@@ -474,6 +474,18 @@ trialGrantValid = false(numFrames,1);
 trialNegativeExpectedOk = false(numFrames,1);
 trialPDCCHBlindSearchEnabled = false(numFrames,1);
 trialPDCCHREGMappingAvailable = false(numFrames,1);
+trialPDCCHGrantBindingRequired = false(numFrames,1);
+trialPDCCHGrantBindingOk = false(numFrames,1);
+trialPDCCHGrantBindingStatus = strings(numFrames,1);
+trialPDCCHGrantBindingFailureCode = strings(numFrames,1);
+trialPDCCHGrantDCIId = strings(numFrames,1);
+trialPDCCHGrantDCIFieldsHash = strings(numFrames,1);
+trialPDCCHGrantFieldsHash = strings(numFrames,1);
+trialPDCCHGrantSearchSpaceId = NaN(numFrames,1);
+trialPDCCHGrantCORESETId = NaN(numFrames,1);
+trialPDCCHGrantAggregationLevel = NaN(numFrames,1);
+trialPDCCHGrantCandidateIndex = NaN(numFrames,1);
+trialPDCCHGrantDCIFormat = strings(numFrames,1);
 trialGrantControlState = strings(numFrames,1);
 trialPDCCHControlFailureReason = strings(numFrames,1);
 trialPDCCHControlEvidenceSource = strings(numFrames,1);
@@ -663,6 +675,18 @@ for n = 1:numFrames
         trialNegativeExpectedOk(n) = logical(sixgr.util.structGet(grantSnapshot, "NegativeExpectedOk", false));
         trialPDCCHBlindSearchEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHBlindSearchEnabled", false));
         trialPDCCHREGMappingAvailable(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHREGMappingAvailable", false));
+        trialPDCCHGrantBindingRequired(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingRequired", false));
+        trialPDCCHGrantBindingOk(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingOk", false));
+        trialPDCCHGrantBindingStatus(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingStatus", ""));
+        trialPDCCHGrantBindingFailureCode(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingFailureCode", ""));
+        trialPDCCHGrantDCIId(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantDCIId", ""));
+        trialPDCCHGrantDCIFieldsHash(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantDCIFieldsHash", ""));
+        trialPDCCHGrantFieldsHash(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantFieldsHash", ""));
+        trialPDCCHGrantSearchSpaceId(n) = double(sixgr.util.structGet(grantSnapshot, "PDCCHGrantSearchSpaceId", NaN));
+        trialPDCCHGrantCORESETId(n) = double(sixgr.util.structGet(grantSnapshot, "PDCCHGrantCORESETId", NaN));
+        trialPDCCHGrantAggregationLevel(n) = double(sixgr.util.structGet(grantSnapshot, "PDCCHGrantAggregationLevel", NaN));
+        trialPDCCHGrantCandidateIndex(n) = double(sixgr.util.structGet(grantSnapshot, "PDCCHGrantCandidateIndex", NaN));
+        trialPDCCHGrantDCIFormat(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantDCIFormat", ""));
         trialGrantControlState(n) = string(sixgr.util.structGet(grantSnapshot, "GrantControlState", ""));
         trialPDCCHControlFailureReason(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHControlFailureReason", ""));
         trialPDCCHControlEvidenceSource(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHControlEvidenceSource", ""));
@@ -1804,6 +1828,18 @@ end
         T.NegativeExpectedOk = trialNegativeExpectedOk(idx);
         T.PDCCHBlindSearchEnabled = trialPDCCHBlindSearchEnabled(idx);
         T.PDCCHREGMappingAvailable = trialPDCCHREGMappingAvailable(idx);
+        T.PDCCHGrantBindingRequired = trialPDCCHGrantBindingRequired(idx);
+        T.PDCCHGrantBindingOk = trialPDCCHGrantBindingOk(idx);
+        T.PDCCHGrantBindingStatus = trialPDCCHGrantBindingStatus(idx);
+        T.PDCCHGrantBindingFailureCode = trialPDCCHGrantBindingFailureCode(idx);
+        T.PDCCHGrantDCIId = trialPDCCHGrantDCIId(idx);
+        T.PDCCHGrantDCIFieldsHash = trialPDCCHGrantDCIFieldsHash(idx);
+        T.PDCCHGrantFieldsHash = trialPDCCHGrantFieldsHash(idx);
+        T.PDCCHGrantSearchSpaceId = trialPDCCHGrantSearchSpaceId(idx);
+        T.PDCCHGrantCORESETId = trialPDCCHGrantCORESETId(idx);
+        T.PDCCHGrantAggregationLevel = trialPDCCHGrantAggregationLevel(idx);
+        T.PDCCHGrantCandidateIndex = trialPDCCHGrantCandidateIndex(idx);
+        T.PDCCHGrantDCIFormat = trialPDCCHGrantDCIFormat(idx);
         T.GrantControlState = trialGrantControlState(idx);
         T.PDCCHControlFailureReason = trialPDCCHControlFailureReason(idx);
         T.PDCCHControlEvidenceSource = trialPDCCHControlEvidenceSource(idx);
@@ -1886,16 +1922,13 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-awgnNVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
+referenceSignalPower = localUsefulOFDMReferencePower(referenceWaveform, txInfo);
+[yControlled, awgnNVar] = sixgr.channel.addControlledAWGN(x, appliedSNR_dB, ...
+    "SignalPower", referenceSignalPower);
 [nVar, source] = localReceiverEffectiveNoiseVariance(awgnNVar, replay, "standalone_awgn_snr_argument_post_channel_units");
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
 if isfinite(awgnNVar) && awgnNVar >= 0
-    if awgnNVar > 0
-        n = sqrt(awgnNVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
-        y = x + cast(n, "like", x);
-    else
-        y = x;
-    end
+    y = yControlled;
     return;
 end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
@@ -3748,6 +3781,18 @@ T.GrantValid = false(0,1);
 T.NegativeExpectedOk = false(0,1);
 T.PDCCHBlindSearchEnabled = false(0,1);
 T.PDCCHREGMappingAvailable = false(0,1);
+T.PDCCHGrantBindingRequired = false(0,1);
+T.PDCCHGrantBindingOk = false(0,1);
+T.PDCCHGrantBindingStatus = strings(0,1);
+T.PDCCHGrantBindingFailureCode = strings(0,1);
+T.PDCCHGrantDCIId = strings(0,1);
+T.PDCCHGrantDCIFieldsHash = strings(0,1);
+T.PDCCHGrantFieldsHash = strings(0,1);
+T.PDCCHGrantSearchSpaceId = zeros(0,1);
+T.PDCCHGrantCORESETId = zeros(0,1);
+T.PDCCHGrantAggregationLevel = zeros(0,1);
+T.PDCCHGrantCandidateIndex = zeros(0,1);
+T.PDCCHGrantDCIFormat = strings(0,1);
 T.GrantControlState = strings(0,1);
 T.PDCCHControlFailureReason = strings(0,1);
 T.PDCCHControlEvidenceSource = strings(0,1);
@@ -5355,6 +5400,9 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk", ...
     "DCICrcPass","PDCCHPayloadMatch","PDCCHCausalGrantDecodeOk","PDCCHMissedDetection","PDCCHFalseAlarm", ...
     "GrantValid","NegativeExpectedOk","PDCCHBlindSearchEnabled","PDCCHREGMappingAvailable", ...
+    "PDCCHGrantBindingRequired","PDCCHGrantBindingOk","PDCCHGrantBindingStatus","PDCCHGrantBindingFailureCode", ...
+    "PDCCHGrantDCIId","PDCCHGrantDCIFieldsHash","PDCCHGrantFieldsHash","PDCCHGrantSearchSpaceId", ...
+    "PDCCHGrantCORESETId","PDCCHGrantAggregationLevel","PDCCHGrantCandidateIndex","PDCCHGrantDCIFormat", ...
     "GrantControlState","PDCCHControlFailureReason","PDCCHControlEvidenceSource","ControlDecodeSource", ...
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
     "TRSGatingActive","TRSValidityState","TrackingEligibility","TRSAgeSlots","LastSuccessfulTRSSlot","LastEstimatedTRSDopplerHz", ...

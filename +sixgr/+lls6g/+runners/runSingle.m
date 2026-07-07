@@ -114,17 +114,21 @@ opt.LinkAdaptiveSweepStep_dB = 2;
 opt.LinkAdaptiveSweepMaxPoints = ternaryDouble(receiverNoiseMode, 1, 12);
 snrSweepEnabled = logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled", false));
 fixedLinkEnabledDefault = (~receiverNoiseMode) || (snrSweepEnabled && numel(unique(controlledSNRGrid)) >= 2);
-opt.LinkFixedLinkCampaignEnabled = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.enabled", fixedLinkEnabledDefault));
-opt.LinkFixedLinkSNRGrid_dB = controlledSNRGrid;
 defaultFixedTrials = max(1, opt.LinkSweepTrialsPerSNR);
-opt.LinkFixedLinkMinTrials = max(1, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.min_trials", defaultFixedTrials))));
-opt.LinkFixedLinkMaxTrials = max(opt.LinkFixedLinkMinTrials, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.max_trials", defaultFixedTrials))));
-opt.LinkFixedLinkTrialsPerDrop = max(1, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.trials_per_drop", totalSlots))));
-opt.LinkFixedLinkErrorTarget = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.error_target", inf));
-opt.LinkFixedLinkCIWidthTarget = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.ci_width_target", inf));
-opt.LinkFixedLinkConfidenceLevel = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.confidence_level", 0.95));
-opt.LinkFixedLinkTargetBLER = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.target_bler", 0.10));
-opt.LinkFixedLinkSeed = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.seed", ...
+fixedLinkCampaignCfg = localResolveFixedLinkCampaignRuntimeConfig(scfg, cfg, controlledSNRGrid, ...
+    fixedLinkEnabledDefault, defaultFixedTrials, totalSlots);
+opt.LinkFixedLinkCampaignConfig = fixedLinkCampaignCfg;
+opt.LinkFixedLinkCampaignEnabled = logical(sixgr.util.structGet(fixedLinkCampaignCfg, "Enabled", false));
+opt.LinkFixedLinkSNRGrid_dB = double(sixgr.util.structGet(fixedLinkCampaignCfg, "SNR_dB", controlledSNRGrid));
+opt.LinkFixedLinkMinTrials = max(1, round(double(sixgr.util.structGet(fixedLinkCampaignCfg, "MinTBPerPoint", defaultFixedTrials))));
+opt.LinkFixedLinkMaxTrials = max(opt.LinkFixedLinkMinTrials, ...
+    round(double(sixgr.util.structGet(fixedLinkCampaignCfg, "MaxTBPerPoint", defaultFixedTrials))));
+opt.LinkFixedLinkTrialsPerDrop = max(1, round(double(sixgr.util.structGet(fixedLinkCampaignCfg, "BatchTBCount", totalSlots))));
+opt.LinkFixedLinkErrorTarget = double(sixgr.util.structGet(fixedLinkCampaignCfg, "MinErrorsForCI", inf));
+opt.LinkFixedLinkCIWidthTarget = 2 * double(sixgr.util.structGet(fixedLinkCampaignCfg, "MaxCIHalfWidth", inf));
+opt.LinkFixedLinkConfidenceLevel = double(sixgr.util.structGet(fixedLinkCampaignCfg, "ConfidenceLevel", 0.95));
+opt.LinkFixedLinkTargetBLER = double(sixgr.util.structGet(fixedLinkCampaignCfg, "PrimaryTargetBLER", 0.10));
+opt.LinkFixedLinkSeed = double(sixgr.util.structGet(fixedLinkCampaignCfg, "SeedBase", ...
     double(sixgr.util.structGet(cfg, "run.seed", 1)) + 730001));
 opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
 opt.SaveFigures = logical(scfg.get("output.save_figures"));
@@ -5219,5 +5223,119 @@ if isempty(entries)
         rmdir(rootFolder);
     catch
     end
+end
+end
+
+function fixedCfg = localResolveFixedLinkCampaignRuntimeConfig(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots)
+validationCfg = sixgr.util.structGet(cfg, "validation.fixed_link_campaign", struct());
+if isstruct(validationCfg) && logical(sixgr.util.structGet(validationCfg, "enabled", false))
+    fixedCfg = localBuildFixedLinkCampaignConfigFromValidation(cfg, validationCfg, controlledSNRGrid, defaultFixedTrials, totalSlots);
+    return;
+end
+fixedCfg = localBuildFixedLinkCampaignConfigFromLegacy(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots);
+end
+
+function fixedCfg = localBuildFixedLinkCampaignConfigFromValidation(cfg, validationCfg, controlledSNRGrid, defaultFixedTrials, totalSlots)
+fixedCfg = struct();
+fixedCfg.Enabled = logical(sixgr.util.structGet(validationCfg, "enabled", false));
+fixedCfg.Direction = string(sixgr.util.structGet(validationCfg, "direction", "both"));
+fixedCfg.ChannelModel = upper(string(sixgr.util.structGet(validationCfg, "channel_model", "AWGN")));
+fixedCfg.SNR_dB = localFiniteRowVector(sixgr.util.structGet(validationCfg, "snr_db", controlledSNRGrid), controlledSNRGrid);
+fixedCfg.MCS = localFiniteIntegerRowVector(sixgr.util.structGet(validationCfg, "mcs", []), []);
+fixedCfg.DLMCS = fixedCfg.MCS;
+fixedCfg.ULMCS = fixedCfg.MCS;
+fixedCfg.Rank = localPositiveIntegerOrDefault(sixgr.util.structGet(validationCfg, "rank", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.rank", 1));
+fixedCfg.Layers = localPositiveIntegerOrDefault(sixgr.util.structGet(validationCfg, "layers", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)));
+fixedCfg.NPRB = localPositiveIntegerOrDefault(sixgr.util.structGet(validationCfg, "n_prb", []), ...
+    localDefaultCampaignNPRB(cfg));
+fixedCfg.MinTBPerPoint = localPositiveIntegerOrDefault(sixgr.util.structGet(validationCfg, "min_tb_per_point", []), defaultFixedTrials);
+fixedCfg.MaxTBPerPoint = max(fixedCfg.MinTBPerPoint, ...
+    localPositiveIntegerOrDefault(sixgr.util.structGet(validationCfg, "max_tb_per_point", []), max(fixedCfg.MinTBPerPoint, 4 * defaultFixedTrials)));
+fixedCfg.MinErrorsForCI = max(0, round(double(sixgr.util.structGet(validationCfg, "min_errors_for_ci", 100))));
+fixedCfg.MaxCIHalfWidth = localFiniteNonNegativeOrDefault(sixgr.util.structGet(validationCfg, "max_ci_half_width", []), 0.05);
+fixedCfg.Seeds = localFiniteIntegerRowVector(sixgr.util.structGet(validationCfg, "seeds", []), ...
+    double(sixgr.util.structGet(cfg, "run.seed", 1)) + 730001);
+fixedCfg.TargetBLER = localFiniteRowVector(sixgr.util.structGet(validationCfg, "target_bler", [0.1 0.01]), [0.1 0.01]);
+fixedCfg.PrimaryTargetBLER = double(fixedCfg.TargetBLER(1));
+fixedCfg.ConfidenceLevel = 0.95;
+fixedCfg.BatchTBCount = max(1, min(round(double(totalSlots)), max(1, fixedCfg.MinTBPerPoint)));
+fixedCfg.SeedBase = double(fixedCfg.Seeds(1));
+end
+
+function fixedCfg = localBuildFixedLinkCampaignConfigFromLegacy(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots)
+fixedCfg = struct();
+fixedCfg.Enabled = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.enabled", fixedLinkEnabledDefault));
+fixedCfg.Direction = "both";
+fixedCfg.ChannelModel = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
+fixedCfg.SNR_dB = localFiniteRowVector(controlledSNRGrid, controlledSNRGrid);
+fixedCfg.MCS = [];
+fixedCfg.DLMCS = localFiniteIntegerRowVector(sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", []), []);
+fixedCfg.ULMCS = localFiniteIntegerRowVector(sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", []), []);
+fixedCfg.Rank = localPositiveIntegerOrDefault(sixgr.util.structGet(cfg, "phy.pdsch.rank", []), 1);
+fixedCfg.Layers = localPositiveIntegerOrDefault(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", ...
+    sixgr.util.structGet(cfg, "phy.pusch.nLayers", 1)), 1);
+fixedCfg.NPRB = localDefaultCampaignNPRB(cfg);
+fixedCfg.MinTBPerPoint = max(1, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.min_trials", defaultFixedTrials))));
+fixedCfg.MaxTBPerPoint = max(fixedCfg.MinTBPerPoint, ...
+    round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.max_trials", defaultFixedTrials))));
+fixedCfg.MinErrorsForCI = max(0, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.error_target", inf))));
+fixedCfg.MaxCIHalfWidth = max(0, double(scfg.get("sweeps_and_matrix.fixed_link_calibration.ci_width_target", inf)) / 2);
+fixedCfg.Seeds = localFiniteIntegerRowVector(scfg.get("sweeps_and_matrix.fixed_link_calibration.seed", ...
+    double(sixgr.util.structGet(cfg, "run.seed", 1)) + 730001), ...
+    double(sixgr.util.structGet(cfg, "run.seed", 1)) + 730001);
+fixedCfg.TargetBLER = localFiniteRowVector(scfg.get("sweeps_and_matrix.fixed_link_calibration.target_bler", 0.10), 0.10);
+fixedCfg.PrimaryTargetBLER = double(fixedCfg.TargetBLER(1));
+fixedCfg.ConfidenceLevel = double(scfg.get("sweeps_and_matrix.fixed_link_calibration.confidence_level", 0.95));
+fixedCfg.BatchTBCount = max(1, round(double(scfg.get("sweeps_and_matrix.fixed_link_calibration.trials_per_drop", totalSlots))));
+fixedCfg.SeedBase = double(fixedCfg.Seeds(1));
+end
+
+function value = localDefaultCampaignNPRB(cfg)
+value = localPositiveIntegerOrDefault(numel(double(sixgr.util.structGet(cfg, "phy.pdsch.PRBSet", []))), NaN);
+if ~(isfinite(value) && value >= 1)
+    value = localPositiveIntegerOrDefault(numel(double(sixgr.util.structGet(cfg, "phy.pusch.PRBSet", []))), NaN);
+end
+if ~(isfinite(value) && value >= 1)
+    value = localPositiveIntegerOrDefault(sixgr.util.structGet(cfg, "phy.numerology.activeGridNumRBs", []), ...
+        sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 24));
+end
+end
+
+function values = localFiniteRowVector(value, fallback)
+values = double(value);
+values = values(:).';
+values = values(isfinite(values));
+if isempty(values)
+    values = double(fallback);
+    values = values(:).';
+    values = values(isfinite(values));
+end
+end
+
+function values = localFiniteIntegerRowVector(value, fallback)
+values = localFiniteRowVector(value, fallback);
+values = round(double(values));
+end
+
+function value = localPositiveIntegerOrDefault(value, fallback)
+value = double(value);
+if ~(isscalar(value) && isfinite(value) && value >= 1)
+    value = double(fallback);
+end
+if ~(isscalar(value) && isfinite(value) && value >= 1)
+    value = 1;
+end
+value = round(double(value));
+end
+
+function value = localFiniteNonNegativeOrDefault(value, fallback)
+value = double(value);
+if ~(isscalar(value) && isfinite(value) && value >= 0)
+    value = double(fallback);
+end
+if ~(isscalar(value) && isfinite(value) && value >= 0)
+    value = 0;
 end
 end

@@ -9,6 +9,7 @@ top_level_order:
   - synchronization
   - rf_hardware
   - tdd_timing
+  - validation
 sections:
   canonical_control:
     required: false
@@ -241,3 +242,34 @@ sections:
       oob_emission_limit_dBr: {required: false, type: number}
       rx_spur_level_dBc: {required: false, type: number}
       local_oscillator_leakage_dBc: {required: false, type: number}
+  validation:
+    required: false
+    parameters:
+      RunClass:
+        required: false
+        type: string
+        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation]
+      fixed_link_campaign: {required: false, type: struct, nested_rule: validation_fixed_link_campaign}
+nested_sections:
+  validation_fixed_link_campaign:
+    parameters:
+      enabled: {required: false, type: boolean}
+      direction:
+        required: false
+        type: string
+        allowed_values: [DL, UL, both, dl, ul]
+      channel_model:
+        required: false
+        type: string
+        allowed_values: [AWGN, TDL, CDL, awgn, tdl, cdl]
+      snr_db: {required: false, type: number_list}
+      mcs: {required: false, type: number_list, integer: true}
+      rank: {required: false, type: integer, min: 1}
+      layers: {required: false, type: integer, min: 1}
+      n_prb: {required: false, type: integer, min: 1}
+      min_tb_per_point: {required: false, type: integer, min: 1}
+      max_tb_per_point: {required: false, type: integer, min: 1}
+      min_errors_for_ci: {required: false, type: integer, min: 0}
+      max_ci_half_width: {required: false, type: number, min: 0}
+      seeds: {required: false, type: number_list, integer: true}
+      target_bler: {required: false, type: number_list, min_items: 1}

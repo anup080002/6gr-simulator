@@ -79,8 +79,9 @@ else
     configuredMatchRate = NaN;
 end
 
-fixedAnchor = localIsFixedOperatingPoint(cfg, trialTable);
-adaptiveMode = localIsAdaptiveMode(cfg, trialTable);
+runClass = localResolveRunClass(cfg, trialTable);
+fixedAnchor = runClass == "fixed_lls_anchor";
+adaptiveMode = any(runClass == ["adaptive_system_diagnostic", "hybrid_validation"]);
 grantBindingRequired = localRequiresPDCCHGrantBinding(cfg);
 mimoReferenceRequired = any(attemptMask & double(rowAudit.EffectiveLayers) > 1) && strictMode;
 channelRFReferenceRequired = localRequiresChannelRFReference(cfg) && strictMode;
@@ -171,7 +172,7 @@ summary = table( ...
     sum(codeBlockErrors(isfinite(codeBlockErrors)), "omitnan"), sum(codeBlockCount(isfinite(codeBlockCount)), "omitnan"), ...
     decoderFailureCount, highSNRPositivePassCount, outageRowCount, ...
     maxBLER, maxBER, minDecodeSuccessRate, decodeSuccessRate, requiredMatchRate, configuredMatchRate, ...
-    fixedAnchor, adaptiveMode, grantBindingRequired, mimoReferenceRequired, channelRFReferenceRequired, ...
+    runClass, fixedAnchor, adaptiveMode, grantBindingRequired, mimoReferenceRequired, channelRFReferenceRequired, ...
     objectivePass, objectivePass, objectivePass, truthStatus, strjoin(failureCodes, "|"), sourceTable, ...
     'VariableNames', {'RunId','ScenarioName','Direction','ProducerModule','StrictMode', ...
     'TrialCount','PositiveTrialCount','TBAttemptCount','NewDataTBAttemptCount','RetransmissionAttemptCount','ObjectiveEligibleRowCount', ...
@@ -179,7 +180,7 @@ summary = table( ...
     'BitErrors','BitsCompared','RawBERWeighted','RawBERUnweighted', ...
     'CodeBlockErrorCount','CodeBlockCount','DecoderFailureCount','HighSNRPositivePassCount','OutageRowCount', ...
     'RawBLERObjectiveThreshold','RawBERObjectiveThreshold','RequiredDecodeSuccessRate','DecodeSuccessRate','RequiredConfiguredMatchRate','ConfiguredEffectiveMatchRate', ...
-    'FixedAnchorMode','AdaptiveMode','GrantBindingRequired','MIMOReferenceRequired','ChannelRFReferenceRequired', ...
+    'RunClass','FixedAnchorMode','AdaptiveMode','GrantBindingRequired','MIMOReferenceRequired','ChannelRFReferenceRequired', ...
     'ObjectivePass','ScenarioObjectiveOk','ResultOk','TruthStatus','FailureReason','SourceTable'});
 
 failures = localBuildFailureTable(runId, scenarioName, failureCodes, summary);
@@ -272,8 +273,8 @@ rankMatch = ~rankApplicable | (isfinite(rank) & round(rank) == round(cfgRank));
 configuredApplicable = mcsApplicable | modApplicable | layerApplicable | rankApplicable;
 configuredMatch = mcsMatch & modMatch & layerMatch & rankMatch;
 
-grantId = strtrim(string(localColumn(T, ["PDCCHGrantReferenceId","GrantContextId","GrantReferenceId"], repmat("", n, 1))));
-grantBindingOk = strlength(grantId) > 0;
+grantBindingRequired = sixgr.control.isPDCCHGrantBindingRequired(cfg, "DL");
+grantBindingOk = localBoolColumn(T, ["PDCCHGrantBindingOk","GrantBindingOk"], false);
 mimoId = strtrim(string(localColumn(T, ["MIMOTrialId","RankLayerEvidenceId","PrecoderEvidenceId"], repmat("", n, 1))));
 mimoRuntimeColumns = isfinite(localNumericColumn(T, "PrecodingNumLayers", NaN)) | ...
     isfinite(localNumericColumn(T, "PrecodingNumPorts", NaN)) | ...
@@ -297,12 +298,14 @@ for i = 1:n
         if ~crcKnown(i), reasons(end+1,1) = "tbc_crc_missing"; end %#ok<AGROW>
         if bitsCompared(i) <= 0 || ~isfinite(bitsCompared(i)), reasons(end+1,1) = "ber_denominator_missing"; end %#ok<AGROW>
         if configuredApplicable(i) && ~configuredMatch(i), reasons(end+1,1) = "configured_effective_mismatch"; end %#ok<AGROW>
+        if grantBindingRequired && ~grantBindingOk(i), reasons(end+1,1) = "pdcch_grant_binding_failed"; end %#ok<AGROW>
     end
     rowFailure(i) = strjoin(unique(reasons, "stable"), "|");
 end
 
 objectiveRowPass = positive & tbAttempted & strictReceiver & ~proxy & ~skipped & ~crash & crcKnown & ...
-    isfinite(bitsCompared) & bitsCompared > 0 & configuredMatch;
+    isfinite(bitsCompared) & bitsCompared > 0 & configuredMatch & ...
+    (~grantBindingRequired | grantBindingOk);
 objectiveClass = repmat("positive_runtime_trial", n, 1);
 objectiveClass(negative) = "negative_or_fault_trial_excluded";
 objectiveClass(~positive & ~negative) = "non_dl_or_not_applicable";
@@ -566,42 +569,69 @@ for i = 1:nargin
 end
 end
 
-function tf = localIsFixedOperatingPoint(cfg, T)
+function runClass = localResolveRunClass(cfg, T)
+runClass = localNormalizeRunClassToken(sixgr.util.structGet(cfg, "validation.RunClass", ...
+    sixgr.util.structGet(cfg, "validation.run_class", "")));
+if strlength(runClass) > 0
+    return;
+end
+if istable(T) && height(T) > 0 && ismember("RunClass", string(T.Properties.VariableNames))
+    runClass = localNormalizeRunClassToken(string(T.RunClass(1)));
+    if strlength(runClass) > 0
+        return;
+    end
+end
+
 mode = lower(strtrim(string([ ...
-    sixgr.util.structGet(cfg, "link_adaptation.fixed_or_amc", ""), ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", ""), ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", ""), ...
-    sixgr.util.structGet(cfg, "validation.dl_pdsch.mode", "") ...
+    localScalarString(sixgr.util.structGet(cfg, "link_adaptation.fixed_or_amc", "")), ...
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "")), ...
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", "")), ...
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", "")), ...
+    localScalarString(sixgr.util.structGet(cfg, "validation.dl_pdsch.mode", "")) ...
     ])));
 mode = mode(strlength(mode) > 0);
+adaptiveTokens = ["amc","adaptive","dynamic","dynamic_link_adaptation","cqi","cqi_driven", ...
+    "baseline","actual_bler_based","effective_sinr_driven"];
 fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
-adaptiveTokens = ["amc","adaptive","cqi","cqi_driven","baseline","actual_bler_based"];
-tf = any(ismember(mode, fixedTokens)) && ~any(ismember(mode, adaptiveTokens));
-if ~tf && istable(T) && height(T) > 0
-    fixedCol = localBoolColumn(T, "FixedAnchorMode", false);
-    adaptiveCol = localBoolColumn(T, "AdaptiveMode", false);
-    tf = any(fixedCol) && ~any(adaptiveCol);
+adaptiveMode = any(ismember(mode, adaptiveTokens));
+fixedMode = any(ismember(mode, fixedTokens)) && ~adaptiveMode;
+fixedCampaignEnabled = logical(sixgr.util.structGet(cfg, "validation.fixed_link_campaign.enabled", false));
+rankFixed = any(ismember(lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", "")))), fixedTokens));
+layersFixed = isfinite(double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN))));
+modulationFixed = strlength(strtrim(string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", "")))) > 0;
+
+if fixedCampaignEnabled && adaptiveMode
+    runClass = "hybrid_validation";
+elseif fixedMode && rankFixed && layersFixed && modulationFixed
+    runClass = "fixed_lls_anchor";
+else
+    runClass = "adaptive_system_diagnostic";
 end
 end
 
-function tf = localIsAdaptiveMode(cfg, T)
-mode = lower(strtrim(string([ ...
-    sixgr.util.structGet(cfg, "link_adaptation.fixed_or_amc", ""), ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", ""), ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", ""), ...
-    sixgr.util.structGet(cfg, "validation.dl_pdsch.mode", "") ...
-    ])));
-mode = mode(strlength(mode) > 0);
-tf = any(ismember(mode, ["amc","adaptive","cqi","cqi_driven","baseline","actual_bler_based"]));
-if istable(T) && height(T) > 0
-    tf = tf || any(localBoolColumn(T, "AdaptiveMode", false));
+function runClass = localNormalizeRunClassToken(raw)
+token = lower(strtrim(string(raw)));
+if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation"])
+    runClass = token;
+else
+    runClass = "";
+end
+end
+
+function value = localScalarString(raw)
+value = "";
+if isempty(raw)
+    return;
+end
+vals = string(raw(:));
+if ~isempty(vals)
+    value = vals(1);
 end
 end
 
 function tf = localRequiresPDCCHGrantBinding(cfg)
-tf = logical(sixgr.util.structGet(cfg, "validation.dl_pdsch.require_pdcch_grant_reference", false)) || ...
-    logical(sixgr.util.structGet(cfg, "phy.pdsch.strictScheduledDL", false)) || ...
-    lower(string(sixgr.util.structGet(cfg, "phy.pdsch.grantSource", ""))) == "decoded_pdcch";
+tf = sixgr.control.isPDCCHGrantBindingRequired(cfg, "DL");
 end
 
 function tf = localRequiresChannelRFReference(cfg)

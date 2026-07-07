@@ -375,6 +375,24 @@
     "include_git_hash": true,
     "echo_to_console": false
   },
+  "validation": {
+    "fixed_link_campaign": {
+      "enabled": false,
+      "direction": "both",
+      "channel_model": "AWGN",
+      "snr_db": [],
+      "mcs": [],
+      "rank": 1,
+      "layers": 1,
+      "n_prb": 24,
+      "min_tb_per_point": 5000,
+      "max_tb_per_point": 20000,
+      "min_errors_for_ci": 100,
+      "max_ci_half_width": 0.05,
+      "seeds": [730001],
+      "target_bler": [0.1, 0.01]
+    }
+  },
   "output": {
     "bucket": "lls",
     "profile": "scenario",

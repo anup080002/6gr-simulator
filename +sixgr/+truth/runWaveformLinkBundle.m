@@ -22,6 +22,8 @@ cfgExec = localPrepareUserCfg(cfgL, multiUser, 1);
 rootRunFolder = fileparts(char(string(runFolder)));
 cfgL = sixgr.util.structSet(cfgL, "run.rootRunFolder", rootRunFolder);
 cfgExec = sixgr.util.structSet(cfgExec, "run.rootRunFolder", rootRunFolder);
+cfgL = sixgr.util.structSet(cfgL, "run.fixedLinkCampaignWriteArtifacts", logical(persistenceEnabled));
+cfgExec = sixgr.util.structSet(cfgExec, "run.fixedLinkCampaignWriteArtifacts", logical(persistenceEnabled));
 
 sixgr.util.ensureFolder(runFolder);
 sixgr.util.ensureFolder(fullfile(runFolder, "csv"));
@@ -52,7 +54,7 @@ if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
         localWriteFixedLinkCampaignEvidence(runFolder, campaign);
     end
     out = struct();
-    out.Ok = istable(fixedSummary) && ~isempty(fixedSummary);
+    out.Ok = localFixedLinkCampaignEvidenceOk(campaign);
     out.RunFolder = runFolder;
     out.Result = struct("SNRSweep", fixedSummary, "ReferenceSweep", fixedSummary, "FixedLinkCampaign", campaign);
     out.KPITable = table();
@@ -501,8 +503,13 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "bundle_complete", 0, toc(bundleStart), "Strict waveform LLS bundle completed.");
 
+campaignEvidenceOk = true;
+if logical(sweepPlan.FixedLinkCampaignEnabled)
+    campaignEvidenceOk = localFixedLinkCampaignEvidenceOk(sixgr.util.structGet(res, "FixedLinkCampaign", struct()));
+end
+
 out = struct();
-out.Ok = logical(localLinkKPITableHealthy(kpi));
+out.Ok = logical(localLinkKPITableHealthy(kpi)) && logical(campaignEvidenceOk);
 out.RunFolder = runFolder;
 out.Result = res;
 out.KPITable = kpi;
@@ -521,6 +528,9 @@ out.LiveDerivedArtifacts = liveDerivedArtifacts;
 out.RuntimeStageProfile = struct2table(stageRows);
 out.Integrity = integrity;
 out.Errors = sixgr.util.structGet(res, "Errors", strings(0,1));
+if logical(sweepPlan.FixedLinkCampaignEnabled) && ~logical(campaignEvidenceOk)
+    out.Errors = [string(out.Errors(:)); "fixed_link_campaign_missing_nonempty_curve_with_confidence_intervals"];
+end
 out.UnsupportedCases = unsupportedCases;
 out.MultiUser = multiUser;
 out.PersistenceEnabled = logical(persistenceEnabled);
@@ -7013,10 +7023,16 @@ for gi = 1:numel(grants)
             [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
                 state, grant, direction, "control_blocked_no_dl_control_symbols_in_tdd_slot");
             state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
+            pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, NaN, ...
+                "control_blocked_no_dl_control_symbols_in_tdd_slot");
+            pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction);
+            [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
+            state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
         else
             grant.PDCCHGatingActive = false;
             grant.ControlDecodeOk = true;
             grant.GrantControlState = "control_not_required_no_dl_control_symbols_in_tdd_slot";
+            [~, grant] = localAnnotateGrantControlTrial(table(), grant, cfgU, direction);
             if isempty(qualifiedGrants)
                 qualifiedGrants = grant;
             else
@@ -7044,7 +7060,7 @@ for gi = 1:numel(grants)
         pdcchT = localBuildPDCCHCapacityBlockedTrial(cfgU, pdcchSNR_dB, plannedAggLevel, ...
             pdcchCCEBudgetThisSlot, pdcchCCEUsedThisSlot, reason);
         pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction);
-        pdcchT = localAnnotateGrantControlTrial(pdcchT, grant);
+        [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
         state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
         continue;
     end
@@ -7062,6 +7078,11 @@ for gi = 1:numel(grants)
         if isfield(state, "LastSuccessfulPDCCHSlotByUE") && ueIdx <= numel(state.LastSuccessfulPDCCHSlotByUE)
             state.LastSuccessfulPDCCHSlotByUE(ueIdx) = controlSlotIdx;
         end
+        pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, pdcchSNR_dB, ...
+            "pre_attach_assumed_ok_no_trial_in_warmup");
+        pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction);
+        [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
+        state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
         state = sixgr.truth.CoupledTruthRuntime.updateGrantControlTrace(state, grant, direction);
         if isempty(qualifiedGrants)
             qualifiedGrants = grant;
@@ -7083,7 +7104,7 @@ for gi = 1:numel(grants)
         localMapSetDouble(pdcchCCEUsedByResource, controlResourceKey, pdcchCCEUsedThisSlot);
     end
     [state, grant, allowExecution] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state, grant, direction, pdcchT);
-    pdcchT = localAnnotateGrantControlTrial(pdcchT, grant);
+    [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
     state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
     if ~allowExecution
         state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
@@ -8413,7 +8434,9 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'CellAcquisitionState','AccessState','SRSValidityState','CSIValidityState','SRSValid','SRSAgeSlots', ...
     'TRSGatingActive','TRSValidityState','TrackingEligibility','TRSAgeSlots','LastSuccessfulTRSSlot','LastEstimatedTRSDopplerHz', ...
     'TRSStateSource','TRSRuntimeConsumer','TRSInfluencedDecision','TRSInfluenceDefinition','TRSReceiverIntegrationStatus','TRSReceiverIntegrationBlocker', ...
-    'GrantContextId','GrantWorkerSafe','GrantSharedStateCommitMode', ...
+    'GrantContextId','PDCCHGrantBindingRequired','PDCCHGrantBindingOk','PDCCHGrantBindingStatus','PDCCHGrantBindingFailureCode', ...
+    'PDCCHGrantDCIId','PDCCHGrantDCIFieldsHash','PDCCHGrantFieldsHash','PDCCHGrantSearchSpaceId','PDCCHGrantCORESETId', ...
+    'PDCCHGrantAggregationLevel','PDCCHGrantCandidateIndex','PDCCHGrantDCIFormat','GrantWorkerSafe','GrantSharedStateCommitMode', ...
     'BSAntennaArrayClass','BSAntennaElementClass','BSAntennaArrayType', ...
     'BSAntennaRows','BSAntennaCols','BSAntennaElements','BSAntennaSpacingH_lambda','BSAntennaSpacingV_lambda', ...
     'BSAntennaPolarization','BSAntennaAzimuth_deg','BSAntennaNumPorts','BSAntennaHasPhasedArrayObject', ...
@@ -8484,7 +8507,9 @@ for i = 1:numel(vars)
                             'RunUUID','RunTag','ScenarioID','RunnerProfile','ConfigHash','SourceArtifact','SourceTable','ArtifactClass','SemanticState', ...
                             'InterfererPrecoderSourceSet','InterfererPrecodingModeSet','InterfererBeamIndexSetSummary', ...
                             'TRSStateSource','TRSRuntimeConsumer','TRSInfluenceDefinition','TRSReceiverIntegrationStatus','TRSReceiverIntegrationBlocker', ...
-                            'GrantContextId','GrantSharedStateCommitMode','TBId','CodeBlockLayoutHash','HARQContextHash','HARQContextStatus', ...
+                            'GrantContextId','PDCCHGrantBindingStatus','PDCCHGrantBindingFailureCode','PDCCHGrantDCIId', ...
+                            'PDCCHGrantDCIFieldsHash','PDCCHGrantFieldsHash','PDCCHGrantDCIFormat', ...
+                            'GrantSharedStateCommitMode','TBId','CodeBlockLayoutHash','HARQContextHash','HARQContextStatus', ...
                             'BSAntennaArrayClass','BSAntennaElementClass','BSAntennaArrayType','BSAntennaPolarization', ...
                             'UEAntennaArrayClass','UEAntennaElementClass','UEAntennaArrayType','UEAntennaPolarization', ...
                             'AntennaConfigSource','RuntimeAntennaObjectSource','ChannelArrayModel','ChannelObjectSource','ChannelObjectClass', ...
@@ -8514,7 +8539,8 @@ for i = 1:numel(vars)
                             'GrantValid','NegativeExpectedOk','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable', ...
                             'BeamSelectionPolicyFixed','LargeScaleSINRFinalizedFlag','SecondaryFieldGapFlag','PartialRowFlag','FinalizedFlag','FallbackFlag','PlaceholderFlag', ...
                             'CountsTowardCoverage','MachineReadable','HumanReadable', ...
-                            'GrantWorkerSafe','BSAntennaHasPhasedArrayObject','UEAntennaHasPhasedArrayObject', ...
+                            'GrantWorkerSafe','PDCCHGrantBindingRequired','PDCCHGrantBindingOk', ...
+                            'BSAntennaHasPhasedArrayObject','UEAntennaHasPhasedArrayObject', ...
                             'AntennaRuntimeObjectCreated','ChannelUsesCountOnlyAntennaModel','ChannelUsesSameRuntimeAntennaAssumptions', ...
                             'InterferenceUsesSameRuntimeAntennaAssumptions','InterferencePathUsesSameArrayAssumptions'}
                         T.(v) = false(height(T),1);
@@ -9913,6 +9939,7 @@ rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
 if nargin < 4 || ~isstruct(grantContext)
     grantContext = struct();
 end
+dciFormatSeed = localResolvePDCCHGrantDCIFormat(grantContext, "DL");
 dciBitsSeed = int8([]);
 if isstruct(sixgr.util.structGet(grantContext, "DCI", struct()))
     dciBitsSeed = int8(sixgr.util.structGet(sixgr.util.structGet(grantContext, "DCI", struct()), "Bits", int8([])));
@@ -9954,6 +9981,7 @@ for k = 1:nTrials
         if ~istable(candidateT)
             candidateT = table();
         end
+        decodedDci = localDecodeObservedPDCCHGrantDCI(rx, tx, dciFormatSeed);
         aggLevel = localPDCCHScalar(tx.PDCCH, "AggregationLevel", NaN);
         usedCCEs = aggLevel;
         availCCEs = localPDCCHAvailableCCEs(tx.PDCCH);
@@ -10082,6 +10110,23 @@ for k = 1:nTrials
         r.PDCCHCORESETDuration = localPDCCHScalar(tx.PDCCH.CORESET, "Duration", NaN);
         r.PDCCHCORESETFrequencyResources = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.CORESET, "FrequencyResources"));
         r.PDCCHSearchSpaceNumCandidates = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.SearchSpace, "NumCandidates"));
+        r.CORESETId = localPDCCHScalar(tx.PDCCH.CORESET, "CORESETID", localPDCCHScalar(tx.PDCCH.CORESET, "ID", NaN));
+        r.SearchSpaceId = localPDCCHScalar(tx.PDCCH.SearchSpace, "SearchSpaceID", localPDCCHScalar(tx.PDCCH.SearchSpace, "ID", NaN));
+        r.CandidateIndex = double(sixgr.util.structGet(rx, "CandidateIndex", NaN));
+        r.DCIFormat = string(dciFormatSeed);
+        r.DCIId = string(sixgr.util.structGet(decodedDci, "PayloadHash", ""));
+        r.DCIFieldsHash = string(localHashDecodedPDCCHGrantFields(decodedDci, r.PDCCHDCICrcRNTI));
+        r.DecodedDCIHARQProcessId = double(sixgr.util.structGet(decodedDci, "Fields.harq_process", NaN));
+        r.DecodedDCIPRBStart = double(sixgr.util.structGet(decodedDci, "Fields.prb_start", NaN));
+        r.DecodedDCIAllocatedPRBCount = double(sixgr.util.structGet(decodedDci, "Fields.num_prb", NaN));
+        r.DecodedDCISymbolStart = double(sixgr.util.structGet(decodedDci, "Fields.symbol_start", NaN));
+        r.DecodedDCINumSymbols = double(sixgr.util.structGet(decodedDci, "Fields.num_symbols", NaN));
+        r.DecodedDCIMCSIndex = double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN));
+        r.DecodedDCIRV = double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN));
+        r.DecodedDCINDI = double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN));
+        r.DecodedDCITimeDomainAssignmentIndex = double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN));
+        r.LinkedGrantId = string(sixgr.util.structGet(grantContext, "GrantContextId", ""));
+        r.LinkedPDSCHOrPUSCH = upper(string(sixgr.util.structGet(grantContext, "Direction", "")));
         r.PDCCHGridHash = localComplexSHA256(tx.Grid);
         r.PDCCHWaveformHash = localComplexSHA256(tx.Waveform);
         r.PDCCHResourceHash = localPDCCHResourceHash(tx.PDCCHInd, tx.DMRSInd);
@@ -10396,6 +10441,41 @@ r.Notes = "PDCCH decode was not attempted because the configured CORESET/search-
 T = struct2table(r, "AsArray", true);
 end
 
+function T = localBuildMissingPDCCHGrantBindingTrial(cfg, snr_dB, reason)
+r = localMakeLinkTrialRow(cfg, "DL", snr_dB, 1);
+r.Status = "NA";
+r.StrictOk = false;
+r.CRCApplicable = false;
+r.CRCPass = NaN;
+r.DecodeAttempted = false;
+r.DecodeUsable = false;
+r.DetectionAttempted = false;
+r.DetectionUsable = false;
+r.MeasurementAttempted = false;
+r.MeasurementUsable = false;
+r.ReceiverUsable = false;
+r.GrantValid = false;
+r.NegativeExpectedOk = false;
+r.DCICrcPass = false;
+r.PDCCHPayloadMatch = false;
+r.PDCCHCausalGrantDecodeOk = false;
+r.PDCCHMissedDetection = false;
+r.PDCCHFalseAlarm = false;
+r.NoiseVarStatus = "NOT_APPLICABLE";
+r.NoiseVarSource = "pdcch_decode_not_attempted";
+r.NoiseVarReason = string(reason);
+r.ReceiverHestSINRValueStatus = "not_applicable";
+r.ReceiverHestSINRNAReason = string(reason);
+r.MeasuredTrialSINRValueStatus = "not_applicable";
+r.MeasuredTrialSINRNAReason = string(reason);
+r.RuntimeMaterializationStatus = "active_integrated_grant_coupled_pdcch_binding_guard";
+r.ValueStatus = "decoded_dci_missing";
+r.FailureReason = string(reason);
+r.TruthStatus = "runtime_pdcch_binding_missing";
+r.Notes = "Decoded PDCCH/DCI evidence was not available for this scheduled grant.";
+T = struct2table(r, "AsArray", true);
+end
+
 function key = localPDCCHControlResourceKey(grant, controlFrameIdx, controlSlotIdx)
 servingCell = double(sixgr.util.structGet(grant, "ServingCell", ...
     sixgr.util.structGet(grant, "BaseStationID", NaN)));
@@ -10592,10 +10672,36 @@ end
 aggLevel = double(levels(idx));
 end
 
-function T = localAnnotateGrantControlTrial(T, grant)
-if ~(istable(T) && ~isempty(T) && isstruct(grant))
+function [T, grant] = localAnnotateGrantControlTrial(T, grant, cfg, direction)
+if nargin < 3 || ~isstruct(cfg)
+    cfg = struct();
+end
+if nargin < 4
+    direction = sixgr.util.structGet(grant, "Direction", "DL");
+end
+if ~isstruct(grant)
     return;
 end
+
+direction = upper(strtrim(string(direction)));
+binding = localResolvePDCCHGrantBinding(cfg, grant, direction, T);
+grant.PDCCHGrantBindingRequired = logical(binding.Required);
+grant.PDCCHGrantBindingOk = logical(binding.Ok);
+grant.PDCCHGrantBindingStatus = char(string(binding.Status));
+grant.PDCCHGrantBindingFailureCode = char(string(binding.FailureCode));
+grant.PDCCHGrantDCIId = char(string(binding.DCIId));
+grant.PDCCHGrantDCIFieldsHash = char(string(binding.DCIFieldsHash));
+grant.PDCCHGrantFieldsHash = char(string(binding.GrantFieldsHash));
+grant.PDCCHGrantSearchSpaceId = double(binding.SearchSpaceId);
+grant.PDCCHGrantCORESETId = double(binding.CORESETId);
+grant.PDCCHGrantAggregationLevel = double(binding.AggregationLevel);
+grant.PDCCHGrantCandidateIndex = double(binding.CandidateIndex);
+grant.PDCCHGrantDCIFormat = char(string(binding.DCIFormat));
+
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+
 heightT = height(T);
 transmittedLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
 rankIndicator = double(sixgr.util.structGet(grant, "RIUsed", ...
@@ -10616,6 +10722,9 @@ annotations = {
     "ControlFrame", double(sixgr.util.structGet(grant, "ControlFrame", NaN));
     "ControlSlot", double(sixgr.util.structGet(grant, "ControlSlot", NaN));
     "ScheduledAbsoluteSlot", double(sixgr.util.structGet(grant, "ScheduledAbsoluteSlot", sixgr.util.structGet(grant, "Slot", NaN)));
+    "GrantContextId", string(sixgr.util.structGet(grant, "GrantContextId", ""));
+    "LinkedGrantId", string(sixgr.util.structGet(grant, "GrantContextId", ""));
+    "LinkedPDSCHOrPUSCH", direction;
     "K2Slots", double(sixgr.util.structGet(grant, "K2Slots", NaN));
     "LastSuccessfulSRSSlot", double(sixgr.util.structGet(grant, "LastSuccessfulSRSSlot", NaN));
     "SRSAgeSlots", double(sixgr.util.structGet(grant, "SRSAgeSlots", NaN));
@@ -10624,7 +10733,19 @@ annotations = {
     "MCSIndex", double(sixgr.util.structGet(grant, "MCSIndex", NaN));
     "Layers", transmittedLayers;
     "Rank", transmittedLayers;
-    "RankIndicator", rankIndicator
+    "RankIndicator", rankIndicator;
+    "GrantBindingRequired", logical(binding.Required);
+    "GrantBindingOk", logical(binding.Ok);
+    "GrantBindingStatus", string(binding.Status);
+    "GrantBindingFailureCode", string(binding.FailureCode);
+    "GrantFieldsHash", string(binding.GrantFieldsHash);
+    "DCIFieldsHash", string(binding.DCIFieldsHash);
+    "DCIId", string(binding.DCIId);
+    "SearchSpaceId", double(binding.SearchSpaceId);
+    "CORESETId", double(binding.CORESETId);
+    "AggregationLevel", double(binding.AggregationLevel);
+    "CandidateIndex", double(binding.CandidateIndex);
+    "DCIFormat", string(binding.DCIFormat)
     };
 for i = 1:size(annotations, 1)
     name = char(annotations{i, 1});
@@ -10648,6 +10769,267 @@ for i = 1:size(annotations, 1)
         end
         T.(name) = repmat(numValue, heightT, 1);
     end
+end
+end
+
+function binding = localResolvePDCCHGrantBinding(cfg, grant, direction, T)
+direction = upper(strtrim(string(direction)));
+grantPayload = localGrantBindingPayloadFromGrant(grant, direction);
+binding = struct( ...
+    "Required", sixgr.control.isPDCCHGrantBindingRequired(cfg, direction), ...
+    "Ok", false, ...
+    "Status", "not_required", ...
+    "FailureCode", "", ...
+    "DCIId", "", ...
+    "DCIFieldsHash", "", ...
+    "GrantFieldsHash", localGrantBindingPayloadHash(grantPayload), ...
+    "SearchSpaceId", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "SearchSpaceID", NaN)), ...
+        double(sixgr.util.structGet(grant, "SearchSpaceId", NaN)), ...
+        double(sixgr.util.structGet(grant, "PDCCHGrantSearchSpaceId", NaN))], NaN), ...
+    "CORESETId", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "CORESETID", NaN)), ...
+        double(sixgr.util.structGet(grant, "CORESETId", NaN)), ...
+        double(sixgr.util.structGet(grant, "PDCCHGrantCORESETId", NaN))], NaN), ...
+    "AggregationLevel", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "PDCCHAggregationLevel", NaN)), ...
+        double(sixgr.util.structGet(grant, "PDCCHGrantAggregationLevel", NaN))], NaN), ...
+    "CandidateIndex", double(sixgr.util.structGet(grant, "PDCCHGrantCandidateIndex", NaN)), ...
+    "DCIFormat", char(string(grantPayload.DCIFormat)));
+if ~binding.Required
+    binding.Ok = true;
+    return;
+end
+
+if ~(istable(T) && ~isempty(T))
+    binding.Status = "missing_decoded_dci";
+    binding.FailureCode = "decoded_dci_missing";
+    return;
+end
+
+row = T(end, :);
+decodedPayload = localGrantBindingPayloadFromDecodedRow(row, direction);
+binding.DCIId = char(localTableText(row, ["DCIId","PayloadHash"], ""));
+binding.DCIFieldsHash = char(localTableText(row, "DCIFieldsHash", ""));
+binding.SearchSpaceId = localFirstFinite([binding.SearchSpaceId, localTableNumber(row, "SearchSpaceId", NaN)], NaN);
+binding.CORESETId = localFirstFinite([binding.CORESETId, localTableNumber(row, "CORESETId", NaN)], NaN);
+binding.AggregationLevel = localFirstFinite([binding.AggregationLevel, localTableNumber(row, "AggregationLevel", NaN)], NaN);
+binding.CandidateIndex = localFirstFinite([binding.CandidateIndex, ...
+    localTableNumber(row, ["CandidateIndex","PDCCHCandidateIndex"], NaN)], NaN);
+binding.DCIFormat = char(localTableText(row, "DCIFormat", binding.DCIFormat));
+
+failures = strings(0, 1);
+if ~localTableLogical(row, "DCICrcPass", false)
+    failures(end+1, 1) = "decoded_dci_crc_failed"; %#ok<AGROW>
+end
+if ~localTableLogical(row, "PDCCHPayloadMatch", false)
+    failures(end+1, 1) = "decoded_dci_payload_mismatch"; %#ok<AGROW>
+end
+if strlength(strtrim(string(binding.DCIFieldsHash))) == 0
+    failures(end+1, 1) = "decoded_dci_fields_hash_missing"; %#ok<AGROW>
+end
+if strlength(strtrim(string(binding.GrantFieldsHash))) == 0
+    failures(end+1, 1) = "grant_fields_hash_missing"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.RNTI, grantPayload.RNTI)
+    failures(end+1, 1) = "rnti_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.HARQProcessId, grantPayload.HARQProcessId)
+    failures(end+1, 1) = "harq_process_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.PRBStart, grantPayload.PRBStart) || ...
+        ~localBindingNumbersMatch(decodedPayload.AllocatedPRBCount, grantPayload.AllocatedPRBCount)
+    failures(end+1, 1) = "prb_allocation_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.SymbolStart, grantPayload.SymbolStart) || ...
+        ~localBindingNumbersMatch(decodedPayload.NumSymbols, grantPayload.NumSymbols)
+    failures(end+1, 1) = "symbol_allocation_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.MCSIndex, grantPayload.MCSIndex)
+    failures(end+1, 1) = "mcs_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.RV, grantPayload.RV)
+    failures(end+1, 1) = "rv_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.NDI, grantPayload.NDI)
+    failures(end+1, 1) = "ndi_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(decodedPayload.TimeDomainAssignmentIndex, grantPayload.TimeDomainAssignmentIndex)
+    failures(end+1, 1) = "time_domain_assignment_mismatch"; %#ok<AGROW>
+end
+if ~localBindingTextsMatch(binding.DCIFormat, grantPayload.DCIFormat)
+    failures(end+1, 1) = "dci_format_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(localTableNumber(row, "SearchSpaceId", NaN), binding.SearchSpaceId)
+    failures(end+1, 1) = "search_space_mismatch"; %#ok<AGROW>
+end
+if ~localBindingNumbersMatch(localTableNumber(row, "CORESETId", NaN), binding.CORESETId)
+    failures(end+1, 1) = "coreset_mismatch"; %#ok<AGROW>
+end
+if strlength(strtrim(string(binding.DCIFieldsHash))) > 0 && strlength(strtrim(string(binding.GrantFieldsHash))) > 0 && ...
+        string(binding.DCIFieldsHash) ~= string(binding.GrantFieldsHash)
+    failures(end+1, 1) = "dci_grant_fields_hash_mismatch"; %#ok<AGROW>
+end
+
+failures = unique(failures(strlength(strtrim(failures)) > 0), "stable");
+binding.Ok = isempty(failures);
+binding.Status = ternaryBinding(binding.Ok, "bound", "failed");
+binding.FailureCode = char(strjoin(failures, "|"));
+end
+
+function payload = localGrantBindingPayloadFromGrant(grant, direction)
+direction = upper(strtrim(string(direction)));
+prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+prbSet = prbSet(isfinite(prbSet));
+prbStart = localFirstFinite(prbSet, double(sixgr.util.structGet(grant, "PRBStart", NaN)));
+if isempty(prbSet)
+    prbCount = double(sixgr.util.structGet(grant, "AllocatedPRBCount", ...
+        sixgr.util.structGet(grant, "PRBCount", NaN)));
+else
+    prbCount = double(numel(prbSet));
+end
+symbolAllocation = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
+symbolAllocation = symbolAllocation(isfinite(symbolAllocation));
+if numel(symbolAllocation) >= 2
+    symbolStart = double(symbolAllocation(1));
+    numSymbols = double(symbolAllocation(2));
+else
+    symbolStart = double(sixgr.util.structGet(grant, "SymbolStart", NaN));
+    numSymbols = double(sixgr.util.structGet(grant, "NumSymbols", NaN));
+end
+payload = struct( ...
+    "Direction", char(direction), ...
+    "DCIFormat", char(localResolvePDCCHGrantDCIFormat(grant, direction)), ...
+    "RNTI", double(sixgr.util.structGet(grant, "RNTI", NaN)), ...
+    "HARQProcessId", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "HARQ.HARQProcess", NaN)), ...
+        double(sixgr.util.structGet(grant, "HARQ.HarqID", NaN)), ...
+        double(sixgr.util.structGet(grant, "HARQProcessId", NaN))], NaN), ...
+    "PRBStart", double(prbStart), ...
+    "AllocatedPRBCount", double(prbCount), ...
+    "SymbolStart", double(symbolStart), ...
+    "NumSymbols", double(numSymbols), ...
+    "TimeDomainAssignmentIndex", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "DCI.TimeDomainAssignmentIndex", NaN)), ...
+        double(sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", NaN)), ...
+        double(sixgr.util.structGet(grant, "TDRAIndex", NaN)), ...
+        double(sixgr.util.structGet(grant, "TimeResourceAssignment", NaN))], NaN), ...
+    "MCSIndex", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "MCSIndex", NaN)), ...
+        double(sixgr.util.structGet(grant, "MCS", NaN))], NaN), ...
+    "RV", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "HARQ.RV", NaN)), ...
+        double(sixgr.util.structGet(grant, "RV", NaN))], NaN), ...
+    "NDI", localFirstFinite([ ...
+        double(sixgr.util.structGet(grant, "HARQ.NDI", NaN)), ...
+        double(sixgr.util.structGet(grant, "NDI", NaN))], NaN));
+end
+
+function payload = localGrantBindingPayloadFromDecodedRow(row, direction)
+payload = struct( ...
+    "Direction", char(upper(strtrim(string(direction)))), ...
+    "DCIFormat", char(localTableText(row, "DCIFormat", localResolvePDCCHGrantDCIFormat(struct(), direction))), ...
+    "RNTI", double(localTableNumber(row, "PDCCHDCICrcRNTI", NaN)), ...
+    "HARQProcessId", double(localTableNumber(row, "DecodedDCIHARQProcessId", NaN)), ...
+    "PRBStart", double(localTableNumber(row, "DecodedDCIPRBStart", NaN)), ...
+    "AllocatedPRBCount", double(localTableNumber(row, "DecodedDCIAllocatedPRBCount", NaN)), ...
+    "SymbolStart", double(localTableNumber(row, "DecodedDCISymbolStart", NaN)), ...
+    "NumSymbols", double(localTableNumber(row, "DecodedDCINumSymbols", NaN)), ...
+    "TimeDomainAssignmentIndex", double(localTableNumber(row, "DecodedDCITimeDomainAssignmentIndex", NaN)), ...
+    "MCSIndex", double(localTableNumber(row, "DecodedDCIMCSIndex", NaN)), ...
+    "RV", double(localTableNumber(row, "DecodedDCIRV", NaN)), ...
+    "NDI", double(localTableNumber(row, "DecodedDCINDI", NaN)));
+end
+
+function hash = localGrantBindingPayloadHash(payload)
+hash = "";
+if ~(isstruct(payload) && ~isempty(fieldnames(payload)))
+    return;
+end
+try
+    hash = char(sixgr.util.sha256Hex(uint8(unicode2native(char(jsonencode(orderfields(payload))), "UTF-8"))));
+catch
+    hash = "";
+end
+end
+
+function tf = localBindingNumbersMatch(lhs, rhs)
+lhs = localFirstFinite(lhs, NaN);
+rhs = localFirstFinite(rhs, NaN);
+if ~(isfinite(lhs) && isfinite(rhs))
+    tf = true;
+else
+    tf = abs(double(lhs) - double(rhs)) < 1e-9;
+end
+end
+
+function tf = localBindingTextsMatch(lhs, rhs)
+lhs = strtrim(string(lhs));
+rhs = strtrim(string(rhs));
+if strlength(lhs) == 0 || strlength(rhs) == 0
+    tf = true;
+else
+    tf = lhs == rhs;
+end
+end
+
+function value = localTableText(row, names, defaultValue)
+value = string(defaultValue);
+if ~(istable(row) && height(row) >= 1)
+    return;
+end
+names = string(names);
+vars = string(row.Properties.VariableNames);
+for ii = 1:numel(names)
+    if any(vars == names(ii))
+        token = string(row.(names(ii))(1));
+        if strlength(strtrim(token)) > 0
+            value = token;
+            return;
+        end
+    end
+end
+end
+
+function value = localTableNumber(row, names, defaultValue)
+value = double(defaultValue);
+if ~(istable(row) && height(row) >= 1)
+    return;
+end
+names = string(names);
+vars = string(row.Properties.VariableNames);
+for ii = 1:numel(names)
+    if any(vars == names(ii))
+        raw = double(row.(names(ii))(1));
+        if isfinite(raw)
+            value = raw;
+            return;
+        end
+    end
+end
+end
+
+function tf = localTableLogical(row, name, defaultValue)
+tf = logical(defaultValue);
+if ~(istable(row) && height(row) >= 1)
+    return;
+end
+vars = string(row.Properties.VariableNames);
+if any(vars == string(name))
+    raw = row.(string(name))(1);
+    if islogical(raw)
+        tf = logical(raw);
+    elseif isnumeric(raw)
+        tf = logical(raw ~= 0);
+    end
+end
+end
+
+function value = ternaryBinding(cond, ifTrue, ifFalse)
+if cond
+    value = string(ifTrue);
+else
+    value = string(ifFalse);
 end
 end
 
@@ -10780,6 +11162,55 @@ try
 catch
     hash = "";
 end
+end
+
+function dciFormat = localResolvePDCCHGrantDCIFormat(source, direction)
+dciFormat = string(sixgr.util.structGet(source, "DCI.Format", ...
+    sixgr.util.structGet(source, "DCIFormat", "")));
+dciFormat = strtrim(dciFormat);
+if strlength(dciFormat) == 0
+    direction = upper(strtrim(string(direction)));
+    if direction == "UL"
+        dciFormat = "0_0";
+    else
+        dciFormat = "1_0";
+    end
+end
+end
+
+function decodedDci = localDecodeObservedPDCCHGrantDCI(rx, tx, dciFormat)
+decodedDci = struct();
+bits = int8(sixgr.util.structGet(rx, "DCIBits", int8([])));
+if isempty(bits)
+    return;
+end
+try
+    pdcchCfg = struct("NSizeGrid", double(tx.Carrier.NSizeGrid));
+    decodedDci = sixgr.phy.pdcch.decodeDCIPayload(bits, dciFormat, pdcchCfg);
+catch
+    decodedDci = struct();
+end
+end
+
+function hash = localHashDecodedPDCCHGrantFields(decodedDci, rnti)
+hash = "";
+if ~(isstruct(decodedDci) && ~isempty(fieldnames(decodedDci)))
+    return;
+end
+payload = struct( ...
+    "Direction", char(string(sixgr.util.structGet(decodedDci, "Direction", ""))), ...
+    "DCIFormat", char(string(sixgr.util.structGet(decodedDci, "Format", ""))), ...
+    "RNTI", double(rnti), ...
+    "HARQProcessId", double(sixgr.util.structGet(decodedDci, "Fields.harq_process", NaN)), ...
+    "PRBStart", double(sixgr.util.structGet(decodedDci, "Fields.prb_start", NaN)), ...
+    "AllocatedPRBCount", double(sixgr.util.structGet(decodedDci, "Fields.num_prb", NaN)), ...
+    "SymbolStart", double(sixgr.util.structGet(decodedDci, "Fields.symbol_start", NaN)), ...
+    "NumSymbols", double(sixgr.util.structGet(decodedDci, "Fields.num_symbols", NaN)), ...
+    "TimeDomainAssignmentIndex", double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN)), ...
+    "MCSIndex", double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN)), ...
+    "RV", double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN)), ...
+    "NDI", double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN)));
+hash = localGrantBindingPayloadHash(payload);
 end
 
 function T = localCollectPUCCHTrials(cfg, snr_dB, nTrials)
@@ -11879,6 +12310,18 @@ row.TRSRuntimeEvidenceSource = "";
 row.TRSRuntimeEvidenceUsable = false;
 row.StrictOk = false;
 row.GrantContextId = "";
+row.PDCCHGrantBindingRequired = false;
+row.PDCCHGrantBindingOk = false;
+row.PDCCHGrantBindingStatus = "";
+row.PDCCHGrantBindingFailureCode = "";
+row.PDCCHGrantDCIId = "";
+row.PDCCHGrantDCIFieldsHash = "";
+row.PDCCHGrantFieldsHash = "";
+row.PDCCHGrantSearchSpaceId = NaN;
+row.PDCCHGrantCORESETId = NaN;
+row.PDCCHGrantAggregationLevel = NaN;
+row.PDCCHGrantCandidateIndex = NaN;
+row.PDCCHGrantDCIFormat = "";
 row.GrantWorkerSafe = false;
 row.GrantSharedStateCommitMode = "";
 row.Notes = "";
@@ -11933,6 +12376,18 @@ T.ShortIRRetx = false(nRows, 1);
 T.CodeBlockLayoutHash = strings(nRows, 1);
 T.HARQContextHash = strings(nRows, 1);
 T.HARQContextStatus = strings(nRows, 1);
+T.PDCCHGrantBindingRequired = false(nRows, 1);
+T.PDCCHGrantBindingOk = false(nRows, 1);
+T.PDCCHGrantBindingStatus = strings(nRows, 1);
+T.PDCCHGrantBindingFailureCode = strings(nRows, 1);
+T.PDCCHGrantDCIId = strings(nRows, 1);
+T.PDCCHGrantDCIFieldsHash = strings(nRows, 1);
+T.PDCCHGrantFieldsHash = strings(nRows, 1);
+T.PDCCHGrantSearchSpaceId = NaN(nRows, 1);
+T.PDCCHGrantCORESETId = NaN(nRows, 1);
+T.PDCCHGrantAggregationLevel = NaN(nRows, 1);
+T.PDCCHGrantCandidateIndex = NaN(nRows, 1);
+T.PDCCHGrantDCIFormat = strings(nRows, 1);
 T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, cell(nRows, 1));
 end
 
@@ -13053,6 +13508,12 @@ campaign = struct( ...
     "TaskPlan", table(), ...
     "SNRGrid_dB", [], ...
     "SeedBase", NaN, ...
+    "DLBlerCurve", table(), ...
+    "ULBlerCurve", table(), ...
+    "DLBerCurve", table(), ...
+    "ULBerCurve", table(), ...
+    "ReportSummary", table(), ...
+    "TargetCrossings", table(), ...
     "Notes", "");
 end
 
@@ -13085,52 +13546,76 @@ end
 grid = localBuildReferenceSweepGrid(snrGrid, sweepPlan);
 end
 
+function cfgCampaign = localResolveFixedLinkCampaignConfig(cfg, snrGrid, sweepPlan)
+runtimeCfg = sixgr.util.structGet(sweepPlan, "FixedLinkCampaignConfig", struct());
+cfgCampaign = localOverlayStruct(sixgr.util.structGet(cfg, "validation.fixed_link_campaign", struct()), runtimeCfg);
+cfgCampaign.Enabled = logical(sixgr.util.structGet(runtimeCfg, "Enabled", ...
+    sixgr.util.structGet(runtimeCfg, "enabled", logical(sixgr.util.structGet(sweepPlan, "FixedLinkCampaignEnabled", false)))));
+cfgCampaign.SNR_dB = double(sixgr.util.structGet(runtimeCfg, "SNR_dB", ...
+    sixgr.util.structGet(runtimeCfg, "snr_db", double(snrGrid(:).'))));
+cfgCampaign.MinTBPerPoint = max(1, round(double(sixgr.util.structGet(runtimeCfg, "MinTBPerPoint", ...
+    sixgr.util.structGet(runtimeCfg, "min_tb_per_point", sixgr.util.structGet(sweepPlan, "FixedLinkMinTrials", 1))))));
+cfgCampaign.MaxTBPerPoint = max(cfgCampaign.MinTBPerPoint, round(double(sixgr.util.structGet(runtimeCfg, "MaxTBPerPoint", ...
+    sixgr.util.structGet(runtimeCfg, "max_tb_per_point", sixgr.util.structGet(sweepPlan, "FixedLinkMaxTrials", cfgCampaign.MinTBPerPoint))))));
+cfgCampaign.MinErrorsForCI = max(0, round(double(sixgr.util.structGet(runtimeCfg, "MinErrorsForCI", ...
+    sixgr.util.structGet(runtimeCfg, "min_errors_for_ci", sixgr.util.structGet(sweepPlan, "FixedLinkErrorTarget", inf))))));
+cfgCampaign.MaxCIHalfWidth = double(sixgr.util.structGet(runtimeCfg, "MaxCIHalfWidth", ...
+    sixgr.util.structGet(runtimeCfg, "max_ci_half_width", double(sixgr.util.structGet(sweepPlan, "FixedLinkCIWidthTarget", inf)) / 2)));
+cfgCampaign.BatchTBCount = max(1, round(double(sixgr.util.structGet(runtimeCfg, "BatchTBCount", ...
+    sixgr.util.structGet(runtimeCfg, "batch_tb_count", sixgr.util.structGet(sweepPlan, "FixedLinkTrialsPerDrop", 1))))));
+cfgCampaign.TargetBLER = double(sixgr.util.structGet(runtimeCfg, "TargetBLER", ...
+    sixgr.util.structGet(runtimeCfg, "target_bler", sixgr.util.structGet(sweepPlan, "FixedLinkTargetBLER", 0.10))));
+cfgCampaign.Seeds = double(sixgr.util.structGet(runtimeCfg, "Seeds", ...
+    sixgr.util.structGet(runtimeCfg, "seeds", sixgr.util.structGet(sweepPlan, "FixedLinkSeed", 730001))));
+cfgCampaign.SeedBase = double(sixgr.util.structGet(runtimeCfg, "SeedBase", ...
+    sixgr.util.structGet(runtimeCfg, "seed_base", sixgr.util.structGet(sweepPlan, "FixedLinkSeed", 730001))));
+cfgCampaign.ConfidenceLevel = double(sixgr.util.structGet(runtimeCfg, "ConfidenceLevel", ...
+    sixgr.util.structGet(runtimeCfg, "confidence_level", sixgr.util.structGet(sweepPlan, "FixedLinkConfidenceLevel", 0.95))));
+end
+
+function tf = localFixedLinkCampaignEvidenceOk(campaign)
+summary = sixgr.util.structGet(campaign, "ReportSummary", table());
+if ~(istable(summary) && ~isempty(summary))
+    tf = false;
+    return;
+end
+curvePresent = localTableLogicalColumn(summary, "CurvePresent");
+ciPresent = localTableLogicalColumn(summary, "ConfidenceIntervalsPresent");
+tf = any(curvePresent) && all(curvePresent & ciPresent);
+end
+
+function values = localTableLogicalColumn(T, varName)
+values = false(height(T), 1);
+if ~(istable(T) && ismember(char(string(varName)), T.Properties.VariableNames))
+    return;
+end
+raw = T.(char(string(varName)));
+if islogical(raw)
+    values = logical(raw);
+elseif isnumeric(raw)
+    values = double(raw) ~= 0;
+else
+    values = lower(strtrim(string(raw))) == "true";
+end
+end
+
+function out = localOverlayStruct(base, overlay)
+out = base;
+if ~(builtin("isstruct", overlay) && isscalar(overlay))
+    return;
+end
+fields = string(fieldnames(overlay));
+for i = 1:numel(fields)
+    out.(char(fields(i))) = overlay.(char(fields(i)));
+end
+end
+
 function campaign = localRunFixedLinkCampaign(cfg, snrGrid, sweepPlan, multiUser)
-campaign = localEmptyFixedLinkCampaignResult(true);
-snrGrid = unique(sort(double(snrGrid(:))));
-snrGrid = snrGrid(isfinite(snrGrid));
-if isempty(snrGrid)
-    campaign.Notes = "skipped_empty_snr_grid";
-    return;
-end
-campaign.SNRGrid_dB = snrGrid(:).';
-campaign.SeedBase = double(sweepPlan.FixedLinkSeed);
-if nargin < 4 || ~isstruct(multiUser)
-    multiUser = localResolveMultiUserSpec(cfg);
-end
-
-if logical(sixgr.util.structGet(multiUser, "Enabled", false))
-    summary = table();
-    dlTrials = table();
-    ulTrials = table();
-    for ueIdx = 1:max(1, round(double(multiUser.NumUsers)))
-        cfgU = localPrepareUserCfg(cfg, multiUser, ueIdx);
-        userCampaign = localRunFixedLinkCampaignSingleUser(cfgU, snrGrid, sweepPlan);
-        Su = sixgr.util.structGet(userCampaign, "Summary", table());
-        if istable(Su) && ~isempty(Su)
-            Su.UEIndex = repmat(double(ueIdx), height(Su), 1);
-            Su.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), height(Su), 1);
-            Su.ExecutionModel = repmat(string(multiUser.ExecutionModel), height(Su), 1);
-            summary = localAppendCompatTable(summary, Su);
-        end
-        dlTrials = localAppendCompatTable(dlTrials, sixgr.util.structGet(userCampaign, "DLTrials", table()));
-        ulTrials = localAppendCompatTable(ulTrials, sixgr.util.structGet(userCampaign, "ULTrials", table()));
-        userTaskPlan = sixgr.util.structGet(userCampaign, "TaskPlan", table());
-        if istable(userTaskPlan) && ~isempty(userTaskPlan)
-            userTaskPlan.UEIndex = repmat(double(ueIdx), height(userTaskPlan), 1);
-            userTaskPlan.RNTI = repmat(double(localUserRNTI(multiUser, ueIdx)), height(userTaskPlan), 1);
-            userTaskPlan.ExecutionModel = repmat(string(multiUser.ExecutionModel), height(userTaskPlan), 1);
-            campaign.TaskPlan = localAppendCompatTable(campaign.TaskPlan, userTaskPlan);
-        end
-    end
-    campaign.Summary = summary;
-    campaign.DLTrials = dlTrials;
-    campaign.ULTrials = ulTrials;
-    campaign.Notes = "multi_user_fixed_link_campaign_executed_as_independent_fixed_links";
-    return;
-end
-
-campaign = localRunFixedLinkCampaignSingleUser(cfg, snrGrid, sweepPlan);
+cfgCampaign = localResolveFixedLinkCampaignConfig(cfg, snrGrid, sweepPlan);
+campaign = sixgr.lls6g.campaign.runFixedLinkCampaign(cfg, ...
+    "Config", cfgCampaign, ...
+    "RootRunFolder", sixgr.util.structGet(cfg, "run.rootRunFolder", ""), ...
+    "WriteArtifacts", logical(sixgr.util.structGet(cfg, "run.fixedLinkCampaignWriteArtifacts", true)));
 end
 
 function campaign = localRunFixedLinkCampaignSingleUser(cfg, snrGrid, sweepPlan)
@@ -14385,6 +14870,7 @@ plan.ReferenceSweepStep_dB = max(1, double(sixgr.util.structGet(opt, "LinkRefere
 plan.ReferenceSweepMargin_dB = max(plan.ReferenceSweepStep_dB * 3, double(sixgr.util.structGet(opt, "LinkReferenceSweepMargin_dB", 24)));
 plan.ReferenceMaxSweepPoints = max(plan.MaxSweepPoints + 1, round(double(sixgr.util.structGet(opt, "LinkReferenceSweepMaxPoints", 8))));
 plan.FixedLinkCampaignEnabled = logical(sixgr.util.structGet(opt, "LinkFixedLinkCampaignEnabled", false));
+plan.FixedLinkCampaignConfig = sixgr.util.structGet(opt, "LinkFixedLinkCampaignConfig", struct());
 plan.FixedLinkSNRGrid_dB = double(sixgr.util.structGet(opt, "LinkFixedLinkSNRGrid_dB", []));
 plan.FixedLinkMinTrials = max(1, round(double(sixgr.util.structGet(opt, "LinkFixedLinkMinTrials", plan.ReferenceTrialsPerSNR))));
 plan.FixedLinkMaxTrials = max(plan.FixedLinkMinTrials, round(double(sixgr.util.structGet(opt, "LinkFixedLinkMaxTrials", plan.ReferenceTrialsPerSNR))));

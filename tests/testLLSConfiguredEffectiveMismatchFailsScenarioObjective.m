@@ -8,9 +8,12 @@ sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder, ctx.ScenarioConfig, c
 
 statusT = readtable(fullfile(ctx.Layout.ReportCSVDir, "result_status_summary.csv"), "VariableNamingRule", "preserve");
 summary = jsondecode(fileread(fullfile(ctx.Layout.ReportDir, "json", "configured_effective_operating_point_summary.json")));
+classT = readtable(fullfile(ctx.Layout.ReportCSVDir, "run_classification.csv"), "VariableNamingRule", "preserve");
 
 assert(double(summary.DLExactMatchRate) == 0, "DL exact configured/effective match rate must be 0 for the mismatch fixture.");
 assert(double(summary.ULExactMatchRate) == 0, "UL exact configured/effective match rate must be 0 for the mismatch fixture.");
+assert(double(classT.ExactConfiguredEffectiveMatchRate(1)) == 0, "Run classification must expose 0 exact configured/effective match rate for the mismatch fixture.");
+assert(~logical(classT.PublicationLLSEligible(1)), "0% exact configured/effective match cannot be publication-eligible.");
 assert(~logical(statusT.ScenarioObjectiveOk(1)), "ScenarioObjectiveOk must fail when fixed exact-match rate is 0%.");
 assert(~logical(statusT.ResultOk(1)), "ResultOk must fail when fixed exact-match rate is 0%.");
 

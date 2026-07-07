@@ -9,8 +9,8 @@ for folder = [layout.ReportCSVDir, layout.AirInterfaceCSVDir, layout.PacketFlowC
     sixgr.util.ensureDir(fullfile(folder, ".keep"));
 end
 
-[scfg, cfg, target, effective] = localScenario(caseName);
-localWriteEvidence(layout, scfg, target, effective);
+[scfg, cfg, target, effective, evidence] = localScenario(caseName);
+localWriteEvidence(layout, scfg, target, effective, evidence);
 if caseName == "critical_waiver"
     localWriteCriticalWaiverIssue(layout);
 end
@@ -23,12 +23,13 @@ ctx.InternalConfig = cfg;
 ctx.Cleanup = onCleanup(@() localCleanup(tmp));
 end
 
-function [scfg, cfg, target, effective] = localScenario(caseName)
+function [scfg, cfg, target, effective, evidence] = localScenario(caseName)
 target = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 4);
 effective = target;
 scenarioName = "nr_baseline_study_root_gate_fixture";
 scenarioMode = "fixed_anchor";
 claimProfile = "";
+evidence = struct("WriteFixedLinkCampaignSummary", false);
 
 switch caseName
     case "broad_claim"
@@ -43,6 +44,15 @@ switch caseName
         target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
         effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);
         scenarioMode = "adaptive_link";
+    case "hybrid_missing_campaign"
+        target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
+        effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);
+        scenarioMode = "adaptive_link";
+    case "hybrid_validation_success"
+        target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
+        effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);
+        scenarioMode = "adaptive_link";
+        evidence.WriteFixedLinkCampaignSummary = true;
     case "missing_effective"
         target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
         effective = struct("Rank", NaN, "Layers", NaN, "Modulation", "", "MCS", NaN);
@@ -64,6 +74,9 @@ scfg = sixgr.util.structSet(scfg, "modulation.dl_mcs_index", target.MCS);
 scfg = sixgr.util.structSet(scfg, "modulation.ul_mcs_index", target.MCS);
 scfg = sixgr.util.structSet(scfg, "pdsch.modulation", target.Modulation);
 scfg = sixgr.util.structSet(scfg, "pusch.modulation", target.Modulation);
+if startsWith(caseName, "hybrid_")
+    scfg = sixgr.util.structSet(scfg, "validation.fixed_link_campaign.enabled", true);
+end
 if scenarioMode == "adaptive_link"
     scfg = sixgr.util.structSet(scfg, "link_adaptation.fixed_or_amc", "adaptive");
     scfg = sixgr.util.structSet(scfg, "link_adaptation.pdsch_link_adaptation_policy", "cqi_driven");
@@ -78,9 +91,27 @@ cfg = struct();
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mode", string(scenarioMode));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.dlPolicy", string(scfg.link_adaptation.pdsch_link_adaptation_policy));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ulPolicy", string(scfg.link_adaptation.pusch_link_adaptation_policy));
+if scenarioMode == "adaptive_link"
+    rankPolicy = "adaptive";
+else
+    rankPolicy = "fixed";
+end
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.rankPolicy", string(rankPolicy));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.numLayers", double(target.Layers));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.nLayers", double(target.Layers));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.numLayers", double(target.Layers));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.nLayers", double(target.Layers));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.rank", double(target.Rank));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.rank", double(target.Rank));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.modulation", string(target.Modulation));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", string(target.Modulation));
+cfg = sixgr.util.structSet(cfg, "pdsch6gr.FixedMCSActive", scenarioMode ~= "adaptive_link");
+if startsWith(caseName, "hybrid_")
+    cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign.enabled", true);
+end
 end
 
-function localWriteEvidence(layout, scfg, target, effective)
+function localWriteEvidence(layout, scfg, target, effective, evidence)
 scenarioName = string(scfg.scenario.name);
 summaryT = table( ...
     "completed", scfg.scenario_id, scenarioName, true, true, 0, true, 0, 0, 0, ...
@@ -124,10 +155,36 @@ ferT = table( ...
     'ObservedFrames','ErroredFrames','FER','FERDefinition','TraceSource'});
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_error_rate_summary.csv"), ferT);
 
+sinrCurveT = table( ...
+    [NaN; 1], [10; 10], [0.01; 0.01], [0.02; 0.02], ...
+    'VariableNames', {'UEIndex','TrialCount','BLER','BER'});
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_measured_sinr_bler_curve.csv"), sinrCurveT);
+
+distanceSINRT = table( ...
+    1, 250, 24.5, ...
+    'VariableNames', {'UEIndex','PropagationDistance_m','MeasuredSINR_dB'});
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "distance_vs_sinr.csv"), distanceSINRT);
+
+sinrSummaryT = table( ...
+    "DL", 24.5, 23.8, 25.1, ...
+    'VariableNames', {'Direction','SINR_median_dB','SINR_p5_dB','SINR_p95_dB'});
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv"), sinrSummaryT);
+
 grantT = table((0:1).', [1; 1], [0; 12], [12; 12], ...
     'VariableNames', {'Slot','UEID','PRBStart','PRBLength'});
 sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), grantT);
 sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), grantT);
+
+if logical(evidence.WriteFixedLinkCampaignSummary)
+    fixedSummary = table( ...
+        ["DL"; "UL"], [20; 20], ["AWGN"; "AWGN"], [2; 2], [2; 2], [24; 24], ...
+        [5; 5], [10; 10], [0; 0], [0.01; 0.02], [0; 0], ...
+        [true; true], [true; true], ["PASS"; "PASS"], ...
+        'VariableNames', {'Direction','MCSIndex','ConfiguredChannelModel','ConfiguredRank','ConfiguredLayers', ...
+        'ConfiguredPRBCount','SNRPointCount','TotalTBCount','TotalFailureCount','MaxBLERCIHalfWidth', ...
+        'IncompletePointCount','CurvePresent','ConfidenceIntervalsPresent','Status'});
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "fixed_link_campaign_summary.csv"), fixedSummary);
+end
 end
 
 function T = localTrialTable(target, effective, direction)

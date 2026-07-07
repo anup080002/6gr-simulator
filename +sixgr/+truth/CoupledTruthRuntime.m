@@ -2242,7 +2242,10 @@ methods(Static, Access=private)
         r.Y_m = double(state.UE.pos_m(ueIdx, 2));
         r.Z_m = double(state.UE.pos_m(ueIdx, 3));
         r.Speed_kmh = sixgr.truth.CoupledTruthRuntime.ueColumn(state.UE, "speed_kmh", ueIdx);
+        r.Speed_mps = double(r.Speed_kmh) / 3.6;
         r.Heading_deg = sixgr.truth.CoupledTruthRuntime.ueColumn(state.UE, "heading_deg", ueIdx);
+        r.Heading_rad = double(r.Heading_deg) * pi / 180;
+        r.CellID = double(servingCell);
         r.ServingCell = double(servingCell);
         r.ServingSite = double(state.Layout.bs.siteId(servingCell));
         r.ServingSector = double(state.Layout.bs.sectorId(servingCell));
@@ -2253,10 +2256,19 @@ methods(Static, Access=private)
         r.ServingRSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
         r.RSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
         r.RxPower_dBm = double(state.LargeScaleState.RxPower_dBm(ueIdx, servingCell));
+        r.BasePathloss_dB = double(state.LargeScaleState.BasePathloss_dB(ueIdx, servingCell));
         r.Pathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, servingCell));
         r.LOSFlag = logical(state.LargeScaleState.LOS(ueIdx, servingCell));
+        r.LOSState = string(sixgr.truth.CoupledTruthRuntime.localLOSStateToken(r.LOSFlag));
         r.ShadowFading_dB = double(state.LargeScaleState.Shadow_dB(ueIdx, servingCell));
         r.O2I_dB = double(state.LargeScaleState.O2I_dB(ueIdx, servingCell));
+        r.Distance2D_m = double(state.LargeScaleState.d2d_m(ueIdx, servingCell));
+        r.Distance3D_m = double(state.LargeScaleState.d3d_m(ueIdx, servingCell));
+        r.PropagationDelay_s = double(state.LargeScaleState.PropagationDelay_s(ueIdx, servingCell));
+        r.RadialVelocity_mps = double(state.LargeScaleState.RadialVelocity_mps(ueIdx, servingCell));
+        r.AppliedDopplerHz = double(state.LargeScaleState.Doppler_Hz(ueIdx, servingCell));
+        r.SignedDoppler_Hz = double(state.LargeScaleState.SignedDoppler_Hz(ueIdx, servingCell));
+        r.ExpectedDopplerHz = abs(double(r.Speed_mps)) * double(sixgr.truth.CoupledTruthRuntime.resolveCarrierFrequencyHz(state)) / 299792458;
         r.ChannelComplianceMode = char(string(sixgr.util.structGet(state.LargeScaleState, "ChannelComplianceMode", "")));
         r.PathlossModelSource = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossModelSource", "")));
         r.PathlossComplianceStatus = char(string(sixgr.util.structGet(state.LargeScaleState, "PathlossComplianceStatus", "")));
@@ -8866,12 +8878,15 @@ methods(Static, Access=private)
         row = struct( ...
             "Slot", NaN, "Time_s", NaN, "UEID", NaN, ...
             "Lat", NaN, "Lon", NaN, "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
-            "Speed_kmh", NaN, "Heading_deg", NaN, ...
+            "Speed_kmh", NaN, "Speed_mps", NaN, "Heading_deg", NaN, "Heading_rad", NaN, ...
+            "CellID", NaN, ...
             "ServingCell", NaN, "ServingSite", NaN, "ServingSector", NaN, ...
             "ServingBeamIndex", NaN, "ServingBeamGain_dB", NaN, ...
             "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", "ServingRSRP_dBm", NaN, ...
-            "RSRP_dBm", NaN, "RxPower_dBm", NaN, "Pathloss_dB", NaN, ...
-            "LOSFlag", false, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+            "RSRP_dBm", NaN, "RxPower_dBm", NaN, "BasePathloss_dB", NaN, "Pathloss_dB", NaN, ...
+            "LOSFlag", false, "LOSState", "", "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+            "Distance2D_m", NaN, "Distance3D_m", NaN, "PropagationDelay_s", NaN, ...
+            "RadialVelocity_mps", NaN, "ExpectedDopplerHz", NaN, "AppliedDopplerHz", NaN, "SignedDoppler_Hz", NaN, ...
             "ChannelComplianceMode", "", "PathlossModelSource", "", "PathlossComplianceStatus", "", "FallbackUsedForPathloss", false, ...
             "O2IModelSource", "", "O2IComplianceStatus", "", "O2IComplianceReason", "", ...
             "LOSProbabilitySource", "", "LOSComplianceStatus", "", "LOSComplianceReason", "", ...
@@ -11390,6 +11405,27 @@ methods(Static, Access=private)
             value = char(string(trueValue));
         else
             value = char(string(falseValue));
+        end
+    end
+
+    function token = localLOSStateToken(tf)
+        if logical(tf)
+            token = "LOS";
+        else
+            token = "NLOS";
+        end
+    end
+
+    function fcHz = resolveCarrierFrequencyHz(state)
+        fcHz = double(sixgr.util.structGet(state, "CarrierFrequency_Hz", NaN));
+        if ~(isfinite(fcHz) && fcHz > 0)
+            fcHz = double(sixgr.util.structGet(state, "Fc_Hz", NaN));
+        end
+        if ~(isfinite(fcHz) && fcHz > 0)
+            fcHz = double(sixgr.util.structGet(sixgr.util.structGet(state, "Cfg", struct()), "phy.fc_Hz", NaN));
+        end
+        if ~(isfinite(fcHz) && fcHz > 0)
+            fcHz = double(sixgr.util.structGet(sixgr.util.structGet(state, "CfgLargeScale", struct()), "phy.fc_Hz", NaN));
         end
     end
 

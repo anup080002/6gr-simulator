@@ -160,6 +160,7 @@ ctx.ScenarioStatus = scenarioStatus;
 ctx.Tables = struct();
 ctx.TableSources = struct();
 ctx.Tables.ScenarioSummary = localReadOptionalTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"));
+ctx.Tables.RunClassification = localReadOptionalTable(fullfile(layout.ReportCSVDir, "run_classification.csv"));
 ctx.Tables.CaseStatus = localReadOptionalTable(fullfile(layout.ReportCSVDir, "case_status.csv"));
 ctx.Tables.Sweep = table();
 ctx.Tables.MeasuredSINRSummary = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv"));
@@ -7205,10 +7206,28 @@ notExercisedCount = sum(availability == "not_exercised");
 specifiedCount = height(coverageT);
 [runtimeCount, configCount, reportCount] = localMetricProvenanceCounts(rows);
 opSummary = localContextOperatingPointSummary(ctx);
+runClassT = sixgr.util.structGet(ctx.Tables, "RunClassification", table());
+if istable(runClassT) && height(runClassT) > 0
+    runClass = string(localTableStringAtRow(runClassT, 1, "RunClass"));
+    publicationEligible = logical(localTableLogicalAtRow(runClassT, 1, "PublicationLLSEligible"));
+    runClassReason = string(localTableStringAtRow(runClassT, 1, "Reason"));
+    exactMatchRate = localTableNumericAtRow(runClassT, 1, "ExactConfiguredEffectiveMatchRate");
+else
+    runClass = "unclassified";
+    publicationEligible = false;
+    runClassReason = "";
+    exactMatchRate = NaN;
+end
 fprintf(fid, "# LLS Executive Summary\n\n");
 localWriteImplementationVerdictSection(fid, sixgr.util.structGet(ctx, "ImplementationValidation", struct()), "executive");
 fprintf(fid, "- Scenario: `%s`\n", string(ctx.ScenarioConfig.ScenarioID));
 fprintf(fid, "- Runner profile: `%s`\n", string(ctx.Manifest.RunnerProfile));
+fprintf(fid, "- Run class: `%s`\n", runClass);
+fprintf(fid, "- Publication LLS eligible: `%s`\n", string(publicationEligible));
+fprintf(fid, "- Exact configured/effective match rate: `%s`\n", localFormatNumber(exactMatchRate, "%.6g"));
+if strlength(strtrim(runClassReason)) > 0
+    fprintf(fid, "- Run classification reason: `%s`\n", runClassReason);
+end
 fprintf(fid, "- Runtime-qualified description: `%s`\n", string(opSummary.RuntimeQualifiedDescription));
 fprintf(fid, "- Run completion: `%s`\n", string(ctx.Manifest.RunCompletion));
 fprintf(fid, "- Result OK: `%s`\n", string(logical(sixgr.util.structGet(ctx.Manifest, "ResultOk", sixgr.util.structGet(ctx.ScenarioStatus, "ResultOk", false)))));
@@ -7546,6 +7565,45 @@ for i = 1:numel(candidates)
             return;
         end
     end
+end
+end
+
+function value = localTableStringAtRow(T, rowIdx, candidates)
+value = "";
+candidates = string(candidates);
+vars = string(T.Properties.VariableNames);
+for i = 1:numel(candidates)
+    if ismember(candidates(i), vars)
+        col = string(T.(candidates(i)));
+        if numel(col) >= rowIdx
+            value = strtrim(col(rowIdx));
+            return;
+        end
+    end
+end
+end
+
+function value = localTableLogicalAtRow(T, rowIdx, candidates)
+value = false;
+candidates = string(candidates);
+vars = string(T.Properties.VariableNames);
+for i = 1:numel(candidates)
+    if ~ismember(candidates(i), vars)
+        continue;
+    end
+    col = T.(candidates(i));
+    if numel(col) < rowIdx
+        continue;
+    end
+    raw = col(rowIdx);
+    if islogical(raw)
+        value = logical(raw);
+    elseif isnumeric(raw)
+        value = isfinite(double(raw)) && double(raw) ~= 0;
+    else
+        value = ismember(lower(strtrim(string(raw))), ["true", "1", "yes", "on", "pass", "ok"]);
+    end
+    return;
 end
 end
 

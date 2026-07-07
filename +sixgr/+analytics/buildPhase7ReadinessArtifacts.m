@@ -15,8 +15,9 @@ cfg = localScenarioStruct(scenarioCfg);
 
 cfgTables = localBuildConfigurationTables(cfg);
 storageTables = localBuildStorageTables(cfg);
-geometryTables = localBuildGeometryTables(cfg);
-mobilityTables = localBuildMobilityTables(cfg, geometryTables);
+runtimeMobility = localReadRuntimeMobilityEvidence(runDir, cfg);
+geometryTables = localBuildGeometryTables(cfg, runtimeMobility);
+mobilityTables = localBuildMobilityTables(cfg, geometryTables, runtimeMobility);
 campaignEvidence = localBuildCampaignEvidence(runDir, cfg);
 gateStatus = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence);
 finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence);
@@ -41,6 +42,10 @@ localWrite(dirs.MobilityCSV, "trajectory_resolution.csv", mobilityTables.Resolut
 localWrite(dirs.MobilityCSV, "trajectory_segment_table.csv", mobilityTables.Segments);
 localWrite(dirs.MobilityCSV, "inter_ue_distance_validation.csv", mobilityTables.InterUEDistance);
 localWrite(dirs.MobilityCSV, "trajectory_constraint_conflicts.csv", mobilityTables.ConstraintConflicts);
+localWrite(dirs.MobilityCSV, "doppler_reconciliation.csv", mobilityTables.DopplerReconciliation);
+localWrite(dirs.MobilityCSV, "pathloss_reconciliation.csv", mobilityTables.PathlossReconciliation);
+localWrite(dirs.MobilityCSV, "propagation_delay_reconciliation.csv", mobilityTables.PropagationDelayReconciliation);
+localWrite(dirs.MobilityCSV, "channel_continuity_reconciliation.csv", mobilityTables.ChannelContinuityReconciliation);
 
 if istable(campaignEvidence.Tables.DLBlerCurve) && height(campaignEvidence.Tables.DLBlerCurve) > 0
     localWrite(dirs.AirInterfaceCSV, "dl_multi_seed_bler_curve.csv", campaignEvidence.Tables.DLBlerCurve);
@@ -68,6 +73,7 @@ report.Configuration = cfgTables;
 report.Storage = storageTables;
 report.Geometry = geometryTables;
 report.Mobility = mobilityTables;
+report.RuntimeMobilityEvidence = runtimeMobility;
 report.Campaign = campaignEvidence;
 report.Gates = gateStatus;
 report.OutputRoot = string(runDir);
@@ -226,7 +232,7 @@ storageTables = struct("VolumeEstimate", volume, "Policy", policy, ...
     "BudgetValidation", budget, "RawCaptureSchedule", schedule);
 end
 
-function geometryTables = localBuildGeometryTables(cfg)
+function geometryTables = localBuildGeometryTables(cfg, runtimeMobility)
 coord = table("local_cartesian", "site_origin", "x_east_y_north_z_up", "degrees", ...
     "azimuth_from_positive_x_counterclockwise", "elevation_from_xy_plane", ...
     'VariableNames', {'CoordinateSystem','Origin','Axes','AngleUnits','AzimuthConvention','ElevationConvention'});
@@ -234,6 +240,18 @@ coord = table("local_cartesian", "site_origin", "x_east_y_north_z_up", "degrees"
 bsHeight = localNumber(cfg, "scenario.bs.height_m", 25);
 site = table(1, 1, 0, 0, bsHeight, localNumber(cfg, "scenario.bs.downtilt_deg", NaN), ...
     'VariableNames', {'SiteID','CellID','X_m','Y_m','Z_m','Downtilt_deg'});
+
+if localRuntimeMobilityAvailable(runtimeMobility)
+    ueInitial = localBuildRuntimeUEInitialPositions(runtimeMobility);
+    traj = localBuildRuntimeTrajectoryGeometry(runtimeMobility, cfg);
+    geomOk = height(ueInitial) > 0 && height(traj) > 0;
+    validation = table(geomOk, "runtime_slot_trace_available", height(ueInitial), ...
+        "runtime_mobility_trace_rows_back_geometry_and_large_scale_reconciliation", ...
+        'VariableNames', {'GeometryValidationOk','CoordinateStatus','UECount','ValidationNotes'});
+    geometryTables = struct("CoordinateSystem", coord, "SitePositions", site, ...
+        "UEInitialPositions", ueInitial, "TrajectoryGeometry", traj, "Validation", validation);
+    return;
+end
 
 paths = localUserPaths(cfg);
 ueRows = repmat(struct("UEID", NaN, "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
@@ -282,7 +300,32 @@ end
 T = localStructRowsToTable(rows);
 end
 
-function mobilityTables = localBuildMobilityTables(cfg, geometryTables)
+function mobilityTables = localBuildMobilityTables(cfg, geometryTables, runtimeMobility)
+if localRuntimeMobilityAvailable(runtimeMobility)
+    resolution = localBuildRuntimeTrajectoryResolution(cfg, runtimeMobility);
+    segments = localBuildRuntimeTrajectorySegments(runtimeMobility);
+    interUE = localRuntimeInterUEDistanceTable(cfg, runtimeMobility);
+    doppler = localBuildRuntimeDopplerReconciliation(runtimeMobility, cfg);
+    pathloss = localBuildRuntimePathlossReconciliation(runtimeMobility);
+    propDelay = localBuildRuntimePropagationDelayReconciliation(runtimeMobility);
+    continuity = localBuildRuntimeChannelContinuityReconciliation(cfg, runtimeMobility);
+    if height(interUE) > 0 && ~all(localColumnAsLogical(interUE.InterUeConstraintResolvedOk))
+        conflicts = table("min_inter_ue_distance_m", interUE.MinDistanceConfigured_m(1), interUE.ClosestDistance_m(1), ...
+            "unresolved_requires_explicit_scenario_decision", ...
+            "permit_virtual_crossing|introduce_separate_lanes|offset_one_trajectory|remove_constraint_for_trace_motion", ...
+            'VariableNames', {'Constraint','ConfiguredValue','ObservedOrPredictedValue','ConflictStatus','AllowedDecisions'});
+    else
+        conflicts = table('Size', [0 5], 'VariableTypes', {'string','double','double','string','string'}, ...
+            'VariableNames', {'Constraint','ConfiguredValue','ObservedOrPredictedValue','ConflictStatus','AllowedDecisions'});
+    end
+    mobilityTables = struct("Resolution", resolution, "Segments", segments, ...
+        "InterUEDistance", interUE, "ConstraintConflicts", conflicts, ...
+        "DopplerReconciliation", doppler, "PathlossReconciliation", pathloss, ...
+        "PropagationDelayReconciliation", propDelay, ...
+        "ChannelContinuityReconciliation", continuity);
+    return;
+end
+
 traj = geometryTables.TrajectoryGeometry;
 slotMs = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5);
 slots = localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], 0);
@@ -313,7 +356,399 @@ else
         'VariableNames', {'Constraint','ConfiguredValue','ObservedOrPredictedValue','ConflictStatus','AllowedDecisions'});
 end
 mobilityTables = struct("Resolution", resolution, "Segments", segments, ...
-    "InterUEDistance", interUE, "ConstraintConflicts", conflicts);
+    "InterUEDistance", interUE, "ConstraintConflicts", conflicts, ...
+    "DopplerReconciliation", localEmptyDopplerReconciliationTable(), ...
+    "PathlossReconciliation", localEmptyPathlossReconciliationTable(), ...
+    "PropagationDelayReconciliation", localEmptyPropagationDelayReconciliationTable(), ...
+    "ChannelContinuityReconciliation", localEmptyChannelContinuityReconciliationTable());
+end
+
+function runtime = localReadRuntimeMobilityEvidence(runDir, cfg)
+runtime = struct();
+runtime.TraceAvailable = false;
+runtime.SourcePath = string(fullfile(runDir, "reports", "csv", "live_rsrp_serving_trace.csv"));
+runtime.ServingTrace = localReadOptionalTable(runtime.SourcePath);
+runtime.NormalizedTrace = localEmptyRuntimeMobilityTraceTable();
+runtime.ConfiguredSlotCount = max(0, round(localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], 0)));
+runtime.SlotDuration_s = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5) / 1e3;
+runtime.CarrierFrequency_Hz = localNumber(cfg, ["frequency.center_frequency_hz","global_radio_scope.carrier_frequency_hz", ...
+    "channels.carrier_frequency_hz","phy.fc_Hz"], NaN);
+runtime.LightSpeed_mps = localLightSpeed();
+if ~(istable(runtime.ServingTrace) && height(runtime.ServingTrace) > 0)
+    return;
+end
+
+T = runtime.ServingTrace;
+rows = repmat(localEmptyRuntimeMobilityTraceRow(), height(T), 1);
+for i = 1:height(T)
+    row = localEmptyRuntimeMobilityTraceRow();
+    row.UeId = localTableNumber(T, i, ["UeId","UEID","UEIndex","UE"], NaN);
+    row.CellId = localTableNumber(T, i, ["CellId","CellID","ServingCell","BaseStationID"], NaN);
+    row.CanonicalSlot = localTableNumber(T, i, ["CanonicalSlot","Slot","TTI"], NaN);
+    row.Time_s = localTableNumber(T, i, "Time_s", NaN);
+    row.X_m = localTableNumber(T, i, ["X_m","UEPosX_m"], NaN);
+    row.Y_m = localTableNumber(T, i, ["Y_m","UEPosY_m"], NaN);
+    row.Z_m = localTableNumber(T, i, ["Z_m","UEPosZ_m"], NaN);
+    row.Speed_kmh = localTableNumber(T, i, "Speed_kmh", localNumber(cfg, "mobility.ue_speed_kmh", NaN));
+    row.Speed_mps = row.Speed_kmh / 3.6;
+    headingDeg = localTableNumber(T, i, ["Heading_deg","UEHeading_deg"], NaN);
+    row.Heading_deg = headingDeg;
+    row.Heading_rad = localDegreesToRadians(headingDeg);
+    row.Pathloss_dB = localTableNumber(T, i, "Pathloss_dB", NaN);
+    row.BasePathloss_dB = localTableNumber(T, i, "BasePathloss_dB", NaN);
+    row.ShadowFading_dB = localTableNumber(T, i, "ShadowFading_dB", NaN);
+    row.O2I_dB = localTableNumber(T, i, "O2I_dB", 0);
+    row.Distance2D_m = localTableNumber(T, i, ["Distance2D_m","ServingDistance2D_m"], NaN);
+    row.Distance3D_m = localTableNumber(T, i, ["Distance3D_m","ServingDistance_m"], NaN);
+    row.PropagationDelay_s = localTableNumber(T, i, "PropagationDelay_s", NaN);
+    row.RadialVelocity_mps = localTableNumber(T, i, "RadialVelocity_mps", NaN);
+    row.ExpectedDopplerHz = localRuntimeExpectedDoppler(row.Speed_mps, runtime.CarrierFrequency_Hz, runtime.LightSpeed_mps);
+    row.AppliedDopplerHz = localTableNumber(T, i, ["AppliedDopplerHz","Doppler_Hz","RuntimeServingDopplerHz"], NaN);
+    row.SignedDoppler_Hz = localTableNumber(T, i, ["SignedDoppler_Hz","RuntimeServingSignedDopplerHz"], NaN);
+    row.PathlossModelSource = localTableString(T, i, "PathlossModelSource", "");
+    row.PathlossComplianceStatus = localTableString(T, i, "PathlossComplianceStatus", "");
+    row.LOSProbabilitySource = localTableString(T, i, "LOSProbabilitySource", "");
+    row.LOSComplianceStatus = localTableString(T, i, "LOSComplianceStatus", "");
+    row.LOSState = localTableString(T, i, "LOSState", "");
+    if strlength(strtrim(row.LOSState)) == 0
+        losFlag = localTableLogical(T, i, "LOSFlag", false);
+        row.LOSState = localTernary(losFlag, "LOS", "NLOS");
+    end
+    if ~isfinite(row.PropagationDelay_s) && isfinite(row.Distance3D_m)
+        row.PropagationDelay_s = row.Distance3D_m / runtime.LightSpeed_mps;
+    end
+    if ~isfinite(row.ExpectedDopplerHz) && isfinite(row.RadialVelocity_mps) && isfinite(runtime.CarrierFrequency_Hz)
+        row.ExpectedDopplerHz = abs(row.RadialVelocity_mps) * runtime.CarrierFrequency_Hz / runtime.LightSpeed_mps;
+    end
+    row.Status = localRuntimeTraceRowStatus(row);
+    rows(i) = row;
+end
+
+runtime.NormalizedTrace = sortrows(struct2table(rows, "AsArray", true), {'UeId','CanonicalSlot'});
+runtime.TraceAvailable = height(runtime.NormalizedTrace) > 0;
+if runtime.ConfiguredSlotCount < 1
+    runtime.ConfiguredSlotCount = numel(unique(localColumnDouble(runtime.NormalizedTrace, "CanonicalSlot", NaN)));
+end
+end
+
+function tf = localRuntimeMobilityAvailable(runtime)
+tf = isstruct(runtime) && logical(sixgr.util.structGet(runtime, "TraceAvailable", false)) && ...
+    istable(sixgr.util.structGet(runtime, "NormalizedTrace", table())) && ...
+    height(sixgr.util.structGet(runtime, "NormalizedTrace", table())) > 0;
+end
+
+function T = localBuildRuntimeUEInitialPositions(runtime)
+traceT = runtime.NormalizedTrace;
+ueList = unique(localColumnDouble(traceT, "UeId", NaN));
+ueList = ueList(isfinite(ueList));
+rows = repmat(struct("UEID", NaN, "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
+    "Speed_kmh", NaN, "PathSource", "", "PathProvenance", ""), numel(ueList), 1);
+for i = 1:numel(ueList)
+    idx = find(localColumnDouble(traceT, "UeId", NaN) == ueList(i), 1, "first");
+    rows(i) = struct("UEID", double(ueList(i)), ...
+        "X_m", double(traceT.X_m(idx)), "Y_m", double(traceT.Y_m(idx)), "Z_m", double(traceT.Z_m(idx)), ...
+        "Speed_kmh", double(traceT.Speed_kmh(idx)), ...
+        "PathSource", "reports/csv/live_rsrp_serving_trace.csv", ...
+        "PathProvenance", "runtime_slot_trace");
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildRuntimeTrajectoryGeometry(runtime, cfg)
+traceT = runtime.NormalizedTrace;
+ueList = unique(localColumnDouble(traceT, "UeId", NaN));
+ueList = ueList(isfinite(ueList));
+routeLengthByUe = containers.Map("KeyType", "double", "ValueType", "double");
+requiredSlots = max(runtime.ConfiguredSlotCount, 0);
+for i = 1:numel(ueList)
+    ue = ueList(i);
+    slice = traceT(localColumnDouble(traceT, "UeId", NaN) == ue, :);
+    routeLengthByUe(ue) = localTraceRouteLength(slice);
+end
+
+rows = repmat(struct( ...
+    "UeId", NaN, "UEID", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
+    "X_m", NaN, "Y_m", NaN, "Z_m", NaN, "Speed_kmh", NaN, "Speed_mps", NaN, ...
+    "Heading_deg", NaN, "Heading_rad", NaN, "Distance2D_m", NaN, "Distance3D_m", NaN, ...
+    "LOSState", "", "Pathloss_dB", NaN, "BasePathloss_dB", NaN, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+    "ExpectedDopplerHz", NaN, "AppliedDopplerHz", NaN, "PropagationDelay_s", NaN, ...
+    "RouteLength_m", NaN, "RequiredTraversalSlots", NaN, "PathProvenance", "", "Status", ""), ...
+    height(traceT), 1);
+    for i = 1:height(traceT)
+        ue = double(traceT.UeId(i));
+        rows(i) = struct( ...
+            "UeId", ue, ...
+            "UEID", ue, ...
+            "CellId", double(traceT.CellId(i)), ...
+            "CanonicalSlot", double(traceT.CanonicalSlot(i)), ...
+            "Time_s", double(traceT.Time_s(i)), ...
+            "X_m", double(traceT.X_m(i)), ...
+            "Y_m", double(traceT.Y_m(i)), ...
+            "Z_m", double(traceT.Z_m(i)), ...
+            "Speed_kmh", double(traceT.Speed_kmh(i)), ...
+            "Speed_mps", double(traceT.Speed_mps(i)), ...
+            "Heading_deg", double(traceT.Heading_deg(i)), ...
+            "Heading_rad", double(traceT.Heading_rad(i)), ...
+            "Distance2D_m", double(traceT.Distance2D_m(i)), ...
+            "Distance3D_m", double(traceT.Distance3D_m(i)), ...
+            "LOSState", string(traceT.LOSState(i)), ...
+            "Pathloss_dB", double(traceT.Pathloss_dB(i)), ...
+            "BasePathloss_dB", double(traceT.BasePathloss_dB(i)), ...
+            "ShadowFading_dB", double(traceT.ShadowFading_dB(i)), ...
+            "O2I_dB", double(traceT.O2I_dB(i)), ...
+            "ExpectedDopplerHz", double(traceT.ExpectedDopplerHz(i)), ...
+            "AppliedDopplerHz", double(traceT.AppliedDopplerHz(i)), ...
+            "PropagationDelay_s", double(traceT.PropagationDelay_s(i)), ...
+            "RouteLength_m", double(routeLengthByUe(ue)), ...
+            "RequiredTraversalSlots", double(requiredSlots), ...
+            "PathProvenance", "runtime_slot_trace", ...
+            "Status", string(traceT.Status(i)));
+    end
+T = localStructRowsToTable(rows);
+if height(T) == 0
+    return;
+end
+if requiredSlots < 1
+    requiredSlots = numel(unique(localColumnDouble(T, "CanonicalSlot", NaN)));
+    T.RequiredTraversalSlots(:) = double(requiredSlots);
+end
+slotDuration_s = localNumber(cfg, "frame_timing.slot_duration_ms", runtime.SlotDuration_s * 1e3) / 1e3; %#ok<NASGU>
+end
+
+function T = localBuildRuntimeTrajectoryResolution(cfg, runtime)
+traceT = runtime.NormalizedTrace;
+ueList = unique(localColumnDouble(traceT, "UeId", NaN));
+ueList = ueList(isfinite(ueList));
+expectedSlots = max(runtime.ConfiguredSlotCount, 0);
+if expectedSlots < 1
+    expectedSlots = numel(unique(localColumnDouble(traceT, "CanonicalSlot", NaN)));
+end
+routeLengths = NaN(numel(ueList), 1);
+fullCoverage = numel(ueList) > 0;
+for i = 1:numel(ueList)
+    slice = traceT(localColumnDouble(traceT, "UeId", NaN) == ueList(i), :);
+    [coverageOk, ~] = localTraceCoverageStatus(slice, expectedSlots);
+    routeLengths(i) = localTraceRouteLength(slice);
+    fullCoverage = fullCoverage && coverageOk;
+end
+configuredSlots = max(expectedSlots, round(localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], expectedSlots)));
+runDurationS = configuredSlots * runtime.SlotDuration_s;
+status = localTernary(fullCoverage, "full_route_runtime_trace_complete", "runtime_trace_missing_slot_coverage");
+T = table(logical(fullCoverage), double(configuredSlots), double(runDurationS), double(expectedSlots), ...
+    double(localMinFinite(routeLengths)), string(status), "runtime_slot_trace", ...
+    'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s','RequiredTraversalSlots', ...
+    'ActualDistanceTravelled_m','Status','PathProvenance'});
+end
+
+function T = localBuildRuntimeTrajectorySegments(runtime)
+traceT = runtime.NormalizedTrace;
+ueList = unique(localColumnDouble(traceT, "UeId", NaN));
+ueList = ueList(isfinite(ueList));
+rows = repmat(struct("UEID", NaN, "StartX_m", NaN, "StartY_m", NaN, "StartZ_m", NaN, ...
+    "EndX_m", NaN, "EndY_m", NaN, "EndZ_m", NaN, "RouteLength_m", NaN, ...
+    "Speed_kmh", NaN, "TraversalTime_s", NaN, "RequiredTraversalSlots", NaN, ...
+    "ObservedSlotCount", NaN, "MissingSlotCount", NaN, "LoopMode", "", ...
+    "PathProvenance", "", "Status", ""), numel(ueList), 1);
+for i = 1:numel(ueList)
+    slice = traceT(localColumnDouble(traceT, "UeId", NaN) == ueList(i), :);
+    slice = sortrows(slice, "CanonicalSlot");
+    [coverageOk, missingSlots] = localTraceCoverageStatus(slice, runtime.ConfiguredSlotCount);
+    startRow = slice(1, :);
+    stopRow = slice(end, :);
+    rows(i) = struct("UEID", double(ueList(i)), ...
+        "StartX_m", double(startRow.X_m), "StartY_m", double(startRow.Y_m), "StartZ_m", double(startRow.Z_m), ...
+        "EndX_m", double(stopRow.X_m), "EndY_m", double(stopRow.Y_m), "EndZ_m", double(stopRow.Z_m), ...
+        "RouteLength_m", double(localTraceRouteLength(slice)), ...
+        "Speed_kmh", double(localMeanFinite(localColumnDouble(slice, "Speed_kmh", NaN))), ...
+        "TraversalTime_s", double(max(localColumnDouble(slice, "Time_s", NaN)) - min(localColumnDouble(slice, "Time_s", NaN))), ...
+        "RequiredTraversalSlots", double(max(runtime.ConfiguredSlotCount, numel(unique(localColumnDouble(slice, "CanonicalSlot", NaN))))), ...
+        "ObservedSlotCount", double(numel(unique(localColumnDouble(slice, "CanonicalSlot", NaN)))), ...
+        "MissingSlotCount", double(missingSlots), ...
+        "LoopMode", "runtime_trace", ...
+        "PathProvenance", "runtime_slot_trace", ...
+        "Status", localTernary(coverageOk, "continuous_runtime_trace", "runtime_trace_gap_detected"));
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localRuntimeInterUEDistanceTable(cfg, runtime)
+traceT = runtime.NormalizedTrace;
+ueList = unique(localColumnDouble(traceT, "UeId", NaN));
+ueList = ueList(isfinite(ueList));
+if numel(ueList) < 2
+    T = table('Size', [0 7], 'VariableTypes', {'double','double','double','double','double','logical','string'}, ...
+        'VariableNames', {'UE1','UE2','MinDistanceConfigured_m','ClosestDistance_m','ClosestTime_s','InterUeConstraintResolvedOk','Status'});
+    return;
+end
+minCfg = localNumber(cfg, "deployment_topology.min_inter_ue_distance_m", ...
+    localNumber(cfg, "users.min_inter_ue_distance_m", 0));
+rows = repmat(struct("UE1", NaN, "UE2", NaN, "MinDistanceConfigured_m", NaN, "ClosestDistance_m", NaN, ...
+    "ClosestTime_s", NaN, "InterUeConstraintResolvedOk", false, "Status", ""), 0, 1);
+for i = 1:numel(ueList)-1
+    for j = i+1:numel(ueList)
+        slice1 = traceT(localColumnDouble(traceT, "UeId", NaN) == ueList(i), :);
+        slice2 = traceT(localColumnDouble(traceT, "UeId", NaN) == ueList(j), :);
+        [sharedSlots, idx1, idx2] = intersect(localColumnDouble(slice1, "CanonicalSlot", NaN), ...
+            localColumnDouble(slice2, "CanonicalSlot", NaN));
+        if isempty(sharedSlots)
+            continue;
+        end
+        d = sqrt((double(slice1.X_m(idx1)) - double(slice2.X_m(idx2))).^2 + ...
+            (double(slice1.Y_m(idx1)) - double(slice2.Y_m(idx2))).^2 + ...
+            (double(slice1.Z_m(idx1)) - double(slice2.Z_m(idx2))).^2);
+        [closestDistance, idx] = min(d);
+        closestTime = double(slice1.Time_s(idx1(idx)));
+        ok = ~(isfinite(minCfg) && minCfg > 0 && closestDistance < minCfg);
+        rows(end+1, 1) = struct("UE1", double(ueList(i)), "UE2", double(ueList(j)), ... %#ok<AGROW>
+            "MinDistanceConfigured_m", double(minCfg), "ClosestDistance_m", double(closestDistance), ...
+            "ClosestTime_s", double(closestTime), "InterUeConstraintResolvedOk", logical(ok), ...
+            "Status", localTernary(ok, "runtime_trace_constraint_satisfied_or_not_configured", ...
+            "runtime_trace_violate_min_inter_ue_distance"));
+    end
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildRuntimeDopplerReconciliation(runtime, cfg)
+traceT = runtime.NormalizedTrace;
+if height(traceT) == 0
+    T = localEmptyDopplerReconciliationTable();
+    return;
+end
+toleranceHz = localNumber(cfg, ["validation.mobility.doppler_tolerance_hz","validation.channel.doppler_tolerance_hz"], 1);
+rows = repmat(localEmptyDopplerReconciliationRow(), height(traceT), 1);
+for i = 1:height(traceT)
+    expected = double(traceT.ExpectedDopplerHz(i));
+    applied = double(traceT.AppliedDopplerHz(i));
+    err = abs(applied - expected);
+    ok = isfinite(expected) && expected > 0 && isfinite(applied) && applied > 0 && isfinite(err) && err <= toleranceHz;
+    status = "doppler_reconciled";
+    if ~isfinite(applied)
+        status = "missing_applied_doppler_evidence";
+    elseif ~ok
+        status = "doppler_mismatch";
+    end
+    rows(i) = struct("UeId", double(traceT.UeId(i)), "CellId", double(traceT.CellId(i)), ...
+        "CanonicalSlot", double(traceT.CanonicalSlot(i)), "Time_s", double(traceT.Time_s(i)), ...
+        "Speed_mps", double(traceT.Speed_mps(i)), "CarrierFrequency_Hz", double(runtime.CarrierFrequency_Hz), ...
+        "ExpectedDopplerHz", expected, "AppliedDopplerHz", applied, "DopplerErrorHz", double(err), ...
+        "DopplerToleranceHz", double(toleranceHz), "DopplerReconciliationOk", logical(ok), ...
+        "EvidenceSource", "reports/csv/live_rsrp_serving_trace.csv", "Status", string(status));
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildRuntimePathlossReconciliation(runtime)
+traceT = runtime.NormalizedTrace;
+if height(traceT) == 0
+    T = localEmptyPathlossReconciliationTable();
+    return;
+end
+toleranceDb = 1e-6;
+rows = repmat(localEmptyPathlossReconciliationRow(), height(traceT), 1);
+for i = 1:height(traceT)
+    expected = double(traceT.BasePathloss_dB(i) + traceT.ShadowFading_dB(i) + traceT.O2I_dB(i));
+    observed = double(traceT.Pathloss_dB(i));
+    err = abs(observed - expected);
+    losState = string(traceT.LOSState(i));
+    losOk = strlength(strtrim(losState)) > 0;
+    shadowOk = isfinite(double(traceT.ShadowFading_dB(i)));
+    pathlossOk = isfinite(observed) && isfinite(expected) && isfinite(err) && err <= toleranceDb;
+    largeScaleOk = pathlossOk && shadowOk && losOk && ...
+        isfinite(double(traceT.Distance2D_m(i))) && isfinite(double(traceT.Distance3D_m(i))) && ...
+        isfinite(double(traceT.PropagationDelay_s(i))) && isfinite(double(traceT.AppliedDopplerHz(i)));
+    status = "pathloss_reconciled";
+    if ~pathlossOk
+        status = "pathloss_mismatch_or_missing_runtime_components";
+    end
+    rows(i) = struct("UeId", double(traceT.UeId(i)), "CellId", double(traceT.CellId(i)), ...
+        "CanonicalSlot", double(traceT.CanonicalSlot(i)), "LOSState", losState, ...
+        "BasePathloss_dB", double(traceT.BasePathloss_dB(i)), "ShadowFading_dB", double(traceT.ShadowFading_dB(i)), ...
+        "O2I_dB", double(traceT.O2I_dB(i)), "ObservedPathloss_dB", observed, "ExpectedPathloss_dB", expected, ...
+        "PathlossError_dB", double(err), "PathlossTolerance_dB", double(toleranceDb), ...
+        "PathlossReconciliationOk", logical(pathlossOk), "ShadowFadingReconciliationOk", logical(shadowOk), ...
+        "LosStateModelOk", logical(losOk), "LargeScaleParameterReconciliationOk", logical(largeScaleOk), ...
+        "EvidenceSource", "reports/csv/live_rsrp_serving_trace.csv", "Status", string(status));
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildRuntimePropagationDelayReconciliation(runtime)
+traceT = runtime.NormalizedTrace;
+if height(traceT) == 0
+    T = localEmptyPropagationDelayReconciliationTable();
+    return;
+end
+toleranceS = 1e-12;
+rows = repmat(localEmptyPropagationDelayReconciliationRow(), height(traceT), 1);
+for i = 1:height(traceT)
+    expected = double(traceT.Distance3D_m(i)) / runtime.LightSpeed_mps;
+    observed = double(traceT.PropagationDelay_s(i));
+    err = abs(observed - expected);
+    ok = isfinite(expected) && expected > 0 && isfinite(observed) && observed > 0 && isfinite(err) && err <= toleranceS;
+    rows(i) = struct("UeId", double(traceT.UeId(i)), "CellId", double(traceT.CellId(i)), ...
+        "CanonicalSlot", double(traceT.CanonicalSlot(i)), "Distance3D_m", double(traceT.Distance3D_m(i)), ...
+        "ObservedPropagationDelay_s", observed, "ExpectedPropagationDelay_s", expected, ...
+        "PropagationDelayError_s", double(err), "PropagationDelayTolerance_s", double(toleranceS), ...
+        "PropagationDelayReconciliationOk", logical(ok), ...
+        "EvidenceSource", "reports/csv/live_rsrp_serving_trace.csv", ...
+        "Status", localTernary(ok, "propagation_delay_reconciled", "propagation_delay_mismatch"));
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildRuntimeChannelContinuityReconciliation(cfg, runtime)
+traceT = runtime.NormalizedTrace;
+if height(traceT) == 0
+    T = localEmptyChannelContinuityReconciliationTable();
+    return;
+end
+ueList = unique(localColumnDouble(traceT, "UeId", NaN));
+ueList = ueList(isfinite(ueList));
+expectedSlots = max(runtime.ConfiguredSlotCount, round(localNumber(cfg, ["run_control.total_slots","simulation.n_slots"], runtime.ConfiguredSlotCount)));
+if expectedSlots < 1
+    expectedSlots = numel(unique(localColumnDouble(traceT, "CanonicalSlot", NaN)));
+end
+timeTol = max(1e-9, runtime.SlotDuration_s * 1e-3);
+rows = repmat(localEmptyChannelContinuityReconciliationRow(), numel(ueList), 1);
+for i = 1:numel(ueList)
+    slice = traceT(localColumnDouble(traceT, "UeId", NaN) == ueList(i), :);
+    slice = sortrows(slice, "CanonicalSlot");
+    [coverageOk, missingSlots] = localTraceCoverageStatus(slice, expectedSlots);
+    slotVals = unique(localColumnDouble(slice, "CanonicalSlot", NaN));
+    timeVals = localColumnDouble(slice, "Time_s", NaN);
+    if numel(timeVals) > 1
+        timeStep = diff(timeVals);
+        timeOk = all(abs(timeStep - runtime.SlotDuration_s) <= timeTol);
+        medianStep = median(timeStep, "omitnan");
+    else
+        timeOk = true;
+        medianStep = NaN;
+    end
+    finiteStateOk = all(isfinite(localColumnDouble(slice, "Distance3D_m", NaN))) && ...
+        all(isfinite(localColumnDouble(slice, "PropagationDelay_s", NaN))) && ...
+        all(isfinite(localColumnDouble(slice, "AppliedDopplerHz", NaN))) && ...
+        all(isfinite(localColumnDouble(slice, "Pathloss_dB", NaN)));
+    mobilityOk = coverageOk && timeOk;
+    channelOk = mobilityOk && finiteStateOk;
+    failureCode = "";
+    if ~coverageOk
+        failureCode = "missing_slot_rows";
+    elseif ~timeOk
+        failureCode = "nonuniform_slot_timing";
+    elseif ~finiteStateOk
+        failureCode = "nonfinite_large_scale_runtime_state";
+    end
+    rows(i) = struct("UeId", double(ueList(i)), ...
+        "ExpectedSlotCount", double(expectedSlots), "ObservedSlotCount", double(numel(slotVals)), ...
+        "MissingSlotCount", double(missingSlots), "FirstSlot", double(localMinFinite(slotVals)), ...
+        "LastSlot", double(localMaxFinite(slotVals)), "ExpectedTimeStep_s", double(runtime.SlotDuration_s), ...
+        "ObservedMedianTimeStep_s", double(medianStep), "MobilityStateContinuousOk", logical(mobilityOk), ...
+        "ChannelStateContinuityOk", logical(channelOk), "FiniteLargeScaleStateOk", logical(finiteStateOk), ...
+        "FailureCode", string(failureCode), ...
+        "Status", localTernary(channelOk, "runtime_channel_continuity_verified", "runtime_channel_continuity_failed"));
+end
+T = localStructRowsToTable(rows);
 end
 
 function T = localInterUEDistanceTable(cfg, traj, runDurationS)
@@ -702,7 +1137,17 @@ flags.ResolvedConfigurationConsistentOk = ~any(string(cfgTables.Conflicts.Confli
 flags.CapturePolicyTruthfulOk = logical(storageTables.Policy.CapturePolicyTruthfulOk(1));
 flags.GeometryValidationOk = logical(geometryTables.Validation.GeometryValidationOk(1));
 flags.FullTrajectoryExecutedOk = logical(mobilityTables.Resolution.FullTrajectoryExecutedOk(1));
+flags.MobilityStateContinuousOk = localAllTableFlag(mobilityTables.ChannelContinuityReconciliation, "MobilityStateContinuousOk");
 flags.InterUeConstraintResolvedOk = isempty(mobilityTables.ConstraintConflicts);
+flags.LosStateModelOk = localAllTableFlag(mobilityTables.PathlossReconciliation, "LosStateModelOk");
+flags.PathlossReconciliationOk = localAllTableFlag(mobilityTables.PathlossReconciliation, "PathlossReconciliationOk");
+flags.ShadowFadingReconciliationOk = localAllTableFlag(mobilityTables.PathlossReconciliation, "ShadowFadingReconciliationOk");
+flags.DopplerReconciliationOk = localAllTableFlag(mobilityTables.DopplerReconciliation, "DopplerReconciliationOk");
+flags.PropagationDelayReconciliationOk = localAllTableFlag(mobilityTables.PropagationDelayReconciliation, "PropagationDelayReconciliationOk");
+flags.ChannelStateContinuityOk = localAllTableFlag(mobilityTables.ChannelContinuityReconciliation, "ChannelStateContinuityOk");
+flags.LargeScaleParameterReconciliationOk = ...
+    localAllTableFlag(mobilityTables.PathlossReconciliation, "LargeScaleParameterReconciliationOk") && ...
+    flags.DopplerReconciliationOk && flags.PropagationDelayReconciliationOk;
 flags.Phase7NoFabricationOk = true;
 flags.Phase7ProvenanceOk = exist(fullfile(runDir, "reports", "json", "scenario_manifest.json"), "file") == 2 || ...
     exist(fullfile(runDir, "meta", "scenario_manifest.json"), "file") == 2;
@@ -1080,6 +1525,180 @@ values = strtrim(string(traj.PathProvenance));
 values = unique(values(strlength(values) > 0));
 if ~isempty(values)
     provenance = strjoin(values(:).', "|");
+end
+end
+
+function row = localEmptyRuntimeMobilityTraceRow()
+row = struct( ...
+    "UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
+    "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
+    "Speed_kmh", NaN, "Speed_mps", NaN, "Heading_deg", NaN, "Heading_rad", NaN, ...
+    "Distance2D_m", NaN, "Distance3D_m", NaN, "PropagationDelay_s", NaN, ...
+    "RadialVelocity_mps", NaN, "ExpectedDopplerHz", NaN, "AppliedDopplerHz", NaN, "SignedDoppler_Hz", NaN, ...
+    "Pathloss_dB", NaN, "BasePathloss_dB", NaN, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+    "LOSState", "", "PathlossModelSource", "", "PathlossComplianceStatus", "", ...
+    "LOSProbabilitySource", "", "LOSComplianceStatus", "", "Status", "");
+end
+
+function T = localEmptyRuntimeMobilityTraceTable()
+T = struct2table(repmat(localEmptyRuntimeMobilityTraceRow(), 0, 1), "AsArray", true);
+end
+
+function row = localEmptyDopplerReconciliationRow()
+row = struct("UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
+    "Speed_mps", NaN, "CarrierFrequency_Hz", NaN, "ExpectedDopplerHz", NaN, "AppliedDopplerHz", NaN, ...
+    "DopplerErrorHz", NaN, "DopplerToleranceHz", NaN, "DopplerReconciliationOk", false, ...
+    "EvidenceSource", "", "Status", "");
+end
+
+function T = localEmptyDopplerReconciliationTable()
+T = struct2table(repmat(localEmptyDopplerReconciliationRow(), 0, 1), "AsArray", true);
+end
+
+function row = localEmptyPathlossReconciliationRow()
+row = struct("UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "LOSState", "", ...
+    "BasePathloss_dB", NaN, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
+    "ObservedPathloss_dB", NaN, "ExpectedPathloss_dB", NaN, ...
+    "PathlossError_dB", NaN, "PathlossTolerance_dB", NaN, ...
+    "PathlossReconciliationOk", false, "ShadowFadingReconciliationOk", false, ...
+    "LosStateModelOk", false, "LargeScaleParameterReconciliationOk", false, ...
+    "EvidenceSource", "", "Status", "");
+end
+
+function T = localEmptyPathlossReconciliationTable()
+T = struct2table(repmat(localEmptyPathlossReconciliationRow(), 0, 1), "AsArray", true);
+end
+
+function row = localEmptyPropagationDelayReconciliationRow()
+row = struct("UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Distance3D_m", NaN, ...
+    "ObservedPropagationDelay_s", NaN, "ExpectedPropagationDelay_s", NaN, ...
+    "PropagationDelayError_s", NaN, "PropagationDelayTolerance_s", NaN, ...
+    "PropagationDelayReconciliationOk", false, "EvidenceSource", "", "Status", "");
+end
+
+function T = localEmptyPropagationDelayReconciliationTable()
+T = struct2table(repmat(localEmptyPropagationDelayReconciliationRow(), 0, 1), "AsArray", true);
+end
+
+function row = localEmptyChannelContinuityReconciliationRow()
+row = struct("UeId", NaN, "ExpectedSlotCount", NaN, "ObservedSlotCount", NaN, ...
+    "MissingSlotCount", NaN, "FirstSlot", NaN, "LastSlot", NaN, ...
+    "ExpectedTimeStep_s", NaN, "ObservedMedianTimeStep_s", NaN, ...
+    "MobilityStateContinuousOk", false, "ChannelStateContinuityOk", false, ...
+    "FiniteLargeScaleStateOk", false, "FailureCode", "", "Status", "");
+end
+
+function T = localEmptyChannelContinuityReconciliationTable()
+T = struct2table(repmat(localEmptyChannelContinuityReconciliationRow(), 0, 1), "AsArray", true);
+end
+
+function d = localTraceRouteLength(T)
+d = 0;
+if ~(istable(T) && height(T) > 1)
+    return;
+end
+x = localColumnDouble(T, "X_m", NaN);
+y = localColumnDouble(T, "Y_m", NaN);
+z = localColumnDouble(T, "Z_m", NaN);
+step = sqrt(diff(x).^2 + diff(y).^2 + diff(z).^2);
+step = step(isfinite(step));
+if ~isempty(step)
+    d = sum(step, "omitnan");
+end
+end
+
+function [coverageOk, missingSlots] = localTraceCoverageStatus(T, expectedSlots)
+coverageOk = false;
+missingSlots = NaN;
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+slots = unique(localColumnDouble(T, "CanonicalSlot", NaN));
+slots = sort(slots(isfinite(slots)));
+if isempty(slots)
+    missingSlots = expectedSlots;
+    return;
+end
+if ~(isfinite(expectedSlots) && expectedSlots >= 1)
+    expectedSlots = numel(slots);
+end
+expectedSpan = (1:expectedSlots).';
+coverageOk = numel(slots) == numel(expectedSpan) && isequal(slots(:), expectedSpan);
+missingSlots = max(0, expectedSlots - numel(slots));
+end
+
+function hz = localRuntimeExpectedDoppler(speedMps, carrierHz, lightSpeed)
+hz = NaN;
+if isfinite(speedMps) && speedMps >= 0 && isfinite(carrierHz) && carrierHz > 0
+    hz = abs(speedMps) * carrierHz / lightSpeed;
+end
+end
+
+function status = localRuntimeTraceRowStatus(row)
+required = [row.UeId, row.CellId, row.CanonicalSlot, row.Time_s, row.X_m, row.Y_m, row.Z_m, ...
+    row.Speed_mps, row.Distance3D_m, row.PropagationDelay_s, row.ExpectedDopplerHz, row.AppliedDopplerHz, row.Pathloss_dB];
+if all(isfinite(required))
+    status = "runtime_trace_complete";
+else
+    status = "runtime_trace_partial";
+end
+end
+
+function value = localTableNumber(T, idx, names, defaultValue)
+value = double(defaultValue);
+for name = string(names(:)).'
+    if localHasColumn(T, name)
+        raw = T.(char(name));
+        if idx <= numel(raw)
+            candidate = localToDouble(raw(idx));
+            if ~isempty(candidate) && isfinite(candidate(1))
+                value = double(candidate(1));
+                return;
+            end
+        end
+    end
+end
+end
+
+function value = localTableString(T, idx, names, defaultValue)
+value = string(defaultValue);
+for name = string(names(:)).'
+    if localHasColumn(T, name)
+        raw = string(T.(char(name)));
+        if idx <= numel(raw) && strlength(strtrim(raw(idx))) > 0
+            value = string(raw(idx));
+            return;
+        end
+    end
+end
+end
+
+function tf = localTableLogical(T, idx, name, defaultValue)
+tf = logical(defaultValue);
+if localHasColumn(T, name)
+    vals = localColumnAsLogical(T.(char(name)));
+    if idx <= numel(vals)
+        tf = logical(vals(idx));
+    end
+end
+end
+
+function rad = localDegreesToRadians(deg)
+if isfinite(deg)
+    rad = deg * pi / 180;
+else
+    rad = NaN;
+end
+end
+
+function c = localLightSpeed()
+c = 299792458;
+end
+
+function tf = localAllTableFlag(T, name)
+tf = false;
+if istable(T) && height(T) > 0 && localHasColumn(T, name)
+    tf = all(localColumnAsLogical(T.(char(name))));
 end
 end
 

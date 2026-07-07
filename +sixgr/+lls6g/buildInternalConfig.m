@@ -1503,6 +1503,13 @@ if builtin("isstruct", channelRFSection) && ~isempty(fieldnames(channelRFSection
     end
 end
 
+fixedLinkCampaignSection = localGetNested(s, "validation.fixed_link_campaign", struct());
+if builtin("isstruct", fixedLinkCampaignSection) && ~isempty(fieldnames(fixedLinkCampaignSection))
+    cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign", ...
+        localNormalizeFixedLinkCampaignSection(fixedLinkCampaignSection));
+end
+cfg = localApplyValidationRunClass(cfg, s);
+
 cfg = localApplyConfigDrivenPHYRuntimeSurfaces(cfg, s);
 end
 
@@ -3462,4 +3469,201 @@ else
     end
 end
 major = round(double(major));
+end
+
+function section = localNormalizeFixedLinkCampaignSection(section)
+if ~(builtin("isstruct", section) && isscalar(section))
+    section = struct();
+    return;
+end
+
+if isfield(section, "direction")
+    direction = lower(strtrim(string(section.direction)));
+    switch direction
+        case "dl"
+            section.direction = "DL";
+        case "ul"
+            section.direction = "UL";
+        otherwise
+            section.direction = "both";
+    end
+end
+
+if isfield(section, "channel_model")
+    model = upper(strtrim(string(section.channel_model)));
+    if model == ""
+        model = "AWGN";
+    end
+    section.channel_model = model;
+end
+
+for fieldName = ["snr_db", "mcs", "seeds", "target_bler"]
+    key = char(fieldName);
+    if isfield(section, key)
+        value = double(section.(key));
+        value = value(:).';
+        value = value(isfinite(value));
+        section.(key) = value;
+    end
+end
+
+for fieldName = ["rank", "layers", "n_prb", "min_tb_per_point", "max_tb_per_point", "min_errors_for_ci"]
+    key = char(fieldName);
+    if isfield(section, key)
+        value = double(section.(key));
+        if isfinite(value)
+            section.(key) = round(double(value));
+        end
+    end
+end
+
+if isfield(section, "max_ci_half_width")
+    value = double(section.max_ci_half_width);
+    if isfinite(value)
+        section.max_ci_half_width = double(value);
+    end
+end
+end
+
+function cfg = localApplyValidationRunClass(cfg, s)
+raw = localFirstNonBlankString([
+    localScalarString(localGetNested(s, "validation.RunClass", ""))
+    localScalarString(localGetNested(s, "validation.run_class", ""))
+    localScalarString(sixgr.util.structGet(cfg, "validation.RunClass", ""))
+    localScalarString(sixgr.util.structGet(cfg, "validation.run_class", ""))
+    ]);
+runClass = localNormalizeRunClassToken(raw);
+if strlength(runClass) == 0
+    runClass = localDeriveValidationRunClass(cfg, s);
+end
+cfg = sixgr.util.structSet(cfg, "validation.RunClass", char(runClass));
+cfg = sixgr.util.structSet(cfg, "validation.run_class", char(runClass));
+end
+
+function runClass = localDeriveValidationRunClass(cfg, s)
+adaptiveMode = localValidationAdaptiveMode(cfg, s);
+fixedMCSActive = localValidationFixedMCSActive(cfg, s);
+rankFixed = localValidationRankFixed(cfg, s);
+layersFixed = localValidationLayersFixed(cfg, s);
+modulationFixed = localValidationModulationFixed(cfg, s, fixedMCSActive);
+fixedCampaignEnabled = logical(sixgr.util.structGet(cfg, "validation.fixed_link_campaign.enabled", ...
+    localGetNested(s, "validation.fixed_link_campaign.enabled", false)));
+
+if fixedCampaignEnabled && adaptiveMode
+    runClass = "hybrid_validation";
+elseif fixedMCSActive && rankFixed && layersFixed && modulationFixed && ~adaptiveMode
+    runClass = "fixed_lls_anchor";
+else
+    % Default to diagnostic when we cannot prove a publication-safe fixed anchor.
+    runClass = "adaptive_system_diagnostic";
+end
+end
+
+function tf = localValidationFixedMCSActive(cfg, s)
+tokens = lower(strtrim([
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", ""))
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", ""))
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", ""))
+    localScalarString(localGetNested(s, "link_adaptation.fixed_or_amc", ""))
+    localScalarString(localGetNested(s, "link_adaptation.pdsch_link_adaptation_policy", ""))
+    localScalarString(localGetNested(s, "link_adaptation.pusch_link_adaptation_policy", ""))
+    ]));
+tokens = tokens(strlength(tokens) > 0);
+fixedTokens = localValidationFixedTokens();
+adaptiveTokens = localValidationAdaptiveTokens();
+tf = logical(sixgr.util.structGet(cfg, "pdsch6gr.FixedMCSActive", false)) || ...
+    (any(ismember(tokens, fixedTokens)) && ~any(ismember(tokens, adaptiveTokens)));
+end
+
+function tf = localValidationRankFixed(cfg, s)
+tokens = lower(strtrim([
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", ""))
+    localScalarString(localGetNested(s, "link_adaptation.rank_adaptation_policy", ""))
+    localScalarString(localGetNested(s, "mimo.rank_adaptation_policy", ""))
+    ]));
+tokens = tokens(strlength(tokens) > 0);
+fixedTokens = localValidationFixedTokens();
+adaptiveTokens = localValidationAdaptiveTokens();
+tf = ~isempty(tokens) && any(ismember(tokens, fixedTokens)) && ~any(ismember(tokens, adaptiveTokens));
+if ~tf
+    tf = isfinite(double(sixgr.util.structGet(cfg, "phy.pdsch.rank", NaN))) || ...
+        isfinite(double(sixgr.util.structGet(cfg, "phy.pusch.rank", NaN)));
+end
+end
+
+function tf = localValidationLayersFixed(cfg, s)
+dlLayers = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", localGetNested(s, "mimo.n_layers", NaN))));
+ulLayers = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "phy.pusch.numLayers", ...
+    sixgr.util.structGet(cfg, "phy.pusch.nLayers", localGetNested(s, "mimo.n_layers", NaN))));
+tf = (isfinite(dlLayers) && dlLayers >= 1) || (isfinite(ulLayers) && ulLayers >= 1);
+end
+
+function tf = localValidationModulationFixed(cfg, s, fixedMCSActive)
+mods = strtrim([
+    localScalarString(sixgr.util.structGet(cfg, "phy.pdsch.modulation", ""))
+    localScalarString(sixgr.util.structGet(cfg, "phy.pusch.modulation", ""))
+    localScalarString(localGetNested(s, "pdsch.modulation", ""))
+    localScalarString(localGetNested(s, "pusch.modulation", ""))
+    localScalarString(localGetNested(s, "modulation_and_mapping.pdsch_modulation", ""))
+    localScalarString(localGetNested(s, "modulation_and_mapping.pusch_modulation", ""))
+    ]);
+mods = mods(strlength(mods) > 0);
+tf = fixedMCSActive && ~isempty(mods);
+end
+
+function tf = localValidationAdaptiveMode(cfg, s)
+tokens = lower(strtrim([
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", ""))
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", ""))
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", ""))
+    localScalarString(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", ""))
+    localScalarString(localGetNested(s, "link_adaptation.fixed_or_amc", ""))
+    localScalarString(localGetNested(s, "link_adaptation.pdsch_link_adaptation_policy", ""))
+    localScalarString(localGetNested(s, "link_adaptation.pusch_link_adaptation_policy", ""))
+    localScalarString(localGetNested(s, "link_adaptation.rank_adaptation_policy", ""))
+    ]));
+tokens = tokens(strlength(tokens) > 0);
+tf = any(ismember(tokens, localValidationAdaptiveTokens()));
+end
+
+function runClass = localNormalizeRunClassToken(raw)
+token = lower(strtrim(string(raw)));
+if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation"])
+    runClass = token;
+else
+    runClass = "";
+end
+end
+
+function tokens = localValidationFixedTokens()
+tokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
+end
+
+function tokens = localValidationAdaptiveTokens()
+tokens = ["amc","adaptive","dynamic","dynamic_link_adaptation","cqi","cqi_driven", ...
+    "baseline","actual_bler_based","effective_sinr_driven"];
+end
+
+function value = localFirstNonBlankString(values)
+value = "";
+values = string(values(:));
+for i = 1:numel(values)
+    candidate = strtrim(values(i));
+    if strlength(candidate) > 0
+        value = candidate;
+        return;
+    end
+end
+end
+
+function value = localScalarString(raw)
+value = "";
+if isempty(raw)
+    return;
+end
+vals = string(raw(:));
+if ~isempty(vals)
+    value = vals(1);
+end
 end

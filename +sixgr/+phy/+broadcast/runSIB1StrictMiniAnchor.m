@@ -16,7 +16,8 @@ cfg.phy.carrier.SubcarrierSpacing_kHz = cfg.phy.carrier.SubcarrierSpacing;
 cfg.phy.carrier.NSizeGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 52));
 cfg.phy.sib1.coreset0Index = double(sixgr.util.structGet(cfg, "phy.sib1.coreset0Index", 0));
 cfg.phy.sib1.searchSpaceZero = double(sixgr.util.structGet(cfg, "phy.sib1.searchSpaceZero", 0));
-runRandomAccess = localShouldRunRandomAccess(cfg);
+raRequested = localRandomAccessRequested(cfg);
+[runRandomAccess, raSkipReason] = localShouldRunRandomAccess(cfg, raRequested);
 if runRandomAccess
     cfg = localMirrorRandomAccessIntoSIB1Prach(cfg);
 end
@@ -48,19 +49,43 @@ end
 lifecycleArtifacts = localExportInitialAccessLifecycle(runFolder, rx, runRandomAccess, ra);
 out = struct("Ok", logical(rx.StrictOk) && (~runRandomAccess || raOk), ...
     "RunFolder", string(runFolder), "Tx", tx, "Rx", rx, ...
-    "RandomAccessRequested", logical(runRandomAccess), "RAOk", logical(raOk), ...
+    "RandomAccessRequested", logical(raRequested), ...
+    "RandomAccessRunnable", logical(runRandomAccess), ...
+    "RandomAccessSkipReason", string(raSkipReason), ...
+    "RAOk", logical(raOk), ...
     "RandomAccess", ra, "NegativeResults", negatives, "Artifacts", artifacts, ...
     "RAArtifacts", raArtifacts, "LifecycleArtifacts", lifecycleArtifacts);
 end
 
-function enabled = localShouldRunRandomAccess(cfg)
-enabled = false;
+function requested = localRandomAccessRequested(cfg)
+requested = false;
 if isfield(cfg, "random_access") && isstruct(cfg.random_access)
     raw = sixgr.util.structGet(cfg, "random_access.enabled", false);
     if islogical(raw) || isnumeric(raw)
-        enabled = ~isempty(raw) && isscalar(raw) && logical(raw);
+        requested = ~isempty(raw) && isscalar(raw) && logical(raw);
     elseif ischar(raw) || isstring(raw)
-        enabled = any(strcmpi(strtrim(string(raw)), ["true", "1", "yes", "enabled"]));
+        requested = any(strcmpi(strtrim(string(raw)), ["true", "1", "yes", "enabled"]));
+    end
+end
+end
+
+function [enabled, skipReason] = localShouldRunRandomAccess(cfg, requested)
+enabled = false;
+skipReason = "";
+if ~logical(requested)
+    return;
+end
+try
+    sixgr.mac.ra.RAConfig(cfg, "RunId", "sib1_strict_mini_anchor_preflight");
+    enabled = true;
+catch ME
+    switch string(ME.identifier)
+        case {"sixgr:mac:ra:MissingRandomAccessConfig", ...
+                "sixgr:mac:ra:MissingMandatoryRACHFields", ...
+                "sixgr:mac:ra:RestrictedSetUnsupportedStrict"}
+            skipReason = "supplemental_sib1_ra_skipped:" + string(ME.message);
+        otherwise
+            rethrow(ME);
     end
 end
 end
