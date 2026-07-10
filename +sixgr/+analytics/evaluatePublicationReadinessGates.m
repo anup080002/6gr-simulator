@@ -21,6 +21,7 @@ sixgr.util.ensureFolder(layout.ReportCSVDir);
 [artifactOk, artifactT] = localEvaluateArtifactCompleteness(runDir);
 [lineageOk, lineageT] = localEvaluatePlotLineage(runDir);
 [claimsOk, claimsT] = localEvaluateClaimsTruthfulness(runDir);
+[modeAcceptance, modeAcceptanceT] = localEvaluateTwoModeAcceptance(cfg, runDir);
 
 paths = struct();
 paths.Energy = localWrite(layout.ReportCSVDir, "energy_model_gate.csv", energyT);
@@ -29,6 +30,7 @@ paths.LongRunStability = localWrite(layout.ReportCSVDir, "long_run_stability_sum
 paths.ArtifactCompleteness = localWrite(layout.ReportCSVDir, "artifact_completeness_summary.csv", artifactT);
 paths.PlotDataLineage = localWrite(layout.ReportCSVDir, "plot_data_lineage_summary.csv", lineageT);
 paths.ClaimsTruthfulness = localWrite(layout.ReportCSVDir, "final_scientific_claims_truthfulness.csv", claimsT);
+paths.TwoModeAcceptance = localWrite(layout.ReportCSVDir, "two_mode_acceptance_gates.csv", modeAcceptanceT);
 
 flags = struct( ...
     "EnergyModelOk", logical(energyOk), ...
@@ -36,20 +38,520 @@ flags = struct( ...
     "LongRunStabilityOk", logical(stabilityOk), ...
     "ArtifactCompletenessOk", logical(artifactOk), ...
     "PlotDataLineageOk", logical(lineageOk), ...
-    "FinalScientificClaimsTruthfulOk", logical(claimsOk));
+    "FinalScientificClaimsTruthfulOk", logical(claimsOk), ...
+    "TwoModeAcceptanceGatesOk", logical(sixgr.util.structGet(modeAcceptance.Flags, "TwoModeAcceptanceGatesOk", true)), ...
+    "FixedSNRLLSOk", logical(sixgr.util.structGet(modeAcceptance.Flags, "FixedSNRLLSOk", true)), ...
+    "GeometryScenarioOk", logical(sixgr.util.structGet(modeAcceptance.Flags, "GeometryScenarioOk", true)), ...
+    "PublicationReferenceComparisonOk", logical(sixgr.util.structGet(modeAcceptance.Flags, "PublicationReferenceComparisonOk", true)));
 
+terminalFlags = flags;
+for optionalName = ["FixedSNRLLSOk","GeometryScenarioOk","PublicationReferenceComparisonOk"]
+    if isfield(terminalFlags, char(optionalName))
+        terminalFlags = rmfield(terminalFlags, char(optionalName));
+    end
+end
 summaryT = table(flags.EnergyModelOk, flags.PerformanceProfileOk, flags.LongRunStabilityOk, ...
     flags.ArtifactCompletenessOk, flags.PlotDataLineageOk, flags.FinalScientificClaimsTruthfulOk, ...
-    all(struct2array(flags)), "evidence_files_only_no_forced_publication_pass", ...
+    flags.TwoModeAcceptanceGatesOk, flags.FixedSNRLLSOk, flags.GeometryScenarioOk, ...
+    flags.PublicationReferenceComparisonOk, all(struct2array(terminalFlags)), ...
+    "evidence_files_only_no_forced_publication_pass", ...
     'VariableNames', {'EnergyModelOk','PerformanceProfileOk','LongRunStabilityOk', ...
     'ArtifactCompletenessOk','PlotDataLineageOk','FinalScientificClaimsTruthfulOk', ...
+    'TwoModeAcceptanceGatesOk','FixedSNRLLSOk','GeometryScenarioOk','PublicationReferenceComparisonOk', ...
     'TerminalPublicationGatesOk','EvaluationPolicy'});
 paths.Summary = localWrite(layout.ReportCSVDir, "publication_readiness_gate_summary.csv", summaryT);
 
 result = struct("Flags", flags, "Tables", struct("Energy", energyT, "Performance", perfT, ...
     "LongRunStability", stabilityT, "ArtifactCompleteness", artifactT, ...
-    "PlotDataLineage", lineageT, "ClaimsTruthfulness", claimsT, "Summary", summaryT), ...
+    "PlotDataLineage", lineageT, "ClaimsTruthfulness", claimsT, ...
+    "TwoModeAcceptance", modeAcceptanceT, "Summary", summaryT), ...
+    "ModeAcceptance", modeAcceptance, ...
     "Paths", paths);
+end
+
+function [result, T] = localEvaluateTwoModeAcceptance(cfg, runDir)
+resolvedCfg = localReadJson(fullfile(runDir, "meta", "scenario_config_resolved.json"));
+runClassT = localReadTable(fullfile(runDir, "reports", "csv", "run_classification.csv"));
+fixedAuditT = localReadTable(fullfile(runDir, "reports", "csv", "fixed_snr_sweep_audit.csv"));
+geometryAuditT = localReadTable(fullfile(runDir, "reports", "csv", "geometry_runtime_audit.csv"));
+csvAuditT = localReadTable(fullfile(runDir, "reports", "csv", "all_csv_artifact_audit.csv"));
+imageAuditT = localReadTable(fullfile(runDir, "reports", "csv", "all_image_artifact_audit.csv"));
+dlCurveT = localReadTable(fullfile(runDir, "reports", "csv", "dl_fixed_snr_bler_curve.csv"));
+ulCurveT = localReadTable(fullfile(runDir, "reports", "csv", "ul_fixed_snr_bler_curve.csv"));
+trajectoryT = localReadTable(fullfile(runDir, "geometry", "csv", "trajectory_geometry.csv"));
+dopplerT = localReadTable(fullfile(runDir, "mobility", "csv", "doppler_reconciliation.csv"));
+measuredSinrT = localReadTable(fullfile(runDir, "reports", "csv", "measured_sinr_timeseries.csv"));
+referenceSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_reference_snr_sweep.csv"));
+
+effectiveCfg = cfg;
+if ~isstruct(effectiveCfg) || isempty(fieldnames(effectiveCfg))
+    effectiveCfg = resolvedCfg;
+end
+
+runClass = localResolveRunClass(effectiveCfg, resolvedCfg, runClassT);
+direction = upper(localResolveFixedDirection(effectiveCfg, resolvedCfg));
+minTrials = localResolveMinTrials(effectiveCfg, resolvedCfg);
+fixedOnly = localResolveLogicalSetting(effectiveCfg, resolvedCfg, ...
+    ["sweeps_and_matrix.fixed_link_calibration.only","canonical_control.run.fixed_link_campaign_only"], false);
+noiseMode = localResolveTextSetting(effectiveCfg, resolvedCfg, ...
+    ["simulation.noise_operating_mode","run.noiseOperatingMode"], "");
+fixedEnabled = localResolveLogicalSetting(effectiveCfg, resolvedCfg, ...
+    ["sweeps_and_matrix.fixed_link_calibration.enabled","validation.fixed_link_campaign.enabled"], false);
+geometryEvidenceRequired = localResolveLogicalSetting(effectiveCfg, resolvedCfg, ...
+    ["validation.geometry_evidence_required"], false);
+fixedSweepRequired = localResolveLogicalSetting(effectiveCfg, resolvedCfg, ...
+    ["validation.fixed_snr_sweep_required"], false);
+
+fixedApplicable = runClass == "fixed_snr_sweep_lls" | runClass == "hybrid_validation";
+geometryApplicable = runClass == "ue_placement_geometry_lls" | runClass == "hybrid_validation";
+rows = repmat(localEmptyModeGateRow(runClass), 0, 1);
+
+if fixedApplicable
+    rows(end+1, 1) = localModeGateRow("RunClassFixedSNRSweep", runClass, true, ...
+        runClass == "fixed_snr_sweep_lls" | runClass == "hybrid_validation", ...
+        1, double(runClass ~= "fixed_snr_sweep_lls" & runClass ~= "hybrid_validation"), ...
+        "reports/csv/run_classification.csv", ...
+        localFailureToken(runClass == "fixed_snr_sweep_lls" | runClass == "hybrid_validation", "run_class_not_fixed_snr_sweep"), ...
+        "Run class must resolve to fixed_snr_sweep_lls or hybrid_validation for fixed-link acceptance."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateRow("FixedLinkCampaignOnly", runClass, true, ...
+        logical(fixedOnly), 1, double(~logical(fixedOnly)), ...
+        "meta/scenario_config_resolved.json", ...
+        localFailureToken(logical(fixedOnly), "fixed_link_campaign_only_false"), ...
+        "Fixed-link publication anchor runs must execute in fixed-campaign-only mode."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateRow("NoiseOperatingMode", runClass, true, ...
+        strcmpi(strtrim(char(noiseMode)), "standalone_awgn_snr_argument"), 1, ...
+        double(~strcmpi(strtrim(char(noiseMode)), "standalone_awgn_snr_argument")), ...
+        "meta/scenario_config_resolved.json", ...
+        localFailureToken(strcmpi(strtrim(char(noiseMode)), "standalone_awgn_snr_argument"), "noise_mode_not_standalone_awgn"), ...
+        "Fixed-link publication anchor runs must use standalone AWGN SNR input mode."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateFromAudit("FixedSNRSweepAudit", runClass, true, ...
+        fixedAuditT, "reports/csv/fixed_snr_sweep_audit.csv", "fixed_snr_sweep_audit_failures_present", ...
+        "Fixed-link sweep audit must report zero FAIL rows."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateFromArtifactAudit("FixedRequiredCSVAudit", runClass, true, ...
+        csvAuditT, "reports/csv/all_csv_artifact_audit.csv", "required_csv_artifact_failures_present", ...
+        "Recursive CSV artifact audit must report zero required FAIL rows."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateFromArtifactAudit("FixedRequiredImageAudit", runClass, true, ...
+        imageAuditT, "reports/csv/all_image_artifact_audit.csv", "required_image_artifact_failures_present", ...
+        "Recursive image artifact audit must report zero required FAIL rows."); %#ok<AGROW>
+    if localDirectionEnabledForMode(direction, "DL")
+        rows(end+1, 1) = localModeGateFromCurve("DLCurveNonEmpty", runClass, true, dlCurveT, ...
+            "reports/csv/dl_fixed_snr_bler_curve.csv", minTrials, "dl_curve_missing_or_incomplete", ...
+            "DL BLER curve must be non-empty and complete for every configured SNR point."); %#ok<AGROW>
+        rows(end+1, 1) = localModeGateFromHighSNR(localCurveHighSNRImproves(dlCurveT), "DLHighSNRImproves", runClass, ...
+            "reports/csv/dl_fixed_snr_bler_curve.csv", "high_snr_not_better_than_low_snr_dl", ...
+            "The highest DL SNR point must improve over the lowest DL SNR point."); %#ok<AGROW>
+    end
+    if localDirectionEnabledForMode(direction, "UL")
+        rows(end+1, 1) = localModeGateFromCurve("ULCurveNonEmpty", runClass, true, ulCurveT, ...
+            "reports/csv/ul_fixed_snr_bler_curve.csv", minTrials, "ul_curve_missing_or_incomplete", ...
+            "UL BLER curve must be non-empty and complete for every configured SNR point."); %#ok<AGROW>
+        rows(end+1, 1) = localModeGateFromHighSNR(localCurveHighSNRImproves(ulCurveT), "ULHighSNRImproves", runClass, ...
+            "reports/csv/ul_fixed_snr_bler_curve.csv", "high_snr_not_better_than_low_snr_ul", ...
+            "The highest UL SNR point must improve over the lowest UL SNR point."); %#ok<AGROW>
+    end
+    rows(end+1, 1) = localModeGateRow("BLERBERInUnitInterval", runClass, true, ...
+        localCurveMetricsValid(dlCurveT) && localCurveMetricsValid(ulCurveT), ...
+        height(dlCurveT) + height(ulCurveT), ...
+        double(~(localCurveMetricsValid(dlCurveT) && localCurveMetricsValid(ulCurveT))), ...
+        "reports/csv/dl_fixed_snr_bler_curve.csv|reports/csv/ul_fixed_snr_bler_curve.csv", ...
+        localFailureToken(localCurveMetricsValid(dlCurveT) && localCurveMetricsValid(ulCurveT), "bler_ber_out_of_range_or_invalid_ci"), ...
+        "BLER and BER must stay within [0,1] with valid confidence intervals."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateRow("ReferenceComparisonPresent", runClass, true, ...
+        fixedEnabled && istable(referenceSweepT) && height(referenceSweepT) > 0, ...
+        height(referenceSweepT), double(~(fixedEnabled && istable(referenceSweepT) && height(referenceSweepT) > 0)), ...
+        "air_interface/csv/lls_reference_snr_sweep.csv", ...
+        localFailureToken(fixedEnabled && istable(referenceSweepT) && height(referenceSweepT) > 0, "reference_snr_sweep_missing"), ...
+        "Publication readiness requires non-empty reference sweep evidence alongside the fixed sweep."); %#ok<AGROW>
+end
+
+if geometryApplicable
+    rows(end+1, 1) = localModeGateRow("RunClassGeometry", runClass, true, ...
+        runClass == "ue_placement_geometry_lls" | runClass == "hybrid_validation", ...
+        1, double(runClass ~= "ue_placement_geometry_lls" & runClass ~= "hybrid_validation"), ...
+        "reports/csv/run_classification.csv", ...
+        localFailureToken(runClass == "ue_placement_geometry_lls" | runClass == "hybrid_validation", "run_class_not_geometry"), ...
+        "Run class must resolve to ue_placement_geometry_lls or hybrid_validation for geometry acceptance."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateFromAudit("GeometryRuntimeAudit", runClass, true, ...
+        geometryAuditT, "reports/csv/geometry_runtime_audit.csv", "geometry_runtime_audit_failures_present", ...
+        "Geometry runtime audit must report zero FAIL rows."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateFromArtifactAudit("GeometryRequiredCSVAudit", runClass, true, ...
+        csvAuditT, "reports/csv/all_csv_artifact_audit.csv", "required_csv_artifact_failures_present", ...
+        "Recursive CSV artifact audit must report zero required FAIL rows."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateFromArtifactAudit("GeometryRequiredImageAudit", runClass, true, ...
+        imageAuditT, "reports/csv/all_image_artifact_audit.csv", "required_image_artifact_failures_present", ...
+        "Recursive image artifact audit must report zero required FAIL rows."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateRow("TrajectoryNonEmpty", runClass, true, ...
+        istable(trajectoryT) && height(trajectoryT) > 0, height(trajectoryT), double(~(istable(trajectoryT) && height(trajectoryT) > 0)), ...
+        "geometry/csv/trajectory_geometry.csv", ...
+        localFailureToken(istable(trajectoryT) && height(trajectoryT) > 0, "trajectory_geometry_empty"), ...
+        "Geometry scenario runs must emit non-empty trajectory evidence."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateRow("DopplerReconciliationPass", runClass, true, ...
+        localDopplerAuditPass(dopplerT), height(dopplerT), double(~localDopplerAuditPass(dopplerT)), ...
+        "mobility/csv/doppler_reconciliation.csv", ...
+        localFailureToken(localDopplerAuditPass(dopplerT), "doppler_reconciliation_failed"), ...
+        "Doppler reconciliation must pass for geometry scenario runs."); %#ok<AGROW>
+    rows(end+1, 1) = localModeGateRow("MeasuredSINRNonEmpty", runClass, true, ...
+        istable(measuredSinrT) && height(measuredSinrT) > 0, height(measuredSinrT), double(~(istable(measuredSinrT) && height(measuredSinrT) > 0)), ...
+        "reports/csv/measured_sinr_timeseries.csv", ...
+        localFailureToken(istable(measuredSinrT) && height(measuredSinrT) > 0, "measured_sinr_timeseries_empty"), ...
+        "Geometry scenario runs must emit non-empty measured SINR timeseries evidence."); %#ok<AGROW>
+    fixedCurveClaim = (height(dlCurveT) > 0 || height(ulCurveT) > 0) && ~fixedEnabled;
+    rows(end+1, 1) = localModeGateRow("NoFixedLinkCurveClaim", runClass, true, ...
+        ~fixedCurveClaim, double(height(dlCurveT) + height(ulCurveT)), double(fixedCurveClaim), ...
+        "reports/csv/dl_fixed_snr_bler_curve.csv|reports/csv/ul_fixed_snr_bler_curve.csv", ...
+        localFailureToken(~fixedCurveClaim, "fixed_link_curve_claim_without_fixed_campaign"), ...
+        "Geometry runs must not claim fixed-link curve evidence unless fixed-link calibration is explicitly enabled."); %#ok<AGROW>
+end
+
+if ~(fixedApplicable || geometryApplicable)
+    rows(end+1, 1) = localModeGateRow("TwoModeAcceptanceNotApplicable", runClass, false, ...
+        true, 0, 0, "", "", ...
+        "Two-mode acceptance gates are informational only for non-fixed and non-geometry run classes."); %#ok<AGROW>
+end
+
+T = struct2table(rows, "AsArray", true);
+requiredMask = logical(T.Required);
+failMask = string(T.Status) == "FAIL";
+
+fixedRows = T(logical(T.Required) & localStringMember(string(T.GateName), [ ...
+    "RunClassFixedSNRSweep","FixedLinkCampaignOnly","NoiseOperatingMode","FixedSNRSweepAudit", ...
+    "FixedRequiredCSVAudit","FixedRequiredImageAudit","DLCurveNonEmpty","ULCurveNonEmpty", ...
+    "DLHighSNRImproves","ULHighSNRImproves","BLERBERInUnitInterval","ReferenceComparisonPresent"]), :);
+geometryRows = T(logical(T.Required) & localStringMember(string(T.GateName), [ ...
+    "RunClassGeometry","GeometryRuntimeAudit","GeometryRequiredCSVAudit","GeometryRequiredImageAudit", ...
+    "TrajectoryNonEmpty","DopplerReconciliationPass","MeasuredSINRNonEmpty","NoFixedLinkCurveClaim"]), :);
+
+result = struct();
+result.RunClass = string(runClass);
+result.Direction = string(direction);
+result.FixedSNRLLSApplicable = logical(fixedApplicable);
+result.GeometryScenarioApplicable = logical(geometryApplicable);
+result.Flags = struct( ...
+    "FixedSNRLLSOk", ~fixedApplicable || all(string(fixedRows.Status) == "PASS"), ...
+    "GeometryScenarioOk", ~geometryApplicable || all(string(geometryRows.Status) == "PASS"), ...
+    "PublicationReferenceComparisonOk", ~fixedApplicable || any(string(fixedRows.GateName) == "ReferenceComparisonPresent" & string(fixedRows.Status) == "PASS"), ...
+    "TwoModeAcceptanceGatesOk", ~any(failMask & requiredMask));
+result.Flags.TwoModeAcceptanceGatesOk = ~any(failMask & requiredMask);
+end
+
+function row = localEmptyModeGateRow(runClass)
+row = struct( ...
+    "GateName", "", ...
+    "RunClass", string(runClass), ...
+    "Required", false, ...
+    "Status", "SKIP", ...
+    "RowsChecked", 0, ...
+    "RowsFailed", 0, ...
+    "EvidencePath", "", ...
+    "FailureCode", "", ...
+    "Details", "");
+end
+
+function row = localModeGateRow(name, runClass, required, pass, rowsChecked, rowsFailed, evidencePath, failureCode, details)
+row = localEmptyModeGateRow(runClass);
+row.GateName = string(name);
+row.Required = logical(required);
+row.Status = localModeStatus(required, pass);
+row.RowsChecked = double(rowsChecked);
+row.RowsFailed = double(rowsFailed);
+row.EvidencePath = string(evidencePath);
+row.FailureCode = string(failureCode);
+row.Details = string(details);
+end
+
+function row = localModeGateFromAudit(name, runClass, required, T, evidencePath, failureCode, details)
+[rowsChecked, rowsFailed] = localAuditStatusCounts(T, false);
+pass = istable(T) && height(T) > 0 && rowsFailed == 0;
+row = localModeGateRow(name, runClass, required, pass, rowsChecked, rowsFailed, evidencePath, ...
+    localFailureToken(pass, failureCode), details);
+end
+
+function row = localModeGateFromArtifactAudit(name, runClass, required, T, evidencePath, failureCode, details)
+[rowsChecked, rowsFailed] = localAuditStatusCounts(T, true);
+pass = istable(T) && rowsChecked > 0 && rowsFailed == 0;
+row = localModeGateRow(name, runClass, required, pass, rowsChecked, rowsFailed, evidencePath, ...
+    localFailureToken(pass, failureCode), details);
+end
+
+function row = localModeGateFromCurve(name, runClass, required, T, evidencePath, minTrials, failureCode, details)
+rowsChecked = 0;
+rowsFailed = 0;
+pass = istable(T) && height(T) > 0;
+if pass
+    rowsChecked = height(T);
+    trialCount = localNumericColumn(T, "TrialCount");
+    incomplete = false(height(T), 1);
+    if localHasColumn(T, "Incomplete")
+        incomplete = localColumnAsLogical(T.Incomplete);
+    end
+    badCount = ~isfinite(trialCount) | trialCount <= 0;
+    if isfinite(minTrials)
+        badCount = badCount | (trialCount < minTrials & ~incomplete);
+    end
+    rowsFailed = sum(badCount);
+    pass = rowsFailed == 0;
+end
+row = localModeGateRow(name, runClass, required, pass, rowsChecked, rowsFailed, evidencePath, ...
+    localFailureToken(pass, failureCode), details);
+end
+
+function row = localModeGateFromHighSNR(pass, name, runClass, evidencePath, failureCode, details)
+row = localModeGateRow(name, runClass, true, logical(pass), 1, double(~logical(pass)), evidencePath, ...
+    localFailureToken(logical(pass), failureCode), details);
+end
+
+function tf = localCurveMetricsValid(T)
+tf = true;
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+for col = ["BLER","BER"]
+    vals = localNumericColumn(T, col);
+    vals = vals(isfinite(vals));
+    if ~isempty(vals) && any(vals < 0 | vals > 1)
+        tf = false;
+        return;
+    end
+end
+for cols = {["BLER_CI_Low","BLER","BLER_CI_High"], ["BER_CI_Low","BER","BER_CI_High"]}
+    lo = localNumericColumn(T, cols{1}(1));
+    mid = localNumericColumn(T, cols{1}(2));
+    hi = localNumericColumn(T, cols{1}(3));
+    n = min([numel(lo), numel(mid), numel(hi)]);
+    if n == 0
+        continue;
+    end
+    lo = lo(1:n);
+    mid = mid(1:n);
+    hi = hi(1:n);
+    mask = isfinite(lo) & isfinite(mid) & isfinite(hi);
+    if any(mask & (lo > mid | mid > hi))
+        tf = false;
+        return;
+    end
+end
+end
+
+function tf = localCurveHighSNRImproves(T)
+tf = false;
+if ~(istable(T) && height(T) >= 2)
+    return;
+end
+snr = localNumericColumn(T, ["ConfiguredSNR_dB","SNR_dB"]);
+bler = localNumericColumn(T, "BLER");
+mask = isfinite(snr) & isfinite(bler);
+if nnz(mask) < 2
+    return;
+end
+snr = snr(mask);
+bler = bler(mask);
+[snr, order] = sort(snr, "ascend");
+bler = bler(order);
+tf = bler(end) < bler(1);
+end
+
+function tf = localDopplerAuditPass(T)
+tf = false;
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+for col = ["DopplerReconciliationOk","Status","status"]
+    if localHasColumn(T, col)
+        if col == "DopplerReconciliationOk"
+            tf = all(localColumnAsLogical(T.(char(col))));
+        else
+            status = upper(strtrim(string(T.(char(col)))));
+            tf = all(status == "PASS" | status == "OK");
+        end
+        return;
+    end
+end
+end
+
+function direction = localResolveFixedDirection(cfg, resolvedCfg)
+direction = upper(localResolveTextSetting(cfg, resolvedCfg, ...
+    ["sweeps_and_matrix.fixed_link_calibration.direction","validation.fixed_link_campaign.direction"], "both"));
+if strlength(direction) == 0
+    direction = "BOTH";
+end
+end
+
+function minTrials = localResolveMinTrials(cfg, resolvedCfg)
+minTrials = localResolveFiniteSetting(cfg, resolvedCfg, ...
+    ["sweeps_and_matrix.fixed_link_calibration.min_trials","validation.fixed_link_campaign.min_tb_per_point"], NaN);
+end
+
+function value = localResolveTextSetting(cfg, resolvedCfg, paths, defaultValue)
+value = "";
+for path = string(paths(:)).'
+    candidate = localConfigString(cfg, path, "");
+    if strlength(strtrim(candidate)) == 0
+        candidate = localConfigString(resolvedCfg, path, "");
+    end
+    if strlength(strtrim(candidate)) > 0
+        value = candidate;
+        return;
+    end
+end
+value = string(defaultValue);
+end
+
+function value = localResolveLogicalSetting(cfg, resolvedCfg, paths, defaultValue)
+for path = string(paths(:)).'
+    [candidate, ok] = localConfigLogical(cfg, path);
+    if ~ok
+        [candidate, ok] = localConfigLogical(resolvedCfg, path);
+    end
+    if ok
+        value = logical(candidate);
+        return;
+    end
+end
+value = logical(defaultValue);
+end
+
+function value = localResolveFiniteSetting(cfg, resolvedCfg, paths, defaultValue)
+for path = string(paths(:)).'
+    [candidate, ok] = localConfigNumber(cfg, path);
+    if ~ok
+        [candidate, ok] = localConfigNumber(resolvedCfg, path);
+    end
+    if ok && isfinite(candidate)
+        value = double(candidate);
+        return;
+    end
+end
+value = double(defaultValue);
+end
+
+function runClass = localResolveRunClass(cfg, resolvedCfg, runClassT)
+runClass = localResolveTextSetting(cfg, resolvedCfg, ...
+    ["validation.RunClass","validation.run_class","scenario.run_class","canonical_control.validation.run_class"], "");
+if strlength(strtrim(runClass)) == 0 && istable(runClassT) && height(runClassT) > 0 && localHasColumn(runClassT, "RunClass")
+    runClass = string(runClassT.RunClass(1));
+end
+if strlength(strtrim(runClass)) == 0
+    runClass = "unknown";
+end
+runClass = lower(strtrim(runClass));
+end
+
+function tf = localDirectionEnabledForMode(direction, token)
+direction = upper(strtrim(string(direction)));
+token = upper(strtrim(string(token)));
+tf = direction == "BOTH" | direction == token;
+end
+
+function tf = localStringMember(values, candidates)
+values = string(values(:));
+candidates = string(candidates(:)).';
+tf = false(size(values));
+for i = 1:numel(candidates)
+    tf = tf | values == candidates(i);
+end
+end
+
+function [rowsChecked, rowsFailed] = localAuditStatusCounts(T, requiredOnly)
+rowsChecked = 0;
+rowsFailed = 0;
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+mask = true(height(T), 1);
+if requiredOnly && localHasColumn(T, ["required"])
+    mask = localColumnAsLogical(T.required);
+elseif requiredOnly && localHasColumn(T, ["Required"])
+    mask = localColumnAsLogical(T.Required);
+end
+rowsChecked = sum(mask);
+if rowsChecked == 0
+    return;
+end
+if localHasColumn(T, ["status"])
+    status = upper(strtrim(string(T.status)));
+elseif localHasColumn(T, ["Status"])
+    status = upper(strtrim(string(T.Status)));
+else
+    status = strings(height(T), 1);
+end
+rowsFailed = sum(mask & status == "FAIL");
+end
+
+function status = localModeStatus(required, pass)
+if ~logical(required)
+    status = "SKIP";
+elseif logical(pass)
+    status = "PASS";
+else
+    status = "FAIL";
+end
+end
+
+function code = localFailureToken(pass, failureCode)
+if logical(pass)
+    code = "";
+else
+    code = string(failureCode);
+end
+end
+
+function value = localConfigString(S, dottedPath, defaultValue)
+raw = localConfigValue(S, dottedPath, defaultValue);
+value = string(raw);
+if numel(value) ~= 1
+    value = value(1);
+end
+end
+
+function [value, ok] = localConfigLogical(S, dottedPath)
+raw = localConfigValue(S, dottedPath, []);
+ok = ~isempty(raw);
+if ~ok
+    value = false;
+    return;
+end
+if islogical(raw)
+    value = logical(raw(1));
+elseif isnumeric(raw)
+    value = isfinite(double(raw(1))) && double(raw(1)) ~= 0;
+else
+    token = lower(strtrim(string(raw)));
+    value = any(token == ["1","true","yes","on","enabled","pass"]);
+end
+end
+
+function [value, ok] = localConfigNumber(S, dottedPath)
+raw = localConfigValue(S, dottedPath, []);
+ok = ~isempty(raw);
+if ~ok
+    value = NaN;
+    return;
+end
+if isnumeric(raw) || islogical(raw)
+    value = double(raw(1));
+else
+    value = str2double(string(raw));
+    ok = isfinite(value);
+end
+end
+
+function value = localConfigValue(S, dottedPath, defaultValue)
+value = defaultValue;
+if ~isstruct(S)
+    return;
+end
+parts = split(string(dottedPath), ".");
+cursor = S;
+for i = 1:numel(parts)
+    name = char(parts(i));
+    if isstruct(cursor) && isfield(cursor, name)
+        cursor = cursor.(name);
+    else
+        value = defaultValue;
+        return;
+    end
+end
+value = cursor;
 end
 
 function path = localWrite(dirPath, fileName, T)

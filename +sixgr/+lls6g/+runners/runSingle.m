@@ -1956,6 +1956,9 @@ scenarioStatus = struct();
 truthArtifactScan = struct();
 optionalArtifactIssues = strings(0, 1);
 profilerArtifacts = struct();
+fixedSNRSweepAudit = struct();
+geometryScenarioAudit = struct();
+geometryScenarioPlots = struct();
 profilerArtifactsExported = false;
 truthGatedCompletionPublished = false;
 
@@ -2064,6 +2067,16 @@ try
     localDBLog("INFO", "Runtime truth contract evaluated: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
         double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
         double(scenarioStatus.RequiredRuntimeEvidenceMissingCount), double(scenarioStatus.StrictTruthFailureCount));
+    fixedSNRSweepAudit = localRunFixedSNRSweepAuditIfNeeded(runFolder, scfg, cfg);
+    preTruthScenarioStatus = localApplyFixedSNRSweepAuditStatus(preTruthScenarioStatus, fixedSNRSweepAudit);
+    scenarioStatus = localApplyFixedSNRSweepAuditStatus(scenarioStatus, fixedSNRSweepAudit);
+    result = localApplyScenarioStatus(result, scenarioStatus);
+    if logical(sixgr.util.structGet(fixedSNRSweepAudit, "Required", false))
+        localDBLog("INFO", "Fixed SNR sweep audit evaluated: required=1 ok=%d failures=%d warnings=%d", ...
+            double(logical(sixgr.util.structGet(fixedSNRSweepAudit, "Ok", true))), ...
+            double(sixgr.util.structGet(fixedSNRSweepAudit, "FailureCount", 0)), ...
+            double(sixgr.util.structGet(fixedSNRSweepAudit, "WarningCount", 0)));
+    end
     summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
     if logical(scfg.get("output.save_csv"))
         localDBLog("INFO", "Rewriting scenario summary CSV with final truth-gated status.");
@@ -2092,6 +2105,7 @@ try
     localDBLog("INFO", "Exporting LLS reporting bundle.");
     reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
     reportBundle.ConfigOwnershipArtifacts = configOwnership;
+    reportBundle.FixedSNRSweepAudit = fixedSNRSweepAudit;
     localDBLog("INFO", "Scanning truth primary artifacts for active proxy/fallback markers.");
     truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
     reportBundle.TruthArtifactScan = truthArtifactScan;
@@ -2102,9 +2116,21 @@ try
     localDBLog("INFO", "Refreshing config-ownership artifacts after final runtime/report exports.");
     configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
     reportBundle.ConfigOwnershipArtifacts = configOwnership;
+    geometryScenarioAudit = localRunGeometryScenarioAuditIfNeeded(runFolder, scfg, cfg);
+    geometryScenarioPlots = localRunGeometryScenarioPlotsIfNeeded(runFolder, geometryScenarioAudit, scfg, cfg);
+    reportBundle.GeometryScenarioAudit = geometryScenarioAudit;
+    reportBundle.GeometryScenarioPlots = geometryScenarioPlots;
+    if logical(sixgr.util.structGet(geometryScenarioAudit, "Required", false))
+        localDBLog("INFO", "Geometry scenario audit evaluated: required=1 ok=%d failures=%d warnings=%d", ...
+            double(logical(sixgr.util.structGet(geometryScenarioAudit, "Ok", true))), ...
+            double(sixgr.util.structGet(geometryScenarioAudit, "FailureCount", 0)), ...
+            double(sixgr.util.structGet(geometryScenarioAudit, "WarningCount", 0)));
+    end
     scenarioStatus = localApplyRuntimeTruthContract(preTruthScenarioStatus, result, scfg, cfg, runFolder);
     scenarioStatus = localApplyVisualArtifactIntegrityStatus(scenarioStatus, ...
         sixgr.util.structGet(outputCoverage, "VisualArtifactIntegrity", table()));
+    scenarioStatus = localApplyFixedSNRSweepAuditStatus(scenarioStatus, fixedSNRSweepAudit);
+    scenarioStatus = localApplyGeometryScenarioAuditStatus(scenarioStatus, geometryScenarioAudit);
     result = localApplyScenarioStatus(result, scenarioStatus);
     localDBLog("INFO", "Runtime truth contract re-evaluated after final artifact exports: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
         double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
@@ -2136,6 +2162,30 @@ try
         localDBLog("WARN", "Browser contract artifact materialization did not complete: %s | %s", ...
             char(string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"))), ...
             char(string(sixgr.util.structGet(contractMaterialization, "Message", ""))));
+    end
+    artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
+    reportBundle.ArtifactAudit = artifactAudit;
+    scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
+    result = localApplyScenarioStatus(result, scenarioStatus);
+    if logical(sixgr.util.structGet(artifactAudit, "Required", false))
+        localDBLog("INFO", "Recursive artifact audit evaluated: required=1 ok=%d failures=%d warnings=%d", ...
+            double(logical(sixgr.util.structGet(artifactAudit, "Ok", true))), ...
+            double(sixgr.util.structGet(artifactAudit, "FailureCount", 0)), ...
+            double(sixgr.util.structGet(artifactAudit, "WarningCount", 0)));
+        localAppendLinkRunStatusLog(layout, scenarioStatus);
+        summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
+        if logical(scfg.get("output.save_csv"))
+            localDBLog("INFO", "Rewriting scenario summary CSV with final artifact-audit status.");
+            sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
+        end
+        manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+        localDBLog("INFO", "Rewriting scenario manifest with final artifact-audit status.");
+        localWriteScenarioManifest(layout, manifest);
+        localDBLog("INFO", "Refreshing artifact manifest after recursive artifact audit.");
+        manifest.ArtifactManifestPath = char(localWriteArtifactManifest(runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
+        localWriteScenarioManifest(layout, manifest);
+        localDBLog("INFO", "Rewriting scenario markdown report after recursive artifact audit.");
+        localWriteMarkdownReport(fullfile(layout.ReportDir, "scenario_report.md"), scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus);
     end
     localDBLog("INFO", "Required final artifacts published; marking terminal run status before optional artifacts.");
     localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
@@ -2865,7 +2915,8 @@ paths = [string(scfg.ConfigPath); string(scfg.SourceFiles(:))];
 for i = 1:numel(paths)
     p = paths(i);
     token = lower(p);
-    if strlength(strtrim(p)) > 0 && (contains(token, "overlay") || contains(token, "browser_runtime"))
+    if localIsBrowserOverlayPath(p) || ...
+            (strlength(strtrim(p)) > 0 && (contains(token, "overlay") || contains(token, "browser_runtime")))
         overlay = p;
         overlayPath = p;
         return;
@@ -4597,7 +4648,397 @@ status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
 if strlength(string(status.ErrorIdentifier)) == 0
     status.ErrorSource = "visual_artifact_integrity";
     status.ErrorIdentifier = "visual_artifact_integrity_failed";
-    status.ErrorMessage = char(strjoin(status.VisualArtifactIntegrityFailures, "; "));
+        status.ErrorMessage = char(strjoin(status.VisualArtifactIntegrityFailures, "; "));
+    end
+end
+
+function audit = localRunFixedSNRSweepAuditIfNeeded(runFolder, scfg, cfg)
+audit = struct( ...
+    "Required", false, ...
+    "Executed", false, ...
+    "Ok", true, ...
+    "Status", "not_required", ...
+    "FailureCount", 0, ...
+    "WarningCount", 0, ...
+    "FailureCodes", strings(0, 1), ...
+    "WarningCodes", strings(0, 1), ...
+    "Identifier", "", ...
+    "Message", "");
+
+runClass = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "validation.RunClass", ...
+    localRunnerScenarioGet(scfg, cfg, "validation.run_class", "")))));
+fixedOnly = logical(localRunnerScenarioGetBool(scfg, cfg, "sweeps_and_matrix.fixed_link_calibration.only", ...
+    localRunnerScenarioGetBool(scfg, cfg, "canonical_control.run.fixed_link_campaign_only", false)));
+required = runClass == "fixed_snr_sweep_lls" || ...
+    logical(localRunnerScenarioGetBool(scfg, cfg, "validation.fixed_snr_sweep_required", false)) || ...
+    fixedOnly;
+audit.Required = logical(required);
+if ~audit.Required
+    return;
+end
+
+try
+    audit = sixgr.validation.auditFixedSNRSweepRun(runFolder, "Strict", false, "WriteOutputs", true);
+    audit.Required = true;
+    audit.Executed = true;
+catch ME
+    audit.Required = true;
+    audit.Executed = false;
+    audit.Ok = false;
+    audit.Status = "error";
+    audit.FailureCount = 1;
+    audit.WarningCount = 0;
+    audit.FailureCodes = "fixed_snr_sweep_audit_error";
+    audit.WarningCodes = strings(0, 1);
+    audit.Identifier = string(ME.identifier);
+    audit.Message = string(ME.message);
+end
+end
+
+function audit = localRunGeometryScenarioAuditIfNeeded(runFolder, scfg, cfg)
+audit = struct( ...
+    "Required", false, ...
+    "Executed", false, ...
+    "Ok", true, ...
+    "Status", "not_required", ...
+    "FailureCount", 0, ...
+    "WarningCount", 0, ...
+    "FailureCodes", strings(0, 1), ...
+    "WarningCodes", strings(0, 1), ...
+    "Identifier", "", ...
+    "Message", "");
+
+runClass = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "validation.RunClass", ...
+    localRunnerScenarioGet(scfg, cfg, "validation.run_class", "")))));
+required = runClass == "ue_placement_geometry_lls" || ...
+    logical(localRunnerScenarioGetBool(scfg, cfg, "validation.geometry_evidence_required", false));
+audit.Required = logical(required);
+if ~audit.Required
+    return;
+end
+
+try
+    audit = sixgr.validation.auditGeometryScenarioRun(runFolder, "Strict", false, "WriteOutputs", true);
+    audit.Required = true;
+    audit.Executed = true;
+catch ME
+    audit.Required = true;
+    audit.Executed = false;
+    audit.Ok = false;
+    audit.Status = "error";
+    audit.FailureCount = 1;
+    audit.WarningCount = 0;
+    audit.FailureCodes = "geometry_scenario_audit_error";
+    audit.WarningCodes = strings(0, 1);
+    audit.Identifier = string(ME.identifier);
+    audit.Message = string(ME.message);
+end
+end
+
+function plotInfo = localRunGeometryScenarioPlotsIfNeeded(runFolder, geometryAudit, scfg, cfg)
+plotInfo = struct( ...
+    "Required", false, ...
+    "Executed", false, ...
+    "Ok", true, ...
+    "Status", "not_required", ...
+    "GeneratedPlots", strings(0, 1), ...
+    "Identifier", "", ...
+    "Message", "");
+
+runClass = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "validation.RunClass", ...
+    localRunnerScenarioGet(scfg, cfg, "validation.run_class", "")))));
+required = runClass == "ue_placement_geometry_lls" || ...
+    logical(localRunnerScenarioGetBool(scfg, cfg, "validation.geometry_evidence_required", false));
+plotInfo.Required = logical(required);
+if ~plotInfo.Required || ~logical(sixgr.util.structGet(geometryAudit, "Ok", true)) || ~usejava("jvm")
+    if plotInfo.Required && ~usejava("jvm")
+        plotInfo.Status = "skipped_no_jvm";
+        plotInfo.Ok = false;
+        plotInfo.Identifier = "geometry_plot_jvm_unavailable";
+        plotInfo.Message = "Geometry evidence plots were skipped because the MATLAB JVM is unavailable.";
+    end
+    return;
+end
+
+try
+    plotInfo = sixgr.visual.plotGeometryScenarioEvidence(runFolder);
+    plotInfo.Required = true;
+    plotInfo.Executed = true;
+    plotInfo.Ok = true;
+    plotInfo.Status = "plotted";
+catch ME
+    plotInfo.Required = true;
+    plotInfo.Executed = false;
+    plotInfo.Ok = false;
+    plotInfo.Status = "error";
+    plotInfo.GeneratedPlots = strings(0, 1);
+    plotInfo.Identifier = string(ME.identifier);
+    plotInfo.Message = string(ME.message);
+end
+end
+
+function audit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg)
+audit = struct( ...
+    "Required", false, ...
+    "Executed", false, ...
+    "Ok", true, ...
+    "Status", "not_required", ...
+    "FailureCount", 0, ...
+    "WarningCount", 0, ...
+    "FailureCodes", strings(0, 1), ...
+    "WarningCodes", strings(0, 1), ...
+    "Identifier", "", ...
+    "Message", "");
+
+strictAudit = logical(localRunnerScenarioGetBool(scfg, cfg, "validation.strict_after_run_artifact_audit", false));
+emitPlaceholders = logical(localRunnerScenarioGetBool(scfg, cfg, "output.emit_placeholder_artifacts", true));
+required = localIsBrowserLaunchedScenario(scfg, cfg) && (strictAudit || ~emitPlaceholders);
+audit.Required = logical(required);
+if ~audit.Required
+    return;
+end
+
+try
+    audit = sixgr.validation.auditRunArtifacts(runFolder, ...
+        "Strict", false, ...
+        "FailOnEmptyRequiredCSV", true, ...
+        "FailOnBlankRequiredImage", true, ...
+        "WriteOutputs", true);
+    audit.Required = true;
+    audit.Executed = true;
+catch ME
+    audit.Required = true;
+    audit.Executed = false;
+    audit.Ok = false;
+    audit.Status = "error";
+    audit.FailureCount = 1;
+    audit.WarningCount = 0;
+    audit.FailureCodes = "recursive_artifact_audit_error";
+    audit.WarningCodes = strings(0, 1);
+    audit.Identifier = string(ME.identifier);
+    audit.Message = string(ME.message);
+end
+end
+
+function value = localRunnerScenarioGet(scfg, cfg, pathValue, defaultValue)
+value = defaultValue;
+try
+    if isobject(scfg) && ismethod(scfg, "get")
+        value = scfg.get(pathValue, defaultValue);
+        return;
+    end
+catch
+end
+try
+    value = sixgr.util.structGet(scfg, pathValue, defaultValue);
+    if ~isequaln(value, defaultValue)
+        return;
+    end
+catch
+end
+try
+    value = sixgr.util.structGet(cfg, pathValue, defaultValue);
+catch
+    value = defaultValue;
+end
+end
+
+function value = localRunnerScenarioGetBool(scfg, cfg, pathValue, defaultValue)
+raw = localRunnerScenarioGet(scfg, cfg, pathValue, defaultValue);
+if islogical(raw)
+    value = logical(raw);
+elseif isnumeric(raw)
+    value = raw ~= 0;
+else
+    token = lower(strtrim(string(raw)));
+    value = any(token == ["true", "1", "yes", "on"]);
+end
+if isempty(value)
+    value = defaultValue;
+end
+end
+
+function tf = localIsBrowserLaunchedScenario(scfg, cfg)
+tf = false;
+sourceKind = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "SourceKind", ...
+    localRunnerScenarioGet(scfg, cfg, "meta.SourceKind", ...
+    localRunnerScenarioGet(scfg, cfg, "config_inheritance.provenance.source_kind", ...
+    localRunnerScenarioGet(scfg, cfg, "lls6g.resolvedConfig.config_inheritance.provenance.source_kind", "")))))));
+if sourceKind == "browser_runtime_overlay"
+    tf = true;
+    return;
+end
+
+paths = strings(0, 1);
+configPath = "";
+sourceFiles = strings(0, 1);
+if isobject(scfg)
+    try
+        configPath = string(scfg.ConfigPath);
+    catch
+        configPath = "";
+    end
+    try
+        sourceFiles = string(scfg.SourceFiles(:));
+    catch
+        sourceFiles = strings(0, 1);
+    end
+end
+if strlength(strtrim(configPath)) == 0
+    configPath = string(localRunnerScenarioGet(scfg, cfg, "ConfigPath", ""));
+end
+if strlength(strtrim(configPath)) > 0
+    paths(end + 1, 1) = configPath; %#ok<AGROW>
+end
+if isempty(sourceFiles)
+    sourceFiles = localRunnerScenarioGet(scfg, cfg, "SourceFiles", strings(0, 1));
+    sourceFiles = string(sourceFiles(:));
+end
+sourceFiles = sourceFiles(strlength(strtrim(sourceFiles)) > 0);
+paths = [paths; sourceFiles]; %#ok<AGROW>
+for i = 1:numel(paths)
+    if localIsBrowserOverlayPath(paths(i))
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = localIsBrowserOverlayPath(candidate)
+candidate = string(candidate);
+tf = false;
+if strlength(candidate) == 0
+    return;
+end
+[~, name, ext] = fileparts(char(candidate));
+name = string(name);
+ext = string(ext);
+tf = startsWith(name, "__web_runtime_", "IgnoreCase", true) && any(strcmpi(ext, [".yaml", ".yml", ".json"]));
+end
+
+function status = localApplyFixedSNRSweepAuditStatus(status, audit)
+status.FixedSNRSweepAuditRequired = logical(sixgr.util.structGet(audit, "Required", false));
+status.FixedSNRSweepAuditExecuted = logical(sixgr.util.structGet(audit, "Executed", false));
+status.FixedSNRSweepAuditOk = logical(sixgr.util.structGet(audit, "Ok", true));
+status.FixedSNRSweepAuditFailureCount = double(sixgr.util.structGet(audit, "FailureCount", 0));
+status.FixedSNRSweepAuditWarningCount = double(sixgr.util.structGet(audit, "WarningCount", 0));
+status.FixedSNRSweepAuditFailures = string(sixgr.util.structGet(audit, "FailureCodes", strings(0, 1)));
+status.FixedSNRSweepAuditFailures = status.FixedSNRSweepAuditFailures(:);
+if ~logical(status.FixedSNRSweepAuditRequired) || logical(status.FixedSNRSweepAuditOk)
+    return;
+end
+
+failureTokens = status.FixedSNRSweepAuditFailures;
+if isempty(failureTokens)
+    identifier = string(sixgr.util.structGet(audit, "Identifier", ""));
+    if strlength(identifier) > 0
+        failureTokens = "fixed_snr_sweep_audit:" + identifier;
+    else
+        failureTokens = "fixed_snr_sweep_audit_failed";
+    end
+else
+    failureTokens = "fixed_snr_sweep_audit:" + failureTokens;
+end
+
+status.ResultOk = false;
+status.CaseOk = false;
+status.PartialOk = logical(status.ArtifactsGenerated);
+status.RunCompletion = "completed_with_failures";
+status.ScenarioObjectiveOk = false;
+status.RequiredFailureCount = double(status.RequiredFailureCount) + max(1, double(status.FixedSNRSweepAuditFailureCount));
+status.RequiredFailedCases = unique([string(status.RequiredFailedCases(:)); failureTokens(:)], "stable");
+status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+status.AuthoritativeStatusSource = "fixed_snr_sweep_audit";
+status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+    "Run-level success is gated by the fixed SNR sweep audit; empty curves, invalid BLER/BER/CI values, strong non-monotonicity, impossible coding, or proxy-like evidence markers force ResultOk=false.");
+if strlength(string(status.ErrorIdentifier)) == 0
+    status.ErrorSource = "fixed_snr_sweep_audit";
+    status.ErrorIdentifier = "fixed_snr_sweep_audit_failed";
+    status.ErrorMessage = char(strjoin(failureTokens, "; "));
+end
+end
+
+function status = localApplyGeometryScenarioAuditStatus(status, audit)
+status.GeometryScenarioAuditRequired = logical(sixgr.util.structGet(audit, "Required", false));
+status.GeometryScenarioAuditExecuted = logical(sixgr.util.structGet(audit, "Executed", false));
+status.GeometryScenarioAuditOk = logical(sixgr.util.structGet(audit, "Ok", true));
+status.GeometryScenarioAuditFailureCount = double(sixgr.util.structGet(audit, "FailureCount", 0));
+status.GeometryScenarioAuditWarningCount = double(sixgr.util.structGet(audit, "WarningCount", 0));
+status.GeometryScenarioAuditFailures = string(sixgr.util.structGet(audit, "FailureCodes", strings(0, 1)));
+status.GeometryScenarioAuditFailures = status.GeometryScenarioAuditFailures(:);
+if ~logical(status.GeometryScenarioAuditRequired) || logical(status.GeometryScenarioAuditOk)
+    return;
+end
+
+failureTokens = status.GeometryScenarioAuditFailures;
+if isempty(failureTokens)
+    identifier = string(sixgr.util.structGet(audit, "Identifier", ""));
+    if strlength(identifier) > 0
+        failureTokens = "geometry_scenario_audit:" + identifier;
+    else
+        failureTokens = "geometry_scenario_audit_failed";
+    end
+else
+    failureTokens = "geometry_scenario_audit:" + failureTokens;
+end
+
+status.ResultOk = false;
+status.CaseOk = false;
+status.PartialOk = logical(status.ArtifactsGenerated);
+status.RunCompletion = "completed_with_failures";
+status.ScenarioObjectiveOk = false;
+status.RequiredFailureCount = double(status.RequiredFailureCount) + max(1, double(status.GeometryScenarioAuditFailureCount));
+status.RequiredFailedCases = unique([string(status.RequiredFailedCases(:)); failureTokens(:)], "stable");
+status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+status.AuthoritativeStatusSource = "geometry_scenario_audit";
+status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+    "Run-level success is gated by the geometry scenario audit; empty trajectory evidence, cell/UE topology mismatches, pathloss or propagation-delay gaps, Doppler mismatches, missing serving-cell lineage, or missing measured SINR rows force ResultOk=false.");
+if strlength(string(status.ErrorIdentifier)) == 0
+    status.ErrorSource = "geometry_scenario_audit";
+    status.ErrorIdentifier = "geometry_scenario_audit_failed";
+    status.ErrorMessage = char(strjoin(failureTokens, "; "));
+end
+end
+
+function status = localApplyArtifactAuditStatus(status, audit)
+status.ArtifactAuditRequired = logical(sixgr.util.structGet(audit, "Required", false));
+status.ArtifactAuditExecuted = logical(sixgr.util.structGet(audit, "Executed", false));
+status.ArtifactAuditOk = logical(sixgr.util.structGet(audit, "Ok", true));
+status.ArtifactAuditFailureCount = double(sixgr.util.structGet(audit, "FailureCount", 0));
+status.ArtifactAuditWarningCount = double(sixgr.util.structGet(audit, "WarningCount", 0));
+status.ArtifactAuditFailures = string(sixgr.util.structGet(audit, "FailureCodes", strings(0, 1)));
+status.ArtifactAuditFailures = status.ArtifactAuditFailures(:);
+if ~logical(status.ArtifactAuditRequired) || logical(status.ArtifactAuditOk)
+    return;
+end
+
+failureTokens = status.ArtifactAuditFailures;
+if isempty(failureTokens)
+    identifier = string(sixgr.util.structGet(audit, "Identifier", ""));
+    if strlength(identifier) > 0
+        failureTokens = "artifact_audit:" + identifier;
+    else
+        failureTokens = "artifact_audit_failed";
+    end
+else
+    failureTokens = "artifact_audit:" + failureTokens;
+end
+
+status.ResultOk = false;
+status.CaseOk = false;
+status.PartialOk = logical(status.ArtifactsGenerated);
+status.RunCompletion = "completed_with_failures";
+status.ScenarioObjectiveOk = false;
+status.RequiredFailureCount = double(status.RequiredFailureCount) + max(1, double(status.ArtifactAuditFailureCount));
+status.RequiredFailedCases = unique([string(status.RequiredFailedCases(:)); failureTokens(:)], "stable");
+status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+status.AuthoritativeStatusSource = "recursive_artifact_audit";
+status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+    "Browser-launched LLS runs with strict artifact audit enabled fail closed when required CSVs are empty or missing, required plots are blank, or recursively audited artifacts report structural problems.");
+if strlength(string(status.ErrorIdentifier)) == 0
+    status.ErrorSource = "recursive_artifact_audit";
+    status.ErrorIdentifier = "recursive_artifact_audit_failed";
+    status.ErrorMessage = char(strjoin(failureTokens, "; "));
 end
 end
 
@@ -4660,6 +5101,18 @@ result.RuntimeTruthContractFailures = string(scenarioStatus.RuntimeTruthContract
 result.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true));
 result.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0));
 result.VisualArtifactIntegrityFailures = string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1)));
+result.FixedSNRSweepAuditRequired = logical(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditRequired", false));
+result.FixedSNRSweepAuditExecuted = logical(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditExecuted", false));
+result.FixedSNRSweepAuditOk = logical(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditOk", true));
+result.FixedSNRSweepAuditFailureCount = double(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditFailureCount", 0));
+result.FixedSNRSweepAuditWarningCount = double(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditWarningCount", 0));
+result.FixedSNRSweepAuditFailures = string(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditFailures", strings(0, 1)));
+result.GeometryScenarioAuditRequired = logical(sixgr.util.structGet(scenarioStatus, "GeometryScenarioAuditRequired", false));
+result.GeometryScenarioAuditExecuted = logical(sixgr.util.structGet(scenarioStatus, "GeometryScenarioAuditExecuted", false));
+result.GeometryScenarioAuditOk = logical(sixgr.util.structGet(scenarioStatus, "GeometryScenarioAuditOk", true));
+result.GeometryScenarioAuditFailureCount = double(sixgr.util.structGet(scenarioStatus, "GeometryScenarioAuditFailureCount", 0));
+result.GeometryScenarioAuditWarningCount = double(sixgr.util.structGet(scenarioStatus, "GeometryScenarioAuditWarningCount", 0));
+result.GeometryScenarioAuditFailures = string(sixgr.util.structGet(scenarioStatus, "GeometryScenarioAuditFailures", strings(0, 1)));
 result.WarningCount = double(scenarioStatus.WarningCount);
 result.FailingCaseCount = double(scenarioStatus.FailingCaseCount);
 result.CaseOk = logical(scenarioStatus.CaseOk);

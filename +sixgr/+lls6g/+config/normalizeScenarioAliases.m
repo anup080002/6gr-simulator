@@ -1056,6 +1056,8 @@ if isfinite(carrierGrid) && carrierGrid > 0 && (~supportsPartial || activeMode =
     cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "resource_grid.num_rbs", round(carrierGrid));
 end
 
+cfg = localApplyCanonicalMobilityAuthority(cfg);
+
 dopplerMode = lower(strtrim(string(sixgr.util.structGet(cfg, "channels.doppler_source_mode", ...
     sixgr.util.structGet(cfg, "channel_model.doppler_source_mode", "")))));
 if dopplerMode == "derive_from_ue_speed"
@@ -1069,6 +1071,32 @@ if dopplerMode == "derive_from_ue_speed"
         cfg = sixgr.util.structSet(cfg, "channel_model.doppler_hz", dopplerHz);
         cfg = sixgr.util.structSet(cfg, "channels.max_doppler_hz", dopplerHz);
     end
+end
+end
+
+function cfg = localApplyCanonicalMobilityAuthority(cfg)
+control = sixgr.util.structGet(cfg, "canonical_control", struct());
+speedKmh = localCanonicalFiniteScalar(sixgr.util.structGet(control, "mobility.ue_speed_kmh", NaN));
+if ~(isfinite(speedKmh) && speedKmh >= 0)
+    speedKmh = localCanonicalFiniteScalar(sixgr.util.structGet(control, "channel.mobility_kmph", NaN));
+end
+if ~(isfinite(speedKmh) && speedKmh >= 0)
+    return;
+end
+cfg = sixgr.util.structSet(cfg, "mobility.ue_speed_kmh", double(speedKmh));
+cfg = sixgr.util.structSet(cfg, "scenario.mobility.speed_kmh", double(speedKmh));
+cfg = sixgr.util.structSet(cfg, "channels.mobility_kmph", double(speedKmh));
+end
+
+function value = localCanonicalFiniteScalar(raw)
+value = NaN;
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if ~isempty(raw)
+    value = double(raw(1));
 end
 end
 

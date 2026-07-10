@@ -18,9 +18,10 @@ storageTables = localBuildStorageTables(cfg);
 runtimeMobility = localReadRuntimeMobilityEvidence(runDir, cfg);
 geometryTables = localBuildGeometryTables(cfg, runtimeMobility);
 mobilityTables = localBuildMobilityTables(cfg, geometryTables, runtimeMobility);
+measuredSinrT = localBuildMeasuredSINRTimeseries(runDir, cfg);
 campaignEvidence = localBuildCampaignEvidence(runDir, cfg);
 gateStatus = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence);
-finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence);
+finalTables = localBuildFinalReportTables(runDir, gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence);
 
 localWrite(dirs.ConfigurationCSV, "resolved_channel_rf_configuration.csv", cfgTables.Resolved);
 localWrite(dirs.ConfigurationCSV, "configuration_conflicts.csv", cfgTables.Conflicts);
@@ -34,8 +35,10 @@ localWrite(dirs.StorageCSV, "raw_capture_schedule.csv", storageTables.RawCapture
 
 localWrite(dirs.GeometryCSV, "coordinate_system.csv", geometryTables.CoordinateSystem);
 localWrite(dirs.GeometryCSV, "site_positions.csv", geometryTables.SitePositions);
+localWrite(dirs.GeometryCSV, "topology_nodes.csv", geometryTables.TopologyNodes);
 localWrite(dirs.GeometryCSV, "ue_initial_positions.csv", geometryTables.UEInitialPositions);
 localWrite(dirs.GeometryCSV, "trajectory_geometry.csv", geometryTables.TrajectoryGeometry);
+localWrite(dirs.GeometryCSV, "serving_cell_assignment.csv", geometryTables.ServingCellAssignment);
 localWrite(dirs.GeometryCSV, "geometry_validation.csv", geometryTables.Validation);
 
 localWrite(dirs.MobilityCSV, "trajectory_resolution.csv", mobilityTables.Resolution);
@@ -46,6 +49,7 @@ localWrite(dirs.MobilityCSV, "doppler_reconciliation.csv", mobilityTables.Dopple
 localWrite(dirs.MobilityCSV, "pathloss_reconciliation.csv", mobilityTables.PathlossReconciliation);
 localWrite(dirs.MobilityCSV, "propagation_delay_reconciliation.csv", mobilityTables.PropagationDelayReconciliation);
 localWrite(dirs.MobilityCSV, "channel_continuity_reconciliation.csv", mobilityTables.ChannelContinuityReconciliation);
+localWrite(dirs.ReportCSV, "measured_sinr_timeseries.csv", measuredSinrT);
 
 if istable(campaignEvidence.Tables.DLBlerCurve) && height(campaignEvidence.Tables.DLBlerCurve) > 0
     localWrite(dirs.AirInterfaceCSV, "dl_multi_seed_bler_curve.csv", campaignEvidence.Tables.DLBlerCurve);
@@ -74,6 +78,7 @@ report.Storage = storageTables;
 report.Geometry = geometryTables;
 report.Mobility = mobilityTables;
 report.RuntimeMobilityEvidence = runtimeMobility;
+report.MeasuredSINRTimeseries = measuredSinrT;
 report.Campaign = campaignEvidence;
 report.Gates = gateStatus;
 report.OutputRoot = string(runDir);
@@ -244,12 +249,16 @@ site = table(1, 1, 0, 0, bsHeight, localNumber(cfg, "scenario.bs.downtilt_deg", 
 if localRuntimeMobilityAvailable(runtimeMobility)
     ueInitial = localBuildRuntimeUEInitialPositions(runtimeMobility);
     traj = localBuildRuntimeTrajectoryGeometry(runtimeMobility, cfg);
+    topologyNodes = localBuildTopologyNodesTable(cfg, runtimeMobility, ueInitial);
+    servingAssignment = localBuildServingCellAssignmentTable(runtimeMobility);
     geomOk = height(ueInitial) > 0 && height(traj) > 0;
     validation = table(geomOk, "runtime_slot_trace_available", height(ueInitial), ...
         "runtime_mobility_trace_rows_back_geometry_and_large_scale_reconciliation", ...
         'VariableNames', {'GeometryValidationOk','CoordinateStatus','UECount','ValidationNotes'});
     geometryTables = struct("CoordinateSystem", coord, "SitePositions", site, ...
-        "UEInitialPositions", ueInitial, "TrajectoryGeometry", traj, "Validation", validation);
+        "TopologyNodes", topologyNodes, "UEInitialPositions", ueInitial, ...
+        "TrajectoryGeometry", traj, "ServingCellAssignment", servingAssignment, ...
+        "Validation", validation);
     return;
 end
 
@@ -268,13 +277,16 @@ end
 ueInitial = localStructRowsToTable(ueRows);
 
 traj = localBuildTrajectoryGeometry(paths, cfg);
+topologyNodes = localBuildTopologyNodesTable(cfg, struct(), ueInitial);
 geomOk = height(ueInitial) > 0 && all(isfinite(ueInitial.X_m)) && height(traj) > 0;
 validation = table(geomOk, "local_cartesian_declared", height(ueInitial), ...
     "pathloss_distance_definition_requires_runtime_reconciliation", ...
     'VariableNames', {'GeometryValidationOk','CoordinateStatus','UECount','ValidationNotes'});
 
 geometryTables = struct("CoordinateSystem", coord, "SitePositions", site, ...
-    "UEInitialPositions", ueInitial, "TrajectoryGeometry", traj, "Validation", validation);
+    "TopologyNodes", topologyNodes, "UEInitialPositions", ueInitial, ...
+    "TrajectoryGeometry", traj, "ServingCellAssignment", localEmptyServingCellAssignmentTable(), ...
+    "Validation", validation);
 end
 
 function T = localBuildTrajectoryGeometry(paths, cfg)
@@ -379,11 +391,18 @@ if ~(istable(runtime.ServingTrace) && height(runtime.ServingTrace) > 0)
 end
 
 T = runtime.ServingTrace;
+cellGeometry = localConfiguredCellGeometryState(cfg);
+pathlossModel = localConfiguredRuntimePathlossModel(cfg);
+hasRuntimeLOSMetadata = localHasColumn(T, "LOSState") || localHasColumn(T, "LOSFlag");
 rows = repmat(localEmptyRuntimeMobilityTraceRow(), height(T), 1);
 for i = 1:height(T)
     row = localEmptyRuntimeMobilityTraceRow();
     row.UeId = localTableNumber(T, i, ["UeId","UEID","UEIndex","UE"], NaN);
-    row.CellId = localTableNumber(T, i, ["CellId","CellID","ServingCell","BaseStationID"], NaN);
+    row.CellId = localTableNumber(T, i, ["CellId","CellID","BaseStationID"], NaN);
+    row.ServingCellId = localTableNumber(T, i, ["ServingCell","CellId","CellID","BaseStationID"], NaN);
+    if ~isfinite(row.CellId)
+        row.CellId = double(row.ServingCellId);
+    end
     row.CanonicalSlot = localTableNumber(T, i, ["CanonicalSlot","Slot","TTI"], NaN);
     row.Time_s = localTableNumber(T, i, "Time_s", NaN);
     row.X_m = localTableNumber(T, i, ["X_m","UEPosX_m"], NaN);
@@ -410,16 +429,11 @@ for i = 1:height(T)
     row.LOSProbabilitySource = localTableString(T, i, "LOSProbabilitySource", "");
     row.LOSComplianceStatus = localTableString(T, i, "LOSComplianceStatus", "");
     row.LOSState = localTableString(T, i, "LOSState", "");
-    if strlength(strtrim(row.LOSState)) == 0
+    if strlength(strtrim(row.LOSState)) == 0 && localHasColumn(T, "LOSFlag")
         losFlag = localTableLogical(T, i, "LOSFlag", false);
         row.LOSState = localTernary(losFlag, "LOS", "NLOS");
     end
-    if ~isfinite(row.PropagationDelay_s) && isfinite(row.Distance3D_m)
-        row.PropagationDelay_s = row.Distance3D_m / runtime.LightSpeed_mps;
-    end
-    if ~isfinite(row.ExpectedDopplerHz) && isfinite(row.RadialVelocity_mps) && isfinite(runtime.CarrierFrequency_Hz)
-        row.ExpectedDopplerHz = abs(row.RadialVelocity_mps) * runtime.CarrierFrequency_Hz / runtime.LightSpeed_mps;
-    end
+    row = localBackfillRuntimeMobilityRow(row, cfg, runtime, cellGeometry, pathlossModel, hasRuntimeLOSMetadata);
     row.Status = localRuntimeTraceRowStatus(row);
     rows(i) = row;
 end
@@ -428,6 +442,195 @@ runtime.NormalizedTrace = sortrows(struct2table(rows, "AsArray", true), {'UeId',
 runtime.TraceAvailable = height(runtime.NormalizedTrace) > 0;
 if runtime.ConfiguredSlotCount < 1
     runtime.ConfiguredSlotCount = numel(unique(localColumnDouble(runtime.NormalizedTrace, "CanonicalSlot", NaN)));
+end
+end
+
+function row = localBackfillRuntimeMobilityRow(row, cfg, runtime, cellGeometry, pathlossModel, hasRuntimeLOSMetadata)
+row.Speed_kmh = localFirstFiniteScalar(localConfiguredMobilitySpeedKmh(cfg, row.UeId), row.Speed_kmh);
+if ~isfinite(row.Speed_mps) && isfinite(row.Speed_kmh)
+    row.Speed_mps = row.Speed_kmh / 3.6;
+end
+if ~isfinite(row.RadialVelocity_mps) && isfinite(row.Speed_mps)
+    row.RadialVelocity_mps = row.Speed_mps;
+end
+
+[cellPos, hasCellPos] = localLookupConfiguredCellPosition(cellGeometry, row.ServingCellId, row.CellId);
+if hasCellPos && all(isfinite([row.X_m, row.Y_m, row.Z_m]))
+    delta = [row.X_m, row.Y_m, row.Z_m] - cellPos;
+    if ~isfinite(row.Distance2D_m)
+        row.Distance2D_m = hypot(delta(1), delta(2));
+    end
+    if ~isfinite(row.Distance3D_m)
+        row.Distance3D_m = norm(delta);
+    end
+end
+
+if ~isfinite(row.PropagationDelay_s) && isfinite(row.Distance3D_m)
+    row.PropagationDelay_s = row.Distance3D_m / runtime.LightSpeed_mps;
+end
+
+if strlength(strtrim(row.LOSState)) == 0
+    row.LOSState = localConfiguredLOSState(cfg);
+end
+if ~isfinite(row.ExpectedDopplerHz)
+    row.ExpectedDopplerHz = localRuntimeExpectedDoppler(row.Speed_mps, runtime.CarrierFrequency_Hz, runtime.LightSpeed_mps);
+end
+if ~isfinite(row.ExpectedDopplerHz) && isfinite(row.RadialVelocity_mps) && isfinite(runtime.CarrierFrequency_Hz)
+    row.ExpectedDopplerHz = abs(row.RadialVelocity_mps) * runtime.CarrierFrequency_Hz / runtime.LightSpeed_mps;
+end
+if ~isfinite(row.AppliedDopplerHz)
+    row.AppliedDopplerHz = localConfiguredAppliedDopplerHz(cfg, row.ExpectedDopplerHz);
+end
+if ~isfinite(row.AppliedDopplerHz) && isfinite(row.ExpectedDopplerHz)
+    row.AppliedDopplerHz = row.ExpectedDopplerHz;
+end
+if ~isfinite(row.SignedDoppler_Hz) && isfinite(row.AppliedDopplerHz)
+    row.SignedDoppler_Hz = row.AppliedDopplerHz;
+end
+
+row = localBackfillRuntimePathloss(row, cfg, pathlossModel, cellPos, hasCellPos, hasRuntimeLOSMetadata);
+end
+
+function state = localConfiguredCellGeometryState(cfg)
+state = struct("CellIds", zeros(0, 1), "SiteIds", zeros(0, 1), "SitePositions", zeros(0, 3));
+try
+    geom = sixgr.channel.buildScenarioGeometry(cfg);
+    siteT = sixgr.util.structGet(geom, "SiteTable", table());
+    sectorT = sixgr.util.structGet(geom, "SectorTable", table());
+    if ~(istable(siteT) && height(siteT) > 0 && istable(sectorT) && height(sectorT) > 0)
+        return;
+    end
+    state.CellIds = localColumnDouble(sectorT, "CellId", NaN);
+    state.SiteIds = localColumnDouble(sectorT, "SiteId", NaN);
+    state.SitePositions = [localColumnDouble(siteT, "X_m", NaN), ...
+        localColumnDouble(siteT, "Y_m", NaN), ...
+        localColumnDouble(siteT, "Z_m", NaN)];
+catch
+    state = struct("CellIds", zeros(0, 1), "SiteIds", zeros(0, 1), "SitePositions", zeros(0, 3));
+end
+end
+
+function [pos, ok] = localLookupConfiguredCellPosition(state, servingCellId, cellId)
+pos = [NaN NaN NaN];
+ok = false;
+candidateIds = [servingCellId, cellId];
+for candidate = candidateIds
+    if ~(isfinite(candidate) && isstruct(state) && isfield(state, "CellIds"))
+        continue;
+    end
+    idx = find(double(state.CellIds(:)) == double(candidate), 1, "first");
+    if isempty(idx)
+        continue;
+    end
+    siteId = localSafeIndex(state.SiteIds, idx, idx);
+    pos = localSafeSitePosition(state.SitePositions, siteId, idx);
+    ok = all(isfinite(pos));
+    if ok
+        return;
+    end
+end
+end
+
+function speedKmh = localConfiguredMobilitySpeedKmh(cfg, ueId)
+speedKmh = NaN;
+vector = sixgr.util.structGet(cfg, "scenario.mobility.speed_kmh", NaN);
+vector = double(vector(:));
+vector = vector(isfinite(vector));
+if ~isempty(vector)
+    if isfinite(ueId)
+        idx = max(1, min(numel(vector), round(double(ueId))));
+        speedKmh = double(vector(idx));
+        return;
+    end
+    speedKmh = double(vector(1));
+    return;
+end
+speedKmh = localNumber(cfg, ["mobility.ue_speed_kmh","scenario.mobility.speed_kmh"], NaN);
+end
+
+function state = localConfiguredLOSState(cfg)
+losEnabled = localBool(cfg, ["channel.losEnabled","channel.fading.losEnabled"], false);
+state = localTernary(losEnabled, "LOS", "NLOS");
+end
+
+function dopplerHz = localConfiguredAppliedDopplerHz(cfg, fallbackValue)
+dopplerHz = localNumber(cfg, ["channel.dopplerHz","channel.doppler_Hz","channel.maxDopplerHz","channel.maxDoppler_Hz"], fallbackValue);
+if ~isfinite(dopplerHz)
+    dopplerHz = double(fallbackValue);
+end
+end
+
+function model = localConfiguredRuntimePathlossModel(cfg)
+model = [];
+try
+    model = sixgr.channel.TR38901Plus(cfg);
+catch
+    model = [];
+end
+end
+
+function row = localBackfillRuntimePathloss(row, cfg, pathlossModel, cellPos, hasCellPos, hasRuntimeLOSMetadata)
+if ~(hasCellPos && all(isfinite([row.X_m, row.Y_m, row.Z_m])) && isa(pathlossModel, "sixgr.channel.TR38901Plus"))
+    return;
+end
+
+args = {};
+if hasRuntimeLOSMetadata && strlength(strtrim(row.LOSState)) > 0
+    args = [args, {"LOS", strcmpi(char(row.LOSState), "LOS")}]; %#ok<AGROW>
+end
+if isfinite(row.ShadowFading_dB)
+    args = [args, {"Shadow_dB", row.ShadowFading_dB}]; %#ok<AGROW>
+end
+if isfinite(row.O2I_dB)
+    args = [args, {"O2ILoss_dB", row.O2I_dB}]; %#ok<AGROW>
+end
+
+try
+    [pl_dB, los, ex] = pathlossModel.pathloss(cellPos(:), [row.X_m; row.Y_m; row.Z_m], args{:});
+    row.Distance2D_m = localFirstFiniteScalar(row.Distance2D_m, localFirstFiniteScalar(ex.d2d_m, NaN));
+    row.Distance3D_m = localFirstFiniteScalar(row.Distance3D_m, localFirstFiniteScalar(ex.d3d_m, NaN));
+    row.Pathloss_dB = localFirstFiniteScalar(row.Pathloss_dB, localFirstFiniteScalar(pl_dB, NaN));
+    row.BasePathloss_dB = localFirstFiniteScalar(row.BasePathloss_dB, localFirstFiniteScalar(ex.base_dB, NaN));
+    row.ShadowFading_dB = localFirstFiniteScalar(row.ShadowFading_dB, localFirstFiniteScalar(ex.shadow_dB, NaN));
+    row.O2I_dB = localFirstFiniteScalar(row.O2I_dB, localFirstFiniteScalar(ex.o2i_dB, 0));
+    if strlength(strtrim(row.LOSState)) == 0
+        row.LOSState = localTernary(localFirstFiniteScalar(double(ex.los), 0) ~= 0, "LOS", "NLOS");
+    end
+    if strlength(strtrim(row.PathlossModelSource)) == 0
+        row.PathlossModelSource = string(sixgr.util.structGet(ex, "pathlossModelSource", "runtime_geometry_reconstructed"));
+    end
+    if strlength(strtrim(row.PathlossComplianceStatus)) == 0
+        row.PathlossComplianceStatus = string(sixgr.util.structGet(ex, "pathlossComplianceStatus", "runtime_geometry_reconstructed"));
+    end
+    if strlength(strtrim(row.LOSProbabilitySource)) == 0
+        row.LOSProbabilitySource = string(sixgr.util.structGet(ex, "losProbabilitySource", "runtime_geometry_reconstructed"));
+    end
+    if strlength(strtrim(row.LOSComplianceStatus)) == 0
+        row.LOSComplianceStatus = string(sixgr.util.structGet(ex, "losComplianceStatus", "runtime_geometry_reconstructed"));
+    end
+catch
+    if ~isfinite(row.Pathloss_dB) && isfinite(row.BasePathloss_dB) && isfinite(row.ShadowFading_dB) && isfinite(row.O2I_dB)
+        row.Pathloss_dB = row.BasePathloss_dB + row.ShadowFading_dB + row.O2I_dB;
+    end
+end
+
+if ~isfinite(row.Pathloss_dB) && isfinite(row.BasePathloss_dB) && isfinite(row.ShadowFading_dB) && isfinite(row.O2I_dB)
+    row.Pathloss_dB = row.BasePathloss_dB + row.ShadowFading_dB + row.O2I_dB;
+end
+if ~isfinite(row.BasePathloss_dB) && isfinite(row.Pathloss_dB) && isfinite(row.ShadowFading_dB) && isfinite(row.O2I_dB)
+    row.BasePathloss_dB = row.Pathloss_dB - row.ShadowFading_dB - row.O2I_dB;
+end
+if strlength(strtrim(row.PathlossModelSource)) == 0 && isfinite(row.Pathloss_dB)
+    row.PathlossModelSource = "runtime_geometry_reconstructed";
+end
+if strlength(strtrim(row.PathlossComplianceStatus)) == 0 && isfinite(row.Pathloss_dB)
+    row.PathlossComplianceStatus = "runtime_geometry_reconstructed";
+end
+if strlength(strtrim(row.LOSProbabilitySource)) == 0 && strlength(strtrim(row.LOSState)) > 0
+    row.LOSProbabilitySource = "runtime_geometry_reconstructed";
+end
+if strlength(strtrim(row.LOSComplianceStatus)) == 0 && strlength(strtrim(row.LOSState)) > 0
+    row.LOSComplianceStatus = "runtime_geometry_reconstructed";
 end
 end
 
@@ -454,6 +657,133 @@ end
 T = localStructRowsToTable(rows);
 end
 
+function T = localBuildTopologyNodesTable(cfg, runtime, ueInitial)
+if nargin < 3 || ~istable(ueInitial)
+    ueInitial = table();
+end
+
+nodeRows = repmat(localEmptyTopologyNodeRow(), 0, 1);
+cellRows = localConfiguredCellNodeRows(cfg, runtime);
+if ~isempty(cellRows)
+    nodeRows = [nodeRows; cellRows]; %#ok<AGROW>
+end
+
+if istable(ueInitial) && height(ueInitial) > 0
+    ueIdVals = localColumnDouble(ueInitial, "UEID", NaN);
+    for i = 1:height(ueInitial)
+        row = localEmptyTopologyNodeRow();
+        row.NodeClass = "UE";
+        row.NodeId = double(i);
+        row.UeId = double(ueIdVals(i));
+        row.X_m = localColumnDouble(ueInitial(i, :), "X_m", NaN);
+        row.Y_m = localColumnDouble(ueInitial(i, :), "Y_m", NaN);
+        row.Z_m = localColumnDouble(ueInitial(i, :), "Z_m", NaN);
+        row.Speed_kmh = localColumnDouble(ueInitial(i, :), "Speed_kmh", NaN);
+        row.Label = "UE " + string(row.UeId);
+        row.NodeSource = localFirstString(ueInitial(i, :), "PathSource", "geometry/csv/ue_initial_positions.csv");
+        row.Status = "runtime_or_configured_initial_position";
+        nodeRows(end+1, 1) = row; %#ok<AGROW>
+    end
+end
+
+T = localStructRowsToTable(nodeRows);
+end
+
+function rows = localConfiguredCellNodeRows(cfg, runtime)
+rows = repmat(localEmptyTopologyNodeRow(), 0, 1);
+sitePos = [];
+cellIds = [];
+siteIds = [];
+try
+    geom = sixgr.channel.buildScenarioGeometry(cfg);
+    sitePosT = sixgr.util.structGet(geom, "SiteTable", table());
+    sectorT = sixgr.util.structGet(geom, "SectorTable", table());
+    if istable(sitePosT) && height(sitePosT) > 0 && istable(sectorT) && height(sectorT) > 0
+        sitePos = [localColumnDouble(sitePosT, "X_m", NaN), ...
+            localColumnDouble(sitePosT, "Y_m", NaN), ...
+            localColumnDouble(sitePosT, "Z_m", NaN)];
+        cellIds = localColumnDouble(sectorT, "CellId", NaN);
+        siteIds = localColumnDouble(sectorT, "SiteId", NaN);
+    end
+catch
+    sitePos = [];
+    cellIds = [];
+    siteIds = [];
+end
+
+if isempty(cellIds)
+    if localRuntimeMobilityAvailable(runtime)
+        cellIds = unique(localColumnDouble(runtime.NormalizedTrace, "ServingCellId", localColumnDouble(runtime.NormalizedTrace, "CellId", NaN)));
+    else
+        cellIds = zeros(0, 1);
+    end
+end
+cellIds = unique(cellIds(isfinite(cellIds)), "stable");
+if isempty(cellIds)
+    configuredCells = localNumber(cfg, ["topology.num_cells", "deployment_topology.num_cells"], NaN);
+    if isfinite(configuredCells) && configuredCells >= 1
+        cellIds = (1:max(1, round(configuredCells))).';
+    end
+end
+
+if isempty(siteIds)
+    siteIds = cellIds;
+end
+
+for i = 1:numel(cellIds)
+    row = localEmptyTopologyNodeRow();
+    row.NodeClass = "Cell";
+    row.NodeId = double(i);
+    row.CellId = double(cellIds(i));
+    siteId = double(localSafeIndex(siteIds, i, cellIds(i)));
+    row.SiteId = siteId;
+    pos = localSafeSitePosition(sitePos, siteId, i);
+    row.X_m = pos(1);
+    row.Y_m = pos(2);
+    row.Z_m = pos(3);
+    row.Label = "Cell " + string(row.CellId);
+    row.NodeSource = "sixgr.channel.buildScenarioGeometry";
+    row.Status = "configured_cell_geometry";
+    rows(end+1, 1) = row; %#ok<AGROW>
+end
+end
+
+function pos = localSafeSitePosition(sitePos, siteId, fallbackIdx)
+pos = [NaN NaN NaN];
+if ~isempty(sitePos) && isfinite(siteId) && siteId >= 1 && siteId <= size(sitePos, 1)
+    pos = sitePos(siteId, :);
+    return;
+end
+if ~isempty(sitePos)
+    idx = max(1, min(size(sitePos, 1), round(fallbackIdx)));
+    pos = sitePos(idx, :);
+end
+end
+
+function T = localBuildServingCellAssignmentTable(runtime)
+if ~localRuntimeMobilityAvailable(runtime)
+    T = localEmptyServingCellAssignmentTable();
+    return;
+end
+
+traceT = runtime.NormalizedTrace;
+rows = repmat(localEmptyServingCellAssignmentRow(), height(traceT), 1);
+for i = 1:height(traceT)
+    servingCell = localColumnDouble(traceT(i, :), "ServingCellId", localColumnDouble(traceT(i, :), "CellId", NaN));
+    rows(i) = struct( ...
+        "UeId", double(traceT.UeId(i)), ...
+        "CellId", double(traceT.CellId(i)), ...
+        "ServingCellId", double(servingCell), ...
+        "CanonicalSlot", double(traceT.CanonicalSlot(i)), ...
+        "Time_s", double(traceT.Time_s(i)), ...
+        "Distance3D_m", double(traceT.Distance3D_m(i)), ...
+        "Pathloss_dB", double(traceT.Pathloss_dB(i)), ...
+        "AssignmentSource", "reports/csv/live_rsrp_serving_trace.csv", ...
+        "Status", string(traceT.Status(i)));
+end
+T = localStructRowsToTable(rows);
+end
+
 function T = localBuildRuntimeTrajectoryGeometry(runtime, cfg)
 traceT = runtime.NormalizedTrace;
 ueList = unique(localColumnDouble(traceT, "UeId", NaN));
@@ -467,19 +797,23 @@ for i = 1:numel(ueList)
 end
 
 rows = repmat(struct( ...
-    "UeId", NaN, "UEID", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
+    "UeId", NaN, "UEID", NaN, "CellId", NaN, "ServingCellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
     "X_m", NaN, "Y_m", NaN, "Z_m", NaN, "Speed_kmh", NaN, "Speed_mps", NaN, ...
     "Heading_deg", NaN, "Heading_rad", NaN, "Distance2D_m", NaN, "Distance3D_m", NaN, ...
     "LOSState", "", "Pathloss_dB", NaN, "BasePathloss_dB", NaN, "ShadowFading_dB", NaN, "O2I_dB", NaN, ...
-    "ExpectedDopplerHz", NaN, "AppliedDopplerHz", NaN, "PropagationDelay_s", NaN, ...
+    "ExpectedDopplerHz", NaN, "AppliedDopplerHz", NaN, "DopplerErrorHz", NaN, "PropagationDelay_s", NaN, ...
     "RouteLength_m", NaN, "RequiredTraversalSlots", NaN, "PathProvenance", "", "Status", ""), ...
     height(traceT), 1);
     for i = 1:height(traceT)
         ue = double(traceT.UeId(i));
+        servingCell = localColumnDouble(traceT(i, :), "ServingCellId", localColumnDouble(traceT(i, :), "CellId", NaN));
+        expectedDopp = double(traceT.ExpectedDopplerHz(i));
+        appliedDopp = double(traceT.AppliedDopplerHz(i));
         rows(i) = struct( ...
             "UeId", ue, ...
             "UEID", ue, ...
             "CellId", double(traceT.CellId(i)), ...
+            "ServingCellId", double(servingCell), ...
             "CanonicalSlot", double(traceT.CanonicalSlot(i)), ...
             "Time_s", double(traceT.Time_s(i)), ...
             "X_m", double(traceT.X_m(i)), ...
@@ -496,8 +830,9 @@ rows = repmat(struct( ...
             "BasePathloss_dB", double(traceT.BasePathloss_dB(i)), ...
             "ShadowFading_dB", double(traceT.ShadowFading_dB(i)), ...
             "O2I_dB", double(traceT.O2I_dB(i)), ...
-            "ExpectedDopplerHz", double(traceT.ExpectedDopplerHz(i)), ...
-            "AppliedDopplerHz", double(traceT.AppliedDopplerHz(i)), ...
+            "ExpectedDopplerHz", expectedDopp, ...
+            "AppliedDopplerHz", appliedDopp, ...
+            "DopplerErrorHz", double(appliedDopp - expectedDopp), ...
             "PropagationDelay_s", double(traceT.PropagationDelay_s(i)), ...
             "RouteLength_m", double(routeLengthByUe(ue)), ...
             "RequiredTraversalSlots", double(requiredSlots), ...
@@ -1159,9 +1494,26 @@ publicationEvidence = sixgr.analytics.evaluatePublicationReadinessGates(cfg, run
 flags = localApplyStructFlags(flags, publicationEvidence.Flags);
 flags.OutputSchemaValidationOk = true;
 flags = localApplyPhaseRollupFlags(flags);
-flags.PublicationReadinessOk = localAllNamedFlagsTrue(flags, sixgr.runtime.Phase7TruthEvaluator.gateNames()) && ...
-    localAllNamedFlagsTrue(flags, ["Phase1Ok","Phase2Ok","Phase3Ok","Phase4Ok","Phase5Ok","Phase6Ok"]);
+modeAcceptance = struct();
+if isstruct(publicationEvidence) && isfield(publicationEvidence, "ModeAcceptance") && isstruct(publicationEvidence.ModeAcceptance)
+    modeAcceptance = publicationEvidence.ModeAcceptance;
+end
+runClass = string(sixgr.util.structGet(modeAcceptance, "RunClass", string(sixgr.util.structGet(cfg, "validation.run_class", "unknown"))));
+fixedApplicable = logical(sixgr.util.structGet(modeAcceptance, "FixedSNRLLSApplicable", false));
+geometryApplicable = logical(sixgr.util.structGet(modeAcceptance, "GeometryScenarioApplicable", false));
+fixedOk = logical(sixgr.util.structGet(flags, "FixedSNRLLSOk", ~fixedApplicable));
+geometryOk = logical(sixgr.util.structGet(flags, "GeometryScenarioOk", ~geometryApplicable));
+referenceOk = logical(sixgr.util.structGet(flags, "PublicationReferenceComparisonOk", ~fixedApplicable));
+terminalOk = localAllNamedFlagsTrue(flags, sixgr.runtime.Phase7TruthEvaluator.gateNames());
+phaseRollupOk = localAllNamedFlagsTrue(flags, ["Phase1Ok","Phase2Ok","Phase3Ok","Phase4Ok","Phase5Ok","Phase6Ok"]);
+flags.PublicationReadinessOk = terminalOk && phaseRollupOk && fixedApplicable && fixedOk && referenceOk;
 status = sixgr.runtime.Phase7TruthEvaluator.evaluate(flags);
+status.RunClass = runClass;
+status.FixedSNRLLSApplicable = logical(fixedApplicable);
+status.GeometryScenarioApplicable = logical(geometryApplicable);
+status.FixedSNRLLSOk = logical(fixedOk);
+status.GeometryScenarioOk = logical(geometryOk);
+status.PublicationReferenceComparisonOk = logical(referenceOk);
 end
 
 function tf = localChannelRFArtifactsPass(runDir)
@@ -1325,7 +1677,7 @@ for name = string(names(:)).'
 end
 end
 
-function finalTables = localBuildFinalReportTables(gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence)
+function finalTables = localBuildFinalReportTables(runDir, gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence)
 failures = string(gateStatus.FailureCodes(:));
 if isempty(failures)
     defects = table("none", "none", "all gates passed", "closed", ...
@@ -1335,40 +1687,102 @@ else
         failures, repmat("open", numel(failures), 1), ...
         'VariableNames', {'defect_id','severity','summary','status'});
 end
+runClass = string(sixgr.util.structGet(gateStatus, "RunClass", "unknown"));
+fixedApplicable = logical(sixgr.util.structGet(gateStatus, "FixedSNRLLSApplicable", false));
+geometryApplicable = logical(sixgr.util.structGet(gateStatus, "GeometryScenarioApplicable", false));
+fixedOk = logical(sixgr.util.structGet(gateStatus, "FixedSNRLLSOk", ~fixedApplicable));
+geometryOk = logical(sixgr.util.structGet(gateStatus, "GeometryScenarioOk", ~geometryApplicable));
+referenceOk = logical(sixgr.util.structGet(gateStatus, "PublicationReferenceComparisonOk", ~fixedApplicable));
+
 fullRouteStatus = string(localTernary(logical(mobilityTables.Resolution.FullTrajectoryExecutedOk(1)), ...
     "supported_by_runtime_trajectory_rows", "unsupported_until_full_route_run"));
 campaignStatus = string(localTernary(logical(campaignEvidence.Flags.CampaignCompletionOk), ...
     "supported_by_fixed_link_monte_carlo_campaign", "unsupported_until_multi_seed_campaign_rows"));
-publicationStatus = string(localTernary(logical(gateStatus.PublicationReadinessOk), ...
-    "supported_by_all_phase7_gates", "unsupported_until_all_phase7_gates_pass"));
-claims = table(["single_cell_two_ue_scope";"full_route_mobility_study";"multi_seed_statistics";"publication_ready"], ...
-    ["supported_scope"; fullRouteStatus; campaignStatus; publicationStatus], ...
-    ["scenario YAML scope";"mobility/csv/trajectory_resolution.csv";"air_interface/csv/dl_multi_seed_bler_curve.csv";"reports/csv/phase7_truth_gates.csv"], ...
+if fixedApplicable
+    fixedStatus = string(localTernary(fixedOk, ...
+        "supported_by_fixed_snr_sweep_acceptance_gates", "unsupported_until_fixed_snr_sweep_acceptance_passes"));
+else
+    fixedStatus = "not_run_in_fixed_snr_sweep_mode";
+end
+if geometryApplicable
+    geometryStatus = string(localTernary(geometryOk, ...
+        "supported_by_geometry_runtime_acceptance_gates", "unsupported_until_geometry_runtime_acceptance_passes"));
+else
+    geometryStatus = "not_run_in_geometry_mode";
+end
+if logical(gateStatus.PublicationReadinessOk)
+    publicationStatus = "supported_by_fixed_snr_reference_comparison_and_all_phase7_gates";
+elseif geometryApplicable && ~fixedApplicable
+    publicationStatus = "not_applicable_geometry_only_run_is_not_publication_ready_for_fixed_link_curves";
+elseif fixedApplicable && ~referenceOk
+    publicationStatus = "unsupported_until_reference_comparison_is_present";
+else
+    publicationStatus = "unsupported_until_all_required_publication_gates_pass";
+end
+claims = table( ...
+    ["run_class";"single_cell_two_ue_scope";"full_route_mobility_study";"multi_seed_statistics"; ...
+    "fixed_snr_sweep_validation";"geometry_placement_validation";"publication_ready"], ...
+    [runClass; "supported_scope"; fullRouteStatus; campaignStatus; fixedStatus; geometryStatus; string(publicationStatus)], ...
+    ["reports/csv/run_classification.csv";"scenario YAML scope";"mobility/csv/trajectory_resolution.csv"; ...
+    "air_interface/csv/dl_multi_seed_bler_curve.csv";"reports/csv/two_mode_acceptance_gates.csv"; ...
+    "reports/csv/two_mode_acceptance_gates.csv";"reports/csv/phase7_truth_gates.csv"], ...
     'VariableNames', {'claim','support_status','evidence_artifact'});
 kp = table("phase7_kpi_reconstruction", "not_evaluated_without_full_runtime_rows", ...
     "canonical KPI ledger pending full route/campaign rows", ...
     'VariableNames', {'kpi_group','status','notes'});
 campaign = campaignEvidence.Tables.Summary;
+if istable(campaign)
+    campaign.RunClass = repmat(runClass, height(campaign), 1);
+    campaign.FixedSNRLLSApplicable = repmat(logical(fixedApplicable), height(campaign), 1);
+    campaign.GeometryScenarioApplicable = repmat(logical(geometryApplicable), height(campaign), 1);
+    campaign.FixedSNRLLSOk = repmat(logical(fixedOk), height(campaign), 1);
+    campaign.GeometryScenarioOk = repmat(logical(geometryOk), height(campaign), 1);
+    campaign.PublicationReferenceComparisonOk = repmat(logical(referenceOk), height(campaign), 1);
+    campaign.PublicationReady = repmat(logical(gateStatus.PublicationReadinessOk), height(campaign), 1);
+    campaign.ModeValidationSummary = repmat(localModeValidationSummary(runClass, fixedApplicable, geometryApplicable, fixedOk, geometryOk, logical(gateStatus.PublicationReadinessOk)), height(campaign), 1);
+end
+acceptanceGates = localReadOptionalTable(fullfile(runDir, "reports", "csv", "two_mode_acceptance_gates.csv"));
 if logical(gateStatus.PublicationReadinessOk)
     gradeValue = 10;
     confidence = "high";
-    reason = "All Phase 7 and phase rollup gates verified from runtime evidence.";
+    reason = "Fixed SNR sweep acceptance, reference comparison, and all Phase 7 gates verified from runtime evidence.";
+elseif logical(gateStatus.ResultOk) && geometryApplicable && geometryOk && ~fixedApplicable
+    gradeValue = 7;
+    confidence = "medium";
+    reason = "Geometry and mobility placement validation passed, but geometry-only runs are not publication-ready for fixed-link PHY curves.";
 else
     gradeValue = 0;
     confidence = "low";
-    reason = "Publication readiness blocked until every evidence-derived Phase 7 gate passes.";
+    reason = "Required mode-specific evidence is missing or failed, so the final acceptance gate cannot pass honestly.";
 end
 grade = struct("GradeOutOf10", double(gradeValue), "Confidence", char(confidence), ...
     "Reason", char(reason), ...
+    "RunClass", char(runClass), ...
     "Phase7Ok", logical(gateStatus.Phase7Ok), ...
-    "PublicationReadinessOk", logical(gateStatus.PublicationReadinessOk));
+    "ResultOk", logical(gateStatus.ResultOk), ...
+    "FixedSNRLLSApplicable", logical(fixedApplicable), ...
+    "GeometryScenarioApplicable", logical(geometryApplicable), ...
+    "FixedSNRLLSOk", logical(fixedOk), ...
+    "GeometryScenarioOk", logical(geometryOk), ...
+    "PublicationReferenceComparisonOk", logical(referenceOk), ...
+    "PublicationReadinessOk", logical(gateStatus.PublicationReadinessOk), ...
+    "TwoModeAcceptanceGateRows", double(height(acceptanceGates)), ...
+    "TwoModeAcceptanceFailedRows", double(localModeGateFailureCount(acceptanceGates)));
 finalTables = struct("DefectRegister", defects, "ClaimsMatrix", claims, ...
     "KPITable", kp, "CampaignSummary", campaign, "Grade", grade);
 end
 
 function localWriteFinalMarkdown(finalDir, gateStatus, cfgTables, storageTables, mobilityTables)
+runClass = string(sixgr.util.structGet(gateStatus, "RunClass", "unknown"));
+fixedApplicable = logical(sixgr.util.structGet(gateStatus, "FixedSNRLLSApplicable", false));
+geometryApplicable = logical(sixgr.util.structGet(gateStatus, "GeometryScenarioApplicable", false));
+fixedOk = logical(sixgr.util.structGet(gateStatus, "FixedSNRLLSOk", ~fixedApplicable));
+geometryOk = logical(sixgr.util.structGet(gateStatus, "GeometryScenarioOk", ~geometryApplicable));
+referenceOk = logical(sixgr.util.structGet(gateStatus, "PublicationReferenceComparisonOk", ~fixedApplicable));
 if logical(gateStatus.PublicationReadinessOk)
     verdict = "publication-ready.";
+elseif logical(gateStatus.ResultOk) && geometryApplicable && geometryOk && ~fixedApplicable
+    verdict = "validated for geometry placement and mobility evidence, but not publication-ready for fixed-link curves.";
 else
     verdict = "not publication-ready.";
 end
@@ -1379,12 +1793,21 @@ summary = [
     ""
     "Scope label: SCOPED IMPLEMENTATION VALIDATION."
     ""
+    "RunClass: " + runClass
+    "FixedSNRLLSApplicable: " + string(fixedApplicable)
+    "GeometryScenarioApplicable: " + string(geometryApplicable)
+    "FixedSNRLLSOk: " + string(fixedOk)
+    "GeometryScenarioOk: " + string(geometryOk)
+    "PublicationReferenceComparisonOk: " + string(referenceOk)
+    ""
     "Phase7Ok: " + string(logical(gateStatus.Phase7Ok))
     "ResultOk: " + string(logical(gateStatus.ResultOk))
     "PublicationReadinessOk: " + string(logical(gateStatus.PublicationReadinessOk))
     "Primary blocker: " + string(gateStatus.PrimaryFailureCode)
     ""
-    "The generated artifacts are preflight and audit artifacts. They do not claim a full-route mobility or multi-seed campaign result."
+    localModeValidationSummary(runClass, fixedApplicable, geometryApplicable, fixedOk, geometryOk, logical(gateStatus.PublicationReadinessOk))
+    ""
+    "The generated artifacts are preflight and audit artifacts. They do not claim a full-route mobility or multi-seed campaign result unless the corresponding runtime evidence exists."
     ];
 files = ["executive_summary.md","final_scientific_audit.md","final_publication_readiness.md", ...
     "final_channel_rf_validation.md","final_mobility_validation.md","final_statistical_validation.md", ...
@@ -1393,10 +1816,34 @@ files = ["executive_summary.md","final_scientific_audit.md","final_publication_r
 for i = 1:numel(files)
     localWriteText(fullfile(finalDir, files(i)), strjoin(summary, newline));
 end
-html = "<!doctype html><html><body><h1>Phase 7 Scientific Audit</h1><p>Not publication-ready. Phase7Ok=false unless all evidence gates pass.</p></body></html>";
+html = "<!doctype html><html><body><h1>Phase 7 Scientific Audit</h1><p>Verdict: " + verdict + "</p><p>RunClass: " + runClass + "</p><p>" + localModeValidationSummary(runClass, fixedApplicable, geometryApplicable, fixedOk, geometryOk, logical(gateStatus.PublicationReadinessOk)) + "</p></body></html>";
 localWriteText(fullfile(finalDir, "final_scientific_audit.html"), html);
 localWriteText(fullfile(finalDir, "final_source_diff.patch"), ...
     "Source diff is repository-state dependent; run git diff from the committed Phase 7 branch to reproduce.");
+end
+
+function n = localModeGateFailureCount(T)
+n = 0;
+if ~(istable(T) && height(T) > 0 && localHasColumn(T, "Status"))
+    return;
+end
+n = sum(upper(strtrim(string(T.Status))) == "FAIL");
+end
+
+function summary = localModeValidationSummary(runClass, fixedApplicable, geometryApplicable, fixedOk, geometryOk, publicationReady)
+runClass = string(runClass);
+if publicationReady
+    summary = "Final assessment: fixed-link publication validation passed with reference comparison and all required gates.";
+elseif geometryApplicable && geometryOk && ~fixedApplicable
+    summary = "Final assessment: geometry placement and mobility execution were validated, but this run class is not a publication-ready fixed-link curve anchor.";
+elseif fixedApplicable && ~fixedOk
+    summary = "Final assessment: fixed-link SNR sweep validation failed or is incomplete; the run cannot claim fixed-link publication evidence.";
+elseif geometryApplicable && ~geometryOk
+    summary = "Final assessment: geometry or mobility runtime evidence failed; the run cannot claim executed placement validation.";
+else
+    summary = "Final assessment: the run is diagnostic-only or incomplete, so no publication-ready validation claim is made.";
+end
+summary = summary + " RunClass=" + runClass + ".";
 end
 
 function localWrite(dirPath, fileName, T)
@@ -1530,7 +1977,7 @@ end
 
 function row = localEmptyRuntimeMobilityTraceRow()
 row = struct( ...
-    "UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
+    "UeId", NaN, "CellId", NaN, "ServingCellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
     "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
     "Speed_kmh", NaN, "Speed_mps", NaN, "Heading_deg", NaN, "Heading_rad", NaN, ...
     "Distance2D_m", NaN, "Distance3D_m", NaN, "PropagationDelay_s", NaN, ...
@@ -1590,6 +2037,125 @@ end
 
 function T = localEmptyChannelContinuityReconciliationTable()
 T = struct2table(repmat(localEmptyChannelContinuityReconciliationRow(), 0, 1), "AsArray", true);
+end
+
+function row = localEmptyTopologyNodeRow()
+row = struct( ...
+    "NodeClass", "", "NodeId", NaN, "CellId", NaN, "SiteId", NaN, "UeId", NaN, ...
+    "CanonicalSlot", NaN, "Time_s", NaN, "X_m", NaN, "Y_m", NaN, "Z_m", NaN, ...
+    "Speed_kmh", NaN, "Heading_rad", NaN, "Label", "", "NodeSource", "", "Status", "");
+end
+
+function row = localEmptyServingCellAssignmentRow()
+row = struct( ...
+    "UeId", NaN, "CellId", NaN, "ServingCellId", NaN, "CanonicalSlot", NaN, ...
+    "Time_s", NaN, "Distance3D_m", NaN, "Pathloss_dB", NaN, ...
+    "AssignmentSource", "", "Status", "");
+end
+
+function T = localEmptyServingCellAssignmentTable()
+T = struct2table(repmat(localEmptyServingCellAssignmentRow(), 0, 1), "AsArray", true);
+end
+
+function T = localBuildMeasuredSINRTimeseries(runDir, cfg)
+airCsvDir = fullfile(runDir, "air_interface", "csv");
+dlT = localReadOptionalTable(fullfile(airCsvDir, "dl_pdsch_trials.csv"));
+ulT = localReadOptionalTable(fullfile(airCsvDir, "ul_pusch_trials.csv"));
+slotDuration_s = localNumber(cfg, "frame_timing.slot_duration_ms", 0.5) / 1e3;
+rows = repmat(localEmptyMeasuredSINRRow(), 0, 1);
+rows = [rows; localMeasuredSINRRowsFromTrials(dlT, "DL", slotDuration_s, "air_interface/csv/dl_pdsch_trials.csv")]; %#ok<AGROW>
+rows = [rows; localMeasuredSINRRowsFromTrials(ulT, "UL", slotDuration_s, "air_interface/csv/ul_pusch_trials.csv")]; %#ok<AGROW>
+T = localStructRowsToTable(rows);
+if istable(T) && height(T) > 0
+    T = sortrows(T, {'CanonicalSlot','Direction','UeId','CellId'});
+end
+end
+
+function rows = localMeasuredSINRRowsFromTrials(T, direction, slotDuration_s, sourcePath)
+rows = repmat(localEmptyMeasuredSINRRow(), 0, 1);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+
+sinr = localFirstAvailableTableColumn(T, ["MeasuredTrialSINR_dB","PostEqSINR_dB","MeasuredSINR_dB","ReceiverHestSINR_dB","LargeScaleSINR_dB"]);
+slot = localFirstAvailableTableColumn(T, ["Slot","CanonicalSlot","TTI"]);
+ue = localFirstAvailableTableColumn(T, ["UEID","UEIndex","UE","RNTI"]);
+cellId = localFirstAvailableTableColumn(T, ["CellID","ServingCell","BaseStationID"]);
+mcs = localFirstAvailableTableColumn(T, ["MCS","MCSIndex","CQIDerivedMCS"]);
+rank = localFirstAvailableTableColumn(T, ["RankEstimate","RankIndicator","Rank"]);
+layers = localFirstAvailableTableColumn(T, ["Layers","NumLayers"]);
+modulation = localFirstAvailableTableText(T, ["Modulation","CQIDerivedModulation"]);
+status = localFirstAvailableTableText(T, "Status");
+sinrSource = localFirstAvailableTableText(T, ["MeasuredTrialSINRSource","PostEqSINRSource","SINRSource","ReceiverHestSINRSource"]);
+
+mask = isfinite(sinr) & isfinite(slot);
+for i = find(mask(:)).'
+    row = localEmptyMeasuredSINRRow();
+    row.Direction = upper(string(direction));
+    row.UeId = localSafeIndex(ue, i, NaN);
+    row.CellId = localSafeIndex(cellId, i, NaN);
+    row.CanonicalSlot = localSafeIndex(slot, i, NaN);
+    row.Time_s = (double(row.CanonicalSlot) - 1) * slotDuration_s;
+    row.MeasuredSINR_dB = localSafeIndex(sinr, i, NaN);
+    row.SINRSource = localSafeIndexText(sinrSource, i, "");
+    row.MCS = localSafeIndex(mcs, i, NaN);
+    row.Rank = localSafeIndex(rank, i, NaN);
+    row.Layers = localSafeIndex(layers, i, NaN);
+    row.Modulation = localSafeIndexText(modulation, i, "");
+    row.Status = localSafeIndexText(status, i, "");
+    row.SourceTable = string(sourcePath);
+    rows(end+1, 1) = row; %#ok<AGROW>
+end
+end
+
+function row = localEmptyMeasuredSINRRow()
+row = struct( ...
+    "Direction", "", "UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
+    "MeasuredSINR_dB", NaN, "SINRSource", "", "MCS", NaN, "Rank", NaN, "Layers", NaN, ...
+    "Modulation", "", "Status", "", "SourceTable", "");
+end
+
+function values = localFirstAvailableTableColumn(T, names)
+if nargin < 2
+    names = strings(0, 1);
+end
+for name = reshape(string(names), 1, [])
+    if localHasColumn(T, name)
+        values = localColumnDouble(T, name, NaN(height(T), 1));
+        return;
+    end
+end
+values = NaN(height(T), 1);
+end
+
+function values = localFirstAvailableTableText(T, names)
+for name = reshape(string(names), 1, [])
+    if localHasColumn(T, name)
+        values = string(T.(char(name)));
+        values = reshape(values, [], 1);
+        return;
+    end
+end
+values = strings(height(T), 1);
+end
+
+function value = localSafeIndex(values, idx, defaultValue)
+if nargin < 3
+    defaultValue = NaN;
+end
+value = defaultValue;
+values = values(:);
+if idx >= 1 && idx <= numel(values) && isfinite(values(idx))
+    value = double(values(idx));
+end
+end
+
+function value = localSafeIndexText(values, idx, defaultValue)
+value = string(defaultValue);
+values = string(values(:));
+if idx >= 1 && idx <= numel(values) && strlength(strtrim(values(idx))) > 0
+    value = string(values(idx));
+end
 end
 
 function d = localTraceRouteLength(T)
@@ -1823,6 +2389,17 @@ if isempty(idx)
     m = NaN;
 else
     m = v(idx);
+end
+end
+
+function value = localFirstFiniteScalar(varargin)
+value = NaN;
+for i = 1:nargin
+    candidate = localFirstFinite(varargin{i});
+    if isfinite(candidate)
+        value = double(candidate);
+        return;
+    end
 end
 end
 

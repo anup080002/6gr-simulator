@@ -171,7 +171,11 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "power_vs_sample", "label": "power_vs_sample", "chart_tokens": ["power vs sample"], "image_tokens": ["power-vs-sample"]},
     {"id": "bler_vs_mcs", "label": "bler_vs_mcs", "chart_tokens": ["bler vs mcs"], "image_tokens": ["bler-vs-mcs"]},
     {"id": "bler_vs_sinr", "label": "bler_vs_sinr", "chart_tokens": ["bler vs sinr", "bler vs snr"], "image_tokens": ["bler-vs-sinr", "bler-vs-snr", "dl_bler_vs_snr", "ul_bler_vs_snr"]},
+    {"id": "dl_bler_vs_snr", "label": "dl_bler_vs_snr", "prefer": "image", "chart_tokens": ["dl bler vs snr"], "image_tokens": ["dl_bler_vs_snr"]},
+    {"id": "ul_bler_vs_snr", "label": "ul_bler_vs_snr", "prefer": "image", "chart_tokens": ["ul bler vs snr"], "image_tokens": ["ul_bler_vs_snr"]},
     {"id": "ber_vs_snr", "label": "ber_vs_snr", "chart_tokens": ["ber vs snr", "ber vs sinr"], "image_tokens": ["ber-vs-snr", "dl_ber_vs_snr", "ul_ber_vs_snr"]},
+    {"id": "dl_ber_vs_snr", "label": "dl_ber_vs_snr", "prefer": "image", "chart_tokens": ["dl ber vs snr"], "image_tokens": ["dl_ber_vs_snr"]},
+    {"id": "ul_ber_vs_snr", "label": "ul_ber_vs_snr", "prefer": "image", "chart_tokens": ["ul ber vs snr"], "image_tokens": ["ul_ber_vs_snr"]},
     {"id": "cell_kpi_dashboard", "label": "cell_kpi_dashboard", "prefer": "image", "chart_tokens": ["per cell throughput"], "image_tokens": ["per-cell-throughput", "cell_kpi_dashboard"]},
     {"id": "cell_load_heatmap", "label": "cell_load_heatmap", "chart_tokens": ["candidate cell rank heatmap", "cell load heatmap"], "image_tokens": ["cell load heatmap", "candidate-cell-rank-heatmap", "cell_load_heatmap"]},
     {"id": "channel_impulse_response", "label": "channel_impulse_response", "prefer": "image", "chart_tokens": ["true h tau if available", "channel impulse response"], "image_tokens": ["estimated-hhat-tau", "true-h-tau-if-available", "channel_impulse_response"]},
@@ -180,6 +184,7 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "csi_rs_resource_map", "label": "csi_rs_resource_map", "chart_tokens": ["csi rs map", "csi rs resource occupancy"], "image_tokens": ["csi-rs-map", "csi-rs-resource-occupancy"]},
     {"id": "cumulative_energy_vs_time", "label": "cumulative_energy_vs_time", "chart_tokens": ["energy per bit over time", "joules gb over time"], "image_tokens": ["energy-per-bit-over-time", "joules-gb-over-time", "cumulative_energy_vs_time"]},
     {"id": "doppler_variation", "label": "doppler_variation", "chart_tokens": ["doppler vs speed plot", "doppler variation"], "image_tokens": ["doppler variation", "doppler", "doppler_variation"]},
+    {"id": "doppler_vs_slot", "label": "doppler_vs_slot", "prefer": "image", "chart_tokens": ["doppler vs slot"], "image_tokens": ["doppler_vs_slot"]},
     {"id": "energy_per_bit_histogram", "label": "energy_per_bit_histogram", "chart_tokens": ["energy per bit histogram"], "image_tokens": ["energy-per-bit-histogram", "energy_per_bit_histogram"]},
     {"id": "evm_distribution", "label": "evm_distribution", "chart_tokens": ["evm rms", "symbol decision error histogram"], "image_tokens": ["evm-rms", "symbol-decision-error-histogram", "evm_distribution"]},
     {"id": "goodput_vs_time", "label": "goodput_vs_time", "chart_tokens": ["goodput over time", "goodput timeline", "goodput vs time"], "image_tokens": ["goodput-over-time", "goodput-vs-time"]},
@@ -211,7 +216,9 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "transition_count_bars", "label": "transition_count_bars", "chart_tokens": ["access state transition sankey", "transition count"], "image_tokens": ["transition count", "transition_count_bars"]},
     {"id": "ue_kpi_dashboard", "label": "ue_kpi_dashboard", "prefer": "image", "chart_tokens": ["per ue throughput"], "image_tokens": ["per-ue-throughput", "ue_kpi_dashboard"]},
     {"id": "measured_sinr_vs_configured_snr", "label": "measured_sinr_vs_configured_snr", "chart_tokens": ["measured sinr vs configured snr", "measured post eq sinr vs configured snr", "applied awgn snr vs measured runtime sinr comparison"], "image_tokens": ["measured_sinr_vs_configured_snr", "measured-sinr-vs-configured-snr"]},
+    {"id": "measured_sinr_vs_slot", "label": "measured_sinr_vs_slot", "prefer": "image", "chart_tokens": ["measured sinr vs slot"], "image_tokens": ["measured_sinr_vs_slot"]},
     {"id": "ue_position_scatter", "label": "ue_position_scatter", "chart_tokens": ["bs sector ue topology scatter plot", "ue trajectory overlay", "ue trajectory views"], "image_tokens": ["bs-sector-ue-topology-scatter-plot", "ue-trajectory-overlay", "ue_position_scatter"]},
+    {"id": "ue_trajectory_xy", "label": "ue_trajectory_xy", "prefer": "image", "chart_tokens": ["ue trajectory xy"], "image_tokens": ["ue_trajectory_xy"]},
 ]
 
 
@@ -6141,6 +6148,9 @@ RESULT_SECTION_LABELS: dict[str, str] = {
 
 PLOT_BUCKET_LABELS: dict[str, str] = {
     "all": "All Channels / Algorithms",
+    "fixed_snr_sweep": "Fixed SNR / SINR Sweep",
+    "geometry_mobility": "Geometry / Mobility",
+    "artifact_audit": "Artifact Audit",
     "ssb_pbch_sib": "SSB / PBCH / SIB",
     "prach": "Random Access / PRACH",
     "pdcch": "DL Control / PDCCH / DCI",
@@ -6159,9 +6169,24 @@ PLOT_BUCKET_LABELS: dict[str, str] = {
     "other": "Other Published Evidence",
 }
 
+TABLE_BUCKET_LABELS: dict[str, str] = {
+    "all": "All Tables",
+    "fixed_snr_sweep": "Fixed SNR / SINR Sweep",
+    "geometry_mobility": "Geometry / Mobility",
+    "artifact_audit": "Artifact Audit",
+    "summary": "Run Summary",
+    "other": "Other Published Tables",
+}
+
 
 def infer_plot_bucket(*values: Any) -> str:
     text = " ".join(str(value or "") for value in values).lower()
+    if any(token in text for token in ("artifact audit", "artifact_audit", "two_mode_acceptance", "run_classification", "geometry_runtime_audit", "fixed_snr_sweep_audit")):
+        return "artifact_audit"
+    if any(token in text for token in ("fixed_snr", "fixed snr", "fixed-link", "fixed_link", "snr sweep", "lls_fixed_link_campaign", "measured_sinr_vs_configured_snr", "dl_bler_vs_snr", "ul_bler_vs_snr", "dl_ber_vs_snr", "ul_ber_vs_snr", "throughput_vs_snr", "bler_vs_snr", "ber_vs_snr")):
+        return "fixed_snr_sweep"
+    if any(token in text for token in ("trajectory_geometry", "ue_trajectory_xy", "topology_map", "measured_sinr_vs_slot", "geometry_scenario_dashboard")):
+        return "geometry_mobility"
     if any(token in text for token in ("ssb", "pbch", "pss", "sss", "sib", "mib")):
         return "ssb_pbch_sib"
     if "prach" in text or "random-access" in text or "random_access" in text:
@@ -6193,6 +6218,47 @@ def infer_plot_bucket(*values: Any) -> str:
     if any(token in text for token in ("coverage", "integrity", "contract", "materialization", "manifest", "config", "artifact_inventory", "unavailable")):
         return "export_integrity"
     return "other"
+
+
+def infer_table_bucket(*values: Any) -> str:
+    text = " ".join(str(value or "") for value in values).lower()
+    if any(token in text for token in ("fixed_snr", "fixed snr", "fixed_link_campaign", "lls_fixed_link_campaign", "lls_snr_sweep", "reference_snr_sweep")):
+        return "fixed_snr_sweep"
+    if any(token in text for token in ("trajectory_geometry", "ue_initial_positions", "topology_nodes", "serving_cell_assignment", "doppler_reconciliation", "pathloss_reconciliation", "propagation_delay_reconciliation", "channel_continuity_reconciliation", "measured_sinr_timeseries")):
+        return "geometry_mobility"
+    if any(token in text for token in ("artifact_audit", "fixed_snr_sweep_audit", "geometry_runtime_audit", "two_mode_acceptance_gates", "run_classification", "monotonicity_audit", "required_outputs", "plot_lineage", "issue_registry")):
+        return "artifact_audit"
+    if any(token in text for token in ("scenario_summary", "result_status_summary", "phase7_truth_gates", "publication_readiness", "campaign_summary", "final_scientific_claims")):
+        return "summary"
+    return "other"
+
+
+def attach_table_bucket(item: dict[str, Any]) -> dict[str, Any]:
+    out = dict(item)
+    bucket = infer_table_bucket(
+        out.get("logical_path"),
+        out.get("section"),
+        out.get("artifact_kind"),
+    )
+    out["bucket"] = bucket
+    out["bucket_label"] = TABLE_BUCKET_LABELS.get(bucket, humanize_key(bucket))
+    return out
+
+
+def bucketize_table_browser_items(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    enriched = [attach_table_bucket(item) for item in items]
+    counts: dict[str, int] = {}
+    for item in enriched:
+        bucket = str(item.get("bucket") or "other")
+        counts[bucket] = counts.get(bucket, 0) + 1
+    ordered_keys = [key for key in TABLE_BUCKET_LABELS if key != "all" and counts.get(key, 0)]
+    ordered_keys.extend(sorted(key for key in counts if key not in set(ordered_keys)))
+    buckets = [{"id": "all", "label": TABLE_BUCKET_LABELS["all"], "count": len(enriched)}]
+    buckets.extend(
+        {"id": key, "label": TABLE_BUCKET_LABELS.get(key, humanize_key(key)), "count": counts.get(key, 0)}
+        for key in ordered_keys
+    )
+    return enriched, buckets
 
 
 def attach_plot_bucket(item: dict[str, Any]) -> dict[str, Any]:
@@ -6885,9 +6951,11 @@ def build_table_browser_payload(run_id: int) -> dict[str, Any]:
         if str(art.get("artifact_kind") or "") == "table_csv"
     ]
     items = dedupe_table_descriptors_for_ui(raw_items)
+    items, buckets = bucketize_table_browser_items(items)
     payload = {
         "run_id": int(run_id),
         "items": items,
+        "buckets": buckets,
         "table_count": len(items),
         "raw_table_count": len(raw_items),
         "suppressed_duplicate_count": max(0, len(raw_items) - len(items)),
@@ -8403,6 +8471,180 @@ def load_scenario_summary_row(artifacts: list[dict[str, Any]]) -> dict[str, Any]
     if summary_rows:
         return summary_rows[0]
     return {}
+
+
+def count_csv_data_rows(artifacts: list[dict[str, Any]], logical_path: str) -> int:
+    art = find_artifact_by_logical_path(artifacts, logical_path)
+    if art is None:
+        return 0
+    filesystem_path = str(art.get("filesystem_path") or "").strip()
+    if filesystem_path:
+        try:
+            return max(0, len(parse_csv_bytes(Path(filesystem_path).read_bytes(), max_rows=None)[1]))
+        except OSError:
+            return 0
+    artifact_id = int(art.get("artifact_id") or 0)
+    return count_cached_csv_data_rows(artifact_id) if artifact_id > 0 else 0
+
+
+def artifact_link_payload(artifacts: list[dict[str, Any]], logical_path: str) -> dict[str, Any] | None:
+    art = find_artifact_by_logical_path(artifacts, logical_path)
+    if art is None:
+        return None
+    descriptor = build_artifact_descriptor(art)
+    return {
+        "label": friendly_artifact_label(logical_path),
+        "logical_path": logical_path,
+        "view_url": descriptor.get("view_url"),
+        "download_url": descriptor.get("download_url"),
+        "artifact_id": descriptor.get("artifact_id"),
+    }
+
+
+def _truthy_cell(value: Any) -> bool:
+    token = str(value or "").strip().lower()
+    return token in {"1", "true", "yes", "on", "pass", "passed", "ok"}
+
+
+def _status_failure_count(rows: list[dict[str, Any]], *, required_only: bool = False) -> int:
+    failures = 0
+    for row in rows:
+        if required_only and not _truthy_cell(row.get("Required", row.get("required", True))):
+            continue
+        status = str(row.get("Status", row.get("status", "")) or "").strip().upper()
+        if status == "FAIL":
+            failures += 1
+    return failures
+
+
+def _numeric_values(rows: list[dict[str, Any]], column: str) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        numeric = coerce_numeric(row.get(column))
+        if numeric is None:
+            continue
+        if math.isfinite(float(numeric)):
+            values.append(float(numeric))
+    return values
+
+
+def _min_max(values: list[float]) -> tuple[float | None, float | None]:
+    if not values:
+        return None, None
+    return min(values), max(values)
+
+
+def build_mode_validation_payload(run_row: dict[str, Any], artifacts: list[dict[str, Any]]) -> dict[str, Any]:
+    run_class_rows = load_small_csv_rows(artifacts, "reports/csv/run_classification.csv", max_rows=4)
+    gate_rows = load_small_csv_rows(artifacts, "reports/csv/two_mode_acceptance_gates.csv", max_rows=256)
+    curve_summary_rows = load_small_csv_rows(artifacts, "reports/csv/fixed_snr_sweep_curve_summary.csv", max_rows=32)
+    dl_curve_rows = load_small_csv_rows(artifacts, "reports/csv/dl_fixed_snr_bler_curve.csv", max_rows=256)
+    ul_curve_rows = load_small_csv_rows(artifacts, "reports/csv/ul_fixed_snr_bler_curve.csv", max_rows=256)
+    csv_audit_rows = load_small_csv_rows(artifacts, "reports/csv/all_csv_artifact_audit.csv", max_rows=512)
+    image_audit_rows = load_small_csv_rows(artifacts, "reports/csv/all_image_artifact_audit.csv", max_rows=512)
+    topology_rows = load_small_csv_rows(artifacts, "geometry/csv/topology_nodes.csv", max_rows=256)
+    trajectory_rows = load_small_csv_rows(artifacts, "geometry/csv/trajectory_geometry.csv", max_rows=512)
+    measured_sinr_rows = load_small_csv_rows(artifacts, "reports/csv/measured_sinr_timeseries.csv", max_rows=512)
+
+    run_class = str((run_class_rows[0] if run_class_rows else {}).get("RunClass") or "").strip().lower() or "unknown"
+    fixed_applicable = run_class in {"fixed_snr_sweep_lls", "hybrid_validation"}
+    geometry_applicable = run_class in {"ue_placement_geometry_lls", "hybrid_validation"}
+    gate_status_by_name = {
+        str(row.get("GateName") or "").strip(): str(row.get("Status") or "").strip().upper()
+        for row in gate_rows
+        if str(row.get("GateName") or "").strip()
+    }
+    fixed_ok = not fixed_applicable or (bool(gate_rows) and all(
+        gate_status_by_name.get(name, "SKIP") == "PASS"
+        for name in (
+            "RunClassFixedSNRSweep",
+            "FixedLinkCampaignOnly",
+            "NoiseOperatingMode",
+            "FixedSNRSweepAudit",
+            "FixedRequiredCSVAudit",
+            "FixedRequiredImageAudit",
+            "BLERBERInUnitInterval",
+            "ReferenceComparisonPresent",
+        )
+    ))
+    geometry_ok = not geometry_applicable or (bool(gate_rows) and all(
+        gate_status_by_name.get(name, "SKIP") == "PASS"
+        for name in (
+            "RunClassGeometry",
+            "GeometryRuntimeAudit",
+            "GeometryRequiredCSVAudit",
+            "GeometryRequiredImageAudit",
+            "TrajectoryNonEmpty",
+            "DopplerReconciliationPass",
+            "MeasuredSINRNonEmpty",
+            "NoFixedLinkCurveClaim",
+        )
+    ))
+
+    dl_bler_min, dl_bler_max = _min_max(_numeric_values(dl_curve_rows, "BLER"))
+    ul_bler_min, ul_bler_max = _min_max(_numeric_values(ul_curve_rows, "BLER"))
+    target_crossing_values = _numeric_values(curve_summary_rows, "TargetCrossingSNR_dB")
+    if not target_crossing_values:
+        target_crossing_values = _numeric_values(dl_curve_rows, "TargetCrossingSNR_dB") + _numeric_values(ul_curve_rows, "TargetCrossingSNR_dB")
+    target_crossing = target_crossing_values[0] if target_crossing_values else None
+    snr_point_count = max(
+        len({value for value in _numeric_values(dl_curve_rows, "SNR_dB")}),
+        len({value for value in _numeric_values(ul_curve_rows, "SNR_dB")}),
+    )
+    required_csv_failures = _status_failure_count(csv_audit_rows, required_only=True)
+    required_image_failures = _status_failure_count(image_audit_rows, required_only=True)
+
+    cell_rows = sum(1 for row in topology_rows if str(row.get("NodeClass") or "").strip().upper() == "CELL")
+    ue_rows = sum(1 for row in topology_rows if str(row.get("NodeClass") or "").strip().upper() == "UE")
+    speed_values = _numeric_values(trajectory_rows, "Speed_kmh")
+    doppler_values = _numeric_values(trajectory_rows, "ExpectedDopplerHz")
+
+    return {
+        "run_class": run_class,
+        "fixed_snr": {
+            "applicable": fixed_applicable,
+            "ok": fixed_ok,
+            "snr_points": snr_point_count,
+            "dl_min_bler": dl_bler_min,
+            "dl_max_bler": dl_bler_max,
+            "ul_min_bler": ul_bler_min,
+            "ul_max_bler": ul_bler_max,
+            "target_crossing_snr_db": target_crossing,
+            "artifact_audit_failures": required_csv_failures + required_image_failures,
+            "links": [
+                link for link in [
+                    artifact_link_payload(artifacts, "reports/image/dl_bler_vs_snr.png"),
+                    artifact_link_payload(artifacts, "reports/image/ul_bler_vs_snr.png"),
+                    artifact_link_payload(artifacts, "reports/image/dl_ber_vs_snr.png"),
+                    artifact_link_payload(artifacts, "reports/image/ul_ber_vs_snr.png"),
+                    artifact_link_payload(artifacts, "reports/image/measured_sinr_vs_configured_snr.png"),
+                    artifact_link_payload(artifacts, "reports/csv/fixed_snr_sweep_curve_summary.csv"),
+                    artifact_link_payload(artifacts, "reports/csv/fixed_snr_sweep_audit.csv"),
+                ] if link is not None
+            ],
+        },
+        "geometry": {
+            "applicable": geometry_applicable,
+            "ok": geometry_ok,
+            "cells": cell_rows,
+            "ues": ue_rows,
+            "speed_kmh": speed_values[0] if speed_values else None,
+            "expected_doppler_hz": doppler_values[0] if doppler_values else None,
+            "trajectory_rows": count_csv_data_rows(artifacts, "geometry/csv/trajectory_geometry.csv"),
+            "measured_sinr_rows": count_csv_data_rows(artifacts, "reports/csv/measured_sinr_timeseries.csv"),
+            "links": [
+                link for link in [
+                    artifact_link_payload(artifacts, "geometry/image/topology_map.png"),
+                    artifact_link_payload(artifacts, "geometry/image/ue_trajectory_xy.png"),
+                    artifact_link_payload(artifacts, "mobility/image/doppler_vs_slot.png"),
+                    artifact_link_payload(artifacts, "reports/image/measured_sinr_vs_slot.png"),
+                    artifact_link_payload(artifacts, "geometry/csv/trajectory_geometry.csv"),
+                    artifact_link_payload(artifacts, "mobility/csv/doppler_reconciliation.csv"),
+                    artifact_link_payload(artifacts, "reports/csv/geometry_runtime_audit.csv"),
+                ] if link is not None
+            ],
+        },
+    }
 
 
 def normalize_layout_type_token(value: Any) -> str:
@@ -12896,6 +13138,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         or any(token in str(art["logical_path"]).lower() for token in ("summary", "sweep", "kpi", "status"))
     ]
     summary = build_live_summary(run_row, artifacts, runtime_context)
+    mode_validation = build_mode_validation_payload(run_row, artifacts)
     numeric_tabs = build_numeric_charts_from_artifacts(table_artifacts, limit=48)
     summary_tabs = build_numeric_charts_from_artifacts(summary_chart_artifacts, limit=16)
     reference_chart_artifacts = shortlist_reference_gallery_chart_artifacts(table_artifacts)
@@ -12907,6 +13150,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     payload = {
         "run": compact_run_row(run_row, artifacts),
         "summary": summary,
+        "mode_validation": mode_validation,
         "counts": counts,
         "metrics": extract_metric_cards(run_row, artifacts, runtime_context),
         "runtime_context": runtime_context,
@@ -14164,7 +14408,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
   const LIVE_API_TEMPLATE = "/api/run/${id}/live";
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   const wired = root.fully_wired_mode || 'LLS';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (obj, path, fallback) => String(path || '').split('.').filter(Boolean).reduce((node, key) => node && typeof node === 'object' && key in node ? node[key] : undefined, obj) ?? fallback;
@@ -15547,29 +15791,38 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function plotsPage() {
     title('Plots', 'Truth-backed chart, graph, and image viewer for the selected run.');
-    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical + Published exposes the semantic gallery plus every persisted chart/image/source table from the selected run. Buckets are semantic: PRACH, PDCCH, PUCCH, SSB/PBCH/SIB, PDSCH, PUSCH, CSI/SRS/TRS, HARQ, RF/channel, scheduler, and export integrity.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Bucket<select id="plotBrowserBucketSelect"></select></label><label>Chart / Graph / Image / Source Table<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
+    main.innerHTML = `<section class="panel"><h3>Plots</h3>${pageRunSelector('plotsRunSelect', 'Selected Run', {runningOnly: false, note: 'Canonical + Published exposes the semantic gallery plus every persisted chart/image/source table from the selected run. Buckets include Fixed SNR/SINR Sweep, Geometry/Mobility, Artifact Audit, PRACH, PDCCH, PUCCH, SSB/PBCH/SIB, PDSCH, PUSCH, CSI/SRS/TRS, HARQ, RF/channel, scheduler, and export integrity.'})}<div class="toolbar"><label>Catalog<select id="plotBrowserCatalogSelect"></select></label><label>Bucket<select id="plotBrowserBucketSelect"></select></label><label>Chart / Graph / Image / Source Table<select id="plotBrowserSelect"></select></label><span id="plotBrowserStats" class="mini-note"></span></div><div id="plotBrowserViewer" class="chart-box" style="height:auto;min-height:78vh;"></div></section>`;
     renderPlotBrowser();
   }
   function buildTableBrowserItems() {
-    return Array.isArray((state.tableBrowserPayload || {}).items) ? (state.tableBrowserPayload || {}).items : [];
+    const payload = state.tableBrowserPayload || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const bucket = String(state.tableBrowserBucket || 'all');
+    if (bucket === 'all') return items;
+    return items.filter(item => String(item.bucket || 'other') === bucket);
   }
   function renderTableBrowser() {
     const items = buildTableBrowserItems();
     const select = document.getElementById('tableBrowserSelect');
+    const bucketSelect = document.getElementById('tableBrowserBucketSelect');
     const stats = document.getElementById('tableBrowserStats');
     const viewer = document.getElementById('tableBrowserViewer');
-    if (!select || !stats || !viewer) return;
+    if (!select || !bucketSelect || !stats || !viewer) return;
     if (!state.tableBrowserPayload || state.tableBrowserRunId !== String(selectedRunId() || '')) {
       select.innerHTML = '<option value="">Loading tables...</option>';
+      bucketSelect.innerHTML = '<option value="all">Loading buckets...</option>';
       stats.textContent = '';
       viewer.innerHTML = '<div class="chart-empty">Loading truthful table artifacts from the database...</div>';
       loadTableBrowserPayload();
       return;
     }
+    const bucketDefs = Array.isArray((state.tableBrowserPayload || {}).buckets) ? (state.tableBrowserPayload || {}).buckets : [{id:'all', label:'All Tables', count: items.length}];
+    if (!bucketDefs.some(item => String(item.id) === String(state.tableBrowserBucket || 'all'))) state.tableBrowserBucket = 'all';
+    bucketSelect.innerHTML = bucketDefs.map(item => `<option value="${esc(item.id)}"${String(item.id) === String(state.tableBrowserBucket || 'all') ? ' selected' : ''}>${esc(item.label)} (${esc(item.count)})</option>`).join('');
     if (!items.length) {
       select.innerHTML = '<option value="">No tables available</option>';
-      stats.textContent = '';
-      viewer.innerHTML = '<div class="chart-empty">No truthful table artifacts were published for the selected run.</div>';
+      stats.textContent = `${Number((state.tableBrowserPayload || {}).table_count || 0)} canonical truthful tables`;
+      viewer.innerHTML = '<div class="chart-empty">No truthful table artifacts were published for the selected bucket in this run.</div>';
       return;
     }
     if (!state.tableBrowserId || !items.some(item => String(item.artifact_id) === String(state.tableBrowserId))) {
@@ -15579,7 +15832,8 @@ window.addEventListener('DOMContentLoaded', function () {
     const selected = items.find(item => String(item.artifact_id) === String(state.tableBrowserId)) || items[0];
     const tableCount = Number((state.tableBrowserPayload || {}).table_count || items.length);
     const suppressedCount = Number((state.tableBrowserPayload || {}).suppressed_duplicate_count || 0);
-    stats.textContent = `${tableCount} canonical truthful tables${suppressedCount ? `, ${suppressedCount} mirror duplicates hidden` : ''}`;
+    const bucketLabel = String((bucketDefs.find(item => String(item.id) === String(state.tableBrowserBucket || 'all')) || {}).label || 'All Tables');
+    stats.textContent = `${tableCount} canonical truthful tables${suppressedCount ? `, ${suppressedCount} mirror duplicates hidden` : ''}. Bucket: ${bucketLabel}.`;
     const fullViewUrl = selected.full_table_view_url || (selected.view_url ? `${selected.view_url}?rows=all` : '#');
     viewer.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(prettyArtifactLabel(selected.logical_path || ''))}</h4><p class="mini-note">${esc(selected.logical_path || '')}</p><p class="mini-note">Canonical table view streams the persisted artifact from MySQL; mirror/legacy duplicates are hidden from this selector.</p></div><div><a class="button-link secondary" href="${esc(fullViewUrl)}" target="_blank" rel="noopener noreferrer">Open Full Table</a> <a class="button-link secondary" href="${esc(selected.download_url || selected.view_url || '#')}">Download CSV</a></div></div><iframe src="${esc(fullViewUrl)}" title="${esc(selected.logical_path || 'table preview')}" style="width:100%;height:min(78vh,920px);border:1px solid var(--line);border-radius:8px;background:#fff;"></iframe>`;
   }
@@ -15587,7 +15841,7 @@ window.addEventListener('DOMContentLoaded', function () {
     state.tableBrowserPayload = null;
     state.tableBrowserRunId = '';
     title('Tables', 'Truth-backed table viewer for the selected run.');
-    main.innerHTML = `<section class="panel"><h3>Tables</h3>${pageRunSelector('tablesRunSelect', 'Selected Run', {runningOnly: false, note: 'The dropdown lists canonical persisted table artifacts from the selected run. The viewer below opens the full stored CSV table when it fits the browser safety limit; Download CSV always retrieves the complete artifact.'})}<div class="toolbar"><label>Table<select id="tableBrowserSelect"></select></label><span id="tableBrowserStats" class="mini-note"></span></div><div id="tableBrowserViewer"></div></section>`;
+    main.innerHTML = `<section class="panel"><h3>Tables</h3>${pageRunSelector('tablesRunSelect', 'Selected Run', {runningOnly: false, note: 'The dropdown lists canonical persisted table artifacts from the selected run. Buckets surface Fixed SNR/SINR Sweep, Geometry/Mobility, and Artifact Audit evidence without requiring manual folder browsing.'})}<div class="toolbar"><label>Bucket<select id="tableBrowserBucketSelect"></select></label><label>Table<select id="tableBrowserSelect"></select></label><span id="tableBrowserStats" class="mini-note"></span></div><div id="tableBrowserViewer"></div></section>`;
     renderTableBrowser();
   }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from the selected run. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
@@ -15622,7 +15876,7 @@ window.addEventListener('DOMContentLoaded', function () {
     if (!previous) return incoming;
     if (!incoming) return previous;
     const merged = { ...previous, ...incoming };
-    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug'];
+    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug', 'mode_validation'];
     stickyKeys.forEach((key) => {
       if (incoming[key] === undefined) merged[key] = previous[key];
     });
@@ -15762,6 +16016,7 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'outputPersistenceModeSelect') { ensureConfigLoaded(false).then(() => { set(state.config, 'output.persistence_mode', normalizeOutputPersistenceMode(target.value)); set(state.config, 'output_control.output_persistence_mode', normalizeOutputPersistenceMode(target.value)); applyOutputPersistenceMode(); updateRunPayload(); root.output_persistence = Object.assign({}, root.output_persistence || {}, {requested_mode: normalizeOutputPersistenceMode(target.value)}); if (state.page === 'home') home(); }); return; }
     if (target.id === 'plotBrowserCatalogSelect') { state.plotBrowserCatalogMode = target.value || 'canonical'; state.plotBrowserId = ''; renderPlotBrowser(); return; }
     if (target.id === 'plotBrowserBucketSelect') { state.plotBrowserBucket = target.value || 'all'; state.plotBrowserId = ''; renderPlotBrowser(); return; }
+    if (target.id === 'tableBrowserBucketSelect') { state.tableBrowserBucket = target.value || 'all'; state.tableBrowserId = ''; renderTableBrowser(); return; }
     if (target.id === 'plotBrowserSelect') { state.plotBrowserId = target.value || ''; renderPlotBrowser(); return; }
     if (target.id === 'tableBrowserSelect') { state.tableBrowserId = target.value || ''; renderTableBrowser(); return; }
     if (target.closest('[data-contract-col]')) { applyContractControls(); return; }
@@ -16723,7 +16978,7 @@ function mergeResultPayload(previous, incoming) {{
   if (!previous) return incoming;
   if (!incoming) return previous;
   const merged = {{ ...previous, ...incoming }};
-  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug'];
+  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug', 'mode_validation'];
   stickyKeys.forEach((key) => {{
     if (incoming[key] === undefined) merged[key] = previous[key];
   }});
@@ -16936,6 +17191,45 @@ function renderRuntimeContext(runtimeContext) {{
     (snapshotLinks.length ? `<div class="toolbar" style="margin-top:12px;">${{snapshotLinks.join('')}}</div>` : '') +
     (roundtripMismatchDetails.length ? `<div class="warning" style="margin-top:12px;"><strong>Roundtrip mismatches</strong><br>${{roundtripMismatchDetails.join('<br>')}}</div>` : '') +
     (notes.length ? `<div class="warning" style="margin-top:12px;">${{notes.map((note) => resultEsc(note)).join('<br>')}}</div>` : '');
+}}
+function resultNumberText(value, digits = 3) {{
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'n/a';
+  return numeric.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}}
+function renderModeValidationPanel(modeValidation) {{
+  const host = document.getElementById('resultModeSummary');
+  const title = document.getElementById('resultModeTitle');
+  if (!host || !title) return;
+  const mode = modeValidation || {{}};
+  const runClass = String(mode.run_class || 'unknown');
+  title.textContent = `Scenario Validation Mode · ${runClass}`;
+  const fixed = mode.fixed_snr || {{}};
+  const geometry = mode.geometry || {{}};
+  const links = [];
+  const fixedLinks = Array.isArray(fixed.links) ? fixed.links : [];
+  const geometryLinks = Array.isArray(geometry.links) ? geometry.links : [];
+  const renderLinks = (items) => items.map((item) => {{
+    const href = item.view_url || item.download_url || '#';
+    return `<a class="button-link secondary" href="${{resultEsc(href)}}"${{href.startsWith('/artifact/') ? ' target="_blank" rel="noopener noreferrer"' : ''}}>${{resultEsc(item.label || item.logical_path || 'Open artifact')}}</a>`;
+  }}).join('');
+  if (fixed.applicable) {{
+    links.push(renderLinks(fixedLinks));
+  }}
+  if (geometry.applicable) {{
+    links.push(renderLinks(geometryLinks));
+  }}
+  const cards = [];
+  if (fixed.applicable) {{
+    cards.push(`<div class="metric-card"><div class="metric-label">Fixed SNR / SINR Sweep</div><div class="metric-value">${{fixed.ok ? 'PASS' : 'FAIL'}}</div><div class="mini-note">SNR points=${{resultEsc(fixed.snr_points ?? 'n/a')}} | audit failures=${{resultEsc(fixed.artifact_audit_failures ?? 'n/a')}}</div><div class="mini-note">DL BLER min/max=${{resultNumberText(fixed.dl_min_bler, 4)}} / ${{resultNumberText(fixed.dl_max_bler, 4)}} | UL BLER min/max=${{resultNumberText(fixed.ul_min_bler, 4)}} / ${{resultNumberText(fixed.ul_max_bler, 4)}}</div><div class="mini-note">Target crossing SNR=${{resultNumberText(fixed.target_crossing_snr_db, 3)}} dB</div></div>`);
+  }}
+  if (geometry.applicable) {{
+    cards.push(`<div class="metric-card"><div class="metric-label">Geometry / Mobility</div><div class="metric-value">${{geometry.ok ? 'PASS' : 'FAIL'}}</div><div class="mini-note">Cells=${{resultEsc(geometry.cells ?? 'n/a')}} | UEs=${{resultEsc(geometry.ues ?? 'n/a')}} | Speed=${{resultNumberText(geometry.speed_kmh, 1)}} km/h</div><div class="mini-note">Expected Doppler=${{resultNumberText(geometry.expected_doppler_hz, 3)}} Hz</div><div class="mini-note">Trajectory rows=${{resultEsc(geometry.trajectory_rows ?? 'n/a')}} | measured SINR rows=${{resultEsc(geometry.measured_sinr_rows ?? 'n/a')}}</div></div>`);
+  }}
+  if (!cards.length) {{
+    cards.push('<div class="warning">No fixed-sweep or geometry validation mode evidence is available for this run yet.</div>');
+  }}
+  host.innerHTML = `<div class="metric-grid">${{cards.join('')}}</div>${{links.filter(Boolean).length ? `<div class="toolbar" style="margin-top:12px;flex-wrap:wrap;">${{links.filter(Boolean).join('')}}</div>` : ''}}`;
 }}
 function resultChartPriority(name) {{
   const token = String(name || '').trim().toLowerCase();
@@ -17402,6 +17696,7 @@ async function applyResultData(data) {{
   const counts = data.counts || {{}};
   document.getElementById('resultMeta').innerHTML = `<span class="pill">Status: ${{resultEsc(data.run.status_text)}}</span><span class="pill">Run Completion: ${{resultEsc(data.run.run_completion || 'n/a')}}</span><span class="pill">Result OK: ${{resultEsc(data.run.result_ok ?? 'n/a')}}</span><span class="pill">Required Failures: ${{resultEsc(data.run.required_failure_count ?? 'n/a')}}</span><span class="pill">Truth Contract OK: ${{resultEsc(data.run.runtime_truth_contract_ok ?? 'n/a')}}</span><span class="pill">Roundtrip Mismatches: ${{resultEsc(data.run.roundtrip_mismatch_count ?? 'n/a')}}</span><span class="pill">Runtime Evidence Missing: ${{resultEsc(data.run.required_runtime_evidence_missing_count ?? 'n/a')}}</span><span class="pill">Strict Truth Failures: ${{resultEsc(data.run.strict_truth_failure_count ?? 'n/a')}}</span><span class="pill">Failing Cases: ${{resultEsc(data.run.failing_case_count ?? 'n/a')}}</span><span class="pill">Warnings: ${{resultEsc(data.run.warning_count ?? 'n/a')}}</span><span class="pill">Visible Tables: ${{resultEsc(tables.length)}}</span><span class="pill">Visible Images: ${{resultEsc(images.length)}}</span><span class="pill">All Tables: ${{resultEsc(counts.tables_total)}}</span><span class="pill">Updated: ${{resultEsc(data.run.updated_utc)}}</span>`;
   try {{ renderRuntimeContext(data.runtime_context || {{}}); }} catch (err) {{ console.error('runtime context render failed', err); }}
+  try {{ renderModeValidationPanel(data.mode_validation || {{}}); }} catch (err) {{ console.error('mode validation render failed', err); }}
   try {{
     const metrics = [{{label:'Artifacts', value:counts.artifacts_total}}, {{label:'Tables', value:counts.tables_total}}, {{label:'Images', value:counts.images_total}}, {{label:'Logs', value:counts.logs_total}}, ...(data.metrics || []).slice(0, 8)];
     document.getElementById('resultMetricGrid').innerHTML = metrics.map((item) => `<div class="metric-card"><div class="metric-value">${{resultEsc(item.value)}}</div><div class="metric-label">${{resultEsc(item.label)}}${{item.source ? ' | ' + resultEsc(item.source) : ''}}</div></div>`).join('');
@@ -17475,6 +17770,11 @@ def build_result_page(run_id: int | None, run_tag: str | None = None, message: s
       <div id="resultMetricGrid" class="metric-grid" style="margin-top:14px;"></div>
       <div id="resultContext" class="toolbar" style="margin-top:14px;flex-wrap:wrap;"></div>
       <p class="muted">Tables are grouped by LLS block here, so you can jump straight to routes like <code>/result/pdsch</code> or <code>/result/pusch</code>. Inside each block, every DB table still gets its own live tab and download link.</p>
+    </section>
+    <section class="panel">
+      <h2 id="resultModeTitle">Scenario Validation Mode</h2>
+      <p class="muted">This panel separates fixed SNR/SINR sweep validation from geometry/mobility placement validation and links directly to the governing CSVs and plots.</p>
+      <div id="resultModeSummary"></div>
     </section>
     <section class="panel">
       <div class="panel-scroll-x"><div class="subtab-bar">{section_links}</div></div>
@@ -17671,7 +17971,7 @@ function mergeAnalyticsPayload(previous, incoming) {{
   if (!previous) return incoming;
   if (!incoming) return previous;
   const merged = {{ ...previous, ...incoming }};
-  const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug'];
+    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug', 'mode_validation'];
   stickyKeys.forEach((key) => {{
     if (incoming[key] === undefined) merged[key] = previous[key];
   }});

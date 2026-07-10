@@ -103,6 +103,7 @@ classdef Phase7TruthEvaluator
                 "PlotDataLineageOk"
                 "Phase7NoFabricationOk"
                 "Phase7ProvenanceOk"
+                "TwoModeAcceptanceGatesOk"
                 "FinalScientificClaimsTruthfulOk"];
         end
 

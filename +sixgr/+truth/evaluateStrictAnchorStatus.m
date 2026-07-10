@@ -343,6 +343,14 @@ switch runClass
         else
             reason = strjoin([fixedCampaignReason; adaptiveOutputsReason], "; ");
         end
+    case "fixed_snr_sweep_lls"
+        publicationEligible = false;
+        objectiveGateOk = true;
+        reason = "fixed_snr_sweep_lls is a dedicated fixed-link sweep validation mode; publication fixed-anchor claims remain disabled while the fixed-sweep audit provides the correctness gate.";
+    case "ue_placement_geometry_lls"
+        publicationEligible = false;
+        objectiveGateOk = true;
+        reason = "ue_placement_geometry_lls is a dedicated geometry and mobility validation mode; publication fixed-anchor claims remain disabled while geometry evidence gates provide the correctness gate.";
     otherwise
         publicationEligible = false;
         objectiveGateOk = false;
@@ -558,7 +566,8 @@ end
 
 function token = localNormalizeRunClassToken(raw)
 token = lower(strtrim(string(raw)));
-if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation"])
+if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation", ...
+        "fixed_snr_sweep_lls", "ue_placement_geometry_lls"])
     return;
 end
 token = "";

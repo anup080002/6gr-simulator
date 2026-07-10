@@ -12,9 +12,20 @@ isd = double(sixgr.util.structGet(cfg, "scenario.layout.interSiteDistance_m", ..
     sixgr.util.structGet(cfg, "deployment_topology.inter_site_distance_m", 500)));
 bsHeight = double(sixgr.util.structGet(cfg, "scenario.bs.height_m", 24));
 ueHeight = double(sixgr.util.structGet(cfg, "scenario.ue.height_m", 1.5));
-sectorAz = double(sixgr.util.structGet(cfg, "scenario.sectorization.azimOffsets_deg", [0 120 240]));
+sectorAz = double(sixgr.util.structGet(cfg, "scenario.sectorization.azimOffsets_deg", []));
 if isempty(sectorAz)
-    sectorAz = [0 120 240];
+    configuredSectors = double(sixgr.util.structGet(cfg, "topology.num_sectors_per_site", ...
+        sixgr.util.structGet(cfg, "deployment_topology.num_sectors_per_site", NaN)));
+    if ~(isfinite(configuredSectors) && configuredSectors >= 1)
+        configuredSectors = 3;
+    end
+    configuredSectors = max(1, round(configuredSectors));
+    if configuredSectors == 1
+        sectorAz = 0;
+    else
+        sectorAz = linspace(0, 360, configuredSectors + 1);
+        sectorAz = sectorAz(1:end-1);
+    end
 end
 sectorAz = sectorAz(:).';
 sitePos = [0 0 bsHeight; isd 0 bsHeight];
