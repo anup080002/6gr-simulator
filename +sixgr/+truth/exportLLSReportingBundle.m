@@ -136,7 +136,7 @@ for i = 1:numel(lines)
     end
     tok = regexp(line, '^- \{\s*key:\s*([^,]+),\s*label:\s*([^}]+)\}$', 'tokens', 'once');
     if ~isempty(tok)
-        metric = struct("key", string(strtrim(tok{1})), "label", string(strtrim(tok{2})));
+        metric = struct("key", string(strtrim(tok{1})), "label", localUnquoteCatalogScalar(tok{2}));
         if isempty(cats(catIdx).metrics)
             cats(catIdx).metrics = metric;
         else
@@ -145,6 +145,17 @@ for i = 1:numel(lines)
     end
 end
 catalog = struct("categories", cats);
+end
+
+function value = localUnquoteCatalogScalar(raw)
+value = strtrim(string(raw));
+if strlength(value) < 2
+    return;
+end
+chars = char(value);
+if (chars(1) == '"' && chars(end) == '"') || (chars(1) == '''' && chars(end) == '''')
+    value = string(chars(2:end-1));
+end
 end
 
 function ctx = localBuildContext(runFolder, layout, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus)
@@ -921,6 +932,19 @@ switch key
         T = [T; ...
             localMetricTableRow(cat, metric, "trace", "equalized_constellations_csv", avail, NaN, localPortablePath(csvPath), "", localPortablePath(csvPath), "Combined constellation sample table with reference, aligned-equalized, and hard-decision symbols from actual DL and UL runtime exports."); ...
             localMetricTableRow(cat, metric, "trace", "equalized_constellations_image", avail, NaN, localPortablePath(imgPath), "", localPortablePath(imgPath), "Combined aligned-equalized and hard-decision scatter image from actual DL and UL runtime exports.")];
+    case "phy_signal_diagnostics"
+        csvPath = fullfile(ctx.Layout.ReportCSVDir, "phy_signal_diagnostic_source.csv");
+        dlImgPath = fullfile(ctx.Layout.ReportImageDir, "dl_phy_signal_diagnostic.png");
+        ulImgPath = fullfile(ctx.Layout.ReportImageDir, "ul_phy_signal_diagnostic.png");
+        diagnosticAvailability = localPHYSignalDiagnosticArtifactAvailability(ctx);
+        note = "Diagnostic-only visualization from one bounded actual PHY trial per direction. Source rows must retain SourceArtifact=runtime_phy_arrays_same_trial, truth_status=real_lls_evidence, and CurveConstruction=runtime_same_trial_phy_signal_snapshot; proxy, fallback, and synthetic reconstruction are not accepted.";
+        if strlength(string(diagnosticAvailability.Reason)) > 0
+            note = note + " Availability gate: " + string(diagnosticAvailability.Reason) + ".";
+        end
+        T = [T; ...
+            localMetricTableRow(cat, metric, "DL_UL", "phy_signal_diagnostic_source_csv", diagnosticAvailability.Source, NaN, localPortablePath(csvPath), "", localPortablePath(csvPath), note); ...
+            localMetricTableRow(cat, metric, "DL", "dl_phy_signal_diagnostic_image", diagnosticAvailability.DL, NaN, localPortablePath(dlImgPath), "", localPortablePath(dlImgPath), note); ...
+            localMetricTableRow(cat, metric, "UL", "ul_phy_signal_diagnostic_image", diagnosticAvailability.UL, NaN, localPortablePath(ulImgPath), "", localPortablePath(ulImgPath), note)];
     case "llr_histograms"
         csvPath = localDebugArtifactPath(ctx, "LLRHistogramsCSV");
         imgPath = localDebugArtifactPath(ctx, "LLRHistogramsImage");
@@ -7898,6 +7922,115 @@ function out = localConstellationArtifactAvailability(ctx)
 T = localBuildEqualizedConstellationTable(ctx);
 hasData = any(localConstellationLineageMask(T));
 out = localDerivedOrPlaceholderAvailability(hasData);
+end
+
+function availability = localPHYSignalDiagnosticArtifactAvailability(ctx)
+availability = struct( ...
+    "Source", "not_available", ...
+    "DL", "not_available", ...
+    "UL", "not_available", ...
+    "Reason", "source_csv_missing");
+csvPath = fullfile(ctx.Layout.ReportCSVDir, "phy_signal_diagnostic_source.csv");
+T = localReadOptionalTable(csvPath);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+
+requiredColumns = [ ...
+    "SnapshotID","Panel","Series","PointIndex","XValue","YValue","Direction", ...
+    "CurveConstruction","truth_status","SourceArtifact","Status"];
+missingColumns = requiredColumns(~ismember(requiredColumns, string(T.Properties.VariableNames)));
+if ~isempty(missingColumns)
+    availability.Reason = "source_schema_missing:" + strjoin(missingColumns, "|");
+    return;
+end
+
+truthStatus = lower(strtrim(string(T.truth_status)));
+curveConstruction = lower(strtrim(string(T.CurveConstruction)));
+sourceArtifact = lower(strtrim(string(T.SourceArtifact)));
+rowStatus = lower(strtrim(string(T.Status)));
+if any(ismissing(truthStatus) | truthStatus ~= "real_lls_evidence")
+    availability.Reason = "truth_status_not_real_lls_evidence";
+    return;
+end
+if any(ismissing(curveConstruction) | curveConstruction ~= "runtime_same_trial_phy_signal_snapshot")
+    availability.Reason = "curve_construction_not_same_trial_runtime_snapshot";
+    return;
+end
+if any(ismissing(sourceArtifact) | sourceArtifact ~= "runtime_phy_arrays_same_trial")
+    availability.Reason = "source_artifact_not_runtime_phy_arrays_same_trial";
+    return;
+end
+if any(ismissing(rowStatus) | rowStatus ~= "available")
+    availability.Reason = "source_rows_not_available";
+    return;
+end
+
+directions = upper(strtrim(string(T.Direction)));
+if any(ismissing(directions) | ~ismember(directions, ["DL","UL"]))
+    availability.Reason = "source_direction_invalid";
+    return;
+end
+
+    requiredPanels = [ ...
+        "time_domain","spectrum","channel_estimate","pre_equalization_re_cloud", ...
+        "post_equalization_constellation","kpi"];
+    tupleColumns = ["Frame","Slot","UEIndex","RNTI","TBId"];
+reasons = strings(0, 1);
+hasValidDirection = false;
+for direction = ["DL","UL"]
+    Td = T(directions == direction, :);
+    if isempty(Td)
+        reasons(end+1, 1) = lower(direction) + "_snapshot_missing"; %#ok<AGROW>
+        continue;
+    end
+    snapshotIDs = strtrim(string(Td.SnapshotID));
+    snapshotIDs = snapshotIDs(~ismissing(snapshotIDs) & strlength(snapshotIDs) > 0);
+    if numel(unique(snapshotIDs, "stable")) ~= 1
+        reasons(end+1, 1) = lower(direction) + "_snapshot_id_not_unique"; %#ok<AGROW>
+        continue;
+    end
+    panels = lower(strtrim(string(Td.Panel)));
+    if ~all(ismember(requiredPanels, unique(panels, "stable")))
+        reasons(end+1, 1) = lower(direction) + "_essential_panel_missing"; %#ok<AGROW>
+        continue;
+    end
+    tupleConsistent = all(ismember(tupleColumns, string(Td.Properties.VariableNames)));
+    for i = 1:numel(tupleColumns)
+        if ~tupleConsistent
+            break;
+        end
+        tupleValues = strtrim(string(Td.(tupleColumns(i))));
+        loweredTupleValues = lower(tupleValues);
+        if any(ismissing(tupleValues) | strlength(tupleValues) == 0 | ...
+                ismember(loweredTupleValues, ["nan","missing","<missing>"])) || ...
+                numel(unique(tupleValues, "stable")) ~= 1
+            tupleConsistent = false;
+            break;
+        end
+    end
+    if ~tupleConsistent
+        reasons(end+1, 1) = lower(direction) + "_trial_tuple_not_unique"; %#ok<AGROW>
+        continue;
+    end
+
+    hasValidDirection = true;
+    imagePath = fullfile(ctx.Layout.ReportImageDir, char(lower(direction) + "_phy_signal_diagnostic.png"));
+    imageInfo = dir(imagePath);
+    if exist(imagePath, "file") == 2 && ~isempty(imageInfo) && double(imageInfo(1).bytes) > 0
+        availability.(char(direction)) = "derived";
+    else
+        reasons(end+1, 1) = lower(direction) + "_image_missing"; %#ok<AGROW>
+    end
+end
+if hasValidDirection
+    availability.Source = "observed";
+end
+if isempty(reasons)
+    availability.Reason = "";
+else
+    availability.Reason = strjoin(reasons, "|");
+end
 end
 
 function out = localLLRHistogramArtifactAvailability(ctx)

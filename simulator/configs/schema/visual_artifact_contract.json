@@ -425,6 +425,38 @@
       "lls_validity": "real_lls_evidence"
     },
     {
+      "plot_id": "dl_phy_signal_diagnostic",
+      "file_path": "reports/image/dl_phy_signal_diagnostic.png",
+      "source_csv": "reports/csv/phy_signal_diagnostic_source.csv",
+      "required_columns": ["SnapshotID", "Panel", "Series", "PointIndex", "XValue", "YValue", "Direction", "CurveConstruction", "truth_status", "SourceArtifact", "Status"],
+      "x_semantics": "panel_specific_x_value_from_one_actual_dl_trial_snapshot",
+      "y_semantics": "panel_specific_y_value_from_one_actual_dl_trial_snapshot",
+      "units": {"x": "panel_specific", "y": "panel_specific"},
+      "min_rows": 64,
+      "min_unique_x": 2,
+      "min_unique_y": 2,
+      "allowed_truth_status": ["real_lls_evidence"],
+      "allowed_curve_construction": ["runtime_same_trial_phy_signal_snapshot"],
+      "plot_kind": "relation",
+      "lls_validity": "diagnostic_only"
+    },
+    {
+      "plot_id": "ul_phy_signal_diagnostic",
+      "file_path": "reports/image/ul_phy_signal_diagnostic.png",
+      "source_csv": "reports/csv/phy_signal_diagnostic_source.csv",
+      "required_columns": ["SnapshotID", "Panel", "Series", "PointIndex", "XValue", "YValue", "Direction", "CurveConstruction", "truth_status", "SourceArtifact", "Status"],
+      "x_semantics": "panel_specific_x_value_from_one_actual_ul_trial_snapshot",
+      "y_semantics": "panel_specific_y_value_from_one_actual_ul_trial_snapshot",
+      "units": {"x": "panel_specific", "y": "panel_specific"},
+      "min_rows": 64,
+      "min_unique_x": 2,
+      "min_unique_y": 2,
+      "allowed_truth_status": ["real_lls_evidence"],
+      "allowed_curve_construction": ["runtime_same_trial_phy_signal_snapshot"],
+      "plot_kind": "relation",
+      "lls_validity": "diagnostic_only"
+    },
+    {
       "plot_id": "prach_correlation_traces",
       "file_path": "reports/image/prach_correlation_traces.png",
       "source_csv": "reports/csv/prach_correlation_trace.csv",

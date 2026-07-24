@@ -18,6 +18,7 @@ import secrets
 import subprocess
 import sys
 import textwrap
+import threading
 import urllib.parse
 import webbrowser
 from http.cookies import SimpleCookie
@@ -27,6 +28,11 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
+try:
+    import winreg
+except ImportError:  # pragma: no cover - non-Windows runtime
+    winreg = None
 
 try:
     import mysql.connector as mysql_connector
@@ -51,20 +57,143 @@ from lls_contract_aliases import (
 # Preserve the active checkout path instead of collapsing through resolve(),
 # which can jump to a sibling canonical path on Windows.
 REPO_ROOT = Path(__file__).absolute().parent.parent
+
+
+def load_local_dashboard_env(path: Path) -> None:
+    """Load ignored machine-local settings without overriding the shell."""
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+def matlab_release_from_path(path: Path) -> str:
+    for part in reversed(path.parts):
+        if re.fullmatch(r"R\d{4}[ab]", part, flags=re.IGNORECASE):
+            return part.upper().replace("A", "a").replace("B", "b")
+    return ""
+
+
+def matlab_release_key(path: Path) -> tuple[int, int]:
+    match = re.search(r"R(\d{4})([ab])", str(path), flags=re.IGNORECASE)
+    if not match:
+        return (0, 0)
+    return (int(match.group(1)), 1 if match.group(2).lower() == "b" else 0)
+
+
+def discover_matlab_runtime() -> tuple[Path | None, str, str, str]:
+    """Resolve MATLAB portably: explicit override, PATH, registry, installs."""
+    rejected: list[str] = []
+    explicit = str(os.environ.get("SIXGR_MATLAB_EXE") or "").strip()
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        if candidate.is_file():
+            return candidate, matlab_release_from_path(candidate), "SIXGR_MATLAB_EXE", ""
+        rejected.append(f"SIXGR_MATLAB_EXE does not exist: {candidate}")
+
+    path_hit = shutil.which("matlab")
+    if path_hit:
+        candidate = Path(path_hit)
+        if candidate.is_file():
+            return candidate, matlab_release_from_path(candidate), "PATH", "; ".join(rejected)
+
+    candidates: list[tuple[Path, str]] = []
+    if os.name == "nt" and winreg is not None:
+        access_modes = [
+            getattr(winreg, "KEY_WOW64_64KEY", 0),
+            getattr(winreg, "KEY_WOW64_32KEY", 0),
+        ]
+        for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for access_mode in access_modes:
+                try:
+                    root_key = winreg.OpenKey(
+                        hive,
+                        r"SOFTWARE\MathWorks\MATLAB",
+                        0,
+                        winreg.KEY_READ | access_mode,
+                    )
+                except OSError:
+                    continue
+                with root_key:
+                    index = 0
+                    while True:
+                        try:
+                            release = winreg.EnumKey(root_key, index)
+                        except OSError:
+                            break
+                        index += 1
+                        try:
+                            with winreg.OpenKey(root_key, release) as release_key:
+                                matlab_root = winreg.QueryValueEx(
+                                    release_key, "MATLABROOT"
+                                )[0]
+                            candidates.append(
+                                (
+                                    Path(str(matlab_root)) / "bin" / "matlab.exe",
+                                    "Windows registry",
+                                )
+                            )
+                        except OSError:
+                            continue
+
+    install_roots = [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "MATLAB",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "MATLAB",
+    ]
+    for install_root in install_roots:
+        if not install_root.is_dir():
+            continue
+        for release_dir in install_root.glob("R20??[ab]"):
+            executable_name = "matlab.exe" if os.name == "nt" else "matlab"
+            candidates.append(
+                (release_dir / "bin" / executable_name, "installed release")
+            )
+    for candidate, source in sorted(
+        candidates,
+        key=lambda item: matlab_release_key(item[0]),
+        reverse=True,
+    ):
+        if candidate.is_file():
+            return (
+                candidate,
+                matlab_release_from_path(candidate),
+                source,
+                "; ".join(rejected),
+            )
+    reason = "; ".join(
+        [
+            *rejected,
+            "MATLAB was not found on PATH, in the Windows registry, or under a standard install root.",
+        ]
+    )
+    return None, "", "not_found", reason
+
+
+load_local_dashboard_env(REPO_ROOT / "apps" / ".env")
 RESULTS_ROOT = Path(os.environ.get("SIXGR_RESULTS_ROOT", str(REPO_ROOT / "results")))
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
 PARAMETER_MATRIX_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "scenario_parameter_matrix_catalog.yaml"
 PARAMETER_CONSTRAINT_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "schema" / "parameter_constraints.json"
-MATLAB_EXE = Path(os.environ.get("SIXGR_MATLAB_EXE", r"C:\Program Files\MATLAB\R2024a\bin\matlab.exe"))
-if not MATLAB_EXE.is_file():
-    raise FileNotFoundError(
-        f"Required MATLAB R2024a executable is missing: {MATLAB_EXE}"
-    )
-MYSQL_HOST = os.environ.get("MYSQL_HOST", "localhost")
+MATLAB_EXE, MATLAB_RELEASE, MATLAB_SOURCE, MATLAB_DISCOVERY_REASON = (
+    discover_matlab_runtime()
+)
+MYSQL_HOST = os.environ.get("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
 MYSQL_USER = os.environ.get("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "root")
+MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "")
 MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", "sixgr_results")
+MYSQL_CONNECT_TIMEOUT = max(1, int(os.environ.get("MYSQL_CONNECT_TIMEOUT", "3") or "3"))
 DEFAULT_DASHBOARD_HOST = os.environ.get("SIXGR_DASHBOARD_HOST", "0.0.0.0").strip() or "0.0.0.0"
 try:
     DEFAULT_DASHBOARD_PORT = int(os.environ.get("SIXGR_DASHBOARD_PORT", "62906") or "62906")
@@ -76,6 +205,8 @@ try:
     DEFAULT_DASHBOARD_THREADS = max(4, int(os.environ.get("SIXGR_DASHBOARD_THREADS", "32") or "32"))
 except Exception:
     DEFAULT_DASHBOARD_THREADS = 32
+WEBGUI_EXECUTION_POLICY = "license_safe_serial"
+WEBGUI_EXECUTION_WORKERS = 1
 LEGACY_WAVEFORM_HONEST_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot.yaml"
 HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot.yaml"
 WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
@@ -149,6 +280,8 @@ CACHED_PAYLOAD_VERSION: dict[int, str] = {}
 SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
 PHY_GRID_PAYLOAD_CACHE: dict[tuple[int, int, str], dict[str, Any]] = {}
 TABLE_BROWSER_PAYLOAD_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
+RUN_LAUNCH_LOCK = threading.Lock()
+ACTIVE_DASHBOARD_PROCESSES: dict[str, subprocess.Popen[Any]] = {}
 DB_POOL_SIZE = max(8, int(os.environ.get("MYSQL_POOL_SIZE", "32") or "32"))
 STALE_RUNNING_MINUTES = max(5, int(os.environ.get("SIXGR_STALE_RUNNING_MINUTES", "15") or "15"))
 PROCESS_HEARTBEAT_STALL_MINUTES = max(
@@ -158,6 +291,8 @@ PROCESS_HEARTBEAT_STALL_MINUTES = max(
 TERMINAL_STATUS_PREFIXES = ("completed", "failed", "aborted")
 TERMINAL_STATUS_VALUES = {"completed", "completed_with_failures", "aborted", "failed", "stopped"}
 REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
+    {"id": "dl_phy_signal_diagnostic", "label": "DL PHY signal diagnostic", "prefer": "image", "chart_tokens": ["dl phy signal diagnostic"], "image_tokens": ["dl_phy_signal_diagnostic", "dl phy signal diagnostic"]},
+    {"id": "ul_phy_signal_diagnostic", "label": "UL PHY signal diagnostic", "prefer": "image", "chart_tokens": ["ul phy signal diagnostic"], "image_tokens": ["ul_phy_signal_diagnostic", "ul phy signal diagnostic"]},
     {"id": "active_bw_vs_power", "label": "active_bw_vs_power", "chart_tokens": ["active bandwidth vs power", "active bandwidth power"], "image_tokens": ["active_bw_vs_power"]},
     {"id": "active_rank_vs_power", "label": "active_rank_vs_power", "chart_tokens": ["active rank vs power", "active rank power"], "image_tokens": ["active_rank_vs_power"]},
     {"id": "antenna_element_layout", "label": "antenna_element_layout", "prefer": "image", "chart_tokens": ["antenna element layout", "array element layout"], "image_tokens": ["antenna element layout", "array element layout", "antenna_element_layout"]},
@@ -293,7 +428,7 @@ def db_connection(database: str | None = MYSQL_DATABASE):
         "user": MYSQL_USER,
         "password": MYSQL_PASSWORD,
         "autocommit": True,
-        "connection_timeout": 10,
+        "connection_timeout": MYSQL_CONNECT_TIMEOUT,
     }
     if database:
         kwargs["database"] = database
@@ -457,10 +592,105 @@ def local_matlab_process_active() -> bool:
     return bool(matlab_process_command_lines())
 
 
+def process_command_line_for_pid(pid_value: int) -> str:
+    if pid_value <= 0:
+        return ""
+    try:
+        if os.name == "nt":
+            proc = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    (
+                        "$p=Get-CimInstance Win32_Process -Filter \"ProcessId = "
+                        f"{int(pid_value)}\"; if ($p) {{ $p.CommandLine }}"
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            return str(proc.stdout or "").strip()
+        cmdline_path = Path("/proc") / str(int(pid_value)) / "cmdline"
+        if cmdline_path.is_file():
+            return cmdline_path.read_bytes().replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def dashboard_run_process_record(run_tag: str | None) -> dict[str, Any] | None:
+    token = safe_token(str(run_tag or ""))
+    pid_path = runtime_pid_file(token)
+    if pid_path is None or not pid_path.is_file():
+        return None
+    try:
+        payload = json.loads(pid_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        payload["pid"] = int(payload.get("pid") or 0)
+        payload["pid_path"] = str(pid_path)
+        return payload
+    except Exception:
+        return None
+
+
+def dashboard_run_process_active(run_tag: str | None) -> bool:
+    token = safe_token(str(run_tag or ""))
+    record = dashboard_run_process_record(token)
+    if not record:
+        return False
+    pid_value = int(record.get("pid") or 0)
+    command_line = process_command_line_for_pid(pid_value)
+    if not command_line:
+        return False
+    lowered = command_line.lower()
+    runtime_yaml = str(record.get("runtime_yaml") or "").strip().lower()
+    return (
+        "matlab" in lowered
+        and (token.lower() in lowered or (runtime_yaml and runtime_yaml in lowered))
+    )
+
+
+def terminate_dashboard_run(run_tag: str | None) -> int:
+    token = safe_token(str(run_tag or ""))
+    record = dashboard_run_process_record(token)
+    if not record:
+        raise ValueError(f"No dashboard-launched process record exists for run '{token}'.")
+    pid_value = int(record.get("pid") or 0)
+    if not dashboard_run_process_active(token):
+        pid_path = runtime_pid_file(token)
+        if pid_path is not None:
+            pid_path.unlink(missing_ok=True)
+        ACTIVE_DASHBOARD_PROCESSES.pop(token, None)
+        raise ValueError(f"Run '{token}' is no longer active.")
+    if os.name == "nt":
+        proc = subprocess.run(
+            ["taskkill", "/PID", str(pid_value), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or f"Unable to stop PID {pid_value}.").strip())
+    else:
+        os.kill(pid_value, 15)
+    pid_path = runtime_pid_file(token)
+    if pid_path is not None:
+        pid_path.unlink(missing_ok=True)
+    ACTIVE_DASHBOARD_PROCESSES.pop(token, None)
+    return pid_value
+
+
 def local_run_process_active(run_row: dict[str, Any]) -> bool:
     run_tag = str(run_row.get("run_tag") or "").strip().lower()
     if not run_tag:
         return local_matlab_process_active()
+    if dashboard_run_process_active(run_tag):
+        return True
     token = safe_token(run_tag).lower()
     pid_path = runtime_pid_file(run_tag)
     pid_value: int | None = None
@@ -470,24 +700,6 @@ def local_run_process_active(run_row: dict[str, Any]) -> bool:
             pid_value = int(payload.get("pid") or 0)
         except Exception:
             pid_value = None
-    if pid_value and pid_value > 0:
-        try:
-            if os.name == "nt":
-                proc = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid_value}", "/FO", "CSV", "/NH"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                )
-                output = (proc.stdout or "") + (proc.stderr or "")
-                if f'"{pid_value}"' in output or f",{pid_value}," in output:
-                    return True
-            else:
-                os.kill(pid_value, 0)
-                return True
-        except Exception:
-            pass
     for command_line in matlab_process_command_lines():
         lowered = command_line.lower()
         if run_tag in lowered or token in lowered:
@@ -4042,11 +4254,32 @@ def scenario_catalog_label(scenario_name: str) -> str:
 
 
 def scenario_dropdown_label(scenario_name: str) -> str:
-    try:
-        return str(_scenario_catalog_metadata_cached(scenario_name)["display_label"])
-    except Exception:
-        stem = Path(str(scenario_name or "")).stem
-        return humanize_key(stem or scenario_name)
+    # Dropdown rendering is a navigation concern, not a config-resolution pass.
+    # Resolving every inherited YAML tree here made the first page wait tens of
+    # seconds in larger catalogs. Detailed scenario metadata is loaded only
+    # after the operator opens a scenario.
+    stem = Path(str(scenario_name or "")).stem
+    label = humanize_key(stem or scenario_name)
+    label = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", label)
+    acronym_map = {
+        "Lls": "LLS",
+        "Snr": "SNR",
+        "Sinr": "SINR",
+        "Awgn": "AWGN",
+        "Ue": "UE",
+        "Dl": "DL",
+        "Ul": "UL",
+        "Nr": "NR",
+        "Mimo": "MIMO",
+        "Tdl": "TDL",
+        "Cdl": "CDL",
+        "Ghz": "GHz",
+        "Mhz": "MHz",
+        "Kmh": "km/h",
+    }
+    for source, replacement in acronym_map.items():
+        label = re.sub(rf"\b{source}\b", replacement, label)
+    return re.sub(r"\s+", " ", label).strip()
 
 
 def resolve_requested_launch_payload(
@@ -4989,6 +5222,36 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
             else f"MySQL artifact store unavailable, so browser run will write to /results: {mysql_reason}"
         )
     payload["output"] = output_cfg
+    # A browser run must not silently create a large local process pool. Several
+    # scenario families inherit 8-32 workers, which makes each worker perform a
+    # fresh R2026a online-license checkout. Keep the exact runtime overlay honest
+    # in the persisted YAML: one coordinator, no automatic parallel pool.
+    run_control_cfg = payload.get("run_control")
+    if not isinstance(run_control_cfg, dict):
+        run_control_cfg = {}
+        payload["run_control"] = run_control_cfg
+    run_control_cfg["num_workers"] = WEBGUI_EXECUTION_WORKERS
+    run_control_cfg["auto_start_parallel_pool"] = False
+    run_control_cfg["batch_size_links"] = 1
+    canonical_cfg = payload.get("canonical_control")
+    if not isinstance(canonical_cfg, dict):
+        canonical_cfg = {}
+        payload["canonical_control"] = canonical_cfg
+    canonical_run_cfg = canonical_cfg.get("run")
+    if not isinstance(canonical_run_cfg, dict):
+        canonical_run_cfg = {}
+        canonical_cfg["run"] = canonical_run_cfg
+    canonical_run_cfg["num_workers"] = WEBGUI_EXECUTION_WORKERS
+    canonical_run_cfg["auto_start_parallel_pool"] = False
+    canonical_run_cfg["batch_size_links"] = 1
+    run_cfg = payload.get("run")
+    if isinstance(run_cfg, dict):
+        if "num_workers" in run_cfg:
+            run_cfg["num_workers"] = WEBGUI_EXECUTION_WORKERS
+        if "numWorkers" in run_cfg:
+            run_cfg["numWorkers"] = WEBGUI_EXECUTION_WORKERS
+        if "useParallel" in run_cfg:
+            run_cfg["useParallel"] = False
     # Emit JSON text on disk even for .yaml runtime files. YAML parsers accept JSON as a
     # subset, and this preserves numeric types like 1e-6 without PyYAML re-emitting them
     # into a plain-scalar form that later reloads as a string.
@@ -5000,12 +5263,50 @@ def matlab_literal(text: str) -> str:
 
 
 def launch_run_from_yaml(scenario_name: str, yaml_text: str, run_tag: str) -> tuple[str, Path, Path]:
+    with RUN_LAUNCH_LOCK:
+        return _launch_run_from_yaml_locked(scenario_name, yaml_text, run_tag)
+
+
+def _terminate_new_process_tree(proc: subprocess.Popen[Any]) -> None:
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(int(proc.pid)), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+        else:
+            proc.terminate()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _launch_run_from_yaml_locked(scenario_name: str, yaml_text: str, run_tag: str) -> tuple[str, Path, Path]:
+    if MATLAB_EXE is None or not MATLAB_EXE.is_file():
+        raise RuntimeError(
+            "MATLAB is unavailable. Set SIXGR_MATLAB_EXE or add a MATLAB "
+            f"installation to PATH. {MATLAB_DISCOVERY_REASON}".strip()
+        )
     scenario_path = resolve_scenario_path(scenario_name)
     cleanup_runtime_yaml(scenario_path.parent)
 
-    normalized_yaml = normalize_run_yaml(yaml_text, scenario_name)
     token = safe_token(run_tag)
+    if dashboard_run_process_active(token):
+        raise RuntimeError(f"Run '{token}' is already active. Open Live to monitor or stop it.")
+    stale_pid_path = runtime_pid_file(token)
+    if stale_pid_path is not None:
+        stale_pid_path.unlink(missing_ok=True)
+    normalized_yaml = normalize_run_yaml(yaml_text, scenario_name)
     runtime_path = scenario_path.with_name(f"__web_runtime_{token}.yaml")
+    initial_log_file = RUNTIME_LOG_DIR / f"{token}.log"
+    if runtime_path.exists() or initial_log_file.exists():
+        token = safe_token(f"{token}_{datetime.now(timezone.utc).strftime('%H%M%S_%f')}")
+        runtime_path = scenario_path.with_name(f"__web_runtime_{token}.yaml")
     runtime_path.write_text(normalized_yaml, encoding="utf-8")
 
     RUNTIME_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -5019,6 +5320,7 @@ def launch_run_from_yaml(scenario_name: str, yaml_text: str, run_tag: str) -> tu
     env["MYSQL_USER"] = MYSQL_USER
     env["MYSQL_PASSWORD"] = MYSQL_PASSWORD
     env["MYSQL_DATABASE"] = MYSQL_DATABASE
+    env["SIXGR_WEBGUI_RUN"] = "1"
 
     rel_runtime_path = runtime_path.relative_to(REPO_ROOT).as_posix()
     repo_root_literal = matlab_literal(str(REPO_ROOT))
@@ -5027,6 +5329,8 @@ def launch_run_from_yaml(scenario_name: str, yaml_text: str, run_tag: str) -> tu
         f"addpath('{repo_root_literal}','-begin'); "
         "rehash; "
         "setup6GRSimToolkit('Verbose',false); "
+        "fprintf('[sixgr-webgui] Execution policy: license_safe_serial "
+        f"({WEBGUI_EXECUTION_WORKERS} worker, parallel pool disabled).\\n'); "
         f"run_6g_phy_lls_single('{matlab_literal(rel_runtime_path)}','results','{matlab_literal(token)}');"
     )
     creationflags = 0
@@ -5045,20 +5349,33 @@ def launch_run_from_yaml(scenario_name: str, yaml_text: str, run_tag: str) -> tu
             creationflags=creationflags,
         )
     pid_path = runtime_pid_file(token)
-    if pid_path is not None:
-        pid_path.write_text(
+    if pid_path is None:
+        _terminate_new_process_tree(proc)
+        raise RuntimeError("Unable to create the run process record path.")
+    pid_tmp_path = pid_path.with_name(f"{pid_path.name}.{int(proc.pid)}.tmp")
+    try:
+        pid_tmp_path.write_text(
             json.dumps(
                 {
                     "pid": int(proc.pid),
                     "run_tag": token,
                     "runtime_yaml": str(runtime_path.name),
                     "log_file": str(log_file.name),
+                    "matlab_exe": str(MATLAB_EXE),
+                    "execution_policy": WEBGUI_EXECUTION_POLICY,
+                    "execution_workers": WEBGUI_EXECUTION_WORKERS,
                     "launched_utc": datetime.now(timezone.utc).isoformat(),
                 },
                 indent=2,
             ),
             encoding="utf-8",
         )
+        os.replace(pid_tmp_path, pid_path)
+    except Exception:
+        pid_tmp_path.unlink(missing_ok=True)
+        _terminate_new_process_tree(proc)
+        raise
+    ACTIVE_DASHBOARD_PROCESSES[token] = proc
     return token, log_file, runtime_path
 
 
@@ -6574,8 +6891,10 @@ def build_artifact_descriptor(art: dict[str, Any]) -> dict[str, Any]:
         "download_url": artifact_url(int(art["artifact_id"]), download=True),
     }
     if art["artifact_kind"] == "table_csv":
-        descriptor["view_url"] = f"/artifact/{art['artifact_id']}/table"
-        descriptor["full_table_view_url"] = f"/artifact/{art['artifact_id']}/table?rows=all"
+        table_query = {"artifact_id": str(art["artifact_id"])}
+        if art.get("run_id") not in (None, ""):
+            table_query["run_id"] = str(art["run_id"])
+        descriptor["view_url"] = f"/tables?{urllib.parse.urlencode(table_query)}"
     else:
         descriptor["view_url"] = artifact_url(int(art["artifact_id"]), download=False)
     return attach_plot_bucket(descriptor)
@@ -6654,7 +6973,6 @@ def _build_legacy_plot_browser_items(
                 "kind": "interactive",
                 "source_kind": "chart_source_table",
                 "source": source,
-                "table_view_url": f"/artifact/{artifact_id}/table",
                 "chart_view_url": f"/api/artifact/{artifact_id}/chart",
                 "download_url": str(chart_artifact.get("download_url") or artifact_url(artifact_id, download=True)),
             }
@@ -6818,7 +7136,6 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
                     "source": str(chart.get("title") or chart.get("chart_id") or ""),
                     "reason": str(item.get("reason") or ""),
                     "family_id": str(item.get("reference_id") or ""),
-                    "table_view_url": f"/artifact/{artifact_id}/table",
                     "chart_view_url": f"/api/artifact/{artifact_id}/chart",
                     "download_url": str(chart.get("download_url") or artifact_url(artifact_id, download=True)),
                 }
@@ -6856,6 +7173,12 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
                 }
             )
     if canonical_items:
+        canonical_items.sort(
+            key=lambda item: (
+                1 if str(item.get("kind") or "") == "unavailable" else 0,
+                0 if str(item.get("family_id") or "").endswith("phy_signal_diagnostic") else 1,
+            )
+        )
         merged_items = merge_plot_browser_items(canonical_items, legacy_items)
         merged_items, buckets = bucketize_plot_browser_items(merged_items)
         canonical_items, canonical_buckets = bucketize_plot_browser_items(canonical_items)
@@ -8715,6 +9038,9 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Slot", "Slot"),
         ("ServingCell", "Cell"),
         ("BaseStationID", "gNB"),
+        ("SourceClassification", "SourceClassification"),
+        ("RuntimeMaterializationStatus", "Runtime materialization"),
+        ("ControlGatingEffect", "Gating effect"),
         ("CRCPass", "CRC pass"),
         ("DetectionMetric", "Metric"),
         ("EVM_rms", "EVM"),
@@ -8788,6 +9114,12 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("DetectionMetric", "Metric"),
         ("EstimatedDopplerHz", "Est Doppler Hz"),
         ("DopplerError_Hz", "Doppler err Hz"),
+        ("TRSValidityState", "TRSValidityState"),
+        ("TrackingEligibility", "Tracking eligible"),
+        ("TRSRuntimeConsumer", "Runtime consumer"),
+        ("TRSInfluencedDecision", "Influenced decision"),
+        ("TRSProcessed", "Processed"),
+        ("TRSReceiverIntegrationStatus", "Receiver integration"),
         ("TRSUpdateOutcome", "Update"),
         ("Status", "Status"),
     ],
@@ -8808,6 +9140,7 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("TargetCodeRate", "TargetCodeRate"),
         ("TBSize_bits", "TBS bits"),
         ("PostEqSINR_dB", "Post-eq SINR dB"),
+        ("MeasuredTrialSINR_dB", "Measured SINR dB"),
         ("WidebandCQI", "CQI"),
         ("Status", "Status"),
     ],
@@ -8824,6 +9157,7 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("TargetCodeRate", "TargetCodeRate"),
         ("TBSize_bits", "TBS bits"),
         ("PostEqSINR_dB", "Post-eq SINR dB"),
+        ("MeasuredTrialSINR_dB", "Measured SINR dB"),
         ("WidebandCQI", "CQI"),
         ("Status", "Status"),
     ],
@@ -13492,57 +13826,84 @@ def page_shell(
     return doc.encode("utf-8")
 
 
+def build_compact_access_page(title: str, subtitle: str, body: str) -> bytes:
+    """Render authentication content inside the one product visual shell."""
+    doc = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)} | 6G Link-Level Simulator</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23087a70'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-family='Arial' font-size='25' font-weight='700' fill='white'%3E6G%3C/text%3E%3C/svg%3E">
+  {product_frontend_style()}
+  <style>
+    .access-main {{ min-height: 100%; display: grid; place-items: center; padding: 24px; }}
+    .access-card {{ width: min(520px, 100%); }}
+    .access-form {{ display: grid; gap: 10px; margin-top: 16px; }}
+    .access-form label {{ color: var(--muted); font-size: 12px; font-weight: 700; }}
+  </style>
+</head>
+<body>
+  <div class="app-shell" data-product-shell>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">6G</div>
+        <div><h1>6G Link-Level<br>Simulator</h1></div>
+      </div>
+    </aside>
+    <section class="workspace">
+      <header class="product-header">
+        <div>
+          <span class="badge good">LLS</span>
+          <h2>{html.escape(title)}</h2>
+          <p class="subtle">{html.escape(subtitle)}</p>
+        </div>
+      </header>
+      <main id="productMain">
+        <div class="access-main">
+          <section class="panel access-card">{body}</section>
+        </div>
+      </main>
+    </section>
+  </div>
+</body>
+</html>
+"""
+    return doc.encode("utf-8")
+
+
 def build_login_page(message: str = "", next_url: str = "/home") -> bytes:
     if auth_mode_open():
-        return page_shell(
-            "Open Access",
-            '<section class="panel"><h2>Open Intranet Access</h2><p class="muted">The dashboard is configured for open intranet access. Username and password prompts are disabled.</p><div class="toolbar"><a class="button-link" href="/home">Open Dashboard</a></div></section>',
-            active="login",
-            user_profile=dict(OPEN_ACCESS_PROFILE),
+        return build_compact_access_page(
+            "Dashboard ready",
+            "Continue to the simulator.",
+            '<div class="toolbar"><a class="button-link primary" href="/home">Open simulator</a></div>',
         )
     if not USER_PROFILES:
-        return page_shell(
-            "Login",
-            '<section class="panel"><h2>Protected Access Misconfigured</h2><p class="muted">Protected login mode is enabled, but no operator profiles were supplied through <code>SIXGR_DASHBOARD_USERS_JSON</code>. Open intranet mode is the intended default for this deployment.</p></section>',
-            active="login",
-            user_profile=None,
+        return build_compact_access_page(
+            "Access unavailable",
+            "Protected access needs an operator profile.",
+            '<p class="warning">Configure <code>SIXGR_DASHBOARD_USERS_JSON</code> or restore the default open access mode.</p>',
         )
     next_url = next_url or "/home"
     safe_next = html.escape(next_url, quote=True)
     message_html = f'<p class="warning">{html.escape(message)}</p>' if message else ""
     body = f"""
-    <section class="login-shell">
-      <div class="login-card">
-        <div class="login-hero">
-          <span class="pill">Secure Intranet Access</span>
-          <h2>6G LLS Operations Console</h2>
-          <p class="muted">Sign in to launch runs, monitor live metrics, browse database-backed results, inspect realtime analytics, and read the detailed code-grounded LLS documentation.</p>
-          <div class="hero-badges">
-            <span class="pill">Realtime MySQL updates</span>
-            <span class="pill">Interactive analytics</span>
-            <span class="pill">Live map + logs</span>
-            <span class="pill">Code-grounded documentation</span>
-          </div>
-        </div>
-        <div class="login-form-panel">
-          <h2>Login</h2>
-          <p class="muted">Use an explicitly provisioned intranet operator account to enter the dashboard.</p>
-          {message_html}
-          <form method="post" action="/login">
-            <input type="hidden" name="next" value="{safe_next}">
-            <label for="username"><strong>Username</strong></label>
-            <input id="username" name="username" type="text" autocomplete="username" placeholder="operator">
-            <label for="password"><strong>Password</strong></label>
-            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••">
-            <div class="toolbar" style="margin-top:8px;">
-              <button type="submit">Enter Dashboard</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </section>
+      {message_html}
+      <form class="access-form" method="post" action="/login">
+        <input type="hidden" name="next" value="{safe_next}">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="username">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password">
+        <button class="primary" type="submit">Sign in</button>
+      </form>
     """
-    return page_shell("Login", body, active="login", user_profile=None)
+    return build_compact_access_page(
+        "Sign in",
+        "Use your simulator operator account.",
+        body,
+    )
 
 
 def build_profile_page(user_profile: dict[str, Any]) -> bytes:
@@ -13631,6 +13992,9 @@ PRODUCT_PAGE_ROUTES: dict[str, str] = {
     "/result": "realtime",
     "/map": "geometry",
     "/logs": "realtime",
+    "/phy-grid": "phy_grid",
+    "/scenario-io": "home",
+    "/results": "plots",
     "/outputs": "artifacts",
     "/images": "artifacts",
 }
@@ -13638,27 +14002,11 @@ PRODUCT_PAGE_ROUTES.update(output_contract.route_map("reports"))
 PRODUCT_PAGE_ROUTES.update(output_contract.route_map("analytics"))
 
 PRODUCT_NAV = [
-    ("home", "Home", "/home"),
-    ("run_control", "Run Control", "/run-control"),
-    ("scenario", "Scenario", "/scenario"),
-    ("geometry", "Geometry", "/geometry"),
-    ("waveform", "Waveform", "/waveform"),
-    ("traffic", "Traffic", "/traffic"),
-    ("mac_scheduler", "MAC / Scheduler", "/mac-scheduler"),
-    ("l1_phy", "L1 / PHY", "/l1-phy"),
-    ("antenna_air", "Antenna / Air Interface / Channel", "/antenna-air"),
-    ("phy_grid", "PHY Grid", "/phy-grid"),
-    ("realtime", "Real-Time Data", "/realtime"),
-    ("reports", "Reports", "/reports"),
-    ("analytics", "Analytics", "/analytics"),
-    ("plots", "Plots", "/plots"),
-    ("tables", "Tables", "/tables"),
-    ("runs", "Runs", "/runs"),
-    ("previous_runs", "Previous Runs", "/previous-runs"),
-    ("artifacts", "Artifact Explorer", "/artifacts"),
-    ("parameters", "Parameter Catalog", "/parameter-catalog"),
-    ("compare", "Compare Runs", "/compare-runs"),
-    ("scenario_io", "Scenario I/O", "/scenario-io"),
+    ("home", "Scenario", "/home"),
+    ("scenario", "Configure", "/scenario"),
+    ("run_control", "Run", "/run-control"),
+    ("realtime", "Live", "/realtime"),
+    ("plots", "Results & Evidence", "/plots"),
 ]
 
 PRODUCT_CONFIG_MODEL_PAGES = {
@@ -14198,54 +14546,72 @@ def product_config_overview(config_payload: dict[str, Any], scenario_name: str, 
     }
 
 
-def product_backend_status() -> dict[str, Any]:
+def product_backend_status(*, probe_storage: bool = True) -> dict[str, Any]:
     status = {
-        "matlab_exe": str(MATLAB_EXE),
-        "matlab_r2023b_only": True,
-        "matlab_available": MATLAB_EXE.is_file(),
+        "matlab_exe": str(MATLAB_EXE or ""),
+        "matlab_release": MATLAB_RELEASE,
+        "matlab_source": MATLAB_SOURCE,
+        "matlab_reason": MATLAB_DISCOVERY_REASON,
+        "matlab_available": bool(MATLAB_EXE and MATLAB_EXE.is_file()),
         "mysql_host": MYSQL_HOST,
         "mysql_port": MYSQL_PORT,
         "mysql_database": MYSQL_DATABASE,
-        "mysql_status": "unavailable",
+        "mysql_status": "checking" if not probe_storage else "unavailable",
         "mysql_reason": "",
         "latest_run_id": None,
         "preferred_live_run_id": None,
         "preferred_analysis_run_id": None,
-        "run_discovery": "mysql_plus_filesystem",
+        "run_discovery": "pending" if not probe_storage else "mysql_plus_filesystem",
     }
-    try:
-        with db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
-        status["mysql_status"] = "connected"
-    except Exception as exc:
-        status["mysql_reason"] = str(exc)
-    try:
-        quick_id = quick_latest_run_id()
-        status["latest_run_id"] = quick_id
-        status["preferred_live_run_id"] = quick_id
-        status["preferred_analysis_run_id"] = quick_id
-    except Exception as exc:
-        reason = str(exc)
-        status["run_discovery"] = "unavailable"
-        status["mysql_reason"] = f"{status.get('mysql_reason')}; run discovery failed: {reason}".strip("; ")
+    if probe_storage:
+        try:
+            with db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+            status["mysql_status"] = "connected"
+        except Exception as exc:
+            status["mysql_reason"] = str(exc)
+        try:
+            quick_id = quick_latest_run_id()
+            status["latest_run_id"] = quick_id
+            status["preferred_live_run_id"] = quick_id
+            status["preferred_analysis_run_id"] = quick_id
+        except Exception as exc:
+            reason = str(exc)
+            status["run_discovery"] = "unavailable"
+            status["mysql_reason"] = f"{status.get('mysql_reason')}; run discovery failed: {reason}".strip("; ")
     return status
+
+
+def product_backend_bootstrap_status() -> dict[str, Any]:
+    return {
+        "matlab_exe": str(MATLAB_EXE or ""),
+        "matlab_release": MATLAB_RELEASE,
+        "matlab_source": MATLAB_SOURCE,
+        "matlab_reason": MATLAB_DISCOVERY_REASON,
+        "matlab_available": bool(MATLAB_EXE and MATLAB_EXE.is_file()),
+        "mysql_status": "checking",
+        "latest_run_id": None,
+        "preferred_live_run_id": None,
+        "preferred_analysis_run_id": None,
+        "run_discovery": "pending",
+    }
 
 
 def product_frontend_style() -> str:
     return """
 <style>
-:root{--bg:#f6f8f5;--panel:#fff;--ink:#17201a;--muted:#607064;--line:#dce5df;--strong:#b7c8bf;--blue:#087f5b;--teal:#2f6690;--green:#1d7f45;--red:#b42336;--amber:#8a6a00;--shadow:0 12px 28px rgba(28,43,34,.08);--mono:Consolas,"Courier New",monospace;--sans:"Segoe UI",Arial,sans-serif}
-*{box-sizing:border-box}html,body{min-height:100%}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)}a{color:inherit;text-decoration:none}
-.app-shell{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;padding:16px;min-height:100vh}.sidebar,.config-dock,.product-header,.panel,.tile,.table-wrap,.map-box{background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}.sidebar{position:sticky;top:16px;height:calc(100vh - 32px);overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable both-edges;padding:16px}.config-dock{padding:16px}.workspace{display:grid;gap:16px;align-content:start;min-width:0}.brand{display:flex;gap:12px;align-items:center;margin-bottom:18px}.brand-mark{width:44px;height:44px;border-radius:8px;display:grid;place-items:center;background:#e7f5ef;color:var(--blue);font-weight:800;border:1px solid #b8dfd0}.brand h1{font-size:18px;margin:0 0 4px;line-height:1.2}.brand p,.subtle{margin:0;color:var(--muted);line-height:1.5}.field-label,.eyebrow{display:block;margin:0 0 8px;color:var(--muted);font-size:12px;font-weight:700}
-.mode-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.nav-list{display:grid;gap:6px;margin-top:18px}.nav-item{padding:10px 12px;border:1px solid transparent;border-radius:8px;color:#2f4438;font-weight:650}.nav-item.active,.nav-item:hover{border-color:#a6d6c3;background:#edf8f3;color:var(--blue)}
-button,.button-link,select,input,textarea{font:inherit;border-radius:8px}button,.button-link{border:1px solid var(--strong);background:#fff;padding:10px 12px;color:var(--ink);font-weight:700;cursor:pointer}button.primary,.mode-button.active,.button-link.primary{background:var(--blue);color:#fff;border-color:var(--blue)}button:disabled{opacity:.55;cursor:not-allowed}select,input,textarea{border:1px solid var(--strong);background:#fff;padding:10px 12px;color:var(--ink);width:100%}
-.product-header{padding:16px;display:grid;grid-template-columns:minmax(0,1fr)auto;gap:16px;align-items:start}.product-header h2{margin:0 0 6px;font-size:26px}.top-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:760px}.top-actions select{width:260px}#runForm{display:inline}.message{padding:12px 14px;background:#fff8e8;color:#6b4500;border:1px solid #e9c77d;border-radius:8px}.hidden{display:none!important}.grid{display:grid;gap:12px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.panel{padding:16px}.panel h3,.tile h3{margin:0 0 8px;font-size:18px}.tile{padding:14px;min-width:0}.tile h4{margin:0 0 6px;font-size:16px}.tile p{margin:0;color:var(--muted);line-height:1.45}.metric{border-left:4px solid var(--teal)}.metric .value{font-size:22px;font-weight:800;margin-top:4px}
+:root{--bg:#f3f7f6;--panel:#fff;--ink:#132522;--muted:#647773;--line:#dce8e5;--strong:#b8cdc8;--blue:#087a70;--teal:#2e6b78;--green:#177448;--red:#b42336;--amber:#8a6400;--shadow:0 8px 24px rgba(20,57,49,.07);--mono:Consolas,"Courier New",monospace;--sans:"Segoe UI Variable","Segoe UI",Arial,sans-serif}
+*{box-sizing:border-box}html,body{height:100%;overflow:hidden}body{margin:0;background:radial-gradient(circle at 85% 0,#e4f5f1 0,transparent 32%),var(--bg);color:var(--ink);font-family:var(--sans)}a{color:inherit;text-decoration:none}
+.app-shell{display:grid;grid-template-columns:224px minmax(0,1fr);height:100vh;min-height:0}.sidebar,.config-dock,.product-header,.panel,.tile,.table-wrap,.map-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}.sidebar{height:100vh;overflow:hidden;padding:22px 14px;border:0;border-radius:0;background:linear-gradient(180deg,#102e2c 0%,#173c38 100%);color:#fff;box-shadow:8px 0 28px rgba(9,38,34,.14)}.config-dock{padding:14px}.workspace{display:grid;grid-template-rows:auto minmax(0,1fr);gap:14px;height:100vh;min-height:0;min-width:0}#productMain{min-height:0;overflow:auto;padding:0 18px 18px;scrollbar-gutter:stable}.brand{display:flex;gap:11px;align-items:center;margin:0 4px 26px}.brand-mark{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#65dfc4,#c4f4e8);color:#103934;font-weight:900;border:1px solid rgba(255,255,255,.34)}.brand h1{font-size:16px;margin:0;line-height:1.2;letter-spacing:-.01em}.brand p,.subtle{margin:0;color:var(--muted);line-height:1.45}.field-label,.eyebrow{display:block;margin:0 0 8px;color:var(--muted);font-size:12px;font-weight:700}
+.mode-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.nav-list{display:grid;gap:7px}.nav-item{padding:12px 13px;border:1px solid transparent;border-radius:11px;color:#c9ded9;font-weight:650;transition:.15s ease}.nav-item.active,.nav-item:hover{border-color:rgba(149,230,211,.34);background:rgba(122,221,198,.14);color:#fff;transform:translateX(2px)}
+button,.button-link,select,input,textarea{font:inherit;border-radius:10px}button,.button-link{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--strong);background:#fff;padding:9px 12px;color:var(--ink);font-weight:700;cursor:pointer;white-space:nowrap}button:hover,.button-link:hover{border-color:var(--blue);color:var(--blue)}button.primary,.mode-button.active,.button-link.primary{background:linear-gradient(135deg,#087a70,#0d8c72);color:#fff;border-color:#087a70;box-shadow:0 6px 14px rgba(8,122,112,.2)}button:disabled{opacity:.55;cursor:not-allowed}select,input,textarea{border:1px solid var(--strong);background:#fff;padding:9px 11px;color:var(--ink);width:100%}
+.product-header{margin:14px 18px 0;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr)auto;gap:16px;align-items:center}.product-header h2{margin:2px 0 2px;font-size:22px;letter-spacing:-.02em}.product-header .badge{margin:0}.top-actions{display:flex;gap:7px;flex-wrap:nowrap;justify-content:flex-end;align-items:center}.top-actions select{width:min(32vw,330px)}#runForm,#scenarioUploadForm{display:inline-flex}.message{margin-top:8px;padding:9px 11px;background:#fff8e8;color:#6b4500;border:1px solid #e9c77d;border-radius:10px}.hidden{display:none!important}.grid{display:grid;gap:10px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.panel{padding:14px}.panel h3,.tile h3{margin:0 0 7px;font-size:17px}.tile{padding:13px;min-width:0}.tile h4{margin:0 0 5px;font-size:15px}.tile p{margin:0;color:var(--muted);line-height:1.4}.metric{border-left:3px solid var(--teal)}.metric .value{font-size:20px;font-weight:800;margin-top:3px}
 .workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.workflow .tile{cursor:pointer;min-height:148px}.workflow .tile:hover,.block-card:hover{border-color:var(--blue)}.badge{display:inline-flex;align-items:center;border:1px solid var(--strong);border-radius:8px;padding:4px 8px;font-size:12px;color:var(--muted);background:#f7f9fc;margin:3px 4px 3px 0}.badge.good{color:var(--green);border-color:#a9d5b7;background:#f2fbf5}.badge.warn{color:var(--amber);border-color:#e3c78d;background:#fff8e8}.badge.bad{color:var(--red);border-color:#e3a8b2;background:#fff3f5}
-.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
-.table-wrap{overflow:auto;max-height:560px;overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:none;overflow:visible}.table-wrap.tall-scroll{max-height:min(72vh, 880px)}table{width:100%;border-collapse:collapse}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f6fa;z-index:1;color:#405469}.stream{max-height:360px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff}.log-warn{border-left:4px solid var(--amber)}.log-error{border-left:4px solid var(--red)}.warning{border-left:4px solid var(--amber);padding:10px 12px;background:#fff8e8;color:#6b4500;border-radius:8px}.map-box{min-height:500px;overflow:hidden}#geometryMap,#realtimeMap{height:500px;width:100%}.chart-box{height:380px;border:1px solid var(--line);border-radius:8px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:700;min-width:140px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:132px}.metric-explorer-note{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.artifact-card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff}.artifact-card h4{margin:0 0 8px}.artifact-card img{display:block;width:100%;max-height:320px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:12px}.interactive-image-stage{position:relative;height:min(78vh,900px);min-height:520px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.45}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:12px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:12px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}
-@media(max-width:1280px){.app-shell{grid-template-columns:240px minmax(0,1fr)}.workflow{grid-template-columns:repeat(3,minmax(0,1fr))}.block-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:860px){.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid{display:block}.sidebar{position:static;height:auto;margin-bottom:12px}.tile,.panel,.config-dock{margin-bottom:12px}.top-actions{justify-content:flex-start}}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.config-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.config-group{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fbfdfc}.config-group[open]{grid-column:1/-1}.config-group summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;cursor:pointer;color:#315650;font-weight:800;list-style:none}.config-group summary::-webkit-details-marker{display:none}.config-group summary::before{content:"›";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-3px;border-radius:6px;background:#e5f4f0;color:var(--blue);font-size:18px;line-height:1;transition:transform .15s ease}.config-group[open] summary::before{transform:rotate(90deg)}.config-group[open] summary{border-bottom:1px solid var(--line);background:#f3faf7}.config-group summary>span:first-of-type{flex:1}.config-group>.form-grid{padding:12px}.config-group .param-editor{padding:10px;border:1px solid #e4eeeb;border-radius:10px;background:#fff;min-width:0}.config-group .param-editor .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
+.table-wrap{overflow:auto;max-height:calc(100vh - 270px);overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:calc(100vh - 300px)}.table-wrap.tall-scroll{max-height:calc(100vh - 330px)}table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f8f7;z-index:1;color:#405d58}.stream{max-height:280px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}.log-warn{border-left:3px solid var(--amber)}.log-error{border-left:3px solid var(--red)}.warning{border-left:3px solid var(--amber);padding:9px 11px;background:#fff8e8;color:#6b4500;border-radius:10px}.map-box{min-height:420px;overflow:hidden}#geometryMap,#realtimeMap{height:420px;width:100%}.chart-box{height:calc(100vh - 310px);min-height:300px;border:1px solid var(--line);border-radius:12px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.toolbar label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:130px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:112px}.metric-explorer-note{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.artifact-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.artifact-card h4{margin:0 0 7px}.artifact-card img{display:block;width:100%;max-height:280px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:10px}.interactive-image-stage{position:relative;height:calc(100vh - 300px);min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.4}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:10px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:9px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}.section-tabs{display:flex;gap:6px;overflow:auto;margin:0 0 10px;padding-bottom:2px}.section-tabs .button-link{padding:7px 10px;font-size:13px}.section-tabs .active{background:#e5f4f0;color:var(--blue);border-color:#9acdc2}.step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.step-card{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fff}.step-number{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e5f4f0;color:var(--blue);font-weight:900}.action-menu{position:relative}.action-menu summary{cursor:pointer;font-weight:700}.action-menu[open]{z-index:3}.action-menu-body{position:absolute;right:0;top:calc(100% + 5px);display:grid;gap:5px;width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}.rg-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#f8fbfa}.resource-grid{display:grid;gap:3px;min-width:max-content;padding:8px}.rg-label,.rg-head,.rg-cell{min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px}.rg-label{position:sticky;left:0;z-index:2;justify-content:flex-start;padding:0 8px;background:#eef5f3;color:#315650;font-weight:700}.rg-head{position:sticky;top:0;z-index:1;flex-direction:column;background:#e8f1ef;font-weight:800}.rg-head span{font-size:9px;color:var(--muted)}.rg-cell{background:#eef3f2;border:1px solid #e4ecea}.rg-cell.active{color:#fff;font-weight:800}.rg-cell.dl{background:#2679a8;border-color:#2679a8}.rg-cell.ul{background:#9b5cc2;border-color:#9b5cc2}.rg-cell.ref{background:#0d8c72;border-color:#0d8c72}
+@media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group{margin-bottom:10px}}
 </style>
 """
 
@@ -14259,36 +14625,38 @@ def build_product_frontend_page(
 ) -> bytes:
     scenarios = list_scenarios()
     scenario_name = selected_scenario if selected_scenario in scenarios else (DEFAULT_SCENARIO if DEFAULT_SCENARIO in scenarios else (scenarios[0] if scenarios else DEFAULT_SCENARIO))
-    try:
-        config_payload, source_chain = load_resolved_config_payload(scenario_name)
-    except Exception as exc:
-        config_payload = {
-            "scenario": {"name": Path(scenario_name).stem},
-            "run_control": {"execution_mode": "LLS", "n_frames": 1},
-            "output": {"database_host": MYSQL_HOST, "database_port": MYSQL_PORT, "database_schema": MYSQL_DATABASE},
-        }
-        source_chain = [f"resolved_config_unavailable: {exc}"]
-        if not message:
-            message = f"Resolved scenario load failed; browser is showing a minimal editable config shell: {exc}"
-    run_control = config_payload.get("run_control")
-    if not isinstance(run_control, dict):
-        run_control = {}
-        config_payload["run_control"] = run_control
-    mode = str(run_control.get("execution_mode") or "LLS").strip().upper()
-    if mode not in BROWSER_EXECUTION_MODE_OPTIONS:
-        mode = "LLS"
-    run_control["execution_mode"] = mode
     valid_pages = set(PRODUCT_PAGE_ROUTES.values()) | {"architecture"}
     page = page_id if page_id in valid_pages else "home"
-    embed_full_config = product_page_needs_config_model(page)
-    config_overview = product_config_overview(config_payload, scenario_name, mode)
-    scenario_contract = scenario_launch_contract(config_payload, scenario_name)
-    include_contract_sections = page in {"reports", "analytics"}
+    # Keep first paint independent of config inheritance, field-catalog expansion,
+    # storage probes, and prior-run artifact scans. Configure/Run fetch the selected
+    # model asynchronously after the compact shell is visible.
+    mode = "LLS"
+    config_payload: dict[str, Any] = {}
+    source_chain: list[str] = []
+    config_overview = {"scenario": scenario_name, "scenario_id": Path(scenario_name).stem}
+    scenario_contract = {
+        "launch_allowed": False,
+        "launch_contract": "loading",
+        "presentation_label": "Loading scenario",
+        "launch_reason": "Loading the selected scenario configuration.",
+        "runner_profile": "",
+        "scenario_id": Path(scenario_name).stem,
+    }
+    config_pages = {
+        "scenario",
+        "geometry",
+        "waveform",
+        "traffic",
+        "mac_scheduler",
+        "l1_phy",
+        "antenna_air",
+        "parameters",
+    }
     product_data = {
-        "title": "Jio Platforms Limited RAN Simulator",
+        "title": "6G Link-Level Simulator",
         "page": page,
         "nav": [{"id": item[0], "label": item[1], "href": item[2]} for item in PRODUCT_NAV],
-        "modes": BROWSER_EXECUTION_MODE_OPTIONS,
+        "modes": ["LLS"],
         "mode_labels": BROWSER_EXECUTION_MODE_LABELS,
         "mode_notes": BROWSER_EXECUTION_MODE_NOTES,
         "fully_wired_mode": FULLY_WIRED_BROWSER_EXECUTION_MODE,
@@ -14296,28 +14664,38 @@ def build_product_frontend_page(
         "scenarios": scenarios,
         "source_chain": source_chain,
         "initial_mode": mode,
-        "config": config_payload if embed_full_config else {},
-        "config_loaded": embed_full_config,
+        "config": {},
+        "config_loaded": False,
         "config_api_url": f"/api/scenario-config?scenario={urllib.parse.quote(scenario_name)}",
         "config_overview": config_overview,
         "scenario_contract": scenario_contract,
-        "field_count": product_field_count(config_payload),
+        "field_count": 0,
         "fields_api_url": f"/api/scenario-fields?scenario={urllib.parse.quote(scenario_name)}",
         "parameter_constraints_api_url": "/api/parameter-constraints",
-        "parameter_constraints_summary": parameter_constraints_summary(),
+        "parameter_constraints_summary": {},
         "domains": PRODUCT_DOMAIN_FILTERS,
-        "architecture": product_architecture_blocks(),
-        "phy_families": product_phy_families(),
-        "l1_parameter_groups": build_l1_phy_parameter_surface(config_payload),
-        "output_persistence": output_persistence_surface(config_payload),
-        "report_sections": output_contract.product_sections_payload("reports") if include_contract_sections else [],
-        "analytics_sections": output_contract.product_sections_payload("analytics") if include_contract_sections else [],
+        "architecture": product_architecture_blocks() if page in config_pages or page == "architecture" else [],
+        "phy_families": product_phy_families() if page == "l1_phy" else [],
+        "l1_parameter_groups": [],
+        "output_persistence": {
+            "options": ["both", "database", "results_folder"],
+            "requested_mode": "both",
+            "effective_mode": "loading",
+            "results_root": "results",
+        },
+        "report_sections": output_contract.product_sections_payload("reports") if page == "reports" else [],
+        "analytics_sections": output_contract.product_sections_payload("analytics") if page == "analytics" else [],
         "contract_context_columns": output_contract.BASE_CONTEXT_COLUMNS,
         "contract_value_roles": output_contract.VALUE_ROLES,
         "contract_value_statuses": output_contract.VALUE_STATUSES,
         "section_slug": "",
-        "backend": product_backend_status(),
-        "matlab_exe": str(MATLAB_EXE),
+        "backend": product_backend_bootstrap_status(),
+        "matlab_exe": str(MATLAB_EXE or ""),
+        "execution_policy": {
+            "id": WEBGUI_EXECUTION_POLICY,
+            "workers": WEBGUI_EXECUTION_WORKERS,
+            "parallel_pool": False,
+        },
         "mysql": {"host": MYSQL_HOST, "port": MYSQL_PORT, "database": MYSQL_DATABASE},
         "message": message,
         "poll_ms": POLL_INTERVAL_MS,
@@ -14329,14 +14707,63 @@ def build_product_frontend_page(
         f'<option value="{html.escape(item)}"{" selected" if item == scenario_name else ""}>{html.escape(scenario_dropdown_label(item))}</option>'
         for item in scenarios
     )
-    user_strip = render_user_strip(user_profile)
+    user_strip = "" if auth_mode_open() else render_user_strip(user_profile)
+    scenario_actions = ""
+    if page in {"home", "run_control"} | config_pages:
+        scenario_actions = f"""
+          <select id="scenarioSelect" aria-label="Scenario">{scenario_options}</select>
+          <button id="openScenarioBtn" type="button">Open</button>
+        """
+    import_action = ""
+    if page == "home":
+        import_action = """
+          <form id="scenarioUploadForm" method="post" action="/scenario/upload" enctype="multipart/form-data">
+            <input id="scenarioFileInput" class="hidden" name="scenario_file" type="file" accept=".yaml,.yml,application/yaml,text/yaml">
+            <label class="button-link" for="scenarioFileInput">Import YAML</label>
+          </form>
+        """
+    configure_actions = ""
+    if page in config_pages:
+        configure_actions = f"""
+          <input id="configJsonFileInput" class="hidden" type="file" accept="application/json,.json">
+          <button id="loadConfigJsonBtn" type="button">Import JSON</button>
+          <button id="saveScenarioBtn" type="button">Save draft</button>
+          <button id="downloadConfigBtn" type="button">Export JSON</button>
+          <a class="button-link" href="/scenario/download?scenario={urllib.parse.quote(scenario_name)}&format=yaml">YAML</a>
+        """
+    run_actions = ""
+    if page == "run_control":
+        run_actions = f"""
+          <button id="validateBtn" type="button">Validate</button>
+          <form id="runForm" method="post" action="/run">
+            <input id="runScenarioInput" type="hidden" name="scenario" value="{html.escape(scenario_name)}">
+            <input id="runModeInput" type="hidden" name="execution_mode" value="LLS">
+            <input id="runConfigInput" type="hidden" name="config_json" value="">
+            <input id="runNextInput" type="hidden" name="next" value="/realtime">
+            <input id="runTagInput" type="hidden" name="run_tag" value="">
+            <button id="runScenarioBtn" class="primary" type="submit" disabled>Run</button>
+          </form>
+        """
+    config_dock = ""
+    needs_leaflet = page in {"geometry", "realtime"}
+    needs_plotly = page in {"realtime", "reports", "analytics", "plots"}
+    leaflet_head = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">' if needs_leaflet else ""
+    external_scripts = "\n".join(
+        item
+        for item in (
+            '<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>' if needs_leaflet else "",
+            '<script defer src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>' if needs_plotly else "",
+        )
+        if item
+    )
     doc = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{html.escape(product_data["title"])}</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23087a70'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-family='Arial' font-size='25' font-weight='700' fill='white'%3E6G%3C/text%3E%3C/svg%3E">
+  {leaflet_head}
   {product_frontend_style()}
 </head>
 <body>
@@ -14346,13 +14773,9 @@ def build_product_frontend_page(
         <div class="brand-mark">6G</div>
         <div>
           <h1>{html.escape(product_data["title"])}</h1>
-          <p>Mode-first console for browser-owned LLS execution and DB-backed analysis.</p>
         </div>
       </div>
-      <div class="user-host">{user_strip}</div>
-      <label class="field-label" for="modeSelector">Mode</label>
-      <div id="modeSelector" class="mode-row" aria-label="Mode selector"></div>
-      <p id="modeNote" class="small" style="margin-top:10px;"></p>
+      {f'<div class="user-host">{user_strip}</div>' if user_strip else ''}
       <nav id="productNav" class="nav-list" aria-label="Simulator pages"></nav>
     </aside>
     <section class="workspace">
@@ -14360,37 +14783,22 @@ def build_product_frontend_page(
         <div>
           <span id="activeModeBadge" class="badge good">LLS</span>
           <h2 id="pageTitle">{html.escape(product_data["title"])}</h2>
-          <p id="pageSubtitle" class="subtle">Build, run, monitor, and inspect the simulator without exposing raw YAML or JSON on the front page.</p>
+          <p id="pageSubtitle" class="subtle"></p>
           <div id="messageBanner" class="message hidden"></div>
         </div>
         <div class="top-actions" aria-label="Quick actions">
-          <select id="scenarioSelect" aria-label="Open Scenario">{scenario_options}</select>
-          <button id="newScenarioBtn" type="button">New Scenario</button>
-          <button id="openScenarioBtn" type="button">Open Scenario</button>
-          <input id="configJsonFileInput" class="hidden" type="file" accept="application/json,.json">
-          <button id="loadConfigJsonBtn" type="button">Load Config JSON</button>
-          <button id="validateBtn" type="button">Validate</button>
-          <form id="runForm" method="post" action="/run">
-            <input id="runScenarioInput" type="hidden" name="scenario" value="{html.escape(scenario_name)}">
-            <input id="runModeInput" type="hidden" name="execution_mode" value="LLS">
-            <input id="runConfigInput" type="hidden" name="config_json" value="">
-            <input id="runNextInput" type="hidden" name="next" value="/realtime">
-            <input id="runTagInput" type="hidden" name="run_tag" value="">
-            <button id="runScenarioBtn" class="primary" type="submit">Run Scenario</button>
-          </form>
-          <button id="saveScenarioBtn" type="button">Save</button>
-          <button id="downloadConfigBtn" type="button">Download Config JSON</button>
+          {scenario_actions}
+          {import_action}
+          {configure_actions}
+          {run_actions}
         </div>
       </header>
       <main id="productMain"></main>
-      <section class="config-dock" aria-label="Selected block configuration">
-        <section id="blockPanel" class="block-panel"></section>
-      </section>
+      {config_dock}
     </section>
   </div>
   <script>window.SIXGR_PRODUCT_DATA = {product_json};</script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  {external_scripts}
   {product_frontend_script()}
 </body>
 </html>
@@ -14404,11 +14812,15 @@ def product_frontend_script() -> str:
 window.addEventListener('DOMContentLoaded', function () {
   const root = window.SIXGR_PRODUCT_DATA || {};
   const main = document.getElementById('productMain');
+  const query = new URLSearchParams(window.location.search);
   const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (err) { return ''; } }, set(key, value) { try { localStorage.setItem(key, value); } catch (err) {} } };
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
   const LIVE_API_TEMPLATE = "/api/run/${id}/live";
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: query.get('artifact_id') || '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', tableBrowserPreviewCache: {}, tableBrowserPreviewPending: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  state.phyGrid = null;
+  state.phyGridLoading = false;
+  state.backendLoading = false;
   const wired = root.fully_wired_mode || 'LLS';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (obj, path, fallback) => String(path || '').split('.').filter(Boolean).reduce((node, key) => node && typeof node === 'object' && key in node ? node[key] : undefined, obj) ?? fallback;
@@ -14476,7 +14888,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function parseValue(input) { if (input.dataset.kind === 'bool') return input.value === 'true'; if (input.dataset.kind === 'int') return parseInt(input.value, 10) || 0; if (input.dataset.kind === 'float') return parseFloat(input.value) || 0; if (input.dataset.kind === 'json') { try { return JSON.parse(input.value); } catch (err) { return input.value; } } return input.value; }
   function pageNeedsConfigModel(pageId) { return ['run_control','scenario','geometry','waveform','traffic','mac_scheduler','l1_phy','antenna_air','parameters'].includes(String(pageId || '')); }
-  function pageNeedsFieldCatalog(pageId) { return pageNeedsConfigModel(pageId); }
+  function pageNeedsFieldCatalog(pageId) { return false; }
   function scenarioClaimsWaveformTruth() {
     const overview = root.config_overview || {};
     const tags = state.configLoaded ? get(state.config, 'meta.tags', []) : ((root.scenario_contract || {}).tags || []);
@@ -14555,6 +14967,12 @@ window.addEventListener('DOMContentLoaded', function () {
       .then(response => response.ok ? response.json() : Promise.reject(new Error(`scenario config HTTP ${response.status}`)))
       .then(payload => {
         state.config = payload && typeof payload.config === 'object' ? payload.config : {};
+        try {
+          const savedDraft = JSON.parse(storage.get('sixgr_product_config') || 'null');
+          if (savedDraft && savedDraft.scenario === root.scenario && savedDraft.config && typeof savedDraft.config === 'object') {
+            state.config = savedDraft.config;
+          }
+        } catch (err) {}
         state.configLoaded = true;
         state.configLoading = false;
         if (payload && payload.mode) state.mode = String(payload.mode).trim().toUpperCase() || state.mode;
@@ -14614,12 +15032,25 @@ window.addEventListener('DOMContentLoaded', function () {
     }
   });
   function kindFor(value) { if (typeof value === 'boolean') return 'bool'; if (Number.isInteger(value)) return 'int'; if (typeof value === 'number') return 'float'; if (value && typeof value === 'object') return 'json'; return 'text'; }
-  function labelFor(path) { const leaf = String(path || 'config').split('.').pop() || 'config'; return leaf.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\b\w/g, ch => ch.toUpperCase()); }
+  function labelFor(path) { const leaf = String(path || 'config').split('.').pop() || 'config'; return leaf.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\\b\\w/g, ch => ch.toUpperCase()); }
   function domainFor(path) { const lower = String(path || '').toLowerCase(); for (const [domain, spec] of Object.entries(root.domains || {})) { if ((spec.paths || []).some(prefix => lower.startsWith(String(prefix).toLowerCase()) || lower.includes(String(prefix).toLowerCase()))) return domain; } return 'scenario'; }
   function flattenConfig(node, prefix) { if (node && typeof node === 'object' && !Array.isArray(node)) { const keys = Object.keys(node); if (keys.length) return keys.flatMap(key => flattenConfig(node[key], prefix ? `${prefix}.${key}` : key)); } const domain = domainFor(prefix); return [{path: prefix || 'config', label: labelFor(prefix), domain, domain_label: ((root.domains || {})[domain] || {}).title || domain, kind: kindFor(node), value: node, current_value: node, requested_value: node, resolved_value: node, applied_value: 'Resolved in MATLAB config; runtime consumer evidence is not yet instrumented.', measured_value: 'Runtime measurement evidence is not yet published for this field.', source: 'loaded config JSON', owner: labelFor(String(prefix || 'config').split('.')[0]), role: 'browser_loaded', search: `${prefix} ${labelFor(prefix)}`}]; }
-  function loadConfigFile(file) { const msg = document.getElementById('messageBanner'); if (!file) return; file.text().then(raw => { const parsed = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON root must be an object.'); delete parsed._download_metadata; state.config = parsed; state.configLoaded = true; state.configLoading = false; state.mode = String(get(parsed, 'run_control.execution_mode', 'LLS')).trim().toUpperCase(); if (!(root.modes || ['LLS']).includes(state.mode)) state.mode = 'LLS'; state.fields = flattenConfig(parsed, ''); state.fieldsLoaded = true; state.fieldsLoading = false; root.field_count = state.fields.length; state.selectedBlock = null; updateRunPayload(); render(); if (msg) { msg.textContent = `Loaded ${file.name}. Run Scenario will use this full config JSON payload.`; msg.classList.remove('hidden'); } }).catch(err => { if (msg) { msg.textContent = `Could not load config JSON: ${err.message}`; msg.classList.remove('hidden'); } }); }
+  function loadConfigFile(file) { const msg = document.getElementById('messageBanner'); if (!file) return; file.text().then(raw => { const parsed = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON root must be an object.'); delete parsed._download_metadata; state.config = parsed; state.configLoaded = true; state.configLoading = false; state.mode = String(get(parsed, 'run_control.execution_mode', 'LLS')).trim().toUpperCase(); if (!(root.modes || ['LLS']).includes(state.mode)) state.mode = 'LLS'; state.fields = flattenConfig(parsed, ''); state.fieldsLoaded = true; state.fieldsLoading = false; root.field_count = state.fields.length; state.selectedBlock = null; updateRunPayload(); render(); if (msg) { msg.textContent = `Imported ${file.name}.`; msg.classList.remove('hidden'); } }).catch(err => { if (msg) { msg.textContent = `Could not import JSON: ${err.message}`; msg.classList.remove('hidden'); } }); }
   function inputFor(field) { const value = get(state.config, field.path, field.current_value); if (field.kind === 'bool') return `<select data-config-input data-path="${esc(field.path)}" data-kind="bool"><option value="true"${value === true ? ' selected' : ''}>true</option><option value="false"${value === false ? ' selected' : ''}>false</option></select>`; if (Array.isArray(field.options) && field.options.length) return `<select data-config-input data-path="${esc(field.path)}" data-kind="${esc(field.kind || 'text')}">${field.options.map(o => `<option value="${esc(o)}"${String(o) === String(value) ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`; return `<input data-config-input data-path="${esc(field.path)}" data-kind="${esc(field.kind || 'text')}" value="${esc(text(value))}">`; }
-  function updateRunPayload() { if (state.configLoaded) { set(state.config, 'run_control.execution_mode', state.mode); applyOutputPersistenceMode(); document.getElementById('runConfigInput').value = JSON.stringify(state.config); } else { document.getElementById('runConfigInput').value = ''; } document.getElementById('runModeInput').value = state.mode; document.getElementById('runScenarioInput').value = root.scenario || ''; document.getElementById('runTagInput').value ||= `web_${state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`; }
+  function updateRunPayload() {
+    const configInput = document.getElementById('runConfigInput');
+    const modeInput = document.getElementById('runModeInput');
+    const scenarioInput = document.getElementById('runScenarioInput');
+    const tagInput = document.getElementById('runTagInput');
+    if (state.configLoaded) {
+      set(state.config, 'run_control.execution_mode', state.mode);
+      applyOutputPersistenceMode();
+      if (configInput) configInput.value = JSON.stringify(state.config);
+    } else if (configInput) configInput.value = '';
+    if (modeInput) modeInput.value = state.mode;
+    if (scenarioInput) scenarioInput.value = root.scenario || '';
+    if (tagInput && !tagInput.value) tagInput.value = `web_${state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`;
+  }
   function runStatusToken(run) { return String((run || {}).status_text || '').toLowerCase().trim(); }
   function isActiveRun(run) { return /queued|launching|running|finalizing|retry/i.test(runStatusToken(run)) && !/completed|failed|cancelled|aborted/i.test(runStatusToken(run)); }
   function runStatusRank(run, preferActive) {
@@ -14681,7 +15112,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function pageRunSelector(selectId, label, options) { const opts = options || {}; const selected = selectedRunId(); const note = opts.note ? `<p class="mini-note">${esc(opts.note)}</p>` : ''; return `<div class="toolbar"><label>${esc(label || 'Run')}<select id="${esc(selectId)}" data-run-selector="true">${runSelectOptions(selected, opts)}</select></label>${opts.showRunningBadge ? `<span class="badge ${((state.runs || []).some(isActiveRun)) ? 'good' : 'warn'}">${esc(((state.runs || []).filter(isActiveRun).length))} active runs</span>` : ''}</div>${note}`; }
   function navigateWithRun(runId) { const url = new URL(window.location.href); if (runId) url.searchParams.set('run_id', runId); else url.searchParams.delete('run_id'); window.location.href = `${url.pathname}${url.search}`; }
-  function evidenceTokens(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(token => token && token.length > 2 && !['the','and','for','with','from','into','over','time','chart','plot','view','views','analytics','runtime','live','graph'].includes(token)); }
+  function evidenceTokens(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\\s+/).filter(token => token && token.length > 2 && !['the','and','for','with','from','into','over','time','chart','plot','view','views','analytics','runtime','live','graph'].includes(token)); }
   function tokenOverlapScore(left, right) { const rightSet = new Set(right || []); return (left || []).reduce((score, token) => score + (rightSet.has(token) ? 1 : 0), 0); }
   function chartEvidenceCatalog(section) {
     const live = state.live || {};
@@ -14883,11 +15314,25 @@ window.addEventListener('DOMContentLoaded', function () {
     if (block.group || block.tests || String(block.name || '').match(/PDCCH|PDSCH|PUSCH|PUCCH|PRACH|SRS|TRS|CSI|PBCH|SSB|MIMO|PHY/i)) return state.fields.filter(f => f.domain === 'l1_phy');
     return exact;
   }
-  function renderBlock(block) { const el = document.getElementById('blockPanel'); if (!block) { el.innerHTML = '<h3>Block Parameters</h3><p class="subtle">Select a workflow or PHY block to inspect editable parameters.</p>'; return; } if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); el.innerHTML = `<h3>${esc(block.name || block.title)}</h3>${unavailable('Block parameters are loading from the resolved scenario config and field catalog.')}`; return; } const body = blockFields(block).map(f => `<tr><td><strong>${esc(f.label || f.path)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('') || '<tr><td colspan="9">Unavailable: no browser-exposed parameter maps directly to this block.</td></tr>'; el.innerHTML = `<h3>${esc(block.name || block.title)}</h3><p class="subtle">${esc(block.purpose || block.summary || '')}</p><p class="small">${esc((block.artifacts || []).join(', ') || block.truth || 'Canonical artifacts first; missing outputs stay unavailable.')}</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${body}</tbody></table></div>`; }
-  function chrome() { const contract = scenarioLaunchContract(); document.getElementById('productNav').innerHTML = (root.nav || []).map(n => `<a class="nav-item ${n.id === state.page ? 'active' : ''}" data-page="${esc(n.id)}" href="${esc(n.href)}">${esc(n.label)}</a>`).join(''); document.getElementById('modeSelector').innerHTML = (root.modes || ['LLS','SLS','E2E']).map(m => `<button type="button" class="mode-button ${m === state.mode ? 'active' : ''}" data-mode="${esc(m)}">${esc(m)}</button>`).join(''); document.getElementById('modeNote').textContent = state.mode === wired ? (contract.launchReason || (root.mode_notes || {})[state.mode] || '') : ((root.mode_notes || {})[state.mode] || ''); document.getElementById('activeModeBadge').textContent = `Mode: ${state.mode}`; document.getElementById('activeModeBadge').className = `badge ${state.mode === wired && contract.launchAllowed ? 'good' : 'warn'}`; document.getElementById('runScenarioBtn').disabled = state.mode !== wired || !contract.launchAllowed; document.getElementById('runScenarioBtn').textContent = state.mode !== wired ? `${state.mode} run unavailable` : (contract.launchAllowed ? 'Run Scenario' : 'Run blocked by scenario contract'); document.getElementById('runScenarioBtn').title = state.mode !== wired ? ((root.mode_notes || {})[state.mode] || '') : (contract.launchAllowed ? `Launch the real browser-owned LLS run via ${contract.presentationLabel || 'the configured runner'}.` : (contract.launchReason || 'Selected scenario is blocked.')); updateRunPayload(); }
+  function renderBlock(block) { const el = document.getElementById('blockPanel'); if (!el) return; if (!block) { el.innerHTML = ''; return; } if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); el.innerHTML = unavailable('Loading parameters…'); return; } const body = blockFields(block).map(f => `<tr><td><strong>${esc(f.label || f.path)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td></tr>`).join('') || '<tr><td colspan="3">No editable parameters are exposed for this block.</td></tr>'; el.innerHTML = `<h3>${esc(block.name || block.title)}</h3><div class="table-wrap"><table><thead><tr><th>Parameter</th><th>Current</th><th>Edit</th></tr></thead><tbody>${body}</tbody></table></div>`; }
+  function chrome() {
+    const configPages = ['scenario','geometry','waveform','traffic','mac_scheduler','l1_phy','antenna_air','parameters'];
+    const resultPages = ['plots','tables','reports','analytics','artifacts','compare','runs','previous_runs'];
+    const activeNav = configPages.includes(state.page) ? 'scenario' : (resultPages.includes(state.page) ? 'plots' : (state.page === 'phy_grid' ? 'realtime' : state.page));
+    document.getElementById('productNav').innerHTML = (root.nav || []).map(n => `<a class="nav-item ${n.id === activeNav ? 'active' : ''}" data-page="${esc(n.id)}" href="${esc(n.href)}">${esc(n.label)}</a>`).join('');
+    const badge = document.getElementById('activeModeBadge');
+    if (badge) { badge.textContent = 'LLS'; badge.className = 'badge good'; }
+    const contract = scenarioLaunchContract();
+    const runButton = document.getElementById('runScenarioBtn');
+    if (runButton) {
+      runButton.disabled = !state.configLoaded || state.mode !== wired || !contract.launchAllowed;
+      runButton.textContent = state.configLoading ? 'Loading…' : 'Run';
+    }
+    updateRunPayload();
+  }
   function title(t, s) { document.getElementById('pageTitle').textContent = t; document.getElementById('pageSubtitle').textContent = s; }
   function home() { title(root.title, 'Clickable workflow, current scenario, warnings, recent runs, and configuration readiness.'); const cards = (root.architecture || []).map(b => `<article class="tile" data-block="${esc(b.id)}"><span class="badge">${esc(b.domain)}</span><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join(''); const fieldCount = Number(root.field_count || state.fields.length || 0); const overview = root.config_overview || {}; const contract = scenarioLaunchContract(); main.innerHTML = `<div class="grid four"><div class="tile metric"><h4>Mode</h4><div class="value">${esc(state.mode)}</div><p>${state.mode === wired && contract.launchAllowed ? 'Launch enabled' : 'Configure only'}</p></div><div class="tile metric"><h4>Launch Contract</h4><div class="value">${esc(contract.launchContract || 'unavailable')}</div><p>${esc(contract.presentationLabel || 'Runtime label pending')}</p></div><div class="tile metric"><h4>Config JSON</h4><div class="value">${state.configLoaded ? 'Ready' : 'Lazy'}</div><p>${state.configLoaded ? 'Loaded in browser memory' : 'Loaded on demand for edit pages and downloads'}</p></div><div class="tile metric"><h4>Latest Run</h4><div class="value">${esc((root.backend || {}).latest_run_id || 'none')}</div><p>${(root.backend || {}).latest_run_id ? 'Run-wise config download is available from Recent Runs.' : 'Result selector'}</p></div></div>${outputPersistencePanel()}<section class="panel"><h3>Architecture Workflow</h3><p class="subtle">Click a block to configure that subsystem.</p><div class="workflow">${cards}</div></section><div class="split"><section class="panel"><h3>Recent Runs</h3><div id="homeRecentRuns">${rows(state.runs.slice(0,10), 'No persisted runs are available yet.', {className:'page-table', scrollKey:'home-recent-runs'})}</div></section><section class="panel"><h3>Current Scenario Summary</h3>${objectTable({Scenario: root.scenario, Mode: state.mode, RunnerProfile: state.configLoaded ? get(state.config, 'scenario.runner_profile', overview.runner_profile || 'unavailable') : (overview.runner_profile || 'loading'), Presentation: contract.presentationLabel || overview.presentation_label || 'loading', LaunchAllowed: contract.launchAllowed, Carrier: state.configLoaded ? get(state.config, 'frequency.center_frequency_hz', get(state.config, 'global_radio_scope.carrier_frequency_hz', overview.carrier_hz || 'unavailable')) : (overview.carrier_hz || 'loading'), Bandwidth: state.configLoaded ? get(state.config, 'frequency.bandwidth_hz', get(state.config, 'global_radio_scope.channel_bandwidth_hz', overview.bandwidth_hz || 'unavailable')) : (overview.bandwidth_hz || 'loading'), Channel: state.configLoaded ? get(state.config, 'channels.profile', get(state.config, 'channel_model.scenario_label', overview.channel_profile || 'unavailable')) : (overview.channel_profile || 'loading'), UEs: overview.num_ues || 'unavailable', Slots: overview.total_slots || 'unavailable', OutputPersistence: state.configLoaded ? get(state.config, 'output.persistence_mode', (root.output_persistence || {}).requested_mode || 'both') : ((root.output_persistence || {}).requested_mode || 'loading')}, '')}<h3 style="margin-top:16px;">Warnings / Completeness</h3>${warnings()}</section></div>`; }
-  function warnings() { const w = []; const contract = scenarioLaunchContract(); if (state.mode !== wired) w.push(`${state.mode} launch is intentionally unavailable from /run; switch to LLS to execute.`); if (!(root.backend || {}).matlab_available) w.push('Pinned MATLAB R2024a executable is missing.'); if ((root.backend || {}).mysql_status !== 'connected') w.push(`MySQL unavailable: ${(root.backend || {}).mysql_reason || 'no connection'}`); if (!contract.launchAllowed) w.push(contract.launchReason || 'Selected scenario launch contract is blocked.'); else if (contract.presentationLabel) w.push(`Browser launch contract: ${contract.presentationLabel}. ${contract.launchReason || ''}`); if (!w.length) w.push('No browser-side blockers. Runtime truth still comes from MATLAB and canonical artifacts.'); return w.map(x => `<div class="stream-item log-warn">${esc(x)}</div>`).join(''); }
+  function warnings() { const w = []; const contract = scenarioLaunchContract(); if (!(root.backend || {}).matlab_available) w.push(`MATLAB unavailable: ${(root.backend || {}).matlab_reason || 'set SIXGR_MATLAB_EXE or add MATLAB to PATH'}`); if ((root.backend || {}).mysql_status !== 'connected') w.push(`MySQL unavailable; results-folder mode remains available. ${(root.backend || {}).mysql_reason || ''}`.trim()); if (!contract.launchAllowed) w.push(contract.launchReason || 'Selected scenario is blocked.'); if (!w.length) w.push('Ready to run.'); return w.map(x => `<div class="stream-item ${/ready/i.test(x) ? '' : 'log-warn'}">${esc(x)}</div>`).join(''); }
   function domain(name) { const spec = (root.domains || {})[name] || {title:name}; title(spec.title || name, 'Traditional controls plus block-driven editing share the same browser config model.'); const bs = (root.architecture || []).filter(b => b.domain === name); if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<div class="split"><section class="panel"><h3>${esc(spec.title || name)}</h3>${unavailable('This page is loading the resolved scenario config and field catalog. Controls will appear automatically once that payload arrives.')}</section><section class="panel"><h3>Blocks</h3><div class="grid">${bs.map(b => `<article class="tile" data-block="${esc(b.id)}"><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join('') || unavailable('No workflow blocks map to this page.')}</div></section></div>`; return; } const fs = state.fields.filter(f => f.domain === name); main.innerHTML = `<div class="split"><section class="panel"><h3>${esc(spec.title || name)}</h3><p class="subtle">${fs.length} exposed parameters on this page.</p><div class="form-grid">${fs.map(f => `<div class="param-editor"><label>${esc(f.label || f.path)}</label>${inputFor(f)}<span class="small mono">${esc(f.path)}</span></div>`).join('') || unavailable('No browser-exposed parameters map to this page.')}</div></section><section class="panel"><h3>Blocks</h3><div class="grid">${bs.map(b => `<article class="tile" data-block="${esc(b.id)}"><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join('') || unavailable('No workflow blocks map to this page.')}</div></section></div>`; }
   function geometry() { domain('geometry'); main.insertAdjacentHTML('beforeend', '<section class="panel"><h3>OpenStreetMap Deployment View</h3><p class="subtle">Sites, sectors, UEs, hotspots, serving view, coverage overlays, and mobility paths use canonical map payloads when available. Dragging a site writes deployment_topology.site_overrides into the browser config.</p><div id="geometryMap" class="map-box"></div></section>'); setTimeout(map, 0); }
   function map() { if (!window.L) return; const p = (state.live || {}).map || {}; const c = p.center || root.map_default || {lat:19.122164, lon:72.999217}; const m = L.map('geometryMap').setView([Number(c.lat), Number(c.lon)], Number(c.zoom || 14)); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(m); [...(p.site_shapes || []), ...(p.sector_shapes || []), ...(p.coverage_shapes || [])].forEach(s => s.points && L.polygon(s.points, {color:'#1f5fbf', weight:1, fillOpacity:.08}).addTo(m)); const sites = (p.sites || p.markers || [{lat:c.lat, lon:c.lon, label:c.label, site_id:1}]).filter(x => String(x.type || 'site') !== 'ue'); sites.slice(0,120).forEach((s,i) => { const mk = L.marker([Number(s.lat), Number(s.lon)], {draggable:true}).addTo(m).bindPopup(esc(s.label || `Site ${i+1}`)); mk.on('dragend', () => { const ll = mk.getLatLng(); const id = s.site_id || i+1; const o = get(state.config, 'deployment_topology.site_overrides', {}) || {}; o[String(id)] = {lat:+ll.lat.toFixed(7), lon:+ll.lng.toFixed(7), source:'browser_osm_drag'}; set(state.config, 'deployment_topology.site_overrides', o); updateRunPayload(); }); }); (p.ues || p.markers || []).filter(x => String(x.type || '') === 'ue').slice(0,300).forEach(u => L.circleMarker([Number(u.lat), Number(u.lon)], {radius:4,color:'#0b7f82',fillOpacity:.7}).addTo(m).bindPopup(esc(u.label || 'UE'))); }
@@ -15537,11 +15982,11 @@ window.addEventListener('DOMContentLoaded', function () {
     if (!raw) return 'Artifact';
     const tail = raw.split('/').pop() || raw;
     return tail
-      .replace(/\.[^.]+$/, '')
+      .replace(/\\.[^.]+$/, '')
       .replace(/^contract__/, '')
       .replace(/__/g, ' / ')
       .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ')
+      .replace(/\\s+/g, ' ')
       .trim();
   }
   function plotBrowserViewerHeight() {
@@ -15581,6 +16026,8 @@ window.addEventListener('DOMContentLoaded', function () {
     if (!runId) {
       state.tableBrowserRunId = '';
       state.tableBrowserPayload = {items: [], table_count: 0};
+      state.tableBrowserPreviewCache = {};
+      state.tableBrowserPreviewPending = '';
       return state.tableBrowserPayload;
     }
     const runKey = String(runId);
@@ -15591,8 +16038,32 @@ window.addEventListener('DOMContentLoaded', function () {
     if (String(selectedRunId() || '') !== runKey) return payload;
     state.tableBrowserRunId = runKey;
     state.tableBrowserPayload = payload || {items: [], table_count: 0};
+    state.tableBrowserPreviewCache = {};
+    state.tableBrowserPreviewPending = '';
     if (state.page === 'tables') renderTableBrowser();
     return state.tableBrowserPayload;
+  }
+  async function loadTableBrowserPreview(artifactId, maxRows = 200) {
+    const key = String(artifactId || '');
+    if (!key) return null;
+    const requestedLimit = Math.max(1, Math.min(5000, Number(maxRows) || 200));
+    const cached = (state.tableBrowserPreviewCache || {})[key];
+    if (cached && Number(cached.row_limit || 0) >= requestedLimit) return cached;
+    const pendingKey = `${key}:${requestedLimit}`;
+    if (state.tableBrowserPreviewPending === pendingKey) return null;
+    state.tableBrowserPreviewPending = pendingKey;
+    let payload = null;
+    try {
+      const response = await fetch(`/api/artifact/${encodeURIComponent(artifactId)}/preview?max_rows=${requestedLimit}`, {cache:'no-store'});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      payload = await response.json();
+    } catch (err) {
+      payload = {header: [], rows: [], row_count: 0, row_limit: requestedLimit, error: 'Table preview could not be loaded.'};
+    }
+    state.tableBrowserPreviewCache[key] = payload;
+    if (state.tableBrowserPreviewPending === pendingKey) state.tableBrowserPreviewPending = '';
+    if (state.page === 'tables' && String(state.tableBrowserId) === key) renderTableBrowser();
+    return payload;
   }
   function mountInteractiveImageViewer(hostId, selected) {
     const host = document.getElementById(hostId);
@@ -15729,7 +16200,7 @@ window.addEventListener('DOMContentLoaded', function () {
       loadPlotBrowserPayload();
       return;
     }
-    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Canonical + Published</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>Raw Published Artifacts</option>`;
+    catalogSelect.innerHTML = `<option value="canonical"${state.plotBrowserCatalogMode === 'canonical' ? ' selected' : ''}>Curated</option><option value="all"${state.plotBrowserCatalogMode === 'all' ? ' selected' : ''}>All files</option>`;
     const bucketRows = state.plotBrowserCatalogMode === 'all'
       ? ((state.plotBrowserPayload || {}).raw_buckets || (state.plotBrowserPayload || {}).buckets || [])
       : ((state.plotBrowserPayload || {}).buckets || []);
@@ -15834,12 +16305,50 @@ window.addEventListener('DOMContentLoaded', function () {
     const suppressedCount = Number((state.tableBrowserPayload || {}).suppressed_duplicate_count || 0);
     const bucketLabel = String((bucketDefs.find(item => String(item.id) === String(state.tableBrowserBucket || 'all')) || {}).label || 'All Tables');
     stats.textContent = `${tableCount} canonical truthful tables${suppressedCount ? `, ${suppressedCount} mirror duplicates hidden` : ''}. Bucket: ${bucketLabel}.`;
-    const fullViewUrl = selected.full_table_view_url || (selected.view_url ? `${selected.view_url}?rows=all` : '#');
-    viewer.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(prettyArtifactLabel(selected.logical_path || ''))}</h4><p class="mini-note">${esc(selected.logical_path || '')}</p><p class="mini-note">Canonical table view streams the persisted artifact from MySQL; mirror/legacy duplicates are hidden from this selector.</p></div><div><a class="button-link secondary" href="${esc(fullViewUrl)}" target="_blank" rel="noopener noreferrer">Open Full Table</a> <a class="button-link secondary" href="${esc(selected.download_url || selected.view_url || '#')}">Download CSV</a></div></div><iframe src="${esc(fullViewUrl)}" title="${esc(selected.logical_path || 'table preview')}" style="width:100%;height:min(78vh,920px);border:1px solid var(--line);border-radius:8px;background:#fff;"></iframe>`;
+    const artifactKey = String(selected.artifact_id || '');
+    const preview = (state.tableBrowserPreviewCache || {})[artifactKey];
+    if (!preview) {
+      viewer.innerHTML = '<div class="chart-empty">Loading table rows...</div>';
+      loadTableBrowserPreview(selected.artifact_id, 200);
+      return;
+    }
+    if (preview.error) {
+      viewer.innerHTML = `<div class="chart-empty">${esc(preview.error)}</div>`;
+      return;
+    }
+    const header = Array.isArray(preview.header) ? preview.header : [];
+    const previewRows = Array.isArray(preview.rows) ? preview.rows : [];
+    const storedRowCount = Number(preview.row_count || previewRows.length);
+    const displayedRowCount = previewRows.length;
+    const rowLimit = Number(preview.row_limit || displayedRowCount || 200);
+    const previousScroller = viewer.querySelector('[data-table-preview-scroll]');
+    const previousScrollTop = previousScroller ? previousScroller.scrollTop : 0;
+    const previousScrollLeft = previousScroller ? previousScroller.scrollLeft : 0;
+    const nextLimit = Math.min(5000, rowLimit < 1000 ? 1000 : rowLimit + 1000, storedRowCount);
+    const canLoadMore = displayedRowCount < storedRowCount && rowLimit < 5000;
+    const limitNote = displayedRowCount < storedRowCount && rowLimit >= 5000
+      ? `Preview capped at ${displayedRowCount.toLocaleString()} rows; download the CSV for all ${storedRowCount.toLocaleString()}.`
+      : `${displayedRowCount.toLocaleString()} of ${storedRowCount.toLocaleString()} rows · ${header.length.toLocaleString()} columns`;
+    const headHtml = header.map((cell, index) => `<th>${esc(cell || `Column ${index + 1}`)}</th>`).join('');
+    const bodyHtml = previewRows.map(row => {
+      const cells = Array.isArray(row) ? row : [];
+      return `<tr>${header.map((_name, index) => `<td>${esc(text(cells[index] ?? ''))}</td>`).join('')}</tr>`;
+    }).join('');
+    const loadMoreButton = canLoadMore
+      ? `<button type="button" data-table-load-more="${esc(selected.artifact_id)}" data-next-limit="${nextLimit}">Load more rows</button>`
+      : '';
+    viewer.innerHTML = `<div class="toolbar" style="justify-content:space-between;align-items:flex-start;"><div><h4 style="margin:0 0 6px;">${esc(prettyArtifactLabel(selected.logical_path || ''))}</h4><p class="mini-note">${esc(selected.logical_path || '')}</p><p class="mini-note">${esc(limitNote)}</p></div><div class="toolbar" style="margin-bottom:0;">${loadMoreButton}<a class="button-link secondary" href="${esc(selected.download_url || '#')}">Download CSV</a></div></div>${header.length ? `<div class="table-wrap page-table" data-table-preview-scroll data-scroll-key="table-browser-preview"><table><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml || `<tr><td colspan="${header.length}">No rows found.</td></tr>`}</tbody></table></div>` : '<div class="chart-empty">This CSV does not contain a header row.</div>'}`;
+    const nextScroller = viewer.querySelector('[data-table-preview-scroll]');
+    if (nextScroller) {
+      nextScroller.scrollTop = previousScrollTop;
+      nextScroller.scrollLeft = previousScrollLeft;
+    }
   }
   function tablesPage() {
     state.tableBrowserPayload = null;
     state.tableBrowserRunId = '';
+    state.tableBrowserPreviewCache = {};
+    state.tableBrowserPreviewPending = '';
     title('Tables', 'Truth-backed table viewer for the selected run.');
     main.innerHTML = `<section class="panel"><h3>Tables</h3>${pageRunSelector('tablesRunSelect', 'Selected Run', {runningOnly: false, note: 'The dropdown lists canonical persisted table artifacts from the selected run. Buckets surface Fixed SNR/SINR Sweep, Geometry/Mobility, and Artifact Audit evidence without requiring manual folder browsing.'})}<div class="toolbar"><label>Bucket<select id="tableBrowserBucketSelect"></select></label><label>Table<select id="tableBrowserSelect"></select></label><span id="tableBrowserStats" class="mini-note"></span></div><div id="tableBrowserViewer"></div></section>`;
     renderTableBrowser();
@@ -15931,7 +16440,278 @@ window.addEventListener('DOMContentLoaded', function () {
     state.sectionEvidenceVersion = `${payload.kind || ''}|${payload.slug || ''}|${payload.artifact_version || ''}`;
     return payload;
   }
-  function render(options) { const opts = options || {}; const scrollSnapshot = opts.preserveScroll ? captureScrollState() : null; chrome(); if (state.page === 'home' || state.page === 'architecture') home(); else if (state.page === 'reports') reports(); else if (state.page === 'runs' || state.page === 'previous_runs') runsPage(); else if (state.page === 'plots') plotsPage(); else if (state.page === 'tables') tablesPage(); else if (state.page === 'geometry') geometry(); else if (state.page === 'l1_phy') l1(); else if (state.page === 'realtime') realtime(); else if (state.page === 'analytics') analytics(); else if (state.page === 'artifacts') artifacts(); else if (state.page === 'parameters') parameters(); else if (state.page === 'compare') compare(); else domain(state.page); renderBlock(state.selectedBlock); if (scrollSnapshot) restoreScrollState(scrollSnapshot); else window.requestAnimationFrame(() => window.scrollTo(0, 0)); }
+  function configureTabs(active) {
+    const tabs = [
+      ['scenario','General','/scenario'],
+      ['geometry','Geometry','/geometry'],
+      ['waveform','Waveform','/waveform'],
+      ['traffic','Traffic','/traffic'],
+      ['mac_scheduler','Scheduler','/mac-scheduler'],
+      ['l1_phy','PHY','/l1-phy'],
+      ['antenna_air','Channel','/antenna-air'],
+      ['parameters','Advanced','/parameter-catalog'],
+    ];
+    return `<nav class="section-tabs" aria-label="Configuration sections">${tabs.map(([id,label,href]) => `<a class="button-link ${id === active ? 'active' : ''}" data-page="${id}" href="${href}">${label}</a>`).join('')}</nav>`;
+  }
+  function liveTabs(active) {
+    return `<nav class="section-tabs" aria-label="Live views"><a class="button-link ${active === 'realtime' ? 'active' : ''}" data-page="realtime" href="/realtime">Overview</a><a class="button-link ${active === 'phy_grid' ? 'active' : ''}" data-page="phy_grid" href="/phy-grid">Resource Grid</a></nav>`;
+  }
+  function resultsTabs(active) {
+    const tabs = [
+      ['plots','Images & Graphs','/plots'],
+      ['tables','Tables','/tables'],
+      ['reports','Runtime Report','/reports'],
+      ['analytics','Analytics','/analytics'],
+      ['artifacts','Files','/artifacts'],
+      ['compare','Compare','/compare-runs'],
+    ];
+    return `<nav class="section-tabs" aria-label="Result views">${tabs.map(([id,label,href]) => `<a class="button-link ${id === active ? 'active' : ''}" data-page="${id}" href="${href}">${label}</a>`).join('')}</nav>`;
+  }
+  function prependTabs(markup) {
+    if (main) main.insertAdjacentHTML('afterbegin', markup);
+  }
+  function scenarioWorkspace() {
+    title('Scenario', 'Choose a scenario or import a YAML file.');
+    const latest = (state.runs || [])[0] || null;
+    main.innerHTML = `
+      <section class="panel">
+        <div class="step-grid">
+          <a class="step-card" data-page="scenario" href="/scenario"><span class="step-number">1</span><span><strong>Configure</strong><br><span class="small">Review and edit parameters</span></span></a>
+          <a class="step-card" data-page="run_control" href="/run-control"><span class="step-number">2</span><span><strong>Run</strong><br><span class="small">Validate and start MATLAB</span></span></a>
+          <a class="step-card" data-page="plots" href="/plots"><span class="step-number">3</span><span><strong>View results</strong><br><span class="small">Images, graphs, tables and files</span></span></a>
+        </div>
+      </section>
+      <div class="grid two">
+        <section class="panel">
+          <h3>Selected scenario</h3>
+          <p><strong>${esc(scenarioDropdownLabel(root.scenario || ''))}</strong></p>
+          <p class="small mono">${esc(root.scenario || '')}</p>
+          <div class="toolbar" style="margin-top:12px">
+            <a class="button-link primary" data-page="scenario" href="/scenario">Configure</a>
+            <a class="button-link" href="${esc(root.download_config_url || '#')}">Download resolved config</a>
+          </div>
+        </section>
+        <section class="panel">
+          <h3>Latest run</h3>
+          ${latest ? `<p><strong>${esc(latest.run_tag || latest.run_id)}</strong></p><p class="small">${esc(latest.status_text || '')}</p><div class="toolbar" style="margin-top:12px"><a class="button-link primary" href="/plots?run_id=${esc(latest.run_id)}">Open results</a><a class="button-link" href="/realtime?run_id=${esc(latest.run_id)}">Open live view</a></div>` : '<p class="subtle">No run has been recorded yet.</p>'}
+        </section>
+      </div>`;
+  }
+  function configureWorkspace(name) {
+    const spec = (root.domains || {})[name] || {title:name};
+    title('Configure', '');
+    if (!state.configLoaded) {
+      main.innerHTML = `${configureTabs(name)}<section class="panel"><p class="subtle">Loading configuration…</p></section>`;
+      return;
+    }
+    const sourceFields = state.fieldsLoaded && state.fields.length ? state.fields : flattenConfig(state.config);
+    const fields = name === 'parameters' ? sourceFields : sourceFields.filter(field => field.domain === name);
+    const titleText = name === 'parameters' ? 'All parameters' : (spec.title || name);
+    const grouped = new Map();
+    fields.forEach(field => {
+      const group = String(field.path || 'general').split('.')[0] || 'general';
+      if (!grouped.has(group)) grouped.set(group, []);
+      grouped.get(group).push(field);
+    });
+    const groupsHtml = [...grouped.entries()].map(([group, groupFields]) => `
+      <details class="config-group">
+        <summary><span>${esc(labelFor(group))}</span><span class="badge">${groupFields.length}</span></summary>
+        <div class="form-grid">${groupFields.map(field => `<div class="param-editor" data-config-row data-search="${esc(`${field.path} ${field.label || ''}`.toLowerCase())}"><label>${esc(field.label || field.path)}</label>${inputFor(field)}<span class="small mono">${esc(field.path)}</span></div>`).join('')}</div>
+      </details>`).join('');
+    main.innerHTML = `${configureTabs(name)}
+      <section class="panel">
+        <div class="toolbar" style="justify-content:space-between">
+          <div><h3>${esc(titleText)}</h3><span class="small">${fields.length} editable values in ${grouped.size} groups</span></div>
+          <input id="configSearch" style="width:min(360px,100%)" type="search" placeholder="Search parameters">
+        </div>
+        <div class="config-groups">${groupsHtml || '<p class="subtle">No editable values in this section.</p>'}</div>
+      </section>`;
+  }
+  function runWorkspace() {
+    title('Run', 'Validate and start the selected scenario.');
+    if (!state.configLoaded) {
+      main.innerHTML = '<section class="panel"><p class="subtle">Loading scenario…</p></section>';
+      return;
+    }
+    const contract = scenarioLaunchContract();
+    const recent = (state.runs || []).slice(0, 6);
+    const mode = normalizeOutputPersistenceMode(get(state.config, 'output.persistence_mode', 'both'));
+    const modeOptions = [
+      ['both','Database + files'],
+      ['results_folder','Files only'],
+      ['database','Database only'],
+    ].map(([value,label]) => `<option value="${value}"${mode === value ? ' selected' : ''}>${label}</option>`).join('');
+    const recentRows = recent.map(run => `<tr><td><strong>${esc(run.run_tag || run.run_id)}</strong><br><span class="small">${esc(run.scenario_id || '')}</span></td><td>${esc(run.status_text || '')}</td><td><a class="button-link" href="/plots?run_id=${esc(run.run_id)}">Open</a></td></tr>`).join('');
+    main.innerHTML = `
+      <div class="grid three">
+        <div class="tile metric"><h4>Scenario</h4><div class="value" style="font-size:15px">${esc(scenarioDropdownLabel(root.scenario || ''))}</div></div>
+        <div class="tile metric"><h4>MATLAB</h4><div class="value">${esc((root.backend || {}).matlab_release || ((root.backend || {}).matlab_available ? 'Ready' : 'Unavailable'))}</div></div>
+        <div class="tile metric"><h4>Validation</h4><div class="value">${contract.launchAllowed ? 'Ready' : 'Review'}</div></div>
+      </div>
+      <div class="grid two" style="margin-top:10px">
+        <section class="panel">
+          <h3>Output</h3>
+          <label class="field-label" for="outputPersistenceModeSelect">Save results to</label>
+          <select id="outputPersistenceModeSelect">${modeOptions}</select>
+          <p class="mini-note"><span class="badge good">License safe</span> ${esc((root.execution_policy || {}).workers || 1)} worker · parallel pool off</p>
+        </section>
+        <section class="panel">
+          <h3>Recent runs</h3>
+          <div class="table-wrap"><table><thead><tr><th>Run</th><th>Status</th><th></th></tr></thead><tbody>${recentRows || '<tr><td colspan="3">No previous runs.</td></tr>'}</tbody></table></div>
+        </section>
+      </div>`;
+  }
+  function liveWorkspace() {
+    title('Live', 'Run status and current measurements.');
+    const live = state.live;
+    if (!live) {
+      main.innerHTML = `${liveTabs('realtime')}<section class="panel">${pageRunSelector('realtimeRunSelect', 'Run', {runningOnly:false})}<div class="chart-empty">Select a run or wait for the active run to appear.</div></section>`;
+      return;
+    }
+    const summary = live.summary || {};
+    const realtimeData = live.realtime || {};
+    const logs = (live.logs || []).slice(-30).reverse();
+    const stage = realtimeData.stage || {};
+    const run = live.run || {};
+    const canStop = /queued|launching|running|finalizing|retry/i.test(String(run.status_text || '')) && String(run.run_tag || '');
+    const stopForm = canStop ? `<form method="post" action="/run/stop" class="inline-form" onsubmit="return confirm('Stop this MATLAB run?')"><input type="hidden" name="run_tag" value="${esc(run.run_tag)}"><input type="hidden" name="next" value="/realtime"><button type="submit">Stop</button></form>` : '';
+    main.innerHTML = `${liveTabs('realtime')}
+      <section class="panel"><div class="toolbar" style="justify-content:space-between">${pageRunSelector('realtimeRunSelect', 'Run', {runningOnly:false})}${stopForm}</div></section>
+      <div class="grid four">
+        <div class="tile metric"><h4>Status</h4><div class="value">${esc((live.run || {}).status_text || '—')}</div></div>
+        <div class="tile metric"><h4>Result</h4><div class="value">${esc(text(summary.result_ok ?? '—'))}</div></div>
+        <div class="tile metric"><h4>UEs</h4><div class="value">${esc(text(summary.configured_users ?? '—'))}</div></div>
+        <div class="tile metric"><h4>Issues</h4><div class="value">${esc(text(summary.required_failure_count ?? 0))}</div></div>
+      </div>
+      <div class="grid two" style="margin-top:10px">
+        <section class="panel"><h3>Progress</h3>${objectTable(stage, 'Waiting for progress data.')}</section>
+        <section class="panel"><div class="toolbar" style="justify-content:space-between"><h3 style="margin:0">Events</h3><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div><div class="stream">${logs.map(log => `<div class="stream-item"><strong>${esc(log.source || log.module || log.created_utc || 'Event')}</strong><br>${esc(log.message || log.line_text || log.log_message || '')}</div>`).join('') || '<p class="subtle">No events yet.</p>'}</div></section>
+      </div>`;
+  }
+  function compactPlotsPage() {
+    title('Results', 'Images and graphs');
+    main.innerHTML = `<section class="panel">
+      ${pageRunSelector('plotsRunSelect', 'Run', {runningOnly:false})}
+      <div class="toolbar">
+        <label>View<select id="plotBrowserCatalogSelect"></select></label>
+        <label>Group<select id="plotBrowserBucketSelect"></select></label>
+        <label style="min-width:260px">Image or graph<select id="plotBrowserSelect"></select></label>
+        <span id="plotBrowserStats" class="mini-note"></span>
+      </div>
+      <div id="plotBrowserViewer" class="chart-box" style="height:calc(100vh - 280px);min-height:320px"></div>
+    </section>`;
+    renderPlotBrowser();
+  }
+  function compactTablesPage() {
+    title('Results', 'Tables');
+    main.innerHTML = `<section class="panel">
+      ${pageRunSelector('tablesRunSelect', 'Run', {runningOnly:false})}
+      <div class="toolbar">
+        <label>Group<select id="tableBrowserBucketSelect"></select></label>
+        <label style="min-width:300px">Table<select id="tableBrowserSelect"></select></label>
+        <span id="tableBrowserStats" class="mini-note"></span>
+      </div>
+      <div id="tableBrowserViewer"></div>
+    </section>`;
+    renderTableBrowser();
+  }
+  function compactArtifactsPage() {
+    title('Results', 'Files');
+    const tables = state.live ? (state.live.tables_all || []) : [];
+    const images = state.live ? (state.live.images_all || []) : [];
+    main.innerHTML = `<section class="panel">
+      ${pageRunSelector('artifactsRunSelect', 'Run', {runningOnly:false})}
+      <div class="grid two">
+        <div><h3>Images</h3>${artifactTable(images, 'No images for this run.')}</div>
+        <div><h3>Tables and files</h3>${artifactTable(tables, 'No files for this run.')}</div>
+      </div>
+    </section>`;
+  }
+  function scenarioDropdownLabel(value) {
+    return String(value || '').replace(/\\.(yaml|yml)$/i, '').replace(/[_-]+/g, ' ').replace(/\\b\\w/g, char => char.toUpperCase());
+  }
+  function renderPhyGridPayload(payload) {
+    const grid = (payload || {}).grid || {};
+    const slots = (grid.slots || []).slice(0, 24);
+    const lanes = (grid.lanes || []).slice(0, 18);
+    const events = grid.events || [];
+    const byCell = new Map();
+    events.forEach(event => {
+      const key = `${String(event.channel || '')}|${String(event.slot ?? '')}`;
+      if (!byCell.has(key)) byCell.set(key, []);
+      byCell.get(key).push(event);
+    });
+    const header = `<div class="rg-label"></div>${slots.map(slot => `<div class="rg-head">${esc(slot.slot)}<span>${esc(slot.tdd || '')}</span></div>`).join('')}`;
+    const rowsHtml = lanes.map(lane => `<div class="rg-label">${esc(lane)}</div>${slots.map(slot => {
+      const cellEvents = byCell.get(`${lane}|${slot.slot}`) || [];
+      const titleText = cellEvents.map(event => `${event.channel} · slot ${event.slot} · PRB ${event.prb_start ?? '?'}+${event.prb_count ?? '?'}`).join('\\n');
+      const flavor = /PUSCH|PUCCH|PRACH|SRS|UL/i.test(lane) ? 'ul' : (/PDSCH|PDCCH|PBCH|SSB|PSS|SSS|DL/i.test(lane) ? 'dl' : 'ref');
+      return `<div class="rg-cell ${cellEvents.length ? `active ${flavor}` : ''}" title="${esc(titleText)}">${cellEvents.length ? esc(cellEvents.length) : ''}</div>`;
+    }).join('')}`).join('');
+    const emptyNote = events.length
+      ? ''
+      : '<p class="mini-note">No exported allocation events are available for this run; the slot-format row remains visible without inventing resource assignments.</p>';
+    return `${emptyNote}<div class="rg-scroll"><div class="resource-grid" style="grid-template-columns:140px repeat(${Math.max(slots.length,1)},minmax(36px,1fr))">${header}${rowsHtml}</div></div>`;
+  }
+  function loadPhyGrid() {
+    const runId = selectedRunId();
+    if (!runId || state.phyGridLoading) return;
+    state.phyGridLoading = true;
+    fetch(`/api/run/${encodeURIComponent(runId)}/phy-grid?slot_limit=50`, {cache:'no-store'})
+      .then(response => response.ok ? response.json() : Promise.reject(new Error(`resource grid HTTP ${response.status}`)))
+      .then(payload => { state.phyGrid = payload; state.phyGridLoading = false; if (state.page === 'phy_grid') phyGridWorkspace(); })
+      .catch(() => { state.phyGridLoading = false; });
+  }
+  function phyGridWorkspace() {
+    title('Live', 'Resource grid');
+    const runId = selectedRunId();
+    const grid = (state.phyGrid || {}).grid || {};
+    main.innerHTML = `${liveTabs('phy_grid')}
+      <section class="panel">
+        ${pageRunSelector('phyGridRunSelect', 'Run', {runningOnly:false})}
+        <div class="grid three" style="margin-bottom:10px">
+          <div class="tile metric"><h4>PRBs</h4><div class="value">${esc(grid.nrb || '—')}</div></div>
+          <div class="tile metric"><h4>Symbols / slot</h4><div class="value">${esc(grid.symbols_per_slot || '—')}</div></div>
+          <div class="tile metric"><h4>Events</h4><div class="value">${esc(grid.event_count ?? '—')}</div></div>
+        </div>
+        ${state.phyGrid ? renderPhyGridPayload(state.phyGrid) : `<div class="chart-empty">${runId ? 'Loading resource grid…' : 'Select a run.'}</div>`}
+      </section>`;
+    if (runId && !state.phyGrid) loadPhyGrid();
+  }
+  function renderResultView(kind, renderer) {
+    renderer();
+    prependTabs(resultsTabs(kind));
+  }
+  function refreshBackendStatus() {
+    if (state.backendLoading) return;
+    state.backendLoading = true;
+    fetch('/api/status', {cache:'no-store'}).then(response => response.ok ? response.json() : null).then(payload => {
+      state.backendLoading = false;
+      if (!payload) return;
+      root.backend = payload;
+      if (!interactionLocked() && ['home','run_control'].includes(state.page)) render({preserveScroll:true});
+    }).catch(() => { state.backendLoading = false; });
+  }
+  function render(options) {
+    const opts = options || {};
+    const scrollSnapshot = opts.preserveScroll ? captureScrollState() : null;
+    chrome();
+    if (state.page === 'home' || state.page === 'architecture') scenarioWorkspace();
+    else if (state.page === 'run_control') runWorkspace();
+    else if (state.page === 'realtime') liveWorkspace();
+    else if (state.page === 'phy_grid') phyGridWorkspace();
+    else if (state.page === 'plots') renderResultView('plots', compactPlotsPage);
+    else if (state.page === 'tables') renderResultView('tables', compactTablesPage);
+    else if (state.page === 'reports') renderResultView('reports', reports);
+    else if (state.page === 'analytics') renderResultView('analytics', analytics);
+    else if (state.page === 'artifacts') renderResultView('artifacts', compactArtifactsPage);
+    else if (state.page === 'compare') renderResultView('compare', compare);
+    else if (state.page === 'runs' || state.page === 'previous_runs') runWorkspace();
+    else configureWorkspace(state.page);
+    renderBlock(state.selectedBlock);
+    if (scrollSnapshot) restoreScrollState(scrollSnapshot);
+    else if (main) main.scrollTo(0, 0);
+  }
   function refreshRunsList(shouldRender) {
     return fetch('/api/runs?limit=200', {cache:'no-store'})
       .then(r => r.ok ? r.json() : {runs:[]})
@@ -15943,7 +16723,8 @@ window.addEventListener('DOMContentLoaded', function () {
         state.runs = nextRuns;
         state.runsDigest = nextDigest;
         if (shouldRender && changed && !interactionLocked()) {
-          if (state.page === 'compare') compare();
+          if (['home','run_control'].includes(state.page)) render({preserveScroll:true});
+          else if (state.page === 'compare') compare();
           else if (document.querySelector('[data-run-selector="true"]') || ['home','runs','plots','tables'].includes(state.page)) refreshRunsSurfaces();
         }
         return state.runs;
@@ -15963,6 +16744,7 @@ window.addEventListener('DOMContentLoaded', function () {
       render({preserveScroll:false});
       if (pageNeedsConfigModel(state.page)) ensureConfigLoaded(true);
       if (pageNeedsFieldCatalog(state.page)) ensureFieldsLoaded(true);
+      hydrateCurrentPage();
     }
     const m = target.closest('[data-mode]');
     if (m) { state.mode = m.dataset.mode; set(state.config, 'run_control.execution_mode', state.mode); render({preserveScroll:false}); }
@@ -15986,8 +16768,12 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'loadConfigJsonBtn') document.getElementById('configJsonFileInput').click();
     if (target.id === 'newScenarioBtn') { state.page = 'scenario'; render({preserveScroll:false}); ensureConfigLoaded(true); ensureFieldsLoaded(true); if (msg) { msg.textContent = 'New scenario draft is active in the browser. Run Scenario and Download Config JSON will use the edited config model.'; msg.classList.remove('hidden'); } }
     if (target.id === 'validateBtn') { ensureConfigLoaded(false).then(() => { const contract = scenarioLaunchContract(); if (msg) { msg.textContent = state.mode !== wired ? `${state.mode} is configurable here, but only LLS is launch-enabled from /run in this pass.` : (contract.launchAllowed ? `Browser validation passed for the editable config surface. Launch contract: ${contract.presentationLabel || contract.launchContract}. MATLAB runtime validation still occurs during /run.` : `Browser validation found a launch-contract blocker: ${contract.launchReason || 'selected scenario is blocked.'}`); msg.classList.remove('hidden'); } }); }
-    if (target.id === 'saveScenarioBtn') { ensureConfigLoaded(false).then(() => { storage.set('sixgr_product_config', JSON.stringify(state.config)); if (msg) { msg.textContent = 'Scenario draft saved in browser storage.'; msg.classList.remove('hidden'); } }); }
+    if (target.id === 'saveScenarioBtn') { ensureConfigLoaded(false).then(() => { storage.set('sixgr_product_config', JSON.stringify({scenario:root.scenario, config:state.config})); if (msg) { msg.textContent = 'Draft saved.'; msg.classList.remove('hidden'); } }); }
     if (target.id === 'downloadConfigBtn') { const runId = selectedRunId(); if (runId) { window.location.href = `/run-config/download?run_id=${encodeURIComponent(runId)}&format=json`; if (msg) { msg.textContent = `Downloading run-wise config evidence bundle for run ${runId}.`; msg.classList.remove('hidden'); } } else { ensureConfigLoaded(false).then(() => { updateRunPayload(); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state.config, null, 2)], {type:'application/json'})); a.download = 'sixgr_final_config_draft.json'; a.click(); if (msg) { msg.textContent = 'No run_id is available yet, so the current browser draft config JSON was downloaded.'; msg.classList.remove('hidden'); } }); } }
+    const tableLoadMore = target.closest('[data-table-load-more]');
+    if (tableLoadMore) {
+      loadTableBrowserPreview(tableLoadMore.dataset.tableLoadMore, Number(tableLoadMore.dataset.nextLimit || 1000));
+    }
     if (target.id === 'liveMetricExportBtn') { exportMetricExplorer('realtime'); }
     if (target.id === 'analyticsMetricExportBtn') { exportMetricExplorer('analytics'); }
   });
@@ -15995,6 +16781,11 @@ window.addEventListener('DOMContentLoaded', function () {
     const target = eventElement(e.target);
     if (!target) return;
     if (isInteractiveElement(target)) markUserInteracting(30000);
+    if (target.id === 'scenarioFileInput') {
+      const form = document.getElementById('scenarioUploadForm');
+      if ((target.files || []).length && form) form.submit();
+      return;
+    }
     if (target.id === 'configJsonFileInput') { loadConfigFile((target.files || [])[0]); target.value = ''; return; }
     if (target.id === 'compareBaselineSelect') { state.compareBaseline = target.value; state.compareBaselineLive = null; storage.set('sixgr_compare_baseline', state.compareBaseline); compare(); return; }
     if (target.id === 'compareCandidateSelect') { state.compareCandidate = target.value; state.compareCandidateLive = null; storage.set('sixgr_compare_candidate', state.compareCandidate); compare(); return; }
@@ -16023,7 +16814,25 @@ window.addEventListener('DOMContentLoaded', function () {
     const i = target.closest('[data-config-input]');
     if (i) { set(state.config, i.dataset.path, parseValue(i)); updateRunPayload(); }
   });
-  document.addEventListener('input', e => { const target = eventElement(e.target); if (!target) return; if (isInteractiveElement(target)) markUserInteracting(30000); if (target.id === 'liveFilter') { state.filter = target.value; if (state.page === 'realtime') render({preserveScroll:true}); } if (target.id === 'contractFilter') applyContractControls(); });
+  document.addEventListener('input', e => {
+    const target = eventElement(e.target);
+    if (!target) return;
+    if (isInteractiveElement(target)) markUserInteracting(30000);
+    if (target.id === 'configSearch') {
+      const query = String(target.value || '').trim().toLowerCase();
+      document.querySelectorAll('[data-config-row]').forEach(row => {
+        row.classList.toggle('hidden', Boolean(query) && !String(row.dataset.search || '').includes(query));
+      });
+      document.querySelectorAll('.config-group').forEach(group => {
+        const matches = group.querySelectorAll('[data-config-row]:not(.hidden)').length;
+        group.classList.toggle('hidden', matches === 0);
+        if (query && matches) group.open = true;
+      });
+      return;
+    }
+    if (target.id === 'liveFilter') { state.filter = target.value; if (state.page === 'realtime') render({preserveScroll:true}); }
+    if (target.id === 'contractFilter') applyContractControls();
+  });
   document.addEventListener('focusin', e => { if (isInteractiveElement(e.target)) markUserInteracting(30000); }, true);
   document.addEventListener('pointerdown', e => { if (isInteractiveElement(e.target)) markUserInteracting(30000); }, true);
   document.addEventListener('wheel', e => { if (isInteractiveElement(e.target)) markUserInteracting(30000); }, {passive: true, capture: true});
@@ -16034,49 +16843,60 @@ window.addEventListener('DOMContentLoaded', function () {
   render({preserveScroll:false});
   if (pageNeedsConfigModel(state.page) && !state.configLoaded) window.setTimeout(() => { ensureConfigLoaded(true); }, 0);
   if (pageNeedsFieldCatalog(state.page)) window.setTimeout(() => { ensureFieldsLoaded(true); }, 0);
-  refreshRunsList(true).then(runRows => {
-    const id = preferredRunId(runRows);
-    const contractKind = state.page === 'reports' ? 'reports' : (state.page === 'analytics' ? 'analytics' : '');
-    if (contractKind) {
-      fetchContractSectionEvidence(contractKind)
-        .then(() => {
-          if (!interactionLocked() && ['reports','analytics'].includes(state.page)) render({preserveScroll:true});
-        })
-        .catch(() => {});
-    }
-    return id ? fetchCanonicalLivePayload(id) : null;
-  }).then((live) => {
-    state.live = live;
-    state.liveVersion = String((live || {}).payload_version || '');
-    state.liveArtifactVersion = String((live || {}).artifact_version || '');
-    if (!interactionLocked()) render({preserveScroll:true});
-    setInterval(() => {
-      const runId = selectedRunId();
-      if (!runId) return;
-      const contractKind = state.page === 'reports' ? 'reports' : (state.page === 'analytics' ? 'analytics' : '');
-      if (contractKind) {
-        const previousSectionVersion = state.sectionEvidenceVersion;
-        fetchContractSectionEvidence(contractKind)
-          .then(() => {
-            if (state.sectionEvidenceVersion !== previousSectionVersion && !interactionLocked() && ['reports','analytics'].includes(state.page)) render({preserveScroll:true});
-          })
-          .catch(() => {});
+  function pageUsesRuns(pageId) {
+    return ['home','run_control','realtime','phy_grid','plots','tables','reports','analytics','artifacts','compare','runs'].includes(String(pageId || ''));
+  }
+  function pageUsesLive(pageId) {
+    return ['realtime','reports','analytics','artifacts'].includes(String(pageId || ''));
+  }
+  function hydrateCurrentPage() {
+    if (['home','run_control'].includes(state.page)) refreshBackendStatus();
+    if (!pageUsesRuns(state.page)) return Promise.resolve();
+    return refreshRunsList(true).then(runRows => {
+      if (state.page === 'phy_grid') { state.phyGrid = null; loadPhyGrid(); return null; }
+      if (state.page === 'plots') {
+        state.plotBrowserPayload = null;
+        state.plotBrowserRunId = '';
+        renderPlotBrowser();
+        return null;
       }
-      fetchCanonicalLivePayload(runId)
-        .then((x) => {
-          if (!x) return;
-          const nextVersion = String(x.payload_version || '');
-          const nextRunId = String((((x || {}).run) || {}).run_id || '');
-          const changed = nextVersion !== state.liveVersion || nextRunId !== String((((state.live || {}).run) || {}).run_id || '');
-          state.live = x;
-          state.liveVersion = nextVersion;
-          state.liveArtifactVersion = String(x.artifact_version || '');
-          if (changed && ['realtime','reports','analytics','artifacts','parameters'].includes(state.page) && !interactionLocked()) render({preserveScroll:true});
-        })
-        .catch(() => {});
-    }, Number(root.poll_ms || 1000));
-    setInterval(() => { refreshRunsList(true); }, Math.max(Number(root.poll_ms || 1000) * 10, 15000));
-  });
+      if (state.page === 'tables') {
+        state.tableBrowserPayload = null;
+        state.tableBrowserRunId = '';
+        renderTableBrowser();
+        return null;
+      }
+      if (!pageUsesLive(state.page)) return null;
+      const runId = preferredRunId(runRows);
+      const contractKind = state.page === 'reports' ? 'reports' : (state.page === 'analytics' ? 'analytics' : '');
+      if (contractKind) fetchContractSectionEvidence(contractKind).catch(() => {});
+      return runId ? fetchCanonicalLivePayload(runId) : null;
+    }).then(live => {
+      if (!live) return;
+      state.live = live;
+      state.liveVersion = String(live.payload_version || '');
+      state.liveArtifactVersion = String(live.artifact_version || '');
+      if (!interactionLocked() && pageUsesLive(state.page)) render({preserveScroll:true});
+    });
+  }
+  hydrateCurrentPage();
+  setInterval(() => {
+    if (document.visibilityState !== 'visible' || !pageUsesLive(state.page)) return;
+    const runId = selectedRunId();
+    if (!runId) return;
+    fetchCanonicalLivePayload(runId).then(payload => {
+      if (!payload) return;
+      const nextVersion = String(payload.payload_version || '');
+      const changed = nextVersion !== state.liveVersion;
+      state.live = payload;
+      state.liveVersion = nextVersion;
+      state.liveArtifactVersion = String(payload.artifact_version || '');
+      if (changed && !interactionLocked()) render({preserveScroll:true});
+    }).catch(() => {});
+  }, Math.max(Number(root.poll_ms || 1000), 3000));
+  setInterval(() => {
+    if (document.visibilityState === 'visible' && pageUsesRuns(state.page)) refreshRunsList(true);
+  }, 15000);
 });
 </script>
 """
@@ -16795,7 +17615,7 @@ def build_home_page(selected_scenario: str, message: str = "", user_profile: dic
         <div class="meta-card" style="margin-top:16px;">
           <strong>Live Stack</strong><br>
           <span class="muted">{html.escape(MYSQL_HOST)}:{MYSQL_PORT}/{html.escape(MYSQL_DATABASE)}</span><br>
-          <code>{html.escape(str(MATLAB_EXE))}</code>
+          <code>{html.escape(str(MATLAB_EXE or "MATLAB unavailable"))}</code>
         </div>
         <div class="meta-card" style="margin-top:16px;">
           <strong>Resolved Source Chain</strong>
@@ -17195,7 +18015,7 @@ function renderRuntimeContext(runtimeContext) {{
 function resultNumberText(value, digits = 3) {{
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 'n/a';
-  return numeric.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  return numeric.toFixed(digits).replace(/\\.0+$/, '').replace(/(\\.\\d*?)0+$/, '$1');
 }}
 function renderModeValidationPanel(modeValidation) {{
   const host = document.getElementById('resultModeSummary');
@@ -17877,48 +18697,6 @@ def build_logs_page(run_id: int | None, user_profile: dict[str, Any] | None = No
     </section>
     """
     return page_shell(f"Logs {run_id}", body, active="logs", run_id=run_id, user_profile=user_profile)
-
-
-def build_table_preview_page(
-    artifact_id: int,
-    user_profile: dict[str, Any] | None = None,
-    *,
-    rows_mode: str = "preview",
-) -> bytes:
-    meta = fetch_artifact_meta(artifact_id)
-    if meta is None:
-        raise KeyError(f"Artifact {artifact_id} was not found.")
-    mode = str(rows_mode or "preview").strip().lower()
-    row_limit = MAX_TABLE_FULL_VIEW_ROWS if mode in {"all", "full", "complete"} else MAX_TABLE_PREVIEW_ROWS
-    header, rows = load_cached_csv_preview(int(artifact_id), row_limit)
-    stored_row_count = count_cached_csv_data_rows(int(artifact_id))
-    displayed_row_count = len(rows)
-    capped = stored_row_count > displayed_row_count
-    mode_label = "Full Table" if mode in {"all", "full", "complete"} and not capped else "Table Preview"
-    head_html = "".join(f"<th>{html.escape(cell)}</th>" for cell in header)
-    body_rows = ["<tr>" + "".join(f"<td>{html.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows]
-    cap_note = (
-        f"Showing {displayed_row_count} of {stored_row_count} stored data rows "
-        f"(browser safety cap {row_limit}); use Download CSV for the complete artifact."
-        if capped
-        else f"Showing all {stored_row_count} stored data rows."
-    )
-    body = f"""
-    <section class="panel">
-      <h2>{html.escape(mode_label)}</h2>
-      <p class="muted"><strong>{html.escape(str(meta['logical_path']))}</strong></p>
-      <p class="muted">{html.escape(cap_note)}</p>
-      <div class="toolbar">
-        <a class="button-link secondary" href="/artifact/{artifact_id}/table?rows=all">Open Full Table View</a>
-        <a class="button-link secondary" href="{artifact_url(artifact_id, download=True)}">Download CSV</a>
-        <a class="button-link secondary" href="/result?run_id={int(meta['run_id'])}">Back To Result</a>
-      </div>
-      <div class="table-scroll" style="margin-top:14px;">
-        <table><thead><tr>{head_html}</tr></thead><tbody>{''.join(body_rows) if body_rows else '<tr><td>No rows found.</td></tr>'}</tbody></table>
-      </div>
-    </section>
-    """
-    return page_shell(f"Artifact {artifact_id}", body, active="result", run_id=int(meta["run_id"]), user_profile=user_profile)
 
 
 def analytics_page_script(
@@ -19514,7 +20292,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             _, user_profile = auth
             if parsed.path == "/profile":
-                self.respond_html(build_profile_page(user_profile))
+                self.redirect("/home")
                 return
             if parsed.path == "/api/status":
                 self.respond_json(product_backend_status())
@@ -19540,7 +20318,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload["_download_metadata"] = {
                     "scenario": scenario_name,
                     "source_chain": source_chain,
-                    "matlab_exe": str(MATLAB_EXE),
+                    "matlab_exe": str(MATLAB_EXE or ""),
+                    "matlab_release": MATLAB_RELEASE,
+                    "matlab_source": MATLAB_SOURCE,
+                    "matlab_reason": MATLAB_DISCOVERY_REASON,
                     "mysql_database": MYSQL_DATABASE,
                     "note": "Resolved config snapshot for browser verification. Browser-side edits use the Download Config JSON quick action.",
                 }
@@ -19568,7 +20349,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.redirect(f"/realtime?run_id={urllib.parse.quote(parsed.path.split('/')[-1])}")
                 return
             if parsed.path == "/":
-                self.redirect("/plots")
+                self.redirect("/home")
                 return
             if (
                 parsed.path in PRODUCT_PAGE_ROUTES
@@ -19677,11 +20458,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/artifact/") and parsed.path.endswith("/table"):
                 artifact_id = int(parsed.path.split("/")[2])
-                self.respond_html(build_table_preview_page(
-                    artifact_id,
-                    user_profile=user_profile,
-                    rows_mode=params.get("rows", ["preview"])[0],
-                ))
+                meta = fetch_artifact_meta(artifact_id)
+                if meta is None:
+                    raise KeyError(f"Artifact {artifact_id} was not found.")
+                self.redirect(
+                    f"/tables?run_id={urllib.parse.quote(str(meta['run_id']))}"
+                    f"&artifact_id={urllib.parse.quote(str(artifact_id))}"
+                )
                 return
             if parsed.path.startswith("/artifact/") and parsed.path.endswith("/raw"):
                 artifact_id = int(parsed.path.split("/")[2])
@@ -19878,6 +20661,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             next_url = str(fields.get("next", ["/home"])[0] or "/home")
             next_url = next_url if next_url.startswith("/") else "/home"
+            if parsed.path == "/run/stop":
+                run_tag = str(fields.get("run_tag", [""])[0] or "").strip()
+                if not run_tag:
+                    raise ValueError("A run tag is required.")
+                stopped_pid = terminate_dashboard_run(run_tag)
+                message = f"Stopped {run_tag} (PID {stopped_pid})."
+                self.redirect(f"{next_url}?message={urllib.parse.quote(message)}")
+                return
             if parsed.path == "/admin/clear":
                 stats = clear_dashboard_storage()
                 message = (
@@ -19909,8 +20700,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 target_name = str(fields.get("target_name", [""])[0] or uploaded_name or "").strip()
                 target_path = write_uploaded_scenario(target_name, yaml_text)
                 rel_name = target_path.relative_to(SCENARIO_ROOT).as_posix()
-                message = f"Uploaded scenario {rel_name}. It is now available from Run Control and Scenario I/O."
-                self.redirect(f"/scenario-io?message={urllib.parse.quote(message)}")
+                message = f"Imported {rel_name}."
+                self.redirect(
+                    f"/home?scenario={urllib.parse.quote(rel_name)}&message={urllib.parse.quote(message)}"
+                )
                 return
             if parsed.path == "/run-prach-comparison":
                 prefix = str(fields.get("run_tag_prefix", [""])[0] or "").strip()
@@ -19959,7 +20752,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 )
             enforce_browser_launch_contract(str(scenario_name), requested_payload)
             launch_tag, log_file, runtime_path = launch_run_from_yaml(scenario_name, yaml_text, run_tag)
-            message = f"Started run '{launch_tag}'. MATLAB stdout is being written to {log_file}. Runtime YAML: {runtime_path.name}"
+            message = (
+                f"Started '{launch_tag}' in license-safe mode "
+                f"({WEBGUI_EXECUTION_WORKERS} worker, no parallel pool)."
+            )
             self.redirect(
                 f"/result?run_tag={urllib.parse.quote(launch_tag)}&message={urllib.parse.quote(message)}"
             )
@@ -20284,7 +21080,8 @@ def main() -> int:
         textwrap.dedent(
             f"""
             MySQL target : {MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}
-            MATLAB path  : {MATLAB_EXE}
+            MATLAB path  : {MATLAB_EXE or "unavailable"}
+            MATLAB release: {MATLAB_RELEASE or "unavailable"} ({MATLAB_SOURCE})
             Repo root    : {REPO_ROOT}
             Map default  : {DEFAULT_MAP_CENTER['label']} ({DEFAULT_MAP_CENTER['lat']:.6f}, {DEFAULT_MAP_CENTER['lon']:.6f})
             """

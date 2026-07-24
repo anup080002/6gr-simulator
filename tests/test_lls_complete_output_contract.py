@@ -18,7 +18,7 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 
 def test_contract_sections_and_context() -> None:
-    assert len(contract.REPORT_SECTIONS) == 22
+    assert len(contract.REPORT_SECTIONS) == 25
     assert len(contract.ANALYTICS_SECTIONS) == 19
     assert {"direction", "ue_id", "bs_id", "sfn", "slot", "symbol"}.issubset(contract.BASE_CONTEXT_COLUMNS)
     for kind in ("reports", "analytics"):
@@ -113,35 +113,35 @@ def test_generated_deliverables_exist_and_are_additive() -> None:
     assert all(row["placeholder_allowed"] == "false" for row in _read_csv(REPO_ROOT / "reports/67_analytics_job_manifest.csv"))
 
 
-def test_browser_top_level_contract_and_old_routes() -> None:
-    nav_ids = [item[0] for item in dash.PRODUCT_NAV]
-    for required in (
-        "home",
-        "run_control",
-        "scenario",
-        "geometry",
-        "waveform",
-        "traffic",
-        "mac_scheduler",
-        "l1_phy",
-        "antenna_air",
-        "realtime",
-        "reports",
-        "analytics",
-        "runs",
-        "previous_runs",
-        "artifacts",
-        "parameters",
-        "compare",
-    ):
-        assert required in nav_ids, f"missing product nav item: {required}"
-    assert nav_ids.index("reports") < nav_ids.index("analytics")
-    assert dash.PRODUCT_PAGE_ROUTES["/run-control"] == "run_control"
+def test_browser_uses_one_compact_shell_and_preserves_deep_links() -> None:
+    expected_nav = [
+        ("home", "Scenario", "/home"),
+        ("scenario", "Configure", "/scenario"),
+        ("run_control", "Run", "/run-control"),
+        ("realtime", "Live", "/realtime"),
+        ("plots", "Results & Evidence", "/plots"),
+    ]
+    assert dash.PRODUCT_NAV == expected_nav
+    assert len({route for _, _, route in dash.PRODUCT_NAV}) == len(expected_nav)
+    for page_id, _, route in dash.PRODUCT_NAV:
+        assert dash.PRODUCT_PAGE_ROUTES[route] == page_id
+
+    expected_result_routes = {
+        "/plots": "plots",
+        "/tables": "tables",
+        "/analytics": "analytics",
+        "/artifacts": "artifacts",
+        "/compare": "compare",
+        "/phy-grid": "phy_grid",
+    }
+    for route, page_id in expected_result_routes.items():
+        assert dash.PRODUCT_PAGE_ROUTES[route] == page_id
+
+    assert dash.PRODUCT_PAGE_ROUTES["/"] == "home"
     assert dash.PRODUCT_PAGE_ROUTES["/reports"] == "reports"
-    assert dash.PRODUCT_PAGE_ROUTES["/analytics"] == "analytics"
     assert dash.PRODUCT_PAGE_ROUTES["/reports/power-energy-thermal-compute-runtime"] == "reports"
     assert dash.PRODUCT_PAGE_ROUTES["/analytics/power-energy-efficiency-analytics"] == "analytics"
-    for preserved in ("/home", "/l1-phy", "/previous-runs", "/artifacts", "/compare"):
+    for preserved in ("/home", "/l1-phy", "/previous-runs", "/parameters"):
         assert preserved in dash.PRODUCT_PAGE_ROUTES, f"old route removed: {preserved}"
 
 
@@ -149,4 +149,4 @@ if __name__ == "__main__":
     test_contract_sections_and_context()
     test_contract_covers_required_domains()
     test_generated_deliverables_exist_and_are_additive()
-    test_browser_top_level_contract_and_old_routes()
+    test_browser_uses_one_compact_shell_and_preserves_deep_links()

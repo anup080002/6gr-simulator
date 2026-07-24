@@ -21,6 +21,9 @@ cfg = sixgr.config.normalizeConfig(cfg);
 
 grant = sixgr.link.resolveWaveformGrant(cfg, "DL", 0);
 assert(logical(grant.Valid), "Resolved waveform grant must be valid.");
+assert(double(grant.UEIndex) == 1 && double(grant.UEID) == 1 && ...
+    string(grant.UEIdentitySource) == "standalone_single_user_default", ...
+    "A standalone grant must carry one consistent, explicitly sourced UE identity.");
 assert(logical(grant.ExactPHYFeasibilityChecked) && logical(grant.ExactPHYFeasible), ...
     "Resolved waveform grant must carry exact PHY feasibility evidence.");
 assert(~logical(grant.ExactTBSUsedFastNREApprox), ...
@@ -66,6 +69,21 @@ assert(isequal(txA.DCIBits, txB.DCIBits) && all(txA.DCIBits == 0), ...
     "Standalone PDCCH_Tx without DCI bits must be deterministic, not random.");
 assert(~logical(infoA.RandomDCIPayload) && ~logical(infoB.RandomDCIPayload), ...
     "Standalone deterministic PDCCH payloads must not be reported as random DCI.");
+
+missingMultiUserIdentity = cfg;
+missingMultiUserIdentity = sixgr.util.structSet(missingMultiUserIdentity, "lls6g.users.enabled", true);
+missingMultiUserIdentity = sixgr.util.structSet(missingMultiUserIdentity, "lls6g.users.n_users", 2);
+missingMultiUserIdentity = sixgr.util.structSet(missingMultiUserIdentity, "lls6g.userContext.RuntimeUEIndex", NaN);
+missingMultiUserIdentity = sixgr.util.structSet(missingMultiUserIdentity, "lls6g.userContext.UEIndex", NaN);
+threwMissingIdentity = false;
+try
+    sixgr.link.resolveWaveformGrant(missingMultiUserIdentity, "DL", 0);
+catch ME
+    threwMissingIdentity = strcmp(string(ME.identifier), ...
+        "sixgr:link:resolveWaveformGrant:MissingMultiUserIdentity");
+end
+assert(threwMissingIdentity, ...
+    "A multi-user grant without an explicit runtime UE identity must fail closed.");
 
 bad = grant;
 dropFields = intersect(fieldnames(bad), {'PHYGrant','DCI'});

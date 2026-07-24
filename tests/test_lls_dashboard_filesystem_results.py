@@ -80,6 +80,9 @@ def test_dashboard_discovers_filesystem_only_result_run(tmp_path, monkeypatch) -
     assert preview is not None
     assert preview["header"][0] == "ScenarioID"
     assert preview["rows"][0][0] == "scenario_a"
+    assert preview["row_count"] == 1
+    assert preview["row_limit"] == dash.MAX_TABLE_PREVIEW_ROWS
+    assert preview["meta"]["logical_path"] == "reports/csv/scenario_summary.csv"
 
     payload = dash.build_live_payload(run_id)
     assert payload["run"]["run_id"] == run_id

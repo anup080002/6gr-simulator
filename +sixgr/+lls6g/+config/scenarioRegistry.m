@@ -10,6 +10,9 @@ files = dir(fullfile(root, "*.yaml"));
 rows = repmat(struct("ScenarioID","", "ConfigPath","", "RunnerProfile","", "Description",""), 0, 1);
 
 for i = 1:numel(files)
+    if startsWith(lower(string(files(i).name)), "__web_")
+        continue;
+    end
     filePath = fullfile(files(i).folder, files(i).name);
     raw = sixgr.lls6g.config.readConfigFile(filePath);
     if isfield(raw, 'execution') || ~isfield(raw, 'scenario')

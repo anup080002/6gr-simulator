@@ -1,0 +1,17 @@
+inherits:
+  - ./lls_true_geometry_2cell_2ue_200kmh.yaml
+
+canonical_control:
+  run:
+    total_slots: 10
+    measurement_slots: 8
+    num_workers: 1
+    batch_size_links: 1
+    auto_start_parallel_pool: false
+
+run_control:
+  total_slots: 10
+  measurement_slots: 8
+  num_workers: 1
+  batch_size_links: 1
+  auto_start_parallel_pool: false

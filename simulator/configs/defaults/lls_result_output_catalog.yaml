@@ -273,6 +273,7 @@ categories:
       - { key: channel_snapshots, label: channel snapshots }
       - { key: channel_estimates, label: channel estimates }
       - { key: equalized_constellations, label: equalized constellations }
+      - { key: phy_signal_diagnostics, label: truthful same-trial PHY signal diagnostics }
       - { key: llr_histograms, label: LLR histograms }
       - { key: cfo_to_tracking_traces, label: CFO/TO tracking traces }
       - { key: harq_process_timelines, label: HARQ process timelines }
@@ -290,17 +291,17 @@ categories:
       - { key: per_sweep_comparison_tables, label: measured-SINR comparison tables }
       - { key: baseline_candidate_delta_tables, label: baseline vs candidate delta tables }
       - { key: waterfall_bar_charts_gains_losses, label: waterfall charts / bar charts of gains/losses }
-      - { key: curves_bler_vs_snr, label: curves: BLER vs measured post-EQ SINR }
-      - { key: curves_throughput_vs_snr, label: curves: throughput vs measured post-EQ SINR }
-      - { key: curves_nmse_vs_snr, label: curves: NMSE vs measured post-EQ SINR }
-      - { key: curves_papr_ccdf, label: curves: PAPR CCDF }
-      - { key: curves_latency_cdf, label: curves: latency semantics CDF }
-      - { key: curves_access_delay_cdf, label: curves: access procedure-delay CDF }
-      - { key: curves_energy_vs_throughput, label: curves: energy vs throughput }
-      - { key: curves_complexity_vs_gain, label: curves: complexity vs gain }
-      - { key: heatmaps_band_feature_kpi, label: heatmaps: band vs feature vs KPI }
-      - { key: heatmaps_impairment_kpi, label: heatmaps: impairment vs KPI }
-      - { key: heatmaps_beam_rank_trp_kpi, label: heatmaps: beam/rank/TRP vs KPI }
+      - { key: curves_bler_vs_snr, label: "curves: BLER vs measured post-EQ SINR" }
+      - { key: curves_throughput_vs_snr, label: "curves: throughput vs measured post-EQ SINR" }
+      - { key: curves_nmse_vs_snr, label: "curves: NMSE vs measured post-EQ SINR" }
+      - { key: curves_papr_ccdf, label: "curves: PAPR CCDF" }
+      - { key: curves_latency_cdf, label: "curves: latency semantics CDF" }
+      - { key: curves_access_delay_cdf, label: "curves: access procedure-delay CDF" }
+      - { key: curves_energy_vs_throughput, label: "curves: energy vs throughput" }
+      - { key: curves_complexity_vs_gain, label: "curves: complexity vs gain" }
+      - { key: heatmaps_band_feature_kpi, label: "heatmaps: band vs feature vs KPI" }
+      - { key: heatmaps_impairment_kpi, label: "heatmaps: impairment vs KPI" }
+      - { key: heatmaps_beam_rank_trp_kpi, label: "heatmaps: beam/rank/TRP vs KPI" }
       - { key: automatic_markdown_summary, label: automatic Markdown summary }
       - { key: executive_one_page_summary, label: executive one-page summary }
       - { key: detailed_technical_report, label: detailed technical report }

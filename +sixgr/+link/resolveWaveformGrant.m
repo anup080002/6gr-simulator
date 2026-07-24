@@ -18,7 +18,10 @@ grant.Direction = char(direction);
 grant.Frame = double(frameIdx);
 grant.Slot = double(opt.Slot);
 grant.SFN = double(opt.SFN);
-grant.UEID = double(sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", 1));
+[ueIndex, ueIdentitySource] = localResolveUEIdentity(cfg);
+grant.UEIndex = double(ueIndex);
+grant.UEID = double(ueIndex);
+grant.UEIdentitySource = char(ueIdentitySource);
 grant.RNTI = double(sixgr.util.structGet(cfg, ternary(isUL, "phy.pusch.RNTI", "phy.pdsch.RNTI"), NaN));
 grant.BaseStationID = double(sixgr.util.structGet(cfg, "scenario.bs.cell_id", ...
     sixgr.util.structGet(cfg, "scenario.cell_id", sixgr.util.structGet(cfg, "scenario.base_station_id", 1))));
@@ -56,6 +59,32 @@ grant = scheduler.freezePHYGrantForGrant(grant);
 grant.DCI = scheduler.buildDCIBitfield(grant);
 end
 
+function [ueIndex, source] = localResolveUEIdentity(cfg)
+runtimeUE = localFiniteOrNaN(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.RuntimeUEIndex", NaN));
+configuredUE = localFiniteOrNaN(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.UEIndex", NaN));
+if isfinite(runtimeUE)
+    ueIndex = runtimeUE;
+    source = "runtime_user_context";
+    return;
+end
+if isfinite(configuredUE)
+    ueIndex = configuredUE;
+    source = "configured_user_context";
+    return;
+end
+
+multiUserEnabled = logical(sixgr.util.structGet(cfg, "lls6g.users.enabled", false));
+numUsers = localFiniteDefault(sixgr.util.structGet(cfg, "lls6g.users.n_users", 1), 1);
+if multiUserEnabled && numUsers > 1
+    error("sixgr:link:resolveWaveformGrant:MissingMultiUserIdentity", ...
+        "A multi-user waveform grant requires lls6g.userContext.RuntimeUEIndex or UEIndex.");
+end
+ueIndex = 1;
+source = "standalone_single_user_default";
+end
+
 function value = ternary(cond, a, b)
 if cond
     value = a;
@@ -73,6 +102,18 @@ end
 value = value(1);
 if ~(isscalar(value) && isfinite(value))
     value = fallback;
+end
+end
+
+function value = localFiniteOrNaN(raw)
+value = double(raw);
+if isempty(value)
+    value = NaN;
+    return;
+end
+value = value(1);
+if ~(isscalar(value) && isfinite(value))
+    value = NaN;
 end
 end
 

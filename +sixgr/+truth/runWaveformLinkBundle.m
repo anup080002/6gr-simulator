@@ -86,6 +86,15 @@ stageRows = repmat(localEmptyRuntimeStageRow(), 0, 1);
 stageOrder = 0;
 liveSweepPath = "";
 saveFigures = logical(sixgr.util.structGet(opt, "SaveFigures", true));
+diagnosticEnabled = saveFigures && logical(sixgr.util.structGet(cfgExec, "outputs.phySignalDiagnosticEnabled", false));
+if ~saveFigures && logical(sixgr.util.structGet(cfgExec, "outputs.phySignalDiagnosticRequested", false))
+    cfgL = sixgr.util.structSet(cfgL, "outputs.phySignalDiagnosticUnavailableReason", ...
+        "runtime_save_figures_disabled");
+    cfgExec = sixgr.util.structSet(cfgExec, "outputs.phySignalDiagnosticUnavailableReason", ...
+        "runtime_save_figures_disabled");
+end
+cfgL = sixgr.util.structSet(cfgL, "outputs.phySignalDiagnosticEnabled", diagnosticEnabled);
+cfgExec = sixgr.util.structSet(cfgExec, "outputs.phySignalDiagnosticEnabled", diagnosticEnabled);
 anchorCaseNames = localResolveBundleAnchorCases(opt);
 receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfgExec, opt);
 
@@ -451,8 +460,33 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
 localLogStage(ctx, "Exporting trial diagnostic plots.");
 stageStart = tic;
 trialPlots = localExportTrialDiagnosticPlots(runFolder, rawTrials, saveFigures);
+phySignalArtifacts = struct( ...
+    "SourceCSV", "", ...
+    "SourceTable", table(), ...
+    "DLImage", "", ...
+    "ULImage", "", ...
+    "DLAvailable", false, ...
+    "ULAvailable", false, ...
+    "DLReason", string(sixgr.util.structGet(cfgExec, ...
+    "outputs.phySignalDiagnosticUnavailableReason", "capture_disabled_by_config")), ...
+    "ULReason", string(sixgr.util.structGet(cfgExec, ...
+    "outputs.phySignalDiagnosticUnavailableReason", "capture_disabled_by_config")));
+diagnosticExportError = "";
+if diagnosticEnabled
+    try
+        phySignalArtifacts = sixgr.truth.exportPHYSignalDiagnostic(rootRunFolder, cfgExec, rawTrials);
+    catch ME
+        phySignalArtifacts.DLReason = "export_failed:" + string(ME.identifier);
+        phySignalArtifacts.ULReason = "export_failed:" + string(ME.identifier);
+        diagnosticExportError = "phy_signal_diagnostic_export_failed:" + ...
+            string(ME.identifier) + ":" + string(ME.message);
+        localLogStage(ctx, "PHY signal diagnostic export failed: " + ...
+            string(ME.identifier) + " " + string(ME.message));
+    end
+end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-    "trial_plot_export", toc(stageStart), toc(bundleStart), "Trial diagnostic plots exported.");
+    "trial_plot_export", toc(stageStart), toc(bundleStart), ...
+    "Trial plots and same-trial PHY signal diagnostics exported when real evidence was available.");
 
 localLogStage(ctx, "Checking primary-link export integrity.");
 stageStart = tic;
@@ -472,6 +506,7 @@ arts = sixgr.link.exportLinkKPIs(runFolder, kpi, res, ...
     "FigurePrefix", "link_truth_validation", ...
     "PlotVisible", false, ...
     "FigureResolution", 140);
+arts.PHYSignalDiagnostic = phySignalArtifacts;
 measuredSINRArtifacts = struct();
 try
     measuredSINRArtifacts.Curves = sixgr.analytics.generateMeasuredSINRCurves(rootRunFolder, ...
@@ -538,11 +573,16 @@ out.BeamformingArtifacts = beamArtifacts;
 out.HARQArtifacts = harqArtifacts;
 out.EnergyArtifacts = energyArtifacts;
 out.TrialDiagnosticPlots = trialPlots;
+out.PHYSignalDiagnosticArtifacts = phySignalArtifacts;
 out.LiveMobilityArtifacts = liveMobilityArtifacts;
 out.LiveDerivedArtifacts = liveDerivedArtifacts;
 out.RuntimeStageProfile = struct2table(stageRows);
 out.Integrity = integrity;
 out.Errors = sixgr.util.structGet(res, "Errors", strings(0,1));
+if strlength(strtrim(diagnosticExportError)) > 0
+    out.Errors = [string(out.Errors(:)); diagnosticExportError];
+    out.Ok = false;
+end
 if logical(sweepPlan.FixedLinkCampaignEnabled) && ~logical(campaignEvidenceOk)
     out.Errors = [string(out.Errors(:)); "fixed_link_campaign_missing_nonempty_curve_with_confidence_intervals"];
 end
@@ -947,6 +987,8 @@ srsTrials = localEmptyLinkTrialTable(0);
 csirsTrials = table();
 trsTrials = localEmptyLinkTrialTable(0);
 coupledRuntime = struct();
+dlSignalDiagnostic = localUnavailablePHYSignalDiagnostic("DL");
+ulSignalDiagnostic = localUnavailablePHYSignalDiagnostic("UL");
 standaloneFallbackForDisabledGating = coupledTruth && localCoupledControlGatingDisabled(cfg);
 exportStandaloneControlDiagnostics = logical(sixgr.util.structGet(cfg, "outputs.exportStandaloneControlDiagnostics", false)) || ...
     standaloneFallbackForDisabledGating;
@@ -1044,6 +1086,11 @@ if coupledTruth
     [dlTrials, ulTrials, dlUserSummary, ulUserSummary, dlConst, ulConst, controlTrials, coupledRuntime] = ...
         localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
         fDL, fUL, dlLiveConstellationPath, ulLiveConstellationPath, struct());
+    coupledDiagnostics = sixgr.util.structGet(coupledRuntime, "PHYSignalDiagnostics", struct());
+    dlSignalDiagnostic = localSelectPHYSignalDiagnostic(dlSignalDiagnostic, ...
+        sixgr.util.structGet(coupledDiagnostics, "DL", struct()));
+    ulSignalDiagnostic = localSelectPHYSignalDiagnostic(ulSignalDiagnostic, ...
+        sixgr.util.structGet(coupledDiagnostics, "UL", struct()));
     pbchTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PBCH", table())), pbchTrials);
     prachTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACH", table())), prachTrials);
     prachCorrelationTrace = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACHCorrelationTrace", table()));
@@ -1054,14 +1101,14 @@ if coupledTruth
     csirsTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "CSIRS", table())), csirsTrials);
     trsTrials = localPreferNonEmptyControlTrials(localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "TRS", table())), trsTrials);
 elseif logical(multiUser.Enabled) && isLiveDBMode
-    [dlTrials, ulTrials, dlUserSummary, ulUserSummary, dlConst, ulConst, csirsTrials] = ...
+    [dlTrials, ulTrials, dlUserSummary, ulUserSummary, dlConst, ulConst, csirsTrials, dlSignalDiagnostic, ulSignalDiagnostic] = ...
         localCollectInterleavedMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
         fDL, fUL, dlLiveConstellationPath, ulLiveConstellationPath, saveFigures, mobilityArtifacts);
 else
     if logical(multiUser.Enabled)
-        [dlTrials, dlUserSummary, dlConst, csirsTrials] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "DL", nTrials, snrGrid, fDL, dlLiveConstellationPath, "DL PDSCH");
+        [dlTrials, dlUserSummary, dlConst, csirsTrials, dlSignalDiagnostic] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "DL", nTrials, snrGrid, fDL, dlLiveConstellationPath, "DL PDSCH");
     else
-        [dlTrials, dlConst, csirsTrials] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "DL", nTrials, snrGrid, ...
+        [dlTrials, dlConst, csirsTrials, dlSignalDiagnostic] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "DL", nTrials, snrGrid, ...
             fDL, dlLiveConstellationPath, "DL PDSCH");
         dlUserSummary = table();
     end
@@ -1098,9 +1145,9 @@ else
     end
 
     if logical(multiUser.Enabled)
-        [ulTrials, ulUserSummary, ulConst] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "UL", nTrials, snrGrid, fUL, ulLiveConstellationPath, "UL PUSCH");
+        [ulTrials, ulUserSummary, ulConst, ~, ulSignalDiagnostic] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, "UL", nTrials, snrGrid, fUL, ulLiveConstellationPath, "UL PUSCH");
     else
-        [ulTrials, ulConst] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "UL", nTrials, snrGrid, ...
+        [ulTrials, ulConst, ~, ulSignalDiagnostic] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, "UL", nTrials, snrGrid, ...
             fUL, ulLiveConstellationPath, "UL PUSCH");
         ulUserSummary = table();
     end
@@ -1360,6 +1407,9 @@ out.LiveSweepPath = liveSweepPath;
 out.MultiUserDL = dlUserSummary;
 out.MultiUserUL = ulUserSummary;
 out.CoupledRuntime = coupledRuntime;
+out.PHYSignalDiagnostics = struct("DL", dlSignalDiagnostic, "UL", ulSignalDiagnostic);
+out.DLSignalDiagnostic = dlSignalDiagnostic;
+out.ULSignalDiagnostic = ulSignalDiagnostic;
 out.InitialAccessLifecycleTraceTable = sixgr.util.structGet(coupledRuntime, "InitialAccessLifecycleTraceTable", table());
 out.MobilityArtifacts = mobilityArtifacts;
 if logical(multiUser.Enabled) && logical(multiUser.SaveUserTables)
@@ -2748,11 +2798,12 @@ catch
 end
 end
 
-function [T, constT, csirsT] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, direction, nTrials, snrGrid, liveTablePath, liveConstellationPath, progressLabel)
+function [T, constT, csirsT, signalDiagnostic] = localCollectSingleUserLinkTrialsAcrossSweep(cfg, direction, nTrials, snrGrid, liveTablePath, liveConstellationPath, progressLabel)
 T = localEmptyLinkTrialTable(0);
 constT = table();
 csirsT = table();
 direction = upper(string(direction));
+signalDiagnostic = localUnavailablePHYSignalDiagnostic(direction);
 snrGrid = unique(sort(double(snrGrid(:))));
 if nargin < 5
     liveTablePath = "";
@@ -2787,6 +2838,8 @@ for i = 1:numel(snrGrid)
             "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfg, nTrials));
     end
     Ti = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), direction, snr, cfg);
+    signalDiagnostic = localSelectPHYSignalDiagnostic(signalDiagnostic, ...
+        sixgr.util.structGet(res, "SignalDiagnostic", struct()));
     T = localAppendCompatTable(T, Ti);
     constT = localAppendCompatTable(constT, sixgr.util.structGet(res, "ConstellationSamples", table()));
     if direction == "DL"
@@ -2804,12 +2857,14 @@ for i = 1:numel(snrGrid)
 end
 end
 
-function [dlTrials, ulTrials, dlSummaryT, ulSummaryT, dlConstT, ulConstT, csirsT] = localCollectInterleavedMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ~, mobilityArtifacts)
+function [dlTrials, ulTrials, dlSummaryT, ulSummaryT, dlConstT, ulConstT, csirsT, dlSignalDiagnostic, ulSignalDiagnostic] = localCollectInterleavedMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ~, mobilityArtifacts)
 dlTrials = localEmptyLinkTrialTable(0);
 ulTrials = localEmptyLinkTrialTable(0);
 dlConstT = table();
 ulConstT = table();
 csirsT = table();
+dlSignalDiagnostic = localUnavailablePHYSignalDiagnostic("DL");
+ulSignalDiagnostic = localUnavailablePHYSignalDiagnostic("UL");
 dlParts = {};
 ulParts = {};
 if nargin < 11 || ~isstruct(mobilityArtifacts)
@@ -2829,8 +2884,9 @@ for i = 1:numel(snrGrid)
             localBuildLiveRawTrialsAggregate(localAppendCompatTable(dlTrials, partialTrials), ulTrials, dlParts, ulParts, csirsT), ...
             multiUser, mobilityArtifacts, ...
             sprintf("Streaming DL user %d/%d at SNR point %d/%d (%.3f dB).", ueIdx, numUsers, i, numel(snrGrid), snrVal))));
-        [dlUserT, dlUserSummary, dlUserConst, dlUserCSIRS] = localRunSingleUserDirectionTrials( ...
+        [dlUserT, dlUserSummary, dlUserConst, dlUserCSIRS, dlUserSignalDiagnostic] = localRunSingleUserDirectionTrials( ...
             cfg, multiUser, ueIdx, "DL", nTrials, snrVal, dlLivePublisher);
+        dlSignalDiagnostic = localSelectPHYSignalDiagnostic(dlSignalDiagnostic, dlUserSignalDiagnostic);
         dlTrials = localAppendCompatTable(dlTrials, dlUserT);
         dlConstT = localAppendCompatTable(dlConstT, dlUserConst);
         csirsT = localAppendCompatTable(csirsT, dlUserCSIRS);
@@ -2857,8 +2913,9 @@ for i = 1:numel(snrGrid)
             localBuildLiveRawTrialsAggregate(dlTrials, localAppendCompatTable(ulTrials, partialTrials), dlParts, ulParts, csirsT), ...
             multiUser, mobilityArtifacts, ...
             sprintf("Streaming UL user %d/%d at SNR point %d/%d (%.3f dB).", ueIdx, numUsers, i, numel(snrGrid), snrVal))));
-        [ulUserT, ulUserSummary, ulUserConst] = localRunSingleUserDirectionTrials( ...
+        [ulUserT, ulUserSummary, ulUserConst, ~, ulUserSignalDiagnostic] = localRunSingleUserDirectionTrials( ...
             cfg, multiUser, ueIdx, "UL", nTrials, snrVal, ulLivePublisher);
+        ulSignalDiagnostic = localSelectPHYSignalDiagnostic(ulSignalDiagnostic, ulUserSignalDiagnostic);
         ulTrials = localAppendCompatTable(ulTrials, ulUserT);
         ulConstT = localAppendCompatTable(ulConstT, ulUserConst);
         if istable(ulUserSummary) && ~isempty(ulUserSummary)
@@ -3343,6 +3400,8 @@ for chunkStart = 1:chunkSize:numel(grants)
         [runtimeState, userT] = localCompleteCoupledRuntimeSlot(runtimeState, chunk(bi).Cfg, ueIdx, direction, userT, chunk(bi).Result);
         primaryTrials = localAppendCompatTable(primaryTrials, userT);
         primaryConstT = localAppendCompatTable(primaryConstT, sixgr.util.structGet(chunk(bi), "ConstellationTable", table()));
+        runtimeState = localRecordPHYSignalDiagnostic(runtimeState, direction, ...
+            sixgr.util.structGet(chunk(bi).Result, "SignalDiagnostic", struct()));
         if direction == "DL"
             runtimeState.ControlTrials.CSIRS = localAppendCompatTable( ...
                 sixgr.util.structGet(runtimeState.ControlTrials, "CSIRS", table()), ...
@@ -3715,7 +3774,7 @@ out = struct();
 if ~(isstruct(res) && ~isempty(fieldnames(res)))
     return;
 end
-keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", ...
+keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", ...
     "Throughput_Mbps", "Goodput_Mbps", "BLER", "BER", "Ok", "Notes"];
 for i = 1:numel(keepFields)
     f = char(keepFields(i));
@@ -4103,6 +4162,12 @@ end
 if ~isempty(pool)
     pool = localApplyCoupledParpoolIdleTimeout(pool, cfg);
     tf = double(pool.NumWorkers) > 1;
+    return;
+end
+if ~logical(sixgr.util.structGet(cfg, "run.autoStartParallelPool", false))
+    localAppendRuntimeLog("INFO", ...
+        "Parallel pool is not active for coupled %s and auto-start is disabled; execution remains serial.", ...
+        char(string(context)));
     return;
 end
 
@@ -7798,10 +7863,11 @@ localAppendRuntimeLog("INFO", ...
     height(sixgr.util.structGet(rawTrials, "DL", table())), height(sixgr.util.structGet(rawTrials, "UL", table())));
 end
 
-function [T, summaryT, constT, csirsT] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, direction, nTrials, snrGrid, liveTablePath, liveConstellationPath, progressLabel)
+function [T, summaryT, constT, csirsT, signalDiagnostic] = localCollectMultiUserLinkTrialsAcrossSweep(cfg, multiUser, direction, nTrials, snrGrid, liveTablePath, liveConstellationPath, progressLabel)
 T = localEmptyLinkTrialTable(0);
 constT = table();
 csirsT = table();
+signalDiagnostic = localUnavailablePHYSignalDiagnostic(direction);
 parts = {};
 snrGrid = unique(sort(double(snrGrid(:))));
 if nargin < 6
@@ -7823,7 +7889,8 @@ for i = 1:numel(snrGrid)
             liveTablePath, liveConstellationPath, cfg, ...
             localMergeLiveMeta(meta, struct("Direction", string(direction), "SNR_dB", double(snrGrid(i)))));
     end
-    [Ti, Si, Ci, Csi] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, double(snrGrid(i)), livePublisher);
+    [Ti, Si, Ci, Csi, pointSignalDiagnostic] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, double(snrGrid(i)), livePublisher);
+    signalDiagnostic = localSelectPHYSignalDiagnostic(signalDiagnostic, pointSignalDiagnostic);
     T = localAppendCompatTable(T, Ti);
     constT = localAppendCompatTable(constT, Ci);
     csirsT = localAppendCompatTable(csirsT, Csi);
@@ -12010,6 +12077,23 @@ row.PDCCHREGMappingAvailable = false;
 row.PDCCHCORESETDuration = NaN;
 row.PDCCHCORESETFrequencyResources = "";
 row.PDCCHSearchSpaceNumCandidates = "";
+row.CORESETId = NaN;
+row.SearchSpaceId = NaN;
+row.CandidateIndex = NaN;
+row.DCIFormat = "";
+row.DCIId = "";
+row.DCIFieldsHash = "";
+row.DecodedDCIHARQProcessId = NaN;
+row.DecodedDCIPRBStart = NaN;
+row.DecodedDCIAllocatedPRBCount = NaN;
+row.DecodedDCISymbolStart = NaN;
+row.DecodedDCINumSymbols = NaN;
+row.DecodedDCIMCSIndex = NaN;
+row.DecodedDCIRV = NaN;
+row.DecodedDCINDI = NaN;
+row.DecodedDCITimeDomainAssignmentIndex = NaN;
+row.LinkedGrantId = "";
+row.LinkedPDSCHOrPUSCH = "";
 row.PDCCHGridHash = "";
 row.PDCCHWaveformHash = "";
 row.PDCCHResourceHash = "";
@@ -12549,10 +12633,11 @@ end
 arr = struct("Nant", double(nTx), "nRow", double(nRow), "nCol", double(nCol));
 end
 
-function [T, summaryT, constT, csirsT] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, snr_dB, livePublisher)
+function [T, summaryT, constT, csirsT, signalDiagnostic] = localCollectMultiUserLinkTrials(cfg, multiUser, direction, nTrials, snr_dB, livePublisher)
 if nargin < 6
     livePublisher = [];
 end
+signalDiagnostic = localUnavailablePHYSignalDiagnostic(direction);
 rows = cell(max(1, round(double(multiUser.NumUsers))), 1);
 constRows = cell(max(1, round(double(multiUser.NumUsers))), 1);
 csirsRows = cell(max(1, round(double(multiUser.NumUsers))), 1);
@@ -12590,6 +12675,8 @@ for ueIdx = 1:max(1, round(double(multiUser.NumUsers)))
             "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfgU, nTrials));
     end
     Tu = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), upper(string(direction)), snr_dB, cfgU);
+    signalDiagnostic = localSelectPHYSignalDiagnostic(signalDiagnostic, ...
+        sixgr.util.structGet(res, "SignalDiagnostic", struct()));
     Tu = localAnnotateUserTrials(Tu, cfgU, multiUser, ueIdx, userMeta);
     rows{ueIdx} = Tu;
     constRows{ueIdx} = localAnnotateConstellationSamples( ...
@@ -12671,7 +12758,7 @@ end
 summaryT = struct2table(summaryRows);
 end
 
-function [Tu, summaryT, constT, csirsT] = localRunSingleUserDirectionTrials(cfg, multiUser, ueIdx, direction, nTrials, snr_dB, livePublisher)
+function [Tu, summaryT, constT, csirsT, signalDiagnostic] = localRunSingleUserDirectionTrials(cfg, multiUser, ueIdx, direction, nTrials, snr_dB, livePublisher)
 if nargin < 7
     livePublisher = [];
 end
@@ -12696,6 +12783,8 @@ else
         "LiveCallbackInterval", localResolveLiveFramePublishInterval(cfgU, nTrials));
 end
 Tu = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), upper(string(direction)), snr_dB, cfgU);
+signalDiagnostic = localSelectPHYSignalDiagnostic(localUnavailablePHYSignalDiagnostic(direction), ...
+    sixgr.util.structGet(res, "SignalDiagnostic", struct()));
 Tu = localAnnotateUserTrials(Tu, cfgU, multiUser, ueIdx, userMeta);
 constT = localAnnotateConstellationSamples( ...
     sixgr.util.structGet(res, "ConstellationSamples", table()), cfgU, multiUser, ueIdx, userMeta, snr_dB, direction);
@@ -15627,6 +15716,65 @@ if isstring(v) || ischar(v)
         T = readtable(p, "VariableNamingRule", "preserve");
     end
 end
+end
+
+function snapshot = localUnavailablePHYSignalDiagnostic(direction)
+snapshot = struct( ...
+    "Available", false, ...
+    "Reason", "same_trial_runtime_evidence_unavailable", ...
+    "Direction", upper(string(direction)), ...
+    "SnapshotID", "", ...
+    "Metadata", struct(), ...
+    "SourceTable", table());
+end
+
+function selected = localSelectPHYSignalDiagnostic(existing, candidate)
+selected = existing;
+if ~(isstruct(candidate) && isscalar(candidate) && ...
+        logical(sixgr.util.structGet(candidate, "Available", false)))
+    return;
+end
+if ~(isstruct(existing) && isscalar(existing) && ...
+        logical(sixgr.util.structGet(existing, "Available", false)))
+    selected = candidate;
+    return;
+end
+
+candidateRank = localPHYSignalDiagnosticRank(candidate);
+existingRank = localPHYSignalDiagnosticRank(existing);
+firstDifference = find(candidateRank ~= existingRank, 1, "first");
+if ~isempty(firstDifference) && candidateRank(firstDifference) < existingRank(firstDifference)
+    selected = candidate;
+end
+end
+
+function rank = localPHYSignalDiagnosticRank(snapshot)
+meta = sixgr.util.structGet(snapshot, "Metadata", struct());
+rank = [ ...
+    double(sixgr.util.structGet(meta, "ConfiguredSNR_dB", Inf)), ...
+    double(sixgr.util.structGet(meta, "Frame", Inf)), ...
+    double(sixgr.util.structGet(meta, "Slot", Inf)), ...
+    double(sixgr.util.structGet(meta, "UEIndex", Inf)), ...
+    double(sixgr.util.structGet(meta, "RNTI", Inf))];
+rank(~isfinite(rank)) = Inf;
+end
+
+function runtimeState = localRecordPHYSignalDiagnostic(runtimeState, direction, candidate)
+direction = upper(string(direction));
+if ~any(direction == ["DL","UL"])
+    return;
+end
+if ~isfield(runtimeState, "PHYSignalDiagnostics") || ...
+        ~isstruct(runtimeState.PHYSignalDiagnostics)
+    runtimeState.PHYSignalDiagnostics = struct( ...
+        "DL", localUnavailablePHYSignalDiagnostic("DL"), ...
+        "UL", localUnavailablePHYSignalDiagnostic("UL"));
+end
+field = char(direction);
+existing = sixgr.util.structGet(runtimeState.PHYSignalDiagnostics, field, ...
+    localUnavailablePHYSignalDiagnostic(direction));
+runtimeState.PHYSignalDiagnostics.(field) = ...
+    localSelectPHYSignalDiagnostic(existing, candidate);
 end
 
 function images = localExportTrialDiagnosticPlots(airInterfaceRunFolder, rawTrials, saveFigures)

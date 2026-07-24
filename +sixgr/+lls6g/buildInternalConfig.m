@@ -91,6 +91,68 @@ cfg.outputs.persistenceFallbackReason = char(string(localGetNested(s, "output.pe
 cfg.outputs.resultsRoot = char(string(localGetNested(s, "output.results_root", "results")));
 cfg.outputs.rawIQCaptureEnabled = logical(localGetNested(s, "run_control.raw_iq_capture_enable", false));
 cfg.outputs.rawGridCaptureEnabled = logical(localGetNested(s, "run_control.raw_grid_capture_enable", false));
+cfg.outputs.saveRawWaveforms = logical(localGetNested(s, "output_control.save_raw_waveforms", cfg.outputs.rawIQCaptureEnabled));
+cfg.outputs.saveChannelSnapshots = logical(localGetNested(s, "output_control.save_channel_snapshots", ...
+    localGetNested(s, "run_control.save_channel_tensors", false)));
+cfg.outputs.saveConstellations = logical(localGetNested(s, "output_control.save_constellations", ...
+    localGetNested(s, "run_control.save_constellations", false)));
+cfg.outputs.savePlots = logical(localGetNested(s, "output_control.save_plots", cfg.outputs.saveFigures));
+diagnosticRequested = logical(localGetNested(s, "output.phy_signal_diagnostic_enabled", false));
+diagnosticCaptureReady = cfg.outputs.rawIQCaptureEnabled && ...
+    logical(localGetNested(s, "run_control.save_channel_tensors", false)) && ...
+    logical(localGetNested(s, "run_control.save_constellations", false)) && ...
+    cfg.outputs.saveRawWaveforms && cfg.outputs.saveChannelSnapshots && ...
+    cfg.outputs.saveConstellations && cfg.outputs.savePlots && ...
+    cfg.outputs.saveFigures && cfg.outputs.savePNG;
+diagnosticMissingGates = strings(0, 1);
+if ~cfg.outputs.rawIQCaptureEnabled
+    diagnosticMissingGates(end+1, 1) = "run_control.raw_iq_capture_enable"; %#ok<AGROW>
+end
+if ~logical(localGetNested(s, "run_control.save_channel_tensors", false))
+    diagnosticMissingGates(end+1, 1) = "run_control.save_channel_tensors"; %#ok<AGROW>
+end
+if ~logical(localGetNested(s, "run_control.save_constellations", false))
+    diagnosticMissingGates(end+1, 1) = "run_control.save_constellations"; %#ok<AGROW>
+end
+if ~cfg.outputs.saveRawWaveforms
+    diagnosticMissingGates(end+1, 1) = "output_control.save_raw_waveforms"; %#ok<AGROW>
+end
+if ~cfg.outputs.saveChannelSnapshots
+    diagnosticMissingGates(end+1, 1) = "output_control.save_channel_snapshots"; %#ok<AGROW>
+end
+if ~cfg.outputs.saveConstellations
+    diagnosticMissingGates(end+1, 1) = "output_control.save_constellations"; %#ok<AGROW>
+end
+if ~cfg.outputs.savePlots
+    diagnosticMissingGates(end+1, 1) = "output_control.save_plots"; %#ok<AGROW>
+end
+if ~cfg.outputs.saveFigures
+    diagnosticMissingGates(end+1, 1) = "output.save_figures"; %#ok<AGROW>
+end
+if ~cfg.outputs.savePNG
+    diagnosticMissingGates(end+1, 1) = "output.save_png"; %#ok<AGROW>
+end
+cfg.outputs.phySignalDiagnosticRequested = diagnosticRequested;
+cfg.outputs.phySignalDiagnosticCaptureReady = diagnosticCaptureReady;
+if diagnosticRequested && ~diagnosticCaptureReady
+    error("sixgr:lls6g:config:PHYSignalDiagnosticPrerequisites", ...
+        "PHY signal diagnostics were requested, but these capture/save gates " + ...
+        "are disabled: %s.", strjoin(diagnosticMissingGates, ", "));
+end
+cfg.outputs.phySignalDiagnosticEnabled = diagnosticRequested;
+if ~diagnosticRequested
+    cfg.outputs.phySignalDiagnosticUnavailableReason = "capture_not_requested";
+else
+    cfg.outputs.phySignalDiagnosticUnavailableReason = "";
+end
+cfg.outputs.phySignalDiagnosticWaveformSamples = double(localGetNested(s, ...
+    "output.phy_signal_diagnostic_waveform_samples", 1024));
+cfg.outputs.phySignalDiagnosticFFTLength = double(localGetNested(s, ...
+    "output.phy_signal_diagnostic_fft_length", 1024));
+cfg.outputs.phySignalDiagnosticChannelPoints = double(localGetNested(s, ...
+    "output.phy_signal_diagnostic_channel_points", 1024));
+cfg.outputs.phySignalDiagnosticConstellationPoints = double(localGetNested(s, ...
+    "output.phy_signal_diagnostic_constellation_points", 512));
 cfg = sixgr.util.structSet(cfg, "run.rawIQCaptureEnabled", cfg.outputs.rawIQCaptureEnabled);
 cfg = sixgr.util.structSet(cfg, "run.rawGridCaptureEnabled", cfg.outputs.rawGridCaptureEnabled);
 cfg.outputs.databaseHost = char(string(localResolveDatabaseField(s, "output.database_host", cfg.outputs.storageBackend)));

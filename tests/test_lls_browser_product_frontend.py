@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,153 +11,196 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
+SCENARIO = "variants/SCN00_BASELINE_CAPACITY.yaml"
+USER_PROFILE = {
+    "username": "admin",
+    "display_name": "Admin",
+    "role": "Administrator",
+}
+
+
+def _product_data(page: str) -> dict:
+    marker = "<script>window.SIXGR_PRODUCT_DATA = "
+    start = page.index(marker) + len(marker)
+    end = page.index(";</script>", start)
+    return json.loads(page[start:end])
+
+
 def main() -> None:
-    orig_backend = dash.product_backend_status
-    orig_scenarios = dash.list_scenarios
-    orig_load = dash.load_resolved_config_payload
+    original_scenarios = dash.list_scenarios
     try:
-        dash.product_backend_status = lambda: {
-            "matlab_exe": str(dash.MATLAB_EXE),
-            "matlab_r2023b_only": True,
-            "matlab_available": True,
-            "mysql_host": "localhost",
-            "mysql_port": 3306,
-            "mysql_database": "sixgr_results",
-            "mysql_status": "connected",
-            "mysql_reason": "",
-            "latest_run_id": 42,
+        dash.list_scenarios = lambda: [SCENARIO]
+
+        page_ids = (
+            "home",
+            "scenario",
+            "run_control",
+            "realtime",
+            "phy_grid",
+            "plots",
+            "tables",
+            "reports",
+            "analytics",
+            "artifacts",
+            "parameters",
+            "compare",
+        )
+        pages = {
+            page_id: dash.build_product_frontend_page(
+                page_id,
+                SCENARIO,
+                user_profile=USER_PROFILE,
+            ).decode("utf-8")
+            for page_id in page_ids
         }
-        dash.list_scenarios = lambda: ["variants/SCN00_BASELINE_CAPACITY.yaml"]
-        dash.load_resolved_config_payload = lambda scenario: (
-            {
-                "scenario": {"name": "frontend_smoke"},
-                "run_control": {"execution_mode": "LLS", "n_frames": 1},
-                "frequency": {"center_frequency_hz": 700000000, "bandwidth_hz": 20000000},
-                "deployment_topology": {"layout_type": "hexagonal_wraparound", "inter_site_distance": 500},
-                "traffic": {"model": "full_buffer"},
-                "system": {"scheduler": {"type": "PF"}},
-                "pdcch": {"enabled": True},
-                "pucch": {"enabled": True},
-                "prach": {"enabled": True},
-                "reference_signals": {"srs": {"enabled": True}, "trs": {"enabled": True}},
-                "mimo": {"n_layers": 2, "precoder_type": "codebook"},
-                "channels": {"profile": "TDL-C"},
-            },
-            ["variants/SCN00_BASELINE_CAPACITY.yaml"],
+        data = {page_id: _product_data(page) for page_id, page in pages.items()}
+
+        expected_nav = [
+            ("home", "Scenario", "/home"),
+            ("scenario", "Configure", "/scenario"),
+            ("run_control", "Run", "/run-control"),
+            ("realtime", "Live", "/realtime"),
+            ("plots", "Results & Evidence", "/plots"),
+        ]
+        assert dash.PRODUCT_NAV == expected_nav
+        expected_nav_payload = [
+            {"id": page_id, "label": label, "href": href}
+            for page_id, label, href in expected_nav
+        ]
+
+        clutter = (
+            "Open Access",
+            "Intranet Viewer",
+            "No login required",
+            "Mode-first console for browser-owned LLS execution",
+            "6G LLS Real-Time Console",
+            "Direct MySQL-backed monitoring",
+        )
+        for page_id, page in pages.items():
+            assert page.lower().count("<!doctype html>") == 1, f"{page_id} must have one document"
+            assert page.count('<div class="app-shell" data-product-shell>') == 1, (
+                f"{page_id} must render one product shell"
+            )
+            assert page.count('<aside class="sidebar"') == 1, f"{page_id} must have one sidebar"
+            assert page.count('<main id="productMain"></main>') == 1, (
+                f"{page_id} must have one content host"
+            )
+            assert "<iframe" not in page.lower(), (
+                f"{page_id} must not embed another WebGUI/page; render content natively"
+            )
+            assert ">OA<" not in page
+            for phrase in clutter:
+                assert phrase not in page, f"{page_id} still exposes legacy clutter: {phrase}"
+            assert data[page_id]["nav"] == expected_nav_payload
+            assert data[page_id]["modes"] == ["LLS"], (
+                f"{page_id} must expose only LLS in the browser launch UI"
+            )
+
+        home_page = pages["home"]
+        home_data = data["home"]
+        assert home_data["title"] == "6G Link-Level Simulator"
+        assert home_data["initial_mode"] == "LLS"
+        assert home_data["fully_wired_mode"] == "LLS"
+        assert home_data["config_loaded"] is False
+        assert home_data["execution_policy"] == {
+            "id": dash.WEBGUI_EXECUTION_POLICY,
+            "workers": 1,
+            "parallel_pool": False,
+        }
+        assert home_data["report_sections"] == []
+        assert home_data["analytics_sections"] == []
+        assert "window.SIXGR_PRODUCT_DATA" in home_page
+        assert "config_api_url" in home_data
+        assert "fields_api_url" in home_data
+        assert "parameter_constraints_api_url" in home_data
+        assert "Import YAML" in home_page
+        assert "Download resolved config" in home_page
+        assert "Configure" in home_page
+        assert "View results" in home_page
+        assert "configPreview" not in home_page, (
+            "the compact product must not expose the legacy raw-config preview"
+        )
+        assert "Backend Status" not in home_page, (
+            "the compact product must not render the legacy backend-status widget"
         )
 
-        page = dash.build_product_frontend_page(
-            "home",
-            "variants/SCN00_BASELINE_CAPACITY.yaml",
-            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
-        ).decode("utf-8")
-        realtime_page = dash.build_product_frontend_page(
-            "realtime",
-            "variants/SCN00_BASELINE_CAPACITY.yaml",
-            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
-        ).decode("utf-8")
-        analytics_page = dash.build_product_frontend_page(
-            "analytics",
-            "variants/SCN00_BASELINE_CAPACITY.yaml",
-            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
-        ).decode("utf-8")
-        reports_page = dash.build_product_frontend_page(
-            "reports",
-            "variants/SCN00_BASELINE_CAPACITY.yaml",
-            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
-        ).decode("utf-8")
-        artifacts_page = dash.build_product_frontend_page(
-            "artifacts",
-            "variants/SCN00_BASELINE_CAPACITY.yaml",
-            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
-        ).decode("utf-8")
-        parameters_page = dash.build_product_frontend_page(
-            "parameters",
-            "variants/SCN00_BASELINE_CAPACITY.yaml",
-            user_profile={"username": "admin", "display_name": "Admin", "role": "Administrator"},
-        ).decode("utf-8")
-
-        assert "Jio Platforms Limited RAN Simulator" in page
-        assert "LLS" in page and "SLS" in page and "E2E" in page
-        assert "Load Config JSON" in page
-        assert "Download Config JSON" in page
-        assert "Recent Runs" in page
-        assert "Previous Runs" in page
-        assert "Reports" in page
-        assert "Runtime truth lives under" not in page
-        assert "Show Output" in page
-        assert "View Tables" in page
-        assert "Add Baseline" in page
-        assert "Add Candidate" in page
-        assert "Delete Run" in page
-        assert "Download Full File" in page
-        assert "window.SIXGR_PRODUCT_DATA" in page
-        assert "config_api_url" in page
-        assert "config_overview" in page
-        assert "fields_api_url" in page
-        assert "parameter_constraints_api_url" in page
-        assert "parameter_constraints_summary" in page
-        assert "field_count" in page
-        assert '"report_sections": []' in page
-        assert '"analytics_sections": []' in page
-        assert "configPreview" not in page, "front page must not expose the old raw config preview"
-        assert "Backend Status" not in page, "visible backend status widget should not be rendered in the product shell"
-        assert "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" in page
-        assert "/api/run/${id}/live" in page or "/api/run/${state.live.run.run_id}/live" in page
-        assert "captureScrollState" in page
-        assert "restoreScrollState" in page
-        assert "function eventElement(target)" in page
-        assert "ensureFieldsLoaded" in page
-        assert "pageNeedsFieldCatalog" in page
-        assert "refreshRunsList" in page
-        assert "function runStatusRank(run, preferActive)" in page
-        assert "state.liveVersion" in page
-        assert "payload_version" in page
-        assert '"config_loaded": false' in page
-        assert "const target = eventElement(e.target);" in page
-        assert "e.target.matches('[data-run-selector=\"true\"]')" not in page
-        assert "selected_run_section_evidence_present" in analytics_page
-        assert "published in selected run" in analytics_page
-        assert 'data-scroll-key="sidebar-scroll"' in page
-        assert "Live UE Metric Explorer" in realtime_page
-        assert "liveMetricSelect" in realtime_page
-        assert "liveUESelect" in realtime_page
-        assert "liveUEScopeSelect" in realtime_page
-        assert "liveSecondaryMetricSelect" in realtime_page
-        assert "liveOverlaySelect" in realtime_page
-        assert "liveMetricExportBtn" in realtime_page
-        assert "realtimeRunSelect" in realtime_page
-        assert "All configured UEs" in realtime_page
-        assert "Selected UE" in realtime_page
-        assert "Per-cell overlay" in realtime_page
-        assert "Analytics Explorer" in analytics_page
-        assert "analyticsMetricSelect" in analytics_page
-        assert "analyticsSecondaryMetricSelect" in analytics_page
-        assert "analyticsOverlaySelect" in analytics_page
-        assert "analyticsMetricExportBtn" in analytics_page
-        assert "Waveform / Heatmap / Constellation Artifacts" in analytics_page
-        assert "Published Analytics Charts" in analytics_page
-        assert "Control Signal Runtime Evidence" in realtime_page
-        assert "Selected Run" in realtime_page
-        assert 'data-run-selector="true"' in analytics_page
-        assert 'data-run-selector="true"' in reports_page
-        assert 'data-run-selector="true"' in artifacts_page
-        assert 'data-run-selector="true"' in parameters_page
-        assert len(realtime_page) < len(analytics_page), "realtime page should not inline heavy report/analytics contract payloads"
-        assert len(page) < len(analytics_page), "home page should stay lighter than analytics-heavy pages"
-        for block in (
-            "Scenario",
-            "Geometry",
-            "Waveform",
-            "Traffic",
-            "MAC / Scheduler",
-            "Control / Access",
-            "L1 / PHY",
-            "Antenna / Air Interface / Channel",
-            "Real-time Data",
-            "Analytics",
+        scenario_page = pages["scenario"]
+        for control in (
+            'id="loadConfigJsonBtn"',
+            'id="saveScenarioBtn"',
+            'id="downloadConfigBtn"',
+            'id="configSearch"',
         ):
-            assert block in page, f"missing architecture block: {block}"
+            assert control in scenario_page
+        for label in ("Import JSON", "Save draft", "Export JSON", "General", "PHY", "Advanced"):
+            assert label in scenario_page
+        assert '<details class="config-group">' in scenario_page
+        assert '<details class="config-group" open>' not in scenario_page, (
+            "configuration groups should start collapsed to keep the page compact"
+        )
+
+        run_page = pages["run_control"]
+        assert 'id="validateBtn"' in run_page
+        assert 'id="runScenarioBtn"' in run_page
+        assert 'id="runModeInput"' in run_page
+        assert 'name="execution_mode" value="LLS"' in run_page
+        assert '<option value="SLS"' not in run_page
+        assert '<option value="E2E"' not in run_page
+        assert 'data-mode="SLS"' not in run_page
+        assert 'data-mode="E2E"' not in run_page
+        assert "License safe" in run_page
+        assert "parallel pool off" in run_page
+        assert dash.FULLY_WIRED_BROWSER_EXECUTION_MODE == "LLS"
+
+        realtime_page = pages["realtime"]
+        assert "Run status and current measurements." in realtime_page
+        assert "Resource Grid" in realtime_page
+        assert "/api/run/${id}/live" in realtime_page
+        assert "captureScrollState" in realtime_page
+        assert "restoreScrollState" in realtime_page
+        assert "function eventElement(target)" in realtime_page
+        assert "payload_version" in realtime_page
+
+        phy_grid_page = pages["phy_grid"]
+        assert "Symbols / slot" in phy_grid_page
+        assert "without inventing resource assignments" in phy_grid_page
+        assert "/phy-grid" in phy_grid_page
+
+        plots_page = pages["plots"]
+        assert 'id="plotBrowserCatalogSelect"' in plots_page
+        assert 'id="plotBrowserBucketSelect"' in plots_page
+        assert 'id="plotBrowserSelect"' in plots_page
+        assert 'id="plotBrowserViewer"' in plots_page
+        assert "Zoom In" in plots_page
+        assert "Fit" in plots_page
+
+        tables_page = pages["tables"]
+        assert 'id="tableBrowserBucketSelect"' in tables_page
+        assert 'id="tableBrowserSelect"' in tables_page
+        assert 'id="tableBrowserViewer"' in tables_page
+        assert "Download CSV" in tables_page
+        assert "loadTableBrowserPreview" in tables_page
+        assert "data-table-preview-scroll" in tables_page
+        assert "Load more rows" in tables_page
+        assert "<iframe" not in tables_page.lower()
+
+        for label in (
+            "Images & Graphs",
+            "Tables",
+            "Runtime Report",
+            "Analytics",
+            "Files",
+            "Compare",
+        ):
+            assert label in plots_page, f"missing compact result tab: {label}"
+
+        assert data["reports"]["report_sections"], "runtime report contract must be loaded on demand"
+        assert data["analytics"]["analytics_sections"], "analytics contract must be loaded on demand"
+        assert 'data-run-selector="true"' in pages["reports"]
+        assert 'data-run-selector="true"' in pages["analytics"]
+        assert 'data-run-selector="true"' in pages["artifacts"]
+        assert 'data-run-selector="true"' in pages["parameters"]
+
         for header in (
             "parameter name",
             "current value",
@@ -168,7 +212,9 @@ def main() -> None:
             "owner",
             "role",
         ):
-            assert header in page, f"block parameter panel must expose {header}"
+            assert header in pages["parameters"], (
+                f"advanced parameter table must expose {header}"
+            )
 
         phy_names = {
             block["name"]
@@ -191,69 +237,33 @@ def main() -> None:
             "DL Chain",
             "UL Chain",
         ):
-            assert required in phy_names, f"missing L1/PHY block: {required}"
+            assert required in phy_names, f"missing LLS PHY block: {required}"
 
         route_expectations = {
             "/": "home",
             "/home": "home",
-            "/run-control": "run_control",
-            "/reports": "reports",
-            "/reports/scheduler-mac-queue-qos-power-control-uci-flow": "reports",
-            "/documentation": "architecture",
             "/scenario": "scenario",
-            "/geometry": "geometry",
-            "/waveform": "waveform",
-            "/traffic": "traffic",
-            "/mac-scheduler": "mac_scheduler",
-            "/l1-phy": "l1_phy",
-            "/antenna-air": "antenna_air",
+            "/run-control": "run_control",
             "/realtime": "realtime",
+            "/result": "realtime",
+            "/phy-grid": "phy_grid",
+            "/plots": "plots",
+            "/results": "plots",
+            "/tables": "tables",
+            "/reports": "reports",
             "/analytics": "analytics",
             "/artifacts": "artifacts",
+            "/outputs": "artifacts",
+            "/images": "artifacts",
             "/parameter-catalog": "parameters",
             "/compare-runs": "compare",
-            "/runs": "runs",
-            "/recent-runs": "runs",
-            "/previous-run": "previous_runs",
-            "/previous-runs": "previous_runs",
-            "/result": "realtime",
-            "/outputs": "artifacts",
-            "/map": "geometry",
-            "/logs": "realtime",
-            "/tables": "tables",
-            "/images": "artifacts",
         }
         for route, page_id in route_expectations.items():
-            assert dash.PRODUCT_PAGE_ROUTES.get(route) == page_id, f"{route} must route to the new product page"
-
-        nav_ids = [item[0] for item in dash.PRODUCT_NAV]
-        for required in (
-            "home",
-            "run_control",
-            "scenario",
-            "geometry",
-            "waveform",
-            "traffic",
-            "mac_scheduler",
-            "l1_phy",
-            "antenna_air",
-            "realtime",
-            "reports",
-            "analytics",
-            "runs",
-            "previous_runs",
-            "artifacts",
-            "parameters",
-            "compare",
-        ):
-            assert required in nav_ids, f"missing product nav item: {required}"
-        assert nav_ids.index("reports") < nav_ids.index("analytics")
-        assert dash.BROWSER_EXECUTION_MODE_OPTIONS == ["LLS", "SLS", "E2E"]
-        assert dash.FULLY_WIRED_BROWSER_EXECUTION_MODE == "LLS"
+            assert dash.PRODUCT_PAGE_ROUTES.get(route) == page_id, (
+                f"{route} must resolve inside the single product WebGUI"
+            )
     finally:
-        dash.product_backend_status = orig_backend
-        dash.list_scenarios = orig_scenarios
-        dash.load_resolved_config_payload = orig_load
+        dash.list_scenarios = original_scenarios
 
 
 if __name__ == "__main__":

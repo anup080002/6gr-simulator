@@ -5,8 +5,14 @@ outputs/
 
 # Python caches
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
+
+# Local deployment settings and secrets
+.env
+.env.*
+!.env.example
 
 # Local Codex and scratch workspaces
 .codex*/
@@ -32,7 +38,8 @@ reports/actual_mobile_2ue_full_phy_study_runner_summary.json
 tmp_web_runs/
 tmp_dashboard/
 simulator/configs/scenarios/__web_runtime_*.yaml
-webgui/backend/data/
-webgui/backend/venv/
-webgui/frontend/node_modules/
-webgui/frontend/dist/
+simulator/configs/scenarios/__web_source_*.yaml
+simulator/configs/scenarios/__web_upload_*.yaml
+__web_runtime_*.yaml
+__web_source_*.yaml
+apps/.webgui-venv/

@@ -147,8 +147,9 @@ end
 host = char(string(sixgr.util.structGet(cfg, "outputs.databaseHost", "localhost")));
 port = double(sixgr.util.structGet(cfg, "outputs.databasePort", 3306));
 schemaName = char(string(sixgr.util.structGet(cfg, "outputs.databaseSchema", "sixgr_results")));
+localValidateWebGUIDatabaseTarget(host, port, schemaName);
 username = localEnvOrDefault("MYSQL_USER", "root");
-password = localEnvOrDefault("MYSQL_PASSWORD", "root");
+password = localEnvOrDefault("MYSQL_PASSWORD", "");
 
 adminConn = [];
 conn = [];
@@ -760,6 +761,40 @@ value = char(string(getenv(char(string(name)))));
 if strlength(strtrim(string(value))) == 0
     value = char(string(defaultValue));
 end
+end
+
+function localValidateWebGUIDatabaseTarget(host, port, schemaName)
+if ~strcmp(strtrim(getenv("SIXGR_WEBGUI_RUN")), "1")
+    return;
+end
+envHost = strtrim(getenv("MYSQL_HOST"));
+envPortText = strtrim(getenv("MYSQL_PORT"));
+envSchema = strtrim(getenv("MYSQL_DATABASE"));
+if strlength(string(envHost)) == 0 || strlength(string(envPortText)) == 0 || ...
+        strlength(string(envSchema)) == 0
+    error("sixgr:db:artifactStore:MissingWebGUIDatabaseTarget", ...
+        "WebGUI mysql_web execution requires MYSQL_HOST, MYSQL_PORT, and MYSQL_DATABASE.");
+end
+envPort = str2double(envPortText);
+hostMatches = strcmp(localNormalizeDatabaseHost(host), localNormalizeDatabaseHost(envHost));
+portMatches = isfinite(envPort) && isscalar(envPort) && double(port) == double(envPort);
+schemaMatches = strcmp(char(string(schemaName)), char(string(envSchema)));
+if ~(hostMatches && portMatches && schemaMatches)
+    error("sixgr:db:artifactStore:WebGUIDatabaseTargetMismatch", ...
+        ["Scenario output.database_host/port/schema (%s:%g/%s) differs from the " ...
+        "WebGUI metadata target (%s:%s/%s). Edit the exact scenario YAML or align " ...
+        "the retained WebGUI's private apps/.env; deployment targets are never overridden silently."], ...
+        char(string(host)), double(port), char(string(schemaName)), ...
+        char(string(envHost)), char(string(envPortText)), char(string(envSchema)));
+end
+end
+
+function token = localNormalizeDatabaseHost(value)
+token = lower(strtrim(char(string(value))));
+if ismember(string(token), ["localhost", "127.0.0.1", "::1"])
+    token = "loopback";
+end
+token = char(string(token));
 end
 
 function maxPacketBytes = localQueryMaxAllowedPacket(conn)

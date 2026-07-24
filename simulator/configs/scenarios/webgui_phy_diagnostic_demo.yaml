@@ -1,0 +1,39 @@
+inherits:
+  - ./dl_4ghz_baseline.yaml
+
+meta:
+  scenario_id: webgui_phy_diagnostic_demo
+  description: Compact bidirectional waveform-truth scenario with same-trial PHY diagnostic capture.
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: webgui_examples
+  tags: [lls, webgui, waveform_truth, phy_diagnostic]
+
+scenario:
+  runner_profile: waveform_bundle
+  target_cases: [bundle, dl, ul, pdsch, pusch]
+
+simulation:
+  link_direction: both
+  n_frames: 2
+  n_slots: 2
+  monte_carlo_iterations: 2
+  snr_db: 20
+
+run_control:
+  raw_iq_capture_enable: true
+  save_constellations: true
+  save_channel_tensors: true
+
+output_control:
+  save_raw_waveforms: true
+  save_channel_snapshots: true
+  save_constellations: true
+  save_plots: true
+
+output:
+  phy_signal_diagnostic_enabled: true
+  phy_signal_diagnostic_waveform_samples: 1024
+  phy_signal_diagnostic_fft_length: 1024
+  phy_signal_diagnostic_channel_points: 1024
+  phy_signal_diagnostic_constellation_points: 512

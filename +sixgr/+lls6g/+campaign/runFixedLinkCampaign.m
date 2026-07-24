@@ -173,13 +173,55 @@ rank = max(1, round(double(campaignCfg.Rank)));
 nPRB = max(1, round(double(campaignCfg.NPRB)));
 prbSet = 0:max(nPRB - 1, 0);
 
-for root = ["phy.pdsch", "phy.pusch"]
+if rank > layers
+    error("sixgr:lls6g:campaign:RankExceedsLayers", ...
+        "Fixed-link campaign rank %d cannot exceed the configured layer count %d.", ...
+        rank, layers);
+end
+
+roots = strings(0, 1);
+ports = zeros(0, 1);
+if localDirectionEnabled(campaignCfg, "DL")
+    roots(end+1, 1) = "phy.pdsch"; %#ok<AGROW>
+    ports(end+1, 1) = layers; %#ok<AGROW>
+end
+if localDirectionEnabled(campaignCfg, "UL")
+    if layers > 4
+        error("sixgr:lls6g:campaign:UnsupportedULLayers", ...
+            "Fixed-link PUSCH campaigns support at most 4 layers, not %d.", layers);
+    end
+    validULPorts = [1 2 4];
+    ulPorts = validULPorts(find(validULPorts >= layers, 1, "first"));
+    roots(end+1, 1) = "phy.pusch"; %#ok<AGROW>
+    ports(end+1, 1) = ulPorts; %#ok<AGROW>
+end
+
+for i = 1:numel(roots)
+    root = roots(i);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".numLayers", layers);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".nLayers", layers);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".rank", rank);
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".numPorts", ports(i));
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".nPorts", ports(i));
     cfgOut = sixgr.util.structSet(cfgOut, root + ".PRBSet", prbSet);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".nPRB", nPRB);
 end
+
+for path = [ ...
+        "phy.pdsch.precoding.matrix", ...
+        "phy.pdsch.precodingMatrix", ...
+        "phy.pdsch.W", ...
+        "phy.pusch.precoding.matrix", ...
+        "phy.pusch.precodingMatrix", ...
+        "phy.pusch.W"]
+    cfgOut = sixgr.util.structSet(cfgOut, path, []);
+end
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.normalizePrecodingMatrix", true);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.normalizePrecodingMatrix", true);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", NaN);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.TPMI", NaN);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.PMI", NaN);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.TPMI", NaN);
 
 cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NSizeGrid", nPRB);
 cfgOut = sixgr.util.structSet(cfgOut, "phy.numerology.activeGridNumRBs", nPRB);
@@ -188,25 +230,25 @@ end
 
 function cfgOut = localDisableCampaignReferenceSignals(cfgOut, campaignCfg)
 nPRB = max(1, round(double(campaignCfg.NPRB)));
-for path = { ...
-        "phy.pbch.enable"
-        "phy.mib.enable"
-        "phy.sib1.enable"
-        "phy.pdcch.enable"
-        "phy.pucch.enable"
-        "phy.prach.enable"
-        "phy.csirs.enable"
-        "phy.srs.enable"
-        "phy.trs.enable"
-        "phy.ptrs.enable"
-        "phy.csi.enable"
-        "reference_signals.pbch_enabled"
-        "reference_signals.csi_rs_enabled"
-        "reference_signals.nzp_csi_rs.enabled"
-        "reference_signals.srs_enabled"
-        "reference_signals.trs_enabled"
-        "reference_signals.ptrs_enabled"}
-    cfgOut = sixgr.util.structSet(cfgOut, char(path{1}), false);
+for path = [ ...
+        "phy.pbch.enable", ...
+        "phy.mib.enable", ...
+        "phy.sib1.enable", ...
+        "phy.pdcch.enable", ...
+        "phy.pucch.enable", ...
+        "phy.prach.enable", ...
+        "phy.csirs.enable", ...
+        "phy.srs.enable", ...
+        "phy.trs.enable", ...
+        "phy.ptrs.enable", ...
+        "phy.csi.enable", ...
+        "reference_signals.pbch_enabled", ...
+        "reference_signals.csi_rs_enabled", ...
+        "reference_signals.nzp_csi_rs.enabled", ...
+        "reference_signals.srs_enabled", ...
+        "reference_signals.trs_enabled", ...
+        "reference_signals.ptrs_enabled"]
+    cfgOut = sixgr.util.structSet(cfgOut, path, false);
 end
 cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.numRB", nPRB);
 cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.rbOffset", 0);
@@ -948,14 +990,18 @@ function profile = localResolveConcreteChannelProfile(cfg, model)
 model = upper(string(model));
 switch model
     case "TDL"
-        profile = upper(string(sixgr.util.structGet(cfg, "channel.tdlProfile", sixgr.util.structGet(cfg, "channel.fading.profile", "TDL-C"))));
+        profile = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.tdlProfile", ...
+            sixgr.util.structGet(cfg, "channel.fading.profile", "")))));
         if strlength(profile) == 0 || ~startsWith(profile, "TDL-")
-            profile = "TDL-C";
+            error("sixgr:lls6g:campaign:ConcreteTDLProfileRequired", ...
+                "Fixed-link TDL campaigns require a concrete profile such as TDL-C.");
         end
     case "CDL"
-        profile = upper(string(sixgr.util.structGet(cfg, "channel.cdlProfile", sixgr.util.structGet(cfg, "channel.fading.profile", "CDL-D"))));
+        profile = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.cdlProfile", ...
+            sixgr.util.structGet(cfg, "channel.fading.profile", "")))));
         if strlength(profile) == 0 || ~startsWith(profile, "CDL-")
-            profile = "CDL-D";
+            error("sixgr:lls6g:campaign:ConcreteCDLProfileRequired", ...
+                "Fixed-link CDL campaigns require a concrete profile such as CDL-D.");
         end
     otherwise
         profile = "AWGN";

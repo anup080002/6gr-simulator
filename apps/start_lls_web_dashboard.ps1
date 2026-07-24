@@ -13,146 +13,203 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $env:MYSQL_HOST) { $env:MYSQL_HOST = "localhost" }
-if (-not $env:MYSQL_PORT) { $env:MYSQL_PORT = "3306" }
-if (-not $env:MYSQL_USER) { $env:MYSQL_USER = "root" }
-if (-not $env:MYSQL_PASSWORD) { $env:MYSQL_PASSWORD = "root" }
-if (-not $env:MYSQL_DATABASE) { $env:MYSQL_DATABASE = "sixgr_results" }
-if ([string]::IsNullOrWhiteSpace($BindHost)) {
-    $BindHost = if ([string]::IsNullOrWhiteSpace($env:SIXGR_DASHBOARD_HOST)) { "0.0.0.0" } else { $env:SIXGR_DASHBOARD_HOST }
-}
-if ($Port -le 0) {
-    $Port = if ([string]::IsNullOrWhiteSpace($env:SIXGR_DASHBOARD_PORT)) { 62906 } else { [int]$env:SIXGR_DASHBOARD_PORT }
-}
-if ([string]::IsNullOrWhiteSpace($PublicHost)) {
-    $PublicHost = $env:SIXGR_DASHBOARD_PUBLIC_HOST
-}
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $scriptPath = Join-Path $PSScriptRoot "lls_web_dashboard.py"
-$matlabPath = if ([string]::IsNullOrWhiteSpace($env:SIXGR_MATLAB_EXE)) { "C:\Program Files\MATLAB\R2024a\bin\matlab.exe" } else { $env:SIXGR_MATLAB_EXE }
+$requirementsPath = Join-Path $PSScriptRoot "requirements-webgui.txt"
+$venvRoot = Join-Path $PSScriptRoot ".webgui-venv"
+$venvPython = Join-Path $venvRoot "Scripts\python.exe"
 
-if (-not (Test-Path $matlabPath)) {
-    throw "Required MATLAB R2024a executable is missing: $matlabPath"
+function Import-LocalDashboardEnvironment {
+    $envPath = Join-Path $PSScriptRoot ".env"
+    if (-not (Test-Path -LiteralPath $envPath)) {
+        return
+    }
+    foreach ($rawLine in Get-Content -LiteralPath $envPath) {
+        $line = $rawLine.Trim()
+        if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+            continue
+        }
+        $parts = $line.Split("=", 2)
+        $key = $parts[0].Trim()
+        if ($key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+            continue
+        }
+        if (Test-Path -LiteralPath "Env:$key") {
+            continue
+        }
+        $value = $parts[1].Trim()
+        if ($value.Length -ge 2 -and
+            (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+             ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        Set-Item -LiteralPath "Env:$key" -Value $value
+    }
+}
+
+function Resolve-MatlabExecutable {
+    if (-not [string]::IsNullOrWhiteSpace($env:SIXGR_MATLAB_EXE) -and
+        (Test-Path -LiteralPath $env:SIXGR_MATLAB_EXE)) {
+        return (Resolve-Path -LiteralPath $env:SIXGR_MATLAB_EXE).Path
+    }
+    $pathCommand = Get-Command matlab -ErrorAction SilentlyContinue
+    if ($pathCommand -and (Test-Path -LiteralPath $pathCommand.Source)) {
+        return $pathCommand.Source
+    }
+    $installRoots = @(
+        (Join-Path ${env:ProgramFiles} "MATLAB"),
+        (Join-Path ${env:ProgramFiles(x86)} "MATLAB")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    $candidates = foreach ($installRoot in $installRoots) {
+        Get-ChildItem -LiteralPath $installRoot -Directory -Filter "R20???" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^R\d{4}[ab]$' } |
+            ForEach-Object { Join-Path $_.FullName "bin\matlab.exe" } |
+            Where-Object { Test-Path -LiteralPath $_ }
+    }
+    return $candidates | Sort-Object -Descending | Select-Object -First 1
+}
+
+function Resolve-BasePython {
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:PYTHON_EXE)) {
+        $candidates += [pscustomobject]@{ Executable = $env:PYTHON_EXE; Prefix = @() }
+    }
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCommand) {
+        $candidates += [pscustomobject]@{ Executable = $pythonCommand.Source; Prefix = @() }
+    }
+    $pyCommand = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyCommand) {
+        $candidates += [pscustomobject]@{ Executable = $pyCommand.Source; Prefix = @("-3") }
+    }
+    foreach ($candidate in $candidates) {
+        try {
+            $prefixArgs = @($candidate.Prefix)
+            & $candidate.Executable $prefixArgs -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                return $candidate
+            }
+        }
+        catch {
+        }
+    }
+    return $null
+}
+
+function Ensure-DashboardPython {
+    $venvPythonReady = $false
+    if (Test-Path -LiteralPath $venvPython) {
+        try {
+            & $venvPython -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)" 2>$null
+            $venvPythonReady = $LASTEXITCODE -eq 0
+            if ($venvPythonReady) {
+                & $venvPython -c "import yaml,mysql.connector,waitress" 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    return $venvPython
+                }
+            }
+        }
+        catch {
+            $venvPythonReady = $false
+        }
+    }
+    if (-not $venvPythonReady) {
+        $basePython = Resolve-BasePython
+        if (-not $basePython) {
+            throw "Python 3.10 or newer was not found. Install Python 3 or set PYTHON_EXE."
+        }
+        $prefixArgs = @($basePython.Prefix)
+        & $basePython.Executable $prefixArgs -m venv --clear $venvRoot
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not create the local WebGUI Python environment."
+        }
+    }
+    & $venvPython -m pip install --disable-pip-version-check -q -r $requirementsPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not install the original WebGUI dependencies."
+    }
+    return $venvPython
 }
 
 function Ensure-DashboardFirewallRule {
-    param(
-        [Parameter(Mandatory = $true)]
-        [int]$LocalPort
-    )
-
-    if ($SkipFirewallRule) {
-        return
-    }
-    if ($BindHost -match '^(127\.|localhost$)') {
+    param([int]$LocalPort)
+    if ($SkipFirewallRule -or $BindHost -match '^(127\.|localhost$)') {
         return
     }
     $ruleName = "SixGR LLS Dashboard TCP $LocalPort"
     try {
         $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
         if (-not $existing) {
-            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $LocalPort -Profile Domain,Private | Out-Null
-            Write-Host "[lls-web] Added Windows firewall rule '$ruleName' for intranet access."
-        } else {
-            Write-Host "[lls-web] Windows firewall rule '$ruleName' already exists."
+            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow `
+                -Protocol TCP -LocalPort $LocalPort -Profile Domain,Private | Out-Null
+            Write-Host "[lls-web] Added Windows firewall rule '$ruleName'."
         }
     }
     catch {
-        Write-Warning "Could not create the Windows firewall rule for TCP port $LocalPort. Remote intranet clients may still be blocked. $($_.Exception.Message)"
+        Write-Warning "Could not create the firewall rule for TCP $LocalPort. $($_.Exception.Message)"
     }
 }
 
-function Test-WebDashboardPython {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string[]]$Command
-    )
+Import-LocalDashboardEnvironment
 
-    $probe = "import sys; import yaml; print(sys.executable)"
-    $prefix = @()
-    if ($Command.Length -gt 1) {
-        $prefix = $Command[1..($Command.Length - 1)]
-    }
+if (-not $env:MYSQL_HOST) { $env:MYSQL_HOST = "127.0.0.1" }
+if (-not $env:MYSQL_PORT) { $env:MYSQL_PORT = "3306" }
+if (-not $env:MYSQL_USER) { $env:MYSQL_USER = "root" }
+if (-not $env:MYSQL_DATABASE) { $env:MYSQL_DATABASE = "sixgr_results" }
+if ([string]::IsNullOrWhiteSpace($BindHost)) {
+    $BindHost = if ($env:SIXGR_DASHBOARD_HOST) { $env:SIXGR_DASHBOARD_HOST } else { "127.0.0.1" }
+}
+if ($Port -le 0) {
+    $Port = if ($env:SIXGR_DASHBOARD_PORT) { [int]$env:SIXGR_DASHBOARD_PORT } else { 62906 }
+}
+if ([string]::IsNullOrWhiteSpace($PublicHost)) {
+    $PublicHost = $env:SIXGR_DASHBOARD_PUBLIC_HOST
+}
+
+$existingListener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if ($existingListener) {
+    $existingUrl = "http://127.0.0.1:$Port/"
     try {
-        $exe = & $Command[0] $prefix -c $probe 2>$null
-        if ($LASTEXITCODE -eq 0 -and $exe) {
-            return [pscustomobject]@{
-                Ok = $true
-                Executable = ($exe | Select-Object -Last 1).Trim()
-                Command = $Command
+        $status = Invoke-RestMethod -Uri "${existingUrl}api/status" -TimeoutSec 5
+        if ($status -and $status.PSObject.Properties.Name -contains "matlab_available") {
+            Write-Host "[lls-web] The original WebGUI is already running at $existingUrl"
+            if (-not $NoBrowser) {
+                Start-Process $existingUrl | Out-Null
             }
+            exit 0
         }
     }
     catch {
     }
-
-    return [pscustomobject]@{
-        Ok = $false
-        Executable = ""
-        Command = $Command
-    }
+    throw "TCP port $Port is already used by another process."
 }
 
-$pythonCandidates = @()
-if ($env:PYTHON_EXE) {
-    $pythonCandidates += ,@($env:PYTHON_EXE)
-}
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    $pythonCandidates += ,@("py", "-3")
-}
-if (Get-Command python -ErrorAction SilentlyContinue) {
-    $pythonCandidates += ,@((Get-Command python).Source)
+$matlabPath = Resolve-MatlabExecutable
+if ($matlabPath) {
+    $env:SIXGR_MATLAB_EXE = $matlabPath
+    Write-Host "[lls-web] MATLAB runtime: $matlabPath"
+} else {
+    Write-Warning "MATLAB was not found automatically. The dashboard will open for existing results, but Run is disabled until SIXGR_MATLAB_EXE or PATH is configured."
 }
 
-$selected = $null
-foreach ($candidate in $pythonCandidates) {
-    $probe = Test-WebDashboardPython -Command $candidate
-    if ($probe.Ok) {
-        $selected = $probe
-        break
-    }
-}
+$dashboardPython = Ensure-DashboardPython
+Write-Host "[lls-web] Python runtime: $dashboardPython"
+Write-Host "[lls-web] Dashboard URL: http://127.0.0.1:$Port/"
 
-if (-not $selected) {
-    $installHint = if ($env:PYTHON_EXE) {
-        "`"$($env:PYTHON_EXE)`" -m pip install pyyaml"
-    }
-    elseif (Get-Command py -ErrorAction SilentlyContinue) {
-        "py -3 -m pip install pyyaml"
-    }
-    else {
-        "python -m pip install pyyaml"
-    }
-    throw "No Python runtime with PyYAML was found for the web dashboard. Install the dependency with: $installHint"
-}
-
-Write-Host "[lls-web] Python runtime: $($selected.Executable)"
-$selectedPrefix = @()
-if ($selected.Command.Length -gt 1) {
-    $selectedPrefix = $selected.Command[1..($selected.Command.Length - 1)]
-}
-$mysqlProbe = "import mysql.connector"
-try {
-    & $selected.Command[0] $selectedPrefix -c $mysqlProbe 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "mysql-connector-python is not installed for this Python runtime. The dashboard will still start in results-folder/filesystem mode; database-backed pages will report MySQL unavailable until installed."
-    }
-}
-catch {
-    Write-Warning "Could not probe mysql-connector-python. The dashboard will still start; database-backed pages may report MySQL unavailable."
-}
-Write-Host "[lls-web] MATLAB runtime: $matlabPath"
-Write-Host "[lls-web] Dashboard bind host: $BindHost"
-Write-Host "[lls-web] Dashboard port: $Port"
-Write-Host "[lls-web] HTTP backend: $Server"
-Write-Host "[lls-web] Worker threads: $Threads"
 $env:SIXGR_DASHBOARD_HOST = $BindHost
 $env:SIXGR_DASHBOARD_PORT = [string]$Port
 $env:SIXGR_DASHBOARD_SERVER = $Server
 $env:SIXGR_DASHBOARD_THREADS = [string]$Threads
 Ensure-DashboardFirewallRule -LocalPort $Port
-$dashboardArgs = @("--host", $BindHost, "--port", [string]$Port, "--server", $Server, "--threads", [string]$Threads)
+
+$dashboardArgs = @(
+    $scriptPath,
+    "--host", $BindHost,
+    "--port", [string]$Port,
+    "--server", $Server,
+    "--threads", [string]$Threads
+)
 if (-not [string]::IsNullOrWhiteSpace($PublicHost)) {
     $dashboardArgs += @("--public-host", $PublicHost)
 }
@@ -162,4 +219,4 @@ if ($NoBrowser) {
 if ($PassthroughArgs) {
     $dashboardArgs += $PassthroughArgs
 }
-& $selected.Command[0] $selectedPrefix $scriptPath $dashboardArgs
+& $dashboardPython $dashboardArgs

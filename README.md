@@ -75,14 +75,17 @@ This is the more general orchestration path built around:
 
 These are used for larger combined runs, truth validation, E2E coupling, structured artifact verification, and broader result bundles.
 
-### 4. GUI / interactive usage
+### 4. Browser WebGUI / interactive usage
 
-There is also a code-only MATLAB GUI:
+The browser workflow has one implementation and one launcher:
 
-- `Start6GRSimToolkit.m`
-- `apps/SimSuiteGUI.m`
+- `apps/lls_web_dashboard.py`
+- `apps/start_lls_web_dashboard.ps1`
 
-Use this if you want an interactive environment rather than calling runners directly.
+It loads scenarios, edits and downloads configuration, launches MATLAB LLS
+runs, and presents live status, tables, plots, files, and resource-grid
+evidence in one interface. The MATLAB `uifigure` utility remains a separate
+desktop tool; it is not another browser server.
 
 ## Recommended First-Time Setup
 
@@ -134,7 +137,8 @@ Use this table as the quick decision guide.
 | Run a matrix/regression of LLS scenarios | `run_6g_phy_lls_matrix` | Best front door for suite-style YAML execution |
 | Run the stricter truth-validation profile | `run_truth_validation_profile` | Truth E2E plus supplemental waveform/control artifacts |
 | Run the broader campaign orchestrator | `sixgr_run_3gpp_full_campaign` | More general and more configurable; used by compatibility flows too |
-| Launch the GUI | `Start6GRSimToolkit` or `SimSuiteGUI` | Interactive usage |
+| Launch the browser WebGUI | `apps/start_lls_web_dashboard.ps1` | The only supported browser launcher; defaults to `http://127.0.0.1:62906/` |
+| Launch the MATLAB desktop utility | `Start6GRSimToolkit` or `SimSuiteGUI` | MATLAB-only interactive usage; not a browser server |
 | Use older compatibility path | `SixGR_Simulator` | Deprecated wrapper; forwards to the full campaign |
 
 ## Quick Start Commands
@@ -203,16 +207,26 @@ report = sixgr_run_3gpp_full_campaign( ...
 
 Use this when you want combined campaign orchestration rather than only the LLS YAML scenario framework.
 
-### F. Launch the GUI
+### F. Launch the single browser WebGUI
+
+Copy the sanitized machine-local template once, then edit `apps/.env` with the
+MySQL address and credentials for that system:
+
+```powershell
+Copy-Item .\apps\.env.example .\apps\.env
+.\apps\start_lls_web_dashboard.ps1
+```
+
+Open <http://127.0.0.1:62906/>. The launcher creates
+`apps/.webgui-venv`, installs `apps/requirements-webgui.txt`, discovers the
+newest installed MATLAB release unless `SIXGR_MATLAB_EXE` is set, and starts
+only `apps/lls_web_dashboard.py`. Use `SIXGR_DASHBOARD_HOST=0.0.0.0` only when
+intranet access is intended; keep the real `apps/.env` untracked.
+
+For the separate MATLAB desktop utility:
 
 ```matlab
 Start6GRSimToolkit
-```
-
-Or:
-
-```matlab
-app = SimSuiteGUI();
 ```
 
 ## Repository Structure

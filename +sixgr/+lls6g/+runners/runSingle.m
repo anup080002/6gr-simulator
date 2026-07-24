@@ -119,6 +119,8 @@ fixedLinkCampaignCfg = localResolveFixedLinkCampaignRuntimeConfig(scfg, cfg, con
     fixedLinkEnabledDefault, defaultFixedTrials, totalSlots);
 opt.LinkFixedLinkCampaignConfig = fixedLinkCampaignCfg;
 opt.LinkFixedLinkCampaignEnabled = logical(sixgr.util.structGet(fixedLinkCampaignCfg, "Enabled", false));
+opt.FixedLinkCampaignOnly = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.only", ...
+    sixgr.util.structGet(fixedLinkCampaignCfg, "Only", false)));
 opt.LinkFixedLinkSNRGrid_dB = double(sixgr.util.structGet(fixedLinkCampaignCfg, "SNR_dB", controlledSNRGrid));
 opt.LinkFixedLinkMinTrials = max(1, round(double(sixgr.util.structGet(fixedLinkCampaignCfg, "MinTBPerPoint", defaultFixedTrials))));
 opt.LinkFixedLinkMaxTrials = max(opt.LinkFixedLinkMinTrials, ...
@@ -5691,6 +5693,8 @@ end
 function fixedCfg = localBuildFixedLinkCampaignConfigFromValidation(cfg, validationCfg, controlledSNRGrid, defaultFixedTrials, totalSlots)
 fixedCfg = struct();
 fixedCfg.Enabled = logical(sixgr.util.structGet(validationCfg, "enabled", false));
+fixedCfg.Only = logical(sixgr.util.structGet(cfg, "sweeps_and_matrix.fixed_link_calibration.only", ...
+    sixgr.util.structGet(cfg, "canonical_control.run.fixed_link_campaign_only", false)));
 fixedCfg.Direction = string(sixgr.util.structGet(validationCfg, "direction", "both"));
 fixedCfg.ChannelModel = upper(string(sixgr.util.structGet(validationCfg, "channel_model", "AWGN")));
 fixedCfg.SNR_dB = localFiniteRowVector(sixgr.util.structGet(validationCfg, "snr_db", controlledSNRGrid), controlledSNRGrid);
@@ -5720,6 +5724,8 @@ end
 function fixedCfg = localBuildFixedLinkCampaignConfigFromLegacy(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots)
 fixedCfg = struct();
 fixedCfg.Enabled = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.enabled", fixedLinkEnabledDefault));
+fixedCfg.Only = logical(scfg.get("sweeps_and_matrix.fixed_link_calibration.only", ...
+    sixgr.util.structGet(cfg, "run.fixedLinkCampaignOnly", false)));
 fixedCfg.Direction = string(scfg.get("sweeps_and_matrix.fixed_link_calibration.direction", "both"));
 fixedCfg.ChannelModel = upper(string(scfg.get("sweeps_and_matrix.fixed_link_calibration.channel_model", ...
     sixgr.util.structGet(cfg, "channel.model", "AWGN"))));

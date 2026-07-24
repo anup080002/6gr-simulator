@@ -12,7 +12,8 @@ import lls_web_dashboard as dash  # noqa: E402
 
 def main() -> None:
     start_text = (REPO_ROOT / "apps" / "start_lls_web_dashboard.ps1").read_text(encoding="utf-8")
-    assert '0.0.0.0' in start_text
+    assert 'else { "127.0.0.1" }' in start_text
+    assert '$BindHost' in start_text, "Explicit intranet binding must remain configurable."
     assert '62906' in start_text
     assert 'New-NetFirewallRule' in start_text
     assert '--host' in start_text
