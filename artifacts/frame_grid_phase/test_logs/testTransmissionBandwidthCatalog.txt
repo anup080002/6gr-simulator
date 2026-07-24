@@ -1,0 +1,2 @@
+Suite: testTransmissionBandwidthCatalog
+PASS in 0.916463 seconds.

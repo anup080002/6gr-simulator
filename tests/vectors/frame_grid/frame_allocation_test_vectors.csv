@@ -1,0 +1,15 @@
+TestID,SymbolMap,Channel,Direction,StartSymbol,NumSymbols,FlexResolution,ExpectedValid,ExpectedReasonCode
+ALLOC-001,DDDDFFFFFFFFUU,PDCCH,DL,0,2,none,TRUE,fixed_dl_symbols
+ALLOC-002,DDDDFFFFFFFFUU,PDSCH,DL,0,4,none,TRUE,fixed_dl_symbols
+ALLOC-003,DDDDFFFFFFFFUU,PDSCH,DL,4,4,unresolved,FALSE,flexible_symbols_unresolved
+ALLOC-004,DDDDFFFFFFFFUU,PDSCH,DL,4,4,DL:4-7,TRUE,flexible_symbols_resolved_dl
+ALLOC-005,DDDDFFFFFFFFUU,PUSCH,UL,4,4,UL:4-7,TRUE,flexible_symbols_resolved_ul
+ALLOC-006,DDDDFFFFFFFFUU,PDSCH+PUSCH,DL+UL,4,4,DL:4-7;UL:4-7,FALSE,conflicting_flexible_symbol_resolution
+ALLOC-007,DDDDFFFFFFFFUU,PUCCH,UL,12,2,none,TRUE,fixed_ul_symbols
+ALLOC-008,DDDDFFFFFFFFUU,PRACH,UL,11,3,unresolved,FALSE,flexible_symbols_unresolved
+ALLOC-009,DDDDFFFFFFFFUU,PRACH,UL,11,3,UL:11,TRUE,flex_plus_fixed_ul
+ALLOC-010,DDDDFFFFFFFFUU,PDSCH,DL,12,2,none,FALSE,allocation_hits_fixed_ul
+ALLOC-011,DDDDFFFFFFFFUU,PUSCH,UL,0,2,none,FALSE,allocation_hits_fixed_dl
+ALLOC-012,DDDDDDDDDDDDDD,PDSCH,DL,0,14,none,TRUE,preserve_explicit_full_slot_pdsch_no_auto_shift
+ALLOC-013,DDDDDDDDDDDDDD,PDSCH,DL,,,none,FALSE,missing_explicit_tdra_in_strict_mode
+ALLOC-014,UUUUUUUUUUUUUU,PUSCH,UL,0,14,none,TRUE,preserve_explicit_full_slot_pusch

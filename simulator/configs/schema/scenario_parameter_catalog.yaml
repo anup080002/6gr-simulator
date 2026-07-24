@@ -135,6 +135,8 @@ sections:
         type: string
         allowed_values: [FR1, FR2, FR3]
       center_frequency_hz: {required: true, type: number, min_exclusive: 0}
+      dl_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
+      ul_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
       bandwidth_hz: {required: true, type: number, min_exclusive: 0}
       duplex_mode:
         required: true
@@ -151,7 +153,7 @@ sections:
         required: true
         type: number_list
         min_items: 1
-        allowed_numeric_values: [15, 30, 60, 120, 240]
+        allowed_numeric_values: [15, 30, 60, 120, 240, 480, 960]
       max_mimo_size: {required: true, type: integer, min: 1}
       max_supported_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
       custom_frequency_override_allowed: {required: false, type: boolean}
@@ -177,10 +179,8 @@ sections:
         required: true
         type: string
         allowed_values: [dl, ul, flexible, mixed]
-      tdd_pattern: {required: true, type: string, nonempty: true}
-      special_slot_downlink_symbols: {required: false, type: integer, min: 0}
-      ul_dl_guard_symbols: {required: false, type: integer, min: 0}
-      special_slot_uplink_symbols: {required: false, type: integer, min: 0}
+      tdd_common: {required: false, type: struct}
+      tdd_dedicated: {required: false, type: struct_array}
   waveform:
     required: true
     parameters:
@@ -246,6 +246,18 @@ sections:
     required: true
     parameters:
       ssb_enabled: {required: true, type: boolean}
+      ssb_case:
+        required: true
+        type: string
+        allowed_values: ["Case A", "Case B", "Case C", "Case D", "Case E", "Case F", "Case G"]
+      ssb_scs_khz:
+        required: true
+        type: number
+        allowed_numeric_values: [15, 30, 120, 240, 480, 960]
+      ssb_lmax:
+        required: true
+        type: integer
+        allowed_numeric_values: [4, 8, 64]
       pbch_enabled: {required: true, type: boolean}
       pdcch_dmrs_enabled: {required: true, type: boolean}
       pdsch_dmrs_ports: {required: true, type: integer, min: 1}

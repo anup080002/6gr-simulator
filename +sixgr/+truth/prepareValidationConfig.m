@@ -134,7 +134,7 @@ cfg = localSetNestedField(cfg, "run.controlGating.trsMaxAgeSlots", 4);
 cfg = localSetNestedField(cfg, "run.controlGating.preAttachUEsBeforeMeasurement", false);
 
 cfg = sixgr.config.normalizeConfig(cfg);
-sixgr.config.validateConfig(cfg);
+cfg = sixgr.config.validateConfig(cfg);
 end
 
 function s = localSetNestedField(s, dottedPath, value)

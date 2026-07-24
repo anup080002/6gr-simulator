@@ -118,10 +118,14 @@ frame:
   scs_khz: 30
   cp_type: normal
   slot_format: flexible
-  tdd_pattern: DDDSU
-  special_slot_downlink_symbols: 7
-  ul_dl_guard_symbols: 0
-  special_slot_uplink_symbols: 7
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 7
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 7
 
 frame_timing:
   frame_duration_ms: 10
@@ -129,10 +133,14 @@ frame_timing:
   slot_duration_ms: 0.5
   symbols_per_slot: 14
   slots_per_frame: 20
-  tdd_pattern: DDDSU
-  special_slot_downlink_symbols: 7
-  ul_dl_guard_symbols: 0
-  special_slot_uplink_symbols: 7
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 7
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 7
 
 waveform:
   fft_size: 4096

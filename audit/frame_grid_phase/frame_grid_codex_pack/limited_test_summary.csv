@@ -1,0 +1,30 @@
+Section,Metric,Value
+general,repository,/mnt/data/6gr_work/6GR Simulator_v2_clean_main
+general,output,C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\audit\frame_grid_phase\frame_grid_codex_pack
+general,matlab_available,False
+prompt,lines,1076
+prompt,bytes,43353
+vectors,numerology,18
+vectors,carrier_grid,71
+vectors,tdd,11
+vectors,allocation,14
+vectors,total,114
+golden_expected_outputs,numerology_rows,18
+golden_expected_outputs,carrier_rows,71
+golden_expected_outputs,slot_symbol_rows,510
+golden_expected_outputs,allocation_rows,14
+current_audit,static_failures,12
+current_audit,carrier_grid_mismatches,17
+current_audit,flexible_symbol_failures,4
+current_audit,existing_frame_artifacts_missing,18
+existing_outputs,png_checked,40
+existing_outputs,png_failed,0
+existing_outputs,csv_checked,5
+existing_outputs,csv_failed,0
+reference_images,checked,4
+reference_images,failed,0
+verifier_selftest,positive_pass,25
+verifier_selftest,positive_fail,0
+verifier_selftest,negative_injected_failures_detected,1
+vector_validation,checks,36
+vector_validation,failed,0

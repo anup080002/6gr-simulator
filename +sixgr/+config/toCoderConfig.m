@@ -13,6 +13,7 @@ end
 
 % Ensure normalized before export
 cfg = sixgr.config.normalizeConfig(cfg);
+cfg = sixgr.config.validateConfig(cfg);
 catalog = sixgr.config.loadCoreCatalog();
 
 c = struct();

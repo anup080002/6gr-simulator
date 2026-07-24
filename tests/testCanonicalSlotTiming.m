@@ -12,6 +12,8 @@ assert(abs(sixgr.time.slotStartTimeSec(21, slotDur) - 10e-3) < 1e-15, "Slot 21 m
 [frame1, slotInFrame1] = sixgr.time.canonicalSlotToFrameSlot([1; 2; 21], 20);
 assert(isequal(frame1(:), [1; 1; 2]) && isequal(slotInFrame1(:), [1; 2; 1]), ...
     "Canonical slots must map to NR frame/slot without treating the slot as a frame.");
+localAssertError(@() sixgr.time.canonicalSlotToFrameSlot(1), ...
+    "sixgr:time:MissingSlotsPerFrame");
 
 raw = localRawWithApplicationPacket(21, 22, slotDur, 0.5);
 out = sixgr.kpi.reconstructLLSKPISummaryFromRaw(raw, ...
@@ -43,6 +45,18 @@ assert(any(contains(string(outMismatch.ReconstructionSummary.FailureReason), "pa
     "Strict failure must expose precomputed latency drift.");
 
 ok = true;
+end
+
+function localAssertError(fcn, expectedIdentifier)
+try
+    fcn();
+catch cause
+    assert(string(cause.identifier) == string(expectedIdentifier), ...
+        "Expected %s, received %s.", expectedIdentifier, cause.identifier);
+    return;
+end
+error("sixgr:test:ExpectedErrorNotThrown", ...
+    "Expected error %s was not thrown.", expectedIdentifier);
 end
 
 function raw = localRawWithApplicationPacket(enqueueSlot, deliverySlot, slotDur, latencyMs)

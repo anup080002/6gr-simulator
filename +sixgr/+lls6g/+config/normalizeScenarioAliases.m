@@ -33,10 +33,8 @@ cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.scs_hz", "frame.
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.cp_type", "frame.cp_type", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.sample_rate_hz", "waveform.sample_rate_hz", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "global_radio_scope.fft_size", "waveform.fft_size", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.tdd_pattern", "frame.tdd_pattern", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.special_slot_downlink_symbols", "frame.special_slot_downlink_symbols", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.ul_dl_guard_symbols", "frame.ul_dl_guard_symbols", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "frame_timing.special_slot_uplink_symbols", "frame.special_slot_uplink_symbols", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, ...
+    "frame_timing.tdd_common", "frame.tdd_common", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "deployment_topology.num_ues", "users.n_users", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "deployment_topology.inter_site_distance_m", "deployment_topology.inter_site_distance", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "deployment_topology.sector_azimuth_offsets_deg", "deployment_topology.sector_azimuths_deg", "identity");
@@ -220,7 +218,7 @@ cfg = localPreferModernRuntimeValue(cfg, "simulation.monte_carlo_iterations", "r
 cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localNormalizeFixedLinkCalibrationMode(cfg);
 cfg = localNormalizeFixedSNRSweepRunClass(cfg);
-cfg = localApplyDerivedRadioAliases(cfg, newBase);
+cfg = localApplyDeclaredRadioAliases(cfg, newBase);
 end
 
 function cfg = localExpandCanonicalControl(cfg, newBase)
@@ -327,14 +325,8 @@ mappings = {
     "radio.cp_type", "frame.cp_type", "identity"
     "radio.cp_type", "global_radio_scope.cp_type", "identity"
     "radio.slot_format", "frame.slot_format", "identity"
-    "radio.tdd_pattern", "frame.tdd_pattern", "identity"
-    "radio.tdd_pattern", "frame_timing.tdd_pattern", "identity"
-    "radio.special_slot_downlink_symbols", "frame.special_slot_downlink_symbols", "identity"
-    "radio.special_slot_downlink_symbols", "frame_timing.special_slot_downlink_symbols", "identity"
-    "radio.ul_dl_guard_symbols", "frame.ul_dl_guard_symbols", "identity"
-    "radio.ul_dl_guard_symbols", "frame_timing.ul_dl_guard_symbols", "identity"
-    "radio.special_slot_uplink_symbols", "frame.special_slot_uplink_symbols", "identity"
-    "radio.special_slot_uplink_symbols", "frame_timing.special_slot_uplink_symbols", "identity"
+    "radio.tdd_common", "frame.tdd_common", "identity"
+    "radio.tdd_common", "frame_timing.tdd_common", "identity"
     "radio.sample_rate_hz", "waveform.sample_rate_hz", "identity"
     "radio.sample_rate_hz", "global_radio_scope.sample_rate_hz", "identity"
     "radio.fft_size", "waveform.fft_size", "identity"
@@ -997,57 +989,12 @@ resourceBlockGroupCount = max(1, ceil(bandwidthRB / 6));
 cfg = sixgr.util.structSet(cfg, "control.coreset_frequency_resources", ones(1, resourceBlockGroupCount));
 end
 
-function cfg = localApplyDerivedRadioAliases(cfg, newBase)
+function cfg = localApplyDeclaredRadioAliases(cfg, newBase)
 scsKHz = localFirstFiniteScalar(sixgr.util.structGet(cfg, "frame.scs_khz", NaN), NaN);
-if ~(isfinite(scsKHz) && scsKHz > 0)
-    return;
+if isfinite(scsKHz) && scsKHz > 0
+    cfg = localReplaceIfDefaultOrMissing(cfg, newBase, ...
+        "global_radio_scope.scs_hz", scsKHz * 1e3);
 end
-
-mu = log2(scsKHz / 15);
-if isfinite(mu)
-    mu = round(mu);
-end
-
-function value = localFirstFiniteScalar(raw, defaultValue)
-if nargin < 2
-    defaultValue = NaN;
-end
-value = defaultValue;
-if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
-    return;
-end
-raw = double(raw(:));
-raw = raw(isfinite(raw));
-if ~isempty(raw)
-    value = double(raw(1));
-end
-end
-if ~(isfinite(mu) && mu >= 0)
-    return;
-end
-
-slotDurationMs = 1 / 2^double(mu);
-slotsPerFrame = 10 * 2^double(mu);
-totalSlots = localFirstFiniteScalar(sixgr.util.structGet(cfg, "run_control.total_slots", ...
-    sixgr.util.structGet(cfg, "simulation.n_slots", NaN)), NaN);
-if isfinite(totalSlots) && totalSlots > 0
-    cfg = sixgr.util.structSet(cfg, "run_control.total_time_ms", double(totalSlots) * slotDurationMs);
-    cfg = sixgr.util.structSet(cfg, "simulation.n_slots", double(totalSlots));
-end
-warmupSlots = localFirstFiniteScalar(sixgr.util.structGet(cfg, "run_control.warmup_slots", NaN), NaN);
-if isfinite(warmupSlots) && warmupSlots >= 0
-    cfg = sixgr.util.structSet(cfg, "run_control.warmup_time_ms", double(warmupSlots) * slotDurationMs);
-end
-measurementSlots = localFirstFiniteScalar(sixgr.util.structGet(cfg, "run_control.measurement_slots", NaN), NaN);
-if isfinite(measurementSlots) && measurementSlots >= 0
-    cfg = sixgr.util.structSet(cfg, "run_control.measurement_time_ms", double(measurementSlots) * slotDurationMs);
-end
-
-cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "global_radio_scope.scs_hz", scsKHz * 1e3);
-cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "global_radio_scope.numerology_mu", mu);
-cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "frame_timing.slot_duration_ms", slotDurationMs);
-cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "frame_timing.slots_per_frame", slotsPerFrame);
-cfg = localReplaceIfDefaultOrMissing(cfg, newBase, "frame_timing.symbols_per_slot", 14);
 
 carrierGrid = double(sixgr.util.structGet(cfg, "frequency.n_size_grid", NaN));
 activeMode = lower(strtrim(string(sixgr.util.structGet(cfg, "bandwidth_operation.active_bandwidth_mode", "fullband"))));
@@ -1071,6 +1018,21 @@ if dopplerMode == "derive_from_ue_speed"
         cfg = sixgr.util.structSet(cfg, "channel_model.doppler_hz", dopplerHz);
         cfg = sixgr.util.structSet(cfg, "channels.max_doppler_hz", dopplerHz);
     end
+end
+end
+
+function value = localFirstFiniteScalar(raw, defaultValue)
+if nargin < 2
+    defaultValue = NaN;
+end
+value = defaultValue;
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if ~isempty(raw)
+    value = double(raw(1));
 end
 end
 

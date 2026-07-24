@@ -124,8 +124,9 @@ rnti = 1;
 nid = [];
 mapType = "A";
 prbSetCfg = [];
-symAllocCfg = [0 14];
+symAllocCfg = [];
 mapTypeExplicit = false;
+tdraID = "";
 
 if isstruct(cfg)
     modStr = sixgr.util.structGet(cfg, "phy.pdsch.modulation", modStr);
@@ -133,13 +134,16 @@ if isstruct(cfg)
     rnti = double(sixgr.util.structGet(cfg, "phy.pdsch.RNTI", rnti));
     nid = sixgr.util.structGet(cfg, "phy.pdsch.NID", ...
         sixgr.util.structGet(cfg, "phy.pdsch.nid", nid));
-    rawMapType = string(sixgr.util.structGet(cfg, "phy.pdsch.mappingType", ""));
+    rawMapType = string(sixgr.util.structGet(cfg, "phy.pdsch.mappingType", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.MappingType", "")));
     if strlength(strtrim(rawMapType)) > 0
         mapType = rawMapType;
         mapTypeExplicit = true;
     end
     prbSetCfg = sixgr.util.structGet(cfg, "phy.pdsch.prbSet", prbSetCfg);
     symAllocCfg = sixgr.util.structGet(cfg, "phy.pdsch.symbolAllocation", symAllocCfg);
+    tdraID = string(sixgr.util.structGet(cfg, "phy.pdsch.tdraId", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.TDRAID", "")));
 end
 
 % Apply overrides
@@ -153,6 +157,10 @@ if strlength(opts.MappingType) > 0
 end
 if ~isempty(opts.PRBSet), prbSetCfg = opts.PRBSet; end
 if ~isempty(opts.SymbolAllocation), symAllocCfg = opts.SymbolAllocation; end
+
+[symAllocCfg, mapType, mapTypeExplicit] = localResolvePDSCHTDRA( ...
+    carrier, cfg, tdraID, symAllocCfg, mapType, mapTypeExplicit, ...
+    opts.FixedReferenceMode);
 
 % Assign
 pdsch.Modulation = localNormalizeModulationForCodewords(modStr, 1 + (double(numLayers) > 4));
@@ -190,20 +198,113 @@ pdsch = localReserveCSIRSResources(carrier, pdsch, cfg);
 
 end
 
-function prbVec = localExpandPRBSet(prbSetCfg, nSizeGrid)
-% Accept [] -> full grid, [start end] -> start:end, else vector.
-
-if isempty(prbSetCfg)
-    prbVec = 0:(nSizeGrid-1);
+function [symbolAllocation, mappingType, mappingExplicit] = ...
+        localResolvePDSCHTDRA(carrier, cfg, tdraID, ...
+        symbolAllocation, mappingType, mappingExplicit, fixedReferenceMode)
+strict = logical(fixedReferenceMode);
+if isstruct(cfg)
+    strict = strict || ...
+        logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
+        logical(sixgr.util.structGet(cfg, "validation.strict", false));
+end
+symbolsPerSlot = localSymbolsPerSlot(carrier);
+tdraID = strtrim(string(tdraID));
+if strlength(tdraID) > 0
+    raw = struct( ...
+        "TDRAID", tdraID, ...
+        "Channel", "PDSCH", ...
+        "DMRSTypeAPosition", localPDSCHDMRSTypeAPosition(cfg));
+    if ~isempty(symbolAllocation)
+        raw.StartSymbol = double(symbolAllocation(1));
+        if numel(symbolAllocation) >= 2
+            raw.NumSymbols = double(symbolAllocation(2));
+        end
+    end
+    if logical(mappingExplicit)
+        raw.MappingType = mappingType;
+    end
+    tdra = sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+        raw, symbolsPerSlot);
+    symbolAllocation = [tdra.StartSymbol tdra.NumSymbols];
+    mappingType = tdra.MappingType;
+    mappingExplicit = true;
     return;
 end
 
+if isempty(symbolAllocation)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "PDSCH transmission requires phy.pdsch.tdraId or an explicit " + ...
+        "phy.pdsch.symbolAllocation test/configuration grant. A missing " + ...
+        "allocation is not expanded to a full slot.");
+end
+if numel(symbolAllocation) ~= 2
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidTDRA", ...
+        "PDSCH SymbolAllocation must be [zeroBasedStart positiveLength].");
+end
+if strict && ~logical(mappingExplicit)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "Strict PDSCH transmission requires an explicit TDRA MappingType A or B.");
+end
+raw = struct( ...
+    "StartSymbol", double(symbolAllocation(1)), ...
+    "NumSymbols", double(symbolAllocation(2)), ...
+    "MappingType", string(mappingType));
+tdra = sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+    raw, symbolsPerSlot);
+symbolAllocation = [tdra.StartSymbol tdra.NumSymbols];
+mappingType = tdra.MappingType;
+end
+
+function position = localPDSCHDMRSTypeAPosition(cfg)
+position = 2;
+if ~isstruct(cfg)
+    return;
+end
+candidate = sixgr.util.structGet(cfg, ...
+    "phy.pdsch.dmrs.typeAPosition", ...
+    sixgr.util.structGet(cfg, ...
+    "phy.pdsch.dmrs.DMRSTypeAPosition", []));
+if ~isempty(candidate)
+    position = double(candidate);
+end
+end
+
+function count = localSymbolsPerSlot(carrier)
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    double(carrier.SubcarrierSpacing), string(carrier.CyclicPrefix), ...
+    "generic_waveform_test", "");
+count = double(numerology.SymbolsPerSlot);
+end
+
+function prbVec = localExpandPRBSet(prbSetCfg, nSizeGrid)
+% Accept [start end] -> start:end, otherwise preserve an explicit vector.
+
+if isempty(prbSetCfg)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingPRBSet", ...
+        "PDSCH transmission requires an explicit nonempty PRBSet. A " + ...
+        "missing allocation is not expanded to the full carrier grid.");
+end
+if ~(isnumeric(prbSetCfg) && isreal(prbSetCfg))
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidPRBSet", ...
+        "PDSCH PRBSet must be a real numeric vector.");
+end
+
 prbSetCfg = double(prbSetCfg(:).');
+if any(~isfinite(prbSetCfg)) || any(prbSetCfg ~= fix(prbSetCfg)) || ...
+        any(prbSetCfg < 0) || any(prbSetCfg >= double(nSizeGrid))
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidPRBSet", ...
+        "PDSCH PRBSet must contain integer indices in [0,%d].", ...
+        round(double(nSizeGrid)) - 1);
+end
 
 if numel(prbSetCfg) == 2 && prbSetCfg(2) >= prbSetCfg(1)
     prbVec = prbSetCfg(1):prbSetCfg(2);
 else
     prbVec = prbSetCfg;
+end
+if isempty(prbVec)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingPRBSet", ...
+        "PDSCH transmission requires an explicit nonempty PRBSet.");
 end
 
 end
@@ -386,7 +487,8 @@ end
 
 symAlloc = double(pdsch.SymbolAllocation(:).');
 if numel(symAlloc) < 2
-    symAlloc = [0 14];
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "PDSCH SymbolAllocation must be present before mapping validation.");
 end
 startSym = max(0, round(double(symAlloc(1))));
 typeAPos = 2;

@@ -1183,6 +1183,17 @@ effectiveAlpha = min(1, max(baseAlpha, double(effectiveAlpha)));
 end
 
 function slotDuration_s = localSlotDurationSeconds(cfg)
+scsKHz = localFirstFiniteConfigValue(cfg, [ ...
+    "phy.carrier.SubcarrierSpacing"
+    "phy.carrier.SubcarrierSpacing_kHz"
+    "phy.numerology.scs_kHz"
+    "frame.scs_khz"], NaN);
+if isfinite(scsKHz)
+    numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+        scsKHz, "normal", "generic_waveform_test", "");
+    slotDuration_s = double(numerology.SlotDurationSeconds);
+    return;
+end
 slotDuration_s = localFirstFiniteConfigValue(cfg, [ ...
     "phy.numerology.slotDuration_s"
     "phy.numerology.slotDurationSeconds"
@@ -1197,11 +1208,7 @@ if isfinite(slotDuration_ms) && slotDuration_ms > 0
     slotDuration_s = double(slotDuration_ms) * 1e-3;
     return;
 end
-scsKHz = localFirstFiniteConfigValue(cfg, [ ...
-    "phy.carrier.SubcarrierSpacing"
-    "phy.numerology.scs_kHz"], 30);
-mu = round(log2(max(double(scsKHz), 15) / 15));
-slotDuration_s = 1e-3 / max(1, 2 ^ max(0, mu));
+slotDuration_s = NaN;
 end
 
 function threshold = localMCSJumpThreshold(cfg)
@@ -1289,24 +1296,7 @@ dopplerHz = localFirstFiniteConfigValue(cfg, [ ...
     "channel.dopplerHz"
     "channel.fading.maxDoppler_Hz"
     "phy.channel.doppler_Hz"], NaN);
-slotDuration_s = localFirstFiniteConfigValue(cfg, [ ...
-    "phy.numerology.slotDuration_s"
-    "phy.numerology.slotDurationSeconds"], NaN);
-if ~(isfinite(slotDuration_s) && slotDuration_s > 0)
-    slotDuration_ms = localFirstFiniteConfigValue(cfg, [ ...
-        "phy.numerology.slotDuration_ms"
-        "frame_timing.slot_duration_ms"], NaN);
-    if isfinite(slotDuration_ms) && slotDuration_ms > 0
-        slotDuration_s = slotDuration_ms * 1e-3;
-    end
-end
-if ~(isfinite(slotDuration_s) && slotDuration_s > 0)
-    scsKHz = localFirstFiniteConfigValue(cfg, [ ...
-        "phy.carrier.SubcarrierSpacing"
-        "phy.numerology.scs_kHz"], 30);
-    mu = round(log2(max(double(scsKHz), 15) / 15));
-    slotDuration_s = 1e-3 / max(1, 2 ^ max(0, mu));
-end
+slotDuration_s = localSlotDurationSeconds(cfg);
 if ~(isfinite(dopplerHz) && dopplerHz >= 0 && isfinite(slotDuration_s) && slotDuration_s > 0)
     alpha = 0.2;
     source = "doppler_unavailable_default_alpha";

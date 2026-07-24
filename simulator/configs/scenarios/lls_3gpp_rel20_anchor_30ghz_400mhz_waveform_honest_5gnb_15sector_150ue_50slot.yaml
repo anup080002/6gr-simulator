@@ -93,7 +93,7 @@ simulation:
   snr_sweep_offsets_db: [0]
 
 frequency:
-  range_name: FR2
+  range_name: FR2-1
   band_name: fr2_30ghz_400mhz
   center_frequency_hz: 30000000000
   bandwidth_hz: 400000000
@@ -117,14 +117,18 @@ frame:
   scs_khz: 120
   cp_type: normal
   slot_format: flexible
-  tdd_pattern: DDDSU
-  special_slot_downlink_symbols: 12
-  ul_dl_guard_symbols: 1
-  special_slot_uplink_symbols: 1
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 120
+    Pattern1:
+      PeriodicityMilliseconds: 0.625
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 1
 
 global_radio_scope:
   carrier_frequency_hz: 30000000000
-  frequency_range_label: FR2
+  frequency_range_label: FR2-1
   channel_bandwidth_hz: 400000000
   simulation_bandwidth_hz: 400000000
   occupied_bandwidth_hz: 380160000
@@ -143,10 +147,14 @@ frame_timing:
   slot_duration_ms: 0.125
   symbols_per_slot: 14
   slots_per_frame: 80
-  tdd_pattern: DDDSU
-  special_slot_downlink_symbols: 12
-  ul_dl_guard_symbols: 1
-  special_slot_uplink_symbols: 1
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 120
+    Pattern1:
+      PeriodicityMilliseconds: 0.625
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 1
 
 waveform:
   fft_size: 4096
@@ -204,6 +212,9 @@ channel_model:
 
 reference_signals:
   ssb_enabled: true
+  ssb_case: "Case D"
+  ssb_scs_khz: 120
+  ssb_lmax: 64
   pbch_enabled: true
   pdcch_dmrs_enabled: true
   pdsch_dmrs_ports: 2

@@ -454,11 +454,16 @@ layout = sixgr.report.resultLayout(runFolder);
 dlTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
 ulTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
 opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
-opSummary.Radio.Numerology_mu = localDeriveNumerologyMu(double(scfg.get("frame.scs_khz", NaN)));
 opSummary.Radio.SCS_kHz = double(scfg.get("frame.scs_khz", NaN));
-opSummary.Radio.SlotDuration_ms = localDeriveSlotDurationMs(opSummary.Radio.Numerology_mu);
-opSummary.Radio.SlotsPerFrame = localDeriveSlotsPerFrame(opSummary.Radio.Numerology_mu);
-opSummary.Radio.SymbolsPerSlot = 14;
+cp = string(scfg.get("frame.cp_type", ...
+    sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal")));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    opSummary.Radio.SCS_kHz, cp, "generic_waveform_test", "");
+opSummary.Radio.Numerology_mu = double(numerology.Mu);
+opSummary.Radio.SlotDuration_ms = ...
+    double(numerology.SlotDurationMilliseconds);
+opSummary.Radio.SlotsPerFrame = double(numerology.SlotsPerFrame);
+opSummary.Radio.SymbolsPerSlot = double(numerology.SymbolsPerSlot);
 opSummary.Radio.NumerologySource = "frame.scs_khz_runtime_authority";
 opSummary.Radio.TimingInterpretationSource = "nr_mu_from_scs";
 numerologyMu = double(sixgr.util.structGet(opSummary, "Radio.Numerology_mu", NaN));
@@ -791,14 +796,18 @@ scsKHz = double(scsKHz);
 if ~(isfinite(scsKHz) && scsKHz > 0)
     return;
 end
-mu = round(log2(scsKHz / 15));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scsKHz, "normal", "generic_waveform_test", "");
+mu = double(numerology.Mu);
 end
 
 function slotDuration_ms = localDeriveSlotDurationMs(mu)
 slotDuration_ms = NaN;
 mu = double(mu);
 if isfinite(mu)
-    slotDuration_ms = 1 / 2^mu;
+    numerology = sixgr.phy.frame.AbsoluteTime.resolveNumerology(mu);
+    slotDuration_ms = 1e3 * double(numerology.TicksPerSlot) / ...
+        double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
 end
 end
 
@@ -806,6 +815,7 @@ function slotsPerFrame = localDeriveSlotsPerFrame(mu)
 slotsPerFrame = NaN;
 mu = double(mu);
 if isfinite(mu)
-    slotsPerFrame = 10 * 2^mu;
+    numerology = sixgr.phy.frame.AbsoluteTime.resolveNumerology(mu);
+    slotsPerFrame = double(numerology.SlotsPerFrame);
 end
 end

@@ -1,0 +1,47 @@
+{
+  "repository": "/mnt/data/6gr_work/6GR Simulator_v2_clean_main",
+  "output": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\audit\\frame_grid_phase\\frame_grid_codex_pack",
+  "matlab_available": false,
+  "prompt": {
+    "lines": 1076,
+    "bytes": 43353
+  },
+  "vectors": {
+    "numerology": 18,
+    "carrier_grid": 71,
+    "tdd": 11,
+    "allocation": 14,
+    "total": 114
+  },
+  "golden_expected_outputs": {
+    "numerology_rows": 18,
+    "carrier_rows": 71,
+    "slot_symbol_rows": 510,
+    "allocation_rows": 14
+  },
+  "current_audit": {
+    "static_failures": 12,
+    "carrier_grid_mismatches": 17,
+    "flexible_symbol_failures": 4,
+    "existing_frame_artifacts_missing": 18
+  },
+  "existing_outputs": {
+    "png_checked": 40,
+    "png_failed": 0,
+    "csv_checked": 5,
+    "csv_failed": 0
+  },
+  "reference_images": {
+    "checked": 4,
+    "failed": 0
+  },
+  "verifier_selftest": {
+    "positive_pass": 25,
+    "positive_fail": 0,
+    "negative_injected_failures_detected": 1
+  },
+  "vector_validation": {
+    "checks": 36,
+    "failed": 0
+  }
+}

@@ -60,88 +60,53 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
     else
         preIdx = opts.PreambleIndex;
     end
-    try
-        prach.PreambleIndex = preIdx;
-    catch
-        % Some configurations do not require explicit PreambleIndex at TX time.
-    end
+    prach.PreambleIndex = preIdx;
 
-    % NPRACHSlot (controls current PRACH slot in OFDM modulator)
+    % NPRACHSlot controls the current PRACH slot in the OFDM modulator,
+    % but it is never accepted as a direct Toolbox-only override. Both
+    % default and explicit selections are mapped through the canonical
+    % Release-18 occasion resolver first.
     if isempty(opts.NPRACHSlot)
-        nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach);
+        canonicalOccasion = sixgr.rach.mapPRACHToOccasion( ...
+            cfg, "OccasionIndex", 1, "Carrier", carrier, "PRACH", prach);
     else
-        nslot = opts.NPRACHSlot;
+        canonicalOccasion = sixgr.rach.mapPRACHToOccasion( ...
+            cfg, "NPRACHSlot", double(opts.NPRACHSlot), ...
+            "Carrier", carrier, "PRACH", prach);
     end
-    try
-        carrier.NSlot = nslot;
-    catch
-        % Leave carrier slot unchanged if the property is unavailable
-    end
-    try
-        prach.NPRACHSlot = nslot;
-    catch
-        % Leave default if property not available
-    end
+    nslot = double(canonicalOccasion.PRACHSlotIndex0);
+    carrier.NFrame = double(canonicalOccasion.Carrier.NFrame);
+    carrier.NSlot = double(canonicalOccasion.Carrier.NSlot);
+    prach.NPRACHSlot = nslot;
+    prach.ActivePRACHSlot = double(canonicalOccasion.ActivePRACHSlot);
+    prach.TimeIndex = double(canonicalOccasion.TimeIndex);
+    prach.FrequencyIndex = double(canonicalOccasion.FrequencyIndex);
 
     % ---- Generate PRACH symbols and waveform -----------------------------
     % Symbols (and optional symbol info)
-    symInfo = struct();
-    try
-        [prachSym, symInfo] = nrPRACH(carrier, prach, "OutputDataType", char(opts.OutputDataType));
-    catch ME
-        % Fallback: older signature without OutputDataType
-        try
-            [prachSym, symInfo] = nrPRACH(carrier, prach);
-        catch
-            error("sixgr:phy:ul:PRACH_Tx:Failed", "nrPRACH failed: %s", ME.message);
-        end
-    end
+    [prachSym, symInfo] = nrPRACH( ...
+        carrier, prach, "OutputDataType", char(opts.OutputDataType));
 
     if isempty(prachSym)
-        tx = struct();
-        tx.Waveform   = [];
-        tx.Grid       = [];
-        tx.Symbols    = prachSym;
-        tx.Indices    = [];
-        tx.Carrier    = carrier;
-        tx.PRACH      = prach;
-        tx.SampleRate = NaN;
-
-        info = struct();
-        info.SymbolInfo = symInfo;
-        info.IndicesInfo = struct();
-        info.OFDMInfo = struct("SampleRate", NaN);
-        info.ActiveOccasionPresent = false;
-        info.ResolvedNPRACHSlot = double(nslot);
-        return;
+        error("sixgr:phy:ul:PRACH_Tx:InactiveOccasion", ...
+            "PRACH slot %d is not active for configuration index %d.", ...
+            nslot, double(prach.ConfigurationIndex));
     end
 
     % Indices and grid
     [prachInd, indInfo] = nrPRACHIndices(carrier, prach); % 1-based linear indices
     if isempty(prachInd)
-        tx = struct();
-        tx.Waveform   = [];
-        tx.Grid       = [];
-        tx.Symbols    = prachSym;
-        tx.Indices    = prachInd;
-        tx.Carrier    = carrier;
-        tx.PRACH      = prach;
-        tx.SampleRate = NaN;
-
-        info = struct();
-        info.SymbolInfo = symInfo;
-        info.IndicesInfo = indInfo;
-        info.OFDMInfo = struct("SampleRate", NaN);
-        info.ActiveOccasionPresent = false;
-        info.ResolvedNPRACHSlot = double(nslot);
-        return;
+        error("sixgr:phy:ul:PRACH_Tx:InactiveOccasion", ...
+            "PRACH slot %d has no indices for configuration index %d.", ...
+            nslot, double(prach.ConfigurationIndex));
     end
     prachGrid = nrPRACHGrid(carrier, prach);
     prachGrid(prachInd) = prachSym;
 
     % PRACH OFDM modulation (note: PRACH has dedicated OFDM numerology)
     if isempty(opts.Windowing)
-        [waveform, ofdmInfo] = nrPRACHOFDMModulate(carrier, prach, prachGrid);
+        [waveform, ofdmInfo] = nrPRACHOFDMModulate( ...
+            carrier, prach, prachGrid, "Windowing", 0);
     else
         [waveform, ofdmInfo] = nrPRACHOFDMModulate(carrier, prach, prachGrid, "Windowing", opts.Windowing);
     end
@@ -162,49 +127,5 @@ function [tx, info] = PRACH_Tx(cfg, varargin)
     info.OFDMInfo    = ofdmInfo;
     info.ActiveOccasionPresent = true;
     info.ResolvedNPRACHSlot = double(nslot);
-end
-
-% -------------------------------------------------------------------------
-function nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach)
-cfgSlot = sixgr.util.structGet(cfg, "phy.prach.nPrachSlot", []);
-if isempty(cfgSlot)
-    cfgSlot = sixgr.util.structGet(cfg, "phy.prach.NPRACHSlot", []);
-end
-if ~isempty(cfgSlot)
-    vals = double(cfgSlot(:));
-    vals = vals(isfinite(vals));
-    if ~isempty(vals)
-        nslot = vals(1);
-        return;
-    end
-end
-
-startSlot = double(carrier.NSlot);
-if ~(isfinite(startSlot) && startSlot >= 0)
-    startSlot = 0;
-end
-scanSlots = 160;
-nslot = startSlot;
-for offset = 0:scanSlots
-    candidate = round(startSlot) + offset;
-    c = carrier;
-    p = prach;
-    try
-        c.NSlot = candidate;
-    catch
-    end
-    try
-        p.NPRACHSlot = candidate;
-    catch
-    end
-    try
-        sym = nrPRACH(c, p);
-        ind = nrPRACHIndices(c, p);
-        if ~isempty(sym) && ~isempty(ind)
-            nslot = candidate;
-            return;
-        end
-    catch
-    end
-end
+    info.PRACHOccasion = canonicalOccasion;
 end

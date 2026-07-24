@@ -1,83 +1,60 @@
-function prach = applyPRACHCfgToObject(prach, cfg, carrier)
-%APPLYPRACHCFGTOOBJECT Apply cfg.phy.prach to an nrPRACHConfig object.
+function prach = applyPRACHCfgToObject(prach, cfg, ~)
+%APPLYPRACHCFGTOOBJECT Apply explicit PRACH fields without timing guesses.
+%
+% Occasion selection is owned by PRACHOccasionResolver through
+% mapPRACHToOccasion.  This function only materializes configured values.
 
-duplex = sixgr.util.structGet(cfg, "phy.duplex.mode", "TDD");
-try
-    prach.DuplexMode = upper(char(string(duplex)));
-catch
-end
-
-fc = double(sixgr.util.structGet(cfg, "channel.fc_Hz", 3.5e9));
-try
-    if fc >= 24.25e9
-        prach.FrequencyRange = "FR2";
-    else
-        prach.FrequencyRange = "FR1";
-    end
-catch
+duplex = upper(string(sixgr.util.structGet(cfg, ...
+    "phy.duplex.mode", sixgr.util.structGet(cfg, ...
+    "frequency.duplex_mode", ""))));
+if ~any(duplex == ["FDD", "TDD", "SUL"])
+    error("sixgr:phy:frame:InvalidPRACHFrequencyDuplexContext", ...
+        "PRACH configuration requires DuplexMode FDD, TDD, or SUL.");
 end
 
-cfgIdx = sixgr.util.structGet(cfg, "phy.prach.configurationIndex", []);
-if ~isempty(cfgIdx)
-    try
-        prach.ConfigurationIndex = cfgIdx;
-    catch
-    end
+fcHz = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.centerFrequency_Hz", ...
+    sixgr.util.structGet(cfg, "frequency.center_frequency_hz", ...
+    sixgr.util.structGet(cfg, "channel.fc_Hz", NaN))));
+range = sixgr.phy.frame.FrequencyRangeResolver.resolve( ...
+    "CenterFrequencyHz", fcHz);
+if startsWith(string(range.FrequencyRange), "FR2")
+    toolboxRange = "FR2";
+else
+    toolboxRange = "FR1";
 end
 
-scs = sixgr.util.structGet(cfg, "phy.prach.subcarrierSpacing_kHz", []);
-if ~isempty(scs)
-    try
-        prach.SubcarrierSpacing = scs;
-    catch
-    end
+configurationIndex = sixgr.util.structGet(cfg, ...
+    "phy.prach.configurationIndex", ...
+    sixgr.util.structGet(cfg, "random_access.configuration_index", []));
+scsKHz = sixgr.util.structGet(cfg, ...
+    "phy.prach.subcarrierSpacing_kHz", ...
+    sixgr.util.structGet(cfg, "random_access.subcarrier_spacing_khz", []));
+if isempty(configurationIndex) || isempty(scsKHz)
+    error("sixgr:phy:frame:MissingPRACHConfiguration", ...
+        "PRACH configuration index and PRACH SCS must be explicit.");
 end
 
-seqIdx = sixgr.util.structGet(cfg, "phy.prach.rootSeqIndex", []);
-if isempty(seqIdx)
-    seqIdx = sixgr.util.structGet(cfg, "phy.prach.sequenceIndex", []);
-end
-if ~isempty(seqIdx)
-    try
-        prach.SequenceIndex = seqIdx;
-    catch
-    end
-end
-
-zcz = sixgr.util.structGet(cfg, "phy.prach.zeroCorrelationZone", []);
-if ~isempty(zcz)
-    try
-        prach.ZeroCorrelationZone = zcz;
-    catch
-    end
-end
-
-freqStart = sixgr.util.structGet(cfg, "phy.prach.frequencyStart", []);
-if ~isempty(freqStart)
-    try
-        prach.FrequencyStart = freqStart;
-    catch
-    end
-end
-
-cfgSlot = sixgr.util.structGet(cfg, "phy.prach.nPrachSlot", []);
-if isempty(cfgSlot)
-    cfgSlot = sixgr.util.structGet(cfg, "phy.prach.NPRACHSlot", []);
-end
-if ~isempty(cfgSlot)
-    vals = double(cfgSlot(:));
-    vals = vals(isfinite(vals));
-    if ~isempty(vals)
-        try
-            prach.NPRACHSlot = vals(1);
-        catch
-        end
-        return;
-    end
-end
-
-try
-    prach.NPRACHSlot = carrier.NSlot;
-catch
-end
+prach.FrequencyRange = char(toolboxRange);
+prach.DuplexMode = char(duplex);
+prach.ConfigurationIndex = double(configurationIndex);
+prach.SubcarrierSpacing = double(scsKHz);
+prach.SequenceIndex = double(sixgr.util.structGet(cfg, ...
+    "phy.prach.rootSeqIndex", ...
+    sixgr.util.structGet(cfg, "phy.prach.sequenceIndex", ...
+    sixgr.util.structGet(cfg, "random_access.root_sequence_index", 0))));
+prach.RestrictedSet = char(string(sixgr.util.structGet(cfg, ...
+    "phy.prach.restrictedSet", ...
+    sixgr.util.structGet(cfg, "random_access.restricted_set", ...
+    "UnrestrictedSet"))));
+prach.ZeroCorrelationZone = double(sixgr.util.structGet(cfg, ...
+    "phy.prach.zeroCorrelationZone", ...
+    sixgr.util.structGet(cfg, "random_access.zero_correlation_zone", 0)));
+prach.FrequencyStart = double(sixgr.util.structGet(cfg, ...
+    "phy.prach.frequencyStart", ...
+    sixgr.util.structGet(cfg, "random_access.frequency_start", 0)));
+prach.RBOffset = double(sixgr.util.structGet(cfg, ...
+    "phy.prach.RBOffset", 0));
+prach.RBSetOffset = double(sixgr.util.structGet(cfg, ...
+    "phy.prach.RBSetOffset", 0));
 end

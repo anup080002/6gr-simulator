@@ -1,0 +1,16 @@
+Suite,TestsRun,Passed,Failed,Skipped,Blocked,Status,ResultFile,IndexConvention
+testFrameNumerologyCatalog,1,1,0,0,0,PASS,test_logs\testFrameNumerologyCatalog.txt,zero_based_phy_indices
+testTransmissionBandwidthCatalog,1,1,0,0,0,PASS,test_logs\testTransmissionBandwidthCatalog.txt,zero_based_phy_indices
+testOFDMSamplingResolver,1,1,0,0,0,PASS,test_logs\testOFDMSamplingResolver.txt,zero_based_phy_indices
+testTDDCommonPattern,1,1,0,0,0,PASS,test_logs\testTDDCommonPattern.txt,zero_based_phy_indices
+testTDDDedicatedOverride,1,1,0,0,0,PASS,test_logs\testTDDDedicatedOverride.txt,zero_based_phy_indices
+testTDDMultiNumerologyExpansion,1,1,0,0,0,PASS,test_logs\testTDDMultiNumerologyExpansion.txt,zero_based_phy_indices
+testFlexibleSymbolAllocator,1,1,0,0,0,PASS,test_logs\testFlexibleSymbolAllocator.txt,zero_based_phy_indices
+testFDDSeparateFrameGrids,1,1,0,0,0,PASS,test_logs\testFDDSeparateFrameGrids.txt,zero_based_phy_indices
+testControlDataAllocationIndependence,1,1,0,0,0,PASS,test_logs\testControlDataAllocationIndependence.txt,zero_based_phy_indices
+testResourceAllocationValidator,1,1,0,0,0,PASS,test_logs\testResourceAllocationValidator.txt,zero_based_phy_indices
+testSSBTimingResolver,1,1,0,0,0,PASS,test_logs\testSSBTimingResolver.txt,zero_based_phy_indices
+testPRACHOccasionResolver,1,1,0,0,0,PASS,test_logs\testPRACHOccasionResolver.txt,zero_based_phy_indices
+testTimingRelationEngine,1,1,0,0,0,PASS,test_logs\testTimingRelationEngine.txt,zero_based_phy_indices
+testMultiBWPFrameGrid,1,1,0,0,0,PASS,test_logs\testMultiBWPFrameGrid.txt,zero_based_phy_indices
+testCarrierAggregationFrameTiming,1,1,0,0,0,PASS,test_logs\testCarrierAggregationFrameTiming.txt,zero_based_phy_indices

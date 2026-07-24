@@ -1,0 +1,37 @@
+Check,Status,Observed,Expected,Detail
+numerology_vector_row_count,PASS,18,18,
+numerology_NUM-N-00,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-N-01,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-N-02,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-N-03,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-N-04,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-N-05,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-N-06,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+numerology_NUM-E-02,PASS,formula_match,formula_match,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+carrier_vector_row_count,PASS,71,71,
+carrier_valid_rows_have_nrb_guardband,PASS,56,56,
+carrier_invalid_rows_have_no_nrb_guardband,PASS,15,15,
+tdd_vector_row_count,PASS,11,11,
+tdd_map_TDD-001,PASS,"[14, 14, 14, 14, 14, 14, 14, 14, 14, 14]",all 14,Common pattern preserves eight flexible symbols in the mixed slot.
+tdd_map_TDD-002,PASS,"[14, 14, 14, 14, 14, 14, 14, 14, 14, 14]",all 14,Dedicated configuration changes only common-flexible symbols.
+tdd_map_TDD-003,PASS,[14],all 14,All-flex common slot may be dedicated to all DL.
+tdd_map_TDD-004,PASS,[14],all 14,All-flex common slot may be dedicated to all UL.
+tdd_map_TDD-005,PASS,[14],all 14,Explicit dedicated mixed slot leaves the middle symbols flexible.
+tdd_map_TDD-006,PASS,"[14, 14, 14, 14, 14, 14, 14, 14, 14, 14]",all 14,Pattern1 and pattern2 concatenate and their total period divides 20 ms.
+tdd_map_TDD-011,PASS,"[12, 12, 12, 12]",all 12,Extended CP uses 12 symbols and preserves eight flexible symbols.
+tdd_vectors_preserve_unresolved_flex,PASS,5,5,
+allocation_vector_row_count,PASS,14,14,
+allocation_vectors_include_positive_negative,PASS,both,both,
+golden_expected_frame_numerology_matrix.csv,PASS,18,18,
+golden_expected_carrier_grid_matrix.csv,PASS,71,71,
+golden_expected_slot_symbol_ownership.csv,PASS,510,510,
+golden_expected_allocation_legality.csv,PASS,14,14,
+current_static_shortcut_failures,PASS,12,12,
+current_carrier_grid_mismatches,PASS,17,17,
+current_flexible_symbol_failures,PASS,4,4,
+existing_png_structural_passes,PASS,40,40,
+existing_csv_parse_passes,PASS,5,5,
+required_frame_artifacts_absent,PASS,18,18,
+reference_image_integrity,PASS,4,4,
+artifact_verifier_positive_selftest,PASS,pass=25;fail=0,pass=25;fail=0,
+artifact_verifier_negative_selftest,PASS,pass=24;fail=1,exactly one injected failure,

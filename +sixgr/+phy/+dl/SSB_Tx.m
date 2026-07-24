@@ -1,368 +1,373 @@
 function [waveform, waveInfo, txCfg] = SSB_Tx(cfg, varargin)
-%SSB_Tx Generate a downlink waveform containing an SS burst (SSB).
+%SSB_TX Generate one standards-validated NR SS/PBCH burst waveform.
 %
-%   [waveform, waveInfo, txCfg] = sixgr.phy.dl.SSB_Tx(cfg, ...)
-%
-% This wrapper uses 5G Toolbox waveform generation objects:
-%   - nrDLCarrierConfig
-%   - nrSCSCarrierConfig
-%   - nrWavegenBWPConfig
-%   - nrWavegenSSBurstConfig
-%   - nrWaveformGenerator
-%
-% The function is designed to be robust to common config mistakes. In
-% particular, if cfg.phy.carrier.NSizeGrid exceeds the maximum allowed for
-% the configured channel bandwidth and subcarrier spacing, nrWaveformGenerator
-% throws an error that includes the maximum allowed RB count. This wrapper
-% catches that case, clamps NSizeGrid, and retries.
-%
-% Outputs:
-%   waveform : complex time-domain waveform (column vector)
-%   waveInfo : struct from nrWaveformGenerator
-%   txCfg    : struct with key parameters used in the generation
-%
-% Notes:
-%   - This is intended for link-level initial access tests (SSB/PBCH).
-%   - Data channels are disabled by default.
-
-% -------------------- Inputs --------------------
+% The carrier transmission grid and SSB timing are resolved before the
+% Toolbox waveform generator is called.  Invalid grids, cases, Lmax values,
+% or SSB indices are never clamped, rewritten, or retried.
 
 p = inputParser;
-
-addParameter(p, 'NumSubframes', 10);
-addParameter(p, 'NCellID', []);
-addParameter(p, 'SSBIndex', 0);
-addParameter(p, 'SSBBlockPattern', []);
-addParameter(p, 'SubcarrierSpacingCommon_kHz', []);
-addParameter(p, 'ChannelBandwidth_MHz', []);
-addParameter(p, 'FrequencyRange', []);
-addParameter(p, 'CarrierFrequency_Hz', sixgr.util.structGet(cfg, 'channel.fc_Hz', 3.5e9));
-addParameter(p, 'EnablePDSCH', false);
-addParameter(p, 'EnableCSIRS', false);
-
-parse(p, varargin{:});
+p.FunctionName = "sixgr.phy.dl.SSB_Tx";
+p.addParameter("NumSubframes", 10, @localPositiveInteger);
+p.addParameter("NCellID", [], @(x) isempty(x) || localNonnegativeInteger(x));
+p.addParameter("SSBIndex", 0, @localNonnegativeInteger);
+p.addParameter("SSBBlockPattern", [], @localOptionalTextScalar);
+p.addParameter("SubcarrierSpacingCommon_kHz", [], ...
+    @(x) isempty(x) || localPositiveFinite(x));
+p.addParameter("ChannelBandwidth_MHz", [], ...
+    @(x) isempty(x) || localPositiveFinite(x));
+p.addParameter("FrequencyRange", [], @localOptionalTextScalar);
+p.addParameter("CarrierFrequency_Hz", ...
+    localCarrierFrequency(cfg), @localPositiveFinite);
+p.addParameter("EnablePDSCH", false, @localLogicalScalar);
+p.addParameter("EnableCSIRS", false, @localLogicalScalar);
+p.addParameter("TimingOnly", false, @localLogicalScalar);
+p.parse(varargin{:});
 opt = p.Results;
 
-% Carrier parameters from cfg (with optional overrides)
-NCellID = sixgr.util.structGet(cfg, 'phy.carrier.NCellID', 1);
-SCSCarrier_kHz = sixgr.util.structGet(cfg, 'phy.carrier.SubcarrierSpacing_kHz', 30);
-SSBCommonSCS_kHz = sixgr.util.structGet(cfg, 'phy.ssb.scs_kHz', []);
-NSizeGrid = sixgr.util.structGet(cfg, 'phy.carrier.NSizeGrid', 52);
-NStartGrid = sixgr.util.structGet(cfg, 'phy.carrier.NStartGrid', 0);
-ChannelBW_MHz = sixgr.util.structGet(cfg, 'phy.channelBandwidth_MHz', 20);
-FrequencyRange = localResolveFrequencyRange(cfg, opt.FrequencyRange, opt.CarrierFrequency_Hz);
-
+nCellID = double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 1));
 if ~isempty(opt.NCellID)
-    NCellID = double(opt.NCellID);
+    nCellID = double(opt.NCellID);
+end
+if ~(localNonnegativeInteger(nCellID) && nCellID <= 1007)
+    error("sixgr:phy:SSB_Tx:InvalidNCellID", ...
+        "NCellID must be an integer in [0,1007].");
 end
 
+carrierFrequencyHz = double(opt.CarrierFrequency_Hz);
+rangeSubtype = localResolveFrequencyRangeSubtype( ...
+    cfg, opt.FrequencyRange, carrierFrequencyHz);
+toolboxFrequencyRange = localToolboxFrequencyRange(rangeSubtype);
+
+carrierSCSKHz = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.SubcarrierSpacing_kHz", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30)));
+ssbSCSKHz = sixgr.util.structGet(cfg, "phy.ssb.scs_kHz", NaN);
 if ~isempty(opt.SubcarrierSpacingCommon_kHz)
-    SCSCarrier_kHz = double(opt.SubcarrierSpacingCommon_kHz);
-    SSBCommonSCS_kHz = double(opt.SubcarrierSpacingCommon_kHz);
+    carrierSCSKHz = double(opt.SubcarrierSpacingCommon_kHz);
+    ssbSCSKHz = double(opt.SubcarrierSpacingCommon_kHz);
 end
-
+channelBandwidthMHz = localChannelBandwidthMHz(cfg);
 if ~isempty(opt.ChannelBandwidth_MHz)
-    ChannelBW_MHz = double(opt.ChannelBandwidth_MHz);
+    channelBandwidthMHz = double(opt.ChannelBandwidth_MHz);
+end
+nStartGrid = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.NStartGrid", 0));
+configuredGrid = sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", []);
+
+catalogArgs = { ...
+    "Role", "gNB", ...
+    "FrequencyRange", rangeSubtype, ...
+    "CenterFrequencyHz", carrierFrequencyHz, ...
+    "ChannelBandwidthMHz", channelBandwidthMHz, ...
+    "SubcarrierSpacingKHz", carrierSCSKHz, ...
+    "NStartGrid", nStartGrid};
+if ~isempty(configuredGrid)
+    catalogArgs = [catalogArgs, ...
+        {"ConfiguredNSizeGrid", configuredGrid}]; %#ok<AGROW>
+end
+carrierGrid = sixgr.phy.frame.TransmissionBandwidthCatalog.resolve( ...
+    catalogArgs{:});
+nSizeGrid = double(carrierGrid.NSizeGrid);
+samplingCarrier = nrCarrierConfig;
+samplingCarrier.NCellID = nCellID;
+samplingCarrier.SubcarrierSpacing = carrierSCSKHz;
+samplingCarrier.CyclicPrefix = char(string(sixgr.util.structGet( ...
+    cfg, "phy.carrier.CyclicPrefix", "normal")));
+samplingCarrier.NStartGrid = nStartGrid;
+samplingCarrier.NSizeGrid = nSizeGrid;
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+    samplingCarrier, "WindowingSamples", 0);
+
+if isempty(opt.SSBBlockPattern)
+    blockPattern = string(sixgr.util.structGet(cfg, ...
+        "phy.ssb.blockPattern", ""));
+else
+    blockPattern = string(opt.SSBBlockPattern);
+end
+if strlength(strtrim(blockPattern)) == 0
+    error("sixgr:phy:frame:MissingSSBCase", ...
+        "SSB_Tx requires an explicit phy.ssb.blockPattern (Case A through G).");
 end
 
-% -------------------- Build waveform generator config --------------------
+lmax = sixgr.util.structGet(cfg, "phy.ssb.Lmax", NaN);
+periodicityMs = double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.periodicity_ms", ...
+    sixgr.util.structGet(cfg, "phy.ssb.period_ms", 20)));
+nStartBWP = double(sixgr.util.structGet(cfg, ...
+    "phy.bwp.dl.NStartBWP", nStartGrid));
+nSizeBWP = double(sixgr.util.structGet(cfg, ...
+    "phy.bwp.dl.NSizeBWP", nSizeGrid));
+timing = sixgr.phy.frame.SSBTimingResolver.resolve( ...
+    "Case", blockPattern, ...
+    "CarrierFrequencyHz", carrierFrequencyHz, ...
+    "FrequencyRange", rangeSubtype, ...
+    "SSBSubcarrierSpacingKHz", ssbSCSKHz, ...
+    "CarrierSubcarrierSpacingKHz", carrierSCSKHz, ...
+    "Lmax", lmax, ...
+    "PeriodicityMs", periodicityMs, ...
+    "SSBIndex", double(opt.SSBIndex), ...
+    "NStartGrid", nStartGrid, ...
+    "NSizeGrid", nSizeGrid, ...
+    "NStartBWP", nStartBWP, ...
+    "NSizeBWP", nSizeBWP, ...
+    "NCRBSSB", sixgr.util.structGet(cfg, "phy.ssb.NCRBSSB", NaN), ...
+    "KSSB", sixgr.util.structGet(cfg, "phy.ssb.KSSB", NaN));
+
+if logical(opt.TimingOnly)
+    waveform = complex(zeros(0, 1));
+    waveInfo = struct( ...
+        "TimingOnly", true, ...
+        "Status", "canonical_timing_resolved_without_waveform");
+    txCfg = struct( ...
+        "TimingOnly", true, ...
+        "NCellID", nCellID, ...
+        "SubcarrierSpacing_kHz", carrierSCSKHz, ...
+        "NSizeGrid", nSizeGrid, ...
+        "NStartGrid", nStartGrid, ...
+        "ChannelBandwidth_MHz", channelBandwidthMHz, ...
+        "FrequencyRangeSubtype", char(rangeSubtype), ...
+        "CarrierFrequency_Hz", carrierFrequencyHz, ...
+        "CarrierGrid", carrierGrid, ...
+        "OFDMSamplingResolution", sampling, ...
+        "OFDMWindowingSamples", 0, ...
+        "OFDMWindowingEnabled", false, ...
+        "WindowingPercent", 0, ...
+        "SSBTiming", timing, ...
+        "SampleRate_Hz", sampling.SampleRateHz);
+    return;
+end
 
 cfgDL = nrDLCarrierConfig;
-cfgDL.FrequencyRange = string(FrequencyRange);
-cfgDL.ChannelBandwidth = double(ChannelBW_MHz); % MHz
-cfgDL.NCellID = double(NCellID);
-cfgDL.CarrierFrequency = double(opt.CarrierFrequency_Hz);
+cfgDL.FrequencyRange = toolboxFrequencyRange;
+cfgDL.ChannelBandwidth = channelBandwidthMHz;
+cfgDL.NCellID = nCellID;
+cfgDL.CarrierFrequency = carrierFrequencyHz;
+cfgDL.NumSubframes = double(opt.NumSubframes);
+cfgDL.SampleRate = double(sampling.SampleRateHz);
+cfgDL.WindowingPercent = 0;
 
-% SCS carrier (grid)
-scs = nrSCSCarrierConfig;
-scs.SubcarrierSpacing = double(SCSCarrier_kHz);
-scs.NSizeGrid = double(NSizeGrid);
-scs.NStartGrid = double(NStartGrid);
-cfgDL.SCSCarriers = {scs};
+scsCarrier = nrSCSCarrierConfig;
+scsCarrier.SubcarrierSpacing = carrierSCSKHz;
+scsCarrier.NSizeGrid = nSizeGrid;
+scsCarrier.NStartGrid = nStartGrid;
+cfgDL.SCSCarriers = {scsCarrier};
 
-% Bandwidth part (BWP) covering the grid
 bwp = nrWavegenBWPConfig;
-bwp.SubcarrierSpacing = scs.SubcarrierSpacing;
-bwp.CyclicPrefix = sixgr.util.structGet(cfg, 'phy.carrier.CyclicPrefix', 'normal');
-bwp.NStartBWP = double(NStartGrid);
-bwp.NSizeBWP = double(NSizeGrid);
-
-% Use BWP 1 by default
+bwp.SubcarrierSpacing = carrierSCSKHz;
+bwp.CyclicPrefix = char(string(sixgr.util.structGet( ...
+    cfg, "phy.carrier.CyclicPrefix", "normal")));
+bwp.NStartBWP = nStartBWP;
+bwp.NSizeBWP = nSizeBWP;
 cfgDL.BandwidthParts = {bwp};
-
-% SS burst configuration
-if isempty(opt.SSBBlockPattern)
-    ssbBlockPattern = string(sixgr.util.structGet(cfg, 'phy.ssb.blockPattern', 'Case B'));
-else
-    ssbBlockPattern = string(opt.SSBBlockPattern);
-end
 
 ssb = nrWavegenSSBurstConfig;
 ssb.Enable = true;
-ssb.BlockPattern = ssbBlockPattern;
-if isprop(ssb, 'SubcarrierSpacingCommon')
-    ssb.SubcarrierSpacingCommon = localFirstFiniteScalar(SSBCommonSCS_kHz, ...
-        localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz));
+ssb.BlockPattern = timing.BlockPattern;
+if isprop(ssb, "SubcarrierSpacingCommon")
+    ssb.SubcarrierSpacingCommon = timing.SSBSubcarrierSpacingKHz;
 end
-if isprop(ssb, 'PDCCHConfigSIB1')
+if isprop(ssb, "PDCCHConfigSIB1")
     ssb.PDCCHConfigSIB1 = localPDCCHConfigSIB1(cfg);
 end
-if isprop(ssb, 'DMRSTypeAPosition')
+if isprop(ssb, "DMRSTypeAPosition")
     ssb.DMRSTypeAPosition = localDMRSTypeAPosition(cfg);
 end
-if isprop(ssb, 'CellBarred')
-    ssb.CellBarred = logical(sixgr.util.structGet(cfg, 'phy.mib.cellBarred', false));
+if isprop(ssb, "CellBarred")
+    ssb.CellBarred = logical(sixgr.util.structGet( ...
+        cfg, "phy.mib.cellBarred", false));
 end
-if isprop(ssb, 'IntraFreqReselection')
-    ssb.IntraFreqReselection = logical(sixgr.util.structGet(cfg, 'phy.mib.intraFreqReselection', false));
+if isprop(ssb, "IntraFreqReselection")
+    ssb.IntraFreqReselection = logical(sixgr.util.structGet( ...
+        cfg, "phy.mib.intraFreqReselection", false));
 end
-ssb.Period = 20; % ms
+ssb.Period = periodicityMs;
 ssb.Power = 0;
-ssbLmax = double(sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 8));
-if ~ismember(round(ssbLmax), [4 8 64])
-    ssbLmax = 8;
-end
-
-% Transmit only one SSB by default (user can override later)
-% NOTE: nrWavegenSSBurstConfig.TransmittedBlocks expects a NUMERIC binary row
-% vector (logical is rejected in some releases). Use uint8 0/1.
-ssb.TransmittedBlocks = zeros(1, round(ssbLmax), 'uint8');
-idx = max(0, min(round(ssbLmax) - 1, round(opt.SSBIndex)));
-ssb.TransmittedBlocks(idx+1) = uint8(1);
-
+ssb.NCRBSSB = double(timing.GridRelationship.NCRBSSB);
+ssb.KSSB = double(timing.GridRelationship.KSSB);
+ssb.TransmittedBlocks = zeros(1, timing.Lmax, "uint8");
+ssb.TransmittedBlocks(timing.SelectedSSBIndex + 1) = uint8(1);
 cfgDL.SSBurst = ssb;
 
-% Disable other channels unless explicitly enabled. SSB generation should
-% not inherit unrelated control/data allocations that can make waveform
-% generation fail for reasons unrelated to initial access itself.
 cfgDL.PDSCH{1}.Enable = logical(opt.EnablePDSCH);
-if isprop(cfgDL, 'PDCCH')
-    try
-        if iscell(cfgDL.PDCCH)
-            for k = 1:numel(cfgDL.PDCCH)
-                cfgDL.PDCCH{k}.Enable = false;
-            end
-        elseif ~isempty(cfgDL.PDCCH)
-            cfgDL.PDCCH.Enable = false;
-        end
-    catch
-    end
-end
-if isprop(cfgDL, 'CSIRS')
+cfgDL = localDisablePDCCH(cfgDL);
+if isprop(cfgDL, "CSIRS")
     cfgDL.CSIRS{1}.Enable = logical(opt.EnableCSIRS);
 end
 
-% Waveform length
-cfgDL.NumSubframes = double(opt.NumSubframes);
-
-% -------------------- Generate waveform (with clamp/retry) --------------------
-
-[waveform, waveInfo, NSizeGridUsed] = localWavegenWithClamp(cfgDL, scs, bwp, NSizeGrid);
-
-% -------------------- Outputs --------------------
+% Exactly one generator dispatch.  Configuration errors propagate unchanged.
+[waveform, waveInfo] = nrWaveformGenerator(cfgDL);
 
 txCfg = struct;
-txCfg.NCellID = double(NCellID);
-txCfg.SubcarrierSpacing_kHz = double(SCSCarrier_kHz);
-txCfg.NSizeGrid = double(NSizeGridUsed);
-txCfg.NStartGrid = double(NStartGrid);
-txCfg.ChannelBandwidth_MHz = double(ChannelBW_MHz);
-txCfg.FrequencyRange = char(cfgDL.FrequencyRange);
-txCfg.CarrierFrequency_Hz = double(cfgDL.CarrierFrequency);
+txCfg.NCellID = nCellID;
+txCfg.SubcarrierSpacing_kHz = carrierSCSKHz;
+txCfg.NSizeGrid = nSizeGrid;
+txCfg.NStartGrid = nStartGrid;
+txCfg.ChannelBandwidth_MHz = channelBandwidthMHz;
+txCfg.FrequencyRange = char(toolboxFrequencyRange);
+txCfg.FrequencyRangeSubtype = char(rangeSubtype);
+txCfg.CarrierFrequency_Hz = carrierFrequencyHz;
+txCfg.CarrierGrid = carrierGrid;
+txCfg.OFDMSamplingResolution = sampling;
+txCfg.OFDMWindowingSamples = 0;
+txCfg.OFDMWindowingEnabled = false;
+txCfg.WindowingPercent = 0;
+txCfg.SSBTiming = timing;
+txCfg.SSB = struct( ...
+    "BlockPattern", char(timing.BlockPattern), ...
+    "SSBIndex", double(timing.SelectedSSBIndex), ...
+    "Lmax", double(timing.Lmax), ...
+    "NumBeams", double(timing.Lmax), ...
+    "Period_ms", double(timing.PeriodicityMs), ...
+    "SCS_kHz", double(timing.SSBSubcarrierSpacingKHz), ...
+    "CandidateIndices", double(timing.CandidateIndices), ...
+    "CandidateStartSymbols", ...
+        double(timing.CandidateStartSymbolsWithinHalfFrame), ...
+    "PDCCHConfigSIB1", double(localPDCCHConfigSIB1(cfg)), ...
+    "CORESET0Index", floor(double(localPDCCHConfigSIB1(cfg)) / 16), ...
+    "SearchSpaceZero", mod(double(localPDCCHConfigSIB1(cfg)), 16), ...
+    "DMRSTypeAPosition", double(localDMRSTypeAPosition(cfg)));
+txCfg.SampleRate_Hz = localWaveformSampleRate(waveInfo);
+if ~(isscalar(txCfg.SampleRate_Hz) && isfinite(txCfg.SampleRate_Hz) && ...
+        txCfg.SampleRate_Hz == sampling.SampleRateHz)
+    error("sixgr:phy:frame:SSBSamplingResolutionMismatch", ...
+        "nrWaveformGenerator sample rate %.15g Hz differs from the " + ...
+        "canonical OFDM rate %.15g Hz.", ...
+        txCfg.SampleRate_Hz, sampling.SampleRateHz);
+end
+end
 
-txCfg.SSB = struct;
-txCfg.SSB.BlockPattern = char(ssb.BlockPattern);
-txCfg.SSB.SSBIndex = idx;
-txCfg.SSB.Lmax = double(ssbLmax);
-txCfg.SSB.NumBeams = double(ssbLmax);
-txCfg.SSB.Period_ms = double(ssb.Period);
-txCfg.SSB.SCS_kHz = double(localFirstFiniteScalar(SSBCommonSCS_kHz, ...
-    localSSBSubcarrierSpacingCommon_kHz(ssbBlockPattern, SCSCarrier_kHz)));
-txCfg.SSB.PDCCHConfigSIB1 = double(localPDCCHConfigSIB1(cfg));
-txCfg.SSB.CORESET0Index = floor(double(txCfg.SSB.PDCCHConfigSIB1) / 16);
-txCfg.SSB.SearchSpaceZero = mod(double(txCfg.SSB.PDCCHConfigSIB1), 16);
-txCfg.SSB.DMRSTypeAPosition = double(localDMRSTypeAPosition(cfg));
-
-% Sample rate: nrWaveformGenerator returns it in waveInfo
-sr = [];
-try
-    if isfield(waveInfo, 'ResourceGrids') && ~isempty(waveInfo.ResourceGrids)
-        rg = waveInfo.ResourceGrids(1);
-        if isfield(rg, 'Info') && isfield(rg.Info, 'SampleRate')
-            sr = rg.Info.SampleRate;
-        end
-        % Some releases may also expose SampleRate directly on ResourceGrids
-        if isempty(sr) && isfield(rg, 'SampleRate')
-            sr = rg.SampleRate;
-        end
+function cfgDL = localDisablePDCCH(cfgDL)
+if ~isprop(cfgDL, "PDCCH") || isempty(cfgDL.PDCCH)
+    return;
+end
+if iscell(cfgDL.PDCCH)
+    for k = 1:numel(cfgDL.PDCCH)
+        cfgDL.PDCCH{k}.Enable = false;
     end
+else
+    cfgDL.PDCCH.Enable = false;
 end
-if isempty(sr) && isfield(waveInfo, 'SampleRate')
-    sr = waveInfo.SampleRate;
-end
-
-txCfg.SampleRate_Hz = sr;
-
-
 end
 
-function rangeName = localResolveFrequencyRange(cfg, requestedRange, carrierFrequencyHz)
-% Resolve the NR frequency range from the validated runtime config.
-%
-% Initial-access generation must not silently default to FR1 because FR2
-% channel bandwidths such as 400 MHz are valid only when FrequencyRange is
-% propagated into nrDLCarrierConfig.
-
-rangeName = localFirstStringScalar(requestedRange);
-if strlength(strtrim(rangeName)) == 0
-    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'phy.frequencyRange', ""));
-end
-if strlength(strtrim(rangeName)) == 0
-    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'frequency.range_name', ""));
-end
-if strlength(strtrim(rangeName)) == 0
-    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'global_radio_scope.frequency_range_label', ""));
-end
-if strlength(strtrim(rangeName)) == 0
-    rangeName = localFirstStringScalar(sixgr.util.structGet(cfg, 'lls6g.frequency.range_name', ""));
-end
-rangeName = upper(strtrim(rangeName));
-if rangeName ~= "FR1" && rangeName ~= "FR2"
-    fcHz = double(carrierFrequencyHz);
-    if ~(isfinite(fcHz) && fcHz > 0)
-        fcHz = double(sixgr.util.structGet(cfg, 'phy.fc_Hz', ...
-            sixgr.util.structGet(cfg, 'channel.fc_Hz', NaN)));
-    end
-    if isfinite(fcHz) && fcHz >= 24.25e9
-        rangeName = "FR2";
-    else
-        rangeName = "FR1";
-    end
-end
-rangeName = char(rangeName);
+function value = localCarrierFrequency(cfg)
+value = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.centerFrequency_Hz", ...
+    sixgr.util.structGet(cfg, "frequency.center_frequency_hz", ...
+    sixgr.util.structGet(cfg, "channel.fc_Hz", ...
+    sixgr.util.structGet(cfg, "phy.fc_Hz", 3.5e9)))));
 end
 
-function value = localFirstStringScalar(raw)
-value = string(raw);
+function value = localChannelBandwidthMHz(cfg)
+value = sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", []);
 if isempty(value)
-    value = "";
-else
-    value = value(1);
-end
-end
-
-function scs = localSSBSubcarrierSpacingCommon_kHz(blockPattern, carrierSCS_kHz)
-bp = upper(strtrim(string(blockPattern)));
-if isempty(bp)
-    bp = "";
-else
-    bp = bp(1);
-end
-switch bp
-    case {"CASE A","A"}
-        scs = 15;
-    case {"CASE B","B","CASE C","C"}
-        scs = 30;
-    case {"CASE D","D"}
-        scs = 120;
-    case {"CASE E","E","CASE F","F","CASE G","G"}
-        scs = 240;
-    otherwise
-        scs = double(carrierSCS_kHz);
-end
-if ~(isfinite(double(scs)) && double(scs) > 0)
-    scs = 30;
-end
-end
-
-function value = localFirstFiniteScalar(varargin)
-value = NaN;
-for i = 1:nargin
-    raw = double(varargin{i});
-    if ~isempty(raw) && isscalar(raw) && isfinite(raw) && raw > 0
-        value = raw;
-        return;
+    bandwidthHz = sixgr.util.structGet(cfg, "frequency.bandwidth_hz", ...
+        sixgr.util.structGet(cfg, "channel.bandwidth_Hz", []));
+    if ~isempty(bandwidthHz)
+        value = double(bandwidthHz) / 1e6;
     end
+end
+if isempty(value)
+    error("sixgr:phy:frame:MissingChannelBandwidth", ...
+        "SSB_Tx requires an explicit standard NR channel bandwidth.");
+end
+value = double(value);
+end
+
+function subtype = localResolveFrequencyRangeSubtype( ...
+        cfg, requestedRange, carrierFrequencyHz)
+requested = string(requestedRange);
+if isempty(requested) || strlength(strtrim(requested(1))) == 0
+    requested = string(sixgr.util.structGet(cfg, ...
+        "phy.frequencyRange", ...
+        sixgr.util.structGet(cfg, "frequency.range_name", "")));
+end
+requested = upper(strtrim(requested(1)));
+derived = sixgr.phy.frame.FrequencyRangeResolver.resolve( ...
+    "CenterFrequencyHz", carrierFrequencyHz);
+subtype = string(derived.FrequencyRange);
+if strlength(requested) == 0
+    return;
+end
+if requested == "FR2"
+    if ~startsWith(subtype, "FR2")
+        error("sixgr:phy:frame:FrequencyRangeMismatch", ...
+            "Configured FR2 conflicts with carrier frequency %.12g Hz.", ...
+            carrierFrequencyHz);
+    end
+elseif requested ~= subtype
+    error("sixgr:phy:frame:FrequencyRangeMismatch", ...
+        "Configured %s conflicts with carrier-frequency range %s.", ...
+        requested, subtype);
+end
+end
+
+function value = localToolboxFrequencyRange(subtype)
+if string(subtype) == "FR1"
+    value = "FR1";
+else
+    value = "FR2";
 end
 end
 
 function value = localPDCCHConfigSIB1(cfg)
-configured = sixgr.util.structGet(cfg, 'phy.mib.pdcchConfigSIB1', []);
+configured = sixgr.util.structGet(cfg, "phy.mib.pdcchConfigSIB1", []);
 if isempty(configured)
-    coreset0 = double(sixgr.util.structGet(cfg, 'phy.sib1.coreset0Index', 0));
-    search0 = double(sixgr.util.structGet(cfg, 'phy.sib1.searchSpaceZero', 0));
+    coreset0 = double(sixgr.util.structGet(cfg, ...
+        "phy.sib1.coreset0Index", 0));
+    search0 = double(sixgr.util.structGet(cfg, ...
+        "phy.sib1.searchSpaceZero", 0));
     configured = coreset0 * 16 + search0;
 end
 value = round(double(configured));
 if ~(isscalar(value) && isfinite(value) && value >= 0 && value <= 255)
-    error('sixgr:phy:SSB_Tx:InvalidPDCCHConfigSIB1', ...
-        'MIB PDCCHConfigSIB1 must resolve to an integer in [0,255].');
+    error("sixgr:phy:SSB_Tx:InvalidPDCCHConfigSIB1", ...
+        "MIB PDCCHConfigSIB1 must resolve to an integer in [0,255].");
 end
 end
 
 function value = localDMRSTypeAPosition(cfg)
-value = round(double(sixgr.util.structGet(cfg, 'phy.mib.dmrsTypeAPosition', 2)));
-if ~ismember(value, [2 3])
-    error('sixgr:phy:SSB_Tx:InvalidDMRSTypeAPosition', ...
-        'MIB DMRSTypeAPosition must be 2 or 3.');
+value = round(double(sixgr.util.structGet( ...
+    cfg, "phy.mib.dmrsTypeAPosition", 2)));
+if ~ismember(value, [2, 3])
+    error("sixgr:phy:SSB_Tx:InvalidDMRSTypeAPosition", ...
+        "MIB DMRSTypeAPosition must be 2 or 3.");
 end
 end
 
-% ======================================================================
-% Local helpers
-% ======================================================================
-
-function [waveform, waveInfo, nGridOut] = localWavegenWithClamp(cfgDL, scs, bwp, nGridIn)
-
-nGridOut = double(nGridIn);
-persistent clampWarned
-if isempty(clampWarned)
-    clampWarned = false;
-end
-
-maxIter = 3;
-for it = 1:maxIter
-    try
-        % Ensure objects reflect the current grid size
-        scs.NSizeGrid = double(nGridOut);
-        bwp.NSizeBWP = double(nGridOut);
-        cfgDL.SCSCarriers = {scs};
-        cfgDL.BandwidthParts = {bwp};
-
-        [waveform, waveInfo] = nrWaveformGenerator(cfgDL);
-        return;
-
-    catch ME
-        maxRB = localParseMaxRB(ME.message);
-        if ~isempty(maxRB) && isfinite(maxRB) && maxRB > 0 && nGridOut > maxRB
-            if ~clampWarned
-                warning('sixgr:phy:SSB_Tx:ClampNSizeGrid', ...
-                    'Clamping NSizeGrid from %d to %d to satisfy BW/SCS limits in nrWaveformGenerator.', ...
-                    nGridOut, maxRB);
-                clampWarned = true;
-            end
-            nGridOut = double(maxRB);
-            continue;
-        end
-        rethrow(ME);
+function value = localWaveformSampleRate(info)
+value = [];
+if isfield(info, "ResourceGrids") && ~isempty(info.ResourceGrids)
+    grid = info.ResourceGrids(1);
+    if isfield(grid, "Info") && isfield(grid.Info, "SampleRate")
+        value = grid.Info.SampleRate;
+    elseif isfield(grid, "SampleRate")
+        value = grid.SampleRate;
     end
 end
-
-error('sixgr:phy:SSB_Tx:WavegenFailed', 'nrWaveformGenerator failed after %d attempts.', maxIter);
-
+if isempty(value) && isfield(info, "SampleRate")
+    value = info.SampleRate;
+end
 end
 
-function maxRB = localParseMaxRB(msg)
-% Extract "maximum RB number is <N>" from nrWaveformGenerator validation errors.
-
-maxRB = [];
-if isempty(msg)
-    return;
+function tf = localOptionalTextScalar(value)
+tf = isempty(value) || ischar(value) || (isstring(value) && isscalar(value));
 end
 
-tokens = regexp(char(msg), 'maximum\s+RB\s+number\s+is\s+(\d+)', 'tokens', 'once');
-if ~isempty(tokens)
-    maxRB = str2double(tokens{1});
+function tf = localPositiveFinite(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value > 0;
 end
 
+function tf = localPositiveInteger(value)
+tf = localPositiveFinite(value) && value == fix(value);
+end
+
+function tf = localNonnegativeInteger(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value >= 0 && value == fix(value);
+end
+
+function tf = localLogicalScalar(value)
+tf = (islogical(value) || isnumeric(value)) && isscalar(value) && ...
+    isfinite(double(value)) && any(double(value) == [0, 1]);
 end

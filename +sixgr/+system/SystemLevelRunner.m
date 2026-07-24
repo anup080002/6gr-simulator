@@ -9,6 +9,7 @@ classdef SystemLevelRunner
             end
 
             cfg = ctx.Cfg;
+            [cfg, canonicalFrame] = localAttachCanonicalFrameCore(cfg);
             log = ctx.Logger;
             runTimer = tic;
             startedUTC = localUTCStamp();
@@ -32,7 +33,7 @@ classdef SystemLevelRunner
 
             detailedTrace = logical(sixgr.util.structGet(params, "DetailedTrace", ...
                                sixgr.util.structGet(cfg, "outputs.detailedSystemTrace", false)));
-            bw_Hz = double(sixgr.util.structGet(cfg, "channel.bandwidth_Hz", 20e6));
+            bw_Hz = double(canonicalFrame.BandwidthHz);
             seed = double(sixgr.util.structGet(cfg, "run.seed", 1));
 
             out = struct();
@@ -134,8 +135,7 @@ classdef SystemLevelRunner
             overflowEvents = 0;
             scheduler = lower(char(string(sixgr.util.structGet(cfg, "mac.scheduler.type", "rr"))));
             ulSinrOffset_dB = double(sixgr.util.structGet(cfg, "system.ulSinrOffset_dB", -1.0));
-            scs_kHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
-                sixgr.util.structGet(cfg, "channel.subcarrierSpacing_kHz", 30)));
+            scs_kHz = double(canonicalFrame.SCSkHz);
             channelModel = string(sixgr.util.structGet(cfg, "channel.model", "TDL"));
             dopplerHz = double(sixgr.util.structGet(cfg, "channel.dopplerHz", 0));
             nLayersDL = max(1, round(double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
@@ -236,7 +236,7 @@ classdef SystemLevelRunner
             noiseFigDL_dB = double(sixgr.util.structGet(cfg, "scenario.ue.noiseFigure_dB", 9));
             noiseFigUL_dB = double(sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", 7));
             interfMargin_dB = double(sixgr.util.structGet(cfg, "channel.interferenceMargin_dB", 3));
-            nRB = max(1, localEstimateNRB(cfg, bw_Hz));
+            nRB = double(canonicalFrame.NRB);
             if legacySINRMode
                 [fastFading_dB, interfVar_dB] = localBuildChannelVariationTraces(cfg, nTTI, K, tti_s, seed);
             else
@@ -1591,18 +1591,21 @@ classdef SystemLevelRunner
 end
 
 function tti_s = localSlotDuration(cfg, params)
-tti_s = double(sixgr.util.structGet(params, "TTI_s", ...
-               sixgr.util.structGet(cfg, "system.tti_s", [])));
-if ~isempty(tti_s)
-    tti_s = max(tti_s, 1e-4);
+configured = sixgr.util.structGet(params, "TTI_s", ...
+    sixgr.util.structGet(cfg, "system.tti_s", []));
+if ~isempty(configured)
+    configured = double(configured);
+    if ~(isscalar(configured) && isfinite(configured) && configured > 0)
+        error("sixgr:system:InvalidTTIDuration", ...
+            "Configured TTI_s must be a positive finite scalar.");
+    end
+    % Explicit TTI_s is the system-level simulation integration step. It
+    % may intentionally span many PHY slots for mobility studies, so it is
+    % not relabelled as a resolved NR slot duration.
+    tti_s = configured;
     return;
 end
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
-mu = log2(scs/15);
-if ~isfinite(mu) || mu < 0
-    mu = 0;
-end
-tti_s = 1e-3 / (2^mu);
+tti_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function d = localDistanceMatrix(uePos, bsPos, wrapEn, area_m)
@@ -1633,18 +1636,33 @@ end
 q = quantile(x, p);
 end
 
-function nRB = localEstimateNRB(cfg, bw_Hz)
-cfgGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
-if isfinite(cfgGrid) && cfgGrid >= 1
-    nRB = round(cfgGrid);
-    return;
+function [cfg, frame] = localAttachCanonicalFrameCore(cfg)
+engine = sixgr.phy.FrameStructureEngine(cfg, "FrameCoreOnly", true);
+frame = engine.toStruct();
+existing = sixgr.util.structGet(cfg, "phy.frameStructure", struct());
+if isstruct(existing) && isscalar(existing)
+    preserved = setdiff(string(fieldnames(existing)), ...
+        string(fieldnames(frame)), "stable");
+    for name = preserved(:).'
+        frame.(name) = existing.(name);
+    end
+    if logical(sixgr.util.structGet( ...
+            existing, "SignalTimingResolved", false))
+        signalFields = [ ...
+            "SSBTiming", "PRACHTiming", "SSBCase", "SSBLmax", ...
+            "SSBCandidateSymbols", "PRACHConfigurationIndex", ...
+            "PRACHFormat", "PRACHStartSymbol", ...
+            "PRACHDurationSymbols", "PRACHValidSlots0Based", ...
+            "PRACHValidationStatus", "ValidationLog", ...
+            "SignalTimingResolved"];
+        for name = signalFields
+            if isfield(existing, name)
+                frame.(name) = existing.(name);
+            end
+        end
+    end
 end
-
-scs_kHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
-                 sixgr.util.structGet(cfg, "channel.subcarrierSpacing_kHz", 30)));
-scs_Hz = max(scs_kHz * 1e3, 1);
-nRB = floor(double(bw_Hz) / (12 * scs_Hz));
-nRB = min(275, max(1, nRB));
+cfg = sixgr.util.structSet(cfg, "phy.frameStructure", frame);
 end
 
 function ebno_dB = localSINRtoEbNo(sinr_dB)
@@ -1653,7 +1671,15 @@ ebno_dB = double(sinr_dB) - 10*log10(max(se, 1e-9));
 end
 
 function [allowDL, allowUL, slotLabel] = localSlotDuplexState(cfg, t)
-partition = sixgr.util.resolveTDDSlotPartition(cfg, t);
+duplex = localCanonicalDuplexMode(cfg);
+if duplex == "FDD"
+    localRequireFDDContext(cfg);
+    allowDL = true;
+    allowUL = true;
+    slotLabel = "FDD_SEPARATE_DL_UL";
+    return;
+end
+partition = sixgr.util.resolveTDDSlotPartition(cfg, t - 1);
 allowDL = logical(partition.AllowDL);
 allowUL = logical(partition.AllowUL);
 slotLabel = string(partition.SlotLabel);
@@ -1665,33 +1691,62 @@ if nargin < 4
 end
 dir = upper(char(string(direction)));
 sch = lower(char(string(schedulerName)));
-try
-    if contains(sch, "pf")
-        sched = sixgr.l2.mac.SchedulerPF(cfg, "Direction", dir, "Logger", log);
-    else
-        sched = sixgr.l2.mac.SchedulerRR(cfg, "Direction", dir, "Logger", log);
-    end
-catch
-    % Last-resort fallback keeps SLS runnable if a scheduler ctor changes.
-    sched = sixgr.l2.mac.SchedulerRR(cfg, "Direction", dir);
+if contains(sch, "pf")
+    sched = sixgr.l2.mac.SchedulerPF(cfg, "Direction", dir, "Logger", log);
+else
+    sched = sixgr.l2.mac.SchedulerRR( ...
+        cfg, "Direction", dir, "Logger", log);
 end
 end
 
 function budget = localSlotBudget(cfg, t, nRB, direction)
-partition = sixgr.util.resolveTDDSlotPartition(cfg, t);
 dir = upper(char(string(direction)));
-nPRB = max(1, round(double(nRB)));
-symbolsPerSlot = max(1, round(double(sixgr.util.structGet(partition, "SymbolsPerSlot", ...
-    sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", 14)))));
-if strcmp(dir, "UL")
-    symAlloc = double(sixgr.util.structGet(partition, "ULSymbolAllocation", [0 symbolsPerSlot]));
+nPRB = double(nRB);
+if ~(isscalar(nPRB) && isfinite(nPRB) && nPRB >= 1 && ...
+        nPRB == fix(nPRB))
+    error("sixgr:system:SystemLevelRunner:InvalidCanonicalGrid", ...
+        "Canonical frame resolution must provide a positive integer N_RB.");
+end
+duplex = localCanonicalDuplexMode(cfg);
+if duplex == "FDD"
+    context = localRequireFDDContext(cfg);
+    symbolsPerSlot = double(context.SymbolsPerSlot);
+    if strcmp(dir, "UL")
+        symAlloc = localRequiredAllocation(cfg, ...
+            ["phy.pusch.symbolAllocation", ...
+            "phy.pusch.SymbolAllocation"], "PUSCH");
+    else
+        symAlloc = localRequiredAllocation(cfg, ...
+            ["phy.pdsch.symbolAllocation", ...
+            "phy.pdsch.SymbolAllocation"], "PDSCH");
+    end
 else
-    symAlloc = double(sixgr.util.structGet(partition, "DLSymbolAllocation", [0 symbolsPerSlot]));
+    partition = sixgr.util.resolveTDDSlotPartition(cfg, t - 1);
+    symbolsPerSlot = double(sixgr.util.structGet( ...
+        partition, "SymbolsPerSlot", NaN));
+    if strcmp(dir, "UL")
+        symAlloc = double(sixgr.util.structGet( ...
+            partition, "ULSymbolAllocation", []));
+    else
+        symAlloc = double(sixgr.util.structGet( ...
+            partition, "DLSymbolAllocation", []));
+    end
+    if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
+        symAlloc = [0, 0];
+    end
 end
-if numel(symAlloc) < 2
-    symAlloc = [0 symbolsPerSlot];
+if ~(isfinite(symbolsPerSlot) && symbolsPerSlot >= 1)
+    error("sixgr:system:SystemLevelRunner:MissingSymbolsPerSlot", ...
+        "Canonical duplex context must provide SymbolsPerSlot.");
 end
-budget = struct("NPRB", nPRB, "SymbolAllocation", reshape(symAlloc(1:2), 1, 2));
+controlAllocation = localRequiredAllocation(cfg, [ ...
+    "phy.pdcch.symbolAllocation", ...
+    "phy.pdcch.SymbolAllocation"], "PDCCH");
+budget = struct( ...
+    "NPRB", nPRB, ...
+    "SymbolAllocation", reshape(symAlloc(1:2), 1, 2), ...
+    "ControlAbsoluteSlot", double(t - 1), ...
+    "ControlSymbolAllocation", controlAllocation);
 end
 
 function tf = localSlotBudgetSupportsExecutableDataGrants(cfg, direction, budget)
@@ -1713,8 +1768,20 @@ if ~(isfinite(nSym) && nSym > 0)
 end
 requiresExactGrantNRE = localRequiresExactGrantNRE(direction, symAlloc);
 
-nPRB = max(1, round(double(sixgr.util.structGet(budget, "NPRB", ...
-    sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)))));
+nPRB = double(sixgr.util.structGet(budget, "NPRB", NaN));
+if ~(isscalar(nPRB) && isfinite(nPRB) && nPRB >= 1 && ...
+        nPRB == fix(nPRB))
+    tf = false;
+    return;
+end
+canonicalGrid = double(sixgr.util.structGet(cfg, ...
+    "phy.frameStructure.CarrierGrid.NSizeGrid", NaN));
+if ~(isscalar(canonicalGrid) && isfinite(canonicalGrid) && ...
+        canonicalGrid >= 1 && canonicalGrid == fix(canonicalGrid)) || ...
+        nPRB > canonicalGrid
+    tf = false;
+    return;
+end
 dir = upper(string(direction));
 switch dir
     case "UL"
@@ -1729,7 +1796,7 @@ end
 
 try
     [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg, ...
-        "NSizeGrid", max(nPRB, double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", nPRB))));
+        "NSizeGrid", canonicalGrid);
     if dir == "UL"
         [~, allocInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg, ...
             "PRBSet", 0:(max(nPRB, 1) - 1), ...
@@ -1750,10 +1817,53 @@ try
         tf = false;
     end
 catch
-    % Fail open on unexpected RE-estimation issues so we only suppress
-    % grants when exact allocation math proves the slot cannot carry data.
-    tf = true;
+    % An unresolved exact allocation cannot authorize a primary grant.
+    tf = false;
 end
+end
+
+function duplex = localCanonicalDuplexMode(cfg)
+duplex = upper(string(sixgr.util.structGet(cfg, ...
+    "phy.frameStructure.DuplexMode", ...
+    sixgr.util.structGet(cfg, "phy.duplex.mode", ""))));
+if ~any(duplex == ["TDD", "FDD"])
+    error("sixgr:system:SystemLevelRunner:MissingDuplexMode", ...
+        "System-level scheduling requires canonical TDD or FDD mode.");
+end
+end
+
+function context = localRequireFDDContext(cfg)
+context = sixgr.util.structGet(cfg, ...
+    "phy.frameStructure.FDDContexts", []);
+if ~(isstruct(context) && isscalar(context) && ...
+        isfield(context, "Downlink") && ...
+        isfield(context, "Uplink") && ...
+        isfield(context, "SymbolsPerSlot") && ...
+        string(sixgr.util.structGet(context, ...
+            "DuplexMode", "")) == "FDD")
+    error("sixgr:system:SystemLevelRunner:MissingFDDContext", ...
+        "FDD scheduling requires explicit canonical DL and UL contexts.");
+end
+end
+
+function allocation = localRequiredAllocation(cfg, paths, label)
+allocation = [];
+for path = string(paths(:)).'
+    candidate = sixgr.util.structGet(cfg, path, []);
+    if ~isempty(candidate)
+        allocation = candidate;
+        break;
+    end
+end
+if ~(isnumeric(allocation) && isreal(allocation) && ...
+        numel(allocation) == 2 && ...
+        all(isfinite(double(allocation(:)))) && ...
+        all(double(allocation(:)) == fix(double(allocation(:)))) && ...
+        double(allocation(1)) >= 0 && double(allocation(2)) >= 1)
+    error("sixgr:system:SystemLevelRunner:MissingSymbolAllocation", ...
+        "%s requires an explicit [start,count] SymbolAllocation.", label);
+end
+allocation = reshape(double(allocation), 1, 2);
 end
 
 function grants = localVertcatGrantSets(grantSets, nSets)
@@ -1836,12 +1946,16 @@ tf = false;
 if upper(string(direction)) ~= "UL"
     return;
 end
-sa = [0 14];
-if nargin >= 2 && ~isempty(symAlloc)
-    sa = double(symAlloc(:).');
+if nargin < 2 || isempty(symAlloc)
+    % An unresolved UL allocation must not be approved by approximate RE
+    % accounting. Force the exact path, which will fail closed if needed.
+    tf = true;
+    return;
 end
-if numel(sa) < 2
-    sa = [0 14];
+sa = double(symAlloc(:).');
+if numel(sa) < 2 || any(~isfinite(sa(1:2)))
+    tf = true;
+    return;
 end
 startSym = max(0, round(double(sa(1))));
 nSym = max(0, round(double(sa(2))));
@@ -2147,36 +2261,6 @@ if strlength(string(token)) == 0
     end
 end
 tableName = char(lower(string(token)));
-end
-
-function tokens = localExpandTDDPattern(pattern)
-if isstruct(pattern)
-    dl = max(0, round(double(sixgr.util.structGet(pattern, "dlSlots", 4))));
-    ul = max(0, round(double(sixgr.util.structGet(pattern, "ulSlots", 1))));
-    sp = max(0, round(double(sixgr.util.structGet(pattern, "specialSlots", 0))));
-    tokens = [repmat('D', 1, dl), repmat('S', 1, sp), repmat('U', 1, ul)];
-    return;
-end
-
-if isstring(pattern) || ischar(pattern)
-    s = upper(char(string(pattern)));
-    s = regexprep(s, "[^DUS]", "");
-    if isempty(s)
-        s = 'DDDSU';
-    end
-    tokens = s;
-    return;
-end
-
-if isnumeric(pattern)
-    p = double(pattern(:).');
-    tokens = repmat('S', 1, numel(p));
-    tokens(p > 0) = 'D';
-    tokens(p < 0) = 'U';
-    return;
-end
-
-tokens = 'DDDSU';
 end
 
 function traffic = localBuildTraffic(cfg, params, nUE, nTTI, tti_s)
@@ -2669,17 +2753,31 @@ count = count + 1;
 i = count;
 
 prbSet = sixgr.util.structGet(grant, "PRBSet", []);
-if isempty(prbSet)
-    prbStart = NaN;
-else
-    prbSet = double(prbSet(:));
-    prbStart = min(prbSet);
+if ~(isnumeric(prbSet) && isreal(prbSet) && ~isempty(prbSet))
+    error("sixgr:system:SystemLevelRunner:MissingGrantPRBSet", ...
+        "Primary grant-trace rows require the scheduler's explicit PRBSet.");
 end
+prbSet = double(prbSet(:));
+if any(~isfinite(prbSet)) || any(prbSet ~= fix(prbSet)) || ...
+        any(prbSet < 0)
+    error("sixgr:system:SystemLevelRunner:InvalidGrantPRBSet", ...
+        "Primary grant-trace PRBSet values must be finite nonnegative integers.");
+end
+prbStart = min(prbSet);
 
-symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]));
+symAlloc = sixgr.util.structGet(grant, "SymbolAllocation", []);
+if ~(isnumeric(symAlloc) && isreal(symAlloc) && numel(symAlloc) == 2)
+    error("sixgr:system:SystemLevelRunner:MissingGrantSymbolAllocation", ...
+        "Primary grant-trace rows require the scheduler's explicit " + ...
+        "SymbolAllocation [start,count].");
+end
+symAlloc = double(symAlloc);
 symAlloc = symAlloc(:).';
-if numel(symAlloc) < 2
-    symAlloc = [0 14];
+if any(~isfinite(symAlloc)) || any(symAlloc ~= fix(symAlloc)) || ...
+        symAlloc(1) < 0 || symAlloc(2) < 1
+    error("sixgr:system:SystemLevelRunner:InvalidGrantSymbolAllocation", ...
+        "Primary grant-trace SymbolAllocation must contain finite integer " + ...
+        "[start,count] values with start >= 0 and count >= 1.");
 end
 harq = sixgr.util.structGet(grant, "HARQ", struct());
 

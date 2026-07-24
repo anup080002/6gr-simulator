@@ -10,7 +10,7 @@ meta:
   tags: [lls, fr2, 28ghz, 400mhz, indoor, cdl-c, strict, waveform_honest]
 
 frequency:
-  range_name: FR2
+  range_name: FR2-1
   band_name: fr2_28ghz_400mhz
   center_frequency_hz: 28000000000
   bandwidth_hz: 400000000
@@ -22,7 +22,14 @@ frequency:
 frame:
   scs_khz: 120
   cp_type: normal
-  tdd_pattern: DDDSU
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 120
+    Pattern1:
+      PeriodicityMilliseconds: 0.625
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 1
 
 channels:
   model_type: CDL
@@ -43,6 +50,8 @@ deployment_topology:
 
 reference_signals:
   ssb_enabled: true
+  ssb_case: "Case D"
+  ssb_scs_khz: 120
   ssb_beam_count: 64
   ssb_lmax: 64
   csi_rs_enabled: true

@@ -1,48 +1,23 @@
-function k1 = resolveHARQFeedbackK1(pdschSlot, tddPattern, mu)
-%RESOLVEHARQFEEDBACKK1 Resolve DL HARQ-ACK timing K1 from a TDD pattern.
+function [k1, timingDecision] = resolveHARQFeedbackK1(cfg, grant, varargin)
+%RESOLVEHARQFEEDBACKK1 Resolve K1 from attached canonical frame state.
 %
-% Explicit scenario HARQ timing still takes precedence in the schedulers.
-% This helper only replaces the old hardcoded default when no explicit K1
-% exists, using the next UL opportunity in the configured TDD pattern.
+% The legacy (pdschSlot,tddPattern,mu) signature is intentionally rejected:
+% a compact pattern cannot represent symbol-level availability, CC/BWP
+% identity, or processing-time capability.
 
-if nargin < 2 || isempty(tddPattern)
-    tddPattern = "DDDSU";
+if nargin ~= 2 || ~isstruct(cfg) || ~isscalar(cfg) || ...
+        ~isstruct(grant) || ~isscalar(grant) || ~isempty(varargin)
+    error("sixgr:l2:mac:LegacyHARQTimingSignatureRejected", ...
+        "resolveHARQFeedbackK1 requires (resolvedCfg, grant). " + ...
+        "Compact TDD pattern and default-mu callers are unsupported.");
 end
-if nargin < 3 || isempty(mu)
-    mu = 1;
+grant.Direction = "DL";
+timingDecision = ...
+    sixgr.phy.frame.TimingRelationEngine.resolveProductionGrant(cfg, grant);
+if ~timingDecision.Valid
+    error("sixgr:l2:mac:HARQTimingRejected", ...
+        "Canonical HARQ-ACK timing rejected the grant: %s", ...
+        char(string(timingDecision.ReasonCode)));
 end
-mu = max(0, round(double(mu)));
-slotsPerFrame = 10 * 2^mu;
-slotInFrame = mod(max(0, round(double(pdschSlot))), slotsPerFrame);
-pattern = upper(strtrim(string(tddPattern)));
-
-switch pattern
-    case "DDDSU"
-        ulSlots = 4:5:(slotsPerFrame - 1);
-    case "DDDDDDDSUU"
-        ulSlots = [];
-        base = [8 9];
-        for f = 0:ceil(slotsPerFrame / 10)
-            ulSlots = [ulSlots, base + 10 * f]; %#ok<AGROW>
-        end
-        ulSlots = ulSlots(ulSlots < slotsPerFrame);
-    otherwise
-        chars = char(pattern);
-        ulBase = find(chars == 'U') - 1;
-        if isempty(ulBase)
-            k1 = 4;
-            return;
-        end
-        ulSlots = [];
-        for f = 0:ceil(slotsPerFrame / max(1, numel(chars)))
-            ulSlots = [ulSlots, ulBase + f * numel(chars)]; %#ok<AGROW>
-        end
-        ulSlots = ulSlots(ulSlots < slotsPerFrame);
-end
-
-nextUL = ulSlots(find(ulSlots > slotInFrame, 1, "first"));
-if isempty(nextUL)
-    nextUL = ulSlots(1) + slotsPerFrame;
-end
-k1 = max(1, min(16, round(double(nextUL - slotInFrame))));
+k1 = double(timingDecision.K1);
 end

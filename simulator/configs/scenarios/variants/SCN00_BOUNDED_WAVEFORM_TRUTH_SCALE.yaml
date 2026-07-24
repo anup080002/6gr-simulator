@@ -50,7 +50,14 @@ simulation:
   monte_carlo_iterations: 1
 
 frame:
-  tdd_pattern: DU
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 1
+      NumDownlinkSlots: 1
+      NumDownlinkSymbols: 0
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 0
 
 deployment_topology:
   num_sites: 2

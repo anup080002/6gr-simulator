@@ -1,0 +1,239 @@
+{
+  "root": "/mnt/data/frame_verifier_selftest",
+  "pass": 25,
+  "fail": 0,
+  "rows": [
+    {
+      "Artifact": "frame_numerology_matrix.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 18,
+      "Columns": 14,
+      "SHA256": "f5381172ca3b94d25e760adb4e323635d2dd16bf1366d5d609878d0f2627244c"
+    },
+    {
+      "Artifact": "carrier_grid_matrix.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 71,
+      "Columns": 16,
+      "SHA256": "ef92519e365cd57babd33754995974a033cb4403e071b0e8740d167c47c59830"
+    },
+    {
+      "Artifact": "slot_symbol_ownership.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 510,
+      "Columns": 13,
+      "SHA256": "1513007fe3d00c14af96981bfbd17e1ff36feb48063368c7189d3bd28c4947df"
+    },
+    {
+      "Artifact": "resource_grid_occupancy.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 2,
+      "Columns": 12,
+      "SHA256": "976f56ba16caf2e50395370e23b4457906c4c13dfed3eb010b0e61d5e6cd949f"
+    },
+    {
+      "Artifact": "allocation_legality.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 14,
+      "Columns": 15,
+      "SHA256": "d2e7b0bc84e6416380896e19c84eede92e99d7fea86dae4df7d935807dfaf578"
+    },
+    {
+      "Artifact": "ofdm_roundtrip.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 1,
+      "Columns": 18,
+      "SHA256": "dbe23ef0ce75246de7bf5671666f4b1ef5a7d0375bb66c62f55bdd93a4706fb5"
+    },
+    {
+      "Artifact": "timing_matrix.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 1,
+      "Columns": 16,
+      "SHA256": "9fe42c221394e1dd3fb0f62a839fae0d09dab1af8d3aca5ed7ba956df52bd907"
+    },
+    {
+      "Artifact": "bwp_switch_trace.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 2,
+      "Columns": 14,
+      "SHA256": "622bd36e32d742515ed0b64ef4205124a846d763d0048ef6ddc8b42a2661c812"
+    },
+    {
+      "Artifact": "component_carrier_trace.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 1,
+      "Columns": 13,
+      "SHA256": "8310787d130be7513acf8bb1bca2aca38c719867ee4c9e166c2eb04c46d52564"
+    },
+    {
+      "Artifact": "frame_fix_test_summary.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 1,
+      "Columns": 8,
+      "SHA256": "5283c319847a079fee7de2f52b98c33d551614e648db0d002ef032f4719e52f0"
+    },
+    {
+      "Artifact": "frame_image_audit.csv",
+      "Type": "CSV",
+      "Status": "PASS",
+      "Reason": "",
+      "Rows": 7,
+      "Columns": 16,
+      "SHA256": "d5e76134bc90d881daf006c37ba5742f75219dc967c4cc4c8fe17d4703f8b9d7"
+    },
+    {
+      "Artifact": "frame_slot_symbol_map.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 38614,
+      "PixelStdDev": 102.54223336270749,
+      "NonBlankFraction": 0.678203601953602,
+      "SHA256": "e264cb17a2f2beb184d4250cc566da8e011ebd32d998abf8246cc2ea98aa1112"
+    },
+    {
+      "Artifact": "resource_grid_occupancy.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 55355,
+      "PixelStdDev": 72.8451186481353,
+      "NonBlankFraction": 0.31557615995115995,
+      "SHA256": "cf2f961fc0f8dec6f0cdeeec145ecf154e58b92fe6ccd34b14f57a25d81a34b1"
+    },
+    {
+      "Artifact": "numerology_timing_matrix.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 51931,
+      "PixelStdDev": 23.027334162322664,
+      "NonBlankFraction": 0.055083943833943834,
+      "SHA256": "59a3c0bfb1d133e3e787e031a7456c5b234b6109359362b10c2f8062cf04c24b"
+    },
+    {
+      "Artifact": "carrier_guardband_map.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 56356,
+      "PixelStdDev": 25.429878614922128,
+      "NonBlankFraction": 0.05832493894993895,
+      "SHA256": "c0cd5f7d334c612c998341f6222530f7d12e7e17a6ef3b528d5d0aeb7cfeb3dd"
+    },
+    {
+      "Artifact": "k0_k1_k2_timeline.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 51931,
+      "PixelStdDev": 23.027334162322664,
+      "NonBlankFraction": 0.055083943833943834,
+      "SHA256": "59a3c0bfb1d133e3e787e031a7456c5b234b6109359362b10c2f8062cf04c24b"
+    },
+    {
+      "Artifact": "bwp_switch_timeline.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 55355,
+      "PixelStdDev": 72.8451186481353,
+      "NonBlankFraction": 0.31557615995115995,
+      "SHA256": "cf2f961fc0f8dec6f0cdeeec145ecf154e58b92fe6ccd34b14f57a25d81a34b1"
+    },
+    {
+      "Artifact": "component_carrier_resource_map.png",
+      "Type": "PNG",
+      "Status": "PASS",
+      "Reason": "",
+      "Width": 1680,
+      "Height": 780,
+      "Mode": "RGBA",
+      "FileBytes": 56356,
+      "PixelStdDev": 25.429878614922128,
+      "NonBlankFraction": 0.05832493894993895,
+      "SHA256": "c0cd5f7d334c612c998341f6222530f7d12e7e17a6ef3b528d5d0aeb7cfeb3dd"
+    },
+    {
+      "Artifact": "frame_slot_symbol_map.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    },
+    {
+      "Artifact": "resource_grid_occupancy.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    },
+    {
+      "Artifact": "numerology_timing_matrix.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    },
+    {
+      "Artifact": "carrier_guardband_map.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    },
+    {
+      "Artifact": "k0_k1_k2_timeline.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    },
+    {
+      "Artifact": "bwp_switch_timeline.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    },
+    {
+      "Artifact": "component_carrier_resource_map.png",
+      "Type": "IMAGE_AUDIT_LINK",
+      "Status": "PASS",
+      "Reason": ""
+    }
+  ]
+}

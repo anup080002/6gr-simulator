@@ -336,25 +336,43 @@ classdef RACHProcedure < handle
     end
 end
 
-function [prachSlotsPerMs, slotDurationMs, pdcchSlotsPerMs] = localResolveSlotsPerMs(cfg)
+function [ulSlotsPerMs, slotDurationMs, pdcchSlotsPerMs] = localResolveSlotsPerMs(cfg)
 prachScs_kHz = double(sixgr.util.structGet(cfg,'phy.prach.subcarrierSpacing_kHz', ...
     sixgr.util.structGet(cfg,'phy.prach.SubcarrierSpacing', ...
     sixgr.util.structGet(cfg,'phy.prach.subcarrierSpacing', ...
     sixgr.util.structGet(cfg,'phy.carrier.SubcarrierSpacing', ...
     sixgr.util.structGet(cfg,'phy.pusch.subcarrierSpacing', 15))))));
 if ~(isscalar(prachScs_kHz) && isfinite(prachScs_kHz) && prachScs_kHz > 0)
-    prachScs_kHz = 15;
+    error("sixgr:rrc:RACHProcedure:MissingPRACHNumerology", ...
+        "The legacy RACH procedure requires an explicit PRACH or carrier SCS.");
 end
 pdcchScs_kHz = double(sixgr.util.structGet(cfg,'phy.carrier.SubcarrierSpacing', ...
     sixgr.util.structGet(cfg,'phy.carrier.subcarrierSpacing_kHz', prachScs_kHz)));
 if ~(isscalar(pdcchScs_kHz) && isfinite(pdcchScs_kHz) && pdcchScs_kHz > 0)
-    pdcchScs_kHz = prachScs_kHz;
+    error("sixgr:rrc:RACHProcedure:MissingPDCCHNumerology", ...
+        "The legacy RACH procedure requires an explicit PDCCH/carrier SCS.");
 end
-muPrach = max(0, round(log2(max(prachScs_kHz, 15) / 15)));
-muPdcch = max(0, round(log2(max(pdcchScs_kHz, 15) / 15)));
-prachSlotsPerMs = 2 ^ muPrach;
-pdcchSlotsPerMs = 2 ^ muPdcch;
-slotDurationMs = 1.0 / prachSlotsPerMs;
+ulScs_kHz = double(sixgr.util.structGet(cfg, ...
+    'phy.pusch.subcarrierSpacing_kHz', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.SubcarrierSpacing', ...
+    pdcchScs_kHz)));
+if ~(isscalar(ulScs_kHz) && isfinite(ulScs_kHz) && ulScs_kHz > 0)
+    error("sixgr:rrc:RACHProcedure:MissingULNumerology", ...
+        "The legacy RACH procedure requires an explicit UL BWP/carrier SCS.");
+end
+cyclicPrefix = string(sixgr.util.structGet(cfg, ...
+    'phy.carrier.CyclicPrefix', "normal"));
+% PRACH long-preamble SCS values (1.25/5 kHz) describe the preamble
+% waveform, not an NR carrier-slot numerology. Timers advance on the
+% configured UL/PDCCH carrier timelines, while exact PRACH occasions are
+% resolved separately by PRACHOccasionResolver.
+ulNumerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    ulScs_kHz, cyclicPrefix, "generic_waveform_test", "");
+pdcchNumerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    pdcchScs_kHz, cyclicPrefix, "generic_waveform_test", "");
+ulSlotsPerMs = double(ulNumerology.SlotsPerSubframe);
+pdcchSlotsPerMs = double(pdcchNumerology.SlotsPerSubframe);
+slotDurationMs = double(ulNumerology.SlotDurationMilliseconds);
 end
 
 function localValidateRAResponseWindow(valueMs)

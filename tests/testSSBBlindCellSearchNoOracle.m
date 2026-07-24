@@ -11,7 +11,7 @@ cfgTx = sixgr.config.defaultConfig();
 cfgTx.phy.carrier.NCellID = 17;
 cfgTx.phy.carrier.SubcarrierSpacing = 30;
 cfgTx.phy.carrier.SubcarrierSpacing_kHz = 30;
-cfgTx.phy.carrier.NSizeGrid = 52;
+cfgTx.phy.carrier.NSizeGrid = 273;
 
 [txWave, ~, txInfo] = sixgr.phy.dl.SSB_Tx(cfgTx, "NumSubframes", 2);
 

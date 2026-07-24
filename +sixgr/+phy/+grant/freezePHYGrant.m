@@ -360,8 +360,9 @@ if isempty(prbSet)
     prbSet = sixgr.util.structGet(cfg, root + ".prbSet", []);
 end
 if isempty(prbSet)
-    nSizeGrid = localFirstFiniteScalar(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", []), 1);
-    prbSet = 0:(max(1, round(nSizeGrid)) - 1);
+    error("sixgr:phy:grant:MissingPRBSet", ...
+        "PHYGrant requires an explicit PRBSet (or PRBStart plus PRBCount) " + ...
+        "from the scheduled grant or resolved channel configuration.");
 end
 prbSet = localExpandPRBSet(prbSet);
 if isempty(prbSet)
@@ -370,11 +371,18 @@ end
 end
 
 function prbSet = localExpandPRBSet(raw)
+if ~(isnumeric(raw) && isreal(raw))
+    error("sixgr:phy:grant:InvalidPRBSet", ...
+        "PHYGrant PRBSet must be a real numeric vector.");
+end
 raw = double(raw(:).');
-raw = raw(isfinite(raw) & raw >= 0);
 if isempty(raw)
     prbSet = [];
     return;
+end
+if any(~isfinite(raw)) || any(raw ~= fix(raw)) || any(raw < 0)
+    error("sixgr:phy:grant:InvalidPRBSet", ...
+        "PHYGrant PRBSet must contain finite nonnegative integers.");
 end
 if numel(raw) == 2 && raw(2) > raw(1)
     prbSet = round(raw(1)):round(raw(2));
@@ -386,7 +394,12 @@ end
 function symbolAllocation = localResolveSymbolAllocation(cfg, grant, root)
 symbolAllocation = sixgr.util.structGet(grant, "SymbolAllocation", []);
 if isempty(symbolAllocation)
-    symbolAllocation = sixgr.util.structGet(cfg, root + ".symbolAllocation", [0 14]);
+    symbolAllocation = sixgr.util.structGet(cfg, root + ".symbolAllocation", []);
+end
+if isempty(symbolAllocation)
+    error("sixgr:phy:grant:MissingSymbolAllocation", ...
+        "PHYGrant requires an explicit SymbolAllocation from the scheduled " + ...
+        "grant or resolved channel configuration.");
 end
 symbolAllocation = double(symbolAllocation(:).');
 if numel(symbolAllocation) < 2 || ~all(isfinite(symbolAllocation(1:2)))

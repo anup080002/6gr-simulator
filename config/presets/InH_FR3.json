@@ -75,7 +75,16 @@
     },
     "duplex": {
       "mode": "TDD",
-      "tddPattern": "DDSUU"
+      "tddCommon": {
+        "ReferenceSubcarrierSpacingKHz": 60,
+        "Pattern1": {
+          "PeriodicityMilliseconds": 1.25,
+          "NumDownlinkSlots": 2,
+          "NumDownlinkSymbols": 12,
+          "NumUplinkSlots": 2,
+          "NumUplinkSymbols": 1
+        }
+      }
     }
   }
 }

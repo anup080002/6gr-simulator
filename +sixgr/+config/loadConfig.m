@@ -64,7 +64,7 @@ cfg.run.configFragments = cellstr(fragFiles);
 cfg.run.projectRoot = string(root);
 
 cfg = sixgr.config.normalizeConfig(cfg);
-sixgr.config.validateConfig(cfg);
+cfg = sixgr.config.validateConfig(cfg);
 
 end
 

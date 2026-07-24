@@ -53,11 +53,7 @@ for ii = 1:numel(srsCfg.ExpectedSlotSet)
     i0 = (ii - 1) * slotLen + 1;
     i1 = min(size(wave, 1), ii * slotLen);
     slotWave = wave(i0:i1, :);
-    try
-        rxGrid = nrOFDMDemodulate(carrier, slotWave);
-    catch
-        rxGrid = complex(zeros(carrier.NSizeGrid * 12, carrier.SymbolsPerSlot, max(1, round(srsCfg.NumSRSPorts))));
-    end
+    rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, slotWave);
     rxSlots(ii).Slot = double(carrier.NSlot);
     rxSlots(ii).RxGrid = rxGrid;
 end

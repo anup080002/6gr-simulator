@@ -1,0 +1,5 @@
+TestID,InputPattern,ExpectedPreservedPattern,CurrentExpandedPattern,Status,Reason
+CUR-TDD-001,DFFU,DFFU,DDDU,FAIL,FrameStructureEngine.expandTDDPattern converts F to D
+CUR-TDD-002,FFFF,FFFF,DDDD,FAIL,FrameStructureEngine.expandTDDPattern converts F to D
+CUR-TDD-003,DDDFUU,DDDFUU,DDDDUU,FAIL,FrameStructureEngine.expandTDDPattern converts F to D
+CUR-TDD-004,DFUF,DFUF,DDUD,FAIL,FrameStructureEngine.expandTDDPattern converts F to D

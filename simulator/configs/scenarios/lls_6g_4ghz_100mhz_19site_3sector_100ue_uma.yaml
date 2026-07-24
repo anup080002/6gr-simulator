@@ -112,7 +112,14 @@ frame:
   scs_khz: 30
   cp_type: normal
   slot_format: flexible
-  tdd_pattern: DDDDU
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 4
+      NumDownlinkSymbols: 0
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 0
 
 waveform:
   dl_waveform: CP-OFDM

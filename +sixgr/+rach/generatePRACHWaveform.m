@@ -17,7 +17,7 @@ if isempty(fieldnames(occasion))
 end
 
 seq = sixgr.rach.generatePRACHSequence(cfg, "Occasion", occasion, "PreambleIndex", opts.PreambleIndex);
-[waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq, cfg);
+[waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq);
 
 numTxAnt = round(double(sixgr.util.structGet(cfg, "NumTxAntennas", 1)));
 if numTxAnt > 1
@@ -40,27 +40,25 @@ tx.SequenceIndex = seq.SequenceIndex;
 tx.Format = seq.Format;
 end
 
-function [waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq, cfg)
-useToolbox = logical(sixgr.util.structGet(cfg, "UseToolboxPRACHOFDMModulator", ...
-    sixgr.util.structGet(cfg, "random_access.use_toolbox_prach_ofdm_modulator", true)));
-if useToolbox
-    try
-        carrier = seq.Carrier;
-        prach = seq.PRACH;
-        grid = nrPRACHGrid(carrier, prach);
-        grid(seq.Indices) = seq.Symbols;
-        [waveform, ofdmInfo] = nrPRACHOFDMModulate(carrier, prach, grid);
-        backend = "matlab_5g_toolbox_nrPRACHOFDMModulate";
-        return;
-    catch ME
-        allowFallback = logical(sixgr.util.structGet(cfg, "AllowInrepoPRACHOFDMFallback", ...
-            sixgr.util.structGet(cfg, "random_access.allow_inrepo_prach_ofdm_fallback", false)));
-        if ~allowFallback
-            error("sixgr:rach:PRACHOFDMModulatorUnavailable", ...
-                "nrPRACHOFDMModulate failed for the resolved PRACH config and fallback is disabled: %s", ME.message);
-        end
-    end
+function [waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq)
+carrier = seq.Carrier;
+prach = seq.PRACH;
+grid = nrPRACHGrid(carrier, prach);
+grid(seq.Indices) = seq.Symbols;
+try
+    [waveform, ofdmInfo] = nrPRACHOFDMModulate( ...
+        carrier, prach, grid, "Windowing", 0);
+catch cause
+    failure = MException("sixgr:rach:PRACHOFDMModulatorUnavailable", ...
+        "nrPRACHOFDMModulate rejected the canonical PRACH occasion. " + ...
+        "The standard waveform path has no heuristic OFDM fallback: %s", ...
+        cause.message);
+    failure = addCause(failure, cause);
+    throwAsCaller(failure);
 end
-[waveform, grid, ofdmInfo] = sixgr.rach.modulatePRACHSymbols(seq.Symbols, seq, cfg);
-backend = "inrepo_nrPRACH_symbol_ofdm_explicit_fallback";
+if double(sixgr.util.structGet(ofdmInfo, "Windowing", NaN)) ~= 0
+    error("sixgr:phy:frame:WindowingNotAppliedExactly", ...
+        "Standard PRACH waveform generation requires exactly zero windowing.");
+end
+backend = "matlab_5g_toolbox_nrPRACHOFDMModulate_zero_windowing";
 end

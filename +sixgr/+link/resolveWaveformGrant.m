@@ -46,11 +46,12 @@ grant.HARQ = struct("HarqID", double(grant.HARQProcess), ...
     "RV", double(grant.RV), ...
     "IsRetransmission", logical(opt.IsRetransmission));
 grant.DAI = 1;
-grant.K1 = double(sixgr.util.structGet(cfg, "mac.harq.k1", 4));
-grant.K2 = double(sixgr.util.structGet(cfg, "mac.harq.k2", 1));
+grant.K0 = NaN;
+grant.K1 = NaN;
+grant.K2 = NaN;
 grant.SearchSpaceID = double(sixgr.util.structGet(cfg, "phy.dl.pdcch.SearchSpaceID", 0));
 grant.CORESETID = double(sixgr.util.structGet(cfg, "phy.dl.pdcch.CORESETID", 0));
-grant.BWPId = double(sixgr.util.structGet(cfg, "phy.bwp.id", 0));
+grant.BWPId = NaN;
 grant.Source = "explicit_waveform_grant";
 grant.Valid = true;
 
@@ -126,13 +127,9 @@ if isempty(prbSet)
     prbSet = sixgr.util.structGet(cfg, ternary(isUL, "phy.pusch.PRBSet", "phy.pdsch.PRBSet"), []);
 end
 if isempty(prbSet)
-    nGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
-    if isscalar(nGrid) && isfinite(nGrid) && nGrid >= 1
-        prbSet = 0:(round(nGrid) - 1);
-        prbStart = 0;
-        prbCount = double(numel(prbSet));
-    end
-    return;
+    error("sixgr:link:resolveWaveformGrant:MissingPRBSet", ...
+        "%s waveform grant requires an explicit configured PRBSet.", ...
+        ternary(isUL, "UL", "DL"));
 end
 prbSet = double(prbSet(:));
 prbSet = prbSet(isfinite(prbSet) & prbSet >= 0);
@@ -151,12 +148,18 @@ if isempty(symAlloc)
     symAlloc = sixgr.util.structGet(cfg, ternary(isUL, "phy.pusch.SymbolAllocation", "phy.pdsch.SymbolAllocation"), []);
 end
 if isempty(symAlloc)
-    symAlloc = [0 14];
+    error("sixgr:link:resolveWaveformGrant:MissingSymbolAllocation", ...
+        "%s waveform grant requires an explicit configured SymbolAllocation.", ...
+        ternary(isUL, "UL", "DL"));
 end
 symAlloc = double(symAlloc(:).');
-if numel(symAlloc) < 2 || any(~isfinite(symAlloc(1:2)))
-    symAlloc = [0 14];
-else
-    symAlloc = round(symAlloc(1:2));
+if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
+    error("sixgr:link:resolveWaveformGrant:InvalidSymbolAllocation", ...
+        "Configured waveform SymbolAllocation must contain exactly two finite values.");
+end
+symAlloc = round(symAlloc);
+if symAlloc(1) < 0 || symAlloc(2) < 1
+    error("sixgr:link:resolveWaveformGrant:InvalidSymbolAllocation", ...
+        "Configured waveform SymbolAllocation must be [start>=0 count>=1].");
 end
 end

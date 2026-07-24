@@ -76,13 +76,12 @@ end
 
 info.NSC = carrier.NSizeGrid * 12;
 
-% Derived OFDM details from 5G Toolbox.
-try
-    info.OFDM = nrOFDMInfo(carrier);
-catch ME
-    info.OFDM = struct();
-    info.OFDMError = ME.message;
-end
+% Derived OFDM details use the same strict policy as every waveform path.
+% Invalid carrier/sampling state is a configuration error and is not
+% converted into an empty metadata struct.
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+info.OFDM = sampling.ToolboxOFDMInfo;
+info.OFDMSamplingResolution = sampling;
 
 end
 

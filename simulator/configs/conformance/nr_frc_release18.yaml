@@ -1,0 +1,2276 @@
+{
+  "schema_version": "1.0.0",
+  "catalog_id": "nr_frc_release18",
+  "research_class": "baseline_benchmark",
+  "catalog_status": "normative_reference_data_with_nonnormative_project_diagnostic",
+  "expected_entry_count": 21,
+  "coverage": {
+    "scope_kind": "selected_phase1_conformance_operating_points",
+    "complete_annex_catalog": false,
+    "scope_statement": "This catalog contains twenty-one selected Release 18 conformance operating points: the ten Phase 1 gate anchors plus eleven representative coverage records spanning FDD PDSCH QPSK through 256QAM and ranks 1 through 4, and selected FR1 and FR2 PUSCH families including 16QAM, 256QAM, and rank-4 codebook transmission. It is not a complete transcription of the PDSCH reference measurement channels in TS 38.101-4 Annex A or the PUSCH G-FR1-A*/G-FR2-A* fixed reference channel families in TS 38.104 Annex A.",
+    "operating_point_count": 21,
+    "unique_frc_count": 19,
+    "downlink": {
+      "standard_key": "ts_38_101_4",
+      "standards_role": "UE receiver PDSCH demodulation requirements; the UE is the downlink receiver.",
+      "operating_point_count": 11,
+      "unique_frc_count": 9,
+      "represented_modulations": ["QPSK", "16QAM", "64QAM", "256QAM"],
+      "represented_layers": [1, 2, 3, 4],
+      "known_gaps": [
+        "FR2, TDD, HD-FDD, RedCap, HST, carrier-aggregation, multi-TRP, interference, 1024QAM, and other Annex A reference-channel families are not represented."
+      ]
+    },
+    "uplink": {
+      "standard_key": "ts_38_104",
+      "standards_role": "Base-station receiver PUSCH demodulation requirements; the gNB is the uplink receiver.",
+      "operating_point_count": 10,
+      "unique_frc_count": 10,
+      "represented_modulations": ["QPSK", "16QAM", "64QAM", "256QAM"],
+      "represented_layers": [1, 4],
+      "known_gaps": [
+        "Only eight selected FR1 and two selected FR2-1 operating points are represented.",
+        "The complete G-FR1-A*/G-FR2-A* Annex A families, including other allocations, transform-precoding choices, two-layer configurations, most multi-layer antenna configurations, FR2-2, and other propagation conditions, are not represented."
+      ]
+    },
+    "standards_role_boundary": "TS 38.101-4 does not define a UE-Rx PUSCH demodulation FRC because the UE transmits PUSCH. TS 38.104 does not define a gNB-Rx PDSCH demodulation FRC because the gNB transmits PDSCH."
+  },
+  "standards": {
+    "ts_38_101_4": {
+      "document": "3GPP TS 38.101-4",
+      "version": "18.11.0",
+      "release": 18,
+      "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+      "retrieved_on": "2026-07-24"
+    },
+    "ts_38_104": {
+      "document": "3GPP TS 38.104",
+      "version": "18.13.0",
+      "release": 18,
+      "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+      "retrieved_on": "2026-07-24"
+    }
+  },
+  "project_diagnostic_policy": {
+    "policy_id": "symmetric_snr_crossing_v1",
+    "normative": false,
+    "comparison_mode": "symmetric_snr_at_target_crossing",
+    "tolerance_db": 1.0,
+    "normative_requirement_semantics": "one_sided_minimum_performance_at_required_snr",
+    "warning": "The absolute measured-minus-required SNR crossing check is a simulator regression diagnostic only. 3GPP specifies one-sided minimum performance at the stated SNR, so a receiver that exceeds the requirement must not be declared nonconformant merely because its crossing is lower."
+  },
+  "entries": [
+    {
+      "id": "dl_r_pdsch_1_1_4_fdd_awgn",
+      "frc_id": "R.PDSCH.1-1.4 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-1",
+        "requirement_clause": "5.2.2.1.5",
+        "test_parameter_tables": ["5.2.2.1.5-2"],
+        "requirement_tables": ["5.2.2.1.5-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAMLowSE",
+        "mcs_index": 14,
+        "modulation": "QPSK",
+        "target_code_rate_numerator": 602,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.59,
+        "tbs_bits": 8064,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 1,
+        "code_block_crc_bits": 0,
+        "g_bits_per_slot": 13728,
+        "g_bits_tracking_slots": 13104,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "static_channel_annex_b_1"
+      },
+      "condition": {
+        "id": "awgn_static_1x2",
+        "kind": "awgn",
+        "label": "AWGN with 1x2 static channel specified in Annex B.1",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "TS 38.101-4 Annex B.1",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 1,
+        "rv_sequence": [0]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "block_error_rate",
+        "comparator": "less_than_or_equal",
+        "target_fraction": 0.00001,
+        "target_percent": 0.001,
+        "required_snr_db": 3.2,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_3_6_fdd_atg_awgn",
+      "frc_id": "R.PDSCH.1-3.6 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-3",
+        "requirement_clause": "5.2.2.1.22",
+        "test_parameter_tables": ["5.2.2.1.22-2"],
+        "requirement_tables": ["5.2.2.1.22-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 22,
+        "modulation": "64QAM",
+        "target_code_rate_numerator": 666,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.65,
+        "tbs_bits": 26632,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 4,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 41184,
+        "g_bits_tracking_slots": 39312,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "atg_awgn_220hz_2x2",
+        "kind": "awgn",
+        "label": "ATG AWGN with 220 Hz frequency offset",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 220,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 13.6,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_4_1_fdd_atg_awgn",
+      "frc_id": "R.PDSCH.1-4.1 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-4",
+        "requirement_clause": "5.2.2.1.22",
+        "test_parameter_tables": ["5.2.2.1.22-2"],
+        "requirement_tables": ["5.2.2.1.22-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "256QAM",
+        "mcs_index": 24,
+        "modulation": "256QAM",
+        "target_code_rate_numerator": 841,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.82,
+        "tbs_bits": 45096,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 6,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 54912,
+        "g_bits_tracking_slots": 52416,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "atg_awgn_220hz_2x2",
+        "kind": "awgn",
+        "label": "ATG AWGN with 220 Hz frequency offset",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 220,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 22.5,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_1_1_fdd_tdlb100_400",
+      "frc_id": "R.PDSCH.1-1.1 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-1",
+        "requirement_clause": "5.2.2.1.1",
+        "test_parameter_tables": ["5.2.2.1.1-2"],
+        "requirement_tables": ["5.2.2.1.1-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 4,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 4,
+        "modulation": "QPSK",
+        "target_code_rate_numerator": 308,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.30,
+        "tbs_bits": 3904,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 1,
+        "code_block_crc_bits": 0,
+        "g_bits_per_slot": 13104,
+        "g_bits_tracking_slots": 12480,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 2,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 18,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2 ULA",
+        "correlation_matrix": "ULA Low"
+      },
+      "condition": {
+        "id": "tdlb100_400_ula_low_2x2",
+        "kind": "fading",
+        "label": "TDLB100-400",
+        "model": "TDL-B",
+        "delay_spread_ns": 100,
+        "max_doppler_hz": 400,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": -0.8,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_3_1_fdd_tdla30_10",
+      "frc_id": "R.PDSCH.1-3.1 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-3",
+        "requirement_clause": "5.2.2.1.1",
+        "test_parameter_tables": ["5.2.2.1.1-2"],
+        "requirement_tables": ["5.2.2.1.1-4"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 19,
+        "modulation": "64QAM",
+        "target_code_rate_numerator": 517,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.51,
+        "tbs_bits": 42016,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 5,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 82368,
+        "g_bits_tracking_slots": 78624,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000, 1001],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 2,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2 ULA",
+        "correlation_matrix": "ULA Low"
+      },
+      "condition": {
+        "id": "tdla30_10_ula_low_2x2",
+        "kind": "fading",
+        "label": "TDLA30-10",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 19.4,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_4_1_fdd_tdla30_10",
+      "frc_id": "R.PDSCH.1-4.1 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-4",
+        "requirement_clause": "5.2.2.1.1",
+        "test_parameter_tables": ["5.2.2.1.1-2"],
+        "requirement_tables": ["5.2.2.1.1-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "256QAM",
+        "mcs_index": 24,
+        "modulation": "256QAM",
+        "target_code_rate_numerator": 841,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.82,
+        "tbs_bits": 45096,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 6,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 54912,
+        "g_bits_tracking_slots": 52416,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2 ULA",
+        "correlation_matrix": "ULA Low"
+      },
+      "condition": {
+        "id": "tdla30_10_ula_low_2x2",
+        "kind": "fading",
+        "label": "TDLA30-10",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 24.6,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_2_1_fdd_tdlc300_100",
+      "frc_id": "R.PDSCH.1-2.1 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-2",
+        "requirement_clause": "5.2.2.1.1",
+        "test_parameter_tables": ["5.2.2.1.1-2", "5.2-1", "C.3.1-1"],
+        "requirement_tables": ["5.2.2.1.1-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 13,
+        "modulation": "16QAM",
+        "target_code_rate_numerator": 490,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.48,
+        "tbs_bits": 13064,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 2,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 27456,
+        "g_bits_tracking_slots": 26208,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2 ULA",
+        "correlation_matrix": "ULA Low"
+      },
+      "condition": {
+        "id": "tdlc300_100_ula_low_2x2",
+        "kind": "fading",
+        "label": "TDLC300-100",
+        "model": "TDL-C",
+        "delay_spread_ns": 300,
+        "max_doppler_hz": 100,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.30,
+        "target_percent": 30,
+        "required_snr_db": 1.1,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_2_2_fdd_tdla30_10",
+      "frc_id": "R.PDSCH.1-2.2 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-2",
+        "requirement_clause": "5.2.2.1.1",
+        "test_parameter_tables": ["5.2.2.1.1-2", "5.2-1", "C.3.1-1"],
+        "requirement_tables": ["5.2.2.1.1-4"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 13,
+        "modulation": "16QAM",
+        "target_code_rate_numerator": 490,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.48,
+        "tbs_bits": 26120,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 4,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 54912,
+        "g_bits_tracking_slots": 52416,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000, 1001],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 2,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2 ULA",
+        "correlation_matrix": "ULA Medium"
+      },
+      "condition": {
+        "id": "tdla30_10_ula_medium_2x2",
+        "kind": "fading",
+        "label": "TDLA30-10",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 17.6,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_2_4_fdd_tdla30_10",
+      "frc_id": "R.PDSCH.1-2.4 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-2",
+        "requirement_clause": "5.2.3.1.1",
+        "test_parameter_tables": ["5.2.3.1.1-2", "5.2-1", "C.3.1-1"],
+        "requirement_tables": ["5.2.3.1.1-6"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 13,
+        "modulation": "16QAM",
+        "target_code_rate_numerator": 490,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.48,
+        "tbs_bits": 48168,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 6,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 99840,
+        "g_bits_tracking_slots": 94848,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [1000, 1001, 1002, 1003],
+        "dmrs_re_per_prb": 24,
+        "data_to_dmrs_epre_db": -3
+      },
+      "mimo": {
+        "layers": 4,
+        "tx_antennas": 4,
+        "rx_antennas": 4,
+        "antenna_configuration": "4x4 ULA",
+        "correlation_matrix": "ULA Low"
+      },
+      "condition": {
+        "id": "tdla30_10_ula_low_4x4",
+        "kind": "fading",
+        "label": "TDLA30-10",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 15.6,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a3a_1_awgn",
+      "frc_id": "G-FR1-A3A-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.3A",
+        "frc_definition_table": "A.3A-1",
+        "requirement_clause": "8.2.6",
+        "test_parameter_tables": ["8.2.6.1-1"],
+        "requirement_tables": ["8.2.6.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "QPSK",
+        "target_code_rate_numerator": 99,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.0967,
+        "tbs_bits": 704,
+        "transport_block_crc_bits": 16,
+        "code_blocks": 1,
+        "code_block_crc_bits": 0,
+        "g_bits_per_slot": 7200
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "awgn_1x2",
+        "kind": "awgn",
+        "label": "AWGN",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 1,
+        "rv_sequence": [0]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "block_error_rate",
+        "comparator": "less_than_or_equal",
+        "target_fraction": 0.00001,
+        "target_percent": 0.001,
+        "required_snr_db": -5.1,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a13_1_atg_awgn",
+      "frc_id": "G-FR1-A13-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.13",
+        "frc_definition_table": "A.13-1",
+        "requirement_clause": "8.2.14",
+        "test_parameter_tables": ["8.2.14.1-1"],
+        "requirement_tables": ["8.2.14.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "64QAM",
+        "target_code_rate_numerator": 948,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.9258,
+        "tbs_bits": 19968,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 3,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 21600
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "atg_awgn_200hz_1x2",
+        "kind": "awgn",
+        "label": "ATG AWGN with 200 Hz frequency offset",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 200,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 19.1,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a3_8_tdlb100_400",
+      "frc_id": "G-FR1-A3-8",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.3",
+        "frc_definition_table": "A.3-2",
+        "requirement_clause": "8.2.1",
+        "test_parameter_tables": ["8.2.1.1-1"],
+        "requirement_tables": ["8.2.1.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "QPSK",
+        "target_code_rate_numerator": 193,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.1885,
+        "tbs_bits": 1352,
+        "transport_block_crc_bits": 16,
+        "code_blocks": 1,
+        "code_block_crc_bits": 0,
+        "g_bits_per_slot": 7200
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "Low"
+      },
+      "condition": {
+        "id": "tdlb100_400_low_1x2",
+        "kind": "fading",
+        "label": "TDLB100-400 Low",
+        "model": "TDL-B",
+        "delay_spread_ns": 100,
+        "max_doppler_hz": 400,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": -2.3,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a5_8_tdla30_10",
+      "frc_id": "G-FR1-A5-8",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.5",
+        "frc_definition_table": "A.5-2",
+        "requirement_clause": "8.2.1",
+        "test_parameter_tables": ["8.2.1.1-1"],
+        "requirement_tables": ["8.2.1.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "64QAM",
+        "target_code_rate_numerator": 567,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.5537,
+        "tbs_bits": 12040,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 2,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 21600
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "Low"
+      },
+      "condition": {
+        "id": "tdla30_10_low_1x2",
+        "kind": "fading",
+        "label": "TDLA30-10 Low",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 12.3,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr2_a3_1_tdla30_300",
+      "frc_id": "G-FR2-A3-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "radiated_RIB",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.3",
+        "frc_definition_table": "A.3-7",
+        "requirement_clause": "11.2.2.1.2",
+        "test_parameter_tables": ["11.2.2.1.1-1"],
+        "requirement_tables": ["11.2.2.1.2-1"],
+        "snr_definition_clause": "11.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR2",
+        "frequency_range_subrange": "FR2-1",
+        "duplex_mode": "TDD",
+        "channel_bandwidth_mhz": 50,
+        "subcarrier_spacing_khz": 60,
+        "cyclic_prefix": "normal",
+        "n_prb": 66,
+        "prb_start": 0,
+        "prb_end": 65
+      },
+      "allocation": {
+        "mapping_type": "B",
+        "start_symbol": 0,
+        "symbol_length": 10,
+        "data_bearing_symbols": 9,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "QPSK",
+        "target_code_rate_numerator": 193,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.1885,
+        "tbs_bits": 2664,
+        "transport_block_crc_bits": 16,
+        "code_blocks": 1,
+        "code_block_crc_bits": 0,
+        "g_bits_per_slot": 14256
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 0,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [0]
+      },
+      "ptrs": {
+        "enabled": false,
+        "frequency_density": "disabled",
+        "time_density": "disabled",
+        "requirement_variant": "No"
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2 OTA demodulation branches",
+        "correlation_matrix": "Low"
+      },
+      "condition": {
+        "id": "tdla30_300_low_1x2",
+        "kind": "fading",
+        "label": "TDLA30-300 Low",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 300,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 11.1.1 radiated SNR: total signal energy in a slot on one RIB divided by noise energy in the transmission bandwidth over the duration where signal energy exists on that RIB; the required SNR is applied separately per polarization."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": -2.0,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr2_a5_1_tdla30_75_no_ptrs",
+      "frc_id": "G-FR2-A5-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "radiated_RIB",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.5",
+        "frc_definition_table": "A.5-3",
+        "requirement_clause": "11.2.2.1.2",
+        "test_parameter_tables": ["11.2.2.1.1-1"],
+        "requirement_tables": ["11.2.2.1.2-1"],
+        "snr_definition_clause": "11.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR2",
+        "frequency_range_subrange": "FR2-1",
+        "duplex_mode": "TDD",
+        "channel_bandwidth_mhz": 50,
+        "subcarrier_spacing_khz": 60,
+        "cyclic_prefix": "normal",
+        "n_prb": 66,
+        "prb_start": 0,
+        "prb_end": 65
+      },
+      "allocation": {
+        "mapping_type": "B",
+        "start_symbol": 0,
+        "symbol_length": 10,
+        "data_bearing_symbols": 9,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "64QAM",
+        "target_code_rate_numerator": 567,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.5537,
+        "tbs_bits": 23568,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 3,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 42768
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 0,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [0]
+      },
+      "ptrs": {
+        "enabled": false,
+        "frequency_density": "disabled",
+        "time_density": "disabled",
+        "requirement_variant": "No"
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2 OTA demodulation branches",
+        "correlation_matrix": "Low"
+      },
+      "condition": {
+        "id": "tdla30_75_low_1x2_no_ptrs",
+        "kind": "fading",
+        "label": "TDLA30-75 Low, PT-RS disabled",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 75,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 11.1.1 radiated SNR: total signal energy in a slot on one RIB divided by noise energy in the transmission bandwidth over the duration where signal energy exists on that RIB; the required SNR is applied separately per polarization."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 13.1,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_2_1_fdd_atg_awgn",
+      "frc_id": "R.PDSCH.1-2.1 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-2",
+        "requirement_clause": "5.2.2.1.22",
+        "test_parameter_tables": ["5.2.2.1.22-2"],
+        "requirement_tables": ["5.2.2.1.22-3"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": 2,
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 13,
+        "modulation": "16QAM",
+        "target_code_rate_numerator": 490,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.48,
+        "tbs_bits": 13064,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 2,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 27456,
+        "g_bits_tracking_slots": 26208,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 1,
+        "ports": [1000],
+        "dmrs_re_per_prb": 12,
+        "data_to_dmrs_epre_db": 0
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 2,
+        "rx_antennas": 2,
+        "antenna_configuration": "2x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "atg_awgn_220hz_2x2",
+        "kind": "awgn",
+        "label": "ATG AWGN with 220 Hz frequency offset",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 220,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 6.0,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "dl_r_pdsch_1_2_3_fdd_tdla30_10",
+      "frc_id": "R.PDSCH.1-2.3 FDD",
+      "research_class": "baseline_benchmark",
+      "direction": "downlink",
+      "physical_channel": "PDSCH",
+      "receiver_role": "UE-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_101_4",
+        "document": "3GPP TS 38.101-4",
+        "version": "18.11.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.11.00_60/ts_13810104v181100p.pdf",
+        "frc_definition_clause": "A.3.2.1.1",
+        "frc_definition_table": "A.3.2.1.1-2",
+        "requirement_clause": "5.2.3.1.1",
+        "test_parameter_tables": ["5.2.3.1.1-2", "5.2-1", "C.3.1-1"],
+        "requirement_tables": ["5.2.3.1.1-5"],
+        "snr_definition_clause": "4.4.2"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 10,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 52,
+        "prb_start": 0,
+        "prb_end": 51
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 2,
+        "symbol_length": 12,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "Type0",
+        "rbg_size_config": "Config2",
+        "prb_bundling_size": "wideband",
+        "vrb_to_prb_mapping": "non_interleaved",
+        "allocated_slots_per_20ms": 19
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "64QAM",
+        "mcs_index": 13,
+        "modulation": "16QAM",
+        "target_code_rate_numerator": 490,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.48,
+        "tbs_bits": 35856,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 5,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 74880,
+        "g_bits_tracking_slots": 71136,
+        "tracking_slot_indices": [10, 11]
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [1000, 1001, 1002],
+        "dmrs_re_per_prb": 24,
+        "data_to_dmrs_epre_db": -3
+      },
+      "mimo": {
+        "layers": 3,
+        "tx_antennas": 4,
+        "rx_antennas": 4,
+        "antenna_configuration": "4x4 ULA",
+        "correlation_matrix": "ULA Low"
+      },
+      "condition": {
+        "id": "tdla30_10_ula_low_4x4_rank3",
+        "kind": "fading",
+        "label": "TDLA30-10",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.101-4 clause 4.4.2 conducted Mode 1 SNR: wanted-signal power summed across receiver antenna connectors divided by Noc summed across those connectors; no precoding gain is included and wanted-signal power is referenced to SSS through Annex C.3.1."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 11.0,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a4_8_tdlc300_100",
+      "frc_id": "G-FR1-A4-8",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.4",
+        "frc_definition_table": "A.4-2",
+        "requirement_clause": "8.2.1",
+        "test_parameter_tables": ["8.2.1.1-1"],
+        "requirement_tables": ["8.2.1.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "16QAM",
+        "target_code_rate_numerator": 658,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.6426,
+        "tbs_bits": 9224,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 2,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 14400
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "Low"
+      },
+      "condition": {
+        "id": "tdlc300_100_low_1x2",
+        "kind": "fading",
+        "label": "TDLC300-100 Low",
+        "model": "TDL-C",
+        "delay_spread_ns": 300,
+        "max_doppler_hz": 100,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 10.1,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a9_1_tdla30_10",
+      "frc_id": "G-FR1-A9-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.9",
+        "frc_definition_table": "A.9-1",
+        "requirement_clause": "8.2.1",
+        "test_parameter_tables": ["8.2.1.1-1"],
+        "requirement_tables": ["8.2.1.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "256QAM",
+        "target_code_rate_numerator": 682.5,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.6665,
+        "tbs_bits": 18960,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 3,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 28800
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "Low"
+      },
+      "condition": {
+        "id": "tdla30_10_low_1x2",
+        "kind": "fading",
+        "label": "TDLA30-10 Low",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 19.1,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a14_1_atg_awgn",
+      "frc_id": "G-FR1-A14-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.14",
+        "frc_definition_table": "A.14-1",
+        "requirement_clause": "8.2.14",
+        "test_parameter_tables": ["8.2.14.1-1"],
+        "requirement_tables": ["8.2.14.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "256QAM",
+        "target_code_rate_numerator": 754,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.7363,
+        "tbs_bits": 21000,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 3,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 28800
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "atg_awgn_200hz_1x2",
+        "kind": "awgn",
+        "label": "ATG AWGN with 200 Hz frequency offset",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 200,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 19.4,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
+      "id": "ul_g_fr1_a11_1_tdla30_10_rank4",
+      "frc_id": "G-FR1-A11-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.11",
+        "frc_definition_table": "A.11-1",
+        "requirement_clause": "8.2.1",
+        "test_parameter_tables": ["8.2.1.1-1"],
+        "requirement_tables": ["8.2.1.2-1"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "A",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "64QAM",
+        "target_code_rate_numerator": 438,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.4277,
+        "tbs_bits": 36896,
+        "transport_block_crc_bits": 24,
+        "code_blocks": 5,
+        "code_block_crc_bits": 24,
+        "g_bits_per_slot": 86400
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0, 1, 2, 3],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [2, 11]
+      },
+      "mimo": {
+        "layers": 4,
+        "tx_antennas": 4,
+        "rx_antennas": 4,
+        "antenna_configuration": "4x4",
+        "correlation_matrix": "Low",
+        "precoding_scheme": "codebook",
+        "tpmi_index": 0
+      },
+      "condition": {
+        "id": "tdla30_10_low_4x4",
+        "kind": "fading",
+        "label": "TDLA30-10 Low",
+        "model": "TDL-A",
+        "delay_spread_ns": 30,
+        "max_doppler_hz": 10,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 4,
+        "rv_sequence": [0, 2, 3, 1]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "fraction_of_maximum_throughput",
+        "comparator": "greater_than_or_equal",
+        "target_fraction": 0.70,
+        "target_percent": 70,
+        "required_snr_db": 19.2,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    }
+  ]
+}

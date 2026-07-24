@@ -1,0 +1,2 @@
+Suite: testMultiBWPFrameGrid
+PASS in 7.112817 seconds.

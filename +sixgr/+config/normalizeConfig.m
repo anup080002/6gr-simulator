@@ -365,51 +365,19 @@ else
 end
 
 % -------------------------------------------------------------------------
-% Derive numerology helpers
+% Direct carrier aliases only
 % -------------------------------------------------------------------------
-scs = double(cfg.phy.carrier.SubcarrierSpacing); % kHz
+% Normalization is intentionally non-physical.  Canonical numerology,
+% OFDM, grid, and duplex state is resolved exactly once by validateConfig
+% and attached as phy.frameStructure.  Keep only direct spelling aliases
+% here so normalization cannot create an independent physical snapshot.
+scs = double(cfg.phy.carrier.SubcarrierSpacing); % configured in kHz
 nRB = double(cfg.phy.carrier.NSizeGrid);
 cfg.phy.numerology = localStructEnsure(cfg.phy,'numerology');
+cfg.phy.carrier.SubcarrierSpacing_kHz = scs;
 cfg.phy.numerology.SubcarrierSpacing_kHz = scs;
+cfg.phy.numerology.scs_kHz = scs;
 cfg.phy.numerology.NRB = nRB;
-cfg.phy.numerology.NSubcarriers = 12*nRB;
-
-% Numerology mu and timing
-mu = log2(scs/15);
-if ~isfinite(mu) || mu < 0
-    mu = 0;
-end
-cfg.phy.numerology.mu = mu;
-cfg.phy.numerology.slotsPerSubframe = 2^mu;
-cfg.phy.numerology.slotsPerFrame = 10 * cfg.phy.numerology.slotsPerSubframe;
-
-% -------------------------------------------------------------------------
-% OFDM info (optional, uses 5G Toolbox if present)
-% -------------------------------------------------------------------------
-cfg.phy.ofdm = struct();
-if exist('nrOFDMInfo','file') == 2 && exist('nrCarrierConfig','file') == 2
-    try
-        carrier = nrCarrierConfig;
-        carrier.SubcarrierSpacing = scs;
-        carrier.NSizeGrid = nRB;
-        carrier.CyclicPrefix = cfg.phy.carrier.CyclicPrefix;
-        info = nrOFDMInfo(carrier);
-        cfg.phy.ofdm = info;
-        if isfield(cfg,'channel') && isa(cfg.channel,'struct')
-            cfg.channel.sampleRate_Hz = info.SampleRate;
-            cfg.channel.nfft = info.Nfft;
-        end
-    catch
-        % Keep cfg.phy.ofdm empty if 5G Toolbox call fails
-    end
-else
-    % Minimal derived values (approx) without 5G Toolbox
-    % Nfft: next power of 2 >= NSubcarriers
-    nSC = cfg.phy.numerology.NSubcarriers;
-    cfg.phy.ofdm.Nfft = 2^nextpow2(max(1,nSC));
-    % Sample rate approx: Nfft * SCS
-    cfg.phy.ofdm.SampleRate = cfg.phy.ofdm.Nfft * (scs*1e3);
-end
 
 % -------------------------------------------------------------------------
 % Scenario convenience fields

@@ -19,8 +19,8 @@ if ismember("Frame", string(T.Properties.VariableNames)) && ismember("Slot", str
     frameCol = double(T.Frame);
     slotCol = double(T.Slot);
     miss = ~isfinite(frameCol) & isfinite(slotCol);
-    if any(miss)
-        frameCol(miss) = floor(max(slotCol(miss) - 1, 0) ./ max(slotsPerFrame, 1)) + 1;
+    if any(miss) && isfinite(slotsPerFrame)
+        frameCol(miss) = floor(max(slotCol(miss) - 1, 0) ./ slotsPerFrame) + 1;
         T.Frame = frameCol;
     end
 end
@@ -126,12 +126,16 @@ end
 end
 
 function slotsPerFrame = localSlotsPerFrame(cfg)
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 15));
-mu = log2(scs / 15);
-if ~(isfinite(mu) && mu >= 0)
-    mu = 0;
+scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", NaN)));
+if ~(isscalar(scs) && isfinite(scs) && scs > 0)
+    slotsPerFrame = NaN;
+    return;
 end
-slotsPerFrame = max(1, round(10 * (2 ^ mu)));
+cp = string(sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal"));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scs, cp, "generic_waveform_test", "");
+slotsPerFrame = double(numerology.SlotsPerFrame);
 end
 
 function value = localDefaultUEID(cfg, n)

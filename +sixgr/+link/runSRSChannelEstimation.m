@@ -793,11 +793,8 @@ hTrue = complex([]);
 if isempty(referenceWaveform) || isempty(pilotInd) || isempty(pilotSym)
     return;
 end
-try
-    refGrid = nrOFDMDemodulate(carrier, referenceWaveform);
-catch
-    return;
-end
+[refGrid, ~] = sixgr.phy.waveform.ofdmDemodulate( ...
+    carrier, referenceWaveform);
 pilotObs = localReferenceGridPilotObservations(refGrid, carrier, pilotInd, nPorts);
 pilotObs = localCollapsePilotObservations(pilotObs);
 pilotSym = pilotSym(:);

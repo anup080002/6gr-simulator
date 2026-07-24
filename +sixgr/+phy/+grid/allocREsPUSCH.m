@@ -129,7 +129,9 @@ rnti = double(sixgr.util.structGet(cfg, 'phy.pusch.RNTI', 1));
 nid = sixgr.util.structGet(cfg, 'phy.pusch.NID', ...
     sixgr.util.structGet(cfg, 'phy.pusch.nid', []));
 prb = sixgr.util.structGet(cfg, 'phy.pusch.prbSet', []);
-symAlloc = sixgr.util.structGet(cfg, 'phy.pusch.symbolAllocation', [0 14]);
+symAlloc = sixgr.util.structGet(cfg, 'phy.pusch.symbolAllocation', []);
+tdraID = string(sixgr.util.structGet(cfg, 'phy.pusch.tdraId', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.TDRAID', '')));
 tp = logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
 tpmi = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.pusch.tpmi', []), ...
@@ -164,6 +166,9 @@ if ~isempty(opts.MappingType)
     mapType = upper(char(string(opts.MappingType)));
     mapTypeExplicit = logical(opts.MappingTypeExplicit);
 end
+[symAlloc, mapType, mapTypeExplicit] = localResolvePUSCHTDRA( ...
+    carrier, cfg, tdraID, symAlloc, mapType, mapTypeExplicit, ...
+    opts.FixedReferenceMode);
 if ~numAntennaPortsExplicit && (~isfinite(numAntennaPorts) || numAntennaPorts < nl)
     numAntennaPorts = nl;
 end
@@ -241,6 +246,66 @@ end
 
 end
 
+function [symbolAllocation, mappingType, mappingExplicit] = ...
+        localResolvePUSCHTDRA(carrier, cfg, tdraID, ...
+        symbolAllocation, mappingType, mappingExplicit, fixedReferenceMode)
+strict = logical(fixedReferenceMode);
+if isstruct(cfg)
+    strict = strict || ...
+        logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
+        logical(sixgr.util.structGet(cfg, "validation.strict", false));
+end
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    double(carrier.SubcarrierSpacing), string(carrier.CyclicPrefix), ...
+    "generic_waveform_test", "");
+symbolsPerSlot = double(numerology.SymbolsPerSlot);
+tdraID = strtrim(string(tdraID));
+if strlength(tdraID) > 0
+    raw = struct( ...
+        "TDRAID", tdraID, ...
+        "Channel", "PUSCH", ...
+        "Mu", double(numerology.Mu));
+    if ~isempty(symbolAllocation)
+        raw.StartSymbol = double(symbolAllocation(1));
+        if numel(symbolAllocation) >= 2
+            raw.NumSymbols = double(symbolAllocation(2));
+        end
+    end
+    if logical(mappingExplicit)
+        raw.MappingType = mappingType;
+    end
+    tdra = sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+        raw, symbolsPerSlot);
+    symbolAllocation = [tdra.StartSymbol tdra.NumSymbols];
+    mappingType = char(tdra.MappingType);
+    mappingExplicit = true;
+    return;
+end
+
+if isempty(symbolAllocation)
+    error("sixgr:phy:grid:allocREsPUSCH:MissingExplicitTDRA", ...
+        "PUSCH transmission requires phy.pusch.tdraId or an explicit " + ...
+        "phy.pusch.symbolAllocation test/configuration grant. A missing " + ...
+        "allocation is not expanded to a full slot.");
+end
+if numel(symbolAllocation) ~= 2
+    error("sixgr:phy:grid:allocREsPUSCH:InvalidTDRA", ...
+        "PUSCH SymbolAllocation must be [zeroBasedStart positiveLength].");
+end
+if strict && ~logical(mappingExplicit)
+    error("sixgr:phy:grid:allocREsPUSCH:MissingExplicitTDRA", ...
+        "Strict PUSCH transmission requires an explicit TDRA MappingType A or B.");
+end
+raw = struct( ...
+    "StartSymbol", double(symbolAllocation(1)), ...
+    "NumSymbols", double(symbolAllocation(2)), ...
+    "MappingType", string(mappingType));
+tdra = sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+    raw, symbolsPerSlot);
+symbolAllocation = [tdra.StartSymbol tdra.NumSymbols];
+mappingType = char(tdra.MappingType);
+end
+
 function pusch = localNormalizePUSCHMapping(pusch, mapType, explicitMapType, fixedReferenceMode)
 if nargin < 2 || strlength(string(mapType)) == 0
     mapType = "A";
@@ -252,12 +317,16 @@ if nargin < 4
     fixedReferenceMode = false;
 end
 
-symAlloc = [0 14];
+symAlloc = [];
 try
     if isprop(pusch, "SymbolAllocation") && ~isempty(pusch.SymbolAllocation)
         symAlloc = double(pusch.SymbolAllocation(:).');
     end
 catch
+end
+if numel(symAlloc) < 2
+    error("sixgr:phy:grid:allocREsPUSCH:MissingExplicitTDRA", ...
+        "PUSCH SymbolAllocation must be present before mapping validation.");
 end
 startSym = 0;
 if ~isempty(symAlloc)
@@ -470,13 +539,20 @@ value = allowed(idx);
 end
 
 function prbVec = localExpandPRBSet(prb, nSizeGrid)
-% Expand PRB set inputs.
+% Expand an explicit PRB-set input.
 if isempty(prb)
-    prbVec = 0:(nSizeGrid-1);
-    return;
+    error("sixgr:phy:grid:allocREsPUSCH:MissingPRBSet", ...
+        "PUSCH transmission requires an explicit nonempty PRBSet. A " + ...
+        "missing allocation is not expanded to the full carrier grid.");
 end
-if isnumeric(prb)
+if isnumeric(prb) && isreal(prb)
     prb = double(prb(:).');
+    if any(~isfinite(prb)) || any(prb ~= fix(prb)) || ...
+            any(prb < 0) || any(prb >= double(nSizeGrid))
+        error("sixgr:phy:grid:allocREsPUSCH:InvalidPRBSet", ...
+            "PUSCH PRBSet must contain integer indices in [0,%d].", ...
+            round(double(nSizeGrid)) - 1);
+    end
     if numel(prb) == 2 && prb(2) >= prb(1)
         prbVec = prb(1):prb(2);
         return;
@@ -485,6 +561,6 @@ if isnumeric(prb)
     return;
 end
 
-% Fallback: default full-band
-prbVec = 0:(nSizeGrid-1);
+error("sixgr:phy:grid:allocREsPUSCH:InvalidPRBSet", ...
+    "PUSCH PRBSet must be a real numeric vector.");
 end

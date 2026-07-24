@@ -723,12 +723,9 @@ if isstruct(txStruct)
     if ~isfield(txInfo.OFDM, "SampleRate") || isempty(txInfo.OFDM.SampleRate)
         sampleRate = sixgr.util.structGet(txStruct, "PRACHRuntimeConfig.SampleRate_Hz", []);
         if isempty(sampleRate) && isfield(txStruct, "Carrier")
-            try
-                ofdmInfo = nrOFDMInfo(txStruct.Carrier);
-                sampleRate = double(sixgr.util.structGet(ofdmInfo, "SampleRate", []));
-            catch
-                sampleRate = [];
-            end
+            sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+                txStruct.Carrier);
+            sampleRate = double(sampling.SampleRateHz);
         end
         if ~isempty(sampleRate)
             txInfo.OFDM.SampleRate = double(sampleRate);
@@ -864,14 +861,8 @@ t = NaN;
 if ~(isfinite(slot) && slot >= 0)
     return;
 end
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
-    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", 15)));
-if ~(isfinite(scs) && scs > 0)
-    scs = 15;
-end
-mu = round(log2(scs / 15));
-slotsPerMs = 2 ^ max(0, mu);
-t = double(slot) / (1000 * slotsPerMs);
+slotDuration_s = sixgr.time.slotDurationSec(cfg);
+t = double(slot) * slotDuration_s;
 end
 
 function row = localEmptyRuntimeStageRow()

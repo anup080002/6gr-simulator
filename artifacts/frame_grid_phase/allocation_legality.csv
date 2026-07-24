@@ -1,0 +1,15 @@
+TestID,Channel,Direction,CCID,BWPID,AbsoluteSlot,StartSymbol,NumSymbols,StartRB,NumRB,FlexDecision,ExpectedValid,ActualValid,ReasonCode,Status,IndexConvention
+ALLOC-001,PDCCH,DL,0,0,0,0,2,0,1,none,TRUE,TRUE,fixed_dl_symbols,PASS,zero_based_phy_indices
+ALLOC-002,PDSCH,DL,0,0,0,0,4,0,1,none,TRUE,TRUE,fixed_dl_symbols,PASS,zero_based_phy_indices
+ALLOC-003,PDSCH,DL,0,0,0,4,4,0,1,unresolved,FALSE,FALSE,flexible_symbols_unresolved,PASS,zero_based_phy_indices
+ALLOC-004,PDSCH,DL,0,0,0,4,4,0,1,DL:4-7,TRUE,TRUE,flexible_symbols_resolved_dl,PASS,zero_based_phy_indices
+ALLOC-005,PUSCH,UL,0,0,0,4,4,0,1,UL:4-7,TRUE,TRUE,flexible_symbols_resolved_ul,PASS,zero_based_phy_indices
+ALLOC-006,PDSCH+PUSCH,DL+UL,0,0,0,4,4,0,1,DL:4-7;UL:4-7,FALSE,FALSE,conflicting_flexible_symbol_resolution,PASS,zero_based_phy_indices
+ALLOC-007,PUCCH,UL,0,0,0,12,2,0,1,none,TRUE,TRUE,fixed_ul_symbols,PASS,zero_based_phy_indices
+ALLOC-008,PRACH,UL,0,0,0,11,3,0,1,unresolved,FALSE,FALSE,flexible_symbols_unresolved,PASS,zero_based_phy_indices
+ALLOC-009,PRACH,UL,0,0,0,11,3,0,1,UL:11,TRUE,TRUE,flex_plus_fixed_ul,PASS,zero_based_phy_indices
+ALLOC-010,PDSCH,DL,0,0,0,12,2,0,1,none,FALSE,FALSE,allocation_hits_fixed_ul,PASS,zero_based_phy_indices
+ALLOC-011,PUSCH,UL,0,0,0,0,2,0,1,none,FALSE,FALSE,allocation_hits_fixed_dl,PASS,zero_based_phy_indices
+ALLOC-012,PDSCH,DL,0,0,0,0,14,0,1,none,TRUE,TRUE,preserve_explicit_full_slot_pdsch_no_auto_shift,PASS,zero_based_phy_indices
+ALLOC-013,PDSCH,DL,0,0,0,NaN,NaN,0,1,none,FALSE,FALSE,missing_explicit_tdra_in_strict_mode,PASS,zero_based_phy_indices
+ALLOC-014,PUSCH,UL,0,0,0,0,14,0,1,none,TRUE,TRUE,preserve_explicit_full_slot_pusch,PASS,zero_based_phy_indices

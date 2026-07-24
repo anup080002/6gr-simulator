@@ -50,12 +50,14 @@ simulation:
 
 frequency:
   range_name: FR1
-  center_frequency_hz: 4000000000
+  center_frequency_hz: 2140000000
+  dl_center_frequency_hz: 2140000000
+  ul_center_frequency_hz: 1950000000
   bandwidth_hz: 10000000
   duplex_mode: FDD
   carrier_count: 1
   carrier_aggregation_enabled: false
-  band_name: n77
+  band_name: n1
   bandwidth_options_hz: [10000000]
   numerology_options_khz: [30]
   max_mimo_size: 1
@@ -65,13 +67,12 @@ frequency:
   power_model_defaults: baseline
   energy_model_defaults: disabled
   rf_impairment_defaults: disabled
-  n_size_grid: 52
+  n_size_grid: 24
 
 frame:
   scs_khz: 30
   cp_type: normal
   slot_format: dl
-  tdd_pattern: FDD
 
 channels:
   model_type: AWGN

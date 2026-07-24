@@ -552,7 +552,8 @@ else
         "RV", tmpl.RV, ...
         "TargetCodeRate", tmpl.TargetCodeRate, ...
         "XOverhead", double(sixgr.util.structGet(tmpl, "XOverhead", ...
-            sixgr.phy.dl.resolvePDSCHXOverhead(cfgReplay, localObjectValue(tmpl.PDSCH, "SymbolAllocation", [0 14])))), ...
+            sixgr.phy.dl.resolvePDSCHXOverhead(cfgReplay, ...
+            localObjectValue(tmpl.PDSCH, "SymbolAllocation", [])))), ...
         "CompactOutput", logical(opt.CompactPHYIO));
 end
 end
@@ -1114,7 +1115,8 @@ end
 rv = localGrantRV(grant);
 targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", ...
     sixgr.util.structGet(cfgE, "phy.pdsch.codeRate", 0.5)));
-xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfgE, localObjectValue(pdsch, "SymbolAllocation", [0 14]));
+xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfgE, ...
+    localObjectValue(pdsch, "SymbolAllocation", []));
 try
     [~, pdschInfo] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
 catch
@@ -1130,15 +1132,31 @@ tx0 = struct( ...
 end
 
 function prbSet = localReplayPRBSet(cfgE, grant)
-prbSet = double(unique(grant.PRBSet(:).'));
+raw = sixgr.util.structGet(grant, "PRBSet", []);
+if ~(isnumeric(raw) && isreal(raw) && ~isempty(raw))
+    error("sixgr:system:waveform:MissingReplayPRBSet", ...
+        "Waveform replay requires an explicit nonempty grant PRBSet.");
+end
+prbSet = double(unique(raw(:).', "stable"));
+if any(~isfinite(prbSet)) || any(prbSet ~= fix(prbSet)) || ...
+        any(prbSet < 0)
+    error("sixgr:system:waveform:InvalidReplayPRBSet", ...
+        "Waveform replay PRBSet must contain finite nonnegative integers.");
+end
 offset = double(sixgr.util.structGet(cfgE, "system.waveform.replayPRBOffset", 0));
 if isfinite(offset) && offset > 0
     prbSet = prbSet - offset;
 end
-prbSet = prbSet(isfinite(prbSet) & prbSet >= 0);
-if isempty(prbSet)
-    nGrid = max(1, round(double(sixgr.util.structGet(cfgE, "phy.carrier.NSizeGrid", 1))));
-    prbSet = 0:(nGrid-1);
+if any(prbSet < 0) || any(prbSet ~= fix(prbSet))
+    error("sixgr:system:waveform:InvalidReplayPRBOffset", ...
+        "system.waveform.replayPRBOffset moves the explicit grant PRBSet " + ...
+        "outside the replay carrier.");
+end
+nGrid = double(sixgr.util.structGet(cfgE, ...
+    "phy.carrier.NSizeGrid", NaN));
+if isfinite(nGrid) && any(prbSet >= round(nGrid))
+    error("sixgr:system:waveform:ReplayPRBOutOfRange", ...
+        "Waveform replay PRBSet exceeds the configured replay carrier grid.");
 end
 end
 
@@ -1214,7 +1232,7 @@ signature.NSizeGrid = double(sixgr.util.structGet(cfgReplay, "phy.carrier.NSizeG
 signature.NStartGrid = double(sixgr.util.structGet(cfgReplay, "phy.carrier.NStartGrid", NaN));
 signature.SubcarrierSpacing = double(sixgr.util.structGet(cfgReplay, "phy.carrier.SubcarrierSpacing", NaN));
 signature.PRBSet = double(localReplayPRBSet(cfgReplay, grant));
-signature.SymbolAllocation = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]));
+signature.SymbolAllocation = localReplaySymbolAllocation(grant);
 signature.Modulation = char(string(sixgr.util.structGet(grant, "Modulation", "")));
 signature.NumLayers = double(sixgr.util.structGet(grant, "NumLayers", NaN));
 signature.RV = double(localGrantRV(grant));
@@ -1430,12 +1448,16 @@ rv = max(0, min(3, round(rv)));
 end
 
 function pusch = localNormalizeReplayPUSCHMapping(pusch)
-symAlloc = [0 14];
+symAlloc = [];
 try
     if isprop(pusch, "SymbolAllocation") && ~isempty(pusch.SymbolAllocation)
         symAlloc = double(pusch.SymbolAllocation(:).');
     end
 catch
+end
+if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
+    error("sixgr:system:waveform:MissingReplaySymbolAllocation", ...
+        "Waveform replay PUSCH requires an explicit SymbolAllocation.");
 end
 startSym = 0;
 if ~isempty(symAlloc)
@@ -1532,6 +1554,23 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
             y(end+1:size(x,1), :) = cast(0, "like", y); %#ok<AGROW>
         end
     end
+end
+
+function symbolAllocation = localReplaySymbolAllocation(grant)
+symbolAllocation = sixgr.util.structGet(grant, "SymbolAllocation", []);
+if ~(isnumeric(symbolAllocation) && isreal(symbolAllocation) && ...
+        numel(symbolAllocation) == 2)
+    error("sixgr:system:waveform:MissingReplaySymbolAllocation", ...
+        "Waveform replay requires explicit grant SymbolAllocation [start,count].");
+end
+symbolAllocation = reshape(double(symbolAllocation), 1, 2);
+if any(~isfinite(symbolAllocation)) || ...
+        any(symbolAllocation ~= fix(symbolAllocation)) || ...
+        symbolAllocation(1) < 0 || symbolAllocation(2) < 1
+    error("sixgr:system:waveform:InvalidReplaySymbolAllocation", ...
+        "Waveform replay SymbolAllocation must contain finite integer " + ...
+        "[start,count] values with start >= 0 and count >= 1.");
+end
 end
 [y, state] = localApplyReplayImpairments(y, state);
 [y, nVar] = localAddAwgn(y, snr_dB);

@@ -146,10 +146,14 @@ frame:
   scs_khz: 30
   cp_type: normal
   slot_format: flexible
-  tdd_pattern: DDDSU
-  special_slot_downlink_symbols: 12
-  ul_dl_guard_symbols: 1
-  special_slot_uplink_symbols: 1
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 1
 
 global_radio_scope:
   carrier_frequency_hz: 4000000000
@@ -172,10 +176,14 @@ frame_timing:
   slot_duration_ms: 0.5
   symbols_per_slot: 14
   slots_per_frame: 20
-  tdd_pattern: DDDSU
-  special_slot_downlink_symbols: 12
-  ul_dl_guard_symbols: 1
-  special_slot_uplink_symbols: 1
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 1
 
 resource_grid:
   num_rbs: 273

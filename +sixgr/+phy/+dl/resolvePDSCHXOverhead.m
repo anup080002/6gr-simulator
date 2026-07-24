@@ -6,7 +6,11 @@ function xOverhead = resolvePDSCHXOverhead(cfg, symAlloc)
 % allocation: 0, 6, 12, or 18 RE/PRB.
 
 if nargin < 2 || isempty(symAlloc)
-    symAlloc = sixgr.util.structGet(cfg, "phy.pdsch.symbolAllocation", [0 14]);
+    symAlloc = sixgr.util.structGet(cfg, "phy.pdsch.symbolAllocation", []);
+end
+if isempty(symAlloc)
+    error("sixgr:phy:dl:MissingPDSCHSymbolAllocation", ...
+        "PDSCH XOverhead resolution requires an explicit SymbolAllocation.");
 end
 
 [xOverhead, explicit] = localFirstFiniteScalarWithPresence( ...
@@ -40,12 +44,14 @@ end
 
 function symbols = localAllocationSymbols(symAlloc)
 symAlloc = double(symAlloc(:).');
-if numel(symAlloc) < 2
-    symbols = 0:13;
-    return;
+if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc)) || ...
+        any(symAlloc ~= fix(symAlloc)) || symAlloc(1) < 0 || ...
+        symAlloc(2) < 1 || sum(symAlloc) > 14
+    error("sixgr:phy:dl:InvalidPDSCHSymbolAllocation", ...
+        "PDSCH SymbolAllocation must be integer [start,count] within a 14-symbol slot.");
 end
-startSym = max(0, round(symAlloc(1)));
-nSym = max(1, round(symAlloc(2)));
+startSym = round(symAlloc(1));
+nSym = round(symAlloc(2));
 symbols = startSym:(startSym + nSym - 1);
 symbols = symbols(symbols >= 0 & symbols < 14);
 end

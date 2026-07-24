@@ -25,7 +25,11 @@ scsHz = localCfgNumber(scenarioCfg, "global_radio_scope.scs_hz", NaN);
 if ~isfinite(scsKHz) && isfinite(scsHz)
     scsKHz = scsHz / 1e3;
 end
-slotDurationMs = localCfgNumber(scenarioCfg, "frame_timing.slot_duration_ms", localSlotDurationFromSCS(scsKHz));
+slotDurationMs = localSlotDurationFromSCS(scsKHz);
+if ~isfinite(slotDurationMs)
+    slotDurationMs = localCfgNumber(scenarioCfg, ...
+        "frame_timing.slot_duration_ms", NaN);
+end
 
 [totalSlots, durationStatus] = localObservedSlotSpan(dlTrials, scenarioCfg);
 runDurationMs = totalSlots * slotDurationMs;
@@ -169,15 +173,12 @@ end
 
 function dt = localSlotDurationFromSCS(scsKHz)
 if ~isfinite(scsKHz) || scsKHz <= 0
-    dt = 0.5;
+    dt = NaN;
     return;
 end
-mu = round(log2(scsKHz / 15));
-if ~isfinite(mu)
-    dt = 0.5;
-else
-    dt = 1 / (2 ^ mu);
-end
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    double(scsKHz), "normal", "generic_waveform_test", "");
+dt = double(numerology.SlotDurationMilliseconds);
 end
 
 function value = localCfgNumber(cfg, paths, defaultValue)

@@ -6,6 +6,7 @@ cfg = sixgr.config.defaultConfig();
 cfg.run.shortRun = true;
 cfg.mac.scheduler.maxUEPerSlot = 4;
 cfg.mac.scheduler.minPRBPerUE = 4;
+cfg = withCanonicalSchedulerTiming(cfg);
 
 ue = repmat(struct("RNTI",0,"DLBufferBytes",0,"CQI",10,"RI",1,"HeadOfLineDelay_ms",1), 4, 1);
 for k = 1:4
@@ -25,6 +26,16 @@ for i = 1:numel(grants)
     for f = 1:numel(reqFields)
         assert(isfield(g, reqFields(f)), "Missing grant field: %s", reqFields(f));
     end
+    assert(isfield(g, "PRBSet") && isnumeric(g.PRBSet) && ...
+        ~isempty(g.PRBSet), ...
+        "Primary scheduler grants must carry an explicit nonempty PRBSet.");
+    assert(isfield(g, "SymbolAllocation") && ...
+        isnumeric(g.SymbolAllocation) && ...
+        numel(g.SymbolAllocation) == 2 && ...
+        all(isfinite(double(g.SymbolAllocation(:)))) && ...
+        double(g.SymbolAllocation(1)) >= 0 && ...
+        double(g.SymbolAllocation(2)) >= 1, ...
+        "Primary scheduler grants must carry explicit [start,count] symbols.");
     assert(double(g.BufferBytesAfter) <= double(g.BufferBytesBefore), ...
         "BufferBytesAfter must not exceed BufferBytesBefore");
     assert(double(g.TBSBits) >= 0 && double(g.TBSBytes) >= 0, "Invalid TBS fields");
@@ -37,8 +48,9 @@ for i = 1:numel(grants)
     end
 end
 
-cfgUL = struct();
-cfgUL = sixgr.util.structSet(cfgUL, "phy.carrier.NSizeGrid", 52);
+cfgUL = sixgr.config.defaultConfig();
+cfgUL = sixgr.util.structSet(cfgUL, "channel.bandwidth_Hz", 20e6);
+cfgUL = sixgr.util.structSet(cfgUL, "phy.carrier.NSizeGrid", 51);
 cfgUL = sixgr.util.structSet(cfgUL, "phy.numerology.scs_kHz", 30);
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.modulation", "QPSK");
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.nLayers", 1);
@@ -46,6 +58,7 @@ cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.codeRate", 0.5);
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.dmrs.DMRSTypeAPosition", 2);
 cfgUL = sixgr.util.structSet(cfgUL, "mac.scheduler.fastNREApprox", false);
 cfgUL = sixgr.util.structSet(cfgUL, "mac.scheduler.tbsMode", "faithful");
+cfgUL = withCanonicalSchedulerTiming(cfgUL);
 schUL = sixgr.l2.mac.SchedulerRR(cfgUL, "Direction", "UL");
 lateULGrant = struct( ...
     "Direction", "UL", ...
@@ -69,6 +82,7 @@ assert(double(lateULGrant.TBSBits) > 0 && double(lateULGrant.ExactNREPerPRB) > 0
 
 cfgGuard = cfgUL;
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.carrier.NSizeGrid", 106);
+cfgGuard = sixgr.util.structSet(cfgGuard, "channel.bandwidth_Hz", 40e6);
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.linkAdaptation.mode", "amc");
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.linkAdaptation.ulPolicy", "cqi");
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.linkAdaptation.minPRBForWidebandCQIGrant", 4);
@@ -76,6 +90,7 @@ cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.mcsTable", "qam64_table1");
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.nLayers", 2);
 cfgGuard = sixgr.util.structSet(cfgGuard, "mac.scheduler.maxUEPerSlot", 1);
 cfgGuard = sixgr.util.structSet(cfgGuard, "mac.scheduler.minPRBPerUE", 1);
+cfgGuard = withCanonicalSchedulerTiming(cfgGuard);
 schGuard = sixgr.l2.mac.SchedulerPF(cfgGuard, "Direction", "UL");
 ueGuard = struct( ...
     "RNTI", 7201, ...

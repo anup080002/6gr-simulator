@@ -1,0 +1,180 @@
+{
+  "FileCount": 35,
+  "Files": [
+    {
+      "RelativePath": "CODEX_PROMPT_01_FRAME_GRID_NUMEROLOGY_DUPLEXING.md",
+      "FileBytes": 43353,
+      "SHA256": "546faa49393a1c82e59b7dcbccaac79189ba456a7b6a879922ef99935e5f51a8"
+    },
+    {
+      "RelativePath": "LIMITED_TEST_EXECUTION_REPORT.md",
+      "FileBytes": 6926,
+      "SHA256": "336b978ede415795c2ae4a655f93442bc9c56c750b8afdf9b805c530f229d060"
+    },
+    {
+      "RelativePath": "README.md",
+      "FileBytes": 4328,
+      "SHA256": "2fa65c341d6c573044933fc4bb58f88d11644d996f629e6faaaed8ce76830209"
+    },
+    {
+      "RelativePath": "current_carrier_grid_comparison.csv",
+      "FileBytes": 4496,
+      "SHA256": "b5b8d4e51517ea260049ced79e2af27067b196e0647477a56c1c4c3c6aa23b1b"
+    },
+    {
+      "RelativePath": "current_carrier_grid_extra_entries.csv",
+      "FileBytes": 600,
+      "SHA256": "f0d0d64f309d4f6e97a773160f2ed240da7090ecb4aa24247df71a861f7e0a56"
+    },
+    {
+      "RelativePath": "current_frame_static_audit.csv",
+      "FileBytes": 2198,
+      "SHA256": "3b01a78afec632b29c79f308b59b89402e2a1b067ee7246e068263031b5798fa"
+    },
+    {
+      "RelativePath": "current_tdd_flexible_symbol_regression.csv",
+      "FileBytes": 437,
+      "SHA256": "e38b83f13b5942d503567e6f749e291186819a5ea3ea2f53a7673b1c659947a1"
+    },
+    {
+      "RelativePath": "desired_frame_csv_contract.csv",
+      "FileBytes": 3439,
+      "SHA256": "60870fa9d6de51e736fd9089aa4083364d7befdbacc8417d82266339250c1559"
+    },
+    {
+      "RelativePath": "desired_frame_image_contract.csv",
+      "FileBytes": 1128,
+      "SHA256": "3be05786d8caacc38a69a65e1c43a15b81e24ed253075588d4a2bc2b926b3eea"
+    },
+    {
+      "RelativePath": "existing_frame_artifact_presence_audit.csv",
+      "FileBytes": 1609,
+      "SHA256": "042e80b99424030c2a05051a81c8e797c0dd153f258e7c5a6407d80af75b94c7"
+    },
+    {
+      "RelativePath": "existing_output_csv_integrity_audit.csv",
+      "FileBytes": 11134,
+      "SHA256": "a451833e5b632071e5145c7a00c6906540a3f7e7120d0f9091752117b416aba4"
+    },
+    {
+      "RelativePath": "existing_output_image_integrity_audit.csv",
+      "FileBytes": 7105,
+      "SHA256": "149dfab235da9051e3fda0c1b31c59e12f24b79e8c273b9cf48c4622dd503d3a"
+    },
+    {
+      "RelativePath": "expected_allocation_legality.csv",
+      "FileBytes": 1343,
+      "SHA256": "d2e7b0bc84e6416380896e19c84eede92e99d7fea86dae4df7d935807dfaf578"
+    },
+    {
+      "RelativePath": "expected_carrier_grid_matrix.csv",
+      "FileBytes": 9553,
+      "SHA256": "ef92519e365cd57babd33754995974a033cb4403e071b0e8740d167c47c59830"
+    },
+    {
+      "RelativePath": "expected_frame_numerology_matrix.csv",
+      "FileBytes": 1603,
+      "SHA256": "f5381172ca3b94d25e760adb4e323635d2dd16bf1366d5d609878d0f2627244c"
+    },
+    {
+      "RelativePath": "expected_output_integrity_audit.csv",
+      "FileBytes": 494,
+      "SHA256": "dbbe41be8cbc4520a07f63ae96fb683ac8fc0a955302b6781a3e0d41d09a7323"
+    },
+    {
+      "RelativePath": "expected_slot_symbol_ownership.csv",
+      "FileBytes": 22462,
+      "SHA256": "4f3235e170efa98f5e9d4576b5863480b8e53b1e3ded4c545dc9b52835f71b69"
+    },
+    {
+      "RelativePath": "frame_allocation_test_vectors.csv",
+      "FileBytes": 1230,
+      "SHA256": "d04281746f36a60fcfa55e837cb49a2fffa70e46160ed6b8acae1e1cb4453034"
+    },
+    {
+      "RelativePath": "frame_carrier_grid_test_vectors.csv",
+      "FileBytes": 10544,
+      "SHA256": "c69bf75ed5e2d152831ec96cd566419e1bbd4bb65b0340c70c03ba972eaba747"
+    },
+    {
+      "RelativePath": "frame_numerology_test_vectors.csv",
+      "FileBytes": 2093,
+      "SHA256": "f31cd6f53d89e41316c6328cf7f81fd6b137c06ae645b583a8481d23980a546c"
+    },
+    {
+      "RelativePath": "frame_tdd_test_vectors.csv",
+      "FileBytes": 2218,
+      "SHA256": "c89a45969640e69fd95979f3411a8a3d34f29f49854b9b328995194c1e2acaa3"
+    },
+    {
+      "RelativePath": "limited_test_summary.csv",
+      "FileBytes": 1025,
+      "SHA256": "c6134b2a13bc1c9aea04883e45fa7647db3fe99abdbe1fec4b19d390a9cc948a"
+    },
+    {
+      "RelativePath": "limited_test_summary.json",
+      "FileBytes": 995,
+      "SHA256": "a99afd6189832d5ccda383ef12963b713535c56828c9652f9cbc52730802b8b2"
+    },
+    {
+      "RelativePath": "limited_vector_validation.csv",
+      "FileBytes": 2661,
+      "SHA256": "c10b746ee793d3ba45bb0aff95febc71d28f159d38276af7419eb5362ecb0cd9"
+    },
+    {
+      "RelativePath": "reference_image_integrity_audit.csv",
+      "FileBytes": 689,
+      "SHA256": "5117c1518b36a6bc7d015621e6c92959b9321bca6905a13dc79ed7ec8a1b482e"
+    },
+    {
+      "RelativePath": "reference_images/reference_allocation_legality.png",
+      "FileBytes": 55355,
+      "SHA256": "cf2f961fc0f8dec6f0cdeeec145ecf154e58b92fe6ccd34b14f57a25d81a34b1"
+    },
+    {
+      "RelativePath": "reference_images/reference_carrier_grid_matrix.png",
+      "FileBytes": 56356,
+      "SHA256": "c0cd5f7d334c612c998341f6222530f7d12e7e17a6ef3b528d5d0aeb7cfeb3dd"
+    },
+    {
+      "RelativePath": "reference_images/reference_frame_slot_symbol_map.png",
+      "FileBytes": 38614,
+      "SHA256": "e264cb17a2f2beb184d4250cc566da8e011ebd32d998abf8246cc2ea98aa1112"
+    },
+    {
+      "RelativePath": "reference_images/reference_numerology_timing_matrix.png",
+      "FileBytes": 51931,
+      "SHA256": "59a3c0bfb1d133e3e787e031a7456c5b234b6109359362b10c2f8062cf04c24b"
+    },
+    {
+      "RelativePath": "validate_pack_integrity.py",
+      "FileBytes": 9840,
+      "SHA256": "38456acdd073f180b0dfff314d494ab2806315f5696821863b36604637328b1e"
+    },
+    {
+      "RelativePath": "verifier_selftest_negative.csv",
+      "FileBytes": 2917,
+      "SHA256": "22ee04eb748b59c14c4d997d61ba9b660e44fccec94de1825361b9b1f3fc31ff"
+    },
+    {
+      "RelativePath": "verifier_selftest_negative.json",
+      "FileBytes": 6473,
+      "SHA256": "784f35d12282c9c7432cae87fbc1d1da28163795f010be096564b97cc466da45"
+    },
+    {
+      "RelativePath": "verifier_selftest_pass.csv",
+      "FileBytes": 2898,
+      "SHA256": "7219adc070666c040fc0039b4b0bb6e57bbe7b0ebf2ae436ba77b54b07ec0000"
+    },
+    {
+      "RelativePath": "verifier_selftest_pass.json",
+      "FileBytes": 6454,
+      "SHA256": "84426ebeb38136f5c533398f246dedf247f078134844ee78b33aec460b37f2e0"
+    },
+    {
+      "RelativePath": "verify_frame_artifacts.py",
+      "FileBytes": 16773,
+      "SHA256": "24f5b05bb1f5419ee1c9f83cfcf561715f4fbd8bf024ebfad6dd40ac1dfacc42"
+    }
+  ]
+}

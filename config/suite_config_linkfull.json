@@ -149,7 +149,7 @@
     "carrier": {
       "NCellID": 1,
       "SubcarrierSpacing": 30,
-      "NSizeGrid": 66,
+      "NSizeGrid": 273,
       "CyclicPrefix": "normal",
       "NFrame": 0,
       "fc_Hz": 4.0E+9
@@ -219,8 +219,7 @@
       }
     },
     "duplex": {
-      "mode": "TDD",
-      "tddPattern": "DDDSU"
+      "mode": "TDD"
     },
     "waveform": {
       "dl": "CP-OFDM",

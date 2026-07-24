@@ -1,0 +1,13 @@
+IssueID,SourceFile,ShortcutPatternDetected,FirstDetectedLine,CurrentStatus,Evidence,SourceSHA256
+FRM-001,+sixgr/+phy/FrameStructureEngine.m,TRUE,285,FAIL,Generic 15*2^mu validation without role/FR/CP matrix,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-002,+sixgr/+phy/FrameStructureEngine.m,TRUE,102,FAIL,Configured NSizeGrid fallback after failed table lookup,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-003,+sixgr/+phy/FrameStructureEngine.m,TRUE,444,FAIL,Heuristic next-power-of-two FFT selection,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-004,+sixgr/+phy/FrameStructureEngine.m,TRUE,468,FAIL,Flexible symbols converted to downlink,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-005,+sixgr/+phy/FrameStructureEngine.m,TRUE,300,FAIL,Silent 12/1/1 special-slot default,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-006,+sixgr/+phy/FrameStructureEngine.m,TRUE,339,FAIL,PDSCH auto-placement derived from CORESET duration,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-007,+sixgr/+phy/+dl/SSB_Tx.m,TRUE,160,FAIL,SSB waveform generation clamps/retries invalid carrier grid,c7b2995904d9d26636bd8ebbf6ef09ab0aa42cc0baba62820abda1f38b665d78
+FRM-008,+sixgr/+phy/FrameStructureEngine.m,TRUE,514,FAIL,Sparse hard-coded PRACH configuration-index switch,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-009,+sixgr/+phy/+waveform/resolveOFDMWindowing.m,TRUE,30,FAIL,Unconfigured 2.5%-of-NFFT OFDM windowing default,95887f1041626bc321c0cb94de23c2a810f5b855f03397c7472a0fb60bec4832
+FRM-010,+sixgr/+lls6g/buildInternalConfig.m,TRUE,1537,FAIL,Single-surface BWP copy path instead of canonical multi-BWP state,7d554c27a2657635d4522a135e5861af6b0c93923162f81ac8485ff1028e6be0
+FRM-011,+sixgr/+phy/FrameStructureEngine.m,TRUE,1,FAIL,Frame engine has no component-carrier identity/state model,7982a6d5d209c0509ebd5645a776d7dae77ec712cb34562577551f3edf8f3ba9
+FRM-012,+sixgr/+l2/+mac/resolveHARQFeedbackK1.m,TRUE,1,FAIL,Timing logic exists outside a single central K0/K1/K2 engine,8652a5c943ed795bfd098e7e7edb9d6277948f4ece3eca087a9d6fad3cb1de2e

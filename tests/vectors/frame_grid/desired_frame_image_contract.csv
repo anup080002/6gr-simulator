@@ -1,0 +1,10 @@
+ImageFile,SourceCSV,MinimumWidth,MinimumHeight,ExpectedAxes,ExpectedContent
+frame_slot_symbol_map.png,slot_symbol_ownership.csv,1200,650,1,"Per-slot/per-symbol D,U,F and runtime-resolved direction; no F relabelled as D before scheduling."
+resource_grid_occupancy.png,resource_grid_occupancy.csv,1200,650,1,RB-by-symbol occupancy with separate channel/port ownership and explicit collision cells.
+numerology_timing_matrix.png,frame_numerology_matrix.csv,1200,650,1,"mu 0..6, SCS, symbols/slot, slots/subframe, slots/frame; extended CP only at mu=2."
+carrier_guardband_map.png,carrier_grid_matrix.csv,1200,650,1,"Channel edges, transmission-bandwidth configuration, active BWP and low/high guardbands."
+k0_k1_k2_timeline.png,timing_matrix.csv,1200,650,1,"PDCCH, PDSCH, PUSCH and PUCCH events on one absolute-time axis with invalid targets marked."
+bwp_switch_timeline.png,bwp_switch_trace.csv,1200,650,1,"Command, switch delay, active DL/UL BWP and grants before/after activation."
+component_carrier_resource_map.png,component_carrier_trace.csv,1200,650,1,Per-CC/BWP resource ownership and cross-carrier scheduling links.
+ssb_timing_map.png,ssb_timing_matrix.csv,1200,650,1,"Cases A-G, zero-based SSB candidate index, half-frame start symbol and frequency-range separation."
+prach_occasion_map.png,prach_occasion_matrix.csv,1200,650,1,"Exact PRACH repetition-period occasions with absolute carrier slot, start symbol and frequency-domain occasion index."

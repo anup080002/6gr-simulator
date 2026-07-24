@@ -49,10 +49,11 @@ end
 
 [scGrid, symGrid, portGrid] = ndgrid(subcarriers, symbolLoc, 1:numPorts);
 linInd = sub2ind([K, L, numPorts], scGrid(:), symGrid(:), portGrid(:));
-try
-    slotsPerFrame = max(1, round(double(carrier.SlotsPerFrame)));
-catch
-    slotsPerFrame = 10;
+slotsPerFrame = double(carrier.SlotsPerFrame);
+if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+        slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+    error("sixgr:phy:refsig:trs:MissingSlotsPerFrame", ...
+        "TRS generation requires carrier-resolved SlotsPerFrame.");
 end
 slotInFrame = mod(round(double(carrier.NSlot)), slotsPerFrame);
 seq = complex(zeros(numel(linInd), 1));

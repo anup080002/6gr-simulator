@@ -1,0 +1,14 @@
+CheckID,Behavior,SearchScope,FilesScanned,MatchCount,ExpectedCount,Status,Reason,MatchedLocations,MatchedEvidence,IndexConvention
+SHORTCUT-01,F converted to D,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-02,configured grid used after standard table miss,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-03,FR2-2 classified as FR3,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-04,nextpow2 implicit standard OFDM resolver,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-05,12/1/1 or 7/0/7 special-slot fallback,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-06,default DDDSU pattern in standard path,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-07,PDSCH start derived from CORESET duration,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-08,PUSCH full-slot allocation injected by frame resolution,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-09,2.5%-of-NFFT default windowing,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-10,SSB NSizeGrid clamp/retry,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-11,unknown PRACH index defaulted to A1,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-12,catch-all canonical-to-legacy resolver fallback,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices
+SHORTCUT-13,missing data/grant allocation fabricated as full slot or carrier,+sixgr/**/*.m (active production; +compat and audit definition excluded),699,0,0,PASS,no_active_hit,,,zero_based_phy_indices

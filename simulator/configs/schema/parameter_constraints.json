@@ -53,55 +53,6 @@
       }
     },
     {
-      "id": "bw_scs_to_nrb",
-      "parent": ["frequency.bandwidth_hz", "frame.scs_khz"],
-      "child": "phy.carrier.NSizeGrid",
-      "type": "computed_lookup",
-      "readonly": true,
-      "reference": "TS 38.101-1 Table 5.3.2-1; TS 38.101-2 Table 5.3.2-1",
-      "lookup_table": {
-        "5000000": {"15": 25, "30": 11, "60": null},
-        "10000000": {"15": 52, "30": 24, "60": 11},
-        "15000000": {"15": 79, "30": 38, "60": 18},
-        "20000000": {"15": 106, "30": 51, "60": 24},
-        "25000000": {"15": 133, "30": 65, "60": 31},
-        "30000000": {"15": 160, "30": 78, "60": 38},
-        "40000000": {"15": 216, "30": 106, "60": 51},
-        "50000000": {"15": 270, "30": 133, "60": 65},
-        "60000000": {"15": null, "30": 162, "60": 79},
-        "70000000": {"15": null, "30": 189, "60": null},
-        "80000000": {"15": null, "30": 217, "60": 107},
-        "90000000": {"15": null, "30": 245, "60": 121},
-        "100000000": {"15": null, "30": 273, "60": 135},
-        "50000000_FR2": {"60": 66, "120": 32},
-        "100000000_FR2": {"60": 132, "120": 66},
-        "200000000_FR2": {"60": 264, "120": 132},
-        "400000000_FR2": {"60": null, "120": 264}
-      },
-      "note": "NRB is browser-computed and read-only; change bandwidth or SCS to update it."
-    },
-    {
-      "id": "scs_nrb_to_fft",
-      "parent": ["frame.scs_khz", "phy.carrier.NSizeGrid"],
-      "child": "waveform.fft_size",
-      "type": "min_power_of_2",
-      "readonly": true,
-      "reference": "TS 38.211 Section 4.1",
-      "formula": "fft_size = next_power_of_two(NSizeGrid * 12)",
-      "standard_values": {"25": 512, "52": 1024, "106": 2048, "132": 2048, "162": 4096, "217": 4096, "273": 4096}
-    },
-    {
-      "id": "duplex_to_tdd_pattern",
-      "parent": "phy.duplex.mode",
-      "child": "phy.duplex.tddPattern",
-      "type": "conditional_enable",
-      "reference": "TS 38.211 frame structure",
-      "cases": {
-        "TDD": {"enabled": true, "required": true},
-        "FDD": {"enabled": false, "required": false, "force_value": null, "note": "TDD pattern is not applicable for FDD."}
-      }
-    },
-    {
       "id": "scs_to_prach_format",
       "parent": "frame.scs_khz",
       "child": "prach.format",

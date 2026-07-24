@@ -33,7 +33,16 @@
     },
     "duplex": {
       "mode": "TDD",
-      "tddPattern": "DDDSU"
+      "tddCommon": {
+        "ReferenceSubcarrierSpacingKHz": 30,
+        "Pattern1": {
+          "PeriodicityMilliseconds": 2.5,
+          "NumDownlinkSlots": 3,
+          "NumDownlinkSymbols": 12,
+          "NumUplinkSlots": 1,
+          "NumUplinkSymbols": 1
+        }
+      }
     },
     "waveform": {
       "dl": "CP-OFDM",

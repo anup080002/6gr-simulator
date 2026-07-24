@@ -3,6 +3,7 @@ function ok = testLLS_UL()
 
 setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
+cfg = withCanonicalSchedulerTiming(cfg);
 cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;

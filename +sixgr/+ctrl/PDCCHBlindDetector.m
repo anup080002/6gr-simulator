@@ -331,11 +331,21 @@ end
 function maxCand = localMaxPDCCHCandidatesPerSlot(ctrlCfg)
 scs = double(sixgr.util.structGet(ctrlCfg, "SubcarrierSpacing_kHz", ...
     sixgr.util.structGet(ctrlCfg, "SubcarrierSpacing", NaN)));
-if ~isfinite(scs)
-    mu = double(sixgr.util.structGet(ctrlCfg, "Numerology", 1));
-    scs = 15 * 2^max(0, round(mu));
+mu = double(sixgr.util.structGet(ctrlCfg, "Numerology", NaN));
+cp = string(sixgr.util.structGet(ctrlCfg, "CyclicPrefix", "normal"));
+if isfinite(scs)
+    numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+        scs, cp, "generic_waveform_test", "");
+    if isfinite(mu) && mu ~= double(numerology.Mu)
+        error("sixgr:ctrl:PDCCH:NumerologyMismatch", ...
+            "Control SCS=%g kHz conflicts with configured mu=%g.", scs, mu);
+    end
+    scs = double(numerology.SubcarrierSpacingKHz);
+else
+    numerology = sixgr.phy.frame.AbsoluteTime.resolveNumerology(mu);
+    scs = double(numerology.SCSKHz);
 end
-switch round(scs)
+switch scs
     case 15
         maxCand = 44;
     case 30

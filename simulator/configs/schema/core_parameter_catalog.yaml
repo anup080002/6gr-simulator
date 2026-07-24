@@ -197,7 +197,7 @@
       "model": {"value_type": "string", "allowed_values": ["TR38901", "TDL", "CDL", "raytracing", "AWGN", "OFF", "NONE"]},
       "fc_Hz": {"value_type": "number", "default": 4000000000, "min": 1},
       "bandwidth_Hz": {"value_type": "number", "default": 100000000, "min": 1},
-      "subcarrierSpacing_kHz": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120, 240]},
+      "subcarrierSpacing_kHz": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120, 240, 480, 960]},
       "delayProfile": {"value_type": "string_or_empty"},
       "tdlProfile": {"value_type": "string_or_empty"},
       "cdlProfile": {"value_type": "string_or_empty"},
@@ -230,18 +230,23 @@
     "phy": {
       "carrier": {
         "NCellID": {"value_type": "integer", "default": 1, "min": 0},
-        "SubcarrierSpacing": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120, 240]},
-        "NSizeGrid": {"value_type": "integer", "default": 51, "min": 1},
+        "SubcarrierSpacing": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120, 240, 480, 960]},
+        "NSizeGrid": {"value_type": "integer", "default": 273, "min": 1},
+        "NStartGrid": {"value_type": "integer", "default": 0, "min": 0},
         "CyclicPrefix": {"value_type": "string", "default": "normal", "allowed_values": ["normal", "extended"]},
         "NFrame": {"value_type": "integer", "default": 0, "min": 0}
       },
       "duplex": {
         "mode": {"value_type": "string", "default": "TDD", "allowed_values": ["TDD", "FDD"]},
-        "tddPattern": {"value_type": "any", "default": "DDDSU"},
-        "specialSlot": {
-          "numDLSymbols": {"value_type": "integer", "default": 7, "min": 0},
-          "numGuardSymbols": {"value_type": "integer", "default": 0, "min": 0},
-          "numULSymbols": {"value_type": "integer", "default": 7, "min": 0}
+        "tddCommon": {
+          "ReferenceSubcarrierSpacingKHz": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 60, 120]},
+          "Pattern1": {
+            "PeriodicityMilliseconds": {"value_type": "number", "default": 5, "allowed_values": [0.5, 0.625, 1, 1.25, 2, 2.5, 3, 4, 5, 10]},
+            "NumDownlinkSlots": {"value_type": "integer", "default": 6, "min": 0},
+            "NumDownlinkSymbols": {"value_type": "integer", "default": 4, "min": 0},
+            "NumUplinkSlots": {"value_type": "integer", "default": 3, "min": 0},
+            "NumUplinkSymbols": {"value_type": "integer", "default": 2, "min": 0}
+          }
         }
       },
       "waveform": {
@@ -250,7 +255,9 @@
       },
       "ssb": {
         "enable": {"value_type": "boolean", "default": true},
-        "blockPattern": {"value_type": "string", "default": "Case B", "allowed_values": ["Case A", "Case B", "Case C", "Case D", "Case E"]},
+        "blockPattern": {"value_type": "string", "default": "Case B", "allowed_values": ["Case A", "Case B", "Case C", "Case D", "Case E", "Case F", "Case G"]},
+        "scs_kHz": {"value_type": "integer", "default": 30, "allowed_values": [15, 30, 120, 240, 480, 960]},
+        "Lmax": {"value_type": "integer", "default": 8, "allowed_values": [4, 8, 64]},
         "period_ms": {"value_type": "number", "default": 20, "min": 0},
         "nBeams": {"value_type": "integer", "default": 8, "min": 1}
       },
@@ -259,7 +266,7 @@
       "sib1": {"enable": {"value_type": "boolean", "default": true}},
       "prach": {
         "enable": {"value_type": "boolean", "default": true},
-        "configurationIndex": {"value_type": "integer", "default": 16, "min": 0},
+        "configurationIndex": {"value_type": "integer", "default": 0, "min": 0},
         "subcarrierSpacing_kHz": {"value_type": "number", "default": 1.25, "min": 0},
         "preambleFormat": {"value_type": "string", "default": "0"},
         "rootSeqIndex": {"value_type": "integer", "default": 1, "min": 0},

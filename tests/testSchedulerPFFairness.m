@@ -8,6 +8,7 @@ cfg = sixgr.util.structSet(cfg, "mac.scheduler.alpha", 0.99);
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxUEPerSlot", 2);
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.minPRBPerUE", 4);
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxPRBAllocationPerUE", 12);
+cfg = withCanonicalSchedulerTiming(cfg);
 
 sched = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL");
 cqiVals = [3 3 8 8 13 13];

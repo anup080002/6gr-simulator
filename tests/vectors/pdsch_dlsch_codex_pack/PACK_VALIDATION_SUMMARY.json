@@ -1,0 +1,91 @@
+{
+  "pack": "6GR PDSCH/DL-SCH Codex implementation pack",
+  "phase": "PDSCH and DL-SCH",
+  "standards_baseline": [
+    "TS 38.211 V18.8.0",
+    "TS 38.212 V18.8.0",
+    "TS 38.213 V18.8.0",
+    "TS 38.214 V18.8.0",
+    "TS 38.331 V18.8.0"
+  ],
+  "codex_prompt": {
+    "file": "CODEX_PROMPT_02_PDSCH_DLSCH.md",
+    "lines": 1722
+  },
+  "findings": {
+    "count": 12,
+    "file": "pdsch_dlsch_12_findings.csv"
+  },
+  "input_vectors": {
+    "files": 11,
+    "rows": 380,
+    "detail": {
+      "pdsch_scrambling_test_vectors.csv": 12,
+      "pdsch_modulation_test_vectors.csv": 24,
+      "pdsch_layer_mapping_test_vectors.csv": 12,
+      "pdsch_coding_tbs_test_vectors.csv": 23,
+      "pdsch_dmrs_test_vectors.csv": 175,
+      "pdsch_scheduling_assignment_test_vectors.csv": 22,
+      "pdsch_ptrs_test_vectors.csv": 56,
+      "pdsch_reserved_re_test_vectors.csv": 14,
+      "pdsch_precoding_prg_test_vectors.csv": 15,
+      "pdsch_harq_test_vectors.csv": 11,
+      "pdsch_declared_coverage_matrix.csv": 16
+    }
+  },
+  "bounded_expected_vectors": {
+    "files": 12,
+    "rows": 518,
+    "detail": {
+      "expected_pdsch_scrambling_vectors.csv": 12,
+      "expected_pdsch_modulation_vectors.csv": 24,
+      "expected_pdsch_layer_mapping.csv": 40,
+      "expected_pdsch_tbs_basegraph.csv": 23,
+      "expected_pdsch_tb_crc_vectors.csv": 18,
+      "expected_pdsch_dmrs_symbol_positions.csv": 175,
+      "expected_pdsch_dmrs_port_table.csv": 108,
+      "expected_pdsch_assignment_resolution.csv": 22,
+      "expected_pdsch_ptrs_presence.csv": 56,
+      "expected_pdsch_reserved_re_union.csv": 14,
+      "expected_pdsch_precoding_behavior.csv": 15,
+      "expected_pdsch_harq_transitions.csv": 11
+    }
+  },
+  "vector_integrity": {
+    "manifest_files": 25,
+    "manifest": "independent_vector_manifest.json",
+    "verifier_result": "PASS; 25 files checked; 0 failures"
+  },
+  "required_runtime_artifacts": {
+    "csv_files": 15,
+    "png_files": 9,
+    "currently_present": 0
+  },
+  "current_source_static_audit": {
+    "checks": 29,
+    "shortcut_or_defect_signatures": 25,
+    "useful_existing_capabilities": 4,
+    "status": "FAIL"
+  },
+  "limited_execution": {
+    "checks": 26,
+    "passed": 25,
+    "failed": 0,
+    "blocked": 1,
+    "matlab_available": false,
+    "octave_available": false,
+    "static_checks": 29,
+    "static_shortcuts_detected": 25,
+    "static_existing_capabilities_detected": 4,
+    "required_phase_artifacts": 24,
+    "required_phase_artifacts_present": 0,
+    "existing_pngs_checked": 40,
+    "existing_pngs_decodable_nonblank": 40,
+    "note": "Python/static/vector checks do not execute the MATLAB PDSCH/DL-SCH PHY chain."
+  },
+  "artifact_verifier_self_test": {
+    "valid_synthetic_artifacts": "33/33 PASS; exit 0",
+    "injected_png_hash_corruption": "detected; 32/33 PASS; exit 2"
+  },
+  "runtime_limitation": "MATLAB and Octave were unavailable; production MATLAB PHY execution and production artifact generation remain blocked until Codex runs on the pinned MATLAB/5G Toolbox release."
+}

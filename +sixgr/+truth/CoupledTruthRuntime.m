@@ -11,6 +11,8 @@ methods(Static)
             totalTrafficFrames = max(1, round(double(sixgr.util.structGet(cfg, "run.numFrames", 1))));
         end
         cfgMob = sixgr.truth.CoupledTruthRuntime.prepareMobilityConfig(cfg, multiUser);
+        [cfgMob, canonicalFrame] = ...
+            sixgr.truth.CoupledTruthRuntime.attachCanonicalFrameCore(cfgMob);
         cfgLargeScale = sixgr.truth.CoupledTruthRuntime.prepareLargeScaleConfig(cfgMob);
         scenarioName = string(sixgr.util.structGet(cfgMob, "scenario.name", ...
             sixgr.util.structGet(cfgMob, "meta.lls6gScenarioID", "UMa")));
@@ -24,7 +26,7 @@ methods(Static)
         numHarqProc = max(double(harqDL.NumProcesses), double(harqUL.NumProcesses));
         nUsers = size(ue.pos_m, 1);
         nCells = size(layoutStruct.bs.pos_m, 1);
-        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(cfgMob, "phy.numerology.symbolsPerSlot", 14))));
+        symbolsPerSlot = double(canonicalFrame.Numerology.SymbolsPerSlot);
 
         state = struct();
         state.RunFolder = string(runFolder);
@@ -61,6 +63,7 @@ methods(Static)
         state.CurrentSlotGuardNumSymbols = 0;
         state.CurrentSlotULSymbolStart = 0;
         state.CurrentSlotULNumSymbols = double(symbolsPerSlot);
+        state.SymbolsPerSlot = double(symbolsPerSlot);
         state.DLCompletedFrames = 0;
         state.ULCompletedFrames = 0;
         state.DLCompletedSlots = 0;
@@ -77,8 +80,10 @@ methods(Static)
             "LastCompositeSummary", struct());
         state.RunState = sixgr.truth.CoupledTruthRuntime.initializeRunState(cfgMob, multiUser, totalTrafficFrames);
         state.SlotTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptySlotTraceRow(), 0, 1));
-        state.SlotDuration_s = sixgr.truth.CoupledTruthRuntime.slotDuration(cfgMob);
-        state.SlotsPerFrame = sixgr.truth.CoupledTruthRuntime.slotsPerFrame(cfgMob, state.SlotDuration_s);
+        state.SlotDuration_s = ...
+            double(canonicalFrame.Numerology.SlotDurationSeconds);
+        state.SlotsPerFrame = ...
+            double(canonicalFrame.Numerology.SlotsPerFrame);
         state.MobilityEnabled = logical(sixgr.util.structGet(cfgMob, "scenario.mobility.enable", false));
         state.BeamUpdateSlots = max(1, round(double(sixgr.util.structGet(cfgMob, "system.beam.updatePeriod_slots", 4))));
         state.LargeScaleUpdateSlots = max(1, round(double(sixgr.util.structGet(cfgMob, "system.largeScaleUpdatePeriod_slots", 1))));
@@ -86,8 +91,8 @@ methods(Static)
         state.TRSSlotPeriod = max(1, round(double(sixgr.util.structGet(cfgMob, "phy.trs.period_slots", 4))));
         state.PBCHSlotPeriod = max(10, round(double(sixgr.util.structGet(cfgMob, "phy.pbch.period_slots", 20))));
         state.TopCellCount = min(max(2, round(double(sixgr.util.structGet(cfgMob, "lls6g.users.live_top_cells", 4)))), max(1, nCells));
-        state.NumRB = sixgr.truth.CoupledTruthRuntime.estimateNRB(cfgMob);
-        state.Bandwidth_Hz = double(sixgr.util.structGet(cfgMob, "channel.bandwidth_Hz", 20e6));
+        state.NumRB = double(canonicalFrame.NRB);
+        state.Bandwidth_Hz = double(canonicalFrame.BandwidthHz);
         state.NoiseFigure_dB = double(sixgr.util.structGet(cfgMob, "scenario.ue.noiseFigure_dB", 9));
         state.NBeams = max(1, round(double(sixgr.util.structGet(cfgMob, "system.beam.numBeams", sixgr.util.structGet(cfgMob, "phy.ssb.nBeams", 8)))));
         state.BeamSpanDeg = max(30, min(240, double(sixgr.util.structGet(cfgMob, "system.beam.sectorSpan_deg", 120))));
@@ -1654,72 +1659,170 @@ methods(Static, Access=private)
         cfgOut = sixgr.util.structSet(cfgOut, "channel.pathlossModel", pathlossModel);
     end
 
-    function nRB = estimateNRB(cfg)
-        vals = double([sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN), sixgr.util.structGet(cfg, "phy.pdsch.nPRB", NaN), sixgr.util.structGet(cfg, "phy.pusch.nPRB", NaN)]);
-        vals = vals(isfinite(vals) & vals >= 1);
-        if isempty(vals)
-            nRB = 52;
-        else
-            nRB = max(1, round(vals(1)));
+    function [cfg, frame] = attachCanonicalFrameCore(cfg)
+        engine = sixgr.phy.FrameStructureEngine( ...
+            cfg, "FrameCoreOnly", true);
+        frame = engine.toStruct();
+        existing = sixgr.util.structGet( ...
+            cfg, "phy.frameStructure", struct());
+        if isstruct(existing) && isscalar(existing)
+            preserved = setdiff(string(fieldnames(existing)), ...
+                string(fieldnames(frame)), "stable");
+            for name = preserved(:).'
+                frame.(name) = existing.(name);
+            end
+            if logical(sixgr.util.structGet( ...
+                    existing, "SignalTimingResolved", false))
+                signalFields = [ ...
+                    "SSBTiming", "PRACHTiming", "SSBCase", ...
+                    "SSBLmax", "SSBCandidateSymbols", ...
+                    "PRACHConfigurationIndex", "PRACHFormat", ...
+                    "PRACHStartSymbol", "PRACHDurationSymbols", ...
+                    "PRACHValidSlots0Based", ...
+                    "PRACHValidationStatus", "ValidationLog", ...
+                    "SignalTimingResolved"];
+                for name = signalFields
+                    if isfield(existing, name)
+                        frame.(name) = existing.(name);
+                    end
+                end
+            end
         end
-    end
-
-    function slotDur_s = slotDuration(cfg)
-        slotDur_s = sixgr.time.slotDurationSec(cfg);
+        sixgr.truth.CoupledTruthRuntime.validateFrameAssertions( ...
+            cfg, frame);
+        cfg = sixgr.util.structSet( ...
+            cfg, "phy.frameStructure", frame);
     end
 
     function [allowDL, allowUL, slotLabel, partition] = slotDuplexState(cfg, canonicalSlot)
-        partition = sixgr.util.resolveTDDSlotPartition(cfg, canonicalSlot);
+        canonicalSlot = double(canonicalSlot);
+        if ~(isscalar(canonicalSlot) && isfinite(canonicalSlot) && ...
+                canonicalSlot >= 1 && canonicalSlot == fix(canonicalSlot))
+            error("sixgr:truth:CoupledTruthRuntime:InvalidCanonicalSlot", ...
+                "Coupled runtime slots are positive one-based indices.");
+        end
+        duplex = upper(string(sixgr.util.structGet(cfg, ...
+            "phy.frameStructure.DuplexMode", ...
+            sixgr.util.structGet(cfg, "phy.duplex.mode", ""))));
+        if duplex == "FDD"
+            context = sixgr.util.structGet(cfg, ...
+                "phy.frameStructure.FDDContexts", []);
+            if ~(isstruct(context) && isscalar(context) && ...
+                    isfield(context, "Downlink") && ...
+                    isfield(context, "Uplink") && ...
+                    isfield(context, "SymbolsPerSlot") && ...
+                    string(sixgr.util.structGet(context, ...
+                        "DuplexMode", "")) == "FDD")
+                error("sixgr:truth:CoupledTruthRuntime:MissingFDDContext", ...
+                    "FDD truth execution requires canonical separate DL/UL contexts.");
+            end
+            dlAllocation = sixgr.truth.CoupledTruthRuntime. ...
+                requiredConfiguredSymbolAllocation(cfg, "DL");
+            ulAllocation = sixgr.truth.CoupledTruthRuntime. ...
+                requiredConfiguredSymbolAllocation(cfg, "UL");
+            partition = struct( ...
+                "AbsoluteSlot", canonicalSlot - 1, ...
+                "SlotLabel", "FDD_SEPARATE_DL_UL", ...
+                "AllowDL", true, ...
+                "AllowUL", true, ...
+                "IsSpecialSlot", false, ...
+                "DLSymbolAllocation", dlAllocation, ...
+                "GuardSymbolAllocation", [0, 0], ...
+                "ULSymbolAllocation", ulAllocation, ...
+                "SymbolsPerSlot", double(context.SymbolsPerSlot), ...
+                "DuplexMode", "FDD", ...
+                "IndexConvention", "zero_based_phy_indices");
+        elseif duplex == "TDD"
+            partition = sixgr.util.resolveTDDSlotPartition( ...
+                cfg, canonicalSlot - 1);
+        else
+            error("sixgr:truth:CoupledTruthRuntime:MissingDuplexMode", ...
+                "Truth execution requires canonical TDD or FDD mode.");
+        end
         allowDL = logical(partition.AllowDL);
         allowUL = logical(partition.AllowUL);
         slotLabel = string(partition.SlotLabel);
     end
 
-    function tokens = expandTDDPattern(pattern)
-        if isstruct(pattern)
-            dl = max(0, round(double(sixgr.util.structGet(pattern, "dlSlots", 4))));
-            ul = max(0, round(double(sixgr.util.structGet(pattern, "ulSlots", 1))));
-            sp = max(0, round(double(sixgr.util.structGet(pattern, "specialSlots", 0))));
-            tokens = [repmat('D', 1, dl), repmat('S', 1, sp), repmat('U', 1, ul)];
-            return;
+    function allocation = requiredConfiguredSymbolAllocation(cfg, direction)
+        direction = upper(string(direction));
+        if direction == "UL"
+            paths = ["phy.pusch.symbolAllocation", ...
+                "phy.pusch.SymbolAllocation"];
+        else
+            paths = ["phy.pdsch.symbolAllocation", ...
+                "phy.pdsch.SymbolAllocation"];
         end
-        if isstring(pattern) || ischar(pattern)
-            tokens = regexprep(upper(char(string(pattern))), "[^DUS]", "");
-            if isempty(tokens)
-                tokens = 'DDDSU';
+        allocation = [];
+        for path = paths
+            candidate = sixgr.util.structGet(cfg, path, []);
+            if ~isempty(candidate)
+                allocation = candidate;
+                break;
             end
-            return;
         end
-        if isnumeric(pattern)
-            p = double(pattern(:).');
-            tokens = repmat('S', 1, numel(p));
-            tokens(p > 0) = 'D';
-            tokens(p < 0) = 'U';
-            return;
+        if ~(isnumeric(allocation) && isreal(allocation) && ...
+                numel(allocation) == 2 && ...
+                all(isfinite(double(allocation(:)))) && ...
+                all(double(allocation(:)) == fix(double(allocation(:)))) && ...
+                double(allocation(1)) >= 0 && double(allocation(2)) >= 1)
+            error("sixgr:truth:CoupledTruthRuntime:MissingSymbolAllocation", ...
+                "%s truth execution requires an explicit SymbolAllocation.", ...
+                direction);
         end
-        tokens = 'DDDSU';
+        allocation = reshape(double(allocation), 1, 2);
     end
 
-    function slots = slotsPerFrame(cfg, slotDuration_s)
-        slots = double(sixgr.util.structGet(cfg, "frame_timing.slots_per_frame", NaN));
-        if ~(isfinite(slots) && slots >= 1)
-            slots = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN));
+    function validateFrameAssertions(cfg, frame)
+        checks = { ...
+            "frame_timing.slots_per_frame", ...
+                double(frame.Numerology.SlotsPerFrame), "SlotsPerFrame"; ...
+            "phy.numerology.slotsPerFrame", ...
+                double(frame.Numerology.SlotsPerFrame), "SlotsPerFrame"; ...
+            "phy.numerology.symbolsPerSlot", ...
+                double(frame.Numerology.SymbolsPerSlot), "SymbolsPerSlot"};
+        for index = 1:size(checks, 1)
+            configured = sixgr.util.structGet(cfg, checks{index, 1}, []);
+            if isempty(configured)
+                continue;
+            end
+            expected = checks{index, 2};
+            if ~((isnumeric(configured) || islogical(configured)) && ...
+                    isscalar(configured) && isfinite(double(configured)) && ...
+                    double(configured) == expected)
+                error("sixgr:truth:CoupledTruthRuntime:FrameAssertionMismatch", ...
+                    "%s conflicts with canonical %s=%d.", ...
+                    checks{index, 1}, ...
+                    checks{index, 3}, expected);
+            end
         end
-        if ~(isfinite(slots) && slots >= 1)
-            slotDuration_s = max(eps, double(slotDuration_s));
-            slots = round(0.01 / slotDuration_s);
-        end
-        slots = max(1, round(double(slots)));
     end
 
     function frameIdx = frameIndexForSlot(state, canonicalSlot)
-        slotsPerFrame = max(1, round(double(sixgr.util.structGet(state, "SlotsPerFrame", 1))));
-        canonicalSlot = max(1, round(double(canonicalSlot)));
+        slotsPerFrame = double(sixgr.util.structGet( ...
+            state, "SlotsPerFrame", NaN));
+        if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+                slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+            error("sixgr:truth:CoupledTruthRuntime:MissingSlotsPerFrame", ...
+                "Runtime state must contain canonical SlotsPerFrame.");
+        end
+        canonicalSlot = double(canonicalSlot);
+        if ~(isscalar(canonicalSlot) && isfinite(canonicalSlot) && ...
+                canonicalSlot >= 1 && canonicalSlot == fix(canonicalSlot))
+            error("sixgr:truth:CoupledTruthRuntime:InvalidCanonicalSlot", ...
+                "Coupled runtime slots are positive one-based indices.");
+        end
         frameIdx = 1 + floor((canonicalSlot - 1) / slotsPerFrame);
     end
 
     function totalFrames = framesPerSweepPoint(state, totalCanonicalSlots)
-        slotsPerFrame = max(1, round(double(sixgr.util.structGet(state, "SlotsPerFrame", 1))));
+        slotsPerFrame = double(sixgr.util.structGet( ...
+            state, "SlotsPerFrame", NaN));
+        if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+                slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+            error("sixgr:truth:CoupledTruthRuntime:MissingSlotsPerFrame", ...
+                "Runtime state must contain canonical SlotsPerFrame.");
+        end
         totalCanonicalSlots = round(double(totalCanonicalSlots));
         if ~(isfinite(totalCanonicalSlots) && totalCanonicalSlots >= 1)
             totalCanonicalSlots = 1;
@@ -5152,7 +5255,13 @@ methods(Static, Access=private)
             state.PacketDeliveryLedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1));
         end
         nUsers = min(numel(offeredBits), double(sixgr.util.structGet(state, "NumUsers", numel(offeredBits))));
-        slotsPerFrame = max(1, round(double(sixgr.util.structGet(state, "SlotsPerFrame", 10))));
+        slotsPerFrame = double(sixgr.util.structGet( ...
+            state, "SlotsPerFrame", NaN));
+        if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+                slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+            error("sixgr:truth:CoupledTruthRuntime:MissingSlotsPerFrame", ...
+                "Packet timing requires canonical SlotsPerFrame.");
+        end
         canonicalSlot1 = max(1, round(double(absoluteFrame)));
         [enqueueFrame, enqueueFrameSlot] = sixgr.time.canonicalSlotToFrameSlot(canonicalSlot1, slotsPerFrame);
         enqueueSlot = canonicalSlot1;
@@ -6835,9 +6944,52 @@ methods(Static, Access=private)
     end
 
     function budget = defaultSlotBudget(state)
-        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(state, "SymbolsPerSlot", ...
-            sixgr.util.structGet(sixgr.util.structGet(state, "CfgMobility", struct()), "phy.numerology.symbolsPerSlot", 14)))));
-        budget = struct("NPRB", max(1, round(double(state.NumRB))), "SymbolAllocation", [0 double(symbolsPerSlot)]);
+        symbolsPerSlot = double(sixgr.util.structGet( ...
+            state, "SymbolsPerSlot", NaN));
+        if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
+                symbolsPerSlot >= 1 && symbolsPerSlot == fix(symbolsPerSlot))
+            error("sixgr:truth:MissingCanonicalSymbolsPerSlot", ...
+                "Runtime slot budgets require canonical SymbolsPerSlot.");
+        end
+        numRB = double(sixgr.util.structGet(state, "NumRB", NaN));
+        if ~(isscalar(numRB) && isfinite(numRB) && ...
+                numRB >= 1 && numRB == fix(numRB))
+            error("sixgr:truth:MissingCanonicalNRB", ...
+                "Runtime slot budgets require canonical N_RB.");
+        end
+        runtimeSlot = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+        controlSlot = double(sixgr.util.structGet( ...
+            state, "TimingControlAbsoluteSlot0Based", runtimeSlot - 1));
+        if ~(isscalar(controlSlot) && isfinite(controlSlot) && ...
+                controlSlot >= 0 && controlSlot == fix(controlSlot))
+            error("sixgr:truth:InvalidTimingControlSlot", ...
+                "Runtime scheduling requires an explicit zero-based control slot.");
+        end
+        controlAllocation = sixgr.util.structGet( ...
+            state, "TimingControlSymbolAllocation", []);
+        if isempty(controlAllocation)
+            controlStart = double(sixgr.util.structGet( ...
+                state, "CurrentSlotDLSymbolStart", NaN));
+            controlCount = double(sixgr.util.structGet( ...
+                state.CfgMobility, "phy.pdcch.coreset.duration", ...
+                sixgr.util.structGet(state.CfgMobility, ...
+                "phy.pdcch.numSymbols", NaN)));
+            controlAllocation = [controlStart, controlCount];
+        end
+        if ~(isnumeric(controlAllocation) && ...
+                numel(controlAllocation) == 2 && ...
+                all(isfinite(double(controlAllocation(:)))) && ...
+                all(double(controlAllocation(:)) == ...
+                fix(double(controlAllocation(:)))) && ...
+                controlAllocation(1) >= 0 && controlAllocation(2) >= 1)
+            error("sixgr:truth:InvalidTimingControlAllocation", ...
+                "Runtime scheduling requires an explicit PDCCH symbol allocation.");
+        end
+        budget = struct("NPRB", numRB, ...
+            "SymbolAllocation", [0 double(symbolsPerSlot)], ...
+            "ControlAbsoluteSlot", controlSlot, ...
+            "ControlSymbolAllocation", ...
+                reshape(double(controlAllocation), 1, 2));
         direction = upper(string(sixgr.util.structGet(state, "CurrentDirection", "DL")));
         if direction == "UL"
             budget.SymbolAllocation = [ ...
@@ -8229,7 +8381,9 @@ methods(Static, Access=private)
     end
 
     function runState = initializeRunState(cfg, multiUser, totalTrafficFrames)
-        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", 14))));
+        numerology = sixgr.truth.CoupledTruthRuntime. ...
+            canonicalNumerologyFromConfig(cfg);
+        symbolsPerSlot = double(numerology.SymbolsPerSlot);
         runState = struct( ...
             "RunStateID", "coupled_truth_run_state", ...
             "ExecutionModel", string(sixgr.util.structGet(multiUser, "ExecutionModel", "slot_coupled_truth")), ...
@@ -10739,8 +10893,13 @@ methods(Static, Access=private)
         resolvedFormat = sixgr.truth.CoupledTruthRuntime.resolveCompatiblePUCCHFormat(requestedFormat, numUCIBits);
         requiredSymbols = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 2, 4);
         nominalDueSlot = sourceSlot + feedbackDelay;
-        slotsPerFrame = max(1, round(double(sixgr.util.structGet(state, "SlotsPerFrame", ...
-            sixgr.util.structGet(state.CfgMobility, "phy.numerology.slotsPerFrame", 10)))));
+        slotsPerFrame = double(sixgr.util.structGet( ...
+            state, "SlotsPerFrame", NaN));
+        if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+                slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+            error("sixgr:truth:CoupledTruthRuntime:MissingSlotsPerFrame", ...
+                "HARQ feedback search requires canonical SlotsPerFrame.");
+        end
         maxSearchSlots = max(2 * slotsPerFrame, 64);
         for offset = 0:maxSearchSlots
             candidateSlot = nominalDueSlot + offset;
@@ -10787,7 +10946,13 @@ methods(Static, Access=private)
             note = "tdd_slot_has_insufficient_ul_symbols_for_resolved_pucch_format";
             return;
         end
-        symbolsPerSlot = max(1, round(double(sixgr.util.structGet(state.CfgMobility, "phy.numerology.symbolsPerSlot", 14))));
+        symbolsPerSlot = double(sixgr.util.structGet( ...
+            state, "SymbolsPerSlot", NaN));
+        if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
+                symbolsPerSlot >= 1 && symbolsPerSlot == fix(symbolsPerSlot))
+            error("sixgr:truth:MissingCanonicalSymbolsPerSlot", ...
+                "PUCCH placement requires canonical SymbolsPerSlot.");
+        end
         ulEndExclusive = min(symbolsPerSlot, ulStart + ulCount);
         requestedStart = round(double(requestedSymbolStart));
         if ~(isfinite(requestedStart))
@@ -10830,13 +10995,22 @@ methods(Static, Access=private)
         resolvedFormat = sixgr.truth.CoupledTruthRuntime.resolveCompatiblePUCCHFormat(requestedFormat, numUCIBits);
         prbCount = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 2, 1);
         numSym = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 2, 4);
-        symbolStart = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 12, 10);
-        if resolvedFormat >= 2
-            symbolStart = min(symbolStart, 14 - numSym);
+        symbolsPerSlot = double(sixgr.util.structGet( ...
+            state, "SymbolsPerSlot", NaN));
+        if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
+                symbolsPerSlot >= numSym && symbolsPerSlot == fix(symbolsPerSlot))
+            error("sixgr:truth:MissingCanonicalSymbolsPerSlot", ...
+                "PUCCH assignment requires canonical SymbolsPerSlot.");
         end
+        symbolStart = symbolsPerSlot - numSym;
         [symbolStart, resourceValid, resourceNote] = ...
             sixgr.truth.CoupledTruthRuntime.fitPUCCHSymbolsToULPartition(state, dueSlot, symbolStart, numSym);
-        numRB = max(1, round(double(sixgr.util.structGet(state, "NumRB", 52))));
+        numRB = double(sixgr.util.structGet(state, "NumRB", NaN));
+        if ~(isscalar(numRB) && isfinite(numRB) && ...
+                numRB >= 1 && numRB == fix(numRB))
+            error("sixgr:truth:MissingCanonicalNRB", ...
+                "PUCCH assignment requires canonical N_RB.");
+        end
         prbSpan = max(1, min(numRB, round(prbCount)));
         prbMod = max(1, numRB - prbSpan + 1);
         prbStart = mod(max(0, round(rnti) - 1) + 7 * max(0, round(servingCell) - 1), prbMod);
@@ -11234,12 +11408,24 @@ methods(Static, Access=private)
         if ~(isfinite(absoluteSlot) && absoluteSlot >= 1)
             return;
         end
-        slotsPerFrame = double(sixgr.util.structGet(state.CfgMobility, "phy.numerology.slotsPerFrame", ...
-            sixgr.util.structGet(state.CfgMobility, "phy.carrier.SlotsPerFrame", NaN)));
-        if ~(isfinite(slotsPerFrame) && slotsPerFrame >= 1)
-            slotsPerFrame = 10;
+        slotsPerFrame = double(sixgr.util.structGet( ...
+            state, "SlotsPerFrame", NaN));
+        if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+                slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+            error("sixgr:truth:CoupledTruthRuntime:MissingSlotsPerFrame", ...
+                "Runtime state must contain canonical SlotsPerFrame.");
         end
         frameIdx = 1 + floor((absoluteSlot - 1) ./ slotsPerFrame);
+    end
+
+    function numerology = canonicalNumerologyFromConfig(cfg)
+        raw = sixgr.util.structGet( ...
+            cfg, "phy.frameStructure.Numerology", []);
+        if ~(isstruct(raw) && isscalar(raw))
+            error("sixgr:truth:CoupledTruthRuntime:MissingCanonicalNumerology", ...
+                "Coupled truth requires the canonical frame numerology snapshot.");
+        end
+        numerology = sixgr.phy.frame.AbsoluteTime.resolveNumerology(raw);
     end
 
     function value = firstNumeric(vals, defaultValue)

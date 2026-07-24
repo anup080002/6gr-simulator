@@ -186,7 +186,9 @@ cfg.TDRA.EnableCrossSlot = false;
 cfg.FDRA.FDRAType = char(string(point.FDRAType));
 cfg.SpeedKmh = max(0, double(sixgr.util.structGet(point, "SpeedKmh", cfg.SpeedKmh)));
 cfg.DopplerHz = localSpeedToDoppler(cfg.SpeedKmh, cfg.CarrierFrequencyHz);
-cfg.SlotNumber = mod(trialIndex - 1, 10 * 2^cfg.Numerology);
+numerology = localStudyNumerology(cfg);
+cfg.Numerology = double(numerology.Mu);
+cfg.SlotNumber = mod(trialIndex - 1, double(numerology.SlotsPerFrame));
 cfg.Seed = double(seed);
 
 fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRAForPoint(cfg), cfg.NSizeGrid, "TransmissionIndex", trialIndex);
@@ -662,7 +664,8 @@ row.seed = double(cfg.Seed);
 row.scenario_id = char(string(point.ScenarioID));
 row.band = char(localBandLabel(cfg.CarrierFrequencyHz));
 row.duplex = char(cfg.DuplexMode);
-row.scs_khz = double(15 * 2^cfg.Numerology);
+numerology = localStudyNumerology(cfg);
+row.scs_khz = double(numerology.SubcarrierSpacingKHz);
 row.bandwidth_mhz = double(cfg.ChannelBandwidthMHz);
 row.snr_db = double(point.SNRdB);
 row.channel_model = char(string(point.ChannelModel));
@@ -978,8 +981,16 @@ end
 end
 
 function bps = localThroughputBps(cfg, bits)
-slotDur = 1e-3 / 2^double(cfg.Numerology);
+numerology = localStudyNumerology(cfg);
+slotDur = double(numerology.SlotDurationSeconds);
 bps = double(bits) / max(slotDur * max(1, cfg.RepetitionCount), eps);
+end
+
+function numerology = localStudyNumerology(cfg)
+base = sixgr.phy.frame.AbsoluteTime.resolveNumerology(double(cfg.Numerology));
+cp = string(sixgr.util.structGet(cfg, "CyclicPrefix", "normal"));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    base.SCSKHz, cp, "generic_waveform_test", "");
 end
 
 function se = localSpectralEfficiency(cfg, bits)

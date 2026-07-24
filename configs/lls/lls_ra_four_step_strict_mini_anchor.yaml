@@ -65,13 +65,20 @@ frequency:
   power_model_defaults: baseline
   energy_model_defaults: disabled
   rf_impairment_defaults: disabled
-  n_size_grid: 52
+  n_size_grid: 24
 
 frame:
   scs_khz: 30
   cp_type: normal
   slot_format: mixed
-  tdd_pattern: DDDSU
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 1
 
 channels:
   model_type: AWGN

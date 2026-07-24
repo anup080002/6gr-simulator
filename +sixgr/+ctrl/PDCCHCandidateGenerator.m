@@ -1,7 +1,7 @@
 function [candidateTable, hashTrace] = PDCCHCandidateGenerator(ctrlCfg, searchSpace, cceMap, slotNumber)
 %PDCCHCandidateGenerator Enumerate monitored blind-decode candidates.
 
-slotsPerFrame = max(1, round(double(sixgr.util.structGet(ctrlCfg, "SlotsPerFrame", 10 * 2^max(0, round(double(sixgr.util.structGet(ctrlCfg, "Numerology", 0))))))));
+slotsPerFrame = localRequireSlotsPerFrame(ctrlCfg);
 nSlotFrame = mod(round(double(slotNumber)), slotsPerFrame);
 periodSlots = max(1, round(double(searchSpace.MonitoringSlotsPeriodicity)));
 slotOffset = max(0, round(double(searchSpace.MonitoringSlotOffset)));
@@ -67,4 +67,13 @@ end
 
 candidateTable = struct2table(candRows);
 hashTrace = struct2table(hashRows);
+end
+
+function slotsPerFrame = localRequireSlotsPerFrame(ctrlCfg)
+slotsPerFrame = double(sixgr.util.structGet(ctrlCfg, "SlotsPerFrame", NaN));
+if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+        slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+    error("sixgr:ctrl:PDCCHCandidateGenerator:MissingCanonicalNumerology", ...
+        "ctrlCfg.SlotsPerFrame must come from ControlChannelConfig's canonical numerology resolution.");
+end
 end

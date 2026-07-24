@@ -838,19 +838,23 @@ if ~(isfinite(prachScsKHz) && prachScsKHz > 0)
     end
 end
 if ~(isfinite(prachScsKHz) && prachScsKHz > 0)
-    prachScsKHz = 15;
+    error("sixgr:link:runPRACHDetection:MissingPRACHNumerology", ...
+        "PRACH procedure timing requires an explicit PRACH or carrier SCS.");
 end
 dataScsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
     sixgr.util.structGet(cfg, "phy.carrier.subcarrierSpacing_kHz", prachScsKHz)));
 if ~(isfinite(dataScsKHz) && dataScsKHz > 0)
-    dataScsKHz = prachScsKHz;
+    error("sixgr:link:runPRACHDetection:MissingDataNumerology", ...
+        "RA response timing requires an explicit data-carrier SCS.");
 end
-muPrach = max(0, round(log2(max(prachScsKHz, 15) / 15)));
-muData = max(0, round(log2(max(dataScsKHz, 15) / 15)));
-slotsPerMsPrach = 2^muPrach;
-slotsPerMsData = 2^muData;
-slotDurationMs = 1 / max(slotsPerMsPrach, eps);
-dataSlotDurationMs = 1 / max(slotsPerMsData, eps);
+prachNumerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    prachScsKHz, "normal", "generic_waveform_test", "");
+dataNumerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    dataScsKHz, "normal", "generic_waveform_test", "");
+slotsPerMsPrach = double(prachNumerology.SlotsPerSubframe);
+slotsPerMsData = double(dataNumerology.SlotsPerSubframe);
+slotDurationMs = double(prachNumerology.SlotDurationMilliseconds);
+dataSlotDurationMs = double(dataNumerology.SlotDurationMilliseconds);
 raWindowSlots = double(sixgr.util.structGet(cfg, "rrc.rach.raResponseWindow_slots", NaN));
 if ~isfinite(raWindowSlots)
     raWindowMs = double(sixgr.util.structGet(cfg, "rrc.rach.raResponseWindow_ms", 10));

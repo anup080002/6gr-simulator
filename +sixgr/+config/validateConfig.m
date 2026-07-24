@@ -1,4 +1,4 @@
-function validateConfig(cfg)
+function [cfg, frameSnapshot, frameEngine] = validateConfig(cfg)
 % sixgr.config.validateConfig
 % Hard checks (errors) to ensure the config is self-consistent.
 %
@@ -27,15 +27,31 @@ req = { ...
 localRequire(cfg, req);
 cCore = sixgr.config.loadCoreCatalog();
 localValidateCatalogFields(cfg, sixgr.util.structGet(cCore, 'parameters', struct()), '');
+frameEngine = sixgr.phy.FrameStructureEngine(cfg);
+frameSnapshot = frameEngine.toStruct();
+cfg = sixgr.util.structSet(cfg, "phy.frameStructure", frameSnapshot);
+cfg = sixgr.util.structSet(cfg, ...
+    "resolved_runtime_view.frame_structure", frameSnapshot);
+localValidateCanonicalFrameGrid(cfg, frameSnapshot);
+cfg = localAttachValidatedFrameAliases(cfg, frameSnapshot);
 
 duplexMode = upper(char(cfg.phy.duplex.mode));
 if strcmp(duplexMode, 'TDD')
-    tddPattern = sixgr.util.structGet(cfg, 'phy.duplex.tddPattern', ...
-        sixgr.util.structGet(cfg, 'scenario.tddPattern', 'DDDSU'));
-    localValidateTDDPattern(tddPattern, 'phy.duplex.tddPattern');
-    if contains(upper(char(string(tddPattern))), 'S')
-        sixgr.util.resolveTDDSlotPartition(cfg, 1);
+    legacyPattern = sixgr.util.structGet(cfg, 'phy.duplex.tddPattern', []);
+    if ~isempty(legacyPattern)
+        token = upper(string(legacyPattern));
+        if ~(isscalar(token) && all(ismember(char(token), 'DUF')))
+            error("sixgr:phy:frame:LegacyCompactTDDPatternNotAllowed", ...
+                "The standard frame path does not accept compact S-slot " + ...
+                "patterns. Configure phy.duplex.tddCommon instead.");
+        end
     end
+    localValidateCanonicalTDD(cfg, frameSnapshot);
+elseif strcmp(duplexMode, 'FDD')
+    localValidateFDDContextIfConfigured(cfg, frameSnapshot);
+else
+    error('sixgr:config:BadEnum', ...
+        'phy.duplex.mode must be one of: TDD, FDD');
 end
 
 % Traffic controls
@@ -603,33 +619,174 @@ else
 end
 end
 
-function localValidateTDDPattern(pat, fieldName)
-if isstruct(pat)
-    dl = double(sixgr.util.structGet(pat, 'dlSlots', NaN));
-    ul = double(sixgr.util.structGet(pat, 'ulSlots', NaN));
-    sp = double(sixgr.util.structGet(pat, 'specialSlots', 0));
-    if ~(isfinite(dl) && isfinite(ul) && isfinite(sp) && dl >= 0 && ul >= 0 && sp >= 0 && (dl + ul + sp) > 0)
-        error('sixgr:config:BadTDDPattern', '%s struct must define non-negative dlSlots/ulSlots/specialSlots with a non-zero total.', fieldName);
-    end
-    return;
+function cfg = localAttachValidatedFrameAliases(cfg, frame)
+cfg.phy.carrier.SubcarrierSpacing = double(frame.SCSkHz);
+cfg.phy.carrier.SubcarrierSpacing_kHz = double(frame.SCSkHz);
+cfg.phy.carrier.CyclicPrefix = char(frame.CyclicPrefix);
+cfg.phy.carrier.NSizeGrid = double(frame.NRB);
+cfg = sixgr.util.structSet(cfg, "phy.numerology.mu", double(frame.Mu));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.scs_kHz", double(frame.SCSkHz));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.SubcarrierSpacing_kHz", double(frame.SCSkHz));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.NRB", double(frame.NRB));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.NSubcarriers", double(12 * frame.NRB));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.slotsPerFrame", double(frame.SlotsPerFrame));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.slotDuration_ms", double(frame.SlotDuration_ms));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.symbolsPerSlot", double(frame.SymbolsPerSlot));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.numerology.source", char(frame.Numerology.Source));
+cfg = sixgr.util.structSet(cfg, "phy.ofdm", frame.OFDMSampling);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.waveform.fftSize", double(frame.FFTSize));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.waveform.sampleRate_Hz", double(frame.SampleRate_Hz));
+if isfield(cfg, "channel") && isstruct(cfg.channel) && isscalar(cfg.channel)
+    cfg.channel.sampleRate_Hz = double(frame.SampleRate_Hz);
+    cfg.channel.nfft = double(frame.FFTSize);
+end
 end
 
-if ischar(pat) || isstring(pat)
-    s = upper(char(string(pat)));
-    s = regexprep(s, '[^DUS]', '');
-    if isempty(s)
-        error('sixgr:config:BadTDDPattern', '%s string must contain at least one D/U/S token.', fieldName);
-    end
-    return;
+function localValidateCanonicalFrameGrid(cfg, frameSnapshot)
+fcHz = localFirstFinite(cfg, [ ...
+    "phy.carrier.centerFrequency_Hz", "phy.carrier.fc_Hz", ...
+    "channel.fc_Hz"]);
+bwHz = localFirstFinite(cfg, [ ...
+    "phy.channelBandwidth_Hz", "channel.bandwidth_Hz", ...
+    "scenario.bandwidth_Hz"]);
+scsKHz = localFirstFinite(cfg, [ ...
+    "phy.carrier.SubcarrierSpacing_kHz", ...
+    "phy.carrier.SubcarrierSpacing"]);
+nSizeGrid = localFirstFinite(cfg, "phy.carrier.NSizeGrid");
+nStartGrid = localFirstFinite(cfg, "phy.carrier.NStartGrid");
+if ~isfinite(nStartGrid)
+    nStartGrid = 0;
+end
+cp = string(sixgr.util.structGet(cfg, ...
+    "phy.carrier.CyclicPrefix", ""));
+if ~(isfinite(fcHz) && isfinite(bwHz) && isfinite(scsKHz) && ...
+        isfinite(nSizeGrid) && strlength(strtrim(cp)) > 0)
+    error("sixgr:config:MissingFrameGridField", ...
+        "Standard frame validation requires center frequency, channel " + ...
+        "bandwidth, SCS, NSizeGrid, and cyclic prefix.");
+end
+if ~(isstruct(frameSnapshot) && isscalar(frameSnapshot) && ...
+        isfield(frameSnapshot, "CarrierGrid") && ...
+        isfield(frameSnapshot, "OFDMSampling"))
+    error("sixgr:config:MissingCanonicalFrameSnapshot", ...
+        "validateConfig must attach one canonical frame/grid snapshot.");
+end
+grid = frameSnapshot.CarrierGrid;
+if double(grid.CenterFrequencyHz) ~= fcHz || ...
+        double(grid.ChannelBandwidthHz) ~= bwHz || ...
+        double(grid.SubcarrierSpacingKHz) ~= scsKHz || ...
+        double(grid.NSizeGrid) ~= nSizeGrid || ...
+        double(grid.NStartGrid) ~= nStartGrid || ...
+        ~strcmpi(string(grid.CyclicPrefix), cp)
+    error("sixgr:config:CanonicalFrameSnapshotMismatch", ...
+        "The canonical frame snapshot does not exactly match configured carrier fields.");
+end
+localValidateDeclaredFrameValue(cfg, "phy.numerology.mu", ...
+    frameSnapshot.Mu);
+localValidateDeclaredFrameValue(cfg, "phy.numerology.slotsPerFrame", ...
+    frameSnapshot.SlotsPerFrame);
+localValidateDeclaredFrameValue(cfg, "phy.numerology.slotDuration_ms", ...
+    frameSnapshot.SlotDuration_ms);
+localValidateDeclaredFrameValue(cfg, "phy.numerology.symbolsPerSlot", ...
+    frameSnapshot.SymbolsPerSlot);
+localValidateDeclaredFrameValue(cfg, "frame_timing.slots_per_frame", ...
+    frameSnapshot.SlotsPerFrame);
+localValidateDeclaredFrameValue(cfg, "frame_timing.slot_duration_ms", ...
+    frameSnapshot.SlotDuration_ms);
+localValidateDeclaredFrameValue(cfg, "frame_timing.symbols_per_slot", ...
+    frameSnapshot.SymbolsPerSlot);
 end
 
-if isnumeric(pat)
-    v = double(pat(:));
-    if isempty(v)
-        error('sixgr:config:BadTDDPattern', '%s numeric pattern cannot be empty.', fieldName);
-    end
+function localValidateDeclaredFrameValue(cfg, path, expected)
+value = sixgr.util.structGet(cfg, path, []);
+if isempty(value)
     return;
 end
+if ~(isnumeric(value) && isreal(value) && isscalar(value) && ...
+        isfinite(double(value))) || ...
+        abs(double(value) - double(expected)) > ...
+        16 * eps(max(1, abs(double(expected))))
+    error("sixgr:config:DeclaredFrameTimingMismatch", ...
+        "%s=%.15g does not match canonical resolved value %.15g.", ...
+        path, double(value), double(expected));
+end
+end
 
-error('sixgr:config:BadTDDPattern', '%s must be struct, string pattern, or numeric vector.', fieldName);
+function localValidateCanonicalTDD(cfg, frameSnapshot)
+node = sixgr.util.structGet(cfg, "phy.duplex.tddCommon", []);
+if ~(isstruct(node) && isscalar(node) && ~isempty(fieldnames(node)))
+    error("sixgr:phy:frame:MissingTDDCommonConfig", ...
+        "TDD requires phy.duplex.tddCommon with an explicit reference " + ...
+        "SCS and pattern1. No compact-pattern default is installed.");
+end
+if string(frameSnapshot.DuplexMode) ~= "TDD" || ...
+        ~isstruct(frameSnapshot.SlotState) || ...
+        isempty(fieldnames(frameSnapshot.SlotState))
+    error("sixgr:config:MissingCanonicalTDDState", ...
+        "The validated TDD config must contain canonical symbol-level slot state.");
+end
+end
+
+function localValidateFDDContextIfConfigured(cfg, frameSnapshot)
+fdd = sixgr.util.structGet(cfg, "phy.duplex.fdd", struct());
+if isempty(fdd) || ~(isstruct(fdd) && isscalar(fdd)) || ...
+        isempty(fieldnames(fdd))
+    error("sixgr:phy:frame:MissingFDDContext", ...
+        "FDD validation requires explicit separate DL and UL contexts.");
+end
+contexts = frameSnapshot.FDDContexts;
+if string(frameSnapshot.DuplexMode) ~= "FDD" || ...
+        ~isstruct(contexts) || ~isfield(contexts, "Downlink") || ...
+        ~isfield(contexts, "Uplink") || ...
+        double(contexts.Downlink.CenterFrequencyHz) == ...
+        double(contexts.Uplink.CenterFrequencyHz)
+    error("sixgr:config:MissingCanonicalFDDState", ...
+        "The validated FDD snapshot must contain distinct DL and UL grids.");
+end
+end
+
+function value = localFirstFinite(cfg, paths)
+value = NaN;
+for path = string(paths)
+    candidate = sixgr.util.structGet(cfg, path, []);
+    if isempty(candidate)
+        continue;
+    end
+    if ~(isnumeric(candidate) || islogical(candidate)) || ...
+            ~isscalar(candidate) || ~isfinite(double(candidate))
+        error("sixgr:config:BadFrameGridValue", ...
+            "%s must be a finite numeric scalar.", path);
+    end
+    value = double(candidate);
+    return;
+end
+end
+
+function value = localFirstFiniteOr(cfg, path, defaultValue)
+value = localFirstFinite(cfg, path);
+if ~isfinite(value)
+    value = double(defaultValue);
+end
+end
+
+function value = localStructField(s, names)
+value = [];
+fields = string(fieldnames(s));
+for name = string(names)
+    index = find(strcmpi(fields, name), 1);
+    if ~isempty(index)
+        value = s.(char(fields(index)));
+        return;
+    end
+end
 end

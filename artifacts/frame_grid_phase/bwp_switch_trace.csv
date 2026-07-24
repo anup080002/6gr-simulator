@@ -1,0 +1,11 @@
+TestID,UEID,CCID,Direction,AbsSlot,OldBWPID,CommandedBWPID,ActivationAbsSlot,ActiveBWPID,TriggerSource,ExpectedValid,ActualValid,ReasonCode,Status,EventType,GrantBWPID,IndexConvention
+BWP-HISTORY-001,UE0,CCB,DL,0,,DL0,-1,DL0,configuration,TRUE,TRUE,initial_active_bwp,PASS,INITIAL_STATE,,zero_based_phy_indices
+BWP-HISTORY-002,UE0,CCB,UL,0,,UL0,-1,UL0,configuration,TRUE,TRUE,initial_active_bwp,PASS,INITIAL_STATE,,zero_based_phy_indices
+BWP-HISTORY-003,UE0,CCB,DL,1,DL0,DL1,4,DL0,DCI,TRUE,TRUE,switch_queued,PASS,SWITCH_COMMAND,,zero_based_phy_indices
+BWP-HISTORY-004,UE0,CCB,DL,4,DL0,DL1,4,DL1,DCI,TRUE,TRUE,switch_activated,PASS,SWITCH_ACTIVATION,,zero_based_phy_indices
+BWP-GRANT-01,UE0,CCB,DL,2,DL0,,4,DL0,grant_validation,TRUE,TRUE,bwp_active,PASS,GRANT,DL0,zero_based_phy_indices
+BWP-GRANT-02,UE0,CCB,DL,2,DL0,,4,DL0,grant_validation,FALSE,FALSE,inactive_bwp,PASS,GRANT,DL1,zero_based_phy_indices
+BWP-GRANT-03,UE0,CCB,UL,3,UL0,,4,UL0,grant_validation,TRUE,TRUE,bwp_active,PASS,GRANT,UL0,zero_based_phy_indices
+BWP-GRANT-04,UE0,CCB,DL,5,DL1,,4,DL1,grant_validation,TRUE,TRUE,bwp_active,PASS,GRANT,DL1,zero_based_phy_indices
+BWP-GRANT-05,UE0,CCB,DL,5,DL1,,4,DL1,grant_validation,FALSE,FALSE,inactive_bwp,PASS,GRANT,DL0,zero_based_phy_indices
+BWP-UL-SNAPSHOT,UE0,CCB,UL,5,UL0,,4,UL0,state_snapshot,TRUE,TRUE,ul_bwp_unchanged_by_dl_switch,PASS,STATE_SNAPSHOT,,zero_based_phy_indices

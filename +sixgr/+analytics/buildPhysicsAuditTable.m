@@ -20,9 +20,15 @@ scsKHz = localFirstFinite([ ...
     localSummaryValue(trialData, "SCS_kHz"), ...
     localCfgValue(scenarioCfg, ["bwp.dl.scs_khz","frame.scs_khz","scs_khz"], NaN), ...
     localColumnMean(trialData.dl, "SCS_kHz"), ...
-    localColumnMean(trialData.ul, "SCS_kHz")], 30);
-mu = log2(scsKHz / 15);
-slotDurationMs = 1 / (2 ^ round(mu));
+    localColumnMean(trialData.ul, "SCS_kHz")], NaN);
+mu = NaN;
+slotDurationMs = NaN;
+if isfinite(scsKHz)
+    numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+        scsKHz, "normal", "generic_waveform_test", "");
+    mu = double(numerology.Mu);
+    slotDurationMs = double(numerology.SlotDurationMilliseconds);
+end
 slotCount = localObservedSlotCount(trialData);
 durationS = slotCount * slotDurationMs / 1000;
 
@@ -59,8 +65,8 @@ dlGoodputMbps = localColumnSum(trialData.dl, "GoodBits") / max(durationS, eps) /
 achievedSE = dlGoodputMbps * 1e6 / bandwidthHz;
 
 rows = {};
-rows{end+1} = localRow("OFDM-001", "Numerology_mu", "mu = log2(SCS_kHz / 15)", scsKHz, round(mu), "", "mu", "computed_from_scs", abs(mu-round(mu)) < 1e-12); %#ok<AGROW>
-rows{end+1} = localRow("OFDM-002", "SlotDuration_ms", "Tslot = 1 / 2^mu", slotDurationMs, slotDurationMs, "", "ms", "computed_from_mu", true); %#ok<AGROW>
+rows{end+1} = localRow("OFDM-001", "Numerology_mu", "TS 38.211 canonical SCS-to-mu catalog", scsKHz, mu, "", "mu", "canonical_numerology_catalog", isfinite(mu)); %#ok<AGROW>
+rows{end+1} = localRow("OFDM-002", "SlotDuration_ms", "TS 38.211 canonical slot duration", slotDurationMs, slotDurationMs, "", "ms", "canonical_numerology_catalog", isfinite(slotDurationMs)); %#ok<AGROW>
 rows{end+1} = localRow("MOB-001", "Speed_mps", "speed_kmh / 3.6", vMps, vMps, "", "m/s", "configured_or_assumed_speed", true); %#ok<AGROW>
 rows{end+1} = localRow("MOB-002", "Wavelength_m", "c / fc", lambdaM, lambdaM, "", "m", "computed_from_carrier", true); %#ok<AGROW>
 rows{end+1} = localRow("MOB-003", "MaxDoppler_Hz", "v / lambda", maxDopplerHz, maxDopplerHz, "", "Hz", "computed_from_speed_and_fc", true); %#ok<AGROW>

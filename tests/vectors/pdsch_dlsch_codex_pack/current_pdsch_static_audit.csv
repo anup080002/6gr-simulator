@@ -1,0 +1,30 @@
+CheckID,File,Line,PatternPresent,Status,Evidence,RequiredCorrectionOrMeaning
+PD-STATIC-001,+sixgr/+link/resolveWaveformGrant.m,51,True,FAIL,"grant.Source = ""explicit_waveform_grant""",Grant is materialized from configuration before DCI is built.
+PD-STATIC-002,+sixgr/+link/resolveWaveformGrant.m,90,True,FAIL,prbSet = 0:(round(nGrid) - 1),Missing PDSCH PRB allocation becomes the full carrier grid.
+PD-STATIC-003,+sixgr/+link/resolveWaveformGrant.m,113,True,FAIL,symAlloc = [0 14],Missing PDSCH symbol allocation becomes a full normal-CP slot.
+PD-STATIC-004,+sixgr/+phy/+grid/allocREsPDSCH.m,184,True,FAIL,DMRSPortSet = 0:(pdsch.NumLayers-1),Configured DM-RS ports are overwritten by 0:(NumLayers-1).
+PD-STATIC-005,+sixgr/+phy/+grid/allocREsPDSCH.m,269,True,FAIL,"DMRSTypeAPosition = max(2, min(3",DMRS type-A position is clamped rather than validated.
+PD-STATIC-006,+sixgr/+phy/+grid/allocREsPDSCH.m,280,True,FAIL,"DMRSConfigurationType = max(1, min(2",DMRS configuration type is clamped rather than validated.
+PD-STATIC-007,+sixgr/+phy/+grid/allocREsPDSCH.m,291,True,FAIL,"DMRSAdditionalPosition = max(0, min(3",DMRS additional position is clamped rather than validated.
+PD-STATIC-008,+sixgr/+phy/+grid/allocREsPDSCH.m,302,True,FAIL,"DMRSLength = max(1, min(2",DMRS length is clamped rather than validated.
+PD-STATIC-009,+sixgr/+phy/+grid/allocREsPDSCH.m,311,True,FAIL,"NumCDMGroupsWithoutData = max(1, min(3",DMRS CDM groups are clamped rather than validated against the configuration.
+PD-STATIC-010,+sixgr/+phy/+grid/allocREsPDSCH.m,221,True,FAIL,"tokens = ""QPSK""",Missing PDSCH modulation silently becomes QPSK.
+PD-STATIC-011,+sixgr/+phy/+grid/allocREsPDSCH.m,232,True,FAIL,tokens(end+1:nCodewords) = tokens(end),A short multi-codeword modulation list is silently repeated.
+PD-STATIC-012,+sixgr/+phy/+grid/allocREsPDSCH.m,234,True,FAIL,tokens = tokens(1:nCodewords),An overlong multi-codeword modulation list is silently truncated.
+PD-STATIC-013,+sixgr/+phy/+grid/allocREsPDSCH.m,407,True,FAIL,"mapType = ""B""",An invalid type-A start can be changed to mapping type B instead of rejected.
+PD-STATIC-014,+sixgr/+phy/+grid/allocREsPDSCH.m,334,True,FAIL,"PTRSTimeDensity"", []), ... 2); freqDensity = localFirstFiniteScalar( ... sixgr.util.structGet(cfg, ""phy.pdsch.ptrs.frequencyDensity"", []), ... sixgr.util.structGet(cfg, ""phy.ptrs.frequencyDensity"", []), ... sixgr.util.structGet(cfg, ""pdsch6",PTRS time density has an implicit default.
+PD-STATIC-015,+sixgr/+phy/+grid/allocREsPDSCH.m,339,True,FAIL,"PTRSFrequencyDensity"", []), ... 2)",PTRS frequency density has an implicit default.
+PD-STATIC-016,+sixgr/+phy/+grid/allocREsPDSCH.m,359,True,FAIL,ptrs.PTRSPortSet = 0,Missing PTRS port set silently becomes port 0.
+PD-STATIC-017,+sixgr/+phy/+dl/resolvePDSCHPrecoding.m,132,True,FAIL,PRGBundleUnsupported,Three-dimensional/per-PRG PDSCH precoder bundles are rejected.
+PD-STATIC-018,+sixgr/+phy/+dl/resolvePDSCHPrecoding.m,171,True,FAIL,Custom DMRSPortSet is not supported,Valid non-default DM-RS ports are rejected in the precoding path.
+PD-STATIC-019,+sixgr/+phy/+dl/resolvePDSCHPrecoding.m,79,True,FAIL,Wcfg = [];,A stale explicit matrix can be discarded and regenerated from scalar PMI.
+PD-STATIC-020,+sixgr/+phy/+resource/computeResourceAccounting.m,61,True,FAIL,nrePerPRB = floor(quotient),NRE/PRB can be reconstructed by flooring instead of using exact index evidence.
+PD-STATIC-021,+sixgr/+phy/+resource/computeResourceAccounting.m,80,True,FAIL,gBitsPerCodeword = double(layerDataRE),"G can be reconstructed from layer RE, Qm and layers."
+PD-STATIC-022,+sixgr/+phy/+dl/PDSCH_Tx.m,85,True,FAIL,"if isempty(opt.PDSCH) if hasPHYGrant [pdschInd, pdschInfo, pdsch] = localBuildPDSCHFromFrozenGrant(carrier, cfg, phyGrant); else [pdschInd, pdschInfo, pdsch] = sixgr.phy.grid.allocREsPDSCH",PDSCH_Tx can create a connected transmission directly from configuration without a decoded assignment.
+PD-STATIC-023,+sixgr/+phy/+dl/PDSCH_Tx.m,263,True,FAIL,localCSIRSResourceCollision,CSI-RS collision is checked after PDSCH indices/symbols are generated instead of through one ownership map.
+PD-STATIC-024,+sixgr/+phy/+dl/PDSCH_Tx.m,248,True,FAIL,"nrResourceGrid(carrier, nPages); catch txGrid = complex(zeros",Resource-grid creation has a catch-all manual zero-grid fallback.
+PD-STATIC-025,+sixgr/+control/isPDCCHGrantBindingRequired.m,31,True,FAIL,"localAnyTruthy(cfg, commonPaths)",PDCCH-to-PDSCH grant binding is policy-optional rather than intrinsic to connected strict mode.
+PD-STATIC-026,+sixgr/+phy/+dl/PDSCH_Tx.m,782,True,PASS,nLayers < 1 || nLayers > 8,Production source includes an explicit rank 1-8 guard.
+PD-STATIC-027,+sixgr/+phy/+dl/PDSCH_Tx.m,802,True,PASS,case 5 counts = [2 3],Production source includes the rank-5 two-codeword layer split.
+PD-STATIC-028,+sixgr/+phy/+dl/PDSCH_Tx.m,192,True,PASS,rateMatchLDPC,Production source rate-matches each codeword to a codeword-specific G.
+PD-STATIC-029,+sixgr/+phy/+dl/PDSCH_Rx.m,580,True,PASS,HARQSoftCombining,"Receiver contains a soft-combining path, which still requires broader context tests."

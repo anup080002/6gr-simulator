@@ -1,0 +1,2 @@
+Suite: testFlexibleSymbolAllocator
+PASS in 0.296468 seconds.

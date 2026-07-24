@@ -7,7 +7,8 @@ cfg = sixgr.config.defaultConfig();
 cfg.run.useMex = false;
 cfg.mac.scheduler.fastNREApprox = true;
 cfg.mac.scheduler.tbsMode = "approximate";
-cfg.phy.carrier.NSizeGrid = 52;
+cfg.channel.bandwidth_Hz = 20e6;
+cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.pdsch.prbSet = 0:11;
 cfg.phy.pdsch.symbolAllocation = [2 10];
 cfg.phy.pdsch.modulation = "QPSK";
@@ -18,6 +19,7 @@ cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numPorts = 1;
 cfg.phy.pdcch.coreset.duration = 2;
 cfg = sixgr.config.normalizeConfig(cfg);
+cfg = withCanonicalSchedulerTiming(cfg);
 
 grant = sixgr.link.resolveWaveformGrant(cfg, "DL", 0);
 assert(logical(grant.Valid), "Resolved waveform grant must be valid.");
@@ -101,6 +103,18 @@ catch ME
     threw = strcmp(ME.identifier, "sixgr:SchedulerBase:InfeasibleGrantDCI");
 end
 assert(threw, "DCI packing must fail closed for infeasible finalized grants.");
+
+invalidSymbols = grant;
+invalidSymbols.SymbolAllocation = [-1 15];
+threw = false;
+try
+    sch.buildDCIBitfield(invalidSymbols);
+catch ME
+    threw = strcmp(ME.identifier, ...
+        "sixgr:SchedulerBase:InvalidSymbolAllocation");
+end
+assert(threw, ...
+    "DCI SLIV encoding must reject, not clamp, an invalid explicit allocation.");
 
 job = sixgr.truth.buildGrantPHYJob(cfg, "DL", 30, 0, struct(), struct("GrantSnapshot", grant));
 assert(isstruct(job.DCI) && isequal(uint8(job.DCI.Bits(:)), uint8(dci.Bits(:))), ...

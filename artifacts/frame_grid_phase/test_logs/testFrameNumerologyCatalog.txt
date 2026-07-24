@@ -1,0 +1,2 @@
+Suite: testFrameNumerologyCatalog
+PASS in 4.794697 seconds.

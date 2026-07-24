@@ -374,43 +374,70 @@ cfg.phy.carrier.SubcarrierSpacing_kHz = double(s.frame.scs_khz);
 cfg.phy.carrier.CyclicPrefix = char(string(s.frame.cp_type));
 cfg.phy.carrier.NSizeGrid = double(s.frequency.n_size_grid);
 scsKHz = double(cfg.phy.carrier.SubcarrierSpacing_kHz);
-if isfinite(scsKHz) && scsKHz > 0
-    numerologyMu = log2(scsKHz / 15);
-else
-    numerologyMu = NaN;
-end
-if isfinite(numerologyMu)
-    numerologyMu = round(double(numerologyMu));
-end
-slotsPerFrame = NaN;
-slotDuration_ms = NaN;
-if isfinite(numerologyMu)
-    slotsPerFrame = 10 * 2^double(numerologyMu);
-    slotDuration_ms = 1 / 2^double(numerologyMu);
-end
-cfg = sixgr.util.structSet(cfg, "phy.numerology.mu", double(numerologyMu));
+declaredMu = double(localRequireNested(s, ...
+    "global_radio_scope.numerology_mu", ...
+    "global_radio_scope.numerology_mu"));
+slotsPerFrame = double(localRequireNested(s, ...
+    "frame_timing.slots_per_frame", "frame_timing.slots_per_frame"));
+slotDuration_ms = double(localRequireNested(s, ...
+    "frame_timing.slot_duration_ms", "frame_timing.slot_duration_ms"));
+symbolsPerSlot = double(localRequireNested(s, ...
+    "frame_timing.symbols_per_slot", "frame_timing.symbols_per_slot"));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.mu", declaredMu);
 cfg = sixgr.util.structSet(cfg, "phy.numerology.scs_kHz", double(scsKHz));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotsPerFrame", double(slotsPerFrame));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotDuration_ms", double(slotDuration_ms));
-cfg = sixgr.util.structSet(cfg, "phy.numerology.symbolsPerSlot", 14);
+cfg = sixgr.util.structSet(cfg, "phy.numerology.symbolsPerSlot", ...
+    symbolsPerSlot);
 cfg = sixgr.util.structSet(cfg, "frame_timing.slots_per_frame", double(slotsPerFrame));
 cfg = sixgr.util.structSet(cfg, "frame_timing.slot_duration_ms", double(slotDuration_ms));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", double(cfg.phy.carrier.NSizeGrid));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", double(s.frequency.n_size_grid));
-cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridSource", "configured_n_size_grid");
-cfg = sixgr.util.structSet(cfg, "phy.numerology.numerologySource", "carrier_subcarrier_spacing_khz");
-cfg = sixgr.util.structSet(cfg, "phy.numerology.timingInterpretationSource", "nr_mu_from_scs");
+cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridSource", "pending_canonical_carrier_resolution");
+cfg = sixgr.util.structSet(cfg, "phy.numerology.numerologySource", ...
+    "declared_scenario_pending_canonical_validation");
+cfg = sixgr.util.structSet(cfg, "phy.numerology.timingInterpretationSource", ...
+    "declared_scenario_pending_canonical_validation");
 cfg.phy.duplex.mode = upper(char(string(s.frequency.duplex_mode)));
-cfg.phy.duplex.tddPattern = char(string(s.frame.tdd_pattern));
-cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numDLSymbols", ...
-    double(localGetNested(s, "frame.special_slot_downlink_symbols", ...
-    localGetNested(s, "frame_timing.special_slot_downlink_symbols", 7))));
-cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numGuardSymbols", ...
-    double(localGetNested(s, "frame.ul_dl_guard_symbols", ...
-    localGetNested(s, "frame_timing.ul_dl_guard_symbols", 0))));
-cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numULSymbols", ...
-    double(localGetNested(s, "frame.special_slot_uplink_symbols", ...
-    localGetNested(s, "frame_timing.special_slot_uplink_symbols", 7))));
+if strcmpi(cfg.phy.duplex.mode, "TDD")
+    tddCommon = localGetNested(s, "frame.tdd_common", []);
+    if ~(isstruct(tddCommon) && isscalar(tddCommon) && ...
+            ~isempty(fieldnames(tddCommon)))
+        error("sixgr:phy:frame:MissingTDDCommonConfig", ...
+            "frame.tdd_common is required for TDD scenarios; compact S-slot " + ...
+            "patterns and implicit special-slot splits are not resolved.");
+    end
+    cfg = sixgr.util.structSet(cfg, "phy.duplex.tddCommon", tddCommon);
+    tddDedicated = localGetNested(s, "frame.tdd_dedicated", struct([]));
+    if ~isempty(tddDedicated)
+        cfg = sixgr.util.structSet(cfg, ...
+            "phy.duplex.tddDedicated", tddDedicated);
+    end
+elseif strcmpi(cfg.phy.duplex.mode, "FDD")
+    dlCenterFrequencyHz = double(localRequireNested(s, ...
+        "frequency.dl_center_frequency_hz", ...
+        "frequency.dl_center_frequency_hz"));
+    ulCenterFrequencyHz = double(localRequireNested(s, ...
+        "frequency.ul_center_frequency_hz", ...
+        "frequency.ul_center_frequency_hz"));
+    if ~(isscalar(dlCenterFrequencyHz) && ...
+            isfinite(dlCenterFrequencyHz) && ...
+            dlCenterFrequencyHz > 0 && ...
+            isscalar(ulCenterFrequencyHz) && ...
+            isfinite(ulCenterFrequencyHz) && ...
+            ulCenterFrequencyHz > 0 && ...
+            dlCenterFrequencyHz ~= ulCenterFrequencyHz)
+        error("sixgr:phy:frame:FDDRequiresSeparateFrequencies", ...
+            "FDD scenarios require distinct, explicit, positive DL and UL center frequencies.");
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.duplex.fdd.dlCenterFrequencyHz", dlCenterFrequencyHz);
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.duplex.fdd.ulCenterFrequencyHz", ulCenterFrequencyHz);
+else
+    error("sixgr:config:BadEnum", ...
+        "frequency.duplex_mode must resolve to TDD or FDD.");
+end
 cfg.phy.waveform.dl = char(string(s.waveform.dl_waveform));
 cfg.phy.waveform.ul = char(string(s.waveform.ul_waveform));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.windowingEnabled", logical(s.waveform.windowing_enabled));
@@ -427,20 +454,22 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.enableCPECorrection", logical(lo
 
 cfg.phy.ssb.enable = logical(s.reference_signals.ssb_enabled);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", ...
-    localDefaultSSBBlockPattern(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz)));
+    char(string(localRequireNested(s, ...
+    "reference_signals.ssb_case", "reference_signals.ssb_case"))));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", ...
-    localDefaultSSBLmax(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz)));
+    double(localRequireNested(s, ...
+    "reference_signals.ssb_lmax", "reference_signals.ssb_lmax")));
 cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", 8)));
 configuredSSBBeamCount = double(localGetNested(s, "reference_signals.ssb_beam_count", ...
     sixgr.util.structGet(cfg, "phy.ssb.nBeams", sixgr.util.structGet(cfg, "phy.ssb.Lmax", 8))));
-if isfinite(configuredSSBBeamCount) && configuredSSBBeamCount >= 1
-    configuredSSBBeamCount = min(max(1, round(configuredSSBBeamCount)), ...
-        max(1, round(double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", configuredSSBBeamCount)))));
-    cfg = sixgr.util.structSet(cfg, "phy.ssb.beamCount", double(configuredSSBBeamCount));
-    cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(configuredSSBBeamCount));
-end
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.ssb.beamCount", configuredSSBBeamCount);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.ssb.nBeams", configuredSSBBeamCount);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.scs_kHz", ...
-    double(localDefaultSSBSubcarrierSpacing_kHz(double(s.frequency.center_frequency_hz), double(s.frame.scs_khz))));
+    double(localRequireNested(s, ...
+    "reference_signals.ssb_scs_khz", ...
+    "reference_signals.ssb_scs_khz")));
 cfg.phy.pbch.enable = logical(s.reference_signals.pbch_enabled);
 cfg.phy.mib.enable = logical(s.reference_signals.pbch_enabled);
 ssbPeriodSlots = localResolvePeriodSlotsFromMsOrSlots(s, runTiming, ...
@@ -1448,9 +1477,9 @@ if localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile)
     cfg = sixgr.util.structSet(cfg, "run.useMex", false);
 end
 
-cfg = localApplyFrameStructureEngine(cfg);
 cfg = sixgr.config.normalizeConfig(cfg);
-sixgr.config.validateConfig(cfg);
+[cfg, ~, frameEngine] = sixgr.config.validateConfig(cfg);
+cfg = localApplyFrameStructureEngine(cfg, frameEngine);
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -1602,17 +1631,125 @@ for i = 1:numel(directions)
     dir = directions(i);
     src = "bwp." + dir;
     [bwpStruct, found] = localTryGetNestedStrict(s, src);
-    if ~found || ~isstruct(bwpStruct)
+    if ~found || ~(isstruct(bwpStruct) || iscell(bwpStruct))
         continue;
     end
+    configured = localNormalizeBWPSurfaceSequence(bwpStruct, upper(dir));
+    active = localInitialBWPSurface(configured, upper(dir));
     base = "phy.bwp." + dir;
-    cfg = sixgr.util.structSet(cfg, base, bwpStruct);
-    cfg = localCopyRuntimeField(cfg, s, src + ".bwp_id", base + ".id");
-    cfg = localCopyRuntimeField(cfg, s, src + ".n_size_bwp", base + ".NSizeBWP");
-    cfg = localCopyRuntimeField(cfg, s, src + ".n_start_bwp", base + ".NStartBWP");
-    cfg = localCopyRuntimeField(cfg, s, src + ".scs_khz", base + ".SubcarrierSpacing_kHz");
-    cfg = localCopyRuntimeField(cfg, s, src + ".cp_type", base + ".CyclicPrefix");
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.bwp.configured" + upper(dir), configured);
+    % The scalar compatibility view is the explicitly selected initial BWP;
+    % the full configured array remains authoritative and is attached to
+    % the production frame runtime state below.
+    cfg = sixgr.util.structSet(cfg, base, active);
 end
+if isfield(s, "component_carriers")
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.frame.componentCarriers", s.component_carriers);
+elseif isfield(s, "bwp") && isstruct(s.bwp) && isscalar(s.bwp) && ...
+        isfield(s.bwp, "component_carriers")
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.frame.componentCarriers", s.bwp.component_carriers);
+end
+end
+
+function configured = localNormalizeBWPSurfaceSequence(raw, direction)
+if iscell(raw)
+    if isempty(raw) || ~all(cellfun(@(x) isstruct(x) && isscalar(x), raw(:)))
+        error("sixgr:lls6g:config:InvalidBWPArray", ...
+            "bwp.%s must contain scalar configuration structs.", lower(direction));
+    end
+    configured = raw{1};
+    for index = 2:numel(raw)
+        names = union(fieldnames(configured), fieldnames(raw{index}), "stable");
+        configured = localAddMissingBWPFields(configured, names);
+        item = localAddMissingBWPFields(raw{index}, names);
+        configured(end + 1) = item; %#ok<AGROW>
+    end
+elseif isstruct(raw)
+    configured = raw(:);
+else
+    error("sixgr:lls6g:config:InvalidBWPArray", ...
+        "bwp.%s must be a struct array.", lower(direction));
+end
+aliasTargets = { ...
+    'Direction', 'BWPID', 'id', 'NSizeBWP', 'NStartBWP', ...
+    'SubcarrierSpacing_kHz', 'SCSKHz', 'CyclicPrefix'};
+configured = localAddMissingBWPFields(configured, ...
+    union(fieldnames(configured), aliasTargets, "stable"));
+for index = 1:numel(configured)
+    configured(index).Direction = char(direction);
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "bwp_id", "BWPID");
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "bwp_id", "id");
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "n_size_bwp", "NSizeBWP");
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "n_start_bwp", "NStartBWP");
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "scs_khz", "SubcarrierSpacing_kHz");
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "scs_khz", "SCSKHz");
+    configured(index) = localCopyBWPAlias(configured(index), ...
+        "cp_type", "CyclicPrefix");
+end
+end
+
+function output = localAddMissingBWPFields(input, names)
+output = input;
+for index = 1:numel(names)
+    if ~isfield(output, names{index})
+        [output.(names{index})] = deal([]);
+    end
+end
+output = orderfields(output, names);
+end
+
+function item = localCopyBWPAlias(item, sourceName, targetName)
+if isfield(item, sourceName) && ~isempty(item.(sourceName))
+    item.(targetName) = item.(sourceName);
+end
+end
+
+function active = localInitialBWPSurface(configured, direction)
+if isempty(configured)
+    error("sixgr:lls6g:config:EmptyBWPArray", ...
+        "bwp.%s must contain at least one BWP.", lower(direction));
+end
+if numel(configured) == 1
+    active = configured(1);
+    return;
+end
+flags = false(numel(configured), 1);
+explicit = false(numel(configured), 1);
+for index = 1:numel(configured)
+    names = ["ActiveInitial","active_initial","Active","active"];
+    for name = names
+        if isfield(configured(index), char(name))
+            value = configured(index).(char(name));
+            if isempty(value)
+                continue;
+            end
+            if ~((islogical(value) || isnumeric(value)) && isscalar(value) && ...
+                    isfinite(double(value)) && any(double(value) == [0, 1]))
+                error("sixgr:lls6g:config:InvalidInitialBWPState", ...
+                    "bwp.%s ActiveInitial values must be scalar logical.", ...
+                    lower(direction));
+            end
+            flags(index) = logical(value);
+            explicit(index) = true;
+            break;
+        end
+    end
+end
+if ~all(explicit) || nnz(flags) ~= 1
+    error("sixgr:lls6g:config:AmbiguousInitialBWPState", ...
+        "A multi-BWP bwp.%s array must explicitly select exactly one initial BWP.", ...
+        lower(direction));
+end
+active = configured(flags);
 end
 
 function cfg = localApplyDataChannelSurface(cfg, s, section, targetBase)
@@ -1653,17 +1790,28 @@ end
 
 [startSymbol, hasStart] = localTryGetNestedStrict(s, section + ".start_symbol");
 [numSymbols, hasNum] = localTryGetNestedStrict(s, section + ".num_symbols");
-if hasStart
-    cfg = sixgr.util.structSet(cfg, targetBase + ".startSymbol", round(double(startSymbol)));
+if xor(hasStart, hasNum)
+    error("sixgr:phy:frame:InvalidTDRA", ...
+        "%s.start_symbol and %s.num_symbols must be configured together.", ...
+        section, section);
 end
-if hasNum
-    cfg = sixgr.util.structSet(cfg, targetBase + ".numSymbols", round(double(numSymbols)));
-end
-if hasStart || hasNum
-    startValue = double(sixgr.util.structGet(cfg, targetBase + ".startSymbol", 0));
-    numValue = double(sixgr.util.structGet(cfg, targetBase + ".numSymbols", 14));
-    cfg = sixgr.util.structSet(cfg, targetBase + ".symbolAllocation", [round(startValue) round(numValue)]);
-    cfg = sixgr.util.structSet(cfg, targetBase + ".SymbolAllocation", [round(startValue) round(numValue)]);
+if hasStart && hasNum
+    % Preserve the configured values byte-for-value at this translation
+    % boundary. Canonical TDRA validation owns integer/range checks; this
+    % adapter must not round or auto-shift an invalid allocation into one
+    % that appears standard-compliant.
+    startValue = double(startSymbol);
+    numValue = double(numSymbols);
+    cfg = sixgr.util.structSet( ...
+        cfg, targetBase + ".startSymbol", startValue);
+    cfg = sixgr.util.structSet( ...
+        cfg, targetBase + ".numSymbols", numValue);
+    cfg = sixgr.util.structSet( ...
+        cfg, targetBase + ".symbolAllocation", ...
+        [startValue numValue]);
+    cfg = sixgr.util.structSet( ...
+        cfg, targetBase + ".SymbolAllocation", ...
+        [startValue numValue]);
 end
 end
 
@@ -1814,6 +1962,7 @@ tddPairs = {
     "timing_advance_max_us", "timingAdvanceMax_us"
     "n1_pdsch_processing_time_symbols", "n1PDSCHProcessingTimeSymbols"
     "n2_pusch_preparation_time_symbols", "n2PUSCHPreparationTimeSymbols"
+    "capability_profile_id", "capabilityProfileID"
     };
 for i = 1:size(tddPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, "tdd_timing." + tddPairs{i,1}, "phy.tddTiming." + tddPairs{i,2});
@@ -2030,10 +2179,12 @@ tf = channelModel ~= "AWGN" && (runnerProfile == "system_level_lls" || ...
     (runnerProfile == "waveform_bundle" && executionModel == "slot_coupled_truth"));
 end
 
-function cfg = localApplyFrameStructureEngine(cfg)
-configuredDuplexMode = string(sixgr.util.structGet(cfg, "phy.duplex.mode", ""));
-configuredTDDPattern = string(sixgr.util.structGet(cfg, "phy.duplex.tddPattern", ""));
-fs = sixgr.phy.FrameStructureEngine(cfg);
+function cfg = localApplyFrameStructureEngine(cfg, fs)
+if nargin < 2 || ~isa(fs, "sixgr.phy.FrameStructureEngine") || ...
+        ~isscalar(fs)
+    error("sixgr:lls6g:config:MissingValidatedFrameStructure", ...
+        "buildInternalConfig requires the FrameStructureEngine instance produced by validateConfig.");
+end
 fsStruct = fs.toStruct();
 
 cfg = sixgr.util.structSet(cfg, "phy.frameStructure", fsStruct);
@@ -2052,122 +2203,154 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.symbolsPerSlot", double(fs.Symbo
 cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", double(fs.NRB));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", double(fs.ConfiguredGridNumRBs));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridSource", char(fs.ActiveGridSource));
-cfg = sixgr.util.structSet(cfg, "phy.numerology.numerologySource", "frame_structure_engine_scs");
-cfg = sixgr.util.structSet(cfg, "phy.numerology.timingInterpretationSource", "nr_mu_from_frame_structure_engine");
+cfg = sixgr.util.structSet(cfg, "phy.numerology.numerologySource", ...
+    char(fs.Numerology.Source));
+cfg = sixgr.util.structSet(cfg, "phy.numerology.timingInterpretationSource", ...
+    "canonical_numerology_catalog");
 cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.active_grid_num_rbs", double(fs.NRB));
 cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.configured_grid_num_rbs", double(fs.ConfiguredGridNumRBs));
 cfg = sixgr.util.structSet(cfg, "resolved_runtime_view.active_grid_source", char(fs.ActiveGridSource));
 
 cfg = sixgr.util.structSet(cfg, "phy.waveform.fftSize", double(fs.FFTSize));
 cfg = sixgr.util.structSet(cfg, "phy.waveform.sampleRate_Hz", double(fs.SampleRate_Hz));
+cfg = sixgr.util.structSet(cfg, "phy.ofdm", fs.OFDMSampling);
 cfg = sixgr.util.structSet(cfg, "waveform.fft_size", double(fs.FFTSize));
 cfg = sixgr.util.structSet(cfg, "waveform.sample_rate_hz", double(fs.SampleRate_Hz));
 
-engineDuplexMode = upper(string(fs.DuplexMode));
-if strlength(strtrim(configuredDuplexMode)) > 0
-    engineDuplexMode = upper(configuredDuplexMode);
-end
-cfg.phy.duplex.mode = char(engineDuplexMode);
-if engineDuplexMode == "FDD"
-    if strlength(strtrim(configuredTDDPattern)) == 0
-        configuredTDDPattern = "FDD";
-    end
-    cfg.phy.duplex.tddPattern = char(configuredTDDPattern);
-    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", char(configuredTDDPattern));
+cfg.phy.duplex.mode = char(fs.DuplexMode);
+if fs.DuplexMode == "FDD"
+    cfg = sixgr.util.structSet(cfg, "phy.duplex.fddContexts", ...
+        fsStruct.FDDContexts);
     cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern_applicable", false);
     cfg = sixgr.util.structSet(cfg, "frame_timing.active_tdd_pattern", "not_applicable");
 else
-    cfg.phy.duplex.tddPattern = char(fs.TDDPattern);
-    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", char(fs.TDDPattern));
+    common = fsStruct.SlotState.CommonDirection;
+    resolved = fsStruct.SlotState.ResolvedDirection;
+    compactTokens = repmat('F', 1, size(common, 1));
+    compactTokens(all(common == 'D', 2)) = 'D';
+    compactTokens(all(common == 'U', 2)) = 'U';
+    cfg.phy.duplex.tddPattern = compactTokens;
+    cfg = sixgr.util.structSet(cfg, "phy.duplex.slotState", fsStruct.SlotState);
+    cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern", compactTokens);
     cfg = sixgr.util.structSet(cfg, "frame_timing.tdd_pattern_applicable", true);
-    cfg = sixgr.util.structSet(cfg, "frame_timing.active_tdd_pattern", char(fs.TDDPattern));
+    cfg = sixgr.util.structSet(cfg, "frame_timing.active_tdd_pattern", compactTokens);
+    cfg = sixgr.util.structSet(cfg, ...
+        "frame_timing.common_direction", common);
+    cfg = sixgr.util.structSet(cfg, ...
+        "frame_timing.resolved_direction", resolved);
 end
 cfg = sixgr.util.structSet(cfg, "frame_timing.symbols_per_slot", double(fs.SymbolsPerSlot));
 cfg = sixgr.util.structSet(cfg, "frame_timing.slots_per_frame", double(fs.SlotsPerFrame));
 cfg = sixgr.util.structSet(cfg, "frame_timing.slot_duration_ms", double(fs.SlotDuration_ms));
-cfg = sixgr.util.structSet(cfg, "frame_timing.special_slot_downlink_symbols", double(fs.SpecialSlotDLSymbols));
-cfg = sixgr.util.structSet(cfg, "frame_timing.ul_dl_guard_symbols", double(fs.SpecialSlotGuardSymbols));
-cfg = sixgr.util.structSet(cfg, "frame_timing.special_slot_uplink_symbols", double(fs.SpecialSlotULSymbols));
-cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numDLSymbols", double(fs.SpecialSlotDLSymbols));
-cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numGuardSymbols", double(fs.SpecialSlotGuardSymbols));
-cfg = sixgr.util.structSet(cfg, "phy.duplex.specialSlot.numULSymbols", double(fs.SpecialSlotULSymbols));
 
-cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", char("Case " + string(fs.SSBCase)));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.case", char(fs.SSBCase));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", double(fs.SSBLmax));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.lmax", double(fs.SSBLmax));
-configuredSSBBeamCount = double(sixgr.util.structGet(cfg, "reference_signals.ssb_beam_count", ...
-    sixgr.util.structGet(cfg, "phy.ssb.beamCount", sixgr.util.structGet(cfg, "phy.ssb.nBeams", double(fs.SSBLmax)))));
-if ~(isfinite(configuredSSBBeamCount) && configuredSSBBeamCount >= 1)
-    configuredSSBBeamCount = double(fs.SSBLmax);
-end
-configuredSSBBeamCount = min(max(1, round(configuredSSBBeamCount)), max(1, round(double(fs.SSBLmax))));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.beamCount", double(configuredSSBBeamCount));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.nBeams", double(configuredSSBBeamCount));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.candidateSymbols", double(fs.SSBCandidateSymbols));
-cfg = sixgr.util.structSet(cfg, "phy.ssb.candidateSlots1Based", double(fs.SSBCandidateSlots1Based));
-
-cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(fs.CORESETDuration));
-cfg = sixgr.util.structSet(cfg, "phy.pdcch.numSymbols", double(fs.CORESETDuration));
-cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.bandwidthRB", double(fs.CORESETBandwidth_RB));
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.startSymbol", double(fs.PDSCHStartSymbol));
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.numSymbols", double(fs.PDSCHNumSymbols));
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.symbolAllocation", [double(fs.PDSCHStartSymbol) double(fs.PDSCHNumSymbols)]);
-if isfield(cfg, "pdsch6gr")
-    cfg.pdsch6gr.NSizeGrid = double(fs.NRB);
-    cfg.pdsch6gr.NumRB = min(double(fs.NRB), max(1, localFiniteScalar(sixgr.util.structGet(cfg, "pdsch6gr.NumRB", fs.NRB), fs.NRB)));
-    cfg.pdsch6gr.StartSymbol = max(double(fs.PDSCHStartSymbol), localFiniteScalar(sixgr.util.structGet(cfg, "pdsch6gr.StartSymbol", fs.PDSCHStartSymbol), fs.PDSCHStartSymbol));
-    cfg.pdsch6gr.NumSymbols = min(localFiniteScalar(sixgr.util.structGet(cfg, "pdsch6gr.NumSymbols", fs.PDSCHNumSymbols), fs.PDSCHNumSymbols), ...
-        double(fs.SymbolsPerSlot) - double(cfg.pdsch6gr.StartSymbol));
-    cfg.pdsch6gr.NumSymbols = max(1, double(cfg.pdsch6gr.NumSymbols));
-    cfg.pdsch6gr.StudyStartSymbols = max(double(fs.PDSCHStartSymbol), double(sixgr.util.structGet(cfg, "pdsch6gr.StudyStartSymbols", cfg.pdsch6gr.StartSymbol)));
-end
-
-cfg = sixgr.util.structSet(cfg, "phy.pusch.symbolAllocation", [0 double(fs.SymbolsPerSlot)]);
-cfg = sixgr.util.structSet(cfg, "phy.srs.bandwidthRB", double(min(fs.NRB, max(1, localFiniteScalar(sixgr.util.structGet(cfg, "phy.srs.bandwidthRB", fs.NRB), fs.NRB)))));
-cfg = sixgr.util.structSet(cfg, "phy.csirs.startRB", 0);
-cfg = sixgr.util.structSet(cfg, "phy.csirs.numRB", double(fs.NRB));
-
-cfg = sixgr.util.structSet(cfg, "phy.prach.preambleFormat", char(fs.PRACHFormat));
-cfg = sixgr.util.structSet(cfg, "phy.prach.startSymbol", double(fs.PRACHStartSymbol));
-cfg = sixgr.util.structSet(cfg, "phy.prach.durationSymbols", double(fs.PRACHDurationSymbols));
-cfg = sixgr.util.structSet(cfg, "phy.prach.validSlots1Based", double(fs.PRACHValidSlots1Based));
-cfg = sixgr.util.structSet(cfg, "phy.prach.validSlots0Based", double(fs.PRACHValidSlots0Based));
-if isempty(sixgr.util.structGet(cfg, "phy.prach.period_slots", []))
-    prachPeriodSlots = localDeriveRepeatingOccasionPeriodSlots( ...
-        double(fs.PRACHValidSlots1Based), double(fs.SlotsPerFrame));
-    if isfinite(prachPeriodSlots) && prachPeriodSlots >= 1
-        cfg = sixgr.util.structSet(cfg, "phy.prach.period_slots", double(prachPeriodSlots));
+if ~isempty(fieldnames(fs.SSBTiming))
+    cfg = sixgr.util.structSet(cfg, "phy.ssb.timing", fs.SSBTiming);
+    cfg = sixgr.util.structSet(cfg, "phy.ssb.case", char(fs.SSBCase));
+    cfg = sixgr.util.structSet(cfg, "phy.ssb.Lmax", double(fs.SSBLmax));
+    configuredSSBBeamCount = double(sixgr.util.structGet(cfg, ...
+        "reference_signals.ssb_beam_count", ...
+        sixgr.util.structGet(cfg, "phy.ssb.beamCount", ...
+        sixgr.util.structGet(cfg, "phy.ssb.nBeams", fs.SSBLmax))));
+    if ~(isscalar(configuredSSBBeamCount) && ...
+            isfinite(configuredSSBBeamCount) && ...
+            configuredSSBBeamCount == round(configuredSSBBeamCount) && ...
+            configuredSSBBeamCount >= 1 && ...
+            configuredSSBBeamCount <= fs.SSBLmax)
+        error("sixgr:phy:frame:InvalidSSBBeamCount", ...
+            "Configured SSB beam count must be an integer in [1,Lmax=%d].", ...
+            fs.SSBLmax);
     end
-end
-cfg = sixgr.util.structSet(cfg, "phy.prach.validationStatus", char(fs.PRACHValidationStatus));
-cfg = sixgr.util.structSet(cfg, "prach_lls.NSizeGrid", double(fs.NRB));
-cfg = sixgr.util.structSet(cfg, "prach_lls.PRACHFormat", char(fs.PRACHFormat));
-cfg = sixgr.util.structSet(cfg, "prach_lls.ValidSlots1Based", double(fs.PRACHValidSlots1Based));
-cfg = sixgr.util.structSet(cfg, "prach_lls.ValidSlots0Based", double(fs.PRACHValidSlots0Based));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.beamCount", configuredSSBBeamCount);
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.nBeams", configuredSSBBeamCount);
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.candidateSymbols", double(fs.SSBCandidateSymbols));
 end
 
-function value = localFiniteScalar(valueIn, defaultValue)
-value = double(defaultValue);
-try
-    candidate = double(valueIn);
-    candidate = candidate(isfinite(candidate));
-    if ~isempty(candidate)
-        value = double(candidate(1));
-    end
-catch
-    value = double(defaultValue);
+localValidatePreservedAllocation(cfg, "phy.pdsch", fs.SymbolsPerSlot);
+localValidatePreservedAllocation(cfg, "phy.pusch", fs.SymbolsPerSlot);
+
+if ~isempty(fieldnames(fs.PRACHTiming))
+    cfg = sixgr.util.structSet(cfg, "phy.prach.timing", fs.PRACHTiming);
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.preambleFormat", char(fs.PRACHFormat));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.startSymbol", double(fs.PRACHStartSymbol));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.durationSymbols", double(fs.PRACHDurationSymbols));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.validSlots1Based", double(fs.PRACHValidSlots1Based));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.validSlots0Based", double(fs.PRACHValidSlots0Based));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.validationStatus", char(fs.PRACHValidationStatus));
+    cfg = sixgr.util.structSet(cfg, "prach_lls.NSizeGrid", double(fs.NRB));
+    cfg = sixgr.util.structSet(cfg, ...
+        "prach_lls.PRACHFormat", char(fs.PRACHFormat));
+    cfg = sixgr.util.structSet(cfg, ...
+        "prach_lls.ValidSlots1Based", double(fs.PRACHValidSlots1Based));
+    cfg = sixgr.util.structSet(cfg, ...
+        "prach_lls.ValidSlots0Based", double(fs.PRACHValidSlots0Based));
 end
+
+[runtimeState, ~] = sixgr.phy.frame.FrameRuntimeStateBuilder.build(cfg);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.frameStructure.TimingContext", runtimeState);
+cfg = sixgr.util.structSet(cfg, ...
+    "resolved_runtime_view.frame_structure.TimingContext", runtimeState);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.frame.ComponentCarriers", runtimeState.ComponentCarriers);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.frame.BWPState", runtimeState.BWPState);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.frame.Policy", runtimeState.Policy);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.frame.DefaultIdentity", runtimeState.DefaultIdentity);
+end
+
+function localValidatePreservedAllocation(cfg, basePath, symbolsPerSlot)
+allocation = sixgr.util.structGet(cfg, basePath + ".symbolAllocation", []);
+if isempty(allocation)
+    start = sixgr.util.structGet(cfg, basePath + ".startSymbol", []);
+    count = sixgr.util.structGet(cfg, basePath + ".numSymbols", []);
+    if isempty(start) && isempty(count)
+        return;
+    end
+    if isempty(start) || isempty(count)
+        error("sixgr:phy:frame:InvalidTDRA", ...
+            "%s requires both startSymbol and numSymbols.", basePath);
+    end
+    allocation = [double(start), double(count)];
+end
+values = double(allocation(:).');
+if numel(values) ~= 2
+    error("sixgr:phy:frame:InvalidTDRA", ...
+        "%s.symbolAllocation must be [StartSymbol NumSymbols].", basePath);
+end
+tdra = struct("StartSymbol", values(1), "NumSymbols", values(2));
+sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+    tdra, symbolsPerSlot);
 end
 
 function timing = localResolveRunTiming(s)
-scsKHz = double(localRequireNested(s, "frame.scs_khz", "frame.scs_khz"));
-mu = round(log2(scsKHz / 15));
-if ~(isfinite(mu) && mu >= 0)
-    mu = 0;
+mu = double(localRequireNested(s, ...
+    "global_radio_scope.numerology_mu", ...
+    "global_radio_scope.numerology_mu"));
+slotDuration_ms = double(localRequireNested(s, ...
+    "frame_timing.slot_duration_ms", ...
+    "frame_timing.slot_duration_ms"));
+slotsPerFrame = double(localRequireNested(s, ...
+    "frame_timing.slots_per_frame", ...
+    "frame_timing.slots_per_frame"));
+if ~(isscalar(mu) && isfinite(mu) && mu >= 0 && mu == fix(mu) && ...
+        isscalar(slotDuration_ms) && isfinite(slotDuration_ms) && ...
+        slotDuration_ms > 0 && isscalar(slotsPerFrame) && ...
+        isfinite(slotsPerFrame) && slotsPerFrame >= 1 && ...
+        slotsPerFrame == fix(slotsPerFrame))
+    error("sixgr:lls6g:config:InvalidDeclaredFrameTiming", ...
+        "Declared numerology_mu, slot_duration_ms, and slots_per_frame must be finite and valid.");
 end
-slotDuration_ms = 1 / 2^double(mu);
-slotsPerFrame = 10 * 2^double(mu);
 
 configuredTotalFrames = localNumericScalarOrNaN(localGetNested(s, "run_control.total_frames", NaN));
 configuredTotalSlots = localNumericScalarOrNaN(localGetNested(s, "run_control.total_slots", NaN));
@@ -2272,30 +2455,6 @@ end
 candidate = localNumericScalarOrNaN(defaultSlots);
 if isfinite(candidate) && candidate > 0
     slots = max(1, round(double(candidate)));
-end
-end
-
-function periodSlots = localDeriveRepeatingOccasionPeriodSlots(validSlots1Based, slotsPerFrame)
-periodSlots = NaN;
-validSlots1Based = unique(round(double(validSlots1Based(:))), "stable");
-validSlots1Based = validSlots1Based(isfinite(validSlots1Based) & validSlots1Based >= 1);
-slotsPerFrame = round(double(slotsPerFrame));
-if ~(isfinite(slotsPerFrame) && slotsPerFrame >= 1) || isempty(validSlots1Based)
-    return;
-end
-validSlots1Based = sort(mod(validSlots1Based - 1, slotsPerFrame) + 1);
-if numel(validSlots1Based) == 1
-    periodSlots = slotsPerFrame;
-    return;
-end
-spacing = diff(validSlots1Based(:));
-wrapSpacing = double(slotsPerFrame) - double(validSlots1Based(end)) + double(validSlots1Based(1));
-spacing = [spacing(:); wrapSpacing];
-spacing = spacing(isfinite(spacing) & spacing > 0);
-if isempty(spacing)
-    periodSlots = slotsPerFrame;
-else
-    periodSlots = max(1, round(double(min(spacing))));
 end
 end
 
@@ -3456,64 +3615,6 @@ switch lower(strtrim(string(codebookType)))
         token = "etype2";
     otherwise
         token = "noncodebook";
-end
-end
-
-function pattern = localDefaultSSBBlockPattern(fcHz, scsKHz)
-fcHz = double(fcHz);
-scsKHz = double(scsKHz);
-
-if ~(isfinite(fcHz) && fcHz > 0)
-    fcHz = 3.5e9;
-end
-if ~(isfinite(scsKHz) && scsKHz > 0)
-    scsKHz = 30;
-end
-
-if scsKHz <= 15
-    pattern = "Case A";
-elseif scsKHz <= 30
-    if fcHz < 3e9
-        pattern = "Case B";
-    else
-        pattern = "Case C";
-    end
-elseif scsKHz <= 120
-    pattern = "Case D";
-else
-    pattern = "Case E";
-end
-end
-
-function lmax = localDefaultSSBLmax(fcHz, scsKHz)
-fcHz = double(fcHz);
-scsKHz = double(scsKHz);
-
-if ~(isfinite(fcHz) && fcHz > 0)
-    fcHz = 3.5e9;
-end
-if ~(isfinite(scsKHz) && scsKHz > 0)
-    scsKHz = 30;
-end
-
-if scsKHz >= 120 || fcHz > 6e9
-    lmax = 64;
-elseif fcHz < 3e9
-    lmax = 4;
-else
-    lmax = 8;
-end
-end
-
-function scs = localDefaultSSBSubcarrierSpacing_kHz(fcHz, scsKHz)
-fcHz = double(fcHz);
-scsKHz = double(scsKHz);
-if isfinite(fcHz) && fcHz >= 24.25e9
-    scs = 120;
-elseif isfinite(scsKHz) && scsKHz <= 15
-    scs = 15;
-else
-    scs = 30;
 end
 end
 

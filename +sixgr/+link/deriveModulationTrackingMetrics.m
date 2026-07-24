@@ -990,14 +990,7 @@ end
 end
 
 function slotDur_s = localSlotDuration(cfg)
-slotDur_s = 1e-3;
-scs_kHz = double(sixgr.util.structGet(cfg, "phy.scs", ...
-    sixgr.util.structGet(cfg, "frame.scs_khz", sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 15))));
-if isfinite(scs_kHz) && scs_kHz > 0
-    mu = round(log2(scs_kHz / 15));
-    mu = max(mu, 0);
-    slotDur_s = 1e-3 / (2^mu);
-end
+slotDur_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function x = localUnwrapCellSignal(x)

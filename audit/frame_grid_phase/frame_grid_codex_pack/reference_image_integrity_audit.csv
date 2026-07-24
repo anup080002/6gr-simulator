@@ -1,0 +1,5 @@
+ImageFile,Width,Height,Mode,FileBytes,PixelStdDev,NonBlankFraction,SHA256,Status,Reason
+reference_allocation_legality.png,1680,780,RGBA,55355,72.845119,0.315576160,cf2f961fc0f8dec6f0cdeeec145ecf154e58b92fe6ccd34b14f57a25d81a34b1,PASS,
+reference_carrier_grid_matrix.png,1680,780,RGBA,56356,25.429879,0.058324939,c0cd5f7d334c612c998341f6222530f7d12e7e17a6ef3b528d5d0aeb7cfeb3dd,PASS,
+reference_frame_slot_symbol_map.png,1680,780,RGBA,38614,102.542233,0.678203602,e264cb17a2f2beb184d4250cc566da8e011ebd32d998abf8246cc2ea98aa1112,PASS,
+reference_numerology_timing_matrix.png,1680,780,RGBA,51931,23.027334,0.055083944,59a3c0bfb1d133e3e787e031a7456c5b234b6109359362b10c2f8062cf04c24b,PASS,

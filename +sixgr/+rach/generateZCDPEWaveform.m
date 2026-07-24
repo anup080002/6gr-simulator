@@ -81,8 +81,9 @@ if useToolbox
         prach = seq.PRACH;
         grid = nrPRACHGrid(carrier, prach);
         grid(seq.Indices) = symbols;
-        [waveform, ofdmInfo] = nrPRACHOFDMModulate(carrier, prach, grid);
-        backend = "matlab_5g_toolbox_nrPRACHOFDMModulate";
+        [waveform, ofdmInfo] = nrPRACHOFDMModulate( ...
+            carrier, prach, grid, "Windowing", 0);
+        backend = "matlab_5g_toolbox_nrPRACHOFDMModulate_zero_windowing";
         return;
     catch ME
         allowFallback = logical(sixgr.util.structGet(cfg, "AllowInrepoPRACHOFDMFallback", ...

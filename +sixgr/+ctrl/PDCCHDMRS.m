@@ -38,8 +38,7 @@ locT = struct2table(locRows);
 
 nID = round(double(sixgr.util.structGet(ctrlCfg, "DMRSScramblingID", ctrlCfg.CellID)));
 nID = mod(nID, 65536);
-slotsPerFrame = round(double(sixgr.util.structGet(ctrlCfg, "SlotsPerFrame", 10 * 2^max(0, round(double(sixgr.util.structGet(ctrlCfg, "Numerology", 0)))))));
-slotsPerFrame = max(1, slotsPerFrame);
+slotsPerFrame = localRequireSlotsPerFrame(ctrlCfg);
 nSlotFrame = mod(round(double(sixgr.util.structGet(context, "SlotNumber", ctrlCfg.SlotNumber))), slotsPerFrame);
 dmrsSymbol = round(double(sixgr.util.structGet(ctrlCfg, "CORESET.StartSymbol", 0)));
 cinit = uint32(mod(2^17 * (14 * nSlotFrame + dmrsSymbol + 1) * (2 * nID + 1) + 2 * nID, 2^31));
@@ -54,4 +53,13 @@ dmrs.PayloadREMask = ~dmrsMask;
 dmrs.Context = context;
 dmrs.SequenceInit = double(cinit);
 dmrs.PatternDescription = "single_port_density_3_per_rb study baseline";
+end
+
+function slotsPerFrame = localRequireSlotsPerFrame(ctrlCfg)
+slotsPerFrame = double(sixgr.util.structGet(ctrlCfg, "SlotsPerFrame", NaN));
+if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
+        slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
+    error("sixgr:ctrl:PDCCHDMRS:MissingCanonicalNumerology", ...
+        "ctrlCfg.SlotsPerFrame must come from ControlChannelConfig's canonical numerology resolution.");
+end
 end

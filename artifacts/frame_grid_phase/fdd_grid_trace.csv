@@ -1,0 +1,17 @@
+TestID,CCID,Direction,GridID,BWPID,AbsSlot,Symbol,StartRB,NumRB,ResourceKey,ExpectedValid,ActualValid,ReasonCode,Status,IndexConvention
+FDD-DL-00-00-000,1,DL,cell7_cc1_dl_grid,10,0,0,0,1,cell7_cc1_dl_grid|slot=0|sym=0|rb=0|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-00-00-005,1,DL,cell7_cc1_dl_grid,10,0,0,5,1,cell7_cc1_dl_grid|slot=0|sym=0|rb=5|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-00-07-000,1,DL,cell7_cc1_dl_grid,10,0,7,0,1,cell7_cc1_dl_grid|slot=0|sym=7|rb=0|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-00-07-005,1,DL,cell7_cc1_dl_grid,10,0,7,5,1,cell7_cc1_dl_grid|slot=0|sym=7|rb=5|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-01-00-000,1,DL,cell7_cc1_dl_grid,10,1,0,0,1,cell7_cc1_dl_grid|slot=1|sym=0|rb=0|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-01-00-005,1,DL,cell7_cc1_dl_grid,10,1,0,5,1,cell7_cc1_dl_grid|slot=1|sym=0|rb=5|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-01-07-000,1,DL,cell7_cc1_dl_grid,10,1,7,0,1,cell7_cc1_dl_grid|slot=1|sym=7|rb=0|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-DL-01-07-005,1,DL,cell7_cc1_dl_grid,10,1,7,5,1,cell7_cc1_dl_grid|slot=1|sym=7|rb=5|sc=0|port=0,TRUE,TRUE,separate_dl_grid,PASS,zero_based_phy_indices
+FDD-UL-00-00-000,1,UL,cell7_cc1_ul_grid,20,0,0,0,1,cell7_cc1_ul_grid|slot=0|sym=0|rb=0|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-00-00-005,1,UL,cell7_cc1_ul_grid,20,0,0,5,1,cell7_cc1_ul_grid|slot=0|sym=0|rb=5|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-00-07-000,1,UL,cell7_cc1_ul_grid,20,0,7,0,1,cell7_cc1_ul_grid|slot=0|sym=7|rb=0|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-00-07-005,1,UL,cell7_cc1_ul_grid,20,0,7,5,1,cell7_cc1_ul_grid|slot=0|sym=7|rb=5|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-01-00-000,1,UL,cell7_cc1_ul_grid,20,1,0,0,1,cell7_cc1_ul_grid|slot=1|sym=0|rb=0|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-01-00-005,1,UL,cell7_cc1_ul_grid,20,1,0,5,1,cell7_cc1_ul_grid|slot=1|sym=0|rb=5|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-01-07-000,1,UL,cell7_cc1_ul_grid,20,1,7,0,1,cell7_cc1_ul_grid|slot=1|sym=7|rb=0|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices
+FDD-UL-01-07-005,1,UL,cell7_cc1_ul_grid,20,1,7,5,1,cell7_cc1_ul_grid|slot=1|sym=7|rb=5|sc=0|port=0,TRUE,TRUE,separate_ul_grid,PASS,zero_based_phy_indices

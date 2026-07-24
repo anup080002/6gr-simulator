@@ -1,0 +1,2 @@
+Suite: testOFDMSamplingResolver
+PASS in 1.743376 seconds.

@@ -1,0 +1,16 @@
+CaseID,ExpectedStatus,ExpectedError,ExpectedMatrixRank,ExpectedAppliedSlices,ExpectedTXApplication,ExpectedRXApplication
+PREC-001,PASS,,4,1,1,1
+PREC-002,PASS,,4,1,1,1
+PREC-003,PASS,,4,1,1,1
+PREC-004,PASS,,4,1,1,1
+PREC-005,PASS,,4,4,1,1
+PREC-006,PASS,,4,3,1,1
+PREC-007,PASS,,4,6,1,1
+PREC-008,PASS,,4,12,1,1
+PREC-009,PASS,,4,1,1,1
+PREC-NEG-001,ERROR,TooFewPortsForLayers,0,0,0,0
+PREC-NEG-002,ERROR,IncompletePRGCoverage,0,0,0,0
+PREC-NEG-003,ERROR,ExcessPRGPages,0,0,0,0
+PREC-NEG-004,ERROR,PrecoderLayerDimensionMismatch,0,0,0,0
+PREC-NEG-005,ERROR,IncompleteSymbolGroupCoverage,0,0,0,0
+PREC-NEG-006,ERROR,ScalarPMINotPrecoderBundle,0,0,0,0

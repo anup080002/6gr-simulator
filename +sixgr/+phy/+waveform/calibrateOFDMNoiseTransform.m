@@ -213,13 +213,16 @@ function info = localResolveOFDMInfo(carrier, infoArgs, fallback)
 if nargin < 3
     fallback = struct();
 end
-try
-    info = nrOFDMInfo(carrier, infoArgs{:});
-catch
+if isstruct(fallback) && ~isempty(fieldnames(fallback))
+    % nrOFDMModulate returned this information for the exact argument set
+    % used by the calibration waveform.  It is therefore the authoritative
+    % result for that modulation, not a guessed or option-free fallback.
     info = fallback;
-    if ~isstruct(info) || isempty(fieldnames(info))
-        info = nrOFDMInfo(carrier);
-    end
+else
+    % Fail closed if the requested explicit OFDM policy is not accepted.
+    % Retrying without infoArgs would silently change Nfft/sample rate or
+    % windowing and would invalidate the noise-transform calibration.
+    info = nrOFDMInfo(carrier, infoArgs{:});
 end
 end
 
@@ -254,12 +257,17 @@ K = 12 * double(localCarrierValue(carrier, "NSizeGrid", NaN));
 end
 
 function L = localSymbolsPerSlot(carrier, ofdmInfo)
-L = double(sixgr.util.structGet(ofdmInfo, "SymbolsPerSlot", NaN));
-if ~(isfinite(L) && L > 0)
-    L = double(localCarrierValue(carrier, "SymbolsPerSlot", NaN));
-end
-if ~(isfinite(L) && L > 0)
-    L = 14;
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    double(localCarrierValue(carrier, "SubcarrierSpacing", NaN)), ...
+    string(localCarrierValue(carrier, "CyclicPrefix", "")), ...
+    "generic_waveform_test", "");
+L = double(numerology.SymbolsPerSlot);
+reported = double(sixgr.util.structGet( ...
+    ofdmInfo, "SymbolsPerSlot", NaN));
+if isfinite(reported) && reported ~= L
+    error("sixgr:phy:frame:InconsistentOFDMNumerology", ...
+        "OFDM calibration metadata reports %d symbols per slot; " + ...
+        "the canonical numerology requires %d.", reported, L);
 end
 end
 

@@ -1,642 +1,688 @@
 classdef FrameStructureEngine
-%FRAMESTRUCTUREENGINE Resolve NR/6G-study frame, grid, and occasion metadata.
+%FRAMESTRUCTUREENGINE Compatibility facade over the canonical frame package.
 %
-% This resolver keeps deterministic configuration-derived timing metadata in
-% one place. It does not create PHY measurements; it resolves standard table
-% values and slot-symbol ownership so downstream runtime/export code can stop
-% carrying divergent NRB, FFT, PDSCH, and PRACH interpretations.
+% The facade owns no physical lookup tables and performs no heuristic
+% repair.  It delegates carrier, numerology, OFDM, duplex, SSB, and PRACH
+% resolution to +sixgr/+phy/+frame.  PHY-facing slot and symbol indices are
+% zero based.
 
-    properties
+    properties (SetAccess = private)
         Config struct = struct()
+        CarrierGrid struct = struct()
+        Numerology struct = struct()
+        OFDMSampling struct = struct()
+        SlotState = []
+        FDDContexts = []
+        SSBTiming struct = struct()
+        PRACHTiming struct = struct()
+
         BandwidthHz (1,1) double = NaN
         CenterFrequencyHz (1,1) double = NaN
-        FrequencyRange (1,1) string = "FR1"
-        SCSkHz (1,1) double = 30
-        Mu (1,1) double = 1
-        CyclicPrefix (1,1) string = "normal"
-        SymbolsPerSlot (1,1) double = 14
-        SlotsPerFrame (1,1) double = 20
-        SlotDuration_ms (1,1) double = 0.5
+        FrequencyRange (1,1) string = ""
+        SCSkHz (1,1) double = NaN
+        Mu (1,1) double = NaN
+        CyclicPrefix (1,1) string = ""
+        SymbolsPerSlot (1,1) double = NaN
+        SlotsPerFrame (1,1) double = NaN
+        SlotDuration_ms (1,1) double = NaN
         ConfiguredGridNumRBs (1,1) double = NaN
         NRB (1,1) double = NaN
-        ActiveGridSource (1,1) string = "unresolved"
+        ActiveGridSource (1,1) string = ""
         FFTSize (1,1) double = NaN
         SampleRate_Hz (1,1) double = NaN
-        DuplexMode (1,1) string = "TDD"
-        TDDPattern (1,1) string = "DDDSU"
-        SpecialSlotDLSymbols (1,1) double = 12
-        SpecialSlotGuardSymbols (1,1) double = 1
-        SpecialSlotULSymbols (1,1) double = 1
-        CORESETDuration (1,1) double = 1
-        CORESETBandwidth_RB (1,1) double = NaN
-        PDSCHStartSymbol (1,1) double = 1
-        PDSCHNumSymbols (1,1) double = 13
-        SSBCase (1,1) string = "C"
-        SSBLmax (1,1) double = 8
+        DuplexMode (1,1) string = ""
+        TDDPattern (1,1) string = ""
+
+        SSBCase (1,1) string = ""
+        SSBLmax (1,1) double = NaN
         SSBCandidateSymbols double = []
         SSBCandidateSlots1Based double = []
+
         PRACHConfigurationIndex (1,1) double = NaN
         PRACHFormat (1,1) string = ""
         PRACHStartSymbol (1,1) double = NaN
         PRACHDurationSymbols (1,1) double = NaN
         PRACHValidSlots1Based double = []
         PRACHValidSlots0Based double = []
-        PRACHValidationStatus (1,1) string = "unresolved"
+        PRACHValidationStatus (1,1) string = "not_configured"
         ValidationLog string = strings(0, 1)
+        IndexConvention (1,1) string = "zero_based_phy_indices"
+        ResolveSignalTiming (1,1) logical = true
     end
 
     methods
-        function obj = FrameStructureEngine(cfg)
-            if nargin < 1 || isempty(cfg)
-                cfg = struct();
+        function obj = FrameStructureEngine(cfg, varargin)
+            if nargin < 1 || ~(isstruct(cfg) && isscalar(cfg))
+                error("sixgr:phy:FrameStructureEngine:InvalidConfig", ...
+                    "FrameStructureEngine requires one scalar resolved configuration struct.");
             end
-            if ~(isstruct(cfg) && isscalar(cfg))
-                cfg = struct();
-            end
+            parser = inputParser;
+            parser.FunctionName = "sixgr.phy.FrameStructureEngine";
+            parser.addParameter("FrameCoreOnly", false, ...
+                @(value) islogical(value) && isscalar(value));
+            parser.parse(varargin{:});
+            obj.ResolveSignalTiming = ~logical(parser.Results.FrameCoreOnly);
             obj.Config = cfg;
             obj = obj.resolve();
         end
 
         function obj = resolve(obj)
             cfg = obj.Config;
-            obj.CenterFrequencyHz = obj.firstNumeric([ ...
-                "frequency.center_frequency_hz", "phy.fc_Hz", "channel.fc_Hz", ...
-                "prach_lls.CarrierFrequencyHz", "carrier.center_frequency_hz"], NaN);
-            obj.FrequencyRange = upper(string(obj.firstText([ ...
-                "frequency.range_name", "phy.frequencyRange", "prach_lls.FrequencyRange"], "")));
-            if strlength(obj.FrequencyRange) == 0
-                obj.FrequencyRange = sixgr.phy.FrameStructureEngine.deriveFrequencyRange(obj.CenterFrequencyHz);
+            obj.CenterFrequencyHz = localRequiredFrequency(cfg);
+            configuredRange = localFirstText(cfg, [ ...
+                "frequency.range_name", "phy.frequencyRange", ...
+                "phy.carrier.FrequencyRange"], "");
+            rangeArgs = {"CenterFrequencyHz", obj.CenterFrequencyHz};
+            if strlength(configuredRange) > 0
+                rangeArgs = [rangeArgs, {"FrequencyRange", configuredRange}]; %#ok<AGROW>
             end
+            rangeInfo = sixgr.phy.frame.FrequencyRangeResolver.resolve(rangeArgs{:});
+            obj.FrequencyRange = string(rangeInfo.FrequencyRange);
 
-            obj.BandwidthHz = obj.firstNumeric([ ...
-                "frequency.bandwidth_hz", "phy.bandwidth_Hz", "carrier.bandwidth_hz", ...
-                "pdsch6gr.ChannelBandwidthMHz"], NaN);
-            if isfinite(obj.BandwidthHz) && obj.BandwidthHz < 1e6
-                obj.BandwidthHz = obj.BandwidthHz * 1e6;
-            end
-
-            obj.SCSkHz = obj.firstNumeric([ ...
+            obj.BandwidthHz = localRequiredBandwidthHz(cfg);
+            obj.SCSkHz = localRequiredNumeric(cfg, [ ...
                 "frame.scs_khz", "phy.carrier.SubcarrierSpacing_kHz", ...
-                "phy.carrier.SubcarrierSpacing", "prach_lls.CarrierSCSkHz"], obj.SCSkHz);
-            obj.SCSKHzSanity();
-            obj.Mu = round(log2(obj.SCSkHz / 15));
-            obj.SlotsPerFrame = 10 * 2^double(obj.Mu);
-            obj.SlotDuration_ms = 1 / 2^double(obj.Mu);
-            obj.CyclicPrefix = lower(string(obj.firstText([ ...
-                "frame.cp_type", "phy.carrier.CyclicPrefix", "carrier.cyclic_prefix"], char(obj.CyclicPrefix))));
-            if obj.CyclicPrefix == "extended" && obj.SCSkHz == 60
-                obj.SymbolsPerSlot = 12;
-            else
-                obj.SymbolsPerSlot = 14;
+                "phy.carrier.SubcarrierSpacing", ...
+                "carrier.SubcarrierSpacing"], ...
+                "sixgr:phy:FrameStructureEngine:MissingSCS", ...
+                "A carrier subcarrier spacing is required.");
+            obj.CyclicPrefix = lower(localFirstText(cfg, [ ...
+                "frame.cp_type", "phy.carrier.CyclicPrefix", ...
+                "carrier.CyclicPrefix"], ""));
+            if strlength(obj.CyclicPrefix) == 0
+                error("sixgr:phy:FrameStructureEngine:MissingCyclicPrefix", ...
+                    "An explicit normal or extended cyclic prefix is required.");
             end
 
-            obj.ConfiguredGridNumRBs = obj.firstNumeric([ ...
-                "frequency.n_size_grid", "phy.numerology.configuredGridNumRBs", ...
-                "phy.carrier.NSizeGrid", "carrier.n_rb", "prach_lls.NSizeGrid"], NaN);
-            tableNRB = sixgr.phy.FrameStructureEngine.lookupNRB(obj.BandwidthHz, obj.SCSkHz, obj.FrequencyRange);
-            if isfinite(tableNRB)
-                obj.NRB = tableNRB;
-                obj.ActiveGridSource = "ts38101_5_3_2_bandwidth_scs_lookup";
-            elseif isfinite(obj.ConfiguredGridNumRBs) && obj.ConfiguredGridNumRBs > 0
-                obj.NRB = round(obj.ConfiguredGridNumRBs);
-                obj.ActiveGridSource = "configured_grid_no_standard_bandwidth_scs_match";
-                obj.ValidationLog(end+1, 1) = sprintf("No TS 38.101 NRB table entry for BW=%g Hz, SCS=%g kHz, FR=%s; preserving configured NSizeGrid=%g.", ...
-                    obj.BandwidthHz, obj.SCSkHz, char(obj.FrequencyRange), obj.ConfiguredGridNumRBs);
-            else
-                error("sixgr:phy:FrameStructureEngine:UnresolvedNRB", ...
-                    "Cannot resolve active NRB: provide a standard bandwidth/SCS pair or configured NSizeGrid.");
+            configuredGrid = localOptionalNumeric(cfg, [ ...
+                "frequency.n_size_grid", "phy.carrier.NSizeGrid", ...
+                "carrier.NSizeGrid"]);
+            obj.ConfiguredGridNumRBs = configuredGrid;
+            nStartGrid = localOptionalNumeric(cfg, [ ...
+                "frequency.n_start_grid", "phy.carrier.NStartGrid", ...
+                "carrier.NStartGrid"]);
+            if ~isfinite(nStartGrid)
+                nStartGrid = 0;
             end
-            obj.FFTSize = sixgr.phy.FrameStructureEngine.defaultFFTSize(obj.NRB);
-            obj.SampleRate_Hz = obj.FFTSize * obj.SCSkHz * 1e3;
+            nStartBWP = localOptionalNumeric(cfg, [ ...
+                "phy.bwp.dl.NStartBWP", "frequency.n_start_bwp"]);
+            nSizeBWP = localOptionalNumeric(cfg, [ ...
+                "phy.bwp.dl.NSizeBWP", "frequency.n_size_bwp"]);
+            bwpSCSKHz = localOptionalNumeric(cfg, [ ...
+                "phy.bwp.dl.SCSKHz", ...
+                "phy.bwp.dl.SubcarrierSpacing_kHz", ...
+                "phy.bwp.dl.SubcarrierSpacingKHz"]);
 
-            obj.DuplexMode = upper(string(obj.firstText([ ...
+            gridArgs = { ...
+                "Role", "gNB", ...
+                "FrequencyRange", obj.FrequencyRange, ...
+                "CenterFrequencyHz", obj.CenterFrequencyHz, ...
+                "ChannelBandwidthMHz", obj.BandwidthHz / 1e6, ...
+                "SubcarrierSpacingKHz", obj.SCSkHz, ...
+                "NStartGrid", nStartGrid, ...
+                "CyclicPrefix", obj.CyclicPrefix};
+            if isfinite(configuredGrid)
+                gridArgs = [gridArgs, {"ConfiguredNSizeGrid", configuredGrid}]; %#ok<AGROW>
+            end
+            if isfinite(nStartBWP) || isfinite(nSizeBWP)
+                gridArgs = [gridArgs, ...
+                    {"NStartBWP", nStartBWP, "NSizeBWP", nSizeBWP}]; %#ok<AGROW>
+                if isfinite(bwpSCSKHz)
+                    gridArgs = [gridArgs, ...
+                        {"BWPSubcarrierSpacingKHz", bwpSCSKHz}]; %#ok<AGROW>
+                end
+            end
+            obj.CarrierGrid = sixgr.phy.frame.CarrierGridConfig.resolve(gridArgs{:});
+            obj.Numerology = obj.CarrierGrid.Numerology;
+            obj.NRB = double(obj.CarrierGrid.NSizeGrid);
+            obj.ActiveGridSource = string(obj.CarrierGrid.SourceTable);
+            obj.Mu = double(obj.Numerology.Mu);
+            obj.SymbolsPerSlot = double(obj.Numerology.SymbolsPerSlot);
+            obj.SlotsPerFrame = double(obj.Numerology.SlotsPerFrame);
+            obj.SlotDuration_ms = double(obj.Numerology.SlotDurationMilliseconds);
+
+            ofdmArgs = localExplicitOFDMArguments(cfg);
+            obj.OFDMSampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+                obj.CarrierGrid, ofdmArgs{:});
+            obj.FFTSize = double(obj.OFDMSampling.Nfft);
+            obj.SampleRate_Hz = double(obj.OFDMSampling.SampleRateHz);
+
+            obj.DuplexMode = upper(localFirstText(cfg, [ ...
                 "frequency.duplex_mode", "global_radio_scope.duplex_mode", ...
-                "phy.duplex.mode", "scenario.duplexMode"], char(obj.DuplexMode))));
-            pattern = obj.firstValue([ ...
-                "frame_timing.tdd_pattern", "frame.tdd_pattern", ...
-                "phy.duplex.tddPattern", "scenario.tddPattern"], char(obj.TDDPattern));
-            obj.TDDPattern = string(sixgr.phy.FrameStructureEngine.expandTDDPattern(pattern));
+                "phy.duplex.mode", "scenario.duplexMode"], ""));
+            if strlength(obj.DuplexMode) > 0 && ...
+                    ~any(obj.DuplexMode == ["TDD", "FDD"])
+                error("sixgr:phy:FrameStructureEngine:InvalidDuplexMode", ...
+                    "Duplex mode must be TDD or FDD.");
+            end
+            if obj.DuplexMode == "TDD"
+                obj.SlotState = localResolveTDDState(cfg, obj.SCSkHz, ...
+                    obj.CyclicPrefix);
+                obj.TDDPattern = string(obj.SlotState.compactMap());
+            elseif obj.DuplexMode == "FDD"
+                obj.FDDContexts = localResolveFDDContexts(cfg, obj);
+                obj.TDDPattern = "not_applicable";
+            end
 
-            obj = obj.resolveSpecialSlot();
-            obj = obj.resolveControlAndDataSymbols();
-            obj = obj.resolveSSB();
-            obj = obj.resolvePRACH();
+            if obj.ResolveSignalTiming && localSSBConfigured(cfg)
+                obj.SSBTiming = sixgr.phy.frame.SSBTimingResolver. ...
+                    resolveFromConfig(localAugmentCanonicalAliases(cfg, obj));
+                obj.SSBCase = string(obj.SSBTiming.Case);
+                obj.SSBLmax = double(obj.SSBTiming.Lmax);
+                obj.SSBCandidateSymbols = double( ...
+                    obj.SSBTiming.CandidateStartSymbolsWithinHalfFrame);
+                obj.SSBCandidateSlots1Based = double( ...
+                    obj.SSBTiming.CandidateSlotsWithinHalfFrame) + 1;
+            end
+
+            if obj.ResolveSignalTiming && localPRACHConfigured(cfg)
+                prachCfg = localAugmentCanonicalAliases(cfg, obj);
+                prachArgs = {};
+                if obj.DuplexMode == "TDD"
+                    prachArgs = { ...
+                        "CommonDirection", obj.SlotState.CommonDirection, ...
+                        "ResolvedDirection", obj.SlotState.ResolvedDirection};
+                end
+                obj.PRACHTiming = sixgr.phy.frame.PRACHOccasionResolver. ...
+                    resolveFromConfig(prachCfg, prachArgs{:});
+                obj = obj.publishPRACHAliases();
+            end
         end
 
         function s = toStruct(obj)
-            s = struct();
-            names = properties(obj);
-            for i = 1:numel(names)
-                name = names{i};
-                if strcmp(name, "Config")
-                    continue;
-                end
-                s.(name) = obj.(name);
+            s = struct( ...
+                "ContractVersion", "sixgr_frame_structure_facade/v2", ...
+                "IndexConvention", obj.IndexConvention, ...
+                "CarrierGrid", obj.CarrierGrid, ...
+                "Numerology", obj.Numerology, ...
+                "OFDMSampling", localOFDMSnapshot(obj.OFDMSampling), ...
+                "SlotState", localSlotStateSnapshot(obj.SlotState), ...
+                "FDDContexts", localFDDContextSnapshot(obj.FDDContexts), ...
+                "SSBTiming", obj.SSBTiming, ...
+                "PRACHTiming", obj.PRACHTiming, ...
+                "BandwidthHz", obj.BandwidthHz, ...
+                "CenterFrequencyHz", obj.CenterFrequencyHz, ...
+                "FrequencyRange", obj.FrequencyRange, ...
+                "SCSkHz", obj.SCSkHz, ...
+                "Mu", obj.Mu, ...
+                "CyclicPrefix", obj.CyclicPrefix, ...
+                "SymbolsPerSlot", obj.SymbolsPerSlot, ...
+                "SlotsPerFrame", obj.SlotsPerFrame, ...
+                "SlotDuration_ms", obj.SlotDuration_ms, ...
+                "ConfiguredGridNumRBs", obj.ConfiguredGridNumRBs, ...
+                "NRB", obj.NRB, ...
+                "ActiveGridSource", obj.ActiveGridSource, ...
+                "FFTSize", obj.FFTSize, ...
+                "SampleRate_Hz", obj.SampleRate_Hz, ...
+                "DuplexMode", obj.DuplexMode, ...
+                "TDDPattern", obj.TDDPattern, ...
+                "SSBCase", obj.SSBCase, ...
+                "SSBLmax", obj.SSBLmax, ...
+                "SSBCandidateSymbols", obj.SSBCandidateSymbols, ...
+                "PRACHConfigurationIndex", obj.PRACHConfigurationIndex, ...
+                "PRACHFormat", obj.PRACHFormat, ...
+                "PRACHStartSymbol", obj.PRACHStartSymbol, ...
+                "PRACHDurationSymbols", obj.PRACHDurationSymbols, ...
+                "PRACHValidSlots0Based", obj.PRACHValidSlots0Based, ...
+                "PRACHValidationStatus", obj.PRACHValidationStatus, ...
+                "ValidationLog", obj.ValidationLog, ...
+                "SignalTimingResolved", obj.ResolveSignalTiming);
+        end
+
+        function token = TDDToken(obj, absoluteSlot)
+            if obj.DuplexMode ~= "TDD"
+                error("sixgr:phy:frame:FDDHasNoTDDToken", ...
+                    "FDD has separate DL and UL grids and no TDD slot token.");
             end
+            token = sixgr.phy.FrameStructureEngine. ...
+                TDDTokenFromState(obj.SlotState, absoluteSlot);
         end
 
-        function token = TDDToken(obj, slotIdx)
-            if upper(obj.DuplexMode) == "FDD"
-                token = 'F';
-                return;
+        function partition = SlotPartition(obj, absoluteSlot)
+            if obj.DuplexMode ~= "TDD"
+                error("sixgr:phy:frame:TDDResolverCalledForFDD", ...
+                    "SlotPartition is a TDD operation; use the explicit FDD context.");
             end
-            tokens = char(obj.TDDPattern);
-            if isempty(tokens)
-                tokens = 'DDDSU';
-            end
-            idx = mod(max(0, round(double(slotIdx)) - 1), numel(tokens)) + 1;
-            token = upper(tokens(idx));
+            partition = sixgr.phy.FrameStructureEngine. ...
+                SlotPartitionFromState(obj.SlotState, absoluteSlot);
         end
 
-        function partition = SlotPartition(obj, slotIdx)
-            token = obj.TDDToken(slotIdx);
-            partition = struct( ...
-                "DuplexMode", char(obj.DuplexMode), ...
-                "CanonicalSlot", double(round(double(slotIdx))), ...
-                "SlotToken", char(token), ...
-                "SlotLabel", "", ...
-                "SymbolsPerSlot", double(obj.SymbolsPerSlot), ...
-                "AllowDL", false, ...
-                "AllowUL", false, ...
-                "IsSpecialSlot", false, ...
-                "DLSymbolAllocation", zeros(1, 2), ...
-                "GuardSymbolAllocation", zeros(1, 2), ...
-                "ULSymbolAllocation", zeros(1, 2), ...
-                "SpecialSlotDLSymbols", 0, ...
-                "SpecialSlotGuardSymbols", 0, ...
-                "SpecialSlotULSymbols", 0);
-            if token == 'F'
-                partition.SlotLabel = "FDD_DLUL";
-                partition.AllowDL = true;
-                partition.AllowUL = true;
-                partition.DLSymbolAllocation = [0 double(obj.SymbolsPerSlot)];
-                partition.ULSymbolAllocation = [0 double(obj.SymbolsPerSlot)];
-            elseif token == 'D'
-                partition.SlotLabel = "DL";
-                partition.AllowDL = true;
-                partition.DLSymbolAllocation = [0 double(obj.SymbolsPerSlot)];
-            elseif token == 'U'
-                partition.SlotLabel = "UL";
-                partition.AllowUL = true;
-                partition.ULSymbolAllocation = [0 double(obj.SymbolsPerSlot)];
-            else
-                partition.SlotLabel = "S";
-                partition.IsSpecialSlot = true;
-                partition.AllowDL = obj.SpecialSlotDLSymbols > 0;
-                partition.AllowUL = obj.SpecialSlotULSymbols > 0;
-                partition.DLSymbolAllocation = [0 double(obj.SpecialSlotDLSymbols)];
-                partition.GuardSymbolAllocation = [double(obj.SpecialSlotDLSymbols) double(obj.SpecialSlotGuardSymbols)];
-                partition.ULSymbolAllocation = [double(obj.SpecialSlotDLSymbols + obj.SpecialSlotGuardSymbols) double(obj.SpecialSlotULSymbols)];
-                partition.SpecialSlotDLSymbols = double(obj.SpecialSlotDLSymbols);
-                partition.SpecialSlotGuardSymbols = double(obj.SpecialSlotGuardSymbols);
-                partition.SpecialSlotULSymbols = double(obj.SpecialSlotULSymbols);
-            end
+        function tf = IsDLSlot(obj, absoluteSlot)
+            partition = obj.SlotPartition(absoluteSlot);
+            tf = partition.AllowDL;
         end
 
-        function tf = IsDLSlot(obj, slotIdx)
-            p = obj.SlotPartition(slotIdx);
-            tf = logical(p.AllowDL);
+        function tf = IsULSlot(obj, absoluteSlot)
+            partition = obj.SlotPartition(absoluteSlot);
+            tf = partition.AllowUL;
         end
 
-        function tf = IsULSlot(obj, slotIdx)
-            p = obj.SlotPartition(slotIdx);
-            tf = logical(p.AllowUL);
+        function tf = IsSpecialSlot(obj, absoluteSlot)
+            tf = obj.SlotPartition(absoluteSlot).IsSpecialSlot;
         end
 
-        function tf = IsSpecialSlot(obj, slotIdx)
-            p = obj.SlotPartition(slotIdx);
-            tf = logical(p.IsSpecialSlot);
+        function tf = IsDLAllocation(obj, absoluteSlot, symbolAllocation)
+            tf = localAllocationAvailable( ...
+                obj.SlotState, absoluteSlot, symbolAllocation, "DL");
         end
 
-        function tf = IsDLAllocation(obj, slotIdx, symAlloc)
-            p = obj.SlotPartition(slotIdx);
-            tf = sixgr.phy.FrameStructureEngine.allocationWithin(symAlloc, p.DLSymbolAllocation);
+        function tf = IsULAllocation(obj, absoluteSlot, symbolAllocation)
+            tf = localAllocationAvailable( ...
+                obj.SlotState, absoluteSlot, symbolAllocation, "UL");
         end
 
-        function tf = IsULAllocation(obj, slotIdx, symAlloc)
-            p = obj.SlotPartition(slotIdx);
-            tf = sixgr.phy.FrameStructureEngine.allocationWithin(symAlloc, p.ULSymbolAllocation);
-        end
-
-        function tf = IsPRACHSlot(obj, slotIdx)
+        function tf = IsPRACHSlot(obj, absoluteSlot)
+            validateattributes(absoluteSlot, {'numeric'}, ...
+                {'scalar','integer','nonnegative','finite'});
             tf = false;
-            if ~(isfinite(double(slotIdx)) && double(slotIdx) >= 1)
+            if isempty(fieldnames(obj.PRACHTiming)) || ...
+                    ~istable(obj.PRACHTiming.Occasions)
                 return;
             end
-            slots = double(obj.PRACHValidSlots1Based(:));
-            if isempty(slots)
-                return;
-            end
-            canonical = mod(round(double(slotIdx)) - 1, max(1, round(double(obj.SlotsPerFrame)))) + 1;
-            tf = any(slots == canonical);
-        end
-    end
-
-    methods (Access = private)
-        function value = firstValue(obj, paths, defaultValue)
-            value = defaultValue;
-            for i = 1:numel(paths)
-                candidate = sixgr.util.structGet(obj.Config, paths(i), []);
-                if obj.hasValue(candidate)
-                    value = candidate;
-                    return;
-                end
-            end
-        end
-
-        function value = firstNumeric(obj, paths, defaultValue)
-            value = defaultValue;
-            raw = obj.firstValue(paths, []);
-            if isempty(raw)
-                return;
-            end
-            try
-                v = double(raw);
-                v = v(isfinite(v));
-                if ~isempty(v)
-                    value = double(v(1));
-                end
-            catch
-            end
-        end
-
-        function value = firstText(obj, paths, defaultValue)
-            value = string(defaultValue);
-            raw = obj.firstValue(paths, []);
-            if isempty(raw)
-                return;
-            end
-            try
-                value = string(raw);
-                if numel(value) > 1
-                    value = value(1);
-                end
-            catch
-                value = string(defaultValue);
-            end
-        end
-
-        function SCSKHzSanity(obj)
-            if ~(isscalar(obj.SCSkHz) && isfinite(obj.SCSkHz) && obj.SCSkHz > 0)
-                error("sixgr:phy:FrameStructureEngine:BadSCS", ...
-                    "Subcarrier spacing must be a positive finite scalar.");
-            end
-            mu = log2(obj.SCSkHz / 15);
-            if abs(mu - round(mu)) > 1e-9
-                error("sixgr:phy:FrameStructureEngine:BadSCS", ...
-                    "Subcarrier spacing %.6g kHz is not an NR 15*2^mu numerology.", obj.SCSkHz);
-            end
-        end
-
-        function obj = resolveSpecialSlot(obj)
-            dl = obj.firstNumeric(["phy.duplex.specialSlot.numDLSymbols", ...
-                "frame.special_slot_downlink_symbols", "frame_timing.special_slot_downlink_symbols"], NaN);
-            guard = obj.firstNumeric(["phy.duplex.specialSlot.numGuardSymbols", ...
-                "frame.ul_dl_guard_symbols", "frame_timing.ul_dl_guard_symbols"], NaN);
-            ul = obj.firstNumeric(["phy.duplex.specialSlot.numULSymbols", ...
-                "frame.special_slot_uplink_symbols", "frame_timing.special_slot_uplink_symbols"], NaN);
-            if ~all(isfinite([dl guard ul]))
-                if obj.SymbolsPerSlot == 14
-                    dl = 12;
-                    guard = 1;
-                    ul = 1;
-                else
-                    dl = max(0, obj.SymbolsPerSlot - 2);
-                    guard = 1;
-                    ul = 1;
-                end
-            end
-            counts = round(double([dl guard ul]));
-            if any(counts < 0) || sum(counts) ~= obj.SymbolsPerSlot
-                error("sixgr:phy:FrameStructureEngine:BadSpecialSlot", ...
-                    "Special-slot DL/guard/UL symbols must be non-negative integers that sum to SymbolsPerSlot=%d.", ...
-                    round(double(obj.SymbolsPerSlot)));
-            end
-            obj.SpecialSlotDLSymbols = counts(1);
-            obj.SpecialSlotGuardSymbols = counts(2);
-            obj.SpecialSlotULSymbols = counts(3);
-        end
-
-        function obj = resolveControlAndDataSymbols(obj)
-            duration = obj.firstNumeric(["phy.pdcch.coreset.duration", ...
-                "phy.pdcch.numSymbols", "control.coreset_duration", ...
-                "ctrl6gr.CORESET.DurationSymbols"], 1);
-            duration = max(1, min(3, round(double(duration))));
-            if obj.SCSkHz >= 120
-                duration = min(duration, 1);
-            end
-            obj.CORESETDuration = duration;
-            freqResources = obj.firstValue(["phy.pdcch.coreset.frequencyResources", ...
-                "control.coreset_frequency_resources"], []);
-            rb = NaN;
-            if isnumeric(freqResources) || islogical(freqResources)
-                rb = 6 * sum(double(freqResources(:)) > 0);
-            end
-            if ~(isfinite(rb) && rb > 0)
-                rb = min(obj.NRB, 48);
-            end
-            obj.CORESETBandwidth_RB = min(obj.NRB, max(1, round(double(rb))));
-            obj.PDSCHStartSymbol = min(max(1, obj.CORESETDuration), max(0, obj.SymbolsPerSlot - 1));
-            obj.PDSCHNumSymbols = max(1, obj.SymbolsPerSlot - obj.PDSCHStartSymbol);
-        end
-
-        function obj = resolveSSB(obj)
-            [ssbCase, lmax, symbols] = sixgr.phy.FrameStructureEngine.resolveSSBCase( ...
-                obj.CenterFrequencyHz, obj.SCSkHz);
-            obj.SSBCase = ssbCase;
-            obj.SSBLmax = lmax;
-            obj.SSBCandidateSymbols = symbols(:).';
-            slots = unique(floor(double(symbols(:)).' / obj.SymbolsPerSlot) + 1);
-            slots = slots(slots >= 1 & slots <= obj.SlotsPerFrame);
-            if isempty(slots)
-                slots = 1:min(obj.SlotsPerFrame, max(1, obj.SSBLmax));
-            end
-            obj.SSBCandidateSlots1Based = slots;
-        end
-
-        function obj = resolvePRACH(obj)
-            obj.PRACHConfigurationIndex = obj.firstNumeric(["phy.prach.configurationIndex", ...
-                "prach_lls.PRACHConfigurationIndex", "random_access.configuration_index"], NaN);
-            configuredFormat = string(obj.firstText(["phy.prach.preambleFormat", ...
-                "prach_lls.PRACHFormat", "random_access.prach_format", "prach.format"], ""));
-            info = sixgr.phy.FrameStructureEngine.resolvePRACHIndexInfo(obj.PRACHConfigurationIndex, obj.SCSkHz);
-            obj.PRACHStartSymbol = info.StartSymbol;
-            obj.PRACHDurationSymbols = info.DurationSymbols;
-            candidateSlots = sixgr.phy.FrameStructureEngine.slotsForSubframe(info.Subframe, obj.SCSkHz, obj.SlotsPerFrame);
-            [toolboxSlots, toolboxFormat, toolboxStart, toolboxDuration] = ...
-                sixgr.phy.FrameStructureEngine.materializedPRACHSlots(obj, max(80, obj.SlotsPerFrame * 4));
-            if strlength(toolboxFormat) > 0
-                obj.PRACHFormat = toolboxFormat;
-                if strlength(configuredFormat) > 0 && upper(strtrim(configuredFormat)) ~= upper(strtrim(toolboxFormat))
-                    obj.ValidationLog(end+1, 1) = sprintf("Requested PRACH format %s differs from nrPRACHConfig format %s for configuration index %g.", ...
-                        char(configuredFormat), char(toolboxFormat), double(obj.PRACHConfigurationIndex));
-                end
-            elseif strlength(configuredFormat) > 0
-                obj.PRACHFormat = configuredFormat;
-            else
-                obj.PRACHFormat = info.Format;
-            end
-            if isfinite(toolboxStart)
-                obj.PRACHStartSymbol = toolboxStart;
-            end
-            if isfinite(toolboxDuration)
-                obj.PRACHDurationSymbols = toolboxDuration;
-            end
-            if ~isempty(toolboxSlots)
-                candidateSlots = unique(mod(double(toolboxSlots(:).'), round(double(obj.SlotsPerFrame))) + 1, "stable");
-            end
-            if isempty(candidateSlots)
-                candidateSlots = 1:obj.SlotsPerFrame;
-            end
-            valid = [];
-            for slot = candidateSlots
-                    p = obj.SlotPartition(slot);
-                    if p.AllowUL && ~p.IsSpecialSlot
-                        valid(end+1) = slot; %#ok<AGROW>
-                    elseif p.IsSpecialSlot && p.AllowUL && isfinite(obj.PRACHStartSymbol) && isfinite(obj.PRACHDurationSymbols)
-                        alloc = [double(obj.PRACHStartSymbol), max(1, double(obj.PRACHDurationSymbols))];
-                    if sixgr.phy.FrameStructureEngine.allocationWithin(alloc, p.ULSymbolAllocation)
-                        valid(end+1) = slot; %#ok<AGROW>
-                    end
-                end
-            end
-            valid = unique(valid);
-            if isempty(valid)
-                obj.PRACHValidationStatus = "no_ul_safe_prach_occasion_for_configured_index";
-            else
-                obj.PRACHValidationStatus = "ul_slot_validated";
-            end
-            obj.PRACHValidSlots1Based = double(valid(:).');
-            obj.PRACHValidSlots0Based = double(valid(:).' - 1);
+            period = double(obj.PRACHTiming.PeriodCarrierSlots);
+            canonical = mod(double(absoluteSlot), period);
+            tf = any(double(obj.PRACHTiming.Occasions.AbsoluteSlot) == canonical);
         end
     end
 
     methods (Static)
-        function nrb = lookupNRB(bandwidthHz, scsKHz, frequencyRange)
-            nrb = NaN;
-            if ~(isfinite(double(bandwidthHz)) && bandwidthHz > 0 && isfinite(double(scsKHz)))
-                return;
-            end
-            bwMHz = round(double(bandwidthHz) / 1e6);
-            scs = round(double(scsKHz));
-            fr = upper(string(frequencyRange));
-            if fr == "FR2"
-                table = [ ...
-                    50 60 66; 100 60 132; 200 60 264; ...
-                    50 120 32; 100 120 66; 200 120 132; 400 120 264; ...
-                    100 240 32; 200 240 66; 400 240 132];
+        function token = TDDTokenFromState(state, absoluteSlot)
+            common = localTDDRow(state, absoluteSlot, "CommonDirection");
+            if all(common == 'D')
+                token = 'D';
+            elseif all(common == 'U')
+                token = 'U';
             else
-                table = [ ...
-                    5 15 25; 10 15 52; 15 15 79; 20 15 106; 25 15 133; 30 15 160; 40 15 216; 50 15 270; ...
-                    5 30 11; 10 30 24; 15 30 38; 20 30 51; 25 30 65; 30 30 78; 40 30 106; 50 30 133; ...
-                    60 30 162; 70 30 189; 80 30 217; 90 30 245; 100 30 273; ...
-                    10 60 11; 15 60 18; 20 60 24; 25 60 31; 30 60 38; 40 60 51; 50 60 65; ...
-                    60 60 79; 80 60 107; 90 60 121; 100 60 135];
-            end
-            idx = find(table(:,1) == bwMHz & table(:,2) == scs, 1);
-            if ~isempty(idx)
-                nrb = double(table(idx, 3));
+                token = 'F';
             end
         end
 
-        function nfft = defaultFFTSize(nrb)
-            occupied = max(1, round(double(nrb)) * 12);
-            nfft = 2^nextpow2(occupied);
-            nfft = max(128, double(nfft));
-        end
-
-        function range = deriveFrequencyRange(fcHz)
-            if ~(isfinite(double(fcHz)) && fcHz > 0)
-                range = "FR1";
-            elseif fcHz <= 7.125e9
-                range = "FR1";
-            elseif fcHz >= 24.25e9 && fcHz <= 52.6e9
-                range = "FR2";
+        function partition = SlotPartitionFromState(state, absoluteSlot)
+            common = localTDDRow(state, absoluteSlot, "CommonDirection");
+            resolved = string(localTDDRow( ...
+                state, absoluteSlot, "ResolvedDirection"));
+            dl = find(resolved == "D" | resolved == "DL") - 1;
+            ul = find(resolved == "U" | resolved == "UL") - 1;
+            guard = find(resolved == "GUARD") - 1;
+            unresolved = find(resolved == "UNRESOLVED_FLEX") - 1;
+            token = sixgr.phy.FrameStructureEngine. ...
+                TDDTokenFromState(state, absoluteSlot);
+            if token == 'D'
+                label = "DL";
+            elseif token == 'U'
+                label = "UL";
             else
-                range = "FR3";
+                label = "FLEXIBLE_OR_MIXED";
             end
-        end
-
-        function tokens = expandTDDPattern(pattern)
-            if isstruct(pattern)
-                dl = max(0, round(double(sixgr.util.structGet(pattern, "dlSlots", 4))));
-                sp = max(0, round(double(sixgr.util.structGet(pattern, "specialSlots", 0))));
-                ul = max(0, round(double(sixgr.util.structGet(pattern, "ulSlots", 1))));
-                tokens = [repmat('D', 1, dl), repmat('S', 1, sp), repmat('U', 1, ul)];
-            elseif isstring(pattern) || ischar(pattern)
-                tokens = regexprep(upper(char(string(pattern))), "[^DUSF]", "");
-                tokens = strrep(tokens, "F", "D");
-            elseif isnumeric(pattern)
-                p = double(pattern(:).');
-                tokens = repmat('S', 1, numel(p));
-                tokens(p > 0) = 'D';
-                tokens(p < 0) = 'U';
-            else
-                tokens = '';
-            end
-            if isempty(tokens)
-                tokens = 'DDDSU';
-            end
-        end
-
-        function [ssbCase, lmax, symbols] = resolveSSBCase(fcHz, scsKHz)
-            if isfinite(double(fcHz)) && fcHz > 24.25e9
-                if round(double(scsKHz)) >= 240
-                    ssbCase = "E";
-                    symbols = [8 12 16 20 32 36 40 44];
-                else
-                    ssbCase = "D";
-                    symbols = [4 8 16 20 32 36 44 48];
-                end
-                lmax = 64;
-            elseif round(double(scsKHz)) >= 30
-                ssbCase = "C";
-                symbols = [2 8 16 22 30 36 44 50];
-                lmax = 8;
-            else
-                ssbCase = "A";
-                symbols = [2 8 16 22];
-                lmax = 4;
-            end
-        end
-
-        function info = resolvePRACHIndexInfo(index, scsKHz)
-            info = struct("Format", "", "Subframe", NaN, "StartSymbol", NaN, "DurationSymbols", NaN);
-            if ~(isfinite(double(index)) && index >= 0)
-                info.Format = "A1";
-                return;
-            end
-            idx = round(double(index));
-            if round(double(scsKHz)) == 30
-                switch idx
-                    case 80
-                        info = struct("Format", "A1", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 2);
-                    case {84, 86}
-                        info = struct("Format", "A1", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 2);
-                    case {87, 88}
-                        info = struct("Format", "A2", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 4);
-                    case 167
-                        info = struct("Format", "B4", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 12);
-                    otherwise
-                        info = struct("Format", "A1", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 2);
-                end
-            else
-                if idx <= 27
-                    info = struct("Format", "0", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 1);
-                else
-                    info = struct("Format", "A1", "Subframe", NaN, "StartSymbol", 0, "DurationSymbols", 6);
-                end
-            end
-        end
-
-        function slots = slotsForSubframe(subframe, scsKHz, slotsPerFrame)
-            slots = [];
-            if ~(isfinite(double(subframe)) && subframe >= 0 && subframe <= 9)
-                return;
-            end
-            mu = round(log2(double(scsKHz) / 15));
-            slotsPerSubframe = max(1, 2^double(mu));
-            firstSlot0 = round(double(subframe)) * slotsPerSubframe;
-            slots = firstSlot0 + (1:slotsPerSubframe);
-            slots = slots(slots >= 1 & slots <= round(double(slotsPerFrame)));
-        end
-
-        function [slots0, prachFormat, symbolLocation, duration] = materializedPRACHSlots(obj, scanSlots)
-            slots0 = [];
-            prachFormat = "";
-            symbolLocation = NaN;
-            duration = NaN;
-            if ~(exist("nrPRACHConfig", "class") == 8 || exist("nrPRACHConfig", "file") == 2) || ...
-                    ~(isfinite(double(obj.PRACHConfigurationIndex)) && obj.PRACHConfigurationIndex >= 0)
-                return;
-            end
-            try
-                carrier = nrCarrierConfig;
-                carrier.SubcarrierSpacing = double(obj.SCSkHz);
-                carrier.NSizeGrid = double(obj.NRB);
-                carrier.NStartGrid = 0;
-                carrier.NCellID = 1;
-
-                prach = nrPRACHConfig;
-                if upper(obj.FrequencyRange) == "FR2"
-                    prach.FrequencyRange = "FR2";
-                else
-                    prach.FrequencyRange = "FR1";
-                end
-                if upper(obj.DuplexMode) == "FDD"
-                    prach.DuplexMode = "FDD";
-                else
-                    prach.DuplexMode = "TDD";
-                end
-                prach.ConfigurationIndex = double(obj.PRACHConfigurationIndex);
-                prach.SubcarrierSpacing = double(obj.firstNumeric(["phy.prach.subcarrierSpacing_kHz", ...
-                    "prach_lls.PRACHSubcarrierSpacing", "random_access.subcarrier_spacing_khz"], obj.SCSkHz));
-                prach.SequenceIndex = double(max(0, round(obj.firstNumeric(["phy.prach.rootSeqIndex", ...
-                    "prach_lls.SequenceIndex", "random_access.sequence_index", "random_access.root_sequence_index"], 0))));
-                prach.PreambleIndex = double(max(0, round(obj.firstNumeric(["phy.prach.preambleIndex", ...
-                    "prach_lls.PreambleIndex", "random_access.preamble_index"], 0))));
-                prach.RestrictedSet = char(string(obj.firstText(["phy.prach.restrictedSet", ...
-                    "prach_lls.RestrictedSet", "random_access.restricted_set"], "UnrestrictedSet")));
-                prach.ZeroCorrelationZone = double(max(0, round(obj.firstNumeric(["phy.prach.zeroCorrelationZone", ...
-                    "prach_lls.ZeroCorrelationZone", "random_access.zero_correlation_zone"], 0))));
-                prach.FrequencyStart = double(max(0, round(obj.firstNumeric(["phy.prach.frequencyStart", ...
-                    "prach_lls.FrequencyStart", "random_access.frequency_start"], 0))));
-                prachFormat = upper(strtrim(string(prach.Format)));
-                symbolLocation = double(prach.SymbolLocation);
-                duration = double(prach.PRACHDuration);
-                for slotCandidate = 0:max(0, round(double(scanSlots)) - 1)
-                    carrier.NSlot = double(slotCandidate);
-                    prach.NPRACHSlot = double(slotCandidate);
-                    try
-                        symbols = nrPRACH(carrier, prach);
-                    catch
-                        symbols = [];
-                    end
-                    if ~isempty(symbols)
-                        slots0(end+1) = slotCandidate; %#ok<AGROW>
-                    end
-                end
-            catch
-                slots0 = [];
-                prachFormat = "";
-                symbolLocation = NaN;
-                duration = NaN;
-            end
+            partition = struct( ...
+                "DuplexMode", "TDD", ...
+                "CanonicalSlot", double(absoluteSlot), ...
+                "SlotToken", token, ...
+                "SlotLabel", label, ...
+                "SymbolsPerSlot", double(size(common, 2)), ...
+                "CommonDirection", common, ...
+                "ResolvedDirection", resolved, ...
+                "AllowDL", ~isempty(dl), ...
+                "AllowUL", ~isempty(ul), ...
+                "IsSpecialSlot", token == 'F', ...
+                "DLSymbolIndices0Based", double(dl), ...
+                "GuardSymbolIndices0Based", double(guard), ...
+                "ULSymbolIndices0Based", double(ul), ...
+                "UnresolvedFlexibleSymbolIndices0Based", double(unresolved), ...
+                "DLSymbolAllocation", localContiguousAllocation(dl), ...
+                "GuardSymbolAllocation", localContiguousAllocation(guard), ...
+                "ULSymbolAllocation", localContiguousAllocation(ul), ...
+                "SpecialSlotDLSymbols", numel(dl), ...
+                "SpecialSlotGuardSymbols", numel(guard), ...
+                "SpecialSlotULSymbols", numel(ul), ...
+                "IndexConvention", "zero_based_phy_indices");
         end
     end
 
-    methods (Static, Access = private)
-        function tf = hasValue(value)
-            tf = false;
-            if isempty(value)
-                return;
-            end
-            if isstring(value)
-                tf = any(strlength(value) > 0);
-            elseif ischar(value)
-                tf = ~isempty(strtrim(value));
-            elseif isnumeric(value) || islogical(value)
-                tf = ~isempty(value);
-            elseif isstruct(value)
-                tf = true;
-            else
-                tf = true;
-            end
-        end
-
-        function tf = allocationWithin(symAlloc, ownerAlloc)
-            tf = false;
-            a = double(symAlloc(:).');
-            b = double(ownerAlloc(:).');
-            if numel(a) < 2 || numel(b) < 2
-                return;
-            end
-            a0 = a(1);
-            a1 = a(1) + max(0, a(2));
-            b0 = b(1);
-            b1 = b(1) + max(0, b(2));
-            tf = isfinite(a0) && isfinite(a1) && isfinite(b0) && isfinite(b1) && ...
-                a(2) > 0 && b(2) > 0 && a0 >= b0 && a1 <= b1;
+    methods (Access = private)
+        function obj = publishPRACHAliases(obj)
+            obj.PRACHConfigurationIndex = ...
+                double(obj.PRACHTiming.ConfigurationIndex);
+            obj.PRACHFormat = string(obj.PRACHTiming.Format);
+            occasions = obj.PRACHTiming.Occasions;
+            obj.PRACHStartSymbol = double(occasions.StartSymbol(1));
+            obj.PRACHDurationSymbols = double(occasions.DurationSymbols(1));
+            obj.PRACHValidSlots0Based = unique( ...
+                double(occasions.AbsoluteSlot(:)).', "stable");
+            obj.PRACHValidSlots1Based = obj.PRACHValidSlots0Based + 1;
+            obj.PRACHValidationStatus = "resolved_exact_repetition_period";
         end
     end
+end
+
+function value = localRequiredFrequency(cfg)
+value = localRequiredNumeric(cfg, [ ...
+    "frequency.center_frequency_hz", "phy.carrier.centerFrequency_Hz", ...
+    "phy.fc_Hz", "channel.fc_Hz"], ...
+    "sixgr:phy:FrameStructureEngine:MissingCenterFrequency", ...
+    "A standard carrier center frequency is required.");
+end
+
+function value = localRequiredBandwidthHz(cfg)
+value = localOptionalNumeric(cfg, [ ...
+    "frequency.bandwidth_hz", "channel.bandwidth_Hz", ...
+    "carrier.bandwidth_hz"]);
+if ~isfinite(value)
+    mhz = localOptionalNumeric(cfg, [ ...
+        "phy.channelBandwidth_MHz", "pdsch6gr.ChannelBandwidthMHz"]);
+    if isfinite(mhz)
+        value = mhz * 1e6;
+    end
+end
+if ~(isscalar(value) && isfinite(value) && value > 0)
+    error("sixgr:phy:FrameStructureEngine:MissingChannelBandwidth", ...
+        "A positive standard channel bandwidth with explicit units is required.");
+end
+end
+
+function value = localRequiredNumeric(cfg, paths, id, message)
+value = localOptionalNumeric(cfg, paths);
+if ~(isscalar(value) && isfinite(value) && value > 0)
+    error(id, "%s", message);
+end
+end
+
+function value = localOptionalNumeric(cfg, paths)
+value = NaN;
+for path = paths
+    raw = sixgr.util.structGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    if ~(isnumeric(raw) || islogical(raw)) || ~isscalar(raw) || ...
+            ~isfinite(double(raw))
+        error("sixgr:phy:FrameStructureEngine:InvalidNumericConfig", ...
+            "%s must be a finite numeric scalar.", path);
+    end
+    value = double(raw);
+    return;
+end
+end
+
+function value = localFirstText(cfg, paths, defaultValue)
+value = string(defaultValue);
+for path = paths
+    raw = sixgr.util.structGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    if ~(ischar(raw) || (isstring(raw) && isscalar(raw)))
+        error("sixgr:phy:FrameStructureEngine:InvalidTextConfig", ...
+            "%s must be scalar text.", path);
+    end
+    candidate = strtrim(string(raw));
+    if strlength(candidate) > 0
+        value = candidate;
+        return;
+    end
+end
+end
+
+function args = localExplicitOFDMArguments(cfg)
+args = {};
+nfft = localOptionalNumeric(cfg, [ ...
+    "phy.ofdm.explicitNfft", "waveform.explicit_fft_size"]);
+sampleRate = localOptionalNumeric(cfg, [ ...
+    "phy.ofdm.explicitSampleRate_Hz", ...
+    "waveform.explicit_sample_rate_hz"]);
+windowing = localOptionalNumeric(cfg, [ ...
+    "phy.ofdm.windowingSamples", ...
+    "phy.waveform.windowingSamples", ...
+    "waveform.windowing_samples"]);
+if isfinite(nfft)
+    args = [args, {"Nfft", nfft}]; %#ok<AGROW>
+end
+if isfinite(sampleRate)
+    args = [args, {"SampleRate", sampleRate}]; %#ok<AGROW>
+end
+if isfinite(windowing)
+    args = [args, {"WindowingSamples", windowing}]; %#ok<AGROW>
+else
+    args = [args, {"WindowingSamples", 0}]; %#ok<AGROW>
+end
+end
+
+function state = localResolveTDDState(cfg, activeSCS, cyclicPrefix)
+node = localFirstStruct(cfg, [ ...
+    "phy.duplex.tddCommon", "frame.tdd_common", ...
+    "frame_timing.tdd_common"]);
+if isempty(fieldnames(node))
+    error("sixgr:phy:frame:MissingTDDCommonConfig", ...
+        "TDD requires a canonical tdd-UL-DL-ConfigurationCommon " + ...
+        "snapshot; no compact-pattern default is used.");
+end
+referenceSCS = localStructNumeric(node, [ ...
+    "ReferenceSubcarrierSpacingKHz", ...
+    "referenceSubcarrierSpacingKHz", "reference_scs_khz"]);
+if ~isfinite(referenceSCS)
+    error("sixgr:phy:frame:MissingTDDCommonPatternField", ...
+        "tddCommon.ReferenceSubcarrierSpacingKHz is required.");
+end
+pattern1 = localStructValue(node, ["Pattern1", "pattern1"], struct());
+pattern2 = localStructValue(node, ["Pattern2", "pattern2"], struct());
+dedicated = localFirstValue(cfg, [ ...
+    "phy.duplex.tddDedicated", "frame.tdd_dedicated", ...
+    "frame_timing.tdd_dedicated"], struct([]));
+state = sixgr.phy.frame.SlotFormatResolver.resolve( ...
+    "ReferenceSubcarrierSpacingKHz", referenceSCS, ...
+    "ActiveSubcarrierSpacingKHz", activeSCS, ...
+    "CyclicPrefix", cyclicPrefix, ...
+    "Pattern1", pattern1, ...
+    "Pattern2", pattern2, ...
+    "DedicatedOverrides", dedicated);
+end
+
+function contexts = localResolveFDDContexts(cfg, obj)
+dlFc = localOptionalNumeric(cfg, [ ...
+    "phy.duplex.fdd.dlCenterFrequencyHz", ...
+    "frequency.dl_center_frequency_hz"]);
+ulFc = localOptionalNumeric(cfg, [ ...
+    "phy.duplex.fdd.ulCenterFrequencyHz", ...
+    "frequency.ul_center_frequency_hz"]);
+if ~isfinite(dlFc) && ~isfinite(ulFc)
+    contexts = [];
+    return;
+end
+if ~isfinite(dlFc) || ~isfinite(ulFc)
+    error("sixgr:phy:frame:FDDRequiresSeparateFrequencies", ...
+        "FDD requires both explicit DL and UL center frequencies.");
+end
+contexts = sixgr.phy.frame.FDDCarrierContexts.create( ...
+    "CellID", localNumericOrDefault(cfg, "phy.carrier.NCellID", 0), ...
+    "DLCCID", localNumericOrDefault(cfg, "phy.duplex.fdd.dlCCID", 0), ...
+    "ULCCID", localNumericOrDefault(cfg, "phy.duplex.fdd.ulCCID", 0), ...
+    "DLBWPID", localNumericOrDefault(cfg, "phy.duplex.fdd.dlBWPID", 0), ...
+    "ULBWPID", localNumericOrDefault(cfg, "phy.duplex.fdd.ulBWPID", 0), ...
+    "DLCenterFrequencyHz", dlFc, ...
+    "ULCenterFrequencyHz", ulFc, ...
+    "SubcarrierSpacingKHz", obj.SCSkHz, ...
+    "DLNumRB", obj.NRB, ...
+    "ULNumRB", localNumericOrDefault(cfg, ...
+        "phy.duplex.fdd.ulNSizeGrid", obj.NRB), ...
+    "CyclicPrefix", obj.CyclicPrefix, ...
+    "ULTimingAdvanceSamples", localNumericOrDefault(cfg, ...
+        "phy.duplex.fdd.ulTimingAdvanceSamples", 0));
+end
+
+function tf = localSSBConfigured(cfg)
+enabled = sixgr.util.structGet(cfg, "phy.ssb.enable", []);
+caseValue = localFirstText(cfg, [ ...
+    "phy.ssb.blockPattern", "phy.ssb.case"], "");
+tf = strlength(caseValue) > 0 && ...
+    (isempty(enabled) || (isscalar(enabled) && logical(enabled)));
+end
+
+function tf = localPRACHConfigured(cfg)
+enabled = sixgr.util.structGet(cfg, "phy.prach.enable", []);
+index = localOptionalNumeric(cfg, [ ...
+    "phy.prach.configurationIndex", ...
+    "random_access.configuration_index"]);
+scs = localOptionalNumeric(cfg, [ ...
+    "phy.prach.subcarrierSpacing_kHz", ...
+    "phy.prach.subcarrierSpacingKHz", ...
+    "random_access.subcarrier_spacing_khz"]);
+tf = isfinite(index) && isfinite(scs) && ...
+    (isempty(enabled) || (isscalar(enabled) && logical(enabled)));
+end
+
+function cfg = localAugmentCanonicalAliases(cfg, obj)
+cfg = sixgr.util.structSet(cfg, "phy.frequencyRange", char(obj.FrequencyRange));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.carrier.centerFrequency_Hz", obj.CenterFrequencyHz);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.carrier.SubcarrierSpacing_kHz", obj.SCSkHz);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.carrier.CyclicPrefix", char(obj.CyclicPrefix));
+cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", obj.NRB);
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.carrier.NStartGrid", obj.CarrierGrid.NStartGrid);
+prachSCS = localOptionalNumeric(cfg, [ ...
+    "phy.prach.subcarrierSpacing_kHz", ...
+    "phy.prach.subcarrierSpacingKHz", ...
+    "random_access.subcarrier_spacing_khz"]);
+if isfinite(prachSCS)
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.subcarrierSpacing_kHz", prachSCS);
+end
+end
+
+function row = localTDDRow(state, absoluteSlot, fieldName)
+validateattributes(absoluteSlot, {'numeric'}, ...
+    {'scalar','integer','nonnegative','finite'});
+map = state.(fieldName);
+rowIndex = mod(double(absoluteSlot), size(map, 1)) + 1;
+row = map(rowIndex, :);
+end
+
+function allocation = localContiguousAllocation(indices)
+if isempty(indices)
+    allocation = zeros(1, 2);
+elseif all(diff(indices) == 1)
+    allocation = [double(indices(1)), double(numel(indices))];
+else
+    allocation = [NaN, NaN];
+end
+end
+
+function tf = localAllocationAvailable(state, absoluteSlot, allocation, direction)
+values = double(allocation(:).');
+if numel(values) ~= 2
+    error("sixgr:phy:frame:InvalidTDRA", ...
+        "Symbol allocation must be [zeroBasedStart, NumSymbols].");
+end
+result = sixgr.phy.frame.SlotFormatResolver.isAvailable( ...
+    state, absoluteSlot, values(1), values(2), direction);
+tf = logical(result.Available);
+end
+
+function snapshot = localOFDMSnapshot(value)
+snapshot = value;
+if isfield(snapshot, "ToolboxOFDMInfo")
+    snapshot = rmfield(snapshot, "ToolboxOFDMInfo");
+end
+if isfield(snapshot, "ToolboxModulationInfo")
+    snapshot = rmfield(snapshot, "ToolboxModulationInfo");
+end
+end
+
+function snapshot = localSlotStateSnapshot(state)
+snapshot = struct();
+if isempty(state)
+    return;
+end
+snapshot = struct( ...
+    "Class", class(state), ...
+    "DuplexMode", string(state.DuplexMode), ...
+    "IndexConvention", string(state.IndexConvention), ...
+    "CommonDirection", state.CommonDirection, ...
+    "ResolvedDirection", state.ResolvedDirection, ...
+    "SymbolsPerSlot", double(size(state.CommonDirection, 2)), ...
+    "SlotsPerPattern", double(size(state.CommonDirection, 1)));
+if isprop(state, "DedicatedDirection")
+    snapshot.DedicatedDirection = state.DedicatedDirection;
+end
+end
+
+function snapshot = localFDDContextSnapshot(value)
+if isempty(value)
+    snapshot = struct();
+else
+    snapshot = struct( ...
+        "DuplexMode", value.DuplexMode, ...
+        "Downlink", value.Downlink, ...
+        "Uplink", value.Uplink, ...
+        "SlotsPerFrame", value.SlotsPerFrame, ...
+        "SymbolsPerSlot", value.SymbolsPerSlot, ...
+        "IndexConvention", value.IndexConvention);
+end
+end
+
+function node = localFirstStruct(cfg, paths)
+node = struct();
+for path = paths
+    value = sixgr.util.structGet(cfg, path, []);
+    if isempty(value)
+        continue;
+    end
+    if ~(isstruct(value) && isscalar(value))
+        error("sixgr:phy:frame:InvalidTDDCommonConfig", ...
+            "%s must be a scalar struct.", path);
+    end
+    node = value;
+    return;
+end
+end
+
+function value = localFirstValue(cfg, paths, defaultValue)
+value = defaultValue;
+for path = paths
+    candidate = sixgr.util.structGet(cfg, path, []);
+    if ~isempty(candidate)
+        value = candidate;
+        return;
+    end
+end
+end
+
+function value = localStructNumeric(s, names)
+value = localStructValue(s, names, NaN);
+if isempty(value)
+    value = NaN;
+elseif ~(isnumeric(value) || islogical(value)) || ~isscalar(value) || ...
+        ~isfinite(double(value))
+    error("sixgr:phy:frame:InvalidTDDCommonConfig", ...
+        "%s must be a finite numeric scalar.", names(1));
+else
+    value = double(value);
+end
+end
+
+function value = localStructValue(s, names, defaultValue)
+value = defaultValue;
+fields = string(fieldnames(s));
+for name = names
+    index = find(strcmpi(fields, name), 1);
+    if ~isempty(index)
+        value = s.(char(fields(index)));
+        return;
+    end
+end
+end
+
+function value = localNumericOrDefault(cfg, path, defaultValue)
+value = sixgr.util.structGet(cfg, path, defaultValue);
+if isempty(value)
+    value = defaultValue;
+end
+if ~(isnumeric(value) || islogical(value)) || ~isscalar(value) || ...
+        ~isfinite(double(value))
+    error("sixgr:phy:FrameStructureEngine:InvalidNumericConfig", ...
+        "%s must be a finite numeric scalar.", path);
+end
+value = double(value);
 end

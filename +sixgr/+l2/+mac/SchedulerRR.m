@@ -16,11 +16,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
         MaxUEPerSlot (1,1) double = inf
         MinPRBPerUE (1,1) double = 4  % keep allocations non-trivial
         MaxPRBPerUE (1,1) double = inf
-        HarqK1 (1,1) double = 4
-        HarqK2 (1,1) double = 1
         SearchSpaceID (1,1) double = 0
         CORESETID (1,1) double = 0
-        BWPId (1,1) double = 0
     end
 
     methods
@@ -31,11 +28,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             obj.MinPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.minPRBPerUE",obj.MinPRBPerUE));
             obj.MaxPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.maxPRBAllocationPerUE", ...
                 sixgr.util.structGet(cfg,"system.scheduler.maxPRBAllocationPerUE",obj.MaxPRBPerUE)));
-            obj.HarqK1 = max(0, round(double(sixgr.util.structGet(cfg, "mac.harq.k1", obj.HarqK1))));
-            obj.HarqK2 = max(0, round(double(sixgr.util.structGet(cfg, "mac.harq.k2", obj.HarqK2))));
             obj.SearchSpaceID = max(0, round(double(sixgr.util.structGet(cfg, "phy.dl.pdcch.SearchSpaceID", obj.SearchSpaceID))));
             obj.CORESETID = max(0, round(double(sixgr.util.structGet(cfg, "phy.dl.pdcch.CORESETID", obj.CORESETID))));
-            obj.BWPId = max(0, round(double(sixgr.util.structGet(cfg, "phy.bwp.id", obj.BWPId))));
         end
 
         function [grants, info] = schedule(obj, slot, ueStates, budget)
@@ -43,6 +37,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 budget = struct();
             end
             [prbAvail, symAlloc] = obj.defaultBudget(budget);
+            controlAbsoluteSlot = localBudgetControlAbsoluteSlot(budget);
+            controlSymbolAllocation = ...
+                localBudgetControlSymbolAllocation(budget);
 
             tmpl = localGrantTemplate(obj.Direction, slot);
             grants = repmat(tmpl, 0, 1);
@@ -51,11 +48,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             info.Direction = obj.Direction;
             nPRBAvail = numel(prbAvail);
             info.NPRBAvail = nPRBAvail;
-            k1 = localResolveGrantK1(obj.Cfg, slot, obj.HarqK1);
-            k2 = obj.HarqK2;
             ssid = obj.SearchSpaceID;
             coreset = obj.CORESETID;
-            bwpId = obj.BWPId;
 
             if isempty(ueStates)
                 return;
@@ -141,6 +135,13 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
 
                     % Refresh slot + HARQ fields
                     g.Slot = slot;
+                    if ~isempty(controlAbsoluteSlot)
+                        g.ControlAbsoluteSlot = controlAbsoluteSlot;
+                    end
+                    if ~isempty(controlSymbolAllocation)
+                        g.ControlSymbolAllocation = ...
+                            controlSymbolAllocation;
+                    end
                     g.Direction = obj.Direction;
                     if ~isfield(g, "MCSTable") || strlength(string(g.MCSTable)) == 0
                         g.MCSTable = obj.resolveMCSTable();
@@ -149,11 +150,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     g.CQIUsed = double(sixgr.util.structGet(g, "CQIUsed", localUECQI(ueStates(k))));
                     g.PDCCHAggregationLevel = double(neededCCE);
                     g.DAI = 1;
-                    g.K1 = k1;
-                    g.K2 = k2;
                     g.SearchSpaceID = ssid;
                     g.CORESETID = coreset;
-                    g.BWPId = bwpId;
                     g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
                     g.BufferBytesBefore = localUEBufferByFlag(ueStates(k), isDL);
                     if ~isfinite(g.BufferBytesBefore)
@@ -258,6 +256,12 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g = tmpl;
                 g.Direction = obj.Direction;
                 g.Slot = slot;
+                if ~isempty(controlAbsoluteSlot)
+                    g.ControlAbsoluteSlot = controlAbsoluteSlot;
+                end
+                if ~isempty(controlSymbolAllocation)
+                    g.ControlSymbolAllocation = controlSymbolAllocation;
+                end
                 g.RNTI = rnti;
                 g.PRBSet = prbSet;
                 g.SymbolAllocation = symAlloc;
@@ -320,11 +324,8 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.RankIndicator = double(plan.NumLayers);
                 g.MCSIndex = double(plan.MCSIndex);
                 g.DAI = 1;
-                g.K1 = k1;
-                g.K2 = k2;
                 g.SearchSpaceID = ssid;
                 g.CORESETID = coreset;
-                g.BWPId = bwpId;
                 g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
                 g.BufferBytesBefore = localUEBufferByFlag(ueStates(k), isDL);
                 if ~isfinite(g.BufferBytesBefore)
@@ -448,11 +449,12 @@ g.MCSIndex = 1;
 g.CQIUsed = 1;
 g.PDCCHAggregationLevel = NaN;
 g.DAI = 1;
-g.K1 = 4;
-g.K2 = 1;
+g.K0 = NaN;
+g.K1 = NaN;
+g.K2 = NaN;
 g.SearchSpaceID = 0;
 g.CORESETID = 0;
-g.BWPId = 0;
+g.BWPId = NaN;
 g.HeadOfLineDelay_ms = 0;
 g.BufferBytesBefore = 0;
 g.BufferBytesAfter = 0;
@@ -555,19 +557,32 @@ cqi = sixgr.l2.mac.SchedulerBase.sanitizeCQI( ...
     sixgr.util.structGet(ue, "CQI", NaN), 1);
 end
 
-function k1 = localResolveGrantK1(cfg, slot, fallback)
-explicit = sixgr.util.structGet(cfg, "mac.harq.k1", []);
-if ~isempty(explicit)
-    k1 = max(1, round(double(explicit)));
-    return;
+function value = localBudgetControlAbsoluteSlot(budget)
+value = [];
+if isstruct(budget) && isscalar(budget) && ...
+        isfield(budget, "ControlAbsoluteSlot") && ...
+        ~isempty(budget.ControlAbsoluteSlot)
+    raw = double(budget.ControlAbsoluteSlot);
+    if ~(isscalar(raw) && isfinite(raw) && raw >= 0 && raw == fix(raw))
+        error("sixgr:SchedulerRR:InvalidControlAbsoluteSlot", ...
+            "budget.ControlAbsoluteSlot must be a zero-based nonnegative integer.");
+    end
+    value = raw;
 end
-pattern = sixgr.util.structGet(cfg, "frame_timing.tdd_pattern", ...
-    sixgr.util.structGet(cfg, "frame.tdd_pattern", "DDDSU"));
-mu = double(sixgr.util.structGet(cfg, "global_radio_scope.numerology_mu", ...
-    sixgr.util.structGet(cfg, "phy.numerology.mu", 1)));
-k1 = sixgr.l2.mac.resolveHARQFeedbackK1(slot, pattern, mu);
-if ~(isfinite(k1) && k1 >= 1)
-    k1 = max(1, round(double(fallback)));
+end
+
+function value = localBudgetControlSymbolAllocation(budget)
+value = [];
+if isstruct(budget) && isscalar(budget) && ...
+        isfield(budget, "ControlSymbolAllocation") && ...
+        ~isempty(budget.ControlSymbolAllocation)
+    raw = double(budget.ControlSymbolAllocation(:).');
+    if ~(numel(raw) == 2 && all(isfinite(raw)) && ...
+            all(raw == fix(raw)) && raw(1) >= 0 && raw(2) >= 1)
+        error("sixgr:SchedulerRR:InvalidControlSymbolAllocation", ...
+            "budget.ControlSymbolAllocation must be [start>=0 count>=1].");
+    end
+    value = raw;
 end
 end
 

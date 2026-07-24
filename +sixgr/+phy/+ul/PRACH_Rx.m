@@ -42,18 +42,25 @@ function [rx, info] = PRACH_Rx(rxWaveform, cfg, varargin)
     if isempty(opts.PRACH)
         prach = nrPRACHConfig;
         prach = sixgr.phy.ul.applyPRACHCfgToObject(prach, cfg, carrier);
-        nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach);
-        try
-            prach.NPRACHSlot = nslot;
-        catch
-        end
+        canonicalOccasion = sixgr.rach.mapPRACHToOccasion( ...
+            cfg, "OccasionIndex", 1, "Carrier", carrier, "PRACH", prach);
+        nslot = double(canonicalOccasion.PRACHSlotIndex0);
+        prach.NPRACHSlot = nslot;
+        carrier.NFrame = double(canonicalOccasion.Carrier.NFrame);
+        carrier.NSlot = double(canonicalOccasion.Carrier.NSlot);
     else
         prach = opts.PRACH;
-        nslot = prach.NPRACHSlot;
-    end
-    try
-        carrier.NSlot = nslot;
-    catch
+        canonicalOccasion = sixgr.rach.mapPRACHToOccasion( ...
+            cfg, "OccasionIndex", 1, "Carrier", carrier, "PRACH", prach);
+        nslot = double(prach.NPRACHSlot);
+        if nslot ~= double(canonicalOccasion.PRACHSlotIndex0)
+            error("sixgr:phy:ul:PRACH_Rx:OccasionMismatch", ...
+                "Receiver PRACH slot %d does not match canonical first " + ...
+                "occasion slot %d for the supplied configuration.", ...
+                nslot, double(canonicalOccasion.PRACHSlotIndex0));
+        end
+        carrier.NFrame = double(canonicalOccasion.Carrier.NFrame);
+        carrier.NSlot = double(canonicalOccasion.Carrier.NSlot);
     end
 
     % ---- Detection -------------------------------------------------------
@@ -84,49 +91,5 @@ function [rx, info] = PRACH_Rx(rxWaveform, cfg, varargin)
     info.PreambleIndex = idx;
     info.TimingOffset  = offset;
     info.ResolvedNPRACHSlot = double(nslot);
-end
-
-% -------------------------------------------------------------------------
-function nslot = localResolveDefaultNPRACHSlot(cfg, carrier, prach)
-cfgSlot = sixgr.util.structGet(cfg, "phy.prach.nPrachSlot", []);
-if isempty(cfgSlot)
-    cfgSlot = sixgr.util.structGet(cfg, "phy.prach.NPRACHSlot", []);
-end
-if ~isempty(cfgSlot)
-    vals = double(cfgSlot(:));
-    vals = vals(isfinite(vals));
-    if ~isempty(vals)
-        nslot = vals(1);
-        return;
-    end
-end
-
-startSlot = double(carrier.NSlot);
-if ~(isfinite(startSlot) && startSlot >= 0)
-    startSlot = 0;
-end
-scanSlots = 160;
-nslot = startSlot;
-for offset = 0:scanSlots
-    candidate = round(startSlot) + offset;
-    c = carrier;
-    p = prach;
-    try
-        c.NSlot = candidate;
-    catch
-    end
-    try
-        p.NPRACHSlot = candidate;
-    catch
-    end
-    try
-        sym = nrPRACH(c, p);
-        ind = nrPRACHIndices(c, p);
-        if ~isempty(sym) && ~isempty(ind)
-            nslot = candidate;
-            return;
-        end
-    catch
-    end
-end
+    info.PRACHOccasion = canonicalOccasion;
 end

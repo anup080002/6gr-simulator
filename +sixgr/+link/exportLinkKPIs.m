@@ -377,13 +377,16 @@ end
 end
 
 function slotDur = localSlotDurationSec(cfg)
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
-    sixgr.util.structGet(cfg, "phy.numerology.scs_khz", 30)));
-mu = log2(scs / 15);
-if ~(isfinite(mu) && mu >= 0)
-    mu = 0;
+try
+    slotDur = sixgr.time.slotDurationSec(cfg);
+catch ME
+    if any(string(ME.identifier) == [ ...
+            "sixgr:time:MissingSCS", "sixgr:time:InvalidSCS"])
+        slotDur = NaN;
+    else
+        rethrow(ME);
+    end
 end
-slotDur = 1e-3 / (2 ^ round(mu));
 end
 
 function durationSec = localRawWindow(T)

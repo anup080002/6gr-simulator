@@ -20,6 +20,11 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %     "PHYGrant"    : frozen canonical grant dimensional contract
 %
+%   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
+%   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
+%   normative -3 dB token maps to exact beta=sqrt(2), matching the
+%   transmitter and retaining configured versus realized dB provenance.
+%
 %   Outputs:
 %     RX.TransportBlock     : recovered TB bits
 %     RX.CRCError           : true if TB CRC fails
@@ -157,6 +162,15 @@ ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
 
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
+[dmrsSym, dmrsPowerInfo] = localApplyPUSCHDMRSEPREDifference(dmrsSym, cfg);
+dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+dmrsInfo.RealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
+dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
+dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
 useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
@@ -352,6 +366,15 @@ if ~logical(noiseStatus.IsValid)
         trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
         nVar, noiseStatus, logical(opt.CompactOutput));
+    rx.DMRSEPREDifference = dmrsPowerInfo;
+    rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+    rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+    rx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+    rx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+    rx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+    rx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
+    info.DMRS = dmrsInfo;
+    info.DMRSEPREDifference = dmrsPowerInfo;
     return;
 end
 
@@ -643,6 +666,13 @@ rx.TransportBlockCRCLength = double(tbCRCLen);
 rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
 rx.CodingLayout = codingLayout;
 rx.CodewordLayerMapping = codewordLayerMapping;
+rx.DMRSEPREDifference = dmrsPowerInfo;
+rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+rx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+rx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+rx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+rx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 rx.NumCodewords = double(codewordLayerMapping.NumCodewords);
 rx.ActualNumCodewords = double(codewordLayerMapping.ActualNumCodewords);
 rx.CodewordLLRCountPerCodeword = double(codewordLayerMapping.DemapperLLRCountPerCodeword);
@@ -835,6 +865,8 @@ info = struct();
 info.CarrierInfo = cinfo;
 info.OFDM = ofdmInfo;
 info.ChannelEstimation = estInfo;
+info.DMRS = dmrsInfo;
+info.DMRSEPREDifference = dmrsPowerInfo;
 info.ReceiverTrackingCorrection = trackingCorrection;
 info.ReceiverSynchronizationState = syncState;
 info.NoiseVariance = noiseStatus;
@@ -1549,12 +1581,8 @@ end
 end
 
 function fs = localCarrierSampleRateHz(carrier)
-fs = NaN;
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    fs = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
-catch
-end
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+fs = double(sampling.SampleRateHz);
 end
 
 function value = localFirstLogical(s, names, defaultValue)
@@ -2457,10 +2485,10 @@ function sa = localSymAlloc(pusch)
 try
     sa = double(pusch.SymbolAllocation);
 catch
-    sa = [0 14];
+    sa = [];
 end
 if numel(sa) < 2
-    sa = [0 14];
+    sa = [];
 else
     sa = reshape(sa(1:2), 1, 2);
 end
@@ -2823,4 +2851,57 @@ if isempty(raw)
 else
     value = double(raw(1));
 end
+end
+
+function [dmrsSym, info] = localApplyPUSCHDMRSEPREDifference(dmrsSym, cfg)
+% The configured quantity follows the conformance-table convention:
+%   data EPRE / DM-RS EPRE in dB = data EPRE - DM-RS EPRE.
+path = "phy.pusch.dmrs.dataToDMRSEPREDifference_dB";
+rawDifference = sixgr.util.structGet(cfg, char(path), []);
+if isempty(rawDifference)
+    difference_dB = 0;
+    source = "default_zero_db";
+else
+    if ~(isnumeric(rawDifference) && isreal(rawDifference) && isscalar(rawDifference) && isfinite(rawDifference))
+        error("sixgr:phy:ul:PUSCHDMRSEPREDifferenceInvalid", ...
+            "%s must be a finite real numeric scalar.", char(path));
+    end
+    difference_dB = double(rawDifference);
+    source = path;
+end
+
+configuredPowerBoost_dB = -difference_dB;
+if abs(difference_dB + 3) <= 1e-12
+    % TS 38.104 expresses the normative PUSCH-to-DMRS EPRE ratio as
+    % -3 dB while the corresponding exact beta is sqrt(2).
+    amplitudeScale = sqrt(2);
+    powerScale = 2;
+    scalePolicy = "ts_38_104_minus3_db_beta_sqrt2";
+else
+    amplitudeScale = 10.^(configuredPowerBoost_dB ./ 20);
+    powerScale = amplitudeScale.^2;
+    scalePolicy = "literal_configured_db_ratio";
+end
+if ~(isfinite(amplitudeScale) && amplitudeScale > 0 && isfinite(powerScale) && powerScale > 0)
+    error("sixgr:phy:ul:PUSCHDMRSEPREDifferenceInvalid", ...
+        "%s=%g dB produces a non-finite or non-positive DM-RS scale.", ...
+        char(path), difference_dB);
+end
+realizedPowerBoost_dB = 10 .* log10(powerScale);
+realizedDifference_dB = -realizedPowerBoost_dB;
+
+dmrsSym = dmrsSym .* cast(amplitudeScale, "like", dmrsSym);
+info = struct( ...
+    "ContractVersion", "PUSCHDMRSEPREDifference/v1", ...
+    "Source", source, ...
+    "DataToDMRSEPREDifference_dB", double(difference_dB), ...
+    "ConfiguredDMRSPowerBoost_dB", double(configuredPowerBoost_dB), ...
+    "RealizedDataToDMRSEPREDifference_dB", double(realizedDifference_dB), ...
+    "DMRSPowerBoost_dB", double(realizedPowerBoost_dB), ...
+    "DMRSAmplitudeScale", double(amplitudeScale), ...
+    "DMRSPowerScale", double(powerScale), ...
+    "Applied", logical(abs(difference_dB) > 1e-12), ...
+    "NormativeMinus3dBBetaApplied", logical(scalePolicy == "ts_38_104_minus3_db_beta_sqrt2"), ...
+    "ScalePolicy", scalePolicy, ...
+    "Equation", "normative_minus3_db_uses_beta_sqrt2_otherwise_10_power_minus_delta_db_over_20");
 end

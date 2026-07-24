@@ -1,0 +1,2 @@
+Suite: testTDDCommonPattern
+PASS in 3.173204 seconds.

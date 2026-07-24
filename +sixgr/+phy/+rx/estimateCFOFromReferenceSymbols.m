@@ -253,32 +253,28 @@ info.SymbolIndices = double(uniqueSymbols(symbolsUsed) - 1);
 end
 
 function sampleRate = localCarrierSampleRate(carrier)
-sampleRate = NaN;
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    sampleRate = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
-catch
-end
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+sampleRate = double(sampling.SampleRateHz);
 end
 
 function symbolTimes = localSymbolCenterTimes(carrier, sampleRateHz, symbolsPerSlot)
-symbolTimes = NaN(max(1, round(double(symbolsPerSlot))), 1);
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    symbolLengths = double(sixgr.util.structGet(ofdmInfo, "SymbolLengths", []));
-    if isempty(symbolLengths)
-        symbolLengths = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", [])) + ...
-            double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
-    end
-    symbolLengths = symbolLengths(:);
-    if isempty(symbolLengths) || any(~isfinite(symbolLengths))
-        return;
-    end
-    if numel(symbolLengths) < symbolsPerSlot
-        symbolLengths(end + 1:symbolsPerSlot, 1) = symbolLengths(end);
-    end
-    symbolLengths = symbolLengths(1:symbolsPerSlot);
-    symbolTimes = (cumsum(symbolLengths) - 0.5 .* symbolLengths) ./ max(double(sampleRateHz), eps);
-catch
+validateattributes(symbolsPerSlot, {'numeric'}, ...
+    {'scalar','integer','positive','finite'});
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+if double(symbolsPerSlot) ~= double(sampling.SymbolsPerSlot)
+    error("sixgr:phy:frame:InconsistentOFDMNumerology", ...
+        "Reference grid has %d symbols, while the canonical carrier has %d.", ...
+        symbolsPerSlot, sampling.SymbolsPerSlot);
 end
+symbolLengths = double(sampling.Nfft) + ...
+    double(sampling.CyclicPrefixLengthsPerSlot(:));
+if abs(double(sampleRateHz) - double(sampling.SampleRateHz)) > ...
+        max(1e-9 * double(sampling.SampleRateHz), 1e-6)
+    error("sixgr:phy:frame:InconsistentOFDMSampleRate", ...
+        "Reference-symbol timing sample rate %.15g Hz differs from the " + ...
+        "canonical carrier rate %.15g Hz.", ...
+        sampleRateHz, sampling.SampleRateHz);
+end
+symbolTimes = (cumsum(symbolLengths) - 0.5 .* symbolLengths) ./ ...
+    double(sampling.SampleRateHz);
 end

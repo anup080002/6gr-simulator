@@ -3091,9 +3091,11 @@ slotDLControlAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed
 if ~slotDLControlAllowed
     return;
 end
-k2Slots = localResolveCoupledULK2Slots(cfg);
 controlSlot = double(sixgr.util.structGet(state, "CurrentSlot", frameLocal));
-dueSlot = controlSlot + k2Slots;
+timingDecision = localResolveCoupledULTimingDecision( ...
+    state, cfg, controlSlot);
+k2Slots = double(timingDecision.K2);
+dueSlot = double(timingDecision.DataAbsoluteSlot) + 1;
 if ~(isfinite(dueSlot) && dueSlot >= 1 && dueSlot <= nFramesPerPoint)
     return;
 end
@@ -3106,6 +3108,9 @@ if localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
 end
 
 planState = sixgr.truth.CoupledTruthRuntime.startSlot(state, cfg, "UL", sweepIdx, sweepCount, dueSlot, nFramesPerPoint, snr_dB);
+planState.TimingControlAbsoluteSlot0Based = controlSlot - 1;
+planState.TimingControlSymbolAllocation = ...
+    localCoupledControlSymbolAllocation(state, cfg);
 % K2 scheduling decides for the future UL slot, so its MAC buffer view must
 % include traffic that arrived up to that due slot.
 planState = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrameRuntime(planState, dueSlot);
@@ -3177,16 +3182,46 @@ localAppendRuntimeLog("INFO", ...
     round(double(controlSlot)), round(double(dueSlot)), numel(qualifiedGrants), numel(pendingULGrants));
 end
 
-function k2Slots = localResolveCoupledULK2Slots(cfg)
-k2Slots = localFirstFiniteNumeric( ...
-    sixgr.util.structGet(cfg, "phy.pusch.k2_slots", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pusch.k2Slots", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pusch.k2", NaN), ...
-    sixgr.util.structGet(cfg, "mac.scheduler.k2_slots", NaN), ...
-    sixgr.util.structGet(cfg, "mac.scheduler.k2Slots", NaN), ...
-    sixgr.util.structGet(cfg, "phy.ul.grantK2Slots", NaN), ...
-    1);
-k2Slots = max(1, round(double(k2Slots)));
+function decision = localResolveCoupledULTimingDecision(state, cfg, controlSlot)
+symbolAllocation = sixgr.util.structGet( ...
+    cfg, "phy.pusch.symbolAllocation", []);
+if isempty(symbolAllocation)
+    symbolAllocation = sixgr.util.structGet( ...
+        cfg, "phy.pusch.SymbolAllocation", []);
+end
+if ~(isnumeric(symbolAllocation) && numel(symbolAllocation) == 2 && ...
+        all(isfinite(double(symbolAllocation(:)))))
+    error("sixgr:truth:MissingPUSCHTimingAllocation", ...
+        "Coupled UL K2 scheduling requires an explicit PUSCH SymbolAllocation.");
+end
+probe = struct( ...
+    "Direction", "UL", ...
+    "ControlAbsoluteSlot", double(controlSlot) - 1, ...
+    "ControlSymbolAllocation", ...
+        localCoupledControlSymbolAllocation(state, cfg), ...
+    "SymbolAllocation", reshape(double(symbolAllocation), 1, 2), ...
+    "HARQProcess", 0);
+decision = sixgr.phy.frame.TimingRelationEngine. ...
+    resolveProductionGrant(cfg, probe);
+if ~decision.Valid
+    error("sixgr:truth:CoupledULTimingRejected", ...
+        "Canonical coupled UL K2 timing rejected control slot %d: %s", ...
+        round(double(controlSlot)), char(string(decision.ReasonCode)));
+end
+end
+
+function allocation = localCoupledControlSymbolAllocation(state, cfg)
+startSymbol = double(sixgr.util.structGet( ...
+    state, "CurrentSlotDLSymbolStart", NaN));
+numSymbols = double(sixgr.util.structGet( ...
+    cfg, "phy.pdcch.coreset.duration", ...
+    sixgr.util.structGet(cfg, "phy.pdcch.numSymbols", NaN)));
+allocation = [startSymbol, numSymbols];
+if ~(all(isfinite(allocation)) && all(allocation == fix(allocation)) && ...
+        allocation(1) >= 0 && allocation(2) >= 1)
+    error("sixgr:truth:MissingPDCCHTimingAllocation", ...
+        "Coupled timing requires an explicit PDCCH start and duration.");
+end
 end
 
 function tf = localPUSCHUCIOnPUSCHAvailable(cfg)
@@ -4890,9 +4925,11 @@ prbB = unique(round(double(sixgr.util.structGet(grantB, "PRBSet", []))));
 if isempty(intersect(prbA(:), prbB(:)))
     return;
 end
-symA = double(sixgr.util.structGet(grantA, "SymbolAllocation", [0 14]));
-symB = double(sixgr.util.structGet(grantB, "SymbolAllocation", [0 14]));
+symA = double(sixgr.util.structGet(grantA, "SymbolAllocation", []));
+symB = double(sixgr.util.structGet(grantB, "SymbolAllocation", []));
 if numel(symA) < 2 || numel(symB) < 2
+    % Missing allocation metadata cannot prove non-overlap. Keep the
+    % conservative collision decision without fabricating full-slot bounds.
     tf = true;
     return;
 end
@@ -5391,8 +5428,8 @@ if ~(isfinite(queueBitsUpper) && queueBitsUpper > 0)
 end
 prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
 if isempty(prbSet)
-    nPrb = max(1, round(double(sixgr.util.structGet(grant, "PRBs", sixgr.util.structGet(cfgIn, "phy.carrier.NSizeGrid", 1)))));
-    prbSet = 0:(nPrb - 1);
+    error("sixgr:truth:MissingStrictGrantPRBSet", ...
+        "Strict grant hydration requires an explicit scheduler PRBSet.");
 end
 fullGrant = localHydrateGrantSnapshot(cfgIn, direction, grant);
 fullBits = double(sixgr.util.structGet(fullGrant, "TransportBlockSize", ...
@@ -5681,16 +5718,31 @@ end
 end
 
 function prbSet = localGrantReplayPRBSet(cfgIn, grant)
-prbSet = double(unique(sixgr.util.structGet(grant, "PRBSet", [])));
-prbSet = prbSet(isfinite(prbSet) & prbSet >= 0);
+raw = sixgr.util.structGet(grant, "PRBSet", []);
+if ~(isnumeric(raw) && isreal(raw) && ~isempty(raw))
+    error("sixgr:truth:MissingGrantReplayPRBSet", ...
+        "Truth waveform replay requires an explicit nonempty grant PRBSet.");
+end
+prbSet = double(unique(raw(:).', "stable"));
+if any(~isfinite(prbSet)) || any(prbSet ~= fix(prbSet)) || ...
+        any(prbSet < 0)
+    error("sixgr:truth:InvalidGrantReplayPRBSet", ...
+        "Truth waveform replay PRBSet must contain finite nonnegative integers.");
+end
 offset = double(sixgr.util.structGet(cfgIn, "system.waveform.replayPRBOffset", 0));
 if isfinite(offset) && offset > 0
     prbSet = prbSet - offset;
 end
-prbSet = prbSet(isfinite(prbSet) & prbSet >= 0);
-if isempty(prbSet)
-    nGrid = max(1, round(double(sixgr.util.structGet(cfgIn, "phy.carrier.NSizeGrid", 1))));
-    prbSet = 0:(nGrid - 1);
+if any(prbSet < 0) || any(prbSet ~= fix(prbSet))
+    error("sixgr:truth:InvalidGrantReplayPRBOffset", ...
+        "system.waveform.replayPRBOffset moves the explicit grant PRBSet " + ...
+        "outside the replay carrier.");
+end
+nGrid = double(sixgr.util.structGet(cfgIn, ...
+    "phy.carrier.NSizeGrid", NaN));
+if isfinite(nGrid) && any(prbSet >= round(nGrid))
+    error("sixgr:truth:GrantReplayPRBOutOfRange", ...
+        "Truth waveform replay PRBSet exceeds the replay carrier grid.");
 end
 end
 
@@ -15082,12 +15134,7 @@ grid = localReduceSweepGrid(grid, double(sweepPlan.ReferenceMaxSweepPoints), max
 end
 
 function slotDur_s = localSlotDuration(cfg)
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
-mu = log2(scs/15);
-if ~isfinite(mu) || mu < 0
-    mu = 0;
-end
-slotDur_s = 1e-3 / (2^mu);
+slotDur_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function [y, nVar] = localAddAwgn(x, snr_dB)
@@ -16548,12 +16595,8 @@ absSlot(mask) = frame(mask) * slotsPerFrame + slot(mask);
 end
 
 function slotsPerFrame = localSlotsPerFrame(cfg)
-slotDur_s = localSlotDuration(cfg);
-if ~(isfinite(slotDur_s) && slotDur_s > 0)
-    slotsPerFrame = 1;
-    return;
-end
-slotsPerFrame = max(1, round(0.01 / slotDur_s));
+[~, numerology] = sixgr.time.slotDurationSec(cfg);
+slotsPerFrame = double(numerology.SlotsPerFrame);
 end
 
 function vals = localTableColumnAsString(T, varName)

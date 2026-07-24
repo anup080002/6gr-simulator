@@ -1,0 +1,86 @@
+function ok = testFrameGridArtifacts()
+%TESTFRAMEGRIDARTIFACTS End-to-end 15-CSV / 9-PNG artifact acceptance.
+
+setup6GRSimToolkit("Verbose", false);
+outputDirectory = string(tempname) + "_frame_grid_test";
+mkdir(outputDirectory);
+cleanup = onCleanup(@() localCleanup(outputDirectory));
+[manifest, summary] = runFrameGridPhaseTests(outputDirectory);
+
+assert(manifest.CSVCount == 15 && manifest.ImageCount == 9);
+assert(height(summary) == 15 && all(summary.Status == "PASS"));
+
+csvListing = dir(fullfile(outputDirectory, "*.csv"));
+pngListing = dir(fullfile(outputDirectory, "*.png"));
+assert(numel(csvListing) == 15, ...
+    "Expected exactly 15 production CSV artifacts, found %d.", ...
+    numel(csvListing));
+assert(numel(pngListing) == 9, ...
+    "Expected exactly nine PNG artifacts, found %d.", numel(pngListing));
+
+vectorDirectory = fullfile(fileparts(mfilename("fullpath")), ...
+    "vectors", "frame_grid");
+csvContract = readtable(fullfile(vectorDirectory, ...
+    "desired_frame_csv_contract.csv"), "TextType", "string");
+imageContract = readtable(fullfile(vectorDirectory, ...
+    "desired_frame_image_contract.csv"), "TextType", "string");
+assert(height(csvContract) == 15 && height(imageContract) == 9);
+
+for index = 1:height(csvContract)
+    path = fullfile(outputDirectory, csvContract.CSVFile(index));
+    assert(isfile(path) && dir(path).bytes > 0, ...
+        "Required CSV is missing or empty: %s", path);
+    data = readtable(path, "TextType", "string", ...
+        "VariableNamingRule", "preserve");
+    assert(height(data) > 0, "Required CSV has no data rows: %s", path);
+    required = split(csvContract.RequiredColumns(index), ",");
+    assert(all(ismember(required, string(data.Properties.VariableNames))), ...
+        "%s lacks one or more required columns.", csvContract.CSVFile(index));
+    assert(all(upper(string(data.Status)) == "PASS"), ...
+        "%s contains a non-PASS row.", csvContract.CSVFile(index));
+    assert(all(string(data.IndexConvention) == "zero_based_phy_indices"), ...
+        "%s lacks the zero-based index convention.", ...
+        csvContract.CSVFile(index));
+end
+
+shortcutAudit = readtable(fullfile(outputDirectory, ...
+    "shortcut_removal_audit.csv"), "TextType", "string", ...
+    "VariableNamingRule", "preserve");
+assert(height(shortcutAudit) >= 13 && ...
+    all(shortcutAudit.FilesScanned == shortcutAudit.FilesScanned(1)) && ...
+    shortcutAudit.FilesScanned(1) > 0, ...
+    "Shortcut audit must scan one nonempty active-production file universe.");
+assert(all(contains(shortcutAudit.SearchScope, ...
+    "active production")) && ...
+    all(shortcutAudit.MatchCount == 0) && ...
+    all(shortcutAudit.ExpectedCount == 0), ...
+    "Shortcut audit must cover the active production tree with zero hits.");
+assert(any(shortcutAudit.CheckID == "SHORTCUT-13"), ...
+    "Shortcut audit must guard against missing allocation fabrication.");
+
+for index = 1:height(imageContract)
+    path = fullfile(outputDirectory, imageContract.ImageFile(index));
+    info = imfinfo(path);
+    assert(info.Width >= imageContract.MinimumWidth(index) && ...
+        info.Height >= imageContract.MinimumHeight(index));
+    assert(dir(path).bytes > 1000);
+end
+
+verifier = fullfile(vectorDirectory, "verify_frame_artifacts.py");
+command = sprintf('python "%s" "%s"', verifier, outputDirectory);
+[exitCode, verifierOutput] = system(command);
+assert(exitCode == 0, ...
+    "Frame artifact verifier failed with exit code %d:\n%s", ...
+    exitCode, verifierOutput);
+ok = true;
+end
+
+function localCleanup(directory)
+if isfolder(directory)
+    resolved = char(java.io.File(directory).getCanonicalPath());
+    temporary = char(java.io.File(tempdir).getCanonicalPath());
+    assert(startsWith(lower(resolved), lower(temporary)), ...
+        "Refusing to recursively remove non-temporary path '%s'.", resolved);
+    rmdir(resolved, "s");
+end
+end

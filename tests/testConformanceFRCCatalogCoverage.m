@@ -1,0 +1,229 @@
+function ok = testConformanceFRCCatalogCoverage()
+%TESTCONFORMANCEFRCCATALOGCOVERAGE Guard the selected Release 18 FRC data.
+%
+% This test validates catalog transcription only. It neither executes a PHY
+% chain nor makes a conformance-performance claim.
+
+setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
+catalog = sixgr.conformance.frcCatalog();
+
+assert(double(catalog.expected_entry_count) == 21 && ...
+    numel(catalog.entries) == 21, ...
+    "Selected Release 18 FRC catalog must contain exactly 21 records.");
+assert(~logical(catalog.coverage.complete_annex_catalog), ...
+    "The selected FRC catalog must not claim complete Annex A coverage.");
+actualModulations = sort(string( ...
+    catalog.coverage.downlink.represented_modulations));
+expectedModulations = sort(["QPSK"; "16QAM"; "64QAM"; "256QAM"]);
+assert(isequal(actualModulations(:), expectedModulations(:)), ...
+    "Downlink coverage must span QPSK through 256QAM.");
+actualLayers = sort(double(catalog.coverage.downlink.represented_layers));
+assert(isequal(actualLayers(:), [1; 2; 3; 4]), ...
+    "Downlink coverage must include ranks 1 through 4.");
+actualULModulations = sort(string( ...
+    catalog.coverage.uplink.represented_modulations));
+assert(isequal(actualULModulations(:), expectedModulations(:)), ...
+    "Uplink coverage must span QPSK through 256QAM.");
+actualULLayers = sort(double(catalog.coverage.uplink.represented_layers));
+assert(isequal(actualULLayers(:), [1; 4]), ...
+    "Uplink coverage must include single-layer and rank-4 FRCs.");
+
+localAssertDL(localEntry(catalog.entries, ...
+    "dl_r_pdsch_1_2_1_fdd_tdlc300_100"), ...
+    "R.PDSCH.1-2.1 FDD", 1, 13064, 27456, 26208, ...
+    1, 12, 0, "TDL-C", 300, 100, 0.30, 1.1, ...
+    "5.2.2.1.1-3");
+localAssertDL(localEntry(catalog.entries, ...
+    "dl_r_pdsch_1_2_2_fdd_tdla30_10"), ...
+    "R.PDSCH.1-2.2 FDD", 2, 26120, 54912, 52416, ...
+    1, 12, 0, "TDL-A", 30, 10, 0.70, 17.6, ...
+    "5.2.2.1.1-4");
+localAssertDL(localEntry(catalog.entries, ...
+    "dl_r_pdsch_1_2_4_fdd_tdla30_10"), ...
+    "R.PDSCH.1-2.4 FDD", 4, 48168, 99840, 94848, ...
+    2, 24, -3, "TDL-A", 30, 10, 0.70, 15.6, ...
+    "5.2.3.1.1-6");
+atg16 = localEntry(catalog.entries, ...
+    "dl_r_pdsch_1_2_1_fdd_atg_awgn");
+localAssertDL(atg16, ...
+    "R.PDSCH.1-2.1 FDD", 1, 13064, 27456, 26208, ...
+    1, 12, 0, "AWGN", 0, 0, 0.70, 6.0, ...
+    "5.2.2.1.22-3");
+assert(string(atg16.standard.requirement_clause) == "5.2.2.1.22");
+assert(double(atg16.condition.frequency_offset_hz) == 220);
+
+rank3 = localEntry(catalog.entries, ...
+    "dl_r_pdsch_1_2_3_fdd_tdla30_10");
+localAssertDL(rank3, ...
+    "R.PDSCH.1-2.3 FDD", 3, 35856, 74880, 71136, ...
+    2, 24, -3, "TDL-A", 30, 10, 0.70, 11.0, ...
+    "5.2.3.1.1-5");
+assert(string(rank3.allocation.prb_bundling_size) == "wideband", ...
+    "Rank-3 Test 3-1 must retain the clause-specific wideband PRB bundling.");
+assert(isequal(double(rank3.dmrs.ports(:).'), 1000:1002), ...
+    "Rank-3 PDSCH must use DM-RS ports 1000 through 1002.");
+assert(double(rank3.mimo.tx_antennas) == 4 && ...
+    double(rank3.mimo.rx_antennas) == 4);
+
+localAssertFR1UL(localEntry(catalog.entries, ...
+    "ul_g_fr1_a4_8_tdlc300_100"), ...
+    "G-FR1-A4-8", "16QAM", 658, 9224, 2, 14400, ...
+    "A.4-2", "8.2.1", "8.2.1.2-1", ...
+    "TDL-C", 300, 100, 0, 1, 1, 2, 10.1);
+localAssertFR1UL(localEntry(catalog.entries, ...
+    "ul_g_fr1_a9_1_tdla30_10"), ...
+    "G-FR1-A9-1", "256QAM", 682.5, 18960, 3, 28800, ...
+    "A.9-1", "8.2.1", "8.2.1.2-1", ...
+    "TDL-A", 30, 10, 0, 1, 1, 2, 19.1);
+localAssertFR1UL(localEntry(catalog.entries, ...
+    "ul_g_fr1_a14_1_atg_awgn"), ...
+    "G-FR1-A14-1", "256QAM", 754, 21000, 3, 28800, ...
+    "A.14-1", "8.2.14", "8.2.14.2-1", ...
+    "AWGN", 0, 0, 200, 1, 1, 2, 19.4);
+rank4UL = localEntry(catalog.entries, ...
+    "ul_g_fr1_a11_1_tdla30_10_rank4");
+localAssertFR1UL(rank4UL, ...
+    "G-FR1-A11-1", "64QAM", 438, 36896, 5, 86400, ...
+    "A.11-1", "8.2.1", "8.2.1.2-1", ...
+    "TDL-A", 30, 10, 0, 4, 4, 4, 19.2);
+assert(isequal(double(rank4UL.dmrs.ports(:).'), 0:3));
+assert(string(rank4UL.mimo.precoding_scheme) == "codebook" && ...
+    double(rank4UL.mimo.tpmi_index) == 0, ...
+    "G-FR1-A11-1 must explicitly retain codebook TPMI index 0.");
+
+localAssertFR2UL(localEntry(catalog.entries, ...
+    "ul_g_fr2_a3_1_tdla30_300"), ...
+    "G-FR2-A3-1", "QPSK", 193, 2664, 14256, ...
+    "A.3-7", "TDL-A", 30, 300, -2.0);
+localAssertFR2UL(localEntry(catalog.entries, ...
+    "ul_g_fr2_a5_1_tdla30_75_no_ptrs"), ...
+    "G-FR2-A5-1", "64QAM", 567, 23568, 42768, ...
+    "A.5-3", "TDL-A", 30, 75, 13.1);
+
+ok = true;
+end
+
+function localAssertFR1UL(entry, frcId, modulation, rateNumerator, ...
+        tbs, codeBlocks, g, frcTable, requirementClause, requirementTable, ...
+        model, delaySpread, doppler, frequencyOffset, ...
+        layers, txAntennas, rxAntennas, requiredSNR)
+assert(string(entry.frc_id) == frcId);
+assert(string(entry.test_interface) == "conducted");
+assert(string(entry.standard.frc_definition_table) == frcTable);
+assert(string(entry.standard.requirement_clause) == requirementClause);
+assert(any(string(entry.standard.requirement_tables) == requirementTable));
+assert(string(entry.standard.snr_definition_clause) == "8.1.1");
+assert(string(entry.carrier.frequency_range) == "FR1");
+assert(double(entry.carrier.channel_bandwidth_mhz) == 5);
+assert(double(entry.carrier.subcarrier_spacing_khz) == 15);
+assert(double(entry.carrier.n_prb) == 25);
+assert(string(entry.allocation.mapping_type) == "A");
+assert(double(entry.allocation.start_symbol) == 0);
+assert(double(entry.allocation.symbol_length) == 14);
+assert(double(entry.allocation.data_bearing_symbols) == 12);
+assert(string(entry.coding.modulation) == modulation);
+localAssertNear(entry.coding.target_code_rate_numerator, rateNumerator);
+assert(double(entry.coding.target_code_rate_denominator) == 1024);
+assert(double(entry.coding.tbs_bits) == tbs);
+assert(double(entry.coding.code_blocks) == codeBlocks);
+assert(double(entry.coding.g_bits_per_slot) == g);
+assert(double(entry.dmrs.additional_position) == 1);
+assert(double(entry.dmrs.num_cdm_groups_without_data) == 2);
+assert(double(entry.dmrs.data_to_dmrs_epre_db) == -3);
+assert(string(entry.condition.model) == model);
+assert(double(entry.condition.delay_spread_ns) == delaySpread);
+assert(double(entry.condition.max_doppler_hz) == doppler);
+assert(double(entry.condition.frequency_offset_hz) == frequencyOffset);
+assert(double(entry.mimo.layers) == layers);
+assert(double(entry.mimo.tx_antennas) == txAntennas);
+assert(double(entry.mimo.rx_antennas) == rxAntennas);
+localAssertNear(entry.requirement.target_fraction, 0.70);
+localAssertNear(entry.requirement.required_snr_db, requiredSNR);
+end
+
+function localAssertDL(entry, frcId, layers, tbs, g, trackingG, ...
+        cdmGroups, dmrsRE, epre, model, delaySpread, doppler, ...
+        target, requiredSNR, requirementTable)
+assert(string(entry.frc_id) == frcId);
+assert(string(entry.standard.frc_definition_table) == "A.3.2.1.1-2");
+assert(any(string(entry.standard.requirement_tables) == requirementTable));
+assert(string(entry.coding.modulation) == "16QAM");
+assert(double(entry.coding.mcs_index) == 13);
+assert(double(entry.coding.target_code_rate_numerator) == 490);
+assert(double(entry.coding.target_code_rate_denominator) == 1024);
+assert(double(entry.mimo.layers) == layers);
+assert(double(entry.coding.tbs_bits) == tbs);
+assert(double(entry.coding.g_bits_per_slot) == g);
+assert(double(entry.coding.g_bits_tracking_slots) == trackingG);
+assert(double(entry.dmrs.num_cdm_groups_without_data) == cdmGroups);
+assert(double(entry.dmrs.dmrs_re_per_prb) == dmrsRE);
+assert(double(entry.dmrs.data_to_dmrs_epre_db) == epre);
+assert(string(entry.condition.model) == model);
+assert(double(entry.condition.delay_spread_ns) == delaySpread);
+assert(double(entry.condition.max_doppler_hz) == doppler);
+localAssertNear(entry.requirement.target_fraction, target);
+localAssertNear(entry.requirement.required_snr_db, requiredSNR);
+end
+
+function localAssertFR2UL(entry, frcId, modulation, rateNumerator, ...
+        tbs, g, frcTable, model, delaySpread, doppler, requiredSNR)
+assert(string(entry.frc_id) == frcId);
+assert(string(entry.test_interface) == "radiated_RIB");
+assert(string(entry.standard.frc_definition_table) == frcTable);
+assert(string(entry.standard.requirement_clause) == "11.2.2.1.2");
+assert(any(string(entry.standard.requirement_tables) == "11.2.2.1.2-1"));
+assert(string(entry.standard.snr_definition_clause) == "11.1.1");
+assert(string(entry.carrier.frequency_range) == "FR2");
+assert(string(entry.carrier.frequency_range_subrange) == "FR2-1");
+assert(double(entry.carrier.channel_bandwidth_mhz) == 50);
+assert(double(entry.carrier.subcarrier_spacing_khz) == 60);
+assert(double(entry.carrier.n_prb) == 66);
+assert(string(entry.allocation.mapping_type) == "B");
+assert(double(entry.allocation.start_symbol) == 0);
+assert(double(entry.allocation.symbol_length) == 10);
+assert(double(entry.allocation.data_bearing_symbols) == 9);
+assert(string(entry.coding.modulation) == modulation);
+assert(double(entry.coding.target_code_rate_numerator) == rateNumerator);
+assert(double(entry.coding.target_code_rate_denominator) == 1024);
+assert(double(entry.coding.tbs_bits) == tbs);
+assert(double(entry.coding.g_bits_per_slot) == g);
+assert(double(entry.dmrs.additional_position) == 0);
+assert(double(entry.dmrs.num_cdm_groups_without_data) == 2);
+assert(double(entry.dmrs.data_to_dmrs_epre_db) == -3);
+assert(~logical(entry.ptrs.enabled));
+assert(string(entry.ptrs.requirement_variant) == "No");
+assert(string(entry.condition.model) == model);
+assert(double(entry.condition.delay_spread_ns) == delaySpread);
+assert(double(entry.condition.max_doppler_hz) == doppler);
+localAssertNear(entry.requirement.target_fraction, 0.70);
+localAssertNear(entry.requirement.required_snr_db, requiredSNR);
+end
+
+function entry = localEntry(entries, id)
+matches = false(numel(entries), 1);
+for index = 1:numel(entries)
+    candidate = localItem(entries, index);
+    matches(index) = string(candidate.id) == string(id);
+end
+indices = find(matches);
+assert(numel(indices) == 1, ...
+    "Expected exactly one catalog record with id '%s'.", id);
+entry = localItem(entries, indices);
+end
+
+function item = localItem(sequence, index)
+if iscell(sequence)
+    item = sequence{index};
+else
+    item = sequence(index);
+end
+end
+
+function localAssertNear(actual, expected)
+actual = double(actual);
+expected = double(expected);
+tolerance = max(1e-12, 64 * eps(max(abs(expected), 1)));
+assert(isscalar(actual) && isfinite(actual) && ...
+    abs(actual - expected) <= tolerance, ...
+    "Value %.15g differs from expected %.15g.", actual, expected);
+end

@@ -1,0 +1,2 @@
+Suite: testSSBTimingResolver
+PASS in 4.174734 seconds.

@@ -3,6 +3,7 @@ function ok = testE2E_FastVsTruth()
 
 setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
+cfg = withCanonicalSchedulerTiming(cfg);
 cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;

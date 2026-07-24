@@ -1,0 +1,6 @@
+TestID,Procedure,PDCCHAbsSlot,SourceMu,TargetMu,K0,K1,K2,TargetAbsSlot,StartSymbol,ProcessingTimeSymbols,AvailableSymbols,ExpectedValid,ActualValid,ReasonCode,Status,IndexConvention
+TIMING-PDSCH-K0,PDSCH,0,1,1,1,NaN,NaN,1,2,0,15.014598540146,TRUE,TRUE,timing_relation_valid,PASS,zero_based_phy_indices
+TIMING-PUSCH-K2,PUSCH,0,1,1,NaN,NaN,2,2,0,0,27.014598540146,TRUE,TRUE,timing_relation_valid,PASS,zero_based_phy_indices
+TIMING-HARQ-K1,HARQ_ACK,0,1,1,NaN,4,NaN,4,0,1,55.043795620438,TRUE,TRUE,timing_relation_valid,PASS,zero_based_phy_indices
+TIMING-UNSUPPORTED-K2,PUSCH,0,1,1,NaN,NaN,3,-1,0,-1.42563868613139e-05,NaN,FALSE,FALSE,unsupported_k2,PASS,zero_based_phy_indices
+TIMING-CROSS-CC-K0,PDSCH,1,1,2,2,NaN,NaN,4,2,0,14.014598540146,TRUE,TRUE,timing_relation_valid,PASS,zero_based_phy_indices

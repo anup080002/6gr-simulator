@@ -1,0 +1,12 @@
+CaseID,ExpectedStatus,ExpectedError,ExpectedCombine,ExpectedHARQAction
+HARQ-RV-1,PASS,,0,reset_and_load_new_tb
+HARQ-RV-2,PASS,,1,position_aware_soft_combine
+HARQ-RV-3,PASS,,1,position_aware_soft_combine
+HARQ-RV-4,PASS,,1,position_aware_soft_combine
+HARQ-NEG-001,ERROR,HARQTBIdentityMismatch,0,reject
+HARQ-NEG-002,ERROR,HARQTBSMismatch,0,reject
+HARQ-NEG-003,ERROR,HARQCodingLayoutMismatch,0,reject
+HARQ-NEG-004,ERROR,HARQProcessIDOutOfRange,0,reject
+HARQ-NEG-005,ERROR,RVOutOfRange,0,reject
+HARQ-NEW-001,PASS,,0,reset_and_load_new_tb
+HARQ-CW2-001,PASS,,1,position_aware_soft_combine

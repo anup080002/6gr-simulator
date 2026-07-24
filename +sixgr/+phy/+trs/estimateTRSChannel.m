@@ -13,7 +13,8 @@ for ii = 1:numel(slotDet)
     try
         rxGrid = slotDet(ii).RxGrid;
         if isempty(rxGrid)
-            rxGrid = nrOFDMDemodulate(resources(ii).Carrier, slotDet(ii).CorrectedWaveform);
+            rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
+                resources(ii).Carrier, slotDet(ii).CorrectedWaveform);
         end
         [hest, noiseEst] = nrChannelEstimate(resources(ii).Carrier, rxGrid, ...
             resources(ii).Indices, resources(ii).Symbols);

@@ -234,8 +234,13 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
             trueChannel, logical(oracleTestMode));
         return;
     elseif estimationMethod == "wiener"
-        fwd = localSetFwdNameValue(fwd, "Interpolation", "linear");
+        % nrChannelEstimate exposes interpolation as an on/off policy. Do
+        % not forward an interpolation-kernel name (for example "linear"):
+        % R2026a rejects such values, while "on" is the documented
+        % semantic option used by supported releases.
+        fwd = localSetFwdNameValue(fwd, "Interpolation", "on");
         fwd = localSetFwdNameValue(fwd, "AveragingWindow", [0 0]);
+        info.InterpolationMethod = char(localResolveInterpolationMethod(fwd, estimationMethod));
     end
 
     if policy.UseFastMexEffective && ...
@@ -459,7 +464,7 @@ end
 if strlength(method) == 0
     switch string(estimationMethod)
         case "wiener"
-            method = "linear_zero_averaging_window_practical_smoothing";
+            method = "nrChannelEstimate_interpolation_on_zero_averaging_window";
         case "ideal"
             method = "true_channel_oracle_no_interpolation";
         otherwise

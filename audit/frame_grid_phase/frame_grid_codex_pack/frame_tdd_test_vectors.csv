@@ -1,0 +1,12 @@
+TestID,ReferenceSCS_kHz,ActiveSCS_kHz,Pattern1Periodicity_ms,P1_DLSlots,P1_DLSymbols,P1_ULSlots,P1_ULSymbols,Pattern2Periodicity_ms,P2_DLSlots,P2_DLSymbols,P2_ULSlots,P2_ULSymbols,DedicatedSlotIndex,DedicatedMode,DedicatedDLSymbols,DedicatedULSymbols,ExpectedValid,ExpectedSlotSymbolMap,ExpectedErrorID,Purpose
+TDD-001,30,30,5,6,4,3,2,,,,,,,,,,TRUE,DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDFFFFFFFFUU|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU,,Common pattern preserves eight flexible symbols in the mixed slot.
+TDD-002,30,30,5,6,4,3,2,,,,,,6,explicit,5,3,TRUE,DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDDDDFFFFFFUUU|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU,,Dedicated configuration changes only common-flexible symbols.
+TDD-003,15,15,1,0,0,0,0,,,,,,0,allDownlink,,,TRUE,DDDDDDDDDDDDDD,,All-flex common slot may be dedicated to all DL.
+TDD-004,15,15,1,0,0,0,0,,,,,,0,allUplink,,,TRUE,UUUUUUUUUUUUUU,,All-flex common slot may be dedicated to all UL.
+TDD-005,15,15,1,0,0,0,0,,,,,,0,explicit,3,4,TRUE,DDDFFFFFFFUUUU,,Explicit dedicated mixed slot leaves the middle symbols flexible.
+TDD-006,30,30,2.5,2,2,2,2,2.5,1,0,3,0,,,,,TRUE,DDDDDDDDDDDDDD|DDDDDDDDDDDDDD|DDFFFFFFFFFFUU|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU|DDDDDDDDDDDDDD|FFFFFFFFFFFFFF|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU|UUUUUUUUUUUUUU,,Pattern1 and pattern2 concatenate and their total period divides 20 ms.
+TDD-007,15,15,1,0,0,0,0,2,0,0,0,0,,,,,FALSE,,sixgr:phy:frame:TDDPeriodDoesNotDivide20ms,P1+P2=3 ms does not divide 20 ms.
+TDD-008,30,30,2.5,3,0,3,0,,,,,,,,,,FALSE,,sixgr:phy:frame:TDDPatternOverbooked,The configured full DL and UL slots exceed the five-slot period.
+TDD-009,120,30,5,1,0,1,0,,,,,,,,,,FALSE,,sixgr:phy:frame:ReferenceSCSExceedsActiveBWPSCS,Reference SCS must not exceed the configured BWP SCS.
+TDD-010,30,30,5,6,4,3,2,,,,,,6,allDownlink,,,FALSE,,sixgr:phy:frame:DedicatedOverridesNonFlexibleSymbol,Dedicated all-DL would contradict the two common fixed-UL symbols.
+TDD-011,60,60,1,0,0,0,0,,,,,,0,explicit,2,2,TRUE,DDFFFFFFFFUU|FFFFFFFFFFFF|FFFFFFFFFFFF|FFFFFFFFFFFF,,Extended CP uses 12 symbols and preserves eight flexible symbols.

@@ -56,9 +56,9 @@ classdef (Abstract) SchedulerBase < handle
 
     properties(SetAccess=protected)
         Carrier = []                 % nrCarrierConfig (optional helper)
-        SlotDuration_s (1,1) double = 1e-3
+        SlotDuration_s (1,1) double = NaN
         NSizeGrid (1,1) double = 0
-        SymbolsPerSlot (1,1) double = 14
+        SymbolsPerSlot (1,1) double = NaN
     end
 
     properties(Access=protected)
@@ -77,6 +77,13 @@ classdef (Abstract) SchedulerBase < handle
             if nargin < 1 || isempty(cfg)
                 error('sixgr:SchedulerBase:NoCfg','SchedulerBase requires cfg struct.');
             end
+            % Scheduler construction is the last normal production boundary
+            % before grants are materialized.  Attach the serializable
+            % canonical frame/CC/BWP context here when buildInternalConfig
+            % has not already done so.  The builder performs physical
+            % resolution once and never supplies legacy K/default rows.
+            cfg = sixgr.phy.frame.FrameRuntimeStateBuilder. ...
+                attachTimingContext(cfg);
             obj.Cfg = cfg;
 
             % Defaults from cfg
@@ -117,28 +124,23 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
 
-            % Build a carrier helper if 5G Toolbox is available
-            try
-                [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
-                obj.Carrier = carrier;
-                obj.NSizeGrid = double(carrier.NSizeGrid);
-                obj.SymbolsPerSlot = double(carrier.SymbolsPerSlot);
-
-                % Slot duration: 1ms / 2^mu where mu = log2(SCS/15k)
-                scs = double(carrier.SubcarrierSpacing);
-                mu = log2(max(scs,15)/15);
-                if isfinite(mu) && mu >= 0
-                    obj.SlotDuration_s = 1e-3 / (2^mu);
-                else
-                    obj.SlotDuration_s = 1e-3;
-                end
-            catch
-                % Leave defaults; scheduler can still run with budgets passed in.
-                obj.Carrier = [];
-                obj.NSizeGrid = double(sixgr.util.structGet(cfg,"phy.carrier.NSizeGrid",66));
-                obj.SymbolsPerSlot = 14;
-                obj.SlotDuration_s = 1e-3;
+            % The scheduler consumes the already attached canonical frame
+            % state. A carrier construction error is a configuration or
+            % Toolbox dependency failure and must not become a mu-0
+            % scheduler with invented 14-symbol timing.
+            [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
+            obj.Carrier = carrier;
+            obj.NSizeGrid = double(carrier.NSizeGrid);
+            numerology = sixgr.util.structGet( ...
+                cfg, "phy.frameStructure.Numerology", []);
+            if ~(isstruct(numerology) && isscalar(numerology) && ...
+                    isfield(numerology, "SymbolsPerSlot") && ...
+                    isfield(numerology, "SlotDurationSeconds"))
+                error("sixgr:SchedulerBase:MissingCanonicalNumerology", ...
+                    "Scheduler construction requires the attached canonical numerology.");
             end
+            obj.SymbolsPerSlot = double(numerology.SymbolsPerSlot);
+            obj.SlotDuration_s = double(numerology.SlotDurationSeconds);
 
             if ~alphaExplicit
                 % PF implementations normally average over O(100ms), not a
@@ -1131,6 +1133,7 @@ classdef (Abstract) SchedulerBase < handle
             if ~isfield(grantOut, "Direction") || strlength(string(grantOut.Direction)) == 0
                 grantOut.Direction = obj.Direction;
             end
+            grantOut = obj.attachCanonicalTimingDecision(grantOut);
             grantOut = obj.finalizeExactPHYFeasibility(grantOut);
             grantSeed = grantOut;
             if isfield(grantSeed, "PHYGrant")
@@ -1142,6 +1145,37 @@ classdef (Abstract) SchedulerBase < handle
                 "HARQContext", sixgr.util.structGet(grantOut, "HARQ", struct()));
             grantOut.PHYGrant = phyGrant;
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
+        end
+
+        function grantOut = attachCanonicalTimingDecision(obj, grantIn)
+            % Attach the authoritative CC/BWP-aware K0/K1/K2 decision.
+            grantOut = grantIn;
+            timing = sixgr.phy.frame.TimingRelationEngine. ...
+                resolveProductionGrant(obj.Cfg, grantOut);
+            grantOut.TimingDecision = timing;
+            grantOut.SchedulingCCID = timing.SchedulingCCID;
+            grantOut.ScheduledCCID = timing.ScheduledCCID;
+            grantOut.CarrierIndicator = timing.CarrierIndicator;
+            grantOut.SourceBWPID = timing.SourceBWPID;
+            grantOut.TargetBWPID = timing.TargetBWPID;
+            grantOut.BWPId = localNumericIdentifierOrNaN( ...
+                timing.TargetBWPID);
+            grantOut.K0 = timing.K0;
+            grantOut.K1 = timing.K1;
+            grantOut.K2 = timing.K2;
+            grantOut.ControlAbsoluteSlot = ...
+                double(timing.ControlAbsoluteSlot);
+            grantOut.ScheduledAbsoluteSlot = ...
+                double(timing.DataAbsoluteSlot);
+            grantOut.HARQFeedbackAbsoluteSlot = ...
+                double(timing.FeedbackAbsoluteSlot);
+            if ~timing.Valid
+                grantOut.Valid = false;
+                grantOut.GrantBlocker = char(timing.ReasonCode);
+                error("sixgr:SchedulerBase:TimingDecisionRejected", ...
+                    "Canonical production timing rejected the grant: %s", ...
+                    char(string(timing.ReasonCode)));
+            end
         end
 
         function grantOut = finalizeExactPHYFeasibility(obj, grantIn)
@@ -1176,10 +1210,12 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
             prbSet = double(prbSet(:).');
-            symAlloc = double(sixgr.util.structGet(grantOut, "SymbolAllocation", [0 obj.SymbolsPerSlot]));
+            symAlloc = double(sixgr.util.structGet( ...
+                grantOut, "SymbolAllocation", []));
             symAlloc = double(symAlloc(:).');
             if numel(symAlloc) < 2
-                symAlloc = [0 obj.SymbolsPerSlot];
+                error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+                    "Final PHY grant requires an explicit SymbolAllocation.");
             end
             symAlloc = round(symAlloc(1:2));
 
@@ -1326,6 +1362,14 @@ classdef (Abstract) SchedulerBase < handle
             if nargin < 2 || isempty(grant) || ~isstruct(grant)
                 return;
             end
+            timingDecision = sixgr.util.structGet( ...
+                grant, "TimingDecision", struct());
+            if ~(isstruct(timingDecision) && isscalar(timingDecision) && ...
+                    logical(sixgr.util.structGet( ...
+                    timingDecision, "Valid", false)))
+                error("sixgr:SchedulerBase:MissingTimingDecision", ...
+                    "DCI packing requires a valid canonical TimingDecision.");
+            end
             if logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false)) && ...
                     ~logical(sixgr.util.structGet(grant, "ExactPHYFeasible", false))
                 error("sixgr:SchedulerBase:InfeasibleGrantDCI", ...
@@ -1370,15 +1414,28 @@ classdef (Abstract) SchedulerBase < handle
                 sixgr.util.structGet(harq, "HarqID", []), 0))));
             dai = max(0, min(3, round(localFirstFiniteScalar( ...
                 sixgr.util.structGet(grant, "DAI", []), 1))));
-            k1 = max(0, min(7, round(localFirstFiniteScalar( ...
-                sixgr.util.structGet(grant, "K1", []), 4))));
-            k2 = max(0, min(7, round(localFirstFiniteScalar( ...
-                sixgr.util.structGet(grant, "K2", []), 1))));
-            sliv = localTimeDomainAssignIndex(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]), obj.SymbolsPerSlot);
+            direction = upper(string(sixgr.util.structGet( ...
+                grant, "Direction", obj.Direction)));
+            if direction == "DL"
+                k1 = localRequiredDCITimingInteger(grant, "K1");
+                k2 = NaN;
+            else
+                k1 = NaN;
+                k2 = localRequiredDCITimingInteger(grant, "K2");
+            end
+            symbolAllocation = sixgr.util.structGet( ...
+                grant, "SymbolAllocation", []);
+            if ~(isnumeric(symbolAllocation) && ...
+                    numel(symbolAllocation) == 2 && ...
+                    all(isfinite(double(symbolAllocation(:)))))
+                error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+                    "DCI packing requires an explicit two-value SymbolAllocation.");
+            end
+            sliv = localTimeDomainAssignIndex( ...
+                symbolAllocation, obj.SymbolsPerSlot);
             tdaIndex = max(0, min(15, round(double(sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", ...
                 sixgr.util.structGet(grant, "TDRAIndex", 0))))));
 
-            direction = upper(string(sixgr.util.structGet(grant, "Direction", obj.Direction)));
             fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
             pdcchCfg = struct("NSizeGrid", double(nRB));
             dciFields = localBuildSupportedDCIFields(obj.Cfg, grant, direction, fmt, riv, tdaIndex, ...
@@ -1583,15 +1640,30 @@ end
 function idx = localTimeDomainAssignIndex(symAlloc, symbolsPerSlot)
 % TS 38.214 SLIV encoding for a start symbol S and length L.
 if nargin < 2 || isempty(symbolsPerSlot)
-    symbolsPerSlot = 14;
+    error("sixgr:SchedulerBase:MissingSymbolsPerSlot", ...
+        "DCI time-domain assignment requires canonical SymbolsPerSlot.");
 end
-N = max(1, min(14, round(double(symbolsPerSlot))));
-sa = double(symAlloc(:).');
-if numel(sa) < 2
-    sa = [0 N];
+if ~(isnumeric(symbolsPerSlot) && isreal(symbolsPerSlot) && ...
+        isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
+        symbolsPerSlot == fix(symbolsPerSlot) && ...
+        any(double(symbolsPerSlot) == [12 14]))
+    error("sixgr:SchedulerBase:InvalidSymbolsPerSlot", ...
+        "Canonical NR SymbolsPerSlot must be 12 or 14.");
 end
-s = max(0, min(N - 1, round(sa(1))));
-l = max(1, min(N - s, round(sa(2))));
+N = double(symbolsPerSlot);
+if ~(isnumeric(symAlloc) && isreal(symAlloc) && numel(symAlloc) == 2)
+    error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+        "DCI time-domain assignment requires explicit [start,count] symbols.");
+end
+sa = reshape(double(symAlloc), 1, 2);
+if any(~isfinite(sa)) || any(sa ~= fix(sa)) || ...
+        sa(1) < 0 || sa(2) < 1 || sum(sa) > N
+    error("sixgr:SchedulerBase:InvalidSymbolAllocation", ...
+        "DCI SymbolAllocation must be integer [start,count] within " + ...
+        "the canonical %d-symbol slot.", N);
+end
+s = sa(1);
+l = sa(2);
 if (l - 1) <= floor(N / 2)
     idx = N * (l - 1) + s;
 else
@@ -1613,12 +1685,14 @@ tf = false;
 if upper(string(direction)) ~= "UL"
     return;
 end
-sa = [0 14];
-if nargin >= 2 && ~isempty(symAlloc)
-    sa = double(symAlloc(:).');
+if nargin < 2 || isempty(symAlloc)
+    tf = true;
+    return;
 end
-if numel(sa) < 2
-    sa = [0 14];
+sa = double(symAlloc(:).');
+if numel(sa) < 2 || any(~isfinite(sa(1:2)))
+    tf = true;
+    return;
 end
 startSym = max(0, round(double(sa(1))));
 nSym = max(0, round(double(sa(2))));
@@ -1670,7 +1744,8 @@ end
 
 function xOverhead = localResolveTBSXOverhead(direction, cfg, symAlloc)
 if nargin < 3 || isempty(symAlloc)
-    symAlloc = [0 14];
+    error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+        "Exact TBS overhead resolution requires explicit [start,count] symbols.");
 end
 if upper(string(direction)) == "UL"
     [xOverhead, explicit] = localFirstFiniteScalarWithPresence( ...
@@ -1797,19 +1872,13 @@ if direction == "DL"
 else
     fields.grant_type = "PUSCH";
 end
-symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 14]));
-if numel(symAlloc) >= 2 && all(isfinite(symAlloc(1:2)))
-    fields.symbol_start = round(double(symAlloc(1)));
-    fields.num_symbols = round(double(symAlloc(2)));
-else
-    if direction == "DL"
-        fields.symbol_start = 2;
-        fields.num_symbols = 12;
-    else
-        fields.symbol_start = 0;
-        fields.num_symbols = 14;
-    end
+symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
+if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
+    error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+        "Supported DCI fields require an explicit SymbolAllocation.");
 end
+fields.symbol_start = round(double(symAlloc(1)));
+fields.num_symbols = round(double(symAlloc(2)));
 
 switch fmt
     case "1_0"
@@ -2170,18 +2239,35 @@ end
 end
 
 function symAlloc = localDefaultSymbolAllocation(cfg, direction, symbolsPerSlot)
-symbolsPerSlot = max(1, round(double(symbolsPerSlot)));
-if strcmpi(char(string(direction)), 'DL')
-    pdcchSymbols = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.duration", ...
-        sixgr.util.structGet(cfg, "phy.pdcch.numSymbols", ...
-        sixgr.util.structGet(cfg, "ctrl6gr.CORESET.DurationSymbols", 1))));
-    if ~(isscalar(pdcchSymbols) && isfinite(pdcchSymbols) && pdcchSymbols >= 0)
-        pdcchSymbols = 1;
-    end
-    startSym = min(max(0, ceil(pdcchSymbols)), max(0, symbolsPerSlot - 1));
-    symAlloc = [double(startSym) double(max(1, symbolsPerSlot - startSym))];
+direction = upper(string(direction));
+if direction == "DL"
+    base = "phy.pdsch";
 else
-    symAlloc = [0 double(symbolsPerSlot)];
+    base = "phy.pusch";
+end
+symAlloc = sixgr.util.structGet(cfg, base + ".symbolAllocation", []);
+if isempty(symAlloc)
+    symAlloc = sixgr.util.structGet(cfg, base + ".SymbolAllocation", []);
+end
+if isempty(symAlloc)
+    startSymbol = sixgr.util.structGet(cfg, base + ".startSymbol", []);
+    numSymbols = sixgr.util.structGet(cfg, base + ".numSymbols", []);
+    if ~isempty(startSymbol) && ~isempty(numSymbols)
+        symAlloc = [startSymbol, numSymbols];
+    end
+end
+if ~(isnumeric(symAlloc) && isreal(symAlloc) && numel(symAlloc) == 2 && ...
+        all(isfinite(double(symAlloc(:)))) && ...
+        all(double(symAlloc(:)) == fix(double(symAlloc(:)))))
+    error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+        "%s scheduling requires an explicit configured SymbolAllocation.", ...
+        direction);
+end
+symAlloc = reshape(double(symAlloc), 1, 2);
+if symAlloc(1) < 0 || symAlloc(2) < 1 || ...
+        sum(symAlloc) > double(symbolsPerSlot)
+    error("sixgr:SchedulerBase:InvalidSymbolAllocation", ...
+        "%s SymbolAllocation is outside the configured slot.", direction);
 end
 end
 
@@ -2796,7 +2882,8 @@ end
 function key = localNRECacheKey(direction, nLayers, nPRB, symAlloc)
 sa = double(symAlloc(:).');
 if numel(sa) < 2
-    sa = [0 14];
+    error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+        "Exact NRE cache keys require explicit [start,count] symbols.");
 end
 
 dirToken = upper(char(string(direction)));
@@ -2859,7 +2946,8 @@ end
 
 sa = double(symAlloc(:).');
 if numel(sa) < 2
-    sa = [0 14];
+    error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
+        "Grant mapping finalization requires explicit [start,count] symbols.");
 end
 startSym = max(0, round(double(sa(1))));
 typeAPos = localResolveTypeAPosition(cfg, root);
@@ -2941,7 +3029,7 @@ if any(round(prbSet) >= nGrid)
     return;
 end
 
-symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", [0 obj.SymbolsPerSlot]));
+symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
 symAlloc = double(symAlloc(:).');
 if numel(symAlloc) < 2 || any(~isfinite(symAlloc(1:2)))
     reason = "invalid_symbol_allocation";
@@ -3016,4 +3104,23 @@ if nSym < 1
     return;
 end
 symbols = startSym:(startSym + nSym - 1);
+end
+
+function value = localNumericIdentifierOrNaN(input)
+value = str2double(string(input));
+if ~(isscalar(value) && isfinite(value) && value >= 0 && ...
+        value == fix(value))
+    value = NaN;
+end
+end
+
+function value = localRequiredDCITimingInteger(grant, field)
+raw = sixgr.util.structGet(grant, field, []);
+if ~(isnumeric(raw) && isreal(raw) && isscalar(raw) && ...
+        isfinite(double(raw)) && double(raw) >= 0 && ...
+        double(raw) == fix(double(raw)))
+    error("sixgr:SchedulerBase:MissingTimingDecisionValue", ...
+        "Canonical TimingDecision did not provide required %s.", field);
+end
+value = double(raw);
 end

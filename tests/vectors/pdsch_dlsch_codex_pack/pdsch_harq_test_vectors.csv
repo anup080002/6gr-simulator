@@ -1,0 +1,12 @@
+CaseID,HARQProcessID,TransmissionIndex,NDI,RV,NewData,SameTBIdentity,SameTBS,SameCodeBlockLayout,ExpectedCombine,ExpectedStatus,ExpectedError
+HARQ-RV-1,3,0,1,0,1,1,1,1,0,PASS,
+HARQ-RV-2,3,1,1,2,0,1,1,1,1,PASS,
+HARQ-RV-3,3,2,1,3,0,1,1,1,1,PASS,
+HARQ-RV-4,3,3,1,1,0,1,1,1,1,PASS,
+HARQ-NEG-001,3,1,1,2,0,0,1,1,0,ERROR,HARQTBIdentityMismatch
+HARQ-NEG-002,3,1,1,2,0,1,0,1,0,ERROR,HARQTBSMismatch
+HARQ-NEG-003,3,1,1,2,0,1,1,0,0,ERROR,HARQCodingLayoutMismatch
+HARQ-NEG-004,17,0,1,0,1,1,1,1,0,ERROR,HARQProcessIDOutOfRange
+HARQ-NEG-005,3,1,1,4,0,1,1,1,0,ERROR,RVOutOfRange
+HARQ-NEW-001,3,4,0,0,1,0,1,1,0,PASS,
+HARQ-CW2-001,7,1,1|1,2|3,0,1,1,1,1,PASS,

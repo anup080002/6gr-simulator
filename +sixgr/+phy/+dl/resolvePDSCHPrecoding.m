@@ -2,8 +2,8 @@ function prec = resolvePDSCHPrecoding(pdsch, cfg, varargin)
 %RESOLVEPDSCHPRECODING Normalize the explicit PDSCH precoding contract.
 %
 %   PREC = sixgr.phy.dl.resolvePDSCHPrecoding(PDSCH, CFG) keeps the 1x1
-%   path on a direct map and enables explicit wideband precoding for
-%   multi-layer or explicitly configured transmissions.
+%   path on a direct map and enables explicit wideband or PRG-bundled
+%   precoding for multi-layer or explicitly configured transmissions.
 
 ip = inputParser;
 ip.addParameter("PrecodingMatrix", [], @(x) isempty(x) || isnumeric(x));
@@ -37,10 +37,14 @@ prec.BeamIndices = [];
 prec.MatrixRows = max(nLayers, 1);
 prec.MatrixCols = max(nLayers, 1);
 prec.MatrixPorts = eye(max(nLayers, 1));
+prec.MatrixPortsPerPRG = reshape(eye(max(nLayers, 1)), ...
+    [max(nLayers, 1), max(nLayers, 1), 1]);
 prec.MatrixLogicalPorts = prec.MatrixPorts;
+prec.MatrixLogicalPortsPerPRG = prec.MatrixPortsPerPRG;
 prec.MatrixNR = reshape(eye(max(nLayers, 1)), [max(nLayers, 1), max(nLayers, 1), 1]);
 prec.MatrixLogicalNR = prec.MatrixNR;
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+prec.NumPRG = 1;
 prec.HybridBeamformingApplied = false;
 prec.HybridElementDomainApplied = false;
 prec.HybridAnalogPrecoderMatrix = [];
@@ -127,13 +131,8 @@ if isempty(Wcfg)
         source = "identity";
     end
 else
-    Wcfg = localSqueezeSingletonPage(Wcfg);
-    if ~ismatrix(Wcfg)
-        error("sixgr:phy:dl:PDSCHPrecoding:PRGBundleUnsupported", ...
-            "Only wideband 2-D PDSCH precoding matrices are supported in this release.");
-    end
-    [~, precInfo] = sixgr.phy.mimo.precoder(eye(nLayers), Wcfg, "NormalizeW", normalizeW);
-    Wports = double(precInfo.W);
+    WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW);
+    Wports = WportsPerPRG(:, :, 1);
     if isstruct(pmiMeta) && isfield(pmiMeta, "Source") && strlength(string(pmiMeta.Source)) > 0
         source = string(pmiMeta.Source);
     else
@@ -159,7 +158,19 @@ if ~isempty(requestedPorts) && size(Wports, 1) ~= requestedPorts
         size(Wports, 1), requestedPorts);
 end
 WlogicalPorts = Wports;
+if ~exist("WportsPerPRG", "var")
+    WportsPerPRG = reshape(Wports, [size(Wports, 1), size(Wports, 2), 1]);
+end
+WlogicalPortsPerPRG = WportsPerPRG;
+if size(WportsPerPRG, 3) > 1 && ...
+        logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+    error("sixgr:phy:dl:PDSCHPrecoding:PRGHybridUnsupported", ...
+        "PRG-bundled PDSCH precoding is not supported with hybrid element-domain expansion.");
+end
 [Wports, hybridMeta] = localApplyHybridElementDomainPrecoder(WlogicalPorts, arch, nLayers);
+if size(WlogicalPortsPerPRG, 3) == 1
+    WportsPerPRG = reshape(Wports, [size(Wports, 1), size(Wports, 2), 1]);
+end
 if logical(sixgr.util.structGet(hybridMeta, "Applied", false))
     source = string(source) + "+hybrid-rf-element-domain";
 end
@@ -178,7 +189,11 @@ if exist("nrPDSCHPrecode", "file") ~= 2
 end
 
 prec.Active = true;
-prec.Mode = "explicit-wideband";
+if size(WportsPerPRG, 3) > 1
+    prec.Mode = "explicit-prg-bundled";
+else
+    prec.Mode = "explicit-wideband";
+end
 prec.Source = source;
 prec.ApplicationStage = "nrPDSCHPrecode_before_RE_mapping";
 prec.NormalizeW = normalizeW;
@@ -188,10 +203,14 @@ prec.NumWaveformColumns = size(Wports, 1);
 prec.MatrixRows = size(Wports, 1);
 prec.MatrixCols = size(Wports, 2);
 prec.MatrixPorts = Wports;
+prec.MatrixPortsPerPRG = WportsPerPRG;
 prec.MatrixLogicalPorts = WlogicalPorts;
-prec.MatrixNR = reshape(Wports.', [nLayers, size(Wports, 1), 1]);
-prec.MatrixLogicalNR = reshape(WlogicalPorts.', [nLayers, size(WlogicalPorts, 1), 1]);
+prec.MatrixLogicalPortsPerPRG = WlogicalPortsPerPRG;
+prec.MatrixNR = permute(WportsPerPRG, [2 1 3]);
+prec.MatrixLogicalNR = permute(WlogicalPortsPerPRG, [2 1 3]);
 prec.ChannelMatrixNR = permute(prec.MatrixNR, [2 1 3]);
+prec.NumPRG = size(WportsPerPRG, 3);
+prec.WidebandOnly = prec.NumPRG == 1;
 prec.HybridBeamformingApplied = logical(sixgr.util.structGet(hybridMeta, "Applied", false));
 prec.HybridElementDomainApplied = logical(sixgr.util.structGet(hybridMeta, "ElementDomainApplied", false));
 prec.HybridAnalogPrecoderMatrix = sixgr.util.structGet(hybridMeta, "AnalogPrecoderMatrix", []);
@@ -200,6 +219,7 @@ prec.HybridElementToPortMatrix = sixgr.util.structGet(hybridMeta, "ElementToPort
 prec.HybridEquation = string(sixgr.util.structGet(hybridMeta, "Equation", ""));
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, Wports, nLayers);
+prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers);
 if isstruct(pmiMeta)
     if isfield(pmiMeta, "PMI")
         prec.PMI = double(pmiMeta.PMI);
@@ -341,6 +361,26 @@ prec.TotalPowerPreservationEquation = "trace((alpha*W)*(alpha*W)'')=NumLayers, a
 prec.TotalPowerPreservingTrace = logical(isfinite(traceWWH) && abs(traceWWH - traceTarget) <= 1e-12 * max(1, traceTarget));
 prec.TotalPowerPreservingNormalizedTrace = logical(isfinite(normalizedTrace) && abs(normalizedTrace - traceTarget) <= 1e-12 * max(1, traceTarget));
 end
+
+function prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers)
+nPRG = size(WportsPerPRG, 3);
+traceValues = zeros(1, nPRG);
+gramErrors = zeros(1, nPRG);
+for prg = 1:nPRG
+    W = double(WportsPerPRG(:, :, prg));
+    traceValues(prg) = real(trace(W * W'));
+    gramErrors(prg) = norm(W' * W - eye(size(W, 2)), "fro");
+end
+target = double(nLayers);
+tolerance = 1e-12 * max(1, target);
+prec.PRGPrecoderTraceWWH = double(traceValues);
+prec.PRGPrecoderLayerGramFroError = double(gramErrors);
+prec.PRGPrecoderTraceTarget = target;
+prec.PRGPrecoderTraceMaxError = double(max(abs(traceValues - target), [], "all"));
+prec.AllPRGTotalPowerPreserving = logical(all(abs(traceValues - target) <= tolerance));
+prec.PRGBundleContractVersion = "PDSCHPRGPrecoding/v1";
+end
+
 function nCodewords = localNumCodewords(pdsch, nLayers)
 nCodewords = 1 + (nLayers > 4);
 try
@@ -370,7 +410,7 @@ if isempty(Wcfg)
     return;
 end
 Wcfg = localSqueezeSingletonPage(Wcfg);
-if ~ismatrix(Wcfg)
+if ndims(Wcfg) > 3
     return;
 end
 sz = size(Wcfg);
@@ -381,7 +421,7 @@ end
 function nPorts = localExplicitMatrixPortCount(Wcfg, nLayers)
 nPorts = [];
 Wcfg = localSqueezeSingletonPage(Wcfg);
-if ~ismatrix(Wcfg)
+if ndims(Wcfg) > 3
     return;
 end
 sz = size(Wcfg);
@@ -392,6 +432,33 @@ elseif sz(1) == nLayers && sz(2) >= nLayers
 end
 if ~isempty(nPorts)
     nPorts = max(1, round(double(nPorts)));
+end
+end
+
+function WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW)
+Wcfg = localSqueezeSingletonPage(Wcfg);
+if ndims(Wcfg) > 3
+    error("sixgr:phy:dl:PDSCHPrecoding:BadPRGMatrixRank", ...
+        "Explicit PDSCH precoding must be a 2-D matrix or a 3-D PRG matrix array.");
+end
+sz = size(Wcfg);
+if sz(2) == nLayers && sz(1) >= nLayers
+    WportsPerPRG = double(Wcfg);
+elseif sz(1) == nLayers && sz(2) >= nLayers
+    WportsPerPRG = permute(double(Wcfg), [2 1 3]);
+else
+    error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixLayerMismatch", ...
+        "Explicit PDSCH precoding must have one matrix dimension equal to NumLayers=%d. Got %s.", ...
+        nLayers, mat2str(size(Wcfg)));
+end
+if ismatrix(WportsPerPRG)
+    WportsPerPRG = reshape(WportsPerPRG, ...
+        [size(WportsPerPRG, 1), size(WportsPerPRG, 2), 1]);
+end
+for prg = 1:size(WportsPerPRG, 3)
+    [~, pageInfo] = sixgr.phy.mimo.precoder(eye(nLayers), ...
+        WportsPerPRG(:, :, prg), "NormalizeW", normalizeW);
+    WportsPerPRG(:, :, prg) = double(pageInfo.W);
 end
 end
 

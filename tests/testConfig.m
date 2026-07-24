@@ -26,7 +26,11 @@ assert(double(sixgr.util.structGet(cfgLinkFull, "channel.doppler_Hz", 0)) > 0, "
 cfgConcrete = sixgr.config.defaultConfig();
 cfgConcrete.channel.model = "TDL-C";
 cfgConcrete = sixgr.config.normalizeConfig(cfgConcrete);
-sixgr.config.validateConfig(cfgConcrete);
+[cfgConcrete, defaultFrame] = sixgr.config.validateConfig(cfgConcrete);
+assert(cfgConcrete.phy.prach.configurationIndex == 0 && ...
+    ~isempty(defaultFrame.PRACHTiming.Occasions) && ...
+    all(defaultFrame.PRACHTiming.Occasions.ULAvailable), ...
+    "The default enabled PRACH configuration must resolve only onto UL-available TDD symbols.");
 assert(strcmpi(char(string(cfgConcrete.channel.model)), "TDL"), "Concrete TDL profile must normalize to bare TDL model.");
 assert(strcmpi(char(string(cfgConcrete.channel.type)), "TDL"), "Concrete TDL profile must keep channel.type aligned with channel.model.");
 assert(strcmpi(char(string(cfgConcrete.channel.tdlProfile)), "TDL-C"), "Concrete TDL profile must be preserved in channel.tdlProfile.");

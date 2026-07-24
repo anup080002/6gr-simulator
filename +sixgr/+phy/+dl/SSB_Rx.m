@@ -14,7 +14,24 @@ function [rxSSBGrid, sync] = SSB_Rx(rxWaveform, cfg, varargin)
 % Parse inputs
 p = inputParser;
 p.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
+p.addParameter('TimingOnly', false, @(x) islogical(x) && isscalar(x));
 p.parse(varargin{:});
+
+% Burst parameters use the same canonical timing object as the transmitter.
+blockPattern = char(sixgr.util.structGet(cfg,'phy.ssb.blockPattern','Case B'));
+timing = sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(cfg);
+Lmax = double(timing.Lmax);
+if p.Results.TimingOnly
+    rxSSBGrid = complex(zeros(0, 0, 0));
+    sync = struct( ...
+        'TimingOnly', true, ...
+        'TimingStatus', 'canonical_timing_resolved_without_waveform', ...
+        'BlockPattern', char(timing.BlockPattern), ...
+        'Lmax', Lmax, ...
+        'SSBTiming', timing);
+    return;
+end
+
 fs = p.Results.SampleRate_Hz;
 if isempty(fs)
     fs = sixgr.util.structGet(cfg,'phy.sampleRate_Hz',[]);
@@ -28,14 +45,11 @@ if isvector(rxWaveform)
     rxWaveform = rxWaveform(:);
 end
 
-% Burst parameters
-blockPattern = char(sixgr.util.structGet(cfg,'phy.ssb.blockPattern','Case B'));
-Lmax = double(sixgr.util.structGet(cfg,'phy.ssb.Lmax',8));
-
 % Coarse frequency correction + NID2 detection
 try
     [rxF, fOffHz, NID2, finfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, fs, ...
-        'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]));
+        'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]), ...
+        'SSBTiming', timing);
 catch ME
     error('sixgr:phy:dl:SSB_Rx:CellSearchFailed', ...
         'PSS/NID2 frequency search failed without transmitter-cell-ID oracle: %s', ME.message);
@@ -44,7 +58,8 @@ NID2 = mod(double(NID2),3);
 
 % Timing estimation (PSS-based)
 try
-    [tOff, tinfo] = sixgr.phy.sync.timingEstimate(rxF, NID2, blockPattern, fs);
+    [tOff, tinfo] = sixgr.phy.sync.timingEstimate( ...
+        rxF, NID2, blockPattern, fs, 'SSBTiming', timing);
 catch
     tOff = NaN;
     tinfo = struct('UsedFallback',true);
@@ -63,13 +78,23 @@ rxSync = rxF(startIdx:end, :);
 
 % OFDM demodulation at SSB numerology (nrbSSB=20)
 nrbSSB = 20;
-scsSSB = double(sixgr.util.structGet(cfg, 'phy.ssb.scs_kHz', ...
-    localSSBSubcarrierSpacing_kHz(blockPattern)));
+scsSSB = double(timing.SSBSubcarrierSpacingKHz);
 nSlot = 0;
 
-% Use the numeric-argument syntax from MathWorks examples for maximum
-% compatibility across 5G Toolbox releases.
-rxGrid = nrOFDMDemodulate(rxSync, nrbSSB, scsSSB, nSlot, 'SampleRate', fs);
+ssbCarrier = nrCarrierConfig;
+ssbCarrier.NCellID = 0;
+ssbCarrier.NSizeGrid = nrbSSB;
+ssbCarrier.NStartGrid = 0;
+ssbCarrier.SubcarrierSpacing = scsSSB;
+ssbCarrier.CyclicPrefix = "normal";
+ssbCarrier.NFrame = 0;
+ssbCarrier.NSlot = nSlot;
+ssbSampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+    ssbCarrier, "SampleRate", fs);
+rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
+    ssbCarrier, rxSync, ...
+    "Nfft", ssbSampling.Nfft, ...
+    "SampleRate", ssbSampling.SampleRateHz);
 
 % Normalize dimensionality: force 3-D grid (Nsc-by-Nsym-by-Nr)
 if ndims(rxGrid) == 2
@@ -118,6 +143,7 @@ sync.UsedConfiguredCellID = false;
 sync.FreqInfo = finfo;
 sync.TimingInfo = tinfo;
 sync.SSSInfo = sssInfo;
+sync.SSBTiming = timing;
 
 end
 
@@ -161,24 +187,4 @@ info.MetricMargin = double(margin);
 info.Metrics = metrics;
 info.SearchSpaceSize = 336;
 info.Detector = 'sss_correlation_all_nid1_candidates';
-end
-
-function scs = localSSBSubcarrierSpacing_kHz(blockPattern)
-%localSSBSubcarrierSpacing_kHz  Map SS burst pattern to SCS (kHz)
-bp = upper(strtrim(char(blockPattern)));
-switch bp
-    case {'CASE A','A'}
-        scs = 15;
-    case {'CASE B','B'}
-        scs = 30;
-    case {'CASE C','C'}
-        scs = 30;
-    case {'CASE D','D'}
-        scs = 120;
-    case {'CASE E','E'}
-        scs = 240;
-    otherwise
-        % Conservative default for FR1
-        scs = 30;
-end
 end

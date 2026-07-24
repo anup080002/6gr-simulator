@@ -51,6 +51,10 @@ compositeTx.GridSlots = compositeSlots;
 compositeTx.Carrier = srsCfg.ToolboxCarrier;
 compositeTx.SRS = srsCfg.ToolboxSRS;
 compositeTx.OFDMInfo = ofdmInfo;
+compositeTx.OFDMSamplingResolution = sixgr.util.structGet( ...
+    ofdmInfo, "OFDMSamplingResolution", struct());
+compositeTx.OFDMWindowingSamples = double(sixgr.util.structGet( ...
+    ofdmInfo, "OFDMWindowingSamples", 0));
 compositeTx.ConfigHash = string(srsCfg.ConfigHash);
 compositeTx.ExpectedRECount = sum(arrayfun(@(b) height(b.Mapping.ResourceMappingTable), bundles));
 compositeTx.ExpectedRBCount = double(srsCfg.NumRB);
@@ -114,6 +118,10 @@ out.Mode = char(mode);
 out.CompositeGridSlots = compositeSlots;
 out.CompositeWaveform = compositeWaveform;
 out.CompositeOFDMInfo = ofdmInfo;
+out.OFDMSamplingResolution = sixgr.util.structGet( ...
+    ofdmInfo, "OFDMSamplingResolution", struct());
+out.OFDMWindowingSamples = double(sixgr.util.structGet( ...
+    ofdmInfo, "OFDMWindowingSamples", 0));
 out.OverlapMatrix = double(overlap);
 out.TrialTable = struct2table(rows, "AsArray", true);
 out.ConfigHash = string(srsCfg.ConfigHash);
@@ -173,7 +181,11 @@ for ss = 1:numel(slotNumbers)
         idxAll = [idxAll; bundles(uu).GridSlots(gIdx).Indices(:)]; %#ok<AGROW>
         symAll = [symAll; bundles(uu).GridSlots(gIdx).Symbols(:)]; %#ok<AGROW>
     end
-    [slotWave, info] = nrOFDMModulate(carrier, grid);
+    baseConfig = sixgr.util.structGet(srsCfg, "BaseConfig", struct());
+    [windowingSamples, ~] = sixgr.phy.waveform.resolveOFDMWindowing( ...
+        baseConfig, carrier);
+    [slotWave, info] = sixgr.phy.waveform.ofdmModulate( ...
+        carrier, grid, "Windowing", double(windowingSamples));
     wave = [wave; slotWave]; %#ok<AGROW>
     if ss == 1
         firstInfo = info;

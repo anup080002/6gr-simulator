@@ -80,7 +80,16 @@
     "scs_khz": 30,
     "cp_type": "normal",
     "slot_format": "flexible",
-    "tdd_pattern": "DDDSU"
+    "tdd_common": {
+      "ReferenceSubcarrierSpacingKHz": 30,
+      "Pattern1": {
+        "PeriodicityMilliseconds": 2.5,
+        "NumDownlinkSlots": 3,
+        "NumDownlinkSymbols": 12,
+        "NumUplinkSlots": 1,
+        "NumUplinkSymbols": 1
+      }
+    }
   },
   "waveform": {
     "dl_waveform": "CP-OFDM",

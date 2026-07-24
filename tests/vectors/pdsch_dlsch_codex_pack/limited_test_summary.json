@@ -1,0 +1,16 @@
+{
+  "checks": 26,
+  "passed": 25,
+  "failed": 0,
+  "blocked": 1,
+  "matlab_available": false,
+  "octave_available": false,
+  "static_checks": 29,
+  "static_shortcuts_detected": 25,
+  "static_existing_capabilities_detected": 4,
+  "required_phase_artifacts": 24,
+  "required_phase_artifacts_present": 0,
+  "existing_pngs_checked": 40,
+  "existing_pngs_decodable_nonblank": 40,
+  "note": "Python/static/vector checks do not execute the MATLAB PDSCH/DL-SCH PHY chain."
+}

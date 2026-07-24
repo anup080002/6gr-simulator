@@ -10,11 +10,13 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
 %   Inputs
 %     rxWaveform   : Nsamp-by-Nr complex samples
 %     NID2         : physical-layer cell ID group (0..2)
-%     blockPattern : 'Case A'|'Case B'|'Case C'|'Case D'|'Case E'
+%     blockPattern : 'Case A' through 'Case G'
 %     sampleRateHz : sampling rate in Hz
 %
 %   Name-value options
 %     'UseAntenna' : scalar antenna index for timing (default: 1)
+%     'SSBTiming'  : canonical SSBTimingResolver result. New standard-path
+%                    callers must provide this object.
 %
 %   Outputs
 %     timingOffset : sample offset returned by nrTimingEstimate
@@ -46,6 +48,7 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
     % Name-value parsing
     p = inputParser;
     p.addParameter('UseAntenna', 1, @(x) isnumeric(x) && isscalar(x) && x >= 1);
+    p.addParameter('SSBTiming', struct(), @localOptionalTiming);
     p.parse(varargin{:});
     opt = p.Results;
 
@@ -54,6 +57,7 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
     end
 
     blockPattern = char(string(blockPattern));
+    ssbTiming = localResolveTiming(blockPattern, opt.SSBTiming);
 
     if isempty(sampleRateHz) || ~isfinite(sampleRateHz) || sampleRateHz <= 0
         error('sixgr:phy:sync:timingEstimate:BadSampleRate', 'sampleRateHz must be a positive scalar.');
@@ -70,7 +74,7 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
     % SS/PBCH block per TS 38.211 7.4.3.1; using a 2-symbol shortcut biases
     % timing against the actual SSB OFDM symbol layout.
     nrbSSB = 20;
-    scsSSB_kHz = localSSBSubcarrierSpacing_kHz(blockPattern);
+    scsSSB_kHz = double(ssbTiming.SSBSubcarrierSpacingKHz);
     initialNSlot = 0;
 
     refGrid = complex(zeros(nrbSSB*12, 4));
@@ -121,20 +125,72 @@ function [timingOffset, info] = timingEstimate(rxWaveform, arg2, arg3, arg4, var
     info.UseAntenna = ant;
     info.RawTimingEstimate_samples = double(timingOffset);
     info.TimingEstimateStatus = "available_raw_estimate";
+    info.SSBTiming = ssbTiming;
 end
 
-function scs_kHz = localSSBSubcarrierSpacing_kHz(blockPattern)
-    bp = upper(strrep(char(blockPattern), ' ', ''));
-    switch bp
-        case 'CASEA'
-            scs_kHz = 15;
-        case {'CASEB','CASEC'}
-            scs_kHz = 30;
-        case 'CASED'
-            scs_kHz = 120;
-        case 'CASEE'
-            scs_kHz = 240;
-        otherwise
-            scs_kHz = 30;
+function timing = localResolveTiming(blockPattern, supplied)
+    if isstruct(supplied) && isscalar(supplied) && ...
+            ~isempty(fieldnames(supplied))
+        timing = localValidateTiming(supplied, blockPattern);
+        return;
     end
+
+    % Compatibility-only positional signature. Case validation and SCS
+    % selection remain owned by the canonical SSB timing resolver.
+    caseLetter = localCaseLetter(blockPattern);
+    if any(caseLetter == ["A", "B", "C"])
+        range = "FR1";
+        lmax = 8;
+    elseif any(caseLetter == ["D", "E"])
+        range = "FR2-1";
+        lmax = NaN;
+    else
+        range = "FR2-2";
+        lmax = NaN;
+    end
+    timing = sixgr.phy.frame.SSBTimingResolver.resolve( ...
+        "Case", caseLetter, ...
+        "FrequencyRange", range, ...
+        "Lmax", lmax);
+end
+
+function timing = localValidateTiming(timing, blockPattern)
+    required = ["BlockPattern", "SSBSubcarrierSpacingKHz", ...
+        "CandidateIndices", "CandidateStartSymbolsWithinHalfFrame", ...
+        "Lmax", "ResolvedValid"];
+    missing = required(~isfield(timing, cellstr(required)));
+    if ~isempty(missing)
+        error("sixgr:phy:sync:InvalidSSBTiming", ...
+            "SSBTiming is missing canonical fields: %s.", ...
+            strjoin(missing, ", "));
+    end
+    if ~(isscalar(timing.ResolvedValid) && logical(timing.ResolvedValid))
+        error("sixgr:phy:sync:InvalidSSBTiming", ...
+            "SSBTiming must be a successfully resolved canonical object.");
+    end
+    expected = localCaseLetter(blockPattern);
+    actual = localCaseLetter(timing.BlockPattern);
+    if actual ~= expected
+        error("sixgr:phy:sync:SSBTimingCaseMismatch", ...
+            "BlockPattern %s conflicts with supplied SSBTiming %s.", ...
+            string(blockPattern), string(timing.BlockPattern));
+    end
+end
+
+function letter = localCaseLetter(raw)
+    letter = upper(strtrim(string(raw)));
+    if ~isscalar(letter) || strlength(letter) == 0
+        error("sixgr:phy:frame:MissingSSBCase", ...
+            "An explicit SSB case A through G is required.");
+    end
+    letter = strtrim(erase(letter, "CASE"));
+    if ~any(letter == ["A", "B", "C", "D", "E", "F", "G"])
+        error("sixgr:phy:frame:UnsupportedSSBCase", ...
+            "Unsupported SSB case '%s'; expected Case A through Case G.", ...
+            string(raw));
+    end
+end
+
+function tf = localOptionalTiming(value)
+    tf = isstruct(value) && isscalar(value);
 end

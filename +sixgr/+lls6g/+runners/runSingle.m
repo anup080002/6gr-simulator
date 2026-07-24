@@ -80,7 +80,8 @@ end
 
 function result = localRunWaveformBundleScenario(cfg, scfg, runFolder)
 opt = struct();
-slotDuration_s = max(eps, double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 1)) / 1e3);
+numerology = localResolveConfigNumerology(cfg);
+slotDuration_s = double(numerology.SlotDurationSeconds);
 totalSlots = max(1, round(double(sixgr.util.structGet(cfg, "run.totalSlots", ...
     sixgr.util.structGet(cfg, "run.numTTI", sixgr.util.structGet(cfg, "run.numFrames", 1))))));
 opt.LinkDuration_s = max(double(totalSlots) * slotDuration_s, ...
@@ -570,7 +571,8 @@ function result = localRunSystemLevelScenario(cfg, scfg, runFolder)
 layout = sixgr.report.resultLayout(runFolder);
 ctx = sixgr.core.SimContext(cfg, "RunFolder", layout.SystemDir);
 
-slotDuration_s = max(eps, double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 0.5)) / 1e3);
+numerology = localResolveConfigNumerology(cfg);
+slotDuration_s = double(numerology.SlotDurationSeconds);
 numTTI = max(1, ceil(double(sixgr.util.structGet(cfg, "run.totalTime_ms", slotDuration_s * 1e3)) / (slotDuration_s * 1e3)));
 params = struct();
 params.PHYBackend = string(sixgr.util.structGet(cfg, "system.phyBackend", "waveform"));
@@ -883,7 +885,8 @@ if ~ismember("CORESETUtilization", string(T.Properties.VariableNames))
     T.CORESETUtilization = T.ControlCapacityUtilization;
 end
 if ~ismember("ControlLatency_ms", string(T.Properties.VariableNames))
-    slotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 1));
+    numerology = localResolveConfigNumerology(cfg);
+    slotDuration_ms = double(numerology.SlotDurationMilliseconds);
     T.ControlLatency_ms = repmat(slotDuration_ms, nRows, 1);
 end
 if ~ismember("ComputeLatency_ms", string(T.Properties.VariableNames))
@@ -1297,7 +1300,8 @@ if ~(istable(roT) && ~isempty(roT))
     return;
 end
 
-slotsPerFrame = max(1, round(double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", 20))));
+numerology = localResolveConfigNumerology(cfg);
+slotsPerFrame = double(numerology.SlotsPerFrame);
 nRows = height(roT);
 frameCol = floor((double(roT.slot_id) - 1) / slotsPerFrame) + 1;
 slotCol = round(double(roT.slot_id));
@@ -3463,11 +3467,15 @@ if isstruct(result) && isfield(result, "Link")
     end
 end
 opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
-opSummary.Radio.Numerology_mu = localDeriveNumerologyMu(double(scfg.get("frame.scs_khz", NaN)));
 opSummary.Radio.SCS_kHz = double(scfg.get("frame.scs_khz", NaN));
-opSummary.Radio.SlotDuration_ms = localDeriveSlotDurationMs(opSummary.Radio.Numerology_mu);
-opSummary.Radio.SlotsPerFrame = localDeriveSlotsPerFrame(opSummary.Radio.Numerology_mu);
-opSummary.Radio.SymbolsPerSlot = 14;
+cp = string(scfg.get("frame.cp_type", "normal"));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    opSummary.Radio.SCS_kHz, cp, "generic_waveform_test", "");
+opSummary.Radio.Numerology_mu = double(numerology.Mu);
+opSummary.Radio.SlotDuration_ms = ...
+    double(numerology.SlotDurationMilliseconds);
+opSummary.Radio.SlotsPerFrame = double(numerology.SlotsPerFrame);
+opSummary.Radio.SymbolsPerSlot = double(numerology.SymbolsPerSlot);
 opSummary.Radio.NumerologySource = "frame.scs_khz_runtime_authority";
 opSummary.Radio.TimingInterpretationSource = "nr_mu_from_scs";
 end
@@ -3577,11 +3585,12 @@ runtime.RequestedWorkers = double(sixgr.util.structGet(cfg, "run.parallelRequest
 runtime.EffectiveWorkers = localEffectiveWorkerCount(cfg);
 runtime.ParallelDisabledReason = char(string(sixgr.util.structGet(cfg, "run.parallelDisabledReason", "")));
 runtime.MaxNumCompThreads = double(localSafeMaxNumCompThreads());
-runtime.Numerology_mu = double(sixgr.util.structGet(cfg, "phy.numerology.mu", NaN));
-runtime.SCS_kHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN));
-runtime.SlotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
-runtime.SlotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN));
-runtime.SymbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", NaN));
+numerology = localResolveConfigNumerology(cfg);
+runtime.Numerology_mu = double(numerology.Mu);
+runtime.SCS_kHz = double(numerology.SubcarrierSpacingKHz);
+runtime.SlotDuration_ms = double(numerology.SlotDurationMilliseconds);
+runtime.SlotsPerFrame = double(numerology.SlotsPerFrame);
+runtime.SymbolsPerSlot = double(numerology.SymbolsPerSlot);
 runtime.ConfiguredGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.configuredGridNumRBs", NaN));
 runtime.ActiveGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.activeGridNumRBs", NaN));
 runtime.ActiveGridSource = char(string(sixgr.util.structGet(cfg, "phy.numerology.activeGridSource", "")));
@@ -5202,14 +5211,18 @@ scsKHz = double(scsKHz);
 if ~(isfinite(scsKHz) && scsKHz > 0)
     return;
 end
-mu = round(log2(scsKHz / 15));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scsKHz, "normal", "generic_waveform_test", "");
+mu = double(numerology.Mu);
 end
 
 function slotDuration_ms = localDeriveSlotDurationMs(mu)
 slotDuration_ms = NaN;
 mu = double(mu);
 if isfinite(mu)
-    slotDuration_ms = 1 / 2^mu;
+    numerology = sixgr.phy.frame.AbsoluteTime.resolveNumerology(mu);
+    slotDuration_ms = 1e3 * double(numerology.TicksPerSlot) / ...
+        double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
 end
 end
 
@@ -5217,8 +5230,19 @@ function slotsPerFrame = localDeriveSlotsPerFrame(mu)
 slotsPerFrame = NaN;
 mu = double(mu);
 if isfinite(mu)
-    slotsPerFrame = 10 * 2^mu;
+    numerology = sixgr.phy.frame.AbsoluteTime.resolveNumerology(mu);
+    slotsPerFrame = double(numerology.SlotsPerFrame);
 end
+end
+
+function numerology = localResolveConfigNumerology(cfg)
+scsKHz = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", ...
+    sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN))));
+cp = string(sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal"));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scsKHz, cp, "generic_waveform_test", "");
 end
 
 function value = localTryLogical(rawValue, defaultValue)

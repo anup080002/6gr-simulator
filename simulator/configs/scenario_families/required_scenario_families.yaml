@@ -135,9 +135,9 @@ families:
         - name: snr_db
           source: sweeps_and_matrix.snr_sweep
           recommended_values: [-5, 0, 5, 10, 15, 20]
-        - name: tdd_pattern
-          source: frame_timing.tdd_pattern
-          recommended_values: [dddsuu, dddsuuuu, dynamic_slot_group]
+        - name: tdd_common
+          source: frame_timing.tdd_common
+          recommended_values: [standard_common_pattern, common_plus_dedicated_override]
         - name: ue_speed_kmh
           source: sweeps_and_matrix.speed_sweep
           recommended_values: [3, 30, 120]

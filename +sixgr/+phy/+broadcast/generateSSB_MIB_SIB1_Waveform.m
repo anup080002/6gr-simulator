@@ -304,8 +304,8 @@ wave(:, end+1:numCols) = 0;
 end
 
 function sampleRate = localSampleRate(carrier)
-info = nrOFDMInfo(carrier);
-sampleRate = double(info.SampleRate);
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+sampleRate = double(sampling.SampleRateHz);
 end
 
 function n = localSSBObservationSubframes(cfg)

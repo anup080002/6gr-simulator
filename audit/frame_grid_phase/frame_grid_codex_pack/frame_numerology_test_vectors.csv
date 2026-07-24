@@ -1,0 +1,19 @@
+TestID,Mu,SCS_kHz,CyclicPrefix,ExpectedValid,ExpectedSymbolsPerSlot,ExpectedSlotsPerSubframe,ExpectedSlotsPerFrame,ExpectedSlotDuration_ms,ExpectedErrorID,SpecAnchor
+NUM-N-00,0,15,normal,TRUE,14,1,10,1.000000000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-N-01,1,30,normal,TRUE,14,2,20,0.500000000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-N-02,2,60,normal,TRUE,14,4,40,0.250000000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-N-03,3,120,normal,TRUE,14,8,80,0.125000000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-N-04,4,240,normal,TRUE,14,16,160,0.062500000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-N-05,5,480,normal,TRUE,14,32,320,0.031250000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-N-06,6,960,normal,TRUE,14,64,640,0.015625000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-1
+NUM-E-00,0,15,extended,FALSE,,,,,sixgr:phy:frame:UnsupportedCyclicPrefixNumerology,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-E-01,1,30,extended,FALSE,,,,,sixgr:phy:frame:UnsupportedCyclicPrefixNumerology,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-E-02,2,60,extended,TRUE,12,4,40,0.250000000,,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-E-03,3,120,extended,FALSE,,,,,sixgr:phy:frame:UnsupportedCyclicPrefixNumerology,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-E-04,4,240,extended,FALSE,,,,,sixgr:phy:frame:UnsupportedCyclicPrefixNumerology,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-E-05,5,480,extended,FALSE,,,,,sixgr:phy:frame:UnsupportedCyclicPrefixNumerology,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-E-06,6,960,extended,FALSE,,,,,sixgr:phy:frame:UnsupportedCyclicPrefixNumerology,TS 38.211 V18.8.0 Tables 4.2-1 and 4.3.2-2
+NUM-X-001,,20,normal,FALSE,,,,,sixgr:phy:frame:UnsupportedSubcarrierSpacing,TS 38.211 V18.8.0 Table 4.2-1
+NUM-X-002,,75,normal,FALSE,,,,,sixgr:phy:frame:UnsupportedSubcarrierSpacing,TS 38.211 V18.8.0 Table 4.2-1
+NUM-X-003,,0,normal,FALSE,,,,,sixgr:phy:frame:InvalidSubcarrierSpacing,TS 38.211 V18.8.0 Table 4.2-1
+NUM-X-004,,-30,normal,FALSE,,,,,sixgr:phy:frame:InvalidSubcarrierSpacing,TS 38.211 V18.8.0 Table 4.2-1

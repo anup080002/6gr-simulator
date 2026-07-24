@@ -150,33 +150,19 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
 rxWave = localApplyTimingCorrection(rxWave, timingResolution.AppliedCorrection_samples);
 
 % Keep one full slot available for OFDM demod even when timing estimation
-% trims a few leading samples on otherwise aligned captures.
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    slotSymbols = max(1, round(double(ofdmInfo.SymbolsPerSlot)));
-    symbolLengths = double(ofdmInfo.SymbolLengths(:).');
-    if numel(symbolLengths) >= slotSymbols
-        expectedSamples = sum(symbolLengths(1:slotSymbols));
-    else
-        expectedSamples = sum(symbolLengths);
-    end
-    if size(rxWave, 1) > expectedSamples
-        rxWave = rxWave(1:expectedSamples, :);
-    end
-    if size(rxWave, 1) < expectedSamples
-        rxWave(end+1:expectedSamples, :) = 0; %#ok<AGROW>
-    end
-catch
-    % Continue without padding if OFDM info is unavailable.
+% trims a few leading samples on otherwise aligned captures. A canonical
+% sampling failure is propagated rather than retried with Toolbox defaults.
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+slotSymbols = double(sampling.SymbolsPerSlot);
+expectedSamples = double(sampling.CurrentSlotSamples);
+if size(rxWave, 1) > expectedSamples
+    rxWave = rxWave(1:expectedSamples, :);
+elseif size(rxWave, 1) < expectedSamples
+    rxWave(end+1:expectedSamples, :) = 0; %#ok<AGROW>
 end
 
 % ---------------------- OFDM demod ----------------------
-try
-    rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
-catch
-    % Fallback to toolbox directly
-    rxGrid = nrOFDMDemodulate(carrier, rxWave);
-end
+rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
 
 % This receiver operates on a single slot. Some toolbox metadata paths
 % describe a full subframe, so trim/pad the demodulated grid to one slot.
@@ -192,35 +178,18 @@ end
 noiseGrid = [];
 if ~isempty(opt.NoiseOnlyWaveform)
     noiseWave = localApplyTimingCorrection(opt.NoiseOnlyWaveform, timingResolution.AppliedCorrection_samples);
-    try
-        ofdmInfo = nrOFDMInfo(carrier);
-        slotSymbolsNoise = max(1, round(double(ofdmInfo.SymbolsPerSlot)));
-        symbolLengthsNoise = double(ofdmInfo.SymbolLengths(:).');
-        if numel(symbolLengthsNoise) >= slotSymbolsNoise
-            expectedSamplesNoise = sum(symbolLengthsNoise(1:slotSymbolsNoise));
-        else
-            expectedSamplesNoise = sum(symbolLengthsNoise);
-        end
-        if size(noiseWave, 1) > expectedSamplesNoise
-            noiseWave = noiseWave(1:expectedSamplesNoise, :);
-        end
-        if size(noiseWave, 1) < expectedSamplesNoise
-            noiseWave(end+1:expectedSamplesNoise, :) = 0; %#ok<AGROW>
-        end
-        try
-            noiseGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, noiseWave);
-        catch
-            noiseGrid = nrOFDMDemodulate(carrier, noiseWave);
-        end
-        if size(noiseGrid, 2) > slotSymbols
-            noiseGrid = noiseGrid(:, 1:slotSymbols, :);
-        elseif size(noiseGrid, 2) < slotSymbols
-            padNoise = complex(zeros(size(noiseGrid, 1), slotSymbols - size(noiseGrid, 2), size(noiseGrid, 3), ...
-                'like', noiseGrid));
-            noiseGrid = cat(2, noiseGrid, padNoise);
-        end
-    catch
-        noiseGrid = [];
+    if size(noiseWave, 1) > expectedSamples
+        noiseWave = noiseWave(1:expectedSamples, :);
+    elseif size(noiseWave, 1) < expectedSamples
+        noiseWave(end+1:expectedSamples, :) = 0; %#ok<AGROW>
+    end
+    noiseGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, noiseWave);
+    if size(noiseGrid, 2) > slotSymbols
+        noiseGrid = noiseGrid(:, 1:slotSymbols, :);
+    elseif size(noiseGrid, 2) < slotSymbols
+        padNoise = complex(zeros(size(noiseGrid, 1), slotSymbols - size(noiseGrid, 2), size(noiseGrid, 3), ...
+            'like', noiseGrid));
+        noiseGrid = cat(2, noiseGrid, padNoise);
     end
 end
 

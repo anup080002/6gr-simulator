@@ -3392,12 +3392,7 @@ trimSamples = max(0, round(filterDelay));
 end
 
 function slotDur_s = localSlotDuration(cfg)
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
-mu = log2(scs/15);
-if ~isfinite(mu) || mu < 0
-    mu = 0;
-end
-slotDur_s = 1e-3 / (2^mu);
+slotDur_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function bits = localResolveExpectedUCIBits(inputBits, grantSnapshot, harqContext)

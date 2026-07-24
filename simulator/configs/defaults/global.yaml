@@ -58,10 +58,16 @@
     "scs_khz": 30,
     "cp_type": "normal",
     "slot_format": "flexible",
-    "tdd_pattern": "DDDSU",
-    "special_slot_downlink_symbols": 7,
-    "ul_dl_guard_symbols": 0,
-    "special_slot_uplink_symbols": 7
+    "tdd_common": {
+      "ReferenceSubcarrierSpacingKHz": 30,
+      "Pattern1": {
+        "PeriodicityMilliseconds": 5,
+        "NumDownlinkSlots": 6,
+        "NumDownlinkSymbols": 4,
+        "NumUplinkSlots": 3,
+        "NumUplinkSymbols": 2
+      }
+    }
   },
   "waveform": {
     "dl_waveform": "CP-OFDM",
@@ -97,6 +103,9 @@
   },
   "reference_signals": {
     "ssb_enabled": true,
+    "ssb_case": "Case C",
+    "ssb_scs_khz": 30,
+    "ssb_lmax": 8,
     "pbch_enabled": true,
     "pdcch_dmrs_enabled": true,
     "pdsch_dmrs_ports": 2,

@@ -440,9 +440,18 @@ carrierDefaultHz = double(localScenarioStructGet(cfg, {"frequency.center_frequen
 bandwidthDefaultHz = double(localScenarioStructGet(cfg, {"frequency.bandwidth_hz", "global_radio_scope.channel_bandwidth_hz", "radio.bandwidth_hz"}, NaN));
 meta.carrier_frequency_hz = double(localScenarioGet(scfg, "global_radio_scope.carrier_frequency_hz", localScenarioGet(scfg, "frequency.center_frequency_hz", carrierDefaultHz)));
 meta.bandwidth_hz = double(localScenarioGet(scfg, "global_radio_scope.channel_bandwidth_hz", localScenarioGet(scfg, "frequency.bandwidth_hz", bandwidthDefaultHz)));
-meta.scs_hz = 1e3 * double(localTableValue(summaryRow, "SCS_kHz", localScenarioGet(scfg, "frame.scs_khz", 30)));
-meta.slots_per_frame = double(localTableValue(summaryRow, "SlotsPerFrame", localDeriveSlotsPerFrame(meta.scs_hz / 1e3)));
-meta.symbols_per_slot = double(localTableValue(summaryRow, "SymbolsPerSlot", 14));
+meta.scs_hz = 1e3 * double(localTableValue(summaryRow, "SCS_kHz", localScenarioGet(scfg, "frame.scs_khz", NaN)));
+numerology = localResolveNumerology(meta.scs_hz / 1e3);
+meta.slots_per_frame = double(localTableValue( ...
+    summaryRow, "SlotsPerFrame", numerology.SlotsPerFrame));
+meta.symbols_per_slot = double(localTableValue( ...
+    summaryRow, "SymbolsPerSlot", numerology.SymbolsPerSlot));
+localValidateSlotsPerFrame(meta.slots_per_frame, numerology);
+if meta.symbols_per_slot ~= double(numerology.SymbolsPerSlot)
+    error("sixgr:truth:exportLLSOutputCoverageArtifacts:NumerologyMismatch", ...
+        "Persisted SymbolsPerSlot=%g conflicts with the canonical value %g.", ...
+        meta.symbols_per_slot, double(numerology.SymbolsPerSlot));
+end
 meta.tdd_pattern = string(localTableValue(summaryRow, "ConfiguredTDDPattern", localScenarioGet(scfg, "frame_timing.tdd_pattern_name", "")));
 end
 
@@ -2454,7 +2463,7 @@ for i = 1:numel(groupIds)
     row.link_id = NaN;
     row.carrier_id = NaN;
     row.bwp_id = NaN;
-    row.numerology = log2(max(meta.scs_hz / 15e3, 1));
+    row.numerology = localDeriveNumerologyMu(meta.scs_hz / 1e3);
     row.scs_khz = meta.scs_hz / 1e3;
     row.bandwidth_hz = meta.bandwidth_hz;
     row.center_frequency_hz = meta.carrier_frequency_hz;
@@ -2547,7 +2556,7 @@ for i = 1:numel(groupIds)
     row.placeholder_flag = false;
     row.config_only_flag = false;
     row.cell_id = row.bs_id;
-    row.numerology = log2(max(meta.scs_hz / 15e3, 1));
+    row.numerology = localDeriveNumerologyMu(meta.scs_hz / 1e3);
     row.scs_khz = meta.scs_hz / 1e3;
     row.bandwidth_hz = meta.bandwidth_hz;
     row.center_frequency_hz = meta.carrier_frequency_hz;
@@ -2742,7 +2751,7 @@ row.trp_id = NaN;
 row.link_id = NaN;
 row.carrier_id = NaN;
 row.bwp_id = NaN;
-row.numerology = log2(max(meta.scs_hz / 15e3, 1));
+row.numerology = localDeriveNumerologyMu(meta.scs_hz / 1e3);
 row.scs_khz = meta.scs_hz / 1e3;
 row.bandwidth_hz = meta.bandwidth_hz;
 row.center_frequency_hz = meta.carrier_frequency_hz;
@@ -3800,7 +3809,9 @@ value = NaN;
 if ~(isfinite(frameVal) && isfinite(slotVal) && isfinite(meta.slots_per_frame) && isfinite(meta.scs_hz))
     return;
 end
-slotDurationMs = 1e3 * (1e-3 / max(meta.slots_per_frame / 10, 1));
+numerology = localResolveNumerology(meta.scs_hz / 1e3);
+localValidateSlotsPerFrame(meta.slots_per_frame, numerology);
+slotDurationMs = double(numerology.SlotDurationMilliseconds);
 value = ((double(frameVal) - 1) * double(meta.slots_per_frame) + (double(slotVal) - 1)) * slotDurationMs;
 end
 
@@ -7809,8 +7820,9 @@ end
 frameVal = double(localTableValue(row, "Frame", NaN));
 slotVal = double(localTableValue(row, "Slot", NaN));
 if isfinite(frameVal) && isfinite(slotVal) && isfinite(meta.slots_per_frame)
-    mu = round(log2((meta.scs_hz / 1e3) / 15));
-    slotDurationMs = 1 / 2^mu;
+    numerology = localResolveNumerology(meta.scs_hz / 1e3);
+    localValidateSlotsPerFrame(meta.slots_per_frame, numerology);
+    slotDurationMs = double(numerology.SlotDurationMilliseconds);
     ms = ((frameVal - 1) * meta.slots_per_frame + (slotVal - 1)) * slotDurationMs;
 else
     ms = NaN;
@@ -7944,11 +7956,34 @@ out = replace(string(pathIn), "\", "/");
 end
 
 function slotsPerFrame = localDeriveSlotsPerFrame(scsKHz)
-mu = round(log2(double(scsKHz) / 15));
-if ~(isfinite(mu) && mu >= 0)
+if ~(isscalar(scsKHz) && isfinite(double(scsKHz)) && double(scsKHz) > 0)
     slotsPerFrame = NaN;
 else
-    slotsPerFrame = 10 * 2^mu;
+    numerology = localResolveNumerology(scsKHz);
+    slotsPerFrame = double(numerology.SlotsPerFrame);
+end
+end
+
+function mu = localDeriveNumerologyMu(scsKHz)
+if ~(isscalar(scsKHz) && isfinite(double(scsKHz)) && double(scsKHz) > 0)
+    mu = NaN;
+    return;
+end
+numerology = localResolveNumerology(scsKHz);
+mu = double(numerology.Mu);
+end
+
+function numerology = localResolveNumerology(scsKHz)
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    double(scsKHz), "normal", "generic_waveform_test", "");
+end
+
+function localValidateSlotsPerFrame(slotsPerFrame, numerology)
+if double(slotsPerFrame) ~= double(numerology.SlotsPerFrame)
+    error("sixgr:truth:exportLLSOutputCoverageArtifacts:NumerologyMismatch", ...
+        "Persisted SlotsPerFrame=%g conflicts with the canonical value %g for SCS=%g kHz.", ...
+        double(slotsPerFrame), double(numerology.SlotsPerFrame), ...
+        double(numerology.SubcarrierSpacingKHz));
 end
 end
 

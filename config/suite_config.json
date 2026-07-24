@@ -177,7 +177,7 @@
   "phy": {
     "carrier": {
       "NCellID": 1,
-      "NSizeGrid": 66,
+      "NSizeGrid": 273,
       "SubcarrierSpacing": 30,
       "CyclicPrefix": "normal"
     },

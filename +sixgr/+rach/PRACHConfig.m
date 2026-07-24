@@ -13,8 +13,10 @@ end
 p = inputParser;
 p.FunctionName = "sixgr.rach.PRACHConfig";
 addRequired(p, "baseCfg", @(x) isstruct(x) || isobject(x));
-addParameter(p, "FrequencyRange", [], @(x) isempty(x) || any(strcmpi(string(x), ["FR1","FR2"])));
-addParameter(p, "DuplexMode", [], @(x) isempty(x) || any(strcmpi(string(x), ["FDD","TDD"])));
+addParameter(p, "FrequencyRange", [], @(x) isempty(x) || ...
+    any(strcmpi(string(x), ["FR1","FR2","FR2-1","FR2-2"])));
+addParameter(p, "DuplexMode", [], @(x) isempty(x) || ...
+    any(strcmpi(string(x), ["FDD","TDD","SUL"])));
 addParameter(p, "CarrierFrequencyHz", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x > 0));
 addParameter(p, "CarrierSCSkHz", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x > 0));
 addParameter(p, "NSizeGrid", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
@@ -28,6 +30,12 @@ addParameter(p, "PreambleIndex", [], @(x) isempty(x) || isnumeric(x));
 addParameter(p, "RestrictedSet", [], @(x) isempty(x) || (ischar(x) || (isstring(x) && isscalar(x))));
 addParameter(p, "ZeroCorrelationZone", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
 addParameter(p, "FrequencyStart", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0));
+addParameter(p, "Msg1FDM", [], @(x) isempty(x) || ...
+    (isscalar(x) && isnumeric(x) && isfinite(x) && any(x == [1 2 4 8])));
+addParameter(p, "RBOffset", [], @(x) isempty(x) || ...
+    (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0 && x == fix(x)));
+addParameter(p, "RBSetOffset", [], @(x) isempty(x) || ...
+    (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 0 && x == fix(x)));
 addParameter(p, "NumPRACHOccasions", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
 addParameter(p, "NumSlots", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
 addParameter(p, "NumSubframes", [], @(x) isempty(x) || (isscalar(x) && isnumeric(x) && isfinite(x) && x >= 1));
@@ -96,11 +104,16 @@ prachCfg.ZeroCorrelationZone = round(double(localResolveScalar(localFirstNonEmpt
     localResolveField(cfg, {"prach_lls.ZeroCorrelationZone", "phy.prach.zeroCorrelationZone", "random_access.zero_correlation_zone"}, 8)))));
 prachCfg.FrequencyStart = round(double(localResolveScalar(localFirstNonEmpty(opts.FrequencyStart, ...
     localResolveField(cfg, {"prach_lls.FrequencyStart", "random_access.frequency_start", "phy.prach.frequencyStart"}, 0)))));
+prachCfg.Msg1FDM = round(double(localResolveScalar(localFirstNonEmpty(opts.Msg1FDM, ...
+    localResolveField(cfg, {"prach_lls.Msg1FDM", "random_access.msg1_fdm", "phy.prach.msg1FDM"}, 1)))));
+prachCfg.RBOffset = round(double(localResolveScalar(localFirstNonEmpty(opts.RBOffset, ...
+    localResolveField(cfg, {"prach_lls.RBOffset", "random_access.rb_offset", "phy.prach.RBOffset"}, 0)))));
+prachCfg.RBSetOffset = round(double(localResolveScalar(localFirstNonEmpty(opts.RBSetOffset, ...
+    localResolveField(cfg, {"prach_lls.RBSetOffset", "random_access.rb_set_offset", "phy.prach.RBSetOffset"}, 0)))));
 prachCfg.NumPRACHOccasions = round(double(localResolveScalar(localFirstNonEmpty(opts.NumPRACHOccasions, ...
     localResolveField(cfg, {"prach_lls.NumPRACHOccasions", "random_access.num_prach_occasions"}, 4)))));
 prachCfg.NumSlots = round(double(localResolveScalar(localFirstNonEmpty(opts.NumSlots, ...
     localResolveField(cfg, {"prach_lls.NumSlots", "random_access.num_slots", "run.totalSlots", "simulation.n_slots"}, max(20, prachCfg.NumPRACHOccasions * 4))))));
-prachCfg.NumSlots = max(prachCfg.NumSlots, max(80, prachCfg.NumPRACHOccasions * 20));
 prachCfg.NumSubframes = round(double(localResolveScalar(localFirstNonEmpty(opts.NumSubframes, ...
     localResolveField(cfg, {"prach_lls.NumSubframes", "random_access.num_subframes"}, max(1, ceil(prachCfg.NumSlots / 2)))))));
 prachCfg.NumTrials = round(double(localResolveScalar(localFirstNonEmpty(opts.NumTrials, ...
@@ -177,21 +190,40 @@ else
     prachCfg.OutputDir = char(string(opts.OutputDir));
 end
 
-if ~any(strcmpi(char(string(prachCfg.FrequencyRange)), {'FR1','FR2'}))
-    if prachCfg.CarrierFrequencyHz >= 24.25e9
-        prachCfg.FrequencyRange = "FR2";
-    else
-        prachCfg.FrequencyRange = "FR1";
+configuredRange = upper(strtrim(string(prachCfg.FrequencyRange)));
+rangeInfo = sixgr.phy.frame.FrequencyRangeResolver.resolve( ...
+    "CenterFrequencyHz", prachCfg.CarrierFrequencyHz);
+resolvedRange = string(rangeInfo.FrequencyRange);
+if strlength(configuredRange) > 0
+    if configuredRange == "FR2"
+        if ~startsWith(resolvedRange, "FR2")
+            error("sixgr:phy:frame:FrequencyRangeMismatch", ...
+                "Configured FR2 conflicts with PRACH carrier frequency %.12g Hz.", ...
+                prachCfg.CarrierFrequencyHz);
+        end
+    elseif configuredRange ~= resolvedRange
+        error("sixgr:phy:frame:FrequencyRangeMismatch", ...
+            "Configured %s conflicts with PRACH carrier-frequency range %s.", ...
+            configuredRange, resolvedRange);
     end
 end
-if ~any(strcmpi(char(string(prachCfg.DuplexMode)), {'FDD','TDD'}))
-    prachCfg.DuplexMode = "FDD";
+prachCfg.FrequencyRangeSubtype = char(resolvedRange);
+if startsWith(resolvedRange, "FR2")
+    prachCfg.FrequencyRange = "FR2";
+else
+    prachCfg.FrequencyRange = "FR1";
+end
+if ~any(strcmpi(char(string(prachCfg.DuplexMode)), {'FDD','TDD','SUL'}))
+    error("sixgr:phy:frame:InvalidPRACHFrequencyDuplexContext", ...
+        "PRACH DuplexMode must be FDD, TDD, or SUL.");
 end
 
 localValidateResolvedConfig(prachCfg);
 [carrier, prach] = localBuildToolboxConfigs(prachCfg);
 localAssertZCZRuntimeResolvable(prachCfg, prach);
-prachCfg.NumSlots = localExpandNumSlotsForRequestedOccasion(prachCfg, carrier, prach);
+[occasionResolution, requiredSlots] = localResolveOccasionPeriod( ...
+    prachCfg, carrier, prach);
+prachCfg.NumSlots = max(prachCfg.NumSlots, requiredSlots);
 [firstOccasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, prachCfg);
 
 prachCfg.ToolboxCarrier = carrier;
@@ -199,6 +231,7 @@ prachCfg.ToolboxPRACH = prach;
 prachCfg.ResolvedPRACHFormat = upper(strtrim(string(prach.Format)));
 prachCfg.PreambleCount = 64;
 prachCfg.FirstActiveOccasion = firstOccasion;
+prachCfg.PRACHOccasionResolution = occasionResolution;
 prachCfg.SampleRate_Hz = double(sampleRateHz);
 prachCfg = localValidateZCZRuntimeGuard(prachCfg);
 prachCfg.TimingTolerance_us = localResolveTimingTolerance(prachCfg);
@@ -473,6 +506,8 @@ prach.PreambleIndex = double(localFirstPreamble(cfg.PreambleIndex));
 prach.RestrictedSet = char(string(cfg.RestrictedSet));
 prach.ZeroCorrelationZone = double(cfg.ZeroCorrelationZone);
 prach.FrequencyStart = double(cfg.FrequencyStart);
+prach.RBOffset = double(cfg.RBOffset);
+prach.RBSetOffset = double(cfg.RBSetOffset);
 
 resolvedFormat = upper(strtrim(string(prach.Format)));
 requestedFormat = upper(strtrim(string(sixgr.util.structGet(cfg, "RequestedPRACHFormat", ""))));
@@ -488,64 +523,48 @@ if strlength(requestedFormat) > 0 && resolvedFormat ~= requestedFormat
 end
 end
 
-function numSlots = localExpandNumSlotsForRequestedOccasion(cfg, carrier, prach)
-numSlots = max(1, round(double(cfg.NumSlots)));
-targetOccasion = max(1, round(double(cfg.NumPRACHOccasions)));
-maxSlots = max([numSlots, 512, targetOccasion * 512]);
-while numSlots <= maxSlots
-    cfgTry = cfg;
-    cfgTry.NumSlots = numSlots;
-    try
-        sixgr.rach.mapPRACHToOccasion(cfgTry, "OccasionIndex", targetOccasion, ...
-            "Carrier", carrier, "PRACH", prach);
-        return;
-    catch ME
-        if ~strcmp(string(ME.identifier), "sixgr:rach:mapPRACHToOccasion:NoSuchOccasion")
-            rethrow(ME);
-        end
-    end
-    numSlots = min(maxSlots + 1, max(numSlots + 1, numSlots * 2));
+function [resolution, requiredSlots] = localResolveOccasionPeriod( ...
+        cfg, carrier, prach)
+resolution = sixgr.phy.frame.PRACHOccasionResolver.resolve( ...
+    "FrequencyRange", cfg.FrequencyRangeSubtype, ...
+    "DuplexMode", cfg.DuplexMode, ...
+    "ConfigurationIndex", cfg.PRACHConfigurationIndex, ...
+    "CarrierSubcarrierSpacingKHz", carrier.SubcarrierSpacing, ...
+    "CarrierCyclicPrefix", carrier.CyclicPrefix, ...
+    "NSizeGrid", carrier.NSizeGrid, ...
+    "NStartGrid", carrier.NStartGrid, ...
+    "NCellID", carrier.NCellID, ...
+    "PRACHSubcarrierSpacingKHz", prach.SubcarrierSpacing, ...
+    "SequenceIndex", prach.SequenceIndex, ...
+    "PreambleIndex", prach.PreambleIndex, ...
+    "RestrictedSet", prach.RestrictedSet, ...
+    "ZeroCorrelationZone", prach.ZeroCorrelationZone, ...
+    "Msg1FDM", cfg.Msg1FDM, ...
+    "Msg1FrequencyStart", prach.FrequencyStart, ...
+    "RBOffset", prach.RBOffset, ...
+    "RBSetOffset", prach.RBSetOffset);
+occasionsPerPeriod = height(resolution.Occasions);
+if occasionsPerPeriod < 1
+    error("sixgr:rach:PRACHConfig:NoOccasion", ...
+        "Canonical PRACH timing returned no occasion in its exact period.");
 end
-error("sixgr:rach:PRACHConfig:NoRequestedOccasion", ...
-    "The resolved PRACH configuration does not materialize requested occasion %g within %g scanned slots.", ...
-    double(targetOccasion), double(maxSlots));
+periodsNeeded = ceil(double(cfg.NumPRACHOccasions) / occasionsPerPeriod);
+requiredSlots = ceil(periodsNeeded * double(resolution.PeriodCarrierSlots));
 end
 
 function [occasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, cfg)
-occasion = struct();
-sampleRateHz = NaN;
-for occIdx = 1:max(cfg.NumPRACHOccasions, cfg.NumSlots)
-    try
-        occasion = sixgr.rach.mapPRACHToOccasion(cfg, "OccasionIndex", occIdx, "Carrier", carrier, "PRACH", prach);
-        sampleRateHz = localEstimatePRACHSampleRate(cfg, prach);
-        return;
-    catch ME
-        if ~strcmp(string(ME.identifier), "sixgr:rach:mapPRACHToOccasion:NoSuchOccasion")
-            rethrow(ME);
-        end
-    end
-end
-error("sixgr:rach:PRACHConfig:NoOccasion", ...
-    "The resolved PRACH configuration does not materialize %g valid PRACH occasions within %g slots.", ...
-    double(cfg.NumPRACHOccasions), double(cfg.NumSlots));
+occasion = sixgr.rach.mapPRACHToOccasion(cfg, ...
+    "OccasionIndex", 1, "Carrier", carrier, "PRACH", prach);
+sampleRateHz = localEstimatePRACHSampleRate(carrier, prach);
 end
 
-function sampleRateHz = localEstimatePRACHSampleRate(cfg, prach)
-lra = NaN;
-try
-    lra = double(prach.LRA);
-catch
+function sampleRateHz = localEstimatePRACHSampleRate(carrier, prach)
+info = nrPRACHOFDMInfo(carrier, prach);
+sampleRateHz = double(info.SampleRate);
+if ~(isscalar(sampleRateHz) && isfinite(sampleRateHz) && sampleRateHz > 0)
+    error("sixgr:rach:PRACHConfig:InvalidToolboxSampleRate", ...
+        "nrPRACHOFDMInfo did not return a positive finite sample rate.");
 end
-if ~(isfinite(lra) && lra >= 1)
-    lra = 839;
-end
-nGridRE = max(12, round(double(cfg.NSizeGrid)) * 12);
-nfft = 2 ^ nextpow2(max([lra, nGridRE, 128]));
-scsHz = double(prach.SubcarrierSpacing) * 1e3;
-if ~(isfinite(scsHz) && scsHz > 0)
-    scsHz = double(cfg.PRACHSubcarrierSpacing) * 1e3;
-end
-sampleRateHz = double(nfft * scsHz);
 end
 
 function value = localFirstPreamble(preambleSpec)

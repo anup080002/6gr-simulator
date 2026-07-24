@@ -1,0 +1,10 @@
+ImageFile,SourceCSV,ExpectedXLabel,ExpectedYLabel,ExpectedTitleToken,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+pdsch_resource_grid_ownership.png,pdsch_resource_ownership.csv,PRB / subcarrier,OFDM symbol,PDSCH resource ownership,1,1,100,900,600
+pdsch_dmrs_ptrs_map.png,pdsch_dmrs_matrix.csv|pdsch_ptrs_matrix.csv,Subcarrier / PRB,OFDM symbol,DM-RS and PT-RS,1,2,20,900,600
+pdsch_codeword_layer_mapping.png,pdsch_layer_codeword_map.csv,Layer,Mapped symbols,Codeword-to-layer mapping,1,1,8,900,600
+pdsch_prg_precoding_map.png,pdsch_precoding_application.csv,PRB / PRG,Precoder index or gain,PRG precoding,1,2,4,900,600
+pdsch_harq_rv_timeline.png,pdsch_harq_trials.csv,Transmission index,RV / decode state,HARQ RV timeline,1,2,4,900,600
+pdsch_bler_vs_snr.png,pdsch_bler_curve.csv,SNR (dB),BLER,PDSCH BLER,1,1,4,900,600
+pdsch_ptrs_phase_noise_evm.png,pdsch_ptrs_matrix.csv,Phase-noise severity,EVM (%),PT-RS phase tracking,1,2,4,900,600
+pdsch_per_layer_sinr.png,pdsch_receiver_metrics.csv,Layer,Measured SINR (dB),Per-layer SINR,1,1,8,900,600
+pdsch_reserved_re_impact.png,pdsch_resource_ownership.csv|pdsch_coding_chain.csv,Reserved RE count,G / TBS,Reserved-resource impact,1,2,4,900,600

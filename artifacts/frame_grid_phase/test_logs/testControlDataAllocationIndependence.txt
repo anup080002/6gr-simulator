@@ -1,0 +1,2 @@
+Suite: testControlDataAllocationIndependence
+PASS in 6.134934 seconds.

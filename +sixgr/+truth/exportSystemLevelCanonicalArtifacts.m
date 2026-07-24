@@ -12,18 +12,31 @@ if ~istable(grantT)
     grantT = table();
 end
 
+numerology = localCanonicalNumerology(cfg);
+canonicalTTI_s = double(numerology.SlotDurationSeconds);
 tti_s = double(sixgr.util.structGet(details, "TTI_s", ...
     sixgr.util.structGet(cfg, "system.tti_s", ...
-    double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", 0.5)) / 1e3)));
+    double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN)) / 1e3)));
 tti_s = tti_s(:);
 tti_s = tti_s(find(isfinite(tti_s) & tti_s > 0, 1, "first"));
 if isempty(tti_s)
-    tti_s = 0.5e-3;
+    tti_s = canonicalTTI_s;
+elseif abs(tti_s - canonicalTTI_s) > max(eps(canonicalTTI_s), 1e-15)
+    error("sixgr:truth:exportSystemLevelCanonicalArtifacts:TTINumerologyMismatch", ...
+        "Configured/system TTI %.15g s conflicts with canonical SCS=%g kHz slot duration %.15g s.", ...
+        tti_s, double(numerology.SubcarrierSpacingKHz), canonicalTTI_s);
 end
 slotDuration_ms = tti_s * 1e3;
-slotsPerFrame = localFiniteOrDefault( ...
-    double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN)), ...
-    max(1, round(10 * 2 ^ max(0, round(log2(max(double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", 30)), 15) / 15))))));
+slotsPerFrame = double(sixgr.util.structGet(cfg, ...
+    "phy.numerology.slotsPerFrame", NaN));
+if isfinite(slotsPerFrame) && ...
+        slotsPerFrame ~= double(numerology.SlotsPerFrame)
+    error("sixgr:truth:exportSystemLevelCanonicalArtifacts:FrameNumerologyMismatch", ...
+        "Configured SlotsPerFrame=%g conflicts with canonical SCS=%g kHz value %g.", ...
+        slotsPerFrame, double(numerology.SubcarrierSpacingKHz), ...
+        double(numerology.SlotsPerFrame));
+end
+slotsPerFrame = double(numerology.SlotsPerFrame);
 
 dlGrantT = localBuildDirectionalGrantTable(grantT, "DL", cfg, details, tti_s, slotsPerFrame);
 ulGrantT = localBuildDirectionalGrantTable(grantT, "UL", cfg, details, tti_s, slotsPerFrame);
@@ -554,6 +567,7 @@ T = struct2table(rows(1:rowIdx), "AsArray", true);
 end
 
 function T = localBuildRuntimeOperatingModeTable(cfg, scfg, details, rawTrials)
+numerology = localCanonicalNumerology(cfg);
 rows = repmat(struct( ...
     "Direction", "", ...
     "LinkAdaptationMode", "", ...
@@ -690,11 +704,11 @@ for i = 1:2
     rows(i).ActualMCSSelectionModeAuthority = "raw_trial_runtime_evidence";
     rows(i).CQITable = char(sixgr.link.resolveConfiguredCQITable(cfg, direction));
     rows(i).MCSTable = char(sixgr.link.resolveConfiguredMCSTable(cfg, direction));
-    rows(i).Numerology_mu = double(sixgr.util.structGet(cfg, "phy.numerology.mu", NaN));
-    rows(i).SCS_kHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN));
-    rows(i).SlotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
-    rows(i).SlotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN));
-    rows(i).SymbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", 14));
+    rows(i).Numerology_mu = double(numerology.Mu);
+    rows(i).SCS_kHz = double(numerology.SubcarrierSpacingKHz);
+    rows(i).SlotDuration_ms = double(numerology.SlotDurationMilliseconds);
+    rows(i).SlotsPerFrame = double(numerology.SlotsPerFrame);
+    rows(i).SymbolsPerSlot = double(numerology.SymbolsPerSlot);
     rows(i).ConfiguredGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.configuredGridNumRBs", sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)));
     rows(i).ActiveGridNumRBs = double(sixgr.util.structGet(cfg, "phy.numerology.activeGridNumRBs", sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)));
     rows(i).ActiveGridSource = char(string(sixgr.util.structGet(cfg, "phy.numerology.activeGridSource", "configured_n_size_grid")));
@@ -1965,4 +1979,14 @@ function value = localFiniteOrDefault(value, defaultValue)
 if ~(isfinite(value) && ~isempty(value))
     value = defaultValue;
 end
+end
+
+function numerology = localCanonicalNumerology(cfg)
+scsKHz = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", ...
+    sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN))));
+cp = string(sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal"));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scsKHz, cp, "generic_waveform_test", "");
 end

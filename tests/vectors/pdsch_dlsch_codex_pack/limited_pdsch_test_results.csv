@@ -1,0 +1,27 @@
+CheckID,Check,Status,Evidence
+LIM-001,independent vector manifest and SHA-256,PASS,"PDSCH vector-pack verification: 25 files checked, 0 failures"
+LIM-002,QPSK full-constellation mean energy,PASS,mean=0.9999999999999998; symbols=4
+LIM-003,16QAM full-constellation mean energy,PASS,mean=1; symbols=16
+LIM-004,64QAM full-constellation mean energy,PASS,mean=0.9999999999999998; symbols=64
+LIM-005,256QAM full-constellation mean energy,PASS,mean=0.9999999999999999; symbols=256
+LIM-006,1024QAM full-constellation mean energy,PASS,mean=0.9999999999999999; symbols=1024
+LIM-007,all supplied TB CRC vectors divide to zero,PASS,18/18
+LIM-008,scrambling vector lengths and ones counts,PASS,rows=12
+LIM-009,codeword index changes Gold sequence where paired,PASS,paired_keys=3
+LIM-010,rank 1-8 codeword-to-layer conservation,PASS,valid_cases=8; output_rows=40
+LIM-011,TBS/base-graph/CRC structural invariants,PASS,valid_rows=18
+LIM-012,DM-RS passing positions contained in PDSCH allocation,PASS,rows=175
+LIM-013,"DM-RS port capability, non-contiguous enhanced sets, OCC weights and deltas",PASS,rows=108; valid=90; invalid=18
+LIM-014,reserved-RE union partitions allocation,PASS,rows=14
+LIM-015,assignment vectors limited to declared DCI 1_0/1_1/1_2,PASS,"formats=['1_0', '1_1', '1_2']"
+LIM-016,downlink SPS vectors require activation context and exact occasion,PASS,sps_rows=6; pass=1
+LIM-017,declared coverage rank 1-8 and mapping A/B,PASS,"ranks=[1, 2, 3, 4, 5, 6, 7, 8]; mappings=['A', 'B']"
+LIM-018,high-rank coverage requests enhanced DM-RS when needed,PASS,rows=16
+LIM-019,coverage matrix selects only supported DM-RS ports,PASS,rows=16
+LIM-020,HARQ NDI is stable for retransmissions and toggles for new data,PASS,"rv_ndi=['1', '1', '1', '1']; new_ndi=0"
+LIM-021,current source-visible shortcut audit executed,PASS,checks=29; fail=25; pass=4
+LIM-022,existing required PDSCH phase artifact presence checked,PASS,present=0; missing=24
+LIM-023,existing repository PNG decode/nonblank check,PASS,passed=40; total=40; PDSCH-specific-required=0
+LIM-024,artifact verifier positive and corruption self-test,PASS,"PDSCH artifact verification: 33 passed, 0 failed | PDSCH artifact verification: 32 passed, 1 failed | FAIL SEMANTIC pdsch_resource_grid_ownership.png: png_hash_mismatch | Verifier self-test valid set: exit=0, checks=33, failures=0 | Verifier self-test corrupted hash: exit=2, checks=33, failures=1, detected=True"
+LIM-025,pack Python files compile,PASS,files=5; stderr=
+LIM-026,MATLAB runtime available for real PHY execution,BLOCKED,matlab=None; octave=None; absence means MATLAB tests remain BLOCKED

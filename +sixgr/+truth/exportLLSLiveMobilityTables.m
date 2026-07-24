@@ -293,12 +293,11 @@ end
 
 function numSlots = localResolveNumSlots(cfg)
 numFrames = max(1, round(double(sixgr.util.structGet(cfg, "run.numFrames", 20))));
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
-mu = log2(max(scs, 15) / 15);
-if ~(isfinite(mu) && mu >= 0)
-    mu = 0;
-end
-slotsPerFrame = 10 * (2 ^ round(mu));
+scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", NaN)));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scs, "normal", "generic_waveform_test", "");
+slotsPerFrame = double(numerology.SlotsPerFrame);
 numSlots = max(8, round(numFrames * slotsPerFrame));
 if ~isfinite(numSlots) || numSlots < 1
     numSlots = 20;
@@ -318,12 +317,7 @@ slots = max(1, round(double(slots)));
 end
 
 function slotDur_s = localSlotDuration(cfg)
-scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
-mu = log2(max(scs, 15) / 15);
-if ~(isfinite(mu) && mu >= 0)
-    mu = 0;
-end
-slotDur_s = 1e-3 / (2^mu);
+slotDur_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function nRB = localEstimateNRB(cfg)
@@ -332,7 +326,12 @@ if isfinite(carrierNRB) && carrierNRB >= 1
     nRB = round(carrierNRB);
 else
     bw_Hz = double(sixgr.util.structGet(cfg, "channel.bandwidth_Hz", 20e6));
-    scs_kHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
+    scs_kHz = double(sixgr.util.structGet(cfg, ...
+        "phy.carrier.SubcarrierSpacing", ...
+        sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", NaN)));
+    numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+        scs_kHz, "normal", "generic_waveform_test", "");
+    scs_kHz = double(numerology.SubcarrierSpacingKHz);
     rbBw_Hz = max(12 * scs_kHz * 1e3, eps);
     nRB = round(bw_Hz / rbBw_Hz);
 end

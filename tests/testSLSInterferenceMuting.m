@@ -31,6 +31,9 @@ cfg.scenario.ue.nTxAnt = 1;
 cfg.scenario.ue.nRxAnt = 1;
 
 cfg.phy.duplex.mode = "FDD";
+cfg.phy.duplex.fdd = struct( ...
+    "dlCenterFrequencyHz", 2.14e9, ...
+    "ulCenterFrequencyHz", 1.95e9);
 cfg.channel.awgnOnly = true;
 cfg.channel.model = "AWGN";
 cfg.channel.fading.enable = false;
@@ -44,14 +47,29 @@ cfg.phy.pdsch.modulation = "QPSK";
 cfg.phy.pdsch.codeRate = 0.35;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.nLayers = 1;
+cfg.phy.pdsch.symbolAllocation = [0 14];
 cfg.phy.pusch.modulation = "QPSK";
 cfg.phy.pusch.codeRate = 0.35;
 cfg.phy.pusch.numLayers = 1;
 cfg.phy.pusch.nLayers = 1;
+cfg.phy.pusch.symbolAllocation = [0 14];
+cfg.phy.pdcch.symbolAllocation = [0 2];
+cfg.phy.pucch.symbolAllocation = [0 2];
+cfg.phy.tddTiming = struct( ...
+    "allowedK0", 1, ...
+    "pdcchToPDSCHK0", 1, ...
+    "dlHARQFeedbackK1Candidates", 2, ...
+    "pdcchToPUSCHK2", 1, ...
+    "ulGrantK2", 1, ...
+    "capabilityProfileID", ...
+        "38.214-v18.8.0-cap1-dmrs-pos0-mu1", ...
+    "n1PDSCHProcessingTimeSymbols", 10, ...
+    "n2PUSCHPreparationTimeSymbols", 12, ...
+    "timingAdvanceTicks", 0);
 cfg.mac.scheduler.type = "rr";
 
 cfg = sixgr.config.normalizeConfig(cfg);
-sixgr.config.validateConfig(cfg);
+cfg = sixgr.config.validateConfig(cfg);
 
 numTTI = 4;
 nUE = double(cfg.scenario.ue.nUE);

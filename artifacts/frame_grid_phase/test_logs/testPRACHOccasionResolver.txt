@@ -1,0 +1,2 @@
+Suite: testPRACHOccasionResolver
+PASS in 55.969110 seconds.

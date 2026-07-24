@@ -18,8 +18,14 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %     "TargetCodeRate": code rate (0..1)
 %     "XOverhead"    : xOverhead for nrTBS (default 0)
 %     "NumTxAnt"     : number of TX antennas / mapped antenna ports
-%     "PrecodingMatrix" : wideband PDSCH precoder, Nports-by-Nlayers or transpose
+%     "PrecodingMatrix" : wideband Nports-by-Nlayers matrix (or transpose),
+%                         or an Nports-by-Nlayers-by-NPRG PRG bundle array
 %     "PHYGrant"     : frozen canonical grant dimensional contract
+%
+%   CFG.phy.pdsch.dmrs.dataToDMRSEPREDifference_dB controls the PDSCH
+%   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
+%   normative -3 dB token maps to exact beta=sqrt(2), with configured and
+%   realized dB values retained separately in the output metadata.
 %
 %   Outputs:
 %     TX.Waveform      : time-domain OFDM waveform
@@ -215,7 +221,16 @@ codewordLayerMapping = localFinalizePDSCHCodewordLayerContract(codewordLayerMapp
 localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayouts, codewordLayerMapping);
 
 % DMRS
-[dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
+[dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
+[dmrsSym, dmrsPowerInfo] = localApplyPDSCHDMRSEPREDifference(dmrsSym, cfg);
+dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+dmrsInfo.RealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
+dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
+dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
 
 % PTRS (optional)
 [ptrsInd, ptrsSym, ptrsInfo] = sixgr.phy.refsig.ptrsPDSCH(carrier, pdsch);
@@ -349,6 +364,13 @@ tx.CodewordLayerMapping = codewordLayerMapping;
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.PrecodePowerInfo = precodePowerInfo;
+tx.DMRSEPREDifference = dmrsPowerInfo;
+tx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+tx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+tx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+tx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+tx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+tx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 tx.SymbolDomainInfo = struct( ...
     "ReferenceDomain", "layer", ...
     "PortDomain", "port", ...
@@ -390,6 +412,7 @@ end
 tx.TxContext = localBuildTxContext(tx, trBlkCell, tbCrcCell, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
     dmrsInd, dmrsSym, dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, ptrsAntInd, ptrsAntSym, ...
     carrier, pdsch, codingLayouts, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
+tx.TxContext.DMRSEPREDifference = dmrsPowerInfo;
 
 info = struct();
 info.CarrierInfo = cinfo;
@@ -410,6 +433,8 @@ info.OFDM = ofdmInfo;
 info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.PrecodePowerInfo = precodePowerInfo;
+info.DMRS = dmrsInfo;
+info.DMRSEPREDifference = dmrsPowerInfo;
 info.XOverhead = double(xOverhead);
 info.ResourceAccounting = resourceAccounting;
 info.CodewordLayerMapping = codewordLayerMapping;
@@ -566,7 +591,8 @@ if isfinite(grantXOverhead) && grantXOverhead >= 0
 elseif ~isempty(optXOverhead)
     xOverhead = double(optXOverhead);
 else
-    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14]));
+    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, ...
+        localObjectValue(pdsch, "SymbolAllocation", []));
 end
 if ~(isscalar(xOverhead) && isfinite(xOverhead) && xOverhead >= 0)
     error("sixgr:phy:dl:PDSCHBadXOverhead", "PDSCH XOverhead must be finite and non-negative.");
@@ -1545,4 +1571,57 @@ if ~(isscalar(numPorts) && isfinite(numPorts) && numPorts >= 0)
     numPorts = 0;
 end
 numPorts = round(numPorts);
+end
+
+function [dmrsSym, info] = localApplyPDSCHDMRSEPREDifference(dmrsSym, cfg)
+% The configured quantity follows the conformance-table convention:
+%   data EPRE / DM-RS EPRE in dB = data EPRE - DM-RS EPRE.
+path = "phy.pdsch.dmrs.dataToDMRSEPREDifference_dB";
+rawDifference = sixgr.util.structGet(cfg, char(path), []);
+if isempty(rawDifference)
+    difference_dB = 0;
+    source = "default_zero_db";
+else
+    if ~(isnumeric(rawDifference) && isreal(rawDifference) && isscalar(rawDifference) && isfinite(rawDifference))
+        error("sixgr:phy:dl:PDSCHDMRSEPREDifferenceInvalid", ...
+            "%s must be a finite real numeric scalar.", char(path));
+    end
+    difference_dB = double(rawDifference);
+    source = path;
+end
+
+configuredPowerBoost_dB = -difference_dB;
+if abs(difference_dB + 3) <= 1e-12
+    % Conformance FRC tables express data-to-DM-RS EPRE as -3 dB while
+    % the corresponding exact reference-symbol amplitude is beta=sqrt(2).
+    amplitudeScale = sqrt(2);
+    powerScale = 2;
+    scalePolicy = "normative_minus3_db_beta_sqrt2";
+else
+    amplitudeScale = 10.^(configuredPowerBoost_dB ./ 20);
+    powerScale = amplitudeScale.^2;
+    scalePolicy = "literal_configured_db_ratio";
+end
+if ~(isfinite(amplitudeScale) && amplitudeScale > 0 && isfinite(powerScale) && powerScale > 0)
+    error("sixgr:phy:dl:PDSCHDMRSEPREDifferenceInvalid", ...
+        "%s=%g dB produces a non-finite or non-positive DM-RS scale.", ...
+        char(path), difference_dB);
+end
+realizedPowerBoost_dB = 10 .* log10(powerScale);
+realizedDifference_dB = -realizedPowerBoost_dB;
+
+dmrsSym = dmrsSym .* cast(amplitudeScale, "like", dmrsSym);
+info = struct( ...
+    "ContractVersion", "PDSCHDMRSEPREDifference/v1", ...
+    "Source", source, ...
+    "DataToDMRSEPREDifference_dB", double(difference_dB), ...
+    "ConfiguredDMRSPowerBoost_dB", double(configuredPowerBoost_dB), ...
+    "RealizedDataToDMRSEPREDifference_dB", double(realizedDifference_dB), ...
+    "DMRSPowerBoost_dB", double(realizedPowerBoost_dB), ...
+    "DMRSAmplitudeScale", double(amplitudeScale), ...
+    "DMRSPowerScale", double(powerScale), ...
+    "Applied", logical(abs(difference_dB) > 1e-12), ...
+    "NormativeMinus3dBBetaApplied", logical(scalePolicy == "normative_minus3_db_beta_sqrt2"), ...
+    "ScalePolicy", scalePolicy, ...
+    "Equation", "normative_minus3_db_uses_beta_sqrt2_otherwise_10_power_minus_delta_db_over_20");
 end

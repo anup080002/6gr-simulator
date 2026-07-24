@@ -18,6 +18,11 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     "NumTxAnt"           : number of TX antennas for resource grid pages
 %     "PHYGrant"           : frozen canonical grant dimensional contract
 %
+%   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
+%   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
+%   normative -3 dB token maps to exact beta=sqrt(2), with configured and
+%   realized dB values retained separately in the output metadata.
+%
 %   Outputs:
 %     TX.Waveform          : time-domain OFDM waveform
 %     TX.Grid              : frequency-domain resource grid
@@ -203,7 +208,16 @@ puschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschLayerI
 puschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschInd, "port");
 
 % DMRS
-[dmrsInd, dmrsSym] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
+[dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
+[dmrsSym, dmrsPowerInfo] = localApplyPUSCHDMRSEPREDifference(dmrsSym, cfg);
+dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+dmrsInfo.RealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
+dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
+dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
 
 % PTRS (optional)
 ptrsInd = [];
@@ -318,6 +332,13 @@ tx.CodewordLayerMapping = codewordLayerMapping;
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.PrecodePowerInfo = precodePowerInfo;
+tx.DMRSEPREDifference = dmrsPowerInfo;
+tx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+tx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+tx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+tx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+tx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+tx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 tx.NumWaveformColumns = double(size(txWaveform, 2));
 tx.UEPhysicalTxAntennas = double(uePhysicalTxAnt);
 tx.SymbolDomainInfo = puschDomainInfo;
@@ -367,6 +388,8 @@ info.OFDM = ofdmInfo;
 info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.PrecodePowerInfo = precodePowerInfo;
+info.DMRS = dmrsInfo;
+info.DMRSEPREDifference = dmrsPowerInfo;
 info.NumWaveformColumns = double(size(txWaveform, 2));
 info.UEPhysicalTxAntennas = double(uePhysicalTxAnt);
 info.UCIOnPUSCH = uciInfo;
@@ -765,7 +788,7 @@ nPorts = localPositiveIntegerValue(localObjectValue(pusch, "NumAntennaPorts", ma
 transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", "nonCodebook"))));
 isCodebook = scheme == "codebook";
-dftInputSym = localScrambledLayerSymbols(pusch, codeword);
+dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword);
 if transformPrecoding
     if isCodebook
         layerSym = localPostTransformLayerSymbols(carrier, pusch, codeword, nLayers);
@@ -850,8 +873,15 @@ Wnr = reshape(H.', [size(H, 2), size(H, 1), 1]);
 [elementSym, elementInd] = nrPDSCHPrecode(carrier, portSym, portInd, Wnr);
 end
 
-function dftInputSym = localScrambledLayerSymbols(pusch, codeword)
-nid = double(localObjectValue(pusch, "NID", 0));
+function dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword)
+% nrPUSCH uses carrier.NCellID when pusch.NID is empty. Mirror that
+% ownership here so the independently reconstructed layer-domain evidence
+% uses the same scrambling sequence as the toolbox modulator.
+nid = localObjectValue(pusch, "NID", []);
+if isempty(nid)
+    nid = localObjectValue(carrier, "NCellID", 0);
+end
+nid = double(nid);
 rnti = double(localObjectValue(pusch, "RNTI", 1));
 scrambled = nrPUSCHScramble(codeword(:), nid, rnti);
 modulated = nrSymbolModulate(scrambled(:), char(string(pusch.Modulation)));
@@ -1335,4 +1365,57 @@ error('sixgr:phy:ul:PUSCHGridMappingMismatch', ...
     ['PUSCH grid mapping requires one symbol per resource element. ' ...
      'IndexCount=%d SymbolCount=%d IndexShape=%s SymbolShape=%s.'], ...
     numel(indLin), numel(symLin), mat2str(size(ind)), mat2str(size(sym)));
+end
+
+function [dmrsSym, info] = localApplyPUSCHDMRSEPREDifference(dmrsSym, cfg)
+% The configured quantity follows the conformance-table convention:
+%   data EPRE / DM-RS EPRE in dB = data EPRE - DM-RS EPRE.
+path = "phy.pusch.dmrs.dataToDMRSEPREDifference_dB";
+rawDifference = sixgr.util.structGet(cfg, char(path), []);
+if isempty(rawDifference)
+    difference_dB = 0;
+    source = "default_zero_db";
+else
+    if ~(isnumeric(rawDifference) && isreal(rawDifference) && isscalar(rawDifference) && isfinite(rawDifference))
+        error("sixgr:phy:ul:PUSCHDMRSEPREDifferenceInvalid", ...
+            "%s must be a finite real numeric scalar.", char(path));
+    end
+    difference_dB = double(rawDifference);
+    source = path;
+end
+
+configuredPowerBoost_dB = -difference_dB;
+if abs(difference_dB + 3) <= 1e-12
+    % TS 38.104 expresses the normative PUSCH-to-DMRS EPRE ratio as
+    % -3 dB while the corresponding exact beta is sqrt(2).
+    amplitudeScale = sqrt(2);
+    powerScale = 2;
+    scalePolicy = "ts_38_104_minus3_db_beta_sqrt2";
+else
+    amplitudeScale = 10.^(configuredPowerBoost_dB ./ 20);
+    powerScale = amplitudeScale.^2;
+    scalePolicy = "literal_configured_db_ratio";
+end
+if ~(isfinite(amplitudeScale) && amplitudeScale > 0 && isfinite(powerScale) && powerScale > 0)
+    error("sixgr:phy:ul:PUSCHDMRSEPREDifferenceInvalid", ...
+        "%s=%g dB produces a non-finite or non-positive DM-RS scale.", ...
+        char(path), difference_dB);
+end
+realizedPowerBoost_dB = 10 .* log10(powerScale);
+realizedDifference_dB = -realizedPowerBoost_dB;
+
+dmrsSym = dmrsSym .* cast(amplitudeScale, "like", dmrsSym);
+info = struct( ...
+    "ContractVersion", "PUSCHDMRSEPREDifference/v1", ...
+    "Source", source, ...
+    "DataToDMRSEPREDifference_dB", double(difference_dB), ...
+    "ConfiguredDMRSPowerBoost_dB", double(configuredPowerBoost_dB), ...
+    "RealizedDataToDMRSEPREDifference_dB", double(realizedDifference_dB), ...
+    "DMRSPowerBoost_dB", double(realizedPowerBoost_dB), ...
+    "DMRSAmplitudeScale", double(amplitudeScale), ...
+    "DMRSPowerScale", double(powerScale), ...
+    "Applied", logical(abs(difference_dB) > 1e-12), ...
+    "NormativeMinus3dBBetaApplied", logical(scalePolicy == "ts_38_104_minus3_db_beta_sqrt2"), ...
+    "ScalePolicy", scalePolicy, ...
+    "Equation", "normative_minus3_db_uses_beta_sqrt2_otherwise_10_power_minus_delta_db_over_20");
 end

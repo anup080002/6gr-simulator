@@ -1,6 +1,6 @@
 {
   "frequency": {
-    "range_name": "FR2",
+    "range_name": "FR2-1",
     "band_name": "30ghz",
     "center_frequency_hz": 30000000000,
     "bandwidth_hz": 100000000,

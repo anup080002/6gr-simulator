@@ -17,8 +17,13 @@ function [rx, info] = PDSCH_Rx(rxWaveform, cfg, varargin)
 %     "NoiseVarDomain": "time", "grid", "frequency", or "auto"
 %     "MaxIterations": LDPC iterations (default from cfg)
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
-%     "PrecodingMatrix": wideband PDSCH precoder used by the transmitter
+%     "PrecodingMatrix": wideband or PRG-bundled PDSCH precoder used by TX
 %     "PHYGrant"    : frozen canonical grant dimensional contract
+%
+%   CFG.phy.pdsch.dmrs.dataToDMRSEPREDifference_dB controls the PDSCH
+%   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
+%   normative -3 dB token maps to exact beta=sqrt(2), matching the
+%   transmitter and retaining configured versus realized dB provenance.
 %
 %   Outputs:
 %     RX.TransportBlock     : recovered TB bits (if CRC passes)
@@ -160,7 +165,8 @@ targetCodeRate = localExpandPerCodewordDouble(targetCodeRate, nCodewords, "PDSCH
 modulationPerCodeword = localPDSCHModulationPerCodeword(pdsch, nCodewords);
 trBlkSize = opt.TransportBlockSize;
 if isempty(trBlkSize)
-    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14]));
+    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, ...
+        localObjectValue(pdsch, "SymbolAllocation", []));
     nPRB = numel(pdsch.PRBSet);
     nrePerPRB = localResolvePDSCHNREPerPRBOrError(carrier, pdsch, pdschInfo, nPRB);
     trBlkSize = nrTBS(pdsch.Modulation, pdsch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
@@ -182,6 +188,15 @@ ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
 
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
+[dmrsSym, dmrsPowerInfo] = localApplyPDSCHDMRSEPREDifference(dmrsSym, cfg);
+dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+dmrsInfo.RealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
+dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
+dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
 useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
@@ -359,15 +374,21 @@ elseif ~isempty(dmrsInd)
     % Estimate the effective PDSCH layer channel from the DM-RS port
     % resources. Precoding is transparent to the UE and is included in this
     % effective channel rather than exposed as antenna-domain references.
-    [hEst, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
-        "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
-        "UseFastMex", useFastChEstMex, ...
-        "StrictMode", strictMode, ...
-        "ChannelModel", channelModelToken, ...
-        "ExpectedTxPorts", numTxPorts, ...
-        "Method", localResolveChannelEstimationMethod(cfg), ...
-        "Config", cfg, ...
-        "ContextLabel", "PDSCH_Rx");
+    if logical(prec.Active) && ~logical(prec.WidebandOnly)
+        [hEst, nVarEst, estInfo] = localEstimatePRGBundledPDSCHChannel( ...
+            carrier, pdsch, rxGrid, dmrsInd, dmrsSym, dmrsInfo, prec, cfg, ...
+            useFastChEstMex, strictMode, channelModelToken, numTxPorts);
+    else
+        [hEst, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
+            "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
+            "UseFastMex", useFastChEstMex, ...
+            "StrictMode", strictMode, ...
+            "ChannelModel", channelModelToken, ...
+            "ExpectedTxPorts", numTxPorts, ...
+            "Method", localResolveChannelEstimationMethod(cfg), ...
+            "Config", cfg, ...
+            "ContextLabel", "PDSCH_Rx");
+    end
 else
     localValidateNoDMRSUnitChannelFallback(channelModelToken, numTxPorts, max(1, size(rxGrid, 3)), "PDSCH_Rx");
     hEst = ones(size(rxGrid), 'like', rxGrid);
@@ -585,7 +606,8 @@ rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
 rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
 rx.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(harqCombiningInfo, "PositionAware", false));
 rx.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(harqCombiningInfo, "OverlapPositionCount", NaN));
-rx.XOverhead = double(sixgr.phy.dl.resolvePDSCHXOverhead(cfg, localObjectValue(pdsch, "SymbolAllocation", [0 14])));
+rx.XOverhead = double(sixgr.phy.dl.resolvePDSCHXOverhead(cfg, ...
+    localObjectValue(pdsch, "SymbolAllocation", [])));
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 rx.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(syncState, "EstimatedCommonFrequency_Hz", NaN));
@@ -681,8 +703,28 @@ rx.ChannelEstimateEffectiveConvention = char(string(sixgr.util.structGet(estInfo
 rx.ChannelEstimatePilotRECount = double(sixgr.util.structGet(estInfo, "PilotRECount", NaN));
 rx.ChannelEstimatePilotResidualPower = double(sixgr.util.structGet(estInfo, "PilotResidualPower", NaN));
 rx.ChannelEstimatePilotResidualNMSE_dB = double(sixgr.util.structGet(estInfo, "PilotResidualNMSE_dB", NaN));
+rx.ChannelEstimatePRGAware = logical(sixgr.util.structGet(estInfo, "PRGAware", false));
+rx.ChannelEstimatePRGCount = double(sixgr.util.structGet(estInfo, "PRGCount", 1));
+rx.ChannelEstimateEstimatedPRGCount = double(sixgr.util.structGet(estInfo, "EstimatedPRGCount", ...
+    double(~isempty(hEst))));
+rx.ChannelEstimatePRGBundleSizeRB = double(sixgr.util.structGet(estInfo, "PRGBundleSizeRB", NaN));
+rx.ChannelEstimateExactAWGNPRGEstimatorRequested = logical(sixgr.util.structGet( ...
+    estInfo, "ExactAWGNPRGEstimatorRequested", false));
+rx.ChannelEstimateExactAWGNPRGEstimatorEligible = logical(sixgr.util.structGet( ...
+    estInfo, "ExactAWGNPRGEstimatorEligible", false));
+rx.ChannelEstimateExactAWGNPRGEstimatorUsed = logical(sixgr.util.structGet( ...
+    estInfo, "ExactAWGNPRGEstimatorUsed", false));
+rx.ChannelEstimateExactAWGNPRGEstimatorDisabledReason = char(string(sixgr.util.structGet( ...
+    estInfo, "ExactAWGNPRGEstimatorDisabledReason", "")));
 rx.ResourceExtractionAttempted = true;
 rx.ResourceExtractionAvailable = ~isempty(rxSym);
+rx.DMRSEPREDifference = dmrsPowerInfo;
+rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+rx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+rx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+rx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+rx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 rx.EqualizationAttempted = true;
 rx.EqualizationAvailable = ~isempty(eqSym);
 rx.DLSCHDecodeAttempted = true;
@@ -777,6 +819,8 @@ info.OFDM = ofdmInfo;
 info.PDSCHInfo = pdschInfo;
 info.Precoding = prec;
 info.ChannelEstimation = estInfo;
+info.DMRS = dmrsInfo;
+info.DMRSEPREDifference = dmrsPowerInfo;
 info.CSIRS = csirsInfo;
 info.CSIRSObservation = csirsObservation;
 info.CSIRSChannelEstimation = csirsEstInfo;
@@ -810,6 +854,440 @@ if hasPHYGrant
     info.PHYGrantDimensionContract = phyGrantContract;
 end
 
+end
+
+function [Hest, nVar, estInfo] = localEstimatePRGBundledPDSCHChannel( ...
+        carrier, pdsch, rxGrid, dmrsInd, dmrsSym, dmrsInfo, prec, cfg, ...
+        useFastChEstMex, strictMode, channelModelToken, numTxPorts)
+% Estimate a discontinuously precoded effective channel independently in
+% each PRG. A whole-grid interpolation is not valid at a PRG boundary:
+% even when the physical channel is flat, H*W changes discontinuously with
+% the PRG precoder. Each estimate still comes exclusively from received
+% DM-RS evidence and uses the ordinary resource-selective truth estimator.
+[prgSet, prgBundleSizeRB, partitionInfo] = ...
+    localResolvePDSCHPRGPartition(carrier, prec, cfg);
+estimationMethod = localResolveChannelEstimationMethod(cfg);
+exactAWGNPolicy = localResolveExactAWGNPRGEstimatorPolicy( ...
+    cfg, channelModelToken, prec, estimationMethod);
+
+K = size(rxGrid, 1);
+L = size(rxGrid, 2);
+nPRG = round(double(prec.NumPRG));
+activePRB = round(double(pdsch.PRBSet(:))) + 1;
+if isempty(activePRB) || any(~isfinite(activePRB)) || ...
+        any(activePRB < 1 | activePRB > numel(prgSet))
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:BadPRBSet", ...
+        "PDSCH PRBSet must resolve to carrier-relative PRBs in [0,%d].", ...
+        numel(prgSet) - 1);
+end
+activePRG = unique(double(prgSet(activePRB)), "stable");
+
+Hest = [];
+estimatedMask = false(1, nPRG);
+perPRGInfo = cell(1, nPRG);
+perPRGNoiseVar = NaN(1, nPRG);
+perPRGPilotCount = zeros(1, nPRG);
+perPRGPilotResidualPower = NaN(1, nPRG);
+perPRGPilotSignalPower = NaN(1, nPRG);
+
+for ii = 1:numel(activePRG)
+    prg = activePRG(ii);
+    prb = find(double(prgSet(:)) == prg);
+    subcarriers = reshape((12 .* (prb(:) - 1)) + (1:12), [], 1);
+    [prgDMRSInd, prgDMRSSym] = localSelectPDSCHPRGReferences( ...
+        dmrsInd, dmrsSym, subcarriers, K, L, max(1, double(prec.NumLayers)));
+    if isempty(prgDMRSInd)
+        error("sixgr:phy:dl:PDSCHPRGChannelEstimate:MissingPRGDMRS", ...
+            ["Active PDSCH PRG %d has no DM-RS evidence. Truth reception " ...
+            "cannot interpolate an effective channel from another precoder bundle."], ...
+            prg);
+    end
+
+    if logical(exactAWGNPolicy.Use)
+        % This is not a scalar full-grid shortcut: it estimates one
+        % independent effective coefficient per PRG and receive antenna,
+        % then fills only that PRG. It is exact only for explicit flat
+        % AWGN with one layer and therefore fails closed outside that gate.
+        [hPRG, nVarPRG, infoPRG] = localEstimateExactAWGNPRGChannel( ...
+            rxGrid, prgDMRSInd, prgDMRSSym, subcarriers, ...
+            channelModelToken, prec, prg);
+    else
+        [hPRG, nVarPRG, infoPRG] = sixgr.phy.rx.channelEstimate( ...
+            carrier, rxGrid, prgDMRSInd, prgDMRSSym, ...
+            "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
+            "UseFastMex", false, ...
+            "StrictMode", strictMode, ...
+            "ChannelModel", channelModelToken, ...
+            "ExpectedTxPorts", numTxPorts, ...
+            "Method", estimationMethod, ...
+            "Config", cfg, ...
+            "ContextLabel", "PDSCH_Rx_PRG_" + string(prg));
+    end
+
+    if isempty(Hest)
+        Hest = zeros(size(hPRG), "like", hPRG);
+    elseif ~isequal(size(Hest), size(hPRG))
+        error("sixgr:phy:dl:PDSCHPRGChannelEstimate:EstimatorShapeMismatch", ...
+            "PRG %d channel-estimate shape %s does not match %s.", ...
+            prg, mat2str(size(hPRG)), mat2str(size(Hest)));
+    end
+    Hest(subcarriers, :, :, :) = hPRG(subcarriers, :, :, :);
+    estimatedMask(prg) = true;
+    perPRGInfo{prg} = infoPRG;
+    perPRGNoiseVar(prg) = double(nVarPRG);
+    perPRGPilotCount(prg) = double(sixgr.util.structGet( ...
+        infoPRG, "PilotRECount", numel(prgDMRSInd)));
+    perPRGPilotResidualPower(prg) = double(sixgr.util.structGet( ...
+        infoPRG, "PilotResidualPower", NaN));
+    perPRGPilotSignalPower(prg) = double(sixgr.util.structGet( ...
+        infoPRG, "PilotSignalPower", NaN));
+end
+
+if any(~estimatedMask(activePRG))
+    missing = activePRG(~estimatedMask(activePRG));
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:IncompletePRGEstimate", ...
+        "No truth channel estimate was produced for active PDSCH PRG(s) %s.", ...
+        mat2str(missing));
+end
+
+nVar = localWeightedFiniteMean(perPRGNoiseVar, perPRGPilotCount);
+if ~isfinite(nVar)
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:NoiseVarianceUnavailable", ...
+        "Per-PRG channel estimation did not produce a finite noise variance.");
+end
+
+firstPRG = activePRG(1);
+estInfo = perPRGInfo{firstPRG};
+pilotResidualPower = localWeightedFiniteMean( ...
+    perPRGPilotResidualPower, perPRGPilotCount);
+pilotSignalPower = localWeightedFiniteMean( ...
+    perPRGPilotSignalPower, perPRGPilotCount);
+pilotResidualNMSEdB = NaN;
+if isfinite(pilotResidualPower) && isfinite(pilotSignalPower)
+    pilotResidualNMSEdB = 10 .* log10(max( ...
+        pilotResidualPower ./ max(pilotSignalPower, eps), eps));
+end
+[pilotMask, pilotLinear] = localPDSCHReferenceMask(dmrsInd, K, L, ...
+    max(1, double(prec.NumLayers)));
+
+estInfo.ContextLabel = "PDSCH_Rx_PRG_stitched";
+if logical(exactAWGNPolicy.Use)
+    estInfo.EngineUsed = "exact_awgn_ls_per_prg_stitched";
+    interpolationMethod = "constant_within_each_prg_from_prg_local_dmrs_ls";
+else
+    estInfo.EngineUsed = "nrChannelEstimate_per_prg_stitched";
+    interpolationMethod = "within_prg_only:" + string( ...
+        sixgr.util.structGet(estInfo, "InterpolationMethod", "nrChannelEstimate_default"));
+end
+estInfo.HestSize = size(Hest);
+estInfo.NoiseVar = double(nVar);
+estInfo.PilotMask = pilotMask;
+estInfo.PilotMaskLinearIndices = double(pilotLinear(:));
+estInfo.PilotRECount = double(sum(perPRGPilotCount(activePRG)));
+estInfo.PilotResidualPower = double(pilotResidualPower);
+estInfo.PilotSignalPower = double(pilotSignalPower);
+estInfo.PilotResidualNMSE_dB = double(pilotResidualNMSEdB);
+estInfo.InterpolationMethod = interpolationMethod;
+estInfo.EffectiveChannelConvention = ...
+    "resource_grid_rx_antenna_by_dmrs_port_after_precoding_stitched_within_each_prg";
+estInfo.PRGAware = true;
+estInfo.PRGCount = double(nPRG);
+estInfo.ActivePRG = double(activePRG(:).');
+estInfo.EstimatedPRGCount = double(nnz(estimatedMask));
+estInfo.EstimatedPRGMask = logical(estimatedMask);
+estInfo.PRGBundleSizeRB = double(prgBundleSizeRB);
+estInfo.PRGSet = double(prgSet(:).');
+estInfo.PRGPartitionSource = char(string(partitionInfo.Source));
+estInfo.PRGBundleSizeCandidatesRB = double(partitionInfo.BundleSizeCandidatesRB);
+estInfo.PerPRGNoiseVar = double(perPRGNoiseVar);
+estInfo.PerPRGPilotRECount = double(perPRGPilotCount);
+estInfo.PerPRGPilotResidualPower = double(perPRGPilotResidualPower);
+estInfo.PerPRGDetails = perPRGInfo;
+estInfo.ExactAWGNPRGEstimatorRequested = logical(exactAWGNPolicy.Requested);
+estInfo.ExactAWGNPRGEstimatorEligible = logical(exactAWGNPolicy.Eligible);
+estInfo.ExactAWGNPRGEstimatorUsed = logical(exactAWGNPolicy.Use);
+estInfo.ExactAWGNPRGEstimatorDisabledReason = char(string(exactAWGNPolicy.DisabledReason));
+estInfo.ExactAWGNPRGEstimatorConfigPath = char(string(exactAWGNPolicy.ConfigPath));
+estInfo.ExactAWGNPRGCoefficientCount = double(nnz(estimatedMask) .* max(1, size(rxGrid, 3)));
+estInfo.ScalarFastPathRequested = logical(useFastChEstMex);
+estInfo.ScalarFastPathAllowed = false;
+estInfo.ScalarFastPathUsed = false;
+estInfo.ScalarFastPathDisabledReason = ...
+    "A single full-grid scalar cannot represent a PRG-discontinuous effective channel";
+end
+
+function policy = localResolveExactAWGNPRGEstimatorPolicy(cfg, channelModelToken, prec, estimationMethod)
+configPath = "phy.pdsch.dmrs.useExactAWGNPRGEstimator";
+rawRequested = sixgr.util.structGet(cfg, char(configPath), true);
+if ~((islogical(rawRequested) || isnumeric(rawRequested)) && ...
+        isscalar(rawRequested) && isfinite(double(rawRequested)))
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorInvalid", ...
+        "%s must be a finite logical or numeric scalar.", char(configPath));
+end
+requested = logical(rawRequested);
+explicitFlatAWGN = localIsExplicitFlatChannel(channelModelToken);
+singleLayer = round(double(sixgr.util.structGet(prec, "NumLayers", NaN))) == 1;
+leastSquares = any(lower(strtrim(string(estimationMethod))) == ...
+    ["ls","least_squares","least-squares"]);
+eligible = explicitFlatAWGN && singleLayer && leastSquares;
+
+reason = "";
+if ~requested
+    reason = "disabled_by_config";
+elseif ~explicitFlatAWGN
+    reason = "requires_explicit_awgn_flat_channel";
+elseif ~singleLayer
+    reason = "requires_exactly_one_pdsch_layer";
+elseif ~leastSquares
+    reason = "requires_ls_channel_estimation_method";
+end
+policy = struct( ...
+    "ConfigPath", configPath, ...
+    "Requested", logical(requested), ...
+    "Eligible", logical(eligible), ...
+    "Use", logical(requested && eligible), ...
+    "DisabledReason", reason);
+end
+
+function [Hest, nVar, info] = localEstimateExactAWGNPRGChannel( ...
+        rxGrid, refInd, refSym, subcarriers, channelModelToken, prec, prg)
+if ~localIsExplicitFlatChannel(channelModelToken) || ...
+        round(double(sixgr.util.structGet(prec, "NumLayers", NaN))) ~= 1
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorIneligible", ...
+        ["The exact per-PRG coefficient estimator is restricted to explicit " ...
+        "flat AWGN and exactly one PDSCH layer."]);
+end
+if ~isvector(refInd) || ~isvector(refSym) || numel(refInd) ~= numel(refSym)
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorReferenceShape", ...
+        "The one-layer exact AWGN PRG estimator requires aligned vector DM-RS indices and symbols.");
+end
+
+rxRef = nrExtractResources(refInd, rxGrid);
+ref = refSym(:);
+if isvector(rxRef)
+    rxRef = rxRef(:);
+end
+if size(rxRef, 1) ~= numel(ref)
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorReferenceShape", ...
+        "Extracted DM-RS observations (%d) do not match reference symbols (%d).", ...
+        size(rxRef, 1), numel(ref));
+end
+validReference = isfinite(real(ref)) & isfinite(imag(ref)) & abs(ref) > eps;
+validObservation = all(isfinite(real(rxRef)) & isfinite(imag(rxRef)), 2);
+keep = validReference & validObservation;
+ref = ref(keep);
+rxRef = rxRef(keep, :);
+if isempty(ref)
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorNoEvidence", ...
+        "PRG %d has no finite nonzero DM-RS observations.", prg);
+end
+
+denominator = sum(abs(ref).^2);
+if ~(isfinite(denominator) && denominator > 0)
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorNoEvidence", ...
+        "PRG %d has zero or non-finite DM-RS reference energy.", prg);
+end
+h = (conj(ref).' * rxRef) ./ denominator;
+residual = rxRef - ref * h;
+degreesOfFreedom = numel(residual) - numel(h);
+if degreesOfFreedom > 0
+    nVar = sum(abs(residual(:)).^2) ./ degreesOfFreedom;
+else
+    nVar = mean(abs(residual(:)).^2);
+end
+nVar = double(real(nVar));
+if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
+    error("sixgr:phy:dl:PDSCHExactAWGNPRGEstimatorNoiseVariance", ...
+        "PRG %d produced an invalid pilot-residual noise variance.", prg);
+end
+
+K = size(rxGrid, 1);
+L = size(rxGrid, 2);
+R = max(1, size(rxGrid, 3));
+Hest = complex(zeros(K, L, R, "like", rxGrid));
+for rr = 1:R
+    Hest(subcarriers, :, rr) = cast(h(rr), "like", rxGrid);
+end
+pilotResidualPower = mean(abs(residual(:)).^2);
+pilotSignalPower = mean(abs(ref * h).^2, "all");
+pilotResidualNMSEdB = 10 .* log10(max( ...
+    double(pilotResidualPower) ./ max(double(pilotSignalPower), eps), eps));
+
+info = struct( ...
+    "ContextLabel", "PDSCH_Rx_PRG_" + string(prg), ...
+    "ChannelModel", char(string(channelModelToken)), ...
+    "ExpectedTxPorts", double(sixgr.util.structGet(prec, "NumPorts", NaN)), ...
+    "NumRxAnt", double(R), ...
+    "Method", "LS", ...
+    "EngineUsed", "exact_awgn_ls_per_prg", ...
+    "HestSize", size(Hest), ...
+    "NoiseVar", double(nVar), ...
+    "PilotRECount", double(numel(ref)), ...
+    "PilotResidualPower", double(pilotResidualPower), ...
+    "PilotSignalPower", double(pilotSignalPower), ...
+    "PilotResidualNMSE_dB", double(pilotResidualNMSEdB), ...
+    "InterpolationMethod", "constant_within_prg_from_prg_local_dmrs_ls", ...
+    "EffectiveChannelConvention", ...
+        "resource_grid_rx_antenna_by_effective_layer_after_precoding_constant_within_prg", ...
+    "ExactAWGNPRGEstimatorUsed", true, ...
+    "PerPRGScalarCoefficient", true, ...
+    "EstimatedCoefficientCount", double(numel(h)), ...
+    "EstimatedCoefficients", h, ...
+    "ScalarFastPathRequested", false, ...
+    "ScalarFastPathAllowed", false, ...
+    "ScalarFastPathUsed", false, ...
+    "ScalarFastPathDisabledReason", ...
+        "Estimator is resource-selective per PRG and is not a full-grid scalar shortcut");
+end
+
+function [prgSet, bundleSizeRB, info] = localResolvePDSCHPRGPartition(carrier, prec, cfg)
+if exist("nrPRGInfo", "file") ~= 2
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:Missing5G", ...
+        "nrPRGInfo is required to resolve explicit PDSCH PRG boundaries.");
+end
+nPRG = round(double(prec.NumPRG));
+if ~(isscalar(nPRG) && isfinite(nPRG) && nPRG > 1)
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:BadPRGCount", ...
+        "PRG-aware estimation requires an explicit precoder with more than one PRG page.");
+end
+
+hintPaths = [ ...
+    "phy.pdsch.prbBundleSize", ...
+    "phy.pdsch.prgBundleSizeRB", ...
+    "phy.mimo.precoderPRGSizeRBs"];
+hints = zeros(1, 0);
+for ii = 1:numel(hintPaths)
+    raw = sixgr.util.structGet(cfg, hintPaths(ii), []);
+    value = localNumericPRGBundleSize(raw);
+    if isfinite(value)
+        hints(end+1) = value; %#ok<AGROW>
+    end
+end
+hints = unique(hints, "stable");
+if numel(hints) > 1
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:ConflictingPRGSize", ...
+        "Configured PDSCH PRG bundle-size hints conflict: %s.", mat2str(hints));
+end
+
+if ~isempty(hints)
+    bundleSizeRB = hints(1);
+    prgInfo = nrPRGInfo(carrier, bundleSizeRB);
+    if double(prgInfo.NPRG) ~= nPRG
+        error("sixgr:phy:dl:PDSCHPRGChannelEstimate:PRGCountMismatch", ...
+            ["Configured PDSCH PRG bundle size %d RB gives %d PRGs, but " ...
+            "the explicit precoder contains %d pages."], ...
+            bundleSizeRB, double(prgInfo.NPRG), nPRG);
+    end
+    prgSet = double(prgInfo.PRGSet(:));
+    source = "validated_config_hint";
+    candidateSizes = bundleSizeRB;
+else
+    candidateSizes = zeros(1, 0);
+    candidateSets = cell(1, 0);
+    for candidate = [2 4]
+        candidateInfo = nrPRGInfo(carrier, candidate);
+        if double(candidateInfo.NPRG) == nPRG
+            candidateSizes(end+1) = candidate; %#ok<AGROW>
+            candidateSets{end+1} = double(candidateInfo.PRGSet(:)); %#ok<AGROW>
+        end
+    end
+    if isempty(candidateSets)
+        error("sixgr:phy:dl:PDSCHPRGChannelEstimate:UnresolvablePRGPartition", ...
+            ["The explicit precoder has %d pages, which matches neither " ...
+            "the 2-RB nor 4-RB nrPRGInfo partition for this carrier."], nPRG);
+    end
+    prgSet = candidateSets{1};
+    for ii = 2:numel(candidateSets)
+        if ~isequal(prgSet, candidateSets{ii})
+            error("sixgr:phy:dl:PDSCHPRGChannelEstimate:AmbiguousPRGPartition", ...
+                ["The explicit precoder page count matches multiple distinct " ...
+                "standards PRG partitions. Configure phy.pdsch.prbBundleSize explicitly."]);
+        end
+    end
+    bundleSizeRB = candidateSizes(1);
+    source = "inferred_from_precoder_page_count_and_nrPRGInfo";
+end
+
+if numel(prgSet) ~= double(carrier.NSizeGrid) || ...
+        ~isequal(unique(prgSet(:)).', 1:nPRG)
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:InvalidPRGPartition", ...
+        "Resolved PRGSet must map every carrier PRB exactly onto PRG pages 1:%d.", nPRG);
+end
+info = struct( ...
+    "Source", source, ...
+    "BundleSizeCandidatesRB", double(candidateSizes), ...
+    "PRGCount", double(nPRG));
+end
+
+function value = localNumericPRGBundleSize(raw)
+value = NaN;
+if isnumeric(raw) || islogical(raw)
+    raw = double(raw);
+    if isscalar(raw) && isfinite(raw)
+        value = raw;
+    end
+elseif ischar(raw) || isstring(raw)
+    token = strtrim(string(raw));
+    if isscalar(token)
+        value = str2double(token);
+    end
+end
+if isfinite(value)
+    value = round(double(value));
+    if ~ismember(value, [2 4])
+        error("sixgr:phy:dl:PDSCHPRGChannelEstimate:BadPRGSize", ...
+            "PDSCH PRG bundle size must be 2 or 4 RB; got %g.", value);
+    end
+end
+end
+
+function [refIndOut, refSymOut] = localSelectPDSCHPRGReferences( ...
+        refInd, refSym, subcarriers, K, L, nPorts)
+if ~isnumeric(refInd) || ~isnumeric(refSym) || ...
+        ~isequal(size(refInd), size(refSym))
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:ReferenceShapeMismatch", ...
+        "PDSCH DM-RS indices and symbols must have identical numeric shapes.");
+end
+indices = double(refInd);
+if any(~isfinite(indices(:)) | indices(:) < 1 | ...
+        indices(:) > double(K) * double(L) * double(max(1, nPorts)))
+    error("sixgr:phy:dl:PDSCHPRGChannelEstimate:BadReferenceIndex", ...
+        "PDSCH DM-RS indices are outside the layer-domain carrier grid.");
+end
+[k, ~, ~] = ind2sub([K L max(1, nPorts)], indices);
+membership = ismember(double(k), double(subcarriers(:)));
+
+if ~isvector(refInd) && size(refInd, 2) > 1
+    firstPortMembership = membership(:, 1);
+    if any(membership ~= firstPortMembership, "all")
+        error("sixgr:phy:dl:PDSCHPRGChannelEstimate:PortReferencePartitionMismatch", ...
+            "PDSCH DM-RS ports do not share a consistent PRG partition.");
+    end
+    refIndOut = refInd(firstPortMembership, :);
+    refSymOut = refSym(firstPortMembership, :);
+else
+    refIndOut = refInd(membership);
+    refSymOut = refSym(membership);
+end
+end
+
+function [mask, linear] = localPDSCHReferenceMask(refInd, K, L, nPorts)
+indices = double(refInd(:));
+[k, l, ~] = ind2sub([K L max(1, nPorts)], indices);
+linear = unique(sub2ind([K L], k, l), "stable");
+mask = false(K, L);
+mask(linear) = true;
+end
+
+function value = localWeightedFiniteMean(values, weights)
+values = double(values(:));
+weights = double(weights(:));
+valid = isfinite(values) & isfinite(weights) & weights > 0;
+if ~any(valid)
+    value = NaN;
+    return;
+end
+value = sum(values(valid) .* weights(valid)) ./ sum(weights(valid));
 end
 
 function method = localResolveChannelEstimationMethod(cfg)
@@ -1473,12 +1951,8 @@ end
 end
 
 function fs = localCarrierSampleRateHz(carrier)
-fs = NaN;
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    fs = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
-catch
-end
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+fs = double(sampling.SampleRateHz);
 end
 
 function value = localFirstLogical(s, names, defaultValue)
@@ -2479,10 +2953,10 @@ function sa = localSymAlloc(pdsch)
 try
     sa = double(pdsch.SymbolAllocation);
 catch
-    sa = [0 14];
+    sa = [];
 end
 if numel(sa) < 2
-    sa = [0 14];
+    sa = [];
 else
     sa = reshape(sa(1:2), 1, 2);
 end
@@ -2601,6 +3075,59 @@ token = char(string(channelToken));
 if isempty(token)
     token = '<unspecified>';
 end
+end
+
+function [dmrsSym, info] = localApplyPDSCHDMRSEPREDifference(dmrsSym, cfg)
+% The configured quantity follows the conformance-table convention:
+%   data EPRE / DM-RS EPRE in dB = data EPRE - DM-RS EPRE.
+path = "phy.pdsch.dmrs.dataToDMRSEPREDifference_dB";
+rawDifference = sixgr.util.structGet(cfg, char(path), []);
+if isempty(rawDifference)
+    difference_dB = 0;
+    source = "default_zero_db";
+else
+    if ~(isnumeric(rawDifference) && isreal(rawDifference) && isscalar(rawDifference) && isfinite(rawDifference))
+        error("sixgr:phy:dl:PDSCHDMRSEPREDifferenceInvalid", ...
+            "%s must be a finite real numeric scalar.", char(path));
+    end
+    difference_dB = double(rawDifference);
+    source = path;
+end
+
+configuredPowerBoost_dB = -difference_dB;
+if abs(difference_dB + 3) <= 1e-12
+    % Conformance FRC tables express data-to-DM-RS EPRE as -3 dB while
+    % the corresponding exact reference-symbol amplitude is beta=sqrt(2).
+    amplitudeScale = sqrt(2);
+    powerScale = 2;
+    scalePolicy = "normative_minus3_db_beta_sqrt2";
+else
+    amplitudeScale = 10.^(configuredPowerBoost_dB ./ 20);
+    powerScale = amplitudeScale.^2;
+    scalePolicy = "literal_configured_db_ratio";
+end
+if ~(isfinite(amplitudeScale) && amplitudeScale > 0 && isfinite(powerScale) && powerScale > 0)
+    error("sixgr:phy:dl:PDSCHDMRSEPREDifferenceInvalid", ...
+        "%s=%g dB produces a non-finite or non-positive DM-RS scale.", ...
+        char(path), difference_dB);
+end
+realizedPowerBoost_dB = 10 .* log10(powerScale);
+realizedDifference_dB = -realizedPowerBoost_dB;
+
+dmrsSym = dmrsSym .* cast(amplitudeScale, "like", dmrsSym);
+info = struct( ...
+    "ContractVersion", "PDSCHDMRSEPREDifference/v1", ...
+    "Source", source, ...
+    "DataToDMRSEPREDifference_dB", double(difference_dB), ...
+    "ConfiguredDMRSPowerBoost_dB", double(configuredPowerBoost_dB), ...
+    "RealizedDataToDMRSEPREDifference_dB", double(realizedDifference_dB), ...
+    "DMRSPowerBoost_dB", double(realizedPowerBoost_dB), ...
+    "DMRSAmplitudeScale", double(amplitudeScale), ...
+    "DMRSPowerScale", double(powerScale), ...
+    "Applied", logical(abs(difference_dB) > 1e-12), ...
+    "NormativeMinus3dBBetaApplied", logical(scalePolicy == "normative_minus3_db_beta_sqrt2"), ...
+    "ScalePolicy", scalePolicy, ...
+    "Equation", "normative_minus3_db_uses_beta_sqrt2_otherwise_10_power_minus_delta_db_over_20");
 end
 
 function value = localScalarOrNaN(raw)

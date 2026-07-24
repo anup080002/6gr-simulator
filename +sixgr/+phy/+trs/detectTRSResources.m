@@ -21,7 +21,8 @@ for ii = 1:numel(resources)
     status = "detection_failed";
     attempted = true;
     try
-        rxGrid = nrOFDMDemodulate(resources(ii).Carrier, corrWave);
+        rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
+            resources(ii).Carrier, corrWave);
         rxRE = rxGrid(resources(ii).Indices);
         ref = resources(ii).Symbols(:);
         metric = localChunkedReferenceCorrelation(rxRE(:), ref);

@@ -29,9 +29,23 @@ cfg.CellID = double(sixgr.util.structGet(phy, "carrier.NCellID", 1));
 cfg.RNTI = double(sixgr.util.structGet(ctrl, "RNTI", sixgr.util.structGet(phy, "pdcch.rnti", 4660)));
 cfg.SlotNumber = double(sixgr.util.structGet(ctrl, "SlotNumber", 0));
 cfg.FrameNumber = double(sixgr.util.structGet(ctrl, "FrameNumber", 0));
-cfg.Numerology = double(sixgr.util.structGet(phy, "numerology.mu", 1));
-cfg.SlotsPerFrame = max(1, round(double(sixgr.util.structGet(ctrl, "SlotsPerFrame", 10 * 2^max(0, round(cfg.Numerology))))));
-cfg.SubcarrierSpacing_kHz = double(sixgr.util.structGet(phy, "carrier.SubcarrierSpacing", 15 * 2^max(0, round(cfg.Numerology))));
+configuredMu = double(sixgr.util.structGet(phy, "numerology.mu", NaN));
+configuredSCS = double(sixgr.util.structGet(phy, "carrier.SubcarrierSpacing", ...
+    sixgr.util.structGet(phy, "carrier.SubcarrierSpacing_kHz", NaN)));
+configuredCP = string(sixgr.util.structGet(phy, "carrier.CyclicPrefix", "normal"));
+numerology = localResolveNumerology(configuredSCS, configuredMu, configuredCP);
+cfg.Numerology = double(numerology.Mu);
+cfg.SlotsPerFrame = double(numerology.SlotsPerFrame);
+configuredSlotsPerFrame = double(sixgr.util.structGet(ctrl, "SlotsPerFrame", NaN));
+if isfinite(configuredSlotsPerFrame) && ...
+        configuredSlotsPerFrame ~= cfg.SlotsPerFrame
+    error("sixgr:ctrl:ControlChannelConfig:NumerologyMismatch", ...
+        "ctrl6gr.SlotsPerFrame=%g conflicts with the canonical value %g for SCS=%g kHz.", ...
+        configuredSlotsPerFrame, cfg.SlotsPerFrame, ...
+        double(numerology.SubcarrierSpacingKHz));
+end
+cfg.SubcarrierSpacing_kHz = double(numerology.SubcarrierSpacingKHz);
+cfg.CyclicPrefix = char(string(numerology.CyclicPrefix));
 cfg.CarrierFrequencyHz = double(sixgr.util.structGet(fullCfg, "phy.fc_Hz", sixgr.util.structGet(channel, "fc_Hz", 4e9)));
 cfg.NSizeGrid = double(sixgr.util.structGet(phy, "carrier.NSizeGrid", 51));
 cfg.NSlotGrid = max(1, round(double(sixgr.util.structGet(ctrl, "NumSlots", sixgr.util.structGet(fullCfg, "run.totalSlots", 1)))));
@@ -206,6 +220,7 @@ if ~strcmpi(cfg.Modulation, "QPSK")
     error("sixgr:ctrl:ControlChannelConfig:UnsupportedModulation", ...
         "Baseline implementation currently supports QPSK only. Requested '%s'.", cfg.Modulation);
 end
+
 if ~ismember(lower(string(cfg.ChannelEstimationMode)), ["realistic","ideal"])
     error("sixgr:ctrl:ControlChannelConfig:BadEstimationMode", ...
         "ChannelEstimationMode must be 'realistic' or 'ideal'.");
@@ -238,4 +253,24 @@ if ~ismember(lower(string(cfg.WaveformMode)), ["full_ofdm","grid_mode"])
     error("sixgr:ctrl:ControlChannelConfig:BadWaveformMode", ...
         "WaveformMode must be full_ofdm or grid_mode.");
 end
+end
+
+function numerology = localResolveNumerology(scsKHz, mu, cyclicPrefix)
+if isfinite(scsKHz)
+    numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+        scsKHz, cyclicPrefix, "generic_waveform_test", "");
+    if isfinite(mu) && double(mu) ~= double(numerology.Mu)
+        error("sixgr:ctrl:ControlChannelConfig:NumerologyMismatch", ...
+            "Configured mu=%g conflicts with SCS=%g kHz (canonical mu=%g).", ...
+            mu, scsKHz, double(numerology.Mu));
+    end
+    return;
+end
+if ~isfinite(mu)
+    error("sixgr:ctrl:ControlChannelConfig:MissingNumerology", ...
+        "Control-channel configuration requires an explicit carrier SCS or mu.");
+end
+spec = sixgr.phy.frame.AbsoluteTime.resolveNumerology(mu);
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    spec.SCSKHz, cyclicPrefix, "generic_waveform_test", "");
 end

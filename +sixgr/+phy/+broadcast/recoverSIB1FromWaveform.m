@@ -401,11 +401,7 @@ siWave = rxWaveform(prefixSamples+1:end, :);
 end
 
 function siWave = localCorruptPDCCHResources(siWave, carrier, pdcch)
-try
-    rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, siWave);
-catch
-    rxGrid = nrOFDMDemodulate(carrier, siWave);
-end
+rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, siWave);
 slotSymbols = max(1, round(double(carrier.SymbolsPerSlot)));
 if size(rxGrid, 2) > slotSymbols
     rxGrid = rxGrid(:, 1:slotSymbols, :);
@@ -417,11 +413,7 @@ siWave = sixgr.phy.waveform.ofdmModulate(carrier, rxGrid);
 end
 
 function siWave = localCorruptPDSCHResources(siWave, carrier, pdsch)
-try
-    rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, siWave);
-catch
-    rxGrid = nrOFDMDemodulate(carrier, siWave);
-end
+rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, siWave);
 slotSymbols = max(1, round(double(carrier.SymbolsPerSlot)));
 if size(rxGrid, 2) > slotSymbols
     rxGrid = rxGrid(:, 1:slotSymbols, :);
@@ -444,8 +436,8 @@ siWave = sixgr.phy.waveform.ofdmModulate(carrier, rxGrid);
 end
 
 function sampleRate = localSampleRate(carrier)
-info = nrOFDMInfo(carrier);
-sampleRate = double(info.SampleRate);
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+sampleRate = double(sampling.SampleRateHz);
 end
 
 function n = localSSBObservationSubframes(cfg)

@@ -770,12 +770,16 @@ end
 end
 
 function symbolsPerSlot = localResolveSymbolsPerSlot(cfg)
-symbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", ...
-    sixgr.util.structGet(cfg, "frame_timing.symbols_per_slot", 14)));
-if ~(isfinite(symbolsPerSlot) && symbolsPerSlot >= 1)
-    symbolsPerSlot = 14;
+[~, numerology] = sixgr.time.slotDurationSec(cfg);
+symbolsPerSlot = double(numerology.SymbolsPerSlot);
+configured = double(sixgr.util.structGet(cfg, ...
+    "phy.numerology.symbolsPerSlot", ...
+    sixgr.util.structGet(cfg, "frame_timing.symbols_per_slot", NaN)));
+if isfinite(configured) && configured ~= symbolsPerSlot
+    error("sixgr:truth:exportLLSLiveDerivedTables:NumerologyMismatch", ...
+        "Configured SymbolsPerSlot=%g conflicts with canonical value %g.", ...
+        configured, symbolsPerSlot);
 end
-symbolsPerSlot = max(1, round(symbolsPerSlot));
 end
 
 function totalSlots = localResolveSymbolThroughputSlotCount(cfg, dlT, ulT)

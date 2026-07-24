@@ -14,7 +14,7 @@ function [NCellID, timingOffset, freqOffsetHz, info] = cellSearch(rxWaveform, cf
 %
 %   Name-Value pairs:
 %     'SampleRate_Hz' : Override sample rate (Hz)
-%     'BlockPattern'  : SSB block pattern ('Case A'..'Case E')
+%     'BlockPattern'  : SSB block pattern ('Case A'..'Case G')
 %     'Lmax'          : Max SSB blocks (4/8/64)
 %     'SearchBW_Hz'   : Frequency search half-span (Hz)
 %     'Debug'         : true/false
@@ -46,25 +46,21 @@ end
 
 Lmax = p.Results.Lmax;
 if isempty(Lmax)
-    Lmax = sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 4);
+    Lmax = sixgr.util.structGet(cfg, 'phy.ssb.Lmax', NaN);
 end
+timing = localResolveSSBTiming(cfg, blockPattern, Lmax);
+Lmax = double(timing.Lmax);
 
 sampleRateHz = p.Results.SampleRate_Hz;
 if isempty(sampleRateHz)
-    % Try config, else derive from an SSB-sized carrier (approx)
     sampleRateHz = sixgr.util.structGet(cfg, 'phy.sampleRate_Hz', []);
     if isempty(sampleRateHz)
-        try
-            scsSSB_kHz = localSSBSubcarrierSpacing_kHz(blockPattern);
-            tmpCarrier = nrCarrierConfig;
-            tmpCarrier.NSizeGrid = 20; % 240 subcarriers
-            tmpCarrier.SubcarrierSpacing = scsSSB_kHz;
-            tmpCarrier.CyclicPrefix = 'normal';
-            ofdm = nrOFDMInfo(tmpCarrier);
-            sampleRateHz = ofdm.SampleRate;
-        catch
-            sampleRateHz = 30.72e6;
-        end
+        tmpCarrier = nrCarrierConfig;
+        tmpCarrier.NSizeGrid = 20; % The SS/PBCH block occupies 240 subcarriers.
+        tmpCarrier.SubcarrierSpacing = timing.SSBSubcarrierSpacingKHz;
+        tmpCarrier.CyclicPrefix = 'normal';
+        sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(tmpCarrier);
+        sampleRateHz = sampling.SampleRateHz;
     end
 end
 
@@ -75,17 +71,18 @@ end
 
 % ---- 1) Coarse frequency correction + NID2 ----
 [rxF, freqOffsetHz, NID2, fInfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, sampleRateHz, ...
-    'SearchBW_Hz', searchBW_Hz);
+    'SearchBW_Hz', searchBW_Hz, 'SSBTiming', timing);
 
 % ---- 2) Timing estimate (offset to symbol preceding PSS) ----
-[timingOffset, tInfo] = sixgr.phy.sync.timingEstimate(rxF, NID2, blockPattern, sampleRateHz);
+[timingOffset, tInfo] = sixgr.phy.sync.timingEstimate( ...
+    rxF, NID2, blockPattern, sampleRateHz, 'SSBTiming', timing);
 timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
     "EstimateUsed", isfinite(double(timingOffset)), ...
     "ApplicationMode", "positive_crop_only", ...
     "Source", "nrTimingEstimate_pss");
 
 % ---- 3) OFDM demodulate and SSS correlation for NID1 ----
-scsSSB_kHz = localSSBSubcarrierSpacing_kHz(blockPattern);
+scsSSB_kHz = double(timing.SSBSubcarrierSpacingKHz);
 carrierSSB = nrCarrierConfig;
 carrierSSB.NSizeGrid = 20;
 carrierSSB.SubcarrierSpacing = scsSSB_kHz;
@@ -147,6 +144,7 @@ info.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationP
 info.TimingEstimateStatus = char(string(timingResolution.Status));
 info.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 info.Debug = p.Results.Debug;
+info.SSBTiming = timing;
 
 if p.Results.Debug
     info.RxSSBGrid = rxSSB; %#ok<STRNU>
@@ -155,20 +153,28 @@ end
 end
 
 % -------------------------------------------------------------------------
-function scs = localSSBSubcarrierSpacing_kHz(blockPattern)
-blockPattern = upper(string(blockPattern));
-switch blockPattern
-    case "CASE A"
-        scs = 15;
-    case {"CASE B","CASE C"}
-        scs = 30;
-    case "CASE D"
-        scs = 120;
-    case "CASE E"
-        scs = 240;
-    otherwise
-        scs = 30;
-end
+function timing = localResolveSSBTiming(cfg, blockPattern, lmax)
+fcHz = double(sixgr.util.structGet(cfg, ...
+    'phy.carrier.centerFrequency_Hz', ...
+    sixgr.util.structGet(cfg, 'frequency.center_frequency_hz', ...
+    sixgr.util.structGet(cfg, 'channel.fc_Hz', ...
+    sixgr.util.structGet(cfg, 'phy.fc_Hz', 3.5e9)))));
+frequencyRange = string(sixgr.util.structGet(cfg, ...
+    'phy.frequencyRange', ...
+    sixgr.util.structGet(cfg, 'frequency.range_name', '')));
+timing = sixgr.phy.frame.SSBTimingResolver.resolve( ...
+    'Case', blockPattern, ...
+    'CarrierFrequencyHz', fcHz, ...
+    'FrequencyRange', frequencyRange, ...
+    'SSBSubcarrierSpacingKHz', sixgr.util.structGet( ...
+        cfg, 'phy.ssb.scs_kHz', NaN), ...
+    'CarrierSubcarrierSpacingKHz', sixgr.util.structGet( ...
+        cfg, 'phy.carrier.SubcarrierSpacing_kHz', ...
+        sixgr.util.structGet(cfg, 'phy.carrier.SubcarrierSpacing', NaN)), ...
+    'Lmax', lmax, ...
+    'PeriodicityMs', sixgr.util.structGet(cfg, ...
+        'phy.ssb.periodicity_ms', ...
+        sixgr.util.structGet(cfg, 'phy.ssb.period_ms', 20)));
 end
 
 function sss = localNRSSS(nid1, nid2)
