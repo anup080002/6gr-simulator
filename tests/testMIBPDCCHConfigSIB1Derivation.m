@@ -30,11 +30,11 @@ cfgRx.phy.sib1.coreset0Index = 15;
 cfgRx.phy.sib1.searchSpaceZero = 15;
 cfgRx.phy.mib.pdcchConfigSIB1 = 255;
 cfgRx.phy.mib.dmrsTypeAPosition = 3;
-rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfgRx, ...
-    "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, ...
-    "ExpectedTreeHash", tx.TxTreeHash);
+rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfgRx);
 
 assert(logical(rx.StrictOk), "SIB1 recovery must pass using decoded MIB despite poisoned receiver config.");
+[treeEqual, ~] = sixgr.rrc.asn1.compareSIB1Trees(tx.TxTree, rx.SIB1RxTree);
+assert(logical(treeEqual), "Test-side transmitted/decoded SIB1 trees must match.");
 assert(double(rx.PDCCHConfigSIB1) == 0 && double(rx.MIBPDCCHConfigSIB1Recovered) == 0, ...
     "Receiver used YAML/config pdcch-ConfigSIB1 instead of decoded PBCH/MIB value.");
 assert(double(rx.MIBCORESET0Index) == 0 && double(rx.MIBSearchSpaceZero) == 0, ...
@@ -51,7 +51,11 @@ cfg.phy.sib1.enable = true;
 cfg.phy.carrier.NCellID = 17;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
-cfg.phy.carrier.NSizeGrid = 52;
+cfg.phy.carrier.NSizeGrid = 51;
+cfg.phy.channelBandwidth_MHz = 20;
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
+cfg.initial_access.sib1.pdsch = struct("prb_start",0, ...
+    "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0);
 cfg.phy.sib1.coreset0Index = 0;
 cfg.phy.sib1.searchSpaceZero = 0;
 cfg.phy.mib.pdcchConfigSIB1 = 0;

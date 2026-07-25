@@ -1,17 +1,28 @@
 function rnti = computeRARNTI(varargin)
-%COMPUTERARNTI Compute RA-RNTI for a PRACH occasion anchor.
+%COMPUTERARNTI Compute RA-RNTI for an exact PRACH occasion.
 %
-% Anchor follows the TS 38.321/38.213 form:
+% TS 38.321:
 % 1 + s_id + 14*t_id + 14*80*f_id + 14*80*8*ul_carrier_id.
 p = inputParser;
-p.addParameter("SymbolIndex", 0, @(x)isnumeric(x) && isscalar(x));
-p.addParameter("SlotIndex", 0, @(x)isnumeric(x) && isscalar(x));
-p.addParameter("FrequencyIndex", 0, @(x)isnumeric(x) && isscalar(x));
-p.addParameter("ULCarrierId", 0, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("SymbolIndex", 0, @localIntegerScalar);
+p.addParameter("SlotIndex", 0, @localIntegerScalar);
+p.addParameter("FrequencyIndex", 0, @localIntegerScalar);
+p.addParameter("ULCarrierId", 0, @localIntegerScalar);
 p.parse(varargin{:});
-sid = max(0, min(13, round(double(p.Results.SymbolIndex))));
-tid = max(0, min(79, round(double(p.Results.SlotIndex))));
-fid = max(0, min(7, round(double(p.Results.FrequencyIndex))));
-ulid = max(0, min(1, round(double(p.Results.ULCarrierId))));
+sid = double(p.Results.SymbolIndex);
+tid = double(p.Results.SlotIndex);
+fid = double(p.Results.FrequencyIndex);
+ulid = double(p.Results.ULCarrierId);
+if sid < 0 || sid > 13 || tid < 0 || tid > 79 || ...
+        fid < 0 || fid > 7 || ulid < 0 || ulid > 1
+    error("sixgr:phy:ia:InvalidRARNTICoordinates", ...
+        "RA-RNTI coordinates require s_id=[0,13], t_id=[0,79], " + ...
+        "f_id=[0,7], and ul_carrier_id=[0,1].");
+end
 rnti = double(1 + sid + 14 * tid + 14 * 80 * fid + 14 * 80 * 8 * ulid);
+end
+
+function tf = localIntegerScalar(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value == fix(value);
 end

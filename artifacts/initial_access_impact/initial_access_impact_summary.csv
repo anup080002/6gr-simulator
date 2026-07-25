@@ -1,0 +1,61 @@
+FamilyID,Title,Wave,ExperimentsExpected,ExperimentsCompleted,PairsComplete,HardRulesPassed,StatisticalConclusion,PracticalConclusion,DependencyStatus,Status
+F01,SSB periodicity,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F02,Active SSB beam count,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F03,Sparse versus dense burst bitmap,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F04,Case A versus Case C at controlled bandwidth,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F05,PSS/SSS EPRE scaling,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F06,SSB SNR sweep,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F07,Carrier-frequency offset stress,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F08,Timing-offset stress,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F09,Selected-beam mismatch,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F10,Beam blockage and reselection,C,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F11,PBCH DM-RS SNR sensitivity,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F12,Lmax blind-hypothesis complexity,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F13,Single-bit MIB corruption,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F14,kSSB placement and edge margin,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F15,CORESET0 table selection,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F16,SearchSpace0 table selection,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F17,PDCCH aggregation level,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F18,SIB1 MCS impact,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F19,SIB1 payload size,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F20,Optional IE load,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F21,SIB1 periodicity/repetition,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F22,Long versus short PRACH,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F23,Preamble format versus delay spread,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F24,PRACH SCS versus CFO,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F25,Restricted set Type A,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F26,Restricted set Type B,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F27,Zero-correlation-zone configuration,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F28,Root sequence reuse,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F29,Frequency-domain occasions,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F30,RA occasion density,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F31,SSB-to-RO ratio,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F32,Preamble group A/B selection,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F33,Contention-based preamble pool,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F34,Contending UE load,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F35,Power-ramping step,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F36,Preamble target power,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F37,Maximum preamble transmissions,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F38,Backoff indicator,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F39,RAR response-window size,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F40,RAR PDCCH aggregation/candidates,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F41,RAR PDSCH MCS,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F42,Msg3 payload size and MCS,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F43,Timing-advance residual error,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F44,Contention-resolution timer,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F45,Near-far capture in same-preamble collision,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F46,RAPID mismatch rejection,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F47,Wrong RA-RNTI rejection,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F48,No-signal PRACH false alarm,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F49,Msg3 HARQ retransmission,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F50,RRCSetupRequest payload size,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F51,RRCSetup payload size,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F52,RRCSetupComplete transaction mismatch,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F53,End-to-end SNR sweep,B,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F54,Mobility/Doppler,C,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F55,Inter-cell initial-access interference,C,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F56,Runtime scaling,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F57,Seed and parallel reproducibility,A,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F58,Two-step RA capability gate,C,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F59,CFRA/BFR/SUL capability gates,C,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS
+F60,NTN/RedCap capability gates,C,12,12,1,1,statistically_valid,measured_component_effect,implemented,PASS

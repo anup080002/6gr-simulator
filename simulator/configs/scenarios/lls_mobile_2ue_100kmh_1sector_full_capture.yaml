@@ -897,15 +897,17 @@ random_access:
   frequency_offset_sweep_hz: [0, 100, 250]
   binding_source: scenario_config_pending_sib1
   ra_response_window_slots: 20
-  ra_contention_resolution_timer_slots: 128
+  ra_contention_resolution_timer_slots: 64
   preamble_trans_max: 10
   power_ramping_step_db: 2
   preamble_received_target_power_dbm: -96
   temp_crnti: 4660
   final_crnti: 4660
-  msg2_slot: 1
-  msg3_slot: 2
-  msg4_slot: 3
+  timing:
+    rar_processing_delay_slots: 1
+    msg3_k2_slots: 1
+    msg4_processing_delay_slots: 1
+    setup_complete_k2_slots: 1
   dci_payload_bits: 32
   msg2_pdsch:
     prb_start: 0

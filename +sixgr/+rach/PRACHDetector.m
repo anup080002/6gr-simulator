@@ -99,13 +99,28 @@ det.Threshold = double(threshold);
 det.ThresholdMode = char(thresholdMode);
 det.CorrelationPeaks = peaks;
 det.CandidatePreambles = candidateSet(:);
-det.MultiCandidateAboveThreshold = sum(peaks >= threshold) > 1;
+toolboxDetections = double(sixgr.util.structGet( ...
+    detInfo, "DetectedPreambleIndicesRaw", []));
+toolboxDetections = unique(toolboxDetections(isfinite(toolboxDetections)));
+if contains(string(sixgr.util.structGet( ...
+        detInfo, "DetectorBackend", "")), "nrPRACHDetect")
+    % nrPRACHDetect correlation peaks are root-sequence metrics.  Multiple
+    % cyclic shifts of the same root can therefore have identical peaks;
+    % that is not a multi-preamble detection.  The detector's returned
+    % preamble-index set is the authoritative ambiguity evidence.
+    candidatesAboveThreshold = numel(toolboxDetections);
+    multiCandidate = candidatesAboveThreshold > 1;
+else
+    candidatesAboveThreshold = sum(peaks >= threshold);
+    multiCandidate = candidatesAboveThreshold > 1;
+end
+det.MultiCandidateAboveThreshold = logical(multiCandidate);
 det.DetInfo = detInfo;
 det.CorrelationTrace = localSelectedCorrelationTrace(detInfo, candidateDetected, threshold, offset);
 det.DetectorBackend = string(sixgr.util.structGet(detInfo, "DetectorBackend", ""));
 det.RxAntennaCount = double(sixgr.util.structGet(detInfo, "RxAntennaCount", NaN));
 det.CandidateCount = double(numel(candidateSet));
-det.CandidatesAboveThreshold = double(sum(peaks >= threshold));
+det.CandidatesAboveThreshold = double(candidatesAboveThreshold);
 det.PDPNoiseFloor = double(sixgr.util.structGet(det.CorrelationTrace, "NoiseFloor", NaN));
 det.PeakLagSamples = double(sixgr.util.structGet(det.CorrelationTrace, "PeakLagSamples", offset));
 det.TimingSearchWindow = sixgr.util.structGet(detInfo, "TimingSearchWindow", struct());
@@ -203,6 +218,8 @@ detInfo.TimingSearchWindow.FiniteLagCount = double(sum(isfinite(peaks)));
 detInfo.DetectorBackend = "matlab_5g_toolbox_nrPRACHDetect_peak";
 detInfo.ProcessingFlow = "nrPRACHDetect_carrier_prach_waveform_candidate_peak_search";
 detInfo.DetectionThreshold = threshold;
+detInfo.DetectedPreambleIndicesRaw = double(idx0(:));
+detInfo.DetectedTimingOffsetsRaw = double(offset(:));
 end
 
 function carrier = localCarrierObject(carrierIn)

@@ -1051,6 +1051,9 @@ switch lower(typeName)
     case "string_or_number"
         ok = ischar(value) || (isstring(value) && isscalar(value)) || ...
             (isnumeric(value) && isscalar(value) && isfinite(double(value)));
+    case "string_or_struct"
+        ok = ischar(value) || (isstring(value) && isscalar(value)) || ...
+            (builtin("isstruct", value) && isscalar(value));
     case "string_list"
         ok = ischar(value) || isstring(value) || iscellstr(value) || ...
             (isempty(value) && (isnumeric(value) || iscell(value)));

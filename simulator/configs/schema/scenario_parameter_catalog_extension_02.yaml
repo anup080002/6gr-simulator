@@ -74,7 +74,7 @@
       "mcs_table": {"required": true, "type": "string"}, "fixed_mcs": {"required": true, "type": "integer", "min": 0},
       "amc_policy": {"required": true, "type": "string"}, "low_papr_mode": {"required": true, "type": "string"},
       "dft_size": {"required": true, "type": "integer", "min": 1}, "fd_mapping": {"required": true, "type": "string"},
-      "non_contiguous_mapping": {"required": true, "type": "boolean"}, "power_control": {"required": true, "type": "string"},
+      "non_contiguous_mapping": {"required": true, "type": "boolean"}, "power_control": {"required": true, "type": "string_or_struct"},
       "prep_time_model": {"required": true, "type": "string"}, "simultaneous_pusch_pucch_policy": {"required": true, "type": "string"},
       "unknown_size_uci_policy": {"required": true, "type": "string"}, "grant_timing": {"required": true, "type": "string"},
       "beam_policy": {"required": true, "type": "string"}, "msg3_flag": {"required": true, "type": "boolean"},

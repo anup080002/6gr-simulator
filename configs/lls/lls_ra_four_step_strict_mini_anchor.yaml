@@ -29,7 +29,7 @@ scenario:
   target_cases: [prach, pdcch, pusch]
   bundle_anchor_cases: [random_access_four_step]
   honesty_mode: strict
-  notes: "AUD-RA-001 strict mini-run; SIB1 binding is scenario_config_pending_sib1 until full SIB1-to-RA binding is enabled."
+  notes: "Strict Release-18 initial-access validation: SSB/MIB/Type0/SIB1 are waveform-decoded before decoded SIB1 owns the four-step RA configuration."
 
 run_control:
   num_workers: 1
@@ -51,12 +51,12 @@ simulation:
 frequency:
   range_name: FR1
   center_frequency_hz: 4000000000
-  bandwidth_hz: 10000000
+  bandwidth_hz: 20000000
   duplex_mode: TDD
   carrier_count: 1
   carrier_aggregation_enabled: false
   band_name: n77
-  bandwidth_options_hz: [10000000]
+  bandwidth_options_hz: [20000000]
   numerology_options_khz: [30]
   max_mimo_size: 1
   mobility_defaults_kmph: 3
@@ -65,7 +65,7 @@ frequency:
   power_model_defaults: baseline
   energy_model_defaults: disabled
   rf_impairment_defaults: disabled
-  n_size_grid: 24
+  n_size_grid: 51
 
 frame:
   scs_khz: 30
@@ -75,10 +75,10 @@ frame:
     ReferenceSubcarrierSpacingKHz: 30
     Pattern1:
       PeriodicityMilliseconds: 2.5
-      NumDownlinkSlots: 3
-      NumDownlinkSymbols: 12
-      NumUplinkSlots: 1
-      NumUplinkSymbols: 1
+      NumDownlinkSlots: 2
+      NumDownlinkSymbols: 0
+      NumUplinkSlots: 3
+      NumUplinkSymbols: 0
 
 channels:
   model_type: AWGN
@@ -106,14 +106,81 @@ mimo:
   multi_panel_ready: false
   panel_count: 1
 
+reference_signals:
+  pdsch_dmrs_ports: 1
+  pusch_dmrs_ports: 1
+  srs_ports: 1
+
+control:
+  coreset_duration: 2
+
+initial_access:
+  enabled: true
+  profile: fr1_four_step_ra_rrc_connection_strict_r18
+  configuration_epoch: 1
+  band_context: n77
+  spectrum: unpaired
+  shared_spectrum: false
+  random_access_procedure: four_step_contention_based
+  require_explicit_ssb_bitmap: true
+  validation_snr_db: 35
+  validation_seed: 240611
+  ssb:
+    enabled: true
+    case: Case C
+    scs_khz: 30
+    lmax: 8
+    beam_count: 1
+    periodicity_ms: 20
+    positions_in_burst: '10000000'
+    per_ssb_power_db: [0, 0, 0, 0, 0, 0, 0, 0]
+    precoder_ids: [identity, identity, identity, identity, identity, identity, identity, identity]
+    selected_ssb_index: 0
+    observation_subframes: 5
+  mib:
+    enabled: true
+    pdcch_config_sib1: 0
+    dmrs_type_a_position: 2
+  type0:
+    si_rnti: 65535
+    dci_format: '1_0'
+    monitoring_occasion_ordinal: 2
+    note17_band: false
+  sib1:
+    enabled: true
+    si_rnti: 65535
+    coreset0_from_mib_required: true
+    searchspace0_from_mib_required: true
+    decode_from_waveform_required: true
+    observation_subframes: 5
+    pdsch:
+      prb_start: 0
+      num_prb: 24
+      symbol_start: 2
+      num_symbols: 12
+      mcs: 0
+      rv: 0
+  rrc:
+    require_setup_complete: true
+    transaction_id: 0
+    srb1_lcid: 1
+  extensions:
+    two_step_ra: false
+    contention_free_ra: false
+    beam_failure_recovery: false
+    supplementary_uplink: false
+    ntn_access: false
+    redcap_access: false
+    eredcap_access: false
+
 random_access:
   enabled: true
   binding_source: scenario_config_pending_sib1
   procedure_type: contention_based_four_step
-  prach_format: A2
-  preamble_length_mode: short
-  configuration_index: 87
-  subcarrier_spacing_khz: 15
+  prach_format: '0'
+  preamble_length_mode: long
+  configuration_index: 16
+  subcarrier_spacing_khz: 1.25
   root_sequence_index: 1
   logical_root_sequence_index: 1
   sequence_index: 1
@@ -121,7 +188,7 @@ random_access:
   restricted_set: UnrestrictedSet
   frequency_start: 0
   preamble_count: 64
-  preamble_index: [7]
+  preamble_index: 7
   min_detection_trials: 1
   msg3_enabled: true
   num_prach_occasions: 1
@@ -160,14 +227,16 @@ random_access:
     frequency_index: 0
   ra_response_window_slots: 8
   ra_contention_resolution_timer_slots: 64
-  preamble_trans_max: 1
+  preamble_trans_max: 10
   power_ramping_step_db: 2
   preamble_received_target_power_dbm: -100
   temp_crnti: 4660
   final_crnti: 4660
-  msg2_slot: 1
-  msg3_slot: 2
-  msg4_slot: 3
+  timing:
+    rar_processing_delay_slots: 1
+    msg3_k2_slots: 1
+    msg4_processing_delay_slots: 1
+    setup_complete_k2_slots: 1
   dci_payload_bits: 32
   msg2_pdsch:
     prb_start: 0
@@ -189,6 +258,7 @@ random_access:
     target_code_rate: 0.1171875
     rv: 0
     n_layers: 1
+    transform_precoding: false
   msg4_pdsch:
     prb_start: 0
     num_prb: 24
@@ -199,6 +269,17 @@ random_access:
     target_code_rate: 0.1171875
     rv: 0
     n_layers: 1
+  setup_complete_pusch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 0
+    num_symbols: 14
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+    transform_precoding: false
 
 output:
   bucket: lls

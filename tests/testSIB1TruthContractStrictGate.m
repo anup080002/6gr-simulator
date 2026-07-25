@@ -5,6 +5,9 @@ setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
 cfg.run.strictMode = true;
 cfg.phy.sib1.enable = true;
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
+cfg.initial_access.sib1.pdsch = struct("prb_start",0, ...
+    "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0);
 scfg = struct("meta", struct("tags", ["truth","no-proxy"]), "scenario", struct("honesty_mode", "strict"));
 tmpMissing = fullfile(tempdir, "sixgr_test_sib1_missing_gate");
 if exist(tmpMissing, "dir")

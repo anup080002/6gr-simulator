@@ -377,11 +377,18 @@ end
 
 function grant = localParseProcedureDCI(bits, procedure, carrier)
 bits = int8(bits(:).');
-if numel(bits) ~= 32 || any(bits ~= 0 & bits ~= 1)
-    error("sixgr:pdsch:ProcedureDCIFieldOutOfRange", ...
-        "The supported RA/SI DCI format 1_0 payload must contain exactly 32 bits.");
-end
 procedure = localProcedure(procedure);
+if any(procedure == ["msg2_rar","msg4_contention_resolution"])
+    requiredBits = 32;
+else
+    requiredBits = sixgr.phy.pdcch.dciPayloadSizeBits( ...
+        double(carrier.NSizeGrid), "1_0");
+end
+if numel(bits) ~= requiredBits || any(bits ~= 0 & bits ~= 1)
+    error("sixgr:pdsch:ProcedureDCIFieldOutOfRange", ...
+        "The %s DCI format 1_0 payload must contain exactly %d bits.", ...
+        procedure, requiredBits);
+end
 if any(procedure == ["msg2_rar","msg4_contention_resolution"])
     [prbStart,pos] = localReadUInt(bits,1,8);
     [prbCount,pos] = localReadUInt(bits,pos,8);

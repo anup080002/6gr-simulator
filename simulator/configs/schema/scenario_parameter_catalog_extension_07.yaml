@@ -1,5 +1,6 @@
 top_level_order:
   - canonical_control
+  - initial_access
   - bwp
   - pdsch6gr
   - pdsch
@@ -31,6 +32,7 @@ sections:
       reference_signals: {required: false, type: struct}
       csi: {required: false, type: struct}
       control: {required: false, type: struct}
+      initial_access: {required: false, type: struct}
       random_access: {required: false, type: struct}
       random_access_evidence: {required: false, type: struct}
       coding: {required: false, type: struct}
@@ -48,6 +50,25 @@ sections:
       validation: {required: false, type: struct}
       manifest: {required: false, type: struct}
       runtime_overrides: {required: false, type: struct_array}
+  initial_access:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      profile: {required: true, type: string}
+      configuration_epoch: {required: true, type: integer, min: 0}
+      band_context: {required: true, type: string}
+      spectrum: {required: true, type: string}
+      shared_spectrum: {required: true, type: boolean}
+      random_access_procedure: {required: true, type: string}
+      require_explicit_ssb_bitmap: {required: true, type: boolean}
+      validation_snr_db: {required: true, type: number}
+      validation_seed: {required: true, type: integer, min: 0}
+      ssb: {required: true, type: struct}
+      mib: {required: true, type: struct}
+      type0: {required: true, type: struct}
+      sib1: {required: true, type: struct}
+      rrc: {required: true, type: struct}
+      extensions: {required: true, type: struct}
   simulation:
     required: false
     parameters:
@@ -140,7 +161,7 @@ sections:
       uci_scaling: {required: false, type: number, min: 0, max: 1}
       repetition_type: {required: false, type: string}
       repetition_count: {required: false, type: integer, min: 1}
-      power_control: {required: false, type: struct}
+      power_control: {required: false, type: string_or_struct}
       srs_authority: {required: false, type: struct}
       xoh_pusch: {required: false, type: number}
       cbg_transmission: {required: false, type: boolean}

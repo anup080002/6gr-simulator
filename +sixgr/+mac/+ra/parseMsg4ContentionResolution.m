@@ -12,6 +12,26 @@ msg4.PayloadHex = upper(string(reshape(dec2hex(bytes(1:9), 2).', 1, [])));
 msg4.ContentionIdentityBytes = id(:);
 msg4.ContentionIdentity = upper(string(reshape(dec2hex(id(:), 2).', 1, [])));
 msg4.FinalCRNTI = final;
+msg4.RRCSetupPresent = false;
+msg4.RRCSetup = struct();
+msg4.RRCSetupSHA256 = "";
+if numel(bytes) > 9
+    if numel(bytes) < 12 || bytes(10) ~= uint8(50) || ...
+            bytes(11) > uint8(3) || bytes(12) < uint8(1) || ...
+            bytes(12) > uint8(32)
+        error("sixgr:mac:ra:InvalidRRCSetup", ...
+            "Msg4 contains an invalid bounded RRCSetup message.");
+    end
+    msg4.PayloadBytes = bytes(1:12);
+    msg4.PayloadHex = upper(string(reshape( ...
+        dec2hex(msg4.PayloadBytes, 2).', 1, [])));
+    msg4.RRCSetupPresent = true;
+    msg4.RRCSetup = struct( ...
+        "MessageType", "RRCSetup", ...
+        "TransactionID", double(bytes(11)), ...
+        "SRB1LCID", double(bytes(12)));
+    msg4.RRCSetupSHA256 = sixgr.rrc.asn1.sha256Hex(bytes(10:12));
+end
 msg4.Valid = true;
 end
 

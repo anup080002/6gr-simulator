@@ -1,220 +1,190 @@
 function [msg, meta] = decodeSIB1UPER(bitsOrBytes)
-%DECODESIB1UPER Decode the supported SIB1 anchor profile.
-
+%DECODESIB1UPER Decode Release-18 BCCH-DL-SCH/SIB1 UPER.
 bits = localNormalizeBits(bitsOrBytes);
-if numel(bits) < 20
-    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 payload is shorter than the anchor header.");
+if isempty(bits) || mod(numel(bits), 8) ~= 0
+    error("sixgr:rrc:asn1:DecodeFailed", ...
+        "SIB1 UPER payload must contain a nonempty whole number of octets.");
 end
-[version, pos] = localReadUInt(bits, 1, 4);
-if version ~= 1
-    error("sixgr:rrc:asn1:DecodeFailed", "Unsupported SIB1 anchor profile version %d.", version);
+hex = sixgr.rrc.asn1.bitsToHex(bits);
+try
+    decoded = sixgr.rrc.asn1.invokeNRRRCCodec( ...
+        "decode", struct("uper_hex", char(hex)));
+catch cause
+    failure = MException("sixgr:rrc:asn1:DecodeFailed", ...
+        "Release-18 SIB1 UPER decode failed: %s", cause.message);
+    failure = addCause(failure, cause);
+    throwAsCaller(failure);
 end
-[bodyLen, pos] = localReadUInt(bits, pos, 16);
-if numel(bits) < pos + bodyLen - 1
-    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 payload ended before declared body length.");
-end
-bodyEnd = pos + bodyLen - 1;
-body = bits(pos:bodyEnd);
-payloadEnd = bodyEnd + mod(8 - mod(bodyEnd, 8), 8);
-if numel(bits) < payloadEnd
-    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 payload ended before byte alignment padding.");
-end
-payloadBits = bits(1:payloadEnd);
-trailingBits = bits(payloadEnd+1:end);
-if any(trailingBits ~= 0)
-    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 transport block has non-zero trailing padding after the ASN.1 payload.");
-end
-p = 1;
-[~, p] = localExpectUInt(body, p, 1, 0, "bcchExtension");
-[~, p] = localExpectUInt(body, p, 1, 0, "messageChoice");
-[~, p] = localExpectUInt(body, p, 3, 0, "c1Choice");
-[~, p] = localExpectUInt(body, p, 1, 0, "sib1Extension");
-[mcc, p] = localReadDigits(body, p, 3);
-[mncIs3, p] = localReadUInt(body, p, 1);
-mncLen = 2 + double(mncIs3);
-[mnc, p] = localReadDigits(body, p, mncLen);
-[tac, p] = localReadUInt(body, p, 24);
-[cellIdentity, p] = localReadUInt(body, p, 36);
-[reserved, p] = localReadUInt(body, p, 1);
-[qRxLevMin, p] = localReadSigned(body, p, -140, 8);
-[qQualMin, p] = localReadSigned(body, p, -43, 7);
-[scsIdx, p] = localReadUInt(body, p, 2);
-[carrierBandwidth, p] = localReadUInt(body, p, 10);
-remainingLegacyTailBits = 44;
-if bodyLen - p + 1 >= remainingLegacyTailBits + 66
-    [absoluteFrequencySSB, p] = localReadUInt(body, p, 22);
-    [dlAbsoluteFrequencyPointA, p] = localReadUInt(body, p, 22);
-    [ulAbsoluteFrequencyPointA, p] = localReadUInt(body, p, 22);
-else
-    absoluteFrequencySSB = NaN;
-    dlAbsoluteFrequencyPointA = NaN;
-    ulAbsoluteFrequencyPointA = NaN;
-end
-[coreset0, p] = localReadUInt(body, p, 4);
-[search0, p] = localReadUInt(body, p, 4);
-[dmrsOffset, p] = localReadUInt(body, p, 1);
-[periodIdx, p] = localReadUInt(body, p, 3);
-[prachIndex, p] = localReadUInt(body, p, 8);
-[rootSeq, p] = localReadUInt(body, p, 10);
-[zcz, p] = localReadUInt(body, p, 4);
-[nPreambles, p] = localReadUInt(body, p, 7);
-[formatIdx, p] = localReadUInt(body, p, 3);
-msg1SCSkHz = NaN;
-if bodyLen - p + 1 >= 2
-    [msg1SCSIdx, ~] = localReadUInt(body, p, 2);
-    msg1SCSKHzValue = localPRACHSCSFromIndex(msg1SCSIdx);
-    msg1SCSkHz = double(msg1SCSKHzValue);
-end
-
-cfg = struct();
-cfg.phy.carrier.NCellID = double(cellIdentity);
-cfg.phy.carrier.SubcarrierSpacing = localSCSFromIndex(scsIdx, "numeric");
-cfg.phy.carrier.NSizeGrid = double(carrierBandwidth);
-cfg.rrc.sib1.plmn = char(mcc + mnc);
-cfg.rrc.sib1.tac = double(tac);
-cfg.rrc.sib1.cellIdentity = double(cellIdentity);
-cfg.phy.sib1.coreset0Index = double(coreset0);
-cfg.phy.sib1.searchSpaceZero = double(search0);
-cfg.phy.mib.dmrsTypeAPosition = double(dmrsOffset) + 2;
-cfg.phy.prach.configurationIndex = double(prachIndex);
-cfg.phy.prach.rootSeqIndex = double(rootSeq);
-cfg.phy.prach.zeroCorrelationZone = double(zcz);
-cfg.phy.prach.nPreambles = double(nPreambles);
-cfg.phy.prach.preambleFormat = char(localPreambleFormatFromIndex(formatIdx));
-if isfinite(msg1SCSkHz)
-    cfg.phy.prach.subcarrierSpacing_kHz = double(msg1SCSkHz);
-end
-msg = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg, "CellID", double(cellIdentity));
-msg.message.c1.systemInformationBlockType1.cellSelectionInfo.q_RxLevMin = double(qRxLevMin);
-msg.message.c1.systemInformationBlockType1.cellSelectionInfo.q_QualMin = double(qQualMin);
-msg.message.c1.systemInformationBlockType1.cellAccessRelatedInfo.cellReservedForOperatorUse = ...
-    string(ternary(reserved == 1, "reserved", "notReserved"));
-msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.ssb_periodicityServingCell = ...
-    localPeriodicityFromIndex(periodIdx);
-if isfinite(absoluteFrequencySSB)
-    msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.downlinkConfigCommon.frequencyInfoDL.absoluteFrequencySSB = ...
-        double(absoluteFrequencySSB);
-end
-if isfinite(dlAbsoluteFrequencyPointA)
-    msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.downlinkConfigCommon.frequencyInfoDL.dl_AbsoluteFrequencyPointA = ...
-        double(dlAbsoluteFrequencyPointA);
-end
-if isfinite(ulAbsoluteFrequencyPointA)
-    msg.message.c1.systemInformationBlockType1.servingCellConfigCommon.uplinkConfigCommon.frequencyInfoUL.absoluteFrequencyPointA = ...
-        double(ulAbsoluteFrequencyPointA);
-end
+semantic = decoded.semantic;
+cfg = localConfig(semantic);
+msg = sixgr.rrc.asn1.buildBCCHDLSCHMessage( ...
+    cfg, "CellID", double(semantic.cell_identity));
+msg.message.c1.systemInformationBlockType1.cellSelectionInfo.q_RxLevMin = ...
+    double(semantic.q_rx_lev_min);
+msg.message.c1.systemInformationBlockType1.cellSelectionInfo.q_QualMin = ...
+    double(semantic.q_qual_min);
+msg.message.c1.systemInformationBlockType1.cellAccessRelatedInfo. ...
+    cellReservedForOperatorUse = string(semantic.cell_reserved);
 sixgr.rrc.asn1.validateSIB1ForScenario(msg, cfg);
-
 meta = struct( ...
-    "Profile", "sixgr_sib1_anchor_profile_v1", ...
-    "PayloadBits", double(numel(payloadBits)), ...
-    "BodyBits", double(bodyLen), ...
-    "TrailingTransportBlockPaddingBits", double(numel(trailingBits)), ...
-    "PayloadHash", sixgr.rrc.asn1.sha256Hex(payloadBits(:)), ...
-    "EncodedHex", sixgr.rrc.asn1.bitsToHex(payloadBits(:)));
+    "Profile", string(decoded.profile), ...
+    "ASN1Release", "3GPP TS 38.331 V18.9.0", ...
+    "Codec", string(decoded.codec), ...
+    "CodecVersion", string(decoded.codec_version), ...
+    "ASN1SchemaSHA256", ...
+        "29e55635561822bf625d9170f050552d65047c334a3c0a8a47797c8df1985db5", ...
+    "PayloadBits", double(decoded.num_bits), ...
+    "BodyBits", double(decoded.num_bits), ...
+    "TrailingTransportBlockPaddingBits", ...
+        double(decoded.transport_padding_bits), ...
+    "TransportBlockBits", double(decoded.transport_num_bits), ...
+    "PayloadHash", string(decoded.sha256), ...
+    "EncodedHex", string(decoded.uper_hex), ...
+    "IndependentImplementation", ...
+        "asn1tools-0.167.0 official-TS38331-i90", ...
+    "SelfConsistencyOnly", false);
+end
+
+function cfg = localConfig(s)
+cfg = struct();
+cfg.phy.carrier.NCellID = double(s.cell_identity);
+cfg.phy.carrier.SubcarrierSpacing = ...
+    double(s.subcarrier_spacing_khz);
+cfg.phy.carrier.SubcarrierSpacing_kHz = ...
+    double(s.subcarrier_spacing_khz);
+cfg.phy.carrier.NSizeGrid = double(s.carrier_bandwidth_rb);
+cfg.phy.fc_Hz = localARFCNToHz(double(s.absolute_frequency_point_a));
+cfg.frequency.band_name = "n" + string(round(double(s.band)));
+cfg.initial_access.band_context = cfg.frequency.band_name;
+cfg.initial_access.ssb.positions_in_burst = ...
+    string(s.ssb_positions_in_burst);
+cfg.initial_access.ssb.periodicity_ms = ...
+    str2double(erase(string(s.ssb_periodicity), "ms"));
+cfg.rrc.sib1.plmn = string(s.mcc) + string(s.mnc);
+cfg.rrc.sib1.tac = double(s.tracking_area_code);
+cfg.rrc.sib1.cellIdentity = double(s.cell_identity);
+cfg.rrc.sib1.ssb_per_rach_choice = string(s.ssb_per_rach_choice);
+cfg.rrc.sib1.cb_preambles_per_ssb = string(s.cb_preambles_per_ssb);
+cfg.rrc.sib1.si_broadcast_status = string(s.si_broadcast_status);
+cfg.rrc.sib1.si_periodicity = string(s.si_periodicity);
+cfg.rrc.sib1.mapped_sib_type = string(s.mapped_sib_type);
+cfg.rrc.sib1.si_window_length = string(s.si_window_length);
+cfg.rrc.sib1.modification_period_coeff = ...
+    string(s.modification_period_coeff);
+cfg.rrc.sib1.default_paging_cycle = string(s.default_paging_cycle);
+cfg.rrc.sib1.paging_frame_choice = string(s.paging_frame_choice);
+cfg.rrc.sib1.paging_frame_offset = double(s.paging_frame_offset);
+cfg.rrc.sib1.paging_ns = string(s.paging_ns);
+cfg.rrc.sib1.time_alignment_timer = string(s.time_alignment_timer);
+cfg.rrc.sib1.ss_pbch_block_power_dbm = ...
+    double(s.ss_pbch_block_power_dbm);
+for name = ["t300","t301","t310","n310","t311","n311","t319"]
+    cfg.rrc.sib1.(name) = string(s.(name));
+end
+cfg.phy.sib1.coreset0Index = 0;
+cfg.phy.sib1.searchSpaceZero = 0;
+cfg.phy.mib.dmrsTypeAPosition = 2;
+cfg.phy.prach.configurationIndex = ...
+    double(s.prach_configuration_index);
+cfg.phy.prach.rootSeqIndex = double(s.root_sequence_index);
+cfg.phy.prach.zeroCorrelationZone = double(s.zero_correlation_zone);
+cfg.phy.prach.nPreambles = double(s.num_preambles);
+cfg.phy.prach.preambleFormat = localPreambleFormat( ...
+    double(s.prach_configuration_index), string(s.root_sequence_choice));
+cfg.phy.prach.subcarrierSpacing_kHz = ...
+    double(s.msg1_subcarrier_spacing_khz);
+cfg.phy.prach.restrictedSet = localRestrictedSet( ...
+    string(s.restricted_set_config));
+cfg.random_access = struct( ...
+    "configuration_index", double(s.prach_configuration_index), ...
+    "root_sequence_index", double(s.root_sequence_index), ...
+    "zero_correlation_zone", double(s.zero_correlation_zone), ...
+    "preamble_count", double(s.num_preambles), ...
+    "prach_format", string(cfg.phy.prach.preambleFormat), ...
+    "subcarrier_spacing_khz", double(s.msg1_subcarrier_spacing_khz), ...
+    "restricted_set", string(cfg.phy.prach.restrictedSet), ...
+    "msg1_fdm", localFDMValue(string(s.msg1_fdm)), ...
+    "frequency_start", double(s.msg1_frequency_start), ...
+    "preamble_received_target_power_dbm", ...
+        double(s.preamble_received_target_power_dbm), ...
+    "preamble_trans_max", localEnumNumber(string(s.preamble_trans_max)), ...
+    "power_ramping_step_db", localEnumNumber(string(s.power_ramping_step)), ...
+    "ra_response_window_slots", localEnumNumber(string(s.ra_response_window)), ...
+    "ra_contention_resolution_timer_slots", ...
+        localEnumNumber(string(s.contention_resolution_timer)));
+end
+
+function format = localPreambleFormat(index, rootChoice)
+if rootChoice == "l839"
+    if index >= 48 && index <= 63
+        format = "3";
+    else
+        format = "0";
+    end
+else
+    format = "A1";
+end
+end
+
+function value = localRestrictedSet(name)
+switch name
+    case "unrestrictedSet"
+        value = "UnrestrictedSet";
+    case "restrictedSetTypeA"
+        value = "RestrictedSetTypeA";
+    case "restrictedSetTypeB"
+        value = "RestrictedSetTypeB";
+    otherwise
+        error("sixgr:rrc:asn1:DecodeFailed", ...
+            "Unsupported decoded restricted-set enum '%s'.", name);
+end
+end
+
+function value = localFDMValue(name)
+names = ["one","two","four","eight"];
+values = [1 2 4 8];
+index = find(names == name, 1);
+if isempty(index)
+    error("sixgr:rrc:asn1:DecodeFailed", ...
+        "Unsupported msg1-FDM enum '%s'.", name);
+end
+value = values(index);
+end
+
+function value = localEnumNumber(name)
+text = regexprep(char(name), '^[A-Za-z]+', '');
+value = str2double(text);
+if ~isfinite(value)
+    error("sixgr:rrc:asn1:DecodeFailed", ...
+        "Cannot decode numeric ASN.1 enum '%s'.", name);
+end
+end
+
+function hz = localARFCNToHz(arfcn)
+if arfcn < 600000
+    mhz = arfcn * 0.005;
+elseif arfcn < 2016667
+    mhz = 3000 + (arfcn - 600000) * 0.015;
+else
+    mhz = 24250.08 + (arfcn - 2016667) * 0.06;
+end
+hz = mhz * 1e6;
 end
 
 function bits = localNormalizeBits(x)
+x = x(:);
 if isempty(x)
     bits = int8([]);
-    return;
-end
-x = x(:);
-if all(x == 0 | x == 1)
+elseif all(x == 0 | x == 1)
     bits = int8(x);
-    return;
-end
-bytes = uint8(x);
-bits = zeros(numel(bytes) * 8, 1, "int8");
-for i = 1:numel(bytes)
-    for b = 1:8
-        bits((i-1)*8+b) = int8(bitget(bytes(i), 9-b));
-    end
-end
-end
-
-function [value, next] = localExpectUInt(bits, pos, width, expected, name)
-[value, next] = localReadUInt(bits, pos, width);
-if value ~= expected
-    error("sixgr:rrc:asn1:DecodeFailed", "Unexpected %s choice value %d.", name, value);
-end
-end
-
-function [value, next] = localReadUInt(bits, pos, width)
-if pos + width - 1 > numel(bits)
-    error("sixgr:rrc:asn1:DecodeFailed", "SIB1 bitstream ended inside constrained integer.");
-end
-value = uint64(0);
-for k = 1:width
-    value = bitshift(value, 1) + uint64(bits(pos + k - 1) ~= 0);
-end
-value = double(value);
-next = pos + width;
-end
-
-function [value, next] = localReadSigned(bits, pos, offset, width)
-[raw, next] = localReadUInt(bits, pos, width);
-value = double(raw) + double(offset);
-end
-
-function [text, next] = localReadDigits(bits, pos, count)
-chars = repmat('0', 1, count);
-next = pos;
-for i = 1:count
-    [digit, next] = localReadUInt(bits, next, 4);
-    if digit > 9
-        error("sixgr:rrc:asn1:DecodeFailed", "Invalid BCD digit in SIB1 PLMN.");
-    end
-    chars(i) = char('0' + digit);
-end
-text = string(chars);
-end
-
-function scs = localSCSFromIndex(idx, mode)
-values = [15 30 60 120];
-names = ["kHz15","kHz30","kHz60","kHz120"];
-idx = double(idx) + 1;
-if idx < 1 || idx > numel(values)
-    error("sixgr:rrc:asn1:DecodeFailed", "Bad SCS enum in SIB1.");
-end
-if strcmpi(mode, "numeric")
-    scs = values(idx);
 else
-    scs = names(idx);
-end
-end
-
-function value = localPeriodicityFromIndex(idx)
-names = ["ms5","ms10","ms20","ms40","ms80","ms160"];
-idx = double(idx) + 1;
-if idx < 1 || idx > numel(names)
-    error("sixgr:rrc:asn1:DecodeFailed", "Bad SSB periodicity enum in SIB1.");
-end
-value = names(idx);
-end
-
-function value = localPreambleFormatFromIndex(idx)
-names = ["0","1","2","3","A1","A2","A3","B4"];
-idx = double(idx) + 1;
-if idx < 1 || idx > numel(names)
-    error("sixgr:rrc:asn1:DecodeFailed", "Bad PRACH preamble format enum in SIB1.");
-end
-value = names(idx);
-end
-
-function value = localPRACHSCSFromIndex(idx)
-values = [1.25 5 15 30];
-idx = double(idx) + 1;
-if idx < 1 || idx > numel(values)
-    error("sixgr:rrc:asn1:DecodeFailed", "Bad PRACH Msg1 SCS enum in SIB1.");
-end
-value = values(idx);
-end
-
-function out = ternary(cond, a, b)
-if cond
-    out = a;
-else
-    out = b;
+    bytes = uint8(x);
+    bits = zeros(numel(bytes) * 8, 1, "int8");
+    for ii = 1:numel(bytes)
+        for jj = 1:8
+            bits((ii - 1) * 8 + jj) = int8( ...
+                bitget(bytes(ii), 9 - jj));
+        end
+    end
 end
 end

@@ -1,8 +1,9 @@
 function [dci, pdsch] = buildSIB1DCI10(carrier, cfg, varargin)
-%BUILDSIB1DCI10 Build/decode the supported SI-RNTI DCI format 1_0 profile.
+%BUILDSIB1DCI10 Build/decode SI-RNTI DCI format 1_0.
 %
-% The bit layout is the simulator anchor subset of DCI 1_0 for SI-RNTI:
-% FDRA/RIV, TDRA index, VRB mapping, MCS, RV, SI indicator, and reserved.
+% The SI-RNTI field set is FDRA/RIV, TDRA index, VRB mapping, MCS, RV,
+% system-information indicator and reserved bits. The total monitored DCI
+% length is derived from the actual initial DL BWP; it is never fixed.
 
 p = inputParser;
 p.addParameter("PDSCH", [], @(x) isempty(x) || isobject(x));
@@ -15,6 +16,9 @@ p.addParameter("SymbolStart", 2, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("NumSymbols", 12, @(x) isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 opt = p.Results;
+[payloadLength, payloadDetails] = ...
+    sixgr.phy.pdcch.dciPayloadSizeBits( ...
+    double(carrier.NSizeGrid), "1_0");
 
 if isempty(opt.Bits)
     if isempty(opt.PDSCH)
@@ -33,12 +37,17 @@ if isempty(opt.Bits)
     bits = localAppendUInt(bits, round(double(opt.MCSIndex)), 5);
     bits = localAppendUInt(bits, round(double(opt.RV)), 2);
     bits = localAppendUInt(bits, 0, 1); % SI indicator: SIB1
-    while numel(bits) < 32
+    while numel(bits) < payloadLength
         bits = localAppendUInt(bits, 0, 1); %#ok<AGROW>
     end
-    bits = bits(1:32);
+    bits = bits(1:payloadLength);
 else
     bits = int8(opt.Bits(:)).';
+    if numel(bits) ~= payloadLength
+        error("sixgr:phy:pdcch:payload_length_mismatch", ...
+            "SI-RNTI DCI 1_0 requires %d bits for initial DL BWP size %d; received %d.", ...
+            payloadLength, double(carrier.NSizeGrid), numel(bits));
+    end
     [riv, pos] = localReadUInt(bits, 1, localRIVWidth(double(carrier.NSizeGrid)));
     [tda, pos] = localReadUInt(bits, pos, 4);
     [vrb, pos] = localReadUInt(bits, pos, 1);
@@ -65,6 +74,7 @@ dci = struct( ...
     "Bits", int8(bits(:)), ...
     "PayloadHex", sixgr.rrc.asn1.bitsToHex(bits(:)), ...
     "PayloadLengthBits", double(numel(bits)), ...
+    "PayloadSizeSource", string(payloadDetails.SizeSource), ...
     "RIV", localEncodeRIV(double(carrier.NSizeGrid), min(double(pdsch.PRBSet)), numel(pdsch.PRBSet)), ...
     "TDRAIndex", 0, ...
     "VRBToPRBInterleaving", localObjectBool(pdsch, "VRBToPRBInterleaving", false), ...

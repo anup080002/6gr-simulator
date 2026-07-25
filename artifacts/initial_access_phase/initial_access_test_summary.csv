@@ -1,0 +1,13 @@
+TestSuite,TestsRun,Passed,Failed,Skipped,Blocked,Duration_s,Mandatory,Status
+testInitialAccessSSBPhaseCore,11,11,0,0,0,25.0324048,1,PASS
+testInitialAccessMIBPhaseCore,2,2,0,0,0,28.7522843,1,PASS
+testInitialAccessType0PhaseCore,4,4,0,0,0,4.5092341,1,PASS
+testSIB1IndependentUPERVectors,2,2,0,0,0,25.0912607,1,PASS
+testSIB1ASN1RoundTrip,1,1,0,0,0,12.9602862,1,PASS
+testSIB1WaveformRecoveryAWGN,1,1,0,0,0,149.909205,1,PASS
+testInitialAccessRAPhaseCore,8,8,0,0,0,14.2274636,1,PASS
+testInitialAccessRRCPhaseCore,3,3,0,0,0,0.9488569,1,PASS
+testMsg3HARQ,1,1,0,0,0,3.188158,1,PASS
+testFourStepRACollisionAndCapture,2,2,0,0,0,5.7135054,1,PASS
+testFourStepRAMultiAttempt,2,2,0,0,0,16.0379954,1,PASS
+testInitialAccessMasterYAMLAuthority,1,1,0,0,0,27.3238449,1,PASS

@@ -10,6 +10,34 @@ msg3.PayloadBytes = bytes(1:8);
 msg3.PayloadHex = upper(string(reshape(dec2hex(bytes(1:8), 2).', 1, [])));
 msg3.ContentionIdentityBytes = id(:);
 msg3.ContentionIdentity = upper(string(reshape(dec2hex(id(:), 2).', 1, [])));
+msg3.RRCSetupRequestPresent = false;
+msg3.RRCSetupRequest = struct();
+msg3.RRCSetupRequestSHA256 = "";
+consumed = 8;
+if numel(bytes) > consumed
+    if numel(bytes) < consumed + 2 || bytes(consumed + 1) ~= uint8(49)
+        error("sixgr:mac:ra:InvalidRRCSetupRequest", ...
+            "Msg3 contains an invalid bounded RRCSetupRequest discriminator.");
+    end
+    identityLength = double(bytes(consumed + 2));
+    requestEnd = consumed + 2 + identityLength;
+    if identityLength < 1 || numel(bytes) < requestEnd
+        error("sixgr:mac:ra:InvalidRRCSetupRequest", ...
+            "Msg3 RRCSetupRequest UE identity is missing or truncated.");
+    end
+    identityBytes = bytes(consumed + 3:requestEnd);
+    ueIdentity = string(native2unicode(identityBytes(:).', "UTF-8"));
+    msg3.PayloadBytes = bytes(1:requestEnd);
+    msg3.PayloadHex = upper(string(reshape( ...
+        dec2hex(msg3.PayloadBytes, 2).', 1, [])));
+    msg3.RRCSetupRequestPresent = true;
+    msg3.RRCSetupRequest = struct( ...
+        "MessageType", "RRCSetupRequest", ...
+        "UEIdentity", ueIdentity, ...
+        "EstablishmentCause", "mo-Signalling");
+    msg3.RRCSetupRequestSHA256 = sixgr.rrc.asn1.sha256Hex( ...
+        bytes(consumed + 1:requestEnd));
+end
 msg3.Valid = true;
 end
 

@@ -69,11 +69,9 @@ if isempty(Lmax)
     Lmax = sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 8);
     Lmax = double(Lmax);
 end
-if ~(Lmax == 4 || Lmax == 8 || Lmax == 64)
-    % allow other values but cap DMRS search below
-    if opt.Verbose
-        fprintf('[PBCH] Warning: unexpected Lmax=%g, continuing.\n', Lmax);
-    end
+if ~any(Lmax == [4, 8, 64])
+    error("sixgr:phy:ia:InvalidLmax", ...
+        "PBCH recovery requires Lmax 4, 8, or 64; got %g.", Lmax);
 end
 
 % PBCH DM-RS only supports ibar_SSB in [0..7]
@@ -283,9 +281,9 @@ pb.BCHScrambledBlockNumBits = double(numel(scrblkBits));
 pb.BCHScrambledBlockHex = sixgr.rrc.asn1.bitsToHex(scrblkBits);
 pb.BCHScrambledBlockHash = sixgr.rrc.asn1.sha256Hex(uint8(scrblkBits));
 pb.MIBDecodedBitSource = "nrBCHDecode";
-try
+if pb.Ok
     mib = sixgr.phy.broadcast.decodeMIBTransportBlock(trblkBits);
-catch
+else
     mib = struct();
 end
 pb.PDCCHConfigSIB1 = double(sixgr.util.structGet(mib, "PDCCHConfigSIB1", NaN));
@@ -326,6 +324,13 @@ pb.PostEqSINRValueStatus = string(sixgr.util.structGet(evidence, "PostEqSINRValu
 pb.PostEqSINRNAReason = string(sixgr.util.structGet(evidence, "PostEqSINRNAReason", ""));
 pb.StrictReceiverEvidenceOk = logical(pb.ChannelEstimateAvailable) && logical(pb.EqualizationAvailable) && ...
     isfinite(pb.ReceiverHestSINR_dB) && logical(pb.PBCHDecodeAvailable) && logical(pb.BCHDecodeAvailable);
+if pb.Ok
+    pb.DecodedMIBState = sixgr.phy.ia.DecodedMIBState.create( ...
+        pb, sixgr.util.structGet(cfg, ...
+        "initial_access.configuration_epoch", 1));
+else
+    pb.DecodedMIBState = struct();
+end
 
 info.Selected = selected;
 info.Nr = Nr;

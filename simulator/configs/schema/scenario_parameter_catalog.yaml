@@ -861,13 +861,12 @@ sections:
       preamble_received_target_power_dbm: {required: false, type: number}
       temp_crnti: {required: false, type: integer, min: 1}
       final_crnti: {required: false, type: integer, min: 1}
-      msg2_slot: {required: false, type: integer, min: 0}
-      msg3_slot: {required: false, type: integer, min: 0}
-      msg4_slot: {required: false, type: integer, min: 0}
+      timing: {required: false, type: struct}
       dci_payload_bits: {required: false, type: integer, min: 1}
       msg2_pdsch: {required: false, type: struct}
       msg3_pusch: {required: false, type: struct}
       msg4_pdsch: {required: false, type: struct}
+      setup_complete_pusch: {required: false, type: struct}
       channel_model:
         required: false
         type: string

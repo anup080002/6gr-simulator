@@ -1,5 +1,11 @@
-function out = runSIB1StrictMiniAnchor(runFolder, cfg)
+function out = runSIB1StrictMiniAnchor(runFolder, cfg, varargin)
 %RUNSIB1STRICTMINIANCHOR Execute and export the AUD-015 strict mini-run.
+
+p = inputParser;
+p.addParameter("RunNegativeSuite", true, ...
+    @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+p.parse(varargin{:});
+runNegativeSuite = logical(p.Results.RunNegativeSuite);
 
 if nargin < 1 || strlength(string(runFolder)) == 0
     runFolder = fullfile(tempdir, "sixgr_sib1_strict_mini_anchor");
@@ -9,11 +15,14 @@ if nargin < 2 || isempty(cfg)
 end
 cfg.run.strictMode = true;
 cfg.phy.sib1.enable = true;
-cfg.phy.sib1.ssbObservationSubframes = 5;
+cfg.phy.sib1.ssbObservationSubframes = double(sixgr.util.structGet(cfg, ...
+    "phy.sib1.ssbObservationSubframes", sixgr.util.structGet(cfg, ...
+    "initial_access.ssb.observation_subframes", 5)));
 cfg.phy.carrier.NCellID = double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 17));
 cfg.phy.carrier.SubcarrierSpacing = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", 30));
 cfg.phy.carrier.SubcarrierSpacing_kHz = cfg.phy.carrier.SubcarrierSpacing;
-cfg.phy.carrier.NSizeGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 52));
+cfg.phy.carrier.NSizeGrid = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.NSizeGrid", 51));
 cfg.phy.sib1.coreset0Index = double(sixgr.util.structGet(cfg, "phy.sib1.coreset0Index", 0));
 cfg.phy.sib1.searchSpaceZero = double(sixgr.util.structGet(cfg, "phy.sib1.searchSpaceZero", 0));
 raRequested = localRandomAccessRequested(cfg);
@@ -22,12 +31,18 @@ if runRandomAccess
     cfg = localMirrorRandomAccessIntoSIB1Prach(cfg);
 end
 
-tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, "SNRdB", 35, "Seed", 1501);
-rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, ...
-    "ExpectedTxTree", tx.TxTree, ...
-    "ExpectedPayloadHash", tx.SIB1PayloadHash, ...
-    "ExpectedTreeHash", tx.TxTreeHash);
-negatives = localRunNegatives(tx, cfg);
+snrDB = double(sixgr.util.structGet(cfg, ...
+    "initial_access.validation_snr_db", 35));
+seed = double(sixgr.util.structGet(cfg, ...
+    "initial_access.validation_seed", ...
+    sixgr.util.structGet(cfg, "run.seed", 1501)));
+tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, ...
+    "SNRdB", snrDB, "Seed", seed);
+rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg);
+negatives = repmat(struct(), 0, 1);
+if runNegativeSuite
+    negatives = localRunNegatives(tx, cfg);
+end
 artifacts = sixgr.phy.broadcast.exportSIB1EvidenceArtifacts(runFolder, tx, rx, "NegativeResults", negatives);
 ra = struct();
 raOk = false;
@@ -53,6 +68,7 @@ out = struct("Ok", logical(rx.StrictOk) && (~runRandomAccess || raOk), ...
     "RandomAccessRunnable", logical(runRandomAccess), ...
     "RandomAccessSkipReason", string(raSkipReason), ...
     "RAOk", logical(raOk), ...
+    "NegativeSuiteRequested", runNegativeSuite, ...
     "RandomAccess", ra, "NegativeResults", negatives, "Artifacts", artifacts, ...
     "RAArtifacts", raArtifacts, "LifecycleArtifacts", lifecycleArtifacts);
 end
@@ -130,6 +146,14 @@ if runRandomAccess && isstruct(ra) && ~isempty(fieldnames(ra))
         "control/csv/msg3_pusch_trials.csv", string(sixgr.util.structGet(ra, "FailureReason", ""))); %#ok<AGROW>
     rows(end+1, 1) = localLifecycleRow("RA_MSG4_CONTENTION_RESOLUTION", true, logical(sixgr.util.structGet(ra, "RACompleted", false)), ...
         "control/csv/msg4_contention_resolution.csv", string(sixgr.util.structGet(ra, "FailureReason", ""))); %#ok<AGROW>
+    if logical(sixgr.util.structGet(ra, "RequireRRCSetupComplete", false))
+        rows(end+1, 1) = localLifecycleRow( ...
+            "RRC_SETUP_COMPLETE_SRB1", true, ...
+            logical(sixgr.util.structGet(ra, "RRCConnected", false)), ...
+            "control/csv/rrc_connection_events.csv", ...
+            string(sixgr.util.structGet( ...
+            ra, "FailureReason", ""))); %#ok<AGROW>
+    end
 end
 T = struct2table(rows, "AsArray", true);
 T.StageOrder = (1:height(T)).';
@@ -146,36 +170,36 @@ end
 
 function negatives = localRunNegatives(tx, cfg)
 negatives = repmat(struct(), 0, 1);
-wrong = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "ReceiverRNTI", 4660, ...
-    "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
+wrong = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+    tx.Waveform, cfg, "ReceiverRNTI", 4660);
 wrong.NegativeTrialType = "wrong_si_rnti";
 wrong.InjectedFault = "receiver_attempted_wrong_rnti_4660";
 wrong.ExpectedFailureStage = "pdcch_decode_failed";
 negatives = localAppendNegative(negatives, wrong);
 
-nosig = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "nosignal", ...
-    "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
+nosig = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+    tx.Waveform, cfg, "FaultMode", "nosignal");
 nosig.NegativeTrialType = "no_signal_coreset0";
 nosig.InjectedFault = "zeroed_sib1_slot";
 nosig.ExpectedFailureStage = "pdcch_decode_failed";
 negatives = localAppendNegative(negatives, nosig);
 
-cpdcch = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "corruptpdcch", ...
-    "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
+cpdcch = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+    tx.Waveform, cfg, "FaultMode", "corruptpdcch");
 cpdcch.NegativeTrialType = "corrupted_pdcch";
 cpdcch.InjectedFault = "pdcch_and_dmrs_resource_elements_zeroed";
 cpdcch.ExpectedFailureStage = "pdcch_decode_failed";
 negatives = localAppendNegative(negatives, cpdcch);
 
-cpdsch = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "corruptpdsch", ...
-    "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
+cpdsch = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+    tx.Waveform, cfg, "FaultMode", "corruptpdsch");
 cpdsch.NegativeTrialType = "corrupted_pdsch";
 cpdsch.InjectedFault = "pdsch_and_dmrs_resource_elements_zeroed";
 cpdsch.ExpectedFailureStage = "pdsch_dlsch_crc_failed";
 negatives = localAppendNegative(negatives, cpdsch);
 
-casn1 = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg, "FaultMode", "corruptasn1", ...
-    "ExpectedTxTree", tx.TxTree, "ExpectedPayloadHash", tx.SIB1PayloadHash, "ExpectedTreeHash", tx.TxTreeHash);
+casn1 = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+    tx.Waveform, cfg, "FaultMode", "corruptasn1");
 casn1.NegativeTrialType = "corrupted_asn1_payload";
 casn1.InjectedFault = "post_dlsch_payload_bit_flip";
 casn1.ExpectedFailureStage = "sib1_asn1_decode_or_tree_match_failed";

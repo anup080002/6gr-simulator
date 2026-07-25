@@ -308,6 +308,14 @@ cfg.phy.frequencyRange = char(upper(string(localGetNested(s, "frequency.range_na
 cfg.frequency.rangeName = cfg.phy.frequencyRange;
 cfg.frequency.centerFrequencyHz = double(s.frequency.center_frequency_hz);
 cfg.frequency.bandwidthHz = double(s.frequency.bandwidth_hz);
+% Keep the canonical scenario spellings available to production PHY
+% components as well as the legacy camel-case facade.  Both aliases are
+% populated from the resolved YAML; neither introduces a MATLAB default.
+cfg.frequency.range_name = cfg.phy.frequencyRange;
+cfg.frequency.band_name = char(string(localRequireNested( ...
+    s, "frequency.band_name", "frequency.band_name")));
+cfg.frequency.center_frequency_hz = double(s.frequency.center_frequency_hz);
+cfg.frequency.bandwidth_hz = double(s.frequency.bandwidth_hz);
 cfg.channel.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.channel.nRxAnt = double(s.mimo.n_rx_ant);
 cfg.channel.snr_dB = localNumericScalarOrNaN(localGetNested(s, "simulation.snr_db", NaN));
@@ -496,8 +504,35 @@ if isfinite(ssbPeriodSlots) && ssbPeriodSlots >= 1
     cfg = sixgr.util.structSet(cfg, "phy.pbch.period_slots", double(ssbPeriodSlots));
 end
 cfg.phy.sib1.enable = logical(localGetNested(s, "phy.sib1.enable", ...
+    localGetNested(s, "initial_access.sib1.enabled", ...
     localGetNested(s, "signals_and_channels_common.sib1_related_pdcch.enable_flag", false) && ...
-    localGetNested(s, "signals_and_channels_common.sib1_related_pdsch.enable_flag", false)));
+    localGetNested(s, "signals_and_channels_common.sib1_related_pdsch.enable_flag", false))));
+initialAccess = localGetNested(s, "initial_access", struct());
+if builtin("isstruct", initialAccess) && ~isempty(fieldnames(initialAccess))
+    cfg = sixgr.util.structSet(cfg, "initial_access", initialAccess);
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.periodicity_ms", ...
+        localGetNested(initialAccess, "ssb.periodicity_ms", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.positionsInBurst", ...
+        localGetNested(initialAccess, "ssb.positions_in_burst", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.perSSBPower_dB", ...
+        localGetNested(initialAccess, "ssb.per_ssb_power_db", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.precoderIDs", ...
+        localGetNested(initialAccess, "ssb.precoder_ids", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.KSSB", ...
+        localGetNested(initialAccess, "ssb.k_ssb", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.NCRBSSB", ...
+        localGetNested(initialAccess, "ssb.n_crb_ssb", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.runtimeSSBIndex", ...
+        localGetNested(initialAccess, "ssb.selected_ssb_index", []));
+    cfg = localStructSetIfPresent(cfg, "phy.sib1.ssbObservationSubframes", ...
+        localGetNested(initialAccess, "ssb.observation_subframes", []));
+    cfg = localStructSetIfPresent(cfg, "phy.mib.pdcchConfigSIB1", ...
+        localGetNested(initialAccess, "mib.pdcch_config_sib1", []));
+    cfg = localStructSetIfPresent(cfg, "phy.mib.dmrsTypeAPosition", ...
+        localGetNested(initialAccess, "mib.dmrs_type_a_position", []));
+    cfg = localStructSetIfPresent(cfg, "validation.sib1.siRNTI", ...
+        localGetNested(initialAccess, "sib1.si_rnti", []));
+end
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
 cfg.phy.pdcch.searchSpaceType = char(localNormalizePDCCHSearchSpaceType(s.control.search_space_type));
@@ -1495,6 +1530,10 @@ cfg = sixgr.util.structSet(cfg, "lls6g.modulation", s.modulation);
 cfg = sixgr.util.structSet(cfg, "lls6g.control", s.control);
 cfg = sixgr.util.structSet(cfg, "lls6g.harq", s.harq);
 cfg = sixgr.util.structSet(cfg, "lls6g.random_access", s.random_access);
+initialAccessSection = localGetNested(s, "initial_access", struct());
+if builtin("isstruct", initialAccessSection) && ~isempty(fieldnames(initialAccessSection))
+    cfg = sixgr.util.structSet(cfg, "initial_access", initialAccessSection);
+end
 cfg = sixgr.util.structSet(cfg, "lls6g.impairments", s.impairments);
 cfg = sixgr.util.structSet(cfg, "lls6g.ai_ml", s.ai_ml);
 cfg = sixgr.util.structSet(cfg, "lls6g.energy_efficiency", s.energy_efficiency);
@@ -1502,7 +1541,7 @@ cfg = sixgr.util.structSet(cfg, "lls6g.kpis", s.kpis);
 cfg = sixgr.util.structSet(cfg, "lls6g.logging", s.logging);
 cfg = sixgr.util.structSet(cfg, "lls6g.scenario", s.scenario);
 cfg = sixgr.util.structSet(cfg, "lls6g.outputRunFolder", char(string(runFolder)));
-for extraSection = ["pucch_resources", "sib1_and_initial_access", "random_access_evidence", ...
+for extraSection = ["pucch_resources", "initial_access", "sib1_and_initial_access", "random_access_evidence", ...
         "channel_rf_configured_vs_applied", "decoder_output_capture", "dut_reference_validation"]
     if isfield(s, extraSection)
         cfg = sixgr.util.structSet(cfg, "lls6g." + extraSection, s.(extraSection));

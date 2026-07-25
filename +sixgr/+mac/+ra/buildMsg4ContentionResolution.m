@@ -2,9 +2,18 @@ function msg4 = buildMsg4ContentionResolution(contentionIdentity, varargin)
 %BUILDMSG4CONTENTIONRESOLUTION Build Msg4 contention-resolution MAC bytes.
 p = inputParser;
 p.addParameter("FinalCRNTI", 4660, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("RRCSetup", true, @(x)islogical(x) || isnumeric(x));
+p.addParameter("TransactionID", 0, @(x)isnumeric(x) && isscalar(x) && ...
+    isfinite(x) && x >= 0 && x <= 3 && x == fix(x));
+p.addParameter("SRB1LCID", 1, @(x)isnumeric(x) && isscalar(x) && ...
+    isfinite(x) && x >= 1 && x <= 32 && x == fix(x));
 p.parse(varargin{:});
 idBytes = localNormalizeIdentity(contentionIdentity);
 payload = uint8([2; idBytes(:); localUInt16Bytes(uint16(p.Results.FinalCRNTI))]);
+if logical(p.Results.RRCSetup)
+    payload = [payload; uint8(50); uint8(p.Results.TransactionID); ...
+        uint8(p.Results.SRB1LCID)]; %#ok<AGROW>
+end
 msg4 = struct();
 msg4.PayloadBytes = payload(:);
 msg4.PayloadBits = localBytesToBits(payload);
@@ -12,6 +21,13 @@ msg4.PayloadHex = upper(string(reshape(dec2hex(payload(:), 2).', 1, [])));
 msg4.ContentionIdentityBytes = idBytes(:);
 msg4.ContentionIdentity = upper(string(reshape(dec2hex(idBytes(:), 2).', 1, [])));
 msg4.FinalCRNTI = double(p.Results.FinalCRNTI);
+msg4.RRCSetupPresent = logical(p.Results.RRCSetup);
+msg4.RRCSetup = struct( ...
+    "MessageType", "RRCSetup", ...
+    "TransactionID", double(p.Results.TransactionID), ...
+    "SRB1LCID", double(p.Results.SRB1LCID));
+msg4.RRCSetupSHA256 = sixgr.rrc.asn1.sha256Hex( ...
+    uint8([50; uint8(p.Results.TransactionID); uint8(p.Results.SRB1LCID)]));
 msg4.PayloadHash = sixgr.rrc.asn1.sha256Hex(payload);
 end
 

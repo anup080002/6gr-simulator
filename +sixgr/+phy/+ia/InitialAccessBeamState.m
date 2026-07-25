@@ -1,0 +1,89 @@
+classdef InitialAccessBeamState
+    %INITIALACCESSBEAMSTATE Measured SSB-beam selection/reselection state.
+    %
+    % This class owns the bounded initial-access beam dependency used by
+    % Type-0, SIB1 and PRACH association. Selection is based only on the
+    % supplied per-beam measurements and explicit blockage state.
+
+    methods (Static)
+        function result = resolve(varargin)
+            p = inputParser;
+            p.FunctionName = ...
+                "sixgr.phy.ia.InitialAccessBeamState.resolve";
+            addParameter(p, "RSRPdBm", [], @localFiniteVector);
+            addParameter(p, "Blocked", false, @localLogicalVector);
+            addParameter(p, "RequestedBeamIndex0", 0, ...
+                @localNonnegativeInteger);
+            addParameter(p, "SSBPeriodicityMs", 20, ...
+                @localPositiveFinite);
+            parse(p, varargin{:});
+            opt = p.Results;
+
+            rsrp = double(opt.RSRPdBm(:));
+            blocked = logical(opt.Blocked(:));
+            if isscalar(blocked)
+                blocked = repmat(blocked, numel(rsrp), 1);
+            end
+            if numel(blocked) ~= numel(rsrp)
+                error("sixgr:phy:ia:InvalidBeamMeasurement", ...
+                    "Blocked and RSRPdBm must have the same beam count.");
+            end
+            requested = double(opt.RequestedBeamIndex0);
+            if requested >= numel(rsrp)
+                error("sixgr:phy:ia:InvalidBeamMeasurement", ...
+                    "Requested beam %d is outside %d measurements.", ...
+                    requested, numel(rsrp));
+            end
+            available = find(~blocked);
+            if isempty(available)
+                error("sixgr:phy:ia:NoAvailableSSBBeam", ...
+                    "Every measured SSB beam is blocked.");
+            end
+            [~, ordinal] = max(rsrp(available));
+            selected = available(ordinal) - 1;
+            requestedBlocked = blocked(requested + 1);
+            mismatch = selected ~= requested;
+            reselectionLatency = double(requestedBlocked) * ...
+                double(opt.SSBPeriodicityMs);
+
+            payload = struct( ...
+                "ContractVersion", ...
+                    "sixgr_initial_access_beam_state/v1", ...
+                "RSRPdBm", rsrp, ...
+                "Blocked", blocked, ...
+                "RequestedBeamIndex0", requested, ...
+                "SelectedBeamIndex0", double(selected), ...
+                "RequestedBeamBlocked", logical(requestedBlocked), ...
+                "BeamMismatch", logical(mismatch), ...
+                "ReselectionLatencyMs", reselectionLatency, ...
+                "AccessPossible", true, ...
+                "MeasurementSource", "per_beam_ssb_measurements", ...
+                "ProxyUsed", false, ...
+                "FallbackUsed", false, ...
+                "Status", "resolved");
+            result = payload;
+            result.StateSHA256 = ...
+                sixgr.util.sha256Hex(jsonencode(payload));
+        end
+    end
+end
+
+function tf = localFiniteVector(value)
+tf = isnumeric(value) && isreal(value) && isvector(value) && ...
+    ~isempty(value) && all(isfinite(value));
+end
+
+function tf = localLogicalVector(value)
+tf = (islogical(value) || isnumeric(value)) && isvector(value) && ...
+    ~isempty(value);
+end
+
+function tf = localNonnegativeInteger(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value >= 0 && value == fix(value);
+end
+
+function tf = localPositiveFinite(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value > 0;
+end

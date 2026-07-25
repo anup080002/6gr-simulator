@@ -51,7 +51,7 @@ try
         'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]), ...
         'SSBTiming', timing);
 catch ME
-    error('sixgr:phy:dl:SSB_Rx:CellSearchFailed', ...
+    error('sixgr:phy:ia:SSBNotDetected', ...
         'PSS/NID2 frequency search failed without transmitter-cell-ID oracle: %s', ME.message);
 end
 NID2 = mod(double(NID2),3);
@@ -60,9 +60,13 @@ NID2 = mod(double(NID2),3);
 try
     [tOff, tinfo] = sixgr.phy.sync.timingEstimate( ...
         rxF, NID2, blockPattern, fs, 'SSBTiming', timing);
-catch
-    tOff = NaN;
-    tinfo = struct('UsedFallback',true);
+catch ME
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'PSS timing search failed without fallback: %s', ME.message);
+end
+if ~(isscalar(tOff) && isfinite(double(tOff)))
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'PSS timing search did not return a finite hypothesis.');
 end
 timingResolution = sixgr.phy.sync.resolveTimingApplication(tOff, ...
     "EstimateUsed", isfinite(double(tOff)), ...
@@ -72,7 +76,8 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(tOff, ...
 % Synchronize waveform
 startIdx = 1 + max(0, round(double(timingResolution.AppliedCorrection_samples)));
 if startIdx > size(rxF,1)
-    startIdx = 1;
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'Resolved SSB timing starts beyond the received waveform.');
 end
 rxSync = rxF(startIdx:end, :);
 
@@ -106,7 +111,8 @@ end
 % the synchronized waveform starts at the SS/PBCH block boundary. Extract the
 % first four demodulated symbols; shifting to 2:5 corrupts PBCH DM-RS/BCH.
 if size(rxGrid,2) < 4
-    rxGrid(:, end+1:4, :) = 0;
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'The synchronized waveform contains fewer than four SSB symbols.');
 end
 
 % Extract SS/PBCH block (symbols 1..4 after synchronization)
@@ -117,7 +123,13 @@ if ndims(rxSSBGrid) == 2
     rxSSBGrid = reshape(rxSSBGrid, size(rxSSBGrid,1), size(rxSSBGrid,2), 1);
 end
 
-[NCellID, NID1, sssInfo] = localRecoverPhysicalCellIDFromSSS(rxSSBGrid, NID2);
+try
+    [NCellID, NID1, sssInfo] = ...
+        localRecoverPhysicalCellIDFromSSS(rxSSBGrid, NID2);
+catch ME
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'SSS physical-cell-ID search failed: %s', ME.message);
+end
 
 sync = struct();
 sync.SampleRate_Hz = fs;

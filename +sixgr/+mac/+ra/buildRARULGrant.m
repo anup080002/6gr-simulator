@@ -10,13 +10,21 @@ sched = raCfg.Msg3PUSCH;
 if ~isempty(opt.MCS)
     sched.MCS = double(opt.MCS);
 end
-prbStart = localClamp(round(double(sched.PRBStart)), 0, 31);
-numPRB = localClamp(round(double(sched.NumPRB)), 1, 31);
+prbStart = localIntegerRange(sched.PRBStart, 0, 31, "PRBStart");
+numPRB = localIntegerRange(sched.NumPRB, 1, 31, "NumPRB");
+if prbStart + numPRB > double(raCfg.NSizeGrid)
+    error("sixgr:mac:ra:InvalidRARULGrant", ...
+        "Msg3 PRB allocation exceeds the active UL BWP.");
+end
+if double(sched.SymbolStart) ~= 0 || double(sched.NumSymbols) ~= 14
+    error("sixgr:mac:ra:InvalidRARULGrant", ...
+        "The bounded RAR TDRA row requires Msg3 SymbolAllocation=[0 14].");
+end
 timeAssignment = 0; % anchor TDRA: SymbolAllocation=[0 14]
-mcs = localClamp(round(double(sched.MCS)), 0, 31);
+mcs = localIntegerRange(sched.MCS, 0, 31, "MCS");
 tpc = 1; % 0 dB anchor command
 csiRequest = 0;
-transformPrecoding = 0;
+transformPrecoding = double(logical(sched.TransformPrecoding));
 freqAssignment = prbStart * 32 + numPRB;
 
 bits = [ ...
@@ -43,7 +51,7 @@ grant.Modulation = string(sched.Modulation);
 grant.TargetCodeRate = double(sched.TargetCodeRate);
 grant.TPCCommand = double(tpc);
 grant.CSIRequest = false;
-grant.TransformPrecoding = false;
+grant.TransformPrecoding = logical(transformPrecoding);
 grant.RV = double(sched.RV);
 grant.NLayers = double(sched.NLayers);
 grant.BitVector = bits;
@@ -61,6 +69,11 @@ for ii = 1:nBits
 end
 end
 
-function value = localClamp(value, lo, hi)
-value = max(lo, min(hi, value));
+function value = localIntegerRange(raw, lo, hi, name)
+value = double(raw);
+if ~(isscalar(value) && isfinite(value) && value == fix(value) && ...
+        value >= lo && value <= hi)
+    error("sixgr:mac:ra:InvalidRARULGrant", ...
+        "%s must be an integer in [%d,%d].", name, lo, hi);
+end
 end

@@ -132,9 +132,12 @@
       "preamble_received_target_power_dbm": {"value_type": "number", "default": -100},
       "temp_crnti": {"value_type": "integer", "default": 4660, "min": 1},
       "final_crnti": {"value_type": "integer", "default": 4660, "min": 1},
-      "msg2_slot": {"value_type": "integer", "default": 1, "min": 0},
-      "msg3_slot": {"value_type": "integer", "default": 2, "min": 0},
-      "msg4_slot": {"value_type": "integer", "default": 3, "min": 0},
+      "timing": {
+        "rar_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 1},
+        "msg3_k2_slots": {"value_type": "integer", "default": 1, "min": 1},
+        "msg4_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 0},
+        "setup_complete_k2_slots": {"value_type": "integer", "default": 1, "min": 1}
+      },
       "msg2_pdsch": {
         "prb_start": {"value_type": "integer", "default": 0, "min": 0},
         "num_prb": {"value_type": "integer", "default": 24, "min": 1},

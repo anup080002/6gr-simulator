@@ -31,8 +31,13 @@ if ~(isfinite(coreset0) && coreset0 >= 0 && coreset0 <= 15 && isfinite(search0) 
 end
 prach = serving.uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon;
 if isfield(prach, "restrictedSet") && ~any(strcmpi(string(prach.restrictedSet), ...
-        ["unrestricted","UnrestrictedSet","false","0",""] ))
+        ["unrestricted","UnrestrictedSet","false","0","", ...
+        "RestrictedSetTypeA","RestrictedSetTypeB"]))
     error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
-        "Restricted-set PRACH SIB1 encoding is not implemented for AUD-015 anchor profile.");
+        "SIB1 restrictedSet must be unrestricted, Type A, or Type B.");
+end
+if ~isfield(sib1, "ue_TimersAndConstants")
+    error("sixgr:rrc:asn1:MissingSIB1IE", ...
+        "Release-18 bounded SIB1 requires ue-TimersAndConstants.");
 end
 end

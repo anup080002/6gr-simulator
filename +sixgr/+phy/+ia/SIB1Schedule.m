@@ -1,0 +1,63 @@
+classdef SIB1Schedule
+    %SIB1SCHEDULE Exact periodic SI-window scheduling for bounded SIB1.
+
+    methods (Static)
+        function result = resolve(varargin)
+            p = inputParser;
+            p.FunctionName = "sixgr.phy.ia.SIB1Schedule.resolve";
+            addParameter(p, "PeriodicityMs", 160, @localPositiveFinite);
+            addParameter(p, "WindowLengthMs", 20, @localPositiveFinite);
+            addParameter(p, "ObservationStartMs", 0, ...
+                @localNonnegativeFinite);
+            addParameter(p, "Repetitions", 4, @localPositiveInteger);
+            parse(p, varargin{:});
+            opt = p.Results;
+
+            periodicity = double(opt.PeriodicityMs);
+            windowLength = double(opt.WindowLengthMs);
+            if windowLength > periodicity
+                error("sixgr:phy:ia:InvalidSIB1Schedule", ...
+                    "The SI window cannot exceed the SIB1 periodicity.");
+            end
+            start = double(opt.ObservationStartMs);
+            first = ceil(start / periodicity) * periodicity;
+            if first < start
+                first = first + periodicity;
+            end
+            occasions = first + ...
+                (0:(double(opt.Repetitions) - 1)).' * periodicity;
+            rows = table( ...
+                (0:(double(opt.Repetitions) - 1)).', ...
+                occasions, occasions + windowLength, ...
+                'VariableNames', { ...
+                'OccasionOrdinal0','WindowStartMs','WindowEndMs'});
+            payload = struct( ...
+                "ContractVersion", "sixgr_sib1_schedule/v1", ...
+                "PeriodicityMs", periodicity, ...
+                "WindowLengthMs", windowLength, ...
+                "ObservationStartMs", start, ...
+                "NextMonitoringLatencyMs", first - start, ...
+                "Occasions", rows, ...
+                "ProxyUsed", false, ...
+                "FallbackUsed", false, ...
+                "Status", "resolved");
+            result = payload;
+            result.ScheduleSHA256 = ...
+                sixgr.util.sha256Hex(jsonencode(payload));
+        end
+    end
+end
+
+function tf = localPositiveFinite(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value > 0;
+end
+
+function tf = localNonnegativeFinite(value)
+tf = isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value >= 0;
+end
+
+function tf = localPositiveInteger(value)
+tf = localPositiveFinite(value) && value == fix(value);
+end

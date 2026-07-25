@@ -11,6 +11,7 @@ if numel(bits) < 24
         "Recovered BCH transport block must contain at least 24 bits.");
 end
 bits = bits(1:24);
+semantic = sixgr.phy.ia.MIBSemanticValidator.decodeBits(bits(2:24));
 
 pdcchConfigSIB1 = localReadUInt(bits, 14, 8);
 split = sixgr.phy.broadcast.splitPDCCHConfigSIB1(pdcchConfigSIB1, ...
@@ -28,6 +29,19 @@ mib.DMRSTypeAPositionBitIndex = 13;
 mib.CellBarredBit = double(bits(22));
 mib.IntraFreqReselectionBit = double(bits(23));
 mib.SpareBit = double(bits(24));
+mib.SystemFrameNumberMSB6 = semantic.SystemFrameNumberMSB6;
+mib.SystemFrameNumberMSB6Bits = semantic.SFNBits;
+mib.SubCarrierSpacingCommon = semantic.SubCarrierSpacingCommon;
+mib.SubCarrierSpacingCommonBit = semantic.SCSBit;
+mib.SSBSubcarrierOffset = semantic.SSBSubcarrierOffset;
+mib.SSBSubcarrierOffsetBits = semantic.KSSBBits;
+mib.CellBarred = semantic.CellBarred;
+mib.IntraFreqReselection = semantic.IntraFreqReselection;
+mib.MIBInformationBits23 = semantic.MIBInformationBits23;
+mib.MIBInformationBits = semantic.InformationBits;
+mib.MIBSemanticSHA256 = semantic.SemanticSHA256;
+mib.SemanticValidationStatus = semantic.SemanticValidationStatus;
+mib.Semantic = semantic;
 mib.Decoder = "sixgr.phy.broadcast.decodeMIBTransportBlock";
 end
 

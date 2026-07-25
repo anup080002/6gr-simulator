@@ -3,6 +3,8 @@ function msg3 = buildMsg3Payload(varargin)
 p = inputParser;
 p.addParameter("UEId", 1, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("ContentionIdentity", [], @(x)isempty(x) || isnumeric(x));
+p.addParameter("RRCSetupRequest", true, @(x)islogical(x) || isnumeric(x));
+p.addParameter("UEIdentity", "", @(x)ischar(x) || (isstring(x) && isscalar(x)));
 p.parse(varargin{:});
 opt = p.Results;
 
@@ -21,12 +23,32 @@ else
     bytes = raw(1:6);
 end
 payload = uint8([1; 6; bytes(:)]);
+ueIdentity = string(opt.UEIdentity);
+if strlength(strtrim(ueIdentity)) == 0
+    ueIdentity = "UE-" + string(round(double(opt.UEId)));
+end
+requestBytes = uint8(unicode2native(char(ueIdentity), "UTF-8"));
+if numel(requestBytes) > 255
+    error("sixgr:mac:ra:RRCSetupRequestTooLarge", ...
+        "The bounded RRCSetupRequest UE identity exceeds 255 octets.");
+end
+if logical(opt.RRCSetupRequest)
+    payload = [payload; uint8(49); uint8(numel(requestBytes)); ...
+        requestBytes(:)]; %#ok<AGROW>
+end
 msg3 = struct();
 msg3.PayloadBytes = payload(:);
 msg3.PayloadBits = localBytesToBits(payload);
 msg3.PayloadHex = upper(string(reshape(dec2hex(payload(:), 2).', 1, [])));
 msg3.ContentionIdentityBytes = bytes(:);
 msg3.ContentionIdentity = upper(string(reshape(dec2hex(bytes(:), 2).', 1, [])));
+msg3.RRCSetupRequestPresent = logical(opt.RRCSetupRequest);
+msg3.RRCSetupRequest = struct( ...
+    "MessageType", "RRCSetupRequest", ...
+    "UEIdentity", ueIdentity, ...
+    "EstablishmentCause", "mo-Signalling");
+msg3.RRCSetupRequestSHA256 = sixgr.rrc.asn1.sha256Hex( ...
+    uint8([49; uint8(numel(requestBytes)); requestBytes(:)]));
 msg3.PayloadHash = sixgr.rrc.asn1.sha256Hex(payload);
 end
 
