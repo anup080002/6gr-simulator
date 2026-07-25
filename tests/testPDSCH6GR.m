@@ -9,7 +9,7 @@ testDynamicFDRAChangesActualResources();
 testTDRAFlexibleStartSymbolChangesOccupancy();
 testDMRSRespectsScheduledRegion();
 testPTRSMappingToggle();
-testRealisticVsIdealChannelEstimation();
+testCanonicalDMRSChannelEstimation();
 testBLERImprovesWithSNR();
 testRepetitionNoWorseInStaticCase();
 testCrossSlotFailsLoudly();
@@ -24,7 +24,7 @@ ok = true;
 end
 
 function testType0BitmapAllocation()
-alloc = sixgr.pdsch.FDRAAllocator(struct("FDRAType","type0_bitmap","RBBitmap",[1 0 1],"GranularityRB",4,"PhysicalCarrierID",0,"SingleCarrierOnly",true), 20);
+alloc = sixgr.pdsch.FDRAAllocator(struct("FDRAType","type0_bitmap","RBBitmap",[1 0 1 0 0],"GranularityRB",4,"PhysicalCarrierID",0,"SingleCarrierOnly",true), 20);
 assert(isequal(double(alloc.PRBSet), [0:3 8:11]), "Type-0 bitmap must map the expected PRBs.");
 end
 
@@ -34,10 +34,17 @@ assert(double(alloc.RBStart) == 0 && double(alloc.NumRB) == 11, "Type-1 RIV must
 end
 
 function testDynamicFDRAChangesActualResources()
-fdra = struct("FDRAType","dynamic","RBBitmap",[1 0 1],"GranularityRB",4,"RIV",520,"PhysicalCarrierID",0,"SingleCarrierOnly",true);
-odd = sixgr.pdsch.FDRAAllocator(fdra, 52, "TransmissionIndex", 1);
-even = sixgr.pdsch.FDRAAllocator(fdra, 52, "TransmissionIndex", 2);
-assert(~isequal(odd.PRBSet, even.PRBSet), "Dynamic FDRA must change actual materialized PRBs between Type-0 and Type-1.");
+fdra = struct("FDRAType","dynamic", ...
+    "RBBitmap",[1 0 1 zeros(1,10)],"GranularityRB",4, ...
+    "RIV",520,"PhysicalCarrierID",0,"SingleCarrierOnly",true);
+type0 = sixgr.pdsch.FDRAAllocator(fdra, 52, ...
+    "DecodedFDRAType", "type0_bitmap");
+type1 = sixgr.pdsch.FDRAAllocator(fdra, 52, ...
+    "DecodedFDRAType", "type1_riv");
+assert(~isequal(type0.PRBSet, type1.PRBSet), ...
+    "Decoded dynamic FDRA types must materialize their distinct scheduled PRBs.");
+localAssertError(@() sixgr.pdsch.FDRAAllocator(fdra, 52, ...
+    "TransmissionIndex", 1), "sixgr:pdsch:MissingDecodedFDRAType");
 end
 
 function testTDRAFlexibleStartSymbolChangesOccupancy()
@@ -46,9 +53,9 @@ fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRA(cfg), cfg.pdsch6gr.NSizeG
 amc = sixgr.pdsch.AMCSelector(sixgr.pdsch.PDSCHStudyConfig(cfg), "EstimatedSNR_dB", 20);
 
 cfgA = cfg; cfgA.pdsch6gr.StartSymbol = 2;
-txA = sixgr.pdsch.PDSCHWaveformBuilder(sixgr.pdsch.PDSCHStudyConfig(cfgA), fdraAlloc, sixgr.pdsch.TDRAAllocator(struct("StartSymbol",2,"NumSymbols",8,"MappingType","single_mapping_type_baseline","SchedulingOffsetSymbols",0,"SchedulingOffsetSlots",0), "RepetitionMode","none","RepetitionCount",1), amc);
+txA = sixgr.pdsch.PDSCHWaveformBuilder(sixgr.pdsch.PDSCHStudyConfig(cfgA), fdraAlloc, sixgr.pdsch.TDRAAllocator(struct("StartSymbol",2,"NumSymbols",8,"MappingType","A","SchedulingOffsetSymbols",0,"SchedulingOffsetSlots",0), "RepetitionMode","none","RepetitionCount",1,"SymbolsPerSlot",14), amc);
 cfgB = cfg; cfgB.pdsch6gr.StartSymbol = 0;
-txB = sixgr.pdsch.PDSCHWaveformBuilder(sixgr.pdsch.PDSCHStudyConfig(cfgB), fdraAlloc, sixgr.pdsch.TDRAAllocator(struct("StartSymbol",0,"NumSymbols",8,"MappingType","single_mapping_type_baseline","SchedulingOffsetSymbols",0,"SchedulingOffsetSlots",0), "RepetitionMode","none","RepetitionCount",1), amc);
+txB = sixgr.pdsch.PDSCHWaveformBuilder(sixgr.pdsch.PDSCHStudyConfig(cfgB), fdraAlloc, sixgr.pdsch.TDRAAllocator(struct("StartSymbol",0,"NumSymbols",8,"MappingType","A","SchedulingOffsetSymbols",0,"SchedulingOffsetSlots",0), "RepetitionMode","none","RepetitionCount",1,"SymbolsPerSlot",14), amc);
 
 symA = unique(double(txA.Copies{1}.DMRSTable.Symbol));
 symB = unique(double(txB.Copies{1}.DMRSTable.Symbol));
@@ -59,7 +66,7 @@ function testDMRSRespectsScheduledRegion()
 cfg = localBaseCfg();
 studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
 fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRA(cfg), studyCfg.NSizeGrid);
-tdraAlloc = sixgr.pdsch.TDRAAllocator(studyCfg.TDRA, "RepetitionMode","none","RepetitionCount",1);
+tdraAlloc = sixgr.pdsch.TDRAAllocator(studyCfg.TDRA, "RepetitionMode","none","RepetitionCount",1,"SymbolsPerSlot",14);
 amc = sixgr.pdsch.AMCSelector(studyCfg, "EstimatedSNR_dB", 20);
 tx = sixgr.pdsch.PDSCHWaveformBuilder(studyCfg, fdraAlloc, tdraAlloc, amc);
 
@@ -100,25 +107,30 @@ assert(isempty(off.Copies{1}.PTRSTable), "PTRS must be absent when disabled.");
 assert(~isempty(on.Copies{1}.PTRSTable), "PTRS must be materialized when enabled.");
 end
 
-function testRealisticVsIdealChannelEstimation()
+function testCanonicalDMRSChannelEstimation()
 cfg = localBaseCfg();
 cfg.pdsch6gr.ChannelModel = "AWGN";
-studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
 tx = localOneShot(cfg, 25);
 copy = tx.Copies{1};
 rxWave = copy.Tx.Waveform + 1e-3 * (randn(size(copy.Tx.Waveform)) + 1j * randn(size(copy.Tx.Waveform)));
-
-studyCfg.ChannelEstimationMode = "realistic";
-realOut = sixgr.pdsch.PDSCHReceiver(rxWave, studyCfg, copy, "NoiseVar", 0);
-studyCfg.ChannelEstimationMode = "ideal_calibration";
-idealOut = sixgr.pdsch.PDSCHReceiver(rxWave, studyCfg, copy, "NoiseVar", 0);
-
-assert(~strcmpi(string(realOut.ChannelEstimation.Engine), string(idealOut.ChannelEstimation.Engine)), ...
-    "Realistic and ideal calibration paths must report different channel-estimation engines.");
-assert(contains(string(idealOut.ChannelEstimation.Engine), "unit-channel", IgnoreCase=true) || ...
-    contains(string(idealOut.ChannelEstimation.Engine), "unit-flat", IgnoreCase=true) || ...
-    contains(string(idealOut.ChannelEstimation.Engine), "no-dmrs", IgnoreCase=true), ...
-    "Ideal calibration path must identify itself as the unit-channel calibration engine.");
+receiverConfig = copy.Tx.ReceiverConfig;
+receiverConfig.NPhysicalRxAntennas = size(rxWave,2);
+receiverConfig.NoiseVariance = 1e-6;
+realOut = sixgr.pdsch.PDSCHReceiver( ...
+    rxWave, copy.Tx.Assignment, copy.Tx.ResourcePlan, copy.Tx.Carrier, ...
+    copy.Tx.ReferenceConfig, receiverConfig, ...
+    "CodingPlans", copy.Tx.CodingPlans, ...
+    "PrecoderBundle", copy.Tx.PrecoderBundle);
+assert(strlength(string(realOut.ChannelEstimationInfo.EngineUsed)) > 0 ...
+        && ~logical(realOut.ChannelEstimationInfo.EstimatorUsesTrueChannel), ...
+    ["Canonical calibration RX must use received DM-RS evidence, never " ...
+    "a unit-channel or transmitted-intermediate shortcut."]);
+assert(contains(string(realOut.Metrics.ChannelEstimateNMSESource), ...
+        "pilot_reconstruction_residual"), ...
+    "Channel-estimation evidence must be receiver-observable pilot residual.");
+localAssertError(@() sixgr.pdsch.PDSCHReceiver( ...
+    rxWave, sixgr.pdsch.PDSCHStudyConfig(cfg), copy), ...
+    "sixgr:pdsch:PDSCHReceiver:MissingResourcePlan");
 end
 
 function testBLERImprovesWithSNR()
@@ -160,25 +172,20 @@ assert(threw, "Cross-slot requests must fail loudly until the truth path materia
 end
 
 function testCodewordLayerMappingTrace()
-cfg = localBaseCfg();
-cfg.pdsch6gr.NumLayers = 2;
-trace = sixgr.pdsch.CodewordLayerMapper(sixgr.pdsch.PDSCHStudyConfig(cfg));
-assert(height(trace) == 2 && all(double(trace.CodewordIndex) == 0), ...
-    "NR-baseline single-codeword mapping trace must materialize one row per layer.");
+[~, info2] = sixgr.pdsch.CodewordLayerMapper((1:8).', 2);
+assert(double(info2.Rank) == 2 ...
+        && isequal(double(info2.CodewordIndexPerLayer), [0 0]), ...
+    "Exact rank-2 mapping must retain the single-codeword layer split.");
 
-cfg6 = localBaseCfg();
-cfg6.pdsch6gr.NumLayers = 6;
-cfg6.pdsch6gr.NumCodewords = 2;
-cfg6.pdsch6gr.NTx = 6;
-cfg6.pdsch6gr.NRx = 6;
-cfg6.pdsch6gr.DMRSConfigType = 2;
-cfg6.pdsch6gr.DMRSNumPorts = 6;
-cfg6.pdsch6gr.DMRSPortSet = 0:5;
-cfg6.pdsch6gr.DMRSCDMGroupsWithoutData = 3;
-cfg6.pdsch6gr.ModulationPerCodeword = {'QPSK','QPSK'};
-trace6 = sixgr.pdsch.CodewordLayerMapper(sixgr.pdsch.PDSCHStudyConfig(cfg6));
-assert(height(trace6) == 6 && isequal(double(trace6.CodewordIndex(:).'), [0 0 0 1 1 1]), ...
-    "Rank-6 PDSCH mapping trace must materialize the two-codeword layer split.");
+[~, info6] = sixgr.pdsch.CodewordLayerMapper( ...
+    {(1:12).', (13:24).'}, 6);
+assert(double(info6.Rank) == 6 ...
+        && isequal(double(info6.CodewordIndexPerLayer), ...
+            [0 0 0 1 1 1]), ...
+    "Exact rank-6 mapping must retain the two-codeword layer split.");
+localAssertError(@() sixgr.pdsch.CodewordLayerMapper( ...
+    struct("NumLayers",2)), ...
+    "sixgr:pdsch:CodewordLayerMapper:LegacyMetadataForbidden");
 end
 
 function testDefaultFDRAUsesFullCarrierGrid()
@@ -232,7 +239,13 @@ scenarioCfg.inherits = {baseScenario};
 scenarioCfg.meta = struct("scenario_id", "pdsch6gr_runner_smoke", "description", "Short 6GR PDSCH runner integration smoke.");
 scenarioCfg.scenario = struct("study_mode", "smoke");
 scenarioCfg.logging = struct("strict_validation", false);
-scenarioCfg.output = struct("save_csv", true, "save_mat", false, "save_figures", false, "publication_mode", "smoke");
+scenarioCfg.output = struct( ...
+    "backend", "filesystem", ...
+    "persistence_mode", "results_folder", ...
+    "persist_to_database", false, ...
+    "persist_to_results_folder", true, ...
+    "save_csv", true, "save_mat", false, ...
+    "save_figures", false, "publication_mode", "smoke");
 scenarioCfg.simulation = struct("monte_carlo_iterations", 1, "snr_db", 20);
 scenarioCfg.pdsch6gr = struct( ...
     "study_snr_db", 20, ...
@@ -264,7 +277,7 @@ function tx = localOneShot(cfg, snr)
 cfg.pdsch6gr.SNRdB = snr;
 studyCfg = sixgr.pdsch.PDSCHStudyConfig(cfg);
 fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRA(cfg), studyCfg.NSizeGrid, "TransmissionIndex", 1);
-tdraAlloc = sixgr.pdsch.TDRAAllocator(studyCfg.TDRA, "RepetitionMode", studyCfg.RepetitionMode, "RepetitionCount", studyCfg.RepetitionCount);
+tdraAlloc = sixgr.pdsch.TDRAAllocator(studyCfg.TDRA, "RepetitionMode", studyCfg.RepetitionMode, "RepetitionCount", studyCfg.RepetitionCount, "SymbolsPerSlot",14);
 amc = sixgr.pdsch.AMCSelector(studyCfg, "EstimatedSNR_dB", snr);
 tx = sixgr.pdsch.PDSCHWaveformBuilder(studyCfg, fdraAlloc, tdraAlloc, amc, "QueueBits", studyCfg.QueueBits, "RV", 0, "TransmissionIndex", 1);
 end
@@ -309,6 +322,15 @@ cfg.pdsch6gr = struct( ...
     "TargetCodeRatePerCodeword", 0.4785, ...
     "MCSMode", "fixed", ...
     "FixedMCS", 10, ...
+    "MCSUECapability1024QAM", false, ...
+    "MCSRRCEnabled1024QAM", false, ...
+    "MCSDCIEnabled1024QAM", false, ...
+    "MCSDeploymentAllows1024QAM", false, ...
+    "MCSFrequencyRange", "FR1", ...
+    "MCSOperatingBand", "n1", ...
+    "MCSDeploymentClass", "controlled_test", ...
+    "MCSFrequencyRangeAllows1024QAM", false, ...
+    "MCSBandAllows1024QAM", false, ...
     "LinkAdaptationMode", "actual_bler_based", ...
     "HARQEnabled", true, ...
     "HARQProcessCount", 4, ...
@@ -366,4 +388,16 @@ function localWriteJSON(filePath, s)
 fid = fopen(filePath, "w");
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 fprintf(fid, "%s", jsonencode(s));
+end
+
+function localAssertError(fn, expectedIdentifier)
+try
+    fn();
+catch ME
+    assert(string(ME.identifier) == string(expectedIdentifier), ...
+        "Observed %s, expected %s.", ME.identifier, expectedIdentifier);
+    return;
+end
+error("sixgr:test:ExpectedErrorNotThrown", ...
+    "Expected error %s was not thrown.", expectedIdentifier);
 end

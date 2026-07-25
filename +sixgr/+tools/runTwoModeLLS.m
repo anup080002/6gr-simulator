@@ -177,80 +177,103 @@ end
 end
 
 function plan = localBuildPlan(mode, repoRoot, resultsRoot, runTagPrefix)
-resultsRoot = char(string(resultsRoot)); %#ok<NASGU>
+resultsRoot = char(string(resultsRoot));
+snrBase = "simulator/configs/scenarios/master_sinr_sweep.yaml";
+geometryBase = "simulator/configs/scenarios/master_geometry_based.yaml";
 switch mode
     case "smoke"
-        snrBase = "simulator/configs/scenarios/lls_true_snr_sweep_awgn_1ue.yaml";
-        snrRuntime = fullfile(repoRoot, "simulator", "configs", "scenarios", ...
-            "lls_true_snr_sweep_awgn_1ue_smoke.yaml");
-        geometryBase = "simulator/configs/scenarios/lls_true_geometry_2cell_2ue_200kmh.yaml";
-        geometryRuntime = fullfile(repoRoot, "simulator", "configs", "scenarios", ...
-            "lls_true_geometry_2cell_2ue_200kmh_smoke.yaml");
+        runtimeConfigDir = fullfile(resultsRoot, "runtime_configs");
+        sixgr.util.ensureFolder(runtimeConfigDir);
+        snrRuntime = fullfile(runtimeConfigDir, "two_mode_smoke_sinr_sweep.yaml");
+        geometryRuntime = fullfile(runtimeConfigDir, "two_mode_smoke_geometry_based.yaml");
+        snrOverridePaths = localWriteSmokeOverlay( ...
+            snrRuntime, localScenarioPath(repoRoot, snrBase));
+        geometryOverridePaths = localWriteSmokeOverlay( ...
+            geometryRuntime, localScenarioPath(repoRoot, geometryBase));
         tagPrefix = string(localDefaultTagPrefix(runTagPrefix, "two_mode_smoke"));
         plan = [
             localPlanRow("fixed_snr_sweep", repoRoot, snrBase, snrRuntime, ...
-                tagPrefix + "_snr", "fixed_snr_sweep_lls", "fixed_snr", true, localSmokeSNROverridePaths(), ...
+                tagPrefix + "_snr", "fixed_snr_sweep_lls", "fixed_snr", true, snrOverridePaths, ...
                 "reports/csv/fixed_snr_sweep_audit.csv")
             localPlanRow("geometry_placement", repoRoot, geometryBase, geometryRuntime, ...
-                tagPrefix + "_geometry", "ue_placement_geometry_lls", "geometry", true, localSmokeGeometryOverridePaths(), ...
+                tagPrefix + "_geometry", "ue_placement_geometry_lls", "geometry", true, geometryOverridePaths, ...
                 "reports/csv/geometry_runtime_audit.csv")
             ];
     case "full"
         tagPrefix = string(localDefaultTagPrefix(runTagPrefix, "two_mode_full"));
         plan = [
-            localPlanRow("fixed_snr_sweep", repoRoot, "simulator/configs/scenarios/lls_true_snr_sweep_awgn_1ue.yaml", ...
-                fullfile(repoRoot, "simulator", "configs", "scenarios", "lls_true_snr_sweep_awgn_1ue.yaml"), ...
+            localPlanRow("fixed_snr_sweep", repoRoot, snrBase, ...
+                localScenarioPath(repoRoot, snrBase), ...
                 tagPrefix + "_snr", "fixed_snr_sweep_lls", "fixed_snr", false, strings(0, 1), ...
                 "reports/csv/fixed_snr_sweep_audit.csv")
-            localPlanRow("geometry_placement", repoRoot, "simulator/configs/scenarios/lls_true_geometry_2cell_2ue_200kmh.yaml", ...
-                fullfile(repoRoot, "simulator", "configs", "scenarios", "lls_true_geometry_2cell_2ue_200kmh.yaml"), ...
+            localPlanRow("geometry_placement", repoRoot, geometryBase, ...
+                localScenarioPath(repoRoot, geometryBase), ...
                 tagPrefix + "_geometry", "ue_placement_geometry_lls", "geometry", false, strings(0, 1), ...
                 "reports/csv/geometry_runtime_audit.csv")
             ];
     otherwise
         error("sixgr:tools:runTwoModeLLS:UnsupportedMode", "Unsupported mode '%s'.", char(mode));
 end
+localVerifyPlan(plan);
 end
 
-function paths = localSmokeSNROverridePaths()
-paths = [ ...
-        "canonical_control.run.fixed_link_snr_grid_db"
-        "canonical_control.run.snr_db"
-        "canonical_control.run.noise_operating_mode"
-        "canonical_control.run.min_trials_per_sinr_bin"
-        "canonical_control.run.max_trials_per_sinr_bin"
-        "canonical_control.run.num_workers"
-        "canonical_control.run.batch_size_links"
-        "canonical_control.run.auto_start_parallel_pool"
-        "run_control.num_workers"
-        "run_control.batch_size_links"
-        "run_control.auto_start_parallel_pool"
-        "simulation.snr_db"
-        "simulation.noise_operating_mode"
-        "validation.fixed_link_campaign.snr_db"
-        "validation.fixed_link_campaign.min_tb_per_point"
-        "validation.fixed_link_campaign.max_tb_per_point"
-        "sweeps_and_matrix.snr_sweep.values_db"
-        "sweeps_and_matrix.fixed_link_calibration.snr_db"
-        "sweeps_and_matrix.fixed_link_calibration.min_trials"
-        "sweeps_and_matrix.fixed_link_calibration.max_trials"
-        "sweeps_and_matrix.fixed_link_calibration.trials_per_drop"
-        ];
+function overridePaths = localWriteSmokeOverlay(runtimePath, basePath)
+master = sixgr.lls6g.config.readConfigFile(char(string(basePath)));
+overlay = sixgr.util.structGet(master, "execution_scales.smoke.overlay", []);
+if ~(isstruct(overlay) && isscalar(overlay) && ~isempty(fieldnames(overlay)))
+    error("sixgr:tools:runTwoModeLLS:SmokeOverlayMissing", ...
+        "Master scenario '%s' must define a nonempty execution_scales.smoke.overlay mapping.", ...
+        char(string(basePath)));
+end
+runtime = struct();
+runtime.inherits = {char(string(basePath))};
+runtime = sixgr.util.mergeStruct(runtime, overlay);
+sixgr.lls6g.config.writeYAML(runtimePath, runtime);
+overridePaths = localStructLeafPaths(overlay, "");
 end
 
-function paths = localSmokeGeometryOverridePaths()
-paths = [ ...
-        "canonical_control.run.total_slots"
-        "canonical_control.run.measurement_slots"
-        "canonical_control.run.num_workers"
-        "canonical_control.run.batch_size_links"
-        "canonical_control.run.auto_start_parallel_pool"
-        "run_control.total_slots"
-        "run_control.measurement_slots"
-        "run_control.num_workers"
-        "run_control.batch_size_links"
-        "run_control.auto_start_parallel_pool"
-        ];
+function localVerifyPlan(plan)
+for i = 1:numel(plan)
+    item = plan(i);
+    if exist(char(item.BaseScenarioPath), "file") ~= 2
+        error("sixgr:tools:runTwoModeLLS:BaseScenarioMissing", ...
+            "Base scenario YAML is missing: %s", char(item.BaseScenarioPath));
+    end
+    if exist(char(item.RuntimeScenarioYAML), "file") ~= 2
+        error("sixgr:tools:runTwoModeLLS:RuntimeScenarioMissing", ...
+            "Runtime scenario YAML is missing: %s", char(item.RuntimeScenarioYAML));
+    end
+    cfg = sixgr.lls6g.config.loadScenarioConfig(char(item.RuntimeScenarioYAML));
+    actualRunClass = string(cfg.get("canonical_control.launch.run_class", ""));
+    if actualRunClass ~= string(item.ExpectedRunClass)
+        error("sixgr:tools:runTwoModeLLS:RunClassMismatch", ...
+            "Scenario '%s' resolves run class '%s'; expected '%s'.", ...
+            char(item.RuntimeScenarioYAML), char(actualRunClass), char(item.ExpectedRunClass));
+    end
+end
+end
+
+function pathValue = localScenarioPath(repoRoot, relativePath)
+pathValue = fullfile(repoRoot, strrep(char(relativePath), "/", filesep));
+end
+
+function paths = localStructLeafPaths(value, prefix)
+paths = strings(0, 1);
+fields = fieldnames(value);
+for i = 1:numel(fields)
+    fieldName = string(fields{i});
+    if strlength(prefix) == 0
+        fieldPath = fieldName;
+    else
+        fieldPath = prefix + "." + fieldName;
+    end
+    child = value.(fields{i});
+    if isstruct(child) && isscalar(child) && ~isempty(fieldnames(child))
+        paths = [paths; localStructLeafPaths(child, fieldPath)]; %#ok<AGROW>
+    else
+        paths(end+1, 1) = fieldPath; %#ok<AGROW>
+    end
+end
 end
 
 function row = localPlanRow(label, repoRoot, baseRel, runtimePath, runTag, expectedRunClass, auditKind, overrideApplied, overridePaths, auditCsv)

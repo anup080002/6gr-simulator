@@ -28,24 +28,39 @@ ulPaths = [
     "phy.pusch.strictScheduledUL"
     ];
 
-tf = localAnyTruthy(cfg, commonPaths);
+dlProfile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.pdsch.executionProfile", ...
+    sixgr.util.structGet(cfg, "run.pdschExecutionProfile", "")))));
+ulProfile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.pusch.executionProfile", ...
+    sixgr.util.structGet(cfg, "run.puschExecutionProfile", "")))));
+if checkDL && any(dlProfile == ["connected_strict","sps_strict","ra_si_strict"])
+    tf = true;
+    return;
+end
+if checkUL && any(ulProfile == ["connected_strict","configured_grant_strict","ra_si_strict"])
+    tf = true;
+    return;
+end
+
+tf = anyConfiguredTruth(cfg, commonPaths);
 if tf
     return;
 end
 if checkDL
-    tf = localAnyTruthy(cfg, dlPaths) || ...
+    tf = anyConfiguredTruth(cfg, dlPaths) || ...
         (lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdsch.grantSource", "")))) == "decoded_pdcch");
     if tf
         return;
     end
 end
 if checkUL
-    tf = localAnyTruthy(cfg, ulPaths) || ...
+    tf = anyConfiguredTruth(cfg, ulPaths) || ...
         (lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.grantSource", "")))) == "decoded_pdcch");
 end
 end
 
-function tf = localAnyTruthy(cfg, paths)
+function tf = anyConfiguredTruth(cfg, paths)
 tf = false;
 for ii = 1:numel(paths)
     value = sixgr.util.structGet(cfg, paths(ii), []);

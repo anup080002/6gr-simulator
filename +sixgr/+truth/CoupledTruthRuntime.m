@@ -383,11 +383,19 @@ methods(Static)
         resource = sixgr.truth.CoupledTruthRuntime.resolvePUCCHResourceAssignment(state, feedbackRow);
     end
 
-    function dueSlot = resolveHARQFeedbackDueSlotRuntime(state, sourceSlot, numUCIBits)
+    function dueSlot = resolveHARQFeedbackDueSlotRuntime( ...
+            state, sourceSlot, numUCIBits, grant, direction)
         if nargin < 3
             numUCIBits = 1;
         end
-        dueSlot = sixgr.truth.CoupledTruthRuntime.resolveHARQFeedbackDueSlot(state, sourceSlot, numUCIBits);
+        if nargin < 4
+            grant = struct();
+        end
+        if nargin < 5
+            direction = "";
+        end
+        dueSlot = sixgr.truth.CoupledTruthRuntime.resolveHARQFeedbackDueSlot( ...
+            state, sourceSlot, numUCIBits, grant, direction);
     end
 
     function [state, observed] = observePUCCHFeedbackRuntime(state, feedbackRow)
@@ -481,6 +489,18 @@ methods(Static)
     function state = enqueueTrafficForFrameRuntime(state, absoluteFrame)
         % Public wrapper for K2 look-ahead scheduling outside this class.
         state = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrame(state, absoluteFrame);
+    end
+
+    function budget = configuredSlotBudgetRuntime(state)
+        % Public runtime planning surface used by integration checks.
+        budget = sixgr.truth.CoupledTruthRuntime.defaultSlotBudget(state);
+    end
+
+    function cells = createSchedulersRuntime( ...
+            cfg, nCells, direction, harqEntity)
+        % Public scheduler construction surface; configured type is strict.
+        cells = sixgr.truth.CoupledTruthRuntime.createSchedulers( ...
+            cfg, nCells, direction, harqEntity);
     end
 end
 
@@ -924,7 +944,15 @@ methods(Static, Access=private)
             return;
         end
 
-        budget = sixgr.truth.CoupledTruthRuntime.defaultSlotBudget(state);
+            budget = sixgr.truth.CoupledTruthRuntime.defaultSlotBudget(state);
+            if double(sixgr.util.structGet(budget, "NPRB", 0)) < 1 || ...
+                    isempty(sixgr.util.structGet(budget, "PRBSet", []))
+                info.ResourceUnavailableReason = char(string(sixgr.util.structGet( ...
+                    budget, "UnavailableReason", "configured_resource_not_available_in_slot")));
+                state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceSchedule( ...
+                    state, direction, info);
+                return;
+            end
         byCell = cell(nCells, 1);
         nGrant = 0;
         activeUsers = 0;
@@ -985,9 +1013,22 @@ methods(Static, Access=private)
                 grant.NCellID = double(phyIdentity.NCellID);
                 grant.PhysicalCellID = double(phyIdentity.NCellID);
                 grant.PHYIdentitySource = char(string(phyIdentity.Source));
-                grant.Direction = char(direction);
-                grant.Slot = double(state.CurrentSlot);
-                grant.Frame = double(state.CurrentFrame);
+                    grant.Direction = char(direction);
+                    grant.Slot = double(state.CurrentSlot);
+                    grant.Frame = double(state.CurrentFrame);
+                    scheduledAbsoluteSlot = double(sixgr.util.structGet( ...
+                        grant, "ScheduledAbsoluteSlot", NaN));
+                    expectedAbsoluteSlot = double(state.CurrentSlot) - 1;
+                    if ~(isscalar(scheduledAbsoluteSlot) && ...
+                            isfinite(scheduledAbsoluteSlot) && ...
+                            scheduledAbsoluteSlot == expectedAbsoluteSlot)
+                        error("sixgr:truth:CoupledTruthRuntime:ScheduledGrantSlotMismatch", ...
+                            "Configured %s K0/K2 timing selected absolute slot %s, " + ...
+                            "but the coupled executor is preparing absolute slot %d. " + ...
+                            "Deferred grants must be queued; they cannot execute in a different slot.", ...
+                            char(direction), string(scheduledAbsoluteSlot), ...
+                            round(expectedAbsoluteSlot));
+                    end
                 feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
                 if isfinite(double(sixgr.util.structGet(feedback, "CQI", NaN)))
                     grant.CQIUsed = double(feedback.CQI);
@@ -2066,7 +2107,8 @@ methods(Static, Access=private)
             ndi = double(txp.HARQ.NDI);
             rv = double(txp.HARQ.RV);
         end
-        grantSnapshot = sixgr.util.structGet(harqOut, "GrantSnapshot", struct());
+        grantSnapshot = sixgr.util.structGet(harqOut, "GrantSnapshot", ...
+            sixgr.util.structGet(context, "GrantSnapshot", struct()));
         if ~(isstruct(grantSnapshot) && ~isempty(fieldnames(grantSnapshot)))
             grantSnapshot = sixgr.truth.CoupledTruthRuntime.buildGrantSnapshot(cfgU, row, direction, ueIdx, rnti);
         end
@@ -2140,7 +2182,8 @@ methods(Static, Access=private)
         fb.HarqID = double(harqId0);
         fb.SourceSlot = double(slotIdx);
         fb.UCIBitCount = 1;
-        feedbackDueSlot = sixgr.truth.CoupledTruthRuntime.resolveHARQFeedbackDueSlot(state, slotIdx, fb.UCIBitCount);
+            feedbackDueSlot = sixgr.truth.CoupledTruthRuntime.resolveHARQFeedbackDueSlot( ...
+                state, slotIdx, fb.UCIBitCount, grantSnapshot, direction);
         fb.DueSlot = double(feedbackDueSlot);
         fb.Ack = logical(combinedDecodeOK);
         fb.CurrentDecodeOK = logical(currentDecodeOK);
@@ -2730,23 +2773,27 @@ methods(Static, Access=private)
         traffic = sixgr.system.TrafficFactory.generate(cfg, nUsers, nFrames, slotDuration_s);
     end
 
-    function cells = createSchedulers(cfg, nCells, direction, harqEntity)
-        nCells = max(1, round(double(nCells)));
-        cells = cell(nCells, 1);
-        schedulerName = lower(string(sixgr.util.structGet(cfg, "mac.scheduler.type", ...
-            sixgr.util.structGet(cfg, "system.scheduler.type", "PF"))));
-        for cellId = 1:nCells
-            try
-                if contains(schedulerName, "pf")
-                    cells{cellId} = sixgr.l2.mac.SchedulerPF(cfg, "Direction", upper(char(string(direction))), "HARQ", harqEntity);
+        function cells = createSchedulers(cfg, nCells, direction, harqEntity)
+            nCells = max(1, round(double(nCells)));
+            cells = cell(nCells, 1);
+            schedulerName = lower(string(sixgr.util.structGet(cfg, "mac.scheduler.type", ...
+                sixgr.util.structGet(cfg, "system.scheduler.type", "PF"))));
+            for cellId = 1:nCells
+                if any(schedulerName == ["pf", "proportional_fair", "proportionalfair"])
+                    cells{cellId} = sixgr.l2.mac.SchedulerPF(cfg, ...
+                        "Direction", upper(char(string(direction))), ...
+                        "HARQ", harqEntity);
+                elseif any(schedulerName == ["rr", "round_robin", "roundrobin"])
+                    cells{cellId} = sixgr.l2.mac.SchedulerRR(cfg, ...
+                        "Direction", upper(char(string(direction))), ...
+                        "HARQ", harqEntity);
                 else
-                    cells{cellId} = sixgr.l2.mac.SchedulerRR(cfg, "Direction", upper(char(string(direction))), "HARQ", harqEntity);
+                    error("sixgr:truth:CoupledTruthRuntime:UnsupportedScheduler", ...
+                        "Configured scheduler '%s' is unsupported by coupled truth. " + ...
+                        "Allowed values are PF or RR.", schedulerName);
                 end
-            catch
-                cells{cellId} = sixgr.l2.mac.SchedulerRR(cfg, "Direction", upper(char(string(direction))), "HARQ", harqEntity);
             end
         end
-    end
 
     function slots = resolveCSIFeedbackSlots(cfg)
         minNRProcessingSlots = 4;
@@ -6943,7 +6990,7 @@ methods(Static, Access=private)
         end
     end
 
-    function budget = defaultSlotBudget(state)
+        function budget = defaultSlotBudget(state)
         symbolsPerSlot = double(sixgr.util.structGet( ...
             state, "SymbolsPerSlot", NaN));
         if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
@@ -6965,62 +7012,54 @@ methods(Static, Access=private)
             error("sixgr:truth:InvalidTimingControlSlot", ...
                 "Runtime scheduling requires an explicit zero-based control slot.");
         end
-        controlAllocation = sixgr.util.structGet( ...
-            state, "TimingControlSymbolAllocation", []);
-        if isempty(controlAllocation)
-            controlStart = double(sixgr.util.structGet( ...
-                state, "CurrentSlotDLSymbolStart", NaN));
-            controlCount = double(sixgr.util.structGet( ...
-                state.CfgMobility, "phy.pdcch.coreset.duration", ...
-                sixgr.util.structGet(state.CfgMobility, ...
-                "phy.pdcch.numSymbols", NaN)));
-            controlAllocation = [controlStart, controlCount];
-        end
-        if ~(isnumeric(controlAllocation) && ...
-                numel(controlAllocation) == 2 && ...
-                all(isfinite(double(controlAllocation(:)))) && ...
-                all(double(controlAllocation(:)) == ...
-                fix(double(controlAllocation(:)))) && ...
-                controlAllocation(1) >= 0 && controlAllocation(2) >= 1)
-            error("sixgr:truth:InvalidTimingControlAllocation", ...
-                "Runtime scheduling requires an explicit PDCCH symbol allocation.");
-        end
-        budget = struct("NPRB", numRB, ...
-            "SymbolAllocation", [0 double(symbolsPerSlot)], ...
-            "ControlAbsoluteSlot", controlSlot, ...
-            "ControlSymbolAllocation", ...
-                reshape(double(controlAllocation), 1, 2));
-        direction = upper(string(sixgr.util.structGet(state, "CurrentDirection", "DL")));
-        if direction == "UL"
-            budget.SymbolAllocation = [ ...
-                double(sixgr.util.structGet(state, "CurrentSlotULSymbolStart", 0)), ...
-                double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", symbolsPerSlot))];
-        else
-            budget.SymbolAllocation = [ ...
-                double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0)), ...
-                double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", symbolsPerSlot))];
-            dlWindowStart = max(0, round(double(budget.SymbolAllocation(1))));
-            dlWindowEnd = min(double(symbolsPerSlot), dlWindowStart + max(0, round(double(budget.SymbolAllocation(2)))));
-            pdcchSymbols = double(sixgr.util.structGet(state.CfgMobility, "phy.pdcch.coreset.duration", ...
-                sixgr.util.structGet(state.CfgMobility, "phy.pdcch.numSymbols", ...
-                sixgr.util.structGet(state.CfgMobility, "ctrl6gr.CORESET.DurationSymbols", 1))));
-            if ~(isscalar(pdcchSymbols) && isfinite(pdcchSymbols) && pdcchSymbols >= 0)
-                pdcchSymbols = 1;
+            direction = upper(string(sixgr.util.structGet(state, "CurrentDirection", "DL")));
+            if ~any(direction == ["DL", "UL"])
+                error("sixgr:truth:CoupledTruthRuntime:MissingBudgetDirection", ...
+                    "Runtime slot budgets require an explicit DL or UL direction.");
             end
-            pdcchRuntimeRequired = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
-            reserveCoresetSymbols = pdcchRuntimeRequired || logical(sixgr.util.structGet(state.CfgMobility, ...
-                "phy.pdcch.reserveCoresetSymbolsForData", false));
-            if reserveCoresetSymbols && pdcchSymbols > 0
-                startSym = max(dlWindowStart, ceil(pdcchSymbols));
-                startSym = min(max(0, startSym), dlWindowEnd);
-                remainingDLSymbols = max(0, dlWindowEnd - startSym);
-                budget.SymbolAllocation = [startSym remainingDLSymbols];
-                if remainingDLSymbols <= 0
-                    budget.NPRB = 0;
-                    budget.PRBSet = zeros(1, 0);
+            configuredAllocation = sixgr.truth.CoupledTruthRuntime. ...
+                requiredConfiguredSymbolAllocation(state.CfgMobility, direction);
+            configuredBWP = sixgr.truth.CoupledTruthRuntime. ...
+                requiredConfiguredActiveBWP(state.CfgMobility, direction, numRB);
+            configuredPRBSet = sixgr.truth.CoupledTruthRuntime. ...
+                requiredConfiguredDataPRBSet( ...
+                state.CfgMobility, direction, configuredBWP);
+            controlAllocation = sixgr.truth.CoupledTruthRuntime. ...
+                requiredConfiguredControlSymbolAllocation(state.CfgMobility);
+            timingControlAllocation = sixgr.util.structGet( ...
+                state, "TimingControlSymbolAllocation", []);
+            if ~isempty(timingControlAllocation)
+                if ~isequal(reshape(double(timingControlAllocation), 1, []), ...
+                        reshape(double(controlAllocation), 1, []))
+                    error("sixgr:truth:CoupledTruthRuntime:ControlAllocationOverride", ...
+                        "Runtime TimingControlSymbolAllocation must equal the " + ...
+                        "configured PDCCH SymbolAllocation.");
                 end
+                controlAllocation = timingControlAllocation;
             end
-        end
+            budget = struct("NPRB", double(numel(configuredPRBSet)), ...
+                "PRBSet", configuredPRBSet, ...
+                "SymbolAllocation", reshape(double(configuredAllocation), 1, 2), ...
+                "ControlAbsoluteSlot", controlSlot, ...
+                "ControlSymbolAllocation", ...
+                    reshape(double(controlAllocation), 1, 2));
+            if direction == "UL"
+                slotAllocation = [ ...
+                    double(sixgr.util.structGet(state, "CurrentSlotULSymbolStart", 0)), ...
+                    double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", symbolsPerSlot))];
+            else
+                slotAllocation = [ ...
+                    double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0)), ...
+                    double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", symbolsPerSlot))];
+            end
+            if ~sixgr.truth.CoupledTruthRuntime.symbolAllocationFitsPartition( ...
+                    budget.SymbolAllocation, slotAllocation)
+                budget.NPRB = 0;
+                budget.PRBSet = zeros(1, 0);
+                budget.UnavailableReason = ...
+                    "configured_" + lower(direction) + ...
+                    "_symbol_allocation_not_available_in_tdd_slot";
+            end
         if logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false))
             pdcchCCEBudget = sixgr.truth.CoupledTruthRuntime.resolveSchedulerPDCCHCCEBudget(state.CfgMobility);
             if isfinite(pdcchCCEBudget) && pdcchCCEBudget > 0
@@ -7031,6 +7070,96 @@ methods(Static, Access=private)
             end
         end
     end
+
+        function bwp = requiredConfiguredActiveBWP(cfg, direction, carrierNRB)
+            direction = lower(string(direction));
+            if ~any(direction == ["dl", "ul"])
+                error("sixgr:truth:CoupledTruthRuntime:InvalidBWPDirection", ...
+                    "Active BWP resolution requires direction DL or UL.");
+            end
+            bwp = sixgr.util.structGet(cfg, "phy.bwp." + direction, []);
+            if ~(isstruct(bwp) && isscalar(bwp))
+                error("sixgr:truth:CoupledTruthRuntime:MissingActiveBWP", ...
+                    "Coupled truth requires an explicit active %s BWP.", ...
+                    upper(direction));
+            end
+            nSize = double(sixgr.util.structGet(bwp, "NSizeBWP", ...
+                sixgr.util.structGet(bwp, "n_size_bwp", NaN)));
+            nStart = double(sixgr.util.structGet(bwp, "NStartBWP", ...
+                sixgr.util.structGet(bwp, "n_start_bwp", NaN)));
+            if ~(isscalar(nSize) && isfinite(nSize) && nSize >= 1 && ...
+                    nSize == fix(nSize) && isscalar(nStart) && ...
+                    isfinite(nStart) && nStart >= 0 && nStart == fix(nStart) && ...
+                    nStart + nSize <= carrierNRB)
+                error("sixgr:truth:CoupledTruthRuntime:InvalidActiveBWP", ...
+                    "Configured %s BWP requires integer NStartBWP>=0 and " + ...
+                    "NSizeBWP>=1 within carrier N_RB=%d.", ...
+                    upper(direction), round(carrierNRB));
+            end
+            bwp.NSizeBWP = double(nSize);
+            bwp.NStartBWP = double(nStart);
+        end
+
+        function prbSet = requiredConfiguredDataPRBSet(cfg, direction, bwp)
+            direction = upper(string(direction));
+            if direction == "DL"
+                root = "phy.pdsch";
+            elseif direction == "UL"
+                root = "phy.pusch";
+            else
+                error("sixgr:truth:CoupledTruthRuntime:InvalidDataPRBDirection", ...
+                    "Data PRB resolution requires direction DL or UL.");
+            end
+            prbSet = sixgr.util.structGet(cfg, root + ".PRBSet", []);
+            if isempty(prbSet)
+                prbSet = sixgr.util.structGet(cfg, root + ".prbSet", []);
+            end
+            nSizeBWP = double(sixgr.util.structGet(bwp, "NSizeBWP", NaN));
+            if ~(isnumeric(prbSet) && isreal(prbSet) && isvector(prbSet) && ...
+                    ~isempty(prbSet))
+                error("sixgr:truth:CoupledTruthRuntime:MissingConfiguredDataPRBSet", ...
+                    "Coupled %s truth requires an explicit configured %s PRBSet.", ...
+                    char(direction), char(root));
+            end
+            prbSet = reshape(double(prbSet), 1, []);
+            if any(~isfinite(prbSet)) || any(prbSet ~= fix(prbSet)) || ...
+                    any(prbSet < 0) || numel(unique(prbSet)) ~= numel(prbSet) || ...
+                    ~(isscalar(nSizeBWP) && isfinite(nSizeBWP) && ...
+                    nSizeBWP >= 1 && all(prbSet < nSizeBWP))
+                error("sixgr:truth:CoupledTruthRuntime:InvalidConfiguredDataPRBSet", ...
+                    "Configured %s PRBSet must contain unique integer BWP-relative " + ...
+                    "indices in [0,NSizeBWP-1].", char(direction));
+            end
+        end
+
+        function allocation = requiredConfiguredControlSymbolAllocation(cfg)
+            allocation = sixgr.util.structGet( ...
+                cfg, "phy.pdcch.symbolAllocation", []);
+            if isempty(allocation)
+                allocation = sixgr.util.structGet( ...
+                    cfg, "phy.pdcch.SymbolAllocation", []);
+            end
+            if ~(isnumeric(allocation) && isreal(allocation) && ...
+                    numel(allocation) == 2 && ...
+                    all(isfinite(double(allocation(:)))) && ...
+                    all(double(allocation(:)) == fix(double(allocation(:)))) && ...
+                    double(allocation(1)) >= 0 && double(allocation(2)) >= 1)
+                error("sixgr:truth:CoupledTruthRuntime:MissingControlSymbolAllocation", ...
+                    "Coupled truth requires an explicit PDCCH SymbolAllocation.");
+            end
+            allocation = reshape(double(allocation), 1, 2);
+        end
+
+        function tf = symbolAllocationFitsPartition(allocation, partition)
+            allocation = reshape(double(allocation), 1, []);
+            partition = reshape(double(partition), 1, []);
+            tf = numel(allocation) == 2 && numel(partition) == 2 && ...
+                all(isfinite(allocation)) && all(isfinite(partition)) && ...
+                allocation(2) >= 1 && partition(2) >= 1 && ...
+                allocation(1) >= partition(1) && ...
+                allocation(1) + allocation(2) <= ...
+                    partition(1) + partition(2);
+        end
 
     function availCCEs = resolveSchedulerPDCCHCCEBudget(cfg)
         freqResources = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.frequencyResources", []));
@@ -10877,15 +11006,48 @@ methods(Static, Access=private)
         end
     end
 
-    function dueSlot = resolveHARQFeedbackDueSlot(state, sourceSlot, numUCIBits)
-        sourceSlot = round(double(sourceSlot));
+        function dueSlot = resolveHARQFeedbackDueSlot(state, sourceSlot, numUCIBits, grant, direction)
+            sourceSlot = round(double(sourceSlot));
         if ~(isfinite(sourceSlot) && sourceSlot >= 1)
             sourceSlot = round(double(sixgr.util.structGet(state, "CurrentSlot", 1)));
         end
         if ~(isfinite(sourceSlot) && sourceSlot >= 1)
             sourceSlot = 1;
         end
-        feedbackDelay = max(1, round(double(sixgr.util.structGet(state, "HARQFeedbackSlots", 4))));
+            if nargin < 4 || ~isstruct(grant)
+                grant = struct();
+            end
+            if nargin < 5
+                direction = "";
+            end
+            direction = upper(string(direction));
+            if direction == "DL"
+                timing = sixgr.util.structGet(grant, "TimingDecision", struct());
+                feedbackSlot0 = double(sixgr.util.structGet(grant, ...
+                    "HARQFeedbackAbsoluteSlot", ...
+                    sixgr.util.structGet(timing, "FeedbackAbsoluteSlot", NaN)));
+                k1 = double(sixgr.util.structGet(grant, "K1", ...
+                    sixgr.util.structGet(timing, "K1", NaN)));
+                timingValid = logical(sixgr.util.structGet(timing, "Valid", false));
+                if ~(timingValid && isscalar(feedbackSlot0) && ...
+                        isfinite(feedbackSlot0) && feedbackSlot0 >= 0 && ...
+                        feedbackSlot0 == fix(feedbackSlot0) && ...
+                        isscalar(k1) && isfinite(k1) && k1 >= 0 && ...
+                        k1 == fix(k1))
+                    error("sixgr:truth:CoupledTruthRuntime:MissingCanonicalK1Decision", ...
+                        "DL HARQ feedback requires the scheduler's valid " + ...
+                        "canonical K1 TimingDecision.");
+                end
+                dueSlot = feedbackSlot0 + 1;
+                if dueSlot <= sourceSlot
+                    error("sixgr:truth:CoupledTruthRuntime:InvalidCanonicalK1Decision", ...
+                        "Canonical K1=%d resolved feedback slot %d not later " + ...
+                        "than source runtime slot %d.", ...
+                        round(k1), round(dueSlot), round(sourceSlot));
+                end
+                return;
+            end
+            feedbackDelay = max(1, round(double(sixgr.util.structGet(state, "HARQFeedbackSlots", 4))));
         requestedFormat = double(sixgr.util.structGet(state.CfgMobility, "phy.pucch.format", 2));
         if ~(isfinite(requestedFormat) && any(round(requestedFormat) == [0 1 2 3 4]))
             requestedFormat = 2;

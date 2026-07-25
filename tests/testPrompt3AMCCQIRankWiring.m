@@ -4,8 +4,8 @@ function ok = testPrompt3AMCCQIRankWiring()
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
-    "master_scenaio_all_file.yaml");
-assert(exist(scenarioPath, "file") == 2, "Missing master_scenaio_all_file.yaml.");
+    "master_geometry_based.yaml");
+assert(exist(scenarioPath, "file") == 2, "Missing master_geometry_based.yaml.");
 
 tmp = tempname;
 mkdir(tmp);

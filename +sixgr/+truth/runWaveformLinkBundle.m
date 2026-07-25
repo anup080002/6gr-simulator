@@ -3211,16 +3211,27 @@ end
 end
 
 function allocation = localCoupledControlSymbolAllocation(state, cfg)
-startSymbol = double(sixgr.util.structGet( ...
-    state, "CurrentSlotDLSymbolStart", NaN));
-numSymbols = double(sixgr.util.structGet( ...
-    cfg, "phy.pdcch.coreset.duration", ...
-    sixgr.util.structGet(cfg, "phy.pdcch.numSymbols", NaN)));
-allocation = [startSymbol, numSymbols];
-if ~(all(isfinite(allocation)) && all(allocation == fix(allocation)) && ...
-        allocation(1) >= 0 && allocation(2) >= 1)
+allocation = sixgr.util.structGet(cfg, "phy.pdcch.symbolAllocation", []);
+if isempty(allocation)
+    allocation = sixgr.util.structGet(cfg, "phy.pdcch.SymbolAllocation", []);
+end
+if ~(isnumeric(allocation) && isreal(allocation) && numel(allocation) == 2 && ...
+        all(isfinite(double(allocation(:)))) && ...
+        all(double(allocation(:)) == fix(double(allocation(:)))) && ...
+        double(allocation(1)) >= 0 && double(allocation(2)) >= 1)
     error("sixgr:truth:MissingPDCCHTimingAllocation", ...
-        "Coupled timing requires an explicit PDCCH start and duration.");
+        "Coupled timing requires the explicit configured PDCCH SymbolAllocation.");
+end
+allocation = reshape(double(allocation), 1, 2);
+dlPartition = [ ...
+    double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", NaN)), ...
+    double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", NaN))];
+if numel(dlPartition) ~= 2 || any(~isfinite(dlPartition)) || ...
+        dlPartition(2) < 1 || allocation(1) < dlPartition(1) || ...
+        allocation(1) + allocation(2) > dlPartition(1) + dlPartition(2)
+    error("sixgr:truth:PDCCHTimingOutsideDLPartition", ...
+        "Configured PDCCH SymbolAllocation=%s is outside the current DL partition=%s.", ...
+        mat2str(allocation), mat2str(dlPartition));
 end
 end
 
@@ -5051,7 +5062,10 @@ try
         end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfg, txArgs{:});
     else
-        txArgs = {"CompactOutput", true};
+        cfg = localConfigureCoupledDLCalibrationOwnership( ...
+            cfg, grantResolved);
+        txArgs = {"CompactOutput", true, ...
+            "ExecutionProfile", "phy_calibration"};
         txArgs = localAppendCoupledGrantReplayTxArgs(txArgs, grantResolved, "DL");
         transportBlockBits = sixgr.util.structGet(grantContext, "TransportBlockBits", int8([]));
         if ~isempty(transportBlockBits)
@@ -5078,6 +5092,47 @@ catch ME
         "Coupled %s interferer Tx precompute failed for signal %s: %s %s", ...
         char(direction), char(signalType), char(string(ME.identifier)), char(string(ME.message)));
 end
+end
+
+function cfgOut = localConfigureCoupledDLCalibrationOwnership(cfgOut, grant)
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+nLayers = localFirstFiniteScalar( ...
+    sixgr.util.structGet(grant, "NumLayers", []), ...
+    sixgr.util.structGet(phyGrant, "CodingLayout.NumLayers", []), ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.numLayers", []), 1);
+nLayers = max(1, round(double(nLayers)));
+numCodewords = 1 + double(nLayers > 4);
+cfgOut.run.pdschExecutionProfile = "phy_calibration";
+cfgOut.phy.pdsch.executionProfile = "phy_calibration";
+cfgOut.phy.pdsch.mcsTable = repmat( ...
+    "calibration_explicit", 1, numCodewords);
+cfgOut.phy.pdsch.mcsIndex = 0:(numCodewords - 1);
+
+modulation = string(sixgr.util.structGet(grant, "Modulation", ...
+    sixgr.util.structGet(phyGrant, "CodingLayout.Modulation", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.modulation", ""))));
+pdschConfig = sixgr.util.structGet(grant, "PDSCHConfig", []);
+if strlength(strtrim(join(modulation, ""))) == 0 && ...
+        ~isempty(pdschConfig) && isobject(pdschConfig) && ...
+        isprop(pdschConfig, "Modulation")
+    modulation = string(pdschConfig.Modulation);
+end
+modulation = upper(strtrim(modulation(:).'));
+if any(modulation == "1024QAM")
+    % Do not manufacture 1024QAM eligibility for an interferer replay.
+    % Explicit UE/RRC/DCI and deployment context must already be supplied.
+    return;
+end
+cfgOut.phy.pdsch.mcsContext = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "not_applicable_non1024_interferer_replay", ...
+    "OperatingBand", "not_applicable_non1024_interferer_replay", ...
+    "DeploymentClass", "coupled_interferer_calibration");
 end
 
 function txArgs = localAppendCoupledGrantReplayTxArgs(txArgs, grant, direction)
@@ -7089,6 +7144,8 @@ end
 
 function tf = localIsActivePRACHOccasion(cfg, slotIdx)
 tf = false;
+prachRequired = logical(sixgr.util.structGet( ...
+    cfg, "run.controlGating.prachRequired", false));
 if ~(isfinite(double(slotIdx)) && double(slotIdx) >= 1)
     return;
 end
@@ -7108,7 +7165,10 @@ else
         if ~fs.IsPRACHSlot(slotIdx)
             return;
         end
-    catch
+    catch ME
+        if prachRequired
+            rethrow(ME);
+        end
         partition = sixgr.util.resolveTDDSlotPartition(cfg, slotIdx);
         if ~(logical(partition.AllowUL) && ~logical(partition.IsSpecialSlot))
             return;
@@ -11262,7 +11322,10 @@ end
 try
     vals = abs(double(value(:)));
     tf = any(isfinite(vals));
-catch
+catch ME
+    if prachRequired
+        rethrow(ME);
+    end
     tf = false;
 end
 end
@@ -13696,7 +13759,15 @@ end
 
 function cfgCampaign = localResolveFixedLinkCampaignConfig(cfg, snrGrid, sweepPlan)
 runtimeCfg = sixgr.util.structGet(sweepPlan, "FixedLinkCampaignConfig", struct());
-cfgCampaign = localOverlayStruct(sixgr.util.structGet(cfg, "validation.fixed_link_campaign", struct()), runtimeCfg);
+cfgCampaign = localOverlayStruct( ...
+    sixgr.util.structGet(cfg, "validation.fixed_link_campaign", struct()), ...
+    runtimeCfg);
+if isstruct(runtimeCfg) && ~isempty(fieldnames(runtimeCfg))
+    % The resolved validation.fixed_link_campaign block is the production
+    % authority. Do not rewrite it from legacy LinkFixedLink* convenience
+    % options after schema validation.
+    return;
+end
 cfgCampaign.Enabled = logical(sixgr.util.structGet(runtimeCfg, "Enabled", ...
     sixgr.util.structGet(runtimeCfg, "enabled", logical(sixgr.util.structGet(sweepPlan, "FixedLinkCampaignEnabled", false)))));
 cfgCampaign.SNR_dB = double(sixgr.util.structGet(runtimeCfg, "SNR_dB", ...

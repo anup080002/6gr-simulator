@@ -237,7 +237,7 @@
       "ue_speed_kmh": {"required": true, "type": "number", "min": 0},
       "speed_profile": {"required": true, "type": "string"},
       "direction_model": {"required": true, "type": "string"},
-      "trajectory_model": {"required": true, "type": "string", "allowed_values": ["randomWaypoint", "straightLine", "zigzag", "trace", "linear"]},
+      "trajectory_model": {"required": true, "type": "string", "allowed_values": ["static", "randomWaypoint", "straightLine", "zigzag", "trace", "linear"]},
       "update_period_s": {"required": false, "type": "number", "min": 0},
       "zigzag_segment_duration_s": {"required": false, "type": "number", "min": 0},
       "zigzag_turn_angle_deg": {"required": false, "type": "number", "min": 0},

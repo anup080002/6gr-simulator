@@ -1697,11 +1697,14 @@ dlBer = NaN(n,1); dlBler = NaN(n,1); dlThr = NaN(n,1);
 ulBer = NaN(n,1); ulBler = NaN(n,1); ulThr = NaN(n,1);
 srsNmse = NaN(n,1);
 nFrames = max(1, round(double(nFrames)));
+cfgDL = localConfigureCampaignPDSCHCalibration(cfg);
 
 for i = 1:n
     snr = snrGrid(i);
     try
-        dl = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", nFrames, "SNR_dB", snr);
+        dl = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
+            "ExecutionProfile", "phy_calibration", ...
+            "NumFrames", nFrames, "SNR_dB", snr);
         if ~logical(sixgr.util.structGet(dl, "Skipped", false))
             dlBer(i) = double(sixgr.util.structGet(dl, "BER", NaN));
             dlBler(i) = double(sixgr.util.structGet(dl, "BLER", NaN));
@@ -1741,7 +1744,10 @@ nTrials = max(8, min(128, round(double(nFrames))));
 dlTrials = localGetCaseTrialTable(linkRes, "DL_PDSCH_Throughput");
 if isempty(dlTrials)
     try
-        dlRun = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", nTrials, "SNR_dB", snr_dB);
+        cfgPrimaryDL = localConfigureCampaignPDSCHCalibration(cfg);
+        dlRun = sixgr.link.runDLPDSCHThroughput(cfgPrimaryDL, ...
+            "ExecutionProfile", "phy_calibration", ...
+            "NumFrames", nTrials, "SNR_dB", snr_dB);
         dlTrials = sixgr.util.structGet(dlRun, "TrialTable", table());
     catch
         dlTrials = table();
@@ -1752,9 +1758,12 @@ fDL = fullfile(csvDir, "dl_pdsch_trials.csv");
 sixgr.util.csvWriteTable(fDL, dlTrials);
 fDLFallback = "";
 if localAllTrialsCrash(dlTrials)
-    cfgDL = localBuildDLTraceFallbackCfg(cfg);
+    cfgDL = localConfigureCampaignPDSCHCalibration( ...
+        localBuildDLTraceFallbackCfg(cfg));
     try
-        dlRun = sixgr.link.runDLPDSCHThroughput(cfgDL, "NumFrames", nTrials, "SNR_dB", snr_dB);
+        dlRun = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
+            "ExecutionProfile", "phy_calibration", ...
+            "NumFrames", nTrials, "SNR_dB", snr_dB);
         dlFallback = sixgr.util.structGet(dlRun, "TrialTable", table());
         if istable(dlFallback) && ~isempty(dlFallback)
             if ismember("Notes", dlFallback.Properties.VariableNames)
@@ -2842,6 +2851,7 @@ out.Table = T;
 end
 
 function out = localRunHARQProbe(cfg, snr_dB, nPackets, maxRetx)
+cfg = localConfigureCampaignPDSCHCalibration(cfg);
 slotDur_s = localSlotDuration(cfg);
 rvSeq = double(sixgr.util.structGet(cfg, "phy.harq.rvSequence", [0 2 3 1]));
 if isempty(rvSeq)
@@ -2895,7 +2905,8 @@ maxIter = double(sixgr.util.structGet(cfg, "phy.ldpc.maxIterations", 12));
 alg = char(string(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum")));
 
 for p = 1:nPackets
-    [tx0, ~] = sixgr.phy.dl.PDSCH_Tx(cfg);
+    [tx0, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, ...
+        "ExecutionProfile", "phy_calibration");
     tb = int8(tx0.TransportBlock(:));
     trBlkSize = double(tx0.TransportBlockSize);
     tcr = double(tx0.TargetCodeRate);
@@ -2918,7 +2929,8 @@ for p = 1:nPackets
             "PDSCH", tx0.PDSCH, ...
             "TransportBlockBits", tb, ...
             "RV", rv, ...
-            "TargetCodeRate", tcr);
+            "TargetCodeRate", tcr, ...
+            "ExecutionProfile", "phy_calibration");
 
         rxWave = localAddAwgn(tx.Waveform, snr_dB);
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfg, ...
@@ -2927,7 +2939,9 @@ for p = 1:nPackets
             "PDSCHIndices", tx.PDSCHIndices, ...
             "TransportBlockSize", trBlkSize, ...
             "TargetCodeRate", tcr, ...
-            "RV", rv);
+            "RV", rv, ...
+            "CodingPlan", tx.CodingPlans, ...
+            "ExecutionProfile", "phy_calibration");
 
         if mode == "NoComb"
             [be, ~] = localBitErrors(tb, rx.TransportBlock);
@@ -3089,6 +3103,7 @@ for i = 1:n
     snr = snrGrid(i);
     cfgS = cfgC;
     cfgS.channel.snr_dB = snr;
+    cfgS = localConfigureCampaignPDSCHCalibration(cfgS);
 
     % PBCH/SSB detect probability.
     okCnt = 0;
@@ -3167,12 +3182,15 @@ for i = 1:n
 
     % Timing offset from PDSCH receiver.
     try
-        [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfgS);
+        [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfgS, ...
+            "ExecutionProfile", "phy_calibration");
         [rxWave, nVar] = localAddAwgn(tx.Waveform, snr);
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgS, ...
             "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, "PDSCHIndices", tx.PDSCHIndices, ...
             "TransportBlockSize", tx.TransportBlockSize, "TargetCodeRate", tx.TargetCodeRate, ...
-            "RV", tx.RV, "NoiseVar", nVar);
+            "RV", tx.RV, "NoiseVar", nVar, ...
+            "CodingPlan", tx.CodingPlans, ...
+            "ExecutionProfile", "phy_calibration");
         timingOffset(i) = double(sixgr.util.structGet(rx, "TimingOffset", NaN));
     catch
     end
@@ -3202,20 +3220,24 @@ out = struct("Ok", true, "Table", T);
 end
 
 function out = localRunInterferenceProbe(cfg, sirGrid_dB, nFramesPerPoint)
+cfg = localConfigureCampaignPDSCHCalibration(cfg);
 n = numel(sirGrid_dB);
 bler = NaN(n,1);
 for i = 1:n
     sir = sirGrid_dB(i);
     fail = 0;
     for k = 1:nFramesPerPoint
-        [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfg);
+        [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, ...
+            "ExecutionProfile", "phy_calibration");
         sigPow = mean(abs(tx.Waveform(:)).^2);
         intPow = sigPow / max(10^(sir/10), eps);
         interf = sqrt(intPow/2) * (randn(size(tx.Waveform)) + 1i*randn(size(tx.Waveform)));
         rxWave = tx.Waveform + interf;
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfg, ...
             "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, "PDSCHIndices", tx.PDSCHIndices, ...
-            "TransportBlockSize", tx.TransportBlockSize, "TargetCodeRate", tx.TargetCodeRate, "RV", tx.RV);
+            "TransportBlockSize", tx.TransportBlockSize, "TargetCodeRate", tx.TargetCodeRate, ...
+            "RV", tx.RV, "CodingPlan", tx.CodingPlans, ...
+            "ExecutionProfile", "phy_calibration");
         if ~rx.Ok
             fail = fail + 1;
         end
@@ -3237,8 +3259,10 @@ cfgR.rf.phaseNoise.enable = true;
 cfgR.rf.phaseNoise.level_dBcHz = -80;
 cfgR.rf.cfo_Hz = 150;
 cfgR.rf.dcOffset = 0.01 + 0.01i;
+cfgR = localConfigureCampaignPDSCHCalibration(cfgR);
 
-[tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfgR);
+[tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfgR, ...
+    "ExecutionProfile", "phy_calibration");
 fs = double(sixgr.util.structGet(cfgR, "channel.sampleRate_Hz", 30.72e6));
 rf = sixgr.rf.RFImpairments(cfgR, fs, 3);
 y = rf.applyTx(tx.Waveform);
@@ -3264,7 +3288,10 @@ for i = 1:n
     c = cfg;
     c.phy.carrier.SubcarrierSpacing = scsList_kHz(i);
     c.channel.subcarrierSpacing_kHz = scsList_kHz(i);
-    r = sixgr.link.runDLPDSCHThroughput(c, "NumFrames", nFrames, "SNR_dB", snr_dB);
+    c = localConfigureCampaignPDSCHCalibration(c);
+    r = sixgr.link.runDLPDSCHThroughput(c, ...
+        "ExecutionProfile", "phy_calibration", ...
+        "NumFrames", nFrames, "SNR_dB", snr_dB);
     ber(i) = double(sixgr.util.structGet(r, "BER", NaN));
     bler(i) = double(sixgr.util.structGet(r, "BLER", NaN));
     thr(i) = double(sixgr.util.structGet(r, "Throughput_Mbps", NaN));
@@ -3403,6 +3430,7 @@ cfgN.phy.pdsch.enable = true;
 cfgN.phy.pdsch.modulation = "QPSK";
 cfgN.phy.pdsch.numLayers = 1;
 cfgN.phy.pdsch.codeRate = 0.4;
+cfgN = localConfigureCampaignPDSCHCalibration(cfgN);
 
 delays_ms = double(opt.NTNDelays_ms(:));
 dops_Hz = double(opt.NTNDoppler_Hz(:));
@@ -3434,7 +3462,8 @@ for i = 1:nCases
     delayErrAcc = NaN(nFrames,1);
     taEstAcc = NaN(nFrames,1);
     for k = 1:nFrames
-        [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfgN);
+        [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfgN, ...
+            "ExecutionProfile", "phy_calibration");
 
         wf = tx.Waveform;
         if capN > 0
@@ -3487,13 +3516,85 @@ T = table(delayCase, doppCase, taSamples, taEstSamples, capDelaySamples, blerNo,
 out = struct("Ok", true, "Table", T);
 end
 
+function cfg = localConfigureCampaignPDSCHCalibration(cfg)
+% Bind campaign-only waveform probes to explicit calibration ownership.
+% calibration_explicit is an identity token: its zero-based index names the
+% codeword and the resolver must match the configured modulation/rate
+% exactly; it never selects a nearest MCS entry.
+numLayers = double(sixgr.util.structGet( ...
+    cfg, "phy.pdsch.numLayers", 1));
+if ~(isscalar(numLayers) && isfinite(numLayers) ...
+        && numLayers == fix(numLayers) ...
+        && numLayers >= 1 && numLayers <= 8)
+    error("sixgr:campaign:InvalidPDSCHCalibrationLayerCount", ...
+        "Campaign PDSCH calibration NumLayers must be an integer from 1 to 8.");
+end
+numCodewords = 1 + double(numLayers > 4);
+tableTokens = repmat("calibration_explicit", 1, numCodewords);
+codewordIndices = 0:(numCodewords - 1);
+
+cfg = sixgr.util.structSet( ...
+    cfg, "run.pdschExecutionProfile", "phy_calibration");
+cfg = sixgr.util.structSet( ...
+    cfg, "phy.pdsch.executionProfile", "phy_calibration");
+cfg = sixgr.util.structSet( ...
+    cfg, "phy.pdsch.mcsTablePerCodeword", tableTokens);
+cfg = sixgr.util.structSet( ...
+    cfg, "phy.pdsch.mcsIndexPerCodeword", codewordIndices);
+cfg = sixgr.util.structSet( ...
+    cfg, "phy.pdsch.mcsTable", tableTokens);
+cfg = sixgr.util.structSet( ...
+    cfg, "phy.pdsch.mcsIndex", codewordIndices);
+
+modulation = upper(strrep(strtrim(string(sixgr.util.structGet( ...
+    cfg, "phy.pdsch.modulation", strings(1,0)))), " ", ""));
+if any(modulation == "1024QAM")
+    % 1024QAM remains fail closed: the incoming scenario must own its full
+    % capability/deployment context. Do not manufacture enabling flags.
+    return;
+end
+
+fc_Hz = double(sixgr.util.structGet(cfg, "channel.fc_Hz", ...
+    sixgr.util.structGet(cfg, "phy.fc_Hz", NaN)));
+if isscalar(fc_Hz) && isfinite(fc_Hz) && fc_Hz > 7.125e9
+    frequencyRange = "FR2";
+elseif isscalar(fc_Hz) && isfinite(fc_Hz) && fc_Hz > 0
+    frequencyRange = "FR1";
+else
+    frequencyRange = "not_applicable_isolated_calibration";
+end
+context = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", frequencyRange, ...
+    "OperatingBand", "not_applicable_isolated_calibration", ...
+    "DeploymentClass", "isolated_campaign_phy_calibration", ...
+    "DCIFormat", "not_applicable_calibration", ...
+    "UECapability1024QAMVariant", "", ...
+    "MaxNumberMIMOLayersPDSCH", NaN);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", context);
+
+contextFields = fieldnames(context);
+for fieldIndex = 1:numel(contextFields)
+    fieldName = contextFields{fieldIndex};
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.pdsch." + string(fieldName), context.(fieldName));
+end
+end
+
 function ok = localTryPDSCHDecode(rxWave, cfg, tx, noiseVar)
 ok = false;
 try
     [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfg, ...
         "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, "PDSCHIndices", tx.PDSCHIndices, ...
         "TransportBlockSize", tx.TransportBlockSize, "TargetCodeRate", tx.TargetCodeRate, ...
-        "RV", tx.RV, "NoiseVar", noiseVar);
+        "RV", tx.RV, "NoiseVar", noiseVar, ...
+        "CodingPlan", tx.CodingPlans, ...
+        "ExecutionProfile", "phy_calibration");
     [be, ~] = localBitErrors(tx.TransportBlock, rx.TransportBlock);
     ok = logical(rx.Ok) && (be == 0);
 catch

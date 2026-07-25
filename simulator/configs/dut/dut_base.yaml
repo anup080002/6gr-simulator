@@ -1,6 +1,6 @@
 dut:
   schema_version: 1
-  master_scenario: ../scenarios/master_scenaio_all_file.yaml
+  master_scenario: ../scenarios/master_geometry_based.yaml
   source_of_truth: canonical_control
   research_class: baseline_benchmark
   run_contract: Apply this DUT overlay to the resolved master scenario for block-focused validation.

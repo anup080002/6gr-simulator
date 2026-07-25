@@ -3,12 +3,14 @@ function ok = testPDSCHMultiPortPrecoding()
 
 setup6GRSimToolkit("Verbose", false);
 if ~localHaveRequired5G()
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testPDSCHMultiPortPrecoding requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 cfg = sixgr.config.defaultConfig();
 cfg.run.shortRun = true;
+cfg.run.pdschExecutionProfile = "phy_calibration";
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
@@ -17,6 +19,10 @@ cfg.phy.pdsch.prbSet = 0:7;
 cfg.phy.pdsch.symbolAllocation = [0 10];
 cfg.phy.pdsch.modulation = 'QPSK';
 cfg.phy.pdsch.codeRate = 0.35;
+cfg.phy.pdsch.mcsTable = "calibration_explicit";
+cfg.phy.pdsch.mcsIndex = 0;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
 cfg.phy.pdsch.nLayers = 2;
 cfg.phy.pdsch.numLayers = 2;
 cfg.phy.pdsch.enablePTRS = false;
@@ -79,6 +85,7 @@ assert(numel(txReserved.Codeword) == double(txReserved.G), ...
     "TransportBlockSize", tx.TransportBlockSize, ...
     "TargetCodeRate", tx.TargetCodeRate, ...
     "RV", tx.RV, ...
+    "CodingPlan", tx.CodingPlans, ...
     "PrecodingMatrix", W);
 
 assert(rx.Ok, "Explicitly precoded multi-port PDSCH must decode successfully.");
@@ -100,6 +107,19 @@ catch ME
 end
 
 ok = true;
+end
+
+function context = localCalibrationMCSContext()
+context = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
 end
 
 function tf = localHaveRequired5G()

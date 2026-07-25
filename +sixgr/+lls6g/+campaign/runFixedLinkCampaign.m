@@ -38,8 +38,8 @@ for mcs = reshape(double(loopMCS), 1, [])
         row = localEmptySummaryRow(snr);
         row.CampaignKind = "fixed_link_monte_carlo";
         row.SweepKind = "fixed_reference_awgn_snr_campaign";
-        row.FixedReferenceMode = true;
-        row.NoiseOperatingMode = "standalone_awgn_snr_argument";
+        row.FixedReferenceMode = logical(campaignCfg.FixedReferenceMode);
+        row.NoiseOperatingMode = string(campaignCfg.NoiseOperatingMode);
         row.ConfidenceLevel = double(campaignCfg.ConfidenceLevel);
         row.SequentialMinTrials = double(campaignCfg.MinTBPerPoint);
         row.SequentialMaxTrials = double(campaignCfg.MaxTBPerPoint);
@@ -127,20 +127,85 @@ end
 
 function cfgOut = localPrepareCampaignCfg(cfgIn, campaignCfg)
 cfgOut = cfgIn;
-cfgOut = sixgr.util.structSet(cfgOut, "lls6g.users.enabled", false);
-cfgOut = sixgr.util.structSet(cfgOut, "lls6g.users.n_users", 1);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.mode", "fixed");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.dlPolicy", "fixed");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.ulPolicy", "fixed");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.rankPolicy", "fixed");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.beamPolicy", "fixed");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.deltaCQIPolicy", "none");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.deltaMCSPolicy", "none");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.fixedReferenceMode", true);
-cfgOut = sixgr.util.structSet(cfgOut, "run.fixedReferenceMode", true);
-cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.harq.enable", false);
-cfgOut = sixgr.util.structSet(cfgOut, "mac.harq.enable", false);
+if ~logical(campaignCfg.SingleUserMode)
+    error("sixgr:lls6g:campaign:SingleUserModeRequired", ...
+        "The fixed-link campaign executes one isolated link and requires " + ...
+        "validation.fixed_link_campaign.single_user_mode=true.");
+end
+configuredUserCount = double(sixgr.util.structGet( ...
+    cfgOut, "lls6g.users.n_users", NaN));
+configuredUsersEnabled = logical(sixgr.util.structGet( ...
+    cfgOut, "lls6g.users.enabled", false));
+if ~(isscalar(configuredUserCount) && isfinite(configuredUserCount) && ...
+        configuredUserCount == 1 && ~configuredUsersEnabled)
+    error("sixgr:lls6g:campaign:SingleUserConfigurationConflict", ...
+        "single_user_mode=true requires the resolved YAML user surface " + ...
+        "to have users.n_users=1 and users.enabled=false; received " + ...
+        "n_users=%s, enabled=%d.", ...
+        mat2str(configuredUserCount), configuredUsersEnabled);
+end
+
+if string(campaignCfg.LinkAdaptationMode) ~= "fixed"
+    error("sixgr:lls6g:campaign:FixedLinkAdaptationRequired", ...
+        "The fixed-link campaign requires " + ...
+        "validation.fixed_link_campaign.link_adaptation_mode='fixed'.");
+end
+cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.mode", ...
+    char(campaignCfg.LinkAdaptationMode));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.dlPolicy", ...
+    char(campaignCfg.LinkAdaptationMode));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.ulPolicy", ...
+    char(campaignCfg.LinkAdaptationMode));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.rankPolicy", ...
+    char(campaignCfg.LinkAdaptationMode));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.beamPolicy", ...
+    char(campaignCfg.LinkAdaptationMode));
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "phy.linkAdaptation.fixedReferenceMode", ...
+    logical(campaignCfg.FixedReferenceMode));
+cfgOut = sixgr.util.structSet(cfgOut, "run.fixedReferenceMode", ...
+    logical(campaignCfg.FixedReferenceMode));
+cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", ...
+    char(campaignCfg.NoiseOperatingMode));
+
+if logical(campaignCfg.HARQEnabled)
+    error("sixgr:lls6g:campaign:HARQUnsupportedInIndependentTBTrials", ...
+        "Fixed-link campaign points execute statistically independent " + ...
+        "transport-block trials; configure harq_enabled=false instead of " + ...
+        "silently labelling those trials as HARQ.");
+end
+for path = ["phy.harq.enable","mac.harq.enable"]
+    configuredHARQ = logical(sixgr.util.structGet(cfgOut, path, false));
+    if configuredHARQ ~= logical(campaignCfg.HARQEnabled)
+        error("sixgr:lls6g:campaign:HARQConfigurationAuthorityMismatch", ...
+            "validation.fixed_link_campaign.harq_enabled=%d conflicts " + ...
+            "with resolved %s=%d.", ...
+            campaignCfg.HARQEnabled, path, configuredHARQ);
+    end
+end
+cfgOut = sixgr.util.structSet(cfgOut, "phy.harq.enable", ...
+    logical(campaignCfg.HARQEnabled));
+cfgOut = sixgr.util.structSet(cfgOut, "mac.harq.enable", ...
+    logical(campaignCfg.HARQEnabled));
+
+profile = lower(strtrim(string(sixgr.util.structGet(cfgOut, ...
+    "phy.pdsch.executionProfile", ...
+    sixgr.util.structGet(cfgOut, "run.pdschExecutionProfile", "")))));
+campaignProfile = string(campaignCfg.PDSCHExecutionProfile);
+if strlength(campaignProfile) > 0 && profile ~= campaignProfile
+    error("sixgr:lls6g:campaign:PDSCHExecutionProfileAuthorityMismatch", ...
+        "validation.fixed_link_campaign.pdsch_execution_profile='%s' " + ...
+        "conflicts with resolved pdsch.execution_profile='%s'.", ...
+        campaignCfg.PDSCHExecutionProfile, profile);
+end
+if campaignCfg.ConfigurationAuthority == "master_yaml" && ...
+        localDirectionEnabled(campaignCfg, "DL") && ...
+        campaignProfile ~= "phy_calibration"
+    error("sixgr:lls6g:campaign:FixedLinkPDSCHCalibrationProfileRequired", ...
+        "DL fixed-link execution requires pdsch.execution_profile=" + ...
+        "'phy_calibration'; resolved profile was '%s'.", ...
+        campaignCfg.PDSCHExecutionProfile);
+end
 
 cfgOut = localApplyChannelModel(cfgOut, campaignCfg);
 cfgOut = localApplyLayerAndPRBConfig(cfgOut, campaignCfg);
@@ -149,21 +214,47 @@ end
 
 function cfgOut = localApplyChannelModel(cfgOut, campaignCfg)
 model = upper(string(sixgr.util.structGet(campaignCfg, "ChannelModel", "AWGN")));
-cfgOut = sixgr.util.structSet(cfgOut, "channel.model", model);
+configuredModel = upper(strtrim(string(sixgr.util.structGet( ...
+    cfgOut, "channel.model", ""))));
+configuredFamily = configuredModel;
+if startsWith(configuredFamily, "TDL-")
+    configuredFamily = "TDL";
+elseif startsWith(configuredFamily, "CDL-")
+    configuredFamily = "CDL";
+end
+if configuredFamily ~= model
+    error("sixgr:lls6g:campaign:ChannelModelAuthorityMismatch", ...
+        "validation.fixed_link_campaign.channel_model='%s' conflicts " + ...
+        "with the resolved channel.model='%s'.", model, configuredModel);
+end
 switch model
     case "AWGN"
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.awgnOnly", true);
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.fading.enable", false);
+        if ~logical(sixgr.util.structGet(cfgOut, "channel.awgnOnly", false)) || ...
+                logical(sixgr.util.structGet(cfgOut, ...
+                "channel.fading.enable", false))
+            error("sixgr:lls6g:campaign:AWGNChannelContractMismatch", ...
+                "AWGN fixed-link configuration requires " + ...
+                "channel.awgnOnly=true and channel.fading.enable=false.");
+        end
     case "TDL"
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.awgnOnly", false);
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.fading.enable", true);
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.tdlProfile", string(campaignCfg.ChannelProfileResolved));
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.fading.profile", string(campaignCfg.ChannelProfileResolved));
+        if logical(sixgr.util.structGet(cfgOut, "channel.awgnOnly", true)) || ...
+                ~logical(sixgr.util.structGet(cfgOut, ...
+                "channel.fading.enable", false))
+            error("sixgr:lls6g:campaign:TDLChannelContractMismatch", ...
+                "TDL fixed-link configuration requires " + ...
+                "channel.awgnOnly=false and channel.fading.enable=true.");
+        end
     case "CDL"
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.awgnOnly", false);
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.fading.enable", true);
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.cdlProfile", string(campaignCfg.ChannelProfileResolved));
-        cfgOut = sixgr.util.structSet(cfgOut, "channel.fading.profile", string(campaignCfg.ChannelProfileResolved));
+        if logical(sixgr.util.structGet(cfgOut, "channel.awgnOnly", true)) || ...
+                ~logical(sixgr.util.structGet(cfgOut, ...
+                "channel.fading.enable", false))
+            error("sixgr:lls6g:campaign:CDLChannelContractMismatch", ...
+                "CDL fixed-link configuration requires " + ...
+                "channel.awgnOnly=false and channel.fading.enable=true.");
+        end
+    otherwise
+        error("sixgr:lls6g:campaign:UnsupportedChannelModel", ...
+            "Unsupported fixed-link channel_model '%s'.", model);
 end
 end
 
@@ -171,65 +262,156 @@ function cfgOut = localApplyLayerAndPRBConfig(cfgOut, campaignCfg)
 layers = max(1, round(double(campaignCfg.Layers)));
 rank = max(1, round(double(campaignCfg.Rank)));
 nPRB = max(1, round(double(campaignCfg.NPRB)));
-prbSet = 0:max(nPRB - 1, 0);
 
-if rank > layers
-    error("sixgr:lls6g:campaign:RankExceedsLayers", ...
-        "Fixed-link campaign rank %d cannot exceed the configured layer count %d.", ...
+if rank ~= layers
+    error("sixgr:lls6g:campaign:RankLayerMismatch", ...
+        "Fixed-link waveform rank is the transmitted layer count; " + ...
+        "configured rank=%d must equal layers=%d.", ...
         rank, layers);
 end
 
 roots = strings(0, 1);
-ports = zeros(0, 1);
 if localDirectionEnabled(campaignCfg, "DL")
     roots(end+1, 1) = "phy.pdsch"; %#ok<AGROW>
-    ports(end+1, 1) = layers; %#ok<AGROW>
 end
 if localDirectionEnabled(campaignCfg, "UL")
     if layers > 4
         error("sixgr:lls6g:campaign:UnsupportedULLayers", ...
             "Fixed-link PUSCH campaigns support at most 4 layers, not %d.", layers);
     end
-    validULPorts = [1 2 4];
-    ulPorts = validULPorts(find(validULPorts >= layers, 1, "first"));
     roots(end+1, 1) = "phy.pusch"; %#ok<AGROW>
-    ports(end+1, 1) = ulPorts; %#ok<AGROW>
 end
 
 for i = 1:numel(roots)
     root = roots(i);
+    configuredLayers = double(sixgr.util.structGet(cfgOut, ...
+        root + ".numLayers", sixgr.util.structGet(cfgOut, ...
+        root + ".nLayers", NaN)));
+    if ~(isscalar(configuredLayers) && isfinite(configuredLayers) && ...
+            configuredLayers == layers)
+        error("sixgr:lls6g:campaign:LayerConfigurationAuthorityMismatch", ...
+            "validation.fixed_link_campaign.layers=%d conflicts with " + ...
+            "resolved %s.numLayers=%s.", ...
+            layers, root, mat2str(configuredLayers));
+    end
+    configuredPRBSet = double(sixgr.util.structGet( ...
+        cfgOut, root + ".PRBSet", ...
+        sixgr.util.structGet(cfgOut, root + ".prbSet", [])));
+    configuredPRBSet = configuredPRBSet(:).';
+    if isempty(configuredPRBSet)
+        error("sixgr:lls6g:campaign:MissingConfiguredPRBSet", ...
+            "%s requires an explicit YAML-owned PRB allocation " + ...
+            "(prb_set or prb_start/num_prb).", root);
+    end
+    if numel(configuredPRBSet) ~= nPRB
+        error("sixgr:lls6g:campaign:ConfiguredPRBCountMismatch", ...
+            "validation.fixed_link_campaign.n_prb=%d conflicts " + ...
+            "with %s PRBSet count=%d.", ...
+            nPRB, root, numel(configuredPRBSet));
+    end
+    configuredPorts = double(sixgr.util.structGet(cfgOut, ...
+        root + ".numPorts", sixgr.util.structGet(cfgOut, ...
+        root + ".nPorts", sixgr.util.structGet(cfgOut, ...
+        root + ".dmrs.nPorts", NaN))));
+    if ~(isscalar(configuredPorts) && isfinite(configuredPorts) && ...
+            configuredPorts == fix(configuredPorts) && ...
+            configuredPorts >= layers)
+        error("sixgr:lls6g:campaign:MissingConfiguredPortCount", ...
+            "%s requires an explicit integer numPorts/nPorts >= " + ...
+            "the configured layer count %d.", root, layers);
+    end
+    if root == "phy.pusch" && ~ismember(configuredPorts, [1 2 4])
+        error("sixgr:lls6g:campaign:UnsupportedPUSCHPortCount", ...
+            "PUSCH numPorts=%d must be one of [1 2 4].", ...
+            configuredPorts);
+    end
     cfgOut = sixgr.util.structSet(cfgOut, root + ".numLayers", layers);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".nLayers", layers);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".rank", rank);
-    cfgOut = sixgr.util.structSet(cfgOut, root + ".numPorts", ports(i));
-    cfgOut = sixgr.util.structSet(cfgOut, root + ".nPorts", ports(i));
-    cfgOut = sixgr.util.structSet(cfgOut, root + ".PRBSet", prbSet);
-    cfgOut = sixgr.util.structSet(cfgOut, root + ".nPRB", nPRB);
+    % The YAML reference-signal surface is the canonical antenna-port
+    % owner. Publish its already-validated value under the aliases used by
+    % the waveform kernels; do not invent a campaign-local port count.
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".numPorts", ...
+        configuredPorts);
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".nPorts", ...
+        configuredPorts);
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".nPRB", ...
+        numel(configuredPRBSet));
 end
 
-for path = [ ...
-        "phy.pdsch.precoding.matrix", ...
-        "phy.pdsch.precodingMatrix", ...
-        "phy.pdsch.W", ...
-        "phy.pusch.precoding.matrix", ...
-        "phy.pusch.precodingMatrix", ...
-        "phy.pusch.W"]
-    cfgOut = sixgr.util.structSet(cfgOut, path, []);
+carrierNRB = double(sixgr.util.structGet(cfgOut, ...
+    "phy.frameStructure.CarrierGrid.NSizeGrid", ...
+    sixgr.util.structGet(cfgOut, "phy.carrier.NSizeGrid", NaN)));
+if ~(isscalar(carrierNRB) && isfinite(carrierNRB) && ...
+        carrierNRB == fix(carrierNRB) && carrierNRB >= nPRB)
+    error("sixgr:lls6g:campaign:AllocationOutsideCanonicalCarrier", ...
+        "Fixed-link NPRB=%d exceeds the immutable canonical carrier " + ...
+        "grid NSizeGrid=%s.", nPRB, mat2str(carrierNRB));
 end
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.normalizePrecodingMatrix", true);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.normalizePrecodingMatrix", true);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", NaN);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.TPMI", NaN);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.PMI", NaN);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.TPMI", NaN);
+for i = 1:numel(roots)
+    localAssertAllocationInsideActiveBWP(cfgOut, roots(i));
+end
+end
 
-cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NSizeGrid", nPRB);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.numerology.activeGridNumRBs", nPRB);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.numerology.configuredGridNumRBs", nPRB);
+function localAssertAllocationInsideActiveBWP(cfg, root)
+if root == "phy.pdsch"
+    bwpPath = "phy.bwp.dl";
+else
+    bwpPath = "phy.bwp.ul";
+end
+bwp = sixgr.util.structGet(cfg, bwpPath, struct());
+bwpStart = double(sixgr.util.structGet(bwp, "NStartBWP", ...
+    sixgr.util.structGet(bwp, "n_start_bwp", NaN)));
+bwpSize = double(sixgr.util.structGet(bwp, "NSizeBWP", ...
+    sixgr.util.structGet(bwp, "n_size_bwp", NaN)));
+if ~(isscalar(bwpStart) && isfinite(bwpStart) && ...
+        bwpStart == fix(bwpStart) && bwpStart >= 0 && ...
+        isscalar(bwpSize) && isfinite(bwpSize) && ...
+        bwpSize == fix(bwpSize) && bwpSize >= 1)
+    error("sixgr:lls6g:campaign:MissingActiveBWPContract", ...
+        "%s requires an explicit active %s NStartBWP/NSizeBWP.", ...
+        root, bwpPath);
+end
+prbSet = double(sixgr.util.structGet(cfg, root + ".PRBSet", []));
+if any(prbSet < 0 | prbSet >= bwpSize)
+    error("sixgr:lls6g:campaign:AllocationOutsideActiveBWP", ...
+        "%s BWP-relative PRBSet=%s lies outside [0,%d); " + ...
+        "the active BWP starts at carrier PRB %d.", ...
+        root, mat2str(prbSet), bwpSize, bwpStart);
+end
+carrierNRB = double(sixgr.util.structGet(cfg, ...
+    "phy.frameStructure.CarrierGrid.NSizeGrid", ...
+    sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)));
+if ~(isscalar(carrierNRB) && isfinite(carrierNRB) && ...
+        bwpStart + bwpSize <= carrierNRB)
+    error("sixgr:lls6g:campaign:ActiveBWPOutsideCanonicalCarrier", ...
+        "%s active BWP [%d,%d) exceeds the canonical carrier " + ...
+        "NSizeGrid=%s.", root, bwpStart, bwpStart + bwpSize, ...
+        mat2str(carrierNRB));
+end
 end
 
 function cfgOut = localDisableCampaignReferenceSignals(cfgOut, campaignCfg)
-nPRB = max(1, round(double(campaignCfg.NPRB)));
+disableAuxiliarySignals = logical(sixgr.util.structGet( ...
+    campaignCfg, "DisableAuxiliarySignals", true));
+enablePTRS = logical(sixgr.util.structGet( ...
+    campaignCfg, "EnablePTRS", false));
+for path = ["phy.pdsch.enablePTRS","phy.pusch.enablePTRS", ...
+        "lls6g.reference_signals.ptrs_enabled"]
+    configuredPTRS = logical(sixgr.util.structGet(cfgOut, path, false));
+    if configuredPTRS ~= enablePTRS
+        error("sixgr:lls6g:campaign:PTRSConfigurationAuthorityMismatch", ...
+            "validation.fixed_link_campaign.enable_ptrs=%d conflicts " + ...
+            "with resolved %s=%d.", enablePTRS, path, configuredPTRS);
+    end
+end
+if ~disableAuxiliarySignals
+    cfgOut = sixgr.util.structSet( ...
+        cfgOut, "phy.pdsch.enablePTRS", enablePTRS);
+    cfgOut = sixgr.util.structSet( ...
+        cfgOut, "reference_signals.ptrs_enabled", enablePTRS);
+    return;
+end
 for path = [ ...
         "phy.pbch.enable", ...
         "phy.mib.enable", ...
@@ -250,12 +432,10 @@ for path = [ ...
         "reference_signals.ptrs_enabled"]
     cfgOut = sixgr.util.structSet(cfgOut, path, false);
 end
-cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.numRB", nPRB);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.rbOffset", 0);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.trs.numRB", nPRB);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.trs.rbOffset", 0);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.enablePTRS", false);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.enablePTRS", false);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.enablePTRS", enablePTRS);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.enablePTRS", enablePTRS);
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "reference_signals.ptrs_enabled", enablePTRS);
 cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.replayDisabledReason", ...
     "fixed_link_campaign_disables_runtime_reference_signals_for_controlled_tb_trials");
 end
@@ -268,7 +448,7 @@ completed = 0;
 dropIndex = 0;
 
 while true
-    stats = localSummarizeDirectionTrials(T, cfgBase);
+    stats = localSummarizeDirectionTrials(T, campaignCfg);
     [shouldStop, stopReason, incomplete] = localShouldStopPoint(stats, campaignCfg);
     if shouldStop
         stats.StopReason = stopReason;
@@ -297,6 +477,8 @@ while true
         res = sixgr.link.runDLPDSCHThroughput(cfgPoint, ...
             "NumFrames", batchTBCount, ...
             "SNR_dB", snr, ...
+            "ExecutionProfile", char(string(sixgr.util.structGet( ...
+                cfgPoint, "phy.pdsch.executionProfile", ""))), ...
             "StartFrameIndex", startFrame);
     else
         res = sixgr.link.runULPUSCHThroughput(cfgPoint, ...
@@ -330,20 +512,78 @@ function cfgPoint = localConfigureDirectionPoint(cfgBase, campaignCfg, direction
 cfgPoint = cfgBase;
 cfgPoint = sixgr.util.structSet(cfgPoint, "run.seed", double(taskSeed));
 cfgPoint = sixgr.util.structSet(cfgPoint, "channel.snr_dB", double(snr));
-cfgPoint = sixgr.util.structSet(cfgPoint, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
-
-if direction == "DL"
-    cfgPoint = sixgr.util.structSet(cfgPoint, "phy.pdsch.enable", true);
-    cfgPoint = sixgr.util.structSet(cfgPoint, "phy.pusch.enable", false);
-    cfgPoint = sixgr.util.structSet(cfgPoint, "phy.pdsch.mcsIndex", double(mcs));
-else
-    cfgPoint = sixgr.util.structSet(cfgPoint, "phy.pdsch.enable", false);
-    cfgPoint = sixgr.util.structSet(cfgPoint, "phy.pusch.enable", true);
-    cfgPoint = sixgr.util.structSet(cfgPoint, "phy.pusch.mcsIndex", double(mcs));
+cfgPoint = sixgr.util.structSet(cfgPoint, "run.noiseOperatingMode", ...
+    char(campaignCfg.NoiseOperatingMode));
+cfgPoint = localApplyPointMCS(cfgPoint, campaignCfg, direction, mcs);
 end
 
-cfgPoint = localApplyLayerAndPRBConfig(cfgPoint, campaignCfg);
-cfgPoint = localDisableCampaignReferenceSignals(cfgPoint, campaignCfg);
+function cfgPoint = localApplyPointMCS(cfgPoint, campaignCfg, direction, mcs)
+direction = upper(string(direction));
+if direction == "DL"
+    root = "phy.pdsch";
+else
+    root = "phy.pusch";
+end
+if ~logical(sixgr.util.structGet(cfgPoint, root + ".enable", false))
+    error("sixgr:lls6g:campaign:ConfiguredDirectionDisabled", ...
+        "validation.fixed_link_campaign.direction includes %s, but " + ...
+        "%s.enable=false in the resolved YAML config.", direction, root);
+end
+
+tableName = string(sixgr.util.structGet(cfgPoint, ...
+    root + ".mcsTable", ""));
+if ~isscalar(tableName) || strlength(strtrim(tableName)) == 0
+    error("sixgr:lls6g:campaign:MissingMCSTable", ...
+        "%s requires an explicit MCS table in the resolved YAML config.", ...
+        root);
+end
+
+if direction == "DL"
+    nCodewords = 1 + double(campaignCfg.Layers > 4);
+    tableNames = repmat(tableName, 1, nCodewords);
+    indices = repmat(double(mcs), 1, nCodewords);
+    context = sixgr.util.structGet(cfgPoint, ...
+        "phy.pdsch.mcsContext", struct());
+    context.NumCodewords = nCodewords;
+    context.NumLayers = double(campaignCfg.Layers);
+    context.SelectionSource = "fixed_link_master_yaml_mcs_sweep";
+    profiles = sixgr.pdsch.PDSCHMCSResolver.resolve( ...
+        tableNames, indices, context);
+    modulation = string({profiles.Modulation});
+    codeRate = double([profiles.TargetCodeRate]);
+    cfgPoint = sixgr.util.structSet(cfgPoint, ...
+        "phy.pdsch.mcsTablePerCodeword", tableNames);
+    cfgPoint = sixgr.util.structSet(cfgPoint, ...
+        "phy.pdsch.mcsIndexPerCodeword", indices);
+    cfgPoint = sixgr.util.structSet(cfgPoint, ...
+        "phy.pdsch.configuredMCSIndex", double(mcs));
+    if nCodewords == 1
+        cfgPoint = sixgr.util.structSet(cfgPoint, ...
+            "phy.pdsch.modulation", char(modulation));
+        cfgPoint = sixgr.util.structSet(cfgPoint, ...
+            "phy.pdsch.codeRate", double(codeRate));
+    else
+        cfgPoint = sixgr.util.structSet(cfgPoint, ...
+            "phy.pdsch.modulation", cellstr(modulation));
+        cfgPoint = sixgr.util.structSet(cfgPoint, ...
+            "phy.pdsch.codeRate", double(codeRate));
+    end
+else
+    profile = sixgr.link.resolveMCSProfile(tableName, mcs);
+    if ~logical(profile.Valid)
+        error("sixgr:lls6g:campaign:InvalidPUSCHMCS", ...
+            "PUSCH MCS table '%s' index %d is unsupported or reserved.", ...
+            tableName, round(double(mcs)));
+    end
+    cfgPoint = sixgr.util.structSet(cfgPoint, ...
+        "phy.pusch.configuredMCSIndex", double(mcs));
+    cfgPoint = sixgr.util.structSet(cfgPoint, ...
+        "phy.pusch.modulation", char(profile.Modulation));
+    cfgPoint = sixgr.util.structSet(cfgPoint, ...
+        "phy.pusch.codeRate", double(profile.TargetCodeRate));
+end
+cfgPoint = sixgr.util.structSet(cfgPoint, root + ".mcsIndex", ...
+    double(mcs));
 end
 
 function T = localAnnotateTrialRows(T, direction, snr, pointIndex, dropIndex, taskSeed, seedIndex, seedValue, completed, campaignCfg, mcs, pointSeed)
@@ -354,7 +594,8 @@ n = height(T);
 
 T.FixedLinkCampaign = true(n, 1);
 T.FixedLinkCampaignKind = repmat("fixed_link_monte_carlo", n, 1);
-T.FixedReferenceMode = true(n, 1);
+T.FixedReferenceMode = repmat( ...
+    logical(campaignCfg.FixedReferenceMode), n, 1);
 T.FixedLinkPointIndex = repmat(double(pointIndex), n, 1);
 T.FixedLinkDropIndex = repmat(double(dropIndex), n, 1);
 T.FixedLinkDropSeed = repmat(double(taskSeed), n, 1);
@@ -392,7 +633,7 @@ if ~ismember("ConfiguredSNR_dB", string(T.Properties.VariableNames))
 end
 end
 
-function stats = localSummarizeDirectionTrials(T, cfg)
+function stats = localSummarizeDirectionTrials(T, campaignCfg)
 stats = localEmptyDirectionStats();
 Te = localEffectiveTrialRows(T);
 if isempty(Te)
@@ -405,8 +646,9 @@ failMask = localTrialFailureMask(Te);
 stats.TrialCount = double(height(Te));
 stats.FailureCount = double(sum(failMask));
 stats.BLER = localSafeDivide(stats.FailureCount, stats.TrialCount);
-stats.BLER_CI_Method = "wilson_95pct";
-stats.BER_CI_Method = "wilson_95pct";
+confidenceLevel = double(campaignCfg.ConfidenceLevel);
+stats.BLER_CI_Method = localWilsonMethodToken(confidenceLevel);
+stats.BER_CI_Method = localWilsonMethodToken(confidenceLevel);
 stats.BLER_CI_Width = NaN;
 stats.BLER_CI_HalfWidth = NaN;
 stats.BER_CI_Width = NaN;
@@ -414,7 +656,9 @@ stats.BER_CI_HalfWidth = NaN;
 stats.StopReason = "continue";
 stats.Incomplete = false;
 
-[~, blerHalfWidth, stats.BLER_CI_Low, stats.BLER_CI_High] = sixgr.stats.wilsonBinomialCI(stats.FailureCount, stats.TrialCount);
+[~, blerHalfWidth, stats.BLER_CI_Low, stats.BLER_CI_High] = ...
+    sixgr.stats.wilsonBinomialCI(stats.FailureCount, ...
+    stats.TrialCount, confidenceLevel);
 stats.BLER_CI_HalfWidth = double(blerHalfWidth);
 stats.BLER_CI_Width = 2 * double(blerHalfWidth);
 
@@ -424,13 +668,17 @@ bitErrTotal = sum(bitErr, "omitnan");
 bitTotal = sum(bits, "omitnan");
 stats.BER = localSafeDivide(bitErrTotal, bitTotal);
 if isfinite(bitTotal) && bitTotal > 0
-    [~, berHalfWidth, stats.BER_CI_Low, stats.BER_CI_High] = sixgr.stats.wilsonBinomialCI(bitErrTotal, bitTotal);
+    [~, berHalfWidth, stats.BER_CI_Low, stats.BER_CI_High] = ...
+        sixgr.stats.wilsonBinomialCI(bitErrTotal, bitTotal, ...
+        confidenceLevel);
     stats.BER_CI_HalfWidth = double(berHalfWidth);
     stats.BER_CI_Width = 2 * double(berHalfWidth);
 end
 
 goodputSamples = localNumericColumn(Te, ["Goodput_Mbps", "Throughput_Mbps"], NaN);
-[stats.Throughput_Mbps, stats.Throughput_CI_Low, stats.Throughput_CI_High] = localMeanCI(goodputSamples);
+[stats.Throughput_Mbps, stats.Throughput_CI_Low, ...
+    stats.Throughput_CI_High] = localMeanCI( ...
+    goodputSamples, confidenceLevel);
 stats.OfferedThroughput_Mbps = localMeanOrNaN(localNumericColumn(Te, ["OfferedThroughput_Mbps"], NaN));
 stats.Goodput_Mbps = localMeanOrNaN(localNumericColumn(Te, ["Goodput_Mbps", "Throughput_Mbps"], NaN));
 stats.CodeBlockBLER = localSafeDivide(sum(localNumericColumn(Te, ["CodeBlockErrors"], 0), "omitnan"), ...
@@ -442,9 +690,15 @@ stats.DecoderComplexityUnits = localMeanOrNaN(localNumericColumn(Te, ["DecoderCo
 stats.NormalizedDecoderComplexity = localMeanOrNaN(localNumericColumn(Te, ["NormalizedDecoderComplexity"], NaN));
 
 measuredSINR = localNumericColumn(Te, ["PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"], NaN);
-[stats.MeasuredSINR_dB, stats.MeasuredSINR_CI_Low, stats.MeasuredSINR_CI_High] = localMeanCI(measuredSINR);
+[stats.MeasuredSINR_dB, stats.MeasuredSINR_CI_Low, ...
+    stats.MeasuredSINR_CI_High] = localMeanCI( ...
+    measuredSINR, confidenceLevel);
 stats.ConfiguredSNR_dB = localFirstFinite(localNumericColumn(Te, ["ConfiguredSNR_dB", "SNR_dB"], NaN), NaN);
 stats.DropCount = double(localUniqueFiniteCount(localNumericColumn(Te, ["FixedLinkDropIndex"], NaN)));
+end
+
+function token = localWilsonMethodToken(confidenceLevel)
+token = "wilson_" + string(round(100 * double(confidenceLevel), 6)) + "pct";
 end
 
 function [shouldStop, stopReason, incomplete] = localShouldStopPoint(stats, campaignCfg)
@@ -918,11 +1172,21 @@ cfg = sixgr.util.structGet(cfgIn, "validation.fixed_link_campaign", struct());
 if builtin("isstruct", cfgOpt) && ~isempty(fieldnames(cfgOpt))
     cfg = localOverlayStruct(cfg, cfgOpt);
 end
+rawCfg = cfg;
 
 cfg.Enabled = logical(sixgr.util.structGet(cfg, "Enabled", sixgr.util.structGet(cfg, "enabled", false)));
-cfg.Direction = localResolveDirectionToken(sixgr.util.structGet(cfg, "Direction", sixgr.util.structGet(cfg, "direction", "both")));
-cfg.ChannelModel = upper(string(sixgr.util.structGet(cfg, "ChannelModel", sixgr.util.structGet(cfg, "channel_model", "AWGN"))));
-cfg.SNR_dB = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfg, "SNR_dB", sixgr.util.structGet(cfg, "snr_db", [])), []);
+cfg.ConfigurationAuthority = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg, "ConfigurationAuthority", sixgr.util.structGet( ...
+    cfg, "configuration_authority", "")))));
+strictMaster = cfg.ConfigurationAuthority == "master_yaml";
+if cfg.Enabled && strictMaster
+    localRequireMasterCampaignFields(rawCfg);
+end
+
+cfg.Direction = localResolveDirectionToken(sixgr.util.structGet(cfg, "Direction", sixgr.util.structGet(cfg, "direction", "both")), strictMaster);
+configuredChannelFamily = localConfiguredChannelFamily(cfgIn);
+cfg.ChannelModel = upper(string(sixgr.util.structGet(cfg, "ChannelModel", sixgr.util.structGet(cfg, "channel_model", configuredChannelFamily))));
+cfg.SNR_dB = localFiniteRowVector(sixgr.util.structGet(cfg, "SNR_dB", sixgr.util.structGet(cfg, "snr_db", [])), []);
 cfg.MCS = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfg, "MCS", sixgr.util.structGet(cfg, "mcs", [])), []);
 cfg.DLMCS = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfg, "DLMCS", []), cfg.MCS);
 cfg.ULMCS = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfg, "ULMCS", []), cfg.MCS);
@@ -940,8 +1204,58 @@ cfg.Seeds = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfg, "Seeds", 
     double(sixgr.util.structGet(cfgIn, "run.seed", 1)) + 730001);
 cfg.TargetBLER = localFiniteRowVector(sixgr.util.structGet(cfg, "TargetBLER", sixgr.util.structGet(cfg, "target_bler", [0.1 0.01])), [0.1 0.01]);
 cfg.PrimaryTargetBLER = double(cfg.TargetBLER(1));
-cfg.ConfidenceLevel = 0.95;
-cfg.BatchTBCount = localPositiveIntegerDefault(sixgr.util.structGet(cfg, "BatchTBCount", 1), 1);
+cfg.ConfidenceLevel = double(sixgr.util.structGet(cfg, "ConfidenceLevel", ...
+    sixgr.util.structGet(cfg, "confidence_level", NaN)));
+if ~(isscalar(cfg.ConfidenceLevel) && isfinite(cfg.ConfidenceLevel) ...
+        && cfg.ConfidenceLevel > 0 && cfg.ConfidenceLevel <= 1)
+    if cfg.Enabled
+        error("sixgr:lls6g:campaign:MissingConfidenceLevel", ...
+            "validation.fixed_link_campaign.confidence_level must be in (0,1].");
+    end
+    cfg.ConfidenceLevel = NaN;
+end
+batchTBCount = double(sixgr.util.structGet(cfg, "BatchTBCount", ...
+    sixgr.util.structGet(cfg, "trials_per_drop", NaN)));
+if ~(isscalar(batchTBCount) && isfinite(batchTBCount) ...
+        && batchTBCount == fix(batchTBCount) && batchTBCount >= 1)
+    if cfg.Enabled
+        error("sixgr:lls6g:campaign:MissingTrialsPerDrop", ...
+            "validation.fixed_link_campaign.trials_per_drop must be a positive integer.");
+    end
+    batchTBCount = NaN;
+end
+cfg.BatchTBCount = batchTBCount;
+cfg.DisableAuxiliarySignals = logical(sixgr.util.structGet(cfg, ...
+    "DisableAuxiliarySignals", sixgr.util.structGet(cfg, ...
+    "disable_auxiliary_signals", false)));
+cfg.EnablePTRS = logical(sixgr.util.structGet(cfg, ...
+    "EnablePTRS", sixgr.util.structGet(cfg, "enable_ptrs", ...
+    sixgr.util.structGet(cfgIn, "phy.ptrs.enable", false))));
+cfg.FixedReferenceMode = logical(sixgr.util.structGet(cfg, ...
+    "FixedReferenceMode", sixgr.util.structGet(cfg, ...
+    "fixed_reference_mode", sixgr.util.structGet( ...
+    cfgIn, "run.fixedReferenceMode", false))));
+cfg.NoiseOperatingMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "NoiseOperatingMode", sixgr.util.structGet(cfg, ...
+    "noise_operating_mode", sixgr.util.structGet( ...
+    cfgIn, "run.noiseOperatingMode", ""))))));
+cfg.PDSCHExecutionProfile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "PDSCHExecutionProfile", sixgr.util.structGet(cfg, ...
+    "pdsch_execution_profile", sixgr.util.structGet( ...
+    cfgIn, "phy.pdsch.executionProfile", ""))))));
+cfg.LinkAdaptationMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "LinkAdaptationMode", sixgr.util.structGet(cfg, ...
+    "link_adaptation_mode", sixgr.util.structGet( ...
+    cfgIn, "phy.linkAdaptation.mode", ""))))));
+cfg.HARQEnabled = logical(sixgr.util.structGet(cfg, ...
+    "HARQEnabled", sixgr.util.structGet(cfg, ...
+    "harq_enabled", sixgr.util.structGet( ...
+    cfgIn, "phy.harq.enable", false))));
+configuredUsers = double(sixgr.util.structGet(cfgIn, ...
+    "lls6g.users.n_users", 1));
+cfg.SingleUserMode = logical(sixgr.util.structGet(cfg, ...
+    "SingleUserMode", sixgr.util.structGet(cfg, ...
+    "single_user_mode", configuredUsers == 1)));
 cfg.SeedBase = double(cfg.Seeds(1));
 cfg.ChannelProfileResolved = localResolveConcreteChannelProfile(cfgIn, cfg.ChannelModel);
 cfg.ChannelModelResolved = localResolvedChannelLabel(cfg.ChannelModel, cfg.ChannelProfileResolved);
@@ -955,16 +1269,252 @@ end
 if isempty(cfg.ULMCS)
     cfg.ULMCS = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfgIn, "phy.pusch.mcsIndex", 0), 0);
 end
+if cfg.Enabled
+    localValidateResolvedCampaignConfig(cfg, rawCfg, strictMaster);
+end
 end
 
-function direction = localResolveDirectionToken(value)
+function localRequireMasterCampaignFields(cfg)
+required = [ ...
+    "enabled","direction","channel_model","snr_db","mcs", ...
+    "rank","layers","n_prb","min_tb_per_point","max_tb_per_point", ...
+    "min_errors_for_ci","max_ci_half_width","confidence_level", ...
+    "trials_per_drop","disable_auxiliary_signals","enable_ptrs", ...
+    "fixed_reference_mode","noise_operating_mode", ...
+    "pdsch_execution_profile", ...
+    "link_adaptation_mode","harq_enabled","single_user_mode", ...
+    "seeds","target_bler"];
+for fieldName = required
+    if ~localHasEitherCampaignField(cfg, fieldName)
+        error("sixgr:lls6g:campaign:MissingMasterYAMLField", ...
+            "validation.fixed_link_campaign.configuration_authority=" + ...
+            "'master_yaml' requires field '%s'.", fieldName);
+    end
+end
+end
+
+function tf = localHasEitherCampaignField(cfg, snakeName)
+snakeName = string(snakeName);
+camelMap = struct( ...
+    "enabled", "Enabled", ...
+    "direction", "Direction", ...
+    "channel_model", "ChannelModel", ...
+    "snr_db", "SNR_dB", ...
+    "mcs", "MCS", ...
+    "rank", "Rank", ...
+    "layers", "Layers", ...
+    "n_prb", "NPRB", ...
+    "min_tb_per_point", "MinTBPerPoint", ...
+    "max_tb_per_point", "MaxTBPerPoint", ...
+    "min_errors_for_ci", "MinErrorsForCI", ...
+    "max_ci_half_width", "MaxCIHalfWidth", ...
+    "confidence_level", "ConfidenceLevel", ...
+    "trials_per_drop", "BatchTBCount", ...
+    "disable_auxiliary_signals", "DisableAuxiliarySignals", ...
+    "enable_ptrs", "EnablePTRS", ...
+    "fixed_reference_mode", "FixedReferenceMode", ...
+    "noise_operating_mode", "NoiseOperatingMode", ...
+    "pdsch_execution_profile", "PDSCHExecutionProfile", ...
+    "link_adaptation_mode", "LinkAdaptationMode", ...
+    "harq_enabled", "HARQEnabled", ...
+    "single_user_mode", "SingleUserMode", ...
+    "seeds", "Seeds", ...
+    "target_bler", "TargetBLER");
+camelName = string(camelMap.(char(snakeName)));
+tf = isfield(cfg, char(snakeName)) || isfield(cfg, char(camelName));
+end
+
+function localValidateResolvedCampaignConfig(cfg, rawCfg, strictMaster)
+if ~isscalar(cfg.Enabled)
+    error("sixgr:lls6g:campaign:InvalidEnabledFlag", ...
+        "validation.fixed_link_campaign.enabled must be scalar logical.");
+end
+if ~any(cfg.ChannelModel == ["AWGN","TDL","CDL"])
+    error("sixgr:lls6g:campaign:UnsupportedChannelModel", ...
+        "channel_model must be one of AWGN, TDL, or CDL.");
+end
+if isempty(cfg.SNR_dB)
+    error("sixgr:lls6g:campaign:MissingSNRGrid", ...
+        "validation.fixed_link_campaign.snr_db must be a nonempty finite vector.");
+end
+if isempty(cfg.MCS) && isempty(cfg.DLMCS) && isempty(cfg.ULMCS)
+    error("sixgr:lls6g:campaign:MissingMCSGrid", ...
+        "validation.fixed_link_campaign.mcs must contain at least one MCS index.");
+end
+if cfg.Rank ~= cfg.Layers
+    error("sixgr:lls6g:campaign:RankLayerMismatch", ...
+        "Fixed-link rank=%d must equal layers=%d.", cfg.Rank, cfg.Layers);
+end
+if cfg.MaxTBPerPoint < cfg.MinTBPerPoint
+    error("sixgr:lls6g:campaign:InvalidTrialRange", ...
+        "max_tb_per_point must be >= min_tb_per_point.");
+end
+if ~(isscalar(cfg.MinErrorsForCI) && isfinite(cfg.MinErrorsForCI) && ...
+        cfg.MinErrorsForCI == fix(cfg.MinErrorsForCI) && ...
+        cfg.MinErrorsForCI >= 0)
+    error("sixgr:lls6g:campaign:InvalidErrorTarget", ...
+        "min_errors_for_ci must be a nonnegative integer.");
+end
+if ~(isscalar(cfg.MaxCIHalfWidth) && isfinite(cfg.MaxCIHalfWidth) && ...
+        cfg.MaxCIHalfWidth >= 0)
+    error("sixgr:lls6g:campaign:InvalidCIHalfWidth", ...
+        "max_ci_half_width must be a finite nonnegative scalar.");
+end
+if ~(isscalar(cfg.ConfidenceLevel) && isfinite(cfg.ConfidenceLevel) && ...
+        cfg.ConfidenceLevel > 0 && cfg.ConfidenceLevel < 1)
+    error("sixgr:lls6g:campaign:MissingConfidenceLevel", ...
+        "confidence_level must satisfy 0 < confidence_level < 1.");
+end
+if isempty(cfg.TargetBLER) || any(cfg.TargetBLER <= 0 | cfg.TargetBLER >= 1)
+    error("sixgr:lls6g:campaign:InvalidTargetBLER", ...
+        "target_bler must contain values strictly between zero and one.");
+end
+if ~logical(cfg.FixedReferenceMode)
+    error("sixgr:lls6g:campaign:FixedReferenceModeRequired", ...
+        "fixed_reference_mode must be true for fixed-link campaigns.");
+end
+if string(cfg.NoiseOperatingMode) ~= "standalone_awgn_snr_argument"
+    error("sixgr:lls6g:campaign:StandaloneAWGNSNRModeRequired", ...
+        "noise_operating_mode must be 'standalone_awgn_snr_argument'.");
+end
+if strlength(string(cfg.PDSCHExecutionProfile)) > 0 && ...
+        string(cfg.PDSCHExecutionProfile) ~= "phy_calibration"
+    error("sixgr:lls6g:campaign:InvalidPDSCHExecutionProfile", ...
+        "pdsch_execution_profile must be 'phy_calibration'.");
+end
+if strictMaster
+    localAssertStrictMasterRawIntegers(rawCfg);
+    localAssertStrictMasterRawVectors(rawCfg);
+end
+end
+
+function localAssertStrictMasterRawIntegers(cfg)
+names = [ ...
+    "rank","layers","n_prb","min_tb_per_point", ...
+    "max_tb_per_point","min_errors_for_ci","trials_per_drop"];
+for name = names
+    value = localRawCampaignValue(cfg, name);
+    minimum = double(name == "min_errors_for_ci") * 0 + ...
+        double(name ~= "min_errors_for_ci") * 1;
+    if ~(isnumeric(value) && isscalar(value) && isfinite(double(value)) ...
+            && double(value) == fix(double(value)) && ...
+            double(value) >= minimum)
+        error("sixgr:lls6g:campaign:InvalidMasterYAMLInteger", ...
+            "validation.fixed_link_campaign.%s must be an integer " + ...
+            "greater than or equal to %d.", name, minimum);
+    end
+end
+minTrials = double(localRawCampaignValue(cfg, "min_tb_per_point"));
+maxTrials = double(localRawCampaignValue(cfg, "max_tb_per_point"));
+if maxTrials < minTrials
+    error("sixgr:lls6g:campaign:InvalidMasterYAMLTrialRange", ...
+        "validation.fixed_link_campaign.max_tb_per_point must be " + ...
+        "greater than or equal to min_tb_per_point.");
+end
+maxCIHalfWidth = localRawCampaignValue(cfg, "max_ci_half_width");
+confidenceLevel = localRawCampaignValue(cfg, "confidence_level");
+if ~(isnumeric(maxCIHalfWidth) && isscalar(maxCIHalfWidth) && ...
+        isfinite(double(maxCIHalfWidth)) && double(maxCIHalfWidth) >= 0)
+    error("sixgr:lls6g:campaign:InvalidMasterYAMLCIHalfWidth", ...
+        "max_ci_half_width must be a finite nonnegative scalar.");
+end
+if ~(isnumeric(confidenceLevel) && isscalar(confidenceLevel) && ...
+        isfinite(double(confidenceLevel)) && ...
+        double(confidenceLevel) > 0 && double(confidenceLevel) < 1)
+    error("sixgr:lls6g:campaign:InvalidMasterYAMLConfidenceLevel", ...
+        "confidence_level must satisfy 0 < confidence_level < 1.");
+end
+for name = ["disable_auxiliary_signals","enable_ptrs", ...
+        "fixed_reference_mode","harq_enabled","single_user_mode"]
+    value = localRawCampaignValue(cfg, name);
+    if ~(islogical(value) && isscalar(value))
+        error("sixgr:lls6g:campaign:InvalidMasterYAMLBoolean", ...
+            "validation.fixed_link_campaign.%s must be scalar logical.", ...
+            name);
+    end
+end
+end
+
+function localAssertStrictMasterRawVectors(cfg)
+for name = ["snr_db","mcs","seeds","target_bler"]
+    value = localRawCampaignValue(cfg, name);
+    if ~isnumeric(value) || isempty(value) || any(~isfinite(double(value(:))))
+        error("sixgr:lls6g:campaign:InvalidMasterYAMLVector", ...
+            "validation.fixed_link_campaign.%s must be a nonempty finite numeric vector.", ...
+            name);
+    end
+end
+for name = ["mcs","seeds"]
+    value = double(localRawCampaignValue(cfg, name));
+    if any(value(:) ~= fix(value(:))) || any(value(:) < 0)
+        error("sixgr:lls6g:campaign:InvalidMasterYAMLIntegerVector", ...
+            "validation.fixed_link_campaign.%s must contain nonnegative integers.", ...
+            name);
+    end
+end
+end
+
+function value = localRawCampaignValue(cfg, snakeName)
+if isfield(cfg, char(snakeName))
+    value = cfg.(char(snakeName));
+    return;
+end
+% Reuse the same stable spellings accepted by the runtime API.
+switch string(snakeName)
+    case "rank", camel = "Rank";
+    case "layers", camel = "Layers";
+    case "n_prb", camel = "NPRB";
+    case "min_tb_per_point", camel = "MinTBPerPoint";
+    case "max_tb_per_point", camel = "MaxTBPerPoint";
+    case "min_errors_for_ci", camel = "MinErrorsForCI";
+    case "trials_per_drop", camel = "BatchTBCount";
+    case "snr_db", camel = "SNR_dB";
+    case "mcs", camel = "MCS";
+    case "seeds", camel = "Seeds";
+    case "target_bler", camel = "TargetBLER";
+    case "max_ci_half_width", camel = "MaxCIHalfWidth";
+    case "confidence_level", camel = "ConfidenceLevel";
+    case "disable_auxiliary_signals", camel = "DisableAuxiliarySignals";
+    case "enable_ptrs", camel = "EnablePTRS";
+    case "fixed_reference_mode", camel = "FixedReferenceMode";
+    case "pdsch_execution_profile", camel = "PDSCHExecutionProfile";
+    case "harq_enabled", camel = "HARQEnabled";
+    case "single_user_mode", camel = "SingleUserMode";
+    otherwise, camel = snakeName;
+end
+value = cfg.(char(camel));
+end
+
+function family = localConfiguredChannelFamily(cfg)
+family = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "channel.model", ""))));
+if startsWith(family, "TDL-")
+    family = "TDL";
+elseif startsWith(family, "CDL-")
+    family = "CDL";
+end
+if strlength(family) == 0
+    family = "AWGN";
+end
+end
+
+function direction = localResolveDirectionToken(value, strict)
+if nargin < 2
+    strict = false;
+end
 token = lower(strtrim(string(value)));
 switch token
     case "dl"
         direction = "DL";
     case "ul"
         direction = "UL";
+    case "both"
+        direction = "both";
     otherwise
+        if strict
+            error("sixgr:lls6g:campaign:InvalidDirection", ...
+                "direction must be one of dl, ul, or both.");
+        end
         direction = "both";
 end
 end
@@ -1202,10 +1752,13 @@ else
 end
 end
 
-function [meanValue, lo, hi] = localMeanCI(values)
+function [meanValue, lo, hi] = localMeanCI(values, confidenceLevel)
 meanValue = NaN;
 lo = NaN;
 hi = NaN;
+if nargin < 2
+    confidenceLevel = 0.95;
+end
 values = double(values(:));
 values = values(isfinite(values));
 if isempty(values)
@@ -1217,7 +1770,7 @@ if numel(values) < 2
     hi = meanValue;
     return;
 end
-z = 1.95996398454005;
+z = sqrt(2) * erfinv(double(confidenceLevel));
 se = std(values, 0, "omitnan") / sqrt(numel(values));
 lo = meanValue - z * se;
 hi = meanValue + z * se;

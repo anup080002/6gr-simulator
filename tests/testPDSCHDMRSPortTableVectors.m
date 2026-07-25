@@ -1,0 +1,79 @@
+function ok = testPDSCHDMRSPortTableVectors()
+%TESTPDSCHDMRSPORTTABLEVECTORS Execute all 108 frozen DM-RS port rows.
+
+setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
+vectors = readPDSCHVectorTable("expected_pdsch_dmrs_port_table.csv");
+assert(height(vectors) == 108, ...
+    "The complete 108-row DM-RS port matrix is mandatory.");
+
+passCount = 0;
+negativeCount = 0;
+for i = 1:height(vectors)
+    configType = str2double(vectors.DMRSConfigurationType(i));
+    dmrsLength = str2double(vectors.DMRSLength(i));
+    multiplexing = vectors.DMRSMultiplexing(i);
+    port = str2double(vectors.DMRSPortSetValue(i));
+    expectedStatus = vectors.ExpectedStatus(i);
+    expectedToken = vectors.ExpectedError(i);
+
+    oracle = sixgr.pdsch.oracle.DMRSTableSpec.port( ...
+        configType, dmrsLength, multiplexing, port);
+    assert(oracle.Status == expectedStatus && ...
+        oracle.ErrorToken == expectedToken, ...
+        "Independent DM-RS port status mismatch for %s.", ...
+        vectors.CaseID(i));
+
+    if expectedStatus == "PASS"
+        actual = sixgr.pdsch.PDSCHDMRSValidator.resolvePort( ...
+            configType, dmrsLength, multiplexing, port);
+        localAssertValidFields(actual, oracle, vectors(i, :));
+        passCount = passCount + 1;
+    else
+        expectedID = "sixgr:pdsch:" + expectedToken;
+        localAssertError(@() ...
+            sixgr.pdsch.PDSCHDMRSValidator.resolvePort( ...
+            configType, dmrsLength, multiplexing, port), expectedID);
+        assert(1000 + port == str2double( ...
+            vectors.PhysicalAntennaPort(i)), ...
+            "Physical antenna-port label mismatch for rejected %s.", ...
+            vectors.CaseID(i));
+        negativeCount = negativeCount + 1;
+    end
+end
+assert(passCount == 90 && negativeCount == 18, ...
+    "Unexpected DM-RS port positive/negative execution counts.");
+ok = true;
+end
+
+function localAssertValidFields(actual, oracle, row)
+caseID = row.CaseID(1);
+assert(actual.LogicalPort == str2double(row.DMRSPortSetValue(1)), ...
+    "Logical port mismatch for %s.", caseID);
+assert(actual.PhysicalAntennaPort == ...
+    str2double(row.PhysicalAntennaPort(1)), ...
+    "Physical port mismatch for %s.", caseID);
+assert(isequal(actual.SupportedLPrime, ...
+    pdschVectorDecodeIntegers(row.SupportedLPrime(1))), ...
+    "Supported l-prime mismatch for %s.", caseID);
+assert(actual.CDMGroupLambda == str2double(row.CDMGroupLambda(1)), ...
+    "CDM group mismatch for %s.", caseID);
+assert(actual.Delta == str2double(row.Delta(1)), ...
+    "Delta mismatch for %s.", caseID);
+assert(isequal(actual.WF, pdschVectorDecodeIntegers(row.WF(1))) && ...
+    isequal(actual.WT, pdschVectorDecodeIntegers(row.WT(1))), ...
+    "Orthogonal-cover weight mismatch for %s.", caseID);
+assert(isequaln(actual, rmfield(oracle, {'Status','ErrorToken'})), ...
+    "Production/oracle port record mismatch for %s.", caseID);
+end
+
+function localAssertError(fn, expectedID)
+try
+    fn();
+catch ME
+    assert(string(ME.identifier) == string(expectedID), ...
+        "Observed %s, expected %s.", ME.identifier, expectedID);
+    return;
+end
+error("sixgr:test:ExpectedErrorNotThrown", ...
+    "Expected error %s was not thrown.", expectedID);
+end

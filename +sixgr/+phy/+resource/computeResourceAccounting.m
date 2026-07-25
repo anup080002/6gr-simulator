@@ -13,7 +13,8 @@ ip.addParameter("IndexBase", "1based", @(x) ischar(x) || isstring(x));
 ip.addParameter("DMRSIndices", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("PTRSIndices", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("ReservedIndices", [], @(x) isempty(x) || isnumeric(x));
-ip.addParameter("TargetCodeRate", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("TargetCodeRate", NaN, ...
+    @(x) isempty(x) || (isnumeric(x) && isvector(x)));
 ip.addParameter("XOverhead", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
@@ -26,12 +27,30 @@ end
 
 idxInfo = localIndicesInfo(opt.AllocationInfo, channel);
 modulation = localObjectValue(cfgObj, "Modulation", "");
-numLayers = localPositiveInteger(localObjectValue(cfgObj, "NumLayers", NaN), 1);
-nCodewords = localPositiveInteger(localObjectValue(cfgObj, "NumCodewords", 1 + (double(numLayers) > 4)), 1);
+numLayers = localRequiredInteger( ...
+    localObjectValue(cfgObj, "NumLayers", NaN), "NumLayers", 1, 8);
+expectedCodewords = 1 + double(numLayers > 4);
+rawCodewords = localObjectValue(cfgObj, "NumCodewords", []);
+if isempty(rawCodewords)
+    nCodewords = expectedCodewords;
+else
+    nCodewords = localRequiredInteger( ...
+        rawCodewords, "NumCodewords", 1, 2);
+end
+if nCodewords ~= expectedCodewords
+    error("sixgr:phy:resource:CodewordLayerMismatch", ...
+        "%s rank %d requires NumCodewords=%d, not %d.", ...
+        char(channel), numLayers, expectedCodewords, nCodewords);
+end
 prbSet = localObjectValue(cfgObj, "PRBSet", []);
 nPRB = double(numel(prbSet));
-if ~(isfinite(nPRB) && nPRB > 0)
-    nPRB = localPositiveInteger(sixgr.util.structGet(opt.AllocationInfo, "PRBCount", NaN), 1);
+if ~(isfinite(nPRB) && nPRB > 0) || any(~isfinite(double(prbSet(:)))) ...
+        || any(double(prbSet(:)) ~= fix(double(prbSet(:)))) ...
+        || any(double(prbSet(:)) < 0) ...
+        || numel(unique(double(prbSet(:)))) ~= nPRB
+    error("sixgr:phy:resource:MissingPRBSet", ...
+        "%s exact resource accounting requires a nonempty unique nonnegative-integer PRBSet.", ...
+        char(channel));
 end
 qmPerCodeword = localModulationOrderVector(modulation, nCodewords);
 qm = qmPerCodeword(1);
@@ -53,14 +72,6 @@ nrePerPRB = localFirstFiniteNonnegative([ ...
     sixgr.util.structGet(idxInfo, "NREPerPRB", NaN), ...
     sixgr.util.structGet(opt.AllocationInfo, "NREPerPRB", NaN), ...
     sixgr.util.structGet(opt.AllocationInfo, "NREPerPRBForTBS", NaN)]);
-if ~isfinite(nrePerPRB) && isfinite(layerDataRE) && layerDataRE >= 0 && nPRB > 0
-    quotient = double(layerDataRE) / double(nPRB);
-    if abs(quotient - round(quotient)) <= 1e-9
-        nrePerPRB = round(quotient);
-    else
-        nrePerPRB = floor(quotient);
-    end
-end
 
 gBitsPerCodeword = localFirstFiniteNonnegativeVector( ...
     sixgr.util.structGet(idxInfo, "G", NaN), ...
@@ -76,30 +87,47 @@ if isempty(gBitsPerCodeword)
         gBitsPerCodeword = double(gBitsScalar);
     end
 end
-if isempty(gBitsPerCodeword) && isfinite(layerDataRE) && layerDataRE >= 0
-    gBitsPerCodeword = double(layerDataRE) .* double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
-end
 
 if ~(isfinite(layerDataRE) && layerDataRE >= 0)
     error("sixgr:phy:resource:MissingLayerDataRE", ...
         "%s resource accounting could not resolve layer-domain data RE from nr%sIndices evidence.", ...
         char(channel), char(channel));
 end
-if ~(isfinite(nrePerPRB) && nrePerPRB >= 0)
+if layerDataRE ~= fix(layerDataRE)
+    error("sixgr:phy:resource:NonintegerLayerDataRE", ...
+        "%s exact resource accounting requires an integer layer-domain data RE count.", ...
+        char(channel));
+end
+if ~isempty(opt.ChannelIndices) && size(opt.ChannelIndices, 1) ~= layerDataRE
+    error("sixgr:phy:resource:LayerDataREIndexMismatch", ...
+        "%s index rows (%d) disagree with the reported layer-domain data RE count (%d).", ...
+        char(channel), size(opt.ChannelIndices, 1), layerDataRE);
+end
+if ~(isfinite(nrePerPRB) && nrePerPRB >= 0 && nrePerPRB == fix(nrePerPRB))
     error("sixgr:phy:resource:MissingNREPerPRB", ...
-        "%s resource accounting could not resolve NREPerPRB from nr%sIndices evidence.", ...
+        "%s resource accounting could not resolve an integer NREPerPRB from nr%sIndices evidence.", ...
         char(channel), char(channel));
 end
-if isempty(gBitsPerCodeword) || ~all(isfinite(gBitsPerCodeword) & gBitsPerCodeword >= 0)
+if isempty(gBitsPerCodeword) || ~all(isfinite(gBitsPerCodeword) ...
+        & gBitsPerCodeword >= 0 & gBitsPerCodeword == fix(gBitsPerCodeword))
     error("sixgr:phy:resource:MissingG", ...
-        "%s resource accounting could not resolve coded-bit count G from nr%sIndices evidence.", ...
+        "%s resource accounting could not resolve integer coded-bit count G from nr%sIndices evidence.", ...
         char(channel), char(channel));
 end
-gBitsPerCodeword = round(double(gBitsPerCodeword(:).'));
-if numel(gBitsPerCodeword) == 1 && nCodewords > 1
-    gBitsPerCodeword = double(layerDataRE) .* double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
+gBitsPerCodeword = double(gBitsPerCodeword(:).');
+if numel(gBitsPerCodeword) ~= nCodewords
+    error("sixgr:phy:resource:MissingCodewordSpecificG", ...
+        "%s exact accounting requires one G value per codeword.", char(channel));
 end
 gBits = sum(gBitsPerCodeword);
+expectedGPerCodeword = double(layerDataRE) .* ...
+    double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
+if any(gBitsPerCodeword ~= expectedGPerCodeword)
+    error("sixgr:phy:resource:GIndexMapMismatch", ...
+        ["%s reported per-codeword G=%s disagrees with exact data-index " ...
+        "accounting %s."], char(channel), mat2str(gBitsPerCodeword), ...
+        mat2str(expectedGPerCodeword));
+end
 
 dmrsIdx = opt.DMRSIndices;
 if isempty(dmrsIdx) && localCanComputeReferenceIndices(cfgObj)
@@ -161,7 +189,7 @@ acct.DMRSLinearRE = double(numel(dmrsLin));
 acct.PTRSLinearRE = double(numel(ptrsLin));
 acct.ReservedLinearRE = double(numel(reservedLin));
 acct.NREPerPRBForTBS = double(nrePerPRB);
-acct.GFromLayerREPerCodeword = double(layerDataRE) .* double(qmPerCodeword(:).') .* double(layerCountPerCodeword(:).');
+acct.GFromLayerREPerCodeword = expectedGPerCodeword;
 acct.GFromLayerRE = sum(acct.GFromLayerREPerCodeword);
 acct.GMatchesLayerRE = abs(double(gBits) - acct.GFromLayerRE) <= 1e-9;
 acct.DuplicateDataIndices = double(dupData);
@@ -220,19 +248,20 @@ if isempty(value)
 end
 end
 
-function value = localPositiveInteger(raw, defaultValue)
-value = defaultValue;
+function value = localRequiredInteger(raw, name, minimum, maximum)
 try
     raw = double(raw);
 catch
-    return;
+    error("sixgr:phy:resource:BadInteger", ...
+        "%s must be a finite integer scalar.", char(string(name)));
 end
-raw = raw(:);
-raw = raw(isfinite(raw));
-if isempty(raw)
-    return;
+if ~(isscalar(raw) && isfinite(raw) && raw == fix(raw) ...
+        && raw >= minimum && raw <= maximum)
+    error("sixgr:phy:resource:BadInteger", ...
+        "%s must be an integer in [%d,%d].", ...
+        char(string(name)), minimum, maximum);
 end
-value = max(1, round(raw(1)));
+value = double(raw);
 end
 
 function value = localFirstFiniteNonnegative(values)
@@ -260,22 +289,16 @@ end
 end
 
 function qm = localModulationOrderVector(modulation, nCodewords)
-if iscell(modulation)
-    tokens = string(modulation);
-else
-    tokens = string(modulation);
-end
+tokens = string(modulation);
 tokens = tokens(:).';
-tokens = tokens(strlength(strtrim(tokens)) > 0);
-if isempty(tokens)
-    tokens = "QPSK";
+if isempty(tokens) || any(strlength(strtrim(tokens)) == 0)
+    error("sixgr:phy:resource:MissingCodewordSpecificModulation", ...
+        "Exact resource accounting requires one nonempty modulation token per codeword.");
 end
-if numel(tokens) == 1 && nCodewords > 1
-    tokens = repmat(tokens, 1, nCodewords);
-elseif numel(tokens) < nCodewords
-    tokens(end+1:nCodewords) = tokens(end);
-elseif numel(tokens) > nCodewords
-    tokens = tokens(1:nCodewords);
+if numel(tokens) ~= nCodewords
+    error("sixgr:phy:resource:MissingCodewordSpecificModulation", ...
+        "Expected exactly NumCodewords=%d modulation tokens; received %d.", ...
+        nCodewords, numel(tokens));
 end
 qm = zeros(1, nCodewords);
 for i = 1:nCodewords
@@ -284,8 +307,14 @@ end
 end
 
 function counts = localLayerCountPerCodeword(numLayers, numCodewords)
-numLayers = max(1, round(double(numLayers)));
-numCodewords = max(1, round(double(numCodewords)));
+numLayers = localRequiredInteger(numLayers, "NumLayers", 1, 8);
+numCodewords = localRequiredInteger(numCodewords, "NumCodewords", 1, 2);
+expectedCodewords = 1 + double(numLayers > 4);
+if numCodewords ~= expectedCodewords
+    error("sixgr:phy:resource:BadCodewordLayerMapping", ...
+        "Rank %d requires NumCodewords=%d, not %d.", ...
+        numLayers, expectedCodewords, numCodewords);
+end
 if numCodewords == 1
     counts = double(numLayers);
     return;
@@ -327,17 +356,13 @@ end
 end
 
 function qm = localModulationOrder(modulation)
-if iscell(modulation)
-    modulation = modulation{1};
-end
 tokens = string(modulation);
 tokens = tokens(:);
-tokens = tokens(strlength(strtrim(tokens)) > 0);
-if isempty(tokens)
-    token = "QPSK";
-else
-    token = tokens(1);
+if numel(tokens) ~= 1 || strlength(strtrim(tokens)) == 0
+    error("sixgr:phy:resource:BadModulation", ...
+        "Each codeword requires one nonempty modulation token.");
 end
+token = tokens(1);
 token = upper(strrep(strtrim(char(token)), " ", ""));
 switch token
     case {"PI/2-BPSK","PI2-BPSK","BPSK"}
@@ -352,11 +377,10 @@ switch token
         qm = 8;
     case "1024QAM"
         qm = 10;
-    case "4096QAM"
-        qm = 12;
     otherwise
-        error("sixgr:phy:resource:BadModulation", ...
-            "Unsupported modulation for resource accounting: '%s'.", char(string(modulation)));
+        error("sixgr:phy:resource:UnsupportedNRModulation", ...
+            "Unsupported NR modulation for resource accounting: '%s'.", ...
+            char(string(modulation)));
 end
 end
 
@@ -409,13 +433,17 @@ if ~iscell(reserved)
     reserved = {reserved};
 end
 [nSC, nSym] = localCarrierGridShape(carrier);
-symAlloc = double(localObjectValue(pdsch, "SymbolAllocation", [0 nSym]));
-if numel(symAlloc) < 2
-    symAlloc = [0 nSym];
+symAlloc = double(localObjectValue(pdsch, "SymbolAllocation", []));
+if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc)) ...
+        || any(symAlloc ~= fix(symAlloc)) || symAlloc(1) < 0 ...
+        || symAlloc(2) < 1 || sum(symAlloc) > nSym
+    error("sixgr:phy:resource:BadSymbolAllocation", ...
+        "Reserved-resource accounting requires a valid explicit [start length] allocation.");
 end
 allocSyms = symAlloc(1):(symAlloc(1) + symAlloc(2) - 1);
 prbSet = double(localObjectValue(pdsch, "PRBSet", []));
-layers = localPositiveInteger(localObjectValue(pdsch, "NumLayers", 1), 1);
+layers = localRequiredInteger( ...
+    localObjectValue(pdsch, "NumLayers", NaN), "NumLayers", 1, 8);
 lin = [];
 for i = 1:numel(reserved)
     r = reserved{i};

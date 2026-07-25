@@ -3,10 +3,9 @@ function ok = testHARQTBContextInvariants()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 if ~localHaveRequired5G()
-    warning("testHARQTBContextInvariants:Missing5G", ...
-        "Skipping HARQ TB context tests because required 5G Toolbox APIs are unavailable.");
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testHARQTBContextInvariants requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 layout0 = localLayout(1024, 0.50, 0);

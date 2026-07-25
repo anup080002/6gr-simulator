@@ -3,8 +3,9 @@ function ok = testPDSCHGrantDrivenTxExact()
 
 setup6GRSimToolkit("Verbose", false);
 if ~localHaveRequired5G()
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testPDSCHGrantDrivenTxExact requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 rng(6306, "twister");
@@ -46,12 +47,19 @@ for i = 1:numel(vectors)
     layerErr = localMaxAbs(tx.PDSCHLayerSymbols(:) - exp.LayerSymbols(:));
     portErr = localMaxAbs(tx.PDSCHPortSymbols(:) - exp.PortSymbols(:));
     gridErr = localMaxAbs(tx.Grid(:) - exp.Grid(:));
+    dmrsPortErr = localMaxAbs( ...
+        tx.DMRSAntennaSymbols(:) - exp.DMRSPortSymbols(:));
+    dmrsPortIndicesMatch = isequal( ...
+        tx.DMRSAntennaIndices,exp.DMRSPortIndices);
     maxLayerErr = max(maxLayerErr, layerErr);
     maxPortErr = max(maxPortErr, portErr);
     maxGridErr = max(maxGridErr, gridErr);
     assert(layerErr < 1e-12, "Layer-domain PDSCH symbols differ for vector %d.", i);
     assert(portErr < 1e-12, "Port-domain PDSCH symbols differ for vector %d.", i);
-    assert(gridErr < 1e-12, "Complete PDSCH port grid differs for vector %d.", i);
+    assert(gridErr < 1e-12, ...
+        sprintf(['Complete PDSCH port grid differs for vector %d ' ...
+        '(DM-RS port error %.3g, DM-RS port indices match=%d).'], ...
+        i,dmrsPortErr,dmrsPortIndicesMatch));
 
     powerErr = double(tx.PrecodePowerInfo.ColumnNormMaxError);
     maxPowerErr = max(maxPowerErr, powerErr);
@@ -89,7 +97,6 @@ mods = ["QPSK", "16QAM", "64QAM", "256QAM"];
 layers = [1 2 3 4];
 maps = ["A", "B"];
 rvs = [0 2 3 1];
-mcsTables = ["qam64", "qam256", "qam1024"];
 vectors = repmat(struct(), 1, 30);
 k = 0;
 for m = 1:numel(mods)
@@ -116,7 +123,7 @@ for m = 1:numel(mods)
             vectors(k).RNTI = 100 + k;
             vectors(k).NID = 10 + k;
             vectors(k).EnablePTRS = mod(k, 6) == 0;
-            vectors(k).MCSTable = mcsTables(1 + mod(k - 1, numel(mcsTables)));
+            vectors(k).MCSTable = "calibration_explicit";
         end
     end
 end
@@ -133,6 +140,7 @@ end
 function cfg = localCfg(v)
 cfg = sixgr.config.defaultConfig();
 cfg.run.shortRun = true;
+cfg.run.pdschExecutionProfile = "phy_calibration";
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
@@ -161,6 +169,9 @@ cfg.phy.pdsch.codeRate = v.TargetCodeRate;
 cfg.phy.pdsch.xOverhead = v.XOverhead;
 cfg.phy.pdsch.rv = v.RV;
 cfg.phy.pdsch.mcsTable = char(v.MCSTable);
+cfg.phy.pdsch.mcsIndex = 0;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
 cfg.phy.pdsch.enablePTRS = logical(v.EnablePTRS);
 cfg.phy.pdsch.ptrs.timeDensity = 2;
 cfg.phy.pdsch.ptrs.frequencyDensity = 2;
@@ -210,15 +221,29 @@ grant.TargetCodeRate = v.TargetCodeRate;
 grant.XOverhead = v.XOverhead;
 grant.NREPerPRB = acct.NREPerPRBForTBS;
 grant.TBSBits = tbs;
-grant.MCSIndex = 4 + mod(v.RNTI, 8);
+grant.MCSIndex = 0;
 grant.MCS = grant.MCSIndex;
 grant.MCSTable = char(v.MCSTable);
+grant.MCSContext = localCalibrationMCSContext();
 grant.PrecodingMatrix = cfg.phy.pdsch.precoding.matrix;
 grant.PrecodingActive = true;
 grant.GrantContextId = sprintf('DL|exact|rnti=%d|rv=%d|layers=%d|ports=%d', ...
     v.RNTI, v.RV, v.NumLayers, v.NumPorts);
 grant.HARQ = struct("HarqID", 0, "NDI", true, "RV", v.RV, "IsRetransmission", false);
 phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, "DL", grant, "Frame", 0, "Slot", 0);
+end
+
+function context = localCalibrationMCSContext()
+context = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
 end
 
 function exp = localDirectToolboxPDSCH(carrier, pdsch, tbBits, targetCodeRate, rv, G, Wports)
@@ -240,7 +265,10 @@ dmrsInd = nrPDSCHDMRSIndices(carrier, pdsch, "IndexStyle", "index");
 dmrsSym = nrPDSCHDMRS(carrier, pdsch);
 [dmrsPortSym, dmrsPortInd] = nrPDSCHPrecode(carrier, dmrsSym, dmrsInd, matrixNR);
 
-ptrsInd = zeros(0, 1);
+% Disabled PT-RS has no index-domain orientation. Match the production
+% facade's canonical empty value; enabled cases below are still compared
+% exactly against nrPDSCHPTRSIndices.
+ptrsInd = [];
 ptrsPortInd = zeros(0, size(portInd, 2));
 ptrsPortSym = complex(zeros(0, size(portSym, 2)));
 if isprop(pdsch, "EnablePTRS") && logical(pdsch.EnablePTRS)
@@ -263,6 +291,7 @@ exp.PortSymbols = portSym;
 exp.PDSCHIndices = pdschInd;
 exp.PortIndices = portInd;
 exp.DMRSIndices = dmrsInd;
+exp.DMRSPortSymbols = dmrsPortSym;
 exp.DMRSPortIndices = dmrsPortInd;
 exp.PTRSIndices = ptrsInd;
 exp.PTRSPortIndices = ptrsPortInd;

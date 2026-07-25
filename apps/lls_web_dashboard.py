@@ -210,7 +210,13 @@ WEBGUI_EXECUTION_WORKERS = 1
 LEGACY_WAVEFORM_HONEST_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1000slot.yaml"
 HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot.yaml"
 WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
-DEFAULT_SCENARIO = WAVEFORM_TRUTH_DEFAULT_SCENARIO
+SINR_SWEEP_MASTER_SCENARIO = "master_sinr_sweep.yaml"
+GEOMETRY_MASTER_SCENARIO = "master_geometry_based.yaml"
+OPERATOR_MASTER_SCENARIOS = (
+    SINR_SWEEP_MASTER_SCENARIO,
+    GEOMETRY_MASTER_SCENARIO,
+)
+DEFAULT_SCENARIO = GEOMETRY_MASTER_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
 SCENARIO_RUN_CLASS_LABELS = {
     "fixed_snr_sweep_lls": "Fixed SNR/SINR Sweep",
@@ -2344,13 +2350,13 @@ def repo_relative_text(path: Path) -> str:
 def resolve_catalog_reference(base_file: Path, raw_ref: str) -> Path:
     candidate = Path(str(raw_ref))
     if candidate.is_file():
-        return candidate.absolute()
+        return candidate.resolve()
     relative_candidate = (base_file.parent / candidate).absolute()
     if relative_candidate.is_file():
-        return relative_candidate
+        return relative_candidate.resolve()
     repo_candidate = (REPO_ROOT / candidate).absolute()
     if repo_candidate.is_file():
-        return repo_candidate
+        return repo_candidate.resolve()
     raise FileNotFoundError(f"Unable to resolve inherited config '{raw_ref}' from '{base_file}'.")
 
 
@@ -4258,6 +4264,11 @@ def scenario_dropdown_label(scenario_name: str) -> str:
     # Resolving every inherited YAML tree here made the first page wait tens of
     # seconds in larger catalogs. Detailed scenario metadata is loaded only
     # after the operator opens a scenario.
+    if scenario_name in OPERATOR_MASTER_SCENARIOS:
+        try:
+            return str(scenario_catalog_metadata(scenario_name)["display_label"])
+        except Exception:
+            pass
     stem = Path(str(scenario_name or "")).stem
     label = humanize_key(stem or scenario_name)
     label = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", label)

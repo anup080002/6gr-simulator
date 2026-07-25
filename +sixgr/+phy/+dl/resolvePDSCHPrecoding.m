@@ -80,7 +80,9 @@ if isempty(requestedPorts)
 end
 requestedPorts = max(nLayers, round(double(requestedPorts)));
 if ~portsRequestedByConfig && ~isempty(explicitPorts) && explicitPorts > localMaxNRLogicalPDSCHPorts()
-    Wcfg = [];
+    error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixPortCountUnsupported", ...
+        "Explicit matrix has %d ports, exceeding the supported logical-port count.", ...
+        explicitPorts);
 end
 
 if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
@@ -89,16 +91,11 @@ if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
         error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixLayerMismatch", ...
             "Fixed-reference PDSCH precoding requires the frozen explicit matrix to be Nports-by-Nlayers or Nlayers-by-Nports. Got %dx%d for %d layer(s).", ...
             sz(1), sz(2), nLayers);
-    elseif localHasFinitePMI(cfg)
-        % A grant replay can carry a stale rank-1 explicit beam from an
-        % earlier snapshot while the current grant has a higher RI.  Do not
-        % reshape that matrix; regenerate the rank-consistent codebook
-        % precoder from the grant PMI/TPMI and requested port count.
-        Wcfg = [];
     else
         sz = size(Wcfg);
-        error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixLayerMismatch", ...
-            "Explicit PDSCH precoding matrix must be Nports-by-Nlayers or Nlayers-by-Nports. Got %dx%d for %d layer(s), with no finite PMI/TPMI to regenerate it.", ...
+        error("sixgr:phy:dl:PDSCHPrecoding:StaleExplicitMatrixContext", ...
+            ["Explicit PDSCH precoding matrix is %dx%d for %d layer(s). " ...
+            "An available PMI does not authorize discarding or replacing it."], ...
             sz(1), sz(2), nLayers);
     end
 end
@@ -176,11 +173,11 @@ if logical(sixgr.util.structGet(hybridMeta, "Applied", false))
 end
 
 dmrsPorts = localDMRSPortSet(pdsch, nLayers);
-expectedPorts = 0:(nLayers-1);
-if numel(dmrsPorts) ~= nLayers || any(dmrsPorts(:).' ~= expectedPorts)
+if numel(dmrsPorts) ~= nLayers || any(~isfinite(dmrsPorts)) || ...
+        any(dmrsPorts ~= fix(dmrsPorts)) || any(dmrsPorts < 0) || ...
+        numel(unique(dmrsPorts)) ~= numel(dmrsPorts)
     error("sixgr:phy:dl:PDSCHPrecoding:DMRSPortSetUnsupported", ...
-        "Explicit PDSCH precoding requires DM-RS ports 0:%d. Custom DMRSPortSet is not supported.", ...
-        nLayers-1);
+        "Explicit PDSCH precoding requires one unique logical DM-RS port per layer.");
 end
 
 if exist("nrPDSCHPrecode", "file") ~= 2
@@ -494,7 +491,7 @@ end
 
 function [Wcfg, meta] = localResolvePMIPrecodingMatrix(cfg, nLayers, requestedPorts)
 meta = struct();
-Wcfg = [];
+Wcfg = zeros(0, 0);
 tpmi = sixgr.util.structGet(cfg, "phy.pdsch.tpmi", []);
 if isempty(tpmi)
     tpmi = sixgr.util.structGet(cfg, "phy.pdsch.TPMI", []);

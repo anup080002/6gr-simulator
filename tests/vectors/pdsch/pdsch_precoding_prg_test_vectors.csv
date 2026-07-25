@@ -1,0 +1,16 @@
+CaseID,Mode,NPorts,NLayers,NPRG,NSymbolGroups,PRGSize,PRBSet,MatrixShape,ExpectedStatus,ExpectedError
+PREC-001,siso_identity,1,1,1,1,0,0-23,1x1x1x1,PASS,
+PREC-002,wideband_codebook,2,1,1,1,0,0-23,2x1x1x1,PASS,
+PREC-003,wideband_codebook,2,2,1,1,0,0-23,2x2x1x1,PASS,
+PREC-004,wideband_noncodebook,4,2,1,1,0,0-23,4x2x1x1,PASS,
+PREC-005,prg_codebook,4,2,4,1,2,0-7,4x2x4x1,PASS,
+PREC-006,prg_noncodebook,8,4,3,1,4,4-15,8x4x3x1,PASS,
+PREC-007,prb_explicit,4,2,6,1,1,0|2|4|6|8|10,4x2x6x1,PASS,
+PREC-008,prg_symbol_selective,4,2,4,3,2,0-7,4x2x4x3,PASS,
+PREC-009,wideband_fixed_matrix,8,8,1,1,0,0-51,8x8x1x1,PASS,
+PREC-NEG-001,prg_codebook,2,4,2,1,4,0-7,2x4x2x1,ERROR,TooFewPortsForLayers
+PREC-NEG-002,prg_codebook,4,2,1,1,2,0-7,4x2x1x1,ERROR,IncompletePRGCoverage
+PREC-NEG-003,prg_codebook,4,2,5,1,2,0-7,4x2x5x1,ERROR,ExcessPRGPages
+PREC-NEG-004,wideband_fixed_matrix,4,2,1,1,0,0-7,4x3x1x1,ERROR,PrecoderLayerDimensionMismatch
+PREC-NEG-005,prg_symbol_selective,4,2,4,2,2,0-7,4x2x4x1,ERROR,IncompleteSymbolGroupCoverage
+PREC-NEG-006,scalar_pmi_called_complete,4,2,4,1,2,0-7,scalar,ERROR,ScalarPMINotPrecoderBundle

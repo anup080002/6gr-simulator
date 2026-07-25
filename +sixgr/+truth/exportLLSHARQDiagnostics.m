@@ -308,6 +308,9 @@ if nargin < 6
     combinedPrev = [];
 end
 cfgAttempt = localSanitizeHARQProbeConfig(cfg, direction);
+if upper(string(direction)) == "DL"
+    cfgAttempt = localConfigureDLHARQCalibrationOwnership(cfgAttempt);
+end
 if isempty(tbBits)
     tbBitsArg = {};
 else
@@ -326,12 +329,19 @@ switch upper(string(direction))
         recLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
         decIt = mean(double(sixgr.util.structGet(rx, "ActiveIterations", NaN)), "omitnan");
     otherwise
-        [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgAttempt, tbBitsArg{:}, "RV", rv);
+        [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgAttempt, ...
+            tbBitsArg{:}, "RV", rv, ...
+            "ExecutionProfile", "phy_calibration");
         chState = localInitChannelState(cfgAttempt, tx, txInfo, direction);
         rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, "RV", tx.RV, ...
+            "CodingPlan", tx.CodingPlans, ...
+            "HARQSoftBufferLLR", combinedPrev, ...
+            "HARQSoftBufferLayout", sixgr.util.structGet( ...
+                combinedPrev,"CodingPlans",struct()), ...
+            "ExecutionProfile", "phy_calibration", ...
             "SkipTimingEstimate", logical(sixgr.util.structGet(chState, "UseFading", false)));
         recLLR = sixgr.util.structGet(rx, "RecLLR", []);
         decIt = NaN;
@@ -342,7 +352,31 @@ if isempty(tbBits)
 else
     tbBits = int8(tbBits(:));
 end
-diag = sixgr.link.evaluateHARQDecode(tx, rx, cfgAttempt, combinedPrev);
+diag = sixgr.link.evaluateHARQDecode(tx, rx, cfgAttempt, []);
+if upper(string(direction)) == "DL"
+    % The canonical receiver already performed position-aware combining.
+    % Preserve that cumulative soft buffer and outcome; do not combine the
+    % same prior a second time in the diagnostic wrapper.
+    diag.CombinedLLR = sixgr.util.structGet(rx, "RecLLR", []);
+    diag.HARQSoftBuffer = sixgr.util.structGet( ...
+        rx, "HARQSoftBuffer", struct());
+    if isstruct(diag.HARQSoftBuffer) && isscalar(diag.HARQSoftBuffer)
+        diag.HARQSoftBuffer.CodingPlans = tx.CodingPlans;
+    end
+    diag.SoftBuffer = diag.HARQSoftBuffer;
+    diag.HARQSoftCombiningInfo = sixgr.util.structGet( ...
+        rx, "HARQSoftCombiningInfoPerCodeword", {});
+    diag.HARQSoftCombiningReason = char(string(sixgr.util.structGet( ...
+        rx, "HARQSoftCombiningReason", "")));
+    diag.HARQSoftCombiningApplied = logical(sixgr.util.structGet( ...
+        rx, "HARQSoftCombiningApplied", false));
+    diag.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet( ...
+        rx, "HARQSoftCombiningPositionAware", false));
+    diag.HARQSoftCombiningOverlapPositionCount = double( ...
+        sixgr.util.structGet(rx, ...
+        "HARQSoftCombiningOverlapPositionCount", NaN));
+    diag.CombinedDecodeOK = logical(sixgr.util.structGet(rx, "Ok", false));
+end
 rxBits = int8(sixgr.util.structGet(rx, "TransportBlock", int8([])));
 [bitErr, bitsCompared] = localBitErrors(tbBits, rxBits);
 diag.BitErrors = double(bitErr);
@@ -357,6 +391,35 @@ diag.MeasuredSINR_dB = measuredSINR;
 if ~isfield(diag, "Notes")
     diag.Notes = "";
 end
+end
+
+function cfgOut = localConfigureDLHARQCalibrationOwnership(cfgOut)
+nLayers = max(1, round(double(sixgr.util.structGet( ...
+    cfgOut, "phy.pdsch.numLayers", ...
+    sixgr.util.structGet(cfgOut, "phy.pdsch.nLayers", 1)))));
+numCodewords = 1 + double(nLayers > 4);
+cfgOut.run.pdschExecutionProfile = "phy_calibration";
+cfgOut.phy.pdsch.executionProfile = "phy_calibration";
+cfgOut.phy.pdsch.mcsTable = repmat( ...
+    "calibration_explicit", 1, numCodewords);
+cfgOut.phy.pdsch.mcsIndex = 0:(numCodewords - 1);
+modulation = upper(strtrim(string(sixgr.util.structGet( ...
+    cfgOut, "phy.pdsch.modulation", ""))));
+if any(modulation(:).' == "1024QAM")
+    % A 1024QAM diagnostic must carry explicit capability and deployment
+    % eligibility from its caller; this probe never auto-enables the gates.
+    return;
+end
+cfgOut.phy.pdsch.mcsContext = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "not_applicable_non1024_harq_probe", ...
+    "OperatingBand", "not_applicable_non1024_harq_probe", ...
+    "DeploymentClass", "lls_harq_calibration_probe");
 end
 
 function row = localMakePacketRow(direction, snr_dB, packetID, attempt, slotIdx, harqInfo, diag, rttSlots, slotDur_s, stopCondition, tbSizeBits, mode)

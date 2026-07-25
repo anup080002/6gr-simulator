@@ -977,31 +977,22 @@ if isempty(Hest) || isempty(rxGrid) || isempty(refInd) || isempty(refSym)
     return;
 end
 try
-    [rxRef, hRef] = nrExtractResources(refInd, rxGrid, Hest);
-catch
-    status = "reference_extraction_failed";
+    referenceMetrics = sixgr.phy.rx.referenceSignalMetrics( ...
+        rxGrid, Hest, refInd, refSym, ...
+        "NoiseVariance", nVar, ...
+        "ContextLabel", "CSI_Feedback");
+catch ME
+    status = "reference_reconstruction_failed:" + string(ME.identifier);
     return;
 end
-
-[rxPilot, pilotRecon, pilotObsH, pilotEstH] = localPilotChannelObservation(rxRef, hRef, refSym);
-if isempty(rxPilot) || isempty(pilotRecon) || isempty(pilotObsH) || isempty(pilotEstH)
-    status = "reference_observation_unavailable";
-    return;
-end
-perRBSINR_dB = localPerRBReferenceSINR(rxGrid, refInd, rxRef, hRef, refSym, nVar);
+perRBSINR_dB = localPerRBReferenceSINR(referenceMetrics);
 maxTrustedSINR = localMaxTrustedReferenceSINR(cfg);
 if isfinite(maxTrustedSINR) && ~isempty(perRBSINR_dB)
     perRBSINR_dB = min(double(perRBSINR_dB), double(maxTrustedSINR));
 end
 
-[signalPowLin, noisePowLin] = localHestNoiseSignalPowers(hRef, refSym, nVar);
-[pilotSignalPowLin, pilotResidualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar);
-if isfinite(pilotSignalPowLin) && pilotSignalPowLin > 0
-    signalPowLin = pilotSignalPowLin;
-end
-if isfinite(pilotResidualPowLin) && pilotResidualPowLin > 0
-    noisePowLin = max(localFiniteOrZero(noisePowLin), pilotResidualPowLin);
-end
+signalPowLin = double(referenceMetrics.SignalPower);
+noisePowLin = double(referenceMetrics.EffectiveDisturbancePower);
 if isfinite(signalPowLin) && signalPowLin > 0 && isfinite(noisePowLin) && noisePowLin > 0
     sinr_dB = 10 * log10(signalPowLin / noisePowLin);
     source = "receiver_hest_reference_signal_measurement";
@@ -1011,11 +1002,7 @@ if isfinite(signalPowLin) && signalPowLin > 0 && isfinite(noisePowLin) && noiseP
         status = "OK_dynamic_range_limited";
     end
 end
-
-nmseLin = localNormalizedPilotMSE(pilotEstH, pilotObsH);
-if isfinite(nmseLin) && nmseLin > 0
-    pilotNMSE_dB = 10 * log10(max(nmseLin, eps));
-end
+pilotNMSE_dB = double(referenceMetrics.NMSEdB);
 
 if ~isfinite(sinr_dB)
     status = "reference_signal_measurement_unavailable";
@@ -1029,36 +1016,23 @@ if ~(isscalar(maxSINR) && isfinite(maxSINR) && maxSINR > 0)
 end
 end
 
-function perRBSINR_dB = localPerRBReferenceSINR(rxGrid, refInd, rxRef, hRef, refSym, nVar)
+function perRBSINR_dB = localPerRBReferenceSINR(referenceMetrics)
 perRBSINR_dB = [];
-if isempty(rxGrid) || isempty(refInd) || isempty(rxRef) || isempty(hRef) || isempty(refSym)
+if ~(isstruct(referenceMetrics) && ...
+        isfield(referenceMetrics, "SubcarrierIndices"))
     return;
 end
-subcarrier = localReferenceSubcarrierIndices(rxGrid, refInd);
-if isempty(subcarrier)
-    return;
-end
-numRE = min([numel(subcarrier), size(rxRef, 1), size(hRef, 1), numel(refSym)]);
-if numRE < 1
-    return;
-end
-subcarrier = double(subcarrier(1:numRE));
-refSym = double(refSym(1:numRE));
-rxRef = double(rxRef(1:numRE, :, :, :));
-hRef = double(hRef(1:numRE, :, :, :));
-[pilotRecon, ~, ~, validRef] = localReferenceReconstruction(hRef, refSym, numRE);
-valid = isfinite(subcarrier) & validRef(:);
+subcarrier = double(referenceMetrics.SubcarrierIndices(:));
+signalPow = double(referenceMetrics.PerRESignalPower(:));
+noisePow = double(referenceMetrics.PerREEffectiveDisturbancePower(:));
+valid = isfinite(subcarrier) & isfinite(signalPow) & signalPow > 0 ...
+    & isfinite(noisePow) & noisePow > 0;
 if ~any(valid)
     return;
 end
 subcarrier = subcarrier(valid);
-pilotRecon = pilotRecon(valid, :);
-signalPow = mean(abs(pilotRecon).^2, 2, "omitnan");
-nVar = double(nVar);
-if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
-    return;
-end
-noisePow = repmat(nVar, size(signalPow));
+signalPow = signalPow(valid);
+noisePow = noisePow(valid);
 rbIndex = floor((subcarrier - 1) ./ 12) + 1;
 maxRb = max(rbIndex(isfinite(rbIndex)));
 if ~(isfinite(maxRb) && maxRb >= 1)
@@ -1066,7 +1040,7 @@ if ~(isfinite(maxRb) && maxRb >= 1)
 end
 perRBSINR_dB = nan(maxRb, 1);
 for rb = 1:maxRb
-    mask = rbIndex == rb & isfinite(signalPow) & signalPow > 0 & isfinite(noisePow) & noisePow > 0;
+    mask = rbIndex == rb;
     if ~any(mask)
         continue;
     end
@@ -1075,198 +1049,6 @@ for rb = 1:maxRb
     if isfinite(sig) && sig > 0 && isfinite(res) && res > 0
         perRBSINR_dB(rb) = 10 * log10(sig / res);
     end
-end
-end
-
-function subcarrier = localReferenceSubcarrierIndices(rxGrid, refInd)
-subcarrier = [];
-if isempty(refInd)
-    return;
-end
-if isnumeric(refInd) && ismatrix(refInd) && size(refInd, 2) >= 1 && size(refInd, 2) <= 4 && size(refInd, 1) > 1
-    if size(refInd, 2) > 1
-        subcarrier = double(refInd(:, 1));
-        return;
-    end
-end
-try
-    nSc = size(rxGrid, 1);
-    subcarrier = mod(double(refInd(:)) - 1, max(double(nSc), 1)) + 1;
-catch
-    subcarrier = [];
-end
-end
-
-function values = localMeanAcrossNonRE(x)
-values = double(x);
-for dim = ndims(values):-1:2
-    try
-        values = mean(values, dim, "omitnan");
-    catch
-        values = mean(values, dim);
-    end
-end
-values = squeeze(values);
-end
-
-function [rxPilot, pilotRecon, pilotObsH, pilotEstH] = localPilotChannelObservation(rxRef, hRef, refSym)
-rxPilot = [];
-pilotRecon = [];
-pilotObsH = [];
-pilotEstH = [];
-L = min([size(rxRef, 1), size(hRef, 1)]);
-if ~(isfinite(L) && L >= 1)
-    return;
-end
-rxMat = reshape(double(rxRef(1:L, :, :, :)), L, []);
-[pilotReconAll, pilotEstHAll, refScale, valid] = localReferenceReconstruction(hRef, refSym, L);
-if isempty(pilotReconAll) || ~any(valid)
-    return;
-end
-rxPilot = rxMat(valid, :);
-pilotRecon = pilotReconAll(valid, :);
-pilotEstH = pilotEstHAll(valid, :);
-pilotObsH = rxPilot ./ max(refScale(valid), sqrt(eps));
-end
-
-function [signalPowLin, noisePowLin] = localHestNoiseSignalPowers(hRef, refSym, nVar)
-signalPowLin = NaN;
-noisePowLin = NaN;
-L = size(hRef, 1);
-if ~(isfinite(L) && L >= 1)
-    return;
-end
-[pilotRecon, ~, ~, valid] = localReferenceReconstruction(hRef, refSym, L);
-if ~any(valid)
-    return;
-end
-signalPow = abs(pilotRecon(valid, :)).^2;
-signalPow = signalPow(isfinite(signalPow));
-if isempty(signalPow)
-    return;
-end
-nVar = double(nVar);
-if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
-    return;
-end
-signalPowLin = mean(signalPow, "omitnan");
-noisePowLin = nVar;
-end
-
-function [pilotRecon, pilotEstH, refScale, valid] = localReferenceReconstruction(hRef, refSym, L)
-pilotRecon = [];
-pilotEstH = [];
-refScale = [];
-valid = false(0, 1);
-if isempty(hRef) || isempty(refSym) || ~(isfinite(L) && L >= 1)
-    return;
-end
-h = reshape(double(hRef(1:L, :, :, :)), L, size(hRef, 2), []);
-nPorts = size(h, 3);
-refMat = localReferenceSymbolMatrix(refSym, L, nPorts);
-if isempty(refMat)
-    return;
-end
-refEnergy = sum(abs(refMat).^2, 2);
-valid = refEnergy > sqrt(eps);
-if ~any(valid)
-    return;
-end
-pilotRecon = complex(zeros(L, size(h, 2)));
-for p = 1:nPorts
-    pilotRecon = pilotRecon + h(:, :, p) .* refMat(:, p);
-end
-refScale = sqrt(max(refEnergy, eps));
-pilotEstH = pilotRecon ./ max(refScale, sqrt(eps));
-end
-
-function refMat = localReferenceSymbolMatrix(refSym, L, nPorts)
-refMat = [];
-if isempty(refSym) || ~(isfinite(L) && L >= 1) || ~(isfinite(nPorts) && nPorts >= 1)
-    return;
-end
-raw = double(refSym);
-if isvector(raw)
-    raw = raw(:);
-    if numel(raw) >= L * nPorts
-        refMat = reshape(raw(1:L * nPorts), L, nPorts);
-    elseif numel(raw) >= L
-        refMat = repmat(raw(1:L), 1, nPorts);
-    end
-else
-    raw = reshape(raw, size(raw, 1), []);
-    if size(raw, 1) < L
-        flat = raw(:);
-        if numel(flat) >= L * nPorts
-            refMat = reshape(flat(1:L * nPorts), L, nPorts);
-        end
-    else
-        refMat = raw(1:L, :);
-        if size(refMat, 2) < nPorts
-            refMat = [refMat, zeros(L, nPorts - size(refMat, 2))]; %#ok<AGROW>
-        elseif size(refMat, 2) > nPorts
-            refMat = refMat(:, 1:nPorts);
-        end
-    end
-end
-end
-
-function [signalPowLin, residualPowLin] = localPilotSignalResidualPowers(rxPilot, pilotRecon, nVar)
-signalPowLin = NaN;
-residualPowLin = NaN;
-rxPilot = double(rxPilot(:));
-pilotRecon = double(pilotRecon(:));
-N = min(numel(rxPilot), numel(pilotRecon));
-if N == 0
-    return;
-end
-rxPilot = rxPilot(1:N);
-pilotRecon = pilotRecon(1:N);
-mask = isfinite(real(rxPilot)) & isfinite(imag(rxPilot)) & ...
-    isfinite(real(pilotRecon)) & isfinite(imag(pilotRecon));
-if ~any(mask)
-    return;
-end
-rxPilot = rxPilot(mask);
-pilotRecon = pilotRecon(mask);
-signalPowLin = mean(abs(pilotRecon).^2, "omitnan");
-residualPowLin = mean(abs(rxPilot - pilotRecon).^2, "omitnan");
-nVar = double(nVar);
-if ~(isfinite(residualPowLin) && residualPowLin > 0) && isfinite(nVar) && nVar > 0
-    residualPowLin = nVar;
-end
-end
-
-function nmseLin = localNormalizedPilotMSE(hEst, hObs)
-nmseLin = NaN;
-hEst = double(hEst(:));
-hObs = double(hObs(:));
-N = min(numel(hEst), numel(hObs));
-if N == 0
-    return;
-end
-hEst = hEst(1:N);
-hObs = hObs(1:N);
-mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(real(hObs)) & isfinite(imag(hObs));
-if ~any(mask)
-    return;
-end
-hEst = hEst(mask);
-hObs = hObs(mask);
-alpha = (hObs' * hEst) / max(hObs' * hObs, eps);
-ref = alpha * hObs;
-den = mean(abs(ref).^2, "omitnan");
-if ~(isfinite(den) && den > 0)
-    return;
-end
-err = hEst - ref;
-nmseLin = mean(abs(err).^2, "omitnan") / max(den, eps);
-end
-
-function value = localFiniteOrZero(value)
-value = double(value);
-if ~(isscalar(value) && isfinite(value) && value > 0)
-    value = 0;
 end
 end
 

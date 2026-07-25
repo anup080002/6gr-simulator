@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
-SCENARIO = "master_scenaio_all_file.yaml"
+SCENARIO = "master_geometry_based.yaml"
 SCENARIO_PATH = REPO_ROOT / "simulator" / "configs" / "scenarios" / SCENARIO
 
 
@@ -43,11 +43,10 @@ RUNTIME_MIRROR_SECTIONS = {
 }
 
 
-def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> None:
+def test_webgui_geometry_master_is_self_contained_and_launchable() -> None:
     raw = yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8"))
 
     assert "inherits" not in raw
-    assert set(raw) == {"canonical_control"}
     assert not (set(raw) & RUNTIME_MIRROR_SECTIONS)
 
     canonical = raw["canonical_control"]
@@ -55,22 +54,17 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
     assert canonical["topology"]["num_trps"] == 2
     assert canonical["topology"]["num_sectors_per_site"] == 1
     assert canonical["topology"]["num_ues"] == 2
-    assert canonical["output"]["profiler_enabled"] is True
-    assert canonical["output"]["live_publish_frame_interval"] == 1
-    assert canonical["output"]["live_heavy_refresh_interval_frames"] == 1
-    assert canonical["random_access"]["n_cell_id"] == 1
     assert canonical["channel"]["profile"] == "CDL-C"
+    assert canonical["output"]["profiler_enabled"] is True
+    assert canonical["random_access"]["n_cell_id"] == 1
     assert canonical["random_access"]["channel_model"] == "CDL-C"
-    assert canonical["random_access"]["timing_offset_sweep_samples"] == [0, 4, 8]
-    assert canonical["random_access"]["frequency_offset_sweep_hz"] == [0, 100, 250]
-    assert canonical["output"]["emit_placeholder_artifacts"] is False
     override_paths = [item["path"] for item in canonical["runtime_overrides"]]
     assert len(override_paths) == len(set(override_paths))
 
     assert SCENARIO in dash.list_scenarios()
     resolved, chain = dash.load_resolved_config_payload(SCENARIO)
-    assert chain == ["simulator/configs/scenarios/master_scenaio_all_file.yaml"]
-    assert dash.path_get(resolved, "meta.scenario_id") == "master_scenaio_all_file"
+    assert chain == ["simulator/configs/scenarios/master_geometry_based.yaml"]
+    assert dash.path_get(resolved, "meta.scenario_id") == "master_geometry_based"
     assert dash.path_get(resolved, "scenario.runner_profile") == "waveform_bundle"
     assert dash.path_get(resolved, "deployment_topology.num_cells") == 2
     assert dash.path_get(resolved, "deployment_topology.num_trps") == 2
@@ -100,8 +94,8 @@ def test_webgui_singlefile_full_lls_yaml_is_self_contained_and_launchable() -> N
 
 
 def test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view() -> None:
-    raw = yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8"))
-    large = copy.deepcopy(raw)
+    resolved, _ = dash.load_resolved_config_payload(SCENARIO)
+    large = copy.deepcopy(resolved)
     topology = large["canonical_control"]["topology"]
     topology["num_sites"] = 50
     topology["num_sectors_per_site"] = 3
@@ -124,8 +118,8 @@ def test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view()
 
 
 def test_webgui_singlefile_high_mobility_derives_cdlc_and_doppler() -> None:
-    raw = yaml.safe_load(SCENARIO_PATH.read_text(encoding="utf-8"))
-    payload = copy.deepcopy(raw)
+    resolved, _ = dash.load_resolved_config_payload(SCENARIO)
+    payload = copy.deepcopy(resolved)
     control = payload["canonical_control"]
     control["mobility"]["ue_speed_kmh"] = 100
     control["channel"]["mobility_kmph"] = 100

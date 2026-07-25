@@ -72,7 +72,7 @@
       },
       "mobility": {
         "enable": {"value_type": "boolean", "default": true},
-        "model": {"value_type": "string", "default": "randomWaypoint", "allowed_values": ["randomWaypoint", "straightLine", "zigzag", "trace", "linear"]},
+        "model": {"value_type": "string", "default": "randomWaypoint", "allowed_values": ["static", "randomWaypoint", "straightLine", "zigzag", "trace", "linear"]},
         "speed_kmh": {"value_type": "number_vector", "default": [3, 30], "min": 0, "min_length": 1, "max_length": 2},
         "updatePeriod_s": {"value_type": "number", "default": 0.1, "min": 0},
         "userPaths": {"value_type": "struct_array", "default_kind": "empty_struct_array"}

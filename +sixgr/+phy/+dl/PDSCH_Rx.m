@@ -19,6 +19,7 @@ function [rx, info] = PDSCH_Rx(rxWaveform, cfg, varargin)
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %     "PrecodingMatrix": wideband or PRG-bundled PDSCH precoder used by TX
 %     "PHYGrant"    : frozen canonical grant dimensional contract
+%     "CodingPlan"  : immutable TX DLSCHCodingPlan object(s), required
 %
 %   CFG.phy.pdsch.dmrs.dataToDMRSEPREDifference_dB controls the PDSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -57,9 +58,23 @@ ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscala
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('Assignment', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHSchedulingAssignment'));
+ip.addParameter('ResourcePlan', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHResourcePlan'));
+ip.addParameter('ReferenceSignalConfig', struct(), ...
+    @(x) (isstruct(x) && isscalar(x)) || ...
+        isa(x, 'sixgr.pdsch.PDSCHReferenceSignalConfig'));
+ip.addParameter('ReceiverConfig', struct(), @(x) isstruct(x) && isscalar(x));
+ip.addParameter('PrecoderBundle', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHPrecoderBundle'));
+ip.addParameter('IntegrationContext', struct(), @(x) isstruct(x) && isscalar(x));
+ip.addParameter('HARQManager', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHHARQManager'));
+ip.addParameter('ExecutionProfile', "", @(x) ischar(x) || isstring(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || iscell(x) || isstruct(x));
-ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) || isstruct(x) || iscell(x));
+ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) ...
+    || isstruct(x) || iscell(x) ...
+    || isa(x,'sixgr.pdsch.DLSCHCodingPlan'));
 ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x) || iscell(x));
+ip.addParameter('CodingPlan', [], @(x) isempty(x) || ...
+    isa(x,'sixgr.pdsch.DLSCHCodingPlan') || iscell(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -74,786 +89,914 @@ ip.parse(varargin{:});
 opt = ip.Results;
 phyGrant = opt.PHYGrant;
 hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
+executionProfile = localResolveRXExecutionProfile( ...
+    cfg, opt.ExecutionProfile, opt.Assignment);
+strictAssignmentProfile = any(executionProfile == ...
+    ["connected_strict","sps_strict","ra_si_strict"]);
+if strictAssignmentProfile && isempty(opt.Assignment)
+    error("sixgr:pdsch:MissingSchedulingAssignment", ...
+        "%s PDSCH reception requires a decoded immutable scheduling assignment.", ...
+        executionProfile);
+end
+if ~isempty(opt.Assignment)
+    [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
+        rxWaveform, opt, executionProfile, hasPHYGrant);
+    return;
+end
+if executionProfile == "phy_calibration"
+    [rx, info] = localDelegateCanonicalCalibrationReceiver( ...
+        rxWaveform, cfg, opt, phyGrant, hasPHYGrant, ...
+        executionProfile);
+    return;
+end
+error("sixgr:pdsch:MissingSchedulingAssignment", ...
+    "Non-calibration PDSCH reception requires an immutable scheduling assignment.");
+end
+
+function [rx, info] = localDelegateCanonicalCalibrationReceiver( ...
+        rxWaveform, cfg, opt, phyGrant, hasPHYGrant, executionProfile)
+if executionProfile ~= "phy_calibration"
+    error("sixgr:pdsch:ExecutionProfileMismatch", ...
+        "Calibration receiver adapter received profile '%s'.", ...
+        executionProfile);
+end
 if hasPHYGrant
-    sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pdsch_rx_entry");
+    sixgr.phy.grant.assertPHYGrantDimensions( ...
+        phyGrant, "pdsch_rx_calibration_adapter_entry");
     cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
-    if isempty(opt.PrecodingMatrix)
-        opt.PrecodingMatrix = double(phyGrant.PrecodingState.Matrix);
-    end
 end
 localValidateSupportedCodewordScope(cfg, opt.PDSCH);
-profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.dl.PDSCH_Rx", ...
-    "Stage", "dl_pdsch_rx", ...
-    "Metadata", struct( ...
-    "NSamples", double(numel(rxWaveform)), ...
-    "NSubcarriers", double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)) * 12, ...
-    "NSymbols", 14, ...
-    "NRx", double(max(1, size(rxWaveform, 2))), ...
-    "NTx", double(sixgr.util.structGet(cfg, "channel.nTxAnt", 1)), ...
-    "NLayers", double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)), ...
-    "TBSBits", double(localScalarOrNaN(opt.TransportBlockSize)), ...
-    "MaxIterations", double(localScalarOrNaN(opt.MaxIterations)))); %#ok<NASGU>
-
-% Carrier
 if isempty(opt.Carrier)
-    [carrier, cinfo] = sixgr.phy.grid.makeCarrier(cfg);
+    [carrier, carrierInfo] = sixgr.phy.grid.makeCarrier(cfg);
 else
     carrier = opt.Carrier;
-    cinfo = struct();
+    carrierInfo = struct();
 end
-
-% PDSCH config and indices
 if isempty(opt.PDSCH)
-    [pdschInd, pdschInfo, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg);
+    [~, pdschInfo, pdsch] = ...
+        sixgr.phy.grid.allocREsPDSCH(carrier, cfg);
 else
     pdsch = opt.PDSCH;
-    if isempty(opt.PDSCHIndices)
-        try
-            [pdschInd, pdschInfo] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
-        catch
-            [pdschInd, pdschInfo] = nrPDSCHIndices(carrier, pdsch);
-        end
-    else
-        pdschInd = opt.PDSCHIndices;
-        try
-            [~, pdschInfo] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
-        catch
-            [~, pdschInfo] = nrPDSCHIndices(carrier, pdsch);
-        end
+    [kernelIndices, pdschInfo] = nrPDSCHIndices(carrier, pdsch);
+    if ~isempty(opt.PDSCHIndices) ...
+            && ~isequal(double(opt.PDSCHIndices), ...
+                double(kernelIndices))
+        error("sixgr:pdsch:CalibrationResourcePlanMismatch", ...
+            ["PDSCHIndices override differs from the final configured " ...
+            "PDSCH data-index kernel output."]);
     end
 end
-
-% Parameters
-rv = opt.RV;
-if isempty(rv)
-    rv = double(sixgr.util.structGet(cfg, 'phy.pdsch.rv', 0));
+nCodewords = localResolvePDSCHNumCodewords( ...
+    pdsch, round(double(pdsch.NumLayers)));
+mcsOwnership = ...
+    sixgr.pdsch.PDSCHCalibrationFacadeAdapter.resolveMCSOwnership( ...
+        cfg, phyGrant, nCodewords);
+codingPlans = localRequireCalibrationCodingPlans( ...
+    opt.CodingPlan,nCodewords);
+rv = cellfun(@(plan) double(plan.RV),codingPlans);
+targetRate = cellfun( ...
+    @(plan) double(plan.TargetCodeRate),codingPlans);
+transportBlockSizes = cellfun( ...
+    @(plan) double(plan.TransportBlockSize),codingPlans);
+localAssertOptionalCalibrationPlanVector( ...
+    opt.RV,rv,"sixgr:pdsch:CalibrationCodingPlanRVMismatch","RV");
+localAssertOptionalCalibrationPlanVector( ...
+    opt.TargetCodeRate,targetRate, ...
+    "sixgr:pdsch:CalibrationCodingPlanRateMismatch","TargetCodeRate");
+localAssertOptionalCalibrationPlanVector( ...
+    opt.TransportBlockSize,transportBlockSizes, ...
+    "sixgr:pdsch:CalibrationCodingPlanTBSMismatch","TransportBlockSize");
+maxIterations = opt.MaxIterations;
+if isempty(maxIterations)
+    maxIterations = sixgr.phy.phycode.resolveLDPCMaxIterations( ...
+        cfg, "Direction", "DL");
 end
-rv = double(rv(:).');
-
-targetCodeRate = opt.TargetCodeRate;
-if isempty(targetCodeRate)
-    targetCodeRate = double(sixgr.util.structGet(cfg, 'phy.pdsch.codeRate', 0.4785));
+algorithm = opt.Algorithm;
+if isempty(algorithm)
+    algorithm = sixgr.util.structGet( ...
+        cfg, "phy.ldpc.algorithm", "Normalized min-sum");
 end
-targetCodeRate = double(targetCodeRate(:).');
+xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead( ...
+    cfg, localObjectValue(pdsch, "SymbolAllocation", []));
+[~, dmrsPowerInfo] = localApplyPDSCHDMRSEPREDifference( ...
+    complex(1), cfg);
+request = struct( ...
+    "TargetCodeRate", targetRate, "RV", rv, ...
+    "XOverhead", xOverhead, ...
+    "MCSTablePerCodeword", mcsOwnership.MCSTablePerCodeword, ...
+    "MCSIndexPerCodeword", mcsOwnership.MCSIndexPerCodeword, ...
+    "UECapability1024QAM", mcsOwnership.UECapability1024QAM, ...
+    "RRCEnabled1024QAM", mcsOwnership.RRCEnabled1024QAM, ...
+    "DCIEnabled1024QAM", mcsOwnership.DCIEnabled1024QAM, ...
+    "DCIFormat", mcsOwnership.DCIFormat, ...
+    "UECapability1024QAMVariant", ...
+        mcsOwnership.UECapability1024QAMVariant, ...
+    "MaxNumberMIMOLayersPDSCH", ...
+        mcsOwnership.MaxNumberMIMOLayersPDSCH, ...
+    "NumLayers", double(pdsch.NumLayers), ...
+    "DeploymentAllows1024QAM", ...
+        mcsOwnership.DeploymentAllows1024QAM, ...
+    "FrequencyRange", mcsOwnership.FrequencyRange, ...
+    "OperatingBand", mcsOwnership.OperatingBand, ...
+    "DeploymentClass", mcsOwnership.DeploymentClass, ...
+    "FrequencyRangeAllows1024QAM", ...
+        mcsOwnership.FrequencyRangeAllows1024QAM, ...
+    "BandAllows1024QAM", mcsOwnership.BandAllows1024QAM, ...
+    "TransportBlockSizes", transportBlockSizes, ...
+    "TransportBlockBits", [], ...
+    "CodingPlans", {codingPlans}, ...
+    "PrecodingMatrix", opt.PrecodingMatrix, ...
+    "ReservedREZeroBased", zeros(1,0), ...
+    "DMRSAmplitudeScale", ...
+        double(dmrsPowerInfo.DMRSAmplitudeScale), ...
+    "DMRSPortResolutionPolicy", ...
+        "explicit_calibration_rank_order_ports", ...
+    "NPhysicalRxAntennas", size(rxWaveform,2), ...
+    "NoiseVariance", opt.NoiseVar, ...
+    "NoiseVarianceDomain", opt.NoiseVarDomain, ...
+    "MaxIterations", maxIterations, ...
+    "Algorithm", algorithm, ...
+    "ReceiverOnly", true);
+bundle = sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize( ...
+    cfg, carrier, pdsch, request);
+localAssertCalibrationCodingLayoutMatchesPlan( ...
+    opt.CodingLayout, codingPlans);
 
-maxIter = opt.MaxIterations;
-if isempty(maxIter)
-    maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL");
-end
-
-alg = opt.Algorithm;
-if isempty(alg)
-    alg = string(sixgr.util.structGet(cfg, 'phy.ldpc.algorithm', "Normalized min-sum"));
-else
-    alg = string(alg);
-end
-
-prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
-    "PrecodingMatrix", opt.PrecodingMatrix);
-phyGrantContract = struct();
-if hasPHYGrant
-    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
-        "pdsch_rx_after_config", ...
-        "PDSCH", pdsch, ...
-        "Precoding", prec);
-end
-
-% Expected TB size
-nCodewords = localResolvePDSCHNumCodewords(pdsch, round(double(pdsch.NumLayers)));
-rv = localExpandPerCodewordRV(rv, nCodewords);
-targetCodeRate = localExpandPerCodewordDouble(targetCodeRate, nCodewords, "PDSCH TargetCodeRate");
-modulationPerCodeword = localPDSCHModulationPerCodeword(pdsch, nCodewords);
-trBlkSize = opt.TransportBlockSize;
-if isempty(trBlkSize)
-    xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, ...
-        localObjectValue(pdsch, "SymbolAllocation", []));
-    nPRB = numel(pdsch.PRBSet);
-    nrePerPRB = localResolvePDSCHNREPerPRBOrError(carrier, pdsch, pdschInfo, nPRB);
-    trBlkSize = nrTBS(pdsch.Modulation, pdsch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
-end
-trBlkSize = localExpandPerCodewordInteger(double(trBlkSize(:).'), nCodewords, "PDSCH transport block size");
-
-% Canonical coding layout.
-rateMatchedBits = localRateMatchedBitCountFromInfo(pdschInfo);
-rateMatchedBits = localExpandPerCodewordInteger(rateMatchedBits, nCodewords, "PDSCH rate-matched bit count");
-codingLayouts = localResolveRxCodingLayouts(opt.CodingLayout, phyGrant, "DL", ...
-    trBlkSize, targetCodeRate, rv, modulationPerCodeword, pdsch.NumLayers, ...
-    rateMatchedBits);
-codingLayout = codingLayouts{1};
-codewordLayerMapping = localBuildPDSCHRxCodewordLayerContract(pdsch, rateMatchedBits, codingLayouts);
-bgn = double(codingLayout.BaseGraph);
-tbCRCType = char(string(codingLayout.TBCRCType));
-tbCRCLen = double(codingLayout.TBCRCLength);
-ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
-
-% DMRS
-[dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
-[dmrsSym, dmrsPowerInfo] = localApplyPDSCHDMRSEPREDifference(dmrsSym, cfg);
-dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
-dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
-dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
-dmrsInfo.RealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
-dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
-dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
-dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
-dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
-useFastAWGNPath = logical(opt.FastAWGNPath);
-strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
-channelModelToken = localResolveEstimatorChannelModel(cfg);
-numTxPorts = localExpectedTxPorts(pdsch, prec);
-localValidateFastScalarShortcut(channelModelToken, numTxPorts, max(1, size(rxWaveform, 2)), useFastAWGNPath, "PDSCH_Rx");
-
-pdschAntInd = pdschInd;
-dmrsAntInd = dmrsInd;
-dmrsAntSym = dmrsSym;
-if prec.Active
-    pdschAntInd = localPrecodeIndices(carrier, pdschInd, prec.MatrixNR);
-    [dmrsAntSym, dmrsAntInd] = nrPDSCHPrecode(carrier, dmrsSym, dmrsInd, prec.MatrixNR);
-end
-
-% ---------------------- Timing estimate ----------------------
-trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTrackingState, cfg);
-sampleRateHz = localCarrierSampleRateHz(carrier);
-knownTimingDelaySamples = localResolveKnownTimingDelaySamples(cfg, trackingCorrection, sampleRateHz);
-if logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
-        isfinite(sampleRateHz) && sampleRateHz > 0
-    rxWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -double(trackingCorrection.EstimatedCFO_Hz));
-    trackingCorrection.CFOCorrectionApplied = true;
-    trackingCorrection.CFOCorrectionApplied_Hz = double(trackingCorrection.EstimatedCFO_Hz);
-elseif logical(trackingCorrection.CFOEstimateAvailable)
-    trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
+canonical = sixgr.pdsch.PDSCHReceiver( ...
+    rxWaveform, bundle.Assignment, bundle.ResourcePlan, ...
+    bundle.Carrier, bundle.ReferenceConfig, ...
+    bundle.ReceiverConfig, ...
+    "CodingPlans", bundle.CodingPlans, ...
+    "PrecoderBundle", bundle.PrecoderBundle, ...
+    "PriorRecoveredLLR", opt.HARQSoftBufferLLR, ...
+    "PriorCodingPlan", opt.HARQSoftBufferLayout, ...
+    "HARQKey", char(bundle.Assignment.AssignmentId), ...
+    "HARQManager", opt.HARQManager);
+[rx, info] = localAdaptCanonicalCalibrationRX( ...
+    canonical, bundle, pdschInfo, carrierInfo, ...
+    dmrsPowerInfo, cfg, opt, phyGrant, hasPHYGrant);
 end
 
-rawTimingEstimate = NaN;
-timingEstimateUsed = false;
-timingEstimateSource = "unavailable";
-runtimeAlignedTimingBypass = localRuntimeAlignedTimingBypass(cfg);
-if runtimeAlignedTimingBypass
-    timingEstimateSource = "runtime_aligned_waveform_no_timing_reacquisition";
-    trackingCorrection.TimingCorrectionApplied = false;
-elseif logical(trackingCorrection.TimingEstimateAvailable) && isfinite(double(trackingCorrection.TimingEstimate_samples))
-    rawTimingEstimate = double(trackingCorrection.TimingEstimate_samples);
-    timingEstimateUsed = true;
-    timingEstimateSource = string(trackingCorrection.Source);
-    trackingCorrection.TimingCorrectionApplied = true;
-elseif ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate) && ~isempty(dmrsInd)
-    try
-        rawTimingEstimate = double(nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym));
-        timingEstimateUsed = true;
-        timingEstimateSource = "nrTimingEstimate_dmrs";
-    catch
-        rawTimingEstimate = NaN;
-        timingEstimateUsed = false;
-        timingEstimateSource = "nrTimingEstimate_failed";
-    end
+function [rx, info] = localAdaptCanonicalCalibrationRX( ...
+        canonical, bundle, pdschInfo, carrierInfo, ...
+        dmrsPowerInfo, cfg, opt, phyGrant, hasPHYGrant)
+carrier = bundle.Carrier;
+pdsch = bundle.PDSCH;
+nCodewords = numel(bundle.TransportBlockSizes);
+nLayers = double(pdsch.NumLayers);
+nPorts = double(bundle.ReferenceConfig.get("NPhysicalTxAntennas"));
+plane = double(carrier.NSizeGrid) * 12 ...
+    * double(carrier.SymbolsPerSlot);
+[pdschInd, kernelInfo] = nrPDSCHIndices(carrier,pdsch);
+dmrsInd = nrPDSCHDMRSIndices(carrier,pdsch);
+dmrsSym = complex(nrPDSCHDMRS(carrier,pdsch)) ...
+    .* double(dmrsPowerInfo.DMRSAmplitudeScale);
+ptrsInd = [];
+ptrsSym = complex(zeros(0,1));
+if pdsch.EnablePTRS
+    ptrsInd = nrPDSCHPTRSIndices(carrier,pdsch);
+    ptrsSym = complex(nrPDSCHPTRS(carrier,pdsch));
 end
-timingEstimateForCorrection = rawTimingEstimate;
-if timingEstimateUsed && isfinite(rawTimingEstimate)
-    knownDelayForCorrection = double(knownTimingDelaySamples);
-    if isfinite(knownDelayForCorrection) && rawTimingEstimate > 0 && knownDelayForCorrection > rawTimingEstimate
-        knownDelayForCorrection = rawTimingEstimate;
-    end
-    timingEstimateForCorrection = rawTimingEstimate - knownDelayForCorrection;
-end
-timingResolution = sixgr.phy.sync.resolveTimingApplication(timingEstimateForCorrection, ...
-    "EstimateUsed", timingEstimateUsed, ...
-    "ApplicationMode", "signed_waveform_shift", ...
-    "SkipRequested", logical(opt.SkipTimingEstimate), ...
-    "Source", timingEstimateSource, ...
-    "MaxCorrectionSamples", localMaxTimingCorrectionSamples(carrier));
-trackingCorrection.TimingCorrectionApplied = logical(timingResolution.EstimateUsed);
+pdschAntInd = localCalibrationRXPortIndices( ...
+    bundle.ResourcePlan.DataIndices,nPorts,plane);
+dmrsUnion = unique([bundle.ResourcePlan.DMRSIndicesPerPort{:}], ...
+    "sorted");
+dmrsAntInd = localCalibrationRXPortIndices( ...
+    dmrsUnion,nPorts,plane);
+ptrsUnion = unique([bundle.ResourcePlan.PTRSIndicesPerPort{:}], ...
+    "sorted");
+ptrsAntInd = localCalibrationRXPortIndices( ...
+    ptrsUnion,nPorts,plane);
 
-% Apply timing correction
-rxWave = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrection_samples);
+layouts = cellfun(@(x) x.toCodingLayout(), ...
+    canonical.CodingPlans, "UniformOutput", false);
+rateBits = double(bundle.ResourcePlan.GPerCodeword);
+mapping = localBuildPDSCHRxCodewordLayerContract( ...
+    pdsch, rateBits, layouts);
+mapping = localFinalizePDSCHRxCodewordLayerContract( ...
+    mapping, canonical.DescrambledLLR, canonical.LayerSymbols);
+[decoded, recLLR, recInfo, decodedBlocks, activeIterations, ...
+    parityChecks, cbCRCError, lineage] = ...
+    localCanonicalRXDecodeEvidence(canonical.Decode,nCodewords);
 
-% ---------------------- OFDM demodulate ----------------------
-localPDSCHRxStageProgressLog(cfg, "stage=ofdm_demod_start samples=%g rx_ant=%g", ...
-    double(size(rxWave, 1)), double(max(1, size(rxWave, 2))));
-stageTic = tic;
-[rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
-localPDSCHRxStageProgressLog(cfg, "stage=ofdm_demod_done elapsed_s=%.3f grid=%gx%gx%g", ...
-    toc(stageTic), double(size(rxGrid, 1)), double(size(rxGrid, 2)), double(size(rxGrid, 3)));
-if ~logical(trackingCorrection.CFOEstimateAvailable)
-    cfoEstimationMethod = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.impairments.cfoEstimationMethod", "cyclic_prefix"))));
-    if any(cfoEstimationMethod == ["dmrs_two_symbol", "dmrs", "reference_symbol_phase_slope"])
-        [dmrsCFOHz, dmrsCFOInfo] = sixgr.phy.rx.estimateCFOFromReferenceSymbols( ...
-            rxGrid, dmrsInd, dmrsSym, carrier, sampleRateHz);
-        if logical(dmrsCFOInfo.EstimateAvailable)
-            trackingCorrection.CFOEstimateAvailable = true;
-            trackingCorrection.EstimatedCFO_Hz = double(dmrsCFOHz);
-            trackingCorrection.Status = "available";
-            trackingCorrection.Source = "dmrs_reference_symbol_phase_slope";
-            trackingCorrection.NAReason = "";
-            trackingCorrection.CFOCorrectionApplied = false;
-            trackingCorrection.CFOCorrectionApplied_Hz = NaN;
-        end
-    end
-    if ~logical(trackingCorrection.CFOEstimateAvailable) && any(cfoEstimationMethod == ["cyclic_prefix", "cp"])
-        [cpCFOHz, cpCFOInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWave, ofdmInfo, sampleRateHz);
-        if logical(cpCFOInfo.EstimateAvailable)
-            trackingCorrection.CFOEstimateAvailable = true;
-            trackingCorrection.EstimatedCFO_Hz = double(cpCFOHz);
-            trackingCorrection.Status = "available";
-            trackingCorrection.Source = "cyclic_prefix_cfo_estimator";
-            trackingCorrection.NAReason = "";
-            trackingCorrection.CFOCorrectionApplied = false;
-            trackingCorrection.CFOCorrectionApplied_Hz = NaN;
-        end
-    elseif ~logical(trackingCorrection.CFOEstimateAvailable)
-        trackingCorrection.Status = "not_available";
-        trackingCorrection.Source = char(string(cfoEstimationMethod));
-        trackingCorrection.NAReason = "cfo_estimate_unavailable_or_disabled_by_method";
-    end
+estimatedNoise = double(canonical.EstimatedNoiseVariance);
+decoderNoise = double(canonical.NoiseVarianceUsedForLLR);
+if ~(isscalar(decoderNoise) && isfinite(decoderNoise) ...
+        && decoderNoise > 0)
+    decoderNoise = eps;
 end
-[rxGrid, ofdmInfo, trackingCorrection] = localApplyEstimatedCFOAndRedemodulate( ...
-    carrier, rxWave, sampleRateHz, rxGrid, ofdmInfo, trackingCorrection, cfg);
-syncState = sixgr.phy.sync.resolveSynchronizationState( ...
-    "SampleRate_Hz", sampleRateHz, ...
-    "InjectedCFO_Hz", localResolveInjectedCFOHz(cfg), ...
-    "EstimatedCFO_Hz", double(sixgr.util.structGet(trackingCorrection, "EstimatedCFO_Hz", NaN)), ...
-    "AppliedCFOCorrection_Hz", double(sixgr.util.structGet(trackingCorrection, "CFOCorrectionApplied_Hz", NaN)), ...
-    "ResidualCFOEstimate_Hz", double(sixgr.util.structGet(trackingCorrection, "ResidualCFOEstimate_Hz", NaN)), ...
-    "EstimatedCommonFrequency_Hz", double(sixgr.util.structGet(trackingCorrection, "EstimatedCommonFrequency_Hz", NaN)), ...
-    "PhysicalDoppler_Hz", double(sixgr.util.structGet(trackingCorrection, "PhysicalDoppler_Hz", NaN)), ...
-    "InjectedTimingOffset_samples", localResolveInjectedTimingOffsetSamples(cfg), ...
-    "RawTimingEstimate_samples", rawTimingEstimate, ...
-    "KnownTimingDelay_samples", knownTimingDelaySamples, ...
-    "AppliedTimingCorrection_samples", double(timingResolution.AppliedCorrection_samples), ...
-    "TimingEstimateUsed", logical(timingResolution.EstimateUsed), ...
-    "TimingSource", timingEstimateSource, ...
-    "FrequencySource", string(sixgr.util.structGet(trackingCorrection, "Source", "")), ...
-    "TrackingState", string(sixgr.util.structGet(trackingCorrection, "TrackingState", "")), ...
-    "TrackingAgeSlots", double(sixgr.util.structGet(trackingCorrection, "AgeSlots", NaN)));
-[ptrsInd, ptrsSym, ptrsInfo] = localResolvePDSCHPTRS(carrier, pdsch, cfg);
-ptrsAntInd = ptrsInd;
-ptrsAntSym = ptrsSym;
-if prec.Active && ~isempty(ptrsInd)
-    try
-        [ptrsAntSym, ptrsAntInd] = nrPDSCHPrecode(carrier, ptrsSym, ptrsInd, prec.MatrixNR);
-    catch ME
-        ptrsAntInd = [];
-        ptrsAntSym = [];
-        ptrsInfo.Available = false;
-        ptrsInfo.Source = "nrPDSCHPTRS_precode_failed";
-        ptrsInfo.NAReason = string(ME.identifier);
-    end
+channelEstimate = canonical.EffectiveLayerChannelEstimate;
+if isempty(channelEstimate)
+    channelEstimate = canonical.ChannelGainPerPhysicalPort;
 end
-cpeCorrInfo = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
-    'MeanCPE_deg', NaN, 'NAReason', "ptrs_cpe_correction_deferred_until_equalization");
-enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pdsch.ptrs.enableCPECorrection", ...
-    sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true)));
-[csirsInd, csirsSym, csirsInfo, csirsObservation] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt);
-[csirsHest, csirsNVar, csirsEstInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, ...
-    strictMode, channelModelToken, numTxPorts);
-if ~isempty(csirsHest)
-    csirsObservation.Consumed = true;
-    csirsObservation.Consumer = "CSI_PMI_CRI_beam_metrics";
-    csirsObservation.UpdateOutcome = "observed_and_channel_estimated_after_ofdm_demodulation";
-elseif logical(sixgr.util.structGet(csirsObservation, "Observed", false))
-    csirsObservation.UpdateOutcome = "observed_but_channel_estimate_unavailable";
-end
-
-% ---------------------- Channel estimate ----------------------
-estInfo = struct();
-useFastChEstMex = logical(sixgr.util.structGet(cfg, 'phy.rx.useFastChannelEstMex', false)) ...
-    && logical(sixgr.util.structGet(cfg, 'run.useMex', false));
-localPDSCHRxStageProgressLog(cfg, "stage=channel_estimate_start dmrs_re=%g fast_awgn=%g", ...
-    double(numel(dmrsInd)), double(logical(useFastAWGNPath)));
-stageTic = tic;
-if useFastAWGNPath
-    hEst = ones(size(rxGrid), 'like', rxGrid);
-    nVarEst = 10^(-double(sixgr.util.structGet(cfg, 'channel.snr_dB', 20))/10);
-    estInfo = struct( ...
-        "Method", "explicit_unit_flat_awgn_validation", ...
-        "EngineUsed", "unit-flat-shortcut", ...
-        "ChannelModel", string(channelModelToken), ...
-        "ExpectedTxPorts", double(numTxPorts), ...
-        "NumRxAnt", double(max(1, size(rxGrid, 3))), ...
-        "ScalarFastPathUsed", true);
-elseif ~isempty(dmrsInd)
-    % Estimate the effective PDSCH layer channel from the DM-RS port
-    % resources. Precoding is transparent to the UE and is included in this
-    % effective channel rather than exposed as antenna-domain references.
-    if logical(prec.Active) && ~logical(prec.WidebandOnly)
-        [hEst, nVarEst, estInfo] = localEstimatePRGBundledPDSCHChannel( ...
-            carrier, pdsch, rxGrid, dmrsInd, dmrsSym, dmrsInfo, prec, cfg, ...
-            useFastChEstMex, strictMode, channelModelToken, numTxPorts);
-    else
-        [hEst, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
-            "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
-            "UseFastMex", useFastChEstMex, ...
-            "StrictMode", strictMode, ...
-            "ChannelModel", channelModelToken, ...
-            "ExpectedTxPorts", numTxPorts, ...
-            "Method", localResolveChannelEstimationMethod(cfg), ...
-            "Config", cfg, ...
-            "ContextLabel", "PDSCH_Rx");
-    end
-else
-    localValidateNoDMRSUnitChannelFallback(channelModelToken, numTxPorts, max(1, size(rxGrid, 3)), "PDSCH_Rx");
-    hEst = ones(size(rxGrid), 'like', rxGrid);
-    nVarEst = 0;
-    estInfo = struct( ...
-        "Method", "explicit_unit_channel_awgn_no_dmrs", ...
-        "EngineUsed", "unit-channel-no-dmrs", ...
-        "ChannelModel", string(channelModelToken), ...
-        "ExpectedTxPorts", double(numTxPorts), ...
-        "NumRxAnt", double(max(1, size(rxGrid, 3))), ...
-        "ScalarFastPathUsed", true);
-end
-localPDSCHRxStageProgressLog(cfg, "stage=channel_estimate_done elapsed_s=%.3f hest_dims=%s nvar=%g", ...
-    toc(stageTic), mat2str(size(hEst)), double(nVarEst));
-
-noiseCandidate = opt.NoiseVar;
-noiseTransformInfo = struct( ...
-    "InputDomain", "grid", ...
-    "OutputDomain", "resource_grid_pre_equalization", ...
-    "TransformSource", "runtime_channel_estimate_grid_domain");
-if isempty(noiseCandidate)
-    % nrChannelEstimate returns grid-domain noise variance.
-    noiseCandidate = nVarEst;
-else
-    domain = lower(strtrim(char(string(opt.NoiseVarDomain))));
-    [noiseCandidate, noiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
-        noiseCandidate, ofdmInfo, ...
-        "InputDomain", domain, ...
-        "Source", "runtime_metadata");
-end
-nVar = noiseCandidate;
-nVar = double(max(0, nVar));
-
-% ---------------------- Extract and equalize PDSCH REs ----------------------
-localPDSCHRxStageProgressLog(cfg, "stage=equalize_start pdsch_re=%g", double(numel(pdschInd)));
-stageTic = tic;
-[rxSym, hestSym] = nrExtractResources(pdschInd, rxGrid, hEst);
-[equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "DL");
-RIncludesNoise = false;
-if equalizerAlg == "IRC"
-    [Rint, rintInfo, RIncludesNoise] = localResolvePDSCHInterferenceCovariance(opt, carrier, ...
-        pdschInd, timingResolution.AppliedCorrection_samples, nVar, rxGrid, hEst, dmrsInd, dmrsSym);
-else
-    Rint = [];
-    rintInfo = struct("Available", false, "Source", "irc_not_requested", ...
-        "Status", "not_applicable", "NAReason", "equalizer_algorithm_is_not_irc", ...
-        "CovarianceIncludesNoise", false, "Domain", "not_applicable");
-end
-if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
-    equalizerAlg = "MMSE";
-end
-resourceDiag = localBuildPDSCHRxResourceDiagnostics(rxSym, hestSym, rxGrid, hEst, ...
-    dmrsInd, Rint, nVar);
-localPDSCHRxStageProgressLog(cfg, ...
-    "stage=equalize_inputs rx_re_power=%g hest_re_power=%g dmrs_rx_power=%g rint_trace=%g preeq_nvar=%g", ...
-    double(resourceDiag.MeasuredPDSCHRxResourcePower), ...
-    double(resourceDiag.MeasuredPDSCHHestResourcePower), ...
-    double(resourceDiag.MeasuredDMRSRxResourcePower), ...
-    double(resourceDiag.MeasuredInterferenceCovarianceTrace), ...
-    double(resourceDiag.MeasuredPreEqualizationNoiseVariance));
-[eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
-    "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);
-[eqSym, cpeCorrInfo] = localCorrectEqualizedPDSCHCPEFromPTRS(eqSym, pdschInd, rxGrid, hEst, ...
-    ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enablePTRSCPECorrection);
-localPDSCHRxStageProgressLog(cfg, "stage=equalize_done elapsed_s=%.3f eq_symbols=%g alg=%s", ...
-    toc(stageTic), double(numel(eqSym)), char(string(equalizerAlg)));
-equalizerResult = sixgr.util.structGet(equalizerInfo, "EqualizerResult", struct());
-try
-    localPDSCHRxStageProgressLog(cfg, "stage=posteq_sinr_start");
-    stageTic = tic;
-    [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
-        hestSym, nVar, ...
-        "Method", char(lower(string(equalizerAlg))), ...
-        "Rint", Rint, ...
-        "RIncludesNoise", RIncludesNoise, ...
-        "EqualizerResult", equalizerResult, ...
-        "Layers", double(localObjectValue(pdsch, "NumLayers", min(size(hestSym, 2), max(1, size(hestSym, 3))))), ...
-        "MaxTrustedSINR_dB", double(sixgr.util.structGet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", NaN)));
-    localPDSCHRxStageProgressLog(cfg, "stage=posteq_sinr_done elapsed_s=%.3f sinr=%g", ...
-        toc(stageTic), double(postEqSINR_dB));
-catch ME
-    postEqSINR_dB = NaN;
-    postEqSINRPerRE_dB = [];
-    postEqSINRInfo = struct( ...
-        "ValueStatus", "failed", ...
-        "NAReason", string(ME.identifier), ...
-        "PerLayerSINR_dB", NaN, ...
-        "Source", "post_equalization_sinr_from_equalizer_channel_estimate", ...
-        "ValueRole", "measured_post_equalization_scheduling_input");
-end
-csiFromEqualizerResult = sixgr.util.structGet(postEqSINRInfo, "DemapperReliability", []);
-if ~isempty(csiFromEqualizerResult)
-    csi = csiFromEqualizerResult;
-end
-receiverSINR = localReceiverHestSINR(hEst, nVar, cfg, "DL", rxGrid, dmrsInd, dmrsSym);
-[nVarDecode, nVarDecodeInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
-    "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
-    "PostEqSINR_dB", postEqSINR_dB, ...
-    "CSI", csi);
-% ---------------------- PDSCH demodulate to soft bits ----------------------
-% nrPDSCHDecode returns a cell array (one per codeword). Newer releases can
-% also return the sliced symbol estimates used during demodulation.
-pdschRxSym = [];
-nVarForDecode = double(nVarDecode);
-if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
-    nVarForDecode = double(nVar);
-end
-nVarForDecode = double(max(nVarForDecode, eps));
-try
-    localPDSCHRxStageProgressLog(cfg, "stage=pdsch_demod_start nvar=%g", nVarForDecode);
-    stageTic = tic;
-    [llrCW, pdschRxSym] = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
-catch
-    llrCW = nrPDSCHDecode(carrier, pdsch, eqSym, nVarForDecode);
-end
-localPDSCHRxStageProgressLog(cfg, "stage=pdsch_demod_done elapsed_s=%.3f", toc(stageTic));
-[llrCWCell, codewordLLRInfo] = localNormalizePDSCHCodewordLLR(llrCW, codewordLayerMapping);
-[llrCell, llrCSIInfoCell] = localApplyCSIToPDSCHCodewordLLRCell(llrCWCell, csi, pdsch.Modulation, ...
-    postEqSINR_dB, codewordLayerMapping, nVarForDecode, nVarDecodeInfo);
+sinr = double(canonical.Metrics. ...
+    MeasuredPostEqualizationSINRdBPerLayer);
+postEqSINR = mean(sinr,"omitnan");
+llrCell = canonical.DescrambledLLR;
 llr = llrCell{1};
-llrCSIInfo = llrCSIInfoCell{1};
-codewordLayerMapping = localFinalizePDSCHRxCodewordLayerContract(codewordLayerMapping, llrCell, eqSym);
+codewordLLRCount = cellfun(@numel,llrCell);
+segmentation = cellfun(@(x) ...
+    sixgr.util.structGet(x,"Segmentation",struct()), ...
+    layouts,"UniformOutput",false);
 
-% ---------------------- DL-SCH decode (rate recovery + LDPC decode) ----------------------
-localPDSCHRxStageProgressLog(cfg, "stage=dlsch_decode_start codewords=%g max_iter=%g", ...
-    double(numel(llrCell)), double(maxIter));
-stageTic = tic;
-decode = localDecodePDSCHCodewords(llrCell, codingLayouts, trBlkSize, targetCodeRate, rv, ...
-    modulationPerCodeword, double(pdsch.NumLayers), cfg, maxIter, alg, opt.HARQSoftBufferLLR, opt.HARQSoftBufferLayout);
-localPDSCHRxStageProgressLog(cfg, "stage=dlsch_decode_done elapsed_s=%.3f crc_pass=%g", ...
-    toc(stageTic), double(all(decode.CRCPassPerCodeword)));
-recLLR = decode.RecLLRCell{1};
-rateRecoverInfo = decode.RateRecoverInfoCell{1};
-harqCombiningInfo = decode.HARQCombiningSummary;
-recLLRBatch = decode.RecLLRBatchCell{1};
-actIter = decode.ActiveIterations;
-parity = decode.ParityChecks;
-decodeLatency_s = decode.DecodeLatency_s;
-useMexLDPC = decode.UseMexLDPC;
-decCbs = decode.DecodedCodeBlocksCell{1};
-B = decode.TransportBlockLenWithCRCPerCodeword(1);
-tbCrcRx = decode.TransportBlockCRCPerCodeword{1};
-cbCrcErr = decode.CodeBlockCRCError;
-tbRx = vertcat(decode.TransportBlockCell{:});
-crcOk = all(decode.CRCPassPerCodeword);
-crcErr = ~crcOk;
-ldpcSeg = decode.LDPCSegmentationCell{1};
-
-% ---------------------- Outputs ----------------------
-rx = struct();
-rx.TransportBlockSize = trBlkSize;
-rx.TransportBlockSizePerCodeword = double(trBlkSize);
-rx.CRCError = logical(crcErr);
-rx.Ok = logical(crcOk);
-rx.CRCPass = logical(crcOk);
-rx.TBCRCPass = logical(crcOk);
-rx.TransportBlock = int8(tbRx(:));
-rx.TransportBlocks = decode.TransportBlockCell;
-rx.CRCPassPerCodeword = logical(decode.CRCPassPerCodeword);
-rx.CRCErrorPerCodeword = logical(decode.CRCErrorPerCodeword);
-rx.TimingOffset = double(rawTimingEstimate);
-rx.RawTimingEstimate_samples = double(rawTimingEstimate);
-rx.KnownTimingDelay_samples = double(knownTimingDelaySamples);
-rx.TimingEstimateForCorrection_samples = double(timingEstimateForCorrection);
-rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
-rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
-rx.TimingEstimateSource = char(timingEstimateSource);
-rx.TimingEstimateStatus = char(string(timingResolution.Status));
-rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
-rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
-rx.SynchronizationState = syncState;
-rx.NoiseVar = nVarForDecode;
+rx = canonical;
+rx.ExecutionProfile = "phy_calibration";
+rx.FacadeContractVersion = "PDSCH_RxCompatibilityFacade/v3";
+rx.CanonicalDelegation = true;
+rx.DelegationTarget = "sixgr.pdsch.PDSCHReceiver";
+rx.StrictSchedulingOwnership = false;
+rx.SchedulingOwnership = ...
+    "explicit_phy_calibration_assignment";
+rx.AssignmentId = char(bundle.Assignment.AssignmentId);
+rx.TransportBlockSize = double(bundle.TransportBlockSizes);
+rx.TransportBlockSizePerCodeword = ...
+    double(bundle.TransportBlockSizes);
+rx.Ok = logical(canonical.CRCPass);
+rx.TBCRCPass = logical(canonical.CRCPass);
+rx.TimingOffset = NaN;
+rx.RawTimingEstimate_samples = NaN;
+rx.KnownTimingDelay_samples = 0;
+rx.TimingEstimateForCorrection_samples = 0;
+rx.AppliedTimingCorrection_samples = 0;
+rx.TimingEstimateUsed = false;
+rx.TimingEstimateSource = ...
+    "assignment_aligned_calibration_waveform";
+rx.TimingEstimateStatus = "not_required";
+rx.TimingEstimateApplicationPolicy = ...
+    "canonical_assignment_alignment";
+rx.TimingEstimateWasClipped = false;
+rx.SynchronizationState = struct( ...
+    "Source","canonical_assignment_alignment");
+rx.NoiseVar = decoderNoise;
 rx.NoiseVarStatus = "OK";
-rx.NoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "post_equalization_decoder_noise_variance")));
+rx.NoiseVarSource = ...
+    "canonical_post_equalization_noise_variance";
 rx.NoiseVarReason = "";
 rx.NoiseVarStrictFailure = false;
-rx.NoiseVarDomain = "post_equalization_decoder_symbol_domain";
-rx.PreEqualizationNoiseVar = double(nVar);
-rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
-rx.PreEqualizationNoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
-rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
-rx.DecoderNoiseVar = double(nVarForDecode);
-rx.PostEqualizationNoiseVar = double(nVarDecode);
-rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
-rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
-rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
+rx.NoiseVarDomain = ...
+    "post_equalization_decoder_symbol_domain";
+rx.PreEqualizationNoiseVar = estimatedNoise;
+rx.PreEqualizationNoiseVarDomain = ...
+    "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarTransformSource = ...
+    "calibration_adapter_explicit_domain_conversion";
+rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
+    canonical.OFDMInfo, "SampleToGridNoiseVarianceGain", NaN));
+rx.DecoderNoiseVar = decoderNoise;
+rx.PostEqualizationNoiseVar = decoderNoise;
+rx.DecoderNoiseVarStatus = "OK";
+rx.DecoderNoiseVarSource = ...
+    "canonical_pdsch_receiver";
+rx.DecoderNoiseVarReductionMethod = ...
+    "explicit_receiver_config_or_dmrs_residual";
 rx.ReceiverUsable = true;
 rx.DecodeAttempted = true;
 rx.DecodeUsable = true;
 rx.FailureReason = "";
-rx.DecodeLatency_s = double(decodeLatency_s);
-rx.MaxDecoderIterations = double(maxIter);
-rx.DecoderIterations = mean(double(actIter(:)), "omitnan");
-rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
-rx.NumCodeBlocksPerCodeword = double(cellfun(@(x) double(x.NumCodeBlocks), decode.LDPCSegmentationCell));
-rx.CodeBlockLength_bits = double(ldpcSeg.CodeBlockLength);
-rx.CodeBlockLengthPerCodeword_bits = double(cellfun(@(x) double(x.CodeBlockLength), decode.LDPCSegmentationCell));
-rx.TransportBlockCRCLength = double(tbCRCLen);
-rx.TransportBlockCRCLengthPerCodeword = double(cellfun(@(x) double(x.TBCRCLength), codingLayouts));
-rx.TransportBlockLenWithCRC = double(ldpcSeg.TransportBlockLenWithCRC);
-rx.TransportBlockLenWithCRCPerCodeword = double(decode.TransportBlockLenWithCRCPerCodeword);
-rx.CodingLayout = codingLayout;
-rx.CodingLayouts = codingLayouts;
-rx.CodewordLayerMapping = codewordLayerMapping;
-rx.NumCodewords = double(codewordLayerMapping.NumCodewords);
-rx.ActualNumCodewords = double(codewordLayerMapping.ActualNumCodewords);
-rx.CodewordLLRCountPerCodeword = double(codewordLayerMapping.DemapperLLRCountPerCodeword);
-rx.DecodedBitLineage = decode.DecodedBitLineageCell{1};
-rx.DecodedBitLineagePerCodeword = decode.DecodedBitLineageCell;
-rx.LDPCRateRecoverNumCodeBlocks = double(sixgr.util.structGet(rateRecoverInfo, "numCBUsed", ldpcSeg.NumCodeBlocks));
-rx.LDPCRateRecoverNumCodeBlocksPerCodeword = double(cellfun(@(x) double(sixgr.util.structGet(x, "numCBUsed", NaN)), decode.RateRecoverInfoCell));
-rx.HARQSoftCombiningApplied = logical(harqCombiningInfo.Applied);
-rx.HARQSoftCombiningReason = char(string(harqCombiningInfo.Reason));
-rx.HARQSoftCombiningCurrentNumel = double(harqCombiningInfo.CurrentNumel);
-rx.HARQSoftCombiningPriorNumel = double(harqCombiningInfo.PriorNumel);
-rx.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(harqCombiningInfo, "PositionAware", false));
-rx.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(harqCombiningInfo, "OverlapPositionCount", NaN));
-rx.XOverhead = double(sixgr.phy.dl.resolvePDSCHXOverhead(cfg, ...
-    localObjectValue(pdsch, "SymbolAllocation", [])));
-rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
-rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
-rx.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(syncState, "EstimatedCommonFrequency_Hz", NaN));
-rx.PhysicalDoppler_Hz = double(sixgr.util.structGet(syncState, "PhysicalDoppler_Hz", NaN));
-rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
-rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
-rx.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_PostCorrection_Hz", NaN));
-rx.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
-rx.ResidualTimingError_PostCorrection_samples = double(sixgr.util.structGet(syncState, "ResidualTimingError_PostCorrection_samples", NaN));
-rx.CPECorrectionApplied = logical(cpeCorrInfo.Enabled);
-rx.CPECorrectedSymbols = double(sixgr.util.structGet(cpeCorrInfo, "NumSymbolsCorrected", 0));
-rx.CPEMeanCorrection_deg = double(sixgr.util.structGet(cpeCorrInfo, "MeanCPE_deg", NaN));
-rx.CPECorrectionNAReason = char(string(sixgr.util.structGet(cpeCorrInfo, "NAReason", "")));
-rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
-rx.PTRSCPECorrectionSymbols = double(sixgr.util.structGet(cpeCorrInfo, "NumSymbolsCorrected", NaN));
-rx.PTRSMeanCPE_deg = double(sixgr.util.structGet(cpeCorrInfo, "MeanCPE_deg", NaN));
-rx.PTRSCPECorrectionReason = char(string(sixgr.util.structGet(cpeCorrInfo, "NAReason", "")));
-rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
-rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
-rx.ReceiverTrackingCorrectionNAReason = char(string(trackingCorrection.NAReason));
-rx.ReceiverHestSINR_dB = double(receiverSINR.Value);
-rx.ReceiverHestSINRSource = char(receiverSINR.Source);
-rx.ReceiverHestSINRValueRole = char(receiverSINR.ValueRole);
-rx.ReceiverHestSINRValueStatus = char(receiverSINR.ValueStatus);
-rx.ReceiverHestSINRNAReason = char(receiverSINR.NAReason);
-rx.PostEqSINR_dB = double(postEqSINR_dB);
-rx.PostEqSINRSource = char(string(sixgr.util.structGet(postEqSINRInfo, "Source", "post_equalization_sinr_from_equalizer_channel_estimate")));
-rx.PostEqSINRValueRole = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueRole", "measured_post_equalization_scheduling_input")));
-rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueStatus", "unavailable")));
-rx.PostEqSINRNAReason = char(string(sixgr.util.structGet(postEqSINRInfo, "NAReason", "")));
-rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayerSINR_dB", NaN));
-rx.EqualizerType = char(string(equalizerInfo.AlgorithmUsed));
-rx.EqualizerRequestedType = char(equalizerRequested);
-rx.EqualizerEngine = char(string(equalizerInfo.EngineUsed));
-rx.EqualizerResultContract = char(string(sixgr.util.structGet(equalizerInfo, "EqualizerResult.ContractVersion", "")));
-rx.EqualizerEquation = char(string(sixgr.util.structGet(equalizerInfo, "EqualizerResult.Equation", "")));
-rx.EqualizerCovarianceIncludesNoise = logical(sixgr.util.structGet(equalizerInfo, "EqualizerResult.CovarianceIncludesNoise", false));
-rx.EqualizerNoiseAddedExactlyOnce = logical(sixgr.util.structGet(equalizerInfo, "EqualizerResult.NoiseAddedExactlyOnce", false));
-rx.EqualizerUniqueSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerResult.UniqueSolveCount", NaN));
-rx.EqualizerSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerResult.SolveCount", NaN));
-rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
-rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
-rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
-rx.InterferenceCovarianceIncludesNoise = logical(sixgr.util.structGet(rintInfo, "CovarianceIncludesNoise", RIncludesNoise));
-rx.InterferenceCovarianceDomain = char(string(sixgr.util.structGet(rintInfo, "Domain", "")));
-rx.MeasuredPDSCHRxResourcePower = double(resourceDiag.MeasuredPDSCHRxResourcePower);
-rx.MeasuredPDSCHHestResourcePower = double(resourceDiag.MeasuredPDSCHHestResourcePower);
-rx.MeasuredPDSCHHestFiniteFraction = double(resourceDiag.MeasuredPDSCHHestFiniteFraction);
-rx.MeasuredDMRSRxResourcePower = double(resourceDiag.MeasuredDMRSRxResourcePower);
-rx.MeasuredDMRSHestResourcePower = double(resourceDiag.MeasuredDMRSHestResourcePower);
-rx.MeasuredInterferenceCovarianceTrace = double(resourceDiag.MeasuredInterferenceCovarianceTrace);
-rx.MeasuredPreEqualizationNoiseVariance = double(resourceDiag.MeasuredPreEqualizationNoiseVariance);
-rx.EqualizedSymbolsForEvidence = eqSym;
-rx.LayerEqualizedSymbolsForEvidence = eqSym;
-rx.LayerEqualizedSymbols = eqSym;
+rx.DecodeLatency_s = NaN;
+rx.MaxDecoderIterations = ...
+    double(bundle.ReceiverConfig.MaxIterations);
+rx.DecoderIterations = mean(activeIterations,"omitnan");
+rx.NumCodeBlocks = double(layouts{1}.NumCodeBlocks);
+rx.NumCodeBlocksPerCodeword = cellfun( ...
+    @(x) double(x.NumCodeBlocks),layouts);
+rx.CodeBlockLength_bits = ...
+    double(layouts{1}.CodeBlockLength);
+rx.CodeBlockLengthPerCodeword_bits = cellfun( ...
+    @(x) double(x.CodeBlockLength),layouts);
+rx.TransportBlockCRCLength = ...
+    double(layouts{1}.TBCRCLength);
+rx.TransportBlockCRCLengthPerCodeword = cellfun( ...
+    @(x) double(x.TBCRCLength),layouts);
+rx.TransportBlockLenWithCRC = ...
+    double(layouts{1}.TransportBlockLengthWithCRC);
+rx.TransportBlockLenWithCRCPerCodeword = cellfun( ...
+    @(x) double(x.TransportBlockLengthWithCRC),layouts);
+rx.CodingLayout = layouts{1};
+rx.CodingLayouts = layouts;
+rx.CodewordLayerMapping = mapping;
+rx.NumCodewords = nCodewords;
+rx.ActualNumCodewords = nCodewords;
+rx.CodewordLLRCountPerCodeword = codewordLLRCount;
+rx.DecodedBitLineage = lineage{1};
+rx.DecodedBitLineagePerCodeword = lineage;
+rx.LDPCRateRecoverNumCodeBlocks = ...
+    double(layouts{1}.NumCodeBlocks);
+rx.LDPCRateRecoverNumCodeBlocksPerCodeword = cellfun( ...
+    @(x) double(x.NumCodeBlocks),layouts);
+harqInfo = cellfun(@(x) x.HARQCombineInfo, decoded, ...
+    "UniformOutput", false);
+harqSummary = localSummarizeHARQCombining(harqInfo);
+rx.HARQSoftCombiningApplied = logical(harqSummary.Applied);
+rx.HARQSoftCombiningAppliedPerCodeword = ...
+    logical(harqSummary.AppliedPerCodeword);
+rx.HARQSoftCombiningReason = string(harqSummary.Reason);
+rx.HARQSoftCombiningCurrentNumel = double(harqSummary.CurrentNumel);
+rx.HARQSoftCombiningPriorNumel = double(harqSummary.PriorNumel);
+rx.HARQSoftCombiningPositionAware = logical(harqSummary.PositionAware);
+rx.HARQSoftCombiningOverlapPositionCount = ...
+    double(harqSummary.OverlapPositionCount);
+rx.XOverhead = double(bundle.XOverhead);
+rx.CFOEstimateAvailable = false;
+rx.EstimatedCFO_Hz = NaN;
+rx.EstimatedCommonFrequency_Hz = NaN;
+rx.PhysicalDoppler_Hz = NaN;
+rx.CFOCorrectionApplied = false;
+rx.CFOCorrectionApplied_Hz = 0;
+rx.ResidualCFO_PostCorrection_Hz = NaN;
+rx.ResidualCFO_EstimatedPostCorrection_Hz = NaN;
+rx.ResidualTimingError_PostCorrection_samples = NaN;
+rx.CPECorrectionApplied = logical(sixgr.util.structGet( ...
+    canonical.PTRSCorrection,"Applied",false));
+rx.CPECorrectedSymbols = double(sixgr.util.structGet( ...
+    canonical.PTRSCorrection,"CorrectedSymbolCount",0));
+rx.CPEMeanCorrection_deg = NaN;
+rx.CPECorrectionNAReason = "";
+rx.PTRSCPECorrectionEnabled = rx.CPECorrectionApplied;
+rx.PTRSCPECorrectionSymbols = rx.CPECorrectedSymbols;
+rx.PTRSMeanCPE_deg = NaN;
+rx.PTRSCPECorrectionReason = "";
+rx.ReceiverTrackingCorrectionSource = ...
+    "canonical_assignment_alignment";
+rx.ReceiverTrackingCorrectionStatus = "not_required";
+rx.ReceiverTrackingCorrectionNAReason = "";
+rx.ReceiverHestSINR_dB = postEqSINR;
+rx.ReceiverHestSINRSource = ...
+    "canonical_dmrs_estimate_and_equalizer";
+rx.ReceiverHestSINRValueRole = ...
+    "measured_post_equalization_scheduling_input";
+rx.ReceiverHestSINRValueStatus = "OK";
+rx.ReceiverHestSINRNAReason = "";
+rx.PostEqSINR_dB = postEqSINR;
+rx.PostEqSINRSource = ...
+    "canonical_post_equalization_sinr";
+rx.PostEqSINRValueRole = ...
+    "measured_post_equalization_scheduling_input";
+rx.PostEqSINRValueStatus = "OK";
+rx.PostEqSINRNAReason = "";
+rx.PostEqSINRPerLayer_dB = sinr;
+rx.EqualizerType = "MMSE";
+rx.EqualizerRequestedType = "MMSE";
+rx.EqualizerEngine = char(string(sixgr.util.structGet( ...
+    canonical.EqualizationInfo,"EngineUsed","")));
+rx.EqualizerResultContract = "";
+rx.EqualizerEquation = "";
+rx.EqualizerCovarianceIncludesNoise = false;
+rx.EqualizerNoiseAddedExactlyOnce = true;
+rx.EqualizerUniqueSolveCount = NaN;
+rx.EqualizerSolveCount = ...
+    double(bundle.ResourcePlan.ExactDataRECount);
+rx.InterferenceCovarianceAvailable = false;
+rx.InterferenceCovarianceSource = "not_requested";
+rx.InterferenceCovarianceStatus = "not_applicable";
+rx.InterferenceCovarianceIncludesNoise = false;
+rx.InterferenceCovarianceDomain = "not_applicable";
+rx.MeasuredPDSCHRxResourcePower = mean( ...
+    abs(canonical.DataPortSymbols(:)).^2,"omitnan");
+rx.MeasuredPDSCHHestResourcePower = mean( ...
+    abs(channelEstimate(:)).^2,"omitnan");
+rx.MeasuredPDSCHHestFiniteFraction = mean( ...
+    isfinite(channelEstimate(:)));
+rx.MeasuredDMRSRxResourcePower = NaN;
+rx.MeasuredDMRSHestResourcePower = ...
+    rx.MeasuredPDSCHHestResourcePower;
+rx.MeasuredInterferenceCovarianceTrace = NaN;
+rx.MeasuredPreEqualizationNoiseVariance = estimatedNoise;
+rx.EqualizedSymbolsForEvidence = canonical.LayerSymbols;
+rx.LayerEqualizedSymbolsForEvidence = canonical.LayerSymbols;
+rx.LayerEqualizedSymbols = canonical.LayerSymbols;
 rx.EqualizedSymbolDomain = "layer";
-rx.LayerSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschInd, "layer");
-rx.DemapperLLRCount = double(codewordLayerMapping.TotalDemapperLLRCount);
-rx.RateRecoveredLLRCount = double(sum(cellfun(@numel, decode.RecLLRCell)));
-rx.RateRecoveredLLRCountPerCodeword = double(cellfun(@numel, decode.RecLLRCell));
-if isempty(pdschRxSym)
-    rx.PDSCHRxSymbolsForEvidence = rxSym;
+rx.LayerSymbolOrder = ...
+    sixgr.phy.resource.buildSymbolOrderingMap( ...
+        carrier,pdschInd,"layer");
+rx.DemapperLLRCount = sum(codewordLLRCount);
+rx.RateRecoveredLLRCount = sum(cellfun(@numel,recLLR));
+rx.RateRecoveredLLRCountPerCodeword = ...
+    cellfun(@numel,recLLR);
+rx.PDSCHRxSymbolsForEvidence = canonical.CodewordSymbols{1};
+rx.RecLLR = recLLR{1};
+rx.RateRecoveredLLR = recLLR{1};
+rx.RecLLRCell = recLLR;
+rx.RateRecoveredLLRCell = recLLR;
+rx.RateRecoverInfoCell = recInfo;
+rx.HARQSoftCombiningInfoPerCodeword = harqInfo;
+rx.HARQSoftBuffer = harqSummary.SoftBuffer;
+rx.HARQSoftBufferCell = harqSummary.SoftBufferCell;
+rx.ChannelEstimateAttempted = true;
+rx.ChannelEstimateAvailable = ~isempty(channelEstimate);
+rx.ChannelEstimateSource = "pdsch_dmrs_channel_estimate";
+rx.ChannelEstimateMethod = ...
+    char(string(canonical.ChannelEstimationMode));
+rx.ChannelEstimateEngine = char(string(sixgr.util.structGet( ...
+    canonical.ChannelEstimationInfo,"EngineUsed","")));
+rx.ChannelEstimateInterpolationMethod = char(string( ...
+    sixgr.util.structGet(canonical.ChannelEstimationInfo, ...
+        "InterpolationMethod","")));
+rx.ChannelEstimateEffectiveConvention = char(string( ...
+    sixgr.util.structGet(canonical.ChannelEstimationInfo, ...
+        "EffectiveChannelConvention","")));
+rx.ChannelEstimatePilotRECount = numel(dmrsUnion);
+rx.ChannelEstimatePilotResidualPower = mean( ...
+    abs(canonical.DMRSResidual(:)).^2,"omitnan");
+rx.ChannelEstimatePilotResidualNMSE_dB = localRXLinearToDb( ...
+    double(canonical.Metrics.ChannelEstimateNMSE));
+rx.ChannelEstimatePRGAware = ...
+    bundle.LegacyPrecoder.NumPRG > 1;
+rx.ChannelEstimatePRGCount = ...
+    double(bundle.LegacyPrecoder.NumPRG);
+rx.ChannelEstimateEstimatedPRGCount = ...
+    double(bundle.LegacyPrecoder.NumPRG);
+if isempty(bundle.PrecoderBundle)
+    rx.ChannelEstimatePRGBundleSizeRB = NaN;
 else
-rx.PDSCHRxSymbolsForEvidence = pdschRxSym;
+    rx.ChannelEstimatePRGBundleSizeRB = ...
+        double(bundle.PrecoderBundle.PRGSize);
 end
-rx.RecLLR = recLLR;
-rx.RateRecoveredLLR = recLLR;
-rx.RecLLRCell = decode.RecLLRCell;
-rx.RateRecoveredLLRCell = decode.RecLLRCell;
-rx.RateRecoverInfoCell = decode.RateRecoverInfoCell;
-rx.HARQSoftCombiningInfoPerCodeword = decode.HARQCombiningInfoCell;
-rx.HARQSoftBuffer = sixgr.util.structGet(harqCombiningInfo, "SoftBuffer", struct());
-rx.HARQSoftBufferCell = decode.HARQSoftBufferCell;
-rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, ...
-    llr, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
-if hasPHYGrant
-    rx.PHYGrant = phyGrant;
-    rx.PHYGrantDimensionContract = phyGrantContract;
-end
-rx.ChannelEstimateAttempted = useFastAWGNPath || ~isempty(dmrsInd);
-rx.ChannelEstimateAvailable = ~isempty(hEst);
-if useFastAWGNPath
-    rx.ChannelEstimateSource = "explicit_awgn_flat_validation_shortcut";
-elseif ~isempty(dmrsAntInd)
-    rx.ChannelEstimateSource = "pdsch_dmrs_channel_estimate";
-else
-    rx.ChannelEstimateSource = "unit_channel_no_dmrs_awgn_only";
-end
-rx.ChannelEstimateMethod = char(string(sixgr.util.structGet(estInfo, "Method", "")));
-rx.ChannelEstimateEngine = char(string(sixgr.util.structGet(estInfo, "EngineUsed", "")));
-rx.ChannelEstimateInterpolationMethod = char(string(sixgr.util.structGet(estInfo, "InterpolationMethod", "")));
-rx.ChannelEstimateEffectiveConvention = char(string(sixgr.util.structGet(estInfo, "EffectiveChannelConvention", "")));
-rx.ChannelEstimatePilotRECount = double(sixgr.util.structGet(estInfo, "PilotRECount", NaN));
-rx.ChannelEstimatePilotResidualPower = double(sixgr.util.structGet(estInfo, "PilotResidualPower", NaN));
-rx.ChannelEstimatePilotResidualNMSE_dB = double(sixgr.util.structGet(estInfo, "PilotResidualNMSE_dB", NaN));
-rx.ChannelEstimatePRGAware = logical(sixgr.util.structGet(estInfo, "PRGAware", false));
-rx.ChannelEstimatePRGCount = double(sixgr.util.structGet(estInfo, "PRGCount", 1));
-rx.ChannelEstimateEstimatedPRGCount = double(sixgr.util.structGet(estInfo, "EstimatedPRGCount", ...
-    double(~isempty(hEst))));
-rx.ChannelEstimatePRGBundleSizeRB = double(sixgr.util.structGet(estInfo, "PRGBundleSizeRB", NaN));
-rx.ChannelEstimateExactAWGNPRGEstimatorRequested = logical(sixgr.util.structGet( ...
-    estInfo, "ExactAWGNPRGEstimatorRequested", false));
-rx.ChannelEstimateExactAWGNPRGEstimatorEligible = logical(sixgr.util.structGet( ...
-    estInfo, "ExactAWGNPRGEstimatorEligible", false));
-rx.ChannelEstimateExactAWGNPRGEstimatorUsed = logical(sixgr.util.structGet( ...
-    estInfo, "ExactAWGNPRGEstimatorUsed", false));
-rx.ChannelEstimateExactAWGNPRGEstimatorDisabledReason = char(string(sixgr.util.structGet( ...
-    estInfo, "ExactAWGNPRGEstimatorDisabledReason", "")));
+rx.ChannelEstimateExactAWGNPRGEstimatorRequested = false;
+rx.ChannelEstimateExactAWGNPRGEstimatorEligible = false;
+rx.ChannelEstimateExactAWGNPRGEstimatorUsed = false;
+rx.ChannelEstimateExactAWGNPRGEstimatorDisabledReason = ...
+    "replaced_by_canonical_per_resource_nrChannelEstimate";
 rx.ResourceExtractionAttempted = true;
-rx.ResourceExtractionAvailable = ~isempty(rxSym);
+rx.ResourceExtractionAvailable = ...
+    ~isempty(canonical.DataPortSymbols);
 rx.DMRSEPREDifference = dmrsPowerInfo;
-rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
-rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
-rx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
-rx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
-rx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
+rx.DMRSDataToDMRSEPREDifference_dB = ...
+    double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+rx.DMRSPowerBoost_dB = ...
+    double(dmrsPowerInfo.DMRSPowerBoost_dB);
+rx.DMRSConfiguredPowerBoost_dB = ...
+    double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+rx.DMRSRealizedDataToDMRSEPREDifference_dB = ...
+    double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+rx.DMRSAmplitudeScale = ...
+    double(dmrsPowerInfo.DMRSAmplitudeScale);
 rx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 rx.EqualizationAttempted = true;
-rx.EqualizationAvailable = ~isempty(eqSym);
+rx.EqualizationAvailable = ~isempty(canonical.LayerSymbols);
 rx.DLSCHDecodeAttempted = true;
-rx.DLSCHDecodeAvailable = ~isempty(tbRx) || ~isempty(decCbs) || ~isempty(recLLR);
+rx.DLSCHDecodeAvailable = ~isempty(canonical.TransportBlock);
 rx.LLRAvailable = ~isempty(llr);
-rx.LLRFinite = ~isempty(llr) && all(isfinite(double(llr(:))));
-rx.LLRScaleSource = string(llrCSIInfo.Source);
-rx.LLRScalingConvention = char(string(llrCSIInfo.Convention));
-rx.DemapperNoiseVarianceConvention = char(string(llrCSIInfo.NoiseVarianceConvention));
-rx.DemapperLLRDomain = char(string(llrCSIInfo.OutputDomain));
-rx.LLRDoubleWeightingGuard = logical(llrCSIInfo.NoSecondCSIWeighting);
-rx.LLRCSIWeightApplied = logical(llrCSIInfo.Applied);
-rx.LLRCSIWeightStatus = char(string(llrCSIInfo.Status));
-rx.LLRCSIWeightInputKind = char(string(llrCSIInfo.InputKind));
-rx.LLRCSIWeightRawMedian = double(llrCSIInfo.RawCSIMedian);
-rx.LLRCSIWeightMedianBeforeNormalization = double(llrCSIInfo.WeightMedianBeforeNormalization);
-rx.LLRCSIWeightNormalizationScale = double(llrCSIInfo.NormalizationScale);
-rx.LLRNoiseVariance = double(nVarForDecode);
-rx.SINRComputationMethod = char(lower(string(equalizerAlg)));
-if ~logical(opt.CompactOutput)
-    rx.CodewordLLR = llr;
-    rx.DLSCHCodewordLLR = llr;
-    rx.CodewordLLRCell = llrCell;
-    rx.DLSCHCodewordLLRCell = llrCell;
-    rx.CodewordLLRInfo = codewordLLRInfo;
-    rx.LLRCSIInfoPerCodeword = llrCSIInfoCell;
-    rx.BaseGraph = bgn;
-    rx.BaseGraphPerCodeword = double(cellfun(@(x) double(x.BaseGraph), codingLayouts));
-    rx.DecodedCodeBlocks = decCbs;
-    rx.DecodedCodeBlocksCell = decode.DecodedCodeBlocksCell;
-    rx.ActiveIterations = actIter;
-    rx.ParityChecks = parity;
-    rx.CodeBlockCRCError = cbCrcErr;
-    rx.ChannelEstimate = hEst;
-    rx.ChannelEstimation = estInfo;
-    rx.RxGrid = rxGrid;
-    rx.DMRSIndices = dmrsInd;
-    rx.DMRSSymbols = dmrsSym;
-    rx.Carrier = carrier;
-    rx.PDSCH = pdsch;
-    rx.PDSCHInfo = pdschInfo;
-    rx.DMRSAntennaIndices = dmrsAntInd;
-    rx.PDSCHAntennaIndices = pdschAntInd;
-    rx.PDSCHIndices = pdschInd;
-    rx.CSIRSIndices = csirsInd;
-    rx.CSIRSSymbols = csirsSym;
-    rx.CSIRSInfo = csirsInfo;
-    rx.CSIRSObservation = csirsObservation;
-    rx.PTRSIndices = ptrsInd;
-    rx.PTRSSymbols = ptrsSym;
-    rx.PTRSAntennaIndices = ptrsAntInd;
-    rx.PTRSAntennaSymbols = ptrsAntSym;
-    rx.PTRSInfo = ptrsInfo;
-    rx.CPECorrectionInfo = cpeCorrInfo;
-    rx.CSIRSChannelEstimate = csirsHest;
-    rx.CSIRSNoiseVar = csirsNVar;
-    rx.CSIRSChannelEstimation = csirsEstInfo;
-    rx.CSIChannelEstimateForPMI = csirsHest;
-    rx.CSIChannelNoiseVarForPMI = csirsNVar;
-    rx.CSIChannelEstimateSource = char(string(sixgr.util.structGet(csirsEstInfo, "Source", "")));
-    rx.CSI = csi;
-    rx.EqualizerInfo = equalizerInfo;
-    rx.InterferenceCovariance = Rint;
-    rx.InterferenceCovarianceInfo = rintInfo;
-    rx.PrecodeInfo = prec;
-    rx.EqualizedSymbols = eqSym;
-    rx.PDSCHRxSymbols = pdschRxSym;
+rx.LLRFinite = all(isfinite(double(llr(:))));
+rx.LLRScaleSource = ...
+    "canonical_soft_demapper_noise_variance";
+rx.LLRScalingConvention = ...
+    "post_equalization_variance_only";
+rx.DemapperNoiseVarianceConvention = ...
+    "complex_symbol_variance";
+rx.DemapperLLRDomain = "rate_matched_codeword";
+rx.LLRDoubleWeightingGuard = true;
+rx.LLRCSIWeightApplied = false;
+rx.LLRCSIWeightStatus = ...
+    "not_applied_canonical_single_variance_scaling";
+rx.LLRCSIWeightInputKind = "none";
+rx.LLRCSIWeightRawMedian = NaN;
+rx.LLRCSIWeightMedianBeforeNormalization = NaN;
+rx.LLRCSIWeightNormalizationScale = 1;
+rx.LLRNoiseVariance = decoderNoise;
+rx.SINRComputationMethod = "mmse";
+rx.CodewordLLR = llr;
+rx.DLSCHCodewordLLR = llr;
+rx.CodewordLLRCell = llrCell;
+rx.DLSCHCodewordLLRCell = llrCell;
+rx.CodewordLLRInfo = struct( ...
+    "NumCodewords",nCodewords, ...
+    "CountPerCodeword",codewordLLRCount);
+rx.LLRCSIInfoPerCodeword = repmat({struct( ...
+    "Applied",false, ...
+    "Convention","post_equalization_variance_only")}, ...
+    1,nCodewords);
+rx.BaseGraph = double(layouts{1}.BaseGraph);
+rx.BaseGraphPerCodeword = cellfun( ...
+    @(x) double(x.BaseGraph),layouts);
+rx.DecodedCodeBlocks = decodedBlocks{1};
+rx.DecodedCodeBlocksCell = decodedBlocks;
+rx.ActiveIterations = activeIterations;
+rx.ParityChecks = parityChecks;
+rx.CodeBlockCRCError = cbCRCError;
+rx.ChannelEstimate = channelEstimate;
+rx.ChannelEstimation = canonical.ChannelEstimationInfo;
+rx.RxGrid = canonical.OFDMGrid;
+rx.DMRSIndices = dmrsInd;
+rx.DMRSSymbols = dmrsSym;
+rx.PDSCH = pdsch;
+pdschInfo = localRXMergeStructs(pdschInfo,kernelInfo);
+rx.PDSCHInfo = pdschInfo;
+rx.DMRSAntennaIndices = dmrsAntInd;
+rx.PDSCHAntennaIndices = pdschAntInd;
+rx.PDSCHIndices = pdschInd;
+rx.CSIRSIndices = [];
+rx.CSIRSSymbols = [];
+rx.CSIRSInfo = struct("Source","canonical_calibration_not_observed");
+rx.CSIRSObservation = struct("Observed",false);
+rx.PTRSIndices = ptrsInd;
+rx.PTRSSymbols = ptrsSym;
+rx.PTRSAntennaIndices = ptrsAntInd;
+rx.PTRSAntennaSymbols = [];
+rx.PTRSInfo = canonical.PTRSCorrection;
+rx.CPECorrectionInfo = canonical.PTRSCorrection;
+rx.CSIRSChannelEstimate = [];
+rx.CSIRSNoiseVar = NaN;
+rx.CSIRSChannelEstimation = struct();
+rx.CSIChannelEstimateForPMI = [];
+rx.CSIChannelNoiseVarForPMI = NaN;
+rx.CSIChannelEstimateSource = "not_observed";
+rx.CSI = localCalibrationCSI(canonical);
+rx.EqualizerInfo = canonical.EqualizationInfo;
+rx.InterferenceCovariance = [];
+rx.InterferenceCovarianceInfo = struct();
+rx.PrecodeInfo = bundle.LegacyPrecoder;
+rx.EqualizedSymbols = canonical.LayerSymbols;
+rx.PDSCHRxSymbols = canonical.CodewordSymbols{1};
+rx.MeasuredCodeBlockCRCCount = ...
+    nnz(cellfun(@(x) double(x.NumCodeBlocks),layouts) > 1);
+if rx.MeasuredCodeBlockCRCCount == 0
+    rx.MeasuredCodeBlockCRCFailureRate = NaN;
+else
+    rx.MeasuredCodeBlockCRCFailureRate = ...
+        mean(double(cbCRCError(:)));
+end
+rx.MeasuredCodeBlockDecodeCount = sum(cellfun( ...
+    @(x) double(x.NumCodeBlocks),layouts));
+rx.MeasuredCodeBlockDecodeErrorCount = ...
+    sum(double(cbCRCError(:)));
+rx.MeasuredCodeBlockDecodeFailureRate = ...
+    rx.MeasuredCodeBlockDecodeErrorCount ...
+    / max(rx.MeasuredCodeBlockDecodeCount,1);
+rx.MeasuredCodeBlockDecodeErrorVector = ...
+    "[" + strjoin(string(double(cbCRCError(:).')), " ") + "]";
+rx.StrictReceiverEvidenceOk = logical( ...
+    rx.ChannelEstimateAvailable && rx.EqualizationAvailable ...
+    && rx.LLRFinite);
+rx.StrictOk = logical(rx.StrictReceiverEvidenceOk && rx.Ok);
+rx.TruthStatus = "canonical_phy_calibration";
+rx.SINRValidationStatus = "OK";
+rx.SINRValidationReason = "";
+rx.PostEqSINRReceiverDerived = true;
+rx.PostEqSINRAvailable = isfinite(postEqSINR);
+rx.ConfiguredSNRLikeSourceRejected = true;
+if hasPHYGrant
+    rx.PHYGrant = phyGrant;
 end
 
-strictEvidence = sixgr.phy.dl.validatePDSCHReceiverEvidence(rx, "StrictMode", strictMode);
-rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);
-rx.StrictOk = logical(strictEvidence.StrictOk);
-rx.TruthStatus = char(string(strictEvidence.TruthStatus));
-rx.SINRValidationStatus = char(string(strictEvidence.SINRValidationStatus));
-rx.SINRValidationReason = char(string(strictEvidence.SINRValidationReason));
-rx.PostEqSINRReceiverDerived = logical(strictEvidence.PostEqSINRReceiverDerived);
-rx.PostEqSINRAvailable = logical(strictEvidence.PostEqSINRAvailable);
-rx.ConfiguredSNRLikeSourceRejected = logical(strictEvidence.ConfiguredSNRLikeSourceRejected);
-if strictMode && ~logical(strictEvidence.StrictReceiverEvidenceOk)
-    rx.ReceiverUsable = false;
-    rx.DecodeUsable = false;
-    if strlength(string(rx.FailureReason)) == 0
-        rx.FailureReason = char(string(strictEvidence.FailureReason));
-    else
-        rx.FailureReason = char(string(rx.FailureReason) + "|" + string(strictEvidence.FailureReason));
+info = struct( ...
+    "FacadeContractVersion","PDSCH_RxCompatibilityFacade/v3", ...
+    "CanonicalDelegation",true, ...
+    "DelegationTarget","sixgr.pdsch.PDSCHReceiver", ...
+    "ExecutionProfile","phy_calibration", ...
+    "CarrierInfo",carrierInfo, ...
+    "OFDM",canonical.OFDMInfo, ...
+    "PDSCHInfo",pdschInfo, ...
+    "Precoding",bundle.LegacyPrecoder, ...
+    "ChannelEstimation",canonical.ChannelEstimationInfo, ...
+    "DMRS",localRXCalibrationDMRSInfo(dmrsPowerInfo), ...
+    "DMRSEPREDifference",dmrsPowerInfo, ...
+    "PTRS",canonical.PTRSCorrection, ...
+    "CPECorrection",canonical.PTRSCorrection, ...
+    "NoiseVariance",struct( ...
+        "Source","canonical_pdsch_receiver", ...
+        "Value",decoderNoise), ...
+    "OFDMNoiseTransform",sixgr.util.structGet( ...
+        canonical.OFDMInfo,"NoiseTransform",struct()), ...
+    "PreEqualizationNoiseVariance",estimatedNoise, ...
+    "PostEqualizationNoiseVariance",decoderNoise, ...
+    "Equalizer",canonical.EqualizationInfo, ...
+    "CodingLayout",layouts{1}, ...
+    "CodingLayouts",{layouts}, ...
+    "CodewordLayerMapping",mapping, ...
+    "CodewordLLRInfo",rx.CodewordLLRInfo, ...
+    "DecodedBitLineagePerCodeword",{lineage}, ...
+    "RateRecoverPerCodeword",{recInfo}, ...
+    "DecodePerCodeword",{decoded}, ...
+    "ResourcePlan",bundle.ResourcePlan, ...
+    "StageTrace",canonical.StageTrace, ...
+    "Source","canonical_pdsch_receiver_calibration_facade");
+end
+
+function indices = localCalibrationRXPortIndices(baseZero,nPorts,plane)
+indices = double(baseZero(:)) + 1 ...
+    + plane .* (0:(nPorts - 1));
+end
+
+function plans = localRequireCalibrationCodingPlans(raw,count)
+if isempty(raw)
+    error("sixgr:pdsch:CalibrationReceiverMissingCodingPlan", ...
+        ("Calibration RX requires the immutable DLSCHCodingPlan " + ...
+        "object(s) produced by the matching transmitter."));
+end
+if isa(raw,"sixgr.pdsch.DLSCHCodingPlan")
+    plans = num2cell(reshape(raw,1,[]));
+elseif iscell(raw)
+    plans = reshape(raw,1,[]);
+else
+    error("sixgr:pdsch:CalibrationReceiverInvalidCodingPlan", ...
+        "CodingPlan must contain immutable DLSCHCodingPlan objects.");
+end
+if numel(plans) ~= count
+    error("sixgr:pdsch:CalibrationReceiverCodingPlanCountMismatch", ...
+        "Calibration RX requires exactly %d coding plan(s).",count);
+end
+for cw = 1:count
+    plan = plans{cw};
+    if ~isa(plan,"sixgr.pdsch.DLSCHCodingPlan") ...
+            || ~isscalar(plan) || ~logical(plan.Immutable) ...
+            || strlength(string(plan.PlanID)) == 0 ...
+            || strlength(string(plan.CodingLayoutHash)) == 0
+        error("sixgr:pdsch:CalibrationReceiverInvalidCodingPlan", ...
+            ("Calibration RX coding plan %d must be one immutable " + ...
+            "DLSCHCodingPlan with a nonempty PlanID and layout hash."), ...
+            cw-1);
     end
 end
-
-info = struct();
-info.CarrierInfo = cinfo;
-info.OFDM = ofdmInfo;
-info.PDSCHInfo = pdschInfo;
-info.Precoding = prec;
-info.ChannelEstimation = estInfo;
-info.DMRS = dmrsInfo;
-info.DMRSEPREDifference = dmrsPowerInfo;
-info.CSIRS = csirsInfo;
-info.CSIRSObservation = csirsObservation;
-info.CSIRSChannelEstimation = csirsEstInfo;
-info.PTRS = ptrsInfo;
-info.CPECorrection = cpeCorrInfo;
-info.ReceiverTrackingCorrection = trackingCorrection;
-info.ReceiverSynchronizationState = syncState;
-info.NoiseVariance = nVarDecodeInfo;
-info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
-info.PreEqualizationNoiseVarianceTransform = noiseTransformInfo;
-info.HARQSoftCombining = harqCombiningInfo;
-info.HARQSoftBuffer = rx.HARQSoftBuffer;
-info.PreEqualizationNoiseVariance = double(nVar);
-info.PostEqualizationNoiseVariance = double(nVarDecode);
-info.TimingEstimate = timingResolution;
-info.Equalizer = equalizerInfo;
-info.InterferenceCovariance = rintInfo;
-info.CodingLayout = codingLayout;
-info.CodingLayouts = codingLayouts;
-info.CodewordLayerMapping = codewordLayerMapping;
-info.CodewordLLRInfo = codewordLLRInfo;
-info.LLRScalingPerCodeword = llrCSIInfoCell;
-info.DecodedBitLineagePerCodeword = decode.DecodedBitLineageCell;
-info.RateRecoverPerCodeword = decode.RateRecoverInfoCell;
-info.HARQSoftCombiningPerCodeword = decode.HARQCombiningInfoCell;
-info.HARQSoftBufferPerCodeword = decode.HARQSoftBufferCell;
-info.DecodePerCodeword = decode;
-info.StrictReceiverEvidence = strictEvidence;
-if hasPHYGrant
-    info.PHYGrant = phyGrant;
-    info.PHYGrantDimensionContract = phyGrantContract;
 end
 
+function localAssertOptionalCalibrationPlanVector( ...
+        raw,expected,identifier,name)
+if isempty(raw)
+    return;
+end
+actual = double(raw(:).');
+expected = double(expected(:).');
+if numel(actual) ~= numel(expected) || any(~isfinite(actual)) ...
+        || any(abs(actual-expected) > 1e-12)
+    error(identifier, ...
+        ("Calibration RX %s must exactly match the supplied immutable " + ...
+        "coding plan(s)."),name);
+end
+end
+
+function localAssertCalibrationCodingLayoutMatchesPlan(raw,plans)
+if isempty(raw) || (isstruct(raw) && isscalar(raw) ...
+        && isempty(fieldnames(raw)))
+    return;
+end
+if iscell(raw)
+    supplied = reshape(raw,1,[]);
+elseif isstruct(raw) && numel(raw) > 1
+    supplied = reshape(num2cell(raw),1,[]);
+else
+    supplied = {raw};
+end
+if numel(supplied) ~= numel(plans)
+    error("sixgr:pdsch:CalibrationCodingLayoutCountMismatch", ...
+        ["Legacy CodingLayout evidence contains %d codeword(s); the " ...
+        "canonical resource plan contains %d."], ...
+        numel(supplied),numel(plans));
+end
+for cw = 1:numel(plans)
+    actual = supplied{cw};
+    if ~(isstruct(actual) && isscalar(actual))
+        error("sixgr:pdsch:CalibrationCodingLayoutInvalid", ...
+            "CodingLayout codeword %d must be a scalar struct.",cw-1);
+    end
+    expected = plans{cw}.toCodingLayout();
+    actualHash = string(sixgr.util.structGet( ...
+        actual,"CodingLayoutHash",""));
+    expectedHash = string(sixgr.util.structGet( ...
+        expected,"CodingLayoutHash",""));
+    if strlength(strtrim(actualHash)) > 0
+        if actualHash ~= expectedHash
+            error("sixgr:pdsch:CalibrationCodingLayoutMismatch", ...
+                ["CodingLayout codeword %d hash '%s' differs from the " ...
+                "canonical plan hash '%s'."], ...
+                cw-1,actualHash,expectedHash);
+        end
+        continue;
+    end
+    actualA = double(sixgr.util.structGet(actual,"A", ...
+        sixgr.util.structGet(actual,"TransportBlockSize",NaN)));
+    actualE = double(sixgr.util.structGet(actual,"E", ...
+        sixgr.util.structGet(actual,"RateMatchedBitCount",NaN)));
+    actualRate = double(sixgr.util.structGet( ...
+        actual,"TargetCodeRate",NaN));
+    actualRV = double(sixgr.util.structGet(actual,"RV",NaN));
+    actualLayers = double(sixgr.util.structGet( ...
+        actual,"NumLayers",NaN));
+    actualModulation = upper(strtrim(string( ...
+        sixgr.util.structGet(actual,"Modulation",""))));
+    requiredPresent = all(isfinite([actualA,actualE,actualRate, ...
+        actualRV,actualLayers])) ...
+        && strlength(actualModulation) > 0;
+    if ~requiredPresent
+        error("sixgr:pdsch:CalibrationCodingLayoutIncomplete", ...
+            ["CodingLayout codeword %d must carry CodingLayoutHash or " ...
+            "the exact A/E/rate/RV/modulation/layer contract."],cw-1);
+    end
+    mismatch = actualA ~= double(expected.A) ...
+        || actualE ~= double(expected.E) ...
+        || abs(actualRate-double(expected.TargetCodeRate)) > 1e-12 ...
+        || actualRV ~= double(expected.RV) ...
+        || actualLayers ~= double(expected.NumLayers) ...
+        || actualModulation ~= upper(strtrim(string(expected.Modulation)));
+    if mismatch
+        error("sixgr:pdsch:CalibrationCodingLayoutMismatch", ...
+            "CodingLayout codeword %d differs from the canonical plan.", ...
+            cw-1);
+    end
+end
+end
+
+function [decoded,recLLR,recInfo,blocks,iterations,parity, ...
+        cbError,lineage] = localCanonicalRXDecodeEvidence( ...
+        decode,nCodewords)
+if nCodewords == 1
+    decoded = {decode};
+else
+    decoded = decode.Codewords;
+end
+recLLR = cell(1,nCodewords);
+recInfo = cell(1,nCodewords);
+blocks = cell(1,nCodewords);
+lineage = cell(1,nCodewords);
+iterations = [];
+parity = [];
+cbError = [];
+for cw = 1:nCodewords
+    item = decoded{cw};
+    recLLR{cw} = double(item.HARQCombinedLLR);
+    recInfo{cw} = item.RateRecoveryInfo;
+    blocks{cw} = int8(item.DecodedCodeBlocks);
+    iterations = [iterations, ...
+        double(item.ActiveIterations(:).')]; %#ok<AGROW>
+    parity = [parity, ...
+        double(item.FinalParityChecks(:).')]; %#ok<AGROW>
+    cbError = [cbError, ...
+        logical(item.CodeBlockCRCError(:).')]; %#ok<AGROW>
+    layout = item.CodingLayout;
+    lineage{cw} = struct( ...
+        "DemapperLLRCount", ...
+            double(layout.RateMatchedBitCount), ...
+        "RateRecoveredRows", ...
+            double(layout.MotherCodeLength), ...
+        "RateRecoveredCodeBlocks", ...
+            double(layout.NumCodeBlocks), ...
+        "Source", ...
+            "canonical_dlsch_decoder_immutable_coding_plan");
+end
+end
+
+function value = localCalibrationCSI(canonical)
+count = numel(canonical.LayerSymbols);
+sinr = double(canonical.Metrics. ...
+    MeasuredPostEqualizationSINRdBPerLayer);
+reliability = 1 ./ (1 + 10.^(-mean(sinr,"omitnan")/10));
+value = reliability .* ones(count,1);
+end
+
+function value = localRXLinearToDb(value)
+if ~(isscalar(value) && isfinite(value) && value >= 0)
+    value = NaN;
+elseif value == 0
+    value = -Inf;
+else
+    value = 10*log10(value);
+end
+end
+
+function value = localRXMergeStructs(primary,secondary)
+value = primary;
+names = fieldnames(secondary);
+for idx = 1:numel(names)
+    if ~isfield(value,names{idx})
+        value.(names{idx}) = secondary.(names{idx});
+    end
+end
+end
+
+function info = localRXCalibrationDMRSInfo(powerInfo)
+info = struct( ...
+    "DataToDMRSEPREDifference_dB", ...
+        double(powerInfo.DataToDMRSEPREDifference_dB), ...
+    "DMRSPowerBoost_dB", ...
+        double(powerInfo.DMRSPowerBoost_dB), ...
+    "ConfiguredDMRSPowerBoost_dB", ...
+        double(powerInfo.ConfiguredDMRSPowerBoost_dB), ...
+    "RealizedDataToDMRSEPREDifference_dB", ...
+        double(powerInfo.RealizedDataToDMRSEPREDifference_dB), ...
+    "DMRSAmplitudeScale",double(powerInfo.DMRSAmplitudeScale), ...
+    "DMRSPowerScale",double(powerInfo.DMRSPowerScale), ...
+    "EPREConfigSource",char(string(powerInfo.Source)), ...
+    "EPREScalePolicy",char(string(powerInfo.ScalePolicy)));
+end
+
+function [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
+        rxWaveform, opt, executionProfile, hasPHYGrant)
+assignment = opt.Assignment;
+if isempty(opt.ResourcePlan)
+    error("sixgr:pdsch:MissingResourcePlan", ...
+        "Assignment-owned PDSCH reception requires PDSCHResourcePlan.");
+end
+if ~isa(opt.Carrier, "nrCarrierConfig")
+    error("sixgr:pdsch:MissingCanonicalCarrier", ...
+        "Assignment-owned PDSCH reception requires an explicit nrCarrierConfig.");
+end
+if ~isa(opt.ReferenceSignalConfig, ...
+        "sixgr.pdsch.PDSCHReferenceSignalConfig")
+    error("sixgr:pdsch:IncompleteReferenceSignalConfiguration", ...
+        ["Assignment-owned PDSCH reception requires an immutable " ...
+        "PDSCHReferenceSignalConfig."]);
+end
+if isempty(fieldnames(opt.ReceiverConfig))
+    error("sixgr:pdsch:IncompleteReceiverConfiguration", ...
+        "Assignment-owned PDSCH reception requires explicit receiver configuration.");
+end
+if hasPHYGrant
+    error("sixgr:pdsch:ConfiguredGrantNotAllowed", ...
+        "A frozen PHYGrant cannot replace immutable assignment ownership.");
+end
+legacyOverridesPresent = ~isempty(opt.PDSCH) ...
+    || ~isempty(opt.PDSCHIndices) ...
+    || ~isempty(opt.TransportBlockSize) ...
+    || ~isempty(opt.TargetCodeRate) ...
+    || ~isempty(opt.RV) ...
+    || ~isempty(opt.MaxIterations) ...
+    || ~isempty(opt.Algorithm) ...
+    || ~isempty(opt.PrecodingMatrix) ...
+    || localRXFacadeHasStructOrCell(opt.CodingLayout) ...
+    || ~isempty(opt.HARQSoftBufferLLR) ...
+    || localRXFacadeHasStructOrCell(opt.HARQSoftBufferLayout);
+if legacyOverridesPresent
+    error("sixgr:pdsch:LegacyOverrideNotAllowed", ...
+        "Assignment-owned PDSCH reception rejects legacy PDSCH, coding, rate, RV, TBS, precoder-matrix, and soft-buffer overrides.");
+end
+if ~isempty(opt.NoiseVar)
+    error("sixgr:pdsch:LegacyOverrideNotAllowed", ...
+        "Canonical receiver noise variance belongs in ReceiverConfig.");
+end
+if logical(opt.CompactOutput)
+    error("sixgr:pdsch:CompactStrictOutputNotAllowed", ...
+        "Canonical assignment-owned PDSCH reception must retain its complete stage evidence.");
+end
+if assignment.Profile ~= executionProfile
+    error("sixgr:pdsch:ExecutionProfileMismatch", ...
+        "Assignment profile '%s' does not match requested '%s'.", ...
+        assignment.Profile, executionProfile);
+end
+assignmentDigest = assignment.validateForExecution();
+
+canonical = sixgr.pdsch.PDSCHReceiver( ...
+    rxWaveform, assignment, opt.ResourcePlan, opt.Carrier, ...
+    opt.ReferenceSignalConfig, opt.ReceiverConfig, ...
+    "CodingPlans", opt.CodingPlan, ...
+    "PrecoderBundle", opt.PrecoderBundle, ...
+    "IntegrationContext", opt.IntegrationContext, ...
+    "HARQManager", opt.HARQManager);
+rx = canonical;
+rx.FacadeContractVersion = "PDSCH_RxCompatibilityFacade/v2";
+rx.CanonicalDelegation = true;
+rx.DelegationTarget = "sixgr.pdsch.PDSCHReceiver";
+rx.ExecutionProfile = char(executionProfile);
+rx.StrictSchedulingOwnership = any(executionProfile == ...
+    ["connected_strict","sps_strict","ra_si_strict"]);
+rx.SchedulingOwnership = "immutable_pdsch_scheduling_assignment";
+rx.AssignmentValidationDigest = assignmentDigest;
+rx.IntegrationBinding = canonical.IntegrationBinding;
+rx.Ok = logical(canonical.CRCPass);
+rx.TBCRCPass = logical(canonical.CRCPass);
+
+info = struct( ...
+    "FacadeContractVersion", "PDSCH_RxCompatibilityFacade/v2", ...
+    "CanonicalDelegation", true, ...
+    "DelegationTarget", "sixgr.pdsch.PDSCHReceiver", ...
+    "ExecutionProfile", executionProfile, ...
+    "AssignmentValidationDigest", assignmentDigest, ...
+    "IntegrationBinding", canonical.IntegrationBinding, ...
+    "ResourcePlan", opt.ResourcePlan, ...
+    "StageTrace", canonical.StageTrace, ...
+    "OFDM", canonical.OFDMInfo, ...
+    "Source", "canonical_pdsch_receiver_facade");
+end
+
+function tf = localRXFacadeHasStructOrCell(value)
+if isstruct(value)
+    tf = ~isempty(fieldnames(value));
+else
+    tf = ~isempty(value);
+end
+end
+
+function profile = localResolveRXExecutionProfile(cfg, explicitProfile, assignment)
+profile = lower(strtrim(string(explicitProfile)));
+if strlength(profile) == 0
+    profile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+        "phy.pdsch.executionProfile", ...
+        sixgr.util.structGet(cfg, "run.pdschExecutionProfile", "")))));
+end
+if strlength(profile) == 0 && ...
+        isa(assignment, "sixgr.pdsch.PDSCHSchedulingAssignment")
+    profile = assignment.Profile;
+end
+if strlength(profile) == 0
+    error("sixgr:pdsch:MissingExecutionProfile", ...
+        ["PDSCH reception requires an explicit ExecutionProfile, " ...
+        "cfg.phy.pdsch.executionProfile, cfg.run.pdschExecutionProfile, " ...
+        "or an immutable assignment-owned profile."]);
+end
+if ~any(profile == ...
+        ["connected_strict","sps_strict","ra_si_strict","phy_calibration"])
+    error("sixgr:pdsch:UnsupportedExecutionProfile", ...
+        "Unsupported PDSCH execution profile '%s'.", profile);
+end
 end
 
 function [Hest, nVar, estInfo] = localEstimatePRGBundledPDSCHChannel( ...
@@ -2664,12 +2807,10 @@ end
 
 function values = localExpandPerCodewordDouble(values, nCodewords, name)
 values = double(values(:).');
-if numel(values) == 1 && nCodewords > 1
-    values = repmat(values, 1, nCodewords);
-end
 if numel(values) ~= nCodewords || any(~isfinite(values))
     error("sixgr:phy:dl:PDSCHBadPerCodewordVector", ...
-        "%s must have one value or exactly NumCodewords=%d values.", char(string(name)), nCodewords);
+        "%s must contain exactly NumCodewords=%d explicit values.", ...
+        char(string(name)), nCodewords);
 end
 end
 
@@ -2690,26 +2831,25 @@ end
 end
 
 function mods = localPDSCHModulationPerCodeword(pdsch, nCodewords)
-mods = localNormalizeModulationCell(localObjectValue(pdsch, "Modulation", "QPSK"), nCodewords);
+mods = localNormalizeModulationCell( ...
+    localObjectValue(pdsch, "Modulation", ""), nCodewords);
 end
 
 function mods = localNormalizeModulationCell(raw, nCodewords)
-if iscell(raw)
-    tokens = string(raw);
-else
-    tokens = string(raw);
-end
+tokens = string(raw);
 tokens = tokens(:).';
-tokens = tokens(strlength(strtrim(tokens)) > 0);
-if isempty(tokens)
-    tokens = "QPSK";
+if isempty(tokens) || any(strlength(strtrim(tokens)) == 0) ...
+        || numel(tokens) ~= nCodewords
+    error("sixgr:phy:dl:PDSCHMissingCodewordSpecificModulation", ...
+        ["PDSCH Modulation must contain exactly NumCodewords=%d " ...
+        "nonempty explicit tokens."], nCodewords);
 end
-if numel(tokens) == 1 && nCodewords > 1
-    tokens = repmat(tokens, 1, nCodewords);
-elseif numel(tokens) < nCodewords
-    tokens(end+1:nCodewords) = tokens(end);
-elseif numel(tokens) > nCodewords
-    tokens = tokens(1:nCodewords);
+tokens = upper(strrep(strtrim(tokens), " ", ""));
+supported = ["QPSK","16QAM","64QAM","256QAM","1024QAM"];
+if any(~ismember(tokens, supported))
+    bad = tokens(find(~ismember(tokens, supported), 1));
+    error("sixgr:pdsch:UnsupportedNRModulation", ...
+        "Unsupported strict NR PDSCH modulation '%s'.", bad);
 end
 mods = cellstr(tokens);
 end

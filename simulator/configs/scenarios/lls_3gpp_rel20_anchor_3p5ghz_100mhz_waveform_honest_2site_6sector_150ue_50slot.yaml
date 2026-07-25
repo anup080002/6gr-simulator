@@ -244,7 +244,7 @@ random_access:
   zero_correlation_zone: 8
   detection_threshold: 0.5
   msg3_enabled: true
-  configuration_index: 167
+  configuration_index: 157
   subcarrier_spacing_khz: 30
   root_sequence_index: 1
   preamble_index: 0

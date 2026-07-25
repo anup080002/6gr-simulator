@@ -10,14 +10,19 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
-SNR_SWEEP_SCENARIO = "lls_true_snr_sweep_awgn_1ue.yaml"
-GEOMETRY_SCENARIO = "lls_true_geometry_2cell_2ue_200kmh.yaml"
+SNR_SWEEP_SCENARIO = "master_sinr_sweep.yaml"
+GEOMETRY_SCENARIO = "master_geometry_based.yaml"
 
 
 def test_webgui_lists_new_lls_scenario_modes() -> None:
     scenarios = dash.list_scenarios()
     assert SNR_SWEEP_SCENARIO in scenarios
     assert GEOMETRY_SCENARIO in scenarios
+    assert dash.OPERATOR_MASTER_SCENARIOS == (
+        SNR_SWEEP_SCENARIO,
+        GEOMETRY_SCENARIO,
+    )
+    assert not any(name.endswith("_smoke.yaml") for name in scenarios)
 
 
 def test_webgui_snr_sweep_metadata_and_label() -> None:

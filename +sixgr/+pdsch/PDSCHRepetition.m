@@ -1,11 +1,18 @@
 function plan = PDSCHRepetition(cfg)
 %PDSCHRepetition Materialize repeated-copy scheduling for truthful studies.
 
+base = sixgr.phy.frame.AbsoluteTime.resolveNumerology( ...
+    double(cfg.Numerology));
+cp = string(sixgr.util.structGet(cfg, "CyclicPrefix", "normal"));
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    base.SCSKHz, cp, "generic_waveform_test", "");
 plan = sixgr.pdsch.TDRAAllocator(cfg.TDRA, ...
     "RepetitionMode", cfg.RepetitionMode, ...
-    "RepetitionCount", cfg.RepetitionCount);
+    "RepetitionCount", cfg.RepetitionCount, ...
+    "SymbolsPerSlot", double(numerology.SymbolsPerSlot), ...
+    "ExecutionProfile", "study_calibration");
 plan.Mode = cfg.RepetitionMode;
 plan.Count = cfg.RepetitionCount;
-plan.CombiningMode = "llr_sum_if_same_length_else_not_materialized";
+plan.CombiningMode = "position_aware_rate_recovery_soft_buffer";
 end
 

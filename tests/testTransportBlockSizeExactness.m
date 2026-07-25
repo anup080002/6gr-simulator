@@ -3,8 +3,9 @@ function ok = testTransportBlockSizeExactness()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 if exist("nrTBS", "file") ~= 2
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testTransportBlockSizeExactness requires nrTBS from 5G " ...
+        "Toolbox; unavailable tests cannot pass."]);
 end
 
 localAssertDefaultPolicy();
@@ -44,7 +45,9 @@ end
 end
 
 function localAssertOverrideCannotSelfCertify(direction)
-cfg = localCfg(direction, 3);
+% Keep this guard isolated from multi-port DM-RS validation: its sole
+% contract is that a frozen grant cannot self-certify a wrong TBS.
+cfg = localCfg(direction, 1);
 grant = sixgr.link.resolveWaveformGrant(cfg, direction, 0);
 badGrant = grant.PHYGrant;
 badTBS = double(grant.TBSBits) + 8;
@@ -65,14 +68,17 @@ else
 end
 
 threw = false;
+actualId = "";
 try
     runner();
 catch ME
+    actualId = string(ME.identifier);
     threw = strcmp(string(ME.identifier), expectedId);
 end
 assert(threw, ...
-    "%s TX must reject a frozen-grant TBS mismatch even when TransportBlockSizeOverride echoes the bad grant.", ...
-    direction);
+    ("%s TX must reject a frozen-grant TBS mismatch even when " + ...
+    "TransportBlockSizeOverride echoes the bad grant. Expected %s; got %s."), ...
+    direction, expectedId, actualId);
 end
 
 function cfg = localCfg(direction, idx)
@@ -87,6 +93,7 @@ rates = [0.25 0.31 0.38 0.45 0.52 0.29 0.34 0.41 0.48 0.55 0.36 0.43];
 cfg = sixgr.config.defaultConfig();
 cfg.run.useMex = false;
 cfg.run.shortRun = true;
+cfg.run.pdschExecutionProfile = "phy_calibration";
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
@@ -94,8 +101,10 @@ cfg.mac.scheduler.fastNREApprox = false;
 cfg.mac.scheduler.tbsMode = "faithful";
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
-cfg.phy.carrier.NSizeGrid = 52;
+cfg.phy.carrier.NSizeGrid = 273;
 cfg.phy.carrier.SubcarrierSpacing = 30;
+cfg.phy.pdcch.symbolAllocation = [0 2];
+cfg.phy.pucch.symbolAllocation = [12 2];
 
 prbStart = mod(2 * idx, 20);
 prbSet = prbStart:(prbStart + prbCounts(idx) - 1);
@@ -115,7 +124,10 @@ if direction == "DL"
     cfg.phy.pdsch.nPorts = numLayers;
     cfg.phy.pdsch.codeRate = codeRate;
     cfg.phy.pdsch.xOverhead = 0;
-    cfg.phy.pdsch.mcsIndex = 4 + mod(idx, 10);
+    cfg.phy.pdsch.executionProfile = "phy_calibration";
+    cfg.phy.pdsch.mcsTable = "calibration_explicit";
+    cfg.phy.pdsch.mcsIndex = 0;
+    cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
     cfg.phy.pdsch.enablePTRS = false;
 else
     cfg.phy.pusch.prbSet = prbSet;
@@ -134,7 +146,21 @@ else
     cfg.phy.pusch.transmissionScheme = "nonCodebook";
     cfg.phy.pusch.enablePTRS = false;
 end
+cfg = withCanonicalSchedulerTiming(cfg);
 cfg = sixgr.config.normalizeConfig(cfg);
+end
+
+function context = localCalibrationMCSContext()
+context = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
 end
 
 function tbs = localExactNrTBS(grant)

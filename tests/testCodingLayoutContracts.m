@@ -3,10 +3,9 @@ function ok = testCodingLayoutContracts()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 if ~localHaveRequired5G()
-    warning("testCodingLayoutContracts:Missing5G", ...
-        "Skipping coding-layout tests because required 5G Toolbox APIs are unavailable.");
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testCodingLayoutContracts requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 rng(7404, "twister");

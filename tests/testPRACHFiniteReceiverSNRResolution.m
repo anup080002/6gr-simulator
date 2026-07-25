@@ -4,7 +4,7 @@ function testPRACHFiniteReceiverSNRResolution
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
     "__web_runtime_webgui_master_2cell_2ue_full_profile_optimized_20260624_1758.yaml");
 if exist(scenarioPath, "file") ~= 2
-    scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
+    scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_geometry_based.yaml");
 end
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "prach_finite_snr_resolution"));

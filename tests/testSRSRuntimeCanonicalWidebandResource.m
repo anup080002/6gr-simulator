@@ -1,7 +1,7 @@
 function ok = testSRSRuntimeCanonicalWidebandResource()
 setup6GRSimToolkit("Verbose", false);
 
-scenarioPath = fullfile("simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
+scenarioPath = fullfile("simulator", "configs", "scenarios", "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, tempname);
 

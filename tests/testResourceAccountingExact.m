@@ -3,10 +3,9 @@ function ok = testResourceAccountingExact()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 if ~localHaveRequired5G()
-    warning("testResourceAccountingExact:Missing5G", ...
-        "Skipping resource accounting test because required 5G Toolbox APIs are unavailable.");
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testResourceAccountingExact requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 rng(4202, "twister");
@@ -178,13 +177,24 @@ end
 
 function localAssertRepresentativeFullTX(carrier)
 cfg = sixgr.config.defaultConfig();
+cfg = sixgr.util.structSet(cfg, "run.pdschExecutionProfile", "phy_calibration");
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", carrier.NSizeGrid);
 cfg = sixgr.util.structSet(cfg, "phy.carrier.SubcarrierSpacing", carrier.SubcarrierSpacing);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.prbSet", 0:23);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.symbolAllocation", [0 14]);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mappingType", "A");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.modulation", "64QAM");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.numLayers", 2);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.enablePTRS", true);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.timeDensity", 2);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.frequencyDensity", 2);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.reOffset", "00");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.portSet", 0);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.codeRate", 449/1024);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.executionProfile", "phy_calibration");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", "calibration_explicit");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", 0);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", localCalibrationMCSContext());
 [txDL, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, "CompactOutput", false);
 assert(numel(txDL.Codeword) == double(txDL.ResourceAccounting.CodedBitCountG), ...
     "PDSCH_Tx codeword length must equal ResourceAccounting G.");
@@ -193,6 +203,7 @@ assert(double(txDL.ScheduledTransportBlockSize) == double(nrTBS(txDL.PDSCH.Modul
     "PDSCH_Tx scheduled TBS must match nrTBS from accounting inputs.");
 
 cfg = sixgr.util.structSet(cfg, "phy.pusch.prbSet", 0:23);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.symbolAllocation", [0 14]);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", "64QAM");
 cfg = sixgr.util.structSet(cfg, "phy.pusch.numLayers", 1);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.transmissionScheme", "codebook");
@@ -208,6 +219,19 @@ assert(double(txUL.ResourceAccounting.LayerDataRE) < double(txUL.ResourceAccount
 assert(double(txUL.ScheduledTransportBlockSize) == double(nrTBS(txUL.PUSCH.Modulation, txUL.PUSCH.NumLayers, ...
     numel(txUL.PUSCH.PRBSet), txUL.ResourceAccounting.NREPerPRBForTBS, txUL.TargetCodeRate, txUL.XOverhead)), ...
     "PUSCH_Tx scheduled TBS must match nrTBS from accounting inputs.");
+end
+
+function context = localCalibrationMCSContext()
+context = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
 end
 
 function n = localLLRLength(llr)

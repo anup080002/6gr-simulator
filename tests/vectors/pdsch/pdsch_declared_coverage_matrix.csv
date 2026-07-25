@@ -1,0 +1,17 @@
+CaseID,Rank,NumCodewords,MappingType,DMRSConfigurationType,DMRSLength,DMRSAdditionalPosition,DMRSMultiplexing,DMRSPortSet,PTRSEnabled,Modulation,RVSequence,PrecodingMode,ChannelModel,NumerologyKHz,RequiredTestKinds,ExpectedStatus
+COV-001,1,1,A,1,1,1,basic,0,0,16QAM,0|2|3|1,wideband_codebook,AWGN,15,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-002,1,1,B,1,1,1,basic,0,1,256QAM,0|2|3|1,wideband_codebook,AWGN,15,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-003,2,1,A,2,1,2,basic,0|1,0,64QAM,0|2|3|1,wideband_codebook,TDL-A,30,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-004,2,1,B,2,1,2,basic,0|1,1,1024QAM,0|2|3|1,wideband_codebook,TDL-A,30,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-005,3,1,A,1,1,3,basic,0|1|2,1,256QAM,0|2|3|1,prg_codebook,CDL-C,60,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-006,3,1,B,1,2,1,basic,0|1|2,0,QPSK,0|2|3|1,prg_codebook,CDL-C,60,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-007,4,1,A,2,1,0,basic,0|1|2|3,1,1024QAM,0|2|3|1,prg_codebook,AWGN,120,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-008,4,1,B,2,1,1,basic,0|1|2|3,0,16QAM,0|2|3|1,prg_codebook,AWGN,120,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-009,5,2,A,1,1,1,enhanced,0|1|2|3|8,0,QPSK,0|2|3|1,prg_noncodebook,TDL-A,15,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-010,5,2,B,1,1,2,enhanced,0|1|2|3|8,0,64QAM,0|2|3|1,prg_noncodebook,TDL-A,15,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-011,6,2,A,2,1,2,basic,0|1|2|3|4|5,0,16QAM,0|2|3|1,prg_noncodebook,CDL-C,30,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-012,6,2,B,2,2,0,basic,0|1|2|3|4|5,1,256QAM,0|2|3|1,prg_noncodebook,CDL-C,30,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-013,7,2,A,1,1,3,enhanced,0|1|2|3|8|9|10,0,64QAM,0|2|3|1,prg_noncodebook,AWGN,60,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-014,7,2,B,1,1,1,enhanced,0|1|2|3|8|9|10,1,1024QAM,0|2|3|1,prg_noncodebook,AWGN,60,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-015,8,2,A,2,1,0,enhanced,0|1|2|3|4|5|12|13,1,256QAM,0|2|3|1,prg_noncodebook,TDL-A,120,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS
+COV-016,8,2,B,2,1,2,enhanced,0|1|2|3|4|5|12|13,0,QPSK,0|2|3|1,prg_noncodebook,TDL-A,120,positive|no_signal|wrong_rnti|wrong_dmrs|wrong_rv|reserved_re|impairment,PASS

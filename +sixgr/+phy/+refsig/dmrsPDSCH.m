@@ -59,7 +59,29 @@ info.DMRSIndicesInfo = dmrsIndInfo;
 try
     info.CDMLengths = reshape(double(dmrsIndInfo.CDMLengths), 1, []);
 catch
-    info.CDMLengths = [];
+    % R2026a removed the secondary nrPDSCHDMRSIndices output.  The
+    % authoritative OCC despreading dimensions remain available as the
+    % computed, read-only nrPDSCHDMRSConfig.CDMLengths property.  Leaving
+    % this empty makes nrChannelEstimate treat multi-port DM-RS as
+    % non-CDM pilots, grossly inflating its noise estimate on fading links.
+    try
+        info.CDMLengths = reshape(double(pdsch.DMRS.CDMLengths), 1, []);
+    catch
+        ports = [];
+        try
+            ports = double(pdsch.DMRS.DMRSPortSet(:).');
+        catch
+        end
+        numPorts = max(double(pdsch.NumLayers),numel(ports));
+        if numPorts <= 1
+            info.CDMLengths = [1 1];
+        else
+            error("sixgr:phy:dmrsPDSCH:CDMLengthsUnavailable", ...
+                "Authoritative PDSCH DM-RS CDM lengths are unavailable " + ...
+                "for a %d-port allocation; multiport estimation cannot " + ...
+                "continue without the OCC despreading contract.",numPorts);
+        end
+    end
 end
 
 end

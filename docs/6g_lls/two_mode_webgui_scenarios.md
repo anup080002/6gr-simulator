@@ -1,9 +1,9 @@
 # Two-Mode WebGUI LLS Scenarios
 
-This repo now exposes two distinct WebGUI-selectable validation modes:
+This repo exposes exactly two operator-facing master configurations:
 
-- Fixed SNR/SINR sweep: configured AWGN SNR is the input, and BLER/BER/throughput curves are the output evidence.
-- Geometry placement scenario: UE placement and mobility are the inputs, and measured SINR, goodput, latency, pathloss, Doppler, and propagation evidence are the output evidence.
+- `master_sinr_sweep.yaml`: configured AWGN SNR is the input, and BLER/BER/throughput curves are the output evidence.
+- `master_geometry_based.yaml`: UE placement and mobility are the inputs, and measured SINR, goodput, latency, pathloss, Doppler, and propagation evidence are the output evidence.
 
 In the fixed-link case, the operator-facing label may say SINR sweep, but the implementation input is controlled AWGN SNR. In the single-link AWGN case, SNR and SINR are equivalent at the input, while the runtime still exports measured post-equalization SINR where available.
 
@@ -21,18 +21,12 @@ Full truth-level run:
 matlab -batch "setup6GRSimToolkit('Verbose',false); run_two_mode_lls_full"
 ```
 
-The smoke command is read-only with respect to configuration. Its bounded policy is stored in two checked-in wrapper YAMLs, so `PrepareOnly` does not create generated files:
-
-- `lls_true_snr_sweep_awgn_1ue_smoke.yaml`
-  - `sweeps_and_matrix.fixed_link_calibration.min_trials = 20`
-  - `sweeps_and_matrix.fixed_link_calibration.max_trials = 40`
-  - `sweeps_and_matrix.fixed_link_calibration.trials_per_drop = 10`
-  - SNR grid forced to `[-2, 4, 10]`
-- `lls_true_geometry_2cell_2ue_200kmh_smoke.yaml`
-  - `canonical_control.run.total_slots = 10`
-  - `canonical_control.run.measurement_slots = 8`
-
-Both smoke wrappers set the canonical and legacy worker controls to one worker with automatic pool startup disabled. This keeps the smoke command portable on MATLAB installations without a Parallel Computing Toolbox worker license.
+There are no checked-in smoke copies. The smoke command writes bounded transient
+overlays under `results/runtime_configs`, each inheriting one of the two masters.
+The runner does not contain smoke values: it copies each master's
+`execution_scales.smoke.overlay` verbatim. The checked-in masters currently select
+`[-2, 4, 10]` dB with 20–40 trials per sweep point and 10 total/eight measured
+geometry slots. Edit those blocks in the two masters to change the smoke scale.
 
 The full command runs both catalog YAMLs as-is, with no trial-count weakening. It is intentionally expensive.
 
@@ -109,8 +103,8 @@ For the geometry placement scenario, check these plots:
 
 From the WebGUI Home page:
 
-1. Select `lls_true_snr_sweep_awgn_1ue.yaml` for fixed-link curve validation.
-2. Select `lls_true_geometry_2cell_2ue_200kmh.yaml` for placement and mobility validation.
+1. Select `master_sinr_sweep.yaml` for fixed-link curve validation.
+2. Select `master_geometry_based.yaml` for placement and mobility validation.
 3. Confirm the `Scenario Validation Mode` panel shows the expected run class before launch.
 
 After the run completes:

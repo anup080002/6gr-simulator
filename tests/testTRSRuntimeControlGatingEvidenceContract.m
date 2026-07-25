@@ -1,12 +1,12 @@
 function ok = testTRSRuntimeControlGatingEvidenceContract()
 %TESTTRSRUNTIMECONTROLGATINGEVIDENCECONTRACT Guard coupled TRS/SRS gate wiring.
 
-scenarioPath = fullfile("simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
+scenarioPath = fullfile("simulator", "configs", "scenarios", "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, tempname);
 
 assert(double(sixgr.util.structGet(cfg, "phy.srs.period_slots", NaN)) == 20, ...
-    "master_scenaio_all_file.yaml must resolve 10 ms SRS periodicity to 20 slots at 30 kHz SCS.");
+    "master_geometry_based.yaml must resolve 10 ms SRS periodicity to 20 slots at 30 kHz SCS.");
 resolvedSRSSlots = double(sixgr.util.structGet(cfg, "phy.srs.slotWithinPeriod1Based", []));
 assert(isequal(resolvedSRSSlots(:).', [5 10 15 20]), ...
     "Master SRS occasions must be explicit UL slots within each 20-slot period.");

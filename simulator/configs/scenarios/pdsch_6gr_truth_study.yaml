@@ -24,14 +24,33 @@
     "notes": "Default truthful 6GR PDSCH study baseline. Unsupported extensions remain explicit study hooks."
   },
   "frequency": {
-    "bandwidth_hz": 20000000
+    "bandwidth_hz": 20000000,
+    "n_size_grid": 51,
+    "dl_center_frequency_hz": 2000000000,
+    "ul_center_frequency_hz": 1900000000
   },
   "frame": {
-    "scs_khz": 15
+    "scs_khz": 30
+  },
+  "reference_signals": {
+    "ssb_case": "Case C",
+    "ssb_scs_khz": 30,
+    "ssb_lmax": 4
   },
   "simulation": {
     "link_direction": "dl",
     "snr_db": 15,
     "monte_carlo_iterations": 1
+  },
+  "pdsch6gr": {
+    "mcs_ue_capability_1024qam": false,
+    "mcs_rrc_enabled_1024qam": false,
+    "mcs_dci_enabled_1024qam": false,
+    "mcs_deployment_allows_1024qam": false,
+    "mcs_frequency_range": "FR1",
+    "mcs_operating_band": "n1",
+    "mcs_deployment_class": "controlled_test",
+    "mcs_frequency_range_allows_1024qam": false,
+    "mcs_band_allows_1024qam": false
   }
 }

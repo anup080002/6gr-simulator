@@ -1,149 +1,247 @@
 function decode = DLSCHDecoder(arg1, varargin)
-%DLSCHDecoder Summarize or execute truthful DL-SCH decode processing.
+%DLSCHDECODER Execute DL-SCH decoding from an immutable coding plan.
+%   DLSCHDecoder(llr,"CodingPlan",plan,...) inverts the immutable plan:
+%   rate recovery, optional position-aware HARQ combining, LDPC decoding,
+%   code-block desegmentation/CRC, and transport-block CRC.
 
-if isstruct(arg1) && isfield(arg1, "CRCError")
-    rx = arg1;
-    decode = struct();
-    decode.TransportBlock = sixgr.util.structGet(rx, "TransportBlock", []);
-    decode.TransportBlocks = sixgr.util.structGet(rx, "TransportBlocks", {decode.TransportBlock});
-    decode.CRCPass = logical(sixgr.util.structGet(rx, "Ok", false));
-    decode.CRCError = logical(sixgr.util.structGet(rx, "CRCError", true));
-    decode.CRCPassPerCodeword = logical(sixgr.util.structGet(rx, "CRCPassPerCodeword", decode.CRCPass));
-    decode.CRCErrorPerCodeword = logical(sixgr.util.structGet(rx, "CRCErrorPerCodeword", decode.CRCError));
-    decode.DecodeLatency_s = double(sixgr.util.structGet(rx, "DecodeLatency_s", NaN));
-    decode.DecoderIterations = double(mean(sixgr.util.structGet(rx, "ActiveIterations", NaN), "omitnan"));
-    decode.ActiveIterations = double(sixgr.util.structGet(rx, "ActiveIterations", NaN));
-    decode.Source = "pdsch_rx_ldpc_decode_truth_path";
-    return;
+[codingPlan, remaining, explicit] = localExtractCodingPlan(varargin);
+if ~explicit
+    error("sixgr:pdsch:DLSCHDecoder:MissingCodingPlan", ...
+        "DL-SCH decoding requires an immutable DLSCHCodingPlan; metadata RX summaries and inferred coding defaults are forbidden.");
+end
+decode = localDecodeExplicit(arg1, codingPlan, remaining{:});
 end
 
-if iscell(arg1)
-    llr = cellfun(@(x) double(x(:)), arg1(:).', "UniformOutput", false);
-else
-    llr = double(arg1(:));
-end
-nCodewords = localNumCodewords(llr);
+function decode = localDecodeExplicit(llr, plans, varargin)
 ip = inputParser;
-ip.addParameter("TransportBlockSize", [], @(x) isnumeric(x) && isvector(x) && all(x(:) > 0));
-ip.addParameter("TargetCodeRate", 0.4785, @(x) isnumeric(x) && isvector(x) && all(x(:) > 0 & x(:) < 1));
-ip.addParameter("RV", 0, @(x) isnumeric(x) && isvector(x) && all(x(:) >= 0));
-ip.addParameter("Modulation", "16QAM", @(x) ischar(x) || isstring(x) || iscell(x));
-ip.addParameter("NumLayers", 1, @(x) isnumeric(x) && isscalar(x) && x >= 1);
-ip.addParameter("MaxIterations", 8, @(x) isnumeric(x) && isscalar(x) && x >= 1);
-ip.addParameter("Algorithm", "Normalized min-sum", @(x) ischar(x) || isstring(x));
+ip.FunctionName = "sixgr.pdsch.DLSCHDecoder explicit path";
+ip.addParameter("MaxIterations", 12, ...
+    @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1);
+ip.addParameter("Algorithm", "Normalized min-sum", ...
+    @(x) ischar(x) || isstring(x));
+ip.addParameter("PriorRecoveredLLR", [], ...
+    @(x) isempty(x) || isnumeric(x) || islogical(x) || isstruct(x) || iscell(x));
+ip.addParameter("PriorCodingPlan", [], ...
+    @(x) isempty(x) || isstruct(x) || iscell(x) || ...
+    isa(x, "sixgr.pdsch.DLSCHCodingPlan"));
+ip.addParameter("HARQKey", "", @(x) ischar(x) || isstring(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
-trBlkSize = localExpandNumeric(opt.TransportBlockSize, nCodewords, "TransportBlockSize");
-targetCodeRate = localExpandNumeric(opt.TargetCodeRate, nCodewords, "TargetCodeRate");
-rv = localExpandNumeric(opt.RV, nCodewords, "RV");
-modulation = localExpandStringList(opt.Modulation, nCodewords);
-numLayers = max(1, round(double(opt.NumLayers)));
-maxIter = max(1, round(double(opt.MaxIterations)));
-alg = char(string(opt.Algorithm));
-layerCounts = localLayerCountPerCodeword(numLayers, nCodewords);
-
-tbCell = cell(1, nCodewords);
-blkErr = false(1, nCodewords);
-actIterCell = cell(1, nCodewords);
-for cw = 1:nCodewords
-    decObj = nrDLSCHDecoder( ...
-        "TargetCodeRate", targetCodeRate(cw), ...
-        "TransportBlockLength", trBlkSize(cw), ...
-        "MaximumLDPCIterationCount", maxIter, ...
-        "LDPCDecodingAlgorithm", alg);
-    llrC = localSelectLLR(llr, cw);
-    [tbRxC, blkErrC] = decObj(llrC, modulation{cw}, layerCounts(cw), rv(cw));
-    decInfo = info(decObj);
-    if iscell(tbRxC)
-        tbRxC = tbRxC{1};
-    end
-    tbCell{cw} = int8(tbRxC(:));
-    blkErr(cw) = logical(blkErrC);
-    actIterCell{cw} = double(sixgr.util.structGet(decInfo, "ActualLDPCIterationCount", NaN));
+[llrCells, planCells] = localNormalizeCodewords(llr, plans);
+codewords = cell(1, numel(planCells));
+for cw = 1:numel(planCells)
+    prior = localSelectCodeword(opt.PriorRecoveredLLR, cw);
+    priorLayout = localResolvePriorLayout(opt.PriorCodingPlan, cw);
+    codewords{cw} = localDecodeCodeword(llrCells{cw}, planCells{cw}, ...
+        round(double(opt.MaxIterations)), char(string(opt.Algorithm)), ...
+        prior, priorLayout, char(string(opt.HARQKey)));
 end
-crcOk = ~logical(blkErr);
-crcErr = logical(blkErr);
-actIter = [actIterCell{:}];
-
-decode = struct();
-decode.TransportBlock = vertcat(tbCell{:});
-decode.TransportBlocks = tbCell;
-decode.CRCPass = all(logical(crcOk));
-decode.CRCError = any(logical(crcErr));
-decode.CRCPassPerCodeword = logical(crcOk);
-decode.CRCErrorPerCodeword = logical(crcErr);
-decode.DecodeLatency_s = NaN;
-decode.DecoderIterations = double(mean(actIter, "omitnan"));
-decode.ActiveIterations = actIter;
-decode.Source = "pdsch_llr_sum_decode_truth_path";
-end
-
-function n = localNumCodewords(llr)
-if iscell(llr)
-    n = numel(llr);
-else
-    n = 1;
-end
-end
-
-function llrC = localSelectLLR(llr, cw)
-if iscell(llr)
-    llrC = double(llr{cw}(:));
-else
-    llrC = double(llr(:));
-end
-end
-
-function values = localExpandNumeric(values, n, name)
-values = double(values(:).');
-if isempty(values)
-    error("sixgr:pdsch:DLSCHDecoder:MissingParameter", ...
-        "%s is required for DL-SCH decode.", char(string(name)));
-end
-if numel(values) == 1 && n > 1
-    values = repmat(values, 1, n);
-elseif numel(values) ~= n
-    error("sixgr:pdsch:DLSCHDecoder:BadPerCodewordVector", ...
-        "%s must be scalar or have one value per codeword. Expected %d, got %d.", ...
-        char(string(name)), char(string(name)), n, numel(values));
-end
-end
-
-function values = localExpandStringList(values, n)
-if ischar(values) || isstring(values)
-    values = cellstr(string(values));
-else
-    values = cellstr(string(values(:)));
-end
-if isempty(values)
-    values = {'16QAM'};
-end
-if numel(values) == 1 && n > 1
-    values = repmat(values, 1, n);
-elseif numel(values) < n
-    values(end+1:n) = values(end);
-elseif numel(values) > n
-    values = values(1:n);
-end
-end
-
-function counts = localLayerCountPerCodeword(numLayers, nCodewords)
-if nCodewords == 1
-    counts = double(numLayers);
+if isscalar(codewords)
+    decode = codewords{1};
     return;
 end
-switch round(double(numLayers))
-    case 5
-        counts = [2 3];
-    case 6
-        counts = [3 3];
-    case 7
-        counts = [3 4];
-    case 8
-        counts = [4 4];
-    otherwise
-        error("sixgr:pdsch:DLSCHDecoder:BadCodewordLayerMapping", ...
-            "Two-codeword PDSCH decode is defined for ranks 5-8. Requested rank %d.", round(double(numLayers)));
+tbCells = cellfun(@(x) x.TransportBlock, codewords, "UniformOutput", false);
+crcPass = cellfun(@(x) x.CRCPass, codewords);
+active = cellfun(@(x) x.ActiveIterations, codewords, "UniformOutput", false);
+decode = struct( ...
+    "ContractVersion", "ExplicitDLSCHDecode/v1", ...
+    "NumCodewords", uint8(numel(codewords)), ...
+    "Codewords", {codewords}, ...
+    "CodingPlanIDs", string(cellfun(@(x) x.CodingPlanID, ...
+        codewords, "UniformOutput", false)), ...
+    "TransportBlock", vertcat(tbCells{:}), ...
+    "TransportBlocks", {tbCells}, ...
+    "CRCPass", all(crcPass), ...
+    "CRCError", any(~crcPass), ...
+    "CRCPassPerCodeword", logical(crcPass), ...
+    "CRCErrorPerCodeword", logical(~crcPass), ...
+    "ActiveIterations", [active{:}], ...
+    "Source", "explicit_dlsch_primitives_truth");
+end
+
+function out = localDecodeCodeword(llr, plan, maxIterations, algorithm, ...
+        prior, priorLayout, harqKey)
+llr = localValidateLLR(llr, plan);
+layout = plan.toCodingLayout();
+if isempty(plan.Nref)
+    [recovered, recoveryInfo] = sixgr.phy.phycode.rateRecoverLDPC( ...
+        llr, double(plan.TransportBlockSize), plan.TargetCodeRate, ...
+        double(plan.RV), plan.Modulation, double(plan.NumLayers), ...
+        double(plan.NumCodeBlocks), [], "CodingLayout", layout);
+else
+    [recovered, recoveryInfo] = sixgr.phy.phycode.rateRecoverLDPC( ...
+        llr, double(plan.TransportBlockSize), plan.TargetCodeRate, ...
+        double(plan.RV), plan.Modulation, double(plan.NumLayers), ...
+        double(plan.NumCodeBlocks), double(plan.Nref), ...
+        "CodingLayout", layout);
+end
+
+if isempty(prior)
+    combined = recovered;
+    [~, harqInfo] = sixgr.phy.harq.combineSoftLLR( ...
+        recovered, [], "CurrentLayout", layout, ...
+        "HARQKey", harqKey, ...
+        "CodewordIndex", double(plan.CodewordIndex) + 1);
+else
+    if isempty(priorLayout) && ~(isstruct(prior) && ...
+            (isfield(prior, "CodingLayout") || isfield(prior, "SoftBuffer")))
+        error("sixgr:pdsch:DLSCHDecoder:MissingPriorCodingPlan", ...
+            ["PriorRecoveredLLR requires PriorCodingPlan unless the prior " ...
+            "decoder result carries its CodingLayout or SoftBuffer."]);
+    end
+    [combined, harqInfo] = sixgr.phy.harq.combineSoftLLR( ...
+        recovered, prior, "CurrentLayout", layout, ...
+        "PriorLayout", priorLayout, "HARQKey", harqKey, ...
+        "CodewordIndex", double(plan.CodewordIndex) + 1);
+end
+
+[decodedCodeBlocks, activeIterations, finalParityChecks] = ...
+    sixgr.phy.phycode.ldpcDecode(combined, double(plan.BaseGraph), ...
+    maxIterations, algorithm);
+if size(decodedCodeBlocks, 1) ~= double(plan.CodeBlockLength) || ...
+        size(decodedCodeBlocks, 2) ~= double(plan.NumCodeBlocks)
+    error("sixgr:pdsch:DLSCHDecoder:PlanMismatch", ...
+        "LDPC decoder output shape does not match the immutable coding plan.");
+end
+[tbCRCBlock, cbCRCError] = sixgr.phy.tb.desegmentLDPC( ...
+    decodedCodeBlocks, layout);
+[transportBlock, tbCRCPass, tbCRCError] = sixgr.phy.tb.checkCRC( ...
+    tbCRCBlock, plan.TBCRCType);
+if numel(transportBlock) ~= double(plan.TransportBlockSize)
+    error("sixgr:pdsch:DLSCHDecoder:PlanMismatch", ...
+        "Decoded transport block length does not match plan A.");
+end
+cbCRCError = logical(double(cbCRCError(:)) ~= 0);
+if double(plan.NumCodeBlocks) == 1
+    cbCRCError = false;
+end
+
+out = struct( ...
+    "ContractVersion", "ExplicitDLSCHDecodeCodeword/v1", ...
+    "CodewordIndex", plan.CodewordIndex, ...
+    "CodingPlan", plan.toStruct(), ...
+    "CodingPlanID", plan.PlanID, ...
+    "CodingLayout", layout, ...
+    "InputRateMatchedLLR", double(llr(:)), ...
+    "RateRecoveredLLR", double(recovered), ...
+    "RateRecoveryInfo", recoveryInfo, ...
+    "HARQCombinedLLR", double(combined), ...
+    "HARQCombineInfo", harqInfo, ...
+    "SoftBuffer", sixgr.util.structGet(harqInfo, "SoftBuffer", struct()), ...
+    "DecodedCodeBlocks", int8(decodedCodeBlocks), ...
+    "ActiveIterations", double(activeIterations), ...
+    "FinalParityChecks", finalParityChecks, ...
+    "DesegmentedTransportBlockWithCRC", int8(tbCRCBlock(:)), ...
+    "CodeBlockCRCError", cbCRCError, ...
+    "CodeBlockCRCPass", ~cbCRCError, ...
+    "TransportBlock", int8(transportBlock(:)), ...
+    "TransportBlocks", {{int8(transportBlock(:))}}, ...
+    "CRCPass", logical(tbCRCPass), ...
+    "CRCError", logical(tbCRCError), ...
+    "CRCPassPerCodeword", logical(tbCRCPass), ...
+    "CRCErrorPerCodeword", logical(tbCRCError), ...
+    "DecodeLatency_s", NaN, ...
+    "DecoderIterations", double(mean(activeIterations, "omitnan")), ...
+    "Source", "explicit_dlsch_primitives_truth");
+end
+
+function llr = localValidateLLR(llr, plan)
+if ~(isnumeric(llr) || islogical(llr)) || ~isvector(llr) || isempty(llr)
+    error("sixgr:pdsch:DLSCHDecoder:BadLLR", ...
+        "Each codeword LLR input must be a non-empty real numeric vector.");
+end
+llr = double(llr(:));
+if ~isreal(llr) || any(isnan(llr))
+    error("sixgr:pdsch:DLSCHDecoder:BadLLR", ...
+        "Rate-matched LLR values must be real and cannot contain NaN.");
+end
+if numel(llr) ~= double(plan.RateMatchedBitCount)
+    error("sixgr:pdsch:DLSCHDecoder:RateMatchedBitCountMismatch", ...
+        "Received %d LLRs; coding plan requires G=%d.", ...
+        numel(llr), double(plan.RateMatchedBitCount));
+end
+end
+
+function [plan, remaining, explicit] = localExtractCodingPlan(args)
+plan = [];
+remaining = args;
+explicit = false;
+if isempty(args)
+    return;
+end
+if localIsPlanCollection(args{1})
+    plan = args{1};
+    remaining = args(2:end);
+    explicit = true;
+    return;
+end
+for i = 1:2:(numel(args) - 1)
+    if (ischar(args{i}) || isstring(args{i})) && ...
+            strcmpi(string(args{i}), "CodingPlan")
+        plan = args{i + 1};
+        if ~localIsPlanCollection(plan)
+            error("sixgr:pdsch:DLSCHDecoder:BadCodingPlan", ...
+                "CodingPlan must be a DLSCHCodingPlan or a cell of plans.");
+        end
+        remaining(i:(i + 1)) = [];
+        explicit = true;
+        return;
+    end
+end
+end
+
+function tf = localIsPlanCollection(value)
+tf = isa(value, "sixgr.pdsch.DLSCHCodingPlan");
+if iscell(value)
+    tf = ~isempty(value) && all(cellfun( ...
+        @(x) isa(x, "sixgr.pdsch.DLSCHCodingPlan"), value(:)));
+end
+end
+
+function [llr, plans] = localNormalizeCodewords(llr, plans)
+if ~iscell(plans)
+    plans = {plans};
+else
+    plans = reshape(plans, 1, []);
+end
+if ~iscell(llr)
+    if numel(plans) ~= 1
+        error("sixgr:pdsch:DLSCHDecoder:CodewordCountMismatch", ...
+            "Two coding plans require a cell containing two LLR vectors.");
+    end
+    llr = {llr};
+else
+    llr = reshape(llr, 1, []);
+end
+if numel(llr) ~= numel(plans) || ~ismember(numel(plans), [1 2])
+    error("sixgr:pdsch:DLSCHDecoder:CodewordCountMismatch", ...
+        "DL-SCH decoding requires one or two equally counted LLRs and plans.");
+end
+indices = cellfun(@(x) double(x.CodewordIndex), plans);
+if ~isequal(indices, 0:(numel(plans) - 1))
+    error("sixgr:pdsch:DLSCHDecoder:CodewordIndexMismatch", ...
+        "Coding plans must be ordered with zero-based indices 0..N-1.");
+end
+end
+
+function value = localSelectCodeword(value, cw)
+if iscell(value)
+    if numel(value) >= cw
+        value = value{cw};
+    else
+        value = [];
+    end
+end
+end
+
+function layout = localResolvePriorLayout(value, cw)
+value = localSelectCodeword(value, cw);
+if isa(value, "sixgr.pdsch.DLSCHCodingPlan")
+    layout = value.toCodingLayout();
+elseif isstruct(value)
+    layout = value;
+else
+    layout = [];
 end
 end

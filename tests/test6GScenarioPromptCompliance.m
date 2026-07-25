@@ -69,7 +69,7 @@ mkdir(tmp);
 c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
 masterScfg = sixgr.lls6g.config.loadScenarioConfig( ...
-    fullfile(configRoot, "scenarios", "master_scenaio_all_file.yaml"));
+    fullfile(configRoot, "scenarios", "master_geometry_based.yaml"));
 masterCfg = sixgr.lls6g.buildInternalConfig(masterScfg, fullfile(tmp, "master_run"));
 assert(logical(sixgr.util.structGet(masterCfg, "random_access.four_step_ra_required", false)), ...
     "Master scenario must require full four-step RA for strict WebGUI access evidence.");

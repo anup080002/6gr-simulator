@@ -4,7 +4,7 @@ tmp = tempname;
 mkdir(tmp);
 c = onCleanup(@() localCleanupTempFolder(tmp)); %#ok<NASGU>
 
-scenarioPath = fullfile("simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
+scenarioPath = fullfile("simulator", "configs", "scenarios", "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
 

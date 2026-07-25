@@ -3,10 +3,9 @@ function ok = testHARQSoftBufferPositionAware()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 if ~localHaveRequired5G()
-    warning("testHARQSoftBufferPositionAware:Missing5G", ...
-        "Skipping HARQ soft-buffer tests because required 5G Toolbox APIs are unavailable.");
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testHARQSoftBufferPositionAware requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 cfg = struct("A", 8448, "R", 0.48, "Modulation", "16QAM", ...

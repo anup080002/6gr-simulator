@@ -400,7 +400,7 @@ harq:
   max_retx: 4
 prach:
   enable: true
-  configuration_index: 167
+  configuration_index: 157
   format: B4
   subcarrier_spacing_khz: 30
   sequence_length: 139
@@ -612,7 +612,7 @@ control:
 random_access:
   enabled: true
   prach_format: B4
-  configuration_index: 167
+  configuration_index: 157
   zero_correlation_zone: 5
   detection_threshold_mode: auto
   false_alarm_candidate_scope: requested_preamble

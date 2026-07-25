@@ -360,7 +360,7 @@ random_access:
   preamble_length_mode: short
   preamble_count: 64
   msg3_enabled: true
-  configuration_index: 167
+  configuration_index: 157
   subcarrier_spacing_khz: 30
   root_sequence_index: 1
   preamble_index: 0

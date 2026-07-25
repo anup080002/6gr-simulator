@@ -233,10 +233,10 @@ end
 function localExerciseActualGeometryScenarioYaml()
 repoRoot = pwd;
 scenarioPath = fullfile(repoRoot, "simulator", "configs", "scenarios", ...
-    "lls_true_geometry_2cell_2ue_200kmh.yaml");
+    "master_geometry_based.yaml");
 baseScfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 resolved = baseScfg.toStruct();
-resolved.meta.scenario_id = "lls_true_geometry_2cell_2ue_200kmh_focus";
+resolved.meta.scenario_id = "master_geometry_based_focus";
 resolved.meta.description = "Reduced-slot geometry runtime evidence regression";
 resolved.simulation.n_slots = 4;
 resolved.simulation.monte_carlo_iterations = 1;

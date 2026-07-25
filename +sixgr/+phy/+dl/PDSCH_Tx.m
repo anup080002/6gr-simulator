@@ -2,7 +2,8 @@ function [tx, info] = PDSCH_Tx(cfg, varargin)
 %PDSCH_Tx Generate a basic PDSCH transmission (DL-SCH -> PDSCH -> OFDM).
 %
 %   [TX,INFO] = sixgr.phy.dl.PDSCH_Tx(CFG) builds a carrier and PDSCH
-%   allocation from CFG (plus safe defaults), generates or accepts a
+%   allocation from an explicit calibration request or immutable strict
+%   scheduling assignment, generates or accepts a
 %   transport block, performs LDPC-based DL-SCH encoding (CRC, segmentation,
 %   LDPC encode, rate matching), maps PDSCH + DMRS (and optional PTRS) into
 %   a resource grid, and returns an OFDM waveform.
@@ -66,384 +67,56 @@ ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)
 ip.addParameter('NumTxAnt', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('PrecodingMatrix', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('Assignment', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHSchedulingAssignment'));
+ip.addParameter('ResourcePlan', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHResourcePlan'));
+ip.addParameter('ReferenceSignalConfig', struct(), ...
+    @(x) (isstruct(x) && isscalar(x)) || ...
+        isa(x, 'sixgr.pdsch.PDSCHReferenceSignalConfig'));
+ip.addParameter('PrecoderBundle', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHPrecoderBundle'));
+ip.addParameter('IntegrationContext', struct(), @(x) isstruct(x) && isscalar(x));
+ip.addParameter('Nref', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('ExecutionProfile', "", @(x) ischar(x) || isstring(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
 phyGrant = opt.PHYGrant;
 hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
-if hasPHYGrant
-    sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pdsch_tx_entry");
-    cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
-    opt.NumTxAnt = double(phyGrant.AntennaArchitecture.NumWaveformColumns);
-    opt.PrecodingMatrix = double(phyGrant.PrecodingState.Matrix);
-end
-localValidateSupportedCodewordScope(cfg, opt.PDSCH);
-
-% Carrier
-if isempty(opt.Carrier)
-    [carrier, cinfo] = sixgr.phy.grid.makeCarrier(cfg);
-else
-    carrier = opt.Carrier;
-    cinfo = struct();
-end
-
-% Allocation / PDSCH config
-if isempty(opt.PDSCH)
+executionProfile = localResolveExecutionProfile(cfg, opt.ExecutionProfile, opt.Assignment);
+strictAssignmentProfile = any(executionProfile == ...
+    ["connected_strict","sps_strict","ra_si_strict"]);
+if strictAssignmentProfile
+    if isempty(opt.Assignment)
+        error("sixgr:pdsch:MissingSchedulingAssignment", ...
+            "%s PDSCH execution requires a decoded immutable scheduling assignment.", ...
+            executionProfile);
+    end
+    if isempty(opt.ResourcePlan)
+        error("sixgr:pdsch:MissingResourcePlan", ...
+            "%s PDSCH execution requires the resolved resource ownership plan.", ...
+            executionProfile);
+    end
     if hasPHYGrant
-        [pdschInd, pdschInfo, pdsch] = localBuildPDSCHFromFrozenGrant(carrier, cfg, phyGrant);
-    else
-        [pdschInd, pdschInfo, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg);
+        error("sixgr:pdsch:ConfiguredGrantNotAllowed", ...
+            "A configured/frozen PHYGrant cannot replace decoded assignment ownership.");
     end
-else
-    pdsch = opt.PDSCH;
-    if hasPHYGrant
-        localAssertExplicitPDSCHMatchesGrant(pdsch, phyGrant);
-    end
-    try
-        [pdschInd, pdschInfo] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
-    catch
-        [pdschInd, pdschInfo] = nrPDSCHIndices(carrier, pdsch);
+    if opt.Assignment.Profile ~= executionProfile
+        error("sixgr:pdsch:ExecutionProfileMismatch", ...
+            "Assignment profile '%s' does not match requested '%s'.", ...
+            opt.Assignment.Profile, executionProfile);
     end
 end
-
-% PDSCH parameters
-rv = localResolvePDSCHRV(cfg, opt.RV, phyGrant, hasPHYGrant);
-targetCodeRate = localResolvePDSCHTargetCodeRate(cfg, opt.TargetCodeRate, phyGrant, hasPHYGrant);
-xOverhead = localResolvePDSCHXOverheadExact(cfg, opt.XOverhead, phyGrant, hasPHYGrant, pdsch);
-
-prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
-    "PrecodingMatrix", opt.PrecodingMatrix, ...
-    "FixedReferenceMode", hasPHYGrant);
-
-numTxAnt = localResolveNumTxAnt(cfg, opt.NumTxAnt, prec);
-phyGrantContract = struct();
-if hasPHYGrant
-    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
-        "pdsch_tx_before_waveform", ...
-        "PDSCH", pdsch, ...
-        "Precoding", prec, ...
-        "NumTxAnt", numTxAnt);
+if ~isempty(opt.Assignment)
+    [tx, info] = localDelegateCanonicalPDSCHTransmitter( ...
+        opt, executionProfile, hasPHYGrant);
+    return;
 end
-
-% Transport block size
-nPRB = numel(pdsch.PRBSet);
-resourceAccounting = sixgr.phy.resource.computeResourceAccounting("PDSCH", carrier, pdsch, ...
-    "ChannelIndices", pdschInd, ...
-    "AllocationInfo", pdschInfo, ...
-    "IndexBase", "1based", ...
-    "TargetCodeRate", targetCodeRate, ...
-    "XOverhead", xOverhead);
-localAssertPDSCHResourceAccounting(resourceAccounting, pdsch, hasPHYGrant);
-pdschInfo.ResourceAccounting = resourceAccounting;
-pdschInfo.LayerDataRE = resourceAccounting.LayerDataRE;
-pdschInfo.PortMappedRE = resourceAccounting.PortMappedRE;
-pdschInfo.ModulationSymbolCount = resourceAccounting.ModulationSymbolCount;
-pdschInfo.CodedBitCountG = resourceAccounting.CodedBitCountG;
-pdschInfo.G = resourceAccounting.CodedBitCountG;
-pdschInfo.NREPerPRB = resourceAccounting.NREPerPRBForTBS;
-nrePerPRB = resourceAccounting.NREPerPRBForTBS;
-if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
-    error('sixgr:phy:dl:PDSCHNoDataRE', ...
-        'PDSCH allocation has no schedulable data RE: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
-        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(localModulationText(pdsch.Modulation)), round(double(pdsch.NumLayers)));
+if executionProfile == "phy_calibration"
+    [tx, info] = localDelegateCanonicalCalibrationTransmitter( ...
+        cfg, opt, phyGrant, hasPHYGrant, executionProfile);
+    return;
 end
-[trBlkSize, scheduledTrBlkSize, transportBlockSizeSource] = localResolvePDSCHTransportBlockSize( ...
-    opt.TransportBlockSizeOverride, phyGrant, hasPHYGrant, pdsch, nPRB, nrePerPRB, targetCodeRate, xOverhead);
-nCodewords = localResolvePDSCHNumCodewords(pdsch, round(double(pdsch.NumLayers)));
-targetCodeRate = localExpandPerCodewordDouble(targetCodeRate, nCodewords, "PDSCH TargetCodeRate");
-rv = localExpandPerCodewordRV(rv, nCodewords);
-trBlkSize = localExpandPerCodewordInteger(trBlkSize, nCodewords, "PDSCH transport block size");
-scheduledTrBlkSize = localExpandPerCodewordInteger(scheduledTrBlkSize, nCodewords, "PDSCH scheduled transport block size");
-GPerCodeword = localResolveRateMatchedBitsPerCodeword(resourceAccounting, nCodewords);
-modulationPerCodeword = localPDSCHModulationPerCodeword(pdsch, nCodewords);
-
-% Transport block bits
-trBlkCell = localResolvePDSCHTransportBlockBits(opt.TransportBlockBits, trBlkSize);
-trBlk = vertcat(trBlkCell{:});
-
-G = double(resourceAccounting.CodedBitCountG);
-if ~(isfinite(G) && G > 0)
-    error('sixgr:phy:dl:PDSCHNoDataRE', ...
-        'PDSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
-        round(double(nPRB)), mat2str(localObjectValue(pdsch, "SymbolAllocation", [NaN NaN])), char(localModulationText(pdsch.Modulation)), round(double(pdsch.NumLayers)));
-end
-codingLayouts = localResolveTxCodingLayouts(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, modulationPerCodeword, pdsch, GPerCodeword);
-codingLayout = codingLayouts{1};
-tbCRCType = char(codingLayout.TBCRCType);
-tbCRCLen = double(codingLayout.TBCRCLength);
-bgn = double(codingLayout.BaseGraph);
-
-% ---------------------- DL-SCH encoding (modular blocks) ----------------------
-tbCrcCell = cell(1, nCodewords);
-crcInfoCell = cell(1, nCodewords);
-segInfoCell = cell(1, nCodewords);
-rateMatchInfoCell = cell(1, nCodewords);
-codewords = cell(1, nCodewords);
-BPerCodeword = zeros(1, nCodewords);
-for c = 1:nCodewords
-    layoutC = codingLayouts{c};
-    tbCRCTypeC = char(layoutC.TBCRCType);
-    bgnC = double(layoutC.BaseGraph);
-
-    % Match the TB CRC selected by nrDLSCHInfo for this transport block size.
-    tbCrcCell{c} = sixgr.phy.tb.attachCRC(trBlkCell{c}, tbCRCTypeC);
-    crcInfoCell{c} = struct("Type", string(tbCRCTypeC), "Length", double(layoutC.TBCRCLength));
-    BPerCodeword(c) = numel(tbCrcCell{c});
-
-    % Code block segmentation and LDPC encode.
-    [cbs, segInfoCell{c}] = sixgr.phy.tb.segmentLDPC(tbCrcCell{c}, bgnC);
-    ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgnC));
-
-    % Rate match to the exact codeword-specific G.
-    [codewordC, rateMatchInfoCell{c}] = sixgr.phy.phycode.rateMatchLDPC( ...
-        ldpcEnc, double(GPerCodeword(c)), double(rv(c)), modulationPerCodeword{c}, double(codingLayouts{c}.NumLayers));
-    codewords{c} = int8(codewordC(:));
-    localAssertRateMatchMapAgreement(rateMatchInfoCell{c}, layoutC);
-end
-tbCrc = tbCrcCell{1};
-crcInfo = crcInfoCell{1};
-segInfo = segInfoCell{1};
-rateMatchInfo = rateMatchInfoCell{1};
-codeword = codewords{1};
-B = BPerCodeword(1);
-
-% ---------------------- PDSCH modulation & mapping ----------------------
-% nrPDSCH expects codewords as a cell array (up to 2 codewords)
-codewordLayerMapping = localBuildPDSCHCodewordLayerContract(pdsch, codewords, codingLayouts, resourceAccounting);
-
-try
-    [pdschSym, pdschSymInfo] = nrPDSCH(carrier, pdsch, codewords);
-catch
-    pdschSym = nrPDSCH(carrier, pdsch, codewords);
-    pdschSymInfo = struct();
-end
-codewordLayerMapping = localFinalizePDSCHCodewordLayerContract(codewordLayerMapping, pdschSym);
-localAssertPDSCHLayerSymbolContract(codewords, pdschSym, pdschInd, resourceAccounting, pdsch, codingLayouts, codewordLayerMapping);
-
-% DMRS
-[dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
-[dmrsSym, dmrsPowerInfo] = localApplyPDSCHDMRSEPREDifference(dmrsSym, cfg);
-dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
-dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
-dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
-dmrsInfo.RealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
-dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
-dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
-dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
-dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
-
-% PTRS (optional)
-[ptrsInd, ptrsSym, ptrsInfo] = sixgr.phy.refsig.ptrsPDSCH(carrier, pdsch);
-
-[csirsInd, csirsSym, csirsInfo, csirsCfg, csirsEvent] = localGenerateCSIRSRuntimeResource(carrier, cfg);
-
-pdschAntInd = pdschInd;
-pdschAntSym = pdschSym;
-dmrsAntInd = dmrsInd;
-dmrsAntSym = dmrsSym;
-ptrsAntInd = ptrsInd;
-ptrsAntSym = ptrsSym;
-if prec.Active
-    % Precode layer/reference-domain signals before the final antenna-port map.
-    [pdschAntSym, pdschAntInd] = nrPDSCHPrecode(carrier, pdschSym, pdschInd, prec.MatrixNR);
-    [dmrsAntSym, dmrsAntInd] = nrPDSCHPrecode(carrier, dmrsSym, dmrsInd, prec.MatrixNR);
-    if ~isempty(ptrsInd)
-        [ptrsAntSym, ptrsAntInd] = nrPDSCHPrecode(carrier, ptrsSym, ptrsInd, prec.MatrixNR);
-    end
-end
-localAssertPortDomainContract(pdschSym, pdschInd, pdschAntSym, pdschAntInd, resourceAccounting, prec);
-localAssertSignalResourceDisjoint(pdschAntInd, dmrsAntInd, ptrsAntInd);
-pdschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschInd, "layer");
-pdschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, pdschAntInd, "port");
-
-% Build resource grid and map
-nPages = max([size(pdschAntInd,2), size(dmrsAntInd,2), size(ptrsAntInd,2), size(csirsInd,2), ...
-    double(sixgr.util.structGet(csirsEvent, "NumPorts", NaN)), numTxAnt, 1]);
-try
-    txGrid = nrResourceGrid(carrier, nPages);
-catch
-    txGrid = complex(zeros(carrier.NSizeGrid*12, carrier.SymbolsPerSlot, nPages));
-end
-
-txGrid = localMapToGrid(txGrid, pdschAntInd, pdschAntSym);
-
-% Map DMRS/PTRS
-if ~isempty(dmrsInd)
-    txGrid = localMapToGrid(txGrid, dmrsAntInd, dmrsAntSym);
-end
-if ~isempty(ptrsAntInd)
-    txGrid = localMapToGrid(txGrid, ptrsAntInd, ptrsAntSym);
-end
-if logical(sixgr.util.structGet(csirsEvent, "Scheduled", false)) && ~isempty(csirsInd)
-    [collision, collisionWith] = localCSIRSResourceCollision(csirsInd, pdschAntInd, dmrsAntInd, ptrsAntInd);
-    if collision
-        csirsEvent.Transmitted = false;
-        csirsEvent.RuntimeMaterializationStatus = "blocked_resource_collision";
-        csirsEvent.Blocker = "csirs_re_collision_with_" + collisionWith;
-    else
-        txGrid = localMapToGrid(txGrid, csirsInd, csirsSym);
-        csirsEvent.Transmitted = true;
-        csirsEvent.RuntimeMaterializationStatus = "runtime_grid_mapped";
-        csirsEvent.UpdateOutcome = "transmitted_on_dl_resource_grid";
-    end
-end
-
-gridPortContract = localBuildResourceGridPortContract(txGrid, pdschAntInd, pdschAntSym, ...
-    dmrsAntInd, dmrsAntSym, ptrsAntInd, ptrsAntSym, csirsInd, csirsSym, csirsEvent, numTxAnt, prec);
-localValidateResourceGridPortContract(gridPortContract, prec);
-precodePowerInfo = localBuildPrecodePowerInfo(pdschSym, pdschAntSym, prec);
-
-% OFDM modulation
-[windowingSamples, windowingInfo] = sixgr.phy.waveform.resolveOFDMWindowing(cfg, carrier);
-[txWaveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid, ...
-    "Windowing", double(windowingSamples));
-if hasPHYGrant
-    phyGrantContract = sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
-        "pdsch_tx_after_waveform", ...
-        "PDSCH", pdsch, ...
-        "Precoding", prec, ...
-        "NumTxAnt", numTxAnt, ...
-        "Grid", txGrid, ...
-        "Waveform", txWaveform);
-end
-
-% ---------------------- Outputs ----------------------
-tx = struct();
-tx.Waveform = txWaveform;
-tx.OFDMInfo = ofdmInfo;
-tx.OFDM = ofdmInfo;
-if hasPHYGrant
-    tx.PHYGrant = phyGrant;
-    tx.PHYGrantDimensionContract = phyGrantContract;
-end
-tx.TransportBlockSize = trBlkSize;
-tx.ScheduledTransportBlockSize = scheduledTrBlkSize;
-tx.TransportBlockSizeSource = transportBlockSizeSource;
-tx.TransportBlock = trBlk;
-tx.TransportBlocks = trBlkCell;
-tx.TransportBlockSizePerCodeword = double(trBlkSize);
-tx.TransportBlockCRCType = char(tbCRCType);
-tx.TransportBlockCRCLength = double(tbCRCLen);
-tx.TransportBlockCRCTypePerCodeword = cellfun(@(x) char(string(x.Type)), crcInfoCell, "UniformOutput", false);
-tx.TransportBlockCRCLengthPerCodeword = double(cellfun(@(x) double(x.Length), crcInfoCell));
-tx.TransportBlockLenWithCRC = B;
-tx.TransportBlockLenWithCRCPerCodeword = double(BPerCodeword);
-tx.RV = rv;
-tx.RVPerCodeword = double(rv);
-tx.TargetCodeRate = targetCodeRate;
-tx.TargetCodeRatePerCodeword = double(targetCodeRate);
-tx.CodingLayout = codingLayout;
-tx.CodingLayouts = codingLayouts;
-tx.Carrier = carrier;
-tx.PDSCH = pdsch;
-tx.PDSCHIndices = pdschInd;
-tx.PDSCHSymbolsForEvidence = pdschSym;
-tx.PDSCHLayerSymbolsForEvidence = pdschSym;
-tx.PDSCHPortSymbolsForEvidence = pdschAntSym;
-tx.PDSCHLayerSymbols = pdschSym;
-tx.PDSCHPortSymbols = pdschAntSym;
-tx.PDSCHLayerIndices = pdschInd;
-tx.PDSCHPortIndices = pdschAntInd;
-tx.LayerSymbolOrder = pdschLayerOrder;
-tx.PortSymbolOrder = pdschPortOrder;
-tx.LayerSymbolDomain = "layer";
-tx.PortSymbolDomain = "port";
-tx.XOverhead = double(xOverhead);
-tx.G = G;
-tx.GPerCodeword = double(GPerCodeword);
-tx.NREPerPRB = double(nrePerPRB);
-tx.LayerDataRE = double(resourceAccounting.LayerDataRE);
-tx.PortMappedRE = double(resourceAccounting.PortMappedRE);
-tx.ModulationSymbolCount = double(resourceAccounting.ModulationSymbolCount);
-tx.QAMSymbolCount = double(numel(pdschSym));
-tx.PortIndexCellCount = double(numel(pdschAntInd));
-tx.RateMatchedBitCount = double(G);
-tx.NumCodewords = double(codewordLayerMapping.NumCodewords);
-tx.RateMatchedBitCountPerCodeword = double(codewordLayerMapping.RateMatchedBitCountPerCodeword);
-tx.CodewordLayerMapping = codewordLayerMapping;
-tx.ResourceAccounting = resourceAccounting;
-tx.PrecodeInfo = prec;
-tx.PrecodePowerInfo = precodePowerInfo;
-tx.DMRSEPREDifference = dmrsPowerInfo;
-tx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
-tx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
-tx.DMRSConfiguredPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
-tx.DMRSRealizedDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
-tx.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
-tx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
-tx.SymbolDomainInfo = struct( ...
-    "ReferenceDomain", "layer", ...
-    "PortDomain", "port", ...
-    "Transform", "nrPDSCHPrecode_when_active", ...
-    "NumLayers", double(pdsch.NumLayers), ...
-    "NumPorts", double(size(pdschAntSym, 2)), ...
-    "Status", "native_layer_symbols_and_port_grid_symbols", ...
-    "Equation", "b_G_to_QAM_d_to_layers_S_to_ports_X_equals_S_times_W_transpose");
-tx.OFDMWindowingSamples = double(windowingSamples);
-tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
-tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
-if ~logical(opt.CompactOutput)
-    tx.Grid = txGrid;
-    tx.TransportBlockCRC = tbCrc;
-    tx.TransportBlockCRCPerCodeword = tbCrcCell;
-    tx.BaseGraph = bgn;
-    tx.BaseGraphPerCodeword = double(cellfun(@(x) double(x.BaseGraph), codingLayouts));
-    tx.Codeword = codeword;
-    tx.Codewords = codewords;
-    tx.PDSCHInfo = pdschInfo;
-    tx.PDSCHSymbols = pdschSym;
-    tx.DMRSIndices = dmrsInd;
-    tx.DMRSSymbols = dmrsSym;
-    tx.PDSCHAntennaIndices = pdschAntInd;
-    tx.PDSCHAntennaSymbols = pdschAntSym;
-    tx.DMRSAntennaIndices = dmrsAntInd;
-    tx.DMRSAntennaSymbols = dmrsAntSym;
-    tx.PTRSIndices = ptrsInd;
-    tx.PTRSSymbols = ptrsSym;
-    tx.PTRSAntennaIndices = ptrsAntInd;
-    tx.PTRSAntennaSymbols = ptrsAntSym;
-    tx.CSIRSIndices = csirsInd;
-    tx.CSIRSSymbols = csirsSym;
-    tx.CSIRSInfo = csirsInfo;
-    tx.CSIRS = csirsCfg;
-    tx.CSIRSRuntimeEvent = csirsEvent;
-    tx.ResourceGridPortContract = gridPortContract;
-end
-tx.TxContext = localBuildTxContext(tx, trBlkCell, tbCrcCell, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
-    dmrsInd, dmrsSym, dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, ptrsAntInd, ptrsAntSym, ...
-    carrier, pdsch, codingLayouts, resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
-tx.TxContext.DMRSEPREDifference = dmrsPowerInfo;
-
-info = struct();
-info.CarrierInfo = cinfo;
-info.CRC = crcInfo;
-info.CRCPerCodeword = crcInfoCell;
-info.Segmentation = segInfo;
-info.SegmentationPerCodeword = segInfoCell;
-info.RateMatch = rateMatchInfo;
-info.RateMatchPerCodeword = rateMatchInfoCell;
-info.CodingLayout = codingLayout;
-info.CodingLayouts = codingLayouts;
-info.PDSCHSymbols = pdschSymInfo;
-info.PTRS = ptrsInfo;
-info.CSIRS = csirsInfo;
-info.CSIRSRuntimeEvent = csirsEvent;
-info.ResourceGridPortContract = gridPortContract;
-info.OFDM = ofdmInfo;
-info.OFDMWindowing = windowingInfo;
-info.Precoding = prec;
-info.PrecodePowerInfo = precodePowerInfo;
-info.DMRS = dmrsInfo;
-info.DMRSEPREDifference = dmrsPowerInfo;
-info.XOverhead = double(xOverhead);
-info.ResourceAccounting = resourceAccounting;
-info.CodewordLayerMapping = codewordLayerMapping;
-info.TxContext = tx.TxContext;
-if hasPHYGrant
-    info.PHYGrant = phyGrant;
-    info.PHYGrantDimensionContract = phyGrantContract;
-end
-
+error("sixgr:pdsch:MissingSchedulingAssignment", ...
+    "Non-calibration PDSCH transmission requires an immutable scheduling assignment.");
 end
 
 function [pdschInd, pdschInfo, pdsch] = localBuildPDSCHFromFrozenGrant(carrier, cfg, phyGrant)
@@ -858,12 +531,10 @@ end
 
 function values = localExpandPerCodewordDouble(values, nCodewords, name)
 values = double(values(:).');
-if numel(values) == 1 && nCodewords > 1
-    values = repmat(values, 1, nCodewords);
-end
 if numel(values) ~= nCodewords || any(~isfinite(values))
     error("sixgr:phy:dl:PDSCHBadPerCodewordVector", ...
-        "%s must have one value or exactly NumCodewords=%d values.", char(string(name)), nCodewords);
+        "%s must contain exactly NumCodewords=%d explicit values.", ...
+        char(string(name)), nCodewords);
 end
 end
 
@@ -901,25 +572,23 @@ end
 end
 
 function mods = localPDSCHModulationPerCodeword(pdsch, nCodewords)
-raw = localObjectValue(pdsch, "Modulation", "QPSK");
-if iscell(raw)
-    tokens = string(raw);
-else
-    tokens = string(raw);
-end
+raw = localObjectValue(pdsch, "Modulation", "");
+tokens = string(raw);
 tokens = tokens(:).';
-tokens = tokens(strlength(strtrim(tokens)) > 0);
-if isempty(tokens)
-    tokens = "QPSK";
+if isempty(tokens) || any(strlength(strtrim(tokens)) == 0) ...
+        || numel(tokens) ~= nCodewords
+    error("sixgr:phy:dl:PDSCHMissingCodewordSpecificModulation", ...
+        ["PDSCH Modulation must contain exactly NumCodewords=%d " ...
+        "nonempty explicit tokens."], nCodewords);
 end
-if numel(tokens) == 1 && nCodewords > 1
-    tokens = repmat(tokens, 1, nCodewords);
-elseif numel(tokens) < nCodewords
-    tokens(end+1:nCodewords) = tokens(end);
-elseif numel(tokens) > nCodewords
-    tokens = tokens(1:nCodewords);
+normalized = upper(strrep(strtrim(tokens), " ", ""));
+supported = ["QPSK","16QAM","64QAM","256QAM","1024QAM"];
+if any(~ismember(normalized, supported))
+    bad = normalized(find(~ismember(normalized, supported), 1));
+    error("sixgr:pdsch:UnsupportedNRModulation", ...
+        "Unsupported strict NR PDSCH modulation '%s'.", bad);
 end
-mods = cellstr(tokens);
+mods = cellstr(normalized);
 end
 
 function text = localModulationText(raw)
@@ -1296,9 +965,757 @@ end
 nCodewords = round(nCodewords);
 localAssertPDSCHCodewordLayerScope(nLayers, nCodewords);
 end
+
+function [tx, info] = localDelegateCanonicalCalibrationTransmitter( ...
+        cfg, opt, phyGrant, hasPHYGrant, executionProfile)
+if executionProfile ~= "phy_calibration"
+    error("sixgr:pdsch:ExecutionProfileMismatch", ...
+        "Calibration adapter received execution profile '%s'.", ...
+        executionProfile);
+end
+if hasPHYGrant
+    sixgr.phy.grant.assertPHYGrantDimensions( ...
+        phyGrant, "pdsch_tx_calibration_adapter_entry");
+    cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
+end
+localValidateSupportedCodewordScope(cfg, opt.PDSCH);
+
+if isempty(opt.Carrier)
+    [carrier, carrierInfo] = sixgr.phy.grid.makeCarrier(cfg);
+else
+    carrier = opt.Carrier;
+    carrierInfo = struct();
+end
+[~, pdschInfo, pdsch] = localResolvePDSCHMaterialization( ...
+    carrier, cfg, opt, phyGrant, hasPHYGrant, false);
+nCodewords = localResolvePDSCHNumCodewords( ...
+    pdsch, round(double(pdsch.NumLayers)));
+mcsOwnership = ...
+    sixgr.pdsch.PDSCHCalibrationFacadeAdapter.resolveMCSOwnership( ...
+        cfg, phyGrant, nCodewords);
+
+rv = localResolvePDSCHRV(cfg, opt.RV, phyGrant, hasPHYGrant);
+targetRate = localResolvePDSCHTargetCodeRate( ...
+    cfg, opt.TargetCodeRate, phyGrant, hasPHYGrant);
+xOverhead = localResolvePDSCHXOverheadExact( ...
+    cfg, opt.XOverhead, phyGrant, hasPHYGrant, pdsch);
+[~, dmrsPowerInfo] = localApplyPDSCHDMRSEPREDifference( ...
+    complex(1), cfg);
+[csirsInd, csirsSym, csirsInfo, csirsCfg, csirsEvent] = ...
+    localGenerateCSIRSRuntimeResource(carrier, cfg);
+reservedZeroBased = localCalibrationBasePlaneZeroBased( ...
+    csirsInd, carrier, pdsch);
+
+transportBlockSizes = opt.TransportBlockSizeOverride;
+transportBlockSizeSource = "nrTBS_from_current_allocation";
+if hasPHYGrant
+    grantTBS = double(sixgr.util.structGet( ...
+        phyGrant, "CodingLayout.TBSBitsPerCodeword", ...
+        sixgr.util.structGet( ...
+            phyGrant, "CodingLayout.TBSBits", [])));
+    if ~isempty(grantTBS) && all(isfinite(grantTBS(:)) ...
+            & grantTBS(:) > 0)
+        grantTBS = round(double(grantTBS(:).'));
+        if ~isempty(transportBlockSizes) ...
+                && ~isequal(round(double( ...
+                    transportBlockSizes(:).')), grantTBS)
+            error("sixgr:phy:dl:PDSCHReplayTBSMismatch", ...
+                ["TransportBlockSizeOverride does not match the frozen " ...
+                "PHYGrant TBS."]);
+        end
+        transportBlockSizes = grantTBS;
+        if logical(sixgr.util.structGet( ...
+                phyGrant, "HARQProcessKey.IsRetransmission", false))
+            transportBlockSizeSource = ...
+                "frozen_phygrant_harq_original_transport_block_size";
+        else
+            transportBlockSizeSource = ...
+                "frozen_phygrant_transport_block_size";
+        end
+    end
+elseif ~isempty(transportBlockSizes)
+    transportBlockSizeSource = ...
+        "harq_replay_stored_transport_block";
+end
+
+nRx = double(sixgr.util.structGet(cfg, ...
+    "channel.nRxAnt", sixgr.util.structGet(cfg, "phy.nRxAnt", NaN)));
+maxIterations = sixgr.phy.phycode.resolveLDPCMaxIterations( ...
+    cfg, "Direction", "DL");
+algorithm = char(string(sixgr.util.structGet( ...
+    cfg, "phy.ldpc.algorithm", "Normalized min-sum")));
+request = struct( ...
+    "TargetCodeRate", targetRate, ...
+    "RV", rv, "XOverhead", xOverhead, ...
+    "MCSTablePerCodeword", mcsOwnership.MCSTablePerCodeword, ...
+    "MCSIndexPerCodeword", mcsOwnership.MCSIndexPerCodeword, ...
+    "UECapability1024QAM", mcsOwnership.UECapability1024QAM, ...
+    "RRCEnabled1024QAM", mcsOwnership.RRCEnabled1024QAM, ...
+    "DCIEnabled1024QAM", mcsOwnership.DCIEnabled1024QAM, ...
+    "DCIFormat", mcsOwnership.DCIFormat, ...
+    "UECapability1024QAMVariant", ...
+        mcsOwnership.UECapability1024QAMVariant, ...
+    "MaxNumberMIMOLayersPDSCH", ...
+        mcsOwnership.MaxNumberMIMOLayersPDSCH, ...
+    "NumLayers", double(pdsch.NumLayers), ...
+    "DeploymentAllows1024QAM", ...
+        mcsOwnership.DeploymentAllows1024QAM, ...
+    "FrequencyRange", mcsOwnership.FrequencyRange, ...
+    "OperatingBand", mcsOwnership.OperatingBand, ...
+    "DeploymentClass", mcsOwnership.DeploymentClass, ...
+    "FrequencyRangeAllows1024QAM", ...
+        mcsOwnership.FrequencyRangeAllows1024QAM, ...
+    "BandAllows1024QAM", mcsOwnership.BandAllows1024QAM, ...
+    "TransportBlockSizes", transportBlockSizes, ...
+    "TransportBlockBits", {opt.TransportBlockBits}, ...
+    "CodingPlans", [], ...
+    "PrecodingMatrix", opt.PrecodingMatrix, ...
+    "ReservedREZeroBased", reservedZeroBased, ...
+    "DMRSAmplitudeScale", ...
+        double(dmrsPowerInfo.DMRSAmplitudeScale), ...
+    "DMRSPortResolutionPolicy", ...
+        "explicit_calibration_rank_order_ports", ...
+    "NPhysicalRxAntennas", nRx, ...
+    "NoiseVariance", [], "NoiseVarianceDomain", "grid", ...
+    "MaxIterations", maxIterations, ...
+    "Algorithm", algorithm);
+bundle = sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize( ...
+    cfg, carrier, pdsch, request);
+if hasPHYGrant
+    localAssertFrozenGrantTBSMatchesMaterializedAllocation( ...
+        phyGrant, bundle.ScheduledTransportBlockSizes);
+end
+
+canonical = sixgr.pdsch.PDSCHTransmitter( ...
+    localUnwrapCanonicalBlocks(bundle.TransportBlocks), ...
+    bundle.Assignment, bundle.ResourcePlan, bundle.Carrier, ...
+    bundle.ReferenceConfig, ...
+    "PrecoderBundle", bundle.PrecoderBundle, ...
+    "Nref", opt.Nref);
+if logical(sixgr.util.structGet( ...
+        csirsEvent, "Scheduled", false)) && ~isempty(csirsInd)
+    [canonical, csirsEvent] = localMapCalibrationCSIRS( ...
+        canonical, csirsInd, csirsSym, csirsEvent);
+end
+[tx, info] = localAdaptCanonicalCalibrationTX( ...
+    canonical, bundle, pdschInfo, carrierInfo, ...
+    dmrsPowerInfo, csirsInd, csirsSym, csirsInfo, ...
+    csirsCfg, csirsEvent, transportBlockSizeSource, ...
+    phyGrant, hasPHYGrant, logical(opt.CompactOutput));
+end
+
+function localAssertFrozenGrantTBSMatchesMaterializedAllocation( ...
+        phyGrant, scheduledTBS)
+grantTBS = double(sixgr.util.structGet( ...
+    phyGrant, "CodingLayout.TBSBitsPerCodeword", ...
+    sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", [])));
+if isempty(grantTBS) || any(~isfinite(grantTBS(:)) ...
+        | grantTBS(:) <= 0)
+    return;
+end
+if logical(sixgr.util.structGet( ...
+        phyGrant, "HARQProcessKey.IsRetransmission", false))
+    return;
+end
+grantTBS = round(double(grantTBS(:).'));
+scheduledTBS = round(double(scheduledTBS(:).'));
+if numel(grantTBS) ~= numel(scheduledTBS) ...
+        || any(grantTBS ~= scheduledTBS)
+    error("sixgr:phy:dl:PDSCHGrantTBSMismatch", ...
+        "Frozen PHYGrant TBS=%s does not match exact nrTBS=%s for the materialized allocation; an echoed TransportBlockSizeOverride is not independent TBS evidence.", ...
+        mat2str(grantTBS), mat2str(scheduledTBS));
+end
+end
+
+function value = localUnwrapCanonicalBlocks(blocks)
+if numel(blocks) == 1
+    value = blocks{1};
+else
+    value = blocks;
+end
+end
+
+function indices = localCalibrationBasePlaneZeroBased(raw, carrier, pdsch)
+if isempty(raw)
+    indices = zeros(1,0);
+    return;
+end
+plane = double(carrier.NSizeGrid) * 12 ...
+    * double(carrier.SymbolsPerSlot);
+raw = double(raw(:));
+if any(~isfinite(raw) | raw ~= fix(raw) | raw < 1)
+    error("sixgr:pdsch:InvalidReservedRE", ...
+        "Auxiliary calibration indices must be positive one-based values.");
+end
+indices = unique(mod(raw - 1, plane), "sorted").';
+prbs = double(pdsch.PRBSet(:).');
+symbolAllocation = double(pdsch.SymbolAllocation(:).');
+subcarriers = reshape(12 .* prbs + (0:11).',1,[]);
+scheduledSymbols = symbolAllocation(1) ...
+    + (0:(symbolAllocation(2)-1));
+[k,l] = ndgrid(subcarriers,scheduledSymbols);
+allocation = double(k(:) ...
+    + 12 .* double(carrier.NSizeGrid) .* l(:));
+indices = intersect(indices,allocation(:).',"stable");
+end
+
+function [canonical, event] = localMapCalibrationCSIRS( ...
+        canonical, indices, symbols, event)
+grid = canonical.Grid;
+plane = size(grid,1) * size(grid,2);
+indexPortCount = ceil(max(double(indices(:))) / plane);
+nPorts = max([size(grid,3), size(indices,2), indexPortCount]);
+if size(grid,3) < nPorts
+    grid(:,:,end+1:nPorts) = 0;
+end
+grid = localMapToGrid(grid, indices, symbols);
+ofdmOptions = canonical.ReferenceConfig.get("OFDMOptions");
+[waveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate( ...
+    canonical.Carrier, grid, ofdmOptions{:});
+canonical.Grid = grid;
+canonical.Waveform = waveform;
+canonical.OFDMInfo = ofdmInfo;
+event.Transmitted = true;
+event.RuntimeMaterializationStatus = ...
+    "post_canonical_auxiliary_grid_mapping";
+event.UpdateOutcome = ...
+    "transmitted_after_pre_coding_resource_reservation";
+canonical.StageTrace = [canonical.StageTrace; table( ...
+    "auxiliary_csirs_mapping", "PASS", numel(symbols), ...
+    'VariableNames', canonical.StageTrace.Properties.VariableNames)];
+end
+
+function [tx, info] = localAdaptCanonicalCalibrationTX( ...
+        canonical, bundle, pdschInfo, carrierInfo, dmrsPowerInfo, ...
+        csirsInd, csirsSym, csirsInfo, csirsCfg, csirsEvent, ...
+        transportBlockSizeSource, phyGrant, hasPHYGrant, compactOutput)
+pdsch = bundle.PDSCH;
+carrier = bundle.Carrier;
+nLayers = double(pdsch.NumLayers);
+nPorts = double(bundle.ReferenceConfig.get("NPhysicalTxAntennas"));
+nCodewords = numel(bundle.TransportBlocks);
+planeSize = double(carrier.NSizeGrid) * 12 ...
+    * double(carrier.SymbolsPerSlot);
+
+[pdschInd, kernelInfo] = nrPDSCHIndices(carrier, pdsch);
+dmrsInd = nrPDSCHDMRSIndices(carrier, pdsch);
+dmrsSym = complex(nrPDSCHDMRS(carrier, pdsch)) ...
+    .* double(dmrsPowerInfo.DMRSAmplitudeScale);
+ptrsInd = [];
+ptrsSym = complex(zeros(0,1));
+if pdsch.EnablePTRS
+    ptrsInd = nrPDSCHPTRSIndices(carrier, pdsch);
+    ptrsSym = complex(nrPDSCHPTRS(carrier, pdsch));
+end
+pdschAntInd = localCalibrationPortIndices( ...
+    bundle.ResourcePlan.DataIndices, nPorts, planeSize);
+dmrsUnion = unique([bundle.ResourcePlan.DMRSIndicesPerPort{:}], ...
+    "sorted");
+dmrsAntInd = localCalibrationPortIndices( ...
+    dmrsUnion, nPorts, planeSize);
+ptrsUnion = unique([bundle.ResourcePlan.PTRSIndicesPerPort{:}], ...
+    "sorted");
+ptrsAntInd = localCalibrationPortIndices( ...
+    ptrsUnion, nPorts, planeSize);
+pdschAntSym = canonical.DataPortSymbols.';
+dmrsAntSym = canonical.DMRSPortSymbols.';
+ptrsAntSym = canonical.PTRSPortSymbols.';
+
+[codewords, codingLayouts, tbCRC, crcInfo, segInfo, ...
+    rateMatchInfo, baseGraphs, B] = ...
+    localCanonicalTXCodingEvidence(canonical, nCodewords);
+codeword = codewords{1};
+pdschSym = canonical.LayerSymbols;
+resourceAccounting = localCanonicalResourceAccounting( ...
+    bundle, nLayers, nPorts);
+codewordLayerMapping = localBuildPDSCHCodewordLayerContract( ...
+    pdsch, codewords, codingLayouts, resourceAccounting);
+codewordLayerMapping = localFinalizePDSCHCodewordLayerContract( ...
+    codewordLayerMapping, pdschSym);
+prec = bundle.LegacyPrecoder;
+precodePowerInfo = localBuildPrecodePowerInfo( ...
+    pdschSym, pdschAntSym, prec);
+gridPortContract = localBuildResourceGridPortContract( ...
+    canonical.Grid, pdschAntInd, pdschAntSym, ...
+    dmrsAntInd, dmrsAntSym, ptrsAntInd, ptrsAntSym, ...
+    csirsInd, csirsSym, csirsEvent, nPorts, prec);
+localValidateResourceGridPortContract(gridPortContract, prec);
+
+trBlkSize = double(bundle.TransportBlockSizes);
+scheduledTBS = double(bundle.ScheduledTransportBlockSizes);
+targetRate = double(bundle.TargetCodeRate);
+rv = double(bundle.RV);
+GPerCodeword = double(bundle.ResourcePlan.GPerCodeword);
+G = sum(GPerCodeword);
+nrePerPRB = double(bundle.NREPerPRBForTBS);
+pdschInfo = localMergeStructs(pdschInfo, kernelInfo);
+pdschInfo.ResourceAccounting = resourceAccounting;
+pdschInfo.LayerDataRE = resourceAccounting.LayerDataRE;
+pdschInfo.PortMappedRE = resourceAccounting.PortMappedRE;
+pdschInfo.ModulationSymbolCount = ...
+    resourceAccounting.ModulationSymbolCount;
+pdschInfo.CodedBitCountG = G;
+pdschInfo.G = G;
+pdschInfo.NREPerPRB = nrePerPRB;
+
+tx = canonical;
+tx.ReceiverConfig = bundle.ReceiverConfig;
+tx.ExecutionProfile = "phy_calibration";
+tx.FacadeContractVersion = "PDSCH_TxCompatibilityFacade/v3";
+tx.CanonicalDelegation = true;
+tx.DelegationTarget = "sixgr.pdsch.PDSCHTransmitter";
+tx.StrictSchedulingOwnership = false;
+tx.SchedulingOwnership = ...
+    "explicit_phy_calibration_assignment";
+tx.AssignmentId = char(bundle.Assignment.AssignmentId);
+tx.OFDM = canonical.OFDMInfo;
+tx.TransportBlockSize = trBlkSize;
+tx.ScheduledTransportBlockSize = scheduledTBS;
+tx.TransportBlockSizeSource = transportBlockSizeSource;
+tx.TransportBlock = vertcat(bundle.TransportBlocks{:});
+tx.TransportBlocks = bundle.TransportBlocks;
+tx.TransportBlockSizePerCodeword = trBlkSize;
+tx.TransportBlockCRCType = char(crcInfo{1}.Type);
+tx.TransportBlockCRCLength = double(crcInfo{1}.Length);
+tx.TransportBlockCRCTypePerCodeword = cellfun( ...
+    @(x) char(string(x.Type)), crcInfo, "UniformOutput", false);
+tx.TransportBlockCRCLengthPerCodeword = cellfun( ...
+    @(x) double(x.Length), crcInfo);
+tx.TransportBlockLenWithCRC = B(1);
+tx.TransportBlockLenWithCRCPerCodeword = B;
+tx.RV = rv;
+tx.RVPerCodeword = rv;
+tx.TargetCodeRate = targetRate;
+tx.TargetCodeRatePerCodeword = targetRate;
+tx.RequestedTargetCodeRate = ...
+    double(bundle.RequestedTargetCodeRate);
+tx.CodingLayout = codingLayouts{1};
+tx.CodingLayouts = codingLayouts;
+tx.PDSCH = pdsch;
+tx.PDSCHIndices = pdschInd;
+tx.PDSCHSymbolsForEvidence = pdschSym;
+tx.PDSCHLayerSymbolsForEvidence = pdschSym;
+tx.PDSCHPortSymbolsForEvidence = pdschAntSym;
+tx.PDSCHLayerSymbols = pdschSym;
+tx.PDSCHPortSymbols = pdschAntSym;
+tx.PDSCHLayerIndices = pdschInd;
+tx.PDSCHPortIndices = pdschAntInd;
+tx.LayerSymbolOrder = ...
+    sixgr.phy.resource.buildSymbolOrderingMap( ...
+        carrier, pdschInd, "layer");
+tx.PortSymbolOrder = ...
+    sixgr.phy.resource.buildSymbolOrderingMap( ...
+        carrier, pdschAntInd, "port");
+tx.LayerSymbolDomain = "layer";
+tx.PortSymbolDomain = "port";
+tx.XOverhead = double(bundle.XOverhead);
+tx.G = G;
+tx.GPerCodeword = GPerCodeword;
+tx.NREPerPRB = nrePerPRB;
+tx.LayerDataRE = resourceAccounting.LayerDataRE;
+tx.PortMappedRE = resourceAccounting.PortMappedRE;
+tx.ModulationSymbolCount = ...
+    resourceAccounting.ModulationSymbolCount;
+tx.QAMSymbolCount = numel(pdschSym);
+tx.PortIndexCellCount = numel(pdschAntInd);
+tx.RateMatchedBitCount = G;
+tx.NumCodewords = nCodewords;
+tx.RateMatchedBitCountPerCodeword = GPerCodeword;
+tx.CodewordLayerMapping = codewordLayerMapping;
+tx.ResourceAccounting = resourceAccounting;
+tx.PrecodeInfo = prec;
+tx.PrecodePowerInfo = precodePowerInfo;
+tx.DMRSEPREDifference = dmrsPowerInfo;
+tx.DMRSDataToDMRSEPREDifference_dB = ...
+    double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+tx.DMRSPowerBoost_dB = ...
+    double(dmrsPowerInfo.DMRSPowerBoost_dB);
+tx.DMRSConfiguredPowerBoost_dB = ...
+    double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
+tx.DMRSRealizedDataToDMRSEPREDifference_dB = ...
+    double(dmrsPowerInfo.RealizedDataToDMRSEPREDifference_dB);
+tx.DMRSAmplitudeScale = ...
+    double(dmrsPowerInfo.DMRSAmplitudeScale);
+tx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
+tx.SymbolDomainInfo = struct( ...
+    "ReferenceDomain", "layer", "PortDomain", "port", ...
+    "Transform", "canonical_PDSCHPrecoderBundle", ...
+    "NumLayers", nLayers, "NumPorts", nPorts, ...
+    "Status", "canonical_layer_and_physical_port_symbols", ...
+    "Equation", ...
+        "b_G_to_QAM_d_to_layers_S_to_ports_X_equals_W_times_S");
+tx.OFDMWindowingSamples = double( ...
+    sixgr.util.structGet(bundle.WindowingInfo, ...
+        "OFDMWindowingSamples", 0));
+tx.OFDMWindowingSource = char(string(sixgr.util.structGet( ...
+    bundle.WindowingInfo, "OFDMWindowingSource", "")));
+tx.OFDMWindowingEnabled = logical(sixgr.util.structGet( ...
+    bundle.WindowingInfo, "OFDMWindowingEnabled", false));
+tx.TransportBlockCRC = tbCRC{1};
+tx.TransportBlockCRCPerCodeword = tbCRC;
+tx.BaseGraph = baseGraphs(1);
+tx.BaseGraphPerCodeword = baseGraphs;
+tx.Codeword = codeword;
+tx.Codewords = codewords;
+tx.PDSCHInfo = pdschInfo;
+tx.PDSCHSymbols = pdschSym;
+tx.DMRSIndices = dmrsInd;
+tx.DMRSSymbols = dmrsSym;
+tx.PDSCHAntennaIndices = pdschAntInd;
+tx.PDSCHAntennaSymbols = pdschAntSym;
+tx.DMRSAntennaIndices = dmrsAntInd;
+tx.DMRSAntennaSymbols = dmrsAntSym;
+tx.PTRSIndices = ptrsInd;
+tx.PTRSSymbols = ptrsSym;
+tx.PTRSAntennaIndices = ptrsAntInd;
+tx.PTRSAntennaSymbols = ptrsAntSym;
+tx.CSIRSIndices = csirsInd;
+tx.CSIRSSymbols = csirsSym;
+tx.CSIRSInfo = csirsInfo;
+tx.CSIRS = csirsCfg;
+tx.CSIRSRuntimeEvent = csirsEvent;
+tx.ResourceGridPortContract = gridPortContract;
+if compactOutput
+    % Canonical stage evidence is intentionally retained even when legacy
+    % callers request their former compact alias surface.
+    tx.CompactOutputRequested = true;
+end
+if hasPHYGrant
+    tx.PHYGrant = phyGrant;
+end
+tx.TxContext = localBuildTxContext( ...
+    tx, bundle.TransportBlocks, tbCRC, codewords, ...
+    canonical.Grid, canonical.Waveform, pdschInd, pdschSym, ...
+    pdschAntInd, pdschAntSym, dmrsInd, dmrsSym, ...
+    dmrsAntInd, dmrsAntSym, ptrsInd, ptrsSym, ...
+    ptrsAntInd, ptrsAntSym, carrier, pdsch, ...
+    codingLayouts, resourceAccounting, prec, ...
+    precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
+tx.TxContext.DMRSEPREDifference = dmrsPowerInfo;
+tx.TxContext.CanonicalDelegation = true;
+
+info = struct( ...
+    "FacadeContractVersion", "PDSCH_TxCompatibilityFacade/v3", ...
+    "CanonicalDelegation", true, ...
+    "DelegationTarget", "sixgr.pdsch.PDSCHTransmitter", ...
+    "ExecutionProfile", "phy_calibration", ...
+    "CarrierInfo", carrierInfo, ...
+    "CRC", crcInfo{1}, "CRCPerCodeword", {crcInfo}, ...
+    "Segmentation", segInfo{1}, ...
+    "SegmentationPerCodeword", {segInfo}, ...
+    "RateMatch", rateMatchInfo{1}, ...
+    "RateMatchPerCodeword", {rateMatchInfo}, ...
+    "CodingLayout", codingLayouts{1}, ...
+    "CodingLayouts", {codingLayouts}, ...
+    "PDSCHSymbols", struct( ...
+        "Source", "canonical_pdsch_modulator_and_layer_mapper"), ...
+    "PTRS", struct("Enabled", logical(pdsch.EnablePTRS)), ...
+    "CSIRS", csirsInfo, ...
+    "CSIRSRuntimeEvent", csirsEvent, ...
+    "ResourceGridPortContract", gridPortContract, ...
+    "OFDM", canonical.OFDMInfo, ...
+    "OFDMWindowing", bundle.WindowingInfo, ...
+    "Precoding", prec, ...
+    "PrecodePowerInfo", precodePowerInfo, ...
+    "DMRS", localCalibrationDMRSInfo(dmrsPowerInfo), ...
+    "DMRSEPREDifference", dmrsPowerInfo, ...
+    "XOverhead", double(bundle.XOverhead), ...
+    "ResourceAccounting", resourceAccounting, ...
+    "CodewordLayerMapping", codewordLayerMapping, ...
+    "TxContext", tx.TxContext, ...
+    "ResourcePlan", bundle.ResourcePlan, ...
+    "StageTrace", canonical.StageTrace, ...
+    "Source", "canonical_pdsch_transmitter_calibration_facade");
+end
+
+function indices = localCalibrationPortIndices(baseZero, nPorts, plane)
+baseOne = double(baseZero(:)) + 1;
+indices = baseOne + plane .* (0:(nPorts - 1));
+end
+
+function [codewords, layouts, tbCRC, crcInfo, segInfo, ...
+        rateInfo, baseGraphs, B] = ...
+        localCanonicalTXCodingEvidence(canonical, nCodewords)
+if nCodewords == 1
+    encoded = {canonical.DLSCHEncode};
+else
+    encoded = canonical.DLSCHEncode.Codewords;
+end
+codewords = cell(1,nCodewords);
+layouts = cell(1,nCodewords);
+tbCRC = cell(1,nCodewords);
+crcInfo = cell(1,nCodewords);
+segInfo = cell(1,nCodewords);
+rateInfo = cell(1,nCodewords);
+baseGraphs = zeros(1,nCodewords);
+B = zeros(1,nCodewords);
+for cw = 1:nCodewords
+    item = encoded{cw};
+    codewords{cw} = int8(item.RateMatchedBits(:));
+    layouts{cw} = item.CodingLayout;
+    tbCRC{cw} = int8(item.TBCRCBlock(:));
+    crcInfo{cw} = struct( ...
+        "Type", string(item.TBCRCType), ...
+        "Length", double(item.CodingLayout.TBCRCLength));
+    segInfo{cw} = item.SegmentationInfo;
+    rateInfo{cw} = item.RateMatchInfo;
+    baseGraphs(cw) = double(item.BaseGraph);
+    B(cw) = numel(item.TBCRCBlock);
+end
+end
+
+function accounting = localCanonicalResourceAccounting( ...
+        bundle, nLayers, nPorts)
+plan = bundle.ResourcePlan;
+GPerCodeword = double(plan.GPerCodeword);
+accounting = struct( ...
+    "ContractVersion", "CanonicalPDSCHResourcePlan/v1", ...
+    "IndexBase", "zero_based", ...
+    "LayerDataRE", double(plan.ExactDataRECount), ...
+    "PortMappedRE", double(plan.ExactDataRECount * nPorts), ...
+    "ModulationSymbolCount", ...
+        double(plan.ExactDataRECount * nLayers), ...
+    "CodedBitCountG", sum(GPerCodeword), ...
+    "CodedBitCountGPerCodeword", GPerCodeword, ...
+    "GPerCodeword", GPerCodeword, ...
+    "NREPerPRBForTBS", double(bundle.NREPerPRBForTBS), ...
+    "NREPerPRB", double(plan.NREPerPRB), ...
+    "DataREPerPRB", double(plan.NREPerPRB), ...
+    "DisjointMasks", logical( ...
+        plan.OverlapCounts.DMRSPTRS == 0 ...
+        && plan.OverlapCounts.DMRSReserved == 0 ...
+        && plan.OverlapCounts.PTRSReserved == 0), ...
+    "ExactResourcePlan", true, ...
+    "Source", "immutable_pdsch_resource_plan");
+end
+
+function value = localMergeStructs(primary, secondary)
+value = primary;
+names = fieldnames(secondary);
+for idx = 1:numel(names)
+    if ~isfield(value, names{idx})
+        value.(names{idx}) = secondary.(names{idx});
+    end
+end
+end
+
+function info = localCalibrationDMRSInfo(powerInfo)
+info = struct( ...
+    "DataToDMRSEPREDifference_dB", ...
+        double(powerInfo.DataToDMRSEPREDifference_dB), ...
+    "DMRSPowerBoost_dB", double(powerInfo.DMRSPowerBoost_dB), ...
+    "ConfiguredDMRSPowerBoost_dB", ...
+        double(powerInfo.ConfiguredDMRSPowerBoost_dB), ...
+    "RealizedDataToDMRSEPREDifference_dB", ...
+        double(powerInfo.RealizedDataToDMRSEPREDifference_dB), ...
+    "DMRSAmplitudeScale", double(powerInfo.DMRSAmplitudeScale), ...
+    "DMRSPowerScale", double(powerInfo.DMRSPowerScale), ...
+    "EPREConfigSource", char(string(powerInfo.Source)), ...
+    "EPREScalePolicy", char(string(powerInfo.ScalePolicy)));
+end
+
+function [tx, info] = localDelegateCanonicalPDSCHTransmitter( ...
+        opt, executionProfile, hasPHYGrant)
+assignment = opt.Assignment;
+if isempty(opt.ResourcePlan)
+    error("sixgr:pdsch:MissingResourcePlan", ...
+        "Assignment-owned PDSCH execution requires PDSCHResourcePlan.");
+end
+if ~isa(opt.Carrier, "nrCarrierConfig")
+    error("sixgr:pdsch:MissingCanonicalCarrier", ...
+        "Assignment-owned PDSCH execution requires an explicit nrCarrierConfig.");
+end
+if ~isa(opt.ReferenceSignalConfig, ...
+        "sixgr.pdsch.PDSCHReferenceSignalConfig")
+    error("sixgr:pdsch:IncompleteReferenceSignalConfiguration", ...
+        ["Assignment-owned PDSCH execution requires an immutable " ...
+        "PDSCHReferenceSignalConfig."]);
+end
+if isempty(opt.TransportBlockBits)
+    error("sixgr:pdsch:MissingTransportBlock", ...
+        "Assignment-owned PDSCH execution requires one explicit transport block per codeword.");
+end
+if hasPHYGrant
+    error("sixgr:pdsch:ConfiguredGrantNotAllowed", ...
+        "A frozen PHYGrant cannot replace immutable assignment ownership.");
+end
+legacyOverridesPresent = ~isempty(opt.PDSCH) ...
+    || ~isempty(opt.TransportBlockSizeOverride) ...
+    || ~isempty(opt.RV) ...
+    || ~isempty(opt.TargetCodeRate) ...
+    || ~isempty(opt.XOverhead) ...
+    || ~isempty(opt.NumTxAnt) ...
+    || ~isempty(opt.PrecodingMatrix);
+if legacyOverridesPresent
+    error("sixgr:pdsch:LegacyOverrideNotAllowed", ...
+        "Assignment-owned PDSCH execution rejects legacy PDSCH, rate, RV, TBS, antenna, and matrix overrides.");
+end
+if logical(opt.CompactOutput)
+    error("sixgr:pdsch:CompactStrictOutputNotAllowed", ...
+        "Canonical assignment-owned PDSCH execution must retain its complete stage evidence.");
+end
+if assignment.Profile ~= executionProfile
+    error("sixgr:pdsch:ExecutionProfileMismatch", ...
+        "Assignment profile '%s' does not match requested '%s'.", ...
+        assignment.Profile, executionProfile);
+end
+assignmentDigest = assignment.validateForExecution();
+
+canonical = sixgr.pdsch.PDSCHTransmitter( ...
+    opt.TransportBlockBits, assignment, opt.ResourcePlan, opt.Carrier, ...
+    opt.ReferenceSignalConfig, ...
+    "PrecoderBundle", opt.PrecoderBundle, ...
+    "IntegrationContext", opt.IntegrationContext, ...
+    "Nref", opt.Nref);
+tx = canonical;
+tx.FacadeContractVersion = "PDSCH_TxCompatibilityFacade/v2";
+tx.CanonicalDelegation = true;
+tx.DelegationTarget = "sixgr.pdsch.PDSCHTransmitter";
+tx.ExecutionProfile = char(executionProfile);
+tx.StrictSchedulingOwnership = any(executionProfile == ...
+    ["connected_strict","sps_strict","ra_si_strict"]);
+tx.SchedulingOwnership = "immutable_pdsch_scheduling_assignment";
+tx.AssignmentValidationDigest = assignmentDigest;
+tx.IntegrationBinding = canonical.IntegrationBinding;
+tx.OFDM = canonical.OFDMInfo;
+tx.TransportBlockSize = double(canonical.TransportBlockSizes);
+tx.ScheduledTransportBlockSize = double(canonical.TransportBlockSizes);
+tx.TransportBlockSizePerCodeword = double(canonical.TransportBlockSizes);
+tx.TransportBlockSizeSource = "canonical_explicit_transport_blocks";
+tx.TransportBlocks = localCanonicalTransportBlockCells(opt.TransportBlockBits);
+tx.TransportBlock = vertcat(tx.TransportBlocks{:});
+tx.RV = double(assignment.get("RVPerCodeword"));
+tx.RVPerCodeword = tx.RV;
+tx.TargetCodeRate = double(assignment.get("TargetCodeRatePerCodeword"));
+tx.TargetCodeRatePerCodeword = tx.TargetCodeRate;
+tx.G = sum(double(opt.ResourcePlan.GPerCodeword));
+tx.GPerCodeword = double(opt.ResourcePlan.GPerCodeword);
+tx.RateMatchedBitCount = tx.G;
+tx.RateMatchedBitCountPerCodeword = tx.GPerCodeword;
+tx.PDSCHIndicesZeroBased = double(opt.ResourcePlan.DataIndices);
+tx.DMRSIndicesPerPortZeroBased = opt.ResourcePlan.DMRSIndicesPerPort;
+tx.PTRSIndicesPerPortZeroBased = opt.ResourcePlan.PTRSIndicesPerPort;
+
+info = struct( ...
+    "FacadeContractVersion", "PDSCH_TxCompatibilityFacade/v2", ...
+    "CanonicalDelegation", true, ...
+    "DelegationTarget", "sixgr.pdsch.PDSCHTransmitter", ...
+    "ExecutionProfile", executionProfile, ...
+    "AssignmentValidationDigest", assignmentDigest, ...
+    "IntegrationBinding", canonical.IntegrationBinding, ...
+    "ResourcePlan", opt.ResourcePlan, ...
+    "StageTrace", canonical.StageTrace, ...
+    "OFDM", canonical.OFDMInfo, ...
+    "Source", "canonical_pdsch_transmitter_facade");
+end
+
+function cells = localCanonicalTransportBlockCells(raw)
+if iscell(raw)
+    cells = reshape(raw, 1, []);
+else
+    cells = {raw};
+end
+for idx = 1:numel(cells)
+    cells{idx} = int8(cells{idx}(:));
+end
+end
+
+function profile = localResolveExecutionProfile(cfg, explicitProfile, assignment)
+profile = lower(strtrim(string(explicitProfile)));
+if strlength(profile) == 0
+    profile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+        "phy.pdsch.executionProfile", ...
+        sixgr.util.structGet(cfg, "run.pdschExecutionProfile", "")))));
+end
+if strlength(profile) == 0 && ...
+        isa(assignment, "sixgr.pdsch.PDSCHSchedulingAssignment")
+    profile = assignment.Profile;
+end
+if strlength(profile) == 0
+    error("sixgr:pdsch:MissingExecutionProfile", ...
+        ["PDSCH execution requires an explicit ExecutionProfile, " ...
+        "cfg.phy.pdsch.executionProfile, cfg.run.pdschExecutionProfile, " ...
+        "or an immutable assignment-owned profile."]);
+end
+if ~any(profile == ...
+        ["connected_strict","sps_strict","ra_si_strict","phy_calibration"])
+    error("sixgr:pdsch:UnsupportedExecutionProfile", ...
+        "Unsupported PDSCH execution profile '%s'.", profile);
+end
+end
+
+function [indices, info, pdsch] = localResolvePDSCHMaterialization( ...
+        carrier, cfg, opt, phyGrant, hasPHYGrant, strictAssignmentProfile)
+providedPDSCH = opt.PDSCH;
+if strictAssignmentProfile
+    if ~isempty(providedPDSCH)
+        error("sixgr:pdsch:ConfigurationOverrideNotAllowed", ...
+            "Strict PDSCH configuration is materialized only from the immutable assignment.");
+    end
+    if isempty(fieldnames(opt.ReferenceSignalConfig))
+        error("sixgr:pdsch:IncompleteReferenceSignalConfiguration", ...
+            "Strict PDSCH materialization requires explicit reference-signal configuration.");
+    end
+    pdsch = sixgr.pdsch.PDSCHConfigMaterializer.fromAssignment( ...
+        opt.Assignment, opt.ReferenceSignalConfig);
+    [indices, info] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
+    return;
+end
+
+if isempty(providedPDSCH)
+    if hasPHYGrant
+        [indices, info, pdsch] = localBuildPDSCHFromFrozenGrant( ...
+            carrier, cfg, phyGrant);
+    else
+        [indices, info, pdsch] = sixgr.phy.grid.allocREsPDSCH( ...
+            carrier, cfg);
+    end
+else
+    pdsch = providedPDSCH;
+    if hasPHYGrant
+        localAssertExplicitPDSCHMatchesGrant(pdsch, phyGrant);
+    end
+    [indices, info] = nrPDSCHIndices(carrier, pdsch, "IndexStyle", "index");
+end
+end
+
+function localAssertResourcePlanAgreement(plan, pdsch, accounting)
+if ~isa(plan, "sixgr.pdsch.PDSCHResourcePlan")
+    error("sixgr:pdsch:MissingResourcePlan", ...
+        "Strict PDSCH execution requires PDSCHResourcePlan.");
+end
+if plan.IndexBase ~= "zero_based"
+    error("sixgr:pdsch:ResourcePlanIndexConventionMismatch", ...
+        "Strict PDSCH resource plans must use zero-based NR indices.");
+end
+if ~isequal(double(plan.PRBSet(:).'), double(pdsch.PRBSet(:).')) || ...
+        ~isequal(double(plan.SymbolAllocation(:).'), ...
+        double(pdsch.SymbolAllocation(:).'))
+    error("sixgr:pdsch:ResourcePlanAssignmentMismatch", ...
+        "Resource plan allocation differs from the materialized assignment.");
+end
+actualG = double(accounting.CodedBitCountGPerCodeword(:).');
+if ~isequal(double(plan.GPerCodeword(:).'), actualG)
+    error("sixgr:pdsch:ResourcePlanGMismatch", ...
+        "Resource plan G=%s differs from exact materialized G=%s.", ...
+        mat2str(double(plan.GPerCodeword(:).')), mat2str(actualG));
+end
+overlapFields = ["DMRSPTRS","DMRSReserved","PTRSReserved", ...
+    "DuplicateAllocation","DuplicateData"];
+hasCollision = false;
+for idx = 1:numel(overlapFields)
+    hasCollision = hasCollision || ...
+        double(plan.OverlapCounts.(overlapFields(idx))) ~= 0;
+end
+if hasCollision
+    error("sixgr:pdsch:DataDMRSPTRSReservedCollision", ...
+        "Strict PDSCH resource plan contains an ownership overlap.");
+end
+end
+
 function [csirsInd, csirsSym, csirsInfo, csirsCfg, event] = localGenerateCSIRSRuntimeResource(carrier, cfg)
 csirsInd = zeros(0, 1);
-csirsSym = complex(zeros(0, 1));
+csirsSym = zeros(0, 1, "like", 1i);
 csirsInfo = struct("Channel", "CSI-RS", "Enabled", false);
 csirsCfg = [];
 event = localEmptyCSIRSEvent(cfg);
@@ -1312,10 +1729,8 @@ event.Scheduled = true;
 try
     [csirsInd, csirsSym, csirsInfo, csirsCfg] = sixgr.phy.refsig.csirs(carrier, cfg);
 catch ME
-    event.RuntimeMaterializationStatus = "blocked_generation_failed";
-    event.Blocker = string(ME.identifier) + ":" + string(ME.message);
-    event.UpdateOutcome = "not_transmitted";
-    return;
+    error("sixgr:pdsch:CSIRSResourceResolutionFailed", ...
+        "Enabled CSI-RS could not be resolved before PDSCH coding: %s", ME.message);
 end
 event.RuntimeEvidenceSource = "sixgr.phy.dl.PDSCH_Tx:csirs_runtime_grid_mapping";
 event.NRE = double(numel(csirsSym));
@@ -1329,9 +1744,8 @@ event.CSIRSType = string(localObjectValue(csirsCfg, "CSIRSType", "nzp"));
 event.Density = string(localObjectValue(csirsCfg, "Density", ""));
 event.Periodicity = localFormatCSIRSPeriod(localObjectValue(csirsCfg, "CSIRSPeriod", ""));
 if isempty(csirsSym)
-    event.RuntimeMaterializationStatus = "blocked_empty_resource";
-    event.Blocker = "nrCSIRS_returned_empty_symbols";
-    event.UpdateOutcome = "not_transmitted";
+    error("sixgr:pdsch:CSIRSResourceResolutionFailed", ...
+        "Enabled CSI-RS resolved to an empty resource.");
 else
     event.RuntimeMaterializationStatus = "generated_not_yet_mapped";
     event.UpdateOutcome = "generated_runtime_symbols";
@@ -1365,9 +1779,7 @@ event.RBOffset = NaN;
 event.NumRB = NaN;
 end
 
-function [collision, collisionWith] = localCSIRSResourceCollision(csirsInd, pdschInd, dmrsInd, ptrsInd)
-collision = false;
-collisionWith = "";
+function localAssertAuxiliaryResourceDisjoint(csirsInd, pdschInd, dmrsInd, ptrsInd)
 csirsSet = localIndexSet(csirsInd);
 if isempty(csirsSet)
     return;
@@ -1376,9 +1788,9 @@ checks = {pdschInd, "pdsch"; dmrsInd, "dmrs"; ptrsInd, "ptrs"};
 for i = 1:size(checks, 1)
     other = localIndexSet(checks{i, 1});
     if ~isempty(other) && ~isempty(intersect(csirsSet, other))
-        collision = true;
-        collisionWith = string(checks{i, 2});
-        return;
+        error("sixgr:pdsch:DataDMRSPTRSReservedCollision", ...
+            "CSI-RS collides with resolved %s resources before PDSCH coding.", ...
+            string(checks{i, 2}));
     end
 end
 end

@@ -648,6 +648,15 @@ sections:
         type: string
         allowed_values: [fixed, amc]
       fixed_mcs: {required: false, type: integer, min: 0}
+      mcs_ue_capability_1024qam: {required: false, type: boolean}
+      mcs_rrc_enabled_1024qam: {required: false, type: boolean}
+      mcs_dci_enabled_1024qam: {required: false, type: boolean}
+      mcs_deployment_allows_1024qam: {required: false, type: boolean}
+      mcs_frequency_range: {required: false, type: string}
+      mcs_operating_band: {required: false, type: string}
+      mcs_deployment_class: {required: false, type: string}
+      mcs_frequency_range_allows_1024qam: {required: false, type: boolean}
+      mcs_band_allows_1024qam: {required: false, type: boolean}
       link_adaptation_mode:
         required: false
         type: string
@@ -870,7 +879,7 @@ sections:
       speed_kmh:
         required: false
         type: number
-        allowed_numeric_values: [3, 30, 100, 120, 500, 1000]
+        min: 0
       cell_radius_m: {required: false, type: number, min: 0}
       timing_uncertainty_min_us: {required: false, type: number}
       timing_uncertainty_max_us: {required: false, type: number}

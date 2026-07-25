@@ -3,8 +3,8 @@ function ok = testPrompt2TopologySRSPRACHRuntimeWiring()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
-masterPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
-assert(exist(masterPath, "file") == 2, "Missing master_scenaio_all_file.yaml.");
+masterPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_geometry_based.yaml");
+assert(exist(masterPath, "file") == 2, "Missing master_geometry_based.yaml.");
 
 scfg = sixgr.lls6g.config.loadScenarioConfig(masterPath);
 resolved = scfg.toStruct();

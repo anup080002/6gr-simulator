@@ -237,6 +237,7 @@ interference:
 
 reference_signals:
   ssb_enabled: true
+  ssb_lmax: 8
   pbch_enabled: true
   pdcch_dmrs_enabled: true
   pdsch_dmrs_ports: 2

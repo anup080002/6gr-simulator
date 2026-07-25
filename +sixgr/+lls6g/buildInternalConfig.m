@@ -20,6 +20,7 @@ cfg.run.seed = double(localRequireFirstNested(s, ...
     ["seeds.global_seed","simulation.random_seed"], ...
     "seeds.global_seed or simulation.random_seed"));
 runnerProfile = lower(string(localRequireNested(s, "scenario.runner_profile", "scenario.runner_profile")));
+localAssertGeometryRuntimeAuthoritySurface(s);
 if runnerProfile == "system_level_lls"
     cfg.run.mode = "system";
 else
@@ -55,6 +56,21 @@ cfg.run.batchSizeLinks = max(1, round(double(localRequireNested(s, "run_control.
 cfg.run.studyMode = char(string(localRequireNested(s, "run_control.study_mode", "run_control.study_mode")));
 cfg.run.simulationMode = char(string(localRequireNested(s, "run_control.simulation_mode", "run_control.simulation_mode")));
 cfg.run.runProfile = char(string(localRequireNested(s, "run_control.run_profile", "run_control.run_profile")));
+pdschExecutionProfile = lower(strtrim(string(localGetNested( ...
+    s, "pdsch.execution_profile", ""))));
+allowedPDSCHExecutionProfiles = [ ...
+    "connected_strict","sps_strict","ra_si_strict","phy_calibration"];
+if ~isscalar(pdschExecutionProfile) || ...
+        (strlength(pdschExecutionProfile) > 0 && ...
+        ~any(pdschExecutionProfile == allowedPDSCHExecutionProfiles))
+    error("sixgr:lls6g:config:InvalidPDSCHExecutionProfile", ...
+        "pdsch.execution_profile must be one of: %s.", ...
+        strjoin(cellstr(allowedPDSCHExecutionProfiles), ", "));
+end
+if strlength(pdschExecutionProfile) > 0
+    cfg.run.pdschExecutionProfile = char(pdschExecutionProfile);
+    cfg.phy.pdsch.executionProfile = char(pdschExecutionProfile);
+end
 cfg.run.executionMode = char(localResolveBrowserExecutionMode(s));
 cfg.run.warmupTime_ms = runTiming.WarmupTime_ms;
 cfg.run.measurementTime_ms = runTiming.MeasurementTime_ms;
@@ -567,6 +583,25 @@ cfg.pdsch6gr.ModulationPerCodeword = cellstr(string(localGetNested(s, "pdsch6gr.
 cfg.pdsch6gr.TargetCodeRatePerCodeword = double(localGetNested(s, "pdsch6gr.target_code_rate_per_codeword", sixgr.util.structGet(cfg, "phy.pdsch.codeRate", 0.4785)));
 cfg.pdsch6gr.MCSMode = char(string(localGetNested(s, "pdsch6gr.mcs_mode", "fixed")));
 cfg.pdsch6gr.FixedMCS = double(localGetNested(s, "pdsch6gr.fixed_mcs", sixgr.util.structGet(cfg, "phy.pdsch.configuredMCSIndex", 10)));
+cfg.pdsch6gr.MCSUECapability1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_ue_capability_1024qam", []));
+cfg.pdsch6gr.MCSRRCEnabled1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_rrc_enabled_1024qam", []));
+cfg.pdsch6gr.MCSDCIEnabled1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_dci_enabled_1024qam", []));
+cfg.pdsch6gr.MCSDeploymentAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_deployment_allows_1024qam", []));
+cfg.pdsch6gr.MCSFrequencyRange = char(string(localGetNested(s, "pdsch6gr.mcs_frequency_range", "")));
+cfg.pdsch6gr.MCSOperatingBand = char(string(localGetNested(s, "pdsch6gr.mcs_operating_band", "")));
+cfg.pdsch6gr.MCSDeploymentClass = char(string(localGetNested(s, "pdsch6gr.mcs_deployment_class", "")));
+cfg.pdsch6gr.MCSFrequencyRangeAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_frequency_range_allows_1024qam", []));
+cfg.pdsch6gr.MCSBandAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_band_allows_1024qam", []));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", struct( ...
+    "UECapability1024QAM", cfg.pdsch6gr.MCSUECapability1024QAM, ...
+    "RRCEnabled1024QAM", cfg.pdsch6gr.MCSRRCEnabled1024QAM, ...
+    "DCIEnabled1024QAM", cfg.pdsch6gr.MCSDCIEnabled1024QAM, ...
+    "DeploymentAllows1024QAM", cfg.pdsch6gr.MCSDeploymentAllows1024QAM, ...
+    "FrequencyRange", cfg.pdsch6gr.MCSFrequencyRange, ...
+    "OperatingBand", cfg.pdsch6gr.MCSOperatingBand, ...
+    "DeploymentClass", cfg.pdsch6gr.MCSDeploymentClass, ...
+    "FrequencyRangeAllows1024QAM", cfg.pdsch6gr.MCSFrequencyRangeAllows1024QAM, ...
+    "BandAllows1024QAM", cfg.pdsch6gr.MCSBandAllows1024QAM));
 cfg.pdsch6gr.LinkAdaptationMode = char(string(localGetNested(s, "pdsch6gr.link_adaptation_mode", "actual_bler_based")));
 cfg.pdsch6gr.HARQEnabled = logical(localGetNested(s, "pdsch6gr.harq_enabled", true));
 cfg.pdsch6gr.HARQProcessCount = double(localGetNested(s, "pdsch6gr.harq_process_count", 4));
@@ -860,6 +895,7 @@ cfg.phy.pusch.numLayers = double(ulLayerCount);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", double(ulLayerCount));
 cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", double(ulLayerCount));
 cfg.phy.pusch.transformPrecoding = logical(s.waveform.transform_precoding_enabled);
+cfg.phy.pusch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
 cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(ulMCSTable));
@@ -1480,6 +1516,19 @@ end
 cfg = sixgr.config.normalizeConfig(cfg);
 [cfg, ~, frameEngine] = sixgr.config.validateConfig(cfg);
 cfg = localApplyFrameStructureEngine(cfg, frameEngine);
+% normalizeConfig/validateConfig may derive a generic diagnostic class from
+% adaptive PHY knobs.  Reapply the explicit source field directly so that
+% the operator-owned execution contract survives that derivation.
+explicitRunClass = localNormalizeRunClassToken(localGetNested( ...
+    s, "validation.run_class", ""));
+if strlength(explicitRunClass) > 0
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.RunClass", char(explicitRunClass));
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.run_class", char(explicitRunClass));
+else
+    cfg = localApplyValidationRunClass(cfg, s);
+end
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -1774,6 +1823,7 @@ if hasMappingType
     cfg = sixgr.util.structSet(cfg, targetBase + ".mappingType", ...
         localNormalizeDataChannelMappingType(mappingType, section + ".mapping_type"));
 end
+cfg = localApplyDataChannelFrequencyAllocation(cfg, s, section, targetBase);
 if section == "pdsch"
     cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".xOverhead");
     cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".XOverhead");
@@ -1815,6 +1865,92 @@ if hasStart && hasNum
 end
 end
 
+function cfg = localApplyDataChannelFrequencyAllocation(cfg, s, section, targetBase)
+[explicitPRBSet, hasExplicitPRBSet] = localTryGetNestedStrict( ...
+    s, section + ".prb_set");
+[prbStart, hasPRBStart] = localTryGetNestedStrict( ...
+    s, section + ".prb_start");
+[numPRB, hasNumPRB] = localTryGetNestedStrict( ...
+    s, section + ".num_prb");
+
+if hasExplicitPRBSet && (hasPRBStart || hasNumPRB)
+    error("sixgr:lls6g:config:AmbiguousDataChannelPRBAllocation", ...
+        "%s must configure either prb_set or the prb_start/num_prb " + ...
+        "pair, not both.", section);
+end
+if xor(hasPRBStart, hasNumPRB)
+    error("sixgr:lls6g:config:IncompleteDataChannelPRBAllocation", ...
+        "%s.prb_start and %s.num_prb must be configured together.", ...
+        section, section);
+end
+if ~hasExplicitPRBSet && ~hasPRBStart
+    return;
+end
+
+if hasExplicitPRBSet
+    prbSet = double(explicitPRBSet(:).');
+else
+    startValue = double(prbStart);
+    countValue = double(numPRB);
+    if ~(isscalar(startValue) && isfinite(startValue) && ...
+            startValue == fix(startValue) && startValue >= 0)
+        error("sixgr:lls6g:config:InvalidDataChannelPRBStart", ...
+            "%s.prb_start must be a nonnegative integer.", section);
+    end
+    if ~(isscalar(countValue) && isfinite(countValue) && ...
+            countValue == fix(countValue) && countValue >= 1)
+        error("sixgr:lls6g:config:InvalidDataChannelPRBCount", ...
+            "%s.num_prb must be a positive integer.", section);
+    end
+    prbSet = startValue + (0:(countValue - 1));
+end
+
+if isempty(prbSet) || any(~isfinite(prbSet) | prbSet ~= fix(prbSet) ...
+        | prbSet < 0) || numel(unique(prbSet)) ~= numel(prbSet)
+    error("sixgr:lls6g:config:InvalidDataChannelPRBSet", ...
+        "%s.prb_set must contain unique nonnegative integers.", section);
+end
+carrierNRB = double(sixgr.util.structGet(cfg, ...
+    "phy.carrier.NSizeGrid", NaN));
+if ~(isscalar(carrierNRB) && isfinite(carrierNRB) && ...
+        carrierNRB == fix(carrierNRB) && carrierNRB >= 1)
+    error("sixgr:lls6g:config:MissingCanonicalCarrierGrid", ...
+        "A valid phy.carrier.NSizeGrid is required before applying " + ...
+        "%s PRB allocation.", section);
+end
+if any(prbSet >= carrierNRB)
+    error("sixgr:lls6g:config:DataChannelPRBOutsideCarrier", ...
+        "%s PRB allocation %s exceeds the canonical carrier " + ...
+        "NSizeGrid=%d.", section, mat2str(prbSet), carrierNRB);
+end
+if section == "pdsch"
+    bwpDirection = "dl";
+else
+    bwpDirection = "ul";
+end
+activeBWP = sixgr.util.structGet(cfg, ...
+    "phy.bwp." + bwpDirection, struct());
+bwpSize = double(sixgr.util.structGet(activeBWP, "NSizeBWP", ...
+    sixgr.util.structGet(activeBWP, "n_size_bwp", NaN)));
+if ~(isscalar(bwpSize) && isfinite(bwpSize) && ...
+        bwpSize == fix(bwpSize) && bwpSize >= 1)
+    error("sixgr:lls6g:config:MissingDataChannelActiveBWP", ...
+        "%s requires an explicit active %s BWP size.", ...
+        section, upper(bwpDirection));
+end
+if any(prbSet >= bwpSize)
+    error("sixgr:lls6g:config:DataChannelPRBOutsideActiveBWP", ...
+        "%s PRB allocation %s must use BWP-relative indices in " + ...
+        "[0,NSizeBWP-1], where NSizeBWP=%d.", ...
+        section, mat2str(prbSet), bwpSize);
+end
+
+cfg = sixgr.util.structSet(cfg, targetBase + ".PRBSet", prbSet);
+cfg = sixgr.util.structSet(cfg, targetBase + ".prbSet", prbSet);
+cfg = sixgr.util.structSet(cfg, targetBase + ".prbStart", min(prbSet));
+cfg = sixgr.util.structSet(cfg, targetBase + ".numPRB", numel(prbSet));
+end
+
 function cfg = localReconcileULWaveformPUSCHSurface(cfg, s)
 ulWaveform = upper(strtrim(string(localGetNested(s, "waveform.ul_waveform", ""))));
 transformEnabled = logical(localGetNested(s, "waveform.transform_precoding_enabled", false));
@@ -1838,6 +1974,22 @@ cfg = sixgr.util.structSet(cfg, "phy.pdcch.yamlSurface", s.pdcch);
 cfg = localCopyRuntimeField(cfg, s, "pdcch.blind_decoding_attempts", "phy.pdcch.blindDecodingAttempts");
 cfg = localCopyRuntimeField(cfg, s, "pdcch.dmrs_scrambling_id_source", "phy.pdcch.dmrsScramblingIdSource");
 cfg = localCopyRuntimeField(cfg, s, "pdcch.rnti_config", "phy.pdcch.rntiConfig");
+[startSymbol, hasStart] = localTryGetNestedStrict(s, "pdcch.start_symbol");
+[numSymbols, hasNum] = localTryGetNestedStrict(s, "pdcch.num_symbols");
+if xor(hasStart, hasNum)
+    error("sixgr:phy:frame:InvalidPDCCHTimingAllocation", ...
+        "pdcch.start_symbol and pdcch.num_symbols must be configured together.");
+end
+if hasStart && hasNum
+    startValue = double(startSymbol);
+    numValue = double(numSymbols);
+    cfg = sixgr.util.structSet(cfg, "phy.pdcch.startSymbol", startValue);
+    cfg = sixgr.util.structSet(cfg, "phy.pdcch.numSymbols", numValue);
+    cfg = sixgr.util.structSet(cfg, "phy.pdcch.symbolAllocation", ...
+        [startValue numValue]);
+    cfg = sixgr.util.structSet(cfg, "phy.pdcch.SymbolAllocation", ...
+        [startValue numValue]);
+end
 [coresets, hasCoreset] = localTryGetNestedStrict(s, "pdcch.coreset");
 if ~hasCoreset
     [coresets, hasCoreset] = localTryGetNestedStrict(s, "pdcch.coresets");
@@ -1858,6 +2010,72 @@ end
 [spaces, hasSpaces] = localTryGetNestedStrict(s, "pdcch.search_spaces");
 if hasSpaces
     cfg = sixgr.util.structSet(cfg, "phy.pdcch.searchSpaces", spaces);
+end
+end
+
+function localAssertGeometryRuntimeAuthoritySurface(s)
+runClass = lower(strtrim(string(localGetNested( ...
+    s, "validation.run_class", ""))));
+if runClass ~= "ue_placement_geometry_lls"
+    return;
+end
+
+requiredPaths = [ ...
+    "bwp.dl"
+    "bwp.ul"
+    "bwp.component_carriers"
+    "pdsch.execution_profile"
+    "pdsch.mapping_type"
+    "pdsch.start_symbol"
+    "pdsch.num_symbols"
+    "pusch.mapping_type"
+    "pusch.start_symbol"
+    "pusch.num_symbols"
+    "pdcch.start_symbol"
+    "pdcch.num_symbols"
+    "tdd_timing.pdcch_to_pdsch_k0"
+    "tdd_timing.pdcch_to_pusch_k2"
+    "tdd_timing.dl_harq_feedback_k1"
+    "tdd_timing.ul_grant_k2"
+    "tdd_timing.n1_pdsch_processing_time_symbols"
+    "tdd_timing.n2_pusch_preparation_time_symbols"
+    "tdd_timing.capability_profile_id"];
+missing = strings(0, 1);
+for index = 1:numel(requiredPaths)
+    [value, found] = localTryGetNestedStrict(s, requiredPaths(index));
+    if ~found || isempty(value)
+        missing(end + 1, 1) = requiredPaths(index); %#ok<AGROW>
+    end
+end
+for section = ["pdsch", "pusch"]
+    [prbSet, hasPRBSet] = localTryGetNestedStrict( ...
+        s, section + ".prb_set");
+    [prbStart, hasPRBStart] = localTryGetNestedStrict( ...
+        s, section + ".prb_start");
+    [numPRB, hasNumPRB] = localTryGetNestedStrict( ...
+        s, section + ".num_prb");
+    hasExplicitSet = hasPRBSet && ~isempty(prbSet);
+    hasExplicitRange = hasPRBStart && ~isempty(prbStart) && ...
+        hasNumPRB && ~isempty(numPRB);
+    if ~(hasExplicitSet || hasExplicitRange)
+        missing(end + 1, 1) = section + ...
+            ".prb_set or (" + section + ".prb_start + " + ...
+            section + ".num_prb)"; %#ok<AGROW>
+    end
+end
+if ~isempty(missing)
+    error("sixgr:lls6g:config:MissingGeometryRuntimeAuthority", ...
+        "validation.run_class='ue_placement_geometry_lls' requires explicit " + ...
+        "geometry runtime fields; missing: %s.", ...
+        strjoin(cellstr(missing), ", "));
+end
+
+profile = lower(strtrim(string(localGetNested( ...
+    s, "pdsch.execution_profile", ""))));
+if profile ~= "connected_strict"
+    error("sixgr:lls6g:config:GeometryRequiresConnectedStrictPDSCH", ...
+        "Geometry truth execution requires pdsch.execution_profile='connected_strict'; received '%s'.", ...
+        profile);
 end
 end
 
@@ -3100,40 +3318,11 @@ end
 
 losEnabled = logical(localGetNested(s, "channels.los_enabled", true));
 if any(configuredProfile == ["CDL-D", "CDL-E"]) && ~losEnabled
-    profile = "CDL-C";
-    source = "cdl_los_profile_guard";
-    reason = "CDL-D/E are LOS CDL profiles but channels.los_enabled=false; using CDL-C NLOS cluster profile.";
-    return;
+    error("sixgr:lls6g:config:ChannelProfileLOSConflict", ...
+        "Configured channels.profile='%s' is a LOS CDL profile, but " + ...
+        "channels.los_enabled=false. Select a compatible concrete profile " + ...
+        "in YAML; MATLAB will not silently replace it.", configuredProfile);
 end
-
-if configuredProfile == "CDL-D" && localIsTR38901UMaMidbandHighMobility(s, mobilitySpeedKmh)
-    profile = "CDL-C";
-    source = "tr38901_uma_midband_high_mobility_mapping";
-    reason = sprintf("4 GHz UMa high-mobility profile uses CDL-C; configured speed %.6g km/h was not allowed to keep CDL-D LOS bias.", ...
-        double(mobilitySpeedKmh));
-end
-end
-
-function tf = localIsTR38901UMaMidbandHighMobility(s, mobilitySpeedKmh)
-tf = false;
-if ~(isfinite(double(mobilitySpeedKmh)) && double(mobilitySpeedKmh) >= 100 - 1e-9)
-    return;
-end
-scenarioTokens = [
-    string(localGetNested(s, "deployment_topology.cell_type", ""))
-    string(localGetNested(s, "channels.pathloss_scenario", ""))
-    string(localGetNested(s, "channel.scenario", ""))
-    string(localGetNested(s, "scenario.name", ""))
-    string(localGetNested(s, "scenario.profileName", ""))
-    ];
-normalized = lower(regexprep(strtrim(scenarioTokens), "[^A-Za-z0-9]", ""));
-isUMa = any(normalized == "uma" | normalized == "urbanmacro");
-if ~isUMa
-    return;
-end
-fcHz = double(localGetNested(s, "frequency.center_frequency_hz", ...
-    localGetNested(s, "global_radio_scope.carrier_frequency_hz", NaN)));
-tf = isfinite(fcHz) && fcHz >= 3.0e9 && fcHz <= 5.0e9;
 end
 
 function dopplerHz = localResolveChannelDopplerHz(s, mobilitySpeedKmh, sourceMode)
@@ -3670,12 +3859,15 @@ for fieldName = ["snr_db", "mcs", "seeds", "target_bler"]
     end
 end
 
-for fieldName = ["rank", "layers", "n_prb", "min_tb_per_point", "max_tb_per_point", "min_errors_for_ci"]
+for fieldName = ["rank", "layers", "n_prb", "min_tb_per_point", "max_tb_per_point", "min_errors_for_ci", "trials_per_drop"]
     key = char(fieldName);
     if isfield(section, key)
         value = double(section.(key));
-        if isfinite(value)
-            section.(key) = round(double(value));
+        if isscalar(value) && isfinite(value)
+            % Preserve the configured scalar exactly. Schema/runtime
+            % validation owns integer checks; this translation boundary
+            % must not silently round an invalid operator value.
+            section.(key) = double(value);
         end
     end
 end

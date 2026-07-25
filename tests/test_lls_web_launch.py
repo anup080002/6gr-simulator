@@ -10,8 +10,8 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
 
-DEFAULT_WAVEFORM_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
-MASTER_SCENARIO = "master_scenaio_all_file.yaml"
+DEFAULT_WAVEFORM_SCENARIO = "master_geometry_based.yaml"
+MASTER_SCENARIO = "master_geometry_based.yaml"
 
 
 def main() -> None:
@@ -58,7 +58,7 @@ def main() -> None:
     master_base, _ = dash.load_resolved_config_payload(MASTER_SCENARIO)
     assert dash.path_get(master_base, "deployment_topology.num_cells") == 2
     assert dash.path_get(master_base, "deployment_topology.num_ues") == 2
-    assert dash.path_get(master_base, "prach.configuration_index") == 167
+    assert dash.path_get(master_base, "prach.configuration_index") == 157
     assert dash.path_get(master_base, "prach.format") == "B4"
     master_runtime_request = {
         "inherits": [f"./{MASTER_SCENARIO}"],

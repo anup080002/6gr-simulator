@@ -21,7 +21,7 @@ ok = true;
 end
 
 function localAssertMasterScenarioHARQ(tmp)
-scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
+scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 s = scfg.toStruct();
 assert(string(sixgr.util.structGet(s, "harq.validation_mode", "")) == "closed_loop", ...

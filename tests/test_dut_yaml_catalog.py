@@ -8,7 +8,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DUT_ROOT = REPO_ROOT / "simulator" / "configs" / "dut"
 SCENARIO_ROOT = REPO_ROOT / "simulator" / "configs" / "scenarios"
-MASTER_SCENARIO = SCENARIO_ROOT / "master_scenaio_all_file.yaml"
+MASTER_SCENARIO = SCENARIO_ROOT / "master_geometry_based.yaml"
 
 EXPECTED_DUT_FILES = {
     "dut_base.yaml",
@@ -70,7 +70,7 @@ def test_dut_yaml_catalog_is_complete_and_overlay_only() -> None:
     assert not list(SCENARIO_ROOT.glob("*_dut*.yaml"))
 
     base = _load("dut_base.yaml")
-    assert base["dut"]["master_scenario"] == "../scenarios/master_scenaio_all_file.yaml"
+    assert base["dut"]["master_scenario"] == "../scenarios/master_geometry_based.yaml"
     assert base["dut"]["source_of_truth"] == "canonical_control"
 
     for name in sorted(EXPECTED_DUT_FILES - {"dut_base.yaml"}):

@@ -31,11 +31,20 @@ metrics = struct( ...
     "CBGCount", NaN, ...
     "CBGBLER", NaN);
 
-metrics.OfferedBits = double(sixgr.util.structGet(tx, "TransportBlockSize", NaN));
-metrics.TBCRCLength_bits = double(sixgr.util.structGet(tx, "TransportBlockCRCLength", NaN));
-metrics.TBLengthWithCRC_bits = double(sixgr.util.structGet(tx, "TransportBlockLenWithCRC", NaN));
-metrics.BaseGraph = double(sixgr.util.structGet(tx, "BaseGraph", NaN));
-metrics.RateMatchedBits = double(sixgr.util.structGet(tx, "G", NaN));
+metrics.OfferedBits = localFiniteSum(sixgr.util.structGet( ...
+    tx, "TransportBlockSizePerCodeword", ...
+    sixgr.util.structGet(tx, "TransportBlockSize", NaN)));
+metrics.TBCRCLength_bits = localFiniteSum(sixgr.util.structGet( ...
+    tx, "TransportBlockCRCLengthPerCodeword", ...
+    sixgr.util.structGet(tx, "TransportBlockCRCLength", NaN)));
+metrics.TBLengthWithCRC_bits = localFiniteSum(sixgr.util.structGet( ...
+    tx, "TransportBlockLenWithCRCPerCodeword", ...
+    sixgr.util.structGet(tx, "TransportBlockLenWithCRC", NaN)));
+metrics.BaseGraph = localFiniteCommon(sixgr.util.structGet( ...
+    tx, "BaseGraphPerCodeword", ...
+    sixgr.util.structGet(tx, "BaseGraph", NaN)));
+metrics.RateMatchedBits = localFiniteSum(sixgr.util.structGet( ...
+    tx, "GPerCodeword",sixgr.util.structGet(tx, "G", NaN)));
 
 codeword = sixgr.util.structGet(tx, "Codeword", []);
 if ~isempty(codeword)
@@ -43,8 +52,10 @@ if ~isempty(codeword)
 end
 
 seg = sixgr.util.structGet(txInfo, "Segmentation", struct());
-metrics.NumCodeBlocks = double(sixgr.util.structGet(seg, "nCB", NaN));
-metrics.CodeBlockLength_bits = double(sixgr.util.structGet(seg, "cbLen", NaN));
+metrics.NumCodeBlocks = localFiniteSum( ...
+    sixgr.util.structGet(seg, "nCB", NaN));
+metrics.CodeBlockLength_bits = localFiniteCommon( ...
+    sixgr.util.structGet(seg, "cbLen", NaN));
 if isfinite(metrics.NumCodeBlocks)
     metrics.SegmentationOccurred = double(metrics.NumCodeBlocks > 1);
 end
@@ -221,5 +232,32 @@ elseif ischar(raw) || isstring(raw)
     value = any(strcmpi(strtrim(char(string(raw))), ["true","1","yes","ok","pass"]));
 else
     value = logical(defaultValue);
+end
+end
+
+function value = localFiniteSum(raw)
+if ~(isnumeric(raw) || islogical(raw))
+    value = NaN;
+    return;
+end
+raw = double(raw(:));
+if isempty(raw) || any(~isfinite(raw))
+    value = NaN;
+else
+    value = sum(raw);
+end
+end
+
+function value = localFiniteCommon(raw)
+if ~(isnumeric(raw) || islogical(raw))
+    value = NaN;
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if isempty(raw) || any(raw ~= raw(1))
+    value = NaN;
+else
+    value = raw(1);
 end
 end

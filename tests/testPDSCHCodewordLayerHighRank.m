@@ -3,8 +3,9 @@ function ok = testPDSCHCodewordLayerHighRank()
 
 setup6GRSimToolkit("Verbose", false);
 if ~localHaveRequired5G()
-    ok = true;
-    return;
+    error("sixgr:test:Required5GToolboxUnavailable", ...
+        ["testPDSCHCodewordLayerHighRank requires the 5G Toolbox APIs " ...
+        "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
 rng(8308, "twister");
@@ -56,6 +57,7 @@ for nLayers = 1:8
         "TransportBlockSize", tx.TransportBlockSize, ...
         "TargetCodeRate", tx.TargetCodeRate, ...
         "RV", tx.RV, ...
+        "CodingPlan", tx.CodingPlans, ...
         "CodingLayout", tx.CodingLayouts, ...
         "PrecodingMatrix", W, ...
         "NoiseVar", 1e-12, ...
@@ -94,6 +96,7 @@ end
 function cfg = localCfg(nLayers)
 cfg = sixgr.config.defaultConfig();
 cfg.run.shortRun = true;
+cfg.run.pdschExecutionProfile = "phy_calibration";
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
@@ -114,18 +117,33 @@ cfg.phy.pdsch.symbolAllocation = [0 10];
 cfg.phy.pdsch.mappingType = 'A';
 if nLayers > 4
     cfg.phy.pdsch.modulation = {'QPSK','QPSK'};
+    cfg.phy.pdsch.mcsTable = ...
+        ["calibration_explicit","calibration_explicit"];
+    cfg.phy.pdsch.mcsIndex = [0 1];
 else
     cfg.phy.pdsch.modulation = 'QPSK';
+    cfg.phy.pdsch.mcsTable = "calibration_explicit";
+    cfg.phy.pdsch.mcsIndex = 0;
 end
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
 cfg.phy.pdsch.numLayers = nLayers;
 cfg.phy.pdsch.nLayers = nLayers;
 cfg.phy.pdsch.numPorts = nLayers;
 cfg.phy.pdsch.nPorts = nLayers;
 cfg.phy.pdsch.RNTI = 1000 + nLayers;
 cfg.phy.pdsch.NID = 42 + nLayers;
-cfg.phy.pdsch.codeRate = 0.30;
+if nLayers > 4
+    cfg.phy.pdsch.codeRate = [0.30 0.30];
+else
+    cfg.phy.pdsch.codeRate = 0.30;
+end
 cfg.phy.pdsch.xOverhead = 0;
-cfg.phy.pdsch.rv = 0;
+if nLayers > 4
+    cfg.phy.pdsch.rv = [0 0];
+else
+    cfg.phy.pdsch.rv = 0;
+end
 cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.pdsch.precoding.matrix = eye(nLayers);
 cfg.phy.pdsch.precodingMatrix = eye(nLayers);
@@ -138,7 +156,26 @@ end
 cfg.phy.csirs.enable = false;
 end
 
+function context = localCalibrationMCSContext()
+context = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
+end
+
 function localAssertInvalidScopesFail()
+cfgScalarRate = localCfg(5);
+cfgScalarRate.phy.pdsch.codeRate = 0.30;
+localAssertThrows(@() sixgr.phy.dl.PDSCH_Tx( ...
+    cfgScalarRate, "PrecodingMatrix", eye(5)), ...
+    "sixgr:pdsch:CalibrationCodeRateCountMismatch");
+
 cfgTwoCW = localCfg(2);
 cfgTwoCW.phy.pdsch.numCodewords = 2;
 localAssertThrows(@() sixgr.phy.dl.PDSCH_Tx(cfgTwoCW, "PrecodingMatrix", eye(2)), ...

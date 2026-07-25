@@ -11,6 +11,9 @@ cfg.phy.carrier.NCellID = 17;
 cfg.phy.carrier.NSizeGrid = 52;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
+cfg.frequency = struct( ...
+    "range_name","FR1", ...
+    "band_name","n78");
 cfg.random_access = struct();
 cfg.random_access.enabled = true;
 cfg.random_access.binding_source = "scenario_config_pending_sib1";

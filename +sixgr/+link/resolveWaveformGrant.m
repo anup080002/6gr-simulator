@@ -52,7 +52,12 @@ grant.K2 = NaN;
 grant.SearchSpaceID = double(sixgr.util.structGet(cfg, "phy.dl.pdcch.SearchSpaceID", 0));
 grant.CORESETID = double(sixgr.util.structGet(cfg, "phy.dl.pdcch.CORESETID", 0));
 grant.BWPId = NaN;
-grant.Source = "explicit_waveform_grant";
+% This helper is an explicitly isolated PHY-calibration request. Connected
+% and SPS execution obtains PDSCHSchedulingAssignment from decoded control
+% state and never treats this configured request as a decoded grant.
+grant.ExecutionProfile = "phy_calibration";
+grant.Source = "explicit_phy_calibration_request";
+grant.AssignmentSource = "calibration_assignment";
 grant.Valid = true;
 
 scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", char(direction));
@@ -132,11 +137,11 @@ if isempty(prbSet)
         ternary(isUL, "UL", "DL"));
 end
 prbSet = double(prbSet(:));
-prbSet = prbSet(isfinite(prbSet) & prbSet >= 0);
-if isempty(prbSet)
-    return;
+if isempty(prbSet) || any(~isfinite(prbSet) | prbSet < 0 ...
+        | prbSet ~= fix(prbSet)) || numel(unique(prbSet)) ~= numel(prbSet)
+    error("sixgr:link:resolveWaveformGrant:InvalidPRBSet", ...
+        "Configured waveform PRBSet must be nonempty, unique, and contain only nonnegative integers.");
 end
-prbSet = unique(round(prbSet), "stable");
 prbStart = double(min(prbSet));
 prbCount = double(numel(prbSet));
 prbSet = double(prbSet(:).');
@@ -153,11 +158,11 @@ if isempty(symAlloc)
         ternary(isUL, "UL", "DL"));
 end
 symAlloc = double(symAlloc(:).');
-if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
+if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc)) ...
+        || any(symAlloc ~= fix(symAlloc))
     error("sixgr:link:resolveWaveformGrant:InvalidSymbolAllocation", ...
-        "Configured waveform SymbolAllocation must contain exactly two finite values.");
+        "Configured waveform SymbolAllocation must contain exactly two finite integers.");
 end
-symAlloc = round(symAlloc);
 if symAlloc(1) < 0 || symAlloc(2) < 1
     error("sixgr:link:resolveWaveformGrant:InvalidSymbolAllocation", ...
         "Configured waveform SymbolAllocation must be [start>=0 count>=1].");

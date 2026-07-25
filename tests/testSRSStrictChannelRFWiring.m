@@ -8,7 +8,7 @@ mkdir(tmp);
 cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
-    "master_scenaio_all_file.yaml");
+    "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, tmp);
 

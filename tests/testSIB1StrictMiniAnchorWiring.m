@@ -5,7 +5,7 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 repoRoot = fileparts(fileparts(mfilename("fullpath")));
 scenarioPath = fullfile(repoRoot, "simulator", "configs", "scenarios", ...
-    "master_scenaio_all_file.yaml");
+    "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 
 tmp = tempname;

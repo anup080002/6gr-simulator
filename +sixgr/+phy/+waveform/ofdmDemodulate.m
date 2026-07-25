@@ -17,10 +17,12 @@ function [grid, info] = ofdmDemodulate(carrier, waveform, varargin)
 %     grid : K-by-L-by-R resource grid
 %     info : struct with OFDM info + metadata
 
-    samplingResolution = localResolveSampling(carrier, varargin{:});
+    [samplingResolution, demodulationArguments] = ...
+        localResolveSampling(carrier, varargin{:});
 
     try
-        grid = nrOFDMDemodulate(carrier, waveform, varargin{:});
+        grid = nrOFDMDemodulate( ...
+            carrier, waveform, demodulationArguments{:});
         engine = "nrOFDMDemodulate";
     catch ME
         failure = MException("sixgr:phy:ofdmDemodulate:Failed", ...
@@ -31,7 +33,7 @@ function [grid, info] = ofdmDemodulate(carrier, waveform, varargin)
     end
 
     ofdmInfo = localResolveOFDMInfo( ...
-        carrier, samplingResolution, varargin{:});
+        carrier, samplingResolution, demodulationArguments{:});
 
     info = ofdmInfo;
     info.OFDMSamplingResolution = samplingResolution;
@@ -67,13 +69,15 @@ end
 ofdmInfo = nrOFDMInfo(carrier, infoArgs{:});
 end
 
-function resolution = localResolveSampling(carrier, varargin)
+function [resolution, demodulationArguments] = ...
+        localResolveSampling(carrier, varargin)
 if mod(numel(varargin), 2) ~= 0
     error("sixgr:phy:ofdmDemodulate:BadNameValueArguments", ...
         "OFDM demodulation options must occur in name-value pairs.");
 end
 
 resolverArguments = {};
+demodulationArguments = {};
 seen = strings(0, 1);
 for index = 1:2:numel(varargin)
     rawName = varargin{index};
@@ -92,9 +96,23 @@ for index = 1:2:numel(varargin)
         case "nfft"
             resolverArguments = [resolverArguments, ...
                 {"Nfft", value}]; %#ok<AGROW>
+            demodulationArguments = [demodulationArguments, ...
+                {rawName, value}]; %#ok<AGROW>
         case "samplerate"
             resolverArguments = [resolverArguments, ...
                 {"SampleRate", value}]; %#ok<AGROW>
+            demodulationArguments = [demodulationArguments, ...
+                {rawName, value}]; %#ok<AGROW>
+        case "windowing"
+            % Windowing controls the transmitter taper and the calibrated
+            % time/grid noise transform. nrOFDMDemodulate has no Windowing
+            % parameter, so retain it in sampling provenance but do not
+            % forward an invalid name-value pair to the toolbox kernel.
+            resolverArguments = [resolverArguments, ...
+                {"WindowingSamples", value}]; %#ok<AGROW>
+        otherwise
+            demodulationArguments = [demodulationArguments, ...
+                {rawName, value}]; %#ok<AGROW>
     end
 end
 resolution = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...

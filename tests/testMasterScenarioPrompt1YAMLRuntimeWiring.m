@@ -4,8 +4,8 @@ function ok = testMasterScenarioPrompt1YAMLRuntimeWiring()
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 scenarioDir = fullfile(pwd, "simulator", "configs", "scenarios");
-masterPath = fullfile(scenarioDir, "master_scenaio_all_file.yaml");
-assert(exist(masterPath, "file") == 2, "Missing master_scenaio_all_file.yaml.");
+masterPath = fullfile(scenarioDir, "master_geometry_based.yaml");
+assert(exist(masterPath, "file") == 2, "Missing master_geometry_based.yaml.");
 
 localAssertScenario(masterPath, "master");
 

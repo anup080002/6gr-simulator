@@ -1,6 +1,7 @@
 top_level_order:
   - canonical_control
   - bwp
+  - pdsch6gr
   - pdsch
   - pusch
   - pdcch
@@ -9,6 +10,7 @@ top_level_order:
   - synchronization
   - rf_hardware
   - tdd_timing
+  - execution_scales
   - validation
 sections:
   canonical_control:
@@ -35,6 +37,7 @@ sections:
       modulation: {required: false, type: struct}
       harq: {required: false, type: struct}
       receiver: {required: false, type: struct}
+      pdsch: {required: false, type: struct}
       impairments: {required: false, type: struct}
       ai_ml: {required: false, type: struct}
       energy: {required: false, type: struct}
@@ -57,9 +60,18 @@ sections:
     parameters:
       dl: {required: false, type: struct}
       ul: {required: false, type: struct}
+      component_carriers: {required: false, type: struct_array}
+      switch_commands: {required: false, type: struct_array}
   pdsch:
     required: false
     parameters:
+      execution_profile:
+        required: false
+        type: string
+        allowed_values: [connected_strict, sps_strict, ra_si_strict, phy_calibration]
+      prb_set: {required: false, type: number_list, integer: true, min_items: 1}
+      prb_start: {required: false, type: integer, min: 0}
+      num_prb: {required: false, type: integer, min: 1}
       resource_allocation_type: {required: false, type: string}
       mapping_type: {required: false, type: string}
       start_symbol: {required: false, type: integer, min: 0}
@@ -74,6 +86,9 @@ sections:
   pusch:
     required: false
     parameters:
+      prb_set: {required: false, type: number_list, integer: true, min_items: 1}
+      prb_start: {required: false, type: integer, min: 0}
+      num_prb: {required: false, type: integer, min: 1}
       resource_allocation_type: {required: false, type: string}
       mapping_type: {required: false, type: string}
       start_symbol: {required: false, type: integer, min: 0}
@@ -89,6 +104,8 @@ sections:
   pdcch:
     required: false
     parameters:
+      start_symbol: {required: false, type: integer, min: 0}
+      num_symbols: {required: false, type: integer, min: 1}
       coreset: {required: false, type: struct_array}
       coresets: {required: false, type: struct_array}
       search_spaces: {required: false, type: struct_array}
@@ -173,6 +190,16 @@ sections:
       timing_advance_max_us: {required: false, type: number, min: 0}
       n1_pdsch_processing_time_symbols: {required: false, type: integer, min: 0}
       n2_pusch_preparation_time_symbols: {required: false, type: integer, min: 0}
+      capability_profile_id: {required: false, type: string}
+  execution_scales:
+    required: false
+    parameters:
+      default:
+        required: false
+        type: string
+        allowed_values: [smoke, full]
+      smoke: {required: false, type: struct}
+      full: {required: false, type: struct}
   coding:
     parameters:
       ldpc_lifting_size_z_selection: {required: false, type: string}
@@ -288,5 +315,28 @@ nested_sections:
       max_tb_per_point: {required: false, type: integer, min: 1}
       min_errors_for_ci: {required: false, type: integer, min: 0}
       max_ci_half_width: {required: false, type: number, min: 0}
+      confidence_level: {required: false, type: number, min_exclusive: 0, max: 1}
+      trials_per_drop: {required: false, type: integer, min: 1}
+      disable_auxiliary_signals: {required: false, type: boolean}
+      enable_ptrs: {required: false, type: boolean}
+      fixed_reference_mode: {required: false, type: boolean}
+      noise_operating_mode:
+        required: false
+        type: string
+        allowed_values: [standalone_awgn_snr_argument]
+      pdsch_execution_profile:
+        required: false
+        type: string
+        allowed_values: [phy_calibration]
+      link_adaptation_mode:
+        required: false
+        type: string
+        allowed_values: [fixed]
+      harq_enabled: {required: false, type: boolean}
+      single_user_mode: {required: false, type: boolean}
+      configuration_authority:
+        required: false
+        type: string
+        allowed_values: [master_yaml]
       seeds: {required: false, type: number_list, integer: true}
       target_bler: {required: false, type: number_list, min_items: 1}

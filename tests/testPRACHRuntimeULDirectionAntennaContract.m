@@ -1,7 +1,7 @@
 function ok = testPRACHRuntimeULDirectionAntennaContract()
 %TESTPRACHRUNTIMEULDIRECTIONANTENNACONTRACT Guard PRACH UE->gNB channel binding.
 
-scenarioPath = fullfile("simulator", "configs", "scenarios", "master_scenaio_all_file.yaml");
+scenarioPath = fullfile("simulator", "configs", "scenarios", "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, tempname);
 cfg = sixgr.config.normalizeConfig(cfg);

@@ -30,10 +30,16 @@ pdsch.Modulation = char(string(s.Modulation));
 pdsch.NumLayers = double(s.NLayers);
 pdsch.RNTI = double(rnti);
 pdsch.NID = double(raCfg.NCellID);
-try
-    pdsch.DMRS.DMRSAdditionalPosition = 2;
-catch
-end
+pdsch.MappingType = "A";
+pdsch.DMRS.DMRSConfigurationType = 1;
+pdsch.DMRS.DMRSTypeAPosition = 2;
+pdsch.DMRS.DMRSAdditionalPosition = 0;
+pdsch.DMRS.DMRSLength = 1;
+pdsch.DMRS.NumCDMGroupsWithoutData = 1;
+pdsch.DMRS.NIDNSCID = double(raCfg.NCellID);
+pdsch.DMRS.NSCID = 0;
+pdsch.DMRS.DMRSPortSet = 0;
+pdsch.EnablePTRS = false;
 end
 
 function bits = localBuildDCI32(s, rv)

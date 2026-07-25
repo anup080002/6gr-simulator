@@ -114,9 +114,11 @@ try
     pdsch.DMRS.DMRSConfigurationType = 1;
     pdsch.DMRS.DMRSTypeAPosition = double(sixgr.util.structGet(cfg, "phy.mib.dmrsTypeAPosition", 2));
     pdsch.DMRS.DMRSLength = 1;
-    pdsch.DMRS.DMRSAdditionalPosition = 2;
+    pdsch.DMRS.DMRSAdditionalPosition = 0;
     pdsch.DMRS.DMRSPortSet = 0;
     pdsch.DMRS.NumCDMGroupsWithoutData = 2;
+    pdsch.DMRS.NIDNSCID = double(carrier.NCellID);
+    pdsch.DMRS.NSCID = 0;
 catch
 end
 pdsch.EnablePTRS = false;

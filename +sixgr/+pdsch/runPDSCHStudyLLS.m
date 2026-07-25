@@ -181,7 +181,8 @@ cfg.PTRS.PTRSEnabled = cfg.EnablePTRS;
 cfg.TDRA.StartSymbol = double(point.StartSymbol);
 cfg.TDRA.NumSymbols = double(point.NumSymbols);
 cfg.DMRS.AdditionalPosition = double(point.DMRSAdditionalPosition);
-cfg.TDRA.MappingType = "single_mapping_type_baseline";
+cfg.TDRA.MappingType = char(upper(string(sixgr.util.structGet( ...
+    point, "MappingType", cfg.TDRA.MappingType))));
 cfg.TDRA.EnableCrossSlot = false;
 cfg.FDRA.FDRAType = char(string(point.FDRAType));
 cfg.SpeedKmh = max(0, double(sixgr.util.structGet(point, "SpeedKmh", cfg.SpeedKmh)));
@@ -191,9 +192,14 @@ cfg.Numerology = double(numerology.Mu);
 cfg.SlotNumber = mod(trialIndex - 1, double(numerology.SlotsPerFrame));
 cfg.Seed = double(seed);
 
-fdraAlloc = sixgr.pdsch.FDRAAllocator(localResolveFDRAForPoint(cfg), cfg.NSizeGrid, "TransmissionIndex", trialIndex);
+fdraAlloc = sixgr.pdsch.FDRAAllocator( ...
+    localResolveFDRAForPoint(cfg), cfg.NSizeGrid);
 [fdraAlloc, mrssOverlap] = sixgr.pdsch.MRSSCoordinator(cfg, fdraAlloc);
-tdraAlloc = sixgr.pdsch.TDRAAllocator(cfg.TDRA, "RepetitionMode", cfg.RepetitionMode, "RepetitionCount", cfg.RepetitionCount);
+tdraAlloc = sixgr.pdsch.TDRAAllocator(cfg.TDRA, ...
+    "RepetitionMode", cfg.RepetitionMode, ...
+    "RepetitionCount", cfg.RepetitionCount, ...
+    "SymbolsPerSlot", double(numerology.SymbolsPerSlot), ...
+    "ExecutionProfile", "study_calibration");
 amc = sixgr.pdsch.AMCSelector(cfg, "EstimatedSNR_dB", cfg.SNRdB);
 rvSeq = [0 2 3 1];
 
@@ -230,16 +236,23 @@ for h = 1:attempts
     layerT = localVertcat(layerT, localAnnotateLayerTrace(txBundle.LayerMappingTrace, point, trialIndex, h));
 
     copyLLRs = cell(numel(txBundle.Copies), 1);
-    copyRx = cell(numel(txBundle.Copies), 1);
+    copyPlans = cell(numel(txBundle.Copies), 1);
     postEqEVM = NaN(numel(txBundle.Copies), 1);
     sinrEst = NaN(numel(txBundle.Copies), 1);
     for c = 1:numel(txBundle.Copies)
         copy = txBundle.Copies{c};
         [rxWave, noiseVar] = localApplyChannelAndNoise(copy.Tx.Waveform, cfg, copy.TxInfo, seed + 100 * h + c);
-        rxOut = sixgr.pdsch.PDSCHReceiver(rxWave, cfg, copy, ...
-            "NoiseVar", noiseVar, "NoiseVarDomain", "time");
-        copyRx{c} = rxOut.Rx;
+        receiverConfig = localCanonicalStudyReceiverConfig( ...
+            copy.Tx, rxWave, noiseVar);
+        canonicalRx = sixgr.pdsch.PDSCHReceiver( ...
+            rxWave, copy.Tx.Assignment, copy.Tx.ResourcePlan, ...
+            copy.Tx.Carrier, copy.Tx.ReferenceConfig, receiverConfig, ...
+            "CodingPlans", copy.Tx.CodingPlans, ...
+            "PrecoderBundle", copy.Tx.PrecoderBundle);
+        rxOut = localCanonicalStudyReceiverBundle( ...
+            canonicalRx, cfg, copy.Tx.Carrier);
         copyLLRs{c} = localCodewordLLRCell(rxOut.Rx);
+        copyPlans{c} = localStudyCodingPlans(copy.Tx);
         postEqEVM(c) = double(rxOut.PostEqEVM);
         sinrEst(c) = localBestStudySINR(rxOut.Rx);
         dmrsT = localVertcat(dmrsT, localAnnotateMap(copy.DMRSTable, point, trialIndex, h, c, "DMRS"));
@@ -249,22 +262,9 @@ for h = 1:attempts
         tdraRows(end+1,1) = localBuildTDRARow(point, trialIndex, h, c, copy); %#ok<AGROW>
     end
 
-    combined = localCombineLLR(copyLLRs);
-    if numel(copyRx) == 1 && ~isempty(copyRx{1})
-        decode = sixgr.pdsch.DLSCHDecoder(copyRx{1});
-        crcPass = logical(decode.CRCPass);
-    elseif ~isempty(combined)
-        decode = sixgr.pdsch.DLSCHDecoder(combined, ...
-            "TransportBlockSize", txBundle.TransportBlockSize, ...
-            "TargetCodeRate", txBundle.ActiveAMC.TargetCodeRate, ...
-            "RV", rv, ...
-            "Modulation", txBundle.ActiveAMC.Modulation, ...
-            "NumLayers", cfg.NumLayers);
-        crcPass = logical(decode.CRCPass);
-    else
-        decode = struct("CRCPass", false, "CRCError", true, "DecoderIterations", NaN);
-        crcPass = false;
-    end
+    decode = localDecodeStudyCopiesWithExactPlans( ...
+        copyLLRs, copyPlans, txBundle, trialIndex, h);
+    crcPass = logical(decode.CRCPass);
 
     throughputBits = double(crcPass) * double(txBundle.PayloadBitsBeforePadding);
     finalPass = crcPass;
@@ -296,7 +296,7 @@ end
 
 trialRow = localBuildTrialRow(cfg, point, trialIndex, finalPass, finalThroughputBits, finalTBSizeBits, ...
     finalCodedBits, finalComplexity, finalEstimatedDelaySpread, finalEstimatedDoppler, finalEstimatedDelay, ...
-    finalEstimatedSNR, finalRxMetricSummary, fdraAlloc);
+    finalEstimatedSNR, finalRxMetricSummary, fdraAlloc, txBundle.ActiveAMC);
 tbT = tbRows;
 cwT = cwRows;
 fdraT = fdraRows;
@@ -406,8 +406,11 @@ end
 function cfgFdra = localResolveFDRAForPoint(cfg)
 cfgFdra = cfg.FDRA;
 if strcmpi(cfgFdra.FDRAType, "type0_bitmap") && isempty(cfgFdra.RBBitmap)
-    nChunks = max(1, ceil(double(cfgFdra.NumRB) / max(1, double(cfgFdra.GranularityRB))));
-    cfgFdra.RBBitmap = ones(1, nChunks);
+    granularity = max(1, double(cfgFdra.GranularityRB));
+    nRBG = ceil(double(cfg.NSizeGrid) / granularity);
+    scheduledRBG = max(1, ceil(double(cfgFdra.NumRB) / granularity));
+    cfgFdra.RBBitmap = [ones(1, min(scheduledRBG, nRBG)), ...
+        zeros(1, max(0, nRBG - scheduledRBG))];
 end
 if strcmpi(cfgFdra.FDRAType, "type1_riv")
     cfgFdra.RIV = localEncodeRIV(cfgFdra.RBStart, cfgFdra.NumRB, cfg.NSizeGrid);
@@ -425,31 +428,120 @@ else
 end
 end
 
-function combined = localCombineLLR(copyLLRs)
-if isempty(copyLLRs)
-    combined = [];
-    return;
+function plans = localStudyCodingPlans(tx)
+if ~isstruct(tx) || ~isfield(tx, "CodingPlans")
+    error("sixgr:pdsch:PDSCHStudyMissingCodingPlans", ...
+        "Every PDSCH study copy must retain the exact TX CodingPlans.");
 end
-if iscell(copyLLRs{1})
-    nCodewords = numel(copyLLRs{1});
-    combined = cell(1, nCodewords);
-    for cw = 1:nCodewords
-        streams = cell(numel(copyLLRs), 1);
-        for i = 1:numel(copyLLRs)
-            streams{i} = copyLLRs{i}{cw};
-        end
-        combined{cw} = localCombineLLR(streams);
+plans = tx.CodingPlans;
+if isa(plans, "sixgr.pdsch.DLSCHCodingPlan")
+    plans = {plans};
+elseif iscell(plans)
+    plans = reshape(plans, 1, []);
+else
+    plans = {};
+end
+if isempty(plans) || ~all(cellfun( ...
+        @(plan) isa(plan, "sixgr.pdsch.DLSCHCodingPlan") ...
+            && logical(plan.Immutable) ...
+            && strlength(string(plan.PlanID)) > 0 ...
+            && strlength(string(plan.CodingLayoutHash)) > 0, plans))
+    error("sixgr:pdsch:PDSCHStudyMissingCodingPlans", ...
+        "Every PDSCH study copy requires immutable plans with IDs and layout hashes.");
+end
+end
+
+function decode = localDecodeStudyCopiesWithExactPlans( ...
+        copyLLRs, copyPlans, txBundle, trialIndex, harqTx)
+if isempty(copyLLRs) || numel(copyLLRs) ~= numel(copyPlans)
+    error("sixgr:pdsch:PDSCHStudyRepetitionInputMismatch", ...
+        "Repetition decoding requires one LLR collection and one exact plan collection per copy.");
+end
+[planIDs, layoutHashes] = ...
+    localAssertIdenticalRepetitionCodingPlans(copyPlans);
+receiverConfig = txBundle.Copies{1}.Tx.ReceiverConfig;
+maxIterations = double(sixgr.util.structGet( ...
+    receiverConfig, "MaxIterations", 12));
+algorithm = string(sixgr.util.structGet( ...
+    receiverConfig, "Algorithm", "Normalized min-sum"));
+priorDecode = [];
+priorPlans = [];
+decode = [];
+for copyIndex = 1:numel(copyLLRs)
+    currentPlans = copyPlans{copyIndex};
+    args = { ...
+        "CodingPlan", localUnwrapOne(currentPlans), ...
+        "MaxIterations", maxIterations, ...
+        "Algorithm", algorithm, ...
+        "HARQKey", sprintf( ...
+            "pdsch_study_trial_%d_harq_%d", trialIndex, harqTx)};
+    if copyIndex > 1
+        args = [args, { ...
+            "PriorRecoveredLLR", priorDecode, ...
+            "PriorCodingPlan", localUnwrapOne(priorPlans)}]; %#ok<AGROW>
     end
-    return;
+    decode = sixgr.pdsch.DLSCHDecoder( ...
+        localUnwrapOne(copyLLRs{copyIndex}), args{:});
+    priorDecode = decode;
+    priorPlans = currentPlans;
 end
-lengths = cellfun(@numel, copyLLRs);
-if isempty(lengths) || any(lengths ~= lengths(1))
-    combined = double(copyLLRs{1}(:));
-    return;
+combiningApplied = localPositionAwareCombiningApplied(decode);
+if numel(copyLLRs) > 1 && ~combiningApplied
+    error("sixgr:pdsch:PDSCHStudyRepetitionCombiningNotApplied", ...
+        "Repeated PDSCH copies did not apply position-aware recovered-LLR combining.");
 end
-combined = zeros(lengths(1), 1);
-for i = 1:numel(copyLLRs)
-    combined = combined + double(copyLLRs{i}(:));
+decode.RepetitionCopyCount = numel(copyLLRs);
+decode.RepetitionCodingPlanIdentityVerified = true;
+decode.RepetitionCodingPlanIDs = planIDs;
+decode.RepetitionCodingLayoutHashes = layoutHashes;
+decode.RepetitionCombiningApplied = combiningApplied;
+decode.RepetitionCombiningMode = ...
+    "position_aware_rate_recovery_soft_buffer";
+end
+
+function [planIDs, layoutHashes] = ...
+        localAssertIdenticalRepetitionCodingPlans(copyPlans)
+base = copyPlans{1};
+planIDs = string(cellfun(@(plan) plan.PlanID, base, ...
+    "UniformOutput", false));
+layoutHashes = string(cellfun(@(plan) plan.CodingLayoutHash, base, ...
+    "UniformOutput", false));
+indices = double(cellfun(@(plan) plan.CodewordIndex, base));
+if ~isequal(indices, 0:(numel(base) - 1))
+    error("sixgr:pdsch:PDSCHStudyCodingPlanOrderMismatch", ...
+        "Study coding plans must be ordered by zero-based codeword index.");
+end
+for copyIndex = 2:numel(copyPlans)
+    current = copyPlans{copyIndex};
+    currentIDs = string(cellfun(@(plan) plan.PlanID, current, ...
+        "UniformOutput", false));
+    currentHashes = string(cellfun( ...
+        @(plan) plan.CodingLayoutHash, current, ...
+        "UniformOutput", false));
+    if numel(current) ~= numel(base) ...
+            || ~isequal(currentIDs, planIDs) ...
+            || ~isequal(currentHashes, layoutHashes)
+        error("sixgr:pdsch:PDSCHStudyRepetitionCodingPlanMismatch", ...
+            "Repetition copy %d changed immutable plan IDs or coding-layout hashes.", ...
+            copyIndex);
+    end
+end
+end
+
+function applied = localPositionAwareCombiningApplied(decode)
+if isfield(decode, "Codewords")
+    applied = all(cellfun(@(codeword) logical(sixgr.util.structGet( ...
+        codeword, "HARQCombineInfo.Applied", false)), ...
+        decode.Codewords));
+else
+    applied = logical(sixgr.util.structGet( ...
+        decode, "HARQCombineInfo.Applied", false));
+end
+end
+
+function value = localUnwrapOne(value)
+if iscell(value) && isscalar(value)
+    value = value{1};
 end
 end
 
@@ -461,7 +553,78 @@ end
 if ~iscell(llrCell)
     llrCell = {llrCell};
 end
-llrCell = cellfun(@(x) double(x(:)), llrCell(:).', "UniformOutput", false);
+llrCell = cellfun(@(x) double(x(:)), llrCell(:).', ...
+    "UniformOutput", false);
+end
+
+function receiverConfig = localCanonicalStudyReceiverConfig( ...
+        txContext, rxWaveform, timeNoiseVariance)
+required = ["Assignment","ResourcePlan","Carrier","ReferenceConfig", ...
+    "ReceiverConfig","PrecoderBundle"];
+missing = required(~isfield(txContext,required));
+if ~isempty(missing)
+    error("sixgr:pdsch:IncompleteCanonicalStudyReceiverContext", ...
+        "Canonical study receiver context is missing: %s.", ...
+        strjoin(cellstr(missing),", "));
+end
+receiverConfig = txContext.ReceiverConfig;
+receiverConfig.NPhysicalRxAntennas = size(rxWaveform,2);
+ofdmOptions = txContext.ReferenceConfig.get("OFDMOptions");
+noiseTransform = sixgr.phy.waveform.calibrateOFDMNoiseTransform( ...
+    txContext.Carrier, ofdmOptions{:});
+[gridNoiseVariance, ~] = ...
+    sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
+        timeNoiseVariance, noiseTransform, ...
+        "InputDomain", "time", ...
+        "Source", "pdsch_study_measured_channel_noise");
+receiverConfig.NoiseVariance = double(gridNoiseVariance);
+end
+
+function bundle = localCanonicalStudyReceiverBundle(canonical, cfg, carrier)
+observed = canonical;
+observed.Ok = logical(canonical.CRCPass);
+observed.CodewordLLRCell = canonical.DescrambledLLR;
+observed.CodewordLLR = canonical.DescrambledLLR{1};
+observed.EqualizedSymbolsForEvidence = canonical.LayerSymbols;
+observed.ChannelEstimate = canonical.EffectiveLayerChannelEstimate;
+if isempty(observed.ChannelEstimate)
+    observed.ChannelEstimate = canonical.ChannelGainPerPhysicalPort;
+end
+observed.NoiseVar = double(canonical.NoiseVarianceUsedForLLR);
+observed.ChannelEstimationEngine = char(string(sixgr.util.structGet( ...
+    canonical.ChannelEstimationInfo,"EngineUsed","")));
+observed.ActiveIterations = double( ...
+    canonical.Metrics.LDPCIterationCountPerCodeword);
+sinr = double( ...
+    canonical.Metrics.MeasuredPostEqualizationSINRdBPerLayer);
+observed.PostEqSINR_dB = mean(sinr,"omitnan");
+observed.PostEqSINRSource = ...
+    "canonical_measured_post_equalization_sinr";
+observed.PostEqSINRValueRole = ...
+    "measured_post_equalization_scheduling_input";
+observed.ReceiverHestSINR_dB = observed.PostEqSINR_dB;
+observed.ReceiverHestSINRSource = observed.PostEqSINRSource;
+observed.TimingOffset = NaN;
+
+bundle = struct();
+bundle.Rx = observed;
+bundle.ChannelEstimation = struct( ...
+    "Mode", char(string(canonical.ChannelEstimationMode)), ...
+    "Engine", observed.ChannelEstimationEngine, ...
+    "NMSEProxy", double(canonical.Metrics.ChannelEstimateNMSE), ...
+    "NMSESource", char(string( ...
+        canonical.Metrics.ChannelEstimateNMSESource)), ...
+    "NoiseVar", observed.NoiseVar, ...
+    "Source", "canonical_dmrs_receiver_observables");
+bundle.Equalizer = sixgr.pdsch.PDSCHEqualizer(cfg, observed);
+bundle.Demodulation = sixgr.pdsch.PDSCHDemodulator(observed);
+bundle.Decoder = canonical.Decode;
+bundle.ParameterEstimation = sixgr.pdsch.PDSCHParameterEstimator( ...
+    observed, struct("InjectedCFO_Hz",NaN), carrier);
+bundle.PostEqEVM = mean(double( ...
+    canonical.Metrics.EVMPerCodeword),"omitnan");
+bundle.PTRSPhaseEstimate_rad = NaN;
+bundle.OFDMInfo = canonical.OFDMInfo;
 end
 
 function n = localPDSCHCodewordCount(numLayers)
@@ -601,6 +764,12 @@ row.harq_tx = NaN;
 row.rv = NaN;
 row.avg_post_eq_evm = NaN;
 row.avg_estimated_sinr_db = NaN;
+row.decode_source = "";
+row.coding_plan_ids = "";
+row.coding_layout_hashes = "";
+row.coding_plan_identity_verified = false;
+row.repetition_combining_applied = false;
+row.repetition_combining_mode = "";
 end
 
 function row = localEmptyCWRow()
@@ -658,7 +827,7 @@ row = struct("Direction","","TTI",NaN,"Time_s",NaN,"Frame",NaN,"Slot",NaN,"CellI
 end
 
 function row = localBuildTrialRow(cfg, point, trialIndex, crcPass, throughputBits, tbSizeBits, codedBits, ...
-        complexity, estDelaySpread, estDoppler, estDelay, estSNR, rxMetricSummary, fdraAlloc)
+        complexity, estDelaySpread, estDoppler, estDelay, estSNR, rxMetricSummary, fdraAlloc, activeAMC)
 row = localEmptyTrialRow();
 row.seed = double(cfg.Seed);
 row.scenario_id = char(string(point.ScenarioID));
@@ -682,8 +851,8 @@ row.repetition_mode = char(string(point.RepetitionMode));
 row.repetition_count = double(cfg.RepetitionCount);
 row.rank = double(point.Rank);
 row.num_codewords = double(cfg.NumCodewords);
-row.modulation_per_cw = char(string(cfg.ModulationPerCodeword{1}));
-row.target_code_rate_per_cw = double(cfg.TargetCodeRatePerCodeword(1));
+row.modulation_per_cw = char(string(activeAMC.Modulation));
+row.target_code_rate_per_cw = double(activeAMC.TargetCodeRate);
 row.dmrs_config_summary = sprintf("cfgType%d_addPos%d_ports%d", cfg.DMRS.ConfigType, cfg.DMRS.AdditionalPosition, cfg.DMRS.NumPorts);
 row.ptrs_enabled = logical(cfg.PTRS.PTRSEnabled);
 row.phase_noise_enabled = logical(cfg.EnablePhaseNoise);
@@ -710,7 +879,8 @@ row = localEmptyTBRow();
 base = localBuildTrialRow(cfg, point, trialIndex, logical(decode.CRCPass), throughputBits, localTotalTBSBits(txBundle), ...
     double(sixgr.util.structGet(txBundle.Copies{1}.Tx, "G", NaN)), localComplexityProxy(txBundle, decode), ...
     NaN, NaN, NaN, mean(sinrEst, "omitnan"), ...
-    string("avg_evm=" + num2str(mean(postEqEVM, "omitnan"), "%.4g")), txBundle.FDRA);
+    string("avg_evm=" + num2str(mean(postEqEVM, "omitnan"), "%.4g")), ...
+    txBundle.FDRA, txBundle.ActiveAMC);
 fields = fieldnames(base);
 for i = 1:numel(fields)
     row.(fields{i}) = base.(fields{i});
@@ -719,6 +889,18 @@ row.harq_tx = double(harqTx);
 row.rv = double(txBundle.RV);
 row.avg_post_eq_evm = double(mean(postEqEVM, "omitnan"));
 row.avg_estimated_sinr_db = double(mean(sinrEst, "omitnan"));
+row.decode_source = string(sixgr.util.structGet( ...
+    decode, "Source", ""));
+row.coding_plan_ids = strjoin(string(sixgr.util.structGet( ...
+    decode, "RepetitionCodingPlanIDs", strings(1,0))), "|");
+row.coding_layout_hashes = strjoin(string(sixgr.util.structGet( ...
+    decode, "RepetitionCodingLayoutHashes", strings(1,0))), "|");
+row.coding_plan_identity_verified = logical(sixgr.util.structGet( ...
+    decode, "RepetitionCodingPlanIdentityVerified", false));
+row.repetition_combining_applied = logical(sixgr.util.structGet( ...
+    decode, "RepetitionCombiningApplied", false));
+row.repetition_combining_mode = string(sixgr.util.structGet( ...
+    decode, "RepetitionCombiningMode", ""));
 end
 
 function rows = localBuildCWRows(cfg, point, trialIndex, harqTx, txBundle, decode, throughputBits, postEqEVM, sinrEst)
