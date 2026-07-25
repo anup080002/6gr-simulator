@@ -35,6 +35,7 @@ def main() -> None:
             "home",
             "scenario",
             "run_control",
+            "runs",
             "realtime",
             "phy_grid",
             "plots",
@@ -59,6 +60,7 @@ def main() -> None:
             ("home", "Scenario", "/home"),
             ("scenario", "Configure", "/scenario"),
             ("run_control", "Run", "/run-control"),
+            ("runs", "Runs", "/runs"),
             ("realtime", "Live", "/realtime"),
             ("plots", "Results & Evidence", "/plots"),
         ]
@@ -113,7 +115,7 @@ def main() -> None:
         assert "config_api_url" in home_data
         assert "fields_api_url" in home_data
         assert "parameter_constraints_api_url" in home_data
-        assert "Import YAML" in home_page
+        assert "Upload YAML" in home_page
         assert "Download resolved config" in home_page
         assert "Configure" in home_page
         assert "View results" in home_page
@@ -144,13 +146,27 @@ def main() -> None:
         assert 'id="runScenarioBtn"' in run_page
         assert 'id="runModeInput"' in run_page
         assert 'name="execution_mode" value="LLS"' in run_page
+        assert 'data-scenario-mode="${esc(item.id)}"' in run_page
+        assert "SINR Sweep" in json.dumps(data["run_control"]["scenario_modes"])
+        assert "Geometry Based" in json.dumps(data["run_control"]["scenario_modes"])
+        assert 'class="upload-dropzone"' in run_page
+        assert 'id="runTagEditor"' in run_page
+        assert "View all runs" in run_page
         assert '<option value="SLS"' not in run_page
         assert '<option value="E2E"' not in run_page
         assert 'data-mode="SLS"' not in run_page
         assert 'data-mode="E2E"' not in run_page
-        assert "License safe" in run_page
+        assert "License-safe" in run_page
         assert "parallel pool off" in run_page
         assert dash.FULLY_WIRED_BROWSER_EXECUTION_MODE == "LLS"
+
+        runs_page = pages["runs"]
+        assert "Run history" in runs_page
+        assert 'id="selectAllRuns"' in runs_page
+        assert 'id="deleteSelectedRunsBtn"' in runs_page
+        assert 'action="/admin/delete-runs"' in runs_page
+        assert 'data-run-checkbox' in runs_page
+        assert "every associated database row, log, artifact, runtime YAML, and output file" in runs_page
 
         realtime_page = pages["realtime"]
         assert "Run status and current measurements." in realtime_page
@@ -244,6 +260,7 @@ def main() -> None:
             "/home": "home",
             "/scenario": "scenario",
             "/run-control": "run_control",
+            "/runs": "runs",
             "/realtime": "realtime",
             "/result": "realtime",
             "/phy-grid": "phy_grid",

@@ -216,6 +216,22 @@ OPERATOR_MASTER_SCENARIOS = (
     SINR_SWEEP_MASTER_SCENARIO,
     GEOMETRY_MASTER_SCENARIO,
 )
+PRODUCT_SCENARIO_MODES = (
+    {
+        "id": "sinr_sweep",
+        "label": "SINR Sweep",
+        "scenario": SINR_SWEEP_MASTER_SCENARIO,
+        "summary": "Sweep configured SNR/SINR points on the fixed-link waveform chain.",
+        "badge": "Fixed link",
+    },
+    {
+        "id": "geometry_based",
+        "label": "Geometry Based",
+        "scenario": GEOMETRY_MASTER_SCENARIO,
+        "summary": "Place UEs, apply mobility and geometry, then run the configured waveform chain.",
+        "badge": "UE placement",
+    },
+)
 DEFAULT_SCENARIO = GEOMETRY_MASTER_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
 SCENARIO_RUN_CLASS_LABELS = {
@@ -4270,6 +4286,8 @@ def scenario_dropdown_label(scenario_name: str) -> str:
         except Exception:
             pass
     stem = Path(str(scenario_name or "")).stem
+    stem = re.sub(r"^__web_upload_", "", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"_[0-9a-f]{10}$", "", stem, flags=re.IGNORECASE)
     label = humanize_key(stem or scenario_name)
     label = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", label)
     acronym_map = {
@@ -5455,14 +5473,25 @@ def validate_scenario_yaml_text(yaml_text: str) -> dict[str, Any]:
     return payload
 
 
-def write_uploaded_scenario(target_name: str, yaml_text: str) -> Path:
+def write_uploaded_scenario(
+    target_name: str,
+    yaml_text: str,
+    base_scenario: str | None = None,
+) -> Path:
     payload = validate_scenario_yaml_text(yaml_text)
     payload = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
     payload.pop("phy", None)
     if "inherits" not in payload:
-        payload["inherits"] = [f"./{DEFAULT_SCENARIO}"]
+        selected_base = str(base_scenario or "").strip()
+        if selected_base not in OPERATOR_MASTER_SCENARIOS:
+            selected_base = DEFAULT_SCENARIO
+        payload["inherits"] = [f"./{selected_base}"]
     safe_name = safe_uploaded_scenario_name(target_name)
-    target_path = resolve_scenario_path(safe_name)
+    stem = Path(safe_name).stem
+    suffix = Path(safe_name).suffix.lower() or ".yaml"
+    digest = hashlib.sha256(str(yaml_text).encode("utf-8", errors="replace")).hexdigest()[:10]
+    storage_name = f"__web_upload_{stem}_{digest}{suffix}"
+    target_path = resolve_scenario_path(storage_name)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     normalized = yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
     target_path.write_text(normalized, encoding="utf-8")
@@ -7659,13 +7688,46 @@ def clear_dashboard_storage() -> dict[str, int]:
     return stats
 
 
+ACTIVE_RUN_STATES = {"queued", "launching", "running", "finalizing", "retry"}
+
+
+def _validated_delete_target(
+    path_obj: Path,
+    allowed_roots: list[Path],
+    *,
+    minimum_relative_parts: int,
+) -> Path:
+    candidate = path_obj if path_obj.is_absolute() else REPO_ROOT / path_obj
+    resolved = candidate.resolve()
+    for allowed_root in allowed_roots:
+        root = allowed_root.resolve()
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError:
+            continue
+        if len(relative.parts) >= int(minimum_relative_parts):
+            return resolved
+    allowed = ", ".join(str(root.resolve()) for root in allowed_roots)
+    raise ValueError(f"Refusing to delete path outside the allowed run storage roots ({allowed}): {resolved}")
+
+
+def _delete_validated_target(path_obj: Path) -> int:
+    if not path_obj.exists():
+        return 0
+    if path_obj.is_dir():
+        shutil.rmtree(path_obj, ignore_errors=False)
+    else:
+        path_obj.unlink(missing_ok=True)
+    return 1
+
+
 def delete_run_storage(run_id: int) -> dict[str, int | str]:
     run_row = fetch_run(int(run_id))
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
-    status_text = str(run_row.get("status_text") or "").strip().lower()
-    if status_text == "running":
-        raise ValueError(f"Run {run_id} is still marked running. Stop or finish it before deleting.")
+    status_text = _effective_run_status(run_row)
+    if status_text in ACTIVE_RUN_STATES:
+        raise ValueError(f"Run {run_id} is still {status_text}. Stop or finish it before deleting.")
 
     stats: dict[str, int | str] = {
         "run_id": int(run_id),
@@ -7677,51 +7739,50 @@ def delete_run_storage(run_id: int) -> dict[str, int | str]:
         "run_tag": str(run_row.get("run_tag") or ""),
     }
 
-    def _safe_delete_path(path_obj: Path) -> int:
-        if not path_obj.exists():
-            return 0
-        resolved = path_obj.resolve()
-        repo_root = REPO_ROOT.resolve()
-        if resolved != repo_root and repo_root not in resolved.parents:
-            raise ValueError(f"Refusing to delete path outside repo root: {resolved}")
-        if path_obj.is_dir():
-            shutil.rmtree(path_obj, ignore_errors=False)
-        else:
-            path_obj.unlink(missing_ok=True)
-        return 1
-
-    clear_dashboard_caches(int(run_id))
-    with db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM sim_artifacts WHERE run_id=%s", (int(run_id),))
-            stats["artifacts"] = int(cur.fetchone()[0])
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM sim_artifact_chunks
-                WHERE artifact_id IN (SELECT artifact_id FROM sim_artifacts WHERE run_id=%s)
-                """,
-                (int(run_id),),
-            )
-            stats["chunks"] = int(cur.fetchone()[0])
-            cur.execute("SELECT COUNT(*) FROM sim_run_logs WHERE run_id=%s", (int(run_id),))
-            stats["logs"] = int(cur.fetchone()[0])
-            cur.execute(
-                """
-                DELETE c FROM sim_artifact_chunks c
-                INNER JOIN sim_artifacts a ON a.artifact_id = c.artifact_id
-                WHERE a.run_id = %s
-                """,
-                (int(run_id),),
-            )
-            cur.execute("DELETE FROM sim_artifacts WHERE run_id=%s", (int(run_id),))
-            cur.execute("DELETE FROM sim_run_logs WHERE run_id=%s", (int(run_id),))
-            cur.execute("DELETE FROM sim_runs WHERE run_id=%s", (int(run_id),))
-
+    run_folder_target: Path | None = None
     run_folder = str(run_row.get("run_folder") or "").strip()
     if run_folder:
+        run_folder_target = _validated_delete_target(
+            Path(run_folder),
+            [root / "lls" for root in _dashboard_result_roots()],
+            minimum_relative_parts=2,
+        )
+
+    clear_dashboard_caches(int(run_id))
+    if is_filesystem_virtual_run_id(run_id):
+        stats["artifacts"] = len(fetch_artifacts(int(run_id)))
+        stats["logs"] = count_logs(int(run_id))
+    else:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM sim_artifacts WHERE run_id=%s", (int(run_id),))
+                stats["artifacts"] = int(cur.fetchone()[0])
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM sim_artifact_chunks
+                    WHERE artifact_id IN (SELECT artifact_id FROM sim_artifacts WHERE run_id=%s)
+                    """,
+                    (int(run_id),),
+                )
+                stats["chunks"] = int(cur.fetchone()[0])
+                cur.execute("SELECT COUNT(*) FROM sim_run_logs WHERE run_id=%s", (int(run_id),))
+                stats["logs"] = int(cur.fetchone()[0])
+                cur.execute(
+                    """
+                    DELETE c FROM sim_artifact_chunks c
+                    INNER JOIN sim_artifacts a ON a.artifact_id = c.artifact_id
+                    WHERE a.run_id = %s
+                    """,
+                    (int(run_id),),
+                )
+                cur.execute("DELETE FROM sim_artifacts WHERE run_id=%s", (int(run_id),))
+                cur.execute("DELETE FROM sim_run_logs WHERE run_id=%s", (int(run_id),))
+                cur.execute("DELETE FROM sim_runs WHERE run_id=%s", (int(run_id),))
+
+    if run_folder_target is not None:
         try:
-            stats["disk_entries"] += _safe_delete_path(Path(run_folder))
+            stats["disk_entries"] += _delete_validated_target(run_folder_target)
         except FileNotFoundError:
             pass
 
@@ -7734,11 +7795,57 @@ def delete_run_storage(run_id: int) -> dict[str, int | str]:
         for extra_path in (runtime_log_file(run_tag), runtime_log_cursor_file(run_tag), runtime_pid_file(run_tag)):
             if extra_path is not None:
                 try:
-                    stats["disk_entries"] += _safe_delete_path(extra_path)
+                    runtime_target = _validated_delete_target(
+                        extra_path,
+                        [RUNTIME_LOG_DIR],
+                        minimum_relative_parts=1,
+                    )
+                    stats["disk_entries"] += _delete_validated_target(runtime_target)
                 except FileNotFoundError:
                     pass
 
     return stats
+
+
+def delete_runs_storage(run_ids: list[Any]) -> dict[str, Any]:
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for raw_id in run_ids:
+        token = str(raw_id or "").strip()
+        if not token.isdigit():
+            raise ValueError(f"Run id must be numeric: {token or '<empty>'}")
+        run_id = int(token)
+        if run_id not in seen:
+            normalized.append(run_id)
+            seen.add(run_id)
+    if not normalized:
+        raise ValueError("Select at least one run to delete.")
+    if len(normalized) > 5000:
+        raise ValueError("At most 5000 runs can be deleted in one request.")
+
+    for run_id in normalized:
+        row = fetch_run(run_id)
+        if row is None:
+            raise KeyError(f"Run {run_id} was not found.")
+        status_text = _effective_run_status(row)
+        if status_text in ACTIVE_RUN_STATES:
+            raise ValueError(f"Run {run_id} is still {status_text}. Stop or finish it before deleting.")
+
+    totals: dict[str, Any] = {
+        "runs": 0,
+        "run_ids": normalized,
+        "artifacts": 0,
+        "chunks": 0,
+        "logs": 0,
+        "runtime_yaml": 0,
+        "disk_entries": 0,
+    }
+    for run_id in normalized:
+        stats = delete_run_storage(run_id)
+        totals["runs"] += 1
+        for key in ("artifacts", "chunks", "logs", "runtime_yaml", "disk_entries"):
+            totals[key] += int(stats.get(key) or 0)
+    return totals
 
 
 def metric_priority(name: str) -> int:
@@ -14016,6 +14123,7 @@ PRODUCT_NAV = [
     ("home", "Scenario", "/home"),
     ("scenario", "Configure", "/scenario"),
     ("run_control", "Run", "/run-control"),
+    ("runs", "Runs", "/runs"),
     ("realtime", "Live", "/realtime"),
     ("plots", "Results & Evidence", "/plots"),
 ]
@@ -14622,7 +14730,8 @@ button,.button-link,select,input,textarea{font:inherit;border-radius:10px}button
 .workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.workflow .tile{cursor:pointer;min-height:148px}.workflow .tile:hover,.block-card:hover{border-color:var(--blue)}.badge{display:inline-flex;align-items:center;border:1px solid var(--strong);border-radius:8px;padding:4px 8px;font-size:12px;color:var(--muted);background:#f7f9fc;margin:3px 4px 3px 0}.badge.good{color:var(--green);border-color:#a9d5b7;background:#f2fbf5}.badge.warn{color:var(--amber);border-color:#e3c78d;background:#fff8e8}.badge.bad{color:var(--red);border-color:#e3a8b2;background:#fff3f5}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.config-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.config-group{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fbfdfc}.config-group[open]{grid-column:1/-1}.config-group summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;cursor:pointer;color:#315650;font-weight:800;list-style:none}.config-group summary::-webkit-details-marker{display:none}.config-group summary::before{content:"›";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-3px;border-radius:6px;background:#e5f4f0;color:var(--blue);font-size:18px;line-height:1;transition:transform .15s ease}.config-group[open] summary::before{transform:rotate(90deg)}.config-group[open] summary{border-bottom:1px solid var(--line);background:#f3faf7}.config-group summary>span:first-of-type{flex:1}.config-group>.form-grid{padding:12px}.config-group .param-editor{padding:10px;border:1px solid #e4eeeb;border-radius:10px;background:#fff;min-width:0}.config-group .param-editor .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
 .table-wrap{overflow:auto;max-height:calc(100vh - 270px);overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:calc(100vh - 300px)}.table-wrap.tall-scroll{max-height:calc(100vh - 330px)}table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f8f7;z-index:1;color:#405d58}.stream{max-height:280px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}.log-warn{border-left:3px solid var(--amber)}.log-error{border-left:3px solid var(--red)}.warning{border-left:3px solid var(--amber);padding:9px 11px;background:#fff8e8;color:#6b4500;border-radius:10px}.map-box{min-height:420px;overflow:hidden}#geometryMap,#realtimeMap{height:420px;width:100%}.chart-box{height:calc(100vh - 310px);min-height:300px;border:1px solid var(--line);border-radius:12px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.toolbar label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:130px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:112px}.metric-explorer-note{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.artifact-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.artifact-card h4{margin:0 0 7px}.artifact-card img{display:block;width:100%;max-height:280px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:10px}.interactive-image-stage{position:relative;height:calc(100vh - 300px);min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.4}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:10px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:9px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}.section-tabs{display:flex;gap:6px;overflow:auto;margin:0 0 10px;padding-bottom:2px}.section-tabs .button-link{padding:7px 10px;font-size:13px}.section-tabs .active{background:#e5f4f0;color:var(--blue);border-color:#9acdc2}.step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.step-card{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fff}.step-number{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e5f4f0;color:var(--blue);font-weight:900}.action-menu{position:relative}.action-menu summary{cursor:pointer;font-weight:700}.action-menu[open]{z-index:3}.action-menu-body{position:absolute;right:0;top:calc(100% + 5px);display:grid;gap:5px;width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}.rg-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#f8fbfa}.resource-grid{display:grid;gap:3px;min-width:max-content;padding:8px}.rg-label,.rg-head,.rg-cell{min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px}.rg-label{position:sticky;left:0;z-index:2;justify-content:flex-start;padding:0 8px;background:#eef5f3;color:#315650;font-weight:700}.rg-head{position:sticky;top:0;z-index:1;flex-direction:column;background:#e8f1ef;font-weight:800}.rg-head span{font-size:9px;color:var(--muted)}.rg-cell{background:#eef3f2;border:1px solid #e4ecea}.rg-cell.active{color:#fff;font-weight:800}.rg-cell.dl{background:#2679a8;border-color:#2679a8}.rg-cell.ul{background:#9b5cc2;border-color:#9b5cc2}.rg-cell.ref{background:#0d8c72;border-color:#0d8c72}
-@media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group{margin-bottom:10px}}
+.scenario-mode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.scenario-mode-card{position:relative;display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:15px;text-align:left;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#fff,#f7fbfa);box-shadow:none;white-space:normal}.scenario-mode-card:hover{transform:translateY(-1px);border-color:#82bfb2;box-shadow:0 10px 24px rgba(8,122,112,.1)}.scenario-mode-card.active{border-color:var(--blue);background:linear-gradient(145deg,#effaf6,#fff);box-shadow:0 0 0 2px rgba(8,122,112,.1)}.scenario-mode-card .mode-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:13px;background:#e1f4ef;color:var(--blue);font-size:13px;font-weight:900;letter-spacing:.03em}.scenario-mode-card h4{margin:0 0 3px;font-size:16px}.scenario-mode-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.35}.scenario-mode-card .mode-check{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--strong);color:transparent}.scenario-mode-card.active .mode-check{border-color:var(--blue);background:var(--blue);color:#fff}.upload-dropzone{display:grid;place-items:center;min-height:94px;margin-top:10px;padding:14px;border:1.5px dashed #8abcb2;border-radius:13px;background:#f5fbf9;color:#315650;text-align:center;cursor:pointer;transition:.15s ease}.upload-dropzone:hover{border-color:var(--blue);background:#edf9f5;color:var(--blue)}.upload-dropzone strong{display:block;margin-bottom:3px;color:var(--ink)}.launch-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:10px;margin-top:10px}.launch-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.launch-actions .param-editor{flex:1 1 220px}.run-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.run-history-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.check-label{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;font-weight:700}.check-label input,.run-select{width:17px;height:17px;margin:0;accent-color:var(--blue)}.run-table th:first-child,.run-table td:first-child{width:42px;text-align:center}.run-table tbody tr:hover{background:#f7fbfa}.run-table .run-title{font-weight:800}.status-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef3f2;color:#536a65;font-size:12px;font-weight:800}.status-pill.good{background:#e8f7ef;color:var(--green)}.status-pill.warn{background:#fff4d9;color:var(--amber)}.status-pill.bad{background:#fff0f2;color:var(--red)}button.danger,.button-link.danger{border-color:#e8a7b1;background:#fff5f6;color:var(--red)}button.danger:hover,.button-link.danger:hover{border-color:var(--red);background:var(--red);color:#fff}.action-menu-body .button-link,.action-menu-body button{width:100%;justify-content:flex-start}.empty-state{display:grid;place-items:center;min-height:180px;padding:24px;text-align:center;color:var(--muted)}
+@media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.launch-grid{grid-template-columns:1fr}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups,.scenario-mode-grid,.launch-grid{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group,.scenario-mode-card{margin-bottom:10px}.run-history-header{align-items:flex-start;flex-direction:column}}
 </style>
 """
 
@@ -14673,6 +14782,7 @@ def build_product_frontend_page(
         "fully_wired_mode": FULLY_WIRED_BROWSER_EXECUTION_MODE,
         "scenario": scenario_name,
         "scenarios": scenarios,
+        "scenario_modes": PRODUCT_SCENARIO_MODES,
         "source_chain": source_chain,
         "initial_mode": mode,
         "config": {},
@@ -14726,11 +14836,15 @@ def build_product_frontend_page(
           <button id="openScenarioBtn" type="button">Open</button>
         """
     import_action = ""
-    if page == "home":
-        import_action = """
+    if page in {"home", "run_control"}:
+        upload_next = "/run-control" if page == "run_control" else "/home"
+        upload_base = scenario_name if scenario_name in OPERATOR_MASTER_SCENARIOS else DEFAULT_SCENARIO
+        import_action = f"""
           <form id="scenarioUploadForm" method="post" action="/scenario/upload" enctype="multipart/form-data">
             <input id="scenarioFileInput" class="hidden" name="scenario_file" type="file" accept=".yaml,.yml,application/yaml,text/yaml">
-            <label class="button-link" for="scenarioFileInput">Import YAML</label>
+            <input id="uploadBaseScenarioInput" type="hidden" name="base_scenario" value="{html.escape(upload_base)}">
+            <input type="hidden" name="next" value="{html.escape(upload_next)}">
+            <label class="button-link" for="scenarioFileInput">Upload YAML</label>
           </form>
         """
     configure_actions = ""
@@ -15044,6 +15158,26 @@ window.addEventListener('DOMContentLoaded', function () {
   });
   function kindFor(value) { if (typeof value === 'boolean') return 'bool'; if (Number.isInteger(value)) return 'int'; if (typeof value === 'number') return 'float'; if (value && typeof value === 'object') return 'json'; return 'text'; }
   function labelFor(path) { const leaf = String(path || 'config').split('.').pop() || 'config'; return leaf.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\\b\\w/g, ch => ch.toUpperCase()); }
+  function currentScenarioMode() {
+    const modes = Array.isArray(root.scenario_modes) ? root.scenario_modes : [];
+    const exact = modes.find(item => String(item.scenario || '') === String(root.scenario || ''));
+    if (exact) return exact;
+    if (!state.configLoaded) return null;
+    const runClass = String(get(state.config, 'validation.run_class', get(state.config, 'scenario.run_class', get(state.config, 'scenario.scenario_mode', '')))).toLowerCase();
+    const sweepEnabled = Boolean(get(state.config, 'sweeps_and_matrix.snr_sweep.enabled', false)) || runClass.includes('sweep');
+    const geometryEnabled = Boolean(get(state.config, 'canonical_control.launch.geometry_enabled', false)) || runClass.includes('geometry');
+    if (sweepEnabled) return modes.find(item => item.id === 'sinr_sweep') || null;
+    if (geometryEnabled) return modes.find(item => item.id === 'geometry_based') || null;
+    return null;
+  }
+  function scenarioModeCards() {
+    const selected = currentScenarioMode();
+    return `<div class="scenario-mode-grid">${(root.scenario_modes || []).map(item => {
+      const active = selected && selected.id === item.id;
+      const icon = item.id === 'sinr_sweep' ? 'SNR' : 'GEO';
+      return `<button type="button" class="scenario-mode-card ${active ? 'active' : ''}" data-scenario-mode="${esc(item.id)}" data-scenario="${esc(item.scenario)}" aria-pressed="${active ? 'true' : 'false'}"><span class="mode-icon">${icon}</span><span><span class="badge">${esc(item.badge || '')}</span><h4>${esc(item.label)}</h4><p>${esc(item.summary || '')}</p></span><span class="mode-check">✓</span></button>`;
+    }).join('')}</div>`;
+  }
   function domainFor(path) { const lower = String(path || '').toLowerCase(); for (const [domain, spec] of Object.entries(root.domains || {})) { if ((spec.paths || []).some(prefix => lower.startsWith(String(prefix).toLowerCase()) || lower.includes(String(prefix).toLowerCase()))) return domain; } return 'scenario'; }
   function flattenConfig(node, prefix) { if (node && typeof node === 'object' && !Array.isArray(node)) { const keys = Object.keys(node); if (keys.length) return keys.flatMap(key => flattenConfig(node[key], prefix ? `${prefix}.${key}` : key)); } const domain = domainFor(prefix); return [{path: prefix || 'config', label: labelFor(prefix), domain, domain_label: ((root.domains || {})[domain] || {}).title || domain, kind: kindFor(node), value: node, current_value: node, requested_value: node, resolved_value: node, applied_value: 'Resolved in MATLAB config; runtime consumer evidence is not yet instrumented.', measured_value: 'Runtime measurement evidence is not yet published for this field.', source: 'loaded config JSON', owner: labelFor(String(prefix || 'config').split('.')[0]), role: 'browser_loaded', search: `${prefix} ${labelFor(prefix)}`}]; }
   function loadConfigFile(file) { const msg = document.getElementById('messageBanner'); if (!file) return; file.text().then(raw => { const parsed = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON root must be an object.'); delete parsed._download_metadata; state.config = parsed; state.configLoaded = true; state.configLoading = false; state.mode = String(get(parsed, 'run_control.execution_mode', 'LLS')).trim().toUpperCase(); if (!(root.modes || ['LLS']).includes(state.mode)) state.mode = 'LLS'; state.fields = flattenConfig(parsed, ''); state.fieldsLoaded = true; state.fieldsLoading = false; root.field_count = state.fields.length; state.selectedBlock = null; updateRunPayload(); render(); if (msg) { msg.textContent = `Imported ${file.name}.`; msg.classList.remove('hidden'); } }).catch(err => { if (msg) { msg.textContent = `Could not import JSON: ${err.message}`; msg.classList.remove('hidden'); } }); }
@@ -15053,6 +15187,8 @@ window.addEventListener('DOMContentLoaded', function () {
     const modeInput = document.getElementById('runModeInput');
     const scenarioInput = document.getElementById('runScenarioInput');
     const tagInput = document.getElementById('runTagInput');
+    const uploadBaseInput = document.getElementById('uploadBaseScenarioInput');
+    const scenarioMode = currentScenarioMode();
     if (state.configLoaded) {
       set(state.config, 'run_control.execution_mode', state.mode);
       applyOutputPersistenceMode();
@@ -15060,7 +15196,8 @@ window.addEventListener('DOMContentLoaded', function () {
     } else if (configInput) configInput.value = '';
     if (modeInput) modeInput.value = state.mode;
     if (scenarioInput) scenarioInput.value = root.scenario || '';
-    if (tagInput && !tagInput.value) tagInput.value = `web_${state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`;
+    if (uploadBaseInput && scenarioMode) uploadBaseInput.value = scenarioMode.scenario || uploadBaseInput.value;
+    if (tagInput && !tagInput.value) tagInput.value = `web_${scenarioMode?.id || state.mode.toLowerCase()}_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}`;
   }
   function runStatusToken(run) { return String((run || {}).status_text || '').toLowerCase().trim(); }
   function isActiveRun(run) { return /queued|launching|running|finalizing|retry/i.test(runStatusToken(run)) && !/completed|failed|cancelled|aborted/i.test(runStatusToken(run)); }
@@ -15328,8 +15465,8 @@ window.addEventListener('DOMContentLoaded', function () {
   function renderBlock(block) { const el = document.getElementById('blockPanel'); if (!el) return; if (!block) { el.innerHTML = ''; return; } if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); el.innerHTML = unavailable('Loading parameters…'); return; } const body = blockFields(block).map(f => `<tr><td><strong>${esc(f.label || f.path)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td></tr>`).join('') || '<tr><td colspan="3">No editable parameters are exposed for this block.</td></tr>'; el.innerHTML = `<h3>${esc(block.name || block.title)}</h3><div class="table-wrap"><table><thead><tr><th>Parameter</th><th>Current</th><th>Edit</th></tr></thead><tbody>${body}</tbody></table></div>`; }
   function chrome() {
     const configPages = ['scenario','geometry','waveform','traffic','mac_scheduler','l1_phy','antenna_air','parameters'];
-    const resultPages = ['plots','tables','reports','analytics','artifacts','compare','runs','previous_runs'];
-    const activeNav = configPages.includes(state.page) ? 'scenario' : (resultPages.includes(state.page) ? 'plots' : (state.page === 'phy_grid' ? 'realtime' : state.page));
+    const resultPages = ['plots','tables','reports','analytics','artifacts','compare'];
+    const activeNav = configPages.includes(state.page) ? 'scenario' : (resultPages.includes(state.page) ? 'plots' : (state.page === 'previous_runs' ? 'runs' : (state.page === 'phy_grid' ? 'realtime' : state.page)));
     document.getElementById('productNav').innerHTML = (root.nav || []).map(n => `<a class="nav-item ${n.id === activeNav ? 'active' : ''}" data-page="${esc(n.id)}" href="${esc(n.href)}">${esc(n.label)}</a>`).join('');
     const badge = document.getElementById('activeModeBadge');
     if (badge) { badge.textContent = 'LLS'; badge.className = 'badge good'; }
@@ -16366,9 +16503,48 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function artifacts() { title('Artifact Explorer', 'Canonical artifact list, source, status, row-count hints, and previews.'); const tables = state.live ? (state.live.tables_all || []) : []; const images = state.live ? (state.live.images_all || []) : []; const runId = (state.live && state.live.run) ? state.live.run.run_id : 'unselected'; main.innerHTML = `<section class="panel"><h3>Canonical Tables For Run ${esc(runId)}</h3>${pageRunSelector('artifactsRunSelect', 'Selected Run', {runningOnly: false, note: 'Artifact Explorer stays truth-backed: it only lists persisted artifacts for the selected run.'})}<p class="subtle">${tables.length} table artifacts loaded from the selected run. Preview opens the browser table view; Download Full File retrieves the complete stored CSV.</p>${artifactTable(tables, 'No canonical table artifacts are available from the selected run.')}</section><section class="panel"><h3>Images And Other Visual Artifacts</h3>${artifactTable(images, 'No canonical image artifacts are available from the selected run.')}</section>`; }
   function parameters() { title('Parameter Catalog', 'Browser, YAML, resolved, applied, measured, source, owner, and role columns.'); const fs = state.fields; if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}${unavailable('Parameter catalog is loading from the selected scenario config and resolved field list. The page will populate automatically once both payloads arrive.')}</section>`; return; } main.innerHTML = `<section class="panel"><h3>Parameter Catalog</h3>${pageRunSelector('parametersRunSelect', 'Reference Run', {runningOnly: false, note: 'The editable config is browser-owned. The selected run gives the runtime context for any measured/applied columns that are available.'})}<p class="subtle">${fs.length} exposed parameters loaded from the resolved/browser config.</p><div class="table-wrap"><table><thead><tr><th>parameter name</th><th>current value</th><th>requested value</th><th>resolved value</th><th>applied value</th><th>measured/runtime value</th><th>source</th><th>owner</th><th>role</th></tr></thead><tbody>${fs.map(f => `<tr><td><strong>${esc(f.label)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td><td>${esc(text(f.resolved_value))}</td><td>${esc(text(f.applied_value))}</td><td>${esc(text(f.measured_value))}</td><td>${esc(f.source)}</td><td>${esc(f.owner)}</td><td>${esc(f.role)}</td></tr>`).join('')}</tbody></table></div></section>`; }
-  function runActions(r, next) { const id = esc(r.run_id); return `<div class="toolbar"><a class="button-link" href="/outputs?run_id=${id}">Show Output</a><a class="button-link" href="/plots?run_id=${id}">View Plots</a><a class="button-link" href="/tables?run_id=${id}">View Tables</a><a class="button-link" href="/realtime?run_id=${id}">Live Data</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=json">Download Config JSON</a><a class="button-link secondary" href="/run-config/download?run_id=${id}&format=yaml">Download Config YAML</a><button type="button" data-compare-baseline="${id}">Add Baseline</button><button type="button" data-compare-candidate="${id}">Add Candidate</button><form method="post" action="/admin/delete-run" class="inline-form" onsubmit="return confirm('Delete run ${id} and all its database rows, logs, runtime YAML, stored artifacts, and disk files?');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit">Delete Run</button></form></div>`; }
-  function runsTable(runList, empty, next, scrollKey) { const runRows = (runList || []).map(r => `<tr><td><strong>${esc(r.run_id)}</strong></td><td>${esc(r.run_tag || '')}<br><span class="small">${esc(r.scenario_id || r.scenario_name || '')}</span></td><td>${esc(r.profile_name || '')}</td><td>${esc(r.status_text || '')}</td><td>${esc(r.created_utc || '')}</td><td>${esc(r.updated_utc || '')}</td><td>${runActions(r, next)}</td></tr>`).join(''); return scrollWrap(`<table><thead><tr><th>Run</th><th>Tag / Scenario</th><th>Profile</th><th>Status</th><th>Created</th><th>Updated</th><th>Options</th></tr></thead><tbody>${runRows || `<tr><td colspan="7">${unavailable(empty)}</td></tr>`}</tbody></table>`, {className:'page-table', scrollKey: scrollKey || 'runs-table'}); }
-  function runsPage() { title('Runs', 'Persisted runs with plot, table, compare, and delete actions.'); const allRuns = state.runs || []; main.innerHTML = `<section class="panel"><h3>Runs</h3><p class="subtle">${allRuns.length} persisted run records loaded from database and/or result folders. Use Plots or Tables to open a dedicated viewer for any selected run.</p><div class="toolbar"><a class="button-link" href="/plots">Plots</a><a class="button-link" href="/tables">Tables</a><a class="button-link" href="/compare">Compare Runs</a></div><div id="recentRunsTable">${runsTable(allRuns, 'No persisted runs are available yet.', '/runs', 'recent-runs-table')}</div></section>`; }
+  function runStatusClass(run) {
+    const token = runStatusToken(run);
+    if (/completed$/.test(token)) return 'good';
+    if (/failed|error|timeout|cancelled|aborted|stalled/.test(token)) return 'bad';
+    if (isActiveRun(run) || /failure|warning/.test(token)) return 'warn';
+    return '';
+  }
+  function runActions(r, next) {
+    const id = esc(r.run_id);
+    const deleteDisabled = isActiveRun(r) ? ' disabled title="Stop or finish this run before deleting it."' : '';
+    return `<div class="toolbar" style="margin:0"><a class="button-link primary" href="/plots?run_id=${id}">Results</a><a class="button-link" href="/realtime?run_id=${id}">Live</a><details class="action-menu"><summary class="button-link">More</summary><div class="action-menu-body"><a class="button-link" href="/tables?run_id=${id}">Tables</a><a class="button-link" href="/outputs?run_id=${id}">Files</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link" href="/run-config/download?run_id=${id}&format=yaml">Download YAML</a><button type="button" data-compare-baseline="${id}">Use as baseline</button><button type="button" data-compare-candidate="${id}">Use as candidate</button><form method="post" action="/admin/delete-run" onsubmit="return confirm('Delete run ${id} and every stored output file? This cannot be undone.');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit" class="danger"${deleteDisabled}>Delete run</button></form></div></details></div>`;
+  }
+  function runsTable(runList, empty, next, scrollKey) {
+    const runRows = (runList || []).map(r => {
+      const id = esc(r.run_id);
+      const active = isActiveRun(r);
+      return `<tr><td><input class="run-select" type="checkbox" name="run_ids" value="${id}" form="bulkDeleteRunsForm" data-run-checkbox aria-label="Select run ${id}"${active ? ' disabled' : ''}></td><td><span class="run-title">Run ${id}</span><br><span class="small">${esc(r.run_tag || '')}</span></td><td><strong>${esc(r.scenario_id || r.scenario_name || 'Uploaded YAML')}</strong><br><span class="small">${esc(r.profile_name || r.backend || '')}</span></td><td><span class="status-pill ${runStatusClass(r)}">${esc(r.status_text || 'unknown')}</span></td><td>${esc(r.created_utc || '')}<br><span class="small">${esc(r.updated_utc || '')}</span></td><td>${runActions(r, next)}</td></tr>`;
+    }).join('');
+    const emptyRow = `<tr><td colspan="6"><div class="empty-state">${esc(empty)}</div></td></tr>`;
+    return scrollWrap(`<table class="run-table"><thead><tr><th></th><th>Run</th><th>Scenario</th><th>Status</th><th>Created / Updated</th><th>Actions</th></tr></thead><tbody>${runRows || emptyRow}</tbody></table>`, {className:'page-table', scrollKey: scrollKey || 'runs-table'});
+  }
+  function updateBulkDeleteState() {
+    const boxes = [...document.querySelectorAll('[data-run-checkbox]')].filter(box => !box.disabled);
+    const selected = boxes.filter(box => box.checked);
+    const selectAll = document.getElementById('selectAllRuns');
+    const deleteButton = document.getElementById('deleteSelectedRunsBtn');
+    if (selectAll) {
+      selectAll.checked = boxes.length > 0 && selected.length === boxes.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < boxes.length;
+    }
+    if (deleteButton) {
+      deleteButton.disabled = selected.length === 0;
+      deleteButton.textContent = selected.length ? `Delete selected (${selected.length})` : 'Delete selected';
+    }
+  }
+  function runsPage() {
+    title('Runs', 'Open, download, compare, or remove complete run records.');
+    const allRuns = state.runs || [];
+    const activeCount = allRuns.filter(isActiveRun).length;
+    main.innerHTML = `<section class="panel"><div class="run-history-header"><div><h3>Run history</h3><p class="subtle">${allRuns.length} runs · ${activeCount} active · database and results-folder records</p></div><div class="run-history-tools"><a class="button-link primary" data-page="run_control" href="/run-control">New run</a><a class="button-link" href="/compare-runs">Compare</a><form id="bulkDeleteRunsForm" method="post" action="/admin/delete-runs" onsubmit="const count=document.querySelectorAll('[data-run-checkbox]:checked').length;if(!count){return false;}return confirm('Delete '+count+' selected runs and every associated database row, log, artifact, runtime YAML, and output file? This cannot be undone.');"><input type="hidden" name="next" value="/runs"><label class="check-label"><input id="selectAllRuns" type="checkbox"> Select all</label><button id="deleteSelectedRunsBtn" class="danger" type="submit" disabled>Delete selected</button></form></div></div><div id="recentRunsTable">${runsTable(allRuns, 'No previous runs yet. Start one from the Run tab.', '/runs', 'recent-runs-table')}</div></section>`;
+    updateBulkDeleteState();
+  }
   function previousRunsPage() { runsPage(); }
   function compareOptions(selected) { return `<option value="">Select run</option>${(state.runs || []).map(r => `<option value="${esc(r.run_id)}"${String(r.run_id) === String(selected) ? ' selected' : ''}>Run ${esc(r.run_id)} - ${esc(r.run_tag || r.scenario_id || r.status_text || '')}</option>`).join('')}`; }
   function compareMetricRows() { const a = state.compareBaselineLive; const b = state.compareCandidateLive; if (!a || !b) return `<tr><td colspan="4">${state.compareLoading ? 'Loading canonical live payloads...' : 'Select baseline and candidate, then click Compare.'}</td></tr>`; const specs = [['Status','run.status_text'],['ResultOk','summary.result_ok'],['RequiredFailureCount','summary.required_failure_count'],['RuntimeTruthContractOk','summary.runtime_truth_contract_ok'],['Configured UEs','summary.configured_users'],['Artifacts','counts.artifacts_total'],['Tables','counts.tables_total'],['Images','counts.images_total'],['Logs','counts.logs_total'],['Bytes','counts.bytes_total']]; return specs.map(([label,path]) => { const av = get(a, path, 'unavailable'); const bv = get(b, path, 'unavailable'); const na = Number(av); const nb = Number(bv); const delta = Number.isFinite(na) && Number.isFinite(nb) ? (nb - na) : (String(av) === String(bv) ? 'same' : 'changed'); return `<tr><td>${esc(label)}</td><td>${esc(text(av))}</td><td>${esc(text(bv))}</td><td>${esc(text(delta))}</td></tr>`; }).join(''); }
@@ -16382,6 +16558,7 @@ window.addEventListener('DOMContentLoaded', function () {
     if (recentBox) recentBox.innerHTML = runsTable(state.runs || [], 'No persisted runs are available yet.', '/runs', 'recent-runs-table');
     const previousBox = document.getElementById('previousRunsTable');
     if (previousBox) previousBox.innerHTML = runsTable(state.runs || [], 'No persisted runs are available yet.', '/runs', 'previous-runs-table');
+    updateBulkDeleteState();
     document.querySelectorAll('[data-run-selector="true"]').forEach(select => {
       const selected = selectorState.get(select.id) || select.value || selectedRunId();
       const runningOnly = select.id === 'realtimeRunSelect';
@@ -16492,6 +16669,10 @@ window.addEventListener('DOMContentLoaded', function () {
           <a class="step-card" data-page="plots" href="/plots"><span class="step-number">3</span><span><strong>View results</strong><br><span class="small">Images, graphs, tables and files</span></span></a>
         </div>
       </section>
+      <section class="panel">
+        <div class="run-history-header"><div><h3>Choose simulation mode</h3><p class="subtle">Each mode opens its master YAML as the editable source of truth.</p></div><a class="button-link" data-page="run_control" href="/run-control">Open run workspace</a></div>
+        ${scenarioModeCards()}
+      </section>
       <div class="grid two">
         <section class="panel">
           <h3>Selected scenario</h3>
@@ -16539,38 +16720,57 @@ window.addEventListener('DOMContentLoaded', function () {
       </section>`;
   }
   function runWorkspace() {
-    title('Run', 'Validate and start the selected scenario.');
+    title('Run', 'Choose a mode, load YAML, and start MATLAB.');
     if (!state.configLoaded) {
       main.innerHTML = '<section class="panel"><p class="subtle">Loading scenario…</p></section>';
       return;
     }
     const contract = scenarioLaunchContract();
-    const recent = (state.runs || []).slice(0, 6);
+    const selectedMode = currentScenarioMode();
+    const recent = (state.runs || []).slice(0, 4);
     const mode = normalizeOutputPersistenceMode(get(state.config, 'output.persistence_mode', 'both'));
     const modeOptions = [
       ['both','Database + files'],
       ['results_folder','Files only'],
       ['database','Database only'],
     ].map(([value,label]) => `<option value="${value}"${mode === value ? ' selected' : ''}>${label}</option>`).join('');
-    const recentRows = recent.map(run => `<tr><td><strong>${esc(run.run_tag || run.run_id)}</strong><br><span class="small">${esc(run.scenario_id || '')}</span></td><td>${esc(run.status_text || '')}</td><td><a class="button-link" href="/plots?run_id=${esc(run.run_id)}">Open</a></td></tr>`).join('');
+    const recentRows = recent.map(run => `<tr><td><strong>Run ${esc(run.run_id)}</strong><br><span class="small">${esc(run.run_tag || run.scenario_id || '')}</span></td><td><span class="status-pill ${runStatusClass(run)}">${esc(run.status_text || '')}</span></td><td><a class="button-link" href="/plots?run_id=${esc(run.run_id)}">Results</a></td></tr>`).join('');
+    const runTag = esc((document.getElementById('runTagInput') || {}).value || '');
+    const canLaunch = state.mode === wired && contract.launchAllowed;
     main.innerHTML = `
-      <div class="grid three">
-        <div class="tile metric"><h4>Scenario</h4><div class="value" style="font-size:15px">${esc(scenarioDropdownLabel(root.scenario || ''))}</div></div>
-        <div class="tile metric"><h4>MATLAB</h4><div class="value">${esc((root.backend || {}).matlab_release || ((root.backend || {}).matlab_available ? 'Ready' : 'Unavailable'))}</div></div>
-        <div class="tile metric"><h4>Validation</h4><div class="value">${contract.launchAllowed ? 'Ready' : 'Review'}</div></div>
+      <section class="panel">
+        <div class="run-history-header"><div><h3>Simulation mode</h3><p class="subtle">Select one master YAML workflow. Uploaded YAML remains editable and runs through the same validated LLS path.</p></div><span class="badge good">LLS execution</span></div>
+        ${scenarioModeCards()}
+      </section>
+      <div class="launch-grid">
+        <section class="panel">
+          <div class="run-history-header"><div><h3>YAML configuration</h3><p class="subtle">Current source: <span class="mono">${esc(root.scenario || '')}</span></p></div><span class="badge">${esc(selectedMode?.label || 'Uploaded YAML')}</span></div>
+          <label class="upload-dropzone" for="scenarioFileInput"><span><strong>Upload a YAML configuration</strong>Choose a .yaml or .yml file to load it into this workspace.</span></label>
+          <div class="toolbar" style="margin-top:10px">
+            <a class="button-link" data-page="scenario" href="/scenario">Edit parameters</a>
+            <a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download YAML</a>
+          </div>
+        </section>
+        <section class="panel">
+          <h3>Launch settings</h3>
+          <div class="param-editor"><label for="runTagEditor">Run label</label><input id="runTagEditor" value="${runTag}" placeholder="Automatic timestamp label"></div>
+          <div class="param-editor" style="margin-top:10px"><label for="outputPersistenceModeSelect">Save results to</label><select id="outputPersistenceModeSelect">${modeOptions}</select></div>
+          <div class="grid three" style="margin-top:10px">
+            <div class="tile metric"><h4>MATLAB</h4><div class="value" style="font-size:15px">${esc((root.backend || {}).matlab_release || ((root.backend || {}).matlab_available ? 'Ready' : 'Unavailable'))}</div></div>
+            <div class="tile metric"><h4>Config</h4><div class="value" style="font-size:15px">${contract.launchAllowed ? 'Ready' : 'Review'}</div></div>
+            <div class="tile metric"><h4>Workers</h4><div class="value" style="font-size:15px">${esc((root.execution_policy || {}).workers || 1)}</div></div>
+          </div>
+          <div class="launch-actions" style="margin-top:12px">
+            <button id="validateWorkspaceBtn" type="button">Validate</button>
+            <button class="primary" type="submit" form="runForm"${canLaunch ? '' : ' disabled'}>Run scenario</button>
+          </div>
+          <p class="mini-note">License-safe serial launch · parallel pool off</p>
+        </section>
       </div>
-      <div class="grid two" style="margin-top:10px">
-        <section class="panel">
-          <h3>Output</h3>
-          <label class="field-label" for="outputPersistenceModeSelect">Save results to</label>
-          <select id="outputPersistenceModeSelect">${modeOptions}</select>
-          <p class="mini-note"><span class="badge good">License safe</span> ${esc((root.execution_policy || {}).workers || 1)} worker · parallel pool off</p>
-        </section>
-        <section class="panel">
-          <h3>Recent runs</h3>
-          <div class="table-wrap"><table><thead><tr><th>Run</th><th>Status</th><th></th></tr></thead><tbody>${recentRows || '<tr><td colspan="3">No previous runs.</td></tr>'}</tbody></table></div>
-        </section>
-      </div>`;
+      <section class="panel" style="margin-top:10px">
+        <div class="run-history-header"><div><h3>Recent runs</h3><p class="subtle">Open a result now, or manage the complete history in Runs.</p></div><a class="button-link" data-page="runs" href="/runs">View all runs</a></div>
+        <div class="table-wrap"><table><thead><tr><th>Run</th><th>Status</th><th></th></tr></thead><tbody>${recentRows || '<tr><td colspan="3">No previous runs.</td></tr>'}</tbody></table></div>
+      </section>`;
   }
   function liveWorkspace() {
     title('Live', 'Run status and current measurements.');
@@ -16639,7 +16839,7 @@ window.addEventListener('DOMContentLoaded', function () {
     </section>`;
   }
   function scenarioDropdownLabel(value) {
-    return String(value || '').replace(/\\.(yaml|yml)$/i, '').replace(/[_-]+/g, ' ').replace(/\\b\\w/g, char => char.toUpperCase());
+    return String(value || '').split('/').pop().replace(/\\.(yaml|yml)$/i, '').replace(/^__web_upload_/i, '').replace(/_[0-9a-f]{10}$/i, '').replace(/[_-]+/g, ' ').replace(/\\b\\w/g, char => char.toUpperCase());
   }
   function renderPhyGridPayload(payload) {
     const grid = (payload || {}).grid || {};
@@ -16717,14 +16917,15 @@ window.addEventListener('DOMContentLoaded', function () {
     else if (state.page === 'analytics') renderResultView('analytics', analytics);
     else if (state.page === 'artifacts') renderResultView('artifacts', compactArtifactsPage);
     else if (state.page === 'compare') renderResultView('compare', compare);
-    else if (state.page === 'runs' || state.page === 'previous_runs') runWorkspace();
+    else if (state.page === 'runs' || state.page === 'previous_runs') runsPage();
     else configureWorkspace(state.page);
     renderBlock(state.selectedBlock);
     if (scrollSnapshot) restoreScrollState(scrollSnapshot);
     else if (main) main.scrollTo(0, 0);
   }
   function refreshRunsList(shouldRender) {
-    return fetch('/api/runs?limit=200', {cache:'no-store'})
+    const runLimit = ['runs','previous_runs'].includes(state.page) ? 5000 : 200;
+    return fetch(`/api/runs?limit=${runLimit}`, {cache:'no-store'})
       .then(r => r.ok ? r.json() : {runs:[]})
       .catch(() => ({runs:[]}))
       .then(payload => {
@@ -16759,6 +16960,12 @@ window.addEventListener('DOMContentLoaded', function () {
     }
     const m = target.closest('[data-mode]');
     if (m) { state.mode = m.dataset.mode; set(state.config, 'run_control.execution_mode', state.mode); render({preserveScroll:false}); }
+    const scenarioMode = target.closest('[data-scenario-mode]');
+    if (scenarioMode) {
+      const scenario = scenarioMode.dataset.scenario || '';
+      if (scenario) location.href = `/run-control?scenario=${encodeURIComponent(scenario)}`;
+      return;
+    }
     const b = target.closest('[data-block]');
     if (b) { state.selectedBlock = (root.architecture || []).find(x => x.id === b.dataset.block); if (state.selectedBlock && state.selectedBlock.route) { const nav = (root.nav || []).find(n => state.selectedBlock.route.startsWith(n.href)); if (nav) state.page = nav.id; } render({preserveScroll:false}); }
     const ph = target.closest('[data-phy]');
@@ -16775,10 +16982,13 @@ window.addEventListener('DOMContentLoaded', function () {
     if (publishedChart) { state.analyticsPublishedChartId = publishedChart.dataset.analyticsPublishedChart; renderPublishedAnalyticsPanel(); }
     const msg = document.getElementById('messageBanner');
     if (target.id === 'compareRunsBtn') loadComparePayloads();
-    if (target.id === 'openScenarioBtn') location.href = `/home?scenario=${encodeURIComponent(document.getElementById('scenarioSelect').value)}`;
+    if (target.id === 'openScenarioBtn') {
+      const destination = state.page === 'run_control' ? '/run-control' : '/home';
+      location.href = `${destination}?scenario=${encodeURIComponent(document.getElementById('scenarioSelect').value)}`;
+    }
     if (target.id === 'loadConfigJsonBtn') document.getElementById('configJsonFileInput').click();
     if (target.id === 'newScenarioBtn') { state.page = 'scenario'; render({preserveScroll:false}); ensureConfigLoaded(true); ensureFieldsLoaded(true); if (msg) { msg.textContent = 'New scenario draft is active in the browser. Run Scenario and Download Config JSON will use the edited config model.'; msg.classList.remove('hidden'); } }
-    if (target.id === 'validateBtn') { ensureConfigLoaded(false).then(() => { const contract = scenarioLaunchContract(); if (msg) { msg.textContent = state.mode !== wired ? `${state.mode} is configurable here, but only LLS is launch-enabled from /run in this pass.` : (contract.launchAllowed ? `Browser validation passed for the editable config surface. Launch contract: ${contract.presentationLabel || contract.launchContract}. MATLAB runtime validation still occurs during /run.` : `Browser validation found a launch-contract blocker: ${contract.launchReason || 'selected scenario is blocked.'}`); msg.classList.remove('hidden'); } }); }
+    if (target.id === 'validateBtn' || target.id === 'validateWorkspaceBtn') { ensureConfigLoaded(false).then(() => { const contract = scenarioLaunchContract(); if (msg) { msg.textContent = state.mode !== wired ? `${state.mode} is configurable here, but only LLS is launch-enabled from /run in this pass.` : (contract.launchAllowed ? `Configuration is ready. ${contract.presentationLabel || contract.launchContract}. MATLAB performs the final schema validation when the run starts.` : `Configuration needs attention: ${contract.launchReason || 'selected scenario is blocked.'}`); msg.classList.remove('hidden'); } }); }
     if (target.id === 'saveScenarioBtn') { ensureConfigLoaded(false).then(() => { storage.set('sixgr_product_config', JSON.stringify({scenario:root.scenario, config:state.config})); if (msg) { msg.textContent = 'Draft saved.'; msg.classList.remove('hidden'); } }); }
     if (target.id === 'downloadConfigBtn') { const runId = selectedRunId(); if (runId) { window.location.href = `/run-config/download?run_id=${encodeURIComponent(runId)}&format=json`; if (msg) { msg.textContent = `Downloading run-wise config evidence bundle for run ${runId}.`; msg.classList.remove('hidden'); } } else { ensureConfigLoaded(false).then(() => { updateRunPayload(); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state.config, null, 2)], {type:'application/json'})); a.download = 'sixgr_final_config_draft.json'; a.click(); if (msg) { msg.textContent = 'No run_id is available yet, so the current browser draft config JSON was downloaded.'; msg.classList.remove('hidden'); } }); } }
     const tableLoadMore = target.closest('[data-table-load-more]');
@@ -16795,6 +17005,15 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'scenarioFileInput') {
       const form = document.getElementById('scenarioUploadForm');
       if ((target.files || []).length && form) form.submit();
+      return;
+    }
+    if (target.id === 'selectAllRuns') {
+      document.querySelectorAll('[data-run-checkbox]:not(:disabled)').forEach(box => { box.checked = target.checked; });
+      updateBulkDeleteState();
+      return;
+    }
+    if (target.matches('[data-run-checkbox]')) {
+      updateBulkDeleteState();
       return;
     }
     if (target.id === 'configJsonFileInput') { loadConfigFile((target.files || [])[0]); target.value = ''; return; }
@@ -16839,6 +17058,11 @@ window.addEventListener('DOMContentLoaded', function () {
         group.classList.toggle('hidden', matches === 0);
         if (query && matches) group.open = true;
       });
+      return;
+    }
+    if (target.id === 'runTagEditor') {
+      const runTagInput = document.getElementById('runTagInput');
+      if (runTagInput) runTagInput.value = target.value;
       return;
     }
     if (target.id === 'liveFilter') { state.filter = target.value; if (state.page === 'realtime') render({preserveScroll:true}); }
@@ -20484,7 +20708,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/runs":
                 limit_raw = params.get("limit", ["50"])[0]
                 try:
-                    limit = max(1, min(200, int(limit_raw)))
+                    limit = max(1, min(5000, int(limit_raw)))
                 except ValueError:
                     limit = 50
                 run_rows = fetch_runs(limit=limit, run_tag=params.get("run_tag", [None])[0])
@@ -20689,6 +20913,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 )
                 self.redirect(f"{next_url}?message={urllib.parse.quote(message)}")
                 return
+            if parsed.path == "/admin/delete-runs":
+                stats = delete_runs_storage(fields.get("run_ids", []))
+                message = (
+                    f"Deleted {stats['runs']} selected runs with all run outputs: "
+                    f"{stats['artifacts']} artifacts, {stats['chunks']} chunks, {stats['logs']} log rows, "
+                    f"{stats['runtime_yaml']} runtime YAML files, and {stats['disk_entries']} disk entries."
+                )
+                self.redirect(f"{next_url}?message={urllib.parse.quote(message)}")
+                return
             if parsed.path == "/admin/delete-run":
                 run_id_text = str(fields.get("run_id", [""])[0]).strip()
                 if not run_id_text.isdigit():
@@ -20709,11 +20942,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if not yaml_text and uploaded.get("content"):
                     yaml_text = bytes(uploaded["content"]).decode("utf-8", errors="replace")
                 target_name = str(fields.get("target_name", [""])[0] or uploaded_name or "").strip()
-                target_path = write_uploaded_scenario(target_name, yaml_text)
+                base_scenario = str(fields.get("base_scenario", [DEFAULT_SCENARIO])[0] or DEFAULT_SCENARIO)
+                target_path = write_uploaded_scenario(target_name, yaml_text, base_scenario=base_scenario)
                 rel_name = target_path.relative_to(SCENARIO_ROOT).as_posix()
-                message = f"Imported {rel_name}."
+                message = f"Uploaded {safe_uploaded_scenario_name(target_name)} and loaded it for this run."
+                separator = "&" if "?" in next_url else "?"
                 self.redirect(
-                    f"/home?scenario={urllib.parse.quote(rel_name)}&message={urllib.parse.quote(message)}"
+                    f"{next_url}{separator}scenario={urllib.parse.quote(rel_name)}"
+                    f"&message={urllib.parse.quote(message)}"
                 )
                 return
             if parsed.path == "/run-prach-comparison":

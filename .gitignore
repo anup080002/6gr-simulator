@@ -44,6 +44,7 @@ artifacts/frame_grid_phase_regression/
 tmp_web_runs/
 tmp_dashboard/
 simulator/configs/scenarios/__web_runtime_*.yaml
+simulator/configs/scenarios/__web_upload_*.yaml
 simulator/configs/scenarios/__web_source_*.yaml
 simulator/configs/scenarios/__web_upload_*.yaml
 __web_runtime_*.yaml
