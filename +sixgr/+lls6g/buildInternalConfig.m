@@ -1828,7 +1828,7 @@ if section == "pdsch"
     cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".xOverhead");
     cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".XOverhead");
 else
-    cfg = localCopyRuntimeField(cfg, s, "pusch.frequency_hopping", targetBase + ".frequencyHopping");
+    cfg = localApplyPUSCHDetailSurface(cfg, s, targetBase);
     cfg = localCopyRuntimeField(cfg, s, "pusch.intra_slot_frequency_hopping", targetBase + ".intraSlotFrequencyHopping");
     cfg = localCopyRuntimeField(cfg, s, "pusch.inter_slot_frequency_hopping", targetBase + ".interSlotFrequencyHopping");
     cfg = localCopyRuntimeField(cfg, s, "pusch.transform_precoding", targetBase + ".transformPrecoding");
@@ -1862,6 +1862,195 @@ if hasStart && hasNum
     cfg = sixgr.util.structSet( ...
         cfg, targetBase + ".SymbolAllocation", ...
         [startValue numValue]);
+end
+end
+
+function cfg = localApplyPUSCHDetailSurface(cfg, s, targetBase)
+% Preserve the operator-owned PUSCH surface using the exact field names
+% consumed by the production allocator, transmitter, receiver, and power
+% controller. Runtime grants may replace scheduling state, but MATLAB
+% literals must not silently replace configured initial PHY policy.
+scalarPairs = {
+    "rnti", "RNTI"
+    "scrambling_id", "NID"
+    "mcs_table", "mcsTable"
+    "mcs_index", "mcsIndex"
+    "modulation", "modulation"
+    "target_code_rate_per_codeword", "codeRate"
+    "num_layers", "numLayers"
+    "num_antenna_ports", "NumAntennaPorts"
+    "transmission_scheme", "transmissionScheme"
+    "codebook_type", "codebookType"
+    "tpmi", "TPMI"
+    "sri", "SRI"
+    "rv_per_codeword", "rv"
+    "ndi_per_codeword", "ndi"
+    "harq_process_id", "HARQProcessId"
+    "dmrs_configuration_type", "dmrs.configurationType"
+    "dmrs_length", "dmrs.length"
+    "dmrs_additional_position", "dmrs.additionalPositions"
+    "dmrs_type_a_position", "dmrs.typeAPosition"
+    "dmrs_num_cdm_groups_without_data", "dmrs.numCDMGroupsWithoutData"
+    "dmrs_port_set", "dmrs.portSet"
+    "dmrs_nid_nscid", "dmrs.NIDNSCID"
+    "dmrs_nscid", "dmrs.NSCID"
+    "dmrs_nrs_id", "dmrs.NRSID"
+    "dmrs_group_hopping", "dmrs.groupHopping"
+    "dmrs_sequence_hopping", "dmrs.sequenceHopping"
+    "ptrs_enabled", "enablePTRS"
+    "ptrs_time_density", "ptrs.timeDensity"
+    "ptrs_frequency_density", "ptrs.frequencyDensity"
+    "ptrs_re_offset", "ptrs.reOffset"
+    "ptrs_port_set", "ptrs.portSet"
+    "ptrs_nid", "ptrs.NID"
+    "uci_beta_offset_ack", "uci.betaOffsetACK"
+    "uci_beta_offset_csi1", "uci.betaOffsetCSI1"
+    "uci_beta_offset_csi2", "uci.betaOffsetCSI2"
+    "uci_scaling", "uci.scaling"
+    "repetition_type", "repetition.type"
+    "repetition_count", "repetition.count"
+    };
+for i = 1:size(scalarPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "pusch." + scalarPairs{i,1}, targetBase + "." + scalarPairs{i,2});
+end
+
+% Maintain the aliases used by existing grant and HARQ materializers.
+cfg = localCopyRuntimeField(cfg, s, "pusch.num_layers", targetBase + ".nLayers");
+cfg = localCopyRuntimeField(cfg, s, "pusch.num_layers", targetBase + ".maxLayers");
+cfg = localCopyRuntimeField(cfg, s, "pusch.num_antenna_ports", targetBase + ".numAntennaPorts");
+cfg = localCopyRuntimeField(cfg, s, "pusch.transmission_scheme", targetBase + ".TransmissionScheme");
+cfg = localCopyRuntimeField(cfg, s, "pusch.codebook_type", targetBase + ".CodebookType");
+cfg = localCopyRuntimeField(cfg, s, "pusch.tpmi", targetBase + ".PMI");
+cfg = localCopyRuntimeField(cfg, s, "pusch.tpmi", targetBase + ".tpmi");
+cfg = localCopyRuntimeField(cfg, s, "pusch.mcs_index", targetBase + ".configuredMCSIndex");
+
+[allocationType, hasAllocationType] = localTryGetNestedStrict( ...
+    s, "pusch.resource_allocation_type");
+if hasAllocationType
+    cfg = sixgr.util.structSet(cfg, targetBase + ".resourceAllocationType", ...
+        localNormalizePUSCHResourceAllocationType(allocationType));
+end
+
+[hoppingMode, hasHoppingMode] = localTryGetNestedStrict( ...
+    s, "pusch.frequency_hopping");
+if hasHoppingMode
+    hoppingMode = localNormalizePUSCHFrequencyHoppingMode(hoppingMode);
+    cfg = sixgr.util.structSet(cfg, targetBase + ".frequencyHopping.mode", ...
+        char(hoppingMode));
+end
+cfg = localCopyRuntimeField(cfg, s, "pusch.second_hop_start_prb", ...
+    targetBase + ".frequencyHopping.secondHopStartPRB");
+
+[codebookFlag, hasCodebookFlag] = localTryGetNestedStrict( ...
+    s, "pusch.codebook_based_transmission");
+[schemeValue, hasScheme] = localTryGetNestedStrict( ...
+    s, "pusch.transmission_scheme");
+if hasScheme
+    scheme = localNormalizePUSCHTransmissionScheme(schemeValue);
+    cfg = sixgr.util.structSet(cfg, targetBase + ".transmissionScheme", char(scheme));
+    cfg = sixgr.util.structSet(cfg, targetBase + ".TransmissionScheme", char(scheme));
+    if hasCodebookFlag && logical(codebookFlag) ~= (scheme == "codebook")
+        error("sixgr:lls6g:config:PUSCHCodebookPolicyConflict", ...
+            "pusch.codebook_based_transmission conflicts with pusch.transmission_scheme.");
+    end
+end
+[transformPrecoding, hasTransformPrecoding] = localTryGetNestedStrict( ...
+    s, "pusch.transform_precoding");
+if hasTransformPrecoding && hasCodebookFlag && ...
+        logical(transformPrecoding) && logical(codebookFlag)
+    error("sixgr:lls6g:config:PUSCHPrecodingPolicyConflict", ...
+        "Transform-precoded PUSCH cannot also select codebook-based transmission.");
+end
+
+powerPairs = {
+    "enabled", "enabled"
+    "open_loop_enabled", "openLoopEnabled"
+    "closed_loop_enabled", "closedLoopEnabled"
+    "p0_pusch_dbm", "p0PUSCH_dBm"
+    "alpha", "alpha"
+    "delta_tf_db", "deltaTF_dB"
+    "closed_loop_accumulation_db", "closedLoopAccumulation_dB"
+    "tpc_command_bits", "tpcCommandBits"
+    "pcmax_dbm", "pcmax_dBm"
+    "reference_tx_power_dbm", "referenceTxPower_dBm"
+    "pathloss_source", "pathlossSource"
+    };
+for i = 1:size(powerPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "pusch.power_control." + powerPairs{i,1}, ...
+        targetBase + ".powerControl." + powerPairs{i,2});
+end
+[pcEnabled, hasPCEnabled] = localTryGetNestedStrict( ...
+    s, "pusch.power_control.enabled");
+if hasPCEnabled
+    cfg = sixgr.util.structSet(cfg, ...
+        "powerAndRF.puschPowerControlEnabled", logical(pcEnabled));
+end
+cfg = localCopyRuntimeField(cfg, s, "pusch.power_control.pcmax_dbm", ...
+    "powerAndRF.uePcmax_dBm");
+cfg = localCopyRuntimeField(cfg, s, ...
+    "pusch.power_control.reference_tx_power_dbm", ...
+    "powerAndRF.referenceTxPower_dBm");
+
+srsPairs = {
+    "required", "required"
+    "max_age_slots", "maxAgeSlots"
+    "configuration_epoch_required", "configurationEpochRequired"
+    "configured_tpmi_fallback_allowed", "configuredTPMIFallbackAllowed"
+    };
+for i = 1:size(srsPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "pusch.srs_authority." + srsPairs{i,1}, ...
+        targetBase + ".srsAuthority." + srsPairs{i,2});
+end
+end
+
+function value = localNormalizePUSCHResourceAllocationType(raw)
+if isnumeric(raw) && isscalar(raw) && isfinite(double(raw)) && ...
+        double(raw) == fix(double(raw)) && any(double(raw) == 0:2)
+    value = double(raw);
+    return;
+end
+token = lower(strrep(strtrim(string(raw)), "_", ""));
+switch token
+    case {"0","type0"}
+        value = 0;
+    case {"1","type1"}
+        value = 1;
+    case {"2","type2"}
+        value = 2;
+    otherwise
+        error("sixgr:lls6g:config:InvalidPUSCHResourceAllocationType", ...
+            "pusch.resource_allocation_type must be type0, type1, type2, 0, 1, or 2.");
+end
+end
+
+function mode = localNormalizePUSCHFrequencyHoppingMode(raw)
+token = lower(strrep(strtrim(string(raw)), "-", "_"));
+switch token
+    case {"none","disabled","neither","off"}
+        mode = "none";
+    case {"intra_slot","intraslot"}
+        mode = "intra_slot";
+    case {"inter_slot","interslot"}
+        mode = "inter_slot";
+    otherwise
+        error("sixgr:lls6g:config:InvalidPUSCHFrequencyHoppingMode", ...
+            "pusch.frequency_hopping must be none, intra_slot, or inter_slot.");
+end
+end
+
+function scheme = localNormalizePUSCHTransmissionScheme(raw)
+token = lower(strrep(strtrim(string(raw)), "_", ""));
+switch token
+    case "codebook"
+        scheme = "codebook";
+    case {"noncodebook","noncodebookbased"}
+        scheme = "nonCodebook";
+    otherwise
+        error("sixgr:lls6g:config:InvalidPUSCHTransmissionScheme", ...
+            "pusch.transmission_scheme must be codebook or nonCodebook.");
 end
 end
 

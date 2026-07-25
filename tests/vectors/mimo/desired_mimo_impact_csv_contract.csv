@@ -1,0 +1,17 @@
+FileName,PrimaryKey,MinRows,RequiredColumns
+mimo_impact_run_manifest.csv,RunID,1,RunID|GitCommit|MATLABVersion|ToolboxVersion|SeedList|ExperimentMatrixSHA256|ConfidenceLevel|Status
+mimo_impact_raw_trials.csv,RunID|ExperimentID|TrialIndex,768,RunID|ExperimentID|FamilyID|PairID|Variant|FactorName|FactorValue|Seed|TrialIndex|PayloadID|ChannelRealizationID|NoiseRealizationID|Profile|Channel|SNRDB|BlockError|BitErrors|RI|PMI|MeasuredSINRDB|EVMPercent|GoodputMbps|RuntimeMs|MemoryMB|Status
+mimo_impact_operating_points.csv,RunID|ExperimentID,768,RunID|ExperimentID|FamilyID|PairID|Variant|Trials|BlockErrors|BitErrors|BLER|BLERCILower|BLERCIUpper|MeanSINRDB|MeanEVMPercent|MeanGoodputMbps|MeanRuntimeMs|MeanMemoryMB|Incomplete|StopReason|Status
+mimo_impact_pairwise_effects.csv,RunID|FamilyID|PairID|Metric,64,RunID|FamilyID|PairID|Metric|BaselineValue|TreatmentValue|AbsoluteEffect|RelativeEffect|CILower|CIUpper|PValue|AdjustedPValue|EffectSize|PracticalMargin|Conclusion|Status
+mimo_impact_rule_evaluation.csv,RunID|RuleID,96,RunID|RuleID|FamilyID|Severity|Metric|ObservedValue|Threshold|Passed|EvidenceCSV|Status
+mimo_impact_codebook_ri_pmi.csv,RunID|ExperimentID,24,RunID|ExperimentID|CodebookType|Rank|SelectedRI|ExpectedRI|SelectedPMI|ExpectedPMI|PMIAccuracy|FeedbackBits|Objective|Status
+mimo_impact_csi_feedback.csv,RunID|ExperimentID,24,RunID|ExperimentID|Part1Bits|Part2Bits|OmittedPart2Bits|ReportAgeSlots|CQIError|PMIError|GoodputMbps|Status
+mimo_impact_high_rank.csv,RunID|ExperimentID|Layer,24,RunID|ExperimentID|Rank|Layer|MeasuredSINRDB|EVMPercent|BLER|GoodputMbps|RankCollapsed|Status
+mimo_impact_covariance_receiver.csv,RunID|ExperimentID,24,RunID|ExperimentID|Receiver|Samples|AgeSlots|ConditionNumber|MinEigenvalue|ShrinkageFactor|MeasuredSINRDB|BLER|FallbackUsed|Status
+mimo_impact_srs_ul.csv,RunID|ExperimentID,24,RunID|ExperimentID|SRSAgeSlots|SoundedBandwidthRB|SelectedRI|SelectedTPMI|AppliedTPMI|TPMIAccuracy|MeasuredSINRDB|BLER|Status
+mimo_impact_mu_mimo.csv,RunID|ExperimentID|UEID,16,RunID|ExperimentID|NumUE|UEID|AngularSeparationDeg|PowerDeltaDB|Receiver|MeasuredSINRDB|BLER|GoodputMbps|Fairness|Status
+mimo_impact_multitrp.csv,RunID|ExperimentID,16,RunID|ExperimentID|Mode|TimingMismatchFractionCP|PhaseMismatchDeg|PowerDeltaDB|CombinedSINRDB|BLER|CoherentGainDB|Status
+mimo_impact_hybrid.csv,RunID|ExperimentID,16,RunID|ExperimentID|Nant|NRFChains|NStreams|PhaseBits|BandwidthMHz|SquintLossDB|ArrayGainDB|EVMPercent|BLER|Status
+mimo_impact_beam_management.csv,RunID|ExperimentID,16,RunID|ExperimentID|MobilityKMH|Blockage|ReportDelaySlots|BeamSwitches|WrongBeamSlots|OutageProbability|RecoveryLatencySlots|GoodputMbps|Status
+mimo_impact_summary.csv,RunID|FamilyID,64,RunID|FamilyID|ExperimentsExpected|ExperimentsExecuted|PairsExpected|PairsComplete|HardRulesFailed|StatisticalRulesInconclusive|BlockedCount|Status
+mimo_impact_image_semantic_audit.csv,RunID|ImageFile,30,RunID|ImageFile|SourceCSV|SourceCSV_SHA256|PNG_SHA256|Width|Height|AxesCount|SeriesCount|FinitePointCount|ActualTitle|ActualXLabel|ActualYLabel|Status

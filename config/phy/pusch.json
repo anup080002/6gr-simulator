@@ -3,7 +3,7 @@
   "modulation": "256QAM",
   "nLayers": 2,
   "codeRate": 0.75,
-  "transformPrecoding": true,
+  "transformPrecoding": false,
   "rnti": 1,
   "prbAllocation": {
     "type": "full",

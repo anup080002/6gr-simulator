@@ -1,0 +1,9 @@
+{
+  "family_count": 52,
+  "experiment_count": 705,
+  "acceptance_rule_count": 70,
+  "analytical_floor_rows": 59,
+  "required_csv_count": 16,
+  "required_image_count": 26,
+  "note": "Impact matrix is a reproducible experiment specification. BLER/goodput values must come from the corrected MATLAB production chain."
+}

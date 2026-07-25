@@ -1,0 +1,52 @@
+ErrorIdentifier,Meaning,StrictAction
+sixgr:mimo:UnsupportedProfile,Requested capability profile is not enabled.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:UnsupportedAntennaTuple,Port/panel/polarization tuple is outside the selected profile.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidPanelGeometry,Panel dimensions or spacing are invalid.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidPortMapping,Logical CSI-RS/SRS/DM-RS ports do not map uniquely to physical ports.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidPolarization,Polarization/XPR definition is inconsistent.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidCodebookType,Codebook type is unsupported or inconsistent with RRC state.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidCodebookSubsetRestriction,Subset restriction length or domain is invalid.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:UnsupportedRank,Rank is unsupported for the selected ports/codebook/direction.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidPMI,PMI indices are outside the configured candidate domain.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidRI,RI is outside the configured rank domain.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidLI,Layer indicator is inconsistent with RI/codeword state.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidCRI,CSI-RS resource indicator is not part of the measurement set.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidCQI,CQI is outside the configured table/domain.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MissingCSIReportConfig,No active CSI report configuration exists.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:StaleCSIReportConfig,CSI report configuration epoch is stale.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MissingMeasurementState,Required CSI-RS/SRS/SSB measurement state is unavailable.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:StaleMeasurementState,Measurement age exceeds the configured validity window.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidCSIPart1Length,CSI Part 1 length differs from the report schema.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidCSIPart2Length,CSI Part 2 length differs from the report schema.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:CSISerializationMismatch,Decoded report fields do not reproduce the serialized bits.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:UnsupportedTypeIIProfile,Requested Type-II variant is not enabled.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:UnsupportedMultiPanelProfile,Requested Type-I multi-panel tuple is not enabled.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MissingInterferenceCovariance,Strict IRC requires covariance.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidInterferenceCovariance,"Covariance is nonfinite, non-Hermitian or non-PSD.",FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InsufficientCovarianceSamples,Covariance sample support is below the profile threshold.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:StaleInterferenceCovariance,Covariance age exceeds the validity window.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:IllConditionedCovariance,Covariance conditioning remains invalid after allowed shrinkage.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:PrecoderDimensionMismatch,Precoder dimensions do not equal Nport-by-Nlayer.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:PrecoderNormalizationMismatch,Precoder violates the expected normalization/power contract.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:PrecoderDigestMismatch,Selected and applied precoder digests differ.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:ConfiguredPrecoderOverride,Configuration attempted to override an authoritative measured decision.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:RankCollapse,Applied rank is lower than the valid scheduled rank without a new decision event.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:PortCollapse,Applied physical/logical port set differs from the assignment.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MissingSRSDecision,UL codebook/non-codebook PUSCH requires measured SRS decision state.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:StaleSRSDecision,SRS decision state is too old for the transmission occasion.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidMUResourceSharing,MU users do not share the declared resource or violate pilot/port constraints.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MUIdentityCollision,UE identities or reference-signal identities collide.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MissingTRPState,Multi-TRP transmission lacks per-TRP state.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:TRPTimingMismatch,CJT timing mismatch exceeds the selected coherence limit.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:TRPPhaseMismatch,CJT phase/calibration mismatch exceeds the selected limit.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InactiveTCIState,Scheduled TCI state is not active.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:QCLSourceMismatch,QCL/TCI source does not match the scheduled data/control resource.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:MissingHybridBeamState,FR2 hybrid profile lacks analog/digital/RF-chain state.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:RFChainLimitExceeded,Requested streams exceed available RF chains.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:AnalogWeightConstraintViolation,Analog weights violate constant-modulus/quantization constraints.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:BeamSquintLimitExceeded,Frequency-dependent beam loss exceeds profile bound.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:BeamMeasurementOracleForbidden,Configured/geometry winning beam was supplied to strict selection.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:BeamReportMismatch,Beam report does not match measured resources and report config.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:InvalidBeamStateTransition,Beam state-machine transition is illegal.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:BeamFailureTimerExpired,Beam failure was not recovered within configured procedure.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE
+sixgr:mimo:UnsupportedResearchFallback,Research-only SVD/MRT/identity fallback entered a strict profile.,FAIL_BEFORE_WAVEFORM_OR_STATE_CHANGE

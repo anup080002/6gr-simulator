@@ -1,0 +1,29 @@
+ImageFile,Description,SourceCSV,MinWidth,MinHeight,MinAxesCount,MinSeriesCount,MinFinitePointCount,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel
+pdcch_impact_payload_size.png,DCI payload size,pdcch_impact_dci_schema.csv,1000,650,1,2,10,DCI payload size,BWP size (PRB),Payload bits
+pdcch_impact_alignment.png,DCI size alignment,pdcch_impact_dci_schema.csv,1000,650,1,2,10,DCI size alignment,DCI context,Aligned bits
+pdcch_impact_polar_rate.png,PDCCH polar code rate,pdcch_impact_dci_schema.csv,1000,650,1,2,10,PDCCH polar code rate,Aggregation level,Code rate
+pdcch_impact_al_detection.png,Aggregation level detection,pdcch_impact_operating_points.csv,1000,650,1,2,10,Aggregation level detection,SNR (dB),Detection probability
+pdcch_impact_candidate_complexity.png,Candidate monitoring complexity,pdcch_impact_runtime.csv,1000,650,1,2,10,Candidate monitoring complexity,Candidates tested,Runtime (ms)
+pdcch_impact_coreset_duration.png,CORESET duration impact,pdcch_impact_coreset_searchspace.csv,1000,650,1,2,10,CORESET duration impact,CORESET duration (symbols),Detection probability
+pdcch_impact_coreset_bandwidth.png,CORESET bandwidth impact,pdcch_impact_coreset_searchspace.csv,1000,650,1,2,10,CORESET bandwidth impact,CORESET RBs,Detection probability
+pdcch_impact_interleaving.png,CCE REG interleaving,pdcch_impact_coreset_searchspace.csv,1000,650,1,2,10,CCE REG interleaving,Mapping configuration,Detection probability
+pdcch_impact_searchspace_load.png,Search space monitoring load,pdcch_impact_coreset_searchspace.csv,1000,650,1,2,10,Search space monitoring load,Periodicity (slots),Monitoring load
+pdcch_impact_candidate_distribution.png,PDCCH candidate distribution,pdcch_impact_coreset_searchspace.csv,1000,650,1,2,10,PDCCH candidate distribution,First CCE,Count
+pdcch_impact_type0_coreset.png,Type0 CORESET0,pdcch_impact_type0.csv,1000,650,1,2,10,Type0 CORESET0,ControlResourceSetZero,CORESET offset (RB)
+pdcch_impact_type0_monitoring.png,Type0 monitoring latency,pdcch_impact_type0.csv,1000,650,1,2,10,Type0 monitoring latency,SearchSpaceZero,Monitoring latency (slots)
+pdcch_impact_rnti_false_alarm.png,RNTI false alarm,pdcch_impact_rnti_false_alarm.csv,1000,650,1,2,10,RNTI false alarm,RNTI hypothesis,False alarm probability
+pdcch_impact_no_signal_bound.png,No signal false alarm bound,pdcch_impact_rnti_false_alarm.csv,1000,650,1,2,10,No signal false alarm bound,Trials,False alarm upper bound
+pdcch_impact_format_confusion.png,DCI format confusion,pdcch_impact_rnti_false_alarm.csv,1000,650,1,2,10,DCI format confusion,Transmitted format,Decoded format
+pdcch_impact_delay_spread.png,Delay spread impact,pdcch_impact_channel_sync.csv,1000,650,1,2,10,Delay spread impact,Delay spread profile,Detection probability
+pdcch_impact_doppler.png,Doppler impact,pdcch_impact_channel_sync.csv,1000,650,1,2,10,Doppler impact,Doppler (Hz),Detection probability
+pdcch_impact_cfo.png,CFO impact,pdcch_impact_channel_sync.csv,1000,650,1,2,10,CFO impact,CFO (Hz),Detection probability
+pdcch_impact_timing.png,Timing acquisition,pdcch_impact_channel_sync.csv,1000,650,1,2,10,Timing acquisition,Timing offset (samples),Detection probability
+pdcch_impact_phase_noise.png,Phase noise impact,pdcch_impact_channel_sync.csv,1000,650,1,2,10,Phase noise impact,Phase noise level,Detection probability
+pdcch_impact_beam_mismatch.png,PDCCH beam mismatch,pdcch_impact_beam_bwp_ca.csv,1000,650,1,2,10,PDCCH beam mismatch,Beam mismatch (dB),Detection probability
+pdcch_impact_beam_recovery.png,PDCCH beam recovery,pdcch_impact_beam_bwp_ca.csv,1000,650,1,2,10,PDCCH beam recovery,Absolute slot,Recovery state
+pdcch_impact_bwp_switch.png,PDCCH BWP switching,pdcch_impact_beam_bwp_ca.csv,1000,650,1,2,10,PDCCH BWP switching,Absolute slot,Active BWP
+pdcch_impact_cross_carrier.png,Cross carrier scheduling,pdcch_impact_beam_bwp_ca.csv,1000,650,1,2,10,Cross carrier scheduling,Control carrier,Scheduled carrier
+pdcch_impact_authority.png,Decoded DCI authority,pdcch_impact_authority.csv,1000,650,1,2,10,Decoded DCI authority,Mutation type,Assignment digest changed
+pdcch_impact_blind_penalty.png,Blind search penalty,pdcch_impact_pairwise_effects.csv,1000,650,1,2,10,Blind search penalty,Operating point,SNR penalty (dB)
+pdcch_impact_runtime_scaling.png,PDCCH runtime scaling,pdcch_impact_runtime.csv,1000,650,1,2,10,PDCCH runtime scaling,Candidates tested,Runtime (ms)
+pdcch_impact_effect_forest.png,PDCCH impact effect forest,pdcch_impact_pairwise_effects.csv,1000,650,1,2,10,PDCCH impact effect forest,Effect family,Standardized effect

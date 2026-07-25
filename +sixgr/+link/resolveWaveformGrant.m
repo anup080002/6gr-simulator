@@ -61,8 +61,14 @@ grant.AssignmentSource = "calibration_assignment";
 grant.Valid = true;
 
 scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", char(direction));
-grant = scheduler.freezePHYGrantForGrant(grant);
+grant = scheduler.attachCanonicalTimingDecision(grant);
+grant = scheduler.finalizeExactPHYFeasibility(grant);
 grant.DCI = scheduler.buildDCIBitfield(grant);
+grant.PHYGrant = sixgr.phy.grant.freezePHYGrant(cfg, direction, grant, ...
+    "Slot", double(grant.Slot), ...
+    "Frame", double(grant.Frame), ...
+    "HARQContext", grant.HARQ);
+grant.PHYGrantContextId = char(string(grant.PHYGrant.GrantContextId));
 end
 
 function [ueIndex, source] = localResolveUEIdentity(cfg)

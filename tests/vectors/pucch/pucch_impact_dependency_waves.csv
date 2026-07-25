@@ -1,0 +1,51 @@
+FamilyID,Wave,ImplementableInThisPhase,RequiredDependency,BlockedPlaceholderAllowed,FinalCompletionRequiresExecution
+F01,A,true,none,false,true
+F02,A,true,none,false,true
+F03,A,true,decoded PDSCH/DCI event state,false,true
+F04,A,true,none,false,true
+F05,A,true,none,false,true
+F06,A,true,none,false,true
+F07,A,true,none,false,true
+F08,A,true,CSI report builder,false,true
+F09,A,true,CSI report builder,false,true
+F10,A,true,CSI report builder,false,true
+F11,A,true,RRC PUCCH state,false,true
+F12,A,true,RRC PUCCH state,false,true
+F13,A,true,none,false,true
+F14,A,true,none,false,true
+F15,A,true,none,false,true
+F16,A,true,none,false,true
+F17,A,true,none,false,true
+F18,A,true,none,false,true
+F19,B,true,central timing/repetition state,false,true
+F20,A,true,none,false,true
+F21,B,true,shared-spectrum/interlace engine,false,true
+F22,A,true,decoded DCI timing state,false,true
+F23,A,true,central frame/TDD engine,false,true
+F24,A,true,decoded DCI PRI,false,true
+F25,A,true,PDCCH CCE provenance,false,true
+F26,B,true,multi-BWP state,false,true
+F27,B,true,multi-carrier state,false,true
+F28,B,true,PUSCH UCI integration,false,true
+F29,B,true,SRS resource engine,false,true
+F30,C,false,PRACH occasion engine,false,true
+F31,A,true,none,false,true
+F32,A,true,pathloss measurement state,false,true
+F33,A,true,decoded TPC state,false,true
+F34,A,true,none,false,true
+F35,A,true,none,false,true
+F36,B,true,beam/TCI state,false,true
+F37,B,true,measurement filtering state,false,true
+F38,C,false,beam failure/recovery engine,false,true
+F39,A,true,none,false,true
+F40,A,true,TDL/CDL channel,false,true
+F41,A,true,TDL/CDL channel,false,true
+F42,C,false,RF CFO estimator,false,true
+F43,C,false,timing acquisition/tracking,false,true
+F44,C,false,phase-noise process,false,true
+F45,A,true,none,false,true
+F46,A,true,none,false,true
+F47,A,true,none,false,true
+F48,A,true,none,false,true
+F49,B,true,multi-user waveform channel,false,true
+F50,A,true,all selected core features,false,true

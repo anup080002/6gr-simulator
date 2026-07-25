@@ -1,0 +1,128 @@
+{
+  "schema_version": "1.0",
+  "profile": "mimo_csi_beamforming_bounded_independent_floor",
+  "no_matlab_used": true,
+  "description": "Independent analytical and structural floor. It is not a substitute for complete release-pinned normative codebook and CSI vectors required by the Codex prompt.",
+  "files": [
+    {
+      "path": "mimo_capability_profile_matrix.csv",
+      "sha256": "dc6b8666a0f97ca0efed73ac9a94e9f4dc2c9d0c4e7db4547f74e1add5dbc024",
+      "rows": 164
+    },
+    {
+      "path": "expected_typeI_2port_codebook.csv",
+      "sha256": "9d00fafeb80892954c199a3dbb966b8f6106248ec400d0bda43cc1ca0a06ebfb",
+      "rows": 16
+    },
+    {
+      "path": "expected_antenna_array_response.csv",
+      "sha256": "f4450b98b36799429d2990218eccc92bcd0326e7ef3643c94267da153b81db31",
+      "rows": 1860
+    },
+    {
+      "path": "mimo_port_mapping_test_vectors.csv",
+      "sha256": "cccf7c73a50c6800ad2bdc79d6c1b8743b46a38f210d802741b77e0dc1f17093",
+      "rows": 22
+    },
+    {
+      "path": "mimo_csi_report_schema_test_vectors.csv",
+      "sha256": "85945778fa29c94b849404ac2a37b8912b5c0982b3823b8a661fc641271be22d",
+      "rows": 41
+    },
+    {
+      "path": "expected_csi_bit_ownership_floor.csv",
+      "sha256": "e022293026100efe3b36997dab45f858f1477e392af0e9a9acd7dab44d401d03",
+      "rows": 192
+    },
+    {
+      "path": "mimo_ri_pmi_metric_test_vectors.csv",
+      "sha256": "126dc03f462a583bd778fd23b5e7aad77aeb69429cf7673a9fccc802c89d2e33",
+      "rows": 180
+    },
+    {
+      "path": "expected_mimo_ri_pmi_selection.csv",
+      "sha256": "43e873ab99b47420e544b5d10749ba8666c38c0b17a89869e82306d3f2ed56df",
+      "rows": 30
+    },
+    {
+      "path": "mimo_covariance_test_vectors.csv",
+      "sha256": "e2ede69da1735c7c32a3e469d7f6c831c3835071625024e6340f03dce521c91b",
+      "rows": 90
+    },
+    {
+      "path": "mimo_precoder_application_test_vectors.csv",
+      "sha256": "51f5d32e768d8567de23a049ad2ad86b9014b9f28add2544fa9a613df94f9dd6",
+      "rows": 31
+    },
+    {
+      "path": "mimo_srs_authority_test_vectors.csv",
+      "sha256": "e59c245d76fc2684787ca552b65d047cd06c6d91da78cd203abcd7f84a3d1d91",
+      "rows": 72
+    },
+    {
+      "path": "mimo_mu_mimo_test_vectors.csv",
+      "sha256": "663de00f88de68bab40204e7cab3e346e8d8a46cadd396c1e332e733fc80093b",
+      "rows": 48
+    },
+    {
+      "path": "mimo_multitrp_test_vectors.csv",
+      "sha256": "b2b7e33df65d3cd6a5f73d0092daa413e9bd2f7bea2ebaecc2a16a99c130a06d",
+      "rows": 64
+    },
+    {
+      "path": "mimo_hybrid_beamforming_test_vectors.csv",
+      "sha256": "7e6a1634739327fc6cc2c0fc6df829c433de109de80e73dd255703a960121e4a",
+      "rows": 108
+    },
+    {
+      "path": "mimo_beam_state_transition_vectors.csv",
+      "sha256": "3bdba09e2811069fcf67d5dbedcef4c2f44b1e0281a8608fa047be23852e9bc1",
+      "rows": 100
+    },
+    {
+      "path": "mimo_negative_test_vectors.csv",
+      "sha256": "55fb2840691145321ca96781096e8a211d97bbcf28324659e8c335bcb775d10a",
+      "rows": 38
+    },
+    {
+      "path": "mimo_declared_coverage_matrix.csv",
+      "sha256": "f0c10a02c8062328caac40591eb41f7307b21a89a40b0c20c71a1c6850f34d34",
+      "rows": 87
+    },
+    {
+      "path": "mimo_impact_analysis_families.csv",
+      "sha256": "1910926e766653ae1de2fbcdcea88c3722a40485f4385fbf7815f3c7f67f4747",
+      "rows": 64
+    },
+    {
+      "path": "mimo_impact_experiment_matrix.csv",
+      "sha256": "a8b53dd2aa8859c86bce2589385c22281defb87562be9bb55c7ef5d3304dc3e4",
+      "rows": 768
+    },
+    {
+      "path": "mimo_impact_pairing_contract.csv",
+      "sha256": "466e718b14c872713539c891e9bc806ec59a3550e24f04356fa33b2d3c03009a",
+      "rows": 64
+    },
+    {
+      "path": "mimo_impact_acceptance_rules.csv",
+      "sha256": "e3a676d4fcb0eaf34f6a563741493aaec25184f8d99b30f11db8f35f04f53393",
+      "rows": 96
+    },
+    {
+      "path": "mimo_impact_dependency_waves.csv",
+      "sha256": "474133f6adc8f78d88481cd510b215b868429090f566051b326ce2e20631d9ee",
+      "rows": 64
+    },
+    {
+      "path": "mimo_impact_implementability_summary.csv",
+      "sha256": "54f1b9ed2f8db9f69b1360c53ab40c6f1beeaf94304e0baab57aee42014fab79",
+      "rows": 3
+    },
+    {
+      "path": "expected_mimo_impact_analytical_floor.csv",
+      "sha256": "5d72dc2cd6b2dca621d17c0818bd343ea38b162dd8ba8e796dcbbb0e237dae48",
+      "rows": 26
+    }
+  ]
+}

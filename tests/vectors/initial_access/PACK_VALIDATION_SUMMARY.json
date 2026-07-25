@@ -1,0 +1,78 @@
+{
+  "pack_name": "6GR_SSB_INITIAL_ACCESS_SIB1_RA_CODEX_PACK",
+  "generated_utc": "2026-07-25T04:42:31Z",
+  "prompt": {
+    "file": "CODEX_PROMPT_06_SSB_INITIAL_ACCESS_SIB1_RA_WITH_IMPACT_ANALYSIS.md",
+    "lines": 1959,
+    "sha256": "d8f2adebbf60dfaa4f75ebb95efb2985cde422b0ba251272c01155d1354ff8f1"
+  },
+  "limited_report": {
+    "file": "INITIAL_ACCESS_LIMITED_TEST_EXECUTION_REPORT.md",
+    "lines": 225,
+    "sha256": "50be7a3499313863a0026aa9c8eb24ff10f26edca8a67e4ddd1d58916f629825"
+  },
+  "source_audit": {
+    "checks": 56,
+    "targeted_defects_detected": 46,
+    "useful_foundations_present": 10
+  },
+  "vector_pack": {
+    "manifest_files": 43,
+    "manifest_rows": 11307,
+    "verifier_exit_code": 0,
+    "failures": 0
+  },
+  "impact": {
+    "families": 60,
+    "experiments": 720,
+    "pairs": 360,
+    "acceptance_rules": 90
+  },
+  "contracts": {
+    "base_csv": 31,
+    "base_png": 20,
+    "impact_csv": 16,
+    "impact_png": 30,
+    "total_artifacts": 97
+  },
+  "current_source_archive": {
+    "required_artifacts_present": 0,
+    "required_artifacts_total": 97,
+    "existing_pngs": 40,
+    "existing_pngs_decode_nonblank": 40,
+    "existing_csvs": 225,
+    "existing_csvs_rectangular": 224
+  },
+  "verifier_self_tests": {
+    "base": {
+      "valid_failures": 0,
+      "corruption_detected": true,
+      "exit_code": 0
+    },
+    "impact": {
+      "valid_failures": 0,
+      "corruption_detected": true,
+      "exit_code": 0
+    }
+  },
+  "pack_file_validation": {
+    "csv_files_checked": 57,
+    "csv_failures": 0,
+    "json_files_checked": 3,
+    "json_failures": 0,
+    "python_compile_exit_code": 0
+  },
+  "matlab_runtime": {
+    "matlab_available": false,
+    "octave_available": false,
+    "production_execution": "BLOCKED"
+  },
+  "limited_test_counts": {
+    "PASS": 12,
+    "WARN": 1,
+    "FAIL": 2,
+    "BLOCKED": 2
+  },
+  "current_status": "PACK_VALIDATED_CURRENT_SIMULATOR_PRE_REMEDIATION_FAIL_MATLAB_BLOCKED",
+  "pack_file_count_before_inventory": 66
+}

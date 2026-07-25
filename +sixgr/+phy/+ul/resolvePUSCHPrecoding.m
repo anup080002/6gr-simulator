@@ -252,10 +252,10 @@ if nPorts < nLayers
         "PUSCH codebook requires NumAntennaPorts >= NumLayers. Got ports=%d layers=%d.", ...
         round(double(nPorts)), round(double(nLayers)));
 end
-allowedPorts = [1 2 4];
+allowedPorts = [1 2 4 8];
 if ~any(round(double(nPorts)) == allowedPorts)
     error("sixgr:phy:ul:PUSCHPrecoding:BadNumAntennaPorts", ...
-        "PUSCH codebook NumAntennaPorts must be one of [1 2 4]. Got %d.", round(double(nPorts)));
+        "PUSCH codebook NumAntennaPorts must be one of [1 2 4 8]. Got %d.", round(double(nPorts)));
 end
 end
 

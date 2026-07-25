@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "profile": "nr_rel18_pucch_uci_strict",
+  "description": "Bounded independent deterministic floor. Codex must add pure-spec/frozen vectors for all selected-profile procedures not completely represented here.",
+  "files": [
+    {
+      "path": "pucch_uci_report_test_vectors.csv",
+      "sha256": "cf01876c70b044ff6e9b8ed60df95ad9b89494bbb0502eb4e2da3f162ff60c02",
+      "rows": 128,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_uci_serialization.csv",
+      "sha256": "1c897ed6bbe741992e7d35b04269249ef35ac7fb1f0edf93a680668bc8b74ba5",
+      "rows": 128,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_uci_coding_test_vectors.csv",
+      "sha256": "d5e59038948c863a6fee78cb7da428340a1985cda7889471710d4d7c272f9b8d",
+      "rows": 140,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_uci_coding_plan.csv",
+      "sha256": "e98d5eb30dde526c25c73cda9a4f7ec30bbaead6bccd3855937c4f2db5f471fc",
+      "rows": 140,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_format_matrix_test_vectors.csv",
+      "sha256": "b460f717d02690c8885c1a1b1806c4e038c81ff5f1be225f4680fa19b4a2052e",
+      "rows": 350,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_format_validation.csv",
+      "sha256": "2b00c7744964e09e92b9f8e1846e80e8ba44a700236bc1a86ecf7a8243ba0deb",
+      "rows": 350,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_resource_set_test_vectors.csv",
+      "sha256": "da24887c7172341f30bc17fc320c9877c9a103cd4ade9fae0a256d6e59ebad92",
+      "rows": 70,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_resource_selection.csv",
+      "sha256": "8263aea0ea324360ba0ce2790feae2fb8d50d93ea03dade327956aa684bb5f66",
+      "rows": 70,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_resource_indicator_test_vectors.csv",
+      "sha256": "7ad65905e1205c893227450cc7f1e578acf97a4d5aadd898277615ac10abc34b",
+      "rows": 64,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_resource_indicator_selection.csv",
+      "sha256": "e9d1cc2ed7db97af943a228fa7db168203f2b5dc5b6125de9a7a45f5b34a8701",
+      "rows": 64,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_harq_codebook_test_vectors.csv",
+      "sha256": "924fa84b197a9c3ec0f70c45401e8b0fbb43aec0b1e66786209079d1b56cfdc3",
+      "rows": 24,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_harq_codebook.csv",
+      "sha256": "2c829149eb3ecad09816ab00f3ac506acac00854056d8f6a1418fd09faddfbb6",
+      "rows": 24,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_sr_test_vectors.csv",
+      "sha256": "478601ae0b85d35539b8021814296f6419a054bff869596732789a1e4fb00b3d",
+      "rows": 414,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_sr_occasion.csv",
+      "sha256": "3af81a569771573eb85914dba629da37130d129201f4d22911a88cacf8e5deae",
+      "rows": 414,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_csi_report_test_vectors.csv",
+      "sha256": "5de779e552372e89e93af0bfd18a6289d5d19a77f609e35414965d1f9797fee1",
+      "rows": 48,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_csi_serialization.csv",
+      "sha256": "bafa88d0dc2f9bc0617c4f91129493ac6cc34a3e2dac46d8de39364df71c2d34",
+      "rows": 48,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_k1_tdd_test_vectors.csv",
+      "sha256": "0df52182facc57d2bb8cd6111bd7177e238e0a2c2d4631c6e3b8093112fcbe16",
+      "rows": 192,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_timing_resolution.csv",
+      "sha256": "298dc39bf3d4e2274335e228a699e5dac9b78c9b5f16fccd3b75ed04a3f86259",
+      "rows": 192,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_collision_test_vectors.csv",
+      "sha256": "1e51f38837e3290b54107c0c993630ac033c2a2e446dc39145124ad10d26333e",
+      "rows": 80,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_collision_resolution.csv",
+      "sha256": "9614de79364ea205681e6e86939b142f68f4e9b4840af60e61f90f536677da97",
+      "rows": 80,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_power_control_test_vectors.csv",
+      "sha256": "8f353363c963be74f5e000455e042322102e652b29ebbeb481f3fd1c7128dbbb",
+      "rows": 48,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_power_control.csv",
+      "sha256": "6b0800a3d5300284b5734b920156778e3afab677729233f516594e6b1a62f854",
+      "rows": 48,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_spatial_relation_test_vectors.csv",
+      "sha256": "38eda838783984da0b7a19accf180f8e0635397ef8feca84f411714e64f869c1",
+      "rows": 72,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_spatial_relation.csv",
+      "sha256": "3e7f48e04c7d263d2da88f4f6a65aab36f32f607ec69d98b20899696d463c79a",
+      "rows": 72,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_negative_test_vectors.csv",
+      "sha256": "f21a50f48fb8a553ee00aa1e23202d2316cfe70aea0c1bb437babf555383ddf9",
+      "rows": 92,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_declared_coverage_matrix.csv",
+      "sha256": "e0aa1f1d3e35c18a3a56b0abf76339f5ff2ea999f97fd196c225156614cd072f",
+      "rows": 84,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_impact_analysis_families.csv",
+      "sha256": "8bda2360207c99df0d59c78ee4dd27eb0f4a037efb8272a33792f1ea8e4b74e3",
+      "rows": 50,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_impact_experiment_matrix.csv",
+      "sha256": "2f849fd58788d9b8488a2c9d0fbdbb35ff68a36b5604da2f75d7a67e3bfaabe7",
+      "rows": 600,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_impact_pairing_contract.csv",
+      "sha256": "c93329070fc9c2f0db2f9c296ed6251206f94f33f7a5b8520d403a751707c27a",
+      "rows": 50,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "pucch_impact_acceptance_rules.csv",
+      "sha256": "395f1b4d23dd5759da2daaf78e7c8b7484d9bfe19b1e628636f4af2bf1cc7874",
+      "rows": 75,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    },
+    {
+      "path": "expected_pucch_impact_analytical_floor.csv",
+      "sha256": "504d414d585b71b4fe92096e5b91aab8f8a5bd0dbb9c43ed41bb73f9d51acd97",
+      "rows": 60,
+      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "generated_without_matlab": true
+    }
+  ]
+}

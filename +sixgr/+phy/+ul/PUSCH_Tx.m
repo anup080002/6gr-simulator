@@ -45,13 +45,18 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PUSCH', [], @(x) isempty(x) || isobject(x));
-ip.addParameter('TransportBlockBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
-ip.addParameter('TransportBlockSizeOverride', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
-ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
-ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
+ip.addParameter('TransportBlockBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || iscell(x));
+ip.addParameter('TransportBlockSizeOverride', [], @(x) isempty(x) || ...
+    (isnumeric(x) && isvector(x) && all(x>0)));
+ip.addParameter('RV', [], @(x) isempty(x) || ...
+    (isnumeric(x) && isvector(x) && all(x>=0 & x<=3)));
+ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || ...
+    (isnumeric(x) && isvector(x) && all(x>0 & x<1)));
 ip.addParameter('XOverhead', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0));
 ip.addParameter('NumTxAnt', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
-ip.addParameter('HARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+ip.addParameter('UCIPayload', [], @(x) isempty(x) || ...
+    isa(x, "sixgr.phy.ul.pusch.PUSCHUCIPayload"));
+ip.addParameter('InitialIMCSPerCodeword', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
@@ -93,8 +98,10 @@ else
 end
 
 % PUSCH parameters
-rv = localResolvePUSCHRV(cfg, opt.RV, phyGrant, hasPHYGrant);
-targetCodeRate = localResolvePUSCHTargetCodeRate(cfg, opt.TargetCodeRate, phyGrant, hasPHYGrant);
+nCodewords = double(pusch.NumCodewords);
+rv = localResolvePUSCHRV(cfg, opt.RV, phyGrant, hasPHYGrant, nCodewords);
+targetCodeRate = localResolvePUSCHTargetCodeRate( ...
+    cfg, opt.TargetCodeRate, phyGrant, hasPHYGrant, nCodewords);
 xOverhead = localResolvePUSCHXOverhead(cfg, opt.XOverhead, phyGrant, hasPHYGrant);
 
 prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg, "FixedReferenceMode", hasPHYGrant);
@@ -124,15 +131,17 @@ resourceAccounting = sixgr.phy.resource.computeResourceAccounting("PUSCH", carri
     "ChannelIndices", puschInd, ...
     "AllocationInfo", puschInfo, ...
     "IndexBase", "1based", ...
-    "TargetCodeRate", targetCodeRate, ...
+    "TargetCodeRate", targetCodeRate(1), ...
     "XOverhead", xOverhead);
 localAssertPUSCHResourceAccounting(resourceAccounting, pusch, hasPHYGrant);
 puschInfo.ResourceAccounting = resourceAccounting;
 puschInfo.LayerDataRE = resourceAccounting.LayerDataRE;
 puschInfo.PortMappedRE = resourceAccounting.PortMappedRE;
 puschInfo.ModulationSymbolCount = resourceAccounting.ModulationSymbolCount;
-puschInfo.CodedBitCountG = resourceAccounting.CodedBitCountG;
-puschInfo.G = resourceAccounting.CodedBitCountG;
+allocationG = double(sixgr.util.structGet(puschInfo, "G", resourceAccounting.CodedBitCountG));
+allocationG = allocationG(:).';
+puschInfo.CodedBitCountG = allocationG;
+puschInfo.G = allocationG;
 puschInfo.NREPerPRB = resourceAccounting.NREPerPRBForTBS;
 nrePerPRB = resourceAccounting.NREPerPRBForTBS;
 if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
@@ -144,65 +153,100 @@ end
     opt.TransportBlockSizeOverride, phyGrant, hasPHYGrant, pusch, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 
 % Transport block bits
-if isempty(opt.TransportBlockBits)
-    trBlk = int8(randi([0 1], trBlkSize, 1));
+trBlkCells = localResolveTransportBlockCells(opt.TransportBlockBits, trBlkSize);
+trBlk = localUnwrapSingleCell(trBlkCells);
+
+G = allocationG;
+if numel(G) ~= nCodewords || any(~isfinite(G) | G <= 0 | G ~= fix(G))
+    error('sixgr:phy:ul:PUSCHNoDataRE', ...
+        'PUSCH requires one positive integer coded-bit budget per codeword: G=%s.', mat2str(G));
+end
+uciPayload = opt.UCIPayload;
+if isempty(uciPayload)
+    uciPayload = sixgr.phy.ul.pusch.PUSCHUCIPayload();
+end
+initialIMCS = opt.InitialIMCSPerCodeword;
+if isempty(initialIMCS)
+    initialIMCS = double(sixgr.util.structGet(phyGrant, ...
+        "CodingLayout.InitialMCSIndex", ...
+        sixgr.util.structGet(phyGrant, "CodingLayout.MCSIndex", 0)));
+end
+[dataBitBudgetG, uciInfo] = localResolvePUSCHUCIBitBudget( ...
+    pusch, targetCodeRate, trBlkSize, G, uciPayload, initialIMCS);
+codingLayouts = localResolveTxCodingLayouts( ...
+    phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, pusch, dataBitBudgetG);
+codingLayout = codingLayouts{1};
+tbCRCType = string(cellfun(@(x) string(x.TBCRCType), codingLayouts));
+tbCRCLen = double(cellfun(@(x) x.TBCRCLength, codingLayouts));
+bgn = double(cellfun(@(x) x.BaseGraph, codingLayouts));
+
+% ---------------------- UL-SCH encoding ----------------------
+tbCrcCells = cell(1, nCodewords);
+segInfoCells = cell(1, nCodewords);
+rateMatchInfoCells = cell(1, nCodewords);
+if nCodewords == 1
+    tbCrcCells{1} = sixgr.phy.tb.attachCRC(trBlkCells{1}, char(tbCRCType(1)));
+    [cbs, segInfoCells{1}] = sixgr.phy.tb.segmentLDPC(tbCrcCells{1}, bgn(1));
+    ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn(1)));
+    [ulSchCodeword, rateMatchInfoCells{1}] = sixgr.phy.phycode.rateMatchLDPC( ...
+        ldpcEnc, dataBitBudgetG(1), rv(1), localModulationAt(pusch.Modulation, 1), pusch.NumLayers);
+    codewords = {int8(ulSchCodeword(:))};
 else
-    trBlk = opt.TransportBlockBits;
-    trBlk = int8(trBlk(:));
-    if numel(trBlk) ~= trBlkSize
-        error('PUSCH_Tx:BadTBSize', 'TransportBlockBits length %d does not match expected TBS %d.', numel(trBlk), trBlkSize);
+    % The release-valid rank-5-to-8 path uses the 5G Toolbox UL-SCH
+    % coder with one transport block and rate-matching budget per codeword.
+    ulschEncoder = nrULSCH("MultipleHARQProcesses", false, ...
+        "TargetCodeRate", targetCodeRate);
+    setTransportBlock(ulschEncoder, trBlkCells);
+    codewords = ulschEncoder(pusch.Modulation, pusch.NumLayers, dataBitBudgetG, rv);
+    codewords = reshape(codewords, 1, []);
+    for cw = 1:nCodewords
+        codewords{cw} = int8(codewords{cw}(:));
+        tbCrcCells{cw} = sixgr.phy.tb.attachCRC(trBlkCells{cw}, char(tbCRCType(cw)));
+        segInfoCells{cw} = sixgr.util.structGet(codingLayouts{cw}, "Segmentation", struct());
+        rateMatchInfoCells{cw} = struct( ...
+            "E", double(numel(codewords{cw})), ...
+            "Source", "nrULSCH_two_codeword_release_valid_path");
     end
 end
-
-G = double(resourceAccounting.CodedBitCountG);
-if ~(isfinite(G) && G > 0)
-    error('sixgr:phy:ul:PUSCHNoDataRE', ...
-        'PUSCH rate matching has no positive data-bit budget: PRBs=%d SymbolAllocation=%s Modulation=%s Layers=%d.', ...
-        round(double(nPRB)), mat2str(localResolveSymbolAllocation(pusch)), char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
+if uciPayload.hasPayload()
+    mux = sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...
+        pusch, targetCodeRate, trBlkSize, codewords, ...
+        uciPayload, initialIMCS);
+    codewords = mux.Codewords;
+    uciInfo = localMergeUCIInfo(uciInfo, mux);
 end
-harqAckBits = localNormalizeHARQACKBits(opt.HARQACKBits);
-oack = numel(harqAckBits);
-[dataBitBudgetG, uciInfo] = localResolvePUSCHUCIBitBudget(pusch, targetCodeRate, trBlkSize, G, harqAckBits);
-codingLayout = localResolveTxCodingLayout(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, pusch, dataBitBudgetG);
-tbCRCType = char(codingLayout.TBCRCType);
-tbCRCLen = double(codingLayout.TBCRCLength);
-bgn = double(codingLayout.BaseGraph);
-
-% ---------------------- UL-SCH encoding (modular blocks) ----------------------
-% Match the TB CRC selected by nrULSCHInfo for this transport block size.
-tbCrc = sixgr.phy.tb.attachCRC(trBlk, tbCRCType);
-crcInfo = struct("Type", string(tbCRCType), "Length", double(tbCRCLen));
-B = numel(tbCrc);
-
-% Code block segmentation
-[cbs, segInfo] = sixgr.phy.tb.segmentLDPC(tbCrc, bgn);
-
-% LDPC encode all code blocks in one toolbox call to avoid repeated
-% per-code-block MATLAB loop overhead.
-ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn));
-
-% Rate match to G bits
-if oack > 0
-    [ulSchCodeword, rateMatchInfo] = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, dataBitBudgetG, rv, pusch.Modulation, pusch.NumLayers);
-    codedAck = nrUCIEncode(harqAckBits, double(uciInfo.GACK), pusch.Modulation);
-    [codeword, muxInfo] = nrULSCHMultiplex(pusch, targetCodeRate, trBlkSize, ulSchCodeword(:), codedAck(:), [], []);
-    codeword = int8(codeword(:));
-    uciInfo.UCIOnPUSCHApplied = true;
-    uciInfo.MultiplexInfo = muxInfo;
-    uciInfo.Source = "nrULSCHMultiplex_ts38212_6_2_7_harq_ack_on_pusch";
-else
-    [codeword, rateMatchInfo] = sixgr.phy.phycode.rateMatchLDPC(ldpcEnc, G, rv, pusch.Modulation, pusch.NumLayers);
+codeword = codewords{1};
+dataRateMatchedBits = double(cellfun(@numel, codewords));
+if uciPayload.hasPayload()
+    dataRateMatchedBits = double(dataBitBudgetG);
 end
-codeword = int8(codeword(:));
-dataRateMatchedBits = double(sixgr.util.structGet(rateMatchInfo, "E", numel(codeword)));
-codewords = {codeword};
-codewordLayerMapping = localBuildPUSCHCodewordLayerContract(pusch, codewords, {codingLayout}, resourceAccounting, dataRateMatchedBits, uciInfo);
-localAssertRateMatchMapAgreement(rateMatchInfo, codingLayout);
+tbCrc = localUnwrapSingleCell(tbCrcCells);
+segInfo = localUnwrapSingleCell(segInfoCells);
+rateMatchInfo = localUnwrapSingleCell(rateMatchInfoCells);
+B = double(cellfun(@numel, tbCrcCells));
+crcInfo = repmat(struct("Type", "", "Length", 0), 1, nCodewords);
+for cw = 1:nCodewords
+    crcInfo(cw).Type = tbCRCType(cw);
+    crcInfo(cw).Length = tbCRCLen(cw);
+end
+codewordLayerMapping = localBuildPUSCHCodewordLayerContract( ...
+    pusch, codewords, codingLayouts, resourceAccounting, dataRateMatchedBits, uciInfo);
+if nCodewords == 1
+    localAssertRateMatchMapAgreement(rateMatchInfoCells{1}, codingLayouts{1});
+end
 
 % ---------------------- PUSCH modulation & mapping ----------------------
-[puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword);
-[puschLayerSym, dftInputSym, puschDomainInfo] = localResolvePUSCHSymbolDomains(carrier, pusch, codeword, puschSym, prec);
-localAssertPUSCHSymbolContract(codeword, dftInputSym, puschLayerSym, puschSym, puschInd, resourceAccounting, pusch, codingLayout, uciInfo);
+[puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH( ...
+    carrier, pusch, localUnwrapSingleCell(codewords));
+[puschLayerSym, dftInputSym, puschDomainInfo] = localResolvePUSCHSymbolDomains( ...
+    carrier, pusch, localUnwrapSingleCell(codewords), puschSym, prec);
+if nCodewords == 1
+    localAssertPUSCHSymbolContract(codeword, dftInputSym, puschLayerSym, ...
+        puschSym, puschInd, resourceAccounting, pusch, codingLayout, uciInfo);
+else
+    localAssertPUSCHMultiCodewordSymbolContract( ...
+        codewords, dftInputSym, puschLayerSym, puschSym, puschInd, pusch);
+end
 puschLayerInd = localLayerIndicesFromPortIndices(puschInd, puschLayerSym);
 puschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschLayerInd, "layer");
 puschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschInd, "port");
@@ -290,12 +334,15 @@ tx.TransportBlockSize = trBlkSize;
 tx.ScheduledTransportBlockSize = scheduledTrBlkSize;
 tx.TransportBlockSizeSource = transportBlockSizeSource;
 tx.TransportBlock = trBlk;
-tx.TransportBlockCRCType = char(tbCRCType);
+tx.TransportBlocks = trBlkCells;
+tx.TransportBlockCRCType = char(tbCRCType(1));
+tx.TransportBlockCRCTypes = cellstr(tbCRCType);
 tx.TransportBlockCRCLength = double(tbCRCLen);
 tx.TransportBlockLenWithCRC = B;
 tx.RV = rv;
 tx.TargetCodeRate = targetCodeRate;
 tx.CodingLayout = codingLayout;
+tx.CodingLayouts = codingLayouts;
 tx.Carrier = carrier;
 tx.PUSCH = pusch;
 tx.PUSCHIndices = puschInd;
@@ -344,7 +391,11 @@ tx.UEPhysicalTxAntennas = double(uePhysicalTxAnt);
 tx.SymbolDomainInfo = puschDomainInfo;
 tx.UCIOnPUSCHApplied = logical(uciInfo.UCIOnPUSCHApplied);
 tx.HARQACKBitCount = double(uciInfo.HARQACKBitCount);
-tx.HARQACKBits = harqAckBits;
+tx.HARQACKBits = int8(uciPayload.HARQACK(:));
+tx.CSIPart1Bits = int8(uciPayload.CSIPart1(:));
+tx.CSIPart2Bits = int8(uciPayload.CSIPart2(:));
+tx.ConfiguredGrantUCIBits = int8(uciPayload.ConfiguredGrantUCI(:));
+tx.UCIPayload = uciPayload.toStruct();
 tx.UCIOnPUSCHSource = char(string(uciInfo.Source));
 tx.OFDMWindowingSamples = double(windowingSamples);
 tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
@@ -352,6 +403,7 @@ tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlockCRC = tbCrc;
+    tx.TransportBlockCRCs = tbCrcCells;
     tx.BaseGraph = bgn;
     tx.Codeword = codeword;
     tx.Codewords = codewords;
@@ -381,6 +433,7 @@ info.CRC = crcInfo;
 info.Segmentation = segInfo;
 info.RateMatch = rateMatchInfo;
 info.CodingLayout = codingLayout;
+info.CodingLayouts = codingLayouts;
 info.CodewordLayerMapping = codewordLayerMapping;
 info.PUSCHSymbols = puschSymInfo;
 info.SymbolDomain = puschDomainInfo;
@@ -398,7 +451,7 @@ info.XOverhead = double(xOverhead);
 info.ResourceAccounting = resourceAccounting;
 info.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, ...
     puschLayerInd, puschLayerSym, puschInd, puschSym, dftInputSym, ...
-    dmrsInd, dmrsSym, ptrsInd, ptrsSym, carrier, pusch, {codingLayout}, ...
+    dmrsInd, dmrsSym, ptrsInd, ptrsSym, carrier, pusch, codingLayouts, ...
     resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
 tx.TxContext = info.TxContext;
 if hasPHYGrant
@@ -483,9 +536,7 @@ tpmi = localFirstFiniteScalarValue( ...
     sixgr.util.structGet(phyGrant, "PrecodingState.TPMI", []), ...
     sixgr.util.structGet(phyGrant, "PrecodingState.PMI", []), ...
     sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot.TPMI", []), ...
-    sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot.PMI", []), ...
-    sixgr.util.structGet(cfg, "phy.pusch.TPMI", []), ...
-    sixgr.util.structGet(cfg, "phy.pusch.PMI", []), NaN);
+    sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot.PMI", []), NaN);
 end
 
 function mappingType = localResolveGrantMappingType(cfg, phyGrant)
@@ -525,40 +576,48 @@ if isfinite(grantPorts) && isprop(pusch, "NumAntennaPorts")
 end
 end
 
-function rv = localResolvePUSCHRV(cfg, optRV, phyGrant, hasPHYGrant)
+function rv = localResolvePUSCHRV(cfg, optRV, phyGrant, hasPHYGrant, nCodewords)
 if ~isempty(optRV)
-    rv = optRV;
+    rv = double(optRV(:).');
 elseif hasPHYGrant
     rv = localFirstFiniteScalarValue(sixgr.util.structGet(phyGrant, "HARQProcessKey.RV", []), ...
         sixgr.util.structGet(phyGrant, "CodingLayout.RV", []), ...
         sixgr.util.structGet(cfg, "phy.pusch.rv", []), 0);
 else
     rv = double(sixgr.util.structGet(cfg, 'phy.pusch.rv', 0));
+    rv = rv(:).';
 end
-rv = localNonnegativeIntegerValue(rv, "PUSCH RV");
-if rv > 3
-    error("sixgr:phy:ul:PUSCHBadRV", "PUSCH RV must be in [0,3].");
+if numel(rv) ~= nCodewords || any(~isfinite(rv) | rv ~= fix(rv) | rv < 0 | rv > 3)
+    error("sixgr:phy:ul:PUSCHBadRV", ...
+        "PUSCH RV must provide one integer in [0,3] per codeword (expected %d).", nCodewords);
 end
 end
 
-function targetCodeRate = localResolvePUSCHTargetCodeRate(cfg, optRate, phyGrant, hasPHYGrant)
+function targetCodeRate = localResolvePUSCHTargetCodeRate(cfg, optRate, phyGrant, hasPHYGrant, nCodewords)
 grantRate = NaN;
 if hasPHYGrant
     grantRate = double(sixgr.util.structGet(phyGrant, "CodingLayout.TargetCodeRate", NaN));
 end
 if isfinite(grantRate) && grantRate > 0
-    if ~isempty(optRate) && abs(double(optRate) - grantRate) > 1e-12
+    if nCodewords ~= 1
+        error("sixgr:phy:ul:PUSCHFrozenGrantCodewordMismatch", ...
+            "The current frozen PHYGrant contract contains one UL-SCH coding layout and cannot own a two-codeword PUSCH.");
+    end
+    if ~isempty(optRate) && any(abs(double(optRate) - grantRate) > 1e-12)
         error("sixgr:phy:ul:PUSCHGrantCodeRateMismatch", ...
-            "TargetCodeRate %.15g does not match frozen PHYGrant %.15g.", double(optRate), grantRate);
+            "TargetCodeRate does not match frozen PHYGrant %.15g.", grantRate);
     end
     targetCodeRate = grantRate;
 elseif ~isempty(optRate)
-    targetCodeRate = double(optRate);
+    targetCodeRate = double(optRate(:).');
 else
-    targetCodeRate = double(sixgr.util.structGet(cfg, 'phy.pusch.codeRate', 0.4785));
+    targetCodeRate = double(sixgr.util.structGet(cfg, 'phy.pusch.codeRate', []));
+    targetCodeRate = targetCodeRate(:).';
 end
-if ~(isscalar(targetCodeRate) && isfinite(targetCodeRate) && targetCodeRate > 0 && targetCodeRate < 1)
-    error("sixgr:phy:ul:PUSCHBadCodeRate", "PUSCH TargetCodeRate must be finite in (0,1).");
+if numel(targetCodeRate) ~= nCodewords || ...
+        any(~isfinite(targetCodeRate) | targetCodeRate <= 0 | targetCodeRate >= 1)
+    error("sixgr:phy:ul:PUSCHBadCodeRate", ...
+        "PUSCH TargetCodeRate must provide one finite value in (0,1) per codeword (expected %d).", nCodewords);
 end
 end
 
@@ -586,6 +645,12 @@ end
 function [trBlkSize, scheduledTrBlkSize, source] = localResolvePUSCHTransportBlockSize( ...
     overrideTBS, phyGrant, hasPHYGrant, pusch, nPRB, nrePerPRB, targetCodeRate, xOverhead)
 scheduledTrBlkSize = double(nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead));
+scheduledTrBlkSize = scheduledTrBlkSize(:).';
+nCodewords = double(pusch.NumCodewords);
+if numel(scheduledTrBlkSize) ~= nCodewords
+    error("sixgr:phy:ul:PUSCHTBSCodewordCountMismatch", ...
+        "nrTBS returned %d value(s) for NumCodewords=%d.", numel(scheduledTrBlkSize), nCodewords);
+end
 grantTBS = NaN;
 if hasPHYGrant
     grantTBS = double(sixgr.util.structGet(phyGrant, "CodingLayout.TBSBits", NaN));
@@ -611,7 +676,11 @@ if isfinite(grantTBS) && grantTBS > 0
         source = 'frozen_phygrant_transport_block_size';
     end
 elseif ~isempty(overrideTBS)
-    trBlkSize = round(double(overrideTBS));
+    trBlkSize = round(double(overrideTBS(:).'));
+    if numel(trBlkSize) ~= nCodewords
+        error("sixgr:phy:ul:PUSCHReplayTBSMismatch", ...
+            "TransportBlockSizeOverride must provide one value per codeword.");
+    end
     source = 'harq_replay_stored_transport_block';
 elseif hasPHYGrant
     trBlkSize = round(double(scheduledTrBlkSize));
@@ -620,55 +689,95 @@ else
     trBlkSize = round(double(scheduledTrBlkSize));
     source = 'nrTBS_from_current_allocation';
 end
-if ~(isfinite(trBlkSize) && trBlkSize > 0 && abs(trBlkSize - round(trBlkSize)) < 1e-9)
-    error('PUSCH_Tx:BadReplayTBSize', 'PUSCH transport block size must be a positive finite integer.');
+trBlkSize = double(trBlkSize(:).');
+if numel(trBlkSize) ~= nCodewords || ...
+        any(~isfinite(trBlkSize) | trBlkSize <= 0 | trBlkSize ~= fix(trBlkSize))
+    error('PUSCH_Tx:BadReplayTBSize', ...
+        'PUSCH must provide one positive finite integer transport block size per codeword.');
 end
 end
 
-function [dataG, uciInfo] = localResolvePUSCHUCIBitBudget(pusch, targetCodeRate, trBlkSize, G, harqAckBits)
-oack = numel(harqAckBits);
+function [dataG, uciInfo] = localResolvePUSCHUCIBitBudget( ...
+        pusch, targetCodeRate, trBlkSize, G, payload, initialIMCS)
+p = payload.toStruct();
+combinedCSI2 = p.OCSI2 + p.OCGUCI;
 uciInfo = struct( ...
     "UCIOnPUSCHApplied", false, ...
-    "HARQACKBitCount", double(oack), ...
-    "HARQACKBits", harqAckBits, ...
+    "HARQACKBitCount", double(p.OACK), ...
+    "CSI1BitCount", double(p.OCSI1), ...
+    "CSI2BitCount", double(p.OCSI2), ...
+    "ConfiguredGrantUCIBitCount", double(p.OCGUCI), ...
+    "Payload", p, ...
+    "InitialIMCSPerCodeword", double(initialIMCS(:).'), ...
     "GULSCH", double(G), ...
     "GACK", NaN, ...
+    "GCSI1", NaN, ...
+    "GCSI2Combined", NaN, ...
     "GACKReserved", NaN, ...
     "Source", "no_uci_payload_requested");
 dataG = double(G);
-if oack == 0
+if ~payload.hasPayload()
     return;
 end
 if exist("nrULSCHMultiplex", "file") ~= 2
-    error('sixgr:phy:ul:PUSCHUCIUnavailable', ...
-        'HARQ-ACK on PUSCH requires nrULSCHMultiplex from 5G Toolbox.');
+    error('sixgr:pusch:UCIProcessingUnavailable', ...
+        'Typed UCI on PUSCH requires nrULSCHMultiplex from 5G Toolbox.');
 end
-rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, oack, 0, 0);
+rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, ...
+    p.OACK, p.OCSI1, combinedCSI2);
 gULSCH = double(rmInfo.GULSCH);
 gACK = double(rmInfo.GACK);
-if ~(isfinite(gULSCH) && gULSCH > 0 && isfinite(gACK) && gACK > 0)
+gCSI1 = double(rmInfo.GCSI1);
+gCSI2 = double(rmInfo.GCSI2);
+if numel(gULSCH) ~= double(pusch.NumCodewords) || ...
+        any(~isfinite(gULSCH) | gULSCH <= 0 | gULSCH ~= fix(gULSCH))
     error('sixgr:phy:ul:PUSCHUCIInvalidAllocation', ...
-        'PUSCH UCI multiplexing has invalid bit allocation: GULSCH=%g GACK=%g OACK=%d.', ...
-        gULSCH, gACK, oack);
+        'PUSCH UCI multiplexing requires one positive integer GULSCH per codeword: %s.', ...
+        mat2str(gULSCH));
 end
-dataG = gULSCH;
+dataG = gULSCH(:).';
 uciInfo.GULSCH = gULSCH;
 uciInfo.GACK = gACK;
+uciInfo.GCSI1 = gCSI1;
+uciInfo.GCSI2Combined = gCSI2;
 uciInfo.GACKReserved = double(sixgr.util.structGet(rmInfo, "GACKRvd", NaN));
-uciInfo.Source = "nrULSCHInfo_ts38212_6_2_7_harq_ack_on_pusch";
+uciInfo.Source = "nrULSCHInfo_ts38212_6_2_7_typed_uci_on_pusch";
 end
 
-function codingLayout = localResolveTxCodingLayout(phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, pusch, G)
-codingLayout = sixgr.phy.phycode.resolveCodingLayout( ...
-    "Direction", "UL", ...
-    "TransportBlockSize", trBlkSize, ...
-    "TargetCodeRate", targetCodeRate, ...
-    "RV", rv, ...
-    "Modulation", pusch.Modulation, ...
-    "NumLayers", pusch.NumLayers, ...
-    "RateMatchedBitCount", G);
+function info = localMergeUCIInfo(info, mux)
+info.UCIOnPUSCHApplied = true;
+info.MultiplexInfo = mux.MuxInfo;
+info.OwnerCodeword = double(mux.OwnerCodeword);
+info.GULSCH = double(mux.GULSCHPerCodeword);
+info.GACK = double(mux.GACK);
+info.GCSI1 = double(mux.GCSI1);
+info.GCSI2Combined = double(mux.GCSI2Combined);
+info.PlaceholderXCount = double(mux.PlaceholderXCount);
+info.PlaceholderYCount = double(mux.PlaceholderYCount);
+info.Source = char(string(mux.Source));
+end
+
+function layouts = localResolveTxCodingLayouts(phyGrant, hasPHYGrant, ...
+        trBlkSize, targetCodeRate, rv, pusch, G)
+nCodewords = double(pusch.NumCodewords);
+[layerCounts, ~] = sixgr.phy.ul.pusch.PUSCHLayerMapper.layerCounts(pusch.NumLayers);
+layouts = cell(1, nCodewords);
+for cw = 1:nCodewords
+    layouts{cw} = sixgr.phy.phycode.resolveCodingLayout( ...
+        "Direction", "UL", ...
+        "TransportBlockSize", trBlkSize(cw), ...
+        "TargetCodeRate", targetCodeRate(cw), ...
+        "RV", rv(cw), ...
+        "Modulation", localModulationAt(pusch.Modulation, cw), ...
+        "NumLayers", layerCounts(cw), ...
+        "RateMatchedBitCount", G(cw));
+end
 if hasPHYGrant
-    localAssertCodingLayoutMatchesGrant(codingLayout, phyGrant);
+    if nCodewords ~= 1
+        error("sixgr:phy:ul:PUSCHFrozenGrantCodewordMismatch", ...
+            "Frozen PHYGrant validation currently requires one explicit CodingLayout per UL-SCH codeword.");
+    end
+    localAssertCodingLayoutMatchesGrant(layouts{1}, phyGrant);
 end
 end
 
@@ -747,35 +856,35 @@ if ~(isscalar(nCodewords) && isfinite(nCodewords) && nCodewords >= 1 && abs(nCod
     error("sixgr:phy:ul:PUSCHBadCodewordCount", "PUSCH NumCodewords must be a positive integer scalar.");
 end
 nCodewords = round(nCodewords);
-if nCodewords ~= 1
-    error("sixgr:phy:ul:PUSCHMultiCodewordUnsupported", ...
-        "PUSCH truth TX supports one UL-SCH codeword only. Requested NumCodewords=%d.", nCodewords);
-end
 if ~iscell(codewords)
     codewords = {codewords};
 end
 if ~iscell(codingLayouts)
     codingLayouts = {codingLayouts};
 end
-if numel(codewords) ~= 1 || numel(codingLayouts) ~= 1
+if numel(codewords) ~= nCodewords || numel(codingLayouts) ~= nCodewords
     error("sixgr:phy:ul:PUSCHCodewordContainerMismatch", ...
-        "PUSCH codeword/coding-layout containers must each contain exactly one stream.");
+        "PUSCH codeword/coding-layout containers must match NumCodewords=%d.", ...
+        nCodewords);
 end
+[layerCounts, ~] = sixgr.phy.ul.pusch.PUSCHLayerMapper.layerCounts(nLayers);
 mapping = struct();
 mapping.ContractVersion = "PUSCHCodewordLayer/v1";
 mapping.Direction = "UL";
-mapping.MappingStandard = "3GPP_TS_38_211_single_ULSCH_codeword_to_layer_mapping";
+mapping.MappingStandard = "3GPP_TS_38_211_ULSCH_codeword_to_layer_mapping";
 mapping.MappingEngine = "nrPUSCH_internal_nrLayerMap";
 mapping.InverseEngine = "nrPUSCHDecode_internal_nrLayerDemap";
-mapping.SupportedScope = "single_ulsch_codeword_ranks_1_to_4";
-mapping.NumCodewords = 1;
+mapping.SupportedScope = "release_valid_one_or_two_ulsch_codeword_tuples";
+mapping.NumCodewords = nCodewords;
 mapping.NumLayers = double(nLayers);
-mapping.CodewordIndexByLayer = ones(1, nLayers);
-mapping.LayerIndexWithinCodeword = double(1:nLayers);
-mapping.LayerCountPerCodeword = double(nLayers);
-mapping.RateMatchedBitCountPerCodeword = double(numel(codewords{1}));
+mapping.CodewordIndexByLayer = repelem(0:nCodewords-1, layerCounts);
+mapping.LayerIndexWithinCodeword = cell2mat(arrayfun( ...
+    @(n) 0:n-1, layerCounts, "UniformOutput", false));
+mapping.LayerCountPerCodeword = double(layerCounts);
+mapping.RateMatchedBitCountPerCodeword = double(cellfun(@numel, codewords));
 mapping.DataRateMatchedBitCountPerCodeword = double(dataRateMatchedBits);
-mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(codingLayouts{1}.RateMatchedBitCount);
+mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(cellfun( ...
+    @(x) x.RateMatchedBitCount, codingLayouts));
 mapping.ResourceAccountingG = double(resourceAccounting.CodedBitCountG);
 mapping.UCIOnPUSCHApplied = logical(sixgr.util.structGet(uciInfo, "UCIOnPUSCHApplied", false));
 mapping.HARQACKBitCount = double(sixgr.util.structGet(uciInfo, "HARQACKBitCount", 0));
@@ -854,10 +963,6 @@ elementInd = portInd;
 if isempty(portSym) || isempty(portInd)
     return;
 end
-if exist("nrPDSCHPrecode", "file") ~= 2
-    error("sixgr:phy:ul:PUSCHHybridPrecode:Missing5G", ...
-        "nrPDSCHPrecode is required to expand %s logical ports onto hybrid RF element waveform columns.", char(string(label)));
-end
 portSym = localEnsure2D(portSym);
 H = double(sixgr.util.structGet(prec, "HybridElementToPortMatrix", []));
 if isempty(H) || ~ismatrix(H)
@@ -869,8 +974,26 @@ if size(H, 2) ~= size(portSym, 2)
         "%s has %d logical port column(s), but the hybrid element matrix is %dx%d.", ...
         char(string(label)), size(portSym, 2), size(H, 1), size(H, 2));
 end
-Wnr = reshape(H.', [size(H, 2), size(H, 1), 1]);
-[elementSym, elementInd] = nrPDSCHPrecode(carrier, portSym, portInd, Wnr);
+elementSym = portSym * H.';
+
+% Expand the logical-port RE locations into the physical antenna planes.
+% The RE coordinates are identical for each precoded antenna; only the
+% symbol values differ. Keeping this UL operation explicit avoids routing
+% PUSCH evidence through a PDSCH-specific helper.
+probeGrid = nrResourceGrid(carrier, size(H, 1));
+planeSize = size(probeGrid, 1) * size(probeGrid, 2);
+portInd = double(portInd);
+if isvector(portInd)
+    baseInd = mod(portInd(:) - 1, planeSize) + 1;
+else
+    baseInd = mod(portInd(:, 1) - 1, planeSize) + 1;
+end
+if size(elementSym, 1) ~= numel(baseInd)
+    error("sixgr:phy:ul:PUSCHHybridPrecode:IndexCountMismatch", ...
+        "%s produced %d symbol rows for %d allocated RE locations.", ...
+        char(string(label)), size(elementSym, 1), numel(baseInd));
+end
+elementInd = baseInd + (0:size(H, 1)-1) * planeSize;
 end
 
 function dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword)
@@ -883,9 +1006,19 @@ if isempty(nid)
 end
 nid = double(nid);
 rnti = double(localObjectValue(pusch, "RNTI", 1));
-scrambled = nrPUSCHScramble(codeword(:), nid, rnti);
-modulated = nrSymbolModulate(scrambled(:), char(string(pusch.Modulation)));
-dftInputSym = nrLayerMap(modulated, double(pusch.NumLayers));
+scrambled = nrPUSCHScramble(codeword, nid, rnti);
+if iscell(scrambled)
+    modulated = cell(size(scrambled));
+    for cw = 1:numel(scrambled)
+        modulated{cw} = nrSymbolModulate(scrambled{cw}(:), ...
+            localModulationAt(pusch.Modulation, cw));
+    end
+    dftInputSym = sixgr.phy.ul.pusch.PUSCHLayerMapper.map( ...
+        modulated, double(pusch.NumLayers));
+else
+    modulated = nrSymbolModulate(scrambled(:), char(string(pusch.Modulation)));
+    dftInputSym = nrLayerMap(modulated, double(pusch.NumLayers));
+end
 end
 
 function layerSym = localPostTransformLayerSymbols(carrier, pusch, codeword, nLayers)
@@ -905,6 +1038,7 @@ if numel(codeword) ~= double(resourceAccounting.CodedBitCountG)
         "PUSCH codeword length %d does not match resource-accounting G=%d.", ...
         numel(codeword), round(double(resourceAccounting.CodedBitCountG)));
 end
+
 if ~logical(uciInfo.UCIOnPUSCHApplied) && numel(codeword) ~= double(codingLayout.RateMatchedBitCount)
     error("sixgr:phy:ul:PUSCHCodewordCodingLayoutContract", ...
         "PUSCH codeword length %d does not match CodingLayout RateMatchedBitCount=%d.", ...
@@ -931,6 +1065,29 @@ if numel(portInd) ~= numel(portSym)
     error("sixgr:phy:ul:PUSCHPortIndexCountContract", ...
         "PUSCH port index count %d does not equal port symbol count %d.", ...
         numel(portInd), numel(portSym));
+end
+end
+
+function localAssertPUSCHMultiCodewordSymbolContract( ...
+        codewords, dftInputSym, layerSym, portSym, portInd, pusch)
+if numel(codewords) ~= 2 || double(pusch.NumCodewords) ~= 2
+    error("sixgr:phy:ul:PUSCHCodewordContainerMismatch", ...
+        "Release-valid high-rank PUSCH requires exactly two UL-SCH codewords.");
+end
+if size(dftInputSym, 2) ~= double(pusch.NumLayers) || ...
+        size(layerSym, 2) ~= double(pusch.NumLayers)
+    error("sixgr:phy:ul:PUSCHLayerSymbolShapeMismatch", ...
+        "High-rank PUSCH layer-domain evidence must have NumLayers=%d columns.", ...
+        double(pusch.NumLayers));
+end
+if numel(portSym) ~= numel(portInd)
+    error("sixgr:phy:ul:PUSCHSymbolIndexCountMismatch", ...
+        "High-rank PUSCH port symbol/index counts differ (%d versus %d).", ...
+        numel(portSym), numel(portInd));
+end
+if any(cellfun(@isempty, codewords))
+    error("sixgr:phy:ul:PUSCHNoDataRE", ...
+        "Each high-rank PUSCH codeword must contain a nonempty coded-bit stream.");
 end
 end
 
@@ -1053,8 +1210,12 @@ ctx = struct();
 ctx.ContractVersion = "PUSCH_TxContext/v1";
 ctx.GrantDriven = logical(hasPHYGrant);
 ctx.GrantContextId = string(sixgr.util.structGet(phyGrant, "GrantContextId", ""));
-ctx.TransportBlock = int8(trBlk(:));
-ctx.TransportBlockCRC = int8(tbCrc(:));
+trBlkCells = localCellify(trBlk);
+tbCrcCells = localCellify(tbCrc);
+ctx.TransportBlocks = cellfun(@(x) int8(x(:)), trBlkCells, "UniformOutput", false);
+ctx.TransportBlockCRCs = cellfun(@(x) int8(x(:)), tbCrcCells, "UniformOutput", false);
+ctx.TransportBlock = ctx.TransportBlocks{1};
+ctx.TransportBlockCRC = ctx.TransportBlockCRCs{1};
 if ~iscell(codewords)
     codewords = {codewords};
 end
@@ -1115,7 +1276,7 @@ ctx.DimensionContract = struct( ...
     "DFTInputSymbolCount", double(numel(dftInputSym)), ...
     "LayerRESymbolCount", double(numel(layerSym)), ...
     "NumCodewords", double(codewordLayerMapping.NumCodewords), ...
-    "RateMatchedBitCount", double(numel(ctx.Codeword)), ...
+    "RateMatchedBitCount", double(sum(codewordLayerMapping.RateMatchedBitCountPerCodeword)), ...
     "RateMatchedBitCountPerCodeword", double(codewordLayerMapping.RateMatchedBitCountPerCodeword), ...
     "LayerIndexCellCount", double(numel(layerInd)), ...
     "PortSymbolCount", double(numel(portSym)), ...
@@ -1198,14 +1359,6 @@ if isempty(ind)
 end
 values = unique(double(ind(:)));
 values = values(isfinite(values));
-end
-
-function bits = localNormalizeHARQACKBits(rawBits)
-if isempty(rawBits)
-    bits = int8([]);
-    return;
-end
-bits = int8(logical(rawBits(:)));
 end
 
 function symAlloc = localResolveSymbolAllocation(pusch)
@@ -1295,17 +1448,24 @@ function pusch = localEnsureTransformPrecodingOwnership(pusch, cfg)
 try
     modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
 catch
-    modToken = upper(strrep(char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', ''))), ' ', ''));
+    error("sixgr:phy:ul:PUSCHMissingModulation", ...
+        "An explicit PUSCH modulation is required.");
 end
-required = strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK') || ...
-    logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
-if required
-    try
-        pusch.TransformPrecoding = true;
-    catch ME
-        error('sixgr:phy:ul:PUSCHTransformPrecodingUnavailable', ...
-            'PUSCH requires TransformPrecoding=true for modulation/config but nrPUSCHConfig rejected it: %s', ME.message);
-    end
+try
+    runtimeValue = logical(pusch.TransformPrecoding);
+catch ME
+    error("sixgr:phy:ul:PUSCHTransformPrecodingUnavailable", ...
+        "The runtime PUSCH object does not expose TransformPrecoding: %s", ME.message);
+end
+if (strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK')) && ~runtimeValue
+    error("sixgr:phy:ul:PI2BPSKRequiresTransformPrecoding", ...
+        "PI/2-BPSK requires TransformPrecoding=true; the transmitter will not silently change the configured waveform.");
+end
+configuredValue = sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', []);
+if ~isempty(configuredValue) && logical(configuredValue) ~= runtimeValue
+    error("sixgr:phy:ul:PUSCHTransformPrecodingOwnershipMismatch", ...
+        "Runtime TransformPrecoding=%d does not match configured phy.pusch.transformPrecoding=%d.", ...
+        runtimeValue, logical(configuredValue));
 end
 end
 
@@ -1319,6 +1479,63 @@ catch
 end
 if source == "disabled" && logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false))
     source = "configured_but_not_runtime_applied";
+end
+end
+
+function blocks = localResolveTransportBlockCells(raw, sizes)
+sizes = double(sizes(:).');
+nCodewords = numel(sizes);
+if isempty(raw)
+    blocks = cell(1, nCodewords);
+    for cw = 1:nCodewords
+        blocks{cw} = int8(randi([0 1], sizes(cw), 1));
+    end
+elseif iscell(raw)
+    blocks = reshape(raw, 1, []);
+else
+    blocks = {raw};
+end
+if numel(blocks) ~= nCodewords
+    error("PUSCH_Tx:BadTBSize", ...
+        "TransportBlockBits must provide one bit vector per codeword.");
+end
+for cw = 1:nCodewords
+    bits = double(blocks{cw}(:));
+    if numel(bits) ~= sizes(cw)
+        error("PUSCH_Tx:BadTBSize", ...
+            "Codeword %d transport block has %d bits; expected %d.", ...
+            cw - 1, numel(bits), sizes(cw));
+    end
+    if any(~isfinite(bits) | (bits ~= 0 & bits ~= 1))
+        error("sixgr:pusch:InvalidTransportBlock", ...
+            "Codeword %d transport block must be binary.", cw - 1);
+    end
+    blocks{cw} = int8(bits);
+end
+end
+
+function value = localUnwrapSingleCell(cells)
+if iscell(cells) && isscalar(cells)
+    value = cells{1};
+else
+    value = cells;
+end
+end
+
+function cells = localCellify(value)
+if iscell(value)
+    cells = reshape(value, 1, []);
+else
+    cells = {value};
+end
+end
+
+function value = localModulationAt(raw, index)
+if iscell(raw)
+    value = char(string(raw{index}));
+else
+    values = string(raw);
+    value = char(values(index));
 end
 end
 

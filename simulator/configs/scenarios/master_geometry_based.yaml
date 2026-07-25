@@ -858,11 +858,73 @@ pusch:
   mapping_type: A
   start_symbol: 0
   num_symbols: 14
-  frequency_hopping: disabled
+  rnti: 1
+  scrambling_id: 1
+  mcs_table: qam256_table2
+  mcs_index: 20
+  modulation: 256QAM
+  target_code_rate_per_codeword:
+  - 0.66650390625
+  num_layers: 2
+  num_antenna_ports: 2
+  transmission_scheme: codebook
+  codebook_type: codebook1_ng1n4n1
+  tpmi: 0
+  sri: 0
+  rv_per_codeword:
+  - 0
+  ndi_per_codeword:
+  - 1
+  harq_process_id: 0
+  frequency_hopping: none
+  second_hop_start_prb: 0
   intra_slot_frequency_hopping: false
   inter_slot_frequency_hopping: false
   transform_precoding: false
   codebook_based_transmission: true
+  dmrs_configuration_type: 1
+  dmrs_length: 1
+  dmrs_additional_position: 1
+  dmrs_type_a_position: 2
+  dmrs_num_cdm_groups_without_data: 2
+  dmrs_port_set:
+  - 0
+  - 1
+  dmrs_nid_nscid: 1
+  dmrs_nscid: 0
+  dmrs_nrs_id: 1
+  dmrs_group_hopping: false
+  dmrs_sequence_hopping: false
+  ptrs_enabled: true
+  ptrs_time_density: 2
+  ptrs_frequency_density: 2
+  ptrs_re_offset: '00'
+  ptrs_port_set:
+  - 0
+  ptrs_nid: 1
+  uci_beta_offset_ack: 20
+  uci_beta_offset_csi1: 6.25
+  uci_beta_offset_csi2: 6.25
+  uci_scaling: 1
+  repetition_type: none
+  repetition_count: 1
+  power_control:
+    enabled: true
+    open_loop_enabled: true
+    closed_loop_enabled: true
+    p0_pusch_dbm: -80
+    alpha: 0.8
+    delta_tf_db: 0
+    closed_loop_accumulation_db: 0
+    tpc_command_bits: 0
+    pcmax_dbm: 23
+    reference_tx_power_dbm: 23
+    pathloss_source: runtime_geometry_or_reference_signal_measurement
+  srs_authority:
+    required: true
+    max_age_slots: 20
+    configuration_epoch_required: true
+    configured_tpmi_fallback_allowed: false
   xoh_pusch: 0
   cbg_transmission: false
   tp_pi2_bpsk: false

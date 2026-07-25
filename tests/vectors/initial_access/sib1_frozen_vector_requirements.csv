@@ -1,0 +1,9 @@
+VectorID,Purpose,IndependentSourceRequirement,RequiredFields,MustProvide
+SIB1-UPER-001,Minimal bounded FR1 SIB1 with 30 kHz common SCS and unrestricted four-step RACH,asn1c/asn1tools or independently generated 3GPP ASN.1 compiler output,BCCH-DL-SCH-Message|c1|systemInformationBlockType1|servingCellConfigCommon|rach-ConfigCommon|ue-TimersAndConstants,ASN1Version|EncoderName|EncoderVersion|SchemaSHA256|SemanticJSON|UPERHex|NumBits|SHA256
+SIB1-UPER-002,15 kHz Case-A bounded profile,independent ASN.1 implementation,subCarrierSpacingCommon|ssb-PositionsInBurst|ssb-periodicityServingCell,same
+SIB1-UPER-003,Long PRACH restricted-set Type A,independent ASN.1 implementation,rach-ConfigGeneric|restrictedSetConfig|totalNumberOfRA-Preambles,same
+SIB1-UPER-004,Long PRACH restricted-set Type B,independent ASN.1 implementation,rach-ConfigGeneric|restrictedSetConfig,same
+SIB1-UPER-005,Maximum bounded optional-IE load,independent ASN.1 implementation,cellSelectionInfo|cellAccessRelatedInfo|connEstFailureControl|si-SchedulingInfo,same
+SIB1-UPER-006,Malformed truncated payload rejection,mutated external vector,n/a,ExpectedErrorBitOffset
+SIB1-UPER-007,Invalid constrained integer rejection,mutated external vector,prach-ConfigurationIndex,ExpectedDecodeOrSemanticError
+SIB1-UPER-008,Unknown extension preservation/rejection policy,external Release-18 vector,extension marker,ExpectedExtensionBehavior

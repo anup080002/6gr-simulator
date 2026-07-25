@@ -1,0 +1,11 @@
+Order,CurrentFile,CurrentSymbol,Action,FindingIDs
+1,+sixgr/+phy/+ul/PUCCH_Rx.m,PUCCH_Rx,Convert to facade; remove ExpectedUCIBits and invented length; delegate to canonical PUCCHReceiver.,PUCCH-001|PUCCH-002|PUCCH-007
+2,+sixgr/+phy/+ul/PUCCH_Tx.m,PUCCH_Tx,Convert to facade; consume typed report and assignment; remove defaults/clamps and swallowed DMRS failure.,PUCCH-001|PUCCH-003|PUCCH-007|PUCCH-009
+3,+sixgr/+link/runPUCCHWaveformTrial.m,runPUCCHWaveformTrial,"Replace ExpectedUCIBits trial contract; remove random payload resizing, format adaptation and CRC shortcut.",PUCCH-001|PUCCH-002|PUCCH-006|PUCCH-007
+4,+sixgr/+truth/CoupledTruthRuntime.m,resolveHARQFeedbackDueSlot,Resolve exact K1 from decoded DCI/RRC; remove default delay and scan-to-next-UL behavior.,PUCCH-004|PUCCH-008
+5,+sixgr/+truth/CoupledTruthRuntime.m,fitPUCCHSymbolsToULPartition,Delete shift-to-fit behavior; validate exact configured symbols against TDD ownership.,PUCCH-008
+6,+sixgr/+truth/CoupledTruthRuntime.m,resolvePUCCHResourceAssignment,Delegate to RRC resource-set/PRI/SR/CSI/SPS assignment factories; remove PRB hash and heuristics.,PUCCH-003|PUCCH-005|PUCCH-006|PUCCH-008
+7,+sixgr/+truth/CoupledTruthRuntime.m,pucchResourcesOverlap,Replace rectangle overlap with exact RE/sequence/OCC/cyclic-shift collision resolver.,PUCCH-009
+8,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m,runStrictPUCCHValidation,Replace five fixed cases with vector-driven complete phase validation.,PUCCH-004|PUCCH-005|PUCCH-006|PUCCH-007|PUCCH-010
+9,+sixgr/+phy/+pucch/exportStrictPUCCHArtifacts.m,exportStrictPUCCHArtifacts,Export all contracted CSVs/PNGs and semantic/hash audits.,PUCCH-010
+10,config/phy/pucch.json,configuration schema,"Replace format/20-bit/ACK+CSI defaults with RRC resource sets, resources, timing, power and spatial state.",PUCCH-001|PUCCH-002|PUCCH-003|PUCCH-010

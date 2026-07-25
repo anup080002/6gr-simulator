@@ -1,0 +1,353 @@
+{
+  "pack": "6GR SSB / initial access / SIB1 / random access implementation pack",
+  "profile": "bounded_FR1_four_step_RA_through_RRCSetupComplete",
+  "generated_utc": "2026-07-25T04:34:15Z",
+  "no_matlab_or_5g_toolbox_used_for_expected_vectors": true,
+  "important_limit": "SIB1 UPER and complete PRACH configuration-table outputs require independent frozen vectors during Codex execution; semantic/input catalogs here do not substitute for those independent references.",
+  "files": [
+    {
+      "path": "ssb_case_lmax_test_vectors.csv",
+      "rows": 67,
+      "sha256": "2d9fdc7231be46636d1f293655868ed4fdfcf4d62e7e47448cc75fb2127b434f",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ssb_case_lmax.csv",
+      "rows": 67,
+      "sha256": "178871908dbec6d548c9032906bdd3a2b88b22f3e76936625f7f218343a1dfd6",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ssb_burst_candidates.csv",
+      "rows": 360,
+      "sha256": "274ff83f62ca2fb5558deeaaba6e8aad9a0d5560b1d6233004fb6506aa9c634f",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ssb_re_mapping_test_vectors.csv",
+      "rows": 4,
+      "sha256": "73d311b4b3266b355342ffe6dda376d9ff9fe53ccdfa06050606dda00596c738",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ssb_re_ownership.csv",
+      "rows": 3840,
+      "sha256": "dc1af256e378f5602a525e2c407e042a976241a1da9c509ac6dd82130f2c777e",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ssb_re_counts.csv",
+      "rows": 4,
+      "sha256": "7c79b26ded35f125f30c44fdd1664b05e4cfcd99bd309c02a2a3ebf139069c9f",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "pbch_mib_test_vectors.csv",
+      "rows": 53,
+      "sha256": "1d41e6e8b78ff14244a0ecfb9b8db49e018ff0ff947874ed75a052b66ca09cf1",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_mib_semantics.csv",
+      "rows": 53,
+      "sha256": "206c6cc668122d7ec48d1216fbdc855125900ad2814075ea0a40afa226324a09",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ia_type0_coreset0_test_vectors.csv",
+      "rows": 268,
+      "sha256": "019502afd21de582f7107bd2a8fda88a90d28cbedf8a3752f8780e50b717f4df",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ia_expected_type0_monitoring_tables.csv",
+      "rows": 64,
+      "sha256": "d52e391a37ffbc22e01b99f03110e370d18ec609fbc36139b265a912f1b6608b",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ia_type0_pattern23_monitoring_test_vectors.csv",
+      "rows": 80,
+      "sha256": "212dbbe9460558606befe535231112d69e0d94b96103e7f0305bc710b32fdf5e",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ia_expected_type0_gscn_offset_vectors.csv",
+      "rows": 40,
+      "sha256": "db8aed9681c27b215c2bd0a3d40679f963c1cb05ca4ca3a4474d4c752bb5f702",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "sib1_asn1_semantic_test_vectors.csv",
+      "rows": 83,
+      "sha256": "704a1ac9e544a60597077b29889f0ce0b352979fc6183b73713f44f1f5920785",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_sib1_semantics.csv",
+      "rows": 83,
+      "sha256": "ad337bf13f0c990973b5a0d40ef7f10252022fd479c86626015ab23d4699f9fd",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "sib1_frozen_vector_requirements.csv",
+      "rows": 8,
+      "sha256": "1a686fb33f9339e64d00513cfadec440e78df3dd10961d69577a9eeac2735baf",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "prach_configuration_index_sweep.csv",
+      "rows": 512,
+      "sha256": "193a2e1aa069b93b0f5993a58543ab664be8af3885ff571481412a206f807563",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "prach_format_restricted_test_vectors.csv",
+      "rows": 380,
+      "sha256": "ea41fcfa306b028ef9fa26be66c442bf79eff539810633143c29aabf088a6008",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ra_rnti_test_vectors.csv",
+      "rows": 128,
+      "sha256": "dbaa83e09f7ca97e4c8e99795d5115b8ca08e6b1d19d9da7c2fb8f70fadd3315",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ra_rnti.csv",
+      "rows": 128,
+      "sha256": "251e33bd7ebc0b7284d05ab8dfe7a05cdf58a68b89860db70c62cd3d02e5d048",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "prach_occasion_pattern_test_vectors.csv",
+      "rows": 1120,
+      "sha256": "85d81f7db0d5a0031c241acc5a06ed6efe5ef7a9debb80eaa12b350d4cf4f781",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_prach_occasion_floor.csv",
+      "rows": 1120,
+      "sha256": "516e38254d8ba0ec777f0cab8b32e05252512e074eaf77d70903c3e047cd0f55",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ssb_to_ro_association_test_vectors.csv",
+      "rows": 120,
+      "sha256": "5635b07ec6cc8f167741dc1f96101e03587a99e63e0e03a7e3f7282319e9f2c0",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ssb_to_ro_association_floor.csv",
+      "rows": 120,
+      "sha256": "aa915750f2dbc3ca8bc6d1391fe0574fdb3c6c6938fcbffd562dcb7ba5732bcd",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ra_power_ramping_test_vectors.csv",
+      "rows": 320,
+      "sha256": "9c100110c75dea23820ac05d54c60a06509816b0b9148d46dfd553527aa73f2a",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ra_power_ramping.csv",
+      "rows": 320,
+      "sha256": "923503e813fc8cda685d5609b7ff013f57b2133ef8e05fe19924159f4116de55",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "ra_timer_backoff_test_vectors.csv",
+      "rows": 96,
+      "sha256": "1d4fd33224d5fa7e257baae043a0e2472fafb3a1e202a9b11d4b37caf4b16ac4",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_ra_timer_backoff.csv",
+      "rows": 96,
+      "sha256": "ed9b70cf3da1d94883b4cf11137aa6dc530af3df671ca5990b749d647355c683",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "rrc_setup_transition_test_vectors.csv",
+      "rows": 32,
+      "sha256": "7342356ca62069cb4cfc48e2fd2605000a194da1a73374ef59c76fab46e018be",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_rrc_setup_transition.csv",
+      "rows": 32,
+      "sha256": "3e85eaf1d169f30b1556aee6f952a3a29e4d4ecb707edafc0ac5fc0e53b294ad",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_end_to_end_test_vectors.csv",
+      "rows": 146,
+      "sha256": "3e78332a350e0a1c3d63ad64d02607bd698659dbf76430997620186cf28702b9",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_negative_test_vectors.csv",
+      "rows": 138,
+      "sha256": "bf631314a5f90491040ac4591401f82ef3786ea5087e299afc8f9c010c7c1321",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_declared_coverage_matrix.csv",
+      "rows": 271,
+      "sha256": "e5b703045d4e983006a300eef686ff8a7ec7af8eaa186f70a14070c913b18978",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_impact_analysis_families.csv",
+      "rows": 60,
+      "sha256": "8636d43414f622d0b6e152212e396976cb0ea6d6a70e976392d4bdec0422a339",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_impact_experiment_matrix.csv",
+      "rows": 720,
+      "sha256": "d114cc2297bc43b53ad0835a01585a2f874bc8f3e620a4b34c09fffa5cc8c3c5",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_impact_pairing_contract.csv",
+      "rows": 60,
+      "sha256": "9c2b0c39287610ba4695b1d9ca647576a49bc529d4f024673ebf165b159d0d5b",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_impact_acceptance_rules.csv",
+      "rows": 90,
+      "sha256": "dc601610e8a1c4adb82ba3566c7616d6e2f7757aa77653a24449ccaa7a2f2385",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_impact_dependency_waves.csv",
+      "rows": 3,
+      "sha256": "23e9ef6878990fefaabc26038ac8a787bd8588003fbbea56bc5595cf3e836ba6",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "initial_access_impact_implementability_summary.csv",
+      "rows": 4,
+      "sha256": "219e222391cab3c3b8425cf7d53bb4119cc78da28602477990e69b6e341c9dc3",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "expected_initial_access_impact_analytical_floor.csv",
+      "rows": 120,
+      "sha256": "f0f3acfbc60e4ef930056bdaabc0399033e6c415335504e50119844d66c24b32",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "desired_initial_access_csv_contract.csv",
+      "rows": 31,
+      "sha256": "43045caeb4eb24bddbdd920ce850e8edaf3ab76fec5265a2400108273c19b443",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "desired_initial_access_image_contract.csv",
+      "rows": 20,
+      "sha256": "f31ede062c5552c56dda3cb878f16873d36a7f519b3000b23184923662ec2c9e",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "desired_initial_access_impact_csv_contract.csv",
+      "rows": 16,
+      "sha256": "d5dce81bdaa1c0668c039c9fc44b527bd205689ddb73f8571303a2abe75c11fc",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    },
+    {
+      "path": "desired_initial_access_impact_image_contract.csv",
+      "rows": 30,
+      "sha256": "a4087f969ccfb7e258bd6a83789a4d1e74d635416529a89a4d0cc08530d64269",
+      "format": "csv",
+      "source": "generated_without_MATLAB_or_copied_independent_Type0_pack",
+      "role": "test_input_or_bounded_independent_floor"
+    }
+  ]
+}

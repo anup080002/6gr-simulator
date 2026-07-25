@@ -38,7 +38,13 @@ if checkDL && any(dlProfile == ["connected_strict","sps_strict","ra_si_strict"])
     tf = true;
     return;
 end
-if checkUL && any(ulProfile == ["connected_strict","configured_grant_strict","ra_si_strict"])
+ulAssignmentProfile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.pusch.assignmentProfile", ...
+    sixgr.util.structGet(cfg, "phy.pusch.assignmentType", "")))));
+ulDynamicConnected = ulProfile == "connected_strict" || ...
+    any(ulAssignmentProfile == [ ...
+        "dynamic_decoded_dci", "dynamic_dci_0_0", "dynamic_dci_0_1"]);
+if checkUL && ulDynamicConnected
     tf = true;
     return;
 end
@@ -55,8 +61,11 @@ if checkDL
     end
 end
 if checkUL
-    tf = anyConfiguredTruth(cfg, ulPaths) || ...
-        (lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.grantSource", "")))) == "decoded_pdcch");
+    % Dynamic connected PUSCH ownership is inherently decoded-DCI bound.
+    % Configured-grant, random-access and calibration profiles use their
+    % own explicit assignment state machines and do not opt in via a
+    % mutable grantSource label.
+    tf = anyConfiguredTruth(cfg, ulPaths) || ulDynamicConnected;
 end
 end
 

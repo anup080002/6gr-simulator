@@ -1,7 +1,7 @@
 function catalog = puschCodebookCatalog(nLayers, nPorts, transformPrecoding)
 %PUSCHCODEBOOKCATALOG Exact supported PUSCH TPMI catalog for NR codebook mode.
 % The TPMI ranges follow TS 38.211 section 6.3.1.5 for PUSCH codebook
-% transmission on 1, 2 or 4 antenna ports. Transform precoding uses the
+% transmission on 1, 2, 4, or 8 antenna ports. Transform precoding uses the
 % same valid (ports,layers,TPMI) catalog; the matrix values are still
 % produced by nrPUSCHCodebook in the waveform path.
 
@@ -27,8 +27,8 @@ if ~(isscalar(nLayers) && isfinite(nLayers) && nLayers >= 1 && ...
     catalog.Reason = "nonfinite_or_nonpositive_layers_or_ports";
     return;
 end
-if ~any(nPorts == [1 2 4])
-    catalog.Reason = "pusch_codebook_supports_1_2_or_4_antenna_ports";
+if ~any(nPorts == [1 2 4 8])
+    catalog.Reason = "pusch_codebook_supports_1_2_4_or_8_antenna_ports";
     return;
 end
 if nLayers > nPorts
@@ -36,34 +36,37 @@ if nLayers > nPorts
     return;
 end
 
-switch nPorts
-    case 1
-        if nLayers == 1
-            validSet = 0;
-        else
-            validSet = [];
-        end
-    case 2
-        if nLayers == 1
-            validSet = 0:5;
-        elseif nLayers == 2
-            validSet = 0:2;
-        else
-            validSet = [];
-        end
-    case 4
-        switch nLayers
-            case 1
-                validSet = 0:27;
-            case 2
-                validSet = 0:21;
-            case 3
-                validSet = 0:6;
-            case 4
-                validSet = 0:4;
-            otherwise
-                validSet = [];
-        end
+if nPorts == 1
+    if nLayers == 1
+        validSet = 0;
+    else
+        validSet = [];
+    end
+elseif nPorts == 2
+    if nLayers == 1
+        validSet = 0:5;
+    elseif nLayers == 2
+        validSet = 0:2;
+    else
+        validSet = [];
+    end
+elseif nPorts == 4
+    maxima = [27 21 6 4];
+    if nLayers <= numel(maxima)
+        validSet = 0:maxima(nLayers);
+    else
+        validSet = [];
+    end
+else
+    % Release-18 eight-port PUSCH codebook table exposed by the pinned
+    % R2026a adapter. Counts are independently boundary-tested against the
+    % allowed TPMI ranges before waveform generation.
+    maxima = [15 31 23 23 7 7 3 3];
+    if nLayers <= numel(maxima)
+        validSet = 0:maxima(nLayers);
+    else
+        validSet = [];
+    end
 end
 
 if isempty(validSet)

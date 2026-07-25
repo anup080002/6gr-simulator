@@ -1,0 +1,16 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+pucch_resource_grid_ownership.png,pucch_resource_mapping.csv,PUCCH resource grid,OFDM symbol,PRB/subcarrier,1,3,20,900,600
+pucch_uci_bit_layout.png,pucch_uci_serialization.csv,UCI bit layout,Bit index,Bit owner,1,4,10,900,600
+pucch_format_resource_matrix.png,pucch_format_matrix.csv,PUCCH format matrix,PUCCH format,Valid configurations,1,5,10,900,600
+pucch_harq_codebook_timeline.png,pucch_harq_codebook.csv,HARQ-ACK codebook,Codebook bit index,ACK state,1,3,10,900,600
+pucch_sr_csi_multiplexing.png,pucch_sr_events.csv|pucch_csi_reports.csv,SR and CSI multiplexing,Absolute slot,UCI bits,1,3,10,900,600
+pucch_k1_tdd_timeline.png,pucch_timing_k1_tdd.csv,K1 and TDD timeline,Absolute slot,Symbol ownership,1,3,10,900,600
+pucch_resource_set_pri_map.png,pucch_resource_set_selection.csv|pucch_resource_indicator_selection.csv,PUCCH resource selection,UCI payload bits,Selected resource,1,3,10,900,600
+pucch_dmrs_hopping_map.png,pucch_dmrs_sequence.csv|pucch_hopping_repetition.csv,PUCCH DM-RS and hopping,OFDM symbol,PRB,1,3,10,900,600
+pucch_format1_occ_correlation.png,pucch_dmrs_sequence.csv,Format 1 OCC correlation,OCC index,Correlation magnitude,1,2,10,900,600
+pucch_format4_occ_spreading.png,pucch_format_matrix.csv|pucch_receiver_metrics.csv,Format 4 spreading,Spreading factor,BLER,1,2,10,900,600
+pucch_power_control_convergence.png,pucch_power_control.csv,PUCCH power control,Transmission occasion,Power (dBm),1,3,10,900,600
+pucch_spatial_relation_beam_timeline.png,pucch_spatial_relation.csv,PUCCH spatial relation,Absolute slot,Beam or spatial relation,1,2,10,900,600
+pucch_bler_vs_snr.png,pucch_bler_curve.csv,PUCCH BLER,SNR (dB),BLER,1,5,20,900,600
+pucch_false_alarm_bounds.png,pucch_false_alarm_trials.csv,PUCCH false alarm,Fault type,Probability,1,2,5,900,600
+pucch_collision_resolution.png,pucch_collision_resolution.csv,PUCCH collision resolution,Collision case,Resolution outcome,1,2,10,900,600

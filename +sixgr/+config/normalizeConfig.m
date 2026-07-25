@@ -125,6 +125,11 @@ if isfield(cfg,'phy') && isa(cfg.phy,'struct')
         if isfield(cfg.phy.pusch,'nLayers') && (~isfield(cfg.phy.pusch,'numLayers') || isempty(cfg.phy.pusch.numLayers))
             cfg.phy.pusch.numLayers = cfg.phy.pusch.nLayers;
         end
+        if isfield(cfg.phy.pusch,'rnti') && ~isempty(cfg.phy.pusch.rnti)
+            cfg.phy.pusch.RNTI = cfg.phy.pusch.rnti;
+        end
+        cfg.phy.pusch = localNormalizeLegacySymbolAllocation( ...
+            cfg.phy.pusch, "phy.pusch.symbolAllocation");
     end
 
     if isfield(cfg.phy,'dl') && isstruct(cfg.phy.dl)
@@ -574,6 +579,25 @@ elseif localIsTDLModelAlias(modelOut)
 elseif localIsCDLModelAlias(modelOut)
     modelOut = 'CDL';
 end
+end
+
+function channel = localNormalizeLegacySymbolAllocation(channel, path)
+if ~isfield(channel, 'symbolAllocation') || ...
+        ~isstruct(channel.symbolAllocation) || ...
+        ~isscalar(channel.symbolAllocation)
+    return;
+end
+legacy = channel.symbolAllocation;
+start = sixgr.util.structGet(legacy, 'start', []);
+length = sixgr.util.structGet(legacy, 'length', []);
+if ~(isnumeric(start) && isscalar(start) && isfinite(start) && ...
+        start == fix(start) && start >= 0 && ...
+        isnumeric(length) && isscalar(length) && isfinite(length) && ...
+        length == fix(length) && length >= 1)
+    error('sixgr:config:normalizeConfig:InvalidSymbolAllocation', ...
+        '%s legacy form requires integer start>=0 and length>=1.', path);
+end
+channel.symbolAllocation = double([start length]);
 end
 
 function [modelOut, profileOut, ch] = localNormalizeLegacyChannelFamily(ch, rawModel, rawProfile)

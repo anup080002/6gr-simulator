@@ -1,0 +1,61 @@
+FloorID,FamilyID,Invariant,ExpectedValue,Tolerance,OracleClass,Status
+FLOOR-001,F01,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-002,F02,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-003,F03,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-004,F04,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-005,F05,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-006,F06,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-007,F07,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-008,F08,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-009,F09,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-010,F10,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-011,F11,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-012,F12,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-013,F13,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-014,F14,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-015,F15,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-016,F16,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-017,F17,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-018,F18,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-019,F19,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-020,F20,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-021,F21,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-022,F22,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-023,F23,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-024,F24,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-025,F25,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-026,F26,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-027,F27,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-028,F28,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-029,F29,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-030,F30,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-031,F31,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-032,F32,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-033,F33,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-034,F34,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-035,F35,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-036,F36,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-037,F37,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-038,F38,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-039,F39,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-040,F40,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-041,F41,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-042,F42,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-043,F43,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-044,F44,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-045,F45,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-046,F46,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-047,F47,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-048,F48,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-049,F49,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-050,F50,treatment_minus_baseline_sign_convention,effect=treatment-baseline,0,ANALYTICAL_INVARIANT,PASS
+FLOOR-X01,F01,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X02,F02,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X03,F03,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X04,F04,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X05,F05,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X06,F06,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X07,F07,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X08,F08,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X09,F09,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS
+FLOOR-X10,F10,pairing_identity,same seed/payload/channel/noise within pair,exact,PAIRING_INVARIANT,PASS

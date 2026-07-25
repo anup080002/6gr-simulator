@@ -1,0 +1,51 @@
+FamilyID,Title,Wave,Dependency,Metrics
+F01,DCI payload size versus BWP and context,A,direct,PayloadBits|FieldCount|CodeRate
+F02,DCI 0_0/1_0 size alignment,A,direct,RawBits|AlignedBits|PaddingBits
+F03,DCI 0_1/1_1 optional field breadth,A,direct,PayloadBits|PackRuntime|DecodeErrors
+F04,RNTI-specific CRC masking,A,direct,WrongRNTIFalseDecode|CorrectDecode
+F05,PDCCH physical scrambling identity,A,direct,SequenceCorrelation|WrongIDDecode
+F06,Polar code rate versus aggregation level,A,direct,CodeRate|BLER|Runtime
+F07,Polar list size and LLR scaling,A,direct,BLER|Runtime|Memory
+F08,Aggregation level detection tradeoff,A,direct,DetectionProbability|ResourceOverhead|Latency
+F09,Candidate count complexity and false alarm,A,direct,CandidatesTested|Runtime|FalseAlarm
+F10,CORESET duration,A,direct,DetectionProbability|Latency|ResourceOverhead
+F11,CORESET frequency span,A,direct,FrequencyDiversity|DetectionProbability|Overhead
+F12,Interleaved versus non-interleaved mapping,A,direct,BLER|ChannelEstimationNMSE|Diversity
+F13,REG bundle size,A,direct,BLER|MappingMismatch|Runtime
+F14,Interleaver size,A,direct,BLER|FrequencyDispersion
+F15,Shift index,A,direct,REGDistribution|Collision|BLER
+F16,Precoder granularity,B,beam_state,BeamRobustness|BLER
+F17,Search-space periodicity,A,direct,ControlLatency|MonitoringLoad
+F18,Search-space duration and symbol bitmap,A,direct,MonitoringLoad|MissedOccasions
+F19,CSS versus USS candidate generation,A,direct,CandidateDistribution|CollisionRate
+F20,Candidate collision and deduplication,A,direct,UniqueCandidates|MonitoringCount
+F21,UE monitoring capability caps,B,multi_cell_monitoring,DroppedCandidates|DetectionProbability
+F22,Type0 CORESET0 index,B,type0_tables,CORESETRBs|Symbols|Offset|DetectionProbability
+F23,Type0 SearchSpace0 index,B,type0_tables,MonitoringLatency|Candidates
+F24,Type0 SSB/PDCCH SCS pair,B,type0_tables,MonitoringTiming|DetectionProbability
+F25,Type0 multiplexing pattern,B,type0_tables,Offset|Timing|DetectionProbability
+F26,Type0 kSSB and channel-bandwidth edge cases,B,type0_tables,CORESETPlacement|InvalidCombinationRate
+F27,Common versus UE-specific RNTI procedures,A,direct,CorrectDecode|WrongProcedureRejection
+F28,Wrong-RNTI false alarm,A,direct,FalseAlarmProbability|UpperBound
+F29,Wrong DCI size and format confusion,A,direct,FalseDecode|ControlledRejection
+F30,No-signal false alarm,A,direct,FalseAlarmProbability|UpperBound
+F31,Low-SNR missed detection,A,direct,DetectionProbability|LowerBound
+F32,Delay spread and frequency selectivity,A,channel_model,DetectionProbability|ChannelEstimationNMSE
+F33,Doppler and channel ageing,A,channel_model,DetectionProbability|TrackingError
+F34,Carrier-frequency offset,A,sync_receiver,DetectionProbability|CFOEstimateError
+F35,Timing offset and acquisition,A,sync_receiver,DetectionProbability|TimingEstimateError
+F36,Phase noise,C,rf_phase_noise,DetectionProbability|EVM
+F37,PDCCH DM-RS ID mismatch,A,direct,FalseDecode|ChannelEstimationNMSE
+F38,Beam mismatch,B,beam_state,DetectionProbability|BeamGainLoss
+F39,TCI/beam switch timing,B,beam_state,OutageSlots|RecoveryLatency
+F40,Beam blockage and recovery,C,beam_failure_recovery,OutageProbability|RecoveryLatency
+F41,BWP switching,B,multi_bwp,CorrectBWPApplication|SwitchLatency
+F42,Cross-carrier scheduling,B,carrier_aggregation,CorrectCarrierApplication|WrongCarrierRejection
+F43,Overlapping CORESETs and RE conflicts,B,multi_coreset,CollisionCount|DetectionProbability
+F44,Multi-UE search-space load,B,multi_ue,Runtime|FalseAlarm|DetectionProbability
+F45,Decoded-DCI scheduler authority,A,direct,AssignmentDigestChange|OracleMutationImmunity
+F46,Downstream PDSCH/PUSCH resource fidelity,B,data_channel_integration,ResourceDigestMatch|DecodeSuccess
+F47,Blind versus known-location calibration gap,A,direct,SNRPenalty|RuntimePenalty
+F48,Runtime and memory scaling,A,direct,Runtime|Memory|CandidatesPerSecond
+F49,Serial/parallel reproducibility,A,direct,ArtifactHashEquality|MetricDifference
+F50,End-to-end Type0 SIB1 acquisition,C,ssb_sib1_chain,AcquisitionProbability|Latency

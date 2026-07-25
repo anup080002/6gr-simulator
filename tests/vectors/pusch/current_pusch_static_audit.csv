@@ -1,0 +1,48 @@
+CheckID,Kind,SourceFile,Expectation,PatternPresent,Line,Snippet,Finding,Status
+ULSRC-001,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,TX exposes an ACK-only UCI input rather than typed HARQ-ACK/CSI1/CSI2/SR/CG-UCI payloads.,PASS
+ULSRC-002,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,UL-SCH multiplexing passes empty CSI Part 1 and CSI Part 2 streams.,PASS
+ULSRC-003,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,TX UCI allocation hard-codes O_CSI1=0 and O_CSI2=0.,PASS
+ULSRC-004,DEFECT,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,0,,,RX exposes an ACK-only expected-UCI interface.,PASS
+ULSRC-005,DEFECT,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,0,,,RX demultiplexing hard-codes CSI Part 1 and CSI Part 2 lengths to zero.,PASS
+ULSRC-006,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,Production TX explicitly rejects more than one UL-SCH transport block/codeword.,PASS
+ULSRC-007,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,TX declares only a one-codeword rank-1-to-4 scope.,PASS
+ULSRC-008,DEFECT,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,0,,,RX declares only a one-codeword rank-1-to-4 scope.,PASS
+ULSRC-009,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,Missing PUSCH modulation silently defaults to 16QAM.,PASS
+ULSRC-010,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,Missing PUSCH time allocation silently becomes a full normal-CP slot.,PASS
+ULSRC-011,DEFECT,+sixgr/+phy/+grant/freezePHYGrant.m,EXPECT_PRESENT,0,,,Frozen UL grant silently defaults to a full normal-CP slot.,PASS
+ULSRC-012,DEFECT,+sixgr/+phy/+grant/freezePHYGrant.m,EXPECT_PRESENT,0,,,Missing PRB allocation silently becomes the complete BWP/grid.,PASS
+ULSRC-013,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,Explicit DM-RS port ownership is overwritten from layer count.,PASS
+ULSRC-014,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,DM-RS type-A position is silently clamped.,PASS
+ULSRC-015,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,DM-RS configuration type is silently clamped.,PASS
+ULSRC-016,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,DM-RS additional position is silently clamped.,PASS
+ULSRC-017,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,DM-RS length is silently clamped.,PASS
+ULSRC-018,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,DM-RS CDM-group count is silently clamped.,PASS
+ULSRC-019,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,An invalid mapping-type-A request may be silently converted to mapping type B.,PASS
+ULSRC-020,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,PT-RS time density has a hidden fallback of 2.,PASS
+ULSRC-021,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,PT-RS frequency density has a hidden fallback of 2.,PASS
+ULSRC-022,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,PT-RS RE offset has a hidden fallback of 00.,PASS
+ULSRC-023,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,PT-RS port has a hidden fallback of port 0.,PASS
+ULSRC-024,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,PT-RS time density is rounded/clamped rather than table-validated.,PASS
+ULSRC-025,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,PT-RS frequency density is rounded/clamped rather than table-validated.,PASS
+ULSRC-026,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_PRESENT,0,,,pi/2-BPSK mutates transform-precoding state instead of validating procedure ownership.,PASS
+ULSRC-027,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,TX can auto-enable transform precoding after configuration materialization.,PASS
+ULSRC-028,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,TX can resolve TPMI directly from configuration.,PASS
+ULSRC-029,DEFECT,+sixgr/+link/runULPUSCHThroughput.m,EXPECT_PRESENT,0,,,UL scheduling/throughput path can select a configured TPMI rather than a current SRS decision.,PASS
+ULSRC-030,DEFECT,+sixgr/+link/runULPUSCHThroughput.m,EXPECT_PRESENT,0,,,PUSCH power control can derive pathloss from configured SNR instead of an RS measurement.,PASS
+ULSRC-031,DEFECT,+sixgr/+link/runULPUSCHThroughput.m,EXPECT_PRESENT,0,,,Power-control alpha is silently clamped.,PASS
+ULSRC-032,DEFECT,+sixgr/+link/runULPUSCHThroughput.m,EXPECT_PRESENT,0,,,PUSCH power formula omits the 2^mu bandwidth factor.,PASS
+ULSRC-033,DEFECT,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,0,,,PUSCH element expansion delegates to a PDSCH-named helper instead of an explicit UL precoder application path.,PASS
+ULSRC-034,DEFECT,+sixgr/+phy/+ul/puschCodebookCatalog.m,EXPECT_PRESENT,0,,,Current codebook catalog visibly centers on 1/2/4-port cases; release-valid 8-port tables are not complete.,PASS
+ULSRC-035,DEFECT,+sixgr/+phy/+grid/allocREsPUSCH.m,EXPECT_ABSENT,1,258,"sch, cfg); pusch = localApplyPUSCHUCIConfig(pusch, cfg); pusch = localApplyPUSCHFrequencyHoppingConfig(pusch, cfg, carrier); pusch = localNormalizePUSCHMapping(pusch, mapType, mapTypeExplicit, opts.FixedReferenceMode); % Scrambling NID if available try",No explicit end-to-end frequency-hop-plan owner is present in the canonical PUSCH allocator.,PASS
+ULSRC-036,DEFECT,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,0,,,Strict UCI receive processing can return an unavailable status instead of failing the transmission.,PASS
+ULSRC-037,DEFECT,+sixgr/+control/isPDCCHGrantBindingRequired.m,EXPECT_PRESENT,0,,,Decoded-PDCCH binding is policy/configuration dependent rather than inherent to dynamic connected PUSCH ownership.,PASS
+ULSRC-038,DEFECT,+sixgr/+link/resolveWaveformGrant.m,EXPECT_PRESENT,0,,,Waveform grant resolution can freeze scheduler/configuration state before decoded DCI becomes the immutable PUSCH assignment.,PASS
+ULSRC-039,FOUNDATION,+sixgr/+phy/+ul/PUSCH_Tx.m,EXPECT_PRESENT,1,130,"block size nPRB = numel(pusch.PRBSet); resourceAccounting = sixgr.phy.resource.computeResourceAccounting(""PUSCH"", carrier, pusch, ... ""ChannelIndices"", puschInd, ... ""AllocationInfo"", puschInfo, ... ""IndexBase"", ""1based"", ... ""TargetCodeRate"", targ",TX already uses a centralized resource-accounting helper.,PASS
+ULSRC-040,FOUNDATION,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,1,464,"end try [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ... hestSymForSINR, nVar, ... ""Method"", char(lower(string(equalizerAlg))), ... ""Rint"", Rint, ... ""RIncludesNoise"", RIncludesNo",RX already computes post-equalization SINR from receiver processing.,PASS
+ULSRC-041,FOUNDATION,+sixgr/+phy/+ul/estimateSRSRITPMI.m,EXPECT_PRESENT,1,1,"function estimate = estimateSRSRITPMI(Hest, nVar, cfg) %ESTIMATESRSRITPMI Estimate UL RI and TPMI from SRS channel observations. % % This helper keeps the estimator explicitly in the SRS / UL sounding p",A measured-SRS RI/TPMI estimator exists and should be made authoritative rather than replaced.,PASS
+ULSRC-042,FOUNDATION,+sixgr/+phy/+waveform/transformPrecode.m,EXPECT_PRESENT,1,8,"ber of allocated resource blocks for the transmission. % % This wrapper calls nrTransformPrecode (5G Toolbox). % % Requirements: % size(MODSYM,1) must be a multiple of (MRB*12). if nargin < 2 error(""sixgr:phy:transformPrecode:MissingArgs"", ""Prov",A production transform-precoding wrapper exists.,PASS
+ULSRC-043,FOUNDATION,+sixgr/+phy/+waveform/transformDeprecode.m,EXPECT_PRESENT,1,7,"NR transform deprecoding across each column of TPSYM. % % This wrapper calls nrTransformDeprecode (5G Toolbox). if nargin < 2 error(""sixgr:phy:transformDeprecode:MissingArgs"", ""Provide TPSYM and MRB.""); end if ~(isscalar(mrb) && isnumeric(mrb) && isfin",A production inverse-transform wrapper exists.,PASS
+ULSRC-044,FOUNDATION,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,1,637,"""CodingLayout"", codingLayout); [recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR, ... ""CurrentLayout"", codingLayout, ""PriorLayout"", opt.HARQSoftBufferLayout); recLLRBatch = localEnsureLLRBatch(recLLR); % L",Receiver has position-aware HARQ soft-combining infrastructure.,PASS
+ULSRC-045,FOUNDATION,+sixgr/+phy/+ul/PUSCH_Rx.m,EXPECT_PRESENT,1,452,".structGet(cfg, ""phy.ptrs.enableCPECorrection"", true))); [eqSym, cpeCorrInfo] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, rxPUSCHInd, rxGrid, Hest, ... ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enablePTRSCPECorrection); try numLayersForSIN",Receiver has a PT-RS common-phase-error correction path.,PASS
+ULSRC-046,FOUNDATION,+sixgr/+phy/+pdcch/buildDCI00UplinkGrant.m,EXPECT_PRESENT,1,31,"4; fields.direction = ""UL""; fields.grant_type = ""PUSCH""; dci = sixgr.phy.pdcch.encodeDCIPayload(fields, ""0_0"", pdcchCfg); end",A bounded DCI 0_0 uplink-grant encoder exists.,PASS
+ULSRC-047,FOUNDATION,+sixgr/+phy/+pdcch/buildDCI01UplinkGrant.m,EXPECT_PRESENT,1,41,"4; fields.direction = ""UL""; fields.grant_type = ""PUSCH""; dci = sixgr.phy.pdcch.encodeDCIPayload(fields, ""0_1"", pdcchCfg); end",A bounded DCI 0_1 uplink-grant encoder exists.,PASS

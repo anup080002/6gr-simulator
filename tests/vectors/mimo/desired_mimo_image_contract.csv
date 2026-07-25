@@ -1,0 +1,21 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+mimo_antenna_panel_geometry.png,mimo_antenna_panel.csv,Antenna panel geometry,Element x [lambda],Element z [lambda],1,2,20,900,600
+mimo_typeI_2port_codebook.png,mimo_codebook_vector_results.csv,Type-I 2-port codebook,Codebook index,Coefficient,1,4,12,900,600
+mimo_codebook_beam_patterns.png,mimo_codebook_candidates.csv|mimo_antenna_panel.csv,Codebook beam patterns,Azimuth [deg],Normalized gain [dB],1,4,50,900,600
+mimo_ri_pmi_objective_map.png,mimo_ri_pmi_selection.csv,RI PMI objective,PMI candidate,Objective,1,2,20,900,600
+mimo_csi_part1_part2_layout.png,mimo_csi_part1_part2.csv|mimo_csi_bit_ownership.csv,CSI Part 1 Part 2,Bit index,Field owner,1,2,30,900,600
+mimo_wideband_subband_pmi.png,mimo_ri_pmi_selection.csv,Wideband and subband PMI,PRG index,PMI,1,2,12,900,600
+mimo_rank_application_timeline.png,mimo_rank_port_trials.csv,Configured selected applied rank,Trial,Rank,1,4,20,900,600
+mimo_precoder_digest_timeline.png,mimo_precoder_selection.csv|mimo_precoder_application.csv,Selected and applied precoder,Transmission,Matrix identity,1,2,12,900,600
+mimo_per_layer_sinr.png,mimo_per_layer_metrics.csv,Per-layer SINR,Layer,SINR [dB],1,2,20,900,600
+mimo_per_layer_evm.png,mimo_per_layer_metrics.csv,Per-layer EVM,Layer,EVM [%],1,2,20,900,600
+mimo_rank_bler.png,mimo_bler_curve.csv,Rank BLER,SNR [dB],BLER,1,4,20,900,600
+mimo_covariance_eigenvalues.png,mimo_covariance_estimation.csv,Covariance eigenvalues,Covariance case,Eigenvalue,1,2,12,900,600
+mimo_irc_mmse_comparison.png,mimo_receiver_comparison.csv,IRC and MMSE,SNR [dB],BLER,1,2,12,900,600
+mimo_srs_tpmi_timeline.png,mimo_srs_ul_decisions.csv,SRS RI SRI TPMI,Slot,Decision index,1,3,12,900,600
+mimo_mu_mimo_user_sinr.png,mimo_mu_mimo_trials.csv,MU-MIMO per-user SINR,UE,SINR [dB],1,2,8,900,600
+mimo_multitrp_combining.png,mimo_multitrp_trials.csv,Multi-TRP combining,Phase error [deg],Combined SINR [dB],1,2,8,900,600
+mimo_hybrid_beam_squint.png,mimo_hybrid_beamforming_trials.csv,Hybrid beam squint,Subcarrier group,Loss [dB],1,2,8,900,600
+mimo_beam_state_timeline.png,mimo_beam_management_events.csv,Beam management state,Slot,State,1,2,20,900,600
+mimo_beam_measurements.png,mimo_beam_management_events.csv,Beam measurements,Slot,RSRP [dBm],1,2,20,900,600
+mimo_profile_bler_vs_snr.png,mimo_bler_curve.csv,MIMO profile BLER,SNR [dB],BLER,1,4,20,900,600

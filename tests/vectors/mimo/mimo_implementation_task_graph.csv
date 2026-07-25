@@ -1,0 +1,30 @@
+TaskID,Wave,Task,ExitCriterion
+MIMO-T01,1,Capability profiles,Create release/version-pinned supported tuple registry and planning rejection.
+MIMO-T02,1,Canonical antenna model,Implement element/panel/pose/polarization/port/calibration objects.
+MIMO-T03,1,Power and matrix contract,"Define Nport-by-Nlayer convention, normalization, PRG scope and immutable digests."
+MIMO-T04,2,Type-I 2-port floor,Implement exact table 5.2.2.2.1-1 and independent vectors.
+MIMO-T05,2,Type-I single-panel,Implement selected 4/8/12/16/24/32-port ranks 1-8 and restrictions.
+MIMO-T06,3,Type-I multi-panel,Implement selected 8/16/32-port panel profiles and ranks.
+MIMO-T07,3,Type-II port selection,Implement bounded Type-II/port-selection profile with exact indices/coefficients.
+MIMO-T08,3,Enhanced Type-II,Implement one bounded enhanced Type-II profile; fence all others.
+MIMO-T09,4,CSI report schema,Build typed CSI report configuration and exact field presence/width/order.
+MIMO-T10,4,CSI Part1/Part2 serialization,Integrate TS 38.212 UCI sequences for PUCCH/PUSCH.
+MIMO-T11,5,Measurement state,"Bind CSI-RS/SRS/SSB measurements, interference and ages to reports."
+MIMO-T12,5,RI selection,Exhaustive rank objective using post-EQ SINR/MI/BLER/goodput.
+MIMO-T13,5,PMI selection,Exhaustive wideband/subband/PRG objective with covariance and receiver.
+MIMO-T14,5,CQI/LI/CRI,Implement report-configuration-aware selection and field validation.
+MIMO-T15,6,DL closed loop,CSI trigger→report→scheduler→DCI→PDSCH W application→receiver evidence.
+MIMO-T16,6,UL closed loop,SRS→RI/SRI/TPMI→scheduler/DCI→PUSCH W application→receiver evidence.
+MIMO-T17,7,High-rank DL,"Execute ranks 1-8, two codewords, ports, DM-RS, HARQ and receiver."
+MIMO-T18,7,High-rank UL,"Execute declared ranks/codewords, codebook/non-codebook and power."
+MIMO-T19,8,Covariance estimator,"Sample support, per-PRB granularity, shrinkage, PSD, condition and age."
+MIMO-T20,8,Strict IRC,No downgrade; covariance-qualified IRC and held-out campaigns.
+MIMO-T21,9,MU-MIMO,"Two/four UE shared-resource scheduling, pilots, power, covariance and decoding."
+MIMO-T22,10,NCJT multi-TRP,"Two-TRP noncoherent state, control, channel, combining and feedback."
+MIMO-T23,10,CJT multi-TRP,Timing/phase/calibration-aware coherent joint transmission.
+MIMO-T24,11,FR2 hybrid beamforming,"Analog/digital codebooks, RF chains, quantization, squint and training."
+MIMO-T25,12,Beam-management loop,"P1/P2/P3, report, TCI, application, failure and recovery."
+MIMO-T26,13,Independent oracles,Codebook/CSI/array/covariance/precoder frozen vectors and math invariants.
+MIMO-T27,14,Base phase runner,Generate all base CSVs/PNGs from actual production execution.
+MIMO-T28,15,Impact runner,"Execute paired experiments, statistics, rules and all impact artifacts."
+MIMO-T29,16,Regression integration,Run PDSCH/PUSCH/PDCCH/PUCCH/CSI/SRS/channel tests with new APIs.

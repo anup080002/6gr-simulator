@@ -1,0 +1,32 @@
+{
+  "pack": "SSB initial access SIB1 RA RRC connection",
+  "timestamp_utc": "2026-07-25T04:40:38Z",
+  "prompt_lines": 1959,
+  "source_static_checks": 56,
+  "targeted_defects_detected": 46,
+  "useful_foundations_present": 10,
+  "manifest_files": 43,
+  "manifest_rows": 11307,
+  "impact_families": 60,
+  "impact_experiments": 720,
+  "acceptance_rules": 90,
+  "base_csv_contracts": 31,
+  "base_png_contracts": 20,
+  "impact_csv_contracts": 16,
+  "impact_png_contracts": 30,
+  "total_required_artifacts": 97,
+  "current_required_artifacts_present": 0,
+  "existing_pngs": 40,
+  "existing_pngs_decode_nonblank": 40,
+  "existing_csvs": 225,
+  "existing_csvs_rectangular": 224,
+  "matlab_available": false,
+  "octave_available": false,
+  "limited_checks": {
+    "PASS": 12,
+    "WARN": 1,
+    "FAIL": 2,
+    "BLOCKED": 2
+  },
+  "current_phase_status": "FAIL_PRE_REMEDIATION_AND_MATLAB_BLOCKED"
+}

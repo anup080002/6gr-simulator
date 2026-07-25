@@ -1,0 +1,601 @@
+ExperimentID,FamilyID,PairID,Variant,FactorName,FactorValue,BaselineFactorValue,Wave,RequiredDependency,Channel,SNR_dB,SeedGroup,PayloadID,PrimaryMetric,Mandatory
+F01-E01-B,F01,F01-P01,baseline,UCI bit ownership/order,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY01_01,BitMismatchCount,true
+F01-E01-T,F01,F01-P01,treatment,UCI bit ownership/order,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY01_01,BitMismatchCount,true
+F01-E02-B,F01,F01-P02,baseline,UCI bit ownership/order,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY01_02,BitMismatchCount,true
+F01-E02-T,F01,F01-P02,treatment,UCI bit ownership/order,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY01_02,BitMismatchCount,true
+F01-E03-B,F01,F01-P03,baseline,UCI bit ownership/order,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY01_03,BitMismatchCount,true
+F01-E03-T,F01,F01-P03,treatment,UCI bit ownership/order,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY01_03,BitMismatchCount,true
+F01-E04-B,F01,F01-P04,baseline,UCI bit ownership/order,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY01_04,BitMismatchCount,true
+F01-E04-T,F01,F01-P04,treatment,UCI bit ownership/order,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY01_04,BitMismatchCount,true
+F01-E05-B,F01,F01-P05,baseline,UCI bit ownership/order,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY01_05,BitMismatchCount,true
+F01-E05-T,F01,F01-P05,treatment,UCI bit ownership/order,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY01_05,BitMismatchCount,true
+F01-E06-B,F01,F01-P06,baseline,UCI bit ownership/order,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY01_06,BitMismatchCount,true
+F01-E06-T,F01,F01-P06,treatment,UCI bit ownership/order,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY01_06,BitMismatchCount,true
+F02-E01-B,F02,F02-P01,baseline,payload size A,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY02_01,BLER,true
+F02-E01-T,F02,F02-P01,treatment,payload size A,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY02_01,BLER,true
+F02-E02-B,F02,F02-P02,baseline,payload size A,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY02_02,BLER,true
+F02-E02-T,F02,F02-P02,treatment,payload size A,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY02_02,BLER,true
+F02-E03-B,F02,F02-P03,baseline,payload size A,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY02_03,BLER,true
+F02-E03-T,F02,F02-P03,treatment,payload size A,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY02_03,BLER,true
+F02-E04-B,F02,F02-P04,baseline,payload size A,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY02_04,BLER,true
+F02-E04-T,F02,F02-P04,treatment,payload size A,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY02_04,BLER,true
+F02-E05-B,F02,F02-P05,baseline,payload size A,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY02_05,BLER,true
+F02-E05-T,F02,F02-P05,treatment,payload size A,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY02_05,BLER,true
+F02-E06-B,F02,F02-P06,baseline,payload size A,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY02_06,BLER,true
+F02-E06-T,F02,F02-P06,treatment,payload size A,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY02_06,BLER,true
+F03-E01-B,F03,F03-P01,baseline,codebook type,BASE_1,BASE_1,A,decoded PDSCH/DCI event state,TDL-C,-6,SG1,PAY03_01,HARQBitErrors,true
+F03-E01-T,F03,F03-P01,treatment,codebook type,TREAT_1,BASE_1,A,decoded PDSCH/DCI event state,TDL-C,-6,SG1,PAY03_01,HARQBitErrors,true
+F03-E02-B,F03,F03-P02,baseline,codebook type,BASE_2,BASE_2,A,decoded PDSCH/DCI event state,CDL-C,-3,SG2,PAY03_02,HARQBitErrors,true
+F03-E02-T,F03,F03-P02,treatment,codebook type,TREAT_2,BASE_2,A,decoded PDSCH/DCI event state,CDL-C,-3,SG2,PAY03_02,HARQBitErrors,true
+F03-E03-B,F03,F03-P03,baseline,codebook type,BASE_3,BASE_3,A,decoded PDSCH/DCI event state,AWGN,0,SG3,PAY03_03,HARQBitErrors,true
+F03-E03-T,F03,F03-P03,treatment,codebook type,TREAT_3,BASE_3,A,decoded PDSCH/DCI event state,AWGN,0,SG3,PAY03_03,HARQBitErrors,true
+F03-E04-B,F03,F03-P04,baseline,codebook type,BASE_4,BASE_4,A,decoded PDSCH/DCI event state,TDL-C,3,SG4,PAY03_04,HARQBitErrors,true
+F03-E04-T,F03,F03-P04,treatment,codebook type,TREAT_4,BASE_4,A,decoded PDSCH/DCI event state,TDL-C,3,SG4,PAY03_04,HARQBitErrors,true
+F03-E05-B,F03,F03-P05,baseline,codebook type,BASE_5,BASE_5,A,decoded PDSCH/DCI event state,CDL-C,6,SG5,PAY03_05,HARQBitErrors,true
+F03-E05-T,F03,F03-P05,treatment,codebook type,TREAT_5,BASE_5,A,decoded PDSCH/DCI event state,CDL-C,6,SG5,PAY03_05,HARQBitErrors,true
+F03-E06-B,F03,F03-P06,baseline,codebook type,BASE_6,BASE_6,A,decoded PDSCH/DCI event state,AWGN,9,SG6,PAY03_06,HARQBitErrors,true
+F03-E06-T,F03,F03-P06,treatment,codebook type,TREAT_6,BASE_6,A,decoded PDSCH/DCI event state,AWGN,9,SG6,PAY03_06,HARQBitErrors,true
+F04-E01-B,F04,F04-P01,baseline,priority mix,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY04_01,HARQBitErrors,true
+F04-E01-T,F04,F04-P01,treatment,priority mix,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY04_01,HARQBitErrors,true
+F04-E02-B,F04,F04-P02,baseline,priority mix,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY04_02,HARQBitErrors,true
+F04-E02-T,F04,F04-P02,treatment,priority mix,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY04_02,HARQBitErrors,true
+F04-E03-B,F04,F04-P03,baseline,priority mix,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY04_03,HARQBitErrors,true
+F04-E03-T,F04,F04-P03,treatment,priority mix,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY04_03,HARQBitErrors,true
+F04-E04-B,F04,F04-P04,baseline,priority mix,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY04_04,HARQBitErrors,true
+F04-E04-T,F04,F04-P04,treatment,priority mix,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY04_04,HARQBitErrors,true
+F04-E05-B,F04,F04-P05,baseline,priority mix,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY04_05,HARQBitErrors,true
+F04-E05-T,F04,F04-P05,treatment,priority mix,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY04_05,HARQBitErrors,true
+F04-E06-B,F04,F04-P06,baseline,priority mix,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY04_06,HARQBitErrors,true
+F04-E06-T,F04,F04-P06,treatment,priority mix,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY04_06,HARQBitErrors,true
+F05-E01-B,F05,F05-P01,baseline,SR periodicity,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY05_01,SRLatencySlots,true
+F05-E01-T,F05,F05-P01,treatment,SR periodicity,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY05_01,SRLatencySlots,true
+F05-E02-B,F05,F05-P02,baseline,SR periodicity,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY05_02,SRLatencySlots,true
+F05-E02-T,F05,F05-P02,treatment,SR periodicity,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY05_02,SRLatencySlots,true
+F05-E03-B,F05,F05-P03,baseline,SR periodicity,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY05_03,SRLatencySlots,true
+F05-E03-T,F05,F05-P03,treatment,SR periodicity,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY05_03,SRLatencySlots,true
+F05-E04-B,F05,F05-P04,baseline,SR periodicity,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY05_04,SRLatencySlots,true
+F05-E04-T,F05,F05-P04,treatment,SR periodicity,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY05_04,SRLatencySlots,true
+F05-E05-B,F05,F05-P05,baseline,SR periodicity,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY05_05,SRLatencySlots,true
+F05-E05-T,F05,F05-P05,treatment,SR periodicity,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY05_05,SRLatencySlots,true
+F05-E06-B,F05,F05-P06,baseline,SR periodicity,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY05_06,SRLatencySlots,true
+F05-E06-T,F05,F05-P06,treatment,SR periodicity,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY05_06,SRLatencySlots,true
+F06-E01-B,F06,F06-P01,baseline,simultaneous HARQ/SR,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY06_01,BLER,true
+F06-E01-T,F06,F06-P01,treatment,simultaneous HARQ/SR,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY06_01,BLER,true
+F06-E02-B,F06,F06-P02,baseline,simultaneous HARQ/SR,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY06_02,BLER,true
+F06-E02-T,F06,F06-P02,treatment,simultaneous HARQ/SR,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY06_02,BLER,true
+F06-E03-B,F06,F06-P03,baseline,simultaneous HARQ/SR,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY06_03,BLER,true
+F06-E03-T,F06,F06-P03,treatment,simultaneous HARQ/SR,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY06_03,BLER,true
+F06-E04-B,F06,F06-P04,baseline,simultaneous HARQ/SR,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY06_04,BLER,true
+F06-E04-T,F06,F06-P04,treatment,simultaneous HARQ/SR,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY06_04,BLER,true
+F06-E05-B,F06,F06-P05,baseline,simultaneous HARQ/SR,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY06_05,BLER,true
+F06-E05-T,F06,F06-P05,treatment,simultaneous HARQ/SR,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY06_05,BLER,true
+F06-E06-B,F06,F06-P06,baseline,simultaneous HARQ/SR,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY06_06,BLER,true
+F06-E06-T,F06,F06-P06,treatment,simultaneous HARQ/SR,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY06_06,BLER,true
+F07-E01-B,F07,F07-P01,baseline,simultaneous SR/CSI,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY07_01,BLER,true
+F07-E01-T,F07,F07-P01,treatment,simultaneous SR/CSI,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY07_01,BLER,true
+F07-E02-B,F07,F07-P02,baseline,simultaneous SR/CSI,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY07_02,BLER,true
+F07-E02-T,F07,F07-P02,treatment,simultaneous SR/CSI,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY07_02,BLER,true
+F07-E03-B,F07,F07-P03,baseline,simultaneous SR/CSI,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY07_03,BLER,true
+F07-E03-T,F07,F07-P03,treatment,simultaneous SR/CSI,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY07_03,BLER,true
+F07-E04-B,F07,F07-P04,baseline,simultaneous SR/CSI,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY07_04,BLER,true
+F07-E04-T,F07,F07-P04,treatment,simultaneous SR/CSI,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY07_04,BLER,true
+F07-E05-B,F07,F07-P05,baseline,simultaneous SR/CSI,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY07_05,BLER,true
+F07-E05-T,F07,F07-P05,treatment,simultaneous SR/CSI,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY07_05,BLER,true
+F07-E06-B,F07,F07-P06,baseline,simultaneous SR/CSI,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY07_06,BLER,true
+F07-E06-T,F07,F07-P06,treatment,simultaneous SR/CSI,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY07_06,BLER,true
+F08-E01-B,F08,F08-P01,baseline,CSI1 bits,BASE_1,BASE_1,A,CSI report builder,TDL-C,-6,SG1,PAY08_01,BLER,true
+F08-E01-T,F08,F08-P01,treatment,CSI1 bits,TREAT_1,BASE_1,A,CSI report builder,TDL-C,-6,SG1,PAY08_01,BLER,true
+F08-E02-B,F08,F08-P02,baseline,CSI1 bits,BASE_2,BASE_2,A,CSI report builder,CDL-C,-3,SG2,PAY08_02,BLER,true
+F08-E02-T,F08,F08-P02,treatment,CSI1 bits,TREAT_2,BASE_2,A,CSI report builder,CDL-C,-3,SG2,PAY08_02,BLER,true
+F08-E03-B,F08,F08-P03,baseline,CSI1 bits,BASE_3,BASE_3,A,CSI report builder,AWGN,0,SG3,PAY08_03,BLER,true
+F08-E03-T,F08,F08-P03,treatment,CSI1 bits,TREAT_3,BASE_3,A,CSI report builder,AWGN,0,SG3,PAY08_03,BLER,true
+F08-E04-B,F08,F08-P04,baseline,CSI1 bits,BASE_4,BASE_4,A,CSI report builder,TDL-C,3,SG4,PAY08_04,BLER,true
+F08-E04-T,F08,F08-P04,treatment,CSI1 bits,TREAT_4,BASE_4,A,CSI report builder,TDL-C,3,SG4,PAY08_04,BLER,true
+F08-E05-B,F08,F08-P05,baseline,CSI1 bits,BASE_5,BASE_5,A,CSI report builder,CDL-C,6,SG5,PAY08_05,BLER,true
+F08-E05-T,F08,F08-P05,treatment,CSI1 bits,TREAT_5,BASE_5,A,CSI report builder,CDL-C,6,SG5,PAY08_05,BLER,true
+F08-E06-B,F08,F08-P06,baseline,CSI1 bits,BASE_6,BASE_6,A,CSI report builder,AWGN,9,SG6,PAY08_06,BLER,true
+F08-E06-T,F08,F08-P06,treatment,CSI1 bits,TREAT_6,BASE_6,A,CSI report builder,AWGN,9,SG6,PAY08_06,BLER,true
+F09-E01-B,F09,F09-P01,baseline,CSI2 bits,BASE_1,BASE_1,A,CSI report builder,TDL-C,-6,SG1,PAY09_01,BLER,true
+F09-E01-T,F09,F09-P01,treatment,CSI2 bits,TREAT_1,BASE_1,A,CSI report builder,TDL-C,-6,SG1,PAY09_01,BLER,true
+F09-E02-B,F09,F09-P02,baseline,CSI2 bits,BASE_2,BASE_2,A,CSI report builder,CDL-C,-3,SG2,PAY09_02,BLER,true
+F09-E02-T,F09,F09-P02,treatment,CSI2 bits,TREAT_2,BASE_2,A,CSI report builder,CDL-C,-3,SG2,PAY09_02,BLER,true
+F09-E03-B,F09,F09-P03,baseline,CSI2 bits,BASE_3,BASE_3,A,CSI report builder,AWGN,0,SG3,PAY09_03,BLER,true
+F09-E03-T,F09,F09-P03,treatment,CSI2 bits,TREAT_3,BASE_3,A,CSI report builder,AWGN,0,SG3,PAY09_03,BLER,true
+F09-E04-B,F09,F09-P04,baseline,CSI2 bits,BASE_4,BASE_4,A,CSI report builder,TDL-C,3,SG4,PAY09_04,BLER,true
+F09-E04-T,F09,F09-P04,treatment,CSI2 bits,TREAT_4,BASE_4,A,CSI report builder,TDL-C,3,SG4,PAY09_04,BLER,true
+F09-E05-B,F09,F09-P05,baseline,CSI2 bits,BASE_5,BASE_5,A,CSI report builder,CDL-C,6,SG5,PAY09_05,BLER,true
+F09-E05-T,F09,F09-P05,treatment,CSI2 bits,TREAT_5,BASE_5,A,CSI report builder,CDL-C,6,SG5,PAY09_05,BLER,true
+F09-E06-B,F09,F09-P06,baseline,CSI2 bits,BASE_6,BASE_6,A,CSI report builder,AWGN,9,SG6,PAY09_06,BLER,true
+F09-E06-T,F09,F09-P06,treatment,CSI2 bits,TREAT_6,BASE_6,A,CSI report builder,AWGN,9,SG6,PAY09_06,BLER,true
+F10-E01-B,F10,F10-P01,baseline,report count,BASE_1,BASE_1,A,CSI report builder,TDL-C,-6,SG1,PAY10_01,BitMismatchCount,true
+F10-E01-T,F10,F10-P01,treatment,report count,TREAT_1,BASE_1,A,CSI report builder,TDL-C,-6,SG1,PAY10_01,BitMismatchCount,true
+F10-E02-B,F10,F10-P02,baseline,report count,BASE_2,BASE_2,A,CSI report builder,CDL-C,-3,SG2,PAY10_02,BitMismatchCount,true
+F10-E02-T,F10,F10-P02,treatment,report count,TREAT_2,BASE_2,A,CSI report builder,CDL-C,-3,SG2,PAY10_02,BitMismatchCount,true
+F10-E03-B,F10,F10-P03,baseline,report count,BASE_3,BASE_3,A,CSI report builder,AWGN,0,SG3,PAY10_03,BitMismatchCount,true
+F10-E03-T,F10,F10-P03,treatment,report count,TREAT_3,BASE_3,A,CSI report builder,AWGN,0,SG3,PAY10_03,BitMismatchCount,true
+F10-E04-B,F10,F10-P04,baseline,report count,BASE_4,BASE_4,A,CSI report builder,TDL-C,3,SG4,PAY10_04,BitMismatchCount,true
+F10-E04-T,F10,F10-P04,treatment,report count,TREAT_4,BASE_4,A,CSI report builder,TDL-C,3,SG4,PAY10_04,BitMismatchCount,true
+F10-E05-B,F10,F10-P05,baseline,report count,BASE_5,BASE_5,A,CSI report builder,CDL-C,6,SG5,PAY10_05,BitMismatchCount,true
+F10-E05-T,F10,F10-P05,treatment,report count,TREAT_5,BASE_5,A,CSI report builder,CDL-C,6,SG5,PAY10_05,BitMismatchCount,true
+F10-E06-B,F10,F10-P06,baseline,report count,BASE_6,BASE_6,A,CSI report builder,AWGN,9,SG6,PAY10_06,BitMismatchCount,true
+F10-E06-T,F10,F10-P06,treatment,report count,TREAT_6,BASE_6,A,CSI report builder,AWGN,9,SG6,PAY10_06,BitMismatchCount,true
+F11-E01-B,F11,F11-P01,baseline,O_UCI,BASE_1,BASE_1,A,RRC PUCCH state,TDL-C,-6,SG1,PAY11_01,ResourceSelectionError,true
+F11-E01-T,F11,F11-P01,treatment,O_UCI,TREAT_1,BASE_1,A,RRC PUCCH state,TDL-C,-6,SG1,PAY11_01,ResourceSelectionError,true
+F11-E02-B,F11,F11-P02,baseline,O_UCI,BASE_2,BASE_2,A,RRC PUCCH state,CDL-C,-3,SG2,PAY11_02,ResourceSelectionError,true
+F11-E02-T,F11,F11-P02,treatment,O_UCI,TREAT_2,BASE_2,A,RRC PUCCH state,CDL-C,-3,SG2,PAY11_02,ResourceSelectionError,true
+F11-E03-B,F11,F11-P03,baseline,O_UCI,BASE_3,BASE_3,A,RRC PUCCH state,AWGN,0,SG3,PAY11_03,ResourceSelectionError,true
+F11-E03-T,F11,F11-P03,treatment,O_UCI,TREAT_3,BASE_3,A,RRC PUCCH state,AWGN,0,SG3,PAY11_03,ResourceSelectionError,true
+F11-E04-B,F11,F11-P04,baseline,O_UCI,BASE_4,BASE_4,A,RRC PUCCH state,TDL-C,3,SG4,PAY11_04,ResourceSelectionError,true
+F11-E04-T,F11,F11-P04,treatment,O_UCI,TREAT_4,BASE_4,A,RRC PUCCH state,TDL-C,3,SG4,PAY11_04,ResourceSelectionError,true
+F11-E05-B,F11,F11-P05,baseline,O_UCI,BASE_5,BASE_5,A,RRC PUCCH state,CDL-C,6,SG5,PAY11_05,ResourceSelectionError,true
+F11-E05-T,F11,F11-P05,treatment,O_UCI,TREAT_5,BASE_5,A,RRC PUCCH state,CDL-C,6,SG5,PAY11_05,ResourceSelectionError,true
+F11-E06-B,F11,F11-P06,baseline,O_UCI,BASE_6,BASE_6,A,RRC PUCCH state,AWGN,9,SG6,PAY11_06,ResourceSelectionError,true
+F11-E06-T,F11,F11-P06,treatment,O_UCI,TREAT_6,BASE_6,A,RRC PUCCH state,AWGN,9,SG6,PAY11_06,ResourceSelectionError,true
+F12-E01-B,F12,F12-P01,baseline,format,BASE_1,BASE_1,A,RRC PUCCH state,TDL-C,-6,SG1,PAY12_01,BLER,true
+F12-E01-T,F12,F12-P01,treatment,format,TREAT_1,BASE_1,A,RRC PUCCH state,TDL-C,-6,SG1,PAY12_01,BLER,true
+F12-E02-B,F12,F12-P02,baseline,format,BASE_2,BASE_2,A,RRC PUCCH state,CDL-C,-3,SG2,PAY12_02,BLER,true
+F12-E02-T,F12,F12-P02,treatment,format,TREAT_2,BASE_2,A,RRC PUCCH state,CDL-C,-3,SG2,PAY12_02,BLER,true
+F12-E03-B,F12,F12-P03,baseline,format,BASE_3,BASE_3,A,RRC PUCCH state,AWGN,0,SG3,PAY12_03,BLER,true
+F12-E03-T,F12,F12-P03,treatment,format,TREAT_3,BASE_3,A,RRC PUCCH state,AWGN,0,SG3,PAY12_03,BLER,true
+F12-E04-B,F12,F12-P04,baseline,format,BASE_4,BASE_4,A,RRC PUCCH state,TDL-C,3,SG4,PAY12_04,BLER,true
+F12-E04-T,F12,F12-P04,treatment,format,TREAT_4,BASE_4,A,RRC PUCCH state,TDL-C,3,SG4,PAY12_04,BLER,true
+F12-E05-B,F12,F12-P05,baseline,format,BASE_5,BASE_5,A,RRC PUCCH state,CDL-C,6,SG5,PAY12_05,BLER,true
+F12-E05-T,F12,F12-P05,treatment,format,TREAT_5,BASE_5,A,RRC PUCCH state,CDL-C,6,SG5,PAY12_05,BLER,true
+F12-E06-B,F12,F12-P06,baseline,format,BASE_6,BASE_6,A,RRC PUCCH state,AWGN,9,SG6,PAY12_06,BLER,true
+F12-E06-T,F12,F12-P06,treatment,format,TREAT_6,BASE_6,A,RRC PUCCH state,AWGN,9,SG6,PAY12_06,BLER,true
+F13-E01-B,F13,F13-P01,baseline,cyclic shift separation,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY13_01,CrossCorrelation,true
+F13-E01-T,F13,F13-P01,treatment,cyclic shift separation,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY13_01,CrossCorrelation,true
+F13-E02-B,F13,F13-P02,baseline,cyclic shift separation,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY13_02,CrossCorrelation,true
+F13-E02-T,F13,F13-P02,treatment,cyclic shift separation,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY13_02,CrossCorrelation,true
+F13-E03-B,F13,F13-P03,baseline,cyclic shift separation,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY13_03,CrossCorrelation,true
+F13-E03-T,F13,F13-P03,treatment,cyclic shift separation,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY13_03,CrossCorrelation,true
+F13-E04-B,F13,F13-P04,baseline,cyclic shift separation,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY13_04,CrossCorrelation,true
+F13-E04-T,F13,F13-P04,treatment,cyclic shift separation,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY13_04,CrossCorrelation,true
+F13-E05-B,F13,F13-P05,baseline,cyclic shift separation,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY13_05,CrossCorrelation,true
+F13-E05-T,F13,F13-P05,treatment,cyclic shift separation,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY13_05,CrossCorrelation,true
+F13-E06-B,F13,F13-P06,baseline,cyclic shift separation,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY13_06,CrossCorrelation,true
+F13-E06-T,F13,F13-P06,treatment,cyclic shift separation,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY13_06,CrossCorrelation,true
+F14-E01-B,F14,F14-P01,baseline,OCC index,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY14_01,CrossCorrelation,true
+F14-E01-T,F14,F14-P01,treatment,OCC index,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY14_01,CrossCorrelation,true
+F14-E02-B,F14,F14-P02,baseline,OCC index,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY14_02,CrossCorrelation,true
+F14-E02-T,F14,F14-P02,treatment,OCC index,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY14_02,CrossCorrelation,true
+F14-E03-B,F14,F14-P03,baseline,OCC index,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY14_03,CrossCorrelation,true
+F14-E03-T,F14,F14-P03,treatment,OCC index,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY14_03,CrossCorrelation,true
+F14-E04-B,F14,F14-P04,baseline,OCC index,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY14_04,CrossCorrelation,true
+F14-E04-T,F14,F14-P04,treatment,OCC index,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY14_04,CrossCorrelation,true
+F14-E05-B,F14,F14-P05,baseline,OCC index,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY14_05,CrossCorrelation,true
+F14-E05-T,F14,F14-P05,treatment,OCC index,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY14_05,CrossCorrelation,true
+F14-E06-B,F14,F14-P06,baseline,OCC index,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY14_06,CrossCorrelation,true
+F14-E06-T,F14,F14-P06,treatment,OCC index,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY14_06,CrossCorrelation,true
+F15-E01-B,F15,F15-P01,baseline,PRBs/symbols,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY15_01,SpectralEfficiency,true
+F15-E01-T,F15,F15-P01,treatment,PRBs/symbols,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY15_01,SpectralEfficiency,true
+F15-E02-B,F15,F15-P02,baseline,PRBs/symbols,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY15_02,SpectralEfficiency,true
+F15-E02-T,F15,F15-P02,treatment,PRBs/symbols,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY15_02,SpectralEfficiency,true
+F15-E03-B,F15,F15-P03,baseline,PRBs/symbols,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY15_03,SpectralEfficiency,true
+F15-E03-T,F15,F15-P03,treatment,PRBs/symbols,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY15_03,SpectralEfficiency,true
+F15-E04-B,F15,F15-P04,baseline,PRBs/symbols,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY15_04,SpectralEfficiency,true
+F15-E04-T,F15,F15-P04,treatment,PRBs/symbols,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY15_04,SpectralEfficiency,true
+F15-E05-B,F15,F15-P05,baseline,PRBs/symbols,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY15_05,SpectralEfficiency,true
+F15-E05-T,F15,F15-P05,treatment,PRBs/symbols,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY15_05,SpectralEfficiency,true
+F15-E06-B,F15,F15-P06,baseline,PRBs/symbols,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY15_06,SpectralEfficiency,true
+F15-E06-T,F15,F15-P06,treatment,PRBs/symbols,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY15_06,SpectralEfficiency,true
+F16-E01-B,F16,F16-P01,baseline,additional DMRS,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY16_01,BLER,true
+F16-E01-T,F16,F16-P01,treatment,additional DMRS,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY16_01,BLER,true
+F16-E02-B,F16,F16-P02,baseline,additional DMRS,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY16_02,BLER,true
+F16-E02-T,F16,F16-P02,treatment,additional DMRS,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY16_02,BLER,true
+F16-E03-B,F16,F16-P03,baseline,additional DMRS,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY16_03,BLER,true
+F16-E03-T,F16,F16-P03,treatment,additional DMRS,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY16_03,BLER,true
+F16-E04-B,F16,F16-P04,baseline,additional DMRS,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY16_04,BLER,true
+F16-E04-T,F16,F16-P04,treatment,additional DMRS,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY16_04,BLER,true
+F16-E05-B,F16,F16-P05,baseline,additional DMRS,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY16_05,BLER,true
+F16-E05-T,F16,F16-P05,treatment,additional DMRS,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY16_05,BLER,true
+F16-E06-B,F16,F16-P06,baseline,additional DMRS,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY16_06,BLER,true
+F16-E06-T,F16,F16-P06,treatment,additional DMRS,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY16_06,BLER,true
+F17-E01-B,F17,F17-P01,baseline,spreading factor,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY17_01,BLER,true
+F17-E01-T,F17,F17-P01,treatment,spreading factor,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY17_01,BLER,true
+F17-E02-B,F17,F17-P02,baseline,spreading factor,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY17_02,BLER,true
+F17-E02-T,F17,F17-P02,treatment,spreading factor,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY17_02,BLER,true
+F17-E03-B,F17,F17-P03,baseline,spreading factor,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY17_03,BLER,true
+F17-E03-T,F17,F17-P03,treatment,spreading factor,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY17_03,BLER,true
+F17-E04-B,F17,F17-P04,baseline,spreading factor,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY17_04,BLER,true
+F17-E04-T,F17,F17-P04,treatment,spreading factor,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY17_04,BLER,true
+F17-E05-B,F17,F17-P05,baseline,spreading factor,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY17_05,BLER,true
+F17-E05-T,F17,F17-P05,treatment,spreading factor,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY17_05,BLER,true
+F17-E06-B,F17,F17-P06,baseline,spreading factor,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY17_06,BLER,true
+F17-E06-T,F17,F17-P06,treatment,spreading factor,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY17_06,BLER,true
+F18-E01-B,F18,F18-P01,baseline,hopping enabled,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY18_01,BLER,true
+F18-E01-T,F18,F18-P01,treatment,hopping enabled,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY18_01,BLER,true
+F18-E02-B,F18,F18-P02,baseline,hopping enabled,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY18_02,BLER,true
+F18-E02-T,F18,F18-P02,treatment,hopping enabled,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY18_02,BLER,true
+F18-E03-B,F18,F18-P03,baseline,hopping enabled,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY18_03,BLER,true
+F18-E03-T,F18,F18-P03,treatment,hopping enabled,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY18_03,BLER,true
+F18-E04-B,F18,F18-P04,baseline,hopping enabled,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY18_04,BLER,true
+F18-E04-T,F18,F18-P04,treatment,hopping enabled,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY18_04,BLER,true
+F18-E05-B,F18,F18-P05,baseline,hopping enabled,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY18_05,BLER,true
+F18-E05-T,F18,F18-P05,treatment,hopping enabled,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY18_05,BLER,true
+F18-E06-B,F18,F18-P06,baseline,hopping enabled,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY18_06,BLER,true
+F18-E06-T,F18,F18-P06,treatment,hopping enabled,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY18_06,BLER,true
+F19-E01-B,F19,F19-P01,baseline,repetition count,BASE_1,BASE_1,B,central timing/repetition state,TDL-C,-6,SG1,PAY19_01,BLER,true
+F19-E01-T,F19,F19-P01,treatment,repetition count,TREAT_1,BASE_1,B,central timing/repetition state,TDL-C,-6,SG1,PAY19_01,BLER,true
+F19-E02-B,F19,F19-P02,baseline,repetition count,BASE_2,BASE_2,B,central timing/repetition state,CDL-C,-3,SG2,PAY19_02,BLER,true
+F19-E02-T,F19,F19-P02,treatment,repetition count,TREAT_2,BASE_2,B,central timing/repetition state,CDL-C,-3,SG2,PAY19_02,BLER,true
+F19-E03-B,F19,F19-P03,baseline,repetition count,BASE_3,BASE_3,B,central timing/repetition state,AWGN,0,SG3,PAY19_03,BLER,true
+F19-E03-T,F19,F19-P03,treatment,repetition count,TREAT_3,BASE_3,B,central timing/repetition state,AWGN,0,SG3,PAY19_03,BLER,true
+F19-E04-B,F19,F19-P04,baseline,repetition count,BASE_4,BASE_4,B,central timing/repetition state,TDL-C,3,SG4,PAY19_04,BLER,true
+F19-E04-T,F19,F19-P04,treatment,repetition count,TREAT_4,BASE_4,B,central timing/repetition state,TDL-C,3,SG4,PAY19_04,BLER,true
+F19-E05-B,F19,F19-P05,baseline,repetition count,BASE_5,BASE_5,B,central timing/repetition state,CDL-C,6,SG5,PAY19_05,BLER,true
+F19-E05-T,F19,F19-P05,treatment,repetition count,TREAT_5,BASE_5,B,central timing/repetition state,CDL-C,6,SG5,PAY19_05,BLER,true
+F19-E06-B,F19,F19-P06,baseline,repetition count,BASE_6,BASE_6,B,central timing/repetition state,AWGN,9,SG6,PAY19_06,BLER,true
+F19-E06-T,F19,F19-P06,treatment,repetition count,TREAT_6,BASE_6,B,central timing/repetition state,AWGN,9,SG6,PAY19_06,BLER,true
+F20-E01-B,F20,F20-P01,baseline,hopping mode,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY20_01,CrossCorrelation,true
+F20-E01-T,F20,F20-P01,treatment,hopping mode,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY20_01,CrossCorrelation,true
+F20-E02-B,F20,F20-P02,baseline,hopping mode,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY20_02,CrossCorrelation,true
+F20-E02-T,F20,F20-P02,treatment,hopping mode,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY20_02,CrossCorrelation,true
+F20-E03-B,F20,F20-P03,baseline,hopping mode,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY20_03,CrossCorrelation,true
+F20-E03-T,F20,F20-P03,treatment,hopping mode,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY20_03,CrossCorrelation,true
+F20-E04-B,F20,F20-P04,baseline,hopping mode,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY20_04,CrossCorrelation,true
+F20-E04-T,F20,F20-P04,treatment,hopping mode,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY20_04,CrossCorrelation,true
+F20-E05-B,F20,F20-P05,baseline,hopping mode,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY20_05,CrossCorrelation,true
+F20-E05-T,F20,F20-P05,treatment,hopping mode,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY20_05,CrossCorrelation,true
+F20-E06-B,F20,F20-P06,baseline,hopping mode,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY20_06,CrossCorrelation,true
+F20-E06-T,F20,F20-P06,treatment,hopping mode,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY20_06,CrossCorrelation,true
+F21-E01-B,F21,F21-P01,baseline,interlace count,BASE_1,BASE_1,B,shared-spectrum/interlace engine,TDL-C,-6,SG1,PAY21_01,Occupancy,true
+F21-E01-T,F21,F21-P01,treatment,interlace count,TREAT_1,BASE_1,B,shared-spectrum/interlace engine,TDL-C,-6,SG1,PAY21_01,Occupancy,true
+F21-E02-B,F21,F21-P02,baseline,interlace count,BASE_2,BASE_2,B,shared-spectrum/interlace engine,CDL-C,-3,SG2,PAY21_02,Occupancy,true
+F21-E02-T,F21,F21-P02,treatment,interlace count,TREAT_2,BASE_2,B,shared-spectrum/interlace engine,CDL-C,-3,SG2,PAY21_02,Occupancy,true
+F21-E03-B,F21,F21-P03,baseline,interlace count,BASE_3,BASE_3,B,shared-spectrum/interlace engine,AWGN,0,SG3,PAY21_03,Occupancy,true
+F21-E03-T,F21,F21-P03,treatment,interlace count,TREAT_3,BASE_3,B,shared-spectrum/interlace engine,AWGN,0,SG3,PAY21_03,Occupancy,true
+F21-E04-B,F21,F21-P04,baseline,interlace count,BASE_4,BASE_4,B,shared-spectrum/interlace engine,TDL-C,3,SG4,PAY21_04,Occupancy,true
+F21-E04-T,F21,F21-P04,treatment,interlace count,TREAT_4,BASE_4,B,shared-spectrum/interlace engine,TDL-C,3,SG4,PAY21_04,Occupancy,true
+F21-E05-B,F21,F21-P05,baseline,interlace count,BASE_5,BASE_5,B,shared-spectrum/interlace engine,CDL-C,6,SG5,PAY21_05,Occupancy,true
+F21-E05-T,F21,F21-P05,treatment,interlace count,TREAT_5,BASE_5,B,shared-spectrum/interlace engine,CDL-C,6,SG5,PAY21_05,Occupancy,true
+F21-E06-B,F21,F21-P06,baseline,interlace count,BASE_6,BASE_6,B,shared-spectrum/interlace engine,AWGN,9,SG6,PAY21_06,Occupancy,true
+F21-E06-T,F21,F21-P06,treatment,interlace count,TREAT_6,BASE_6,B,shared-spectrum/interlace engine,AWGN,9,SG6,PAY21_06,Occupancy,true
+F22-E01-B,F22,F22-P01,baseline,K1,BASE_1,BASE_1,A,decoded DCI timing state,TDL-C,-6,SG1,PAY22_01,LatencySlots,true
+F22-E01-T,F22,F22-P01,treatment,K1,TREAT_1,BASE_1,A,decoded DCI timing state,TDL-C,-6,SG1,PAY22_01,LatencySlots,true
+F22-E02-B,F22,F22-P02,baseline,K1,BASE_2,BASE_2,A,decoded DCI timing state,CDL-C,-3,SG2,PAY22_02,LatencySlots,true
+F22-E02-T,F22,F22-P02,treatment,K1,TREAT_2,BASE_2,A,decoded DCI timing state,CDL-C,-3,SG2,PAY22_02,LatencySlots,true
+F22-E03-B,F22,F22-P03,baseline,K1,BASE_3,BASE_3,A,decoded DCI timing state,AWGN,0,SG3,PAY22_03,LatencySlots,true
+F22-E03-T,F22,F22-P03,treatment,K1,TREAT_3,BASE_3,A,decoded DCI timing state,AWGN,0,SG3,PAY22_03,LatencySlots,true
+F22-E04-B,F22,F22-P04,baseline,K1,BASE_4,BASE_4,A,decoded DCI timing state,TDL-C,3,SG4,PAY22_04,LatencySlots,true
+F22-E04-T,F22,F22-P04,treatment,K1,TREAT_4,BASE_4,A,decoded DCI timing state,TDL-C,3,SG4,PAY22_04,LatencySlots,true
+F22-E05-B,F22,F22-P05,baseline,K1,BASE_5,BASE_5,A,decoded DCI timing state,CDL-C,6,SG5,PAY22_05,LatencySlots,true
+F22-E05-T,F22,F22-P05,treatment,K1,TREAT_5,BASE_5,A,decoded DCI timing state,CDL-C,6,SG5,PAY22_05,LatencySlots,true
+F22-E06-B,F22,F22-P06,baseline,K1,BASE_6,BASE_6,A,decoded DCI timing state,AWGN,9,SG6,PAY22_06,LatencySlots,true
+F22-E06-T,F22,F22-P06,treatment,K1,TREAT_6,BASE_6,A,decoded DCI timing state,AWGN,9,SG6,PAY22_06,LatencySlots,true
+F23-E01-B,F23,F23-P01,baseline,UL symbol pattern,BASE_1,BASE_1,A,central frame/TDD engine,TDL-C,-6,SG1,PAY23_01,AvailabilityProbability,true
+F23-E01-T,F23,F23-P01,treatment,UL symbol pattern,TREAT_1,BASE_1,A,central frame/TDD engine,TDL-C,-6,SG1,PAY23_01,AvailabilityProbability,true
+F23-E02-B,F23,F23-P02,baseline,UL symbol pattern,BASE_2,BASE_2,A,central frame/TDD engine,CDL-C,-3,SG2,PAY23_02,AvailabilityProbability,true
+F23-E02-T,F23,F23-P02,treatment,UL symbol pattern,TREAT_2,BASE_2,A,central frame/TDD engine,CDL-C,-3,SG2,PAY23_02,AvailabilityProbability,true
+F23-E03-B,F23,F23-P03,baseline,UL symbol pattern,BASE_3,BASE_3,A,central frame/TDD engine,AWGN,0,SG3,PAY23_03,AvailabilityProbability,true
+F23-E03-T,F23,F23-P03,treatment,UL symbol pattern,TREAT_3,BASE_3,A,central frame/TDD engine,AWGN,0,SG3,PAY23_03,AvailabilityProbability,true
+F23-E04-B,F23,F23-P04,baseline,UL symbol pattern,BASE_4,BASE_4,A,central frame/TDD engine,TDL-C,3,SG4,PAY23_04,AvailabilityProbability,true
+F23-E04-T,F23,F23-P04,treatment,UL symbol pattern,TREAT_4,BASE_4,A,central frame/TDD engine,TDL-C,3,SG4,PAY23_04,AvailabilityProbability,true
+F23-E05-B,F23,F23-P05,baseline,UL symbol pattern,BASE_5,BASE_5,A,central frame/TDD engine,CDL-C,6,SG5,PAY23_05,AvailabilityProbability,true
+F23-E05-T,F23,F23-P05,treatment,UL symbol pattern,TREAT_5,BASE_5,A,central frame/TDD engine,CDL-C,6,SG5,PAY23_05,AvailabilityProbability,true
+F23-E06-B,F23,F23-P06,baseline,UL symbol pattern,BASE_6,BASE_6,A,central frame/TDD engine,AWGN,9,SG6,PAY23_06,AvailabilityProbability,true
+F23-E06-T,F23,F23-P06,treatment,UL symbol pattern,TREAT_6,BASE_6,A,central frame/TDD engine,AWGN,9,SG6,PAY23_06,AvailabilityProbability,true
+F24-E01-B,F24,F24-P01,baseline,PRI,BASE_1,BASE_1,A,decoded DCI PRI,TDL-C,-6,SG1,PAY24_01,ResourceSelectionError,true
+F24-E01-T,F24,F24-P01,treatment,PRI,TREAT_1,BASE_1,A,decoded DCI PRI,TDL-C,-6,SG1,PAY24_01,ResourceSelectionError,true
+F24-E02-B,F24,F24-P02,baseline,PRI,BASE_2,BASE_2,A,decoded DCI PRI,CDL-C,-3,SG2,PAY24_02,ResourceSelectionError,true
+F24-E02-T,F24,F24-P02,treatment,PRI,TREAT_2,BASE_2,A,decoded DCI PRI,CDL-C,-3,SG2,PAY24_02,ResourceSelectionError,true
+F24-E03-B,F24,F24-P03,baseline,PRI,BASE_3,BASE_3,A,decoded DCI PRI,AWGN,0,SG3,PAY24_03,ResourceSelectionError,true
+F24-E03-T,F24,F24-P03,treatment,PRI,TREAT_3,BASE_3,A,decoded DCI PRI,AWGN,0,SG3,PAY24_03,ResourceSelectionError,true
+F24-E04-B,F24,F24-P04,baseline,PRI,BASE_4,BASE_4,A,decoded DCI PRI,TDL-C,3,SG4,PAY24_04,ResourceSelectionError,true
+F24-E04-T,F24,F24-P04,treatment,PRI,TREAT_4,BASE_4,A,decoded DCI PRI,TDL-C,3,SG4,PAY24_04,ResourceSelectionError,true
+F24-E05-B,F24,F24-P05,baseline,PRI,BASE_5,BASE_5,A,decoded DCI PRI,CDL-C,6,SG5,PAY24_05,ResourceSelectionError,true
+F24-E05-T,F24,F24-P05,treatment,PRI,TREAT_5,BASE_5,A,decoded DCI PRI,CDL-C,6,SG5,PAY24_05,ResourceSelectionError,true
+F24-E06-B,F24,F24-P06,baseline,PRI,BASE_6,BASE_6,A,decoded DCI PRI,AWGN,9,SG6,PAY24_06,ResourceSelectionError,true
+F24-E06-T,F24,F24-P06,treatment,PRI,TREAT_6,BASE_6,A,decoded DCI PRI,AWGN,9,SG6,PAY24_06,ResourceSelectionError,true
+F25-E01-B,F25,F25-P01,baseline,first CCE,BASE_1,BASE_1,A,PDCCH CCE provenance,TDL-C,-6,SG1,PAY25_01,ResourceSelectionError,true
+F25-E01-T,F25,F25-P01,treatment,first CCE,TREAT_1,BASE_1,A,PDCCH CCE provenance,TDL-C,-6,SG1,PAY25_01,ResourceSelectionError,true
+F25-E02-B,F25,F25-P02,baseline,first CCE,BASE_2,BASE_2,A,PDCCH CCE provenance,CDL-C,-3,SG2,PAY25_02,ResourceSelectionError,true
+F25-E02-T,F25,F25-P02,treatment,first CCE,TREAT_2,BASE_2,A,PDCCH CCE provenance,CDL-C,-3,SG2,PAY25_02,ResourceSelectionError,true
+F25-E03-B,F25,F25-P03,baseline,first CCE,BASE_3,BASE_3,A,PDCCH CCE provenance,AWGN,0,SG3,PAY25_03,ResourceSelectionError,true
+F25-E03-T,F25,F25-P03,treatment,first CCE,TREAT_3,BASE_3,A,PDCCH CCE provenance,AWGN,0,SG3,PAY25_03,ResourceSelectionError,true
+F25-E04-B,F25,F25-P04,baseline,first CCE,BASE_4,BASE_4,A,PDCCH CCE provenance,TDL-C,3,SG4,PAY25_04,ResourceSelectionError,true
+F25-E04-T,F25,F25-P04,treatment,first CCE,TREAT_4,BASE_4,A,PDCCH CCE provenance,TDL-C,3,SG4,PAY25_04,ResourceSelectionError,true
+F25-E05-B,F25,F25-P05,baseline,first CCE,BASE_5,BASE_5,A,PDCCH CCE provenance,CDL-C,6,SG5,PAY25_05,ResourceSelectionError,true
+F25-E05-T,F25,F25-P05,treatment,first CCE,TREAT_5,BASE_5,A,PDCCH CCE provenance,CDL-C,6,SG5,PAY25_05,ResourceSelectionError,true
+F25-E06-B,F25,F25-P06,baseline,first CCE,BASE_6,BASE_6,A,PDCCH CCE provenance,AWGN,9,SG6,PAY25_06,ResourceSelectionError,true
+F25-E06-T,F25,F25-P06,treatment,first CCE,TREAT_6,BASE_6,A,PDCCH CCE provenance,AWGN,9,SG6,PAY25_06,ResourceSelectionError,true
+F26-E01-B,F26,F26-P01,baseline,BWP switch,BASE_1,BASE_1,B,multi-BWP state,TDL-C,-6,SG1,PAY26_01,GrantSuccess,true
+F26-E01-T,F26,F26-P01,treatment,BWP switch,TREAT_1,BASE_1,B,multi-BWP state,TDL-C,-6,SG1,PAY26_01,GrantSuccess,true
+F26-E02-B,F26,F26-P02,baseline,BWP switch,BASE_2,BASE_2,B,multi-BWP state,CDL-C,-3,SG2,PAY26_02,GrantSuccess,true
+F26-E02-T,F26,F26-P02,treatment,BWP switch,TREAT_2,BASE_2,B,multi-BWP state,CDL-C,-3,SG2,PAY26_02,GrantSuccess,true
+F26-E03-B,F26,F26-P03,baseline,BWP switch,BASE_3,BASE_3,B,multi-BWP state,AWGN,0,SG3,PAY26_03,GrantSuccess,true
+F26-E03-T,F26,F26-P03,treatment,BWP switch,TREAT_3,BASE_3,B,multi-BWP state,AWGN,0,SG3,PAY26_03,GrantSuccess,true
+F26-E04-B,F26,F26-P04,baseline,BWP switch,BASE_4,BASE_4,B,multi-BWP state,TDL-C,3,SG4,PAY26_04,GrantSuccess,true
+F26-E04-T,F26,F26-P04,treatment,BWP switch,TREAT_4,BASE_4,B,multi-BWP state,TDL-C,3,SG4,PAY26_04,GrantSuccess,true
+F26-E05-B,F26,F26-P05,baseline,BWP switch,BASE_5,BASE_5,B,multi-BWP state,CDL-C,6,SG5,PAY26_05,GrantSuccess,true
+F26-E05-T,F26,F26-P05,treatment,BWP switch,TREAT_5,BASE_5,B,multi-BWP state,CDL-C,6,SG5,PAY26_05,GrantSuccess,true
+F26-E06-B,F26,F26-P06,baseline,BWP switch,BASE_6,BASE_6,B,multi-BWP state,AWGN,9,SG6,PAY26_06,GrantSuccess,true
+F26-E06-T,F26,F26-P06,treatment,BWP switch,TREAT_6,BASE_6,B,multi-BWP state,AWGN,9,SG6,PAY26_06,GrantSuccess,true
+F27-E01-B,F27,F27-P01,baseline,feedback cell,BASE_1,BASE_1,B,multi-carrier state,TDL-C,-6,SG1,PAY27_01,GrantSuccess,true
+F27-E01-T,F27,F27-P01,treatment,feedback cell,TREAT_1,BASE_1,B,multi-carrier state,TDL-C,-6,SG1,PAY27_01,GrantSuccess,true
+F27-E02-B,F27,F27-P02,baseline,feedback cell,BASE_2,BASE_2,B,multi-carrier state,CDL-C,-3,SG2,PAY27_02,GrantSuccess,true
+F27-E02-T,F27,F27-P02,treatment,feedback cell,TREAT_2,BASE_2,B,multi-carrier state,CDL-C,-3,SG2,PAY27_02,GrantSuccess,true
+F27-E03-B,F27,F27-P03,baseline,feedback cell,BASE_3,BASE_3,B,multi-carrier state,AWGN,0,SG3,PAY27_03,GrantSuccess,true
+F27-E03-T,F27,F27-P03,treatment,feedback cell,TREAT_3,BASE_3,B,multi-carrier state,AWGN,0,SG3,PAY27_03,GrantSuccess,true
+F27-E04-B,F27,F27-P04,baseline,feedback cell,BASE_4,BASE_4,B,multi-carrier state,TDL-C,3,SG4,PAY27_04,GrantSuccess,true
+F27-E04-T,F27,F27-P04,treatment,feedback cell,TREAT_4,BASE_4,B,multi-carrier state,TDL-C,3,SG4,PAY27_04,GrantSuccess,true
+F27-E05-B,F27,F27-P05,baseline,feedback cell,BASE_5,BASE_5,B,multi-carrier state,CDL-C,6,SG5,PAY27_05,GrantSuccess,true
+F27-E05-T,F27,F27-P05,treatment,feedback cell,TREAT_5,BASE_5,B,multi-carrier state,CDL-C,6,SG5,PAY27_05,GrantSuccess,true
+F27-E06-B,F27,F27-P06,baseline,feedback cell,BASE_6,BASE_6,B,multi-carrier state,AWGN,9,SG6,PAY27_06,GrantSuccess,true
+F27-E06-T,F27,F27-P06,treatment,feedback cell,TREAT_6,BASE_6,B,multi-carrier state,AWGN,9,SG6,PAY27_06,GrantSuccess,true
+F28-E01-B,F28,F28-P01,baseline,PUSCH overlap,BASE_1,BASE_1,B,PUSCH UCI integration,TDL-C,-6,SG1,PAY28_01,UCIRecoveryRate,true
+F28-E01-T,F28,F28-P01,treatment,PUSCH overlap,TREAT_1,BASE_1,B,PUSCH UCI integration,TDL-C,-6,SG1,PAY28_01,UCIRecoveryRate,true
+F28-E02-B,F28,F28-P02,baseline,PUSCH overlap,BASE_2,BASE_2,B,PUSCH UCI integration,CDL-C,-3,SG2,PAY28_02,UCIRecoveryRate,true
+F28-E02-T,F28,F28-P02,treatment,PUSCH overlap,TREAT_2,BASE_2,B,PUSCH UCI integration,CDL-C,-3,SG2,PAY28_02,UCIRecoveryRate,true
+F28-E03-B,F28,F28-P03,baseline,PUSCH overlap,BASE_3,BASE_3,B,PUSCH UCI integration,AWGN,0,SG3,PAY28_03,UCIRecoveryRate,true
+F28-E03-T,F28,F28-P03,treatment,PUSCH overlap,TREAT_3,BASE_3,B,PUSCH UCI integration,AWGN,0,SG3,PAY28_03,UCIRecoveryRate,true
+F28-E04-B,F28,F28-P04,baseline,PUSCH overlap,BASE_4,BASE_4,B,PUSCH UCI integration,TDL-C,3,SG4,PAY28_04,UCIRecoveryRate,true
+F28-E04-T,F28,F28-P04,treatment,PUSCH overlap,TREAT_4,BASE_4,B,PUSCH UCI integration,TDL-C,3,SG4,PAY28_04,UCIRecoveryRate,true
+F28-E05-B,F28,F28-P05,baseline,PUSCH overlap,BASE_5,BASE_5,B,PUSCH UCI integration,CDL-C,6,SG5,PAY28_05,UCIRecoveryRate,true
+F28-E05-T,F28,F28-P05,treatment,PUSCH overlap,TREAT_5,BASE_5,B,PUSCH UCI integration,CDL-C,6,SG5,PAY28_05,UCIRecoveryRate,true
+F28-E06-B,F28,F28-P06,baseline,PUSCH overlap,BASE_6,BASE_6,B,PUSCH UCI integration,AWGN,9,SG6,PAY28_06,UCIRecoveryRate,true
+F28-E06-T,F28,F28-P06,treatment,PUSCH overlap,TREAT_6,BASE_6,B,PUSCH UCI integration,AWGN,9,SG6,PAY28_06,UCIRecoveryRate,true
+F29-E01-B,F29,F29-P01,baseline,SRS overlap,BASE_1,BASE_1,B,SRS resource engine,TDL-C,-6,SG1,PAY29_01,CollisionRate,true
+F29-E01-T,F29,F29-P01,treatment,SRS overlap,TREAT_1,BASE_1,B,SRS resource engine,TDL-C,-6,SG1,PAY29_01,CollisionRate,true
+F29-E02-B,F29,F29-P02,baseline,SRS overlap,BASE_2,BASE_2,B,SRS resource engine,CDL-C,-3,SG2,PAY29_02,CollisionRate,true
+F29-E02-T,F29,F29-P02,treatment,SRS overlap,TREAT_2,BASE_2,B,SRS resource engine,CDL-C,-3,SG2,PAY29_02,CollisionRate,true
+F29-E03-B,F29,F29-P03,baseline,SRS overlap,BASE_3,BASE_3,B,SRS resource engine,AWGN,0,SG3,PAY29_03,CollisionRate,true
+F29-E03-T,F29,F29-P03,treatment,SRS overlap,TREAT_3,BASE_3,B,SRS resource engine,AWGN,0,SG3,PAY29_03,CollisionRate,true
+F29-E04-B,F29,F29-P04,baseline,SRS overlap,BASE_4,BASE_4,B,SRS resource engine,TDL-C,3,SG4,PAY29_04,CollisionRate,true
+F29-E04-T,F29,F29-P04,treatment,SRS overlap,TREAT_4,BASE_4,B,SRS resource engine,TDL-C,3,SG4,PAY29_04,CollisionRate,true
+F29-E05-B,F29,F29-P05,baseline,SRS overlap,BASE_5,BASE_5,B,SRS resource engine,CDL-C,6,SG5,PAY29_05,CollisionRate,true
+F29-E05-T,F29,F29-P05,treatment,SRS overlap,TREAT_5,BASE_5,B,SRS resource engine,CDL-C,6,SG5,PAY29_05,CollisionRate,true
+F29-E06-B,F29,F29-P06,baseline,SRS overlap,BASE_6,BASE_6,B,SRS resource engine,AWGN,9,SG6,PAY29_06,CollisionRate,true
+F29-E06-T,F29,F29-P06,treatment,SRS overlap,TREAT_6,BASE_6,B,SRS resource engine,AWGN,9,SG6,PAY29_06,CollisionRate,true
+F30-E01-B,F30,F30-P01,baseline,PRACH overlap,BASE_1,BASE_1,C,PRACH occasion engine,TDL-C,-6,SG1,PAY30_01,CollisionRate,true
+F30-E01-T,F30,F30-P01,treatment,PRACH overlap,TREAT_1,BASE_1,C,PRACH occasion engine,TDL-C,-6,SG1,PAY30_01,CollisionRate,true
+F30-E02-B,F30,F30-P02,baseline,PRACH overlap,BASE_2,BASE_2,C,PRACH occasion engine,CDL-C,-3,SG2,PAY30_02,CollisionRate,true
+F30-E02-T,F30,F30-P02,treatment,PRACH overlap,TREAT_2,BASE_2,C,PRACH occasion engine,CDL-C,-3,SG2,PAY30_02,CollisionRate,true
+F30-E03-B,F30,F30-P03,baseline,PRACH overlap,BASE_3,BASE_3,C,PRACH occasion engine,AWGN,0,SG3,PAY30_03,CollisionRate,true
+F30-E03-T,F30,F30-P03,treatment,PRACH overlap,TREAT_3,BASE_3,C,PRACH occasion engine,AWGN,0,SG3,PAY30_03,CollisionRate,true
+F30-E04-B,F30,F30-P04,baseline,PRACH overlap,BASE_4,BASE_4,C,PRACH occasion engine,TDL-C,3,SG4,PAY30_04,CollisionRate,true
+F30-E04-T,F30,F30-P04,treatment,PRACH overlap,TREAT_4,BASE_4,C,PRACH occasion engine,TDL-C,3,SG4,PAY30_04,CollisionRate,true
+F30-E05-B,F30,F30-P05,baseline,PRACH overlap,BASE_5,BASE_5,C,PRACH occasion engine,CDL-C,6,SG5,PAY30_05,CollisionRate,true
+F30-E05-T,F30,F30-P05,treatment,PRACH overlap,TREAT_5,BASE_5,C,PRACH occasion engine,CDL-C,6,SG5,PAY30_05,CollisionRate,true
+F30-E06-B,F30,F30-P06,baseline,PRACH overlap,BASE_6,BASE_6,C,PRACH occasion engine,AWGN,9,SG6,PAY30_06,CollisionRate,true
+F30-E06-T,F30,F30-P06,treatment,PRACH overlap,TREAT_6,BASE_6,C,PRACH occasion engine,AWGN,9,SG6,PAY30_06,CollisionRate,true
+F31-E01-B,F31,F31-P01,baseline,priority mix,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY31_01,CollisionRate,true
+F31-E01-T,F31,F31-P01,treatment,priority mix,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY31_01,CollisionRate,true
+F31-E02-B,F31,F31-P02,baseline,priority mix,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY31_02,CollisionRate,true
+F31-E02-T,F31,F31-P02,treatment,priority mix,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY31_02,CollisionRate,true
+F31-E03-B,F31,F31-P03,baseline,priority mix,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY31_03,CollisionRate,true
+F31-E03-T,F31,F31-P03,treatment,priority mix,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY31_03,CollisionRate,true
+F31-E04-B,F31,F31-P04,baseline,priority mix,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY31_04,CollisionRate,true
+F31-E04-T,F31,F31-P04,treatment,priority mix,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY31_04,CollisionRate,true
+F31-E05-B,F31,F31-P05,baseline,priority mix,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY31_05,CollisionRate,true
+F31-E05-T,F31,F31-P05,treatment,priority mix,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY31_05,CollisionRate,true
+F31-E06-B,F31,F31-P06,baseline,priority mix,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY31_06,CollisionRate,true
+F31-E06-T,F31,F31-P06,treatment,priority mix,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY31_06,CollisionRate,true
+F32-E01-B,F32,F32-P01,baseline,P0/pathloss,BASE_1,BASE_1,A,pathloss measurement state,TDL-C,-6,SG1,PAY32_01,PowerError_dB,true
+F32-E01-T,F32,F32-P01,treatment,P0/pathloss,TREAT_1,BASE_1,A,pathloss measurement state,TDL-C,-6,SG1,PAY32_01,PowerError_dB,true
+F32-E02-B,F32,F32-P02,baseline,P0/pathloss,BASE_2,BASE_2,A,pathloss measurement state,CDL-C,-3,SG2,PAY32_02,PowerError_dB,true
+F32-E02-T,F32,F32-P02,treatment,P0/pathloss,TREAT_2,BASE_2,A,pathloss measurement state,CDL-C,-3,SG2,PAY32_02,PowerError_dB,true
+F32-E03-B,F32,F32-P03,baseline,P0/pathloss,BASE_3,BASE_3,A,pathloss measurement state,AWGN,0,SG3,PAY32_03,PowerError_dB,true
+F32-E03-T,F32,F32-P03,treatment,P0/pathloss,TREAT_3,BASE_3,A,pathloss measurement state,AWGN,0,SG3,PAY32_03,PowerError_dB,true
+F32-E04-B,F32,F32-P04,baseline,P0/pathloss,BASE_4,BASE_4,A,pathloss measurement state,TDL-C,3,SG4,PAY32_04,PowerError_dB,true
+F32-E04-T,F32,F32-P04,treatment,P0/pathloss,TREAT_4,BASE_4,A,pathloss measurement state,TDL-C,3,SG4,PAY32_04,PowerError_dB,true
+F32-E05-B,F32,F32-P05,baseline,P0/pathloss,BASE_5,BASE_5,A,pathloss measurement state,CDL-C,6,SG5,PAY32_05,PowerError_dB,true
+F32-E05-T,F32,F32-P05,treatment,P0/pathloss,TREAT_5,BASE_5,A,pathloss measurement state,CDL-C,6,SG5,PAY32_05,PowerError_dB,true
+F32-E06-B,F32,F32-P06,baseline,P0/pathloss,BASE_6,BASE_6,A,pathloss measurement state,AWGN,9,SG6,PAY32_06,PowerError_dB,true
+F32-E06-T,F32,F32-P06,treatment,P0/pathloss,TREAT_6,BASE_6,A,pathloss measurement state,AWGN,9,SG6,PAY32_06,PowerError_dB,true
+F33-E01-B,F33,F33-P01,baseline,TPC command,BASE_1,BASE_1,A,decoded TPC state,TDL-C,-6,SG1,PAY33_01,PowerError_dB,true
+F33-E01-T,F33,F33-P01,treatment,TPC command,TREAT_1,BASE_1,A,decoded TPC state,TDL-C,-6,SG1,PAY33_01,PowerError_dB,true
+F33-E02-B,F33,F33-P02,baseline,TPC command,BASE_2,BASE_2,A,decoded TPC state,CDL-C,-3,SG2,PAY33_02,PowerError_dB,true
+F33-E02-T,F33,F33-P02,treatment,TPC command,TREAT_2,BASE_2,A,decoded TPC state,CDL-C,-3,SG2,PAY33_02,PowerError_dB,true
+F33-E03-B,F33,F33-P03,baseline,TPC command,BASE_3,BASE_3,A,decoded TPC state,AWGN,0,SG3,PAY33_03,PowerError_dB,true
+F33-E03-T,F33,F33-P03,treatment,TPC command,TREAT_3,BASE_3,A,decoded TPC state,AWGN,0,SG3,PAY33_03,PowerError_dB,true
+F33-E04-B,F33,F33-P04,baseline,TPC command,BASE_4,BASE_4,A,decoded TPC state,TDL-C,3,SG4,PAY33_04,PowerError_dB,true
+F33-E04-T,F33,F33-P04,treatment,TPC command,TREAT_4,BASE_4,A,decoded TPC state,TDL-C,3,SG4,PAY33_04,PowerError_dB,true
+F33-E05-B,F33,F33-P05,baseline,TPC command,BASE_5,BASE_5,A,decoded TPC state,CDL-C,6,SG5,PAY33_05,PowerError_dB,true
+F33-E05-T,F33,F33-P05,treatment,TPC command,TREAT_5,BASE_5,A,decoded TPC state,CDL-C,6,SG5,PAY33_05,PowerError_dB,true
+F33-E06-B,F33,F33-P06,baseline,TPC command,BASE_6,BASE_6,A,decoded TPC state,AWGN,9,SG6,PAY33_06,PowerError_dB,true
+F33-E06-T,F33,F33-P06,treatment,TPC command,TREAT_6,BASE_6,A,decoded TPC state,AWGN,9,SG6,PAY33_06,PowerError_dB,true
+F34-E01-B,F34,F34-P01,baseline,format/payload,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY34_01,PowerError_dB,true
+F34-E01-T,F34,F34-P01,treatment,format/payload,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY34_01,PowerError_dB,true
+F34-E02-B,F34,F34-P02,baseline,format/payload,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY34_02,PowerError_dB,true
+F34-E02-T,F34,F34-P02,treatment,format/payload,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY34_02,PowerError_dB,true
+F34-E03-B,F34,F34-P03,baseline,format/payload,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY34_03,PowerError_dB,true
+F34-E03-T,F34,F34-P03,treatment,format/payload,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY34_03,PowerError_dB,true
+F34-E04-B,F34,F34-P04,baseline,format/payload,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY34_04,PowerError_dB,true
+F34-E04-T,F34,F34-P04,treatment,format/payload,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY34_04,PowerError_dB,true
+F34-E05-B,F34,F34-P05,baseline,format/payload,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY34_05,PowerError_dB,true
+F34-E05-T,F34,F34-P05,treatment,format/payload,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY34_05,PowerError_dB,true
+F34-E06-B,F34,F34-P06,baseline,format/payload,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY34_06,PowerError_dB,true
+F34-E06-T,F34,F34-P06,treatment,format/payload,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY34_06,PowerError_dB,true
+F35-E01-B,F35,F35-P01,baseline,requested power,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY35_01,EVM,true
+F35-E01-T,F35,F35-P01,treatment,requested power,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY35_01,EVM,true
+F35-E02-B,F35,F35-P02,baseline,requested power,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY35_02,EVM,true
+F35-E02-T,F35,F35-P02,treatment,requested power,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY35_02,EVM,true
+F35-E03-B,F35,F35-P03,baseline,requested power,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY35_03,EVM,true
+F35-E03-T,F35,F35-P03,treatment,requested power,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY35_03,EVM,true
+F35-E04-B,F35,F35-P04,baseline,requested power,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY35_04,EVM,true
+F35-E04-T,F35,F35-P04,treatment,requested power,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY35_04,EVM,true
+F35-E05-B,F35,F35-P05,baseline,requested power,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY35_05,EVM,true
+F35-E05-T,F35,F35-P05,treatment,requested power,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY35_05,EVM,true
+F35-E06-B,F35,F35-P06,baseline,requested power,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY35_06,EVM,true
+F35-E06-T,F35,F35-P06,treatment,requested power,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY35_06,EVM,true
+F36-E01-B,F36,F36-P01,baseline,spatial relation,BASE_1,BASE_1,B,beam/TCI state,TDL-C,-6,SG1,PAY36_01,BLER,true
+F36-E01-T,F36,F36-P01,treatment,spatial relation,TREAT_1,BASE_1,B,beam/TCI state,TDL-C,-6,SG1,PAY36_01,BLER,true
+F36-E02-B,F36,F36-P02,baseline,spatial relation,BASE_2,BASE_2,B,beam/TCI state,CDL-C,-3,SG2,PAY36_02,BLER,true
+F36-E02-T,F36,F36-P02,treatment,spatial relation,TREAT_2,BASE_2,B,beam/TCI state,CDL-C,-3,SG2,PAY36_02,BLER,true
+F36-E03-B,F36,F36-P03,baseline,spatial relation,BASE_3,BASE_3,B,beam/TCI state,AWGN,0,SG3,PAY36_03,BLER,true
+F36-E03-T,F36,F36-P03,treatment,spatial relation,TREAT_3,BASE_3,B,beam/TCI state,AWGN,0,SG3,PAY36_03,BLER,true
+F36-E04-B,F36,F36-P04,baseline,spatial relation,BASE_4,BASE_4,B,beam/TCI state,TDL-C,3,SG4,PAY36_04,BLER,true
+F36-E04-T,F36,F36-P04,treatment,spatial relation,TREAT_4,BASE_4,B,beam/TCI state,TDL-C,3,SG4,PAY36_04,BLER,true
+F36-E05-B,F36,F36-P05,baseline,spatial relation,BASE_5,BASE_5,B,beam/TCI state,CDL-C,6,SG5,PAY36_05,BLER,true
+F36-E05-T,F36,F36-P05,treatment,spatial relation,TREAT_5,BASE_5,B,beam/TCI state,CDL-C,6,SG5,PAY36_05,BLER,true
+F36-E06-B,F36,F36-P06,baseline,spatial relation,BASE_6,BASE_6,B,beam/TCI state,AWGN,9,SG6,PAY36_06,BLER,true
+F36-E06-T,F36,F36-P06,treatment,spatial relation,TREAT_6,BASE_6,B,beam/TCI state,AWGN,9,SG6,PAY36_06,BLER,true
+F37-E01-B,F37,F37-P01,baseline,measurement age,BASE_1,BASE_1,B,measurement filtering state,TDL-C,-6,SG1,PAY37_01,PowerError_dB,true
+F37-E01-T,F37,F37-P01,treatment,measurement age,TREAT_1,BASE_1,B,measurement filtering state,TDL-C,-6,SG1,PAY37_01,PowerError_dB,true
+F37-E02-B,F37,F37-P02,baseline,measurement age,BASE_2,BASE_2,B,measurement filtering state,CDL-C,-3,SG2,PAY37_02,PowerError_dB,true
+F37-E02-T,F37,F37-P02,treatment,measurement age,TREAT_2,BASE_2,B,measurement filtering state,CDL-C,-3,SG2,PAY37_02,PowerError_dB,true
+F37-E03-B,F37,F37-P03,baseline,measurement age,BASE_3,BASE_3,B,measurement filtering state,AWGN,0,SG3,PAY37_03,PowerError_dB,true
+F37-E03-T,F37,F37-P03,treatment,measurement age,TREAT_3,BASE_3,B,measurement filtering state,AWGN,0,SG3,PAY37_03,PowerError_dB,true
+F37-E04-B,F37,F37-P04,baseline,measurement age,BASE_4,BASE_4,B,measurement filtering state,TDL-C,3,SG4,PAY37_04,PowerError_dB,true
+F37-E04-T,F37,F37-P04,treatment,measurement age,TREAT_4,BASE_4,B,measurement filtering state,TDL-C,3,SG4,PAY37_04,PowerError_dB,true
+F37-E05-B,F37,F37-P05,baseline,measurement age,BASE_5,BASE_5,B,measurement filtering state,CDL-C,6,SG5,PAY37_05,PowerError_dB,true
+F37-E05-T,F37,F37-P05,treatment,measurement age,TREAT_5,BASE_5,B,measurement filtering state,CDL-C,6,SG5,PAY37_05,PowerError_dB,true
+F37-E06-B,F37,F37-P06,baseline,measurement age,BASE_6,BASE_6,B,measurement filtering state,AWGN,9,SG6,PAY37_06,PowerError_dB,true
+F37-E06-T,F37,F37-P06,treatment,measurement age,TREAT_6,BASE_6,B,measurement filtering state,AWGN,9,SG6,PAY37_06,PowerError_dB,true
+F38-E01-B,F38,F38-P01,baseline,beam blockage,BASE_1,BASE_1,C,beam failure/recovery engine,TDL-C,-6,SG1,PAY38_01,BLER,true
+F38-E01-T,F38,F38-P01,treatment,beam blockage,TREAT_1,BASE_1,C,beam failure/recovery engine,TDL-C,-6,SG1,PAY38_01,BLER,true
+F38-E02-B,F38,F38-P02,baseline,beam blockage,BASE_2,BASE_2,C,beam failure/recovery engine,CDL-C,-3,SG2,PAY38_02,BLER,true
+F38-E02-T,F38,F38-P02,treatment,beam blockage,TREAT_2,BASE_2,C,beam failure/recovery engine,CDL-C,-3,SG2,PAY38_02,BLER,true
+F38-E03-B,F38,F38-P03,baseline,beam blockage,BASE_3,BASE_3,C,beam failure/recovery engine,AWGN,0,SG3,PAY38_03,BLER,true
+F38-E03-T,F38,F38-P03,treatment,beam blockage,TREAT_3,BASE_3,C,beam failure/recovery engine,AWGN,0,SG3,PAY38_03,BLER,true
+F38-E04-B,F38,F38-P04,baseline,beam blockage,BASE_4,BASE_4,C,beam failure/recovery engine,TDL-C,3,SG4,PAY38_04,BLER,true
+F38-E04-T,F38,F38-P04,treatment,beam blockage,TREAT_4,BASE_4,C,beam failure/recovery engine,TDL-C,3,SG4,PAY38_04,BLER,true
+F38-E05-B,F38,F38-P05,baseline,beam blockage,BASE_5,BASE_5,C,beam failure/recovery engine,CDL-C,6,SG5,PAY38_05,BLER,true
+F38-E05-T,F38,F38-P05,treatment,beam blockage,TREAT_5,BASE_5,C,beam failure/recovery engine,CDL-C,6,SG5,PAY38_05,BLER,true
+F38-E06-B,F38,F38-P06,baseline,beam blockage,BASE_6,BASE_6,C,beam failure/recovery engine,AWGN,9,SG6,PAY38_06,BLER,true
+F38-E06-T,F38,F38-P06,treatment,beam blockage,TREAT_6,BASE_6,C,beam failure/recovery engine,AWGN,9,SG6,PAY38_06,BLER,true
+F39-E01-B,F39,F39-P01,baseline,format,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY39_01,BLER,true
+F39-E01-T,F39,F39-P01,treatment,format,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY39_01,BLER,true
+F39-E02-B,F39,F39-P02,baseline,format,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY39_02,BLER,true
+F39-E02-T,F39,F39-P02,treatment,format,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY39_02,BLER,true
+F39-E03-B,F39,F39-P03,baseline,format,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY39_03,BLER,true
+F39-E03-T,F39,F39-P03,treatment,format,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY39_03,BLER,true
+F39-E04-B,F39,F39-P04,baseline,format,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY39_04,BLER,true
+F39-E04-T,F39,F39-P04,treatment,format,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY39_04,BLER,true
+F39-E05-B,F39,F39-P05,baseline,format,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY39_05,BLER,true
+F39-E05-T,F39,F39-P05,treatment,format,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY39_05,BLER,true
+F39-E06-B,F39,F39-P06,baseline,format,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY39_06,BLER,true
+F39-E06-T,F39,F39-P06,treatment,format,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY39_06,BLER,true
+F40-E01-B,F40,F40-P01,baseline,delay spread,BASE_1,BASE_1,A,TDL/CDL channel,TDL-C,-6,SG1,PAY40_01,BLER,true
+F40-E01-T,F40,F40-P01,treatment,delay spread,TREAT_1,BASE_1,A,TDL/CDL channel,TDL-C,-6,SG1,PAY40_01,BLER,true
+F40-E02-B,F40,F40-P02,baseline,delay spread,BASE_2,BASE_2,A,TDL/CDL channel,CDL-C,-3,SG2,PAY40_02,BLER,true
+F40-E02-T,F40,F40-P02,treatment,delay spread,TREAT_2,BASE_2,A,TDL/CDL channel,CDL-C,-3,SG2,PAY40_02,BLER,true
+F40-E03-B,F40,F40-P03,baseline,delay spread,BASE_3,BASE_3,A,TDL/CDL channel,AWGN,0,SG3,PAY40_03,BLER,true
+F40-E03-T,F40,F40-P03,treatment,delay spread,TREAT_3,BASE_3,A,TDL/CDL channel,AWGN,0,SG3,PAY40_03,BLER,true
+F40-E04-B,F40,F40-P04,baseline,delay spread,BASE_4,BASE_4,A,TDL/CDL channel,TDL-C,3,SG4,PAY40_04,BLER,true
+F40-E04-T,F40,F40-P04,treatment,delay spread,TREAT_4,BASE_4,A,TDL/CDL channel,TDL-C,3,SG4,PAY40_04,BLER,true
+F40-E05-B,F40,F40-P05,baseline,delay spread,BASE_5,BASE_5,A,TDL/CDL channel,CDL-C,6,SG5,PAY40_05,BLER,true
+F40-E05-T,F40,F40-P05,treatment,delay spread,TREAT_5,BASE_5,A,TDL/CDL channel,CDL-C,6,SG5,PAY40_05,BLER,true
+F40-E06-B,F40,F40-P06,baseline,delay spread,BASE_6,BASE_6,A,TDL/CDL channel,AWGN,9,SG6,PAY40_06,BLER,true
+F40-E06-T,F40,F40-P06,treatment,delay spread,TREAT_6,BASE_6,A,TDL/CDL channel,AWGN,9,SG6,PAY40_06,BLER,true
+F41-E01-B,F41,F41-P01,baseline,Doppler,BASE_1,BASE_1,A,TDL/CDL channel,TDL-C,-6,SG1,PAY41_01,BLER,true
+F41-E01-T,F41,F41-P01,treatment,Doppler,TREAT_1,BASE_1,A,TDL/CDL channel,TDL-C,-6,SG1,PAY41_01,BLER,true
+F41-E02-B,F41,F41-P02,baseline,Doppler,BASE_2,BASE_2,A,TDL/CDL channel,CDL-C,-3,SG2,PAY41_02,BLER,true
+F41-E02-T,F41,F41-P02,treatment,Doppler,TREAT_2,BASE_2,A,TDL/CDL channel,CDL-C,-3,SG2,PAY41_02,BLER,true
+F41-E03-B,F41,F41-P03,baseline,Doppler,BASE_3,BASE_3,A,TDL/CDL channel,AWGN,0,SG3,PAY41_03,BLER,true
+F41-E03-T,F41,F41-P03,treatment,Doppler,TREAT_3,BASE_3,A,TDL/CDL channel,AWGN,0,SG3,PAY41_03,BLER,true
+F41-E04-B,F41,F41-P04,baseline,Doppler,BASE_4,BASE_4,A,TDL/CDL channel,TDL-C,3,SG4,PAY41_04,BLER,true
+F41-E04-T,F41,F41-P04,treatment,Doppler,TREAT_4,BASE_4,A,TDL/CDL channel,TDL-C,3,SG4,PAY41_04,BLER,true
+F41-E05-B,F41,F41-P05,baseline,Doppler,BASE_5,BASE_5,A,TDL/CDL channel,CDL-C,6,SG5,PAY41_05,BLER,true
+F41-E05-T,F41,F41-P05,treatment,Doppler,TREAT_5,BASE_5,A,TDL/CDL channel,CDL-C,6,SG5,PAY41_05,BLER,true
+F41-E06-B,F41,F41-P06,baseline,Doppler,BASE_6,BASE_6,A,TDL/CDL channel,AWGN,9,SG6,PAY41_06,BLER,true
+F41-E06-T,F41,F41-P06,treatment,Doppler,TREAT_6,BASE_6,A,TDL/CDL channel,AWGN,9,SG6,PAY41_06,BLER,true
+F42-E01-B,F42,F42-P01,baseline,normalized CFO,BASE_1,BASE_1,C,RF CFO estimator,TDL-C,-6,SG1,PAY42_01,BLER,true
+F42-E01-T,F42,F42-P01,treatment,normalized CFO,TREAT_1,BASE_1,C,RF CFO estimator,TDL-C,-6,SG1,PAY42_01,BLER,true
+F42-E02-B,F42,F42-P02,baseline,normalized CFO,BASE_2,BASE_2,C,RF CFO estimator,CDL-C,-3,SG2,PAY42_02,BLER,true
+F42-E02-T,F42,F42-P02,treatment,normalized CFO,TREAT_2,BASE_2,C,RF CFO estimator,CDL-C,-3,SG2,PAY42_02,BLER,true
+F42-E03-B,F42,F42-P03,baseline,normalized CFO,BASE_3,BASE_3,C,RF CFO estimator,AWGN,0,SG3,PAY42_03,BLER,true
+F42-E03-T,F42,F42-P03,treatment,normalized CFO,TREAT_3,BASE_3,C,RF CFO estimator,AWGN,0,SG3,PAY42_03,BLER,true
+F42-E04-B,F42,F42-P04,baseline,normalized CFO,BASE_4,BASE_4,C,RF CFO estimator,TDL-C,3,SG4,PAY42_04,BLER,true
+F42-E04-T,F42,F42-P04,treatment,normalized CFO,TREAT_4,BASE_4,C,RF CFO estimator,TDL-C,3,SG4,PAY42_04,BLER,true
+F42-E05-B,F42,F42-P05,baseline,normalized CFO,BASE_5,BASE_5,C,RF CFO estimator,CDL-C,6,SG5,PAY42_05,BLER,true
+F42-E05-T,F42,F42-P05,treatment,normalized CFO,TREAT_5,BASE_5,C,RF CFO estimator,CDL-C,6,SG5,PAY42_05,BLER,true
+F42-E06-B,F42,F42-P06,baseline,normalized CFO,BASE_6,BASE_6,C,RF CFO estimator,AWGN,9,SG6,PAY42_06,BLER,true
+F42-E06-T,F42,F42-P06,treatment,normalized CFO,TREAT_6,BASE_6,C,RF CFO estimator,AWGN,9,SG6,PAY42_06,BLER,true
+F43-E01-B,F43,F43-P01,baseline,timing offset,BASE_1,BASE_1,C,timing acquisition/tracking,TDL-C,-6,SG1,PAY43_01,BLER,true
+F43-E01-T,F43,F43-P01,treatment,timing offset,TREAT_1,BASE_1,C,timing acquisition/tracking,TDL-C,-6,SG1,PAY43_01,BLER,true
+F43-E02-B,F43,F43-P02,baseline,timing offset,BASE_2,BASE_2,C,timing acquisition/tracking,CDL-C,-3,SG2,PAY43_02,BLER,true
+F43-E02-T,F43,F43-P02,treatment,timing offset,TREAT_2,BASE_2,C,timing acquisition/tracking,CDL-C,-3,SG2,PAY43_02,BLER,true
+F43-E03-B,F43,F43-P03,baseline,timing offset,BASE_3,BASE_3,C,timing acquisition/tracking,AWGN,0,SG3,PAY43_03,BLER,true
+F43-E03-T,F43,F43-P03,treatment,timing offset,TREAT_3,BASE_3,C,timing acquisition/tracking,AWGN,0,SG3,PAY43_03,BLER,true
+F43-E04-B,F43,F43-P04,baseline,timing offset,BASE_4,BASE_4,C,timing acquisition/tracking,TDL-C,3,SG4,PAY43_04,BLER,true
+F43-E04-T,F43,F43-P04,treatment,timing offset,TREAT_4,BASE_4,C,timing acquisition/tracking,TDL-C,3,SG4,PAY43_04,BLER,true
+F43-E05-B,F43,F43-P05,baseline,timing offset,BASE_5,BASE_5,C,timing acquisition/tracking,CDL-C,6,SG5,PAY43_05,BLER,true
+F43-E05-T,F43,F43-P05,treatment,timing offset,TREAT_5,BASE_5,C,timing acquisition/tracking,CDL-C,6,SG5,PAY43_05,BLER,true
+F43-E06-B,F43,F43-P06,baseline,timing offset,BASE_6,BASE_6,C,timing acquisition/tracking,AWGN,9,SG6,PAY43_06,BLER,true
+F43-E06-T,F43,F43-P06,treatment,timing offset,TREAT_6,BASE_6,C,timing acquisition/tracking,AWGN,9,SG6,PAY43_06,BLER,true
+F44-E01-B,F44,F44-P01,baseline,phase noise,BASE_1,BASE_1,C,phase-noise process,TDL-C,-6,SG1,PAY44_01,BLER,true
+F44-E01-T,F44,F44-P01,treatment,phase noise,TREAT_1,BASE_1,C,phase-noise process,TDL-C,-6,SG1,PAY44_01,BLER,true
+F44-E02-B,F44,F44-P02,baseline,phase noise,BASE_2,BASE_2,C,phase-noise process,CDL-C,-3,SG2,PAY44_02,BLER,true
+F44-E02-T,F44,F44-P02,treatment,phase noise,TREAT_2,BASE_2,C,phase-noise process,CDL-C,-3,SG2,PAY44_02,BLER,true
+F44-E03-B,F44,F44-P03,baseline,phase noise,BASE_3,BASE_3,C,phase-noise process,AWGN,0,SG3,PAY44_03,BLER,true
+F44-E03-T,F44,F44-P03,treatment,phase noise,TREAT_3,BASE_3,C,phase-noise process,AWGN,0,SG3,PAY44_03,BLER,true
+F44-E04-B,F44,F44-P04,baseline,phase noise,BASE_4,BASE_4,C,phase-noise process,TDL-C,3,SG4,PAY44_04,BLER,true
+F44-E04-T,F44,F44-P04,treatment,phase noise,TREAT_4,BASE_4,C,phase-noise process,TDL-C,3,SG4,PAY44_04,BLER,true
+F44-E05-B,F44,F44-P05,baseline,phase noise,BASE_5,BASE_5,C,phase-noise process,CDL-C,6,SG5,PAY44_05,BLER,true
+F44-E05-T,F44,F44-P05,treatment,phase noise,TREAT_5,BASE_5,C,phase-noise process,CDL-C,6,SG5,PAY44_05,BLER,true
+F44-E06-B,F44,F44-P06,baseline,phase noise,BASE_6,BASE_6,C,phase-noise process,AWGN,9,SG6,PAY44_06,BLER,true
+F44-E06-T,F44,F44-P06,treatment,phase noise,TREAT_6,BASE_6,C,phase-noise process,AWGN,9,SG6,PAY44_06,BLER,true
+F45-E01-B,F45,F45-P01,baseline,detection threshold,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY45_01,FalseAlarmProbability,true
+F45-E01-T,F45,F45-P01,treatment,detection threshold,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY45_01,FalseAlarmProbability,true
+F45-E02-B,F45,F45-P02,baseline,detection threshold,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY45_02,FalseAlarmProbability,true
+F45-E02-T,F45,F45-P02,treatment,detection threshold,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY45_02,FalseAlarmProbability,true
+F45-E03-B,F45,F45-P03,baseline,detection threshold,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY45_03,FalseAlarmProbability,true
+F45-E03-T,F45,F45-P03,treatment,detection threshold,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY45_03,FalseAlarmProbability,true
+F45-E04-B,F45,F45-P04,baseline,detection threshold,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY45_04,FalseAlarmProbability,true
+F45-E04-T,F45,F45-P04,treatment,detection threshold,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY45_04,FalseAlarmProbability,true
+F45-E05-B,F45,F45-P05,baseline,detection threshold,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY45_05,FalseAlarmProbability,true
+F45-E05-T,F45,F45-P05,treatment,detection threshold,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY45_05,FalseAlarmProbability,true
+F45-E06-B,F45,F45-P06,baseline,detection threshold,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY45_06,FalseAlarmProbability,true
+F45-E06-T,F45,F45-P06,treatment,detection threshold,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY45_06,FalseAlarmProbability,true
+F46-E01-B,F46,F46-P01,baseline,RNTI mismatch,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY46_01,FalseGrantProbability,true
+F46-E01-T,F46,F46-P01,treatment,RNTI mismatch,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY46_01,FalseGrantProbability,true
+F46-E02-B,F46,F46-P02,baseline,RNTI mismatch,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY46_02,FalseGrantProbability,true
+F46-E02-T,F46,F46-P02,treatment,RNTI mismatch,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY46_02,FalseGrantProbability,true
+F46-E03-B,F46,F46-P03,baseline,RNTI mismatch,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY46_03,FalseGrantProbability,true
+F46-E03-T,F46,F46-P03,treatment,RNTI mismatch,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY46_03,FalseGrantProbability,true
+F46-E04-B,F46,F46-P04,baseline,RNTI mismatch,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY46_04,FalseGrantProbability,true
+F46-E04-T,F46,F46-P04,treatment,RNTI mismatch,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY46_04,FalseGrantProbability,true
+F46-E05-B,F46,F46-P05,baseline,RNTI mismatch,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY46_05,FalseGrantProbability,true
+F46-E05-T,F46,F46-P05,treatment,RNTI mismatch,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY46_05,FalseGrantProbability,true
+F46-E06-B,F46,F46-P06,baseline,RNTI mismatch,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY46_06,FalseGrantProbability,true
+F46-E06-T,F46,F46-P06,treatment,RNTI mismatch,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY46_06,FalseGrantProbability,true
+F47-E01-B,F47,F47-P01,baseline,length mismatch,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY47_01,FalseDecodeProbability,true
+F47-E01-T,F47,F47-P01,treatment,length mismatch,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY47_01,FalseDecodeProbability,true
+F47-E02-B,F47,F47-P02,baseline,length mismatch,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY47_02,FalseDecodeProbability,true
+F47-E02-T,F47,F47-P02,treatment,length mismatch,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY47_02,FalseDecodeProbability,true
+F47-E03-B,F47,F47-P03,baseline,length mismatch,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY47_03,FalseDecodeProbability,true
+F47-E03-T,F47,F47-P03,treatment,length mismatch,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY47_03,FalseDecodeProbability,true
+F47-E04-B,F47,F47-P04,baseline,length mismatch,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY47_04,FalseDecodeProbability,true
+F47-E04-T,F47,F47-P04,treatment,length mismatch,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY47_04,FalseDecodeProbability,true
+F47-E05-B,F47,F47-P05,baseline,length mismatch,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY47_05,FalseDecodeProbability,true
+F47-E05-T,F47,F47-P05,treatment,length mismatch,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY47_05,FalseDecodeProbability,true
+F47-E06-B,F47,F47-P06,baseline,length mismatch,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY47_06,FalseDecodeProbability,true
+F47-E06-T,F47,F47-P06,treatment,length mismatch,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY47_06,FalseDecodeProbability,true
+F48-E01-B,F48,F48-P01,baseline,resource mismatch,BASE_1,BASE_1,A,none,TDL-C,-6,SG1,PAY48_01,FalseDecodeProbability,true
+F48-E01-T,F48,F48-P01,treatment,resource mismatch,TREAT_1,BASE_1,A,none,TDL-C,-6,SG1,PAY48_01,FalseDecodeProbability,true
+F48-E02-B,F48,F48-P02,baseline,resource mismatch,BASE_2,BASE_2,A,none,CDL-C,-3,SG2,PAY48_02,FalseDecodeProbability,true
+F48-E02-T,F48,F48-P02,treatment,resource mismatch,TREAT_2,BASE_2,A,none,CDL-C,-3,SG2,PAY48_02,FalseDecodeProbability,true
+F48-E03-B,F48,F48-P03,baseline,resource mismatch,BASE_3,BASE_3,A,none,AWGN,0,SG3,PAY48_03,FalseDecodeProbability,true
+F48-E03-T,F48,F48-P03,treatment,resource mismatch,TREAT_3,BASE_3,A,none,AWGN,0,SG3,PAY48_03,FalseDecodeProbability,true
+F48-E04-B,F48,F48-P04,baseline,resource mismatch,BASE_4,BASE_4,A,none,TDL-C,3,SG4,PAY48_04,FalseDecodeProbability,true
+F48-E04-T,F48,F48-P04,treatment,resource mismatch,TREAT_4,BASE_4,A,none,TDL-C,3,SG4,PAY48_04,FalseDecodeProbability,true
+F48-E05-B,F48,F48-P05,baseline,resource mismatch,BASE_5,BASE_5,A,none,CDL-C,6,SG5,PAY48_05,FalseDecodeProbability,true
+F48-E05-T,F48,F48-P05,treatment,resource mismatch,TREAT_5,BASE_5,A,none,CDL-C,6,SG5,PAY48_05,FalseDecodeProbability,true
+F48-E06-B,F48,F48-P06,baseline,resource mismatch,BASE_6,BASE_6,A,none,AWGN,9,SG6,PAY48_06,FalseDecodeProbability,true
+F48-E06-T,F48,F48-P06,treatment,resource mismatch,TREAT_6,BASE_6,A,none,AWGN,9,SG6,PAY48_06,FalseDecodeProbability,true
+F49-E01-B,F49,F49-P01,baseline,power imbalance,BASE_1,BASE_1,B,multi-user waveform channel,TDL-C,-6,SG1,PAY49_01,BLER,true
+F49-E01-T,F49,F49-P01,treatment,power imbalance,TREAT_1,BASE_1,B,multi-user waveform channel,TDL-C,-6,SG1,PAY49_01,BLER,true
+F49-E02-B,F49,F49-P02,baseline,power imbalance,BASE_2,BASE_2,B,multi-user waveform channel,CDL-C,-3,SG2,PAY49_02,BLER,true
+F49-E02-T,F49,F49-P02,treatment,power imbalance,TREAT_2,BASE_2,B,multi-user waveform channel,CDL-C,-3,SG2,PAY49_02,BLER,true
+F49-E03-B,F49,F49-P03,baseline,power imbalance,BASE_3,BASE_3,B,multi-user waveform channel,AWGN,0,SG3,PAY49_03,BLER,true
+F49-E03-T,F49,F49-P03,treatment,power imbalance,TREAT_3,BASE_3,B,multi-user waveform channel,AWGN,0,SG3,PAY49_03,BLER,true
+F49-E04-B,F49,F49-P04,baseline,power imbalance,BASE_4,BASE_4,B,multi-user waveform channel,TDL-C,3,SG4,PAY49_04,BLER,true
+F49-E04-T,F49,F49-P04,treatment,power imbalance,TREAT_4,BASE_4,B,multi-user waveform channel,TDL-C,3,SG4,PAY49_04,BLER,true
+F49-E05-B,F49,F49-P05,baseline,power imbalance,BASE_5,BASE_5,B,multi-user waveform channel,CDL-C,6,SG5,PAY49_05,BLER,true
+F49-E05-T,F49,F49-P05,treatment,power imbalance,TREAT_5,BASE_5,B,multi-user waveform channel,CDL-C,6,SG5,PAY49_05,BLER,true
+F49-E06-B,F49,F49-P06,baseline,power imbalance,BASE_6,BASE_6,B,multi-user waveform channel,AWGN,9,SG6,PAY49_06,BLER,true
+F49-E06-T,F49,F49-P06,treatment,power imbalance,TREAT_6,BASE_6,B,multi-user waveform channel,AWGN,9,SG6,PAY49_06,BLER,true
+F50-E01-B,F50,F50-P01,baseline,scale/seed,BASE_1,BASE_1,A,all selected core features,TDL-C,-6,SG1,PAY50_01,RuntimeMs,true
+F50-E01-T,F50,F50-P01,treatment,scale/seed,TREAT_1,BASE_1,A,all selected core features,TDL-C,-6,SG1,PAY50_01,RuntimeMs,true
+F50-E02-B,F50,F50-P02,baseline,scale/seed,BASE_2,BASE_2,A,all selected core features,CDL-C,-3,SG2,PAY50_02,RuntimeMs,true
+F50-E02-T,F50,F50-P02,treatment,scale/seed,TREAT_2,BASE_2,A,all selected core features,CDL-C,-3,SG2,PAY50_02,RuntimeMs,true
+F50-E03-B,F50,F50-P03,baseline,scale/seed,BASE_3,BASE_3,A,all selected core features,AWGN,0,SG3,PAY50_03,RuntimeMs,true
+F50-E03-T,F50,F50-P03,treatment,scale/seed,TREAT_3,BASE_3,A,all selected core features,AWGN,0,SG3,PAY50_03,RuntimeMs,true
+F50-E04-B,F50,F50-P04,baseline,scale/seed,BASE_4,BASE_4,A,all selected core features,TDL-C,3,SG4,PAY50_04,RuntimeMs,true
+F50-E04-T,F50,F50-P04,treatment,scale/seed,TREAT_4,BASE_4,A,all selected core features,TDL-C,3,SG4,PAY50_04,RuntimeMs,true
+F50-E05-B,F50,F50-P05,baseline,scale/seed,BASE_5,BASE_5,A,all selected core features,CDL-C,6,SG5,PAY50_05,RuntimeMs,true
+F50-E05-T,F50,F50-P05,treatment,scale/seed,TREAT_5,BASE_5,A,all selected core features,CDL-C,6,SG5,PAY50_05,RuntimeMs,true
+F50-E06-B,F50,F50-P06,baseline,scale/seed,BASE_6,BASE_6,A,all selected core features,AWGN,9,SG6,PAY50_06,RuntimeMs,true
+F50-E06-T,F50,F50-P06,treatment,scale/seed,TREAT_6,BASE_6,A,all selected core features,AWGN,9,SG6,PAY50_06,RuntimeMs,true

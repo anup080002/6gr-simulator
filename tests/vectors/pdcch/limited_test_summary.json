@@ -1,0 +1,12 @@
+{
+  "TotalChecks": 17,
+  "PASS": 14,
+  "FAIL": 2,
+  "BLOCKED": 1,
+  "PackInfrastructurePass": true,
+  "CurrentSimulatorPass": false,
+  "MATLABAvailable": false,
+  "OctaveAvailable": false,
+  "RequiredArtifacts": 78,
+  "RequiredArtifactsPresent": 0
+}

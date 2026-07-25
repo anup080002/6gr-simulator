@@ -1,0 +1,10 @@
+Path,Rows,Columns,Rectangular,Error
+docs/phase3_pdcch_spec_traceability.csv,4,10,true,
+phase5_baseline/existing_pdcch_source_map.csv,8,5,true,
+tmp_geom_cfg_smoke_manual/run/csv/system_mobility_control_series.csv,4,8,true,
+tmp_geom_cfg_smoke_manual/run/traces/system_mobility_control_series.csv,4,8,true,
+tmp_geom_cfg_export_manual/run/csv/system_mobility_control_series.csv,4,8,true,
+tmp_geom_cfg_export_manual/run/traces/system_mobility_control_series.csv,4,8,true,
+tmp_geom_cfg_export_manual/run/reports/csv/live_control_gating_state.csv,0,24,true,
+tmp_geom_cfg_export_manual/run/reports/csv/live_control_gating_summary.csv,1,19,true,
+tmp_geom_cfg_export_manual/run/air_interface/csv/pdcch_trials.csv,8,34,true,

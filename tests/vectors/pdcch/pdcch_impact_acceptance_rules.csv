@@ -1,0 +1,76 @@
+RuleID,FamilyID,Severity,Metric,Rule,Threshold,Evidence
+PDCCH-RULE-001,F01,HARD,PayloadBits,contextual DCI size matches independent schema,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-002,F02,HARD,Alignment,0_0/1_0 alignment and padding positions exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-003,F03,HARD,FieldLayout,conditional 0_1/1_1 fields exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-004,F04,HARD,WrongRNTIGrant,wrong CRC mask never creates grant,count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-005,F05,HARD,WrongScramblingIdentity,wrong physical scrambling identity never creates grant,count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-006,F06,HARD,RateMatchedBits,E equals 108 times AL,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-007,F07,HARD,PolarIntegrity,decoder profile changes no noiseless payload bits,bit_errors=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-008,F08,HARD,AggregationLevel,configured AL and consumed CCE count exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-009,F09,HARD,CandidateEnumeration,all and only configured candidates attempted,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-010,F10,HARD,CORESETDuration,every mapped REG lies within configured duration,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-011,F11,HARD,CORESETBandwidth,every mapped REG lies within configured frequency resources,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-012,F12,HARD,CCEToREGMap,interleaved and non-interleaved maps match independent indices,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-013,F13,HARD,REGBundle,bundle boundaries and membership exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-014,F14,HARD,Interleaver,interleaver permutation exact and bijective,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-015,F15,HARD,ShiftIndex,shift changes permutation only and remains bijective,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-016,F16,HARD,PrecoderGranularity,DMRS coverage follows configured granularity exactly,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-017,F17,HARD,MonitoringPeriod,monitoring slots equal periodicity/offset resolver,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-018,F18,HARD,MonitoringSymbols,duration and symbol bitmap resolved exactly,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-019,F19,HARD,CSSUSS,CSS uses Y=0 and USS uses exact Y recursion,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-020,F20,HARD,CandidateDeduplication,dedup follows overlap equivalence rules,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-021,F21,HARD,MonitoringBudget,candidate and non-overlapped CCE caps applied by exact priority,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-022,F22,HARD,CORESET0Table,all 13-0 through 13-10A rows and reserved indices exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-023,F23,HARD,SearchSpace0Table,all 13-11/12/12A rows and reserved indices exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-024,F24,HARD,Type0TableSelection,SCS/frequency-range context selects one exact table,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-025,F25,HARD,Type0Pattern,patterns 1/2/3 and monitoring rules exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-026,F26,HARD,Type0Edge,kSSB/channel-bandwidth/GSCN edge cases fail closed,unexpected_passes=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-027,F27,HARD,RNTIProcedure,RNTI/search-space/DCI applicability exact,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-028,F28,HARD,WrongRNTIFalseGrant,wrong RNTI hypotheses create zero grants,count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-029,F29,HARD,WrongDCIHypothesis,wrong size/format/context rejected before grant,count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-030,F30,HARD,NoSignalGrant,no-signal trials create zero grants,count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-031,F31,HARD,LowSNRIntegrity,every accepted DCI still passes CRC and semantic validation,invalid_accepts=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-032,F32,HARD,ChannelMapIntegrity,channel does not alter candidate or RE ownership,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-033,F33,HARD,DopplerIntegrity,Doppler does not invoke oracle channel/timing state,oracle_uses=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-034,F34,HARD,CFOAcquisition,strict blind receiver uses measured CFO only,configured_oracle_uses=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-035,F35,HARD,TimingAcquisition,strict blind receiver uses measured timing only,configured_oracle_uses=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-036,F36,HARD,PhaseNoiseIntegrity,phase-noise profile is waveform applied and receiver observed,provenance_failures=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-037,F37,HARD,PDCCHDMRS,sequence initialization and RE indices match independent vectors,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-038,F38,HARD,BeamProvenance,beam/QCL state is observed/current and not omniscient,provenance_failures=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-039,F39,HARD,TCIActivation,TCI switch applies only after valid activation timing,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-040,F40,HARD,BeamRecovery,blocked beam never silently becomes perfect beam,oracle_fallbacks=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-041,F41,HARD,BWPSwitch,decoded control applies only to current active BWP/epoch,wrong_bwp_grants=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-042,F42,HARD,CrossCarrier,carrier indicator/nCI selects exact scheduled carrier,wrong_carrier_grants=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-043,F43,HARD,CORESETCollision,unresolved RE collisions are zero,collision_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-044,F44,HARD,MultiUELoad,each decoded DCI is bound to one valid RNTI/context,cross_ue_grants=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-045,F45,HARD,GrantAuthority,configured oracle mutation has no effect; decoded-bit mutation has required effect,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-046,F46,HARD,DownstreamFidelity,decoded field digest equals PDSCH/PUSCH assignment digest,mismatch_count=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-047,F47,HARD,BlindIsolation,blind profile uses no known location/format/RNTI/timing oracle,oracle_uses=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-048,F48,HARD,HypothesisCompleteness,runtime optimizations never prune mandatory hypotheses,pruned_mandatory=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-049,F49,HARD,Reproducibility,same seed serial/parallel artifacts are bit-identical,hash_mismatches=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-050,F50,HARD,Type0SIB1Authority,SIB1 PDSCH grant exists only after decoded SI-RNTI DCI 1_0,violations=0,production CSV plus independent vector or typed negative test
+PDCCH-RULE-051,F47,HARD,KnownLocationUsed,strict blind trials use no known location,count=0,cross-cutting production evidence
+PDCCH-RULE-052,F30,HARD,IncompletePoints,no mandatory point is incomplete,count=0,cross-cutting production evidence
+PDCCH-RULE-053,F09,HARD,CandidateCoverage,all configured mandatory candidates appear in attempted set,missing=0,cross-cutting production evidence
+PDCCH-RULE-054,F45,HARD,StateMutation,failed CRC/RNTI/context creates no scheduler or HARQ mutation,count=0,cross-cutting production evidence
+PDCCH-RULE-055,F37,HARD,ResourceOwnership,PDCCH data and DMRS RE collisions are zero,count=0,cross-cutting production evidence
+PDCCH-RULE-056,F28,STATISTICAL,FalseAlarmProbability,exact one-sided Clopper-Pearson,upper95 <= configured_target,paired raw trials with Holm adjustment
+PDCCH-RULE-057,F30,STATISTICAL,FalseAlarmProbability,exact one-sided Clopper-Pearson,upper95 <= configured_target,paired raw trials with Holm adjustment
+PDCCH-RULE-058,F31,STATISTICAL,DetectionProbability,Wilson interval,lower95 >= configured_target,paired raw trials with Holm adjustment
+PDCCH-RULE-059,F06,STATISTICAL,DetectionDifference,paired McNemar,finite adjusted p and CI,paired raw trials with Holm adjustment
+PDCCH-RULE-060,F08,STATISTICAL,DetectionDifference,paired McNemar,finite adjusted p and CI,paired raw trials with Holm adjustment
+PDCCH-RULE-061,F12,STATISTICAL,DetectionDifference,paired McNemar,finite adjusted p and CI,paired raw trials with Holm adjustment
+PDCCH-RULE-062,F32,STATISTICAL,DetectionDifference,paired McNemar,finite adjusted p and CI,paired raw trials with Holm adjustment
+PDCCH-RULE-063,F33,STATISTICAL,DetectionDifference,paired McNemar,finite adjusted p and CI,paired raw trials with Holm adjustment
+PDCCH-RULE-064,F34,STATISTICAL,CFOEstimateError,paired bootstrap,finite 95% CI,paired raw trials with Holm adjustment
+PDCCH-RULE-065,F35,STATISTICAL,TimingEstimateError,paired bootstrap,finite 95% CI,paired raw trials with Holm adjustment
+PDCCH-RULE-066,F38,STATISTICAL,BeamGainLoss,paired bootstrap,finite 95% CI,paired raw trials with Holm adjustment
+PDCCH-RULE-067,F48,STATISTICAL,RuntimeMs,paired bootstrap,finite 95% CI and effect size,paired raw trials with Holm adjustment
+PDCCH-RULE-068,F01,DIAGNOSTIC,PayloadGrowth,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-069,F07,DIAGNOSTIC,RuntimeMemoryTradeoff,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-070,F10,DIAGNOSTIC,LatencyOverhead,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-071,F17,DIAGNOSTIC,MonitoringLoad,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-072,F36,DIAGNOSTIC,PhaseNoisePenalty,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-073,F44,DIAGNOSTIC,MultiUELoadScaling,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-074,F47,DIAGNOSTIC,BlindPenalty,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary
+PDCCH-RULE-075,F49,DIAGNOSTIC,ParallelSpeedup,"report signed treatment-minus-baseline effect, confidence interval, practical magnitude and equivalence conclusion",finite and predeclared margin,impact pairwise effects and family summary

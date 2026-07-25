@@ -1,0 +1,20 @@
+CaseID,NRB,DurationSymbols,MappingType,REGBundleSize,InterleaverSize,ShiftIndex,NREG,NCCE,ExpectedOutcome,ExpectedError
+MAP001,24,1,nonInterleaved,6,0,0,24,4,PASS,
+MAP002,24,2,nonInterleaved,6,0,0,48,8,PASS,
+MAP003,24,3,nonInterleaved,6,0,0,72,12,PASS,
+MAP004,48,1,nonInterleaved,6,0,0,48,8,PASS,
+MAP005,48,2,nonInterleaved,6,0,0,96,16,PASS,
+MAP006,96,1,nonInterleaved,6,0,0,96,16,PASS,
+MAP007,24,1,interleaved,2,2,0,24,4,PASS,
+MAP008,24,1,interleaved,6,2,7,24,4,PASS,
+MAP009,48,1,interleaved,2,3,17,48,8,PASS,
+MAP010,48,2,interleaved,2,2,42,96,16,PASS,
+MAP011,48,2,interleaved,6,3,13,96,16,FAIL,noninteger C
+MAP012,48,3,interleaved,3,2,11,144,24,PASS,
+MAP013,48,3,interleaved,6,3,101,144,24,PASS,
+MAP014,96,1,interleaved,6,6,274,96,16,FAIL,noninteger C
+MAP015,96,2,interleaved,2,3,55,192,32,PASS,
+MAP016,25,1,nonInterleaved,6,0,0,25,4,FAIL,sixgr:phy:pdcch:nreg_not_divisible_by_6
+MAP017,24,1,interleaved,3,2,0,24,4,FAIL,sixgr:phy:pdcch:invalid_bundle_size
+MAP018,24,2,interleaved,3,2,0,48,8,FAIL,sixgr:phy:pdcch:invalid_bundle_size
+MAP019,24,1,interleaved,2,5,0,24,4,FAIL,sixgr:phy:pdcch:noninteger_C

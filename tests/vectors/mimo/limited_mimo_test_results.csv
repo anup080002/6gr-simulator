@@ -1,0 +1,22 @@
+CheckID,Category,Status,Detail,Evidence
+PACK-PY-COMPILE,Pack infrastructure,PASS,All three Python verifiers compile successfully.,verify_mimo_vector_pack.py; verify_mimo_artifacts.py; verify_mimo_impact_artifacts.py
+PACK-MANIFEST,Pack infrastructure,PASS,"Independent manifest contains 24 files, 4,228 rows, zero missing files, zero hash mismatches and zero row-count mismatches.",independent_vector_manifest.json
+PACK-CAPABILITY,Pack infrastructure,PASS,Capability matrix contains 164 explicit supported/unsupported profile tuples.,mimo_capability_profile_matrix.csv
+PACK-TYPEI2,Independent vector floor,PASS,Exact two-port Type-I coefficient floor is structurally complete and hash-protected.,expected_typeI_2port_codebook.csv
+PACK-ARRAY,Independent vector floor,PASS,"Analytical antenna-array response floor contains 1,860 deterministic rows.",expected_antenna_array_response.csv
+PACK-CSI,Independent vector floor,PASS,CSI schema and per-bit ownership floors are structurally valid.,mimo_csi_report_schema_test_vectors.csv; expected_csi_bit_ownership_floor.csv
+PACK-RIPMI,Independent vector floor,PASS,RI/PMI metric inputs and expected selections are structurally valid.,mimo_ri_pmi_metric_test_vectors.csv; expected_mimo_ri_pmi_selection.csv
+PACK-COV,Independent vector floor,PASS,"Covariance positive, stale, sample-support and invalid-matrix vectors are present.",mimo_covariance_test_vectors.csv
+PACK-PRECODER,Independent vector floor,PASS,Selected-versus-applied matrix and power cases are present.,mimo_precoder_application_test_vectors.csv
+PACK-SRS,Independent vector floor,PASS,Measured-SRS authority cases are present.,mimo_srs_authority_test_vectors.csv
+PACK-ADVANCED,Independent vector floor,PASS,"MU-MIMO, multi-TRP, hybrid-beamforming and beam-state input matrices are present.",mimo_mu_mimo_test_vectors.csv; mimo_multitrp_test_vectors.csv; mimo_hybrid_beamforming_test_vectors.csv; mimo_beam_state_transition_vectors.csv
+PACK-IMPACT,Impact infrastructure,PASS,64 families and 768 paired controlled experiments validate structurally.,mimo_impact_analysis_families.csv; mimo_impact_experiment_matrix.csv
+PACK-RULES,Impact infrastructure,PASS,96 impact acceptance rules validate structurally.,mimo_impact_acceptance_rules.csv
+PACK-BASE-VERIFIER,Artifact verifier,PASS,Base verifier accepts 28 CSV/20 PNG synthetic set and rejects an injected PNG hash mismatch.,valid_exit=0; corrupt_exit=2
+PACK-IMPACT-VERIFIER,Artifact verifier,PASS,"Impact verifier accepts 768 experiments, 96 rules, 16 CSV/30 PNG synthetic set and rejects an injected PNG hash mismatch.",valid_exit=0; corrupt_exit=2
+CURRENT-PNG-INTEGRITY,Current output inventory,PASS,All 40 existing PNGs decode and are structurally nonblank.,existing_mimo_image_integrity_audit.csv
+INDEPENDENT-SCOPE,Independent vector floor,WARN,"The supplied pure-math/frozen vectors are a bounded floor. General Type-I, multi-panel, Type-II and enhanced Type-II candidates still require exact frozen vectors before those tuples can pass.",independent_vector_manifest.json
+CURRENT-SOURCE-REMEDIATION,Current simulator,FAIL,48 targeted MIMO/CSI/beamforming defect signatures remain in the uploaded production source.,current_mimo_csi_beamforming_static_audit.csv
+CURRENT-REQUIRED-ARTIFACTS,Current simulator,FAIL,0 of 94 contracted production artifacts currently exist: 0/44 CSVs and 0/50 PNGs.,existing_mimo_artifact_presence_audit.csv
+MATLAB-PRODUCTION-RUNTIME,Runtime,BLOCKED,MATLAB and Octave are not installed in this execution environment; the production waveform chain could not be executed.,command -v matlab: none; command -v octave: none
+EXISTING-MATLAB-TESTS,Runtime,BLOCKED,28 relevant existing MATLAB MIMO/CSI/beam/IRC tests were identified but could not be run without MATLAB.,repository test inventory

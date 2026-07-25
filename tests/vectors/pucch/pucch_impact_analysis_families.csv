@@ -1,0 +1,51 @@
+FamilyID,Title,Wave,RequiredDependency,FactorName,PrimaryMetric,Mandatory,Description
+F01,UCI report composition and serialization,A,none,UCI bit ownership/order,BitMismatchCount,true,Controlled baseline/treatment analysis for uci report composition and serialization.
+F02,UCI coding and CRC boundary behavior,A,none,payload size A,BLER,true,Controlled baseline/treatment analysis for uci coding and crc boundary behavior.
+F03,HARQ-ACK codebook type and size,A,decoded PDSCH/DCI event state,codebook type,HARQBitErrors,true,Controlled baseline/treatment analysis for harq-ack codebook type and size.
+F04,HARQ priority-index multiplexing,A,none,priority mix,HARQBitErrors,true,Controlled baseline/treatment analysis for harq priority-index multiplexing.
+F05,SR periodicity and offset,A,none,SR periodicity,SRLatencySlots,true,Controlled baseline/treatment analysis for sr periodicity and offset.
+F06,HARQ-ACK and SR multiplexing,A,none,simultaneous HARQ/SR,BLER,true,Controlled baseline/treatment analysis for harq-ack and sr multiplexing.
+F07,SR and CSI multiplexing,A,none,simultaneous SR/CSI,BLER,true,Controlled baseline/treatment analysis for sr and csi multiplexing.
+F08,CSI Part 1 payload size,A,CSI report builder,CSI1 bits,BLER,true,Controlled baseline/treatment analysis for csi part 1 payload size.
+F09,CSI Part 2 payload size,A,CSI report builder,CSI2 bits,BLER,true,Controlled baseline/treatment analysis for csi part 2 payload size.
+F10,Multiple CSI report ordering,A,CSI report builder,report count,BitMismatchCount,true,Controlled baseline/treatment analysis for multiple csi report ordering.
+F11,PUCCH resource-set selection,A,RRC PUCCH state,O_UCI,ResourceSelectionError,true,Controlled baseline/treatment analysis for pucch resource-set selection.
+F12,Format selection by symbol length and payload,A,RRC PUCCH state,format,BLER,true,Controlled baseline/treatment analysis for format selection by symbol length and payload.
+F13,Format-0 cyclic-shift orthogonality,A,none,cyclic shift separation,CrossCorrelation,true,Controlled baseline/treatment analysis for format-0 cyclic-shift orthogonality.
+F14,Format-1 OCC orthogonality,A,none,OCC index,CrossCorrelation,true,Controlled baseline/treatment analysis for format-1 occ orthogonality.
+F15,Format-2 PRB and symbol efficiency,A,none,PRBs/symbols,SpectralEfficiency,true,Controlled baseline/treatment analysis for format-2 prb and symbol efficiency.
+F16,Format-3 DMRS density and pi/2-BPSK,A,none,additional DMRS,BLER,true,Controlled baseline/treatment analysis for format-3 dmrs density and pi/2-bpsk.
+F17,Format-4 spreading factor and OCC,A,none,spreading factor,BLER,true,Controlled baseline/treatment analysis for format-4 spreading factor and occ.
+F18,Intra-slot frequency hopping,A,none,hopping enabled,BLER,true,Controlled baseline/treatment analysis for intra-slot frequency hopping.
+F19,Inter-slot hopping and repetition,B,central timing/repetition state,repetition count,BLER,true,Controlled baseline/treatment analysis for inter-slot hopping and repetition.
+F20,Group and sequence hopping,A,none,hopping mode,CrossCorrelation,true,Controlled baseline/treatment analysis for group and sequence hopping.
+F21,Interlaced PUCCH shared-spectrum mapping,B,shared-spectrum/interlace engine,interlace count,Occupancy,true,Controlled baseline/treatment analysis for interlaced pucch shared-spectrum mapping.
+F22,K1 feedback timing,A,decoded DCI timing state,K1,LatencySlots,true,Controlled baseline/treatment analysis for k1 feedback timing.
+F23,TDD UL-symbol availability,A,central frame/TDD engine,UL symbol pattern,AvailabilityProbability,true,Controlled baseline/treatment analysis for tdd ul-symbol availability.
+F24,PUCCH resource indicator mapping,A,decoded DCI PRI,PRI,ResourceSelectionError,true,Controlled baseline/treatment analysis for pucch resource indicator mapping.
+F25,Set-0 resource list larger than eight,A,PDCCH CCE provenance,first CCE,ResourceSelectionError,true,Controlled baseline/treatment analysis for set-0 resource list larger than eight.
+F26,Active UL BWP switching,B,multi-BWP state,BWP switch,GrantSuccess,true,Controlled baseline/treatment analysis for active ul bwp switching.
+F27,Cross-carrier PUCCH cell selection,B,multi-carrier state,feedback cell,GrantSuccess,true,Controlled baseline/treatment analysis for cross-carrier pucch cell selection.
+F28,PUCCH and PUSCH simultaneous-UCI procedure,B,PUSCH UCI integration,PUSCH overlap,UCIRecoveryRate,true,Controlled baseline/treatment analysis for pucch and pusch simultaneous-uci procedure.
+F29,PUCCH and SRS collision resolution,B,SRS resource engine,SRS overlap,CollisionRate,true,Controlled baseline/treatment analysis for pucch and srs collision resolution.
+F30,PUCCH and PRACH collision resolution,C,PRACH occasion engine,PRACH overlap,CollisionRate,true,Controlled baseline/treatment analysis for pucch and prach collision resolution.
+F31,Multiple-PUCCH priority/collision resolution,A,none,priority mix,CollisionRate,true,Controlled baseline/treatment analysis for multiple-pucch priority/collision resolution.
+F32,Open-loop PUCCH power control,A,pathloss measurement state,P0/pathloss,PowerError_dB,true,Controlled baseline/treatment analysis for open-loop pucch power control.
+F33,Closed-loop PUCCH TPC convergence,A,decoded TPC state,TPC command,PowerError_dB,true,Controlled baseline/treatment analysis for closed-loop pucch tpc convergence.
+F34,Format-dependent deltaF and deltaTF,A,none,format/payload,PowerError_dB,true,Controlled baseline/treatment analysis for format-dependent deltaf and deltatf.
+F35,P_CMAX clipping,A,none,requested power,EVM,true,Controlled baseline/treatment analysis for p_cmax clipping.
+F36,Spatial relation and beam selection,B,beam/TCI state,spatial relation,BLER,true,Controlled baseline/treatment analysis for spatial relation and beam selection.
+F37,Pathloss-reference RS ageing,B,measurement filtering state,measurement age,PowerError_dB,true,Controlled baseline/treatment analysis for pathloss-reference rs ageing.
+F38,Beam switching and blockage,C,beam failure/recovery engine,beam blockage,BLER,true,Controlled baseline/treatment analysis for beam switching and blockage.
+F39,Format-0-to-4 AWGN performance,A,none,format,BLER,true,Controlled baseline/treatment analysis for format-0-to-4 awgn performance.
+F40,Delay-spread sensitivity,A,TDL/CDL channel,delay spread,BLER,true,Controlled baseline/treatment analysis for delay-spread sensitivity.
+F41,Doppler sensitivity,A,TDL/CDL channel,Doppler,BLER,true,Controlled baseline/treatment analysis for doppler sensitivity.
+F42,CFO sensitivity,C,RF CFO estimator,normalized CFO,BLER,true,Controlled baseline/treatment analysis for cfo sensitivity.
+F43,Timing-offset sensitivity,C,timing acquisition/tracking,timing offset,BLER,true,Controlled baseline/treatment analysis for timing-offset sensitivity.
+F44,Phase-noise sensitivity,C,phase-noise process,phase noise,BLER,true,Controlled baseline/treatment analysis for phase-noise sensitivity.
+F45,No-signal false-alarm and DTX,A,none,detection threshold,FalseAlarmProbability,true,Controlled baseline/treatment analysis for no-signal false-alarm and dtx.
+F46,Wrong-RNTI rejection,A,none,RNTI mismatch,FalseGrantProbability,true,Controlled baseline/treatment analysis for wrong-rnti rejection.
+F47,Wrong-length rejection,A,none,length mismatch,FalseDecodeProbability,true,Controlled baseline/treatment analysis for wrong-length rejection.
+F48,Wrong-resource/PRI rejection,A,none,resource mismatch,FalseDecodeProbability,true,Controlled baseline/treatment analysis for wrong-resource/pri rejection.
+F49,Multi-UE near-far and orthogonality,B,multi-user waveform channel,power imbalance,BLER,true,Controlled baseline/treatment analysis for multi-ue near-far and orthogonality.
+F50,"Runtime, memory, reproducibility and end-to-end",A,all selected core features,scale/seed,RuntimeMs,true,"Controlled baseline/treatment analysis for runtime, memory, reproducibility and end-to-end."

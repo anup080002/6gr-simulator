@@ -1,0 +1,4 @@
+Wave,FamilyCount,ExperimentCount,Description
+A,36,432,Direct PUCCH/UCI implementation
+B,9,108,Internal or adjacent integration required
+C,5,60,Requires real adjacent technical subsystem

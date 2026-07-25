@@ -1,0 +1,4 @@
+Path,Rows,Columns,Rectangular,Error
+phase5_baseline/existing_pucch_source_map.csv,7,5,true,
+tmp_geom_cfg_export_manual/run/air_interface/csv/pucch_trials.csv,8,38,true,
+tmp_geom_cfg_export_manual/run/packet_flow/csv/live_pucch_grants.csv,8,39,true,

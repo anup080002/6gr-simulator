@@ -1,0 +1,41 @@
+{
+  "schema": "PUSCHULSCHImpactPackValidation/v1",
+  "implementation_findings": 12,
+  "base_input_rows": 487,
+  "base_expected_rows": 480,
+  "impact_families": 52,
+  "impact_experiments": 705,
+  "pairing_contracts": 52,
+  "acceptance_rules": 70,
+  "rule_severity_counts": {
+    "HARD": 55,
+    "DIAGNOSTIC": 8,
+    "STATISTICAL": 7
+  },
+  "analytical_floor_rows": 59,
+  "base_required_csvs": 20,
+  "base_required_pngs": 11,
+  "impact_required_csvs": 16,
+  "impact_required_pngs": 26,
+  "total_required_artifacts": 73,
+  "current_base_artifacts_present": 0,
+  "current_impact_artifacts_present": 0,
+  "current_static_failures": 38,
+  "current_foundations": 9,
+  "base_limited_test_status_counts": {
+    "PASS": 22,
+    "FAIL": 2,
+    "BLOCKED": 1
+  },
+  "matlab_available": false,
+  "octave_available": false,
+  "pack_verifier": "PASS",
+  "base_artifact_selftest": "PASS_AND_CORRUPTION_DETECTED",
+  "impact_artifact_selftest": "PASS_AND_CORRUPTION_DETECTED",
+  "execution_waves": {
+    "A_CORE_PUSCH_NOW": 28,
+    "B_PUSCH_INTERNAL_DEPENDENCY": 10,
+    "C_CROSS_AREA_DEPENDENCY": 14
+  },
+  "production_runtime_status": "BLOCKED_NO_MATLAB"
+}

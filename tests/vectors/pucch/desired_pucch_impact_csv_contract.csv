@@ -1,0 +1,17 @@
+FileName,RequiredColumns,MinRows,PrimaryKey
+pucch_impact_run_manifest.csv,RunID|GitCommit|MATLABVersion|ToolboxVersion|SeedList|ConfidenceLevel|ExperimentMatrixSHA256|Status,1,RunID
+pucch_impact_raw_trials.csv,RunID|ExperimentID|FamilyID|PairID|Variant|FactorName|FactorValue|BaselineFactorValue|Seed|TrialIndex|PayloadID|ChannelRealizationID|NoiseRealizationID|Channel|SNR_dB|SignalPresent|CorrectDecode|FalseAlarm|BitErrors|MeasuredSINR_dB|EVMPercent|TransmitPowerdBm|RuntimeMs|MemoryMB|Status,600,RunID|ExperimentID|Seed|TrialIndex
+pucch_impact_operating_points.csv,RunID|ExperimentID|FamilyID|PairID|Variant|Trials|BlockErrors|BitErrors|FalseAlarms|BLER|BLERCILower|BLERCIUpper|FalseAlarmProbability|FalseAlarmCIUpper|MeanSINR_dB|MeanEVMPercent|MeanPowerdBm|MeanRuntimeMs|MeanMemoryMB|Incomplete|Status,600,RunID|ExperimentID
+pucch_impact_pairwise_effects.csv,RunID|FamilyID|PairID|Metric|BaselineValue|TreatmentValue|AbsoluteEffect|RelativeEffect|CILower|CIUpper|PValue|AdjustedPValue|EffectSize|Conclusion|Status,300,RunID|FamilyID|PairID|Metric
+pucch_impact_rule_evaluation.csv,RunID|RuleID|FamilyID|Severity|Metric|ObservedValue|Threshold|Passed|EvidenceCSV|Status,75,RunID|RuleID
+pucch_impact_uci.csv,RunID|ExperimentID|FamilyID|UCIComposition|PayloadBits|CodingScheme|CRCBits|CodeRate|BitMismatchCount|BLER|Status,1,RunID|ExperimentID
+pucch_impact_resource_timing.csv,RunID|ExperimentID|FamilyID|ResourceSetID|PRI|K1|DueSlot|TDDLegal|ResourceSelectionError|LatencySlots|Status,1,RunID|ExperimentID
+pucch_impact_formats_dmrs.csv,RunID|ExperimentID|FamilyID|Format|NumSymbols|NumPRBs|DMRSSymbols|CyclicShift|OCCIndex|CrossCorrelation|BLER|Status,1,RunID|ExperimentID
+pucch_impact_hopping_repetition.csv,RunID|ExperimentID|FamilyID|HoppingMode|RepetitionSlots|DopplerHz|DelaySpread_ns|DiversityGain_dB|BLER|Status,1,RunID|ExperimentID
+pucch_impact_power_spatial.csv,RunID|ExperimentID|FamilyID|P0dBm|PathlossdB|TPCdB|RequestedPowerdBm|MeasuredPowerdBm|PowerError_dB|SpatialRelationID|BeamMismatch|BLER|Status,1,RunID|ExperimentID
+pucch_impact_collisions.csv,RunID|ExperimentID|FamilyID|CollisionType|ExactREOverlap|Orthogonal|ResolutionAction|CollisionRate|UCIRecoveryRate|Status,1,RunID|ExperimentID
+pucch_impact_receiver.csv,RunID|ExperimentID|FamilyID|Channel|SNR_dB|CFOHz|TimingOffsetSamples|PhaseNoiseProfile|MeasuredSINR_dB|EVMPercent|BLER|FalseAlarmProbability|Status,1,RunID|ExperimentID
+pucch_impact_runtime.csv,RunID|ExperimentID|FamilyID|PRBs|Symbols|Reports|UEs|RuntimeMs|MemoryMB|ThroughputTrialsPerSecond|Status,1,RunID|ExperimentID
+pucch_impact_interactions.csv,RunID|InteractionID|FactorA|FactorB|Metric|MainEffectA|MainEffectB|InteractionEffect|CILower|CIUpper|PValue|AdjustedPValue|Status,1,RunID|InteractionID|Metric
+pucch_impact_summary.csv,RunID|FamilyID|Wave|ExperimentsExpected|ExperimentsExecuted|HardRulesPassed|HardRulesFailed|StatisticalRulesPassed|InconclusiveCount|BlockedCount|PrimaryConclusion|Status,50,RunID|FamilyID
+pucch_impact_image_semantic_audit.csv,RunID|ImageFile|SourceCSV|SourceCSV_SHA256|PNG_SHA256|Width|Height|AxesCount|SeriesCount|FinitePointCount|ActualTitle|ActualXLabel|ActualYLabel|Status,28,RunID|ImageFile

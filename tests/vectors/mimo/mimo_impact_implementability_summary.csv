@@ -1,0 +1,4 @@
+Wave,FamilyCount,ExperimentCount,Meaning
+A,33,396,direct core MIMO/CSI implementation
+B,17,204,requires internal scheduler/channel/beam integration
+C,14,168,requires adjacent multi-TRP/FR2/mobility/RF procedures

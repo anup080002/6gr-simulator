@@ -1,0 +1,4 @@
+Wave,FamilyCount,Families,Meaning,CompletionRule
+A,42,F01|F02|F03|F04|F05|F06|F07|F08|F11|F12|F13|F14|F15|F16|F17|F18|F19|F20|F22|F23|F24|F25|F26|F27|F28|F29|F30|F32|F33|F34|F35|F36|F37|F38|F39|F44|F46|F47|F48|F52|F56|F57,direct initial-access implementation,all experiments execute after dependencies are real; blocked is not PASS
+B,12,F09|F21|F31|F40|F41|F42|F43|F45|F49|F50|F51|F53,integrated internal PHY/MAC dependencies,all experiments execute after dependencies are real; blocked is not PASS
+C,6,F10|F54|F55|F58|F59|F60,adjacent or explicitly unsupported extension dependency,all experiments execute after dependencies are real; blocked is not PASS

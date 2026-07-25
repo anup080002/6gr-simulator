@@ -1,0 +1,71 @@
+RuleID,FamilyID,Severity,Metric,Comparison,Aggregation,Method,Alpha,Threshold,ExpectedDirection,RequiredInputs,FailureMeaning
+R-F01-01,F01,HARD,G reconciliation,sum(bit-owner counts)==G and GULSCH+GUCI==G,per operating point,exact integer equality,0.05,0,equal,bit ownership export,UCI/UL-SCH multiplexing is incorrect
+R-F01-02,F01,HARD,UCI payload recovery,decoded bits equal transmitted bits,per payload,bit exact,0.05,0,equal,TX/RX payload digests,UCI coding/demultiplexing is incorrect
+R-F02-01,F02,HARD,Qprime/E values,production equals independent table/math oracle,per case,exact integer equality,0.05,0,equal,beta/alpha and grant,UCI budgeting is incorrect
+R-F02-02,F02,DIAGNOSTIC,Pareto effect,UCI reliability versus UL-SCH goodput,paired operating points,paired bootstrap CI,0.05,report,tradeoff,raw trial pairs,beta-offset impact not quantified
+R-F03-01,F03,HARD,CSI2 dependency,OCSI2>0 requires valid CSI1/report config,per case,typed validation,0.05,no waveform,required,assignment logs,invalid CSI2 accepted
+R-F03-02,F03,HARD,CSI2 recovery,decoded payload equals input,no-noise and SNR sweep,bit exact/Wilson,0.05,0 mismatches,equal,payload digests,CSI2 chain incomplete
+R-F04-01,F04,HARD,UCI-only integrity,TBS=0 and GULSCH=0 with UCI positions valid,per case,exact,0.05,0,equal,coding/mux export,fabricated UL-SCH data
+R-F04-02,F04,STATISTICAL,false UCI decode,no-signal false CRC pass rate,pooled seeds,Clopper-Pearson upper bound,0.05,configured <=1e-3,lower,raw trials,unsafe false detection
+R-F05-01,F05,HARD,UCI owner,higher initial IMCS; tie CW0,per case,exact,0.05,0,equal,per-CW IMCS and positions,wrong codeword ownership
+R-F06-01,F06,HARD,coding metadata,TBS/BG/C/Zc/filler equals oracle,per boundary,exact,0.05,0,equal,independent coding vectors,coding boundary defect
+R-F06-02,F06,HARD,no-noise TB recovery,decoded TB digest equals source,per boundary,exact,0.05,0 mismatches,equal,TB digests,coding chain defect
+R-F07-01,F07,HARD,decoder stability,CRC-passed result invariant to extra iterations,paired samples,exact digest,0.05,0 mismatches,equal,decoder traces,decoder state/non-determinism defect
+R-F08-01,F08,HARD,invalid assignment,invalid DCI/state creates no waveform,per fault,exact boolean,0.05,waveform=0,required,assignment/waveform logs,configured/stale grant shortcut remains
+R-F08-02,F08,HARD,valid-field causality,changed decoded field changes corresponding applied digest,per mutation,exact mapping,0.05,required,causal,DCI and applied configuration digests,decoded DCI not authoritative
+R-F09-01,F09,HARD,CG occasion legality,TX only on active exact occasion,per event,exact,0.05,0 illegal transmissions,required,event log,CG state machine incorrect
+R-F10-01,F10,HARD,resource collision,one final owner per RE,per slot,exact,0.05,0 unresolved collisions,required,resource ownership,CG collision defect
+R-F10-02,F10,HARD,HARQ identity,repetitions preserve TB/codeword layout digest,per repetition,exact,0.05,0 mismatches,equal,HARQ traces,repetition combines wrong data
+R-F11-01,F11,HARD,RA identity/grant,decoded RAR/MsgA fields equal applied PUSCH fields,per case,exact,0.05,0 mismatches,equal,RA grant/application digests,RA grant shortcut
+R-F12-01,F12,HARD,constellation/no-noise,independent symbols and recovered bits match,per modulation,NMSE/bit exact,0.05,NMSE<=1e-12; 0 bit errors,equal,constellation vectors,modulation chain defect
+R-F12-02,F12,HARD,unsupported modulation,1024QAM/4096QAM rejected in profile,per negative,typed error,0.05,no waveform,required,negative log,unsupported mode silently accepted
+R-F13-01,F13,HARD,layer mapping,all symbols conserved and inverse exact,per rank,exact,0.05,0 mismatch,equal,layer-map export,high-rank mapping defect
+R-F13-02,F13,HARD,precoding power,TX layer-to-port power conserved,per rank,relative error,0.05,<=1e-10,equal,power ledger,rank-dependent scaling defect
+R-F14-01,F14,HARD,measured per-layer SINR,finite receiver-derived value for every layer,per trial aggregate,schema/value,0.05,100% present,required,receiver metrics,rank result uses configured SNR
+R-F15-01,F15,HARD,two-codeword independence,TB identities/layouts/CRC handled separately,per case,exact,0.05,0 cross-contamination,required,per-CW traces,codeword dropped or mixed
+R-F16-01,F16,HARD,precoder authority,selection digest equals application digest and source=measured_srs,per TX,exact,0.05,0 mismatch,equal,SRS decision/application,configured precoder shortcut
+R-F17-01,F17,STATISTICAL,DMRS impact,high-density minus low-density NMSE at high Doppler,paired seeds,paired bootstrap CI,0.05,report CI; expected <=0,lower,paired channel/noise,tracking impact not measured
+R-F18-01,F18,HARD,DMRS map,indices/ports/OCC equal independent vector,per case,exact,0.05,0 mismatch,equal,DMRS vectors,DMRS type mapping defect
+R-F19-01,F19,HARD,DMRS requested/applied ports,sets equal and valid,per case,exact,0.05,0 mutation,equal,config/application,port overwrite remains
+R-F19-02,F19,HARD,cross-port sequence,ideal normalized cross-correlation matches oracle,per port pair,absolute error,0.05,<=1e-10,equal,sequence vectors,OCC/port defect
+R-F20-01,F20,STATISTICAL,wrong-UE leakage,wrong identity false CRC rate,pooled seeds,binomial upper CI,0.05,configured <=1e-3,lower,raw trials,UE separation unsafe
+R-F21-01,F21,HARD,PT-RS map,indices/sequence/associated port match oracle,per case,exact/NMSE,0.05,0 mismatch; NMSE<=1e-10,equal,PTRS vectors,PT-RS mapping defect
+R-F21-02,F21,STATISTICAL,CPE correction,after-before CPE RMSE under stress,paired symbols,paired bootstrap CI,0.05,upper CI < 0,lower,same PN realization,phase tracking ineffective
+R-F22-01,F22,HARD,PT-RS overhead,GULSCH and RE accounting exact,per pair,exact,0.05,0 mismatch,equal,resource/coding export,overhead hidden
+R-F23-01,F23,HARD,DFT energy,input/output energy relative error,per block,relative error,0.05,<=1e-12,equal,DFT vectors,transform precoder not unitary
+R-F23-02,F23,HARD,DFT round trip,IDFT(DFT(x)) NMSE,per block,NMSE,0.05,<=1e-12,equal,DFT vectors,transform chain defect
+R-F24-01,F24,HARD,linear PA null,CP-OFDM/DFT-S-OFDM bits recover with linear PA,no-noise,bit exact,0.05,0 errors,equal,raw bits,PA/reference scaling defect
+R-F25-01,F25,STATISTICAL,AWGN hopping null,hopping-minus-no hopping BLER,paired TB errors,McNemar/paired CI,0.05,CI includes 0 within tolerance,equal,paired noise,artificial hopping gain/loss
+R-F26-01,F26,DIAGNOSTIC,diversity effect,hopping-minus-no hopping BLER in selective fading,paired seeds,paired bootstrap/McNemar,0.05,report,lower_or_contextual,paired channel/noise,diversity impact absent from analysis
+R-F27-01,F27,HARD,HARQ/hop positions,each round resource and rate-match digest correct,per round,exact,0.05,0 mismatch,equal,HARQ/hop traces,wrong combining positions
+R-F28-01,F28,HARD,SRS decision provenance,measured SRS decision ID/digest used by TX,per TX,exact,0.05,0 mismatch,equal,SRS/application logs,configured TPMI remains authoritative
+R-F29-01,F29,HARD,SRS age enforcement,age>max invalidates decision,per TX,typed validation,0.05,no waveform/re-sound,required,age/epoch trace,stale SRS used
+R-F30-01,F30,HARD,SRS coverage claim,decision records actual sounded bandwidth,per case,exact,0.05,no full-band label when partial,required,coverage map,partial SRS treated as full-band
+R-F31-01,F31,DIAGNOSTIC,oracle gap,measured/fixed precoder versus perfect-CSI effective SINR,paired channels,paired bootstrap CI,0.05,report,lower_or_equal_to_oracle,same channel,precoding gap not quantified
+R-F32-01,F32,DIAGNOSTIC,calibration sensitivity,error magnitude versus precoder loss,paired channels,regression with CI,0.05,report slope,nondecreasing_on_average,raw pairs,calibration impact not quantified
+R-F33-01,F33,HARD,power equation,requested power equals independent TS equation,per case,absolute error dB,0.05,<=1e-9,equal,power inputs,power-control formula defect
+R-F33-02,F33,HARD,waveform power,measured waveform power equals applied ledger,per waveform,absolute error dB,0.05,<=0.05 dB,equal,time waveform,power not actually applied
+R-F34-01,F34,HARD,TPC recurrence,state sequence equals independent recurrence,per command,absolute error dB,0.05,<=1e-9,equal,TPC trace,closed-loop state defect
+R-F35-01,F35,HARD,P_CMAX clipping,"applied=min(requested,PCMAX)",per TX,absolute error dB,0.05,<=1e-9,equal,power ledger,saturation defect
+R-F36-01,F36,DIAGNOSTIC,pathloss error effect,measurement error versus power/BLER,paired traces,regression/bootstrap,0.05,report,contextual,actual and estimated pathloss,measurement sensitivity unquantified
+R-F37-01,F37,HARD,per-UE power ledger,sum received desired/interference powers reconciles,per UE/slot,relative error,0.05,<=1e-6,equal,waveforms/channels,near-far analysis invalid
+R-F38-01,F38,HARD,IRC covariance,finite Hermitian PSD covariance with provenance,per estimate,eigenvalue/schema,0.05,min eig >= -1e-10,required,covariance export,IRC input invalid
+R-F38-02,F38,HARD,no silent fallback,requested receiver equals applied receiver,per case,exact,0.05,0 fallback,equal,receiver trace,IRC/ZF/MMSE shortcut
+R-F39-01,F39,DIAGNOSTIC,covariance quality effect,age/sample count versus BLER/SINR loss,paired received grid,paired bootstrap/regression,0.05,report,contextual,same RX samples,covariance impact missing
+R-F40-01,F40,HARD,rate-match positions,production positions equal independent oracle per RV,per code block,exact,0.05,0 mismatch,equal,position vectors,HARQ combining invalid
+R-F40-02,F40,HARD,TB identity,soft combining only when TB/layout digest matches,per combine,exact,0.05,0 illegal combines,required,HARQ context,cross-TB contamination
+R-F41-01,F41,HARD,single delivery,one successful TB delivered once,per packet,exact,0.05,0 duplicates,required,packet/TB lineage,HARQ duplicate delivery
+R-F42-01,F42,HARD,UE isolation,wrong UE DMRS/scrambling does not recover payload,per UE,bit/CRC,0.05,0 cross-UE CRC success in no-noise identity test,required,per-UE digests,MU separation defect
+R-F43-01,F43,HARD,measured SINR presence,finite receiver-derived SINR and sample count,per row,schema/value,0.05,100% present,required,receiver metrics,configured SNR substituted
+R-F43-02,F43,HARD,AWGN SINR calibration,measured minus analytical SNR,aggregate paired,mean and CI,0.05,abs(mean)<=0.25 dB; CI within 0.5 dB,equal,AWGN power ledger,SINR estimator/scaling defect
+R-F44-01,F44,STATISTICAL,false CRC pass,invalid/no-signal false decode rate,pooled trials,Clopper-Pearson upper bound,0.05,<=1e-3 or profile threshold,lower,raw trials,receiver false acceptance
+R-F45-01,F45,HARD,CFO provenance,applied/estimated/residual CFO exported and finite,per trial aggregate,schema/value,0.05,100% present,required,waveform/receiver trace,CFO analysis uses oracle
+R-F46-01,F46,HARD,timing provenance,true applied offset separate from receiver estimate,per trial aggregate,schema/value,0.05,100% present,required,waveform/receiver trace,timing analysis circular
+R-F47-01,F47,STATISTICAL,PT-RS under PN,enabled-minus-disabled CPE/EVM under stress,paired PN/noise,paired bootstrap CI,0.05,upper CI < 0 for selected stress,lower,same PN realization,PT-RS impact absent
+R-F48-01,F48,HARD,canonical numerology,slot/symbol/sample counts match frame engine,per case,exact,0.05,0 mismatch,equal,frame state,local numerology shortcut
+R-F49-01,F49,DIAGNOSTIC,runtime regression,current versus stored accepted baseline,median/p95,ratio with CI,0.05,report; fail only if configured regression budget exceeded,lower,same hardware/toolchain,complexity regression untracked
+R-F50-01,F50,HARD,same-seed replay,raw artifacts/digests repeat,per experiment,exact or documented float tolerance,0.05,0 mismatch,equal,manifest,non-reproducible simulator
+R-F50-02,F50,HARD,parallel RNG equivalence,serial and parallel counts/streams match,per experiment,exact,0.05,0 mismatch,equal,RNG stream IDs,parallel execution changes science
+R-F51-01,F51,DIAGNOSTIC,interaction model,main and two-way effects with CI,factorial aggregate,linear/logistic model with Holm correction,0.05,report,contextual,complete factorial rows,feature interactions hidden
+R-F52-01,F52,HARD,scenario completeness,all required profiles executed and artifacts present,per profile,exact,0.05,0 missing/blocked/incomplete,required,summary/manifest,end-to-end evidence incomplete
+R-F52-02,F52,HARD,production provenance,all metrics originate from production chain,per artifact,digest/source audit,0.05,100%,required,artifact manifest,synthetic/copied output accepted

@@ -1,0 +1,31 @@
+ImageFile,SourceCSVFiles,ExpectedTitleTokens,ExpectedXLabelTokens,ExpectedYLabelTokens,MinWidth,MinHeight,MinAxes,MinSeries,MinFinitePoints,Mandatory
+ia_impact_ssb_periodicity.png,initial_access_impact_ssb.csv,SSB periodicity impact,SSB periodicity ms,Acquisition latency / success,900,600,1,1,12,true
+ia_impact_beam_count.png,initial_access_impact_ssb.csv,SSB beam count impact,Active SSB beams,Success / runtime,900,600,1,1,12,true
+ia_impact_ssb_snr.png,initial_access_impact_ssb.csv,SSB acquisition versus SNR,SNR dB,Detection / BCH BLER,900,600,1,1,12,true
+ia_impact_cfo_timing.png,initial_access_impact_ssb.csv,SSB CFO and timing sensitivity,CFO / timing offset,Acquisition probability,900,600,1,1,12,true
+ia_impact_pbch_dmrs.png,initial_access_impact_ssb.csv,PBCH DM-RS impact,DM-RS SNR dB,BCH BLER / NMSE,900,600,1,1,12,true
+ia_impact_type0_coreset.png,initial_access_impact_type0_sib1.csv,CORESET0 impact,CORESET0 index,Detection / overhead,900,600,1,1,12,true
+ia_impact_searchspace0.png,initial_access_impact_type0_sib1.csv,SearchSpace0 impact,SearchSpace0 index,Monitoring latency,900,600,1,1,12,true
+ia_impact_pdcch_al.png,initial_access_impact_type0_sib1.csv,Type-0 aggregation-level impact,Aggregation level,Detection probability,900,600,1,1,12,true
+ia_impact_sib1_mcs.png,initial_access_impact_type0_sib1.csv,SIB1 MCS impact,MCS,BLER / resource RE,900,600,1,1,12,true
+ia_impact_sib1_payload.png,initial_access_impact_type0_sib1.csv,SIB1 payload-size impact,Payload bits,Required resources / BLER,900,600,1,1,12,true
+ia_impact_prach_format.png,initial_access_impact_prach.csv,PRACH format impact,Preamble format,Detection / timing error,900,600,1,1,12,true
+ia_impact_prach_scs_cfo.png,initial_access_impact_prach.csv,PRACH SCS and CFO,PRACH SCS kHz,Detection probability,900,600,1,1,12,true
+ia_impact_restricted_set.png,initial_access_impact_prach.csv,Restricted-set impact,Restricted set,Detection / root usage,900,600,1,1,12,true
+ia_impact_zcz.png,initial_access_impact_prach.csv,Zero-correlation-zone impact,ZCZ configuration,Detection / collision leakage,900,600,1,1,12,true
+ia_impact_msg1_fdm.png,initial_access_impact_prach.csv,Msg1 FDM impact,Frequency occasions,Collision / overhead,900,600,1,1,12,true
+ia_impact_ro_density.png,initial_access_impact_prach.csv,RA occasion density,Occasions per 10 ms,Latency / collision,900,600,1,1,12,true
+ia_impact_ssb_ro_ratio.png,initial_access_impact_prach.csv|initial_access_impact_beam.csv,SSB to RO association impact,SSBs per RO,Collision / latency,900,600,1,1,12,true
+ia_impact_ue_load.png,initial_access_impact_contention.csv,Contending UE load,Number of UEs,Collision / success,900,600,1,1,12,true
+ia_impact_preamble_pool.png,initial_access_impact_contention.csv,Preamble-pool impact,CB preambles per SSB,Collision probability,900,600,1,1,12,true
+ia_impact_power_ramping.png,initial_access_impact_power.csv,Preamble power-ramping impact,Ramping step dB,Attempts / energy,900,600,1,1,12,true
+ia_impact_target_power.png,initial_access_impact_power.csv,Preamble target-power impact,Target power dBm,Detection / clipping,900,600,1,1,12,true
+ia_impact_backoff.png,initial_access_impact_contention.csv,Backoff impact,Backoff ms,Collision / latency,900,600,1,1,12,true
+ia_impact_response_window.png,initial_access_impact_contention.csv,RAR response-window impact,Window slots,RAR miss / latency,900,600,1,1,12,true
+ia_impact_capture.png,initial_access_impact_contention.csv,Near-far capture,Near-far offset dB,Capture / success,900,600,1,1,12,true
+ia_impact_msg3_harq.png,initial_access_impact_rrc.csv,Msg3 HARQ impact,HARQ mode / round,Success / latency,900,600,1,1,12,true
+ia_impact_rrc_messages.png,initial_access_impact_rrc.csv,RRC message-size impact,Message bits,BLER / latency,900,600,1,1,12,true
+ia_impact_e2e_snr.png,initial_access_impact_operating_points.csv,End-to-end access versus SNR,SNR dB,RRC connected probability,900,600,1,1,12,true
+ia_impact_runtime_scaling.png,initial_access_impact_runtime.csv,Initial-access runtime scaling,Scenario scale,Runtime / memory,900,600,1,1,12,true
+ia_impact_effect_forest.png,initial_access_impact_pairwise_effects.csv,Initial-access effect-size forest,Treatment minus baseline,Effect size,900,600,1,1,12,true
+ia_impact_family_summary.png,initial_access_impact_summary.csv,Initial-access impact summary,Impact family,Conclusion / status,900,600,1,1,12,true

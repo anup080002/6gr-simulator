@@ -1,0 +1,17 @@
+CaseID,SNRdB,ChannelModel,UEID,Rank,Codeword,Layer,Hop,DataRECount,LLRCount,RateRecoveredBitCount,MeasuredSINRdB,MeasuredSINRSource,ReceiverDerived,EVMPercent,BER,BLER,TBCRCOK,ChannelEstimateNMSEdB,LDPCIterations,InterferenceCovarianceUsed,Status
+RX-P1-T1,-8,AWGN,UE1,1,0,0,0,936,1872,3600,-5.2198204575251372,post_equalization_sinr_from_dmrs_residual_bounded_equalizer_channel_estimate,1,141.21519317437071,0.39583333333333331,1,0,-4.8098652233933867,50,0,PASS
+RX-P1-T2,-8,AWGN,UE1,1,0,0,0,936,1872,3600,-9.706004684407592,post_equalization_sinr_from_equalizer_channel_estimate,1,278.73385673498797,0.41145833333333331,1,0,-4.3317842457829805,50,0,PASS
+RX-P1-T3,-8,AWGN,UE1,1,0,0,0,936,1872,3600,-4.5823442902046914,post_equalization_sinr_from_equalizer_channel_estimate,1,135.29047751858124,0.36631944444444442,1,0,-10.424164714573465,50,0,PASS
+RX-P1-T4,-8,AWGN,UE1,1,0,0,0,936,1872,3600,-6.5744832109464397,post_equalization_sinr_from_equalizer_channel_estimate,1,187.45607004610841,0.3732638888888889,1,0,-7.731111724788942,50,0,PASS
+RX-P2-T1,-3,AWGN,UE1,1,0,0,0,936,1872,3600,1.4990193994600012,post_equalization_sinr_from_equalizer_channel_estimate,1,68.604233439231038,0,0,1,-10.675770877576298,6,0,PASS
+RX-P2-T2,-3,AWGN,UE1,1,0,0,0,936,1872,3600,-2.248806108417623,post_equalization_sinr_from_dmrs_residual_bounded_equalizer_channel_estimate,1,108.06088578628336,0,0,1,-10.673660094782997,7,0,PASS
+RX-P2-T3,-3,AWGN,UE1,1,0,0,0,936,1872,3600,1.8269748813808586,post_equalization_sinr_from_equalizer_channel_estimate,1,66.117906378102703,0,0,1,-9.1044124648106166,6,0,PASS
+RX-P2-T4,-3,AWGN,UE1,1,0,0,0,936,1872,3600,0.14533308752292248,post_equalization_sinr_from_dmrs_residual_bounded_equalizer_channel_estimate,1,81.745584542418356,0,0,1,-13.165570040279055,9,0,PASS
+RX-P3-T1,2,AWGN,UE1,1,0,0,0,936,1872,3600,5.1206809399383646,post_equalization_sinr_from_equalizer_channel_estimate,1,52.818945370052404,0,0,1,-19.652342424556842,2,0,PASS
+RX-P3-T2,2,AWGN,UE1,1,0,0,0,936,1872,3600,4.8885499126093483,post_equalization_sinr_from_equalizer_channel_estimate,1,54.68425161989903,0,0,1,-17.404763149164587,2,0,PASS
+RX-P3-T3,2,AWGN,UE1,1,0,0,0,936,1872,3600,4.8936038338844678,post_equalization_sinr_from_equalizer_channel_estimate,1,54.898202647227947,0,0,1,-18.786527433055078,3,0,PASS
+RX-P3-T4,2,AWGN,UE1,1,0,0,0,936,1872,3600,4.7955924571588415,post_equalization_sinr_from_dmrs_residual_bounded_equalizer_channel_estimate,1,52.065475260106332,0,0,1,-15.730346834340187,2,0,PASS
+RX-P4-T1,8,AWGN,UE1,1,0,0,0,936,1872,3600,10.013628124662375,post_equalization_sinr_from_decision_directed_symbol_residual_bounded_equalizer_channel_estimate,1,30.542672550685769,0,0,1,-18.52136828276512,1,0,PASS
+RX-P4-T2,8,AWGN,UE1,1,0,0,0,936,1872,3600,9.7371084357628011,post_equalization_sinr_from_equalizer_channel_estimate,1,38.087376059506497,0,0,1,-15.942210705862273,1,0,PASS
+RX-P4-T3,8,AWGN,UE1,1,0,0,0,936,1872,3600,9.9978153819741351,post_equalization_sinr_from_decision_directed_symbol_residual_bounded_equalizer_channel_estimate,1,32.141074144332002,0,0,1,-19.293002365382605,1,0,PASS
+RX-P4-T4,8,AWGN,UE1,1,0,0,0,936,1872,3600,10.432611066773067,post_equalization_sinr_from_dmrs_residual_bounded_equalizer_channel_estimate,1,29.50410399037165,0,0,1,-22.999081646158093,1,0,PASS

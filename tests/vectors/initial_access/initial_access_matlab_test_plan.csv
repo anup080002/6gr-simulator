@@ -1,0 +1,53 @@
+TestID,MATLABTest,Purpose,TaskID,Mandatory,RequiredResult,SkipAllowed
+IA-TEST-001,testInitialAccessCapabilityRegistry,profile tuples and planning-time extension rejection,IA-TASK-01,true,executed_and_passed,false
+IA-TEST-002,testSSBCaseResolverCaseA,Case A candidate symbols/Lmax,IA-TASK-02,true,executed_and_passed,false
+IA-TEST-003,testSSBCaseResolverCaseB,Case B candidate symbols/Lmax,IA-TASK-02,true,executed_and_passed,false
+IA-TEST-004,testSSBCaseResolverCaseC,Case C paired/unpaired thresholds,IA-TASK-02,true,executed_and_passed,false
+IA-TEST-005,testSSBGridValidation,bandwidth/SCS/NRB/kSSB/no-clamp behavior,IA-TASK-02,true,executed_and_passed,false
+IA-TEST-006,testSSBInvalidLmaxAndIndex,typed rejection/no mutation,IA-TASK-02,true,executed_and_passed,false
+IA-TEST-007,testSSBResourceOwnership,exact 960-RE ownership for v=0..3,IA-TASK-03,true,executed_and_passed,false
+IA-TEST-008,testSSBBurstBitmapAndCandidateTiming,multi-SSB bitmap and exact absolute timing,IA-TASK-03,true,executed_and_passed,false
+IA-TEST-009,testSSBPerBeamPrecodingAndPower,beam matrix/power application,IA-TASK-03,true,executed_and_passed,false
+IA-TEST-010,testSSBBlindCellSearchNoOracle,PSS/SSS timing/CFO/cell ID without transmitted truth,IA-TASK-04,true,executed_and_passed,false
+IA-TEST-011,testSSBBlindSearchMultiBeam,best beam/tie/blockage cases,IA-TASK-04,true,executed_and_passed,false
+IA-TEST-012,testPBCHDMRSAndBCHDecode,sequence/index/BCH CRC,IA-TASK-04,true,executed_and_passed,false
+IA-TEST-013,testMIBSemanticPacking,23-bit MIB fields and invalid values,IA-TASK-04,true,executed_and_passed,false
+IA-TEST-014,testType0CORESET0Tables,all bounded FR1 CORESET0 rows,IA-TASK-05,true,executed_and_passed,false
+IA-TEST-015,testType0SearchSpace0Tables,monitoring rows/patterns/reserved cases,IA-TASK-05,true,executed_and_passed,false
+IA-TEST-016,testType0BlindDCI10SIRNTI,true blind candidates and wrong-RNTI/no-signal,IA-TASK-05,true,executed_and_passed,false
+IA-TEST-017,testSIB1IndependentUPERVectors,external ASN.1 bit-exact vectors,IA-TASK-06,true,executed_and_passed,false
+IA-TEST-018,testSIB1MalformedAndExtensions,truncation/constraint/extension handling,IA-TASK-06,true,executed_and_passed,false
+IA-TEST-019,testSIB1SemanticInstallation,decoded RACH/common/timer state and epoch,IA-TASK-06,true,executed_and_passed,false
+IA-TEST-020,testSIB1ExactScheduling,decoded DCI controls PDSCH resources,IA-TASK-07,true,executed_and_passed,false
+IA-TEST-021,testSIB1NoSyntheticGap,absolute timing/sample mapping,IA-TASK-07,true,executed_and_passed,false
+IA-TEST-022,testSIB1ReceiverNoOracle,no expected tree/hash/payload input,IA-TASK-07,true,executed_and_passed,false
+IA-TEST-023,testSIB1PDSCHDLSCHRoundTrip,no-noise/AWGN/TDL/CDL SIB1 recovery,IA-TASK-07,true,executed_and_passed,false
+IA-TEST-024,testPRACHConfigIndexFDD,0..255 table resolution,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-025,testPRACHConfigIndexTDD,0..255 table resolution,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-026,testPRACHLongFormats,formats 0/1/2/3 waveform and detector,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-027,testPRACHShortFormats,A1/A2/A3/B1/B4/C0/C2 waveform and detector,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-028,testPRACHRestrictedSetTypeA,long-sequence Type A roots/cyclic shifts,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-029,testPRACHRestrictedSetTypeB,long-sequence Type B roots/cyclic shifts,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-030,testPRACHZCZAndRootBudget,NCS/root exhaustion/boundaries,IA-TASK-08,true,executed_and_passed,false
+IA-TEST-031,testPRACHOccasionResolver,frame/slot/symbol/FDM absolute occasions,IA-TASK-09,true,executed_and_passed,false
+IA-TEST-032,testRARNTIArithmetic,exact RA-RNTI for occasion coordinates,IA-TASK-09,true,executed_and_passed,false
+IA-TEST-033,testSSBToROAssociation,all declared ratios/preamble groups,IA-TASK-09,true,executed_and_passed,false
+IA-TEST-034,testRAPreamblePowerControl,target/pathloss/ramping/Pcmax/waveform power,IA-TASK-10,true,executed_and_passed,false
+IA-TEST-035,testRAResponseWindow,exact inclusive/exclusive boundaries,IA-TASK-10,true,executed_and_passed,false
+IA-TEST-036,testRABackoff,BI/deterministic random selection/restart,IA-TASK-10,true,executed_and_passed,false
+IA-TEST-037,testRAContentionResolutionTimer,exact timer start/stop/expiry,IA-TASK-10,true,executed_and_passed,false
+IA-TEST-038,testRAPreambleGroupAB,message/pathloss thresholds and selection,IA-TASK-10,true,executed_and_passed,false
+IA-TEST-039,testFourStepRAFirstAttemptSuccess,Msg1/RAR/Msg3/Msg4 causal path,IA-TASK-11,true,executed_and_passed,false
+IA-TEST-040,testFourStepRAMultiAttempt,miss/retry/backoff/ramping/preambleTransMax,IA-TASK-11,true,executed_and_passed,false
+IA-TEST-041,testFourStepRACollisionAndCapture,same/different preamble multi-UE,IA-TASK-11,true,executed_and_passed,false
+IA-TEST-042,testRARWrongRNTIAndRAPID,no false grant/state mutation,IA-TASK-11,true,executed_and_passed,false
+IA-TEST-043,testMsg3HARQ,RV/NDI/soft buffer and RRCSetupRequest lineage,IA-TASK-11,true,executed_and_passed,false
+IA-TEST-044,testRRCConnectionEstablishment,SetupRequest/Setup/SetupComplete success,IA-TASK-12,true,executed_and_passed,false
+IA-TEST-045,testRRCSetupTransactionAndIdentity,wrong transaction/identity rejection,IA-TASK-12,true,executed_and_passed,false
+IA-TEST-046,testRRCSetupCompleteLateDuplicateCRC,timer/duplicate/CRC/state rollback,IA-TASK-12,true,executed_and_passed,false
+IA-TEST-047,testInitialAccessNoSignalFalseAlarm,SSB/PDCCH/PRACH no-signal exact bounds,IA-TASK-13,true,executed_and_passed,false
+IA-TEST-048,testInitialAccessWrongIdentityMatrix,cell/RNTI/RO/preamble/transaction faults,IA-TASK-13,true,executed_and_passed,false
+IA-TEST-049,testInitialAccessEndToEndChannels,AWGN/TDL/CDL and mobility bounded profile,IA-TASK-13,true,executed_and_passed,false
+IA-TEST-050,testInitialAccessArtifactGeneration,31 CSV/20 PNG production contracts,IA-TASK-14,true,executed_and_passed,false
+IA-TEST-051,testInitialAccessImpactAnalysis,60 families/720 experiments/90 rules,IA-TASK-15,true,executed_and_passed,false
+IA-TEST-052,testInitialAccessFullRegression,all repository initial-access and dependent PHY suites,IA-TASK-16,true,executed_and_passed,false

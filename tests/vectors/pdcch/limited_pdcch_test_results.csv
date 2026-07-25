@@ -1,0 +1,18 @@
+CheckID,Category,Status,Details
+PY-COMPILE,PACK_INFRASTRUCTURE,PASS,All supplied Python verifier modules compile.
+VECTOR-MANIFEST,PACK_INFRASTRUCTURE,PASS,"24 manifested files; 1,369 rows; zero missing files, row-count mismatches, or SHA-256 mismatches."
+CSV-STRUCTURE,PACK_INFRASTRUCTURE,PASS,All 41 pack CSVs are rectangular and have unique headers.
+CANDIDATE-VECTORS,PACK_INFRASTRUCTURE,PASS,"55 candidate inputs and 48 independent positive outputs pass legality, alignment, range, and count checks."
+TYPE0-COMPLETE-TABLE-FAMILY,PACK_INFRASTRUCTURE,PASS,"268 CORESET0 rows across Tables 13-0 through 13-10A, 64 monitoring rows, 80 pattern-2/3 rows, and GSCN-offset vectors are present and hash-pinned."
+PDCCH-DMRS-FLOOR,PACK_INFRASTRUCTURE,PASS,"29 inputs and 24 pure-spec expected outputs pass c_init, sequence-length, mapped-RE-count, and unit-power checks."
+CONTROLLED-IMPACT-PAIRS,PACK_INFRASTRUCTURE,PASS,600 experiments form 300 baseline/treatment pairs; only FactorValue changes inside each pair.
+IMPACT-RULES,PACK_INFRASTRUCTURE,PASS,"75 unique rules: 55 hard, 12 statistical, 8 diagnostic."
+BASE-VERIFIER-VALID,PACK_INFRASTRUCTURE,PASS,Synthetic complete base set: 21 CSVs and 13 PNGs accepted; exit code 0.
+BASE-VERIFIER-CORRUPTION,PACK_INFRASTRUCTURE,PASS,Injected pdcch_coreset_reg_cce_map.png hash corruption detected; exit code 2.
+IMPACT-VERIFIER-VALID,PACK_INFRASTRUCTURE,PASS,"Synthetic complete impact set: 600 experiments, 75 rules, 16 CSVs, and 28 PNGs accepted; exit code 0."
+IMPACT-VERIFIER-CORRUPTION,PACK_INFRASTRUCTURE,PASS,Injected pdcch_impact_payload_size.png hash corruption detected; exit code 2.
+EXISTING-IMAGE-INTEGRITY,CURRENT_OUTPUT_INVENTORY,PASS,40/40 existing PNGs decode and are structurally nonblank; 0 are contracted PDCCH/DCI images.
+EXISTING-CSV-INVENTORY,CURRENT_OUTPUT_INVENTORY,PASS,9/9 PDCCH-related existing CSV candidates are rectangular; none satisfies the production contract.
+CURRENT-SOURCE-REMEDIATION,CURRENT_SIMULATOR,FAIL,42 of 48 targeted defect signatures remain in the uploaded source; 7 useful foundations are present.
+CURRENT-REQUIRED-ARTIFACTS,CURRENT_SIMULATOR,FAIL,0 of 78 required PDCCH/DCI production artifacts exist by exact contracted filename.
+MATLAB-PRODUCTION-RUNTIME,RUNTIME,BLOCKED,"Neither MATLAB nor Octave is installed; actual waveform, Polar, blind-search, Type-0, detection/false-alarm, and figure execution was not run."

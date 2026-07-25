@@ -1,0 +1,97 @@
+RuleID,FamilyID,Severity,Metric,Operator,Threshold,RequiredEvidence,Description
+MRULE-001,F01,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Type-I single-panel codebook versus compact DFT
+MRULE-002,F02,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Type-I rank breadth 1-8
+MRULE-003,F03,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Codebook subset restriction
+MRULE-004,F04,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Panel geometry mismatch
+MRULE-005,F05,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Polarization and XPR
+MRULE-006,F06,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Port mapping permutation
+MRULE-007,F07,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for RI objective SVD versus goodput
+MRULE-008,F08,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for PMI objective gain versus post-EQ MI
+MRULE-009,F09,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Wideband versus subband PMI
+MRULE-010,F10,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for PRG precoding
+MRULE-011,F11,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CSI Part1/Part2 exact versus custom
+MRULE-012,F12,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CSI report omission priority
+MRULE-013,F13,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CSI delay
+MRULE-014,F14,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CSI measurement noise
+MRULE-015,F15,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CSI-IM interference measurement
+MRULE-016,F16,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CQI calibration
+MRULE-017,F17,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for High-rank DL
+MRULE-018,F18,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for High-rank UL
+MRULE-019,F19,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Two codewords
+MRULE-020,F20,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for SRS-derived TPMI authority
+MRULE-021,F21,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for SRS sounding bandwidth
+MRULE-022,F22,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for SRS age
+MRULE-023,F23,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Reciprocity calibration
+MRULE-024,F24,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Covariance sample count
+MRULE-025,F25,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Covariance age
+MRULE-026,F26,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Covariance granularity
+MRULE-027,F27,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Covariance shrinkage
+MRULE-028,F28,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Receiver MMSE versus IRC
+MRULE-029,F29,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Strict IRC no fallback
+MRULE-030,F30,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for ZF versus MMSE
+MRULE-031,F31,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for MU-MIMO 2 UE
+MRULE-032,F32,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for MU-MIMO 4 UE
+MRULE-033,F33,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for MU angular separation
+MRULE-034,F34,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for MU DM-RS collision
+MRULE-035,F35,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for MU near-far power
+MRULE-036,F36,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for MU scheduler objective
+MRULE-037,F37,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for NCJT two-TRP
+MRULE-038,F38,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CJT perfect coherence
+MRULE-039,F39,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CJT phase mismatch
+MRULE-040,F40,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for CJT timing mismatch
+MRULE-041,F41,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for TRP power imbalance
+MRULE-042,F42,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for TRP CSI ownership
+MRULE-043,F43,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for TCI activation delay
+MRULE-044,F44,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for QCL source mismatch
+MRULE-045,F45,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for P1 beam acquisition
+MRULE-046,F46,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for P2 beam refinement
+MRULE-047,F47,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for P3 UL beam selection
+MRULE-048,F48,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Beam mobility tracking
+MRULE-049,F49,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Beam blockage recovery
+MRULE-050,F50,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Beam report delay
+MRULE-051,F51,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Hybrid RF-chain count
+MRULE-052,F52,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Hybrid phase quantization
+MRULE-053,F53,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Hybrid beam squint
+MRULE-054,F54,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Hybrid calibration error
+MRULE-055,F55,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Analog versus digital beam search
+MRULE-056,F56,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for No rank collapse gate
+MRULE-057,F57,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for No port collapse gate
+MRULE-058,F58,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Power normalization
+MRULE-059,F59,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Wrong RNTI/resource identity
+MRULE-060,F60,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for No-signal false beam/CSI decision
+MRULE-061,F61,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Runtime scaling ports/rank
+MRULE-062,F62,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Serial versus parallel reproducibility
+MRULE-063,F63,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for Closed-loop versus open-loop MIMO
+MRULE-064,F64,HARD,technical_invariant,family_specific,defined_in_prompt,raw_trials|operating_points|pairwise_effects,Correctness invariant for End-to-end mobility MU multi-TRP beam loop
+MRULE-065,F01,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Type-I single-panel codebook versus compact DFT
+MRULE-066,F02,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Type-I rank breadth 1-8
+MRULE-067,F03,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Codebook subset restriction
+MRULE-068,F04,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Panel geometry mismatch
+MRULE-069,F05,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Polarization and XPR
+MRULE-070,F06,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Port mapping permutation
+MRULE-071,F07,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for RI objective SVD versus goodput
+MRULE-072,F08,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for PMI objective gain versus post-EQ MI
+MRULE-073,F09,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Wideband versus subband PMI
+MRULE-074,F10,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for PRG precoding
+MRULE-075,F11,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for CSI Part1/Part2 exact versus custom
+MRULE-076,F12,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for CSI report omission priority
+MRULE-077,F13,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for CSI delay
+MRULE-078,F14,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for CSI measurement noise
+MRULE-079,F15,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for CSI-IM interference measurement
+MRULE-080,F16,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for CQI calibration
+MRULE-081,F17,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for High-rank DL
+MRULE-082,F18,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for High-rank UL
+MRULE-083,F19,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Two codewords
+MRULE-084,F20,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for SRS-derived TPMI authority
+MRULE-085,F21,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for SRS sounding bandwidth
+MRULE-086,F22,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for SRS age
+MRULE-087,F23,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Reciprocity calibration
+MRULE-088,F24,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Covariance sample count
+MRULE-089,F25,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Covariance age
+MRULE-090,F26,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Covariance granularity
+MRULE-091,F27,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Covariance shrinkage
+MRULE-092,F28,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Receiver MMSE versus IRC
+MRULE-093,F29,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for Strict IRC no fallback
+MRULE-094,F30,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for ZF versus MMSE
+MRULE-095,F31,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for MU-MIMO 2 UE
+MRULE-096,F32,STATISTICAL,primary_effect,paired_CI_and_practical_margin,defined_before_execution,pairwise_effects|confidence_interval|adjusted_pvalue,Statistical/effect-size rule for MU-MIMO 4 UE

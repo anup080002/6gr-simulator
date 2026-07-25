@@ -1,0 +1,32 @@
+{
+  "SchemaVersion": "PUSCHLimitedTestSummary/v1",
+  "TotalChecks": 25,
+  "StatusCounts": {
+    "PASS": 22,
+    "FAIL": 2,
+    "BLOCKED": 1
+  },
+  "ByResultClass": {
+    "PACK_INFRASTRUCTURE": {
+      "PASS": 21
+    },
+    "CURRENT_OUTPUT_INVENTORY": {
+      "PASS": 1
+    },
+    "CURRENT_SIMULATOR": {
+      "FAIL": 2
+    },
+    "MANDATORY_RUNTIME": {
+      "BLOCKED": 1
+    }
+  },
+  "CurrentSimulatorPhaseStatus": "FAIL",
+  "MATLABRuntimeStatus": "BLOCKED",
+  "PackInfrastructurePass": true,
+  "RequiredCSVCount": 20,
+  "RequiredPNGCount": 11,
+  "InputVectorRows": 487,
+  "BoundedExpectedRows": 480,
+  "StaticDefectCount": 38,
+  "ExistingRequiredArtifactsPresent": 0
+}

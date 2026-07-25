@@ -1,0 +1,18 @@
+CheckID,Category,Check,Result,Observed,Expected,Details
+IA-LIM-001,PackInfrastructure,Python verifier compilation,PASS,3 verifier scripts compiled,0 syntax errors,
+IA-LIM-002,VectorPack,Manifest/hash/row verification,PASS,43 files; 11307 rows; 0 failures,all manifest entries match,
+IA-LIM-003,VectorPack,SSB case/candidate arithmetic,PASS,67 case rows; 360 candidate rows,Case A/B/C floors match,
+IA-LIM-004,VectorPack,SS/PBCH RE ownership,PASS,3840 RE rows; exact 127/127/432/144/130 counts,0 ownership mismatches,
+IA-LIM-005,VectorPack,MIB semantic bits,PASS,53 cases; valid cases are 23 bits,exact bounded floor,
+IA-LIM-006,VectorPack,Type-0 table vector coverage,PASS,452 rows,268+64+80+40 rows,
+IA-LIM-007,VectorPack,PRACH index and format inputs,PASS,512 config-index rows; 380 format/restricted rows,FDD/TDD 0..255 inputs and declared format matrix,Complete independent PRACH table outputs still required during Codex execution.
+IA-LIM-008,VectorPack,RA-RNTI/power/timer/RRC arithmetic,PASS,128 RA-RNTI; 320 power; 96 timer; 32 RRC rows,0 formula mismatches,
+IA-LIM-009,ImpactPack,Impact matrix and rules,PASS,60 families; 720 experiments; 90 rules,60/720/90,
+IA-LIM-010,Verifier,Base artifact verifier self-test,PASS,valid synthetic set accepted; intentional PNG hash corruption detected,exit 0 then corruption rejection,
+IA-LIM-011,Verifier,Impact artifact verifier self-test,PASS,valid synthetic set accepted; intentional PNG hash corruption detected,exit 0 then corruption rejection,
+IA-LIM-012,ExistingOutputs,Existing PNG decode/nonblank audit,PASS,40/40 decoded and nonblank,all existing PNGs structurally valid,"These are generic bundled outputs, not the contracted initial-access plots."
+IA-LIM-013,ExistingOutputs,Existing CSV structural inventory,WARN,224/225 rectangular,diagnostic only,One unrelated file is malformed: tmp_geom_cfg_export_manual/run/reports/csv/phase7_truth_gates.csv.
+IA-LIM-014,CurrentSimulator,Current source remediation status,FAIL,46 targeted defects detected; 10 useful foundations present,0 targeted defects in strict dependencies,See current_initial_access_static_audit.csv.
+IA-LIM-015,CurrentSimulator,Required production artifacts,FAIL,0/97 contracted artifacts present,97/97,31 base CSV + 20 base PNG + 16 impact CSV + 30 impact PNG.
+IA-LIM-016,MATLABRuntime,Production MATLAB waveform execution,BLOCKED,matlab not found; octave not found,pinned MATLAB and 5G Toolbox runtime,No current or corrected waveform result was executed here.
+IA-LIM-017,MATLABRuntime,Relevant existing MATLAB tests,BLOCKED,109 relevant files identified out of 483 tests; 0 executed,all mandatory selected tests execute,Availability is not a PASS.

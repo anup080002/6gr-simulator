@@ -43,9 +43,12 @@ ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PUSCH', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PUSCHIndices', [], @(x) isempty(x) || isnumeric(x));
-ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
-ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0 && x<1));
-ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=3));
+ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || ...
+    (isnumeric(x) && isvector(x) && all(x>0)));
+ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || ...
+    (isnumeric(x) && isvector(x) && all(x>0 & x<1)));
+ip.addParameter('RV', [], @(x) isempty(x) || ...
+    (isnumeric(x) && isvector(x) && all(x>=0 & x<=3)));
 ip.addParameter('NoiseVar', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'time','grid','frequency','auto'})));
 ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
@@ -53,11 +56,12 @@ ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
-ip.addParameter('ExpectedHARQACKBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
+ip.addParameter('ExpectedUCIPayload', [], @(x) isempty(x) || isa(x, "sixgr.phy.ul.pusch.PUSCHUCIPayload"));
+ip.addParameter('InitialIMCSPerCodeword', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) || isstruct(x));
-ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x) || iscell(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -119,14 +123,26 @@ else
 end
 
 % Rx params
+nCodewords = double(pusch.NumCodewords);
 rv = opt.RV;
 if isempty(rv)
-    rv = double(sixgr.util.structGet(cfg, 'phy.pusch.rv', 0));
+    rv = double(sixgr.util.structGet(cfg, 'phy.pusch.rv', []));
+end
+rv = double(rv(:).');
+if numel(rv) ~= nCodewords || any(~isfinite(rv) | rv ~= fix(rv) | rv < 0 | rv > 3)
+    error("sixgr:phy:ul:PUSCHBadRV", ...
+        "PUSCH RX requires one integer RV in [0,3] per codeword.");
 end
 
 targetCodeRate = opt.TargetCodeRate;
 if isempty(targetCodeRate)
-    targetCodeRate = double(sixgr.util.structGet(cfg, 'phy.pusch.codeRate', 0.4785));
+    targetCodeRate = double(sixgr.util.structGet(cfg, 'phy.pusch.codeRate', []));
+end
+targetCodeRate = double(targetCodeRate(:).');
+if numel(targetCodeRate) ~= nCodewords || ...
+        any(~isfinite(targetCodeRate) | targetCodeRate <= 0 | targetCodeRate >= 1)
+    error("sixgr:phy:ul:PUSCHBadCodeRate", ...
+        "PUSCH RX requires one finite TargetCodeRate in (0,1) per codeword.");
 end
 
 maxIter = opt.MaxIterations;
@@ -139,7 +155,16 @@ if isempty(alg)
     alg = sixgr.util.structGet(cfg, 'phy.ldpc.algorithm', 'Normalized min-sum');
 end
 alg = char(string(alg));
-expectedHARQACKBits = localNormalizeHARQACKBits(opt.ExpectedHARQACKBits);
+expectedUCIPayload = opt.ExpectedUCIPayload;
+if isempty(expectedUCIPayload)
+    expectedUCIPayload = sixgr.phy.ul.pusch.PUSCHUCIPayload();
+end
+initialIMCS = opt.InitialIMCSPerCodeword;
+if isempty(initialIMCS)
+    initialIMCS = double(sixgr.util.structGet(phyGrant, ...
+        "CodingLayout.InitialMCSIndex", ...
+        sixgr.util.structGet(phyGrant, "CodingLayout.MCSIndex", 0)));
+end
 
 % Determine TB size
 trBlkSize = opt.TransportBlockSize;
@@ -149,15 +174,24 @@ if isempty(trBlkSize)
     nrePerPRB = localResolvePUSCHNREPerPRBOrError(carrier, pusch, puschInfo, nPRB);
     trBlkSize = nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 end
-trBlkSize = double(trBlkSize);
+trBlkSize = double(trBlkSize(:).');
+if numel(trBlkSize) ~= nCodewords || ...
+        any(~isfinite(trBlkSize) | trBlkSize <= 0 | trBlkSize ~= fix(trBlkSize))
+    error("sixgr:phy:ul:PUSCHBadTransportBlockSize", ...
+        "PUSCH RX requires one positive integer transport block size per codeword.");
+end
 
-% Canonical coding layout.
-codingLayout = localResolveRxCodingLayout(opt.CodingLayout, phyGrant, "UL", ...
+% Canonical coding layout. For UCI-on-PUSCH the LDPC rate-recovery input is
+% GULSCH, not the total PUSCH coded-bit count G.
+ulschRateMatchedBitCount = localResolveRxULSCHBitCount( ...
+    pusch, targetCodeRate, trBlkSize, puschInfo, expectedUCIPayload);
+codingLayouts = localResolveRxCodingLayouts(opt.CodingLayout, phyGrant, "UL", ...
     trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ...
-    localRateMatchedBitCountFromInfo(puschInfo), numel(expectedHARQACKBits));
-bgn = double(codingLayout.BaseGraph);
-tbCRCType = char(string(codingLayout.TBCRCType));
-tbCRCLen = double(codingLayout.TBCRCLength);
+    ulschRateMatchedBitCount);
+codingLayout = codingLayouts{1};
+bgn = double(cellfun(@(x) x.BaseGraph, codingLayouts));
+tbCRCType = string(cellfun(@(x) string(x.TBCRCType), codingLayouts));
+tbCRCLen = double(cellfun(@(x) x.TBCRCLength, codingLayouts));
 ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
 
 % DMRS
@@ -171,6 +205,11 @@ dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
 dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
 dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
+[rxPUSCH, rxPUSCHInd, chEstDMRSInd, chEstDMRSSym, effectiveRxInfo] = ...
+    localResolvePUSCHEffectiveRxReference(carrier, pusch, puschInd, dmrsInd, dmrsSym);
+if logical(effectiveRxInfo.Applied)
+    [chEstDMRSSym, ~] = localApplyPUSCHDMRSEPREDifference(chEstDMRSSym, cfg);
+end
 useFastAWGNPath = logical(opt.FastAWGNPath);
 strictMode = logical(sixgr.util.structGet(cfg, 'run.strictMode', false));
 channelModelToken = localResolveEstimatorChannelModel(cfg);
@@ -314,12 +353,12 @@ if useFastAWGNPath
         "FastAWGNActiveWaveformColumns", double(fastAWGNColumnInfo.ActiveColumnCount), ...
         "FastAWGNInactiveColumnTrimmed", logical(fastAWGNColumnInfo.Trimmed));
 else
-    [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym, ...
+    [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, chEstDMRSInd, chEstDMRSSym, ...
         "CDMLengths", sixgr.util.structGet(dmrsInfo, "CDMLengths", []), ...
         "UseFastMex", useFastChEstMex, ...
         "StrictMode", strictMode, ...
         "ChannelModel", channelModelToken, ...
-        "ExpectedTxPorts", numTxPorts, ...
+        "ExpectedTxPorts", double(effectiveRxInfo.EffectiveTxPorts), ...
         "Method", localResolveChannelEstimationMethod(cfg), ...
         "Config", cfg, ...
         "ContextLabel", "PUSCH_Rx");
@@ -378,19 +417,24 @@ if ~logical(noiseStatus.IsValid)
     return;
 end
 
-% Extract resources
-[rxSym, hestSym] = nrExtractResources(puschInd, rxGrid, Hest);
-[hestSymForSINR, sinrProjectionInfo] = localProjectPUSCHHestToLayerDomain(hestSym, pusch);
-if ~logical(sinrProjectionInfo.Applied)
-    hestSymForSINR = hestSym;
-end
+% Extract resources in the effective layer domain for codebook PUSCH. The
+% DM-RS is precoded by the same TPMI as data, so estimating eight
+% independent physical-port channels from five layer pilots is
+% underdetermined. The non-codebook clone exposes the exact effective
+% layer references without using transmitted data or true channel state.
+[rxSym, hestSym] = nrExtractResources(rxPUSCHInd, rxGrid, Hest);
+hestSymForSINR = hestSym;
+sinrProjectionInfo = struct( ...
+    "Applied", logical(effectiveRxInfo.Applied), ...
+    "Status", string(effectiveRxInfo.Status), ...
+    "TPMI", double(effectiveRxInfo.TPMI));
 
 % Equalize
 [equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL");
 RIncludesNoise = false;
 if equalizerAlg == "IRC"
     [Rint, rintInfo, RIncludesNoise] = localResolvePUSCHInterferenceCovariance(opt, carrier, ...
-        puschInd, timingResolution.AppliedCorrection_samples, nVar, rxGrid, Hest, dmrsInd, dmrsSym);
+        rxPUSCHInd, timingResolution.AppliedCorrection_samples, nVar, rxGrid, Hest, chEstDMRSInd, chEstDMRSSym);
 else
     Rint = [];
     rintInfo = struct("Available", false, "Source", "irc_not_requested", ...
@@ -405,7 +449,7 @@ end
 [ptrsInd, ptrsSym, ptrsInfo] = localResolvePUSCHPTRS(carrier, pusch, cfg);
 enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pusch.ptrs.enableCPECorrection", ...
     sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", true)));
-[eqSym, cpeCorrInfo] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, puschInd, rxGrid, Hest, ...
+[eqSym, cpeCorrInfo] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, rxPUSCHInd, rxGrid, Hest, ...
     ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enablePTRSCPECorrection);
 try
     numLayersForSINR = double(pusch.NumLayers);
@@ -454,8 +498,8 @@ csiFromEqualizerResult = sixgr.util.structGet(postEqSINRInfo, "DemapperReliabili
 if ~isempty(csiFromEqualizerResult)
     csi = csiFromEqualizerResult;
 end
-pilotPostEqInfo = localEstimatePUSCHDMRSPostEqResidual(rxGrid, Hest, dmrsInd, dmrsSym, ...
-    nVar, equalizerAlg, Rint, RIncludesNoise, pusch);
+pilotPostEqInfo = localEstimatePUSCHDMRSPostEqResidual(rxGrid, Hest, chEstDMRSInd, chEstDMRSSym, ...
+    nVar, equalizerAlg, Rint, RIncludesNoise, rxPUSCH);
 [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = localApplyPUSCHDMRSPostEqSINRBound( ...
     postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, pilotPostEqInfo);
 [layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, [], pusch);
@@ -478,30 +522,94 @@ receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmr
 % equalized REs for non-codebook PUSCH, while native codebook PUSCH
 % consumes the port-domain equalized symbols and applies the codebook-aware
 % de-layering internally.
-[decoderInputSym, decoderInputInfo] = localResolvePUSCHDecoderInputSymbols(eqSym, layerEqSym, pusch);
+[decoderInputSym, decoderInputInfo] = localResolvePUSCHDecoderInputSymbols(eqSym, layerEqSym, rxPUSCH);
 puschRxSym = [];
 if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
     nVarForDecode = double(nVar);
 end
 nVarForDecode = double(max(nVarForDecode, eps));
 try
-    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, pusch, decoderInputSym, nVarForDecode);
+    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, rxPUSCH, decoderInputSym, nVarForDecode);
 catch
-    cwLLR = nrPUSCHDecode(carrier, pusch, decoderInputSym, nVarForDecode);
+    cwLLR = nrPUSCHDecode(carrier, rxPUSCH, decoderInputSym, nVarForDecode);
 end
-[qamEqSym, qamEqInfo] = localResolvePUSCHQAMEqualizedSymbols(puschRxSym, layerEqSym);
+if nCodewords == 2
+    qamEqSym = layerEqSym;
+    qamEqInfo = struct( ...
+        "Status", "two_codeword_layer_domain_equalized_symbols", ...
+        "Source", "explicit_layer_equalizer_output");
+else
+    [qamEqSym, qamEqInfo] = localResolvePUSCHQAMEqualizedSymbols(puschRxSym, layerEqSym);
+end
 
-[cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHSingleCodewordLLR(cwLLR);
-codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract(pusch, cwLLRCell, codingLayout, eqSym);
-[cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, pusch.Modulation, postEqSINR_dB, ...
-    nVarForDecode, nVarDecodeInfo);
-[cwLLRForULSCH, uciOnPUSCH] = localDemultiplexHARQACKFromPUSCH( ...
-    cwLLR, pusch, targetCodeRate, trBlkSize, expectedHARQACKBits);
-if ~isempty(expectedHARQACKBits) && ~logical(uciOnPUSCH.Applied)
-    error("sixgr:phy:ul:PUSCHUCIDemultiplexUnavailable", ...
-        "Expected HARQ-ACK on PUSCH, but UCI demultiplexing was not applied: %s %s.", ...
-        char(string(uciOnPUSCH.Status)), char(string(uciOnPUSCH.Reason)));
+[cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHCodewordLLR(cwLLR, nCodewords);
+codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract( ...
+    pusch, cwLLRCell, codingLayouts, eqSym);
+if nCodewords == 1
+    [cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, ...
+        pusch.Modulation, postEqSINR_dB, nVarForDecode, nVarDecodeInfo);
+    cwLLRCell = {cwLLR};
+else
+    llrCSIInfo = struct( ...
+        "Source", "nrPUSCHDecode_native_per_codeword_llr_scaling", ...
+        "Convention", "toolbox_demapper_llr_per_codeword", ...
+        "NoiseVarianceConvention", "explicit_decoder_noise_variance", ...
+        "OutputDomain", "two_ulsch_codeword_llr_cells", ...
+        "NoSecondCSIWeighting", true, ...
+        "Applied", false, ...
+        "Status", "native_high_rank_scaling_retained", ...
+        "InputKind", "two_codeword_cell", ...
+        "RawCSIMedian", NaN, ...
+        "WeightMedianBeforeNormalization", NaN, ...
+        "NormalizationScale", 1);
 end
+[cwLLRForULSCH, uciOnPUSCH] = localDemultiplexTypedUCIFromPUSCH( ...
+    localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
+    expectedUCIPayload, initialIMCS);
+
+if nCodewords == 2
+    decodeTic = tic;
+    decoder = nrULSCHDecoder( ...
+        "MultipleHARQProcesses", false, ...
+        "TargetCodeRate", targetCodeRate, ...
+        "TransportBlockLength", trBlkSize, ...
+        "LDPCDecodingAlgorithm", alg, ...
+        "MaximumLDPCIterationCount", maxIter);
+    [tbBitsCell, crcErr] = decoder(cwLLRForULSCH, ...
+        pusch.Modulation, pusch.NumLayers, rv);
+    decodeLatency_s = toc(decodeTic);
+    tbBitsCell = reshape(tbBitsCell, 1, []);
+    crcErr = logical(crcErr(:).');
+    if numel(tbBitsCell) ~= 2 || numel(crcErr) ~= 2
+        error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
+            "High-rank UL-SCH decoder did not return exactly two transport blocks.");
+    end
+    rx = localBuildHighRankPUSCHRx( ...
+        tbBitsCell, crcErr, trBlkSize, cwLLRCell, cwLLRForULSCH, ...
+        codingLayouts, codewordLayerMapping, codewordLLRInfo, ...
+        carrier, pusch, puschInfo, puschInd, puschRxSym, ...
+        Hest, estInfo, eqSym, layerEqSym, decoderInputSym, decoderInputInfo, ...
+        qamEqSym, qamEqInfo, dmrsInd, dmrsSym, dmrsInfo, dmrsPowerInfo, ...
+        ptrsInd, ptrsSym, ptrsInfo, cpeCorrInfo, nVar, nVarForDecode, ...
+        noiseStatus, noiseTransformInfo, postEqSINR_dB, postEqSINRInfo, ...
+        receiverSINR, timingResolution, rawTimingEstimate, ...
+        knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
+        decodeLatency_s, maxIter, alg, llrCSIInfo, uciOnPUSCH, opt.CompactOutput);
+    if hasPHYGrant
+        rx.PHYGrant = phyGrant;
+        rx.PHYGrantDimensionContract = phyGrantContract;
+    end
+    info = struct( ...
+        "CarrierInfo", cinfo, ...
+        "PUSCHInfo", puschInfo, ...
+        "CodingLayouts", {codingLayouts}, ...
+        "CodewordLayerMapping", codewordLayerMapping, ...
+        "UCIOnPUSCH", uciOnPUSCH, ...
+        "DecodeLatency_s", decodeLatency_s, ...
+        "ExecutionBackend", "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth");
+    return;
+end
+cwLLRForULSCH = cwLLRForULSCH{1};
 
 % Rate recover (to code blocks)
 if numel(cwLLRForULSCH) ~= double(codingLayout.RateMatchedBitCount)
@@ -807,6 +915,18 @@ rx.DecodedHARQACKBits = int8(uciOnPUSCH.DecodedHARQACKBits(:));
 rx.HARQACKContentMatch = logical(uciOnPUSCH.ContentMatch);
 rx.HARQACKDecodeStatus = char(string(uciOnPUSCH.Status));
 rx.HARQACKDecodeReason = char(string(uciOnPUSCH.Reason));
+rx.CSI1BitCount = double(uciOnPUSCH.CSI1BitCount);
+rx.CSI2BitCount = double(uciOnPUSCH.CSI2BitCount);
+rx.ConfiguredGrantUCIBitCount = double(uciOnPUSCH.ConfiguredGrantUCIBitCount);
+rx.ExpectedCSIPart1Bits = int8(uciOnPUSCH.ExpectedCSIPart1Bits(:));
+rx.ExpectedCSIPart2Bits = int8(uciOnPUSCH.ExpectedCSIPart2Bits(:));
+rx.ExpectedConfiguredGrantUCIBits = int8(uciOnPUSCH.ExpectedConfiguredGrantUCIBits(:));
+rx.DecodedCSIPart1Bits = int8(uciOnPUSCH.DecodedCSIPart1Bits(:));
+rx.DecodedCSIPart2Bits = int8(uciOnPUSCH.DecodedCSIPart2Bits(:));
+rx.DecodedConfiguredGrantUCIBits = int8(uciOnPUSCH.DecodedConfiguredGrantUCIBits(:));
+rx.CSI1ContentMatch = logical(uciOnPUSCH.CSI1ContentMatch);
+rx.CSI2ContentMatch = logical(uciOnPUSCH.CSI2ContentMatch);
+rx.ConfiguredGrantUCIContentMatch = logical(uciOnPUSCH.ConfiguredGrantUCIContentMatch);
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
     rx.CodewordLLRCell = cwLLRCell;
@@ -814,6 +934,8 @@ if ~logical(opt.CompactOutput)
     rx.ULSCHCodewordLLRCell = {cwLLRForULSCH};
     rx.CodewordLLRInfo = codewordLLRInfo;
     rx.HARQACKLLR = uciOnPUSCH.HARQACKLLR;
+    rx.CSI1LLR = uciOnPUSCH.CSI1LLR;
+    rx.CSI2AndCGUCILLR = uciOnPUSCH.CSI2AndCGUCILLR;
     rx.DecodedCodeBlocks = decCbs;
     rx.ActiveIterations = actIter;
     rx.ParityChecks = parity;
@@ -899,7 +1021,7 @@ end
 
 end
 
-function [cwLLR, cwLLRCell, info] = localNormalizePUSCHSingleCodewordLLR(cwLLRRaw)
+function [cwLLR, cwLLRCell, info] = localNormalizePUSCHCodewordLLR(cwLLRRaw, expectedCount)
 if iscell(cwLLRRaw)
     cwLLRCell = reshape(cwLLRRaw, 1, []);
     sourceWasCell = true;
@@ -907,31 +1029,43 @@ else
     cwLLRCell = {cwLLRRaw};
     sourceWasCell = false;
 end
-if numel(cwLLRCell) ~= 1
+if numel(cwLLRCell) ~= expectedCount
     error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
-        "nrPUSCHDecode returned %d codeword LLR stream(s); PUSCH truth RX supports exactly one.", numel(cwLLRCell));
+        "nrPUSCHDecode returned %d codeword LLR stream(s); expected %d.", ...
+        numel(cwLLRCell), expectedCount);
 end
-cwLLR = double(cwLLRCell{1}(:));
-cwLLRCell{1} = cwLLR;
+for cw = 1:numel(cwLLRCell)
+    cwLLRCell{cw} = double(cwLLRCell{cw}(:));
+    if isempty(cwLLRCell{cw}) || any(~isfinite(cwLLRCell{cw}))
+        error("sixgr:phy:ul:PUSCHInvalidCodewordLLR", ...
+            "Codeword %d LLR stream must be nonempty and finite.", cw - 1);
+    end
+end
+cwLLR = cwLLRCell{1};
 info = struct( ...
     "ContractVersion", "PUSCHCodewordLLR/v1", ...
     "SourceWasCell", logical(sourceWasCell), ...
-    "ExpectedNumCodewords", 1, ...
+    "ExpectedNumCodewords", double(expectedCount), ...
     "ActualNumCodewords", double(numel(cwLLRCell)), ...
-    "LLRCountPerCodeword", double(numel(cwLLR)));
+    "LLRCountPerCodeword", double(cellfun(@numel, cwLLRCell)));
 end
 
-function mapping = localBuildPUSCHRxCodewordLayerContract(pusch, cwLLRCell, codingLayout, eqSym)
+function mapping = localBuildPUSCHRxCodewordLayerContract(pusch, cwLLRCell, codingLayouts, eqSym)
 nLayers = max(1, round(double(localObjectValue(pusch, "NumLayers", 1))));
 counts = double(cellfun(@numel, cwLLRCell));
-expected = double(codingLayout.RateMatchedBitCount);
-if numel(cwLLRCell) ~= 1
-    error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
-        "PUSCH RX finalized %d codeword LLR stream(s), but the UL-SCH contract expects one.", numel(cwLLRCell));
+if ~iscell(codingLayouts)
+    codingLayouts = {codingLayouts};
 end
-if counts(1) < expected
+nCodewords = double(pusch.NumCodewords);
+expected = double(cellfun(@(x) x.RateMatchedBitCount, codingLayouts));
+if numel(cwLLRCell) ~= nCodewords || numel(codingLayouts) ~= nCodewords
+    error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
+        "PUSCH RX codeword and coding-layout containers must match NumCodewords=%d.", nCodewords);
+end
+if any(counts < expected)
     error("sixgr:phy:ul:PUSCHCodewordLLRCountContract", ...
-        "PUSCH demapper LLR count %d is smaller than CodingLayout RateMatchedBitCount=%d.", counts(1), expected);
+        "PUSCH demapper LLR count %s is smaller than CodingLayout rate-matched count %s.", ...
+        mat2str(counts), mat2str(expected));
 end
 if isempty(eqSym)
     nCols = 0;
@@ -945,24 +1079,26 @@ end
 mapping = struct();
 mapping.ContractVersion = "PUSCHCodewordLayer/v1";
 mapping.Direction = "UL";
-mapping.MappingStandard = "3GPP_TS_38_211_single_ULSCH_codeword_to_layer_mapping";
+mapping.MappingStandard = "3GPP_TS_38_211_ULSCH_codeword_to_layer_mapping";
 mapping.MappingEngine = "nrPUSCH_internal_nrLayerMap";
 mapping.InverseEngine = "nrPUSCHDecode_internal_nrLayerDemap";
-mapping.SupportedScope = "single_ulsch_codeword_ranks_1_to_4";
-mapping.NumCodewords = 1;
-mapping.ActualNumCodewords = 1;
+mapping.SupportedScope = "release_valid_one_or_two_ulsch_codeword_ranks_1_to_8";
+mapping.NumCodewords = nCodewords;
+mapping.ActualNumCodewords = double(numel(cwLLRCell));
 mapping.NumLayers = double(nLayers);
-mapping.CodewordIndexByLayer = ones(1, nLayers);
-mapping.LayerIndexWithinCodeword = double(1:nLayers);
-mapping.LayerCountPerCodeword = double(nLayers);
+[layerCounts, ~] = sixgr.phy.ul.pusch.PUSCHLayerMapper.layerCounts(nLayers);
+mapping.CodewordIndexByLayer = repelem(0:nCodewords-1, layerCounts);
+mapping.LayerIndexWithinCodeword = cell2mat(arrayfun( ...
+    @(n) 0:n-1, layerCounts, "UniformOutput", false));
+mapping.LayerCountPerCodeword = double(layerCounts);
 mapping.RateMatchedBitCountPerCodeword = double(counts);
 mapping.CodingLayoutRateMatchedBitCountPerCodeword = double(expected);
-mapping.UCIOrControlMuxedBitCount = double(max(0, counts(1) - expected));
+mapping.UCIOrControlMuxedBitCount = double(max(0, counts - expected));
 mapping.DemapperLLRCountPerCodeword = double(counts);
 mapping.TotalDemapperLLRCount = double(sum(counts));
 mapping.ActualLayerColumns = double(nCols);
 mapping.ActualLayersEqualGrantLayers = logical(nCols == nLayers);
-mapping.Equation = "port_observations_to_equalized_layers_S_hat_to_single_ULSCH_codeword_LLRs";
+mapping.Equation = "port_observations_to_equalized_layers_S_hat_to_one_or_two_ULSCH_codeword_LLRs";
 end
 
 function lineage = localBuildPUSCHDecodedBitLineage(demapperLLR, ulschLLR, recLLR, decCbs, layout, trBlkSize, transportBlockLenWithCRC, crcPass, uciOnPUSCH)
@@ -1782,6 +1918,47 @@ error("sixgr:phy:ul:PUSCHEqualizedDomainMismatch", ...
     mat2str(size(eqSym)), mat2str(size(puschRxSym)), nLayers, nPorts);
 end
 
+function [rxPUSCH, rxPUSCHInd, rxDMRSInd, rxDMRSSym, info] = ...
+        localResolvePUSCHEffectiveRxReference(carrier, pusch, puschInd, dmrsInd, dmrsSym)
+rxPUSCH = pusch;
+rxPUSCHInd = puschInd;
+rxDMRSInd = dmrsInd;
+rxDMRSSym = dmrsSym;
+scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
+info = struct( ...
+    "Applied", false, ...
+    "Status", "native_noncodebook_effective_channel", ...
+    "TPMI", double(localObjectValue(pusch, "TPMI", NaN)), ...
+    "EffectiveTxPorts", double(localObjectValue(pusch, "NumLayers", 1)), ...
+    "PhysicalTxPorts", double(localObjectValue(pusch, "NumAntennaPorts", 1)));
+if scheme ~= "codebook"
+    return;
+end
+% nrPUSCHConfig is a value object; assignment preserves the caller-owned
+% runtime configuration while materializing a receiver-only view.
+rxPUSCH = pusch;
+rxPUSCH.TransmissionScheme = "nonCodebook";
+try
+    [rxPUSCHInd, ~] = nrPUSCHIndices(carrier, rxPUSCH, "IndexStyle", "index");
+catch
+    rxPUSCHInd = nrPUSCHIndices(carrier, rxPUSCH);
+end
+try
+    rxDMRSInd = nrPUSCHDMRSIndices(carrier, rxPUSCH, "IndexStyle", "index");
+catch
+    rxDMRSInd = nrPUSCHDMRSIndices(carrier, rxPUSCH);
+end
+rxDMRSSym = nrPUSCHDMRS(carrier, rxPUSCH);
+if size(rxPUSCHInd, 2) ~= double(pusch.NumLayers) || ...
+        size(rxDMRSSym, 2) ~= double(pusch.NumLayers)
+    error("sixgr:phy:ul:PUSCHEffectiveReferenceShapeMismatch", ...
+        "Codebook PUSCH effective references must expose NumLayers=%d columns.", ...
+        double(pusch.NumLayers));
+end
+info.Applied = true;
+info.Status = "codebook_dmrs_precoder_effective_layer_channel_estimation";
+end
+
 function [decoderSym, info] = localResolvePUSCHDecoderInputSymbols(eqSym, layerSym, pusch)
 eqSym = localEnsureSymbolMatrix(eqSym);
 layerSym = localEnsureSymbolMatrix(layerSym);
@@ -2354,34 +2531,54 @@ seg = struct( ...
     "SegmentationInfo", segInfo);
 end
 
-function layout = localResolveRxCodingLayout(layoutIn, phyGrant, direction, trBlkSize, targetCodeRate, rv, modulation, numLayers, rateMatchedBits, expectedHARQACKBitCount)
-if nargin < 10
-    expectedHARQACKBitCount = 0;
+function layouts = localResolveRxCodingLayouts(layoutIn, phyGrant, direction, ...
+        trBlkSize, targetCodeRate, rv, modulation, numLayers, rateMatchedBits)
+nCodewords = numel(trBlkSize);
+[layerCounts, ~] = sixgr.phy.ul.pusch.PUSCHLayerMapper.layerCounts(numLayers);
+if numel(layerCounts) ~= nCodewords
+    error("sixgr:phy:ul:PUSCHCodingLayoutMismatch", ...
+        "NumLayers=%d implies %d codeword(s), but %d transport block(s) were supplied.", ...
+        numLayers, numel(layerCounts), nCodewords);
 end
-layout = layoutIn;
-if ~(isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMatchPositionMap"))
-    grantLayout = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
-    if isstruct(grantLayout) && ~isempty(fieldnames(grantLayout)) && isfield(grantLayout, "RateMatchPositionMap")
-        layout = grantLayout;
+if iscell(layoutIn)
+    layouts = reshape(layoutIn, 1, []);
+elseif nCodewords == 1 && isstruct(layoutIn) && ...
+        ~isempty(fieldnames(layoutIn)) && isfield(layoutIn, "RateMatchPositionMap")
+    layouts = {layoutIn};
+else
+    layouts = cell(1, nCodewords);
+end
+grantLayout = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
+if nCodewords == 1 && isempty(layouts{1}) && isstruct(grantLayout) && ...
+        ~isempty(fieldnames(grantLayout)) && isfield(grantLayout, "RateMatchPositionMap")
+    layouts{1} = grantLayout;
+elseif nCodewords > 1 && isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
+    error("sixgr:phy:ul:PUSCHFrozenGrantCodewordMismatch", ...
+        "A high-rank PUSCH PHYGrant must expose one immutable CodingLayout per codeword.");
+end
+if numel(layouts) ~= nCodewords
+    error("sixgr:phy:ul:PUSCHCodingLayoutMismatch", ...
+        "CodingLayout must provide one contract per codeword.");
+end
+for cw = 1:nCodewords
+    if isstruct(layouts{cw}) && ~isempty(fieldnames(layouts{cw})) && ...
+            isfield(layouts{cw}, "RateMatchPositionMap")
+        localAssertCodingLayoutMatches(layouts{cw}, trBlkSize(cw), rv(cw), ...
+            localModulationAt(modulation, cw), layerCounts(cw), rateMatchedBits(cw));
     else
-        layout = struct();
+        layouts{cw} = sixgr.phy.phycode.resolveCodingLayout( ...
+            "Direction", direction, ...
+            "TransportBlockSize", trBlkSize(cw), ...
+            "TargetCodeRate", targetCodeRate(cw), ...
+            "RV", rv(cw), ...
+            "Modulation", localModulationAt(modulation, cw), ...
+            "NumLayers", layerCounts(cw), ...
+            "RateMatchedBitCount", rateMatchedBits(cw));
     end
 end
-if isstruct(layout) && ~isempty(fieldnames(layout)) && isfield(layout, "RateMatchPositionMap")
-    localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits, expectedHARQACKBitCount);
-    return;
-end
-layout = sixgr.phy.phycode.resolveCodingLayout( ...
-    "Direction", direction, ...
-    "TransportBlockSize", trBlkSize, ...
-    "TargetCodeRate", targetCodeRate, ...
-    "RV", rv, ...
-    "Modulation", modulation, ...
-    "NumLayers", numLayers, ...
-    "RateMatchedBitCount", rateMatchedBits);
 end
 
-function localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits, expectedHARQACKBitCount)
+function localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits)
 if double(layout.TransportBlockSize) ~= double(trBlkSize) || ...
         double(layout.RV) ~= double(rv) || ...
         ~strcmpi(char(string(layout.Modulation)), char(string(modulation))) || ...
@@ -2392,9 +2589,6 @@ end
 layoutE = double(layout.RateMatchedBitCount);
 rxE = double(rateMatchedBits);
 if layoutE == rxE
-    return;
-end
-if double(expectedHARQACKBitCount) > 0 && layoutE < rxE
     return;
 end
 error("sixgr:phy:ul:PUSCHCodingLayoutMismatch", ...
@@ -2412,9 +2606,10 @@ end
 
 function E = localRateMatchedBitCountFromInfo(info)
 E = double(sixgr.util.structGet(info, "G", NaN));
-if ~(isscalar(E) && isfinite(E) && E > 0 && abs(E - round(E)) < 1e-9)
+E = E(:).';
+if isempty(E) || any(~isfinite(E) | E <= 0 | E ~= fix(E))
     error("sixgr:phy:ul:PUSCHCodingLayoutMissingG", ...
-        "PUSCH RX requires an integer rate-matched bit count to resolve CodingLayout.");
+        "PUSCH RX requires one positive integer rate-matched bit count per codeword.");
 end
 E = round(E);
 end
@@ -2423,17 +2618,24 @@ function pusch = localEnsureTransformPrecodingOwnership(pusch, cfg)
 try
     modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
 catch
-    modToken = upper(strrep(char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', ''))), ' ', ''));
+    error("sixgr:phy:ul:PUSCHMissingModulation", ...
+        "An explicit PUSCH modulation is required.");
 end
-required = strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK') || ...
-    logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
-if required
-    try
-        pusch.TransformPrecoding = true;
-    catch ME
-        error('sixgr:phy:ul:PUSCHTransformPrecodingUnavailable', ...
-            'PUSCH requires TransformPrecoding=true for modulation/config but nrPUSCHConfig rejected it: %s', ME.message);
-    end
+try
+    runtimeValue = logical(pusch.TransformPrecoding);
+catch ME
+    error("sixgr:phy:ul:PUSCHTransformPrecodingUnavailable", ...
+        "The runtime PUSCH object does not expose TransformPrecoding: %s", ME.message);
+end
+if (strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK')) && ~runtimeValue
+    error("sixgr:phy:ul:PI2BPSKRequiresTransformPrecoding", ...
+        "PI/2-BPSK requires TransformPrecoding=true; the receiver will not silently change the configured waveform.");
+end
+configuredValue = sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', []);
+if ~isempty(configuredValue) && logical(configuredValue) ~= runtimeValue
+    error("sixgr:phy:ul:PUSCHTransformPrecodingOwnershipMismatch", ...
+        "Runtime TransformPrecoding=%d does not match configured phy.pusch.transformPrecoding=%d.", ...
+        runtimeValue, logical(configuredValue));
 end
 end
 
@@ -2494,54 +2696,93 @@ else
 end
 end
 
-function bits = localNormalizeHARQACKBits(rawBits)
-if isempty(rawBits)
-    bits = int8([]);
+function E = localResolveRxULSCHBitCount(pusch, targetCodeRate, trBlkSize, puschInfo, payload)
+E = localRateMatchedBitCountFromInfo(puschInfo);
+if ~payload.hasPayload()
     return;
 end
-bits = int8(logical(rawBits(:)));
+if exist("nrULSCHInfo", "file") ~= 2
+    error("sixgr:pusch:UCIProcessingUnavailable", ...
+        "Typed UCI on PUSCH requires nrULSCHInfo from 5G Toolbox.");
+end
+p = payload.toStruct();
+rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, ...
+    p.OACK, p.OCSI1, p.OCSI2 + p.OCGUCI);
+E = double(rmInfo.GULSCH);
+E = E(:).';
+if numel(E) ~= double(pusch.NumCodewords) || ...
+        any(~isfinite(E) | E <= 0 | E ~= fix(E))
+    error("sixgr:pusch:InvalidUCIBitBudget", ...
+        "Typed UCI produced an invalid per-codeword GULSCH=%s.", mat2str(E));
+end
 end
 
-function [ulschLLR, info] = localDemultiplexHARQACKFromPUSCH(cwLLR, pusch, targetCodeRate, trBlkSize, expectedBits)
-ulschLLR = double(cwLLR(:));
-expectedBits = localNormalizeHARQACKBits(expectedBits);
-oack = numel(expectedBits);
+function [ulschLLR, info] = localDemultiplexTypedUCIFromPUSCH( ...
+        cwLLR, pusch, targetCodeRate, trBlkSize, expectedPayload, initialIMCS)
+p = expectedPayload.toStruct();
 info = struct( ...
     "Applied", false, ...
-    "Source", "no_harq_ack_payload_expected", ...
-    "HARQACKBitCount", double(oack), ...
-    "ExpectedHARQACKBits", expectedBits, ...
+    "Source", "no_uci_payload_requested", ...
+    "HARQACKBitCount", double(p.OACK), ...
+    "CSI1BitCount", double(p.OCSI1), ...
+    "CSI2BitCount", double(p.OCSI2), ...
+    "ConfiguredGrantUCIBitCount", double(p.OCGUCI), ...
+    "ExpectedHARQACKBits", int8(expectedPayload.HARQACK(:)), ...
+    "ExpectedCSIPart1Bits", int8(expectedPayload.CSIPart1(:)), ...
+    "ExpectedCSIPart2Bits", int8(expectedPayload.CSIPart2(:)), ...
+    "ExpectedConfiguredGrantUCIBits", int8(expectedPayload.ConfiguredGrantUCI(:)), ...
     "DecodedHARQACKBits", int8([]), ...
+    "DecodedCSIPart1Bits", int8([]), ...
+    "DecodedCSIPart2Bits", int8([]), ...
+    "DecodedConfiguredGrantUCIBits", int8([]), ...
     "HARQACKLLR", double([]), ...
-    "ContentMatch", false, ...
+    "CSI1LLR", double([]), ...
+    "CSI2AndCGUCILLR", double([]), ...
+    "ContentMatch", true, ...
+    "CSI1ContentMatch", true, ...
+    "CSI2ContentMatch", true, ...
+    "ConfiguredGrantUCIContentMatch", true, ...
     "Status", "not_requested", ...
     "Reason", "");
-if oack <= 0
+cwLLRCells = localCellify(cwLLR);
+for cw = 1:numel(cwLLRCells)
+    cwLLRCells{cw} = double(cwLLRCells{cw}(:));
+end
+ulschLLR = cwLLRCells;
+if ~expectedPayload.hasPayload()
     return;
 end
 if exist("nrULSCHDemultiplex", "file") ~= 2 || exist("nrUCIDecode", "file") ~= 2
-    info.Status = "unavailable";
-    info.Reason = "nrULSCHDemultiplex_or_nrUCIDecode_unavailable";
-    return;
+    error("sixgr:pusch:UCIProcessingUnavailable", ...
+        "Mandatory typed UCI demultiplex/decode requires nrULSCHDemultiplex and nrUCIDecode.");
 end
 try
-    [ulschLLR, ackLLR] = nrULSCHDemultiplex( ...
-        pusch, targetCodeRate, trBlkSize, oack, 0, 0, double(cwLLR(:)));
-    decoded = int8(logical(nrUCIDecode(ackLLR, oack)));
-    info.Applied = true;
-    info.Source = "nrULSCHDemultiplex_ts38212_6_2_7_harq_ack_on_pusch";
-    info.DecodedHARQACKBits = decoded(:);
-    info.HARQACKLLR = double(ackLLR(:));
-    info.ContentMatch = numel(decoded) == oack && isequal(decoded(:), expectedBits(:));
-    if info.ContentMatch
-        info.Status = "decoded_match";
-    else
-        info.Status = "decoded_mismatch";
-    end
+    result = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
+        pusch, targetCodeRate, trBlkSize, localUnwrapSingleCell(cwLLRCells), ...
+        expectedPayload, initialIMCS);
 catch ME
-    ulschLLR = double(cwLLR(:));
-    info.Status = "failed";
-    info.Reason = char(string(ME.identifier));
+    throwAsCaller(MException("sixgr:phy:ul:PUSCHUCIDemultiplexFailed", ...
+        "Typed UCI demultiplex/decode failed (%s): %s", ME.identifier, ME.message));
+end
+ulschLLR = result.ULSCHLLR;
+info.Applied = true;
+info.Source = result.Source;
+info.DecodedHARQACKBits = result.DecodedHARQACK;
+info.DecodedCSIPart1Bits = result.DecodedCSIPart1;
+info.DecodedCSIPart2Bits = result.DecodedCSIPart2;
+info.DecodedConfiguredGrantUCIBits = result.DecodedConfiguredGrantUCI;
+info.HARQACKLLR = result.HARQACKLLR;
+info.CSI1LLR = result.CSI1LLR;
+info.CSI2AndCGUCILLR = result.CSI2AndCGUCILLR;
+info.ContentMatch = result.HARQACKCRCOK;
+info.CSI1ContentMatch = result.CSI1CRCOK;
+info.CSI2ContentMatch = result.CSI2CRCOK;
+info.ConfiguredGrantUCIContentMatch = result.ConfiguredGrantUCIMatch;
+if info.ContentMatch && info.CSI1ContentMatch && info.CSI2ContentMatch && ...
+        info.ConfiguredGrantUCIContentMatch
+    info.Status = "decoded_match";
+else
+    info.Status = "decoded_mismatch";
 end
 end
 
@@ -2577,6 +2818,172 @@ info = struct( ...
     "NormalizationScale", 1, ...
     "InputLLRMeanAbs", double(meanAbsLLR), ...
     "OutputLLRMeanAbs", double(meanAbsLLR));
+end
+
+function rx = localBuildHighRankPUSCHRx( ...
+        tbBitsCell, crcErr, trBlkSize, cwLLRCell, ulschLLRCell, ...
+        codingLayouts, codewordLayerMapping, codewordLLRInfo, ...
+        carrier, pusch, puschInfo, puschInd, puschRxSym, ...
+        Hest, estInfo, eqSym, layerEqSym, decoderInputSym, decoderInputInfo, ...
+        qamEqSym, qamEqInfo, dmrsInd, dmrsSym, dmrsInfo, dmrsPowerInfo, ...
+        ptrsInd, ptrsSym, ptrsInfo, cpeCorrInfo, nVar, nVarForDecode, ...
+        noiseStatus, noiseTransformInfo, postEqSINR_dB, postEqSINRInfo, ...
+        receiverSINR, timingResolution, rawTimingEstimate, ...
+        knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
+        decodeLatency_s, maxIter, alg, llrCSIInfo, uci, compactOutput)
+tbBitsCell = reshape(tbBitsCell, 1, []);
+ulschLLRCell = reshape(ulschLLRCell, 1, []);
+rx = struct();
+rx.ExecutionBackend = "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth";
+rx.ApproximationMode = "none";
+rx.TransportBlockSize = double(trBlkSize);
+rx.TransportBlocks = cellfun(@(x) int8(x(:)), tbBitsCell, "UniformOutput", false);
+rx.TransportBlock = rx.TransportBlocks{1};
+rx.CRCError = logical(crcErr);
+rx.CRCPass = logical(~crcErr);
+rx.TBCRCPass = logical(~crcErr);
+rx.Ok = logical(all(~crcErr));
+rx.NumCodewords = 2;
+rx.ActualNumCodewords = 2;
+rx.CodingLayouts = codingLayouts;
+rx.CodingLayout = codingLayouts{1};
+rx.CodewordLayerMapping = codewordLayerMapping;
+rx.CodewordLLRInfo = codewordLLRInfo;
+rx.CodewordLLRCell = cwLLRCell;
+rx.ULSCHCodewordLLRCell = ulschLLRCell;
+rx.CodewordLLR = cwLLRCell{1};
+rx.ULSCHCodewordLLR = ulschLLRCell{1};
+rx.CodewordLLRCountPerCodeword = double(cellfun(@numel, cwLLRCell));
+rx.ULSCHDemapperLLRCountPerCodeword = double(cellfun(@numel, ulschLLRCell));
+rx.DemapperLLRCount = double(sum(cellfun(@numel, cwLLRCell)));
+rx.ULSCHDemapperLLRCount = double(sum(cellfun(@numel, ulschLLRCell)));
+rx.LLRAvailable = all(~cellfun(@isempty, ulschLLRCell));
+rx.LLRFinite = all(cellfun(@(x) all(isfinite(double(x(:)))), ulschLLRCell));
+rx.DecodeAttempted = true;
+rx.DecodeUsable = true;
+rx.ReceiverUsable = true;
+rx.ULSCHDecodeAttempted = true;
+rx.ULSCHDecodeAvailable = true;
+rx.FailureReason = "";
+rx.DecodeLatency_s = double(decodeLatency_s);
+rx.MaxDecoderIterations = double(maxIter);
+rx.LDPCDecodingAlgorithm = char(string(alg));
+rx.HARQSoftCombiningApplied = false;
+rx.HARQSoftCombiningPositionAware = false;
+rx.HARQSoftCombiningReason = "no_prior_high_rank_soft_buffer_supplied";
+rx.NoiseVar = double(nVar);
+rx.PreEqualizationNoiseVar = double(nVar);
+rx.DecoderNoiseVar = double(nVarForDecode);
+rx.NoiseVarStatus = char(string(noiseStatus.Status));
+rx.NoiseVarSource = char(string(noiseStatus.Source));
+rx.NoiseVarReason = char(string(noiseStatus.Reason));
+rx.NoiseVarDomain = "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarTransformSource = char(string( ...
+    sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
+rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
+    noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
+rx.ReceiverHestSINR_dB = double(receiverSINR.Value);
+rx.ReceiverHestSINRSource = char(receiverSINR.Source);
+rx.PostEqSINR_dB = double(postEqSINR_dB);
+rx.PostEqSINRWidebanddB = double(postEqSINR_dB);
+rx.PostEqSINRSource = char(string(sixgr.util.structGet( ...
+    postEqSINRInfo, "Source", "measured_post_equalization_sinr")));
+rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet( ...
+    postEqSINRInfo, "ValueStatus", "unavailable")));
+rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet( ...
+    postEqSINRInfo, "PerLayerSINR_dB", NaN));
+rx.TimingOffset = double(rawTimingEstimate);
+rx.RawTimingEstimate_samples = double(rawTimingEstimate);
+rx.KnownTimingDelay_samples = double(knownTimingDelaySamples);
+rx.TimingEstimateForCorrection_samples = double(timingEstimateForCorrection);
+rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
+rx.TimingEstimateSource = char(string(timingEstimateSource));
+rx.TimingEstimateStatus = char(string(timingResolution.Status));
+rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPolicy));
+rx.ChannelEstimateAttempted = true;
+rx.ChannelEstimateAvailable = ~isempty(Hest);
+rx.ChannelEstimateSource = "pusch_dmrs_channel_estimate";
+rx.ChannelEstimateMethod = char(string(sixgr.util.structGet(estInfo, "Method", "")));
+rx.ResourceExtractionAttempted = true;
+rx.ResourceExtractionAvailable = ~isempty(eqSym);
+rx.EqualizationAttempted = true;
+rx.EqualizationAvailable = ~isempty(layerEqSym);
+rx.EqualizedSymbolsForEvidence = layerEqSym;
+rx.LayerEqualizedSymbolsForEvidence = layerEqSym;
+rx.PortEqualizedSymbolsForEvidence = eqSym;
+rx.DecoderInputSymbolsForEvidence = decoderInputSym;
+rx.DecoderInputSymbolDomain = char(string(decoderInputInfo.Domain));
+rx.QAMEqualizedSymbolsForEvidence = qamEqSym;
+rx.QAMEqualizedSymbolSource = char(string(qamEqInfo.Status));
+rx.PUSCHRxSymbolsForEvidence = puschRxSym;
+rx.LLRScaleSource = string(llrCSIInfo.Source);
+rx.LLRScalingConvention = char(string(llrCSIInfo.Convention));
+rx.LLRDoubleWeightingGuard = logical(llrCSIInfo.NoSecondCSIWeighting);
+rx.DMRSEPREDifference = dmrsPowerInfo;
+rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
+rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
+rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
+rx.PTRSCPECorrectionSymbols = double(cpeCorrInfo.NumSymbolsCorrected);
+rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
+rx.UCIOnPUSCHApplied = logical(uci.Applied);
+rx.UCIOnPUSCHSource = char(string(uci.Source));
+rx.HARQACKBitCount = double(uci.HARQACKBitCount);
+rx.CSI1BitCount = double(uci.CSI1BitCount);
+rx.CSI2BitCount = double(uci.CSI2BitCount);
+rx.ConfiguredGrantUCIBitCount = double(uci.ConfiguredGrantUCIBitCount);
+rx.ExpectedHARQACKBits = int8(uci.ExpectedHARQACKBits(:));
+rx.DecodedHARQACKBits = int8(uci.DecodedHARQACKBits(:));
+rx.DecodedCSIPart1Bits = int8(uci.DecodedCSIPart1Bits(:));
+rx.DecodedCSIPart2Bits = int8(uci.DecodedCSIPart2Bits(:));
+rx.DecodedConfiguredGrantUCIBits = int8(uci.DecodedConfiguredGrantUCIBits(:));
+rx.HARQACKContentMatch = logical(uci.ContentMatch);
+rx.CSI1ContentMatch = logical(uci.CSI1ContentMatch);
+rx.CSI2ContentMatch = logical(uci.CSI2ContentMatch);
+rx.ConfiguredGrantUCIContentMatch = logical(uci.ConfiguredGrantUCIContentMatch);
+rx.HARQACKDecodeStatus = char(string(uci.Status));
+if ~logical(compactOutput)
+    rx.ChannelEstimate = Hest;
+    rx.Carrier = carrier;
+    rx.PUSCH = pusch;
+    rx.PUSCHInfo = puschInfo;
+    rx.PUSCHIndices = puschInd;
+    rx.DMRSIndices = dmrsInd;
+    rx.DMRSSymbols = dmrsSym;
+    rx.DMRSInfo = dmrsInfo;
+    rx.PTRSIndices = ptrsInd;
+    rx.PTRSSymbols = ptrsSym;
+    rx.PTRSInfo = ptrsInfo;
+    rx.EqualizedSymbols = layerEqSym;
+    rx.PortEqualizedSymbols = eqSym;
+    rx.DecoderInputSymbols = decoderInputSym;
+end
+end
+
+function cells = localCellify(value)
+if iscell(value)
+    cells = reshape(value, 1, []);
+else
+    cells = {value};
+end
+end
+
+function value = localUnwrapSingleCell(cells)
+if iscell(cells) && isscalar(cells)
+    value = cells{1};
+else
+    value = cells;
+end
+end
+
+function value = localModulationAt(raw, index)
+if iscell(raw)
+    value = char(string(raw{index}));
+else
+    values = string(raw);
+    value = char(values(index));
+end
 end
 
 function x = localEnsureLLRBatch(xIn)

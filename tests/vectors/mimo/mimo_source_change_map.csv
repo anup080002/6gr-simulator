@@ -1,0 +1,26 @@
+Component,FileOrAction,RequiredChange
+Antenna capability/profile registry,NEW:+sixgr/+phy/+mimo/MIMOCapabilityProfile.m,"Create explicit supported tuples by release, direction, ports, panel, codebook, rank, CSI quantity, receiver and feature."
+Canonical array model,NEW:+sixgr/+phy/+mimo/AntennaPanel.m,"Own geometry, element pattern, polarization, port mapping, pose, calibration and frequency response."
+Canonical codebook engine,REPLACE:+sixgr/+mimo/buildNRCodebook.m,"Delegate to exact Type-I single/multi-panel, Type-II/port-selection and selected enhanced Type-II constructors."
+PMI selector,REPLACE:+sixgr/+mimo/selectPMI.m,"Exhaustive configured objective over codebook, covariance, receiver, wideband/subband and rank."
+RI selector,REFACTOR:+sixgr/+mimo/resolveNominalVsEffectiveMIMO.m,Separate runtime selection from evidence export; remove configured-SNR/SVD/fallback shortcuts.
+CSI report builder,REPLACE:+sixgr/+mimo/buildCSIFeedback.m,Build typed report-dependent CSI Part1/Part2 and no custom hex payload.
+CSI payload serializer,REPLACE:+sixgr/+phy/+dl/packCSIFeedbackPayload.m,Use TS 38.214 fields plus TS 38.212 UCI serialization.
+Advanced codebooks,REPLACE:+sixgr/+phy/+dl/pmiCodebookCandidates.m,No generic DFT labels; exact profile-specific enumeration and restrictions.
+DL CSI processing,REFACTOR:+sixgr/+phy/+dl/CSI_Feedback.m,"Consume report config, measurement state and exact field objects."
+DL precoder integration,REFACTOR:+sixgr/+phy/+dl/resolvePDSCHPrecoding.m,Apply immutable wideband/subband/PRG matrices and TCI state.
+UL precoder integration,REFACTOR:+sixgr/+phy/+ul/resolvePUSCHPrecoding.m,Apply authoritative measured-SRS RI/SRI/TPMI decision.
+SRS selection,REFACTOR:+sixgr/+mimo/selectULBeamFromSRS.m,Remove rank2/configured-SNR defaults; add timestamped measured state.
+SRS RI/TPMI,EXTEND:+sixgr/+phy/+ul/estimateSRSRITPMI.m,Exact UL codebook/non-codebook candidate matrix and objective.
+Linear receiver,REFACTOR:+sixgr/+phy/+rx/mimoDetect.m,Strict receiver selection; no silent IRC downgrade.
+Covariance estimator,REPLACE:+sixgr/+phy/+rx/estimateInterferenceCovarianceIRC.m,"Per-PRB/subband covariance with sample support, age, shrinkage, PSD and held-out quality."
+Precoder application,REFACTOR:+sixgr/+phy/+mimo/precoder.m,"One matrix orientation, no identity fallback, immutable matrix and exact power ledger."
+MU/Multi-TRP waveform,REFACTOR:+sixgr/+mimo/executeSpatialComposite.m,"Typed grants, per-UE/TRP identity, clocks, channel, phase, power and actual decoding."
+CSI-RS beam refinement,REPLACE:+sixgr/+rf/BeamRefinementCSIRS.m,"Measured CSI-RS resources, report trigger, refinement state and TCI application."
+SRS reciprocity,REPLACE:+sixgr/+rf/BeamformingSRSReciprocity.m,Calibration-aware measured SRS state and codebook/non-codebook procedure.
+Beam selection,REPLACE:+sixgr/+system/selectBestBeamPerLink.m,Geometry only configures channel; measured RS selects beam.
+Beam state machine,NEW:+sixgr/+phy/+beam/BeamManagementStateMachine.m,"P1/P2/P3 measurements, report, TCI activation, application, failure and recovery."
+Multi-TRP state,NEW:+sixgr/+phy/+mimo/MultiTRPTransmissionContext.m,"NCJT/CJT timing, phase, power, TCI, report and combining ownership."
+Hybrid beamforming,NEW:+sixgr/+phy/+mimo/HybridBeamformer.m,"RF-chain constrained analog/digital weights, codebooks, squint and calibration."
+Artifact runner,NEW:+sixgr/+phy/+mimo/runMIMOCSIBeamformingPhaseValidation.m,"Execute vectors, waveform campaigns and export all base artifacts."
+Impact runner,NEW:+sixgr/+phy/+mimo/runMIMOCSIBeamformingImpactAnalysis.m,Execute paired impact matrix and statistics.

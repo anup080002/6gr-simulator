@@ -1,0 +1,14 @@
+ImageFile,Description,SourceCSV,MinWidth,MinHeight,MinAxesCount,MinSeriesCount,MinFinitePointCount,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel
+pdcch_coreset_reg_cce_map.png,CORESET REG bundle and CCE ownership,pdcch_coreset_mapping.csv|pdcch_re_ownership.csv,1000,650,1,2,50,CORESET REG CCE map,REG index,CCE index
+pdcch_search_space_timeline.png,monitoring occasions and symbols,pdcch_search_space_monitoring.csv,1000,650,1,2,20,PDCCH search space timeline,Absolute slot,Monitoring symbol
+pdcch_candidate_map.png,candidate first CCEs by AL,pdcch_candidate_enumeration.csv,1000,650,1,3,30,PDCCH candidate map,Candidate index,First CCE
+pdcch_dci_field_layout.png,contextual DCI field layout,pdcch_dci_field_layout.csv,1100,700,1,4,30,DCI field layout,Bit index,Field
+pdcch_dmrs_sequence_correlation.png,PDCCH DM-RS sequence correlation and identity separation,pdcch_dmrs_matrix.csv,1100,700,1,3,24,PDCCH DM-RS,DM-RS vector,Correlation magnitude
+pdcch_polar_rate_vs_al.png,polar code rate by K and AL,pdcch_polar_coding.csv,1000,650,1,3,15,PDCCH polar code rate,Aggregation level,Code rate
+pdcch_detection_vs_snr.png,correct detection probability,pdcch_detection_curve.csv,1000,650,1,4,20,PDCCH detection probability,SNR (dB),Detection probability
+pdcch_false_alarm_bounds.png,false alarm upper confidence bounds,pdcch_detection_curve.csv,1000,650,1,3,15,PDCCH false alarm,Trials,False alarm probability upper bound
+pdcch_type0_css_timeline.png,Type0 monitoring occasions,pdcch_type0_css.csv,1100,700,1,3,20,Type0 PDCCH CSS,Absolute slot,First monitored symbol
+pdcch_rnti_confusion_matrix.png,RNTI/format confusion results,pdcch_blind_trials.csv|pdcch_rnti_procedure.csv,900,700,1,2,20,PDCCH RNTI confusion,Transmitted RNTI type,Decoded RNTI type
+pdcch_bwp_crosscarrier_map.png,control/data cell and BWP binding,pdcch_bwp_crosscarrier.csv,1000,650,1,2,10,PDCCH cross carrier,Control carrier/BWP,Scheduled carrier/BWP
+pdcch_beam_monitoring_timeline.png,beam/QCL/TCI monitoring state,pdcch_beam_monitoring.csv,1000,650,1,3,10,PDCCH beam monitoring,Absolute slot,Beam/TCI state
+pdcch_grant_authority_trace.png,decoded DCI causal grant trace,pdcch_grant_authority.csv,1000,650,1,3,20,Decoded DCI grant authority,Mutation case,Assignment effect

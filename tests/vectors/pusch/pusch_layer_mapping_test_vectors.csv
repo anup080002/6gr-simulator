@@ -1,0 +1,13 @@
+CaseID,Rank,NumCodewords,Codeword0Symbols,Codeword1Symbols,RequiresRel18EightPortCodebook,ExpectedStatus,ExpectedError
+LAYER-01,1,1,0+0j|1-1j|2-2j|3-3j,,0,PASS,
+LAYER-02,2,1,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j,,0,PASS,
+LAYER-03,3,1,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j|8-8j|9-9j|10-10j|11-11j,,0,PASS,
+LAYER-04,4,1,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j|8-8j|9-9j|10-10j|11-11j|12-12j|13-13j|14-14j|15-15j,,0,PASS,
+LAYER-05,5,2,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j,100+0j|101-1j|102-2j|103-3j|104-4j|105-5j|106-6j|107-7j|108-8j|109-9j|110-10j|111-11j|112-12j|113-13j|114-14j,1,PASS,
+LAYER-06,6,2,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j|8-8j|9-9j|10-10j|11-11j,100+0j|101-1j|102-2j|103-3j|104-4j|105-5j|106-6j|107-7j|108-8j|109-9j|110-10j|111-11j|112-12j|113-13j|114-14j,1,PASS,
+LAYER-07,7,2,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j|8-8j|9-9j|10-10j|11-11j,100+0j|101-1j|102-2j|103-3j|104-4j|105-5j|106-6j|107-7j|108-8j|109-9j|110-10j|111-11j|112-12j|113-13j|114-14j|115-15j|116-16j|117-17j|118-18j|119-19j,1,PASS,
+LAYER-08,8,2,0+0j|1-1j|2-2j|3-3j|4-4j|5-5j|6-6j|7-7j|8-8j|9-9j|10-10j|11-11j|12-12j|13-13j|14-14j|15-15j,100+0j|101-1j|102-2j|103-3j|104-4j|105-5j|106-6j|107-7j|108-8j|109-9j|110-10j|111-11j|112-12j|113-13j|114-14j|115-15j|116-16j|117-17j|118-18j|119-19j,1,PASS,
+LAYER-NEG-01,0,1,0+0j,,0,ERROR,sixgr:pusch:InvalidRank
+LAYER-NEG-02,9,2,0+0j,0+0j,1,ERROR,sixgr:pusch:UnsupportedRank
+LAYER-NEG-03,4,2,0+0j,0+0j,0,ERROR,sixgr:pusch:InvalidCodewordCount
+LAYER-NEG-04,2,1,0+0j|1+0j|2+0j,,0,ERROR,sixgr:pusch:LayerSymbolCountMismatch

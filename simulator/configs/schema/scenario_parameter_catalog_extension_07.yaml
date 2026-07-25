@@ -93,11 +93,55 @@ sections:
       mapping_type: {required: false, type: string}
       start_symbol: {required: false, type: integer, min: 0}
       num_symbols: {required: false, type: integer, min: 1}
-      frequency_hopping: {required: false, type: string}
+      rnti: {required: false, type: integer, min: 0, max: 65535}
+      scrambling_id: {required: false, type: integer, min: 0, max: 1023}
+      mcs_table: {required: false, type: string}
+      mcs_index: {required: false, type: integer, min: 0, max: 31}
+      modulation: {required: false, type: string}
+      target_code_rate_per_codeword: {required: false, type: number_list, min_items: 1}
+      num_layers: {required: false, type: integer, min: 1, max: 8}
+      num_antenna_ports: {required: false, type: integer, min: 1, max: 8}
+      transmission_scheme: {required: false, type: string, allowed_values: [codebook, nonCodebook]}
+      codebook_type: {required: false, type: string}
+      tpmi: {required: false, type: integer, min: 0}
+      sri: {required: false, type: integer, min: 0}
+      rv_per_codeword: {required: false, type: number_list, integer: true, min_items: 1}
+      ndi_per_codeword: {required: false, type: number_list, integer: true, min_items: 1}
+      harq_process_id: {required: false, type: integer, min: 0}
+      frequency_hopping:
+        required: false
+        type: string
+        allowed_values: [none, disabled, intra_slot, inter_slot]
+      second_hop_start_prb: {required: false, type: integer, min: 0}
       intra_slot_frequency_hopping: {required: false, type: boolean}
       inter_slot_frequency_hopping: {required: false, type: boolean}
       transform_precoding: {required: false, type: boolean}
       codebook_based_transmission: {required: false, type: boolean}
+      dmrs_configuration_type: {required: false, type: integer, allowed_numeric_values: [1, 2]}
+      dmrs_length: {required: false, type: integer, allowed_numeric_values: [1, 2]}
+      dmrs_additional_position: {required: false, type: integer, min: 0, max: 3}
+      dmrs_type_a_position: {required: false, type: integer, allowed_numeric_values: [2, 3]}
+      dmrs_num_cdm_groups_without_data: {required: false, type: integer, min: 1, max: 3}
+      dmrs_port_set: {required: false, type: number_list, integer: true, min_items: 1}
+      dmrs_nid_nscid: {required: false, type: integer, min: 0, max: 65535}
+      dmrs_nscid: {required: false, type: integer, allowed_numeric_values: [0, 1]}
+      dmrs_nrs_id: {required: false, type: integer, min: 0, max: 1007}
+      dmrs_group_hopping: {required: false, type: boolean}
+      dmrs_sequence_hopping: {required: false, type: boolean}
+      ptrs_enabled: {required: false, type: boolean}
+      ptrs_time_density: {required: false, type: integer, allowed_numeric_values: [1, 2, 4]}
+      ptrs_frequency_density: {required: false, type: integer, allowed_numeric_values: [2, 4]}
+      ptrs_re_offset: {required: false, type: string, allowed_values: ['00', '01', '10', '11']}
+      ptrs_port_set: {required: false, type: number_list, integer: true, min_items: 1}
+      ptrs_nid: {required: false, type: integer, min: 0, max: 1007}
+      uci_beta_offset_ack: {required: false, type: number, min: 0}
+      uci_beta_offset_csi1: {required: false, type: number, min: 0}
+      uci_beta_offset_csi2: {required: false, type: number, min: 0}
+      uci_scaling: {required: false, type: number, min: 0, max: 1}
+      repetition_type: {required: false, type: string}
+      repetition_count: {required: false, type: integer, min: 1}
+      power_control: {required: false, type: struct}
+      srs_authority: {required: false, type: struct}
       xoh_pusch: {required: false, type: number}
       cbg_transmission: {required: false, type: boolean}
       tp_pi2_bpsk: {required: false, type: boolean}

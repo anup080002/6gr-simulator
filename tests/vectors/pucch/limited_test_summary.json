@@ -1,0 +1,29 @@
+{
+  "checks": 25,
+  "status_counts": {
+    "PASS": 21,
+    "FAIL": 2,
+    "BLOCKED": 2
+  },
+  "pack_infrastructure_passed": 19,
+  "current_source_defects_detected": 44,
+  "useful_foundations_detected": 8,
+  "independent_manifest_files": 31,
+  "independent_vector_rows": 4271,
+  "impact_families": 50,
+  "impact_experiments": 600,
+  "acceptance_rules": 75,
+  "required_base_csvs": 23,
+  "required_base_pngs": 15,
+  "required_impact_csvs": 16,
+  "required_impact_pngs": 28,
+  "total_required_artifacts": 82,
+  "current_required_artifacts_present": 0,
+  "existing_pngs": 40,
+  "existing_pngs_decoded": 40,
+  "existing_pngs_nonblank": 40,
+  "matlab_available": false,
+  "octave_available": false,
+  "current_phase_result": "FAIL",
+  "matlab_runtime_result": "BLOCKED"
+}

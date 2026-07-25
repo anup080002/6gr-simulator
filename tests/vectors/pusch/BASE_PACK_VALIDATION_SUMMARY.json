@@ -1,0 +1,52 @@
+{
+  "SchemaVersion": "PUSCHCodexPackValidation/v1",
+  "PromptFile": "CODEX_PROMPT_03_PUSCH_ULSCH.md",
+  "PromptLines": 2713,
+  "PromptBytes": 98252,
+  "Findings": 12,
+  "InputFiles": 16,
+  "InputRows": 487,
+  "BoundedExpectedFiles": 15,
+  "BoundedExpectedRows": 480,
+  "ManifestFiles": 31,
+  "ManifestNoMATLABUsed": true,
+  "StaticChecks": 47,
+  "StaticDefectsDetected": 38,
+  "FoundationsPresent": 9,
+  "ExistingCSVFiles": 225,
+  "ExistingCSVPass": 224,
+  "ExistingCSVFail": 1,
+  "ExistingPNGFiles": 40,
+  "ExistingPNGPass": 40,
+  "RequiredCSVCount": 20,
+  "RequiredPNGCount": 11,
+  "ExistingRequiredArtifactsPresent": 0,
+  "LimitedChecks": 25,
+  "LimitedStatusCounts": {
+    "PASS": 22,
+    "FAIL": 2,
+    "BLOCKED": 1
+  },
+  "PackInfrastructurePass": true,
+  "CurrentSimulatorPhaseStatus": "FAIL",
+  "MATLABRuntimeStatus": "BLOCKED",
+  "ArtifactVerifierValidSynthetic": {
+    "Checks": 42,
+    "Passed": 42,
+    "Failed": 0,
+    "ExitCode": 0
+  },
+  "ArtifactVerifierCorruptSynthetic": {
+    "Checks": 42,
+    "Passed": 41,
+    "Failed": 1,
+    "ExitCode": 2,
+    "Detected": "png_hash_mismatch"
+  },
+  "TechnicalCorrections": [
+    "Scheduling Request is rejected from generic PUSCH UCI and routed to PUCCH.",
+    "Transform-precoded strict PUSCH is rank 1; rank>1 is a typed negative.",
+    "PUSCH strict modulation set ends at 256QAM.",
+    "Two-TB UCI owner uses highest initial I_MCS, tie to first TB."
+  ]
+}

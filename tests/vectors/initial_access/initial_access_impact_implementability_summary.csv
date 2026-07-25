@@ -1,0 +1,5 @@
+Category,Wave,FamilyCount,Status
+Directly implementable in this phase,A,42,must_execute
+Requires integrated technical dependency,B,12,must_execute_after_dependency
+Requires adjacent/extension implementation,C,6,blocked_until_real_dependency_no_proxy
+Total,A|B|C,60,defined

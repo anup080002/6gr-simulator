@@ -1,0 +1,121 @@
+FloorID,FamilyID,Kind,Inputs,FormulaOrInvariant,Expected,Unit,Tolerance,IndependentOfMATLAB5GToolbox
+IA-FLOOR-0001,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v0"",""Owner"":""PSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0002,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v0"",""Owner"":""SSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0003,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v0"",""Owner"":""PBCH_RE""}",count exact SS/PBCH mapping positions,432,RE,exact,true
+IA-FLOOR-0004,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v0"",""Owner"":""PBCH_DMRS_RE""}",count exact SS/PBCH mapping positions,144,RE,exact,true
+IA-FLOOR-0005,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v0"",""Owner"":""ZERO_RE""}",count exact SS/PBCH mapping positions,130,RE,exact,true
+IA-FLOOR-0006,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v0"",""Owner"":""TotalRE""}",count exact SS/PBCH mapping positions,960,RE,exact,true
+IA-FLOOR-0007,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v1"",""Owner"":""PSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0008,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v1"",""Owner"":""SSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0009,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v1"",""Owner"":""PBCH_RE""}",count exact SS/PBCH mapping positions,432,RE,exact,true
+IA-FLOOR-0010,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v1"",""Owner"":""PBCH_DMRS_RE""}",count exact SS/PBCH mapping positions,144,RE,exact,true
+IA-FLOOR-0011,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v1"",""Owner"":""ZERO_RE""}",count exact SS/PBCH mapping positions,130,RE,exact,true
+IA-FLOOR-0012,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v1"",""Owner"":""TotalRE""}",count exact SS/PBCH mapping positions,960,RE,exact,true
+IA-FLOOR-0013,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v2"",""Owner"":""PSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0014,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v2"",""Owner"":""SSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0015,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v2"",""Owner"":""PBCH_RE""}",count exact SS/PBCH mapping positions,432,RE,exact,true
+IA-FLOOR-0016,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v2"",""Owner"":""PBCH_DMRS_RE""}",count exact SS/PBCH mapping positions,144,RE,exact,true
+IA-FLOOR-0017,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v2"",""Owner"":""ZERO_RE""}",count exact SS/PBCH mapping positions,130,RE,exact,true
+IA-FLOOR-0018,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v2"",""Owner"":""TotalRE""}",count exact SS/PBCH mapping positions,960,RE,exact,true
+IA-FLOOR-0019,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v3"",""Owner"":""PSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0020,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v3"",""Owner"":""SSS_RE""}",count exact SS/PBCH mapping positions,127,RE,exact,true
+IA-FLOOR-0021,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v3"",""Owner"":""PBCH_RE""}",count exact SS/PBCH mapping positions,432,RE,exact,true
+IA-FLOOR-0022,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v3"",""Owner"":""PBCH_DMRS_RE""}",count exact SS/PBCH mapping positions,144,RE,exact,true
+IA-FLOOR-0023,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v3"",""Owner"":""ZERO_RE""}",count exact SS/PBCH mapping positions,130,RE,exact,true
+IA-FLOOR-0024,F01,SSB_RE_COUNT,"{""CaseID"":""SSBRE-v3"",""Owner"":""TotalRE""}",count exact SS/PBCH mapping positions,960,RE,exact,true
+IA-FLOOR-0025,F13,MIB_BITS,"{""CaseID"":""MIB-001""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000000000000010001100,bits,exact,true
+IA-FLOOR-0026,F13,MIB_BITS,"{""CaseID"":""MIB-002""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000000001100100010100,bits,exact,true
+IA-FLOOR-0027,F13,MIB_BITS,"{""CaseID"":""MIB-003""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000000111000110011110,bits,exact,true
+IA-FLOOR-0028,F13,MIB_BITS,"{""CaseID"":""MIB-004""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000001111101000100100,bits,exact,true
+IA-FLOOR-0029,F13,MIB_BITS,"{""CaseID"":""MIB-005""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000010000001010101100,bits,exact,true
+IA-FLOOR-0030,F13,MIB_BITS,"{""CaseID"":""MIB-006""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000010001101100110110,bits,exact,true
+IA-FLOOR-0031,F13,MIB_BITS,"{""CaseID"":""MIB-007""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000010111001110111000,bits,exact,true
+IA-FLOOR-0032,F13,MIB_BITS,"{""CaseID"":""MIB-008""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000011111110001000100,bits,exact,true
+IA-FLOOR-0033,F13,MIB_BITS,"{""CaseID"":""MIB-009""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000100000010011001110,bits,exact,true
+IA-FLOOR-0034,F13,MIB_BITS,"{""CaseID"":""MIB-010""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000100001110101010100,bits,exact,true
+IA-FLOOR-0035,F13,MIB_BITS,"{""CaseID"":""MIB-011""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000100111010111011100,bits,exact,true
+IA-FLOOR-0036,F13,MIB_BITS,"{""CaseID"":""MIB-012""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000101111111001100110,bits,exact,true
+IA-FLOOR-0037,F13,MIB_BITS,"{""CaseID"":""MIB-013""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000110000011011101100,bits,exact,true
+IA-FLOOR-0038,F13,MIB_BITS,"{""CaseID"":""MIB-014""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000110001111101110000,bits,exact,true
+IA-FLOOR-0039,F13,MIB_BITS,"{""CaseID"":""MIB-015""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000110111011111111110,bits,exact,true
+IA-FLOOR-0040,F13,MIB_BITS,"{""CaseID"":""MIB-016""}",concatenate 6+1+4+1+8+1+1+1 information bits,00000111111100010000100,bits,exact,true
+IA-FLOOR-0041,F47,RA_RNTI,"{""CaseID"":""RARNTI-001""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,1,integer,exact,true
+IA-FLOOR-0042,F47,RA_RNTI,"{""CaseID"":""RARNTI-002""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,8961,integer,exact,true
+IA-FLOOR-0043,F47,RA_RNTI,"{""CaseID"":""RARNTI-003""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,1121,integer,exact,true
+IA-FLOOR-0044,F47,RA_RNTI,"{""CaseID"":""RARNTI-004""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,10081,integer,exact,true
+IA-FLOOR-0045,F47,RA_RNTI,"{""CaseID"":""RARNTI-005""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,3361,integer,exact,true
+IA-FLOOR-0046,F47,RA_RNTI,"{""CaseID"":""RARNTI-006""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,12321,integer,exact,true
+IA-FLOOR-0047,F47,RA_RNTI,"{""CaseID"":""RARNTI-007""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,7841,integer,exact,true
+IA-FLOOR-0048,F47,RA_RNTI,"{""CaseID"":""RARNTI-008""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,16801,integer,exact,true
+IA-FLOOR-0049,F47,RA_RNTI,"{""CaseID"":""RARNTI-009""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,15,integer,exact,true
+IA-FLOOR-0050,F47,RA_RNTI,"{""CaseID"":""RARNTI-010""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,8975,integer,exact,true
+IA-FLOOR-0051,F47,RA_RNTI,"{""CaseID"":""RARNTI-011""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,1135,integer,exact,true
+IA-FLOOR-0052,F47,RA_RNTI,"{""CaseID"":""RARNTI-012""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,10095,integer,exact,true
+IA-FLOOR-0053,F47,RA_RNTI,"{""CaseID"":""RARNTI-013""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,3375,integer,exact,true
+IA-FLOOR-0054,F47,RA_RNTI,"{""CaseID"":""RARNTI-014""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,12335,integer,exact,true
+IA-FLOOR-0055,F47,RA_RNTI,"{""CaseID"":""RARNTI-015""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,7855,integer,exact,true
+IA-FLOOR-0056,F47,RA_RNTI,"{""CaseID"":""RARNTI-016""}",1+s_id+14*t_id+14*80*f_id+14*80*8*ul_carrier_id,16815,integer,exact,true
+IA-FLOOR-0057,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0001""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",-20,dBm,1e-9,true
+IA-FLOOR-0058,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0033""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",-16,dBm,1e-9,true
+IA-FLOOR-0059,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0065""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",-12,dBm,1e-9,true
+IA-FLOOR-0060,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0097""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",-8,dBm,1e-9,true
+IA-FLOOR-0061,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0129""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",-4,dBm,1e-9,true
+IA-FLOOR-0062,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0161""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",0,dBm,1e-9,true
+IA-FLOOR-0063,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0193""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",4,dBm,1e-9,true
+IA-FLOOR-0064,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0225""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",8,dBm,1e-9,true
+IA-FLOOR-0065,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0257""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",12,dBm,1e-9,true
+IA-FLOOR-0066,F35,PREAMBLE_POWER,"{""CaseID"":""RAPWR-0289""}","min(PCMAX,target+delta+(counter-1)*step+pathloss)",16,dBm,1e-9,true
+IA-FLOOR-0067,F39,RA_TIMER,"{""CaseID"":""RATMR-0001""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|1|19,slots,exact,true
+IA-FLOOR-0068,F39,RA_TIMER,"{""CaseID"":""RATMR-0002""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|2|28,slots,exact,true
+IA-FLOOR-0069,F39,RA_TIMER,"{""CaseID"":""RATMR-0003""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|4|38,slots,exact,true
+IA-FLOOR-0070,F39,RA_TIMER,"{""CaseID"":""RATMR-0004""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|8|50,slots,exact,true
+IA-FLOOR-0071,F39,RA_TIMER,"{""CaseID"":""RATMR-0005""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|10|60,slots,exact,true
+IA-FLOOR-0072,F39,RA_TIMER,"{""CaseID"":""RATMR-0006""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|20|78,slots,exact,true
+IA-FLOOR-0073,F39,RA_TIMER,"{""CaseID"":""RATMR-0007""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|40|106,slots,exact,true
+IA-FLOOR-0074,F39,RA_TIMER,"{""CaseID"":""RATMR-0008""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,1|80|90,slots,exact,true
+IA-FLOOR-0075,F39,RA_TIMER,"{""CaseID"":""RATMR-0009""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,8|8|26,slots,exact,true
+IA-FLOOR-0076,F39,RA_TIMER,"{""CaseID"":""RATMR-0010""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,8|9|35,slots,exact,true
+IA-FLOOR-0077,F39,RA_TIMER,"{""CaseID"":""RATMR-0011""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,8|11|45,slots,exact,true
+IA-FLOOR-0078,F39,RA_TIMER,"{""CaseID"":""RATMR-0012""}",responseStart=end+1; responseLast=start+window-1; contention expiry exclusive,8|15|57,slots,exact,true
+IA-FLOOR-0079,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-001""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0080,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-002""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0081,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-003""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0082,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-004""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0083,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-005""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0084,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-006""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0085,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-007""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0086,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-008""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0087,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-009""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0088,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-010""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0089,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-011""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0090,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-012""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0091,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-013""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0092,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-014""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0093,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-015""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0094,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-016""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0095,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-017""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0096,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-018""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0097,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-019""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0098,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-020""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0099,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-021""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0100,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-022""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0101,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-023""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0102,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-024""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0103,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-025""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0104,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-026""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0105,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-027""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0106,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-028""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",CONNECTED,state,exact,true
+IA-FLOOR-0107,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-029""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0108,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-030""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0109,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-031""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0110,F52,RRC_STATE,"{""CaseID"":""RRCSETUP-032""}","CONNECTED iff SetupRequest, Setup and SetupComplete pass with matching identity/transaction and SRB1",FAILED,state,exact,true
+IA-FLOOR-0111,F15,TYPE0_TABLE_ROWS,"{""File"":""ia_type0_coreset0_test_vectors.csv""}",row count of independent Type-0 table vector,268,rows,exact,true
+IA-FLOOR-0112,F15,TYPE0_TABLE_ROWS,"{""File"":""ia_expected_type0_monitoring_tables.csv""}",row count of independent Type-0 table vector,64,rows,exact,true
+IA-FLOOR-0113,F15,TYPE0_TABLE_ROWS,"{""File"":""ia_type0_pattern23_monitoring_test_vectors.csv""}",row count of independent Type-0 table vector,80,rows,exact,true
+IA-FLOOR-0114,F15,TYPE0_TABLE_ROWS,"{""File"":""ia_expected_type0_gscn_offset_vectors.csv""}",row count of independent Type-0 table vector,40,rows,exact,true
+IA-FLOOR-0115,F58,CAPABILITY_GATE,"{""Procedure"":""two_step""}",unsupported bounded profile => zero waveform and typed rejection,UnsupportedTwoStepRA,error,exact,true
+IA-FLOOR-0116,F59,CAPABILITY_GATE,"{""Procedure"":""cfra""}",unsupported bounded profile => zero waveform and typed rejection,UnsupportedCFRA,error,exact,true
+IA-FLOOR-0117,F59,CAPABILITY_GATE,"{""Procedure"":""bfr""}",unsupported bounded profile => zero waveform and typed rejection,UnsupportedBFR,error,exact,true
+IA-FLOOR-0118,F59,CAPABILITY_GATE,"{""Procedure"":""sul""}",unsupported bounded profile => zero waveform and typed rejection,UnsupportedSUL,error,exact,true
+IA-FLOOR-0119,F60,CAPABILITY_GATE,"{""Procedure"":""ntn""}",unsupported bounded profile => zero waveform and typed rejection,UnsupportedNTNAccess,error,exact,true
+IA-FLOOR-0120,F60,CAPABILITY_GATE,"{""Procedure"":""redcap""}",unsupported bounded profile => zero waveform and typed rejection,UnsupportedRedCapAccess,error,exact,true

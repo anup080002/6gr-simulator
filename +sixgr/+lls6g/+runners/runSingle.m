@@ -5573,7 +5573,7 @@ mappings = {
     "pusch.mapping_type", "UL_Data_PUSCH", "phy.pusch.mappingType"
     "pusch.start_symbol", "UL_Data_PUSCH", "phy.pusch.startSymbol"
     "pusch.num_symbols", "UL_Data_PUSCH", "phy.pusch.numSymbols"
-    "pusch.frequency_hopping", "UL_Data_PUSCH", "phy.pusch.frequencyHopping"
+    "pusch.frequency_hopping", "UL_Data_PUSCH", "phy.pusch.frequencyHopping.mode"
     "pusch.intra_slot_frequency_hopping", "UL_Data_PUSCH", "phy.pusch.intraSlotFrequencyHopping"
     "pusch.inter_slot_frequency_hopping", "UL_Data_PUSCH", "phy.pusch.interSlotFrequencyHopping"
     "pusch.transform_precoding", "UL_Data_PUSCH", "phy.pusch.transformPrecoding"

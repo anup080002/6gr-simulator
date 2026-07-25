@@ -1,0 +1,4 @@
+Wave,FamilyCount,FamilyIDs,ExecutionMeaning
+A_CORE_PUSCH_NOW,28,F01|F02|F03|F04|F05|F06|F07|F08|F12|F13|F15|F17|F18|F19|F20|F21|F22|F23|F25|F26|F33|F34|F35|F40|F43|F44|F49|F50,Can be implemented and analysed directly while correcting the PUSCH/UL-SCH production chain.
+B_PUSCH_INTERNAL_DEPENDENCY,10,F09|F10|F16|F27|F28|F29|F30|F31|F38|F39,Implement in this PUSCH phase after the named assignment/SRS/HARQ/covariance prerequisite is complete.
+C_CROSS_AREA_DEPENDENCY,14,F11|F14|F24|F32|F36|F37|F41|F42|F45|F46|F47|F48|F51|F52,"Experiment definition is ready, but execution depends on another physical procedure, RF, frame, timing, RA, or multi-user component."

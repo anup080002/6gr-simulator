@@ -1,0 +1,53 @@
+CheckID,Classification,File,Pattern,Detected,ExpectedDetected,Result,Description,Evidence
+PUCCH-S001,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,"phy\.pucch\.format""\s*,\s*2",true,true,PASS,TX defaults PUCCH format to 2.,+sixgr/+phy/+ul/PUCCH_Tx.m:65
+PUCCH-S002,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,"phy\.rnti""\s*,\s*1",true,true,PASS,TX defaults RNTI to 1.,+sixgr/+phy/+ul/PUCCH_Tx.m:83
+PUCCH-S003,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,function\s+\[?\w*.*PUCCH_Tx\([^\n]*uciBits,true,true,PASS,TX API accepts raw UCI bits instead of a typed report.,+sixgr/+phy/+ul/PUCCH_Tx.m:1
+PUCCH-S004,SHORTCUT,+sixgr/+phy/+ul/PUCCH_Tx.m,"nrUCIEncode\(uciBits,\s*G\)",true,true,PASS,Generic UCI encoding is driven only by raw payload and G.,+sixgr/+phy/+ul/PUCCH_Tx.m:112
+PUCCH-S005,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,catch\s*\n\s*dmrsInd\s*=\s*\[\],true,true,PASS,DM-RS generation failures are swallowed.,+sixgr/+phy/+ul/PUCCH_Tx.m:145
+PUCCH-S006,SHORTCUT,+sixgr/+phy/+ul/PUCCH_Tx.m,SymbolAllocation\s*=\s*\[0\s+2\],true,true,PASS,Long-format symbol allocation defaults to [0 2].,+sixgr/+phy/+ul/PUCCH_Tx.m:117
+PUCCH-S007,SHORTCUT,+sixgr/+phy/+ul/PUCCH_Tx.m,nid\s*=\s*carrier\.NCellID,true,true,PASS,PUCCH scrambling identity falls back to cell ID.,+sixgr/+phy/+ul/PUCCH_Tx.m:235
+PUCCH-S008,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,"SecondHopStartPRB\s*=\s*max\(0,\s*round",true,true,PASS,Second-hop PRB is clamped/rounded.,+sixgr/+phy/+ul/PUCCH_Tx.m:266
+PUCCH-S009,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,InitialCyclicShift\s*=\s*mod\(round,true,true,PASS,Initial cyclic shift is modulo-wrapped.,+sixgr/+phy/+ul/PUCCH_Tx.m:273
+PUCCH-S010,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,"OCCI\s*=\s*max\(0,\s*round",true,true,PASS,OCC index is clamped/rounded.,+sixgr/+phy/+ul/PUCCH_Tx.m:281
+PUCCH-S011,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,"SpreadingFactor\s*=\s*max\(1,\s*round",true,true,PASS,Spreading factor is clamped/rounded.,+sixgr/+phy/+ul/PUCCH_Tx.m:289
+PUCCH-S012,DEFECT,+sixgr/+phy/+ul/PUCCH_Tx.m,"HoppingID\s*=\s*max\(0,\s*round",true,true,PASS,Hopping ID is clamped/rounded.,+sixgr/+phy/+ul/PUCCH_Tx.m:296
+PUCCH-S013,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,ExpectedUCIBits,true,true,PASS,Production receiver accepts transmitted payload bits.,+sixgr/+phy/+ul/PUCCH_Rx.m:17
+PUCCH-S014,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,ouci\s*=\s*20,true,true,PASS,Receiver invents a 20-bit UCI payload.,+sixgr/+phy/+ul/PUCCH_Rx.m:218
+PUCCH-S015,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,ouci\s*=\s*numel\(opts\.ExpectedUCIBits\),true,true,PASS,Receiver derives payload length from expected transmitted bits.,+sixgr/+phy/+ul/PUCCH_Rx.m:214
+PUCCH-S016,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,nrUCIDecode\([^\n]+\)\s*;\s*\n\s*catch\s*\n\s*uciBits\s*=\s*\[\],true,true,PASS,UCI decode failure is converted to an empty payload.,+sixgr/+phy/+ul/PUCCH_Rx.m:235
+PUCCH-S017,SHORTCUT,+sixgr/+phy/+ul/PUCCH_Rx.m,SymbolAllocation\s*=\s*\[0\s+2\],true,true,PASS,RX repeats the long-format symbol default.,+sixgr/+phy/+ul/PUCCH_Rx.m:363
+PUCCH-S018,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,"SecondHopStartPRB\s*=\s*max\(0,\s*round",true,true,PASS,RX clamps second-hop PRB.,+sixgr/+phy/+ul/PUCCH_Rx.m:405
+PUCCH-S019,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,InitialCyclicShift\s*=\s*mod\(round,true,true,PASS,RX modulo-wraps cyclic shift.,+sixgr/+phy/+ul/PUCCH_Rx.m:412
+PUCCH-S020,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,"OCCI\s*=\s*max\(0,\s*round",true,true,PASS,RX clamps OCC index.,+sixgr/+phy/+ul/PUCCH_Rx.m:420
+PUCCH-S021,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,"SpreadingFactor\s*=\s*max\(1,\s*round",true,true,PASS,RX clamps spreading factor.,+sixgr/+phy/+ul/PUCCH_Rx.m:428
+PUCCH-S022,DEFECT,+sixgr/+phy/+ul/PUCCH_Rx.m,"HoppingID\s*=\s*max\(0,\s*round",true,true,PASS,RX clamps hopping ID.,+sixgr/+phy/+ul/PUCCH_Rx.m:435
+PUCCH-S023,DEFECT,+sixgr/+link/runPUCCHWaveformTrial.m,"ExpectedUCIBits""\s*,\s*int8\(1\)",true,true,PASS,Waveform trial defaults expected payload to one bit.,+sixgr/+link/runPUCCHWaveformTrial.m:8
+PUCCH-S024,DEFECT,+sixgr/+link/runPUCCHWaveformTrial.m,randi\(\[0\s+1\].*uciPayloadBits,true,true,PASS,Configured payload size can replace payload with random bits.,+sixgr/+link/runPUCCHWaveformTrial.m:187
+PUCCH-S025,SHORTCUT,+sixgr/+link/runPUCCHWaveformTrial.m,localResolveCompatiblePUCCHFormat,true,true,PASS,Trial auto-adapts format from payload length.,+sixgr/+link/runPUCCHWaveformTrial.m:201
+PUCCH-S026,SHORTCUT,+sixgr/+link/runPUCCHWaveformTrial.m,fmt\s*=\s*1;.*numBits\s*<=\s*2,true,true,PASS,Long formats can be silently demoted.,+sixgr/+link/runPUCCHWaveformTrial.m:543
+PUCCH-S027,SHORTCUT,+sixgr/+link/runPUCCHWaveformTrial.m,fmt\s*=\s*2;.*numBits\s*>\s*2,true,true,PASS,Short formats can be silently promoted.,+sixgr/+link/runPUCCHWaveformTrial.m:182
+PUCCH-S028,DEFECT,+sixgr/+link/runPUCCHWaveformTrial.m,numBits\s*>=\s*12\s*\n\s*n\s*=\s*6,true,true,PASS,CRC helper uses six bits for all payloads at or above 12.,+sixgr/+link/runPUCCHWaveformTrial.m:1051
+PUCCH-S029,VALIDATION_GAP,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m,positive_format2_csi_part1,true,true,PASS,Strict matrix contains only one generic format-2 CSI case.,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m:42
+PUCCH-S030,VALIDATION_GAP,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m,positive_format1_harq_ack,true,true,PASS,"Strict matrix is concentrated on formats 0, 1 and 2.",+sixgr/+phy/+pucch/runStrictPUCCHValidation.m:33
+PUCCH-S031,SHORTCUT,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m,"ExpectedUCIBits"",\s*bits",true,true,PASS,Strict receiver tests pass transmitted bits to RX.,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m:90
+PUCCH-S032,SHORTCUT,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m,PRBSet.*\[?\s*2:5,true,true,PASS,Strict validation hard-codes resource PRBs.,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m:270
+PUCCH-S033,VALIDATION_GAP,+sixgr/+phy/+pucch/exportStrictPUCCHArtifacts.m,csvMap\s*=\s*struct,true,true,PASS,Artifact exporter is CSV/JSON-only and has no technical figures.,+sixgr/+phy/+pucch/exportStrictPUCCHArtifacts.m:13
+PUCCH-S034,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,"HARQFeedbackSlots"",\s*4",true,true,PASS,Runtime defaults HARQ feedback timing to four slots.,+sixgr/+truth/CoupledTruthRuntime.m:10734
+PUCCH-S035,DEFECT,+sixgr/+truth/CoupledTruthRuntime.m,pucch_symbol_allocation_shifted_to_fit_tdd_ul_partition,true,true,PASS,Runtime shifts PUCCH symbols to force TDD legality.,+sixgr/+truth/CoupledTruthRuntime.m:10800
+PUCCH-S036,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,"resolveCompatiblePUCCHFormat\(requestedFormat,\s*numUCIBits\)",true,true,PASS,Runtime selects format from payload length rather than configured resource.,+sixgr/+truth/CoupledTruthRuntime.m:10739
+PUCCH-S037,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,"ternaryNumeric\(resolvedFormat\s*>=\s*2,\s*2,\s*1\)",true,true,PASS,Runtime heuristically chooses PUCCH PRB count.,+sixgr/+truth/CoupledTruthRuntime.m:10831
+PUCCH-S038,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,"ternaryNumeric\(resolvedFormat\s*>=\s*2,\s*2,\s*4\)",true,true,PASS,Runtime heuristically chooses PUCCH symbol count.,+sixgr/+truth/CoupledTruthRuntime.m:10740
+PUCCH-S039,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,"prbStart\s*=\s*mod\(max\(0,\s*round\(rnti\)",true,true,PASS,Runtime hashes RNTI/cell into a PUCCH PRB.,+sixgr/+truth/CoupledTruthRuntime.m:10842
+PUCCH-S040,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,"""UCIType"",\s*""harq_ack""",true,true,PASS,Runtime hard-codes the UCI type to HARQ-ACK.,+sixgr/+truth/CoupledTruthRuntime.m:2061
+PUCCH-S041,DEFECT,+sixgr/+truth/CoupledTruthRuntime.m,function\s+tf\s*=\s*pucchResourcesOverlap.*aPrbEnd,true,true,PASS,Collision detection uses only rectangular PRB/symbol extents.,+sixgr/+truth/CoupledTruthRuntime.m:11080
+PUCCH-S042,SHORTCUT,+sixgr/+truth/CoupledTruthRuntime.m,ExpectedUCIBits\s*=\s*int8\(logical\(sixgr\.truth.*rowExpectedPUCCHAck,true,true,PASS,Interference bundle transports only one expected ACK-like bit.,+sixgr/+truth/CoupledTruthRuntime.m:10955
+PUCCH-S043,DEFECT,config/phy/pucch.json,"""numUCIBits""\s*:\s*20",true,true,PASS,Default configuration fixes UCI length to 20 bits.,config/phy/pucch.json:5
+PUCCH-S044,SHORTCUT,config/phy/pucch.json,"""type""\s*:\s*""ACK\+CSI""",true,true,PASS,Default configuration flattens ACK and CSI into a generic type.,config/phy/pucch.json:13
+PUCCH-F001,FOUNDATION,+sixgr/+phy/+ul/PUCCH_Tx.m,nrPUCCH0Config,true,true,PASS,Toolbox-backed format-0 configuration exists.,+sixgr/+phy/+ul/PUCCH_Tx.m:187
+PUCCH-F002,FOUNDATION,+sixgr/+phy/+ul/PUCCH_Tx.m,nrPUCCH4Config,true,true,PASS,Toolbox-backed format-4 configuration exists.,+sixgr/+phy/+ul/PUCCH_Tx.m:195
+PUCCH-F003,FOUNDATION,+sixgr/+phy/+ul/PUCCH_Tx.m,nrPUCCHIndices,true,true,PASS,Production TX uses PUCCH index generation.,+sixgr/+phy/+ul/PUCCH_Tx.m:10
+PUCCH-F004,FOUNDATION,+sixgr/+phy/+ul/PUCCH_Tx.m,nrPUCCHDMRS,true,true,PASS,Production TX has a DM-RS integration point.,+sixgr/+phy/+ul/PUCCH_Tx.m:143
+PUCCH-F005,FOUNDATION,+sixgr/+phy/+ul/PUCCH_Rx.m,nrPUCCHDecode,true,true,PASS,Production RX uses a Toolbox-backed PUCCH decoder.,+sixgr/+phy/+ul/PUCCH_Rx.m:8
+PUCCH-F006,FOUNDATION,+sixgr/+link/runPUCCHWaveformTrial.m,runPUCCHWaveformTrial,true,true,PASS,A waveform-backed trial harness exists.,+sixgr/+link/runPUCCHWaveformTrial.m:1
+PUCCH-F007,FOUNDATION,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m,runStrictPUCCHValidation,true,true,PASS,A strict validation entry point exists.,+sixgr/+phy/+pucch/runStrictPUCCHValidation.m:1
+PUCCH-F008,FOUNDATION,+sixgr/+truth/CoupledTruthRuntime.m,PUCCHGrantTraceTable,true,true,PASS,A runtime PUCCH grant trace integration point exists.,+sixgr/+truth/CoupledTruthRuntime.m:173

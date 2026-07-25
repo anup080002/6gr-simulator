@@ -1,0 +1,29 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+pucch_impact_uci_composition.png,pucch_impact_uci.csv,UCI composition,UCI composition,Bit mismatch count,1,2,10,900,600
+pucch_impact_coding_boundaries.png,pucch_impact_uci.csv,UCI coding boundaries,Payload bits,BLER,1,2,10,900,600
+pucch_impact_harq_codebook.png,pucch_impact_uci.csv,HARQ-ACK codebook,Codebook size,HARQ bit error rate,1,2,10,900,600
+pucch_impact_sr_periodicity.png,pucch_impact_resource_timing.csv,SR periodicity,SR periodicity (slots),Latency (slots),1,2,10,900,600
+pucch_impact_csi_size.png,pucch_impact_uci.csv,CSI payload size,CSI bits,BLER,1,2,10,900,600
+pucch_impact_resource_set.png,pucch_impact_resource_timing.csv,PUCCH resource set,UCI payload bits,Selected resource set,1,2,10,900,600
+pucch_impact_format_selection.png,pucch_impact_formats_dmrs.csv,PUCCH format selection,PUCCH format,BLER,1,2,10,900,600
+pucch_impact_format0_cyclic_shift.png,pucch_impact_formats_dmrs.csv,Format 0 cyclic shift,Cyclic shift separation,Correlation magnitude,1,2,10,900,600
+pucch_impact_format1_occ.png,pucch_impact_formats_dmrs.csv,Format 1 OCC,OCC index,Correlation magnitude,1,2,10,900,600
+pucch_impact_format2_efficiency.png,pucch_impact_formats_dmrs.csv,Format 2 efficiency,Allocated REs,Spectral efficiency,1,2,10,900,600
+pucch_impact_format3_dmrs.png,pucch_impact_formats_dmrs.csv,Format 3 DM-RS,Doppler (Hz),BLER,1,2,10,900,600
+pucch_impact_format4_spreading.png,pucch_impact_formats_dmrs.csv,Format 4 spreading,Spreading factor,BLER,1,2,10,900,600
+pucch_impact_hopping_diversity.png,pucch_impact_hopping_repetition.csv,PUCCH hopping diversity,Delay spread (ns),BLER,1,2,10,900,600
+pucch_impact_repetition.png,pucch_impact_hopping_repetition.csv,PUCCH repetition,Repetition slots,BLER,1,2,10,900,600
+pucch_impact_interlace.png,pucch_impact_hopping_repetition.csv,Interlaced PUCCH,Interlace count,Occupied PRBs,1,2,10,900,600
+pucch_impact_k1_latency.png,pucch_impact_resource_timing.csv,K1 feedback latency,K1 (slots),Latency (slots),1,2,10,900,600
+pucch_impact_tdd_availability.png,pucch_impact_resource_timing.csv,TDD PUCCH availability,TDD pattern,Availability probability,1,2,10,900,600
+pucch_impact_pri_mapping.png,pucch_impact_resource_timing.csv,PUCCH resource indicator,PRI value,Selected resource ordinal,1,2,10,900,600
+pucch_impact_collision_matrix.png,pucch_impact_collisions.csv,PUCCH collision matrix,Collision type,Collision rate,1,2,10,900,600
+pucch_impact_power_control.png,pucch_impact_power_spatial.csv,PUCCH power control,Transmission occasion,Power error (dB),1,2,10,900,600
+pucch_impact_power_clipping.png,pucch_impact_power_spatial.csv,PUCCH power clipping,Requested power (dBm),EVM (%),1,2,10,900,600
+pucch_impact_spatial_relation.png,pucch_impact_power_spatial.csv,PUCCH spatial relation,Beam mismatch,BLER,1,2,10,900,600
+pucch_impact_bler_formats.png,pucch_impact_receiver.csv,PUCCH format BLER,SNR (dB),BLER,1,2,10,900,600
+pucch_impact_delay_doppler.png,pucch_impact_receiver.csv,PUCCH delay and Doppler,Doppler (Hz),BLER,1,2,10,900,600
+pucch_impact_cfo_timing.png,pucch_impact_receiver.csv,PUCCH CFO and timing,Normalized impairment,BLER,1,2,10,900,600
+pucch_impact_false_alarm.png,pucch_impact_receiver.csv,PUCCH false alarm,Detection threshold,False alarm probability,1,2,10,900,600
+pucch_impact_near_far.png,pucch_impact_collisions.csv,PUCCH near-far,Power imbalance (dB),BLER,1,2,10,900,600
+pucch_impact_effect_forest.png,pucch_impact_pairwise_effects.csv,PUCCH impact effects,Treatment minus baseline,Effect size,1,2,10,900,600

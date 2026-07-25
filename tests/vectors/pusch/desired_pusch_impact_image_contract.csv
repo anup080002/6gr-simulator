@@ -1,0 +1,27 @@
+ImageFile,SourceCSV,ExpectedXLabel,ExpectedYLabel,ExpectedTitleToken,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+pusch_impact_uci_capacity.png,pusch_impact_uci.csv,UCI payload / composition,Coded bits or goodput,PUSCH UCI capacity impact,1,3,20,1000,650
+pusch_impact_uci_bler.png,pusch_impact_uci.csv|pusch_impact_operating_points.csv,SNR (dB),BLER,PUSCH UCI BLER impact,1,3,20,1000,650
+pusch_impact_uci_beta_tradeoff.png,pusch_impact_uci.csv|pusch_impact_pairwise_effects.csv,UL-SCH goodput,UCI BLER,PUSCH UCI beta trade-off,1,2,12,1000,650
+pusch_impact_csi2_size.png,pusch_impact_uci.csv,CSI Part 2 payload bits,BLER / goodput,PUSCH CSI Part 2 impact,1,2,12,1000,650
+pusch_impact_rank_modulation.png,pusch_impact_operating_points.csv,Rank / modulation,Required SNR or goodput,PUSCH rank modulation impact,1,5,30,1000,650
+pusch_impact_dmrs_doppler.png,pusch_impact_dmrs_ptrs.csv,Doppler (Hz),Channel-estimation NMSE / BLER,PUSCH DM-RS Doppler impact,1,3,20,1000,650
+pusch_impact_dmrs_delay_spread.png,pusch_impact_dmrs_ptrs.csv,Delay profile / spread,Channel-estimation NMSE / BLER,PUSCH DM-RS delay-spread impact,1,2,12,1000,650
+pusch_impact_dmrs_port_leakage.png,pusch_impact_dmrs_ptrs.csv,DM-RS port pair,Leakage (dB),PUSCH DM-RS port leakage,1,2,12,1000,650
+pusch_impact_ptrs_phase_noise.png,pusch_impact_dmrs_ptrs.csv,Phase-noise profile / density,CPE RMSE / EVM / BLER,PUSCH PT-RS phase-noise impact,1,3,20,1000,650
+pusch_impact_transform_papr.png,pusch_impact_transform_hopping.csv,PAPR (dB),CCDF,PUSCH transform-precoding PAPR,1,2,100,1000,650
+pusch_impact_pa_backoff.png,pusch_impact_transform_hopping.csv,PA backoff (dB),EVM / BLER,PUSCH PA-backoff impact,1,2,20,1000,650
+pusch_impact_hopping_diversity.png,pusch_impact_transform_hopping.csv,SNR (dB),BLER / diversity gain,PUSCH frequency-hopping impact,1,3,20,1000,650
+pusch_impact_srs_snr_tpmi.png,pusch_impact_srs_precoding.csv,SRS SNR (dB),RI/TPMI accuracy / loss,PUSCH SRS decision impact,1,3,20,1000,650
+pusch_impact_srs_age_mobility.png,pusch_impact_srs_precoding.csv,SRS age (slots),Precoder loss / BLER,PUSCH SRS aging impact,1,3,20,1000,650
+pusch_impact_power_control_convergence.png,pusch_impact_power_control.csv,Slot / TPC command,Power-control error (dB),PUSCH power-control convergence,1,2,20,1000,650
+pusch_impact_power_clipping.png,pusch_impact_power_control.csv,Pathloss (dB),Power / BLER,PUSCH power clipping impact,1,3,20,1000,650
+pusch_impact_near_far.png,pusch_impact_power_control.csv|pusch_impact_harq_receiver.csv,Pathloss imbalance (dB),Per-UE SINR / BLER,PUSCH near-far impact,1,3,20,1000,650
+pusch_impact_receiver_comparison.png,pusch_impact_harq_receiver.csv,SNR / interference condition,BLER / per-layer SINR,PUSCH receiver impact,1,3,20,1000,650
+pusch_impact_harq_combining.png,pusch_impact_harq_receiver.csv,HARQ round,BLER / success probability,PUSCH HARQ combining impact,1,2,12,1000,650
+pusch_impact_configured_grant_latency.png,pusch_impact_grant_cg_ra.csv,Traffic / grant mode,Access latency / overhead,PUSCH configured-grant impact,1,3,12,1000,650
+pusch_impact_random_access_uplink.png,pusch_impact_grant_cg_ra.csv,Pathloss (dB),Success probability / power,PUSCH random-access uplink impact,1,2,12,1000,650
+pusch_impact_sinr_calibration.png,pusch_impact_operating_points.csv,Analytical SNR (dB),Measured SINR (dB),PUSCH measured-SINR calibration,1,2,20,1000,650
+pusch_impact_runtime_scaling.png,pusch_impact_runtime.csv,PRBs / rank,Runtime / memory,PUSCH runtime scaling,1,3,20,1000,650
+pusch_impact_feature_interactions.png,pusch_impact_interactions.csv,Feature / interaction term,Effect size,PUSCH feature interactions,1,5,20,1000,650
+pusch_impact_effect_forest.png,pusch_impact_pairwise_effects.csv,Effect size,Impact family,PUSCH impact effect forest,1,10,30,1000,650
+pusch_impact_scenario_summary.png,pusch_impact_summary.csv,Scenario / family,Technical impact metric,PUSCH end-to-end impact summary,1,5,20,1000,650

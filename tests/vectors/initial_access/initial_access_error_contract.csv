@@ -1,0 +1,46 @@
+ErrorID,Meaning,WaveformGenerated,GrantOrStateMutation,RequiredStage
+sixgr:phy:ia:UnsupportedProfile,Requested initial-access profile is not declared executable.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidCarrierGrid,Carrier/BWP/SSB grid tuple is invalid; no clamp is permitted.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidSSBCaseForBand,SSB case/common-SCS combination is invalid for the selected band.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidLmax,Lmax is not valid for the selected bounded profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SSBIndexOutOfRange,SSB index is outside the resolved candidate set.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidSSBBitmap,Active SSB bitmap length/positions are inconsistent with Lmax.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SSBOutsideCarrier,SSB subcarriers do not fit the configured carrier/grid.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SSBAmbiguousDetection,Blind SSB hypotheses are ambiguous under configured acceptance rule.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SSBNotDetected,No valid PSS/SSS/PBCH hypothesis passes.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:PBCHCRCFailure,PBCH/BCH decoding or CRC failed.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:MIBSemanticFailure,Decoded MIB fields violate profile or context.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:Type0UnsupportedTableRow,Decoded MIB resolves to an unsupported/reserved Type-0 table row.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:Type0MonitoringOccasionMismatch,Attempted Type-0 monitoring is not in a valid occasion.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SIRNTIMismatch,DCI/PDSCH is not valid for SI-RNTI.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SIB1DCIFailure,No semantically valid DCI 1_0 schedules SIB1.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SIB1DLSCHFailure,SIB1 PDSCH/DL-SCH failed CRC or receiver evidence.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SIB1ASN1DecodeFailure,BCCH-DL-SCH/SIB1 UPER decoding failed.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SIB1SemanticFailure,Decoded SIB1 is ASN.1-valid but unusable for selected profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:StaleSIB1Configuration,Random access attempted with stale decoded SIB1 epoch.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedPRACHConfigIndex,PRACH configuration index/context is unsupported or reserved.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidPRACHRestrictedSet,Restricted-set type is invalid for selected sequence length/format.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidPRACHRootBudget,Configured roots/cyclic shifts cannot produce the required preamble pool.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:NoPRACHOccasion,No valid PRACH occasion exists at requested absolute time/frequency.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:SSBToROMismatch,Selected SSB is not associated with attempted RO/preamble group.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:RARNTIMismatch,RAR PDCCH RNTI does not equal the RA-RNTI of the transmitted occasion.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:PreambleNotDetected,Msg1 PRACH detection failed.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:RAResponseWindowExpired,No valid RAR completed inside the exact response window.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:RAPIDMismatch,RAR does not contain the transmitted preamble identity.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidRARGrant,RAR UL grant/TA/temporary C-RNTI is invalid.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:Msg3CRCFailure,Msg3 PUSCH/UL-SCH failed after allowed HARQ procedure.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:ContentionResolutionFailure,Msg4 contention identity or final C-RNTI validation failed.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:ContentionResolutionTimerExpired,Contention resolution did not complete before timer expiry.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:PreambleTransMaxReached,Maximum preamble transmission count reached.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidPowerRampingState,Power ramping counter/target/pathloss/Pcmax state is invalid.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:RRCSetupRequestFailure,RRCSetupRequest was not decoded or validated.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:RRCSetupFailure,RRCSetup was not decoded or transaction/identity failed.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:RRCSetupCompleteFailure,RRCSetupComplete was not decoded or transaction/SRB1 state failed.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:InvalidRRCStateTransition,Illegal state transition was attempted.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedTwoStepRA,Two-step RA is not implemented in bounded FR1 profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedCFRA,Contention-free RA is not implemented in bounded FR1 profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedBFR,Beam-failure recovery access is not implemented in bounded FR1 profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedSUL,Supplementary-uplink access is not implemented in bounded FR1 profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedNTNAccess,NTN access is not implemented in bounded FR1 profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:UnsupportedRedCapAccess,RedCap/eRedCap access is not implemented in bounded FR1 profile.,false,false,precondition_or_exact_failure_stage
+sixgr:phy:ia:OracleInputForbidden,Transmitted truth or expected payload/tree/resource was supplied to strict receiver.,false,false,precondition_or_exact_failure_stage

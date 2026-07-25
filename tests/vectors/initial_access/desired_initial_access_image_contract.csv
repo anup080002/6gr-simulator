@@ -1,0 +1,21 @@
+ImageFile,SourceCSVFiles,ExpectedTitleTokens,ExpectedXLabelTokens,ExpectedYLabelTokens,MinWidth,MinHeight,MinAxes,MinSeries,MinFinitePoints,Mandatory
+ssb_burst_timeline.png,ssb_burst_plan.csv,SSB burst timeline,Absolute symbol,SSB index / beam,900,600,1,2,20,true
+ssb_resource_grid.png,ssb_re_ownership.csv,SS/PBCH block resource ownership,Subcarrier k,OFDM symbol l,900,600,1,5,960,true
+ssb_beam_rsrp.png,ssb_beam_measurements.csv,SSB beam measurements,SSB index,RSRP / SINR,900,600,1,2,8,true
+ssb_blind_search_heatmap.png,ssb_blind_search_hypotheses.csv,Blind SSB search hypotheses,Timing hypothesis,Frequency / cell hypothesis,900,600,1,1,100,true
+pbch_mib_bit_layout.png,pbch_mib_decode.csv,PBCH and MIB semantic bit layout,MIB field,Bit position,900,600,1,1,20,true
+type0_coreset_searchspace.png,type0_coreset_resolution.csv|type0_monitoring_candidates.csv,Type-0 CORESET and SearchSpace0,Absolute symbol / CCE,Resource / candidate,900,600,1,2,50,true
+sib1_resource_grid.png,sib1_resource_ownership.csv,SIB1 PDCCH/PDSCH resource ownership,PRB / subcarrier,OFDM symbol,900,600,1,4,100,true
+sib1_asn1_tree_size.png,sib1_asn1_decode.csv,SIB1 UPER payload and semantic decode,Scenario,Payload bits,900,600,1,1,20,true
+prach_occasion_map.png,prach_occasion_resolution.csv,PRACH occasion time-frequency map,Absolute slot,Frequency occasion,900,600,1,2,50,true
+prach_preamble_correlation.png,prach_detection_trials.csv,PRACH correlation and detection,Timing hypothesis,Correlation metric,900,600,1,2,100,true
+ssb_ro_association.png,ssb_ro_association.csv,SSB to PRACH occasion association,SSB index,RO ordinal / preamble group,900,600,1,2,20,true
+ra_power_ramping.png,ra_power_control.csv,Random-access power ramping,Attempt / counter,Transmit power dBm,900,600,1,3,20,true
+ra_timer_timeline.png,ra_timer_events.csv,Random-access timer timeline,Absolute slot,Timer / event,900,600,1,3,30,true
+ra_attempt_state_machine.png,ra_attempt_events.csv,Four-step random-access state machine,Event ordinal,State,900,600,1,2,30,true
+ra_collision_capture.png,prach_detection_trials.csv|ra_attempt_events.csv,Contention collision and capture,Near-far offset dB,Capture / success probability,900,600,1,2,20,true
+msg3_harq_timeline.png,msg3_harq.csv,Msg3 HARQ timeline,HARQ round,CRC / RV,900,600,1,2,20,true
+rrc_connection_timeline.png,rrc_connection_events.csv,RRC connection establishment,Event ordinal,UE and gNB state,900,600,1,2,20,true
+initial_access_stage_failures.png,initial_access_stage_bler.csv,Initial-access stage failure distribution,Stage,Error probability,900,600,1,1,20,true
+initial_access_success_vs_snr.png,initial_access_stage_bler.csv,End-to-end access success versus SNR,SNR dB,RRC connected probability,900,600,1,1,20,true
+initial_access_latency_cdf.png,ra_attempt_events.csv|rrc_connection_events.csv,Initial-access latency CDF,Access latency ms,Empirical CDF,900,600,1,1,20,true

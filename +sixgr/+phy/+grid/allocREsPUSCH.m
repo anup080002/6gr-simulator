@@ -97,6 +97,10 @@ info.TransmissionScheme = char(localObjectValue(pusch, 'TransmissionScheme', '')
 info.NumAntennaPorts = double(localObjectValue(pusch, 'NumAntennaPorts', NaN));
 info.TPMI = double(localObjectValue(pusch, 'TPMI', NaN));
 info.CodebookType = char(string(localObjectValue(pusch, 'CodebookType', '')));
+info.BetaOffsetACK = double(localObjectValue(pusch, 'BetaOffsetACK', NaN));
+info.BetaOffsetCSI1 = double(localObjectValue(pusch, 'BetaOffsetCSI1', NaN));
+info.BetaOffsetCSI2 = double(localObjectValue(pusch, 'BetaOffsetCSI2', NaN));
+info.UCIScaling = double(localObjectValue(pusch, 'UCIScaling', NaN));
 info.PRBSet = pusch.PRBSet;
 info.SymbolAllocation = pusch.SymbolAllocation;
 info.NRE = size(puschInd, 1);
@@ -118,21 +122,26 @@ info.ReservedRE = info.ResourceAccounting.ReservedRE;
 end
 
 function pusch = localBuildFromCfg(carrier, cfg, opts)
-% Build nrPUSCHConfig with safe defaults.
+% Build nrPUSCHConfig from explicit resolved configuration.
 
 pusch = nrPUSCHConfig;
 
 % Basic PHY settings
-mod = char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', '16QAM')));
-nl  = double(sixgr.util.structGet(cfg, 'phy.pusch.numLayers', 1));
-rnti = double(sixgr.util.structGet(cfg, 'phy.pusch.RNTI', 1));
+mod = char(string(sixgr.util.structGet(cfg, 'phy.pusch.modulation', '')));
+nl  = double(sixgr.util.structGet(cfg, 'phy.pusch.numLayers', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.nLayers', NaN)));
+rnti = double(sixgr.util.structGet(cfg, 'phy.pusch.RNTI', NaN));
 nid = sixgr.util.structGet(cfg, 'phy.pusch.NID', ...
     sixgr.util.structGet(cfg, 'phy.pusch.nid', []));
 prb = sixgr.util.structGet(cfg, 'phy.pusch.prbSet', []);
 symAlloc = sixgr.util.structGet(cfg, 'phy.pusch.symbolAllocation', []);
 tdraID = string(sixgr.util.structGet(cfg, 'phy.pusch.tdraId', ...
     sixgr.util.structGet(cfg, 'phy.pusch.TDRAID', '')));
-tp = logical(sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', false));
+tpRaw = sixgr.util.structGet(cfg, 'phy.pusch.transformPrecoding', []);
+tp = [];
+if ~isempty(tpRaw)
+    tp = logical(tpRaw);
+end
 tpmi = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.pusch.tpmi', []), ...
     sixgr.util.structGet(cfg, 'phy.pusch.TPMI', []), ...
@@ -144,7 +153,7 @@ transmissionScheme = char(string(sixgr.util.structGet(cfg, 'phy.pusch.transmissi
 codebookType = char(string(sixgr.util.structGet(cfg, 'phy.pusch.codebookType', ...
     sixgr.util.structGet(cfg, 'phy.pusch.CodebookType', ''))));
 mapType = upper(char(string(sixgr.util.structGet(cfg, 'phy.pusch.mappingType', ...
-    sixgr.util.structGet(cfg, 'phy.pusch.MappingType', 'A')))));
+    sixgr.util.structGet(cfg, 'phy.pusch.MappingType', '')))));
 mapTypeExplicit = strlength(strtrim(string(sixgr.util.structGet(cfg, 'phy.pusch.mappingType', ...
     sixgr.util.structGet(cfg, 'phy.pusch.MappingType', ''))))) > 0;
 
@@ -166,22 +175,42 @@ if ~isempty(opts.MappingType)
     mapType = upper(char(string(opts.MappingType)));
     mapTypeExplicit = logical(opts.MappingTypeExplicit);
 end
+if isempty(strtrim(mod))
+    error("sixgr:pusch:UnsupportedModulation", ...
+        "PUSCH modulation must be explicit in the resolved configuration or assignment.");
+end
+mod = char(sixgr.phy.ul.pusch.PUSCHModulator.normalizeModulation(mod));
+if ~(isscalar(nl) && isfinite(nl) && nl == fix(nl) && nl >= 1 && nl <= 8)
+    error("sixgr:pusch:UnsupportedLayerCodewordTuple", ...
+        "PUSCH NumLayers must be an explicit integer in [1,8].");
+end
+if ~(isscalar(rnti) && isfinite(rnti) && rnti == fix(rnti) ...
+        && rnti >= 0 && rnti <= 65535)
+    error("sixgr:pusch:InvalidRNTIProcedure", ...
+        "PUSCH RNTI must be an explicit integer in [0,65535].");
+end
+if isempty(tp)
+    error("sixgr:pusch:TransformPrecodingMismatch", ...
+        "PUSCH transformPrecoding must be explicitly true or false.");
+end
+if strcmpi(strrep(mod, ' ', ''), 'PI/2-BPSK') && ~tp
+    error("sixgr:pusch:TransformPrecodingRequired", ...
+        "PI/2-BPSK requires an explicitly transform-precoded PUSCH.");
+end
+if tp && nl ~= 1
+    error("sixgr:pusch:UnsupportedTransformPrecodingLayerCount", ...
+        "The selected strict transform-precoded PUSCH profile requires rank one.");
+end
 [symAlloc, mapType, mapTypeExplicit] = localResolvePUSCHTDRA( ...
     carrier, cfg, tdraID, symAlloc, mapType, mapTypeExplicit, ...
     opts.FixedReferenceMode);
 if ~numAntennaPortsExplicit && (~isfinite(numAntennaPorts) || numAntennaPorts < nl)
     numAntennaPorts = nl;
 end
-if strcmpi(strrep(char(string(mod)), ' ', ''), 'PI/2-BPSK') || strcmpi(strrep(char(string(mod)), ' ', ''), 'PI2-BPSK')
-    % TS 38.211 6.3.1.4 / TS 38.214 6.1.3: pi/2-BPSK PUSCH is DFT-s-OFDM.
-    tp = true;
-end
-
 pusch.Modulation = mod;
 pusch.NumLayers = nl;
 pusch.RNTI = rnti;
 pusch.TransformPrecoding = tp;
-
 if isempty(strtrim(transmissionScheme)) && ~tp && isfinite(tpmi)
     transmissionScheme = 'codebook';
 end
@@ -225,6 +254,8 @@ pusch.PRBSet = prbVec;
 pusch.SymbolAllocation = symAlloc;
 pusch = localApplyPUSCHDMRSConfig(pusch, cfg);
 pusch = localApplyPUSCHPTRSConfig(pusch, cfg);
+pusch = localApplyPUSCHUCIConfig(pusch, cfg);
+pusch = localApplyPUSCHFrequencyHoppingConfig(pusch, cfg, carrier);
 pusch = localNormalizePUSCHMapping(pusch, mapType, mapTypeExplicit, opts.FixedReferenceMode);
 
 % Scrambling NID if available
@@ -235,12 +266,6 @@ try
         end
         pusch.NID = double(nid);
     end
-catch
-end
-
-% DMRS ports to match layers (avoid default mismatch)
-try
-    pusch.DMRS.DMRSPortSet = 0:(pusch.NumLayers-1);
 catch
 end
 
@@ -308,7 +333,8 @@ end
 
 function pusch = localNormalizePUSCHMapping(pusch, mapType, explicitMapType, fixedReferenceMode)
 if nargin < 2 || strlength(string(mapType)) == 0
-    mapType = "A";
+    error("sixgr:phy:grid:allocREsPUSCH:MissingExplicitTDRA", ...
+        "PUSCH MappingType must be explicitly A or B.");
 end
 if nargin < 3
     explicitMapType = false;
@@ -328,27 +354,25 @@ if numel(symAlloc) < 2
     error("sixgr:phy:grid:allocREsPUSCH:MissingExplicitTDRA", ...
         "PUSCH SymbolAllocation must be present before mapping validation.");
 end
-startSym = 0;
-if ~isempty(symAlloc)
-    startSym = max(0, round(symAlloc(1)));
-end
+startSym = round(symAlloc(1));
 
 mapType = upper(char(string(mapType)));
-typeAPos = 2;
+typeAPos = NaN;
 try
     if isprop(pusch, "DMRS") && isprop(pusch.DMRS, "DMRSTypeAPosition")
         typeAPos = round(double(pusch.DMRS.DMRSTypeAPosition));
     end
 catch
 end
-typeAPos = max(2, min(3, round(double(typeAPos))));
+if ~(isscalar(typeAPos) && isfinite(typeAPos) ...
+        && typeAPos == fix(typeAPos) && ismember(typeAPos, [2 3]))
+    error("sixgr:pusch:InvalidDMRSConfiguration", ...
+        "PUSCH DMRSTypeAPosition must be explicitly 2 or 3.");
+end
 if startSym > typeAPos && strcmp(mapType, "A")
-    if logical(explicitMapType) || logical(fixedReferenceMode)
-        error("sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol", ...
-            "PUSCH MappingType A starts at symbol %d after configured DMRSTypeAPosition=%d. Configure DMRSTypeAPosition=3 when legal, choose MappingType B, or move PUSCH earlier.", ...
-            round(double(startSym)), round(double(typeAPos)));
-    end
-    mapType = "B";
+    error("sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol", ...
+        "PUSCH MappingType A starts at symbol %d after configured DMRSTypeAPosition=%d.", ...
+        round(double(startSym)), round(double(typeAPos)));
 end
 
 try
@@ -373,7 +397,8 @@ typeAPos = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.dmrs.typeAPosition', []), ...
     sixgr.util.structGet(cfg, 'phy.dmrs.typeApos', []));
 if isfinite(typeAPos) && isprop(dmrs, 'DMRSTypeAPosition')
-    dmrs.DMRSTypeAPosition = max(2, min(3, round(double(typeAPos))));
+    dmrs.DMRSTypeAPosition = localValidatedIntegerSet( ...
+        typeAPos, [2 3], "DMRSTypeAPosition");
 end
 
 configType = localFirstFiniteScalar( ...
@@ -383,7 +408,8 @@ configType = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.dmrs.configurationType', []), ...
     sixgr.util.structGet(cfg, 'phy.dmrs.configType', []));
 if isfinite(configType) && isprop(dmrs, 'DMRSConfigurationType')
-    dmrs.DMRSConfigurationType = max(1, min(2, round(double(configType))));
+    dmrs.DMRSConfigurationType = localValidatedIntegerSet( ...
+        configType, [1 2], "DMRSConfigurationType");
 end
 
 addPos = localFirstFiniteScalar( ...
@@ -393,7 +419,8 @@ addPos = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.dmrs.additionalPositions', []), ...
     sixgr.util.structGet(cfg, 'phy.dmrs.DMRSAdditionalPosition', []));
 if isfinite(addPos) && isprop(dmrs, 'DMRSAdditionalPosition')
-    dmrs.DMRSAdditionalPosition = max(0, min(3, round(double(addPos))));
+    dmrs.DMRSAdditionalPosition = localValidatedIntegerSet( ...
+        addPos, 0:3, "DMRSAdditionalPosition");
 end
 
 dmrsLength = localFirstFiniteScalar( ...
@@ -403,7 +430,8 @@ dmrsLength = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.dmrs.maxLength', []), ...
     sixgr.util.structGet(cfg, 'phy.dmrs.DMRSLength', []));
 if isfinite(dmrsLength) && isprop(dmrs, 'DMRSLength')
-    dmrs.DMRSLength = max(1, min(2, round(double(dmrsLength))));
+    dmrs.DMRSLength = localValidatedIntegerSet( ...
+        dmrsLength, [1 2], "DMRSLength");
 end
 
 numCDM = localFirstFiniteScalar( ...
@@ -411,7 +439,53 @@ numCDM = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.pusch.dmrs.NumCDMGroupsWithoutData', []), ...
     sixgr.util.structGet(cfg, 'phy.dmrs.numCDMGroupsWithoutData', []));
 if isfinite(numCDM) && isprop(dmrs, 'NumCDMGroupsWithoutData')
-    dmrs.NumCDMGroupsWithoutData = max(1, min(3, round(double(numCDM))));
+    dmrs.NumCDMGroupsWithoutData = localValidatedIntegerSet( ...
+        numCDM, 1:3, "NumCDMGroupsWithoutData");
+end
+
+portSet = sixgr.util.structGet(cfg, 'phy.pusch.dmrs.portSet', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.dmrs.DMRSPortSet', []));
+if ~isempty(portSet) && isprop(dmrs, 'DMRSPortSet')
+    portSet = double(portSet(:).');
+    if any(~isfinite(portSet) | portSet ~= fix(portSet) | portSet < 0) ...
+            || numel(unique(portSet)) ~= numel(portSet)
+        error("sixgr:pusch:InvalidDMRSPortSet", ...
+            "PUSCH DM-RS port set must contain unique zero-based integers.");
+    end
+    dmrs.DMRSPortSet = portSet;
+end
+
+groupHopping = sixgr.util.structGet(cfg, ...
+    'phy.pusch.dmrs.groupHopping', []);
+sequenceHopping = sixgr.util.structGet(cfg, ...
+    'phy.pusch.dmrs.sequenceHopping', []);
+if ~isempty(groupHopping) && ~isempty(sequenceHopping) && ...
+        logical(groupHopping) && logical(sequenceHopping)
+    error("sixgr:pusch:InvalidDMRSConfiguration", ...
+        "PUSCH DM-RS group hopping and sequence hopping cannot both be enabled.");
+end
+if ~isempty(groupHopping) && isprop(dmrs, 'GroupHopping')
+    dmrs.GroupHopping = logical(groupHopping);
+end
+if ~isempty(sequenceHopping) && isprop(dmrs, 'SequenceHopping')
+    dmrs.SequenceHopping = logical(sequenceHopping);
+end
+nidNSCID = localFirstFiniteScalar(sixgr.util.structGet( ...
+    cfg, 'phy.pusch.dmrs.NIDNSCID', []));
+if isfinite(nidNSCID) && isprop(dmrs, 'NIDNSCID')
+    dmrs.NIDNSCID = localValidatedIntegerRange( ...
+        nidNSCID, 0, 65535, "DMRS.NIDNSCID");
+end
+nscid = localFirstFiniteScalar(sixgr.util.structGet( ...
+    cfg, 'phy.pusch.dmrs.NSCID', []));
+if isfinite(nscid) && isprop(dmrs, 'NSCID')
+    dmrs.NSCID = localValidatedIntegerSet(nscid, [0 1], "DMRS.NSCID");
+end
+nrsid = localFirstFiniteScalar(sixgr.util.structGet( ...
+    cfg, 'phy.pusch.dmrs.NRSID', []));
+if isfinite(nrsid) && isprop(dmrs, 'NRSID')
+    dmrs.NRSID = localValidatedIntegerRange( ...
+        nrsid, 0, 1007, "DMRS.NRSID");
 end
 
 pusch.DMRS = dmrs;
@@ -432,39 +506,121 @@ end
 ptrs = pusch.PTRS;
 timeDensity = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.pusch.ptrs.timeDensity', []), ...
-    sixgr.util.structGet(cfg, 'phy.ptrs.timeDensity', []), ...
-    2);
+    sixgr.util.structGet(cfg, 'phy.ptrs.timeDensity', []));
 freqDensity = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, 'phy.pusch.ptrs.frequencyDensity', []), ...
-    sixgr.util.structGet(cfg, 'phy.ptrs.frequencyDensity', []), ...
-    2);
+    sixgr.util.structGet(cfg, 'phy.ptrs.frequencyDensity', []));
 reOffset = string(sixgr.util.structGet(cfg, 'phy.pusch.ptrs.reOffset', ...
-    sixgr.util.structGet(cfg, 'phy.ptrs.reOffset', '00')));
+    sixgr.util.structGet(cfg, 'phy.ptrs.reOffset', '')));
 portSet = sixgr.util.structGet(cfg, 'phy.pusch.ptrs.portSet', ...
     sixgr.util.structGet(cfg, 'phy.ptrs.portSet', []));
+if ~isfinite(timeDensity) || ~isfinite(freqDensity) ...
+        || strlength(strtrim(reOffset)) == 0 || isempty(portSet)
+    error("sixgr:pusch:InvalidPTRSConfiguration", ...
+        "Enabled PUSCH PT-RS requires explicit timeDensity, frequencyDensity, REOffset, and portSet.");
+end
 
 try
     if isprop(ptrs, 'TimeDensity')
-        ptrs.TimeDensity = max(1, round(double(timeDensity)));
+        ptrs.TimeDensity = localValidatedIntegerSet( ...
+            timeDensity, [1 2 4], "PTRS.TimeDensity");
     end
     if isprop(ptrs, 'FrequencyDensity')
-        ptrs.FrequencyDensity = max(1, round(double(freqDensity)));
+        ptrs.FrequencyDensity = localValidatedIntegerSet( ...
+            freqDensity, [2 4], "PTRS.FrequencyDensity");
     end
     if isprop(ptrs, 'REOffset')
+        if ~ismember(reOffset, ["00","01","10","11"])
+            error("sixgr:pusch:InvalidPTRSConfiguration", ...
+                "PUSCH PT-RS REOffset must be 00, 01, 10, or 11.");
+        end
         ptrs.REOffset = char(reOffset);
     end
     if isprop(ptrs, 'PTRSPortSet')
-        if isempty(portSet)
-            ptrs.PTRSPortSet = 0;
-        else
-            ptrs.PTRSPortSet = max(0, round(double(portSet(:).')));
+        portSet = double(portSet(:).');
+        if any(~isfinite(portSet) | portSet ~= fix(portSet) | portSet < 0) ...
+                || numel(unique(portSet)) ~= numel(portSet)
+            error("sixgr:pusch:InvalidPTRSAssociation", ...
+                "PUSCH PT-RS ports must be unique zero-based integers.");
         end
+        ptrs.PTRSPortSet = portSet;
+    end
+    nid = localFirstFiniteScalar(sixgr.util.structGet( ...
+        cfg, 'phy.pusch.ptrs.NID', []));
+    if isfinite(nid) && isprop(ptrs, 'NID')
+        ptrs.NID = localValidatedIntegerRange(nid, 0, 1007, "PTRS.NID");
     end
     pusch.PTRS = ptrs;
 catch ME
     error("sixgr:phy:grid:allocREsPUSCH:BadPTRSConfig", ...
         "Invalid PUSCH PTRS runtime configuration: %s", ME.message);
 end
+end
+
+function pusch = localApplyPUSCHUCIConfig(pusch, cfg)
+if ~isstruct(cfg)
+    return;
+end
+items = {
+    'BetaOffsetACK', 'phy.pusch.uci.betaOffsetACK', 0, Inf
+    'BetaOffsetCSI1', 'phy.pusch.uci.betaOffsetCSI1', 0, Inf
+    'BetaOffsetCSI2', 'phy.pusch.uci.betaOffsetCSI2', 0, Inf
+    'UCIScaling', 'phy.pusch.uci.scaling', 0, 1
+    };
+for i = 1:size(items, 1)
+    propertyName = items{i,1};
+    value = localFirstFiniteScalar(sixgr.util.structGet( ...
+        cfg, items{i,2}, []));
+    if ~isfinite(value)
+        continue;
+    end
+    if value < items{i,3} || value > items{i,4}
+        error("sixgr:pusch:InvalidUCIConfiguration", ...
+            "%s must be in [%g,%g].", propertyName, ...
+            items{i,3}, items{i,4});
+    end
+    if isprop(pusch, propertyName)
+        pusch.(propertyName) = double(value);
+    end
+end
+end
+
+function pusch = localApplyPUSCHFrequencyHoppingConfig(pusch, cfg, carrier)
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    'phy.pusch.frequencyHopping.mode', ...
+    sixgr.util.structGet(cfg, 'phy.pusch.frequencyHopping', 'none')))));
+if mode == "none"
+    pusch.FrequencyHopping = "neither";
+    return;
+end
+if mode == "intra_slot"
+    toolboxMode = "intraSlot";
+elseif mode == "inter_slot"
+    toolboxMode = "interSlot";
+else
+    error("sixgr:pusch:InvalidFrequencyHoppingMode", ...
+        "PUSCH frequency hopping must be none, intra_slot, or inter_slot.");
+end
+allocationType = double(sixgr.util.structGet(cfg, ...
+    'phy.pusch.resourceAllocationType', 1));
+if allocationType == 2
+    error("sixgr:pusch:FrequencyHoppingResourceTypeConflict", ...
+        "PUSCH resource-allocation type 2 cannot use frequency hopping.");
+end
+secondHop = sixgr.util.structGet(cfg, ...
+    'phy.pusch.frequencyHopping.secondHopStartPRB', []);
+if isempty(secondHop)
+    error("sixgr:pusch:MissingSecondHopStartPRB", ...
+        "Enabled PUSCH frequency hopping requires secondHopStartPRB.");
+end
+secondHop = localValidatedIntegerSet(secondHop, ...
+    0:(double(carrier.NSizeGrid)-1), "SecondHopStartPRB");
+if secondHop + numel(pusch.PRBSet) > double(carrier.NSizeGrid)
+    error("sixgr:pusch:SecondHopOutOfBWP", ...
+        "PUSCH second-hop allocation exceeds the active carrier grid.");
+end
+pusch.FrequencyHopping = char(toolboxMode);
+pusch.SecondHopStartPRB = secondHop;
 end
 
 function value = localObjectValue(obj, propName, defaultValue)
@@ -521,17 +677,20 @@ value = localFirstFiniteScalar( ...
 end
 
 function value = localNormalizePUSCHAntennaPorts(value, numLayers, explicit)
-allowed = [1 2 4];
-value = max(1, round(double(value)));
-minPorts = max(1, round(double(numLayers)));
+allowed = [1 2 4 8];
+value = double(value);
+minPorts = round(double(numLayers));
+if ~(isscalar(value) && isfinite(value) && value == fix(value) && value >= 1)
+    error("NumAntennaPorts must be a positive integer.");
+end
 if explicit && ~any(value == allowed)
-    error("explicit NumAntennaPorts=%g is invalid for nrPUSCHConfig; expected one of [1 2 4].", value);
+    error("explicit NumAntennaPorts=%g is invalid for nrPUSCHConfig; expected one of [1 2 4 8].", value);
 end
 value = max(value, minPorts);
 idx = find(allowed >= value, 1, 'first');
 if isempty(idx)
     if explicit
-        error("explicit NumAntennaPorts=%g cannot support NumLayers=%g within nrPUSCHConfig allowed ports [1 2 4].", value, minPorts);
+        error("explicit NumAntennaPorts=%g cannot support NumLayers=%g within nrPUSCHConfig allowed ports [1 2 4 8].", value, minPorts);
     end
     idx = numel(allowed);
 end
@@ -563,4 +722,23 @@ end
 
 error("sixgr:phy:grid:allocREsPUSCH:InvalidPRBSet", ...
     "PUSCH PRBSet must be a real numeric vector.");
+end
+
+function value = localValidatedIntegerSet(raw, allowed, label)
+value = double(raw);
+if ~(isscalar(value) && isfinite(value) && value == fix(value) ...
+        && ismember(value, allowed))
+    error("sixgr:pusch:InvalidDMRSConfiguration", ...
+        "%s must be one of %s; received %g.", ...
+        label, mat2str(double(allowed)), value);
+end
+end
+
+function value = localValidatedIntegerRange(raw, minimum, maximum, label)
+value = double(raw);
+if ~(isscalar(value) && isfinite(value) && value == fix(value) && ...
+        value >= minimum && value <= maximum)
+    error("sixgr:pusch:InvalidConfigurationInteger", ...
+        "%s must be an integer in [%d,%d].", label, minimum, maximum);
+end
 end

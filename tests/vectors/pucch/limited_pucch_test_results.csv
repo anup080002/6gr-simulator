@@ -1,0 +1,26 @@
+CheckID,Category,Status,Details,Command
+PACK-001,pack_infrastructure,PASS,"{   ""manifest_files"": 31,   ""vector_rows"": 4271,   ""failures"": [] }",python /mnt/data/pucch_uci_codex_pack/verify_pucch_vector_pack.py
+STATIC-001,current_simulator,FAIL,44 targeted defect/shortcut signatures are present; 8 useful foundations are present. The audit executable itself ran successfully.,python /mnt/data/pucch_uci_codex_pack/audit_current_pucch_source.py <repo>
+PACK-002,pack_infrastructure,PASS,Base verifier accepts a complete synthetic 23-CSV/15-PNG set and rejects an injected PNG hash mismatch.,python /mnt/data/pucch_uci_codex_pack/verify_pucch_artifacts.py --self-test
+PACK-003,pack_infrastructure,PASS,"Impact verifier accepts 600 experiments, 75 rules, 16 CSVs and 28 PNGs, then rejects an injected PNG hash mismatch.",python /mnt/data/pucch_uci_codex_pack/verify_pucch_impact_artifacts.py --self-test
+VEC-001,pack_infrastructure,PASS,128 typed UCI report/serialization inputs pass ordering and Part-2 padding invariants.,python verify_pucch_vector_pack.py
+VEC-002,pack_infrastructure,PASS,"140 UCI coding-plan inputs cover A/E boundaries, CRC6/CRC11 and segmentation triggers.",python verify_pucch_vector_pack.py
+VEC-003,pack_infrastructure,PASS,"350 format/resource cases cover formats 0-4, positive and typed-negative tuples.",python verify_pucch_vector_pack.py
+VEC-004,pack_infrastructure,PASS,"70 resource-set cases cover HARQ, SPS, SR-only and CSI-only sources.",python verify_pucch_vector_pack.py
+VEC-005,pack_infrastructure,PASS,PRI vectors cover field widths 0-3 and mark set-0 >8 cases for the exact CCE formula oracle.,python verify_pucch_vector_pack.py
+VEC-006,pack_infrastructure,PASS,24 bounded HARQ codebook contexts preserve ACK/NACK/DTX and event ordering.,python verify_pucch_vector_pack.py
+VEC-007,pack_infrastructure,PASS,414 SR occasion cases pass independent periodicity/offset arithmetic.,python verify_pucch_vector_pack.py
+VEC-008,pack_infrastructure,PASS,48 CSI contexts pass deterministic Part-1/Part-2 serialization.,python verify_pucch_vector_pack.py
+VEC-009,pack_infrastructure,PASS,192 K1/TDD cases enforce exact due slot and prohibit symbol shifting.,python verify_pucch_vector_pack.py
+VEC-010,pack_infrastructure,PASS,"80 collision cases distinguish rectangular overlap, exact RE overlap and orthogonality.",python verify_pucch_vector_pack.py
+VEC-011,pack_infrastructure,PASS,48 PUCCH power-control cases pass independent arithmetic and P_CMAX clipping.,python verify_pucch_vector_pack.py
+VEC-012,pack_infrastructure,PASS,"72 spatial-relation cases cover active, inactive and stale state.",python verify_pucch_vector_pack.py
+VEC-013,pack_infrastructure,PASS,92 wrong-length/resource/RNTI/timing/configuration/collision/power cases require typed rejection.,python verify_pucch_vector_pack.py
+VEC-014,pack_infrastructure,PASS,"84 end-to-end declared coverage rows span formats, UCI types and AWGN/TDL/CDL/no-noise profiles.",python verify_pucch_vector_pack.py
+IMPACT-001,pack_infrastructure,PASS,50 impact families and 600 controlled baseline/treatment experiments are pair-complete.,python verify_pucch_vector_pack.py
+IMPACT-002,pack_infrastructure,PASS,"75 acceptance rules are present: 50 family correctness rules, 15 statistical rules and 10 diagnostic rules.",python verify_pucch_vector_pack.py
+CURRENT-ARTIFACTS,current_simulator,FAIL,0 of 82 required base+impact PUCCH artifacts are present in current bundled outputs.,
+CURRENT-IMAGES,current_output_inventory,PASS,"40 of 40 existing PNG files decode and 40 are structurally nonblank, but none is one of the 43 contracted PUCCH-specific technical figures.",
+CURRENT-CSV-INVENTORY,current_output_inventory,PASS,3 of 3 current PUCCH-named CSV files are rectangular; they do not satisfy the 39 contracted production CSVs.,
+CURRENT-PY-PUCCH,current_simulator,BLOCKED,"    raise FileNotFoundError( |         f""Required MATLAB R2024a executable is missing: {MATLAB_EXE}"" |     ) | FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe",python /mnt/data/6gr_src_pucch/6GR Simulator_v2_clean_main/tests/test_lls_browser_pucch_truth.py
+MATLAB-RUNTIME,runtime_validation,BLOCKED,"MATLAB executable: not found; Octave executable: not found. Production PHY, BLER and MATLAB figure tests were not executable here.",

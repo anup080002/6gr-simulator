@@ -60,6 +60,7 @@ end
 schedulerDrivenGrant = (isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))) || ...
     (isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride)));
 expectedUCIBits = localResolveExpectedUCIBits(p.Results.ExpectedUCIBits, grantSnapshotOverride, harqContext);
+expectedUCIPayload = sixgr.phy.ul.pusch.PUSCHUCIPayload("HARQACK", expectedUCIBits);
 
 out = struct();
 out.Ok = false;
@@ -593,8 +594,9 @@ for n = 1:numFrames
         if ~isempty(rvOverride)
             txArgs = [txArgs {"RV", rvOverride}]; %#ok<AGROW>
         end
-        if ~isempty(expectedUCIBits)
-            txArgs = [txArgs {"HARQACKBits", expectedUCIBits}]; %#ok<AGROW>
+        if expectedUCIPayload.hasPayload()
+            txArgs = [txArgs {"UCIPayload", expectedUCIPayload, ...
+                "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
         end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
@@ -774,8 +776,9 @@ for n = 1:numFrames
         if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
             rxArgs = [rxArgs {"PHYGrant", phyGrantOverride}]; %#ok<AGROW>
         end
-        if ~isempty(expectedUCIBits)
-            rxArgs = [rxArgs {"ExpectedHARQACKBits", expectedUCIBits}]; %#ok<AGROW>
+        if expectedUCIPayload.hasPayload()
+            rxArgs = [rxArgs {"ExpectedUCIPayload", expectedUCIPayload, ...
+                "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
         end
         injectedNoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
         if isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
@@ -2834,20 +2837,18 @@ end
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 pathloss_dB = localFirstFiniteScalar( ...
     sixgr.util.structGet(userMeta, "RuntimeServingPathloss_dB", []), ...
-    sixgr.util.structGet(userMeta, "RuntimeServingBasePathloss_dB", []), ...
-    sixgr.util.structGet(cfg, "channel.pathloss_dB", []), ...
-    sixgr.util.structGet(cfg, "channel.largeScale.pathloss_dB", []));
+    sixgr.util.structGet(userMeta, "RuntimeServingBasePathloss_dB", []));
 pc.Pathloss_dB = double(pathloss_dB);
 if ~(isfinite(pathloss_dB) && pathloss_dB >= 0)
-    [pathloss_dB, derivedSource] = localDeriveULPathlossFromConfiguredSNR(cfg);
-    pc.Pathloss_dB = double(pathloss_dB);
-    if ~(isfinite(pathloss_dB) && pathloss_dB >= 0)
-        pc.Status = "pathloss_unavailable_no_power_control_applied";
-        return;
+    pc.Status = "measured_pathloss_unavailable_no_power_control_applied";
+    if logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+        error("sixgr:pusch:PathlossMeasurementMissing", ...
+            "Strict PUSCH power control requires runtime measured serving-link pathloss; configured SNR cannot substitute for it.");
     end
-    pc.Status = "pathloss_derived_from_configured_snr_for_olpc_only";
-    pc.PathlossSource = char(derivedSource);
+    return;
 end
+pc.PathlossSource = char(string(sixgr.util.structGet(userMeta, ...
+    "RuntimeServingPathlossSource", "runtime_geometry_or_reference_signal_measurement")));
 
 try
     mRB = numel(tx.PUSCH.PRBSet);
@@ -2865,7 +2866,10 @@ alpha = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.pusch.powerControl.alpha", []), ...
     sixgr.util.structGet(cfg, "phy.pusch.power_control.alpha", []), ...
     0.8);
-alpha = min(max(double(alpha), 0), 1);
+if ~(isscalar(alpha) && isfinite(alpha) && alpha >= 0 && alpha <= 1)
+    error("sixgr:pusch:InvalidPowerControlAlpha", ...
+        "Configured PUSCH power-control alpha must be finite in [0,1].");
+end
 pcmax = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.pusch.powerControl.pcmax_dBm", []), ...
     sixgr.util.structGet(cfg, "phy.pusch.powerControl.Pcmax_dBm", []), ...
@@ -2885,7 +2889,19 @@ refPower = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "powerAndRF.referenceTxPower_dBm", []), ...
     0);
 
-requestedPower = double(p0) + double(alpha) * double(pathloss_dB) + 10 * log10(double(mRB)) + ...
+try
+    scsKHz = double(tx.Carrier.SubcarrierSpacing);
+catch
+    scsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN));
+end
+mu = log2(scsKHz / 15);
+if ~(isscalar(mu) && isfinite(mu) && abs(mu - round(mu)) < 1e-9 && mu >= 0)
+    error("sixgr:pusch:InvalidPowerControlNumerology", ...
+        "PUSCH power control requires a valid 15*2^mu kHz carrier spacing.");
+end
+mu = round(mu);
+requestedPower = double(p0) + double(alpha) * double(pathloss_dB) + ...
+    10 * log10((2 ^ mu) * double(mRB)) + ...
     double(deltaTF) + double(closedLoop);
 txPower = min(double(pcmax), requestedPower);
 scale = 10 .^ ((double(txPower) - double(refPower)) / 20);
@@ -2893,44 +2909,18 @@ if ~(isfinite(scale) && scale > 0)
     scale = 1;
 end
 
-if ~isfield(pc, "PathlossSource")
-    pc.PathlossSource = "runtime_pathloss_evidence";
-end
-pc.Status = "resolved_open_loop_ts38213_fractional_pathloss_scaling_deferred_to_power_context";
+pc.Status = "resolved_ts38213_with_mu_factor_applied_by_power_context";
 pc.TxPower_dBm = double(txPower);
 pc.Pcmax_dBm = double(pcmax);
 pc.PowerHeadroom_dB = double(pcmax) - double(txPower);
 pc.AmplitudeScale = double(scale);
+pc.Mu = double(mu);
+pc.MRB = double(mRB);
+pc.FormulaIncludesMuFactor = true;
+pc.ConfiguredSNRSubstitution = false;
 
 cfgOut = sixgr.util.structSet(cfgOut, "powerAndRF.ueTxPower_dBm", double(txPower));
 cfgOut = sixgr.util.structSet(cfgOut, "lls6g.resolvedConfig.power_and_rf_frontend.ue_tx_power_dbm", double(txPower));
-end
-
-function [pathloss_dB, source] = localDeriveULPathlossFromConfiguredSNR(cfg)
-pathloss_dB = NaN;
-source = "unavailable";
-snr_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", NaN));
-if ~(isscalar(snr_dB) && isfinite(snr_dB))
-    return;
-end
-txPower_dBm = localFirstFiniteScalar( ...
-    sixgr.util.structGet(cfg, "powerAndRF.ueTxPower_dBm", []), ...
-    sixgr.util.structGet(cfg, "phy.pusch.powerControl.referenceTxPower_dBm", []), ...
-    sixgr.util.structGet(cfg, "phy.pusch.powerControl.pcmax_dBm", []), ...
-    23);
-bwHz = localFirstFiniteScalar( ...
-    sixgr.util.structGet(cfg, "channel.bandwidth_Hz", []), ...
-    sixgr.util.structGet(cfg, "frequency.bandwidthHz", []), ...
-    sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", []) .* 1e6, ...
-    20e6);
-nf_dB = localFirstFiniteScalar( ...
-    sixgr.util.structGet(cfg, "scenario.bs.noiseFigure_dB", []), ...
-    sixgr.util.structGet(cfg, "powerAndRF.bsNoiseFigure_dB", []), ...
-    5);
-noiseFloor_dBm = -174 + 10 .* log10(max(double(bwHz), 1)) + double(nf_dB);
-rxSignal_dBm = noiseFloor_dBm + double(snr_dB);
-pathloss_dB = double(txPower_dBm) - rxSignal_dBm;
-source = "configured_snr_thermal_noise_link_budget";
 end
 
 function [y, replay, state] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle)
@@ -4623,22 +4613,9 @@ if isfinite(selectedIdx)
     end
 end
 
+% UL PMI/TPMI authority is measured SRS state carried in metrics. Do not
+% fall back to phy.pusch.PMI/TPMI when that state is missing or stale.
 selectedSet = localResolveBeamSetFromPMI(cfg, metrics, size(W, 1), size(W, 2));
-if ~isempty(selectedSet)
-    return;
-end
-
-configuredPMI = double(sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN));
-configuredTPMI = double(sixgr.util.structGet(cfg, "phy.pusch.TPMI", NaN));
-if isfinite(configuredTPMI)
-    configuredPMI = configuredTPMI;
-end
-if isfinite(configuredPMI)
-    selectedSet = localResolveBeamSetFromPMI(cfg, struct("PMI", configuredPMI, "RI", metrics.RI), size(W, 1), size(W, 2));
-    if ~isempty(selectedSet)
-        return;
-    end
-end
 end
 
 function [nmseLin, detectionMetric] = localPilotResidualChannelMetrics(rx, Hest)
@@ -4859,11 +4836,12 @@ end
 function selectedSet = localResolveBeamSetFromPMI(cfg, metrics, nTx, beamCount)
 selectedSet = [];
 pmi = double(sixgr.util.structGet(metrics, "PMI", NaN));
-if ~isfinite(pmi)
+ri = double(sixgr.util.structGet(metrics, "RI", NaN));
+if ~isfinite(pmi) || ~(isfinite(ri) && ri >= 1)
     return;
 end
 
-nLayers = localResolveLayerCount(cfg, metrics);
+nLayers = round(ri);
 codebookMode = string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo"));
 try
     candidates = sixgr.phy.dl.pmiCodebookCandidates(cfg, nLayers, nTx, "Mode", codebookMode);

@@ -1,0 +1,195 @@
+{
+  "SchemaVersion": "PUSCHIndependentVectorManifest/v1",
+  "Generator": "generate_pusch_independent_vectors.py",
+  "GeneratorSHA256": "b33d3fba1fcfe4f1992199f56117b522a8f0d69d159205f9224fe6a90f36a0c4",
+  "NoMATLABUsed": true,
+  "ScopeWarning": "Bounded floor only; broad DMRS/PT-RS/UCI/LDPC/codebook tables require additional independent vectors.",
+  "Files": [
+    {
+      "FileName": "pusch_scrambling_test_vectors.csv",
+      "SHA256": "6c6fab31311fb9d3d9ab4d2a55c08dd0599cb7dd02352ace651aac1fc9b1d113",
+      "Rows": 15,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_modulation_test_vectors.csv",
+      "SHA256": "3801f5038dada12c59401b8668f0662103a924d5c239b85419f2ee6de4ca1c92",
+      "Rows": 26,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_layer_mapping_test_vectors.csv",
+      "SHA256": "36230d91ff98ff05f0c083eb7735ad2d9dbb7dc854ad10453d6791df9ca7ced9",
+      "Rows": 12,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_coding_tbs_test_vectors.csv",
+      "SHA256": "1d21679bfee5bd64aeab366bcacd548f83619947fb3ed4bbe8ae207c6a97c2ad",
+      "Rows": 23,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_tb_crc_test_vectors.csv",
+      "SHA256": "8c412d913e0ece6de918a43d5ef30ac31bf1ed71592756fb28de17c799373699",
+      "Rows": 18,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_scheduling_assignment_test_vectors.csv",
+      "SHA256": "6c2c2636e270718cda2e5035baafb512f0c828a2ce807aa1e238a54b0a6a2290",
+      "Rows": 26,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_uci_multiplex_test_vectors.csv",
+      "SHA256": "0379e37159fdc09d21ce8d0ee23e007fa6164a14b02d4c41f61e5494e0601d46",
+      "Rows": 34,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_dmrs_test_vectors.csv",
+      "SHA256": "d6fb8cc08288dae511e9d2798f57bbd17bb2bfd76532477fa32af5136274e19c",
+      "Rows": 84,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_ptrs_test_vectors.csv",
+      "SHA256": "7f5bdbb91ce7441815df0a28d4cb0c393ffb435efaa9730a383630c028e6703d",
+      "Rows": 60,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_transform_precoding_test_vectors.csv",
+      "SHA256": "96a86bb60c0899e4504146dda09790ceedb6a2e0e6df43cc46314262aeca70b7",
+      "Rows": 14,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_frequency_hopping_test_vectors.csv",
+      "SHA256": "050cef48dc5997f61c060f98fb4388038b487091cc15c9b52ed351cbf5288e26",
+      "Rows": 27,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_srs_precoder_test_vectors.csv",
+      "SHA256": "6b3f33a9fdb771b325093d9f78967e991cd7fc7ddb72b12038f9dbebe91c8fe4",
+      "Rows": 20,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_precoding_application_test_vectors.csv",
+      "SHA256": "385ba5458b73fa4d044491b7bde3034001e62ac03b8369bce5092da07ec9ee72",
+      "Rows": 39,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_power_control_test_vectors.csv",
+      "SHA256": "5b0f5e7c06d67e538c69d41c17221ce7444a8e9f37b049d43ca36a1de042b857",
+      "Rows": 33,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_harq_test_vectors.csv",
+      "SHA256": "0b0468114ec026edcce68de68ce8cce5c8afa4a7b8b5773d468e10d98f858be1",
+      "Rows": 21,
+      "Role": "input"
+    },
+    {
+      "FileName": "pusch_declared_coverage_matrix.csv",
+      "SHA256": "e7556caf72d1cbd9e067c24eb3a0a28210a4c99c71c87219bb5d327e37d64d35",
+      "Rows": 35,
+      "Role": "input"
+    },
+    {
+      "FileName": "expected_pusch_scrambling_vectors.csv",
+      "SHA256": "3bba3539cb702f785d1aa98b938f4d97bb4f61a32a7fa63941e0825530ebe7a5",
+      "Rows": 15,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_modulation_vectors.csv",
+      "SHA256": "a43f6d9cfda4d204a94ee34e0b535dff6066a914e2629a735c322b7ea7acccb4",
+      "Rows": 26,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_layer_mapping.csv",
+      "SHA256": "3c4a986e85ffb0f404bb5f2f4e3aa64bd222b3ab9d16f391cae45cd8303d6494",
+      "Rows": 40,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_tbs_basegraph.csv",
+      "SHA256": "eb741e76a2092279947bb1b60e3469921c6eb844ee62cf029a6bfa0f5f244818",
+      "Rows": 23,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_tb_crc_vectors.csv",
+      "SHA256": "164df53458a7f37853943a032d3d59682be5aaf2db62f6e15e1e18d30ee265a8",
+      "Rows": 18,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_assignment_resolution.csv",
+      "SHA256": "2da1270913d8b5077d8f5ac81636dc211aedf0217ceb828c6cd75c95dd7fdc1f",
+      "Rows": 26,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_uci_owner_and_budget.csv",
+      "SHA256": "c66fdcdf5c682b3a3f313f53d5c018d7ca53176b4e80c727840fc483818c9b2f",
+      "Rows": 34,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_dmrs_validation_floor.csv",
+      "SHA256": "90520c8a5df9082b448e735a26caf9f1d565ed0a43e19e26fed2ba06b888ed9a",
+      "Rows": 84,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_ptrs_presence.csv",
+      "SHA256": "0663c9d7aedc983ff0e2a6128f455128c8c05da0f8a05df37fa9de0145f7c5d2",
+      "Rows": 60,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_transform_dft_vectors.csv",
+      "SHA256": "8864220c17d0fbafda8bbacd106d8783db9431d54514f09d79c13e748d9d9445",
+      "Rows": 14,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_hop_plans.csv",
+      "SHA256": "8d31dbc669154059d255cefb7d690e580e3ae362c245827afdd41fe460c03207",
+      "Rows": 27,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_srs_precoder_decisions.csv",
+      "SHA256": "384b095020426ee929dc8fbba62290a9a618fb31c5c81ea54fff1808c25e56a8",
+      "Rows": 20,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_precoding_application.csv",
+      "SHA256": "0d37ddbc6f32e6e37a6d0109410427a7abe7869a976d45d63a578263b3e198a6",
+      "Rows": 39,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_power_control.csv",
+      "SHA256": "c51b63ceb58e4bd58e581f92a6cb28232e0288045e17d759b9e0220cb7cd267d",
+      "Rows": 33,
+      "Role": "bounded_independent_expected"
+    },
+    {
+      "FileName": "expected_pusch_harq_transitions.csv",
+      "SHA256": "a0b50f4f2cca36605dc9ca27502d36e1a3f57e44ca75bc7c75ea80f192525abb",
+      "Rows": 21,
+      "Role": "bounded_independent_expected"
+    }
+  ]
+}

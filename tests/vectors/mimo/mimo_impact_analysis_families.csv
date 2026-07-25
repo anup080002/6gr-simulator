@@ -1,0 +1,65 @@
+FamilyID,Title,Wave,FactorName,BaselineValue,TreatmentValue,PrimaryMetrics,Implementability,RequiredDesign
+F01,Type-I single-panel codebook versus compact DFT,A,codebook_engine,compact_dft,exact_typeI,PMI accuracy|BLER|goodput,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F02,Type-I rank breadth 1-8,A,rank,1,8,throughput|BLER|condition,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F03,Codebook subset restriction,A,subset_restriction,disabled,enabled,search complexity|PMI accuracy,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F04,Panel geometry mismatch,A,panel_geometry,correct,inferred_square,array gain|PMI errors,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F05,Polarization and XPR,A,polarization_model,co-polar,dual-polar,rank|SINR|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F06,Port mapping permutation,A,port_mapping,correct,permuted,EVM|BLER|port leakage,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F07,RI objective SVD versus goodput,A,ri_objective,svd_threshold,goodput,RI accuracy|goodput,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F08,PMI objective gain versus post-EQ MI,A,pmi_objective,frobenius_gain,posteq_mi,PMI|SINR|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F09,Wideband versus subband PMI,A,csi_granularity,wideband,subband,goodput|feedback bits,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F10,PRG precoding,A,precoder_granularity,wideband,PRG,SINR|BLER|runtime,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F11,CSI Part1/Part2 exact versus custom,A,csi_serialization,custom10bit,exact,bit errors|scheduler decisions,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F12,CSI report omission priority,A,part2_capacity,full,constrained,omission|goodput,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F13,CSI delay,A,csi_age_slots,0,8,PMI age loss|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F14,CSI measurement noise,A,csi_measurement_snr,20,0,RI/PMI accuracy,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F15,CSI-IM interference measurement,A,interference_measurement,none,CSI-IM,CQI calibration|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F16,CQI calibration,A,cqi_mapping,heuristic,calibrated,BLER target|goodput,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F17,High-rank DL,A,dl_rank,2,8,throughput|per-layer SINR,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F18,High-rank UL,B,ul_rank,1,4,throughput|BLER|power,internal_integration,paired_same_seed_channel_noise_payload
+F19,Two codewords,A,codewords,1,2,goodput|HARQ independence,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F20,SRS-derived TPMI authority,B,ul_precoder_source,configured,measured_srs,SINR|TPMI accuracy,internal_integration,paired_same_seed_channel_noise_payload
+F21,SRS sounding bandwidth,B,srs_bandwidth,narrow,full,TPMI|frequency selectivity,internal_integration,paired_same_seed_channel_noise_payload
+F22,SRS age,B,srs_age,0,16,UL precoder loss,internal_integration,paired_same_seed_channel_noise_payload
+F23,Reciprocity calibration,B,reciprocity,uncalibrated,calibrated,DL beam gain|EVM,internal_integration,paired_same_seed_channel_noise_payload
+F24,Covariance sample count,A,cov_samples,4,128,PSD|IRC gain,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F25,Covariance age,A,cov_age,0,16,IRC loss|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F26,Covariance granularity,A,cov_granularity,wideband,per_PRB,IRC SINR|runtime,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F27,Covariance shrinkage,A,shrinkage,none,LedoitWolf,condition|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F28,Receiver MMSE versus IRC,A,receiver,MMSE,IRC,SINR|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F29,Strict IRC no fallback,A,missing_covariance,fallback_MMSE,strict_failure,false pass prevention,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F30,ZF versus MMSE,A,receiver,ZF,MMSE,SINR|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F31,MU-MIMO 2 UE,B,mu_users,1,2,sum rate|per UE BLER,internal_integration,paired_same_seed_channel_noise_payload
+F32,MU-MIMO 4 UE,B,mu_users,2,4,sum rate|fairness|runtime,internal_integration,paired_same_seed_channel_noise_payload
+F33,MU angular separation,B,angular_separation,5,60,condition|sum rate,internal_integration,paired_same_seed_channel_noise_payload
+F34,MU DM-RS collision,B,dmrs_identity,orthogonal,collision,false decode|BLER,internal_integration,paired_same_seed_channel_noise_payload
+F35,MU near-far power,B,power_delta_db,0,20,weak UE BLER|IRC,internal_integration,paired_same_seed_channel_noise_payload
+F36,MU scheduler objective,B,scheduler,channel_gain,weighted_sum_rate,fairness|goodput,internal_integration,paired_same_seed_channel_noise_payload
+F37,NCJT two-TRP,C,trp_mode,single,NCJT,coverage|BLER,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F38,CJT perfect coherence,C,trp_mode,NCJT,CJT,array gain|BLER,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F39,CJT phase mismatch,C,phase_error_deg,0,45,coherent loss,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F40,CJT timing mismatch,C,timing_fraction_cp,0,0.25,EVM|BLER,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F41,TRP power imbalance,C,trp_power_delta_db,0,10,combining gain,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F42,TRP CSI ownership,C,csi_owner,per_trp,shared_wrong,PMI|BLER,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F43,TCI activation delay,B,tci_delay_slots,0,4,beam application loss,internal_integration,paired_same_seed_channel_noise_payload
+F44,QCL source mismatch,B,qcl_state,correct,wrong,channel estimation|BLER,internal_integration,paired_same_seed_channel_noise_payload
+F45,P1 beam acquisition,B,beam_selection,geometry_oracle,measured_ssb,selection accuracy,internal_integration,paired_same_seed_channel_noise_payload
+F46,P2 beam refinement,B,refinement,disabled,CSI-RS,beam gain|overhead,internal_integration,paired_same_seed_channel_noise_payload
+F47,P3 UL beam selection,B,ul_beam,configured,measured_srs,UL SINR,internal_integration,paired_same_seed_channel_noise_payload
+F48,Beam mobility tracking,C,mobility_kmh,3,120,outage|switch rate,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F49,Beam blockage recovery,C,blockage,none,event,recovery latency,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F50,Beam report delay,B,beam_report_delay,0,8,outage|wrong beam,internal_integration,paired_same_seed_channel_noise_payload
+F51,Hybrid RF-chain count,C,rf_chains,1,4,rank|goodput|power,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F52,Hybrid phase quantization,C,phase_bits,2,6,array gain|EVM,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F53,Hybrid beam squint,C,bandwidth_mhz,100,800,edge loss|BLER,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F54,Hybrid calibration error,C,calibration_error_deg,0,15,array gain|EVM,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F55,Analog versus digital beam search,C,beam_search,hierarchical,exhaustive,training overhead|gain,adjacent_subsystem_required,paired_same_seed_channel_noise_payload
+F56,No rank collapse gate,A,rank_gate,absent,enabled,hidden collapse detections,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F57,No port collapse gate,A,port_gate,absent,enabled,mapping errors,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F58,Power normalization,A,w_normalization,column_mutation,exact_matrix,power|EVM,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F59,Wrong RNTI/resource identity,A,identity,correct,wrong,false decode,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F60,No-signal false beam/CSI decision,A,signal,present,absent,false alarm bound,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F61,Runtime scaling ports/rank,A,complexity,4p_r1,32p_r8,runtime|memory,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F62,Serial versus parallel reproducibility,A,execution,serial,parallel,hash equality,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F63,Closed-loop versus open-loop MIMO,A,loop,open,closed,goodput|BLER,direct_mimo_phase,paired_same_seed_channel_noise_payload
+F64,End-to-end mobility MU multi-TRP beam loop,C,scenario,single_user_static,integrated,goodput|outage|latency,adjacent_subsystem_required,paired_same_seed_channel_noise_payload

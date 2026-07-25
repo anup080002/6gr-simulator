@@ -1,0 +1,12 @@
+ImageFile,SourceCSV,ExpectedXLabel,ExpectedYLabel,ExpectedTitleToken,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+pusch_resource_grid_ownership.png,pusch_resource_ownership.csv,PRB / subcarrier,OFDM symbol,PUSCH resource ownership,1,1,100,900,600
+pusch_dmrs_ptrs_hop_map.png,pusch_dmrs_matrix.csv|pusch_ptrs_matrix.csv|pusch_frequency_hopping.csv,Subcarrier / PRB,OFDM symbol,PUSCH DM-RS PT-RS hopping,1,3,30,900,600
+pusch_uci_bit_allocation.png,pusch_uci_multiplexing.csv,Coded-bit position,Payload owner,UCI multiplexing,1,3,20,900,600
+pusch_codeword_layer_mapping.png,pusch_codeword_layer_map.csv,Layer,Mapped symbols,PUSCH codeword-to-layer mapping,1,1,8,900,600
+pusch_transform_precoding_spectrum.png,pusch_transform_precoding.csv,Subcarrier,Magnitude / power,Transform precoding spectrum,1,2,24,900,600
+pusch_papr_ccdf.png,pusch_transform_precoding.csv,PAPR (dB),CCDF,PUSCH PAPR,1,2,20,900,600
+pusch_frequency_hop_timeline.png,pusch_frequency_hopping.csv,Slot / OFDM symbol,PRB / hop,PUSCH frequency hopping,1,2,8,900,600
+pusch_srs_tpmi_selection.png,pusch_srs_precoder_selection.csv,SRS measurement / case,RI SRI TPMI metric,SRS-derived uplink precoding,1,2,8,900,600
+pusch_power_control_convergence.png,pusch_power_control.csv,Slot / TPC command,Transmit power (dBm),PUSCH power control,1,2,8,900,600
+pusch_bler_vs_snr.png,pusch_bler_curve.csv,SNR (dB),BLER,PUSCH BLER,1,1,4,900,600
+pusch_per_layer_sinr.png,pusch_receiver_metrics.csv,Layer / operating point,Measured SINR (dB),PUSCH per-layer SINR,1,1,8,900,600

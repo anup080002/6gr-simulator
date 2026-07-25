@@ -1,0 +1,174 @@
+{
+  "ManifestVersion": 2,
+  "GeneratedWithoutMATLAB": true,
+  "Files": [
+    {
+      "FileName": "pdcch_dci_context_test_vectors.csv",
+      "SHA256": "4863ea6a4cbca98c493736ca5b01f05a131607272be7391e7c6aefcae6a1f57f",
+      "RowCount": 94,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_dci_size_alignment_floor.csv",
+      "SHA256": "76a3d940f455a2c652744c158b42dd3e5a2b67bd49e926b99167c5ba41385e31",
+      "RowCount": 28,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_rnti_procedure_test_vectors.csv",
+      "SHA256": "e8deca26aafae377e83844bb10db213c24e7c6a70687407b3d9fcc725b0a5984",
+      "RowCount": 27,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_crc_vectors.csv",
+      "SHA256": "6be1f1416ae654b1adb11feeb1b9d48561d0a78e842ad7cc4ae4863a475ec612",
+      "RowCount": 40,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_scrambling_vectors.csv",
+      "SHA256": "9e6783ec1b02375a82afe735a11f24c01e24072f8f8afea8b0e9844cd386bf9d",
+      "RowCount": 15,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_qpsk_vectors.csv",
+      "SHA256": "848064aadf816eadfdc88d2d67b3771a6c5a55e18ef5e0f25011033eb50ee475",
+      "RowCount": 4,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_dmrs_test_vectors.csv",
+      "SHA256": "eb283bf4973a8046698c33eb0d2eee4e2b15dfaf84bace801dee3466be883596",
+      "RowCount": 29,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_dmrs_vectors.csv",
+      "SHA256": "f1a33af6bf4d99e0e8790f0315ace4570dd9d19d723ab6a9e831105177766dc3",
+      "RowCount": 24,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_coreset_mapping_test_vectors.csv",
+      "SHA256": "25294c8589f373c5dbb8eb3c18100b12ba8a2704433b7999f44db5d7e4ac352f",
+      "RowCount": 19,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_coreset_reg_cce_mapping.csv",
+      "SHA256": "07e26266cfe1fbd7f486aa6d8c08ef401c1f21463760799054ed7560051bd878",
+      "RowCount": 176,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_candidate_enumeration_test_vectors.csv",
+      "SHA256": "cd4f670c1ac2879ad7d513ceb7fd1f9efb8942b5d38ff71f6394adc971b23a58",
+      "RowCount": 55,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_candidate_enumeration.csv",
+      "SHA256": "369f44b68deb33880ea6d2b0f496593d2a65675022a2b18dd1e9ed9b62d216bf",
+      "RowCount": 48,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_monitoring_occasion_test_vectors.csv",
+      "SHA256": "cc64ced08f37d7c0302f9fc96cf631a53e79cff93bf7f0b57bb3e7e4c01a5edb",
+      "RowCount": 11,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_monitoring_occasions.csv",
+      "SHA256": "20d00ff4ea235b1db8a1ae23387c284e67abae244c179e31a8dbb655fefc9cb8",
+      "RowCount": 7,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_type0_css_test_vectors.csv",
+      "SHA256": "019502afd21de582f7107bd2a8fda88a90d28cbedf8a3752f8780e50b717f4df",
+      "RowCount": 268,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_type0_monitoring_tables.csv",
+      "SHA256": "d52e391a37ffbc22e01b99f03110e370d18ec609fbc36139b265a912f1b6608b",
+      "RowCount": 64,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_type0_pattern23_monitoring_test_vectors.csv",
+      "SHA256": "212dbbe9460558606befe535231112d69e0d94b96103e7f0305bc710b32fdf5e",
+      "RowCount": 80,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_type0_gscn_offset_vectors.csv",
+      "SHA256": "db8aed9681c27b215c2bd0a3d40679f963c1cb05ca4ca3a4474d4c752bb5f702",
+      "RowCount": 40,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_blind_detection_test_vectors.csv",
+      "SHA256": "7bc3d6326f939646a1eb3ac19d97598db35ab1f92572340a15ec2fb83b96d185",
+      "RowCount": 151,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_bwp_crosscarrier_beam_test_vectors.csv",
+      "SHA256": "36021de9799419a88dffcc82c6c3a8bedf292b44517c4310c06969071cb866a6",
+      "RowCount": 24,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_grant_authority_test_vectors.csv",
+      "SHA256": "0059200eacb3af9a4afbdff193b51dd14036b134f2ce8c1627a1113f42536c06",
+      "RowCount": 32,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_grant_authority.csv",
+      "SHA256": "219df6e14b2b636875c2945f7f7c16591c639ec6c97c87c6bdd31db275b5bbba",
+      "RowCount": 32,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "pdcch_declared_coverage_matrix.csv",
+      "SHA256": "7d0ed3f910ed8f9d036309e54edc75e5a7af295d680c43368c3669f2a87e59d0",
+      "RowCount": 60,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    },
+    {
+      "FileName": "expected_pdcch_impact_analytical_floor.csv",
+      "SHA256": "dbe45ea5e5149a6de290c54c7772282afa5f6da9626409c5c14ec4121c97165a",
+      "RowCount": 41,
+      "GenerationClass": "pure_python_no_matlab",
+      "NormativeScope": "bounded_independent_floor_or_input_matrix"
+    }
+  ]
+}

@@ -1,0 +1,269 @@
+VectorID,Table,FR,SSBSCSkHz,PDCCHSCSkHz,MinimumChannelBandwidthMHz,SharedSpectrum,ControlResourceSetZero,MultiplexingPattern,CORESETRBs,CORESETSymbols,KSSBClass,OffsetRule,OffsetRB,ExpectedOutcome,ExpectedError,IndependentMethod,Status
+T000001,13-0,FR1,15,15,3; channel=3|5,false,0,1,12,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000002,13-0,FR1,15,15,3; channel=3|5,false,1,1,12,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000003,13-0,FR1,15,15,3; channel=3|5,false,2,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000004,13-0,FR1,15,15,3; channel=3|5,false,3,1,24,2,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000005,13-0,FR1,15,15,3; channel=3|5,false,4,1,24,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000006,13-0,FR1,15,15,3; channel=3|5,false,5,1,24,3,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000007,13-0,FR1,15,15,3; channel=3|5,false,6,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000008,13-0,FR1,15,15,3; channel=3|5,false,7,1,24,2,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000009,13-0,FR1,15,15,3; channel=3|5,false,8,1,24,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000010,13-0,FR1,15,15,3; channel=3|5,false,9,1,24,3,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000011,13-0,FR1,15,15,3; channel=3|5,false,10,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000012,13-0,FR1,15,15,3; channel=3|5,false,11,1,24,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000013,13-0,FR1,15,15,3; channel=3|5,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000014,13-0,FR1,15,15,3; channel=3|5,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000015,13-0,FR1,15,15,3; channel=3|5,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000016,13-0,FR1,15,15,3; channel=3|5,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000017,13-1,FR1,15,15,5|10; or min=3 channel>3,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000018,13-1,FR1,15,15,5|10; or min=3 channel>3,false,1,1,24,2,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000019,13-1,FR1,15,15,5|10; or min=3 channel>3,false,2,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000020,13-1,FR1,15,15,5|10; or min=3 channel>3,false,3,1,24,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000021,13-1,FR1,15,15,5|10; or min=3 channel>3,false,4,1,24,3,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000022,13-1,FR1,15,15,5|10; or min=3 channel>3,false,5,1,24,3,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000023,13-1,FR1,15,15,5|10; or min=3 channel>3,false,6,1,48,1,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000024,13-1,FR1,15,15,5|10; or min=3 channel>3,false,7,1,48,1,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000025,13-1,FR1,15,15,5|10; or min=3 channel>3,false,8,1,48,2,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000026,13-1,FR1,15,15,5|10; or min=3 channel>3,false,9,1,48,2,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000027,13-1,FR1,15,15,5|10; or min=3 channel>3,false,10,1,48,3,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000028,13-1,FR1,15,15,5|10; or min=3 channel>3,false,11,1,48,3,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000029,13-1,FR1,15,15,5|10; or min=3 channel>3,false,12,1,96,1,any,38,38,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000030,13-1,FR1,15,15,5|10; or min=3 channel>3,false,13,1,96,2,any,38,38,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000031,13-1,FR1,15,15,5|10; or min=3 channel>3,false,14,1,96,3,any,38,38,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000032,13-1,FR1,15,15,5|10; or min=3 channel>3,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000033,13-1A,FR1,15,15,shared-spectrum,true,0,1,96,1,any,10,10,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000034,13-1A,FR1,15,15,shared-spectrum,true,1,1,96,1,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000035,13-1A,FR1,15,15,shared-spectrum,true,2,1,96,1,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000036,13-1A,FR1,15,15,shared-spectrum,true,3,1,96,1,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000037,13-1A,FR1,15,15,shared-spectrum,true,4,1,96,2,any,10,10,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000038,13-1A,FR1,15,15,shared-spectrum,true,5,1,96,2,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000039,13-1A,FR1,15,15,shared-spectrum,true,6,1,96,2,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000040,13-1A,FR1,15,15,shared-spectrum,true,7,1,96,2,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000041,13-1A,FR1,15,15,shared-spectrum,true,8,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000042,13-1A,FR1,15,15,shared-spectrum,true,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000043,13-1A,FR1,15,15,shared-spectrum,true,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000044,13-1A,FR1,15,15,shared-spectrum,true,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000045,13-1A,FR1,15,15,shared-spectrum,true,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000046,13-1A,FR1,15,15,shared-spectrum,true,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000047,13-1A,FR1,15,15,shared-spectrum,true,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000048,13-1A,FR1,15,15,shared-spectrum,true,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000049,13-2,FR1,15,30,5|10,false,0,1,24,2,any,5,5,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000050,13-2,FR1,15,30,5|10,false,1,1,24,2,any,6,6,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000051,13-2,FR1,15,30,5|10,false,2,1,24,2,any,7,7,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000052,13-2,FR1,15,30,5|10,false,3,1,24,2,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000053,13-2,FR1,15,30,5|10,false,4,1,24,3,any,5,5,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000054,13-2,FR1,15,30,5|10,false,5,1,24,3,any,6,6,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000055,13-2,FR1,15,30,5|10,false,6,1,24,3,any,7,7,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000056,13-2,FR1,15,30,5|10,false,7,1,24,3,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000057,13-2,FR1,15,30,5|10,false,8,1,48,1,any,18,18,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000058,13-2,FR1,15,30,5|10,false,9,1,48,1,any,20,20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000059,13-2,FR1,15,30,5|10,false,10,1,48,2,any,18,18,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000060,13-2,FR1,15,30,5|10,false,11,1,48,2,any,20,20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000061,13-2,FR1,15,30,5|10,false,12,1,48,3,any,18,18,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000062,13-2,FR1,15,30,5|10,false,13,1,48,3,any,20,20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000063,13-2,FR1,15,30,5|10,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000064,13-2,FR1,15,30,5|10,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000065,13-3,FR1,30,15,5|10; excluding note17 bands,false,0,1,48,1,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000066,13-3,FR1,30,15,5|10; excluding note17 bands,false,1,1,48,1,any,6,6,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000067,13-3,FR1,30,15,5|10; excluding note17 bands,false,2,1,48,2,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000068,13-3,FR1,30,15,5|10; excluding note17 bands,false,3,1,48,2,any,6,6,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000069,13-3,FR1,30,15,5|10; excluding note17 bands,false,4,1,48,3,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000070,13-3,FR1,30,15,5|10; excluding note17 bands,false,5,1,48,3,any,6,6,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000071,13-3,FR1,30,15,5|10; excluding note17 bands,false,6,1,96,1,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000072,13-3,FR1,30,15,5|10; excluding note17 bands,false,7,1,96,2,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000073,13-3,FR1,30,15,5|10; excluding note17 bands,false,8,1,96,3,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000074,13-3,FR1,30,15,5|10; excluding note17 bands,false,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000075,13-3,FR1,30,15,5|10; excluding note17 bands,false,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000076,13-3,FR1,30,15,5|10; excluding note17 bands,false,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000077,13-3,FR1,30,15,5|10; excluding note17 bands,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000078,13-3,FR1,30,15,5|10; excluding note17 bands,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000079,13-3,FR1,30,15,5|10; excluding note17 bands,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000080,13-3,FR1,30,15,5|10; excluding note17 bands,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000081,13-4,FR1,30,30,5|10; excluding note17 bands,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000082,13-4,FR1,30,30,5|10; excluding note17 bands,false,1,1,24,2,any,1,1,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000083,13-4,FR1,30,30,5|10; excluding note17 bands,false,2,1,24,2,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000084,13-4,FR1,30,30,5|10; excluding note17 bands,false,3,1,24,2,any,3,3,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000085,13-4,FR1,30,30,5|10; excluding note17 bands,false,4,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000086,13-4,FR1,30,30,5|10; excluding note17 bands,false,5,1,24,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000087,13-4,FR1,30,30,5|10; excluding note17 bands,false,6,1,24,3,any,1,1,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000088,13-4,FR1,30,30,5|10; excluding note17 bands,false,7,1,24,3,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000089,13-4,FR1,30,30,5|10; excluding note17 bands,false,8,1,24,3,any,3,3,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000090,13-4,FR1,30,30,5|10; excluding note17 bands,false,9,1,24,3,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000091,13-4,FR1,30,30,5|10; excluding note17 bands,false,10,1,48,1,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000092,13-4,FR1,30,30,5|10; excluding note17 bands,false,11,1,48,1,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000093,13-4,FR1,30,30,5|10; excluding note17 bands,false,12,1,48,1,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000094,13-4,FR1,30,30,5|10; excluding note17 bands,false,13,1,48,2,any,12,12,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000095,13-4,FR1,30,30,5|10; excluding note17 bands,false,14,1,48,2,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000096,13-4,FR1,30,30,5|10; excluding note17 bands,false,15,1,48,2,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000097,13-4A,FR1,30,30,shared-spectrum,true,0,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000098,13-4A,FR1,30,30,shared-spectrum,true,1,1,48,1,any,1,1,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000099,13-4A,FR1,30,30,shared-spectrum,true,2,1,48,1,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000100,13-4A,FR1,30,30,shared-spectrum,true,3,1,48,1,any,3,3,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000101,13-4A,FR1,30,30,shared-spectrum,true,4,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000102,13-4A,FR1,30,30,shared-spectrum,true,5,1,48,2,any,1,1,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000103,13-4A,FR1,30,30,shared-spectrum,true,6,1,48,2,any,2,2,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000104,13-4A,FR1,30,30,shared-spectrum,true,7,1,48,2,any,3,3,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000105,13-4A,FR1,30,30,shared-spectrum,true,8,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000106,13-4A,FR1,30,30,shared-spectrum,true,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000107,13-4A,FR1,30,30,shared-spectrum,true,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000108,13-4A,FR1,30,30,shared-spectrum,true,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000109,13-4A,FR1,30,30,shared-spectrum,true,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000110,13-4A,FR1,30,30,shared-spectrum,true,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000111,13-4A,FR1,30,30,shared-spectrum,true,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000112,13-4A,FR1,30,30,shared-spectrum,true,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000113,13-5,FR1,30,15,40; or note17 bands,false,0,1,48,1,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000114,13-5,FR1,30,15,40; or note17 bands,false,1,1,48,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000115,13-5,FR1,30,15,40; or note17 bands,false,2,1,48,3,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000116,13-5,FR1,30,15,40; or note17 bands,false,3,1,96,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000117,13-5,FR1,30,15,40; or note17 bands,false,4,1,96,1,any,56,56,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000118,13-5,FR1,30,15,40; or note17 bands,false,5,1,96,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000119,13-5,FR1,30,15,40; or note17 bands,false,6,1,96,2,any,56,56,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000120,13-5,FR1,30,15,40; or note17 bands,false,7,1,96,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000121,13-5,FR1,30,15,40; or note17 bands,false,8,1,96,3,any,56,56,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000122,13-5,FR1,30,15,40; or note17 bands,false,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000123,13-5,FR1,30,15,40; or note17 bands,false,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000124,13-5,FR1,30,15,40; or note17 bands,false,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000125,13-5,FR1,30,15,40; or note17 bands,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000126,13-5,FR1,30,15,40; or note17 bands,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000127,13-5,FR1,30,15,40; or note17 bands,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000128,13-5,FR1,30,15,40; or note17 bands,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000129,13-6,FR1,30,30,40; or note17 bands,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000130,13-6,FR1,30,30,40; or note17 bands,false,1,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000131,13-6,FR1,30,30,40; or note17 bands,false,2,1,24,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000132,13-6,FR1,30,30,40; or note17 bands,false,3,1,24,3,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000133,13-6,FR1,30,30,40; or note17 bands,false,4,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000134,13-6,FR1,30,30,40; or note17 bands,false,5,1,48,1,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000135,13-6,FR1,30,30,40; or note17 bands,false,6,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000136,13-6,FR1,30,30,40; or note17 bands,false,7,1,48,2,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000137,13-6,FR1,30,30,40; or note17 bands,false,8,1,48,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000138,13-6,FR1,30,30,40; or note17 bands,false,9,1,48,3,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000139,13-6,FR1,30,30,40; or note17 bands,false,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000140,13-6,FR1,30,30,40; or note17 bands,false,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000141,13-6,FR1,30,30,40; or note17 bands,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000142,13-6,FR1,30,30,40; or note17 bands,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000143,13-6,FR1,30,30,40; or note17 bands,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000144,13-6,FR1,30,30,40; or note17 bands,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000145,13-7,FR2-1,120,60,FR2-1 profile,false,0,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000146,13-7,FR2-1,120,60,FR2-1 profile,false,1,1,48,1,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000147,13-7,FR2-1,120,60,FR2-1 profile,false,2,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000148,13-7,FR2-1,120,60,FR2-1 profile,false,3,1,48,2,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000149,13-7,FR2-1,120,60,FR2-1 profile,false,4,1,48,3,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000150,13-7,FR2-1,120,60,FR2-1 profile,false,5,1,48,3,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000151,13-7,FR2-1,120,60,FR2-1 profile,false,6,1,96,1,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000152,13-7,FR2-1,120,60,FR2-1 profile,false,7,1,96,2,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000153,13-7,FR2-1,120,60,FR2-1 profile,false,8,2,48,1,zero,-41_if_kSSB_eq0,-41,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000154,13-7,FR2-1,120,60,FR2-1 profile,false,8,2,48,1,positive,-42_if_kSSB_gt0,-42,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000155,13-7,FR2-1,120,60,FR2-1 profile,false,9,2,48,1,any,49,49,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000156,13-7,FR2-1,120,60,FR2-1 profile,false,10,2,96,1,zero,-41_if_kSSB_eq0,-41,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000157,13-7,FR2-1,120,60,FR2-1 profile,false,10,2,96,1,positive,-42_if_kSSB_gt0,-42,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000158,13-7,FR2-1,120,60,FR2-1 profile,false,11,2,96,1,any,97,97,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000159,13-7,FR2-1,120,60,FR2-1 profile,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000160,13-7,FR2-1,120,60,FR2-1 profile,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000161,13-7,FR2-1,120,60,FR2-1 profile,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000162,13-7,FR2-1,120,60,FR2-1 profile,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000163,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000164,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,1,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000165,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,2,1,48,1,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000166,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,3,1,48,2,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000167,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,4,3,24,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000168,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,4,3,24,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000169,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,5,3,24,2,any,24,24,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000170,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,6,3,48,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000171,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,6,3,48,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000172,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,7,3,48,2,any,48,48,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000173,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,8,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000174,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000175,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000176,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000177,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000178,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000179,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000180,13-8,FR2-1|FR2-NTN,120,120,FR2-1 or FR2-NTN,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000181,13-9,FR2-1,240,60,FR2-1 profile,false,0,1,96,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000182,13-9,FR2-1,240,60,FR2-1 profile,false,1,1,96,1,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000183,13-9,FR2-1,240,60,FR2-1 profile,false,2,1,96,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000184,13-9,FR2-1,240,60,FR2-1 profile,false,3,1,96,2,any,16,16,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000185,13-9,FR2-1,240,60,FR2-1 profile,false,4,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000186,13-9,FR2-1,240,60,FR2-1 profile,false,5,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000187,13-9,FR2-1,240,60,FR2-1 profile,false,6,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000188,13-9,FR2-1,240,60,FR2-1 profile,false,7,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000189,13-9,FR2-1,240,60,FR2-1 profile,false,8,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000190,13-9,FR2-1,240,60,FR2-1 profile,false,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000191,13-9,FR2-1,240,60,FR2-1 profile,false,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000192,13-9,FR2-1,240,60,FR2-1 profile,false,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000193,13-9,FR2-1,240,60,FR2-1 profile,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000194,13-9,FR2-1,240,60,FR2-1 profile,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000195,13-9,FR2-1,240,60,FR2-1 profile,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000196,13-9,FR2-1,240,60,FR2-1 profile,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000197,13-10,FR2-1,240,120,FR2-1 profile,false,0,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000198,13-10,FR2-1,240,120,FR2-1 profile,false,1,1,48,1,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000199,13-10,FR2-1,240,120,FR2-1 profile,false,2,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000200,13-10,FR2-1,240,120,FR2-1 profile,false,3,1,48,2,any,8,8,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000201,13-10,FR2-1,240,120,FR2-1 profile,false,4,2,24,1,zero,-41_if_kSSB_eq0,-41,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000202,13-10,FR2-1,240,120,FR2-1 profile,false,4,2,24,1,positive,-42_if_kSSB_gt0,-42,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000203,13-10,FR2-1,240,120,FR2-1 profile,false,5,2,24,1,any,25,25,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000204,13-10,FR2-1,240,120,FR2-1 profile,false,6,2,48,1,zero,-41_if_kSSB_eq0,-41,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000205,13-10,FR2-1,240,120,FR2-1 profile,false,6,2,48,1,positive,-42_if_kSSB_gt0,-42,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000206,13-10,FR2-1,240,120,FR2-1 profile,false,7,2,48,1,any,49,49,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000207,13-10,FR2-1,240,120,FR2-1 profile,false,8,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000208,13-10,FR2-1,240,120,FR2-1 profile,false,9,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000209,13-10,FR2-1,240,120,FR2-1 profile,false,10,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000210,13-10,FR2-1,240,120,FR2-1 profile,false,11,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000211,13-10,FR2-1,240,120,FR2-1 profile,false,12,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000212,13-10,FR2-1,240,120,FR2-1 profile,false,13,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000213,13-10,FR2-1,240,120,FR2-1 profile,false,14,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000214,13-10,FR2-1,240,120,FR2-1 profile,false,15,,,,any,reserved,,FAIL,sixgr:phy:pdcch:type0_reserved_index,transcribed_ts38213_v18_8_0_table,PASS
+T000215,13-10A,FR2-2,120,120,FR2-2 profile,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000216,13-10A,FR2-2,120,120,FR2-2 profile,false,1,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000217,13-10A,FR2-2,120,120,FR2-2 profile,false,2,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000218,13-10A,FR2-2,120,120,FR2-2 profile,false,3,1,48,1,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000219,13-10A,FR2-2,120,120,FR2-2 profile,false,4,1,48,1,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000220,13-10A,FR2-2,120,120,FR2-2 profile,false,5,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000221,13-10A,FR2-2,120,120,FR2-2 profile,false,6,1,48,2,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000222,13-10A,FR2-2,120,120,FR2-2 profile,false,7,1,48,2,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000223,13-10A,FR2-2,120,120,FR2-2 profile,false,8,1,96,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000224,13-10A,FR2-2,120,120,FR2-2 profile,false,9,1,96,1,any,76,76,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000225,13-10A,FR2-2,120,120,FR2-2 profile,false,10,1,96,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000226,13-10A,FR2-2,120,120,FR2-2 profile,false,11,1,96,2,any,76,76,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000227,13-10A,FR2-2,120,120,FR2-2 profile,false,12,3,24,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000228,13-10A,FR2-2,120,120,FR2-2 profile,false,12,3,24,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000229,13-10A,FR2-2,120,120,FR2-2 profile,false,13,3,24,2,any,24,24,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000230,13-10A,FR2-2,120,120,FR2-2 profile,false,14,3,48,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000231,13-10A,FR2-2,120,120,FR2-2 profile,false,14,3,48,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000232,13-10A,FR2-2,120,120,FR2-2 profile,false,15,3,48,2,any,48,48,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000233,13-10A,FR2-2,480,480,FR2-2 profile,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000234,13-10A,FR2-2,480,480,FR2-2 profile,false,1,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000235,13-10A,FR2-2,480,480,FR2-2 profile,false,2,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000236,13-10A,FR2-2,480,480,FR2-2 profile,false,3,1,48,1,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000237,13-10A,FR2-2,480,480,FR2-2 profile,false,4,1,48,1,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000238,13-10A,FR2-2,480,480,FR2-2 profile,false,5,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000239,13-10A,FR2-2,480,480,FR2-2 profile,false,6,1,48,2,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000240,13-10A,FR2-2,480,480,FR2-2 profile,false,7,1,48,2,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000241,13-10A,FR2-2,480,480,FR2-2 profile,false,8,1,96,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000242,13-10A,FR2-2,480,480,FR2-2 profile,false,9,1,96,1,any,76,76,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000243,13-10A,FR2-2,480,480,FR2-2 profile,false,10,1,96,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000244,13-10A,FR2-2,480,480,FR2-2 profile,false,11,1,96,2,any,76,76,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000245,13-10A,FR2-2,480,480,FR2-2 profile,false,12,3,24,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000246,13-10A,FR2-2,480,480,FR2-2 profile,false,12,3,24,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000247,13-10A,FR2-2,480,480,FR2-2 profile,false,13,3,24,2,any,24,24,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000248,13-10A,FR2-2,480,480,FR2-2 profile,false,14,3,48,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000249,13-10A,FR2-2,480,480,FR2-2 profile,false,14,3,48,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000250,13-10A,FR2-2,480,480,FR2-2 profile,false,15,3,48,2,any,48,48,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000251,13-10A,FR2-2,960,960,FR2-2 profile,false,0,1,24,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000252,13-10A,FR2-2,960,960,FR2-2 profile,false,1,1,24,2,any,4,4,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000253,13-10A,FR2-2,960,960,FR2-2 profile,false,2,1,48,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000254,13-10A,FR2-2,960,960,FR2-2 profile,false,3,1,48,1,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000255,13-10A,FR2-2,960,960,FR2-2 profile,false,4,1,48,1,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000256,13-10A,FR2-2,960,960,FR2-2 profile,false,5,1,48,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000257,13-10A,FR2-2,960,960,FR2-2 profile,false,6,1,48,2,any,14,14,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000258,13-10A,FR2-2,960,960,FR2-2 profile,false,7,1,48,2,any,28,28,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000259,13-10A,FR2-2,960,960,FR2-2 profile,false,8,1,96,1,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000260,13-10A,FR2-2,960,960,FR2-2 profile,false,9,1,96,1,any,76,76,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000261,13-10A,FR2-2,960,960,FR2-2 profile,false,10,1,96,2,any,0,0,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000262,13-10A,FR2-2,960,960,FR2-2 profile,false,11,1,96,2,any,76,76,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000263,13-10A,FR2-2,960,960,FR2-2 profile,false,12,3,24,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000264,13-10A,FR2-2,960,960,FR2-2 profile,false,12,3,24,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000265,13-10A,FR2-2,960,960,FR2-2 profile,false,13,3,24,2,any,24,24,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000266,13-10A,FR2-2,960,960,FR2-2 profile,false,14,3,48,2,zero,-20_if_kSSB_eq0,-20,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000267,13-10A,FR2-2,960,960,FR2-2 profile,false,14,3,48,2,positive,-21_if_kSSB_gt0,-21,PASS,,transcribed_ts38213_v18_8_0_table,PASS
+T000268,13-10A,FR2-2,960,960,FR2-2 profile,false,15,3,48,2,any,48,48,PASS,,transcribed_ts38213_v18_8_0_table,PASS

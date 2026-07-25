@@ -1,0 +1,31 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+mimo_impact_codebook_accuracy.png,mimo_impact_codebook_ri_pmi.csv,Codebook accuracy,Experiment,PMI accuracy,1,2,8,900,600
+mimo_impact_rank_scaling.png,mimo_impact_high_rank.csv,Rank scaling,Rank,Goodput [Mbps],1,2,8,900,600
+mimo_impact_subset_restriction.png,mimo_impact_codebook_ri_pmi.csv,Subset restriction,Candidate count,PMI accuracy,1,2,8,900,600
+mimo_impact_panel_geometry.png,mimo_impact_codebook_ri_pmi.csv,Panel geometry,Geometry case,Array gain [dB],1,2,8,900,600
+mimo_impact_polarization.png,mimo_impact_high_rank.csv,Polarization,XPR [dB],BLER,1,2,8,900,600
+mimo_impact_ri_objective.png,mimo_impact_codebook_ri_pmi.csv,RI objective,SNR [dB],RI accuracy,1,2,8,900,600
+mimo_impact_pmi_objective.png,mimo_impact_codebook_ri_pmi.csv,PMI objective,SNR [dB],PMI accuracy,1,2,8,900,600
+mimo_impact_wideband_subband.png,mimo_impact_csi_feedback.csv,Wideband and subband CSI,SNR [dB],Goodput [Mbps],1,2,8,900,600
+mimo_impact_csi_payload.png,mimo_impact_csi_feedback.csv,CSI payload,CSI bits,Goodput [Mbps],1,2,8,900,600
+mimo_impact_csi_age.png,mimo_impact_csi_feedback.csv,CSI age,Age [slots],BLER,1,2,8,900,600
+mimo_impact_high_rank_sinr.png,mimo_impact_high_rank.csv,High-rank SINR,Layer,SINR [dB],1,2,8,900,600
+mimo_impact_two_codewords.png,mimo_impact_high_rank.csv,Two codewords,SNR [dB],Goodput [Mbps],1,2,8,900,600
+mimo_impact_srs_tpmi.png,mimo_impact_srs_ul.csv,SRS TPMI,SRS SNR [dB],TPMI accuracy,1,2,8,900,600
+mimo_impact_srs_age.png,mimo_impact_srs_ul.csv,SRS age,Age [slots],BLER,1,2,8,900,600
+mimo_impact_covariance_samples.png,mimo_impact_covariance_receiver.csv,Covariance samples,Samples,BLER,1,2,8,900,600
+mimo_impact_covariance_age.png,mimo_impact_covariance_receiver.csv,Covariance age,Age [slots],BLER,1,2,8,900,600
+mimo_impact_irc_mmse.png,mimo_impact_covariance_receiver.csv,IRC and MMSE,Interference level [dB],BLER,1,2,8,900,600
+mimo_impact_mu_users.png,mimo_impact_mu_mimo.csv,MU-MIMO users,Number of UEs,Sum goodput [Mbps],1,2,8,900,600
+mimo_impact_mu_separation.png,mimo_impact_mu_mimo.csv,MU angular separation,Separation [deg],Goodput [Mbps],1,2,8,900,600
+mimo_impact_mu_near_far.png,mimo_impact_mu_mimo.csv,MU near far,Power delta [dB],Weak UE BLER,1,2,8,900,600
+mimo_impact_ncjt_cjt.png,mimo_impact_multitrp.csv,NCJT and CJT,Mode,BLER,1,2,8,900,600
+mimo_impact_cjt_phase.png,mimo_impact_multitrp.csv,CJT phase,Phase error [deg],Coherent gain [dB],1,2,8,900,600
+mimo_impact_cjt_timing.png,mimo_impact_multitrp.csv,CJT timing,Timing mismatch [CP fraction],BLER,1,2,8,900,600
+mimo_impact_hybrid_rfchains.png,mimo_impact_hybrid.csv,Hybrid RF chains,RF chains,Goodput [Mbps],1,2,8,900,600
+mimo_impact_hybrid_phase_bits.png,mimo_impact_hybrid.csv,Hybrid phase quantization,Phase bits,Array gain [dB],1,2,8,900,600
+mimo_impact_hybrid_squint.png,mimo_impact_hybrid.csv,Hybrid beam squint,Bandwidth [MHz],Squint loss [dB],1,2,8,900,600
+mimo_impact_beam_mobility.png,mimo_impact_beam_management.csv,Beam mobility,Speed [km/h],Outage probability,1,2,8,900,600
+mimo_impact_beam_recovery.png,mimo_impact_beam_management.csv,Beam recovery,Blockage case,Recovery latency [slots],1,2,8,900,600
+mimo_impact_runtime_scaling.png,mimo_impact_operating_points.csv,MIMO runtime scaling,Ports times rank,Runtime [ms],1,2,8,900,600
+mimo_impact_effect_forest.png,mimo_impact_pairwise_effects.csv,MIMO impact effects,Effect size,Family,1,2,8,900,600
