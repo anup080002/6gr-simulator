@@ -1,0 +1,17 @@
+ExistingPath,Action,RequiredChange,FindingIDs
++sixgr/+rf/applyRFImpairmentChain.m,REFACTOR,Delegate to TransmitterFrontEnd/ReceiverFrontEnd and RFChainState; remove aliases/defaults/linear SCO/direct EVM.,"RF-001,RF-003,RF-004,RF-005,RF-006,RF-009,RF-011,RF-014"
++sixgr/+rf/RFImpairments.m,FACADE,Keep compatibility only; no independent production logic.,"RF-003,RF-005,RF-006"
++sixgr/+rf/PhaseNoiseModel.m,REPLACE_INTERNALS,Use stateful PhaseNoiseProcess and explicit PhaseNoiseProfile.,RF-005
++sixgr/+rf/PAModel.m,REPLACE_INTERNALS,Use calibrated PAProfile/Rapp/Saleh/LUT/MP/GMP; no silent fallback.,RF-007
++sixgr/+rf/applyPowerContext.m,REFACTOR,Remove output-power restoration; export every RF reference plane.,"RF-002,RF-007"
++sixgr/+rf/PowerContext.m,REFACTOR,Require explicit strict-profile powers/gains/NF/reference planes; preserve facade.,RF-002
++sixgr/+link/applyCompositeReceiverFrontEnd.m,REFACTOR,Remove automatic AGC; delegate to explicit receiver chain.,"RF-009,RF-010"
++sixgr/+link/applyCompositeFrontEndVarianceReplay.m,REPLACE,Use sample-derived error/covariance and linear-stage covariance propagation.,RF-013
++sixgr/+link/runULPUSCHThroughput.m,MIGRATE,Use UplinkPowerControlState and PUSCHPowerController; no configured-SNR pathloss.,RF-012
++sixgr/+phy/+rx/estimateCFOFromCyclicPrefix.m,INTEGRATE,Use as bounded fractional estimator inside acquisition/tracking engine.,RF-003
++sixgr/+phy/+rx/estimateCFOFromReferenceSymbols.m,INTEGRATE,Use as fine estimator inside tracker; preserve measurement provenance.,RF-003
++sixgr/+system/+waveform/replayGrant.m,MIGRATE,Consume receiver-estimated timing/CFO/IQ states and export corrections; true values diagnostic only.,"RF-003,RF-004,RF-006"
++sixgr/+phy/+ra/runFourStepRA.m,MIGRATE,Use PRACHPowerController and measured pathloss reference state.,RF-012
++sixgr/+phy/+ul/PUSCH_Tx.m,MIGRATE,Apply exact PUSCH power assignment before RF front end.,RF-012
++sixgr/+phy/+ul/PUCCH_Tx.m,MIGRATE,Apply exact PUCCH power control.,RF-012
++sixgr/+phy/+refsig/srs.m,MIGRATE,Apply exact SRS power control and power-state identity.,RF-012

@@ -1,7 +1,11 @@
 function [W_rank1, W_rank2, info] = buildNRCodebook(N1, N2, O1, O2)
-%BUILDNRCODEBOOK Build a compact NR Type-I single-panel DFT codebook.
+%BUILDNRCODEBOOK Compatibility facade for the bounded MIMO codebook engine.
 %
-% The returned matrices are deterministic wideband precoder candidates:
+% For two ports this returns the exact TS 38.214 Type-I floor. Larger
+% layouts retain the historical compact DFT candidates as explicitly
+% non-normative study output; strict profiles must use CodebookEngine.
+%
+% The returned matrices are deterministic wideband candidates:
 %   W_rank1: [N1*N2 x N1*O1*N2*O2]
 %   W_rank2: [N1*N2 x 2 x N1*O1*N2*O2*4]
 
@@ -9,12 +13,31 @@ if nargin < 1 || isempty(N1), N1 = 8; end
 if nargin < 2 || isempty(N2), N2 = 8; end
 if nargin < 3 || isempty(O1), O1 = 4; end
 if nargin < 4 || isempty(O2), O2 = 4; end
-N1 = max(1, round(double(N1)));
-N2 = max(1, round(double(N2)));
-O1 = max(1, round(double(O1)));
-O2 = max(1, round(double(O2)));
+values = double([N1 N2 O1 O2]);
+if any(~isfinite(values) | values < 1 | values ~= round(values))
+    error("sixgr:mimo:InvalidPanelGeometry", ...
+        "N1, N2, O1 and O2 must be explicit positive integers.");
+end
+N1 = values(1); N2 = values(2); O1 = values(3); O2 = values(4);
 
 nPorts = N1 * N2;
+if nPorts == 2
+    exactRank1 = sixgr.phy.mimo.TypeI2PortCodebook.enumerate(1);
+    exactRank2 = sixgr.phy.mimo.TypeI2PortCodebook.enumerate(2);
+    W_rank1 = reshape(exactRank1, 2, size(exactRank1,3));
+    W_rank2 = exactRank2;
+    info = struct( ...
+        "N1", N1, "N2", N2, "O1", O1, "O2", O2, ...
+        "NumPorts", 2, ...
+        "NumRank1Candidates", size(W_rank1,2), ...
+        "NumRank2Candidates", size(W_rank2,3), ...
+        "CodebookType", "typeI-SinglePanel", ...
+        "NormativeSubset", true, ...
+        "GenericDFTApproximationUsed", false, ...
+        "Specification", "TS38.214-V18.9.0-Table5.2.2.2.1-1");
+    return;
+end
+
 nBeamsH = N1 * O1;
 nBeamsV = N2 * O2;
 v = localDFT(N1, nBeamsH);
@@ -56,7 +79,10 @@ info.O2 = double(O2);
 info.NumPorts = double(nPorts);
 info.NumRank1Candidates = double(size(W_rank1, 2));
 info.NumRank2Candidates = double(size(W_rank2, 3));
-info.CodebookType = "TypeI_SinglePanel_DFT";
+info.CodebookType = "study_compact_dft_non_normative";
+info.NormativeSubset = false;
+info.GenericDFTApproximationUsed = true;
+info.Specification = "study_only_not_a_3gpp_codebook_claim";
 end
 
 function B = localDFT(nElem, nBeams)

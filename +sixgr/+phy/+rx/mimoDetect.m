@@ -8,6 +8,10 @@ alg = "MMSE";
 ind = [];
 Rint = [];
 RIncludesNoise = [];
+strict = false;
+currentSlot = NaN;
+prgID = NaN;
+covarianceState = [];
 if ~isempty(varargin)
     if mod(numel(varargin), 2) ~= 0
         error("sixgr:phy:mimoDetect:InvalidNV", "Name-value inputs must be in pairs.");
@@ -27,6 +31,12 @@ if ~isempty(varargin)
                 Rint = val;
             case {"rincludesnoise","rintincludesnoise","covarianceincludesnoise"}
                 RIncludesNoise = logical(val);
+            case "strict"
+                strict = logical(val);
+            case "currentslot"
+                currentSlot = double(val);
+            case "prgid"
+                prgID = double(val);
             otherwise
                 error("sixgr:phy:mimoDetect:UnknownNV", "Unknown name-value: %s", char(string(name)));
         end
@@ -39,7 +49,26 @@ if strlength(algRequested) == 0
 end
 algEffective = algRequested;
 if algEffective == "IRC" && isempty(Rint)
-    algEffective = "MMSE";
+    error("sixgr:mimo:MissingInterferenceCovariance", ...
+        "Strict IRC requires a qualified interference covariance; MMSE downgrade is forbidden.");
+end
+if algEffective == "IRC" && isa(Rint, ...
+        "sixgr.phy.mimo.InterferenceCovarianceState")
+    covarianceState = Rint;
+    if ~isfinite(currentSlot)
+        error("sixgr:mimo:MissingInterferenceCovariance", ...
+            "Strict IRC covariance state requires CurrentSlot for age validation.");
+    end
+    if isfinite(prgID)
+        covarianceState.validateAt(currentSlot,prgID);
+    else
+        covarianceState.validateAt(currentSlot);
+    end
+    Rint = covarianceState.Matrix;
+    RIncludesNoise = covarianceState.IncludesNoise;
+elseif algEffective == "IRC" && strict
+    error("sixgr:mimo:InvalidInterferenceCovariance", ...
+        "Strict IRC requires InterferenceCovarianceState, not a bare matrix.");
 end
 
 args = {"Algorithm", algEffective, "Rint", Rint};
@@ -67,9 +96,7 @@ result.DemapperEffectiveVarianceEquation = ...
     "sigma2_eff_l=(sum_(j~=l)|WH_(l,j)|^2+(W*R*W^H)_(l,l))/|WH_(l,l)|^2=1/SINR_l";
 
 engine = char(string(eqInfo.EngineUsed));
-if algRequested == "IRC" && algEffective == "MMSE"
-    engine = "IRC_fallback_MMSE_" + string(engine);
-elseif algEffective == "IRC"
+if algEffective == "IRC"
     engine = "manualIRC";
 elseif algEffective == "ZF"
     engine = "manualZF";
@@ -86,6 +113,20 @@ info.RawLayerSymSize = size(rawLayerSym);
 info.DemapperContract = demapperContract;
 info.EqualizerResult = result;
 info.NVar = double(eqInfo.NVar);
+info.Strict = logical(strict);
+info.CovarianceStateUsed = ~isempty(covarianceState);
+info.FallbackUsed = false;
+if ~isempty(covarianceState)
+    info.CovarianceID = covarianceState.CovarianceID;
+    info.CovarianceSampleCount = covarianceState.SampleCount;
+    info.CovariancePRGID = covarianceState.PRGID;
+    info.CovarianceAgeSlots = currentSlot-covarianceState.Slot;
+else
+    info.CovarianceID = "";
+    info.CovarianceSampleCount = NaN;
+    info.CovariancePRGID = NaN;
+    info.CovarianceAgeSlots = NaN;
+end
 end
 
 function [unitGainSym, contract] = localUnitDesiredGainSymbols(rawSym, result)

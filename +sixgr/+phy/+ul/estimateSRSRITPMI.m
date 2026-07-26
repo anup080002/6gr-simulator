@@ -32,6 +32,8 @@ estimate = struct( ...
     "MetricFamily", "post_equalization_mutual_information", ...
     "RankSelectionObjective", "sum_log2_one_plus_layer_sinr", ...
     "ValueRole", "estimated_runtime_srs");
+strict = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
+    sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
 
 if isempty(Hest)
     estimate.RISource = "srs_hest_missing";
@@ -70,7 +72,8 @@ if scheme ~= "codebook" || transformPrecoding || numTxPorts < 2
     return;
 end
 
-[Htpmi, tpmiNumPorts, portSource] = localRestrictToPUSCHCodebookPorts(Hprb, cfg, numTxPorts);
+[Htpmi, tpmiNumPorts, portSource] = localRestrictToPUSCHCodebookPorts( ...
+    Hprb, cfg, numTxPorts, strict);
 estimate.NumTxPorts = double(tpmiNumPorts);
 estimate.PUSCHCodebookNumPorts = double(tpmiNumPorts);
 estimate.PortSelectionSource = char(portSource);
@@ -94,7 +97,7 @@ end
 estimate.Valid = isfinite(estimate.RI) || isfinite(estimate.TPMI);
 end
 
-function [Hout, numPortsOut, source] = localRestrictToPUSCHCodebookPorts(Hprb, cfg, measuredNumPorts)
+function [Hout, numPortsOut, source] = localRestrictToPUSCHCodebookPorts(Hprb, cfg, measuredNumPorts, strict)
 Hout = Hprb;
 numPortsOut = max(1, round(double(measuredNumPorts)));
 source = "srs_port_count_matches_pusch_codebook";
@@ -105,6 +108,10 @@ configuredPorts = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.pusch.dmrs.nPorts", NaN), ...
     sixgr.util.structGet(cfg, "phy.pusch.nPorts", NaN));
 if ~(isfinite(configuredPorts) && configuredPorts >= 1)
+    if strict
+        error("sixgr:mimo:MissingSRSState", ...
+            "Strict SRS-driven PUSCH selection requires the active PUSCH antenna-port count.");
+    end
     configuredPorts = numPortsOut;
     source = "pusch_codebook_ports_inferred_from_srs_ports";
 end
@@ -116,6 +123,11 @@ configuredPorts = max(1, round(double(configuredPorts)));
 % TPMI into nrPUSCHConfig later.
 allowedPorts = [1 2 4];
 if ~ismember(configuredPorts, allowedPorts)
+    if strict
+        error("sixgr:mimo:UnsupportedAntennaTuple", ...
+            "Strict PUSCH codebook supports exactly 1, 2, or 4 active antenna ports; received %d.", ...
+            configuredPorts);
+    end
     idx = find(allowedPorts >= configuredPorts, 1, "first");
     if isempty(idx)
         idx = numel(allowedPorts);
@@ -129,6 +141,11 @@ if configuredPorts < numPortsOut
     numPortsOut = configuredPorts;
     source = "srs_ports_restricted_to_active_pusch_codebook_ports";
 elseif configuredPorts > numPortsOut
+    if strict
+        error("sixgr:mimo:MissingSRSState", ...
+            "Measured SRS exposes %d port(s), fewer than the active %d-port PUSCH codebook.", ...
+            numPortsOut,configuredPorts);
+    end
     source = "pusch_codebook_ports_limited_by_available_srs_ports";
 end
 end

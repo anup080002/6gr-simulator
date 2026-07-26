@@ -1,0 +1,65 @@
+FamilyID,Name,Wave,Implementability,RequiredDependency,PrimaryMetrics,PairCount
+F01,Static CFO magnitude,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F02,Integer CFO acquisition,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F03,Fractional CFO estimation,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F04,CFO drift and loop bandwidth,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F05,Doppler versus oscillator separation,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F06,CFO estimator SNR,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F07,CFO false-lock probability,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F08,CFO chunk continuity,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F09,Integer timing offset,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F10,Fractional timing offset,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F11,SCO ppm drift,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F12,SCO tracking bandwidth,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F13,Resampler stopband and aliasing,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F14,Phase-noise mask severity,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F15,Phase noise versus carrier frequency,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F16,CPE versus ICI decomposition,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F17,Common versus independent LO,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F18,PT-RS phase-noise correction,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F19,TX IQ amplitude mismatch,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F20,TX IQ phase mismatch,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F21,RX IQ imbalance,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F22,Frequency-selective IQ imbalance,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F23,DC offset and LO leakage,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F24,IQ compensation convergence,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F25,PA input/output backoff,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F26,PA model family,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F27,AM-PM distortion,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F28,PA memory depth,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F29,Cross-carrier PA memory,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F30,Crest-factor reduction,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F31,DPD order and memory,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F32,DPD coefficient ageing,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F33,DAC bit depth,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F34,ADC bit depth,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F35,ADC full scale,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F36,Clipping probability,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F37,Dither,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F38,Aperture jitter,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F39,AGC target,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F40,AGC attack and release,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F41,LNA noise figure,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F42,Cascaded noise figure,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F43,Blocker power,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F44,Blocker frequency offset,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F45,Reciprocal mixing,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F46,Receiver IIP2,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F47,Receiver IIP3,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F48,ADC overload under blocker,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F49,EVM measurement correction,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F50,ACLR measurement,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F51,SEM and OBUE,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F52,Carrier and image leakage,A,DIRECT,RF_FRONTEND_CORE,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F53,PUSCH P0,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F54,PUSCH alpha,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F55,Numerology and bandwidth term,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F56,Delta TF,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F57,TPC accumulation,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F58,PCMAX clipping,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F59,PUCCH power control,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F60,SRS power control,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F61,PRACH power ramping,B,INTERNAL_DEPENDENCY,INTERNAL_PHY_INTEGRATION,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F62,Simultaneous UL channel sharing,C,ADJACENT_DEPENDENCY,MULTI_CHANNEL_END_TO_END,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F63,Impairment interaction factorial,C,ADJACENT_DEPENDENCY,MULTI_CHANNEL_END_TO_END,BLER;EVM;ACLR;Power;ResidualError;Runtime,6
+F64,End-to-end RF-impaired link,C,ADJACENT_DEPENDENCY,MULTI_CHANNEL_END_TO_END,BLER;EVM;ACLR;Power;ResidualError;Runtime,6

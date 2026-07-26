@@ -1,0 +1,43 @@
+top_level_order:
+  - canonical_control
+sections:
+  canonical_control:
+    required: false
+    parameters:
+      reference_signals:
+        required: false
+        type: struct
+        nested_contract:
+          rsla_strict:
+            required: false
+            type: struct
+            authority: operator_master_yaml
+            required_when_present:
+              - enabled
+              - strict
+              - profile_id
+              - configuration_epoch
+              - specification
+              - resource_ownership
+              - dmrs
+              - csi_rs
+              - srs
+              - trs
+              - ptrs
+              - measurements
+              - filtering
+              - measurement_gaps
+              - csi_reports
+              - calibration
+              - olla
+              - rrm
+              - evm
+              - validation
+            constraints:
+              profile_id: nr_rel18_rsla_strict
+              strict: true
+              index_base: zero_based
+              unsupported_tuple_policy: reject_before_waveform
+            runtime_target: phy.rsla
+            fallback_policy: none
+            approximation_policy: explicit_only

@@ -27,5 +27,80 @@
     "link_direction": "dl",
     "snr_db": 20,
     "monte_carlo_iterations": 6
+  },
+  "run_control": {
+    "auto_start_parallel_pool": false,
+    "num_workers": 1
+  },
+  "control_gating": {
+    "pdcch_required": false
+  },
+  "control": {
+    "pdcch_strict": {
+      "execution_profile": "connected_blind_strict",
+      "research_class": "baseline_benchmark",
+      "spec_release": "Release-18",
+      "spec_version": "18.8.0",
+      "rnti": {
+        "type": "C-RNTI",
+        "value": 4660
+      },
+      "dci_context": {
+        "search_space_id": 1,
+        "coreset_id": 0,
+        "control_serving_cell": 0,
+        "control_carrier": 0,
+        "control_bwp": 0,
+        "scheduled_serving_cell": 0,
+        "scheduled_carrier": 0,
+        "scheduled_bwp": 0,
+        "initial_dl_bwp_size": 106,
+        "initial_dl_bwp_start": 0,
+        "active_dl_bwp_size": 106,
+        "active_dl_bwp_start": 0,
+        "initial_ul_bwp_size": 106,
+        "initial_ul_bwp_start": 0,
+        "active_ul_bwp_size": 106,
+        "active_ul_bwp_start": 0,
+        "frequency_allocation_type": "type1_riv",
+        "dl_time_domain_allocations": [
+          [0, 2, 12, 4], [1, 2, 10, 4], [2, 3, 11, 4], [3, 2, 9, 4],
+          [4, 2, 7, 4], [5, 9, 4, 4], [6, 4, 4, 4], [7, 5, 7, 4],
+          [8, 5, 2, 4], [9, 9, 2, 4], [10, 12, 2, 4], [11, 1, 13, 4],
+          [12, 1, 6, 4], [13, 2, 4, 4], [14, 4, 7, 4], [15, 8, 4, 4]
+        ],
+        "ul_time_domain_allocations": [
+          [0, 0, 14, 1], [1, 0, 12, 1], [2, 2, 10, 1], [3, 4, 10, 1],
+          [4, 0, 7, 1], [5, 7, 7, 1], [6, 0, 4, 1], [7, 4, 4, 1],
+          [8, 8, 4, 1], [9, 10, 4, 1], [10, 0, 2, 1], [11, 2, 2, 1],
+          [12, 4, 2, 1], [13, 6, 2, 1], [14, 8, 2, 1], [15, 10, 2, 1]
+        ],
+        "carrier_indicator_present": false,
+        "carrier_indicator_width": 0,
+        "carrier_indicator_value": 0,
+        "bwp_indicator_present": false,
+        "bwp_indicator_width": 0,
+        "sul_indicator_present": false,
+        "frequency_hopping_enabled": false,
+        "transform_precoding_enabled": false,
+        "harq_process_count": 16,
+        "dai_width": 2,
+        "antenna_port_field_width": 5,
+        "layer_capability": 2,
+        "tci_present": false,
+        "tci_width": 0,
+        "active_tci_state_id": 0,
+        "srs_resource_indicator_width": 4,
+        "srs_request_width": 2,
+        "csi_request_width": 2,
+        "rate_match_indicator_width": 2,
+        "zp_csirs_trigger_width": 2,
+        "cbg_fields_present": false,
+        "cbg_transmission_width": 0,
+        "cbg_flush_width": 0,
+        "dmrs_sequence_initialization_present": true,
+        "configuration_epoch": 1
+      }
+    }
   }
 }

@@ -74,8 +74,7 @@ out.StrictOk = all(localColumnLogical(configAudit, "Pass", false)) && ...
 end
 
 function decision = localResolveRuntimeRank(carrier, pdsch, H, noiseVar, nominalRank, cfg)
-% Runtime SVD/codebook decision for Prompt 5. Carrier/pdsch are accepted for
-% API symmetry with PHY callers; all evidence comes from H/noise/config.
+% Receiver-aware measured-channel rank/codebook decision.
 if nargin < 6 || ~isstruct(cfg)
     cfg = struct();
 end
@@ -86,103 +85,80 @@ if isempty(Hwb)
 end
 nRx = size(Hwb, 1);
 nTx = size(Hwb, 2);
-nominalRank = max(1, round(double(nominalRank)));
-maxRank = max(1, round(double(localFirstFiniteStruct(cfg, ...
-    ["MaxRank","maxRank","mimo.maxRank","phy.mimo.maxRank"], nominalRank))));
-maxRank = min([maxRank, nominalRank, nRx, nTx]);
-if maxRank < 1
-    maxRank = 1;
+nominalRank = double(nominalRank);
+if ~(isscalar(nominalRank) && isfinite(nominalRank) && nominalRank >= 1 && ...
+        nominalRank == round(nominalRank))
+    error("sixgr:mimo:InvalidRI","Nominal rank must be a positive integer.");
+end
+maxRank = double(localFirstFiniteStruct(cfg, ...
+    ["MaxRank","maxRank","mimo.maxRank","phy.mimo.maxRank"], nominalRank));
+if ~(isscalar(maxRank) && isfinite(maxRank) && maxRank >= 1 && maxRank == round(maxRank))
+    error("sixgr:mimo:InvalidRI","Maximum rank must be a positive integer.");
+end
+rankLimit = min([maxRank,nominalRank,nRx,nTx]);
+strict = logical(sixgr.util.structGet(cfg,"Strict", ...
+    sixgr.util.structGet(cfg,"mimo.strict",false)));
+if strict && (rankLimit ~= maxRank || nominalRank > rankLimit)
+    error("sixgr:mimo:UnsupportedRank", ...
+        "Requested rank domain exceeds measured antenna capability.");
+end
+if ~(isscalar(noiseVar) && isnumeric(noiseVar) && isfinite(noiseVar) && noiseVar > 0)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Runtime rank selection requires measured positive noise variance.");
 end
 
-[~, S, V] = svd(double(Hwb), "econ");
-sv = diag(S);
-if isempty(sv)
-    sv = norm(Hwb, "fro");
-end
-sv = double(sv(:));
-rankLimit = min([numel(sv), maxRank, nRx, nTx]);
-if rankLimit < 1
-    rankLimit = 1;
-end
-
-snrCfg_dB = double(localFirstFiniteStruct(cfg, ...
-    ["SNR_configured_dB","snr_dB","SNR_dB","phy.snr_dB"], NaN));
-if isfinite(double(noiseVar)) && double(noiseVar) > 0
-    snrTotal = 1 / double(noiseVar);
-elseif isfinite(snrCfg_dB)
-    snrTotal = 10.^(snrCfg_dB / 10);
-else
-    snrTotal = 1;
-end
-minLayerSNR_dB = double(localFirstFiniteStruct(cfg, ...
-    ["MinSNR_per_layer_dB","minSNRPerLayer_dB","mimo.minSNRPerLayer_dB"], 0));
-minLayerSNR = 10.^(minLayerSNR_dB / 10);
-condThresh_dB = double(localFirstFiniteStruct(cfg, ...
-    ["ConditionNumberThresh_dB","conditionNumberThresh_dB","mimo.conditionNumberThresh_dB"], 20));
-
-rates = NaN(max(rankLimit, 2), 1);
-minLayerSNRs = NaN(max(rankLimit, 2), 1);
-feasible = false(max(rankLimit, 2), 1);
+rates = NaN(max(rankLimit,2),1);
+precoders = cell(rankLimit,1);
+pmiValues = cell(rankLimit,1);
+pmi2Values = NaN(rankLimit,1);
+selectionInfo = cell(rankLimit,1);
 for nu = 1:rankLimit
-    layerSNR = snrTotal .* (sv(1:nu).^2) ./ max(nu, 1);
-    rates(nu) = sum(log2(1 + max(layerSNR, 0)));
-    minLayerSNRs(nu) = min(layerSNR);
-    kappaNu_dB = localConditionNumberForRank(sv, nu);
-    feasible(nu) = isfinite(rates(nu)) && minLayerSNRs(nu) >= minLayerSNR && kappaNu_dB <= condThresh_dB;
-end
-candidateRates = rates;
-candidateRates(~feasible) = -Inf;
-[bestRate, effectiveRank] = max(candidateRates(1:rankLimit));
-if ~isfinite(bestRate)
-    effectiveRank = 1;
-end
-effectiveRank = min(max(1, round(double(effectiveRank))), rankLimit);
-
-reason = "rank" + string(effectiveRank) + "_selected_by_svd_rate";
-if effectiveRank == nominalRank
-    reason = "nominal_rank_matched_svd_rate";
-elseif nominalRank >= 2 && rankLimit >= 2
-    if ~(feasible(2))
-        if minLayerSNRs(2) < minLayerSNR
-            reason = "rank1_fallback_layer_snr";
-        elseif localConditionNumberForRank(sv, 2) > condThresh_dB
-            reason = "rank1_fallback_condition_number";
-        else
-            reason = "rank1_fallback_infeasible_rank2";
-        end
-    elseif rates(1) >= rates(2)
-        reason = "rank1_fallback_rate";
+    rankCfg = cfg;
+    rankCfg.NoiseVariance = double(noiseVar);
+    if isfield(cfg,"CandidateMatricesByRank")
+        rankCfg.CandidateMatrices = cfg.CandidateMatricesByRank{nu};
     end
+    [precoders{nu},pmiValues{nu},pmi2Values(nu),selectionInfo{nu}] = ...
+        sixgr.mimo.selectPMI(Hwb,nu,nTx,nRx,rankCfg);
+    rates(nu) = selectionInfo{nu}.SelectedMetric;
 end
+[~,effectiveRank] = max(rates(1:rankLimit));
+Wcb = precoders{effectiveRank};
+pmi1 = pmiValues{effectiveRank};
+pmi2 = pmi2Values(effectiveRank);
+reason = "rank"+string(effectiveRank)+"_selected_by_posteq_mutual_information";
 
-Wsvd = V(:, 1:effectiveRank);
-try
-    [Wcb, pmi1, pmi2] = sixgr.mimo.selectPMI(Hwb, effectiveRank, nTx, nRx, cfg);
-catch
-    Wcb = Wsvd;
-    pmi1 = [NaN NaN];
-    pmi2 = NaN;
+% Singular values are diagnostic only and do not participate in selection.
+sv = svd(double(Hwb));
+layerEquivalentSNR = NaN(max(rankLimit,2),1);
+for nu = 1:rankLimit
+    layerEquivalentSNR(nu) = max(2^(rates(nu)/nu)-1,0);
 end
+conditionDB = localConditionNumberForRank(sv,max(1,min(effectiveRank,numel(sv))));
 
 decision = struct();
 decision.EffectiveRank = double(effectiveRank);
 decision.NominalRank = double(nominalRank);
 decision.ExactMatch = logical(effectiveRank == nominalRank);
 decision.Precoder_W = Wcb;
-decision.Precoder_W_SVD = Wsvd;
+decision.Precoder_W_SVD = [];
 decision.PMI_i1 = pmi1;
 decision.PMI_i2 = pmi2;
-decision.ConditionNumber_dB = localConditionNumberForRank(sv, max(1, min(effectiveRank, numel(sv))));
+decision.ConditionNumber_dB = conditionDB;
 decision.SingularValues = sv;
 decision.Rate_rank1_bps = rates(1);
 decision.Rate_rank2_bps = localVectorValueOrNaN(rates, 2);
-decision.SNR_layer1_dB = 10 * log10(max(localVectorValueOrNaN(minLayerSNRs, 1), realmin));
-decision.SNR_layer2_dB = 10 * log10(max(localVectorValueOrNaN(minLayerSNRs, 2), realmin));
+decision.SNR_layer1_dB = 10*log10(max(localVectorValueOrNaN(layerEquivalentSNR,1),realmin));
+decision.SNR_layer2_dB = 10*log10(max(localVectorValueOrNaN(layerEquivalentSNR,2),realmin));
 decision.RankDecisionReason = char(reason);
-decision.ConditionNumberOk = logical(localConditionNumberForRank(sv, min(2, max(1, numel(sv)))) <= condThresh_dB);
-decision.LayerSNROk = logical(localVectorValueOrNaN(minLayerSNRs, min(2, numel(minLayerSNRs))) >= minLayerSNR);
+decision.ConditionNumberOk = isfinite(conditionDB);
+decision.LayerSNROk = isfinite(layerEquivalentSNR(effectiveRank));
 decision.RateGainOk = logical(numel(rates) >= 2 && isfinite(rates(2)) && rates(2) > rates(1));
-decision.RuntimeEvidenceSource = "svd_of_measured_channel_matrix";
+decision.RuntimeEvidenceSource = "measured_channel_posteq_mutual_information";
+decision.ConfiguredSNRUsed = false;
+decision.SVDThresholdUsed = false;
+decision.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(Wcb);
+decision.SelectionInfo = selectionInfo{effectiveRank};
 decision.NumRxAntennas = double(nRx);
 decision.NumTxPorts = double(nTx);
 decision.CodebookType = string(localFirstTextStruct(cfg, ["CodebookType","codebookType","phy.csi.codebookType"], "type1"));

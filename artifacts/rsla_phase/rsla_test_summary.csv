@@ -1,0 +1,11 @@
+Suite,TestsRun,Passed,Failed,Skipped,Blocked,IncompletePoints,Status
+CapabilityPlanning,7,7,0,0,0,0,PASS
+ReferenceSignals,7,7,0,0,0,0,PASS
+Measurements,7,7,0,0,0,0,PASS
+CSIReports,7,7,0,0,0,0,PASS
+Calibration,7,7,0,0,0,0,PASS
+EffectiveSINR,7,7,0,0,0,0,PASS
+OLLA,7,7,0,0,0,0,PASS
+FilteringRRM,7,7,0,0,0,0,PASS
+EVM,7,7,0,0,0,0,PASS
+Artifacts,7,7,0,0,0,0,PASS

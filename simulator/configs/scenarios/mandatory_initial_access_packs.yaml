@@ -23,6 +23,12 @@
     "scenario_group": "mandatory_pack_catalog",
     "research_class": "study_item_candidate"
   },
+  "random_access": {
+    "preamble_length_mode": "short",
+    "prach_format": "B1",
+    "configuration_index": 95,
+    "subcarrier_spacing_khz": 120
+  },
   "scenario": {
     "runner_profile": "generic_sweep",
     "target_cases": ["ssb", "pbch", "prach", "bundle"],
@@ -38,8 +44,8 @@
         {"label": "long_ssb_periodicity_candidate", "config": {"random_access": {"long_ssb_periodicity_candidate_enabled": true, "ssb_periodicity_ms": 160}}},
         {"label": "increased_ssb_beam_count", "config": {"random_access": {"ssb_beam_count": 16}}},
         {"label": "beam_sweep_clustering", "config": {"random_access": {"beam_clustering_enabled": true}, "mimo": {"beam_sweep_enabled": true}}},
-        {"label": "prach_zc_baseline_long", "config": {"random_access": {"prach_sequence_family": "zadoff_chu_baseline", "preamble_length_mode": "long"}}},
-        {"label": "prach_short_preamble", "config": {"random_access": {"preamble_length_mode": "short", "prach_format": "B1", "configuration_index": 133}}},
+        {"label": "prach_zc_baseline_long", "config": {"frequency": {"range_name": "FR1", "band_name": "4ghz_long_prach", "center_frequency_hz": 4000000000, "bandwidth_hz": 40000000, "bandwidth_options_hz": [20000000, 40000000, 100000000], "duplex_mode": "TDD", "numerology_options_khz": [30], "n_size_grid": 106}, "frame": {"scs_khz": 30}, "random_access": {"frequency_range": "FR1", "duplex_mode": "TDD", "carrier_frequency_hz": 4000000000, "carrier_scs_khz": 30, "n_size_grid": 106, "prach_sequence_family": "zadoff_chu_baseline", "preamble_length_mode": "long", "prach_format": "0", "configuration_index": 0, "subcarrier_spacing_khz": 1.25}}},
+        {"label": "prach_short_preamble", "config": {"random_access": {"preamble_length_mode": "short", "prach_format": "B1", "configuration_index": 95, "subcarrier_spacing_khz": 120}}},
         {"label": "prach_multisequence_occ_candidate", "config": {"random_access": {"prach_sequence_family": "multisequence_candidate"}}},
         {"label": "prach_same_beam_repetition", "config": {"random_access": {"repetition_count": 2, "repetition_beam_mode": "same_beam"}}},
         {"label": "prach_different_beam_repetition", "config": {"random_access": {"repetition_count": 2, "repetition_beam_mode": "different_beam"}}},

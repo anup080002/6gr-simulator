@@ -1,0 +1,17 @@
+FileName,MinimumRows,RequiredColumns
+rf_impact_run_manifest.csv,64,FamilyID;Wave;Dependency;PlannedPairs;CompletedPairs;Status
+rf_impact_raw_trials.csv,768,ExperimentID;FamilyID;PairID;Role;Seed;TrialID;Metric;Value;Status
+rf_impact_operating_points.csv,384,PairID;FamilyID;BaselineExperimentID;TreatmentExperimentID;SharedStateDigest;Complete;Status
+rf_impact_pairwise_effects.csv,64,FamilyID;Metric;BaselineMean;TreatmentMean;Effect;CILower;CIUpper;PValue;AdjustedPValue;PracticalSignificance;Status
+rf_impact_rule_evaluation.csv,96,RuleID;FamilyID;Metric;Observed;Operator;Threshold;Passed;Evidence;Status
+rf_impact_cfo_timing.csv,100,FamilyID;CaseID;CFOError_Hz;TimingError_samples;SCODrift_samples;FalseLock;Status
+rf_impact_phase_noise_iq.csv,100,FamilyID;CaseID;PhaseNoiseRMS_rad;CPE_rad;ICIPower_dB;IRR_dB;EVM_pct;Status
+rf_impact_pa_dpd.csv,100,FamilyID;CaseID;PAPR_dB;OutputPower_dBm;EVM_pct;ACLR_dB;SEMmargin_dB;Status
+rf_impact_data_converters.csv,100,FamilyID;CaseID;Bits;FullScale;ClippingRatio;SQNR_dB;EVM_pct;BLER;Status
+rf_impact_blocker_receiver.csv,100,FamilyID;CaseID;BlockerPower_dBm;Offset_Hz;Desensitization_dB;IM3Power_dBm;BLER;Status
+rf_impact_waveform_quality.csv,100,FamilyID;CaseID;EVM_pct;ACLR_dB;SEMmargin_dB;CarrierLeakage_dBc;Status
+rf_impact_power_control.csv,100,FamilyID;CaseID;RequestedPower_dBm;AppliedPower_dBm;MeasuredPower_dBm;PowerError_dB;BLER;Status
+rf_impact_runtime.csv,64,FamilyID;Runtime_s;PeakMemory_MB;SerialDigest;ParallelDigest;Status
+rf_impact_interactions.csv,64,FamilyID;MainEffect;InteractionEffect;CILower;CIUpper;Status
+rf_impact_summary.csv,64,FamilyID;Experiments;Completed;Failed;Incomplete;PrimaryEffect;Conclusion;Status
+rf_impact_image_semantic_audit.csv,30,ImageFile;SourceCSV;SourceCSVSHA256;PNGSHA256;Width;Height;Title;XLabel;YLabel;AxesCount;SeriesCount;FinitePointCount;Status

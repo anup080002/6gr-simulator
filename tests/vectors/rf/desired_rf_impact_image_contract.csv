@@ -1,0 +1,31 @@
+ImageFile,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,SourceCSV,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
+rf_impact_cfo_magnitude.png,CFO magnitude impact,CFO,Residual error,rf_impact_cfo_timing.csv,900,600,1,2,20
+rf_impact_cfo_tracking.png,CFO tracking impact,Time,Residual CFO,rf_impact_cfo_timing.csv,900,600,1,2,20
+rf_impact_timing_offset.png,Timing-offset impact,Timing offset,BLER,rf_impact_cfo_timing.csv,900,600,1,2,20
+rf_impact_sco_drift.png,Sample-clock offset impact,SCO ppm,Drift,rf_impact_cfo_timing.csv,900,600,1,2,20
+rf_impact_phase_noise_mask.png,Phase-noise mask impact,Mask severity,EVM,rf_impact_phase_noise_iq.csv,900,600,1,2,20
+rf_impact_phase_noise_cpe_ici.png,CPE and ICI impact,Phase noise,Error power,rf_impact_phase_noise_iq.csv,900,600,1,2,20
+rf_impact_lo_correlation.png,LO correlation impact,Correlation,Per-chain error,rf_impact_phase_noise_iq.csv,900,600,1,2,20
+rf_impact_iq_imbalance.png,IQ imbalance impact,IQ mismatch,Image rejection,rf_impact_phase_noise_iq.csv,900,600,1,2,20
+rf_impact_iq_compensation.png,IQ compensation impact,Iteration,EVM,rf_impact_phase_noise_iq.csv,900,600,1,2,20
+rf_impact_pa_backoff.png,PA backoff impact,Backoff,ACLR,rf_impact_pa_dpd.csv,900,600,1,2,20
+rf_impact_pa_memory.png,PA memory impact,Memory depth,ACLR,rf_impact_pa_dpd.csv,900,600,1,2,20
+rf_impact_cfr_papr.png,CFR PAPR impact,CFR target,PAPR,rf_impact_pa_dpd.csv,900,600,1,2,20
+rf_impact_dpd_order.png,DPD order impact,DPD order,ACLR,rf_impact_pa_dpd.csv,900,600,1,2,20
+rf_impact_dpd_ageing.png,DPD ageing impact,Age,EVM,rf_impact_pa_dpd.csv,900,600,1,2,20
+rf_impact_dac_bits.png,DAC bit-depth impact,DAC bits,EVM,rf_impact_data_converters.csv,900,600,1,2,20
+rf_impact_adc_bits.png,ADC bit-depth impact,ADC bits,BLER,rf_impact_data_converters.csv,900,600,1,2,20
+rf_impact_adc_fullscale.png,ADC full-scale impact,Full scale,Clipping,rf_impact_data_converters.csv,900,600,1,2,20
+rf_impact_agc_dynamics.png,AGC dynamics impact,Time,Gain,rf_impact_data_converters.csv,900,600,1,2,20
+rf_impact_aperture_jitter.png,Aperture-jitter impact,Jitter,EVM,rf_impact_data_converters.csv,900,600,1,2,20
+rf_impact_noise_figure.png,Noise-figure impact,Noise figure,BLER,rf_impact_blocker_receiver.csv,900,600,1,2,20
+rf_impact_blocker_power.png,Blocker-power impact,Blocker power,Desensitization,rf_impact_blocker_receiver.csv,900,600,1,2,20
+rf_impact_blocker_offset.png,Blocker-offset impact,Frequency offset,BLER,rf_impact_blocker_receiver.csv,900,600,1,2,20
+rf_impact_reciprocal_mixing.png,Reciprocal-mixing impact,Blocker offset,Noise rise,rf_impact_blocker_receiver.csv,900,600,1,2,20
+rf_impact_intermodulation.png,Intermodulation impact,IIP3,IM3 power,rf_impact_blocker_receiver.csv,900,600,1,2,20
+rf_impact_evm_method.png,EVM-method impact,Method,EVM,rf_impact_waveform_quality.csv,900,600,1,2,20
+rf_impact_aclr.png,ACLR impact,Operating point,ACLR,rf_impact_waveform_quality.csv,900,600,1,2,20
+rf_impact_sem_obue.png,SEM and OBUE impact,Offset,Margin,rf_impact_waveform_quality.csv,900,600,1,2,20
+rf_impact_power_control.png,UL power-control impact,Pathloss,Transmit power,rf_impact_power_control.csv,900,600,1,2,20
+rf_impact_interaction_forest.png,RF interaction effects,Family,Effect,rf_impact_pairwise_effects.csv,900,600,1,2,20
+rf_impact_runtime_scaling.png,RF runtime scaling,Complexity,Runtime,rf_impact_runtime.csv,900,600,1,2,20

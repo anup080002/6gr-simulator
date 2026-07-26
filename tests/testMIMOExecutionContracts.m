@@ -104,7 +104,7 @@ assert(size(out.Rx(1).ContributionTensor, 3) == 2, ...
 end
 
 function cfg = localRankCfg(requestedLayers, ports)
-cfg = struct();
+cfg = sixgr.config.defaultConfig();
 cfg.system.phyBackend = "waveform";
 cfg.channel.awgnOnly = false;
 cfg.channel.model = "TDL-C";

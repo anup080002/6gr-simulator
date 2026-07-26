@@ -11,6 +11,8 @@ ip.addParameter("NormalizeW", [], @(x) isempty(x) || islogical(x) || (isnumeric(
 ip.addParameter("FixedReferenceMode", false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
+    sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
 
 nLayers = double(pdsch.NumLayers);
 nCodewords = localNumCodewords(pdsch, nLayers);
@@ -50,6 +52,12 @@ prec.HybridElementDomainApplied = false;
 prec.HybridAnalogPrecoderMatrix = [];
 prec.HybridDigitalPortToRFChainMatrix = [];
 prec.HybridElementToPortMatrix = [];
+prec.StrictMIMO = strictMIMO;
+prec.SelectedMatrixSHA256 = "";
+prec.AppliedMatrixSHA256 = "";
+prec.MatrixRegenerated = false;
+prec.Orientation = "Nport_by_Nlayer";
+prec.ActiveTCIStateID = NaN;
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 
@@ -101,6 +109,10 @@ if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
 end
 
 if isempty(Wcfg)
+    if strictMIMO && ~(nLayers == 1 && requestedPorts == 1)
+        error("sixgr:mimo:MissingAppliedPrecoder", ...
+            "Strict multi-port PDSCH requires the scheduler-selected immutable Nport-by-Nlayer matrix.");
+    end
     [Wcfg, pmiMeta] = localResolvePMIPrecodingMatrix(cfg, nLayers, requestedPorts);
 else
     pmiMeta = localResolveExplicitMatrixMetadata(cfg, Wcfg, nLayers, requestedPorts);
@@ -108,12 +120,16 @@ end
 
 normalizeW = opt.NormalizeW;
 if isempty(normalizeW)
-    normalizeW = logical(sixgr.util.structGet(cfg, "phy.pdsch.normalizePrecodingMatrix", true));
+    normalizeW = logical(sixgr.util.structGet(cfg, "phy.pdsch.normalizePrecodingMatrix", ~strictMIMO));
+end
+if strictMIMO && normalizeW
+    error("sixgr:mimo:PrecoderNormalizationMismatch", ...
+        "Strict PDSCH must apply the selected matrix unchanged; runtime normalization is forbidden.");
 end
 
 if isempty(Wcfg)
     if nLayers == 1 && requestedPorts == 1
-        if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+        if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false)) && ~strictMIMO
             prec.NormalizeW = normalizeW;
             return;
         end
@@ -128,7 +144,7 @@ if isempty(Wcfg)
         source = "identity";
     end
 else
-    WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW);
+    WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW, strictMIMO);
     Wports = WportsPerPRG(:, :, 1);
     if isstruct(pmiMeta) && isfield(pmiMeta, "Source") && strlength(string(pmiMeta.Source)) > 0
         source = string(pmiMeta.Source);
@@ -217,6 +233,36 @@ prec.HybridEquation = string(sixgr.util.structGet(hybridMeta, "Equation", ""));
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, Wports, nLayers);
 prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers);
+if strictMIMO
+    for prg = 1:size(WportsPerPRG,3)
+        sixgr.phy.mimo.MatrixContract.validate( ...
+            WportsPerPRG(:,:,prg),size(WportsPerPRG,1),nLayers);
+    end
+    selectedDigest = string(sixgr.util.structGet(cfg, ...
+        "phy.pdsch.selectedPrecoderSHA256",""));
+    appliedDigest = sixgr.phy.mimo.MatrixContract.digest(WportsPerPRG);
+    if strlength(selectedDigest) == 0
+        error("sixgr:mimo:MissingAppliedPrecoder", ...
+            "Strict PDSCH requires the scheduler-selected matrix SHA-256 identity.");
+    end
+    if ~strcmpi(selectedDigest,appliedDigest)
+        error("sixgr:mimo:PrecoderDigestMismatch", ...
+            "Selected and applied PDSCH precoder matrix identities differ.");
+    end
+    prec.SelectedMatrixSHA256 = selectedDigest;
+    prec.AppliedMatrixSHA256 = appliedDigest;
+    tciState = double(sixgr.util.structGet(cfg,"phy.pdsch.activeTCIStateID",NaN));
+    requireTCI = logical(sixgr.util.structGet(cfg,"phy.mimo.requireActiveTCIState",false));
+    if requireTCI && ~isfinite(tciState)
+        error("sixgr:mimo:InactiveTCIState", ...
+            "Strict beamformed PDSCH requires a decoded active TCI state.");
+    end
+    prec.ActiveTCIStateID = tciState;
+    prec.PrecoderTraceTarget = 1;
+    prec.PrecoderTraceError = abs(real(trace(Wports*Wports'))-1);
+    prec.TotalPowerPreservingTrace = prec.PrecoderTraceError <= 1e-10;
+    prec.NormativeNormalizationPreserved = true;
+end
 if isstruct(pmiMeta)
     if isfield(pmiMeta, "PMI")
         prec.PMI = double(pmiMeta.PMI);
@@ -432,7 +478,7 @@ if ~isempty(nPorts)
 end
 end
 
-function WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW)
+function WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW, strictMIMO)
 Wcfg = localSqueezeSingletonPage(Wcfg);
 if ndims(Wcfg) > 3
     error("sixgr:phy:dl:PDSCHPrecoding:BadPRGMatrixRank", ...
@@ -442,6 +488,10 @@ sz = size(Wcfg);
 if sz(2) == nLayers && sz(1) >= nLayers
     WportsPerPRG = double(Wcfg);
 elseif sz(1) == nLayers && sz(2) >= nLayers
+    if strictMIMO
+        error("sixgr:mimo:PrecoderDimensionMismatch", ...
+            "Strict precoders use Nport-by-Nlayer orientation; transpose guessing is forbidden.");
+    end
     WportsPerPRG = permute(double(Wcfg), [2 1 3]);
 else
     error("sixgr:phy:dl:PDSCHPrecoding:ExplicitMatrixLayerMismatch", ...

@@ -116,6 +116,48 @@ classdef BeamRefinementCSIRS
             wBest = W(:, idxBest);
         end
 
+        function [wBest, resourceID, decision] = selectMeasuredResource(measurement, W, options)
+            %SELECTMEASUREDRESOURCE Strict receiver-evidence beam refinement.
+            arguments
+                measurement (1,1) sixgr.phy.mimo.CSIMeasurementState
+                W
+                options.CurrentSlot (1,1) double {mustBeInteger,mustBeNonnegative}
+                options.Receiver (1,1) string = "MMSE"
+                options.ResourceIDs string = strings(0,1)
+            end
+            measurement.validateAt(options.CurrentSlot);
+            if ~contains(upper(measurement.ResourceType),"CSI-RS")
+                error("sixgr:mimo:BeamReportMismatch", ...
+                    "P2 refinement requires a measured CSI-RS resource.");
+            end
+            H = double(measurement.ChannelEstimate);
+            if ndims(H) == 3
+                H = mean(H,3,"omitnan");
+            end
+            if ~ismatrix(H) || size(H,2) ~= size(W,1)
+                error("sixgr:mimo:PrecoderDimensionMismatch", ...
+                    "CSI-RS measurement ports do not match the beam codebook.");
+            end
+            [wBest,decision] = sixgr.phy.mimo.CodebookEngine.select( ...
+                H,reshape(W,size(W,1),1,size(W,2)), ...
+                NoiseVariance=double(measurement.NoiseVariance), ...
+                InterferenceCovariance=measurement.InterferenceCovariance, ...
+                Receiver=options.Receiver);
+            ids = options.ResourceIDs;
+            if isempty(ids)
+                ids = "CSI-RS-"+string(0:size(W,2)-1);
+            end
+            if numel(ids) ~= size(W,2)
+                error("sixgr:mimo:BeamReportMismatch", ...
+                    "ResourceIDs must identify every CSI-RS beam.");
+            end
+            resourceID = ids(decision.SelectedIndex+1);
+            decision.MeasurementID = measurement.MeasurementID;
+            decision.ResourceID = resourceID;
+            decision.GeometryOracleUsed = false;
+            decision.SelectionSource = "measured_csirs_receiver_objective";
+        end
+
     end
 
     methods(Static, Access=private)

@@ -1,0 +1,9 @@
+MeasurementID,Quantity,ReferenceSignal,DefinitionVersion,Units,AveragingRule,BeamAssociation,ValidityRule,Status
+R18-SS-RSRP,SS-RSRP,SSB,TS 38.215 V18.8.0,dBm,mean_power_over_declared_RS_REs,installed_RRC_resource_beam_and_antenna,beam_and_antenna_bound,PASS
+R18-CSI-RSRP,CSI-RSRP,CSI-RS,TS 38.215 V18.8.0,dBm,mean_power_over_declared_RS_REs,installed_RRC_resource_beam_and_antenna,beam_and_antenna_bound,PASS
+R18-SS-RSRQ,SS-RSRQ,SSB,TS 38.215 V18.8.0,dB,N_RB_times_RSRP_over_RSSI,installed_RRC_resource_beam_and_antenna,beam_and_bandwidth_bound,PASS
+R18-CSI-RSRQ,CSI-RSRQ,CSI-RS,TS 38.215 V18.8.0,dB,N_RB_times_RSRP_over_RSSI,installed_RRC_resource_beam_and_antenna,beam_and_bandwidth_bound,PASS
+R18-SS-SINR,SS-SINR,SSB,TS 38.215 V18.8.0,dB,RS_power_over_interference_plus_noise,installed_RRC_resource_beam_and_antenna,beam_and_resource_bound,PASS
+R18-CSI-SINR,CSI-SINR,CSI-RS,TS 38.215 V18.8.0,dB,RS_power_over_interference_plus_noise,installed_RRC_resource_beam_and_antenna,beam_and_resource_bound,PASS
+R18-RSSI,RSSI,configuredResources,TS 38.215 V18.8.0,dBm,received_power_over_measurement_bandwidth,installed_RRC_resource_beam_and_antenna,bandwidth_bound,PASS
+R18-SRS-RSRP,SRS-RSRP,SRS,TS 38.215 V18.8.0,dBm,mean_power_over_declared_RS_REs,installed_RRC_resource_beam_and_antenna,UE_resource_and_port_bound,PASS

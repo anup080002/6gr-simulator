@@ -263,7 +263,7 @@ control:
 
 random_access:
   enabled: true
-  frequency_range: FR2
+  frequency_range: FR2-1
   carrier_frequency_hz: 30000000000
   duplex_mode: TDD
   carrier_scs_khz: 120

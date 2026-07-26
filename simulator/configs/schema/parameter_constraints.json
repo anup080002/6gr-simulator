@@ -10,7 +10,8 @@
       "reference": "TS 38.101-1 Table 5.3.5-1; TS 38.101-2 Table 5.3.5-1",
       "cases": {
         "FR1": {"allowed": [5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 40000000, 50000000, 60000000, 70000000, 80000000, 90000000, 100000000], "labels": ["5 MHz", "10 MHz", "15 MHz", "20 MHz", "25 MHz", "30 MHz", "40 MHz", "50 MHz", "60 MHz", "70 MHz", "80 MHz", "90 MHz", "100 MHz"], "note": "FR1 benchmark bandwidth set."},
-        "FR2": {"allowed": [50000000, 100000000, 200000000, 400000000], "labels": ["50 MHz", "100 MHz", "200 MHz", "400 MHz"], "note": "FR2 benchmark bandwidth set."},
+        "FR2-1": {"allowed": [50000000, 100000000, 200000000, 400000000], "labels": ["50 MHz", "100 MHz", "200 MHz", "400 MHz"], "note": "FR2-1 benchmark bandwidth set."},
+        "FR2-2": {"allowed": [100000000, 400000000, 800000000, 1600000000, 2000000000], "labels": ["100 MHz", "400 MHz", "800 MHz", "1600 MHz", "2 GHz"], "note": "FR2-2 Release-18 benchmark bandwidth set."},
         "FR3": {"allowed": [100000000, 200000000, 400000000, 800000000, 1600000000, 2000000000], "labels": ["100 MHz", "200 MHz", "400 MHz", "800 MHz", "1600 MHz", "2 GHz"], "note": "6G candidate study bandwidth set, not an NR conformance band."}
       }
     },
@@ -36,11 +37,18 @@
           "90000000": {"allowed": [30, 60]},
           "100000000": {"allowed": [30, 60]}
         },
-        "FR2": {
+        "FR2-1": {
           "50000000": {"allowed": [60, 120]},
           "100000000": {"allowed": [60, 120]},
           "200000000": {"allowed": [60, 120]},
           "400000000": {"allowed": [120], "note": "400 MHz FR2 is represented with 120 kHz SCS in the benchmark table."}
+        },
+        "FR2-2": {
+          "100000000": {"allowed": [120]},
+          "400000000": {"allowed": [120, 480, 960]},
+          "800000000": {"allowed": [480, 960]},
+          "1600000000": {"allowed": [480, 960]},
+          "2000000000": {"allowed": [960]}
         },
         "FR3": {
           "100000000": {"allowed": [60, 120], "note": "6G candidate."},
@@ -162,7 +170,8 @@
       "reference": "TR 38.901 Section 7.4",
       "cases": {
         "FR1": {"allowed": ["AWGN", "TDL", "CDL", "TR38901"]},
-        "FR2": {"allowed": ["AWGN", "TDL", "CDL", "TR38901"]},
+        "FR2-1": {"allowed": ["AWGN", "TDL", "CDL", "TR38901"]},
+        "FR2-2": {"allowed": ["AWGN", "TDL", "CDL", "TR38901"]},
         "FR3": {"allowed": ["AWGN", "CDL", "TR38901"], "note": "FR3 is a 6G candidate study surface; TDL is hidden unless explicitly implemented."}
       }
     },
@@ -248,7 +257,8 @@
       "reference": "TR 38.901 Section 7.4.1",
       "cases": {
         "FR1": {"allowed": ["nrPathLoss", "TR38901_UMa", "TR38901_UMi", "TR38901_RMa", "ABG_explicit_study"]},
-        "FR2": {"allowed": ["nrPathLoss", "TR38901_UMa", "TR38901_UMi", "TR38901_InH", "ABG_explicit_study"]},
+        "FR2-1": {"allowed": ["nrPathLoss", "TR38901_UMa", "TR38901_UMi", "TR38901_InH", "ABG_explicit_study"]},
+        "FR2-2": {"allowed": ["nrPathLoss", "TR38901_UMa", "TR38901_UMi", "TR38901_InH", "ABG_explicit_study"]},
         "FR3": {"allowed": ["TR38901_candidate_extrapolation", "ABG_explicit_study"], "note": "FR3 pathloss is a candidate study surface, not NR conformance truth."}
       }
     },

@@ -5,11 +5,15 @@ ip = inputParser;
 ip.addRequired("cfg", @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("SourceFiles", strings(0,1), @(x)isstring(x) || iscellstr(x) || ischar(x));
 ip.addParameter("ConfigPath", "", @(x)ischar(x) || isstring(x));
+ip.addParameter("Authority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.parse(cfg, varargin{:});
 opt = ip.Results;
 
 newBase = localNewDefaults();
 oldBase = localLegacyDefaults();
+if ~isempty(fieldnames(opt.Authority))
+    cfg.sixgrAliasAuthorityInternal = opt.Authority;
+end
 
 cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localEnsureScenarioSchemaVersion(cfg);
@@ -218,7 +222,130 @@ cfg = localPreferModernRuntimeValue(cfg, "simulation.monte_carlo_iterations", "r
 cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localNormalizeFixedLinkCalibrationMode(cfg);
 cfg = localNormalizeFixedSNRSweepRunClass(cfg);
+cfg = localApplyDerivedNumerologyAliases(cfg, newBase, oldBase, opt.Authority);
+cfg = localApplyAuthorityDerivedCarrierGrid(cfg, opt.Authority);
+cfg = localApplyDerivedRandomAccessCarrierAliases(cfg, oldBase, opt.Authority);
 cfg = localApplyDeclaredRadioAliases(cfg, newBase);
+if isfield(cfg, "sixgrAliasAuthorityInternal")
+    cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
+end
+end
+
+function cfg = localApplyDerivedRandomAccessCarrierAliases(cfg, oldBase, authority)
+if ~logical(sixgr.util.structGet(cfg, "random_access.enabled", true))
+    return;
+end
+mappings = {
+    "frequency.range_name", "random_access.frequency_range"
+    "frequency.duplex_mode", "random_access.duplex_mode"
+    "frequency.center_frequency_hz", "random_access.carrier_frequency_hz"
+    "frame.scs_khz", "random_access.carrier_scs_khz"
+    "frequency.n_size_grid", "random_access.n_size_grid"
+    };
+for i = 1:size(mappings, 1)
+    sourcePath = string(mappings{i, 1});
+    targetPath = string(mappings{i, 2});
+    sourceValue = sixgr.util.structGet(cfg, sourcePath, []);
+    sourceBase = sixgr.util.structGet(oldBase, sourcePath, []);
+    targetValue = sixgr.util.structGet(cfg, targetPath, []);
+    targetBase = sixgr.util.structGet(oldBase, targetPath, []);
+    [~, sourceAuthoritative] = localTryGetNestedValue(authority, sourcePath);
+    [~, targetAuthoritative] = localTryGetNestedValue(authority, targetPath);
+    if targetAuthoritative
+        continue;
+    end
+    if sourceAuthoritative || (~isequaln(sourceValue, sourceBase) && ...
+            (isempty(targetValue) || isequaln(targetValue, targetBase)))
+        cfg = sixgr.util.structSet(cfg, targetPath, sourceValue);
+    end
+end
+end
+
+function cfg = localApplyDerivedNumerologyAliases(cfg, newBase, oldBase, authority)
+scsKHz = double(sixgr.util.structGet(cfg, "frame.scs_khz", NaN));
+cp = string(sixgr.util.structGet(cfg, "frame.cp_type", "normal"));
+if ~(isscalar(scsKHz) && isfinite(scsKHz) && scsKHz > 0)
+    return;
+end
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    scsKHz, cp, "generic_waveform_test", "");
+[~, scsExplicit] = localTryGetNestedValue(authority, "frame.scs_khz");
+[~, radioSCSExplicit] = localTryGetNestedValue(authority, ...
+    "global_radio_scope.scs_hz");
+scsChangedByAuthority = scsExplicit || radioSCSExplicit;
+baseSCS = double(sixgr.util.structGet(oldBase, "frame.scs_khz", NaN));
+scsDiffersFromBase = isfinite(baseSCS) && scsKHz ~= baseSCS;
+
+cfg = localInstallDerivedNumerologyValue(cfg, authority, newBase, ...
+    "global_radio_scope.numerology_mu", double(numerology.Mu), ...
+    scsChangedByAuthority, scsDiffersFromBase);
+cfg = localInstallDerivedNumerologyValue(cfg, authority, newBase, ...
+    "frame_timing.slot_duration_ms", ...
+    double(numerology.SlotDurationMilliseconds), ...
+    scsChangedByAuthority, scsDiffersFromBase);
+cfg = localInstallDerivedNumerologyValue(cfg, authority, newBase, ...
+    "frame_timing.slots_per_frame", double(numerology.SlotsPerFrame), ...
+    scsChangedByAuthority, scsDiffersFromBase);
+end
+
+function cfg = localInstallDerivedNumerologyValue(cfg, authority, newBase, ...
+        path, value, forceFromAuthority, scsDiffersFromBase)
+[~, explicitlyConfigured] = localTryGetNestedValue(authority, path);
+if explicitlyConfigured
+    return;
+end
+current = sixgr.util.structGet(cfg, path, []);
+baseValue = sixgr.util.structGet(newBase, path, []);
+if forceFromAuthority || isempty(current) || ...
+        (scsDiffersFromBase && isequaln(current, baseValue))
+    cfg = sixgr.util.structSet(cfg, path, value);
+end
+end
+
+function cfg = localApplyAuthorityDerivedCarrierGrid(cfg, authority)
+if isempty(fieldnames(authority))
+    return;
+end
+carrierPaths = [ ...
+    "frequency.range_name"
+    "frequency.center_frequency_hz"
+    "frequency.bandwidth_hz"
+    "frame.scs_khz"];
+carrierChanged = false;
+for i = 1:numel(carrierPaths)
+    [~, found] = localTryGetNestedValue(authority, carrierPaths(i));
+    carrierChanged = carrierChanged || found;
+end
+if ~carrierChanged
+    return;
+end
+[~, gridExplicit] = localTryGetNestedValue(authority, "frequency.n_size_grid");
+if gridExplicit
+    return;
+end
+range = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "frequency.range_name", ""))));
+if range == "FR3"
+    error("sixgr:phy:frame:CustomCarrierGridSizeRequired", ...
+        "Custom FR3 sweep overrides must explicitly configure frequency.n_size_grid.");
+end
+grid = sixgr.phy.frame.CarrierGridConfig.resolve( ...
+    "Role", "gNB", ...
+    "FrequencyRange", range, ...
+    "CenterFrequencyHz", double(sixgr.util.structGet(cfg, ...
+        "frequency.center_frequency_hz", NaN)), ...
+    "ChannelBandwidthMHz", double(sixgr.util.structGet(cfg, ...
+        "frequency.bandwidth_hz", NaN)) / 1e6, ...
+    "SubcarrierSpacingKHz", double(sixgr.util.structGet(cfg, ...
+        "frame.scs_khz", NaN)), ...
+    "NStartGrid", double(sixgr.util.structGet(cfg, ...
+        "frequency.n_start_grid", 0)), ...
+    "CyclicPrefix", string(sixgr.util.structGet(cfg, ...
+        "frame.cp_type", "normal")));
+cfg = sixgr.util.structSet(cfg, "frequency.n_size_grid", ...
+    double(grid.NSizeGrid));
+cfg = sixgr.util.structSet(cfg, "resource_grid.num_rbs", ...
+    double(grid.NSizeGrid));
 end
 
 function cfg = localExpandCanonicalControl(cfg, newBase)
@@ -401,6 +528,7 @@ mappings = {
     "mimo.trp_count", "mimo.trp_count", "identity"
     "mimo.mu_mimo_enable", "mimo.mu_mimo_enable", "identity"
     "mimo.mu_mimo_max_users_per_prb", "mimo.mu_mimo_max_users_per_prb", "identity"
+    "mimo.phase07_strict", "mimo.phase07_strict", "identity"
     "scheduler.type", "system.scheduler.type", "identity"
     "scheduler.max_active_ues_per_slot", "system.scheduler.maxActiveUEsPerSlot", "identity"
     "scheduler.max_active_ues_per_cell_per_slot", "system.scheduler.maxActiveUEsPerCellPerSlot", "identity"
@@ -451,6 +579,7 @@ mappings = {
     "reference_signals.srs_max_ues_per_slot", "reference_signals.srs_max_ues_per_slot", "identity"
     "reference_signals.srs_scheduling_policy", "reference_signals.srs_scheduling_policy", "identity"
     "reference_signals.trs_periodicity_ms", "reference_signals.trs_periodicity_ms", "identity"
+    "reference_signals.rsla_strict", "reference_signals.rsla_strict", "identity"
     "reference_signals.ptrs_enabled", "reference_signals.ptrs.enabled", "identity"
     "reference_signals.csi_rs_enabled", "reference_signals.nzp_csi_rs.enabled", "identity"
     "reference_signals.srs_enabled", "reference_signals.srs.enabled", "identity"
@@ -1109,6 +1238,10 @@ oldVal = sixgr.util.structGet(cfg, oldPath, []);
 newBaseVal = sixgr.util.structGet(newBase, newPath, []);
 oldBaseVal = sixgr.util.structGet(oldBase, oldPath, []);
 
+authority = sixgr.util.structGet(cfg, "sixgrAliasAuthorityInternal", struct());
+[~, newAuthoritative] = localTryGetNestedValue(authority, newPath);
+[~, oldAuthoritative] = localTryGetNestedValue(authority, oldPath);
+
 newDiff = ~isequaln(newVal, newBaseVal);
 oldDiff = ~isequaln(oldVal, oldBaseVal);
 newMissing = localAliasMissing(newVal);
@@ -1117,7 +1250,11 @@ oldMissing = localAliasMissing(oldVal);
 newToOld = localConvert(newVal, mode, "new_to_old");
 oldToNew = localConvert(oldVal, mode, "old_to_new");
 
-if newDiff && (oldMissing || ~oldDiff)
+if newAuthoritative && ~oldAuthoritative
+    cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
+elseif oldAuthoritative && ~newAuthoritative
+    cfg = sixgr.util.structSet(cfg, newPath, oldToNew);
+elseif newDiff && (oldMissing || ~oldDiff)
     cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
 elseif oldDiff && (newMissing || ~newDiff)
     cfg = sixgr.util.structSet(cfg, newPath, oldToNew);

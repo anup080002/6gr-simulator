@@ -442,7 +442,9 @@ else
         "CovarianceIncludesNoise", false, "Domain", "not_applicable");
 end
 if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
-    equalizerAlg = "MMSE";
+    error("sixgr:mimo:MissingInterferenceCovariance", ...
+        "PUSCH strict IRC requested, but no qualified covariance is available (%s).", ...
+        char(string(sixgr.util.structGet(rintInfo, "NAReason", "unknown"))));
 end
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);

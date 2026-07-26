@@ -1,0 +1,150 @@
+{
+  "ManifestVersion": "rf-vector-pack/v1",
+  "GeneratedWithoutMATLAB": true,
+  "Files": [
+    {
+      "File": "expected_rf_cfo_analytical.csv",
+      "Rows": 81,
+      "SHA256": "7bd334f85ca1ea30203d7ac5bd56beea1935738ae137e0cb46320169f4b00bcc",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_iq_analytical.csv",
+      "Rows": 70,
+      "SHA256": "be92402ef4f2e77a7a1a6e3e406f800f0687d31f2a120ef95159c546c1f4f3c6",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_noise_figure_analytical.csv",
+      "Rows": 54,
+      "SHA256": "74ed0175c25920b8780ba2f15acc54b3305289e1ea714889d280f8b06eb6c151",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_pa_analytical.csv",
+      "Rows": 189,
+      "SHA256": "89d4934b6089ba65ccd7df5cd237f30c65caec22020657f36ec3b791f72424d3",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_phase_noise_psd_floor.csv",
+      "Rows": 18,
+      "SHA256": "6c9d13222721f61a205571e7668b8f765b3bbb6bd05bdf13ffe7ab78b793d0a0",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_quantizer_analytical.csv",
+      "Rows": 189,
+      "SHA256": "5ebe440956c215059c6b3a32eed1a1e68beb829dc997d3504c5a4b4d673e1071",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_resampling_analytical.csv",
+      "Rows": 150,
+      "SHA256": "644047ce0c86cc5b5707676c0f4cc479daec492f564a381f9edbdba771139bdc",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "expected_rf_ul_power_control_analytical.csv",
+      "Rows": 192,
+      "SHA256": "6f3dbbace2c33bab7dc94849aaa4109221c3617e5eefa98815b0c892d006f144",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_blocker_intermod_test_vectors.csv",
+      "Rows": 144,
+      "SHA256": "7d1db6f938a4e199fbbc64d5e9084c4f44b10ce7a1e7f424b2ff7099fca6177f",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_cfo_tracking_test_vectors.csv",
+      "Rows": 81,
+      "SHA256": "272d47facb9d993e4bcd14fb6ed4f90b2fe398fd969f60da6a38d81a29476fb3",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_dpd_cfr_test_vectors.csv",
+      "Rows": 72,
+      "SHA256": "ff0dd3b6a298d1d0a3c227a237378ed3bbe1a8dd52f83eb7515ea3ec8b10cbe1",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_impact_acceptance_rules.csv",
+      "Rows": 96,
+      "SHA256": "758951c2a64e4df3eb257194da6d5f160a6c80fcc6962aa76c15d43b090176a2",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_impact_analysis_families.csv",
+      "Rows": 64,
+      "SHA256": "ca7770f2cef0d7092e43000c053a032e4d46dd73671e22a12bb2022c9f8f3a65",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_impact_experiment_matrix.csv",
+      "Rows": 768,
+      "SHA256": "737216c35102cc10fc323e5fe0975d0a7ef59c5e999c5b515a690c529413c42a",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_impact_pairing_contract.csv",
+      "Rows": 64,
+      "SHA256": "141d42269e2702d89128b4415971ad68aca639d5ae144300260b7bcada56b254",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_iq_dc_test_vectors.csv",
+      "Rows": 70,
+      "SHA256": "e6db363f705a2cfc4b03d47ae9bfbebc07af1f30ff579af921958439ebd0a46e",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_negative_test_vectors.csv",
+      "Rows": 180,
+      "SHA256": "af4a168da04a3da0dcd819992e7f66cec6a44e690ecb2aaf90f56b14c5263aad",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_noise_figure_test_vectors.csv",
+      "Rows": 54,
+      "SHA256": "ab16e17cc7a3bb5782cc617b154f94037c8de8e47028b07e94360a7c9325964f",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_pa_memory_test_vectors.csv",
+      "Rows": 189,
+      "SHA256": "cf1ced463f748b5fb5a45ddca589708736f02519b081ee552ef2f878952e50a4",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_phase_noise_test_vectors.csv",
+      "Rows": 18,
+      "SHA256": "60bc85458b1b8c1e5339ce733d95db1c996bbe34db2f3754d5560a4d332ae35c",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_quantizer_agc_test_vectors.csv",
+      "Rows": 189,
+      "SHA256": "f44f30fff50e10690ef0830a704218a1075207eeea372815f2fc216a8e88e8ca",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_timing_sco_test_vectors.csv",
+      "Rows": 150,
+      "SHA256": "a9ec529b5644f41a6a24e9c9af3bc69abf42a039b8ca4246390a8be7ef1cc9f5",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_ul_power_control_test_vectors.csv",
+      "Rows": 192,
+      "SHA256": "9bb813c02f68101f40d90174b5f07648c5e77b3bb01bc7ba69b2ace5b23f49ab",
+      "IndependentOfMATLAB": true
+    },
+    {
+      "File": "rf_waveform_quality_test_vectors.csv",
+      "Rows": 42,
+      "SHA256": "3cac91451ca9b6a652aecd0de4422915741b9ba9527f56539f4df8a744ea2945",
+      "IndependentOfMATLAB": true
+    }
+  ]
+}

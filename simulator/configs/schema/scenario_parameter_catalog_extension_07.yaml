@@ -299,6 +299,7 @@ sections:
       dmrs_scrambling_id_source: {required: false, type: string}
       dmrs_scrambling_id: {required: false, type: integer, min: 0}
       dmrs_port_to_layer_mapping: {required: false, type: string}
+      rsla_strict: {required: false, type: struct}
   link_adaptation:
     parameters:
       olla_init_offset_db: {required: false, type: number}

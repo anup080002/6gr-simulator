@@ -1,0 +1,2 @@
+RunID,ExperimentCount,CompletedCount,IncompleteCount,SeedList,ConfidenceLevel,Status
+RSLA_IMPACT09_R18,768,768,0,11|23|47|89|131|197,0.95,PASS

@@ -230,6 +230,43 @@ canonical_control:
     trp_count: 2
     mu_mimo_enable: true
     mu_mimo_max_users_per_prb: 2
+    phase07_strict:
+      enabled: false
+      profile_id: fr1_typeI_single_panel_strict
+      specification_profile: 3GPP_R18_MIMO_CSI_V1
+      direction: DL
+      codebook_type: typeI-SinglePanel
+      ports: 32
+      panels: 1
+      n1: 4
+      n2: 4
+      o1: 4
+      o2: 4
+      max_rank: 2
+      rank_domain: [1, 2]
+      receiver: MMSE
+      precoder_prg_size_rbs: 4
+      require_active_tci_state: true
+      measurement_max_age_slots: 8
+      covariance:
+        min_samples: 32
+        max_age_slots: 4
+        shrinkage_factor: 0.05
+        condition_number_limit: 1000000000000
+      csi_report:
+        report_config_id: csi-report-0
+        epoch: 0
+        report_quantity: cri-RI-PMI-CQI
+        num_csi_resources: 32
+        frequency_granularity: subband
+        uci_channel: PUCCH
+        num_subbands: 16
+        number_of_beams: 4
+        phase_alphabet_size: 4
+      ul_srs_authority:
+        enabled: true
+        max_age_slots: 8
+        configured_override_forbidden: true
   scheduler:
     type: PF
     queue_max_bits: 2000000000
@@ -289,6 +326,102 @@ canonical_control:
     srs_max_ues_per_slot: 2
     srs_scheduling_policy: multiplex_due_users
     trs_periodicity_ms: 10
+    rsla_strict:
+      enabled: true
+      strict: true
+      profile_id: nr_rel18_rsla_strict
+      configuration_epoch: 1
+      specification:
+        ts_38211: 18.8.0
+        ts_38212: 18.8.0
+        ts_38213: 18.8.0
+        ts_38214: 18.9.0
+        ts_38215: 18.8.0
+        ts_38331: 18.9.0
+        channel_profile: TR_38.901_TDL-C
+      resource_ownership:
+        index_base: zero_based
+        collision_policy: reject_unproven_overlap
+        require_complete_ledger_before_waveform: true
+      dmrs:
+        mapping_types: [A, B]
+        configuration_types: [1, 2]
+        lengths: [1, 2]
+        additional_positions: [0, 1, 2, 3]
+        type_a_positions: [2, 3]
+        nscid_values: [0, 1]
+        require_independent_vector: true
+      csi_rs:
+        rows: [1, 2, 3, 4, 5, 6]
+        resource_types: [NZP, ZP, CSI-IM_ASSOCIATED]
+        trigger_types: [periodic, semiPersistent, aperiodic]
+        muting_enabled: true
+        require_decoded_aperiodic_trigger: true
+        require_independent_vector: true
+      srs:
+        port_counts: [1, 2, 4]
+        resource_types: [periodic, semiPersistent, aperiodic]
+        usages: [beamManagement, codebook, nonCodebook]
+        transmission_combs: [2, 4]
+        require_scheduler_state: true
+        require_independent_vector: true
+      trs:
+        resource_model: nzp_csi_rs_tracking_set
+        no_oracle_tracking: true
+        require_applied_correction_hash: true
+      ptrs:
+        directions: [DL, UL]
+        time_densities: [1, 2, 4]
+        frequency_densities: [2, 4]
+        re_offsets: [0, 1, 2, 3]
+        require_measured_cpe: true
+      measurements:
+        quantities: [SS-RSRP, CSI-RSRP, SS-RSRQ, CSI-RSRQ, SS-SINR, CSI-SINR, RSSI, SRS-RSRP]
+        provenance_required: observed_received_sample_statistics
+        max_age_slots: 8
+        require_complete_identity: true
+      filtering:
+        l1_window_samples: 4
+        l3_coefficient: 0.5
+        prediction_enabled: true
+      measurement_gaps:
+        enabled: true
+        period_slots: 40
+        offset_slots: 4
+        length_slots: 6
+      csi_reports:
+        profiles: [P01, P02, P03, P04, P05, P06, P07, P08]
+        transports: [PUCCH, PUSCH]
+        crc_required: true
+        semantic_validation_required: true
+      calibration:
+        registry_id: rsla_rel18_profile_keyed
+        target_bler: 0.1
+        mapping_methods: [EESM, MIESM]
+        missing_profile_policy: reject
+      olla:
+        enabled: true
+        target_bler: 0.1
+        ack_step_db: 0.01
+        margin_min_db: -5
+        margin_max_db: 5
+        dtx_policy: NACK
+        inactivity_reset_slots: 100
+        per_ue_state: true
+      rrm:
+        events: [A1, A2, A3, A4, A5, A6]
+        hysteresis_db: 3
+        time_to_trigger_samples: 2
+        require_filtered_measurements: true
+      evm:
+        reference_point: equalized_data_RE
+        rf_pass_fail_enabled: false
+      validation:
+        vector_root: tests/vectors/rsla
+        seeds: [11, 23, 47, 89]
+        impact_seeds: [11, 23, 47, 89, 131, 197]
+        confidence_level: 0.95
+        unsupported_tuple_policy: reject_before_waveform
   csi:
     dl_csi_enabled: true
     ul_csi_enabled: true

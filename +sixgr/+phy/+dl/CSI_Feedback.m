@@ -14,8 +14,18 @@ ip.addParameter("PostEqSINRSource", "", @(s) ischar(s) || isstring(s));
 ip.addParameter("PostEqSINRValueRole", "", @(s) ischar(s) || isstring(s));
 ip.addParameter("PostEqSINRValueStatus", "", @(s) ischar(s) || isstring(s));
 ip.addParameter("PostEqSINRNAReason", "", @(s) ischar(s) || isstring(s));
+ip.addParameter("MeasurementState", [], @(x) isempty(x) || isa(x, ...
+    "sixgr.phy.mimo.CSIMeasurementState"));
+ip.addParameter("ReportConfiguration", [], @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+
+strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
+    sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
+if strictMIMO
+    [csi,info] = localStrictCSI(hEst,nVar,cfg,opt);
+    return;
+end
 
 method = lower(string(opt.Method));
 direction = localNormalizeDirection(opt.Direction);
@@ -277,6 +287,7 @@ ri = NaN;
 if nargin < 3 || isempty(maxRank) || ~(isfinite(double(maxRank)) && double(maxRank) >= 1)
     maxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", 1));
 end
+
 maxRank = max(1, round(double(maxRank)));
 if isempty(hEst)
     return;
@@ -1078,6 +1089,148 @@ for i = 1:size(W, 2)
     nrm = norm(W(:, i));
     if nrm > 0
         W(:, i) = W(:, i) ./ nrm;
+    end
+end
+end
+
+function [csi,info] = localStrictCSI(hEst,nVar,cfg,opt)
+measurement = opt.MeasurementState;
+if isempty(measurement)
+    measurement = sixgr.util.structGet(cfg,"phy.csi.measurementState",[]);
+end
+if ~isa(measurement,"sixgr.phy.mimo.CSIMeasurementState")
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict CSI feedback requires CSIMeasurementState.");
+end
+if sixgr.phy.mimo.MatrixContract.digest(hEst) ~= measurement.Digest
+    error("sixgr:mimo:MeasurementIdentityMismatch", ...
+        "CSI facade input differs from the immutable measured state.");
+end
+if ismatrix(hEst)
+    Hwb = double(hEst);
+else
+    Hwb = localWidebandChannelMatrix(hEst,cfg);
+end
+if isempty(Hwb)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict CSI feedback requires a measured channel estimate.");
+end
+reportRequest = opt.ReportConfiguration;
+if isempty(reportRequest)
+    reportRequest = sixgr.util.structGet(cfg,"phy.csi.reportConfiguration",[]);
+end
+if isempty(reportRequest)
+    error("sixgr:mimo:MissingCSIReportConfig", ...
+        "Strict CSI feedback requires the active decoded report configuration.");
+end
+runtime = localStrictRuntimeConfig(cfg,opt,reportRequest,measurement,size(Hwb,2));
+core = sixgr.mimo.buildCSIFeedback(Hwb,double(nVar),runtime, ...
+    "Direction",opt.Direction,"NominalRank",runtime.MaxRank, ...
+    "MeasurementState",measurement);
+payload = sixgr.phy.dl.packCSIFeedbackPayload(core,runtime);
+csi = core;
+csi.SINR_dB = double(core.WidebandSINR_dB);
+csi.NumRxAnt = double(size(Hwb,1));
+csi.NumTxPorts = double(size(Hwb,2));
+csi.ReportCQI = contains(lower(string(core.ChannelStateInformationMode)),"cqi");
+csi.ReportPMI = contains(lower(string(core.ChannelStateInformationMode)),"pmi");
+csi.ReportRI = contains(lower(string(core.ChannelStateInformationMode)),"ri");
+csi.ReportCRI = contains(lower(string(core.ChannelStateInformationMode)),"cri");
+csi.PMICodebookMode = string(core.CSIReportConfiguration.CodebookType);
+csi.CSIPayloadBits = payload.Bits;
+csi.CSIPayloadBitLength = payload.BitLength;
+csi.CSIPayloadHex = "";
+csi.CSIPayloadMode = payload.Mode;
+csi.CSIPayloadStandardProfile = payload.StandardProfile;
+csi.CSIPayloadCRCEnabled = payload.CRCEnabled;
+csi.CSIPayloadFieldCount = payload.FieldCount;
+csi.CSIPayloadFieldLayout = payload.FieldLayout;
+csi.CSIPart1Bits = payload.Part1Bits;
+csi.CSIPart2Bits = payload.Part2Bits;
+csi.SeparateEncoding = payload.SeparateEncoding;
+csi.CustomContainerUsed = payload.CustomContainerUsed;
+csi.SINRSource = "measured_csi_state_receiver_objective";
+csi.SINRValueRole = "measured_post_equalization_scheduling_input";
+csi.SINRValueStatus = "OK";
+csi.SINRNAReason = "";
+csi.SubbandCQI = [];
+csi.SubbandPMI = [];
+csi.SubbandCount = double(sixgr.util.structGet(reportRequest,"NumSubbands",1));
+csi.WidebandOrSubband = string(core.CSIReportConfiguration.FrequencyGranularity);
+csi.RSRP_dB = NaN;
+csi.RSSI_dB = NaN;
+csi.RSRQ_dB = NaN;
+csi.RSRPSource = "not_requested_by_strict_csi_report";
+csi.RSSISource = "not_requested_by_strict_csi_report";
+csi.RSRQSource = "not_requested_by_strict_csi_report";
+
+info = struct( ...
+    "Method","strict_report_configured_receiver_objective", ...
+    "EngineUsed","sixgr.mimo.buildCSIFeedback", ...
+    "NoiseVar",double(nVar), ...
+    "WidebandChannel",Hwb, ...
+    "SelectedMetric",double(core.SelectionInfo.SelectedMetric), ...
+    "SelectedRank",double(core.RI), ...
+    "SelectedPMI",double(core.PMI), ...
+    "SelectedMatrixSHA256",string(core.PrecoderMatrixSHA256), ...
+    "MeasurementID",string(measurement.MeasurementID), ...
+    "ReportConfigID",string(core.CSIReportConfiguration.ReportConfigID), ...
+    "Payload",payload, ...
+    "ConfiguredSNRUsed",false, ...
+    "SVDThresholdUsed",false, ...
+    "CustomContainerUsed",false);
+end
+
+function runtime = localStrictRuntimeConfig(cfg,opt,reportRequest,measurement,nTx)
+runtime = struct();
+runtime.Strict = true;
+runtime.N1 = localFirstStrictNumber(cfg, ...
+    ["phy.mimo.N1","mimo.N1","antenna.bs.N1"],NaN);
+runtime.N2 = localFirstStrictNumber(cfg, ...
+    ["phy.mimo.N2","mimo.N2","antenna.bs.N2"],NaN);
+runtime.O1 = localFirstStrictNumber(cfg, ...
+    ["phy.mimo.O1","mimo.O1"],1);
+runtime.O2 = localFirstStrictNumber(cfg, ...
+    ["phy.mimo.O2","mimo.O2"],1);
+if ~(isfinite(runtime.N1) && isfinite(runtime.N2) && runtime.N1*runtime.N2 == nTx)
+    if nTx == 2
+        runtime.N1 = 1;
+        runtime.N2 = 1;
+    else
+        error("sixgr:mimo:InvalidPanelGeometry", ...
+            "Strict CSI requires explicit N1*N2 equal to the measured transmit ports.");
+    end
+end
+runtime.MaxRank = opt.MaxRank;
+if isempty(runtime.MaxRank)
+    runtime.MaxRank = double(sixgr.util.structGet(cfg,"phy.csi.maxRank", ...
+        min(size(measurement.ChannelEstimate))));
+end
+runtime.RankDomain = double(sixgr.util.structGet(cfg,"phy.csi.rankDomain", ...
+    1:runtime.MaxRank));
+runtime.NoiseVariance = double(measurement.NoiseVariance);
+runtime.InterferenceCovariance = measurement.InterferenceCovariance;
+runtime.Receiver = string(sixgr.util.structGet(cfg,"phy.rx.detector","MMSE"));
+runtime.ReportConfiguration = reportRequest;
+runtime.ReportConfigurationEpoch = double(sixgr.util.structGet(cfg, ...
+    "phy.csi.reportConfigurationEpoch",double(reportRequest.Epoch)));
+runtime.CurrentSlot = double(sixgr.util.structGet(cfg,"runtime.currentSlot",measurement.Slot));
+runtime.CQISINRThresholdsDB = double(sixgr.util.structGet(cfg, ...
+    "phy.csi.cqiSINRThresholdsDB", ...
+    [-Inf -6.7 -4.7 -2.3 .2 2.4 4.3 5.9 8.1 10.3 11.7 14.1 16.3 18.7 21 22.7]));
+candidateMatrices = sixgr.util.structGet(cfg,"phy.csi.candidateMatricesByRank",[]);
+if ~isempty(candidateMatrices)
+    runtime.CandidateMatricesByRank = candidateMatrices;
+end
+end
+
+function value = localFirstStrictNumber(cfg,paths,defaultValue)
+value = defaultValue;
+for path = string(paths)
+    candidate = sixgr.util.structGet(cfg,path,[]);
+    if isnumeric(candidate) && isscalar(candidate) && isfinite(double(candidate))
+        value = double(candidate);
+        return;
     end
 end
 end

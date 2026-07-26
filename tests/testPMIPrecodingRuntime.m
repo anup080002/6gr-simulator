@@ -20,6 +20,10 @@ cfg.phy.pdsch.codeRate = 0.35;
 cfg.phy.pdsch.nLayers = 2;
 cfg.phy.pdsch.numLayers = 2;
 cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.mcsTable = "calibration_explicit";
+cfg.phy.pdsch.mcsIndex = 0;
+cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
 cfg.phy.nTxAnt = 4;
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.numPorts", 4);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.PMI", 0);
@@ -65,6 +69,8 @@ cfgUL.phy.pusch.codeRate = 0.35;
 cfgUL.phy.pusch.transformPrecoding = false;
 cfgUL.phy.pusch.nLayers = 2;
 cfgUL.phy.pusch.numLayers = 2;
+cfgUL.phy.pusch.transmissionScheme = "codebook";
+cfgUL.phy.pusch.NumAntennaPorts = 4;
 cfgUL.phy.nTxAnt = 4;
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.numPorts", 4);
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.PMI", 1);
@@ -99,6 +105,19 @@ assert(isfinite(double(rxUL.ReceiverHestSINR_dB)) && ...
     "PMI-driven UL PUSCH must export measured receiver-Hest reference SINR from reconstructed multi-port DM-RS evidence.");
 
 ok = true;
+end
+
+function context = localCalibrationMCSContext()
+context = struct( ...
+    "UECapability1024QAM",false, ...
+    "RRCEnabled1024QAM",false, ...
+    "DCIEnabled1024QAM",false, ...
+    "DeploymentAllows1024QAM",false, ...
+    "FrequencyRangeAllows1024QAM",false, ...
+    "BandAllows1024QAM",false, ...
+    "FrequencyRange","FR1", ...
+    "OperatingBand","n78", ...
+    "DeploymentClass","controlled_test");
 end
 
 function tf = localHaveRequired5G()

@@ -1,108 +1,177 @@
 function [W_opt, pmi_i1, pmi_i2, info] = selectPMI(H_wb, rankValue, nTx, nRx, cfg)
-%SELECTPMI Select a wideband PMI/codebook precoder from measured channel H.
+%SELECTPMI Receiver-aware exhaustive PMI selection from measured channel.
 %
-% The search criterion is max ||H*W||_F^2 over deterministic Type-I-style
-% DFT candidates. PMI values are zero-based for exported evidence.
+% This compatibility façade preserves the historical outputs while using a
+% post-equalization mutual-information objective. Strict mode requires
+% explicit panel geometry and an enabled enumerated codebook. It never
+% infers a square panel or uses configured SNR as measurement evidence.
 
 if nargin < 5 || ~isstruct(cfg)
     cfg = struct();
 end
-H = localOrientChannel(H_wb, nTx);
-nTx = size(H, 2);
-nRx = size(H, 1);
-rankValue = max(1, min(round(double(rankValue)), min(nTx, nRx)));
-
-[W1, W2, cbInfo] = localCandidateCodebook(nTx, cfg);
-if rankValue == 1
-    gains = sum(abs(H * W1).^2, 1);
-    [bestGain, bestIdx] = max(gains);
-    W_opt = W1(:, bestIdx);
-    [l1, l2] = localDecodePMI(bestIdx, cbInfo.NumHorizontalBeams, cbInfo.NumVerticalBeams);
-    pmi_i1 = [l1, l2];
-    pmi_i2 = NaN;
-else
-    nCand = size(W2, 3);
-    gains = NaN(nCand, 1);
-    for ii = 1:nCand
-        gains(ii) = norm(H * W2(:, :, ii), "fro")^2;
-    end
-    [bestGain, bestIdx] = max(gains);
-    W_opt = W2(:, :, bestIdx);
-    beamIdx = floor((bestIdx - 1) / 4) + 1;
-    pmi_i2 = mod(bestIdx - 1, 4);
-    [l1, l2] = localDecodePMI(beamIdx, cbInfo.NumHorizontalBeams, cbInfo.NumVerticalBeams);
-    pmi_i1 = [l1, l2];
+strict = logical(sixgr.util.structGet(cfg,"Strict", ...
+    sixgr.util.structGet(cfg,"mimo.strict",false)));
+H = localOrientMeasuredChannel(H_wb,nTx,strict);
+nTxMeasured = size(H,2);
+nRxMeasured = size(H,1);
+if ~(isscalar(rankValue) && isnumeric(rankValue) && isfinite(rankValue) && ...
+        rankValue == round(rankValue) && rankValue >= 1 && ...
+        rankValue <= min(nTxMeasured,nRxMeasured))
+    error("sixgr:mimo:UnsupportedRank", ...
+        "Rank %s is invalid for measured %d-by-%d channel.", ...
+        mat2str(rankValue),nRxMeasured,nTxMeasured);
 end
+if ~isempty(nRx) && isfinite(double(nRx)) && strict && double(nRx) ~= nRxMeasured
+    error("sixgr:mimo:UnsupportedAntennaTuple", ...
+        "Configured receive antennas differ from the measured channel.");
+end
+
+[candidates,candidateIndices,cbInfo] = localCandidates(nTxMeasured,rankValue,cfg,strict);
+noiseVariance = double(sixgr.util.structGet(cfg,"NoiseVariance", ...
+    sixgr.util.structGet(cfg,"noiseVariance",1)));
+if ~(isscalar(noiseVariance) && isfinite(noiseVariance) && noiseVariance >= 0)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Measured noise variance is required for strict PMI selection.");
+end
+Rint = sixgr.util.structGet(cfg,"InterferenceCovariance",[]);
+receiver = string(sixgr.util.structGet(cfg,"Receiver","MMSE"));
+[W_opt,decision] = sixgr.phy.mimo.CodebookEngine.select( ...
+    H,candidates,NoiseVariance=noiseVariance, ...
+    InterferenceCovariance=Rint,Receiver=receiver);
+selected = decision.SelectedIndex+1;
+pmiLinear = candidateIndices(selected);
+pmi_i1 = double(pmiLinear);
+pmi_i2 = NaN;
 
 info = cbInfo;
 info.Rank = double(rankValue);
-info.NumRx = double(nRx);
-info.NumTx = double(nTx);
-info.SelectedGain = double(bestGain);
+info.NumRx = double(nRxMeasured);
+info.NumTx = double(nTxMeasured);
+info.SelectedPMI = double(pmiLinear);
 info.SelectedPMI_i1 = double(pmi_i1);
 info.SelectedPMI_i2 = double(pmi_i2);
-info.SelectionMetric = "max_norm_H_times_W_frobenius";
+info.CandidateMetric = decision.CandidateMetric;
+info.SelectedMetric = decision.SelectedMetric;
+info.SelectedGain = decision.SelectedMetric; % compatibility label only
+info.SelectionMetric = "posteq_mutual_information_log2det";
+info.SelectionObjective = decision.Objective;
+info.Receiver = decision.Receiver;
+info.ConfiguredSNRUsed = false;
+info.SVDThresholdUsed = false;
+info.MatrixSHA256 = decision.MatrixSHA256;
+info.RuntimeEvidenceSource = "measured_channel_noise_and_covariance";
 end
 
-function H = localOrientChannel(Hin, nTx)
+function H = localOrientMeasuredChannel(Hin,nTx,strict)
+if isempty(Hin) || ~isnumeric(Hin)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "PMI selection requires a measured channel matrix.");
+end
 H = Hin;
-if isempty(H)
-    error("sixgr:mimo:selectPMI:EmptyChannel", "PMI selection requires a non-empty channel matrix.");
-end
 if ndims(H) == 3
-    H = mean(H, 3, "omitnan");
+    H = mean(H,3,"omitnan");
 end
-if ~ismatrix(H)
-    error("sixgr:mimo:selectPMI:BadChannelShape", "H_wb must be a matrix or nRx-by-nTx-by-nSubcarrier array.");
+if ~ismatrix(H) || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Measured channel must be a finite matrix or frequency stack.");
 end
 if nargin >= 2 && ~isempty(nTx) && isnumeric(nTx) && isfinite(double(nTx))
     nTx = round(double(nTx));
-    if size(H, 2) ~= nTx && size(H, 1) == nTx
-        H = H.';
+    if size(H,2) ~= nTx
+        if ~strict && size(H,1) == nTx
+            H = H.';
+        else
+            error("sixgr:mimo:UnsupportedAntennaTuple", ...
+                "Channel orientation must be Nrx-by-Nport; received %s for %d ports.", ...
+                mat2str(size(H)),nTx);
+        end
     end
 end
 end
 
-function [W1, W2, info] = localCandidateCodebook(nTx, cfg)
-N1 = round(localNumericCfg(cfg, ["N1","mimo.N1"], NaN));
-N2 = round(localNumericCfg(cfg, ["N2","mimo.N2"], NaN));
-O1 = round(localNumericCfg(cfg, ["O1","mimo.O1"], 4));
-O2 = round(localNumericCfg(cfg, ["O2","mimo.O2"], 4));
-if ~(isfinite(N1) && isfinite(N2) && N1 >= 1 && N2 >= 1 && N1 * N2 == nTx)
-    N1 = max(1, floor(sqrt(double(nTx))));
-    while mod(nTx, N1) ~= 0 && N1 > 1
-        N1 = N1 - 1;
+function [candidates,indices,info] = localCandidates(nTx,rankValue,cfg,strict)
+explicit = sixgr.util.structGet(cfg,"CandidateMatrices",[]);
+if ~isempty(explicit)
+    candidates = explicit;
+    if ndims(candidates) < 3
+        candidates = reshape(candidates,size(candidates,1),size(candidates,2),1);
     end
-    N2 = max(1, nTx / N1);
+    if size(candidates,1) ~= nTx || size(candidates,2) ~= rankValue
+        error("sixgr:mimo:PrecoderDimensionMismatch", ...
+            "Explicit candidate matrices must be Nport-by-rank-by-Ncandidate.");
+    end
+    indices = double(sixgr.util.structGet(cfg,"CandidateIndices", ...
+        (0:size(candidates,3)-1).'));
+    if numel(indices) ~= size(candidates,3)
+        error("sixgr:mimo:InvalidPMI", ...
+            "CandidateIndices must identify every candidate matrix.");
+    end
+    for index = 1:size(candidates,3)
+        sixgr.phy.mimo.MatrixContract.validate( ...
+            candidates(:,:,index),nTx,rankValue);
+    end
+    info = struct("CodebookType","explicit_frozen_candidates", ...
+        "GenericDFTApproximationUsed",false, ...
+        "NormativeSubset",logical(sixgr.util.structGet(cfg,"NormativeSubset",false)));
+    return;
 end
 
-function value = localNumericCfg(cfg, paths, defaultValue)
+codebookType = lower(string(sixgr.util.structGet(cfg,"CodebookType", ...
+    sixgr.util.structGet(cfg,"phy.csi.codebookType","typeI-SinglePanel"))));
+if nTx == 2 && contains(codebookType,"typei") && ...
+        ~contains(codebookType,"typeii")
+    candidates = sixgr.phy.mimo.TypeI2PortCodebook.enumerate(rankValue);
+    indices = (0:size(candidates,3)-1).';
+    info = struct( ...
+        "CodebookType","typeI-SinglePanel", ...
+        "GenericDFTApproximationUsed",false, ...
+        "NormativeSubset",true, ...
+        "Specification","TS38.214-V18.9.0-Table5.2.2.2.1-1");
+    return;
+end
+
+N1 = localExplicitInteger(cfg,["N1","mimo.N1"],strict);
+N2 = localExplicitInteger(cfg,["N2","mimo.N2"],strict);
+if ~(isfinite(N1) && isfinite(N2) && N1*N2 == nTx)
+    if strict
+        error("sixgr:mimo:InvalidPanelGeometry", ...
+            "Strict PMI selection requires explicit N1*N2 equal to measured ports.");
+    end
+    N1 = 1;
+    N2 = nTx;
+end
+O1 = localExplicitInteger(cfg,["O1","mimo.O1"],false,4);
+O2 = localExplicitInteger(cfg,["O2","mimo.O2"],false,4);
+[W1,W2,info] = sixgr.mimo.buildNRCodebook(N1,N2,O1,O2);
+if rankValue == 1
+    candidates = reshape(W1,nTx,1,size(W1,2));
+else
+    candidates = W2;
+end
+if strict && logical(sixgr.util.structGet(info,"GenericDFTApproximationUsed",true))
+    error("sixgr:mimo:UnsupportedResearchFallback", ...
+        "A compact DFT study codebook cannot enter a strict profile.");
+end
+indices = (0:size(candidates,3)-1).';
+end
+
+function value = localExplicitInteger(cfg,paths,required,defaultValue)
+if nargin < 4
+    defaultValue = NaN;
+end
 value = defaultValue;
-for p = string(paths)
-    raw = sixgr.util.structGet(cfg, p, []);
+for path = string(paths)
+    raw = sixgr.util.structGet(cfg,path,[]);
     if isempty(raw)
         continue;
     end
-    if isnumeric(raw) || islogical(raw)
-        vals = double(raw(:));
-    else
-        vals = str2double(string(raw(:)));
-    end
-    idx = find(isfinite(vals), 1);
-    if ~isempty(idx)
-        value = vals(idx);
+    raw = double(raw);
+    if isscalar(raw) && isfinite(raw) && raw >= 1 && raw == round(raw)
+        value = raw;
         return;
     end
 end
+if required
+    value = NaN;
 end
-[W1, W2, info] = sixgr.mimo.buildNRCodebook(N1, N2, O1, O2);
-info.NumHorizontalBeams = double(N1 * O1);
-info.NumVerticalBeams = double(N2 * O2);
-end
-
-function [l1, l2] = localDecodePMI(idx, nH, nV)
-idx0 = max(0, round(double(idx)) - 1);
-l1 = floor(idx0 / nV);
-l2 = mod(idx0, nV);
-l1 = mod(l1, nH);
 end

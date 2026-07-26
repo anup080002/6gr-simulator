@@ -1,0 +1,16 @@
+{
+  "Counts": {
+    "PASS": 9,
+    "WARN": 0,
+    "FAIL": 2,
+    "BLOCKED": 2
+  },
+  "DefectSignatures": 46,
+  "UsefulFoundations": 11,
+  "RequiredArtifactsPresent": 0,
+  "RequiredArtifactsTotal": 100,
+  "ExistingCSVs": 225,
+  "ExistingPNGs": 40,
+  "MATLABAvailable": false,
+  "VectorVerifierExit": 0
+}

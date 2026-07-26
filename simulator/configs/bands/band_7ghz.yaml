@@ -1,6 +1,6 @@
 {
   "frequency": {
-    "range_name": "FR3",
+    "range_name": "FR1",
     "band_name": "7ghz",
     "center_frequency_hz": 7000000000,
     "bandwidth_hz": 50000000,
@@ -14,7 +14,7 @@
     "power_model_defaults": "fr3",
     "energy_model_defaults": "fr3_energy",
     "rf_impairment_defaults": "fr3_beam_tracking",
-    "n_size_grid": 66
+    "n_size_grid": 65
   },
   "frame": {
     "scs_khz": 60

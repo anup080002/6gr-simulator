@@ -17,7 +17,10 @@ opt = struct( ...
     "Mode", "auto", ...
     "CombiningMode", "coherent", ...
     "NoiseVariance", sixgr.util.structGet(cfg, "phy.noiseVariance", 0), ...
-    "NoiseSamples", []);
+    "NoiseSamples", [], ...
+    "Strict", logical(sixgr.util.structGet(cfg,"mimo.strict", ...
+        sixgr.util.structGet(cfg,"phy.mimo.strict",false))), ...
+    "TransmissionContext", []);
 if ~isempty(varargin)
     if mod(numel(varargin), 2) ~= 0
         error("sixgr:mimo:executeSpatialComposite:BadNameValue", ...
@@ -34,6 +37,10 @@ if ~isempty(varargin)
                 opt.NoiseVariance = double(varargin{i + 1});
             case "noisesamples"
                 opt.NoiseSamples = varargin{i + 1};
+            case "strict"
+                opt.Strict = logical(varargin{i + 1});
+            case "transmissioncontext"
+                opt.TransmissionContext = varargin{i + 1};
             otherwise
                 error("sixgr:mimo:executeSpatialComposite:UnknownOption", ...
                     "Unknown option '%s'.", key);
@@ -41,7 +48,7 @@ if ~isempty(varargin)
     end
 end
 
-tx = localNormalizeTx(tx);
+tx = localNormalizeTx(tx,opt.Strict);
 rx = localNormalizeRx(rx);
 if isempty(tx)
     error("sixgr:mimo:executeSpatialComposite:NoTransmitters", ...
@@ -51,9 +58,12 @@ if isempty(rx)
     error("sixgr:mimo:executeSpatialComposite:NoReceivers", ...
         "At least one receiver context is required.");
 end
+localValidateStrictContext(tx,rx,opt);
 
 nTx = numel(tx);
 portWaveforms = cell(nTx, 1);
+matrixDigests = strings(nTx,1);
+measuredTxPower = zeros(nTx,1);
 for k = 1:nTx
     S = tx(k).Symbols;
     W = tx(k).Precoder;
@@ -67,6 +77,8 @@ for k = 1:nTx
         scale = 0;
     end
     portWaveforms{k} = scale .* (S * W.');
+    matrixDigests(k) = sixgr.phy.mimo.MatrixContract.digest(W);
+    measuredTxPower(k) = localMeanPower(portWaveforms{k});
 end
 
 out = struct();
@@ -79,6 +91,11 @@ out.ReceiverCount = double(numel(rx));
 out.SimultaneousSharedPRB = logical(localHasSharedPRB(tx));
 out.Equation = "y_u=sum_j H_{u<-j} x_j+n_u, x_j=S_j W_j^T";
 out.TxPortWaveforms = portWaveforms;
+out.PrecoderSHA256 = matrixDigests;
+out.MeasuredTxPower = measuredTxPower;
+out.FallbackUsed = false;
+out.Strict = logical(opt.Strict);
+out.ContextClass = string(class(opt.TransmissionContext));
 
 rxOut = repmat(localEmptyRxOut(), numel(rx), 1);
 for r = 1:numel(rx)
@@ -138,13 +155,15 @@ for r = 1:numel(rx)
     rxOut(r).SINR_dB = double(10 .* log10(max(sinr, realmin)));
     rxOut(r).Rate_bpsHz = double(log2(1 + max(sinr, 0)));
     rxOut(r).ContributorIds = string({tx.SourceId});
+    rxOut(r).DesiredContributorIds = string({tx(desiredMask).SourceId});
+    rxOut(r).InterferenceContributorIds = string({tx(~desiredMask).SourceId});
 end
 out.Rx = rxOut;
 out.SumRate_bpsHz = sum([rxOut.Rate_bpsHz]);
 out.DimensionContract = "S[Nsample,Nlayer], W[Nport,Nlayer], X=S*W.', H[Nrx,Nport], Y=X*H.'";
 end
 
-function tx = localNormalizeTx(txIn)
+function tx = localNormalizeTx(txIn,strict)
 if isempty(txIn)
     tx = repmat(localEmptyTx(), 0, 1);
     return;
@@ -165,6 +184,10 @@ for k = 1:numel(tx)
     end
     tx(k).Symbols = double(S);
     if ~isfield(tx(k), "Precoder") || isempty(tx(k).Precoder)
+        if strict
+            error("sixgr:mimo:MissingAppliedPrecoder", ...
+                "Strict spatial composition requires the scheduler-selected immutable precoder.");
+        end
         tx(k).Precoder = eye(size(S, 2));
     end
     if ~isnumeric(tx(k).Precoder) || ~ismatrix(tx(k).Precoder)
@@ -172,6 +195,10 @@ for k = 1:numel(tx)
             "Transmitter Precoder must be an Nport-by-Nlayer numeric matrix.");
     end
     tx(k).Precoder = double(tx(k).Precoder);
+    if strict
+        sixgr.phy.mimo.MatrixContract.validate( ...
+            tx(k).Precoder,size(tx(k).Precoder,1),size(S,2));
+    end
     if ~isfield(tx(k), "UserId") || strlength(string(tx(k).UserId)) == 0
         tx(k).UserId = "tx" + k;
     end
@@ -193,6 +220,60 @@ for k = 1:numel(tx)
     if ~isfield(tx(k), "PRBSet")
         tx(k).PRBSet = [];
     end
+    if ~isfield(tx(k), "SymbolSet")
+        tx(k).SymbolSet = [];
+    end
+    if ~isfield(tx(k), "DMRSIdentity")
+        tx(k).DMRSIdentity = NaN;
+    end
+end
+end
+
+function localValidateStrictContext(tx,rx,opt)
+if ~logical(opt.Strict)
+    return;
+end
+if isempty(opt.TransmissionContext)
+    error("sixgr:mimo:MissingTransmissionContext", ...
+        "Strict MU-MIMO or multi-TRP composition requires a typed transmission context.");
+end
+ctx = opt.TransmissionContext;
+if isa(ctx,"sixgr.phy.mimo.MUMIMOTransmissionContext")
+    if numel(tx) ~= numel(ctx.UEIDs) || ...
+            ~isequal(sort(string({tx.UserId})),sort(ctx.UEIDs))
+        error("sixgr:mimo:MUIdentityCollision", ...
+            "Waveform UE identities do not match the immutable MU context.");
+    end
+    dmrs = double([tx.DMRSIdentity]);
+    if any(~isfinite(dmrs)) || ...
+            ~isequal(sort(dmrs),sort(double(ctx.DMRSIdentities)))
+        error("sixgr:mimo:MUIdentityCollision", ...
+            "Waveform DM-RS identities do not match the immutable MU context.");
+    end
+    for index = 1:numel(tx)
+        if isempty(tx(index).PRBSet) || isempty(tx(index).SymbolSet)
+            error("sixgr:mimo:InvalidMUResourceSharing", ...
+                "Strict MU transmitters require explicit PRB and symbol sets.");
+        end
+        if ~isequal(sort(double(tx(index).PRBSet(:))),sort(double(ctx.SharedPRBs(:)))) || ...
+                ~isequal(sort(double(tx(index).SymbolSet(:))),sort(double(ctx.SharedSymbols(:))))
+            error("sixgr:mimo:InvalidMUResourceSharing", ...
+                "Waveform resources differ from the immutable MU context.");
+        end
+    end
+elseif isa(ctx,"sixgr.phy.mimo.MultiTRPTransmissionContext")
+    if numel(tx) ~= 2 || ...
+            ~isequal(sort(string({tx.TRPId})),sort(ctx.TRPIDs))
+        error("sixgr:mimo:MissingTRPState", ...
+            "Waveform TRP identities do not match the immutable multi-TRP context.");
+    end
+else
+    error("sixgr:mimo:MissingTransmissionContext", ...
+        "Unsupported strict transmission-context class %s.",class(ctx));
+end
+if isempty(rx)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict composition requires at least one receiver context.");
 end
 end
 
@@ -285,7 +366,8 @@ end
 
 function s = localEmptyTx()
 s = struct("Symbols", [], "Precoder", [], "UserId", "", "SourceId", "", ...
-    "TRPId", "", "Muted", false, "PowerScale", 1, "PhaseRad", 0, "PRBSet", []);
+    "TRPId", "", "Muted", false, "PowerScale", 1, "PhaseRad", 0, ...
+    "PRBSet", [], "SymbolSet", [], "DMRSIdentity", NaN);
 end
 
 function s = localEmptyRxOut()
@@ -293,5 +375,7 @@ s = struct("UserId", "", "DesiredWaveform", [], "InterferenceWaveform", [], ...
     "NoiseWaveform", [], "CompositeWaveform", [], "ContributionTensor", [], ...
     "DesiredMask", [], "DesiredPower", NaN, "InterferencePower", NaN, ...
     "NoisePower", NaN, "SINRLinear", NaN, "SINR_dB", NaN, "Rate_bpsHz", NaN, ...
-    "ContributorIds", strings(0, 1));
+    "ContributorIds", strings(0, 1), ...
+    "DesiredContributorIds", strings(0,1), ...
+    "InterferenceContributorIds", strings(0,1));
 end

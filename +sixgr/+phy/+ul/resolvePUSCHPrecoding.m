@@ -9,8 +9,11 @@ if nargin < 2 || ~isstruct(cfg)
 end
 ip = inputParser;
 ip.addParameter("FixedReferenceMode", false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("SRSDecision", [], @(x) isempty(x) || (isstruct(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
+    sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
 
 nLayers = localPositiveInteger(localObjectValue(pusch, "NumLayers", 1), "NumLayers");
 arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "ue", ...
@@ -31,7 +34,17 @@ nPorts = max(1, round(double(nPorts)));
 tpmi = NaN;
 if isCodebook
     tpmi = double(localObjectValue(pusch, "TPMI", NaN));
+    srsDecision = opt.SRSDecision;
+    if isempty(srsDecision)
+        srsDecision = sixgr.util.structGet(cfg,"phy.pusch.srsDecision",[]);
+    end
+    if strictMIMO
+        localValidateSRSAuthority(srsDecision,nLayers,nPorts,tpmi);
+        tpmi = double(srsDecision.TPMI);
+    end
     localValidateCodebookInputs(nLayers, nPorts, tpmi);
+else
+    srsDecision = opt.SRSDecision;
 end
 
 prec = struct();
@@ -72,10 +85,20 @@ prec.HybridDigitalPortToRFChainMatrix = [];
 prec.HybridEquation = "";
 prec.BeamIndexDefinition = "";
 prec.FixedReferenceMode = logical(opt.FixedReferenceMode);
+prec.StrictMIMO = logical(strictMIMO);
+prec.AuthoritativeSRSDecisionUsed = false;
+prec.SRSMeasurementID = "";
+prec.SRSMeasurementSlot = NaN;
+prec.SelectedMatrixSHA256 = "";
+prec.AppliedMatrixSHA256 = "";
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 
 if transformPrecoding && ~isCodebook
+    if strictMIMO && isempty(srsDecision)
+        error("sixgr:mimo:MissingSRSState", ...
+            "Strict transform-precoded PUSCH requires a timestamped measured SRS decision.");
+    end
     prec.Mode = "transform_precoding";
     prec.Source = "ul_pusch_transform_precoding";
     prec.ApplicationStage = "dft_spread_before_re_mapping";
@@ -87,6 +110,32 @@ if transformPrecoding && ~isCodebook
 end
 
 if ~isCodebook
+    if strictMIMO && nLayers > 1 && isempty(srsDecision)
+        error("sixgr:mimo:MissingSRSState", ...
+            "Strict multi-layer non-codebook PUSCH requires a measured SRS precoder decision.");
+    end
+    if strictMIMO && ~isempty(srsDecision) && isfield(srsDecision,"MatrixPorts")
+        Wmeasured = double(srsDecision.MatrixPorts);
+        sixgr.phy.mimo.MatrixContract.validate(Wmeasured,size(Wmeasured,1),nLayers);
+        prec.MatrixPorts = Wmeasured;
+        prec.MatrixLogicalPorts = Wmeasured;
+        prec.MatrixRows = size(Wmeasured,1);
+        prec.MatrixCols = size(Wmeasured,2);
+        prec.NumPorts = size(Wmeasured,1);
+        prec.NumLogicalPorts = size(Wmeasured,1);
+        prec.NumWaveformColumns = size(Wmeasured,1);
+        prec.Source = "authoritative_measured_srs_noncodebook_precoder";
+        prec.ApplicationStage = "explicit_measured_srs_precoder_before_re_mapping";
+        prec.ExplicitBeamWeightsApplied = true;
+        prec.BeamformingApplied = true;
+        prec.AuthoritativeSRSDecisionUsed = true;
+        prec = localAttachSRSIdentity(prec,srsDecision);
+        prec.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(Wmeasured);
+        prec.AppliedMatrixSHA256 = prec.SelectedMatrixSHA256;
+        prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
+        prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+        return;
+    end
     prec.MatrixPorts = localRectIdentity(nLayers, nLayers);
     prec.MatrixLogicalPorts = prec.MatrixPorts;
     prec.MatrixRows = NaN;
@@ -140,8 +189,55 @@ prec.NumWaveformColumns = double(size(Wports, 1));
 prec.BeamIndices = double(localActiveCodebookPorts(Wtx));
 prec.BeamIndexDefinition = "nrPUSCHCodebook_nonzero_antenna_port_support";
 prec.CodebookStatus = string(codebookStatus);
+if strictMIMO
+    selectedDigest = string(sixgr.util.structGet(srsDecision,"SelectionMatrixSHA256",""));
+    actualDigest = sixgr.phy.mimo.MatrixContract.digest(Wports);
+    if strlength(selectedDigest) > 0 && ~strcmpi(selectedDigest,actualDigest)
+        error("sixgr:mimo:PrecoderDigestMismatch", ...
+            "SRS-selected and PUSCH-applied TPMI matrices differ.");
+    end
+    prec.AuthoritativeSRSDecisionUsed = true;
+    prec.SelectedMatrixSHA256 = actualDigest;
+    prec.AppliedMatrixSHA256 = actualDigest;
+    prec = localAttachSRSIdentity(prec,srsDecision);
+end
 prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+end
+
+function localValidateSRSAuthority(decision,nLayers,nPorts,tpmi)
+if isempty(decision) || ~isstruct(decision) || ...
+        ~logical(sixgr.util.structGet(decision,"Authoritative",false))
+    error("sixgr:mimo:MissingSRSState", ...
+        "Strict codebook PUSCH requires an authoritative measured-SRS RI/SRI/TPMI decision.");
+end
+required = ["MeasurementID","MeasurementSlot","RI","TPMI"];
+for name = required
+    value = sixgr.util.structGet(decision,name,[]);
+    if isempty(value) || (isstring(value) && all(strlength(value)==0))
+        error("sixgr:mimo:MissingSRSState", ...
+            "Authoritative SRS decision is missing %s.",name);
+    end
+end
+if double(decision.RI) ~= double(nLayers)
+    error("sixgr:mimo:RankIdentityMismatch", ...
+        "SRS-selected RI %d differs from scheduled PUSCH layers %d.", ...
+        double(decision.RI),double(nLayers));
+end
+if isfield(decision,"NumPorts") && double(decision.NumPorts) ~= double(nPorts)
+    error("sixgr:mimo:PortIdentityMismatch", ...
+        "SRS decision port count differs from the active PUSCH codebook.");
+end
+if isfinite(tpmi) && double(decision.TPMI) ~= double(tpmi)
+    error("sixgr:mimo:PrecoderDigestMismatch", ...
+        "Configured PUSCH TPMI differs from the authoritative measured-SRS TPMI.");
+end
+end
+
+function prec = localAttachSRSIdentity(prec,decision)
+prec.SRSMeasurementID = string(sixgr.util.structGet(decision,"MeasurementID",""));
+prec.SRSMeasurementSlot = double(sixgr.util.structGet(decision,"MeasurementSlot",NaN));
+prec.SRI = double(sixgr.util.structGet(decision,"SRI",NaN));
 end
 
 function nPorts = localResolvePUSCHConfiguredPorts(cfg)

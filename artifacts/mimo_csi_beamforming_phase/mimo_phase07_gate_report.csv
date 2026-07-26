@@ -1,0 +1,9 @@
+Gate,ExpectedOrExecuted,MissingOrFailed,EvidenceClass,Passed,Status
+independent_vector_pack,2544,0,independent specification/vector calculations,1,PASS
+typed_negative_contract,38,0,typed planning rejection before waveform/state/grant,1,PASS
+bounded_production_tests,28,0,executed bounded production components,1,PASS
+yaml_authority,1,0,operator YAML materialization and validation,1,PASS
+mandatory_test_contract,65,53,mandatory tests named by mimo_matlab_test_plan.csv,0,BLOCKED
+independent_codebook_matrix_packs,158,130,frozen independent matrices required before strict enumeration,0,BLOCKED
+base_csv_contract,28,28,contracted production CSVs (not generated before gates pass),0,BLOCKED
+base_png_contract,20,20,contracted production PNGs (not generated before gates pass),0,BLOCKED

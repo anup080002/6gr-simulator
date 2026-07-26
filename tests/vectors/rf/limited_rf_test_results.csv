@@ -1,0 +1,14 @@
+CheckID,Category,Result,Detail
+PACK-PY-COMPILE,PACK,PASS,All three Python verifiers compile.
+PACK-VECTOR-VERIFY,PACK,PASS,verifier exit=0
+PACK-MANIFEST,PACK,PASS,24 files protected by SHA-256 and row count.
+PACK-CAPABILITY,PACK,PASS,210 profile/feature rows.
+PACK-IMPACT,PACK,PASS,"64 families, 768 experiments, 384 pairs, 96 rules."
+PACK-BASE-VERIFIER,PACK,PASS,"valid=0, corrupted=2"
+PACK-IMPACT-VERIFIER,PACK,PASS,"valid=0, corrupted=2"
+CURRENT-SOURCE-REMEDIATION,CURRENT_SIMULATOR,FAIL,46 source-visible defect signatures; 11 useful foundations.
+CURRENT-REQUIRED-ARTIFACTS,CURRENT_SIMULATOR,FAIL,0 of 100 contracted RF artifacts present.
+CURRENT-CSV-INVENTORY,CURRENT_SIMULATOR,PASS,225 CSV files inspected; 224 rectangular.
+CURRENT-PNG-INVENTORY,CURRENT_SIMULATOR,PASS,40 PNG files inspected; 40 decoded and nonblank.
+MATLAB-PRODUCTION-RUNTIME,RUNTIME,BLOCKED,MATLAB and Octave executables not found in this environment.
+EXISTING-MATLAB-TESTS,RUNTIME,BLOCKED,403 RF-related MATLAB test files could not execute.

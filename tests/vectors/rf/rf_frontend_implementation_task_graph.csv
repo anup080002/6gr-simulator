@@ -1,0 +1,16 @@
+PhaseID,Title,FindingIDs,DependsOn,Deliverable
+RF-P01,Profiles and reference planes,"RF-001,RF-002",none,"Create profiles, claim boundary, units/reference-plane contracts"
+RF-P02,Oscillator and CFO loop,RF-003,RF-P01,"Relative oscillator state, coarse/fine acquisition and tracking"
+RF-P03,Timing and SCO loop,RF-004,RF-P01,Timing acquisition/tracking and stateful resampling
+RF-P04,Phase noise,RF-005,RF-P02,"Explicit masks, state continuity and LO correlation"
+RF-P05,IQ/DC/LO leakage,RF-006,"RF-P02,RF-P03",Measured IQ estimation and compensation
+RF-P06,PA models,RF-007,RF-P01,Calibrated PA and no power restoration
+RF-P07,CFR/DPD,RF-008,RF-P06,Training/holdout and coefficient state
+RF-P08,DAC/LNA/filter/AGC/ADC,RF-009,RF-P01,Complete Tx/Rx conversion and dynamic-range chain
+RF-P09,Blocker/intermod receiver,RF-010,"RF-P04,RF-P08",Wanted+blocker sample-domain receiver
+RF-P10,Waveform quality,RF-011,"RF-P02,RF-P03,RF-P05,RF-P06,RF-P08",EVM/ACLR/SEM/OBUE methods
+RF-P11,UL power control,RF-012,RF-P01,PUSCH/PUCCH/SRS/PRACH closed-loop controllers
+RF-P12,Noise and covariance,RF-013,"RF-P08,RF-P09",Friis/ENBW/noise/covariance chain
+RF-P13,Closed-loop integration,RF-014,RF-P02..RF-P12,"Interaction, multi-seed and end-to-end campaigns"
+RF-P14,Artifact generation,RF-014,RF-P13,"48 CSVs, 52 PNGs and semantic audits"
+RF-P15,Full regression,RF-014,RF-P14,Run all repository MATLAB tests

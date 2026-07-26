@@ -1,0 +1,4 @@
+Wave,FamilyCount,ExperimentCount,Description
+A,42,504,Direct RF/front-end implementation
+B,19,228,Internal PHY/power-control integration
+C,3,36,Multichannel/end-to-end integration

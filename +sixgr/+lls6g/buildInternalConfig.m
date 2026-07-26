@@ -945,6 +945,7 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.reportPayloadMode", char(reportPayloadM
 cfg = sixgr.util.structSet(cfg, "phy.csi.crcAttached", crcAttachedMode);
 cfg = sixgr.util.structSet(cfg, "phy.csi.crcFreeMode", crcFreeMode);
 cfg = sixgr.util.structSet(cfg, "phy.csi.bitExactPayloadPacking", true);
+cfg = localApplyPhase07MIMOConfig(cfg,s);
 
 cfg.phy.pucch.enable = logical(s.control.pucch_enabled);
 cfg.phy.pucch.calibrationFormatHint = double(s.control.pucch_format);
@@ -1106,6 +1107,7 @@ cfg = localStructSetIfPresent(cfg, "phy.trs.channelNMSEThresholddB", localGetNes
 cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.trs", localGetNested(s, "reference_signals.trs", struct()));
 cfg = sixgr.util.structSet(cfg, "phy.ptrs.enable", logical(s.reference_signals.ptrs_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.trackingRS.enable", logical(s.reference_signals.tracking_rs_enabled));
+cfg = localInstallRSLAStrictConfig(cfg,s);
 
 cfg.random_access = s.random_access;
 cfg.phy.prach.enable = logical(s.random_access.enabled);
@@ -2193,8 +2195,13 @@ if ulWaveform == "DFT-S-OFDM" || transformEnabled
     cfg = sixgr.util.structSet(cfg, "phy.pusch.transmissionScheme", "noncodebook");
     cfg = sixgr.util.structSet(cfg, "phy.pusch.TransmissionScheme", "noncodebook");
 end
-if logical(localGetNested(s, "modulation.pi2_bpsk_enabled", false)) && ...
-        logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false))
+if localUsePi2BPSKULMode(s)
+    % The inherited generic PUSCH surface may still carry its baseline
+    % modulation token.  The explicit DFT-s-OFDM/pi/2-BPSK scenario owns
+    % the effective waveform modulation and must win at this final
+    % reconciliation boundary.
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", "pi/2-BPSK");
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.pi2BPSKEnabled", true);
     cfg = sixgr.util.structSet(cfg, "phy.pusch.pi2BPSKTransformPrecoding", true);
 end
 end
@@ -2421,6 +2428,112 @@ end
 cfg = localCopyRuntimeField(cfg, s, "tdd_timing.ul_grant_k2", "mac.harq.k2");
 cfg = localCopyRuntimeField(cfg, s, "tdd_timing.ul_grant_k2", "phy.pusch.k2_slots");
 cfg = localCopyRuntimeField(cfg, s, "tdd_timing.pdcch_to_pusch_k2", "phy.ul.grantK2Slots");
+end
+
+function cfg = localApplyPhase07MIMOConfig(cfg,s)
+section = localGetNested(s,"mimo.phase07_strict",struct());
+if ~isstruct(section) || isempty(fieldnames(section))
+    cfg = sixgr.util.structSet(cfg,"phy.mimo.strict",false);
+    return;
+end
+enabled = logical(localGetNested(section,"enabled",false));
+profileID = string(localGetNested(section,"profile_id",""));
+direction = upper(string(localGetNested(section,"direction","DL")));
+codebookType = string(localGetNested(section,"codebook_type",""));
+ports = double(localGetNested(section,"ports",NaN));
+panels = double(localGetNested(section,"panels",NaN));
+n1 = double(localGetNested(section,"n1",NaN));
+n2 = double(localGetNested(section,"n2",NaN));
+o1 = double(localGetNested(section,"o1",NaN));
+o2 = double(localGetNested(section,"o2",NaN));
+maxRank = double(localGetNested(section,"max_rank",NaN));
+rankDomain = double(localGetNested(section,"rank_domain",[]));
+receiver = upper(string(localGetNested(section,"receiver","MMSE")));
+
+cfg = sixgr.util.structSet(cfg,"phy.mimo.strict",enabled);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.profileID",char(profileID));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.specificationProfile",char(string( ...
+    localGetNested(section,"specification_profile","3GPP_R18_MIMO_CSI_V1"))));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.direction",char(direction));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.codebookType",char(codebookType));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.ports",ports);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.panels",panels);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.N1",n1);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.N2",n2);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.O1",o1);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.O2",o2);
+cfg = sixgr.util.structSet(cfg,"phy.mimo.maxRank",maxRank);
+cfg = sixgr.util.structSet(cfg,"phy.csi.maxRank",maxRank);
+cfg = sixgr.util.structSet(cfg,"phy.csi.rankDomain",rankDomain(:).');
+cfg = sixgr.util.structSet(cfg,"phy.rx.detector",char(receiver));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.precoderPRGSizeRBs",double( ...
+    localGetNested(section,"precoder_prg_size_rbs",NaN)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.requireActiveTCIState",logical( ...
+    localGetNested(section,"require_active_tci_state",false)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.measurementMaxAgeSlots",double( ...
+    localGetNested(section,"measurement_max_age_slots",8)));
+
+covariance = localGetNested(section,"covariance",struct());
+cfg = sixgr.util.structSet(cfg,"phy.mimo.covariance.minSamples",double( ...
+    localGetNested(covariance,"min_samples",16)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.covariance.maxAgeSlots",double( ...
+    localGetNested(covariance,"max_age_slots",8)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.covariance.shrinkageFactor",double( ...
+    localGetNested(covariance,"shrinkage_factor",.05)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.covariance.conditionNumberLimit",double( ...
+    localGetNested(covariance,"condition_number_limit",1e12)));
+
+srsAuthority = localGetNested(section,"ul_srs_authority",struct());
+cfg = sixgr.util.structSet(cfg,"phy.mimo.ulSRSAuthority.enabled",logical( ...
+    localGetNested(srsAuthority,"enabled",false)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.ulSRSAuthority.maxAgeSlots",double( ...
+    localGetNested(srsAuthority,"max_age_slots",8)));
+cfg = sixgr.util.structSet(cfg,"phy.mimo.ulSRSAuthority.configuredOverrideForbidden",logical( ...
+    localGetNested(srsAuthority,"configured_override_forbidden",true)));
+
+report = localGetNested(section,"csi_report",struct());
+reportRequest = struct( ...
+    "ReportConfigID",string(localGetNested(report,"report_config_id","")), ...
+    "Epoch",double(localGetNested(report,"epoch",NaN)), ...
+    "CodebookType",codebookType, ...
+    "Ports",ports, ...
+    "Rank",maxRank, ...
+    "ReportQuantity",string(localGetNested(report,"report_quantity","")), ...
+    "NumCSIResources",double(localGetNested(report,"num_csi_resources",NaN)), ...
+    "FrequencyGranularity",string(localGetNested(report,"frequency_granularity","")), ...
+    "UCIChannel",upper(string(localGetNested(report,"uci_channel","PUCCH"))), ...
+    "NumSubbands",double(localGetNested(report,"num_subbands",1)), ...
+    "NumberOfBeams",double(localGetNested(report,"number_of_beams",1)), ...
+    "PhaseAlphabetSize",double(localGetNested(report,"phase_alphabet_size",4)));
+cfg = sixgr.util.structSet(cfg,"phy.csi.reportConfiguration",reportRequest);
+cfg = sixgr.util.structSet(cfg,"phy.csi.reportConfigurationEpoch",reportRequest.Epoch);
+
+if ~enabled
+    return;
+end
+numericPositive = [ports panels n1 n2 o1 o2 maxRank];
+if any(~isfinite(numericPositive) | numericPositive < 1 | ...
+        numericPositive ~= round(numericPositive)) || isempty(rankDomain)
+    error("sixgr:mimo:UnsupportedAntennaTuple", ...
+        "Enabled Phase-07 MIMO requires explicit positive integer ports, panel, N/O and rank fields.");
+end
+if any(rankDomain < 1 | rankDomain > maxRank | rankDomain ~= round(rankDomain))
+    error("sixgr:mimo:InvalidRI", ...
+        "mimo.phase07_strict.rank_domain is outside max_rank.");
+end
+if ~ismember(receiver,["MMSE","IRC","ZF"])
+    error("sixgr:mimo:InvalidReceiver", ...
+        "Phase-07 receiver must be MMSE, IRC or ZF.");
+end
+request = struct("ProfileID",profileID,"Direction",direction, ...
+    "CodebookType",codebookType,"Ports",ports,"Panels",panels, ...
+    "N1",n1,"N2",n2,"O1",o1,"O2",o2,"Rank",maxRank);
+sixgr.phy.mimo.MIMOCapabilityProfile().resolve(request);
+sixgr.phy.mimo.CSIReportConfiguration(reportRequest,reportRequest.Epoch);
+if direction == "DL"
+    cfg = sixgr.util.structSet(cfg,"phy.pdsch.numPorts",ports);
+    cfg = sixgr.util.structSet(cfg,"phy.pdsch.normalizePrecodingMatrix",false);
+end
 end
 
 function cfg = localApplyAuxiliaryPHYKnobs(cfg, s)
@@ -3674,6 +3787,119 @@ for i = 1:numel(candidatePaths)
 end
 error("sixgr:lls6g:config:MissingResolvedConfigValue", ...
     "Resolved scenario config is missing required value '%s'.", string(label));
+end
+
+function cfg = localInstallRSLAStrictConfig(cfg,s)
+path = "reference_signals.rsla_strict";
+rsla = sixgr.util.structGet(s,path,[]);
+if isempty(rsla)
+    return;
+end
+if ~(isstruct(rsla) && isscalar(rsla))
+    error("sixgr:lls6g:config:InvalidRSLAStrictConfig", ...
+        "%s must be a scalar configuration structure.",path);
+end
+required = [
+    "enabled"
+    "strict"
+    "profile_id"
+    "configuration_epoch"
+    "specification.ts_38211"
+    "specification.ts_38212"
+    "specification.ts_38213"
+    "specification.ts_38214"
+    "specification.ts_38215"
+    "specification.ts_38331"
+    "specification.channel_profile"
+    "resource_ownership.index_base"
+    "resource_ownership.collision_policy"
+    "resource_ownership.require_complete_ledger_before_waveform"
+    "dmrs.mapping_types"
+    "dmrs.configuration_types"
+    "dmrs.lengths"
+    "dmrs.additional_positions"
+    "dmrs.type_a_positions"
+    "dmrs.nscid_values"
+    "dmrs.require_independent_vector"
+    "csi_rs.rows"
+    "csi_rs.resource_types"
+    "csi_rs.trigger_types"
+    "csi_rs.muting_enabled"
+    "csi_rs.require_decoded_aperiodic_trigger"
+    "csi_rs.require_independent_vector"
+    "srs.port_counts"
+    "srs.resource_types"
+    "srs.usages"
+    "srs.transmission_combs"
+    "srs.require_scheduler_state"
+    "srs.require_independent_vector"
+    "trs.resource_model"
+    "trs.no_oracle_tracking"
+    "trs.require_applied_correction_hash"
+    "ptrs.directions"
+    "ptrs.time_densities"
+    "ptrs.frequency_densities"
+    "ptrs.re_offsets"
+    "ptrs.require_measured_cpe"
+    "measurements.quantities"
+    "measurements.provenance_required"
+    "measurements.max_age_slots"
+    "measurements.require_complete_identity"
+    "filtering.l1_window_samples"
+    "filtering.l3_coefficient"
+    "filtering.prediction_enabled"
+    "measurement_gaps.enabled"
+    "measurement_gaps.period_slots"
+    "measurement_gaps.offset_slots"
+    "measurement_gaps.length_slots"
+    "csi_reports.profiles"
+    "csi_reports.transports"
+    "csi_reports.crc_required"
+    "csi_reports.semantic_validation_required"
+    "calibration.registry_id"
+    "calibration.target_bler"
+    "calibration.mapping_methods"
+    "calibration.missing_profile_policy"
+    "olla.enabled"
+    "olla.target_bler"
+    "olla.ack_step_db"
+    "olla.margin_min_db"
+    "olla.margin_max_db"
+    "olla.dtx_policy"
+    "olla.inactivity_reset_slots"
+    "olla.per_ue_state"
+    "rrm.events"
+    "rrm.hysteresis_db"
+    "rrm.time_to_trigger_samples"
+    "rrm.require_filtered_measurements"
+    "evm.reference_point"
+    "evm.rf_pass_fail_enabled"
+    "validation.vector_root"
+    "validation.seeds"
+    "validation.impact_seeds"
+    "validation.confidence_level"
+    "validation.unsupported_tuple_policy"
+    ];
+for index = 1:numel(required)
+    localRequireNested(rsla,required(index),path+"."+required(index));
+end
+if ~logical(rsla.strict)
+    error("sixgr:lls6g:config:InvalidRSLAStrictConfig", ...
+        "%s.strict must be true for the Release-18 strict profile.",path);
+end
+if string(rsla.profile_id)~="nr_rel18_rsla_strict"
+    error("sixgr:lls6g:config:InvalidRSLAStrictConfig", ...
+        "%s.profile_id is unsupported.",path);
+end
+if ~strcmpi(string(rsla.resource_ownership.index_base),"zero_based") || ...
+        ~strcmpi(string(rsla.validation.unsupported_tuple_policy), ...
+        "reject_before_waveform")
+    error("sixgr:lls6g:config:InvalidRSLAStrictConfig", ...
+        "RSLA strict ownership/index and rejection policies are mandatory.");
+end
+cfg = sixgr.util.structSet(cfg,"phy.rsla",rsla);
+cfg = sixgr.util.structSet(cfg,"phy.rsla.configuration_authority", ...
+    "operator_master_yaml");
 end
 
 function value = localResolveDatabaseField(s, path, storageBackend)

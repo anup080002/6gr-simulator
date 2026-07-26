@@ -1,0 +1,23 @@
+ImageFile,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,SourceCSV,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
+rf_chain_reference_planes.png,RF chain reference planes,Stage,Power,rf_reference_plane_power.csv,900,600,1,2,20
+rf_cfo_acquisition_tracking.png,CFO acquisition and tracking,Time,Frequency error,rf_cfo_tracking.csv,900,600,1,2,20
+rf_cfo_residual_vs_snr.png,Residual CFO versus SNR,SNR,Residual CFO,rf_cfo_acquisition.csv,900,600,1,2,20
+rf_timing_tracking.png,Timing acquisition and tracking,Time,Timing error,rf_timing_tracking.csv,900,600,1,2,20
+rf_sco_drift_resampling.png,Sample clock drift and resampling,Time,Drift,rf_sco_resampler.csv,900,600,1,2,20
+rf_phase_noise_mask.png,Phase-noise mask,Offset frequency,PSD,rf_phase_noise_psd.csv,900,600,1,2,20
+rf_phase_noise_cpe_ici.png,Phase-noise CPE and ICI,Case,Error power,rf_phase_noise_tracking.csv,900,600,1,2,20
+rf_iq_constellation_image.png,IQ imbalance and image,In-phase,Quadrature,rf_iq_imbalance.csv,900,600,1,2,20
+rf_iq_compensation.png,IQ compensation,Case,Image rejection,rf_iq_compensation.csv,900,600,1,2,20
+rf_pa_amam_ampm.png,PA AM-AM and AM-PM,Input amplitude,Output amplitude,rf_pa_characterization.csv,900,600,1,2,20
+rf_pa_memory_spectrum.png,PA memory spectrum,Frequency,Power spectral density,rf_pa_memory.csv,900,600,1,2,20
+rf_dpd_aclr_evm.png,DPD ACLR and EVM,Case,Metric,rf_dpd_validation.csv,900,600,1,2,20
+rf_dac_adc_quantization.png,DAC and ADC quantization,Input,Output,rf_adc_quantization.csv,900,600,1,2,20
+rf_agc_overload_trace.png,AGC and overload trace,Time,Gain or clipping,rf_agc_trace.csv,900,600,1,2,20
+rf_noise_figure_cascade.png,Noise-figure cascade,Stage,Noise figure,rf_noise_figure_cascade.csv,900,600,1,2,20
+rf_blocker_desensitization.png,Receiver blocker desensitization,Blocker power,Desensitization,rf_blocker_trials.csv,900,600,1,2,20
+rf_intermodulation_spectrum.png,Receiver intermodulation spectrum,Frequency,Power,rf_intermodulation_trials.csv,900,600,1,2,20
+rf_evm_by_modulation.png,EVM by modulation,Modulation,EVM,rf_evm_measurement.csv,900,600,1,2,20
+rf_aclr_spectrum.png,Adjacent-channel leakage,Frequency offset,Power,rf_aclr_measurement.csv,900,600,1,2,20
+rf_sem_obue_spectrum.png,Spectrum emission and OBUE,Frequency offset,Power,rf_sem_obue_measurement.csv,900,600,1,2,20
+rf_ul_power_control_convergence.png,UL power-control convergence,Time,Transmit power,rf_power_control_state.csv,900,600,1,2,20
+rf_end_to_end_bler.png,End-to-end RF-impaired BLER,SNR,BLER,rf_receiver_metrics.csv,900,600,1,2,20

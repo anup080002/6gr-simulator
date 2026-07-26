@@ -1,65 +1,185 @@
 function csi = buildCSIFeedback(H, noiseVar, cfg, varargin)
-%BUILDCSIFEEDBACK Build runtime CQI/PMI/RI feedback from measured channel H.
+%BUILDCSIFEEDBACK Build measured, report-configured CSI Part 1 and Part 2.
 
 ip = inputParser;
-ip.addParameter("Direction", "DL", @(x) ischar(x) || isstring(x));
-ip.addParameter("NominalRank", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("Direction","DL",@(x)ischar(x)||isstring(x));
+ip.addParameter("NominalRank",[],@(x)isempty(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("MeasurementState",[],@(x)isempty(x)||isa(x, ...
+    "sixgr.phy.mimo.CSIMeasurementState"));
 ip.parse(varargin{:});
-
 if nargin < 3 || ~isstruct(cfg)
     cfg = struct();
 end
-nominalRank = ip.Results.NominalRank;
-if isempty(nominalRank)
-    nominalRank = sixgr.util.structGet(cfg, "MaxRank", ...
-        sixgr.util.structGet(cfg, "mimo.maxRank", ...
-        sixgr.util.structGet(cfg, "phy.pdsch.numLayers", 1)));
+strict = logical(sixgr.util.structGet(cfg,"Strict", ...
+    sixgr.util.structGet(cfg,"mimo.strict",false)));
+if isempty(H) || ~isnumeric(H)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "CSI feedback requires a measured channel.");
 end
-decision = sixgr.mimo.resolveNominalVsEffectiveMIMO([], [], H, noiseVar, nominalRank, cfg);
-widebandSINR = max([decision.SNR_layer1_dB, decision.SNR_layer2_dB], [], "omitnan");
-if ~(isfinite(widebandSINR))
-    widebandSINR = double(sixgr.util.structGet(cfg, "SNR_configured_dB", NaN));
+if ~(isscalar(noiseVar)&&isnumeric(noiseVar)&&isfinite(noiseVar)&&noiseVar>=0)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "CSI feedback requires measured finite noise variance.");
 end
-
-cqi = localCQIFromSINR(widebandSINR, cfg, ip.Results.Direction);
-csi = struct();
-csi.Direction = upper(string(ip.Results.Direction));
-csi.RI = double(decision.EffectiveRank);
-csi.PMI = double(decision.PMI_i1(1));
-csi.PMI_i1 = decision.PMI_i1;
-csi.PMI_i2 = decision.PMI_i2;
-csi.CQI = double(cqi);
-csi.WidebandSINR_dB = double(widebandSINR);
-csi.Precoder_W = decision.Precoder_W;
-csi.RankDecisionReason = string(decision.RankDecisionReason);
-csi.ConditionNumber_dB = double(decision.ConditionNumber_dB);
-csi.SingularValues = decision.SingularValues;
-csi.RuntimeEvidenceSource = "svd_of_measured_channel_matrix";
-csi.ChannelStateInformationMode = "PMI+CQI+RI";
-csi.CSIPayloadBitLength = 4 + 4 + 2;
-csi.CSIPayloadHex = localPayloadHex(csi.RI, csi.PMI, csi.CQI);
+measurement = ip.Results.MeasurementState;
+if strict && isempty(measurement)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict CSI feedback requires an immutable measured reference-signal state.");
 end
-
-function cqi = localCQIFromSINR(sinr_dB, cfg, direction)
-cqi = NaN;
-try
-    feedback = sixgr.link.resolveWidebandCQI(struct( ...
-        "WidebandSINR_dB", double(sinr_dB), ...
-        "SINRSource", "svd_measured_mimo_channel", ...
-        "SINRValueRole", "runtime_csi_feedback_input", ...
-        "SINRValueStatus", "OK"), cfg, upper(string(direction)));
-    cqi = double(sixgr.util.structGet(feedback, "WidebandCQI", NaN));
-catch
-end
-if ~(isfinite(cqi))
-    cqi = max(0, min(15, round((double(sinr_dB) + 6) / 2)));
-end
+if ~isempty(measurement)
+    currentSlot = double(sixgr.util.structGet(cfg,"CurrentSlot",measurement.Slot));
+    measurement.validateAt(currentSlot);
+    if sixgr.phy.mimo.MatrixContract.digest(H) ~= measurement.Digest
+        error("sixgr:mimo:MeasurementIdentityMismatch", ...
+            "CSI input channel differs from the immutable measured state.");
+    end
+    if ~(isscalar(measurement.NoiseVariance) && ...
+            isfinite(double(measurement.NoiseVariance)) && ...
+            double(measurement.NoiseVariance) >= 0)
+        error("sixgr:mimo:MissingMeasurementState", ...
+            "Measured CSI state contains invalid noise variance.");
+    end
+    if abs(double(noiseVar)-double(measurement.NoiseVariance)) > ...
+            1e-12*max(1,abs(double(noiseVar)))
+        error("sixgr:mimo:MeasurementIdentityMismatch", ...
+            "CSI input noise variance differs from the immutable measured state.");
+    end
+    if ~isempty(measurement.InterferenceCovariance)
+        cfg.InterferenceCovariance = measurement.InterferenceCovariance;
+    end
 end
 
-function hex = localPayloadHex(ri, pmi, cqi)
-ri = max(0, min(3, round(double(ri))));
-pmi = max(0, min(15, round(double(pmi))));
-cqi = max(0, min(15, round(double(cqi))));
-val = bitor(bitshift(uint16(ri), 8), bitor(bitshift(uint16(pmi), 4), uint16(cqi)));
-hex = upper(string(dec2hex(val, 3)));
+nTx = size(H,2);
+nRx = size(H,1);
+maxRank = ip.Results.NominalRank;
+if isempty(maxRank)
+    maxRank = double(sixgr.util.structGet(cfg,"MaxRank", ...
+        sixgr.util.structGet(cfg,"mimo.maxRank",min(nTx,nRx))));
+end
+maxRank = min([double(maxRank),nTx,nRx]);
+if maxRank < 1 || maxRank ~= round(maxRank)
+    error("sixgr:mimo:UnsupportedRank","CSI max rank must be a positive integer.");
+end
+rankDomain = double(sixgr.util.structGet(cfg,"RankDomain",1:maxRank));
+rankDomain = rankDomain(:).';
+if any(rankDomain<1 | rankDomain>maxRank | rankDomain~=round(rankDomain))
+    error("sixgr:mimo:InvalidRI","RankDomain contains an invalid RI.");
+end
+
+rankScores = -inf(size(rankDomain));
+rankW = cell(size(rankDomain));
+rankPMI = nan(size(rankDomain));
+rankInfo = cell(size(rankDomain));
+for index = 1:numel(rankDomain)
+    rankValue = rankDomain(index);
+    rankCfg = cfg;
+    rankCfg.NoiseVariance = noiseVar;
+    if isfield(cfg,"CandidateMatricesByRank")
+        rankCfg.CandidateMatrices = cfg.CandidateMatricesByRank{rankValue};
+    end
+    [W,pmi,~,selection] = sixgr.mimo.selectPMI( ...
+        H,rankValue,nTx,nRx,rankCfg);
+    rankScores(index) = selection.SelectedMetric;
+    rankW{index} = W;
+    rankPMI(index) = double(pmi(1));
+    rankInfo{index} = selection;
+end
+feedbackOverheadWeight = double(sixgr.util.structGet(cfg, ...
+    "FeedbackOverheadWeight",0));
+rankScores = rankScores - feedbackOverheadWeight.*rankDomain;
+[selectedScore,selectedIndex] = max(rankScores);
+selectedRank = rankDomain(selectedIndex);
+W = rankW{selectedIndex};
+pmi = rankPMI(selectedIndex);
+selection = rankInfo{selectedIndex};
+sinrDB = 10*log10(max(2^(selectedScore/selectedRank)-1,realmin));
+cqi = localCQI(sinrDB,cfg,strict);
+singularValues = svd(double(H));
+if numel(singularValues) >= selectedRank && singularValues(selectedRank) > 0
+    conditionNumberDB = 20*log10(singularValues(1)/singularValues(selectedRank));
+else
+    conditionNumberDB = Inf;
+end
+
+reportRequest = sixgr.util.structGet(cfg,"ReportConfiguration", ...
+    sixgr.util.structGet(cfg,"phy.csi.reportConfiguration",[]));
+if isempty(reportRequest)
+    if strict
+        error("sixgr:mimo:MissingCSIReportConfig", ...
+            "Strict CSI feedback requires decoded report configuration.");
+    end
+    reportRequest = struct( ...
+        "ReportConfigID","compat-wideband-0", ...
+        "Epoch",0, ...
+        "CodebookType","typeI-SinglePanel", ...
+        "Ports",nTx, ...
+        "Rank",selectedRank, ...
+        "ReportQuantity","cri-RI-PMI-CQI", ...
+        "NumCSIResources",1, ...
+        "FrequencyGranularity","wideband", ...
+        "UCIChannel","PUCCH");
+end
+reportRequest.Rank = selectedRank;
+currentEpoch = double(sixgr.util.structGet(cfg,"ReportConfigurationEpoch", ...
+    sixgr.util.structGet(reportRequest,"Epoch",0)));
+reportConfig = sixgr.phy.mimo.CSIReportConfiguration(reportRequest,currentEpoch);
+values = struct("CRI",0,"RI",selectedRank,"CQI_CW0",cqi, ...
+    "PMI",pmi,"LI",max(0,selectedRank-1));
+report = reportConfig.build(values);
+
+csi = struct( ...
+    "Direction",upper(string(ip.Results.Direction)), ...
+    "RI",selectedRank, ...
+    "PMI",pmi, ...
+    "PMI_i1",pmi, ...
+    "PMI_i2",NaN, ...
+    "CQI",cqi, ...
+    "LI",max(0,selectedRank-1), ...
+    "CRI",0, ...
+    "WidebandSINR_dB",sinrDB, ...
+    "Precoder_W",W, ...
+    "PrecoderMatrixSHA256",sixgr.phy.mimo.MatrixContract.digest(W), ...
+    "ConditionNumber_dB",conditionNumberDB, ...
+    "SingularValues",singularValues, ...
+    "RankCandidateObjective",rankScores, ...
+    "RankDomain",rankDomain, ...
+    "RankDecisionReason","maximum_receiver_aware_goodput_objective", ...
+    "RuntimeEvidenceSource","measured_channel_noise_and_covariance", ...
+    "MeasurementID",localMeasurementField(measurement,"MeasurementID",""), ...
+    "MeasurementResourceID",localMeasurementField(measurement,"ResourceID",""), ...
+    "MeasurementSlot",localMeasurementField(measurement,"Slot",NaN), ...
+    "MeasurementProvenance",localMeasurementField(measurement,"Provenance", ...
+        "measured_runtime_compatibility"), ...
+    "ConfiguredOracleUsed",false, ...
+    "ChannelStateInformationMode",reportConfig.ReportQuantity, ...
+    "CSIReportConfiguration",reportConfig, ...
+    "TypedReport",report, ...
+    "CSIPart1Bits",report.Part1Bits, ...
+    "CSIPart2Bits",report.Part2Bits, ...
+    "CSIPayloadBitLength",numel(report.Part1Bits)+numel(report.Part2Bits), ...
+    "CustomContainerUsed",false, ...
+    "ConfiguredSNRUsed",false, ...
+    "SVDThresholdUsed",false, ...
+    "SelectionInfo",selection);
+end
+
+function value = localMeasurementField(measurement,name,defaultValue)
+if isempty(measurement)
+    value = defaultValue;
+else
+    value = measurement.(name);
+end
+end
+
+function cqi = localCQI(sinrDB,cfg,strict)
+thresholds = double(sixgr.util.structGet(cfg,"CQISINRThresholdsDB", ...
+    [-Inf -6.7 -4.7 -2.3 0.2 2.4 4.3 5.9 8.1 10.3 11.7 14.1 16.3 18.7 21 22.7]));
+if numel(thresholds) ~= 16 || any(diff(thresholds)<0)
+    if strict
+        error("sixgr:mimo:InvalidCQI", ...
+            "Strict CQI selection requires 16 ordered calibrated thresholds.");
+    end
+    thresholds = [-Inf -6.7 -4.7 -2.3 0.2 2.4 4.3 5.9 8.1 10.3 11.7 14.1 16.3 18.7 21 22.7];
+end
+cqi = find(sinrDB>=thresholds,1,"last")-1;
+cqi = max(0,min(15,cqi));
 end

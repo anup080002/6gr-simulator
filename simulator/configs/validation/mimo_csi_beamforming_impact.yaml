@@ -1,0 +1,43 @@
+scenario:
+  id: mimo_csi_beamforming_impact_phase07
+  research_class: study_item_candidate
+  description: >-
+    Deterministic paired sample-domain MIMO component campaign. This profile
+    exercises production MIMO, CSI, covariance, MU-MIMO, multi-TRP, hybrid
+    beamforming and beam-management components; it is not an NR PDSCH/PUSCH
+    waveform-conformance profile.
+
+evidence:
+  execution_backend: production_sample_domain_mimo_components
+  approximation_mode: component_campaign_not_nr_waveform_truth
+  truth_qualified: false
+  status_meaning: >-
+    PASS means the declared factor was applied and the component experiment
+    completed, including an expected typed fail-closed outcome where required.
+
+monte_carlo:
+  modulation: QPSK
+  symbols_per_trial: 24
+  block_duration_ms: 1.0
+  channel_model: correlated_complex_gaussian_component
+  interference_to_noise_ratio: 0.10
+
+statistics:
+  bootstrap_replicates: 256
+  practical_margin_goodput_mbps: 0.002
+  minimum_finite_pairs: 6
+
+covariance:
+  minimum_samples: 4
+  maximum_age_slots: 8
+  default_shrinkage_factor: 0.05
+
+hybrid:
+  antenna_count: 32
+  center_frequency_hz: 28000000000
+  default_bandwidth_hz: 400000000
+
+images:
+  width_pixels: 1200
+  height_pixels: 760
+  resolution_dpi: 100

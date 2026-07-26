@@ -133,7 +133,7 @@ sections:
       range_name:
         required: true
         type: string
-        allowed_values: [FR1, FR2, FR3]
+        allowed_values: [FR1, FR2-1, FR2-2, FR3]
       center_frequency_hz: {required: true, type: number, min_exclusive: 0}
       dl_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
       ul_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
@@ -170,7 +170,7 @@ sections:
       scs_khz:
         required: true
         type: number
-        allowed_numeric_values: [15, 30, 60, 120, 240]
+        allowed_numeric_values: [15, 30, 60, 120, 240, 480, 960]
       cp_type:
         required: true
         type: string
@@ -406,6 +406,10 @@ sections:
         required: false
         type: string
         allowed_values: [prg_wideband]
+      phase07_strict:
+        required: false
+        type: struct
+        nested_rule: mimo_phase07_strict
   users:
     required: false
     parameters:
@@ -750,7 +754,7 @@ sections:
       frequency_range:
         required: false
         type: string
-        allowed_values: [FR1, FR2]
+        allowed_values: [FR1, FR2-1, FR2-2]
       duplex_mode:
         required: false
         type: string
@@ -759,7 +763,7 @@ sections:
       carrier_scs_khz:
         required: false
         type: number
-        allowed_numeric_values: [15, 30, 60, 120]
+        allowed_numeric_values: [15, 30, 60, 120, 480, 960]
       n_size_grid: {required: false, type: integer, min: 1}
       ssb_unit_mode:
         required: false
@@ -1075,6 +1079,75 @@ sections:
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}
 nested_sections:
+  mimo_phase07_strict:
+    path: mimo.phase07_strict
+    parameters:
+      enabled: {required: true, type: boolean}
+      profile_id: {required: true, type: string, nonempty: true}
+      specification_profile: {required: true, type: string, nonempty: true}
+      direction:
+        required: true
+        type: string
+        allowed_values: [DL, UL, BOTH]
+      codebook_type: {required: true, type: string, nonempty: true}
+      ports: {required: true, type: integer, min: 1}
+      panels: {required: true, type: integer, min: 1}
+      n1: {required: true, type: integer, min: 1}
+      n2: {required: true, type: integer, min: 1}
+      o1: {required: true, type: integer, min: 1}
+      o2: {required: true, type: integer, min: 1}
+      max_rank: {required: true, type: integer, min: 1, max: 8}
+      rank_domain: {required: true, type: number_list, min_items: 1}
+      receiver:
+        required: true
+        type: string
+        allowed_values: [MMSE, IRC, ZF]
+      precoder_prg_size_rbs: {required: true, type: integer, min: 1}
+      require_active_tci_state: {required: true, type: boolean}
+      measurement_max_age_slots: {required: true, type: integer, min: 0}
+      covariance:
+        required: true
+        type: struct
+        nested_rule: mimo_phase07_covariance
+      csi_report:
+        required: true
+        type: struct
+        nested_rule: mimo_phase07_csi_report
+      ul_srs_authority:
+        required: true
+        type: struct
+        nested_rule: mimo_phase07_ul_srs_authority
+  mimo_phase07_covariance:
+    path: mimo.phase07_strict.covariance
+    parameters:
+      min_samples: {required: true, type: integer, min: 1}
+      max_age_slots: {required: true, type: integer, min: 0}
+      shrinkage_factor: {required: true, type: number, min: 0, max: 1}
+      condition_number_limit: {required: true, type: number, min_exclusive: 1}
+  mimo_phase07_csi_report:
+    path: mimo.phase07_strict.csi_report
+    parameters:
+      report_config_id: {required: true, type: string, nonempty: true}
+      epoch: {required: true, type: integer, min: 0}
+      report_quantity: {required: true, type: string, nonempty: true}
+      num_csi_resources: {required: true, type: integer, min: 1}
+      frequency_granularity:
+        required: true
+        type: string
+        allowed_values: [wideband, subband]
+      uci_channel:
+        required: true
+        type: string
+        allowed_values: [PUCCH, PUSCH]
+      num_subbands: {required: true, type: integer, min: 1}
+      number_of_beams: {required: true, type: integer, min: 1}
+      phase_alphabet_size: {required: true, type: integer, min: 2}
+  mimo_phase07_ul_srs_authority:
+    path: mimo.phase07_strict.ul_srs_authority
+    parameters:
+      enabled: {required: true, type: boolean}
+      max_age_slots: {required: true, type: integer, min: 0}
+      configured_override_forbidden: {required: true, type: boolean}
   scenario_bs:
     path: scenario.bs
     parameters:

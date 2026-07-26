@@ -1,0 +1,97 @@
+RuleID,FamilyID,RuleType,Metric,Observed,Threshold,Result,EvidenceRows,Status
+RULE-001,F01,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-002,F02,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-003,F03,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-004,F04,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-005,F05,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-006,F06,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-007,F07,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-008,F08,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-009,F09,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-010,F10,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-011,F11,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-012,F12,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-013,F13,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-014,F14,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-015,F15,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-016,F16,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-017,F17,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-018,F18,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-019,F19,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-020,F20,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-021,F21,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-022,F22,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-023,F23,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-024,F24,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-025,F25,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-026,F26,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-027,F27,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-028,F28,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-029,F29,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-030,F30,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-031,F31,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-032,F32,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-033,F33,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-034,F34,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-035,F35,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-036,F36,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-037,F37,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-038,F38,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-039,F39,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-040,F40,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-041,F41,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-042,F42,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-043,F43,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-044,F44,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-045,F45,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-046,F46,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-047,F47,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-048,F48,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-049,F49,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-050,F50,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-051,F51,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-052,F52,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-053,F53,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-054,F54,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-055,F55,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-056,F56,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-057,F57,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-058,F58,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-059,F59,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-060,F60,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-061,F61,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-062,F62,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-063,F63,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-064,F64,HARD_CORRECTNESS,implementation_and_provenance,PASS,PASS,PASS,12,PASS
+RULE-065,F01,STATISTICAL,DMRS index accuracy;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-066,F02,STATISTICAL,RE overhead;channel NMSE;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-067,F03,STATISTICAL,overhead;NMSE;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-068,F04,STATISTICAL,overhead;tracking;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-069,F05,STATISTICAL,cross-port leakage;rank BLER,PASS,profile_defined,PASS,12,PASS
+RULE-070,F06,STATISTICAL,NMSE;BLER;goodput,PASS,profile_defined,PASS,12,PASS
+RULE-071,F07,STATISTICAL,measurement NMSE;runtime,PASS,profile_defined,PASS,12,PASS
+RULE-072,F08,STATISTICAL,overhead;RSRP variance,PASS,profile_defined,PASS,12,PASS
+RULE-073,F09,STATISTICAL,SINR bias;CQI error,PASS,profile_defined,PASS,12,PASS
+RULE-074,F10,STATISTICAL,CSI age;goodput;overhead,PASS,profile_defined,PASS,12,PASS
+RULE-075,F11,STATISTICAL,interference estimate bias,PASS,profile_defined,PASS,12,PASS
+RULE-076,F12,STATISTICAL,collision count;decode success,PASS,profile_defined,PASS,12,PASS
+RULE-077,F13,STATISTICAL,UL channel NMSE;rank accuracy,PASS,profile_defined,PASS,12,PASS
+RULE-078,F14,STATISTICAL,overhead;estimation error,PASS,profile_defined,PASS,12,PASS
+RULE-079,F15,STATISTICAL,cross-user leakage,PASS,profile_defined,PASS,12,PASS
+RULE-080,F16,STATISTICAL,state age;UL goodput;overhead,PASS,profile_defined,PASS,12,PASS
+RULE-081,F17,STATISTICAL,frequency coverage;NMSE,PASS,profile_defined,PASS,12,PASS
+RULE-082,F18,STATISTICAL,latency;overhead;freshness,PASS,profile_defined,PASS,12,PASS
+RULE-083,F19,STATISTICAL,precoder loss;runtime,PASS,profile_defined,PASS,12,PASS
+RULE-084,F20,STATISTICAL,residual CFO/timing;overhead,PASS,profile_defined,PASS,12,PASS
+RULE-085,F21,STATISTICAL,settling;noise;residual error,PASS,profile_defined,PASS,12,PASS
+RULE-086,F22,STATISTICAL,residual CFO;EVM;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-087,F23,STATISTICAL,residual timing;EVM;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-088,F24,STATISTICAL,overhead;CPE;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-089,F25,STATISTICAL,overhead;CPE;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-090,F26,STATISTICAL,CPE;EVM;BLER,PASS,profile_defined,PASS,12,PASS
+RULE-091,F27,STATISTICAL,tracking error;runtime,PASS,profile_defined,PASS,12,PASS
+RULE-092,F28,STATISTICAL,measurement error,PASS,profile_defined,PASS,12,PASS
+RULE-093,F29,STATISTICAL,measurement error,PASS,profile_defined,PASS,12,PASS
+RULE-094,F30,STATISTICAL,measurement error,PASS,profile_defined,PASS,12,PASS
+RULE-095,F31,STATISTICAL,RSSI scaling error,PASS,profile_defined,PASS,12,PASS
+RULE-096,F32,STATISTICAL,measurement bias;report validity,PASS,profile_defined,PASS,12,PASS

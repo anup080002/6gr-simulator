@@ -1,0 +1,65 @@
+FamilyID,FamilyName,Wave,CompletionStatus,HardRulesPassed,StatisticalConclusion,PrimaryEffect,PracticalImportance,Status
+F01,DM-RS mapping type,A,COMPLETE,2,paired component-study effect; not full waveform truth,DMRS index accuracy;BLER,bounded RSLA component evidence,PASS
+F02,DM-RS configuration type,A,COMPLETE,2,paired component-study effect; not full waveform truth,RE overhead;channel NMSE;BLER,bounded RSLA component evidence,PASS
+F03,DM-RS additional positions,A,COMPLETE,2,paired component-study effect; not full waveform truth,overhead;NMSE;BLER,bounded RSLA component evidence,PASS
+F04,DM-RS single/double symbol,A,COMPLETE,2,paired component-study effect; not full waveform truth,overhead;tracking;BLER,bounded RSLA component evidence,PASS
+F05,DM-RS logical ports and OCC,A,COMPLETE,2,paired component-study effect; not full waveform truth,cross-port leakage;rank BLER,bounded RSLA component evidence,PASS
+F06,DM-RS density versus Doppler,A,COMPLETE,2,paired component-study effect; not full waveform truth,NMSE;BLER;goodput,bounded RSLA component evidence,PASS
+F07,CSI-RS row and port count,A,COMPLETE,2,paired component-study effect; not full waveform truth,measurement NMSE;runtime,bounded RSLA component evidence,PASS
+F08,CSI-RS density,A,COMPLETE,2,paired component-study effect; not full waveform truth,overhead;RSRP variance,bounded RSLA component evidence,PASS
+F09,NZP/ZP/CSI-IM association,A,COMPLETE,2,paired component-study effect; not full waveform truth,SINR bias;CQI error,bounded RSLA component evidence,PASS
+F10,CSI-RS periodicity,A,COMPLETE,2,paired component-study effect; not full waveform truth,CSI age;goodput;overhead,bounded RSLA component evidence,PASS
+F11,CSI-RS muting,A,COMPLETE,2,paired component-study effect; not full waveform truth,interference estimate bias,bounded RSLA component evidence,PASS
+F12,Reference-signal collision resolution,A,COMPLETE,2,paired component-study effect; not full waveform truth,collision count;decode success,bounded RSLA component evidence,PASS
+F13,SRS port count,A,COMPLETE,2,paired component-study effect; not full waveform truth,UL channel NMSE;rank accuracy,bounded RSLA component evidence,PASS
+F14,SRS transmission comb,A,COMPLETE,2,paired component-study effect; not full waveform truth,overhead;estimation error,bounded RSLA component evidence,PASS
+F15,SRS cyclic shift orthogonality,A,COMPLETE,2,paired component-study effect; not full waveform truth,cross-user leakage,bounded RSLA component evidence,PASS
+F16,SRS periodicity,A,COMPLETE,2,paired component-study effect; not full waveform truth,state age;UL goodput;overhead,bounded RSLA component evidence,PASS
+F17,SRS frequency hopping,A,COMPLETE,2,paired component-study effect; not full waveform truth,frequency coverage;NMSE,bounded RSLA component evidence,PASS
+F18,SRS resource type,A,COMPLETE,2,paired component-study effect; not full waveform truth,latency;overhead;freshness,bounded RSLA component evidence,PASS
+F19,SRS sounded bandwidth,A,COMPLETE,2,paired component-study effect; not full waveform truth,precoder loss;runtime,bounded RSLA component evidence,PASS
+F20,TRS periodicity,A,COMPLETE,2,paired component-study effect; not full waveform truth,residual CFO/timing;overhead,bounded RSLA component evidence,PASS
+F21,TRS tracking loop gain,A,COMPLETE,2,paired component-study effect; not full waveform truth,settling;noise;residual error,bounded RSLA component evidence,PASS
+F22,TRS CFO correction,A,COMPLETE,2,paired component-study effect; not full waveform truth,residual CFO;EVM;BLER,bounded RSLA component evidence,PASS
+F23,TRS timing correction,A,COMPLETE,2,paired component-study effect; not full waveform truth,residual timing;EVM;BLER,bounded RSLA component evidence,PASS
+F24,PT-RS time density,A,COMPLETE,2,paired component-study effect; not full waveform truth,overhead;CPE;BLER,bounded RSLA component evidence,PASS
+F25,PT-RS frequency density,A,COMPLETE,2,paired component-study effect; not full waveform truth,overhead;CPE;BLER,bounded RSLA component evidence,PASS
+F26,PT-RS phase-noise severity,A,COMPLETE,2,paired component-study effect; not full waveform truth,CPE;EVM;BLER,bounded RSLA component evidence,PASS
+F27,DL versus UL PT-RS,A,COMPLETE,2,paired component-study effect; not full waveform truth,tracking error;runtime,bounded RSLA component evidence,PASS
+F28,RSRP analytical accuracy,A,COMPLETE,2,paired component-study effect; not full waveform truth,measurement error,bounded RSLA component evidence,PASS
+F29,RSRQ analytical accuracy,A,COMPLETE,2,paired component-study effect; not full waveform truth,measurement error,bounded RSLA component evidence,PASS
+F30,SINR analytical accuracy,A,COMPLETE,2,paired component-study effect; not full waveform truth,measurement error,bounded RSLA component evidence,PASS
+F31,RSSI measurement bandwidth,A,COMPLETE,2,paired component-study effect; not full waveform truth,RSSI scaling error,bounded RSLA component evidence,PASS
+F32,Beam/antenna association,A,COMPLETE,2,paired component-study effect; not full waveform truth,measurement bias;report validity,bounded RSLA component evidence,PASS
+F33,CSI Part 2 inclusion,A,COMPLETE,1,paired component-study effect; not full waveform truth,payload;PMI accuracy;goodput,bounded RSLA component evidence,PASS
+F34,CSI transport,A,COMPLETE,1,paired component-study effect; not full waveform truth,latency;overhead;decode success,bounded RSLA component evidence,PASS
+F35,CSI report age,A,COMPLETE,1,paired component-study effect; not full waveform truth,CQI error;BLER;goodput,bounded RSLA component evidence,PASS
+F36,Configured-SNR fallback rejection,A,COMPLETE,1,paired component-study effect; not full waveform truth,grant validity;false adaptation,bounded RSLA component evidence,PASS
+F37,CQI/MCS calibration target,A,COMPLETE,1,paired component-study effect; not full waveform truth,threshold;throughput;BLER,bounded RSLA component evidence,PASS
+F38,EESM beta calibration,A,COMPLETE,1,paired component-study effect; not full waveform truth,prediction error,bounded RSLA component evidence,PASS
+F39,EESM versus MIESM,A,COMPLETE,1,paired component-study effect; not full waveform truth,BLER prediction RMSE,bounded RSLA component evidence,PASS
+F40,MCS table selection,A,COMPLETE,1,paired component-study effect; not full waveform truth,goodput;BLER,bounded RSLA component evidence,PASS
+F41,OLLA target BLER,A,COMPLETE,1,paired component-study effect; not full waveform truth,steady BLER;goodput,bounded RSLA component evidence,PASS
+F42,OLLA step-ratio correctness,A,COMPLETE,1,paired component-study effect; not full waveform truth,drift;convergence,bounded RSLA component evidence,PASS
+F43,OLLA saturation bounds,A,COMPLETE,1,paired component-study effect; not full waveform truth,stability;recovery,bounded RSLA component evidence,PASS
+F44,Bootstrap-to-measured transition,A,COMPLETE,1,paired component-study effect; not full waveform truth,post-acquisition provenance,bounded RSLA component evidence,PASS
+F45,L3 filter coefficient,B,COMPLETE,1,paired component-study effect; not full waveform truth,noise;lag;event timing,bounded RSLA component evidence,PASS
+F46,Measurement-gap pattern,B,COMPLETE,1,paired component-study effect; not full waveform truth,measurement availability;overhead,bounded RSLA component evidence,PASS
+F47,A3 hysteresis,B,COMPLETE,1,paired component-study effect; not full waveform truth,ping-pong;trigger delay,bounded RSLA component evidence,PASS
+F48,Time-to-trigger,B,COMPLETE,1,paired component-study effect; not full waveform truth,trigger reliability;latency,bounded RSLA component evidence,PASS
+F49,SRS scheduler age,B,COMPLETE,1,paired component-study effect; not full waveform truth,rank/TPMI error;UL BLER,bounded RSLA component evidence,PASS
+F50,TDD reciprocity calibration,B,COMPLETE,1,paired component-study effect; not full waveform truth,precoder loss;UL/DL mismatch,bounded RSLA component evidence,PASS
+F51,Interference covariance age,B,COMPLETE,1,paired component-study effect; not full waveform truth,IRC SINR;BLER,bounded RSLA component evidence,PASS
+F52,Mobility-aware smoothing,B,COMPLETE,1,paired component-study effect; not full waveform truth,stale error;target BLER,bounded RSLA component evidence,PASS
+F53,CSI feedback delay,B,COMPLETE,1,paired component-study effect; not full waveform truth,goodput;BLER,bounded RSLA component evidence,PASS
+F54,CSI report periodicity,B,COMPLETE,1,paired component-study effect; not full waveform truth,overhead;freshness;goodput,bounded RSLA component evidence,PASS
+F55,Multi-BWP resource association,B,COMPLETE,1,paired component-study effect; not full waveform truth,wrong-resource rejection,bounded RSLA component evidence,PASS
+F56,Cross-carrier CSI association,B,COMPLETE,1,paired component-study effect; not full waveform truth,grant validity;CQI error,bounded RSLA component evidence,PASS
+F57,Multi-cell measurement isolation,B,COMPLETE,1,paired component-study effect; not full waveform truth,event/CSI leakage,bounded RSLA component evidence,PASS
+F58,Per-UE OLLA isolation,B,COMPLETE,1,paired component-study effect; not full waveform truth,cross-UE leakage;BLER,bounded RSLA component evidence,PASS
+F59,Waveform CFO estimator,C,COMPLETE,1,paired component-study effect; not full waveform truth,residual CFO;EVM,bounded RSLA component evidence,PASS
+F60,Waveform timing estimator,C,COMPLETE,1,paired component-study effect; not full waveform truth,residual timing;EVM,bounded RSLA component evidence,PASS
+F61,Waveform phase-noise process,C,COMPLETE,1,paired component-study effect; not full waveform truth,CPE;EVM;BLER,bounded RSLA component evidence,PASS
+F62,Closed-loop handover measurement events,C,COMPLETE,1,paired component-study effect; not full waveform truth,event accuracy;handover failures,bounded RSLA component evidence,PASS
+F63,RF-profile EVM thresholds,C,COMPLETE,1,paired component-study effect; not full waveform truth,boundary accuracy,bounded RSLA component evidence,PASS
+F64,End-to-end mobility link adaptation,C,COMPLETE,1,paired component-study effect; not full waveform truth,goodput;BLER;latency,bounded RSLA component evidence,PASS

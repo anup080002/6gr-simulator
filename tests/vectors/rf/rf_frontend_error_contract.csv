@@ -1,0 +1,37 @@
+ErrorID,Meaning,WaveformGenerated,StateMutation
+RF:UnsupportedProfile,Unknown or unsupported RF profile,false,false
+RF:DeviceConformanceClaimForbidden,Baseband LLS requested RF-device conformance/certification claim,false,false
+RF:MissingReferencePlane,Required RF reference plane missing,false,false
+RF:MissingPowerParameter,Strict power/gain/loss/NF parameter missing,false,false
+RF:PowerClosureFailure,Waveform and analytical power do not reconcile,false,false
+RF:CFOAcquisitionFailed,No valid CFO hypothesis,false,false
+RF:CFOFalseLock,CFO lock violates residual/likelihood policy,false,false
+RF:CFOAmbiguityUnresolved,Integer/fractional CFO ambiguity unresolved,false,false
+RF:TimingAcquisitionFailed,No valid timing peak,false,false
+RF:SampleClockProfileMissing,SCO enabled without stateful resampler profile,false,false
+RF:ResamplerBandwidthViolation,Resampler cannot preserve declared occupied bandwidth,false,false
+RF:PhaseNoiseMaskMissing,Strict phase-noise profile lacks mask/provenance,false,false
+RF:PhaseNoiseStateDiscontinuity,Oscillator phase state is discontinuous,false,false
+RF:IQCalibrationMissing,IQ compensation requested without measured state,false,false
+RF:PAProfileMissing,PA enabled without calibrated model,false,false
+RF:PAProfileDimensionMismatch,PA memory/GMP coefficients invalid,false,false
+RF:DPDProfileMissing,DPD enabled without trained/frozen coefficients,false,false
+RF:DPDValidationFailed,DPD holdout result violates limits,false,false
+RF:DACProfileMissing,DAC enabled without code/filter profile,false,false
+RF:ADCProfileMissing,ADC enabled without explicit quantizer profile,false,false
+RF:ImplicitAGCForbidden,Strict execution attempted automatic AGC creation,false,false
+RF:AGCOverload,AGC/ADC remains overloaded,false,false
+RF:BlockerScenarioInvalid,Blocker scenario is invalid or incomplete,false,false
+RF:ReceiverCompression,Receiver front end exceeds declared compression limit,false,false
+RF:EVMReferenceInvalid,EVM reference/resource/measurement interval invalid,false,false
+RF:ACLRFilterInvalid,ACLR filter/band configuration invalid,false,false
+RF:SpectrumMaskMissing,SEM/OBUE profile missing,false,false
+RF:MeasuredPathlossUnavailable,UL power control has no measured pathloss-reference state,false,false
+RF:TPCStateStale,TPC state stale or wrong configuration epoch,false,false
+RF:PowerControlEquationMismatch,Power-control analytical and applied result differ,false,false
+RF:PCMAXExceeded,Power allocation exceeds PCMAX without valid sharing/clipping result,false,false
+RF:NoiseCascadeInvalid,NF/noise-temperature cascade invalid,false,false
+RF:CovarianceInvalid,Receiver covariance nonfinite/non-PSD/inconsistent,false,false
+RF:UnsupportedCombination,RF feature tuple not in capability matrix,false,false
+RF:StateEpochMismatch,RF state/configuration epoch mismatch,false,false
+RF:NonFiniteSamples,RF stage generated nonfinite samples,false,false

@@ -1,4 +1,4 @@
-function [Rint, info] = estimateInterferenceCovarianceIRC(rxGrid, hEst, refInd, refSym, nVar)
+function [Rint, info, covarianceState] = estimateInterferenceCovarianceIRC(rxGrid, hEst, refInd, refSym, nVar, varargin)
 %ESTIMATEINTERFERENCECOVARIANCEIRC Estimate IRC covariance from pilot residuals.
 %
 %   RINT = sixgr.phy.rx.estimateInterferenceCovarianceIRC(...) computes a
@@ -8,16 +8,34 @@ function [Rint, info] = estimateInterferenceCovarianceIRC(rxGrid, hEst, refInd, 
 %   The output is measured receiver evidence and is not a configured
 %   interference shortcut.
 
+ip = inputParser;
+ip.addParameter("MinSamples",8,@(x)isnumeric(x)&&isscalar(x)&&x>=1);
+ip.addParameter("AgeSlots",0,@(x)isnumeric(x)&&isscalar(x)&&x>=0);
+ip.addParameter("MaxAgeSlots",8,@(x)isnumeric(x)&&isscalar(x)&&x>=0);
+ip.addParameter("PRGID",0,@(x)isnumeric(x)&&isscalar(x)&&x>=0);
+ip.addParameter("ShrinkageFactor",0.05,@(x)isnumeric(x)&&isscalar(x)&&x>=0&&x<=1);
+ip.addParameter("Slot",0,@(x)isnumeric(x)&&isscalar(x)&&x>=0&&x==round(x));
+ip.addParameter("CovarianceID","cov-dmrs-0",@(x)ischar(x)||isstring(x));
+ip.addParameter("SourceResource","DMRS_RESIDUAL",@(x)ischar(x)||isstring(x));
+ip.parse(varargin{:});
+opt = ip.Results;
+
 info = struct('Available', false, 'Method', 'pilot_residual_covariance', ...
     'Source', 'dmrs_pilot_residual_runtime_evidence', 'Status', 'unavailable', ...
-    'NRE', 0, 'NAReason', "");
+    'NRE', 0, 'SampleCount', 0, 'MinSamples', double(opt.MinSamples), ...
+    'AgeSlots', double(opt.AgeSlots), 'MaxAgeSlots', double(opt.MaxAgeSlots), ...
+    'PRGID', double(opt.PRGID), 'ShrinkageMethod', 'diagonal_target', ...
+    'ShrinkageFactor', double(opt.ShrinkageFactor), ...
+    'HermitianError', NaN, 'MinEigenvalue', NaN, ...
+    'ConditionNumber', NaN, 'Valid', false, 'NAReason', "");
 
 nr = max(1, localNumRx(rxGrid));
 nVar = double(nVar);
 if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
     nVar = 0;
 end
-Rint = nVar .* eye(nr);
+Rint = [];
+covarianceState = [];
 
 if isempty(rxGrid) || isempty(hEst) || isempty(refInd) || isempty(refSym)
     info.NAReason = "missing_grid_channel_or_pilots";
@@ -57,18 +75,59 @@ try
         Rsum = Rsum + ek * ek';
         used = used + 1;
     end
-    if used < 1
-        info.NAReason = "pilot_residuals_empty_after_shape_validation";
+    info.NRE = double(used);
+    info.SampleCount = double(used);
+    if used < double(opt.MinSamples)
+        info.NAReason = "insufficient_covariance_samples";
+        info.Status = "INSUFFICIENT_SAMPLES";
         return;
     end
-    Rk = Rsum ./ used + nVar .* eye(nr);
-    Rint = (Rk + Rk') ./ 2;
+    if double(opt.AgeSlots) > double(opt.MaxAgeSlots)
+        info.NAReason = "stale_covariance";
+        info.Status = "STALE";
+        return;
+    end
+    Rk = Rsum ./ used;
+    target = trace(Rk)/nr*eye(nr);
+    alpha = double(opt.ShrinkageFactor);
+    Rk = (1-alpha)*Rk + alpha*target + nVar.*eye(nr);
+    Rcandidate = (Rk + Rk') ./ 2;
+    hermitianError = norm(Rcandidate-Rcandidate',"fro") / ...
+        max(norm(Rcandidate,"fro"),realmin);
+    eigValues = real(eig(Rcandidate));
+    condition = cond(Rcandidate);
+    info.HermitianError = double(hermitianError);
+    info.MinEigenvalue = double(min(eigValues));
+    info.ConditionNumber = double(condition);
+    if hermitianError > 1e-12 || min(eigValues) < -1e-10*max(1,abs(trace(Rcandidate)))
+        info.NAReason = "invalid_covariance_psd";
+        info.Status = "INVALID_PSD";
+        return;
+    end
+    if ~isfinite(condition) || condition > 1e12
+        info.NAReason = "ill_conditioned_covariance";
+        info.Status = "ILL_CONDITIONED";
+        return;
+    end
+    Rint = Rcandidate;
+    covarianceState = sixgr.phy.mimo.InterferenceCovarianceState(Rcandidate, ...
+        CovarianceID=string(opt.CovarianceID), ...
+        SampleCount=used,MinSamples=double(opt.MinSamples), ...
+        Slot=double(opt.Slot),MaxAgeSlots=double(opt.MaxAgeSlots), ...
+        PRGID=double(opt.PRGID), ...
+        SourceResource=string(opt.SourceResource), ...
+        ShrinkageFactor=double(opt.ShrinkageFactor), ...
+        ApplyShrinkage=false,IncludesNoise=true);
     info.Available = true;
+    info.Valid = true;
     info.Status = "OK";
-    info.NRE = double(used);
     info.NAReason = "";
+    info.CovarianceID = covarianceState.CovarianceID;
+    info.CovarianceState = covarianceState;
+    info.CovarianceIncludesNoise = true;
 catch ME
     info.NAReason = string(ME.identifier);
+    covarianceState = [];
 end
 end
 
