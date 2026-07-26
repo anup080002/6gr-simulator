@@ -19,14 +19,7 @@ fields.mcs = double(opt.MCS);
 fields.ndi = 1;
 fields.rv = 0;
 fields.harq_process = double(opt.HARQProcess);
-fields.tpc = 1;
-fields.csi_request = 0;
-fields.prb_start = double(opt.PRBStart);
-fields.num_prb = double(opt.NumPRB);
-fields.symbol_start = 0;
-fields.num_symbols = 14;
-fields.direction = "UL";
-fields.grant_type = "PUSCH";
+fields.tpc_command_for_pusch = 1;
 
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "0_0", pdcchCfg);
 end

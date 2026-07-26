@@ -1,0 +1,13 @@
+RunID,CaseID,AbsoluteSlot,CORESETID,SearchSpaceID,TCIStateID,QCLSourceType,QCLSourceID,BeamID,BeamActive,BeamBlocked,PDCCHMonitored,Decoded,RecoveryState,MeasurementProvenance,Status
+PDCCH_PHASE04_R18,BEAM0001,0,1,1,0,SSB,0,0,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0001,1,1,1,1,SSB,1,1,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0001,2,1,1,2,SSB,2,2,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0002,3,1,1,3,SSB,3,3,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0002,4,1,1,0,SSB,4,0,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0002,5,1,1,1,SSB,5,1,false,true,false,false,BLOCKED_RECOVERY_PENDING,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0003,6,1,1,2,SSB,6,2,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0003,7,1,1,3,SSB,7,3,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0003,8,1,1,0,SSB,0,0,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0004,9,1,1,1,SSB,1,1,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0004,10,1,1,2,SSB,2,2,true,false,true,true,ACTIVE,configured_ssb_qcl_measurement,PASS
+PDCCH_PHASE04_R18,BEAM0004,11,1,1,3,SSB,3,3,false,true,false,false,BLOCKED_RECOVERY_PENDING,configured_ssb_qcl_measurement,PASS

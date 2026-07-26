@@ -25,23 +25,15 @@ fields.ndi = 1;
 fields.rv = 0;
 fields.harq_process = double(opt.HARQProcess);
 fields.dai = 0;
-fields.tpc = 1;
+fields.tpc_command_for_pucch = 1;
 fields.pucch_resource_indicator = 0;
 fields.pdsch_to_harq_feedback_timing = 4;
-fields.antenna_ports = max(0, min(31, round(double(opt.NumLayers) - 1)));
-fields.transmission_configuration_indication = max(0, min(7, round(double(opt.PMI))));
+fields.antenna_ports = double(opt.NumLayers) - 1;
+fields.transmission_configuration_indication = double(opt.PMI);
 fields.srs_request = 0;
 fields.csi_request = 0;
 fields.cbg_transmission_information = 0;
 fields.cbg_flushing_information = 0;
 fields.dmrs_sequence_initialization = 0;
-fields.prb_start = double(opt.PRBStart);
-fields.num_prb = double(opt.NumPRB);
-fields.symbol_start = 2;
-fields.num_symbols = 12;
-fields.direction = "DL";
-fields.grant_type = "PDSCH";
-
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "1_1", pdcchCfg);
 end
-

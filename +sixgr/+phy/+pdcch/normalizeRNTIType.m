@@ -12,6 +12,18 @@ switch raw
         token = "RA-RNTI";
     case {"TC", "TC-RNTI", "TCRNTI"}
         token = "TC-RNTI";
+    case {"CS", "CS-RNTI", "CSRNTI"}
+        token = "CS-RNTI";
+    case {"MCS-C", "MCS-C-RNTI", "MCSCRNTI"}
+        token = "MCS-C-RNTI";
+    case {"P", "P-RNTI", "PRNTI"}
+        token = "P-RNTI";
+    case {"TPC-PUSCH", "TPC-PUSCH-RNTI", "TPCPUSCHRNTI"}
+        token = "TPC-PUSCH-RNTI";
+    case {"TPC-PUCCH", "TPC-PUCCH-RNTI", "TPCPUCCHRNTI"}
+        token = "TPC-PUCCH-RNTI";
+    case {"TPC-SRS", "TPC-SRS-RNTI", "TPCSRSRNTI"}
+        token = "TPC-SRS-RNTI";
     otherwise
         token = string(value);
 end

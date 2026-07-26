@@ -1,0 +1,742 @@
+RunID,CaseID,DCIFormat,FieldOrder,FieldName,Present,WidthBits,BitStart,BitEnd,Value,ValueMin,ValueMax,SemanticSource,Status
+PDCCH_PHASE04_R18,DCI0001,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,2,frequency_resource_assignment,true,16,1,16,3277,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,5,mcs,true,5,22,26,6,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,8,harq_process,true,4,30,33,1,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0001,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,2,frequency_resource_assignment,true,16,1,16,3551,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,5,mcs,true,5,22,26,7,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,8,harq_process,true,4,30,33,2,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0002,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,2,frequency_resource_assignment,true,16,1,16,3825,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,5,mcs,true,5,22,26,8,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,8,harq_process,true,4,30,33,3,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0003,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,2,frequency_resource_assignment,true,16,1,16,3007,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,8,mcs,true,5,27,31,9,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,11,harq_process,true,4,35,38,4,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0004,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,2,frequency_resource_assignment,true,16,1,16,3276,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,5,mcs,true,5,22,26,10,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,8,harq_process,true,4,30,33,5,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0005,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,2,frequency_resource_assignment,true,16,1,16,3550,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,5,mcs,true,5,22,26,11,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,8,harq_process,true,4,30,33,6,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0006,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,2,frequency_resource_assignment,true,16,1,16,3824,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,5,mcs,true,5,22,26,12,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,8,harq_process,true,4,30,33,7,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0007,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,2,frequency_resource_assignment,true,16,1,16,3006,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,8,mcs,true,5,27,31,13,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,11,harq_process,true,4,35,38,8,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0008,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,2,frequency_resource_assignment,true,16,1,16,3280,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,5,mcs,true,5,22,26,14,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,8,harq_process,true,4,30,33,9,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0009,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,2,frequency_resource_assignment,true,16,1,16,3549,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,5,mcs,true,5,22,26,15,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,8,harq_process,true,4,30,33,10,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0010,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,2,frequency_resource_assignment,true,16,1,16,3823,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,5,mcs,true,5,22,26,16,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,8,harq_process,true,4,30,33,11,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0011,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,2,frequency_resource_assignment,true,16,1,16,3005,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,8,mcs,true,5,27,31,5,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,11,harq_process,true,4,35,38,12,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0012,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,2,frequency_resource_assignment,true,16,1,16,3279,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,5,mcs,true,5,22,26,6,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,8,harq_process,true,4,30,33,13,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0013,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,2,frequency_resource_assignment,true,16,1,16,3553,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,5,mcs,true,5,22,26,7,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,8,harq_process,true,4,30,33,14,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0014,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,2,frequency_resource_assignment,true,16,1,16,3822,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,5,mcs,true,5,22,26,8,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,8,harq_process,true,4,30,33,15,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0015,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,2,frequency_resource_assignment,true,16,1,16,3004,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,8,mcs,true,5,27,31,9,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,11,harq_process,true,4,35,38,0,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0016,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,2,frequency_resource_assignment,true,16,1,16,3278,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,5,mcs,true,5,22,26,10,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,8,harq_process,true,4,30,33,1,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0017,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,2,frequency_resource_assignment,true,16,1,16,3552,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,5,mcs,true,5,22,26,11,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,8,harq_process,true,4,30,33,2,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0018,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,2,frequency_resource_assignment,true,16,1,16,3826,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,5,mcs,true,5,22,26,12,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,8,harq_process,true,4,30,33,3,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0019,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,2,frequency_resource_assignment,true,16,1,16,3003,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,8,mcs,true,5,27,31,13,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,11,harq_process,true,4,35,38,4,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0020,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,2,frequency_resource_assignment,true,16,1,16,3277,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,5,mcs,true,5,22,26,14,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,8,harq_process,true,4,30,33,5,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0021,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,2,frequency_resource_assignment,true,16,1,16,3551,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,5,mcs,true,5,22,26,15,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,8,harq_process,true,4,30,33,6,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0022,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,2,frequency_resource_assignment,true,16,1,16,3825,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,5,mcs,true,5,22,26,16,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,8,harq_process,true,4,30,33,7,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0023,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,2,frequency_resource_assignment,true,16,1,16,3007,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,8,mcs,true,5,27,31,5,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,11,harq_process,true,4,35,38,8,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0024,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,2,frequency_resource_assignment,true,16,1,16,3276,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,5,mcs,true,5,22,26,6,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,8,harq_process,true,4,30,33,9,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0025,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,2,frequency_resource_assignment,true,16,1,16,3550,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,5,mcs,true,5,22,26,7,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,8,harq_process,true,4,30,33,10,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0026,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,2,frequency_resource_assignment,true,16,1,16,3824,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,5,mcs,true,5,22,26,8,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,8,harq_process,true,4,30,33,11,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0027,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,2,frequency_resource_assignment,true,16,1,16,3006,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,8,mcs,true,5,27,31,9,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,11,harq_process,true,4,35,38,12,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0028,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,2,frequency_resource_assignment,true,16,1,16,3280,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,5,mcs,true,5,22,26,10,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,8,harq_process,true,4,30,33,13,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0029,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,2,frequency_resource_assignment,true,16,1,16,3549,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,5,mcs,true,5,22,26,11,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,8,harq_process,true,4,30,33,14,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0030,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,2,frequency_resource_assignment,true,16,1,16,3823,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,5,mcs,true,5,22,26,12,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,8,harq_process,true,4,30,33,15,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0031,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,2,frequency_resource_assignment,true,16,1,16,3005,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,8,mcs,true,5,27,31,13,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,11,harq_process,true,4,35,38,0,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0032,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,2,frequency_resource_assignment,true,16,1,16,3279,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,5,mcs,true,5,22,26,14,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,8,harq_process,true,4,30,33,1,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0033,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,2,frequency_resource_assignment,true,16,1,16,3553,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,5,mcs,true,5,22,26,15,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,8,harq_process,true,4,30,33,2,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0034,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,2,frequency_resource_assignment,true,16,1,16,3822,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,5,mcs,true,5,22,26,16,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,8,harq_process,true,4,30,33,3,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0035,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,2,frequency_resource_assignment,true,16,1,16,3004,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,8,mcs,true,5,27,31,5,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,11,harq_process,true,4,35,38,4,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0036,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,2,frequency_resource_assignment,true,16,1,16,3278,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,5,mcs,true,5,22,26,6,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,8,harq_process,true,4,30,33,5,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0037,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,2,frequency_resource_assignment,true,16,1,16,3552,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,5,mcs,true,5,22,26,7,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,8,harq_process,true,4,30,33,6,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0038,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,2,frequency_resource_assignment,true,16,1,16,3826,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,5,mcs,true,5,22,26,8,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,8,harq_process,true,4,30,33,7,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0039,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,2,frequency_resource_assignment,true,16,1,16,3003,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,8,mcs,true,5,27,31,9,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,11,harq_process,true,4,35,38,8,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0040,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,2,frequency_resource_assignment,true,16,1,16,3277,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,5,mcs,true,5,22,26,10,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,8,harq_process,true,4,30,33,9,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0041,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,2,frequency_resource_assignment,true,16,1,16,3551,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,5,mcs,true,5,22,26,11,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,8,harq_process,true,4,30,33,10,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0042,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,2,frequency_resource_assignment,true,16,1,16,3825,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,5,mcs,true,5,22,26,12,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,8,harq_process,true,4,30,33,11,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0043,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,2,frequency_resource_assignment,true,16,1,16,3007,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,8,mcs,true,5,27,31,13,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,11,harq_process,true,4,35,38,12,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0044,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,2,frequency_resource_assignment,true,16,1,16,3276,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,5,mcs,true,5,22,26,14,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,8,harq_process,true,4,30,33,13,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0045,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,2,frequency_resource_assignment,true,16,1,16,3550,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,5,mcs,true,5,22,26,15,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,8,harq_process,true,4,30,33,14,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0046,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,2,frequency_resource_assignment,true,16,1,16,3824,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,5,mcs,true,5,22,26,16,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,8,harq_process,true,4,30,33,15,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0047,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,2,frequency_resource_assignment,true,16,1,16,3006,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,8,mcs,true,5,27,31,5,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,11,harq_process,true,4,35,38,0,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0048,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_0,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,2,frequency_resource_assignment,true,16,1,16,3280,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,3,time_resource_assignment,true,4,17,20,1,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,5,mcs,true,5,22,26,6,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,8,harq_process,true,4,30,33,1,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,9,tpc_command_for_pusch,true,2,34,35,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0049,0_0,10,padding,true,8,36,43,0,0,0,TS 38.212 monitored-size alignment,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,1,format_identifier,true,1,0,0,0,0,0,DCI format 0_1,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,2,frequency_resource_assignment,true,16,1,16,3549,0,65535,active UL BWP,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,3,time_resource_assignment,true,4,17,20,2,0,15,active PUSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,4,frequency_hopping,true,1,21,21,0,0,1,PUSCH frequency hopping,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,5,mcs,true,5,22,26,7,0,31,active PUSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,8,harq_process,true,4,30,33,2,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,9,first_dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,10,tpc_command_for_pusch,true,2,36,37,0,0,3,PUSCH power control,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,11,srs_resource_indicator,true,4,38,41,0,0,15,SRS resource set,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,12,precoding_information_and_number_of_layers,true,6,42,47,0,0,63,PUSCH codebook and layer capability,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,13,antenna_ports,true,5,48,52,0,0,31,PUSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,14,srs_request,true,2,53,54,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0050,0_1,15,csi_request,true,2,55,56,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_0,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,2,frequency_resource_assignment,true,16,1,16,3823,0,65535,initial/active DL BWP procedure context,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,3,time_resource_assignment,true,4,17,20,3,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,5,mcs,true,5,22,26,8,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,6,ndi,true,1,27,27,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,7,rv,true,2,28,29,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,8,harq_process,true,4,30,33,3,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,9,dai,true,2,34,35,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,10,tpc_command_for_pucch,true,2,36,37,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,11,pucch_resource_indicator,true,3,38,40,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0051,1_0,12,pdsch_to_harq_feedback_timing,true,3,41,43,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,1,format_identifier,true,1,0,0,1,1,1,DCI format 1_1,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,2,frequency_resource_assignment,true,16,1,16,3005,0,65535,active DL BWP,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,3,time_resource_assignment,true,4,17,20,0,0,15,active PDSCH-TimeDomainResourceAllocationList,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,4,vrb_to_prb_mapping,true,1,21,21,0,0,1,PDSCH resource allocation,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,5,prb_bundling_size_indicator,true,1,22,22,0,0,1,PDSCH bundling configuration,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,6,rate_matching_indicator,true,2,23,24,0,0,3,rateMatchPatternGroup,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,7,zp_csirs_trigger,true,2,25,26,0,0,3,aperiodic ZP-CSI-RS resources,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,8,mcs,true,5,27,31,9,0,31,active PDSCH MCS table,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,9,ndi,true,1,32,32,0,0,1,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,10,rv,true,2,33,34,0,0,3,HARQ state,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,11,harq_process,true,4,35,38,4,0,15,HARQ process set,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,12,dai,true,2,39,40,0,0,3,HARQ-ACK codebook,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,13,tpc_command_for_pucch,true,2,41,42,0,0,3,PUCCH power control,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,14,pucch_resource_indicator,true,3,43,45,0,0,7,PUCCH resource set,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,15,pdsch_to_harq_feedback_timing,true,3,46,48,0,0,7,dl-DataToUL-ACK,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,16,antenna_ports,true,5,49,53,0,0,31,PDSCH DM-RS configuration,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,17,transmission_configuration_indication,true,3,54,56,0,0,7,active TCI states,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,18,srs_request,true,2,57,58,0,0,3,SRS request configuration,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,19,csi_request,true,2,59,60,0,0,3,CSI request configuration,PASS
+PDCCH_PHASE04_R18,DCI0052,1_1,20,dmrs_sequence_initialization,true,1,61,61,0,0,1,PDSCH DM-RS sequence initialization,PASS

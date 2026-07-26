@@ -1,0 +1,11 @@
+RunID,ModelID,Response,Term,Coefficient,StdError,CILower,CIUpper,PValue,AdjustedPValue,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_01,-0.04,0.01,-0.0596,-0.0204,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_02,-0.03,0.01,-0.0496,-0.0104,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_03,-0.02,0.01,-0.0396,-0.0004,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_04,-0.01,0.01,-0.0296,0.0096,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_05,0,0.01,-0.0196,0.0196,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_06,0.01,0.01,-0.0096,0.0296,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_07,0.02,0.01,0.0004,0.0396,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_08,0.03,0.01,0.0104,0.0496,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_09,0.04,0.01,0.0204,0.0596,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH_PAIRED_LINEAR,DetectionProbability,factor_10,0.05,0.01,0.0304,0.0696,0.5,0.75,PASS,analytical_component_evaluation,component_proxy,study_not_truth

@@ -1,0 +1,11 @@
+RunID,ExperimentID,FamilyID,BeamID,TCIStateID,ControlBWP,ScheduledBWP,ControlCarrier,ScheduledCarrier,DetectionProbability,CorrectApplication,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+PDCCH_IMPACT_R18,PDCCH-EXP-0001,F01,0,0,0,0,0,0,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0002,F01,1,1,0,1,0,1,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0003,F01,2,2,0,0,0,0,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0004,F01,3,3,0,1,0,1,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0005,F01,0,0,0,0,0,0,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0006,F01,1,1,0,1,0,1,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0007,F01,2,2,0,0,0,0,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0008,F01,3,3,0,1,0,1,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0009,F01,0,0,0,0,0,0,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0010,F01,1,1,0,1,0,1,1,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth

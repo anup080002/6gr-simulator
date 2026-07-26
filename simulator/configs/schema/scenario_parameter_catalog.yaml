@@ -551,7 +551,7 @@ sections:
         min_items: 1
         integer: true
         min: 0
-      pdcch_payload_bits: {required: true, type: integer, min: 1}
+      pdcch_payload_bits: {required: false, type: integer, min: 1}
       blind_decode_list_length: {required: true, type: integer, min: 1}
       pdcch_strict: {required: false, type: struct}
       pdcch6gr: {required: false, type: struct}

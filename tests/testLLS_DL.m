@@ -9,8 +9,10 @@ cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 
-resLow = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, "SNR_dB", 0);
-resHigh = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, "SNR_dB", 18);
+resLow = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, ...
+    "SNR_dB", 0, "ExecutionProfile", "phy_calibration");
+resHigh = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, ...
+    "SNR_dB", 18, "ExecutionProfile", "phy_calibration");
 assert(isfield(resLow, "Ok") && isfield(resHigh, "Ok"), "Result missing Ok");
 assert(isfield(resLow, "BLER") && isfield(resHigh, "BLER"), "Result missing BLER");
 assert(isfield(resLow, "BER") && isfield(resHigh, "BER"), "Result missing BER");

@@ -772,7 +772,12 @@ function result = localRunPDCCHBlindDecodeSweep(cfg, scfg, runFolder)
 aggLevels = double(scfg.get("control.aggregation_levels"));
 nTrials = max(1, round(double(scfg.get("simulation.monte_carlo_iterations"))));
 snr_dB = double(scfg.get("simulation.snr_db"));
-pdcchPayloadBits = max(1, round(double(scfg.get("control.pdcch_payload_bits"))));
+pdcchPayloadBits = double(sixgr.util.structGet(cfg, "phy.pdcch.dciPayloadBits", NaN));
+if ~(isscalar(pdcchPayloadBits) && isfinite(pdcchPayloadBits) && ...
+        pdcchPayloadBits >= 1 && pdcchPayloadBits == fix(pdcchPayloadBits))
+    error("sixgr:phy:pdcch:missing_dci_context", ...
+        "PDCCH blind sweep requires a context-derived exact payload size.");
+end
 listLength = max(1, round(double(scfg.get("control.blind_decode_list_length"))));
 
 trialRows = repmat(struct("AggregationLevel", NaN, "Trial", NaN, "SNR_dB", NaN, ...

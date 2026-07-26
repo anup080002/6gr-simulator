@@ -1,0 +1,11 @@
+RunID,TestSuite,Mandatory,Executed,Passed,Failed,Skipped,Blocked,MATLABVersion,ToolboxVersion,Command,Status
+PDCCH_PHASE04_R18,context_schema_alignment,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,pack_parse_typed_rejection,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,crc_scrambling_qpsk,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,polar_rate_matching,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,coreset_mapping_ownership,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,dmrs_mapping,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,monitoring_candidate_enumeration,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,blind_detection_no_oracle,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,type0_and_rnti,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS
+PDCCH_PHASE04_R18,bwp_carrier_beam_authority,true,true,true,0,0,0,26.1.0.3312084 (R2026a) Update 4,26.1,runPDCCHPhaseValidation/internal-production-check,PASS

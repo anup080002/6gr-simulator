@@ -302,7 +302,14 @@ canonical_control:
     pdcch_enabled: true
     pucch_enabled: true
     pucch_format: 2
-    pdcch_payload_bits: 64
+    coreset_type: ue_specific
+    search_space_type: ue_specific
+    dci_formats:
+    - '0_0'
+    - '0_1'
+    - '1_0'
+    - '1_1'
+    blind_decode_candidates: 23
     blind_decode_list_length: 16
     aggregation_levels:
     - 1
@@ -310,6 +317,20 @@ canonical_control:
     - 4
     - 8
     - 16
+    candidate_aggregation_levels:
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+    scheduler_aggregation_level: 4
+    aggregation_selection_policy: configured_scheduler_level
+    search_space_num_candidates:
+    - 8
+    - 8
+    - 4
+    - 2
+    - 1
     coreset_duration: 2
     coreset_frequency_resources:
     - 1
@@ -324,6 +345,167 @@ canonical_control:
     - 1
     - 1
     - 1
+    pdcch_strict:
+      execution_profile: connected_blind_strict
+      research_class: baseline_benchmark
+      spec_release: Release-18
+      spec_version: 18.8.0
+      known_location_fallback: false
+      oracle_candidate_timing: false
+      synchronized_calibration_separate: true
+      validation_campaign:
+        trials_per_operating_point: 25
+        no_signal_period: 5
+        channels:
+        - AWGN
+        - TDL-C
+        channel_doppler_hz:
+        - 0
+        - 100
+        snr_by_aggregation_db:
+        - 10
+        - 8
+        - 6
+        - 4
+        - 2
+        fading_snr_offset_db: 4
+        impact_num_workers: 4
+        phase_noise_profiles:
+        - none
+        - low
+        - medium
+        - high
+        - common_phase
+        - common_plus_ici
+        - tracked
+        - untracked
+        phase_noise_std_radians:
+        - 0
+        - 0.0001
+        - 0.0005
+        - 0.002
+        - 0.0002
+        - 0.001
+        - 0.0001
+        - 0.002
+        impact_waveform_families:
+        - F06
+        - F08
+        - F12
+        - F28
+        - F30
+        - F31
+        - F32
+        - F33
+        - F34
+        - F35
+        - F36
+        - F38
+        - F47
+        - F48
+      rnti:
+        type: C-RNTI
+        value: 4660
+      dci_context:
+        search_space_id: 1
+        coreset_id: 1
+        control_serving_cell: 0
+        control_carrier: 0
+        control_bwp: 0
+        scheduled_serving_cell: 0
+        scheduled_carrier: 0
+        scheduled_bwp: 0
+        initial_dl_bwp_size: 273
+        initial_dl_bwp_start: 0
+        active_dl_bwp_size: 273
+        active_dl_bwp_start: 0
+        initial_ul_bwp_size: 273
+        initial_ul_bwp_start: 0
+        active_ul_bwp_size: 273
+        active_ul_bwp_start: 0
+        frequency_allocation_type: type1_riv
+        dl_time_domain_allocations:
+        - [0, 2, 12, 4]
+        - [1, 2, 10, 4]
+        - [2, 3, 11, 4]
+        - [3, 2, 9, 4]
+        - [4, 2, 7, 4]
+        - [5, 9, 4, 4]
+        - [6, 4, 4, 4]
+        - [7, 5, 7, 4]
+        - [8, 5, 2, 4]
+        - [9, 9, 2, 4]
+        - [10, 12, 2, 4]
+        - [11, 1, 13, 4]
+        - [12, 1, 6, 4]
+        - [13, 2, 4, 4]
+        - [14, 4, 7, 4]
+        - [15, 8, 4, 4]
+        ul_time_domain_allocations:
+        - [0, 0, 14, 1]
+        - [1, 0, 12, 1]
+        - [2, 2, 10, 1]
+        - [3, 4, 10, 1]
+        - [4, 0, 7, 1]
+        - [5, 7, 7, 1]
+        - [6, 0, 4, 1]
+        - [7, 4, 4, 1]
+        - [8, 8, 4, 1]
+        - [9, 10, 4, 1]
+        - [10, 0, 2, 1]
+        - [11, 2, 2, 1]
+        - [12, 4, 2, 1]
+        - [13, 6, 2, 1]
+        - [14, 8, 2, 1]
+        - [15, 10, 2, 1]
+        carrier_indicator_present: false
+        carrier_indicator_width: 0
+        carrier_indicator_value: 0
+        bwp_indicator_present: false
+        bwp_indicator_width: 0
+        sul_indicator_present: false
+        frequency_hopping_enabled: false
+        transform_precoding_enabled: false
+        harq_process_count: 16
+        dai_width: 2
+        antenna_port_field_width: 5
+        layer_capability: 4
+        tci_present: true
+        tci_width: 3
+        active_tci_state_id: 0
+        srs_resource_indicator_width: 4
+        srs_request_width: 2
+        csi_request_width: 2
+        rate_match_indicator_width: 2
+        zp_csirs_trigger_width: 2
+        cbg_fields_present: false
+        cbg_transmission_width: 0
+        cbg_flush_width: 0
+        dmrs_sequence_initialization_present: true
+        configuration_epoch: 1
+      coreset:
+        id: 1
+        n_rb: 72
+        rb_start: 0
+        start_symbol: 0
+        duration_symbols: 2
+        mapping_type: noninterleaved
+        reg_bundle_size: 6
+        interleaver_size: 0
+        shift_index: 1
+        precoder_granularity: sameAsREG-bundle
+      search_space:
+        id: 1
+        type: USS
+        coreset_id: 1
+        period_slots: 1
+        offset_slots: 0
+        duration_slots: 1
+        monitoring_symbols_within_slot: '10000000000000'
+        num_candidates: [8, 8, 4, 2, 1]
+        monitored_formats: ['0_0', '0_1', '1_0', '1_1']
+        allowed_rnti_types: [C-RNTI]
+        n_ci: 0
     pbch_required: true
     prach_required: true
     pdcch_required: true

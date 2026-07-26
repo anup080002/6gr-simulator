@@ -1,0 +1,11 @@
+RunID,ExperimentID,FamilyID,SSBSCSkHz,PDCCHSCSkHz,ControlResourceSetZero,SearchSpaceZero,OffsetRB,MonitoringLatencySlots,DetectionProbability,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+PDCCH_IMPACT_R18,TYPE0-IMPACT-001,F21,15,15,0,0,0,1,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-002,F22,15,15,1,1,0,0.5,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-003,F23,15,15,2,2,0,3,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-004,F24,15,15,3,3,2,2.5,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-005,F25,15,15,4,4,0,6,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-006,F26,15,15,5,5,2,5.5,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-007,F27,15,15,6,6,0,8,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-008,F28,15,15,7,7,2,7.5,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-009,F29,15,15,8,8,0,2,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,TYPE0-IMPACT-010,F30,15,15,9,9,2,7,1,PASS,analytical_component_evaluation,component_proxy,study_not_truth

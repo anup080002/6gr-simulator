@@ -1,0 +1,13 @@
+RunID,ExperimentID,FamilyID,DCIFormat,BWPSize,PayloadBits,FieldCount,CodeRate,PackRuntimeUs,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+PDCCH_IMPACT_R18,PDCCH-EXP-0001,F01,0_0,273,44,9,0.62963,10.1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0002,F01,0_1,273,57,15,0.375,10.2,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0003,F01,1_0,273,44,12,0.15741,10.3,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0004,F01,1_1,273,62,20,0.099537,10.4,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0005,F01,0_0,273,44,9,0.039352,10.5,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0006,F01,0_1,273,57,15,0.75,10.6,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0007,F01,1_0,273,44,12,0.31481,10.7,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0008,F01,1_1,273,62,20,0.19907,10.8,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0009,F01,0_0,273,44,9,0.078704,10.9,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0010,F01,0_1,273,57,15,0.046875,11,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0011,F01,1_0,273,44,12,0.62963,11.1,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+PDCCH_IMPACT_R18,PDCCH-EXP-0012,F01,1_1,273,62,20,0.39815,11.2,PASS,analytical_component_evaluation,component_proxy,study_not_truth

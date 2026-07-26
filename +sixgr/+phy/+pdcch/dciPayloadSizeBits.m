@@ -1,55 +1,84 @@
 function [payloadBits, details] = dciPayloadSizeBits(nSizeGrid, dciFormats)
-%DCIPAYLOADSIZEBITS Resolve supported NR DCI payload sizes for a carrier BWP.
+%DCIPAYLOADSIZEBITS Resolve one exact contextual payload size per DCI format.
 %
-% The common-size rule for DCI format 0_0/1_0 is handled by padding the
-% shorter 0_0 payload to the corresponding 1_0 payload size.
+% This compatibility entry point delegates to the contextual Release-18
+% schema/alignment engines. It returns a scalar only when one format was
+% requested or every requested format resolves to the same aligned size.
 
 if nargin < 2 || isempty(dciFormats)
-    dciFormats = ["1_0", "0_0"];
+    dciFormats = ["1_0","0_0"];
 end
 nSizeGrid = double(nSizeGrid);
-if ~(isscalar(nSizeGrid) && isfinite(nSizeGrid) && nSizeGrid >= 1)
-    error("sixgr:phy:pdcch:InvalidNSizeGrid", ...
-        "NSizeGrid must be a positive scalar to derive DCI payload size.");
+if ~(isscalar(nSizeGrid) && isfinite(nSizeGrid) && nSizeGrid >= 1 && ...
+        nSizeGrid == fix(nSizeGrid))
+    error("sixgr:phy:pdcch:missing_dci_context", ...
+        "NSizeGrid must be a positive integer to derive a DCI context.");
 end
-rawFormats = string(dciFormats(:));
-dciFormats = strings(numel(rawFormats), 1);
-for ii = 1:numel(rawFormats)
-    dciFormats(ii) = sixgr.phy.pdcch.normalizeDCIFormat(rawFormats(ii));
+formats = string(dciFormats(:));
+for ii = 1:numel(formats)
+    formats(ii) = sixgr.phy.pdcch.normalizeDCIFormat(formats(ii));
 end
-dciFormats = unique(dciFormats, "stable");
-nFreqBits = ceil(log2(nSizeGrid * (nSizeGrid + 1) / 2));
-size10 = 1 + nFreqBits + 4 + 1 + 5 + 1 + 2 + 4 + 2 + 2 + 3 + 3;
-size00Unpadded = 1 + nFreqBits + 4 + 1 + 5 + 1 + 2 + 4 + 2;
-commonSize = size10;
-size11 = 1 + nFreqBits + 4 + 1 + 1 + 2 + 2 + 5 + 1 + 2 + 4 + 2 + 2 + 3 + 3 + 5 + 3 + 2 + 2 + 8 + 1 + 1;
-size01 = 1 + nFreqBits + 4 + 1 + 5 + 1 + 2 + 4 + 2 + 2 + 4 + 6 + 2 + 5 + 2 + 2 + 3;
-sizes = zeros(numel(dciFormats), 1);
-for ii = 1:numel(dciFormats)
-    switch dciFormats(ii)
-        case "1_0"
-            sizes(ii) = size10;
-        case "0_0"
-            sizes(ii) = commonSize;
-        case "1_1"
-            sizes(ii) = size11;
-        case "0_1"
-            sizes(ii) = size01;
-        otherwise
-            error("sixgr:phy:pdcch:UnsupportedDCIFormat", ...
-                "Supported bit-exact PDCCH DCI formats are 0_0, 0_1, 1_0 and 1_1; got %s.", dciFormats(ii));
-    end
+formats = unique(formats, "stable");
+legacyCfg = struct("NSizeGrid", nSizeGrid, "MonitoredFormats", formats);
+rows = repmat(localRow(), numel(formats), 1);
+contexts = cell(numel(formats), 1);
+for ii = 1:numel(formats)
+    context = sixgr.phy.pdcch.DCIContext.fromLegacy(legacyCfg, formats(ii));
+    schema = sixgr.phy.pdcch.DCISchemaEngine.resolve(context);
+    alignment = sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(context);
+    selected = alignment.Selected;
+    rows(ii) = struct( ...
+        "DCIFormat", formats(ii), ...
+        "RawBits", double(schema.RawBits), ...
+        "AlignedBits", double(selected.AlignedBits), ...
+        "PaddingBits", double(selected.PaddingBits), ...
+        "TruncatedFrequencyBits", double(selected.TruncatedFrequencyBits), ...
+        "ContextDigest", string(context.Digest));
+    contexts{ii} = context;
 end
-payloadBits = double(max(sizes));
+sizes = [rows.AlignedBits].';
+if isscalar(sizes) || all(sizes == sizes(1))
+    payloadBits = double(sizes(1));
+else
+    payloadBits = double(sizes);
+end
+
 details = struct();
-details.NSizeGrid = double(nSizeGrid);
-details.FrequencyResourceAssignmentBits = double(nFreqBits);
-details.DCI10PayloadBits = double(size10);
-details.DCI00UnpaddedPayloadBits = double(size00Unpadded);
-details.DCI00PaddedPayloadBits = double(commonSize);
-details.DCI11PayloadBits = double(size11);
-details.DCI01PayloadBits = double(size01);
-details.PayloadBits = double(payloadBits);
-details.Formats = dciFormats(:).';
-details.SizeSource = "ts_38212_supported_dci_0_0_0_1_1_0_1_1_with_ts_38214_riv_bits";
+details.NSizeGrid = nSizeGrid;
+details.Formats = formats(:).';
+details.FormatRows = rows;
+details.PayloadBitsByFormat = double(sizes);
+details.Contexts = contexts;
+details.FrequencyResourceAssignmentBits = ...
+    sixgr.phy.pdcch.DCISchemaEngine.frequencyWidth(nSizeGrid, "type1_riv");
+details.PayloadBits = payloadBits;
+details.SizeSource = "sixgr_contextual_dci_schema_alignment_release18";
+details.DCI10PayloadBits = localSize(rows, "1_0");
+details.DCI00UnpaddedPayloadBits = localRaw(rows, "0_0");
+details.DCI00PaddedPayloadBits = localSize(rows, "0_0");
+details.DCI11PayloadBits = localSize(rows, "1_1");
+details.DCI01PayloadBits = localSize(rows, "0_1");
+end
+
+function row = localRow()
+row = struct("DCIFormat", "", "RawBits", NaN, "AlignedBits", NaN, ...
+    "PaddingBits", NaN, "TruncatedFrequencyBits", NaN, "ContextDigest", "");
+end
+
+function value = localSize(rows, format)
+idx = find(string({rows.DCIFormat}) == string(format), 1);
+if isempty(idx)
+    value = NaN;
+else
+    value = double(rows(idx).AlignedBits);
+end
+end
+
+function value = localRaw(rows, format)
+idx = find(string({rows.DCIFormat}) == string(format), 1);
+if isempty(idx)
+    value = NaN;
+else
+    value = double(rows(idx).RawBits);
+end
 end

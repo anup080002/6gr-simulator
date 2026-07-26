@@ -24,20 +24,12 @@ fields.rv = 0;
 fields.harq_process = double(opt.HARQProcess);
 fields.first_dai = 0;
 fields.tpc_command_for_pusch = 1;
-fields.srs_resource_indicator = max(0, min(15, round(double(opt.SRSResourceIndicator))));
-fields.precoding_information_and_number_of_layers_tpmi = max(0, min(63, round(double(opt.TPMI))));
-fields.precoding_information_and_number_of_layers_rank_minus1 = max(0, min(3, round(double(opt.NumLayers) - 1)));
-fields.antenna_ports = max(0, min(31, round(double(opt.NumLayers) - 1)));
+fields.srs_resource_indicator = double(opt.SRSResourceIndicator);
+fields.precoding_information_and_number_of_layers = ...
+    double(opt.TPMI) + 16 * (double(opt.NumLayers) - 1);
+fields.antenna_ports = double(opt.NumLayers) - 1;
 fields.srs_request = 0;
 fields.csi_request = 0;
-fields.k2 = 1;
-fields.prb_start = double(opt.PRBStart);
-fields.num_prb = double(opt.NumPRB);
-fields.symbol_start = 0;
-fields.num_symbols = 14;
-fields.direction = "UL";
-fields.grant_type = "PUSCH";
 
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "0_1", pdcchCfg);
 end
-

@@ -96,10 +96,8 @@ if blind
     [allSymInd, allDMRSSym, allDMRSInd] = nrPDCCHSpace(carrier, pdcch);
     [candSymInd, candDMRSInd, candDMRSSym] = localCollectPDCCHCandidates(allSymInd, allDMRSInd, allDMRSSym);
     if isempty(candSymInd)
-        [pdcchInd, dmrsSym, dmrsInd] = nrPDCCHResources(carrier, pdcch);
-        candSymInd  = {pdcchInd};
-        candDMRSInd = {dmrsInd};
-        candDMRSSym = {dmrsSym};
+        error("sixgr:phy:pdcch:invalid_candidate_count", ...
+            "Blind PDCCH monitoring resolved no legal candidates; known-location fallback is forbidden.");
     end
 else
     [pdcchInd, dmrsSym, dmrsInd] = nrPDCCHResources(carrier, pdcch);
@@ -231,6 +229,7 @@ rx.ChannelEstimate = [];
 rx.RxGrid = rxGrid;
 rx.EqualizedSymbols = complex([]);
 candidateRows = repmat(localEmptyCandidateRow(), 0, 1);
+passingRx = cell(0, 1);
 
 for c = 1:numel(candSymInd)
     symInd  = candSymInd{c};
@@ -323,10 +322,22 @@ for c = 1:numel(candSymInd)
     row.PDCCHRECount = double(numel(symInd));
     row.DMRSRECount = double(numel(dmrsInd));
     candidateRows(end+1, 1) = row; %#ok<AGROW>
-
     if rx.Ok
-        break;
+        passingRx{end+1,1} = rx; %#ok<AGROW>
     end
+end
+
+if numel(passingRx) == 1
+    rx = passingRx{1};
+elseif numel(passingRx) > 1
+    rx = passingRx{1};
+    rx.Ok = false;
+    rx.CausalGrantDecodeOk = false;
+    rx.AmbiguousValidHypotheses = true;
+    rx.AmbiguousHypothesisCount = numel(passingRx);
+else
+    rx.AmbiguousValidHypotheses = false;
+    rx.AmbiguousHypothesisCount = 0;
 end
 
 info = struct();
@@ -347,6 +358,8 @@ info.ListLength = listLen;
 info.BlindSearch = blind;
 info.NumCandidatesAvailable = numel(candSymInd);
 info.NumCandidatesTried = numel(candidateRows);
+info.ValidHypothesisCount = numel(passingRx);
+info.AmbiguousValidHypotheses = numel(passingRx) > 1;
 info.TimingEstimate = timingResolution;
 if ~isempty(candidateRows)
     info.CandidateResults = struct2table(candidateRows, "AsArray", true);

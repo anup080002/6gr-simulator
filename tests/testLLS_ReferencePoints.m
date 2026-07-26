@@ -14,8 +14,10 @@ cfg.outputs.saveFigures = false;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 
 rng(2026, "twister");
-dl0 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 0);
-dl20 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 20);
+dl0 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, ...
+    "SNR_dB", 0, "ExecutionProfile", "phy_calibration");
+dl20 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, ...
+    "SNR_dB", 20, "ExecutionProfile", "phy_calibration");
 ul0 = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 0);
 ul20 = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 20);
 

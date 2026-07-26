@@ -541,12 +541,35 @@ cfg.phy.pdcch.aggregationLevel = double(localResolveDefaultPDCCHAggregationLevel
 cfg.phy.pdcch.candidateAggregationLevels = double(localGetNested(s, "control.candidate_aggregation_levels", cfg.phy.pdcch.aggregationLevels));
 cfg.phy.pdcch.aggregationSelectionPolicy = char(string(localGetNested(s, "control.aggregation_selection_policy", "snr_threshold")));
 cfg.phy.pdcch.schedulerAggregationLevel = double(localGetNested(s, "control.scheduler_aggregation_level", NaN));
+cfg.phy.pdcch.dciFormats = cellstr(string(s.control.dci_formats(:)));
 cfg.phy.pdcch.dciFormat = char(string(localFirstValue(s.control.dci_formats)));
+cfg.phy.pdcch.operatorControl = s.control;
 cfg.phy.pdcch.configuredPayloadBits = double(localGetNested(s, "control.pdcch_payload_bits", NaN));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindDecodeCandidates", double(s.control.blind_decode_candidates));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(s.control.coreset_duration));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResources", double(s.control.coreset_frequency_resources));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.searchSpace.numCandidates", double(s.control.search_space_num_candidates));
+strictControl = localGetNested(s, "control.pdcch_strict", struct());
+if isstruct(strictControl) && isfield(strictControl, "dci_context")
+    formats = string(s.control.dci_formats(:));
+    contextData = cell(numel(formats), 1);
+    contextDigests = strings(numel(formats), 1);
+    payloadSizes = zeros(numel(formats), 1);
+    for contextIndex = 1:numel(formats)
+        dciContext = sixgr.phy.pdcch.DCIContextFactory.fromOperatorControl( ...
+            s.control, formats(contextIndex));
+        contextData{contextIndex} = dciContext.Data;
+        contextDigests(contextIndex) = dciContext.Digest;
+        aligned = sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(dciContext);
+        payloadSizes(contextIndex) = aligned.Selected.AlignedBits;
+    end
+    cfg.phy.pdcch.dciContextData = contextData;
+    cfg.phy.pdcch.dciContextDigests = contextDigests;
+    cfg.phy.pdcch.dciPayloadSizesByFormat = payloadSizes;
+    cfg.phy.pdcch.dciPayloadBits = payloadSizes(1);
+    cfg.phy.pdcch.KBits = payloadSizes(1);
+    cfg.phy.pdcch.payloadSizeSource = "contextual_release18_schema";
+end
 
 cfg.ctrl6gr.enable = logical(localGetNested(s, "control.pdcch6gr.enable_6gr_pdcch", false));
 cfg.ctrl6gr.RNTI = double(localGetNested(s, "control.pdcch6gr.rnti", 4660));
@@ -573,8 +596,10 @@ cfg.ctrl6gr.DiversityMode = char(string(localGetNested(s, "control.pdcch6gr.dive
 cfg.ctrl6gr.PrecoderGranularity = char(string(localGetNested(s, "control.pdcch6gr.precoder_granularity", "none")));
 cfg.ctrl6gr.OutputDir = char(string(runFolder));
 cfg.ctrl6gr.Seed = double(cfg.run.seed);
-cfg.ctrl6gr.PayloadLengthBits = double(localGetNested(s, "control.pdcch6gr.payload_length_bits", ...
-    localGetNested(s, "control.pdcch_payload_bits", 64)));
+cfg.ctrl6gr.PayloadLengthBits = double(localGetNested(s, ...
+    "control.pdcch6gr.payload_length_bits", ...
+    sixgr.util.structGet(cfg, "phy.pdcch.dciPayloadBits", ...
+    localGetNested(s, "control.pdcch_payload_bits", 64))));
 cfg.ctrl6gr.Modulation = char(string(localGetNested(s, "control.pdcch6gr.modulation", "QPSK")));
 cfg.ctrl6gr.CRCPolynomial = char(string(localGetNested(s, "control.pdcch6gr.crc_polynomial", "24C")));
 cfg.ctrl6gr.CRCScramblingEnabled = logical(localGetNested(s, "control.pdcch6gr.crc_scrambling_enabled", true));

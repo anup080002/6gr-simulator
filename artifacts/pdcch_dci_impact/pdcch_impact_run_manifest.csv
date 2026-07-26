@@ -1,0 +1,2 @@
+RunID,GitCommit,MATLABVersion,ToolboxVersion,SeedList,ConfidenceLevel,ExperimentMatrixSHA256,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+PDCCH_IMPACT_R18,59137fe38a0a35a23e51133c0a1b459b79ceb849,26.1.0.3312084 (R2026a) Update 4,26.1,11|23|47|89,0.95,7e0fdf3cd693f8a22faa7bf335545d2748f6f9dcbe8597f705e77bc6dc8d0527,PASS,analytical_component_evaluation,component_proxy,study_not_truth
