@@ -89,6 +89,7 @@ cfg.phy.pusch.mcsIndex = 4;
 cfg.phy.pusch.nLayers = 1;
 cfg.phy.pusch.numLayers = 1;
 cfg.phy.pusch.transformPrecoding = true;
+cfg.phy.pusch.powerControl.enabled = false;
 cfg.phy.pusch.equalizer = "MMSE";
 cfg.phy.channelEstimation.method = "LS";
 end

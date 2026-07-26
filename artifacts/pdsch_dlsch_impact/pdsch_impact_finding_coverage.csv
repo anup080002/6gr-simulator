@@ -1,0 +1,13 @@
+RunID,FamilyID,FindingID,Title,ExperimentsRequired,ExperimentsCompleted,SourceArtifacts,SourceRowsPass,TruthQualified,Status
+pdsch_dlsch_impact_20260726T142845Z,F01,DL-001,Declared production matrix execution,3,3,pdsch_declared_coverage_results.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F02,DL-002,Frequency-selective PRG precoding,3,3,pdsch_precoding_application.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F03,DL-003,Preserved DM-RS port configuration,3,3,pdsch_dmrs_matrix.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F04,DL-004,Exact DM-RS mapping combinations,3,3,pdsch_dmrs_matrix.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F05,DL-005,Immutable precoder application,3,3,pdsch_precoding_application.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F06,DL-006,Reserved-resource exact G,3,3,pdsch_coding_chain.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F07,DL-007,PT-RS receiver correction,3,3,pdsch_ptrs_matrix.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F08,DL-008,Decoded grant and SPS authority,3,3,pdsch_assignment_resolution.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F09,DL-009,Normative modulation mapping,3,3,pdsch_independent_vector_results.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F10,DL-010,BWP carrier and QCL binding,3,3,pdsch_assignment_resolution.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F11,DL-011,Rank one-to-eight codeword mapping,3,3,pdsch_layer_codeword_map.csv,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F12,DL-012,Independent specification oracles,3,3,pdsch_independent_vector_results.csv,1,0,PASS

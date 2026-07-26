@@ -1,0 +1,17 @@
+TaskID,Title,ProductionFiles,Findings,ExitCriteria
+P01,Specification and capability profiles,+sixgr/+protocol/ProtocolSpecificationProfile.m|ProtocolCapabilityProfile.m|ProtocolPlanningResult.m,PROTO-001..015,"Pin releases, profiles, feature tuples and planning-time rejection."
+P02,Event store and identities,+sixgr/+protocol/ProtocolEvent.m|ProtocolEventStore.m|ProtocolIdentity.m|ConfigurationEpoch.m,"PROTO-004,010,011,015",Provide append-only cross-layer causal state.
+P03,RLC common/entity factory,+sixgr/+l2/+rlc18/RLCEntityFactory.m|RLCBearerIdentity.m|RLCEntityLifecycle.m,PROTO-001..004,Create exact TM/UM/AM entities from RRC config.
+P04,RLC UM,+sixgr/+l2/+rlc18/RLCUMEntity.m|UMDPDUCodec.m|RLCUMState.m,PROTO-003,"Exact 6/12-bit UMD, t-Reassembly and window."
+P05,RLC AM,+sixgr/+l2/+rlc18/RLCAMEntity.m|AMDPDUCodec.m|STATUSPDUCodec.m|RLCAMState.m,"PROTO-001,002","Exact 12/18-bit AMD, poll/status/timers/resegmentation."
+P06,PDCP common/state,+sixgr/+l2/+pdcp18/PDCPState.m|PDCPCount.m|PDCPPDUCodec.m,PROTO-005,"Exact PDU/control PDU, COUNT/HFN/reordering/discard."
+P07,PDCP security,+sixgr/+l2/+pdcp18/PDCPSecurityContext.m|NEA2.m|NIA2.m,PROTO-006,Exact bounded AS security and activation.
+P08,PDCP path features,+sixgr/+l2/+pdcp18/PDCPDuplicationState.m|PDCPPathSelector.m,PROTO-007,Bounded duplication; unsupported compression/features rejected.
+P09,SDAP,+sixgr/+l2/+sdap18/SDAPEntity.m|SDAPPDUCodec.m|QoSFlowMappingState.m,PROTO-008,"Exact UL/DL headers, end-marker and reflective mapping."
+P10,ASN.1 runtime,+sixgr/+l3/+rrc18/+asn1/RRCASN1Registry.m|UPERCodec.m|RRCMessageValidator.m,PROTO-009,Schema-derived Release-18 UPER.
+P11,RRC procedure engine,+sixgr/+l3/+rrc18/RRCUE.m|RRCGNB.m|RRCTransaction.m|RRCTimerService.m,PROTO-010,Event-sourced RRC procedures/states.
+P12,Bearer configuration,+sixgr/+l3/+rrc18/RadioBearerConfigState.m|BearerConfigTransaction.m,PROTO-011,Atomic validate/commit to all layers.
+P13,Handover,+sixgr/+l3/+rrc18/HandoverContext.m|HandoverStateMachine.m,PROTO-012,Bounded intra-frequency source-target procedure.
+P14,NAS boundary,+sixgr/+l3/+rrc18/NASBoundary.m|N1N2Event.m,PROTO-013,Typed boundary without synthetic success.
+P15,Traffic engine,+sixgr/+traffic18/TrafficSession.m|TrafficPacket.m|PDUSet.m|TrafficGenerator.m,PROTO-014,Packet/session/PDU-set and named streams.
+P16,Lineage and artifacts,+sixgr/+protocol/ProtocolLineageGraph.m|ProtocolConservationLedger.m|ProtocolArtifactExporter.m,PROTO-015,"Cross-layer identity, conservation and outputs."

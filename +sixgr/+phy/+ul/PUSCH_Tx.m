@@ -266,7 +266,8 @@ dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
 % PTRS (optional)
 ptrsInd = [];
 if ~isempty(ptrsSym)
-    ptrsInd = nrPUSCHPTRSIndices(carrier, pusch, "IndexBase", "1based");
+    ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
+        carrier, pusch, "IndexBase", "1based");
 end
 localAssertSignalResourceDisjoint(puschInd, dmrsInd, ptrsInd);
 

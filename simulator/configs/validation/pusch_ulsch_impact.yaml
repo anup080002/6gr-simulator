@@ -1,0 +1,30 @@
+schema_version: 1
+scenario_id: pusch_ulsch_impact_component_campaign
+research_class: baseline_benchmark
+
+evidence:
+  execution_backend: production_sample_domain_pusch_components
+  approximation_mode: component_campaign_not_full_ulsch_waveform_truth
+  truth_qualified: false
+
+monte_carlo:
+  symbols_per_experiment: 768
+  block_duration_ms: 0.5
+  pilot_symbols: 96
+  covariance_samples: 64
+  minimum_covariance_samples: 16
+
+statistics:
+  confidence_level: 0.95
+  bootstrap_replicates: 400
+  practical_effect_margin: 0.001
+
+receiver:
+  channel_estimation: measured_pilot_ls
+  equalization: configured_from_experiment
+  perfect_csi_allowed_only_for_oracle: true
+
+images:
+  width_pixels: 1200
+  height_pixels: 760
+  resolution_dpi: 100

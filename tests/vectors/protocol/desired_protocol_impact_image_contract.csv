@@ -1,0 +1,31 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinWidth,MinHeight,MinAxesCount,MinSeriesCount,MinFinitePointCount
+protocol_impact_rlc_sn_overhead.png,protocol_impact_rlc.csv,RLC SN overhead,SN bits,Header overhead,900,600,1,2,20
+protocol_impact_rlc_polling.png,protocol_impact_rlc.csv,RLC polling,Polling configuration,Recovery and overhead,900,600,1,2,20
+protocol_impact_rlc_timers.png,protocol_impact_rlc.csv,RLC timers,Timer value,Latency and discard,900,600,1,2,20
+protocol_impact_rlc_status.png,protocol_impact_rlc.csv,RLC STATUS,Loss pattern,STATUS and retransmission bytes,900,600,1,2,20
+protocol_impact_pdcp_sn_count.png,protocol_impact_pdcp.csv,PDCP SN and COUNT,SN bits,Overhead and wrap,900,600,1,2,20
+protocol_impact_pdcp_reordering.png,protocol_impact_pdcp.csv,PDCP reordering,Timer value,Delay and discard,900,600,1,2,20
+protocol_impact_pdcp_security.png,protocol_impact_pdcp.csv,PDCP security,Algorithm,Runtime and failures,900,600,1,2,20
+protocol_impact_pdcp_duplication.png,protocol_impact_pdcp.csv,PDCP duplication,Path profile,Reliability and overhead,900,600,1,2,20
+protocol_impact_sdap_mapping.png,protocol_impact_sdap.csv,SDAP mapping,QFI,DRB and errors,900,600,1,2,20
+protocol_impact_sdap_end_marker.png,protocol_impact_sdap.csv,SDAP end marker,Mapping transition,Completion state,900,600,1,2,20
+protocol_impact_rrc_codec.png,protocol_impact_rrc.csv,RRC codec,Message type,Encoded bits,900,600,1,2,20
+protocol_impact_rrc_setup.png,protocol_impact_rrc.csv,RRC setup,Scenario,Completion time,900,600,1,2,20
+protocol_impact_rrc_security.png,protocol_impact_rrc.csv,RRC security,Event sequence,Security state,900,600,1,2,20
+protocol_impact_bearer_commit.png,protocol_impact_rrc.csv,Bearer commit,Configuration,Layer consistency,900,600,1,2,20
+protocol_impact_rrc_resume.png,protocol_impact_rrc.csv,RRC resume,Procedure,Latency and signaling,900,600,1,2,20
+protocol_impact_handover_ttt.png,protocol_impact_handover.csv,Handover TTT,TTT (ms),Ping-pong and interruption,900,600,1,2,20
+protocol_impact_handover_continuity.png,protocol_impact_handover.csv,Handover continuity,Scenario,Packet loss and duplicates,900,600,1,2,20
+protocol_impact_t304.png,protocol_impact_handover.csv,T304,Scenario,Completion and rollback,900,600,1,2,20
+protocol_impact_traffic_arrivals.png,protocol_impact_traffic.csv,Traffic arrivals,Profile,Interarrival and burstiness,900,600,1,2,20
+protocol_impact_packet_size.png,protocol_impact_traffic.csv,Packet size,Packet bytes,Segmentation and latency,900,600,1,2,20
+protocol_impact_pdu_set_deadline.png,protocol_impact_traffic.csv,PDU set deadline,Deadline (ms),Miss probability,900,600,1,2,20
+protocol_impact_qos_mix.png,protocol_impact_traffic.csv,QoS mix,5QI profile,Latency and goodput,900,600,1,2,20
+protocol_impact_lineage_faults.png,protocol_impact_lineage.csv,Lineage faults,Fault case,Detected violations,900,600,1,2,20
+protocol_impact_conservation.png,protocol_impact_lineage.csv,Conservation,Experiment,Byte error,900,600,1,2,20
+protocol_impact_runtime_scaling.png,protocol_impact_runtime.csv,Protocol runtime scaling,Flows and bearers,Runtime (ms),900,600,1,2,20
+protocol_impact_memory_scaling.png,protocol_impact_runtime.csv,Protocol memory scaling,Flows and packets,Peak memory (MB),900,600,1,2,20
+protocol_impact_reproducibility.png,protocol_impact_runtime.csv,Protocol reproducibility,Execution mode,Artifact mismatch,900,600,1,2,20
+protocol_impact_interactions.png,protocol_impact_interactions.csv,Protocol interactions,Factor combination,Interaction effect,900,600,1,2,20
+protocol_impact_effect_forest.png,protocol_impact_pairwise_effects.csv,Protocol effect forest,Effect size,Family,900,600,1,2,20
+protocol_impact_end_to_end.png,protocol_impact_summary.csv,Connected-mode end-to-end,Scenario,Pass and performance,900,600,1,2,20

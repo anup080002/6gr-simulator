@@ -1,0 +1,13 @@
+RunID,FamilyID,FindingID,Title,ExperimentsRequired,ExperimentsCompleted,HardRules,HardRulesPassed,DiagnosticRules,PrimaryMetric,BaselineValue,TreatmentValue,AbsoluteEffect,TechnicalConclusion,Status
+pdsch_dlsch_impact_20260726T142845Z,F01,DL-001,Declared production matrix execution,3,3,1,1,1,ProductionTXExecuted,0.42857,0.42857,0,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F02,DL-002,Frequency-selective PRG precoding,3,3,1,1,1,PowerRelativeError,0,6.854e-17,6.854e-17,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F03,DL-003,Preserved DM-RS port configuration,3,3,1,1,1,DMRSRECount,4,12,8,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F04,DL-004,Exact DM-RS mapping combinations,3,3,1,1,1,IndexMismatchCount,0,0,0,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F05,DL-005,Immutable precoder application,3,3,1,1,1,TXApplicationCount,1,1,0,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F06,DL-006,Reserved-resource exact G,3,3,1,1,1,G,168,324,156,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F07,DL-007,PT-RS receiver correction,3,3,1,1,1,EVMBeforePercent,1.8443,6.9507,5.1064,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F08,DL-008,Decoded grant and SPS authority,3,3,1,1,1,WaveformAllowed,0,0,0,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F09,DL-009,Normative modulation mapping,3,3,1,1,1,MismatchCount,0,0,0,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F10,DL-010,BWP carrier and QCL binding,3,3,1,1,1,BWPId,0,1,1,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F11,DL-011,Rank one-to-eight codeword mapping,3,3,1,1,1,MappedSymbolCount,6,6,0,verified production PDSCH rows compared; waveform truth not claimed,PASS
+pdsch_dlsch_impact_20260726T142845Z,F12,DL-012,Independent specification oracles,3,3,1,1,1,MaxAbsError,0,0,0,verified production PDSCH rows compared; waveform truth not claimed,PASS

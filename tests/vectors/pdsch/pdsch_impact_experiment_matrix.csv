@@ -1,0 +1,37 @@
+ExperimentID,FamilyID,PairID,Variant,FindingID,Title,SourceCSV,SourceKeyColumn,Metric,Selection,Aggregation,Notes
+DL-F01-E01,F01,DL-F01,baseline,DL-001,Declared production matrix execution,pdsch_declared_coverage_results.csv,CaseID,ProductionTXExecuted,low,truth_fraction,Lowest executed production-TX fraction
+DL-F01-E02,F01,DL-F01,treatment,DL-001,Declared production matrix execution,pdsch_declared_coverage_results.csv,CaseID,ProductionTXExecuted,mid,truth_fraction,Median executed production-TX fraction
+DL-F01-E03,F01,DL-F01,stress,DL-001,Declared production matrix execution,pdsch_declared_coverage_results.csv,CaseID,ProductionTXExecuted,high,truth_fraction,Highest executed production-TX fraction
+DL-F02-E01,F02,DL-F02,baseline,DL-002,Frequency-selective PRG precoding,pdsch_precoding_application.csv,CaseID,PowerRelativeError,low,numeric_mean,Lowest applied-precoder power error
+DL-F02-E02,F02,DL-F02,treatment,DL-002,Frequency-selective PRG precoding,pdsch_precoding_application.csv,CaseID,PowerRelativeError,mid,numeric_mean,Median applied-precoder power error
+DL-F02-E03,F02,DL-F02,stress,DL-002,Frequency-selective PRG precoding,pdsch_precoding_application.csv,CaseID,PowerRelativeError,high,numeric_mean,Highest applied-precoder power error
+DL-F03-E01,F03,DL-F03,baseline,DL-003,Preserved DM-RS port configuration,pdsch_dmrs_matrix.csv,CaseID,DMRSRECount,low,numeric_mean,Lowest executed DM-RS allocation
+DL-F03-E02,F03,DL-F03,treatment,DL-003,Preserved DM-RS port configuration,pdsch_dmrs_matrix.csv,CaseID,DMRSRECount,mid,numeric_mean,Median executed DM-RS allocation
+DL-F03-E03,F03,DL-F03,stress,DL-003,Preserved DM-RS port configuration,pdsch_dmrs_matrix.csv,CaseID,DMRSRECount,high,numeric_mean,Highest executed DM-RS allocation
+DL-F04-E01,F04,DL-F04,baseline,DL-004,Exact DM-RS mapping combinations,pdsch_dmrs_matrix.csv,CaseID,IndexMismatchCount,low,numeric_mean,Lowest independent index mismatch count
+DL-F04-E02,F04,DL-F04,treatment,DL-004,Exact DM-RS mapping combinations,pdsch_dmrs_matrix.csv,CaseID,IndexMismatchCount,mid,numeric_mean,Median independent index mismatch count
+DL-F04-E03,F04,DL-F04,stress,DL-004,Exact DM-RS mapping combinations,pdsch_dmrs_matrix.csv,CaseID,IndexMismatchCount,high,numeric_mean,Highest independent index mismatch count
+DL-F05-E01,F05,DL-F05,baseline,DL-005,Immutable precoder application,pdsch_precoding_application.csv,CaseID,TXApplicationCount,low,numeric_mean,Lowest production TX application count
+DL-F05-E02,F05,DL-F05,treatment,DL-005,Immutable precoder application,pdsch_precoding_application.csv,CaseID,TXApplicationCount,mid,numeric_mean,Median production TX application count
+DL-F05-E03,F05,DL-F05,stress,DL-005,Immutable precoder application,pdsch_precoding_application.csv,CaseID,TXApplicationCount,high,numeric_mean,Highest production TX application count
+DL-F06-E01,F06,DL-F06,baseline,DL-006,Reserved-resource exact G,pdsch_coding_chain.csv,CaseID,G,low,numeric_mean,Lowest executed coded-bit allocation
+DL-F06-E02,F06,DL-F06,treatment,DL-006,Reserved-resource exact G,pdsch_coding_chain.csv,CaseID,G,mid,numeric_mean,Median executed coded-bit allocation
+DL-F06-E03,F06,DL-F06,stress,DL-006,Reserved-resource exact G,pdsch_coding_chain.csv,CaseID,G,high,numeric_mean,Highest executed coded-bit allocation
+DL-F07-E01,F07,DL-F07,baseline,DL-007,PT-RS receiver correction,pdsch_ptrs_matrix.csv,CaseID,EVMBeforePercent,low,numeric_mean,Lowest measured pre-correction EVM
+DL-F07-E02,F07,DL-F07,treatment,DL-007,PT-RS receiver correction,pdsch_ptrs_matrix.csv,CaseID,EVMBeforePercent,mid,numeric_mean,Median measured pre-correction EVM
+DL-F07-E03,F07,DL-F07,stress,DL-007,PT-RS receiver correction,pdsch_ptrs_matrix.csv,CaseID,EVMBeforePercent,high,numeric_mean,Highest measured pre-correction EVM
+DL-F08-E01,F08,DL-F08,baseline,DL-008,Decoded grant and SPS authority,pdsch_assignment_resolution.csv,CaseID,WaveformAllowed,low,truth_fraction,Rejected assignment outcome
+DL-F08-E02,F08,DL-F08,treatment,DL-008,Decoded grant and SPS authority,pdsch_assignment_resolution.csv,CaseID,WaveformAllowed,mid,truth_fraction,Median assignment outcome
+DL-F08-E03,F08,DL-F08,stress,DL-008,Decoded grant and SPS authority,pdsch_assignment_resolution.csv,CaseID,WaveformAllowed,high,truth_fraction,Accepted assignment outcome
+DL-F09-E01,F09,DL-F09,baseline,DL-009,Normative modulation mapping,pdsch_independent_vector_results.csv,CaseID,MismatchCount,low,numeric_mean,Lowest independent modulation-oracle mismatch
+DL-F09-E02,F09,DL-F09,treatment,DL-009,Normative modulation mapping,pdsch_independent_vector_results.csv,CaseID,MismatchCount,mid,numeric_mean,Median independent modulation-oracle mismatch
+DL-F09-E03,F09,DL-F09,stress,DL-009,Normative modulation mapping,pdsch_independent_vector_results.csv,CaseID,MismatchCount,high,numeric_mean,Highest independent modulation-oracle mismatch
+DL-F10-E01,F10,DL-F10,baseline,DL-010,BWP carrier and QCL binding,pdsch_assignment_resolution.csv,CaseID,BWPId,low,numeric_mean,Lowest bound BWP identifier
+DL-F10-E02,F10,DL-F10,treatment,DL-010,BWP carrier and QCL binding,pdsch_assignment_resolution.csv,CaseID,BWPId,mid,numeric_mean,Median bound BWP identifier
+DL-F10-E03,F10,DL-F10,stress,DL-010,BWP carrier and QCL binding,pdsch_assignment_resolution.csv,CaseID,BWPId,high,numeric_mean,Highest bound BWP identifier
+DL-F11-E01,F11,DL-F11,baseline,DL-011,Rank one-to-eight codeword mapping,pdsch_layer_codeword_map.csv,CaseID,MappedSymbolCount,low,numeric_mean,Lowest executed mapped-symbol count
+DL-F11-E02,F11,DL-F11,treatment,DL-011,Rank one-to-eight codeword mapping,pdsch_layer_codeword_map.csv,CaseID,MappedSymbolCount,mid,numeric_mean,Median executed mapped-symbol count
+DL-F11-E03,F11,DL-F11,stress,DL-011,Rank one-to-eight codeword mapping,pdsch_layer_codeword_map.csv,CaseID,MappedSymbolCount,high,numeric_mean,Highest executed mapped-symbol count
+DL-F12-E01,F12,DL-F12,baseline,DL-012,Independent specification oracles,pdsch_independent_vector_results.csv,CaseID,MaxAbsError,low,numeric_mean,Lowest independent-oracle error
+DL-F12-E02,F12,DL-F12,treatment,DL-012,Independent specification oracles,pdsch_independent_vector_results.csv,CaseID,MaxAbsError,mid,numeric_mean,Median independent-oracle error
+DL-F12-E03,F12,DL-F12,stress,DL-012,Independent specification oracles,pdsch_independent_vector_results.csv,CaseID,MaxAbsError,high,numeric_mean,Highest independent-oracle error

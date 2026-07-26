@@ -1,0 +1,4 @@
+RunID,ExperimentID,FamilyID,Variant,Metric,ObservedValue,SourceRows,SourceCSV_SHA256,Status
+pdsch_dlsch_impact_20260726T142845Z,DL-F09-E01,F09,baseline,MismatchCount,0,1,dc4d97917b0042a83db2944e84eb88656d792b5f9eb7c4cc84d413b49f7d1c02,PASS
+pdsch_dlsch_impact_20260726T142845Z,DL-F09-E02,F09,treatment,MismatchCount,0,1,dc4d97917b0042a83db2944e84eb88656d792b5f9eb7c4cc84d413b49f7d1c02,PASS
+pdsch_dlsch_impact_20260726T142845Z,DL-F09-E03,F09,stress,MismatchCount,0,1,dc4d97917b0042a83db2944e84eb88656d792b5f9eb7c4cc84d413b49f7d1c02,PASS

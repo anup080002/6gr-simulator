@@ -1,0 +1,25 @@
+ImageFile,SourceCSV,ExpectedXLabel,ExpectedYLabel,ExpectedTitleToken,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+frame_impact_numerology_slots.png,frame_impact_numerology.csv,Numerology operating point,Slots per frame,Frame numerology impact,1,2,3,1000,650
+frame_impact_numerology_summary.png,frame_impact_operating_points.csv,Experiment,Resolved timing metric,Numerology timing comparison,1,3,12,1000,650
+frame_impact_carrier_prb.png,frame_impact_carrier_grid.csv,Carrier operating point,Resolved PRBs,Carrier-grid bandwidth impact,1,2,3,1000,650
+frame_impact_guardband_summary.png,frame_impact_pairwise_effects.csv,Impact family,Absolute effect,Carrier-grid comparative effects,1,3,12,1000,650
+frame_impact_ofdm_fft.png,frame_impact_ofdm.csv,OFDM operating point,FFT or EVM metric,OFDM sampling impact,1,2,6,1000,650
+frame_impact_ofdm_runtime.png,frame_impact_raw_trials.csv,Experiment,Executed source rows,OFDM evidence coverage,1,3,20,1000,650
+frame_impact_tdd_common.png,frame_impact_tdd.csv,TDD operating point,DL ownership fraction,TDD common ownership impact,1,2,6,1000,650
+frame_impact_tdd_dedicated.png,frame_impact_tdd.csv,TDD operating point,Dedicated override fraction,TDD dedicated override impact,1,2,6,1000,650
+frame_impact_fdd_grid.png,frame_impact_fdd.csv,FDD operating point,Allocated RBs,FDD grid separation impact,1,2,3,1000,650
+frame_impact_fdd_summary.png,frame_impact_operating_points.csv,Experiment,Resolved metric,FDD context comparison,1,3,12,1000,650
+frame_impact_allocation_legality.png,frame_impact_allocation.csv,Allocation group,Valid fraction,Allocation legality impact,1,2,3,1000,650
+frame_impact_allocation_rules.png,frame_impact_rule_evaluation.csv,Rule,Pass value,Allocation rule evaluation,1,3,20,1000,650
+frame_impact_ssb_start_symbol.png,frame_impact_ssb.csv,SSB operating point,Start symbol,SSB timing impact,1,2,3,1000,650
+frame_impact_ssb_summary.png,frame_impact_pairwise_effects.csv,Impact family,Absolute effect,SSB timing comparison,1,3,12,1000,650
+frame_impact_prach_slot.png,frame_impact_prach.csv,PRACH operating point,Absolute slot,PRACH occasion impact,1,2,3,1000,650
+frame_impact_prach_summary.png,frame_impact_operating_points.csv,Experiment,Resolved metric,PRACH timing comparison,1,3,12,1000,650
+frame_impact_windowing_evm.png,frame_impact_ofdm.csv,OFDM operating point,EVM percent,Implicit-windowing removal impact,1,2,6,1000,650
+frame_impact_roundtrip_quality.png,frame_impact_pairwise_effects.csv,Impact family,Effect magnitude,OFDM round-trip quality impact,1,3,12,1000,650
+frame_impact_bwp_events.png,frame_impact_bwp_cc_timing.csv,BWP event,Absolute slot,BWP switching impact,1,2,6,1000,650
+frame_impact_bwp_summary.png,frame_impact_summary.csv,Work item,Primary effect,Multi-BWP impact summary,1,3,12,1000,650
+frame_impact_cc_resources.png,frame_impact_bwp_cc_timing.csv,CC operating point,Allocated RBs,Component-carrier impact,1,2,6,1000,650
+frame_impact_absolute_timing.png,frame_impact_operating_points.csv,Experiment,Resolved metric,Absolute timing impact,1,3,12,1000,650
+frame_impact_effect_forest.png,frame_impact_pairwise_effects.csv,Effect size,Impact family,Frame-grid effect forest,1,6,24,1000,650
+frame_impact_scenario_summary.png,frame_impact_summary.csv,Work item,Technical metric,Frame-grid impact summary,1,5,12,1000,650

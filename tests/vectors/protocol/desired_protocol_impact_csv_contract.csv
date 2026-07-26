@@ -1,0 +1,17 @@
+FileName,PrimaryKey,RequiredColumns,MinRows
+protocol_impact_run_manifest.csv,RunID,RunID|GitCommit|MATLABVersion|ToolboxVersion|ExperimentMatrixSHA256|SeedList|ConfidenceLevel|Strict|Status,1
+protocol_impact_raw_trials.csv,RunID|ExperimentID|TrialID,RunID|ExperimentID|TrialID|FamilyID|PairID|Variant|Seed|Packets|Delivered|Dropped|DuplicateDelivered|Latency_ms|Goodput_Mbps|ControlBytes|Runtime_ms|Status,768
+protocol_impact_operating_points.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|PairID|Variant|Trials|Packets|Errors|Incomplete|StopReason|DeliveryRate|CILower|CIUpper|MeanLatency_ms|P95Latency_ms|MeanGoodput_Mbps|MeanRuntime_ms|Status,768
+protocol_impact_pairwise_effects.csv,RunID|PairID|Metric,RunID|PairID|FamilyID|Metric|BaselineMean|TreatmentMean|Effect|CILower|CIUpper|PValue|AdjustedPValue|EffectSize|Conclusion|Status,300
+protocol_impact_rule_evaluation.csv,RunID|RuleID,RunID|RuleID|FamilyID|RuleClass|Metric|Operator|Threshold|ObservedValue|EvidenceRows|Result|Status,96
+protocol_impact_rlc.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|SNBits|PollCount|StatusBytes|RetxBytes|DeliveredBytes|MeanReassembly_ms|DiscardedSDUs|Status,50
+protocol_impact_pdcp.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|SNBits|CipherAlgorithm|IntegrityAlgorithm|ReorderingDelay_ms|DiscardedPDUs|DuplicatePDUs|SecurityFailures|Status,50
+protocol_impact_sdap.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|QFI|DRBID|HeaderBytes|MappingChanges|EndMarkers|MappingErrors|Status,30
+protocol_impact_rrc.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|Procedure|Messages|SignalingBytes|CompletionTime_ms|TimerExpiries|TransactionErrors|FinalState|Status,50
+protocol_impact_handover.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|SourceCell|TargetCell|Interruption_ms|PacketsLost|Duplicates|T304Expired|Completed|Status,40
+protocol_impact_traffic.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|ProfileID|Packets|Bytes|MeanInterarrival_ms|Burstiness|PDUSetDeadlineMisses|QueueP95Bytes|Status,50
+protocol_impact_lineage.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|Nodes|Edges|OrphanNodes|UnownedBytes|DuplicateDeliveredBytes|ConservationErrorBytes|GoodputAccountingErrorBits|Status,50
+protocol_impact_runtime.csv,RunID|ExperimentID,RunID|ExperimentID|FamilyID|Flows|Bearers|Packets|Runtime_ms|PeakMemory_MB|EventsPerSecond|Status,30
+protocol_impact_interactions.csv,RunID|InteractionID,RunID|InteractionID|Factors|ResponseMetric|MainEffect1|MainEffect2|InteractionEffect|CILower|CIUpper|Status,20
+protocol_impact_summary.csv,RunID,RunID|ExperimentsExpected|ExperimentsComplete|RulesPassed|RulesFailed|IncompletePoints|HardFailures|StatisticalConclusions|Status,1
+protocol_impact_image_semantic_audit.csv,RunID|ImageFile,RunID|ImageFile|SourceCSV|SourceCSV_SHA256|PNG_SHA256|Width|Height|AxesCount|SeriesCount|FinitePointCount|ActualTitle|ActualXLabel|ActualYLabel|Status,30

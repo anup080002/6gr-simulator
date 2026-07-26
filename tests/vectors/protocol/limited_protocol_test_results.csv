@@ -1,0 +1,50 @@
+Check,Command,ExitCode,Status,Stdout,Stderr
+PY_COMPILE_VECTOR,/opt/pyvenv/bin/python -m py_compile verify_protocol_vector_pack.py,0,PASS,,
+PY_COMPILE_BASE,/opt/pyvenv/bin/python -m py_compile verify_protocol_artifacts.py,0,PASS,,
+PY_COMPILE_IMPACT,/opt/pyvenv/bin/python -m py_compile verify_protocol_impact_artifacts.py,0,PASS,,
+VECTOR_VERIFY,/opt/pyvenv/bin/python verify_protocol_vector_pack.py,0,PASS,"{
+  ""manifest_files"": 27,
+  ""vector_rows"": 3169,
+  ""impact_families"": 64,
+  ""impact_experiments"": 768,
+  ""acceptance_rules"": 96,
+  ""failures"": []
+}
+",
+BASE_VERIFIER_SELFTEST,/opt/pyvenv/bin/python verify_protocol_artifacts.py --self-test,0,PASS,"{
+  ""required_csvs"": 34,
+  ""required_pngs"": 22,
+  ""failures"": []
+}
+{
+  ""required_csvs"": 34,
+  ""required_pngs"": 22,
+  ""failures"": [
+    ""png_hash_mismatch:rlc_am_window_timeline.png""
+  ]
+}
+{
+  ""valid_exit"": 0,
+  ""corrupt_exit"": 2
+}
+",
+IMPACT_VERIFIER_SELFTEST,/opt/pyvenv/bin/python verify_protocol_impact_artifacts.py --self-test,0,PASS,"{
+  ""required_csvs"": 16,
+  ""required_pngs"": 30,
+  ""failures"": []
+}
+{
+  ""required_csvs"": 16,
+  ""required_pngs"": 30,
+  ""failures"": [
+    ""png_hash_mismatch:protocol_impact_rlc_sn_overhead.png""
+  ]
+}
+{
+  ""valid_exit"": 0,
+  ""corrupt_exit"": 2
+}
+",
+MATLAB_PRODUCTION_RUNTIME,which matlab/octave,3,BLOCKED,MATLAB=None; Octave=None,
+CURRENT_SOURCE_REMEDIATION,static audit,2,FAIL,44 targeted defect signatures detected,
+CURRENT_REQUIRED_ARTIFACTS,artifact presence audit,2,FAIL,0/102 required artifacts present,

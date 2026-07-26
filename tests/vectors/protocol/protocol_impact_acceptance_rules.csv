@@ -1,0 +1,97 @@
+RuleID,FamilyID,RuleClass,Metric,Operator,Threshold,Mandatory,Description
+H001,F01,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC AM 12 versus 18-bit SN: exact PDU/state/identity/conservation invariant
+H002,F02,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC UM 6 versus 12-bit SN: exact PDU/state/identity/conservation invariant
+H003,F03,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC segmentation size: exact PDU/state/identity/conservation invariant
+H004,F04,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC re-segmentation: exact PDU/state/identity/conservation invariant
+H005,F05,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC pollPDU: exact PDU/state/identity/conservation invariant
+H006,F06,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC pollByte: exact PDU/state/identity/conservation invariant
+H007,F07,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC t-PollRetransmit: exact PDU/state/identity/conservation invariant
+H008,F08,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC t-Reassembly: exact PDU/state/identity/conservation invariant
+H009,F09,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC t-StatusProhibit: exact PDU/state/identity/conservation invariant
+H010,F10,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC segment NACK: exact PDU/state/identity/conservation invariant
+H011,F11,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC NACK range: exact PDU/state/identity/conservation invariant
+H012,F12,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC loss burst: exact PDU/state/identity/conservation invariant
+H013,F13,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP 12 versus 18-bit SN: exact PDU/state/identity/conservation invariant
+H014,F14,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP t-Reordering: exact PDU/state/identity/conservation invariant
+H015,F15,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP discard timer: exact PDU/state/identity/conservation invariant
+H016,F16,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP status report: exact PDU/state/identity/conservation invariant
+H017,F17,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP data recovery: exact PDU/state/identity/conservation invariant
+H018,F18,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP integrity: exact PDU/state/identity/conservation invariant
+H019,F19,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP ciphering: exact PDU/state/identity/conservation invariant
+H020,F20,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP wrong COUNT: exact PDU/state/identity/conservation invariant
+H021,F21,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP duplication: exact PDU/state/identity/conservation invariant
+H022,F22,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP path asymmetry: exact PDU/state/identity/conservation invariant
+H023,F23,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,SDAP header: exact PDU/state/identity/conservation invariant
+H024,F24,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,SDAP default DRB: exact PDU/state/identity/conservation invariant
+H025,F25,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,SDAP reflective QoS: exact PDU/state/identity/conservation invariant
+H026,F26,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,SDAP end marker: exact PDU/state/identity/conservation invariant
+H027,F27,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RRC JSON versus UPER rejection: exact PDU/state/identity/conservation invariant
+H028,F28,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RRC setup timer T300: exact PDU/state/identity/conservation invariant
+H029,F29,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Security activation timing: exact PDU/state/identity/conservation invariant
+H030,F30,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,UE capability procedure: exact PDU/state/identity/conservation invariant
+H031,F31,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Radio bearer atomic commit: exact PDU/state/identity/conservation invariant
+H032,F32,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RRC transaction collision: exact PDU/state/identity/conservation invariant
+H033,F33,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RRC release: exact PDU/state/identity/conservation invariant
+H034,F34,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RRC re-establishment: exact PDU/state/identity/conservation invariant
+H035,F35,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RRC resume: exact PDU/state/identity/conservation invariant
+H036,F36,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,A3 hysteresis: exact PDU/state/identity/conservation invariant
+H037,F37,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,A3 time-to-trigger: exact PDU/state/identity/conservation invariant
+H038,F38,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Handover target RA: exact PDU/state/identity/conservation invariant
+H039,F39,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Handover RLC AM handling: exact PDU/state/identity/conservation invariant
+H040,F40,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Handover PDCP recovery: exact PDU/state/identity/conservation invariant
+H041,F41,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,T304 expiry: exact PDU/state/identity/conservation invariant
+H042,F42,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,NAS external result: exact PDU/state/identity/conservation invariant
+H043,F43,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,CBR period: exact PDU/state/identity/conservation invariant
+H044,F44,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Poisson arrival rate: exact PDU/state/identity/conservation invariant
+H045,F45,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Burst duty cycle: exact PDU/state/identity/conservation invariant
+H046,F46,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Packet size distribution: exact PDU/state/identity/conservation invariant
+H047,F47,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,XR PDU-set size: exact PDU/state/identity/conservation invariant
+H048,F48,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,XR PDU-set deadline: exact PDU/state/identity/conservation invariant
+H049,F49,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,mMTC device count: exact PDU/state/identity/conservation invariant
+H050,F50,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Trace replay versus generated: exact PDU/state/identity/conservation invariant
+H051,F51,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Named versus global RNG: exact PDU/state/identity/conservation invariant
+H052,F52,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,TCP proxy rejection: exact PDU/state/identity/conservation invariant
+H053,F53,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,5QI mix: exact PDU/state/identity/conservation invariant
+H054,F54,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,QFI remapping: exact PDU/state/identity/conservation invariant
+H055,F55,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,PDCP-RLC backpressure: exact PDU/state/identity/conservation invariant
+H056,F56,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,RLC-MAC grant fragmentation: exact PDU/state/identity/conservation invariant
+H057,F57,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Packet lineage: exact PDU/state/identity/conservation invariant
+H058,F58,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,First delivery de-duplication: exact PDU/state/identity/conservation invariant
+H059,F59,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Byte conservation: exact PDU/state/identity/conservation invariant
+H060,F60,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Multi-bearer isolation: exact PDU/state/identity/conservation invariant
+H061,F61,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Runtime scaling: exact PDU/state/identity/conservation invariant
+H062,F62,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Serial versus parallel: exact PDU/state/identity/conservation invariant
+H063,F63,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,End-to-end connected-mode: exact PDU/state/identity/conservation invariant
+H064,F64,HARD_CORRECTNESS,ProtocolInvariant,EQ,0 failures,true,Handover under traffic: exact PDU/state/identity/conservation invariant
+S001,F01,STATISTICAL,BLER,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S002,F05,STATISTICAL,DropRate,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S003,F09,STATISTICAL,Latency_ms,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S004,F13,STATISTICAL,Goodput_Mbps,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S005,F17,STATISTICAL,BLER,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S006,F21,STATISTICAL,DropRate,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S007,F25,STATISTICAL,Latency_ms,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S008,F29,STATISTICAL,Goodput_Mbps,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S009,F33,STATISTICAL,BLER,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S010,F37,STATISTICAL,DropRate,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S011,F41,STATISTICAL,Latency_ms,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S012,F45,STATISTICAL,Goodput_Mbps,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S013,F49,STATISTICAL,BLER,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S014,F53,STATISTICAL,DropRate,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S015,F57,STATISTICAL,Latency_ms,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+S016,F61,STATISTICAL,Goodput_Mbps,CI_VALID,95% paired evidence,true,No incomplete point; confidence interval and practical margin required.
+D001,F02,DIAGNOSTIC,Runtime_ms,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D002,F06,DIAGNOSTIC,Memory_MB,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D003,F10,DIAGNOSTIC,HeaderOverhead,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D004,F14,DIAGNOSTIC,SignalingBytes,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D005,F18,DIAGNOSTIC,Runtime_ms,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D006,F22,DIAGNOSTIC,Memory_MB,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D007,F26,DIAGNOSTIC,HeaderOverhead,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D008,F30,DIAGNOSTIC,SignalingBytes,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D009,F34,DIAGNOSTIC,Runtime_ms,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D010,F38,DIAGNOSTIC,Memory_MB,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D011,F42,DIAGNOSTIC,HeaderOverhead,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D012,F46,DIAGNOSTIC,SignalingBytes,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D013,F50,DIAGNOSTIC,Runtime_ms,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D014,F54,DIAGNOSTIC,Memory_MB,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D015,F58,DIAGNOSTIC,HeaderOverhead,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.
+D016,F62,DIAGNOSTIC,SignalingBytes,REPORT,finite,false,Diagnostic trend must be finite and provenance-linked.

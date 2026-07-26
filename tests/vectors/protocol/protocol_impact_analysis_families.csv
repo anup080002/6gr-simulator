@@ -1,0 +1,65 @@
+FamilyID,Title,Domain,FactorName,BaselineValue,TreatmentValue,DependencyWave,PrimaryMetrics,Paired,Mandatory
+F01,RLC AM 12 versus 18-bit SN,RLC,SNBits,12,18,A,header overhead|wrap frequency|goodput,true,true
+F02,RLC UM 6 versus 12-bit SN,RLC,SNBits,6,12,A,header overhead|reordering range,true,true
+F03,RLC segmentation size,RLC,SegmentBytes,300,900,A,PDU count|latency,true,true
+F04,RLC re-segmentation,RLC,Resegmentation,off,on,A,retransmitted bytes|latency,true,true
+F05,RLC pollPDU,RLC,PollPDU,p64,p8,A,status overhead|recovery,true,true
+F06,RLC pollByte,RLC,PollByte,kB500,kB25,A,status overhead|recovery,true,true
+F07,RLC t-PollRetransmit,RLC,tPollRetransmit_ms,45,10,A,retransmission timing,true,true
+F08,RLC t-Reassembly,RLC,tReassembly_ms,35,5,A,latency|discard,true,true
+F09,RLC t-StatusProhibit,RLC,tStatusProhibit_ms,10,0,A,STATUS rate|recovery,true,true
+F10,RLC segment NACK,RLC,SegmentNACK,off,on,A,retransmitted bytes,true,true
+F11,RLC NACK range,RLC,NACKRange,off,on,A,STATUS size,true,true
+F12,RLC loss burst,RLC,LossPattern,iid,burst,A,recovery latency,true,true
+F13,PDCP 12 versus 18-bit SN,PDCP,SNBits,12,18,A,header overhead|wrap,true,true
+F14,PDCP t-Reordering,PDCP,tReordering_ms,100,10,A,latency|out-of-order,true,true
+F15,PDCP discard timer,PDCP,DiscardTimer_ms,infinity,50,A,stale packet drop,true,true
+F16,PDCP status report,PDCP,StatusReport,off,on,B,recovery overhead,true,true
+F17,PDCP data recovery,PDCP,DataRecovery,off,on,B,handover loss,true,true
+F18,PDCP integrity,PDCP,Integrity,NIA0,NIA2,A,CPU|detection,true,true
+F19,PDCP ciphering,PDCP,Ciphering,NEA0,NEA2,A,CPU|confidentiality,true,true
+F20,PDCP wrong COUNT,PDCP,CountState,correct,wrong,A,integrity failure,true,true
+F21,PDCP duplication,PDCP,Duplication,off,dual_path,B,reliability|overhead,true,true
+F22,PDCP path asymmetry,PDCP,PathDelay,equal,asymmetric,B,reordering|duplicate,true,true
+F23,SDAP header,SDAP,HeaderPresent,false,true,A,overhead|QFI recovery,true,true
+F24,SDAP default DRB,SDAP,Mapping,explicit,default,A,mapping behavior,true,true
+F25,SDAP reflective QoS,SDAP,ReflectiveQoS,off,on,B,mapping convergence,true,true
+F26,SDAP end marker,SDAP,EndMarker,absent,present,A,path switch completion,true,true
+F27,RRC JSON versus UPER rejection,RRC,Codec,JSON,UPER,A,bit accuracy|size,true,true
+F28,RRC setup timer T300,RRC,T300_ms,1000,200,A,failure latency,true,true
+F29,Security activation timing,RRC,SecurityActivation,late,exact,A,unprotected PDUs,true,true
+F30,UE capability procedure,RRC,CapabilityExchange,off,on,A,configuration legality,true,true
+F31,Radio bearer atomic commit,RRC,CommitMode,partial,atomic,A,cross-layer consistency,true,true
+F32,RRC transaction collision,RRC,ConcurrentTransactions,1,2,A,failure detection,true,true
+F33,RRC release,RRC,ReleaseCause,normal,radio_failure,A,state cleanup,true,true
+F34,RRC re-establishment,RRC,Reestablishment,off,on,B,service recovery,true,true
+F35,RRC resume,RRC,Resume,setup_new,resume,B,latency|signaling,true,true
+F36,A3 hysteresis,Mobility,Hysteresis_dB,1,4,B,ping-pong|delay,true,true
+F37,A3 time-to-trigger,Mobility,TTT_ms,40,320,B,handover timing,true,true
+F38,Handover target RA,Mobility,TargetRA,success,failure,B,interruption,true,true
+F39,Handover RLC AM handling,Mobility,RLCHandling,reset,reestablish,B,loss|duplicates,true,true
+F40,Handover PDCP recovery,Mobility,PDCPRecovery,off,on,B,packet loss,true,true
+F41,T304 expiry,Mobility,T304,not_expired,expired,B,rollback,true,true
+F42,NAS external result,NAS,NASResult,synthetic,external,C,registration state,true,true
+F43,CBR period,Traffic,Period_ms,10,1,A,load|queue,true,true
+F44,Poisson arrival rate,Traffic,Lambda_pps,10,100,A,queue|delay,true,true
+F45,Burst duty cycle,Traffic,DutyCycle,0.1,0.7,A,burst queue,true,true
+F46,Packet size distribution,Traffic,PacketSize,64,1500,A,segmentation|overhead,true,true
+F47,XR PDU-set size,Traffic,PDUSetPackets,2,8,A,PDU-set delay,true,true
+F48,XR PDU-set deadline,Traffic,PDUSetDeadline_ms,50,10,A,deadline miss,true,true
+F49,mMTC device count,Traffic,DeviceCount,100,10000,C,access/load,true,true
+F50,Trace replay versus generated,Traffic,Source,generated,trace,A,reproducibility,true,true
+F51,Named versus global RNG,Traffic,RNG,global,named_stream,A,reproducibility,true,true
+F52,TCP proxy rejection,Traffic,TransportProfile,proxy,packet_study,A,claim correctness,true,true
+F53,5QI mix,QoS,FiveQISet,single,mixed,B,PDB/fairness,true,true
+F54,QFI remapping,QoS,MappingEpoch,static,changed,B,routing continuity,true,true
+F55,PDCP-RLC backpressure,CrossLayer,Backpressure,off,on,B,buffer occupancy,true,true
+F56,RLC-MAC grant fragmentation,CrossLayer,GrantBytes,1500,200,B,segmentation delay,true,true
+F57,Packet lineage,CrossLayer,Lineage,disabled,enabled,A,orphan detection,true,true
+F58,First delivery de-duplication,CrossLayer,Deduplication,off,on,A,goodput accounting,true,true
+F59,Byte conservation,CrossLayer,Fault,none,drop_one_byte,A,fault detection,true,true
+F60,Multi-bearer isolation,CrossLayer,BearerCount,1,8,B,state leakage,true,true
+F61,Runtime scaling,Performance,Flows,10,1000,A,runtime|memory,true,true
+F62,Serial versus parallel,Performance,Execution,serial,parallel,A,determinism,true,true
+F63,End-to-end connected-mode,EndToEnd,Profile,PHY_only,connected_stack,C,latency|goodput,true,true
+F64,Handover under traffic,EndToEnd,Mobility,static,handover,C,interruption|loss,true,true

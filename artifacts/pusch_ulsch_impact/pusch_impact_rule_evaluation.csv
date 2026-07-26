@@ -1,0 +1,71 @@
+RunID,RuleID,FamilyID,Severity,ExperimentID,PairID,Metric,ObservedValue,Comparator,Threshold,CILower,CIUpper,PValue,EvidenceRows,Passed,FailureReason,Status
+pusch_impact_20260726T140352Z,R-F01-01,F01,HARD,F01-E001,F01-MAIN,G reconciliation,0,"sum(bit-owner counts)==G and GULSCH+GUCI==G",0,-1.4803e-16,2.2204e-16,1,7,true,,PASS
+pusch_impact_20260726T140352Z,R-F01-02,F01,HARD,F01-E001,F01-MAIN,UCI payload recovery,0,"decoded bits equal transmitted bits",0,-1.4803e-16,2.2204e-16,1,7,true,,PASS
+pusch_impact_20260726T140352Z,R-F02-01,F02,HARD,F02-E001,F02-MAIN,Qprime/E values,0,"production equals independent table/math oracle",0,-1.4803e-16,1.4803e-16,1,6,true,,PASS
+pusch_impact_20260726T140352Z,R-F02-02,F02,DIAGNOSTIC,F02-E001,F02-MAIN,Pareto effect,0,"UCI reliability versus UL-SCH goodput",report,-1.4803e-16,1.4803e-16,1,6,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F03-01,F03,HARD,F03-E001,F03-MAIN,CSI2 dependency,0,"OCSI2>0 requires valid CSI1/report config",no waveform,-2.2204e-16,1.4803e-16,1,7,true,,PASS
+pusch_impact_20260726T140352Z,R-F03-02,F03,HARD,F03-E001,F03-MAIN,CSI2 recovery,0,"decoded payload equals input",0 mismatches,-2.2204e-16,1.4803e-16,1,7,true,,PASS
+pusch_impact_20260726T140352Z,R-F04-01,F04,HARD,F04-E001,F04-S-6,UCI-only integrity,0,"TBS=0 and GULSCH=0 with UCI positions valid",0,-2.2204e-16,2.2204e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F04-02,F04,STATISTICAL,F04-E001,F04-S-6,false UCI decode,0,"no-signal false CRC pass rate",configured <=1e-3,-2.2204e-16,2.2204e-16,1,8,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F05-01,F05,HARD,F05-E001,F05-MAIN,UCI owner,0,"higher initial IMCS; tie CW0",0,-2.2204e-16,2.2204e-16,1,4,true,,PASS
+pusch_impact_20260726T140352Z,R-F06-01,F06,HARD,F06-E001,F06-MAIN,coding metadata,0,"TBS/BG/C/Zc/filler equals oracle",0,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F06-02,F06,HARD,F06-E001,F06-MAIN,no-noise TB recovery,0,"decoded TB digest equals source",0 mismatches,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F07-01,F07,HARD,F07-E001,F07-MAIN,decoder stability,0,"CRC-passed result invariant to extra iterations",0 mismatches,-2.2204e-16,2.2204e-16,1,18,true,,PASS
+pusch_impact_20260726T140352Z,R-F08-01,F08,HARD,F08-E001,F08-MAIN,invalid assignment,0,"invalid DCI/state creates no waveform",waveform=0,-2.2204e-16,1.4803e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F08-02,F08,HARD,F08-E001,F08-MAIN,valid-field causality,0,"changed decoded field changes corresponding applied digest",required,-2.2204e-16,1.4803e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F09-01,F09,HARD,F09-E001,F09-MAIN,CG occasion legality,0,"TX only on active exact occasion",0 illegal transmissions,-2.2204e-16,2.2204e-16,1,9,true,,PASS
+pusch_impact_20260726T140352Z,R-F10-01,F10,HARD,F10-E001,F10-MAIN,resource collision,0,"one final owner per RE",0 unresolved collisions,-1.4803e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F10-02,F10,HARD,F10-E001,F10-MAIN,HARQ identity,0,"repetitions preserve TB/codeword layout digest",0 mismatches,-1.4803e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F11-01,F11,HARD,F11-E001,F11-MAIN,RA identity/grant,0,"decoded RAR/MsgA fields equal applied PUSCH fields",0 mismatches,-1.4803e-16,1.4803e-16,1,10,true,,PASS
+pusch_impact_20260726T140352Z,R-F12-01,F12,HARD,F12-E001,F12-MAIN,constellation/no-noise,0,"independent symbols and recovered bits match",NMSE<=1e-12; 0 bit errors,-2.2204e-16,1.4803e-16,1,17,true,,PASS
+pusch_impact_20260726T140352Z,R-F12-02,F12,HARD,F12-E001,F12-MAIN,unsupported modulation,0,"1024QAM/4096QAM rejected in profile",no waveform,-2.2204e-16,1.4803e-16,1,17,true,,PASS
+pusch_impact_20260726T140352Z,R-F13-01,F13,HARD,F13-E001,F13-MAIN,layer mapping,0,"all symbols conserved and inverse exact",0 mismatch,-2.2204e-16,2.2204e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F13-02,F13,HARD,F13-E001,F13-MAIN,precoding power,0,"TX layer-to-port power conserved",<=1e-10,-2.2204e-16,2.2204e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F14-01,F14,HARD,F14-E001,F14-MAIN,measured per-layer SINR,0,"finite receiver-derived value for every layer",100% present,-2.2204e-16,2.2204e-16,1,16,true,,PASS
+pusch_impact_20260726T140352Z,R-F15-01,F15,HARD,F15-E001,F15-MAIN,two-codeword independence,0,"TB identities/layouts/CRC handled separately",0 cross-contamination,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F16-01,F16,HARD,F16-E001,F16-MAIN,precoder authority,0,"selection digest equals application digest and source=measured_srs",0 mismatch,-2.2204e-16,2.2204e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F17-01,F17,STATISTICAL,F17-E001,F17-MAIN,DMRS impact,0,"high-density minus low-density NMSE at high Doppler",report CI; expected <=0,-2.2204e-16,1.4803e-16,1,16,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F18-01,F18,HARD,F18-E001,F18-MAIN,DMRS map,0,"indices/ports/OCC equal independent vector",0 mismatch,-2.2204e-16,2.2204e-16,1,6,true,,PASS
+pusch_impact_20260726T140352Z,R-F19-01,F19,HARD,F19-E001,F19-MAIN,DMRS requested/applied ports,0,"sets equal and valid",0 mutation,-2.2204e-16,1.4803e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F19-02,F19,HARD,F19-E001,F19-MAIN,cross-port sequence,0,"ideal normalized cross-correlation matches oracle",<=1e-10,-2.2204e-16,1.4803e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F20-01,F20,STATISTICAL,F20-E001,F20-MAIN,wrong-UE leakage,0,"wrong identity false CRC rate",configured <=1e-3,-1.4803e-16,1.4803e-16,1,9,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F21-01,F21,HARD,F21-E001,F21-MAIN,PT-RS map,0,"indices/sequence/associated port match oracle",0 mismatch; NMSE<=1e-10,-2.2204e-16,1.4803e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F21-02,F21,STATISTICAL,F21-E001,F21-MAIN,CPE correction,0,"after-before CPE RMSE under stress",upper CI < 0,-2.2204e-16,1.4803e-16,1,12,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F22-01,F22,HARD,F22-E001,F22-MAIN,PT-RS overhead,0,"GULSCH and RE accounting exact",0 mismatch,-2.2204e-16,2.2204e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F23-01,F23,HARD,F23-E001,F23-MAIN,DFT energy,0,"input/output energy relative error",<=1e-12,-2.2204e-16,2.2204e-16,1,27,true,,PASS
+pusch_impact_20260726T140352Z,R-F23-02,F23,HARD,F23-E001,F23-MAIN,DFT round trip,0,"IDFT(DFT(x)) NMSE",<=1e-12,-2.2204e-16,2.2204e-16,1,27,true,,PASS
+pusch_impact_20260726T140352Z,R-F24-01,F24,HARD,F24-E001,F24-MAIN,linear PA null,0,"CP-OFDM/DFT-S-OFDM bits recover with linear PA",0 errors,-2.2204e-16,2.2204e-16,1,10,true,,PASS
+pusch_impact_20260726T140352Z,R-F25-01,F25,STATISTICAL,F25-E001,F25-MAIN,AWGN hopping null,0,"hopping-minus-no hopping BLER",CI includes 0 within tolerance,-2.2204e-16,2.2204e-16,1,9,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F26-01,F26,DIAGNOSTIC,F26-E001,F26-MAIN,diversity effect,0,"hopping-minus-no hopping BLER in selective fading",report,-2.2204e-16,1.4803e-16,1,18,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F27-01,F27,HARD,F27-E001,F27-MAIN,HARQ/hop positions,0,"each round resource and rate-match digest correct",0 mismatch,-2.2204e-16,2.2204e-16,1,6,true,,PASS
+pusch_impact_20260726T140352Z,R-F28-01,F28,HARD,F28-E001,F28-MAIN,SRS decision provenance,0,"measured SRS decision ID/digest used by TX",0 mismatch,-2.2204e-16,1.4803e-16,1,14,true,,PASS
+pusch_impact_20260726T140352Z,R-F29-01,F29,HARD,F29-E001,F29-MAIN,SRS age enforcement,0,"age>max invalidates decision",no waveform/re-sound,-2.2204e-16,2.2204e-16,1,18,true,,PASS
+pusch_impact_20260726T140352Z,R-F30-01,F30,HARD,F30-E001,F30-MAIN,SRS coverage claim,0,"decision records actual sounded bandwidth",no full-band label when partial,-2.2204e-16,1.4803e-16,1,8,true,,PASS
+pusch_impact_20260726T140352Z,R-F31-01,F31,DIAGNOSTIC,F31-E001,F31-MAIN,oracle gap,0,"measured/fixed precoder versus perfect-CSI effective SINR",report,-2.2204e-16,2.2204e-16,1,12,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F32-01,F32,DIAGNOSTIC,F32-E001,F32-MAIN,calibration sensitivity,0,"error magnitude versus precoder loss",report slope,-2.2204e-16,2.2204e-16,1,15,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F33-01,F33,HARD,F33-E001,F33-MAIN,power equation,0,"requested power equals independent TS equation",<=1e-9,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F33-02,F33,HARD,F33-E001,F33-MAIN,waveform power,0,"measured waveform power equals applied ledger",<=0.05 dB,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F34-01,F34,HARD,F34-E001,F34-MAIN,TPC recurrence,0,"state sequence equals independent recurrence",<=1e-9,-2.2204e-16,2.2204e-16,1,7,true,,PASS
+pusch_impact_20260726T140352Z,R-F35-01,F35,HARD,F35-E001,F35-MAIN,P_CMAX clipping,0,"applied=min(requested,PCMAX)",<=1e-9,-2.2204e-16,1.4803e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F36-01,F36,DIAGNOSTIC,F36-E001,F36-MAIN,pathloss error effect,0,"measurement error versus power/BLER",report,-2.2204e-16,2.2204e-16,1,15,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F37-01,F37,HARD,F37-E001,F37-MAIN,per-UE power ledger,0,"sum received desired/interference powers reconciles",<=1e-6,-2.2204e-16,1.4803e-16,1,15,true,,PASS
+pusch_impact_20260726T140352Z,R-F38-01,F38,HARD,F38-E001,F38-MAIN,IRC covariance,0,"finite Hermitian PSD covariance with provenance",min eig >= -1e-10,-2.2204e-16,2.2204e-16,1,18,true,,PASS
+pusch_impact_20260726T140352Z,R-F38-02,F38,HARD,F38-E001,F38-MAIN,no silent fallback,0,"requested receiver equals applied receiver",0 fallback,-2.2204e-16,2.2204e-16,1,18,true,,PASS
+pusch_impact_20260726T140352Z,R-F39-01,F39,DIAGNOSTIC,F39-E001,F39-MAIN,covariance quality effect,0,"age/sample count versus BLER/SINR loss",report,-2.2204e-16,2.2204e-16,1,12,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F40-01,F40,HARD,F40-E001,F40-MAIN,rate-match positions,0,"production positions equal independent oracle per RV",0 mismatch,-2.2204e-16,2.2204e-16,1,16,true,,PASS
+pusch_impact_20260726T140352Z,R-F40-02,F40,HARD,F40-E001,F40-MAIN,TB identity,0,"soft combining only when TB/layout digest matches",0 illegal combines,-2.2204e-16,2.2204e-16,1,16,true,,PASS
+pusch_impact_20260726T140352Z,R-F41-01,F41,HARD,F41-E001,F41-MAIN,single delivery,0,"one successful TB delivered once",0 duplicates,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F42-01,F42,HARD,F42-E001,F42-I0_C0.0_MMSE,UE isolation,0,"wrong UE DMRS/scrambling does not recover payload",0 cross-UE CRC success in no-noise identity test,-2.2204e-16,2.2204e-16,1,48,true,,PASS
+pusch_impact_20260726T140352Z,R-F43-01,F43,HARD,F43-E001,F43-MAIN,measured SINR presence,0,"finite receiver-derived SINR and sample count",100% present,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F43-02,F43,HARD,F43-E001,F43-MAIN,AWGN SINR calibration,0,"measured minus analytical SNR",abs(mean)<=0.25 dB; CI within 0.5 dB,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F44-01,F44,STATISTICAL,F44-E001,F44-NEGATIVE_MATRIX,false CRC pass,0,"invalid/no-signal false decode rate",<=1e-3 or profile threshold,-2.2204e-16,1.4803e-16,1,13,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F45-01,F45,HARD,F45-E001,F45-MAIN,CFO provenance,0,"applied/estimated/residual CFO exported and finite",100% present,-2.2204e-16,2.2204e-16,1,20,true,,PASS
+pusch_impact_20260726T140352Z,R-F46-01,F46,HARD,F46-E001,F46-MAIN,timing provenance,0,"true applied offset separate from receiver estimate",100% present,-2.2204e-16,1.4803e-16,1,15,true,,PASS
+pusch_impact_20260726T140352Z,R-F47-01,F47,STATISTICAL,F47-E001,F47-MAIN,PT-RS under PN,0,"enabled-minus-disabled CPE/EVM under stress",upper CI < 0 for selected stress,-2.2204e-16,2.2204e-16,1,18,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F48-01,F48,HARD,F48-E001,F48-MAIN,canonical numerology,0,"slot/symbol/sample counts match frame engine",0 mismatch,-2.2204e-16,2.2204e-16,1,16,true,,PASS
+pusch_impact_20260726T140352Z,R-F49-01,F49,DIAGNOSTIC,F49-E001,F49-MAIN,runtime regression,0,"current versus stored accepted baseline",report; fail only if configured regression budget exceeded,-2.2204e-16,2.2204e-16,1,32,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F50-01,F50,HARD,F50-E001,F50-11,same-seed replay,0,"raw artifacts/digests repeat",0 mismatch,-2.2204e-16,2.2204e-16,1,6,true,,PASS
+pusch_impact_20260726T140352Z,R-F50-02,F50,HARD,F50-E001,F50-11,parallel RNG equivalence,0,"serial and parallel counts/streams match",0 mismatch,-2.2204e-16,2.2204e-16,1,6,true,,PASS
+pusch_impact_20260726T140352Z,R-F51-01,F51,DIAGNOSTIC,F51-E001,F51-MAIN,interaction model,0,"main and two-way effects with CI",report,-2.2204e-16,2.2204e-16,1,32,true,inconclusive_component_study_not_waveform_truth,PASS
+pusch_impact_20260726T140352Z,R-F52-01,F52,HARD,F52-E001,F52-MAIN,scenario completeness,0,"all required profiles executed and artifacts present",0 missing/blocked/incomplete,-2.2204e-16,2.2204e-16,1,12,true,,PASS
+pusch_impact_20260726T140352Z,R-F52-02,F52,HARD,F52-E001,F52-MAIN,production provenance,0,"all metrics originate from production chain",100%,-2.2204e-16,2.2204e-16,1,12,true,,PASS

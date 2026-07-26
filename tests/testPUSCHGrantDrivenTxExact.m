@@ -17,7 +17,16 @@ maxDftErr = 0;
 for i = 1:numel(vectors)
     v = vectors(i);
     cfg = localCfg(v);
-    [~, pusch, acct] = localConfiguredPUSCH(cfg, v);
+    try
+        [~, pusch, acct] = localConfiguredPUSCH(cfg, v);
+    catch cause
+        failure = MException("sixgr:tests:PUSCHGrantVectorFailed", ...
+            "PUSCH grant vector %d failed (%s, rank=%d, ports=%d, transform=%d, PTRS=%d).", ...
+            i, char(v.Modulation), v.NumLayers, v.NumPorts, ...
+            double(v.TransformPrecoding), double(v.EnablePTRS));
+        failure = addCause(failure, cause);
+        throw(failure);
+    end
     tbs = double(nrTBS(pusch.Modulation, pusch.NumLayers, numel(pusch.PRBSet), ...
         acct.NREPerPRBForTBS, v.TargetCodeRate, v.XOverhead));
     tbBits = localPayloadBits(tbs, i);
@@ -95,7 +104,6 @@ vectors = [ ...
     localVector("QPSK", 3, 4, "codebook", 3, false, false), ...
     localVector("QPSK", 4, 4, "codebook", 0, false, false), ...
     localVector("QPSK", 1, 1, "nonCodebook", NaN, true, false), ...
-    localVector("16QAM", 2, 2, "nonCodebook", NaN, true, false), ...
     localVector("QPSK", 1, 2, "codebook", 0, true, false), ...
     localVector("QPSK", 1, 2, "codebook", 1, true, true)];
 rvPattern = [0 2 3 1];
@@ -260,7 +268,8 @@ dmrsInd = nrPUSCHDMRSIndices(carrier, pusch, "IndexStyle", "index");
 dmrsSym = nrPUSCHDMRS(carrier, pusch);
 ptrsInd = zeros(0, size(portSym, 2));
 if ~isempty(ptrsSym)
-    ptrsInd = nrPUSCHPTRSIndices(carrier, pusch, "IndexStyle", "index");
+    ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
+        carrier, pusch, "IndexBase", "1based");
 end
 if isempty(nPages)
     nPages = max([size(puschInd, 2), size(dmrsInd, 2), size(ptrsInd, 2), 1]);
@@ -398,6 +407,25 @@ catch ME
     thrown = strcmp(ME.identifier, "sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol");
 end
 assert(thrown, "Fixed-reference PUSCH MappingType A timing mutation must fail.");
+
+cfgTransform = sixgr.config.defaultConfig();
+cfgTransform.phy.carrier.NSizeGrid = 18;
+cfgTransform.phy.pusch.numLayers = 2;
+cfgTransform.phy.pusch.nLayers = 2;
+cfgTransform.phy.pusch.transformPrecoding = true;
+carrier = sixgr.phy.grid.makeCarrier(cfgTransform);
+thrown = false;
+try
+    sixgr.phy.grid.allocREsPUSCH(carrier, cfgTransform, ...
+        "PRBSet", 0:3, "SymbolAllocation", [0 10], ...
+        "NumLayers", 2, "TransformPrecoding", true, ...
+        "FixedReferenceMode", true);
+catch ME
+    thrown = strcmp(ME.identifier, ...
+        "sixgr:pusch:UnsupportedTransformPrecodingLayerCount");
+end
+assert(thrown, ...
+    "Strict transform-precoded rank greater than one must fail explicitly.");
 end
 
 function localAssertPTRSWaveformMapping(tx, vectorIndex)

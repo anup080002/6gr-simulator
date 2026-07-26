@@ -1,0 +1,24 @@
+schema_version: 1
+scenario_id: frame_grid_impact_component_campaign
+research_class: baseline_benchmark
+
+evidence:
+  execution_backend: verified_production_frame_grid_artifacts
+  approximation_mode: comparative_component_campaign_not_waveform_truth
+  truth_qualified: false
+
+execution:
+  require_base_artifact_verifier: true
+  require_all_source_rows_pass: true
+  required_experiments: 36
+  required_families: 12
+  required_rules: 24
+
+statistics:
+  confidence_level: 0.95
+  bootstrap_replicates: 400
+
+images:
+  width_pixels: 1200
+  height_pixels: 760
+  resolution_dpi: 100

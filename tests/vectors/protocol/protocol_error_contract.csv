@@ -1,0 +1,25 @@
+ErrorID,Meaning,RequiredBehavior
+sixgr:protocol:UnsupportedCapability,Unsupported feature tuple requested.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rlc:InvalidSNLength,RLC SN length is not permitted for the mode/bearer.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rlc:MalformedPDU,RLC PDU header/length/reserved fields are invalid.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rlc:WindowViolation,SN is outside the applicable receiving/transmitting window.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rlc:TimerStateViolation,RLC timer transition is illegal.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rlc:StatusEncodingFailed,STATUS PDU cannot represent the requested report.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:pdcp:CountExhausted,PDCP COUNT would wrap or exceed its valid range.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:pdcp:MalformedPDU,PDCP PDU/control PDU is invalid.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:pdcp:SecurityContextMissing,Required security context is absent or inactive.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:pdcp:IntegrityFailure,PDCP integrity verification failed.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:pdcp:ReorderingStateViolation,PDCP reordering state/context is inconsistent.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:sdap:MissingQFIMap,QFI has no valid DRB/default mapping.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:sdap:MalformedPDU,SDAP header/control PDU is invalid.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:ASN1ConstraintViolation,RRC message violates ASN.1 constraints.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:UPERDecodeFailed,RRC UPER decoding failed.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:TransactionMismatch,RRC transaction ID/source/state mismatch.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:ProcedureTimerExpired,RRC procedure timer expired.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:BearerCommitFailed,Atomic bearer configuration commit failed.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:HandoverStateViolation,Handover event is illegal in current state.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:rrc:ExternalNASRequired,An external NAS/5GC result is required.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:traffic:InvalidTrafficProfile,Traffic profile/session parameters are invalid.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:traffic:NonDeterministicStream,Traffic source did not use its declared named stream.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:protocol:LineageViolation,A protocol object has missing/duplicate/invalid lineage.,Reject before state mutation; export negative-test row; no delivery counted.
+sixgr:protocol:ConservationFailure,Cross-layer byte/bit conservation failed.,Reject before state mutation; export negative-test row; no delivery counted.

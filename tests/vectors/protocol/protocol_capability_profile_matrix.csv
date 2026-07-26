@@ -1,0 +1,141 @@
+CaseID,ProfileID,Feature,Scope,Supported,ExpectedPlanningResult,Reason
+CP0001,nr_rel18_connected_mode_bounded_strict,RLC_TM,SRB0|CCCH,true,EXECUTE,enabled bounded tuple
+CP0002,nr_rel18_connected_mode_bounded_strict,RLC_UM6,DRB,true,EXECUTE,enabled bounded tuple
+CP0003,nr_rel18_connected_mode_bounded_strict,RLC_UM12,DRB,true,EXECUTE,enabled bounded tuple
+CP0004,nr_rel18_connected_mode_bounded_strict,RLC_AM12,SRB1|SRB2|DRB,true,EXECUTE,enabled bounded tuple
+CP0005,nr_rel18_connected_mode_bounded_strict,RLC_AM18,DRB,true,EXECUTE,enabled bounded tuple
+CP0006,nr_rel18_connected_mode_bounded_strict,RLC_STATUS_SEGMENT_NACK,AM,true,EXECUTE,enabled bounded tuple
+CP0007,nr_rel18_connected_mode_bounded_strict,PDCP_SRB12,SRB,true,EXECUTE,enabled bounded tuple
+CP0008,nr_rel18_connected_mode_bounded_strict,PDCP_DRB12,DRB,true,EXECUTE,enabled bounded tuple
+CP0009,nr_rel18_connected_mode_bounded_strict,PDCP_DRB18,DRB,true,EXECUTE,enabled bounded tuple
+CP0010,nr_rel18_connected_mode_bounded_strict,PDCP_NEA0_NIA0,security,true,EXECUTE,enabled bounded tuple
+CP0011,nr_rel18_connected_mode_bounded_strict,PDCP_NEA2_NIA2,security,true,EXECUTE,enabled bounded tuple
+CP0012,nr_rel18_connected_mode_bounded_strict,PDCP_DUPLICATION_BOUNDED,DRB,true,EXECUTE,enabled bounded tuple
+CP0013,nr_rel18_connected_mode_bounded_strict,SDAP_UL_DL_HEADER,DRB,true,EXECUTE,enabled bounded tuple
+CP0014,nr_rel18_connected_mode_bounded_strict,SDAP_END_MARKER,DRB,true,EXECUTE,enabled bounded tuple
+CP0015,nr_rel18_connected_mode_bounded_strict,SDAP_REFLECTIVE_QOS,DRB,true,EXECUTE,enabled bounded tuple
+CP0016,nr_rel18_connected_mode_bounded_strict,RRC_SETUP,RRC,true,EXECUTE,enabled bounded tuple
+CP0017,nr_rel18_connected_mode_bounded_strict,RRC_SECURITY_MODE,RRC,true,EXECUTE,enabled bounded tuple
+CP0018,nr_rel18_connected_mode_bounded_strict,RRC_CAPABILITY,RRC,true,EXECUTE,enabled bounded tuple
+CP0019,nr_rel18_connected_mode_bounded_strict,RRC_RECONFIG_BEARER,RRC,true,EXECUTE,enabled bounded tuple
+CP0020,nr_rel18_connected_mode_bounded_strict,RRC_RELEASE,RRC,true,EXECUTE,enabled bounded tuple
+CP0021,nr_rel18_connected_mode_bounded_strict,RRC_REESTABLISHMENT,RRC,true,EXECUTE,enabled bounded tuple
+CP0022,nr_rel18_connected_mode_bounded_strict,RRC_RESUME,RRC,true,EXECUTE,enabled bounded tuple
+CP0023,nr_rel18_connected_mode_bounded_strict,INTRA_FREQ_HO,RRC,false,REJECT,not enabled in selected profile
+CP0024,nr_rel18_connected_mode_bounded_strict,CBR_PACKET_TRAFFIC,traffic,true,EXECUTE,enabled bounded tuple
+CP0025,nr_rel18_connected_mode_bounded_strict,POISSON_TRAFFIC,traffic,true,EXECUTE,enabled bounded tuple
+CP0026,nr_rel18_connected_mode_bounded_strict,XR_PDU_SET,traffic,true,EXECUTE,enabled bounded tuple
+CP0027,nr_rel18_connected_mode_bounded_strict,TRACE_REPLAY,traffic,true,EXECUTE,enabled bounded tuple
+CP0028,nr_rel18_connected_mode_bounded_strict,ROHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0029,nr_rel18_connected_mode_bounded_strict,EHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0030,nr_rel18_connected_mode_bounded_strict,UDC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0031,nr_rel18_connected_mode_bounded_strict,DAPS_HO,unsupported,false,REJECT,not enabled in selected profile
+CP0032,nr_rel18_connected_mode_bounded_strict,MR_DC_SPLIT_BEARER,unsupported,false,REJECT,not enabled in selected profile
+CP0033,nr_rel18_connected_mode_bounded_strict,FULL_NAS_5GC,unsupported,false,REJECT,not enabled in selected profile
+CP0034,nr_rel18_connected_mode_bounded_strict,TCP_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0035,nr_rel18_connected_mode_bounded_strict,QUIC_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0036,nr_rel18_handover_bounded_strict,RLC_TM,SRB0|CCCH,false,REJECT,not enabled in selected profile
+CP0037,nr_rel18_handover_bounded_strict,RLC_UM6,DRB,false,REJECT,not enabled in selected profile
+CP0038,nr_rel18_handover_bounded_strict,RLC_UM12,DRB,true,EXECUTE,enabled bounded tuple
+CP0039,nr_rel18_handover_bounded_strict,RLC_AM12,SRB1|SRB2|DRB,true,EXECUTE,enabled bounded tuple
+CP0040,nr_rel18_handover_bounded_strict,RLC_AM18,DRB,false,REJECT,not enabled in selected profile
+CP0041,nr_rel18_handover_bounded_strict,RLC_STATUS_SEGMENT_NACK,AM,false,REJECT,not enabled in selected profile
+CP0042,nr_rel18_handover_bounded_strict,PDCP_SRB12,SRB,false,REJECT,not enabled in selected profile
+CP0043,nr_rel18_handover_bounded_strict,PDCP_DRB12,DRB,true,EXECUTE,enabled bounded tuple
+CP0044,nr_rel18_handover_bounded_strict,PDCP_DRB18,DRB,false,REJECT,not enabled in selected profile
+CP0045,nr_rel18_handover_bounded_strict,PDCP_NEA0_NIA0,security,false,REJECT,not enabled in selected profile
+CP0046,nr_rel18_handover_bounded_strict,PDCP_NEA2_NIA2,security,true,EXECUTE,enabled bounded tuple
+CP0047,nr_rel18_handover_bounded_strict,PDCP_DUPLICATION_BOUNDED,DRB,false,REJECT,not enabled in selected profile
+CP0048,nr_rel18_handover_bounded_strict,SDAP_UL_DL_HEADER,DRB,true,EXECUTE,enabled bounded tuple
+CP0049,nr_rel18_handover_bounded_strict,SDAP_END_MARKER,DRB,false,REJECT,not enabled in selected profile
+CP0050,nr_rel18_handover_bounded_strict,SDAP_REFLECTIVE_QOS,DRB,false,REJECT,not enabled in selected profile
+CP0051,nr_rel18_handover_bounded_strict,RRC_SETUP,RRC,true,EXECUTE,enabled bounded tuple
+CP0052,nr_rel18_handover_bounded_strict,RRC_SECURITY_MODE,RRC,true,EXECUTE,enabled bounded tuple
+CP0053,nr_rel18_handover_bounded_strict,RRC_CAPABILITY,RRC,false,REJECT,not enabled in selected profile
+CP0054,nr_rel18_handover_bounded_strict,RRC_RECONFIG_BEARER,RRC,true,EXECUTE,enabled bounded tuple
+CP0055,nr_rel18_handover_bounded_strict,RRC_RELEASE,RRC,true,EXECUTE,enabled bounded tuple
+CP0056,nr_rel18_handover_bounded_strict,RRC_REESTABLISHMENT,RRC,true,EXECUTE,enabled bounded tuple
+CP0057,nr_rel18_handover_bounded_strict,RRC_RESUME,RRC,false,REJECT,not enabled in selected profile
+CP0058,nr_rel18_handover_bounded_strict,INTRA_FREQ_HO,RRC,true,EXECUTE,enabled bounded tuple
+CP0059,nr_rel18_handover_bounded_strict,CBR_PACKET_TRAFFIC,traffic,true,EXECUTE,enabled bounded tuple
+CP0060,nr_rel18_handover_bounded_strict,POISSON_TRAFFIC,traffic,false,REJECT,not enabled in selected profile
+CP0061,nr_rel18_handover_bounded_strict,XR_PDU_SET,traffic,false,REJECT,not enabled in selected profile
+CP0062,nr_rel18_handover_bounded_strict,TRACE_REPLAY,traffic,true,EXECUTE,enabled bounded tuple
+CP0063,nr_rel18_handover_bounded_strict,ROHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0064,nr_rel18_handover_bounded_strict,EHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0065,nr_rel18_handover_bounded_strict,UDC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0066,nr_rel18_handover_bounded_strict,DAPS_HO,unsupported,false,REJECT,not enabled in selected profile
+CP0067,nr_rel18_handover_bounded_strict,MR_DC_SPLIT_BEARER,unsupported,false,REJECT,not enabled in selected profile
+CP0068,nr_rel18_handover_bounded_strict,FULL_NAS_5GC,unsupported,false,REJECT,not enabled in selected profile
+CP0069,nr_rel18_handover_bounded_strict,TCP_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0070,nr_rel18_handover_bounded_strict,QUIC_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0071,protocol_system_study,RLC_TM,SRB0|CCCH,true,EXECUTE,enabled bounded tuple
+CP0072,protocol_system_study,RLC_UM6,DRB,true,EXECUTE,enabled bounded tuple
+CP0073,protocol_system_study,RLC_UM12,DRB,true,EXECUTE,enabled bounded tuple
+CP0074,protocol_system_study,RLC_AM12,SRB1|SRB2|DRB,true,EXECUTE,enabled bounded tuple
+CP0075,protocol_system_study,RLC_AM18,DRB,true,EXECUTE,enabled bounded tuple
+CP0076,protocol_system_study,RLC_STATUS_SEGMENT_NACK,AM,true,EXECUTE,enabled bounded tuple
+CP0077,protocol_system_study,PDCP_SRB12,SRB,true,EXECUTE,enabled bounded tuple
+CP0078,protocol_system_study,PDCP_DRB12,DRB,true,EXECUTE,enabled bounded tuple
+CP0079,protocol_system_study,PDCP_DRB18,DRB,true,EXECUTE,enabled bounded tuple
+CP0080,protocol_system_study,PDCP_NEA0_NIA0,security,true,EXECUTE,enabled bounded tuple
+CP0081,protocol_system_study,PDCP_NEA2_NIA2,security,true,EXECUTE,enabled bounded tuple
+CP0082,protocol_system_study,PDCP_DUPLICATION_BOUNDED,DRB,true,EXECUTE,enabled bounded tuple
+CP0083,protocol_system_study,SDAP_UL_DL_HEADER,DRB,true,EXECUTE,enabled bounded tuple
+CP0084,protocol_system_study,SDAP_END_MARKER,DRB,true,EXECUTE,enabled bounded tuple
+CP0085,protocol_system_study,SDAP_REFLECTIVE_QOS,DRB,true,EXECUTE,enabled bounded tuple
+CP0086,protocol_system_study,RRC_SETUP,RRC,true,EXECUTE,enabled bounded tuple
+CP0087,protocol_system_study,RRC_SECURITY_MODE,RRC,true,EXECUTE,enabled bounded tuple
+CP0088,protocol_system_study,RRC_CAPABILITY,RRC,true,EXECUTE,enabled bounded tuple
+CP0089,protocol_system_study,RRC_RECONFIG_BEARER,RRC,true,EXECUTE,enabled bounded tuple
+CP0090,protocol_system_study,RRC_RELEASE,RRC,true,EXECUTE,enabled bounded tuple
+CP0091,protocol_system_study,RRC_REESTABLISHMENT,RRC,true,EXECUTE,enabled bounded tuple
+CP0092,protocol_system_study,RRC_RESUME,RRC,true,EXECUTE,enabled bounded tuple
+CP0093,protocol_system_study,INTRA_FREQ_HO,RRC,true,EXECUTE,enabled bounded tuple
+CP0094,protocol_system_study,CBR_PACKET_TRAFFIC,traffic,true,EXECUTE,enabled bounded tuple
+CP0095,protocol_system_study,POISSON_TRAFFIC,traffic,true,EXECUTE,enabled bounded tuple
+CP0096,protocol_system_study,XR_PDU_SET,traffic,true,EXECUTE,enabled bounded tuple
+CP0097,protocol_system_study,TRACE_REPLAY,traffic,true,EXECUTE,enabled bounded tuple
+CP0098,protocol_system_study,ROHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0099,protocol_system_study,EHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0100,protocol_system_study,UDC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0101,protocol_system_study,DAPS_HO,unsupported,false,REJECT,not enabled in selected profile
+CP0102,protocol_system_study,MR_DC_SPLIT_BEARER,unsupported,false,REJECT,not enabled in selected profile
+CP0103,protocol_system_study,FULL_NAS_5GC,unsupported,false,REJECT,not enabled in selected profile
+CP0104,protocol_system_study,TCP_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0105,protocol_system_study,QUIC_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0106,unsupported_extension,RLC_TM,SRB0|CCCH,false,REJECT,not enabled in selected profile
+CP0107,unsupported_extension,RLC_UM6,DRB,false,REJECT,not enabled in selected profile
+CP0108,unsupported_extension,RLC_UM12,DRB,false,REJECT,not enabled in selected profile
+CP0109,unsupported_extension,RLC_AM12,SRB1|SRB2|DRB,false,REJECT,not enabled in selected profile
+CP0110,unsupported_extension,RLC_AM18,DRB,false,REJECT,not enabled in selected profile
+CP0111,unsupported_extension,RLC_STATUS_SEGMENT_NACK,AM,false,REJECT,not enabled in selected profile
+CP0112,unsupported_extension,PDCP_SRB12,SRB,false,REJECT,not enabled in selected profile
+CP0113,unsupported_extension,PDCP_DRB12,DRB,false,REJECT,not enabled in selected profile
+CP0114,unsupported_extension,PDCP_DRB18,DRB,false,REJECT,not enabled in selected profile
+CP0115,unsupported_extension,PDCP_NEA0_NIA0,security,false,REJECT,not enabled in selected profile
+CP0116,unsupported_extension,PDCP_NEA2_NIA2,security,false,REJECT,not enabled in selected profile
+CP0117,unsupported_extension,PDCP_DUPLICATION_BOUNDED,DRB,false,REJECT,not enabled in selected profile
+CP0118,unsupported_extension,SDAP_UL_DL_HEADER,DRB,false,REJECT,not enabled in selected profile
+CP0119,unsupported_extension,SDAP_END_MARKER,DRB,false,REJECT,not enabled in selected profile
+CP0120,unsupported_extension,SDAP_REFLECTIVE_QOS,DRB,false,REJECT,not enabled in selected profile
+CP0121,unsupported_extension,RRC_SETUP,RRC,false,REJECT,not enabled in selected profile
+CP0122,unsupported_extension,RRC_SECURITY_MODE,RRC,false,REJECT,not enabled in selected profile
+CP0123,unsupported_extension,RRC_CAPABILITY,RRC,false,REJECT,not enabled in selected profile
+CP0124,unsupported_extension,RRC_RECONFIG_BEARER,RRC,false,REJECT,not enabled in selected profile
+CP0125,unsupported_extension,RRC_RELEASE,RRC,false,REJECT,not enabled in selected profile
+CP0126,unsupported_extension,RRC_REESTABLISHMENT,RRC,false,REJECT,not enabled in selected profile
+CP0127,unsupported_extension,RRC_RESUME,RRC,false,REJECT,not enabled in selected profile
+CP0128,unsupported_extension,INTRA_FREQ_HO,RRC,false,REJECT,not enabled in selected profile
+CP0129,unsupported_extension,CBR_PACKET_TRAFFIC,traffic,false,REJECT,not enabled in selected profile
+CP0130,unsupported_extension,POISSON_TRAFFIC,traffic,false,REJECT,not enabled in selected profile
+CP0131,unsupported_extension,XR_PDU_SET,traffic,false,REJECT,not enabled in selected profile
+CP0132,unsupported_extension,TRACE_REPLAY,traffic,false,REJECT,not enabled in selected profile
+CP0133,unsupported_extension,ROHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0134,unsupported_extension,EHC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0135,unsupported_extension,UDC_FULL,unsupported,false,REJECT,not enabled in selected profile
+CP0136,unsupported_extension,DAPS_HO,unsupported,false,REJECT,not enabled in selected profile
+CP0137,unsupported_extension,MR_DC_SPLIT_BEARER,unsupported,false,REJECT,not enabled in selected profile
+CP0138,unsupported_extension,FULL_NAS_5GC,unsupported,false,REJECT,not enabled in selected profile
+CP0139,unsupported_extension,TCP_INTEROP,unsupported,false,REJECT,not enabled in selected profile
+CP0140,unsupported_extension,QUIC_INTEROP,unsupported,false,REJECT,not enabled in selected profile

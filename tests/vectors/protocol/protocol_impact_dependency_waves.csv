@@ -1,0 +1,65 @@
+FamilyID,DependencyWave,Implementability,CanTemporarilyBlock,FinalCompletionRequires
+F01,A,Direct protocol implementation,false,true
+F02,A,Direct protocol implementation,false,true
+F03,A,Direct protocol implementation,false,true
+F04,A,Direct protocol implementation,false,true
+F05,A,Direct protocol implementation,false,true
+F06,A,Direct protocol implementation,false,true
+F07,A,Direct protocol implementation,false,true
+F08,A,Direct protocol implementation,false,true
+F09,A,Direct protocol implementation,false,true
+F10,A,Direct protocol implementation,false,true
+F11,A,Direct protocol implementation,false,true
+F12,A,Direct protocol implementation,false,true
+F13,A,Direct protocol implementation,false,true
+F14,A,Direct protocol implementation,false,true
+F15,A,Direct protocol implementation,false,true
+F16,B,Requires internal cross-layer or mobility integration,true,true
+F17,B,Requires internal cross-layer or mobility integration,true,true
+F18,A,Direct protocol implementation,false,true
+F19,A,Direct protocol implementation,false,true
+F20,A,Direct protocol implementation,false,true
+F21,B,Requires internal cross-layer or mobility integration,true,true
+F22,B,Requires internal cross-layer or mobility integration,true,true
+F23,A,Direct protocol implementation,false,true
+F24,A,Direct protocol implementation,false,true
+F25,B,Requires internal cross-layer or mobility integration,true,true
+F26,A,Direct protocol implementation,false,true
+F27,A,Direct protocol implementation,false,true
+F28,A,Direct protocol implementation,false,true
+F29,A,Direct protocol implementation,false,true
+F30,A,Direct protocol implementation,false,true
+F31,A,Direct protocol implementation,false,true
+F32,A,Direct protocol implementation,false,true
+F33,A,Direct protocol implementation,false,true
+F34,B,Requires internal cross-layer or mobility integration,true,true
+F35,B,Requires internal cross-layer or mobility integration,true,true
+F36,B,Requires internal cross-layer or mobility integration,true,true
+F37,B,Requires internal cross-layer or mobility integration,true,true
+F38,B,Requires internal cross-layer or mobility integration,true,true
+F39,B,Requires internal cross-layer or mobility integration,true,true
+F40,B,Requires internal cross-layer or mobility integration,true,true
+F41,B,Requires internal cross-layer or mobility integration,true,true
+F42,C,Requires adjacent complete system/NAS/access dependency,true,true
+F43,A,Direct protocol implementation,false,true
+F44,A,Direct protocol implementation,false,true
+F45,A,Direct protocol implementation,false,true
+F46,A,Direct protocol implementation,false,true
+F47,A,Direct protocol implementation,false,true
+F48,A,Direct protocol implementation,false,true
+F49,C,Requires adjacent complete system/NAS/access dependency,true,true
+F50,A,Direct protocol implementation,false,true
+F51,A,Direct protocol implementation,false,true
+F52,A,Direct protocol implementation,false,true
+F53,B,Requires internal cross-layer or mobility integration,true,true
+F54,B,Requires internal cross-layer or mobility integration,true,true
+F55,B,Requires internal cross-layer or mobility integration,true,true
+F56,B,Requires internal cross-layer or mobility integration,true,true
+F57,A,Direct protocol implementation,false,true
+F58,A,Direct protocol implementation,false,true
+F59,A,Direct protocol implementation,false,true
+F60,B,Requires internal cross-layer or mobility integration,true,true
+F61,A,Direct protocol implementation,false,true
+F62,A,Direct protocol implementation,false,true
+F63,C,Requires adjacent complete system/NAS/access dependency,true,true
+F64,C,Requires adjacent complete system/NAS/access dependency,true,true

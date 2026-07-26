@@ -1,0 +1,13 @@
+RunID,FamilyID,PairID,BaselineExperimentID,TreatmentExperimentID,Metric,BaselineValue,TreatmentValue,AbsoluteEffect,RelativeEffectPercent,EffectDirection,CILower,CIUpper,PValue,AdjustedPValue,EffectSize,Status
+pdsch_dlsch_impact_20260726T142845Z,F01,DL-F01,DL-F01-E01,DL-F01-E02,ProductionTXExecuted,0.42857,0.42857,0,0,no_change,0,0,1,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F02,DL-F02,DL-F02-E01,DL-F02-E02,PowerRelativeError,0,6.854e-17,6.854e-17,6.854e-15,increase,6.854e-17,6.854e-17,1,1,6.854e-17,PASS
+pdsch_dlsch_impact_20260726T142845Z,F03,DL-F03,DL-F03-E01,DL-F03-E02,DMRSRECount,4,12,8,200,increase,8,8,0.00033546,0.0036901,2,PASS
+pdsch_dlsch_impact_20260726T142845Z,F04,DL-F04,DL-F04-E01,DL-F04-E02,IndexMismatchCount,0,0,0,0,no_change,0,0,1,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F05,DL-F05,DL-F05-E01,DL-F05-E02,TXApplicationCount,1,1,0,0,no_change,0,0,1,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F06,DL-F06,DL-F06-E01,DL-F06-E02,G,168,324,156,92.8571,increase,156,156,1.7785e-68,2.1342e-67,0.92857,PASS
+pdsch_dlsch_impact_20260726T142845Z,F07,DL-F07,DL-F07-E01,DL-F07-E02,EVMBeforePercent,1.8443,6.9507,5.1064,276.8792,increase,5.1064,5.1064,0.0060579,0.060579,2.7688,PASS
+pdsch_dlsch_impact_20260726T142845Z,F08,DL-F08,DL-F08-E01,DL-F08-E02,WaveformAllowed,0,0,0,0,no_change,0,0,1,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F09,DL-F09,DL-F09-E01,DL-F09-E02,MismatchCount,0,0,0,0,no_change,0,0,1,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F10,DL-F10,DL-F10-E01,DL-F10-E02,BWPId,0,1,1,100,increase,1,1,0.36788,1,1,PASS
+pdsch_dlsch_impact_20260726T142845Z,F11,DL-F11,DL-F11-E01,DL-F11-E02,MappedSymbolCount,6,6,0,0,no_change,0,0,1,1,0,PASS
+pdsch_dlsch_impact_20260726T142845Z,F12,DL-F12,DL-F12-E01,DL-F12-E02,MaxAbsError,0,0,0,0,no_change,0,0,1,1,0,PASS

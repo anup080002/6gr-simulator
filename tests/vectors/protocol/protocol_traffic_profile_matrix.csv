@@ -1,0 +1,9 @@
+ProfileID,GeneratorType,PacketAccurate,SessionState,NamedRandomStream,Supported,Reason
+CBR_PACKET,periodic,true,false,false,true,bounded exact profile
+POISSON_PACKET,poisson,true,false,true,true,bounded exact profile
+BURST_ON_OFF,burst,true,false,true,true,bounded exact profile
+XR_PDU_SET,pdu_set,true,true,true,true,bounded exact profile
+MMTC_PERIODIC,periodic,true,false,false,true,bounded exact profile
+TRACE_REPLAY,trace,true,true,false,true,bounded exact profile
+TCP_PROXY,proxy,false,false,true,false,study/unsupported until exact transport or core implementation
+FULL_NAS_5GC,unsupported,false,false,true,false,study/unsupported until exact transport or core implementation

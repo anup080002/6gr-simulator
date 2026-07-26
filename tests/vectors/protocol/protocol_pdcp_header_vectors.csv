@@ -1,0 +1,16 @@
+CaseID,BearerType,SNBits,SN,HeaderHex,HeaderBytes,DCBit,MACIPresence,ExpectedValid
+PH0001,SRB,12,0,0000,2,NA,true,true
+PH0002,SRB,12,1,0001,2,NA,true,true
+PH0003,SRB,12,4095,0FFF,2,NA,true,true
+PH0004,SRB,12,2057,0809,2,NA,true,true
+PH0005,DRB,12,0,8000,2,1,false_optional,true
+PH0006,DRB,12,1,8001,2,1,false_optional,true
+PH0007,DRB,12,4095,8FFF,2,1,false_optional,true
+PH0008,DRB,12,2057,8809,2,1,false_optional,true
+PH0009,DRB,18,0,800000,3,1,false_optional,true
+PH0010,DRB,18,1,800001,3,1,false_optional,true
+PH0011,DRB,18,262143,83FFFF,3,1,false_optional,true
+PH0012,DRB,18,131081,820009,3,1,false_optional,true
+PH0013,SRB,18,1,,,,,false
+PH0014,DRB,12,4096,,,,,false
+PH0015,DRB,18,262144,,,,,false

@@ -1,0 +1,11 @@
+CaseID,SNBits,ArrivalSNs,DeliveredSNs,BufferedSNs,DuplicateCount,RX_DELIV,TimerRequired,ExpectedValid
+PR0001,12,0|1|2,0|1|2,,0,3,false,true
+PR0002,12,0|2|1,0|1|2,,0,3,false,true
+PR0003,12,4094|4095|0|1,4094|4095|0|1,,0,2,false,true
+PR0004,12,3|3|4,3|4,,1,5,false,true
+PR0005,12,5|7|8,5,7|8,0,6,true,true
+PR0006,18,0|1|2,0|1|2,,0,3,false,true
+PR0007,18,0|2|1,0|1|2,,0,3,false,true
+PR0008,18,262142|262143|0|1,262142|262143|0|1,,0,2,false,true
+PR0009,18,3|3|4,3|4,,1,5,false,true
+PR0010,18,5|7|8,5,7|8,0,6,true,true

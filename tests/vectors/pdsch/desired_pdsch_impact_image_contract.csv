@@ -1,0 +1,25 @@
+ImageFile,SourceCSV,ExpectedXLabel,ExpectedYLabel,ExpectedTitleToken,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+pdsch_impact_coverage_execution.png,pdsch_impact_assignment.csv,Experiment,Observed assignment metric,Declared PDSCH execution impact,1,1,9,1000,650
+pdsch_impact_coverage_summary.png,pdsch_impact_operating_points.csv,Experiment,Observed production metric,PDSCH coverage comparison,1,1,36,1000,650
+pdsch_impact_prg_power_error.png,pdsch_impact_precoding.csv,PRG experiment,Observed precoding metric,PRG precoding impact,1,1,6,1000,650
+pdsch_impact_prg_effects.png,pdsch_impact_pairwise_effects.csv,Finding family,Baseline production metric,PRG comparative effects,1,1,12,1000,650
+pdsch_impact_dmrs_ports.png,pdsch_impact_dmrs.csv,DM-RS experiment,Observed DM-RS metric,DM-RS port impact,1,1,6,1000,650
+pdsch_impact_dmrs_mapping.png,pdsch_impact_dmrs.csv,DM-RS experiment,Observed DM-RS metric,DM-RS mapping impact,1,1,6,1000,650
+pdsch_impact_precoder_application.png,pdsch_impact_precoding.csv,Precoder experiment,Observed precoding metric,Applied precoder impact,1,1,6,1000,650
+pdsch_impact_precoder_summary.png,pdsch_impact_summary.csv,Finding family,Required experiments,Precoder evidence summary,1,1,12,1000,650
+pdsch_impact_reserved_g.png,pdsch_impact_resource_accounting.csv,Resource experiment,Coded bits G,Reserved-resource impact,1,1,3,1000,650
+pdsch_impact_resource_summary.png,pdsch_impact_raw_trials.csv,Experiment,Observed production metric,Resource-accounting evidence,1,1,36,1000,650
+pdsch_impact_ptrs_evm.png,pdsch_impact_ptrs.csv,PT-RS experiment,EVM before correction,PT-RS receiver impact,1,1,3,1000,650
+pdsch_impact_ptrs_summary.png,pdsch_impact_rule_evaluation.csv,Rule,Observed rule result,PT-RS evidence gate,1,1,24,1000,650
+pdsch_impact_assignment_authority.png,pdsch_impact_assignment.csv,Assignment experiment,Observed assignment metric,Decoded-grant authority impact,1,1,9,1000,650
+pdsch_impact_assignment_effects.png,pdsch_impact_pairwise_effects.csv,Finding family,Baseline production metric,Assignment comparative effects,1,1,12,1000,650
+pdsch_impact_modulation_oracles.png,pdsch_impact_modulation.csv,Modulation experiment,Mismatch count,Modulation oracle impact,1,1,3,1000,650
+pdsch_impact_modulation_summary.png,pdsch_impact_independent_oracles.csv,Oracle experiment,Maximum absolute error,Independent modulation evidence,1,1,3,1000,650
+pdsch_impact_bwp_binding.png,pdsch_impact_assignment.csv,Assignment experiment,Observed assignment metric,BWP carrier binding impact,1,1,9,1000,650
+pdsch_impact_bwp_summary.png,pdsch_impact_finding_coverage.csv,Finding family,Required experiments,BWP and state evidence,1,1,12,1000,650
+pdsch_impact_high_rank_mapping.png,pdsch_impact_layer_codeword.csv,Rank experiment,Mapped symbols,High-rank mapping impact,1,1,3,1000,650
+pdsch_impact_high_rank_summary.png,pdsch_impact_summary.csv,Finding family,Required experiments,High-rank evidence summary,1,1,12,1000,650
+pdsch_impact_independent_error.png,pdsch_impact_independent_oracles.csv,Oracle experiment,Maximum absolute error,Independent oracle impact,1,1,3,1000,650
+pdsch_impact_independent_summary.png,pdsch_impact_finding_coverage.csv,Finding family,Required experiments,Independent evidence coverage,1,1,12,1000,650
+pdsch_impact_all_findings.png,pdsch_impact_pairwise_effects.csv,Finding family,Baseline production metric,All PDSCH findings impact,1,1,12,1000,650
+pdsch_impact_gate_overview.png,pdsch_impact_rule_evaluation.csv,Acceptance rule,Observed rule result,PDSCH impact gate overview,1,1,24,1000,650

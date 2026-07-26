@@ -1,0 +1,4 @@
+RunID,ExperimentID,FamilyID,Variant,Metric,ObservedValue,SourceRows,SourceCSV_SHA256,Status
+pdsch_dlsch_impact_20260726T142845Z,DL-F11-E01,F11,baseline,MappedSymbolCount,6,1,b96549db47145d661bcb920d125d7f2cba9bfd73a6107748dd1f6efa2a9803be,PASS
+pdsch_dlsch_impact_20260726T142845Z,DL-F11-E02,F11,treatment,MappedSymbolCount,6,4,b96549db47145d661bcb920d125d7f2cba9bfd73a6107748dd1f6efa2a9803be,PASS
+pdsch_dlsch_impact_20260726T142845Z,DL-F11-E03,F11,stress,MappedSymbolCount,6,8,b96549db47145d661bcb920d125d7f2cba9bfd73a6107748dd1f6efa2a9803be,PASS

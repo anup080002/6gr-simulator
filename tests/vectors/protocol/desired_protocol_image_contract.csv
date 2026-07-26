@@ -1,0 +1,23 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinWidth,MinHeight,MinAxesCount,MinSeriesCount,MinFinitePointCount
+rlc_am_window_timeline.png,rlc_am_state_events.csv,RLC AM window,Event sequence,Sequence number,900,600,1,3,20
+rlc_status_nack_map.png,rlc_status_pdus.csv,RLC STATUS,NACK entry,Sequence or segment,900,600,1,2,10
+rlc_um_reassembly_timeline.png,rlc_um_reassembly.csv,RLC UM reassembly,Arrival order,Sequence number,900,600,1,2,10
+rlc_segmentation_resegmentation.png,rlc_pdu_encoding.csv,RLC segmentation,PDU index,Bytes,900,600,1,3,20
+pdcp_count_hfn_timeline.png,pdcp_count_state.csv,PDCP COUNT,Event sequence,COUNT,900,600,1,3,20
+pdcp_reordering_window.png,pdcp_reordering_discard.csv,PDCP reordering,Event sequence,COUNT,900,600,1,3,20
+pdcp_security_flow.png,pdcp_security_results.csv,PDCP security,Test case,Mismatch count,900,600,1,2,20
+pdcp_duplication_paths.png,pdcp_duplication_routing.csv,PDCP duplication,Time,Path,900,600,1,2,10
+sdap_qfi_drb_map.png,sdap_qfi_drb_mapping.csv,SDAP QFI to DRB,QFI,DRB ID,900,600,1,2,20
+sdap_end_marker_timeline.png,sdap_end_marker_events.csv,SDAP end marker,Event sequence,Mapping state,900,600,1,2,5
+rrc_message_sequence.png,rrc_transaction_events.csv,RRC message sequence,Time,Endpoint and message,900,600,1,3,20
+rrc_state_machine.png,rrc_state_transitions.csv,RRC state,Event sequence,State,900,600,1,2,15
+rrc_transaction_timeline.png,rrc_transaction_events.csv,RRC transactions,Event sequence,Transaction ID,900,600,1,3,20
+radio_bearer_stack.png,radio_bearer_config.csv,Radio bearer stack,Bearer ID,Layer state,900,600,1,3,10
+security_activation_timeline.png,security_mode_events.csv,Security activation,Event sequence,Security state,900,600,1,2,8
+handover_sequence.png,handover_events.csv,Handover sequence,Event sequence,Handover state,900,600,1,3,12
+traffic_packet_arrivals.png,traffic_packet_arrivals.csv,Packet arrivals,Time (ms),Packet bytes,900,600,1,3,50
+traffic_pdu_set_latency.png,traffic_pdu_sets.csv,PDU set latency,PDU set,Latency (ms),900,600,1,2,5
+protocol_lineage_graph.png,protocol_lineage.csv,Protocol lineage,Layer stage,Object identity,900,600,1,4,30
+protocol_conservation_balance.png,protocol_conservation.csv,Protocol conservation,Scope,Bytes,900,600,1,4,10
+protocol_latency_cdf.png,protocol_receiver_metrics.csv,Protocol latency CDF,Latency (ms),CDF,900,600,1,2,20
+protocol_end_to_end_goodput.png,protocol_receiver_metrics.csv,End-to-end goodput,Operating point,Goodput (Mbps),900,600,1,2,10

@@ -1,0 +1,37 @@
+ExperimentID,FamilyID,PairID,Variant,WorkItem,Title,SourceCSV,Metric,Selection,Aggregation,Notes
+FG-F01-E01,F01,FG-F01,baseline,1,Numerology and cyclic prefix,frame_numerology_matrix.csv,ResolvedSlotsPerFrame,low,value_quantile,Lowest executed numerology
+FG-F01-E02,F01,FG-F01,treatment,1,Numerology and cyclic prefix,frame_numerology_matrix.csv,ResolvedSlotsPerFrame,mid,value_quantile,Mid executed numerology
+FG-F01-E03,F01,FG-F01,stress,1,Numerology and cyclic prefix,frame_numerology_matrix.csv,ResolvedSlotsPerFrame,high,value_quantile,Highest executed numerology
+FG-F02-E01,F02,FG-F02,baseline,2,Frequency range and transmission bandwidth,carrier_grid_matrix.csv,ResolvedNRB,low,value_quantile,Smallest valid bandwidth grid
+FG-F02-E02,F02,FG-F02,treatment,2,Frequency range and transmission bandwidth,carrier_grid_matrix.csv,ResolvedNRB,mid,value_quantile,Median valid bandwidth grid
+FG-F02-E03,F02,FG-F02,stress,2,Frequency range and transmission bandwidth,carrier_grid_matrix.csv,ResolvedNRB,high,value_quantile,Largest valid bandwidth grid
+FG-F03-E01,F03,FG-F03,baseline,3,Validated OFDM sampling policy,ofdm_roundtrip.csv,Nfft,low,value_quantile,Smallest executed FFT
+FG-F03-E02,F03,FG-F03,treatment,3,Validated OFDM sampling policy,ofdm_roundtrip.csv,Nfft,mid,value_quantile,Median executed FFT
+FG-F03-E03,F03,FG-F03,stress,3,Validated OFDM sampling policy,ofdm_roundtrip.csv,Nfft,high,value_quantile,Largest executed FFT
+FG-F04-E01,F04,FG-F04,baseline,4,TDD common symbol ownership,slot_symbol_ownership.csv,ResolvedDirection,low,direction_dl_fraction,First executed TDD ownership group
+FG-F04-E02,F04,FG-F04,treatment,4,TDD common symbol ownership,slot_symbol_ownership.csv,ResolvedDirection,mid,direction_dl_fraction,Middle executed TDD ownership group
+FG-F04-E03,F04,FG-F04,stress,4,TDD common symbol ownership,slot_symbol_ownership.csv,ResolvedDirection,high,direction_dl_fraction,Last executed TDD ownership group
+FG-F05-E01,F05,FG-F05,baseline,5,TDD dedicated and flexible symbols,slot_symbol_ownership.csv,ResolutionSource,low,dedicated_override_fraction,First ownership group
+FG-F05-E02,F05,FG-F05,treatment,5,TDD dedicated and flexible symbols,slot_symbol_ownership.csv,ResolutionSource,mid,dedicated_override_fraction,Middle ownership group
+FG-F05-E03,F05,FG-F05,stress,5,TDD dedicated and flexible symbols,slot_symbol_ownership.csv,ResolutionSource,high,dedicated_override_fraction,Last ownership group
+FG-F06-E01,F06,FG-F06,baseline,6,Explicit FDD carrier contexts,fdd_grid_trace.csv,NumRB,low,value_quantile,Smallest executed FDD allocation
+FG-F06-E02,F06,FG-F06,treatment,6,Explicit FDD carrier contexts,fdd_grid_trace.csv,NumRB,mid,value_quantile,Median executed FDD allocation
+FG-F06-E03,F06,FG-F06,stress,6,Explicit FDD carrier contexts,fdd_grid_trace.csv,NumRB,high,value_quantile,Largest executed FDD allocation
+FG-F07-E01,F07,FG-F07,baseline,7,Separated control and data allocation,allocation_legality.csv,ActualValid,low,valid_fraction,First allocation-vector group
+FG-F07-E02,F07,FG-F07,treatment,7,Separated control and data allocation,allocation_legality.csv,ActualValid,mid,valid_fraction,Middle allocation-vector group
+FG-F07-E03,F07,FG-F07,stress,7,Separated control and data allocation,allocation_legality.csv,ActualValid,high,valid_fraction,Last allocation-vector group
+FG-F08-E01,F08,FG-F08,baseline,8,Exact SSB timing,ssb_timing_matrix.csv,StartSymbol,low,value_quantile,Earliest executed SSB candidate
+FG-F08-E02,F08,FG-F08,treatment,8,Exact SSB timing,ssb_timing_matrix.csv,StartSymbol,mid,value_quantile,Median executed SSB candidate
+FG-F08-E03,F08,FG-F08,stress,8,Exact SSB timing,ssb_timing_matrix.csv,StartSymbol,high,value_quantile,Latest executed SSB candidate
+FG-F09-E01,F09,FG-F09,baseline,9,Exact PRACH occasions,prach_occasion_matrix.csv,AbsoluteSlot,low,value_quantile,Earliest executed PRACH occasion
+FG-F09-E02,F09,FG-F09,treatment,9,Exact PRACH occasions,prach_occasion_matrix.csv,AbsoluteSlot,mid,value_quantile,Median executed PRACH occasion
+FG-F09-E03,F09,FG-F09,stress,9,Exact PRACH occasions,prach_occasion_matrix.csv,AbsoluteSlot,high,value_quantile,Latest executed PRACH occasion
+FG-F10-E01,F10,FG-F10,baseline,10,Zero implicit OFDM windowing,ofdm_roundtrip.csv,EVMPercent,low,value_quantile,Lowest executed no-channel EVM
+FG-F10-E02,F10,FG-F10,treatment,10,Zero implicit OFDM windowing,ofdm_roundtrip.csv,EVMPercent,mid,value_quantile,Median executed no-channel EVM
+FG-F10-E03,F10,FG-F10,stress,10,Zero implicit OFDM windowing,ofdm_roundtrip.csv,EVMPercent,high,value_quantile,Highest executed no-channel EVM
+FG-F11-E01,F11,FG-F11,baseline,11,Canonical multi-BWP operation,bwp_switch_trace.csv,AbsSlot,low,value_quantile,Earliest executed BWP event
+FG-F11-E02,F11,FG-F11,treatment,11,Canonical multi-BWP operation,bwp_switch_trace.csv,AbsSlot,mid,value_quantile,Median executed BWP event
+FG-F11-E03,F11,FG-F11,stress,11,Canonical multi-BWP operation,bwp_switch_trace.csv,AbsSlot,high,value_quantile,Latest executed BWP event
+FG-F12-E01,F12,FG-F12,baseline,12,Component carrier and absolute timing,component_carrier_trace.csv,NumRB,low,value_quantile,Smallest executed CC allocation
+FG-F12-E02,F12,FG-F12,treatment,12,Component carrier and absolute timing,component_carrier_trace.csv,NumRB,mid,value_quantile,Median executed CC allocation
+FG-F12-E03,F12,FG-F12,stress,12,Component carrier and absolute timing,component_carrier_trace.csv,NumRB,high,value_quantile,Largest executed CC allocation

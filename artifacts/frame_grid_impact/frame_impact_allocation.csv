@@ -1,0 +1,4 @@
+RunID,ExperimentID,Variant,ObservedValue,SourceRows,SourceCSV_SHA256,Status
+frame_grid_impact_20260726T132620Z,FG-F07-E01,baseline,0,1,30309dbbc74889c23fa9fc4bc1238cd57d0c5fabfcfc2a08032e43f7416f8e22,PASS
+frame_grid_impact_20260726T132620Z,FG-F07-E02,treatment,1,1,30309dbbc74889c23fa9fc4bc1238cd57d0c5fabfcfc2a08032e43f7416f8e22,PASS
+frame_grid_impact_20260726T132620Z,FG-F07-E03,stress,1,1,30309dbbc74889c23fa9fc4bc1238cd57d0c5fabfcfc2a08032e43f7416f8e22,PASS

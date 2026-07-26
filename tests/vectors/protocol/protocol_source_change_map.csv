@@ -1,0 +1,15 @@
+CurrentFile,TargetFile,RequiredAction,StrictPathAfterMigration
++sixgr/+l2/+rlc/RLC_AM.m,+sixgr/+l2/+rlc18/RLCAMEntity.m,Compatibility facade only; remove custom codec and polling.,TARGET_ONLY
++sixgr/+l2/+rlc/RLC_UM.m,+sixgr/+l2/+rlc18/RLCUMEntity.m,Compatibility facade only; remove local codec/timer.,TARGET_ONLY
++sixgr/+l2/+rlc/RLC_TM.m,+sixgr/+l2/+rlc18/RLCTMEntity.m,Delegate through entity factory.,TARGET_ONLY
++sixgr/+l2/+pdcp/PDCP.m,+sixgr/+l2/+pdcp18/PDCPBearerEntity.m,Replace custom security/ROHC/header/state.,TARGET_ONLY
++sixgr/+l2/+sdap/SDAP.m,+sixgr/+l2/+sdap18/SDAPEntity.m,Replace default-LCID/custom header.,TARGET_ONLY
++sixgr/+l3/+rrc/RRC.m,+sixgr/+l3/+rrc18/RRCUE.m|RRCGNB.m,Replace JSON and local state.,TARGET_ONLY
++sixgr/+l3/+rrc/AttachProcedure.m,+sixgr/+l3/+rrc18/RRCConnectionEstablishment.m,Replace synthetic structs/timers.,TARGET_ONLY
++sixgr/+l3/+rrc/SystemInformation.m,+sixgr/+l3/+rrc18/SystemInformationState.m,Use decoded ASN.1 state.,TARGET_ONLY
++sixgr/+rrc/+asn1/encodeSIB1UPER.m,+sixgr/+l3/+rrc18/+asn1/UPERCodec.m,Delete custom anchor format from strict profile.,TARGET_ONLY
++sixgr/+rrc/+asn1/decodeSIB1UPER.m,+sixgr/+l3/+rrc18/+asn1/UPERCodec.m,Delete custom anchor decoder from strict profile.,TARGET_ONLY
++sixgr/+system/TrafficFactory.m,+sixgr/+traffic18/TrafficGeneratorFactory.m,Replace bits-per-TTI and proxy transport path.,TARGET_ONLY
++sixgr/+system/Traffic_XR.m,+sixgr/+traffic18/XRTrafficSession.m,Generate packets/PDU sets with named stream.,TARGET_ONLY
++sixgr/+system/Traffic_GenAI.m,+sixgr/+traffic18/GenAITrafficSession.m,Generate request/response packet sessions.,TARGET_ONLY
++sixgr/+system/Traffic_mMTC.m,+sixgr/+traffic18/MMTCTrafficSession.m,Generate device packet events with named streams.,TARGET_ONLY

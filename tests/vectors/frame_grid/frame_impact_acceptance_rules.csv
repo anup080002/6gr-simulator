@@ -1,0 +1,25 @@
+RuleID,FamilyID,Severity,Metric,Comparator,Threshold,Description
+FG-R-F01-H,F01,HARD,SourceRowsPASS,eq,1,Numerology source rows and experiment lineage pass
+FG-R-F01-D,F01,DIAGNOSTIC,FiniteEffect,eq,1,Numerology comparative effect is finite
+FG-R-F02-H,F02,HARD,SourceRowsPASS,eq,1,Carrier-grid source rows and experiment lineage pass
+FG-R-F02-D,F02,DIAGNOSTIC,FiniteEffect,eq,1,Carrier-grid comparative effect is finite
+FG-R-F03-H,F03,HARD,SourceRowsPASS,eq,1,OFDM sampling source rows and experiment lineage pass
+FG-R-F03-D,F03,DIAGNOSTIC,FiniteEffect,eq,1,OFDM sampling comparative effect is finite
+FG-R-F04-H,F04,HARD,SourceRowsPASS,eq,1,TDD common source rows and experiment lineage pass
+FG-R-F04-D,F04,DIAGNOSTIC,FiniteEffect,eq,1,TDD common comparative effect is finite
+FG-R-F05-H,F05,HARD,SourceRowsPASS,eq,1,TDD dedicated source rows and experiment lineage pass
+FG-R-F05-D,F05,DIAGNOSTIC,FiniteEffect,eq,1,TDD dedicated comparative effect is finite
+FG-R-F06-H,F06,HARD,SourceRowsPASS,eq,1,FDD source rows and experiment lineage pass
+FG-R-F06-D,F06,DIAGNOSTIC,FiniteEffect,eq,1,FDD comparative effect is finite
+FG-R-F07-H,F07,HARD,SourceRowsPASS,eq,1,Allocation source rows and experiment lineage pass
+FG-R-F07-D,F07,DIAGNOSTIC,FiniteEffect,eq,1,Allocation comparative effect is finite
+FG-R-F08-H,F08,HARD,SourceRowsPASS,eq,1,SSB source rows and experiment lineage pass
+FG-R-F08-D,F08,DIAGNOSTIC,FiniteEffect,eq,1,SSB comparative effect is finite
+FG-R-F09-H,F09,HARD,SourceRowsPASS,eq,1,PRACH source rows and experiment lineage pass
+FG-R-F09-D,F09,DIAGNOSTIC,FiniteEffect,eq,1,PRACH comparative effect is finite
+FG-R-F10-H,F10,HARD,SourceRowsPASS,eq,1,Windowing and OFDM source rows pass
+FG-R-F10-D,F10,DIAGNOSTIC,FiniteEffect,eq,1,Windowing comparative effect is finite
+FG-R-F11-H,F11,HARD,SourceRowsPASS,eq,1,BWP source rows and experiment lineage pass
+FG-R-F11-D,F11,DIAGNOSTIC,FiniteEffect,eq,1,BWP comparative effect is finite
+FG-R-F12-H,F12,HARD,SourceRowsPASS,eq,1,CC and absolute-timing source rows pass
+FG-R-F12-D,F12,DIAGNOSTIC,FiniteEffect,eq,1,CC comparative effect is finite

@@ -1,0 +1,25 @@
+RuleID,FamilyID,Severity,Metric,Comparator,Threshold,Description
+DL-R-F01-H,F01,HARD,VerifiedProductionSource,eq,1,Declared coverage production rows and lineage pass
+DL-R-F01-D,F01,DIAGNOSTIC,FiniteEffect,eq,1,Declared coverage comparative effect is finite
+DL-R-F02-H,F02,HARD,VerifiedProductionSource,eq,1,PRG precoding production rows and lineage pass
+DL-R-F02-D,F02,DIAGNOSTIC,FiniteEffect,eq,1,PRG precoding comparative effect is finite
+DL-R-F03-H,F03,HARD,VerifiedProductionSource,eq,1,DM-RS port production rows and lineage pass
+DL-R-F03-D,F03,DIAGNOSTIC,FiniteEffect,eq,1,DM-RS port comparative effect is finite
+DL-R-F04-H,F04,HARD,VerifiedProductionSource,eq,1,DM-RS mapping production rows and lineage pass
+DL-R-F04-D,F04,DIAGNOSTIC,FiniteEffect,eq,1,DM-RS mapping comparative effect is finite
+DL-R-F05-H,F05,HARD,VerifiedProductionSource,eq,1,Applied precoder production rows and lineage pass
+DL-R-F05-D,F05,DIAGNOSTIC,FiniteEffect,eq,1,Applied precoder comparative effect is finite
+DL-R-F06-H,F06,HARD,VerifiedProductionSource,eq,1,Resource accounting production rows and lineage pass
+DL-R-F06-D,F06,DIAGNOSTIC,FiniteEffect,eq,1,Resource accounting comparative effect is finite
+DL-R-F07-H,F07,HARD,VerifiedProductionSource,eq,1,PT-RS receiver production rows and lineage pass
+DL-R-F07-D,F07,DIAGNOSTIC,FiniteEffect,eq,1,PT-RS receiver comparative effect is finite
+DL-R-F08-H,F08,HARD,VerifiedProductionSource,eq,1,Assignment authority production rows and lineage pass
+DL-R-F08-D,F08,DIAGNOSTIC,FiniteEffect,eq,1,Assignment authority comparative effect is finite
+DL-R-F09-H,F09,HARD,VerifiedProductionSource,eq,1,Modulation oracle production rows and lineage pass
+DL-R-F09-D,F09,DIAGNOSTIC,FiniteEffect,eq,1,Modulation comparative effect is finite
+DL-R-F10-H,F10,HARD,VerifiedProductionSource,eq,1,BWP and carrier binding production rows and lineage pass
+DL-R-F10-D,F10,DIAGNOSTIC,FiniteEffect,eq,1,BWP binding comparative effect is finite
+DL-R-F11-H,F11,HARD,VerifiedProductionSource,eq,1,High-rank layer mapping production rows and lineage pass
+DL-R-F11-D,F11,DIAGNOSTIC,FiniteEffect,eq,1,High-rank mapping comparative effect is finite
+DL-R-F12-H,F12,HARD,VerifiedProductionSource,eq,1,Independent oracle production rows and lineage pass
+DL-R-F12-D,F12,DIAGNOSTIC,FiniteEffect,eq,1,Independent-oracle comparative effect is finite

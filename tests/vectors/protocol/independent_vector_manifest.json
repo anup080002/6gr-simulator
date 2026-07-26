@@ -1,0 +1,142 @@
+{
+  "profile": "nr_rel18_connected_mode_bounded_strict",
+  "generator": "independent_python_pack_generator_v1",
+  "no_matlab_used": true,
+  "files": [
+    {
+      "path": "protocol_rlc_um_header_vectors.csv",
+      "sha256": "dbee56175eaa4b6ca968a8e7ce723845aff7cbe5bc1a168475bc39be2dc2290c",
+      "rows": 78
+    },
+    {
+      "path": "protocol_rlc_am_header_vectors.csv",
+      "sha256": "e35fc56fc5cb6d289f801a1552e579b6695b4e9cf2872fae2763e5f16785671f",
+      "rows": 164
+    },
+    {
+      "path": "protocol_rlc_status_vectors.csv",
+      "sha256": "bc00244932132822bc285a279bb3739e1531e970c7fd64af200c62e6e5247abf",
+      "rows": 26
+    },
+    {
+      "path": "protocol_rlc_timer_state_vectors.csv",
+      "sha256": "63e1aae504bdceb59c62337fde3a32fff7d35282142d646d13c5c7046149e25f",
+      "rows": 23
+    },
+    {
+      "path": "protocol_pdcp_header_vectors.csv",
+      "sha256": "6c6127bdd955119a14a68e25c60aa910ce04f6bfca8382020b07204c1eb3f120",
+      "rows": 15
+    },
+    {
+      "path": "protocol_pdcp_count_vectors.csv",
+      "sha256": "aafa4f5fc6db673395167e610957e2bb94374632ab88502a92e594a85bc9f1f2",
+      "rows": 40
+    },
+    {
+      "path": "protocol_pdcp_security_vectors.csv",
+      "sha256": "bded519495696fe2bfd20846ae0260bc5c6ad7b2567d1618f2c44ae0f7e047e5",
+      "rows": 64
+    },
+    {
+      "path": "protocol_pdcp_reordering_vectors.csv",
+      "sha256": "40a3821c0761de95a330ae472a21d7f2dbc099add5103e6e1b84f334446c3b22",
+      "rows": 10
+    },
+    {
+      "path": "protocol_sdap_header_vectors.csv",
+      "sha256": "ce3757ca75f69090eaa8ff061a2ffe508bad26ee916c4d16758c81b42be68d2e",
+      "rows": 387
+    },
+    {
+      "path": "protocol_sdap_mapping_vectors.csv",
+      "sha256": "3f215b5e996e2a5c3181c9ef9f7541872cb4facabd126c3026dbf32b7110e925",
+      "rows": 35
+    },
+    {
+      "path": "protocol_rrc_message_vectors.csv",
+      "sha256": "6cab9f40e1a73b86710bba6f6b604c3563d8757f4fff8d3b64ce08d7fa9afc06",
+      "rows": 55
+    },
+    {
+      "path": "protocol_rrc_state_transition_vectors.csv",
+      "sha256": "a21e8b75512cc9e2a779bd96704f64c9dc126cc6bf96f89c80f2b9ad5c386af1",
+      "rows": 17
+    },
+    {
+      "path": "protocol_radio_bearer_vectors.csv",
+      "sha256": "67a2a4f016a02f784f52fc1717eb8a1d30383ebe0171ac939be2e6abf1ac7278",
+      "rows": 18
+    },
+    {
+      "path": "protocol_handover_state_vectors.csv",
+      "sha256": "c5335e969605adfc1820f324cbab317437f8e65e6482e8962704fce942fa9d75",
+      "rows": 17
+    },
+    {
+      "path": "protocol_traffic_profile_matrix.csv",
+      "sha256": "5206ad8fbe3edb1248b5df4209e50474bd71cab75e5dc36ab2cc506819b8f551",
+      "rows": 8
+    },
+    {
+      "path": "protocol_traffic_arrival_vectors.csv",
+      "sha256": "f483271a49cb76ca6c9a6dd1678f4d6f51831043e9fc5a0ea76db2014c5a973e",
+      "rows": 320
+    },
+    {
+      "path": "protocol_lineage_vectors.csv",
+      "sha256": "d8f3f06f91af90c80ebe711cf389ea4f780926299a17bd5350a230637a53e74e",
+      "rows": 384
+    },
+    {
+      "path": "protocol_negative_test_vectors.csv",
+      "sha256": "5e46163e615c55d7a65e582eaf2d775156da1f03f08c50bd43600b54e7372ccd",
+      "rows": 105
+    },
+    {
+      "path": "protocol_capability_profile_matrix.csv",
+      "sha256": "d6882a68352ed1f1fe2ef03666d499c5788d710291708a522c328fc9a1bf8275",
+      "rows": 140
+    },
+    {
+      "path": "protocol_declared_coverage_matrix.csv",
+      "sha256": "42525d3a6b1c0d2f4434533fa4c416619060485538d0d68622a6ccc0a8e1a84f",
+      "rows": 140
+    },
+    {
+      "path": "protocol_impact_analysis_families.csv",
+      "sha256": "2288a971daea23fb4415bae8ae40a737e7a1d61f46ee252dc3914509df979210",
+      "rows": 64
+    },
+    {
+      "path": "protocol_impact_experiment_matrix.csv",
+      "sha256": "acccbafc8e16f25e901fd0c6d4543e26b10651101e6babd58e631275be1789c9",
+      "rows": 768
+    },
+    {
+      "path": "protocol_impact_pairing_contract.csv",
+      "sha256": "f4ff7528b4379953395bc07e0035d7a1527af8b8c00df2b0c0eae19d0304e208",
+      "rows": 64
+    },
+    {
+      "path": "protocol_impact_acceptance_rules.csv",
+      "sha256": "80c7928faab54fbc17df076b7710d5431e840c4242aa06fc5c3d2411359ca7d0",
+      "rows": 96
+    },
+    {
+      "path": "protocol_impact_dependency_waves.csv",
+      "sha256": "0261dfec824db73428d4f0deab8b0c0d1fc8fb53419651930ee8314d6521f373",
+      "rows": 64
+    },
+    {
+      "path": "protocol_impact_implementability_summary.csv",
+      "sha256": "fdc12bb859222350041dac57c3912c7019ed092fbf204f93766942566a1163d1",
+      "rows": 3
+    },
+    {
+      "path": "expected_protocol_impact_analytical_floor.csv",
+      "sha256": "181356b91ded86219fb0da0bdba9642072b2ad3e8f0f62969612fa4332507322",
+      "rows": 64
+    }
+  ]
+}

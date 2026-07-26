@@ -92,6 +92,7 @@ cfg.antenna.ue.numElements = 4;
 cfg.scenario.ue.nTxAnt = 4;
 cfg.phy.pusch.NumAntennaPorts = 2;
 cfg.phy.pusch.numPorts = 2;
+cfg.phy.pusch.transformPrecoding = false;
 cfg.rf.ue.hybridBeamformingEnabled = true;
 cfg.rf.ue.numRFChains = 2;
 

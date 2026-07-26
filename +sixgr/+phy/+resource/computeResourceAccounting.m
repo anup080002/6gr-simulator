@@ -98,11 +98,6 @@ if layerDataRE ~= fix(layerDataRE)
         "%s exact resource accounting requires an integer layer-domain data RE count.", ...
         char(channel));
 end
-if ~isempty(opt.ChannelIndices) && size(opt.ChannelIndices, 1) ~= layerDataRE
-    error("sixgr:phy:resource:LayerDataREIndexMismatch", ...
-        "%s index rows (%d) disagree with the reported layer-domain data RE count (%d).", ...
-        char(channel), size(opt.ChannelIndices, 1), layerDataRE);
-end
 if ~(isfinite(nrePerPRB) && nrePerPRB >= 0 && nrePerPRB == fix(nrePerPRB))
     error("sixgr:phy:resource:MissingNREPerPRB", ...
         "%s resource accounting could not resolve an integer NREPerPRB from nr%sIndices evidence.", ...
@@ -136,6 +131,24 @@ end
 ptrsIdx = opt.PTRSIndices;
 if isempty(ptrsIdx) && localCanComputeReferenceIndices(cfgObj) && localPTRSEnabled(cfgObj)
     ptrsIdx = localReferenceIndices(channel, "PTRS", carrier, cfgObj, opt.IndexBase);
+end
+puncturedPTRSRows = 0;
+if ~isempty(opt.ChannelIndices) && size(opt.ChannelIndices, 1) ~= layerDataRE
+    indexRows = double(size(opt.ChannelIndices, 1));
+    candidateGap = indexRows - double(layerDataRE);
+    transformPrecodedPTRS = channel == "PUSCH" && ...
+        logical(localObjectValue(cfgObj, "TransformPrecoding", false)) && ...
+        localPTRSEnabled(cfgObj) && candidateGap > 0 && ...
+        candidateGap == double(size(ptrsIdx, 1));
+    if ~transformPrecodedPTRS
+        error("sixgr:phy:resource:LayerDataREIndexMismatch", ...
+            "%s index rows (%d) disagree with the reported layer-domain data RE count (%d).", ...
+            char(channel), size(opt.ChannelIndices, 1), layerDataRE);
+    end
+    % For transform-precoded PUSCH, nrPUSCHIndices retains the PT-RS
+    % puncture locations in its port-domain map while Gd excludes them
+    % from the layer-domain coded-data count.  Keep both exact domains.
+    puncturedPTRSRows = candidateGap;
 end
 reservedIdx = opt.ReservedIndices;
 if isempty(reservedIdx) && channel == "PDSCH" && localCanComputeReferenceIndices(cfgObj)
@@ -187,6 +200,7 @@ acct.PTRSRE = double(numel(unique(ptrsBase)));
 acct.ReservedRE = double(numel(unique(reservedBase)));
 acct.DMRSLinearRE = double(numel(dmrsLin));
 acct.PTRSLinearRE = double(numel(ptrsLin));
+acct.TransformPrecodedPTRSPuncturedRows = double(puncturedPTRSRows);
 acct.ReservedLinearRE = double(numel(reservedLin));
 acct.NREPerPRBForTBS = double(nrePerPRB);
 acct.GFromLayerREPerCodeword = expectedGPerCodeword;
@@ -394,7 +408,8 @@ try
     elseif channel == "PUSCH" && refType == "DMRS"
         idx = nrPUSCHDMRSIndices(carrier, cfgObj, "IndexBase", indexBase);
     elseif channel == "PUSCH" && refType == "PTRS"
-        idx = nrPUSCHPTRSIndices(carrier, cfgObj, "IndexBase", indexBase);
+        idx = sixgr.phy.resource.puschPTRSGridIndices( ...
+            carrier, cfgObj, "IndexBase", indexBase);
     end
 catch ME
     if refType == "PTRS" && ~localPTRSEnabled(cfgObj)

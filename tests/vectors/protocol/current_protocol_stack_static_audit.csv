@@ -1,0 +1,55 @@
+CheckID,Kind,FindingID,Status,File,EvidencePattern,Evidence,RequiredFix,Description
+D001,TARGET_DEFECT,PROTO-001,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,NOT a full TS 38\.322 bit-exact,line 12: NOT a full TS 38.322 bit-exact,Replace custom PDU/state with exact Release-18 engine.,RLC AM self-declared non-bit-exact
+D002,TARGET_DEFECT,PROTO-001,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,12 supported; 18 not yet,line 24: 12 supported; 18 not yet,Implement 12/18-bit AM.,AM 18-bit SN absent
+D003,TARGET_DEFECT,PROTO-001,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,Data PDU header \(simplified,line 30: Data PDU header (simplified,"Implement exact D/C,P,SI,SN,SO formats.",Custom AMD header
+D004,TARGET_DEFECT,PROTO-002,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,STATUS PDU \(simplified,line 35: STATUS PDU (simplified,"Implement E1/E2/E3, SO and NACK range.",Simplified STATUS
+D005,TARGET_DEFECT,PROTO-002,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,PollEveryNPDU,line 27: pollEveryNPDU,Implement pollPDU/pollByte/t-PollRetransmit.,Heuristic poll counter
+D006,TARGET_DEFECT,PROTO-002,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,best-effort,line 447: best-effort,Implement exact timer/state ownership.,Best-effort STATUS handling
+D007,TARGET_DEFECT,PROTO-003,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_UM.m,abstract but coherent,line 5: abstract but coherent,Implement exact UMD and state variables.,UM is abstract
+D008,TARGET_DEFECT,PROTO-003,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_UM.m,reorderingTimer_slots,line 31: reorderingTimer_slots,Install RRC timer in absolute protocol time.,Slot-count timer proxy
+D009,TARGET_DEFECT,PROTO-004,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_TM.m,classdef RLC_TM,line 1: classdef RLC_TM,Integrate entity factory and lifecycle.,TM exists without shared bearer lifecycle
+D010,TARGET_DEFECT,PROTO-005,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,"simplified, message-flow correct","line 3: simplified, message-flow correct",Implement exact 38.323 procedures.,PDCP self-declared simplified
+D011,TARGET_DEFECT,PROTO-005,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,PDCP Data PDU format \(simplified,line 12: PDCP Data PDU format (simplified,Implement exact SRB/DRB 12/18 formats.,Custom PDCP header
+D012,TARGET_DEFECT,PROTO-005,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,RxSeen,line 93: RxSeen,Implement COUNT/window/t-Reordering duplicate rules.,Permanent seen bitmap proxy
+D013,TARGET_DEFECT,PROTO-006,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,SHA-256,line 531: SHA-256,Implement NIA2 and exact inputs.,Simulation integrity primitive
+D014,TARGET_DEFECT,PROTO-006,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,xor|bitxor,line 29: XOR,Implement NEA2 and exact inputs.,Simulation cipher primitive
+D015,TARGET_DEFECT,PROTO-007,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,0xF0|240 marks this simulator ROHC,line 194: 0xF0,Remove from strict profile.,Custom ROHC marker
+D016,TARGET_DEFECT,PROTO-007,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,ROHCContextHeader,line 99: ROHCContextHeader,Keep ROHC unsupported or implement exact profile.,Single remembered-header proxy
+D017,TARGET_DEFECT,PROTO-008,DEFECT_DETECTED,+sixgr/+l2/+sdap/SDAP.m,simplified but coherent,line 3: simplified but coherent,Implement exact 37.324 PDU/state.,SDAP self-declared simplified
+D018,TARGET_DEFECT,PROTO-008,DEFECT_DETECTED,+sixgr/+l2/+sdap/SDAP.m,DefaultLCID,line 37: DefaultLCID,Fail missing QFI or use exact default-DRB state.,Missing mapping falls back
+D019,TARGET_DEFECT,PROTO-008,DEFECT_DETECTED,+sixgr/+l2/+sdap/SDAP.m,"max\(0,min\(63|mod\(",line 76: mod(,Reject out-of-range QFI.,QFI may be clamped/wrapped
+D020,TARGET_DEFECT,PROTO-009,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,UTF-8 JSON,line 15: UTF-8 JSON,Implement ASN.1 UPER.,RRC uses JSON
+D021,TARGET_DEFECT,PROTO-009,DEFECT_DETECTED,+sixgr/+l3/+rrc/SystemInformation.m,jsonencode,line 215: jsonencode,Use ASN.1 codecs only.,System information JSON framing
+D022,TARGET_DEFECT,PROTO-009,DEFECT_DETECTED,+sixgr/+rrc/+asn1/encodeSIB1UPER.m,anchor profile,line 21: anchor profile,Replace with actual 38.331 ASN.1 module.,Custom SIB1 anchor
+D023,TARGET_DEFECT,PROTO-009,DEFECT_DETECTED,+sixgr/+rrc/+asn1/encodeSIB1UPER.m,localAppendUInt,line 19: localAppendUInt,Use schema-derived UPER.,Hand-coded fixed bit layout
+D024,TARGET_DEFECT,PROTO-010,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,"State == \""CONNECTED\""|State = 'CONNECTED'","line 39: State == ""CONNECTED""",Implement RRC_IDLE/INACTIVE/CONNECTED.,Reduced state model
+D025,TARGET_DEFECT,PROTO-010,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,Handover hooks \(stubs,line 337: Handover hooks (stubs,Implement procedure state machine.,Handover stub
+D026,TARGET_DEFECT,PROTO-010,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,Placeholder hook,line 357: Placeholder hook,Implement decoded report ownership.,Measurement report placeholder
+D027,TARGET_DEFECT,PROTO-010,DEFECT_DETECTED,+sixgr/+l3/+rrc/AttachProcedure.m,callable to progress timers if you add them later,line 154: callable to progress timers if you add them later,Implement T300 and procedure timers.,Attach timers incomplete
+D028,TARGET_DEFECT,PROTO-010,DEFECT_DETECTED,+sixgr/+l3/+rrc/AttachProcedure.m,abstract,line 8: abstract,Bind exact messages/events.,Abstract RAR/attach state
+D029,TARGET_DEFECT,PROTO-011,DEFECT_DETECTED,+sixgr/+l3/+rrc/AttachProcedure.m,srb1\s*=\s*struct,line 215: srb1 = struct,Implement RadioBearerConfig.,Tiny SRB1 configuration
+D030,TARGET_DEFECT,PROTO-011,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,encodeMessage,line 309: encodeMessage,Use typed ASN.1 message registry.,Local message codec
+D031,TARGET_DEFECT,PROTO-012,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,requestHandover,line 339: requestHandover,Implement source/target contexts and sync.,Local handover command generator
+D032,TARGET_DEFECT,PROTO-012,DEFECT_DETECTED,+sixgr/+l3/+rrc/RRC.m,checkMeasurementEventA3,line 367: checkMeasurementEventA3,Use filtered MeasConfig/event state.,Local A3 counter
+D033,TARGET_DEFECT,PROTO-013,DEFECT_DETECTED,+sixgr/+l3/+rrc/AttachProcedure.m,dedicatedNAS,line 349: dedicatedNAS,Create typed external NAS boundary.,Synthetic NAS embedded in SetupComplete
+D034,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/TrafficFactory.m,Simple congestion-window-like shaping,line 456: Simple congestion-window-like shaping,Keep study-only or implement packet transport.,TCP proxy
+D035,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/TrafficFactory.m,ftp3_like_udp_offered_load_approximation,line 568: ftp3_like_udp_offered_load_approximation,Replace with explicit session/packet model.,FTP proxy
+D036,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/TrafficFactory.m,rand\(,line 430: rand(,Use named streams per flow.,Global RNG in traffic factory
+D037,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/Traffic_XR.m,rand\(|randn\(,line 13: rand(,Use named streams and packet/PDU-set events.,Global RNG in XR
+D038,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/Traffic_GenAI.m,rand\(|randn\(,line 9: rand(,Use named streams and sessions.,Global RNG in GenAI traffic
+D039,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/Traffic_mMTC.m,rand\(|randn\(,line 26: rand(,Use named streams and packet events.,Global RNG in mMTC
+D040,TARGET_DEFECT,PROTO-014,DEFECT_DETECTED,+sixgr/+system/TrafficFactory.m,bitsPerTTI|nTTI,line 18: nTTI,Create immutable packet arrivals.,Offered bits per TTI core
+D041,TARGET_DEFECT,PROTO-015,DEFECT_DETECTED,+sixgr/+l2/+rlc/RLC_AM.m,DropCause,line 266: DropCause,Add shared lineage IDs.,Local traces without full lineage
+D042,TARGET_DEFECT,PROTO-015,DEFECT_DETECTED,+sixgr/+l2/+pdcp/PDCP.m,TxNextSN,line 87: TxNextSN,Add packet/SDU/PDU IDs.,PDCP state not linked to packet lineage
+D043,TARGET_DEFECT,PROTO-015,DEFECT_DETECTED,+sixgr/+l2/+sdap/SDAP.m,lcid = obj.DefaultLCID,line 112: lcid = obj.DefaultLCID,Use RRC mapping epoch and exact decision.,Implicit routing changes lineage
+D044,TARGET_DEFECT,PROTO-015,DEFECT_DETECTED,+sixgr/+l3/+rrc/AttachProcedure.m,obj.State = \'CONNECTED\',line 227: obj.State = 'CONNECTED',Require peer-confirmed decoded event.,State can be set locally
+F001,USEFUL_FOUNDATION,PROTO-001,FOUND,+sixgr/+l2/+rlc/RLC_AM.m,segment coverage tracking,line 8: segment coverage tracking,Preserve while replacing header/state.,AM segment coverage foundation
+F002,USEFUL_FOUNDATION,PROTO-003,FOUND,+sixgr/+l2/+rlc/RLC_UM.m,SNBits.*6 or 12,line 28: snBits           (6 or 12,Preserve exact valid profile.,UM 6/12-bit configuration exists
+F003,USEFUL_FOUNDATION,PROTO-005,FOUND,+sixgr/+l2/+pdcp/PDCP.m,SNBits.*12 or 18,"line 63: SNBits (1,1) double = 12          % 12 or 18",Integrate COUNT/HFN.,PDCP 12/18 selection exists
+F004,USEFUL_FOUNDATION,PROTO-006,FOUND,+sixgr/+l2/+pdcp/PDCP.m,validateSecurityConfig,line 179: validateSecurityConfig,Replace algorithms and inputs.,Security validation hook exists
+F005,USEFUL_FOUNDATION,PROTO-008,FOUND,+sixgr/+l2/+sdap/SDAP.m,QFI,line 5: QFI,Replace header/mapping state.,QFI mapping integration point exists
+F006,USEFUL_FOUNDATION,PROTO-010,FOUND,+sixgr/+l3/+rrc/AttachProcedure.m,RRCSetupComplete,line 12: RRCSetupComplete,Replace synthetic message with ASN.1.,SetupComplete state hook exists
+F007,USEFUL_FOUNDATION,PROTO-012,FOUND,+sixgr/+l3/+rrc/RRC.m,MeasurementReport,line 356: MeasurementReport,Connect filtered measurement state.,Measurement report hook exists
+F008,USEFUL_FOUNDATION,PROTO-014,FOUND,+sixgr/+system/TrafficFactory.m,traceReplay,line 6: traceReplay,Preserve with immutable packet identities.,Trace replay exists
+F009,USEFUL_FOUNDATION,PROTO-014,FOUND,+sixgr/+system/TrafficFactory.m,5QI|QFI,line 9: 5QI,Connect PDU sessions/SDAP.,QoS fields exist
+F010,USEFUL_FOUNDATION,PROTO-015,FOUND,+sixgr/+system/TrafficFactory.m,flowTable,line 15: FlowTable,Promote to immutable session/flow state.,Flow table exists

@@ -1,0 +1,13 @@
+RunID,FamilyID,WorkItem,Title,ExperimentsRequired,ExperimentsCompleted,HardRules,HardRulesPassed,DiagnosticRules,PrimaryMetric,BaselineValue,TreatmentValue,AbsoluteEffect,TechnicalConclusion,Status
+frame_grid_impact_20260726T132620Z,F01,1,Numerology and cyclic prefix,3,3,1,1,1,ResolvedSlotsPerFrame,10,40,30,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F02,2,Frequency range and transmission bandwidth,3,3,1,1,1,ResolvedNRB,11,92,81,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F03,3,Validated OFDM sampling policy,3,3,1,1,1,Nfft,256,2048,1792,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F04,4,TDD common symbol ownership,3,3,1,1,1,ResolvedDirection,0,0.32857,0.32857,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F05,5,TDD dedicated and flexible symbols,3,3,1,1,1,ResolutionSource,0,0.057143,0.057143,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F06,6,Explicit FDD carrier contexts,3,3,1,1,1,NumRB,1,1,0,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F07,7,Separated control and data allocation,3,3,1,1,1,ActualValid,0,1,1,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F08,8,Exact SSB timing,3,3,1,1,1,StartSymbol,2,212,210,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F09,9,Exact PRACH occasions,3,3,1,1,1,AbsoluteSlot,0,9,9,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F10,10,Zero implicit OFDM windowing,3,3,1,1,1,EVMPercent,1.7497e-14,2.22e-14,4.703e-15,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F11,11,Canonical multi-BWP operation,3,3,1,1,1,AbsSlot,0,2,2,verified production component rows compared; waveform truth not claimed,PASS
+frame_grid_impact_20260726T132620Z,F12,12,Component carrier and absolute timing,3,3,1,1,1,NumRB,24,24,0,verified production component rows compared; waveform truth not claimed,PASS

@@ -1,0 +1,4 @@
+DependencyWave,Families,Experiments,Description
+A,42,504,Direct protocol implementation
+B,18,216,Requires internal cross-layer or mobility integration
+C,4,48,Requires adjacent complete system/NAS/access dependency

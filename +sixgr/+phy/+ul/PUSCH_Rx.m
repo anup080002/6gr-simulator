@@ -1150,7 +1150,8 @@ if ~enabled
     return;
 end
 try
-    ptrsInd = nrPUSCHPTRSIndices(carrier, pusch, "IndexStyle", "index");
+    ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
+        carrier, pusch, "IndexBase", "1based");
     ptrsSym = nrPUSCHPTRS(carrier, pusch);
     info.Available = ~isempty(ptrsInd) && ~isempty(ptrsSym);
     info.Source = "nrPUSCHPTRS_runtime_symbols";
