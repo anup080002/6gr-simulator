@@ -72,22 +72,32 @@ if ~(isfinite(inputTotal_mW) && inputTotal_mW > 0)
     info.PAExecutionStatus = "configured_but_input_power_unavailable";
     return;
 end
-pa = sixgr.rf.PAModel(cfg);
-paModel = string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"));
 normScale = sqrt(max(double(inputTotal_mW), realmin));
-yn = pa.apply(x ./ cast(normScale, "like", x));
+[runtimeProfile,canonical] = sixgr.rf.runtime.PAProfile.fromConfiguration(cfg);
+if canonical
+    [yn,paEvidence] = sixgr.rf.runtime.PAProfile.apply( ...
+        x ./ cast(normScale, "like", x),runtimeProfile);
+    paModel = string(paEvidence.Model);
+else
+    pa = sixgr.rf.PAModel(cfg);
+    paModel = string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"));
+    yn = pa.apply(x ./ cast(normScale, "like", x));
+end
 [normOutTotal, ~] = localTotalActivePower_mW(yn, txInfo);
 if ~(isfinite(normOutTotal) && normOutTotal > 0)
     info.PAExecutionStatus = "configured_but_output_power_unavailable";
     return;
 end
-restoreScale = sqrt(max(double(inputTotal_mW), realmin) ./ max(double(normOutTotal), realmin));
-y = yn .* cast(restoreScale, "like", x);
+% Preserve the PA's physical AM/AM power change. Restoring the output to the
+% input power would erase compression and would make ACLR/EVM/power evidence
+% internally inconsistent.
+y = yn .* cast(normScale, "like", x);
 [outputTotal_mW, ~] = localTotalActivePower_mW(y, txInfo);
 info.PAApplied = true;
-info.PAModel = string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"));
+info.PAModel = paModel;
 info.PAOutputTotalPower_mW = double(outputTotal_mW);
 info.PACompression_dB = 10 * log10(max(double(outputTotal_mW), realmin) ./ max(double(inputTotal_mW), realmin));
+info.PAPowerRestorationApplied = false;
 info.PAExecutionStatus = localPAExecutionStatus(paModel);
 if isfield(ctx, "WaveformAmplitudeUnit")
     info.PAAmplitudeUnit = string(ctx.WaveformAmplitudeUnit);

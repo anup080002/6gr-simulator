@@ -242,6 +242,7 @@ sections:
         type: string
         allowed_values: [nrPathLoss, freeSpace, none]
       shadow_fading_std_db: {required: true, type: number, min: 0}
+      phase10_strict: {required: false, type: struct}
   reference_signals:
     required: true
     parameters:
@@ -726,6 +727,7 @@ sections:
       ptrs_time_density: {required: false, type: integer, min: 1}
       ptrs_frequency_density: {required: false, type: integer, min: 1}
       ptrs_re_offset: {required: false, type: string}
+      ptrs_port_set: {required: false, type: number_list}
       queue_bits: {required: false, type: integer, min: 1}
       study_snr_db: {required: false, type: number_list}
       study_fdra_types: {required: false, type: string_list}

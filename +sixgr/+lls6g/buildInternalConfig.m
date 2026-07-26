@@ -345,12 +345,49 @@ cfg = sixgr.util.structSet(cfg, "channel.pathlossEnabled", logical(s.channels.pa
 cfg = sixgr.util.structSet(cfg, "channel.shadowFadingEnabled", logical(s.channels.shadow_fading_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.spatialConsistencyEnabled", logical(s.channels.spatial_consistency_enabled));
 cfg = sixgr.util.structSet(cfg, "channel.losEnabled", logical(s.channels.los_enabled));
+phase10 = localGetNested(s, "channels.phase10_strict", ...
+    localGetNested(s, "channel.phase10_strict", struct()));
+cfg = sixgr.util.structSet(cfg, "channel.phase10Strict", phase10);
+if isstruct(phase10) && ~isempty(fieldnames(phase10))
+    phase10Enabled = logical(localGetNested(phase10, "enabled", false));
+    cfg = sixgr.util.structSet(cfg, "channel.phase10Strict.enabled", phase10Enabled);
+    cfg = localStructSetIfPresent(cfg, "channel.pathloss.streetWidth_m", ...
+        localGetNested(phase10, "pathloss.street_width_m", []));
+    cfg = localStructSetIfPresent(cfg, "channel.pathloss.buildingHeight_m", ...
+        localGetNested(phase10, "pathloss.building_height_m", []));
+    cfg = localStructSetIfPresent(cfg, "channel.oxygenAbsorptionEnabled", ...
+        localGetNested(phase10, "oxygen_absorption.enabled", []));
+    cfg = localStructSetIfPresent(cfg, "scenario.mobility.seed", ...
+        localGetNested(phase10, "ue_drop.seed", []));
+    if phase10Enabled
+        localValidatePhase10Surface(phase10);
+        cfg.channel.complianceMode = "strict_38901";
+        cfg.channel.pathloss.model = char(string( ...
+            localGetNested(phase10, "pathloss.model", s.channels.pathloss_model)));
+        cfg.channel.pathlossModel = cfg.channel.pathloss.model;
+        cfg.channel.propagationScenario = char(string( ...
+            localGetNested(phase10, "propagation_scenario", propagationScenario)));
+    end
+end
 o2iModel = localResolveO2IModel(localGetNested(s, "channels.o2i_model", ...
     localGetNested(s, "channels.o2i_loss_model", "none")));
 cfg = sixgr.util.structSet(cfg, "channel.o2i.model", o2iModel);
 cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", ...
     ~any(lower(strtrim(string(o2iModel))) == ["", "none", "disabled", "off"]));
 cfg = localStructSetIfPresent(cfg, "channel.o2i.custom_dB", localGetNested(s, "channels.o2i_loss_db", []));
+if isstruct(phase10) && ~isempty(fieldnames(phase10)) && ...
+        logical(localGetNested(phase10, "enabled", false))
+    phase10O2I = char(string(localGetNested(phase10, "o2i.profile", o2iModel)));
+    cfg = sixgr.util.structSet(cfg, "channel.o2i.model", phase10O2I);
+    cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", ...
+        logical(localGetNested(phase10, "o2i.enabled", false)));
+    cfg = localStructSetIfPresent(cfg, "channel.o2i.indoorDistance_m", ...
+        localGetNested(phase10, "o2i.indoor_distance_m", []));
+    cfg = localStructSetIfPresent(cfg, "channel.o2i.randomComponentEnabled", ...
+        localGetNested(phase10, "o2i.random_component_enabled", []));
+    cfg = localStructSetIfPresent(cfg, "channel.o2i.seed", ...
+        localGetNested(phase10, "o2i.seed", []));
+end
 interferenceModelToken = lower(strtrim(string(localGetNested(s, "air_interface.interference_model", "none"))));
 cfg = sixgr.util.structSet(cfg, "channel_rf.interferenceEnabled", ...
     ~any(interferenceModelToken == ["", "none", "disabled", "off"]));
@@ -715,6 +752,7 @@ cfg.pdsch6gr.DMRSPortSet = double(localGetNested(s, "pdsch6gr.dmrs_port_set", 0)
 cfg.pdsch6gr.PTRSTimeDensity = double(localGetNested(s, "pdsch6gr.ptrs_time_density", 2));
 cfg.pdsch6gr.PTRSFrequencyDensity = double(localGetNested(s, "pdsch6gr.ptrs_frequency_density", 2));
 cfg.pdsch6gr.PTRSREOffset = char(string(localGetNested(s, "pdsch6gr.ptrs_re_offset", "00")));
+cfg.pdsch6gr.PTRSPortSet = double(localGetNested(s, "pdsch6gr.ptrs_port_set", []));
 cfg.pdsch6gr.QueueBits = double(localGetNested(s, "pdsch6gr.queue_bits", 1000000));
 cfg.pdsch6gr.Seed = double(localGetNested(s, "pdsch6gr.seed", cfg.run.seed));
 cfg.pdsch6gr.OutputDir = char(string(runFolder));
@@ -1622,6 +1660,31 @@ if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
         cfg = sixgr.util.structSet(cfg,"phy.pucch.resources",resources);
         cfg = sixgr.util.structSet(cfg,"phy.pucch.dlDataToULACK", ...
             localGetNested(s,"pucch_resources.dl_data_to_ul_ack",[]));
+        harqACKResourceID = double(localGetNested(s, ...
+            "pucch_resources.harq_ack.resource_id", NaN));
+        if ~(isscalar(harqACKResourceID) && isfinite(harqACKResourceID) && ...
+                harqACKResourceID >= 0 && harqACKResourceID == fix(harqACKResourceID))
+            error("sixgr:lls6g:config:MissingPUCCHHARQACKResource", ...
+                "Enabled connected PUCCH requires pucch_resources.harq_ack.resource_id.");
+        end
+        resourceIDs = double([resources.id]);
+        resourceIndex = find(resourceIDs == harqACKResourceID, 1);
+        if isempty(resourceIndex) || ...
+                ~isfield(resources(resourceIndex), "starting_symbol") || ...
+                ~isfield(resources(resourceIndex), "nrof_symbols")
+            error("sixgr:lls6g:config:InvalidPUCCHHARQACKResource", ...
+                "PUCCH HARQ-ACK resource %d must identify a configured resource with explicit symbol allocation.", ...
+                harqACKResourceID);
+        end
+        harqACKSymbolAllocation = double([ ...
+            resources(resourceIndex).starting_symbol, ...
+            resources(resourceIndex).nrof_symbols]);
+        cfg = sixgr.util.structSet(cfg, "phy.pucch.harqACKResourceID", ...
+            harqACKResourceID);
+        cfg = sixgr.util.structSet(cfg, "phy.pucch.symbolAllocation", ...
+            harqACKSymbolAllocation);
+        cfg = sixgr.util.structSet(cfg, "phy.pucch.SymbolAllocation", ...
+            harqACKSymbolAllocation);
         cfg = sixgr.util.structSet(cfg,"phy.pucch.assignmentMode", ...
             "rrc_procedure_state");
     end
@@ -2394,8 +2457,12 @@ rfPairs = {
     "dac_resolution_bits", "dac.resolutionBits"
     "adc_dynamic_range_db", "adc.dynamicRange_dB"
     "adc_full_scale_power_dBm", "adc.fullScalePower_dBm"
+    "adc_full_scale", "adc.fullScale"
     "agc_enable", "agc.enabled"
     "agc_target_level_dBm", "agc.targetLevel_dBm"
+    "agc_target_rms", "agc.targetRms"
+    "agc_max_gain_db", "agc.maxGain_dB"
+    "agc_min_gain_db", "agc.minGain_dB"
     "agc_attack_time_us", "agc.attackTime_us"
     "agc_release_time_us", "agc.releaseTime_us"
     "dc_offset_enable", "dcOffset.enabled"
@@ -2408,6 +2475,72 @@ rfPairs = {
     };
 for i = 1:size(rfPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, "rf_hardware." + rfPairs{i,1}, "rf.hardware." + rfPairs{i,2});
+end
+
+rfFrontend = localGetNested(s, "rf_frontend", struct());
+if isstruct(rfFrontend) && ~isempty(fieldnames(rfFrontend))
+    cfg = sixgr.util.structSet(cfg, "rf.frontend", rfFrontend);
+    cfg = localCopyRuntimeField(cfg, s, "rf_frontend.enabled", "rf.enable");
+    cfg = localCopyRuntimeField(cfg, s, "rf_frontend.profile_id", ...
+        "rf.specification.profile_id");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.specification_version", ...
+        "rf.specification.version");
+    cfg = localCopyRuntimeField(cfg, s, "rf_frontend.claim_class", ...
+        "rf.specification.claim_class");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.configuration_epoch", "rf.configurationEpoch");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.reference_plane.impedance_ohm", ...
+        "rf.referencePlane.impedance_Ohm");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.agc.enabled", "rf.rx.agc.enable");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.agc.target_rms", "rf.rx.agc.targetRms");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.agc.max_gain_db", "rf.rx.agc.maxGain_dB");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.agc.min_gain_db", "rf.rx.agc.minGain_dB");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.adc.enabled", "rf.adc.enable");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.adc.bits", "rf.adcBits");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.receiver.adc.full_scale", "rf.adc.fullScale");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.dac.bits", "rf.dacBits");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.pa.enabled", "rf.pa.enable");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.pa.model", "rf.pa.method");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.pa.input_backoff_db", "rf.pa.backoff_dB");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.phase_noise.enabled", "rf.phaseNoise.enable");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.phase_noise.mask_offsets_hz", ...
+        "rf.phaseNoise.maskOffsets_Hz");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.phase_noise.mask_levels_dbchz", ...
+        "rf.phaseNoise.maskLevels_dBcHz");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.timing_and_sample_clock.sco_ppm", ...
+        "phy.impairments.sampleClockOffsetPpm");
+    cfg = localCopyRuntimeField(cfg, s, ...
+        "rf_frontend.ul_power_control.require_measured_reference_rs", ...
+        "phy.pusch.power_control.requireMeasuredReferenceRS");
+    profileId = string(localGetNested(rfFrontend, "profile_id", ""));
+    if strlength(strtrim(profileId)) > 0
+        profile = sixgr.rf.runtime.RFSpecificationProfile.resolve(profileId);
+        configuredClaim = upper(strtrim(string(localGetNested( ...
+            rfFrontend, "claim_class", profile.ClaimClass))));
+        if configuredClaim ~= upper(string(profile.ClaimClass))
+            error("RF:UnsupportedProfile", ...
+                "RF profile claim_class does not match the immutable profile.");
+        end
+        cfg = sixgr.util.structSet(cfg, ...
+            "rf.specification.resolvedProfile",profile);
+    end
 end
 
 tddPairs = {
@@ -4463,5 +4596,53 @@ end
 vals = string(raw(:));
 if ~isempty(vals)
     value = vals(1);
+end
+end
+
+function localValidatePhase10Surface(section)
+required = [ ...
+    "profile_id"
+    "specification"
+    "propagation_scenario"
+    "coordinate_frame"
+    "pathloss.model"
+    "pathloss.street_width_m"
+    "pathloss.building_height_m"
+    "los.state_process"
+    "o2i.enabled"
+    "oxygen_absorption.enabled"
+    "topology.model"
+    "ue_drop.profile"
+    "ue_drop.seed"
+    "channel_update.cadence"
+    "channel_update.period_s"
+    "interference.execution"
+    "interference.sample_rate_hz"
+    "absolute_power.reference_point"
+    "absolute_power.implementation_loss_db"
+    "raytracing.enabled"
+    "raytracing.method"
+    "raytracing.max_reflections"
+    "raytracing.max_diffractions"];
+missing = strings(0,1);
+for index = 1:numel(required)
+    [value, found] = localTryGetNestedStrict(section, required(index));
+    if ~found || isempty(value)
+        missing(end+1,1) = required(index); %#ok<AGROW>
+    end
+end
+if ~isempty(missing)
+    error("CHANNEL:UnsupportedProfile", ...
+        "Enabled channel.phase10_strict is missing: %s.", ...
+        strjoin(cellstr(missing), ", "));
+end
+if string(localGetNested(section, "specification", "")) ~= "TR38.901-V19.2.0"
+    error("CHANNEL:UnsupportedProfile", ...
+        "Phase-10 strict mode requires specification TR38.901-V19.2.0.");
+end
+if lower(string(localGetNested(section, "coordinate_frame", ""))) ~= ...
+        "global_cartesian_enu"
+    error("CHANNEL:InvalidCoordinateFrame", ...
+        "Phase-10 strict geometry requires global_cartesian_enu.");
 end
 end

@@ -1173,8 +1173,9 @@ classdef (Abstract) SchedulerBase < handle
                 grantOut.Valid = false;
                 grantOut.GrantBlocker = char(timing.ReasonCode);
                 error("sixgr:SchedulerBase:TimingDecisionRejected", ...
-                    "Canonical production timing rejected the grant: %s", ...
-                    char(string(timing.ReasonCode)));
+                    "Canonical production timing rejected the grant: %s (%s)", ...
+                    char(string(timing.ReasonCode)), ...
+                    char(string(timing.Diagnostic)));
             end
         end
 
@@ -1864,32 +1865,22 @@ fields.mcs = double(mcs);
 fields.ndi = double(ndi);
 fields.rv = double(rv);
 fields.harq_process = double(harqId);
-fields.prb_start = double(rbStart);
-fields.num_prb = double(rbLen);
-fields.direction = char(direction);
-if direction == "DL"
-    fields.grant_type = "PDSCH";
-else
-    fields.grant_type = "PUSCH";
-end
 symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
 if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
     error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
         "Supported DCI fields require an explicit SymbolAllocation.");
 end
-fields.symbol_start = round(double(symAlloc(1)));
-fields.num_symbols = round(double(symAlloc(2)));
 
 switch fmt
     case "1_0"
         fields.vrb_to_prb_mapping = localClampDCIValue(sixgr.util.structGet(grant, "VRBToPRBMapping", 0), 1);
         fields.dai = double(dai);
-        fields.tpc = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
+        fields.tpc_command_for_pucch = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
         fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
         fields.pdsch_to_harq_feedback_timing = double(k1);
     case "0_0"
         fields.frequency_hopping = localClampDCIValue(sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
-        fields.tpc = localClampDCIValue(sixgr.util.structGet(grant, "TPCCommandForPUSCH", ...
+        fields.tpc_command_for_pusch = localClampDCIValue(sixgr.util.structGet(grant, "TPCCommandForPUSCH", ...
             sixgr.util.structGet(grant, "TPC", 1)), 2);
     case "1_1"
         fields.vrb_to_prb_mapping = localClampDCIValue(sixgr.util.structGet(grant, "VRBToPRBMapping", 0), 1);
@@ -1897,7 +1888,7 @@ switch fmt
         fields.rate_matching_indicator = localClampDCIValue(sixgr.util.structGet(grant, "RateMatchingIndicator", 0), 2);
         fields.zp_csirs_trigger = localClampDCIValue(sixgr.util.structGet(grant, "ZPCSIRSTrigger", 0), 2);
         fields.dai = double(dai);
-        fields.tpc = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
+        fields.tpc_command_for_pucch = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
         fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
         fields.pdsch_to_harq_feedback_timing = double(k1);
         fields.antenna_ports = localDLAntennaPortField(grant);
@@ -1915,10 +1906,12 @@ switch fmt
         fields.tpc_command_for_pusch = localClampDCIValue(sixgr.util.structGet(grant, "TPCCommandForPUSCH", 1), 2);
         fields.srs_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "SRSResourceIndicator", ...
             sixgr.util.structGet(grant, "SRSResourceID", 0)), 4);
-        fields.precoding_information_and_number_of_layers_tpmi = localClampDCIValue(sixgr.util.structGet(grant, "TPMI", ...
-            sixgr.util.structGet(grant, "PMI", NaN)), 6);
-        fields.precoding_information_and_number_of_layers_rank_minus1 = max(0, ...
-            localClampDCIValue(sixgr.util.structGet(grant, "NumLayers", 1), 2) - 1);
+        tpmi = localClampDCIValue(sixgr.util.structGet(grant, "TPMI", ...
+            sixgr.util.structGet(grant, "PMI", 0)), 4);
+        rankMinusOne = max(0, localClampDCIValue( ...
+            sixgr.util.structGet(grant, "NumLayers", 1), 2) - 1);
+        fields.precoding_information_and_number_of_layers = ...
+            double(tpmi + 16 * rankMinusOne);
         fields.antenna_ports = localULAntennaPortField(grant);
         fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
         fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", 0), 2);

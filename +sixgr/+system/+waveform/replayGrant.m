@@ -1625,6 +1625,9 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
         end
     end
 end
+[y, state] = localApplyReplayImpairments(y, state);
+[y, nVar] = localAddAwgn(y, snr_dB);
+end
 
 function symbolAllocation = localReplaySymbolAllocation(grant)
 symbolAllocation = sixgr.util.structGet(grant, "SymbolAllocation", []);
@@ -1641,9 +1644,6 @@ if any(~isfinite(symbolAllocation)) || ...
         "Waveform replay SymbolAllocation must contain finite integer " + ...
         "[start,count] values with start >= 0 and count >= 1.");
 end
-end
-[y, state] = localApplyReplayImpairments(y, state);
-[y, nVar] = localAddAwgn(y, snr_dB);
 end
 
 function [y, state] = localApplyReplayImpairments(x, state)

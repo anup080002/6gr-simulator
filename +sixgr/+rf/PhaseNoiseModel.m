@@ -32,6 +32,10 @@ classdef PhaseNoiseModel < handle
 
     properties(Access=private)
         Obj
+        RuntimeProcess
+        RuntimeProfile struct = struct()
+        StateEpoch (1,1) double = 1
+        UseCanonicalRuntime (1,1) logical = false
     end
 
     methods
@@ -54,6 +58,9 @@ classdef PhaseNoiseModel < handle
                 obj.SampleRate_Hz = double(sixgr.util.structGet(cfg, "rf.sampleRate_Hz", 1e6));
             end
 
+            [obj.UseCanonicalRuntime,obj.RuntimeProfile,obj.StateEpoch] = ...
+                obj.localResolveCanonicalProfile(cfg);
+
             obj = obj.reset();
         end
 
@@ -69,6 +76,21 @@ classdef PhaseNoiseModel < handle
 
             if ~obj.Enable
                 obj.Obj = [];
+                obj.RuntimeProcess = [];
+                return;
+            end
+
+            if obj.UseCanonicalRuntime
+                obj.RuntimeProfile.SampleRate_Hz = obj.SampleRate_Hz;
+                obj.RuntimeProfile.Seed = obj.Seed;
+                obj.RuntimeProfile = sixgr.rf.runtime.PhaseNoiseProfile. ...
+                    validate(obj.RuntimeProfile);
+                obj.RuntimeProcess = [];
+                obj.UseCommObj = false;
+                obj.Obj = [];
+                obj.Backend = "sixgr_rf_runtime_phase_noise_process";
+                obj.TruthClassification = "runtime_calibrated_mask_model";
+                obj.ApproximationReason = "";
                 return;
             end
 
@@ -117,6 +139,16 @@ classdef PhaseNoiseModel < handle
                 obj = obj.reset(obj.Seed);
             end
 
+            if obj.UseCanonicalRuntime
+                if isempty(obj.RuntimeProcess) || ...
+                        numel(obj.RuntimeProcess.Phase_rad) ~= size(x,2)
+                    obj.RuntimeProcess = sixgr.rf.runtime.PhaseNoiseProcess( ...
+                        obj.RuntimeProfile,size(x,2),obj.StateEpoch);
+                end
+                [y,~] = obj.RuntimeProcess.apply(x,obj.StateEpoch);
+                return;
+            end
+
             if obj.UseCommObj && ~isempty(obj.Obj)
                 y = obj.Obj(x);
                 return;
@@ -140,8 +172,10 @@ classdef PhaseNoiseModel < handle
         end
 
         function [levels, offsets] = localResolvePhaseNoiseMask(obj, cfg)
-            levels = double(sixgr.util.structGet(cfg, "rf.phaseNoise.level_dBcHz", []));
-            offsets = double(sixgr.util.structGet(cfg, "rf.phaseNoise.freqOffsetHz", []));
+            levels = double(sixgr.util.structGet(cfg, "rf.phaseNoise.maskLevels_dBcHz", ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.level_dBcHz", [])));
+            offsets = double(sixgr.util.structGet(cfg, "rf.phaseNoise.maskOffsets_Hz", ...
+                sixgr.util.structGet(cfg, "rf.phaseNoise.freqOffsetHz", [])));
             if ~isempty(levels) && ~isempty(offsets) && numel(levels) == numel(offsets)
                 levels = levels(:).';
                 offsets = offsets(:).';
@@ -180,6 +214,40 @@ classdef PhaseNoiseModel < handle
                 sixgr.util.structGet(cfg, "channel.fc_Hz", ...
                 sixgr.util.structGet(cfg, "carrierFrequencyHz", 4e9))));
             [levels, offsets] = sixgr.rf.PhaseNoiseModel.defaultMaskFromCarrier(carrierHz);
+        end
+
+        function [canonical,profile,stateEpoch] = ...
+                localResolveCanonicalProfile(obj,cfg)
+            canonical = false;
+            profile = struct();
+            stateEpoch = double(sixgr.util.structGet(cfg, ...
+                "rf.configurationEpoch",1));
+            profileId = string(sixgr.util.structGet(cfg, ...
+                "rf.specification.profile_id",""));
+            if strlength(strtrim(profileId)) == 0 || ~obj.Enable
+                return;
+            end
+            sixgr.rf.runtime.RFSpecificationProfile.resolve(profileId);
+            raw = sixgr.util.structGet(cfg,"rf.frontend.phase_noise",struct());
+            if ~isstruct(raw) || isempty(fieldnames(raw))
+                error("RF:PhaseNoiseMaskMissing", ...
+                    "Canonical RF phase noise requires rf_frontend.phase_noise.");
+            end
+            profile = struct( ...
+                "ProfileID",string(sixgr.util.structGet(raw,"profile_id","")), ...
+                "Version",string(sixgr.util.structGet(raw,"version","")), ...
+                "SampleRate_Hz",obj.SampleRate_Hz, ...
+                "CarrierFrequency_Hz",double(sixgr.util.structGet(cfg, ...
+                "phy.fc_Hz",sixgr.util.structGet(cfg,"channel.fc_Hz",NaN))), ...
+                "MaskOffsets_Hz",double(sixgr.util.structGet( ...
+                raw,"mask_offsets_hz",[])), ...
+                "MaskLevels_dBcHz",double(sixgr.util.structGet( ...
+                raw,"mask_levels_dbchz",[])), ...
+                "LOCorrelation",double(sixgr.util.structGet( ...
+                raw,"lo_correlation",NaN)), ...
+                "Seed",double(sixgr.util.structGet(raw,"seed",NaN)));
+            profile = sixgr.rf.runtime.PhaseNoiseProfile.validate(profile);
+            canonical = true;
         end
 
         function value = localFirstFiniteScalar(~, varargin)

@@ -487,6 +487,7 @@ mappings = {
     "channel.shadow_fading_std_db", "channels.shadow_fading_std_db", "identity"
     "channel.mobility_kmph", "channels.mobility_kmph", "identity"
     "channel.inter_cell_execution_mode", "interference.inter_cell_execution_mode", "identity"
+    "channel.phase10_strict", "channels.phase10_strict", "identity"
     "mobility.ue_speed_kmh", "mobility.ue_speed_kmh", "identity"
     "mobility.ue_speed_kmh", "channels.mobility_kmph", "identity"
     "mobility.speed_profile", "mobility.speed_profile", "identity"

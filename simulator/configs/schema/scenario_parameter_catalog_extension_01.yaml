@@ -534,6 +534,7 @@
       "feedback_type": {"required": false, "type": "string"}
     }},
     "pucch_harq_ack_object": {"parameters": {
+      "resource_id": {"required": false, "type": "integer", "min": 0},
       "k1_slots": {"required": false, "type": "integer", "min": 0},
       "require_mac_harq_binding": {"required": false, "type": "boolean"},
       "require_waveform_decoded_uci": {"required": false, "type": "boolean"},

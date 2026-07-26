@@ -10,6 +10,7 @@ top_level_order:
   - equalization
   - synchronization
   - rf_hardware
+  - rf_frontend
   - tdd_timing
   - execution_scales
   - validation
@@ -232,8 +233,12 @@ sections:
       dac_resolution_bits: {required: false, type: integer, min: 1}
       adc_dynamic_range_db: {required: false, type: number, min: 0}
       adc_full_scale_power_dBm: {required: false, type: number}
+      adc_full_scale: {required: false, type: number, min: 0}
       agc_enable: {required: false, type: boolean}
       agc_target_level_dBm: {required: false, type: number}
+      agc_target_rms: {required: false, type: number, min: 0}
+      agc_max_gain_db: {required: false, type: number}
+      agc_min_gain_db: {required: false, type: number}
       agc_attack_time_us: {required: false, type: number, min: 0}
       agc_release_time_us: {required: false, type: number, min: 0}
       dc_offset_enable: {required: false, type: boolean}
@@ -243,6 +248,27 @@ sections:
       rx_gain_dB: {required: false, type: number}
       tx_gain_dB: {required: false, type: number}
       mutual_coupling_matrix_enable: {required: false, type: boolean}
+  rf_frontend:
+    required: false
+    parameters:
+      enabled: {required: false, type: boolean}
+      profile_id: {required: false, type: string}
+      specification_version: {required: false, type: string}
+      claim_class: {required: false, type: string}
+      configuration_epoch: {required: false, type: integer, min: 1}
+      reference_plane: {required: false, type: struct}
+      oscillator: {required: false, type: struct}
+      timing_and_sample_clock: {required: false, type: struct}
+      phase_noise: {required: false, type: struct}
+      iq_and_lo_leakage: {required: false, type: struct}
+      pa: {required: false, type: struct}
+      cfr: {required: false, type: struct}
+      dpd: {required: false, type: struct}
+      dac: {required: false, type: struct}
+      receiver: {required: false, type: struct}
+      blocker: {required: false, type: struct}
+      measurements: {required: false, type: struct}
+      ul_power_control: {required: false, type: struct}
   tdd_timing:
     required: false
     parameters:

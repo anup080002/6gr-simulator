@@ -56,15 +56,15 @@ classdef RayTracingAdapter < handle
 
             % Create propagation model (ray tracing) if available
             if exist("propagationModel","file") == 2
-                try
-                    method = char(sixgr.util.structGet(cfg,"channel.raytracing.method","sbr"));
-                    maxRef = double(sixgr.util.structGet(cfg,"channel.raytracing.maxReflections",2));
-                    obj.PropModel = propagationModel("raytracing", ...
-                        "Method", method, ...
-                        "MaxNumReflections", maxRef);
-                catch
-                    obj.PropModel = propagationModel("raytracing");
+                method = sixgr.util.structGet(cfg,"channel.raytracing.method",[]);
+                maxRef = sixgr.util.structGet(cfg,"channel.raytracing.maxReflections",[]);
+                if isempty(method) || isempty(maxRef)
+                    error("CHANNEL:InvalidRayTracingContract", ...
+                        "Ray tracing requires explicit method and maxReflections.");
                 end
+                obj.PropModel = propagationModel("raytracing", ...
+                    "Method", char(string(method)), ...
+                    "MaxNumReflections", double(maxRef));
             else
                 obj.PropModel = [];
             end
@@ -135,11 +135,11 @@ classdef RayTracingAdapter < handle
                         pl_dB = -ss_dBm; % tx power 0 dBm, no gains
                         det.method = "sigstrength(rx,tx,propModel) with txPower=0 dBm";
                     catch ME
-                        error("RayTracingAdapter:pathloss:Failed", ...
+                        error("CHANNEL:RayTracingFailed", ...
                             "Ray tracing pathloss failed. Underlying error: %s", ME.message);
                     end
                 else
-                    error("RayTracingAdapter:pathloss:MissingRFProp", ...
+                    error("CHANNEL:RayTracingUnavailable", ...
                         "RF propagation functions are missing (propagationModel/pathloss/sigstrength).");
                 end
             end
@@ -149,11 +149,7 @@ classdef RayTracingAdapter < handle
             % Rays (optional)
             det.rays = [];
             if opt.ReturnRays && exist("raytrace","file") == 2 && ~isempty(obj.PropModel)
-                try
-                    det.rays = raytrace(tx, rx, obj.PropModel);
-                catch
-                    det.rays = [];
-                end
+                det.rays = raytrace(tx, rx, obj.PropModel);
             end
         end
     end
@@ -186,7 +182,7 @@ classdef RayTracingAdapter < handle
                     error("GeographicNotImplemented");
                 end
             catch
-                error("RayTracingAdapter:MakeSitesFailed", ...
+                error("CHANNEL:InvalidRayTracingContract", ...
                     "Failed to create txsite/rxsite from positions. " + ...
                     "Pass explicit TxSite/RxSite objects to RayTracingAdapter.pathloss().");
             end

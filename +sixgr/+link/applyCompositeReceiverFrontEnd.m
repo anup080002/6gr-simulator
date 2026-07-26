@@ -70,25 +70,11 @@ if localHasPath(cfgIn, "rf.rx.agc.enable") || localHasPath(cfgIn, "rf.agc.enable
     autoAGC.Source = "explicit_agc_configuration";
     return;
 end
-fullScale = localFirstFinite( ...
-    sixgr.util.structGet(cfgIn, "rf.adc.fullScale", NaN), ...
-    sixgr.util.structGet(cfgIn, "rf.adcFullScale", NaN), ...
-    sixgr.util.structGet(cfgIn, "phy.impairments.adcFullScale", NaN), ...
-    1);
-if ~(isfinite(fullScale) && fullScale > 0)
-    fullScale = 1;
+if localRFStrictProfileSelected(cfgIn)
+    error("RF:ImplicitAGCForbidden", ...
+        "Strict RF execution requires an explicit AGC profile when ADC quantization is enabled.");
 end
-targetRMS = 0.25 * double(fullScale);
-maxGain = 120;
-minGain = -120;
-cfgOut = sixgr.util.structSet(cfgOut, "rf.rx.agc.enable", true);
-cfgOut = sixgr.util.structSet(cfgOut, "rf.rx.agc.targetRms", targetRMS);
-cfgOut = sixgr.util.structSet(cfgOut, "rf.rx.agc.maxGain_dB", maxGain);
-cfgOut = sixgr.util.structSet(cfgOut, "rf.rx.agc.minGain_dB", minGain);
-autoAGC.Enabled = true;
-autoAGC.Source = "auto_composite_receiver_adc_fullscale_calibration";
-autoAGC.TargetRMS = double(targetRMS);
-autoAGC.MaxGain_dB = double(maxGain);
+autoAGC.Source = "agc_not_configured_identity";
 end
 
 function tf = localADCQuantizationEnabled(cfg)
@@ -202,4 +188,15 @@ for i = 1:numel(parts)
     cur = cur.(f);
 end
 tf = true;
+end
+
+function tf = localRFStrictProfileSelected(cfg)
+profile = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "rf.specification.profile_id", ...
+    sixgr.util.structGet(cfg, "rf.profile.id", "")))));
+tf = strlength(profile) > 0 && any(profile == [ ...
+    "ideal_phy_strict","rf_impaired_research", ...
+    "rf_conformance_emulation_bs_fr1", ...
+    "rf_conformance_emulation_ue_fr1", ...
+    "rf_conformance_emulation_fr2"]);
 end

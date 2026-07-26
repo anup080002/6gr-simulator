@@ -1,0 +1,29 @@
+classdef ACLRFilterSpec
+%ACLRFILTERSPEC Pure-math explicit-band ACLR reference.
+    methods(Static)
+        function result=measure(samples,sampleRateHz,assignedCenterHz, ...
+                adjacentOffsetHz,bandwidthHz)
+            if isempty(samples)||any(~isfinite(samples(:)))||sampleRateHz<=0|| ...
+                    bandwidthHz<=0||adjacentOffsetHz<=bandwidthHz/2
+                error("RFOracle:ACLRInvalid","ACLR reference inputs are invalid.");
+            end
+            n=max(4096,2^nextpow2(numel(samples)));
+            power=abs(fftshift(fft(double(samples(:)),n))).^2/n^2;
+            frequency=(-n/2:n/2-1).'*sampleRateHz/n;
+            centers=[assignedCenterHz assignedCenterHz-adjacentOffsetHz ...
+                assignedCenterHz+adjacentOffsetHz];
+            values=zeros(1,3);
+            for k=1:3
+                mask=abs(frequency-centers(k))<=bandwidthHz/2;
+                values(k)=sum(power(mask));
+            end
+            result=struct("AssignedPower",values(1), ...
+                "AdjacentLowerPower",values(2), ...
+                "AdjacentUpperPower",values(3), ...
+                "ACLRLower_dB",10*log10(max(values(1),realmin)/ ...
+                max(values(2),realmin)), ...
+                "ACLRUpper_dB",10*log10(max(values(1),realmin)/ ...
+                max(values(3),realmin)));
+        end
+    end
+end

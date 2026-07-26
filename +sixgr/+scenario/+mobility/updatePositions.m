@@ -39,12 +39,15 @@ if isempty(model)
 % and flat cfg.scenario.* configs).
 prof = sixgr.scenario.ScenarioFactory.getProfile(cfg);
     modelName = char(string(sixgr.util.structGet(cfg, "scenario.mobility.model", "randomWaypoint")));
+    mobilitySeed = double(sixgr.util.structGet(cfg, "scenario.mobility.seed", ...
+        sixgr.util.structGet(cfg, "run.seed", 0)));
     wrapEn = logical(sixgr.util.structGet(cfg, "scenario.wraparoundEnabled", prof.wraparoundEnabled));
     area_m = double(prof.area_m);
 
     switch lower(modelName)
         case {"randomwaypoint","rwp"}
-            model = sixgr.scenario.mobility.MobilityRandomWaypoint(area_m, wrapEn);
+            model = sixgr.scenario.mobility.MobilityRandomWaypoint(area_m, wrapEn, ...
+                "Seed", mobilitySeed);
         case {"zigzag","zig_zag","zigzagline","zig_zag_line"}
             segDur_s = double(sixgr.util.structGet(cfg, "scenario.mobility.zigzagSegmentDuration_s", ...
                 sixgr.util.structGet(cfg, "scenario.mobility.segmentDuration_s", 0.75)));
@@ -58,7 +61,8 @@ prof = sixgr.scenario.ScenarioFactory.getProfile(cfg);
         case {"rmamixedspeed","rma","mixed","straightline","straight_line","straight","line"}
             model = sixgr.scenario.mobility.MobilityRMaMixedSpeed(area_m, wrapEn);
         otherwise
-            model = sixgr.scenario.mobility.MobilityRandomWaypoint(area_m, wrapEn);
+            error("CHANNEL:UnsupportedMobilityProfile", ...
+                "Unsupported mobility profile '%s'.", modelName);
     end
 
     ue = model.reset(ue);

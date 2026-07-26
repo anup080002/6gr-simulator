@@ -1,0 +1,2 @@
+Campaign,Started,Reason,Status
+"channel_geometry_impact",0,"base_artifacts_incomplete:channel_ssp_clusters.csv|channel_tdl_profile.csv|channel_cdl_profile.csv|channel_blockage_material.csv|channel_handover_continuity.csv|channel_raytracing_contract.csv|channel_image_semantic_audit.csv","FAIL"

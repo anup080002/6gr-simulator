@@ -122,7 +122,8 @@
       "angular_spread_azimuth_tx_deg": {"required": false, "type": "number", "min": 0},
       "angular_spread_elevation_tx_deg": {"required": false, "type": "number", "min": 0},
       "angular_spread_azimuth_rx_deg": {"required": false, "type": "number", "min": 0},
-      "angular_spread_elevation_rx_deg": {"required": false, "type": "number", "min": 0}
+      "angular_spread_elevation_rx_deg": {"required": false, "type": "number", "min": 0},
+      "phase10_strict": {"required": false, "type": "struct"}
     }},
     "mimo": {"parameters": {
       "mode": {"required": false, "type": "string"},

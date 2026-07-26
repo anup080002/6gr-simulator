@@ -4,6 +4,56 @@
 
 This report accompanies `CODEX_PROMPT_10_CHANNEL_GEOMETRY_MOBILITY_INTERFERENCE_WITH_IMPACT_ANALYSIS.md`. It is an implementation pack for the production MATLAB channel chain. It does not claim that the current simulator already passes the phase.
 
+## Executed implementation status — 2026-07-26
+
+This section supersedes the pack-time statements below that MATLAB was unavailable
+and that no contracted artifact existed. The original static audit is retained as
+the implementation baseline.
+
+Production execution was performed with MATLAB R2026a Update 4
+(`26.1.0.3312084`) and 5G Toolbox `26.1`.
+
+```text
+Independent-vector verifier:       139 / 139 passed, exit 0
+Mandatory *Channel* tests:           14 / 14 passed
+Mandatory *Geometry* tests:           4 / 4 passed
+Mandatory *Mobility* tests:           1 / 1 passed
+Mandatory *Interference* tests:       1 / 1 passed
+Mandatory *TDL* tests:                3 / 3 passed
+Mandatory *CDL* tests:                2 / 2 passed
+Full function-based MATLAB suite:   254 / 254 passed
+Focused production channel tests:     6 / 6 passed
+Config/DL/UL/reference regressions:    4 / 4 passed
+Strict geometry system audit:          passed
+Base contracted CSVs:                 26 / 32 present
+Base contracted PNGs:                 16 / 22 present
+Base verifier:                       257 / 270 passed, exit 2
+Typed negative mutations:            198 / 198 passed
+Impact experiments:                    0 / 768
+Impact acceptance rules:               0 / 96
+Impact verifier:                        0 / 49 passed, exit 2
+```
+
+The strict geometry master now materializes `strict_38901` with the exact
+`TR38.901-V19.2.0` version token and executes the production YAML → scheduler/DCI
+→ TDL-C waveform → RF/AGC/ADC → measured-export path. The SINR-sweep/AWGN master
+retains the same exposed configuration surface but does not enable a geometry
+profile.
+
+The base phase remains fail-closed on six source families:
+
+1. full runtime SSP cluster/ray/angle state;
+2. independent TDL delay/power references;
+3. independent CDL references (the supplied rows remain
+   `SPEC_LOOKUP_REQUIRED`);
+4. independent blockage/material references;
+5. decoded-measurement-driven multicell handover continuity;
+6. pinned ray-tracing scene/material/solver assets and hashes.
+
+Their six dependent PNGs are intentionally absent. The base gate therefore blocks
+the 768 paired impact experiments; no proxy, fallback or synthetic primary rows
+were generated to satisfy the contract shape.
+
 ## Pack result
 
 ```text

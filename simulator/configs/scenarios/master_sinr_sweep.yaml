@@ -190,6 +190,47 @@ canonical_control:
     pathloss_model: nrPathLoss
     shadow_fading_std_db: 6
     inter_cell_execution_mode: none
+    phase10_strict:
+      enabled: false
+      profile_id: nr_r19_awgn_no_geometry
+      specification: TR38.901-V19.2.0
+      propagation_scenario: UMa
+      coordinate_frame: global_cartesian_enu
+      pathloss:
+        model: nrPathLoss
+        street_width_m: 20
+        building_height_m: 5
+      los:
+        state_process: disabled_for_awgn_sweep
+        correlation_distance_m: 0
+      o2i:
+        enabled: false
+        profile: LOW_LOSS
+        indoor_distance_m: 0
+        random_component_enabled: false
+      oxygen_absorption:
+        enabled: false
+        profile: tr38901_v19_2_0_pinned_table
+      topology:
+        model: single_link_no_wraparound
+        sectors_per_site: 1
+      ue_drop:
+        profile: fixed_link
+        seed: 104801
+      channel_update:
+        cadence: static
+        period_s: 0.0005
+      interference:
+        execution: none
+        sample_rate_hz: 122880000
+      absolute_power:
+        reference_point: antenna_connector_to_post_channel_samples
+        implementation_loss_db: 0
+      raytracing:
+        enabled: false
+        method: sbr
+        max_reflections: 2
+        max_diffractions: 1
   mobility:
     ue_speed_kmh: 0
     speed_profile: static
@@ -1152,6 +1193,8 @@ pdsch6gr:
   ptrs_time_density: 2
   ptrs_frequency_density: 2
   ptrs_re_offset: '00'
+  ptrs_port_set:
+  - 0
   queue_bits: 1000000
   study_snr_db:
   - -6
@@ -1278,6 +1321,197 @@ pusch:
 pdcch:
   start_symbol: 0
   num_symbols: 2
+rf_hardware:
+  adc_resolution_bits: 12
+  dac_resolution_bits: 12
+  adc_dynamic_range_db: 72
+  adc_full_scale_power_dBm: 0
+  adc_full_scale: 1.0
+  agc_enable: true
+  agc_target_rms: 0.5
+  agc_max_gain_db: 120
+  agc_min_gain_db: -60
+rf_frontend:
+  enabled: false
+  profile_id: ideal_phy_strict
+  specification_version: 1.0.0
+  claim_class: IDEAL_PHY
+  configuration_epoch: 1
+  reference_plane:
+    sample_unit: sqrt_mW
+    impedance_ohm: 50
+    tx_input: DIGITAL_LAYER_PORT
+    tx_output: TX_ANTENNA_CONNECTOR_OR_DECLARED_TAB
+    rx_input: RX_ANTENNA_CONNECTOR_OR_DECLARED_TAB
+    rx_output: EQUALIZED_RE
+    occupied_bandwidth_source: configured_bwp
+    enbw_source: explicit_filter_response
+  oscillator:
+    state_id: RF_OSCILLATOR_STATE_V1
+    tx_error_hz: 0
+    rx_error_hz: 0
+    link_doppler_source: channel_runtime
+    drift_hz_per_s: 0
+    initial_phase_rad: 0
+    acquisition_method: integer_hypothesis_plus_fractional_cp_dmrs
+    tracking_loop_bandwidth_hz: 200
+    tracking_proportional_gain: 0.25
+    tracking_integral_gain: 0.01
+    ambiguity_limit_hz: 15000
+    seed: 11
+  timing_and_sample_clock:
+    state_id: RF_SAMPLE_CLOCK_STATE_V1
+    initial_timing_offset_samples: 0
+    sco_ppm: 0
+    occupied_bandwidth_hz: 45000000
+    interpolation: stateful_cubic_farrow
+    anti_alias_stopband_db: 90
+    timing_tracking_proportional_gain: 0.5
+    timing_tracking_integral_gain: 0.05
+    anti_alias_filter_taps: [0.0, 0.25, 0.5, 0.25, 0.0]
+  phase_noise:
+    enabled: false
+    profile_id: OSC_FR1_A
+    version: 1.0.0
+    mask_offsets_hz: [1000, 10000, 100000, 1000000, 10000000]
+    mask_levels_dbchz: [-85, -95, -110, -130, -145]
+    lo_correlation: 1.0
+    seed: 11
+  iq_and_lo_leakage:
+    enabled: false
+    gain_imbalance_db: 0
+    phase_imbalance_deg: 0
+    dc_offset_real: 0
+    dc_offset_imag: 0
+    compensation_enabled: false
+    calibration_source: measured_pilot_state
+    calibration_sequence_id: RF_IQ_CAL_V1
+    frequency_selective_taps: [1.0]
+  pa:
+    enabled: false
+    profile_id: RAPP_BOUNDED_V1
+    version: 1.0.0
+    model: rapp
+    input_backoff_db: 6
+    saturation_amplitude: 1
+    smoothness: 2
+    gain_db: 0
+    p1db_input_dbm: 0
+    iip3_dbm: 10
+    oip3_dbm: 10
+    sample_rate_hz: 122880000
+    occupied_bandwidth_hz: 90000000
+    temperature_k: 290
+    coefficient_provenance: bounded_profile_pack_v1
+    coefficients: [1.0, -0.12, 0.02]
+    orders: [1, 3, 5]
+    memory_depth: 1
+    power_restoration_allowed: false
+  cfr:
+    enabled: false
+    target_papr_db: 7
+    iterations: 3
+  dpd:
+    enabled: false
+    profile_id: DPD_MP_V1
+    version: 1.0.0
+    order: 5
+    memory_depth: 3
+    training_samples: 200000
+    holdout_samples: 100000
+    training_seed: 11
+    holdout_seed: 23
+    algorithm: indirect_learning_memory_polynomial
+    coefficient_normalization: unit_linear_term
+    ageing_slots: 0
+    retraining_threshold_evm_percent: 1
+  dac:
+    enabled: false
+    bits: 12
+    full_scale: 1.0
+    convention: signed_midtread
+    dither_enabled: false
+    dither_rms: 0
+    enob: 12
+    inl_lsb: 0
+    dnl_lsb: 0
+    aperture_jitter_seconds: 0
+    reconstruction_filter_id: DAC_RECON_FR1_V1
+    reconstruction_filter_version: 1.0.0
+    reconstruction_filter_taps: [0.0, 0.25, 0.5, 0.25, 0.0]
+    reconstruction_passband_hz: 45000000
+    reconstruction_stopband_hz: 55000000
+  receiver:
+    noise_temperature_k: 290
+    noise_seed: 17
+    selectivity_filter_id: RX_FR1_100M_V1
+    selectivity_filter_version: 1.0.0
+    selectivity_filter_taps: [0.0, 0.25, 0.5, 0.25, 0.0]
+    selectivity_passband_hz: 45000000
+    selectivity_stopband_hz: 55000000
+    selectivity_enbw_hz: 100000000
+    lna_profile_id: LNA_FR1_V1
+    lna_profile_version: 1.0.0
+    lna_gain_db: 20
+    lna_nf_db: 2
+    lna_p1db_input_dbm: -5
+    lna_reference_impedance_ohm: 50
+    mixer_profile_id: MIXER_FR1_V1
+    mixer_profile_version: 1.0.0
+    mixer_lo_frequency_hz: 0
+    mixer_gain_db: 0
+    mixer_nf_db: 8
+    mixer_iip2_dbm: 40
+    mixer_iip3_dbm: 10
+    agc:
+      enabled: true
+      target_rms: 0.5
+      max_gain_db: 120
+      min_gain_db: -60
+      attack_time_us: 10
+      release_time_us: 100
+      attack_coefficient: 0.8
+      release_coefficient: 0.2
+      hold_samples: 64
+    adc:
+      enabled: false
+      bits: 12
+      full_scale: 1.0
+      convention: signed_midtread
+      dither_enabled: false
+      dither_rms: 0
+      enob: 12
+      inl_lsb: 0
+      dnl_lsb: 0
+      aperture_jitter_seconds: 0
+  blocker:
+    enabled: false
+    wanted_power_dbm: -90
+    blocker_power_dbm: -50
+    blocker_offset_hz: 20000000
+    iip2_dbm: 40
+    iip3_dbm: 10
+    carrier_frequency_hz: 3500000000
+    seed: 11
+  measurements:
+    evm_reference_plane: EQUALIZED_RE
+    aclr_filter_id: ACLR_NR_100M_V1
+    spectrum_mask_id: NR_FR1_BOUNDED_V1
+    measurement_bandwidth_hz: 100000000
+    adjacent_channel_offset_hz: 100000000
+    rbw_hz: 100000
+    averaging_windows: 4
+    carrier_leakage_removal: true
+  ul_power_control:
+    require_measured_reference_rs: true
+    configured_snr_pathloss_forbidden: true
+    tpc_source: decoded_control_event
+    tpc_mode: accumulation
+    state_epoch_required: true
+    pusch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 pucch_resources:
   enabled: false
   profile: nr_rel18_pucch_strict
@@ -1366,6 +1600,9 @@ pucch_resources:
     nid: 1
     hopping_id: 1
   dl_data_to_ul_ack: [1, 2, 3, 4, 5, 6, 7, 8]
+  harq_ack:
+    resource_id: 0
+    k1_slots: 4
   sr_resource_ids: [0]
   csi_resource_ids: [10]
   sps_pucch_an_resource_ids: [1]
@@ -1403,7 +1640,7 @@ tdd_timing:
   timing_advance_max_us: 667
   n1_pdsch_processing_time_symbols: 10
   n2_pusch_preparation_time_symbols: 12
-  capability_profile_id: fr1_30khz_baseline
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
 sweeps_and_matrix:
   snr_sweep:
     enabled: true

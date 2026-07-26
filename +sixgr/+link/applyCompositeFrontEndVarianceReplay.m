@@ -53,16 +53,10 @@ qVar = 0;
 if ~logical(sixgr.util.structGet(replay, "ADCQuantizationApplied", false))
     return;
 end
-bits = double(sixgr.util.structGet(replay, "ADCBits", NaN));
-fullScale = double(sixgr.util.structGet(replay, "ADCFullScale", NaN));
-if ~(isfinite(bits) && bits > 0 && bits < 32 && isfinite(fullScale) && fullScale > 0)
-    return;
+qVar = double(sixgr.util.structGet(replay, ...
+    "ADCQuantizationErrorVariance", NaN));
+if ~(isscalar(qVar) && isfinite(qVar) && qVar >= 0)
+    error("RF:CovarianceInvalid", ...
+        "Post-ADC variance replay requires covariance measured from the actual quantization-error samples.");
 end
-levels = 2^max(1, round(bits));
-maxCode = levels / 2 - 1;
-if ~(isfinite(maxCode) && maxCode > 0)
-    return;
-end
-step = double(fullScale) ./ double(maxCode);
-qVar = double(step.^2 ./ 6);
 end

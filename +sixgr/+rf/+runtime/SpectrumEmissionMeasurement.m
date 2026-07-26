@@ -1,0 +1,39 @@
+classdef SpectrumEmissionMeasurement
+%SPECTRUMEMISSIONMEASUREMENT Explicit RBW/band emission integration.
+
+    methods(Static)
+        function result=measure(samples,sampleRateHz,profile)
+            required=["ProfileID","Version","BandCenters_Hz", ...
+                "Bandwidths_Hz","Limits_dB"];
+            if ~isstruct(profile)||~all(isfield(profile,required)) || ...
+                    isempty(samples)||any(~isfinite(samples(:))) || ...
+                    ~(isscalar(sampleRateHz)&&isfinite(sampleRateHz)&&sampleRateHz>0)
+                error("RF:SpectrumMeasurementInvalid", ...
+                    "Spectrum-emission measurement profile or waveform is invalid.");
+            end
+            centers=double(profile.BandCenters_Hz(:));
+            widths=double(profile.Bandwidths_Hz(:));
+            limits=double(profile.Limits_dB(:));
+            if numel(centers)~=numel(widths)||numel(widths)~=numel(limits)|| ...
+                    any(~isfinite([centers;widths;limits]))||any(widths<=0)|| ...
+                    any(abs(centers)+widths/2>=sampleRateHz/2)
+                error("RF:SpectrumMeasurementInvalid", ...
+                    "Spectrum-emission bands are invalid.");
+            end
+            n=max(4096,2^nextpow2(numel(samples)));
+            spectrum=abs(fftshift(fft(double(samples(:)),n))).^2/n^2;
+            frequency=(-n/2:n/2-1).'*sampleRateHz/n;
+            measured=zeros(size(centers));
+            for k=1:numel(centers)
+                mask=abs(frequency-centers(k))<=widths(k)/2;
+                measured(k)=10*log10(max(sum(spectrum(mask)),realmin));
+            end
+            result=table(centers,widths,limits,measured,limits-measured, ...
+                repmat(string(profile.ProfileID),numel(centers),1), ...
+                repmat(string(profile.Version),numel(centers),1), ...
+                measured<=limits,'VariableNames', ...
+                {'Center_Hz','Bandwidth_Hz','Limit_dB','Measured_dB', ...
+                'Margin_dB','ProfileID','Version','Passed'});
+        end
+    end
+end

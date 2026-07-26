@@ -11,12 +11,25 @@ cfg.channel.bandwidth_Hz = 20e6;
 cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.pdsch.prbSet = 0:11;
 cfg.phy.pdsch.symbolAllocation = [2 10];
-cfg.phy.pdsch.modulation = "QPSK";
-cfg.phy.pdsch.codeRate = 0.35;
 cfg.phy.pdsch.mcsIndex = 4;
+cfg.phy.pdsch.mcsTable = "qam256_table2";
+mcsProfile = sixgr.link.resolveMCSProfile( ...
+    cfg.phy.pdsch.mcsTable, cfg.phy.pdsch.mcsIndex);
+cfg.phy.pdsch.modulation = mcsProfile.Modulation;
+cfg.phy.pdsch.codeRate = mcsProfile.TargetCodeRate;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numPorts = 1;
+cfg.phy.pdsch.mcsContext = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
 cfg.phy.pdcch.coreset.duration = 2;
 cfg = sixgr.config.normalizeConfig(cfg);
 cfg = withCanonicalSchedulerTiming(cfg);
@@ -126,14 +139,18 @@ badTBSGrant = grant.PHYGrant;
 badTBSGrant.CodingLayout.TBSBits = double(grant.TBSBits) + 8;
 badTBSGrant.CodingLayout.TBSBitsPerCodeword = double(grant.TBSBits) + 8;
 threw = false;
+actualIdentifier = "";
 try
     sixgr.phy.dl.PDSCH_Tx(cfg, "PHYGrant", badTBSGrant, ...
-        "TransportBlockSizeOverride", double(grant.TBSBits) + 8, "CompactOutput", true);
+        "TransportBlockSizeOverride", double(grant.TBSBits) + 8, ...
+        "ExecutionProfile", "phy_calibration", "CompactOutput", true);
 catch ME
+    actualIdentifier = string(ME.identifier);
     threw = strcmp(ME.identifier, "sixgr:phy:dl:PDSCHGrantTBSMismatch");
 end
 assert(threw, ...
-    "PDSCH_Tx must not let TransportBlockSizeOverride self-certify a frozen-grant TBS mismatch.");
+    "PDSCH_Tx must not let TransportBlockSizeOverride self-certify a frozen-grant TBS mismatch. Actual error: %s", ...
+    actualIdentifier);
 
 ok = true;
 end

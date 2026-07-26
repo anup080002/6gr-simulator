@@ -27,6 +27,8 @@ classdef TR38901Plus < handle
     properties
         Scenario (1,1) string = "UMa"
         Fc_Hz (1,1) double = 3.5e9
+        StreetWidth_m (1,1) double = 20
+        BuildingHeight_m (1,1) double = 5
 
         % "nrPathLoss" or "ABG"
         PathlossModel (1,1) string = "nrPathLoss"
@@ -76,6 +78,12 @@ classdef TR38901Plus < handle
             % Defaults from cfg
             obj.Scenario = string(localCanonicalScenario(cfg, obj.Scenario));
             obj.Fc_Hz = double(localCanonicalStructGet(cfg, "phy.fc_Hz", "channel.fc_Hz", obj.Fc_Hz));
+            obj.StreetWidth_m = double(localFirstStructGet(cfg, ...
+                ["channel.pathloss.streetWidth_m","scenario.streetWidth_m"], ...
+                obj.StreetWidth_m));
+            obj.BuildingHeight_m = double(localFirstStructGet(cfg, ...
+                ["channel.pathloss.buildingHeight_m","scenario.buildingHeight_m"], ...
+                obj.BuildingHeight_m));
             obj.PathlossModel = string(localCanonicalStructGet(cfg, "channel.pathlossModel", "channel.pathloss.model", obj.PathlossModel));
             obj.ShadowSigma_dB = double(localCanonicalStructGet(cfg, "channel.shadowSigma_dB", "channel.shadowFadingStd_dB", obj.ShadowSigma_dB));
             obj.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", obj.PathlossEnabled));
@@ -111,6 +119,10 @@ classdef TR38901Plus < handle
                         obj.Scenario = string(val);
                     case {"fc_hz","fc","frequency"}
                         obj.Fc_Hz = double(val);
+                    case "streetwidth_m"
+                        obj.StreetWidth_m = double(val);
+                    case "buildingheight_m"
+                        obj.BuildingHeight_m = double(val);
                     case "pathlossmodel"
                         obj.PathlossModel = string(val);
                     case "shadowsigma_db"
@@ -562,8 +574,8 @@ classdef TR38901Plus < handle
 
         function pl = pathlossViaTR38901ClosedForm(obj, txPos_m, rxPos_m, los, scenarioToken)
             d2d = sqrt(sum((txPos_m(1:2,:) - rxPos_m(1:2,:)).^2, 1));
-            d3d = sqrt(sum((txPos_m - rxPos_m).^2, 1));
             hUT = double(rxPos_m(3, :));
+            hBS = double(txPos_m(3, :));
             fcGHz = double(obj.Fc_Hz) / 1e9;
             scenarioToken = localCanonicalScenarioToken(scenarioToken);
             los = logical(los);
@@ -578,31 +590,28 @@ classdef TR38901Plus < handle
 
             switch scenarioToken
                 case "uma"
-                    hBS = double(txPos_m(3, :));
-                    hBS = max(hBS, 1.0);
-                    hUT = max(hUT, 1.0);
-                    dBP = max(1.0, 4 .* hBS .* hUT .* double(obj.Fc_Hz) ./ 3e8);
-                    d3dSafe = max(d3d, 1.0);
-                    pl1 = 28.0 + 22.0 .* log10(d3dSafe) + 20.0 .* log10(fcGHz);
-                    plAtBP = 28.0 + 22.0 .* log10(max(dBP, 1.0)) + 20.0 .* log10(fcGHz);
-                    pl2 = plAtBP + 40.0 .* log10(max(d3dSafe ./ max(dBP, 1.0), 1.0));
-                    plLOS = pl1;
-                    beyondBP = d2d > dBP;
-                    plLOS(beyondBP) = pl2(beyondBP);
-                    plNLOS = max(plLOS, 13.54 + 39.08 .* log10(max(d3d, 1.0)) + ...
-                        20.0 .* log10(fcGHz) - 0.6 .* (hUT - 1.5));
+                    scenario = "UMa";
                 case "umi"
-                    plLOS = 32.4 + 21.0 .* log10(max(d3d, 1.0)) + 20.0 .* log10(fcGHz);
-                    plNLOS = max(plLOS, 22.4 + 35.3 .* log10(max(d3d, 1.0)) + ...
-                        21.3 .* log10(fcGHz) - 0.3 .* (hUT - 1.5));
+                    scenario = "UMi-StreetCanyon";
+                case "rma"
+                    scenario = "RMa";
+                case {"inh","inhoffice"}
+                    scenario = "InH-Office";
                 otherwise
-                    error("TR38901Plus:UnsupportedClosedFormScenario", ...
-                        "TR 38.901 closed-form pathloss is currently implemented for UMa and UMi only; got '%s'.", ...
+                    error("CHANNEL:UnsupportedProfile", ...
+                        "No enabled strict analytical profile exists for '%s'.", ...
                         char(scenarioToken));
             end
-
-            pl = plLOS;
-            pl(~losRow) = plNLOS(~losRow);
+            pl = zeros(size(d2d));
+            for index = 1:numel(d2d)
+                condition = "LOS";
+                if ~losRow(index)
+                    condition = "NLOS";
+                end
+                pl(index) = sixgr.channel.Pathloss38901(scenario, condition, ...
+                    fcGHz, d2d(index), hBS(index), hUT(index), ...
+                    obj.StreetWidth_m, obj.BuildingHeight_m);
+            end
             pl = double(pl(:)).';
             obj.PathlossExecutionBackend = "tr38901_closed_form_runtime_backend";
             obj.PathlossTruthClassification = "standards_backed_3gpp_closed_form_large_scale_pathloss";
@@ -688,7 +697,8 @@ end
 function tf = localAnalytical38901Supported(scenarioName, fcHz)
 scenarioToken = localCanonicalScenarioToken(scenarioName);
 fcGHz = double(fcHz) / 1e9;
-tf = any(scenarioToken == ["uma", "umi"]) && fcGHz >= 0.5 && fcGHz <= 100.0;
+tf = any(scenarioToken == ["uma", "umi", "rma", "inh", "inhoffice"]) ...
+    && fcGHz >= 0.5 && fcGHz <= 100.0;
 end
 
 function status = localAnalytical38901ComplianceStatus(fcHz)
@@ -712,6 +722,8 @@ switch token
         token = "umi";
     case {"rma", "ruralmacro", "ruralmacrocell", "3gpprma"}
         token = "rma";
+    case {"inh", "inhoffice", "indoorhotspot", "indooroffice"}
+        token = "inh";
     otherwise
         token = lower(strtrim(string(value)));
 end

@@ -1168,8 +1168,7 @@ end
 
 function receiver = localReceiverConfig(cfg, request, tbs, ...
         nPhysicalPorts, legacyPrecoder, carrier, referenceConfig)
-model = upper(strtrim(string(sixgr.util.structGet( ...
-    cfg, "channel.model", "AWGN"))));
+model = localReceiverChannelModel(cfg);
 if logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false))
     model = "AWGN";
 end
@@ -1193,6 +1192,20 @@ receiver = struct( ...
     "NPhysicalRxAntennas", nRx);
 if ~isempty(noiseVariance)
     receiver.NoiseVariance = double(noiseVariance);
+end
+end
+
+function model = localReceiverChannelModel(cfg)
+model = upper(strtrim(string(sixgr.util.structGet( ...
+    cfg, "channel.model", "AWGN"))));
+if model == "TDL"
+    model = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+        "channel.tdlProfile", sixgr.util.structGet(cfg, ...
+        "channel.fading.profile", "")))));
+elseif model == "CDL"
+    model = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+        "channel.cdlProfile", sixgr.util.structGet(cfg, ...
+        "channel.fading.profile", "")))));
 end
 end
 

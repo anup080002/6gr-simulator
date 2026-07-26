@@ -13,16 +13,21 @@ classdef MobilityRandomWaypoint < sixgr.scenario.mobility.MobilityModelBase
 
     properties
         TargetXY_m double = zeros(0,2);  % [K x 2]
+        Stream
     end
 
     methods
-        function obj = MobilityRandomWaypoint(area_m, wrapEnabled)
+        function obj = MobilityRandomWaypoint(area_m, wrapEnabled, varargin)
             obj@sixgr.scenario.mobility.MobilityModelBase(area_m, wrapEnabled);
+            parser = inputParser;
+            addParameter(parser, "Seed", 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x));
+            parse(parser, varargin{:});
+            obj.Stream = RandStream("mt19937ar", "Seed", double(parser.Results.Seed));
         end
 
         function ue = reset(obj, ue)
             K = ue.K;
-            obj.TargetXY_m = localRandomXY(K, obj.Area_m);
+            obj.TargetXY_m = localRandomXY(K, obj.Area_m, obj.Stream);
             ue.heading_deg = localHeadingToTarget(ue.pos_m(:,1:2), obj.TargetXY_m);
         end
 
@@ -38,7 +43,7 @@ classdef MobilityRandomWaypoint < sixgr.scenario.mobility.MobilityModelBase
             arrived = d < 1.0; % meters
 
             if any(arrived)
-                obj.TargetXY_m(arrived,:) = localRandomXY(nnz(arrived), obj.Area_m);
+                obj.TargetXY_m(arrived,:) = localRandomXY(nnz(arrived), obj.Area_m, obj.Stream);
                 tgt = obj.TargetXY_m;
                 toTgt = tgt - xy;
                 d = sqrt(sum(toTgt.^2, 2));
@@ -64,9 +69,9 @@ end
 
 % ---------------- Local helpers ----------------
 
-function xy = localRandomXY(K, area_m)
+function xy = localRandomXY(K, area_m, stream)
 W = area_m(1); H = area_m(2);
-xy = [ (rand(K,1)-0.5)*W, (rand(K,1)-0.5)*H ];
+xy = [ (rand(stream,K,1)-0.5)*W, (rand(stream,K,1)-0.5)*H ];
 end
 
 function hd = localHeadingToTarget(xy, tgt)

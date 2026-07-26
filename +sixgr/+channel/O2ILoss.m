@@ -22,10 +22,11 @@ function [LdB, status] = O2ILoss(fc_Hz, model, varargin)
 %     non-strict.
 %   - ASCII-only file.
 
-opt.IndoorDistance_m = 10;
+opt.IndoorDistance_m = [];
 opt.CustomLoss_dB = 0;
 opt.Stream = [];
 opt.RandomComponentEnabled = true;
+opt.RandomComponent_dB = [];
 
 if mod(numel(varargin),2) ~= 0
     error("O2ILoss:BadNV","Name-value inputs must come in pairs.");
@@ -42,6 +43,8 @@ for i = 1:2:numel(varargin)
             opt.Stream = val;
         case {"randomcomponentenabled","applyrandomcomponent"}
             opt.RandomComponentEnabled = logical(val);
+        case {"randomcomponent_db","random_db"}
+            opt.RandomComponent_dB = double(val);
         otherwise
             error("O2ILoss:UnknownOpt","Unknown option: %s", name);
     end
@@ -71,33 +74,50 @@ if m == "custom"
     status.ComplianceStatus = "configured_custom_o2i_loss_not_strict_38901";
     status.Reason = "custom configured o2i loss is caller supplied and not a strict tr38901 building penetration model";
 else
+    if isempty(opt.IndoorDistance_m) || any(~isfinite(opt.IndoorDistance_m(:))) || ...
+            any(opt.IndoorDistance_m(:) < 0)
+        error("CHANNEL:InvalidIndoorDistance", ...
+            "A finite nonnegative UT-specific indoor distance is required.");
+    end
     f = max(fc_GHz, 1e-3);
     lGlass = 2 + 0.2 * f;
-    lIRRGlass = 23 + 0.3 * f;
+    lIRRGlass = 25.4 + 0.11 * f;
     lConcrete = 5 + 4 * f;
-    if m == "low"
+    lPlywood = 1.03 + 0.17 * f;
+    lWood = 4.85 + 0.12 * f;
+    if any(m == ["low","low_loss"])
         L_pen = 5 - 10 * log10(0.3 * 10.^(-lGlass/10) + 0.7 * 10.^(-lConcrete/10));
         sigma = 4.4;
         status.ModelSource = "tr38901_table_7_4_3_1_low_loss_building";
         status.ComplianceStatus = "strict_38901_o2i_model";
         status.StrictSupported = true;
-    elseif m == "high"
+    elseif any(m == ["high","high_loss"])
         L_pen = 5 - 10 * log10(0.7 * 10.^(-lIRRGlass/10) + 0.3 * 10.^(-lConcrete/10));
         sigma = 6.5;
         status.ModelSource = "tr38901_table_7_4_3_1_high_loss_building";
         status.ComplianceStatus = "strict_38901_o2i_model";
         status.StrictSupported = true;
+    elseif any(m == ["lowa","low_loss_a"])
+        L_pen = 5 - 10 * log10(0.3 * 10.^(-lGlass/10) + 0.7 * 10.^(-lPlywood/10));
+        sigma = 4.4;
+        status.ModelSource = "tr38901_v19_2_0_table_7_4_3_1_low_loss_a_building";
+        status.ComplianceStatus = "strict_38901_o2i_model";
+        status.StrictSupported = true;
     else
-        error("O2ILoss:UnsupportedModel", ...
-            "O2I model must be 'none', 'low', 'high', or 'custom'; got '%s'.", char(m));
+        error("CHANNEL:MissingO2IMaterialProfile", ...
+            "No exact O2I material mixture exists for profile '%s'.", char(m));
     end
 
     % Add TR 38.901 log-normal penetration-loss random component.
-    if logical(opt.RandomComponentEnabled)
+    if ~isempty(opt.RandomComponent_dB)
+        L_pen = L_pen + opt.RandomComponent_dB;
+        status.RandomComponentApplied = true;
+    elseif logical(opt.RandomComponentEnabled)
         if ~isempty(opt.Stream)
             rnd = randn(opt.Stream,1,1);
         else
-            rnd = randn;
+            error("CHANNEL:InvalidProvenance", ...
+                "Strict O2I random loss requires an explicit RandStream or RandomComponent_dB.");
         end
         L_pen = L_pen + sigma*rnd;
         status.RandomComponentApplied = true;

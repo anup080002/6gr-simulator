@@ -1,0 +1,29 @@
+function ledger = AbsolutePowerLedger(txPower_dBm, txGain_dBi, rxGain_dBi, ...
+    pathloss_dB, shadowFading_dB, o2iLoss_dB, oxygenLoss_dB, ...
+    implementationLoss_dB, bandwidth_Hz, noiseFigure_dB)
+%ABSOLUTEPOWERLEDGER Reconcile antenna-connector and sample-domain power.
+
+arguments
+    txPower_dBm double {mustBeFinite}
+    txGain_dBi double {mustBeFinite}
+    rxGain_dBi double {mustBeFinite}
+    pathloss_dB double {mustBeFinite}
+    shadowFading_dB double {mustBeFinite}
+    o2iLoss_dB double {mustBeFinite}
+    oxygenLoss_dB double {mustBeFinite}
+    implementationLoss_dB double {mustBeFinite}
+    bandwidth_Hz double {mustBeFinite,mustBePositive}
+    noiseFigure_dB double {mustBeFinite}
+end
+
+rxPower_dBm = txPower_dBm + txGain_dBi + rxGain_dBi ...
+    - pathloss_dB - shadowFading_dB - o2iLoss_dB ...
+    - oxygenLoss_dB - implementationLoss_dB;
+noisePower_dBm = -174 + 10 .* log10(bandwidth_Hz) + noiseFigure_dB;
+ledger = struct( ...
+    "RxPower_dBm", rxPower_dBm, ...
+    "RxPower_W", 10.^((rxPower_dBm - 30) ./ 10), ...
+    "NoisePower_dBm", noisePower_dBm, ...
+    "SNR_dB", rxPower_dBm - noisePower_dBm, ...
+    "ReferencePoint", "antenna_connector_to_post_channel_samples");
+end

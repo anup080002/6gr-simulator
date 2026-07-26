@@ -660,8 +660,10 @@ classdef SystemLevelRunner
                             [gCell, ~] = schedDLCells{cellId}.schedule(t-1, ueStateDL, dlBudget);
                         catch MEs
                             gCell = struct([]);
-                            out.Errors(end+1,1) = "DL scheduling failed at slot " + string(t) + ...
+                            schedulingError = "DL scheduling failed at slot " + string(t) + ...
                                 " cell " + string(cellId) + ": " + string(MEs.message);
+                            out.Errors(end+1,1) = schedulingError;
+                            log.warn(char(schedulingError));
                         end
                         schedCellElapsed_s = toc(schedCellTimer);
                         if t == 1
@@ -716,8 +718,10 @@ classdef SystemLevelRunner
                             [gCell, ~] = schedULCells{cellId}.schedule(t-1, ueStateUL, ulBudget);
                         catch MEs
                             gCell = struct([]);
-                            out.Errors(end+1,1) = "UL scheduling failed at slot " + string(t) + ...
+                            schedulingError = "UL scheduling failed at slot " + string(t) + ...
                                 " cell " + string(cellId) + ": " + string(MEs.message);
+                            out.Errors(end+1,1) = schedulingError;
+                            log.warn(char(schedulingError));
                         end
                         schedCellElapsed_s = toc(schedCellTimer);
                         if t == 1
@@ -1725,15 +1729,23 @@ else
     symbolsPerSlot = double(sixgr.util.structGet( ...
         partition, "SymbolsPerSlot", NaN));
     if strcmp(dir, "UL")
-        symAlloc = double(sixgr.util.structGet( ...
+        partitionAllocation = double(sixgr.util.structGet( ...
             partition, "ULSymbolAllocation", []));
+        configuredAllocation = localRequiredAllocation(cfg, ...
+            ["phy.pusch.symbolAllocation", ...
+            "phy.pusch.SymbolAllocation"], "PUSCH");
     else
-        symAlloc = double(sixgr.util.structGet( ...
+        partitionAllocation = double(sixgr.util.structGet( ...
             partition, "DLSymbolAllocation", []));
+        configuredAllocation = localRequiredAllocation(cfg, ...
+            ["phy.pdsch.symbolAllocation", ...
+            "phy.pdsch.SymbolAllocation"], "PDSCH");
     end
-    if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
-        symAlloc = [0, 0];
+    if numel(partitionAllocation) ~= 2 || any(~isfinite(partitionAllocation))
+        partitionAllocation = [0, 0];
     end
+    symAlloc = localIntersectSymbolAllocations( ...
+        configuredAllocation, partitionAllocation);
 end
 if ~(isfinite(symbolsPerSlot) && symbolsPerSlot >= 1)
     error("sixgr:system:SystemLevelRunner:MissingSymbolsPerSlot", ...
@@ -1747,6 +1759,26 @@ budget = struct( ...
     "SymbolAllocation", reshape(symAlloc(1:2), 1, 2), ...
     "ControlAbsoluteSlot", double(t - 1), ...
     "ControlSymbolAllocation", controlAllocation);
+end
+
+function allocation = localIntersectSymbolAllocations(configured, partition)
+configured = double(configured(:).');
+partition = double(partition(:).');
+if numel(configured) ~= 2 || numel(partition) ~= 2 || ...
+        any(~isfinite(configured)) || any(~isfinite(partition))
+    error("sixgr:system:SystemLevelRunner:InvalidSymbolAllocation", ...
+        "Configured and TDD-partition symbol allocations must be finite [start,count] pairs.");
+end
+configuredStart = round(configured(1));
+configuredEnd = configuredStart + max(0, round(configured(2)));
+partitionStart = round(partition(1));
+partitionEnd = partitionStart + max(0, round(partition(2)));
+startSymbol = max(configuredStart, partitionStart);
+endSymbol = min(configuredEnd, partitionEnd);
+allocation = [startSymbol, max(0, endSymbol - startSymbol)];
+if allocation(2) == 0
+    allocation(1) = 0;
+end
 end
 
 function tf = localSlotBudgetSupportsExecutableDataGrants(cfg, direction, budget)
