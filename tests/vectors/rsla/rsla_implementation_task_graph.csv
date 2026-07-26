@@ -1,0 +1,25 @@
+TaskID,Task,DependsOn,Deliverable,CompletionEvidence,Status
+T01,Capability profile and planning rejection,,MIMOSpecificationProfile-style explicit support matrix for RSLA,MATLAB tests + production CSV/PNG,OPEN
+T02,Canonical resource ownership engine,T01,"one zero-based RE ledger for DM-RS, CSI-RS, CSI-IM, SRS, TRS, PT-RS and data/control",MATLAB tests + production CSV/PNG,OPEN
+T03,Shared DM-RS engine,T02,"DL/UL exact sequence, mapping, ports, OCC and receiver estimator",MATLAB tests + production CSV/PNG,OPEN
+T04,CSI-RS/CSI-IM engine,T02,"RRC-owned resources/resource sets, triggering, muting and measurement association",MATLAB tests + production CSV/PNG,OPEN
+T05,SRS resource/resource-set engine,T02,"periodic/SP/AP, multi-port, hopping, triggers and receiver state",MATLAB tests + production CSV/PNG,OPEN
+T06,TRS tracking resources,T04,selected NZP-CSI-RS tracking profile and QCL state,MATLAB tests + production CSV/PNG,OPEN
+T07,PT-RS joint tracker,T03,DL/UL exact mapping and CPE correction,MATLAB tests + production CSV/PNG,OPEN
+T08,Measurement registry,T03;T04;T05,selected TS 38.215 definitions and analytical tests,MATLAB tests + production CSV/PNG,OPEN
+T09,Measured-state store,T08,timestamped UE/cell/BWP/resource/beam measurement state and validity,MATLAB tests + production CSV/PNG,OPEN
+T10,CSI report configuration objects,T04;T09,RRC-owned report quantities and resource associations,MATLAB tests + production CSV/PNG,OPEN
+T11,CSI Part1/Part2 serializer,T10,exact report-dependent ownership and TS 38.212 UCI integration,MATLAB tests + production CSV/PNG,OPEN
+T12,SRS scheduler consumption,T05;T09,measured RI/SRI/TPMI and covariance authority,MATLAB tests + production CSV/PNG,OPEN
+T13,CQI/MCS calibration registry,T09,"versioned link curves, confidence and held-out validation",MATLAB tests + production CSV/PNG,OPEN
+T14,EESM/MIESM calibration,T13,profile-keyed parameters and no fallback,MATLAB tests + production CSV/PNG,OPEN
+T15,Decoded-report link adaptation,T11;T13;T14,MCS only from valid decoded reports or measured SRS state,MATLAB tests + production CSV/PNG,OPEN
+T16,OLLA state machine,T15,"per-UE isolation, target-balanced steps, reset/age/saturation",MATLAB tests + production CSV/PNG,OPEN
+T17,Bootstrap transition state,T15,bounded acquisition and measured steady-state separation,MATLAB tests + production CSV/PNG,OPEN
+T18,L1/L3 filtering and gaps,T08,selected filter/gap procedures,MATLAB tests + production CSV/PNG,OPEN
+T19,RRM event engine,T18,"selected A1-A6 entry/leave, hysteresis and TTT",MATLAB tests + production CSV/PNG,OPEN
+T20,Tracking correction lineage,T06;T07,apply measured timing/CFO/CPE to later samples and export residuals,MATLAB tests + production CSV/PNG,OPEN
+T21,EVM engine,T03;T07,reference-point and RE-specific RMS EVM,MATLAB tests + production CSV/PNG,OPEN
+T22,Base validation/artifacts,T01-T21,"all vectors, waveform campaigns, 32 CSVs and 22 figures",MATLAB tests + production CSV/PNG,OPEN
+T23,Impact runner,T22,768 controlled experiments and 96 rules,MATLAB tests + production CSV/PNG,OPEN
+T24,Full regression,T23,all repository MATLAB tests and canonical scenarios,MATLAB tests + production CSV/PNG,OPEN

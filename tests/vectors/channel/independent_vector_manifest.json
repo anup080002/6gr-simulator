@@ -1,0 +1,197 @@
+{
+  "ManifestVersion": "1.0",
+  "GeneratedWithoutMATLAB": true,
+  "Purpose": "Bounded independent analytical vectors and deterministic experiment contracts; SPEC_LOOKUP_REQUIRED rows must be replaced by frozen exact vectors before enabling those tuples.",
+  "Files": [
+    {
+      "FileName": "channel_geometry_state_test_vectors.csv",
+      "SHA256": "393f6a81dcbb79ce62477d59432250397cec65daddc36eab16a8210bce5104d9",
+      "Rows": 336
+    },
+    {
+      "FileName": "expected_geometry_kinematics.csv",
+      "SHA256": "49997d9ae44c33948cd864b6ab7477e51780a9e875e83dae96558ba70fdf96db",
+      "Rows": 336
+    },
+    {
+      "FileName": "channel_pathloss_test_vectors.csv",
+      "SHA256": "180f775bf52aa7e81d3a9c935e406630770e3635086f979794f0a04072de858c",
+      "Rows": 368
+    },
+    {
+      "FileName": "expected_channel_pathloss.csv",
+      "SHA256": "6dd4ca9d4deb58ad21e75ad92795fe9ad146bca57284a8c6c0aac849e50391bc",
+      "Rows": 368
+    },
+    {
+      "FileName": "channel_los_probability_test_vectors.csv",
+      "SHA256": "33faef3070585c7ceeffd693b1420b2cb25e5939b51447e6b4aa50dddcfcdaf5",
+      "Rows": 106
+    },
+    {
+      "FileName": "expected_channel_los_probability.csv",
+      "SHA256": "db930208b7041b5b58903408c01e05264c7eb34c36ad15429eb8faa531d128d5",
+      "Rows": 106
+    },
+    {
+      "FileName": "channel_o2i_material_test_vectors.csv",
+      "SHA256": "165c1537424794c9d7d3356c0dabf5eebbca9a7c0ff02bd11ce3aed02c8b1dba",
+      "Rows": 198
+    },
+    {
+      "FileName": "expected_channel_o2i_loss.csv",
+      "SHA256": "6bcc30c06792cc30999954cd0958fc705abf0d5e1efe8007e8dfb2b84ebd8a55",
+      "Rows": 198
+    },
+    {
+      "FileName": "channel_oxygen_absorption_test_vectors.csv",
+      "SHA256": "9b7c94f514ceaa5e00e097525ecc71b8c03dc7924cf2a2e938a1f75217649200",
+      "Rows": 428
+    },
+    {
+      "FileName": "expected_channel_oxygen_absorption.csv",
+      "SHA256": "92b6b0eb7149741e4252185a812099fb55319cd05fe7ca12c1cae118f72092c0",
+      "Rows": 428
+    },
+    {
+      "FileName": "channel_array_response_test_vectors.csv",
+      "SHA256": "533f6a99f99b2a7e3ec832eebab3d38352344f445b149a162636fea2c0bd4e5e",
+      "Rows": 768
+    },
+    {
+      "FileName": "expected_channel_array_response.csv",
+      "SHA256": "65ed93617d03487d6d48d1a438efc3a5924a398a083f416c323b861e2d15c3fa",
+      "Rows": 12544
+    },
+    {
+      "FileName": "channel_tdl_correlation_test_vectors.csv",
+      "SHA256": "daf34eec7ebdf4287babb6d1361211a0e553e64bc43a093c456f705074f4f56a",
+      "Rows": 30
+    },
+    {
+      "FileName": "expected_tdl_spatial_correlation.csv",
+      "SHA256": "7829f0cf9ce404118e9ab1145581ae46ca4338c299894562e92059b34a0c90ee",
+      "Rows": 2046
+    },
+    {
+      "FileName": "channel_cdl_profile_test_vectors.csv",
+      "SHA256": "e762ad0a2cb15775334ab4bcdaed7035715eb0824bee93a4f2384e7365c207e4",
+      "Rows": 100
+    },
+    {
+      "FileName": "channel_lsp_spatial_consistency_test_vectors.csv",
+      "SHA256": "93eb50b553dbfa2202994267cb6a4321a7ab322ef12e7215d9dcf0d528f1d4f1",
+      "Rows": 378
+    },
+    {
+      "FileName": "expected_lsp_spatial_correlation.csv",
+      "SHA256": "f1340c2b8e084305df14d9377c1eaee9dbec73d117e0252f64072c25298cbbf1",
+      "Rows": 378
+    },
+    {
+      "FileName": "channel_wraparound_test_vectors.csv",
+      "SHA256": "2218cca9d323c11c4926c5dde3b687a120dfb742745adeda72dcbda0534a8b81",
+      "Rows": 12
+    },
+    {
+      "FileName": "expected_wraparound_topology.csv",
+      "SHA256": "38f1a0e3e7ab007e902623149e8e374005cbd2b78e3fa895699a171babee32ef",
+      "Rows": 684
+    },
+    {
+      "FileName": "channel_ue_drop_test_vectors.csv",
+      "SHA256": "77c354103728eed548ea975a8fbc1ef60c40041d8c662b2eba4589e98fbcf4ff",
+      "Rows": 75
+    },
+    {
+      "FileName": "expected_channel_ue_drop_coordinates.csv",
+      "SHA256": "c69a0131fa32d36f13f0b7522c3783102bfa87c7fc92dbc995f51fa9361ebc3f",
+      "Rows": 6500
+    },
+    {
+      "FileName": "channel_interference_superposition_test_vectors.csv",
+      "SHA256": "6b99432cb379dfd32abecce3fbfb03413bee042db3bfcce6dc50c08d256d6416",
+      "Rows": 216
+    },
+    {
+      "FileName": "expected_interference_superposition.csv",
+      "SHA256": "8aacd534907af52ff8f226698f75fd614327b70345121a70c2b30af5e96f1c7c",
+      "Rows": 6720
+    },
+    {
+      "FileName": "channel_mobility_doppler_test_vectors.csv",
+      "SHA256": "de5f46baa9905bbbac9e0c89efd31ed5afc2f9da79e0bb5e383cd9d62c39107a",
+      "Rows": 14400
+    },
+    {
+      "FileName": "expected_mobility_doppler_phase.csv",
+      "SHA256": "c8e58428941dc377eb6f567e2899d46fc89fe357e9d43f22e3b6be0839ace688",
+      "Rows": 14400
+    },
+    {
+      "FileName": "channel_absolute_power_test_vectors.csv",
+      "SHA256": "3f7dc8e9a32c87d9c382ba6aa378ac724914e9011753990ece2b4d076a9aad08",
+      "Rows": 210
+    },
+    {
+      "FileName": "expected_absolute_power_ledger.csv",
+      "SHA256": "4a6a3b136f15d4bc3a32dd8feef1a8093cff4debf20161a789c12165fcd0f981",
+      "Rows": 210
+    },
+    {
+      "FileName": "channel_raytracing_contract_vectors.csv",
+      "SHA256": "b98f445f2e4db07b48d29edff2183971e2f897e2e280529a19c924f3cd9bf72d",
+      "Rows": 24
+    },
+    {
+      "FileName": "channel_negative_test_vectors.csv",
+      "SHA256": "6bb0ebe22692e7c3b047c5d2c2bd118b823394ce8bff25fc97d6687b11f018b7",
+      "Rows": 198
+    },
+    {
+      "FileName": "channel_capability_profile_matrix.csv",
+      "SHA256": "7f928bb3aa284f94b5fc03a7506826210faa07e1d2c8cd6ce034f095016012cc",
+      "Rows": 290
+    },
+    {
+      "FileName": "channel_declared_coverage_matrix.csv",
+      "SHA256": "7e801ea97cba39cb4d87fea8fda8b2b1881d0dbe4ac51338f476e9c987073ca3",
+      "Rows": 290
+    },
+    {
+      "FileName": "channel_impact_analysis_families.csv",
+      "SHA256": "4687af3d8f1544ce36401ce70a6e36f84136578dd1b2631dbd16db7e1034d94a",
+      "Rows": 64
+    },
+    {
+      "FileName": "channel_impact_experiment_matrix.csv",
+      "SHA256": "d4de9e5d154b939a57b3079d67e0ec3308bd9ab252d6dc9b35bce5c5b2bc22ce",
+      "Rows": 768
+    },
+    {
+      "FileName": "channel_impact_pairing_contract.csv",
+      "SHA256": "1c68d8ab7206211ec336ffa62ec90e32ad8cb286e8b2032e21d03c2afd14d279",
+      "Rows": 64
+    },
+    {
+      "FileName": "channel_impact_acceptance_rules.csv",
+      "SHA256": "568b2ea71dc2c1bf551b22e2b8d941b7adc79bd219b89c25b05d64b25c086b59",
+      "Rows": 96
+    },
+    {
+      "FileName": "channel_impact_dependency_waves.csv",
+      "SHA256": "d52613c2984e3009086ae726fbddd103e504f613d209df20b87edb71f0bb3a1f",
+      "Rows": 64
+    },
+    {
+      "FileName": "channel_impact_implementability_summary.csv",
+      "SHA256": "4691208a13b6b2baeb9e61a658dd234529e92ac768f5e7903fbd2397b469e995",
+      "Rows": 3
+    },
+    {
+      "FileName": "expected_channel_impact_analytical_floor.csv",
+      "SHA256": "2581e13334e3e2b2d47d6b2043bcae9ccfe603ddcef8946810439b00fdf9d141",
+      "Rows": 128
+    }
+  ]
+}

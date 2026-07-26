@@ -1,0 +1,45 @@
+{
+  "StatusCounts": {
+    "PASS": 20,
+    "WARN": 2,
+    "FAIL": 2,
+    "BLOCKED": 2
+  },
+  "StaticAudit": {
+    "DefectsDetected": 42,
+    "RegressionGuards": 10,
+    "UsefulFoundationsDetected": 11,
+    "FoundationWarnings": 1
+  },
+  "VectorPack": {
+    "Files": 38,
+    "Rows": 64532,
+    "VerifierChecks": 139,
+    "VerifierPassed": 139
+  },
+  "Impact": {
+    "Families": 64,
+    "Experiments": 768,
+    "Pairs": 384,
+    "Rules": 96
+  },
+  "Artifacts": {
+    "BaseCSVs": 32,
+    "BasePNGs": 22,
+    "ImpactCSVs": 16,
+    "ImpactPNGs": 30,
+    "Total": 100,
+    "PresentInCurrentSimulator": 0
+  },
+  "ExistingOutputs": {
+    "CSVs": 225,
+    "RectangularCSVs": 224,
+    "PNGs": 40,
+    "DecodedNonblankPNGs": 40
+  },
+  "Runtime": {
+    "MATLAB": "not found",
+    "Octave": "not found",
+    "Status": "BLOCKED"
+  }
+}

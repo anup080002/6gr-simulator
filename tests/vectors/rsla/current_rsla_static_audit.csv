@@ -1,0 +1,65 @@
+CheckID,Classification,Finding,SourcePath,Pattern,Detected,Evidence,Disposition,Status
+DEF-001,DEFECT,CSI-RS IndexBase is documented as best-effort,+sixgr/+phy/+refsig/csirs.m,best-effort,true,+sixgr/+phy/+refsig/csirs.m:14: best-effort,REMEDIATE,FAIL
+DEF-002,DEFECT,CSI-RS nPorts defaults to 2,+sixgr/+phy/+refsig/csirs.m,"nPorts'.*?,\s*2\)",true,"+sixgr/+phy/+refsig/csirs.m:85: nPorts', 2)",REMEDIATE,FAIL
+DEF-003,DEFECT,CSI-RS row can be inferred locally from ports,+sixgr/+phy/+refsig/csirs.m,localFindRowForPorts,true,+sixgr/+phy/+refsig/csirs.m:90: localFindRowForPorts,REMEDIATE,FAIL
+DEF-004,DEFECT,CSI-RS multi-port placement uses Toolbox defaults,+sixgr/+phy/+refsig/csirs.m,use valid NR Toolbox defaults,true,+sixgr/+phy/+refsig/csirs.m:95: use valid NR Toolbox defaults,REMEDIATE,FAIL
+DEF-005,DEFECT,CSI-RS CDM assignment can be swallowed,+sixgr/+phy/+refsig/csirs.m,catch,true,+sixgr/+phy/+refsig/csirs.m:57: catch,REMEDIATE,FAIL
+DEF-006,DEFECT,CSI-RS scrambling ID is modulo wrapped,+sixgr/+phy/+refsig/csirs.m,"mod\(round\(nID\),\s*1024\)",true,"+sixgr/+phy/+refsig/csirs.m:135: mod(round(nID), 1024)",REMEDIATE,FAIL
+DEF-007,DEFECT,TRS port count is clamped/defaulted,+sixgr/+phy/+refsig/trs.m,numPorts\s*=\s*max\(1,true,+sixgr/+phy/+refsig/trs.m:31: numPorts = max(1,REMEDIATE,FAIL
+DEF-008,DEFECT,TRS comb is clamped/defaulted,+sixgr/+phy/+refsig/trs.m,comb\s*=\s*max\(1,true,+sixgr/+phy/+refsig/trs.m:33: comb = max(1,REMEDIATE,FAIL
+DEF-009,DEFECT,TRS RB range is cropped to carrier,+sixgr/+phy/+refsig/trs.m,"numRB\s*=\s*max\(1,\s*min",true,"+sixgr/+phy/+refsig/trs.m:36: numRB = max(1, min",REMEDIATE,FAIL
+DEF-010,DEFECT,TRS symbols are clamped into slot,+sixgr/+phy/+refsig/trs.m,"unique\(max\(1,\s*min\(L",true,"+sixgr/+phy/+refsig/trs.m:122: unique(max(1, min(L",REMEDIATE,FAIL
+DEF-011,DEFECT,Causal measurement state defaults max age to infinity,+sixgr/+phy/+refsig/causalMeasurementState.m,"MaxAgeSlots"",\s*inf",true,"+sixgr/+phy/+refsig/causalMeasurementState.m:12: MaxAgeSlots"", inf",REMEDIATE,FAIL
+DEF-012,DEFECT,Invalid max age can become infinity,+sixgr/+phy/+refsig/causalMeasurementState.m,maxAge\s*=\s*inf,true,+sixgr/+phy/+refsig/causalMeasurementState.m:44: maxAge = inf,REMEDIATE,FAIL
+DEF-013,DEFECT,CSI feedback uses a deterministic custom packer,+sixgr/+phy/+dl/packCSIFeedbackPayload.m,Pack CQI/PMI/RI/CRI into a deterministic CSI payload,true,+sixgr/+phy/+dl/packCSIFeedbackPayload.m:2: Pack CQI/PMI/RI/CRI into a deterministic CSI payload,REMEDIATE,FAIL
+DEF-014,DEFECT,CSI report mode defaults to PMI+CQI+RI,+sixgr/+phy/+dl/packCSIFeedbackPayload.m,PMI\+CQI\+RI,true,+sixgr/+phy/+dl/packCSIFeedbackPayload.m:18: PMI+CQI+RI,REMEDIATE,FAIL
+DEF-015,DEFECT,CQI is clamped into four bits,+sixgr/+phy/+dl/packCSIFeedbackPayload.m,"enc\s*=\s*max\(0,\s*min\(15",true,"+sixgr/+phy/+dl/packCSIFeedbackPayload.m:118: enc = max(0, min(15",REMEDIATE,FAIL
+DEF-016,DEFECT,RI is clamped to local maximum rank,+sixgr/+phy/+dl/packCSIFeedbackPayload.m,"maxRank\s*=\s*max\(1,\s*min",true,"+sixgr/+phy/+dl/packCSIFeedbackPayload.m:31: maxRank = max(1, min",REMEDIATE,FAIL
+DEF-017,DEFECT,CRI is clamped to candidate count,+sixgr/+phy/+dl/packCSIFeedbackPayload.m,numCandidates\s*=\s*max\(1,true,+sixgr/+phy/+dl/packCSIFeedbackPayload.m:145: numCandidates = max(1,REMEDIATE,FAIL
+DEF-018,DEFECT,PMI packing uses local candidate structures,+sixgr/+phy/+dl/packCSIFeedbackPayload.m,StartBeamIndex,true,+sixgr/+phy/+dl/packCSIFeedbackPayload.m:177: StartBeamIndex,REMEDIATE,FAIL
+DEF-019,DEFECT,CQI table documents laboratory defaults,+sixgr/+link/cqiRequiredSINRTable.m,lab|laboratory|default,true,+sixgr/+link/cqiRequiredSINRTable.m:56: lab,REMEDIATE,FAIL
+DEF-020,DEFECT,Wideband CQI contains a 1.5 beta fallback,+sixgr/+link/resolveWidebandCQI.m,1\.5,true,+sixgr/+link/resolveWidebandCQI.m:467: 1.5,REMEDIATE,FAIL
+DEF-021,DEFECT,MCS required SINR is interpolated from CQI anchors,+sixgr/+link/mcsRequiredSINRTable.m,interp1\(,true,+sixgr/+link/mcsRequiredSINRTable.m:89: interp1(,REMEDIATE,FAIL
+DEF-022,DEFECT,Invalid OLLA base MCS can become minimum valid MCS,+sixgr/+link/applyOLLADeltaDbToMCSIndex.m,baseIdx\s*=\s*min\(validIndices\),true,+sixgr/+link/applyOLLADeltaDbToMCSIndex.m:42: baseIdx = min(validIndices),REMEDIATE,FAIL
+DEF-023,DEFECT,OLLA index is clamped into valid range,+sixgr/+link/applyOLLADeltaDbToMCSIndex.m,"max\(min\(validIndices\),\s*min\(max\(validIndices\)",true,"+sixgr/+link/applyOLLADeltaDbToMCSIndex.m:44: max(min(validIndices), min(max(validIndices)",REMEDIATE,FAIL
+DEF-024,DEFECT,SRS scenario nPorts is clamped/defaulted,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m,nPorts\s*=\s*max\(1,true,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m:30: nPorts = max(1,REMEDIATE,FAIL
+DEF-025,DEFECT,SRS port set is overwritten from port count,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m,PortSet\s*=\s*0:\(nPorts-1\),true,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m:92: PortSet = 0:(nPorts-1),REMEDIATE,FAIL
+DEF-026,DEFECT,SRS resource type defaults to periodic,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m,"resource_type"",\s*""periodic""",true,"+sixgr/+phy/+srs/buildSRSConfigFromScenario.m:41: resource_type"", ""periodic""",REMEDIATE,FAIL
+DEF-027,DEFECT,SRS high SNR uses configured channel SNR,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m,channel\.snr_dB,true,+sixgr/+phy/+srs/buildSRSConfigFromScenario.m:162: channel.snr_dB,REMEDIATE,FAIL
+DEF-028,DEFECT,SRS resource port count is clamped,+sixgr/+phy/+srs/buildSRSResourceStrict.m,NumSRSPorts\s*=\s*max\(1,true,+sixgr/+phy/+srs/buildSRSResourceStrict.m:5: NumSRSPorts = max(1,REMEDIATE,FAIL
+DEF-029,DEFECT,SRS comb is clamped,+sixgr/+phy/+srs/buildSRSResourceStrict.m,KTC\s*=\s*max\(2,true,+sixgr/+phy/+srs/buildSRSResourceStrict.m:9: KTC = max(2,REMEDIATE,FAIL
+DEF-030,DEFECT,SRS frequency and hopping fields are clamped,+sixgr/+phy/+srs/buildSRSResourceStrict.m,BH[oa]p\s*=\s*max\(0,true,+sixgr/+phy/+srs/buildSRSResourceStrict.m:15: BHop = max(0,REMEDIATE,FAIL
+DEF-031,DEFECT,SRS target coverage can become full carrier,+sixgr/+phy/+srs/buildSRSResourceStrict.m,target\s*=\s*max\(1.*NSizeGrid,true,"+sixgr/+phy/+srs/buildSRSResourceStrict.m:31: target = max(1, round(double(carrier.NSizeGrid",REMEDIATE,FAIL
+DEF-032,DEFECT,TRS tracking accepts configured SNR,+sixgr/+link/runTRSTracking.m,channel\.snr_dB,true,+sixgr/+link/runTRSTracking.m:6: channel.snr_dB,REMEDIATE,FAIL
+DEF-033,DEFECT,TRS tracking records configured Doppler beside estimate,+sixgr/+link/runTRSTracking.m,ConfiguredMaxDoppler,true,+sixgr/+link/runTRSTracking.m:18: ConfiguredMaxDoppler,REMEDIATE,FAIL
+DEF-034,DEFECT,TRS tracking catches and warns rather than fail-closed,+sixgr/+link/runTRSTracking.m,"log\.warn\(""runTRSTracking failed",true,"+sixgr/+link/runTRSTracking.m:153: log.warn(""runTRSTracking failed",REMEDIATE,FAIL
+DEF-035,DEFECT,PT-RS correction catches errors and disables correction,+sixgr/+phy/+rx/correctCPEFromPTRS.m,catch ME,true,+sixgr/+phy/+rx/correctCPEFromPTRS.m:88: catch ME,REMEDIATE,FAIL
+DEF-036,DEFECT,PT-RS correction can report unavailable and continue,+sixgr/+phy/+rx/correctCPEFromPTRS.m,ptrs_unavailable,true,+sixgr/+phy/+rx/correctCPEFromPTRS.m:28: ptrs_unavailable,REMEDIATE,FAIL
+DEF-037,DEFECT,Decoder truth proxy SINR helper exists,+sixgr/+link/deriveDecoderTruthProxySINR.m,function,true,+sixgr/+link/deriveDecoderTruthProxySINR.m:1: function,REMEDIATE,FAIL
+DEF-038,DEFECT,AMC selector has a default MCS path,+sixgr/+pdsch/AMCSelector.m,default|MCS.*4,false,pattern not found,REGRESSION_GUARD,PASS
+DEF-039,DEFECT,SINR-to-CQI mapping helper is heuristic/local,+sixgr/+phy/+dl/mapSINRToCQI.m,threshold|interp|linspace,true,+sixgr/+phy/+dl/mapSINRToCQI.m:2: threshold,REMEDIATE,FAIL
+DEF-040,DEFECT,Configured CQI table resolver is in live link path,+sixgr/+link/resolveConfiguredCQITable.m,function,true,+sixgr/+link/resolveConfiguredCQITable.m:1: function,REMEDIATE,FAIL
+DEF-041,DEFECT,Configured MCS table resolver is in live link path,+sixgr/+link/resolveConfiguredMCSTable.m,function,true,+sixgr/+link/resolveConfiguredMCSTable.m:1: function,REMEDIATE,FAIL
+DEF-042,DEFECT,No canonical CSIReport object exists,+sixgr/+phy/+rsla/CSIReport.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-043,DEFECT,No calibration registry exists,+sixgr/+phy/+rsla/CalibrationDatasetRegistry.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-044,DEFECT,No measurement registry exists,+sixgr/+phy/+rsla/MeasurementRegistryR18.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-045,DEFECT,No reference-signal ownership map exists,+sixgr/+phy/+rsla/ReferenceSignalOwnershipMap.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-046,DEFECT,No measurement-gap state exists,+sixgr/+phy/+rsla/MeasurementGapState.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-047,DEFECT,No RRM event engine exists,+sixgr/+phy/+rsla/RRMEventEngine.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-048,DEFECT,No EESM calibration registry exists,+sixgr/+phy/+rsla/EESMMapper.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-049,DEFECT,No MIESM implementation exists,+sixgr/+phy/+rsla/MIESMMapper.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-050,DEFECT,No per-UE canonical OLLA state exists,+sixgr/+phy/+rsla/OLLAState.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-051,DEFECT,No canonical EVM engine exists,+sixgr/+phy/+rsla/EVMMeasurementEngine.m,function|classdef,true,missing path,REMEDIATE,FAIL
+DEF-052,DEFECT,No decoded CSI report event exists,+sixgr/+phy/+rsla/DecodedCSIReportEvent.m,function|classdef,true,missing path,REMEDIATE,FAIL
+FND-001,FOUNDATION,CSI-RS uses nrCSIRSIndices,+sixgr/+phy/+refsig/csirs.m,nrCSIRSIndices,true,+sixgr/+phy/+refsig/csirs.m:5: nrCSIRSIndices,PRESERVE_AND_INTEGRATE,PASS
+FND-002,FOUNDATION,CSI-RS uses nrCSIRS symbols,+sixgr/+phy/+refsig/csirs.m,nrCSIRS\(,true,+sixgr/+phy/+refsig/csirs.m:48: nrCSIRS(,PRESERVE_AND_INTEGRATE,PASS
+FND-003,FOUNDATION,Receiver post-equalization SINR kernel exists,+sixgr/+phy/+rx/computePostEqSINR.m,function,true,+sixgr/+phy/+rx/computePostEqSINR.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-004,FOUNDATION,SRS no-oracle guard exists,+sixgr/+phy/+srs/guardNoOracleSRS.m,function,true,+sixgr/+phy/+srs/guardNoOracleSRS.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-005,FOUNDATION,SRS channel estimation exists,+sixgr/+phy/+srs/estimateULChannelFromSRS.m,function,true,+sixgr/+phy/+srs/estimateULChannelFromSRS.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-006,FOUNDATION,Strict SRS validation entry point exists,+sixgr/+phy/+srs/runStrictSRSValidation.m,function,true,+sixgr/+phy/+srs/runStrictSRSValidation.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-007,FOUNDATION,TRS timing estimator exists,+sixgr/+phy/+trs/estimateTRSTiming.m,function,true,+sixgr/+phy/+trs/estimateTRSTiming.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-008,FOUNDATION,TRS frequency estimator exists,+sixgr/+phy/+trs/estimateTRSFrequencyOffset.m,function,true,+sixgr/+phy/+trs/estimateTRSFrequencyOffset.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-009,FOUNDATION,PT-RS CPE correction kernel exists,+sixgr/+phy/+rx/correctCPEFromPTRS.m,cpeVec_rad,true,+sixgr/+phy/+rx/correctCPEFromPTRS.m:1: cpeVec_rad,PRESERVE_AND_INTEGRATE,PASS
+FND-010,FOUNDATION,Causal measurement selector exists,+sixgr/+phy/+refsig/causalMeasurementState.m,consumerSlot,true,+sixgr/+phy/+refsig/causalMeasurementState.m:1: consumerSlot,PRESERVE_AND_INTEGRATE,PASS
+FND-011,FOUNDATION,Measured CSI feedback entry point exists,+sixgr/+phy/+dl/CSI_Feedback.m,function,true,+sixgr/+phy/+dl/CSI_Feedback.m:1: function,PRESERVE_AND_INTEGRATE,PASS
+FND-012,FOUNDATION,Measured SINR analytics exist,+sixgr/+analytics/generateMeasuredSINRCurves.m,function,true,+sixgr/+analytics/generateMeasuredSINRCurves.m:1: function,PRESERVE_AND_INTEGRATE,PASS

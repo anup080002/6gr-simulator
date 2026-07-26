@@ -1,0 +1,23 @@
+ExpectedTitle,ExpectedXLabel,ExpectedYLabel,ImageFile,MinimumAxes,MinimumFinitePoints,MinimumHeight,MinimumSeries,MinimumWidth,SourceCSV
+Runtime geometry trajectory,Time,Position,channel_geometry_trajectory_3d.png,1,100,600,3,900,channel_geometry_state.csv
+Explicit cloned site and sector topology,X position,Y position,channel_topology_clone_map.png,1,20,600,3,900,channel_topology_sites_sectors.csv
+UE drop distribution,X position,Y position,channel_ue_drop_distribution.png,1,100,600,3,900,channel_ue_drops.csv
+TR 38.901 pathloss,Distance,Pathloss,channel_pathloss_curves.png,1,50,600,4,900,channel_pathloss_trials.csv
+LOS probability and state continuity,Distance or time,LOS probability,channel_los_probability_state.png,1,50,600,2,900,channel_los_state.csv
+O2I material and indoor loss,Frequency,Loss,channel_o2i_material_loss.png,1,30,600,3,900,channel_o2i_trials.csv
+Oxygen absorption profile,Frequency,Specific attenuation,channel_oxygen_absorption.png,1,30,600,2,900,channel_oxygen_absorption.csv
+Large-scale parameter marginals,Value,Probability,channel_lsp_marginals.png,1,50,600,3,900,channel_lsp_statistics.csv
+LSP spatial correlation,Separation,Correlation,channel_lsp_spatial_correlation.png,1,50,600,3,900,channel_lsp_statistics.csv
+Cluster delay and angle state,Delay,Angle,channel_cluster_delay_angle_map.png,1,100,600,3,900,channel_ssp_clusters.csv
+TDL impulse response,Delay,Power,channel_tdl_impulse_response.png,1,30,600,2,900,channel_tdl_profile.csv
+TDL spatial correlation,Port index,Correlation,channel_tdl_spatial_correlation.png,1,30,600,2,900,channel_tdl_spatial_correlation.csv
+CDL delay and angle spectrum,Delay,Power,channel_cdl_delay_angle_spectrum.png,1,50,600,3,900,channel_cdl_profile.csv
+Antenna array and polarization geometry,Element X,Element Y,channel_array_polarization_geometry.png,1,20,600,3,900,channel_array_geometry.csv
+Mobility Doppler and phase continuity,Time,Doppler,channel_mobility_doppler_timeline.png,1,100,600,3,900,channel_doppler_phase.csv
+Blockage and material loss timeline,Time,Loss,channel_blockage_material_timeline.png,1,30,600,2,900,channel_blockage_material.csv
+Absolute power reconciliation,Expected power,Measured power,channel_absolute_power_reconciliation.png,1,50,600,2,900,channel_absolute_power_ledger.csv
+Sample-domain interference contributions,Sample,Amplitude,channel_interference_contribution_map.png,1,100,600,3,900,channel_interference_contributions.csv
+Interference covariance,Row,Column,channel_interference_covariance.png,1,20,600,2,900,channel_interference_covariance.csv
+Mobility and handover continuity,Time,Serving cell,channel_handover_continuity.png,1,30,600,2,900,channel_handover_continuity.csv
+Release-19 7 to 24 GHz validation,Frequency,Error,channel_rel19_midband_validation.png,1,30,600,2,900,channel_rel19_midband_profiles.csv
+Ray-tracing reproducibility,Contract,Result,channel_raytracing_reproducibility.png,1,10,600,2,900,channel_raytracing_contract.csv

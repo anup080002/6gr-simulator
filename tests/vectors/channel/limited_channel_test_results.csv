@@ -1,0 +1,27 @@
+Category,CheckID,Details,Evidence,Status
+PACK,PACK-PROMPT,"Production source edits, MATLAB execution, vectors, impact analysis and artifact contracts are required.","1,262-line implementation prompt generated",PASS
+PACK,PACK-PY-COMPILE,"verify_channel_vector_pack.py, verify_channel_artifacts.py, verify_channel_impact_artifacts.py",All three Python verifiers compiled,PASS
+PACK,PACK-MANIFEST,GeneratedWithoutMATLAB=true,"38 files / 64,532 rows; zero hash or row mismatches",PASS
+VECTOR,VECTOR-GEOMETRY,"Distance, delay, range rate, signed Doppler and phase increments.",336 geometry cases,PASS
+VECTOR,VECTOR-PATHLOSS,"UMa, UMi, RMa and InH bounded analytical floors.",320 exact rows plus explicit lookup-required rows,PASS
+VECTOR,VECTOR-LOS,"UMa, UMi, RMa, InH mixed/open; InF explicitly blocked until exact vectors are added.",78 exact LOS rows,PASS
+VECTOR,VECTOR-O2I,Release-19 material coefficients and low/high/low-A deterministic floor.,198 O2I rows,PASS
+VECTOR,VECTOR-OXYGEN,"0–100 GHz table/interpolation, including the 60 GHz line.",428 oxygen rows,PASS
+VECTOR,VECTOR-ARRAY,ULA/UPA pure-math steering responses.,"768 array cases / 12,544 coefficients",PASS
+VECTOR,VECTOR-TDL-LSP,Bounded analytical correlation floors; exact scenario matrices still required before enablement.,"2,046 TDL correlation rows and 378 LSP rows",PASS
+VECTOR,VECTOR-TOPOLOGY-DROP,Explicit 19-site topology and deterministic drop profiles.,"684 clone/sector rows and 6,500 UE coordinates",PASS
+VECTOR,VECTOR-INTERFERENCE,Per-link timing/CFO/amplitude superposition.,"6,720 composite-sample rows",PASS
+VECTOR,VECTOR-MOBILITY,Signed Doppler and integrated phase for multiple frequencies/trajectories/cadences.,"14,400 mobility samples",PASS
+VECTOR,VECTOR-POWER,dBm/watt/noise/SNR analytical ledger.,210 absolute-power cases,PASS
+PACK,IMPACT-MATRIX,Pair integrity verified.,"64 families, 768 experiments, 384 matched pairs, 96 rules",PASS
+VERIFIER,BASE-VERIFIER-POSITIVE,Synthetic 32-CSV/22-PNG artifact set.,"337/337 checks passed, exit 0",PASS
+VERIFIER,BASE-VERIFIER-NEGATIVE,channel_geometry_trajectory_3d.png,"Injected PNG hash mismatch detected, exit 2",PASS
+VERIFIER,IMPACT-VERIFIER-POSITIVE,Synthetic 16-CSV/30-PNG impact set.,"343/343 checks passed, exit 0",PASS
+VERIFIER,IMPACT-VERIFIER-NEGATIVE,channel_impact_observed_provenance.png,"Injected PNG hash mismatch detected, exit 2",PASS
+CURRENT_OUTPUT,CURRENT-CSV-INVENTORY,Existing unrelated phase7_truth_gates.csv is non-rectangular.,225 CSVs; 224 rectangular; 1 malformed,WARN
+CURRENT_OUTPUT,CURRENT-IMAGE-INVENTORY,"These are mostly generic outputs, not the contracted channel-phase figures.",40/40 PNGs decode and are nonblank,PASS
+CURRENT_SOURCE,CURRENT-SOURCE-REMEDIATION,Current source is not remediated.,42 targeted defect signatures detected; 10 unmatched checks retained as regression guards,FAIL
+CURRENT_OUTPUT,CURRENT-REQUIRED-ARTIFACTS,No required channel-phase CSV/PNG artifact currently exists.,0/100 contracted artifacts present,FAIL
+PACK,INDEPENDENT-EXACT-PROFILES,Codex must add exact frozen/pure-spec vectors before enabling those tuples.,CDL and selected InF/LSP profile rows are SPEC_LOOKUP_REQUIRED,WARN
+RUNTIME,MATLAB-PRODUCTION-RUNTIME,No production waveform/channel run was executed here.,MATLAB and Octave executables not found,BLOCKED
+RUNTIME,EXISTING-MATLAB-TESTS,"Runtime unavailability is BLOCKED, never PASS.",47 relevant existing MATLAB test files could not execute,BLOCKED

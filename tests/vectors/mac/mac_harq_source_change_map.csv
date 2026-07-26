@@ -1,0 +1,21 @@
+Component,FileOrAction,RequiredChange
+Event store,+sixgr/+l2/+mac/MACEvent.m; MACEventStore.m; UEContextProjection.m,Create immutable typed events and deterministic projections.
+Timing,+sixgr/+l2/+mac/CentralMACTimingService.m,"Own K0/K1/K2, processing time, TDD, feedback/resource timing."
+HARQ,+sixgr/+l2/+mac/HARQEntityDL.m; HARQEntityUL.m; HARQProcess.m,Replace generic simple entity with direction-specific event-sourced processes.
+HARQ identity,+sixgr/+l2/+mac/HARQTBKey.m; HARQAttemptKey.m,Immutable cell/process/codeword/NDI/TB/grant identity.
+Soft buffer,+sixgr/+phy/+harq/SoftBufferLedger.m,Bind LLR positions and provenance to full attempt key.
+Feedback,+sixgr/+l2/+mac/HARQFeedbackEvent.m,ACK/NACK/DTX/codebook/DAI/source event.
+Persistent grants,+sixgr/+l2/+mac/SPSState.m; ConfiguredGrantType1State.m; ConfiguredGrantType2State.m,Activation/occasion/release and HARQ state.
+BSR,+sixgr/+l2/+mac/BSRStateMachine.m; BSRTableR18.m,Exact tables and triggers/timers/formats.
+PHR,+sixgr/+l2/+mac/PHRStateMachine.m; PHRMappingR18.m,Exact mappings and triggers/timers/multiple cells.
+SR,+sixgr/+l2/+mac/SchedulingRequestState.m,Per-SR-ID pending/prohibit/cancel/fallback state.
+LCP,+sixgr/+l2/+mac/LogicalChannelState.m; LogicalChannelPrioritizer.m,PBR/BSD/Bj and restrictions.
+PDU,+sixgr/+l2/+mac/MACCESchemaRegistry.m; MACPDUAssembler.m; MACPDUDemultiplexer.m,Exact bounded LCID/eLCID/subheaders/CEs.
+TA,+sixgr/+l2/+mac/TimingAdvanceGroupState.m; TimingAdvanceController.m,"TA command, timer, gating, reporting."
+Eligibility,+sixgr/+l2/+mac/UEEligibilityEngine.m,Central all-reason eligibility gate.
+Scheduler,+sixgr/+l2/+mac/SchedulerSnapshot.m; SchedulerPolicy.m; QoSPFPolicy.m; EDFPolicy.m,Policies over identical immutable state.
+Grant commit,+sixgr/+l2/+mac/CandidateGrant.m; GrantCommit.m,Two-phase atomic scheduling and HARQ reservation.
+Lineage,+sixgr/+l2/+mac/PacketLineageGraph.m; ConservationLedger.m,Immutable packet-to-delivery graph and conservation.
+Artifacts,+sixgr/+l2/+mac/MACArtifactExporter.m; runMACHARQSchedulingPhaseValidation.m,Generate required CSV/PNG evidence.
+Impact,+sixgr/+l2/+mac/runMACHARQSchedulingImpactAnalysis.m,Execute paired experiment matrix and statistics.
+Legacy migration,HARQEntity.m; BSR_PHR.m; TBAssembler.m; SchedulerBase/PF/RR.m,Convert to compatibility facades with no hidden fallback.

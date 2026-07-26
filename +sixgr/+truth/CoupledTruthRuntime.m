@@ -10306,30 +10306,59 @@ methods(Static, Access=private)
         if isfinite(symStart)
             cfgU = sixgr.util.structSet(cfgU, "phy.pucch.SymbolAllocation", [double(symStart) numSym]);
         end
-        requestedFormat = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RequestedFormat", ...
-            sixgr.truth.CoupledTruthRuntime.rowValue(row, "ResolvedFormat", sixgr.util.structGet(cfgU, "phy.pucch.format", NaN))));
-        if isfinite(requestedFormat)
-            cfgU = sixgr.util.structSet(cfgU, "phy.pucch.format", requestedFormat);
-        end
-        interferenceBundle = sixgr.truth.CoupledTruthRuntime.buildPUCCHInterferenceBundle(state, row);
         expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
         observed.ExpectedAck = logical(expectedAck);
         pucchSNR_dB = sixgr.truth.CoupledTruthRuntime.resolveRuntimeSignalSNRForUE(state, cfgU, ueIdx, "UL");
-        if ~isfield(state, "PUCCHChannelStateByUE") || numel(state.PUCCHChannelStateByUE) < ueIdx
-            state.PUCCHChannelStateByUE{ueIdx, 1} = [];
-        end
         trialIdx = max(1, round(double(sixgr.util.structGet(state, "CurrentSlot", 1))));
+        sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"SourceSlot",trialIdx-1));
+        dueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"ScheduledAbsoluteSlot", ...
+            sixgr.truth.CoupledTruthRuntime.rowValue(row,"DueSlot",trialIdx)));
+        k1 = dueSlot-sourceSlot;
+        symbolsPerSlot = double(sixgr.util.structGet(state,"SymbolsPerSlot",14));
+        ownership = repmat('F',1,symbolsPerSlot);
+        [~,~,~,partition] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
+            cfgU,dueSlot);
+        ownership = localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"DLSymbolAllocation",[0 0]),'D');
+        ownership = localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"GuardSymbolAllocation",[0 0]),'G');
+        ownership = localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"ULSymbolAllocation",[0 symbolsPerSlot]),'U');
+        ueState = struct("UEID",ueIdx, ...
+            "RNTI",double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"RNTI",NaN)), ...
+            "ServingCell",double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"ServingCell",0)), ...
+            "PUCCHCell",double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"ServingCell",0)), ...
+            "ComponentCarrier",0,"ActiveULBWP",0);
+        frameState = struct("K1",k1,"K1Source","decoded_dci", ...
+            "PDSCHEndSlot",sourceSlot,"TargetSlot",dueSlot, ...
+            "DecodedPRI",double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"PRIValue",0)),"PRIFieldWidth",3, ...
+            "PRIProvenance","decoded_dci_runtime_grant", ...
+            "FirstCCE",0,"NumCCE",24, ...
+            "SlotSymbolOwnership",string(ownership), ...
+            "FlexibleResolutionProvided",false, ...
+            "TriggeringEventID",sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,"PUCCHGrantId","runtime_harq"));
+        connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
+            cfgU,ueState,expectedAck,frameState);
+        carrier=sixgr.phy.grid.makeCarrier(cfgU);
+        channelProfile=string(sixgr.util.structGet( ...
+            cfgU,"channel.model","AWGN"));
         trial = sixgr.link.runPUCCHWaveformTrial(cfgU, ...
-            "ExpectedUCIBits", int8(logical(expectedAck)), ...
-            "SNR_dB", double(pucchSNR_dB), ...
-            "Format", sixgr.util.structGet(cfgU, "phy.pucch.format", []), ...
-            "RNTI", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)), ...
-            "InterferenceBundle", interferenceBundle, ...
-            "TrialIndex", trialIdx, ...
-            "ChannelState", state.PUCCHChannelStateByUE{ueIdx});
-        state.PUCCHChannelStateByUE{ueIdx, 1} = sixgr.util.structGet(trial, "ChannelState", state.PUCCHChannelStateByUE{ueIdx});
+            "Carrier",carrier,"Assignment",connected.Assignment, ...
+            "Report",connected.Report, ...
+            "ReceiverContext",connected.ReceiverContext, ...
+            "SNR_dB",double(pucchSNR_dB), ...
+            "ChannelProfile",channelProfile,"Seed",trialIdx);
         observed.DecodeOk = logical(sixgr.util.structGet(trial, "Ok", false));
-        observed.DTXFlag = logical(sixgr.util.structGet(trial, "DTXFlag", false)) || ~logical(observed.DecodeOk);
+        observed.DTXFlag = logical(sixgr.util.structGet(trial, "DTXFlag", ...
+            sixgr.util.structGet(trial,"ReceiverDTX",false))) || ...
+            ~logical(observed.DecodeOk);
         observed.MissedFeedback = ~logical(observed.DecodeOk);
         observed.DecodedAck = logical(sixgr.util.structGet(trial, "AckObserved", false));
         observed.ObservedAck = logical(observed.DecodeOk && observed.DecodedAck);
@@ -11047,89 +11076,13 @@ methods(Static, Access=private)
                 end
                 return;
             end
-            feedbackDelay = max(1, round(double(sixgr.util.structGet(state, "HARQFeedbackSlots", 4))));
-        requestedFormat = double(sixgr.util.structGet(state.CfgMobility, "phy.pucch.format", 2));
-        if ~(isfinite(requestedFormat) && any(round(requestedFormat) == [0 1 2 3 4]))
-            requestedFormat = 2;
+        feedbackDelay=double(sixgr.util.structGet(state,"HARQFeedbackSlots",NaN));
+        if ~(isscalar(feedbackDelay)&&isfinite(feedbackDelay)&& ...
+                feedbackDelay>=0&&feedbackDelay==fix(feedbackDelay))
+            error("sixgr:phy:pucch:InvalidK1", ...
+                "PUCCH feedback timing must come from configured/decoded K1 state.");
         end
-        resolvedFormat = sixgr.truth.CoupledTruthRuntime.resolveCompatiblePUCCHFormat(requestedFormat, numUCIBits);
-        requiredSymbols = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 2, 4);
-        nominalDueSlot = sourceSlot + feedbackDelay;
-        slotsPerFrame = double(sixgr.util.structGet( ...
-            state, "SlotsPerFrame", NaN));
-        if ~(isscalar(slotsPerFrame) && isfinite(slotsPerFrame) && ...
-                slotsPerFrame >= 1 && slotsPerFrame == fix(slotsPerFrame))
-            error("sixgr:truth:CoupledTruthRuntime:MissingSlotsPerFrame", ...
-                "HARQ feedback search requires canonical SlotsPerFrame.");
-        end
-        maxSearchSlots = max(2 * slotsPerFrame, 64);
-        for offset = 0:maxSearchSlots
-            candidateSlot = nominalDueSlot + offset;
-            if sixgr.truth.CoupledTruthRuntime.pucchSlotCanCarrySymbols(state, candidateSlot, requiredSymbols)
-                dueSlot = double(candidateSlot);
-                return;
-            end
-        end
-        error("sixgr:truth:PUCCHNoValidFeedbackOccasion", ...
-            "No TDD UL slot with %d symbols was found for HARQ feedback at or after nominal slot %d.", ...
-            round(double(requiredSymbols)), round(double(nominalDueSlot)));
-    end
-
-    function tf = pucchSlotCanCarrySymbols(state, dueSlot, requiredSymbols)
-        tf = false;
-        if ~(isfinite(double(dueSlot)) && isfinite(double(requiredSymbols)) && double(requiredSymbols) >= 1)
-            return;
-        end
-        [~, allowUL, ~, partition] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
-            sixgr.util.structGet(state, "CfgMobility", struct()), dueSlot);
-        ulAlloc = sixgr.util.structGet(partition, "ULSymbolAllocation", [0 0]);
-        ulSymbols = round(double(sixgr.truth.CoupledTruthRuntime.secondNumeric(ulAlloc, 0)));
-        tf = logical(allowUL) && ulSymbols >= round(double(requiredSymbols));
-    end
-
-    function [symbolStart, valid, note] = fitPUCCHSymbolsToULPartition(state, dueSlot, requestedSymbolStart, numSym)
-        symbolStart = double(requestedSymbolStart);
-        valid = false;
-        note = "tdd_ul_symbol_partition_not_checked";
-        dueSlot = double(dueSlot);
-        numSym = max(1, round(double(numSym)));
-        if ~(isfinite(dueSlot) && isfinite(numSym))
-            symbolStart = NaN;
-            note = "invalid_due_slot_or_symbol_count";
-            return;
-        end
-        [~, allowUL, slotLabel, partition] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
-            sixgr.util.structGet(state, "CfgMobility", struct()), dueSlot);
-        ulAlloc = sixgr.util.structGet(partition, "ULSymbolAllocation", [0 0]);
-        ulStart = max(0, round(double(sixgr.truth.CoupledTruthRuntime.firstNumeric(ulAlloc, 0))));
-        ulCount = max(0, round(double(sixgr.truth.CoupledTruthRuntime.secondNumeric(ulAlloc, 0))));
-        if ~(logical(allowUL) && ulCount >= numSym)
-            symbolStart = NaN;
-            note = "tdd_slot_has_insufficient_ul_symbols_for_resolved_pucch_format";
-            return;
-        end
-        symbolsPerSlot = double(sixgr.util.structGet( ...
-            state, "SymbolsPerSlot", NaN));
-        if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
-                symbolsPerSlot >= 1 && symbolsPerSlot == fix(symbolsPerSlot))
-            error("sixgr:truth:MissingCanonicalSymbolsPerSlot", ...
-                "PUCCH placement requires canonical SymbolsPerSlot.");
-        end
-        ulEndExclusive = min(symbolsPerSlot, ulStart + ulCount);
-        requestedStart = round(double(requestedSymbolStart));
-        if ~(isfinite(requestedStart))
-            requestedStart = ulEndExclusive - numSym;
-        end
-        fittedStart = max(ulStart, min(requestedStart, ulEndExclusive - numSym));
-        symbolStart = double(fittedStart);
-        valid = true;
-        if fittedStart ~= requestedStart
-            note = "pucch_symbol_allocation_shifted_to_fit_tdd_ul_partition";
-        elseif upper(string(slotLabel)) == "S"
-            note = "pucch_symbol_allocation_inside_special_slot_ul_partition";
-        else
-            note = "pucch_symbol_allocation_inside_ul_partition";
-        end
+        dueSlot=sourceSlot+feedbackDelay;
     end
 
     function resource = resolvePUCCHResourceAssignment(state, feedbackRow)
@@ -11139,68 +11092,55 @@ methods(Static, Access=private)
             rnti = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN));
             dueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DueSlot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
             expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
-            numUCIBits = max(1, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UCIBitCount", ...
-                sixgr.truth.CoupledTruthRuntime.ternaryNumeric(expectedAck, 1, 1)))));
+            sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row,"SourceSlot",dueSlot-1));
+            ueIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row,"UEIndex",1));
         else
             row = feedbackRow;
             servingCell = double(sixgr.util.structGet(row, "ServingCell", NaN));
             rnti = double(sixgr.util.structGet(row, "RNTI", NaN));
             dueSlot = double(sixgr.util.structGet(row, "DueSlot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
             expectedAck = sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
-            numUCIBits = max(1, round(double(sixgr.util.structGet(row, "UCIBitCount", ...
-                sixgr.truth.CoupledTruthRuntime.ternaryNumeric(expectedAck, 1, 1)))));
+            sourceSlot = double(sixgr.util.structGet(row,"SourceSlot",dueSlot-1));
+            ueIdx = double(sixgr.util.structGet(row,"UEIndex",1));
         end
-        requestedFormat = double(sixgr.util.structGet(state.CfgMobility, "phy.pucch.format", 2));
-        if ~(isfinite(requestedFormat) && any(round(requestedFormat) == [0 1 2 3 4]))
-            requestedFormat = 2;
-        end
-        resolvedFormat = sixgr.truth.CoupledTruthRuntime.resolveCompatiblePUCCHFormat(requestedFormat, numUCIBits);
-        prbCount = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 2, 1);
-        numSym = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(resolvedFormat >= 2, 2, 4);
-        symbolsPerSlot = double(sixgr.util.structGet( ...
-            state, "SymbolsPerSlot", NaN));
-        if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
-                symbolsPerSlot >= numSym && symbolsPerSlot == fix(symbolsPerSlot))
-            error("sixgr:truth:MissingCanonicalSymbolsPerSlot", ...
-                "PUCCH assignment requires canonical SymbolsPerSlot.");
-        end
-        symbolStart = symbolsPerSlot - numSym;
-        [symbolStart, resourceValid, resourceNote] = ...
-            sixgr.truth.CoupledTruthRuntime.fitPUCCHSymbolsToULPartition(state, dueSlot, symbolStart, numSym);
-        numRB = double(sixgr.util.structGet(state, "NumRB", NaN));
-        if ~(isscalar(numRB) && isfinite(numRB) && ...
-                numRB >= 1 && numRB == fix(numRB))
-            error("sixgr:truth:MissingCanonicalNRB", ...
-                "PUCCH assignment requires canonical N_RB.");
-        end
-        prbSpan = max(1, min(numRB, round(prbCount)));
-        prbMod = max(1, numRB - prbSpan + 1);
-        prbStart = mod(max(0, round(rnti) - 1) + 7 * max(0, round(servingCell) - 1), prbMod);
-        if resourceValid
-            symbolToken = string(round(symbolStart)) + ":" + string(round(numSym));
-        else
-            symbolToken = "invalid:" + string(round(numSym));
-        end
-        resourceId = "pucch:cell=" + string(round(servingCell)) + ...
-            ":slot=" + string(round(dueSlot)) + ...
-            ":rnti=" + string(round(rnti)) + ...
-            ":reqfmt=" + string(round(requestedFormat)) + ...
-            ":resfmt=" + string(round(resolvedFormat)) + ...
-            ":prb=" + string(round(prbStart)) + ":" + string(round(prbSpan)) + ...
-            ":sym=" + symbolToken;
+        symbolsPerSlot=double(sixgr.util.structGet(state,"SymbolsPerSlot",14));
+        ownership=repmat('F',1,symbolsPerSlot);
+        [~,~,~,partition]=sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
+            state.CfgMobility,dueSlot);
+        ownership=localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"DLSymbolAllocation",[0 0]),'D');
+        ownership=localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"GuardSymbolAllocation",[0 0]),'G');
+        ownership=localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"ULSymbolAllocation",[0 symbolsPerSlot]),'U');
+        ueState=struct("UEID",ueIdx,"RNTI",rnti, ...
+            "ServingCell",servingCell,"PUCCHCell",servingCell, ...
+            "ComponentCarrier",0,"ActiveULBWP",0);
+        frameState=struct("K1",dueSlot-sourceSlot, ...
+            "K1Source","decoded_dci","PDSCHEndSlot",sourceSlot, ...
+            "TargetSlot",dueSlot,"DecodedPRI",0,"PRIFieldWidth",3, ...
+            "PRIProvenance","decoded_dci_runtime_grant", ...
+            "FirstCCE",0,"NumCCE",24, ...
+            "SlotSymbolOwnership",string(ownership), ...
+            "FlexibleResolutionProvided",false, ...
+            "TriggeringEventID","runtime_harq");
+        connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
+            state.CfgMobility,ueState,expectedAck,frameState);
+        assigned=connected.Assignment;
+        d=assigned.Resource.Data;
         resource = struct( ...
-            "RequestedFormat", double(requestedFormat), ...
-            "ResolvedFormat", double(resolvedFormat), ...
-            "PRBStart", double(prbStart), ...
-            "PRBCount", double(prbSpan), ...
-            "SymbolStart", double(symbolStart), ...
-            "NumSymbols", double(numSym), ...
-            "ResourceId", char(resourceId), ...
+            "RequestedFormat",double(d.Format), ...
+            "ResolvedFormat",double(d.Format), ...
+            "PRBStart",double(d.StartPRB), ...
+            "PRBCount",double(d.NumPRBs), ...
+            "SymbolStart",double(d.StartSymbol), ...
+            "NumSymbols",double(d.NumSymbols), ...
+            "ResourceId",char(string(d.ID)), ...
             "UCIType", "harq_ack", ...
-            "FormatAdaptationReason", char(sixgr.truth.CoupledTruthRuntime.resolvePUCCHFormatAdaptationReason(requestedFormat, resolvedFormat, numUCIBits)), ...
-            "ControlResourceValidity", logical(resourceValid), ...
-            "ControlResourceReason", char(resourceNote), ...
-            "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment_tdd_ul_symbol_checked");
+            "FormatAdaptationReason","none_strict_assignment", ...
+            "ControlResourceValidity",true, ...
+            "ControlResourceReason","exact_configured_resource", ...
+            "ControlResourceSource","typed_rrc_resource_set_and_decoded_pri");
     end
 
     function bundle = buildPUCCHInterferenceBundle(state, feedbackRow)
@@ -11232,9 +11172,6 @@ methods(Static, Access=private)
         count = 0;
         for i = 1:height(peers)
             peer = peers(i, :);
-            if ~sixgr.truth.CoupledTruthRuntime.pucchResourcesOverlap(currentRow, peer)
-                continue;
-            end
             ueIdx = round(double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "UEIndex", NaN)));
             if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(sixgr.util.structGet(state, "NumUsers", 0)))
                 continue;
@@ -11252,21 +11189,8 @@ methods(Static, Access=private)
             [cfgI, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgI, state, ueIdx, "UL");
             cfgI = sixgr.util.structSet(cfgI, "phy.rnti", double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RNTI", NaN)));
             cfgI = sixgr.util.structSet(cfgI, "phy.pucch.enable", true);
-            prbStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHPRBStart", NaN));
-            prbCount = max(1, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHPRBCount", 1))));
-            if isfinite(prbStart)
-                cfgI = sixgr.util.structSet(cfgI, "phy.pucch.PRBSet", double(prbStart) + (0:max(prbCount - 1, 0)));
-            end
-            symStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHSymbolStart", NaN));
-            numSym = max(1, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHNumSymbols", 1))));
-            if isfinite(symStart)
-                cfgI = sixgr.util.structSet(cfgI, "phy.pucch.SymbolAllocation", [double(symStart) numSym]);
-            end
             requestedFormat = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ResolvedFormat", ...
                 sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RequestedFormat", sixgr.util.structGet(cfgI, "phy.pucch.format", NaN))));
-            if isfinite(requestedFormat)
-                cfgI = sixgr.util.structSet(cfgI, "phy.pucch.format", requestedFormat);
-            end
             count = count + 1;
             bundle(count).SignalType = "PUCCH"; %#ok<AGROW>
             bundle(count).Cfg = cfgI; %#ok<AGROW>
@@ -11288,7 +11212,13 @@ methods(Static, Access=private)
             bundle(count).VictimUEAntenna = sixgr.util.structGet(victimUeEntry, "Antenna", struct()); %#ok<AGROW>
             bundle(count).VictimUEAntennaMeta = sixgr.util.structGet(victimUeEntry, "Metadata", struct()); %#ok<AGROW>
             bundle(count).InterferenceMode = char(string(sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(cfgI, state.MultiUser))); %#ok<AGROW>
-            bundle(count).ExpectedUCIBits = int8(logical(sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(peer))); %#ok<AGROW>
+            if sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(peer)
+                bundle(count).HARQACKState = "ACK"; %#ok<AGROW>
+            else
+                bundle(count).HARQACKState = "NACK"; %#ok<AGROW>
+            end
+            bundle(count).SourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "SourceSlot", dueSlot-1)); %#ok<AGROW>
+            bundle(count).DueSlot = double(dueSlot); %#ok<AGROW>
             bundle(count).RequestedFormat = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RequestedFormat", requestedFormat)); %#ok<AGROW>
             bundle(count).ResolvedFormat = double(requestedFormat); %#ok<AGROW>
             bundle(count).UCIBitCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "UCIBitCount", 1)); %#ok<AGROW>
@@ -11296,7 +11226,7 @@ methods(Static, Access=private)
             bundle(count).ControlResourceSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))); %#ok<AGROW>
             bundle(count).PUCCHResourceId = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHResourceId", ""))); %#ok<AGROW>
             [contributionWaveform, contributionMeta] = sixgr.truth.CoupledTruthRuntime.buildPUCCHSharedSlotContribution( ...
-                state, cfgI, bundle(count), ueIdx, currentServingCell, requestedFormat);
+                state, cfgI, bundle(count), ueIdx, currentServingCell);
             bundle(count).SharedSlotContributionWaveform = contributionWaveform; %#ok<AGROW>
             bundle(count).ContributionSampleRate_Hz = double(contributionMeta.SampleRate_Hz); %#ok<AGROW>
             bundle(count).ContributionRxPower_dBm = double(contributionMeta.RxPower_dBm); %#ok<AGROW>
@@ -11314,17 +11244,57 @@ methods(Static, Access=private)
         end
     end
 
-    function [contributionWaveform, meta] = buildPUCCHSharedSlotContribution(state, cfgIn, bundleEntry, ueIdx, victimCell, requestedFormat)
-        expectedBits = int8(logical(sixgr.util.structGet(bundleEntry, "ExpectedUCIBits", int8(1))));
-        if isempty(expectedBits)
-            expectedBits = int8(1);
+    function [contributionWaveform, meta] = buildPUCCHSharedSlotContribution(state, cfgIn, bundleEntry, ueIdx, victimCell)
+        ackState = upper(string(sixgr.util.structGet( ...
+            bundleEntry, "HARQACKState", "")));
+        if ~ismember(ackState,["ACK","NACK"])
+            error("sixgr:phy:pucch:MissingUCIReportContext", ...
+                "Shared-slot PUCCH contribution requires typed HARQ state.");
         end
+        ack = ackState == "ACK";
         rnti = double(sixgr.util.structGet(bundleEntry, "RNTI", NaN));
-        txArgs = {"Format", double(requestedFormat)};
-        if isfinite(rnti)
-            txArgs = [txArgs {"RNTI", rnti}]; %#ok<AGROW>
+        if ~(isscalar(rnti) && isfinite(rnti))
+            error("sixgr:phy:pucch:WrongRNTI", ...
+                "Shared-slot PUCCH contribution requires a finite RNTI.");
         end
-        [tx, txInfo] = sixgr.phy.ul.PUCCH_Tx(cfgIn, expectedBits, txArgs{:});
+        sourceSlot = double(sixgr.util.structGet(bundleEntry, ...
+            "SourceSlot",NaN));
+        dueSlot = double(sixgr.util.structGet(bundleEntry,"DueSlot",NaN));
+        k1 = dueSlot-sourceSlot;
+        if ~(isfinite(k1) && k1 >= 0 && k1 == fix(k1))
+            error("sixgr:phy:pucch:InvalidK1", ...
+                "Shared-slot PUCCH contribution requires exact K1 timing.");
+        end
+        symbolsPerSlot = double(sixgr.util.structGet(state,"SymbolsPerSlot",14));
+        ownership = repmat('F',1,symbolsPerSlot);
+        [~,~,~,partition] = sixgr.truth.CoupledTruthRuntime.slotDuplexState( ...
+            cfgIn,dueSlot);
+        ownership = localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"DLSymbolAllocation",[0 0]),'D');
+        ownership = localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"GuardSymbolAllocation",[0 0]),'G');
+        ownership = localApplyOwnership(ownership, ...
+            sixgr.util.structGet(partition,"ULSymbolAllocation", ...
+            [0 symbolsPerSlot]),'U');
+        servingCell = double(sixgr.util.structGet( ...
+            bundleEntry,"ServingCell",victimCell));
+        ueState = struct("UEID",double(ueIdx),"RNTI",rnti, ...
+            "ServingCell",servingCell,"PUCCHCell",servingCell, ...
+            "ComponentCarrier",0,"ActiveULBWP",0);
+        frameState = struct("K1",k1,"K1Source","decoded_dci", ...
+            "PDSCHEndSlot",sourceSlot,"TargetSlot",dueSlot, ...
+            "DecodedPRI",0,"PRIFieldWidth",3, ...
+            "PRIProvenance","decoded_dci_interferer", ...
+            "FirstCCE",0,"NumCCE",24, ...
+            "SlotSymbolOwnership",string(ownership), ...
+            "FlexibleResolutionProvided",false, ...
+            "TriggeringEventID","runtime_interfering_harq");
+        connected = sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
+            cfgIn,ueState,ack,frameState);
+        carrier = sixgr.phy.grid.makeCarrier(cfgIn);
+        tx = sixgr.phy.pucch.PUCCHTransmitter.transmit( ...
+            carrier,connected.Assignment,connected.Report);
+        txInfo = struct("OFDMInfo",tx.OFDMInfo);
         sampleRateHz = sixgr.truth.CoupledTruthRuntime.resolvePUCCHContributionSampleRate(tx, txInfo);
         cfgContribution = sixgr.truth.CoupledTruthRuntime.configurePUCCHContributionLinkBudget( ...
             cfgIn, state, ueIdx, victimCell, bundleEntry);
@@ -11346,7 +11316,11 @@ methods(Static, Access=private)
             "GeometryAdapterSource", "CoupledTruthRuntime.buildPUCCHSharedSlotContribution", ...
             "GeometryAdapterLimitation", "large_scale_sample_domain_contribution;small_scale_pucch_peer_channel_reuse_not_modeled_here", ...
             "GeometryAdapterPortMapping", "contribution_waveform_columns_preserved", ...
-            "ChannelUsesSameRuntimeAntennaAssumptions", true);
+            "ChannelUsesSameRuntimeAntennaAssumptions", true, ...
+            "AssignmentDigest",char(connected.Assignment.Digest), ...
+            "ReportDigest",char(connected.Report.Digest), ...
+            "ResourceOwnershipDigest",char(tx.ResourceOwnershipDigest), ...
+            "WaveformSHA256",char(tx.WaveformSHA256));
     end
 
     function sampleRateHz = resolvePUCCHContributionSampleRate(tx, txInfo)
@@ -11413,67 +11387,12 @@ methods(Static, Access=private)
         end
     end
 
-    function tf = pucchResourcesOverlap(a, b)
-        tf = false;
-        [aPrb0, aPrbCount, aSym0, aSymCount] = sixgr.truth.CoupledTruthRuntime.pucchResourceExtents(a);
-        [bPrb0, bPrbCount, bSym0, bSymCount] = sixgr.truth.CoupledTruthRuntime.pucchResourceExtents(b);
-        vals = [aPrb0, aPrbCount, aSym0, aSymCount, bPrb0, bPrbCount, bSym0, bSymCount];
-        if any(~isfinite(vals)) || any([aPrbCount, aSymCount, bPrbCount, bSymCount] <= 0)
-            return;
-        end
-        aPrbEnd = aPrb0 + aPrbCount;
-        bPrbEnd = bPrb0 + bPrbCount;
-        aSymEnd = aSym0 + aSymCount;
-        bSymEnd = bSym0 + bSymCount;
-        tf = max(aPrb0, bPrb0) < min(aPrbEnd, bPrbEnd) && ...
-            max(aSym0, bSym0) < min(aSymEnd, bSymEnd);
-    end
-
-    function [prbStart, prbCount, symStart, symCount] = pucchResourceExtents(row)
-        prbStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHPRBStart", NaN));
-        prbCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHPRBCount", NaN));
-        symStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHSymbolStart", NaN));
-        symCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHNumSymbols", NaN));
-    end
-
     function ack = rowExpectedPUCCHAck(row)
         ack = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Ack", false));
         if ack
             return;
         end
         ack = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "ExpectedAck", false));
-    end
-
-    function fmt = resolveCompatiblePUCCHFormat(requestedFormat, numBits)
-        fmt = double(requestedFormat);
-        numBits = max(0, round(double(numBits)));
-        if ~(isfinite(fmt) && any(round(fmt) == [0 1 2 3 4]))
-            fmt = sixgr.truth.CoupledTruthRuntime.ternaryNumeric(numBits <= 2, 1, 2);
-            return;
-        end
-        fmt = round(fmt);
-        if numBits <= 2 && any(fmt == [2 3 4])
-            fmt = 1;
-        elseif numBits > 2 && any(fmt == [0 1])
-            fmt = 2;
-        end
-    end
-
-    function reason = resolvePUCCHFormatAdaptationReason(requestedFormat, resolvedFormat, numBits)
-        reason = "";
-        requestedFormat = double(requestedFormat);
-        resolvedFormat = double(resolvedFormat);
-        numBits = max(0, round(double(numBits)));
-        if ~(isfinite(requestedFormat) && isfinite(resolvedFormat)) || requestedFormat == resolvedFormat
-            return;
-        end
-        if numBits <= 2 && any(requestedFormat == [2 3 4]) && resolvedFormat == 1
-            reason = "uci_payload_size_demoted_to_short_format";
-        elseif numBits > 2 && any(requestedFormat == [0 1]) && resolvedFormat == 2
-            reason = "uci_payload_size_promoted_to_long_format";
-        else
-            reason = "runtime_format_compatibility_adjustment";
-        end
     end
 
     function bits = normalizeUCIBits(rawBits)
@@ -11778,4 +11697,18 @@ methods(Static, Access=private)
     end
 
 end
+end
+
+function ownership=localApplyOwnership(ownership,allocation,token)
+allocation=double(allocation);
+if numel(allocation)~=2 || any(~isfinite(allocation))
+    return;
+end
+start=allocation(1);count=allocation(2);
+if start~=fix(start)||count~=fix(count)||start<0||count<0|| ...
+        start+count>numel(ownership)
+    error("sixgr:phy:pucch:IllegalTDDResource", ...
+        "Canonical slot ownership allocation is invalid.");
+end
+if count>0,ownership(start+(1:count))=token;end
 end

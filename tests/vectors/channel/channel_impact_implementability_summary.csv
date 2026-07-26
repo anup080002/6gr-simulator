@@ -1,0 +1,4 @@
+Description,Experiments,Families,Wave
+Direct channel/geometry implementation,528,44,A
+Internal multicell/mobility/control integration,144,12,B
+Ray-tracing/HST/end-to-end dependencies,96,8,C

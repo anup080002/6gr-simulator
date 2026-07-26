@@ -1,0 +1,31 @@
+ImageFile,SourceCSV,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints,Required
+rsla_impact_dmrs_doppler.png,rsla_impact_reference_signals.csv,DM-RS density versus Doppler,Doppler / profile,BLER / NMSE,900,600,1,1,4,true
+rsla_impact_csirs_overhead.png,rsla_impact_reference_signals.csv,CSI-RS overhead and accuracy,CSI-RS profile,overhead / error,900,600,1,1,4,true
+rsla_impact_csirs_periodicity.png,rsla_impact_reference_signals.csv,CSI-RS periodicity impact,periodicity,age / goodput,900,600,1,1,4,true
+rsla_impact_srs_ports.png,rsla_impact_reference_signals.csv,SRS port-count impact,ports,NMSE / rank accuracy,900,600,1,1,4,true
+rsla_impact_srs_hopping.png,rsla_impact_reference_signals.csv,SRS hopping impact,hopping profile,coverage / NMSE,900,600,1,1,4,true
+rsla_impact_srs_periodicity.png,rsla_impact_reference_signals.csv,SRS periodicity impact,periodicity,age / overhead,900,600,1,1,4,true
+rsla_impact_trs_cfo.png,rsla_impact_tracking.csv,TRS CFO tracking impact,CFO case,residual CFO / EVM,900,600,1,1,4,true
+rsla_impact_trs_timing.png,rsla_impact_tracking.csv,TRS timing tracking impact,timing case,residual timing / EVM,900,600,1,1,4,true
+rsla_impact_ptrs_phase_noise.png,rsla_impact_tracking.csv,PT-RS phase-noise impact,phase noise,CPE / EVM / BLER,900,600,1,1,4,true
+rsla_impact_measurement_rsrp.png,rsla_impact_measurements.csv,RSRP measurement impact,case,measurement error,900,600,1,1,4,true
+rsla_impact_measurement_rsrq.png,rsla_impact_measurements.csv,RSRQ measurement impact,case,measurement error,900,600,1,1,4,true
+rsla_impact_measurement_sinr.png,rsla_impact_measurements.csv,SINR measurement impact,case,measurement error,900,600,1,1,4,true
+rsla_impact_filter_lag_noise.png,rsla_impact_measurements.csv,Filter lag-noise trade-off,filter coefficient,lag / variance,900,600,1,1,4,true
+rsla_impact_gap_availability.png,rsla_impact_measurements.csv,Measurement-gap availability,gap profile,measurement availability,900,600,1,1,4,true
+rsla_impact_rrm_hysteresis.png,rsla_impact_rrm.csv,RRM hysteresis impact,hysteresis,false triggers / delay,900,600,1,1,4,true
+rsla_impact_rrm_ttt.png,rsla_impact_rrm.csv,Time-to-trigger impact,TTT,false triggers / delay,900,600,1,1,4,true
+rsla_impact_csi_part2.png,rsla_impact_csi_reports.csv,CSI Part-2 impact,report profile,bits / goodput,900,600,1,1,4,true
+rsla_impact_csi_transport.png,rsla_impact_csi_reports.csv,PUCCH versus PUSCH CSI,transport,latency / decode rate,900,600,1,1,4,true
+rsla_impact_csi_age.png,rsla_impact_csi_reports.csv,CSI age impact,report age,BLER / goodput,900,600,1,1,4,true
+rsla_impact_cqi_calibration.png,rsla_impact_calibration.csv,CQI/MCS calibration accuracy,MCS,BLER prediction error,900,600,1,1,4,true
+rsla_impact_eesm_beta.png,rsla_impact_calibration.csv,EESM beta calibration impact,beta source,prediction RMSE,900,600,1,1,4,true
+rsla_impact_eesm_miesm.png,rsla_impact_calibration.csv,EESM versus MIESM,method,prediction RMSE,900,600,1,1,4,true
+rsla_impact_olla_target.png,rsla_impact_olla.csv,OLLA target-BLER impact,target BLER,achieved BLER / goodput,900,600,1,1,4,true
+rsla_impact_olla_steps.png,rsla_impact_olla.csv,OLLA step-ratio impact,step profile,drift / convergence,900,600,1,1,4,true
+rsla_impact_olla_multiue.png,rsla_impact_olla.csv,OLLA multi-UE isolation,UE,margin / BLER,900,600,1,1,4,true
+rsla_impact_bootstrap.png,rsla_impact_summary.csv,Bootstrap policy impact,policy,measured decision fraction,900,600,1,1,4,true
+rsla_impact_runtime_scaling.png,rsla_impact_runtime.csv,RSLA runtime scaling,family,runtime / memory,900,600,1,1,4,true
+rsla_impact_effect_forest.png,rsla_impact_pairwise_effects.csv,Paired impact effect forest,effect,confidence interval,900,600,1,1,4,true
+rsla_impact_interactions.png,rsla_impact_interactions.csv,RSLA factor interactions,term,coefficient,900,600,1,1,4,true
+rsla_impact_family_status.png,rsla_impact_summary.csv,RSLA impact-family status,family,completion status,900,600,1,1,4,true

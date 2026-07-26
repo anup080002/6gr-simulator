@@ -1,0 +1,205 @@
+{
+  "manifest_version": "1.0",
+  "generator": "independent Python table/state/vector generator; no MATLAB or 5G Toolbox used",
+  "specification_profile": "3GPP Release 18 bounded MAC/HARQ profile",
+  "files": [
+    {
+      "path": "expected_bsr_5bit_table.csv",
+      "rows": 32,
+      "sha256": "ecdfaaabb579df01fcd1835848ba01d4ed34d7f529b5320a424524092c84fa90",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "expected_bsr_8bit_table.csv",
+      "rows": 256,
+      "sha256": "549a9302b130d4f509b97e2738c22b0a603cfc8206dab0f346f83993cbacd6fe",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "expected_refined_bsr_8bit_table.csv",
+      "rows": 256,
+      "sha256": "0f1555517e6d50e9c07ae2a3d2a136a584dcb257256a6917f68ea1a489a3584d",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "expected_phr_mapping.csv",
+      "rows": 64,
+      "sha256": "0ccb8779c83baa7e1b93670367a5e55db13d509aae7fa9027d1d9d664580406a",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "expected_pcmax_mapping.csv",
+      "rows": 64,
+      "sha256": "490202dd8af2dddc723904983174c1277f6021560fdc426d237c3236bbdea759",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_harq_state_transition_vectors.csv",
+      "rows": 150,
+      "sha256": "4ce609bdf0bc80ceed0f9dbf8ce0a9a97e4b3d98f2502c9128a6c2ccea7842c9",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_harq_feedback_codebook_vectors.csv",
+      "rows": 120,
+      "sha256": "6518500f0554be275296e8df85869ffc4d7224a51b5c86373feb9b3a58b7bf71",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_timing_k0_k1_k2_vectors.csv",
+      "rows": 80,
+      "sha256": "5adf2ad233d0402df9a4f6f8df9fcdd70f074b7c494707e82eff73c2ecd80b1c",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_tdd_eligibility_vectors.csv",
+      "rows": 80,
+      "sha256": "b4b3ca87d524c08e5bd0cc7fde9a83a24c849481a7d1dc877ce168b877840196",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_soft_buffer_provenance_vectors.csv",
+      "rows": 64,
+      "sha256": "8e559e6fd07dbdeb1e349e5df4616b992f372a6cec100289a5d93d960c3df06d",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_bsr_trigger_timer_vectors.csv",
+      "rows": 120,
+      "sha256": "a36dff41dcd1bacbf699e217a204ed5b4bf27c1aebf39a2e262916fb781a4e66",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_phr_trigger_timer_vectors.csv",
+      "rows": 400,
+      "sha256": "20117533a0448aeb9236cd08b5fa48848b7f2170e076c402d09d240660a0ab53",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_sr_state_vectors.csv",
+      "rows": 32,
+      "sha256": "229c01fd70839e29137912c913aa00db321b45b42902bbd54d65055c922a8673",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_lcp_test_vectors.csv",
+      "rows": 300,
+      "sha256": "22b0767aa4e7ad99d083e044cb8ab7affe298825e53ab96ce90c95d496ca2716",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_pdu_subheader_test_vectors.csv",
+      "rows": 77,
+      "sha256": "809a4bfa651d547427138a46baf484ed6055da92ec8f482885b50506df6f910a",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_ce_priority_test_vectors.csv",
+      "rows": 288,
+      "sha256": "98c30df2a51a7f03c7fdd7c043d86e7eaefd15eb52fe5c5118893db395bc9c57",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_timing_advance_test_vectors.csv",
+      "rows": 105,
+      "sha256": "9a8758765a49328dc723afa1c953562e7387ec692fb5d25e86ac65a9a183a973",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_scheduler_policy_test_vectors.csv",
+      "rows": 360,
+      "sha256": "1559327b939a2e82de8aa44d808a1ef1bbc56ab755ee6f12bdbd8b8b99aba1b3",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_packet_lineage_test_vectors.csv",
+      "rows": 301,
+      "sha256": "51dfbcc00aeea8a50cadb2ee481e663045590860409bd488b462b5a6ba3dd627",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_negative_test_vectors.csv",
+      "rows": 150,
+      "sha256": "e61be9f215c07c2707b76b1d23b78be2188d3cdba290946a55281ff2d717c0e9",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_declared_coverage_matrix.csv",
+      "rows": 128,
+      "sha256": "e49b1bdc793c05b0e18841619c042fe0b26227d7ff9233720fa86605f9fecef3",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_capability_profile_matrix.csv",
+      "rows": 48,
+      "sha256": "3cd11574c02ab50c03264ace83855d091bfb61386e4b965121870fef52e231b3",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_harq_scheduling_20_findings.csv",
+      "rows": 20,
+      "sha256": "9028b820b8f968823da702928e2a3292ccb1348eeef7114cf4b3d60d35f800dc",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_harq_error_contract.csv",
+      "rows": 35,
+      "sha256": "94635a091e503359508a0ffd40077ff6ffb2519021e99ac9c4deb9f543fb4e44",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_harq_implementation_task_graph.csv",
+      "rows": 28,
+      "sha256": "66c8b727d770210f23ea76557d30502941ef69fe61cd2f0b5a78e7a166f06fa7",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_harq_matlab_test_plan.csv",
+      "rows": 60,
+      "sha256": "e8d0449c78285921fb16dde1a8b6ea31a5fd7c49b2a5a78342ed4676d2648993",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_impact_analysis_families.csv",
+      "rows": 64,
+      "sha256": "0236a40169738e57914af79522a88292e20454007c11c7ba2d2a5d7f2d0ee3cc",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_impact_experiment_matrix.csv",
+      "rows": 768,
+      "sha256": "47098f650f06e218840ba59a10bc8f00bc6d3b29a0a3bdd003ebd1e74396fd37",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_impact_pairing_contract.csv",
+      "rows": 64,
+      "sha256": "bce7a426f21913acb64394d0504390dedeff5be463b3119050296e75024bf991",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_impact_acceptance_rules.csv",
+      "rows": 96,
+      "sha256": "ab9172e872b1d7ae6ec5e432ccf50d1e886e168ef3281fb55f278b6f198119aa",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_impact_dependency_waves.csv",
+      "rows": 64,
+      "sha256": "1853d04f026e414c5de2dc20c3ebb242f355e6c6896284ca33787a96392df8ae",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "mac_impact_implementability_summary.csv",
+      "rows": 3,
+      "sha256": "1aefed3793d963fd71ee6a247083dddacf5cda998f98f784102730f6b3da26ff",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    },
+    {
+      "path": "expected_mac_impact_analytical_floor.csv",
+      "rows": 96,
+      "sha256": "8bfbb0d8d3a8961ac873a4ff063c1381c7ab6dbc5ce603a57793e107ccdd2e09",
+      "oracle_class": "pure_spec_table_or_deterministic_state_floor"
+    }
+  ]
+}

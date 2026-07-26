@@ -1,0 +1,61 @@
+CheckID,Category,Description,SourceFile,Pattern,Detected,RawMatch,Evidence
+D01,HARQ,HARQ entity self-identifies as simple,+sixgr/+l2/+mac/HARQEntity.m,Simple HARQ process manager,true,true,line 3: Simple HARQ process manager for MAC/PHY integration. % % This class tracks HARQ process state per UE and per direction (DL/UL).
+D02,HARQ,Generic synthesized stale timeout property,+sixgr/+l2/+mac/HARQEntity.m,StaleProcessTimeoutSlots,true,true,"line 41: StaleProcessTimeoutSlots (1,1) double = NaN Logger = [] % optional sixgr.core.Logger end"
+D03,HARQ,Stale timeout derived from RTT or K1,+sixgr/+l2/+mac/HARQEntity.m,2 \* rttSlots,true,true,"line 108: 2 * rttSlots; else feedbackSlots = double(sixgr.util.structGet(cfg, ""phy.har"
+D04,HARQ,"Fallback max(16,4*K1)",+sixgr/+l2/+mac/HARQEntity.m,"max\(16,\s*4 \* feedbackSlots\)",true,true,"line 115: max(16, 4 * feedbackSlots); end end obj.NumProcesses = max(1, round(obj.NumProcesses))"
+D05,HARQ,Age-based process expiry,+sixgr/+l2/+mac/HARQEntity.m,expireStaleProcessArray,true,true,"line 226: expireStaleProcessArray(procs, slot); % 1) Serve pending retransmissions first pid = find([procs.N"
+D06,HARQ,Boolean ACK feedback API,+sixgr/+l2/+mac/HARQEntity.m,function onFeedback\([^\n]*ack,true,true,"line 373: function onFeedback(obj, rnti, harqId0, ack, varargin) % onFeedback Update HARQ process state after ACK/NACK. rnti = do"
+D07,HARQ,Stale feedback ignored counter,+sixgr/+l2/+mac/HARQEntity.m,StaleFeedbackIgnored,true,true,"line 54: StaleFeedbackIgnored',0,'SoftBufferStore',0, ... 'SoftBufferClear',0,'FirstSuccessDelivery',0) end"
+D08,HARQ,Fixed common RV sequence embedded in entity,+sixgr/+l2/+mac/HARQEntity.m,RVSequence[^\n]*\[0 2 3 1\],true,true,"line 39: RVSequence (1,:) double = [0 2 3 1] StoreTB (1,1) logical = true StaleProcessTimeoutSlots (1,1) double = NaN Lo"
+D09,Lineage,TB identity synthesized from process/slot fallback,+sixgr/+l2/+mac/HARQEntity.m,_rnti.*_harq.*_ndi.*_firstSlot,false,false,not found
+D10,Timing,Default DDDSU pattern,+sixgr/+l2/+mac/resolveHARQFeedbackK1.m,DDDSU,true,true,"line 9: DDDSU""; end if nargin < 3 || isempty(mu) mu = 1; end mu = max(0, round(double(mu))); slotsPerFrame ="
+D11,Timing,K1 helper selects next UL opportunity,+sixgr/+l2/+mac/resolveHARQFeedbackK1.m,next UL opportunity,true,true,"line 6: next UL opportunity in the configured TDD pattern. if nargin < 2 || isempty(tddPattern) tddPattern = ""DDDSU""; end"
+D12,Timing,K1 has no-UL/default fallback,+sixgr/+l2/+mac/resolveHARQFeedbackK1.m,k1\s*=\s*4,true,true,line 33: k1 = 4; return; end ulSlots = []; for f = 0:ceil(slotsPerFrame / max(1
+D13,Scheduling,PF stamps configured SearchSpace,+sixgr/+l2/+mac/SchedulerPF.m,phy\.dl\.pdcch\.SearchSpaceID,true,true,"line 62: phy.dl.pdcch.SearchSpaceID"", 0)))); coreset = max(0, round(double(sixgr.util.structGet(obj.Cfg, ""phy.dl.pdcch.CORE"
+D14,Scheduling,PF stamps configured CORESET,+sixgr/+l2/+mac/SchedulerPF.m,phy\.dl\.pdcch\.CORESETID,true,true,"line 63: phy.dl.pdcch.CORESETID"", 0)))); bwpId = max(0, round(double(sixgr.util.structGet(obj.Cfg, ""phy.bwp.id"", 0))));"
+D15,Scheduling,PF stamps scalar BWP,+sixgr/+l2/+mac/SchedulerPF.m,BWPId,true,true,"line 64: bwpId = max(0, round(double(sixgr.util.structGet(obj.Cfg, ""phy.bwp.id"", 0)))); if isempty(ue"
+D16,Scheduling,PF hardcodes DAI=1,+sixgr/+l2/+mac/SchedulerPF.m,DAI\s*=\s*1,true,true,line 150: DAI = 1; g.K1 = k1; g.K2 = k2; g.Se
+D17,Scheduling,RR hardcodes DAI=1,+sixgr/+l2/+mac/SchedulerRR.m,DAI\s*=\s*1,true,true,line 151: DAI = 1; g.K1 = k1; g.K2 = k2; g.SearchSpaceID
+D18,Scheduling,PF is simple PRB chunking,+sixgr/+l2/+mac/SchedulerPF.m,simple PRB chunking,true,true,"line 10: simple PRB chunking. % - This is intentionally ""simple but correct"" and is a good basis for % adding QoS (5QI), LCP"
+D19,Scheduling,Retransmissions are unconditionally first,+sixgr/+l2/+mac/SchedulerPF.m,HARQ retransmissions first,true,true,line 110: HARQ retransmissions first ------------------ if ~isempty(obj.HARQ) for t = 1:numel(ueIdx)
+D20,Scheduling,Configured fixed MCS path,+sixgr/+l2/+mac/SchedulerBase.m,configured_fixed_mcs,true,true,"line 567: configured_fixed_mcs""; amc.MCSValueStatus = ""configured""; end amc.CQ"
+D21,Scheduling,Bootstrap CQI/MCS path,+sixgr/+l2/+mac/SchedulerBase.m,bootstrap_cqi,true,true,"line 651: bootstrap_cqi_conservative""]) && isstruct(amc.MCSProfile) && ... isfield(amc.MCSProfile, ""Val"
+D22,Scheduling,Approximate TBS mode,+sixgr/+l2/+mac/SchedulerBase.m,"TBSMode""?,\s*""approximate",true,true,"line 791: TBSMode"", ""approximate"", ""ViennaEquivalent"", false, ... ""PlanningOnly"", logical(opt.PlanningOnly), ..."
+D23,BSR,PHR simplified quantization comment,+sixgr/+l2/+mac/BSR_PHR.m,simplified quantization,true,true,line 14: simplified quantization) % % IMPORTANT: Exact dB mapping for PH/PCMAX indices is defined in TS 38.133. % For simulation coh
+D24,PHR,Approximate linear PH mapping,+sixgr/+l2/+mac/BSR_PHR.m,round\(PH_dB\) \+ 23,true,true,"line 18: round(PH_dB) + 23, 0, 63) % This matches the typical LTE/NR representation range [-23..40] dB. % % Keep this file ASC"
+D25,BSR,Truncated BSR option reserved,+sixgr/+l2/+mac/BSR_PHR.m,Truncated.*reserved,true,true,"line 70: Truncated' : true/false (default false) (reserved) ip = inputParser; ip.addParameter('Format','auto',@(x) ischar(x) || isstri"
+D26,BSR,Smooth approximate 8-bit table,+sixgr/+l2/+mac/BSR_PHR.m,smooth approximation,true,true,line 312: smooth approximation: % - Map bytes to a monotonic index in [0..255] using log scaling. % If yo
+D27,PHR,Approximate PCMAX mapping,+sixgr/+l2/+mac/BSR_PHR.m,PCMAX.*approximate,true,true,"line 250: PCMAX,f,c: 6 bits (index 0..63), approximate mapping to dBm % - Remaining bits: set to 0 (R bits / MPE not modelled here)"
+D28,PDU,TB assembler describes pragmatic subset,+sixgr/+l2/+mac/TBAssembler.m,pragmatic subset,true,true,line 5: pragmatic subset of 3GPP TS 38.321 MAC PDU building: % - Supports MAC SDUs (logical channel SDUs) and MAC CEs (e.g.
+D29,PDU,Drop-last-SDU shortcut enabled by default,+sixgr/+l2/+mac/TBAssembler.m,"AllowDropLastSDU.*,true",true,true,"line 41: AllowDropLastSDU',true,@(x) islogical(x) && isscalar(x)); ip.addParameter('Logger',[],@(x) true);"
+D30,LCP,Scalar priority sort,+sixgr/+l2/+mac/TBAssembler.m,sort\(\[sduList\.Priority\],true,true,"line 58: sort([sduList.Priority],'ascend'); sduList = sduList(ord); end % Order: DL -> CEs"
+D31,LCP,Missing priority defaults to 100,+sixgr/+l2/+mac/TBAssembler.m,Priority\s*=\s*100,true,true,"line 372: Priority = 100; end if ~isfield(sduList(i),'Meta') || isempty(sduList(i).Meta)"
+D32,PDU,Best-effort PDU decode,+sixgr/+l2/+mac/TBAssembler.m,best-effort,true,true,"line 178: best-effort, uses LCID heuristics for fixed-size CEs). ip = inputParser; ip.addParamete"
+D33,PDU,LCID heuristic helper,+sixgr/+l2/+mac/TBAssembler.m,isCE_LCID,true,true,"line 239: isCE_LCID(lcid, dir) item.Type = ""CE""; if needCE"
+D34,State,No MACEvent class in canonical package,+sixgr/+l2/+mac/HARQEntity.m,classdef MACEvent,true,false,not found
+D35,Timing,No CentralMACTimingService,+sixgr/+l2/+mac/SchedulerBase.m,CentralMACTimingService,true,false,not found
+D36,SR,No SchedulingRequestState,+sixgr/+l2/+mac/BSR_PHR.m,SchedulingRequestState,true,false,not found
+D37,LCP,No prioritizedBitRate/Bj state,+sixgr/+l2/+mac/TBAssembler.m,prioritizedBitRate|BucketSizeDuration|\bBj\b,true,false,not found
+D38,TA,No timeAlignmentTimer in MAC,+sixgr/+l2/+mac/HARQEntity.m,timeAlignmentTimer,true,false,not found
+D39,TA,No TimingAdvanceGroup state in MAC,+sixgr/+l2/+mac/HARQEntity.m,TimingAdvanceGroup,true,false,not found
+D40,Eligibility,No central eligibility engine,+sixgr/+l2/+mac/SchedulerBase.m,UEEligibilityEngine,true,false,not found
+D41,Lineage,No PacketLineageGraph,+sixgr/+l2/+mac/TBAssembler.m,PacketLineageGraph,true,false,not found
+D42,Lineage,No ConservationLedger,+sixgr/+l2/+mac/TBAssembler.m,ConservationLedger,true,false,not found
+D43,CA,No per-serving-cell HARQ entity type,+sixgr/+l2/+mac/HARQEntity.m,ServingCellHARQ|HARQEntityDL|HARQEntityUL,true,false,not found
+D44,Persistent grants,No integrated SPS state,+sixgr/+l2/+mac/SchedulerBase.m,classdef SPSState,true,false,not found
+D45,Persistent grants,No integrated configured-grant state,+sixgr/+l2/+mac/SchedulerBase.m,ConfiguredGrantType1State|ConfiguredGrantType2State,true,false,not found
+D46,Grant authority,Scheduler intent constructs DCI/grant fields,+sixgr/+l2/+mac/SchedulerBase.m,buildDCIBitfield,true,true,"line 1310: buildDCIBitfield(obj, grant) % buildDCIBitfield Build NR-style DCI intent fields for a grant."
+D47,Feedback,HARQ feedback called directly from scheduler,+sixgr/+l2/+mac/SchedulerBase.m,HARQ\.onFeedback,true,true,"line 285: HARQ.onFeedback(rnti, harqId, ack, ""SourceSlot"", double(sourceSlotList(k))); else"
+D48,Conservation,Delivery ledger only TB-level,+sixgr/+l2/+mac/HARQEntity.m,DeliveryLedger table,true,true,"line 49: DeliveryLedger table = table() end properties Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0,"
+FND01,Foundation,Position-aware soft combining exists,+sixgr/+phy/+harq/combineSoftLLR.m,PositionAware,true,true,"line 77: PositionAware = true; info.Reason = ""position_aware_harq_soft_buffer_accumulated""; info.CombinedNumel = double(nu"
+FND02,Foundation,Mother-code indices are stored,+sixgr/+phy/+harq/combineSoftLLR.m,MotherCodeShape,true,true,"line 219: MotherCodeShape"", uint32(size(llr)), ... ""FillerMask"", logical(fillerMask), ... ""HARQKey"", char(string(opt."
+FND03,Foundation,Coding-layout hash is used,+sixgr/+phy/+harq/combineSoftLLR.m,CodingLayoutHash,true,true,line 43: CodingLayoutHash = currentBuffer.CodingLayoutHash; info.SoftBuffer = currentBuffer; if priorEmpty info.Reason =
+FND04,Foundation,NDI epoch exists,+sixgr/+l2/+mac/HARQEntity.m,NDIEpoch,true,true,"line 182: NDIEpoch', p.NDIEpoch, ... 'RV', p.RV, 'IsRetransmission', true); retx = struct("
+FND05,Foundation,First-success delivery dedup exists,+sixgr/+l2/+mac/HARQEntity.m,FirstSuccessDelivery,true,true,"line 55: FirstSuccessDelivery',0) end methods function obj = HARQEntity(cfg, varargin) %#ok<INUSD> c"
+FND06,Foundation,PF scheduler exists,+sixgr/+l2/+mac/SchedulerPF.m,classdef SchedulerPF,true,true,line 1: classdef SchedulerPF < sixgr.l2.mac.SchedulerBase % sixgr.l2.mac.SchedulerPF % Proportional Fair (PF) scheduler. % % PF
+FND07,Foundation,RR scheduler exists,+sixgr/+l2/+mac/SchedulerRR.m,classdef SchedulerRR,true,true,line 1: classdef SchedulerRR < sixgr.l2.mac.SchedulerBase % sixgr.l2.mac.SchedulerRR % Round-robin scheduler (very simple baseli
+FND08,Foundation,Exact grant finalization hook exists,+sixgr/+l2/+mac/SchedulerBase.m,finalizeExactPHYFeasibility,true,true,"line 1134: finalizeExactPHYFeasibility(grantOut); grantSeed = grantOut; if isfield(grantSeed, ""PHYGrant"")"
+FND09,Foundation,Basic BSR helper exists,+sixgr/+l2/+mac/BSR_PHR.m,encodeShortBSR,true,true,"line 99: encodeShortBSR(lcgId, lcgBytes(active(1))); ce = struct('LCID',61,'Payload',payload,'IsFixed',"
+FND10,Foundation,Basic PHR helper exists,+sixgr/+l2/+mac/BSR_PHR.m,encodeSingleEntryPHR,true,true,"line 126: encodeSingleEntryPHR(ph_dB, pcmax_dBm, opt.PowerBackoff); ce = struct('LCID',57,'Payload',payload,'IsFixed',"
+FND11,Foundation,TB metadata includes HARQ process,+sixgr/+l2/+mac/TBAssembler.m,HARQProcess,true,true,"line 443: HARQProcess',{},'GrantSlot',{},'DeliverySlot',{},'DropCause',{},'Meta',{}); end function item"
+FND12,Foundation,Msg3 timing advance helper exists,+sixgr/+phy/+ra/applyMsg3TimingAdvance.m,function,true,true,"line 1: function out = applyMsg3TimingAdvance(waveform, timingAdvanceSamples) %APPLYMSG3TIMINGADVANCE Apply decoded"

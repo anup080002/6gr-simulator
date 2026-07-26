@@ -1,0 +1,241 @@
+CaseID,Method,Qm,BetaDb,SINRPerREDb,ExpectedEffectiveSINRLinear,ExpectedEffectiveSINRDb,FormulaNote,ExpectedDisposition,Status
+EFF-0001,EESM,2,-3,-5;-2;0;2;5,8.085543853959e-01,-0.922907630,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0002,EESM,2,-3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0003,EESM,2,-3,3;6;9;12,2.680608341077e+00,4.282333646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0004,EESM,2,-3,-10;-5;5;15,5.432646291190e-01,-2.649885701,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0005,EESM,2,-3,1;2;3;4;5;6,1.845681031020e+00,2.661566488,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0006,EESM,2,-3,20;10;0;-10,7.178189154760e-01,-1.439851016,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0007,EESM,4,-3,-5;-2;0;2;5,8.085543853959e-01,-0.922907630,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0008,EESM,4,-3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0009,EESM,4,-3,3;6;9;12,2.680608341077e+00,4.282333646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0010,EESM,4,-3,-10;-5;5;15,5.432646291190e-01,-2.649885701,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0011,EESM,4,-3,1;2;3;4;5;6,1.845681031020e+00,2.661566488,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0012,EESM,4,-3,20;10;0;-10,7.178189154760e-01,-1.439851016,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0013,EESM,6,-3,-5;-2;0;2;5,8.085543853959e-01,-0.922907630,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0014,EESM,6,-3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0015,EESM,6,-3,3;6;9;12,2.680608341077e+00,4.282333646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0016,EESM,6,-3,-10;-5;5;15,5.432646291190e-01,-2.649885701,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0017,EESM,6,-3,1;2;3;4;5;6,1.845681031020e+00,2.661566488,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0018,EESM,6,-3,20;10;0;-10,7.178189154760e-01,-1.439851016,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0019,EESM,8,-3,-5;-2;0;2;5,8.085543853959e-01,-0.922907630,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0020,EESM,8,-3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0021,EESM,8,-3,3;6;9;12,2.680608341077e+00,4.282333646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0022,EESM,8,-3,-10;-5;5;15,5.432646291190e-01,-2.649885701,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0023,EESM,8,-3,1;2;3;4;5;6,1.845681031020e+00,2.661566488,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0024,EESM,8,-3,20;10;0;-10,7.178189154760e-01,-1.439851016,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0025,EESM,2,0,-5;-2;0;2;5,9.802140128012e-01,-0.086790933,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0026,EESM,2,0,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0027,EESM,2,0,3;6;9;12,3.250632425932e+00,5.119678632,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0028,EESM,2,0,-10;-5;5;15,8.698485292907e-01,-0.605563665,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0029,EESM,2,0,1;2;3;4;5;6,2.057006320928e+00,3.132356262,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0030,EESM,2,0,20;10;0;-10,1.145104815359e+00,0.588452410,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0031,EESM,4,0,-5;-2;0;2;5,9.802140128012e-01,-0.086790933,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0032,EESM,4,0,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0033,EESM,4,0,3;6;9;12,3.250632425932e+00,5.119678632,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0034,EESM,4,0,-10;-5;5;15,8.698485292907e-01,-0.605563665,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0035,EESM,4,0,1;2;3;4;5;6,2.057006320928e+00,3.132356262,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0036,EESM,4,0,20;10;0;-10,1.145104815359e+00,0.588452410,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0037,EESM,6,0,-5;-2;0;2;5,9.802140128012e-01,-0.086790933,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0038,EESM,6,0,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0039,EESM,6,0,3;6;9;12,3.250632425932e+00,5.119678632,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0040,EESM,6,0,-10;-5;5;15,8.698485292907e-01,-0.605563665,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0041,EESM,6,0,1;2;3;4;5;6,2.057006320928e+00,3.132356262,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0042,EESM,6,0,20;10;0;-10,1.145104815359e+00,0.588452410,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0043,EESM,8,0,-5;-2;0;2;5,9.802140128012e-01,-0.086790933,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0044,EESM,8,0,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0045,EESM,8,0,3;6;9;12,3.250632425932e+00,5.119678632,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0046,EESM,8,0,-10;-5;5;15,8.698485292907e-01,-0.605563665,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0047,EESM,8,0,1;2;3;4;5;6,2.057006320928e+00,3.132356262,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0048,EESM,8,0,20;10;0;-10,1.145104815359e+00,0.588452410,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0049,EESM,2,1.5,-5;-2;0;2;5,1.058086413490e+00,0.245211378,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0050,EESM,2,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0051,EESM,2,1.5,3;6;9;12,3.626947224883e+00,5.595412363,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0052,EESM,2,1.5,-10;-5;5;15,1.098669476966e+00,0.408670592,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0053,EESM,2,1.5,1;2;3;4;5;6,2.144644568096e+00,3.313553269,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0054,EESM,2,1.5,20;10;0;-10,1.457762511916e+00,1.636867776,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0055,EESM,4,1.5,-5;-2;0;2;5,1.058086413490e+00,0.245211378,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0056,EESM,4,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0057,EESM,4,1.5,3;6;9;12,3.626947224883e+00,5.595412363,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0058,EESM,4,1.5,-10;-5;5;15,1.098669476966e+00,0.408670592,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0059,EESM,4,1.5,1;2;3;4;5;6,2.144644568096e+00,3.313553269,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0060,EESM,4,1.5,20;10;0;-10,1.457762511916e+00,1.636867776,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0061,EESM,6,1.5,-5;-2;0;2;5,1.058086413490e+00,0.245211378,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0062,EESM,6,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0063,EESM,6,1.5,3;6;9;12,3.626947224883e+00,5.595412363,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0064,EESM,6,1.5,-10;-5;5;15,1.098669476966e+00,0.408670592,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0065,EESM,6,1.5,1;2;3;4;5;6,2.144644568096e+00,3.313553269,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0066,EESM,6,1.5,20;10;0;-10,1.457762511916e+00,1.636867776,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0067,EESM,8,1.5,-5;-2;0;2;5,1.058086413490e+00,0.245211378,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0068,EESM,8,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0069,EESM,8,1.5,3;6;9;12,3.626947224883e+00,5.595412363,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0070,EESM,8,1.5,-10;-5;5;15,1.098669476966e+00,0.408670592,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0071,EESM,8,1.5,1;2;3;4;5;6,2.144644568096e+00,3.313553269,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0072,EESM,8,1.5,20;10;0;-10,1.457762511916e+00,1.636867776,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0073,EESM,2,3,-5;-2;0;2;5,1.125084635421e+00,0.511851938,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0074,EESM,2,3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0075,EESM,2,3,3;6;9;12,4.059762845244e+00,6.085006646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0076,EESM,2,3,-10;-5;5;15,1.373537128295e+00,1.378404034,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0077,EESM,2,3,1;2;3;4;5;6,2.215347497415e+00,3.454418589,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0078,EESM,2,3,20;10;0;-10,1.874174860100e+00,2.728101080,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0079,EESM,4,3,-5;-2;0;2;5,1.125084635421e+00,0.511851938,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0080,EESM,4,3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0081,EESM,4,3,3;6;9;12,4.059762845244e+00,6.085006646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0082,EESM,4,3,-10;-5;5;15,1.373537128295e+00,1.378404034,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0083,EESM,4,3,1;2;3;4;5;6,2.215347497415e+00,3.454418589,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0084,EESM,4,3,20;10;0;-10,1.874174860100e+00,2.728101080,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0085,EESM,6,3,-5;-2;0;2;5,1.125084635421e+00,0.511851938,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0086,EESM,6,3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0087,EESM,6,3,3;6;9;12,4.059762845244e+00,6.085006646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0088,EESM,6,3,-10;-5;5;15,1.373537128295e+00,1.378404034,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0089,EESM,6,3,1;2;3;4;5;6,2.215347497415e+00,3.454418589,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0090,EESM,6,3,20;10;0;-10,1.874174860100e+00,2.728101080,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0091,EESM,8,3,-5;-2;0;2;5,1.125084635421e+00,0.511851938,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0092,EESM,8,3,0;0;0;0,1.000000000000e+00,0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0093,EESM,8,3,3;6;9;12,4.059762845244e+00,6.085006646,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0094,EESM,8,3,-10;-5;5;15,1.373537128295e+00,1.378404034,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0095,EESM,8,3,1;2;3;4;5;6,2.215347497415e+00,3.454418589,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0096,EESM,8,3,20;10;0;-10,1.874174860100e+00,2.728101080,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0097,EESM,2,6,-5;-2;0;2;5,1.222005564857e+00,0.870731836,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0098,EESM,2,6,0;0;0;0,1.000000000000e+00,-0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0099,EESM,2,6,3;6;9;12,5.038253726911e+00,7.022800348,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0100,EESM,2,6,-10;-5;5;15,2.115629911034e+00,3.254396985,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0101,EESM,2,6,1;2;3;4;5;6,2.310502519710e+00,3.637064465,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0102,EESM,2,6,20;10;0;-10,3.104018888044e+00,4.919243553,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0103,EESM,4,6,-5;-2;0;2;5,1.222005564857e+00,0.870731836,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0104,EESM,4,6,0;0;0;0,1.000000000000e+00,-0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0105,EESM,4,6,3;6;9;12,5.038253726911e+00,7.022800348,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0106,EESM,4,6,-10;-5;5;15,2.115629911034e+00,3.254396985,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0107,EESM,4,6,1;2;3;4;5;6,2.310502519710e+00,3.637064465,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0108,EESM,4,6,20;10;0;-10,3.104018888044e+00,4.919243553,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0109,EESM,6,6,-5;-2;0;2;5,1.222005564857e+00,0.870731836,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0110,EESM,6,6,0;0;0;0,1.000000000000e+00,-0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0111,EESM,6,6,3;6;9;12,5.038253726911e+00,7.022800348,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0112,EESM,6,6,-10;-5;5;15,2.115629911034e+00,3.254396985,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0113,EESM,6,6,1;2;3;4;5;6,2.310502519710e+00,3.637064465,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0114,EESM,6,6,20;10;0;-10,3.104018888044e+00,4.919243553,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0115,EESM,8,6,-5;-2;0;2;5,1.222005564857e+00,0.870731836,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0116,EESM,8,6,0;0;0;0,1.000000000000e+00,-0.000000000,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0117,EESM,8,6,3;6;9;12,5.038253726911e+00,7.022800348,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0118,EESM,8,6,-10;-5;5;15,2.115629911034e+00,3.254396985,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0119,EESM,8,6,1;2;3;4;5;6,2.310502519710e+00,3.637064465,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0120,EESM,8,6,20;10;0;-10,3.104018888044e+00,4.919243553,Exact EESM in linear domain; beta is a calibration input.,PASS,EXPECTED
+EFF-0121,MIESM_ANALYTICAL_SURROGATE,2,-3,-5;-2;0;2;5,1.135311544808e+00,0.551150542,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0122,MIESM_ANALYTICAL_SURROGATE,2,-3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0123,MIESM_ANALYTICAL_SURROGATE,2,-3,3;6;9;12,2.720948927700e+00,4.347203901,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0124,MIESM_ANALYTICAL_SURROGATE,2,-3,-10;-5;5;15,1.193870199691e+00,0.769571119,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0125,MIESM_ANALYTICAL_SURROGATE,2,-3,1;2;3;4;5;6,2.153116135790e+00,3.330674556,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0126,MIESM_ANALYTICAL_SURROGATE,2,-3,20;10;0;-10,1.435766571262e+00,1.570838375,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0127,MIESM_ANALYTICAL_SURROGATE,4,-3,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0128,MIESM_ANALYTICAL_SURROGATE,4,-3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0129,MIESM_ANALYTICAL_SURROGATE,4,-3,3;6;9;12,5.797412803429e+00,7.632342253,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0130,MIESM_ANALYTICAL_SURROGATE,4,-3,-10;-5;5;15,2.133600955654e+00,3.291131972,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0131,MIESM_ANALYTICAL_SURROGATE,4,-3,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0132,MIESM_ANALYTICAL_SURROGATE,4,-3,20;10;0;-10,3.435921347589e+00,5.360432137,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0133,MIESM_ANALYTICAL_SURROGATE,6,-3,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0134,MIESM_ANALYTICAL_SURROGATE,6,-3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0135,MIESM_ANALYTICAL_SURROGATE,6,-3,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0136,MIESM_ANALYTICAL_SURROGATE,6,-3,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0137,MIESM_ANALYTICAL_SURROGATE,6,-3,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0138,MIESM_ANALYTICAL_SURROGATE,6,-3,20;10;0;-10,5.273340131381e+00,7.220857843,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0139,MIESM_ANALYTICAL_SURROGATE,8,-3,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0140,MIESM_ANALYTICAL_SURROGATE,8,-3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0141,MIESM_ANALYTICAL_SURROGATE,8,-3,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0142,MIESM_ANALYTICAL_SURROGATE,8,-3,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0143,MIESM_ANALYTICAL_SURROGATE,8,-3,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0144,MIESM_ANALYTICAL_SURROGATE,8,-3,20;10;0;-10,6.031276635102e+00,7.804092486,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0145,MIESM_ANALYTICAL_SURROGATE,2,0,-5;-2;0;2;5,1.135311544808e+00,0.551150542,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0146,MIESM_ANALYTICAL_SURROGATE,2,0,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0147,MIESM_ANALYTICAL_SURROGATE,2,0,3;6;9;12,2.720948927700e+00,4.347203901,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0148,MIESM_ANALYTICAL_SURROGATE,2,0,-10;-5;5;15,1.193870199691e+00,0.769571119,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0149,MIESM_ANALYTICAL_SURROGATE,2,0,1;2;3;4;5;6,2.153116135790e+00,3.330674556,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0150,MIESM_ANALYTICAL_SURROGATE,2,0,20;10;0;-10,1.435766571262e+00,1.570838375,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0151,MIESM_ANALYTICAL_SURROGATE,4,0,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0152,MIESM_ANALYTICAL_SURROGATE,4,0,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0153,MIESM_ANALYTICAL_SURROGATE,4,0,3;6;9;12,5.797412803429e+00,7.632342253,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0154,MIESM_ANALYTICAL_SURROGATE,4,0,-10;-5;5;15,2.133600955654e+00,3.291131972,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0155,MIESM_ANALYTICAL_SURROGATE,4,0,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0156,MIESM_ANALYTICAL_SURROGATE,4,0,20;10;0;-10,3.435921347589e+00,5.360432137,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0157,MIESM_ANALYTICAL_SURROGATE,6,0,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0158,MIESM_ANALYTICAL_SURROGATE,6,0,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0159,MIESM_ANALYTICAL_SURROGATE,6,0,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0160,MIESM_ANALYTICAL_SURROGATE,6,0,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0161,MIESM_ANALYTICAL_SURROGATE,6,0,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0162,MIESM_ANALYTICAL_SURROGATE,6,0,20;10;0;-10,5.273340131381e+00,7.220857843,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0163,MIESM_ANALYTICAL_SURROGATE,8,0,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0164,MIESM_ANALYTICAL_SURROGATE,8,0,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0165,MIESM_ANALYTICAL_SURROGATE,8,0,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0166,MIESM_ANALYTICAL_SURROGATE,8,0,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0167,MIESM_ANALYTICAL_SURROGATE,8,0,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0168,MIESM_ANALYTICAL_SURROGATE,8,0,20;10;0;-10,6.031276635102e+00,7.804092486,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0169,MIESM_ANALYTICAL_SURROGATE,2,1.5,-5;-2;0;2;5,1.135311544808e+00,0.551150542,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0170,MIESM_ANALYTICAL_SURROGATE,2,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0171,MIESM_ANALYTICAL_SURROGATE,2,1.5,3;6;9;12,2.720948927700e+00,4.347203901,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0172,MIESM_ANALYTICAL_SURROGATE,2,1.5,-10;-5;5;15,1.193870199691e+00,0.769571119,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0173,MIESM_ANALYTICAL_SURROGATE,2,1.5,1;2;3;4;5;6,2.153116135790e+00,3.330674556,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0174,MIESM_ANALYTICAL_SURROGATE,2,1.5,20;10;0;-10,1.435766571262e+00,1.570838375,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0175,MIESM_ANALYTICAL_SURROGATE,4,1.5,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0176,MIESM_ANALYTICAL_SURROGATE,4,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0177,MIESM_ANALYTICAL_SURROGATE,4,1.5,3;6;9;12,5.797412803429e+00,7.632342253,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0178,MIESM_ANALYTICAL_SURROGATE,4,1.5,-10;-5;5;15,2.133600955654e+00,3.291131972,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0179,MIESM_ANALYTICAL_SURROGATE,4,1.5,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0180,MIESM_ANALYTICAL_SURROGATE,4,1.5,20;10;0;-10,3.435921347589e+00,5.360432137,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0181,MIESM_ANALYTICAL_SURROGATE,6,1.5,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0182,MIESM_ANALYTICAL_SURROGATE,6,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0183,MIESM_ANALYTICAL_SURROGATE,6,1.5,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0184,MIESM_ANALYTICAL_SURROGATE,6,1.5,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0185,MIESM_ANALYTICAL_SURROGATE,6,1.5,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0186,MIESM_ANALYTICAL_SURROGATE,6,1.5,20;10;0;-10,5.273340131381e+00,7.220857843,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0187,MIESM_ANALYTICAL_SURROGATE,8,1.5,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0188,MIESM_ANALYTICAL_SURROGATE,8,1.5,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0189,MIESM_ANALYTICAL_SURROGATE,8,1.5,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0190,MIESM_ANALYTICAL_SURROGATE,8,1.5,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0191,MIESM_ANALYTICAL_SURROGATE,8,1.5,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0192,MIESM_ANALYTICAL_SURROGATE,8,1.5,20;10;0;-10,6.031276635102e+00,7.804092486,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0193,MIESM_ANALYTICAL_SURROGATE,2,3,-5;-2;0;2;5,1.135311544808e+00,0.551150542,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0194,MIESM_ANALYTICAL_SURROGATE,2,3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0195,MIESM_ANALYTICAL_SURROGATE,2,3,3;6;9;12,2.720948927700e+00,4.347203901,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0196,MIESM_ANALYTICAL_SURROGATE,2,3,-10;-5;5;15,1.193870199691e+00,0.769571119,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0197,MIESM_ANALYTICAL_SURROGATE,2,3,1;2;3;4;5;6,2.153116135790e+00,3.330674556,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0198,MIESM_ANALYTICAL_SURROGATE,2,3,20;10;0;-10,1.435766571262e+00,1.570838375,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0199,MIESM_ANALYTICAL_SURROGATE,4,3,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0200,MIESM_ANALYTICAL_SURROGATE,4,3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0201,MIESM_ANALYTICAL_SURROGATE,4,3,3;6;9;12,5.797412803429e+00,7.632342253,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0202,MIESM_ANALYTICAL_SURROGATE,4,3,-10;-5;5;15,2.133600955654e+00,3.291131972,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0203,MIESM_ANALYTICAL_SURROGATE,4,3,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0204,MIESM_ANALYTICAL_SURROGATE,4,3,20;10;0;-10,3.435921347589e+00,5.360432137,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0205,MIESM_ANALYTICAL_SURROGATE,6,3,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0206,MIESM_ANALYTICAL_SURROGATE,6,3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0207,MIESM_ANALYTICAL_SURROGATE,6,3,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0208,MIESM_ANALYTICAL_SURROGATE,6,3,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0209,MIESM_ANALYTICAL_SURROGATE,6,3,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0210,MIESM_ANALYTICAL_SURROGATE,6,3,20;10;0;-10,5.273340131381e+00,7.220857843,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0211,MIESM_ANALYTICAL_SURROGATE,8,3,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0212,MIESM_ANALYTICAL_SURROGATE,8,3,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0213,MIESM_ANALYTICAL_SURROGATE,8,3,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0214,MIESM_ANALYTICAL_SURROGATE,8,3,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0215,MIESM_ANALYTICAL_SURROGATE,8,3,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0216,MIESM_ANALYTICAL_SURROGATE,8,3,20;10;0;-10,6.031276635102e+00,7.804092486,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0217,MIESM_ANALYTICAL_SURROGATE,2,6,-5;-2;0;2;5,1.135311544808e+00,0.551150542,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0218,MIESM_ANALYTICAL_SURROGATE,2,6,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0219,MIESM_ANALYTICAL_SURROGATE,2,6,3;6;9;12,2.720948927700e+00,4.347203901,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0220,MIESM_ANALYTICAL_SURROGATE,2,6,-10;-5;5;15,1.193870199691e+00,0.769571119,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0221,MIESM_ANALYTICAL_SURROGATE,2,6,1;2;3;4;5;6,2.153116135790e+00,3.330674556,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0222,MIESM_ANALYTICAL_SURROGATE,2,6,20;10;0;-10,1.435766571262e+00,1.570838375,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0223,MIESM_ANALYTICAL_SURROGATE,4,6,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0224,MIESM_ANALYTICAL_SURROGATE,4,6,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0225,MIESM_ANALYTICAL_SURROGATE,4,6,3;6;9;12,5.797412803429e+00,7.632342253,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0226,MIESM_ANALYTICAL_SURROGATE,4,6,-10;-5;5;15,2.133600955654e+00,3.291131972,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0227,MIESM_ANALYTICAL_SURROGATE,4,6,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0228,MIESM_ANALYTICAL_SURROGATE,4,6,20;10;0;-10,3.435921347589e+00,5.360432137,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0229,MIESM_ANALYTICAL_SURROGATE,6,6,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0230,MIESM_ANALYTICAL_SURROGATE,6,6,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0231,MIESM_ANALYTICAL_SURROGATE,6,6,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0232,MIESM_ANALYTICAL_SURROGATE,6,6,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0233,MIESM_ANALYTICAL_SURROGATE,6,6,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0234,MIESM_ANALYTICAL_SURROGATE,6,6,20;10;0;-10,5.273340131381e+00,7.220857843,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0235,MIESM_ANALYTICAL_SURROGATE,8,6,-5;-2;0;2;5,1.152362711254e+00,0.615891967,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0236,MIESM_ANALYTICAL_SURROGATE,8,6,0;0;0;0,1.000000000000e+00,0.000000000,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0237,MIESM_ANALYTICAL_SURROGATE,8,6,3;6;9;12,5.885837086784e+00,7.698082372,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0238,MIESM_ANALYTICAL_SURROGATE,8,6,-10;-5;5;15,2.744500783976e+00,4.384633592,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0239,MIESM_ANALYTICAL_SURROGATE,8,6,1;2;3;4;5;6,2.292271255205e+00,3.602660084,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED
+EFF-0240,MIESM_ANALYTICAL_SURROGATE,8,6,20;10;0;-10,6.031276635102e+00,7.804092486,Analytical surrogate floor only; strict MIESM must use modulation-specific calibrated MI curves.,PASS,EXPECTED

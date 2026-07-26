@@ -1,0 +1,24 @@
+{
+  "ResultCounts": {
+    "PASS": 15,
+    "WARN": 2,
+    "FAIL": 2,
+    "BLOCKED": 2
+  },
+  "CurrentSourceDefectsDetected": 51,
+  "CurrentSourceDefectChecks": 52,
+  "UsefulFoundationsDetected": 12,
+  "UsefulFoundationChecks": 12,
+  "ExistingCSVCount": 225,
+  "ExistingRectangularCSVCount": 224,
+  "ExistingPNGCount": 40,
+  "ExistingDecodedPNGCount": 40,
+  "ExistingNonblankPNGCount": 40,
+  "RequiredArtifactCount": 100,
+  "RequiredArtifactPresentCount": 0,
+  "RelevantMATLABTestsBlocked": 87,
+  "MATLABAvailable": false,
+  "OctaveAvailable": false,
+  "VectorVerifierExitCode": 0,
+  "VerifierSelfTestsPassed": true
+}

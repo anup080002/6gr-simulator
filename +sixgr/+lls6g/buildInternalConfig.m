@@ -947,7 +947,8 @@ cfg = sixgr.util.structSet(cfg, "phy.csi.crcFreeMode", crcFreeMode);
 cfg = sixgr.util.structSet(cfg, "phy.csi.bitExactPayloadPacking", true);
 
 cfg.phy.pucch.enable = logical(s.control.pucch_enabled);
-cfg.phy.pucch.format = double(s.control.pucch_format);
+cfg.phy.pucch.calibrationFormatHint = double(s.control.pucch_format);
+cfg.phy.pucch.assignmentMode = "rrc_procedure_state";
 
 cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
 cfg.phy.pusch.nLayers = double(ulLayerCount);
@@ -1602,46 +1603,25 @@ pucchSection = localGetNested(s, "pucch_resources", struct());
 if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
     cfg = sixgr.util.structSet(cfg, "validation.pucch_resources", pucchSection);
     if logical(localGetNested(s, "pucch_resources.enabled", false))
-        requestedFormat = double(sixgr.util.structGet(cfg, "phy.pucch.format", 2));
-        resource = localResolvePreferredPUCCHResource(localGetNested(s, "pucch_resources.resources", struct([])), requestedFormat);
-        if ~isempty(resource)
-            formatValue = double(sixgr.util.structGet(resource, "format", requestedFormat));
-            prbStart = double(sixgr.util.structGet(resource, "starting_prb", NaN));
-            numPRB = double(sixgr.util.structGet(resource, "num_prb", 1));
-            symbolStart = double(sixgr.util.structGet(resource, "symbol_start", NaN));
-            numSymbols = double(sixgr.util.structGet(resource, "num_symbols", NaN));
-            if isfinite(formatValue) && formatValue >= 0
-                cfg = sixgr.util.structSet(cfg, "phy.pucch.format", round(double(formatValue)));
-            end
-            if isfinite(prbStart) && isfinite(numPRB) && numPRB >= 1
-                cfg = sixgr.util.structSet(cfg, "phy.pucch.PRBSet", double(prbStart) + (0:max(round(double(numPRB)) - 1, 0)));
-            end
-            if isfinite(symbolStart) && isfinite(numSymbols) && numSymbols >= 1
-                cfg = sixgr.util.structSet(cfg, "phy.pucch.SymbolAllocation", [double(symbolStart) double(numSymbols)]);
-            end
-            cfg = localStructSetIfPresent(cfg, "phy.pucch.InitialCyclicShift", sixgr.util.structGet(resource, "initial_cyclic_shift", []));
-            cfg = localStructSetIfPresent(cfg, "phy.pucch.OCCLength", sixgr.util.structGet(resource, "occ_length", []));
-            cfg = localStructSetIfPresent(cfg, "phy.pucch.OCCIndex", sixgr.util.structGet(resource, "occ_index", []));
-            cfg = localStructSetIfPresent(cfg, "phy.pucch.SecondHopPRB", sixgr.util.structGet(resource, "second_hop_prb", []));
-            cfg = localStructSetIfPresent(cfg, "phy.pucch.IntraSlotFrequencyHopping", sixgr.util.structGet(resource, "intra_slot_frequency_hopping", []));
-            cfg = localStructSetIfPresent(cfg, "validation.pucch_resources.default_resource_id", sixgr.util.structGet(resource, "resource_id", []));
-            cfg = localStructSetIfPresent(cfg, "validation.pucch_resources.default_feedback_type", sixgr.util.structGet(resource, "feedback_type", []));
+        profile = string(localGetNested(s,"pucch_resources.profile",""));
+        epoch = double(localGetNested(s,"pucch_resources.configuration_epoch",NaN));
+        resourceSets = localGetNested(s,"pucch_resources.resource_sets",struct([]));
+        resources = localGetNested(s,"pucch_resources.resources",struct([]));
+        if profile ~= "nr_rel18_pucch_strict" || ...
+                ~(isscalar(epoch)&&isfinite(epoch)&&epoch>=0&&epoch==fix(epoch)) || ...
+                ~isstruct(resourceSets) || isempty(resourceSets) || ...
+                ~isstruct(resources) || isempty(resources)
+            error("sixgr:lls6g:config:InvalidStrictPUCCHConfiguration", ...
+                "Enabled connected PUCCH requires the strict profile, epoch, resource sets and resources.");
         end
-        harqK1 = double(localGetNested(s, "pucch_resources.harq_ack.k1_slots", NaN));
-        if isfinite(harqK1) && harqK1 >= 0
-            cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", round(double(harqK1)));
-            cfg = sixgr.util.structSet(cfg, "mac.harq.k1", round(double(harqK1)));
-        end
-        uciOnPuschEnabled = localGetNested(s, "pucch_resources.overlap_policy.uci_on_pusch_enabled", []);
-        if ~isempty(uciOnPuschEnabled)
-            if logical(uciOnPuschEnabled)
-                cfg = sixgr.util.structSet(cfg, "phy.pusch.uciMultiplexingMode", "harq_ack_on_pusch_when_pucch_collides");
-            else
-                cfg = sixgr.util.structSet(cfg, "phy.pusch.uciMultiplexingMode", "pucch_only");
-            end
-        end
-        cfg = localStructSetIfPresent(cfg, "pucch.simultaneous_pucch_pusch_policy", ...
-            localGetNested(s, "pucch_resources.overlap_policy.unsupported_overlap_policy", []));
+        cfg = sixgr.util.structSet(cfg,"phy.pucch.profile",char(profile));
+        cfg = sixgr.util.structSet(cfg,"phy.pucch.configurationEpoch",epoch);
+        cfg = sixgr.util.structSet(cfg,"phy.pucch.resourceSets",resourceSets);
+        cfg = sixgr.util.structSet(cfg,"phy.pucch.resources",resources);
+        cfg = sixgr.util.structSet(cfg,"phy.pucch.dlDataToULACK", ...
+            localGetNested(s,"pucch_resources.dl_data_to_ul_ack",[]));
+        cfg = sixgr.util.structSet(cfg,"phy.pucch.assignmentMode", ...
+            "rrc_procedure_state");
     end
 end
 
@@ -2599,25 +2579,6 @@ for ii = 1:numel(parts)
     cur = cur.(key);
 end
 tf = true;
-end
-
-function resource = localResolvePreferredPUCCHResource(resources, requestedFormat)
-resource = struct([]);
-if isempty(resources)
-    return;
-end
-if istable(resources)
-    resources = table2struct(resources);
-end
-if ~isstruct(resources)
-    return;
-end
-formats = arrayfun(@(entry) double(sixgr.util.structGet(entry, "format", NaN)), resources);
-matchIdx = find(isfinite(formats) & round(formats) == round(double(requestedFormat)), 1, "first");
-if isempty(matchIdx)
-    matchIdx = 1;
-end
-resource = resources(matchIdx);
 end
 
 function values = localStringVector(raw)

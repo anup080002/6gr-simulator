@@ -1,0 +1,769 @@
+Arm,ExpectedStatus,ExperimentID,FactorValue,FamilyID,PairID,Required,SameBaseRandomField,SameGeometry,SameNoise,SamePayload,ScenarioProfile,Seed,TrialBudget
+BASELINE,EXECUTE,F01-P01-B,configured reconstruction,F01,F01-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F01-P01-T,runtime observed fields,F01,F01-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F01-P02-B,configured reconstruction,F01,F01-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F01-P02-T,runtime observed fields,F01,F01-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F01-P03-B,configured reconstruction,F01,F01-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F01-P03-T,runtime observed fields,F01,F01-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F01-P04-B,configured reconstruction,F01,F01-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F01-P04-T,runtime observed fields,F01,F01-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F01-P05-B,configured reconstruction,F01,F01-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F01-P05-T,runtime observed fields,F01,F01-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F01-P06-B,configured reconstruction,F01,F01-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F01-P06-T,runtime observed fields,F01,F01-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F02-P01-B,shared configured source,F02,F02-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F02-P01-T,independent oracle,F02,F02-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F02-P02-B,shared configured source,F02,F02-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F02-P02-T,independent oracle,F02,F02-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F02-P03-B,shared configured source,F02,F02-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F02-P03-T,independent oracle,F02,F02-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F02-P04-B,shared configured source,F02,F02-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F02-P04-T,independent oracle,F02,F02-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F02-P05-B,shared configured source,F02,F02-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F02-P05-T,independent oracle,F02,F02-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F02-P06-B,shared configured source,F02,F02-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F02-P06-T,independent oracle,F02,F02-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F03-P01-B,unrotated shortcut,F03,F03-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F03-P01-T,canonical GCS/LCS,F03,F03-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F03-P02-B,unrotated shortcut,F03,F03-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F03-P02-T,canonical GCS/LCS,F03,F03-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F03-P03-B,unrotated shortcut,F03,F03-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F03-P03-T,canonical GCS/LCS,F03,F03-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F03-P04-B,unrotated shortcut,F03,F03-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F03-P04-T,canonical GCS/LCS,F03,F03-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F03-P05-B,unrotated shortcut,F03,F03-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F03-P05-T,canonical GCS/LCS,F03,F03-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F03-P06-B,unrotated shortcut,F03,F03-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F03-P06-T,canonical GCS/LCS,F03,F03-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F04-P01-B,minimum-image shortcut,F04,F04-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F04-P01-T,19-site clones,F04,F04-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F04-P02-B,minimum-image shortcut,F04,F04-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F04-P02-T,19-site clones,F04,F04-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F04-P03-B,minimum-image shortcut,F04,F04-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F04-P03-T,19-site clones,F04,F04-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F04-P04-B,minimum-image shortcut,F04,F04-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F04-P04-T,19-site clones,F04,F04-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F04-P05-B,minimum-image shortcut,F04,F04-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F04-P05-T,19-site clones,F04,F04-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F04-P06-B,minimum-image shortcut,F04,F04-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F04-P06-T,19-site clones,F04,F04-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F05-P01-B,rectangle/clipping,F05,F05-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F05-P01-T,pinned polygon sampler,F05,F05-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F05-P02-B,rectangle/clipping,F05,F05-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F05-P02-T,pinned polygon sampler,F05,F05-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F05-P03-B,rectangle/clipping,F05,F05-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F05-P03-T,pinned polygon sampler,F05,F05-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F05-P04-B,rectangle/clipping,F05,F05-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F05-P04-T,pinned polygon sampler,F05,F05-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F05-P05-B,rectangle/clipping,F05,F05-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F05-P05-T,pinned polygon sampler,F05,F05-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F05-P06-B,rectangle/clipping,F05,F05-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F05-P06-T,pinned polygon sampler,F05,F05-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F06-P01-B,uniform drop,F06,F06-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F06-P01-T,calibrated hotspot,F06,F06-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F06-P02-B,uniform drop,F06,F06-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F06-P02-T,calibrated hotspot,F06,F06-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F06-P03-B,uniform drop,F06,F06-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F06-P03-T,calibrated hotspot,F06,F06-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F06-P04-B,uniform drop,F06,F06-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F06-P04-T,calibrated hotspot,F06,F06-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F06-P05-B,uniform drop,F06,F06-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F06-P05-T,calibrated hotspot,F06,F06-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F06-P06-B,uniform drop,F06,F06-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F06-P06-T,calibrated hotspot,F06,F06-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F07-P01-B,shrunk grid,F07,F07-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F07-P01-T,floor/room model,F07,F07-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F07-P02-B,shrunk grid,F07,F07-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F07-P02-T,floor/room model,F07,F07-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F07-P03-B,shrunk grid,F07,F07-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F07-P03-T,floor/room model,F07,F07-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F07-P04-B,shrunk grid,F07,F07-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F07-P04-T,floor/room model,F07,F07-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F07-P05-B,shrunk grid,F07,F07-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F07-P05-T,floor/room model,F07,F07-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F07-P06-B,shrunk grid,F07,F07-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F07-P06-T,floor/room model,F07,F07-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F08-P01-B,generic formula,F08,F08-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F08-P01-T,pinned 38.901,F08,F08-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F08-P02-B,generic formula,F08,F08-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F08-P02-T,pinned 38.901,F08,F08-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F08-P03-B,generic formula,F08,F08-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F08-P03-T,pinned 38.901,F08,F08-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F08-P04-B,generic formula,F08,F08-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F08-P04-T,pinned 38.901,F08,F08-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F08-P05-B,generic formula,F08,F08-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F08-P05-T,pinned 38.901,F08,F08-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F08-P06-B,generic formula,F08,F08-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F08-P06-T,pinned 38.901,F08,F08-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F09-P01-B,exponential proxy,F09,F09-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F09-P01-T,pinned 38.901,F09,F09-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F09-P02-B,exponential proxy,F09,F09-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F09-P02-T,pinned 38.901,F09,F09-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F09-P03-B,exponential proxy,F09,F09-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F09-P03-T,pinned 38.901,F09,F09-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F09-P04-B,exponential proxy,F09,F09-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F09-P04-T,pinned 38.901,F09,F09-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F09-P05-B,exponential proxy,F09,F09-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F09-P05-T,pinned 38.901,F09,F09-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F09-P06-B,exponential proxy,F09,F09-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F09-P06-T,pinned 38.901,F09,F09-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F10-P01-B,old coefficients,F10,F10-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F10-P01-T,V19.2 material mixture,F10,F10-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F10-P02-B,old coefficients,F10,F10-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F10-P02-T,V19.2 material mixture,F10,F10-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F10-P03-B,old coefficients,F10,F10-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F10-P03-T,V19.2 material mixture,F10,F10-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F10-P04-B,old coefficients,F10,F10-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F10-P04-T,V19.2 material mixture,F10,F10-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F10-P05-B,old coefficients,F10,F10-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F10-P05-T,V19.2 material mixture,F10,F10-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F10-P06-B,old coefficients,F10,F10-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F10-P06-T,V19.2 material mixture,F10,F10-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F11-P01-B,Gaussian approximation,F11,F11-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F11-P01-T,table/interpolation,F11,F11-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F11-P02-B,Gaussian approximation,F11,F11-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F11-P02-T,table/interpolation,F11,F11-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F11-P03-B,Gaussian approximation,F11,F11-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F11-P03-T,table/interpolation,F11,F11-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F11-P04-B,Gaussian approximation,F11,F11-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F11-P04-T,table/interpolation,F11,F11-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F11-P05-B,Gaussian approximation,F11,F11-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F11-P05-T,table/interpolation,F11,F11-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F11-P06-B,Gaussian approximation,F11,F11-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F11-P06-T,table/interpolation,F11,F11-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F12-P01-B,independent generic Gaussian,F12,F12-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F12-P01-T,profile distribution,F12,F12-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F12-P02-B,independent generic Gaussian,F12,F12-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F12-P02-T,profile distribution,F12,F12-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F12-P03-B,independent generic Gaussian,F12,F12-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F12-P03-T,profile distribution,F12,F12-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F12-P04-B,independent generic Gaussian,F12,F12-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F12-P04-T,profile distribution,F12,F12-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F12-P05-B,independent generic Gaussian,F12,F12-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F12-P05-T,profile distribution,F12,F12-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F12-P06-B,independent generic Gaussian,F12,F12-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F12-P06-T,profile distribution,F12,F12-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F13-P01-B,independent parameters,F13,F13-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F13-P01-T,pinned correlation matrix,F13,F13-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F13-P02-B,independent parameters,F13,F13-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F13-P02-T,pinned correlation matrix,F13,F13-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F13-P03-B,independent parameters,F13,F13-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F13-P03-T,pinned correlation matrix,F13,F13-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F13-P04-B,independent parameters,F13,F13-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F13-P04-T,pinned correlation matrix,F13,F13-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F13-P05-B,independent parameters,F13,F13-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F13-P05-T,pinned correlation matrix,F13,F13-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F13-P06-B,independent parameters,F13,F13-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F13-P06-T,pinned correlation matrix,F13,F13-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F14-P01-B,slotwise iid,F14,F14-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F14-P01-T,correlated field,F14,F14-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F14-P02-B,slotwise iid,F14,F14-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F14-P02-T,correlated field,F14,F14-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F14-P03-B,slotwise iid,F14,F14-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F14-P03-T,correlated field,F14,F14-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F14-P04-B,slotwise iid,F14,F14-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F14-P04-T,correlated field,F14,F14-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F14-P05-B,slotwise iid,F14,F14-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F14-P05-T,correlated field,F14,F14-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F14-P06-B,slotwise iid,F14,F14-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F14-P06-T,correlated field,F14,F14-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F15-P01-B,redraw per call,F15,F15-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F15-P01-T,position-driven evolution,F15,F15-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F15-P02-B,redraw per call,F15,F15-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F15-P02-T,position-driven evolution,F15,F15-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F15-P03-B,redraw per call,F15,F15-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F15-P03-T,position-driven evolution,F15,F15-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F15-P04-B,redraw per call,F15,F15-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F15-P04-T,position-driven evolution,F15,F15-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F15-P05-B,redraw per call,F15,F15-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F15-P05-T,position-driven evolution,F15,F15-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F15-P06-B,redraw per call,F15,F15-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F15-P06-T,position-driven evolution,F15,F15-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F16-P01-B,independent links,F16,F16-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F16-P01-T,shared spatial field,F16,F16-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F16-P02-B,independent links,F16,F16-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F16-P02-T,shared spatial field,F16,F16-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F16-P03-B,independent links,F16,F16-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F16-P03-T,shared spatial field,F16,F16-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F16-P04-B,independent links,F16,F16-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F16-P04-T,shared spatial field,F16,F16-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F16-P05-B,independent links,F16,F16-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F16-P05-T,shared spatial field,F16,F16-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F16-P06-B,independent links,F16,F16-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F16-P06-T,shared spatial field,F16,F16-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F17-P01-B,reduced proxy,F17,F17-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F17-P01-T,exact profile,F17,F17-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F17-P02-B,reduced proxy,F17,F17-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F17-P02-T,exact profile,F17,F17-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F17-P03-B,reduced proxy,F17,F17-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F17-P03-T,exact profile,F17,F17-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F17-P04-B,reduced proxy,F17,F17-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F17-P04-T,exact profile,F17,F17-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F17-P05-B,reduced proxy,F17,F17-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F17-P05-T,exact profile,F17,F17-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F17-P06-B,reduced proxy,F17,F17-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F17-P06-T,exact profile,F17,F17-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F18-P01-B,identity/generic rho,F18,F18-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F18-P01-T,declared matrix,F18,F18-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F18-P02-B,identity/generic rho,F18,F18-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F18-P02-T,declared matrix,F18,F18-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F18-P03-B,identity/generic rho,F18,F18-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F18-P03-T,declared matrix,F18,F18-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F18-P04-B,identity/generic rho,F18,F18-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F18-P04-T,declared matrix,F18,F18-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F18-P05-B,identity/generic rho,F18,F18-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F18-P05-T,declared matrix,F18,F18-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F18-P06-B,identity/generic rho,F18,F18-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F18-P06-T,declared matrix,F18,F18-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F19-P01-B,configured scalar Doppler,F19,F19-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F19-P01-T,runtime velocity spectrum,F19,F19-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F19-P02-B,configured scalar Doppler,F19,F19-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F19-P02-T,runtime velocity spectrum,F19,F19-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F19-P03-B,configured scalar Doppler,F19,F19-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F19-P03-T,runtime velocity spectrum,F19,F19-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F19-P04-B,configured scalar Doppler,F19,F19-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F19-P04-T,runtime velocity spectrum,F19,F19-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F19-P05-B,configured scalar Doppler,F19,F19-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F19-P05-T,runtime velocity spectrum,F19,F19-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F19-P06-B,configured scalar Doppler,F19,F19-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F19-P06-T,runtime velocity spectrum,F19,F19-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F20-P01-B,profile substitution,F20,F20-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F20-P01-T,exact profile,F20,F20-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F20-P02-B,profile substitution,F20,F20-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F20-P02-T,exact profile,F20,F20-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F20-P03-B,profile substitution,F20,F20-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F20-P03-T,exact profile,F20,F20-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F20-P04-B,profile substitution,F20,F20-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F20-P04-T,exact profile,F20,F20-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F20-P05-B,profile substitution,F20,F20-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F20-P05-T,exact profile,F20,F20-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F20-P06-B,profile substitution,F20,F20-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F20-P06-T,exact profile,F20,F20-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F21-P01-B,reduced statistics,F21,F21-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F21-P01-T,38.901 rays,F21,F21-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F21-P02-B,reduced statistics,F21,F21-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F21-P02-T,38.901 rays,F21,F21-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F21-P03-B,reduced statistics,F21,F21-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F21-P03-T,38.901 rays,F21,F21-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F21-P04-B,reduced statistics,F21,F21-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F21-P04-T,38.901 rays,F21,F21-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F21-P05-B,reduced statistics,F21,F21-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F21-P05-T,38.901 rays,F21,F21-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F21-P06-B,reduced statistics,F21,F21-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F21-P06-T,38.901 rays,F21,F21-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F22-P01-B,default ±45,F22,F22-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F22-P01-T,full polarization,F22,F22-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F22-P02-B,default ±45,F22,F22-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F22-P02-T,full polarization,F22,F22-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F22-P03-B,default ±45,F22,F22-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F22-P03-T,full polarization,F22,F22-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F22-P04-B,default ±45,F22,F22-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F22-P04-T,full polarization,F22,F22-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F22-P05-B,default ±45,F22,F22-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F22-P05-T,full polarization,F22,F22-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F22-P06-B,default ±45,F22,F22-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F22-P06-T,full polarization,F22,F22-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F23-P01-B,axis-aligned default,F23,F23-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F23-P01-T,canonical pose,F23,F23-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F23-P02-B,axis-aligned default,F23,F23-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F23-P02-T,canonical pose,F23,F23-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F23-P03-B,axis-aligned default,F23,F23-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F23-P03-T,canonical pose,F23,F23-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F23-P04-B,axis-aligned default,F23,F23-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F23-P04-T,canonical pose,F23,F23-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F23-P05-B,axis-aligned default,F23,F23-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F23-P05-T,canonical pose,F23,F23-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F23-P06-B,axis-aligned default,F23,F23-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F23-P06-T,canonical pose,F23,F23-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F24-P01-B,flatten/crop,F24,F24-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F24-P01-T,explicit projection,F24,F24-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F24-P02-B,flatten/crop,F24,F24-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F24-P02-T,explicit projection,F24,F24-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F24-P03-B,flatten/crop,F24,F24-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F24-P03-T,explicit projection,F24,F24-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F24-P04-B,flatten/crop,F24,F24-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F24-P04-T,explicit projection,F24,F24-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F24-P05-B,flatten/crop,F24,F24-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F24-P05-T,explicit projection,F24,F24-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F24-P06-B,flatten/crop,F24,F24-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F24-P06-T,explicit projection,F24,F24-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F25-P01-B,far-field only,F25,F25-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F25-P01-T,spherical wave,F25,F25-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F25-P02-B,far-field only,F25,F25-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F25-P02-T,spherical wave,F25,F25-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F25-P03-B,far-field only,F25,F25-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F25-P03-T,spherical wave,F25,F25-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F25-P04-B,far-field only,F25,F25-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F25-P04-T,spherical wave,F25,F25-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F25-P05-B,far-field only,F25,F25-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F25-P05-T,spherical wave,F25,F25-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F25-P06-B,far-field only,F25,F25-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F25-P06-T,spherical wave,F25,F25-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F26-P01-B,random mask,F26,F26-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F26-P01-T,runtime visibility/birth-death,F26,F26-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F26-P02-B,random mask,F26,F26-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F26-P02-T,runtime visibility/birth-death,F26,F26-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F26-P03-B,random mask,F26,F26-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F26-P03-T,runtime visibility/birth-death,F26,F26-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F26-P04-B,random mask,F26,F26-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F26-P04-T,runtime visibility/birth-death,F26,F26-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F26-P05-B,random mask,F26,F26-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F26-P05-T,runtime visibility/birth-death,F26,F26-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F26-P06-B,random mask,F26,F26-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F26-P06-T,runtime visibility/birth-death,F26,F26-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F27-P01-B,static loss,F27,F27-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F27-P01-T,stateful blocker,F27,F27-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F27-P02-B,static loss,F27,F27-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F27-P02-T,stateful blocker,F27,F27-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F27-P03-B,static loss,F27,F27-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F27-P03-T,stateful blocker,F27,F27-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F27-P04-B,static loss,F27,F27-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F27-P04-T,stateful blocker,F27,F27-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F27-P05-B,static loss,F27,F27-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F27-P05-T,stateful blocker,F27,F27-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F27-P06-B,static loss,F27,F27-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F27-P06-T,stateful blocker,F27,F27-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F28-P01-B,constant loss,F28,F28-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F28-P01-T,time-correlated vehicle state,F28,F28-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F28-P02-B,constant loss,F28,F28-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F28-P02-T,time-correlated vehicle state,F28,F28-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F28-P03-B,constant loss,F28,F28-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F28-P03-T,time-correlated vehicle state,F28,F28-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F28-P04-B,constant loss,F28,F28-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F28-P04-T,time-correlated vehicle state,F28,F28-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F28-P05-B,constant loss,F28,F28-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F28-P05-T,time-correlated vehicle state,F28,F28-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F28-P06-B,constant loss,F28,F28-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F28-P06-T,time-correlated vehicle state,F28,F28-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F29-P01-B,generic attenuation,F29,F29-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F29-P01-T,versioned materials,F29,F29-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F29-P02-B,generic attenuation,F29,F29-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F29-P02-T,versioned materials,F29,F29-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F29-P03-B,generic attenuation,F29,F29-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F29-P03-T,versioned materials,F29,F29-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F29-P04-B,generic attenuation,F29,F29-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F29-P04-T,versioned materials,F29,F29-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F29-P05-B,generic attenuation,F29,F29-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F29-P05-T,versioned materials,F29,F29-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F29-P06-B,generic attenuation,F29,F29-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F29-P06-T,versioned materials,F29,F29-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F30-P01-B,configured speed,F30,F30-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F30-P01-T,trajectory velocity,F30,F30-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F30-P02-B,configured speed,F30,F30-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F30-P02-T,trajectory velocity,F30,F30-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F30-P03-B,configured speed,F30,F30-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F30-P03-T,trajectory velocity,F30,F30-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F30-P04-B,configured speed,F30,F30-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F30-P04-T,trajectory velocity,F30,F30-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F30-P05-B,configured speed,F30,F30-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F30-P05-T,trajectory velocity,F30,F30-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F30-P06-B,configured speed,F30,F30-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F30-P06-T,trajectory velocity,F30,F30-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F31-P01-B,channel reset,F31,F31-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F31-P01-T,continuous phase/state,F31,F31-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F31-P02-B,channel reset,F31,F31-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F31-P02-T,continuous phase/state,F31,F31-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F31-P03-B,channel reset,F31,F31-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F31-P03-T,continuous phase/state,F31,F31-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F31-P04-B,channel reset,F31,F31-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F31-P04-T,continuous phase/state,F31,F31-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F31-P05-B,channel reset,F31,F31-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F31-P05-T,continuous phase/state,F31,F31-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F31-P06-B,channel reset,F31,F31-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F31-P06-T,continuous phase/state,F31,F31-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F32-P01-B,generic waypoint,F32,F32-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F32-P01-T,HST trajectory/channel,F32,F32-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F32-P02-B,generic waypoint,F32,F32-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F32-P02-T,HST trajectory/channel,F32,F32-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F32-P03-B,generic waypoint,F32,F32-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F32-P03-T,HST trajectory/channel,F32,F32-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F32-P04-B,generic waypoint,F32,F32-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F32-P04-T,HST trajectory/channel,F32,F32-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F32-P05-B,generic waypoint,F32,F32-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F32-P05-T,HST trajectory/channel,F32,F32-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F32-P06-B,generic waypoint,F32,F32-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F32-P06-T,HST trajectory/channel,F32,F32-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F33-P01-B,slotwise reset,F33,F33-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F33-P01-T,phase-integrated cadence,F33,F33-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F33-P02-B,slotwise reset,F33,F33-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F33-P02-T,phase-integrated cadence,F33,F33-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F33-P03-B,slotwise reset,F33,F33-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F33-P03-T,phase-integrated cadence,F33,F33-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F33-P04-B,slotwise reset,F33,F33-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F33-P04-T,phase-integrated cadence,F33,F33-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F33-P05-B,slotwise reset,F33,F33-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F33-P05-T,phase-integrated cadence,F33,F33-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F33-P06-B,slotwise reset,F33,F33-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F33-P06-T,phase-integrated cadence,F33,F33-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F34-P01-B,absolute speed,F34,F34-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F34-P01-T,signed range rate,F34,F34-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F34-P02-B,absolute speed,F34,F34-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F34-P02-T,signed range rate,F34,F34-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F34-P03-B,absolute speed,F34,F34-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F34-P03-T,signed range rate,F34,F34-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F34-P04-B,absolute speed,F34,F34-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F34-P04-T,signed range rate,F34,F34-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F34-P05-B,absolute speed,F34,F34-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F34-P05-T,signed range rate,F34,F34-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F34-P06-B,absolute speed,F34,F34-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F34-P06-T,signed range rate,F34,F34-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F35-P01-B,independent phase,F35,F35-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F35-P01-T,integrated phase,F35,F35-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F35-P02-B,independent phase,F35,F35-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F35-P02-T,integrated phase,F35,F35-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F35-P03-B,independent phase,F35,F35-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F35-P03-T,integrated phase,F35,F35-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F35-P04-B,independent phase,F35,F35-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F35-P04-T,integrated phase,F35,F35-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F35-P05-B,independent phase,F35,F35-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F35-P05-T,integrated phase,F35,F35-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F35-P06-B,independent phase,F35,F35-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F35-P06-T,integrated phase,F35,F35-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F36-P01-B,normalized path gains,F36,F36-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F36-P01-T,absolute ledger,F36,F36-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F36-P02-B,normalized path gains,F36,F36-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F36-P02-T,absolute ledger,F36,F36-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F36-P03-B,normalized path gains,F36,F36-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F36-P03-T,absolute ledger,F36,F36-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F36-P04-B,normalized path gains,F36,F36-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F36-P04-T,absolute ledger,F36,F36-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F36-P05-B,normalized path gains,F36,F36-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F36-P05-T,absolute ledger,F36,F36-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F36-P06-B,normalized path gains,F36,F36-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F36-P06-T,absolute ledger,F36,F36-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F37-P01-B,configured SNR,F37,F37-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F37-P01-T,kTB/NF scaling,F37,F37-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F37-P02-B,configured SNR,F37,F37-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F37-P02-T,kTB/NF scaling,F37,F37-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F37-P03-B,configured SNR,F37,F37-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F37-P03-T,kTB/NF scaling,F37,F37-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F37-P04-B,configured SNR,F37,F37-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F37-P04-T,kTB/NF scaling,F37,F37-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F37-P05-B,configured SNR,F37,F37-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F37-P05-T,kTB/NF scaling,F37,F37-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F37-P06-B,configured SNR,F37,F37-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F37-P06-T,kTB/NF scaling,F37,F37-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F38-P01-B,implicit scaling,F38,F38-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F38-P01-T,Parseval ledger,F38,F38-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F38-P02-B,implicit scaling,F38,F38-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F38-P02-T,Parseval ledger,F38,F38-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F38-P03-B,implicit scaling,F38,F38-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F38-P03-T,Parseval ledger,F38,F38-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F38-P04-B,implicit scaling,F38,F38-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F38-P04-T,Parseval ledger,F38,F38-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F38-P05-B,implicit scaling,F38,F38-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F38-P05-T,Parseval ledger,F38,F38-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F38-P06-B,implicit scaling,F38,F38-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F38-P06-T,Parseval ledger,F38,F38-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F39-P01-B,scalar power sum,F39,F39-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F39-P01-T,sample contribution graph,F39,F39-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F39-P02-B,scalar power sum,F39,F39-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F39-P02-T,sample contribution graph,F39,F39-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F39-P03-B,scalar power sum,F39,F39-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F39-P03-T,sample contribution graph,F39,F39-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F39-P04-B,scalar power sum,F39,F39-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F39-P04-T,sample contribution graph,F39,F39-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F39-P05-B,scalar power sum,F39,F39-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F39-P05-T,sample contribution graph,F39,F39-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F39-P06-B,scalar power sum,F39,F39-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F39-P06-T,sample contribution graph,F39,F39-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F40-P01-B,aligned shortcut,F40,F40-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F40-P01-T,sample timing,F40,F40-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F40-P02-B,aligned shortcut,F40,F40-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F40-P02-T,sample timing,F40,F40-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F40-P03-B,aligned shortcut,F40,F40-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F40-P03-T,sample timing,F40,F40-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F40-P04-B,aligned shortcut,F40,F40-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F40-P04-T,sample timing,F40,F40-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F40-P05-B,aligned shortcut,F40,F40-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F40-P05-T,sample timing,F40,F40-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F40-P06-B,aligned shortcut,F40,F40-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F40-P06-T,sample timing,F40,F40-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F41-P01-B,same-frequency shortcut,F41,F41-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F41-P01-T,per-link CFO,F41,F41-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F41-P02-B,same-frequency shortcut,F41,F41-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F41-P02-T,per-link CFO,F41,F41-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F41-P03-B,same-frequency shortcut,F41,F41-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F41-P03-T,per-link CFO,F41,F41-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F41-P04-B,same-frequency shortcut,F41,F41-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F41-P04-T,per-link CFO,F41,F41-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F41-P05-B,same-frequency shortcut,F41,F41-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F41-P05-T,per-link CFO,F41,F41-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F41-P06-B,same-frequency shortcut,F41,F41-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F41-P06-T,per-link CFO,F41,F41-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F42-P01-B,wideband overlap,F42,F42-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F42-P01-T,RE overlap,F42,F42-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F42-P02-B,wideband overlap,F42,F42-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F42-P02-T,RE overlap,F42,F42-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F42-P03-B,wideband overlap,F42,F42-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F42-P03-T,RE overlap,F42,F42-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F42-P04-B,wideband overlap,F42,F42-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F42-P04-T,RE overlap,F42,F42-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F42-P05-B,wideband overlap,F42,F42-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F42-P05-T,RE overlap,F42,F42-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F42-P06-B,wideband overlap,F42,F42-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F42-P06-T,RE overlap,F42,F42-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F43-P01-B,normalized links,F43,F43-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F43-P01-T,absolute powers,F43,F43-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F43-P02-B,normalized links,F43,F43-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F43-P02-T,absolute powers,F43,F43-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F43-P03-B,normalized links,F43,F43-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F43-P03-T,absolute powers,F43,F43-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F43-P04-B,normalized links,F43,F43-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F43-P04-T,absolute powers,F43,F43-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F43-P05-B,normalized links,F43,F43-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F43-P05-T,absolute powers,F43,F43-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F43-P06-B,normalized links,F43,F43-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F43-P06-T,absolute powers,F43,F43-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F44-P01-B,identity/noise-only,F44,F44-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F44-P01-T,measured covariance,F44,F44-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F44-P02-B,identity/noise-only,F44,F44-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F44-P02-T,measured covariance,F44,F44-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F44-P03-B,identity/noise-only,F44,F44-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F44-P03-T,measured covariance,F44,F44-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F44-P04-B,identity/noise-only,F44,F44-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F44-P04-T,measured covariance,F44,F44-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F44-P05-B,identity/noise-only,F44,F44-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F44-P05-T,measured covariance,F44,F44-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F44-P06-B,identity/noise-only,F44,F44-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F44-P06-T,measured covariance,F44,F44-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F45-P01-B,independent links,F45,F45-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F45-P01-T,shared waveform runtime,F45,F45-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F45-P02-B,independent links,F45,F45-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F45-P02-T,shared waveform runtime,F45,F45-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F45-P03-B,independent links,F45,F45-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F45-P03-T,shared waveform runtime,F45,F45-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F45-P04-B,independent links,F45,F45-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F45-P04-T,shared waveform runtime,F45,F45-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F45-P05-B,independent links,F45,F45-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F45-P05-T,shared waveform runtime,F45,F45-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F45-P06-B,independent links,F45,F45-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F45-P06-T,shared waveform runtime,F45,F45-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F46-P01-B,minimum image,F46,F46-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F46-P01-T,explicit clones,F46,F46-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F46-P02-B,minimum image,F46,F46-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F46-P02-T,explicit clones,F46,F46-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F46-P03-B,minimum image,F46,F46-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F46-P03-T,explicit clones,F46,F46-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F46-P04-B,minimum image,F46,F46-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F46-P04-T,explicit clones,F46,F46-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F46-P05-B,minimum image,F46,F46-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F46-P05-T,explicit clones,F46,F46-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F46-P06-B,minimum image,F46,F46-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F46-P06-T,explicit clones,F46,F46-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F47-P01-B,instantaneous max RSRP,F47,F47-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F47-P01-T,decoded measurements,F47,F47-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F47-P02-B,instantaneous max RSRP,F47,F47-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F47-P02-T,decoded measurements,F47,F47-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F47-P03-B,instantaneous max RSRP,F47,F47-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F47-P03-T,decoded measurements,F47,F47-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F47-P04-B,instantaneous max RSRP,F47,F47-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F47-P04-T,decoded measurements,F47,F47-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F47-P05-B,instantaneous max RSRP,F47,F47-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F47-P05-T,decoded measurements,F47,F47-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F47-P06-B,instantaneous max RSRP,F47,F47-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F47-P06-T,decoded measurements,F47,F47-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F48-P01-B,geometry switch,F48,F48-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F48-P01-T,event-driven handover,F48,F48-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F48-P02-B,geometry switch,F48,F48-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F48-P02-T,event-driven handover,F48,F48-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F48-P03-B,geometry switch,F48,F48-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F48-P03-T,event-driven handover,F48,F48-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F48-P04-B,geometry switch,F48,F48-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F48-P04-T,event-driven handover,F48,F48-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F48-P05-B,geometry switch,F48,F48-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F48-P05-T,event-driven handover,F48,F48-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F48-P06-B,geometry switch,F48,F48-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F48-P06-T,event-driven handover,F48,F48-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F49-P01-B,instant outage,F49,F49-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F49-P01-T,measured timers/events,F49,F49-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F49-P02-B,instant outage,F49,F49-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F49-P02-T,measured timers/events,F49,F49-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F49-P03-B,instant outage,F49,F49-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F49-P03-T,measured timers/events,F49,F49-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F49-P04-B,instant outage,F49,F49-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F49-P04-T,measured timers/events,F49,F49-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F49-P05-B,instant outage,F49,F49-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F49-P05-T,measured timers/events,F49,F49-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F49-P06-B,instant outage,F49,F49-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F49-P06-T,measured timers/events,F49,F49-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F50-P01-B,redrawn loss,F50,F50-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F50-P01-T,UT-specific correlated O2I,F50,F50-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F50-P02-B,redrawn loss,F50,F50-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F50-P02-T,UT-specific correlated O2I,F50,F50-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F50-P03-B,redrawn loss,F50,F50-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F50-P03-T,UT-specific correlated O2I,F50,F50-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F50-P04-B,redrawn loss,F50,F50-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F50-P04-T,UT-specific correlated O2I,F50,F50-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F50-P05-B,redrawn loss,F50,F50-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F50-P05-T,UT-specific correlated O2I,F50,F50-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F50-P06-B,redrawn loss,F50,F50-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F50-P06-T,UT-specific correlated O2I,F50,F50-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F51-P01-B,independent draw,F51,F51-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F51-P01-T,correlated LOS state,F51,F51-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F51-P02-B,independent draw,F51,F51-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F51-P02-T,correlated LOS state,F51,F51-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F51-P03-B,independent draw,F51,F51-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F51-P03-T,correlated LOS state,F51,F51-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F51-P04-B,independent draw,F51,F51-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F51-P04-T,correlated LOS state,F51,F51-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F51-P05-B,independent draw,F51,F51-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F51-P05-T,correlated LOS state,F51,F51-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F51-P06-B,independent draw,F51,F51-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F51-P06-T,correlated LOS state,F51,F51-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F52-P01-B,FR3 generic,F52,F52-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F52-P01-T,V19.2 profile,F52,F52-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F52-P02-B,FR3 generic,F52,F52-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F52-P02-T,V19.2 profile,F52,F52-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F52-P03-B,FR3 generic,F52,F52-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F52-P03-T,V19.2 profile,F52,F52-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F52-P04-B,FR3 generic,F52,F52-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F52-P04-T,V19.2 profile,F52,F52-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F52-P05-B,FR3 generic,F52,F52-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F52-P05-T,V19.2 profile,F52,F52-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F52-P06-B,FR3 generic,F52,F52-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F52-P06-T,V19.2 profile,F52,F52-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F53-P01-B,old material model,F53,F53-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F53-P01-T,updated materials,F53,F53-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F53-P02-B,old material model,F53,F53-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F53-P02-T,updated materials,F53,F53-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F53-P03-B,old material model,F53,F53-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F53-P03-T,updated materials,F53,F53-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F53-P04-B,old material model,F53,F53-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F53-P04-T,updated materials,F53,F53-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F53-P05-B,old material model,F53,F53-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F53-P05-T,updated materials,F53,F53-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F53-P06-B,old material model,F53,F53-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F53-P06-T,updated materials,F53,F53-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F54-P01-B,fixed 0.5λ proxy,F54,F54-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F54-P01-T,frequency-dependent array,F54,F54-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F54-P02-B,fixed 0.5λ proxy,F54,F54-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F54-P02-T,frequency-dependent array,F54,F54-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F54-P03-B,fixed 0.5λ proxy,F54,F54-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F54-P03-T,frequency-dependent array,F54,F54-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F54-P04-B,fixed 0.5λ proxy,F54,F54-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F54-P04-T,frequency-dependent array,F54,F54-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F54-P05-B,fixed 0.5λ proxy,F54,F54-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F54-P05-T,frequency-dependent array,F54,F54-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F54-P06-B,fixed 0.5λ proxy,F54,F54-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F54-P06-T,frequency-dependent array,F54,F54-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F55-P01-B,interpolated generic,F55,F55-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F55-P01-T,pinned LSP/CDL,F55,F55-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F55-P02-B,interpolated generic,F55,F55-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F55-P02-T,pinned LSP/CDL,F55,F55-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F55-P03-B,interpolated generic,F55,F55-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F55-P03-T,pinned LSP/CDL,F55,F55-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F55-P04-B,interpolated generic,F55,F55-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F55-P04-T,pinned LSP/CDL,F55,F55-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F55-P05-B,interpolated generic,F55,F55-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F55-P05-T,pinned LSP/CDL,F55,F55-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F55-P06-B,interpolated generic,F55,F55-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F55-P06-T,pinned LSP/CDL,F55,F55-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+BASELINE,EXECUTE,F56-P01-B,Gaussian approximation,F56,F56-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F56-P01-T,exact table,F56,F56-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F56-P02-B,Gaussian approximation,F56,F56-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F56-P02-T,exact table,F56,F56-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F56-P03-B,Gaussian approximation,F56,F56-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F56-P03-T,exact table,F56,F56-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F56-P04-B,Gaussian approximation,F56,F56-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F56-P04-T,exact table,F56,F56-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F56-P05-B,Gaussian approximation,F56,F56-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F56-P05-T,exact table,F56,F56-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F56-P06-B,Gaussian approximation,F56,F56-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F56-P06-T,exact table,F56,F56-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F57-P01-B,default scene,F57,F57-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F57-P01-T,scene hash,F57,F57-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F57-P02-B,default scene,F57,F57-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F57-P02-T,scene hash,F57,F57-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F57-P03-B,default scene,F57,F57-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F57-P03-T,scene hash,F57,F57-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F57-P04-B,default scene,F57,F57-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F57-P04-T,scene hash,F57,F57-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F57-P05-B,default scene,F57,F57-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F57-P05-T,scene hash,F57,F57-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F57-P06-B,default scene,F57,F57-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F57-P06-T,scene hash,F57,F57-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F58-P01-B,generic material,F58,F58-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F58-P01-T,material hash,F58,F58-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F58-P02-B,generic material,F58,F58-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F58-P02-T,material hash,F58,F58-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F58-P03-B,generic material,F58,F58-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F58-P03-T,material hash,F58,F58-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F58-P04-B,generic material,F58,F58-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F58-P04-T,material hash,F58,F58-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F58-P05-B,generic material,F58,F58-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F58-P05-T,material hash,F58,F58-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F58-P06-B,generic material,F58,F58-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F58-P06-T,material hash,F58,F58-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F59-P01-B,catch fallback,F59,F59-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F59-P01-T,solver/version contract,F59,F59-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F59-P02-B,catch fallback,F59,F59-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F59-P02-T,solver/version contract,F59,F59-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F59-P03-B,catch fallback,F59,F59-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F59-P03-T,solver/version contract,F59,F59-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F59-P04-B,catch fallback,F59,F59-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F59-P04-T,solver/version contract,F59,F59-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F59-P05-B,catch fallback,F59,F59-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F59-P05-T,solver/version contract,F59,F59-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F59-P06-B,catch fallback,F59,F59-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F59-P06-T,solver/version contract,F59,F59-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F60-P01-B,global RNG,F60,F60-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F60-P01-T,named streams/state hashes,F60,F60-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F60-P02-B,global RNG,F60,F60-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F60-P02-T,named streams/state hashes,F60,F60-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F60-P03-B,global RNG,F60,F60-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F60-P03-T,named streams/state hashes,F60,F60-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F60-P04-B,global RNG,F60,F60-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F60-P04-T,named streams/state hashes,F60,F60-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F60-P05-B,global RNG,F60,F60-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F60-P05-T,named streams/state hashes,F60,F60-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F60-P06-B,global RNG,F60,F60-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F60-P06-T,named streams/state hashes,F60,F60-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F61-P01-B,legacy engine,F61,F61-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F61-P01-T,canonical engine,F61,F61-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F61-P02-B,legacy engine,F61,F61-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F61-P02-T,canonical engine,F61,F61-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F61-P03-B,legacy engine,F61,F61-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F61-P03-T,canonical engine,F61,F61-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F61-P04-B,legacy engine,F61,F61-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F61-P04-T,canonical engine,F61,F61-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F61-P05-B,legacy engine,F61,F61-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F61-P05-T,canonical engine,F61,F61-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F61-P06-B,legacy engine,F61,F61-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F61-P06-T,canonical engine,F61,F61-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F62-P01-B,legacy artifacts,F62,F62-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F62-P01-T,canonical trace,F62,F62-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F62-P02-B,legacy artifacts,F62,F62-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F62-P02-T,canonical trace,F62,F62-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F62-P03-B,legacy artifacts,F62,F62-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F62-P03-T,canonical trace,F62,F62-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F62-P04-B,legacy artifacts,F62,F62-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F62-P04-T,canonical trace,F62,F62-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F62-P05-B,legacy artifacts,F62,F62-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F62-P05-T,canonical trace,F62,F62-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F62-P06-B,legacy artifacts,F62,F62-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F62-P06-T,canonical trace,F62,F62-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F63-P01-B,order-dependent RNG,F63,F63-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+TREATMENT,EXECUTE,F63-P01-T,deterministic merge,F63,F63-P01,true,True,True,True,True,channel_phase_bounded_profile,11,200
+BASELINE,EXECUTE,F63-P02-B,order-dependent RNG,F63,F63-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+TREATMENT,EXECUTE,F63-P02-T,deterministic merge,F63,F63-P02,true,True,True,True,True,channel_phase_bounded_profile,23,200
+BASELINE,EXECUTE,F63-P03-B,order-dependent RNG,F63,F63-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+TREATMENT,EXECUTE,F63-P03-T,deterministic merge,F63,F63-P03,true,True,True,True,True,channel_phase_bounded_profile,47,200
+BASELINE,EXECUTE,F63-P04-B,order-dependent RNG,F63,F63-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+TREATMENT,EXECUTE,F63-P04-T,deterministic merge,F63,F63-P04,true,True,True,True,True,channel_phase_bounded_profile,89,200
+BASELINE,EXECUTE,F63-P05-B,order-dependent RNG,F63,F63-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+TREATMENT,EXECUTE,F63-P05-T,deterministic merge,F63,F63-P05,true,True,True,True,True,channel_phase_bounded_profile,131,200
+BASELINE,EXECUTE,F63-P06-B,order-dependent RNG,F63,F63-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+TREATMENT,EXECUTE,F63-P06-T,deterministic merge,F63,F63-P06,true,True,True,True,True,channel_phase_bounded_profile,197,200
+BASELINE,EXECUTE,F64-P01-B,legacy chain,F64,F64-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+TREATMENT,EXECUTE,F64-P01-T,corrected full chain,F64,F64-P01,true,True,True,True,True,channel_phase_bounded_profile,11,2000
+BASELINE,EXECUTE,F64-P02-B,legacy chain,F64,F64-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+TREATMENT,EXECUTE,F64-P02-T,corrected full chain,F64,F64-P02,true,True,True,True,True,channel_phase_bounded_profile,23,2000
+BASELINE,EXECUTE,F64-P03-B,legacy chain,F64,F64-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+TREATMENT,EXECUTE,F64-P03-T,corrected full chain,F64,F64-P03,true,True,True,True,True,channel_phase_bounded_profile,47,2000
+BASELINE,EXECUTE,F64-P04-B,legacy chain,F64,F64-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+TREATMENT,EXECUTE,F64-P04-T,corrected full chain,F64,F64-P04,true,True,True,True,True,channel_phase_bounded_profile,89,2000
+BASELINE,EXECUTE,F64-P05-B,legacy chain,F64,F64-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+TREATMENT,EXECUTE,F64-P05-T,corrected full chain,F64,F64-P05,true,True,True,True,True,channel_phase_bounded_profile,131,2000
+BASELINE,EXECUTE,F64-P06-B,legacy chain,F64,F64-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000
+TREATMENT,EXECUTE,F64-P06-T,corrected full chain,F64,F64-P06,true,True,True,True,True,channel_phase_bounded_profile,197,2000

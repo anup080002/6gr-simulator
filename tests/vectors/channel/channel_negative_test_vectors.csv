@@ -1,0 +1,199 @@
+CaseID,Description,ExpectedError,ExpectedStateMutation,ExpectedStatus,ExpectedWaveformGenerated,NegativeType,Strict
+NEG-0001,Distance3D_m omitted from ChannelStateTrace,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DISTANCE,True
+NEG-0002,SignedDoppler_Hz omitted,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DOPPLER,True
+NEG-0003,Configured pathloss labelled observed,CHANNEL:InvalidProvenance,False,REJECT,False,CONFIGURED_AS_OBSERVED,True
+NEG-0004,Expected and applied pathloss share config source,CHANNEL:CircularComparison,False,REJECT,False,CIRCULAR_PATHLOSS_COMPARE,True
+NEG-0005,Frame=WGS84 but coordinates treated as ENU metres,CHANNEL:InvalidCoordinateFrame,False,REJECT,False,UNKNOWN_COORDINATE_FRAME,True
+NEG-0006,Two cloned sites share identity,CHANNEL:InvalidTopology,False,REJECT,False,DUPLICATE_CLONE_ID,True
+NEG-0007,UE lies outside declared street/floor/site polygon,CHANNEL:InvalidDropDistribution,False,REJECT,False,OUTSIDE_DROP_POLYGON,True
+NEG-0008,Scenario token not in pinned registry,CHANNEL:UnknownLOSScenario,False,REJECT,False,UNKNOWN_LOS_SCENARIO,True
+NEG-0009,LOS changes without correlated transition,CHANNEL:InvalidLOSStateTransition,False,REJECT,False,LOS_TELEPORT,True
+NEG-0010,Distance/height outside applicability,CHANNEL:PathlossOutOfRange,False,REJECT,False,PATHLOSS_OUTSIDE_RANGE,True
+NEG-0011,No LSP profile for scenario/frequency,CHANNEL:MissingLSPProfile,False,REJECT,False,MISSING_LSP_MATRIX,True
+NEG-0012,Cross-correlation matrix has negative eigenvalue,CHANNEL:InvalidLSPCovariance,False,REJECT,False,NON_PSD_LSP_MATRIX,True
+NEG-0013,Adjacent positions have independent LSP draws,CHANNEL:SpatialConsistencyViolation,False,REJECT,False,LSP_DISCONTINUITY,True
+NEG-0014,Material mixture not registered,CHANNEL:MissingO2IMaterialProfile,False,REJECT,False,UNKNOWN_O2I_MATERIAL,True
+NEG-0015,Indoor distance exceeds profile limit,CHANNEL:InvalidIndoorDistance,False,REJECT,False,INVALID_INDOOR_DISTANCE,True
+NEG-0016,Frequency needs profile but none pinned,CHANNEL:MissingOxygenProfile,False,REJECT,False,MISSING_OXYGEN_TABLE,True
+NEG-0017,Unsupported TDL/DS tuple,CHANNEL:InvalidTDLProfile,False,REJECT,False,INVALID_TDL_DELAY_SPREAD,True
+NEG-0018,Unsupported CDL/array tuple,CHANNEL:InvalidCDLProfile,False,REJECT,False,INVALID_CDL_ARRAY,True
+NEG-0019,Element count and panel dimensions differ,CHANNEL:InvalidAntennaArray,False,REJECT,False,ARRAY_DIMENSION_MISMATCH,True
+NEG-0020,Projection changes total radiated power,CHANNEL:PortProjectionMismatch,False,REJECT,False,PORT_PROJECTION_ENERGY,True
+NEG-0021,Approaching path reported as negative,CHANNEL:InvalidDopplerState,False,REJECT,False,DOPPLER_SIGN_FLIP,True
+NEG-0022,Path gain lacks connector/sample reference,CHANNEL:MissingAbsolutePowerReference,False,REJECT,False,MISSING_POWER_REFERENCE,True
+NEG-0023,Measured power differs by 1 dB,CHANNEL:PowerLedgerMismatch,False,REJECT,False,POWER_RECONCILIATION,True
+NEG-0024,Overlapping interferer has no channel state,CHANNEL:InterferenceLinkMissing,False,REJECT,False,MISSING_INTERFERER_CHANNEL,True
+NEG-0025,Composite samples differ from contribution sum,CHANNEL:InterferenceLedgerMismatch,False,REJECT,False,INTERFERENCE_SUM_MISMATCH,True
+NEG-0026,Measured covariance not from contribution samples,CHANNEL:CovarianceMismatch,False,REJECT,False,COVARIANCE_MISMATCH,True
+NEG-0027,Silent random-waypoint fallback attempted,CHANNEL:UnknownMobilityModel,False,REJECT,False,UNKNOWN_MOBILITY,True
+NEG-0028,Velocity discontinuity without acceleration model,CHANNEL:InvalidMobilityTrajectory,False,REJECT,False,VELOCITY_TELEPORT,True
+NEG-0029,Serving cell changes from geometry max RSRP,CHANNEL:MissingHandoverMeasurement,False,REJECT,False,HANDOVER_WITHOUT_EVENT,True
+NEG-0030,Unimplemented body/vehicle model requested,CHANNEL:UnsupportedBlockageProfile,False,REJECT,False,UNSUPPORTED_BLOCKAGE,True
+NEG-0031,Scene/solver/material hash missing,CHANNEL:RayTracingContractMissing,False,REJECT,False,RAY_CONTRACT_MISSING,True
+NEG-0032,Result belongs to different scene,CHANNEL:RayTracingHashMismatch,False,REJECT,False,RAY_HASH_MISMATCH,True
+NEG-0033,CDL profile substituted or array clamped,CHANNEL:StrictFallbackForbidden,False,REJECT,False,STRICT_FALLBACK,True
+NEG-0034,Distance3D_m omitted from ChannelStateTrace,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DISTANCE,True
+NEG-0035,SignedDoppler_Hz omitted,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DOPPLER,True
+NEG-0036,Configured pathloss labelled observed,CHANNEL:InvalidProvenance,False,REJECT,False,CONFIGURED_AS_OBSERVED,True
+NEG-0037,Expected and applied pathloss share config source,CHANNEL:CircularComparison,False,REJECT,False,CIRCULAR_PATHLOSS_COMPARE,True
+NEG-0038,Frame=WGS84 but coordinates treated as ENU metres,CHANNEL:InvalidCoordinateFrame,False,REJECT,False,UNKNOWN_COORDINATE_FRAME,True
+NEG-0039,Two cloned sites share identity,CHANNEL:InvalidTopology,False,REJECT,False,DUPLICATE_CLONE_ID,True
+NEG-0040,UE lies outside declared street/floor/site polygon,CHANNEL:InvalidDropDistribution,False,REJECT,False,OUTSIDE_DROP_POLYGON,True
+NEG-0041,Scenario token not in pinned registry,CHANNEL:UnknownLOSScenario,False,REJECT,False,UNKNOWN_LOS_SCENARIO,True
+NEG-0042,LOS changes without correlated transition,CHANNEL:InvalidLOSStateTransition,False,REJECT,False,LOS_TELEPORT,True
+NEG-0043,Distance/height outside applicability,CHANNEL:PathlossOutOfRange,False,REJECT,False,PATHLOSS_OUTSIDE_RANGE,True
+NEG-0044,No LSP profile for scenario/frequency,CHANNEL:MissingLSPProfile,False,REJECT,False,MISSING_LSP_MATRIX,True
+NEG-0045,Cross-correlation matrix has negative eigenvalue,CHANNEL:InvalidLSPCovariance,False,REJECT,False,NON_PSD_LSP_MATRIX,True
+NEG-0046,Adjacent positions have independent LSP draws,CHANNEL:SpatialConsistencyViolation,False,REJECT,False,LSP_DISCONTINUITY,True
+NEG-0047,Material mixture not registered,CHANNEL:MissingO2IMaterialProfile,False,REJECT,False,UNKNOWN_O2I_MATERIAL,True
+NEG-0048,Indoor distance exceeds profile limit,CHANNEL:InvalidIndoorDistance,False,REJECT,False,INVALID_INDOOR_DISTANCE,True
+NEG-0049,Frequency needs profile but none pinned,CHANNEL:MissingOxygenProfile,False,REJECT,False,MISSING_OXYGEN_TABLE,True
+NEG-0050,Unsupported TDL/DS tuple,CHANNEL:InvalidTDLProfile,False,REJECT,False,INVALID_TDL_DELAY_SPREAD,True
+NEG-0051,Unsupported CDL/array tuple,CHANNEL:InvalidCDLProfile,False,REJECT,False,INVALID_CDL_ARRAY,True
+NEG-0052,Element count and panel dimensions differ,CHANNEL:InvalidAntennaArray,False,REJECT,False,ARRAY_DIMENSION_MISMATCH,True
+NEG-0053,Projection changes total radiated power,CHANNEL:PortProjectionMismatch,False,REJECT,False,PORT_PROJECTION_ENERGY,True
+NEG-0054,Approaching path reported as negative,CHANNEL:InvalidDopplerState,False,REJECT,False,DOPPLER_SIGN_FLIP,True
+NEG-0055,Path gain lacks connector/sample reference,CHANNEL:MissingAbsolutePowerReference,False,REJECT,False,MISSING_POWER_REFERENCE,True
+NEG-0056,Measured power differs by 1 dB,CHANNEL:PowerLedgerMismatch,False,REJECT,False,POWER_RECONCILIATION,True
+NEG-0057,Overlapping interferer has no channel state,CHANNEL:InterferenceLinkMissing,False,REJECT,False,MISSING_INTERFERER_CHANNEL,True
+NEG-0058,Composite samples differ from contribution sum,CHANNEL:InterferenceLedgerMismatch,False,REJECT,False,INTERFERENCE_SUM_MISMATCH,True
+NEG-0059,Measured covariance not from contribution samples,CHANNEL:CovarianceMismatch,False,REJECT,False,COVARIANCE_MISMATCH,True
+NEG-0060,Silent random-waypoint fallback attempted,CHANNEL:UnknownMobilityModel,False,REJECT,False,UNKNOWN_MOBILITY,True
+NEG-0061,Velocity discontinuity without acceleration model,CHANNEL:InvalidMobilityTrajectory,False,REJECT,False,VELOCITY_TELEPORT,True
+NEG-0062,Serving cell changes from geometry max RSRP,CHANNEL:MissingHandoverMeasurement,False,REJECT,False,HANDOVER_WITHOUT_EVENT,True
+NEG-0063,Unimplemented body/vehicle model requested,CHANNEL:UnsupportedBlockageProfile,False,REJECT,False,UNSUPPORTED_BLOCKAGE,True
+NEG-0064,Scene/solver/material hash missing,CHANNEL:RayTracingContractMissing,False,REJECT,False,RAY_CONTRACT_MISSING,True
+NEG-0065,Result belongs to different scene,CHANNEL:RayTracingHashMismatch,False,REJECT,False,RAY_HASH_MISMATCH,True
+NEG-0066,CDL profile substituted or array clamped,CHANNEL:StrictFallbackForbidden,False,REJECT,False,STRICT_FALLBACK,True
+NEG-0067,Distance3D_m omitted from ChannelStateTrace,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DISTANCE,True
+NEG-0068,SignedDoppler_Hz omitted,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DOPPLER,True
+NEG-0069,Configured pathloss labelled observed,CHANNEL:InvalidProvenance,False,REJECT,False,CONFIGURED_AS_OBSERVED,True
+NEG-0070,Expected and applied pathloss share config source,CHANNEL:CircularComparison,False,REJECT,False,CIRCULAR_PATHLOSS_COMPARE,True
+NEG-0071,Frame=WGS84 but coordinates treated as ENU metres,CHANNEL:InvalidCoordinateFrame,False,REJECT,False,UNKNOWN_COORDINATE_FRAME,True
+NEG-0072,Two cloned sites share identity,CHANNEL:InvalidTopology,False,REJECT,False,DUPLICATE_CLONE_ID,True
+NEG-0073,UE lies outside declared street/floor/site polygon,CHANNEL:InvalidDropDistribution,False,REJECT,False,OUTSIDE_DROP_POLYGON,True
+NEG-0074,Scenario token not in pinned registry,CHANNEL:UnknownLOSScenario,False,REJECT,False,UNKNOWN_LOS_SCENARIO,True
+NEG-0075,LOS changes without correlated transition,CHANNEL:InvalidLOSStateTransition,False,REJECT,False,LOS_TELEPORT,True
+NEG-0076,Distance/height outside applicability,CHANNEL:PathlossOutOfRange,False,REJECT,False,PATHLOSS_OUTSIDE_RANGE,True
+NEG-0077,No LSP profile for scenario/frequency,CHANNEL:MissingLSPProfile,False,REJECT,False,MISSING_LSP_MATRIX,True
+NEG-0078,Cross-correlation matrix has negative eigenvalue,CHANNEL:InvalidLSPCovariance,False,REJECT,False,NON_PSD_LSP_MATRIX,True
+NEG-0079,Adjacent positions have independent LSP draws,CHANNEL:SpatialConsistencyViolation,False,REJECT,False,LSP_DISCONTINUITY,True
+NEG-0080,Material mixture not registered,CHANNEL:MissingO2IMaterialProfile,False,REJECT,False,UNKNOWN_O2I_MATERIAL,True
+NEG-0081,Indoor distance exceeds profile limit,CHANNEL:InvalidIndoorDistance,False,REJECT,False,INVALID_INDOOR_DISTANCE,True
+NEG-0082,Frequency needs profile but none pinned,CHANNEL:MissingOxygenProfile,False,REJECT,False,MISSING_OXYGEN_TABLE,True
+NEG-0083,Unsupported TDL/DS tuple,CHANNEL:InvalidTDLProfile,False,REJECT,False,INVALID_TDL_DELAY_SPREAD,True
+NEG-0084,Unsupported CDL/array tuple,CHANNEL:InvalidCDLProfile,False,REJECT,False,INVALID_CDL_ARRAY,True
+NEG-0085,Element count and panel dimensions differ,CHANNEL:InvalidAntennaArray,False,REJECT,False,ARRAY_DIMENSION_MISMATCH,True
+NEG-0086,Projection changes total radiated power,CHANNEL:PortProjectionMismatch,False,REJECT,False,PORT_PROJECTION_ENERGY,True
+NEG-0087,Approaching path reported as negative,CHANNEL:InvalidDopplerState,False,REJECT,False,DOPPLER_SIGN_FLIP,True
+NEG-0088,Path gain lacks connector/sample reference,CHANNEL:MissingAbsolutePowerReference,False,REJECT,False,MISSING_POWER_REFERENCE,True
+NEG-0089,Measured power differs by 1 dB,CHANNEL:PowerLedgerMismatch,False,REJECT,False,POWER_RECONCILIATION,True
+NEG-0090,Overlapping interferer has no channel state,CHANNEL:InterferenceLinkMissing,False,REJECT,False,MISSING_INTERFERER_CHANNEL,True
+NEG-0091,Composite samples differ from contribution sum,CHANNEL:InterferenceLedgerMismatch,False,REJECT,False,INTERFERENCE_SUM_MISMATCH,True
+NEG-0092,Measured covariance not from contribution samples,CHANNEL:CovarianceMismatch,False,REJECT,False,COVARIANCE_MISMATCH,True
+NEG-0093,Silent random-waypoint fallback attempted,CHANNEL:UnknownMobilityModel,False,REJECT,False,UNKNOWN_MOBILITY,True
+NEG-0094,Velocity discontinuity without acceleration model,CHANNEL:InvalidMobilityTrajectory,False,REJECT,False,VELOCITY_TELEPORT,True
+NEG-0095,Serving cell changes from geometry max RSRP,CHANNEL:MissingHandoverMeasurement,False,REJECT,False,HANDOVER_WITHOUT_EVENT,True
+NEG-0096,Unimplemented body/vehicle model requested,CHANNEL:UnsupportedBlockageProfile,False,REJECT,False,UNSUPPORTED_BLOCKAGE,True
+NEG-0097,Scene/solver/material hash missing,CHANNEL:RayTracingContractMissing,False,REJECT,False,RAY_CONTRACT_MISSING,True
+NEG-0098,Result belongs to different scene,CHANNEL:RayTracingHashMismatch,False,REJECT,False,RAY_HASH_MISMATCH,True
+NEG-0099,CDL profile substituted or array clamped,CHANNEL:StrictFallbackForbidden,False,REJECT,False,STRICT_FALLBACK,True
+NEG-0100,Distance3D_m omitted from ChannelStateTrace,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DISTANCE,True
+NEG-0101,SignedDoppler_Hz omitted,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DOPPLER,True
+NEG-0102,Configured pathloss labelled observed,CHANNEL:InvalidProvenance,False,REJECT,False,CONFIGURED_AS_OBSERVED,True
+NEG-0103,Expected and applied pathloss share config source,CHANNEL:CircularComparison,False,REJECT,False,CIRCULAR_PATHLOSS_COMPARE,True
+NEG-0104,Frame=WGS84 but coordinates treated as ENU metres,CHANNEL:InvalidCoordinateFrame,False,REJECT,False,UNKNOWN_COORDINATE_FRAME,True
+NEG-0105,Two cloned sites share identity,CHANNEL:InvalidTopology,False,REJECT,False,DUPLICATE_CLONE_ID,True
+NEG-0106,UE lies outside declared street/floor/site polygon,CHANNEL:InvalidDropDistribution,False,REJECT,False,OUTSIDE_DROP_POLYGON,True
+NEG-0107,Scenario token not in pinned registry,CHANNEL:UnknownLOSScenario,False,REJECT,False,UNKNOWN_LOS_SCENARIO,True
+NEG-0108,LOS changes without correlated transition,CHANNEL:InvalidLOSStateTransition,False,REJECT,False,LOS_TELEPORT,True
+NEG-0109,Distance/height outside applicability,CHANNEL:PathlossOutOfRange,False,REJECT,False,PATHLOSS_OUTSIDE_RANGE,True
+NEG-0110,No LSP profile for scenario/frequency,CHANNEL:MissingLSPProfile,False,REJECT,False,MISSING_LSP_MATRIX,True
+NEG-0111,Cross-correlation matrix has negative eigenvalue,CHANNEL:InvalidLSPCovariance,False,REJECT,False,NON_PSD_LSP_MATRIX,True
+NEG-0112,Adjacent positions have independent LSP draws,CHANNEL:SpatialConsistencyViolation,False,REJECT,False,LSP_DISCONTINUITY,True
+NEG-0113,Material mixture not registered,CHANNEL:MissingO2IMaterialProfile,False,REJECT,False,UNKNOWN_O2I_MATERIAL,True
+NEG-0114,Indoor distance exceeds profile limit,CHANNEL:InvalidIndoorDistance,False,REJECT,False,INVALID_INDOOR_DISTANCE,True
+NEG-0115,Frequency needs profile but none pinned,CHANNEL:MissingOxygenProfile,False,REJECT,False,MISSING_OXYGEN_TABLE,True
+NEG-0116,Unsupported TDL/DS tuple,CHANNEL:InvalidTDLProfile,False,REJECT,False,INVALID_TDL_DELAY_SPREAD,True
+NEG-0117,Unsupported CDL/array tuple,CHANNEL:InvalidCDLProfile,False,REJECT,False,INVALID_CDL_ARRAY,True
+NEG-0118,Element count and panel dimensions differ,CHANNEL:InvalidAntennaArray,False,REJECT,False,ARRAY_DIMENSION_MISMATCH,True
+NEG-0119,Projection changes total radiated power,CHANNEL:PortProjectionMismatch,False,REJECT,False,PORT_PROJECTION_ENERGY,True
+NEG-0120,Approaching path reported as negative,CHANNEL:InvalidDopplerState,False,REJECT,False,DOPPLER_SIGN_FLIP,True
+NEG-0121,Path gain lacks connector/sample reference,CHANNEL:MissingAbsolutePowerReference,False,REJECT,False,MISSING_POWER_REFERENCE,True
+NEG-0122,Measured power differs by 1 dB,CHANNEL:PowerLedgerMismatch,False,REJECT,False,POWER_RECONCILIATION,True
+NEG-0123,Overlapping interferer has no channel state,CHANNEL:InterferenceLinkMissing,False,REJECT,False,MISSING_INTERFERER_CHANNEL,True
+NEG-0124,Composite samples differ from contribution sum,CHANNEL:InterferenceLedgerMismatch,False,REJECT,False,INTERFERENCE_SUM_MISMATCH,True
+NEG-0125,Measured covariance not from contribution samples,CHANNEL:CovarianceMismatch,False,REJECT,False,COVARIANCE_MISMATCH,True
+NEG-0126,Silent random-waypoint fallback attempted,CHANNEL:UnknownMobilityModel,False,REJECT,False,UNKNOWN_MOBILITY,True
+NEG-0127,Velocity discontinuity without acceleration model,CHANNEL:InvalidMobilityTrajectory,False,REJECT,False,VELOCITY_TELEPORT,True
+NEG-0128,Serving cell changes from geometry max RSRP,CHANNEL:MissingHandoverMeasurement,False,REJECT,False,HANDOVER_WITHOUT_EVENT,True
+NEG-0129,Unimplemented body/vehicle model requested,CHANNEL:UnsupportedBlockageProfile,False,REJECT,False,UNSUPPORTED_BLOCKAGE,True
+NEG-0130,Scene/solver/material hash missing,CHANNEL:RayTracingContractMissing,False,REJECT,False,RAY_CONTRACT_MISSING,True
+NEG-0131,Result belongs to different scene,CHANNEL:RayTracingHashMismatch,False,REJECT,False,RAY_HASH_MISMATCH,True
+NEG-0132,CDL profile substituted or array clamped,CHANNEL:StrictFallbackForbidden,False,REJECT,False,STRICT_FALLBACK,True
+NEG-0133,Distance3D_m omitted from ChannelStateTrace,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DISTANCE,True
+NEG-0134,SignedDoppler_Hz omitted,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DOPPLER,True
+NEG-0135,Configured pathloss labelled observed,CHANNEL:InvalidProvenance,False,REJECT,False,CONFIGURED_AS_OBSERVED,True
+NEG-0136,Expected and applied pathloss share config source,CHANNEL:CircularComparison,False,REJECT,False,CIRCULAR_PATHLOSS_COMPARE,True
+NEG-0137,Frame=WGS84 but coordinates treated as ENU metres,CHANNEL:InvalidCoordinateFrame,False,REJECT,False,UNKNOWN_COORDINATE_FRAME,True
+NEG-0138,Two cloned sites share identity,CHANNEL:InvalidTopology,False,REJECT,False,DUPLICATE_CLONE_ID,True
+NEG-0139,UE lies outside declared street/floor/site polygon,CHANNEL:InvalidDropDistribution,False,REJECT,False,OUTSIDE_DROP_POLYGON,True
+NEG-0140,Scenario token not in pinned registry,CHANNEL:UnknownLOSScenario,False,REJECT,False,UNKNOWN_LOS_SCENARIO,True
+NEG-0141,LOS changes without correlated transition,CHANNEL:InvalidLOSStateTransition,False,REJECT,False,LOS_TELEPORT,True
+NEG-0142,Distance/height outside applicability,CHANNEL:PathlossOutOfRange,False,REJECT,False,PATHLOSS_OUTSIDE_RANGE,True
+NEG-0143,No LSP profile for scenario/frequency,CHANNEL:MissingLSPProfile,False,REJECT,False,MISSING_LSP_MATRIX,True
+NEG-0144,Cross-correlation matrix has negative eigenvalue,CHANNEL:InvalidLSPCovariance,False,REJECT,False,NON_PSD_LSP_MATRIX,True
+NEG-0145,Adjacent positions have independent LSP draws,CHANNEL:SpatialConsistencyViolation,False,REJECT,False,LSP_DISCONTINUITY,True
+NEG-0146,Material mixture not registered,CHANNEL:MissingO2IMaterialProfile,False,REJECT,False,UNKNOWN_O2I_MATERIAL,True
+NEG-0147,Indoor distance exceeds profile limit,CHANNEL:InvalidIndoorDistance,False,REJECT,False,INVALID_INDOOR_DISTANCE,True
+NEG-0148,Frequency needs profile but none pinned,CHANNEL:MissingOxygenProfile,False,REJECT,False,MISSING_OXYGEN_TABLE,True
+NEG-0149,Unsupported TDL/DS tuple,CHANNEL:InvalidTDLProfile,False,REJECT,False,INVALID_TDL_DELAY_SPREAD,True
+NEG-0150,Unsupported CDL/array tuple,CHANNEL:InvalidCDLProfile,False,REJECT,False,INVALID_CDL_ARRAY,True
+NEG-0151,Element count and panel dimensions differ,CHANNEL:InvalidAntennaArray,False,REJECT,False,ARRAY_DIMENSION_MISMATCH,True
+NEG-0152,Projection changes total radiated power,CHANNEL:PortProjectionMismatch,False,REJECT,False,PORT_PROJECTION_ENERGY,True
+NEG-0153,Approaching path reported as negative,CHANNEL:InvalidDopplerState,False,REJECT,False,DOPPLER_SIGN_FLIP,True
+NEG-0154,Path gain lacks connector/sample reference,CHANNEL:MissingAbsolutePowerReference,False,REJECT,False,MISSING_POWER_REFERENCE,True
+NEG-0155,Measured power differs by 1 dB,CHANNEL:PowerLedgerMismatch,False,REJECT,False,POWER_RECONCILIATION,True
+NEG-0156,Overlapping interferer has no channel state,CHANNEL:InterferenceLinkMissing,False,REJECT,False,MISSING_INTERFERER_CHANNEL,True
+NEG-0157,Composite samples differ from contribution sum,CHANNEL:InterferenceLedgerMismatch,False,REJECT,False,INTERFERENCE_SUM_MISMATCH,True
+NEG-0158,Measured covariance not from contribution samples,CHANNEL:CovarianceMismatch,False,REJECT,False,COVARIANCE_MISMATCH,True
+NEG-0159,Silent random-waypoint fallback attempted,CHANNEL:UnknownMobilityModel,False,REJECT,False,UNKNOWN_MOBILITY,True
+NEG-0160,Velocity discontinuity without acceleration model,CHANNEL:InvalidMobilityTrajectory,False,REJECT,False,VELOCITY_TELEPORT,True
+NEG-0161,Serving cell changes from geometry max RSRP,CHANNEL:MissingHandoverMeasurement,False,REJECT,False,HANDOVER_WITHOUT_EVENT,True
+NEG-0162,Unimplemented body/vehicle model requested,CHANNEL:UnsupportedBlockageProfile,False,REJECT,False,UNSUPPORTED_BLOCKAGE,True
+NEG-0163,Scene/solver/material hash missing,CHANNEL:RayTracingContractMissing,False,REJECT,False,RAY_CONTRACT_MISSING,True
+NEG-0164,Result belongs to different scene,CHANNEL:RayTracingHashMismatch,False,REJECT,False,RAY_HASH_MISMATCH,True
+NEG-0165,CDL profile substituted or array clamped,CHANNEL:StrictFallbackForbidden,False,REJECT,False,STRICT_FALLBACK,True
+NEG-0166,Distance3D_m omitted from ChannelStateTrace,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DISTANCE,True
+NEG-0167,SignedDoppler_Hz omitted,CHANNEL:MissingObservedGeometry,False,REJECT,False,MISSING_OBSERVED_DOPPLER,True
+NEG-0168,Configured pathloss labelled observed,CHANNEL:InvalidProvenance,False,REJECT,False,CONFIGURED_AS_OBSERVED,True
+NEG-0169,Expected and applied pathloss share config source,CHANNEL:CircularComparison,False,REJECT,False,CIRCULAR_PATHLOSS_COMPARE,True
+NEG-0170,Frame=WGS84 but coordinates treated as ENU metres,CHANNEL:InvalidCoordinateFrame,False,REJECT,False,UNKNOWN_COORDINATE_FRAME,True
+NEG-0171,Two cloned sites share identity,CHANNEL:InvalidTopology,False,REJECT,False,DUPLICATE_CLONE_ID,True
+NEG-0172,UE lies outside declared street/floor/site polygon,CHANNEL:InvalidDropDistribution,False,REJECT,False,OUTSIDE_DROP_POLYGON,True
+NEG-0173,Scenario token not in pinned registry,CHANNEL:UnknownLOSScenario,False,REJECT,False,UNKNOWN_LOS_SCENARIO,True
+NEG-0174,LOS changes without correlated transition,CHANNEL:InvalidLOSStateTransition,False,REJECT,False,LOS_TELEPORT,True
+NEG-0175,Distance/height outside applicability,CHANNEL:PathlossOutOfRange,False,REJECT,False,PATHLOSS_OUTSIDE_RANGE,True
+NEG-0176,No LSP profile for scenario/frequency,CHANNEL:MissingLSPProfile,False,REJECT,False,MISSING_LSP_MATRIX,True
+NEG-0177,Cross-correlation matrix has negative eigenvalue,CHANNEL:InvalidLSPCovariance,False,REJECT,False,NON_PSD_LSP_MATRIX,True
+NEG-0178,Adjacent positions have independent LSP draws,CHANNEL:SpatialConsistencyViolation,False,REJECT,False,LSP_DISCONTINUITY,True
+NEG-0179,Material mixture not registered,CHANNEL:MissingO2IMaterialProfile,False,REJECT,False,UNKNOWN_O2I_MATERIAL,True
+NEG-0180,Indoor distance exceeds profile limit,CHANNEL:InvalidIndoorDistance,False,REJECT,False,INVALID_INDOOR_DISTANCE,True
+NEG-0181,Frequency needs profile but none pinned,CHANNEL:MissingOxygenProfile,False,REJECT,False,MISSING_OXYGEN_TABLE,True
+NEG-0182,Unsupported TDL/DS tuple,CHANNEL:InvalidTDLProfile,False,REJECT,False,INVALID_TDL_DELAY_SPREAD,True
+NEG-0183,Unsupported CDL/array tuple,CHANNEL:InvalidCDLProfile,False,REJECT,False,INVALID_CDL_ARRAY,True
+NEG-0184,Element count and panel dimensions differ,CHANNEL:InvalidAntennaArray,False,REJECT,False,ARRAY_DIMENSION_MISMATCH,True
+NEG-0185,Projection changes total radiated power,CHANNEL:PortProjectionMismatch,False,REJECT,False,PORT_PROJECTION_ENERGY,True
+NEG-0186,Approaching path reported as negative,CHANNEL:InvalidDopplerState,False,REJECT,False,DOPPLER_SIGN_FLIP,True
+NEG-0187,Path gain lacks connector/sample reference,CHANNEL:MissingAbsolutePowerReference,False,REJECT,False,MISSING_POWER_REFERENCE,True
+NEG-0188,Measured power differs by 1 dB,CHANNEL:PowerLedgerMismatch,False,REJECT,False,POWER_RECONCILIATION,True
+NEG-0189,Overlapping interferer has no channel state,CHANNEL:InterferenceLinkMissing,False,REJECT,False,MISSING_INTERFERER_CHANNEL,True
+NEG-0190,Composite samples differ from contribution sum,CHANNEL:InterferenceLedgerMismatch,False,REJECT,False,INTERFERENCE_SUM_MISMATCH,True
+NEG-0191,Measured covariance not from contribution samples,CHANNEL:CovarianceMismatch,False,REJECT,False,COVARIANCE_MISMATCH,True
+NEG-0192,Silent random-waypoint fallback attempted,CHANNEL:UnknownMobilityModel,False,REJECT,False,UNKNOWN_MOBILITY,True
+NEG-0193,Velocity discontinuity without acceleration model,CHANNEL:InvalidMobilityTrajectory,False,REJECT,False,VELOCITY_TELEPORT,True
+NEG-0194,Serving cell changes from geometry max RSRP,CHANNEL:MissingHandoverMeasurement,False,REJECT,False,HANDOVER_WITHOUT_EVENT,True
+NEG-0195,Unimplemented body/vehicle model requested,CHANNEL:UnsupportedBlockageProfile,False,REJECT,False,UNSUPPORTED_BLOCKAGE,True
+NEG-0196,Scene/solver/material hash missing,CHANNEL:RayTracingContractMissing,False,REJECT,False,RAY_CONTRACT_MISSING,True
+NEG-0197,Result belongs to different scene,CHANNEL:RayTracingHashMismatch,False,REJECT,False,RAY_HASH_MISMATCH,True
+NEG-0198,CDL profile substituted or array clamped,CHANNEL:StrictFallbackForbidden,False,REJECT,False,STRICT_FALLBACK,True

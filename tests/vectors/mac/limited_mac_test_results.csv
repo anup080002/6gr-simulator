@@ -1,0 +1,24 @@
+CheckID,Status,Detail
+PYTHON-COMPILE,PASS,All three pack verifiers compile.
+MANIFEST-INTEGRITY,PASS,33 manifest files exist with matching SHA-256 and row counts.
+VECTOR-ROW-INTEGRITY,PASS,"4,773 protected vector rows verified."
+BSR-5BIT-TABLE,PASS,32 indices and required boundaries verified.
+BSR-8BIT-TABLE,PASS,"256 indices, overflow row and reserved index verified."
+BSR-REFINED-TABLE,PASS,"256 refined indices and required 4,751/5,000/750,000 boundaries verified."
+PH-MAPPING,PASS,64 Power Headroom mapping rows and boundary anchors verified.
+PCMAX-MAPPING,PASS,64 PCMAX mapping rows and boundary anchors verified.
+HARQ-STATE-VECTORS,PASS,Bounded HARQ transition graph and invalid transitions verified.
+TIMING-TDD-VECTORS,PASS,K0/K1/K2 same-numerology arithmetic and D/U/F legality verified.
+SOFT-BUFFER-PROVENANCE,PASS,Combining eligibility requires all supplied identity fields to match.
+MAC-PROCEDURE-VECTORS,PASS,BSR/PHR/SR/LCP/PDU/CE/TA/scheduler/lineage vector schemas and invariants verified.
+IMPACT-MATRIX,PASS,64 families and 768 paired controlled experiments verified.
+ACCEPTANCE-RULES,PASS,96 impact-rule definitions verified.
+BASE-ARTIFACT-VERIFIER,PASS,Complete synthetic 32-CSV/22-PNG set accepted; injected PNG hash mismatch rejected.
+IMPACT-ARTIFACT-VERIFIER,PASS,Complete synthetic 16-CSV/30-PNG set accepted; injected PNG hash mismatch rejected.
+EXISTING-CSV-INVENTORY,PASS,Inspected 225 CSVs and detected 1 malformed/nonrectangular file.
+EXISTING-PNG-INTEGRITY,PASS,Decoded 40/40 PNGs; 40 are structurally nonblank.
+INDEPENDENT-FLOOR-SCOPE,WARN,The supplied vectors are a bounded selected-profile floor; Codex must add vectors for any newly enabled CE/eLCID/profile tuple.
+CURRENT-SOURCE-REMEDIATION,FAIL,47 of 48 targeted source defect signatures remain.
+CURRENT-REQUIRED-ARTIFACTS,FAIL,0 of 100 contracted MAC artifacts exist.
+MATLAB-PRODUCTION-RUNTIME,BLOCKED,MATLAB and Octave executables are unavailable in this environment.
+EXISTING-MATLAB-TESTS,BLOCKED,37 relevant existing MATLAB test files could not be executed.

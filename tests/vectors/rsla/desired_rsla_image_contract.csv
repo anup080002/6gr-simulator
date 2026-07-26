@@ -1,0 +1,23 @@
+ImageFile,SourceCSV,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints,Required
+rsla_resource_ownership_map.png,rsla_resource_ownership.csv,Reference-signal resource ownership,slot/symbol/PRB,resource type,900,600,1,1,4,true
+rsla_dmrs_port_symbol_map.png,rsla_dmrs_matrix.csv,DM-RS ports and symbols,configuration case,logical port / symbol,900,600,1,1,4,true
+rsla_csirs_resource_map.png,rsla_csirs_matrix.csv,CSI-RS and CSI-IM resource map,resource case,RE ownership,900,600,1,1,4,true
+rsla_srs_resource_hopping_map.png,rsla_srs_matrix.csv,"SRS resource, comb and hopping map",slot / frequency,SRS resource,900,600,1,1,4,true
+rsla_trs_tracking_convergence.png,rsla_trs_tracking.csv,TRS timing and frequency tracking,update index,residual error,900,600,1,1,4,true
+rsla_ptrs_cpe_evm.png,rsla_ptrs_tracking.csv,PT-RS common phase error and EVM,phase-noise case,CPE / EVM,900,600,1,1,4,true
+rsla_measurement_accuracy.png,rsla_measurement_results.csv,TS 38.215 measurement accuracy,expected value,measured value,900,600,1,1,4,true
+rsla_measurement_filter_trace.png,rsla_measurement_filter_trace.csv,Measurement filtering trace,sample index,measurement (dB),900,600,1,1,4,true
+rsla_measurement_gap_timeline.png,rsla_measurement_gap_trace.csv,Measurement-gap timeline,absolute slot,gap / measurement state,900,600,1,1,4,true
+rsla_rrm_event_timeline.png,rsla_rrm_event_trace.csv,RRM event entry and leave timeline,sample index,event state,900,600,1,1,4,true
+rsla_srs_scheduler_authority.png,rsla_srs_scheduler_consumption.csv,Measured SRS scheduler authority,measurement age,selection validity,900,600,1,1,4,true
+rsla_csi_part1_part2_layout.png,rsla_csi_bit_ownership.csv,CSI Part 1 and Part 2 bit ownership,bit index,field owner,900,600,1,1,4,true
+rsla_csi_roundtrip.png,rsla_csi_uci_roundtrip.csv,CSI UCI encode/decode round trip,case,bit / CRC result,900,600,1,1,4,true
+rsla_link_adaptation_timeline.png,rsla_link_adaptation_decisions.csv,Decoded-report link-adaptation timeline,decision slot,CQI / MCS,900,600,1,1,4,true
+rsla_bootstrap_transition.png,rsla_bootstrap_transition.csv,Bootstrap to measured transition,slot,decision source,900,600,1,1,4,true
+rsla_cqi_mcs_calibration_curves.png,rsla_cqi_mcs_calibration.csv,CQI/MCS calibration curves,SNR (dB),BLER,900,600,1,1,4,true
+rsla_effective_sinr_prediction.png,rsla_effective_sinr_trials.csv,Effective-SINR prediction accuracy,predicted SINR (dB),reference SINR (dB),900,600,1,1,4,true
+rsla_olla_convergence.png,rsla_olla_convergence.csv,OLLA convergence to target BLER,transmission index,BLER / margin,900,600,1,1,4,true
+rsla_olla_multiue_isolation.png,rsla_olla_state.csv,Per-UE OLLA isolation,event index,OLLA margin (dB),900,600,1,1,4,true
+rsla_evm_by_modulation.png,rsla_evm_measurements.csv,EVM by modulation and impairment,case,EVM (%),900,600,1,1,4,true
+rsla_bler_vs_measured_sinr.png,rsla_receiver_metrics.csv,BLER versus measured SINR,measured SINR (dB),BLER,900,600,1,1,4,true
+rsla_test_status.png,rsla_test_summary.csv,RSLA mandatory test status,test suite,count,900,600,1,1,4,true

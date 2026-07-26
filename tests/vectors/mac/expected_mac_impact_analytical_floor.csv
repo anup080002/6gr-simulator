@@ -1,0 +1,97 @@
+FloorID,FamilyID,Input,ExpectedMetric,ExpectedRelationship,Tolerance,OracleClass
+FL-F01,F01,HARQProcesses,throughput,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F02,F02,MaxRetx,BLER,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F03,F03,RVSequence,combining_gain,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F04,F04,NDIEpochCheck,false_delivery,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F05,F05,DTXPolicy,BLER,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F06,F06,Codebook,payload,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F07,F07,K1,feedback_legality,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F08,F08,K2,ul_latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F09,F09,FlexPolicy,collision,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F10,F10,OfferedLoad,blocking,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F11,F11,ProvenanceCheck,false_decode,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F12,F12,PositionAware,BLER,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F13,F13,ResetPolicy,drop,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F14,F14,Scheduler,throughput,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F15,F15,PFTau_ms,fairness,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F16,F16,Scheduler,pdb_miss,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F17,F17,Scheduler,deadline_miss,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F18,F18,RetxPriority,latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F19,F19,ControlOverhead,net_goodput,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F20,F20,CSIAgePolicy,BLER,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F21,F21,BSRMapping,demand_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F22,F22,BSRMapping,demand_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F23,F23,BSRMapping,quant_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F24,F24,BSRTrigger,ul_latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F25,F25,PeriodicBSR,staleness,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F26,F26,RetxBSR,grant_recovery,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F27,F27,TruncatedBSR,ce_fit,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F28,F28,PHRMapping,power_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F29,F29,PCMAXMapping,power_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F30,F30,PHRProhibit,overhead,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F31,F31,PHRMode,ca_power,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F32,F32,SRState,access_latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F33,F33,SRProhibit,overhead,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F34,F34,SRFallback,recovery,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F35,F35,LCP,qos,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F36,F36,PBR_kBps,throughput,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F37,F37,BSD_ms,burst_delay,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F38,F38,LCRestrictions,illegal_grant,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F39,F39,CEPriority,ce_drop,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F40,F40,PDUCodec,parse_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F41,F41,eLCID,feature_coverage,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F42,F42,Segmentation,goodput,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F43,F43,TA,ul_sinr,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F44,F44,TATimer,illegal_ul,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F45,F45,TAGs,ca_alignment,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F46,F46,ResidualTA_samples,EVM,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F47,F47,GrantMode,latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F48,F48,GrantMode,latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F49,F49,GrantMode,latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F50,F50,CommitMode,state_leak,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F51,F51,GrantAuthority,false_grant,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F52,F52,BWPCheck,illegal_grant,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F53,F53,DRXCheck,power,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F54,F54,GapCheck,illegal_grant,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F55,F55,Cells,state_leak,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F56,F56,CrossCarrier,latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F57,F57,Lineage,orphan,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F58,F58,Dedup,goodput_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F59,F59,Conservation,byte_error,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F60,F60,Traffic,latency,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F61,F61,Traffic,pdb_miss,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F62,F62,NumUE,runtime,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F63,F63,Execution,artifact_hash,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-F64,F64,Mode,throughput,treatment_vs_baseline evaluated with common random numbers,profile_defined,analytical_or_state_invariant
+FL-EX-01,F01,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-02,F02,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-03,F03,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-04,F04,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-05,F05,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-06,F06,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-07,F07,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-08,F08,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-09,F09,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-10,F10,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-11,F11,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-12,F12,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-13,F13,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-14,F14,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-15,F15,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-16,F16,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-17,F17,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-18,F18,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-19,F19,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-20,F20,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-21,F21,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-22,F22,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-23,F23,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-24,F24,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-25,F25,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-26,F26,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-27,F27,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-28,F28,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-29,F29,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-30,F30,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-31,F31,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math
+FL-EX-32,F32,boundary_or_fault,exact_state_or_table,bit_exact_or_no_state_mutation,0,pure_spec_math

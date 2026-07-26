@@ -1,0 +1,6 @@
+RunID,CaseID,Format,Channel,SNR_dB,Trials,BlockErrors,BLER,CILower,CIUpper,StopReason,Incomplete,Status
+PUCCH_PHASE05_R18,BLER-1,2,AWGN,0,10,0,0,0,0.27753,fixed_executed_trials,false,PASS
+PUCCH_PHASE05_R18,BLER-2,2,AWGN,5,10,0,0,0,0.27753,fixed_executed_trials,false,PASS
+PUCCH_PHASE05_R18,BLER-3,2,AWGN,10,10,0,0,0,0.27753,fixed_executed_trials,false,PASS
+PUCCH_PHASE05_R18,BLER-4,2,AWGN,15,10,0,0,0,0.27753,fixed_executed_trials,false,PASS
+PUCCH_PHASE05_R18,BLER-5,2,AWGN,20,10,0,0,0,0.27753,fixed_executed_trials,false,PASS

@@ -1,0 +1,61 @@
+TestName,Scope,Mandatory,RequiredResult
+testMACEventStoreReplay,event store,true,PASS
+testMACContextProjection,state ownership,true,PASS
+testCentralMACTimingK0K1K2,timing,true,PASS
+testCentralMACTimingTDD,timing,true,PASS
+testHARQDLStateMachine,HARQ,true,PASS
+testHARQULStateMachine,HARQ,true,PASS
+testHARQIdentityKeys,HARQ,true,PASS
+testHARQFeedbackACKNACKDTX,HARQ,true,PASS
+testHARQCodebookBinding,HARQ,true,PASS
+testHARQProcessExhaustion,HARQ,true,PASS
+testHARQSoftBufferProvenance,HARQ,true,PASS
+testHARQSoftCombiningGain,HARQ,true,PASS
+testHARQResetAndFlush,HARQ,true,PASS
+testSPSState,persistent grants,true,PASS
+testConfiguredGrantType1State,persistent grants,true,PASS
+testConfiguredGrantType2State,persistent grants,true,PASS
+testExactBSR5BitTable,BSR,true,PASS
+testExactBSR8BitTable,BSR,true,PASS
+testExactRefinedBSRTable,BSR,true,PASS
+testBSRTriggersAndTimers,BSR,true,PASS
+testBSRFormats,BSR,true,PASS
+testExactPHMapping,PHR,true,PASS
+testExactPCMAXMapping,PHR,true,PASS
+testPHRTriggersAndTimers,PHR,true,PASS
+testMultipleEntryPHR,PHR,true,PASS
+testSchedulingRequestState,SR,true,PASS
+testSchedulingRequestFallback,SR,true,PASS
+testLogicalChannelBj,LCP,true,PASS
+testLogicalChannelPriority,LCP,true,PASS
+testLogicalChannelRestrictions,LCP,true,PASS
+testMACSubheaderCodec,PDU,true,PASS
+testMACPDUAssemblyDemux,PDU,true,PASS
+testMACCEPriority,PDU,true,PASS
+testMACPDUNegativeMatrix,PDU,true,PASS
+testTimingAdvanceCommand,TA,true,PASS
+testTimeAlignmentTimer,TA,true,PASS
+testMultipleTAG,TA,true,PASS
+testUEEligibilityEngine,eligibility,true,PASS
+testAtomicGrantCommit,scheduler,true,PASS
+testSchedulerRR,scheduler,true,PASS
+testSchedulerPF,scheduler,true,PASS
+testSchedulerQoSPF,scheduler,true,PASS
+testSchedulerEDF,scheduler,true,PASS
+testSchedulerRetransmissionPriority,scheduler,true,PASS
+testSchedulerFairnessAndStarvation,scheduler,true,PASS
+testSchedulerQoSAndDeadlines,scheduler,true,PASS
+testTwoCellHARQIsolation,CA,true,PASS
+testCrossCarrierGrantState,CA,true,PASS
+testPacketLineageGraph,lineage,true,PASS
+testByteBitConservation,lineage,true,PASS
+testFirstSuccessDeduplication,lineage,true,PASS
+testMACNoNoiseClosedLoop,end-to-end,true,PASS
+testMACAWGNCampaign,end-to-end,true,PASS
+testMACTDLCampaign,end-to-end,true,PASS
+testMACCDLCampaign,end-to-end,true,PASS
+testMACFaultInjection,negative,true,PASS
+testMACArtifactGeneration,artifacts,true,PASS
+testMACImpactAnalysis,impact,true,PASS
+testMACSerialParallelReproducibility,reproducibility,true,PASS
+testMACFullRepositoryRegression,regression,true,PASS

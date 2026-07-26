@@ -1,0 +1,2 @@
+RunID,TestSuite,Mandatory,Executed,Passed,Failed,Skipped,Blocked,DurationSeconds,Status
+PUCCH_PHASE05_R18,Phase05 production vectors and waveform campaign,true,true,true,0,0,0,13.5849,PASS

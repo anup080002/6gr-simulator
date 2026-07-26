@@ -1,0 +1,22 @@
+{
+  "BasePositive": {
+    "Checks": 337,
+    "Passed": 337,
+    "Failed": 0,
+    "ExitCode": 0
+  },
+  "BaseCorruption": {
+    "Detected": "png_hash:channel_geometry_trajectory_3d.png",
+    "ExitCode": 2
+  },
+  "ImpactPositive": {
+    "Checks": 343,
+    "Passed": 343,
+    "Failed": 0,
+    "ExitCode": 0
+  },
+  "ImpactCorruption": {
+    "Detected": "png_hash:channel_impact_observed_provenance.png",
+    "ExitCode": 2
+  }
+}

@@ -1,0 +1,291 @@
+CapabilityID,Feature,FrequencyMax_GHz,FrequencyMin_GHz,PlanningOutcome,ProfileID,Reason,Release,RequiredEvidence,Scenario,Supported
+CAP-0001,IMMUTABLE_GEOMETRY,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0002,CHANNEL_STATE_TRACE,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0003,PATHLOSS,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0004,LOS_PROBABILITY,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0005,CORRELATED_LOS_STATE,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0006,LSP_MARGINALS,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0007,LSP_CROSS_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0008,LSP_SPATIAL_CONSISTENCY,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0009,O2I,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0010,OXYGEN_ABSORPTION,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0011,TDL,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0012,TDL_SPATIAL_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Bounded declared correlation profile only; not full geometry,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0013,CDL,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0014,ARRAY_POSE_POLARIZATION,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0015,PORT_PROJECTION,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0016,CLONED_WRAPAROUND,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0017,SCENARIO_UE_DROPS,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0018,SAMPLE_DOMAIN_INTERFERENCE,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0019,ABSOLUTE_POWER_LEDGER,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0020,MOBILITY_DOPPLER_PHASE,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0021,BLOCKAGE,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMa,false
+CAP-0022,VEHICLE_PENETRATION,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMa,false
+CAP-0023,HANDOVER_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0024,RLF_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_uma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMa,true
+CAP-0025,NEAR_FIELD,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMa,false
+CAP-0026,SPATIAL_NON_STATIONARITY,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMa,false
+CAP-0027,RAY_TRACING,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,Ray tracing isolated to reproducible study profile,R18,typed_rejection_no_mutation,UMa,false
+CAP-0028,HST,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,HST isolated to HST study profile,R18,typed_rejection_no_mutation,UMa,false
+CAP-0029,REL19_7_24,7.125,0.5,REJECT,nr_r18_fr1_uma_strict,Release-19 mid-band isolated profile,R18,typed_rejection_no_mutation,UMa,false
+CAP-0030,IMMUTABLE_GEOMETRY,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0031,CHANNEL_STATE_TRACE,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0032,PATHLOSS,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0033,LOS_PROBABILITY,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0034,CORRELATED_LOS_STATE,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0035,LSP_MARGINALS,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0036,LSP_CROSS_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0037,LSP_SPATIAL_CONSISTENCY,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0038,O2I,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0039,OXYGEN_ABSORPTION,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0040,TDL,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0041,TDL_SPATIAL_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Bounded declared correlation profile only; not full geometry,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0042,CDL,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0043,ARRAY_POSE_POLARIZATION,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0044,PORT_PROJECTION,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0045,CLONED_WRAPAROUND,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0046,SCENARIO_UE_DROPS,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0047,SAMPLE_DOMAIN_INTERFERENCE,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0048,ABSOLUTE_POWER_LEDGER,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0049,MOBILITY_DOPPLER_PHASE,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0050,BLOCKAGE,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0051,VEHICLE_PENETRATION,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0052,HANDOVER_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0053,RLF_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_umi_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0054,NEAR_FIELD,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0055,SPATIAL_NON_STATIONARITY,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0056,RAY_TRACING,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,Ray tracing isolated to reproducible study profile,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0057,HST,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,HST isolated to HST study profile,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0058,REL19_7_24,7.125,0.5,REJECT,nr_r18_fr1_umi_strict,Release-19 mid-band isolated profile,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0059,IMMUTABLE_GEOMETRY,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0060,CHANNEL_STATE_TRACE,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0061,PATHLOSS,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0062,LOS_PROBABILITY,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0063,CORRELATED_LOS_STATE,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0064,LSP_MARGINALS,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0065,LSP_CROSS_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0066,LSP_SPATIAL_CONSISTENCY,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0067,O2I,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0068,OXYGEN_ABSORPTION,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0069,TDL,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0070,TDL_SPATIAL_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Bounded declared correlation profile only; not full geometry,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0071,CDL,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0072,ARRAY_POSE_POLARIZATION,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0073,PORT_PROJECTION,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0074,CLONED_WRAPAROUND,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0075,SCENARIO_UE_DROPS,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0076,SAMPLE_DOMAIN_INTERFERENCE,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0077,ABSOLUTE_POWER_LEDGER,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0078,MOBILITY_DOPPLER_PHASE,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0079,BLOCKAGE,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,RMa,false
+CAP-0080,VEHICLE_PENETRATION,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,RMa,false
+CAP-0081,HANDOVER_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0082,RLF_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_rma_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,RMa,true
+CAP-0083,NEAR_FIELD,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,RMa,false
+CAP-0084,SPATIAL_NON_STATIONARITY,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,RMa,false
+CAP-0085,RAY_TRACING,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,Ray tracing isolated to reproducible study profile,R18,typed_rejection_no_mutation,RMa,false
+CAP-0086,HST,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,HST isolated to HST study profile,R18,typed_rejection_no_mutation,RMa,false
+CAP-0087,REL19_7_24,7.125,0.5,REJECT,nr_r18_fr1_rma_strict,Release-19 mid-band isolated profile,R18,typed_rejection_no_mutation,RMa,false
+CAP-0088,IMMUTABLE_GEOMETRY,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0089,CHANNEL_STATE_TRACE,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0090,PATHLOSS,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0091,LOS_PROBABILITY,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0092,CORRELATED_LOS_STATE,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0093,LSP_MARGINALS,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0094,LSP_CROSS_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0095,LSP_SPATIAL_CONSISTENCY,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0096,O2I,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0097,OXYGEN_ABSORPTION,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0098,TDL,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0099,TDL_SPATIAL_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Bounded declared correlation profile only; not full geometry,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0100,CDL,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0101,ARRAY_POSE_POLARIZATION,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0102,PORT_PROJECTION,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0103,CLONED_WRAPAROUND,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0104,SCENARIO_UE_DROPS,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0105,SAMPLE_DOMAIN_INTERFERENCE,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0106,ABSOLUTE_POWER_LEDGER,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0107,MOBILITY_DOPPLER_PHASE,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0108,BLOCKAGE,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0109,VEHICLE_PENETRATION,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0110,HANDOVER_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0111,RLF_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_inh_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InH-Office,true
+CAP-0112,NEAR_FIELD,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0113,SPATIAL_NON_STATIONARITY,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0114,RAY_TRACING,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,Ray tracing isolated to reproducible study profile,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0115,HST,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,HST isolated to HST study profile,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0116,REL19_7_24,7.125,0.5,REJECT,nr_r18_fr1_inh_strict,Release-19 mid-band isolated profile,R18,typed_rejection_no_mutation,InH-Office,false
+CAP-0117,IMMUTABLE_GEOMETRY,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0118,CHANNEL_STATE_TRACE,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0119,PATHLOSS,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0120,LOS_PROBABILITY,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0121,CORRELATED_LOS_STATE,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0122,LSP_MARGINALS,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0123,LSP_CROSS_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0124,LSP_SPATIAL_CONSISTENCY,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0125,O2I,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0126,OXYGEN_ABSORPTION,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0127,TDL,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0128,TDL_SPATIAL_CORRELATION,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Bounded declared correlation profile only; not full geometry,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0129,CDL,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Enable only after independent InF/CDL vectors,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0130,ARRAY_POSE_POLARIZATION,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0131,PORT_PROJECTION,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0132,CLONED_WRAPAROUND,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0133,SCENARIO_UE_DROPS,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0134,SAMPLE_DOMAIN_INTERFERENCE,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0135,ABSOLUTE_POWER_LEDGER,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0136,MOBILITY_DOPPLER_PHASE,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0137,BLOCKAGE,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0138,VEHICLE_PENETRATION,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0139,HANDOVER_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0140,RLF_COUPLING,7.125,0.5,EXECUTE,nr_r18_fr1_inf_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,InF-SL,true
+CAP-0141,NEAR_FIELD,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0142,SPATIAL_NON_STATIONARITY,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0143,RAY_TRACING,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Ray tracing isolated to reproducible study profile,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0144,HST,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,HST isolated to HST study profile,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0145,REL19_7_24,7.125,0.5,REJECT,nr_r18_fr1_inf_strict,Release-19 mid-band isolated profile,R18,typed_rejection_no_mutation,InF-SL,false
+CAP-0146,IMMUTABLE_GEOMETRY,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0147,CHANNEL_STATE_TRACE,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0148,PATHLOSS,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0149,LOS_PROBABILITY,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0150,CORRELATED_LOS_STATE,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0151,LSP_MARGINALS,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0152,LSP_CROSS_CORRELATION,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0153,LSP_SPATIAL_CONSISTENCY,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0154,O2I,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0155,OXYGEN_ABSORPTION,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0156,TDL,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0157,TDL_SPATIAL_CORRELATION,71,24.25,EXECUTE,nr_r18_fr2_strict,Bounded declared correlation profile only; not full geometry,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0158,CDL,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0159,ARRAY_POSE_POLARIZATION,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0160,PORT_PROJECTION,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0161,CLONED_WRAPAROUND,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0162,SCENARIO_UE_DROPS,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0163,SAMPLE_DOMAIN_INTERFERENCE,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0164,ABSOLUTE_POWER_LEDGER,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0165,MOBILITY_DOPPLER_PHASE,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0166,BLOCKAGE,71,24.25,REJECT,nr_r18_fr2_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0167,VEHICLE_PENETRATION,71,24.25,REJECT,nr_r18_fr2_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0168,HANDOVER_COUPLING,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0169,RLF_COUPLING,71,24.25,EXECUTE,nr_r18_fr2_strict,Selected bounded profile,R18,runtime+independent_vectors+statistics,UMi-StreetCanyon,true
+CAP-0170,NEAR_FIELD,71,24.25,REJECT,nr_r18_fr2_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0171,SPATIAL_NON_STATIONARITY,71,24.25,REJECT,nr_r18_fr2_strict,Study extension; enable only after exact dependency tests,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0172,RAY_TRACING,71,24.25,REJECT,nr_r18_fr2_strict,Ray tracing isolated to reproducible study profile,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0173,HST,71,24.25,REJECT,nr_r18_fr2_strict,HST isolated to HST study profile,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0174,REL19_7_24,71,24.25,REJECT,nr_r18_fr2_strict,Release-19 mid-band isolated profile,R18,typed_rejection_no_mutation,UMi-StreetCanyon,false
+CAP-0175,IMMUTABLE_GEOMETRY,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0176,CHANNEL_STATE_TRACE,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0177,PATHLOSS,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0178,LOS_PROBABILITY,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0179,CORRELATED_LOS_STATE,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0180,LSP_MARGINALS,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0181,LSP_CROSS_CORRELATION,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0182,LSP_SPATIAL_CONSISTENCY,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0183,O2I,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0184,OXYGEN_ABSORPTION,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0185,TDL,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0186,TDL_SPATIAL_CORRELATION,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Bounded declared correlation profile only; not full geometry,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0187,CDL,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0188,ARRAY_POSE_POLARIZATION,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0189,PORT_PROJECTION,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0190,CLONED_WRAPAROUND,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0191,SCENARIO_UE_DROPS,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0192,SAMPLE_DOMAIN_INTERFERENCE,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0193,ABSOLUTE_POWER_LEDGER,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0194,MOBILITY_DOPPLER_PHASE,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0195,BLOCKAGE,24.25,7.125,REJECT,rel19_7_24_study_strict,Study extension; enable only after exact dependency tests,R19,typed_rejection_no_mutation,UMa,false
+CAP-0196,VEHICLE_PENETRATION,24.25,7.125,REJECT,rel19_7_24_study_strict,Study extension; enable only after exact dependency tests,R19,typed_rejection_no_mutation,UMa,false
+CAP-0197,HANDOVER_COUPLING,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0198,RLF_COUPLING,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0199,NEAR_FIELD,24.25,7.125,REJECT,rel19_7_24_study_strict,Study extension; enable only after exact dependency tests,R19,typed_rejection_no_mutation,UMa,false
+CAP-0200,SPATIAL_NON_STATIONARITY,24.25,7.125,REJECT,rel19_7_24_study_strict,Study extension; enable only after exact dependency tests,R19,typed_rejection_no_mutation,UMa,false
+CAP-0201,RAY_TRACING,24.25,7.125,REJECT,rel19_7_24_study_strict,Ray tracing isolated to reproducible study profile,R19,typed_rejection_no_mutation,UMa,false
+CAP-0202,HST,24.25,7.125,REJECT,rel19_7_24_study_strict,HST isolated to HST study profile,R19,typed_rejection_no_mutation,UMa,false
+CAP-0203,REL19_7_24,24.25,7.125,EXECUTE,rel19_7_24_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,UMa,true
+CAP-0204,IMMUTABLE_GEOMETRY,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0205,CHANNEL_STATE_TRACE,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0206,PATHLOSS,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0207,LOS_PROBABILITY,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0208,CORRELATED_LOS_STATE,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0209,LSP_MARGINALS,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0210,LSP_CROSS_CORRELATION,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0211,LSP_SPATIAL_CONSISTENCY,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0212,O2I,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0213,OXYGEN_ABSORPTION,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0214,TDL,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0215,TDL_SPATIAL_CORRELATION,100,0.5,EXECUTE,hst_study_strict,Bounded declared correlation profile only; not full geometry,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0216,CDL,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0217,ARRAY_POSE_POLARIZATION,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0218,PORT_PROJECTION,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0219,CLONED_WRAPAROUND,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0220,SCENARIO_UE_DROPS,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0221,SAMPLE_DOMAIN_INTERFERENCE,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0222,ABSOLUTE_POWER_LEDGER,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0223,MOBILITY_DOPPLER_PHASE,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0224,BLOCKAGE,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0225,VEHICLE_PENETRATION,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0226,HANDOVER_COUPLING,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0227,RLF_COUPLING,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0228,NEAR_FIELD,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0229,SPATIAL_NON_STATIONARITY,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0230,RAY_TRACING,100,0.5,REJECT,hst_study_strict,Ray tracing isolated to reproducible study profile,R19,typed_rejection_no_mutation,HST,false
+CAP-0231,HST,100,0.5,EXECUTE,hst_study_strict,Selected bounded profile,R19,runtime+independent_vectors+statistics,HST,true
+CAP-0232,REL19_7_24,100,0.5,REJECT,hst_study_strict,Release-19 mid-band isolated profile,R19,typed_rejection_no_mutation,HST,false
+CAP-0233,IMMUTABLE_GEOMETRY,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0234,CHANNEL_STATE_TRACE,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0235,PATHLOSS,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0236,LOS_PROBABILITY,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0237,CORRELATED_LOS_STATE,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0238,LSP_MARGINALS,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0239,LSP_CROSS_CORRELATION,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0240,LSP_SPATIAL_CONSISTENCY,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0241,O2I,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0242,OXYGEN_ABSORPTION,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0243,TDL,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0244,TDL_SPATIAL_CORRELATION,100,0.5,EXECUTE,raytracing_reproducible_study,Bounded declared correlation profile only; not full geometry,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0245,CDL,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0246,ARRAY_POSE_POLARIZATION,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0247,PORT_PROJECTION,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0248,CLONED_WRAPAROUND,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0249,SCENARIO_UE_DROPS,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0250,SAMPLE_DOMAIN_INTERFERENCE,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0251,ABSOLUTE_POWER_LEDGER,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0252,MOBILITY_DOPPLER_PHASE,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0253,BLOCKAGE,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0254,VEHICLE_PENETRATION,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0255,HANDOVER_COUPLING,100,0.5,REJECT,raytracing_reproducible_study,Not part of this profile,STUDY,typed_rejection_no_mutation,RAY_TRACING,false
+CAP-0256,RLF_COUPLING,100,0.5,REJECT,raytracing_reproducible_study,Not part of this profile,STUDY,typed_rejection_no_mutation,RAY_TRACING,false
+CAP-0257,NEAR_FIELD,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0258,SPATIAL_NON_STATIONARITY,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0259,RAY_TRACING,100,0.5,EXECUTE,raytracing_reproducible_study,Selected bounded profile,STUDY,runtime+independent_vectors+statistics,RAY_TRACING,true
+CAP-0260,HST,100,0.5,REJECT,raytracing_reproducible_study,HST isolated to HST study profile,STUDY,typed_rejection_no_mutation,RAY_TRACING,false
+CAP-0261,REL19_7_24,100,0.5,REJECT,raytracing_reproducible_study,Release-19 mid-band isolated profile,STUDY,typed_rejection_no_mutation,RAY_TRACING,false
+CAP-0262,IMMUTABLE_GEOMETRY,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0263,CHANNEL_STATE_TRACE,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0264,PATHLOSS,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0265,LOS_PROBABILITY,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0266,CORRELATED_LOS_STATE,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0267,LSP_MARGINALS,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0268,LSP_CROSS_CORRELATION,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0269,LSP_SPATIAL_CONSISTENCY,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0270,O2I,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0271,OXYGEN_ABSORPTION,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0272,TDL,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0273,TDL_SPATIAL_CORRELATION,0,0,REJECT,unsupported_extension,Bounded declared correlation profile only; not full geometry,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0274,CDL,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0275,ARRAY_POSE_POLARIZATION,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0276,PORT_PROJECTION,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0277,CLONED_WRAPAROUND,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0278,SCENARIO_UE_DROPS,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0279,SAMPLE_DOMAIN_INTERFERENCE,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0280,ABSOLUTE_POWER_LEDGER,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0281,MOBILITY_DOPPLER_PHASE,0,0,REJECT,unsupported_extension,Explicitly unsupported profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0282,BLOCKAGE,0,0,REJECT,unsupported_extension,Study extension; enable only after exact dependency tests,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0283,VEHICLE_PENETRATION,0,0,REJECT,unsupported_extension,Study extension; enable only after exact dependency tests,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0284,HANDOVER_COUPLING,0,0,REJECT,unsupported_extension,Not part of this profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0285,RLF_COUPLING,0,0,REJECT,unsupported_extension,Not part of this profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0286,NEAR_FIELD,0,0,REJECT,unsupported_extension,Study extension; enable only after exact dependency tests,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0287,SPATIAL_NON_STATIONARITY,0,0,REJECT,unsupported_extension,Study extension; enable only after exact dependency tests,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0288,RAY_TRACING,0,0,REJECT,unsupported_extension,Ray tracing isolated to reproducible study profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0289,HST,0,0,REJECT,unsupported_extension,HST isolated to HST study profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false
+CAP-0290,REL19_7_24,0,0,REJECT,unsupported_extension,Release-19 mid-band isolated profile,NONE,typed_rejection_no_mutation,UNSUPPORTED,false

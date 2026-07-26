@@ -1,0 +1,36 @@
+ErrorIdentifier,Meaning,StrictAction
+sixgr:mac:InvalidHARQTransition,State/event pair is not legal,Reject; no state mutation
+sixgr:mac:HARQIdentityMismatch,TB/codeword/cell/process/NDI key mismatch,Reject and preserve buffer
+sixgr:mac:RVSequenceMismatch,RV does not follow selected HARQ procedure,Reject transmission
+sixgr:mac:LateHARQFeedback,Feedback arrives outside expected event/window,Record late; no process update
+sixgr:mac:DuplicateHARQFeedback,Feedback already consumed,Reject duplicate
+sixgr:mac:InvalidHARQFeedbackContext,Codebook/DAI/bit/source mismatch,Reject feedback
+sixgr:mac:TimingContextMissing,Decoded/configured timing state absent,No grant
+sixgr:mac:TDDResourceUnavailable,Requested symbols have wrong ownership,No grant
+sixgr:mac:ProcessingTimeViolation,N1/N2 or processing constraint fails,No grant
+sixgr:mac:SoftBufferProvenanceMismatch,LLR source/key/layout mismatch,Reject combine
+sixgr:mac:ConfiguredGrantInactive,CG not activated/installed,No grant
+sixgr:mac:ConfiguredGrantWrongOccasion,CG occasion mismatch,No grant
+sixgr:mac:SPSWrongOccasion,SPS occasion mismatch,No grant
+sixgr:mac:BSRTableMismatch,Table/index mismatch,Fail vector/test
+sixgr:mac:BSRTriggerInvalid,BSR trigger/timer state invalid,Reject CE
+sixgr:mac:PHRMappingMismatch,PH/PCMAX mapping mismatch,Reject CE
+sixgr:mac:PHRStateInvalid,PHR trigger/timer state invalid,Reject CE
+sixgr:mac:InvalidSRTransition,SR state transition invalid,Reject event
+sixgr:mac:SRResourceMismatch,SR resource/occasion mismatch,No transmission
+sixgr:mac:LCPConfigurationInvalid,PBR/BSD/priority/restriction invalid,Reject RRC install
+sixgr:mac:ReservedLCID,Reserved/unsupported LCID,Reject PDU
+sixgr:mac:MACPDUOverrun,Subheader/length exceeds PDU,Reject PDU
+sixgr:mac:MACPDUTruncated,PDU ends before declared payload,Reject PDU
+sixgr:mac:DuplicateMACCE,Prohibited duplicate CE,Reject assembly
+sixgr:mac:MACCECapacityInsufficient,Mandatory CE cannot fit,Apply exact procedure or fail
+sixgr:mac:TimeAlignmentInvalid,UL requested for expired TAG,No UL transmission
+sixgr:mac:TimingAdvanceCommandInvalid,TA command outside procedure/domain,Reject command
+sixgr:mac:UEIneligible,One or more central eligibility gates fail,No reservation/grant
+sixgr:mac:GrantAuthorityMissing,No decoded/valid grant source,No commit
+sixgr:mac:GrantCommitConflict,Atomic state version changed,Abort and retry planning
+sixgr:mac:RetransmissionContextMismatch,Retx TB/coding/resource incompatible,Reject retx
+sixgr:mac:LineageConservationFailure,Byte/bit ledger does not reconcile,Fail run
+sixgr:mac:OrphanLineageNode,Lineage edge/node missing parent,Fail run
+sixgr:mac:DuplicateDelivery,Same packet/TB counted twice,Fail run
+sixgr:mac:UnsupportedProfileTuple,Capability tuple not enabled,Reject planning

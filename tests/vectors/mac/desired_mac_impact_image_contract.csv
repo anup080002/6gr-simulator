@@ -1,0 +1,31 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+mac_impact_harq_process_count.png,mac_impact_harq.csv,HARQ process count impact,HARQ processes,Blocking / throughput,1,2,10,900,600
+mac_impact_retransmissions.png,mac_impact_harq.csv,HARQ retransmission impact,Maximum retransmissions,BLER / latency,1,2,10,900,600
+mac_impact_rv_combining.png,mac_impact_harq.csv,RV sequence combining impact,HARQ round,Combining gain dB,1,2,10,900,600
+mac_impact_ack_dtx.png,mac_impact_harq.csv,ACK NACK DTX impact,Feedback outcome,Process result,1,2,10,900,600
+mac_impact_k1_k2.png,mac_impact_timing.csv,K1 K2 timing impact,Timing configuration,Latency / legality,1,2,10,900,600
+mac_impact_tdd_flex.png,mac_impact_timing.csv,Flexible TDD allocation impact,Flexible policy,Collision / utilization,1,2,10,900,600
+mac_impact_scheduler_policy.png,mac_impact_scheduler.csv,Scheduler policy comparison,Scheduler policy,Goodput Mbps,1,2,10,900,600
+mac_impact_fairness_latency.png,mac_impact_scheduler.csv,Fairness and latency tradeoff,Jain fairness,Latency ms,1,2,10,900,600
+mac_impact_qos_deadlines.png,mac_impact_scheduler.csv,QoS deadline impact,Offered load,Deadline miss rate,1,2,10,900,600
+mac_impact_bsr_mapping.png,mac_impact_bsr_phr_sr.csv,BSR mapping impact,Buffer bytes,Demand error bytes,1,2,10,900,600
+mac_impact_bsr_timers.png,mac_impact_bsr_phr_sr.csv,BSR timer impact,Timer configuration,Latency / overhead,1,2,10,900,600
+mac_impact_phr_mapping.png,mac_impact_bsr_phr_sr.csv,PHR mapping impact,Power headroom dB,Index / power error,1,2,10,900,600
+mac_impact_sr_state.png,mac_impact_bsr_phr_sr.csv,Scheduling Request state impact,SR state,Latency / overhead,1,2,10,900,600
+mac_impact_lcp_bj.png,mac_impact_lcp_pdu.csv,LCP token bucket impact,Time ms,Bj bytes,1,2,10,900,600
+mac_impact_pdu_codec.png,mac_impact_lcp_pdu.csv,MAC PDU codec impact,PDU size bytes,Parse errors,1,2,10,900,600
+mac_impact_ce_priority.png,mac_impact_lcp_pdu.csv,MAC CE priority impact,Grant bytes,Selected CE bytes,1,2,10,900,600
+mac_impact_segmentation.png,mac_impact_lcp_pdu.csv,SDU segmentation impact,Grant bytes,Dropped / delivered bytes,1,2,10,900,600
+mac_impact_timing_advance.png,mac_impact_timing_advance.csv,Timing advance impact,Residual timing samples,UL BLER,1,2,10,900,600
+mac_impact_time_alignment_timer.png,mac_impact_timing_advance.csv,Time alignment timer impact,Time slot,UL eligibility,1,2,10,900,600
+mac_impact_persistent_grants.png,mac_impact_persistent_grants.csv,Persistent grant impact,Grant mode,Latency / overhead,1,2,10,900,600
+mac_impact_grant_atomicity.png,mac_impact_persistent_grants.csv,Atomic grant commit impact,Fault injection,State leakage,1,2,10,900,600
+mac_impact_two_cell_isolation.png,mac_impact_lineage.csv,Two-cell HARQ isolation impact,Serving cell,State errors,1,2,10,900,600
+mac_impact_lineage.png,mac_impact_lineage.csv,Packet lineage impact,Processing stage,Bytes,1,2,10,900,600
+mac_impact_conservation.png,mac_impact_lineage.csv,Byte conservation impact,Flow,Conservation error,1,2,10,900,600
+mac_impact_goodput_dedup.png,mac_impact_lineage.csv,First-success goodput impact,HARQ attempt,Counted goodput bits,1,2,10,900,600
+mac_impact_runtime_scaling.png,mac_impact_runtime.csv,MAC runtime scaling,Number of UEs,Runtime ms,1,2,10,900,600
+mac_impact_memory_scaling.png,mac_impact_runtime.csv,MAC memory scaling,Number of UEs,Memory MB,1,2,10,900,600
+mac_impact_reproducibility.png,mac_impact_runtime.csv,Serial parallel reproducibility,Execution mode,Metric difference,1,2,10,900,600
+mac_impact_effect_forest.png,mac_impact_pairwise_effects.csv,MAC impact effect forest,Treatment minus baseline,Effect size,1,2,10,900,600
+mac_impact_end_to_end.png,mac_impact_summary.csv,End-to-end MAC impact summary,Impact family,Pass / effect,1,2,10,900,600

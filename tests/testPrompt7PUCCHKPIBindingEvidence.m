@@ -7,22 +7,9 @@ tmp = tempname;
 mkdir(tmp);
 cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
-scfg = sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
-    "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml"));
-cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "cfg"));
-cfg.channel.model = "AWGN";
-cfg.channel.awgnOnly = true;
-cfg.channel.snr_dB = 40;
-cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
-cfg.run.interferenceExecutionMode = "none";
-cfg.phy.rnti = 320;
-
-trialF0 = sixgr.link.runPUCCHWaveformTrial(cfg, ...
-    "ExpectedUCIBits", int8(1), "SNR_dB", 40, "Format", 0, "RNTI", 320);
-trialF1 = sixgr.link.runPUCCHWaveformTrial(cfg, ...
-    "ExpectedUCIBits", int8([1; 0]), "SNR_dB", 40, "Format", 1, "RNTI", 320);
-trialF2 = sixgr.link.runPUCCHWaveformTrial(cfg, ...
-    "ExpectedUCIBits", int8(mod((0:19).', 2)), "SNR_dB", 45, "Format", 2, "RNTI", 320);
+trialF0 = localPUCCHTrial(0, int8(1), 40);
+trialF1 = localPUCCHTrial(1, int8([1; 0]), 40);
+trialF2 = localPUCCHTrial(2, int8(mod((0:19).', 2)), 45);
 
 for trial = [trialF0, trialF1, trialF2]
     assert(logical(trial.Ok), "PUCCH focused waveform trial must decode.");
@@ -69,6 +56,18 @@ assert(nnz(published) >= 200, ...
     "Parameter binding matrix must populate at least 200 runtime measured values from trial columns.");
 
 ok = true;
+end
+
+function trial = localPUCCHTrial(format, bits, snrDB)
+fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected( ...
+    format, bits, "RNTI", 320);
+trial = sixgr.link.runPUCCHWaveformTrial(fixture.Carrier, ...
+    "Assignment", fixture.Assignment, ...
+    "Report", fixture.Report, ...
+    "ReceiverContext", fixture.Context, ...
+    "Carrier", fixture.Carrier, ...
+    "SNR_dB", snrDB, ...
+    "Seed", 320 + format);
 end
 
 function raw = localRawFixture()

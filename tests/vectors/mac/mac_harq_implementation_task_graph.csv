@@ -1,0 +1,29 @@
+TaskID,Wave,Task,ExitCriterion
+MAC-T01,1,Freeze capability/specification profile,Executable selected tuple registry and exact spec versions.
+MAC-T02,1,Create event model and store,Immutable typed events and deterministic replay.
+MAC-T03,1,Create UE/cell context projections,No direct mutable configured truth in live procedures.
+MAC-T04,2,Central timing service,All K0/K1/K2/TDD/processing/resource decisions centralized.
+MAC-T05,2,Direction-specific HARQ entities,"Explicit DL/UL states, keys, feedback and process lifecycle."
+MAC-T06,2,Soft buffer ledger,Full provenance and position-aware combine ownership.
+MAC-T07,3,Persistent grant states,"SPS, CG1, CG2 and RA grant event state."
+MAC-T08,3,Exact BSR tables/state,"All tables, triggers, timers and formats."
+MAC-T09,3,Exact PHR mappings/state,"PH/PCMAX, timers, triggers and multi-cell formats."
+MAC-T10,3,Scheduling Request state,Pending/prohibit/cancel/fallback behavior.
+MAC-T11,4,Logical channel prioritization,"PBR/BSD/Bj, restrictions and segmentation."
+MAC-T12,4,MAC PDU codec,"Bounded LCID/eLCID, subheaders, CEs and errors."
+MAC-T13,4,CE priority resolver,Exact selected-profile CE inclusion/cancellation.
+MAC-T14,5,Timing advance groups,"TA commands, timers, sample shifts and UL gating."
+MAC-T15,5,Eligibility engine,DRX/BWP/gap/TDD/TA/control/power/access gating.
+MAC-T16,6,Scheduler snapshots/policies,RR/PF/QoS-PF/EDF over identical immutable inputs.
+MAC-T17,6,Atomic grant commit,No HARQ/queue mutation before executable grant commit.
+MAC-T18,6,Multi-cell/CA isolation,"Per-cell HARQ, feedback, BSR/PHR/TA and cross-carrier."
+MAC-T19,7,Packet lineage graph,All packet/PDU/TB/codeword/attempt/delivery IDs.
+MAC-T20,7,Conservation ledger,Byte/bit/packet equations and duplicate-delivery detection.
+MAC-T21,8,Independent vector suite,"Exact tables, states, timing, PDU, LCP and lineage vectors."
+MAC-T22,8,No-noise closed loop,Decoded DCI/UCI/MAC CE/RRC event chain without channel errors.
+MAC-T23,9,AWGN/TDL/CDL campaigns,Multi-seed HARQ/scheduler/traffic campaigns.
+MAC-T24,9,Fault injection,Every typed error and no-mutation invariant.
+MAC-T25,10,Base artifacts,Generate all base CSVs and PNGs.
+MAC-T26,11,Impact runner,Execute 768 paired experiments and 96 rules.
+MAC-T27,12,Regression integration,Run all control/data/RLC/RRC/channel tests.
+MAC-T28,13,Clean removal of shortcuts,No heuristic timeouts/tables/default grants remain.

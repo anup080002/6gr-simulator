@@ -1,0 +1,31 @@
+ExpectedTitle,ExpectedXLabel,ExpectedYLabel,ImageFile,MinimumAxes,MinimumFinitePoints,MinimumHeight,MinimumSeries,MinimumWidth,SourceCSV
+Observed versus reconstructed geometry,Case,Error,channel_impact_observed_provenance.png,1,20,600,2,900,channel_impact_geometry.csv
+Coordinate-frame impact,Orientation,Error,channel_impact_coordinate_frame.png,1,20,600,2,900,channel_impact_geometry.csv
+Topology and wraparound impact,Inter-site distance,Interference,channel_impact_topology_wraparound.png,1,20,600,2,900,channel_impact_geometry.csv
+UE drop statistical fidelity,Distance,CDF,channel_impact_ue_drop_statistics.png,1,20,600,2,900,channel_impact_geometry.csv
+Pathloss model impact,Distance,Pathloss,channel_impact_pathloss.png,1,20,600,2,900,channel_impact_large_scale.csv
+LOS probability impact,Distance,Probability,channel_impact_los_probability.png,1,20,600,2,900,channel_impact_large_scale.csv
+O2I model impact,Frequency,Loss,channel_impact_o2i.png,1,20,600,2,900,channel_impact_large_scale.csv
+Oxygen absorption impact,Frequency,Loss,channel_impact_oxygen.png,1,20,600,2,900,channel_impact_large_scale.csv
+LSP marginal impact,Value,Probability,channel_impact_lsp_marginals.png,1,20,600,2,900,channel_impact_large_scale.csv
+LSP cross-correlation impact,Parameter pair,Correlation,channel_impact_lsp_cross_correlation.png,1,20,600,2,900,channel_impact_large_scale.csv
+LSP spatial-consistency impact,Separation,Correlation,channel_impact_lsp_spatial_consistency.png,1,20,600,2,900,channel_impact_large_scale.csv
+TDL profile impact,Delay,Power,channel_impact_tdl_profile.png,1,20,600,2,900,channel_impact_tdl_cdl.csv
+TDL spatial-correlation impact,Port separation,Correlation,channel_impact_tdl_spatial_correlation.png,1,20,600,2,900,channel_impact_tdl_cdl.csv
+TDL Doppler spectrum impact,Doppler,PSD,channel_impact_tdl_doppler.png,1,20,600,2,900,channel_impact_tdl_cdl.csv
+CDL statistics impact,Metric,Error,channel_impact_cdl_statistics.png,1,20,600,2,900,channel_impact_tdl_cdl.csv
+CDL polarization impact,XPR,Leakage,channel_impact_cdl_polarization.png,1,20,600,2,900,channel_impact_arrays_polarization.csv
+Array pose impact,Angle,Gain,channel_impact_array_pose.png,1,20,600,2,900,channel_impact_arrays_polarization.csv
+Port projection impact,Port,Power,channel_impact_port_projection.png,1,20,600,2,900,channel_impact_arrays_polarization.csv
+Spatial non-stationarity impact,Position,Visible clusters,channel_impact_spatial_nonstationarity.png,1,20,600,2,900,channel_impact_arrays_polarization.csv
+Blockage impact,Time,Loss,channel_impact_blockage.png,1,20,600,2,900,channel_impact_large_scale.csv
+Doppler sign and phase impact,Time,Phase error,channel_impact_doppler_sign_phase.png,1,20,600,2,900,channel_impact_mobility_doppler.csv
+High-speed trajectory impact,Speed,BLER,channel_impact_hst.png,1,20,600,2,900,channel_impact_mobility_doppler.csv
+Channel update-cadence impact,Update interval,Error,channel_impact_update_cadence.png,1,20,600,2,900,channel_impact_mobility_doppler.csv
+Absolute-power impact,Expected power,Measured power,channel_impact_absolute_power.png,1,20,600,2,900,channel_impact_power.csv
+Noise scaling impact,Bandwidth,Noise power,channel_impact_noise_scaling.png,1,20,600,2,900,channel_impact_power.csv
+Interference superposition impact,Sample,Error,channel_impact_interference_superposition.png,1,20,600,2,900,channel_impact_interference.csv
+Interference covariance impact,Sample count,Covariance error,channel_impact_interference_covariance.png,1,20,600,2,900,channel_impact_interference.csv
+Multicell mobility impact,Time,Serving cell,channel_impact_multicell_handover.png,1,20,600,2,900,channel_impact_interference.csv
+Release-19 mid-band impact,Frequency,Error,channel_impact_rel19_midband.png,1,20,600,2,900,channel_impact_rel19_raytracing.csv
+Channel implementation effect summary,Effect,Family,channel_impact_effect_forest.png,1,20,600,2,900,channel_impact_pairwise_effects.csv

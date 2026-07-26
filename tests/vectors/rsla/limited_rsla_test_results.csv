@@ -1,0 +1,22 @@
+CheckID,Category,Result,Observed,Required,Details
+PACK-PROMPT,Pack,PASS,697 prompt lines,detailed implementation prompt,"Production edit, migration, tests, artifacts and completion rules included."
+PACK-MANIFEST,Pack,PASS,37 files / 8760 rows,all manifest hashes/rows valid,Generated without MATLAB.
+PACK-VECTOR-VERIFIER,Pack,PASS,exit 0,exit 0,"Independent formula, count and pairing checks."
+PACK-CAPABILITY,Pack,PASS,180 explicit tuples,explicit execute/reject matrix,Selected DMRS/CSI-RS/SRS/TRS/PTRS/measurement/CSI/effective-SINR/OLLA profiles.
+PACK-RS-VECTORS,Pack,PASS,"192 DMRS, 114 CSI-RS, 162 SRS, 96 TRS, 96 PT-RS, 120 collision rows",broad test-input matrices,"Positive, negative and specification-lookup cases."
+PACK-MEASUREMENT-FORMULAS,Pack,PASS,120 analytical measurement + 80 EVM rows,independent formula checks,RSRP/RSRQ/SINR/RSSI/SRS-RSRP/EVM.
+PACK-EFFECTIVE-SINR,Pack,PASS,240 EESM/MIESM-surrogate rows,formula floor,Strict MIESM still requires calibrated modulation-specific curves.
+PACK-OLLA,Pack,PASS,16 analytical cases / 800 state rows,zero target drift and state traces,Margin-subtraction sign convention is explicit.
+PACK-FILTER-EVENTS,Pack,PASS,"504 filter, 1024 gap, 360 event rows",analytical filtering/gap/event floor,Selected bounded profiles.
+PACK-IMPACT,Pack,PASS,64 families / 768 experiments / 384 pairs,pair integrity,Only declared factor differs inside each pair.
+PACK-RULES,Pack,PASS,96 rules,hard/statistical rules,"Wilson, Clopper-Pearson, McNemar, paired bootstrap, Holm."
+PACK-BASE-VERIFIER,Pack,PASS,exit 0,exit 0,32 CSV and 22 PNG synthetic complete set.
+PACK-IMPACT-VERIFIER,Pack,PASS,exit 0,exit 0,16 CSV and 30 PNG synthetic complete set.
+PACK-CORRUPTION-DETECTION,Pack,PASS,"base 2, impact 2",both exit 2,Injected PNG audit-hash mismatches were detected.
+CURRENT-PNG-INTEGRITY,Current simulator,PASS,40/40 decoded; 40/40 nonblank,all current PNGs decode/nonblank,These are not the contracted RSLA technical figures.
+CURRENT-CSV-INVENTORY,Current simulator,WARN,224/225 rectangular,all rectangular,One existing unrelated report is malformed in the uploaded snapshot.
+VECTOR-INDEPENDENCE-SCOPE,Pack,WARN,analytical floors complete; several exact RS index/sequence rows marked SPEC_LOOKUP_REQUIRED,exact pure-spec/frozen vectors before profile enablement,Codex must add independent exact DMRS/CSI-RS/SRS/TRS/PT-RS vectors for every enabled tuple.
+CURRENT-SOURCE-REMEDIATION,Current simulator,FAIL,51/52 targeted defect signatures detected,0 detected for enabled strict profiles,12/12 useful foundations also detected.
+CURRENT-REQUIRED-ARTIFACTS,Current simulator,FAIL,0/100 contracted artifacts present,100/100,48 CSV + 52 PNG required.
+MATLAB-PRODUCTION-RUNTIME,Runtime,BLOCKED,MATLAB=not found; Octave=not found,pinned MATLAB + 5G Toolbox,No corrected production waveform or MATLAB suite can execute here.
+EXISTING-MATLAB-TESTS,Runtime,BLOCKED,87 relevant test files not executed,all execute/pass,Runtime unavailable.

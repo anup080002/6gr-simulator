@@ -1,0 +1,17 @@
+FileName,MinimumRows,RequiredColumns
+channel_impact_run_manifest.csv,768,ExperimentID;FamilyID;PairID;Arm;Seed;ProfileID;Status
+channel_impact_raw_trials.csv,768,ExperimentID;FamilyID;PairID;Arm;Seed;Trial;GeometryHash;ChannelHash;NoiseHash;MetricName;MetricValue;Status
+channel_impact_operating_points.csv,128,ExperimentID;FamilyID;OperatingPointID;Trials;Errors;Incomplete;StopReason;Status
+channel_impact_pairwise_effects.csv,64,FamilyID;PairID;MetricName;BaselineValue;TreatmentValue;Effect;ConfidenceLower;ConfidenceUpper;PValue;AdjustedPValue;Status
+channel_impact_rule_evaluation.csv,96,RuleID;FamilyID;RuleClass;Metric;Result;EvidenceRows;Status
+channel_impact_geometry.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_large_scale.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_tdl_cdl.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_arrays_polarization.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_mobility_doppler.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_interference.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_power.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_rel19_raytracing.csv,40,FamilyID;Metric;Baseline;Treatment;Effect;Status
+channel_impact_runtime.csv,64,FamilyID;SerialSHA256;ParallelSHA256;Reproducible;Runtime_s;Memory_MB;Status
+channel_impact_summary.csv,64,FamilyID;CompletionStatus;PrimaryEffect;ConfidenceLower;ConfidenceUpper;Status
+channel_impact_image_semantic_audit.csv,30,ImageFile;SourceCSV;SourceCSVSHA256;PNGSHA256;Width;Height;Title;XLabel;YLabel;AxesCount;SeriesCount;FinitePointCount;Status

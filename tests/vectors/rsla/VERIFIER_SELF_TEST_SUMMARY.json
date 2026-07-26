@@ -1,0 +1,12 @@
+{
+  "PythonCompileAllPassed": true,
+  "BaseValidReturnCode": 0,
+  "BaseCorruptionReturnCode": 2,
+  "ImpactValidReturnCode": 0,
+  "ImpactCorruptionReturnCode": 2,
+  "Expected": {
+    "Valid": 0,
+    "Corruption": 2
+  },
+  "Passed": true
+}

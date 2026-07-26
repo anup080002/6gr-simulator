@@ -1,0 +1,230 @@
+{
+  "ManifestVersion": "1.0.0",
+  "GeneratedWithoutMATLAB": true,
+  "FileCount": 37,
+  "TotalRows": 8760,
+  "files": [
+    {
+      "FileName": "reference_signals_measurements_link_adaptation_18_findings.csv",
+      "Rows": 18,
+      "SHA256": "bafeb130f0f011e5f093aaa620a553c354e10e5445539c7f51926045b765dfd3",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_source_change_map.csv",
+      "Rows": 18,
+      "SHA256": "fe54bd219c3cd16cce46f55f4183b263b6c265beab1a03b609919043961c0978",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_error_contract.csv",
+      "Rows": 25,
+      "SHA256": "5da3a2812864e48ab7c8398f968ca08101e6bb0169605024b595f4240ceec5d5",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_capability_profile_matrix.csv",
+      "Rows": 180,
+      "SHA256": "aaf1bc5355247e380c1925eee0ef2b9b6c5af33638e6262db11ee3a5717056e0",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_dmrs_test_vectors.csv",
+      "Rows": 192,
+      "SHA256": "78241ead53ab1168ca416a394b234a48f855ff542fb55431f1fe34ac1522123d",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_csirs_test_vectors.csv",
+      "Rows": 114,
+      "SHA256": "31e4ebdbe017d061d0d57c661852d481617bc8fd9287944be8843f3720dc527a",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_srs_test_vectors.csv",
+      "Rows": 162,
+      "SHA256": "ca1c432941a7c8a7bed7e21d967895ef900cde72d735b378b3b7fb5015162c6d",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_trs_tracking_test_vectors.csv",
+      "Rows": 96,
+      "SHA256": "a8381423c7513f5081723d81ba633cb92baa37a66f391146b9f3dec505e89042",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_ptrs_tracking_test_vectors.csv",
+      "Rows": 96,
+      "SHA256": "485d6f61c4b49b69767e5ef4d20fa367bb1e6dfffadeebafca0604f3e24681d0",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_collision_test_vectors.csv",
+      "Rows": 120,
+      "SHA256": "214bdede63b1fac0af3181df5dc185f3e12762b5c96ddb99ee4fbceb4cda0356",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_measurement_analytical_vectors.csv",
+      "Rows": 120,
+      "SHA256": "aa07acae7f8deebab8cbf16959c6a199adfcf87f6a8afe68e2fdfd3d89683119",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_evm_vectors.csv",
+      "Rows": 80,
+      "SHA256": "db1e9805ceac5eb774d5bf5b4b8b83347e49b37966bac4b05c737a0cf1e5b411",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_csi_report_test_vectors.csv",
+      "Rows": 48,
+      "SHA256": "28f1bdec04e800954af4d3b9f341e6481749843564fa3979ba8ed2fe3180478d",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_csi_bit_ownership.csv",
+      "Rows": 1206,
+      "SHA256": "04274bf6d7b36129978d263099996c77beb4901f9fff903e8ee0471edd4de66f",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_measured_state_test_vectors.csv",
+      "Rows": 160,
+      "SHA256": "42aca8a73bc104ff53443be0093ae36d685558df4738c8f0641ce1f720fe07d4",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_cqi_mcs_calibration_matrix.csv",
+      "Rows": 540,
+      "SHA256": "e56c800400d689d4314c117c4d9201ab498a3f2c051d6c92a286ec0b032ac891",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_effective_sinr_vectors.csv",
+      "Rows": 240,
+      "SHA256": "a95d5d2b5826d868e2229c3838f8767561ac34854846b32dc3c9be40fb948362",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_calibration_provenance_test_vectors.csv",
+      "Rows": 80,
+      "SHA256": "0a9be73db06a097a20c96c47de3ecabcfc34e632788217baa34c4bf9a203890d",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_olla_analytical_vectors.csv",
+      "Rows": 16,
+      "SHA256": "c7b6382090775f1e9ca49cb3af27449709485cfe15a5160822cd59bda17250b2",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_olla_state_trace.csv",
+      "Rows": 800,
+      "SHA256": "0f37476a865a90148940f93fd9a97289c734425bad6b7b53ec737ca747f21da3",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_bootstrap_transition_test_vectors.csv",
+      "Rows": 120,
+      "SHA256": "353fff5e58e0ce35cddd5701c76f67b805163033bf7995fe992c889725e2d9d6",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_l3_filter_vectors.csv",
+      "Rows": 504,
+      "SHA256": "8c52599ad6893a0cdfaf8c474fed5d9d6406a57df3ec65331a5cda4808625c3c",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_measurement_gap_vectors.csv",
+      "Rows": 1024,
+      "SHA256": "de7cb5efc8543949e558f581fafbf82a646c17285bbe2d2c5e70c05d22e02fbd",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_rrm_event_vectors.csv",
+      "Rows": 360,
+      "SHA256": "09b93ca0121f0bc4f3e2f840f8d1fe600020b66861fb44b351349786464051c0",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_srs_scheduler_state_vectors.csv",
+      "Rows": 180,
+      "SHA256": "e46648b79f435ad63779c92de073ba08b8b566772681cdb57e53e04235d7d96f",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_tracking_loop_vectors.csv",
+      "Rows": 432,
+      "SHA256": "5ec0a4c8e81d8143e0efb44b599c77159e97d3ad3c7b0a1cb5d8aa33fbbeb879",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_link_adaptation_authority_vectors.csv",
+      "Rows": 240,
+      "SHA256": "15ca474e33a10552c9cfb3f0337ca3a0345dbfc0ec82b48ab1a804845baa37f7",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_negative_test_vectors.csv",
+      "Rows": 192,
+      "SHA256": "b3b9f5722b9dbaddc9ea7ed9825514848030c5297ae727ff8b125da0cb4a3393",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_declared_coverage_matrix.csv",
+      "Rows": 180,
+      "SHA256": "fa1190717f31f9001fa4cee0ffd6b3ce52bf3ce20776df5ac72999e6efb0dfc8",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_impact_analysis_families.csv",
+      "Rows": 64,
+      "SHA256": "f703917824e452845c18299cc9ba4d18836cde06b85dd8b002546cf20ad38f61",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_impact_experiment_matrix.csv",
+      "Rows": 768,
+      "SHA256": "1056cc169b579152391e51104b579659f0bde7ef77a9538ca56b28c9ce06b44d",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_impact_pairing_contract.csv",
+      "Rows": 64,
+      "SHA256": "41cb72eb980d1fd3ead92a67287444f7e26c082957cb252a9cb2e19a759cf812",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_impact_acceptance_rules.csv",
+      "Rows": 96,
+      "SHA256": "1d6548451f7df8d105f799fc2c9968f98cc838d6462f125bcca54addacdecc88",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_impact_dependency_waves.csv",
+      "Rows": 3,
+      "SHA256": "1ab4c891ef2bab28bcf6d58b428f9d1c6c4257b3ef01a08ab0305fad4b646947",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "expected_rsla_impact_analytical_floor.csv",
+      "Rows": 128,
+      "SHA256": "32d7acf4f85213207d301aed410d3f43969e1064c0233f983d18c7fa538191fe",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_implementation_task_graph.csv",
+      "Rows": 24,
+      "SHA256": "09c61f6a817ef97338877561491c44319e904e7f9fe06e679f6d5ec6bdd0d04f",
+      "Role": "independent_input_or_analytical_floor"
+    },
+    {
+      "FileName": "rsla_matlab_test_plan.csv",
+      "Rows": 70,
+      "SHA256": "2ebe4e9efc819895444b845b2dd31dc48f860b741e05be35d42b5a0c03b30e1a",
+      "Role": "independent_input_or_analytical_floor"
+    }
+  ]
+}

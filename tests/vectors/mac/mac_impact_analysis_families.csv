@@ -1,0 +1,65 @@
+FamilyID,Title,Wave,FactorName,BaselineValue,TreatmentValue,PrimaryMetrics,Implementability,RequiredDesign
+F01,HARQ process count,A,HARQProcesses,4,16,throughput|blocking|latency,Implement in this phase,paired common-random-numbers experiment
+F02,Maximum retransmissions,A,MaxRetx,1,4,BLER|latency|goodput,Implement in this phase,paired common-random-numbers experiment
+F03,RV sequence,A,RVSequence,0|0|0|0,0|2|3|1,combining_gain|BLER,Implement in this phase,paired common-random-numbers experiment
+F04,NDI epoch enforcement,A,NDIEpochCheck,off,on,false_delivery|state_error,Implement in this phase,paired common-random-numbers experiment
+F05,ACK versus DTX handling,A,DTXPolicy,nack_alias,explicit,BLER|retx|false_ack,Implement in this phase,paired common-random-numbers experiment
+F06,HARQ feedback codebook,B,Codebook,type1,type2,payload|latency|errors,Requires internal cross-channel integration,paired common-random-numbers experiment
+F07,K1 timing,A,K1,4,decoded,feedback_legality|latency,Implement in this phase,paired common-random-numbers experiment
+F08,K2 timing,A,K2,1,decoded,ul_latency|grant_legality,Implement in this phase,paired common-random-numbers experiment
+F09,TDD flexible symbol resolution,A,FlexPolicy,force_dl,scheduler_resolved,collision|utilization,Implement in this phase,paired common-random-numbers experiment
+F10,HARQ process exhaustion,A,OfferedLoad,low,high,blocking|queue|latency,Implement in this phase,paired common-random-numbers experiment
+F11,Soft combining provenance,A,ProvenanceCheck,partial,complete,false_decode|gain,Implement in this phase,paired common-random-numbers experiment
+F12,Soft buffer position awareness,A,PositionAware,off,on,BLER|combining_gain,Implement in this phase,paired common-random-numbers experiment
+F13,Soft buffer age/reset,A,ResetPolicy,heuristic,event_driven,drop|memory|errors,Implement in this phase,paired common-random-numbers experiment
+F14,Scheduler policy RR versus PF,A,Scheduler,RR,PF,throughput|fairness,Implement in this phase,paired common-random-numbers experiment
+F15,PF averaging window,A,PFTau_ms,50,500,fairness|responsiveness,Implement in this phase,paired common-random-numbers experiment
+F16,QoS-PF policy,A,Scheduler,PF,QoS-PF,pdb_miss|fairness|goodput,Implement in this phase,paired common-random-numbers experiment
+F17,EDF policy,A,Scheduler,PF,EDF,deadline_miss|throughput,Implement in this phase,paired common-random-numbers experiment
+F18,Retransmission priority,A,RetxPriority,off,on,latency|drop|fairness,Implement in this phase,paired common-random-numbers experiment
+F19,Control overhead accounting,A,ControlOverhead,ignored,included,net_goodput|allocation,Implement in this phase,paired common-random-numbers experiment
+F20,CQI age gating,B,CSIAgePolicy,accept_stale,reject_stale,BLER|utilization,Requires internal cross-channel integration,paired common-random-numbers experiment
+F21,BSR 5-bit exact table,A,BSRMapping,approx,exact5,demand_error|throughput,Implement in this phase,paired common-random-numbers experiment
+F22,BSR 8-bit exact table,A,BSRMapping,approx,exact8,demand_error|throughput,Implement in this phase,paired common-random-numbers experiment
+F23,Refined BSR table,A,BSRMapping,normal8,refined8,quant_error|overhead,Implement in this phase,paired common-random-numbers experiment
+F24,Regular BSR trigger,A,BSRTrigger,disabled,regular,ul_latency|overhead,Implement in this phase,paired common-random-numbers experiment
+F25,Periodic BSR timer,A,PeriodicBSR,off,on,staleness|overhead,Implement in this phase,paired common-random-numbers experiment
+F26,Retx BSR timer,A,RetxBSR,off,on,grant_recovery|latency,Implement in this phase,paired common-random-numbers experiment
+F27,Truncated BSR,A,TruncatedBSR,off,on,ce_fit|demand_error,Implement in this phase,paired common-random-numbers experiment
+F28,PH exact mapping,A,PHRMapping,linear,exact,power_error|mcs,Implement in this phase,paired common-random-numbers experiment
+F29,PCMAX exact mapping,A,PCMAXMapping,linear,exact,power_error|clipping,Implement in this phase,paired common-random-numbers experiment
+F30,PHR prohibit timer,A,PHRProhibit,off,on,overhead|freshness,Implement in this phase,paired common-random-numbers experiment
+F31,Multiple-entry PHR,B,PHRMode,single,multiple,ca_power|overhead,Requires internal cross-channel integration,paired common-random-numbers experiment
+F32,Scheduling Request state,A,SRState,basic,event_sourced,access_latency|duplicates,Implement in this phase,paired common-random-numbers experiment
+F33,SR prohibit timer,A,SRProhibit,off,on,overhead|latency,Implement in this phase,paired common-random-numbers experiment
+F34,SR-to-RA fallback,B,SRFallback,off,on,recovery|latency,Requires internal cross-channel integration,paired common-random-numbers experiment
+F35,LCP priority only versus token bucket,A,LCP,priority_only,pbr_bsd_bj,qos|fairness,Implement in this phase,paired common-random-numbers experiment
+F36,PBR,A,PBR_kBps,8,256,throughput|bj|starvation,Implement in this phase,paired common-random-numbers experiment
+F37,Bucket size duration,A,BSD_ms,10,100,burst_delay|fairness,Implement in this phase,paired common-random-numbers experiment
+F38,Logical-channel restrictions,A,LCRestrictions,ignored,enforced,illegal_grant|utilization,Implement in this phase,paired common-random-numbers experiment
+F39,MAC CE priority,A,CEPriority,fixed_order,procedure_order,ce_drop|latency,Implement in this phase,paired common-random-numbers experiment
+F40,MAC PDU exact subheaders,A,PDUCodec,heuristic,exact,parse_error|overhead,Implement in this phase,paired common-random-numbers experiment
+F41,eLCID support,B,eLCID,off,bounded,feature_coverage|overhead,Requires internal cross-channel integration,paired common-random-numbers experiment
+F42,SDU segmentation,A,Segmentation,drop_last,segment,goodput|drop,Implement in this phase,paired common-random-numbers experiment
+F43,Timing advance command,B,TA,off,on,ul_sinr|crc,Requires internal cross-channel integration,paired common-random-numbers experiment
+F44,timeAlignmentTimer,B,TATimer,ignored,enforced,illegal_ul|recovery,Requires internal cross-channel integration,paired common-random-numbers experiment
+F45,Multiple TAGs,C,TAGs,1,2,ca_alignment|complexity,Requires adjacent subsystem integration,paired common-random-numbers experiment
+F46,UL timing error,B,ResidualTA_samples,0,8,EVM|BLER,Requires internal cross-channel integration,paired common-random-numbers experiment
+F47,Configured grant Type 1,B,GrantMode,dynamic,CG1,latency|overhead,Requires internal cross-channel integration,paired common-random-numbers experiment
+F48,Configured grant Type 2,B,GrantMode,dynamic,CG2,latency|activation,Requires internal cross-channel integration,paired common-random-numbers experiment
+F49,Downlink SPS,B,GrantMode,dynamic,SPS,latency|overhead,Requires internal cross-channel integration,paired common-random-numbers experiment
+F50,Grant commit atomicity,A,CommitMode,early_mutation,atomic,state_leak|errors,Implement in this phase,paired common-random-numbers experiment
+F51,PDCCH decode authority,B,GrantAuthority,configured,decoded,false_grant|throughput,Requires internal cross-channel integration,paired common-random-numbers experiment
+F52,Active BWP eligibility,B,BWPCheck,off,on,illegal_grant|utilization,Requires internal cross-channel integration,paired common-random-numbers experiment
+F53,DRX eligibility,C,DRXCheck,off,on,power|latency|illegal_grant,Requires adjacent subsystem integration,paired common-random-numbers experiment
+F54,Measurement-gap eligibility,C,GapCheck,off,on,illegal_grant|throughput,Requires adjacent subsystem integration,paired common-random-numbers experiment
+F55,Two-cell HARQ isolation,C,Cells,1,2,state_leak|throughput,Requires adjacent subsystem integration,paired common-random-numbers experiment
+F56,Cross-carrier scheduling,C,CrossCarrier,off,on,latency|state_isolation,Requires adjacent subsystem integration,paired common-random-numbers experiment
+F57,Packet lineage graph,A,Lineage,partial,complete,orphan|duplicate|conservation,Implement in this phase,paired common-random-numbers experiment
+F58,First-success delivery deduplication,A,Dedup,off,on,goodput_error,Implement in this phase,paired common-random-numbers experiment
+F59,Queue-byte conservation,A,Conservation,unchecked,checked,byte_error|drop,Implement in this phase,paired common-random-numbers experiment
+F60,Bursty traffic,A,Traffic,full_buffer,bursty,latency|scheduler_response,Implement in this phase,paired common-random-numbers experiment
+F61,Mixed 5QI traffic,B,Traffic,single_qos,mixed_qos,pdb_miss|fairness,Requires internal cross-channel integration,paired common-random-numbers experiment
+F62,Runtime scaling,A,NumUE,4,64,runtime|memory,Implement in this phase,paired common-random-numbers experiment
+F63,Serial/parallel reproducibility,A,Execution,serial,parallel,artifact_hash|metrics,Implement in this phase,paired common-random-numbers experiment
+F64,End-to-end closed loop,C,Mode,shortcut,full_event_chain,throughput|latency|conservation,Requires adjacent subsystem integration,paired common-random-numbers experiment

@@ -1,0 +1,3 @@
+RunID,CaseID,FaultType,Trials,FalseAlarms,FalseAlarmProbability,CIUpper,DetectionThreshold,Incomplete,Status
+PUCCH_PHASE05_R18,FA-F0,no_signal_format_0,20,0,0,0.13911,0.9,false,PASS
+PUCCH_PHASE05_R18,FA-F1,no_signal_format_1,20,0,0,0.13911,0.9,false,PASS

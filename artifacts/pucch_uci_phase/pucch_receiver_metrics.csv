@@ -1,0 +1,6 @@
+RunID,CaseID,Format,Channel,SNR_dB,MeasuredSINR_dB,EVMPercent,BitErrors,BitsCompared,CRCApplicable,CRCPassed,DTX,FalseAlarm,WrongRNTI,WrongResource,OraclePayloadBitsUsed,Status
+PUCCH_PHASE05_R18,RX-F0,0,AWGN,40,64.6965,100,0,1,false,true,false,false,false,false,false,PASS
+PUCCH_PHASE05_R18,RX-F1,1,AWGN,40,61.7816,521.8895,0,2,false,true,false,false,false,false,false,PASS
+PUCCH_PHASE05_R18,RX-F2,2,AWGN,40,58.7881,781.1888,0,20,true,true,false,false,false,false,false,PASS
+PUCCH_PHASE05_R18,RX-F3,3,AWGN,40,55.7282,519.5453,0,20,true,true,false,false,false,false,false,PASS
+PUCCH_PHASE05_R18,RX-F4,4,AWGN,40,61.8252,525.0196,0,20,true,true,false,false,false,false,false,PASS

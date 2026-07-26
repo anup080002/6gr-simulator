@@ -1,0 +1,34 @@
+ErrorIdentifier,Meaning,RequiredOutcome
+CHANNEL:UnsupportedProfile,Requested scenario/frequency/model tuple is not enabled by the capability profile.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:MissingObservedGeometry,A strict consumer requested a geometry field not emitted by the runtime.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidProvenance,"A runtime field is configured, reconstructed or self-derived where observed evidence is required.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:CircularComparison,Both sides of a validation comparison share the same non-observed source.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidCoordinateFrame,"A position, velocity, pose or ray uses an unknown/inconsistent coordinate frame.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidTopology,"Site/sector/clone topology is incomplete, duplicated or geometrically inconsistent.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidDropDistribution,A UE drop violates the pinned scenario distribution or exclusion rules.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:UnknownLOSScenario,No pinned LOS-probability equation exists for the requested scenario.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidLOSStateTransition,LOS/NLOS state changes without the configured correlated process.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:PathlossOutOfRange,Pathloss equation was requested outside its supported distance/height/frequency range.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:MissingLSPProfile,No exact LSP distribution/cross-correlation profile matches the request.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidLSPCovariance,"The configured LSP cross-correlation matrix is not finite, symmetric or positive semidefinite.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:SpatialConsistencyViolation,LSP/SSP evolution is discontinuous beyond the declared tolerance.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:MissingO2IMaterialProfile,No exact material mixture exists for the requested O2I profile.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidIndoorDistance,The UT-specific indoor distance is missing or outside the profile range.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:MissingOxygenProfile,No exact oxygen/atmosphere profile matches the request.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidTDLProfile,"The TDL profile, delay spread or spatial-correlation tuple is unsupported.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidCDLProfile,"The CDL profile, delay spread, K-factor or array tuple is unsupported.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidAntennaArray,"Array geometry, element pattern, pose, polarization or logical-port projection is invalid.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:PortProjectionMismatch,Logical-to-physical port projection is dimensionally or energetically inconsistent.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidDopplerState,"Doppler sign, phase or update cadence is inconsistent with runtime geometry.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:MissingAbsolutePowerReference,The path gain/noise/antenna/OFDM reference points are incomplete.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:PowerLedgerMismatch,Analytical and measured sample-domain power differ beyond tolerance.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InterferenceLinkMissing,"An overlapping interferer lacks waveform, timing, channel or power state.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InterferenceLedgerMismatch,The composed waveform does not equal the sum of recorded contributions.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:CovarianceMismatch,Measured interference covariance is inconsistent with the contribution ledger.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:UnknownMobilityModel,An unrecognized mobility model was requested.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:InvalidMobilityTrajectory,"Trajectory position, velocity, acceleration or direction continuity is invalid.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:MissingHandoverMeasurement,A handover/reselection/RLF state change lacks a decoded measurement/control event.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:UnsupportedBlockageProfile,The requested blockage/material/vehicle model is not implemented.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:RayTracingContractMissing,"Scene, materials, solver, version, mesh or coordinate transform is absent.",No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:RayTracingHashMismatch,The ray-tracing scene or result digest differs from the declared contract.,No waveform/state mutation; emit typed rejection with request/profile IDs.
+CHANNEL:StrictFallbackForbidden,"A strict path attempted to default, clamp, retry, substitute or downgrade.",No waveform/state mutation; emit typed rejection with request/profile IDs.

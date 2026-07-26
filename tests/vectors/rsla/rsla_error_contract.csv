@@ -1,0 +1,26 @@
+ErrorID,Meaning,StrictBehavior,ExpectedArtifact
+RSLA:UnsupportedCapabilityTuple,Requested RS/measurement/link-adaptation tuple is not enabled by the selected capability profile.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidDMRSConfiguration,"DM-RS mapping, length, port, CDM/OCC or scrambling combination is invalid.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidCSIRSConfiguration,CSI-RS row/density/CDM/ports/symbol/subcarrier combination is invalid.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidSRSConfiguration,"SRS resource/resource-set, comb, cyclic shift, ports, hopping or trigger combination is invalid.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidTRSConfiguration,TRS/NZP-CSI-RS tracking resource set is invalid or not QCL-associated.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidPTRSConfiguration,"PT-RS density, offset, port association or transform-precoding combination is invalid.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:ResourceCollision,Two non-orthogonal resources own at least one identical RE.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:MissingMeasuredInput,A strict operation requires receiver-derived measurement/channel/covariance data.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:ConfiguredSNRForbidden,Configured SNR cannot substitute for measured channel quality in strict mode.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:StaleMeasurement,Measurement/report age exceeds the selected validity bound.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:WrongMeasurementIdentity,"UE, cell, BWP, resource, beam or configuration epoch does not match.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidCSIReportConfiguration,"CSI report configuration, resource association or codebook state is inconsistent.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidCSIPayloadLength,CSI Part 1/Part 2 information length differs from the report-derived length.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:CSIReportDecodeFailure,CSI report UCI coding/CRC or semantic decoding failed.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:BootstrapExpired,Bootstrap link adaptation is used after the bounded acquisition period.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:MissingCQICalibration,No CQI/MCS calibration dataset matches the operating tuple.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:MissingEffectiveSINRCalibration,No EESM/MIESM calibration matches the operating tuple.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidCalibrationProvenance,"Calibration dataset lacks version, profile, sample, confidence or hash provenance.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidOLLAConfiguration,"OLLA target, steps, saturation, DTX/reset or isolation configuration is invalid.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:MeasurementGapViolation,A measurement was attempted outside the configured resource/gap opportunity.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidMeasurementDefinition,Measurement registry entry or analytical definition is incomplete.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:EventStateViolation,"RRM event state, hysteresis or time-to-trigger transition is inconsistent.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:TrackingEstimateUnavailable,Timing/CFO/CPE tracker has no valid measured state.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:TrackingCorrectionNotApplied,A valid correction was selected but not applied to the waveform/receiver state.,Fail before scheduler/waveform state mutation,rsla_negative_tests.csv
+RSLA:InvalidEVMReference,"EVM reference points, normalization or RE ownership is invalid.",Fail before scheduler/waveform state mutation,rsla_negative_tests.csv

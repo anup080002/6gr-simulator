@@ -1,0 +1,65 @@
+FamilyID,Wave,ImplementNow,BlockingDependency
+F01,A,true,
+F02,A,true,
+F03,A,true,
+F04,A,true,
+F05,A,true,
+F06,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F07,A,true,
+F08,A,true,
+F09,A,true,
+F10,A,true,
+F11,A,true,
+F12,A,true,
+F13,A,true,
+F14,A,true,
+F15,A,true,
+F16,A,true,
+F17,A,true,
+F18,A,true,
+F19,A,true,
+F20,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F21,A,true,
+F22,A,true,
+F23,A,true,
+F24,A,true,
+F25,A,true,
+F26,A,true,
+F27,A,true,
+F28,A,true,
+F29,A,true,
+F30,A,true,
+F31,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F32,A,true,
+F33,A,true,
+F34,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F35,A,true,
+F36,A,true,
+F37,A,true,
+F38,A,true,
+F39,A,true,
+F40,A,true,
+F41,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F42,A,true,
+F43,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F44,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F45,C,false,adjacent DRX/CA/multi-cell/full-stack subsystem
+F46,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F47,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F48,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F49,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F50,A,true,
+F51,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F52,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F53,C,false,adjacent DRX/CA/multi-cell/full-stack subsystem
+F54,C,false,adjacent DRX/CA/multi-cell/full-stack subsystem
+F55,C,false,adjacent DRX/CA/multi-cell/full-stack subsystem
+F56,C,false,adjacent DRX/CA/multi-cell/full-stack subsystem
+F57,A,true,
+F58,A,true,
+F59,A,true,
+F60,A,true,
+F61,B,false,completed PDCCH/PUCCH/PUSCH/RRC integration
+F62,A,true,
+F63,A,true,
+F64,C,false,adjacent DRX/CA/multi-cell/full-stack subsystem

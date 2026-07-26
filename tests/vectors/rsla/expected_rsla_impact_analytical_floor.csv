@@ -1,0 +1,129 @@
+FloorID,FamilyID,Check,Expected,RequiredMethod,ExpectedDisposition,Status
+F01-PairIntegrity,F01,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F01-EffectSign,F01,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F02-PairIntegrity,F02,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F02-EffectSign,F02,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F03-PairIntegrity,F03,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F03-EffectSign,F03,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F04-PairIntegrity,F04,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F04-EffectSign,F04,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F05-PairIntegrity,F05,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F05-EffectSign,F05,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F06-PairIntegrity,F06,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F06-EffectSign,F06,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F07-PairIntegrity,F07,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F07-EffectSign,F07,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F08-PairIntegrity,F08,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F08-EffectSign,F08,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F09-PairIntegrity,F09,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F09-EffectSign,F09,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F10-PairIntegrity,F10,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F10-EffectSign,F10,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F11-PairIntegrity,F11,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F11-EffectSign,F11,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F12-PairIntegrity,F12,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F12-EffectSign,F12,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F13-PairIntegrity,F13,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F13-EffectSign,F13,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F14-PairIntegrity,F14,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F14-EffectSign,F14,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F15-PairIntegrity,F15,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F15-EffectSign,F15,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F16-PairIntegrity,F16,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F16-EffectSign,F16,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F17-PairIntegrity,F17,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F17-EffectSign,F17,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F18-PairIntegrity,F18,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F18-EffectSign,F18,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F19-PairIntegrity,F19,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F19-EffectSign,F19,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F20-PairIntegrity,F20,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F20-EffectSign,F20,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F21-PairIntegrity,F21,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F21-EffectSign,F21,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F22-PairIntegrity,F22,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F22-EffectSign,F22,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F23-PairIntegrity,F23,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F23-EffectSign,F23,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F24-PairIntegrity,F24,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F24-EffectSign,F24,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F25-PairIntegrity,F25,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F25-EffectSign,F25,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F26-PairIntegrity,F26,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F26-EffectSign,F26,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F27-PairIntegrity,F27,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F27-EffectSign,F27,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F28-PairIntegrity,F28,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F28-EffectSign,F28,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F29-PairIntegrity,F29,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F29-EffectSign,F29,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F30-PairIntegrity,F30,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F30-EffectSign,F30,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F31-PairIntegrity,F31,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F31-EffectSign,F31,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F32-PairIntegrity,F32,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F32-EffectSign,F32,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F33-PairIntegrity,F33,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F33-EffectSign,F33,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F34-PairIntegrity,F34,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F34-EffectSign,F34,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F35-PairIntegrity,F35,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F35-EffectSign,F35,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F36-PairIntegrity,F36,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F36-EffectSign,F36,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F37-PairIntegrity,F37,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F37-EffectSign,F37,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F38-PairIntegrity,F38,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F38-EffectSign,F38,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F39-PairIntegrity,F39,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F39-EffectSign,F39,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F40-PairIntegrity,F40,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F40-EffectSign,F40,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F41-PairIntegrity,F41,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F41-EffectSign,F41,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F42-PairIntegrity,F42,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F42-EffectSign,F42,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F43-PairIntegrity,F43,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F43-EffectSign,F43,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F44-PairIntegrity,F44,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F44-EffectSign,F44,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F45-PairIntegrity,F45,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F45-EffectSign,F45,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F46-PairIntegrity,F46,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F46-EffectSign,F46,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F47-PairIntegrity,F47,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F47-EffectSign,F47,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F48-PairIntegrity,F48,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F48-EffectSign,F48,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F49-PairIntegrity,F49,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F49-EffectSign,F49,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F50-PairIntegrity,F50,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F50-EffectSign,F50,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F51-PairIntegrity,F51,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F51-EffectSign,F51,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F52-PairIntegrity,F52,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F52-EffectSign,F52,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F53-PairIntegrity,F53,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F53-EffectSign,F53,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F54-PairIntegrity,F54,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F54-EffectSign,F54,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F55-PairIntegrity,F55,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F55-EffectSign,F55,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F56-PairIntegrity,F56,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F56-EffectSign,F56,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F57-PairIntegrity,F57,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F57-EffectSign,F57,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F58-PairIntegrity,F58,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F58-EffectSign,F58,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F59-PairIntegrity,F59,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F59-EffectSign,F59,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F60-PairIntegrity,F60,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F60-EffectSign,F60,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F61-PairIntegrity,F61,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F61-EffectSign,F61,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F62-PairIntegrity,F62,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F62-EffectSign,F62,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F63-PairIntegrity,F63,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F63-EffectSign,F63,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED
+F64-PairIntegrity,F64,PairIntegrity,all invariant hashes equal,deterministic pair audit,PASS,EXPECTED
+F64-EffectSign,F64,EffectSign,treatment minus baseline,signed paired effect,PASS,EXPECTED

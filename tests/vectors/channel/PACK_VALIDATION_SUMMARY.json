@@ -1,0 +1,64 @@
+{
+  "PackName": "6GR_CHANNEL_GEOMETRY_MOBILITY_INTERFERENCE_CODEX_PACK",
+  "PromptLines": 1262,
+  "Findings": 24,
+  "StaticAuditChecks": 64,
+  "TargetedDefectsDetected": 42,
+  "TargetedRegressionGuards": 10,
+  "UsefulFoundationsDetected": 11,
+  "IndependentVectorFiles": 38,
+  "IndependentVectorRows": 64532,
+  "VectorVerifier": {
+    "Checks": 139,
+    "Passed": 139,
+    "Failed": 0,
+    "ExitCode": 0
+  },
+  "Impact": {
+    "Families": 64,
+    "Experiments": 768,
+    "Pairs": 384,
+    "AcceptanceRules": 96
+  },
+  "Contracts": {
+    "BaseCSVs": 32,
+    "BasePNGs": 22,
+    "ImpactCSVs": 16,
+    "ImpactPNGs": 30,
+    "TotalArtifacts": 100
+  },
+  "VerifierSelfTests": {
+    "BasePositive": {
+      "Checks": 337,
+      "Passed": 337,
+      "Failed": 0,
+      "ExitCode": 0
+    },
+    "BaseCorruption": {
+      "Detected": "png_hash:channel_geometry_trajectory_3d.png",
+      "ExitCode": 2
+    },
+    "ImpactPositive": {
+      "Checks": 343,
+      "Passed": 343,
+      "Failed": 0,
+      "ExitCode": 0
+    },
+    "ImpactCorruption": {
+      "Detected": "png_hash:channel_impact_observed_provenance.png",
+      "ExitCode": 2
+    }
+  },
+  "CurrentSimulator": {
+    "ContractedArtifactsPresent": 0,
+    "Required": 100,
+    "ExistingCSVs": 225,
+    "RectangularCSVs": 224,
+    "ExistingPNGs": 40,
+    "DecodedNonblankPNGs": 40,
+    "MATLABRuntime": "BLOCKED"
+  },
+  "Warnings": [
+    "Exact frozen/pure-spec vectors are still required before enabling selected InF, CDL and advanced LSP tuples."
+  ]
+}

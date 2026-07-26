@@ -1,0 +1,4 @@
+Wave,FamilyCount,ExperimentCount,Meaning
+A,44,528,Direct MAC/HARQ/scheduler implementation
+B,14,168,Internal integrated dependency
+C,6,72,Adjacent system dependency

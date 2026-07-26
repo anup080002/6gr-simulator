@@ -1,0 +1,17 @@
+FileName,RequiredColumns,MinimumRows,Required,ProductionSource
+rsla_impact_run_manifest.csv,RunID;ExperimentCount;CompletedCount;IncompleteCount;SeedList;ConfidenceLevel;Status,1,true,impact runner
+rsla_impact_raw_trials.csv,ExperimentID;FamilyID;PairID;Arm;Seed;Trial;PrimaryMetric;MetricValue;Outcome;PayloadHash;ChannelHash;NoiseHash;Status,768,true,impact runner
+rsla_impact_operating_points.csv,FamilyID;Arm;FactorValue;Trials;Errors;Rate;CILow;CIHigh;Incomplete;Status,128,true,impact runner
+rsla_impact_pairwise_effects.csv,FamilyID;PairID;Metric;BaselineValue;TreatmentValue;Effect;CILow;CIHigh;PValue;AdjustedPValue;EffectSize;Status,384,true,impact runner
+rsla_impact_rule_evaluation.csv,RuleID;FamilyID;RuleType;Metric;Observed;Threshold;Result;EvidenceRows;Status,96,true,impact runner
+rsla_impact_reference_signals.csv,FamilyID;ResourceFamily;BaselineOverhead;TreatmentOverhead;BaselineNMSE;TreatmentNMSE;BaselineBLER;TreatmentBLER;Status,100,true,impact runner
+rsla_impact_measurements.csv,FamilyID;Quantity;BaselineError;TreatmentError;BaselineVariance;TreatmentVariance;BaselineAge;TreatmentAge;Status,100,true,impact runner
+rsla_impact_csi_reports.csv,FamilyID;ReportProfile;BaselineBits;TreatmentBits;BaselineLatency;TreatmentLatency;BaselineDecodeRate;TreatmentDecodeRate;Status,80,true,impact runner
+rsla_impact_calibration.csv,FamilyID;Method;BaselinePredictionRMSE;TreatmentPredictionRMSE;BaselineBLERError;TreatmentBLERError;Status,80,true,impact runner
+rsla_impact_olla.csv,FamilyID;UEID;TargetBLER;BaselineAchievedBLER;TreatmentAchievedBLER;BaselineConvergenceSlots;TreatmentConvergenceSlots;Leakage;Status,80,true,impact runner
+rsla_impact_tracking.csv,FamilyID;BaselineResidualCFO;TreatmentResidualCFO;BaselineResidualTiming;TreatmentResidualTiming;BaselineEVM;TreatmentEVM;Status,80,true,impact runner
+rsla_impact_rrm.csv,FamilyID;EventID;BaselineFalseTriggers;TreatmentFalseTriggers;BaselineDelay;TreatmentDelay;Status,80,true,impact runner
+rsla_impact_runtime.csv,FamilyID;Arm;RuntimeSeconds;PeakMemoryMB;SerialSHA256;ParallelSHA256;Reproducible;Status,128,true,impact runner
+rsla_impact_interactions.csv,ModelID;Response;Term;Coefficient;CILow;CIHigh;PValue;AdjustedPValue;Status,50,true,impact runner
+rsla_impact_summary.csv,FamilyID;FamilyName;Wave;CompletionStatus;HardRulesPassed;StatisticalConclusion;PrimaryEffect;PracticalImportance;Status,64,true,impact runner
+rsla_impact_image_semantic_audit.csv,ImageFile;SourceCSV;SourceCSVSHA256;PNGSHA256;Width;Height;Title;XLabel;YLabel;AxesCount;SeriesCount;FinitePointCount;Status,30,true,impact runner

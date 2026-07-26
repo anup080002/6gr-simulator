@@ -1,0 +1,47 @@
+{
+  "phase": "MAC, HARQ and scheduling",
+  "manifest_files": 33,
+  "vector_rows": 4773,
+  "static_checks": 60,
+  "targeted_checks": 48,
+  "targeted_defects_detected": 47,
+  "useful_foundations": 12,
+  "mandatory_matlab_tests": 60,
+  "relevant_existing_matlab_tests": 37,
+  "impact_families": 64,
+  "impact_experiments": 768,
+  "impact_rules": 96,
+  "base_csvs": 32,
+  "base_pngs": 22,
+  "impact_csvs": 16,
+  "impact_pngs": 30,
+  "total_csvs": 48,
+  "total_pngs": 52,
+  "total_artifacts": 100,
+  "existing_contracted_artifacts": 0,
+  "existing_csvs": 225,
+  "existing_rectangular_csvs": 224,
+  "existing_malformed_csvs": 1,
+  "existing_pngs": 40,
+  "existing_decoded_pngs": 40,
+  "existing_nonblank_pngs": 40,
+  "limited_test_status_counts": {
+    "PASS": 18,
+    "FAIL": 2,
+    "BLOCKED": 2,
+    "WARN": 1
+  },
+  "matlab_available": false,
+  "octave_available": false,
+  "base_verifier_selftest": {
+    "valid_exit": 0,
+    "corrupt_exit": 2,
+    "corruption_detected": "png_hash_mismatch:mac_event_state_timeline.png"
+  },
+  "impact_verifier_selftest": {
+    "valid_exit": 0,
+    "corrupt_exit": 2,
+    "corruption_detected": "png_hash_mismatch:mac_impact_harq_process_count.png"
+  },
+  "current_phase_status": "FAIL_WITH_RUNTIME_BLOCKED"
+}

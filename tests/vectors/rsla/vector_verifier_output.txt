@@ -1,0 +1,21 @@
+PASS manifest:37 files
+PASS count:reference_signals_measurements_link_adaptation_18_findings.csv:18
+PASS count:rsla_capability_profile_matrix.csv:180
+PASS count:rsla_dmrs_test_vectors.csv:192
+PASS count:rsla_srs_test_vectors.csv:162
+PASS count:expected_rsla_measurement_analytical_vectors.csv:120
+PASS count:rsla_impact_analysis_families.csv:64
+PASS count:rsla_impact_experiment_matrix.csv:768
+PASS count:rsla_impact_pairing_contract.csv:64
+PASS count:rsla_impact_acceptance_rules.csv:96
+PASS count:rsla_matlab_test_plan.csv:70
+PASS measurement formulas
+PASS EESM analytical floor
+PASS OLLA target-drift balance
+PASS L3 filter analytical floor
+PASS 384 matched impact pairs
+{
+  "Passed": true,
+  "FailureCount": 0,
+  "Failures": []
+}

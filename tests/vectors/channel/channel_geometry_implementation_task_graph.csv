@@ -1,0 +1,23 @@
+TaskID,Title,DependsOn,Acceptance,Status
+T00,Freeze strict profiles and version registry,,Capability planning rejects unknown scenarios/frequencies/models before runtime.,OPEN
+T01,Create coordinate-frame and immutable geometry objects,T00,"Positions, velocities, poses, sites, sectors and clones use one frame and immutable IDs.",OPEN
+T02,Create runtime ChannelStateTrace and provenance graph,T01,Every per-link/per-slot field is emitted by the runtime with observed/derived provenance.,OPEN
+T03,Replace geometry audit backfill,T02,Missing observed fields fail strict validation; diagnostic reconstructions are separate.,OPEN
+T04,Implement scenario templates and exact UE drops,T01,UMa/UMi/RMa/InH/InF/SMa selected distributions and topology vectors pass.,OPEN
+T05,Implement explicit cloned wraparound topology,T04,Serving and interfering cloned sites/sectors are explicit and power-causal.,OPEN
+T06,Implement exact pathloss and LOS probability registry,T00;T01,Pinned V19.2 equations and applicability ranges pass independent vectors.,OPEN
+T07,Implement correlated LOS/LSP spatial consistency,T02;T06,"Marginals, cross-correlation and spatial autocorrelation pass statistical tests.",OPEN
+T08,Implement exact O2I and oxygen absorption,T06,"Material, indoor-distance, random component and oxygen tables pass vectors.",OPEN
+T09,Create canonical antenna/pose/polarization objects,T01,"Array response, rotations, port projection, polarization and normalization pass.",OPEN
+T10,Refactor TDL adapter and bounded correlation profiles,T07;T09,TDL profiles preserve exact delay/power statistics and declared correlation scope.,OPEN
+T11,Refactor CDL adapter and array coupling,T07;T09,"CDL profiles, angles, polarization, arrays and time evolution pass independent/statistical tests.",OPEN
+T12,Implement cluster/ray state and spatial non-stationarity,T07;T09;T11,"Visibility, birth/death and continuity use runtime ray/cluster geometry.",OPEN
+T13,"Implement exact mobility, Doppler and phase integration",T02;T07,"Signed Doppler, phase, cadence and direction-change continuity pass.",OPEN
+T14,Implement absolute-power ledger and noise reference points,T06;T08;T09;T10;T11,Analytical and sample-domain powers reconcile in AWGN/FSPL/TDL/CDL.,OPEN
+T15,Implement sample-domain multicell interference graph,T05;T11;T14,All overlapping links have waveform/channel/power/timing state and covariance reconciliation.,OPEN
+T16,Couple measured mobility to reselection/handover/RLF,T13;T15,"State transitions are caused by decoded measurements/control, not instantaneous geometry truth.",OPEN
+T17,Implement selected blockage/material/vehicle profiles,T07;T09;T13,Time-correlated blockage and penetration states pass bounded profiles.,OPEN
+T18,Pin Rel-19 7–24 GHz enhancements,T06;T08;T09;T11,Every enabled mid-band tuple records V19.2 profile/table and passes vectors.,OPEN
+T19,Implement strict ray-tracing contract,T01;T09,Scene/material/solver/version hashes and ray-set reproducibility pass.,OPEN
+T20,Generate phase artifacts and statistical calibration results,T03;T10;T11;T12;T14;T15,All contracted CSV/PNG outputs are generated from runtime objects.,OPEN
+T21,Run impact matrix and complete repository regression,T20,All mandatory experiments/rules pass; no skipped/blocked required test.,OPEN

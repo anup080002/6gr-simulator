@@ -1203,6 +1203,120 @@ pusch:
 pdcch:
   start_symbol: 0
   num_symbols: 2
+pucch_resources:
+  enabled: true
+  profile: nr_rel18_pucch_strict
+  configuration_epoch: 1
+  resource_sets:
+  - id: 0
+    max_payload_bits: 2
+    resource_ids: [0, 1]
+  - id: 1
+    max_payload_bits: 1706
+    resource_ids: [10, 11, 12]
+  resources:
+  - id: 0
+    format: 0
+    starting_prb: 0
+    nrof_prbs: 1
+    starting_symbol: 12
+    nrof_symbols: 2
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 1
+    format: 1
+    starting_prb: 1
+    nrof_prbs: 1
+    starting_symbol: 10
+    nrof_symbols: 4
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 3
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 10
+    format: 2
+    starting_prb: 4
+    nrof_prbs: 2
+    starting_symbol: 12
+    nrof_symbols: 2
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 11
+    format: 3
+    starting_prb: 8
+    nrof_prbs: 2
+    starting_symbol: 10
+    nrof_symbols: 4
+    intra_slot_hopping: true
+    second_hop_start_prb: 20
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: true
+    pi2_bpsk: true
+    nid: 1
+    hopping_id: 1
+  - id: 12
+    format: 4
+    starting_prb: 12
+    nrof_prbs: 1
+    starting_symbol: 10
+    nrof_symbols: 4
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 2
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  dl_data_to_ul_ack: [1, 2, 3, 4, 5, 6, 7, 8]
+  sr_resource_ids: [0]
+  csi_resource_ids: [10]
+  sps_pucch_an_resource_ids: [1]
+  power_control:
+    mu: 0
+    m_rb: 1
+    p0_dbm: -80
+    pathloss_db: 77
+    delta_f_db: 0
+    delta_tf_db: 0
+    closed_loop_adjustment_db: 0
+    pcmax_dbm: 23
+    pathloss_reference_rs_id: 1
+    tpc_command_source: decoded_tpc
+  spatial_relations:
+  - id: 1
+    active_id: 1
+    reference_signal_type: SSB
+    reference_signal_id: 0
+    pathloss_reference_rs_id: 1
+    p0_pucch_id: 1
+    closed_loop_index: 0
+    state_age_slots: 0
+    maximum_age_slots: 20
+    selected_beam_id: 0
+    applied_beam_id: 0
 tdd_timing:
   pdcch_to_pdsch_k0: 0
   pdcch_to_pusch_k2: 1

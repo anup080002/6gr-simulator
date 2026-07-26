@@ -1,0 +1,97 @@
+Description,FailureOutcome,FamilyID,Mandatory,Metric,Operator,RuleClass,RuleID,Threshold
+Observed geometry versus audit backfill: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F01,True,family_primary,profile_specific,HARD,RULE-F01-PRIMARY,defined_in_family_runner
+Circular versus independent validation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F02,True,family_primary,profile_specific,HARD,RULE-F02-PRIMARY,defined_in_family_runner
+Coordinate-frame rotation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F03,True,family_primary,profile_specific,HARD,RULE-F03-PRIMARY,defined_in_family_runner
+Explicit clone topology: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F04,True,family_primary,profile_specific,HARD,RULE-F04-PRIMARY,defined_in_family_runner
+Uniform drop fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F05,True,family_primary,profile_specific,STATISTICAL,RULE-F05-PRIMARY,defined_in_family_runner
+Hotspot drop fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F06,True,family_primary,profile_specific,STATISTICAL,RULE-F06-PRIMARY,defined_in_family_runner
+Indoor floor fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F07,True,family_primary,profile_specific,STATISTICAL,RULE-F07-PRIMARY,defined_in_family_runner
+Pathloss model fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F08,True,family_primary,profile_specific,HARD,RULE-F08-PRIMARY,defined_in_family_runner
+LOS probability fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F09,True,family_primary,profile_specific,STATISTICAL,RULE-F09-PRIMARY,defined_in_family_runner
+O2I material model: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F10,True,family_primary,profile_specific,HARD,RULE-F10-PRIMARY,defined_in_family_runner
+Oxygen absorption: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F11,True,family_primary,profile_specific,HARD,RULE-F11-PRIMARY,defined_in_family_runner
+Shadow-fading marginal: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F12,True,family_primary,profile_specific,STATISTICAL,RULE-F12-PRIMARY,defined_in_family_runner
+LSP cross-correlation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F13,True,family_primary,profile_specific,STATISTICAL,RULE-F13-PRIMARY,defined_in_family_runner
+LSP spatial autocorrelation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F14,True,family_primary,profile_specific,STATISTICAL,RULE-F14-PRIMARY,defined_in_family_runner
+LSP temporal continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F15,True,family_primary,profile_specific,STATISTICAL,RULE-F15-PRIMARY,defined_in_family_runner
+Inter-link correlation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F16,True,family_primary,profile_specific,STATISTICAL,RULE-F16-PRIMARY,defined_in_family_runner
+TDL delay/power profile: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F17,True,family_primary,profile_specific,HARD,RULE-F17-PRIMARY,defined_in_family_runner
+TDL spatial correlation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F18,True,family_primary,profile_specific,STATISTICAL,RULE-F18-PRIMARY,defined_in_family_runner
+TDL Doppler spectrum: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F19,True,family_primary,profile_specific,STATISTICAL,RULE-F19-PRIMARY,defined_in_family_runner
+CDL profile fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F20,True,family_primary,profile_specific,HARD,RULE-F20-PRIMARY,defined_in_family_runner
+CDL delay/angle statistics: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F21,True,family_primary,profile_specific,STATISTICAL,RULE-F21-PRIMARY,defined_in_family_runner
+CDL polarization/XPR: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F22,True,family_primary,profile_specific,STATISTICAL,RULE-F22-PRIMARY,defined_in_family_runner
+Array pose/orientation: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F23,True,family_primary,profile_specific,HARD,RULE-F23-PRIMARY,defined_in_family_runner
+Logical port projection: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F24,True,family_primary,profile_specific,HARD,RULE-F24-PRIMARY,defined_in_family_runner
+Near-field response: treatment must satisfy exact correctness and declared engineering effect.,INCONCLUSIVE,F25,True,family_primary,profile_specific,DIAGNOSTIC,RULE-F25-PRIMARY,defined_in_family_runner
+Spatial non-stationarity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F26,True,family_primary,profile_specific,STATISTICAL,RULE-F26-PRIMARY,defined_in_family_runner
+Dynamic blockage: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F27,True,family_primary,profile_specific,STATISTICAL,RULE-F27-PRIMARY,defined_in_family_runner
+Vehicle penetration: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F28,True,family_primary,profile_specific,STATISTICAL,RULE-F28-PRIMARY,defined_in_family_runner
+Material-specific loss: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F29,True,family_primary,profile_specific,HARD,RULE-F29-PRIMARY,defined_in_family_runner
+Mobility speed fidelity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F30,True,family_primary,profile_specific,HARD,RULE-F30-PRIMARY,defined_in_family_runner
+Direction-change continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F31,True,family_primary,profile_specific,HARD,RULE-F31-PRIMARY,defined_in_family_runner
+High-speed train profile: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F32,True,family_primary,profile_specific,STATISTICAL,RULE-F32-PRIMARY,defined_in_family_runner
+Channel update cadence: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F33,True,family_primary,profile_specific,HARD,RULE-F33-PRIMARY,defined_in_family_runner
+Doppler sign: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F34,True,family_primary,profile_specific,HARD,RULE-F34-PRIMARY,defined_in_family_runner
+Doppler phase continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F35,True,family_primary,profile_specific,HARD,RULE-F35-PRIMARY,defined_in_family_runner
+Absolute received power: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F36,True,family_primary,profile_specific,HARD,RULE-F36-PRIMARY,defined_in_family_runner
+Noise PSD and NF: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F37,True,family_primary,profile_specific,HARD,RULE-F37-PRIMARY,defined_in_family_runner
+OFDM normalization: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F38,True,family_primary,profile_specific,HARD,RULE-F38-PRIMARY,defined_in_family_runner
+Per-link waveform interference: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F39,True,family_primary,profile_specific,HARD,RULE-F39-PRIMARY,defined_in_family_runner
+Interferer timing offset: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F40,True,family_primary,profile_specific,STATISTICAL,RULE-F40-PRIMARY,defined_in_family_runner
+Interferer frequency offset: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F41,True,family_primary,profile_specific,STATISTICAL,RULE-F41-PRIMARY,defined_in_family_runner
+Resource-overlap interference: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F42,True,family_primary,profile_specific,HARD,RULE-F42-PRIMARY,defined_in_family_runner
+Near-far interference: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F43,True,family_primary,profile_specific,STATISTICAL,RULE-F43-PRIMARY,defined_in_family_runner
+Interference covariance: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F44,True,family_primary,profile_specific,STATISTICAL,RULE-F44-PRIMARY,defined_in_family_runner
+Two-cell waveform coupling: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F45,True,family_primary,profile_specific,STATISTICAL,RULE-F45-PRIMARY,defined_in_family_runner
+Nineteen-site interference: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F46,True,family_primary,profile_specific,STATISTICAL,RULE-F46-PRIMARY,defined_in_family_runner
+Serving-cell selection: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F47,True,family_primary,profile_specific,HARD,RULE-F47-PRIMARY,defined_in_family_runner
+Handover continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F48,True,family_primary,profile_specific,STATISTICAL,RULE-F48-PRIMARY,defined_in_family_runner
+RLF continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F49,True,family_primary,profile_specific,STATISTICAL,RULE-F49-PRIMARY,defined_in_family_runner
+O2I spatial continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F50,True,family_primary,profile_specific,STATISTICAL,RULE-F50-PRIMARY,defined_in_family_runner
+LOS-state continuity: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F51,True,family_primary,profile_specific,STATISTICAL,RULE-F51-PRIMARY,defined_in_family_runner
+Rel-19 7–24 GHz pathloss: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F52,True,family_primary,profile_specific,HARD,RULE-F52-PRIMARY,defined_in_family_runner
+Rel-19 7–24 GHz O2I: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F53,True,family_primary,profile_specific,HARD,RULE-F53-PRIMARY,defined_in_family_runner
+Rel-19 7–24 GHz arrays: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F54,True,family_primary,profile_specific,STATISTICAL,RULE-F54-PRIMARY,defined_in_family_runner
+Rel-19 7–24 GHz channel stats: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F55,True,family_primary,profile_specific,STATISTICAL,RULE-F55-PRIMARY,defined_in_family_runner
+60-GHz oxygen line: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F56,True,family_primary,profile_specific,HARD,RULE-F56-PRIMARY,defined_in_family_runner
+Ray-tracing scene contract: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F57,True,family_primary,profile_specific,HARD,RULE-F57-PRIMARY,defined_in_family_runner
+Ray-tracing materials: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F58,True,family_primary,profile_specific,HARD,RULE-F58-PRIMARY,defined_in_family_runner
+Ray-tracing solver version: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F59,True,family_primary,profile_specific,HARD,RULE-F59-PRIMARY,defined_in_family_runner
+Channel reproducibility: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F60,True,family_primary,profile_specific,HARD,RULE-F60-PRIMARY,defined_in_family_runner
+Runtime scaling: treatment must satisfy exact correctness and declared engineering effect.,INCONCLUSIVE,F61,True,family_primary,profile_specific,DIAGNOSTIC,RULE-F61-PRIMARY,defined_in_family_runner
+Memory scaling: treatment must satisfy exact correctness and declared engineering effect.,INCONCLUSIVE,F62,True,family_primary,profile_specific,DIAGNOSTIC,RULE-F62-PRIMARY,defined_in_family_runner
+Serial/parallel reproducibility: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F63,True,family_primary,profile_specific,HARD,RULE-F63-PRIMARY,defined_in_family_runner
+End-to-end geometry-to-BLER: treatment must satisfy exact correctness and declared engineering effect.,FAIL,F64,True,family_primary,profile_specific,STATISTICAL,RULE-F64-PRIMARY,defined_in_family_runner
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F01,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-01,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F02,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-02,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F03,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-03,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F04,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-04,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F05,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-05,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F06,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-06,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F07,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-07,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F08,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-08,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F09,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-09,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F10,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-10,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F11,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-11,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F12,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-12,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F13,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-13,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F14,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-14,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F15,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-15,95% paired bootstrap/Wilson/McNemar as applicable
+No visual-only conclusion; preserve pair identities and uncertainty.,INCONCLUSIVE,F16,True,paired_effect_confidence,CI excludes disallowed region,STATISTICAL,RULE-STAT-16,95% paired bootstrap/Wilson/McNemar as applicable
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F17,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-01,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F18,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-02,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F19,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-03,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F20,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-04,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F21,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-05,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F22,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-06,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F23,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-07,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F24,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-08,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F25,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-09,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F26,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-10,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F27,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-11,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F28,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-12,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F29,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-13,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F30,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-14,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F31,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-15,1
+"All required state, provenance, power and continuity fields are finite and observed.",FAIL,F32,True,runtime_evidence_completeness,==,DIAGNOSTIC,RULE-DIAG-16,1

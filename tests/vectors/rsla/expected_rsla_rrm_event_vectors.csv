@@ -1,0 +1,361 @@
+CaseID,EventID,ServingMeasurementDb,NeighborMeasurementDb,Threshold1Db,Threshold2Db,OffsetDb,HysteresisDb,TTTSamples,ConsecutiveConditionSamples,ExpectedCondition,ExpectedEnterEvent,ExpectedLeaveEvent,Formula,Status
+EVENT-0001,A1,-110,-115,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0002,A1,-110,-115,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0003,A1,-110,-115,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0004,A1,-110,-105,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0005,A1,-110,-105,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0006,A1,-110,-105,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0007,A1,-110,-95,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0008,A1,-110,-95,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0009,A1,-110,-95,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0010,A1,-110,-85,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0011,A1,-110,-85,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0012,A1,-110,-85,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0013,A1,-110,-75,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0014,A1,-110,-75,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0015,A1,-110,-75,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0016,A1,-100,-115,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0017,A1,-100,-115,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0018,A1,-100,-115,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0019,A1,-100,-105,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0020,A1,-100,-105,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0021,A1,-100,-105,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0022,A1,-100,-95,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0023,A1,-100,-95,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0024,A1,-100,-95,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0025,A1,-100,-85,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0026,A1,-100,-85,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0027,A1,-100,-85,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0028,A1,-100,-75,-95,-90,3,0,2,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0029,A1,-100,-75,-95,-90,3,1,4,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0030,A1,-100,-75,-95,-90,3,3,1,0,false,false,true,Ms-Hys>Thresh,EXPECTED
+EVENT-0031,A1,-90,-115,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0032,A1,-90,-115,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0033,A1,-90,-115,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0034,A1,-90,-105,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0035,A1,-90,-105,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0036,A1,-90,-105,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0037,A1,-90,-95,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0038,A1,-90,-95,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0039,A1,-90,-95,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0040,A1,-90,-85,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0041,A1,-90,-85,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0042,A1,-90,-85,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0043,A1,-90,-75,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0044,A1,-90,-75,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0045,A1,-90,-75,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0046,A1,-80,-115,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0047,A1,-80,-115,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0048,A1,-80,-115,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0049,A1,-80,-105,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0050,A1,-80,-105,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0051,A1,-80,-105,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0052,A1,-80,-95,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0053,A1,-80,-95,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0054,A1,-80,-95,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0055,A1,-80,-85,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0056,A1,-80,-85,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0057,A1,-80,-85,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0058,A1,-80,-75,-95,-90,3,0,2,2,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0059,A1,-80,-75,-95,-90,3,1,4,4,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0060,A1,-80,-75,-95,-90,3,3,1,1,true,true,false,Ms-Hys>Thresh,EXPECTED
+EVENT-0061,A2,-110,-115,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0062,A2,-110,-115,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0063,A2,-110,-115,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0064,A2,-110,-105,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0065,A2,-110,-105,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0066,A2,-110,-105,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0067,A2,-110,-95,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0068,A2,-110,-95,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0069,A2,-110,-95,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0070,A2,-110,-85,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0071,A2,-110,-85,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0072,A2,-110,-85,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0073,A2,-110,-75,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0074,A2,-110,-75,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0075,A2,-110,-75,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0076,A2,-100,-115,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0077,A2,-100,-115,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0078,A2,-100,-115,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0079,A2,-100,-105,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0080,A2,-100,-105,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0081,A2,-100,-105,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0082,A2,-100,-95,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0083,A2,-100,-95,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0084,A2,-100,-95,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0085,A2,-100,-85,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0086,A2,-100,-85,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0087,A2,-100,-85,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0088,A2,-100,-75,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0089,A2,-100,-75,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0090,A2,-100,-75,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh,EXPECTED
+EVENT-0091,A2,-90,-115,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0092,A2,-90,-115,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0093,A2,-90,-115,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0094,A2,-90,-105,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0095,A2,-90,-105,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0096,A2,-90,-105,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0097,A2,-90,-95,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0098,A2,-90,-95,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0099,A2,-90,-95,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0100,A2,-90,-85,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0101,A2,-90,-85,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0102,A2,-90,-85,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0103,A2,-90,-75,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0104,A2,-90,-75,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0105,A2,-90,-75,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0106,A2,-80,-115,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0107,A2,-80,-115,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0108,A2,-80,-115,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0109,A2,-80,-105,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0110,A2,-80,-105,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0111,A2,-80,-105,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0112,A2,-80,-95,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0113,A2,-80,-95,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0114,A2,-80,-95,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0115,A2,-80,-85,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0116,A2,-80,-85,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0117,A2,-80,-85,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0118,A2,-80,-75,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0119,A2,-80,-75,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0120,A2,-80,-75,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh,EXPECTED
+EVENT-0121,A3,-110,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0122,A3,-110,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0123,A3,-110,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0124,A3,-110,-105,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0125,A3,-110,-105,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0126,A3,-110,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0127,A3,-110,-95,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0128,A3,-110,-95,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0129,A3,-110,-95,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0130,A3,-110,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0131,A3,-110,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0132,A3,-110,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0133,A3,-110,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0134,A3,-110,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0135,A3,-110,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0136,A3,-100,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0137,A3,-100,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0138,A3,-100,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0139,A3,-100,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0140,A3,-100,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0141,A3,-100,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0142,A3,-100,-95,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0143,A3,-100,-95,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0144,A3,-100,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0145,A3,-100,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0146,A3,-100,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0147,A3,-100,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0148,A3,-100,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0149,A3,-100,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0150,A3,-100,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0151,A3,-90,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0152,A3,-90,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0153,A3,-90,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0154,A3,-90,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0155,A3,-90,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0156,A3,-90,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0157,A3,-90,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0158,A3,-90,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0159,A3,-90,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0160,A3,-90,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0161,A3,-90,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0162,A3,-90,-85,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0163,A3,-90,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0164,A3,-90,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0165,A3,-90,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0166,A3,-80,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0167,A3,-80,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0168,A3,-80,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0169,A3,-80,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0170,A3,-80,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0171,A3,-80,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0172,A3,-80,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0173,A3,-80,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0174,A3,-80,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0175,A3,-80,-85,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0176,A3,-80,-85,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0177,A3,-80,-85,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0178,A3,-80,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0179,A3,-80,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0180,A3,-80,-75,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Ms+Off (all other offsets zero),EXPECTED
+EVENT-0181,A4,-110,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0182,A4,-110,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0183,A4,-110,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0184,A4,-110,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0185,A4,-110,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0186,A4,-110,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0187,A4,-110,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0188,A4,-110,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0189,A4,-110,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0190,A4,-110,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0191,A4,-110,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0192,A4,-110,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0193,A4,-110,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0194,A4,-110,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0195,A4,-110,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0196,A4,-100,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0197,A4,-100,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0198,A4,-100,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0199,A4,-100,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0200,A4,-100,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0201,A4,-100,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0202,A4,-100,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0203,A4,-100,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0204,A4,-100,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0205,A4,-100,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0206,A4,-100,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0207,A4,-100,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0208,A4,-100,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0209,A4,-100,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0210,A4,-100,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0211,A4,-90,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0212,A4,-90,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0213,A4,-90,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0214,A4,-90,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0215,A4,-90,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0216,A4,-90,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0217,A4,-90,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0218,A4,-90,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0219,A4,-90,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0220,A4,-90,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0221,A4,-90,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0222,A4,-90,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0223,A4,-90,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0224,A4,-90,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0225,A4,-90,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0226,A4,-80,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0227,A4,-80,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0228,A4,-80,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0229,A4,-80,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0230,A4,-80,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0231,A4,-80,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0232,A4,-80,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0233,A4,-80,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0234,A4,-80,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>Thresh,EXPECTED
+EVENT-0235,A4,-80,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0236,A4,-80,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0237,A4,-80,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0238,A4,-80,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0239,A4,-80,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0240,A4,-80,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>Thresh,EXPECTED
+EVENT-0241,A5,-110,-115,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0242,A5,-110,-115,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0243,A5,-110,-115,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0244,A5,-110,-105,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0245,A5,-110,-105,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0246,A5,-110,-105,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0247,A5,-110,-95,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0248,A5,-110,-95,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0249,A5,-110,-95,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0250,A5,-110,-85,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0251,A5,-110,-85,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0252,A5,-110,-85,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0253,A5,-110,-75,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0254,A5,-110,-75,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0255,A5,-110,-75,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0256,A5,-100,-115,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0257,A5,-100,-115,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0258,A5,-100,-115,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0259,A5,-100,-105,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0260,A5,-100,-105,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0261,A5,-100,-105,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0262,A5,-100,-95,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0263,A5,-100,-95,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0264,A5,-100,-95,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0265,A5,-100,-85,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0266,A5,-100,-85,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0267,A5,-100,-85,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0268,A5,-100,-75,-95,-90,3,0,2,2,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0269,A5,-100,-75,-95,-90,3,1,4,4,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0270,A5,-100,-75,-95,-90,3,3,1,1,true,true,false,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0271,A5,-90,-115,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0272,A5,-90,-115,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0273,A5,-90,-115,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0274,A5,-90,-105,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0275,A5,-90,-105,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0276,A5,-90,-105,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0277,A5,-90,-95,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0278,A5,-90,-95,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0279,A5,-90,-95,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0280,A5,-90,-85,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0281,A5,-90,-85,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0282,A5,-90,-85,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0283,A5,-90,-75,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0284,A5,-90,-75,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0285,A5,-90,-75,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0286,A5,-80,-115,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0287,A5,-80,-115,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0288,A5,-80,-115,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0289,A5,-80,-105,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0290,A5,-80,-105,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0291,A5,-80,-105,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0292,A5,-80,-95,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0293,A5,-80,-95,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0294,A5,-80,-95,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0295,A5,-80,-85,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0296,A5,-80,-85,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0297,A5,-80,-85,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0298,A5,-80,-75,-95,-90,3,0,2,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0299,A5,-80,-75,-95,-90,3,1,4,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0300,A5,-80,-75,-95,-90,3,3,1,0,false,false,true,Ms+Hys<Thresh1 AND Mn-Hys>Thresh2,EXPECTED
+EVENT-0301,A6,-110,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0302,A6,-110,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0303,A6,-110,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0304,A6,-110,-105,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0305,A6,-110,-105,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0306,A6,-110,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0307,A6,-110,-95,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0308,A6,-110,-95,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0309,A6,-110,-95,-95,-90,3,3,1,1,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0310,A6,-110,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0311,A6,-110,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0312,A6,-110,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0313,A6,-110,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0314,A6,-110,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0315,A6,-110,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0316,A6,-100,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0317,A6,-100,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0318,A6,-100,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0319,A6,-100,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0320,A6,-100,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0321,A6,-100,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0322,A6,-100,-95,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0323,A6,-100,-95,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0324,A6,-100,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0325,A6,-100,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0326,A6,-100,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0327,A6,-100,-85,-95,-90,3,3,1,1,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0328,A6,-100,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0329,A6,-100,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0330,A6,-100,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0331,A6,-90,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0332,A6,-90,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0333,A6,-90,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0334,A6,-90,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0335,A6,-90,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0336,A6,-90,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0337,A6,-90,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0338,A6,-90,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0339,A6,-90,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0340,A6,-90,-85,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0341,A6,-90,-85,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0342,A6,-90,-85,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0343,A6,-90,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0344,A6,-90,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0345,A6,-90,-75,-95,-90,3,3,1,1,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0346,A6,-80,-115,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0347,A6,-80,-115,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0348,A6,-80,-115,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0349,A6,-80,-105,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0350,A6,-80,-105,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0351,A6,-80,-105,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0352,A6,-80,-95,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0353,A6,-80,-95,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0354,A6,-80,-95,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0355,A6,-80,-85,-95,-90,3,0,2,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0356,A6,-80,-85,-95,-90,3,1,4,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0357,A6,-80,-85,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0358,A6,-80,-75,-95,-90,3,0,2,2,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0359,A6,-80,-75,-95,-90,3,1,4,4,true,true,false,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED
+EVENT-0360,A6,-80,-75,-95,-90,3,3,1,0,false,false,true,Mn-Hys>SCell+Off (bounded SCell profile),EXPECTED

@@ -1,0 +1,23 @@
+ImageFile,SourceCSV,ExpectedTitleToken,ExpectedXLabel,ExpectedYLabel,MinAxesCount,MinSeriesCount,MinFinitePointCount,MinWidth,MinHeight
+mac_event_state_timeline.png,mac_event_log.csv|mac_ue_context_projection.csv,MAC event and UE state timeline,Absolute slot,State/event,1,3,20,900,600
+mac_harq_process_timeline.png,mac_harq_process_states.csv,HARQ process state timeline,Absolute slot,HARQ state,1,4,20,900,600
+mac_ndi_rv_attempt_timeline.png,mac_harq_attempts.csv,NDI RV and attempt timeline,Transmission attempt,NDI / RV,1,3,20,900,600
+mac_k0_k1_k2_timeline.png,mac_timing_decisions.csv,K0 K1 K2 timing timeline,PDCCH slot,Target slot,1,3,20,900,600
+mac_tdd_eligibility_map.png,mac_timing_decisions.csv|mac_eligibility_decisions.csv,TDD and eligibility map,Absolute symbol,Direction / eligibility,1,3,20,900,600
+mac_harq_feedback_codebook.png,mac_harq_feedback.csv,HARQ feedback codebook mapping,Feedback bit position,Outcome,1,3,20,900,600
+mac_soft_combining_gain.png,mac_soft_buffer_ledger.csv|mac_harq_attempts.csv,HARQ soft combining evidence,Attempt,Combining metric,1,2,20,900,600
+mac_harq_process_occupancy.png,mac_harq_process_states.csv,HARQ process occupancy,Absolute slot,Active processes,1,2,20,900,600
+mac_bsr_buffer_timeline.png,mac_bsr_state.csv,BSR and buffer timeline,Absolute slot,Buffer bytes,1,3,20,900,600
+mac_bsr_quantization_error.png,mac_bsr_table_results.csv,BSR table quantization boundaries,BSR index,Buffer bytes,1,3,32,900,600
+mac_phr_power_timeline.png,mac_phr_state.csv,Power headroom and PCMAX timeline,Absolute slot,Power dB / dBm,1,3,20,900,600
+mac_sr_state_timeline.png,mac_sr_state.csv,Scheduling Request state timeline,Absolute slot,SR state,1,2,20,900,600
+mac_lcp_bj_timeline.png,mac_logical_channel_state.csv|mac_lcp_decisions.csv,Logical channel Bj and selection,Absolute slot,Bytes,1,4,20,900,600
+mac_pdu_composition.png,mac_pdu_subpdus.csv,MAC PDU composition,Byte offset,SubPDU owner,1,4,20,900,600
+mac_ce_priority_selection.png,mac_ce_selection.csv,MAC CE priority and selection,CE priority,Selected bytes,1,3,20,900,600
+mac_timing_advance_timeline.png,mac_timing_advance_state.csv,Timing advance and alignment timer,Absolute slot,NTA / timer,1,3,20,900,600
+mac_scheduler_allocation.png,mac_scheduler_grants.csv,Scheduler resource allocation,Absolute slot,PRB / UE,1,4,20,900,600
+mac_scheduler_fairness.png,mac_scheduler_metrics.csv,Scheduler throughput and Jain fairness,UE,Throughput Mbps,1,4,10,900,600
+mac_qos_latency_cdf.png,mac_scheduler_metrics.csv,QoS packet latency CDF,Latency ms,CDF,1,4,20,900,600
+mac_packet_lineage_graph.png,mac_packet_lineage_nodes.csv|mac_packet_lineage_edges.csv,Packet to HARQ delivery lineage,Processing stage,Bytes,1,5,20,900,600
+mac_conservation_balance.png,mac_conservation_ledger.csv,Packet and byte conservation,Flow,Bytes,1,5,10,900,600
+mac_grant_authority_trace.png,mac_scheduler_candidates.csv|mac_scheduler_grants.csv|mac_event_log.csv,Decoded grant authority trace,Event sequence,Grant state,1,4,20,900,600
