@@ -19,6 +19,10 @@ end
 localWriteAuditPrereqs(tmp, snrGrid, trialsPerPoint);
 
 audit = sixgr.validation.auditFixedSNRSweepRun(tmp, "Strict", false, "WriteOutputs", true);
+if ~logical(audit.Ok)
+    disp(audit.Table(string(audit.Table.Status)=="FAIL",:));
+    disp(audit.FailureCodes);
+end
 assert(logical(audit.Ok), "A correct fixed SNR sweep fixture must pass the fixed-sweep audit.");
 assert(exist(fullfile(tmp, "reports", "csv", "fixed_snr_sweep_audit.csv"), "file") == 2, ...
     "The fixed-sweep audit CSV must be written.");
@@ -58,12 +62,39 @@ end
 function cfg = localFixtureConfig()
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "variants", "SCN00_BASELINE_CAPACITY.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+scfg = scfg.toStruct();
+scfg.harq.k2 = 2;
+scfg.random_access.enabled = false;
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "fixed_snr_sweep_audit_fixture"));
 cfg.run.numFrames = 1;
 cfg.run.strictMode = false;
 cfg.run.noProxyTruthContract = false;
 cfg.run.interferenceExecutionMode = "none";
-cfg.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
+cfg.run.fixedReferenceMode = true;
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+cfg.phy.linkAdaptation.mode = "fixed";
+cfg.phy.pdsch.PRBSet = 0:23;
+cfg.phy.pdsch.prbSet = 0:23;
+cfg.phy.pdsch.numPorts = 1;
+cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.UECapability1024QAM = false;
+cfg.phy.pdsch.RRCEnabled1024QAM = false;
+cfg.phy.pdsch.DCIEnabled1024QAM = false;
+cfg.phy.pdsch.DeploymentAllows1024QAM = false;
+cfg.phy.pdsch.FrequencyRangeAllows1024QAM = false;
+cfg.phy.pdsch.BandAllows1024QAM = false;
+cfg.phy.pdsch.FrequencyRange = "FR1";
+cfg.phy.pdsch.OperatingBand = "n77";
+cfg.phy.pdsch.DeploymentClass = "macro";
+cfg.phy.pdsch.DCIFormat = "1_1";
+cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pdsch.mappingType = "A";
+cfg.phy.pusch.prbSet = 0:23;
+cfg.phy.pusch.PRBSet = 0:23;
+cfg.phy.pusch.enablePTRS = false;
+cfg.phy.bwp.dl = struct("NStartBWP",0,"NSizeBWP",273);
+cfg.phy.bwp.ul = struct("NStartBWP",0,"NSizeBWP",273);
 cfg.run.seed = 4207;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
@@ -90,6 +121,7 @@ cfg.phy.pucch.enable = false;
 cfg.phy.srs.enable = false;
 cfg = sixgr.util.structSet(cfg, "phy.trs.enable", false);
 cfg = sixgr.util.structSet(cfg, "phy.ptrs.enable", false);
+cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.ptrs_enabled", false);
 cfg.phy.csirs.enable = false;
 cfg.phy.prach.enable = false;
 cfg.phy.harq.enable = false;
@@ -117,8 +149,8 @@ opt = struct( ...
     "LinkFixedLinkMinTrials", trialsPerPoint, ...
     "LinkFixedLinkMaxTrials", trialsPerPoint, ...
     "LinkFixedLinkTrialsPerDrop", 1, ...
-    "LinkFixedLinkErrorTarget", inf, ...
-    "LinkFixedLinkCIWidthTarget", inf, ...
+    "LinkFixedLinkErrorTarget", 1, ...
+    "LinkFixedLinkCIWidthTarget", 1, ...
     "LinkFixedLinkConfidenceLevel", 0.95, ...
     "LinkFixedLinkSeed", seed, ...
     "HARQDiagnosticsEnabled", false, ...

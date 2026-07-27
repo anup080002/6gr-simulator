@@ -1,0 +1,29 @@
+classdef EvidenceProvenanceClass
+    %EVIDENCEPROVENANCECLASS Canonical evidence lineage classes.
+    methods (Static)
+        function out = values()
+            out = ["OBSERVED_RUNTIME_STATE", ...
+                "DERIVED_FROM_OBSERVED_RUNTIME_STATE", ...
+                "DECODED_RECEIVER_STATE","CONFIGURED", ...
+                "RECONSTRUCTED_DIAGNOSTIC","EXTERNAL_ORACLE","DUT_OUTPUT"];
+        end
+        function out = runtimeValues()
+            out = ["OBSERVED_RUNTIME_STATE", ...
+                "DERIVED_FROM_OBSERVED_RUNTIME_STATE", ...
+                "DECODED_RECEIVER_STATE"];
+        end
+        function out = parse(input)
+            out = upper(strtrim(string(input)));
+            if ~(isscalar(out) && ...
+                    ismember(out,sixgr.validation.EvidenceProvenanceClass.values()))
+                error("sixgr:validation:UnknownEvidenceProvenance", ...
+                    "Unknown evidence provenance class '%s'.",string(input));
+            end
+        end
+        function out = qualifiesRuntime(input)
+            out = ismember( ...
+                sixgr.validation.EvidenceProvenanceClass.parse(input), ...
+                sixgr.validation.EvidenceProvenanceClass.runtimeValues());
+        end
+    end
+end

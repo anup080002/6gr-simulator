@@ -118,6 +118,7 @@ def test_browser_uses_one_compact_shell_and_preserves_deep_links() -> None:
         ("home", "Scenario", "/home"),
         ("scenario", "Configure", "/scenario"),
         ("run_control", "Run", "/run-control"),
+        ("runs", "Runs", "/runs"),
         ("realtime", "Live", "/realtime"),
         ("plots", "Results & Evidence", "/plots"),
     ]

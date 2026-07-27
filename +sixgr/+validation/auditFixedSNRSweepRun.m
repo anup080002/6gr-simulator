@@ -402,7 +402,7 @@ rows = [rows; localPerPointTrialAuditRows(direction, blerT, req)]; %#ok<AGROW>
 rows = [rows; localProbabilityAuditRows(direction, blerT, "BLER")]; %#ok<AGROW>
 rows = [rows; localProbabilityAuditRows(direction, berT, "BER")]; %#ok<AGROW>
 rows = [rows; localMeasuredSINRAuditRows(direction, blerT, req)]; %#ok<AGROW>
-rows = [rows; localHighSNRSanityAuditRows(direction, blerT)]; %#ok<AGROW>
+rows = [rows; localHighSNRSanityAuditRows(direction, blerT, req)]; %#ok<AGROW>
 rows = [rows; localEffectiveCodeRateAuditRows(direction, trialT)]; %#ok<AGROW>
 end
 
@@ -414,7 +414,7 @@ end
 
 trialCount = localNumericColumn(curveT, "TrialCount", NaN(height(curveT), 1));
 incomplete = localLogicalColumn(curveT, "Incomplete", false(height(curveT), 1));
-stopReason = lower(strtrim(localTextColumn(curveT, "StopReason", "", height(curveT))));
+stopReason = upper(strtrim(localTextColumn(curveT, "StopReason", "", height(curveT))));
 ciWidth = localNumericColumn(curveT, "BLER_CI_Width", NaN(height(curveT), 1));
 snr = localNumericColumn(curveT, ["ConfiguredSNR_dB", "SNR_dB"], NaN(height(curveT), 1));
 
@@ -427,14 +427,14 @@ rows(end + 1, 1) = localAuditRow( ...
     localFailureToken(any(bad), "trial_count_below_minimum"), ...
     char(direction) + " complete curve points must meet the configured min_trials threshold.");
 
-ciTargetMiss = stopReason == "max_trials_reached" & ...
+ciTargetMiss = stopReason == "MAX_TRIALS_REACHED_INCOMPLETE" & ...
     ((isfinite(req.CIWidthTarget) & (~isfinite(ciWidth) | ciWidth > req.CIWidthTarget + 1e-12)));
 % Rows that hit the cap and still missed the CI target remain audit failures.
 bad = ciTargetMiss;
 rows(end + 1, 1) = localAuditRow( ...
     lower(char(direction)) + "_ci_target_met_before_or_at_max_trials", ...
     "reports/csv/" + lower(char(direction)) + "_fixed_snr_bler_curve.csv", ...
-    nnz(stopReason == "max_trials_reached"), nnz(bad), localMaxOrNaN(ciWidth(ciTargetMiss)), ...
+    nnz(stopReason == "MAX_TRIALS_REACHED_INCOMPLETE"), nnz(bad), localMaxOrNaN(ciWidth(ciTargetMiss)), ...
     localTernary(isfinite(req.CIWidthTarget), string(req.CIWidthTarget), "finite CI width"), ...
     localStatusFromFailures(nnz(bad)), ...
     localFailureToken(any(bad), "ci_target_missed_at_max_trials"), ...
@@ -516,7 +516,7 @@ rows(end + 1, 1) = localAuditRow( ...
     char(direction) + " measured SINR must stay within the configured delta threshold from configured SNR.");
 end
 
-function rows = localHighSNRSanityAuditRows(direction, curveT)
+function rows = localHighSNRSanityAuditRows(direction, curveT, req)
 rows = repmat(localEmptyAuditRow(), 0, 1);
 if ~(istable(curveT) && height(curveT) >= 2)
     return;
@@ -524,21 +524,43 @@ end
 
 [snr, order] = sort(localNumericColumn(curveT, ["ConfiguredSNR_dB", "SNR_dB"], NaN(height(curveT), 1)));
 bler = localNumericColumn(curveT, "BLER", NaN(height(curveT), 1));
+low = localNumericColumn(curveT, "BLER_CI_Low", NaN(height(curveT), 1));
+high = localNumericColumn(curveT, "BLER_CI_High", NaN(height(curveT), 1));
+incomplete = localLogicalColumn(curveT,"Incomplete", ...
+    false(height(curveT),1));
 bler = bler(order);
+low = low(order);
+high = high(order);
+incomplete = incomplete(order);
 finiteMask = isfinite(snr) & isfinite(bler);
 snr = snr(finiteMask);
 bler = bler(finiteMask);
+low = low(finiteMask);
+high = high(finiteMask);
+incomplete = incomplete(finiteMask);
 if numel(bler) < 2
     return;
 end
-bad = bler(end) >= bler(1) - 1e-12;
+trendPass = bler(end) <= bler(1) + 1e-12;
+if isfinite(high(1)) && isfinite(low(end))
+    trendPass = trendPass || low(end) <= high(1);
+end
+objectivePass = true;
+if isfinite(req.TargetBLER)
+    objectivePass = isfinite(high(end)) && high(end) <= req.TargetBLER;
+end
+pointStatePass = ~incomplete(end);
+bad = ~(trendPass && objectivePass && pointStatePass);
 rows(end + 1, 1) = localAuditRow( ...
-    lower(char(direction)) + "_high_snr_better_than_low_snr", ...
+    lower(char(direction)) + "_high_snr_objective_with_uncertainty", ...
     "reports/csv/" + lower(char(direction)) + "_fixed_snr_bler_curve.csv", ...
-    numel(bler), double(bad), bler(end) - bler(1), "<0", ...
+    numel(bler), double(bad), high(end), ...
+    localTernary(isfinite(req.TargetBLER),string(req.TargetBLER), ...
+    "nondegradation_with_uncertainty"), ...
     localStatusFromFailures(double(bad)), ...
-    localFailureToken(bad, "high_snr_not_better_than_low_snr"), ...
-    char(direction) + " highest-SNR BLER must be lower than the lowest-SNR BLER.");
+    localFailureToken(bad, "high_snr_objective_or_uncertainty_failed"), ...
+    char(direction) + " highest-SNR point must be complete/censored, " + ...
+    "nondegraded within uncertainty, and meet the objective upper bound.");
 end
 
 function rows = localEffectiveCodeRateAuditRows(direction, trialT)

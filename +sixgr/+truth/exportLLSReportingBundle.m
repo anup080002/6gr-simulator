@@ -1814,11 +1814,10 @@ try
         blerHigh = betainv(1 - alpha / 2, nFail + 1, nTotal - nFail);
     end
 catch
-    pHat = nFail / nTotal;
-    z = 1.95996398454005;
-    halfWidth = z * sqrt(max(pHat * (1 - pHat) / nTotal, 0));
-    blerLow = pHat - halfWidth;
-    blerHigh = pHat + halfWidth;
+    interval = sixgr.validation.BinomialIntervalEngine.wilson( ...
+        nFail,nTotal,1-alpha);
+    blerLow = interval.Lower;
+    blerHigh = interval.Upper;
 end
 blerLow = max(0, min(1, double(blerLow)));
 blerHigh = max(0, min(1, double(blerHigh)));

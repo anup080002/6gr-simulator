@@ -1,0 +1,111 @@
+version: 1.0.0
+schema_version: 1.0.0
+profiles:
+  nr_rel18_phy_lls_strict:
+    supported: true
+    run_class: FIXED_LINK_CALIBRATION
+    publication_eligible: true
+    measured_sinr_required: true
+    minimum_independent_drops: 8
+    min_trials: 100
+    min_errors: 10
+    max_trials: 10000
+    max_looks: 10
+    look_schedule: [100, 200, 500, 1000, 2000, 3000, 5000, 7000, 9000, 10000]
+    target_half_width: 0.02
+    target_zero_error_upper_bound: 0.001
+    nominal_confidence_level: 0.95
+    interval_method: CLOPPER_PEARSON_TWO_SIDED
+    multiplicity_method: HOLM
+    minimum_curve_overlap: 5
+    equivalence_margin: 0.02
+  nr_rel18_system_lls_strict:
+    supported: true
+    run_class: SYSTEM_LEVEL
+    publication_eligible: true
+    measured_sinr_required: true
+    minimum_independent_drops: 8
+    min_trials: 1000
+    min_errors: 100
+    max_trials: 20000
+    max_looks: 20
+    look_schedule: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000]
+    target_half_width: 0.01
+    target_zero_error_upper_bound: 0.0005
+    nominal_confidence_level: 0.95
+    interval_method: CLOPPER_PEARSON_TWO_SIDED
+    multiplicity_method: HOLM
+    minimum_curve_overlap: 5
+    equivalence_margin: 0.02
+  protocol_system_study:
+    supported: true
+    run_class: PROTOCOL_SYSTEM_STUDY
+    publication_eligible: false
+    measured_sinr_required: true
+    minimum_independent_drops: 8
+    min_trials: 500
+    min_errors: 20
+    max_trials: 5000
+    max_looks: 5
+    look_schedule: [500, 1000, 2000, 3000, 5000]
+    target_half_width: 0.025
+    target_zero_error_upper_bound: 0.005
+    nominal_confidence_level: 0.90
+    interval_method: CLOPPER_PEARSON_TWO_SIDED
+    multiplicity_method: HOLM
+    minimum_curve_overlap: 5
+    equivalence_margin: 0.03
+  rel20_6g_study_context:
+    supported: true
+    run_class: GEOMETRY_LINK_LEVEL
+    publication_eligible: false
+    measured_sinr_required: true
+    minimum_independent_drops: 8
+    min_trials: 500
+    min_errors: 20
+    max_trials: 5000
+    max_looks: 5
+    look_schedule: [500, 1000, 2000, 3000, 5000]
+    target_half_width: 0.025
+    target_zero_error_upper_bound: 0.005
+    nominal_confidence_level: 0.90
+    interval_method: CLOPPER_PEARSON_TWO_SIDED
+    multiplicity_method: HOLM
+    minimum_curve_overlap: 5
+    equivalence_margin: 0.03
+  internal_numerical_regression:
+    supported: true
+    run_class: CONTROL_ONLY
+    publication_eligible: false
+    measured_sinr_required: false
+    minimum_independent_drops: 1
+    min_trials: 10
+    min_errors: 1
+    max_trials: 1000
+    max_looks: 1
+    look_schedule: [1000]
+    target_half_width: 0.10
+    target_zero_error_upper_bound: 0.10
+    nominal_confidence_level: 0.95
+    interval_method: WILSON_TWO_SIDED
+    multiplicity_method: NONE
+    minimum_curve_overlap: 2
+    equivalence_margin: 0.05
+  unsupported_extension:
+    supported: false
+    run_class: CONTROL_ONLY
+    publication_eligible: false
+    measured_sinr_required: false
+    minimum_independent_drops: 0
+    min_trials: 0
+    min_errors: 0
+    max_trials: 0
+    max_looks: 0
+    look_schedule: []
+    target_half_width: 0
+    target_zero_error_upper_bound: 0
+    nominal_confidence_level: 0.95
+    interval_method: WILSON_TWO_SIDED
+    multiplicity_method: NONE
+    minimum_curve_overlap: 0
+    equivalence_margin: 0

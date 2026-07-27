@@ -459,7 +459,7 @@ while true
 
     remaining = max(0, round(double(campaignCfg.MaxTBPerPoint)) - completed);
     if remaining <= 0
-        stats.StopReason = "max_tb_per_point_reached";
+        stats.StopReason = "MAX_TRIALS_REACHED_INCOMPLETE";
         stats.Incomplete = localPointIncomplete(stats, campaignCfg);
         stats.PointSeed = double(pointSeed);
         return;
@@ -704,28 +704,36 @@ end
 function [shouldStop, stopReason, incomplete] = localShouldStopPoint(stats, campaignCfg)
 trialCount = double(sixgr.util.structGet(stats, "TrialCount", 0));
 failureCount = double(sixgr.util.structGet(stats, "FailureCount", 0));
-halfWidth = double(sixgr.util.structGet(stats, "BLER_CI_HalfWidth", inf));
 
 shouldStop = false;
 stopReason = "continue";
 incomplete = false;
 
-if trialCount < double(campaignCfg.MinTBPerPoint)
+if trialCount == 0
     return;
 end
 
-metConfidence = isfinite(halfWidth) && halfWidth <= double(campaignCfg.MaxCIHalfWidth);
-metErrorCount = failureCount >= double(campaignCfg.MinErrorsForCI);
-if metConfidence && metErrorCount
-    shouldStop = true;
-    stopReason = "ci_target_reached";
-    return;
-end
-
-if trialCount >= double(campaignCfg.MaxTBPerPoint)
-    shouldStop = true;
-    stopReason = "max_tb_per_point_reached";
-    incomplete = ~(metConfidence && metErrorCount);
+maxLooks=max(1,ceil(double(campaignCfg.MaxTBPerPoint)/ ...
+    double(campaignCfg.BatchTBCount)));
+profile=struct( ...
+    "MinTrials",double(campaignCfg.MinTBPerPoint), ...
+    "MinErrors",double(campaignCfg.MinErrorsForCI), ...
+    "MaxTrials",double(campaignCfg.MaxTBPerPoint), ...
+    "MaxLooks",maxLooks, ...
+    "LookSchedule",min(double(campaignCfg.MaxTBPerPoint), ...
+        (1:maxLooks)*double(campaignCfg.BatchTBCount)), ...
+    "TargetHalfWidth",double(campaignCfg.MaxCIHalfWidth), ...
+    "TargetZeroErrorUpperBound",double(campaignCfg.MaxCIHalfWidth), ...
+    "NominalConfidenceLevel",double(campaignCfg.ConfidenceLevel));
+design=sixgr.validation.SequentialDesign.fromProfile(profile);
+lookIndex=min(maxLooks,max(1,ceil(trialCount/ ...
+    double(campaignCfg.BatchTBCount))));
+decision=sixgr.validation.SequentialStoppingPolicy.evaluate( ...
+    failureCount,trialCount,design,lookIndex);
+shouldStop=logical(decision.Stopped);
+if shouldStop
+    stopReason=string(decision.StopReason);
+    incomplete=string(decision.PointStatus)=="INCOMPLETE_MAX_TRIALS";
 end
 end
 

@@ -82,6 +82,7 @@ trajectoryT = localReadTable(fullfile(runDir, "geometry", "csv", "trajectory_geo
 dopplerT = localReadTable(fullfile(runDir, "mobility", "csv", "doppler_reconciliation.csv"));
 measuredSinrT = localReadTable(fullfile(runDir, "reports", "csv", "measured_sinr_timeseries.csv"));
 referenceSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_reference_snr_sweep.csv"));
+dutSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_snr_sweep.csv"));
 
 effectiveCfg = cfg;
 if ~isstruct(effectiveCfg) || isempty(fieldnames(effectiveCfg))
@@ -91,6 +92,9 @@ end
 runClass = localResolveRunClass(effectiveCfg, resolvedCfg, runClassT);
 direction = upper(localResolveFixedDirection(effectiveCfg, resolvedCfg));
 minTrials = localResolveMinTrials(effectiveCfg, resolvedCfg);
+targetBLER = localResolveFiniteSetting(effectiveCfg,resolvedCfg, ...
+    ["sweeps_and_matrix.fixed_link_calibration.target_bler", ...
+    "validation.fixed_link_campaign.target_bler"],NaN);
 fixedOnly = localResolveLogicalSetting(effectiveCfg, resolvedCfg, ...
     ["sweeps_and_matrix.fixed_link_calibration.only","canonical_control.run.fixed_link_campaign_only"], false);
 noiseMode = localResolveTextSetting(effectiveCfg, resolvedCfg, ...
@@ -137,7 +141,7 @@ if fixedApplicable
         rows(end+1, 1) = localModeGateFromCurve("DLCurveNonEmpty", runClass, true, dlCurveT, ...
             "reports/csv/dl_fixed_snr_bler_curve.csv", minTrials, "dl_curve_missing_or_incomplete", ...
             "DL BLER curve must be non-empty and complete for every configured SNR point."); %#ok<AGROW>
-        rows(end+1, 1) = localModeGateFromHighSNR(localCurveHighSNRImproves(dlCurveT), "DLHighSNRImproves", runClass, ...
+        rows(end+1, 1) = localModeGateFromHighSNR(localCurveHighSNRImproves(dlCurveT,targetBLER), "DLHighSNRImproves", runClass, ...
             "reports/csv/dl_fixed_snr_bler_curve.csv", "high_snr_not_better_than_low_snr_dl", ...
             "The highest DL SNR point must improve over the lowest DL SNR point."); %#ok<AGROW>
     end
@@ -145,7 +149,7 @@ if fixedApplicable
         rows(end+1, 1) = localModeGateFromCurve("ULCurveNonEmpty", runClass, true, ulCurveT, ...
             "reports/csv/ul_fixed_snr_bler_curve.csv", minTrials, "ul_curve_missing_or_incomplete", ...
             "UL BLER curve must be non-empty and complete for every configured SNR point."); %#ok<AGROW>
-        rows(end+1, 1) = localModeGateFromHighSNR(localCurveHighSNRImproves(ulCurveT), "ULHighSNRImproves", runClass, ...
+        rows(end+1, 1) = localModeGateFromHighSNR(localCurveHighSNRImproves(ulCurveT,targetBLER), "ULHighSNRImproves", runClass, ...
             "reports/csv/ul_fixed_snr_bler_curve.csv", "high_snr_not_better_than_low_snr_ul", ...
             "The highest UL SNR point must improve over the lowest UL SNR point."); %#ok<AGROW>
     end
@@ -156,12 +160,14 @@ if fixedApplicable
         "reports/csv/dl_fixed_snr_bler_curve.csv|reports/csv/ul_fixed_snr_bler_curve.csv", ...
         localFailureToken(localCurveMetricsValid(dlCurveT) && localCurveMetricsValid(ulCurveT), "bler_ber_out_of_range_or_invalid_ci"), ...
         "BLER and BER must stay within [0,1] with valid confidence intervals."); %#ok<AGROW>
+    [referenceComparisonOK,referenceFailure] = ...
+        localIndependentReferenceComparisonPass(dutSweepT,referenceSweepT);
     rows(end+1, 1) = localModeGateRow("ReferenceComparisonPresent", runClass, true, ...
-        fixedEnabled && istable(referenceSweepT) && height(referenceSweepT) > 0, ...
-        height(referenceSweepT), double(~(fixedEnabled && istable(referenceSweepT) && height(referenceSweepT) > 0)), ...
+        fixedEnabled && referenceComparisonOK, ...
+        height(referenceSweepT), double(~(fixedEnabled && referenceComparisonOK)), ...
         "air_interface/csv/lls_reference_snr_sweep.csv", ...
-        localFailureToken(fixedEnabled && istable(referenceSweepT) && height(referenceSweepT) > 0, "reference_snr_sweep_missing"), ...
-        "Publication readiness requires non-empty reference sweep evidence alongside the fixed sweep."); %#ok<AGROW>
+        localFailureToken(fixedEnabled && referenceComparisonOK,referenceFailure), ...
+        "Publication readiness requires an independent, hash-distinct, exact-key reference comparison."); %#ok<AGROW>
 end
 
 if geometryApplicable
@@ -332,22 +338,42 @@ for cols = {["BLER_CI_Low","BLER","BLER_CI_High"], ["BER_CI_Low","BER","BER_CI_H
 end
 end
 
-function tf = localCurveHighSNRImproves(T)
+function tf = localCurveHighSNRImproves(T,targetBLER)
 tf = false;
 if ~(istable(T) && height(T) >= 2)
     return;
 end
 snr = localNumericColumn(T, ["ConfiguredSNR_dB","SNR_dB"]);
 bler = localNumericColumn(T, "BLER");
+low = localNumericColumn(T,"BLER_CI_Low");
+high = localNumericColumn(T,"BLER_CI_High");
 mask = isfinite(snr) & isfinite(bler);
 if nnz(mask) < 2
     return;
 end
 snr = snr(mask);
 bler = bler(mask);
+low = low(mask);
+high = high(mask);
 [snr, order] = sort(snr, "ascend");
 bler = bler(order);
-tf = bler(end) < bler(1);
+low = low(order);
+high = high(order);
+trendPass=bler(end)<=bler(1)+1e-12;
+if isfinite(low(end))&&isfinite(high(1))
+    trendPass=trendPass||low(end)<=high(1);
+end
+objectivePass=true;
+if isfinite(targetBLER)
+    objectivePass=isfinite(high(end))&&high(end)<=targetBLER;
+end
+incomplete=false(height(T),1);
+if localHasColumn(T,"Incomplete")
+    incomplete=localColumnAsLogical(T.Incomplete);
+end
+incomplete=incomplete(mask);
+incomplete=incomplete(order);
+tf=trendPass&&objectivePass&&~incomplete(end);
 end
 
 function tf = localDopplerAuditPass(T)
@@ -493,6 +519,56 @@ if logical(pass)
 else
     code = string(failureCode);
 end
+end
+
+function [passed,failure]=localIndependentReferenceComparisonPass(dut,reference)
+passed=false;
+failure="reference_snr_sweep_missing";
+if ~(istable(dut)&&~isempty(dut)&&istable(reference)&&~isempty(reference))
+    return;
+end
+referenceNames=string(reference.Properties.VariableNames);
+metadata=["ReferenceSHA256","DUTSHA256","IndependentOfDUT"];
+if any(~ismember(metadata,referenceNames))
+    failure="reference_independence_metadata_missing";
+    return;
+end
+referenceHash=lower(string(reference.ReferenceSHA256));
+dutHash=lower(string(reference.DUTSHA256));
+independent=localColumnAsLogical(reference.IndependentOfDUT);
+validHash=arrayfun(@(x)strlength(x)==64&& ...
+    ~isempty(regexp(char(x),"^[0-9a-f]{64}$","once")),referenceHash) & ...
+    arrayfun(@(x)strlength(x)==64&& ...
+    ~isempty(regexp(char(x),"^[0-9a-f]{64}$","once")),dutHash);
+if ~all(independent&validHash&referenceHash~=dutHash)
+    failure="reference_not_independent_or_hash_distinct";
+    return;
+end
+keyFields=sixgr.validation.OperatingPointKey.requiredFields();
+if any(~ismember(keyFields,string(dut.Properties.VariableNames))) || ...
+        any(~ismember(keyFields,referenceNames))
+    failure="reference_complete_point_key_missing";
+    return;
+end
+dutKey=strings(height(dut),1);
+referenceKey=strings(height(reference),1);
+for index=1:height(dut)
+    dutKey(index)=sixgr.validation.OperatingPointKey.canonical(dut(index,:));
+end
+for index=1:height(reference)
+    referenceKey(index)=sixgr.validation.OperatingPointKey.canonical(reference(index,:));
+end
+if numel(unique(dutKey))~=height(dut)|| ...
+        numel(unique(referenceKey))~=height(reference)
+    failure="reference_duplicate_point_key";
+    return;
+end
+if ~isequal(sort(dutKey),sort(referenceKey))
+    failure="reference_exact_point_join_failed";
+    return;
+end
+passed=true;
+failure="";
 end
 
 function value = localConfigString(S, dottedPath, defaultValue)

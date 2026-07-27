@@ -1,0 +1,7 @@
+GateName,Required,Status,FailureReason
+"ExperimentMatrix",1,"PASS",""
+"PairingContract",1,"PASS",""
+"AcceptanceRules",1,"PASS",""
+"BasePhase",1,"FAIL","base_validation_phase_not_passed"
+"ImpactExecution",1,"FAIL","impact_experiments_not_executed"
+"ImpactArtifacts",1,"FAIL","contracted_impact_artifacts_not_generated"

@@ -47,7 +47,6 @@ if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
     fixedSummary = sixgr.util.structGet(campaign, "Summary", table());
     if istable(fixedSummary) && ~isempty(fixedSummary)
         sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), fixedSummary);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), fixedSummary);
         sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedSummary);
     end
     if logical(persistenceEnabled)
@@ -63,7 +62,8 @@ if logical(sixgr.util.structGet(opt, "FixedLinkCampaignOnly", false))
     out = struct();
     out.Ok = localFixedLinkCampaignEvidenceOk(campaign);
     out.RunFolder = runFolder;
-    out.Result = struct("SNRSweep", fixedSummary, "ReferenceSweep", fixedSummary, "FixedLinkCampaign", campaign);
+    out.Result = struct("SNRSweep", fixedSummary, ...
+        "ReferenceSweep", table(), "FixedLinkCampaign", campaign);
     out.KPITable = table();
     out.SNRSweep = fixedSummary;
     out.ReferenceSweep = fixedSummary;
@@ -13743,7 +13743,7 @@ for i = 1:n
     end
 
     srsT = localSubsetTrialsBySNR(sixgr.util.structGet(rawTrials, "SRS", table()), snr);
-    row = localApplyScalarSweepStats(row, "SRS_NMSE_dB", srsT, "NMSE_dB");
+    row = localApplyScalarSweepStats(row, "SRS_NMSE_dB", srsT, "NMSE_dB", cfg);
     rows(i) = row;
 end
 
@@ -13855,7 +13855,9 @@ cfgCampaign.Seeds = double(sixgr.util.structGet(runtimeCfg, "Seeds", ...
 cfgCampaign.SeedBase = double(sixgr.util.structGet(runtimeCfg, "SeedBase", ...
     sixgr.util.structGet(runtimeCfg, "seed_base", sixgr.util.structGet(sweepPlan, "FixedLinkSeed", 730001))));
 cfgCampaign.ConfidenceLevel = double(sixgr.util.structGet(runtimeCfg, "ConfidenceLevel", ...
-    sixgr.util.structGet(runtimeCfg, "confidence_level", sixgr.util.structGet(sweepPlan, "FixedLinkConfidenceLevel", 0.95))));
+    sixgr.util.structGet(runtimeCfg, "confidence_level", ...
+    sixgr.util.structGet(sweepPlan,"FixedLinkConfidenceLevel", ...
+    localConfiguredConfidenceLevel(cfg)))));
 end
 
 function tf = localFixedLinkCampaignEvidenceOk(campaign)
@@ -14012,7 +14014,7 @@ while true
 
     completed = max(0, round(double(sixgr.util.structGet(stats, "TrialCount", 0))));
     if completed >= double(sweepPlan.FixedLinkMaxTrials)
-        stats.StopReason = "max_trials_reached";
+        stats.StopReason = "MAX_TRIALS_REACHED_INCOMPLETE";
         stats.Incomplete = localFixedLinkIncomplete(stats, sweepPlan, stats.StopReason);
         return;
     end
@@ -14106,7 +14108,9 @@ if ismember("FixedLinkDropIndex", string(Te.Properties.VariableNames))
         [g, ~] = findgroups(drops(valid));
         dropFail = splitapply(@mean, double(failMask(valid)), g);
         stats.DropCount = double(numel(dropFail));
-        [stats.BLER_ClusterCI_Low, stats.BLER_ClusterCI_High] = localMeanConfidenceInterval(dropFail);
+        [stats.BLER_ClusterCI_Low, stats.BLER_ClusterCI_High] = ...
+            localMeanConfidenceInterval(dropFail, ...
+            sweepPlan.FixedLinkConfidenceLevel);
     end
 end
 end
@@ -14118,11 +14122,11 @@ ciWidth = double(sixgr.util.structGet(stats, "BLER_CI_Width", inf));
 if trialCount < double(sweepPlan.FixedLinkMinTrials)
     stopReason = "continue";
 elseif isfinite(double(sweepPlan.FixedLinkErrorTarget)) && failureCount >= double(sweepPlan.FixedLinkErrorTarget)
-    stopReason = "error_target_reached";
+    stopReason = "MIN_ERRORS_AND_CI_MET";
 elseif isfinite(double(sweepPlan.FixedLinkCIWidthTarget)) && isfinite(ciWidth) && ciWidth <= double(sweepPlan.FixedLinkCIWidthTarget)
-    stopReason = "ci_width_target_reached";
+    stopReason = "MIN_ERRORS_AND_CI_MET";
 elseif trialCount >= double(sweepPlan.FixedLinkMaxTrials)
-    stopReason = "max_trials_reached";
+    stopReason = "MAX_TRIALS_REACHED_INCOMPLETE";
 else
     stopReason = "continue";
 end
@@ -14130,7 +14134,7 @@ end
 
 function tf = localFixedLinkIncomplete(stats, sweepPlan, stopReason)
 tf = false;
-if string(stopReason) ~= "max_trials_reached"
+if string(stopReason) ~= "MAX_TRIALS_REACHED_INCOMPLETE"
     return;
 end
 failureCount = double(sixgr.util.structGet(stats, "FailureCount", 0));
@@ -14564,10 +14568,15 @@ offeredBits = double(Te.OfferedBits);
 offeredBits(~isfinite(offeredBits)) = 0;
 stats.BER = sum(bitErr) / max(sum(bits), 1);
 stats.BLER = sum(failMask) / max(height(Te), 1);
-[stats.BER_CI_Low, stats.BER_CI_High] = localWilsonInterval(sum(bitErr), sum(bits));
-[stats.BLER_CI_Low, stats.BLER_CI_High] = localWilsonInterval(sum(failMask), height(Te));
+confidenceLevel = localConfiguredConfidenceLevel(cfg);
+[stats.BER_CI_Low, stats.BER_CI_High] = localWilsonInterval( ...
+    sum(bitErr),sum(bits),confidenceLevel);
+[stats.BLER_CI_Low, stats.BLER_CI_High] = localWilsonInterval( ...
+    sum(failMask),height(Te),confidenceLevel);
 stats.Throughput_Mbps = localAggregateThroughputFromTrials(Te, cfg);
-[stats.Throughput_CI_Low, stats.Throughput_CI_High] = localMeanConfidenceInterval(localTrialThroughputSamples(Te, cfg));
+[stats.Throughput_CI_Low, stats.Throughput_CI_High] = ...
+    localMeanConfidenceInterval(localTrialThroughputSamples(Te,cfg), ...
+    confidenceLevel);
 stats.OfferedThroughput_Mbps = localAggregateBitRateFromTrials(Te, cfg, "OfferedBits");
 stats.Goodput_Mbps = localAggregateBitRateFromTrials(Te, cfg, "GoodBits");
 stats.CodeBlockBLER = localRatioFromColumns(Te, "CodeBlockErrors", "CodeBlockCount");
@@ -14801,7 +14810,7 @@ if ~(isfinite(duration_s) && duration_s > 0)
 end
 end
 
-function [lo, hi] = localWilsonInterval(k, n)
+function [lo, hi] = localWilsonInterval(k,n,confidenceLevel)
 lo = NaN;
 hi = NaN;
 n = double(n);
@@ -14809,16 +14818,13 @@ k = double(k);
 if ~(isfinite(n) && n > 0 && isfinite(k) && k >= 0)
     return;
 end
-z = 1.95996398454005;
-p = min(max(k / n, 0), 1);
-den = 1 + (z^2 / n);
-center = (p + z^2 / (2 * n)) / den;
-spread = (z / den) * sqrt((p * (1 - p) / n) + (z^2 / (4 * n^2)));
-lo = max(0, center - spread);
-hi = min(1, center + spread);
+interval=sixgr.validation.BinomialIntervalEngine.wilson( ...
+    k,n,confidenceLevel);
+lo=interval.Lower;
+hi=interval.Upper;
 end
 
-function [lo, hi] = localMeanConfidenceInterval(x)
+function [lo, hi] = localMeanConfidenceInterval(x,confidenceLevel)
 lo = NaN;
 hi = NaN;
 x = double(x(:));
@@ -14832,7 +14838,12 @@ if numel(x) < 2
     hi = m;
     return;
 end
-z = 1.95996398454005;
+if ~(isnumeric(confidenceLevel)&&isscalar(confidenceLevel)&& ...
+        isfinite(confidenceLevel)&&confidenceLevel>0&&confidenceLevel<1)
+    error("sixgr:validation:InvalidConfidenceLevel", ...
+        "Mean confidence interval requires an explicit confidence level.");
+end
+z=-sqrt(2)*erfcinv(2*((1+double(confidenceLevel))/2));
 se = std(x, 0, "omitnan") / sqrt(numel(x));
 lo = m - z * se;
 hi = m + z * se;
@@ -14896,7 +14907,7 @@ row.(char(prefix + "_DecoderComplexityUnits")) = double(sixgr.util.structGet(sta
 row.(char(prefix + "_NormalizedDecoderComplexity")) = double(sixgr.util.structGet(stats, "NormalizedDecoderComplexity", NaN));
 end
 
-function row = localApplyScalarSweepStats(row, fieldPrefix, trialT, valueVar)
+function row = localApplyScalarSweepStats(row,fieldPrefix,trialT,valueVar,cfg)
 trialT = localEffectiveTrialRows(trialT);
 vals = [];
 if istable(trialT) && ~isempty(trialT) && ismember(valueVar, string(trialT.Properties.VariableNames))
@@ -14907,7 +14918,7 @@ base = string(fieldPrefix);
 if isempty(vals)
     return;
 end
-[lo, hi] = localMeanConfidenceInterval(vals);
+[lo, hi] = localMeanConfidenceInterval(vals,localConfiguredConfidenceLevel(cfg));
 row.(char(base)) = mean(vals, "omitnan");
 ciBase = base;
 countName = base;
@@ -15165,9 +15176,11 @@ plan.FixedLinkCIWidthTarget = double(sixgr.util.structGet(opt, "LinkFixedLinkCIW
 if ~(isfinite(plan.FixedLinkCIWidthTarget) && plan.FixedLinkCIWidthTarget >= 0)
     plan.FixedLinkCIWidthTarget = inf;
 end
-plan.FixedLinkConfidenceLevel = double(sixgr.util.structGet(opt, "LinkFixedLinkConfidenceLevel", 0.95));
+defaultConfidenceLevel=localConfiguredConfidenceLevel(struct());
+plan.FixedLinkConfidenceLevel = double(sixgr.util.structGet(opt, ...
+    "LinkFixedLinkConfidenceLevel",defaultConfidenceLevel));
 if ~(isfinite(plan.FixedLinkConfidenceLevel) && plan.FixedLinkConfidenceLevel > 0 && plan.FixedLinkConfidenceLevel < 1)
-    plan.FixedLinkConfidenceLevel = 0.95;
+    plan.FixedLinkConfidenceLevel = defaultConfidenceLevel;
 end
 plan.FixedLinkSeed = double(sixgr.util.structGet(opt, "LinkFixedLinkSeed", 730001));
 if ~(isfinite(plan.FixedLinkSeed) && plan.FixedLinkSeed >= 0)
@@ -16752,5 +16765,19 @@ elseif iscellstr(v)
     vals = string(v);
 else
     vals = string(v);
+end
+end
+
+function confidenceLevel=localConfiguredConfidenceLevel(cfg)
+profileID=string(sixgr.util.structGet(cfg, ...
+    "validation.profile_id","nr_rel18_phy_lls_strict"));
+profile=sixgr.validation.ValidationCapabilityProfile.plan(profileID).toStruct();
+confidenceLevel=double(sixgr.util.structGet(cfg, ...
+    "validation.fixed_link_campaign.confidence_level", ...
+    profile.NominalConfidenceLevel));
+if ~(isscalar(confidenceLevel)&&isfinite(confidenceLevel)&& ...
+        confidenceLevel>0&&confidenceLevel<1)
+    error("sixgr:validation:InvalidConfidenceLevel", ...
+        "Configured validation confidence level must be in (0,1).");
 end
 end

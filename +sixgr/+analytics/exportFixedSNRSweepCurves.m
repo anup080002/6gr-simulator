@@ -16,6 +16,7 @@ layout = sixgr.report.resultLayout(rootRunFolder);
 writeArtifacts = logical(sixgr.util.structGet(opt, "WriteArtifacts", true));
 
 summary = localAsTable(sixgr.util.structGet(campaign, "Summary", table()));
+referenceSummary = localAsTable(sixgr.util.structGet(campaign, "ReferenceSummary", table()));
 taskPlan = localAsTable(sixgr.util.structGet(campaign, "TaskPlan", table()));
 dlTrials = localNormalizeTrialTable( ...
     localAsTable(sixgr.util.structGet(campaign, "DLTrials", table())), "DL", summary);
@@ -34,7 +35,10 @@ if writeArtifacts
 
     localWriteTable(fullfile(layout.AirInterfaceCSVDir, "lls_fixed_link_campaign.csv"), summary);
     localWriteTable(fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"), summary);
-    localWriteTable(fullfile(layout.AirInterfaceCSVDir, "lls_reference_snr_sweep.csv"), summary);
+    if ~isempty(referenceSummary)
+        localWriteTable(fullfile(layout.AirInterfaceCSVDir, ...
+            "lls_reference_snr_sweep.csv"), referenceSummary);
+    end
     localWriteTable(fullfile(layout.AirInterfaceCSVDir, "fixed_link_campaign_task_plan.csv"), taskPlan);
     localWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_fixed_link_campaign_trials.csv"), dlTrials);
     localWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_fixed_link_campaign_trials.csv"), ulTrials);

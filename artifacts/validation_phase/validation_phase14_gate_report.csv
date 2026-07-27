@@ -1,0 +1,7 @@
+GateName,Required,Status,FailureReason,EvidenceArtifact
+"IndependentVectorPack",1,"PASS","","C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\vectors\validation\verify_validation_vector_pack.py"
+"CanonicalMATLABTests",1,"PASS","","tests/testValidationPhase14.m"
+"IndependentOracleArtifacts",1,"FAIL","missing_independent_oracle_artifacts=32","validation_oracle_registry_vectors.csv"
+"FreshCanonicalScenarios",1,"FAIL","fresh_canonical_runtime_scenarios_not_supplied",""
+"ContractedArtifacts",1,"FAIL","contracted_artifacts_with_runtime_lineage_not_generated",""
+"PublicationGate",1,"FAIL","publication_gate_requires_all_prior_runtime_gates",""

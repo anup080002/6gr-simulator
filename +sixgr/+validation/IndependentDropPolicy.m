@@ -1,0 +1,36 @@
+classdef IndependentDropPolicy
+    %INDEPENDENTDROPPOLICY Independent drop/seed qualification.
+    methods (Static)
+        function result = validate(input,minimumDrops)
+            required = ["IndependentDropID","Seed","TrialCount","ErrorCount"];
+            if ~istable(input) || any(~ismember(required, ...
+                    string(input.Properties.VariableNames)))
+                error("sixgr:validation:SchemaMissingColumn", ...
+                    "Independent-drop input is missing required columns.");
+            end
+            drops = string(input.IndependentDropID);
+            seeds = double(input.Seed);
+            duplicateDropCount = numel(drops)-numel(unique(drops));
+            duplicateSeedCount = numel(seeds)-numel(unique(seeds));
+            if duplicateDropCount > 0
+                error("sixgr:validation:SchemaDuplicateKey", ...
+                    "IndependentDropID values must be unique.");
+            end
+            if duplicateSeedCount > 0
+                error("sixgr:validation:TaskSeedCollision", ...
+                    "Independent drops must use unique seeds.");
+            end
+            if numel(unique(drops)) < double(minimumDrops)
+                error("sixgr:validation:IncompleteMandatoryPoint", ...
+                    "Only %d independent drops are present; %d are required.", ...
+                    numel(unique(drops)),minimumDrops);
+            end
+            result = struct("InputRows",height(input), ...
+                "UniqueDropCount",numel(unique(drops)), ...
+                "UniqueSeedCount",numel(unique(seeds)), ...
+                "DuplicateDropCount",duplicateDropCount, ...
+                "DuplicateSeedCount",duplicateSeedCount, ...
+                "Status","PASS");
+        end
+    end
+end
