@@ -1,0 +1,11 @@
+CaseID,Quota,ConfiguredLimit,AttemptedValue,Expected,StateMutationOnReject
+QUOTA-001,per_user_active_runs,2,3,reject_429,false
+QUOTA-002,global_active_runs,8,9,queue_or_reject,false
+QUOTA-003,yaml_bytes,2097152,2097153,reject_413,false
+QUOTA-004,artifact_preview_rows,1000,1001,truncate_with_metadata,false
+QUOTA-005,artifact_download_bytes,2147483648,2147483649,stream_or_reject_policy,false
+QUOTA-006,run_wall_clock_s,14400,14401,terminate_and_mark_quota,false
+QUOTA-007,run_disk_bytes,107374182400,107374182401,stop_and_mark_quota,false
+QUOTA-008,login_attempts_account,10,11,rate_limit,false
+QUOTA-009,websocket_messages_per_minute,120,121,rate_limit,false
+QUOTA-010,compare_run_count,5,6,reject_422,false

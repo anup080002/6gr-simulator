@@ -1,0 +1,23 @@
+ImageFile,SourceCSV,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
+validation_campaign_state_map.png,validation_point_status.csv,Campaign point-state map,Operating point,Point status,900,600,1,1,5
+validation_stop_reason_distribution.png,validation_stop_reason_ledger.csv,Stop-reason distribution,Stop reason,Count,900,600,1,1,5
+validation_interval_width_vs_trials.png,validation_binomial_intervals.csv,Confidence interval width versus trials,Trial count,Interval width,900,600,1,1,5
+validation_zero_error_upper_bound.png,validation_zero_error_bounds.csv,Zero-error one-sided upper bound,Trial count,Upper bound,900,600,1,1,5
+validation_sequential_stopping_trace.png,validation_sequential_decisions.csv,Sequential stopping trace,Look / trials,Estimate and bounds,900,600,1,1,5
+validation_multiseed_aggregation.png,validation_multiseed_aggregation.csv,Independent-drop aggregation,Independent drop,Error rate,900,600,1,1,5
+validation_point_key_join.png,validation_operating_point_join.csv,Operating-point join coverage,Point key,Join status,900,600,1,1,5
+validation_curve_comparison.png,validation_curve_comparison.csv,DUT versus independent reference curve,SNR (dB),BLER,900,600,1,1,5
+validation_bler_difference_ci.png,validation_curve_comparison.csv,BLER difference confidence intervals,Operating point,DUT minus reference,900,600,1,1,5
+validation_oracle_independence.png,validation_oracle_registry.csv,Oracle independence matrix,Oracle type,Qualifying count,900,600,1,1,5
+validation_provenance_dag.png,validation_provenance_edges.csv,Evidence provenance graph,Evidence node,Dependency,900,600,1,1,5
+validation_evidence_source_breakdown.png,validation_runtime_evidence.csv,Runtime evidence provenance,Provenance class,Field count,900,600,1,1,5
+validation_measured_sinr_reconciliation.png,validation_measured_sinr.csv,Measured SINR reconciliation,Configured SNR (dB),Measured SINR (dB),900,600,1,1,5
+validation_time_window_timeline.png,validation_kpi_sample_ledger.csv,Validation time-window timeline,Absolute time,Phase / KPI inclusion,900,600,1,1,5
+validation_task_seed_partition.png,validation_seed_ledger.csv,Task and seed partition,Task,Seed / substream,900,600,1,1,5
+validation_parallel_merge_determinism.png,validation_task_merge.csv,Parallel merge determinism,Execution order,Merged result difference,900,600,1,1,5
+validation_artifact_coverage.png,validation_artifact_audit.csv,Required artifact coverage,Artifact,Status,900,600,1,1,5
+validation_run_class_isolation.png,validation_artifact_requirements.csv,Run-class evidence isolation,Run class,Evidence class,900,600,1,1,5
+validation_release_scenario_matrix.png,validation_canonical_scenarios.csv,Canonical release scenario matrix,Scenario,Runtime status,900,600,1,1,5
+validation_matlab_test_matrix.png,validation_matlab_test_execution.csv,MATLAB test execution matrix,Test suite,Result,900,600,1,1,5
+validation_publication_gate_waterfall.png,validation_publication_gates.csv,Publication gate waterfall,Gate,Status,900,600,1,1,5
+validation_fail_closed_mutations.png,validation_negative_tests.csv,Fail-closed mutation coverage,Mutation,Rejected cases,900,600,1,1,5

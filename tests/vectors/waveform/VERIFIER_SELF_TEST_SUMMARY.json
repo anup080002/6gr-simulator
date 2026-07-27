@@ -1,0 +1,18 @@
+{
+  "BaseValid": {
+    "ExitCode": 0,
+    "OutputTail": "PASS png_audit:waveform_capability_matrix.png\nPASS source_hash:waveform_capability_matrix.png\nPASS png_hash:waveform_capability_matrix.png\nPASS png_metadata:waveform_capability_matrix.png\nPASS png_title:waveform_capability_matrix.png\nPASS png_semantics:waveform_capability_matrix.png\n{\n  \"Checks\": 335,\n  \"Passed\": 335,\n  \"Failed\": 0,\n  \"Failures\": []\n}"
+  },
+  "BaseCorrupt": {
+    "ExitCode": 2,
+    "Detected": true
+  },
+  "ImpactValid": {
+    "ExitCode": 0,
+    "OutputTail": "PASS png_nonblank:waveform_impact_effect_forest.png\nPASS png_audit:waveform_impact_effect_forest.png\nPASS source_hash:waveform_impact_effect_forest.png\nPASS png_hash:waveform_impact_effect_forest.png\nPASS png_title:waveform_impact_effect_forest.png\nPASS png_semantics:waveform_impact_effect_forest.png\n{\n  \"Checks\": 306,\n  \"Passed\": 306,\n  \"Failed\": 0,\n  \"Failures\": []\n}"
+  },
+  "ImpactCorrupt": {
+    "ExitCode": 2,
+    "Detected": true
+  }
+}

@@ -1,0 +1,23 @@
+DependencyWave,Category,Families
+A,Aggregation,3
+A,Comparison,4
+A,Curve sanity,1
+A,Enums,1
+A,Evidence,3
+A,Intervals,2
+A,Join,4
+A,Oracle,4
+A,Parallel,5
+A,Provenance,3
+A,Run class,1
+A,Schema,5
+A,Stopping,6
+A,Time windows,4
+B,Artifacts,4
+B,Calibration,2
+B,Claims,1
+B,Configuration,2
+B,Release,2
+B,Runtime,2
+B,Toolchain,4
+C,Publication,1

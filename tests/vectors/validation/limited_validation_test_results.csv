@@ -1,0 +1,16 @@
+CheckID,Category,Status,Observed,Expected,Details
+PACK-PY-COMPILE,PACK,PASS,3 verifier scripts compile,All compile,
+PACK-VECTOR-VERIFIER,PACK,PASS,"811 passed, 0 failed",0 failures,
+PACK-BASE-VERIFIER,PACK,PASS,Valid synthetic set exit 0; corrupted hash exit 2,0 then 2,
+PACK-IMPACT-VERIFIER,PACK,PASS,Valid synthetic set exit 0; corrupted hash exit 2,0 then 2,
+PACK-IMPACT-MATRIX,PACK,PASS,"64 families, 768 experiments, 384 pairs, 96 rules",Exact counts,
+CURRENT-SOURCE-REMEDIATION,CURRENT_SIMULATOR,FAIL,48 of 48 targeted defect signatures/absence checks detected,0 open targeted defects,See current_validation_static_audit.csv
+CURRENT-REQUIRED-ARTIFACTS,CURRENT_SIMULATOR,FAIL,0 of 100 contracted artifacts present,100 of 100,See existing_validation_artifact_presence_audit.csv
+CURRENT-YAML-SOURCE,CURRENT_SIMULATOR,FAIL,1 source YAML failure,0,lls_result_output_catalog.yaml has unquoted colons
+CURRENT-YAML-GENERATED,CURRENT_SIMULATOR,WARN,2 generated/baseline YAML failures,0,Resolved-config artifacts are also invalid
+CURRENT-PYTEST-COLLECTION,CURRENT_SIMULATOR,FAIL,"17 tests collected, 40 collection errors",Collection succeeds without MATLAB import side effect,Import-time R2024a executable check and tests package import failures
+CURRENT-CSV-INVENTORY,CURRENT_SIMULATOR,WARN,225 CSVs; 224 rectangular; 1 malformed,All rectangular,One phase7_truth_gates.csv is malformed
+CURRENT-PNG-INTEGRITY,CURRENT_SIMULATOR,PASS,40 decoded; 40 nonblank,Decode/nonblank,None are contracted validation-specific PNGs
+MATLAB-PRODUCTION-RUNTIME,RUNTIME,BLOCKED,MATLAB executable not found,Pinned MATLAB/Toolbox available,No production MATLAB validation was executed
+OCTAVE-RUNTIME,RUNTIME,BLOCKED,Octave executable not found,Optional alternate runtime,
+EXISTING-MATLAB-TESTS,RUNTIME,BLOCKED,"493 MATLAB tests inventoried, not executed",All required tests executed,

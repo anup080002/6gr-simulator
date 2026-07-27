@@ -1,0 +1,23 @@
+ErrorID,Meaning,WaveformGenerated,StateMutation
+WAVEFORM:UnsupportedProfile,Requested waveform profile is not executable.,false,false
+WAVEFORM:NormativeResearchMix,Research feature requested under a normative strict profile.,false,false
+WAVEFORM:InvalidOFDMParameters,Nfft/sample-rate/CP/numerology tuple is invalid.,false,false
+WAVEFORM:OFDMInfoUnavailable,Required OFDM metadata could not be resolved.,false,false
+WAVEFORM:InvalidSubcarrierMap,"RE-to-FFT-bin map is out of range, duplicate or inconsistent.",false,false
+WAVEFORM:WindowingMustBeExplicit,Nonzero windowing was not explicitly selected.,false,false
+WAVEFORM:WindowOverlapStateMissing,Stateful WOLA overlap state is missing or stale.,false,false
+WAVEFORM:StreamDiscontinuity,Chunk/sample/phase continuity check failed.,false,false
+WAVEFORM:TransformPrecodingOwnership,Transform precoding is not owned by the decoded assignment.,false,false
+WAVEFORM:TransformPrecodingLayerCount,Strict transform-precoded PUSCH requires one layer.,false,false
+WAVEFORM:InvalidDFTSize,DFT-spreading size is not permitted by the selected profile.,false,false
+WAVEFORM:NoncontiguousTransformAllocation,Strict transform precoding requires the selected contiguous allocation.,false,false
+WAVEFORM:UnsupportedModulation,Modulation is not supported by the selected waveform profile.,false,false
+WAVEFORM:Pi2BPSKContextMissing,Required pi/2-BPSK procedure context is missing.,false,false
+WAVEFORM:MultiNumerologyClockMismatch,Component sample clocks cannot be composed exactly.,false,false
+WAVEFORM:CarrierFrequencyOverlap,Component carriers overlap illegally under the declared profile.,false,false
+WAVEFORM:PowerLedgerMismatch,Waveform power/energy reconciliation exceeded tolerance.,false,false
+WAVEFORM:SpectralConfigurationInvalid,PSD/RBW/integration-band configuration is invalid.,false,false
+WAVEFORM:PAPRInsufficientOversampling,PAPR result has not converged at the required oversampling.,false,false
+WAVEFORM:IndependentOracleMissing,Enabled tuple lacks an independent oracle.,false,false
+WAVEFORM:UnsupportedResearchCandidate,Research candidate has no complete TX/RX definition.,false,false
+WAVEFORM:NonFiniteSamples,Waveform contains nonfinite samples.,false,false

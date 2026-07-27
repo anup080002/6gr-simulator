@@ -1,0 +1,47 @@
+top_level_order:
+  - canonical_control
+  - protocol
+  - mac_phase08
+sections:
+  canonical_control:
+    required: false
+    parameters:
+      protocol_stack: {required: false, type: struct}
+  protocol:
+    required: false
+    parameters:
+      enabled: {required: false, type: boolean}
+      strict: {required: false, type: boolean}
+      profile_id: {required: false, type: string}
+      configuration_epoch: {required: false, type: integer, min: 1}
+      vector_root: {required: false, type: string}
+      rlc: {required: false, type: struct}
+      pdcp: {required: false, type: struct}
+      sdap: {required: false, type: struct}
+      rrc: {required: false, type: struct}
+      traffic: {required: false, type: struct}
+  mac_phase08:
+    required: false
+    parameters:
+      enabled: {required: false, type: boolean}
+      profile_id: {required: false, type: string}
+      specification_profile: {required: false, type: string}
+      capability_class: {required: false, type: string}
+      configuration_epoch: {required: false, type: integer, min: 1}
+      harq: {required: false, type: struct}
+      timing: {required: false, type: struct}
+      scheduler: {required: false, type: struct}
+      bsr: {required: false, type: struct}
+      phr: {required: false, type: struct}
+      sr: {required: false, type: struct}
+      lcp: {required: false, type: struct}
+      pdu: {required: false, type: struct}
+      timing_advance: {required: false, type: struct}
+      persistent_grants: {required: false, type: struct}
+      lineage: {required: false, type: struct}
+      harq_roundtrip_slots: {required: false, type: number, min: 0}
+      dl_to_ul_guard_time_us: {required: false, type: number, min: 0}
+      timing_advance_max_us: {required: false, type: number, min: 0}
+      n1_pdsch_processing_time_symbols: {required: false, type: number, min: 0}
+      n2_pusch_preparation_time_symbols: {required: false, type: number, min: 0}
+      capability_profile_id: {required: false, type: string}

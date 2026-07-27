@@ -1,0 +1,97 @@
+RuleID,FamilyID,RuleClass,Metric,Requirement,FailureStatus
+RULE-F01,F01,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F02,F02,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F03,F03,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F04,F04,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F05,F05,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F06,F06,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F07,F07,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F08,F08,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F09,F09,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F10,F10,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F11,F11,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F12,F12,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F13,F13,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F14,F14,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F15,F15,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F16,F16,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F17,F17,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F18,F18,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F19,F19,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F20,F20,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F21,F21,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F22,F22,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F23,F23,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F24,F24,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F25,F25,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F26,F26,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F27,F27,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F28,F28,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F29,F29,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F30,F30,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F31,F31,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F32,F32,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F33,F33,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F34,F34,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F35,F35,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F36,F36,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F37,F37,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F38,F38,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F39,F39,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F40,F40,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F41,F41,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F42,F42,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F43,F43,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F44,F44,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F45,F45,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F46,F46,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F47,F47,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F48,F48,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F49,F49,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F50,F50,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F51,F51,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F52,F52,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F53,F53,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F54,F54,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F55,F55,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F56,F56,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F57,F57,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F58,F58,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F59,F59,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F60,F60,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F61,F61,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F62,F62,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F63,F63,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+RULE-F64,F64,HARD_OR_STATISTICAL,family-specific primary metrics,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,FAIL
+GLOBAL-01,GLOBAL,HARD,all 768 experiments executed,PASS,FAIL
+GLOBAL-02,GLOBAL,HARD,all 384 pairs complete,PASS,FAIL
+GLOBAL-03,GLOBAL,HARD,same seed and payload within pair,PASS,FAIL
+GLOBAL-04,GLOBAL,HARD,no configured waveform oracle,PASS,FAIL
+GLOBAL-05,GLOBAL,HARD,no implicit windowing,PASS,FAIL
+GLOBAL-06,GLOBAL,HARD,no nextpow2 fallback,PASS,FAIL
+GLOBAL-07,GLOBAL,HARD,no reduced low-PAPR IFFT,PASS,FAIL
+GLOBAL-08,GLOBAL,HARD,single-layer strict DFT-s-OFDM,PASS,FAIL
+GLOBAL-09,GLOBAL,HARD,valid DFT sizes only,PASS,FAIL
+GLOBAL-10,GLOBAL,HARD,exact RE-to-bin ownership,PASS,FAIL
+GLOBAL-11,GLOBAL,HARD,stream chunk equivalence,PASS,FAIL
+GLOBAL-12,GLOBAL,HARD,phase continuity,PASS,FAIL
+GLOBAL-13,GLOBAL,HARD,WOLA overlap conservation,PASS,FAIL
+GLOBAL-14,GLOBAL,HARD,Parseval closure,PASS,FAIL
+GLOBAL-15,GLOBAL,HARD,power error <=0.01 dB,PASS,FAIL
+GLOBAL-16,GLOBAL,HARD,PAPR oversampling convergence,PASS,FAIL
+GLOBAL-17,GLOBAL,HARD,spectral time/frequency power closure,PASS,FAIL
+GLOBAL-18,GLOBAL,HARD,multi-numerology sample count closure,PASS,FAIL
+GLOBAL-19,GLOBAL,HARD,component-carrier frequency closure,PASS,FAIL
+GLOBAL-20,GLOBAL,HARD,composite sample sum closure,PASS,FAIL
+GLOBAL-21,GLOBAL,HARD,negative cases fail closed,PASS,FAIL
+GLOBAL-22,GLOBAL,HARD,independent vectors zero mismatch,PASS,FAIL
+GLOBAL-23,GLOBAL,HARD,no skipped mandatory tests,PASS,FAIL
+GLOBAL-24,GLOBAL,HARD,no blocked mandatory tests,PASS,FAIL
+GLOBAL-25,GLOBAL,HARD,no incomplete mandatory points,PASS,FAIL
+GLOBAL-26,GLOBAL,HARD,all base CSVs present,PASS,FAIL
+GLOBAL-27,GLOBAL,HARD,all base PNGs present,PASS,FAIL
+GLOBAL-28,GLOBAL,HARD,all impact CSVs present,PASS,FAIL
+GLOBAL-29,GLOBAL,HARD,all impact PNGs present,PASS,FAIL
+GLOBAL-30,GLOBAL,HARD,base verifier exit zero,PASS,FAIL
+GLOBAL-31,GLOBAL,HARD,impact verifier exit zero,PASS,FAIL
+GLOBAL-32,GLOBAL,HARD,full repository regression passes,PASS,FAIL

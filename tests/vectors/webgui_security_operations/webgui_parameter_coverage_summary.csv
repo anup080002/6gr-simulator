@@ -1,0 +1,16 @@
+DashboardSection,CatalogParameterCount,CurrentNewGUIMappedCount,RequiredMappedCount,TargetCoveragePct,CurrentCoveragePct
+Advanced_Other,596,0,596,100.0,0.0
+Channel_Geometry_Mobility,189,0,189,100.0,0.0
+Frame_Grid_Numerology,77,0,77,100.0,0.0
+Initial_Access,178,0,178,100.0,0.0
+MAC_HARQ_Scheduler,62,0,62,100.0,0.0
+MIMO_CSI_Beam,122,0,122,100.0,0.0
+PDCCH_DCI,191,0,191,100.0,0.0
+PDSCH_DL_SCH,95,0,95,100.0,0.0
+PUCCH_UCI,15,0,15,100.0,0.0
+PUSCH_UL_SCH,58,0,58,100.0,0.0
+Protocol_Traffic,47,0,47,100.0,0.0
+RF_Front_End,72,0,72,100.0,0.0
+Reference_Signals_Link_Adaptation,273,0,273,100.0,0.0
+Validation_Outputs,94,0,94,100.0,0.0
+Waveform,89,0,89,100.0,0.0

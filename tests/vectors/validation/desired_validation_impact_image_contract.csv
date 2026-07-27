@@ -1,0 +1,31 @@
+ImageFile,SourceCSV,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
+validation_impact_stop_tokens.png,validation_impact_summary.csv,Stop-token migration,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_incomplete_points.png,validation_impact_summary.csv,Incomplete-point policy,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_zero_error.png,validation_impact_summary.csv,Zero-error censor policy,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_confidence_levels.png,validation_impact_summary.csv,Confidence-level sensitivity,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_interval_methods.png,validation_impact_summary.csv,Interval-method comparison,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_sequential_coverage.png,validation_impact_summary.csv,Sequential coverage,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_trial_requirements.png,validation_impact_summary.csv,Minimum trial and error requirements,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_high_snr_plateau.png,validation_impact_summary.csv,High-SNR plateau policy,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_drop_count.png,validation_impact_summary.csv,Independent-drop count,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_duplicate_seed.png,validation_impact_summary.csv,Duplicate-seed detection,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_point_key.png,validation_impact_summary.csv,Operating-point key breadth,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_missing_extra_points.png,validation_impact_summary.csv,Missing and extra points,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_curve_difference.png,validation_impact_summary.csv,Curve-difference intervals,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_noninferiority.png,validation_impact_summary.csv,Non-inferiority margins,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_equivalence.png,validation_impact_summary.csv,Equivalence margins,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_multiplicity.png,validation_impact_summary.csv,Multiplicity correction,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_reference_independence.png,validation_impact_summary.csv,Reference independence,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_oracle_types.png,validation_impact_summary.csv,Oracle qualification,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_provenance.png,validation_impact_summary.csv,Evidence provenance,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_measured_sinr.png,validation_impact_summary.csv,Measured-SINR authority,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_schema_mutations.png,validation_impact_summary.csv,Schema mutation failures,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_time_windows.png,validation_impact_summary.csv,Time-window semantics,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_task_merge.png,validation_impact_summary.csv,Task merge determinism,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_runclass.png,validation_impact_summary.csv,Run-class isolation,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_artifact_surface.png,validation_impact_summary.csv,Artifact launch-surface parity,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_archive.png,validation_impact_summary.csv,Archive acceptance,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_toolchain.png,validation_impact_summary.csv,Toolchain execution evidence,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_yaml.png,validation_impact_summary.csv,All-source YAML validation,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_calibration.png,validation_impact_summary.csv,Calibration hold-out,Validation factor,Effect / status,900,600,1,1,10
+validation_impact_effect_forest.png,validation_impact_summary.csv,Validation-engine effect forest,Validation factor,Effect / status,900,600,1,1,10

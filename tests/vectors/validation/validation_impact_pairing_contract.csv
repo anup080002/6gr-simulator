@@ -1,0 +1,65 @@
+FamilyID,FamilyName,DependencyWave,PairsPerFamily,RequiredArms,SameSeedRequired,SamePayloadRequired,SameChannelNoiseRequired
+V01,Stop reason token migration,A,6,BASELINE;TREATMENT,True,True,True
+V02,Incomplete point policy,A,6,BASELINE;TREATMENT,True,True,True
+V03,Zero-error censor policy,A,6,BASELINE;TREATMENT,True,True,True
+V04,Confidence level,A,6,BASELINE;TREATMENT,True,True,True
+V05,Wilson versus exact interval,A,6,BASELINE;TREATMENT,True,True,True
+V06,Sequential alpha spending,A,6,BASELINE;TREATMENT,True,True,True
+V07,Minimum trial count,A,6,BASELINE;TREATMENT,True,True,True
+V08,Minimum error count,A,6,BASELINE;TREATMENT,True,True,True
+V09,Maximum trial cap,A,6,BASELINE;TREATMENT,True,True,True
+V10,High-SNR zero plateau,A,6,BASELINE;TREATMENT,True,True,True
+V11,Independent drop count,A,6,BASELINE;TREATMENT,True,True,True
+V12,Duplicate seed detection,A,6,BASELINE;TREATMENT,True,True,True
+V13,Hierarchical aggregation,A,6,BASELINE;TREATMENT,True,True,True
+V14,Operating-point key breadth,A,6,BASELINE;TREATMENT,True,True,True
+V15,Missing reference point,A,6,BASELINE;TREATMENT,True,True,True
+V16,Extra reference point,A,6,BASELINE;TREATMENT,True,True,True
+V17,Duplicate reference point,A,6,BASELINE;TREATMENT,True,True,True
+V18,Curve difference interval,A,6,BASELINE;TREATMENT,True,True,True
+V19,Non-inferiority margin,A,6,BASELINE;TREATMENT,True,True,True
+V20,Equivalence margin,A,6,BASELINE;TREATMENT,True,True,True
+V21,Multiplicity correction,A,6,BASELINE;TREATMENT,True,True,True
+V22,Reference independence,A,6,BASELINE;TREATMENT,True,True,True
+V23,Same-Toolbox oracle,A,6,BASELINE;TREATMENT,True,True,True
+V24,Frozen-vector hash,A,6,BASELINE;TREATMENT,True,True,True
+V25,Pure-math oracle,A,6,BASELINE;TREATMENT,True,True,True
+V26,Observed runtime evidence,A,6,BASELINE;TREATMENT,True,True,True
+V27,Derived-from-observed evidence,A,6,BASELINE;TREATMENT,True,True,True
+V28,Circular comparison,A,6,BASELINE;TREATMENT,True,True,True
+V29,Measured SINR presence,A,6,BASELINE;TREATMENT,True,True,True
+V30,Measured SINR sample count,A,6,BASELINE;TREATMENT,True,True,True
+V31,Measured SINR provenance,A,6,BASELINE;TREATMENT,True,True,True
+V32,Schema missing column,A,6,BASELINE;TREATMENT,True,True,True
+V33,NaN threshold,A,6,BASELINE;TREATMENT,True,True,True
+V34,Wrong field type,A,6,BASELINE;TREATMENT,True,True,True
+V35,Empty mandatory table,A,6,BASELINE;TREATMENT,True,True,True
+V36,Canonical aliases,A,6,BASELINE;TREATMENT,True,True,True
+V37,Warm-up exclusion,A,6,BASELINE;TREATMENT,True,True,True
+V38,Acquisition phase,A,6,BASELINE;TREATMENT,True,True,True
+V39,Tail-drain accounting,A,6,BASELINE;TREATMENT,True,True,True
+V40,KPI sample reconstruction,A,6,BASELINE;TREATMENT,True,True,True
+V41,Task ID determinism,A,6,BASELINE;TREATMENT,True,True,True
+V42,Retry idempotence,A,6,BASELINE;TREATMENT,True,True,True
+V43,Duplicate conflict,A,6,BASELINE;TREATMENT,True,True,True
+V44,Merge order,A,6,BASELINE;TREATMENT,True,True,True
+V45,Floating aggregation,A,6,BASELINE;TREATMENT,True,True,True
+V46,AWGN/geometry isolation,A,6,BASELINE;TREATMENT,True,True,True
+V47,Headless artifact gate,B,6,BASELINE;TREATMENT,True,True,True
+V48,Browser artifact gate,B,6,BASELINE;TREATMENT,True,True,True
+V49,Artifact hash,B,6,BASELINE;TREATMENT,True,True,True
+V50,Artifact freshness,B,6,BASELINE;TREATMENT,True,True,True
+V51,Canonical scenario smoke tier,B,6,BASELINE;TREATMENT,True,True,True
+V52,Canonical scenario full tier,B,6,BASELINE;TREATMENT,True,True,True
+V53,Archive clean workspace,B,6,BASELINE;TREATMENT,True,True,True
+V54,Source-tree hash,B,6,BASELINE;TREATMENT,True,True,True
+V55,MATLAB version pin,B,6,BASELINE;TREATMENT,True,True,True
+V56,Toolbox version pin,B,6,BASELINE;TREATMENT,True,True,True
+V57,Required test skip,B,6,BASELINE;TREATMENT,True,True,True
+V58,Python no-MATLAB collection,B,6,BASELINE;TREATMENT,True,True,True
+V59,All-source YAML parsing,B,6,BASELINE;TREATMENT,True,True,True
+V60,Duplicate YAML key,B,6,BASELINE;TREATMENT,True,True,True
+V61,Calibration exact key,B,6,BASELINE;TREATMENT,True,True,True
+V62,Hold-out prediction,B,6,BASELINE;TREATMENT,True,True,True
+V63,Internal anchor classification,B,6,BASELINE;TREATMENT,True,True,True
+V64,Publication gate end-to-end,C,6,BASELINE;TREATMENT,True,True,True

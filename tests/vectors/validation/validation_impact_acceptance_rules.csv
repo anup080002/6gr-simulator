@@ -1,0 +1,97 @@
+RuleID,RuleType,FamilyID,Rule,ExpectedResult
+R-001,HARD_CORRECTNESS,V01,Stop reason token migration: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-002,HARD_CORRECTNESS,V02,Incomplete point policy: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-003,HARD_CORRECTNESS,V03,Zero-error censor policy: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-004,HARD_CORRECTNESS,V04,Confidence level: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-005,HARD_CORRECTNESS,V05,Wilson versus exact interval: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-006,HARD_CORRECTNESS,V06,Sequential alpha spending: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-007,HARD_CORRECTNESS,V07,Minimum trial count: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-008,HARD_CORRECTNESS,V08,Minimum error count: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-009,HARD_CORRECTNESS,V09,Maximum trial cap: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-010,HARD_CORRECTNESS,V10,High-SNR zero plateau: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-011,HARD_CORRECTNESS,V11,Independent drop count: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-012,HARD_CORRECTNESS,V12,Duplicate seed detection: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-013,HARD_CORRECTNESS,V13,Hierarchical aggregation: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-014,HARD_CORRECTNESS,V14,Operating-point key breadth: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-015,HARD_CORRECTNESS,V15,Missing reference point: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-016,HARD_CORRECTNESS,V16,Extra reference point: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-017,HARD_CORRECTNESS,V17,Duplicate reference point: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-018,HARD_CORRECTNESS,V18,Curve difference interval: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-019,HARD_CORRECTNESS,V19,Non-inferiority margin: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-020,HARD_CORRECTNESS,V20,Equivalence margin: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-021,HARD_CORRECTNESS,V21,Multiplicity correction: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-022,HARD_CORRECTNESS,V22,Reference independence: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-023,HARD_CORRECTNESS,V23,Same-Toolbox oracle: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-024,HARD_CORRECTNESS,V24,Frozen-vector hash: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-025,HARD_CORRECTNESS,V25,Pure-math oracle: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-026,HARD_CORRECTNESS,V26,Observed runtime evidence: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-027,HARD_CORRECTNESS,V27,Derived-from-observed evidence: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-028,HARD_CORRECTNESS,V28,Circular comparison: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-029,HARD_CORRECTNESS,V29,Measured SINR presence: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-030,HARD_CORRECTNESS,V30,Measured SINR sample count: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-031,HARD_CORRECTNESS,V31,Measured SINR provenance: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-032,HARD_CORRECTNESS,V32,Schema missing column: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-033,HARD_CORRECTNESS,V33,NaN threshold: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-034,HARD_CORRECTNESS,V34,Wrong field type: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-035,HARD_CORRECTNESS,V35,Empty mandatory table: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-036,HARD_CORRECTNESS,V36,Canonical aliases: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-037,HARD_CORRECTNESS,V37,Warm-up exclusion: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-038,HARD_CORRECTNESS,V38,Acquisition phase: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-039,HARD_CORRECTNESS,V39,Tail-drain accounting: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-040,HARD_CORRECTNESS,V40,KPI sample reconstruction: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-041,HARD_CORRECTNESS,V41,Task ID determinism: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-042,HARD_CORRECTNESS,V42,Retry idempotence: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-043,HARD_CORRECTNESS,V43,Duplicate conflict: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-044,HARD_CORRECTNESS,V44,Merge order: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-045,HARD_CORRECTNESS,V45,Floating aggregation: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-046,HARD_CORRECTNESS,V46,AWGN/geometry isolation: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-047,HARD_CORRECTNESS,V47,Headless artifact gate: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-048,HARD_CORRECTNESS,V48,Browser artifact gate: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-049,HARD_CORRECTNESS,V49,Artifact hash: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-050,HARD_CORRECTNESS,V50,Artifact freshness: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-051,HARD_CORRECTNESS,V51,Canonical scenario smoke tier: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-052,HARD_CORRECTNESS,V52,Canonical scenario full tier: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-053,HARD_CORRECTNESS,V53,Archive clean workspace: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-054,HARD_CORRECTNESS,V54,Source-tree hash: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-055,HARD_CORRECTNESS,V55,MATLAB version pin: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-056,HARD_CORRECTNESS,V56,Toolbox version pin: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-057,HARD_CORRECTNESS,V57,Required test skip: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-058,HARD_CORRECTNESS,V58,Python no-MATLAB collection: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-059,HARD_CORRECTNESS,V59,All-source YAML parsing: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-060,HARD_CORRECTNESS,V60,Duplicate YAML key: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-061,HARD_CORRECTNESS,V61,Calibration exact key: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-062,HARD_CORRECTNESS,V62,Hold-out prediction: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-063,HARD_CORRECTNESS,V63,Internal anchor classification: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-064,HARD_CORRECTNESS,V64,Publication gate end-to-end: treatment must satisfy canonical validation semantics and no silent fallback.,PASS
+R-065,STATISTICAL,ALL,Wilson coverage must meet the configured acceptance contract.,PASS
+R-066,STATISTICAL,ALL,Clopper-Pearson coverage must meet the configured acceptance contract.,PASS
+R-067,STATISTICAL,ALL,Sequential look control must meet the configured acceptance contract.,PASS
+R-068,STATISTICAL,ALL,Zero-error upper bound must meet the configured acceptance contract.,PASS
+R-069,STATISTICAL,ALL,Independent-drop minimum must meet the configured acceptance contract.,PASS
+R-070,STATISTICAL,ALL,Duplicate-seed rejection must meet the configured acceptance contract.,PASS
+R-071,STATISTICAL,ALL,Newcombe interval must meet the configured acceptance contract.,PASS
+R-072,STATISTICAL,ALL,Non-inferiority margin must meet the configured acceptance contract.,PASS
+R-073,STATISTICAL,ALL,Equivalence margin must meet the configured acceptance contract.,PASS
+R-074,STATISTICAL,ALL,Holm correction must meet the configured acceptance contract.,PASS
+R-075,STATISTICAL,ALL,McNemar paired outcomes must meet the configured acceptance contract.,PASS
+R-076,STATISTICAL,ALL,Paired bootstrap must meet the configured acceptance contract.,PASS
+R-077,STATISTICAL,ALL,Confidence metadata must meet the configured acceptance contract.,PASS
+R-078,STATISTICAL,ALL,Incomplete-point handling must meet the configured acceptance contract.,PASS
+R-079,STATISTICAL,ALL,Curve overlap must meet the configured acceptance contract.,PASS
+R-080,STATISTICAL,ALL,Holdout calibration must meet the configured acceptance contract.,PASS
+R-081,DIAGNOSTIC,ALL,Schema mutation coverage must be reported with explicit counts and hashes.,PASS
+R-082,DIAGNOSTIC,ALL,Oracle independence coverage must be reported with explicit counts and hashes.,PASS
+R-083,DIAGNOSTIC,ALL,Provenance root coverage must be reported with explicit counts and hashes.,PASS
+R-084,DIAGNOSTIC,ALL,Run-class isolation coverage must be reported with explicit counts and hashes.,PASS
+R-085,DIAGNOSTIC,ALL,Artifact freshness coverage must be reported with explicit counts and hashes.,PASS
+R-086,DIAGNOSTIC,ALL,Toolchain manifest completeness must be reported with explicit counts and hashes.,PASS
+R-087,DIAGNOSTIC,ALL,Parallel merge reproducibility must be reported with explicit counts and hashes.,PASS
+R-088,DIAGNOSTIC,ALL,Publication claim wording must be reported with explicit counts and hashes.,PASS
+R-089,DIAGNOSTIC,ALL,YAML all-source coverage must be reported with explicit counts and hashes.,PASS
+R-090,DIAGNOSTIC,ALL,Test execution completeness must be reported with explicit counts and hashes.,PASS
+R-091,DIAGNOSTIC,ALL,Canonical alias reconciliation must be reported with explicit counts and hashes.,PASS
+R-092,DIAGNOSTIC,ALL,Time-window reconstruction must be reported with explicit counts and hashes.,PASS
+R-093,DIAGNOSTIC,ALL,Measured SINR coverage must be reported with explicit counts and hashes.,PASS
+R-094,DIAGNOSTIC,ALL,Reference point reconciliation must be reported with explicit counts and hashes.,PASS
+R-095,DIAGNOSTIC,ALL,Archive source reconciliation must be reported with explicit counts and hashes.,PASS
+R-096,DIAGNOSTIC,ALL,End-to-end gate traceability must be reported with explicit counts and hashes.,PASS

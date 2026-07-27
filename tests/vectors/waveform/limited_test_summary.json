@@ -1,0 +1,23 @@
+{
+  "PASS": 8,
+  "WARN": 1,
+  "FAIL": 2,
+  "BLOCKED": 3,
+  "NOT_RUN": 0,
+  "StaticDefectsDetected": 34,
+  "UsefulFoundations": 8,
+  "RequiredArtifactsPresent": 0,
+  "RequiredArtifactsTotal": 100,
+  "ExistingCSVCount": 225,
+  "ExistingRectangularCSVCount": 224,
+  "ExistingPNGCount": 40,
+  "ExistingDecodedPNGCount": 40,
+  "ManifestFiles": 29,
+  "ManifestRows": 8391,
+  "CapabilityRows": 180,
+  "ImpactExperiments": 768,
+  "ImpactPairs": 384,
+  "AcceptanceRules": 96,
+  "MATLABAvailable": false,
+  "OctaveAvailable": false
+}

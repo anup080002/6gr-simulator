@@ -21,8 +21,8 @@ methods(Static)
         ue = sixgr.scenario.dropUEs(cfgMob, layoutStruct, scenarioName);
         [bsAntennaRuntime, ueAntennaRuntime, antennaConfigResolvedTable] = ...
             sixgr.truth.CoupledTruthRuntime.buildRuntimeAntennaState(cfgMob, layoutStruct, ue);
-        harqDL = sixgr.l2.mac.HARQEntity(cfg, "Direction", "DL");
-        harqUL = sixgr.l2.mac.HARQEntity(cfg, "Direction", "UL");
+        harqDL = sixgr.l2.mac.HARQEntityDL(cfg);
+        harqUL = sixgr.l2.mac.HARQEntityUL(cfg);
         numHarqProc = max(double(harqDL.NumProcesses), double(harqUL.NumProcesses));
         nUsers = size(ue.pos_m, 1);
         nCells = size(layoutStruct.bs.pos_m, 1);

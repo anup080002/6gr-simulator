@@ -1,0 +1,61 @@
+TestName,Scope,Mandatory,Executed,Passed,Total,Failed,Skipped,Blocked,DurationSeconds,Status
+testMACEventStoreReplay,event store,true,true,true,1,0,0,0,1.6928,PASS
+testMACContextProjection,state ownership,true,true,true,1,0,0,0,0.012553,PASS
+testCentralMACTimingK0K1K2,timing,true,true,true,1,0,0,0,0.049024,PASS
+testCentralMACTimingTDD,timing,true,true,true,1,0,0,0,0.0099013,PASS
+testHARQDLStateMachine,HARQ,true,true,true,1,0,0,0,0.06473,PASS
+testHARQULStateMachine,HARQ,true,true,true,1,0,0,0,0.014109,PASS
+testHARQIdentityKeys,HARQ,true,true,true,1,0,0,0,0.0091554,PASS
+testHARQFeedbackACKNACKDTX,HARQ,true,true,true,1,0,0,0,0.01447,PASS
+testHARQCodebookBinding,HARQ,true,true,true,1,0,0,0,0.036711,PASS
+testHARQProcessExhaustion,HARQ,true,true,true,1,0,0,0,0.001393,PASS
+testHARQSoftBufferProvenance,HARQ,true,true,true,1,0,0,0,0.043744,PASS
+testHARQSoftCombiningGain,HARQ,true,true,true,1,0,0,0,0.013456,PASS
+testHARQResetAndFlush,HARQ,true,true,true,1,0,0,0,0.0015596,PASS
+testSPSState,persistent grants,true,true,true,1,0,0,0,0.013887,PASS
+testConfiguredGrantType1State,persistent grants,true,true,true,1,0,0,0,0.0068755,PASS
+testConfiguredGrantType2State,persistent grants,true,true,true,1,0,0,0,0.010274,PASS
+testExactBSR5BitTable,BSR,true,true,true,1,0,0,0,0.0003068,PASS
+testExactBSR8BitTable,BSR,true,true,true,1,0,0,0,0.0003728,PASS
+testExactRefinedBSRTable,BSR,true,true,true,1,0,0,0,4.24e-05,PASS
+testBSRTriggersAndTimers,BSR,true,true,true,1,0,0,0,2.55e-05,PASS
+testBSRFormats,BSR,true,true,true,1,0,0,0,0.0002738,PASS
+testExactPHMapping,PHR,true,true,true,1,0,0,0,0.0003524,PASS
+testExactPCMAXMapping,PHR,true,true,true,1,0,0,0,0.0002205,PASS
+testPHRTriggersAndTimers,PHR,true,true,true,1,0,0,0,2.15e-05,PASS
+testMultipleEntryPHR,PHR,true,true,true,1,0,0,0,5.8e-06,PASS
+testSchedulingRequestState,SR,true,true,true,1,0,0,0,4.6e-06,PASS
+testSchedulingRequestFallback,SR,true,true,true,1,0,0,0,4.5e-06,PASS
+testLogicalChannelBj,LCP,true,true,true,1,0,0,0,0.029042,PASS
+testLogicalChannelPriority,LCP,true,true,true,1,0,0,0,0.0083057,PASS
+testLogicalChannelRestrictions,LCP,true,true,true,1,0,0,0,0.010331,PASS
+testMACSubheaderCodec,PDU,true,true,true,1,0,0,0,0.000636,PASS
+testMACPDUAssemblyDemux,PDU,true,true,true,1,0,0,0,0.0026228,PASS
+testMACCEPriority,PDU,true,true,true,1,0,0,0,0.006869,PASS
+testMACPDUNegativeMatrix,PDU,true,true,true,1,0,0,0,0.0015498,PASS
+testTimingAdvanceCommand,TA,true,true,true,1,0,0,0,0.012776,PASS
+testTimeAlignmentTimer,TA,true,true,true,1,0,0,0,0.0065378,PASS
+testMultipleTAG,TA,true,true,true,1,0,0,0,0.0045839,PASS
+testUEEligibilityEngine,eligibility,true,true,true,1,0,0,0,0.065423,PASS
+testAtomicGrantCommit,scheduler,true,true,true,1,0,0,0,0.015579,PASS
+testSchedulerRR,scheduler,true,true,true,1,0,0,0,0.012097,PASS
+testSchedulerPF,scheduler,true,true,true,1,0,0,0,0.0053049,PASS
+testSchedulerQoSPF,scheduler,true,true,true,1,0,0,0,0.026462,PASS
+testSchedulerEDF,scheduler,true,true,true,1,0,0,0,0.0077985,PASS
+testSchedulerRetransmissionPriority,scheduler,true,true,true,1,0,0,0,0.0028522,PASS
+testSchedulerFairnessAndStarvation,scheduler,true,true,true,1,0,0,0,0.0020981,PASS
+testSchedulerQoSAndDeadlines,scheduler,true,true,true,1,0,0,0,0.0020174,PASS
+testTwoCellHARQIsolation,CA,true,true,true,1,0,0,0,0.0078574,PASS
+testCrossCarrierGrantState,CA,true,true,true,1,0,0,0,2.88e-05,PASS
+testPacketLineageGraph,lineage,true,true,true,1,0,0,0,0.10121,PASS
+testByteBitConservation,lineage,true,true,true,1,0,0,0,0.037579,PASS
+testFirstSuccessDeduplication,lineage,true,true,true,1,0,0,0,0.01379,PASS
+testMACNoNoiseClosedLoop,end-to-end,true,true,true,1,0,0,0,0.013914,PASS
+testMACAWGNCampaign,end-to-end,true,true,true,1,0,0,0,0.014507,PASS
+testMACTDLCampaign,end-to-end,true,true,true,1,0,0,0,0.0045054,PASS
+testMACCDLCampaign,end-to-end,true,true,true,1,0,0,0,0.0053628,PASS
+testMACFaultInjection,negative,true,true,true,1,0,0,0,0.15229,PASS
+testMACArtifactGeneration,artifacts,true,true,true,1,0,0,0,0.0016917,PASS
+testMACImpactAnalysis,impact,true,true,true,1,0,0,0,0.0005919,PASS
+testMACSerialParallelReproducibility,reproducibility,true,true,true,1,0,0,0,0.0005533,PASS
+testMACFullRepositoryRegression,regression,true,true,true,1,0,0,0,0.0005483,PASS

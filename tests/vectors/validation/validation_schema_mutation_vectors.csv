@@ -1,0 +1,15 @@
+CaseID,Mutation,Target,ExpectedStatus,ExpectedError
+SCHEMA_VALID,NONE,,PASS,
+SCHEMA_MISSING_TRIAL,DELETE_COLUMN,TrialCount,FAIL,sixgr:validation:SchemaMissingColumn
+SCHEMA_MISSING_SINR,DELETE_COLUMN,MeasuredSINR_dB,FAIL,sixgr:validation:SchemaMissingColumn
+SCHEMA_NAN_THRESHOLD,SET_NAN,ConfidenceLevel,FAIL,sixgr:validation:SchemaNonFinite
+SCHEMA_INF_CI,SET_INF,CIHigh,FAIL,sixgr:validation:SchemaNonFinite
+SCHEMA_BAD_TYPE_MCS,SET_STRING,MCS,FAIL,sixgr:validation:SchemaWrongType
+SCHEMA_BAD_TYPE_STATUS,SET_UNKNOWN_ENUM,PointStatus,FAIL,sixgr:validation:UnknownPointStatus
+SCHEMA_DUP_KEY,DUPLICATE_PRIMARY_KEY,TaskID,FAIL,sixgr:validation:SchemaDuplicateKey
+SCHEMA_EMPTY_REQUIRED,EMPTY_TABLE,,FAIL,sixgr:validation:SchemaMissingColumn
+SCHEMA_ERRORS_GT_TRIALS,SET_INVALID_RELATION,ErrorCount>TrialCount,FAIL,sixgr:validation:SchemaWrongType
+SCHEMA_CI_REVERSED,SET_INVALID_RELATION,CILow>CIHigh,FAIL,sixgr:validation:SchemaWrongType
+SCHEMA_ESTIMATE_OUTSIDE,SET_OUT_OF_RANGE,Estimate,FAIL,sixgr:validation:SchemaWrongType
+SCHEMA_ZERO_SINR_SAMPLES,SET_ZERO,MeasuredSINRSampleCount,FAIL,sixgr:validation:SchemaWrongType
+SCHEMA_BAD_HASH,SET_BAD_HASH,ScenarioSHA256,FAIL,sixgr:validation:SchemaWrongType

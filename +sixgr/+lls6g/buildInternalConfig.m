@@ -42,6 +42,35 @@ cfg.run.honestyMode = char(string(localGetNested(s, "scenario.honesty_mode", "st
 cfg.run.unsupportedOutputPolicy = char(string(localGetNested(s, ...
     "scenario.unsupported_output_policy", "blank_unmeasured_values")));
 cfg.run.provenanceLogging = logical(localGetNested(s, "scenario.provenance_logging", true));
+protocolConfig = localGetNested(s,"protocol",struct());
+if isstruct(protocolConfig) && isscalar(protocolConfig) && ...
+        ~isempty(fieldnames(protocolConfig))
+    protocolEnabled = logical(localGetNested(protocolConfig,"enabled",false));
+    if protocolEnabled
+        requiredProtocolFields = ["profile_id","configuration_epoch", ...
+            "strict","rlc","pdcp","sdap","rrc","traffic"];
+        missingProtocolFields = requiredProtocolFields( ...
+            ~arrayfun(@(name)isfield(protocolConfig,char(name)), ...
+            requiredProtocolFields));
+        if ~isempty(missingProtocolFields)
+            error("sixgr:lls6g:config:IncompleteProtocolStack", ...
+                "Enabled protocol_stack is missing: %s.", ...
+                strjoin(cellstr(missingProtocolFields),", "));
+        end
+        if ~logical(protocolConfig.strict)
+            error("sixgr:lls6g:config:ProtocolStackMustBeStrict", ...
+                "The bounded Release-18 protocol stack requires strict=true.");
+        end
+    end
+    cfg.protocol = protocolConfig;
+    if protocolEnabled
+        protocolResolution = ...
+            sixgr.protocol.ProtocolConfigurationValidator.validate( ...
+            protocolConfig);
+        cfg.protocol.capability_resolution = ...
+            table2struct(protocolResolution);
+    end
+end
 if isfield(s, "seeds")
     cfg.run.seedCatalog = s.seeds;
 end
@@ -1263,30 +1292,27 @@ cfg = sixgr.util.structSet(cfg, "run.saveHARQBuffers", harqSaveBuffers);
 cfg = sixgr.util.structSet(cfg, "phy.harq.stopCondition", char(harqStopCondition));
 cfg = sixgr.util.structSet(cfg, "mac.harq.stopCondition", char(harqStopCondition));
 harqFeedbackTimingSlots = max(0, round(double(s.harq.feedback_timing_slots)));
-harqK2Slots = localNumericScalarOrNaN(localGetNested(s, "harq.k2", NaN));
+harqK2Slots = localNumericScalarOrNaN(localGetNested(s, "harq.k2", ...
+    localGetNested(s, "tdd_timing.ul_grant_k2", NaN)));
 if ~(isfinite(harqK2Slots) && harqK2Slots >= 0)
-    harqK2Slots = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "mac.harq.k2", NaN));
-end
-if ~(isfinite(harqK2Slots) && harqK2Slots >= 0)
-    harqK2Slots = 1;
+    error("sixgr:lls6g:MissingHARQK2", ...
+        "harq.k2 or tdd_timing.ul_grant_k2 must be explicitly configured.");
 end
 harqK2Slots = max(0, round(double(harqK2Slots)));
 cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", double(harqFeedbackTimingSlots));
 cfg = sixgr.util.structSet(cfg, "mac.harq.k1", double(harqFeedbackTimingSlots));
 cfg = sixgr.util.structSet(cfg, "mac.harq.k2", double(harqK2Slots));
-harqRoundtripSlots = localNumericScalarOrNaN(localGetNested(s, "tdd_timing.harq_roundtrip_slots", NaN));
-if isfinite(harqRoundtripSlots) && harqRoundtripSlots > 0
-    staleProcessTimeoutSlots = max(1, round(2 * double(harqRoundtripSlots)));
-else
-    staleProcessTimeoutSlots = max(16, round(4 * max(1, double(harqFeedbackTimingSlots))));
-end
-cfg = sixgr.util.structSet(cfg, "phy.harq.staleProcessTimeoutSlots", double(staleProcessTimeoutSlots));
-cfg = sixgr.util.structSet(cfg, "mac.harq.staleProcessTimeoutSlots", double(staleProcessTimeoutSlots));
+cfg = sixgr.util.structSet(cfg, "phy.harq.staleProcessTimeoutSlots", NaN);
+cfg = sixgr.util.structSet(cfg, "mac.harq.staleProcessTimeoutSlots", NaN);
+cfg = sixgr.util.structSet(cfg, "mac.harq.processLifetimePolicy", "event_driven");
 cfg = sixgr.util.structSet(cfg, "phy.pusch.k2_slots", double(harqK2Slots));
 cfg = sixgr.util.structSet(cfg, "phy.ul.grantK2Slots", double(harqK2Slots));
 cfg = sixgr.util.structSet(cfg, "phy.harq.combiningMode", char(string(s.harq.combining_mode)));
 cfg = sixgr.util.structSet(cfg, "phy.harq.cbgEnabled", logical(s.harq.cbg_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.harq.validationMode", char(string(localRequireNested(s, "harq.validation_mode", "harq.validation_mode"))));
+if isfield(s, "mac_phase08") && isstruct(s.mac_phase08)
+    cfg = sixgr.util.structSet(cfg, "mac.phase08", s.mac_phase08);
+end
 
 cfg.phy.ldpc.maxIterations = double(s.coding.max_decoder_iterations);
 cfg = sixgr.util.structSet(cfg, "phy.ldpc.useMexBatchDecode", ...

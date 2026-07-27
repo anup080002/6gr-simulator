@@ -1,0 +1,15 @@
+CheckID,Class,Result,Detail
+PACK-PY-COMPILE,PACK,PASS,All three Python verifiers compile.
+PACK-VECTOR-MANIFEST,PACK,PASS,Vector verifier exit 0; 29 protected files.
+PACK-VECTOR-ROWS,PACK,PASS,Protected deterministic rows: 8391.
+PACK-CAPABILITY,PACK,PASS,Capability rows: 180.
+PACK-IMPACT,PACK,PASS,Impact experiments: 768; pairs: 384; rules: 96.
+PACK-BASE-VERIFIER,PACK,PASS,Base verifier accepts complete set and rejects injected PNG hash corruption.
+PACK-IMPACT-VERIFIER,PACK,PASS,Impact verifier accepts complete set and rejects injected PNG hash corruption.
+CURRENT-SOURCE-REMEDIATION,CURRENT_SIMULATOR,FAIL,34 targeted waveform defect signatures detected; 8 useful foundations found.
+CURRENT-REQUIRED-ARTIFACTS,CURRENT_SIMULATOR,FAIL,0 of 100 required waveform artifacts found.
+CURRENT-CSV-INVENTORY,CURRENT_SIMULATOR,WARN,225 CSVs inspected; 224 rectangular.
+CURRENT-PNG-INVENTORY,CURRENT_SIMULATOR,PASS,40 PNGs inspected; 40 decoded; 40 nonblank.
+MATLAB-PRODUCTION-RUNTIME,RUNTIME,BLOCKED,MATLAB executable not found.
+OCTAVE-RUNTIME,RUNTIME,BLOCKED,Octave executable not found.
+EXISTING-MATLAB-TESTS,RUNTIME,BLOCKED,476 relevant existing MATLAB test files inventoried; not executed in this environment.

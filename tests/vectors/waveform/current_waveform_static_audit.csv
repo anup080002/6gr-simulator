@@ -1,0 +1,43 @@
+CheckID,Classification,Signature,File,Line,Detected,Status,Detail
+WF-SRC-001,DEFECT,implicit_2p5pct_window,+sixgr/+phy/+waveform/resolveOFDMWindowing.m,30,true,DETECTED,Strict waveform silently receives 2.5% Nfft windowing.
+WF-SRC-002,DEFECT,nextpow2_nfft_fallback,+sixgr/+phy/+waveform/resolveOFDMWindowing.m,48,true,DETECTED,Nfft fallback synthesizes a different OFDM plan.
+WF-SRC-003,DEFECT,thin_toolbox_modulator,+sixgr/+phy/+waveform/ofdmModulate.m,6,true,DETECTED,Canonical wrapper contains no independent OFDM implementation.
+WF-SRC-004,DEFECT,thin_toolbox_demodulator,+sixgr/+phy/+waveform/ofdmDemodulate.m,6,true,DETECTED,Canonical receiver wrapper is Toolbox-only.
+WF-SRC-005,DEFECT,same_toolbox_acceptance,tests/+phy/gridBitWaveformAcceptance.m,49,true,DETECTED,Acceptance compares production wrapper against the same Toolbox kernel.
+WF-SRC-006,DEFECT,nrb_clamp_low_papr,+sixgr/+link/runULLowPAPR.m,12,true,DETECTED,Low-PAPR harness changes configured bandwidth.
+WF-SRC-007,DEFECT,hardcoded_14_symbols,+sixgr/+link/runULLowPAPR.m,14,true,DETECTED,Extended CP and other symbol plans cannot execute.
+WF-SRC-008,DEFECT,nonstandard_cp,+sixgr/+link/runULLowPAPR.m,15,true,DETECTED,CP is derived from occupied tones rather than the OFDM plan.
+WF-SRC-009,DEFECT,occupied_size_ifft,+sixgr/+link/runULLowPAPR.m,73,true,DETECTED,CP-OFDM uses occupied subcarrier count as IFFT size.
+WF-SRC-010,DEFECT,degenerate_dft_spread,+sixgr/+link/runULLowPAPR.m,73,true,DETECTED,DFT and IFFT have the same size without localized mapping.
+WF-SRC-011,DEFECT,global_rng_low_papr,+sixgr/+link/runULLowPAPR.m,39,true,DETECTED,Low-PAPR trials do not use a named random stream.
+WF-SRC-012,DEFECT,mex_silent_fallback,+sixgr/+link/runULLowPAPR.m,61,true,DETECTED,MEX failure silently changes the executed implementation.
+WF-SRC-013,DEFECT,unsupported_1024_helper,+sixgr/+link/runULLowPAPR.m,107,true,DETECTED,Research helper accepts a modulation outside the selected strict UL DFT-s-OFDM table.
+WF-SRC-014,DEFECT,unsupported_4096_helper,+sixgr/+link/runULLowPAPR.m,109,true,DETECTED,Research helper accepts non-profile 4096QAM.
+WF-SRC-015,DEFECT,unknown_modulation_defaults_16qam,+sixgr/+link/runULLowPAPR.m,111,true,DETECTED,Unknown modulation silently becomes 16QAM.
+WF-SRC-016,DEFECT,all_sample_power_fallback,+sixgr/+phy/+waveform/ofdmReferencePower.m,31,true,DETECTED,Missing OFDM metadata changes the reference power domain.
+WF-SRC-017,DEFECT,transform_auto_enable,+sixgr/+phy/+ul/PUSCH_Tx.m,79,true,DETECTED,Transform-precoding ownership is reconstructed locally.
+WF-SRC-018,DEFECT,random_tb_generation,+sixgr/+phy/+ul/PUSCH_Tx.m,143,true,DETECTED,Production TX may synthesize payload bits locally.
+WF-SRC-019,DEFECT,zero_grid_catch_fallback,+sixgr/+phy/+ul/PUSCH_Tx.m,236,true,DETECTED,Generation failure can produce an all-zero grid.
+WF-SRC-020,DEFECT,multi_layer_dfts_flag,simulator/configs/scenarios/mandatory_ul_waveform_packs.yaml,36,true,DETECTED,Multi-layer DFT-s-OFDM is scenario-selectable.
+WF-SRC-021,DEFECT,tone_reservation_flag,simulator/configs/defaults/global.yaml,76,true,DETECTED,Tone reservation is exposed without a canonical engine.
+WF-SRC-022,DEFECT,frequency_truncation_flag,simulator/configs/defaults/global.yaml,77,true,DETECTED,Frequency-domain truncation is exposed without a canonical engine.
+WF-SRC-023,DEFECT,flexible_dft_flag,simulator/configs/defaults/global.yaml,78,true,DETECTED,Flexible DFT size is exposed without a canonical engine.
+WF-SRC-024,DEFECT,noncontiguous_flag,simulator/configs/defaults/global.yaml,79,true,DETECTED,Noncontiguous mapping is exposed without a canonical engine.
+WF-SRC-025,DEFECT,enhanced_dmrs_data_flag,simulator/configs/defaults/global.yaml,80,true,DETECTED,Enhanced DMRS/data multiplexing is exposed without a complete implementation.
+WF-SRC-026,DEFECT,experimental_dl_dfts_flag,simulator/configs/defaults/global.yaml,73,true,DETECTED,DL DFT-s-OFDM can be selected as an experimental flag.
+WF-SRC-027,DEFECT,no_stream_state,+sixgr/+phy/+waveform/OFDMStreamState.m,,true,DETECTED,No canonical persistent OFDM stream state class.
+WF-SRC-028,DEFECT,no_multinumerology_composer,+sixgr/+phy/+waveform/MultiNumerologyWaveformComposer.m,,true,DETECTED,No canonical multi-numerology composer.
+WF-SRC-029,DEFECT,no_cc_composer,+sixgr/+phy/+waveform/ComponentCarrierWaveformComposer.m,,true,DETECTED,No canonical component-carrier waveform composer.
+WF-SRC-030,DEFECT,no_spectral_engine,+sixgr/+phy/+waveform/SpectralMeasurement.m,,true,DETECTED,No canonical PSD/OOB spectral measurement engine.
+WF-SRC-031,DEFECT,no_papr_oversampling_engine,+sixgr/+phy/+waveform/PAPRMeasurement.m,,true,DETECTED,No canonical oversampled PAPR/CCDF engine.
+WF-SRC-032,DEFECT,no_wola_state,+sixgr/+phy/+waveform/WindowOverlapState.m,,true,DETECTED,No persistent WOLA overlap state.
+WF-SRC-033,DEFECT,no_power_ledger,+sixgr/+phy/+waveform/WaveformPowerLedger.m,,true,DETECTED,No layer-to-composite waveform power ledger.
+WF-SRC-034,DEFECT,no_re_to_bin_export,+sixgr/+phy/+waveform/SubcarrierMapper.m,,true,DETECTED,No canonical explicit RE-to-FFT-bin mapper.
+WF-SRC-035,FOUNDATION,toolbox_ofdm_modulator,+sixgr/+phy/+waveform/ofdmModulate.m,6,true,FOUND,Useful Toolbox-backed OFDM generation exists.
+WF-SRC-036,FOUNDATION,toolbox_ofdm_demodulator,+sixgr/+phy/+waveform/ofdmDemodulate.m,6,true,FOUND,Useful Toolbox-backed OFDM demodulation exists.
+WF-SRC-037,FOUNDATION,toolbox_transform_precode,+sixgr/+phy/+waveform/transformPrecode.m,8,true,FOUND,Useful Toolbox-backed transform precoding exists.
+WF-SRC-038,FOUNDATION,noise_transform_calibration,+sixgr/+phy/+waveform/calibrateOFDMNoiseTransform.m,84,true,FOUND,Useful sample/grid noise-transform calibration exists.
+WF-SRC-039,FOUNDATION,per_port_papr,+sixgr/+link/deriveModulationTrackingMetrics.m,21,true,FOUND,Per-port waveform metrics already have an integration point.
+WF-SRC-040,FOUNDATION,pusch_native_toolbox,+sixgr/+phy/+ul/PUSCH_Tx.m,12,true,FOUND,Native PUSCH configuration exists.
+WF-SRC-041,FOUNDATION,explicit_windowing_metadata,+sixgr/+phy/+waveform/resolveOFDMWindowing.m,15,true,FOUND,Windowing metadata already has an integration point.
+WF-SRC-042,FOUNDATION,power_metadata,+sixgr/+phy/+waveform/ofdmReferencePower.m,51,true,FOUND,OFDM metadata can support a correct power reference.

@@ -558,6 +558,7 @@ mappings = {
     "traffic.packet_interval_ms", "traffic.packetInterval_ms", "identity"
     "traffic.target_rate_mbps", "traffic.targetRate_Mbps", "identity"
     "traffic.full_buffer_bits_per_tti", "traffic.fullBufferBitsPerTTI", "identity"
+    "protocol_stack", "protocol", "identity"
     "reference_signals.ssb_enabled", "reference_signals.ssb_enabled", "identity"
     "reference_signals.pbch_enabled", "reference_signals.pbch_enabled", "identity"
     "reference_signals.pdcch_dmrs_enabled", "reference_signals.pdcch_dmrs_enabled", "identity"

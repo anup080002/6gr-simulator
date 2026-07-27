@@ -1,0 +1,370 @@
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_unavailable_plotted_metric_status
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_negative_fixture
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs
+tests/test_dut_yaml_catalog.py::test_dut_yaml_catalog_is_complete_and_overlay_only
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_blocks_open_high_issue
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_allows_verified_issue
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_rejects_critical_waiver
+tests/test_lls_dashboard_optional_mysql.py::test_dashboard_imports_without_mysql_connector
+tests/test_prompt10_webgui_scaffold.py::test_webgui_csv_store_reads_existing_artifacts_without_placeholders
+tests/test_prompt10_webgui_scaffold.py::test_webgui_oracle_guard_rejects_configured_snr_and_perfect_tokens
+tests/test_prompt10_webgui_scaffold.py::test_webgui_time_profile_aggregates_measurement_rows_only
+tests/test_prompt11_lls_manifest.py::test_manifest_audit_rejects_configured_noise_and_perfect_channel
+tests/test_prompt11_lls_manifest.py::test_csv_generator_derives_runtime_tables_without_fake_tbs_reference
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+tests/test_prompt11_lls_manifest.py::test_acceptance_gate_reports_missing_manifest_without_throwing
+
+==================================== ERRORS ====================================
+___________ ERROR collecting tests/test_6g_4ghz_config_validation.py ___________
+tests/test_6g_4ghz_config_validation.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+____________ ERROR collecting tests/test_6g_4ghz_scenario_smoke.py _____________
+tests/test_6g_4ghz_scenario_smoke.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_______ ERROR collecting tests/test_actual_lls_implementation_harness.py _______
+ImportError while importing test module '/mnt/data/work_sim/6GR Simulator_v2_clean_main/tests/test_actual_lls_implementation_harness.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_actual_lls_implementation_harness.py:3: in <module>
+    from tests._actual_lls_test_helper import run_isolated_matlab_test
+E   ModuleNotFoundError: No module named 'tests'
+___________ ERROR collecting tests/test_dut_reference_comparison.py ____________
+ImportError while importing test module '/mnt/data/work_sim/6GR Simulator_v2_clean_main/tests/test_dut_reference_comparison.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_dut_reference_comparison.py:3: in <module>
+    from tests._actual_lls_test_helper import run_isolated_matlab_test
+E   ModuleNotFoundError: No module named 'tests'
+_____________ ERROR collecting tests/test_lls_200ue_fullbuffer.py ______________
+tests/test_lls_200ue_fullbuffer.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_3gpp_4ghz_100mhz_longrun.py __________
+tests/test_lls_3gpp_4ghz_100mhz_longrun.py:12: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+______________ ERROR collecting tests/test_lls_50ue_fullbuffer.py ______________
+tests/test_lls_50ue_fullbuffer.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_______ ERROR collecting tests/test_lls_browser_antenna_channel_truth.py _______
+tests/test_lls_browser_antenna_channel_truth.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+___ ERROR collecting tests/test_lls_browser_canonical_artifact_selection.py ____
+tests/test_lls_browser_canonical_artifact_selection.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_browser_db_roundtrip_e2e.py __________
+tests/test_lls_browser_db_roundtrip_e2e.py:14: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+______ ERROR collecting tests/test_lls_browser_fixed_snr_plot_gallery.py _______
+tests/test_lls_browser_fixed_snr_plot_gallery.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_browser_lifecycle_payload.py _________
+tests/test_lls_browser_lifecycle_payload.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+__________ ERROR collecting tests/test_lls_browser_metric_explorer.py __________
+tests/test_lls_browser_metric_explorer.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+__________ ERROR collecting tests/test_lls_browser_output_coverage.py __________
+tests/test_lls_browser_output_coverage.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_browser_parameter_surface.py _________
+tests/test_lls_browser_parameter_surface.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+___________ ERROR collecting tests/test_lls_browser_plot_browser.py ____________
+tests/test_lls_browser_plot_browser.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_browser_product_frontend.py __________
+tests/test_lls_browser_product_frontend.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+____________ ERROR collecting tests/test_lls_browser_pucch_truth.py ____________
+tests/test_lls_browser_pucch_truth.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_____ ERROR collecting tests/test_lls_browser_realtime_control_preview.py ______
+tests/test_lls_browser_realtime_control_preview.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_browser_roundtrip_payload.py _________
+tests/test_lls_browser_roundtrip_payload.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+________ ERROR collecting tests/test_lls_browser_run_tag_resolution.py _________
+tests/test_lls_browser_run_tag_resolution.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+____________ ERROR collecting tests/test_lls_browser_sinr_truth.py _____________
+tests/test_lls_browser_sinr_truth.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+________ ERROR collecting tests/test_lls_browser_terminal_promotion.py _________
+tests/test_lls_browser_terminal_promotion.py:11: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_____________ ERROR collecting tests/test_lls_browser_trs_truth.py _____________
+tests/test_lls_browser_trs_truth.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+__________ ERROR collecting tests/test_lls_browser_truth_integrity.py __________
+tests/test_lls_browser_truth_integrity.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_complete_output_contract.py __________
+tests/test_lls_complete_output_contract.py:12: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_contract_materialization.py __________
+tests/test_lls_contract_materialization.py:12: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+___________ ERROR collecting tests/test_lls_dashboard_edge_stack.py ____________
+tests/test_lls_dashboard_edge_stack.py:11: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_______ ERROR collecting tests/test_lls_dashboard_filesystem_results.py ________
+tests/test_lls_dashboard_filesystem_results.py:11: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_lls_dashboard_intranet_access.py _________
+tests/test_lls_dashboard_intranet_access.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+______________ ERROR collecting tests/test_lls_outcome_summary.py ______________
+ImportError while importing test module '/mnt/data/work_sim/6GR Simulator_v2_clean_main/tests/test_lls_outcome_summary.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_lls_outcome_summary.py:3: in <module>
+    from tests._actual_lls_test_helper import run_isolated_matlab_test
+E   ModuleNotFoundError: No module named 'tests'
+___________ ERROR collecting tests/test_lls_parameter_constraints.py ___________
+tests/test_lls_parameter_constraints.py:11: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_____ ERROR collecting tests/test_lls_running_contract_materialization.py ______
+tests/test_lls_running_contract_materialization.py:11: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+________________ ERROR collecting tests/test_lls_web_launch.py _________________
+tests/test_lls_web_launch.py:11: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_____________ ERROR collecting tests/test_no_label_only_success.py _____________
+ImportError while importing test module '/mnt/data/work_sim/6GR Simulator_v2_clean_main/tests/test_no_label_only_success.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_no_label_only_success.py:3: in <module>
+    from tests._actual_lls_test_helper import run_isolated_matlab_test
+E   ModuleNotFoundError: No module named 'tests'
+_____________ ERROR collecting tests/test_phy_value_invariants.py ______________
+ImportError while importing test module '/mnt/data/work_sim/6GR Simulator_v2_clean_main/tests/test_phy_value_invariants.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_phy_value_invariants.py:3: in <module>
+    from tests._actual_lls_test_helper import run_isolated_matlab_test
+E   ModuleNotFoundError: No module named 'tests'
+____________ ERROR collecting tests/test_real_function_coverage.py _____________
+ImportError while importing test module '/mnt/data/work_sim/6GR Simulator_v2_clean_main/tests/test_real_function_coverage.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_real_function_coverage.py:3: in <module>
+    from tests._actual_lls_test_helper import run_isolated_matlab_test
+E   ModuleNotFoundError: No module named 'tests'
+________ ERROR collecting tests/test_webgui_mode_validation_outputs.py _________
+tests/test_webgui_mode_validation_outputs.py:12: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+________ ERROR collecting tests/test_webgui_singlefile_full_lls_yaml.py ________
+tests/test_webgui_singlefile_full_lls_yaml.py:13: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+_________ ERROR collecting tests/test_webgui_two_lls_scenario_modes.py _________
+tests/test_webgui_two_lls_scenario_modes.py:10: in <module>
+    import lls_web_dashboard as dash  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/lls_web_dashboard.py:60: in <module>
+    raise FileNotFoundError(
+E   FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+=============================== warnings summary ===============================
+apps/lls_web_dashboard.py:14617
+  /mnt/data/work_sim/6GR Simulator_v2_clean_main/apps/lls_web_dashboard.py:14617: SyntaxWarning: invalid escape sequence '\w'
+    function labelFor(path) { const leaf = String(path || 'config').split('.').pop() || 'config'; return leaf.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\b\w/g, ch => ch.toUpperCase()); }
+
+apps/lls_web_dashboard.py:17749
+  /mnt/data/work_sim/6GR Simulator_v2_clean_main/apps/lls_web_dashboard.py:17749: SyntaxWarning: invalid escape sequence '\.'
+    def build_result_page(run_id: int | None, run_tag: str | None = None, message: str = "", section: str = "all", user_profile: dict[str, Any] | None = None) -> bytes:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/test_6g_4ghz_config_validation.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_6g_4ghz_scenario_smoke.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_actual_lls_implementation_harness.py
+ERROR tests/test_dut_reference_comparison.py
+ERROR tests/test_lls_200ue_fullbuffer.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_3gpp_4ghz_100mhz_longrun.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_50ue_fullbuffer.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_antenna_channel_truth.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_canonical_artifact_selection.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_db_roundtrip_e2e.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_fixed_snr_plot_gallery.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_lifecycle_payload.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_metric_explorer.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_output_coverage.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_parameter_surface.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_plot_browser.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_product_frontend.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_pucch_truth.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_realtime_control_preview.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_roundtrip_payload.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_run_tag_resolution.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_sinr_truth.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_terminal_promotion.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_trs_truth.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_browser_truth_integrity.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_complete_output_contract.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_contract_materialization.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_dashboard_edge_stack.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_dashboard_filesystem_results.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_dashboard_intranet_access.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_outcome_summary.py
+ERROR tests/test_lls_parameter_constraints.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_running_contract_materialization.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_lls_web_launch.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_no_label_only_success.py
+ERROR tests/test_phy_value_invariants.py
+ERROR tests/test_real_function_coverage.py
+ERROR tests/test_webgui_mode_validation_outputs.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_webgui_singlefile_full_lls_yaml.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+ERROR tests/test_webgui_two_lls_scenario_modes.py - FileNotFoundError: Required MATLAB R2024a executable is missing: C:\Program Files\MATLAB\R2024a\bin\matlab.exe
+!!!!!!!!!!!!!!!!!!! Interrupted: 40 errors during collection !!!!!!!!!!!!!!!!!!!
+17 tests collected, 40 errors in 11.30s

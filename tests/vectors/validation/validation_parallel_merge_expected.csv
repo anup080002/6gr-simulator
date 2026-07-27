@@ -1,0 +1,4 @@
+CampaignID,InputRows,UniqueTaskIDs,ExpectedMergedTaskCount,ExpectedConflictCount,ExpectedStatus
+MERGE_CONFLICT,13,12,0,1,FAIL
+MERGE_RETRY_IDENTICAL,13,12,12,0,PASS
+MERGE_VALID,12,12,12,0,PASS

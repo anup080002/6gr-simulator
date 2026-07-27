@@ -1,0 +1,38 @@
+ErrorID,Meaning
+sixgr:validation:UnknownPointStatus,Point status token is not in the canonical enum.
+sixgr:validation:UnknownStopReason,Stop-reason token is not in the canonical enum.
+sixgr:validation:LegacyTokenUnmapped,A legacy status/reason has no explicit migration.
+sixgr:validation:SchemaMissingColumn,Mandatory canonical column is missing.
+sixgr:validation:SchemaWrongType,A canonical field has the wrong type.
+sixgr:validation:SchemaNonFinite,A mandatory numeric value or threshold is NaN/Inf.
+sixgr:validation:SchemaDuplicateKey,Primary key is duplicated.
+sixgr:validation:IncompleteMandatoryPoint,A required point reached a non-qualifying incomplete state.
+sixgr:validation:InvalidCensorPolicy,Censored completion was attempted without a valid one-sided bound.
+sixgr:validation:ConfidenceLevelMismatch,Interval metadata and configured confidence differ.
+sixgr:validation:SequentialDesignInvalid,Look schedule or alpha-spending configuration is invalid.
+sixgr:validation:MeasuredSINRMissing,Receiver-derived SINR is absent.
+sixgr:validation:MeasuredSINRInvalidProvenance,SINR is configured/reconstructed rather than receiver-derived.
+sixgr:validation:OperatingPointMissing,A required DUT or reference point is missing.
+sixgr:validation:OperatingPointExtra,An unexpected operating point is present.
+sixgr:validation:OperatingPointDuplicate,An operating-point key is duplicated.
+sixgr:validation:ReferenceNotIndependent,Reference source/hash is not independent of DUT.
+sixgr:validation:OracleNotQualified,Mandatory test uses only a regression/self-consistency oracle.
+sixgr:validation:OracleHashMismatch,Frozen oracle artifact hash does not match registry.
+sixgr:validation:ProvenanceCircular,Expected and observed values share a disallowed root.
+sixgr:validation:ObservedEvidenceMissing,Mandatory runtime field lacks observed/decoded evidence.
+sixgr:validation:RunClassSubstitution,Artifacts from one run class are used to satisfy another.
+sixgr:validation:TimeWindowUndefined,KPI sample lacks a named phase/window.
+sixgr:validation:TaskDuplicateConflict,Same task ID produced different output hashes.
+sixgr:validation:TaskSeedCollision,Independent tasks unexpectedly share a seed/substream.
+sixgr:validation:MergeNonDeterministic,Canonical merge differs across execution order.
+sixgr:validation:ArtifactMissing,Mandatory artifact is absent.
+sixgr:validation:ArtifactHashMismatch,Artifact hash differs from manifest.
+sixgr:validation:ArtifactStale,Artifact timestamp/source hash indicates stale reuse.
+sixgr:validation:YAMLParseFailed,Source YAML cannot be parsed.
+sixgr:validation:YAMLDuplicateKey,Source YAML contains a duplicate key.
+sixgr:validation:CanonicalScenarioNotExecuted,Mandatory scenario lacks a fresh runtime result.
+sixgr:validation:MATLABUnavailable,Pinned MATLAB/Toolbox runtime unavailable.
+sixgr:validation:RequiredTestSkipped,Mandatory test was skipped or blocked.
+sixgr:validation:ArchiveSourceMismatch,Built archive source hashes do not match manifest.
+sixgr:validation:PublicationComparisonFailed,Confidence-aware reference comparison failed.
+sixgr:validation:PublicationGateIncomplete,One or more mandatory gates are incomplete.

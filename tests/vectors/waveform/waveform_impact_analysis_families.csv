@@ -1,0 +1,65 @@
+FamilyID,FamilyName,Baseline,Treatment,DependencyWave,PrimaryMetrics,RequiredMethod
+F01,Nfft resolution,configured fallback,canonical resolver,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F02,Sample-rate resolution,implicit,explicit common clock,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F03,Normal versus extended CP,normal,extended,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F04,CP length sufficiency,delay within CP,delay beyond CP,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F05,Subcarrier position,center,band edge,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F06,DC handling,no DC occupancy,DC fault injection,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F07,Guard-band width,wide,narrow,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F08,Rectangular versus WOLA,rectangular,explicit WOLA,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F09,WOLA overlap length,short,long,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F10,Window matched receiver,matched,unmatched,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F11,Streaming chunking,one shot,random chunks,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F12,Slot boundary phase,continuous,reset each slot,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F13,CP-OFDM versus DFT-s-OFDM,CP-OFDM,DFT-s-OFDM,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F14,DFT size,small,large,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F15,DFT allocation position,center,edge,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F16,pi/2-BPSK versus QPSK,QPSK,pi/2-BPSK,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F17,DFT modulation order,QPSK,256QAM,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F18,PAPR oversampling,1x,8x,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F19,PAPR domain,useful samples,CP plus window,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F20,Per-port PAPR,rank1,rank4,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F21,Tone reservation,disabled,enabled,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F22,Frequency truncation,disabled,enabled,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F23,FDSS,disabled,enabled,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F24,Clipping/CFR,disabled,enabled,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F25,Waveform plus PA,linear PA,nonlinear PA,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F26,PSD window,rectangular,Hann analysis,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F27,PSD RBW,coarse,fine,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F28,Spectral averaging,single segment,Welch average,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F29,Multi-numerology ratio,1:2,1:8,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F30,Multi-numerology guard,large,small,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F31,Multi-numerology timing,synchronous,asynchronous,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F32,Multi-numerology filtering,none,subband filter,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F33,Two component carriers,single CC,two CC,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F34,CC separation,wide,narrow,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F35,CC power imbalance,equal,near-far,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F36,NCO phase continuity,continuous,reset,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F37,Rank scaling,rank1,rank8 CP-OFDM,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F38,PRG precoding variation,wideband,frequency selective,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F39,Power normalization,ledger enabled,legacy scaling,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F40,OFDM Parseval,unitary reference,fault injection,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F41,CFO sensitivity,zero,0.2 SCS,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F42,Timing sensitivity,zero,near CP boundary,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F43,SCO sensitivity,zero,20 ppm,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F44,Phase noise sensitivity,disabled,enabled,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F45,TDL delay spread,low,high,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F46,CDL Doppler,static,high mobility,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F47,CP exceeded channel,within CP,outside CP,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F48,AWGN no-noise round trip,no noise,tiny noise,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F49,DFT despreading,correct,wrong M,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F50,Inter-numerology interference,absent,present,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F51,Adjacent CC interference,absent,present,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F52,Asynchronous link composition,aligned,offset,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F53,Sample contribution sum,exact,fault injection,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F54,MEX versus MATLAB,MATLAB,MEX,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F55,Serial versus parallel,serial,parallel,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F56,Seed reproducibility,same seed,different seed,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F57,Runtime versus Nfft,small Nfft,large Nfft,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F58,Runtime versus carriers,one carrier,four carriers,WAVE_B,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F59,Memory versus duration,short,long streaming,WAVE_A,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F60,Research candidate planning,unsupported,implemented study,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F61,Multi-layer DFT study,single layer,multi-layer candidate,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F62,DL DFT-s-OFDM study,CP-OFDM DL,DFT-s-OFDM DL,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F63,Low-PAPR factorial,baseline,combined techniques,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin
+F64,End-to-end waveform profile,bounded baseline,full selected profile,WAVE_C,NMSE;EVM;PAPR_dB;OOB_dB;BLER;PowerError_dB;Runtime_s,paired identical payload/channel/noise; confidence interval; engineering margin

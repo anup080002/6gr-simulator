@@ -1,0 +1,2 @@
+RunID,GitCommit,MATLABVersion,ToolboxVersion,SpecificationProfile,VectorManifestSHA256,SeedList,Strict,Status
+"PROTOCOL-20260727-071456","5da5a5c643d09c880814592e6b35a09a68ed1831","26.1.0.3312084 (R2026a) Update 4","2026a","3GPP_RELEASE_18_STRICT_BOUNDED","5e2a19b6db106b0b0de5ef00c3e37247cf15cbb062422f1459490526c57f65f6","11;23;47;89","true","PASS"

@@ -16,6 +16,16 @@ classdef TrafficFactory
 
     methods(Static)
         function traffic = generate(cfg, nUE, nTTI, tti_s)
+            protocolEnabled = logical(sixgr.util.structGet( ...
+                cfg,"protocol.enabled",false));
+            protocolTrafficEnabled = logical(sixgr.util.structGet( ...
+                cfg,"protocol.traffic.enabled",protocolEnabled));
+            if protocolEnabled && protocolTrafficEnabled
+                traffic = ...
+                    sixgr.traffic18.TrafficGeneratorFactory.generateCompatible( ...
+                    cfg,nUE,nTTI,tti_s);
+                return;
+            end
             model = lower(strtrim(string(sixgr.util.structGet(cfg, "traffic.model", "fullBuffer"))));
             if any(model == ["tracereplay","trace_replay","trace"])
                 traffic = localGenerateTraceReplayTraffic(cfg, nUE, nTTI, tti_s);

@@ -1,0 +1,11 @@
+RunID,ScopeID,ArrivedBytes,QueuedBytes,InFlightBytes,DeliveredBytes,DroppedBytes,UnownedBytes,DuplicateDeliveredBytes,EquationErrorBytes,Status
+"PROTOCOL-20260727-071456","SCOPE-1","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-2","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-3","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-4","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-5","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-6","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-7","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-8","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-9","2853","0","0","2853","0","0","0","0","PASS"
+"PROTOCOL-20260727-071456","SCOPE-10","2853","0","0","2853","0","0","0","0","PASS"

@@ -1,0 +1,12 @@
+Area,ExistingFiles,TargetFiles,Action
+Profile planning,+sixgr/+config/normalizeConfig.m; simulator/configs/waveforms/*.yaml,+sixgr/+phy/+waveform/WaveformSpecificationProfile.m; WaveformCapabilityProfile.m; WaveformPlanningResult.m,Replace string/flag inference with explicit profile planning and fail-closed capability resolution.
+OFDM parameters,+sixgr/+phy/+waveform/resolveOFDMWindowing.m; ofdmModulate.m; ofdmDemodulate.m,OFDMParameterResolver.m; OFDMNumerologyContext.m; OFDMSymbolPlan.m,"Centralize Nfft, sample rate, CP, symbol timing and reference-frequency state."
+Frequency mapping,distributed grids and Toolbox calls,SubcarrierMapper.m; WaveformFrequencyReference.m; ResourceGridToFFTMap.m,Export zero-based RE-to-bin mapping and reject duplicates/out-of-range bins.
+Streaming,slot-local OFDM calls,OFDMStreamState.m; WaveformStreamComposer.m; WaveformChunk.m,"Preserve absolute sample time, phase, overlap and filter state across chunks."
+Windowing,resolveOFDMWindowing.m,WindowingProfile.m; WOLAEngine.m; WindowOverlapState.m,Strict default zero; research WOLA explicit and matched at RX.
+Transform precoding,transformPrecode.m; transformDeprecode.m; PUSCH_Tx.m,TransformPrecodingPlan.m; UnitaryDFTSpreader.m; UnitaryDFTDespreader.m; LocalizedDFTMapper.m,Consume decoded assignment and enforce single-layer/valid-size/contiguous resource constraints.
+Low-PAPR studies,+sixgr/+link/runULLowPAPR.m,LowPAPRStudyRunner.m; ToneReservationEngine.m; FrequencyDomainShapingEngine.m,Delete reduced IFFT path; use canonical waveform and explicit research engines.
+Multi-numerology,none canonical,MultiNumerologyWaveformComposer.m; RationalSampleRateConverter.m,"Common clock, per-BWP state, digital shifts and guard leakage."
+Carrier aggregation,none canonical,ComponentCarrierWaveformComposer.m; DigitalUpconverter.m; DigitalDownconverter.m,"Stateful NCO, phase-continuous composition and per-CC power."
+Power and metrics,ofdmReferencePower.m; deriveModulationTrackingMetrics.m,WaveformPowerLedger.m; ParsevalLedger.m; PAPRMeasurement.m; SpectralMeasurement.m; WaveformEVMMeasurement.m,One explicit reference-domain and oversampled analysis chain.
+Validation,tests/+phy/gridBitWaveformAcceptance.m; bounded tests,tests/+phy/+waveform/*; runWaveformPhaseValidation.m; runWaveformImpactAnalysis.m,"Add independent vectors, complete capability execution, impact analysis and artifacts."

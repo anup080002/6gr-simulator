@@ -1,0 +1,2 @@
+RunID,ExperimentsExpected,ExperimentsComplete,RulesPassed,RulesFailed,IncompletePoints,HardFailures,StatisticalConclusions,Status
+"PROTOCOL-IMPACT-20260727-071740","768","768","96","0","0","0","paired_component_execution_complete","PASS"

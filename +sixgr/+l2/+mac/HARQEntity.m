@@ -1,6 +1,6 @@
 classdef HARQEntity < handle
 % sixgr.l2.mac.HARQEntity
-% Simple HARQ process manager for MAC/PHY integration.
+% Compatibility facade for direction-specific event-driven HARQ entities.
 %
 % This class tracks HARQ process state per UE and per direction (DL/UL).
 % It does NOT implement soft-combining arithmetic itself; it provides the
@@ -38,7 +38,7 @@ classdef HARQEntity < handle
         MaxRetx (1,1) double = 3
         RVSequence (1,:) double = [0 2 3 1]
         StoreTB (1,1) logical = true
-        StaleProcessTimeoutSlots (1,1) double = NaN
+        StaleProcessTimeoutSlots (1,1) double = NaN % deprecated; never expires state
         Logger = []                         % optional sixgr.core.Logger
     end
 
@@ -83,7 +83,10 @@ classdef HARQEntity < handle
                         case 'storetb'
                             obj.StoreTB = logical(val);
                         case 'staleprocesstimeoutslots'
-                            obj.StaleProcessTimeoutSlots = double(val);
+                            if isfinite(double(val))
+                                error("sixgr:mac:SynthesizedHARQTimeoutForbidden", ...
+                                    "HARQ process lifetime is event-driven; age timeouts are forbidden.");
+                            end
                         case 'logger'
                             obj.Logger = val;
                     end
@@ -98,26 +101,11 @@ classdef HARQEntity < handle
                 obj.MaxRetx = double(sixgr.util.structGet(cfg,"mac.harq.maxRetx",obj.MaxRetx));
                 obj.NumProcesses = double(sixgr.util.structGet(cfg,"mac.harq.numProcesses", ...
                     sixgr.util.structGet(cfg,"phy.harq.nProcesses",obj.NumProcesses)));
-                obj.StaleProcessTimeoutSlots = double(sixgr.util.structGet(cfg,"mac.harq.staleProcessTimeoutSlots", ...
-                    sixgr.util.structGet(cfg,"phy.harq.staleProcessTimeoutSlots",obj.StaleProcessTimeoutSlots)));
             catch
-            end
-            if ~(isfinite(obj.StaleProcessTimeoutSlots) && obj.StaleProcessTimeoutSlots > 0)
-                rttSlots = double(sixgr.util.structGet(cfg, "tdd_timing.harq_roundtrip_slots", NaN));
-                if isfinite(rttSlots) && rttSlots > 0
-                    obj.StaleProcessTimeoutSlots = 2 * rttSlots;
-                else
-                    feedbackSlots = double(sixgr.util.structGet(cfg, "phy.harq.feedbackTimingSlots", ...
-                        sixgr.util.structGet(cfg, "mac.harq.k1", 4)));
-                    if ~(isfinite(feedbackSlots) && feedbackSlots > 0)
-                        feedbackSlots = 4;
-                    end
-                    obj.StaleProcessTimeoutSlots = max(16, 4 * feedbackSlots);
-                end
             end
             obj.NumProcesses = max(1, round(obj.NumProcesses));
             obj.MaxRetx = max(0, round(obj.MaxRetx));
-            obj.StaleProcessTimeoutSlots = max(1, round(double(obj.StaleProcessTimeoutSlots)));
+            obj.StaleProcessTimeoutSlots = NaN;
         end
 
         function reset(obj)
@@ -370,11 +358,25 @@ classdef HARQEntity < handle
             obj.UEProcs{ui} = procs;
         end
 
-        function onFeedback(obj, rnti, harqId0, ack, varargin)
-            % onFeedback Update HARQ process state after ACK/NACK.
+        function onFeedback(obj, rnti, harqId0, feedback, varargin)
+            % onFeedback Apply a typed ACK/NACK/DTX outcome.
             rnti = double(rnti);
             pid = double(harqId0) + 1;
-            ack = logical(ack);
+            if isa(feedback, "sixgr.l2.mac.HARQFeedbackEvent")
+                outcome = feedback.Outcome;
+            elseif islogical(feedback) || ...
+                    (isnumeric(feedback) && isscalar(feedback))
+                % Compatibility callers remain supported, but the live
+                % scheduler installs an explicit Outcome before dispatch.
+                if logical(feedback), outcome = "ACK"; else, outcome = "NACK"; end
+            else
+                outcome = upper(string(feedback));
+            end
+            if ~ismember(outcome, ["ACK","NACK","DTX"])
+                error("sixgr:mac:InvalidHARQFeedbackContext", ...
+                    "Feedback outcome must be ACK, NACK, or DTX.");
+            end
+            ack = outcome == "ACK";
             sourceSlot = NaN;
             feedbackSlot = NaN;
             if ~isempty(varargin)
@@ -435,7 +437,7 @@ classdef HARQEntity < handle
                 obj.Stats.Ack = obj.Stats.Ack + 1;
             else
                 obj.Stats.Nack = obj.Stats.Nack + 1;
-                obj.markDeliveryFeedback(rnti, harqId0, false, sourceSlot, feedbackSlot, "nack");
+                obj.markDeliveryFeedback(rnti, harqId0, false, sourceSlot, feedbackSlot, lower(outcome));
 
                 % NACK: if max transmissions reached, drop; else schedule retx
                 maxTx = 1 + obj.MaxRetx;
@@ -589,45 +591,14 @@ classdef HARQEntity < handle
         end
 
         function expireStaleProcesses(obj, rnti, currentSlot)
-            if ~(isfinite(double(currentSlot)) && isfinite(double(obj.StaleProcessTimeoutSlots)) && ...
-                    double(obj.StaleProcessTimeoutSlots) > 0)
-                return;
-            end
-            [ui, procs] = obj.getUE(double(rnti), false);
-            if ui < 1
-                return;
-            end
-            procs = obj.expireStaleProcessArray(procs, currentSlot);
-            obj.UEProcs{ui} = procs;
+            %#ok<INUSD>
+            % Intentionally empty. Process lifetime is changed only by
+            % decoded feedback, cancellation, release, reset, or TA expiry.
         end
 
         function procs = expireStaleProcessArray(obj, procs, currentSlot)
-            if ~(isfinite(double(currentSlot)) && isfinite(double(obj.StaleProcessTimeoutSlots)) && ...
-                    double(obj.StaleProcessTimeoutSlots) > 0) || isempty(procs)
-                return;
-            end
-            timeoutSlots = max(1, round(double(obj.StaleProcessTimeoutSlots)));
-            for pid = 1:numel(procs)
-                if ~logical(procs(pid).Active)
-                    continue;
-                end
-                ageSlots = double(currentSlot) - double(procs(pid).LastTxSlot);
-                if isfinite(ageSlots) && ageSlots >= timeoutSlots
-                    ndi = procs(pid).NDI;
-                    ndiEpoch = procs(pid).NDIEpoch;
-                    lastTxSlot = procs(pid).LastTxSlot;
-                    if ~isempty(fieldnames(procs(pid).SoftBuffer))
-                        obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
-                    end
-                    procs(pid) = obj.newProcTemplate();
-                    procs(pid).NDI = ndi;
-                    procs(pid).NDIEpoch = ndiEpoch;
-                    procs(pid).LastDropReason = "stale_harq_process_timeout";
-                    obj.markDeliveryFeedback(NaN, pid - 1, false, lastTxSlot, currentSlot, "stale_harq_process_timeout");
-                    obj.Stats.Drop = obj.Stats.Drop + 1;
-                    obj.Stats.TimeoutDrop = obj.Stats.TimeoutDrop + 1;
-                end
-            end
+            %#ok<INUSD>
+            % Compatibility no-op; synthesized age expiry is forbidden.
         end
 
         function key = composeTBIdentity(obj, rnti, harqId0, p, grant)

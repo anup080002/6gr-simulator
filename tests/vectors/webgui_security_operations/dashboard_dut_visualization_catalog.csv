@@ -1,0 +1,89 @@
+Domain,DisplayOrder,VisualizationTitle,SourceArtifactPattern,TruthRequirement,Priority,MissingDataBehavior,CompareRunSupport,InteractivePlotPreferred
+Overview,1,Run stage and failure waterfall,run_stage_timeline.csv,Measured/decoded stage events,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Overview,2,KPI summary cards,kpi_summary.csv,Measured KPI with sample count and phase,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Overview,3,Artifact completeness by domain,artifact_manifest.csv,Manifest presence/hash state,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Overview,4,Validity and provenance badges,validation_gate_results.csv,Gate outcome plus provenance,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Frame_Grid_Numerology_Duplexing,1,Slot/symbol ownership heatmap,slot_symbol_ownership.csv,Resolved D/U/F/guard ownership,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Frame_Grid_Numerology_Duplexing,2,Resource-grid occupancy,resource_grid_occupancy.csv,Actual RE ownership,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Frame_Grid_Numerology_Duplexing,3,K0/K1/K2 timeline,k0_k1_k2_timeline.csv,Decoded/configured timing lineage,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Frame_Grid_Numerology_Duplexing,4,BWP and component-carrier map,bwp_switch_timeline.csv|component_carrier_resource_map.csv,Actual active BWP/CC state,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+Waveform_OFDM_DFTsOFDM,1,OFDM symbol anatomy and CP,waveform_symbol_timing.csv,Resolved OFDM metadata,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Waveform_OFDM_DFTsOFDM,2,PSD and occupied bandwidth,waveform_spectral_measurements.csv,Actual waveform samples and declared RBW,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Waveform_OFDM_DFTsOFDM,3,PAPR CCDF,waveform_papr_ccdf.csv,Oversampled actual waveform trials,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Waveform_OFDM_DFTsOFDM,4,Constellation and eye diagram,receiver_symbol_samples.csv,Actual equalized/decoded symbols,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Waveform_OFDM_DFTsOFDM,5,EVM per RB and symbol,waveform_receiver_roundtrip.csv,Measured RE EVM,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Waveform_OFDM_DFTsOFDM,6,DFT-spreading map/spectrum,waveform_dft_mapping.csv,Actual transform mapping,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+PDSCH_DL_SCH,1,BLER/BER versus SNR with independent reference,pdsch_bler_curve.csv|pdsch_independent_vector_results.csv,DUT and qualifying oracle with confidence intervals,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PDSCH_DL_SCH,2,PDSCH resource ownership,pdsch_resource_ownership.csv,Actual RE map,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PDSCH_DL_SCH,3,DM-RS/PT-RS map,pdsch_dmrs_matrix.csv|pdsch_ptrs_matrix.csv,Actual reference-signal indices,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PDSCH_DL_SCH,4,Codeword-to-layer map,pdsch_layer_codeword_map.csv,Actual selected/applied mapping,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PDSCH_DL_SCH,5,HARQ RV timeline,pdsch_harq_trials.csv,Actual process/TB/RV events,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+PUSCH_UL_SCH,1,UL BLER/BER versus measured SINR,pusch_bler_curve.csv|pusch_receiver_metrics.csv,Receiver measured SINR and CRC outcomes,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PUSCH_UL_SCH,2,UCI bit allocation,pusch_uci_multiplexing.csv,Actual TS 38.212 bit ownership,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PUSCH_UL_SCH,3,DM-RS/PT-RS/hop map,pusch_re_mapping.csv,Actual RE and hop ownership,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PUSCH_UL_SCH,4,Transform spectrum and PAPR,pusch_transform_precoding.csv,Actual DFT-s-OFDM samples,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PUSCH_UL_SCH,5,SRS/TPMI selection,pusch_srs_precoder_selection.csv,Measured SRS state and applied matrix,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PUSCH_UL_SCH,6,Power-control convergence,pusch_power_control.csv,Requested/applied/measured power,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+PDCCH_DCI,1,CORESET REG/CCE map,pdcch_coreset_mapping.csv,Actual mapping,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PDCCH_DCI,2,Search-space and candidate map,pdcch_candidate_enumeration.csv,Blind-search candidates,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PDCCH_DCI,3,Detection probability versus SNR,pdcch_detection_campaign.csv,Multi-seed detections,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PDCCH_DCI,4,False-alarm upper bounds,pdcch_false_alarm_trials.csv,No-signal/wrong-RNTI trials,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PDCCH_DCI,5,DCI field layout,pdcch_dci_schema.csv,Contextual decoded field ownership,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+PUCCH_UCI,1,PUCCH resource-grid ownership,pucch_resource_mapping.csv,Actual resource/sequence/OCC map,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PUCCH_UCI,2,UCI bit layout,pucch_uci_serialization.csv,Actual HARQ/SR/CSI fields,hero,show_unavailable_reason_no_synthetic_plot,true,true
+PUCCH_UCI,3,K1/TDD timeline,pucch_timing_k1_tdd.csv,Exact due slot and resource,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PUCCH_UCI,4,HARQ codebook timeline,pucch_harq_codebook.csv,Decoded PDSCH event ownership,primary,show_unavailable_reason_no_synthetic_plot,true,true
+PUCCH_UCI,5,False-alarm/wrong-context bounds,pucch_false_alarm_trials.csv,No-signal and negative trials,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+SSB_Initial_Access_SIB1_RA,1,SSB burst and beam timeline,ssb_burst_plan.csv,Actual active SSB indices/beam state,hero,show_unavailable_reason_no_synthetic_plot,true,true
+SSB_Initial_Access_SIB1_RA,2,SS/PBCH resource grid,ssb_re_ownership.csv,Actual RE ownership,hero,show_unavailable_reason_no_synthetic_plot,true,true
+SSB_Initial_Access_SIB1_RA,3,Beam RSRP and selected SSB,ssb_beam_measurements.csv,Measured per-beam RSRP/SINR,primary,show_unavailable_reason_no_synthetic_plot,true,true
+SSB_Initial_Access_SIB1_RA,4,Type-0 CORESET/SearchSpace,type0_monitoring_candidates.csv,Decoded MIB-driven configuration,primary,show_unavailable_reason_no_synthetic_plot,true,true
+SSB_Initial_Access_SIB1_RA,5,PRACH occasion/correlation,prach_occasion_resolution.csv|prach_detection_trials.csv,Actual RO and correlation,primary,show_unavailable_reason_no_synthetic_plot,true,true
+SSB_Initial_Access_SIB1_RA,6,RA/RRC state timeline,ra_attempt_events.csv|rrc_connection_events.csv,Actual Msg1-4 and SetupComplete events,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Reference_Signals_Measurements_Link_Adaptation,1,Reference-signal ownership map,rsla_resource_ownership.csv,Actual RE ownership,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Reference_Signals_Measurements_Link_Adaptation,2,CSI-RS and SRS maps,rsla_csirs_resource_map.csv|rsla_srs_resource_map.csv,Actual configured resources,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Reference_Signals_Measurements_Link_Adaptation,3,Measured SINR/RSRP/RSRQ accuracy,rsla_measurement_results.csv,Receiver-derived measurements,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Reference_Signals_Measurements_Link_Adaptation,4,CSI Part 1/Part 2 layout,rsla_csi_report_bits.csv,Decoded report field ownership,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Reference_Signals_Measurements_Link_Adaptation,5,MCS and OLLA timeline,rsla_link_adaptation_decisions.csv|rsla_olla_state.csv,Decoded report authority and ACK/NACK,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Reference_Signals_Measurements_Link_Adaptation,6,Tracking convergence,rsla_tracking_state.csv,Measured timing/CFO correction,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,1,Antenna panel and 3D radiation pattern,mimo_antenna_geometry.csv|mimo_array_response.csv,Active array model,hero,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,2,Codebook beam patterns,mimo_codebook_vectors.csv,Exact enabled codebook matrices,hero,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,3,RI/PMI objective map,mimo_ri_pmi_selection.csv,Measured channel/covariance objective,primary,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,4,Per-layer SINR/EVM,mimo_receiver_metrics.csv,Receiver-derived per-layer values,hero,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,5,Covariance eigenvalues/age,mimo_covariance_state.csv,Measured covariance validity,primary,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,6,MU-MIMO interference map,mimo_mu_mimo_trials.csv,Shared waveform per-UE contributions,primary,show_unavailable_reason_no_synthetic_plot,true,true
+MIMO_CSI_Beamforming,7,Multi-TRP phase/timing,mimo_multitrp_trials.csv,Per-TRP actual phase/timing state,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,1,3D trajectory/topology,channel_geometry_state.csv,Observed runtime positions,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,2,Signal strength/pathloss along route plus SER/BLER,channel_pathloss_runtime.csv|channel_receiver_trials.csv,Runtime received power and outcomes,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,3,CIR/PDP and delay-angle spectrum,channel_impulse_response.csv,Actual channel taps,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,4,Doppler and phase continuity,channel_mobility_doppler.csv,Observed range rate and channel phase,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,5,LSP distribution/correlation,channel_lsp_statistics.csv,Independent-drop statistics,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,6,Interference contributions/covariance,channel_interference_contributions.csv,Sample-domain per-link ledger,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Channel_Geometry_Mobility_Interference,7,Ray-tracing scene/reproducibility,channel_raytracing_manifest.csv,Scene/solver/material hashes,secondary,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,1,Target versus measured tracking with zoom panels,rf_tracking_trace.csv,Injected target and receiver estimate; residuals,hero,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,2,CFO/SCO/timing convergence,rf_cfo_tracking.csv|rf_sco_tracking.csv,Measured acquisition/tracking state,hero,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,3,Phase-noise PSD and CPE/ICI,rf_phase_noise_measurements.csv,Actual oscillator samples,primary,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,4,IQ constellation/image rejection,rf_iq_measurements.csv,Actual compensated/uncompensated samples,primary,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,5,PA AM-AM/AM-PM and spectrum,rf_pa_measurements.csv,Actual input/output samples,hero,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,6,EVM/ACLR/SEM/OBUE,rf_waveform_quality.csv,Declared measurement method/reference plane,hero,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,7,Blocker/intermodulation,rf_blocker_trials.csv,Actual composite front-end samples,primary,show_unavailable_reason_no_synthetic_plot,true,true
+RF_Impairments_Power_Control,8,UL power-control convergence,rf_ul_power_control.csv,Requested/applied/measured power,primary,show_unavailable_reason_no_synthetic_plot,true,true
+MAC_HARQ_Scheduling,1,HARQ process/NDI/RV timeline,mac_harq_attempts.csv,Event-sourced process state,hero,show_unavailable_reason_no_synthetic_plot,true,true
+MAC_HARQ_Scheduling,2,Scheduler resource allocation,mac_scheduler_grants.csv,Committed grants only,hero,show_unavailable_reason_no_synthetic_plot,true,true
+MAC_HARQ_Scheduling,3,Queue/BSR/PHR/SR/TA timeline,mac_queue_control_state.csv,Decoded CE and timer state,primary,show_unavailable_reason_no_synthetic_plot,true,true
+MAC_HARQ_Scheduling,4,Latency CDF and PDB misses,mac_packet_lineage.csv,First delivery only,hero,show_unavailable_reason_no_synthetic_plot,true,true
+MAC_HARQ_Scheduling,5,Fairness and goodput,mac_scheduler_metrics.csv,Per-UE delivered bytes,primary,show_unavailable_reason_no_synthetic_plot,true,true
+MAC_HARQ_Scheduling,6,Packet lineage/conservation,mac_conservation_ledger.csv,Immutable cross-layer IDs,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Protocol_Traffic,1,RLC receive window and STATUS map,protocol_rlc_state.csv,Decoded PDU/timer state,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Protocol_Traffic,2,PDCP COUNT/security/reordering,protocol_pdcp_state.csv,Actual COUNT and security outcomes,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Protocol_Traffic,3,SDAP QFI-to-DRB map,protocol_sdap_mapping.csv,RRC-installed mapping,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Protocol_Traffic,4,RRC message/handover sequence,protocol_rrc_events.csv,Decoded ASN.1 procedure events,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Protocol_Traffic,5,Traffic arrivals and PDU-set latency,protocol_traffic_packets.csv,Named-stream packet events,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Protocol_Traffic,6,Cross-layer lineage/conservation,protocol_conservation_ledger.csv,First delivery and byte balance,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,1,DUT versus independent BER/BLER reference,validation_curve_comparison.csv,Complete-key join and qualifying oracle,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,2,Confidence interval and stopping trace,validation_campaign_points.csv,Actual trial/error counts,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,3,Point-state/stop-reason matrix,validation_point_status.csv,Canonical states,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,4,Provenance DAG,validation_provenance_edges.csv,Observed/derived/oracle nodes,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,5,Measured versus configured SINR reconciliation,validation_measured_sinr.csv,Receiver-derived measurement,primary,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,6,Publication-gate waterfall,validation_publication_gates.csv,Fail-closed gate outcomes,hero,show_unavailable_reason_no_synthetic_plot,true,true
+Validation_Statistics_Evidence,7,Artifact completeness/integrity,validation_artifact_audit.csv,Manifest/hash/schema status,primary,show_unavailable_reason_no_synthetic_plot,true,true

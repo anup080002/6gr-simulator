@@ -155,7 +155,11 @@ classdef (Abstract) SchedulerBase < handle
             try
                 harqEnable = logical(sixgr.util.structGet(cfg,"mac.harq.enable",true));
                 if harqEnable && isempty(obj.HARQ)
-                    obj.HARQ = sixgr.l2.mac.HARQEntity(cfg,'Direction',obj.Direction,'Logger',obj.Logger);
+                    if strcmpi(obj.Direction, "DL")
+                        obj.HARQ = sixgr.l2.mac.HARQEntityDL(cfg,'Logger',obj.Logger);
+                    else
+                        obj.HARQ = sixgr.l2.mac.HARQEntityUL(cfg,'Logger',obj.Logger);
+                    end
                 end
             catch
                 % ignore
@@ -210,7 +214,15 @@ classdef (Abstract) SchedulerBase < handle
             if istable(rxFeedback)
                 rntiList = rxFeedback.RNTI;
                 tbsList  = rxFeedback.TBSBits;
-                ackList  = rxFeedback.Ack;
+                if ismember("Outcome", string(rxFeedback.Properties.VariableNames))
+                    outcomeList = upper(string(rxFeedback.Outcome));
+                    ackList = outcomeList == "ACK";
+                else
+                    ackList  = rxFeedback.Ack;
+                    outcomeList = strings(height(rxFeedback),1);
+                    outcomeList(logical(ackList)) = "ACK";
+                    outcomeList(~logical(ackList)) = "NACK";
+                end
                 rvList = nan(height(rxFeedback), 1);
                 isRetxList = false(height(rxFeedback), 1);
                 isRetxKnownList = false(height(rxFeedback), 1);
@@ -237,7 +249,15 @@ classdef (Abstract) SchedulerBase < handle
             else
                 rntiList = [rxFeedback.RNTI];
                 tbsList  = [rxFeedback.TBSBits];
-                ackList  = [rxFeedback.Ack];
+                if isfield(rxFeedback, "Outcome")
+                    outcomeList = upper(string({rxFeedback.Outcome}));
+                    ackList = outcomeList == "ACK";
+                else
+                    ackList  = [rxFeedback.Ack];
+                    outcomeList = strings(numel(ackList),1);
+                    outcomeList(logical(ackList)) = "ACK";
+                    outcomeList(~logical(ackList)) = "NACK";
+                end
                 harqIdList = nan(numel(rntiList), 1);
                 rvList = nan(numel(rntiList), 1);
                 isRetxList = false(numel(rntiList), 1);
@@ -284,9 +304,9 @@ classdef (Abstract) SchedulerBase < handle
                     harqId = double(harqIdList(k));
                     if isfinite(harqId)
                         if isfinite(double(sourceSlotList(k)))
-                            obj.HARQ.onFeedback(rnti, harqId, ack, "SourceSlot", double(sourceSlotList(k)));
+                            obj.HARQ.onFeedback(rnti, harqId, outcomeList(k), "SourceSlot", double(sourceSlotList(k)));
                         else
-                            obj.HARQ.onFeedback(rnti, harqId, ack);
+                            obj.HARQ.onFeedback(rnti, harqId, outcomeList(k));
                         end
                     end
                 end

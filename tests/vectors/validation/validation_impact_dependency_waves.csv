@@ -1,0 +1,4 @@
+DependencyWave,Families,Experiments,Pairs,Meaning
+A,46,552,276,Direct validation-engine implementation
+B,17,204,102,Runtime/toolchain/artifact integration
+C,1,12,6,Complete publication pipeline

@@ -1,0 +1,17 @@
+VectorID,Length,SignalType,ReferenceDomain,OversamplingFactor
+PAPR-16-constant,16,constant,useful_samples,1
+PAPR-16-single_impulse,16,single_impulse,useful_samples,1
+PAPR-16-alternating,16,alternating,useful_samples,1
+PAPR-16-two_tone_time,16,two_tone_time,useful_samples,1
+PAPR-64-constant,64,constant,useful_samples,1
+PAPR-64-single_impulse,64,single_impulse,useful_samples,1
+PAPR-64-alternating,64,alternating,useful_samples,1
+PAPR-64-two_tone_time,64,two_tone_time,useful_samples,1
+PAPR-256-constant,256,constant,useful_samples,1
+PAPR-256-single_impulse,256,single_impulse,useful_samples,1
+PAPR-256-alternating,256,alternating,useful_samples,1
+PAPR-256-two_tone_time,256,two_tone_time,useful_samples,1
+PAPR-1024-constant,1024,constant,useful_samples,1
+PAPR-1024-single_impulse,1024,single_impulse,useful_samples,1
+PAPR-1024-alternating,1024,alternating,useful_samples,1
+PAPR-1024-two_tone_time,1024,two_tone_time,useful_samples,1

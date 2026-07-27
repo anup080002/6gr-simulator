@@ -1,0 +1,86 @@
+TestID,TestName,Category,Mandatory,RequiredEvidence,ExpectedStatus
+VT-001,testValidationPointStatusEnum,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-002,testValidationStopReasonEnum,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-003,testValidationLegacyTokenMigration,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-004,testOperatingPointKeyCanonicalization,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-005,testOperatingPointKeyMissingField,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-006,testOperatingPointKeyDuplicate,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-007,testCanonicalSchemaHappyPath,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-008,testCanonicalSchemaMissingColumn,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-009,testCanonicalSchemaWrongType,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-010,testCanonicalSchemaNaNThreshold,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-011,testCanonicalSchemaInfThreshold,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-012,testCanonicalSchemaEmptyMandatoryTable,Schema and enums,True,MATLAB test result plus canonical CSV row,PASS
+VT-013,testWilsonInterval90,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-014,testWilsonInterval95,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-015,testWilsonInterval99,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-016,testClopperPearsonTwoSided,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-017,testClopperPearsonOneSidedUpper,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-018,testZeroErrorUpperBound,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-019,testSequentialMinimumTrials,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-020,testSequentialMinimumErrorsAndCI,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-021,testSequentialZeroErrorCensored,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-022,testSequentialMaxTrialsIncomplete,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-023,testSequentialAlphaSpending,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-024,testSequentialCoverageMonteCarlo,Intervals and sequential design,True,MATLAB test result plus canonical CSV row,PASS
+VT-025,testHighSNRZeroErrorPlateau,Curve trend and independent drops,True,MATLAB test result plus canonical CSV row,PASS
+VT-026,testHighSNRDegradedCurve,Curve trend and independent drops,True,MATLAB test result plus canonical CSV row,PASS
+VT-027,testHighSNRUncertaintyTrend,Curve trend and independent drops,True,MATLAB test result plus canonical CSV row,PASS
+VT-028,testIndependentDropMinimum,Curve trend and independent drops,True,MATLAB test result plus canonical CSV row,PASS
+VT-029,testIndependentDropDuplicateSeed,Curve trend and independent drops,True,MATLAB test result plus canonical CSV row,PASS
+VT-030,testIndependentDropAggregation,Curve trend and independent drops,True,MATLAB test result plus canonical CSV row,PASS
+VT-031,testTaskIDDeterminism,Task/seed/merge determinism,True,MATLAB test result plus canonical CSV row,PASS
+VT-032,testHierarchicalSeedPartition,Task/seed/merge determinism,True,MATLAB test result plus canonical CSV row,PASS
+VT-033,testRetryIdempotence,Task/seed/merge determinism,True,MATLAB test result plus canonical CSV row,PASS
+VT-034,testDuplicateTaskConflict,Task/seed/merge determinism,True,MATLAB test result plus canonical CSV row,PASS
+VT-035,testMergeOrderDeterminism,Task/seed/merge determinism,True,MATLAB test result plus canonical CSV row,PASS
+VT-036,testFloatingPointStableAggregation,Task/seed/merge determinism,True,MATLAB test result plus canonical CSV row,PASS
+VT-037,testRunClassAWGNIsolation,Run-class isolation,True,MATLAB test result plus canonical CSV row,PASS
+VT-038,testRunClassGeometryIsolation,Run-class isolation,True,MATLAB test result plus canonical CSV row,PASS
+VT-039,testRunClassControlOnlyIsolation,Run-class isolation,True,MATLAB test result plus canonical CSV row,PASS
+VT-040,testEvidenceObservedRuntime,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-041,testEvidenceDerivedFromObserved,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-042,testEvidenceConfiguredRejected,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-043,testEvidenceReconstructedRejected,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-044,testProvenanceCircularComparison,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-045,testProvenanceIndependentRoots,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-046,testMeasuredSINRMandatory,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-047,testMeasuredSINRFinite,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-048,testMeasuredSINRSampleCount,Evidence provenance and measured SINR,True,MATLAB test result plus canonical CSV row,PASS
+VT-049,testOracleRegistryPureMath,Oracle independence,True,MATLAB test result plus canonical CSV row,PASS
+VT-050,testOracleRegistryFrozenExternal,Oracle independence,True,MATLAB test result plus canonical CSV row,PASS
+VT-051,testOracleRegistryAnalyticalInvariant,Oracle independence,True,MATLAB test result plus canonical CSV row,PASS
+VT-052,testOracleRegistryStatisticalDistribution,Oracle independence,True,MATLAB test result plus canonical CSV row,PASS
+VT-053,testOracleSelfConsistencyQuarantined,Oracle independence,True,MATLAB test result plus canonical CSV row,PASS
+VT-054,testOracleHashMismatch,Oracle independence,True,MATLAB test result plus canonical CSV row,PASS
+VT-055,testReferenceDatasetIndependence,Reference datasets,True,MATLAB test result plus canonical CSV row,PASS
+VT-056,testReferenceDatasetDeleted,Reference datasets,True,MATLAB test result plus canonical CSV row,PASS
+VT-057,testReferenceDatasetShifted,Reference datasets,True,MATLAB test result plus canonical CSV row,PASS
+VT-058,testOperatingPointExactJoin,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-059,testOperatingPointMissingReference,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-060,testOperatingPointExtraReference,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-061,testOperatingPointIncompatibleProfile,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-062,testCurveNewcombeDifference,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-063,testCurveNonInferiority,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-064,testCurveEquivalence,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-065,testCurveMultiplicityHolm,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-066,testCurveSparseOverlapRejected,Point joins and curve comparison,True,MATLAB test result plus canonical CSV row,PASS
+VT-067,testCalibrationCatalogExactKey,Calibration and negative matrix,True,MATLAB test result plus canonical CSV row,PASS
+VT-068,testCalibrationHoldoutBounds,Calibration and negative matrix,True,MATLAB test result plus canonical CSV row,PASS
+VT-069,testNegativeTestMatrixGeneration,Calibration and negative matrix,True,MATLAB test result plus canonical CSV row,PASS
+VT-070,testTimeWindowHalfOpenBoundaries,Time windows,True,MATLAB test result plus canonical CSV row,PASS
+VT-071,testKPISamplePhaseOwnership,Time windows,True,MATLAB test result plus canonical CSV row,PASS
+VT-072,testWarmupExcludedFromSteadyKPI,Time windows,True,MATLAB test result plus canonical CSV row,PASS
+VT-073,testArtifactRequirementsHeadless,Artifacts,True,MATLAB test result plus canonical CSV row,PASS
+VT-074,testArtifactRequirementsBrowser,Artifacts,True,MATLAB test result plus canonical CSV row,PASS
+VT-075,testArtifactDeletionFails,Artifacts,True,MATLAB test result plus canonical CSV row,PASS
+VT-076,testCanonicalScenarioFreshRun,Scenario/archive,True,MATLAB test result plus canonical CSV row,PASS
+VT-077,testArchiveCleanWorkspace,Scenario/archive,True,MATLAB test result plus canonical CSV row,PASS
+VT-078,testArchiveStaleArtifactRejected,Scenario/archive,True,MATLAB test result plus canonical CSV row,PASS
+VT-079,testMATLABExecutionLedger,Toolchain/Python,True,MATLAB test result plus canonical CSV row,PASS
+VT-080,testRequiredTestSkippedFails,Toolchain/Python,True,MATLAB test result plus canonical CSV row,PASS
+VT-081,testPythonCollectionWithoutMATLAB,Toolchain/Python,True,MATLAB test result plus canonical CSV row,PASS
+VT-082,testAllSourceYAMLParse,YAML/claims/publication,True,MATLAB test result plus canonical CSV row,PASS
+VT-083,testYAMLDuplicateKey,YAML/claims/publication,True,MATLAB test result plus canonical CSV row,PASS
+VT-084,testInternalAnchorClassification,YAML/claims/publication,True,MATLAB test result plus canonical CSV row,PASS
+VT-085,testPublicationGateEndToEnd,YAML/claims/publication,True,MATLAB test result plus canonical CSV row,PASS

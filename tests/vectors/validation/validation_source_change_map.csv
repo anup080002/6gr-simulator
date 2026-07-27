@@ -1,0 +1,37 @@
+Path,Action,RequiredChange
++sixgr/+stats/wilsonBinomialCI.m,Replace,Delegate to configurable BinomialIntervalEngine; remove fixed 95% z.
++sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,Refactor,"Use canonical point state, sequential design, configurable confidence, independent drop ledger, immutable task IDs."
++sixgr/+validation/auditFixedSNRSweepRun.m,Replace,Schema-first audit; canonical status/reason enums; mandatory measured SINR by run class.
++sixgr/+truth/runWaveformLinkBundle.m,Refactor,Stop writing DUT output as reference; emit canonical raw trials and independent reference identifier.
++sixgr/+analytics/exportFixedSNRSweepCurves.m,Refactor,Export DUT only; references loaded from registry.
++sixgr/+analytics/evaluatePublicationReadinessGates.m,Replace,"Perform complete joins, confidence-aware numerical comparisons, fail-closed gates."
++sixgr/+analytics/buildPhase7ReadinessArtifacts.m,Refactor,Separate observed/derived/configured/reconstructed fields and field-level provenance.
++sixgr/+truth/exportLLSReportingBundle.m,Refactor,Use canonical schemas and interval engine; compatibility aliases generated only from canonical data.
++sixgr/+util/hierarchicalSeed.m,Preserve/extend,Use as seed primitive within immutable task and substream ledger.
+apps/lls_web_dashboard.py,Refactor,Remove import-time MATLAB failure; display canonical validation status and reason enums.
+simulator/configs/defaults/lls_result_output_catalog.yaml,Fix,Quote flow-mapping labels and validate all source YAMLs in CI.
+tests/testReleaseNumericalAcceptanceSuite.m,Refactor,Separate internal numerical anchors from runtime profile conformance suites.
+tests/+core/releaseBaselineArchiveAcceptance.m,Replace,Validate freshly built archive in clean workspace; reject fixture-only evidence.
+tests/+core/releaseScenarioMatrixAcceptance.m,Replace,Execute canonical smoke/full scenario tiers with fresh run IDs.
+tests/testGeometryScenarioAudit.m,Refactor,Require observed runtime evidence and reject configuration backfill.
++sixgr/+validation/PointStatus.m,Add,Canonical point status enumeration.
++sixgr/+validation/StopReason.m,Add,Canonical stop-reason enumeration and explicit legacy migration.
++sixgr/+validation/OperatingPointKey.m,Add,Complete versioned operating-point key.
++sixgr/+validation/ValidationSchemaRegistry.m,Add,Canonical fail-closed schema registry.
++sixgr/+validation/BinomialIntervalEngine.m,Add,Wilson and Clopper-Pearson intervals with configurable levels.
++sixgr/+validation/SequentialStoppingPolicy.m,Add,Bounded-look sequential design and censored zero-error policy.
++sixgr/+validation/IndependentDropAggregator.m,Add,Hierarchical independent-drop/seed aggregation.
++sixgr/+validation/CurveComparisonEngine.m,Add,Newcombe-Wilson point comparisons and curve-level multiplicity handling.
++sixgr/+validation/OperatingPointJoiner.m,Add,Exact complete-key one-to-one join and discrepancy report.
++sixgr/+validation/IndependentOracleRegistry.m,Add,Versioned qualifying/reference and regression-only oracle registry.
++sixgr/+validation/EvidenceProvenanceGraph.m,Add,Field-level provenance DAG and circular-comparison detection.
++sixgr/+validation/RuntimeEvidenceGate.m,Add,Observed/decoded evidence requirements and measured-SINR enforcement.
++sixgr/+validation/TimeWindowContract.m,Add,Warm-up/acquisition/steady/tail phase ownership and KPI inclusion.
++sixgr/+validation/DeterministicTaskPlan.m,Add,"Immutable task IDs, seeds, substreams and trial ranges."
++sixgr/+validation/DeterministicMergeEngine.m,Add,"Idempotent retry handling, duplicate conflict rejection and stable merge."
++sixgr/+validation/ArtifactRequirementRegistry.m,Add,Launch-surface-independent mandatory artifacts.
++sixgr/+validation/CanonicalScenarioRunner.m,Add,Fresh executable profile conformance scenarios.
++sixgr/+validation/ArchiveAcceptanceRunner.m,Add,Clean-built release archive execution and hash checks.
++sixgr/+validation/TestExecutionLedger.m,Add,Pinned MATLAB/Python test execution evidence.
++sixgr/+validation/PublicationGateEvaluator.m,Add,Final publication gate aggregation with explicit failure reasons.
++sixgr/+validation/ValidationArtifactExporter.m,Add,Canonical CSV/JSON/PNG export with hashes.

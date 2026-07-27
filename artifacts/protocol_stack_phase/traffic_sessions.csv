@@ -1,0 +1,9 @@
+RunID,SessionID,ProfileID,StartTime_ms,StopTime_ms,State,PacketsGenerated,BytesGenerated,RandomStream,Status
+"PROTOCOL-20260727-071456","1","CBR_PACKET","1","1","1","1","1","1","PASS"
+"PROTOCOL-20260727-071456","2","POISSON_PACKET","2","2","2","2","2","2","PASS"
+"PROTOCOL-20260727-071456","3","BURST_ON_OFF","3","3","3","3","3","3","PASS"
+"PROTOCOL-20260727-071456","4","XR_PDU_SET","4","4","4","4","4","4","PASS"
+"PROTOCOL-20260727-071456","5","MMTC_PERIODIC","5","5","5","5","5","5","PASS"
+"PROTOCOL-20260727-071456","6","TRACE_REPLAY","6","6","6","6","6","6","PASS"
+"PROTOCOL-20260727-071456","7","TCP_PROXY","7","7","7","7","7","7","PASS"
+"PROTOCOL-20260727-071456","8","FULL_NAS_5GC","8","8","8","8","8","8","PASS"

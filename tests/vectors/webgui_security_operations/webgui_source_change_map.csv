@@ -1,0 +1,21 @@
+Path,Action,RequiredChange
+webgui/backend/main.py,Replace,"Application factory, same-origin static frontend, security middleware, auth/RBAC dependencies, request IDs, health/readiness."
+webgui/backend/config.py,Replace,Typed deployment settings; no default DB credentials; fixed public bind 0.0.0.0; trusted hosts/TLS/secrets/quotas.
+webgui/backend/routers/runs.py,Rewrite,"Config revision IDs, ownership, quotas, start/stop/delete/share permissions, no client paths."
+webgui/backend/routers/config.py,Rewrite,"Active root only, catalog-driven schema, round-trip revisions, inheritance/resolution/diff, upload constraints."
+webgui/backend/routers/results.py,Rewrite,"Manifest-driven artifact endpoints, pagination, safe previews, validation/results grouping."
+webgui/backend/routers/realtime.py,Rewrite,"Authenticated and authorized WS with Origin check, read-only messages by default, owner stop command."
+webgui/backend/services/matlab_runner.py,Replace,"Persistent queue/worker, immutable resolved YAML, process group, quotas, restart reconciliation, command manifest."
+webgui/backend/services/csv_store.py,Replace/Rehome,Opaque IDs and artifact manifest; remove substring run lookup and arbitrary repo paths.
+webgui/backend/models/*,Expand,"User, Role, Session, ConfigRevision, Run, RunACL, Job, Artifact, AuditEvent, QuotaUsage, WorkerLease."
+webgui/frontend/src/App.tsx,Rewrite,Global run selector and full information architecture.
+webgui/frontend/src/components/ConfigPanel/*,Rewrite,Mode-first structured schema-generated editor; Advanced raw YAML; source/effective/resolved/diff.
+webgui/frontend/src/components/Results/*,Add,"Domain/DUT galleries, interactive CSV plots, validated PNGs, truth/provenance badges."
+webgui/frontend/src/components/Validation/*,Add,"Gate waterfall, point status, provenance, independent comparison, artifact audit."
+webgui/frontend/src/components/ArtifactExplorer/*,Add,Search/filter/download/preview all manifest artifacts.
+webgui/frontend/src/components/CompareRuns/*,Add,Compatible-key comparison and plot overlays.
+webgui/frontend/src/components/Architecture/*,Add,Interactive block diagram and parameter catalog.
+webgui/frontend/src/components/Operations/*,Add,Queue/worker/quota/audit/retention/admin views by role.
+apps/lls_web_dashboard.py,Delete,After parity acceptance; no old server remains.
+apps/start_lls_web_dashboard.ps1,Delete,Replaced by canonical launcher.
+apps/start_lls_dashboard_edge_stack.ps1,Delete,Replaced by canonical launcher.

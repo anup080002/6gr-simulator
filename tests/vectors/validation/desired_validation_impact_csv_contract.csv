@@ -1,0 +1,17 @@
+FileName,RequiredColumns,MinimumRows
+validation_impact_run_manifest.csv,ExperimentID;FamilyID;PairID;Arm;Seed;RunID;Status,768
+validation_impact_raw_trials.csv,ExperimentID;PairID;Arm;TrialID;Outcome;MetricValue;Status,768
+validation_impact_operating_points.csv,ExperimentID;PointKey;TrialCount;ErrorCount;Estimate;CILow;CIHigh;Status,768
+validation_impact_pairwise_effects.csv,FamilyID;PairID;BaselineValue;TreatmentValue;Effect;CILow;CIHigh;PValue;AdjustedPValue;Status,384
+validation_impact_rule_evaluation.csv,RuleID;RuleType;FamilyID;Observed;Threshold;Status;FailureReason,96
+validation_impact_intervals.csv,FamilyID;Method;ConfidenceLevel;Coverage;MeanWidth;Status,64
+validation_impact_stopping.csv,FamilyID;BaselineStop;TreatmentStop;TrialDifference;IncompleteCount;Status,64
+validation_impact_reference.csv,FamilyID;ReferenceMode;MismatchCount;MissingCount;ExtraCount;Status,64
+validation_impact_provenance.csv,FamilyID;ConfiguredCount;ObservedCount;CircularCount;Status,64
+validation_impact_multiseed.csv,FamilyID;IndependentDrops;UniqueSeeds;AggregateEstimate;BetweenDropVariance;Status,64
+validation_impact_parallel.csv,FamilyID;SerialSHA256;ParallelSHA256;DuplicateConflicts;Status,64
+validation_impact_artifacts.csv,FamilyID;RequiredArtifacts;GeneratedArtifacts;ValidArtifacts;Status,64
+validation_impact_toolchain.csv,FamilyID;MATLABVersion;ToolboxVersion;TestsExecuted;TestsFailed;Status,64
+validation_impact_interactions.csv,ModelID;Term;Estimate;CILow;CIHigh;AdjustedPValue;Status,64
+validation_impact_summary.csv,FamilyID;FamilyName;DependencyWave;PrimaryEffect;PracticalVerdict;StatisticalVerdict;Status,64
+validation_impact_image_semantic_audit.csv,ImageFile;SourceCSV;SourceCSVSHA256;ImageSHA256;Width;Height;Axes;Series;FinitePoints;ActualTitle;ActualXLabel;ActualYLabel;Status,30

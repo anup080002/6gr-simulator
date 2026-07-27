@@ -344,6 +344,60 @@ canonical_control:
     packet_interval_ms: 1
     target_rate_mbps: 100
     full_buffer_bits_per_tti: 100000000
+  protocol_stack:
+    enabled: true
+    strict: true
+    profile_id: nr_rel18_handover_bounded_strict
+    configuration_epoch: 1
+    vector_root: tests/vectors/protocol
+    rlc:
+      mode: AM
+      sn_bits: 12
+      poll_pdu: 16
+      poll_byte: 65536
+      max_retx_threshold: 8
+      t_poll_retransmit_ms: 45
+      t_reassembly_ms: 35
+      t_status_prohibit_ms: 10
+    pdcp:
+      bearer_type: DRB
+      sn_bits: 12
+      cipher_algorithm: 128-NEA2
+      integrity_algorithm: 128-NIA2
+      t_reordering_ms: 50
+      discard_timer_ms: 100
+      duplication_enabled: false
+    sdap:
+      pdu_session_id: 1
+      default_drb_id: 1
+      qfi_to_drb:
+      - qfi: 9
+        drb_id: 1
+    rrc:
+      endpoint_profile: ue_and_gnb
+      setup_enabled: true
+      security_mode_enabled: true
+      capability_exchange_enabled: false
+      reconfiguration_enabled: true
+      handover_enabled: true
+      t300_ms: 1000
+      t301_ms: 1000
+      t304_ms: 1000
+      t310_ms: 1000
+      t311_ms: 3000
+      t319_ms: 1000
+    traffic:
+      enabled: true
+      sessions:
+      - flow_id: data-1
+        profile_id: CBR
+        pdu_session_id: 1
+        qfi: 9
+        five_qi: 9
+        packet_bytes: 1500
+        rate_mbps: 100
+        deadline_ms: 50
+        direction: BIDIR
   reference_signals:
     ssb_enabled: true
     pbch_enabled: true
@@ -1707,6 +1761,107 @@ sweeps_and_matrix:
   snr_sweep:
     enabled: false
     values_db: []
+mac_phase08:
+  enabled: true
+  profile_id: nr_rel18_ca_scheduler_strict
+  specification_profile: 3gpp_release18_bounded_mac_harq
+  capability_class: benchmark
+  configuration_epoch: 1
+  harq:
+    process_count: 16
+    max_retransmissions: 4
+    rv_sequence: [0, 2, 3, 1]
+    process_lifetime_policy: event_driven
+    feedback_outcomes: [ACK, NACK, DTX]
+    dl_ack_codebook: type2
+    identity_fields: [direction, serving_cell, ue_id, harq_process, codeword, ndi_epoch, tb_id, bwp_id, configuration_epoch]
+    soft_buffer_position_aware: true
+    require_complete_provenance: true
+    first_success_deduplication: true
+  timing:
+    k0: 0
+    k1: 4
+    k2: 1
+    k0_source: decoded_dci
+    k1_source: decoded_dci_and_uci_codebook
+    k2_source: decoded_dci
+    tdd_pattern: FFFFFFFFFFFFFF
+    flexible_resolution: scheduler_resolved
+    symbols_per_slot: 14
+    processing_validation: strict
+    forward_slot_scan: false
+  scheduler:
+    default_policy: PF
+    enabled_policies: [RR, PF, QoS-PF, EDF]
+    grant_authority: decoded_dci
+    commit_mode: candidate_feasibility_atomic
+    tbs_source: exact_phy_allocation
+    retransmission_priority: configured_policy
+    proportional_fair_window_ms: 100
+    starvation_limit_slots: 40
+    cqi_max_age_slots: 20
+    control_overhead_accounting: true
+  bsr:
+    table_5bit: 38.321-table-6.1.3.1-1
+    table_8bit: 38.321-table-6.1.3.1-2
+    refined_table_8bit: 38.321-table-6.1.3.1-3
+    formats: [short, long, shortTruncated, longTruncated, refinedLong]
+    periodic_timer_slots: 40
+    retx_timer_slots: 80
+    triggers: [regular, periodic, retx, padding]
+  phr:
+    ph_mapping: 38.133-table-10.1.17.1-1
+    pcmax_mapping: 38.133-table-10.1.18.1-1
+    types: [type1, type2, type3, multipleEntry]
+    periodic_timer_slots: 40
+    prohibit_timer_slots: 20
+    pathloss_change_db: 3
+    power_backoff_change_db: 3
+  sr:
+    enabled: true
+    sr_id: 0
+    prohibit_timer_slots: 8
+    maximum_transmissions: 4
+    fallback: random_access
+  lcp:
+    algorithm: pbr_bsd_bj
+    channels:
+    - lcid: 1
+      lcg_id: 0
+      priority: 1
+      prioritized_bit_rate_kBps: 256
+      bucket_size_duration_ms: 100
+      allowed_serving_cells: [0, 1]
+      allowed_scs_kHz: [15, 30, 60, 120]
+    - lcid: 2
+      lcg_id: 1
+      priority: 4
+      prioritized_bit_rate_kBps: 64
+      bucket_size_duration_ms: 50
+      allowed_serving_cells: [0, 1]
+      allowed_scs_kHz: [15, 30, 60, 120]
+  pdu:
+    codec: nr_rel18_bounded_exact
+    allow_best_effort_parse: false
+    allow_drop_last_sdu: false
+    segmentation: exact
+    extended_lcid: bounded
+    ce_priority: procedure_owned
+  timing_advance:
+    tag_ids: [0, 1]
+    command_mode: relative_and_absolute
+    time_alignment_timer_slots: 2560
+    gate_ul_on_expiry: true
+    apply_waveform_sample_shift: true
+  persistent_grants:
+    sps_enabled: true
+    configured_grant_type1_enabled: true
+    configured_grant_type2_enabled: true
+    activation_authority: decoded_control
+  lineage:
+    enabled: true
+    byte_conservation: strict
+    delivery_counting: first_success_only
 execution_scales:
   default: full
   smoke:

@@ -1,0 +1,17 @@
+VectorID,ExpectedPAPR_dB,ExpectedMeanPower,ExpectedPeakPower
+PAPR-16-constant,0,1,1
+PAPR-16-single_impulse,12.0411998265592,1,16
+PAPR-16-alternating,0,1,1
+PAPR-16-two_tone_time,3.01029995663981,2,4
+PAPR-64-constant,0,1,1
+PAPR-64-single_impulse,18.0617997398389,1,64
+PAPR-64-alternating,0,1,1
+PAPR-64-two_tone_time,3.01029995663981,2,4
+PAPR-256-constant,0,1,1
+PAPR-256-single_impulse,24.0823996531185,1,256
+PAPR-256-alternating,0,1,1
+PAPR-256-two_tone_time,3.01029995663981,2,4
+PAPR-1024-constant,0,1,1
+PAPR-1024-single_impulse,30.1029995663981,1,1024
+PAPR-1024-alternating,0,1,1
+PAPR-1024-two_tone_time,3.01029995663981,2,4

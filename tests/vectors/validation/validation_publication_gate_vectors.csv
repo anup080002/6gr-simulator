@@ -1,0 +1,10 @@
+CaseID,SchemaOK,OracleOK,ProvenanceOK,StatisticsOK,CanonicalScenariosOK,RequiredTestsOK,ArtifactsOK,ArchiveOK,ExpectedStatus,ExpectedError
+PUB_PASS,True,True,True,True,True,True,True,True,PASS,
+PUB_SCHEMA,False,True,True,True,True,True,True,True,FAIL,sixgr:validation:PublicationGateIncomplete
+PUB_ORACLE,True,False,True,True,True,True,True,True,FAIL,sixgr:validation:PublicationGateIncomplete
+PUB_PROV,True,True,False,True,True,True,True,True,FAIL,sixgr:validation:PublicationGateIncomplete
+PUB_STATS,True,True,True,False,True,True,True,True,FAIL,sixgr:validation:PublicationGateIncomplete
+PUB_SCENARIO,True,True,True,True,False,True,True,True,FAIL,sixgr:validation:CanonicalScenarioNotExecuted
+PUB_TESTS,True,True,True,True,True,False,True,True,FAIL,sixgr:validation:RequiredTestSkipped
+PUB_ARTIFACTS,True,True,True,True,True,True,False,True,FAIL,sixgr:validation:ArtifactMissing
+PUB_ARCHIVE,True,True,True,True,True,True,True,False,FAIL,sixgr:validation:ArchiveSourceMismatch

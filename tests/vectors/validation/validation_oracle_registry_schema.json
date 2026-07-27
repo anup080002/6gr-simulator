@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sixgr://schemas/validation/oracle-registry/1.0.0",
+  "title": "6GR independent oracle registry entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "OracleID",
+    "OracleType",
+    "Feature",
+    "ProfileID",
+    "SourceName",
+    "SourceVersion",
+    "GeneratorCommand",
+    "ArtifactPath",
+    "ArtifactSHA256",
+    "IndependentOfDUT",
+    "QualifiesForMandatoryGate",
+    "License",
+    "CreatedUTC"
+  ],
+  "properties": {
+    "OracleID": {
+      "type": "string"
+    },
+    "OracleType": {
+      "enum": [
+        "PURE_MATH",
+        "FROZEN_EXTERNAL_VECTOR",
+        "ANALYTICAL_INVARIANT",
+        "STATISTICAL_DISTRIBUTION",
+        "SAME_TOOLBOX_SELF_CONSISTENCY",
+        "DUT_REGRESSION"
+      ]
+    },
+    "Feature": {
+      "type": "string"
+    },
+    "ProfileID": {
+      "type": "string"
+    },
+    "SourceName": {
+      "type": "string"
+    },
+    "SourceVersion": {
+      "type": "string"
+    },
+    "GeneratorCommand": {
+      "type": "string"
+    },
+    "ArtifactPath": {
+      "type": "string"
+    },
+    "ArtifactSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "IndependentOfDUT": {
+      "type": "boolean"
+    },
+    "QualifiesForMandatoryGate": {
+      "type": "boolean"
+    },
+    "License": {
+      "type": "string"
+    },
+    "CreatedUTC": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

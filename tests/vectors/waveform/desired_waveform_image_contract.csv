@@ -1,0 +1,23 @@
+ImageFile,SourceCSV,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
+waveform_ofdm_symbol_anatomy.png,waveform_symbol_timing.csv,OFDM symbol anatomy,Sample index,Symbol / CP,900,600,1,2,20
+waveform_subcarrier_fft_map.png,waveform_subcarrier_mapping.csv,Resource grid to FFT-bin map,FFT bin,Resource element,900,600,1,2,50
+waveform_cp_timeline.png,waveform_cp_insertion.csv,Cyclic-prefix insertion,Sample index,Amplitude,900,600,1,2,30
+waveform_stream_continuity.png,waveform_stream_continuity.csv,Waveform stream continuity,Boundary,Error,900,600,1,2,10
+waveform_window_overlap.png,waveform_windowing_wola.csv,WOLA overlap-add window,Overlap sample,Window coefficient,900,600,1,2,10
+waveform_cpofdm_vs_dfts_time.png,waveform_low_papr_processing.csv,CP-OFDM and DFT-s-OFDM waveform,Sample,Amplitude,900,600,1,2,20
+waveform_dft_spreading_map.png,waveform_transform_precoding.csv,DFT spreading and localized mapping,DFT index,Mapped subcarrier,900,600,1,2,20
+waveform_pi2bpsk_constellation.png,waveform_pi2bpsk.csv,pi/2-BPSK constellation,In-phase,Quadrature,900,600,1,1,16
+waveform_papr_ccdf.png,waveform_papr_ccdf.csv,PAPR CCDF,PAPR threshold (dB),CCDF,900,600,1,2,20
+waveform_psd_guardband.png,waveform_psd.csv,Waveform PSD and guard band,Frequency (Hz),PSD (dB/Hz),900,600,1,2,100
+waveform_windowing_oob_evm.png,waveform_windowing_wola.csv,Windowing OOB and EVM trade-off,Overlap samples,Metric,900,600,1,2,10
+waveform_multinumerology_timeline.png,waveform_multinumerology_composition.csv,Multi-numerology timing,Absolute sample,Component,900,600,1,2,20
+waveform_multinumerology_spectrum.png,waveform_psd.csv,Multi-numerology spectrum,Frequency (Hz),PSD (dB/Hz),900,600,1,2,100
+waveform_component_carrier_spectrum.png,waveform_component_carrier_composition.csv,Component-carrier spectrum,Frequency offset (Hz),Power,900,600,1,2,10
+waveform_power_reconciliation.png,waveform_power_ledger.csv,Waveform power reconciliation,Stage,Power error (dB),900,600,1,2,20
+waveform_parseval_error.png,waveform_parseval.csv,Parseval energy error,Case,Relative error,900,600,1,1,10
+waveform_delay_vs_cp_isi.png,waveform_evm_isi_ici.csv,Delay spread versus cyclic prefix,Delay / CP,ISI power (dB),900,600,1,2,15
+waveform_cfo_timing_sensitivity.png,waveform_sync_sensitivity.csv,CFO and timing sensitivity,Impairment,EVM / BLER,900,600,1,2,15
+waveform_bler_vs_snr.png,waveform_awgn_roundtrip.csv,Waveform BLER versus SNR,SNR (dB),BLER,900,600,1,1,10
+waveform_interference_composition.png,waveform_interference_composition.csv,Waveform interference composition,Link,Power / error,900,600,1,2,10
+waveform_runtime_scaling.png,waveform_runtime_scaling.csv,Waveform runtime scaling,Problem size,Runtime (s),900,600,1,2,10
+waveform_capability_matrix.png,waveform_capability_results.csv,Waveform capability matrix,Feature,Profile outcome,900,600,1,1,50

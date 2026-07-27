@@ -1,0 +1,68 @@
+schema_version: 2026-07-27.webgui.security.v1
+passwords:
+  hash: Argon2id
+  minimum_single_factor_length: 15
+  maximum_supported_length_at_least: 64
+  block_common_and_compromised: true
+  composition_rules: false
+  plaintext_storage: false
+  default_credentials: false
+sessions:
+  transport: opaque server-side session cookie
+  cookie_name: __Host-sixgr_session
+  http_only: true
+  secure_in_https: true
+  same_site: Strict
+  path: /
+  domain_attribute: false
+  rotate_on:
+  - login
+  - privilege_change
+  - password_change
+  idle_timeout_minutes: 30
+  absolute_timeout_hours: 12
+  store_token_hash_only: true
+csrf:
+  pattern: synchronizer_token_or_signed_double_submit
+  header: X-CSRF-Token
+  verify_origin: true
+  verify_fetch_metadata: true
+  safe_methods:
+  - GET
+  - HEAD
+  - OPTIONS
+authorization:
+  model: RBAC plus run owner/share ACL
+  default: deny
+  check_every_http_request: true
+  check_every_websocket_connect_and_message: true
+rate_limits:
+  login_per_ip_per_15m: 20
+  login_per_account_per_15m: 10
+  run_create_per_user_per_hour: 20
+  upload_per_user_per_hour: 50
+headers:
+  Content-Security-Policy: 'default-src ''self''; img-src ''self'' data: blob:; connect-src
+    ''self'' wss:; object-src ''none''; frame-ancestors ''none''; base-uri ''self'''
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Cross-Origin-Opener-Policy: same-origin
+uploads:
+  allowed_extensions:
+  - .yaml
+  - .yml
+  max_bytes: 2097152
+  max_aliases: 50
+  max_depth: 64
+  max_nodes: 100000
+  generated_server_filename: true
+  outside_webroot: true
+  authorized_roles:
+  - Admin
+  - Operator
+  - Researcher
+secrets:
+  environment_or_secret_store_only: true
+  redact_logs: true
+  refuse_known_defaults: true

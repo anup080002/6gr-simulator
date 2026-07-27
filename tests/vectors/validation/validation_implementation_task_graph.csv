@@ -1,0 +1,25 @@
+TaskID,FindingIDs,Deliverable,DependsOn
+T01,VAL-025,"Create canonical schemas, enums, point key and compatibility-alias policy",
+T02,VAL-001,Migrate all point status and stop reason producers/consumers,T01
+T03,VAL-012,Implement schema-first fail-closed validators,T01
+T04,VAL-013,Implement configurable Wilson and exact binomial intervals,T03
+T05,VAL-016,Implement bounded-look sequential design and alpha spending,T04
+T06,"VAL-002,VAL-014",Implement complete/censored/incomplete point policy and high-SNR bounds,T05
+T07,VAL-015,Implement independent drop/seed aggregation,T06
+T08,VAL-028,"Implement deterministic task IDs, seed partition and canonical merge",T01
+T09,VAL-027,Implement physical run-class isolation,T01
+T10,"VAL-005,VAL-006,VAL-011","Implement observed evidence, provenance DAG and measured SINR gate",T01
+T11,"VAL-007,VAL-019",Implement independent oracle and vector registries,T01
+T12,VAL-003,Remove DUT-as-reference writes and load registered references,T11
+T13,"VAL-004,VAL-017",Implement exact point joins and confidence-aware curve comparison,"T04,T12"
+T14,VAL-018,Implement calibration catalog and hold-out validation,"T07,T11"
+T15,VAL-020,Generate capability-derived negative tests,"T03,T11"
+T16,VAL-026,Implement phase/time-window contracts and KPI sample ledger,T01
+T17,VAL-024,Make artifact requirements independent of launch surface,T03
+T18,VAL-009,Execute canonical scenario smoke/full tiers,"T08,T09,T17"
+T19,VAL-010,Validate fresh built archive in clean workspace,T18
+T20,VAL-021,Record pinned MATLAB/Toolbox execution and full tests,T18
+T21,VAL-022,Make Python imports side-effect free and tests collect without MATLAB,T03
+T22,VAL-023,Parse/schema-validate every source YAML,T03
+T23,VAL-008,Separate internal numerical anchors from runtime conformance reports,"T18,T20"
+T24,ALL,"Generate base/impact artifacts, run verifiers and full regression",T01-T23

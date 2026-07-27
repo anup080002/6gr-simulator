@@ -1,0 +1,14 @@
+Test,Status,Details
+CURRENT_NEW_BACKEND_COMPILEALL,PASS,compiled
+CURRENT_DUPLICATED_STACKS,FAIL,Old single-file dashboard and new FastAPI/React stack both exist.
+CURRENT_AUTHORIZATION,FAIL,New API/WS routes have no centralized authentication or RBAC.
+CURRENT_YAML_EXECUTION_ROUNDTRIP,FAIL,Edited YAML text is not persisted or used by launch; active and legacy roots are listed.
+CURRENT_ARTIFACT_GALLERY,FAIL,Results are hard-coded to six artifacts; full registry not indexed.
+CURRENT_REQUIRED_SECURITY_CONTROLS,FAIL,No CSRF/session/cookie/RBAC/quota/path/upload hardening in new stack.
+CURRENT_OLD_STACK_DECOMMISSION,FAIL,Old dashboard and start scripts are present.
+PACK_PARAMETER_CATALOG,PASS,2158 unique parameter paths normalized.
+PACK_ARTIFACT_REGISTRY,PASS,1190 unique artifact contracts normalized.
+PACK_DUT_VISUAL_CATALOG,PASS,88 domain/DUT visualization definitions.
+ATTACHED_VISUAL_REFERENCES,PASS,8 images decoded and hashed; marked design-only.
+MATLAB_WEBGUI_E2E,BLOCKED,MATLAB is not installed in this environment; canonical run launch/results workflow was not executed.
+FRONTEND_BUILD,BLOCKED,node_modules is absent and no network install was performed; TypeScript/Vite build not executed.

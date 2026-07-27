@@ -1,0 +1,2 @@
+RunID,GitCommit,MATLABVersion,ToolboxVersion,SpecProfile,ExperimentMatrixSHA256,SeedList,Strict,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+MAC_IMPACT08_R18_20260727033550,5da5a5c643d09c880814592e6b35a09a68ed1831,26.1.0.3312084 (R2026a) Update 4,26.1,3GPP_R18_MAC_STRICT_COMPONENT_STUDY,47098f650f06e218840ba59a10bc8f00bc6d3b29a0a3bdd003ebd1e74396fd37,11|23|47|89|131|197,true,PASS,analytical_component_evaluation,component_proxy,study_not_truth

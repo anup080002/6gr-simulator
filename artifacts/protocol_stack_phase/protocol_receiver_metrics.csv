@@ -1,0 +1,11 @@
+RunID,OperatingPointID,Packets,Delivered,Dropped,DuplicateDiscarded,MeanLatency_ms,P95Latency_ms,Goodput_Mbps,ControlOverheadBytes,Status
+"PROTOCOL-20260727-071456","OP-1","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-2","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-3","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-4","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-5","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-6","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-7","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-8","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-9","40","40","0","false","0.25","0.5","2.1","0","PASS"
+"PROTOCOL-20260727-071456","OP-10","40","40","0","false","0.25","0.5","2.1","0","PASS"

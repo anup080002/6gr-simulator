@@ -1,0 +1,14 @@
+SampleID,Timestamp,ExpectedPhase,IncludeBLER,IncludeThroughput,IncludeAcquisitionDelay,IncludeQueueDrain,ExpectedStatus
+T0,0,WARMUP,False,False,False,False,PASS
+T1,1,WARMUP,False,False,False,False,PASS
+T99,99,WARMUP,False,False,False,False,PASS
+T100,100,ACQUISITION,False,False,True,False,PASS
+T101,101,ACQUISITION,False,False,True,False,PASS
+T199,199,ACQUISITION,False,False,True,False,PASS
+T200,200,STEADY_STATE,True,True,False,False,PASS
+T201,201,STEADY_STATE,True,True,False,False,PASS
+T999,999,STEADY_STATE,True,True,False,False,PASS
+T1000,1000,TAIL_DRAIN,False,True,False,True,PASS
+T1001,1001,TAIL_DRAIN,False,True,False,True,PASS
+T1099,1099,TAIL_DRAIN,False,True,False,True,PASS
+T1100,1100,OUTSIDE,False,False,False,False,REJECT

@@ -1,0 +1,31 @@
+ImageFile,SourceCSV,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
+waveform_impact_nfft_sample_rate.png,waveform_impact_ofdm.csv,Nfft and sample-rate resolution,Factor,Effect,900,600,1,1,10
+waveform_impact_cp_delay.png,waveform_impact_ofdm.csv,CP length and delay spread,Factor,Effect,900,600,1,1,10
+waveform_impact_subcarrier_guard.png,waveform_impact_ofdm.csv,Subcarrier position and guard leakage,Factor,Effect,900,600,1,1,10
+waveform_impact_windowing_tradeoff.png,waveform_impact_windowing.csv,Windowing OOB EVM trade-off,Factor,Effect,900,600,1,1,10
+waveform_impact_stream_continuity.png,waveform_impact_ofdm.csv,Streaming continuity,Factor,Effect,900,600,1,1,10
+waveform_impact_cpofdm_dfts_papr.png,waveform_impact_dfts.csv,CP-OFDM versus DFT-s-OFDM PAPR,Factor,Effect,900,600,1,1,10
+waveform_impact_dft_size.png,waveform_impact_dfts.csv,DFT size impact,Factor,Effect,900,600,1,1,10
+waveform_impact_pi2bpsk.png,waveform_impact_dfts.csv,pi/2-BPSK impact,Factor,Effect,900,600,1,1,10
+waveform_impact_papr_oversampling.png,waveform_impact_papr_spectral.csv,PAPR oversampling convergence,Factor,Effect,900,600,1,1,10
+waveform_impact_tone_reservation.png,waveform_impact_dfts.csv,Tone reservation impact,Factor,Effect,900,600,1,1,10
+waveform_impact_frequency_shaping.png,waveform_impact_dfts.csv,Frequency-domain shaping impact,Factor,Effect,900,600,1,1,10
+waveform_impact_fdss.png,waveform_impact_dfts.csv,FDSS impact,Factor,Effect,900,600,1,1,10
+waveform_impact_pa_backoff.png,waveform_impact_dfts.csv,Waveform and PA backoff,Factor,Effect,900,600,1,1,10
+waveform_impact_psd_rbw.png,waveform_impact_papr_spectral.csv,PSD RBW and averaging,Factor,Effect,900,600,1,1,10
+waveform_impact_multinumerology_guard.png,waveform_impact_multinumerology.csv,Multi-numerology guard,Factor,Effect,900,600,1,1,10
+waveform_impact_multinumerology_timing.png,waveform_impact_multinumerology.csv,Multi-numerology timing,Factor,Effect,900,600,1,1,10
+waveform_impact_component_carriers.png,waveform_impact_carrier_aggregation.csv,Component-carrier composition,Factor,Effect,900,600,1,1,10
+waveform_impact_cc_power_imbalance.png,waveform_impact_carrier_aggregation.csv,Component-carrier power imbalance,Factor,Effect,900,600,1,1,10
+waveform_impact_rank_port_power.png,waveform_impact_ofdm.csv,Rank and port power,Factor,Effect,900,600,1,1,10
+waveform_impact_parseval.png,waveform_impact_papr_spectral.csv,Power and Parseval closure,Factor,Effect,900,600,1,1,10
+waveform_impact_cfo_timing.png,waveform_impact_sync_channel.csv,CFO and timing,Factor,Effect,900,600,1,1,10
+waveform_impact_sco_phase_noise.png,waveform_impact_sync_channel.csv,SCO and phase noise,Factor,Effect,900,600,1,1,10
+waveform_impact_tdl_cdl.png,waveform_impact_sync_channel.csv,TDL and CDL waveform impact,Factor,Effect,900,600,1,1,10
+waveform_impact_cp_exceeded.png,waveform_impact_sync_channel.csv,CP exceeded ISI,Factor,Effect,900,600,1,1,10
+waveform_impact_interference.png,waveform_impact_ofdm.csv,Waveform interference,Factor,Effect,900,600,1,1,10
+waveform_impact_runtime.png,waveform_impact_runtime.csv,Waveform runtime,Factor,Effect,900,600,1,1,10
+waveform_impact_memory.png,waveform_impact_runtime.csv,Waveform memory,Factor,Effect,900,600,1,1,10
+waveform_impact_reproducibility.png,waveform_impact_ofdm.csv,Waveform reproducibility,Factor,Effect,900,600,1,1,10
+waveform_impact_research_candidates.png,waveform_impact_summary.csv,Research waveform candidates,Factor,Effect,900,600,1,1,10
+waveform_impact_effect_forest.png,waveform_impact_summary.csv,Waveform effect summary,Factor,Effect,900,600,1,1,10

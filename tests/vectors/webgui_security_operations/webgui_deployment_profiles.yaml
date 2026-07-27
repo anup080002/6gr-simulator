@@ -1,0 +1,35 @@
+schema_version: 2026-07-27.webgui.deployment.v1
+public_bind_host: 0.0.0.0
+architecture: single_same_origin_fastapi_serving_built_react_api_and_websocket
+profiles:
+  local_dev:
+    bind_host: 0.0.0.0
+    port: 8443
+    tls: development_certificate_or_explicit_http_acknowledgement
+    authentication_required: true
+    database: sqlite_allowed_for_single_user_development; no default credentials
+    cookie_secure: true when TLS; false only under explicit HTTP development acknowledgement
+    trusted_hosts:
+    - localhost
+    - 127.0.0.1
+    - configured LAN host/IP
+    cors: disabled for same-origin production; exact Vite origin only in dev
+    print_urls:
+    - https://localhost:8443
+    - https://<LAN-IP>:8443
+  lan_secure:
+    bind_host: 0.0.0.0
+    port: 8443
+    tls: required
+    authentication_required: true
+    database: required persistent DB; no CSV-only auth/ownership fallback
+    cookie_secure: true
+    trusted_hosts: explicit allowlist
+    cors: same-origin only
+    hsts: true
+    startup_failures:
+    - missing TLS certificate
+    - default/weak secret
+    - default database credentials
+    - database unavailable
+    - empty trusted-host list

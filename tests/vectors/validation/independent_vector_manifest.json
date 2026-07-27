@@ -1,0 +1,238 @@
+{
+  "SchemaVersion": "1.0.0",
+  "CreatedUTC": "2026-07-26T00:00:00Z",
+  "IndependenceStatement": "Vectors are generated without calling MATLAB, 5G Toolbox, or DUT helper functions.",
+  "Artifacts": [
+    {
+      "FileName": "validation_binomial_interval_test_vectors.csv",
+      "Rows": 114,
+      "SHA256": "e7750a20e88b3f2522fa1f17187cfbaa1e258b5af718908b117a540f61a8059d",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_zero_error_upper_bound_vectors.csv",
+      "Rows": 45,
+      "SHA256": "4f7547497b6b7ee9d31cbde14bdf14cf8724403478ebeb0ac80eafe239e8a6a5",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_sequential_stopping_vectors.csv",
+      "Rows": 62,
+      "SHA256": "0876e84470e7fda95f053300a7210e624f0289872c3f1820a6c9bf49ae2b61ee",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_status_stop_reason_vectors.csv",
+      "Rows": 38,
+      "SHA256": "ccbc6514b8087fbac030dbead622f268eab0d0b30ce4e26408b839f82d4c0ddb",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_curve_comparison_vectors.csv",
+      "Rows": 48,
+      "SHA256": "8bb3e1422829ee56c1c85905cc0de3a3d25d76030948c69e56b47fe364fd433c",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_curve_verdict_vectors.csv",
+      "Rows": 6,
+      "SHA256": "1246daacbd846cf98bee6d5b4c9e10a27362c23c32cc7725931f6f7f5b3199c9",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_operating_point_join_vectors.csv",
+      "Rows": 20,
+      "SHA256": "597b85a53fd0ac1bcca0bfa475b05bc41763e13a99ebf7dde08ee0fdb0354630",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_multiseed_drop_vectors.csv",
+      "Rows": 51,
+      "SHA256": "300da93c1e0c95cd3851b3d4a40637fe6b75a4767aa270139a0576acff65f777",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_multiseed_aggregation_vectors.csv",
+      "Rows": 5,
+      "SHA256": "1c0d4dee2c43b96e79dc106d125816d013e1ed244c640d15e31c97a2b4e59d84",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_provenance_dag_vectors.csv",
+      "Rows": 8,
+      "SHA256": "1b049a4dda9a4e1f5730af668505baa17b9adf680339e9a1e90c284bc08e0865",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_oracle_registry_vectors.csv",
+      "Rows": 48,
+      "SHA256": "14cf5d41965870feb2b647b96905ee57dbfba81c5ee6a9ea21c1f93b71feb205",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_schema_mutation_vectors.csv",
+      "Rows": 14,
+      "SHA256": "69b04acc9a82be8958f9c45f1fca4df94f069d92cb4be1dff6f9e1192e8a32dc",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_time_window_vectors.csv",
+      "Rows": 13,
+      "SHA256": "dcb8cd7c17af812f37a90ba461a67b0f689bb9d6c7650b015e9c4ae0a76bd39e",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_parallel_merge_vectors.csv",
+      "Rows": 38,
+      "SHA256": "d2760590a7ffb629ddcbb701590a9d92859cdf987c8a10bec1b8fdb1eb561842",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_parallel_merge_expected.csv",
+      "Rows": 3,
+      "SHA256": "179c24d12024b15f160c60839173823e7a349fff469b97a95608949f8c3981a5",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_archive_acceptance_vectors.csv",
+      "Rows": 9,
+      "SHA256": "e38bd6c1d0b41a8ff0666f610e242a2cbac0e3dd65c0fe90e9dde3b76178cc41",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_run_class_isolation_vectors.csv",
+      "Rows": 7,
+      "SHA256": "ec7778b28b315b3513b2699c18f287f224b34477a3d18bc7242597b914697dc7",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_artifact_requirement_vectors.csv",
+      "Rows": 18,
+      "SHA256": "1f7d4a8ddb5e6b3448cc8f305207bddc4143b7662673c6224d76267284eaf5aa",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_calibration_catalog_vectors.csv",
+      "Rows": 72,
+      "SHA256": "e5e30111b72fdf2be722bd67ff448ac4279f653c97d23f98a71ae48bc34f700b",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_operating_point_key_vectors.csv",
+      "Rows": 31,
+      "SHA256": "84921a0960e1cfdd5731e930c6cb160e39c3f7f6a7ecda2f68475ac24114aeed",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_negative_test_vectors.csv",
+      "Rows": 100,
+      "SHA256": "64e90293b82c6599b46552264eee4f130cfe71caf8a7b7b1e3ff37380dd8db08",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_capability_profile_matrix.csv",
+      "Rows": 168,
+      "SHA256": "4e92982a779c8fd99b1140cf7756ba01f1f9c18a4ec43357ed3b714ad0d843ae",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_declared_coverage_matrix.csv",
+      "Rows": 168,
+      "SHA256": "4e92982a779c8fd99b1140cf7756ba01f1f9c18a4ec43357ed3b714ad0d843ae",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_impact_analysis_families.csv",
+      "Rows": 64,
+      "SHA256": "1b7764688510fb3f52a15f7ba392ca2f07af4861a3d9880237413646ebac7f28",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_impact_experiment_matrix.csv",
+      "Rows": 768,
+      "SHA256": "eecbf893694babd07b5b517be689dae1e1c530188d83bee6f0916f4222f3d9bb",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_impact_pairing_contract.csv",
+      "Rows": 64,
+      "SHA256": "af68be022243116e9597749a733e4963989e02de10599d415a359c91a040e24c",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_impact_acceptance_rules.csv",
+      "Rows": 96,
+      "SHA256": "053724e818bfedb034457a8e79254f4b159f7283548312300da73a51cd32af03",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_impact_dependency_waves.csv",
+      "Rows": 3,
+      "SHA256": "acbf79c0e62f408146d3ab3894bd9d5160f04d32de6bd2189658ab9c33f9bf6d",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_impact_implementability_summary.csv",
+      "Rows": 22,
+      "SHA256": "a6c668d574a891d373925f7ce262817045e689e924e416478f80725352dfd761",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_reference_dataset_vectors.csv",
+      "Rows": 6,
+      "SHA256": "5b886c582e8942ac5ec9ea50cba537aab30461f967ac682a227c1dee4622866c",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_measured_sinr_vectors.csv",
+      "Rows": 7,
+      "SHA256": "ee6ac5558fcd1398a273bfe35d802c1178b90fe24e7bad0feb9a40f1ad2913aa",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_seed_partition_vectors.csv",
+      "Rows": 24,
+      "SHA256": "fa753ca5da2bfbdc0124d3e5b2480865e95b03908bedbedc377bdaaeab2ab925",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    },
+    {
+      "FileName": "validation_publication_gate_vectors.csv",
+      "Rows": 9,
+      "SHA256": "920486425b1e631874c2c6a98cd56414bf0547ccfd9c1a76afd14e1ccfec01a2",
+      "Generator": "independent_python_or_closed_form_pack_generator",
+      "UsesMATLAB": false
+    }
+  ]
+}

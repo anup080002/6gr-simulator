@@ -1,0 +1,59 @@
+{
+  "schema_version": "2026-07-27.webgui.api.v1",
+  "base_path": "/api/v1",
+  "same_origin": true,
+  "websocket_path": "/ws/runs/{run_id}",
+  "resources": {
+    "auth": [
+      "POST /auth/login",
+      "POST /auth/logout",
+      "GET /auth/me",
+      "POST /auth/password/change"
+    ],
+    "config": [
+      "GET /config/catalog",
+      "GET /config/scenarios",
+      "POST /config/revisions",
+      "GET /config/revisions/{id}",
+      "POST /config/revisions/{id}/validate",
+      "POST /config/revisions/{id}/resolve",
+      "GET /config/revisions/{id}/diff"
+    ],
+    "runs": [
+      "POST /runs",
+      "GET /runs",
+      "GET /runs/{id}",
+      "POST /runs/{id}/stop",
+      "DELETE /runs/{id}",
+      "POST /runs/{id}/share"
+    ],
+    "artifacts": [
+      "GET /runs/{id}/artifacts",
+      "GET /artifacts/{artifact_id}",
+      "GET /artifacts/{artifact_id}/preview",
+      "GET /artifacts/{artifact_id}/rows"
+    ],
+    "results": [
+      "GET /runs/{id}/overview",
+      "GET /runs/{id}/results",
+      "GET /runs/{id}/validation",
+      "POST /compare"
+    ],
+    "operations": [
+      "GET /operations/health",
+      "GET /operations/readiness",
+      "GET /operations/metrics",
+      "GET /audit"
+    ]
+  },
+  "rules": [
+    "all identifiers opaque",
+    "no client file paths",
+    "all state changes require CSRF",
+    "all non-login endpoints require authenticated session",
+    "authorization is deny-by-default and evaluated per request",
+    "responses include request_id",
+    "large tables are paginated/streamed",
+    "artifacts are immutable after run completion except audited reindex"
+  ]
+}

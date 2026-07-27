@@ -1,0 +1,23 @@
+CheckID,Severity,Category,File,Line,Evidence,Finding,CurrentResult
+CUR-WEB-001,CRITICAL,secrets,webgui/backend/config.py,26,mysql+pymysql://root:password,Insecure database credentials are embedded as a default.,FAIL
+CUR-WEB-002,CRITICAL,auth,webgui/backend/main.py,58,app.include_router,No authentication dependency wraps the included routers.,FAIL
+CUR-WEB-003,CRITICAL,cors,webgui/backend/main.py,43,"allow_methods=[""*""]",CORS permits all methods and headers.,FAIL
+CUR-WEB-004,CRITICAL,run-control,webgui/backend/routers/runs.py,74,"@router.delete(""/runs/{run_id}"")",Unauthenticated destructive/stop endpoint.,FAIL
+CUR-WEB-005,CRITICAL,websocket,webgui/backend/routers/realtime.py,18,"if action == ""stop""",Unauthenticated WebSocket client can stop a run.,FAIL
+CUR-WEB-006,HIGH,upload,webgui/backend/routers/runs.py,81,content = await file.read(),Upload reads unbounded content into memory and only parses YAML.,FAIL
+CUR-WEB-007,HIGH,path,webgui/backend/services/csv_store.py,56,resolved.relative_to(settings.repo_root_path),Path allowlist is the entire repository rather than active scenario/artifact roots.,FAIL
+CUR-WEB-008,HIGH,run-index,webgui/backend/services/csv_store.py,94,token in candidate.name,Run lookup accepts substring matches and may bind the wrong directory.,FAIL
+CUR-WEB-009,HIGH,artifacts,webgui/backend/services/csv_store.py,182,"""dl_pdsch_trials""",Results are hard-coded to a small artifact list.,FAIL
+CUR-WEB-010,HIGH,orchestration,webgui/backend/services/matlab_runner.py,17,_runs: dict,Run/process state is in memory only.,FAIL
+CUR-WEB-011,HIGH,deployment,webgui/start_backend.bat,9,--reload,Externally bound backend is launched with development reload mode.,FAIL
+CUR-WEB-012,HIGH,config,webgui/backend/routers/config.py,24,"settings.repo_root_path / ""configs"" / ""scenarios""",Legacy scenario root is still listed.,FAIL
+CUR-WEB-013,CRITICAL,config,webgui/frontend/src/components/ConfigPanel/ConfigPanel.tsx,63,scenario_yaml: selectedScenario,Edited YAML text is not sent when launching a run.,FAIL
+CUR-WEB-014,HIGH,config,webgui/frontend/src/components/ConfigPanel/ConfigPanel.tsx,64,snr_db: values.snr_db,UI override values are submitted but the MATLAB launch command ignores them.,FAIL
+CUR-WEB-015,CRITICAL,old-auth,apps/lls_web_dashboard.py,133,"SIXGR_DASHBOARD_AUTH_MODE"", ""open""",Old stack defaults to open access.,FAIL
+CUR-WEB-016,CRITICAL,old-auth,apps/lls_web_dashboard.py,19864,"password != str(profile.get(""password"")",Old stack compares plaintext password values.,FAIL
+CUR-WEB-017,CRITICAL,old-secrets,apps/lls_web_dashboard.py,66,"MYSQL_PASSWORD"", ""root""",Old stack has root password default.,FAIL
+CUR-WEB-018,HIGH,old-toolchain,apps/lls_web_dashboard.py,58,C:\Program Files\MATLAB\R2024a,Old dashboard hard-codes a machine-specific MATLAB executable and raises at import.,FAIL
+CUR-WEB-019,HIGH,old-session,apps/lls_web_dashboard.py,145,ACTIVE_SESSIONS: dict,Old sessions are in-memory and lost on restart.,FAIL
+CUR-WEB-020,HIGH,old-cookie,apps/lls_web_dashboard.py,19485,HttpOnly; SameSite=Lax,Old cookie lacks Secure and modern session lifecycle controls.,FAIL
+CUR-WEB-021,CRITICAL,old-admin,apps/lls_web_dashboard.py,16785,/admin/clear,Old stack exposes repository-wide clear operation under ad-hoc authorization.,FAIL
+CUR-WEB-022,HIGH,duplication,apps/lls_web_dashboard.py,19457,class DashboardHandler,Old single-file server duplicates the new backend/frontend stack.,FAIL

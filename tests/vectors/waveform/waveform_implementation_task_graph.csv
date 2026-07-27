@@ -1,0 +1,16 @@
+TaskID,Task,Dependencies,Findings,CompletionRule
+W01,Profile and capability registry,,"WF-001,WF-012,WF-020",Mandatory tests execute; generated artifacts pass both verifiers.
+W02,Canonical OFDM parameter resolver,W01,"WF-003,WF-005",Mandatory tests execute; generated artifacts pass both verifiers.
+W03,Independent small-FFT/CP/bin-map oracle,W02,"WF-004,WF-005,WF-016",Mandatory tests execute; generated artifacts pass both verifiers.
+W04,Canonical CP-OFDM TX/RX façades,"W02,W03","WF-004,WF-007,WF-018",Mandatory tests execute; generated artifacts pass both verifiers.
+W05,Persistent stream state and chunk equivalence,W04,WF-006,Mandatory tests execute; generated artifacts pass both verifiers.
+W06,Explicit rectangular/WOLA shaping profiles,W05,"WF-002,WF-013",Mandatory tests execute; generated artifacts pass both verifiers.
+W07,Transform-precoding plan and unitary DFT engine,W04,"WF-008,WF-009,WF-010",Mandatory tests execute; generated artifacts pass both verifiers.
+W08,Replace low-PAPR harness with canonical runner,"W06,W07","WF-007,WF-008,WF-011",Mandatory tests execute; generated artifacts pass both verifiers.
+W09,Power/Parseval/PAPR/spectral engines,"W04,W06,W07","WF-011,WF-016,WF-017",Mandatory tests execute; generated artifacts pass both verifiers.
+W10,Multi-numerology waveform composer,"W05,W09","WF-014,WF-019",Mandatory tests execute; generated artifacts pass both verifiers.
+W11,Component-carrier composer,"W05,W09",WF-015,Mandatory tests execute; generated artifacts pass both verifiers.
+W12,Research candidate engines or planning rejection,"W08,W10,W11","WF-012,WF-020",Mandatory tests execute; generated artifacts pass both verifiers.
+W13,No-noise and channel receiver closure,"W04,W07,W10,W11","WF-018,WF-019",Mandatory tests execute; generated artifacts pass both verifiers.
+W14,Phase validation artifacts,W01-W13,WF-001-WF-020,Mandatory tests execute; generated artifacts pass both verifiers.
+W15,Impact analysis and full regression,W14,WF-001-WF-020,Mandatory tests execute; generated artifacts pass both verifiers.

@@ -1,0 +1,30 @@
+{
+  "VectorVerifier": {
+    "Checks": 811,
+    "Passed": 811,
+    "Failed": 0,
+    "ExitCode": 0
+  },
+  "BaseArtifactVerifier": {
+    "ValidChecks": 1180,
+    "ValidPassed": 1180,
+    "ValidFailed": 0,
+    "ValidExit": 0,
+    "CorruptChecks": 1180,
+    "CorruptPassed": 1179,
+    "CorruptFailed": 1,
+    "CorruptExit": 2,
+    "InjectedFailure": "png_hash:validation_campaign_state_map.png"
+  },
+  "ImpactArtifactVerifier": {
+    "ValidChecks": 3922,
+    "ValidPassed": 3922,
+    "ValidFailed": 0,
+    "ValidExit": 0,
+    "CorruptChecks": 3922,
+    "CorruptPassed": 3921,
+    "CorruptFailed": 1,
+    "CorruptExit": 2,
+    "InjectedFailure": "png_hash:validation_impact_stop_tokens.png"
+  }
+}

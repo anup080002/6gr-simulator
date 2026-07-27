@@ -1,0 +1,2 @@
+Command,ExitCode,TestsCollected,CollectionErrors,PrimaryCause,Status
+pytest --collect-only -q,2,17,40,Import-time MATLAB R2024a path requirement plus tests package import failures,FAIL

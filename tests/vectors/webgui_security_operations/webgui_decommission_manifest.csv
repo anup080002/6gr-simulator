@@ -1,0 +1,10 @@
+Path,Kind,Action,Replacement,CIAssertion
+apps/lls_web_dashboard.py,old_web_stack,delete_after_feature_parity_and_data_migration,webgui canonical FastAPI/React same-origin stack,path_absent_and_no_import_reference
+apps/start_lls_web_dashboard.ps1,old_web_stack,delete_after_feature_parity_and_data_migration,webgui canonical FastAPI/React same-origin stack,path_absent_and_no_import_reference
+apps/start_lls_dashboard_edge_stack.ps1,old_web_stack,delete_after_feature_parity_and_data_migration,webgui canonical FastAPI/React same-origin stack,path_absent_and_no_import_reference
+apps/lls_contract_aliases.py,shared_helper_candidate,migrate_to_canonical_artifact_registry_then_delete_or_rehome,webgui/backend/services/artifact_registry.py or shared non-web package,no_dependency_on_old_dashboard
+apps/lls_contract_materializer.py,shared_helper_candidate,migrate_to_canonical_artifact_registry_then_delete_or_rehome,webgui/backend/services/artifact_registry.py or shared non-web package,no_dependency_on_old_dashboard
+apps/lls_output_contract.py,shared_helper_candidate,migrate_to_canonical_artifact_registry_then_delete_or_rehome,webgui/backend/services/artifact_registry.py or shared non-web package,no_dependency_on_old_dashboard
+webgui/start_backend.bat,development_launcher,replace,single scripts/start_webgui.(ps1|sh) or sixgr-web CLI,no --reload or npm install at runtime
+webgui/start_frontend.bat,development_launcher,replace,single scripts/start_webgui.(ps1|sh) or sixgr-web CLI,no --reload or npm install at runtime
+webgui/start_all.bat,development_launcher,replace,single scripts/start_webgui.(ps1|sh) or sixgr-web CLI,no --reload or npm install at runtime

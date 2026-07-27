@@ -1,0 +1,61 @@
+CheckID,Kind,Description,Detected,EvidencePath,EvidenceLine,Evidence,RequiredAction
+VST-001,DEFECT,Campaign emits max_tb_per_point_reached,True,+sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,258,max_tb_per_point_reached,Remove/replace and add regression test.
+VST-002,DEFECT,Audit checks incompatible max_trials_reached,True,+sixgr/+validation/auditFixedSNRSweepRun.m,430,max_trials_reached,Remove/replace and add regression test.
+VST-003,DEFECT,Campaign confidence is overwritten to 0.95,True,+sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,919,ConfidenceLevel = 0.95,Remove/replace and add regression test.
+VST-004,DEFECT,Runner confidence is overwritten to 0.95,True,+sixgr/+truth/runWaveformLinkBundle.m,14892,FixedLinkConfidenceLevel = 0.95,Remove/replace and add regression test.
+VST-005,DEFECT,Wilson routine hard-codes 95 percent z,True,+sixgr/+stats/wilsonBinomialCI.m,17,1.95996398454005,Remove/replace and add regression test.
+VST-006,DEFECT,Campaign labels intervals wilson_95pct,True,+sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,384,wilson_95pct,Remove/replace and add regression test.
+VST-007,DEFECT,DUT summary is written as reference sweep,True,+sixgr/+truth/runWaveformLinkBundle.m,50,"lls_reference_snr_sweep.csv""), fixedSummary",Remove/replace and add regression test.
+VST-008,DEFECT,Export function writes summary as reference,True,+sixgr/+analytics/exportFixedSNRSweepCurves.m,37,"lls_reference_snr_sweep.csv""), summary",Remove/replace and add regression test.
+VST-009,DEFECT,Reference gate checks presence rather than comparison,True,+sixgr/+analytics/evaluatePublicationReadinessGates.m,159,ReferenceComparisonPresent,Remove/replace and add regression test.
+VST-010,DEFECT,Publication reference result derives from presence gate,True,+sixgr/+analytics/evaluatePublicationReadinessGates.m,232,"PublicationReferenceComparisonOk"", ~fixedApplicable || any(string(fixedRows.GateName) == ""ReferenceComparisonPresent",Remove/replace and add regression test.
+VST-011,DEFECT,Curve metric helper can default true,True,+sixgr/+analytics/evaluatePublicationReadinessGates.m,303,function tf = localCurveMetricsValid(T) tf = true,Remove/replace and add regression test.
+VST-012,DEFECT,Measured SINR requirement is conditional on fixed sweep flag,True,+sixgr/+validation/auditFixedSNRSweepRun.m,174,MeasuredSINRRequired = logical(req.FixedSNRSweepRequired),Remove/replace and add regression test.
+VST-013,DEFECT,Missing measured SINR can become warning,True,+sixgr/+validation/auditFixedSNRSweepRun.m,499,"localTernary(req.MeasuredSINRRequired, ""FAIL"", ""WARN"")",Remove/replace and add regression test.
+VST-014,DEFECT,High SNR gate requires strict decrease,True,+sixgr/+analytics/evaluatePublicationReadinessGates.m,350,bler(end) < bler(1),Remove/replace and add regression test.
+VST-015,DEFECT,Runtime geometry values are labelled runtime_slot_trace,True,+sixgr/+analytics/buildPhase7ReadinessArtifacts.m,655,"PathProvenance"", ""runtime_slot_trace""",Remove/replace and add regression test.
+VST-016,DEFECT,Reconstructed trace can be labelled runtime_trace_complete,True,+sixgr/+analytics/buildPhase7ReadinessArtifacts.m,2207,"status = ""runtime_trace_complete""",Remove/replace and add regression test.
+VST-017,DEFECT,Tests require reconstructed runtime_trace_complete,True,tests/testGeometryScenarioAudit.m,172,runtime_trace_complete,Remove/replace and add regression test.
+VST-018,DEFECT,Release archive acceptance uses fixture scenario,True,tests/+core/releaseBaselineArchiveAcceptance.m,22,release_archive_fixture,Remove/replace and add regression test.
+VST-019,DEFECT,Release numerical suite includes matrix/static anchors,True,tests/testReleaseNumericalAcceptanceSuite.m,14,releaseScenarioMatrixAcceptance,Remove/replace and add regression test.
+VST-020,DEFECT,Python dashboard imports fail when MATLAB path absent,True,apps/lls_web_dashboard.py,59,if not MATLAB_EXE.is_file():     raise FileNotFoundError,Remove/replace and add regression test.
+VST-021,DEFECT,Python dashboard defaults to machine-specific R2024a path,True,apps/lls_web_dashboard.py,58,MATLAB_EXE defaults to C:\Program Files\MATLAB\R2024a\bin\matlab.exe,Remove/replace and add regression test.
+VST-022,DEFECT,Source result-output catalog YAML is invalid,True,simulator/configs/defaults/lls_result_output_catalog.yaml,293,Flow-mapping label contains an unquoted colon: label: curves: BLER vs measured post-EQ SINR,Remove/replace and add regression test.
+VST-023,DEFECT,No canonical PointStatus enum exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-024,DEFECT,No canonical StopReason enum exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-025,DEFECT,No independent oracle registry exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-026,DEFECT,No evidence provenance DAG class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-027,DEFECT,No complete operating-point joiner exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-028,DEFECT,No deterministic merge engine exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-029,DEFECT,No time-window contract class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-030,DEFECT,No canonical validation schema registry exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-031,DEFECT,No curve equivalence engine exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-032,DEFECT,No sequential stopping policy class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-033,DEFECT,No centralized configurable Clopper-Pearson interval service exists,True,+sixgr/+analytics/buildPhase7ReadinessArtifacts.m,2416,Clopper-Pearson exists only as local duplicate helpers rather than one canonical configurable service.,Remove/replace and add regression test.
+VST-034,DEFECT,No alpha-spending implementation exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-035,DEFECT,No run-class isolation registry exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-036,DEFECT,No versioned calibration catalog exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-037,DEFECT,No signed vector catalog exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-038,DEFECT,No all-source YAML validator exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-039,DEFECT,No launch-surface-independent artifact requirement registry exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-040,DEFECT,No clean archive acceptance runner exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-041,DEFECT,No canonical scenario runtime matrix runner exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-042,DEFECT,No complete test-execution ledger exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-043,DEFECT,No duplicate-task conflict class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-044,DEFECT,No complete seed ledger exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-045,DEFECT,No point-key schema class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-046,DEFECT,No manifest signing/hash validation class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-047,DEFECT,No profile-specific minimum-drop policy class exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-048,DEFECT,No schema mutation test generator exists,True,,,No matching production class/function found in scanned MATLAB/Python/YAML/JSON sources.,Remove/replace and add regression test.
+VST-F01,FOUNDATION,Hierarchical deterministic seed helper exists,True,+sixgr/+util/hierarchicalSeed.m,1,function seed = hierarchicalSeed,Preserve and integrate into canonical validation engine.
+VST-F02,FOUNDATION,Campaign records TaskKey,True,+sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,459,taskKey,Preserve and integrate into canonical validation engine.
+VST-F03,FOUNDATION,Campaign records TaskSeed,True,+sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,267,taskSeed,Preserve and integrate into canonical validation engine.
+VST-F04,FOUNDATION,Receiver measured post-equalization SINR is exported,True,+sixgr/+visual/plotGeometryScenarioEvidence.m,36,MeasuredSINR,Preserve and integrate into canonical validation engine.
+VST-F05,FOUNDATION,Recursive artifact validation entry point exists,True,+sixgr/+analytics/validateAnalysisOutputs.m,1,validateAnalysisOutputs,Preserve and integrate into canonical validation engine.
+VST-F06,FOUNDATION,Publication gate exporter exists,True,+sixgr/+analytics/buildPhase7ReadinessArtifacts.m,1493,evaluatePublicationReadinessGates,Preserve and integrate into canonical validation engine.
+VST-F07,FOUNDATION,Fixed-link campaign task planning exists,True,+sixgr/+lls6g/+campaign/runFixedLinkCampaign.m,30,taskPlan,Preserve and integrate into canonical validation engine.
+VST-F08,FOUNDATION,Run-class metadata exists,True,+sixgr/+truth/evaluatePDSCHObjectiveStrict.m,82,runClass,Preserve and integrate into canonical validation engine.
+VST-F09,FOUNDATION,JSON schema files exist,False,,,Pattern not found.,Preserve and integrate into canonical validation engine.
+VST-F10,FOUNDATION,MATLAB test corpus exists,False,,,Pattern not found.,Preserve and integrate into canonical validation engine.
+VST-F11,FOUNDATION,Reference sweep read path already exists,True,+sixgr/+analytics/evaluatePublicationReadinessGates.m,84,lls_reference_snr_sweep.csv,Preserve and integrate into canonical validation engine.
+VST-F12,FOUNDATION,Artifact SHA256 helpers exist,True,+sixgr/+visual/verifyVisualArtifacts.m,70,SHA256,Preserve and integrate into canonical validation engine.

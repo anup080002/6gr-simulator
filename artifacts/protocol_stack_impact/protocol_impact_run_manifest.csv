@@ -1,0 +1,2 @@
+RunID,GitCommit,MATLABVersion,ToolboxVersion,ExperimentMatrixSHA256,SeedList,ConfidenceLevel,Strict,Status
+"PROTOCOL-IMPACT-20260727-071740","5da5a5c643d09c880814592e6b35a09a68ed1831","26.1.0.3312084 (R2026a) Update 4","2026a","acccbafc8e16f25e901fd0c6d4543e26b10651101e6babd58e631275be1789c9","11;23;47;89;131;197","0.95","true","PASS"

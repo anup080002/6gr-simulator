@@ -1,0 +1,151 @@
+{
+  "ManifestVersion": "1.0",
+  "OracleScope": "pure-math analytical floors and experiment definitions; no MATLAB/5G Toolbox used",
+  "Artifacts": [
+    {
+      "FileName": "waveform_ofdm_parameter_test_vectors.csv",
+      "Rows": 70,
+      "SHA256": "c62739e4c2e323ad4c6966430ab905a1439945247ce664a65ed60edda7766489"
+    },
+    {
+      "FileName": "waveform_small_fft_test_vectors.csv",
+      "Rows": 36,
+      "SHA256": "2d4b152c3c0927aa9e49dbe159b13b489527574df3bf70d79fbb58b21bc500ab"
+    },
+    {
+      "FileName": "expected_waveform_small_fft_samples.csv",
+      "Rows": 756,
+      "SHA256": "5c8fcb7401f2d7e9a4fd0d861103a5d4acc0f52ef84c26821b8bf5aa1ca472b8"
+    },
+    {
+      "FileName": "waveform_cp_test_vectors.csv",
+      "Rows": 20,
+      "SHA256": "7469021508cd7e6c3250c99a196ba2425683408a8e5110cdc984744ce900d33e"
+    },
+    {
+      "FileName": "expected_waveform_cp_samples.csv",
+      "Rows": 657,
+      "SHA256": "3f21632a85b72f406066ee46da8af2ce1014d4820eecd4f19c8c4d69dc12c99e"
+    },
+    {
+      "FileName": "waveform_dft_size_test_vectors.csv",
+      "Rows": 84,
+      "SHA256": "d3fbd3e3d28e388d3b259524d9194f4ef86479d34022320608d9b7ddb73e18a7"
+    },
+    {
+      "FileName": "waveform_dft_spreading_test_vectors.csv",
+      "Rows": 108,
+      "SHA256": "ba9f798833b4549d23ff7010581ba18eff7cdf0faa1e3f9c4e056e4636216b44"
+    },
+    {
+      "FileName": "expected_waveform_dft_coefficients.csv",
+      "Rows": 4458,
+      "SHA256": "c4afa77927a9096959c743e58ecc096ca6922411ce265c1fd6a3ae1d51f20e29"
+    },
+    {
+      "FileName": "waveform_pi2bpsk_test_vectors.csv",
+      "Rows": 4,
+      "SHA256": "d5bcce429dc67145bad8d8e3bd77ea7476ddb637054f2fa05b5490740425537f"
+    },
+    {
+      "FileName": "expected_waveform_pi2bpsk_symbols.csv",
+      "Rows": 128,
+      "SHA256": "863deb9eaeacd83158758ff3e9ed18f18ed9ec147dacc9b86ca2ff1b9451c072"
+    },
+    {
+      "FileName": "waveform_wola_test_vectors.csv",
+      "Rows": 18,
+      "SHA256": "dd9c9a2074584133d4ba4099c682001480f56e5def58771d39626f373af56e74"
+    },
+    {
+      "FileName": "expected_waveform_wola_coefficients.csv",
+      "Rows": 189,
+      "SHA256": "8174359539b30184b2c793cef7dd13c6cd78ff1f7794a8d89def989444c6ea77"
+    },
+    {
+      "FileName": "waveform_stream_continuity_test_vectors.csv",
+      "Rows": 64,
+      "SHA256": "05788aded18bd306c7e3dc5a6b9274b5c7fee543c5457a0bd2407cd8c7908809"
+    },
+    {
+      "FileName": "waveform_multinumerology_test_vectors.csv",
+      "Rows": 40,
+      "SHA256": "997ace59ab8e259f2e10196584c6b9eb9df0bdfc8f8b6cab33807201f86fce9a"
+    },
+    {
+      "FileName": "waveform_component_carrier_test_vectors.csv",
+      "Rows": 36,
+      "SHA256": "e614857ba78e04b8e980db4d05c30e693fee44725be9ddf076f14531af7abdb2"
+    },
+    {
+      "FileName": "waveform_papr_test_vectors.csv",
+      "Rows": 16,
+      "SHA256": "955d5185917e555c7992ff0c27c191611c4b408ba8ed373b8c25f2d5c9af7b1b"
+    },
+    {
+      "FileName": "expected_waveform_papr_analytical.csv",
+      "Rows": 16,
+      "SHA256": "f287950b0dbabb69d5622c0923e760a13dc6165c0af6b8a379dac80ff70c8d1e"
+    },
+    {
+      "FileName": "waveform_spectral_test_vectors.csv",
+      "Rows": 20,
+      "SHA256": "79799d2b7d7432c45db35ebefb36de45a21bbf2e1cb7d9b1db9f23f83064fc70"
+    },
+    {
+      "FileName": "expected_waveform_spectral_analytical.csv",
+      "Rows": 20,
+      "SHA256": "a7a41091e816c01dc27a16bba88fbedea9adf2d324855979e0a4ee3077bc93d4"
+    },
+    {
+      "FileName": "waveform_negative_test_vectors.csv",
+      "Rows": 161,
+      "SHA256": "c9a6863343106ec1e759aee6cd6171cd99e29817aaa300dcc552d950dc48b73f"
+    },
+    {
+      "FileName": "waveform_capability_profile_matrix.csv",
+      "Rows": 180,
+      "SHA256": "69b2dd50e5355fb2244f4e4c3dfb3518d0c6d7d9a2aa3e23757aac618b6d914f"
+    },
+    {
+      "FileName": "waveform_declared_coverage_matrix.csv",
+      "Rows": 180,
+      "SHA256": "1a4c97bf3fc0fc0ef0328daf90fe114679aa8eae4a628c595526b07ab06a8607"
+    },
+    {
+      "FileName": "waveform_impact_analysis_families.csv",
+      "Rows": 64,
+      "SHA256": "2cb2af7b22c6f72242e912a9d9f84045b86d0a9eb5cdf6fdf1c8e4752c2ba554"
+    },
+    {
+      "FileName": "waveform_impact_experiment_matrix.csv",
+      "Rows": 768,
+      "SHA256": "98a538c02bdd54b78c0c1d59441e316cbca9dc4e4cb68d27ae28209c890dcd9f"
+    },
+    {
+      "FileName": "waveform_impact_pairing_contract.csv",
+      "Rows": 64,
+      "SHA256": "8dd1c9f4c60235314d8b549f5ab1c7af3cf16bb1860c17b8ef57b4696b1df41b"
+    },
+    {
+      "FileName": "waveform_impact_acceptance_rules.csv",
+      "Rows": 96,
+      "SHA256": "3753ed8b54a2f071b7380c811352173ea0d41d56e2bf27ad96a941024f915ecd"
+    },
+    {
+      "FileName": "waveform_impact_dependency_waves.csv",
+      "Rows": 64,
+      "SHA256": "318dfe3d5aea5ebfde70fdde4fc992a0e559494f7e5f08e1b03ef9f46caec34f"
+    },
+    {
+      "FileName": "waveform_impact_implementability_summary.csv",
+      "Rows": 3,
+      "SHA256": "01a0507ffe499af6397eb37e718efdfc415ad003540e18f6cee408ce69e55587"
+    },
+    {
+      "FileName": "expected_waveform_impact_analytical_floor.csv",
+      "Rows": 71,
+      "SHA256": "538686a73a55f1bdbd65aa08b356b58d35094675189aebe28c63a61fe8cdf54d"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sixgr://schemas/validation/run-manifest/1.0.0",
+  "title": "6GR immutable validation run manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "SchemaVersion",
+    "RunID",
+    "RunClass",
+    "ProfileID",
+    "SourceCommit",
+    "SourceTreeSHA256",
+    "ScenarioPath",
+    "ScenarioSHA256",
+    "MATLABVersion",
+    "ToolboxVersions",
+    "StartUTC",
+    "EndUTC",
+    "TaskPlanSHA256",
+    "RawTrialManifestSHA256",
+    "ArtifactManifestSHA256",
+    "CanonicalSchemaVersion",
+    "ConfidenceLevel",
+    "SequentialDesignID",
+    "OracleRegistrySHA256",
+    "Status"
+  ],
+  "properties": {
+    "SchemaVersion": {
+      "const": "1.0.0"
+    },
+    "RunID": {
+      "type": "string"
+    },
+    "RunClass": {
+      "enum": [
+        "FIXED_LINK_CALIBRATION",
+        "GEOMETRY_LINK_LEVEL",
+        "SYSTEM_LEVEL",
+        "CONTROL_ONLY",
+        "PROTOCOL_SYSTEM_STUDY"
+      ]
+    },
+    "ProfileID": {
+      "type": "string"
+    },
+    "SourceCommit": {
+      "type": "string"
+    },
+    "SourceTreeSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ScenarioPath": {
+      "type": "string"
+    },
+    "ScenarioSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "MATLABVersion": {
+      "type": "string"
+    },
+    "ToolboxVersions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "StartUTC": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "EndUTC": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "TaskPlanSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "RawTrialManifestSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ArtifactManifestSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "CanonicalSchemaVersion": {
+      "const": "1.0.0"
+    },
+    "ConfidenceLevel": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 1
+    },
+    "SequentialDesignID": {
+      "type": "string"
+    },
+    "OracleRegistrySHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Status": {
+      "enum": [
+        "COMPLETE",
+        "FAILED",
+        "BLOCKED"
+      ]
+    }
+  }
+}

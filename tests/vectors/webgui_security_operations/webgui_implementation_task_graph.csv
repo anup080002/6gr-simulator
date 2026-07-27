@@ -1,0 +1,16 @@
+TaskID,Task,DependsOn,Deliverable
+W00,Inventory/parity freeze,,"Build route, feature, parameter and artifact parity matrices; freeze old dashboard except critical fixes."
+W01,Canonical same-origin application,W00,"Application factory, build React, serve static/API/WS from one origin, bind 0.0.0.0, remove deployment reload."
+W02,Identity/session/security middleware,W01,"Users, Argon2id, sessions, CSRF, TrustedHost, headers, login rate limits."
+W03,RBAC and run ACL,W02,Central authorize() dependency and owner/share ACL for every HTTP/WS route.
+W04,Config catalog and revision model,W03,"Active root only, parameter catalog, round-trip YAML revisions, inheritance, validation, resolved hash."
+W05,Persistent run queue and quotas,W04,"Durable jobs, process groups, command manifests, quota reservation, restart recovery."
+W06,Artifact manifest/indexer,W05,Index all outputs by ID/hash/schema/provenance/source relationships; no substring lookup.
+W07,Dashboard shell and global run selector,W03,Mode-first navigation and URL-synchronized global run selection.
+W08,Structured configuration UI,"W04,W07","Schema-generated forms, geometry map, raw YAML Advanced, source/effective/resolved/diff."
+W09,Results/validation/artifact explorer,"W06,W07","Dynamic galleries for all registered artifacts, actual-data Plotly recipes, validity badges."
+W10,Compare runs and DUT views,W09,"DUT visualization catalog, compatible operating-point comparison, independent references."
+W11,Operations/audit/retention,"W05,W06","Health/readiness, metrics, audit log, quotas, retention, backups, admin actions."
+W12,Security/E2E/performance tests,"W01,W02,W03,W04,W05,W06,W07,W08,W09,W10,W11","Pytest, Vitest, Playwright, security negatives, property tests, load/large artifact tests."
+W13,Feature parity migration and old-stack deletion,W12,"Complete parity, migrate data if needed, delete old dashboard/scripts/tests/docs, CI absence guard."
+W14,Final clean deployment smoke,W13,"Fresh install/build, bind 0.0.0.0, localhost/LAN login, configure/run/stop/results/validation/artifact workflow."

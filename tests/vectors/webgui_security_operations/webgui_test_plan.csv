@@ -1,0 +1,50 @@
+TestID,Area,TestName,Type,Acceptance,Mandatory,MaySkip
+WEBTEST-001,SEC,test_password_argon2id_hash_and_verify,Backend unit,No plaintext/default credential; hash upgrade supported,true,false
+WEBTEST-002,SEC,test_bootstrap_admin_one_time,Backend integration,Bootstrap token expires and endpoint disables,true,false
+WEBTEST-003,SEC,test_login_rate_limit_and_audit,Backend integration,429 after threshold; audit event,true,false
+WEBTEST-004,SEC,test_session_cookie_flags_https,Backend integration,"__Host-, Secure, HttpOnly, SameSite=Strict",true,false
+WEBTEST-005,SEC,test_session_rotation_and_revocation,Backend integration,Old session unusable,true,false
+WEBTEST-006,SEC,test_csrf_all_state_changing_routes,Route matrix,Missing/wrong token rejected,true,false
+WEBTEST-007,SEC,test_origin_fetch_metadata,Backend integration,Cross-site state change rejected,true,false
+WEBTEST-008,SEC,test_trusted_host_and_https_profile,Deployment,Bad host rejected; lan profile redirects/refuses HTTP,true,false
+WEBTEST-009,AUTHZ,test_route_matrix_deny_by_default,Route matrix,Every route has explicit permission,true,false
+WEBTEST-010,AUTHZ,test_run_owner_share_acl,Backend integration,Owner/share/admin behavior correct,true,false
+WEBTEST-011,AUTHZ,test_websocket_auth_origin_ownership,WebSocket,No anonymous/cross-user control,true,false
+WEBTEST-012,CONFIG,test_active_scenario_root_only,Backend unit,Legacy configs/scenarios absent,true,false
+WEBTEST-013,CONFIG,test_yaml_roundtrip_semantics,Property/integration,No semantic drift,true,false
+WEBTEST-014,CONFIG,test_yaml_duplicate_alias_depth_size_limits,Negative,Fail closed,true,false
+WEBTEST-015,CONFIG,test_catalog_parameter_coverage_100_percent,Contract,Every catalog path mapped or explicitly unsupported,true,false
+WEBTEST-016,CONFIG,test_structured_edit_changes_resolved_yaml,E2E,Edited field changes exact resolved YAML,true,false
+WEBTEST-017,CONFIG,test_uploaded_yaml_is_executed_revision,E2E/dry run,MATLAB command uses immutable resolved YAML,true,false
+WEBTEST-018,CONFIG,test_inheritance_source_effective_resolved_diff,Backend/frontend,Views reconcile,true,false
+WEBTEST-019,RUN,test_persistent_queue_restart_recovery,Backend integration,Jobs reconcile after restart,true,false
+WEBTEST-020,RUN,test_process_group_graceful_and_hard_stop,OS integration,Child processes terminated,true,false
+WEBTEST-021,RUN,test_run_quotas_atomic_reservation,Backend integration,Concurrent creates cannot exceed quota,true,false
+WEBTEST-022,RUN,test_no_hidden_cli_override,Dry-run command,Only resolved YAML and documented flags,true,false
+WEBTEST-023,RUN,test_run_id_exact_lookup,Backend unit,No substring collision,true,false
+WEBTEST-024,ART,test_artifact_manifest_schema_and_hashes,Backend integration,Every file has exact hash/ID,true,false
+WEBTEST-025,ART,test_png_source_csv_binding,Backend integration,Source hash and recipe present,true,false
+WEBTEST-026,ART,test_missing_source_never_generates_plot,Frontend E2E,Unavailable card shown,true,false
+WEBTEST-027,ART,test_all_registered_artifacts_visible,Contract/E2E,All registry entries discoverable,true,false
+WEBTEST-028,ART,test_large_csv_pagination_and_limits,Backend load,No unbounded memory response,true,false
+WEBTEST-029,ART,test_artifact_path_symlink_traversal,Security negative,Escape rejected,true,false
+WEBTEST-030,UI,test_global_run_selector_drives_all_pages,Playwright,Selected run consistent URL/store,true,false
+WEBTEST-031,UI,test_mode_first_configuration_sections,Playwright,LLS/SLS/E2E and all domain sections,true,false
+WEBTEST-032,UI,test_results_domain_dut_gallery,Playwright,Every domain/DUT view accessible,true,false
+WEBTEST-033,UI,test_validation_and_provenance_badges,Playwright,Measured/decoded/derived/configured/diagnostic/unavailable rendered,true,false
+WEBTEST-034,UI,test_compare_runs_compatibility_gate,Playwright/API,Incompatible keys blocked,true,false
+WEBTEST-035,UI,test_visual_reference_archetypes_not_used_as_data,Contract,Reference images excluded from run manifests,true,false
+WEBTEST-036,OPS,test_health_readiness_liveness,Backend integration,Readiness reflects DB/worker/disk,true,false
+WEBTEST-037,OPS,test_audit_log_attribution_and_redaction,Backend integration,No secrets; actor/request/run IDs,true,false
+WEBTEST-038,OPS,test_retention_purge_rbac_confirmation,Backend integration,Only admin and audited,true,false
+WEBTEST-039,OPS,test_backup_restore_users_runs_artifacts,Integration,Restored ACL/session invalidation correct,true,false
+WEBTEST-040,BUILD,test_backend_import_without_matlab,Python,No import-time MATLAB requirement,true,false
+WEBTEST-041,BUILD,test_frontend_typescript_build,Frontend,Strict build succeeds,true,false
+WEBTEST-042,BUILD,test_dependency_security_scans,CI,No unreviewed high/critical vulnerabilities,true,false
+WEBTEST-043,BUILD,test_single_public_listener_0_0_0_0,Deployment smoke,One same-origin listener,true,false
+WEBTEST-044,BUILD,test_localhost_and_lan_url_smoke,Playwright/network,Both addresses serve login/UI,true,false
+WEBTEST-045,DECOM,test_old_dashboard_files_absent,CI,Old files removed,true,false
+WEBTEST-046,DECOM,test_no_old_dashboard_imports_routes_scripts,CI,No references remain,true,false
+WEBTEST-047,E2E,test_login_configure_run_live_results_validation_download,Playwright+MATLAB,Complete workflow,true,false
+WEBTEST-048,E2E,test_two_canonical_scenarios,Playwright+MATLAB,AWGN and geometry scenario workflow,true,false
+WEBTEST-049,E2E,test_all_new_technical_pack_artifacts_render,Playwright+artifact fixtures/real run,All registered contracts handled,true,false

@@ -1,0 +1,65 @@
+FamilyID,Title,Wave,ExperimentsExpected,ExperimentsComplete,RulesPassed,RulesFailed,PrimaryConclusion,IncompletePoints,Status,ExecutionBackend,ApproximationMode,EvidenceClass
+F01,HARQ process count,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F02,Maximum retransmissions,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F03,RV sequence,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F04,NDI epoch enforcement,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F05,ACK versus DTX handling,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F06,HARQ feedback codebook,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F07,K1 timing,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F08,K2 timing,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F09,TDD flexible symbol resolution,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F10,HARQ process exhaustion,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F11,Soft combining provenance,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F12,Soft buffer position awareness,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F13,Soft buffer age/reset,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F14,Scheduler policy RR versus PF,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F15,PF averaging window,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F16,QoS-PF policy,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F17,EDF policy,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F18,Retransmission priority,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F19,Control overhead accounting,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F20,CQI age gating,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F21,BSR 5-bit exact table,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F22,BSR 8-bit exact table,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F23,Refined BSR table,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F24,Regular BSR trigger,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F25,Periodic BSR timer,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F26,Retx BSR timer,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F27,Truncated BSR,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F28,PH exact mapping,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F29,PCMAX exact mapping,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F30,PHR prohibit timer,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F31,Multiple-entry PHR,B,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F32,Scheduling Request state,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F33,SR prohibit timer,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F34,SR-to-RA fallback,B,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F35,LCP priority only versus token bucket,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F36,PBR,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F37,Bucket size duration,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F38,Logical-channel restrictions,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F39,MAC CE priority,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F40,MAC PDU exact subheaders,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F41,eLCID support,B,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F42,SDU segmentation,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F43,Timing advance command,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F44,timeAlignmentTimer,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F45,Multiple TAGs,C,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F46,UL timing error,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F47,Configured grant Type 1,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F48,Configured grant Type 2,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F49,Downlink SPS,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F50,Grant commit atomicity,A,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F51,PDCCH decode authority,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F52,Active BWP eligibility,B,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F53,DRX eligibility,C,12,12,2,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F54,Measurement-gap eligibility,C,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F55,Two-cell HARQ isolation,C,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F56,Cross-carrier scheduling,C,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F57,Packet lineage graph,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F58,First-success delivery deduplication,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F59,Queue-byte conservation,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F60,Bursty traffic,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F61,Mixed 5QI traffic,B,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F62,Runtime scaling,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F63,Serial/parallel reproducibility,A,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth
+F64,End-to-end closed loop,C,12,12,1,0,component_contract_complete,0,PASS,analytical_component_evaluation,component_proxy,study_not_truth

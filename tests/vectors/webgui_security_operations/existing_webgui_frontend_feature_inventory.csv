@@ -1,0 +1,16 @@
+Stack,Feature,Component,RouteOrTab,CurrentStatus,RequiredDisposition
+new_react,Config,ConfigPanel,config,present,retain_and_expand
+new_react,Run Manager,RunManager,runs,present,retain_and_expand
+new_react,Real-Time,RealTimeDash,realtime,present,retain_and_expand
+new_react,Analytics,Analytics,analytics,present,retain_and_expand
+new_react,Developer Tools,DevTools,devtools,present,retain_and_expand
+old_single_file,Mode-first LLS/SLS/E2E configuration,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Interactive architecture/parameter catalog,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,OSM geometry map,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Artifact Explorer,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Plot gallery,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Table browser,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Compare Runs,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Config JSON/YAML download,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Database-backed run history,old_dashboard,multiple,present_old_only,port_before_delete
+old_single_file,Delete/Clear admin operations,old_dashboard,multiple,present_old_only,replace_with_rbac_audited_actions

@@ -1,0 +1,17 @@
+FileName,RequiredColumns,MinimumRows
+waveform_impact_run_manifest.csv,RunID;ExperimentMatrixSHA256;SeedList;MATLABVersion;ToolboxVersion;Status,1
+waveform_impact_raw_trials.csv,ExperimentID;FamilyID;PairID;Arm;Seed;TrialIndex;Metric;Value;Status,768
+waveform_impact_operating_points.csv,FamilyID;PairID;Arm;Trials;Errors;Incomplete;Status,128
+waveform_impact_pairwise_effects.csv,FamilyID;Metric;Effect;LowerCI;UpperCI;PValue;AdjustedPValue;PracticalThreshold;Conclusion;Status,64
+waveform_impact_rule_evaluation.csv,RuleID;FamilyID;Requirement;Observed;Result;Status,96
+waveform_impact_ofdm.csv,FamilyID;Factor;Baseline;Treatment;NMSEEffect;EVMEffect;Status,10
+waveform_impact_dfts.csv,FamilyID;Factor;Baseline;Treatment;PAPREffect_dB;BLEREffect;Status,10
+waveform_impact_windowing.csv,FamilyID;Overlap;OOBEffect_dB;EVMEffect_pct;ISIEffect_dB;Status,10
+waveform_impact_papr_spectral.csv,FamilyID;PAPR_dB;CCDF;OOB_dB;SpectralPowerError_dB;Status,10
+waveform_impact_multinumerology.csv,FamilyID;SCSRatio;Guard_Hz;TimingOffset;Interference_dB;Status,10
+waveform_impact_carrier_aggregation.csv,FamilyID;Carriers;Separation_Hz;PowerImbalance_dB;Leakage_dB;Status,10
+waveform_impact_sync_channel.csv,FamilyID;CFO;Timing;DelaySpread;Doppler;EVMEffect;BLEREffect;Status,10
+waveform_impact_runtime.csv,FamilyID;ProblemSize;Runtime_s;PeakMemory_MB;Status,10
+waveform_impact_interactions.csv,ModelID;Term;Coefficient;LowerCI;UpperCI;PValue;Status,10
+waveform_impact_summary.csv,FamilyID;PrimaryMetric;Effect;LowerCI;UpperCI;Conclusion;Status,64
+waveform_impact_image_semantic_audit.csv,ImageFile;SourceCSV;SourceCSVSHA256;PNGSHA256;Width;Height;Title;XLabel;YLabel;AxesCount;SeriesCount;FinitePointCount;Status,30
