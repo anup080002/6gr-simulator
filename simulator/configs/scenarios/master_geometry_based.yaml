@@ -176,7 +176,33 @@ canonical_control:
     dl_waveform: CP-OFDM
     ul_waveform: CP-OFDM
     transform_precoding_enabled: false
-    windowing_enabled: true
+    windowing_enabled: false
+  waveform_phase13:
+    enabled: true
+    profile_id: nr_rel19_multinumerology_strict
+    primary_feature: multi_numerology_sync
+    specification_38211: 3GPP TS 38.211 V19.3.0
+    specification_38214: 3GPP TS 38.214 V19.3.0
+    specification_38331: 3GPP TS 38.331 V19.3.0
+    windowing_profile: rectangular
+    windowing_samples: 0
+    common_sample_rate_hz: 122880000
+    papr_oversampling_factors: [1, 2, 4, 8]
+    papr_convergence_tolerance_db: 0.1
+    spectral_fft_size: 16384
+    spectral_analysis_window: hann
+    spectral_segment_overlap: 0.5
+    unsupported_candidate_policy: reject_before_waveform
+  integration:
+    enabled: true
+    run_mode: GEOMETRY_NETWORK
+    radio_profile: nr_rel18_system_lls_strict
+    subprofile: connected_network
+    trace_profile: FULL_EVIDENCE
+    configuration_epoch: 1
+    configured_snr_is_link_authority: false
+    common_pipeline_required: true
+    measured_sinr_required: true
   channel:
     model_type: CDL
     profile: CDL-C
@@ -1874,6 +1900,16 @@ execution_scales:
           num_workers: 1
           batch_size_links: 1
           auto_start_parallel_pool: false
+        output:
+          backend: filesystem
+          persistence_mode: results_folder
+          profiler_enabled: false
+      output:
+        backend: filesystem
+        persistence_mode: results_folder
+        persist_to_database: false
+        persist_to_results_folder: true
+        profiler_enabled: false
       run_control:
         total_slots: 10
         total_time_ms: 5

@@ -1,0 +1,121 @@
+RuleID,Category,RuleType,Metric,Operator,Threshold,Scope,Description,Mandatory
+INT-RULE-001,planning,hard,ResolvedRunModeCount,==,1,all runs,Exactly one run mode,true
+INT-RULE-002,planning,hard,ResolvedRadioProfileCount,==,1,all runs,Exactly one radio profile,true
+INT-RULE-003,configuration,hard,ExecutedConfigHashMatch,==,true,all runs,Executed staged YAML hash equals manifest,true
+INT-RULE-004,configuration,hard,HiddenOverrideCount,==,0,all runs,No hidden CLI/env override outside manifest,true
+INT-RULE-005,architecture,hard,CommonWaveformImplementation,==,true,both modes,Same production waveform implementation digest,true
+INT-RULE-006,architecture,hard,CommonReceiverImplementation,==,true,both modes,Same production receiver implementation digest,true
+INT-RULE-007,architecture,hard,DuplicateCoreServiceCount,==,0,all runs,No duplicate config/clock/seed/power/waveform services,true
+INT-RULE-008,time,hard,FutureEventConsumptionCount,==,0,all runs,No evidence consumed before available,true
+INT-RULE-009,time,hard,StaleEvidenceConsumptionCount,==,0,strict runs,No stale measurement/control evidence,true
+INT-RULE-010,resources,hard,UnauthorizedCollisionCount,==,0,all runs,No unauthorized RE collisions,true
+INT-RULE-011,resources,hard,OutOfGridAllocationCount,==,0,all runs,All allocations within active carrier/BWP,true
+INT-RULE-012,causality,hard,InvalidDCIGrantCount,==,0,connected runs,No grant from invalid/wrong-RNTI DCI,true
+INT-RULE-013,causality,hard,ConfiguredStateOverrideCount,==,0,connected runs,Configured state cannot override decoded state,true
+INT-RULE-014,causality,hard,ReceiverOracleInputCount,==,0,strict runs,No transmitted truth supplied to receiver,true
+INT-RULE-015,waveform,hard,NonFiniteSampleCount,==,0,all runs,No NaN/Inf samples,true
+INT-RULE-016,waveform,hard,StreamDiscontinuityCount,==,0,all runs,No unplanned sample/phase discontinuity,true
+INT-RULE-017,channel,hard,HiddenNormalizationCount,==,0,all runs,No hidden channel/sample renormalization,true
+INT-RULE-018,interference,hard,ContributionSumMismatchCount,==,0,geometry runs,Composite waveform equals per-link sum,true
+INT-RULE-019,harq,hard,HARQIdentityMismatchCount,==,0,all runs,HARQ TB/codeword/NDI identity exact,true
+INT-RULE-020,harq,hard,HARQPositionMismatchCount,==,0,all runs,Rate-match position provenance exact,true
+INT-RULE-021,mimo,hard,SelectedAppliedPrecoderMismatchCount,==,0,supported MIMO runs,Selected/applied precoder digests equal,true
+INT-RULE-022,mimo,hard,SilentRankCollapseCount,==,0,supported high-rank runs,No silent rank/layer collapse,true
+INT-RULE-023,protocol,hard,UnownedBytes,==,0,geometry connected runs,No unowned payload bytes,true
+INT-RULE-024,protocol,hard,DuplicateDeliveredBytes,==,0,geometry connected runs,No duplicate first delivery,true
+INT-RULE-025,protocol,hard,ConservationErrorBytes,==,0,geometry connected runs,Cross-layer byte conservation,true
+INT-RULE-026,determinism,hard,TaskConflictCount,==,0,all campaigns,No same-ID conflicting output,true
+INT-RULE-027,artifacts,hard,MissingMandatoryArtifactCount,==,0,acceptance runs,All mandatory artifacts present,true
+INT-RULE-028,artifacts,hard,StaleArtifactCount,==,0,acceptance runs,All artifacts bound to current run/config,true
+INT-RULE-029,artifacts,hard,ArtifactHashMismatchCount,==,0,acceptance runs,All artifact hashes verify,true
+INT-RULE-030,tests,hard,SkippedMandatoryTestCount,==,0,acceptance,No skipped mandatory tests,true
+INT-RULE-031,tests,hard,BlockedMandatoryTestCount,==,0,acceptance,No blocked mandatory tests,true
+INT-RULE-032,claims,hard,Rel20NormativePassCount,==,0,Rel20 study,Study runs never emit normative pass,true
+INT-RULE-033,claims,hard,CalibrationEvidenceLeakCount,==,0,fixed calibration,Calibration cannot satisfy connected gates,true
+INT-RULE-034,runstate,hard,PartialRunMarkedCompleteCount,==,0,all runs,Partial/stopped/failed never complete,true
+INT-RULE-035,power,quantitative,MaxPowerReconciliationError_dB,<=,0.05,all strict runs,Analytical and waveform power reconciliation,true
+INT-RULE-036,noise,quantitative,MaxNoiseVarianceError_dB,<=,0.05,fixed and geometry,Noise ledger reconciliation,true
+INT-RULE-037,fixed,quantitative,MaxConfiguredVsMeasuredInputSNRAbsError_dB,<=,0.25,fixed AWGN,Input SNR calibration,true
+INT-RULE-038,fixed,quantitative,MaxConfiguredVsPostEqSINRAbsError_dB,<=,0.50,fixed AWGN rank1,Receiver SINR consistency,true
+INT-RULE-039,fixed,statistical,IncompleteMandatoryPointCount,==,0,fixed acceptance,No incomplete required SNR point,true
+INT-RULE-040,fixed,statistical,CurveNonDegradationViolations,==,0,fixed acceptance,Confidence-aware BLER non-degradation,true
+INT-RULE-041,fixed,statistical,ReferenceJoinMismatchCount,==,0,fixed reference cases,Exact point-key joins,true
+INT-RULE-042,fixed,statistical,MinIndependentDrops,>=,6,fixed acceptance,Independent drops/seeds,true
+INT-RULE-043,geometry,quantitative,MaxGeometryDelayError_s,<=,1e-12,geometry deterministic checks,Distance-to-delay identity,true
+INT-RULE-044,geometry,quantitative,MaxDopplerKinematicError_Hz,<=,1e-6,geometry deterministic checks,Signed Doppler identity,true
+INT-RULE-045,geometry,quantitative,MaxInterferenceContributionPowerError_dB,<=,0.05,geometry,Per-link contribution power,true
+INT-RULE-046,geometry,statistical,MinIndependentSeeds,>=,6,canonical geometry acceptance,Multi-seed evidence,true
+INT-RULE-047,crossmode,hard,AWGNRecoveredBitMismatchCount,==,0,cross-mode AWGN,Bit-exact reduction,true
+INT-RULE-048,crossmode,hard,AWGNReceiverDigestMismatchCount,==,0,cross-mode AWGN,Common receiver result,true
+INT-RULE-049,crossmode,hard,AWGNWaveformDigestMismatchCount,==,0,cross-mode AWGN,Common waveform result,true
+INT-RULE-050,crossmode,quantitative,MaxCrossModeMeasuredSINRError_dB,<=,0.10,cross-mode AWGN,Measured SINR agreement,true
+INT-RULE-051,crossmode,quantitative,MaxCrossModeTDLGridNMSE,<=,1e-10,cross-mode TDL no-noise,Recovered grid agreement,true
+INT-RULE-052,crossmode,hard,CrossModeDecodeOutcomeMismatchCount,==,0,controlled equivalence,Same decode outcomes,true
+INT-RULE-053,measurements,hard,ConfiguredMeasurementDecisionCount,==,0,steady state,Measured-only scheduler decisions,true
+INT-RULE-054,measurements,hard,MeasurementResourceIdentityMismatchCount,==,0,all measured decisions,Correct resource association,true
+INT-RULE-055,rf,quantitative,MaxChunkedVsOneShotNMSE,<=,1e-12,waveform/RF continuity,Chunked state continuity,true
+INT-RULE-056,scheduler,hard,IllegalGrantCount,==,0,geometry connected,Every grant passes exact eligibility,true
+INT-RULE-057,handover,hard,GeometryTruthDirectHandoverCount,==,0,handover scenarios,Handover from decoded filtered measurements,true
+INT-RULE-058,handover,hard,InvalidHandoverCompletionCount,==,0,handover scenarios,Complete target procedure before switch,true
+INT-RULE-059,kpi,hard,KPIRegistrySemanticMismatchCount,==,0,both modes,Same KPI semantics,true
+INT-RULE-060,integration,hard,SameSeedCanonicalHashMatch,==,true,acceptance,Same seed and task produce identical canonical hashes,true
+INT-RULE-061,integration,hard,SerialParallelCanonicalHashMatch,==,true,acceptance,Serial and parallel outputs are identical,true
+INT-RULE-062,integration,hard,ShuffledMergeCanonicalHashMatch,==,true,acceptance,Merge order does not change output,true
+INT-RULE-063,integration,hard,RetryIdempotence,==,true,acceptance,Identical retry counted once,true
+INT-RULE-064,integration,hard,NoGlobalRNGUse,==,true,acceptance,Strict runtime uses named streams only,true
+INT-RULE-065,integration,hard,NoUnboundedTraceGrowth,==,true,acceptance,Trace policy remains within configured budget,true
+INT-RULE-066,integration,hard,NoFidelityDowngrade,==,true,acceptance,Runtime pressure never silently disables mandatory fidelity,true
+INT-RULE-067,integration,hard,WorkerLossRecoveryCorrect,==,true,acceptance,"Worker loss produces recoverable/failed state, never false complete",true
+INT-RULE-068,integration,hard,GracefulStopCorrect,==,true,acceptance,Graceful stop preserves partial status and artifacts,true
+INT-RULE-069,integration,hard,RestartNoDoubleCount,==,true,acceptance,Restart/retry does not duplicate trials/events,true
+INT-RULE-070,integration,hard,WebGUIExactRunBinding,==,true,acceptance,Selected run resolves by exact RunID,true
+INT-RULE-071,integration,hard,WebGUIExactConfigBinding,==,true,acceptance,Displayed config hash equals executed config hash,true
+INT-RULE-072,integration,hard,ArtifactManifestComplete,==,true,acceptance,All domain artifacts indexed,true
+INT-RULE-073,integration,hard,PlotSourceHashMatch,==,true,acceptance,Every PNG source CSV hash matches,true
+INT-RULE-074,integration,hard,ImageSemanticAuditPass,==,true,acceptance,Every required image passes semantic audit,true
+INT-RULE-075,integration,hard,CSVSchemaPass,==,true,acceptance,Every required CSV passes schema,true
+INT-RULE-076,integration,hard,FullRegressionPass,==,true,acceptance,Complete repository MATLAB regression passes,true
+INT-RULE-077,integration,hard,PytestPass,==,true,acceptance,Python test suite passes without MATLAB import side effects,true
+INT-RULE-078,integration,hard,AllSourceYAMLPass,==,true,acceptance,Every source YAML parses and validates,true
+INT-RULE-079,integration,hard,CleanOutputRoot,==,true,acceptance,Acceptance runs use fresh output roots,true
+INT-RULE-080,integration,hard,PinnedToolchainMatch,==,true,acceptance,MATLAB and Toolbox versions match profile,true
+INT-RULE-081,integration,hard,ActualRunEvidence,==,true,acceptance,Acceptance gates use fresh runtime evidence,true
+INT-RULE-082,integration,hard,NoFixtureAsRuntime,==,true,acceptance,Fixture/static evidence cannot satisfy runtime gate,true
+INT-RULE-083,integration,hard,NoModeArtifactLeakage,==,true,acceptance,Fixed and geometry artifacts cannot satisfy each other's gates,true
+INT-RULE-084,integration,hard,Rel20StudyLabelPresent,==,true,acceptance,Every 6G study artifact is clearly marked non-normative,true
+INT-RULE-085,integration,hard,RuntimeManifestHashPass,==,true,acceptance,Run manifest and all hashes verify,true
+INT-RULE-086,integration,hard,FailureRegistryEmptyForMandatory,==,true,acceptance,No open mandatory integration failures,true
+INT-RULE-087,integration,hard,ScenarioCompletionPass,==,true,acceptance,Every mandatory actual-run scenario completes,true
+INT-RULE-088,integration,hard,DashboardKeyVisualsPresent,==,true,acceptance,Key run/DUT visuals available or explicitly unavailable,true
+INT-RULE-089,integration,hard,CrossModeReportPass,==,true,acceptance,Cross-mode equivalence report passes all required rows,true
+INT-RULE-090,domain,hard,RRCIntegrationGate,==,true,applicable acceptance runs,RRC production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-091,domain,hard,PDCCHIntegrationGate,==,true,applicable acceptance runs,PDCCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-092,domain,hard,PDSCHIntegrationGate,==,true,applicable acceptance runs,PDSCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-093,domain,hard,PUSCHIntegrationGate,==,true,applicable acceptance runs,PUSCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-094,domain,hard,PUCCHIntegrationGate,==,true,applicable acceptance runs,PUCCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-095,domain,hard,SSBIntegrationGate,==,true,applicable acceptance runs,SSB production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-096,domain,hard,PRACHIntegrationGate,==,true,applicable acceptance runs,PRACH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-097,domain,hard,CSIIntegrationGate,==,true,applicable acceptance runs,CSI production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-098,domain,hard,SRSIntegrationGate,==,true,applicable acceptance runs,SRS production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-099,domain,hard,TRSIntegrationGate,==,true,applicable acceptance runs,TRS production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-100,domain,hard,PTRSIntegrationGate,==,true,applicable acceptance runs,PTRS production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-101,domain,hard,MIMOIntegrationGate,==,true,applicable acceptance runs,MIMO production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-102,domain,hard,CHANNELIntegrationGate,==,true,applicable acceptance runs,CHANNEL production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-103,domain,hard,RFIntegrationGate,==,true,applicable acceptance runs,RF production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-104,domain,hard,MACIntegrationGate,==,true,applicable acceptance runs,MAC production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-105,domain,hard,RLCIntegrationGate,==,true,applicable acceptance runs,RLC production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-106,domain,hard,PDCPIntegrationGate,==,true,applicable acceptance runs,PDCP production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-107,domain,hard,SDAPIntegrationGate,==,true,applicable acceptance runs,SDAP production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-108,domain,hard,RRCIntegrationGate,==,true,applicable acceptance runs,RRC production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-109,domain,hard,PDCCHIntegrationGate,==,true,applicable acceptance runs,PDCCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-110,domain,hard,PDSCHIntegrationGate,==,true,applicable acceptance runs,PDSCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-111,domain,hard,PUSCHIntegrationGate,==,true,applicable acceptance runs,PUSCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-112,domain,hard,PUCCHIntegrationGate,==,true,applicable acceptance runs,PUCCH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-113,domain,hard,SSBIntegrationGate,==,true,applicable acceptance runs,SSB production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-114,domain,hard,PRACHIntegrationGate,==,true,applicable acceptance runs,PRACH production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-115,domain,hard,CSIIntegrationGate,==,true,applicable acceptance runs,CSI production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-116,domain,hard,SRSIntegrationGate,==,true,applicable acceptance runs,SRS production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-117,domain,hard,TRSIntegrationGate,==,true,applicable acceptance runs,TRS production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-118,domain,hard,PTRSIntegrationGate,==,true,applicable acceptance runs,PTRS production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-119,domain,hard,MIMOIntegrationGate,==,true,applicable acceptance runs,MIMO production component executes through the common integration path and passes its selected profile gate,true
+INT-RULE-120,domain,hard,CHANNELIntegrationGate,==,true,applicable acceptance runs,CHANNEL production component executes through the common integration path and passes its selected profile gate,true

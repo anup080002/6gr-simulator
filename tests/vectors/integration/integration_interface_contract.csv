@@ -1,0 +1,15 @@
+Interface,Producer,Consumer,PayloadContract,MandatoryEvidence,Prohibited
+ResolvedRunConfiguration,Config service,IntegrationOrchestrator,Immutable config object + hashes,Source/effective/resolved/executed hashes,No hidden overrides
+SimulationContext,IntegrationOrchestrator,All runtime components,Dependency registry,Component/version/config digests,No duplicate local service
+AbsoluteRadioClock,Clock service,All components,Absolute sample/symbol/slot time,Clock trace,No independent counters
+SlotExecutionPlan,Event scheduler,Resource manager/scheduler,Immutable due events and resources,Plan digest,No future information
+ResourceTransaction,Channel mappers,Waveform engine,Exact RE ownership,Collision report,No post-waveform masking
+WaveformChunk,Waveform engine,Channel/RF composer,Samples + absolute sample range + state digest,Power/continuity ledger,No slot reset
+ChannelContribution,Channel link engine,Interference composer,Per-link samples + state ID,Contribution power/hash,No scalar-only interference
+ReceivedWaveform,Interference/RF composer,Receivers,Composite samples + covariance/noise state,Sample/power hash,No configured SINR input
+DecodedDCIEvent,PDCCH receiver,Grant materializer,CRC/RNTI/context-valid decoded fields,Causality ledger,No configured grant override
+DecodedUCIEvent,PUCCH/PUSCH receiver,HARQ/CSI/MAC,Typed ACK/SR/CSI fields,Bit ownership and decode result,No expected payload oracle
+MeasurementState,Receiver/RS engine,Scheduler/link adaptation,Measured quantity + resource/time/provenance,Age and validity,No configured fallback
+HARQAttempt,MAC/HARQ,PHY transmitter/receiver,Immutable TB/NDI/RV/codeword identity,Soft-buffer ledger,No process/slot synthesized identity
+PacketLineageEvent,Traffic/protocol/MAC/PHY,Conservation ledger,Parent/child identities and bytes,Lineage graph,No unowned bytes
+ArtifactManifest,Artifact exporter,WebGUI/validation,"Opaque IDs, paths, hashes, schemas",Completeness and freshness,No substring run lookup

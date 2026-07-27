@@ -1,0 +1,38 @@
+top_level_order:
+  - canonical_control
+  - waveform_phase13
+sections:
+  canonical_control:
+    required: false
+    parameters:
+      waveform_phase13: {required: false, type: struct}
+  waveform_phase13:
+    required: false
+    parameters:
+      enabled: {required: false, type: boolean}
+      profile_id:
+        required: false
+        type: string
+        allowed_values: [nr_rel19_cp_ofdm_strict, nr_rel19_ul_dfts_ofdm_strict, nr_rel19_multinumerology_strict, rel20_6g_waveform_study, waveform_research_candidate, unsupported_extension]
+      primary_feature: {required: false, type: string}
+      specification_38211: {required: false, type: string}
+      specification_38214: {required: false, type: string}
+      specification_38331: {required: false, type: string}
+      windowing_profile:
+        required: false
+        type: string
+        allowed_values: [rectangular, sqrt_raised_cosine_complementary, filtered_ofdm_research]
+      windowing_samples: {required: false, type: integer, min: 0}
+      common_sample_rate_hz: {required: false, type: number, min: 1}
+      papr_oversampling_factors: {required: false, type: array}
+      papr_convergence_tolerance_db: {required: false, type: number, min: 0}
+      spectral_fft_size: {required: false, type: integer, min: 64}
+      spectral_analysis_window:
+        required: false
+        type: string
+        allowed_values: [rectangular, hann]
+      spectral_segment_overlap: {required: false, type: number, min: 0, max: 0.95}
+      unsupported_candidate_policy:
+        required: false
+        type: string
+        allowed_values: [reject_before_waveform]

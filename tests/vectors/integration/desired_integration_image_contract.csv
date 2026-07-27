@@ -1,0 +1,41 @@
+Artifact,Mode,Domain,SourceCSV,RequiredFor,MinWidth,MinHeight,TitleTokens,XAxisTokens,YAxisTokens,MinSeries,MinFinitePoints
+reports/image/integration_architecture_flow.png,ALL,architecture,reports/csv/integration_interface_bindings.csv,acceptance,900,600,integration architecture,stage,component,1,10
+reports/image/integration_mode_profile_matrix.png,ALL,planning,reports/csv/integration_profile_resolution.csv,acceptance,900,600,mode profile,run,profile,1,2
+reports/image/integration_slot_event_timeline.png,ALL,time,reports/csv/integration_event_trace.csv,acceptance,900,600,event timeline,time,event,2,20
+reports/image/integration_resource_grid_ownership.png,ALL,resources,reports/csv/integration_resource_transactions.csv,acceptance,900,600,resource ownership,resource block,ofdm symbol,2,50
+reports/image/integration_power_reference_planes.png,ALL,power,reports/csv/integration_power_ledger.csv,acceptance,900,600,power reference,reference plane,power,2,10
+reports/image/integration_seed_determinism.png,ALL,determinism,reports/csv/integration_seed_ledger.csv,acceptance,900,600,seed determinism,task,hash,1,4
+reports/image/integration_runtime_scaling.png,ALL,performance,reports/csv/integration_runtime_profile.csv,acceptance,900,600,runtime scaling,samples,elapsed,1,6
+reports/image/integration_acceptance_waterfall.png,ALL,validation,reports/csv/integration_acceptance_results.csv,acceptance,900,600,acceptance waterfall,rule,status,1,20
+reports/image/fixed_bler_ber_vs_snr.png,FIXED_SNR_SWEEP,fixed,reports/csv/fixed_snr_bler_curve.csv,acceptance,900,600,bler ber,snr,error rate,2,6
+reports/image/fixed_measured_vs_configured_snr.png,FIXED_SNR_SWEEP,fixed,reports/csv/fixed_snr_measured_sinr.csv,acceptance,900,600,measured configured,configured snr,measured sinr,2,6
+reports/image/fixed_throughput_vs_snr.png,FIXED_SNR_SWEEP,fixed,reports/csv/fixed_snr_throughput_curve.csv,acceptance,900,600,throughput snr,snr,throughput,2,6
+reports/image/fixed_constellation_evm.png,FIXED_SNR_SWEEP,waveform,reports/csv/fixed_snr_receiver_metrics.csv,acceptance,900,600,constellation evm,in phase,quadrature,1,20
+reports/image/fixed_harq_timeline.png,FIXED_SNR_SWEEP,harq,reports/csv/fixed_snr_harq_trace.csv,acceptance,900,600,harq timeline,attempt,feedback,1,4
+reports/image/fixed_papr_ccdf.png,FIXED_SNR_SWEEP,waveform,reports/csv/fixed_snr_waveform_metrics.csv,acceptance,900,600,papr ccdf,papr,ccdf,1,4
+reports/image/fixed_psd.png,FIXED_SNR_SWEEP,waveform,reports/csv/fixed_snr_waveform_metrics.csv,acceptance,900,600,power spectral density,frequency,power,1,20
+reports/image/fixed_reference_comparison.png,FIXED_SNR_SWEEP,validation,reports/csv/fixed_snr_reference_comparison.csv,acceptance,900,600,dut reference,snr,bler,2,4
+reports/image/geometry_topology_trajectory.png,GEOMETRY_NETWORK,geometry,reports/csv/geometry_mobility_trace.csv,acceptance,900,600,topology trajectory,x,y,2,20
+reports/image/geometry_signal_strength_route.png,GEOMETRY_NETWORK,channel,reports/csv/geometry_link_state_trace.csv,acceptance,900,600,signal strength route,distance,power,2,20
+reports/image/geometry_ser_bler_route.png,GEOMETRY_NETWORK,kpi,reports/csv/geometry_ue_kpi.csv,acceptance,900,600,error rate route,distance,error rate,1,4
+reports/image/geometry_cir_pdp.png,GEOMETRY_NETWORK,channel,reports/csv/geometry_channel_state_trace.csv,acceptance,900,600,channel impulse,delay,magnitude,1,20
+reports/image/geometry_doppler_timeline.png,GEOMETRY_NETWORK,channel,reports/csv/geometry_link_state_trace.csv,acceptance,900,600,doppler timeline,time,doppler,2,20
+reports/image/geometry_psd_eye_constellation.png,GEOMETRY_NETWORK,waveform,reports/csv/geometry_rf_tracking.csv,acceptance,900,600,psd eye constellation,sample,amplitude,4,20
+reports/image/geometry_evm_per_rb_symbol.png,GEOMETRY_NETWORK,waveform,reports/csv/geometry_grant_trace.csv,acceptance,900,600,evm resource block ofdm symbol,resource block,evm,2,20
+reports/image/geometry_antenna_beam_pattern.png,GEOMETRY_NETWORK,mimo,reports/csv/geometry_beam_mimo_trace.csv,acceptance,900,600,antenna beam pattern,azimuth,gain,2,20
+reports/image/geometry_measurement_csi_mcs.png,GEOMETRY_NETWORK,csi,reports/csv/geometry_csi_reports.csv,acceptance,900,600,measurement csi mcs,time,index,3,10
+reports/image/geometry_scheduler_allocations.png,GEOMETRY_NETWORK,scheduler,reports/csv/geometry_scheduler_trace.csv,acceptance,900,600,scheduler allocation,time,resource,2,20
+reports/image/geometry_interference_contributions.png,GEOMETRY_NETWORK,interference,reports/csv/geometry_interference_contributions.csv,acceptance,900,600,interference contributions,time,power,2,20
+reports/image/geometry_harq_queue_timeline.png,GEOMETRY_NETWORK,harq,reports/csv/geometry_harq_trace.csv,acceptance,900,600,harq queue,time,state,2,20
+reports/image/geometry_beam_mimo_timeline.png,GEOMETRY_NETWORK,mimo,reports/csv/geometry_beam_mimo_trace.csv,acceptance,900,600,beam mimo,time,rank beam,2,20
+reports/image/geometry_rf_target_measured_tracking.png,GEOMETRY_NETWORK,rf,reports/csv/geometry_rf_tracking.csv,acceptance,900,600,target measured tracking,time,error,3,20
+reports/image/geometry_power_control.png,GEOMETRY_NETWORK,power,reports/csv/integration_power_ledger.csv,acceptance,900,600,power control,time,power,2,20
+reports/image/geometry_packet_latency_cdf.png,GEOMETRY_NETWORK,protocol,reports/csv/geometry_ue_kpi.csv,acceptance,900,600,latency cdf,latency,cdf,1,4
+reports/image/geometry_serving_cell_handover.png,GEOMETRY_NETWORK,mobility,reports/csv/geometry_handover_rlf_trace.csv,acceptance,900,600,handover serving cell,time,cell,2,4
+reports/image/geometry_ue_cell_kpi.png,GEOMETRY_NETWORK,kpi,reports/csv/geometry_ue_kpi.csv,acceptance,900,600,ue cell kpi,ue,goodput,2,4
+reports/image/cross_mode_awgn_equivalence.png,BOTH,crossmode,reports/csv/cross_mode_equivalence.csv,acceptance,900,600,cross mode awgn,snr,difference,2,8
+reports/image/cross_mode_noise_power.png,BOTH,crossmode,reports/csv/cross_mode_noise_power_reconciliation.csv,acceptance,900,600,noise power reconciliation,comparison,error,2,8
+reports/image/cross_mode_digest_matrix.png,BOTH,crossmode,reports/csv/cross_mode_waveform_digest.csv,acceptance,900,600,digest matrix,comparison,equal,2,8
+reports/image/cross_mode_kpi_comparison.png,BOTH,crossmode,reports/csv/cross_mode_kpi_comparison.csv,acceptance,900,600,kpi comparison,kpi,difference,2,8
+reports/image/integration_failure_heatmap.png,ALL,errors,reports/csv/integration_error_registry.csv,acceptance,900,600,failure heatmap,domain,severity,1,4
+reports/image/integration_artifact_completeness.png,ALL,artifacts,reports/csv/integration_artifact_index.csv,acceptance,900,600,artifact completeness,domain,count,2,10

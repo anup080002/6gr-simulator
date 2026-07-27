@@ -2414,7 +2414,7 @@ end
 
 function T = localPowerControlConvergenceRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-policy = localConfigString(ctx, ["pusch.power_control"], "baseline");
+policy = localPowerControlPolicy(ctx);
 note = "Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.";
 T = [T; localMetricTableRow(cat, metric, "UL", "policy", "available", NaN, policy, "", localDefaultSource("UL"), note)]; %#ok<AGROW>
     sinr = localFiniteColumn(ctx.Tables.UL, "PostEqSINR_dB");
@@ -2428,6 +2428,25 @@ end
 T = [T; ... %#ok<AGROW>
     localMetricTableRow(cat, metric, "UL", "sinr_std_db", "available", std(sinr, 0, "omitnan"), "", "dB", localDefaultSource("UL"), note); ...
     localMetricTableRow(cat, metric, "UL", "mean_step_delta_db", "available", mean(step, "omitnan"), "", "dB", localDefaultSource("UL"), note)];
+end
+
+function policy = localPowerControlPolicy(ctx)
+enabled = localConfigFlag(ctx, ["pusch.power_control.enabled"], false);
+if ~enabled
+    policy = "disabled";
+    return;
+end
+openLoop = localConfigFlag(ctx, ["pusch.power_control.open_loop_enabled"], false);
+closedLoop = localConfigFlag(ctx, ["pusch.power_control.closed_loop_enabled"], false);
+if openLoop && closedLoop
+    policy = "open_loop_plus_closed_loop";
+elseif openLoop
+    policy = "open_loop";
+elseif closedLoop
+    policy = "closed_loop";
+else
+    policy = "enabled_without_loop_selection";
+end
 end
 
 function T = localMsg3SpecificSuccessRows(cat, metric, ctx)

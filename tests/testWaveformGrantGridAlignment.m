@@ -11,12 +11,22 @@ cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.outputs.saveFIG = false;
 
-cfg.phy.carrier.SubcarrierSpacing = 15;
+% Use a standards-valid 20 MHz / 30 kHz / 51 PRB carrier tuple.  The
+% oversized grant below remains intentionally larger than this carrier so
+% the replay-alignment behavior under test is unchanged.
+cfg.frequency.bandwidth_hz = 20e6;
+cfg.channel.bandwidth_Hz = 20e6;
+cfg.phy.channelBandwidth_MHz = 20;
+cfg.channel.subcarrierSpacing_kHz = 30;
+cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.pdsch.modulation = "QPSK";
 cfg.phy.pdsch.codeRate = 0.35;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.nLayers = 1;
+cfg.phy.pdcch.symbolAllocation = [0 2];
+cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pdsch.mappingType = "A";
 
 cfg.channel.awgnOnly = false;
 cfg.channel.model = "TDL-C";
@@ -36,6 +46,7 @@ grant = struct( ...
     "RNTI", 1, ...
     "PRBSet", 0:91, ...
     "SymbolAllocation", [0 14], ...
+    "MappingType", "A", ...
     "Modulation", "QPSK", ...
     "NumLayers", 1, ...
     "RV", 0, ...
@@ -65,6 +76,7 @@ cfgSystem.scenario.ue.nUE = 2;
 cfgSystem.scenario.nUE = 2;
 cfgSystem = sixgr.config.normalizeConfig(cfgSystem);
 sixgr.config.validateConfig(cfgSystem);
+cfgSystem = withCanonicalSchedulerTiming(cfgSystem);
 
 ctx = sixgr.core.SimContext(cfgSystem);
 offeredDL = repmat(2e5, 4, 2);
@@ -92,6 +104,7 @@ cfgSystemTDL.scenario.ue.nUE = 2;
 cfgSystemTDL.scenario.nUE = 2;
 cfgSystemTDL = sixgr.config.normalizeConfig(cfgSystemTDL);
 sixgr.config.validateConfig(cfgSystemTDL);
+cfgSystemTDL = withCanonicalSchedulerTiming(cfgSystemTDL);
 
 ctxTDL = sixgr.core.SimContext(cfgSystemTDL);
 resTDL = sixgr.system.SystemLevelRunner.run(ctxTDL, struct( ...

@@ -1,0 +1,32 @@
+version: 1.0.0
+research_class: baseline_benchmark
+run_modes:
+  FIXED_SNR_SWEEP:
+    run_class: fixed_link_calibration
+    environment_adapter: FixedSNREnvironmentAdapter
+    configured_snr_role: operating_point_input
+    allowed_subprofiles: [calibration_grant, connected_control_smoke]
+  GEOMETRY_NETWORK:
+    run_class: geometry_system_lls
+    environment_adapter: GeometryNetworkEnvironmentAdapter
+    configured_snr_role: prohibited_as_link_authority
+    allowed_subprofiles: [connected_network, handover_mobility, multi_user_multicell]
+radio_profiles:
+  nr_rel18_system_lls_strict:
+    normative: true
+    research_class: baseline_benchmark
+  rel19_extension_strict:
+    normative: true
+    research_class: agreed_starting_point
+  rel20_6g_study_context:
+    normative: false
+    research_class: study_item_candidate
+trace_profiles:
+  FULL_EVIDENCE:
+    event_trace: true
+    resource_trace: true
+    link_trace: true
+  PRODUCTION_SUMMARY:
+    event_trace: false
+    resource_trace: false
+    link_trace: false

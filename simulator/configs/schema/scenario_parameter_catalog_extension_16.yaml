@@ -1,0 +1,29 @@
+top_level_order:
+  - canonical_control
+  - integration
+sections:
+  canonical_control:
+    required: false
+    parameters:
+      integration: {required: false, type: struct}
+  integration:
+    required: false
+    parameters:
+      enabled: {required: false, type: boolean}
+      run_mode:
+        required: false
+        type: string
+        allowed_values: [FIXED_SNR_SWEEP, GEOMETRY_NETWORK]
+      radio_profile:
+        required: false
+        type: string
+        allowed_values: [nr_rel18_system_lls_strict, rel19_extension_strict, rel20_6g_study_context]
+      subprofile: {required: false, type: string}
+      trace_profile:
+        required: false
+        type: string
+        allowed_values: [FULL_EVIDENCE, PRODUCTION_SUMMARY]
+      configuration_epoch: {required: false, type: integer, min: 1}
+      configured_snr_is_link_authority: {required: false, type: boolean}
+      common_pipeline_required: {required: false, type: boolean}
+      measured_sinr_required: {required: false, type: boolean}

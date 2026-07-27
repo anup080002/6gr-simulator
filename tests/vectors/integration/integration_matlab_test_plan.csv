@@ -1,0 +1,101 @@
+TestID,Category,TestName,Scope,Kind,Expected,Mandatory
+INT-TEST-001,planning,testIntegrationRunModeResolution,all,unit,exactly one mode,true
+INT-TEST-002,planning,testIntegrationRadioProfileResolution,all,unit,exactly one profile,true
+INT-TEST-003,config,testResolvedConfigHashBinding,all,unit,source/effective/resolved/executed hashes match,true
+INT-TEST-004,config,testNoHiddenExecutionOverrides,all,negative,hidden override rejected,true
+INT-TEST-005,architecture,testCommonComponentRegistry,all,unit,one shared service per core responsibility,true
+INT-TEST-006,clock,testAbsoluteRadioClockConversions,all,unit,sample/symbol/slot/frame conversions exact,true
+INT-TEST-007,clock,testEventProducedAvailableConsumedTimes,all,unit,no early or stale consumption,true
+INT-TEST-008,waveform,testCommonWaveformImplementationAcrossModes,both,integration,implementation digest equal,true
+INT-TEST-009,waveform,testChunkedOneShotWaveformContinuity,both,integration,NMSE <= 1e-12,true
+INT-TEST-010,power,testFixedGeometryPowerReferenceReconciliation,both,integration,<=0.05 dB,true
+INT-TEST-011,noise,testFixedSNRNoiseCalibration,fixed,integration,measured input SNR within tolerance,true
+INT-TEST-012,resources,testIntegratedResourceTransactionMap,both,integration,zero unauthorized collisions,true
+INT-TEST-013,control,testInvalidDCICannotCreateGrant,connected,negative,"typed rejection, no state change",true
+INT-TEST-014,control,testDecodedDCIGrantCausality,connected,integration,grant reflects decoded fields,true
+INT-TEST-015,uci,testDecodedUCICausality,connected,integration,HARQ/CSI state follows decoded UCI,true
+INT-TEST-016,measurements,testFutureCSIRejected,geometry,negative,future evidence rejected,true
+INT-TEST-017,measurements,testStaleCSIRejected,geometry,negative,stale evidence rejected,true
+INT-TEST-018,measurements,testMeasuredCSIControlsScheduler,geometry,integration,later MCS/rank changes causally,true
+INT-TEST-019,srs,testSRSControlsULPrecoder,geometry,integration,selected/applied digest match,true
+INT-TEST-020,harq,testIntegratedHARQIdentity,both,integration,TB/NDI/RV/codeword exact,true
+INT-TEST-021,harq,testIntegratedSoftBufferPositions,both,integration,rate-match positions exact,true
+INT-TEST-022,channel,testSampleDomainInterferenceSum,geometry,integration,sample sum and covariance reconcile,true
+INT-TEST-023,channel,testMobilityDopplerPhaseContinuity,geometry,integration,signed Doppler and phase continuous,true
+INT-TEST-024,mimo,testIntegratedRankPortLayerNoCollapse,geometry,integration,no silent collapse,true
+INT-TEST-025,rf,testIntegratedRFStateContinuity,both,integration,CFO/SCO/PN/AGC state continuous,true
+INT-TEST-026,mac,testIntegratedSchedulerEligibility,geometry,integration,zero illegal grants,true
+INT-TEST-027,protocol,testIntegratedPacketLineageConservation,geometry,integration,zero conservation error,true
+INT-TEST-028,rrc,testIntegratedConnectedStateCausality,geometry,integration,both endpoints connected only after decoded completion,true
+INT-TEST-029,webgui,testWebGUIExactConfigRunBinding,all,e2e,selected revision is executed and displayed,true
+INT-TEST-030,artifacts,testIntegrationArtifactManifest,all,integration,all artifacts indexed and hashed,true
+INT-TEST-031,crossmode,testCrossModeAWGNDLBitExact,both,actual-run,zero bit/digest mismatch,true
+INT-TEST-032,crossmode,testCrossModeAWGNULBitExact,both,actual-run,zero bit/digest mismatch,true
+INT-TEST-033,crossmode,testCrossModeTDLDLGridEquivalence,both,actual-run,grid NMSE <= 1e-10,true
+INT-TEST-034,crossmode,testCrossModeTDLULGridEquivalence,both,actual-run,grid NMSE <= 1e-10,true
+INT-TEST-035,determinism,testSerialParallelDeterminism,both,actual-run,canonical hashes equal,true
+INT-TEST-036,determinism,testRetryIdempotence,both,integration,retry counted once,true
+INT-TEST-037,failure,testWorkerLossAndResume,all,e2e,no false complete or double count,true
+INT-TEST-038,failure,testGracefulStopPartialState,all,e2e,partial status and artifacts correct,true
+INT-TEST-039,actualrun,testFixedSNRSmokeActualRun,fixed,actual-run,fresh run completes,true
+INT-TEST-040,actualrun,testGeometrySmokeActualRun,geometry,actual-run,fresh run completes,true
+INT-TEST-041,actualrun,testFixedSNRFullAcceptance,fixed,actual-run,all mandatory points complete,true
+INT-TEST-042,actualrun,testGeometryFullAcceptance,geometry,actual-run,all integration gates pass,true
+INT-TEST-043,actualrun,testGeometryHandoverAcceptance,geometry,actual-run,handover and continuity pass,true
+INT-TEST-044,study,testRel20StudyIntegrationSmoke,geometry,actual-run,runs with Normative=false,true
+INT-TEST-045,regression,testCompleteRepositoryRegression,all,regression,all tests pass,true
+INT-TEST-046,frame,testIntegratedFrameGridToWaveform,geometry,integration,FrameGridToWaveform causal bridge passes,true
+INT-TEST-047,frame,testIntegratedFrameGridToWaveformNegative,geometry,negative,FrameGridToWaveform invalid/stale/wrong-context input fails closed,true
+INT-TEST-048,waveform,testIntegratedWaveformToChannel,geometry,integration,WaveformToChannel causal bridge passes,true
+INT-TEST-049,waveform,testIntegratedWaveformToChannelNegative,geometry,negative,WaveformToChannel invalid/stale/wrong-context input fails closed,true
+INT-TEST-050,channel,testIntegratedChannelToRF,geometry,integration,ChannelToRF causal bridge passes,true
+INT-TEST-051,channel,testIntegratedChannelToRFNegative,geometry,negative,ChannelToRF invalid/stale/wrong-context input fails closed,true
+INT-TEST-052,rf,testIntegratedRFToReceiver,geometry,integration,RFToReceiver causal bridge passes,true
+INT-TEST-053,rf,testIntegratedRFToReceiverNegative,geometry,negative,RFToReceiver invalid/stale/wrong-context input fails closed,true
+INT-TEST-054,pdcch,testIntegratedPDCCHToGrant,geometry,integration,PDCCHToGrant causal bridge passes,true
+INT-TEST-055,pdcch,testIntegratedPDCCHToGrantNegative,geometry,negative,PDCCHToGrant invalid/stale/wrong-context input fails closed,true
+INT-TEST-056,pdsch,testIntegratedGrantToPDSCH,geometry,integration,GrantToPDSCH causal bridge passes,true
+INT-TEST-057,pdsch,testIntegratedGrantToPDSCHNegative,geometry,negative,GrantToPDSCH invalid/stale/wrong-context input fails closed,true
+INT-TEST-058,pusch,testIntegratedGrantToPUSCH,geometry,integration,GrantToPUSCH causal bridge passes,true
+INT-TEST-059,pusch,testIntegratedGrantToPUSCHNegative,geometry,negative,GrantToPUSCH invalid/stale/wrong-context input fails closed,true
+INT-TEST-060,pucch,testIntegratedUCIToHARQ,geometry,integration,UCIToHARQ causal bridge passes,true
+INT-TEST-061,pucch,testIntegratedUCIToHARQNegative,geometry,negative,UCIToHARQ invalid/stale/wrong-context input fails closed,true
+INT-TEST-062,ssb,testIntegratedSSBToType0,geometry,integration,SSBToType0 causal bridge passes,true
+INT-TEST-063,ssb,testIntegratedSSBToType0Negative,geometry,negative,SSBToType0 invalid/stale/wrong-context input fails closed,true
+INT-TEST-064,initial_access,testIntegratedType0ToSIB1,geometry,integration,Type0ToSIB1 causal bridge passes,true
+INT-TEST-065,initial_access,testIntegratedType0ToSIB1Negative,geometry,negative,Type0ToSIB1 invalid/stale/wrong-context input fails closed,true
+INT-TEST-066,prach,testIntegratedPRACHToRAR,geometry,integration,PRACHToRAR causal bridge passes,true
+INT-TEST-067,prach,testIntegratedPRACHToRARNegative,geometry,negative,PRACHToRAR invalid/stale/wrong-context input fails closed,true
+INT-TEST-068,rrc,testIntegratedRARToRRCConnected,geometry,integration,RARToRRCConnected causal bridge passes,true
+INT-TEST-069,rrc,testIntegratedRARToRRCConnectedNegative,geometry,negative,RARToRRCConnected invalid/stale/wrong-context input fails closed,true
+INT-TEST-070,csirs,testIntegratedCSIRSToCSIReport,geometry,integration,CSIRSToCSIReport causal bridge passes,true
+INT-TEST-071,csirs,testIntegratedCSIRSToCSIReportNegative,geometry,negative,CSIRSToCSIReport invalid/stale/wrong-context input fails closed,true
+INT-TEST-072,srs,testIntegratedSRSToULPrecoder,geometry,integration,SRSToULPrecoder causal bridge passes,true
+INT-TEST-073,srs,testIntegratedSRSToULPrecoderNegative,geometry,negative,SRSToULPrecoder invalid/stale/wrong-context input fails closed,true
+INT-TEST-074,trs,testIntegratedTRSToTracking,geometry,integration,TRSToTracking causal bridge passes,true
+INT-TEST-075,trs,testIntegratedTRSToTrackingNegative,geometry,negative,TRSToTracking invalid/stale/wrong-context input fails closed,true
+INT-TEST-076,ptrs,testIntegratedPTRSToCPECorrection,geometry,integration,PTRSToCPECorrection causal bridge passes,true
+INT-TEST-077,ptrs,testIntegratedPTRSToCPECorrectionNegative,geometry,negative,PTRSToCPECorrection invalid/stale/wrong-context input fails closed,true
+INT-TEST-078,mimo,testIntegratedCSIToMIMOPrecoder,geometry,integration,CSIToMIMOPrecoder causal bridge passes,true
+INT-TEST-079,mimo,testIntegratedCSIToMIMOPrecoderNegative,geometry,negative,CSIToMIMOPrecoder invalid/stale/wrong-context input fails closed,true
+INT-TEST-080,beam,testIntegratedBeamReportToTCI,geometry,integration,BeamReportToTCI causal bridge passes,true
+INT-TEST-081,beam,testIntegratedBeamReportToTCINegative,geometry,negative,BeamReportToTCI invalid/stale/wrong-context input fails closed,true
+INT-TEST-082,mac,testIntegratedSchedulerToDecodedGrant,geometry,integration,SchedulerToDecodedGrant causal bridge passes,true
+INT-TEST-083,mac,testIntegratedSchedulerToDecodedGrantNegative,geometry,negative,SchedulerToDecodedGrant invalid/stale/wrong-context input fails closed,true
+INT-TEST-084,rlc,testIntegratedRLCToPacketLineage,geometry,integration,RLCToPacketLineage causal bridge passes,true
+INT-TEST-085,rlc,testIntegratedRLCToPacketLineageNegative,geometry,negative,RLCToPacketLineage invalid/stale/wrong-context input fails closed,true
+INT-TEST-086,pdcp,testIntegratedPDCPSecurityToDelivery,geometry,integration,PDCPSecurityToDelivery causal bridge passes,true
+INT-TEST-087,pdcp,testIntegratedPDCPSecurityToDeliveryNegative,geometry,negative,PDCPSecurityToDelivery invalid/stale/wrong-context input fails closed,true
+INT-TEST-088,sdap,testIntegratedQFIToDRB,geometry,integration,QFIToDRB causal bridge passes,true
+INT-TEST-089,sdap,testIntegratedQFIToDRBNegative,geometry,negative,QFIToDRB invalid/stale/wrong-context input fails closed,true
+INT-TEST-090,traffic,testIntegratedTrafficToMACQueue,geometry,integration,TrafficToMACQueue causal bridge passes,true
+INT-TEST-091,traffic,testIntegratedTrafficToMACQueueNegative,geometry,negative,TrafficToMACQueue invalid/stale/wrong-context input fails closed,true
+INT-TEST-092,validation,testIntegratedRuntimeToAcceptanceGate,geometry,integration,RuntimeToAcceptanceGate causal bridge passes,true
+INT-TEST-093,validation,testIntegratedRuntimeToAcceptanceGateNegative,geometry,negative,RuntimeToAcceptanceGate invalid/stale/wrong-context input fails closed,true
+INT-TEST-094,boundary,testIntegrationBoundaryCase094,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true
+INT-TEST-095,boundary,testIntegrationBoundaryCase095,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true
+INT-TEST-096,boundary,testIntegrationBoundaryCase096,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true
+INT-TEST-097,boundary,testIntegrationBoundaryCase097,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true
+INT-TEST-098,boundary,testIntegrationBoundaryCase098,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true
+INT-TEST-099,boundary,testIntegrationBoundaryCase099,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true
+INT-TEST-100,boundary,testIntegrationBoundaryCase100,both,boundary,supported boundary executes; unsupported boundary rejects before mutation,true

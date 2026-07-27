@@ -18,6 +18,22 @@ end
 cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localEnsureScenarioSchemaVersion(cfg);
 cfg = localExpandCanonicalControl(cfg, sixgr.util.mergeStruct(newBase, oldBase));
+outputBackend = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg,"output.backend","filesystem"))));
+switch outputBackend
+    case "filesystem"
+        cfg = sixgr.util.structSet(cfg,"output.persistence_mode","results_folder");
+        cfg = sixgr.util.structSet(cfg,"output.persist_to_database",false);
+        cfg = sixgr.util.structSet(cfg,"output.persist_to_results_folder",true);
+    case "mysql_web"
+        cfg = sixgr.util.structSet(cfg,"output.persistence_mode","both");
+        cfg = sixgr.util.structSet(cfg,"output.persist_to_database",true);
+        cfg = sixgr.util.structSet(cfg,"output.persist_to_results_folder",true);
+    otherwise
+        error("sixgr:lls6g:config:InvalidOutputBackend", ...
+            "output.backend must be filesystem or mysql_web, not '%s'.", ...
+            outputBackend);
+end
 
 cfg = localSyncValue(cfg, newBase, oldBase, "meta.scenario_id", "meta.scenario_id", "identity");
 cfg = localSyncMetadataAlias(cfg, "meta.scenario_name", "meta.description");
@@ -355,6 +371,12 @@ end
 
 cfg = sixgr.util.mergeStruct(newBase, cfg);
 control = cfg.canonical_control;
+if isfield(control,"waveform_phase13")
+    cfg.waveform_phase13 = control.waveform_phase13;
+end
+if isfield(control,"integration")
+    cfg.integration = control.integration;
+end
 
 mappings = {
     "identity.scenario_id", "meta.scenario_id", "identity"

@@ -2891,15 +2891,22 @@ refPower = localFirstFiniteScalar( ...
 
 try
     scsKHz = double(tx.Carrier.SubcarrierSpacing);
+    cyclicPrefix = string(tx.Carrier.CyclicPrefix);
 catch
     scsKHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN));
+    cyclicPrefix = string(sixgr.util.structGet( ...
+        cfg, "phy.carrier.CyclicPrefix", "normal"));
 end
-mu = log2(scsKHz / 15);
-if ~(isscalar(mu) && isfinite(mu) && abs(mu - round(mu)) < 1e-9 && mu >= 0)
-    error("sixgr:pusch:InvalidPowerControlNumerology", ...
-        "PUSCH power control requires a valid 15*2^mu kHz carrier spacing.");
+try
+    numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+        scsKHz, cyclicPrefix, "generic_waveform_test", "");
+catch cause
+    wrapped = MException("sixgr:pusch:InvalidPowerControlNumerology", ...
+        "PUSCH power control requires a catalogued NR carrier numerology.");
+    wrapped = addCause(wrapped, cause);
+    throwAsCaller(wrapped);
 end
-mu = round(mu);
+mu = double(numerology.Mu);
 requestedPower = double(p0) + double(alpha) * double(pathloss_dB) + ...
     10 * log10((2 ^ mu) * double(mRB)) + ...
     double(deltaTF) + double(closedLoop);

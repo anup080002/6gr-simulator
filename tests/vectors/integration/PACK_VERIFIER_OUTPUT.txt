@@ -1,0 +1,29 @@
+PASS exists:integration_32_findings.csv
+PASS exists:integration_architecture_contract.yaml
+PASS exists:integration_mode_contract.yaml
+PASS exists:integration_state_ownership_matrix.csv
+PASS exists:integration_interface_contract.csv
+PASS exists:integration_actual_run_matrix.csv
+PASS exists:integration_cross_mode_equivalence_vectors.csv
+PASS exists:integration_negative_test_vectors.csv
+PASS exists:integration_acceptance_rules.csv
+PASS exists:integration_matlab_test_plan.csv
+PASS exists:desired_integration_csv_contract.csv
+PASS exists:desired_integration_image_contract.csv
+PASS exists:integration_dashboard_visualization_catalog.csv
+PASS exists:verify_integration_artifacts.py
+PASS exists:CODEX_PROMPT_16_END_TO_END_TWO_MODE_INTEGRATION_WITH_ACTUAL_RUNS.md
+PASS findings_count
+PASS rules_count
+PASS tests_count
+PASS cross_vectors
+PASS negative_vectors
+PASS run_matrix
+PASS csv_contract_unique 56
+PASS image_contract_unique 40
+PASS dashboard_covers_images
+{
+  "checks": 24,
+  "passed": 24,
+  "failed": 0
+}

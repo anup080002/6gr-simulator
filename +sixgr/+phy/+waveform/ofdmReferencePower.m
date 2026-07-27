@@ -27,14 +27,12 @@ end
 
 idx = localUsefulSampleIndices(size(x, 1), ofdmInfo);
 if isempty(idx)
-    refPower = mean(abs(double(x(:))).^2, "omitnan");
-    referenceDomain = "all_waveform_samples_metadata_unavailable";
-    cpExcluded = false;
-else
-    refPower = mean(abs(double(x(idx, :))).^2, "all", "omitnan");
-    referenceDomain = "active_samples_excluding_cp";
-    cpExcluded = true;
+    error("WAVEFORM:OFDMInfoUnavailable", ...
+        "Useful-sample reference power requires Nfft and cyclic-prefix metadata.");
 end
+refPower = mean(abs(double(x(idx, :))).^2, "all", "omitnan");
+referenceDomain = "active_samples_excluding_cp";
+cpExcluded = true;
 info = struct( ...
     "ReferenceDomain", char(referenceDomain), ...
     "SampleCount", double(numel(idx) * max(1, size(x, 2))), ...

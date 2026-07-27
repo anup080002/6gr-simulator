@@ -1,0 +1,36 @@
+version: "1.0.0"
+fixed_snr_sweep:
+  purpose: "Link calibration and controlled receiver characterization"
+  required_reference_plane: "receiver_input_before_frontend_noise_or_profile_declared_equivalent"
+  mandatory:
+    - exact noise scaling
+    - measured receiver SINR
+    - common waveform and receiver pipeline
+    - sequential statistical completion
+    - independent reference comparison where declared
+  prohibited:
+    - geometry pathloss backfill
+    - configured SNR labelled measured SINR
+    - calibration grants satisfying connected-control gates
+geometry_network:
+  purpose: "Connected multi-cell/multi-UE link/system LLS with mobility and interference"
+  mandatory:
+    - runtime geometry and channel state
+    - absolute power and noise ledgers
+    - sample-domain interference
+    - decoded control and UCI causality
+    - measurement/CSI/SRS scheduler loop
+    - HARQ/MAC/packet lineage
+  prohibited:
+    - configured SNR as link authority
+    - scalar interference replacing waveform contributions
+    - future or configured measurement truth
+cross_mode:
+  mandatory_reduction_cases:
+    - awgn_dl_bit_exact
+    - awgn_ul_bit_exact
+    - tdl_dl_common_channel_samples
+    - tdl_ul_common_channel_samples
+    - noise_power_reference_reconciliation
+    - waveform_implementation_digest_match
+    - receiver_implementation_digest_match

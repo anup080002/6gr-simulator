@@ -102,14 +102,15 @@ try
 catch
 end
 [txDL, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, ...
-    "Carrier", carrier, "PDSCH", pdsch, "NumTxAnt", 1, "CompactOutput", true);
+    "Carrier", carrier, "NumTxAnt", 1, ...
+    "ExecutionProfile", "phy_calibration", "CompactOutput", true);
 [rxDL, ~] = sixgr.phy.dl.PDSCH_Rx(txDL.Waveform, cfg, ...
     "Carrier", txDL.Carrier, "PDSCH", txDL.PDSCH, "PDSCHIndices", txDL.PDSCHIndices, ...
     "TransportBlockSize", txDL.TransportBlockSize, "TargetCodeRate", txDL.TargetCodeRate, ...
     "RV", txDL.RV, "CodingPlan", txDL.CodingPlans, ...
     "NoiseVar", sampleNoiseVar, "NoiseVarDomain", "time", ...
     "FastAWGNPath", true, "SkipTimingEstimate", true, "CompactOutput", true);
-localAssertNear(double(rxDL.PreEqualizationNoiseVar), expectedGridVar, "PDSCH");
+localAssertNear(double(rxDL.NoiseVar), expectedGridVar, "PDSCH");
 
 pusch = nrPUSCHConfig;
 pusch.PRBSet = 0:5;
@@ -133,10 +134,6 @@ end
     "FastAWGNPath", true, "SkipTimingEstimate", true, "CompactOutput", true);
 localAssertNear(double(rxUL.PreEqualizationNoiseVar), expectedGridVar, "PUSCH");
 
-tmp = tempname;
-mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s"));
-cfgCtrl = localControlCfg(tmp);
 fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected(1,int8(1));
 [txPUCCH, ~] = sixgr.phy.ul.PUCCH_Tx(fixture.Carrier, ...
     fixture.Assignment,fixture.Report,"Carrier",fixture.Carrier);
@@ -174,6 +171,22 @@ cfg.phy.rx.useIdealTimingSync = true;
 cfg.phy.channelEstimation.method = "LS";
 cfg.phy.pdsch.modulation = "QPSK";
 cfg.phy.pdsch.codeRate = 0.30;
+cfg.phy.pdsch.prbSet = 0:5;
+cfg.phy.pdsch.symbolAllocation = [0 10];
+cfg.phy.pdsch.mappingType = "A";
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.mcsTable = "calibration_explicit";
+cfg.phy.pdsch.mcsIndex = 0;
+cfg.phy.pdsch.mcsContext = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "controlled_test");
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.numPorts = 1;
@@ -183,30 +196,15 @@ cfg.phy.csirs.enabled = false;
 cfg.phy.csirs.nPorts = 1;
 cfg.phy.pusch.modulation = "QPSK";
 cfg.phy.pusch.codeRate = 0.30;
+cfg.phy.pusch.prbSet = 0:5;
+cfg.phy.pusch.symbolAllocation = [0 10];
+cfg.phy.pusch.mappingType = "A";
 cfg.phy.pusch.nLayers = 1;
 cfg.phy.pusch.numLayers = 1;
 cfg.phy.pusch.numPorts = 1;
 cfg.phy.pusch.nPorts = 1;
 cfg.phy.pusch.dmrs.nPorts = 1;
 cfg.phy.pusch.transformPrecoding = false;
-end
-
-function cfg = localControlCfg(runFolder)
-scfg = sixgr.lls6g.config.loadScenarioConfig( ...
-    fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml"));
-cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
-cfg.outputs.saveCSV = false;
-cfg.outputs.saveMAT = false;
-cfg.outputs.saveFigures = false;
-cfg.channel.model = "AWGN";
-cfg.channel.awgnOnly = true;
-cfg.channel.snr_dB = 20;
-cfg.run.strictMode = false;
-cfg.run.noProxyTruthContract = false;
-cfg.run.strictNoiseVarianceRequired = false;
-cfg.run.interferenceExecutionMode = "none";
-cfg.phy.pucch.format = 1;
-cfg.phy.rnti = 320;
 end
 
 function carrier = localCarrier(scs, cyclicPrefix)

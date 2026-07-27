@@ -15,7 +15,7 @@ function [ue, model] = updatePositions(ue, cfg, dt_s, model)
 %   model : mobility model object (cache and reuse each TTI/slot)
 %
 % Model selection:
-%   cfg.scenario.mobility.model = "randomWaypoint" | "straightLine" | "zigzag" | "trace"
+%   cfg.scenario.mobility.model = "static" | "randomWaypoint" | "straightLine" | "zigzag" | "trace"
 %
 % Notes:
 % - This wrapper exists so higher layers do not directly construct classes.
@@ -39,6 +39,11 @@ if isempty(model)
 % and flat cfg.scenario.* configs).
 prof = sixgr.scenario.ScenarioFactory.getProfile(cfg);
     modelName = char(string(sixgr.util.structGet(cfg, "scenario.mobility.model", "randomWaypoint")));
+    if any(strcmpi(strtrim(modelName), {"static","stationary","none"}))
+        % A static trajectory is an explicit no-motion policy. Keep the
+        % caller's positions and mobility state untouched.
+        return;
+    end
     mobilitySeed = double(sixgr.util.structGet(cfg, "scenario.mobility.seed", ...
         sixgr.util.structGet(cfg, "run.seed", 0)));
     wrapEn = logical(sixgr.util.structGet(cfg, "scenario.wraparoundEnabled", prof.wraparoundEnabled));

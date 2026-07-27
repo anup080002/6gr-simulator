@@ -1,0 +1,29 @@
+specification:
+  ts_38211: 3GPP TS 38.211 V19.3.0 (Release 19, 2026-04)
+  ts_38214: 3GPP TS 38.214 V19.3.0 (Release 19)
+  ts_38331: 3GPP TS 38.331 V19.3.0 (Release 19)
+profiles:
+  nr_rel19_cp_ofdm_strict:
+    research_class: baseline_benchmark
+    execute_features: [dl_cp_ofdm, ul_cp_ofdm, normal_cp, extended_cp_60khz, windowing_zero]
+    unsupported_research_features: []
+  nr_rel19_ul_dfts_ofdm_strict:
+    research_class: baseline_benchmark
+    execute_features: [ul_cp_ofdm, normal_cp, extended_cp_60khz, windowing_zero, single_layer_ul_dfts_ofdm, pi2_bpsk, qpsk_dfts, 16qam_dfts, 64qam_dfts, 256qam_dfts]
+    unsupported_research_features: []
+  nr_rel19_multinumerology_strict:
+    research_class: agreed_starting_point
+    execute_features: [dl_cp_ofdm, ul_cp_ofdm, normal_cp, windowing_zero, multi_numerology_sync, two_component_carrier]
+    unsupported_research_features: []
+  rel20_6g_waveform_study:
+    research_class: study_item_candidate
+    execute_features: [dl_cp_ofdm, ul_cp_ofdm, normal_cp, windowing_zero, explicit_wola, single_layer_ul_dfts_ofdm, pi2_bpsk, rank2_dfts_ofdm, dl_dfts_ofdm, flexible_dft_size, tone_reservation, frequency_domain_truncation, fdss, filtered_ofdm, multi_numerology_sync, multi_numerology_async, two_component_carrier, enhanced_dmrs_data_mux]
+    unsupported_research_features: [otfs, afdm, ufmc, fbmc]
+  waveform_research_candidate:
+    research_class: optional_research_experiment
+    execute_features: [dl_cp_ofdm, ul_cp_ofdm, normal_cp, windowing_zero, explicit_wola, single_layer_ul_dfts_ofdm, pi2_bpsk, rank2_dfts_ofdm, dl_dfts_ofdm, noncontiguous_dft_mapping, flexible_dft_size, tone_reservation, frequency_domain_truncation, fdss, filtered_ofdm, multi_numerology_sync, multi_numerology_async, two_component_carrier, four_component_carrier, pruned_dft, enhanced_dmrs_data_mux]
+    unsupported_research_features: [otfs, afdm, ufmc, fbmc]
+  unsupported_extension:
+    research_class: optional_research_experiment
+    execute_features: []
+    unsupported_research_features: []

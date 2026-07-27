@@ -1,0 +1,50 @@
+version: "1.0.0"
+name: sixgr_two_mode_integration_contract
+principle: "One control/data/waveform/receiver implementation; two environment adapters"
+run_modes:
+  FIXED_SNR_SWEEP:
+    run_class: fixed_link_calibration
+    environment_adapter: FixedSNREnvironmentAdapter
+    allowed_subprofiles:
+      - calibration_grant
+      - connected_control_smoke
+    configured_snr_role: operating_point_input
+    geometry_authority: disabled
+    multi_cell_interference: disabled_unless_explicit_test
+  GEOMETRY_NETWORK:
+    run_class: geometry_system_lls
+    environment_adapter: GeometryNetworkEnvironmentAdapter
+    allowed_subprofiles:
+      - connected_network
+      - handover_mobility
+      - multi_user_multicell
+    configured_snr_role: prohibited_as_link_authority
+    geometry_authority: runtime_observed_state
+    multi_cell_interference: sample_domain
+radio_profiles:
+  nr_rel18_system_lls_strict:
+    normative: true
+    fail_closed: true
+    configured_state_cannot_replace_decoded_state: true
+  rel19_extension_strict:
+    normative: true
+    fail_closed: true
+    exact_feature_version_required: true
+  rel20_6g_study_context:
+    normative: false
+    fail_closed_for_declared_study_model: true
+    conformance_gate_allowed: false
+common_runtime:
+  config: ResolvedRunConfiguration
+  context: SimulationContext
+  clock: AbsoluteRadioClock
+  scheduler: AbsoluteEventScheduler
+  state: EventSourcedStateStore
+  resources: ResourceTransactionManager
+  waveform: CanonicalWaveformEngine
+  channel_application: ChannelApplicationContract
+  rf_frontend: RFFrontEndRuntime
+  receiver: CommonReceiverPipeline
+  evidence: RuntimeEvidenceBus
+  artifacts: IntegrationArtifactExporter
+completion_rule: "No mode-specific bypass may replace a common production component"

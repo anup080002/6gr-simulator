@@ -175,7 +175,33 @@ canonical_control:
     dl_waveform: CP-OFDM
     ul_waveform: CP-OFDM
     transform_precoding_enabled: false
-    windowing_enabled: true
+    windowing_enabled: false
+  waveform_phase13:
+    enabled: true
+    profile_id: nr_rel19_cp_ofdm_strict
+    primary_feature: dl_cp_ofdm
+    specification_38211: 3GPP TS 38.211 V19.3.0
+    specification_38214: 3GPP TS 38.214 V19.3.0
+    specification_38331: 3GPP TS 38.331 V19.3.0
+    windowing_profile: rectangular
+    windowing_samples: 0
+    common_sample_rate_hz: 122880000
+    papr_oversampling_factors: [1, 2, 4, 8]
+    papr_convergence_tolerance_db: 0.1
+    spectral_fft_size: 16384
+    spectral_analysis_window: hann
+    spectral_segment_overlap: 0.5
+    unsupported_candidate_policy: reject_before_waveform
+  integration:
+    enabled: true
+    run_mode: FIXED_SNR_SWEEP
+    radio_profile: nr_rel18_system_lls_strict
+    subprofile: calibration_grant
+    trace_profile: FULL_EVIDENCE
+    configuration_epoch: 1
+    configured_snr_is_link_authority: true
+    common_pipeline_required: true
+    measured_sinr_required: true
   channel:
     model_type: AWGN
     profile: AWGN
@@ -1849,11 +1875,21 @@ execution_scales:
           - 10
           snr_db: -2
           noise_operating_mode: standalone_awgn_snr_argument
-          min_trials_per_sinr_bin: 20
-          max_trials_per_sinr_bin: 40
+          min_trials_per_sinr_bin: 10
+          max_trials_per_sinr_bin: 10
           num_workers: 1
           batch_size_links: 1
           auto_start_parallel_pool: false
+        output:
+          backend: filesystem
+          persistence_mode: results_folder
+          profiler_enabled: false
+      output:
+        backend: filesystem
+        persistence_mode: results_folder
+        persist_to_database: false
+        persist_to_results_folder: true
+        profiler_enabled: false
       run_control:
         num_workers: 1
         batch_size_links: 1
@@ -1867,8 +1903,8 @@ execution_scales:
           - -2
           - 4
           - 10
-          min_tb_per_point: 20
-          max_tb_per_point: 40
+          min_tb_per_point: 10
+          max_tb_per_point: 10
       sweeps_and_matrix:
         snr_sweep:
           enabled: true
@@ -1883,6 +1919,6 @@ execution_scales:
           - -2
           - 4
           - 10
-          min_trials: 20
-          max_trials: 40
+          min_trials: 10
+          max_trials: 10
           trials_per_drop: 10

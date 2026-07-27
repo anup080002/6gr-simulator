@@ -1132,6 +1132,14 @@ function [tx0, grantUsed] = localBuildGrantAlignedPDSCHTx(cfgE, grant)
 if isfield(grant, "PRBSet") && ~isempty(grant.PRBSet)
     cfgE = sixgr.util.structSet(cfgE, "phy.pdsch.prbSet", localReplayPRBSet(cfgE, grant));
 end
+if isfield(grant, "SymbolAllocation") && ~isempty(grant.SymbolAllocation)
+    cfgE = sixgr.util.structSet(cfgE, "phy.pdsch.symbolAllocation", ...
+        localReplaySymbolAllocation(grant));
+end
+if isfield(grant, "MappingType") && ~isempty(grant.MappingType)
+    cfgE = sixgr.util.structSet(cfgE, "phy.pdsch.mappingType", ...
+        char(string(grant.MappingType)));
+end
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgE);
 [~, pdschInfo, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfgE);
 grantUsed = grant;
@@ -1233,6 +1241,14 @@ end
 function [tx0, grantUsed] = localBuildGrantAlignedPUSCHTx(cfgE, grant)
 if isfield(grant, "PRBSet") && ~isempty(grant.PRBSet)
     cfgE = sixgr.util.structSet(cfgE, "phy.pusch.prbSet", localReplayPRBSet(cfgE, grant));
+end
+if isfield(grant, "SymbolAllocation") && ~isempty(grant.SymbolAllocation)
+    cfgE = sixgr.util.structSet(cfgE, "phy.pusch.symbolAllocation", ...
+        localReplaySymbolAllocation(grant));
+end
+if isfield(grant, "MappingType") && ~isempty(grant.MappingType)
+    cfgE = sixgr.util.structSet(cfgE, "phy.pusch.mappingType", ...
+        char(string(grant.MappingType)));
 end
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgE);
 [~, puschInfo, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfgE);

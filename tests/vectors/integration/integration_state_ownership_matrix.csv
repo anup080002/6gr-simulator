@@ -1,0 +1,15 @@
+State,AuthoritativeSource,AvailabilityRule,Consumer,ProhibitedShortcut
+Carrier/BWP/numerology configuration,Resolved RRC/config revision,Configured before run; decoded RRC for connected reconfiguration,SimulationContext,No local reconstruction
+Absolute radio time,AbsoluteRadioClock,Runtime clock,All components,No slot counter conversion without clock service
+Dynamic DL grant,Decoded DCI 1_x + installed UE context,After CRC/RNTI/semantic validation,PDSCH assignment factory,Calibration grant allowed only in calibration subprofile
+Dynamic UL grant,Decoded DCI 0_x + installed UE context,After CRC/RNTI/semantic validation,PUSCH assignment factory,RAR/CG use separate factories
+HARQ ACK/NACK/DTX,Decoded UCI or typed receiver DTX,At exact K1 opportunity,HARQ event store,No Boolean configured ACK
+DL CSI report,Decoded CSI Part 1/2,After report decode and semantic validation,Scheduler measurement state,No configured CQI after acquisition
+UL RI/SRI/TPMI,Measured SRS state,After measurement available time,UL sounding state,Selected/applied matrix hashes must match
+Beam/TCI state,Measured beam report + decoded activation,After activation/application time,Beam management state machine,Geometry cannot directly select winner
+Pathloss/LOS/LSP/channel coefficients,Runtime geometry/channel engine,At channel update event,ChannelStateTrace,Configured model values are not observations
+CFO/timing/SCO/phase noise state,Runtime RF process and receiver estimator,Continuous sample time,RFStateTrace,Injected truth cannot drive correction
+Scheduler eligibility,Event-sourced UE/MAC state,At scheduling snapshot time,UEEligibilityEngine,No hidden bootstrap after steady state
+RRC connected state,Decoded peer completion messages,After procedure completion,RRC state machine,Local flag cannot set connected
+Packet delivery,First decoded upper-layer packet,After lineage/conservation update,ProtocolLineageGraph,Retransmission is not new delivery
+Run completion,IntegrationAcceptanceRunner,After required tests/artifacts/gates,Run manifest,Partial/stopped is never complete

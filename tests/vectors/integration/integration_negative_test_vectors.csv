@@ -1,0 +1,61 @@
+CaseID,Mode,Fault,Description,ExpectedError,WaveformGenerated,StateChanged,RunCompleted,Mandatory
+NEG-001-FIX,FIXED_SNR_SWEEP,MODE_CONFLICT,Conflicting RunMode fields,sixgr:integration:RunModeConflict,false,false,false,true
+NEG-001-GEO,GEOMETRY_NETWORK,MODE_CONFLICT,Conflicting RunMode fields,sixgr:integration:RunModeConflict,false,false,false,true
+NEG-002-FIX,FIXED_SNR_SWEEP,PROFILE_CONFLICT,Strict NR and Rel20 study flags both active,sixgr:integration:RadioProfileConflict,false,false,false,true
+NEG-002-GEO,GEOMETRY_NETWORK,PROFILE_CONFLICT,Strict NR and Rel20 study flags both active,sixgr:integration:RadioProfileConflict,false,false,false,true
+NEG-003-FIX,FIXED_SNR_SWEEP,CONFIG_HASH_MISMATCH,Staged YAML hash differs from manifest,sixgr:integration:ExecutedConfigHashMismatch,false,false,false,true
+NEG-003-GEO,GEOMETRY_NETWORK,CONFIG_HASH_MISMATCH,Staged YAML hash differs from manifest,sixgr:integration:ExecutedConfigHashMismatch,false,false,false,true
+NEG-004-FIX,FIXED_SNR_SWEEP,DUPLICATE_CLOCK,Subsystem creates local clock,sixgr:integration:DuplicateClockService,false,false,false,true
+NEG-004-GEO,GEOMETRY_NETWORK,DUPLICATE_CLOCK,Subsystem creates local clock,sixgr:integration:DuplicateClockService,false,false,false,true
+NEG-005-FIX,FIXED_SNR_SWEEP,FUTURE_CSI,Scheduler consumes CSI before AvailableAt,sixgr:integration:FutureEvidenceConsumed,false,false,false,true
+NEG-005-GEO,GEOMETRY_NETWORK,FUTURE_CSI,Scheduler consumes CSI before AvailableAt,sixgr:integration:FutureEvidenceConsumed,false,false,false,true
+NEG-006-FIX,FIXED_SNR_SWEEP,STALE_CSI,Scheduler consumes expired CSI,sixgr:integration:StaleEvidenceConsumed,false,false,false,true
+NEG-006-GEO,GEOMETRY_NETWORK,STALE_CSI,Scheduler consumes expired CSI,sixgr:integration:StaleEvidenceConsumed,false,false,false,true
+NEG-007-FIX,FIXED_SNR_SWEEP,CONFIGURED_CQI_OVERRIDE,Configured CQI overrides decoded report,sixgr:integration:ConfiguredStateOverride,false,false,false,true
+NEG-007-GEO,GEOMETRY_NETWORK,CONFIGURED_CQI_OVERRIDE,Configured CQI overrides decoded report,sixgr:integration:ConfiguredStateOverride,false,false,false,true
+NEG-008-FIX,FIXED_SNR_SWEEP,DCI_CRC_FAIL_GRANT,Failed DCI creates dynamic grant,sixgr:integration:InvalidGrantCausality,false,false,false,true
+NEG-008-GEO,GEOMETRY_NETWORK,DCI_CRC_FAIL_GRANT,Failed DCI creates dynamic grant,sixgr:integration:InvalidGrantCausality,false,false,false,true
+NEG-009-FIX,FIXED_SNR_SWEEP,WRONG_RNTI_GRANT,Wrong RNTI creates grant,sixgr:integration:InvalidGrantCausality,false,false,false,true
+NEG-009-GEO,GEOMETRY_NETWORK,WRONG_RNTI_GRANT,Wrong RNTI creates grant,sixgr:integration:InvalidGrantCausality,false,false,false,true
+NEG-010-FIX,FIXED_SNR_SWEEP,UCI_EXPECTED_BITS,Receiver receives transmitted UCI truth,sixgr:integration:ReceiverOracleInput,false,false,false,true
+NEG-010-GEO,GEOMETRY_NETWORK,UCI_EXPECTED_BITS,Receiver receives transmitted UCI truth,sixgr:integration:ReceiverOracleInput,false,false,false,true
+NEG-011-FIX,FIXED_SNR_SWEEP,RESOURCE_COLLISION,Unauthorized RE collision,sixgr:integration:ResourceCollision,false,false,false,true
+NEG-011-GEO,GEOMETRY_NETWORK,RESOURCE_COLLISION,Unauthorized RE collision,sixgr:integration:ResourceCollision,false,false,false,true
+NEG-012-FIX,FIXED_SNR_SWEEP,HIDDEN_CHANNEL_NORMALIZATION,Channel rescales output,sixgr:integration:HiddenNormalization,false,false,false,true
+NEG-012-GEO,GEOMETRY_NETWORK,HIDDEN_CHANNEL_NORMALIZATION,Channel rescales output,sixgr:integration:HiddenNormalization,false,false,false,true
+NEG-013-FIX,FIXED_SNR_SWEEP,CONFIGURED_SNR_IN_GEOMETRY,Geometry run uses configured SNR authority,sixgr:integration:ConfiguredSNRProhibited,false,false,false,true
+NEG-013-GEO,GEOMETRY_NETWORK,CONFIGURED_SNR_IN_GEOMETRY,Geometry run uses configured SNR authority,sixgr:integration:ConfiguredSNRProhibited,false,false,false,true
+NEG-014-FIX,FIXED_SNR_SWEEP,MISSING_MEASURED_SINR,Strict point lacks measured SINR,sixgr:integration:MeasuredSINRRequired,false,false,false,true
+NEG-014-GEO,GEOMETRY_NETWORK,MISSING_MEASURED_SINR,Strict point lacks measured SINR,sixgr:integration:MeasuredSINRRequired,false,false,false,true
+NEG-015-FIX,FIXED_SNR_SWEEP,POWER_LEDGER_MISMATCH,Waveform and analytical power differ,sixgr:integration:PowerReconciliationFailure,false,false,false,true
+NEG-015-GEO,GEOMETRY_NETWORK,POWER_LEDGER_MISMATCH,Waveform and analytical power differ,sixgr:integration:PowerReconciliationFailure,false,false,false,true
+NEG-016-FIX,FIXED_SNR_SWEEP,SCALAR_INTERFERENCE,Geometry uses scalar-only interference,sixgr:integration:WaveformInterferenceRequired,false,false,false,true
+NEG-016-GEO,GEOMETRY_NETWORK,SCALAR_INTERFERENCE,Geometry uses scalar-only interference,sixgr:integration:WaveformInterferenceRequired,false,false,false,true
+NEG-017-FIX,FIXED_SNR_SWEEP,HARQ_TB_MISMATCH,Soft combine uses different TB identity,sixgr:integration:HARQIdentityMismatch,false,false,false,true
+NEG-017-GEO,GEOMETRY_NETWORK,HARQ_TB_MISMATCH,Soft combine uses different TB identity,sixgr:integration:HARQIdentityMismatch,false,false,false,true
+NEG-018-FIX,FIXED_SNR_SWEEP,HARQ_RV_POSITION_MISMATCH,Soft combine uses wrong rate-match positions,sixgr:integration:HARQPositionMismatch,false,false,false,true
+NEG-018-GEO,GEOMETRY_NETWORK,HARQ_RV_POSITION_MISMATCH,Soft combine uses wrong rate-match positions,sixgr:integration:HARQPositionMismatch,false,false,false,true
+NEG-019-FIX,FIXED_SNR_SWEEP,PRECODER_DIGEST_MISMATCH,Selected and applied precoder differ,sixgr:integration:PrecoderApplicationMismatch,false,false,false,true
+NEG-019-GEO,GEOMETRY_NETWORK,PRECODER_DIGEST_MISMATCH,Selected and applied precoder differ,sixgr:integration:PrecoderApplicationMismatch,false,false,false,true
+NEG-020-FIX,FIXED_SNR_SWEEP,RANK_COLLAPSE,Configured high rank collapses silently,sixgr:integration:RankCollapse,false,false,false,true
+NEG-020-GEO,GEOMETRY_NETWORK,RANK_COLLAPSE,Configured high rank collapses silently,sixgr:integration:RankCollapse,false,false,false,true
+NEG-021-FIX,FIXED_SNR_SWEEP,PACKET_CONSERVATION,Unowned or duplicate bytes,sixgr:integration:PacketConservationFailure,false,false,false,true
+NEG-021-GEO,GEOMETRY_NETWORK,PACKET_CONSERVATION,Unowned or duplicate bytes,sixgr:integration:PacketConservationFailure,false,false,false,true
+NEG-022-FIX,FIXED_SNR_SWEEP,GLOBAL_RNG,Strict runtime uses global RNG,sixgr:integration:GlobalRNGProhibited,false,false,false,true
+NEG-022-GEO,GEOMETRY_NETWORK,GLOBAL_RNG,Strict runtime uses global RNG,sixgr:integration:GlobalRNGProhibited,false,false,false,true
+NEG-023-FIX,FIXED_SNR_SWEEP,TASK_HASH_CONFLICT,Same TaskID different output hash,sixgr:integration:TaskConflict,false,false,false,true
+NEG-023-GEO,GEOMETRY_NETWORK,TASK_HASH_CONFLICT,Same TaskID different output hash,sixgr:integration:TaskConflict,false,false,false,true
+NEG-024-FIX,FIXED_SNR_SWEEP,STALE_ARTIFACT,Artifact older than run/config hash,sixgr:integration:StaleArtifact,false,false,false,true
+NEG-024-GEO,GEOMETRY_NETWORK,STALE_ARTIFACT,Artifact older than run/config hash,sixgr:integration:StaleArtifact,false,false,false,true
+NEG-025-FIX,FIXED_SNR_SWEEP,RUN_SUBSTRING_LOOKUP,Artifact resolved by substring run match,sixgr:integration:ExactRunIDRequired,false,false,false,true
+NEG-025-GEO,GEOMETRY_NETWORK,RUN_SUBSTRING_LOOKUP,Artifact resolved by substring run match,sixgr:integration:ExactRunIDRequired,false,false,false,true
+NEG-026-FIX,FIXED_SNR_SWEEP,PARTIAL_MARKED_COMPLETE,Stopped/failed run marked complete,sixgr:integration:InvalidCompletionState,false,false,false,true
+NEG-026-GEO,GEOMETRY_NETWORK,PARTIAL_MARKED_COMPLETE,Stopped/failed run marked complete,sixgr:integration:InvalidCompletionState,false,false,false,true
+NEG-027-FIX,FIXED_SNR_SWEEP,REL20_NORMATIVE,Rel20 study sets normative pass,sixgr:integration:StudyConformanceClaimProhibited,false,false,false,true
+NEG-027-GEO,GEOMETRY_NETWORK,REL20_NORMATIVE,Rel20 study sets normative pass,sixgr:integration:StudyConformanceClaimProhibited,false,false,false,true
+NEG-028-FIX,FIXED_SNR_SWEEP,CALIBRATION_AS_NETWORK,Calibration grant satisfies control gate,sixgr:integration:RunClassEvidenceLeakage,false,false,false,true
+NEG-028-GEO,GEOMETRY_NETWORK,CALIBRATION_AS_NETWORK,Calibration grant satisfies control gate,sixgr:integration:RunClassEvidenceLeakage,false,false,false,true
+NEG-029-FIX,FIXED_SNR_SWEEP,WAVEFORM_IMPL_MISMATCH,Modes use different waveform implementation,sixgr:integration:CommonPHYImplementationMismatch,false,false,false,true
+NEG-029-GEO,GEOMETRY_NETWORK,WAVEFORM_IMPL_MISMATCH,Modes use different waveform implementation,sixgr:integration:CommonPHYImplementationMismatch,false,false,false,true
+NEG-030-FIX,FIXED_SNR_SWEEP,RECEIVER_IMPL_MISMATCH,Modes use different receiver implementation,sixgr:integration:CommonPHYImplementationMismatch,false,false,false,true
+NEG-030-GEO,GEOMETRY_NETWORK,RECEIVER_IMPL_MISMATCH,Modes use different receiver implementation,sixgr:integration:CommonPHYImplementationMismatch,false,false,false,true

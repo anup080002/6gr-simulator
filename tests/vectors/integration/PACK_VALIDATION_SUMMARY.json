@@ -1,0 +1,16 @@
+{
+  "generated_at_utc": "2026-07-27T01:35:42.718566+00:00",
+  "pack_verifier_exit_code": 0,
+  "findings": 32,
+  "acceptance_rules": 120,
+  "matlab_tests": 100,
+  "actual_run_matrix_rows": 25,
+  "cross_mode_vectors": 64,
+  "negative_vectors": 60,
+  "csv_artifact_contracts": 56,
+  "image_artifact_contracts": 40,
+  "matlab_available": false,
+  "octave_available": false,
+  "actual_matlab_runs_executed_here": 0,
+  "status": "PACK_VALIDATED_RUNTIME_BLOCKED"
+}
