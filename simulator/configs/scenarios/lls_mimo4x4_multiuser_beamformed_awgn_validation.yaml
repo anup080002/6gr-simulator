@@ -12,6 +12,14 @@
   "simulation": {
     "snr_db": 34
   },
+  "frequency": {
+    "duplex_mode": "FDD",
+    "dl_center_frequency_hz": 4000000000,
+    "ul_center_frequency_hz": 3900000000
+  },
+  "mimo": {
+    "reciprocity_mode": "FDD"
+  },
   "output": {
     "profile": "lls_mimo4x4_multiuser_beamformed_awgn_validation"
   }

@@ -34,7 +34,7 @@
   },
   "channel": {
     "type": "TR38901",
-    "fc_Hz": 700000000.0,
+    "fc_Hz": 780000000.0,
     "bandwidth_Hz": 10000000.0,
     "subcarrierSpacing_kHz": 15,
     "pathloss": {
@@ -55,6 +55,16 @@
       "SubcarrierSpacing": 15,
       "NSizeGrid": 52,
       "CyclicPrefix": "normal"
+    },
+    "ssb": {
+      "Lmax": 4
+    },
+    "duplex": {
+      "mode": "FDD",
+      "fdd": {
+        "dlCenterFrequencyHz": 780000000.0,
+        "ulCenterFrequencyHz": 725000000.0
+      }
     },
     "waveform": {
       "dl": "CP-OFDM",

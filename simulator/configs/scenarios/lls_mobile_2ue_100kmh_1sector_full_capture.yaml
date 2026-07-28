@@ -498,7 +498,10 @@ system:
       unsampledGrantPolicy: full_replay
 
 pdsch:
+  execution_profile: connected_strict
   resource_allocation_type: type1
+  prb_start: 0
+  num_prb: 273
   mapping_type: typeA
   start_symbol: 2
   num_symbols: 12
@@ -510,8 +513,17 @@ pdsch:
   tbs_scaling: 1.0
   cbg_transmission: false
 
+pdsch6gr:
+  ptrs_time_density: 2
+  ptrs_frequency_density: 2
+  ptrs_re_offset: '00'
+  ptrs_port_set:
+    - 0
+
 pusch:
   resource_allocation_type: type1
+  prb_start: 0
+  num_prb: 273
   mapping_type: typeA
   start_symbol: 0
   num_symbols: 14
@@ -520,11 +532,22 @@ pusch:
   inter_slot_frequency_hopping: false
   transform_precoding: false
   codebook_based_transmission: true
+  dmrs_port_set:
+    - 0
+    - 1
+  ptrs_enabled: true
+  ptrs_time_density: 2
+  ptrs_frequency_density: 2
+  ptrs_re_offset: '00'
+  ptrs_port_set:
+    - 0
   xoh_pusch: 0
   cbg_transmission: false
   tp_pi2_bpsk: false
 
 pdcch:
+  start_symbol: 0
+  num_symbols: 2
   coreset:
     - coreset_id: 0
       duration_symbols: 2

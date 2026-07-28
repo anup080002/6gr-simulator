@@ -13,7 +13,8 @@
   },
   "scenario": {
     "runner_profile": "waveform_bundle",
-    "target_cases": ["bundle", "dl", "ul", "pdsch", "pusch", "csi_rs", "srs"],
+    "target_cases": ["dl", "ul", "pdsch", "pusch"],
+    "bundle_anchor_cases": ["dl_pdsch_throughput", "ul_pusch_throughput"],
     "notes": "Config-driven multi-user beamformed 4x4 waveform LLS."
   },
   "mimo": {
@@ -38,6 +39,161 @@
     "ul_modulation_order": 4,
     "dl_mcs_index": 4,
     "ul_mcs_index": 4
+  },
+  "bwp": {
+    "dl": {
+      "bwp_id": 0,
+      "direction": "DL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 106,
+      "scs_khz": 30,
+      "cp_type": "normal",
+      "active": true
+    },
+    "ul": {
+      "bwp_id": 0,
+      "direction": "UL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 106,
+      "scs_khz": 30,
+      "cp_type": "normal",
+      "active": true
+    }
+  },
+  "pdsch": {
+    "execution_profile": "scheduler_truth",
+    "prb_start": 0,
+    "num_prb": 106,
+    "mapping_type": "typeA",
+    "start_symbol": 2,
+    "num_symbols": 12
+  },
+  "pusch": {
+    "prb_start": 0,
+    "num_prb": 106,
+    "mapping_type": "typeA",
+    "start_symbol": 0,
+    "num_symbols": 14
+  },
+  "pdcch": {
+    "start_symbol": 0,
+    "num_symbols": 2
+  },
+  "control_gating": {
+    "pbch_required": false,
+    "prach_required": false,
+    "pdcch_required": false,
+    "srs_required": false,
+    "trs_required": false
+  },
+  "pucch_resources": {
+    "enabled": true,
+    "profile": "nr_rel18_pucch_strict",
+    "configuration_epoch": 1,
+    "resource_sets": [
+      {
+        "id": 0,
+        "max_payload_bits": 2,
+        "resource_ids": [0]
+      },
+      {
+        "id": 1,
+        "max_payload_bits": 1706,
+        "resource_ids": [10]
+      }
+    ],
+    "resources": [
+      {
+        "id": 0,
+        "format": 0,
+        "starting_prb": 0,
+        "nrof_prbs": 1,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 1,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      },
+      {
+        "id": 10,
+        "format": 2,
+        "starting_prb": 4,
+        "nrof_prbs": 2,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 1,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      }
+    ],
+    "dl_data_to_ul_ack": [4, 5, 6, 7],
+    "harq_ack": {
+      "resource_id": 0,
+      "k1_slots": 4
+    },
+    "sr_resource_ids": [0],
+    "csi_resource_ids": [10],
+    "sps_pucch_an_resource_ids": [0],
+    "power_control": {
+      "mu": 1,
+      "m_rb": 1,
+      "p0_dbm": -80,
+      "pathloss_db": 77,
+      "delta_f_db": 0,
+      "delta_tf_db": 0,
+      "closed_loop_adjustment_db": 0,
+      "pcmax_dbm": 23,
+      "pathloss_reference_rs_id": 1,
+      "tpc_command_source": "decoded_tpc"
+    },
+    "spatial_relations": [
+      {
+        "id": 1,
+        "active_id": 1,
+        "reference_signal_type": "SSB",
+        "reference_signal_id": 0,
+        "pathloss_reference_rs_id": 1,
+        "p0_pucch_id": 1,
+        "closed_loop_index": 0,
+        "state_age_slots": 0,
+        "maximum_age_slots": 20,
+        "selected_beam_id": 0,
+        "applied_beam_id": 0
+      }
+    ]
+  },
+  "pdsch6gr": {
+    "mcs_ue_capability_1024qam": false,
+    "mcs_rrc_enabled_1024qam": false,
+    "mcs_dci_enabled_1024qam": false,
+    "mcs_deployment_allows_1024qam": false,
+    "mcs_frequency_range": "FR1",
+    "mcs_operating_band": "n77",
+    "mcs_deployment_class": "multiuser_phy_calibration",
+    "mcs_frequency_range_allows_1024qam": false,
+    "mcs_band_allows_1024qam": false
+  },
+  "sweeps_and_matrix": {
+    "snr_sweep": {
+      "enabled": false,
+      "values_db": [34]
+    },
+    "fixed_link_calibration": {
+      "enabled": false,
+      "only": false
+    }
   },
   "users": {
     "enabled": true,

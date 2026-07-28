@@ -39,6 +39,7 @@ seed = double(sixgr.util.structGet(cfg, ...
 tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, ...
     "SNRdB", snrDB, "Seed", seed);
 rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg);
+rx = localAttachValidationComparison(tx, rx);
 negatives = repmat(struct(), 0, 1);
 if runNegativeSuite
     negatives = localRunNegatives(tx, cfg);
@@ -71,6 +72,40 @@ out = struct("Ok", logical(rx.StrictOk) && (~runRandomAccess || raOk), ...
     "NegativeSuiteRequested", runNegativeSuite, ...
     "RandomAccess", ra, "NegativeResults", negatives, "Artifacts", artifacts, ...
     "RAArtifacts", raArtifacts, "LifecycleArtifacts", lifecycleArtifacts);
+end
+
+function rx = localAttachValidationComparison(tx, rx)
+% Compare transmit and decoded semantics outside the production receiver.
+%
+% The receiver must remain blind to transmitted payload/tree metadata.  The
+% strict mini-anchor is a validation harness, so it owns the post-recovery
+% comparison used by the exported conformance evidence.
+txTree = sixgr.util.structGet(tx, "TxTree", struct());
+rxTree = sixgr.util.structGet(rx, "SIB1RxTree", struct());
+decoded = logical(sixgr.util.structGet(rx, "SIB1ASN1DecodeOk", false));
+if ~decoded || isempty(fieldnames(txTree)) || isempty(fieldnames(rxTree))
+    return;
+end
+
+[treeEqual, hashes] = sixgr.rrc.asn1.compareSIB1Trees(txTree, rxTree);
+txPayloadHash = string(sixgr.util.structGet(tx, "SIB1PayloadHash", ""));
+rxPayloadHash = string(sixgr.util.structGet(rx, "SIB1PayloadHashRx", ""));
+payloadEqual = strlength(txPayloadHash) > 0 && ...
+    strcmpi(txPayloadHash, rxPayloadHash);
+
+rx.SIB1PayloadHashTx = txPayloadHash;
+rx.SIB1TxTreeHash = string(hashes.TxTreeHash);
+rx.SIB1RxTreeHash = string(hashes.RxTreeHash);
+rx.SIB1TreeEqual = logical(treeEqual);
+rx.StrictOk = logical(sixgr.util.structGet(rx, "StrictOk", false)) && ...
+    logical(treeEqual) && logical(payloadEqual);
+if rx.StrictOk
+    rx.Status = "PASS";
+    rx.FailureReason = "";
+else
+    rx.Status = "FAIL";
+    rx.FailureReason = "sib1_validation_semantic_comparison_failed";
+end
 end
 
 function requested = localRandomAccessRequested(cfg)

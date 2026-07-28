@@ -1935,7 +1935,6 @@ switch fmt
         fields.antenna_ports = localULAntennaPortField(grant);
         fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
         fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", 0), 2);
-        fields.k2 = double(k2);
 end
 end
 

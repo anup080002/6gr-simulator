@@ -46,6 +46,14 @@
       "SubcarrierSpacing": 30,
       "NSizeGrid": 273,
       "CyclicPrefix": "normal"
+    },
+    "pusch": {
+      "transformPrecoding": true
+    },
+    "ul": {
+      "pusch": {
+        "TransformPrecoding": true
+      }
     }
   }
 }

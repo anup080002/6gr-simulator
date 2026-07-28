@@ -45,6 +45,9 @@
     "ldpc": {
       "useMexBatchDecode": true
     },
+    "pusch": {
+      "transformPrecoding": true
+    },
     "rx": {
       "useFastChannelEstMex": false
     },

@@ -1,8 +1,8 @@
 {
   "meta": {
     "presetClass": "fading_truth",
-    "presetIntent": "scenario_profile_inh_fr3",
-    "presetNotes": "Indoor hotspot scenario preset with explicit TDL-A fading."
+    "presetIntent": "scenario_profile_inh_fr1",
+    "presetNotes": "Indoor hotspot FR1 scenario preset with explicit TDL-A fading."
   },
   "scenario": {
     "name": "IndoorHotspot",
@@ -51,9 +51,9 @@
   },
   "channel": {
     "type": "TR38901",
-    "fc_Hz": 14000000000.0,
+    "fc_Hz": 6000000000.0,
     "bandwidth_Hz": 100000000.0,
-    "subcarrierSpacing_kHz": 60,
+    "subcarrierSpacing_kHz": 30,
     "pathloss": {
       "model": "ABG",
       "shadowFadingStd_dB": 4,
@@ -69,21 +69,39 @@
   },
   "phy": {
     "carrier": {
-      "SubcarrierSpacing": 60,
-      "NSizeGrid": 132,
+      "SubcarrierSpacing": 30,
+      "NSizeGrid": 273,
       "CyclicPrefix": "normal"
     },
     "duplex": {
       "mode": "TDD",
       "tddCommon": {
-        "ReferenceSubcarrierSpacingKHz": 60,
+        "ReferenceSubcarrierSpacingKHz": 30,
         "Pattern1": {
-          "PeriodicityMilliseconds": 1.25,
-          "NumDownlinkSlots": 2,
+          "PeriodicityMilliseconds": 2.5,
+          "NumDownlinkSlots": 3,
           "NumDownlinkSymbols": 12,
-          "NumUplinkSlots": 2,
+          "NumUplinkSlots": 1,
           "NumUplinkSymbols": 1
         }
+      }
+    },
+    "waveform": {
+      "type": "DFT-s-OFDM",
+      "dl": "CP-OFDM",
+      "ul": "DFT-s-OFDM"
+    },
+    "pusch": {
+      "transformPrecoding": true
+    },
+    "prach": {
+      "configurationIndex": 69,
+      "subcarrierSpacing_kHz": 30,
+      "preambleFormat": "A1"
+    },
+    "ul": {
+      "pusch": {
+        "TransformPrecoding": true
       }
     }
   }

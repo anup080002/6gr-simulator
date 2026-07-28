@@ -28,8 +28,12 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             obj.MinPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.minPRBPerUE",obj.MinPRBPerUE));
             obj.MaxPRBPerUE = double(sixgr.util.structGet(cfg,"mac.scheduler.maxPRBAllocationPerUE", ...
                 sixgr.util.structGet(cfg,"system.scheduler.maxPRBAllocationPerUE",obj.MaxPRBPerUE)));
-            obj.SearchSpaceID = max(0, round(double(sixgr.util.structGet(cfg, "phy.dl.pdcch.SearchSpaceID", obj.SearchSpaceID))));
-            obj.CORESETID = max(0, round(double(sixgr.util.structGet(cfg, "phy.dl.pdcch.CORESETID", obj.CORESETID))));
+            obj.SearchSpaceID = max(0, round(double(sixgr.util.structGet(cfg, ...
+                "phy.pdcch.searchSpace.id", ...
+                sixgr.util.structGet(cfg, "phy.dl.pdcch.SearchSpaceID", 1)))));
+            obj.CORESETID = max(0, round(double(sixgr.util.structGet(cfg, ...
+                "phy.pdcch.coreset.id", ...
+                sixgr.util.structGet(cfg, "phy.dl.pdcch.CORESETID", obj.CORESETID)))));
         end
 
         function [grants, info] = schedule(obj, slot, ueStates, budget)
@@ -268,6 +272,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.Modulation = char(string(plan.Modulation));
                 g.NumLayers = double(plan.NumLayers);
                 g.Layers = double(plan.NumLayers);
+                [g.DMRSPortSet, g.DMRSPortSetSource] = ...
+                    sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+                    obj.Cfg, obj.Direction, g.NumLayers, g);
                 g.TargetCodeRate = double(plan.TargetCodeRate);
                 g.TBSBits = double(plan.TBSBits);
                 g.TBSBytes = double(plan.TBSBytes);

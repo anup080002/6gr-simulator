@@ -682,7 +682,6 @@ caseDefs = { ...
 end
 
 function res = localRunConfiguredBundleAnchorCases(cfg, ctx, numFrames, baseSNR_dB, anchorCaseNames)
-caseDefs = localBundleAnchorCaseDefs();
 res = struct();
 res.Ok = false;
 res.Skipped = false;
@@ -692,8 +691,8 @@ res.KPITable = table();
 res.Artifacts = struct('csv', {{}}, 'mat', {{}}, 'fig', {{}});
 
 rows = repmat(localMakeBundleAnchorKpiRow("", struct()), 0, 1);
-for k = 1:numel(caseDefs)
-    cName = string(caseDefs{k}.name);
+for k = 1:numel(anchorCaseNames)
+    cName = string(anchorCaseNames(k));
     deferred = struct( ...
         "Ok", false, ...
         "Skipped", false, ...
@@ -2995,7 +2994,7 @@ for sweepIdx = 1:numel(snrGrid)
             continue;
         end
         runtimeState = localRunCoupledPreSchedulingControlGating(runtimeState, cfg, runFolder, userCfg, snrVal);
-        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, runtimeState.ControlTrials);
+        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, runtimeState.ControlTrials, cfg);
         publishDirection = "DL";
         if ~allowDL && allowUL
             publishDirection = "UL";
@@ -3066,7 +3065,7 @@ controlTrials = runtimeState.ControlTrials;
 harqTimelineT = sixgr.util.structGet(runtimeState, "HARQTimelineTable", table());
 dlTrials = localHydrateHARQTrialColumnsFromTimeline(dlTrials, harqTimelineT, "DL");
 ulTrials = localHydrateHARQTrialColumnsFromTimeline(ulTrials, harqTimelineT, "UL");
-finalRawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, controlTrials);
+finalRawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, controlTrials, cfg);
 dlSummaryT = sixgr.util.structGet(finalRawTrials, "MultiUserDL", table());
 ulSummaryT = sixgr.util.structGet(finalRawTrials, "MultiUserUL", table());
 dlTrials = localCanonicalizeLinkTrialExport(dlTrials, "DL", cfg);
@@ -3466,14 +3465,14 @@ for chunkStart = 1:chunkSize:numel(grants)
         char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
         round(double(chunkEnd - chunkStart + 1)), height(primaryTrials));
     if direction == "DL"
-        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(primaryTrials, secondaryTrials, multiUser, runtimeState.ControlTrials);
+        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(primaryTrials, secondaryTrials, multiUser, runtimeState.ControlTrials, cfg);
         localPublishCoupledTruthRuntimeState(cfg, runFolder, liveRawTrials, multiUser, runtimeState, ...
             primaryTablePath, secondaryTablePath, primaryConstellationPath, secondaryConstellationPath, primaryConstT, secondaryConstT, ...
             direction, snr_dB, sweepIdx, sweepCount, chunkLastUEIdx, numel(userCfg), frameLocal, nFramesPerPoint, chunkWaveformPreviewT, ...
             "SlotComplete", localIsCoupledDirectionalPublishSlotComplete(runtimeState, direction), ...
             "FinalDirectionChunk", chunkEnd >= numel(grants), "PublishReason", "post_grant_chunk");
     else
-        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(secondaryTrials, primaryTrials, multiUser, runtimeState.ControlTrials);
+        liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(secondaryTrials, primaryTrials, multiUser, runtimeState.ControlTrials, cfg);
         localPublishCoupledTruthRuntimeState(cfg, runFolder, liveRawTrials, multiUser, runtimeState, ...
             secondaryTablePath, primaryTablePath, secondaryConstellationPath, primaryConstellationPath, secondaryConstT, primaryConstT, ...
             direction, snr_dB, sweepIdx, sweepCount, chunkLastUEIdx, numel(userCfg), frameLocal, nFramesPerPoint, chunkWaveformPreviewT, ...
@@ -5522,6 +5521,17 @@ elseif numel(data) == 1
 end
 end
 
+function value = localFirstNonemptyNumeric(varargin)
+value = [];
+for index = 1:nargin
+    candidate = varargin{index};
+    if isnumeric(candidate) && ~isempty(candidate)
+        value = double(candidate);
+        return;
+    end
+end
+end
+
 function grant = localResolveStrictGrantSnapshot(cfgIn, direction, grant, queueBitsUpper)
 if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
     return;
@@ -6257,6 +6267,9 @@ grantPMI = double(sixgr.util.structGet(grant, "PMI", NaN));
 grantCRI = double(sixgr.util.structGet(grant, "CRI", NaN));
 grantMCSTable = string(sixgr.util.structGet(grant, "MCSTable", ""));
 grantCQITable = string(sixgr.util.structGet(grant, "CQITable", ""));
+grantDMRSPortSet = localFirstNonemptyNumeric( ...
+    sixgr.util.structGet(grant, "DMRSPortSet", []), ...
+    sixgr.util.structGet(grant, "PHYGrant.CodingLayout.DMRSPortSet", []));
 if useTBContext
     grantMCS = double(sixgr.util.structGet(tbContext, "OriginalMCS", grantMCS));
     grantMod = string(sixgr.util.structGet(tbContext, "OriginalModulation", grantMod));
@@ -6285,6 +6298,12 @@ end
 if isfinite(grantLayers) && grantLayers >= 1
     cfgOut = sixgr.util.structSet(cfgOut, root + ".numLayers", grantLayers);
     cfgOut = sixgr.util.structSet(cfgOut, root + ".nLayers", grantLayers);
+end
+if ~isempty(grantDMRSPortSet)
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".dmrs.portSet", ...
+        double(grantDMRSPortSet(:).'));
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".dmrs.DMRSPortSet", ...
+        double(grantDMRSPortSet(:).'));
 end
 if isfinite(grantPRBs) && grantPRBs >= 1
     cfgOut = sixgr.util.structSet(cfgOut, root + ".nPRB", grantPRBs);
@@ -6496,10 +6515,27 @@ state = sixgr.truth.CoupledTruthRuntime.advanceFrame(state, cfg, multiUser, abso
 end
 
 function [allowDL, allowUL, slotLabel] = localCoupledSlotDuplexState(cfg, canonicalSlot)
-partition = sixgr.util.resolveTDDSlotPartition(cfg, canonicalSlot);
-allowDL = logical(partition.AllowDL);
-allowUL = logical(partition.AllowUL);
-slotLabel = string(partition.SlotLabel);
+duplexMode = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.frameStructure.DuplexMode", ...
+    sixgr.util.structGet(cfg, "phy.duplex.mode", "")))));
+switch duplexMode
+    case "FDD"
+        % Paired FDD carriers permit canonical DL scheduling and UL
+        % execution in the same absolute slot. Frequency separation, not
+        % a TDD slot partition, supplies direction isolation.
+        allowDL = true;
+        allowUL = true;
+        slotLabel = "FDD";
+    case "TDD"
+        partition = sixgr.util.resolveTDDSlotPartition(cfg, canonicalSlot);
+        allowDL = logical(partition.AllowDL);
+        allowUL = logical(partition.AllowUL);
+        slotLabel = string(partition.SlotLabel);
+    otherwise
+        error("sixgr:truth:runWaveformLinkBundle:InvalidCoupledDuplexMode", ...
+            "Coupled truth execution requires a resolved FDD or TDD duplex mode; received '%s'.", ...
+            char(duplexMode));
+end
 end
 
 function tf = localIsCoupledDirectionalPublishSlotComplete(runtimeState, direction)
@@ -7346,6 +7382,20 @@ for gi = 1:numel(grants)
     end
     [state, grant, allowExecution] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state, grant, direction, pdcchT);
     [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
+    localAppendRuntimeLog("INFO", ...
+        "Coupled %s PDCCH grant binding: ue=%d required=%d ok=%d status=%s failure=%s dci=%s grant_ss=%.17g observed_ss=%.17g bound_ss=%.17g grant_coreset=%.17g observed_coreset=%.17g bound_coreset=%.17g.", ...
+        char(direction), round(double(ueIdx)), ...
+        logical(sixgr.util.structGet(grant, "PDCCHGrantBindingRequired", false)), ...
+        logical(sixgr.util.structGet(grant, "PDCCHGrantBindingOk", false)), ...
+        char(string(sixgr.util.structGet(grant, "PDCCHGrantBindingStatus", ""))), ...
+        char(string(sixgr.util.structGet(grant, "PDCCHGrantBindingFailureCode", ""))), ...
+        char(string(sixgr.util.structGet(grant, "PDCCHGrantDCIId", ""))), ...
+        double(sixgr.util.structGet(grant, "SearchSpaceID", NaN)), ...
+        localTrialTableScalar(pdcchT, "SearchSpaceId", NaN), ...
+        double(sixgr.util.structGet(grant, "PDCCHGrantSearchSpaceId", NaN)), ...
+        double(sixgr.util.structGet(grant, "CORESETID", NaN)), ...
+        localTrialTableScalar(pdcchT, "CORESETId", NaN), ...
+        double(sixgr.util.structGet(grant, "PDCCHGrantCORESETId", NaN)));
     state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
     if ~allowExecution
         state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
@@ -7663,9 +7713,13 @@ T.LinkDirection = repmat(string(direction), n, 1);
 T.GrantDirection = repmat(string(direction), n, 1);
 end
 
-function rawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, controlTrials)
+function rawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, controlTrials, cfg)
 if nargin < 4 || ~isstruct(controlTrials)
     controlTrials = struct();
+end
+if nargin < 5 || ~isstruct(cfg)
+    error("sixgr:truth:MissingCoupledSummaryConfig", ...
+        "Coupled live/final summaries require the resolved runtime configuration.");
 end
 rawTrials = struct( ...
     "DL", dlTrials, ...
@@ -7677,8 +7731,8 @@ rawTrials = struct( ...
     "PBCH", sixgr.util.structGet(controlTrials, "PBCH", table()), ...
     "PRACH", sixgr.util.structGet(controlTrials, "PRACH", table()), ...
     "PUCCH", sixgr.util.structGet(controlTrials, "PUCCH", table()), ...
-    "MultiUserDL", localBuildDirectionUserSummaryFromRaw(dlTrials, "DL", multiUser, struct()), ...
-    "MultiUserUL", localBuildDirectionUserSummaryFromRaw(ulTrials, "UL", multiUser, struct()));
+    "MultiUserDL", localBuildDirectionUserSummaryFromRaw(dlTrials, "DL", multiUser, cfg), ...
+    "MultiUserUL", localBuildDirectionUserSummaryFromRaw(ulTrials, "UL", multiUser, cfg));
 end
 
 function T = localHydrateHARQTrialColumnsFromTimeline(T, harqTimelineT, direction)
@@ -10192,7 +10246,13 @@ for k = 1:nTrials
     r.Status = "FAIL";
     try
         cfgTrial = localResolvePDCCHTrialConfig(cfg, snr_dB, k, nTrials, grantContext);
+        grantRNTI = double(sixgr.util.structGet(grantContext, "RNTI", ...
+            sixgr.util.structGet(cfgTrial, "phy.pdsch.RNTI", ...
+            sixgr.util.structGet(cfgTrial, "phy.pdcch.rnti", NaN))));
         txArgs = {};
+        if isfinite(grantRNTI)
+            txArgs = [txArgs {"RNTI", grantRNTI}]; %#ok<AGROW>
+        end
         if ~isempty(dciBitsSeed)
             txArgs = [txArgs {"DCIBits", dciBitsSeed}]; %#ok<AGROW>
         else
@@ -10202,7 +10262,11 @@ for k = 1:nTrials
         [rxWave, nVar, replay, noiseOnly] = localApplyPDCCHChannelAndNoise(tx.Waveform, cfgTrial, tx, txInfo, snr_dB);
         tDecode = tic;
         rxArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", 16, "NoiseOnlyWaveform", noiseOnly, "ExpectedDCIBits", tx.DCIBits};
+            "ListLength", 16, "NoiseOnlyWaveform", noiseOnly, ...
+            "ExpectedDCIBits", tx.DCIBits};
+        if isfinite(grantRNTI)
+            rxArgs = [rxArgs {"RNTI", grantRNTI}]; %#ok<AGROW>
+        end
         if isfinite(double(nVar)) && double(nVar) >= 0
             rxArgs = [rxArgs {"NoiseVar", nVar}]; %#ok<AGROW>
         end
@@ -10211,6 +10275,9 @@ for k = 1:nTrials
         radioTTI_ms = localSlotDuration(cfgTrial) * 1e3;
         noiseArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
             "ListLength", 16, "ExpectedDCIBits", tx.DCIBits};
+        if isfinite(grantRNTI)
+            noiseArgs = [noiseArgs {"RNTI", grantRNTI}]; %#ok<AGROW>
+        end
         if isfinite(double(nVar)) && double(nVar) >= 0
             noiseArgs = [noiseArgs {"NoiseVar", nVar}]; %#ok<AGROW>
         end
@@ -10353,8 +10420,16 @@ for k = 1:nTrials
         r.PDCCHCORESETDuration = localPDCCHScalar(tx.PDCCH.CORESET, "Duration", NaN);
         r.PDCCHCORESETFrequencyResources = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.CORESET, "FrequencyResources"));
         r.PDCCHSearchSpaceNumCandidates = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.SearchSpace, "NumCandidates"));
-        r.CORESETId = localPDCCHScalar(tx.PDCCH.CORESET, "CORESETID", localPDCCHScalar(tx.PDCCH.CORESET, "ID", NaN));
-        r.SearchSpaceId = localPDCCHScalar(tx.PDCCH.SearchSpace, "SearchSpaceID", localPDCCHScalar(tx.PDCCH.SearchSpace, "ID", NaN));
+        configuredCORESETId = double(sixgr.util.structGet(cfgTrial, ...
+            "phy.pdcch.coreset.id", 0));
+        configuredSearchSpaceId = double(sixgr.util.structGet(cfgTrial, ...
+            "phy.pdcch.searchSpace.id", 1));
+        r.CORESETId = localPDCCHScalar(tx.PDCCH.CORESET, ...
+            "CORESETID", localPDCCHScalar(tx.PDCCH.CORESET, ...
+            "ID", configuredCORESETId));
+        r.SearchSpaceId = localPDCCHScalar(tx.PDCCH.SearchSpace, ...
+            "SearchSpaceID", localPDCCHScalar(tx.PDCCH.SearchSpace, ...
+            "ID", configuredSearchSpaceId));
         r.CandidateIndex = double(sixgr.util.structGet(rx, "CandidateIndex", NaN));
         r.DCIFormat = string(dciFormatSeed);
         r.DCIId = string(sixgr.util.structGet(decodedDci, "PayloadHash", ""));
@@ -10984,8 +11059,8 @@ annotations = {
     "GrantFieldsHash", string(binding.GrantFieldsHash);
     "DCIFieldsHash", string(binding.DCIFieldsHash);
     "DCIId", string(binding.DCIId);
-    "SearchSpaceId", double(binding.SearchSpaceId);
-    "CORESETId", double(binding.CORESETId);
+    "GrantSearchSpaceId", double(binding.SearchSpaceId);
+    "GrantCORESETId", double(binding.CORESETId);
     "AggregationLevel", double(binding.AggregationLevel);
     "CandidateIndex", double(binding.CandidateIndex);
     "DCIFormat", string(binding.DCIFormat)
@@ -11039,7 +11114,7 @@ binding = struct( ...
         double(sixgr.util.structGet(grant, "PDCCHGrantAggregationLevel", NaN))], NaN), ...
     "CandidateIndex", double(sixgr.util.structGet(grant, "PDCCHGrantCandidateIndex", NaN)), ...
     "DCIFormat", char(string(grantPayload.DCIFormat)));
-if ~binding.Required
+if ~binding.Required && ~(istable(T) && ~isempty(T))
     binding.Ok = true;
     return;
 end
@@ -11103,10 +11178,14 @@ end
 if ~localBindingTextsMatch(binding.DCIFormat, grantPayload.DCIFormat)
     failures(end+1, 1) = "dci_format_mismatch"; %#ok<AGROW>
 end
-if ~localBindingNumbersMatch(localTableNumber(row, "SearchSpaceId", NaN), binding.SearchSpaceId)
+observedSearchSpaceId = localTableNumber(row, "SearchSpaceId", NaN);
+if ~(isfinite(observedSearchSpaceId) && isfinite(binding.SearchSpaceId) && ...
+        double(observedSearchSpaceId) == double(binding.SearchSpaceId))
     failures(end+1, 1) = "search_space_mismatch"; %#ok<AGROW>
 end
-if ~localBindingNumbersMatch(localTableNumber(row, "CORESETId", NaN), binding.CORESETId)
+observedCORESETId = localTableNumber(row, "CORESETId", NaN);
+if ~(isfinite(observedCORESETId) && isfinite(binding.CORESETId) && ...
+        double(observedCORESETId) == double(binding.CORESETId))
     failures(end+1, 1) = "coreset_mismatch"; %#ok<AGROW>
 end
 if strlength(strtrim(string(binding.DCIFieldsHash))) > 0 && strlength(strtrim(string(binding.GrantFieldsHash))) > 0 && ...
@@ -11413,6 +11492,11 @@ if strlength(dciFormat) == 0
     else
         dciFormat = "1_0";
     end
+end
+try
+    dciFormat = sixgr.phy.pdcch.normalizeDCIFormat(dciFormat);
+catch
+    % The contextual DCI decoder will fail closed for an unsupported token.
 end
 end
 

@@ -60,8 +60,12 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             candidateRows = repmat(localCandidateRow(), 0, 1);
             info.CandidateTable = localCandidateTable(candidateRows);
             info.DecisionTable = info.CandidateTable;
-            ssid = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.SearchSpaceID", 0))));
-            coreset = max(0, round(double(sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.CORESETID", 0))));
+            ssid = max(0, round(double(sixgr.util.structGet(obj.Cfg, ...
+                "phy.pdcch.searchSpace.id", ...
+                sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.SearchSpaceID", 1)))));
+            coreset = max(0, round(double(sixgr.util.structGet(obj.Cfg, ...
+                "phy.pdcch.coreset.id", ...
+                sixgr.util.structGet(obj.Cfg, "phy.dl.pdcch.CORESETID", 0)))));
 
             if isempty(ueStates) || isempty(prbAvail)
                 return;
@@ -393,6 +397,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.Modulation = char(string(plan.Modulation));
                     g.NumLayers = double(plan.NumLayers);
                     g.Layers = double(plan.NumLayers);
+                    [g.DMRSPortSet, g.DMRSPortSetSource] = ...
+                        sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+                        obj.Cfg, obj.Direction, g.NumLayers, g);
                     g.TargetCodeRate = double(plan.TargetCodeRate);
                     g.TBSBits = double(plan.TBSBits);
                     g.TBSBytes = double(plan.TBSBytes);

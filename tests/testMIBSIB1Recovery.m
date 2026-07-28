@@ -10,7 +10,9 @@ end
 cfg = sixgr.config.defaultConfig();
 cfg.run.shortRun = true;
 cfg.phy.sib1.enable = true;
-cfg.phy.carrier.NSizeGrid = 52;
+cfg.channel.bandwidth_Hz = 20e6;
+cfg.phy.channelBandwidth_Hz = 20e6;
+cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
 cfg.phy.carrier.NCellID = 17;

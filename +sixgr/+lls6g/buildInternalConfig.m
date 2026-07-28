@@ -153,7 +153,8 @@ cfg.run.runProfile = char(string(localRequireNested(s, "run_control.run_profile"
 pdschExecutionProfile = lower(strtrim(string(localGetNested( ...
     s, "pdsch.execution_profile", ""))));
 allowedPDSCHExecutionProfiles = [ ...
-    "connected_strict","sps_strict","ra_si_strict","phy_calibration"];
+    "connected_strict","sps_strict","ra_si_strict", ...
+    "scheduler_truth","phy_calibration"];
 if ~isscalar(pdschExecutionProfile) || ...
         (strlength(pdschExecutionProfile) > 0 && ...
         ~any(pdschExecutionProfile == allowedPDSCHExecutionProfiles))
@@ -916,6 +917,7 @@ end
 cfg.phy.pdsch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pdsch_enable)));
 cfg.phy.pdsch.nLayers = double(dlLayerCount);
 cfg.phy.pdsch.numLayers = double(dlLayerCount);
+cfg.phy.pdsch.rank = double(dlLayerCount);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxLayers", double(dlLayerCount));
 cfg = sixgr.util.structSet(cfg, "phy.maxDLLayers", double(dlLayerCount));
 cfg.phy.pdsch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
@@ -1109,10 +1111,19 @@ cfg.phy.pucch.assignmentMode = "rrc_procedure_state";
 cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
 cfg.phy.pusch.nLayers = double(ulLayerCount);
 cfg.phy.pusch.numLayers = double(ulLayerCount);
+cfg.phy.pusch.rank = double(ulLayerCount);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", double(ulLayerCount));
 cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", double(ulLayerCount));
 cfg.phy.pusch.transformPrecoding = logical(s.waveform.transform_precoding_enabled);
 cfg.phy.pusch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
+if logical(localGetNested(s, ...
+        "pucch_resources.overlap_policy.uci_on_pusch_enabled", false))
+    cfg.phy.pusch.uciMultiplexingMode = ...
+        "harq_ack_on_pusch_when_pucch_collides";
+    cfg = sixgr.util.structSet(cfg, ...
+        "mac.scheduler.uciMultiplexingMode", ...
+        "harq_ack_on_pusch_when_pucch_collides");
+end
 cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(ulMCSTable));
@@ -1795,10 +1806,39 @@ if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
             resources(resourceIndex).nrof_symbols]);
         cfg = sixgr.util.structSet(cfg, "phy.pucch.harqACKResourceID", ...
             harqACKResourceID);
+        cfg = sixgr.util.structSet(cfg, ...
+            "phy.pucch.harqACKSymbolAllocation", ...
+            harqACKSymbolAllocation);
+        requestedFormat = double(localGetNested(s, ...
+            "control.pucch_format", NaN));
+        resourceFormats = double([resources.format]);
+        defaultIndex = find(resourceFormats == requestedFormat, 1);
+        if isempty(defaultIndex)
+            error("sixgr:lls6g:config:MissingPUCCHDefaultResource", ...
+                "No configured PUCCH resource matches control.pucch_format=%g.", ...
+                requestedFormat);
+        end
+        requiredDefaultFields = { ...
+            'starting_prb','nrof_prbs','starting_symbol','nrof_symbols'};
+        if ~all(isfield(resources(defaultIndex), requiredDefaultFields))
+            error("sixgr:lls6g:config:IncompletePUCCHDefaultResource", ...
+                "The default PUCCH resource must provide PRB and symbol allocation.");
+        end
+        defaultPRBStart = double(resources(defaultIndex).starting_prb);
+        defaultPRBCount = double(resources(defaultIndex).nrof_prbs);
+        defaultSymbolAllocation = double([ ...
+            resources(defaultIndex).starting_symbol, ...
+            resources(defaultIndex).nrof_symbols]);
+        cfg = sixgr.util.structSet(cfg, "phy.pucch.defaultResourceID", ...
+            double(resources(defaultIndex).id));
+        cfg = sixgr.util.structSet(cfg, "phy.pucch.PRBSet", ...
+            defaultPRBStart + (0:(defaultPRBCount - 1)));
+        cfg = sixgr.util.structSet(cfg, "phy.pucch.prbSet", ...
+            defaultPRBStart + (0:(defaultPRBCount - 1)));
         cfg = sixgr.util.structSet(cfg, "phy.pucch.symbolAllocation", ...
-            harqACKSymbolAllocation);
+            defaultSymbolAllocation);
         cfg = sixgr.util.structSet(cfg, "phy.pucch.SymbolAllocation", ...
-            harqACKSymbolAllocation);
+            defaultSymbolAllocation);
         cfg = sixgr.util.structSet(cfg,"phy.pucch.assignmentMode", ...
             "rrc_procedure_state");
     end
@@ -2684,6 +2724,7 @@ tddPairs = {
     "harq_roundtrip_slots", "harqRoundtripSlots"
     "dl_to_ul_guard_time_us", "dlToULGuardTime_us"
     "timing_advance_max_us", "timingAdvanceMax_us"
+    "timing_advance_ticks", "timingAdvanceTicks"
     "n1_pdsch_processing_time_symbols", "n1PDSCHProcessingTimeSymbols"
     "n2_pusch_preparation_time_symbols", "n2PUSCHPreparationTimeSymbols"
     "capability_profile_id", "capabilityProfileID"
@@ -3094,6 +3135,9 @@ if ~isempty(fieldnames(fs.PRACHTiming))
         "phy.prach.validSlots1Based", double(fs.PRACHValidSlots1Based));
     cfg = sixgr.util.structSet(cfg, ...
         "phy.prach.validSlots0Based", double(fs.PRACHValidSlots0Based));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.prach.period_slots", ...
+        double(fs.PRACHTiming.PeriodCarrierSlots));
     cfg = sixgr.util.structSet(cfg, ...
         "phy.prach.validationStatus", char(fs.PRACHValidationStatus));
     cfg = sixgr.util.structSet(cfg, "prach_lls.NSizeGrid", double(fs.NRB));

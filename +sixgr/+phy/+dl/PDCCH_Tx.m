@@ -227,7 +227,7 @@ function pdcch = localDefaultPDCCH(cfg, carrier, nCellID, rnti)
 % CORESET covering a small portion of bandwidth (avoid config validation issues)
 coreset = nrCORESETConfig;
 coresetID = double(sixgr.util.structGet(cfg, 'phy.pdcch.coreset.id', 0));
-localSetPropIfPresent(coreset, {'CORESETID','ID'}, coresetID);
+[coreset, ~] = localSetPropIfPresent(coreset, {'CORESETID','ID'}, coresetID);
 
 % Duration in OFDM symbols (1..3)
 coreset.Duration = double(sixgr.util.structGet(cfg, 'phy.pdcch.coreset.duration', 2));
@@ -250,7 +250,7 @@ coreset.ShiftIndex = double(sixgr.util.structGet(cfg, 'phy.pdcch.coreset.shiftIn
 % Search space
 ss = nrSearchSpaceConfig;
 searchSpaceID = double(sixgr.util.structGet(cfg, 'phy.pdcch.searchSpace.id', 1));
-localSetPropIfPresent(ss, {'SearchSpaceID','ID'}, searchSpaceID);
+[ss, ~] = localSetPropIfPresent(ss, {'SearchSpaceID','ID'}, searchSpaceID);
 ss.CORESETID = localGetFirstProp(coreset, {'CORESETID','ID'}, 0);
 ss.StartSymbolWithinSlot = double(sixgr.util.structGet(cfg, 'phy.pdcch.searchSpace.startSymbol', 0));
 ss.SlotPeriodAndOffset = double(sixgr.util.structGet(cfg, 'phy.pdcch.searchSpace.slotPeriodAndOffset', [1 0]));
@@ -281,7 +281,7 @@ ss.NumCandidates = double(numCand(:).');
 
 % PDCCH config
 pdcch = nrPDCCHConfig;
-localSetPropIfPresent(pdcch, {'NCellID','DMRSScramblingID'}, double(nCellID));
+[pdcch, ~] = localSetPropIfPresent(pdcch, {'NCellID','DMRSScramblingID'}, double(nCellID));
 pdcch.RNTI = double(rnti);
 pdcch.CORESET = coreset;
 pdcch.SearchSpace = ss;
@@ -300,7 +300,7 @@ end
 
 end
 
-function tf = localSetPropIfPresent(obj, propNames, value)
+function [obj, tf] = localSetPropIfPresent(obj, propNames, value)
 tf = false;
 for i = 1:numel(propNames)
     p = char(string(propNames{i}));

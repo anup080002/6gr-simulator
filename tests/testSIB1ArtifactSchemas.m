@@ -15,7 +15,15 @@ runFolder = fullfile(tempdir, "sixgr_test_sib1_artifacts");
 if exist(runFolder, "dir")
     rmdir(runFolder, "s");
 end
-out = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(runFolder, sixgr.config.defaultConfig());
+cfg = sixgr.config.defaultConfig();
+cfg.channel.bandwidth_Hz = 20e6;
+cfg.phy.channelBandwidth_Hz = 20e6;
+cfg.phy.carrier.NSizeGrid = 51;
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal", 2);
+cfg.initial_access.sib1.pdsch = struct("prb_start", 0, ...
+    "num_prb", 24, "symbol_start", 2, "num_symbols", 12, ...
+    "mcs", 0, "rv", 0);
+out = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(runFolder, cfg);
 assert(logical(out.Ok), "SIB1 strict mini-run must pass before artifact schema checks.");
 required = [ ...
     "control/csv/sib1_recovery_trials.csv"

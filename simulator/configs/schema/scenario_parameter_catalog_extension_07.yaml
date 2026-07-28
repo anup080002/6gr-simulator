@@ -90,7 +90,7 @@ sections:
       execution_profile:
         required: false
         type: string
-        allowed_values: [connected_strict, sps_strict, ra_si_strict, phy_calibration]
+        allowed_values: [connected_strict, sps_strict, ra_si_strict, scheduler_truth, phy_calibration]
       prb_set: {required: false, type: number_list, integer: true, min_items: 1}
       prb_start: {required: false, type: integer, min: 0}
       num_prb: {required: false, type: integer, min: 1}
@@ -279,6 +279,7 @@ sections:
       harq_roundtrip_slots: {required: false, type: integer, min: 0}
       dl_to_ul_guard_time_us: {required: false, type: number, min: 0}
       timing_advance_max_us: {required: false, type: number, min: 0}
+      timing_advance_ticks: {required: false, type: integer, min: 0}
       n1_pdsch_processing_time_symbols: {required: false, type: integer, min: 0}
       n2_pusch_preparation_time_symbols: {required: false, type: integer, min: 0}
       capability_profile_id: {required: false, type: string}

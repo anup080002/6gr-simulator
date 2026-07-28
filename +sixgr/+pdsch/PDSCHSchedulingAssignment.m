@@ -28,7 +28,7 @@ classdef PDSCHSchedulingAssignment
             end
 
             profile = lower(strtrim(string(data.Profile)));
-            if ~any(profile == ["connected_strict","sps_strict","ra_si_strict","phy_calibration"])
+            if ~any(profile == ["connected_strict","sps_strict","ra_si_strict","scheduler_truth","phy_calibration"])
                 error("sixgr:pdsch:UnsupportedExecutionProfile", ...
                     "Unsupported PDSCH execution profile '%s'.", profile);
             end
@@ -285,10 +285,13 @@ classdef PDSCHSchedulingAssignment
                     "Logical PDSCH DM-RS ports must lie in the Release-18 range 0...23.");
             end
 
-            if profile == "connected_strict" || profile == "ra_si_strict"
+            if profile == "connected_strict" || profile == "ra_si_strict" || ...
+                    profile == "scheduler_truth"
                 expectedSource = "decoded_dci+ue_context";
                 if profile == "ra_si_strict"
                     expectedSource = "decoded_dci+procedure_context";
+                elseif profile == "scheduler_truth"
+                    expectedSource = "decoded_scheduler_grant+pdcch_binding";
                 end
                 if source ~= expectedSource ...
                         || strlength(strtrim(string(data.DecodedDCIId))) == 0 ...
@@ -308,7 +311,7 @@ classdef PDSCHSchedulingAssignment
                         "PDCCHAbsoluteSlot + K0 must equal PDSCHAbsoluteSlot.");
                 end
                 rntiType = upper(strtrim(string(data.RNTIType)));
-                if profile == "connected_strict"
+                if profile == "connected_strict" || profile == "scheduler_truth"
                     allowed = ["C-RNTI","CS-RNTI","MCS-C-RNTI"];
                 else
                     allowed = ["SI-RNTI","P-RNTI","RA-RNTI","TC-RNTI"];

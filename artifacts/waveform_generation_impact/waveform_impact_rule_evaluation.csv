@@ -1,0 +1,97 @@
+RuleID,FamilyID,Requirement,Observed,Result,Status
+RULE-F01,F01,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F02,F02,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F03,F03,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F04,F04,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F05,F05,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F06,F06,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F07,F07,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F08,F08,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F09,F09,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F10,F10,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F11,F11,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F12,F12,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F13,F13,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F14,F14,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F15,F15,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F16,F16,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F17,F17,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F18,F18,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F19,F19,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F20,F20,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F21,F21,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F22,F22,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F23,F23,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F24,F24,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F25,F25,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F26,F26,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F27,F27,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F28,F28,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F29,F29,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F30,F30,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F31,F31,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F32,F32,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F33,F33,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F34,F34,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F35,F35,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F36,F36,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F37,F37,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F38,F38,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F39,F39,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F40,F40,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F41,F41,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F42,F42,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F43,F43,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F44,F44,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F45,F45,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F46,F46,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F47,F47,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F48,F48,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F49,F49,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F50,F50,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F51,F51,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F52,F52,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F53,F53,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F54,F54,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F55,F55,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F56,F56,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F57,F57,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F58,F58,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F59,F59,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F60,F60,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F61,F61,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F62,F62,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F63,F63,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+RULE-F64,F64,Pairing valid; no missing trials; technical correctness gates pass; statistical result valid or explicitly inconclusive,trials=12;pairs=6,PASS,PASS
+GLOBAL-01,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-02,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-03,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-04,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-05,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-06,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-07,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-08,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-09,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-10,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-11,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-12,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-13,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-14,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-15,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-16,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-17,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-18,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-19,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-20,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-21,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-22,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-23,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-24,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-25,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-26,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-27,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-28,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-29,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-30,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-31,GLOBAL,PASS,global_gate=true,PASS,PASS
+GLOBAL-32,GLOBAL,PASS,global_gate=true,PASS,PASS

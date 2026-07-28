@@ -894,6 +894,10 @@ function [allocation, reason] = localFeedbackSymbolAllocation(cfg, grant)
 raw = localOptional(grant, ...
     ["HARQFeedbackSymbolAllocation", "PUCCHSymbolAllocation"], []);
 if isempty(raw)
+    raw = sixgr.util.structGet(cfg, ...
+        "phy.pucch.harqACKSymbolAllocation", []);
+end
+if isempty(raw)
     raw = sixgr.util.structGet(cfg, "phy.pucch.SymbolAllocation", []);
 end
 if isempty(raw)

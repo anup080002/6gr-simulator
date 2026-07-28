@@ -43,7 +43,7 @@
   },
   "phy": {
     "carrier": {
-      "NSizeGrid": 48
+      "NSizeGrid": 273
     },
     "rx": {
       "useFastChannelEstMex": false,
@@ -95,7 +95,10 @@
     },
     "pdcch": {
       "nStartBWP": 0,
-      "nSizeBWP": 48
+      "nSizeBWP": 273
+    },
+    "pusch": {
+      "transformPrecoding": true
     }
   },
   "outputs": {
