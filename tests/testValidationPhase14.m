@@ -337,6 +337,14 @@ switch kind
         verifyGreaterThanOrEqual(t,height(V),50);
         verifyTrue(t,all(strlength(V.ExpectedError)>0));
         verifyTrue(t,all(lower(V.ExpectedGatePass)=="false"));
+        for index=1:height(V)
+            actual=sixgr.validation.NegativeCaseExecutor.execute(V(index,:));
+            verifyEqual(t,actual.ActualError,V.ExpectedError(index));
+            verifyFalse(t,actual.StateMutation);
+            verifyFalse(t,actual.GatePass);
+            verifyFalse(t,actual.ArtifactAccepted);
+            verifyEqual(t,actual.Status,"PASS");
+        end
     case "TIME"
         V=localRead(vectors,"validation_time_window_vectors.csv");
         contract=sixgr.validation.TimeWindowContract(0,100,200,1000,1100);

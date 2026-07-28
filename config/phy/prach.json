@@ -1,8 +1,8 @@
 {
   "enable": true,
-  "configurationIndex": 16,
+  "configurationIndex": 0,
   "subcarrierSpacing_kHz": 1.25,
-  "preambleFormat": "A1",
+  "preambleFormat": "0",
   "rootSeqIndex": 1,
   "zeroCorrelationZone": 8,
   "restrictedSet": "Unrestricted",

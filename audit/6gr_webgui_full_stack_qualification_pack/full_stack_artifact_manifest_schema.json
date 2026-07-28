@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "6GR full-stack qualification artifact manifest",
+  "type": "object",
+  "required": [
+    "run_id",
+    "suite_preset",
+    "resolved_yaml_sha256",
+    "artifacts"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suite_preset": {
+      "enum": [
+        "comprehensive_smoke",
+        "deep_acceptance"
+      ]
+    },
+    "resolved_yaml_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "executed_yaml_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "domain",
+          "file_name",
+          "relative_path",
+          "artifact_type",
+          "sha256",
+          "evidence_class",
+          "validity",
+          "webgui_published"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "relative_path": {
+            "type": "string"
+          },
+          "artifact_type": {
+            "enum": [
+              "CSV",
+              "PNG",
+              "JSON",
+              "YAML",
+              "MAT",
+              "LOG",
+              "MD",
+              "OTHER"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source_artifact_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_class": {
+            "type": "string"
+          },
+          "validity": {
+            "enum": [
+              "VALID",
+              "INVALID",
+              "UNAVAILABLE"
+            ]
+          },
+          "placeholder": {
+            "type": "boolean"
+          },
+          "webgui_published": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

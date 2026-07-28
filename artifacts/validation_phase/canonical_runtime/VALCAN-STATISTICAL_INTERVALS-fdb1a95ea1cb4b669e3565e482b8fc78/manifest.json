@@ -1,0 +1,14 @@
+{
+  "SchemaVersion": "1.0.0",
+  "RunID": "VALCAN-STATISTICAL_INTERVALS-fdb1a95ea1cb4b669e3565e482b8fc78",
+  "Workload": "STATISTICAL_INTERVALS",
+  "RunClass": "CONTROL_ONLY",
+  "SourceCommit": "1704e9320ab3b7a6261ce0150bb46b31258da3f1",
+  "SourceTreeSHA256": "2a43c7e900b2ff9a8b1b9184a98472f2322729369ec3879354946e341f0429c0",
+  "ScenarioSHA256": "7b1e37e62d08c5877d54834d05168dbf3147568a3551e8839ffb932bcba22c86",
+  "EvidenceSHA256": "c99a9e1792f25991c889dbc9c47eff5d8f0456d30d19f0d7f7724429bc538c25",
+  "StartUTC": "2026-07-27T16:36:29.035Z",
+  "EndUTC": "2026-07-27T16:36:29.184Z",
+  "RuntimeStatus": "PASS",
+  "ArtifactStatus": "PASS"
+}

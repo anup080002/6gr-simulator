@@ -45,8 +45,22 @@
       }
     },
     "waveform": {
+      "type": "DFT-s-OFDM",
       "dl": "CP-OFDM",
       "ul": "DFT-s-OFDM"
+    },
+    "pusch": {
+      "transformPrecoding": true
+    },
+    "prach": {
+      "configurationIndex": 69,
+      "subcarrierSpacing_kHz": 30,
+      "preambleFormat": "A1"
+    },
+    "ul": {
+      "pusch": {
+        "TransformPrecoding": true
+      }
     }
   }
 }

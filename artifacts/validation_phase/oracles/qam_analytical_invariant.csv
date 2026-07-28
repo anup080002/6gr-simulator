@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+QAM-00,ANALYTICAL_INVARIANT,QAM,"-3,-3","-0.948683298050514,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-01,ANALYTICAL_INVARIANT,QAM,"-3,-1","-0.948683298050514,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-02,ANALYTICAL_INVARIANT,QAM,"-3,1","-0.948683298050514,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-03,ANALYTICAL_INVARIANT,QAM,"-3,3","-0.948683298050514,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-04,ANALYTICAL_INVARIANT,QAM,"-1,-3","-0.316227766016838,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-05,ANALYTICAL_INVARIANT,QAM,"-1,-1","-0.316227766016838,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-06,ANALYTICAL_INVARIANT,QAM,"-1,1","-0.316227766016838,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-07,ANALYTICAL_INVARIANT,QAM,"-1,3","-0.316227766016838,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-08,ANALYTICAL_INVARIANT,QAM,"1,-3","0.316227766016838,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-09,ANALYTICAL_INVARIANT,QAM,"1,-1","0.316227766016838,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-10,ANALYTICAL_INVARIANT,QAM,"1,1","0.316227766016838,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-11,ANALYTICAL_INVARIANT,QAM,"1,3","0.316227766016838,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-12,ANALYTICAL_INVARIANT,QAM,"3,-3","0.948683298050514,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-13,ANALYTICAL_INVARIANT,QAM,"3,-1","0.948683298050514,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-14,ANALYTICAL_INVARIANT,QAM,"3,1","0.948683298050514,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-15,ANALYTICAL_INVARIANT,QAM,"3,3","0.948683298050514,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import

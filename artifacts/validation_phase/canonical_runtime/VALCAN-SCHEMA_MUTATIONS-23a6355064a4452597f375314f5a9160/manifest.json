@@ -1,0 +1,14 @@
+{
+  "SchemaVersion": "1.0.0",
+  "RunID": "VALCAN-SCHEMA_MUTATIONS-23a6355064a4452597f375314f5a9160",
+  "Workload": "SCHEMA_MUTATIONS",
+  "RunClass": "CONTROL_ONLY",
+  "SourceCommit": "1704e9320ab3b7a6261ce0150bb46b31258da3f1",
+  "SourceTreeSHA256": "3beae610f4e32fc6dd39736f19c0ab04ae88b1722827be27559c5b935a9e8860",
+  "ScenarioSHA256": "38151c8d08ffca6e41010b3747b71ab9a7ad5996f2d23add87ecbf094acd8e88",
+  "EvidenceSHA256": "fcf4f3ba4f2cea9cbba7f41a18a4b6d54a31d0cb80925f99f4167c885bb4d175",
+  "StartUTC": "2026-07-27T17:29:45.531Z",
+  "EndUTC": "2026-07-27T17:29:45.984Z",
+  "RuntimeStatus": "PASS",
+  "ArtifactStatus": "PASS"
+}

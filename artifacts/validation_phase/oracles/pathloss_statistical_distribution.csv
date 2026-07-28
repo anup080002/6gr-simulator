@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+STAT-00,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=0,0.0264932271666944,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-01,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=1,-0.10931673455388,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-02,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=2,0.00993308121177193,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-03,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=3,-0.0324326207548823,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-04,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=4,0.0919049953935971,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-05,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=5,0.116869034257578,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-06,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=6,-0.110282681430688,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-07,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=7,0.0356643211903795,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-08,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=8,-0.0263483277358848,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-09,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=9,-0.0391943789975502,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-10,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=10,0.00894433988881231,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-11,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=11,0.0175136805857754,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-12,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=12,-0.104545540241815,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-13,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=13,-0.0773653454466861,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-14,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=14,-0.126754973902131,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import
+STAT-15,STATISTICAL_DISTRIBUTION,PATHLOSS,feature=PATHLOSS;seed=14005;block=15,0.0361938578894815,pinned normal distribution;global_mean=-0.0176702540924642;variance=1.01331353295019,standalone_python_no_dut_import

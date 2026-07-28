@@ -34,6 +34,29 @@ classdef ValidationCapabilityProfile
                     sixgr.validation.OracleType.qualifyingValues());
             result = sixgr.validation.ValidationPlanningResult(data);
         end
+        function result = resolveFeature(profileID,findingID,feature)
+            profileID = lower(strtrim(string(profileID)));
+            findingID = upper(strtrim(string(findingID)));
+            feature = strtrim(string(feature));
+            plan = sixgr.validation.ValidationCapabilityProfile.plan( ...
+                profileID).toStruct();
+            catalog = sixgr.validation.ValidationCapabilityProfile.catalog();
+            field = matlab.lang.makeValidName(char(profileID));
+            raw = catalog.profiles.(field);
+            executable = logical(plan.Supported);
+            if isfield(raw,"allowed_findings")
+                allowed = upper(strtrim(string(raw.allowed_findings)));
+                executable = executable && ismember(findingID,allowed);
+            end
+            outcome = "REJECT";
+            if executable
+                outcome = "EXECUTE";
+            end
+            result = struct("ProfileID",profileID, ...
+                "FindingID",findingID,"Feature",feature, ...
+                "Outcome",outcome,"Executable",logical(executable), ...
+                "Status","PASS");
+        end
         function out = catalog()
             persistent value
             if isempty(value)

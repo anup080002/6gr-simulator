@@ -1,0 +1,6 @@
+ReferenceID,ProfileID,SourceName,SourceVersion,ArtifactSHA256,DUTSHA256,Independent,Status
+"REF-1","nr_rel18_phy_lls_strict","independent_phase_vector_pack","repository-pinned","4d651dfdc0b3f6523bcdfe6c7bb8462d82bd8bfed5d870ec00afb125f889b66c","074943a35e6bab4517c5673a42e9a86b1ae06235eb1c21e59abf81d0b5dae5ee",1,"PASS"
+"REF-2","nr_rel18_phy_lls_strict","independent_phase_vector_pack","repository-pinned","fdb69aa58d39cdb8f2237a432af5e96ded0bd0be4b19bbb16a8d44ea8d85da92","074943a35e6bab4517c5673a42e9a86b1ae06235eb1c21e59abf81d0b5dae5ee",1,"PASS"
+"REF-3","nr_rel18_phy_lls_strict","independent_phase_vector_pack","repository-pinned","66c73f4a6eab7a203da53f9d6b4cf7596550ba03cf35eeacb1eefbdd503f79aa","074943a35e6bab4517c5673a42e9a86b1ae06235eb1c21e59abf81d0b5dae5ee",1,"PASS"
+"REF-4","nr_rel18_phy_lls_strict","independent_phase_vector_pack","repository-pinned","4fc23497ce3c271311da781d2dca57e0e6beb38962924cdcb76ddccef7b2a61b","074943a35e6bab4517c5673a42e9a86b1ae06235eb1c21e59abf81d0b5dae5ee",1,"PASS"
+"REF-5","nr_rel18_phy_lls_strict","independent_phase_vector_pack","repository-pinned","1553103ad3f328fbeca9996b8c9ee8a14a135d16a696040bc1e8df9ab3d9a725","074943a35e6bab4517c5673a42e9a86b1ae06235eb1c21e59abf81d0b5dae5ee",1,"PASS"

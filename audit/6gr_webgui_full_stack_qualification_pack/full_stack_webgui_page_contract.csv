@@ -1,0 +1,14 @@
+Page,Requirement,Mandatory
+Configure,Scenario selectable; preset dropdown; source/effective/resolved YAML; parameter search; validation messages; resolved hash displayed.,true
+Live,"Current subcase, current point/slot/TB, latest measured SINR, HARQ result, channel/RF state, progress and failures.",true
+Overview,"Final status, component coverage, artifact completeness, key KPI cards and acceptance waterfall.",true
+TX Chain,"Grid, coding, modulation, reference signals, precoding, OFDM, power and RF transmit artifacts grouped by subcase.",true
+RX Chain,"Synchronization, channel estimation, equalization, demapping, decoding, measured SINR/EVM and errors.",true
+Control and Access,SSB/PBCH/MIB/SIB1/PRACH/PDCCH/PUCCH/DCI/UCI timelines and negative controls.,true
+MIMO and Beam,"Antenna geometry, codebooks, rank/PMI, precoder hashes, covariance, beam state and MU/multi-TRP evidence.",true
+Channel and RF,"LOS/NLOS/O2I/blockage, CIR/PDP, Doppler, interference, power, CFO/SCO/PN/IQ/PA/ADC/blocker.",true
+MAC and Protocol,"HARQ, scheduler, BSR/PHR/SR/TA, RLC/PDCP/SDAP/RRC, handover, traffic and lineage.",true
+Results,"All required domain CSVs and PNGs visible with filters, preview, download, provenance and source hash.",true
+Validation,All acceptance rules and value checks visible; failed rows never hidden.,true
+Artifact Explorer,Complete manifest with 100% required artifact visibility and exact run binding.,true
+Compare,Optional comparison with compatible run key and clear incompatibility reasons.,false

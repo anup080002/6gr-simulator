@@ -1,0 +1,5 @@
+FieldName,Value,Unit,ProvenanceClass,ObservedSampleCount,Status
+"CampaignsExecuted","3","count","OBSERVED_RUNTIME_STATE",3,"PASS"
+"CampaignsMatched","3","count","OBSERVED_RUNTIME_STATE",3,"PASS"
+"MergeRows","38","count","OBSERVED_RUNTIME_STATE",38,"PASS"
+"VectorSHA256","d2760590a7ffb629ddcbb701590a9d92859cdf987c8a10bec1b8fdb1eb561842","sha256","OBSERVED_RUNTIME_STATE",1,"PASS"

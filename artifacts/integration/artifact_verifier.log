@@ -1,0 +1,211 @@
+PASS csv_exists:reports/csv/integration_run_manifest.csv
+PASS csv_minrows:reports/csv/integration_run_manifest.csv 2
+PASS csv_columns:reports/csv/integration_run_manifest.csv
+PASS csv_unique:reports/csv/integration_run_manifest.csv 0
+PASS csv_status:reports/csv/integration_run_manifest.csv 0
+PASS csv_exists:reports/csv/integration_config_resolution.csv
+PASS csv_minrows:reports/csv/integration_config_resolution.csv 2
+PASS csv_columns:reports/csv/integration_config_resolution.csv
+PASS csv_unique:reports/csv/integration_config_resolution.csv 0
+PASS csv_status:reports/csv/integration_config_resolution.csv 0
+PASS csv_exists:reports/csv/integration_profile_resolution.csv
+PASS csv_minrows:reports/csv/integration_profile_resolution.csv 2
+PASS csv_columns:reports/csv/integration_profile_resolution.csv
+PASS csv_unique:reports/csv/integration_profile_resolution.csv 0
+PASS csv_status:reports/csv/integration_profile_resolution.csv 0
+PASS csv_exists:reports/csv/integration_component_registry.csv
+PASS csv_minrows:reports/csv/integration_component_registry.csv 20
+FAIL csv_columns:reports/csv/integration_component_registry.csv Implementation,Singleton,Version
+PASS csv_unique:reports/csv/integration_component_registry.csv 0
+PASS csv_status:reports/csv/integration_component_registry.csv 0
+FAIL csv_exists:reports/csv/integration_interface_bindings.csv
+FAIL csv_exists:reports/csv/integration_state_ownership.csv
+FAIL csv_exists:reports/csv/integration_radio_clock.csv
+FAIL csv_exists:reports/csv/integration_event_trace.csv
+FAIL csv_exists:reports/csv/integration_slot_symbol_timeline.csv
+FAIL csv_exists:reports/csv/integration_resource_transactions.csv
+FAIL csv_exists:reports/csv/integration_resource_collisions.csv
+FAIL csv_exists:reports/csv/integration_waveform_chain.csv
+FAIL csv_exists:reports/csv/integration_power_ledger.csv
+FAIL csv_exists:reports/csv/integration_noise_ledger.csv
+FAIL csv_exists:reports/csv/integration_seed_ledger.csv
+FAIL csv_exists:reports/csv/integration_task_merge.csv
+FAIL csv_exists:reports/csv/integration_error_registry.csv
+FAIL csv_exists:reports/csv/integration_test_summary.csv
+PASS csv_exists:reports/csv/integration_negative_tests.csv
+PASS csv_minrows:reports/csv/integration_negative_tests.csv 60
+PASS csv_columns:reports/csv/integration_negative_tests.csv
+PASS csv_unique:reports/csv/integration_negative_tests.csv 0
+PASS csv_status:reports/csv/integration_negative_tests.csv 0
+FAIL csv_exists:reports/csv/integration_acceptance_results.csv
+FAIL csv_exists:reports/csv/integration_artifact_index.csv
+FAIL csv_exists:reports/csv/integration_runtime_profile.csv
+PASS csv_exists:reports/csv/integration_image_semantic_audit.csv
+PASS csv_minrows:reports/csv/integration_image_semantic_audit.csv 5
+PASS csv_columns:reports/csv/integration_image_semantic_audit.csv
+PASS csv_unique:reports/csv/integration_image_semantic_audit.csv 0
+PASS csv_status:reports/csv/integration_image_semantic_audit.csv 0
+FAIL csv_exists:reports/csv/fixed_snr_operating_points.csv
+FAIL csv_exists:reports/csv/fixed_snr_trials.csv
+FAIL csv_exists:reports/csv/fixed_snr_bler_curve.csv
+FAIL csv_exists:reports/csv/fixed_snr_ber_curve.csv
+FAIL csv_exists:reports/csv/fixed_snr_measured_sinr.csv
+FAIL csv_exists:reports/csv/fixed_snr_throughput_curve.csv
+FAIL csv_exists:reports/csv/fixed_snr_receiver_metrics.csv
+FAIL csv_exists:reports/csv/fixed_snr_grant_trace.csv
+FAIL csv_exists:reports/csv/fixed_snr_harq_trace.csv
+FAIL csv_exists:reports/csv/fixed_snr_waveform_metrics.csv
+FAIL csv_exists:reports/csv/fixed_snr_reference_comparison.csv
+FAIL csv_exists:reports/csv/geometry_topology.csv
+FAIL csv_exists:reports/csv/geometry_mobility_trace.csv
+FAIL csv_exists:reports/csv/geometry_link_state_trace.csv
+FAIL csv_exists:reports/csv/geometry_channel_state_trace.csv
+FAIL csv_exists:reports/csv/geometry_interference_contributions.csv
+FAIL csv_exists:reports/csv/geometry_measurements.csv
+FAIL csv_exists:reports/csv/geometry_csi_reports.csv
+FAIL csv_exists:reports/csv/geometry_scheduler_trace.csv
+FAIL csv_exists:reports/csv/geometry_grant_trace.csv
+FAIL csv_exists:reports/csv/geometry_harq_trace.csv
+FAIL csv_exists:reports/csv/geometry_beam_mimo_trace.csv
+FAIL csv_exists:reports/csv/geometry_rf_tracking.csv
+FAIL csv_exists:reports/csv/geometry_packet_lineage.csv
+FAIL csv_exists:reports/csv/geometry_ue_kpi.csv
+FAIL csv_exists:reports/csv/geometry_cell_kpi.csv
+FAIL csv_exists:reports/csv/geometry_handover_rlf_trace.csv
+PASS csv_exists:reports/csv/cross_mode_equivalence.csv
+PASS csv_minrows:reports/csv/cross_mode_equivalence.csv 64
+PASS csv_columns:reports/csv/cross_mode_equivalence.csv
+PASS csv_unique:reports/csv/cross_mode_equivalence.csv 0
+PASS csv_status:reports/csv/cross_mode_equivalence.csv 0
+PASS csv_exists:reports/csv/cross_mode_waveform_digest.csv
+PASS csv_minrows:reports/csv/cross_mode_waveform_digest.csv 64
+PASS csv_columns:reports/csv/cross_mode_waveform_digest.csv
+PASS csv_unique:reports/csv/cross_mode_waveform_digest.csv 0
+PASS csv_status:reports/csv/cross_mode_waveform_digest.csv 0
+PASS csv_exists:reports/csv/cross_mode_receiver_digest.csv
+PASS csv_minrows:reports/csv/cross_mode_receiver_digest.csv 64
+PASS csv_columns:reports/csv/cross_mode_receiver_digest.csv
+PASS csv_unique:reports/csv/cross_mode_receiver_digest.csv 0
+PASS csv_status:reports/csv/cross_mode_receiver_digest.csv 0
+PASS csv_exists:reports/csv/cross_mode_noise_power_reconciliation.csv
+PASS csv_minrows:reports/csv/cross_mode_noise_power_reconciliation.csv 64
+PASS csv_columns:reports/csv/cross_mode_noise_power_reconciliation.csv
+PASS csv_unique:reports/csv/cross_mode_noise_power_reconciliation.csv 0
+PASS csv_status:reports/csv/cross_mode_noise_power_reconciliation.csv 0
+FAIL csv_exists:reports/csv/cross_mode_causality.csv
+PASS csv_exists:reports/csv/cross_mode_kpi_comparison.csv
+PASS csv_minrows:reports/csv/cross_mode_kpi_comparison.csv 192
+PASS csv_columns:reports/csv/cross_mode_kpi_comparison.csv
+PASS csv_unique:reports/csv/cross_mode_kpi_comparison.csv 0
+PASS csv_status:reports/csv/cross_mode_kpi_comparison.csv 0
+FAIL png_exists:reports/image/integration_architecture_flow.png
+FAIL png_source_exists:reports/image/integration_architecture_flow.png
+PASS png_exists:reports/image/integration_mode_profile_matrix.png
+PASS png_source_exists:reports/image/integration_mode_profile_matrix.png
+PASS png_dimensions:reports/image/integration_mode_profile_matrix.png 1530x1108
+PASS png_audit_row:reports/image/integration_mode_profile_matrix.png
+PASS png_hash:reports/image/integration_mode_profile_matrix.png
+PASS png_source_hash:reports/image/integration_mode_profile_matrix.png
+PASS png_semantic_status:reports/image/integration_mode_profile_matrix.png
+FAIL png_exists:reports/image/integration_slot_event_timeline.png
+FAIL png_source_exists:reports/image/integration_slot_event_timeline.png
+FAIL png_exists:reports/image/integration_resource_grid_ownership.png
+FAIL png_source_exists:reports/image/integration_resource_grid_ownership.png
+FAIL png_exists:reports/image/integration_power_reference_planes.png
+FAIL png_source_exists:reports/image/integration_power_reference_planes.png
+FAIL png_exists:reports/image/integration_seed_determinism.png
+FAIL png_source_exists:reports/image/integration_seed_determinism.png
+FAIL png_exists:reports/image/integration_runtime_scaling.png
+FAIL png_source_exists:reports/image/integration_runtime_scaling.png
+FAIL png_exists:reports/image/integration_acceptance_waterfall.png
+FAIL png_source_exists:reports/image/integration_acceptance_waterfall.png
+FAIL png_exists:reports/image/fixed_bler_ber_vs_snr.png
+FAIL png_source_exists:reports/image/fixed_bler_ber_vs_snr.png
+FAIL png_exists:reports/image/fixed_measured_vs_configured_snr.png
+FAIL png_source_exists:reports/image/fixed_measured_vs_configured_snr.png
+FAIL png_exists:reports/image/fixed_throughput_vs_snr.png
+FAIL png_source_exists:reports/image/fixed_throughput_vs_snr.png
+FAIL png_exists:reports/image/fixed_constellation_evm.png
+FAIL png_source_exists:reports/image/fixed_constellation_evm.png
+FAIL png_exists:reports/image/fixed_harq_timeline.png
+FAIL png_source_exists:reports/image/fixed_harq_timeline.png
+FAIL png_exists:reports/image/fixed_papr_ccdf.png
+FAIL png_source_exists:reports/image/fixed_papr_ccdf.png
+FAIL png_exists:reports/image/fixed_psd.png
+FAIL png_source_exists:reports/image/fixed_psd.png
+FAIL png_exists:reports/image/fixed_reference_comparison.png
+FAIL png_source_exists:reports/image/fixed_reference_comparison.png
+FAIL png_exists:reports/image/geometry_topology_trajectory.png
+FAIL png_source_exists:reports/image/geometry_topology_trajectory.png
+FAIL png_exists:reports/image/geometry_signal_strength_route.png
+FAIL png_source_exists:reports/image/geometry_signal_strength_route.png
+FAIL png_exists:reports/image/geometry_ser_bler_route.png
+FAIL png_source_exists:reports/image/geometry_ser_bler_route.png
+FAIL png_exists:reports/image/geometry_cir_pdp.png
+FAIL png_source_exists:reports/image/geometry_cir_pdp.png
+FAIL png_exists:reports/image/geometry_doppler_timeline.png
+FAIL png_source_exists:reports/image/geometry_doppler_timeline.png
+FAIL png_exists:reports/image/geometry_psd_eye_constellation.png
+FAIL png_source_exists:reports/image/geometry_psd_eye_constellation.png
+FAIL png_exists:reports/image/geometry_evm_per_rb_symbol.png
+FAIL png_source_exists:reports/image/geometry_evm_per_rb_symbol.png
+FAIL png_exists:reports/image/geometry_antenna_beam_pattern.png
+FAIL png_source_exists:reports/image/geometry_antenna_beam_pattern.png
+FAIL png_exists:reports/image/geometry_measurement_csi_mcs.png
+FAIL png_source_exists:reports/image/geometry_measurement_csi_mcs.png
+FAIL png_exists:reports/image/geometry_scheduler_allocations.png
+FAIL png_source_exists:reports/image/geometry_scheduler_allocations.png
+FAIL png_exists:reports/image/geometry_interference_contributions.png
+FAIL png_source_exists:reports/image/geometry_interference_contributions.png
+FAIL png_exists:reports/image/geometry_harq_queue_timeline.png
+FAIL png_source_exists:reports/image/geometry_harq_queue_timeline.png
+FAIL png_exists:reports/image/geometry_beam_mimo_timeline.png
+FAIL png_source_exists:reports/image/geometry_beam_mimo_timeline.png
+FAIL png_exists:reports/image/geometry_rf_target_measured_tracking.png
+FAIL png_source_exists:reports/image/geometry_rf_target_measured_tracking.png
+FAIL png_exists:reports/image/geometry_power_control.png
+FAIL png_source_exists:reports/image/geometry_power_control.png
+FAIL png_exists:reports/image/geometry_packet_latency_cdf.png
+FAIL png_source_exists:reports/image/geometry_packet_latency_cdf.png
+FAIL png_exists:reports/image/geometry_serving_cell_handover.png
+FAIL png_source_exists:reports/image/geometry_serving_cell_handover.png
+FAIL png_exists:reports/image/geometry_ue_cell_kpi.png
+FAIL png_source_exists:reports/image/geometry_ue_cell_kpi.png
+PASS png_exists:reports/image/cross_mode_awgn_equivalence.png
+PASS png_source_exists:reports/image/cross_mode_awgn_equivalence.png
+PASS png_dimensions:reports/image/cross_mode_awgn_equivalence.png 1542x1108
+PASS png_audit_row:reports/image/cross_mode_awgn_equivalence.png
+PASS png_hash:reports/image/cross_mode_awgn_equivalence.png
+PASS png_source_hash:reports/image/cross_mode_awgn_equivalence.png
+PASS png_semantic_status:reports/image/cross_mode_awgn_equivalence.png
+PASS png_exists:reports/image/cross_mode_noise_power.png
+PASS png_source_exists:reports/image/cross_mode_noise_power.png
+PASS png_dimensions:reports/image/cross_mode_noise_power.png 1542x1108
+PASS png_audit_row:reports/image/cross_mode_noise_power.png
+PASS png_hash:reports/image/cross_mode_noise_power.png
+PASS png_source_hash:reports/image/cross_mode_noise_power.png
+PASS png_semantic_status:reports/image/cross_mode_noise_power.png
+PASS png_exists:reports/image/cross_mode_digest_matrix.png
+PASS png_source_exists:reports/image/cross_mode_digest_matrix.png
+PASS png_dimensions:reports/image/cross_mode_digest_matrix.png 1535x1108
+PASS png_audit_row:reports/image/cross_mode_digest_matrix.png
+PASS png_hash:reports/image/cross_mode_digest_matrix.png
+PASS png_source_hash:reports/image/cross_mode_digest_matrix.png
+PASS png_semantic_status:reports/image/cross_mode_digest_matrix.png
+PASS png_exists:reports/image/cross_mode_kpi_comparison.png
+PASS png_source_exists:reports/image/cross_mode_kpi_comparison.png
+PASS png_dimensions:reports/image/cross_mode_kpi_comparison.png 1548x1108
+PASS png_audit_row:reports/image/cross_mode_kpi_comparison.png
+PASS png_hash:reports/image/cross_mode_kpi_comparison.png
+PASS png_source_hash:reports/image/cross_mode_kpi_comparison.png
+PASS png_semantic_status:reports/image/cross_mode_kpi_comparison.png
+FAIL png_exists:reports/image/integration_failure_heatmap.png
+FAIL png_source_exists:reports/image/integration_failure_heatmap.png
+FAIL png_exists:reports/image/integration_artifact_completeness.png
+FAIL png_source_exists:reports/image/integration_artifact_completeness.png
+{
+  "checks": 205,
+  "passed": 89,
+  "failed": 116,
+  "output": "artifacts\\integration"
+}

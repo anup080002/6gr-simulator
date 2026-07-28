@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+LDPC-RV0-E8,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=0;E=8,0;1;2;3;4;5;6;7,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV0-E16,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=0;E=16,0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV0-E24,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=0;E=24,0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV0-E32,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=0;E=32,0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23;24;25;26;27;28;29;30;31,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV1-E8,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=1;E=8,16;17;18;19;20;21;22;23,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV1-E16,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=1;E=16,16;17;18;19;20;21;22;23;24;25;26;27;28;29;30;31,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV1-E24,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=1;E=24,16;17;18;19;20;21;22;23;24;25;26;27;28;29;30;31;32;33;34;35;36;37;38;39,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV1-E32,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=1;E=32,16;17;18;19;20;21;22;23;24;25;26;27;28;29;30;31;32;33;34;35;36;37;38;39;40;41;42;43;44;45;46;47,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV2-E8,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=2;E=8,33;34;35;36;37;38;39;40,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV2-E16,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=2;E=16,33;34;35;36;37;38;39;40;41;42;43;44;45;46;47;48,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV2-E24,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=2;E=24,33;34;35;36;37;38;39;40;41;42;43;44;45;46;47;48;49;50;51;52;53;54;55;56,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV2-E32,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=2;E=32,33;34;35;36;37;38;39;40;41;42;43;44;45;46;47;48;49;50;51;52;53;54;55;56;57;58;59;60;61;62;63;64,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV3-E8,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=3;E=8,49;50;51;52;53;54;55;56,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV3-E16,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=3;E=16,49;50;51;52;53;54;55;56;57;58;59;60;61;62;63;64,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV3-E24,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=3;E=24,49;50;51;52;53;54;55;56;57;58;59;60;61;62;63;64;65;0;1;2;3;4;5;6,independent circular-buffer selection invariant,standalone_python_no_dut_import
+LDPC-RV3-E32,ANALYTICAL_INVARIANT,LDPC_RATE_MATCH,Ncb=66;rv=3;E=32,49;50;51;52;53;54;55;56;57;58;59;60;61;62;63;64;65;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14,independent circular-buffer selection invariant,standalone_python_no_dut_import

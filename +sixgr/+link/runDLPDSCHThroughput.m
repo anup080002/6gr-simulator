@@ -1976,7 +1976,7 @@ end
     end
 end
 
-function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo)
+function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier)
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", txInfo);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
@@ -1992,18 +1992,43 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-referenceSignalPower = localUsefulOFDMReferencePower(referenceWaveform, txInfo);
-[yControlled, awgnNVar] = sixgr.channel.addControlledAWGN(x, appliedSNR_dB, ...
-    "SignalPower", referenceSignalPower);
-[nVar, source] = localReceiverEffectiveNoiseVariance(awgnNVar, replay, "standalone_awgn_snr_argument_post_channel_units");
+if isempty(carrier)
+    error("sixgr:link:MissingOFDMNoiseCalibration", ...
+        "Standalone AWGN requires the transmitting carrier for occupied-grid noise calibration.");
+end
+signalEnergyPerOccupiedRE = localOccupiedRESignalEnergy(txInfo);
+[y, referenceNoise] = sixgr.conformance.addReferenceNoise( ...
+    x, carrier, appliedSNR_dB, ...
+    "SignalEnergyPerOccupiedRE", signalEnergyPerOccupiedRE);
+[nVar, source] = localReceiverEffectiveNoiseVariance( ...
+    referenceNoise.SampleNoiseVariance, replay, ...
+    "standalone_awgn_occupied_grid_esn0_reference");
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
-if isfinite(awgnNVar) && awgnNVar >= 0
-    y = yControlled;
+noiseInfo.AppliedNoiseSNR_dB = double(referenceNoise.RequestedEsN0_dB);
+noiseInfo.SNRReferencePlane = ...
+    "occupied_resource_grid_re_after_ofdm_demodulation";
+noiseInfo.GridNoiseVariance = double(referenceNoise.GridNoiseVariance);
+noiseInfo.SampleNoiseVariance = double(referenceNoise.SampleNoiseVariance);
+noiseInfo.SampleToGridNoiseVarianceGain = ...
+    double(referenceNoise.SampleToGridNoiseVarianceGain);
+noiseInfo.NoiseCalibrationVersion = char(string(referenceNoise.Version));
+noiseInfo.WaveformPowerUsedForAWGN = false;
+noiseInfo.SignalEnergyPerOccupiedRE = ...
+    double(referenceNoise.SignalEnergyPerOccupiedRE);
+end
+
+function signalEnergy = localOccupiedRESignalEnergy(txInfo)
+% The native PDSCH mapper emits unit-energy data symbols. Preserve the
+% requested grid Es/N0 after the physical transmit-power scale is applied.
+signalEnergy = 1;
+powerContext = sixgr.util.structGet(txInfo, "PowerContext", struct());
+if ~isstruct(powerContext)
     return;
 end
-[y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
-[nVar, source] = localReceiverEffectiveNoiseVariance(nVar, replay, "legacy_addAwgnComplex_last_resort");
-noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
+netScale = double(sixgr.util.structGet(powerContext, "AmplitudeScale", 1));
+if isscalar(netScale) && isfinite(netScale) && netScale > 0
+    signalEnergy = netScale .^ 2;
+end
 end
 
 function [effectiveNVar, source] = localReceiverEffectiveNoiseVariance(baseNVar, replay, baseSource)
@@ -2049,14 +2074,13 @@ snr_dB = double(snr_dB);
 if ~(isscalar(snr_dB) && isfinite(snr_dB))
     return;
 end
-if isempty(referenceWaveform)
+ofdmInfo = sixgr.util.structGet(txInfo, "OFDM", struct());
+gain = double(sixgr.util.structGet(ofdmInfo, ...
+    "SampleToGridNoiseVarianceGain", NaN));
+if ~(isscalar(gain) && isfinite(gain) && gain > 0)
     return;
 end
-refPower = localUsefulOFDMReferencePower(referenceWaveform, txInfo);
-if ~(isfinite(refPower) && refPower >= 0)
-    return;
-end
-nVar = refPower / max(10.^(snr_dB / 10), eps);
+nVar = 10.^(-snr_dB / 10) / gain;
 end
 
 function refPower = localUsefulOFDMReferencePower(waveform, txInfo)
@@ -3125,7 +3149,9 @@ replay.InterferenceRandomPhaseApplied = logical(sixgr.util.structGet(interferenc
 if strlength(strtrim(string(replay.InterferencePowerSource))) == 0 && replay.InterferenceContributorCount > 0
     replay.InterferencePowerSource = "sample_domain_interference_sum";
 end
-[y, replay.InjectedNoiseVariance, noiseInfo] = localAddAwgn(y, replay, desiredWaveform, txInfo);
+[y, replay.InjectedNoiseVariance, noiseInfo] = localAddAwgn( ...
+    y, replay, desiredWaveform, txInfo, ...
+    sixgr.util.structGet(tx, "Carrier", []));
 localLogPDSCHCompositeStageDiagnostics(cfg, tx, [], y, "post_noise_pre_front_end");
 noiseFields = fieldnames(noiseInfo);
 for ni = 1:numel(noiseFields)

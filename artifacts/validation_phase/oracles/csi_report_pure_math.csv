@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+CSI-00,PURE_MATH,CSI_REPORT,ri=0;pmi=0;cqi=0,0000000000,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-01,PURE_MATH,CSI_REPORT,ri=1;pmi=3;cqi=5,0100110101,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-02,PURE_MATH,CSI_REPORT,ri=2;pmi=6;cqi=10,1001101010,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-03,PURE_MATH,CSI_REPORT,ri=3;pmi=9;cqi=15,1110011111,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-04,PURE_MATH,CSI_REPORT,ri=0;pmi=12;cqi=4,0011000100,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-05,PURE_MATH,CSI_REPORT,ri=1;pmi=15;cqi=9,0111111001,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-06,PURE_MATH,CSI_REPORT,ri=2;pmi=2;cqi=14,1000101110,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-07,PURE_MATH,CSI_REPORT,ri=3;pmi=5;cqi=3,1101010011,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-08,PURE_MATH,CSI_REPORT,ri=0;pmi=8;cqi=8,0010001000,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-09,PURE_MATH,CSI_REPORT,ri=1;pmi=11;cqi=13,0110111101,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-10,PURE_MATH,CSI_REPORT,ri=2;pmi=14;cqi=2,1011100010,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-11,PURE_MATH,CSI_REPORT,ri=3;pmi=1;cqi=7,1100010111,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-12,PURE_MATH,CSI_REPORT,ri=0;pmi=4;cqi=12,0001001100,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-13,PURE_MATH,CSI_REPORT,ri=1;pmi=7;cqi=1,0101110001,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-14,PURE_MATH,CSI_REPORT,ri=2;pmi=10;cqi=6,1010100110,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import
+CSI-15,PURE_MATH,CSI_REPORT,ri=3;pmi=13;cqi=11,1111011011,"2-bit RI, 4-bit PMI, 4-bit CQI concatenation",standalone_python_no_dut_import

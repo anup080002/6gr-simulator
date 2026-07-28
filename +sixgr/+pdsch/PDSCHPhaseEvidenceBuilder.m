@@ -700,7 +700,7 @@ pdsch = nrPDSCHConfig;
 pdsch.NID = 42;
 pdsch.RNTI = 4660;
 pdsch.PRBSet = 0;
-pdsch.SymbolAllocation = [0 14];
+pdsch.SymbolAllocation = [0, 14];
 pdsch.MappingType = "A";
 pdsch.Modulation = "QPSK";
 pdsch.NumLayers = 1;
@@ -717,7 +717,7 @@ pdsch.DMRS.NSCID = 0;
 dmrsIndices = unique(double(dmrsIndices(:)).', "stable");
 dmrsSymbols = unique(floor(dmrsIndices / 12), "stable");
 ptrs = sixgr.pdsch.PDSCHPTRSResolver.resolveIndices(struct( ...
-    "PRBSet", 0, "SymbolAllocation", [0 14], ...
+    "PRBSet", 0, "SymbolAllocation", [0, 14], ...
     "DMRSSymbols", dmrsSymbols, ...
     "TimeDensity", 2, "FrequencyDensity", 2, ...
     "REOffset", "00", "GridNumPRB", 1));

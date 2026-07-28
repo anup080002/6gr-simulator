@@ -1,0 +1,9 @@
+CaseID,ExpectedNode,AppliedNode,SharedRoot,Allowed,ErrorID,Status
+"PROV_PASS_OBSERVED","EXPECTED-1","APPLIED-1",0,1,"","PASS"
+"PROV_PASS_DERIVED_OBS","EXPECTED-2","APPLIED-2",0,1,"","PASS"
+"PROV_PASS_DECODED","EXPECTED-3","APPLIED-3",0,1,"","PASS"
+"PROV_FAIL_CONFIG_SHARED","EXPECTED-4","APPLIED-4",1,0,"sixgr:validation:ProvenanceCircular","PASS"
+"PROV_FAIL_RECON_SHARED","EXPECTED-5","APPLIED-5",1,0,"sixgr:validation:ProvenanceCircular","PASS"
+"PROV_FAIL_CONFIG_RUNTIME_LABEL","EXPECTED-6","APPLIED-6",0,0,"sixgr:validation:ObservedEvidenceMissing","PASS"
+"PROV_FAIL_DUT_REFERENCE","EXPECTED-7","APPLIED-7",1,0,"sixgr:validation:ReferenceNotIndependent","PASS"
+"PROV_PASS_OBS_DERIVED","EXPECTED-8","APPLIED-8",0,1,"","PASS"

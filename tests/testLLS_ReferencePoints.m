@@ -12,6 +12,17 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+% Golden points must not inherit a moving operator default. Pin the UL
+% reference to TS 38.214 table-1 MCS 19 (64QAM, R=517/1024) so the 0/20 dB
+% envelopes describe one stable waveform operating point.
+ulReferenceMCS = sixgr.link.resolveMCSProfile("qam64_table1", 19);
+cfg.phy.linkAdaptation.mode = "fixed";
+cfg.phy.linkAdaptation.ulPolicy = "fixed";
+cfg.phy.pusch.mcsTable = "qam64_table1";
+cfg.phy.pusch.mcsIndex = 19;
+cfg.phy.pusch.configuredMCSIndex = 19;
+cfg.phy.pusch.modulation = char(string(ulReferenceMCS.Modulation));
+cfg.phy.pusch.codeRate = double(ulReferenceMCS.TargetCodeRate);
 
 rng(2026, "twister");
 dl0 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, ...

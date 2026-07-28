@@ -54,6 +54,41 @@
     "dl_mcs_index": 14,
     "ul_mcs_index": 14
   },
+  "bwp": {
+    "dl": {
+      "bwp_id": 0,
+      "direction": "DL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 51,
+      "scs_khz": 30,
+      "cp_type": "normal",
+      "active": true
+    },
+    "ul": {
+      "bwp_id": 0,
+      "direction": "UL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 51,
+      "scs_khz": 30,
+      "cp_type": "normal",
+      "active": true
+    }
+  },
+  "pdsch": {
+    "execution_profile": "phy_calibration",
+    "mapping_type": "A",
+    "prb_start": 0,
+    "num_prb": 51,
+    "start_symbol": 2,
+    "num_symbols": 12
+  },
+  "pusch": {
+    "mapping_type": "A",
+    "prb_start": 0,
+    "num_prb": 51,
+    "start_symbol": 0,
+    "num_symbols": 14
+  },
   "energy_efficiency": {
     "tx_power_dbm": -35
   },

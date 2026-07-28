@@ -574,57 +574,74 @@ control:
 
 pucch_resources:
   enabled: true
+  profile: nr_rel18_pucch_strict
+  configuration_epoch: 1
   resource_sets:
-    - set_id: 0
+    - id: 0
       usage: harq_ack_sr
+      max_payload_bits: 2
       resource_ids: [0, 1]
-    - set_id: 1
+    - id: 1
       usage: csi
+      max_payload_bits: 1706
       resource_ids: [2]
   resources:
-    - resource_id: 0
+    - id: 0
       format: 1
       starting_prb: 0
-      num_prb: 1
-      second_hop_prb: 272
-      intra_slot_frequency_hopping: true
-      symbol_start: 10
-      num_symbols: 4
+      nrof_prbs: 1
+      second_hop_start_prb: 272
+      intra_slot_hopping: true
+      starting_symbol: 10
+      nrof_symbols: 4
       initial_cyclic_shift: 0
       occ_length: 2
       occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
       rnti_source: c_rnti
       scrambling_id_source: physical_cell_id
       feedback_type: harq_ack
-    - resource_id: 1
+    - id: 1
       format: 0
       starting_prb: 1
-      num_prb: 1
-      second_hop_prb: 271
-      intra_slot_frequency_hopping: true
-      symbol_start: 12
-      num_symbols: 2
+      nrof_prbs: 1
+      second_hop_start_prb: 271
+      intra_slot_hopping: true
+      starting_symbol: 12
+      nrof_symbols: 2
       initial_cyclic_shift: 3
       occ_length: 0
       occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
       rnti_source: c_rnti
       scrambling_id_source: physical_cell_id
       feedback_type: scheduling_request
-    - resource_id: 2
+    - id: 2
       format: 2
       starting_prb: 2
-      num_prb: 4
-      second_hop_prb: 2
-      intra_slot_frequency_hopping: false
-      symbol_start: 8
-      num_symbols: 2
+      nrof_prbs: 4
+      second_hop_start_prb: 2
+      intra_slot_hopping: false
+      starting_symbol: 8
+      nrof_symbols: 2
       initial_cyclic_shift: 0
       occ_length: 0
       occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
       rnti_source: c_rnti
       scrambling_id_source: physical_cell_id
       feedback_type: csi_part1
   harq_ack:
+    resource_id: 0
     k1_slots: 4
     require_mac_harq_binding: true
     require_waveform_decoded_uci: true
@@ -729,7 +746,8 @@ tdd_timing:
 reference_signals:
   ssb_enabled: true
   pbch_enabled: true
-  ssb_case: C
+  ssb_case: "Case C"
+  ssb_scs_khz: 30
   ssb_Lmax: 8
   ssb_periodicity_ms: 20
   ssb_beam_count: 8

@@ -2911,6 +2911,7 @@ tf = any(token == ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM"]);
 end
 
 function nrePerPRB = localComputeExactNREPerPRB(direction, carrier, cfg, nPRB, symAlloc, modStr, nLayers)
+cfg = localApplyGrantLayerCountToCfg(cfg, direction, nLayers);
 if strcmpi(direction,'DL')
     [~, allocInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg, ...
         "PRBSet", 0:(max(nPRB,1)-1), ...
@@ -2925,6 +2926,32 @@ else
         "NumLayers", double(nLayers));
 end
 nrePerPRB = localExtractNREPerPRB(allocInfo, nPRB, modStr, nLayers);
+end
+
+function cfg = localApplyGrantLayerCountToCfg(cfg, direction, nLayers)
+direction = upper(string(direction));
+nLayers = max(1, round(double(nLayers)));
+root = localPHYRoot(direction);
+cfg = sixgr.util.structSet(cfg, root + ".nLayers", nLayers);
+cfg = sixgr.util.structSet(cfg, root + ".numLayers", nLayers);
+
+ports = sixgr.util.structGet(cfg, root + ".dmrs.portSet", ...
+    sixgr.util.structGet(cfg, root + ".dmrs.DMRSPortSet", []));
+if isempty(ports) && direction == "DL"
+    ports = sixgr.util.structGet(cfg, "pdsch6gr.DMRSPortSet", []);
+end
+if isempty(ports)
+    return;
+end
+ports = double(ports(:).');
+if numel(ports) < nLayers
+    error("sixgr:SchedulerBase:InsufficientDMRSPorts", ...
+        "Configured %s DM-RS port set has %d ports for a %d-layer grant.", ...
+        char(direction), numel(ports), nLayers);
+end
+grantPorts = ports(1:nLayers);
+cfg = sixgr.util.structSet(cfg, root + ".dmrs.portSet", grantPorts);
+cfg = sixgr.util.structSet(cfg, root + ".dmrs.DMRSPortSet", grantPorts);
 end
 
 function nrePerPRB = localExtractNREPerPRB(info, nPRB, modStr, nLayers)

@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+STAT-00,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=0,0.030893591434442,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-01,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=1,0.0404528705704351,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-02,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=2,-0.0650496858182031,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-03,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=3,-0.0242805926743569,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-04,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=4,-0.0946078521068699,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-05,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=5,0.0751879917932783,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-06,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=6,-0.0215503544155248,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-07,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=7,-0.0244040027624263,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-08,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=8,0.0252683612957056,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-09,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=9,0.0307648242414628,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-10,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=10,0.00685418614647977,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-11,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=11,-0.00396856251890753,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-12,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=12,0.0210352538386588,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-13,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=13,-0.201390975436045,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-14,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=14,-0.0180503126442789,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import
+STAT-15,STATISTICAL_DISTRIBUTION,CRC24C,feature=CRC24C;seed=14000;block=15,0.0143771505373943,pinned normal distribution;global_mean=-0.0130292567824222;variance=0.986744685358588,standalone_python_no_dut_import

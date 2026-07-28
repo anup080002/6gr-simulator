@@ -1,0 +1,9 @@
+{
+  "SchemaVersion": "1.0.0",
+  "ScenarioID": "validation_ul_fixed_link",
+  "Workload": "UL_FIXED_LINK",
+  "RunClass": "FIXED_LINK_CALIBRATION",
+  "Seed": 14016,
+  "SourceCommit": "1704e9320ab3b7a6261ce0150bb46b31258da3f1",
+  "SourceTreeSHA256": "ee27c68973fcc2d2d5c09d78410ebac300eb030c0be2c73d5d8549b96eaca8cc"
+}

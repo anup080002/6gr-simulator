@@ -1,0 +1,388 @@
+RuleID,Category,Requirement,RequiredInComprehensiveSmoke,RequiredInDeepAcceptance,EvidenceCSV,Operator,Threshold,FailureCode
+FSR-0001,Configuration,Source/effective/resolved/executed YAML are hash-bound and no key is dropped.,true,true,full_stack_config_binding.csv,ALL_PASS,PASS,FULLSTACK:ConfigBinding
+FSR-0002,Execution,Run was started from canonical WebGUI and MATLAB executed the bound revision.,true,true,full_stack_run_manifest.csv|full_stack_webgui_publication.csv,ALL_PASS,PASS,FULLSTACK:NotWebGUIRun
+FSR-0003,Subcases,Every mandatory subcase executed and passed.,true,true,full_stack_subcase_status.csv,ALL_REQUIRED_PASS,PASS,FULLSTACK:SubcaseFailure
+FSR-0004,Components,"Every mandatory component was executed, evidenced and correctness-checked.",true,true,full_stack_component_coverage_results.csv,ALL_REQUIRED_PASS,PASS,FULLSTACK:ComponentCoverage
+FSR-0005,Values,Every required numerical/semantic value check passed.,true,true,full_stack_value_correctness_results.csv,ALL_REQUIRED_PASS,PASS,FULLSTACK:ValueCorrectness
+FSR-0006,Artifacts,Every preset-required CSV and PNG exists and passes schema/hash/semantic validation.,true,true,full_stack_artifact_audit.csv,ALL_REQUIRED_PASS,PASS,FULLSTACK:ArtifactAudit
+FSR-0007,WebGUI,Every required artifact is published in Results/Validation/Artifact Explorer.,true,true,full_stack_webgui_publication.csv,ALL_REQUIRED_PASS,PASS,FULLSTACK:WebGUIPublication
+FSR-0008,Regression,"No mandatory test failed, skipped or blocked.",true,true,full_stack_regression_summary.csv,ALL_PASS,PASS,FULLSTACK:Regression
+FSR-0009,Subcase,SC-00 CONFIG_AND_TOOLCHAIN_PREFLIGHT executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-00),PASS,FULLSTACK:SC-00Failed
+FSR-0010,Subcase,SC-01 FRAME_GRID_DUPLEX executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-01),PASS,FULLSTACK:SC-01Failed
+FSR-0011,Subcase,SC-02 WAVEFORM_DL_NOISELESS executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-02),PASS,FULLSTACK:SC-02Failed
+FSR-0012,Subcase,SC-03 WAVEFORM_UL_NOISELESS executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-03),PASS,FULLSTACK:SC-03Failed
+FSR-0013,Subcase,SC-04 FIXED_SINR_DL_SWEEP executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-04),PASS,FULLSTACK:SC-04Failed
+FSR-0014,Subcase,SC-05 FIXED_SINR_UL_SWEEP executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-05),PASS,FULLSTACK:SC-05Failed
+FSR-0015,Subcase,SC-06 INITIAL_ACCESS_CONNECTED executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-06),PASS,FULLSTACK:SC-06Failed
+FSR-0016,Subcase,SC-07 PDCCH_DCI_FORMAT_MATRIX executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-07),PASS,FULLSTACK:SC-07Failed
+FSR-0017,Subcase,SC-08 PDSCH_DLSCH_MAPPING_MATRIX executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-08),PASS,FULLSTACK:SC-08Failed
+FSR-0018,Subcase,SC-09 PUSCH_ULSCH_UCI_MATRIX executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-09),PASS,FULLSTACK:SC-09Failed
+FSR-0019,Subcase,SC-10 PUCCH_UCI_FORMATS_0_TO_4 executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-10),PASS,FULLSTACK:SC-10Failed
+FSR-0020,Subcase,SC-11 REFERENCE_SIGNALS_MEASUREMENTS executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-11),PASS,FULLSTACK:SC-11Failed
+FSR-0021,Subcase,SC-12 LINK_ADAPTATION_CSI_OLLA executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-12),PASS,FULLSTACK:SC-12Failed
+FSR-0022,Subcase,SC-13 MIMO_ANTENNA_PRECODING executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-13),PASS,FULLSTACK:SC-13Failed
+FSR-0023,Subcase,SC-14 BEAM_MANAGEMENT_AND_BFR executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-14),PASS,FULLSTACK:SC-14Failed
+FSR-0024,Subcase,SC-15 CHANNEL_LOS_STATIC executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-15),PASS,FULLSTACK:SC-15Failed
+FSR-0025,Subcase,SC-16 CHANNEL_NLOS_O2I_BLOCKAGE executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-16),PASS,FULLSTACK:SC-16Failed
+FSR-0026,Subcase,SC-17 MOBILITY_DOPPLER_CONTINUITY executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-17),PASS,FULLSTACK:SC-17Failed
+FSR-0027,Subcase,SC-18 MULTICELL_WAVEFORM_INTERFERENCE executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-18),PASS,FULLSTACK:SC-18Failed
+FSR-0028,Subcase,SC-19 RF_CFO_TIMING_SCO_TRACKING executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-19),PASS,FULLSTACK:SC-19Failed
+FSR-0029,Subcase,SC-20 RF_PHASE_IQ_PA_ADC_BLOCKER executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-20),PASS,FULLSTACK:SC-20Failed
+FSR-0030,Subcase,SC-21 UL_POWER_CONTROL_ALL_CHANNELS executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-21),PASS,FULLSTACK:SC-21Failed
+FSR-0031,Subcase,SC-22 MAC_HARQ_SCHEDULER executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-22),PASS,FULLSTACK:SC-22Failed
+FSR-0032,Subcase,SC-23 RLC_PDCP_SDAP_RRC executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-23),PASS,FULLSTACK:SC-23Failed
+FSR-0033,Subcase,SC-24 TRAFFIC_PACKET_LINEAGE executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-24),PASS,FULLSTACK:SC-24Failed
+FSR-0034,Subcase,SC-25 HANDOVER_RLF_REESTABLISHMENT executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-25),PASS,FULLSTACK:SC-25Failed
+FSR-0035,Subcase,SC-26 NEGATIVE_AND_FAULT_INJECTION executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-26),PASS,FULLSTACK:SC-26Failed
+FSR-0036,Subcase,SC-27 VALIDATION_ORACLES_STATISTICS executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-27),PASS,FULLSTACK:SC-27Failed
+FSR-0037,Subcase,SC-28 ALL_ARTIFACT_EXPORT_AND_AUDIT executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-28),PASS,FULLSTACK:SC-28Failed
+FSR-0038,Subcase,SC-29 WEBGUI_PUBLISH_AND_E2E executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-29),PASS,FULLSTACK:SC-29Failed
+FSR-0039,Subcase,SC-30 COMPLETE_REPOSITORY_REGRESSION executes successfully.,true,true,full_stack_subcase_status.csv,STATUS(SC-30),PASS,FULLSTACK:SC-30Failed
+FSR-0040,Component,"COMP-0001 YAML source revision is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0001),PASS,FULLSTACK:YAMLsourcerevisionFailed
+FSR-0041,Component,"COMP-0002 Inheritance resolution is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0002),PASS,FULLSTACK:InheritanceresolutionFailed
+FSR-0042,Component,"COMP-0003 Toolchain pinning is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0003),PASS,FULLSTACK:ToolchainpinningFailed
+FSR-0043,Component,"COMP-0004 Named random streams is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0004),PASS,FULLSTACK:NamedrandomstreamsFailed
+FSR-0044,Component,"COMP-0005 Absolute radio clock is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0005),PASS,FULLSTACK:AbsoluteradioclockFailed
+FSR-0045,Component,"COMP-0006 Numerology resolver is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0006),PASS,FULLSTACK:NumerologyresolverFailed
+FSR-0046,Component,"COMP-0007 Carrier grid and guardband is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0007),PASS,FULLSTACK:CarriergridandguardbandFailed
+FSR-0047,Component,"COMP-0008 TDD common pattern is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0008),PASS,FULLSTACK:TDDcommonpatternFailed
+FSR-0048,Component,"COMP-0009 Dedicated TDD overrides is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0009),PASS,FULLSTACK:DedicatedTDDoverridesFailed
+FSR-0049,Component,"COMP-0010 Resource collision manager is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0010),PASS,FULLSTACK:ResourcecollisionmanagerFailed
+FSR-0050,Component,"COMP-0011 K0 K1 K2 timing is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0011),PASS,FULLSTACK:K0K1K2timingFailed
+FSR-0051,Component,"COMP-0012 BWP switching is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0012),PASS,FULLSTACK:BWPswitchingFailed
+FSR-0052,Component,"COMP-0013 Component carrier timing is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0013),PASS,FULLSTACK:ComponentcarriertimingFailed
+FSR-0053,Component,"COMP-0014 DL CP-OFDM modulation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0014),PASS,FULLSTACK:DLCPOFDMmodulationFailed
+FSR-0054,Component,"COMP-0015 UL CP-OFDM modulation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0015),PASS,FULLSTACK:ULCPOFDMmodulationFailed
+FSR-0055,Component,"COMP-0016 UL DFT-s-OFDM spreading is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0016),PASS,FULLSTACK:ULDFTsOFDMspreadingFailed
+FSR-0056,Component,"COMP-0017 Pi over 2 BPSK is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0017),PASS,FULLSTACK:Piover2BPSKFailed
+FSR-0057,Component,"COMP-0018 Subcarrier to FFT mapping is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0018),PASS,FULLSTACK:SubcarriertoFFTmappingFailed
+FSR-0058,Component,"COMP-0019 Continuous stream state is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0019),PASS,FULLSTACK:ContinuousstreamstateFailed
+FSR-0059,Component,"COMP-0020 Power and Parseval ledger is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0020),PASS,FULLSTACK:PowerandParsevalledgerFailed
+FSR-0060,Component,"COMP-0021 PAPR and CCDF is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0021),PASS,FULLSTACK:PAPRandCCDFFailed
+FSR-0061,Component,"COMP-0022 PSD and OOB measurement is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0022),PASS,FULLSTACK:PSDandOOBmeasurementFailed
+FSR-0062,Component,"COMP-0023 Decoded DL assignment is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0023),PASS,FULLSTACK:DecodedDLassignmentFailed
+FSR-0063,Component,"COMP-0024 DL-SCH CRC segmentation LDPC is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0024),PASS,FULLSTACK:DLSCHCRCsegmentationLDPCFailed
+FSR-0064,Component,"COMP-0025 PDSCH scrambling modulation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0025),PASS,FULLSTACK:PDSCHscramblingmodulationFailed
+FSR-0065,Component,"COMP-0026 PDSCH resource mapping is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0026),PASS,FULLSTACK:PDSCHresourcemappingFailed
+FSR-0066,Component,"COMP-0027 PDSCH DMRS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0027),PASS,FULLSTACK:PDSCHDMRSFailed
+FSR-0067,Component,"COMP-0028 PDSCH PTRS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0028),PASS,FULLSTACK:PDSCHPTRSFailed
+FSR-0068,Component,"COMP-0029 PDSCH precoding PRG is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0029),PASS,FULLSTACK:PDSCHprecodingPRGFailed
+FSR-0069,Component,"COMP-0030 DL HARQ is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0030),PASS,FULLSTACK:DLHARQFailed
+FSR-0070,Component,"COMP-0031 DL receiver is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0031),PASS,FULLSTACK:DLreceiverFailed
+FSR-0071,Component,"COMP-0032 Decoded UL assignment is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0032),PASS,FULLSTACK:DecodedULassignmentFailed
+FSR-0072,Component,"COMP-0033 UL-SCH CRC segmentation LDPC is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0033),PASS,FULLSTACK:ULSCHCRCsegmentationLDPCFailed
+FSR-0073,Component,"COMP-0034 UCI on PUSCH is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0034),PASS,FULLSTACK:UCIonPUSCHFailed
+FSR-0074,Component,"COMP-0035 PUSCH DMRS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0035),PASS,FULLSTACK:PUSCHDMRSFailed
+FSR-0075,Component,"COMP-0036 PUSCH PTRS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0036),PASS,FULLSTACK:PUSCHPTRSFailed
+FSR-0076,Component,"COMP-0037 Transform precoding is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0037),PASS,FULLSTACK:TransformprecodingFailed
+FSR-0077,Component,"COMP-0038 Frequency hopping is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0038),PASS,FULLSTACK:FrequencyhoppingFailed
+FSR-0078,Component,"COMP-0039 SRS precoder authority is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0039),PASS,FULLSTACK:SRSprecoderauthorityFailed
+FSR-0079,Component,"COMP-0040 UL power application is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0040),PASS,FULLSTACK:ULpowerapplicationFailed
+FSR-0080,Component,"COMP-0041 UL receiver is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0041),PASS,FULLSTACK:ULreceiverFailed
+FSR-0081,Component,"COMP-0042 DCI schema engine is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0042),PASS,FULLSTACK:DCIschemaengineFailed
+FSR-0082,Component,"COMP-0043 CRC24C RNTI mask is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0043),PASS,FULLSTACK:CRC24CRNTImaskFailed
+FSR-0083,Component,"COMP-0044 Polar coding and rate matching is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0044),PASS,FULLSTACK:PolarcodingandratematchingFailed
+FSR-0084,Component,"COMP-0045 CORESET mapping is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0045),PASS,FULLSTACK:CORESETmappingFailed
+FSR-0085,Component,"COMP-0046 Search-space monitoring is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0046),PASS,FULLSTACK:SearchspacemonitoringFailed
+FSR-0086,Component,"COMP-0047 Blind candidate search is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0047),PASS,FULLSTACK:BlindcandidatesearchFailed
+FSR-0087,Component,"COMP-0048 Type-0 CSS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0048),PASS,FULLSTACK:Type0CSSFailed
+FSR-0088,Component,"COMP-0049 Grant authority is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0049),PASS,FULLSTACK:GrantauthorityFailed
+FSR-0089,Component,"COMP-0050 Typed UCI report is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0050),PASS,FULLSTACK:TypedUCIreportFailed
+FSR-0090,Component,"COMP-0051 UCI serialization and coding is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0051),PASS,FULLSTACK:UCIserializationandcodingFailed
+FSR-0091,Component,"COMP-0052 HARQ-ACK codebook is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0052),PASS,FULLSTACK:HARQACKcodebookFailed
+FSR-0092,Component,"COMP-0053 Scheduling request is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0053),PASS,FULLSTACK:SchedulingrequestFailed
+FSR-0093,Component,"COMP-0054 CSI on PUCCH is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0054),PASS,FULLSTACK:CSIonPUCCHFailed
+FSR-0094,Component,"COMP-0055 Formats 0 to 4 is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0055),PASS,FULLSTACK:Formats0to4Failed
+FSR-0095,Component,"COMP-0056 Resource set and PRI is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0056),PASS,FULLSTACK:ResourcesetandPRIFailed
+FSR-0096,Component,"COMP-0057 K1 and TDD is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0057),PASS,FULLSTACK:K1andTDDFailed
+FSR-0097,Component,"COMP-0058 PUCCH power and spatial relation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0058),PASS,FULLSTACK:PUCCHpowerandspatialrelationFailed
+FSR-0098,Component,"COMP-0059 SSB case and burst is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0059),PASS,FULLSTACK:SSBcaseandburstFailed
+FSR-0099,Component,"COMP-0060 PSS/SSS blind search is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0060),PASS,FULLSTACK:PSSSSSblindsearchFailed
+FSR-0100,Component,"COMP-0061 PBCH/MIB is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0061),PASS,FULLSTACK:PBCHMIBFailed
+FSR-0101,Component,"COMP-0062 SIB1 Type-0 scheduling is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0062),PASS,FULLSTACK:SIB1Type0schedulingFailed
+FSR-0102,Component,"COMP-0063 SIB1 ASN.1 is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0063),PASS,FULLSTACK:SIB1ASN1Failed
+FSR-0103,Component,"COMP-0064 PRACH config and occasions is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0064),PASS,FULLSTACK:PRACHconfigandoccasionsFailed
+FSR-0104,Component,"COMP-0065 SSB to RO association is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0065),PASS,FULLSTACK:SSBtoROassociationFailed
+FSR-0105,Component,"COMP-0066 RAR Msg2 is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0066),PASS,FULLSTACK:RARMsg2Failed
+FSR-0106,Component,"COMP-0067 Msg3 HARQ is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0067),PASS,FULLSTACK:Msg3HARQFailed
+FSR-0107,Component,"COMP-0068 Msg4 contention and RRC complete is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0068),PASS,FULLSTACK:Msg4contentionandRRCcompleteFailed
+FSR-0108,Component,"COMP-0069 Common RS ownership is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0069),PASS,FULLSTACK:CommonRSownershipFailed
+FSR-0109,Component,"COMP-0070 CSI-RS and CSI-IM is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0070),PASS,FULLSTACK:CSIRSandCSIIMFailed
+FSR-0110,Component,"COMP-0071 SRS resource and receiver is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0071),PASS,FULLSTACK:SRSresourceandreceiverFailed
+FSR-0111,Component,"COMP-0072 TRS tracking is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0072),PASS,FULLSTACK:TRStrackingFailed
+FSR-0112,Component,"COMP-0073 PTRS tracking is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0073),PASS,FULLSTACK:PTRStrackingFailed
+FSR-0113,Component,"COMP-0074 TS 38.215 measurements is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0074),PASS,FULLSTACK:TS38215measurementsFailed
+FSR-0114,Component,"COMP-0075 CSI report Part1 Part2 is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0075),PASS,FULLSTACK:CSIreportPart1Part2Failed
+FSR-0115,Component,"COMP-0076 Measured-only link adaptation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0076),PASS,FULLSTACK:MeasuredonlylinkadaptationFailed
+FSR-0116,Component,"COMP-0077 EESM MIESM calibration lookup is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0077),PASS,FULLSTACK:EESMMIESMcalibrationlookupFailed
+FSR-0117,Component,"COMP-0078 OLLA state is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0078),PASS,FULLSTACK:OLLAstateFailed
+FSR-0118,Component,"COMP-0079 Antenna geometry and pose is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0079),PASS,FULLSTACK:AntennageometryandposeFailed
+FSR-0119,Component,"COMP-0080 Polarization and XPR is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0080),PASS,FULLSTACK:PolarizationandXPRFailed
+FSR-0120,Component,"COMP-0081 Type-I codebook is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0081),PASS,FULLSTACK:TypeIcodebookFailed
+FSR-0121,Component,"COMP-0082 RI selection is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0082),PASS,FULLSTACK:RIselectionFailed
+FSR-0122,Component,"COMP-0083 PMI selection is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0083),PASS,FULLSTACK:PMIselectionFailed
+FSR-0123,Component,"COMP-0084 CSI feedback authority is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0084),PASS,FULLSTACK:CSIfeedbackauthorityFailed
+FSR-0124,Component,"COMP-0085 Precoder application is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0085),PASS,FULLSTACK:PrecoderapplicationFailed
+FSR-0125,Component,"COMP-0086 High-rank probe is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0086),PASS,FULLSTACK:HighrankprobeFailed
+FSR-0126,Component,"COMP-0087 Strict IRC covariance is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0087),PASS,FULLSTACK:StrictIRCcovarianceFailed
+FSR-0127,Component,"COMP-0088 MU-MIMO is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0088),PASS,FULLSTACK:MUMIMOFailed
+FSR-0128,Component,"COMP-0089 Multi-TRP is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0089),PASS,FULLSTACK:MultiTRPFailed
+FSR-0129,Component,"COMP-0090 Hybrid beamforming is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0090),PASS,FULLSTACK:HybridbeamformingFailed
+FSR-0130,Component,"COMP-0091 Beam state machine is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0091),PASS,FULLSTACK:BeamstatemachineFailed
+FSR-0131,Component,"COMP-0092 Immutable geometry state is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0092),PASS,FULLSTACK:ImmutablegeometrystateFailed
+FSR-0132,Component,"COMP-0093 Pathloss and LOS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0093),PASS,FULLSTACK:PathlossandLOSFailed
+FSR-0133,Component,"COMP-0094 NLOS state is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0094),PASS,FULLSTACK:NLOSstateFailed
+FSR-0134,Component,"COMP-0095 O2I and materials is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0095),PASS,FULLSTACK:O2IandmaterialsFailed
+FSR-0135,Component,"COMP-0096 Blockage and vehicle/material loss is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0096),PASS,FULLSTACK:BlockageandvehiclemateriallossFailed
+FSR-0136,Component,"COMP-0097 Oxygen absorption is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0097),PASS,FULLSTACK:OxygenabsorptionFailed
+FSR-0137,Component,"COMP-0098 TDL correlation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0098),PASS,FULLSTACK:TDLcorrelationFailed
+FSR-0138,Component,"COMP-0099 CDL arrays/polarization is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0099),PASS,FULLSTACK:CDLarrayspolarizationFailed
+FSR-0139,Component,"COMP-0100 LSP spatial consistency is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0100),PASS,FULLSTACK:LSPspatialconsistencyFailed
+FSR-0140,Component,"COMP-0101 Signed Doppler phase continuity is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0101),PASS,FULLSTACK:SignedDopplerphasecontinuityFailed
+FSR-0141,Component,"COMP-0102 Absolute power/noise is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0102),PASS,FULLSTACK:AbsolutepowernoiseFailed
+FSR-0142,Component,"COMP-0103 Sample-domain interference is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0103),PASS,FULLSTACK:SampledomaininterferenceFailed
+FSR-0143,Component,"COMP-0104 Interference covariance is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0104),PASS,FULLSTACK:InterferencecovarianceFailed
+FSR-0144,Component,"COMP-0105 Wraparound/topology is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0105),PASS,FULLSTACK:WraparoundtopologyFailed
+FSR-0145,Component,"COMP-0106 Handover continuity is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0106),PASS,FULLSTACK:HandovercontinuityFailed
+FSR-0146,Component,"COMP-0107 RF profile separation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0107),PASS,FULLSTACK:RFprofileseparationFailed
+FSR-0147,Component,"COMP-0108 RF reference planes is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0108),PASS,FULLSTACK:RFreferenceplanesFailed
+FSR-0148,Component,"COMP-0109 CFO acquisition/tracking is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0109),PASS,FULLSTACK:CFOacquisitiontrackingFailed
+FSR-0149,Component,"COMP-0110 Timing acquisition/tracking is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0110),PASS,FULLSTACK:TimingacquisitiontrackingFailed
+FSR-0150,Component,"COMP-0111 SCO resampling is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0111),PASS,FULLSTACK:SCOresamplingFailed
+FSR-0151,Component,"COMP-0112 Phase noise is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0112),PASS,FULLSTACK:PhasenoiseFailed
+FSR-0152,Component,"COMP-0113 IQ imbalance is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0113),PASS,FULLSTACK:IQimbalanceFailed
+FSR-0153,Component,"COMP-0114 PA memory and compression is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0114),PASS,FULLSTACK:PAmemoryandcompressionFailed
+FSR-0154,Component,"COMP-0115 CFR and DPD is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0115),PASS,FULLSTACK:CFRandDPDFailed
+FSR-0155,Component,"COMP-0116 DAC/AGC/ADC is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0116),PASS,FULLSTACK:DACAGCADCFailed
+FSR-0156,Component,"COMP-0117 Blocker/intermodulation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0117),PASS,FULLSTACK:BlockerintermodulationFailed
+FSR-0157,Component,"COMP-0118 EVM/ACLR/SEM is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0118),PASS,FULLSTACK:EVMACLRSEMFailed
+FSR-0158,Component,"COMP-0119 PUSCH power control is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0119),PASS,FULLSTACK:PUSCHpowercontrolFailed
+FSR-0159,Component,"COMP-0120 PUCCH/SRS/PRACH power is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0120),PASS,FULLSTACK:PUCCHSRSPRACHpowerFailed
+FSR-0160,Component,"COMP-0121 Noise figure/covariance is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0121),PASS,FULLSTACK:NoisefigurecovarianceFailed
+FSR-0161,Component,"COMP-0122 Event-sourced UE context is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0122),PASS,FULLSTACK:EventsourcedUEcontextFailed
+FSR-0162,Component,"COMP-0123 DL HARQ entity is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0123),PASS,FULLSTACK:DLHARQentityFailed
+FSR-0163,Component,"COMP-0124 UL HARQ entity is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0124),PASS,FULLSTACK:ULHARQentityFailed
+FSR-0164,Component,"COMP-0125 ACK NACK DTX codebook is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0125),PASS,FULLSTACK:ACKNACKDTXcodebookFailed
+FSR-0165,Component,"COMP-0126 Soft combining provenance is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0126),PASS,FULLSTACK:SoftcombiningprovenanceFailed
+FSR-0166,Component,"COMP-0127 K0 K1 K2 service is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0127),PASS,FULLSTACK:K0K1K2serviceFailed
+FSR-0167,Component,"COMP-0128 BSR exact tables/state is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0128),PASS,FULLSTACK:BSRexacttablesstateFailed
+FSR-0168,Component,"COMP-0129 PHR PCMAX is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0129),PASS,FULLSTACK:PHRPCMAXFailed
+FSR-0169,Component,"COMP-0130 Scheduling request is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0130),PASS,FULLSTACK:SchedulingrequestFailed
+FSR-0170,Component,"COMP-0131 Logical channel prioritization is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0131),PASS,FULLSTACK:LogicalchannelprioritizationFailed
+FSR-0171,Component,"COMP-0132 MAC PDU/CE is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0132),PASS,FULLSTACK:MACPDUCEFailed
+FSR-0172,Component,"COMP-0133 Timing advance is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0133),PASS,FULLSTACK:TimingadvanceFailed
+FSR-0173,Component,"COMP-0134 Scheduler policies is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0134),PASS,FULLSTACK:SchedulerpoliciesFailed
+FSR-0174,Component,"COMP-0135 Atomic grant commit is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0135),PASS,FULLSTACK:AtomicgrantcommitFailed
+FSR-0175,Component,"COMP-0136 Packet lineage and conservation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0136),PASS,FULLSTACK:PacketlineageandconservationFailed
+FSR-0176,Component,"COMP-0137 RLC UM 6/12 SN is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0137),PASS,FULLSTACK:RLCUM612SNFailed
+FSR-0177,Component,"COMP-0138 RLC AM 12/18 SN is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0138),PASS,FULLSTACK:RLCAM1218SNFailed
+FSR-0178,Component,"COMP-0139 RLC STATUS is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0139),PASS,FULLSTACK:RLCSTATUSFailed
+FSR-0179,Component,"COMP-0140 PDCP COUNT/HFN is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0140),PASS,FULLSTACK:PDCPCOUNTHFNFailed
+FSR-0180,Component,"COMP-0141 PDCP security is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0141),PASS,FULLSTACK:PDCPsecurityFailed
+FSR-0181,Component,"COMP-0142 PDCP reordering/duplication is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0142),PASS,FULLSTACK:PDCPreorderingduplicationFailed
+FSR-0182,Component,"COMP-0143 SDAP QFI/DRB mapping is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0143),PASS,FULLSTACK:SDAPQFIDRBmappingFailed
+FSR-0183,Component,"COMP-0144 RRC ASN.1 messages is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0144),PASS,FULLSTACK:RRCASN1messagesFailed
+FSR-0184,Component,"COMP-0145 RRC state/transactions is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0145),PASS,FULLSTACK:RRCstatetransactionsFailed
+FSR-0185,Component,"COMP-0146 Atomic radio bearer config is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0146),PASS,FULLSTACK:AtomicradiobearerconfigFailed
+FSR-0186,Component,"COMP-0147 Handover procedure is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0147),PASS,FULLSTACK:HandoverprocedureFailed
+FSR-0187,Component,"COMP-0148 Traffic generators is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0148),PASS,FULLSTACK:TrafficgeneratorsFailed
+FSR-0188,Component,"COMP-0149 PDU set/deadline is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0149),PASS,FULLSTACK:PDUsetdeadlineFailed
+FSR-0189,Component,"COMP-0150 Cross-layer lineage is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0150),PASS,FULLSTACK:CrosslayerlineageFailed
+FSR-0190,Component,"COMP-0151 End-to-end delivery is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0151),PASS,FULLSTACK:EndtoenddeliveryFailed
+FSR-0191,Component,"COMP-0152 Schema-first validation is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0152),PASS,FULLSTACK:SchemafirstvalidationFailed
+FSR-0192,Component,"COMP-0153 Point status and stop reason is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0153),PASS,FULLSTACK:PointstatusandstopreasonFailed
+FSR-0193,Component,"COMP-0154 Independent oracle registry is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0154),PASS,FULLSTACK:IndependentoracleregistryFailed
+FSR-0194,Component,"COMP-0155 Operating-point join is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0155),PASS,FULLSTACK:OperatingpointjoinFailed
+FSR-0195,Component,"COMP-0156 Confidence intervals is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0156),PASS,FULLSTACK:ConfidenceintervalsFailed
+FSR-0196,Component,"COMP-0157 Provenance DAG is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0157),PASS,FULLSTACK:ProvenanceDAGFailed
+FSR-0197,Component,"COMP-0158 Measured SINR gate is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0158),PASS,FULLSTACK:MeasuredSINRgateFailed
+FSR-0198,Component,"COMP-0159 Deterministic merge is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0159),PASS,FULLSTACK:DeterministicmergeFailed
+FSR-0199,Component,"COMP-0160 Artifact completeness is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0160),PASS,FULLSTACK:ArtifactcompletenessFailed
+FSR-0200,Component,"COMP-0161 WebGUI launch and config binding is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0161),PASS,FULLSTACK:WebGUIlaunchandconfigbindingFailed
+FSR-0201,Component,"COMP-0162 WebGUI result publication is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0162),PASS,FULLSTACK:WebGUIresultpublicationFailed
+FSR-0202,Component,"COMP-0163 Full regression is executed, evidenced and correct.",true,true,full_stack_component_coverage_results.csv,STATUS(COMP-0163),PASS,FULLSTACK:FullregressionFailed
+FSR-0203,ValueCorrectness,VALCHK-0001 Configuration value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0001),PASS,FULLSTACK:ExecutedYAMLMismatch
+FSR-0204,ValueCorrectness,VALCHK-0002 Configuration value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0002),PASS,FULLSTACK:UnknownYAMLKeys
+FSR-0205,ValueCorrectness,VALCHK-0003 Configuration value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0003),PASS,FULLSTACK:DroppedYAMLKeys
+FSR-0206,ValueCorrectness,VALCHK-0004 Toolchain value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0004),PASS,FULLSTACK:RunExitNonzero
+FSR-0207,ValueCorrectness,VALCHK-0005 Frame value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0005),PASS,FULLSTACK:NumerologyMismatch
+FSR-0208,ValueCorrectness,VALCHK-0006 Frame value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0006),PASS,FULLSTACK:TDDOwnership
+FSR-0209,ValueCorrectness,VALCHK-0007 Frame value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0007),PASS,FULLSTACK:ResourceCollision
+FSR-0210,ValueCorrectness,VALCHK-0008 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0008),PASS,FULLSTACK:DLWaveformRoundtrip
+FSR-0211,ValueCorrectness,VALCHK-0009 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0009),PASS,FULLSTACK:ULWaveformRoundtrip
+FSR-0212,ValueCorrectness,VALCHK-0010 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0010),PASS,FULLSTACK:Parseval
+FSR-0213,ValueCorrectness,VALCHK-0011 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0011),PASS,FULLSTACK:StreamContinuity
+FSR-0214,ValueCorrectness,VALCHK-0012 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0012),PASS,FULLSTACK:DFTSpread
+FSR-0215,ValueCorrectness,VALCHK-0013 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0013),PASS,FULLSTACK:WaveformPower
+FSR-0216,ValueCorrectness,VALCHK-0014 Waveform value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0014),PASS,FULLSTACK:PAPRNonfinite
+FSR-0217,ValueCorrectness,VALCHK-0015 DL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0015),PASS,FULLSTACK:DLMeasuredSINR
+FSR-0218,ValueCorrectness,VALCHK-0016 DL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0016),PASS,FULLSTACK:DLBLERRange
+FSR-0219,ValueCorrectness,VALCHK-0017 DL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0017),PASS,FULLSTACK:DLBLERDirection
+FSR-0220,ValueCorrectness,VALCHK-0018 DL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0018),PASS,FULLSTACK:DLNoHighSNRSuccess
+FSR-0221,ValueCorrectness,VALCHK-0019 UL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0019),PASS,FULLSTACK:ULMeasuredSINR
+FSR-0222,ValueCorrectness,VALCHK-0020 UL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0020),PASS,FULLSTACK:ULBLERRange
+FSR-0223,ValueCorrectness,VALCHK-0021 UL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0021),PASS,FULLSTACK:ULBLERDirection
+FSR-0224,ValueCorrectness,VALCHK-0022 UL Fixed Sweep value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0022),PASS,FULLSTACK:ULNoHighSNRSuccess
+FSR-0225,ValueCorrectness,VALCHK-0023 Initial Access value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0023),PASS,FULLSTACK:UEState
+FSR-0226,ValueCorrectness,VALCHK-0024 Initial Access value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0024),PASS,FULLSTACK:GNBState
+FSR-0227,ValueCorrectness,VALCHK-0025 Initial Access value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0025),PASS,FULLSTACK:RRCSetupComplete
+FSR-0228,ValueCorrectness,VALCHK-0026 PDCCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0026),PASS,FULLSTACK:PDCCHOracleLeak
+FSR-0229,ValueCorrectness,VALCHK-0027 PDCCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0027),PASS,FULLSTACK:InvalidDCIGrant
+FSR-0230,ValueCorrectness,VALCHK-0028 PDCCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0028),PASS,FULLSTACK:PDCCHFalseGrant
+FSR-0231,ValueCorrectness,VALCHK-0029 PDSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0029),PASS,FULLSTACK:ConfiguredDLGrant
+FSR-0232,ValueCorrectness,VALCHK-0030 PDSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0030),PASS,FULLSTACK:PDSCHDMRS
+FSR-0233,ValueCorrectness,VALCHK-0031 PDSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0031),PASS,FULLSTACK:PDSCHPTRS
+FSR-0234,ValueCorrectness,VALCHK-0032 PDSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0032),PASS,FULLSTACK:DLSCHCoding
+FSR-0235,ValueCorrectness,VALCHK-0033 PDSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0033),PASS,FULLSTACK:DLPrecoderMismatch
+FSR-0236,ValueCorrectness,VALCHK-0034 PUSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0034),PASS,FULLSTACK:InvalidULGrant
+FSR-0237,ValueCorrectness,VALCHK-0035 PUSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0035),PASS,FULLSTACK:PUSCHUCIMismatch
+FSR-0238,ValueCorrectness,VALCHK-0036 PUSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0036),PASS,FULLSTACK:PUSCHDMRS
+FSR-0239,ValueCorrectness,VALCHK-0037 PUSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0037),PASS,FULLSTACK:PUSCHHopping
+FSR-0240,ValueCorrectness,VALCHK-0038 PUSCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0038),PASS,FULLSTACK:ULPrecoderMismatch
+FSR-0241,ValueCorrectness,VALCHK-0039 PUCCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0039),PASS,FULLSTACK:PUCCHFormats
+FSR-0242,ValueCorrectness,VALCHK-0040 PUCCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0040),PASS,FULLSTACK:PUCCHUCIMismatch
+FSR-0243,ValueCorrectness,VALCHK-0041 PUCCH value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0041),PASS,FULLSTACK:PUCCHTiming
+FSR-0244,ValueCorrectness,VALCHK-0042 Reference Signals value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0042),PASS,FULLSTACK:RSCollision
+FSR-0245,ValueCorrectness,VALCHK-0043 Measurements value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0043),PASS,FULLSTACK:ConfiguredMeasurement
+FSR-0246,ValueCorrectness,VALCHK-0044 Measurements value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0044),PASS,FULLSTACK:MeasurementNonfinite
+FSR-0247,ValueCorrectness,VALCHK-0045 Tracking value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0045),PASS,FULLSTACK:TrackingNotApplied
+FSR-0248,ValueCorrectness,VALCHK-0046 CSI value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0046),PASS,FULLSTACK:CSIReportMismatch
+FSR-0249,ValueCorrectness,VALCHK-0047 Link Adaptation value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0047),PASS,FULLSTACK:ConfiguredMCSAuthority
+FSR-0250,ValueCorrectness,VALCHK-0048 Link Adaptation value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0048),PASS,FULLSTACK:CalibrationFallback
+FSR-0251,ValueCorrectness,VALCHK-0049 OLLA value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0049),PASS,FULLSTACK:OLLAStateLeak
+FSR-0252,ValueCorrectness,VALCHK-0050 Antenna value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0050),PASS,FULLSTACK:ArrayResponse
+FSR-0253,ValueCorrectness,VALCHK-0051 MIMO value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0051),PASS,FULLSTACK:MIMOPrecoder
+FSR-0254,ValueCorrectness,VALCHK-0052 MIMO value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0052),PASS,FULLSTACK:RankCollapse
+FSR-0255,ValueCorrectness,VALCHK-0053 MIMO value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0053),PASS,FULLSTACK:InvalidIRC
+FSR-0256,ValueCorrectness,VALCHK-0054 MU-MIMO value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0054),PASS,FULLSTACK:MUMIMOAccounting
+FSR-0257,ValueCorrectness,VALCHK-0055 Beam Management value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0055),PASS,FULLSTACK:BeamOracle
+FSR-0258,ValueCorrectness,VALCHK-0056 Beam Management value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0056),PASS,FULLSTACK:TCINotApplied
+FSR-0259,ValueCorrectness,VALCHK-0057 Geometry value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0057),PASS,FULLSTACK:GeometryBackfill
+FSR-0260,ValueCorrectness,VALCHK-0058 Geometry value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0058),PASS,FULLSTACK:PropagationDelay
+FSR-0261,ValueCorrectness,VALCHK-0059 Mobility value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0059),PASS,FULLSTACK:DopplerSign
+FSR-0262,ValueCorrectness,VALCHK-0060 Mobility value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0060),PASS,FULLSTACK:PhaseContinuity
+FSR-0263,ValueCorrectness,VALCHK-0061 Channel LOS value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0061),PASS,FULLSTACK:Pathloss
+FSR-0264,ValueCorrectness,VALCHK-0062 Channel NLOS value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0062),PASS,FULLSTACK:NLOSNotExercised
+FSR-0265,ValueCorrectness,VALCHK-0063 O2I value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0063),PASS,FULLSTACK:O2INotExercised
+FSR-0266,ValueCorrectness,VALCHK-0064 Blockage value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0064),PASS,FULLSTACK:BlockageNotExercised
+FSR-0267,ValueCorrectness,VALCHK-0065 Interference value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0065),PASS,FULLSTACK:InterferenceSum
+FSR-0268,ValueCorrectness,VALCHK-0066 Interference value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0066),PASS,FULLSTACK:CovarianceMismatch
+FSR-0269,ValueCorrectness,VALCHK-0067 Power value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0067),PASS,FULLSTACK:ChannelPower
+FSR-0270,ValueCorrectness,VALCHK-0068 RF CFO value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0068),PASS,FULLSTACK:CFOTracking
+FSR-0271,ValueCorrectness,VALCHK-0069 RF Timing value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0069),PASS,FULLSTACK:TimingTracking
+FSR-0272,ValueCorrectness,VALCHK-0070 RF SCO value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0070),PASS,FULLSTACK:SCOCount
+FSR-0273,ValueCorrectness,VALCHK-0071 RF Phase Noise value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0071),PASS,FULLSTACK:PhaseNoiseMask
+FSR-0274,ValueCorrectness,VALCHK-0072 RF IQ value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0072),PASS,FULLSTACK:IQCompensation
+FSR-0275,ValueCorrectness,VALCHK-0073 RF PA value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0073),PASS,FULLSTACK:PAPowerRestored
+FSR-0276,ValueCorrectness,VALCHK-0074 RF DPD value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0074),PASS,FULLSTACK:DPDNoGain
+FSR-0277,ValueCorrectness,VALCHK-0075 RF Quantizer value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0075),PASS,FULLSTACK:ImplicitAGC
+FSR-0278,ValueCorrectness,VALCHK-0076 RF Blocker value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0076),PASS,FULLSTACK:BlockerNotApplied
+FSR-0279,ValueCorrectness,VALCHK-0077 UL Power value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0077),PASS,FULLSTACK:ULPowerMismatch
+FSR-0280,ValueCorrectness,VALCHK-0078 UL Power value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0078),PASS,FULLSTACK:ConfiguredPathloss
+FSR-0281,ValueCorrectness,VALCHK-0079 HARQ value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0079),PASS,FULLSTACK:HARQIdentity
+FSR-0282,ValueCorrectness,VALCHK-0080 HARQ value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0080),PASS,FULLSTACK:SoftCombine
+FSR-0283,ValueCorrectness,VALCHK-0081 Timing value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0081),PASS,FULLSTACK:MACTiming
+FSR-0284,ValueCorrectness,VALCHK-0082 BSR value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0082),PASS,FULLSTACK:BSRTable
+FSR-0285,ValueCorrectness,VALCHK-0083 PHR value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0083),PASS,FULLSTACK:PHRMapping
+FSR-0286,ValueCorrectness,VALCHK-0084 TA value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0084),PASS,FULLSTACK:TimingAdvance
+FSR-0287,ValueCorrectness,VALCHK-0085 Scheduler value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0085),PASS,FULLSTACK:IllegalSchedulerGrant
+FSR-0288,ValueCorrectness,VALCHK-0086 MAC PDU value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0086),PASS,FULLSTACK:MACPDU
+FSR-0289,ValueCorrectness,VALCHK-0087 RLC value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0087),PASS,FULLSTACK:RLCMismatch
+FSR-0290,ValueCorrectness,VALCHK-0088 PDCP value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0088),PASS,FULLSTACK:PDCPCount
+FSR-0291,ValueCorrectness,VALCHK-0089 PDCP Security value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0089),PASS,FULLSTACK:PDCPSecurity
+FSR-0292,ValueCorrectness,VALCHK-0090 SDAP value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0090),PASS,FULLSTACK:SDAPFallback
+FSR-0293,ValueCorrectness,VALCHK-0091 RRC value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0091),PASS,FULLSTACK:RRCASN1
+FSR-0294,ValueCorrectness,VALCHK-0092 Bearer Config value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0092),PASS,FULLSTACK:BearerAtomicity
+FSR-0295,ValueCorrectness,VALCHK-0093 Traffic value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0093),PASS,FULLSTACK:ByteConservation
+FSR-0296,ValueCorrectness,VALCHK-0094 Traffic value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0094),PASS,FULLSTACK:DuplicateDelivery
+FSR-0297,ValueCorrectness,VALCHK-0095 Traffic value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0095),PASS,FULLSTACK:NoDLDelivery
+FSR-0298,ValueCorrectness,VALCHK-0096 Traffic value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0096),PASS,FULLSTACK:NoULDelivery
+FSR-0299,ValueCorrectness,VALCHK-0097 Handover value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0097),PASS,FULLSTACK:HandoverNotExercised
+FSR-0300,ValueCorrectness,VALCHK-0098 RLF/Reestablishment value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0098),PASS,FULLSTACK:ReestablishmentNotExercised
+FSR-0301,ValueCorrectness,VALCHK-0099 Validation value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0099),PASS,FULLSTACK:FailOpen
+FSR-0302,ValueCorrectness,VALCHK-0100 Validation value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0100),PASS,FULLSTACK:OracleIndependence
+FSR-0303,ValueCorrectness,VALCHK-0101 Validation value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0101),PASS,FULLSTACK:MergeDeterminism
+FSR-0304,ValueCorrectness,VALCHK-0102 Validation value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0102),PASS,FULLSTACK:CircularEvidence
+FSR-0305,ValueCorrectness,VALCHK-0103 Artifacts value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0103),PASS,FULLSTACK:ArtifactCompleteness
+FSR-0306,ValueCorrectness,VALCHK-0104 Artifacts value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0104),PASS,FULLSTACK:PlaceholderArtifact
+FSR-0307,ValueCorrectness,VALCHK-0105 WebGUI value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0105),PASS,FULLSTACK:WebGUINotPublished
+FSR-0308,ValueCorrectness,VALCHK-0106 WebGUI value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0106),PASS,FULLSTACK:MissingProvenanceBadge
+FSR-0309,ValueCorrectness,VALCHK-0107 Regression value correctness check passes.,true,true,full_stack_value_correctness_results.csv,STATUS(VALCHK-0107),PASS,FULLSTACK:RegressionNotClean
+FSR-0310,Negative,NEG-001 YAML duplicate key rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-001),PASS,FULLSTACK:DuplicateYAMLKey
+FSR-0311,Negative,NEG-002 Unknown YAML key rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-002),PASS,FULLSTACK:UnknownYAMLKey
+FSR-0312,Negative,NEG-003 Executed YAML hash differs rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-003),PASS,FULLSTACK:ExecutedYAMLMismatch
+FSR-0313,Negative,NEG-004 Invalid SCS bandwidth tuple rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-004),PASS,FRAME:UnsupportedCarrierTuple
+FSR-0314,Negative,NEG-005 Flexible symbol forced to DL rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-005),PASS,FRAME:IllegalFlexibleResolution
+FSR-0315,Negative,NEG-006 Illegal channel collision rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-006),PASS,FRAME:ResourceCollision
+FSR-0316,Negative,NEG-007 Invalid NFFT fallback request rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-007),PASS,WAVEFORM:UnsupportedOFDMParameters
+FSR-0317,Negative,NEG-008 Noncontiguous strict DFT allocation rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-008),PASS,WAVEFORM:NonContiguousTransformAllocation
+FSR-0318,Negative,NEG-009 Rank greater than one DFT-s-OFDM rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-009),PASS,WAVEFORM:TransformPrecodingLayerCount
+FSR-0319,Negative,NEG-010 PDSCH wrong DCI RNTI rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-010),PASS,PDSCH:WrongRNTI
+FSR-0320,Negative,NEG-011 PDSCH stale BWP epoch rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-011),PASS,PDSCH:StaleConfigurationEpoch
+FSR-0321,Negative,NEG-012 Invalid DMRS port/layer tuple rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-012),PASS,PDSCH:InvalidDMRSPortSet
+FSR-0322,Negative,NEG-013 PUSCH missing decoded DCI rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-013),PASS,PUSCH:MissingDecodedGrant
+FSR-0323,Negative,NEG-014 PUSCH wrong UCI length rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-014),PASS,PUSCH:UCILengthMismatch
+FSR-0324,Negative,NEG-015 PUSCH stale SRS decision rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-015),PASS,PUSCH:StaleSRSState
+FSR-0325,Negative,NEG-016 PDCCH no signal rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-016),PASS,PDCCH:NoValidCandidate
+FSR-0326,Negative,NEG-017 PDCCH wrong RNTI rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-017),PASS,PDCCH:CRCOrRNTIMismatch
+FSR-0327,Negative,NEG-018 PDCCH wrong contextual size rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-018),PASS,PDCCH:DCISizeMismatch
+FSR-0328,Negative,NEG-019 PUCCH missing report context rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-019),PASS,PUCCH:MissingUCIContext
+FSR-0329,Negative,NEG-020 PUCCH wrong resource rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-020),PASS,PUCCH:ResourceMismatch
+FSR-0330,Negative,NEG-021 PUCCH unavailable TDD symbols rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-021),PASS,PUCCH:UnavailableULSymbols
+FSR-0331,Negative,NEG-022 SSB invalid Lmax rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-022),PASS,IA:InvalidLmax
+FSR-0332,Negative,NEG-023 SSB grid out of carrier rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-023),PASS,IA:SSBOutsideCarrier
+FSR-0333,Negative,NEG-024 PRACH invalid restricted set rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-024),PASS,IA:InvalidPRACHRestrictedSet
+FSR-0334,Negative,NEG-025 RAR wrong RA-RNTI rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-025),PASS,IA:WrongRARNTI
+FSR-0335,Negative,NEG-026 RRC transaction mismatch rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-026),PASS,RRC:TransactionMismatch
+FSR-0336,Negative,NEG-027 CSI-RS collision rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-027),PASS,RSLA:ResourceCollision
+FSR-0337,Negative,NEG-028 Stale measurement rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-028),PASS,RSLA:StaleMeasurement
+FSR-0338,Negative,NEG-029 Configured SINR substituted rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-029),PASS,RSLA:ConfiguredMeasurementForbidden
+FSR-0339,Negative,NEG-030 Missing EESM calibration rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-030),PASS,RSLA:MissingEffectiveSINRCalibration
+FSR-0340,Negative,NEG-031 Unsupported codebook tuple rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-031),PASS,MIMO:UnsupportedCapabilityTuple
+FSR-0341,Negative,NEG-032 Invalid covariance rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-032),PASS,MIMO:InvalidCovariance
+FSR-0342,Negative,NEG-033 Selected/applied precoder mismatch rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-033),PASS,MIMO:PrecoderDigestMismatch
+FSR-0343,Negative,NEG-034 Inactive TCI state rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-034),PASS,MIMO:InactiveTCIState
+FSR-0344,Negative,NEG-035 Unknown channel scenario rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-035),PASS,CHANNEL:UnknownScenario
+FSR-0345,Negative,NEG-036 Configured geometry backfill rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-036),PASS,CHANNEL:MissingObservedGeometry
+FSR-0346,Negative,NEG-037 Invalid CDL profile substitution rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-037),PASS,CHANNEL:ProfileSubstitutionForbidden
+FSR-0347,Negative,NEG-038 Circular pathloss comparison rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-038),PASS,CHANNEL:CircularEvidence
+FSR-0348,Negative,NEG-039 Interference contribution missing rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-039),PASS,CHANNEL:MissingInterferingLink
+FSR-0349,Negative,NEG-040 True CFO supplied to RX rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-040),PASS,RF:OracleCFOForbidden
+FSR-0350,Negative,NEG-041 Missing SCO profile rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-041),PASS,RF:MissingSCOProfile
+FSR-0351,Negative,NEG-042 Heuristic phase-noise mask rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-042),PASS,RF:MissingPhaseNoiseProfile
+FSR-0352,Negative,NEG-043 PA soft-limiter fallback rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-043),PASS,RF:PAFallbackForbidden
+FSR-0353,Negative,NEG-044 Implicit AGC rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-044),PASS,RF:ImplicitAGCForbidden
+FSR-0354,Negative,NEG-045 Configured-SNR pathloss rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-045),PASS,RF:ConfiguredPathlossForbidden
+FSR-0355,Negative,NEG-046 HARQ TB identity mismatch rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-046),PASS,MAC:HARQIdentityMismatch
+FSR-0356,Negative,NEG-047 Illegal K1/K2 timing rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-047),PASS,MAC:IllegalTiming
+FSR-0357,Negative,NEG-048 Approximate BSR table rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-048),PASS,MAC:BSRTableMismatch
+FSR-0358,Negative,NEG-049 TA expired UL grant rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-049),PASS,MAC:TimeAlignmentExpired
+FSR-0359,Negative,NEG-050 Nonatomic grant commit rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-050),PASS,MAC:GrantCommitFailed
+FSR-0360,Negative,NEG-051 RLC invalid SN length rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-051),PASS,RLC:UnsupportedSNLength
+FSR-0361,Negative,NEG-052 Malformed STATUS PDU rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-052),PASS,RLC:MalformedStatusPDU
+FSR-0362,Negative,NEG-053 PDCP COUNT exhaustion rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-053),PASS,PDCP:COUNTExhausted
+FSR-0363,Negative,NEG-054 PDCP wrong integrity rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-054),PASS,PDCP:IntegrityFailure
+FSR-0364,Negative,NEG-055 Missing QFI map rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-055),PASS,SDAP:MissingQFIMap
+FSR-0365,Negative,NEG-056 RRC JSON wire input rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-056),PASS,RRC:NonUPERWireFormat
+FSR-0366,Negative,NEG-057 Partial bearer commit rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-057),PASS,RRC:AtomicBearerCommitFailed
+FSR-0367,Negative,NEG-058 Duplicate packet delivery rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-058),PASS,TRAFFIC:DuplicateDelivery
+FSR-0368,Negative,NEG-059 Unowned packet bytes rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-059),PASS,TRAFFIC:ConservationFailure
+FSR-0369,Negative,NEG-060 Global RNG use rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-060),PASS,TRAFFIC:UnnamedRandomStream
+FSR-0370,Negative,NEG-061 Handover geometry-truth target rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-061),PASS,RRC:HandoverOracleTarget
+FSR-0371,Negative,NEG-062 T304 expiry rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-062),PASS,RRC:T304Expired
+FSR-0372,Negative,NEG-063 Target RA failure rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-063),PASS,RRC:TargetRAFailure
+FSR-0373,Negative,NEG-064 Missing required CSV rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-064),PASS,ARTIFACT:MissingCSV
+FSR-0374,Negative,NEG-065 Malformed CSV schema rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-065),PASS,ARTIFACT:CSVSchema
+FSR-0375,Negative,NEG-066 Blank PNG rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-066),PASS,ARTIFACT:BlankPNG
+FSR-0376,Negative,NEG-067 PNG/source hash mismatch rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-067),PASS,ARTIFACT:SourceHashMismatch
+FSR-0377,Negative,NEG-068 Placeholder artifact rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-068),PASS,ARTIFACT:PlaceholderForbidden
+FSR-0378,Negative,NEG-069 Unauthenticated WebGUI run rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-069),PASS,WEB:AuthenticationRequired
+FSR-0379,Negative,NEG-070 YAML edited but not executed rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-070),PASS,WEB:ExecutedConfigMismatch
+FSR-0380,Negative,NEG-071 Required artifact hidden rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-071),PASS,WEB:ArtifactNotPublished
+FSR-0381,Negative,NEG-072 Run ownership violation rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-072),PASS,WEB:Forbidden
+FSR-0382,Negative,NEG-073 Same-toolbox oracle labelled independent rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-073),PASS,VALIDATION:NonIndependentOracle
+FSR-0383,Negative,NEG-074 Incomplete point accepted rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-074),PASS,VALIDATION:IncompletePoint
+FSR-0384,Negative,NEG-075 NaN threshold accepted rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-075),PASS,VALIDATION:NonFiniteThreshold
+FSR-0385,Negative,NEG-076 Duplicate task conflict rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-076),PASS,VALIDATION:TaskDuplicateConflict
+FSR-0386,Negative,NEG-077 Circular evidence accepted rejects with no state mutation.,true,true,full_stack_failure_registry.csv,NEGATIVE_STATUS(NEG-077),PASS,VALIDATION:CircularEvidence
+FSR-0387,DeepAcceptance,All impact-analysis artifacts required by deep preset are valid.,false,true,full_stack_artifact_audit.csv,ALL_DEEP_REQUIRED_PASS,PASS,FULLSTACK:DeepImpactArtifacts

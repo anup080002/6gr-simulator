@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+CRC-00,ANALYTICAL_INVARIANT,CRC24C,00000000,000000,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-01,ANALYTICAL_INVARIANT,CRC24C,00000001,b2b117,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-02,ANALYTICAL_INVARIANT,CRC24C,00000010,d7d339,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-03,ANALYTICAL_INVARIANT,CRC24C,00000011,65622e,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-04,ANALYTICAL_INVARIANT,CRC24C,00000100,1d1765,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-05,ANALYTICAL_INVARIANT,CRC24C,00000101,afa672,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-06,ANALYTICAL_INVARIANT,CRC24C,00000110,cac45c,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-07,ANALYTICAL_INVARIANT,CRC24C,00000111,78754b,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-08,ANALYTICAL_INVARIANT,CRC24C,00001000,3a2eca,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-09,ANALYTICAL_INVARIANT,CRC24C,00001001,889fdd,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-10,ANALYTICAL_INVARIANT,CRC24C,00001010,edfdf3,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-11,ANALYTICAL_INVARIANT,CRC24C,00001011,5f4ce4,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-12,ANALYTICAL_INVARIANT,CRC24C,00001100,2739af,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-13,ANALYTICAL_INVARIANT,CRC24C,00001101,9588b8,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-14,ANALYTICAL_INVARIANT,CRC24C,00001110,f0ea96,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import
+CRC-15,ANALYTICAL_INVARIANT,CRC24C,00001111,425b81,CRC24C polynomial 0x1B2B117,standalone_python_no_dut_import

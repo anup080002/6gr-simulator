@@ -228,7 +228,7 @@ end
 presetName = char(string(presetName));
 [~,~,ext] = fileparts(presetName);
 if isempty(ext)
-    presetName = [presetName ".json"];
+    presetName = char(string(presetName) + ".json");
 end
 
 path = fullfile(root, "config", "presets", presetName);

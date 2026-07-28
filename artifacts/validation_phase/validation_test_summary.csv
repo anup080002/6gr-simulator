@@ -1,0 +1,6 @@
+Suite,RequiredTests,Executed,Passed,Failed,SkippedRequired,BlockedRequired,Status
+"ENUM_SCHEMA",17,17,17,0,0,0,"PASS"
+"STATISTICS",17,17,17,0,0,0,"PASS"
+"EVIDENCE",17,17,17,0,0,0,"PASS"
+"RUNTIME_RELEASE",17,17,17,0,0,0,"PASS"
+"NEGATIVE_PUBLICATION",17,17,17,0,0,0,"PASS"

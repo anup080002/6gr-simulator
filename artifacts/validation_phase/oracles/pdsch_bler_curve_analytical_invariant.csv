@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+AWGN-00,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,-6,0.239228710767672,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-01,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,-5,0.21322801835762,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-02,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,-4,0.186113817483389,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-03,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,-3,0.158368318809598,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-04,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,-2,0.130644488522829,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-05,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,-1,0.103759095953406,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-06,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,0,0.0786496035251426,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-07,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,1,0.0562819519765415,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-08,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,2,0.037506128358926,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-09,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,3,0.0228784075610853,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-10,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,4,0.0125008180407376,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-11,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,5,0.00595386714777866,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-12,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,6,0.00238829078093281,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-13,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,7,0.000772674815378444,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-14,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,8,0.000190907774075993,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import
+AWGN-15,ANALYTICAL_INVARIANT,PDSCH_BLER_CURVE,9,3.36272284196175e-05,uncoded Gray QPSK AWGN analytical BER baseline,standalone_python_no_dut_import

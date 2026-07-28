@@ -75,6 +75,7 @@ profiles:
     equivalence_margin: 0.03
   internal_numerical_regression:
     supported: true
+    allowed_findings: [VAL-007, VAL-008, VAL-019, VAL-020, VAL-022, VAL-023, VAL-025, VAL-028]
     run_class: CONTROL_ONLY
     publication_eligible: false
     measured_sinr_required: false

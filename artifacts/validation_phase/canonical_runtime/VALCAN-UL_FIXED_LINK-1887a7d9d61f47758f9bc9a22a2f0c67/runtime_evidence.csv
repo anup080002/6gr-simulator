@@ -1,0 +1,6 @@
+FieldName,Value,Unit,ProvenanceClass,ObservedSampleCount,Status,Workload
+"TrialCount","12","count","OBSERVED_RUNTIME_STATE",12,"PASS","UL_FIXED_LINK"
+"ReceiverSINRSampleCount","12","count","OBSERVED_RUNTIME_STATE",12,"PASS","UL_FIXED_LINK"
+"BLER","0.25","ratio","OBSERVED_RUNTIME_STATE",12,"PASS","UL_FIXED_LINK"
+"Throughput_Mbps","33.804","Mbit/s","OBSERVED_RUNTIME_STATE",12,"PASS","UL_FIXED_LINK"
+"RuntimeFolder","C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\artifacts\validation_phase\canonical_runtime\VALCAN-UL_FIXED_LINK-1887a7d9d61f47758f9bc9a22a2f0c67","path","OBSERVED_RUNTIME_STATE",1,"PASS","UL_FIXED_LINK"

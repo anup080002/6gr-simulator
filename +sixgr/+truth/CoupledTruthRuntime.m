@@ -931,6 +931,11 @@ methods(Static, Access=private)
 
     function [state, grants, info] = scheduleDirectionImpl(state, cfg, direction)
         direction = upper(string(direction));
+        if ~any(direction == ["DL", "UL"])
+            error("sixgr:truth:CoupledTruthRuntime:InvalidScheduleDirection", ...
+                "Runtime scheduling direction must be DL or UL.");
+        end
+        state.CurrentDirection = direction;
         grants = repmat(struct(), 0, 1);
         info = struct("Direction", char(direction), "ActiveUsers", 0, "GrantedUsers", 0, "GrantCount", 0, "QueueBits", 0);
         slotDLAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true));

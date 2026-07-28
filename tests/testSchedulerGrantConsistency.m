@@ -59,6 +59,12 @@ cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.dmrs.DMRSTypeAPosition", 2);
 cfgUL = sixgr.util.structSet(cfgUL, "mac.scheduler.fastNREApprox", false);
 cfgUL = sixgr.util.structSet(cfgUL, "mac.scheduler.tbsMode", "faithful");
 cfgUL = withCanonicalSchedulerTiming(cfgUL);
+if isfield(cfgUL.phy.pusch, "mappingType")
+    cfgUL.phy.pusch = rmfield(cfgUL.phy.pusch, "mappingType");
+end
+if isfield(cfgUL.phy.pusch, "MappingType")
+    cfgUL.phy.pusch = rmfield(cfgUL.phy.pusch, "MappingType");
+end
 schUL = sixgr.l2.mac.SchedulerRR(cfgUL, "Direction", "UL");
 lateULGrant = struct( ...
     "Direction", "UL", ...
@@ -73,7 +79,8 @@ lateULGrant = struct( ...
     "MCSIndex", 4);
 lateULGrant = schUL.freezePHYGrantForGrant(lateULGrant);
 assert(logical(lateULGrant.ExactPHYFeasible), ...
-    "Implicit late-symbol special-slot UL grant must finalize to a legal exact PHY allocation.");
+    "Implicit late-symbol special-slot UL grant must finalize to a legal exact PHY allocation. Reason: %s", ...
+    string(lateULGrant.ExactPHYInfeasibilityReason));
 assert(strcmp(string(lateULGrant.MappingType), "B") && ...
         strcmp(string(lateULGrant.MappingTypeSelectionSource), "scheduler_special_slot_legalization"), ...
     "Implicit MappingType A must be finalized as MappingType B before exact PUSCH accounting in late UL symbols.");
@@ -88,6 +95,11 @@ cfgGuard = sixgr.util.structSet(cfgGuard, "phy.linkAdaptation.ulPolicy", "cqi");
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.linkAdaptation.minPRBForWidebandCQIGrant", 4);
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.mcsTable", "qam64_table1");
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.nLayers", 2);
+cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.NumAntennaPorts", 2);
+cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.transformPrecoding", false);
+cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.mappingType", "A");
+cfgGuard = sixgr.util.structSet(cfgGuard, "scenario.ue.nTxAnt", 2);
+cfgGuard = sixgr.util.structSet(cfgGuard, "scenario.bs.nRxAnt", 2);
 cfgGuard = sixgr.util.structSet(cfgGuard, "mac.scheduler.maxUEPerSlot", 1);
 cfgGuard = sixgr.util.structSet(cfgGuard, "mac.scheduler.minPRBPerUE", 1);
 cfgGuard = withCanonicalSchedulerTiming(cfgGuard);

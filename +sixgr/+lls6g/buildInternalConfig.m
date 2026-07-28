@@ -768,7 +768,8 @@ cfg.pdsch6gr.NSizeGrid = double(localGetNested(s, "pdsch6gr.n_size_grid", cfg.ph
 cfg.pdsch6gr.ChannelBandwidthMHz = double(localGetNested(s, "pdsch6gr.channel_bandwidth_mhz", double(s.frequency.bandwidth_hz) / 1e6));
 cfg.pdsch6gr.NTx = double(localGetNested(s, "pdsch6gr.n_tx", sixgr.util.structGet(cfg, "channel.nTxAnt", 1)));
 cfg.pdsch6gr.NRx = double(localGetNested(s, "pdsch6gr.n_rx", sixgr.util.structGet(cfg, "channel.nRxAnt", 1)));
-cfg.pdsch6gr.NumLayers = double(localGetNested(s, "pdsch6gr.num_layers", cfg.phy.pdsch.nLayers));
+cfg.pdsch6gr.NumLayers = double(localGetNested(s, "pdsch6gr.num_layers", ...
+    localGetNested(s, "mimo.max_dl_layers", s.mimo.n_layers)));
 cfg.pdsch6gr.NumCodewords = double(localGetNested(s, "pdsch6gr.num_codewords", 1));
 cfg.pdsch6gr.ModulationPerCodeword = cellstr(string(localGetNested(s, "pdsch6gr.modulation_per_codeword", {char(string(sixgr.util.structGet(cfg, "phy.pdsch.modulation", "16QAM")))})));
 cfg.pdsch6gr.TargetCodeRatePerCodeword = double(localGetNested(s, "pdsch6gr.target_code_rate_per_codeword", sixgr.util.structGet(cfg, "phy.pdsch.codeRate", 0.4785)));
@@ -841,8 +842,29 @@ cfg.pdsch6gr.StartSymbol = double(localGetNested(s, "pdsch6gr.start_symbol", 2))
 cfg.pdsch6gr.NumSymbols = double(localGetNested(s, "pdsch6gr.num_symbols", 10));
 cfg.pdsch6gr.DMRSConfigType = double(localGetNested(s, "pdsch6gr.dmrs_config_type", 1));
 cfg.pdsch6gr.DMRSAdditionalPosition = double(localGetNested(s, "pdsch6gr.dmrs_additional_position", 1));
-cfg.pdsch6gr.DMRSNumPorts = double(localGetNested(s, "pdsch6gr.dmrs_num_ports", 1));
-cfg.pdsch6gr.DMRSPortSet = double(localGetNested(s, "pdsch6gr.dmrs_port_set", 0));
+[configuredDMRSPortSet, hasConfiguredDMRSPortSet] = ...
+    localTryGetNestedStrict(s, "pdsch6gr.dmrs_port_set");
+if hasConfiguredDMRSPortSet
+    configuredDMRSPortSet = double(configuredDMRSPortSet(:).');
+else
+    configuredDMRSPortCount = double(localGetNested(s, ...
+        "reference_signals.pdsch_dmrs_ports", cfg.pdsch6gr.NumLayers));
+    if ~(isscalar(configuredDMRSPortCount) && ...
+            isfinite(configuredDMRSPortCount) && ...
+            configuredDMRSPortCount >= cfg.pdsch6gr.NumLayers)
+        error("sixgr:lls6g:config:InsufficientPDSCHDMRSPorts", ...
+            "reference_signals.pdsch_dmrs_ports must provide at least " + ...
+            "one logical DM-RS port per configured PDSCH layer.");
+    end
+    configuredDMRSPortSet = 0:(max(1, round(cfg.pdsch6gr.NumLayers)) - 1);
+end
+cfg.pdsch6gr.DMRSPortSet = configuredDMRSPortSet;
+cfg.pdsch6gr.DMRSNumPorts = double(localGetNested(s, ...
+    "pdsch6gr.dmrs_num_ports", numel(configuredDMRSPortSet)));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.portSet", ...
+    configuredDMRSPortSet);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.DMRSPortSet", ...
+    configuredDMRSPortSet);
 cfg.pdsch6gr.PTRSTimeDensity = double(localGetNested(s, "pdsch6gr.ptrs_time_density", 2));
 cfg.pdsch6gr.PTRSFrequencyDensity = double(localGetNested(s, "pdsch6gr.ptrs_frequency_density", 2));
 cfg.pdsch6gr.PTRSREOffset = char(string(localGetNested(s, "pdsch6gr.ptrs_re_offset", "00")));
@@ -874,9 +896,9 @@ elseif linkAdaptationUsesFixedMCS && (strlength(explicitPDSCHMCSMode) == 0 || ex
 end
 cfg.pdsch6gr.FixedMCSActive = logical(linkAdaptationUsesFixedMCS);
 dlConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, ...
-    "modulation_and_mapping.dl_mcs_index", localGetNested(s, "modulation.dl_mcs_index", NaN)));
+    "modulation.dl_mcs_index", localGetNested(s, "modulation_and_mapping.dl_mcs_index", NaN)));
 ulConfiguredMCSIndex = localNumericScalarOrNaN(localGetNested(s, ...
-    "modulation_and_mapping.ul_mcs_index", localGetNested(s, "modulation.ul_mcs_index", NaN)));
+    "modulation.ul_mcs_index", localGetNested(s, "modulation_and_mapping.ul_mcs_index", NaN)));
 dlMCSTable = localResolveDirectionalMCSTable(s, "DL");
 ulMCSTable = localResolveDirectionalMCSTable(s, "UL");
 dlLayerCount = localNumericScalarOrNaN(localGetNested(s, "mimo.max_dl_layers", s.mimo.n_layers));
@@ -1081,6 +1103,7 @@ cfg = localApplyPhase07MIMOConfig(cfg,s);
 
 cfg.phy.pucch.enable = logical(s.control.pucch_enabled);
 cfg.phy.pucch.calibrationFormatHint = double(s.control.pucch_format);
+cfg.phy.pucch.format = double(s.control.pucch_format);
 cfg.phy.pucch.assignmentMode = "rrc_procedure_state";
 
 cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
@@ -1867,6 +1890,25 @@ end
 cfg = localApplyBWPSurface(cfg, s);
 cfg = localApplyDataChannelSurface(cfg, s, "pdsch", "phy.pdsch");
 cfg = localApplyDataChannelSurface(cfg, s, "pusch", "phy.pusch");
+% The canonical directional modulation surface owns the selected MCS table
+% and index. A legacy per-channel surface inherited from an older scenario
+% must not silently overwrite these operator-visible values.
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", ...
+    char(localResolveDirectionalMCSTable(s, "DL")));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", ...
+    char(localResolveDirectionalMCSTable(s, "UL")));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", ...
+    localNumericScalarOrNaN(localGetNested(s, ...
+    "modulation.dl_mcs_index", ...
+    localGetNested(s, "modulation_and_mapping.dl_mcs_index", NaN))));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsIndex", ...
+    localNumericScalarOrNaN(localGetNested(s, ...
+    "modulation.ul_mcs_index", ...
+    localGetNested(s, "modulation_and_mapping.ul_mcs_index", NaN))));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.configuredMCSIndex", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", NaN));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.configuredMCSIndex", ...
+    sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", NaN));
 cfg = localReconcileULWaveformPUSCHSurface(cfg, s);
 cfg = localApplyPDCCHSurface(cfg, s);
 cfg = localApplyReceiverSurface(cfg, s);
@@ -3604,11 +3646,11 @@ function [modStr, codeRate] = localResolveFixedMCSProfile(s, direction)
 direction = upper(string(direction));
 tableName = string(localResolveDirectionalMCSTable(s, direction));
 if direction == "DL"
-    mcsIndex = double(localGetNested(s, "modulation_and_mapping.dl_mcs_index", ...
-        localGetNested(s, "modulation.dl_mcs_index", NaN)));
+    mcsIndex = double(localGetNested(s, "modulation.dl_mcs_index", ...
+        localGetNested(s, "modulation_and_mapping.dl_mcs_index", NaN)));
 else
-    mcsIndex = double(localGetNested(s, "modulation_and_mapping.ul_mcs_index", ...
-        localGetNested(s, "modulation.ul_mcs_index", NaN)));
+    mcsIndex = double(localGetNested(s, "modulation.ul_mcs_index", ...
+        localGetNested(s, "modulation_and_mapping.ul_mcs_index", NaN)));
 end
 
 profile = sixgr.link.resolveMCSProfile(tableName, mcsIndex);

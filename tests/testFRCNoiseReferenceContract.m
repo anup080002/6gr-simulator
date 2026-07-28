@@ -11,8 +11,40 @@ end
 localCheckCarrier(12, 30, 72001);
 localCheckCarrier(273, 30, 72002);
 localCheckOccupancyIndependence();
+localCheckScaledOccupiedREEnergy();
 
 ok = true;
+end
+
+function localCheckScaledOccupiedREEnergy()
+carrier = nrCarrierConfig;
+carrier.NSizeGrid = 24;
+carrier.NStartGrid = 0;
+carrier.SubcarrierSpacing = 30;
+carrier.CyclicPrefix = "normal";
+
+K = 12 * carrier.NSizeGrid;
+L = carrier.SymbolsPerSlot;
+signalEnergy = 10^(23 / 10);
+referenceGrid = sqrt(signalEnergy) .* localUnitEnergyQPSK(K, L, 8);
+txWaveform = nrOFDMModulate(carrier, referenceGrid, "Windowing", 0);
+requestedEsN0_dB = 0;
+[rxWaveform, info] = sixgr.conformance.addReferenceNoise( ...
+    txWaveform, carrier, requestedEsN0_dB, "Seed", 74001, ...
+    "SignalEnergyPerOccupiedRE", signalEnergy);
+rxGrid = nrOFDMDemodulate(carrier, rxWaveform);
+noiseGrid = rxGrid - referenceGrid;
+measuredEsN0_dB = 10 * log10( ...
+    mean(abs(referenceGrid(:)).^2) / mean(abs(noiseGrid(:)).^2));
+
+assert(abs(measuredEsN0_dB - requestedEsN0_dB) <= 0.1, ...
+    ["Physical power scaling changed the requested occupied-RE Es/N0: " ...
+    "requested %.3f dB, measured %.3f dB."], ...
+    requestedEsN0_dB, measuredEsN0_dB);
+localAssertNear(info.SignalEnergyPerOccupiedRE, signalEnergy, ...
+    "scaled occupied-RE signal energy");
+localAssertNear(info.GridNoiseVariance, signalEnergy, ...
+    "scaled grid-domain noise variance");
 end
 
 function localCheckCarrier(nSizeGrid, scs_kHz, seed)

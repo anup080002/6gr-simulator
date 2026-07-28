@@ -56,7 +56,7 @@ grant.BWPId = NaN;
 % and SPS execution obtains PDSCHSchedulingAssignment from decoded control
 % state and never treats this configured request as a decoded grant.
 grant.ExecutionProfile = "phy_calibration";
-grant.Source = "explicit_phy_calibration_request";
+grant.Source = "explicit_waveform_grant";
 grant.AssignmentSource = "calibration_assignment";
 grant.Valid = true;
 

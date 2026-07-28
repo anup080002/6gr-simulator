@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+QAM-00,PURE_MATH,QAM,"-3,-3","-0.948683298050514,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-01,PURE_MATH,QAM,"-3,-1","-0.948683298050514,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-02,PURE_MATH,QAM,"-3,1","-0.948683298050514,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-03,PURE_MATH,QAM,"-3,3","-0.948683298050514,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-04,PURE_MATH,QAM,"-1,-3","-0.316227766016838,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-05,PURE_MATH,QAM,"-1,-1","-0.316227766016838,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-06,PURE_MATH,QAM,"-1,1","-0.316227766016838,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-07,PURE_MATH,QAM,"-1,3","-0.316227766016838,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-08,PURE_MATH,QAM,"1,-3","0.316227766016838,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-09,PURE_MATH,QAM,"1,-1","0.316227766016838,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-10,PURE_MATH,QAM,"1,1","0.316227766016838,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-11,PURE_MATH,QAM,"1,3","0.316227766016838,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-12,PURE_MATH,QAM,"3,-3","0.948683298050514,-0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-13,PURE_MATH,QAM,"3,-1","0.948683298050514,-0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-14,PURE_MATH,QAM,"3,1","0.948683298050514,0.316227766016838",unit-average-power square 16QAM,standalone_python_no_dut_import
+QAM-15,PURE_MATH,QAM,"3,3","0.948683298050514,0.948683298050514",unit-average-power square 16QAM,standalone_python_no_dut_import

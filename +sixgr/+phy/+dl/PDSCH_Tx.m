@@ -82,6 +82,8 @@ opt = ip.Results;
 phyGrant = opt.PHYGrant;
 hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
 executionProfile = localResolveExecutionProfile(cfg, opt.ExecutionProfile, opt.Assignment);
+localPreflightConfiguredTDRA( ...
+    cfg, opt, hasPHYGrant, executionProfile);
 strictAssignmentProfile = any(executionProfile == ...
     ["connected_strict","sps_strict","ra_si_strict"]);
 if strictAssignmentProfile
@@ -117,6 +119,34 @@ if executionProfile == "phy_calibration"
 end
 error("sixgr:pdsch:MissingSchedulingAssignment", ...
     "Non-calibration PDSCH transmission requires an immutable scheduling assignment.");
+end
+
+function localPreflightConfiguredTDRA( ...
+        cfg, opt, hasPHYGrant, executionProfile)
+% Preserve configuration-error authority before execution-profile dispatch.
+% An explicit PDSCH object, frozen grant, or immutable assignment owns its
+% own TDRA. The configured calibration path must expose both fields.
+if executionProfile ~= "phy_calibration" || ...
+        ~isempty(opt.PDSCH) || hasPHYGrant || ~isempty(opt.Assignment) || ...
+        ~logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+    return;
+end
+symbolAllocation = sixgr.util.structGet(cfg, ...
+    "phy.pdsch.symbolAllocation", []);
+if isempty(symbolAllocation)
+    symbolAllocation = sixgr.util.structGet(cfg, ...
+        "phy.pdsch.SymbolAllocation", []);
+end
+mappingType = string(sixgr.util.structGet(cfg, ...
+    "phy.pdsch.mappingType", ""));
+if strlength(strtrim(mappingType)) == 0
+    mappingType = string(sixgr.util.structGet(cfg, ...
+        "phy.pdsch.MappingType", ""));
+end
+if isempty(symbolAllocation) || strlength(strtrim(mappingType)) == 0
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "Strict PDSCH execution requires explicit SymbolAllocation and MappingType.");
+end
 end
 
 function [pdschInd, pdschInfo, pdsch] = localBuildPDSCHFromFrozenGrant(carrier, cfg, phyGrant)

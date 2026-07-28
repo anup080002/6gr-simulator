@@ -224,7 +224,8 @@ localAssertZCZRuntimeResolvable(prachCfg, prach);
 [occasionResolution, requiredSlots] = localResolveOccasionPeriod( ...
     prachCfg, carrier, prach);
 prachCfg.NumSlots = max(prachCfg.NumSlots, requiredSlots);
-[firstOccasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, prachCfg);
+[firstOccasion, sampleRateHz, carrier, prach] = ...
+    localResolveFirstOccasion(carrier, prach, prachCfg);
 
 prachCfg.ToolboxCarrier = carrier;
 prachCfg.ToolboxPRACH = prach;
@@ -552,9 +553,16 @@ periodsNeeded = ceil(double(cfg.NumPRACHOccasions) / occasionsPerPeriod);
 requiredSlots = ceil(periodsNeeded * double(resolution.PeriodCarrierSlots));
 end
 
-function [occasion, sampleRateHz] = localResolveFirstOccasion(carrier, prach, cfg)
+function [occasion, sampleRateHz, carrier, prach] = ...
+        localResolveFirstOccasion(carrier, prach, cfg)
 occasion = sixgr.rach.mapPRACHToOccasion(cfg, ...
     "OccasionIndex", 1, "Carrier", carrier, "PRACH", prach);
+carrier.NFrame = double(occasion.Carrier.NFrame);
+carrier.NSlot = double(occasion.Carrier.NSlot);
+prach.NPRACHSlot = double(occasion.PRACH.NPRACHSlot);
+prach.ActivePRACHSlot = double(occasion.PRACH.ActivePRACHSlot);
+prach.TimeIndex = double(occasion.PRACH.TimeIndex);
+prach.FrequencyIndex = double(occasion.PRACH.FrequencyIndex);
 sampleRateHz = localEstimatePRACHSampleRate(carrier, prach);
 end
 

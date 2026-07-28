@@ -1,0 +1,14 @@
+{
+  "SchemaVersion": "1.0.0",
+  "RunID": "VALCAN-UL_FIXED_LINK-646d00e0b9ac41b8b7bbc75e17276e78",
+  "Workload": "UL_FIXED_LINK",
+  "RunClass": "FIXED_LINK_CALIBRATION",
+  "SourceCommit": "1704e9320ab3b7a6261ce0150bb46b31258da3f1",
+  "SourceTreeSHA256": "3beae610f4e32fc6dd39736f19c0ab04ae88b1722827be27559c5b935a9e8860",
+  "ScenarioSHA256": "e85ad41eb541408bd4c8eaca762005ac3774488c094b24b25c50f8ac761b2304",
+  "EvidenceSHA256": "4e49c87f77dc426e208dd40159f50198e82d3f45ff3c5fe48a39d864cf9906f4",
+  "StartUTC": "2026-07-27T17:29:20.939Z",
+  "EndUTC": "2026-07-27T17:29:45.377Z",
+  "RuntimeStatus": "PASS",
+  "ArtifactStatus": "PASS"
+}

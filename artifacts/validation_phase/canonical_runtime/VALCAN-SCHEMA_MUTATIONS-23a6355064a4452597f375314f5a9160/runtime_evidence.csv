@@ -1,0 +1,5 @@
+FieldName,Value,Unit,ProvenanceClass,ObservedSampleCount,Status
+"CasesExecuted","14","count","OBSERVED_RUNTIME_STATE",14,"PASS"
+"AcceptedCases","1","count","OBSERVED_RUNTIME_STATE",1,"PASS"
+"RejectedCases","13","count","OBSERVED_RUNTIME_STATE",13,"PASS"
+"VectorSHA256","69b04acc9a82be8958f9c45f1fca4df94f069d92cb4be1dff6f9e1192e8a32dc","sha256","OBSERVED_RUNTIME_STATE",1,"PASS"

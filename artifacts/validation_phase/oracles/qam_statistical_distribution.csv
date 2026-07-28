@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+STAT-00,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=0,0.0123903211896702,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-01,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=1,-0.0821988449320442,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-02,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=2,-0.0368576974860493,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-03,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=3,0.0945147614720624,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-04,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=4,-0.0787737627561503,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-05,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=5,0.0536892869342752,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-06,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=6,-0.048652962288103,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-07,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=7,-0.0110927892761305,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-08,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=8,-0.00947180936412231,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-09,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=9,0.0231535809988099,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-10,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=10,-0.0466822663076058,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-11,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=11,0.0137059627116503,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-12,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=12,-0.0104350659756377,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-13,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=13,-0.0568230715900299,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-14,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=14,0.174431642415482,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import
+STAT-15,STATISTICAL_DISTRIBUTION,QAM,feature=QAM;seed=14001;block=15,-0.0255318536174758,pinned normal distribution;global_mean=-0.00216466049196245;variance=0.992555367298087,standalone_python_no_dut_import

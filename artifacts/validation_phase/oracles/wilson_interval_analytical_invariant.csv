@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+WILSON-00,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=0;trials=10;cl=0.95,0;0;0.277532799862889,Wilson score interval,standalone_python_no_dut_import
+WILSON-01,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=1;trials=10;cl=0.95,0.1;0.0178762130950729;0.404150026795238,Wilson score interval,standalone_python_no_dut_import
+WILSON-02,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=2;trials=10;cl=0.95,0.2;0.0566821514543752;0.509837528463358,Wilson score interval,standalone_python_no_dut_import
+WILSON-03,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=5;trials=10;cl=0.95,0.5;0.236593090512564;0.763406909487436,Wilson score interval,standalone_python_no_dut_import
+WILSON-04,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=10;trials=10;cl=0.95,1;0.722467200137111;1,Wilson score interval,standalone_python_no_dut_import
+WILSON-05,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=1;trials=100;cl=0.95,0.01;0.00176743206414065;0.0544861961787053,Wilson score interval,standalone_python_no_dut_import
+WILSON-06,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=10;trials=100;cl=0.95,0.1;0.0552291370606751;0.174365661504913,Wilson score interval,standalone_python_no_dut_import
+WILSON-07,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=50;trials=100;cl=0.95,0.5;0.403831530365996;0.596168469634004,Wilson score interval,standalone_python_no_dut_import
+WILSON-08,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=0;trials=1000;cl=0.95,0;2.16840434497101e-19;0.00382675848555512,Wilson score interval,standalone_python_no_dut_import
+WILSON-09,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=1;trials=1000;cl=0.95,0.001;0.000176546370626078;0.00564255859795794,Wilson score interval,standalone_python_no_dut_import
+WILSON-10,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=10;trials=1000;cl=0.95,0.01;0.00544075444552925;0.0183094688703148,Wilson score interval,standalone_python_no_dut_import
+WILSON-11,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=100;trials=1000;cl=0.95,0.1;0.0829094435930957;0.120151963195348,Wilson score interval,standalone_python_no_dut_import
+WILSON-12,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=500;trials=1000;cl=0.95,0.5;0.469069600368104;0.530930399631896,Wilson score interval,standalone_python_no_dut_import
+WILSON-13,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=900;trials=1000;cl=0.95,0.9;0.879848036804652;0.917090556406904,Wilson score interval,standalone_python_no_dut_import
+WILSON-14,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=999;trials=1000;cl=0.95,0.999;0.994357441402042;0.999823453629374,Wilson score interval,standalone_python_no_dut_import
+WILSON-15,ANALYTICAL_INVARIANT,WILSON_INTERVAL,errors=1000;trials=1000;cl=0.95,1;0.996173241514445;1,Wilson score interval,standalone_python_no_dut_import

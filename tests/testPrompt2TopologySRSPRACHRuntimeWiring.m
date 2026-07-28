@@ -8,7 +8,9 @@ assert(exist(masterPath, "file") == 2, "Missing master_geometry_based.yaml.");
 
 scfg = sixgr.lls6g.config.loadScenarioConfig(masterPath);
 resolved = scfg.toStruct();
-expectedDopplerHz = (100 / 3.6) * 4.0e9 / 299792458;
+expectedSpeedKmh = double(sixgr.util.structGet(resolved, ...
+    "random_access.speed_kmh", NaN));
+expectedDopplerHz = (expectedSpeedKmh / 3.6) * 4.0e9 / 299792458;
 
 assert(double(sixgr.util.structGet(resolved, "random_access.num_rx_antennas", NaN)) == 64, ...
     "Resolved PRACH must use the configured gNB receive antenna count.");
@@ -57,14 +59,16 @@ state = localPrepareBootstrapSchedulingState(state);
 [state, grantsSlot11] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
 assert(numel(grantsSlot11) == 1 && double(grantsSlot11(1).ServingCell) == 1, ...
     "First conservative-bootstrap full-reuse DL slot must allow only the selected clean cell.");
-state.CurrentSlot = 12;
+% Use the next DL control slot whose configured K1=4 feedback lands in the
+% full UL slot of the five-slot TDD period.
+state.CurrentSlot = 16;
 state = localMarkControlSuccessAtCurrentSlot(state);
 state.DLDecodeSuccessCountByUE(1) = 1;
 [state, grantsSlot12] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
 assert(numel(grantsSlot12) == 1 && double(grantsSlot12(1).ServingCell) == 2, ...
     "Second conservative-bootstrap full-reuse DL slot must protect the other cell's first decode. Got %s. State %s.", ...
     localGrantSummary(grantsSlot12), localStateSummary(state));
-state.CurrentSlot = 13;
+state.CurrentSlot = 21;
 state = localMarkControlSuccessAtCurrentSlot(state);
 state.DLDecodeSuccessCountByUE(:) = 1;
 [~, grantsSlot13] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
@@ -86,11 +90,13 @@ assert(logical(srsCfg.StrictValidation.StrictValid), ...
     "SRS strict validation must pass with finite carrier, power-control and RE-count fields.");
 
 prachCfg = sixgr.rach.PRACHConfig(cfg);
-localAssertPRACHRuntimeConfig(prachCfg, expectedDopplerHz, "PRACH runtime config");
+localAssertPRACHRuntimeConfig(prachCfg, expectedSpeedKmh, ...
+    expectedDopplerHz, "PRACH runtime config");
 
 prachStrict = sixgr.phy.prach.PRACHConfigStrict(cfg, ...
     "RunFolder", tmp, "ScenarioName", "prompt2_topology_srs_prach_runtime_wiring");
-localAssertPRACHRuntimeConfig(prachStrict, expectedDopplerHz, "Strict PRACH config");
+localAssertPRACHRuntimeConfig(prachStrict, expectedSpeedKmh, ...
+    expectedDopplerHz, "Strict PRACH config");
 assert(logical(prachStrict.StrictValidation.StrictValid), ...
     "Strict PRACH validation must pass for the resolved 4 GHz UMa/CDL-C configuration.");
 
@@ -210,15 +216,17 @@ summary = sprintf("slot=%g dlAllowed=%d queue=%s serving=%s schedElig=%s ctrlEli
     mat2str(double(sixgr.util.structGet(state, "GrantsBlockedByGatingCount", [])).'));
 end
 
-function localAssertPRACHRuntimeConfig(prachCfg, expectedDopplerHz, label)
+function localAssertPRACHRuntimeConfig(prachCfg, expectedSpeedKmh, ...
+        expectedDopplerHz, label)
 assert(abs(double(prachCfg.CarrierFrequencyHz) - 4.0e9) < 1e-3, ...
     "%s must inherit the 4 GHz carrier frequency.", label);
 assert(strcmpi(char(string(prachCfg.ChannelModel)), "CDL-C"), ...
     "%s must use CDL-C, not AWGN or CDL-D.", label);
 assert(abs(double(prachCfg.DelaySpread_ns) - 93) < 1e-12, ...
     "%s must use the 93 ns UMa delay spread.", label);
-assert(abs(double(prachCfg.Speed_kmh) - 100) < 1e-12, ...
-    "%s must use 100 km/h mobility.", label);
+assert(abs(double(prachCfg.Speed_kmh) - expectedSpeedKmh) < 1e-12, ...
+    "%s must use the configured %.15g km/h mobility.", ...
+    label, expectedSpeedKmh);
 assert(abs(double(prachCfg.MaxDopplerHz) - expectedDopplerHz) < 1e-6, ...
     "%s must derive Doppler from speed and carrier frequency.", label);
 assert(double(prachCfg.NumRxAntennas) == 64, ...

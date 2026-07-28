@@ -20,11 +20,15 @@ cfg = sixgr.util.structSet(cfg, "phy.beamManagement.trpCount", 4);
 Hwb = [1.05 + 0.05j, 0.35 - 0.10j, 0.20 + 0.03j, 0.05; ...
        0.18 + 0.04j, 0.95 + 0.02j, 0.12 - 0.08j, 0.30 + 0.05j];
 Hest = repmat(reshape(Hwb, 1, 1, size(Hwb, 1), size(Hwb, 2)), [24, 14, 1, 1]);
-rxGrid = complex(zeros(24, 14, 1));
+rxGrid = complex(zeros(24, 14, size(Hwb, 1)));
 refInd = uint32([1; 9; 17]);
-rxGrid(double(refInd)) = [1+1j; 2; 0.5-0.5j];
 refSym = ones(numel(refInd), 1);
-expectedMeasuredRSRP_dB = 10 * log10(mean(abs(double(rxGrid(double(refInd)))).^2));
+for rxIdx = 1:size(Hwb, 1)
+    rxGrid(double(refInd) + (rxIdx - 1) * 24 * 14) = ...
+        Hwb(rxIdx, 1) .* refSym;
+end
+rxRef = nrExtractResources(refInd, rxGrid);
+expectedMeasuredRSRP_dB = 10 * log10(mean(abs(double(rxRef(:))).^2));
 expectedRSSI_dB = 10 * log10(sum(abs(double(rxGrid(:, 1, :))).^2, "all"));
 expectedRSRQ_dB = 10 * log10(2 * 10^(expectedMeasuredRSRP_dB/10) / 10^(expectedRSSI_dB/10));
 
@@ -105,11 +109,34 @@ cfgRun = cfg;
 cfgRun.phy.pdsch.enable = true;
 cfgRun.phy.pdsch.nLayers = 1;
 cfgRun.phy.pdsch.numLayers = 1;
+cfgRun.phy.pdsch.SymbolAllocation = [2 12];
+cfgRun.phy.pdsch.symbolAllocation = [2 12];
+cfgRun.phy.pdsch.MappingType = "A";
+cfgRun.phy.pdsch.mappingType = "A";
+cfgRun.phy.pdsch.PRBSet = 0:(double(cfgRun.phy.carrier.NSizeGrid) - 1);
+cfgRun.phy.pdsch.prbSet = cfgRun.phy.pdsch.PRBSet;
+cfgRun.phy.pdsch.mcsTable = "calibration_explicit";
+cfgRun.phy.pdsch.mcsIndex = 0;
+cfgRun.phy.pdsch.UECapability1024QAM = false;
+cfgRun.phy.pdsch.RRCEnabled1024QAM = false;
+cfgRun.phy.pdsch.DCIEnabled1024QAM = false;
+cfgRun.phy.pdsch.DeploymentAllows1024QAM = false;
+cfgRun.phy.pdsch.FrequencyRangeAllows1024QAM = false;
+cfgRun.phy.pdsch.BandAllows1024QAM = false;
+cfgRun.phy.pdsch.FrequencyRange = "FR1";
+cfgRun.phy.pdsch.OperatingBand = "n77";
+cfgRun.phy.pdsch.DeploymentClass = "macro";
+cfgRun.phy.pdsch.DCIFormat = "1_1";
 cfgRun.phy.csirs.enable = true;
 cfgRun.phy.csirs.nPorts = 1;
-cfgRun.phy.csirs.rowNumber = 1;
+cfgRun.phy.csirs.rowNumber = 2;
+cfgRun.phy.csirs.symbolLocations = 6;
+cfgRun.phy.csirs.subcarrierLocations = 0;
+cfgRun.phy.csirs.rbOffset = 0;
+cfgRun.phy.csirs.density = "one";
 cfgRun.phy.nRxAnt = 1;
-dl = sixgr.link.runDLPDSCHThroughput(cfgRun, "NumFrames", 2, "SNR_dB", 20);
+dl = sixgr.link.runDLPDSCHThroughput(cfgRun, "NumFrames", 2, ...
+    "SNR_dB", 20, "ExecutionProfile", "phy_calibration");
 assert(istable(dl.TrialTable), "DL runtime must return a trial table.");
 assert(all(ismember(["CRI","PMIType","PMICodebookMode","CSIReportMode","CSIPayloadBitLength","CSIPayloadHex","CSI_RSSI_dB","CSI_RSRQ_dB"], string(dl.TrialTable.Properties.VariableNames))), ...
     "DL trial tables must export CSI runtime fields.");
@@ -122,7 +149,8 @@ assert(all(logical(dl.CSIRSTrialTable.Transmitted)) && all(logical(dl.CSIRSTrial
 
 cfgNoCSIRS = cfgRun;
 cfgNoCSIRS.phy.csirs.enable = false;
-dlNoCSIRS = sixgr.link.runDLPDSCHThroughput(cfgNoCSIRS, "NumFrames", 1, "SNR_dB", 20);
+dlNoCSIRS = sixgr.link.runDLPDSCHThroughput(cfgNoCSIRS, "NumFrames", 1, ...
+    "SNR_dB", 20, "ExecutionProfile", "phy_calibration");
 assert(istable(dlNoCSIRS.CSIRSTrialTable) && isempty(dlNoCSIRS.CSIRSTrialTable), ...
     "DL runtime must not fabricate CSI-RS rows when CSI-RS is inactive.");
 

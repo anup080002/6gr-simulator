@@ -1,0 +1,78 @@
+CaseID,Name,Domain,SubcaseID,ExpectedRejected,ExpectedStateMutation,ExpectedWaveformOrPDUProduced,ExpectedError,Mandatory
+NEG-001,YAML duplicate key,Configuration,SC-00,true,false,false,FULLSTACK:DuplicateYAMLKey,true
+NEG-002,Unknown YAML key,Configuration,SC-00,true,false,false,FULLSTACK:UnknownYAMLKey,true
+NEG-003,Executed YAML hash differs,Configuration,SC-00,true,false,false,FULLSTACK:ExecutedYAMLMismatch,true
+NEG-004,Invalid SCS bandwidth tuple,Frame,SC-01,true,false,false,FRAME:UnsupportedCarrierTuple,true
+NEG-005,Flexible symbol forced to DL,Frame,SC-01,true,false,false,FRAME:IllegalFlexibleResolution,true
+NEG-006,Illegal channel collision,Frame,SC-01,true,false,false,FRAME:ResourceCollision,true
+NEG-007,Invalid NFFT fallback request,Waveform,SC-02,true,false,false,WAVEFORM:UnsupportedOFDMParameters,true
+NEG-008,Noncontiguous strict DFT allocation,Waveform,SC-03,true,false,false,WAVEFORM:NonContiguousTransformAllocation,true
+NEG-009,Rank greater than one DFT-s-OFDM,Waveform,SC-03,true,false,false,WAVEFORM:TransformPrecodingLayerCount,true
+NEG-010,PDSCH wrong DCI RNTI,PDSCH,SC-08,true,false,false,PDSCH:WrongRNTI,true
+NEG-011,PDSCH stale BWP epoch,PDSCH,SC-08,true,false,false,PDSCH:StaleConfigurationEpoch,true
+NEG-012,Invalid DMRS port/layer tuple,PDSCH,SC-08,true,false,false,PDSCH:InvalidDMRSPortSet,true
+NEG-013,PUSCH missing decoded DCI,PUSCH,SC-09,true,false,false,PUSCH:MissingDecodedGrant,true
+NEG-014,PUSCH wrong UCI length,PUSCH,SC-09,true,false,false,PUSCH:UCILengthMismatch,true
+NEG-015,PUSCH stale SRS decision,PUSCH,SC-09,true,false,false,PUSCH:StaleSRSState,true
+NEG-016,PDCCH no signal,PDCCH,SC-07,true,false,false,PDCCH:NoValidCandidate,true
+NEG-017,PDCCH wrong RNTI,PDCCH,SC-07,true,false,false,PDCCH:CRCOrRNTIMismatch,true
+NEG-018,PDCCH wrong contextual size,PDCCH,SC-07,true,false,false,PDCCH:DCISizeMismatch,true
+NEG-019,PUCCH missing report context,PUCCH,SC-10,true,false,false,PUCCH:MissingUCIContext,true
+NEG-020,PUCCH wrong resource,PUCCH,SC-10,true,false,false,PUCCH:ResourceMismatch,true
+NEG-021,PUCCH unavailable TDD symbols,PUCCH,SC-10,true,false,false,PUCCH:UnavailableULSymbols,true
+NEG-022,SSB invalid Lmax,Initial Access,SC-06,true,false,false,IA:InvalidLmax,true
+NEG-023,SSB grid out of carrier,Initial Access,SC-06,true,false,false,IA:SSBOutsideCarrier,true
+NEG-024,PRACH invalid restricted set,Initial Access,SC-06,true,false,false,IA:InvalidPRACHRestrictedSet,true
+NEG-025,RAR wrong RA-RNTI,Initial Access,SC-06,true,false,false,IA:WrongRARNTI,true
+NEG-026,RRC transaction mismatch,Initial Access,SC-06,true,false,false,RRC:TransactionMismatch,true
+NEG-027,CSI-RS collision,Reference Signals,SC-11,true,false,false,RSLA:ResourceCollision,true
+NEG-028,Stale measurement,Measurements,SC-11,true,false,false,RSLA:StaleMeasurement,true
+NEG-029,Configured SINR substituted,Measurements,SC-12,true,false,false,RSLA:ConfiguredMeasurementForbidden,true
+NEG-030,Missing EESM calibration,Link Adaptation,SC-12,true,false,false,RSLA:MissingEffectiveSINRCalibration,true
+NEG-031,Unsupported codebook tuple,MIMO,SC-13,true,false,false,MIMO:UnsupportedCapabilityTuple,true
+NEG-032,Invalid covariance,MIMO,SC-13,true,false,false,MIMO:InvalidCovariance,true
+NEG-033,Selected/applied precoder mismatch,MIMO,SC-13,true,false,false,MIMO:PrecoderDigestMismatch,true
+NEG-034,Inactive TCI state,Beam,SC-14,true,false,false,MIMO:InactiveTCIState,true
+NEG-035,Unknown channel scenario,Channel,SC-15,true,false,false,CHANNEL:UnknownScenario,true
+NEG-036,Configured geometry backfill,Channel,SC-15,true,false,false,CHANNEL:MissingObservedGeometry,true
+NEG-037,Invalid CDL profile substitution,Channel,SC-16,true,false,false,CHANNEL:ProfileSubstitutionForbidden,true
+NEG-038,Circular pathloss comparison,Channel,SC-16,true,false,false,CHANNEL:CircularEvidence,true
+NEG-039,Interference contribution missing,Interference,SC-18,true,false,false,CHANNEL:MissingInterferingLink,true
+NEG-040,True CFO supplied to RX,RF,SC-19,true,false,false,RF:OracleCFOForbidden,true
+NEG-041,Missing SCO profile,RF,SC-19,true,false,false,RF:MissingSCOProfile,true
+NEG-042,Heuristic phase-noise mask,RF,SC-20,true,false,false,RF:MissingPhaseNoiseProfile,true
+NEG-043,PA soft-limiter fallback,RF,SC-20,true,false,false,RF:PAFallbackForbidden,true
+NEG-044,Implicit AGC,RF,SC-20,true,false,false,RF:ImplicitAGCForbidden,true
+NEG-045,Configured-SNR pathloss,Power Control,SC-21,true,false,false,RF:ConfiguredPathlossForbidden,true
+NEG-046,HARQ TB identity mismatch,HARQ,SC-22,true,false,false,MAC:HARQIdentityMismatch,true
+NEG-047,Illegal K1/K2 timing,MAC,SC-22,true,false,false,MAC:IllegalTiming,true
+NEG-048,Approximate BSR table,MAC,SC-22,true,false,false,MAC:BSRTableMismatch,true
+NEG-049,TA expired UL grant,MAC,SC-22,true,false,false,MAC:TimeAlignmentExpired,true
+NEG-050,Nonatomic grant commit,MAC,SC-22,true,false,false,MAC:GrantCommitFailed,true
+NEG-051,RLC invalid SN length,RLC,SC-23,true,false,false,RLC:UnsupportedSNLength,true
+NEG-052,Malformed STATUS PDU,RLC,SC-23,true,false,false,RLC:MalformedStatusPDU,true
+NEG-053,PDCP COUNT exhaustion,PDCP,SC-23,true,false,false,PDCP:COUNTExhausted,true
+NEG-054,PDCP wrong integrity,PDCP,SC-23,true,false,false,PDCP:IntegrityFailure,true
+NEG-055,Missing QFI map,SDAP,SC-23,true,false,false,SDAP:MissingQFIMap,true
+NEG-056,RRC JSON wire input,RRC,SC-23,true,false,false,RRC:NonUPERWireFormat,true
+NEG-057,Partial bearer commit,RRC,SC-23,true,false,false,RRC:AtomicBearerCommitFailed,true
+NEG-058,Duplicate packet delivery,Traffic,SC-24,true,false,false,TRAFFIC:DuplicateDelivery,true
+NEG-059,Unowned packet bytes,Traffic,SC-24,true,false,false,TRAFFIC:ConservationFailure,true
+NEG-060,Global RNG use,Traffic,SC-24,true,false,false,TRAFFIC:UnnamedRandomStream,true
+NEG-061,Handover geometry-truth target,Handover,SC-25,true,false,false,RRC:HandoverOracleTarget,true
+NEG-062,T304 expiry,Handover,SC-25,true,false,false,RRC:T304Expired,true
+NEG-063,Target RA failure,Handover,SC-25,true,false,false,RRC:TargetRAFailure,true
+NEG-064,Missing required CSV,Artifacts,SC-28,true,false,false,ARTIFACT:MissingCSV,true
+NEG-065,Malformed CSV schema,Artifacts,SC-28,true,false,false,ARTIFACT:CSVSchema,true
+NEG-066,Blank PNG,Artifacts,SC-28,true,false,false,ARTIFACT:BlankPNG,true
+NEG-067,PNG/source hash mismatch,Artifacts,SC-28,true,false,false,ARTIFACT:SourceHashMismatch,true
+NEG-068,Placeholder artifact,Artifacts,SC-28,true,false,false,ARTIFACT:PlaceholderForbidden,true
+NEG-069,Unauthenticated WebGUI run,WebGUI,SC-29,true,false,false,WEB:AuthenticationRequired,true
+NEG-070,YAML edited but not executed,WebGUI,SC-29,true,false,false,WEB:ExecutedConfigMismatch,true
+NEG-071,Required artifact hidden,WebGUI,SC-29,true,false,false,WEB:ArtifactNotPublished,true
+NEG-072,Run ownership violation,WebGUI,SC-29,true,false,false,WEB:Forbidden,true
+NEG-073,Same-toolbox oracle labelled independent,Validation,SC-27,true,false,false,VALIDATION:NonIndependentOracle,true
+NEG-074,Incomplete point accepted,Validation,SC-27,true,false,false,VALIDATION:IncompletePoint,true
+NEG-075,NaN threshold accepted,Validation,SC-27,true,false,false,VALIDATION:NonFiniteThreshold,true
+NEG-076,Duplicate task conflict,Validation,SC-27,true,false,false,VALIDATION:TaskDuplicateConflict,true
+NEG-077,Circular evidence accepted,Validation,SC-27,true,false,false,VALIDATION:CircularEvidence,true

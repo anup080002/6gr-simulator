@@ -18,6 +18,7 @@ if exist("nrPDSCH", "file") ~= 2 || exist("nrPUSCH", "file") ~= 2
 end
 
 cfg = sixgr.config.defaultConfig();
+cfg = localConfigurePDSCHCalibration(cfg);
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 25;
@@ -81,6 +82,7 @@ if exist("nrPDSCH", "file") ~= 2 || exist("nrPUSCH", "file") ~= 2
 end
 
 cfg = sixgr.config.defaultConfig();
+cfg = localConfigurePDSCHCalibration(cfg);
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 25;
@@ -229,6 +231,7 @@ if exist("nrPDSCH", "file") ~= 2 || exist("nrPUSCH", "file") ~= 2
 end
 
 cfg = sixgr.config.defaultConfig();
+cfg = localConfigurePDSCHCalibration(cfg);
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 25;
@@ -283,4 +286,28 @@ assert(double(rxUL.AppliedTimingCorrection_samples) == largeOffset, ...
     "PUSCH receiver must not CP-clip an absolute acquisition timing estimate.");
 assert(~logical(rxUL.TimingEstimateWasClipped), ...
     "PUSCH data-channel timing correction must not report CP-window clipping.");
+end
+
+function cfg = localConfigurePDSCHCalibration(cfg)
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.SymbolAllocation = [2 12];
+cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pdsch.MappingType = "A";
+cfg.phy.pdsch.mappingType = "A";
+cfg.phy.pdsch.PRBSet = 0:(double(cfg.phy.carrier.NSizeGrid) - 1);
+cfg.phy.pdsch.prbSet = cfg.phy.pdsch.PRBSet;
+cfg.phy.pdsch.mcsTable = "qam64_table1";
+cfg.phy.pdsch.mcsIndex = 0;
+cfg.phy.pdsch.modulation = "QPSK";
+cfg.phy.pdsch.codeRate = 120 / 1024;
+cfg.phy.pdsch.UECapability1024QAM = false;
+cfg.phy.pdsch.RRCEnabled1024QAM = false;
+cfg.phy.pdsch.DCIEnabled1024QAM = false;
+cfg.phy.pdsch.DeploymentAllows1024QAM = false;
+cfg.phy.pdsch.FrequencyRangeAllows1024QAM = false;
+cfg.phy.pdsch.BandAllows1024QAM = false;
+cfg.phy.pdsch.FrequencyRange = "FR1";
+cfg.phy.pdsch.OperatingBand = "n77";
+cfg.phy.pdsch.DeploymentClass = "macro";
+cfg.phy.pdsch.DCIFormat = "1_1";
 end

@@ -10,7 +10,9 @@ classdef LowPAPRStudyRunner
                     "phy.pusch.modulation must be configured explicitly.");
             end
             bitsPerSymbol=sixgr.phy.waveform.LowPAPRStudyRunner.bitsPerSymbol(modulation);
-            nRB=double(carrier.NSizeGrid); m=12*nRB;
+            prbSet=sixgr.phy.waveform.LowPAPRStudyRunner. ...
+                resolvePRBSet(cfg,double(carrier.NSizeGrid));
+            nRB=numel(prbSet); m=12*nRB;
             if m>=sixgr.phy.waveform.OFDMParameterResolver.resolve(carrier).Nfft
                 error("WAVEFORM:InvalidOFDMParameters", ...
                     "Localized DFT-s-OFDM requires Nfft greater than M.");
@@ -37,15 +39,24 @@ classdef LowPAPRStudyRunner
                 end
                 symbols=reshape(symbols,m,symbolsPerSlot);
                 spread=sixgr.phy.waveform.UnitaryDFTSpreader.apply(symbols,m);
+                allocatedRows=reshape(12*prbSet(:).' + (1:12).',[],1);
+                cpTxGrid=complex(zeros(12*double(carrier.NSizeGrid), ...
+                    symbolsPerSlot));
+                dftTxGrid=cpTxGrid;
+                cpTxGrid(allocatedRows,:)=symbols;
+                dftTxGrid(allocatedRows,:)=spread;
                 [cpWave,cpInfo]=sixgr.phy.waveform.CanonicalOFDMModulator.toolbox( ...
-                    carrier,symbols,"Windowing",0);
+                    carrier,cpTxGrid,"Windowing",0);
                 [dftWave,dftInfo]=sixgr.phy.waveform.CanonicalOFDMModulator.toolbox( ...
-                    carrier,spread,"Windowing",0);
-                cpGrid=sixgr.phy.waveform.CanonicalOFDMDemodulator.toolbox( ...
+                    carrier,dftTxGrid,"Windowing",0);
+                cpRxGrid=sixgr.phy.waveform.CanonicalOFDMDemodulator.toolbox( ...
                     carrier,cpWave,"Windowing",0);
-                dftGrid=sixgr.phy.waveform.CanonicalOFDMDemodulator.toolbox( ...
+                dftRxGrid=sixgr.phy.waveform.CanonicalOFDMDemodulator.toolbox( ...
                     carrier,dftWave,"Windowing",0);
-                recovered=sixgr.phy.waveform.UnitaryDFTDespreader.apply(dftGrid,m);
+                cpGrid=cpRxGrid(allocatedRows,:);
+                dftGrid=dftRxGrid(allocatedRows,:);
+                recovered=sixgr.phy.waveform.UnitaryDFTDespreader.apply( ...
+                    dftGrid,m);
                 evmCP(trial)=100*sqrt(mean(abs(cpGrid(:)-symbols(:)).^2)/ ...
                     max(mean(abs(symbols(:)).^2),eps));
                 evmDFT(trial)=100*sqrt(mean(abs(recovered(:)-symbols(:)).^2)/ ...
@@ -79,6 +90,28 @@ classdef LowPAPRStudyRunner
         end
     end
     methods (Static,Access=private)
+        function prbSet=resolvePRBSet(cfg,nSizeGrid)
+            prbSet=sixgr.util.structGet(cfg,"phy.pusch.PRBSet",[]);
+            if isempty(prbSet)
+                prbSet=sixgr.util.structGet(cfg,"phy.pusch.prbSet",[]);
+            end
+            prbSet=double(prbSet(:)).';
+            if isempty(prbSet)
+                error("WAVEFORM:MissingTransformAllocation", ...
+                    "Localized DFT-s-OFDM requires an explicit PUSCH PRBSet.");
+            end
+            if any(~isfinite(prbSet)) || any(prbSet~=fix(prbSet)) || ...
+                    any(prbSet<0) || any(prbSet>=nSizeGrid) || ...
+                    numel(unique(prbSet))~=numel(prbSet)
+                error("WAVEFORM:InvalidTransformAllocation", ...
+                    "PUSCH PRBSet must contain unique zero-based PRB indices inside the carrier.");
+            end
+            prbSet=sort(prbSet);
+            if numel(prbSet)>1 && any(diff(prbSet)~=1)
+                error("WAVEFORM:NoncontiguousTransformAllocation", ...
+                    "Localized DFT-s-OFDM requires a contiguous PUSCH PRBSet.");
+            end
+        end
         function value=bitsPerSymbol(modulation)
             switch modulation
                 case {"BPSK","PI/2-BPSK","PI2-BPSK"},value=1;

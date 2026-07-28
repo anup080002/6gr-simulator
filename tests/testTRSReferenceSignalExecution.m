@@ -165,9 +165,26 @@ cfgSyncDL.channel.model = "AWGN";
 cfgSyncDL.channel.awgnOnly = true;
 cfgSyncDL.channel.snr_dB = 30;
 cfgSyncDL.phy.rx.useIdealTimingSync = false;
+cfgSyncDL.phy.pdsch.SymbolAllocation = [2 12];
+cfgSyncDL.phy.pdsch.symbolAllocation = [2 12];
+cfgSyncDL.phy.pdsch.MappingType = "A";
+cfgSyncDL.phy.pdsch.mappingType = "A";
+cfgSyncDL.phy.pdsch.PRBSet = 0:(double(cfgSyncDL.phy.carrier.NSizeGrid) - 1);
+cfgSyncDL.phy.pdsch.prbSet = cfgSyncDL.phy.pdsch.PRBSet;
+cfgSyncDL.phy.pdsch.UECapability1024QAM = false;
+cfgSyncDL.phy.pdsch.RRCEnabled1024QAM = false;
+cfgSyncDL.phy.pdsch.DCIEnabled1024QAM = false;
+cfgSyncDL.phy.pdsch.DeploymentAllows1024QAM = false;
+cfgSyncDL.phy.pdsch.FrequencyRangeAllows1024QAM = false;
+cfgSyncDL.phy.pdsch.BandAllows1024QAM = false;
+cfgSyncDL.phy.pdsch.FrequencyRange = "FR1";
+cfgSyncDL.phy.pdsch.OperatingBand = "n77";
+cfgSyncDL.phy.pdsch.DeploymentClass = "macro";
+cfgSyncDL.phy.pdsch.DCIFormat = "1_1";
 cfgSyncDL = sixgr.util.structSet(cfgSyncDL, "phy.impairments.cfoHz", 0);
 cfgSyncDL = sixgr.util.structSet(cfgSyncDL, "phy.impairments.timingOffsetSamples", 0);
-dlSync = sixgr.link.runDLPDSCHThroughput(cfgSyncDL, "SNR_dB", 30, "NumFrames", 1);
+dlSync = sixgr.link.runDLPDSCHThroughput(cfgSyncDL, "SNR_dB", 30, ...
+    "NumFrames", 1, "ExecutionProfile", "phy_calibration");
 dlSyncT = dlSync.TrialTable;
 assert(istable(dlSyncT) && height(dlSyncT) == 1 && ...
     strcmpi(char(string(dlSyncT.CFOEstimateAvailability(1))), "available") && ...

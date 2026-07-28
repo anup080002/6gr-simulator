@@ -1,0 +1,17 @@
+CaseID,OracleType,Feature,Input,Expected,Equation,Implementation
+DMRS-00,PURE_MATH,DMRS_INDEX,nprb=4;prb=0;symbol=2,96;98;100;102;104;106,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-01,PURE_MATH,DMRS_INDEX,nprb=4;prb=0;symbol=7,336;338;340;342;344;346,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-02,PURE_MATH,DMRS_INDEX,nprb=4;prb=0;symbol=11,528;530;532;534;536;538,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-03,PURE_MATH,DMRS_INDEX,nprb=4;prb=0;symbol=13,624;626;628;630;632;634,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-04,PURE_MATH,DMRS_INDEX,nprb=4;prb=1;symbol=2,108;110;112;114;116;118,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-05,PURE_MATH,DMRS_INDEX,nprb=4;prb=1;symbol=7,348;350;352;354;356;358,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-06,PURE_MATH,DMRS_INDEX,nprb=4;prb=1;symbol=11,540;542;544;546;548;550,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-07,PURE_MATH,DMRS_INDEX,nprb=4;prb=1;symbol=13,636;638;640;642;644;646,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-08,PURE_MATH,DMRS_INDEX,nprb=4;prb=2;symbol=2,120;122;124;126;128;130,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-09,PURE_MATH,DMRS_INDEX,nprb=4;prb=2;symbol=7,360;362;364;366;368;370,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-10,PURE_MATH,DMRS_INDEX,nprb=4;prb=2;symbol=11,552;554;556;558;560;562,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-11,PURE_MATH,DMRS_INDEX,nprb=4;prb=2;symbol=13,648;650;652;654;656;658,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-12,PURE_MATH,DMRS_INDEX,nprb=4;prb=3;symbol=2,132;134;136;138;140;142,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-13,PURE_MATH,DMRS_INDEX,nprb=4;prb=3;symbol=7,372;374;376;378;380;382,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-14,PURE_MATH,DMRS_INDEX,nprb=4;prb=3;symbol=11,564;566;568;570;572;574,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import
+DMRS-15,PURE_MATH,DMRS_INDEX,nprb=4;prb=3;symbol=13,660;662;664;666;668;670,zero-based type-1 comb-2 RE coordinates,standalone_python_no_dut_import

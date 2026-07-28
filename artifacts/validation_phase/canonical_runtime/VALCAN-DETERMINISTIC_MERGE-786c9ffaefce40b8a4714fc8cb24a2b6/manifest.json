@@ -1,0 +1,14 @@
+{
+  "SchemaVersion": "1.0.0",
+  "RunID": "VALCAN-DETERMINISTIC_MERGE-786c9ffaefce40b8a4714fc8cb24a2b6",
+  "Workload": "DETERMINISTIC_MERGE",
+  "RunClass": "CONTROL_ONLY",
+  "SourceCommit": "1704e9320ab3b7a6261ce0150bb46b31258da3f1",
+  "SourceTreeSHA256": "2a43c7e900b2ff9a8b1b9184a98472f2322729369ec3879354946e341f0429c0",
+  "ScenarioSHA256": "2ae86ff5713876a4d588316a5c3726a2ae454823cf8e4e6bffca9662bd65746b",
+  "EvidenceSHA256": "8fb6ca6793bf65378afe6d32ed527803c494636ce7054f5f90dc30368eefa5c4",
+  "StartUTC": "2026-07-27T16:36:29.306Z",
+  "EndUTC": "2026-07-27T16:36:29.476Z",
+  "RuntimeStatus": "PASS",
+  "ArtifactStatus": "PASS"
+}

@@ -220,6 +220,7 @@
     "rv_sequence": [0, 2, 3, 1],
     "cbg_enabled": false,
     "feedback_timing_slots": 4,
+    "k2": 1,
     "combining_mode": "soft",
     "study_axes": ["latency", "reliability"],
     "stop_condition": "max_retransmissions",

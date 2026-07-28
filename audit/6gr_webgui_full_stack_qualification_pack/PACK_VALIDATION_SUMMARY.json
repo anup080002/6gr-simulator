@@ -1,0 +1,17 @@
+{
+  "scenario_id": "lls_webgui_full_stack_sinr_geometry_qualification",
+  "subcases": 31,
+  "components": 163,
+  "value_checks": 107,
+  "negative_cases": 77,
+  "acceptance_rules": 387,
+  "artifact_registry_total": 1248,
+  "comprehensive_artifacts": 746,
+  "comprehensive_csv": 447,
+  "comprehensive_png": 299,
+  "deep_artifacts": 1248,
+  "deep_csv": 623,
+  "deep_png": 625,
+  "yaml_parse_ok": true,
+  "pack_verifier_exit": 0
+}

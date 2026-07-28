@@ -1,0 +1,9 @@
+{
+  "SchemaVersion": "1.0.0",
+  "ScenarioID": "validation_statistical_intervals",
+  "Workload": "STATISTICAL_INTERVALS",
+  "RunClass": "CONTROL_ONLY",
+  "Seed": 14018,
+  "SourceCommit": "1704e9320ab3b7a6261ce0150bb46b31258da3f1",
+  "SourceTreeSHA256": "2a43c7e900b2ff9a8b1b9184a98472f2322729369ec3879354946e341f0429c0"
+}

@@ -1,0 +1,3 @@
+RunID,RunMode,RadioProfile,RunClass,Normative,Status
+master_sinr_sweep-d17d719c8a3d,FIXED_SNR_SWEEP,nr_rel18_system_lls_strict,fixed_link_calibration,1,PASS
+master_geometry_based-6e9abbcae95a,GEOMETRY_NETWORK,nr_rel18_system_lls_strict,geometry_system_lls,1,PASS

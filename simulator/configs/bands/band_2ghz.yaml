@@ -3,6 +3,8 @@
     "range_name": "FR1",
     "band_name": "2ghz",
     "center_frequency_hz": 2000000000,
+    "dl_center_frequency_hz": 2000000000,
+    "ul_center_frequency_hz": 1900000000,
     "bandwidth_hz": 40000000,
     "bandwidth_options_hz": [10000000, 20000000, 40000000],
     "duplex_mode": "FDD",

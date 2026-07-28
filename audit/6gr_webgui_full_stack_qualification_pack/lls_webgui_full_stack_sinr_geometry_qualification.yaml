@@ -1,0 +1,224 @@
+# Semantic contract for a single WebGUI-launched, multi-subcase, full-stack qualification suite.
+# Codex must map every field into the repository canonical schema. No field may be silently ignored.
+meta:
+  scenario_id: lls_webgui_full_stack_sinr_geometry_qualification
+  scenario_name: Full-Stack SINR + Geometry Qualification Suite
+  description: >-
+    One WebGUI run and one YAML revision orchestrating bounded component, link, network,
+    protocol, negative, artifact and UI qualification subcases. It exercises the same
+    canonical TX/RX, waveform, channel, RF, MAC and protocol implementations across
+    fixed-SNR, LOS geometry, NLOS/O2I, mobility, interference and handover environments.
+  version: "2.0.0"
+  tags: [webgui, full_stack, qualification, sinr_sweep, geometry, los, nlos, rf, l2, l3, traffic]
+
+profile:
+  primary_id: nr_rel18_system_lls_strict
+  normative_core: true
+  bounded_profile_only: true
+  publication_curve_eligible: false
+  rf_impairment_subcase_profile: rf_impaired_research
+  rel20_6g_study_subcase_enabled: false
+
+validation:
+  run_class: webgui_full_stack_qualification
+  strict: true
+  require_actual_matlab_execution: true
+  require_webgui_launch: true
+  require_measured_post_eq_sinr: true
+  require_observed_geometry: true
+  require_independent_oracles: true
+  require_all_preset_artifacts: true
+  require_no_placeholder_artifacts: true
+  require_no_mandatory_skip_or_block: true
+  confidence_level: 0.95
+
+suite:
+  preset: comprehensive_smoke
+  one_webgui_run_id: true
+  one_resolved_yaml_revision: true
+  child_subcases_share_canonical_implementations: true
+  continue_after_subcase_failure: true
+  final_status_requires_all_mandatory_pass: true
+  presets:
+    comprehensive_smoke:
+      estimated_runtime_minutes: 90
+      require_base_component_artifacts: true
+      require_impact_artifacts: false
+      fixed_snr_seeds: [11, 23]
+      geometry_seeds: [11, 23]
+      fixed_tbs_per_point_per_direction_per_seed: 12
+      connected_tbs_per_point_per_direction_per_seed: 4
+      geometry_slots_per_probe: 60
+    deep_acceptance:
+      estimated_runtime_minutes: 480
+      require_base_component_artifacts: true
+      require_impact_artifacts: true
+      fixed_snr_seeds: [11, 23, 47, 89, 131, 197]
+      geometry_seeds: [11, 23, 47, 89, 131, 197]
+      fixed_tbs_per_point_per_direction_per_seed: 200
+      connected_tbs_per_point_per_direction_per_seed: 40
+      geometry_slots_per_probe: 400
+
+carrier:
+  frequency_range: FR1
+  center_frequency_hz: 4000000000
+  channel_bandwidth_hz: 20000000
+  subcarrier_spacing_khz: 30
+  cyclic_prefix: normal
+  duplex_mode: TDD
+  active_bwp_nrb: 24
+  active_bwp_start_rb: 0
+
+frame:
+  tdd_pattern: DDDSU
+  preserve_flexible_symbols: true
+  special_slot:
+    downlink_symbols: 10
+    guard_symbols: 2
+    uplink_symbols: 2
+
+main_fixed_sinr_sweep:
+  enabled: true
+  directions: [DL, UL]
+  snr_db: [-8, -4, 0, 4, 10]
+  fixed_mcs_dl: 10
+  fixed_mcs_ul: 10
+  fixed_rank: 1
+  measured_sinr_tolerance_db: 1.0
+  channel: AWGN
+  connected_control_overlay: true
+
+network_probes:
+  initial_access:
+    enabled: true
+    snr_db: 14
+    active_ssb_beams: 4
+    require_rrc_setup_complete: true
+  los_static:
+    enabled: true
+    cells: 1
+    ues: 1
+    channel_profile: TDL-C
+    slots: 60
+  nlos_o2i_blockage:
+    enabled: true
+    cells: 1
+    ues: 1
+    scenario: UMa
+    los_state: NLOS
+    channel_profile: CDL-C
+    o2i_enabled: true
+    blockage_enabled: true
+    slots: 60
+  multicell_interference_mobility:
+    enabled: true
+    cells: 2
+    ues: 2
+    ue_speed_kmh: 100
+    channel_profile: CDL-C
+    sample_domain_interference: true
+    slots: 80
+  handover_rlf:
+    enabled: true
+    cells: 2
+    ues: 1
+    trajectory: crossing_cells
+    ue_speed_kmh: 60
+    require_successful_handover: true
+    require_failure_and_reestablishment_branch: true
+    slots: 120
+
+antennas_mimo_beam:
+  gnb_ports: 4
+  ue_ports: 4
+  runtime_rank_probes: [1, 2, 4]
+  type_i_codebook_probe: true
+  covariance_qualified_irc_probe: true
+  mu_mimo_probe: true
+  multi_trp_probe: true
+  beam_management_p1_p2_p3: true
+  beam_failure_recovery_probe: true
+
+control_data_reference_signals:
+  dci_formats: ["0_0", "1_0", "0_1", "1_1"]
+  pdcch_aggregation_levels: [1, 2, 4, 8, 16]
+  pucch_formats: [0, 1, 2, 3, 4]
+  pdsch_dmrs_mapping_types: [A, B]
+  pusch_dmrs_mapping_types: [A, B]
+  dmrs_configuration_types: [1, 2]
+  ptrs_enabled: true
+  csirs_enabled: true
+  csi_im_enabled: true
+  srs_enabled: true
+  trs_enabled: true
+  csi_part1_part2_enabled: true
+  olla_enabled: true
+
+rf_front_end_probes:
+  enabled: true
+  cfo_hz: 600
+  fractional_timing_offset_samples: 0.25
+  sample_clock_offset_ppm: 10
+  phase_noise_profile: explicit_smoke_profile
+  tx_iq_gain_imbalance_db: 0.5
+  tx_iq_phase_imbalance_deg: 3
+  rx_iq_gain_imbalance_db: 0.5
+  rx_iq_phase_imbalance_deg: 3
+  pa_profile: bounded_rapp_memory_probe
+  pa_input_backoff_db: 6
+  dpd_probe: true
+  dac_bits: 12
+  adc_bits: 10
+  explicit_agc: true
+  blocker_probe: true
+
+mac_protocol_traffic:
+  harq_enabled: true
+  dl_harq_processes: 4
+  ul_harq_processes: 4
+  max_retransmissions: 2
+  rv_sequence: [0, 2, 3, 1]
+  scheduler_policies: [RR, PF, QoS_PF]
+  exact_bsr_phr_sr_ta_probes: true
+  rlc_um_sn_lengths: [6, 12]
+  rlc_am_sn_lengths: [12, 18]
+  pdcp_sn_lengths: [12, 18]
+  pdcp_security_profiles: [NEA2_NIA2]
+  sdap_qfi_drb_mapping: true
+  rrc_reconfiguration: true
+  deterministic_cbr_packets:
+    packet_size_bytes: 512
+    packet_count_dl: 20
+    packet_count_ul: 20
+    qfi: 9
+    five_qi: 9
+  burst_traffic_probe: true
+  require_first_delivery_deduplication: true
+  require_byte_conservation: true
+
+negative_fault_injection:
+  enabled: true
+  execute_all_cases_from: full_stack_negative_fault_injection_matrix.csv
+
+artifacts:
+  registry_file: full_stack_required_artifact_registry.csv
+  require_selected_preset_entries: true
+  generate_csv: true
+  generate_png: true
+  generate_mat: true
+  generate_logs: true
+  generate_json_manifest: true
+  emit_placeholder_artifacts: false
+  hash_every_artifact: true
+  semantic_plot_audit: true
+  publish_all_in_webgui: true
+
+webgui:
+  canonical_stack_only: true
+  show_source_effective_resolved_yaml: true
+  show_live_subcase_progress: true
+  show_all_artifacts: true
+  show_component_coverage: true
+  show_value_correctness: true
+  show_failed_validation_rows: true
+  require_playwright_end_to_end: true
