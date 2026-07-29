@@ -414,6 +414,7 @@ for k = 1:numel(tests)
     name = func2str(fn);
     r = struct("name", name, "ok", false, "msg", "", "duration_s", NaN);
     testStart = tic;
+    fprintf("FULLSTACK_TEST_START %s\n", name);
     try
         feval(fn);
         r.ok = true;
@@ -424,6 +425,8 @@ for k = 1:numel(tests)
     end
     r.duration_s = toc(testStart);
     report.results = [report.results; r]; %#ok<AGROW>
+    fprintf("FULLSTACK_TEST_END %s %s\n", name, ...
+        ternary(r.ok, "PASS", "FAIL"));
     fprintf("[%s] %s (%.2fs)\n", ternary(r.ok, "PASS", "FAIL"), name, r.duration_s);
     if ~r.ok
         fprintf("       %s\n", r.msg);

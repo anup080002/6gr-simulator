@@ -211,3 +211,39 @@ def test_regression_helper_emits_progress_heartbeat(tmp_path: Path) -> None:
     assert payload["status"] == "RUNNING"
     assert payload["elapsed_seconds"] > 0
     assert payload["timeout_seconds"] == 2
+
+
+def test_regression_helper_enforces_per_test_timeout(tmp_path: Path) -> None:
+    helper = REPO_ROOT / "tools" / "run_bounded_command.py"
+    log = tmp_path / "per_test.log"
+    heartbeat = tmp_path / "per_test_heartbeat.json"
+    child = (
+        "import time; "
+        "print('FULLSTACK_TEST_START deliberately_slow', flush=True); "
+        "time.sleep(1)"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(helper),
+            "--timeout-seconds",
+            "5",
+            "--per-test-timeout-seconds",
+            "0.15",
+            "--heartbeat-seconds",
+            "0.03",
+            "--heartbeat-file",
+            str(heartbeat),
+            "--log",
+            str(log),
+            "--",
+            sys.executable,
+            "-c",
+            child,
+        ],
+        check=False,
+    )
+    assert result.returncode == 125
+    content = log.read_text(encoding="utf-8")
+    assert "FULLSTACK:PerTestTimeout" in content
+    assert "deliberately_slow" in content
