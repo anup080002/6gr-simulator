@@ -52,7 +52,7 @@ def _page_contract() -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def test_full_stack_webgui_actual_run_workflow() -> None:
+def test_full_stack_webgui_actual_run_workflow(tmp_path: Path) -> None:
     base_url = os.environ.get(
         "SIXGR_WEBGUI_BASE_URL", "http://127.0.0.1:62906"
     ).rstrip("/")
@@ -195,10 +195,19 @@ def test_full_stack_webgui_actual_run_workflow() -> None:
         selected = _selected_registry()
         required_names = {row["FileName"] for row in selected}
         missing = sorted(required_names - set(by_name))
-        assert not missing, (
-            f"{len(missing)} selected-preset artifacts are not indexed: "
-            + ", ".join(missing[:25])
-        )
+        if launch_run:
+            assert not missing, (
+                f"{len(missing)} selected-preset artifacts are not indexed: "
+                + ", ".join(missing[:25])
+            )
+        else:
+            # Recovery mode inspects the preserved failed run. Missing
+            # evidence must remain visible and must not be materialized by
+            # the WebGUI test.
+            assert missing, (
+                "The preserved failed run unexpectedly exposes every "
+                "contracted artifact."
+            )
 
         # Download one CSV and one PNG per domain. Repeated byte hashes prove
         # the WebGUI download is stable for the selected immutable RunID.
@@ -217,6 +226,8 @@ def test_full_stack_webgui_actual_run_workflow() -> None:
                 if match:
                     representatives.append(match)
         for row in representatives:
+            if row["FileName"] not in by_name:
+                continue
             descriptor = by_name[row["FileName"]]
             url = urljoin(base_url, str(descriptor["download_url"]))
             first = context.request.get(url)
@@ -242,9 +253,8 @@ def test_full_stack_webgui_actual_run_workflow() -> None:
 
         run_folder = Path(str((live.get("run") or {}).get("run_folder") or ""))
         assert run_folder.is_dir()
-        screenshot_dir = (
-            run_folder / "qualification_evidence" / "webgui_screenshots"
-        )
+        # The source run is immutable during Phase-19 recovery.
+        screenshot_dir = tmp_path / "webgui_screenshots"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(
             path=str(screenshot_dir / "full_stack_qualification.png"),

@@ -24,21 +24,24 @@ classdef FullStackRegressionRunner
                 "testAll('Verbose',false,'ShowSlowest',10)");
             rows(1) = localBoundedGate(ctx,rows(1).Suite, ...
                 [matlabExecutable,"-batch",code],countPath, ...
-                localSlice(budgetSeconds,budgetTimer,10));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(1).Suite),1,numel(rows));
             localWrite(ctx,rows);
 
             countPath = fullfile(countDir,"matlab_fullstack_counts.csv");
             code = localRuntestsCode(countPath,"*FullStack*");
             rows(2) = localBoundedGate(ctx,rows(2).Suite, ...
                 [matlabExecutable,"-batch",code],countPath, ...
-                localSlice(budgetSeconds,budgetTimer,9));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(2).Suite),2,numel(rows));
             localWrite(ctx,rows);
 
             countPath = fullfile(countDir,"matlab_integration_counts.csv");
             code = localRuntestsCode(countPath,"*Integration*");
             rows(3) = localBoundedGate(ctx,rows(3).Suite, ...
                 [matlabExecutable,"-batch",code],countPath, ...
-                localSlice(budgetSeconds,budgetTimer,8));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(3).Suite),3,numel(rows));
             localWrite(ctx,rows);
 
             countPath = fullfile(countDir,"matlab_config_channel_counts.csv");
@@ -48,7 +51,8 @@ classdef FullStackRegressionRunner
             code = localTestAllCode(countPath,call);
             rows(4) = localBoundedGate(ctx,rows(4).Suite, ...
                 [matlabExecutable,"-batch",code],countPath, ...
-                localSlice(budgetSeconds,budgetTimer,7));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(4).Suite),4,numel(rows));
             localWrite(ctx,rows);
 
             countPath = fullfile(countDir,"matlab_truth_export_counts.csv");
@@ -59,33 +63,39 @@ classdef FullStackRegressionRunner
             code = localTestAllCode(countPath,call);
             rows(5) = localBoundedGate(ctx,rows(5).Suite, ...
                 [matlabExecutable,"-batch",code],countPath, ...
-                localSlice(budgetSeconds,budgetTimer,6));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(5).Suite),5,numel(rows));
             localWrite(ctx,rows);
 
             rows(6) = localBoundedGate(ctx,rows(6).Suite, ...
                 ["python","-m","compileall","apps","backend","frontend", ...
-                "tests"],"",localSlice(budgetSeconds,budgetTimer,5));
+                "tests"],"",localSuiteTimeout(ctx,budgetSeconds, ...
+                budgetTimer,rows(6).Suite),6,numel(rows));
             localWrite(ctx,rows);
             rows(7) = localBoundedGate(ctx,rows(7).Suite, ...
                 ["python","-m","pytest","-q"],"", ...
-                localSlice(budgetSeconds,budgetTimer,4));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(7).Suite),7,numel(rows));
             localWrite(ctx,rows);
             rows(8) = localBoundedGate(ctx,rows(8).Suite, ...
                 ["python","-m","pytest","-q","tests","-k", ...
                 "lls_web_dashboard"],"", ...
-                localSlice(budgetSeconds,budgetTimer,3));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(8).Suite),8,numel(rows));
             localWrite(ctx,rows);
             rows(9) = localBoundedGate(ctx,rows(9).Suite, ...
                 ["python","-m","pytest","-q", ...
                 "tests/test_full_stack_webgui_e2e.py"],"", ...
-                localSlice(budgetSeconds,budgetTimer,2));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(9).Suite),9,numel(rows));
             localWrite(ctx,rows);
             verifier = fullfile(ctx.Profile.PackRoot, ...
                 "verify_full_stack_qualification_artifacts.py");
             rows(10) = localBoundedGate(ctx,rows(10).Suite, ...
                 ["python",verifier,ctx.RunFolder,ctx.Profile.PackRoot, ...
                 "--preset",ctx.Profile.Preset],"", ...
-                localSlice(budgetSeconds,budgetTimer,1));
+                localSuiteTimeout(ctx,budgetSeconds,budgetTimer, ...
+                rows(10).Suite),10,numel(rows));
             T = localWrite(ctx,rows);
         end
     end
@@ -106,10 +116,16 @@ for index = 1:numel(names)
 end
 end
 
-function row = localBoundedGate(ctx,name,args,countPath,timeoutSeconds)
+function row = localBoundedGate(ctx,name,args,countPath,timeoutSeconds, ...
+        shardIndex,shardCount)
 row = localRow();
 row.Suite = char(name);
 row.MandatoryTests = 1;
+row.ShardIndex = shardIndex;
+row.ShardCount = shardCount;
+row.SuiteTimeoutSeconds = timeoutSeconds;
+row.PerTestTimeoutSeconds = localRegressionNumber(ctx, ...
+    "per_test_timeout_minutes",25)*60;
 if ~(isfinite(timeoutSeconds) && timeoutSeconds >= 1)
     row.BlockedTests = 1;
     row.Details = "FULLSTACK:RegressionBudgetExhausted: " + ...
@@ -119,10 +135,16 @@ end
 logDir = fullfile(ctx.ReportsDir,"regression");
 sixgr.util.ensureFolder(logDir);
 logPath = fullfile(logDir,lower(string(name))+".log");
+heartbeatPath = fullfile(logDir,lower(string(name))+"_heartbeat.json");
+row.HeartbeatArtifact = char(replace(string(heartbeatPath), ...
+    string(ctx.RunFolder)+filesep,""));
 wrapper = fullfile(ctx.Profile.RepositoryRoot,"tools", ...
     "run_bounded_command.py");
+heartbeatSeconds = localRegressionNumber(ctx,"heartbeat_seconds",30);
 command = strjoin([localQuote("python"),localQuote(wrapper), ...
     "--timeout-seconds",compose("%.3f",timeoutSeconds), ...
+    "--heartbeat-seconds",compose("%.3f",heartbeatSeconds), ...
+    "--heartbeat-file",localQuote(heartbeatPath), ...
     "--log",localQuote(logPath),"--",arrayfun(@localQuote,args)]," ");
 started = tic;
 [exitCode,launcherOutput] = system(command);
@@ -152,6 +174,7 @@ else
     row.FailedTests = max(row.FailedTests,1);
     row.Details = localFailureDetails(exitCode,logPath,launcherOutput);
 end
+row.LastTest = char(localLastTest(logPath));
 end
 
 function value = localFailureDetails(exitCode,logPath,launcherOutput)
@@ -167,24 +190,19 @@ value = sprintf("ExitCode=%d Log=%s Output=%s", ...
 end
 
 function secondsValue = localBudgetSeconds(ctx)
-T = ctx.Profile.Subcases;
-mask = string(T.SubcaseID) == "SC-30";
-if ctx.Profile.Preset == "deep_acceptance"
-    column = "DeepBudgetMinutes";
-else
-    column = "ComprehensiveBudgetMinutes";
-end
-minutesValue = str2double(string(T.(column)(mask)));
-if numel(minutesValue) ~= 1 || ~isfinite(minutesValue) || minutesValue <= 0
+minutesValue = localRegressionNumber(ctx,"total_budget_minutes",NaN);
+if ~(isscalar(minutesValue)&&isfinite(minutesValue)&&minutesValue>0)
     error("FULLSTACK:InvalidRegressionBudget", ...
-        "SC-30 must declare a positive %s value.",column);
+        "qualification.regression.total_budget_minutes must be positive.");
 end
 secondsValue = 60*minutesValue;
 end
 
-function secondsValue = localSlice(totalSeconds,budgetTimer,suitesRemaining)
+function secondsValue = localSuiteTimeout(ctx,totalSeconds,budgetTimer,~)
 remaining = max(0,totalSeconds-toc(budgetTimer));
-secondsValue = floor(remaining/max(1,suitesRemaining));
+configured = 60*localRegressionNumber(ctx, ...
+    "per_suite_timeout_minutes",90);
+secondsValue = floor(min(remaining,configured));
 end
 
 function code = localTestAllCode(countPath,call)
@@ -223,5 +241,32 @@ function row = localRow()
 row = struct("Suite","","MandatoryTests",0,"ExecutedTests",0, ...
     "PassedTests",0,"FailedTests",0,"SkippedTests",0, ...
     "BlockedTests",0,"Status","FAIL","DurationSeconds",NaN, ...
-    "Details","");
+    "ShardIndex",0,"ShardCount",10,"SuiteTimeoutSeconds",NaN, ...
+    "PerTestTimeoutSeconds",NaN,"HeartbeatArtifact","", ...
+    "LastTest","","Details","");
+end
+
+function value = localRegressionNumber(ctx,name,default)
+raw = sixgr.util.structGet(ctx.Profile.Configuration, ...
+    "regression."+string(name),default);
+if isnumeric(raw)
+    value = double(raw);
+else
+    value = str2double(string(raw));
+end
+if ~(isscalar(value)&&isfinite(value)&&value>0)
+    value = default;
+end
+end
+
+function value = localLastTest(logPath)
+value = "";
+if ~isfile(logPath),return;end
+text = string(fileread(logPath));
+tokens = regexp(char(text), ...
+    '(?m)^(?:Running|Starting|Test)\s+([^\r\n]+)$', ...
+    'tokens');
+if ~isempty(tokens)
+    value = strtrim(string(tokens{end}{1}));
+end
 end

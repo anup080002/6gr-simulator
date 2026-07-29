@@ -1,0 +1,14 @@
+{
+  "branch": "integration/phase18-recovery",
+  "checkpoint_commit": "33b7749b2328cfb3cfe31349b7be5627dff69827",
+  "source_branch": "main",
+  "source_run_id": "phase18_actual_20260728_04",
+  "source_run_relative_path": "results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04",
+  "source_run_file_count": 461,
+  "source_run_inventory_sha256": "1c9ee842848b5ea6bf5dc2b792667a500185d3104d8be31edab8ef6b85496f0f",
+  "source_run_resolver_inventory_sha256": "da0609941c2b4199be2158fc3334d97b5230a6e78ddbd03c0383de259712546a",
+  "source_run_resolver_inventory_algorithm": "sorted RelativePath|ByteCount|SHA256 UTF-8 lines",
+  "source_run_read_only": true,
+  "recorded_utc": "2026-07-29T00:51:08.794Z",
+  "notes": "Phase-18 was already committed cleanly on main before recovery began; this branch points at that exact behavior checkpoint."
+}

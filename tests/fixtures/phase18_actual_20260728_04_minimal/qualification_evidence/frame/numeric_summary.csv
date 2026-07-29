@@ -1,0 +1,2 @@
+CaseID,IllegalFixedDirectionOverrideCount,InvalidDCIGrantCount,FalseGrantCount,RequiredFormatsPassed,MismatchCount,ConfiguredMeasurementSubstitutionCount,Status
+FIXTURE-1,0,0,0,5,0,0,PASS

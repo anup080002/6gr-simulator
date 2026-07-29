@@ -1,0 +1,2 @@
+RunID,StatusPDUId,ACK_SN,NACKCount,MismatchCount,Status
+phase18_fixture,STATUS-1,4,0,0,PASS

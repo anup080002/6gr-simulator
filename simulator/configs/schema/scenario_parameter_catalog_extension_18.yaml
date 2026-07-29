@@ -7,6 +7,7 @@ sections:
       profile: {required: true, type: struct, nested_rule: qualification_profile}
       validation: {required: true, type: struct, nested_rule: qualification_validation}
       suite: {required: true, type: struct, nested_rule: qualification_suite}
+      regression: {required: true, type: struct, nested_rule: qualification_regression}
       carrier: {required: true, type: struct, nested_rule: qualification_carrier}
       frame: {required: true, type: struct, nested_rule: qualification_frame}
       main_fixed_sinr_sweep: {required: true, type: struct, nested_rule: qualification_fixed_sweep}
@@ -63,6 +64,14 @@ nested_sections:
       fixed_tbs_per_point_per_direction_per_seed: {required: true, type: integer, min: 1}
       connected_tbs_per_point_per_direction_per_seed: {required: true, type: integer, min: 1}
       geometry_slots_per_probe: {required: true, type: integer, min: 1}
+  qualification_regression:
+    parameters:
+      measured_baseline_minutes: {required: true, type: number, min_exclusive: 0}
+      total_budget_minutes: {required: true, type: number, min_exclusive: 0}
+      per_suite_timeout_minutes: {required: true, type: number, min_exclusive: 0}
+      per_test_timeout_minutes: {required: true, type: number, min_exclusive: 0}
+      heartbeat_seconds: {required: true, type: number, min_exclusive: 0}
+      shard_count: {required: true, type: integer, min: 1}
   qualification_carrier:
     parameters:
       frequency_range: {required: true, type: string, allowed_values: [FR1, FR2]}

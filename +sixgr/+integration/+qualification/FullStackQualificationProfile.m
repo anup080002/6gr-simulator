@@ -87,8 +87,15 @@ if ~isfile(path)
     error("FULLSTACK:ContractFileMissing", ...
         "Qualification contract file is missing: %s", path);
 end
-T = readtable(path, "Delimiter", ",", "TextType", "string", ...
-    "VariableNamingRule", "preserve");
+% Contract CSVs intentionally mix identifiers, enum literals and numeric
+% constants in the same columns.  Automatic numeric inference converts
+% identifiers such as ResolvedYAMLSHA256 and PASS to NaN, which destroys
+% the contract before the evaluator sees it.  Load every contract field as
+% text and let the typed expression/comparator engines perform conversion.
+options = detectImportOptions(path,"Delimiter",",", ...
+    "VariableNamingRule","preserve","TextType","string");
+options = setvartype(options,options.VariableNames,"string");
+T = readtable(path,options);
 end
 
 function tf = localTruth(value)

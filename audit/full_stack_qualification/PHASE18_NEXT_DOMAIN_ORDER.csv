@@ -1,0 +1,11 @@
+Rank,DomainWave,BlockingCriticalPath,MissingMandatoryArtifacts,ActualDomainFailureCount,DependentSubcasesBlocked,ExistingEvidenceReusePct,EstimatedRuntimeToVerify
+1,"Frame/waveform schema and correctness closure",1,41,24,4,45.3333333333333,"20-40 min"
+2,"PDSCH/DL-SCH production runner and exporters",2,24,12,1,0,"45-90 min"
+3,"PUSCH/UL-SCH production runner and exporters",3,31,13,1,0,"45-90 min"
+4,"Fixed DL/UL SINR sweep SC-04/SC-05",4,55,25,2,0,"30-60 min"
+5,"Initial access SC-06",5,50,15,1,1.96078431372549,"30-60 min"
+6,"MIMO/beam SC-13/SC-14",6,53,17,2,5.35714285714286,"45-90 min"
+7,"NLOS/interference/mobility/power/handover gaps",7,24,45,7,80.8,"45-90 min"
+8,"Validation/oracle artifacts",8,54,17,1,5.26315789473684,"20-45 min"
+9,"Final artifact/WebGUI publication",9,96,45,1,2.04081632653061,"15-30 min"
+10,"Sharded complete regression",10,0,2,1,100,"measured baseline plus 25%"

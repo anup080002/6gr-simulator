@@ -1,0 +1,3 @@
+RunID,SubcaseID,Mandatory,Executed,Status,FailureCode
+phase18_fixture,SC-00,1,1,PASS,
+phase18_fixture,SC-30,1,0,FAIL,FULLSTACK:RegressionIncomplete

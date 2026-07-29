@@ -4581,6 +4581,12 @@ def _filesystem_run_folders() -> list[Path]:
                         / "csv"
                         / "full_stack_run_manifest.csv"
                     ).is_file()
+                    or (
+                        run_dir
+                        / "reports"
+                        / "json"
+                        / "phase18_reanalysis_manifest.json"
+                    ).is_file()
                 ):
                     folders.append(run_dir)
     return folders
@@ -4594,15 +4600,27 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     qualification_path = (
         run_folder / "reports" / "csv" / "full_stack_run_manifest.csv"
     )
+    reanalysis_path = (
+        run_folder
+        / "reports"
+        / "json"
+        / "phase18_reanalysis_manifest.json"
+    )
     manifest = _read_json_file(manifest_path)
     summary = _read_first_csv_record(summary_path)
     qualification = _read_first_csv_record(qualification_path)
-    if not manifest and not summary and not qualification:
+    reanalysis = _read_json_file(reanalysis_path)
+    if not manifest and not summary and not qualification and not reanalysis:
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
     scenario_id = str(
         summary.get("ScenarioID")
         or qualification.get("ScenarioID")
+        or (
+            FULL_STACK_QUALIFICATION_SCENARIO
+            if reanalysis
+            else ""
+        )
         or manifest.get("ScenarioID")
         or manifest.get("ScenarioId")
         or run_folder.parent.name
@@ -4619,6 +4637,13 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             if qualification_status == "PASS"
             else "failed"
         )
+    if not run_completion and reanalysis:
+        reanalysis_status = str(reanalysis.get("FinalStatus") or "").strip().upper()
+        run_completion = {
+            "PASS": "completed",
+            "INTERRUPTED": "interrupted",
+            "FAIL": "failed",
+        }.get(reanalysis_status, "reanalysed")
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
@@ -4627,15 +4652,23 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         or summary.get("Ok")
         or manifest.get("ResultOk")
         or qualification.get("FinalStatus")
+        or reanalysis.get("FinalStatus")
     )
     required_failures = _int_value(summary.get("RequiredFailureCount") or manifest.get("RequiredFailureCount"))
     truth_ok = _truthy_value(summary.get("RuntimeTruthContractOk") or manifest.get("RuntimeTruthContractOk"))
     updated_utc = _max_mtime_utc(
-        [manifest_path, summary_path, qualification_path, run_folder]
+        [
+            manifest_path,
+            summary_path,
+            qualification_path,
+            reanalysis_path,
+            run_folder,
+        ]
     )
     generated_utc = str(
         manifest.get("GeneratedUTC")
         or qualification.get("StartUTC")
+        or reanalysis.get("GeneratedUTC")
         or ""
     ).strip()
     config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
@@ -4659,7 +4692,17 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "qualification_manifest_artifact": (
             "reports/csv/full_stack_run_manifest.csv"
             if qualification
-            else ""
+            else (
+                "reports/json/phase18_reanalysis_manifest.json"
+                if reanalysis
+                else ""
+            )
+        ),
+        "qualification_reanalysis": bool(reanalysis),
+        "source_run_id": str(reanalysis.get("SourceRunID") or ""),
+        "source_run_unchanged": reanalysis.get("SourceRunUnchanged"),
+        "source_inventory_sha256": str(
+            reanalysis.get("SourceInventorySHA256After") or ""
         ),
     }
     return {
@@ -4675,7 +4718,11 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             or (
                 "full_stack_qualification"
                 if qualification
-                else ""
+                else (
+                    "full_stack_qualification_reanalysis"
+                    if reanalysis
+                    else ""
+                )
             )
         ),
         "backend": str(manifest.get("OutputBackend") or "results_folder"),
@@ -13748,6 +13795,32 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
             "reports/csv/full_stack_acceptance_results.csv",
             max_rows=450,
         ),
+        "reanalysis_manifest": _read_json_file(
+            Path(str(run_row.get("run_folder") or ""))
+            / "reports"
+            / "json"
+            / "phase18_reanalysis_manifest.json"
+        ),
+        "recomputed_subcases": load_small_csv_rows(
+            artifacts,
+            "reports/csv/phase18_recomputed_subcase_results.csv",
+            max_rows=64,
+        ),
+        "recomputed_component_coverage": load_small_csv_rows(
+            artifacts,
+            "reports/csv/phase18_recomputed_component_results.csv",
+            max_rows=200,
+        ),
+        "recomputed_value_correctness": load_small_csv_rows(
+            artifacts,
+            "reports/csv/phase18_recomputed_value_results.csv",
+            max_rows=150,
+        ),
+        "recomputed_acceptance": load_small_csv_rows(
+            artifacts,
+            "reports/csv/phase18_recomputed_acceptance_results.csv",
+            max_rows=450,
+        ),
     }
     payload = {
         "run": compact_run_row(run_row, artifacts),
@@ -17008,18 +17081,24 @@ window.addEventListener('DOMContentLoaded', function () {
     const configBinding = byName('full_stack_config_binding.csv');
     const bindingRow = (qualification.config_binding || [])[0] || {};
     const manifestRow = (qualification.run_manifest || [])[0] || {};
+    const reanalysis = qualification.reanalysis_manifest || {};
+    const isReanalysis = Boolean(reanalysis.Completed);
+    const recomputedSubcases = byName('phase18_recomputed_subcase_results.csv');
+    const recomputedComponents = byName('phase18_recomputed_component_results.csv');
+    const recomputedValues = byName('phase18_recomputed_value_results.csv');
+    const recomputedAcceptance = byName('phase18_recomputed_acceptance_results.csv');
     const evidenceButton = item => item ? `<a class="button-link" href="${esc(item.view_url || item.download_url || '#')}">Open evidence</a>` : '<span class="status-pill bad">Unavailable</span>';
     main.innerHTML = `
       <section class="panel">
         <div class="run-history-header">
-          <div><h3>Full-stack qualification</h3><p class="subtle">Only persisted artifacts from the globally selected RunID are shown. Missing and failed evidence remains visible.</p></div>
+          <div><h3>${isReanalysis ? 'Phase-18 read-only reanalysis' : 'Full-stack qualification'}</h3><p class="subtle">${isReanalysis ? `Source ${esc(reanalysis.SourceRunID || 'unknown')} is immutable; original and corrected evaluator counts remain distinct.` : 'Only persisted artifacts from the globally selected RunID are shown. Missing and failed evidence remains visible.'}</p></div>
           ${pageRunSelector('qualificationRunSelect', 'Run', {runningOnly:false})}
         </div>
         <div class="grid four">
           <div class="tile metric"><h4>RunID</h4><div class="value">${esc(run.run_id || runId || '—')}</div></div>
-          <div class="tile metric"><h4>Status</h4><div class="value">${esc(run.status_text || '—')}</div></div>
+          <div class="tile metric"><h4>Status</h4><div class="value">${esc(isReanalysis ? (reanalysis.FinalStatus || run.status_text || '—') : (run.status_text || '—'))}</div></div>
           <div class="tile metric"><h4>Artifacts</h4><div class="value">${esc(allArtifacts.length)}</div></div>
-          <div class="tile metric"><h4>Preset</h4><div class="value">${esc(manifestRow.SuitePreset || '—')}</div></div>
+          <div class="tile metric"><h4>${isReanalysis ? 'Source unchanged' : 'Preset'}</h4><div class="value">${esc(isReanalysis ? String(reanalysis.SourceRunUnchanged ?? '—') : (manifestRow.SuitePreset || '—'))}</div></div>
         </div>
         <div class="section-tabs" style="margin-top:12px">${tabCards}</div>
       </section>
@@ -17027,8 +17106,8 @@ window.addEventListener('DOMContentLoaded', function () {
         <h3>${esc(active.page)}</h3>
         <p class="subtle">${esc(active.requirement || '')}</p>
         ${active.page === 'Configure' ? `<div class="grid two"><div>${objectTable({SourceYAMLSHA256:bindingRow.SourceYAMLSHA256 || 'unavailable',EffectiveYAMLSHA256:bindingRow.EffectiveYAMLSHA256 || 'unavailable',ResolvedYAMLSHA256:bindingRow.ResolvedYAMLSHA256 || 'unavailable',ExecutedYAMLSHA256:bindingRow.ExecutedYAMLSHA256 || 'unavailable',HashesMatch:bindingRow.HashesMatch ?? 'unavailable',DiffStatus:bindingRow.HashesMatch === true || String(bindingRow.HashesMatch).toLowerCase() === 'true' ? 'resolved and executed YAML are byte-identical' : 'resolved/executed YAML differ or are unavailable',WebGUIAuthMode:bindingRow.WebGUIAuthMode || 'unavailable',WebGUISecured:bindingRow.WebGUISecured ?? 'unavailable'}, 'Configuration binding is unavailable.')}</div><div><div class="toolbar"><a class="button-link" href="/scenario?scenario=${encodeURIComponent(root.scenario || '')}">Source configuration</a><a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download source YAML</a><a class="button-link" href="${runId ? `/run-config/download?run_id=${encodeURIComponent(runId)}&format=yaml` : '#'}">Download executed config</a>${evidenceButton(configBinding)}</div></div></div>` : ''}
-        ${active.page === 'Overview' ? `<div class="grid three"><div class="tile"><h4>31 subcases</h4>${evidenceButton(subcases)}</div><div class="tile"><h4>163 components</h4>${evidenceButton(components)}</div><div class="tile"><h4>107 values / 387 rules</h4>${evidenceButton(values)} ${evidenceButton(acceptance)}</div></div>` : ''}
-        ${active.page === 'Validation' ? `<div class="toolbar">${evidenceButton(values)}${evidenceButton(acceptance)}${evidenceButton(audit)}${evidenceButton(manifest)}</div>` : ''}
+        ${active.page === 'Overview' ? `<div class="grid three"><div class="tile"><h4>31 subcases</h4>${evidenceButton(isReanalysis ? recomputedSubcases : subcases)}</div><div class="tile"><h4>163 components</h4>${evidenceButton(isReanalysis ? recomputedComponents : components)}</div><div class="tile"><h4>107 values / 387 rules</h4>${evidenceButton(isReanalysis ? recomputedValues : values)} ${evidenceButton(isReanalysis ? recomputedAcceptance : acceptance)}</div></div>${isReanalysis ? `<div class="tile" style="margin-top:12px"><h4>Original → recomputed PASS</h4><p class="subtle">Values ${esc((reanalysis.OriginalPassCounts || {}).Values ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Values ?? '—')} · Components ${esc((reanalysis.OriginalPassCounts || {}).Components ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Components ?? '—')} · Subcases ${esc((reanalysis.OriginalPassCounts || {}).Subcases ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Subcases ?? '—')} · Acceptance ${esc((reanalysis.OriginalPassCounts || {}).Acceptance ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Acceptance ?? '—')}</p></div>` : ''}` : ''}
+        ${active.page === 'Validation' ? `<div class="toolbar">${evidenceButton(isReanalysis ? recomputedValues : values)}${evidenceButton(isReanalysis ? recomputedAcceptance : acceptance)}${evidenceButton(audit)}${evidenceButton(manifest)}</div>` : ''}
         <div style="margin-top:12px">${artifactTable(visible, `No persisted artifacts match ${active.page} for this run.`)}</div>
       </section>`;
   }

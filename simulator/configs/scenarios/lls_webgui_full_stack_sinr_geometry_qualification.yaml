@@ -215,6 +215,13 @@ qualification:
         fixed_tbs_per_point_per_direction_per_seed: 200
         connected_tbs_per_point_per_direction_per_seed: 40
         geometry_slots_per_probe: 400
+  regression:
+    measured_baseline_minutes: 65
+    total_budget_minutes: 150
+    per_suite_timeout_minutes: 90
+    per_test_timeout_minutes: 25
+    heartbeat_seconds: 30
+    shard_count: 10
   carrier:
     frequency_range: FR1
     center_frequency_hz: 4000000000

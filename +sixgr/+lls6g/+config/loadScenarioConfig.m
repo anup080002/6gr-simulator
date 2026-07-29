@@ -75,6 +75,14 @@ end
 
 function p = localResolvePath(configPath)
 configPath = char(string(configPath));
+% MATLAB R2026a can return a partial match from which() when an absolute
+% Windows path contains spaces.  Resolve an existing absolute path before
+% consulting the MATLAB search path.
+absoluteFile = java.io.File(configPath);
+if absoluteFile.isAbsolute() && exist(configPath, "file") == 2
+    p = localCanonicalPath(configPath);
+    return;
+end
 located = which(configPath);
 if ~isempty(located) && exist(located, "file") == 2
     p = localCanonicalPath(located);
