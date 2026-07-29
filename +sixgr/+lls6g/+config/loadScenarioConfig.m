@@ -52,20 +52,21 @@ end
 
 function resolved = localResolveRelativeConfig(baseFile, relativePath)
 relativePath = char(string(relativePath));
-if exist(relativePath, "file") == 2
-    resolved = relativePath;
+relativeFile = java.io.File(relativePath);
+if relativeFile.isAbsolute() && exist(relativePath, "file") == 2
+    resolved = localCanonicalPath(relativePath);
     return;
 end
 baseDir = fileparts(char(string(baseFile)));
 candidate = fullfile(baseDir, relativePath);
 if exist(candidate, "file") == 2
-    resolved = candidate;
+    resolved = localCanonicalPath(candidate);
     return;
 end
 root = localRepoRoot();
 candidate = fullfile(root, relativePath);
 if exist(candidate, "file") == 2
-    resolved = candidate;
+    resolved = localCanonicalPath(candidate);
     return;
 end
 error("sixgr:lls6g:config:InheritedConfigNotFound", ...
@@ -73,14 +74,16 @@ error("sixgr:lls6g:config:InheritedConfigNotFound", ...
 end
 
 function p = localResolvePath(configPath)
-if exist(char(string(configPath)), "file") == 2
-    p = char(string(configPath));
+configPath = char(string(configPath));
+located = which(configPath);
+if ~isempty(located) && exist(located, "file") == 2
+    p = localCanonicalPath(located);
     return;
 end
 root = localRepoRoot();
-candidate = fullfile(root, char(string(configPath)));
+candidate = fullfile(root, configPath);
 if exist(candidate, "file") == 2
-    p = candidate;
+    p = localCanonicalPath(candidate);
     return;
 end
 error("sixgr:lls6g:config:ConfigNotFound", ...
@@ -90,4 +93,8 @@ end
 function out = localRepoRoot()
 here = fileparts(mfilename("fullpath"));
 out = fileparts(fileparts(fileparts(here)));
+end
+
+function path = localCanonicalPath(path)
+path = char(java.io.File(char(string(path))).getCanonicalPath());
 end

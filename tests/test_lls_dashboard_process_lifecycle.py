@@ -173,6 +173,7 @@ def test_browser_matlab_child_activates_webgui_database_contract(
 
     child_env = captured["kwargs"]["env"]
     assert child_env["SIXGR_WEBGUI_RUN"] == "1"
+    assert child_env["SIXGR_WEBGUI_LAUNCHED"] == "1"
     assert child_env["MYSQL_HOST"] == dash.MYSQL_HOST
     assert child_env["MYSQL_PORT"] == str(dash.MYSQL_PORT)
     assert child_env["MYSQL_DATABASE"] == dash.MYSQL_DATABASE

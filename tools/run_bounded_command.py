@@ -1,0 +1,84 @@
+"""Run one command with an exact wall-clock limit and a durable log.
+
+This helper is intentionally small and dependency-free so MATLAB qualification
+orchestrators can execute repository regressions without allowing an in-process
+test runner to exceed the selected preset's bounded runtime contract.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+
+TIMEOUT_EXIT_CODE = 124
+
+
+def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=5)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--timeout-seconds", type=float, required=True)
+    parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = list(args.command)
+    if command[:1] == ["--"]:
+        command = command[1:]
+    if not command:
+        parser.error("a command is required after --")
+    if not args.timeout_seconds > 0:
+        parser.error("--timeout-seconds must be positive")
+
+    args.log.parent.mkdir(parents=True, exist_ok=True)
+    creation_flags = (
+        subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    )
+    with args.log.open("wb") as output:
+        process = subprocess.Popen(
+            command,
+            cwd=Path.cwd(),
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            start_new_session=os.name != "nt",
+            creationflags=creation_flags,
+        )
+        try:
+            return process.wait(timeout=args.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            _terminate_tree(process)
+            output.write(
+                (
+                    f"\nFULLSTACK:RegressionTimeout command exceeded "
+                    f"{args.timeout_seconds:.3f} seconds.\n"
+                ).encode("utf-8")
+            )
+            output.flush()
+            return TIMEOUT_EXIT_CODE
+
+
+if __name__ == "__main__":
+    sys.exit(main())

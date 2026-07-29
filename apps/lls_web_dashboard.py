@@ -212,9 +212,13 @@ HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_system
 WAVEFORM_TRUTH_DEFAULT_SCENARIO = "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_19site_57cell_570ue_60slot.yaml"
 SINR_SWEEP_MASTER_SCENARIO = "master_sinr_sweep.yaml"
 GEOMETRY_MASTER_SCENARIO = "master_geometry_based.yaml"
+FULL_STACK_QUALIFICATION_SCENARIO = (
+    "lls_webgui_full_stack_sinr_geometry_qualification.yaml"
+)
 OPERATOR_MASTER_SCENARIOS = (
     SINR_SWEEP_MASTER_SCENARIO,
     GEOMETRY_MASTER_SCENARIO,
+    FULL_STACK_QUALIFICATION_SCENARIO,
 )
 PRODUCT_SCENARIO_MODES = (
     {
@@ -231,6 +235,13 @@ PRODUCT_SCENARIO_MODES = (
         "summary": "Place UEs, apply mobility and geometry, then run the configured waveform chain.",
         "badge": "UE placement",
     },
+    {
+        "id": "full_stack_qualification",
+        "label": "Full-Stack Qualification",
+        "scenario": FULL_STACK_QUALIFICATION_SCENARIO,
+        "summary": "One WebGUI RunID executes the bounded SINR, geometry, PHY, RF, MAC, protocol and evidence suite.",
+        "badge": "31 subcases",
+    },
 )
 DEFAULT_SCENARIO = GEOMETRY_MASTER_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
@@ -240,6 +251,7 @@ SCENARIO_RUN_CLASS_LABELS = {
     "adaptive_system_diagnostic": "Adaptive System Diagnostic",
     "hybrid_validation": "Hybrid Validation",
     "fixed_lls_anchor": "Fixed LLS Anchor",
+    "webgui_full_stack_qualification": "Full-Stack Qualification",
     "unknown": "Other Scenarios",
 }
 SCENARIO_SELECTOR_GROUP_ORDER = (
@@ -248,7 +260,14 @@ SCENARIO_SELECTOR_GROUP_ORDER = (
     "adaptive_system_diagnostic",
     "hybrid_validation",
     "fixed_lls_anchor",
+    "webgui_full_stack_qualification",
     "unknown",
+)
+FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH = (
+    REPO_ROOT
+    / "audit"
+    / "6gr_webgui_full_stack_qualification_pack"
+    / "full_stack_webgui_page_contract.csv"
 )
 OUTPUT_PERSISTENCE_OPTIONS = ["both", "database", "results_folder"]
 FILESYSTEM_RUN_ID_BASE = 9_000_000_000
@@ -302,6 +321,7 @@ CACHED_PAYLOAD_VERSION: dict[int, str] = {}
 SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
 PHY_GRID_PAYLOAD_CACHE: dict[tuple[int, int, str], dict[str, Any]] = {}
 TABLE_BROWSER_PAYLOAD_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
+FILESYSTEM_ARTIFACT_CACHE: dict[str, list[dict[str, Any]]] = {}
 RUN_LAUNCH_LOCK = threading.Lock()
 ACTIVE_DASHBOARD_PROCESSES: dict[str, subprocess.Popen[Any]] = {}
 DB_POOL_SIZE = max(8, int(os.environ.get("MYSQL_POOL_SIZE", "32") or "32"))
@@ -480,6 +500,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
         SECTION_PAYLOAD_CACHE.clear()
         PHY_GRID_PAYLOAD_CACHE.clear()
         TABLE_BROWSER_PAYLOAD_CACHE.clear()
+        FILESYSTEM_ARTIFACT_CACHE.clear()
         build_chart_payload_for_artifact.cache_clear()
         fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
@@ -496,6 +517,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     for key in list(TABLE_BROWSER_PAYLOAD_CACHE.keys()):
         if int(key[0]) == int(run_id):
             TABLE_BROWSER_PAYLOAD_CACHE.pop(key, None)
+    FILESYSTEM_ARTIFACT_CACHE.clear()
     # Artifact ids are immutable per DB row, but per-run rematerialization,
     # deletion, or relaunch can invalidate cached bytes/previews that were
     # generated from an older artifact set. Clear them eagerly so the browser
@@ -2350,6 +2372,27 @@ def list_scenarios() -> list[str]:
             continue
         items.append(path.relative_to(SCENARIO_ROOT).as_posix())
     return items
+
+
+@lru_cache(maxsize=1)
+def load_full_stack_webgui_page_contract() -> list[dict[str, Any]]:
+    """Load the checked-in Phase-18 page registry without inventing pages."""
+    if not FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH.is_file():
+        return []
+    with FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH.open(
+        "r", encoding="utf-8-sig", newline=""
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+    return [
+        {
+            "page": str(row.get("Page") or "").strip(),
+            "requirement": str(row.get("Requirement") or "").strip(),
+            "mandatory": str(row.get("Mandatory") or "").strip().lower()
+            in {"true", "1", "yes"},
+        }
+        for row in rows
+        if str(row.get("Page") or "").strip()
+    ]
 
 
 def load_scenario_text(rel_path: str) -> str:
@@ -4532,6 +4575,12 @@ def _filesystem_run_folders() -> list[Path]:
                 if (
                     (run_dir / "meta" / "scenario_manifest.json").is_file()
                     or (run_dir / "reports" / "csv" / "scenario_summary.csv").is_file()
+                    or (
+                        run_dir
+                        / "reports"
+                        / "csv"
+                        / "full_stack_run_manifest.csv"
+                    ).is_file()
                 ):
                     folders.append(run_dir)
     return folders
@@ -4542,26 +4591,53 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         return None
     manifest_path = run_folder / "meta" / "scenario_manifest.json"
     summary_path = run_folder / "reports" / "csv" / "scenario_summary.csv"
+    qualification_path = (
+        run_folder / "reports" / "csv" / "full_stack_run_manifest.csv"
+    )
     manifest = _read_json_file(manifest_path)
     summary = _read_first_csv_record(summary_path)
-    if not manifest and not summary:
+    qualification = _read_first_csv_record(qualification_path)
+    if not manifest and not summary and not qualification:
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
     scenario_id = str(
         summary.get("ScenarioID")
+        or qualification.get("ScenarioID")
         or manifest.get("ScenarioID")
         or manifest.get("ScenarioId")
         or run_folder.parent.name
     ).strip()
     run_completion = str(summary.get("RunCompletion") or manifest.get("RunCompletion") or "").strip()
+    if not run_completion and qualification:
+        qualification_status = str(
+            qualification.get("FinalStatus")
+            or qualification.get("Status")
+            or ""
+        ).strip().upper()
+        run_completion = (
+            "completed"
+            if qualification_status == "PASS"
+            else "failed"
+        )
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
-    result_ok = _truthy_value(summary.get("ResultOk") or summary.get("Ok") or manifest.get("ResultOk"))
+    result_ok = _truthy_value(
+        summary.get("ResultOk")
+        or summary.get("Ok")
+        or manifest.get("ResultOk")
+        or qualification.get("FinalStatus")
+    )
     required_failures = _int_value(summary.get("RequiredFailureCount") or manifest.get("RequiredFailureCount"))
     truth_ok = _truthy_value(summary.get("RuntimeTruthContractOk") or manifest.get("RuntimeTruthContractOk"))
-    updated_utc = _max_mtime_utc([manifest_path, summary_path, run_folder])
-    generated_utc = str(manifest.get("GeneratedUTC") or "").strip()
+    updated_utc = _max_mtime_utc(
+        [manifest_path, summary_path, qualification_path, run_folder]
+    )
+    generated_utc = str(
+        manifest.get("GeneratedUTC")
+        or qualification.get("StartUTC")
+        or ""
+    ).strip()
     config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
     config_json = ""
     if config_json_path.is_file():
@@ -4580,6 +4656,11 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "filesystem_backed": True,
         "summary_artifact": "reports/csv/scenario_summary.csv" if summary else "",
         "manifest_artifact": "meta/scenario_manifest.json" if manifest else "",
+        "qualification_manifest_artifact": (
+            "reports/csv/full_stack_run_manifest.csv"
+            if qualification
+            else ""
+        ),
     }
     return {
         "run_id": run_id,
@@ -4588,7 +4669,15 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "run_tag": run_folder.name,
         "run_folder": str(run_folder.absolute()),
         "bucket": str(manifest.get("OutputBucket") or "filesystem"),
-        "profile_name": str(summary.get("RunnerProfile") or manifest.get("RunnerProfile") or ""),
+        "profile_name": str(
+            summary.get("RunnerProfile")
+            or manifest.get("RunnerProfile")
+            or (
+                "full_stack_qualification"
+                if qualification
+                else ""
+            )
+        ),
         "backend": str(manifest.get("OutputBackend") or "results_folder"),
         "status_text": run_completion,
         "status_json": json.dumps(status_payload, separators=(",", ":")),
@@ -5350,6 +5439,8 @@ def _launch_run_from_yaml_locked(scenario_name: str, yaml_text: str, run_tag: st
     env["MYSQL_PASSWORD"] = MYSQL_PASSWORD
     env["MYSQL_DATABASE"] = MYSQL_DATABASE
     env["SIXGR_WEBGUI_RUN"] = "1"
+    env["SIXGR_WEBGUI_LAUNCHED"] = "1"
+    env["SIXGR_WEBGUI_RUN_TAG"] = token
 
     rel_runtime_path = runtime_path.relative_to(REPO_ROOT).as_posix()
     repo_root_literal = matlab_literal(str(REPO_ROOT))
@@ -8202,6 +8293,11 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
         root = (REPO_ROOT / root).absolute()
     if not root.is_dir():
         return []
+    cache_key = str(root.absolute()).replace("\\", "/").lower()
+    status_text = str((run_row or {}).get("status_text") or "").strip()
+    terminal = is_terminal_status(status_text)
+    if terminal and cache_key in FILESYSTEM_ARTIFACT_CACHE:
+        return [dict(row) for row in FILESYSTEM_ARTIFACT_CACHE[cache_key]]
     artifacts: list[dict[str, Any]] = []
     for path in root.rglob("*"):
         if not path.is_file():
@@ -8236,6 +8332,10 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
                 ),
             }
         )
+    if terminal:
+        FILESYSTEM_ARTIFACT_CACHE[cache_key] = [
+            dict(row) for row in artifacts
+        ]
     return artifacts
 
 
@@ -13416,7 +13516,11 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
 
-    recent_all_artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(run_id), run_row)
+    recent_all_artifacts = fetch_artifacts(run_id)
+    if not is_filesystem_virtual_run_id(run_id):
+        recent_all_artifacts = merge_db_and_filesystem_artifacts(
+            recent_all_artifacts, run_row
+        )
     rollup = artifact_rollup_from_artifacts(recent_all_artifacts)
     artifact_version = f"{rollup['artifacts_total']}|{rollup['latest_artifact_id']}"
     full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
@@ -13521,7 +13625,9 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
     db_artifacts = fetch_artifacts(run_id)
-    artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
+    artifacts = db_artifacts
+    if not is_filesystem_virtual_run_id(run_id):
+        artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     feature_policy = extract_run_feature_policy(run_row)
     status_text = str(run_row.get("status_text") or "").strip().lower()
     should_materialize_contract = (
@@ -13591,14 +13697,58 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     ]
     summary = build_live_summary(run_row, artifacts, runtime_context)
     mode_validation = build_mode_validation_payload(run_row, artifacts)
-    numeric_tabs = build_numeric_charts_from_artifacts(table_artifacts, limit=48)
-    summary_tabs = build_numeric_charts_from_artifacts(summary_chart_artifacts, limit=16)
+    full_stack_mode = (
+        str(run_row.get("scenario_id") or "")
+        == FULL_STACK_QUALIFICATION_SCENARIO
+    )
+    numeric_tabs = build_numeric_charts_from_artifacts(
+        table_artifacts, limit=8 if full_stack_mode else 48
+    )
+    summary_tabs = build_numeric_charts_from_artifacts(
+        summary_chart_artifacts, limit=4 if full_stack_mode else 16
+    )
     reference_chart_artifacts = shortlist_reference_gallery_chart_artifacts(table_artifacts)
     reference_gallery_charts = build_numeric_charts_from_artifacts(
         reference_chart_artifacts,
-        limit=max(len(reference_chart_artifacts), 1),
+        limit=(
+            min(max(len(reference_chart_artifacts), 1), 6)
+            if full_stack_mode
+            else max(len(reference_chart_artifacts), 1)
+        ),
     )
     contract_surface = build_output_contract_surface(run_row, artifacts, numeric_tabs, summary_tabs, output_coverage)
+    full_stack_qualification = {
+        "config_binding": load_small_csv_rows(
+            artifacts,
+            "reports/csv/full_stack_config_binding.csv",
+            max_rows=2,
+        ),
+        "run_manifest": load_small_csv_rows(
+            artifacts,
+            "reports/csv/full_stack_run_manifest.csv",
+            max_rows=2,
+        ),
+        "subcases": load_small_csv_rows(
+            artifacts,
+            "reports/csv/full_stack_subcase_status.csv",
+            max_rows=64,
+        ),
+        "component_coverage": load_small_csv_rows(
+            artifacts,
+            "reports/csv/full_stack_component_coverage_results.csv",
+            max_rows=200,
+        ),
+        "value_correctness": load_small_csv_rows(
+            artifacts,
+            "reports/csv/full_stack_value_correctness_results.csv",
+            max_rows=150,
+        ),
+        "acceptance": load_small_csv_rows(
+            artifacts,
+            "reports/csv/full_stack_acceptance_results.csv",
+            max_rows=450,
+        ),
+    }
     payload = {
         "run": compact_run_row(run_row, artifacts),
         "summary": summary,
@@ -13609,12 +13759,16 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         "output_coverage": output_coverage,
         "feature_policy": feature_policy,
         "contract_surface": contract_surface,
+        "full_stack_qualification": full_stack_qualification,
         "output_contract": {
             "reports": output_contract.product_sections_payload("reports"),
             "analytics": output_contract.product_sections_payload("analytics"),
             "rule": "/reports is runtime truth; /analytics is derived post-processing. Missing outputs stay unavailable.",
         },
         "tables_all": all_tables,
+        "artifacts_all": [
+            build_artifact_descriptor(artifact) for artifact in sorted_artifacts
+        ],
         "tables_recent": recent_tables,
         "tables_summary": summary_tables,
         "images_all": all_images,
@@ -14107,6 +14261,7 @@ PRODUCT_PAGE_ROUTES: dict[str, str] = {
     "/compare": "compare",
     "/compare-runs": "compare",
     "/compare_runs": "compare",
+    "/qualification": "qualification",
     "/result": "realtime",
     "/map": "geometry",
     "/logs": "realtime",
@@ -14125,6 +14280,7 @@ PRODUCT_NAV = [
     ("run_control", "Run", "/run-control"),
     ("runs", "Runs", "/runs"),
     ("realtime", "Live", "/realtime"),
+    ("qualification", "Qualification", "/qualification"),
     ("plots", "Results & Evidence", "/plots"),
 ]
 
@@ -14730,7 +14886,7 @@ button,.button-link,select,input,textarea{font:inherit;border-radius:10px}button
 .workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.workflow .tile{cursor:pointer;min-height:148px}.workflow .tile:hover,.block-card:hover{border-color:var(--blue)}.badge{display:inline-flex;align-items:center;border:1px solid var(--strong);border-radius:8px;padding:4px 8px;font-size:12px;color:var(--muted);background:#f7f9fc;margin:3px 4px 3px 0}.badge.good{color:var(--green);border-color:#a9d5b7;background:#f2fbf5}.badge.warn{color:var(--amber);border-color:#e3c78d;background:#fff8e8}.badge.bad{color:var(--red);border-color:#e3a8b2;background:#fff3f5}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.config-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.config-group{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fbfdfc}.config-group[open]{grid-column:1/-1}.config-group summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;cursor:pointer;color:#315650;font-weight:800;list-style:none}.config-group summary::-webkit-details-marker{display:none}.config-group summary::before{content:"›";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-3px;border-radius:6px;background:#e5f4f0;color:var(--blue);font-size:18px;line-height:1;transition:transform .15s ease}.config-group[open] summary::before{transform:rotate(90deg)}.config-group[open] summary{border-bottom:1px solid var(--line);background:#f3faf7}.config-group summary>span:first-of-type{flex:1}.config-group>.form-grid{padding:12px}.config-group .param-editor{padding:10px;border:1px solid #e4eeeb;border-radius:10px;background:#fff;min-width:0}.config-group .param-editor .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
 .table-wrap{overflow:auto;max-height:calc(100vh - 270px);overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:calc(100vh - 300px)}.table-wrap.tall-scroll{max-height:calc(100vh - 330px)}table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f8f7;z-index:1;color:#405d58}.stream{max-height:280px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}.log-warn{border-left:3px solid var(--amber)}.log-error{border-left:3px solid var(--red)}.warning{border-left:3px solid var(--amber);padding:9px 11px;background:#fff8e8;color:#6b4500;border-radius:10px}.map-box{min-height:420px;overflow:hidden}#geometryMap,#realtimeMap{height:420px;width:100%}.chart-box{height:calc(100vh - 310px);min-height:300px;border:1px solid var(--line);border-radius:12px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.toolbar label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:130px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:112px}.metric-explorer-note{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.artifact-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.artifact-card h4{margin:0 0 7px}.artifact-card img{display:block;width:100%;max-height:280px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:10px}.interactive-image-stage{position:relative;height:calc(100vh - 300px);min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.4}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:10px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:9px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}.section-tabs{display:flex;gap:6px;overflow:auto;margin:0 0 10px;padding-bottom:2px}.section-tabs .button-link{padding:7px 10px;font-size:13px}.section-tabs .active{background:#e5f4f0;color:var(--blue);border-color:#9acdc2}.step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.step-card{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fff}.step-number{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e5f4f0;color:var(--blue);font-weight:900}.action-menu{position:relative}.action-menu summary{cursor:pointer;font-weight:700}.action-menu[open]{z-index:3}.action-menu-body{position:absolute;right:0;top:calc(100% + 5px);display:grid;gap:5px;width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}.rg-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#f8fbfa}.resource-grid{display:grid;gap:3px;min-width:max-content;padding:8px}.rg-label,.rg-head,.rg-cell{min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px}.rg-label{position:sticky;left:0;z-index:2;justify-content:flex-start;padding:0 8px;background:#eef5f3;color:#315650;font-weight:700}.rg-head{position:sticky;top:0;z-index:1;flex-direction:column;background:#e8f1ef;font-weight:800}.rg-head span{font-size:9px;color:var(--muted)}.rg-cell{background:#eef3f2;border:1px solid #e4ecea}.rg-cell.active{color:#fff;font-weight:800}.rg-cell.dl{background:#2679a8;border-color:#2679a8}.rg-cell.ul{background:#9b5cc2;border-color:#9b5cc2}.rg-cell.ref{background:#0d8c72;border-color:#0d8c72}
-.scenario-mode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.scenario-mode-card{position:relative;display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:15px;text-align:left;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#fff,#f7fbfa);box-shadow:none;white-space:normal}.scenario-mode-card:hover{transform:translateY(-1px);border-color:#82bfb2;box-shadow:0 10px 24px rgba(8,122,112,.1)}.scenario-mode-card.active{border-color:var(--blue);background:linear-gradient(145deg,#effaf6,#fff);box-shadow:0 0 0 2px rgba(8,122,112,.1)}.scenario-mode-card .mode-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:13px;background:#e1f4ef;color:var(--blue);font-size:13px;font-weight:900;letter-spacing:.03em}.scenario-mode-card h4{margin:0 0 3px;font-size:16px}.scenario-mode-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.35}.scenario-mode-card .mode-check{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--strong);color:transparent}.scenario-mode-card.active .mode-check{border-color:var(--blue);background:var(--blue);color:#fff}.upload-dropzone{display:grid;place-items:center;min-height:94px;margin-top:10px;padding:14px;border:1.5px dashed #8abcb2;border-radius:13px;background:#f5fbf9;color:#315650;text-align:center;cursor:pointer;transition:.15s ease}.upload-dropzone:hover{border-color:var(--blue);background:#edf9f5;color:var(--blue)}.upload-dropzone strong{display:block;margin-bottom:3px;color:var(--ink)}.launch-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:10px;margin-top:10px}.launch-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.launch-actions .param-editor{flex:1 1 220px}.run-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.run-history-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.check-label{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;font-weight:700}.check-label input,.run-select{width:17px;height:17px;margin:0;accent-color:var(--blue)}.run-table th:first-child,.run-table td:first-child{width:42px;text-align:center}.run-table tbody tr:hover{background:#f7fbfa}.run-table .run-title{font-weight:800}.status-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef3f2;color:#536a65;font-size:12px;font-weight:800}.status-pill.good{background:#e8f7ef;color:var(--green)}.status-pill.warn{background:#fff4d9;color:var(--amber)}.status-pill.bad{background:#fff0f2;color:var(--red)}button.danger,.button-link.danger{border-color:#e8a7b1;background:#fff5f6;color:var(--red)}button.danger:hover,.button-link.danger:hover{border-color:var(--red);background:var(--red);color:#fff}.action-menu-body .button-link,.action-menu-body button{width:100%;justify-content:flex-start}.empty-state{display:grid;place-items:center;min-height:180px;padding:24px;text-align:center;color:var(--muted)}
+.scenario-mode-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.scenario-mode-card{position:relative;display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:15px;text-align:left;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#fff,#f7fbfa);box-shadow:none;white-space:normal}.scenario-mode-card:hover{transform:translateY(-1px);border-color:#82bfb2;box-shadow:0 10px 24px rgba(8,122,112,.1)}.scenario-mode-card.active{border-color:var(--blue);background:linear-gradient(145deg,#effaf6,#fff);box-shadow:0 0 0 2px rgba(8,122,112,.1)}.scenario-mode-card .mode-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:13px;background:#e1f4ef;color:var(--blue);font-size:13px;font-weight:900;letter-spacing:.03em}.scenario-mode-card h4{margin:0 0 3px;font-size:16px}.scenario-mode-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.35}.scenario-mode-card .mode-check{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--strong);color:transparent}.scenario-mode-card.active .mode-check{border-color:var(--blue);background:var(--blue);color:#fff}.upload-dropzone{display:grid;place-items:center;min-height:94px;margin-top:10px;padding:14px;border:1.5px dashed #8abcb2;border-radius:13px;background:#f5fbf9;color:#315650;text-align:center;cursor:pointer;transition:.15s ease}.upload-dropzone:hover{border-color:var(--blue);background:#edf9f5;color:var(--blue)}.upload-dropzone strong{display:block;margin-bottom:3px;color:var(--ink)}.launch-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:10px;margin-top:10px}.launch-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.launch-actions .param-editor{flex:1 1 220px}.run-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.run-history-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.check-label{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;font-weight:700}.check-label input,.run-select{width:17px;height:17px;margin:0;accent-color:var(--blue)}.run-table th:first-child,.run-table td:first-child{width:42px;text-align:center}.run-table tbody tr:hover{background:#f7fbfa}.run-table .run-title{font-weight:800}.status-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef3f2;color:#536a65;font-size:12px;font-weight:800}.status-pill.good{background:#e8f7ef;color:var(--green)}.status-pill.warn{background:#fff4d9;color:var(--amber)}.status-pill.bad{background:#fff0f2;color:var(--red)}button.danger,.button-link.danger{border-color:#e8a7b1;background:#fff5f6;color:var(--red)}button.danger:hover,.button-link.danger:hover{border-color:var(--red);background:var(--red);color:#fff}.action-menu-body .button-link,.action-menu-body button{width:100%;justify-content:flex-start}.empty-state{display:grid;place-items:center;min-height:180px;padding:24px;text-align:center;color:var(--muted)}
 @media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.launch-grid{grid-template-columns:1fr}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups,.scenario-mode-grid,.launch-grid{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group,.scenario-mode-card{margin-bottom:10px}.run-history-header{align-items:flex-start;flex-direction:column}}
 </style>
 """
@@ -14783,6 +14939,7 @@ def build_product_frontend_page(
         "scenario": scenario_name,
         "scenarios": scenarios,
         "scenario_modes": PRODUCT_SCENARIO_MODES,
+        "full_stack_page_contract": load_full_stack_webgui_page_contract(),
         "source_chain": source_chain,
         "initial_mode": mode,
         "config": {},
@@ -14942,7 +15099,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
   const LIVE_API_TEMPLATE = "/api/run/${id}/live";
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: query.get('artifact_id') || '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', tableBrowserPreviewCache: {}, tableBrowserPreviewPending: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', qualificationSection: query.get('section') || 'Overview', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: query.get('artifact_id') || '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', tableBrowserPreviewCache: {}, tableBrowserPreviewPending: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   state.phyGrid = null;
   state.phyGridLoading = false;
   state.backendLoading = false;
@@ -15174,7 +15331,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const selected = currentScenarioMode();
     return `<div class="scenario-mode-grid">${(root.scenario_modes || []).map(item => {
       const active = selected && selected.id === item.id;
-      const icon = item.id === 'sinr_sweep' ? 'SNR' : 'GEO';
+      const icon = item.id === 'sinr_sweep' ? 'SNR' : (item.id === 'geometry_based' ? 'GEO' : 'QUAL');
       return `<button type="button" class="scenario-mode-card ${active ? 'active' : ''}" data-scenario-mode="${esc(item.id)}" data-scenario="${esc(item.scenario)}" aria-pressed="${active ? 'true' : 'false'}"><span class="mode-icon">${icon}</span><span><span class="badge">${esc(item.badge || '')}</span><h4>${esc(item.label)}</h4><p>${esc(item.summary || '')}</p></span><span class="mode-check">✓</span></button>`;
     }).join('')}</div>`;
   }
@@ -15465,7 +15622,7 @@ window.addEventListener('DOMContentLoaded', function () {
   function renderBlock(block) { const el = document.getElementById('blockPanel'); if (!el) return; if (!block) { el.innerHTML = ''; return; } if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); el.innerHTML = unavailable('Loading parameters…'); return; } const body = blockFields(block).map(f => `<tr><td><strong>${esc(f.label || f.path)}</strong><br><span class="small mono">${esc(f.path)}</span></td><td>${esc(text(get(state.config, f.path, f.current_value)))}</td><td>${inputFor(f)}</td></tr>`).join('') || '<tr><td colspan="3">No editable parameters are exposed for this block.</td></tr>'; el.innerHTML = `<h3>${esc(block.name || block.title)}</h3><div class="table-wrap"><table><thead><tr><th>Parameter</th><th>Current</th><th>Edit</th></tr></thead><tbody>${body}</tbody></table></div>`; }
   function chrome() {
     const configPages = ['scenario','geometry','waveform','traffic','mac_scheduler','l1_phy','antenna_air','parameters'];
-    const resultPages = ['plots','tables','reports','analytics','artifacts','compare'];
+    const resultPages = ['plots','tables','reports','analytics','artifacts','compare','qualification'];
     const activeNav = configPages.includes(state.page) ? 'scenario' : (resultPages.includes(state.page) ? 'plots' : (state.page === 'previous_runs' ? 'runs' : (state.page === 'phy_grid' ? 'realtime' : state.page)));
     document.getElementById('productNav').innerHTML = (root.nav || []).map(n => `<a class="nav-item ${n.id === activeNav ? 'active' : ''}" data-page="${esc(n.id)}" href="${esc(n.href)}">${esc(n.label)}</a>`).join('');
     const badge = document.getElementById('activeModeBadge');
@@ -16602,7 +16759,7 @@ window.addEventListener('DOMContentLoaded', function () {
           state.live = full;
           state.liveVersion = String(full.payload_version || '');
           state.liveArtifactVersion = String(full.artifact_version || '');
-          if (!interactionLocked() && ['realtime','reports','analytics','artifacts','parameters'].includes(state.page)) render({preserveScroll:true});
+          if (!interactionLocked() && ['realtime','reports','analytics','artifacts','parameters','qualification'].includes(state.page)) render({preserveScroll:true});
         })
         .catch(() => {})
         .finally(() => {
@@ -16799,6 +16956,82 @@ window.addEventListener('DOMContentLoaded', function () {
         <section class="panel"><div class="toolbar" style="justify-content:space-between"><h3 style="margin:0">Events</h3><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div><div class="stream">${logs.map(log => `<div class="stream-item"><strong>${esc(log.source || log.module || log.created_utc || 'Event')}</strong><br>${esc(log.message || log.line_text || log.log_message || '')}</div>`).join('') || '<p class="subtle">No events yet.</p>'}</div></section>
       </div>`;
   }
+  function qualificationKeywords(section) {
+    const map = {
+      'Configure':['source_scenario','effective_scenario','resolved_scenario','executed_scenario','full_stack_config_binding'],
+      'Live':['full_stack_subcase_status','runtime','progress','log'],
+      'Overview':['full_stack_','scenario_summary'],
+      'TX Chain':['tx_','transmit','pdsch','pusch','pdcch','pucch','waveform'],
+      'RX Chain':['rx_','receiver','decode','bler','sinr','evm','channel_est'],
+      'Control and Access':['initial_access','ssb','pbch','prach','pdcch','pucch','dci','uci'],
+      'MIMO and Beam':['mimo','beam','precod','codebook','covariance'],
+      'Channel and RF':['channel','geometry','mobility','interference','rf_','cfo','timing','power_control'],
+      'MAC and Protocol':['mac','harq','scheduler','rlc','pdcp','sdap','rrc','traffic','handover'],
+      'Results':['.csv','.png'],
+      'Validation':['acceptance','correctness','negative','audit','failure','regression'],
+      'Artifact Explorer':[''],
+      'Compare':['compare']
+    };
+    return map[section] || ['full_stack_'];
+  }
+  function qualificationWorkspace() {
+    title('Qualification', 'One immutable WebGUI run · 31 physical child subcases · fail-closed evidence');
+    const live = state.live || {};
+    const qualification = live.full_stack_qualification || {};
+    const run = live.run || {};
+    const allArtifacts = (live.artifacts_all || []).length
+      ? live.artifacts_all
+      : [...(live.tables_all || []), ...(live.images_all || [])];
+    const contract = (root.full_stack_page_contract || []).filter(item => item.mandatory || item.page === 'Compare');
+    const active = contract.find(item => item.page === state.qualificationSection) || contract[0] || {page:'Overview',requirement:''};
+    const tokens = qualificationKeywords(active.page).map(item => String(item).toLowerCase());
+    const visible = active.page === 'Artifact Explorer'
+      ? allArtifacts
+      : allArtifacts.filter(item => {
+          const value = `${item.logical_path || ''} ${item.section || ''}`.toLowerCase();
+          return tokens.some(token => !token || value.includes(token));
+        });
+    const runId = selectedRunId();
+    const tabCards = contract.map(item => {
+      const url = new URL('/qualification', window.location.origin);
+      if (runId) url.searchParams.set('run_id', runId);
+      url.searchParams.set('section', item.page);
+      return `<a class="button-link ${item.page === active.page ? 'active' : ''}" href="${esc(url.pathname + url.search)}">${esc(item.page)}</a>`;
+    }).join('');
+    const byName = name => allArtifacts.find(item => String(item.logical_path || '').toLowerCase().endsWith(String(name).toLowerCase()));
+    const manifest = byName('full_stack_run_manifest.csv');
+    const subcases = byName('full_stack_subcase_status.csv');
+    const components = byName('full_stack_component_coverage_results.csv');
+    const values = byName('full_stack_value_correctness_results.csv');
+    const acceptance = byName('full_stack_acceptance_results.csv');
+    const audit = byName('full_stack_artifact_audit.csv');
+    const configBinding = byName('full_stack_config_binding.csv');
+    const bindingRow = (qualification.config_binding || [])[0] || {};
+    const manifestRow = (qualification.run_manifest || [])[0] || {};
+    const evidenceButton = item => item ? `<a class="button-link" href="${esc(item.view_url || item.download_url || '#')}">Open evidence</a>` : '<span class="status-pill bad">Unavailable</span>';
+    main.innerHTML = `
+      <section class="panel">
+        <div class="run-history-header">
+          <div><h3>Full-stack qualification</h3><p class="subtle">Only persisted artifacts from the globally selected RunID are shown. Missing and failed evidence remains visible.</p></div>
+          ${pageRunSelector('qualificationRunSelect', 'Run', {runningOnly:false})}
+        </div>
+        <div class="grid four">
+          <div class="tile metric"><h4>RunID</h4><div class="value">${esc(run.run_id || runId || '—')}</div></div>
+          <div class="tile metric"><h4>Status</h4><div class="value">${esc(run.status_text || '—')}</div></div>
+          <div class="tile metric"><h4>Artifacts</h4><div class="value">${esc(allArtifacts.length)}</div></div>
+          <div class="tile metric"><h4>Preset</h4><div class="value">${esc(manifestRow.SuitePreset || '—')}</div></div>
+        </div>
+        <div class="section-tabs" style="margin-top:12px">${tabCards}</div>
+      </section>
+      <section class="panel">
+        <h3>${esc(active.page)}</h3>
+        <p class="subtle">${esc(active.requirement || '')}</p>
+        ${active.page === 'Configure' ? `<div class="grid two"><div>${objectTable({SourceYAMLSHA256:bindingRow.SourceYAMLSHA256 || 'unavailable',EffectiveYAMLSHA256:bindingRow.EffectiveYAMLSHA256 || 'unavailable',ResolvedYAMLSHA256:bindingRow.ResolvedYAMLSHA256 || 'unavailable',ExecutedYAMLSHA256:bindingRow.ExecutedYAMLSHA256 || 'unavailable',HashesMatch:bindingRow.HashesMatch ?? 'unavailable',DiffStatus:bindingRow.HashesMatch === true || String(bindingRow.HashesMatch).toLowerCase() === 'true' ? 'resolved and executed YAML are byte-identical' : 'resolved/executed YAML differ or are unavailable',WebGUIAuthMode:bindingRow.WebGUIAuthMode || 'unavailable',WebGUISecured:bindingRow.WebGUISecured ?? 'unavailable'}, 'Configuration binding is unavailable.')}</div><div><div class="toolbar"><a class="button-link" href="/scenario?scenario=${encodeURIComponent(root.scenario || '')}">Source configuration</a><a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download source YAML</a><a class="button-link" href="${runId ? `/run-config/download?run_id=${encodeURIComponent(runId)}&format=yaml` : '#'}">Download executed config</a>${evidenceButton(configBinding)}</div></div></div>` : ''}
+        ${active.page === 'Overview' ? `<div class="grid three"><div class="tile"><h4>31 subcases</h4>${evidenceButton(subcases)}</div><div class="tile"><h4>163 components</h4>${evidenceButton(components)}</div><div class="tile"><h4>107 values / 387 rules</h4>${evidenceButton(values)} ${evidenceButton(acceptance)}</div></div>` : ''}
+        ${active.page === 'Validation' ? `<div class="toolbar">${evidenceButton(values)}${evidenceButton(acceptance)}${evidenceButton(audit)}${evidenceButton(manifest)}</div>` : ''}
+        <div style="margin-top:12px">${artifactTable(visible, `No persisted artifacts match ${active.page} for this run.`)}</div>
+      </section>`;
+  }
   function compactPlotsPage() {
     title('Results', 'Images and graphs');
     main.innerHTML = `<section class="panel">
@@ -16916,6 +17149,7 @@ window.addEventListener('DOMContentLoaded', function () {
     else if (state.page === 'reports') renderResultView('reports', reports);
     else if (state.page === 'analytics') renderResultView('analytics', analytics);
     else if (state.page === 'artifacts') renderResultView('artifacts', compactArtifactsPage);
+    else if (state.page === 'qualification') qualificationWorkspace();
     else if (state.page === 'compare') renderResultView('compare', compare);
     else if (state.page === 'runs' || state.page === 'previous_runs') runsPage();
     else configureWorkspace(state.page);
@@ -17079,10 +17313,10 @@ window.addEventListener('DOMContentLoaded', function () {
   if (pageNeedsConfigModel(state.page) && !state.configLoaded) window.setTimeout(() => { ensureConfigLoaded(true); }, 0);
   if (pageNeedsFieldCatalog(state.page)) window.setTimeout(() => { ensureFieldsLoaded(true); }, 0);
   function pageUsesRuns(pageId) {
-    return ['home','run_control','realtime','phy_grid','plots','tables','reports','analytics','artifacts','compare','runs'].includes(String(pageId || ''));
+    return ['home','run_control','realtime','phy_grid','plots','tables','reports','analytics','artifacts','qualification','compare','runs'].includes(String(pageId || ''));
   }
   function pageUsesLive(pageId) {
-    return ['realtime','reports','analytics','artifacts'].includes(String(pageId || ''));
+    return ['realtime','reports','analytics','artifacts','qualification'].includes(String(pageId || ''));
   }
   function hydrateCurrentPage() {
     if (['home','run_control'].includes(state.page)) refreshBackendStatus();

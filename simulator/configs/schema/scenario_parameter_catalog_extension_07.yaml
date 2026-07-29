@@ -376,11 +376,11 @@ sections:
       RunClass:
         required: false
         type: string
-        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls]
+        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls, webgui_full_stack_qualification]
       run_class:
         required: false
         type: string
-        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls]
+        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls, webgui_full_stack_qualification]
       publication_mode: {required: false, type: string}
       required_artifact_audit: {required: false, type: boolean}
       fixed_snr_sweep_required: {required: false, type: boolean}

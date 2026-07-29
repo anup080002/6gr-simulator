@@ -1,0 +1,482 @@
+# One operator-owned WebGUI scenario. The qualification section is the
+# Phase-18 semantic contract; every key is schema-validated and consumed by
+# sixgr.integration.qualification.FullStackQualificationRunner.
+inherits: master_sinr_sweep.yaml
+
+canonical_control:
+  identity:
+    scenario_id: lls_webgui_full_stack_sinr_geometry_qualification
+    scenario_name: Full-Stack SINR + Geometry Qualification Suite
+    description: One WebGUI RunID and one resolved configuration revision orchestrating bounded component, link, network, protocol, negative, artifact, and UI qualification subcases.
+    version: 2.0.0
+    owner: codex
+    research_class: baseline_benchmark
+    maturity_tag: regression
+    purpose: Actual MATLAB full-stack qualification across fixed-SINR and geometry child environments.
+    release_reference: Release-18 bounded strict qualification profile
+    source_reference: Phase-18 full-stack qualification pack
+    created_at: '2026-07-28'
+    notes: Child environments share one immutable resolved configuration and canonical implementation registry; proxy or placeholder evidence is forbidden.
+    baseline_reference_name: lls_webgui_full_stack_sinr_geometry_qualification
+    comparison_group_name: full_stack_sinr_geometry_qualification
+    tags: [webgui, full_stack, qualification, sinr_sweep, geometry, los, nlos, rf, l2, l3, traffic]
+  launch:
+    runner_profile: full_stack_qualification
+    target_cases: [bundle]
+    bundle_anchor_cases: [cell_search_mib_sib1, pdcch_strict_validation, prach_detection, random_access_four_step, dl_pdsch_throughput, ul_pusch_throughput, ul_srs_channelest]
+    expected_outputs:
+      - reports/csv/full_stack_run_manifest.csv
+      - reports/csv/full_stack_config_binding.csv
+      - reports/csv/full_stack_subcase_status.csv
+      - reports/csv/full_stack_component_coverage_results.csv
+      - reports/csv/full_stack_value_correctness_results.csv
+      - reports/csv/full_stack_acceptance_results.csv
+      - reports/csv/full_stack_artifact_manifest.csv
+      - reports/csv/full_stack_webgui_publication.csv
+      - reports/csv/full_stack_regression_summary.csv
+    honesty_mode: strict
+    unsupported_output_policy: show_unavailable_with_reason
+    provenance_logging: true
+    notes: The browser launch contract is the full-stack qualification orchestrator; domain runners remain the sole scientific implementations.
+    run_class: webgui_full_stack_qualification
+    scenario_mode: full_stack_qualification
+    sweep_enabled: true
+    fixed_link_campaign_enabled: true
+    geometry_enabled: true
+  run:
+    seed: 11
+    deterministic_mode: true
+    link_direction: both
+    n_frames: 1
+    total_slots: 60
+    total_time_ms: 30
+    measurement_slots: 60
+    n_subframes: 60
+    monte_carlo_iterations: 1
+    num_seeds: 2
+    seed_list: [11, 23]
+    fixed_link_snr_grid_db: [-8, -4, 0, 4, 10]
+    min_campaign_snr_points: 5
+    min_trials_per_sinr_bin: 12
+    max_trials_per_sinr_bin: 12
+    confidence_level: 0.95
+    max_ci_width: 1.0
+    fixed_link_campaign_enabled: true
+    fixed_link_campaign_only: false
+    snr_db: 0
+    noise_operating_mode: standalone_awgn_snr_argument
+    min_duration_s: 0.03
+    execution_mode: LLS
+    study_mode: campaign
+    simulation_mode: full_phy
+    run_profile: exhaustive
+    num_workers: 1
+    batch_size_links: 1
+    auto_start_parallel_pool: false
+    trace_capture_level: full
+    save_intermediate: true
+  radio:
+    range_name: FR1
+    band_name: bounded_4ghz_midband
+    center_frequency_hz: 4000000000
+    bandwidth_hz: 20000000
+    bandwidth_options_hz: [20000000]
+    occupied_bandwidth_hz: 18360000
+    duplex_mode: TDD
+    carrier_count: 1
+    carrier_aggregation_enabled: false
+    numerology_options_khz: [30]
+    max_mimo_size: 4
+    mobility_defaults_kmph: 0
+    channel_model_defaults: AWGN
+    reference_signal_defaults: qualification
+    power_model_defaults: qualification
+    energy_model_defaults: qualification
+    rf_impairment_defaults: qualification
+    scs_khz: 30
+    cp_type: normal
+    slot_format: flexible
+    tdd_common:
+      ReferenceSubcarrierSpacingKHz: 30
+      Pattern1:
+        PeriodicityMilliseconds: 2.5
+        NumDownlinkSlots: 3
+        NumDownlinkSymbols: 10
+        NumUplinkSlots: 1
+        NumUplinkSymbols: 2
+    n_size_grid: 51
+    sample_rate_hz: 30720000
+    fft_size: 1024
+    dl_waveform: CP-OFDM
+    ul_waveform: CP-OFDM
+    transform_precoding_enabled: false
+    windowing_enabled: false
+  mimo:
+    n_tx_ant: 4
+    n_rx_ant: 4
+    n_layers: 1
+    max_dl_layers: 1
+    max_ul_layers: 1
+    precoder_type: wideband
+    codebook_type: type1
+    reciprocity_mode: TDD
+    beam_sweep_enabled: true
+    beam_count: 4
+    mtrp_ready: true
+    multi_panel_ready: false
+    panel_count: 1
+    trp_count: 2
+    mu_mimo_enable: true
+    mu_mimo_max_users_per_prb: 2
+  modulation:
+    dl_modulation_order: 4
+    ul_modulation_order: 4
+    mcs_table: qam64_table1
+    dl_mcs_index: 10
+    ul_mcs_index: 10
+    constellation_shaping_enabled: false
+  reference_signals:
+    ssb_enabled: true
+    pbch_enabled: true
+    pdcch_dmrs_enabled: true
+    csi_rs_enabled: true
+    srs_enabled: true
+    trs_enabled: true
+    ptrs_enabled: true
+    csi_feedback_mode: PMI+CQI+RI+CRI
+    cqi_reporting_enabled: true
+    pmi_reporting_enabled: true
+    ri_reporting_enabled: true
+    pdsch_dmrs_ports: 1
+    pusch_dmrs_ports: 1
+    csi_rs_ports: 4
+    srs_ports: 4
+    trs_ports: 1
+  output:
+    backend: filesystem
+    persistence_mode: results_folder
+    persist_to_database: false
+    persist_to_results_folder: true
+    save_csv: true
+    save_png: true
+    save_figures: true
+    save_mat: true
+    save_logs: true
+    include_git_hash: true
+    include_config_snapshot: true
+    include_manifest: true
+    include_rng_seed: true
+    include_toolbox_versions: true
+    include_system_info: true
+
+qualification:
+  profile:
+    primary_id: nr_rel18_system_lls_strict
+    normative_core: true
+    bounded_profile_only: true
+    publication_curve_eligible: false
+    rf_impairment_subcase_profile: rf_impaired_research
+    rel20_6g_study_subcase_enabled: false
+  validation:
+    run_class: webgui_full_stack_qualification
+    strict: true
+    require_actual_matlab_execution: true
+    require_webgui_launch: true
+    require_measured_post_eq_sinr: true
+    require_observed_geometry: true
+    require_independent_oracles: true
+    require_all_preset_artifacts: true
+    require_no_placeholder_artifacts: true
+    require_no_mandatory_skip_or_block: true
+    confidence_level: 0.95
+  suite:
+    preset: comprehensive_smoke
+    one_webgui_run_id: true
+    one_resolved_yaml_revision: true
+    child_subcases_share_canonical_implementations: true
+    continue_after_subcase_failure: true
+    final_status_requires_all_mandatory_pass: true
+    presets:
+      comprehensive_smoke:
+        estimated_runtime_minutes: 90
+        require_base_component_artifacts: true
+        require_impact_artifacts: false
+        fixed_snr_seeds: [11, 23]
+        geometry_seeds: [11, 23]
+        fixed_tbs_per_point_per_direction_per_seed: 12
+        connected_tbs_per_point_per_direction_per_seed: 4
+        geometry_slots_per_probe: 60
+      deep_acceptance:
+        estimated_runtime_minutes: 480
+        require_base_component_artifacts: true
+        require_impact_artifacts: true
+        fixed_snr_seeds: [11, 23, 47, 89, 131, 197]
+        geometry_seeds: [11, 23, 47, 89, 131, 197]
+        fixed_tbs_per_point_per_direction_per_seed: 200
+        connected_tbs_per_point_per_direction_per_seed: 40
+        geometry_slots_per_probe: 400
+  carrier:
+    frequency_range: FR1
+    center_frequency_hz: 4000000000
+    channel_bandwidth_hz: 20000000
+    subcarrier_spacing_khz: 30
+    cyclic_prefix: normal
+    duplex_mode: TDD
+    active_bwp_nrb: 24
+    active_bwp_start_rb: 0
+  frame:
+    tdd_pattern: DDDSU
+    preserve_flexible_symbols: true
+    special_slot:
+      downlink_symbols: 10
+      guard_symbols: 2
+      uplink_symbols: 2
+  main_fixed_sinr_sweep:
+    enabled: true
+    directions: [DL, UL]
+    snr_db: [-8, -4, 0, 4, 10]
+    fixed_mcs_dl: 10
+    fixed_mcs_ul: 10
+    fixed_rank: 1
+    measured_sinr_tolerance_db: 1.0
+    channel: AWGN
+    connected_control_overlay: true
+  network_probes:
+    initial_access:
+      enabled: true
+      snr_db: 14
+      active_ssb_beams: 4
+      require_rrc_setup_complete: true
+    los_static:
+      enabled: true
+      cells: 1
+      ues: 1
+      channel_profile: TDL-C
+      slots: 60
+    nlos_o2i_blockage:
+      enabled: true
+      cells: 1
+      ues: 1
+      scenario: UMa
+      los_state: NLOS
+      channel_profile: CDL-C
+      o2i_enabled: true
+      blockage_enabled: true
+      slots: 60
+    multicell_interference_mobility:
+      enabled: true
+      cells: 2
+      ues: 2
+      ue_speed_kmh: 100
+      channel_profile: CDL-C
+      sample_domain_interference: true
+      slots: 80
+    handover_rlf:
+      enabled: true
+      cells: 2
+      ues: 1
+      trajectory: crossing_cells
+      ue_speed_kmh: 60
+      require_successful_handover: true
+      require_failure_and_reestablishment_branch: true
+      slots: 120
+  antennas_mimo_beam:
+    gnb_ports: 4
+    ue_ports: 4
+    runtime_rank_probes: [1, 2, 4]
+    type_i_codebook_probe: true
+    covariance_qualified_irc_probe: true
+    mu_mimo_probe: true
+    multi_trp_probe: true
+    beam_management_p1_p2_p3: true
+    beam_failure_recovery_probe: true
+  control_data_reference_signals:
+    dci_formats: ["0_0", "1_0", "0_1", "1_1"]
+    pdcch_aggregation_levels: [1, 2, 4, 8, 16]
+    pucch_formats: [0, 1, 2, 3, 4]
+    pdsch_dmrs_mapping_types: [A, B]
+    pusch_dmrs_mapping_types: [A, B]
+    dmrs_configuration_types: [1, 2]
+    ptrs_enabled: true
+    csirs_enabled: true
+    csi_im_enabled: true
+    srs_enabled: true
+    trs_enabled: true
+    csi_part1_part2_enabled: true
+    olla_enabled: true
+  rf_front_end_probes:
+    enabled: true
+    cfo_hz: 600
+    fractional_timing_offset_samples: 0.25
+    sample_clock_offset_ppm: 10
+    phase_noise_profile: explicit_smoke_profile
+    tx_iq_gain_imbalance_db: 0.5
+    tx_iq_phase_imbalance_deg: 3
+    rx_iq_gain_imbalance_db: 0.5
+    rx_iq_phase_imbalance_deg: 3
+    pa_profile: bounded_rapp_memory_probe
+    pa_input_backoff_db: 6
+    dpd_probe: true
+    dac_bits: 12
+    adc_bits: 10
+    explicit_agc: true
+    blocker_probe: true
+  mac_protocol_traffic:
+    harq_enabled: true
+    dl_harq_processes: 4
+    ul_harq_processes: 4
+    max_retransmissions: 2
+    rv_sequence: [0, 2, 3, 1]
+    scheduler_policies: [RR, PF, QoS_PF]
+    exact_bsr_phr_sr_ta_probes: true
+    rlc_um_sn_lengths: [6, 12]
+    rlc_am_sn_lengths: [12, 18]
+    pdcp_sn_lengths: [12, 18]
+    pdcp_security_profiles: [NEA2_NIA2]
+    sdap_qfi_drb_mapping: true
+    rrc_reconfiguration: true
+    deterministic_cbr_packets:
+      packet_size_bytes: 512
+      packet_count_dl: 20
+      packet_count_ul: 20
+      qfi: 9
+      five_qi: 9
+    burst_traffic_probe: true
+    require_first_delivery_deduplication: true
+    require_byte_conservation: true
+  negative_fault_injection:
+    enabled: true
+    execute_all_cases_from: full_stack_negative_fault_injection_matrix.csv
+  artifacts:
+    registry_file: full_stack_required_artifact_registry.csv
+    require_selected_preset_entries: true
+    generate_csv: true
+    generate_png: true
+    generate_mat: true
+    generate_logs: true
+    generate_json_manifest: true
+    emit_placeholder_artifacts: false
+    hash_every_artifact: true
+    semantic_plot_audit: true
+    publish_all_in_webgui: true
+  webgui:
+    canonical_stack_only: true
+    show_source_effective_resolved_yaml: true
+    show_live_subcase_progress: true
+    show_all_artifacts: true
+    show_component_coverage: true
+    show_value_correctness: true
+    show_failed_validation_rows: true
+    require_playwright_end_to_end: true
+
+# Canonical active BWP/CC projection for the 20 MHz carrier. The semantic
+# qualification contract intentionally uses a 24-RB active BWP inside the
+# standards-derived 51-RB carrier grid.
+bwp:
+  dl:
+    bwp_id: 0
+    direction: DL
+    cc_id: 0
+    serving_cell_id: 1
+    frequency_range: FR1
+    scs_khz: 30
+    cp_type: normal
+    n_start_bwp: 0
+    n_size_bwp: 24
+    control_config_ref: PDCCH-CONFIG-0
+    data_config_ref: PDSCH-CONFIG-0
+    control_bwp_id: 0
+    data_bwp_id: 0
+    active: true
+    switch_activation_tick: 0
+    state_version: 1
+    common_tdd_reference_scs_khz: 30
+  ul:
+    bwp_id: 0
+    direction: UL
+    cc_id: 0
+    serving_cell_id: 1
+    frequency_range: FR1
+    scs_khz: 30
+    cp_type: normal
+    n_start_bwp: 0
+    n_size_bwp: 24
+    control_config_ref: PUCCH-CONFIG-0
+    data_config_ref: PUSCH-CONFIG-0
+    control_bwp_id: 0
+    data_bwp_id: 0
+    active: true
+    switch_activation_tick: 0
+    state_version: 1
+    common_tdd_reference_scs_khz: 30
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 4000000000
+      band: bounded_4ghz_midband
+      frequency_range: FR1
+      channel_bandwidth_mhz: 20
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 51, scs_khz: 30}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 51, scs_khz: 30}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+
+pdsch6gr:
+  channel_bandwidth_mhz: 20
+  n_size_grid: 51
+  n_tx: 4
+  n_rx: 4
+  num_layers: 1
+  num_codewords: 1
+  modulation_per_codeword: [16QAM]
+  target_code_rate_per_codeword: [0.33203125]
+  fixed_mcs: 10
+  num_rb: 24
+  rb_start: 0
+  study_ranks: [1, 2, 4]
+  study_snr_db: [-8, -4, 0, 4, 10]
+
+pdsch:
+  prb_start: 0
+  num_prb: 24
+
+pusch:
+  prb_start: 0
+  num_prb: 24
+  mcs_table: qam64_table1
+  mcs_index: 10
+  modulation: 16QAM
+  target_code_rate_per_codeword: [0.33203125]
+  num_layers: 1
+  num_antenna_ports: 4
+
+validation:
+  run_class: webgui_full_stack_qualification
+  fixed_link_campaign:
+    enabled: true
+    fixed_reference_mode: true
+    single_user_mode: true
+    configuration_authority: master_yaml
+    direction: both
+    channel_model: AWGN
+    noise_operating_mode: standalone_awgn_snr_argument
+    pdsch_execution_profile: phy_calibration
+    link_adaptation_mode: fixed
+    harq_enabled: false
+    snr_db: [-8, -4, 0, 4, 10]
+    mcs: [10]
+    rank: 1
+    layers: 1
+    n_prb: 24
+    min_tb_per_point: 12
+    max_tb_per_point: 12
+    min_errors_for_ci: 0
+    max_ci_half_width: 0.5
+    seeds: [11, 23]
+    target_bler: [0.1, 0.01]
+    confidence_level: 0.95
+    trials_per_drop: 12
+    disable_auxiliary_signals: false
+    enable_ptrs: true

@@ -2035,6 +2035,10 @@ try
             result = localRunGenericSweep(cfg, scfg, runFolder);
         case "ai_benchmark"
             result = localRunAIBenchmark(cfg, scfg, runFolder);
+        case "full_stack_qualification"
+            result = sixgr.integration.qualification. ...
+                FullStackQualificationRunner.run(cfg, scfg, ...
+                string(runFolder));
         otherwise
             error("sixgr:lls6g:runner:UnknownProfile", ...
                 "Unsupported scenario.runner_profile '%s' for '%s'.", profile, scfg.ScenarioID);
@@ -2094,6 +2098,25 @@ try
             localBuildTerminalStatusPayload(scenarioStatus, "run_smoke_publication_complete", optionalArtifactIssues));
         execOut = localBuildExecOut(profile, result, manifest, runtimeSummary, environmentSummary, ...
             reportBundle, configOwnership, scenarioStatus, profilerArtifacts, optionalArtifactIssues);
+        return;
+    end
+    if profile == "full_stack_qualification"
+        % Phase-18 owns a selected-preset artifact, value, publication and
+        % acceptance truth contract spanning all canonical domain runners.
+        % Applying the ordinary single-link report contract here would
+        % incorrectly demand one flat radio environment and duplicate the
+        % qualification authority.
+        manifest.PublicationMode = "full_stack_qualification";
+        manifest.PublicationModeNotes = ...
+            "Qualification-owned immutable multi-subcase truth and artifact contract.";
+        localWriteScenarioManifest(layout, manifest);
+        localMarkRunStatusSafe(string(scenarioStatus.RunCompletion), ...
+            localBuildTerminalStatusPayload(scenarioStatus, ...
+            "full_stack_qualification_complete", optionalArtifactIssues));
+        execOut = localBuildExecOut(profile, result, manifest, ...
+            runtimeSummary, environmentSummary, reportBundle, ...
+            configOwnership, scenarioStatus, profilerArtifacts, ...
+            optionalArtifactIssues);
         return;
     end
     localDBLog("INFO", "Exporting initial config-ownership and hardcoding audit artifacts.");

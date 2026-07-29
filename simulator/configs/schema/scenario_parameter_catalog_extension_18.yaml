@@ -1,0 +1,243 @@
+top_level_order:
+  - qualification
+sections:
+  qualification:
+    required: false
+    parameters:
+      profile: {required: true, type: struct, nested_rule: qualification_profile}
+      validation: {required: true, type: struct, nested_rule: qualification_validation}
+      suite: {required: true, type: struct, nested_rule: qualification_suite}
+      carrier: {required: true, type: struct, nested_rule: qualification_carrier}
+      frame: {required: true, type: struct, nested_rule: qualification_frame}
+      main_fixed_sinr_sweep: {required: true, type: struct, nested_rule: qualification_fixed_sweep}
+      network_probes: {required: true, type: struct, nested_rule: qualification_network_probes}
+      antennas_mimo_beam: {required: true, type: struct, nested_rule: qualification_mimo}
+      control_data_reference_signals: {required: true, type: struct, nested_rule: qualification_control_rs}
+      rf_front_end_probes: {required: true, type: struct, nested_rule: qualification_rf}
+      mac_protocol_traffic: {required: true, type: struct, nested_rule: qualification_mac_protocol}
+      negative_fault_injection: {required: true, type: struct, nested_rule: qualification_negative}
+      artifacts: {required: true, type: struct, nested_rule: qualification_artifacts}
+      webgui: {required: true, type: struct, nested_rule: qualification_webgui}
+nested_sections:
+  qualification_profile:
+    parameters:
+      primary_id: {required: true, type: string, allowed_values: [nr_rel18_system_lls_strict]}
+      normative_core: {required: true, type: boolean}
+      bounded_profile_only: {required: true, type: boolean}
+      publication_curve_eligible: {required: true, type: boolean}
+      rf_impairment_subcase_profile: {required: true, type: string, allowed_values: [rf_impaired_research]}
+      rel20_6g_study_subcase_enabled: {required: true, type: boolean}
+  qualification_validation:
+    parameters:
+      run_class: {required: true, type: string, allowed_values: [webgui_full_stack_qualification]}
+      strict: {required: true, type: boolean}
+      require_actual_matlab_execution: {required: true, type: boolean}
+      require_webgui_launch: {required: true, type: boolean}
+      require_measured_post_eq_sinr: {required: true, type: boolean}
+      require_observed_geometry: {required: true, type: boolean}
+      require_independent_oracles: {required: true, type: boolean}
+      require_all_preset_artifacts: {required: true, type: boolean}
+      require_no_placeholder_artifacts: {required: true, type: boolean}
+      require_no_mandatory_skip_or_block: {required: true, type: boolean}
+      confidence_level: {required: true, type: number, min_exclusive: 0, max: 1}
+  qualification_suite:
+    parameters:
+      preset: {required: true, type: string, allowed_values: [comprehensive_smoke, deep_acceptance]}
+      one_webgui_run_id: {required: true, type: boolean}
+      one_resolved_yaml_revision: {required: true, type: boolean}
+      child_subcases_share_canonical_implementations: {required: true, type: boolean}
+      continue_after_subcase_failure: {required: true, type: boolean}
+      final_status_requires_all_mandatory_pass: {required: true, type: boolean}
+      presets: {required: true, type: struct, nested_rule: qualification_presets}
+  qualification_presets:
+    parameters:
+      comprehensive_smoke: {required: true, type: struct, nested_rule: qualification_preset}
+      deep_acceptance: {required: true, type: struct, nested_rule: qualification_preset}
+  qualification_preset:
+    parameters:
+      estimated_runtime_minutes: {required: true, type: number, min_exclusive: 0}
+      require_base_component_artifacts: {required: true, type: boolean}
+      require_impact_artifacts: {required: true, type: boolean}
+      fixed_snr_seeds: {required: true, type: number_list, integer: true, min_items: 1}
+      geometry_seeds: {required: true, type: number_list, integer: true, min_items: 1}
+      fixed_tbs_per_point_per_direction_per_seed: {required: true, type: integer, min: 1}
+      connected_tbs_per_point_per_direction_per_seed: {required: true, type: integer, min: 1}
+      geometry_slots_per_probe: {required: true, type: integer, min: 1}
+  qualification_carrier:
+    parameters:
+      frequency_range: {required: true, type: string, allowed_values: [FR1, FR2]}
+      center_frequency_hz: {required: true, type: number, min_exclusive: 0}
+      channel_bandwidth_hz: {required: true, type: number, min_exclusive: 0}
+      subcarrier_spacing_khz: {required: true, type: number, allowed_values: [15, 30, 60, 120, 240]}
+      cyclic_prefix: {required: true, type: string, allowed_values: [normal, extended]}
+      duplex_mode: {required: true, type: string, allowed_values: [TDD, FDD]}
+      active_bwp_nrb: {required: true, type: integer, min: 1}
+      active_bwp_start_rb: {required: true, type: integer, min: 0}
+  qualification_frame:
+    parameters:
+      tdd_pattern: {required: true, type: string, nonempty: true}
+      preserve_flexible_symbols: {required: true, type: boolean}
+      special_slot: {required: true, type: struct, nested_rule: qualification_special_slot}
+  qualification_special_slot:
+    parameters:
+      downlink_symbols: {required: true, type: integer, min: 0, max: 14}
+      guard_symbols: {required: true, type: integer, min: 0, max: 14}
+      uplink_symbols: {required: true, type: integer, min: 0, max: 14}
+  qualification_fixed_sweep:
+    parameters:
+      enabled: {required: true, type: boolean}
+      directions: {required: true, type: string_list, min_items: 1}
+      snr_db: {required: true, type: number_list, min_items: 1}
+      fixed_mcs_dl: {required: true, type: integer, min: 0}
+      fixed_mcs_ul: {required: true, type: integer, min: 0}
+      fixed_rank: {required: true, type: integer, min: 1}
+      measured_sinr_tolerance_db: {required: true, type: number, min: 0}
+      channel: {required: true, type: string, allowed_values: [AWGN]}
+      connected_control_overlay: {required: true, type: boolean}
+  qualification_network_probes:
+    parameters:
+      initial_access: {required: true, type: struct, nested_rule: qualification_initial_access}
+      los_static: {required: true, type: struct, nested_rule: qualification_los_static}
+      nlos_o2i_blockage: {required: true, type: struct, nested_rule: qualification_nlos}
+      multicell_interference_mobility: {required: true, type: struct, nested_rule: qualification_multicell}
+      handover_rlf: {required: true, type: struct, nested_rule: qualification_handover}
+  qualification_initial_access:
+    parameters:
+      enabled: {required: true, type: boolean}
+      snr_db: {required: true, type: number}
+      active_ssb_beams: {required: true, type: integer, min: 1}
+      require_rrc_setup_complete: {required: true, type: boolean}
+  qualification_los_static:
+    parameters:
+      enabled: {required: true, type: boolean}
+      cells: {required: true, type: integer, min: 1}
+      ues: {required: true, type: integer, min: 1}
+      channel_profile: {required: true, type: string, allowed_values: [TDL-C]}
+      slots: {required: true, type: integer, min: 1}
+  qualification_nlos:
+    parameters:
+      enabled: {required: true, type: boolean}
+      cells: {required: true, type: integer, min: 1}
+      ues: {required: true, type: integer, min: 1}
+      scenario: {required: true, type: string, allowed_values: [UMa]}
+      los_state: {required: true, type: string, allowed_values: [NLOS]}
+      channel_profile: {required: true, type: string, allowed_values: [CDL-C]}
+      o2i_enabled: {required: true, type: boolean}
+      blockage_enabled: {required: true, type: boolean}
+      slots: {required: true, type: integer, min: 1}
+  qualification_multicell:
+    parameters:
+      enabled: {required: true, type: boolean}
+      cells: {required: true, type: integer, min: 2}
+      ues: {required: true, type: integer, min: 2}
+      ue_speed_kmh: {required: true, type: number, min: 0}
+      channel_profile: {required: true, type: string, allowed_values: [CDL-C]}
+      sample_domain_interference: {required: true, type: boolean}
+      slots: {required: true, type: integer, min: 1}
+  qualification_handover:
+    parameters:
+      enabled: {required: true, type: boolean}
+      cells: {required: true, type: integer, min: 2}
+      ues: {required: true, type: integer, min: 1}
+      trajectory: {required: true, type: string, allowed_values: [crossing_cells]}
+      ue_speed_kmh: {required: true, type: number, min: 0}
+      require_successful_handover: {required: true, type: boolean}
+      require_failure_and_reestablishment_branch: {required: true, type: boolean}
+      slots: {required: true, type: integer, min: 1}
+  qualification_mimo:
+    parameters:
+      gnb_ports: {required: true, type: integer, min: 1}
+      ue_ports: {required: true, type: integer, min: 1}
+      runtime_rank_probes: {required: true, type: number_list, integer: true, min_items: 1}
+      type_i_codebook_probe: {required: true, type: boolean}
+      covariance_qualified_irc_probe: {required: true, type: boolean}
+      mu_mimo_probe: {required: true, type: boolean}
+      multi_trp_probe: {required: true, type: boolean}
+      beam_management_p1_p2_p3: {required: true, type: boolean}
+      beam_failure_recovery_probe: {required: true, type: boolean}
+  qualification_control_rs:
+    parameters:
+      dci_formats: {required: true, type: string_list, min_items: 1}
+      pdcch_aggregation_levels: {required: true, type: number_list, integer: true, min_items: 1}
+      pucch_formats: {required: true, type: number_list, integer: true, min_items: 1}
+      pdsch_dmrs_mapping_types: {required: true, type: string_list, min_items: 1}
+      pusch_dmrs_mapping_types: {required: true, type: string_list, min_items: 1}
+      dmrs_configuration_types: {required: true, type: number_list, integer: true, min_items: 1}
+      ptrs_enabled: {required: true, type: boolean}
+      csirs_enabled: {required: true, type: boolean}
+      csi_im_enabled: {required: true, type: boolean}
+      srs_enabled: {required: true, type: boolean}
+      trs_enabled: {required: true, type: boolean}
+      csi_part1_part2_enabled: {required: true, type: boolean}
+      olla_enabled: {required: true, type: boolean}
+  qualification_rf:
+    parameters:
+      enabled: {required: true, type: boolean}
+      cfo_hz: {required: true, type: number}
+      fractional_timing_offset_samples: {required: true, type: number}
+      sample_clock_offset_ppm: {required: true, type: number}
+      phase_noise_profile: {required: true, type: string}
+      tx_iq_gain_imbalance_db: {required: true, type: number}
+      tx_iq_phase_imbalance_deg: {required: true, type: number}
+      rx_iq_gain_imbalance_db: {required: true, type: number}
+      rx_iq_phase_imbalance_deg: {required: true, type: number}
+      pa_profile: {required: true, type: string}
+      pa_input_backoff_db: {required: true, type: number}
+      dpd_probe: {required: true, type: boolean}
+      dac_bits: {required: true, type: integer, min: 1}
+      adc_bits: {required: true, type: integer, min: 1}
+      explicit_agc: {required: true, type: boolean}
+      blocker_probe: {required: true, type: boolean}
+  qualification_mac_protocol:
+    parameters:
+      harq_enabled: {required: true, type: boolean}
+      dl_harq_processes: {required: true, type: integer, min: 1}
+      ul_harq_processes: {required: true, type: integer, min: 1}
+      max_retransmissions: {required: true, type: integer, min: 0}
+      rv_sequence: {required: true, type: number_list, integer: true, min_items: 1}
+      scheduler_policies: {required: true, type: string_list, min_items: 1}
+      exact_bsr_phr_sr_ta_probes: {required: true, type: boolean}
+      rlc_um_sn_lengths: {required: true, type: number_list, integer: true, min_items: 1}
+      rlc_am_sn_lengths: {required: true, type: number_list, integer: true, min_items: 1}
+      pdcp_sn_lengths: {required: true, type: number_list, integer: true, min_items: 1}
+      pdcp_security_profiles: {required: true, type: string_list, min_items: 1}
+      sdap_qfi_drb_mapping: {required: true, type: boolean}
+      rrc_reconfiguration: {required: true, type: boolean}
+      deterministic_cbr_packets: {required: true, type: struct, nested_rule: qualification_cbr}
+      burst_traffic_probe: {required: true, type: boolean}
+      require_first_delivery_deduplication: {required: true, type: boolean}
+      require_byte_conservation: {required: true, type: boolean}
+  qualification_cbr:
+    parameters:
+      packet_size_bytes: {required: true, type: integer, min: 1}
+      packet_count_dl: {required: true, type: integer, min: 1}
+      packet_count_ul: {required: true, type: integer, min: 1}
+      qfi: {required: true, type: integer, min: 0}
+      five_qi: {required: true, type: integer, min: 0}
+  qualification_negative:
+    parameters:
+      enabled: {required: true, type: boolean}
+      execute_all_cases_from: {required: true, type: string, nonempty: true}
+  qualification_artifacts:
+    parameters:
+      registry_file: {required: true, type: string, nonempty: true}
+      require_selected_preset_entries: {required: true, type: boolean}
+      generate_csv: {required: true, type: boolean}
+      generate_png: {required: true, type: boolean}
+      generate_mat: {required: true, type: boolean}
+      generate_logs: {required: true, type: boolean}
+      generate_json_manifest: {required: true, type: boolean}
+      emit_placeholder_artifacts: {required: true, type: boolean}
+      hash_every_artifact: {required: true, type: boolean}
+      semantic_plot_audit: {required: true, type: boolean}
+      publish_all_in_webgui: {required: true, type: boolean}
+  qualification_webgui:
+    parameters:
+      canonical_stack_only: {required: true, type: boolean}
+      show_source_effective_resolved_yaml: {required: true, type: boolean}
+      show_live_subcase_progress: {required: true, type: boolean}
+      show_all_artifacts: {required: true, type: boolean}
+      show_component_coverage: {required: true, type: boolean}
+      show_value_correctness: {required: true, type: boolean}
+      show_failed_validation_rows: {required: true, type: boolean}
+      require_playwright_end_to_end: {required: true, type: boolean}
