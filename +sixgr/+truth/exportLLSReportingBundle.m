@@ -6812,26 +6812,41 @@ sixgr.db.captureFileArtifact(filePath, "markdown_report", "text/markdown; charse
 end
 
 function localPlotWaterfallOrPlaceholder(pathOut, ctx)
-  thr = [localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean"), ...
-      localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean")];
-  bler = [localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall"), ...
-      localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall")];
-  if (any(isfinite(thr)) || any(isfinite(bler))) && ~localConfigFlag(ctx, ["output.save_figures"], true)
-      localExportPlaceholderFigure(pathOut, "Key Gains/Losses Summary", ...
-          "visual_gate=constant_chart_source; aggregate waterfall suppressed because save_figures=false and the source is a single-scenario summary.");
-      return;
-  end
-  if any(isfinite(thr)) || any(isfinite(bler))
-      fig = figure("Visible", "off", "Color", "w");
-      cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
-      ax = axes(fig);
-    vals = [localSafeZero(thr(1)) localSafeZero(thr(2)) -localSafeZero(bler(1)) -localSafeZero(bler(2))];
-    bar(ax, vals);
-    set(ax, 'XTickLabel', {'DL Thr','UL Thr','DL BLER','UL BLER'});
-    ylabel(ax, "KPI proxy value");
-    title(ax, "Key Gains/Losses Summary");
-    grid(ax, "on");
-    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+thr = [localMeasuredSummaryNumeric(ctx, "DL", "Goodput_Mbps_mean"), ...
+    localMeasuredSummaryNumeric(ctx, "UL", "Goodput_Mbps_mean")];
+bler = [localMeasuredSummaryNumeric(ctx, "DL", "BLER_overall"), ...
+    localMeasuredSummaryNumeric(ctx, "UL", "BLER_overall")];
+if any(isfinite(thr)) || any(isfinite(bler))
+    % The contracted source is per_scenario_summary_tables.csv. A single
+    % scenario cannot support a cross-scenario gains/losses waterfall, and
+    % mixing Mbps throughput with dimensionless BLER bars would be
+    % misleading. Publish an explicit unavailable card until at least two
+    % independently identified scenario rows exist.
+    sourcePath = fullfile(ctx.Layout.ReportCSVDir, ...
+        "per_scenario_summary_tables.csv");
+    independentScenarioCount = 0;
+    if exist(sourcePath, "file") == 2
+        try
+            sourceT = readtable(sourcePath, ...
+                "VariableNamingRule", "preserve", "TextType", "string");
+            if ismember("ScenarioID", string(sourceT.Properties.VariableNames))
+                scenarioIds = strtrim(string(sourceT.ScenarioID));
+                independentScenarioCount = numel(unique( ...
+                    scenarioIds(strlength(scenarioIds) > 0)));
+            end
+        catch
+            independentScenarioCount = 0;
+        end
+    end
+    if independentScenarioCount < 2
+        localExportPlaceholderFigure(pathOut, ...
+            "Key Gains/Losses Summary", ...
+            "visual_gate=constant_chart_source; at least two independent scenario rows are required for a truthful cross-scenario waterfall.");
+        return;
+    end
+    localExportPlaceholderFigure(pathOut, ...
+        "Key Gains/Losses Summary", ...
+        "visual_gate=unsupported_mixed_units; throughput (Mbps) and BLER (ratio) require separate normalized comparison series.");
     return;
 end
 if ~localShouldEmitPlaceholderArtifacts(ctx)

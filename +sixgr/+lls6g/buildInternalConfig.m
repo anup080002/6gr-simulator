@@ -2191,6 +2191,7 @@ scalarPairs = {
     "uci_scaling", "uci.scaling"
     "repetition_type", "repetition.type"
     "repetition_count", "repetition.count"
+    "decision_directed_post_eq_sinr_bound_enabled", "measurements.decisionDirectedPostEqSINRBoundEnabled"
     };
 for i = 1:size(scalarPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, ...

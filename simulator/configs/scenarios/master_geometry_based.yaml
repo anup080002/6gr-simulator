@@ -974,6 +974,7 @@ canonical_control:
     enabled: true
     process_count: 16
     max_retx: 4
+    k2: 1
     rv_sequence:
     - 0
     - 2
@@ -1445,6 +1446,7 @@ pusch:
   uci_scaling: 1
   repetition_type: none
   repetition_count: 1
+  decision_directed_post_eq_sinr_bound_enabled: true
   power_control:
     enabled: true
     open_loop_enabled: true

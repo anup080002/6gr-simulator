@@ -78,6 +78,7 @@ requiredPaths = [ ...
     "canonical_control.modulation.ul_mcs_index"
     "canonical_control.modulation.mcs_table"
     "canonical_control.harq.enabled"
+    "canonical_control.harq.k2"
     "canonical_control.random_access.enabled"
     "bwp.dl.bwp_id"
     "bwp.dl.n_start_bwp"
@@ -99,6 +100,7 @@ requiredPaths = [ ...
     "pusch.num_prb"
     "pusch.start_symbol"
     "pusch.num_symbols"
+    "pusch.decision_directed_post_eq_sinr_bound_enabled"
     "pdcch.start_symbol"
     "pdcch.num_symbols"
     "tdd_timing.pdcch_to_pdsch_k0"
@@ -150,6 +152,9 @@ localAssertEqual(double(cfg.phy.bwp.ul.NStartBWP), ...
     double(raw.bwp.ul.n_start_bwp), fileName + " UL BWP start");
 localAssertEqual(double(cfg.phy.bwp.ul.NSizeBWP), ...
     double(raw.bwp.ul.n_size_bwp), fileName + " UL BWP size");
+assert(logical(cfg.phy.pusch.measurements.decisionDirectedPostEqSINRBoundEnabled) == ...
+    logical(raw.pusch.decision_directed_post_eq_sinr_bound_enabled), ...
+    "%s did not preserve the configured PUSCH measured-SINR policy.", fileName);
 assert(~isempty(sixgr.util.structGet(cfg, ...
     "phy.frame.componentCarriers", [])), ...
     "%s did not attach the explicitly configured component carrier.", fileName);
@@ -272,6 +277,7 @@ raw.pusch.num_symbols = 13;
 raw.tdd_timing.pdcch_to_pdsch_k0 = 1;
 raw.tdd_timing.pdcch_to_pusch_k2 = 2;
 raw.tdd_timing.ul_grant_k2 = 2;
+raw.canonical_control.harq.k2 = 2;
 raw.canonical_control.modulation.dl_mcs_index = 10;
 raw.canonical_control.modulation.ul_mcs_index = 10;
 raw.pdsch6gr.fixed_mcs = 10;

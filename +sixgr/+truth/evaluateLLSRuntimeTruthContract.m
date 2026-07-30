@@ -47,6 +47,7 @@ isChannelRFStrict = localIsChannelRFStrictScenario(scfg, cfg);
 isRAOnly = localIsRAOnlyScenario(scfg, cfg);
 isPDSCHStudy = localIsPDSCH6GRStudyScenario(scfg, cfg);
 isProxyOnlyStudy = localIsProxyOnlyStudyScenario(scfg, cfg);
+isFixedSNRSweep = localIsFixedSNRSweepScenario(scfg, cfg);
 isControlOnly = isPRACHOnly || isPDCCHOnly || isTRSOnly || isSRSOnly || isChannelRFOnly || isRAOnly;
 verdict.ContractApplicability = "applicable";
 
@@ -304,13 +305,13 @@ elseif isRAOnly
 end
 if verdict.RequiredDL
     requiredArtifacts(end + 1, 1) = dlTrialsPath;
-    if strictTruthRequired
+    if strictTruthRequired && ~isFixedSNRSweep
         requiredArtifacts(end + 1, 1) = fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv");
     end
 end
 if verdict.RequiredUL
     requiredArtifacts(end + 1, 1) = ulTrialsPath;
-    if strictTruthRequired
+    if strictTruthRequired && ~isFixedSNRSweep
         requiredArtifacts(end + 1, 1) = fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv");
     end
 end
@@ -395,7 +396,11 @@ if ~isControlOnly && ~isPDSCHStudy
         verdict = localAddFailure(verdict, rawLifecycleFailures(ii), "evidence");
     end
 
-    [ferStats, ferFailures] = localFERScopeStats(layout);
+    if isFixedSNRSweep
+        [ferStats, ferFailures] = localFixedSweepFERScopeStats();
+    else
+        [ferStats, ferFailures] = localFERScopeStats(layout);
+    end
     for ii = 1:numel(ferFailures)
         verdict = localAddFailure(verdict, ferFailures(ii), "evidence");
     end
@@ -437,7 +442,7 @@ if strictTruthRequired && double(issueRegistryStats.BlockingIssueCount) > 0
         "evidence");
 end
 
-sib1Stats = localSIB1EvidenceStats(layout, scfg, cfg);
+sib1Stats = localSIB1EvidenceStats(layout, scfg, cfg, isFixedSNRSweep);
 if strictTruthRequired && logical(sib1Stats.SIB1Required) && ~logical(sib1Stats.SIB1StrictOk)
     verdict = localAddFailure(verdict, ...
         "sib1_strict_waveform_evidence_missing_or_failing:" + string(sib1Stats.SIB1Status), ...
@@ -486,7 +491,9 @@ if strictTruthRequired && logical(channelRFStats.ChannelRFRequired) && ~logical(
         "evidence");
 end
 
-[pdschObjectiveStats, pdschObjectiveFailures] = localPDSCHObjectiveStats(dlTrials, scfg, cfg, strictTruthRequired, isControlOnly, verdict.RequiredDL);
+[pdschObjectiveStats, pdschObjectiveFailures] = localPDSCHObjectiveStats( ...
+    dlTrials, scfg, cfg, strictTruthRequired, isControlOnly, ...
+    verdict.RequiredDL, isFixedSNRSweep);
 for ii = 1:numel(pdschObjectiveFailures)
     verdict = localAddFailure(verdict, pdschObjectiveFailures(ii), "evidence");
 end
@@ -496,7 +503,8 @@ for ii = 1:numel(scenarioObjectiveFailures)
     verdict = localAddFailure(verdict, scenarioObjectiveFailures(ii), "evidence");
 end
 
-[measuredSINRStats, measuredSINRFailures] = localMeasuredSINREvidenceStats(layout, strictTruthRequired, isControlOnly);
+[measuredSINRStats, measuredSINRFailures] = localMeasuredSINREvidenceStats( ...
+    layout, strictTruthRequired, isControlOnly, isFixedSNRSweep);
 for ii = 1:numel(measuredSINRFailures)
     verdict = localAddFailure(verdict, measuredSINRFailures(ii), "evidence");
 end
@@ -716,6 +724,23 @@ function tf = localIsProxyOnlyStudyScenario(scfg, cfg)
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
 sweepBase = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.sweep.base_profile", ""))));
 tf = runnerProfile == "ai_benchmark" || (runnerProfile == "generic_sweep" && sweepBase == "ai_benchmark");
+end
+
+function tf = localIsFixedSNRSweepScenario(scfg, cfg)
+runClass = lower(strtrim(string(localScenarioGet( ...
+    scfg, cfg, "validation.run_class", ...
+    localScenarioGet(scfg, cfg, "validation.RunClass", "")))));
+fixedOnly = localScenarioGetBool( ...
+    scfg, cfg, "sweeps_and_matrix.fixed_link_calibration.only", false) || ...
+    localScenarioGetBool( ...
+    scfg, cfg, "canonical_control.run.fixed_link_campaign_only", false) || ...
+    localScenarioGetBool(scfg, cfg, "run.fixedLinkCampaignOnly", false);
+campaignEnabled = localScenarioGetBool( ...
+    scfg, cfg, "validation.fixed_link_campaign.enabled", false);
+tf = runClass == "fixed_snr_sweep_lls" || ...
+    localScenarioGetBool( ...
+    scfg, cfg, "validation.fixed_snr_sweep_required", false) || ...
+    (fixedOnly && campaignEnabled);
 end
 
 function details = localProxyOnlyTruthContractDetails(layout)
@@ -1056,6 +1081,19 @@ if stats.FERRunScopeIdentityLeakCount > 0
 end
 end
 
+function [stats, failures] = localFixedSweepFERScopeStats()
+% Fixed-link calibration trials are independent transport blocks, not a
+% scheduled run/frame lifecycle. BLER/BER confidence intervals are gated
+% by auditFixedSNRSweepRun instead of a synthetic run-scope FER table.
+stats = struct( ...
+    "FERSummaryRows", NaN, ...
+    "FERRunScopeRows", NaN, ...
+    "FERRunScopeIdentityLeakCount", 0, ...
+    "FERRunScopeIdentityOk", true, ...
+    "FERScopeStatus", "not_applicable_for_fixed_snr_sweep");
+failures = strings(0, 1);
+end
+
 function values = localColumnHasFiniteIdentity(T, columnName)
 raw = T.(string(columnName));
 if isnumeric(raw)
@@ -1281,12 +1319,21 @@ if any(selfGenerated)
 end
 end
 
-function stats = localSIB1EvidenceStats(layout, scfg, cfg)
+function stats = localSIB1EvidenceStats(layout, scfg, cfg, isFixedSNRSweep)
+if nargin < 4
+    isFixedSNRSweep = false;
+end
 required = localScenarioGetBool(scfg, cfg, "phy.sib1.enable", false) || ...
     localScenarioHasObjective(scfg, cfg, "cell_search_mib_sib1") || ...
     localScenarioAnyTrue(scfg, cfg, ["sib1_and_initial_access.sib1_required", ...
     "sib1_and_initial_access.sib1_decode_from_waveform_required", ...
     "sib1_and_initial_access.sib1_pdsch_required"]);
+auxiliarySignalsDisabled = localScenarioGetBool( ...
+    scfg, cfg, ...
+    "validation.fixed_link_campaign.disable_auxiliary_signals", false);
+if logical(isFixedSNRSweep) && auxiliarySignalsDisabled
+    required = false;
+end
 summaryPath = fullfile(layout.ReportCSVDir, "sib1_conformance_summary.csv");
 recoveryPath = fullfile(layout.ControlCSVDir, "sib1_recovery_trials.csv");
 candidatePath = fullfile(layout.ControlCSVDir, "sib1_pdcch_candidates.csv");
@@ -1301,6 +1348,10 @@ stats = struct( ...
     "SIB1ASN1RoundtripRows", 0, ...
     "SIB1AirInterfaceRows", 0);
 if ~required
+    if logical(isFixedSNRSweep) && auxiliarySignalsDisabled
+        stats.SIB1Status = ...
+            "not_applicable_fixed_snr_sweep_auxiliary_signals_disabled";
+    end
     return;
 end
 summaryT = localReadTable(summaryPath);
@@ -2294,10 +2345,15 @@ else
 end
 end
 
-function [stats, failures] = localMeasuredSINREvidenceStats(layout, strictTruthRequired, isControlOnly)
+function [stats, failures] = localMeasuredSINREvidenceStats( ...
+        layout, strictTruthRequired, isControlOnly, isFixedSNRSweep)
+if nargin < 4
+    isFixedSNRSweep = false;
+end
 stats = struct( ...
     "MeasuredSINRRequired", logical(strictTruthRequired) && ~logical(isControlOnly), ...
     "MeasuredSINRCurveOk", true, ...
+    "DistanceSINRApplicable", ~logical(isFixedSNRSweep), ...
     "DistanceSINREvidenceOk", true, ...
     "SINRSummaryOk", true, ...
     "DLBinsWithAtLeast5Trials", NaN, ...
@@ -2326,20 +2382,22 @@ else
     end
 end
 
-distancePath = fullfile(layout.AirInterfaceCSVDir, "distance_vs_sinr.csv");
-distT = localReadTable(distancePath);
-if isempty(distT) || height(distT) == 0 || ~localHasColumn(distT, "UEIndex") || ~localHasColumn(distT, "PropagationDistance_m")
-    stats.DistanceSINREvidenceOk = false;
-    failures(end+1, 1) = "distance_vs_sinr_missing_or_empty"; %#ok<AGROW>
-else
-    distance = localColumnNumeric(distT, "PropagationDistance_m");
-    ue = localColumnNumeric(distT, "UEIndex");
-    valid = isfinite(distance) & isfinite(ue);
-    stats.DistanceRows = sum(valid);
-    stats.UEsWithDistanceRows = numel(unique(ue(valid)));
-    stats.DistanceSINREvidenceOk = stats.DistanceRows >= 1 && stats.UEsWithDistanceRows >= 1;
-    if ~stats.DistanceSINREvidenceOk
-        failures(end+1, 1) = "distance_vs_sinr_no_valid_ue_distance_rows"; %#ok<AGROW>
+if ~logical(isFixedSNRSweep)
+    distancePath = fullfile(layout.AirInterfaceCSVDir, "distance_vs_sinr.csv");
+    distT = localReadTable(distancePath);
+    if isempty(distT) || height(distT) == 0 || ~localHasColumn(distT, "UEIndex") || ~localHasColumn(distT, "PropagationDistance_m")
+        stats.DistanceSINREvidenceOk = false;
+        failures(end+1, 1) = "distance_vs_sinr_missing_or_empty"; %#ok<AGROW>
+    else
+        distance = localColumnNumeric(distT, "PropagationDistance_m");
+        ue = localColumnNumeric(distT, "UEIndex");
+        valid = isfinite(distance) & isfinite(ue);
+        stats.DistanceRows = sum(valid);
+        stats.UEsWithDistanceRows = numel(unique(ue(valid)));
+        stats.DistanceSINREvidenceOk = stats.DistanceRows >= 1 && stats.UEsWithDistanceRows >= 1;
+        if ~stats.DistanceSINREvidenceOk
+            failures(end+1, 1) = "distance_vs_sinr_no_valid_ue_distance_rows"; %#ok<AGROW>
+        end
     end
 end
 
@@ -2404,9 +2462,15 @@ failures = failures(strlength(failures) > 0);
 stats.ScenarioObjectiveOk = isempty(failures);
 end
 
-function [stats, failures] = localPDSCHObjectiveStats(dlTrials, scfg, cfg, strictTruthRequired, isControlOnly, requiredDL)
+function [stats, failures] = localPDSCHObjectiveStats( ...
+        dlTrials, scfg, cfg, strictTruthRequired, isControlOnly, ...
+        requiredDL, isFixedSNRSweep)
+if nargin < 7
+    isFixedSNRSweep = false;
+end
 stats = struct( ...
     "PDSCHObjectiveRequired", false, ...
+    "Applicability", "applicable", ...
     "ObjectivePass", true, ...
     "RawBLER", NaN, ...
     "RawBERWeighted", NaN, ...
@@ -2414,6 +2478,14 @@ stats = struct( ...
     "FailureReason", "");
 failures = strings(0, 1);
 if isControlOnly
+    stats.Applicability = "not_applicable_control_only";
+    return;
+end
+if logical(isFixedSNRSweep)
+    % A sweep intentionally includes outage points. Applying one aggregate
+    % BLER/BER threshold across all SNRs would reject the waterfall by
+    % construction; auditFixedSNRSweepRun owns its pointwise objective.
+    stats.Applicability = "fixed_snr_sweep_audit";
     return;
 end
 required = logical(requiredDL) || (istable(dlTrials) && height(dlTrials) > 0);

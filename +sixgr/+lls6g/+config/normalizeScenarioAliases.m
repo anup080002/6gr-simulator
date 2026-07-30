@@ -734,6 +734,7 @@ mappings = {
     "harq.rv_sequence", "harq.rv_sequence", "identity"
     "harq.combining_mode", "harq.combining_mode", "identity"
     "harq.feedback_timing_slots", "harq.feedback_timing_slots", "identity"
+    "harq.k2", "harq.k2", "identity"
     "receiver.channel_estimator", "receiver_algorithms.channel_estimator", "identity"
     "receiver.interpolation_method", "receiver_algorithms.interpolation_method", "identity"
     "receiver.equalizer", "receiver_algorithms.equalizer", "identity"

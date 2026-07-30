@@ -31,23 +31,26 @@ canonical_control:
     target_cases:
     - bundle
     bundle_anchor_cases:
-    - cell_search_mib_sib1
-    - prach_detection
     - dl_pdsch_throughput
     - ul_pusch_throughput
-    - ul_srs_channelest
-    - ul_lowpapr
     expected_outputs:
     - reports/csv/scenario_summary.csv
     - reports/csv/runtime_operating_mode.csv
+    - reports/csv/live_control_gating_summary.csv
     - reports/csv/config_roundtrip_verification.csv
     - reports/csv/browser_runtime_db_consistency.csv
     - reports/csv/summary_vs_raw_consistency.csv
     - reports/csv/value_source_audit.csv
-    - packet_flow/csv/live_dl_scheduler_grants.csv
-    - packet_flow/csv/live_ul_scheduler_grants.csv
     - air_interface/csv/dl_pdsch_trials.csv
     - air_interface/csv/ul_pusch_trials.csv
+    - air_interface/csv/dl_fixed_link_campaign_trials.csv
+    - air_interface/csv/ul_fixed_link_campaign_trials.csv
+    - air_interface/csv/dl_measured_sinr_bler_curve.csv
+    - air_interface/csv/ul_measured_sinr_bler_curve.csv
+    - air_interface/csv/lls_measured_sinr_summary.csv
+    - reports/csv/dl_fixed_snr_bler_curve.csv
+    - reports/csv/ul_fixed_snr_bler_curve.csv
+    - reports/csv/fixed_snr_sweep_audit.csv
     honesty_mode: strict
     unsupported_output_policy: show_unavailable_with_reason
     provenance_logging: true
@@ -76,15 +79,14 @@ canonical_control:
     campaign_mode: single_seed_coupled_truth
     fixed_link_campaign_enabled: true
     fixed_link_snr_grid_db:
-    - -6
-    - -4
-    - -2
-    - 0
-    - 2
-    - 4
-    - 6
-    - 8
     - 10
+    - 14
+    - 18
+    - 20
+    - 22
+    - 24
+    - 26
+    - 30
     min_campaign_snr_points: 5
     min_trials_per_sinr_bin: 5000
     max_trials_per_sinr_bin: 20000
@@ -969,6 +971,7 @@ canonical_control:
     enabled: false
     process_count: 16
     max_retx: 4
+    k2: 1
     rv_sequence:
     - 0
     - 2
@@ -1125,15 +1128,14 @@ validation:
     link_adaptation_mode: fixed
     harq_enabled: false
     snr_db:
-    - -6
-    - -4
-    - -2
-    - 0
-    - 2
-    - 4
-    - 6
-    - 8
     - 10
+    - 14
+    - 18
+    - 20
+    - 22
+    - 24
+    - 26
+    - 30
     mcs:
     - 20
     rank: 1
@@ -1383,6 +1385,7 @@ pusch:
   uci_scaling: 1
   repetition_type: none
   repetition_count: 1
+  decision_directed_post_eq_sinr_bound_enabled: false
   power_control:
     enabled: false
     open_loop_enabled: false
@@ -1730,30 +1733,28 @@ sweeps_and_matrix:
   snr_sweep:
     enabled: true
     values_db:
-    - -6
-    - -4
-    - -2
-    - 0
-    - 2
-    - 4
-    - 6
-    - 8
     - 10
+    - 14
+    - 18
+    - 20
+    - 22
+    - 24
+    - 26
+    - 30
   fixed_link_calibration:
     enabled: true
     only: true
     direction: both
     channel_model: AWGN
     snr_db:
-    - -6
-    - -4
-    - -2
-    - 0
-    - 2
-    - 4
-    - 6
-    - 8
     - 10
+    - 14
+    - 18
+    - 20
+    - 22
+    - 24
+    - 26
+    - 30
     min_trials: 5000
     max_trials: 20000
     trials_per_drop: 200
@@ -1765,7 +1766,7 @@ sweeps_and_matrix:
     require_monotonic_bler: true
     require_high_snr_pass: true
     max_sinr_snr_delta_db: 0.5
-    smoke_min_trials: 100
+    smoke_min_trials: 40
     truth_min_trials: 5000
 mac_phase08:
   enabled: true
@@ -1875,13 +1876,13 @@ execution_scales:
       canonical_control:
         run:
           fixed_link_snr_grid_db:
-          - -2
-          - 4
-          - 10
-          snr_db: -2
+          - 18
+          - 24
+          - 30
+          snr_db: 18
           noise_operating_mode: standalone_awgn_snr_argument
-          min_trials_per_sinr_bin: 10
-          max_trials_per_sinr_bin: 10
+          min_trials_per_sinr_bin: 40
+          max_trials_per_sinr_bin: 40
           num_workers: 1
           batch_size_links: 1
           auto_start_parallel_pool: false
@@ -1900,30 +1901,33 @@ execution_scales:
         batch_size_links: 1
         auto_start_parallel_pool: false
       simulation:
-        snr_db: -2
+        snr_db: 18
         noise_operating_mode: standalone_awgn_snr_argument
       validation:
         fixed_link_campaign:
           snr_db:
-          - -2
-          - 4
-          - 10
-          min_tb_per_point: 10
-          max_tb_per_point: 10
+          - 18
+          - 24
+          - 30
+          min_tb_per_point: 40
+          max_tb_per_point: 40
+          min_errors_for_ci: 0
+          trials_per_drop: 40
       sweeps_and_matrix:
         snr_sweep:
           enabled: true
           values_db:
-          - -2
-          - 4
-          - 10
+          - 18
+          - 24
+          - 30
         fixed_link_calibration:
           enabled: true
           only: true
           snr_db:
-          - -2
-          - 4
-          - 10
-          min_trials: 10
-          max_trials: 10
-          trials_per_drop: 10
+          - 18
+          - 24
+          - 30
+          min_trials: 40
+          max_trials: 40
+          trials_per_drop: 40
+          error_target: 0

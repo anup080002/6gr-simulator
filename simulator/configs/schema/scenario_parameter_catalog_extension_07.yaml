@@ -162,6 +162,7 @@ sections:
       uci_scaling: {required: false, type: number, min: 0, max: 1}
       repetition_type: {required: false, type: string}
       repetition_count: {required: false, type: integer, min: 1}
+      decision_directed_post_eq_sinr_bound_enabled: {required: false, type: boolean}
       power_control: {required: false, type: string_or_struct}
       srs_authority: {required: false, type: struct}
       xoh_pusch: {required: false, type: number}

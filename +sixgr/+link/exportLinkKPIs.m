@@ -368,9 +368,24 @@ if isstruct(cfg)
     bwHz = double(sixgr.util.structGet(cfg, "channel.bandwidth_Hz", ...
         sixgr.util.structGet(cfg, "phy.channelBandwidth_Hz", NaN)));
     if ~(isfinite(bwHz) && bwHz > 0)
-        bwMHz = double(sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", NaN));
+        bwMHz = double(sixgr.util.structGet(cfg, "phy.channelBandwidth_MHz", ...
+            sixgr.util.structGet(cfg, "channel.bandwidth_MHz", NaN)));
         if isfinite(bwMHz) && bwMHz > 0
             bwHz = bwMHz * 1e6;
+        end
+    end
+    if ~(isfinite(bwHz) && bwHz > 0)
+        activeRBs = double(sixgr.util.structGet(cfg, ...
+            "phy.numerology.activeGridNumRBs", ...
+            sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)));
+        scsKHz = double(sixgr.util.structGet(cfg, ...
+            "phy.numerology.scs_kHz", ...
+            sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN)));
+        if isfinite(activeRBs) && activeRBs > 0 && ...
+                isfinite(scsKHz) && scsKHz > 0
+            % The occupied active-grid bandwidth is the exact denominator
+            % available when a nominal channel bandwidth was not supplied.
+            bwHz = activeRBs * 12 * scsKHz * 1e3;
         end
     end
 end
