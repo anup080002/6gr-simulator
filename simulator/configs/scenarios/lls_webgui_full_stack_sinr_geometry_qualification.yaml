@@ -111,6 +111,16 @@ canonical_control:
     ul_waveform: CP-OFDM
     transform_precoding_enabled: false
     windowing_enabled: false
+  antenna:
+    bs_array_geometry: URA
+    ue_array_geometry: ULA
+    bs_num_antenna_elements: 4
+    ue_num_antenna_elements: 4
+    polarization: single
+    element_spacing_h: 0.5
+    element_spacing_v: 0.5
+    digital_precoder_family: wideband
+    bs_mechanical_tilt_deg: 10
   mimo:
     n_tx_ant: 4
     n_rx_ant: 4
@@ -376,6 +386,21 @@ qualification:
     show_failed_validation_rows: true
     require_playwright_end_to_end: true
 
+# Runtime antenna ownership must agree with the four-port component probes.
+# These override the inherited single-element smoke defaults.
+antenna_and_array:
+  bs_num_txrus: 4
+  bs_num_rxrus: 4
+  bs_num_antenna_elements: 4
+  ue_num_antenna_elements: 4
+
+mimo:
+  n_tx_ant: 4
+  n_rx_ant: 4
+  n_layers: 1
+  max_dl_layers: 1
+  max_ul_layers: 1
+
 # Canonical active BWP/CC projection for the 20 MHz carrier. The semantic
 # qualification contract intentionally uses a 24-RB active BWP inside the
 # standards-derived 51-RB carrier grid.
@@ -458,6 +483,7 @@ pusch:
   target_code_rate_per_codeword: [0.33203125]
   num_layers: 1
   num_antenna_ports: 4
+  ptrs_enabled: true
 
 validation:
   run_class: webgui_full_stack_qualification
@@ -477,8 +503,8 @@ validation:
     rank: 1
     layers: 1
     n_prb: 24
-    min_tb_per_point: 12
-    max_tb_per_point: 12
+    min_tb_per_point: 24
+    max_tb_per_point: 24
     min_errors_for_ci: 0
     max_ci_half_width: 0.5
     seeds: [11, 23]

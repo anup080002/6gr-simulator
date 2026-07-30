@@ -1,0 +1,43 @@
+Running testQualificationFinalizationArtifactSchema
+..
+Done testQualificationFinalizationArtifactSchema
+__________
+
+Running testQualificationArtifactAuditNormalizer
+...
+Done testQualificationArtifactAuditNormalizer
+__________
+
+Running testQualificationImageSemanticJoin
+..
+Done testQualificationImageSemanticJoin
+__________
+
+Running testQualificationArtifactCompleteness
+.
+Done testQualificationArtifactCompleteness
+__________
+
+Running testQualificationFilesystemPublication
+.
+Done testQualificationFilesystemPublication
+__________
+
+Running testQualificationRegressionSharding
+.
+Done testQualificationRegressionSharding
+__________
+
+  110 TestResult array with properties:
+
+    Name
+    Passed
+    Failed
+    Incomplete
+    Duration
+    Details
+
+Totals:
+   10 Passed, 0 Failed, 0 Incomplete.
+   8.5096 seconds testing time.
+

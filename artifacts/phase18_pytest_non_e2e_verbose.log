@@ -1,0 +1,104 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-7.4.4, pluggy-1.0.0 -- C:\ProgramData\anaconda3\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main
+configfile: pytest.ini
+plugins: anyio-4.2.0
+collecting ... collected 68 items / 1 deselected / 67 selected
+
+tests/test_actual_lls_implementation_harness.py::test_actual_lls_implementation_harness PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_unavailable_plotted_metric_status PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_negative_fixture PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs PASSED
+tests/test_dut_reference_comparison.py::test_dut_reference_comparison PASSED
+tests/test_dut_yaml_catalog.py::test_dut_yaml_catalog_is_complete_and_overlay_only PASSED
+tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_is_a_canonical_webgui_mode PASSED
+tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_resolves_and_is_launchable PASSED
+tests/test_full_stack_webgui_contract.py::test_full_stack_page_contract_is_rendered_in_single_webgui PASSED
+tests/test_full_stack_webgui_contract.py::test_bounded_command_reports_success_and_timeout PASSED
+tests/test_full_stack_webgui_contract.py::test_incomplete_full_stack_run_remains_filesystem_indexable PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator PASSED
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_blocks_open_high_issue PASSED
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_allows_verified_issue PASSED
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_rejects_critical_waiver PASSED
+tests/test_lls_browser_fixed_snr_plot_gallery.py::test_reference_gallery_matches_fixed_snr_plot_filenames PASSED
+tests/test_lls_complete_output_contract.py::test_contract_sections_and_context PASSED
+tests/test_lls_complete_output_contract.py::test_contract_covers_required_domains PASSED
+tests/test_lls_complete_output_contract.py::test_generated_deliverables_exist_and_are_additive PASSED
+tests/test_lls_complete_output_contract.py::test_browser_uses_one_compact_shell_and_preserves_deep_links FAILED
+
+================================== FAILURES ===================================
+________ test_browser_uses_one_compact_shell_and_preserves_deep_links _________
+
+    def test_browser_uses_one_compact_shell_and_preserves_deep_links() -> None:
+        expected_nav = [
+            ("home", "Scenario", "/home"),
+            ("scenario", "Configure", "/scenario"),
+            ("run_control", "Run", "/run-control"),
+            ("runs", "Runs", "/runs"),
+            ("realtime", "Live", "/realtime"),
+            ("plots", "Results & Evidence", "/plots"),
+        ]
+>       assert dash.PRODUCT_NAV == expected_nav
+E       AssertionError: assert [('home', 'Scenario', '/home'), ('scenario', 'Configure', '/scenario'), ('run_control', 'Run', '/run-control'), ('runs', 'Runs', '/runs'), ('realtime', 'Live', '/realtime'), ('qualification', 'Qualification', '/qualification'), ('plots', 'Results & Evidence', '/plots')] == [('home', 'Scenario', '/home'), ('scenario', 'Configure', '/scenario'), ('run_control', 'Run', '/run-control'), ('runs', 'Runs', '/runs'), ('realtime', 'Live', '/realtime'), ('plots', 'Results & Evidence', '/plots')]
+E         At index 5 diff: ('qualification', 'Qualification', '/qualification') != ('plots', 'Results & Evidence', '/plots')
+E         Left contains one more item: ('plots', 'Results & Evidence', '/plots')
+E         Full diff:
+E           [
+E            ('home',
+E             'Scenario',
+E             '/home'),
+E            ('scenario',
+E             'Configure',
+E             '/scenario'),
+E            ('run_control',
+E             'Run',
+E             '/run-control'),
+E            ('runs',
+E             'Runs',
+E             '/runs'),
+E            ('realtime',
+E             'Live',
+E             '/realtime'),
+E         +  ('qualification',
+E         +   'Qualification',
+E         +   '/qualification'),
+E            ('plots',
+E             'Results & Evidence',
+E             '/plots'),
+E           ]
+
+tests\test_lls_complete_output_contract.py:125: AssertionError
+============================== warnings summary ===============================
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_lls_complete_output_contract.py::test_browser_uses_one_compact_shell_and_preserves_deep_links
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+===== 1 failed, 24 passed, 1 deselected, 13 warnings in 115.71s (0:01:55) =====

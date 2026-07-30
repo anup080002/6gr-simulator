@@ -1,0 +1,6 @@
+[PASS] testLLSPlotDataValidation (242.61s)
+Slowest 1 test(s):
+   1. testLLSPlotDataValidation (242.61s)
+{Unrecognized field name "Passed".
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

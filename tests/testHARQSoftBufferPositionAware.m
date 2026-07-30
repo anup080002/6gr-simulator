@@ -84,7 +84,7 @@ end
 
 function localAssertHARQEntityLifecycle(buffer0, buffer3, tbsBits)
 harq = sixgr.l2.mac.HARQEntity(struct(), "Direction", "DL", ...
-    "NumProcesses", 1, "MaxRetx", 2, "StaleProcessTimeoutSlots", 2);
+    "NumProcesses", 1, "MaxRetx", 2);
 rnti = 101;
 txp = harq.allocate(rnti, 0, ceil(tbsBits / 8), "NewData", true);
 harq.onTx(rnti, txp.HARQ.HarqID, uint8(zeros(tbsBits, 1)), struct("TBSBits", tbsBits), 0);
@@ -108,7 +108,23 @@ harq.onTx(rnti, txp2.HARQ.HarqID, uint8(zeros(tbsBits, 1)), struct("TBSBits", tb
 harq.storeSoftBuffer(rnti, txp2.HARQ.HarqID, buffer0);
 tf = harq.hasFreeProcess(rnti, 6); %#ok<NASGU> trigger stale expiry
 stored = harq.getSoftBuffer(rnti, txp2.HARQ.HarqID);
-assert(isempty(fieldnames(stored)), "HARQ timeout must clear the matching soft buffer.");
+assert(~tf && isfield(stored, "LLRSum"), ...
+    "Elapsed slots must not synthesize a HARQ timeout or clear soft state.");
+harq.onFeedback(rnti, txp2.HARQ.HarqID, true, "SourceSlot", 3);
+stored = harq.getSoftBuffer(rnti, txp2.HARQ.HarqID);
+assert(isempty(fieldnames(stored)), ...
+    "Explicit ACK must clear the matching HARQ soft buffer.");
+
+try
+    sixgr.l2.mac.HARQEntity(struct(), "Direction", "DL", ...
+        "StaleProcessTimeoutSlots", 2);
+    error("testHARQSoftBufferPositionAware:ExpectedTimeoutGuard", ...
+        "Finite HARQ age timeout was accepted.");
+catch ME
+    assert(string(ME.identifier) == ...
+        "sixgr:mac:SynthesizedHARQTimeoutForbidden", ...
+        "Finite HARQ age timeout must fail with the typed guard.");
+end
 end
 
 function E = localRateMatchedLength(cfg)

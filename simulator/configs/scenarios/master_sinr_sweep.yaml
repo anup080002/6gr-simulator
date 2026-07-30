@@ -861,6 +861,11 @@ canonical_control:
     restricted_set: UnrestrictedSet
     frequency_start: 0
     preamble_index: 0
+    occasion:
+      frame: 0
+      slot: 0
+      symbol: 0
+      frequency_index: 0
     prach_format: B4
     channel_model: AWGN
     delay_spread_ns: 0

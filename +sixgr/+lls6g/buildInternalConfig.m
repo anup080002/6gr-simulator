@@ -2732,9 +2732,18 @@ tddPairs = {
 for i = 1:size(tddPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, "tdd_timing." + tddPairs{i,1}, "phy.tddTiming." + tddPairs{i,2});
 end
-cfg = localCopyRuntimeField(cfg, s, "tdd_timing.ul_grant_k2", "mac.harq.k2");
-cfg = localCopyRuntimeField(cfg, s, "tdd_timing.ul_grant_k2", "phy.pusch.k2_slots");
-cfg = localCopyRuntimeField(cfg, s, "tdd_timing.pdcch_to_pusch_k2", "phy.ul.grantK2Slots");
+% harq.k2 is the canonical scheduler/UL-grant timing authority. Do not
+% overwrite it later with a stale inherited tdd_timing alias.
+harqK2 = localNumericScalarOrNaN(localGetNested(s, "harq.k2", ...
+    localGetNested(s, "tdd_timing.ul_grant_k2", NaN)));
+if isfinite(harqK2) && harqK2 >= 0
+    harqK2 = max(0, round(double(harqK2)));
+    cfg = sixgr.util.structSet(cfg, "mac.harq.k2", harqK2);
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.k2_slots", harqK2);
+    cfg = sixgr.util.structSet(cfg, "phy.ul.grantK2Slots", harqK2);
+    cfg = sixgr.util.structSet(cfg, "phy.tddTiming.ulGrantK2", harqK2);
+    cfg = sixgr.util.structSet(cfg, "phy.tddTiming.pdcchToPUSCHK2", harqK2);
+end
 end
 
 function cfg = localApplyPhase07MIMOConfig(cfg,s)

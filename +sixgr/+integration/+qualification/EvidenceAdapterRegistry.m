@@ -47,13 +47,17 @@ classdef EvidenceAdapterRegistry
                 row.SourceSchemaID = localSchemaID(fileName,T);
                 row.TargetSchemaID = "phase18:" + string(fileName) + ...
                     ":" + target;
+                row.SourceArtifact = string(fileName);
+                row.TargetArtifact = string(fileName);
                 row.SourceColumns = strjoin(sourceColumns,"|");
                 row.TargetColumns = target;
+                row.DerivedColumns = target;
                 row.TransformationFormula = formula;
                 row.Lossless = true;
+                row.RowsIn = height(T);
                 row.SourceArtifactSHA256 = lower(string(sourceHash));
                 row.AdapterVersion = "phase18-evidence-adapter-v1";
-                row.OutputArtifactSHA256 = localValueDigest(value);
+                row.OutputArtifactSHA256 = "";
                 row.Status = "PASS";
                 row.Details = "Derived exclusively from observed runtime columns.";
                 metadata(end+1,1) = row; %#ok<AGROW>
@@ -112,12 +116,36 @@ classdef EvidenceAdapterRegistry
             end
             if ~isempty(metadata)
                 results = struct2table(metadata,"AsArray",true);
+                results.RowsOut(:) = height(adapted);
             end
         end
 
         function T = emptyResults()
             T = struct2table(repmat(localMetadataRow(),0,1), ...
                 "AsArray",true);
+        end
+
+        function T = unsupported(fileName,sourceColumns, ...
+                targetColumns,sourceHash,details)
+            row=localMetadataRow();
+            sourceColumns=string(sourceColumns(:));
+            targetColumns=string(targetColumns(:));
+            row.AdapterID="ADAPT-UNSUPPORTED-"+upper(regexprep( ...
+                erase(string(fileName),".csv"),'[^A-Za-z0-9]','-'));
+            row.SourceArtifact=string(fileName);
+            row.TargetArtifact=string(fileName);
+            row.SourceSchemaID=localSchemaText(fileName,sourceColumns);
+            row.TargetSchemaID="phase18:"+string(fileName)+":" + ...
+                strjoin(targetColumns,"|");
+            row.SourceColumns=strjoin(sourceColumns,"|");
+            row.TargetColumns=strjoin(targetColumns,"|");
+            row.Lossless=false;
+            row.SourceArtifactSHA256=lower(string(sourceHash));
+            row.AdapterVersion="phase18-evidence-adapter-v1";
+            row.Status="UNSUPPORTED";
+            row.FailureCode="FULLSTACK:SchemaAdapterUnsupported";
+            row.Details=string(details);
+            T=struct2table(row,"AsArray",true);
         end
     end
 end
@@ -129,6 +157,80 @@ sourceColumns = strings(0,1);
 formula = "";
 key = lower(string(fileName)) + "::" + string(target);
 switch key
+    case {"frame_numerology_matrix.csv::CaseID", ...
+            "carrier_grid_matrix.csv::CaseID", ...
+            "slot_symbol_ownership.csv::CaseID", ...
+            "allocation_legality.csv::CaseID", ...
+            "ofdm_roundtrip.csv::CaseID", ...
+            "bwp_switch_trace.csv::CaseID", ...
+            "component_carrier_trace.csv::CaseID"}
+        [value,sourceColumns,formula] = localRename(T,"TestID");
+    case "frame_numerology_matrix.csv::SymbolsPerSlot"
+        [value,sourceColumns,formula] = ...
+            localRename(T,"ResolvedSymbolsPerSlot");
+    case "frame_numerology_matrix.csv::SlotsPerSubframe"
+        [value,sourceColumns,formula] = ...
+            localRename(T,"ResolvedSlotsPerSubframe");
+    case "frame_numerology_matrix.csv::SlotsPerFrame"
+        [value,sourceColumns,formula] = ...
+            localRename(T,"ResolvedSlotsPerFrame");
+    case "carrier_grid_matrix.csv::Bandwidth_MHz"
+        [value,sourceColumns,formula] = ...
+            localRename(T,"ChannelBandwidth_MHz");
+    case "carrier_grid_matrix.csv::SCS_kHz"
+        [value,sourceColumns,formula] = ...
+            localRename(T,"CarrierSCS_kHz");
+    case "carrier_grid_matrix.csv::NSizeGrid"
+        [value,sourceColumns,formula] = localRename(T,"ResolvedNRB");
+    case "carrier_grid_matrix.csv::Guardband_kHz"
+        low=localNumeric(T,"GuardbandLow_Hz");
+        high=localNumeric(T,"GuardbandHigh_Hz");
+        value=min(low,high)/1000;
+        sourceColumns=["GuardbandLow_Hz","GuardbandHigh_Hz"];
+        formula="min(GuardbandLow_Hz,GuardbandHigh_Hz)/1000";
+    case "slot_symbol_ownership.csv::AbsoluteSlot"
+        % The source evidence explicitly records Frame=0 for this
+        % qualification vector, so Slot is already its absolute slot.
+        frame=localNumeric(T,"Frame");
+        if any(frame~=0)
+            error("FULLSTACK:SchemaAdapterUnsupportedFrameIndex", ...
+                "AbsoluteSlot requires slots-per-frame when Frame is nonzero.");
+        end
+        [value,sourceColumns,formula]=localRename(T,"Slot");
+    case "slot_symbol_ownership.csv::CommonOwnership"
+        [value,sourceColumns,formula]=localRename(T,"CommonDirection");
+    case "slot_symbol_ownership.csv::DedicatedOwnership"
+        [value,sourceColumns,formula]=localRename(T,"DedicatedDirection");
+    case "slot_symbol_ownership.csv::ResolvedOwnership"
+        [value,sourceColumns,formula]=localRename(T,"ResolvedDirection");
+    case "allocation_legality.csv::AllocationID"
+        [value,sourceColumns,formula]=localRename(T,"TestID");
+    case "allocation_legality.csv::Legal"
+        [value,sourceColumns,formula]=localRename(T,"ActualValid");
+    case "allocation_legality.csv::ErrorIdentifier"
+        [value,sourceColumns,formula]=localRename(T,"ReasonCode");
+    case "ofdm_roundtrip.csv::EVM_pct"
+        [value,sourceColumns,formula]=localRename(T,"EVMPercent");
+    case "bwp_switch_trace.csv::AbsoluteSlot"
+        [value,sourceColumns,formula]=localRename(T,"AbsSlot");
+    case "bwp_switch_trace.csv::NewBWPID"
+        [value,sourceColumns,formula]=localRename(T,"ActiveBWPID");
+    case "bwp_switch_trace.csv::CommandSource"
+        [value,sourceColumns,formula]=localRename(T,"TriggerSource");
+    case "bwp_switch_trace.csv::ActivationSlot"
+        [value,sourceColumns,formula]=localRename(T,"ActivationAbsSlot");
+    case "component_carrier_trace.csv::AbsoluteSlot"
+        [value,sourceColumns,formula]=localRename(T,"AbsSlot");
+    case "component_carrier_trace.csv::ControlCC"
+        [value,sourceColumns,formula]=localRename(T,"SchedulingCCID");
+    case "component_carrier_trace.csv::ScheduledCC"
+        [value,sourceColumns,formula]=localRename(T,"ScheduledCCID");
+    case "component_carrier_trace.csv::GrantID"
+        [value,sourceColumns,formula]=localRename(T,"TestID");
+    case "frame_image_audit.csv::Image"
+        [value,sourceColumns,formula]=localRename(T,"ImageFile");
+    case "frame_image_audit.csv::PNG_SHA256"
+        [value,sourceColumns,formula]=localRename(T,"ImageSHA256");
     case "slot_symbol_ownership.csv::IllegalFixedDirectionOverrideCount"
         value = nnz(~localPass(T));
         sourceColumns = ["CommonDirection","DedicatedDirection", ...
@@ -432,6 +534,12 @@ value = string(fileName) + ":" + lower(string(sixgr.util.sha256Hex( ...
     unicode2native(char(columns),"UTF-8"))));
 end
 
+function value=localSchemaText(fileName,columns)
+text=strjoin(string(columns(:)),"|");
+value=string(fileName)+":"+lower(string(sixgr.util.sha256Hex( ...
+    unicode2native(char(text),"UTF-8"))));
+end
+
 function value = localValueDigest(raw)
 if isnumeric(raw)
     text = strjoin(compose("%.17g",double(raw(:).')),"|");
@@ -445,8 +553,11 @@ value = lower(string(sixgr.util.sha256Hex( ...
 end
 
 function row = localMetadataRow()
-row = struct("AdapterID","","SourceSchemaID","","TargetSchemaID","", ...
+row = struct("AdapterID","","Domain","","SourceArtifact","", ...
+    "TargetArtifact","","SourceSchemaID","","TargetSchemaID","", ...
     "SourceColumns","","TargetColumns","","TransformationFormula","", ...
-    "Lossless",false,"SourceArtifactSHA256","","AdapterVersion","", ...
-    "OutputArtifactSHA256","","Status","","Details","");
+    "DerivedColumns","","RowsIn",0,"RowsOut",0,"Lossless",false, ...
+    "SourceArtifactSHA256","","AdapterVersion","", ...
+    "OutputArtifactSHA256","","Status","","FailureCode","", ...
+    "Details","");
 end

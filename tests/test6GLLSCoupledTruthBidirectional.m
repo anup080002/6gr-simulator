@@ -3,9 +3,20 @@ function ok = test6GLLSCoupledTruthBidirectional()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+previousScratch = string(getenv("SIXGR_REGRESSION_SCRATCH_ROOT"));
+scratchRoot = previousScratch;
+ownsScratchRoot = strlength(strtrim(scratchRoot)) == 0;
+if ownsScratchRoot
+    scratchRoot = string(tempname);
+    mkdir(scratchRoot);
+    setenv("SIXGR_REGRESSION_SCRATCH_ROOT", scratchRoot);
+elseif ~isfolder(scratchRoot)
+    mkdir(scratchRoot);
+end
+scratchCleanup = onCleanup(@() localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)); %#ok<NASGU>
+tmp = localScratchChild(scratchRoot, "c", ownsScratchRoot);
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+c = onCleanup(@() localRemoveFolder(tmp)); %#ok<NASGU>
 
 baseScenario = fullfile(pwd, "simulator", "configs", "scenarios", "lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml");
 scenarioPath = fullfile(tmp, "lls_coupled_truth_smoke.yaml");
@@ -15,6 +26,7 @@ fprintf(fid, "%s", ['{' ...
     '"meta":{"scenario_id":"lls_coupled_truth_smoke","description":"coupled truth smoke","version":"1","owner":"test","maturity_tag":"smoke"},' ...
     '"simulation":{"link_direction":"both","n_frames":1,"n_slots":5,"monte_carlo_iterations":1,"random_seed":23,"snr_db":28},' ...
     '"run_control":{"total_slots":5,"warmup_slots":0,"measurement_slots":5,"total_time_ms":2.5,"warmup_time_ms":0,"measurement_time_ms":2.5,"batch_size_links":1,"num_workers":1},' ...
+    '"pdsch":{"execution_profile":"scheduler_truth"},' ...
     '"random_access":{"enabled":true,"prach_format":"B4","preamble_length_mode":"short","preamble_count":64,"zero_correlation_zone":8,"detection_threshold":0.5,"msg3_enabled":true,"configuration_index":198,"subcarrier_spacing_khz":30,"root_sequence_index":1,"preamble_index":0},' ...
     '"users":{"enabled":true,"n_users":2,"rnti_start":201,"seed_stride":17,' ...
     '"execution_model":"slot_coupled_truth","beam_selection_strategy":"fixed_first_beam","save_user_tables":true},' ...
@@ -95,6 +107,9 @@ assert(istable(srs), "Coupled truth mirrored SRS CSV must remain readable.");
 assert(istable(trs), "Coupled truth mirrored TRS CSV must remain readable.");
 assert(numel(unique(double(dl.UEIndex))) >= 2, "Coupled truth DL trials must cover multiple UEs.");
 assert(numel(unique(double(ul.UEIndex))) >= 2, "Coupled truth UL trials must cover multiple UEs.");
+assert(ismember("ExecutionProfile", dl.Properties.VariableNames) && ...
+    all(string(dl.ExecutionProfile) == "scheduler_truth"), ...
+    "Coupled scheduler-owned DL trials must retain the scheduler_truth profile.");
 assert(all(string(summary.ExecutionModel) == "slot_coupled_truth"), ...
     "Coupled truth summary must declare slot_coupled_truth honestly.");
 assert(all(ismember(["DetectionMetric","NMSEDefinition","NMSEInterpretation"], string(chanEst.Properties.VariableNames))), ...
@@ -212,4 +227,26 @@ if ~isempty(srs)
 end
 
 ok = true;
+end
+
+function localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)
+setenv("SIXGR_REGRESSION_SCRATCH_ROOT", previousScratch);
+if ownsScratchRoot
+    localRemoveFolder(scratchRoot);
+end
+end
+
+function pathValue = localScratchChild(scratchRoot, prefix, ownsScratchRoot)
+if ownsScratchRoot
+    pathValue = fullfile(scratchRoot, prefix);
+else
+    token = char(java.util.UUID.randomUUID());
+    pathValue = fullfile(scratchRoot, prefix + string(token(1:8)));
+end
+end
+
+function localRemoveFolder(pathValue)
+if isfolder(pathValue)
+    rmdir(pathValue, "s");
+end
 end

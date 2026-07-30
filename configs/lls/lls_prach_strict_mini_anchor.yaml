@@ -74,6 +74,12 @@ frame:
   cp_type: normal
   slot_format: ul
 
+reference_signals:
+  ssb_enabled: true
+  ssb_case: "Case A"
+  ssb_scs_khz: 15
+  ssb_lmax: 4
+
 channels:
   model_type: AWGN
   profile: AWGN

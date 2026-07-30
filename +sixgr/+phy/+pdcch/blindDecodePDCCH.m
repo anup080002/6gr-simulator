@@ -44,7 +44,26 @@ decoded.PayloadHash = "";
 decoded.FieldTable = table();
 decoded.GrantType = "";
 if logical(sixgr.util.structGet(rx, "Ok", false))
-    decoded = sixgr.phy.pdcch.decodeDCIPayload(rx.DCIBits, string(opt.DCIFormatAttempted), strictCfg);
+    try
+        decoded = sixgr.phy.pdcch.decodeDCIPayload( ...
+            rx.DCIBits, string(opt.DCIFormatAttempted), strictCfg);
+    catch ME
+        if ~startsWith(string(ME.identifier), "sixgr:phy:pdcch:")
+            rethrow(ME);
+        end
+        % CRC success is necessary but not sufficient for a blind
+        % hypothesis.  A payload that cannot be parsed under the attempted
+        % DCI schema is a rejected candidate and must never materialize a
+        % grant or abort evaluation of the remaining hypotheses.
+        rx.Ok = false;
+        rx.DecodeOK = false;
+        rx.DCIParseErrorIdentifier = string(ME.identifier);
+        if isfield(info, "CandidateResults") && ...
+                istable(info.CandidateResults) && ...
+                ismember("DecodeOK", string(info.CandidateResults.Properties.VariableNames))
+            info.CandidateResults.DecodeOK(:) = false;
+        end
+    end
 end
 
 det = struct();

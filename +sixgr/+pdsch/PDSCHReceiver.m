@@ -124,6 +124,9 @@ if receiver.IsResourceSelective
     channelEstimationMode = "dmrs_nr_channel_estimate_per_resource";
     channelEstimateScope = ...
         "dmrs_backed_resource_selective_effective_layer_channel";
+    measuredPostEqualizationSINR = [];
+    noiseVariance = localEffectiveNoiseVariance( ...
+        estimatedNoiseVariance,receiver.NoiseVariance);
 else
     [channelGain, estimatedNoiseVariance, dmrsResidual] = ...
         localEstimateAWGNChannel(rxGrid, dmrsIndices, expectedDMRS);
@@ -167,6 +170,17 @@ else
         "Domain","physical_port_then_explicit_deprecoding");
     channelEstimationMode = "awgn_scalar_per_physical_port";
     channelEstimateScope = "AWGN_only_not_fading_full_grid";
+    measuredLayerNoiseVariance = localAWGNLayerNoiseVariance( ...
+        estimatedNoiseVariance,channelGain,opt.PrecoderBundle, ...
+        dataPRB,dataSymbol,contract.NumLayers);
+    measuredPostEqualizationSINR = 10*log10( ...
+        1./max(measuredLayerNoiseVariance,eps));
+    configuredPreEqualizationNoise = localEffectiveNoiseVariance( ...
+        estimatedNoiseVariance,receiver.NoiseVariance);
+    decoderLayerNoiseVariance = localAWGNLayerNoiseVariance( ...
+        configuredPreEqualizationNoise,channelGain,opt.PrecoderBundle, ...
+        dataPRB,dataSymbol,contract.NumLayers);
+    noiseVariance = mean(decoderLayerNoiseVariance,"omitnan");
 end
 layerSymbols = layerValues.';
 codewordSymbols = sixgr.pdsch.CodewordLayerMapper( ...
@@ -177,10 +191,6 @@ else
     codewordSymbols = reshape(codewordSymbols,1,[]);
 end
 
-noiseVariance = estimatedNoiseVariance;
-if ~isempty(receiver.NoiseVariance)
-    noiseVariance = receiver.NoiseVariance;
-end
 demapperNoiseVariance = max(double(noiseVariance), eps);
 scrambledLLR = cell(1, contract.NumCodewords);
 descrambledLLR = cell(1, contract.NumCodewords);
@@ -212,7 +222,7 @@ harqResults = localProcessHARQ(opt.HARQManager, assignment, ...
 metrics = localStrictMetrics(resourcePlan, dmrsIndices, ptrsIndices, ...
     layerSymbols, codewordSymbols, scrambledLLR, descrambledLLR, ...
     decode, contract, noiseVariance, crcPass, receiverConfig, ...
-    channelGain, channelEstimateNMSE);
+    channelGain, channelEstimateNMSE,measuredPostEqualizationSINR);
 
 stageTrace = table( ...
     ["ofdm_demodulation";"dmrs_extraction";"channel_noise_estimation"; ...
@@ -961,15 +971,66 @@ trace = table(resourceIndex,PRB,Symbol,PRG,SymbolGroup,Domain, ...
     'Domain','Operation','ResolvedMatrixDigest','AppliedMatrixDigest'});
 end
 
+function layerNoise = localAWGNLayerNoiseVariance( ...
+        preEqualizationNoise,gain,bundle,prb,symbol,numLayers)
+% Convert grid-domain noise through the exact AWGN inverse/deprecoder path.
+preEqualizationNoise = double(preEqualizationNoise);
+gain = complex(double(gain(:)));
+if ~(isscalar(preEqualizationNoise) && isfinite(preEqualizationNoise) ...
+        && preEqualizationNoise >= 0) ...
+        || any(~isfinite(real(gain)) | ~isfinite(imag(gain)) ...
+        | abs(gain) <= eps)
+    error("sixgr:pdsch:PDSCHReceiver:InvalidAWGNNoiseTransform", ...
+        "AWGN post-equalization noise conversion requires finite noise and channel gains.");
+end
+portNoise = preEqualizationNoise./abs(gain).^2;
+if isempty(bundle)
+    if numel(portNoise) ~= numLayers
+        error("sixgr:pdsch:PDSCHReceiver:AWGNNoiseLayerMismatch", ...
+            "Identity AWGN noise conversion requires one physical port per layer.");
+    end
+    layerNoise = reshape(portNoise,1,[]);
+    return;
+end
+if bundle.NPhysicalTxAntennas ~= numel(portNoise) ...
+        || bundle.NLayerPorts ~= numLayers ...
+        || numel(prb) ~= numel(symbol) || isempty(prb)
+    error("sixgr:pdsch:PDSCHReceiver:AWGNNoisePrecoderMismatch", ...
+        "AWGN noise conversion does not match the resolved precoder resources.");
+end
+accumulator = zeros(1,numLayers);
+for resource = 1:numel(prb)
+    page = bundle.slice(prb(resource),symbol(resource));
+    inverse = page\eye(size(page,1));
+    covariance = inverse*diag(portNoise)*inverse';
+    accumulator = accumulator + real(diag(covariance)).';
+end
+layerNoise = accumulator/numel(prb);
+if any(~isfinite(layerNoise) | layerNoise < 0)
+    error("sixgr:pdsch:PDSCHReceiver:InvalidAWGNLayerNoise", ...
+        "The exact inverse/deprecoder transform produced invalid layer noise.");
+end
+end
+
 function metrics = localStrictMetrics(plan,dmrsIndices,ptrsIndices, ...
         layerSymbols,codewordSymbols,scrambledLLR,descrambledLLR, ...
         decode,contract,noiseVariance,crcPass,receiverConfig, ...
-        channelGain,pilotReconstructionNMSE)
+        channelGain,pilotReconstructionNMSE,measuredSINRPerLayer)
 safeNoise = max(double(noiseVariance),eps);
-sinrPerLayer = zeros(1,contract.NumLayers);
-for layer = 1:contract.NumLayers
-    sinrPerLayer(layer) = 10*log10( ...
-        mean(abs(layerSymbols(:,layer)).^2)/safeNoise);
+if isempty(measuredSINRPerLayer)
+    sinrPerLayer = zeros(1,contract.NumLayers);
+    for layer = 1:contract.NumLayers
+        sinrPerLayer(layer) = 10*log10( ...
+            mean(abs(layerSymbols(:,layer)).^2)/safeNoise);
+    end
+else
+    sinrPerLayer = double(measuredSINRPerLayer(:).');
+    if numel(sinrPerLayer) ~= contract.NumLayers ...
+            || any(~isfinite(sinrPerLayer))
+        error("sixgr:pdsch:PDSCHReceiver:InvalidMeasuredSINR", ...
+            ["Receiver-derived post-equalization SINR must contain one " ...
+            "finite value per scheduled layer."]);
+    end
 end
 evmPerCodeword = zeros(1,contract.NumCodewords);
 rateRecoveredCount = zeros(1,contract.NumCodewords);

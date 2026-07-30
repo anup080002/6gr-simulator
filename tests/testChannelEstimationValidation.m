@@ -227,6 +227,7 @@ cfg.phy.nRxAnt = 1;
 cfg.channel.nTxAnt = 1;
 cfg.channel.nRxAnt = 1;
 cfg.phy.carrier.NSizeGrid = 12;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.phy.pdsch.prbSet = 0:5;
 cfg.phy.pdsch.symbolAllocation = [0 10];
 cfg.phy.pdsch.modulation = 'QPSK';

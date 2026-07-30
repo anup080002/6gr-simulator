@@ -80,9 +80,10 @@ for i = 1:numel(parameterIds)
         defaultBrowserEditable = true;
     end
     browserEditable = localInferLogical(localGetField(contract, "BrowserEditable", []), defaultBrowserEditable);
-    featureFamily = localCoalesceString(localGetField(contract, "FeatureFamily", ""), localGetField(taxonomy, "FeatureFamily", ""), localGetField(registryHint, "FeatureFamily", ""), "Uncategorized");
+    [inferredFeatureFamily,inferredUISection] = localInferTaxonomy(parameterId);
+    featureFamily = localCoalesceString(localGetField(contract, "FeatureFamily", ""), localGetField(taxonomy, "FeatureFamily", ""), localGetField(registryHint, "FeatureFamily", ""), inferredFeatureFamily);
     uiLayer = localCoalesceString(localGetField(contract, "UILayer", ""), localGetField(taxonomy, "UILayer", ""), localGetField(registryHint, "UILayer", ""), "Outputs");
-    uiSection = localCoalesceString(localGetField(contract, "UISection", ""), localGetField(taxonomy, "UISection", ""), localGetField(registryHint, "UISection", ""), "Uncategorized");
+    uiSection = localCoalesceString(localGetField(contract, "UISection", ""), localGetField(taxonomy, "UISection", ""), localGetField(registryHint, "UISection", ""), inferredUISection);
     supportStatus = localCoalesceString(localGetField(contract, "SupportStatus", ""), localInferSupportStatus(consumerFunctions, contractClassification));
     sharedDependency = localInferLogical(localGetField(contract, "SharedDependency", []), localGetField(taxonomy, "SharedDependency", false));
     appliesWhen = localGetField(contract, "AppliesWhen", strings(0, 1));
@@ -1023,6 +1024,54 @@ for i = 1:numelCol
     text = normalized(1);
     found = true;
     return;
+end
+end
+
+function [featureFamily,uiSection] = localInferTaxonomy(parameterId)
+path = lower(string(parameterId));
+path = erase(path,"canonical_control.");
+root = extractBefore(path+".",".");
+switch root
+    case {"identity","meta"}
+        featureFamily="Scenario_Identity";uiSection="Scenario";
+    case {"launch","run","run_control","simulation","execution"}
+        featureFamily="Execution_Control";uiSection="Run";
+    case {"frequency","radio","frame","tdd_timing","bwp","carrier"}
+        featureFamily="Frame_Grid_Radio";uiSection="Radio";
+    case {"waveform","waveform_phase13","phase13"}
+        featureFamily="Waveform";uiSection="Waveform";
+    case {"pdsch","dlsch"}
+        featureFamily="PDSCH_DLSCH";uiSection="Downlink PHY";
+    case {"pusch","ulsch"}
+        featureFamily="PUSCH_ULSCH";uiSection="Uplink PHY";
+    case {"pdcch","dci"}
+        featureFamily="PDCCH_DCI";uiSection="Downlink Control";
+    case {"pucch","uci"}
+        featureFamily="PUCCH_UCI";uiSection="Uplink Control";
+    case {"reference_signals","csi","srs","trs","measurements", ...
+            "link_adaptation","csi_acquisition_and_reporting"}
+        featureFamily="Reference_Signals_Link_Adaptation";
+        uiSection="Measurements";
+    case {"initial_access","sib1_and_initial_access", ...
+            "random_access","random_access_evidence"}
+        featureFamily="Random_Access_PRACH";uiSection="Initial Access";
+    case {"mimo","beamforming","precoding","topology"}
+        featureFamily="MIMO_Beamforming";uiSection="MIMO & Beams";
+    case {"channel","channels","mobility","geometry","interference"}
+        featureFamily="Channel_Geometry";uiSection="Channel";
+    case {"rf","power_control","impairments"}
+        featureFamily="RF_Power_Control";uiSection="RF";
+    case {"mac","harq","scheduler","scheduling"}
+        featureFamily="MAC_HARQ_Scheduling";uiSection="MAC";
+    case {"protocol","rlc","pdcp","sdap","rrc","traffic"}
+        featureFamily="Protocol_Stack";uiSection="Protocol";
+    case {"qualification","validation","integration"}
+        featureFamily="Validation_Integration";uiSection="Validation";
+    case {"output","analytics","reporting","export"}
+        featureFamily="Results_Exports";uiSection="Results";
+    otherwise
+        featureFamily="Advanced_Configuration";
+        uiSection="Advanced";
 end
 end
 

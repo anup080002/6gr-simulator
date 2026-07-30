@@ -1,0 +1,3 @@
+TestSuite,Mandatory,Total,Passed,Failed,Skipped,Blocked,Status
+testPUSCHULSCHPhaseCore,1,3,3,0,0,0,PASS
+testUCIPUSCHPhaseCore,1,4,4,0,0,0,PASS

@@ -1,0 +1,45 @@
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-scratch-probe\lls\prach_detection\probe
+{Error using assert
+Assertion failed.
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

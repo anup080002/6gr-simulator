@@ -1,0 +1,72 @@
+Running testQualificationFinalizationCoordinator
+.
+Done testQualificationFinalizationCoordinator
+__________
+
+Running testQualificationFinalizationResume
+
+================================================================================
+Error occurred in testQualificationFinalizationResume/testInterruptedRecoveryResumesAtNextStage and it did not run to completion.
+    ---------
+    Error ID:
+    ---------
+    'MATLAB:TooManyInputs'
+    --------------
+    Error Details:
+    --------------
+    Error using sixgr.integration.qualification.resumeFinalize (line 1)
+    Invalid argument at position 1. Function requires exactly 0 positional input(s) before name 'StopAfterStage'.
+    
+    Error in testQualificationFinalizationResume>testInterruptedRecoveryResumesAtNextStage (line 7)
+    first=sixgr.integration.qualification.resumeFinalize( ...
+================================================================================
+.
+Done testQualificationFinalizationResume
+__________
+
+Running testQualificationFinalizationIdempotence
+
+================================================================================
+Error occurred in testQualificationFinalizationIdempotence/testCompletedStageResumeDoesNotRewriteLedger and it did not run to completion.
+    ---------
+    Error ID:
+    ---------
+    'MATLAB:TooManyInputs'
+    --------------
+    Error Details:
+    --------------
+    Error using sixgr.integration.qualification.resumeFinalize (line 1)
+    Invalid argument at position 1. Function requires exactly 0 positional input(s) before name 'StopAfterStage'.
+    
+    Error in testQualificationFinalizationIdempotence>testCompletedStageResumeDoesNotRewriteLedger (line 8)
+    sixgr.integration.qualification.resumeFinalize( ...
+================================================================================
+.
+Done testQualificationFinalizationIdempotence
+__________
+
+Running testQualificationSelectedSubcases
+..
+Done testQualificationSelectedSubcases
+__________
+
+Failure Summary:
+
+     Name                                                                                   Failed  Incomplete  Reason(s)
+    ======================================================================================================================
+     testQualificationFinalizationResume/testInterruptedRecoveryResumesAtNextStage            X         X       Errored.
+    ----------------------------------------------------------------------------------------------------------------------
+     testQualificationFinalizationIdempotence/testCompletedStageResumeDoesNotRewriteLedger    X         X       Errored.
+  15 TestResult array with properties:
+
+    Name
+    Passed
+    Failed
+    Incomplete
+    Duration
+    Details
+
+Totals:
+   3 Passed, 2 Failed, 2 Incomplete.
+   38.7887 seconds testing time.
+

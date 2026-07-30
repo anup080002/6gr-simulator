@@ -1,0 +1,216 @@
+Suite,MandatoryTests,ExecutedTests,PassedTests,FailedTests,SkippedTests,BlockedTests,Status,DurationSeconds,ShardIndex,ShardCount,SuiteTimeoutSeconds,PerTestTimeoutSeconds,HeartbeatArtifact,LastTest,Details
+"MATLAB_FULL_REGRESSION",1,1,0,1,0,0,"FAIL",2914.289583,1,10,5400,1500,"reports\regression\matlab_full_regression_heartbeat.json","parallel pool (parpool) using the 'Processes' profile ...","ExitCode=125 Log=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260729_01\reports\regression\matlab_full_regression.log Output=moke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+[2026-07-29T04:12:48Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-29T04:13:33Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-29T04:13:33Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-29T04:13:34Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-29T04:13:34Z] INFO Writing artifact manifest.
+[2026-07-29T04:13:34Z] INFO Writing scenario markdown report.
+[2026-07-29T04:13:35Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-29T04:13:35Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-29T04:13:35Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-29T04:13:35Z] INFO Writing MAT result bundle.
+[2026-07-29T04:13:36Z] INFO Pruning empty result directories.
+[2026-07-29T04:13:36Z] INFO Run completed successfully in 260.765 seconds.
+[2026-07-29T04:13:37Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag= runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+[2026-07-29T04:13:38Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-29T04:13:38Z] INFO Writing resolved snapshots.
+[2026-07-29T04:13:38Z] INFO Exporting live geometry artifacts.
+[2026-07-29T04:13:38Z] INFO Executing runner profile=ai_benchmark.
+[2026-07-29T04:13:39Z] INFO Runner profile completed. result.Ok=1
+[2026-07-29T04:13:39Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-29T04:13:39Z] INFO Annotating CSV artifacts.
+[2026-07-29T04:13:39Z] INFO Writing scenario summary CSV.
+[2026-07-29T04:13:39Z] INFO Writing runtime and environment summaries.
+[2026-07-29T04:13:40Z] INFO Writing scenario manifest.
+[2026-07-29T04:13:40Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+
+FULLSTACK:PerTestTimeout test 'test6GScenarioMatrixRunner' exceeded 1500.000 seconds.
+"
+"MATLAB_FULLSTACK_FOCUSED",8,8,8,0,0,0,"PASS",128.8617827,2,10,5400,1500,"reports\regression\matlab_fullstack_focused_heartbeat.json","",""
+"MATLAB_INTEGRATION_FOCUSED",41,41,41,0,0,0,"PASS",225.1714992,3,10,5400,1500,"reports\regression\matlab_integration_focused_heartbeat.json","",""
+"MATLAB_CONFIG_CHANNEL_GATES",4,4,4,0,0,0,"PASS",112.9114497,4,10,5400,1500,"reports\regression\matlab_config_channel_gates_heartbeat.json","",""
+"MATLAB_TRUTH_EXPORT_GATES",5,5,5,0,0,0,"PASS",1359.4807136,5,10,5400,1500,"reports\regression\matlab_truth_export_gates_heartbeat.json","",""
+"PYTHON_COMPILEALL",1,1,1,0,0,0,"PASS",3.1989126,6,10,4247,1500,"reports\regression\python_compileall_heartbeat.json","",""
+"PYTEST",1,1,0,1,0,0,"FAIL",4.404454,7,10,4243,1500,"reports\regression\pytest_heartbeat.json","","ExitCode=2 Log=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260729_01\reports\regression\pytest.log Output=
+=================================== ERRORS ====================================
+________________________ ERROR collecting test session ________________________
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\runner.py:341: in from_call
+    result: Optional[TResult] = func()
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\runner.py:372: in <lambda>
+    call = CallInfo.from_call(lambda: list(collector.collect()), ""collect"")
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\main.py:729: in collect
+    for direntry in visit(argpath, self._recurse):
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:726: in visit
+    yield from visit(entry.path, recurse)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:722: in visit
+    entries = scandir(path)
+C:\ProgramData\anaconda3\Lib\site-packages\_pytest\pathlib.py:698: in scandir
+    with os.scandir(path) as s:
+E   FileNotFoundError: [WinError 3] The system cannot find the path specified: 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\results\\lls\\lls_webgui_full_stack_sinr_geometry_qualification\\phase18_actual_20260729_01\\qualification_evidence\\validation\\canonical_runtime\\VALCAN-DL_FIXED_LINK-0454fc97dc034595811f04dd24c9f314'
+=========================== short test summary info ===========================
+ERROR  - FileNotFoundError: [WinError 3] The system cannot find the path spec...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 2.24s
+"
+"WEBGUI_UNIT_TESTS",1,1,0,1,0,0,"FAIL",6.8062217,8,10,4239,1500,"reports\regression\webgui_unit_tests_heartbeat.json","","ExitCode=5 Log=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260729_01\reports\regression\webgui_unit_tests.log Output=
+============================== warnings summary ===============================
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+63 deselected, 13 warnings in 5.08s
+"
+"PLAYWRIGHT_FULLSTACK",1,1,0,1,0,0,"FAIL",10.7611164,9,10,4232,1500,"reports\regression\playwright_fullstack_heartbeat.json","","ExitCode=1 Log=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260729_01\reports\regression\playwright_fullstack.log Output=F                                                                        [100%]
+================================== FAILURES ===================================
+_________________ test_full_stack_webgui_actual_run_workflow __________________
+
+tmp_path = WindowsPath('C:/Users/anup0/AppData/Local/Temp/pytest-of-anup0/pytest-79/test_full_stack_webgui_actual_0')
+
+    def test_full_stack_webgui_actual_run_workflow(tmp_path: Path) -> None:
+        base_url = os.environ.get(
+            ""SIXGR_WEBGUI_BASE_URL"", ""http://127.0.0.1:62906""
+        ).rstrip(""/"")
+        run_tag = os.environ.get(""SIXGR_WEBGUI_RUN_TAG"", """")
+        launch_run = os.environ.get(
+            ""SIXGR_FULL_STACK_E2E_ALLOW_LAUNCH"", """"
+        ).strip().lower() in {""1"", ""true"", ""yes""}
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(accept_downloads=True)
+            page = context.new_page()
+>           _login_if_required(page, base_url)
+
+tests\test_full_stack_webgui_e2e.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+page = <Page url='http://127.0.0.1:62906/login?next=/qualification'>
+base_url = 'http://127.0.0.1:62906'
+
+    def _login_if_required(page: Page, base_url: str) -> None:
+        page.goto(urljoin(base_url, ""/qualification""), wait_until=""domcontentloaded"")
+        if ""/login"" not in page.url:
+            return
+        username = os.environ.get(""SIXGR_WEBGUI_TEST_USERNAME"", """")
+        password = os.environ.get(""SIXGR_WEBGUI_TEST_PASSWORD"", """")
+>       assert username and password, (
+            ""The secured WebGUI requested login, but the Playwright operator ""
+            ""credentials were not configured.""
+        )
+E       AssertionError: The secured WebGUI requested login, but the Playwright operator credentials were not configured.
+E       assert ('')
+
+tests\test_full_stack_webgui_e2e.py:26: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_full_stack_webgui_e2e.py::test_full_stack_webgui_actual_run_workflow
+1 failed in 9.56s
+"
+"QUALIFICATION_ARTIFACT_VERIFIER",1,1,0,1,0,0,"FAIL",25.8392269,10,10,4221,1500,"reports\regression\qualification_artifact_verifier_heartbeat.json","","ExitCode=2 Log=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260729_01\reports\regression\qualification_artifact_verifier.log Output=tatus:sdap_pdu_encoding.csv
+FAIL invalid manifest status:rrc_asn1_messages.csv
+FAIL missing required CSV:validation_profile_resolution.csv
+FAIL missing required CSV:validation_schema_results.csv
+FAIL missing required CSV:validation_point_status.csv
+FAIL missing required CSV:validation_stop_reason_ledger.csv
+FAIL missing required CSV:validation_binomial_intervals.csv
+FAIL missing required CSV:validation_sequential_decisions.csv
+FAIL missing required CSV:validation_zero_error_bounds.csv
+FAIL missing required CSV:validation_multiseed_aggregation.csv
+FAIL missing required CSV:validation_operating_point_join.csv
+FAIL missing required CSV:validation_curve_comparison.csv
+FAIL missing required CSV:validation_reference_registry.csv
+FAIL missing required CSV:validation_oracle_registry.csv
+FAIL missing required CSV:validation_oracle_results.csv
+FAIL missing required CSV:validation_provenance_nodes.csv
+FAIL missing required CSV:validation_provenance_edges.csv
+FAIL missing required CSV:validation_provenance_checks.csv
+FAIL missing required CSV:validation_runtime_evidence.csv
+FAIL missing required CSV:validation_measured_sinr.csv
+FAIL missing required CSV:validation_time_windows.csv
+FAIL missing required CSV:validation_kpi_sample_ledger.csv
+FAIL missing required CSV:validation_task_plan.csv
+FAIL missing required CSV:validation_task_merge.csv
+FAIL missing required CSV:validation_seed_ledger.csv
+FAIL missing required CSV:validation_artifact_requirements.csv
+FAIL missing required CSV:validation_artifact_audit.csv
+FAIL missing required CSV:validation_canonical_scenarios.csv
+FAIL missing required CSV:validation_archive_acceptance.csv
+FAIL missing required CSV:validation_matlab_test_execution.csv
+FAIL missing required CSV:validation_negative_tests.csv
+FAIL missing required CSV:validation_publication_gates.csv
+FAIL missing required CSV:validation_test_summary.csv
+FAIL missing required CSV:validation_image_semantic_audit.csv
+FAIL missing required PNG:validation_campaign_state_map.png
+FAIL missing required PNG:validation_stop_reason_distribution.png
+FAIL missing required PNG:validation_interval_width_vs_trials.png
+FAIL missing required PNG:validation_zero_error_upper_bound.png
+FAIL missing required PNG:validation_sequential_stopping_trace.png
+FAIL missing required PNG:validation_multiseed_aggregation.png
+FAIL missing required PNG:validation_point_key_join.png
+FAIL missing required PNG:validation_curve_comparison.png
+FAIL missing required PNG:validation_bler_difference_ci.png
+FAIL missing required PNG:validation_oracle_independence.png
+FAIL missing required PNG:validation_provenance_dag.png
+FAIL missing required PNG:validation_evidence_source_breakdown.png
+FAIL missing required PNG:validation_measured_sinr_reconciliation.png
+FAIL missing required PNG:validation_time_window_timeline.png
+FAIL missing required PNG:validation_task_seed_partition.png
+FAIL missing required PNG:validation_parallel_merge_determinism.png
+FAIL missing required PNG:validation_artifact_coverage.png
+FAIL missing required PNG:validation_run_class_isolation.png
+FAIL missing required PNG:validation_release_scenario_matrix.png
+FAIL missing required PNG:validation_matlab_test_matrix.png
+FAIL missing required PNG:validation_publication_gate_waterfall.png
+FAIL missing required PNG:validation_fail_closed_mutations.png
+FAIL missing required CSV:integration_run_manifest.csv
+FAIL missing required CSV:integration_config_resolution.csv
+FAIL missing required CSV:integration_profile_resolution.csv
+FAIL missing required CSV:integration_component_registry.csv
+FAIL missing required CSV:integration_interface_bindings.csv
+FAIL missing required CSV:integration_state_ownership.csv
+FAIL missing required CSV:integration_radio_clock.csv
+FAIL missing required CSV:integration_event_trace.csv
+FAIL missing required CSV:integration_slot_symbol_timeline.csv
+FAIL missing required CSV:integration_resource_transactions.csv
+FAIL missing required CSV:integration_resource_collisions.csv
+FAIL missing required CSV:integration_waveform_chain.csv
+"

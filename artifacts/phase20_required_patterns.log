@@ -1,0 +1,180 @@
+Running testFullStackQualificationContract
+........
+Done testFullStackQualificationContract
+__________
+
+Running testQualificationArtifactAuditNormalizer
+...
+Done testQualificationArtifactAuditNormalizer
+__________
+
+Running testQualificationArtifactAuditSchema
+.
+Done testQualificationArtifactAuditSchema
+__________
+
+Running testQualificationArtifactCompleteness
+.
+Done testQualificationArtifactCompleteness
+__________
+
+Running testQualificationDomainArtifactAdapters
+..
+Done testQualificationDomainArtifactAdapters
+__________
+
+Running testQualificationFilesystemPublication
+.
+Done testQualificationFilesystemPublication
+__________
+
+Running testQualificationFinalizationArtifactSchema
+..
+Done testQualificationFinalizationArtifactSchema
+__________
+
+Running testQualificationFinalizationCoordinator
+.
+Done testQualificationFinalizationCoordinator
+__________
+
+Running testQualificationFinalizationIdempotence
+.
+Done testQualificationFinalizationIdempotence
+__________
+
+Running testQualificationFinalizationResume
+.
+Done testQualificationFinalizationResume
+__________
+
+Running testQualificationImageSemanticJoin
+..
+Done testQualificationImageSemanticJoin
+__________
+
+Running testQualificationRecovery
+.......... ....
+Done testQualificationRecovery
+__________
+
+Running testQualificationRegressionSharding
+..
+Done testQualificationRegressionSharding
+__________
+
+Running testQualificationSelectedSubcases
+....
+Done testQualificationSelectedSubcases
+__________
+
+Running testQualificationStatusReduction
+..
+Done testQualificationStatusReduction
+__________
+
+PHASE20_PATTERN *Qualification* total=45 passed=45 failed=0 incomplete=0
+Running testFullStackQualificationContract
+...
+Done testFullStackQualificationContract
+__________
+
+Running testMACHARQSchedulingPhase08
+.
+Done testMACHARQSchedulingPhase08
+__________
+
+Running testPDCCHArtifactGeneration
+.
+Done testPDCCHArtifactGeneration
+__________
+
+Running testPDSCHPhaseDiscoverySuite
+PDSCH_EXPORTER_OUTPUT=C:\Users\anup0\AppData\Local\Temp\sixgr_pdsch_exporter_focused
+.
+Done testPDSCHPhaseDiscoverySuite
+__________
+
+Running testPUCCHPhase05
+.
+Done testPUCCHPhase05
+__________
+
+Running testProtocolStackPhase12
+.
+Done testProtocolStackPhase12
+__________
+
+Running testQualificationArtifactAuditNormalizer
+...
+Done testQualificationArtifactAuditNormalizer
+__________
+
+Running testQualificationArtifactAuditSchema
+.
+Done testQualificationArtifactAuditSchema
+__________
+
+Running testQualificationArtifactCompleteness
+.
+Done testQualificationArtifactCompleteness
+__________
+
+Running testQualificationDomainArtifactAdapters
+..
+Done testQualificationDomainArtifactAdapters
+__________
+
+Running testQualificationFinalizationArtifactSchema
+..
+Done testQualificationFinalizationArtifactSchema
+__________
+
+Running testQualificationRecovery
+.
+Done testQualificationRecovery
+__________
+
+Running testRFFrontEndPhase11
+.
+Done testRFFrontEndPhase11
+__________
+
+Running testRSLAPhase09
+.
+Done testRSLAPhase09
+__________
+
+Running testValidationPhase14
+....
+Done testValidationPhase14
+__________
+
+Running testWaveformPhase13
+.
+Done testWaveformPhase13
+__________
+
+PHASE20_PATTERN *Artifact* total=25 passed=25 failed=0 incomplete=0
+Running testFullStackQualificationContract
+........
+Done testFullStackQualificationContract
+__________
+
+Running testQualificationArtifactCompleteness
+.
+Done testQualificationArtifactCompleteness
+__________
+
+PHASE20_PATTERN *FullStack* total=9 passed=9 failed=0 incomplete=0
+Running testIntegrationAcceptanceRunner
+....
+Done testIntegrationAcceptanceRunner
+__________
+
+Running testIntegrationPhase16Core
+.......... .......... .......... .......
+Done testIntegrationPhase16Core
+__________
+
+PHASE20_PATTERN *Integration* total=41 passed=41 failed=0 incomplete=0

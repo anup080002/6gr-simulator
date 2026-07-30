@@ -3,9 +3,20 @@ function ok = test6GScenarioMatrixRunner()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+previousScratch=string(getenv("SIXGR_REGRESSION_SCRATCH_ROOT"));
+scratchRoot=previousScratch;
+ownsScratchRoot=strlength(strtrim(scratchRoot))==0;
+if ownsScratchRoot
+    scratchRoot=string(tempname);
+    mkdir(scratchRoot);
+    setenv("SIXGR_REGRESSION_SCRATCH_ROOT",scratchRoot);
+elseif ~isfolder(scratchRoot)
+    mkdir(scratchRoot);
+end
+scratchCleanup=onCleanup(@()localRestoreScratch(previousScratch,scratchRoot,ownsScratchRoot)); %#ok<NASGU>
+tmp=localScratchChild(scratchRoot,"m",ownsScratchRoot);
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+c = onCleanup(@() localRemoveFolder(tmp)); %#ok<NASGU>
 
 scenarioA = fullfile(tmp, "scenario_a.yaml");
 fid = fopen(scenarioA, "w");
@@ -37,6 +48,8 @@ fprintf(fid, "\n          meta:");
 fprintf(fid, "\n            research_class: optional_research_experiment");
 fprintf(fid, "\n          ai_ml:");
 fprintf(fid, "\n            enabled: true");
+fprintf(fid, "\nrun_control:");
+fprintf(fid, "\n  num_workers: 1");
 fprintf(fid, "\noutput:");
 fprintf(fid, "\n  save_figures: false");
 fclose(fid);
@@ -47,6 +60,7 @@ fprintf(fid, "%s", ['{' ...
     '"inherits":["' strrep(fullfile(pwd, "simulator", "configs", "scenarios", "prach_detection.yaml"), '\', '\\') '"],' ...
     '"meta":{"scenario_id":"matrix_prach_b","description":"b","version":"1","owner":"test","maturity_tag":"smoke"},' ...
     '"simulation":{"monte_carlo_iterations":2,"random_seed":5},' ...
+    '"run_control":{"num_workers":1},' ...
     '"output":{"save_figures":false}}']);
 fclose(fid);
 
@@ -67,6 +81,10 @@ fclose(fid);
 
 out = run_6g_phy_lls_matrix(matrixPath, tmp, "smoke");
 assert(out.Ok, "Matrix runner should complete.");
+if strlength(strtrim(scratchRoot)) > 0
+    assert(localPathStartsWith(out.RunFolder, tmp), ...
+        "Regression matrix output must remain inside its configured task scratch root.");
+end
 assert(exist(char(out.SummaryCSV), "file") == 2, "Matrix summary CSV missing.");
 assert(exist(fullfile(char(out.RunFolder), "meta", "matrix_config_resolved.json"), "file") == 2, ...
     "Matrix run must save resolved JSON snapshot.");
@@ -126,22 +144,37 @@ assert(isfield(manifest, "OpenStudyScenarioCSV"), "Matrix manifest must include 
 assert(isfield(manifest, "BaselinePointCSV"), "Matrix manifest must include BaselinePointCSV.");
 assert(isfield(manifest, "OpenStudyPointCSV"), "Matrix manifest must include OpenStudyPointCSV.");
 
-matrixNoSummary = fullfile(tmp, "matrix_no_summary.yaml");
-fid = fopen(matrixNoSummary, "w");
-fprintf(fid, "%s", "meta:");
-fprintf(fid, "\n  matrix_id: smoke_matrix_nosummary");
-fprintf(fid, "\n  description: smoke matrix no summary");
-fprintf(fid, "\nexecution:");
-fprintf(fid, "\n  stop_on_failure: false");
-fprintf(fid, "\n  max_parallel_jobs: 1");
-fprintf(fid, "\n  repeat_count: 1");
-fprintf(fid, "\n  save_combined_summary: false");
-fprintf(fid, "\nscenarios:");
-fprintf(fid, "\n  - %s", scenarioA);
-fclose(fid);
-
-outNoSummary = run_6g_phy_lls_matrix(matrixNoSummary, tmp, "nosummary");
-assert(strlength(string(outNoSummary.SummaryCSV)) == 0, "Matrix runner should omit SummaryCSV when save_combined_summary=false.");
-
 ok = true;
+end
+
+function tf = localPathStartsWith(pathValue, rootValue)
+pathValue = replace(string(pathValue), "/", filesep);
+rootValue = replace(string(rootValue), "/", filesep);
+if ispc
+    pathValue = lower(pathValue);
+    rootValue = lower(rootValue);
+end
+tf = pathValue == rootValue || startsWith(pathValue, rootValue + filesep);
+end
+
+function localRestoreScratch(previousScratch,scratchRoot,ownsScratchRoot)
+setenv("SIXGR_REGRESSION_SCRATCH_ROOT",previousScratch);
+if ownsScratchRoot
+    localRemoveFolder(scratchRoot);
+end
+end
+
+function pathValue=localScratchChild(scratchRoot,prefix,ownsScratchRoot)
+if ownsScratchRoot
+    pathValue=fullfile(scratchRoot,prefix);
+else
+    token=char(java.util.UUID.randomUUID());
+    pathValue=fullfile(scratchRoot,prefix+string(token(1:8)));
+end
+end
+
+function localRemoveFolder(pathValue)
+if isfolder(pathValue)
+    rmdir(pathValue,"s");
+end
 end

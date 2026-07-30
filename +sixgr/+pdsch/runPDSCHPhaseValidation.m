@@ -140,7 +140,12 @@ if ~isfolder(parentDir)
             "Unable to create output parent directory: %s", message);
     end
 end
-stageDir = tempname(parentDir);
+stageDir = fullfile(parentDir, ".pdsch-stage-" + ...
+    string(java.util.UUID.randomUUID()));
+if isfile(stageDir) || isfolder(stageDir)
+    error("sixgr:pdsch:PDSCHPhaseValidation:StageCollision", ...
+        "Unique transactional stage already exists: %s",stageDir);
+end
 cleanup = onCleanup(@() localRemoveStage(stageDir));
 
 preExecution = [ ...

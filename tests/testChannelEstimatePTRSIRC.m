@@ -30,7 +30,9 @@ if exist("nrExtractResources", "file") == 2
         hEst(k, l, 1, 1) = 1;
         hEst(k, l, 2, 1) = 0.5;
     end
-    [Rint, rinfo] = sixgr.phy.rx.estimateInterferenceCovarianceIRC(rxGridIRC, hEst, refInd, ones(numel(refInd), 1), 0.01);
+    [Rint, rinfo] = sixgr.phy.rx.estimateInterferenceCovarianceIRC( ...
+        rxGridIRC, hEst, refInd, ones(numel(refInd), 1), 0.01, ...
+        "MinSamples", numel(refInd));
     assert(isequal(size(Rint), [Nr Nr]), "IRC covariance must be Nr-by-Nr.");
     assert(all(isfinite(Rint), "all"), "IRC covariance must be finite.");
     assert(norm(Rint - Rint', "fro") < 1e-10, "IRC covariance must be Hermitian.");

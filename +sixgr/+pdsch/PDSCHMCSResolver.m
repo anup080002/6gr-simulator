@@ -101,11 +101,11 @@ classdef PDSCHMCSResolver
     methods (Static, Access = private)
         function token = canonicalTable(token)
             switch token
-                case {"qam64","qam64_table1","table1"}
+                case {"qam64","64qam","qam64_table1","table1"}
                     token = "qam64_table1";
-                case {"qam256","qam256_table2","table2"}
+                case {"qam256","256qam","qam256_table2","table2"}
                     token = "qam256_table2";
-                case {"qam64lowse","qam64lowse_table3","table3"}
+                case {"qam64lowse","64qamlowse","qam64lowse_table3","table3"}
                     token = "qam64lowse_table3";
                 case {"qam1024","qam1024_table4","table4"}
                     token = "qam1024_table4";

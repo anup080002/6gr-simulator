@@ -1,0 +1,305 @@
+Running testQualificationArtifactAuditSchema
+.
+Done testQualificationArtifactAuditSchema
+__________
+
+Running testQualificationArtifactAuditNormalizer
+...
+Done testQualificationArtifactAuditNormalizer
+__________
+
+Running testQualificationFinalizationCoordinator
+
+================================================================================
+Verification failed in testQualificationFinalizationCoordinator/testMalformedAuditNeverThrows.
+    ---------------------
+    Framework Diagnostic:
+    ---------------------
+    verifyEqual failed.
+    --> The strings are not equal.
+    
+    Actual Value:
+        "PASS"
+    Expected Value:
+        "FAIL"
+    ------------------
+    Stack Information:
+    ------------------
+    In C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\testQualificationFinalizationCoordinator.m (testMalformedAuditNeverThrows) at 24
+================================================================================
+.
+Done testQualificationFinalizationCoordinator
+__________
+
+Running testQualificationFinalizationArtifactSchema
+..
+Done testQualificationFinalizationArtifactSchema
+__________
+
+Running testQualificationFinalizationResume
+
+================================================================================
+Error occurred in testQualificationFinalizationResume/testInterruptedRecoveryResumesAtNextStage and it did not run to completion.
+    ---------
+    Error ID:
+    ---------
+    'MATLAB:COPYFILE:FileNotFound'
+    --------------
+    Error Details:
+    --------------
+    Error using copyfile
+    No matching files named 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+    Simulator_v2_clean_main\tests\simulator\configs\scenarios\lls_webgui_full_stack_sinr_geometry_qualification.yaml' were found.
+    
+    Error in testQualificationFinalizationResume>localFixture (line 22)
+    copyfile(fullfile(pwd,"simulator","configs","scenarios", ...
+    
+    Error in testQualificationFinalizationResume>testInterruptedRecoveryResumesAtNextStage (line 6)
+    [source,recovery,cleanup]=localFixture(); %#ok<ASGLU>
+================================================================================
+.
+Done testQualificationFinalizationResume
+__________
+
+Running testQualificationFinalizationIdempotence
+
+================================================================================
+Error occurred in testQualificationFinalizationIdempotence/testCompletedStageResumeDoesNotRewriteLedger and it did not run to completion.
+    ---------
+    Error ID:
+    ---------
+    'MATLAB:COPYFILE:FileNotFound'
+    --------------
+    Error Details:
+    --------------
+    Error using copyfile
+    No matching files named 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+    Simulator_v2_clean_main\tests\simulator\configs\scenarios\lls_webgui_full_stack_sinr_geometry_qualification.yaml' were found.
+    
+    Error in testQualificationFinalizationIdempotence>localFixture (line 24)
+    copyfile(fullfile(pwd,"simulator","configs","scenarios", ...
+    
+    Error in testQualificationFinalizationIdempotence>testCompletedStageResumeDoesNotRewriteLedger (line 6)
+    [source,recovery,cleanup]=localFixture(); %#ok<ASGLU>
+================================================================================
+.
+Done testQualificationFinalizationIdempotence
+__________
+
+Running testQualificationImageSemanticJoin
+..
+Done testQualificationImageSemanticJoin
+__________
+
+Running testQualificationArtifactCompleteness
+.
+Done testQualificationArtifactCompleteness
+__________
+
+Running testQualificationFilesystemPublication
+.
+Done testQualificationFilesystemPublication
+__________
+
+Running testQualificationDomainArtifactAdapters
+.
+Done testQualificationDomainArtifactAdapters
+__________
+
+Running testQualificationSelectedSubcases
+[Warning: The following error was caught while executing 'onCleanup' class destructor:
+Error using rmdir
+C:\Users\anup0\AppData\Local\Temp\tpa61a3bf3_33d3_4b04_984d_289f9e7401b0 is not a directory.
+
+Error in testQualificationSelectedSubcases>@()rmdir(root,"s") (line 7)
+cleanup=onCleanup(@()rmdir(root,"s")); %#ok<NASGU>
+                     ^^^^^^^^^^^^^^^
+Error in onCleanup/delete (line 29)
+            obj.task();
+            ^^^^^^^^^^
+Error in testQualificationSelectedSubcases>testPreflightRunsWithoutOtherGroups (line 6)
+root=string(tempname);
+^^^^
+Error in matlab.unittest.TestRunner/evaluateMethodCore (line 864)
+                    func(content);
+                    ^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/evaluateMethodsOnTestContent (line 801)
+                    runner.evaluateMethodCore(method, content, arguments);
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/runTestMethodCore (line 980)
+            runner.evaluateMethodsOnTestContent(method, testCase);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/runTestCore (line 952)
+                    runner.runTestMethodCore;
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/repeatTest (line 396)
+                    runner.runTestCore;
+                    ^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/runSharedTestCase (line 337)
+                    runner.repeatTest(usePlugins);
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/runTestClass (line 1252)
+                runner.runSharedTestCase(runner.PluginData.runSharedTestCase);
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runTestClass (line 66)
+            nextOperator.runTestClass(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.testrunprogress.ConciseProgressPlugin/runTestClass (line 68)
+            runTestClass@matlab.unittest.plugins.TestRunnerPlugin(plugin, pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runTestClass (line 66)
+            nextOperator.runTestClass(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sltest.plugins.TestManagerResultsPlugin/runTestClass (line 148)
+            plugin.runTestClass@matlab.unittest.plugins.TestRunnerPlugin(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/runTestSuite (line 1176)
+                    plugin.runTestClass(runner.PluginData.runTestClass);
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runTestSuite (line 38)
+            nextOperator.runTestSuite(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.DiagnosticsOutputPlugin/runTestSuite (line 73)
+            runTestSuite@matlab.unittest.plugins.TestRunnerPlugin(plugin, pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runTestSuite (line 38)
+            nextOperator.runTestSuite(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.DiagnosticsRecordingPlugin/runTestSuite (line 79)
+            plugin.runTestSuite@matlab.unittest.plugins.TestRunnerPlugin(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runTestSuite (line 38)
+            nextOperator.runTestSuite(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sltest.plugins.TestManagerResultsPlugin/runTestSuite (line 134)
+            plugin.runTestSuite@matlab.unittest.plugins.TestRunnerPlugin(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/evaluateMethodOnPlugins (line 254)
+                [varargout{1:nargout}] = plugin.(methodName)(pluginData);
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.internal.SerialTestRunStrategy/runTestSuite (line 36)
+            runner.evaluateMethodOnPlugins("runTestSuite", pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.internal.SerialTestRunStrategy/runSession (line 16)
+            strategy.runTestSuite(runner,testSuiteRunPluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/runSession (line 1133)
+            runner.TestRunStrategy.runSession(runner,pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runSession (line 33)
+            nextOperator.runSession(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.DiagnosticsOutputPlugin/runSession (line 58)
+            runSession@matlab.unittest.plugins.TestRunnerPlugin(plugin,pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.plugins.TestRunnerPlugin/runSession (line 33)
+            nextOperator.runSession(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sltest.plugins.TestManagerResultsPlugin/runSession (line 122)
+            plugin.runSession@matlab.unittest.plugins.TestRunnerPlugin(pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/evaluateMethodOnPlugins (line 254)
+                [varargout{1:nargout}] = plugin.(methodName)(pluginData);
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/doRunWithFcn (line 242)
+            runner.evaluateMethodOnPlugins(methodName, pluginData);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.TestRunner/run (line 138)
+            result = doRunWithFcn(runner, "runSession", pluginData);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in matlab.unittest.internal.testoutputviewhandlers.TestOutputHandler/runTests (line 27)
+            results = runFcn(runner,suite);
+                      ^^^^^^^^^^^^^^^^^^^^
+Error in runtests (line 16)
+testResults = testOutputHandler.runTests(parseResults.Options, plugins, suite, runner);
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^] 
+[> In testQualificationSelectedSubcases>testPreflightRunsWithoutOtherGroups (line 6)]
+
+================================================================================
+Error occurred in testQualificationSelectedSubcases/testPreflightRunsWithoutOtherGroups and it did not run to completion.
+    ---------
+    Error ID:
+    ---------
+    'FULLSTACK:SelectedScenarioMissing'
+    --------------
+    Error Details:
+    --------------
+    Error using sixgr.integration.qualification.runSelectedSubcases (line 15)
+    Selected-subcase scenario does not exist: C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+    Simulator_v2_clean_main\tests\simulator\configs\scenarios\lls_webgui_full_stack_sinr_geometry_qualification.yaml
+    
+    Error in testQualificationSelectedSubcases>testPreflightRunsWithoutOtherGroups (line 8)
+    out=sixgr.integration.qualification.runSelectedSubcases( ...
+================================================================================
+.
+================================================================================
+Verification failed in testQualificationSelectedSubcases/testOrchestratorCannotBeMisreportedAsSelectedExecution.
+    ---------------------
+    Framework Diagnostic:
+    ---------------------
+    verifyError failed.
+    --> The function threw the wrong exception.
+        
+        Actual Exception:
+            'FULLSTACK:SelectedScenarioMissing'
+        Expected Exception:
+            'FULLSTACK:SelectedSubcaseNotIndependentlyRunnable'
+    --> Actual Error Report:
+            Error using sixgr.integration.qualification.runSelectedSubcases (line 15)
+            Selected-subcase scenario does not exist: C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+            Simulator_v2_clean_main\tests\simulator\configs\scenarios\lls_webgui_full_stack_sinr_geometry_qualification.yaml
+            
+            Error in
+            testQualificationSelectedSubcases>@()sixgr.integration.qualification.runSelectedSubcases(ScenarioPath=fullfile(pwd,"simulator","configs","scenarios","lls_webgui_full_stack_sinr_geometry_qualification.yaml"),Preset="comprehensive_smoke",SubcaseIDs="SC-28",ParentRunID="qualification-selected-test",OutputRoot=root,Strict=true)
+            (line 28)
+            verifyError(testCase,@()sixgr.integration.qualification. ...
+    
+    Evaluated Function:
+      function_handle with value:
+    
+        @()sixgr.integration.qualification.runSelectedSubcases(ScenarioPath=fullfile(pwd,"simulator","configs","scenarios","lls_webgui_full_stack_sinr_geometry_qualification.yaml"),Preset="comprehensive_smoke",SubcaseIDs="SC-28",ParentRunID="qualification-selected-test",OutputRoot=root,Strict=true)
+    ------------------
+    Stack Information:
+    ------------------
+    In C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\testQualificationSelectedSubcases.m (testOrchestratorCannotBeMisreportedAsSelectedExecution) at 28
+================================================================================
+.
+Done testQualificationSelectedSubcases
+__________
+
+Running testQualificationStatusReduction
+.
+Done testQualificationStatusReduction
+__________
+
+Running testQualificationRegressionSharding
+.
+Done testQualificationRegressionSharding
+__________
+
+Failure Summary:
+
+     Name                                                                                      Failed  Incomplete  Reason(s)
+    =======================================================================================================================================
+     testQualificationFinalizationCoordinator/testMalformedAuditNeverThrows                      X                 Failed by verification.
+    ---------------------------------------------------------------------------------------------------------------------------------------
+     testQualificationFinalizationResume/testInterruptedRecoveryResumesAtNextStage               X         X       Errored.
+    ---------------------------------------------------------------------------------------------------------------------------------------
+     testQualificationFinalizationIdempotence/testCompletedStageResumeDoesNotRewriteLedger       X         X       Errored.
+    ---------------------------------------------------------------------------------------------------------------------------------------
+     testQualificationSelectedSubcases/testPreflightRunsWithoutOtherGroups                       X         X       Errored.
+    ---------------------------------------------------------------------------------------------------------------------------------------
+     testQualificationSelectedSubcases/testOrchestratorCannotBeMisreportedAsSelectedExecution    X                 Failed by verification.
+  118 TestResult array with properties:
+
+    Name
+    Passed
+    Failed
+    Incomplete
+    Duration
+    Details
+
+Totals:
+   13 Passed, 5 Failed, 3 Incomplete.
+   10.6272 seconds testing time.
+

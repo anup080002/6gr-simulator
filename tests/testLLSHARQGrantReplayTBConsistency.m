@@ -7,6 +7,7 @@ cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 
 baseDL = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 1, "SNR_dB", 18);
 assert(~isempty(baseDL.HARQ) && isfield(baseDL.HARQ, "TransportBlockBits"), "DL base run must return HARQ transport bits.");

@@ -1,0 +1,20 @@
+[FAIL] testLLSPlotDataValidation (46.91s)
+       Unable to find file. Ensure file exists and path is valid.
+[2026-07-30T01:35:05Z] INFO Preparing LLS run: scenario=pdcch_smoke runTag=smoke runFolder=C:\Users\anup0\AppData\Local\Temp\tpab08b943_9854_4c8e_a4c6_a8dd9975fbb9\s\lls\pdcch_smoke\smoke
+[2026-07-30T01:35:11Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T01:35:11Z] INFO Writing resolved snapshots.
+[2026-07-30T01:35:12Z] INFO Exporting live geometry artifacts.
+[2026-07-30T01:35:12Z] INFO Executing runner profile=pdcch_blind_decode_sweep.
+[2026-07-30T01:35:19Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T01:35:19Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T01:35:19Z] INFO Annotating CSV artifacts.
+[2026-07-30T01:35:21Z] INFO Writing scenario summary CSV.
+[2026-07-30T01:35:21Z] INFO Writing runtime and environment summaries.
+[2026-07-30T01:35:22Z] INFO Writing scenario manifest.
+[2026-07-30T01:35:22Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T01:36:33Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=0 strictFailures=2
+[2026-07-30T01:36:33Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T01:36:35Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T01:36:35Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T01:36:40Z] ERROR Run failed: MATLAB:fopen:InvalidFileLocation | Unable to find file. Ensure file exists and path is valid.
+[2026-07-30T01:36:41Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.

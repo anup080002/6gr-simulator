@@ -230,6 +230,7 @@ cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.channel.nTxAnt = 2;
 cfg.channel.nRxAnt = 2;
 cfg.phy.nTxAnt = 2;

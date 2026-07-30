@@ -90,6 +90,7 @@ cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.pdsch.enable = true;
 cfg.phy.pdsch.prbSet = 0:5;
 cfg.phy.pdsch.symbolAllocation = [0 10];
+cfg.phy.pdsch.mappingType = "B";
 cfg.phy.pdsch.modulation = "QPSK";
 cfg.phy.pdsch.codeRate = 0.30;
 cfg.phy.pdsch.mcsIndex = 4;

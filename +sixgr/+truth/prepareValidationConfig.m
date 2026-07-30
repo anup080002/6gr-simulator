@@ -48,9 +48,14 @@ cfg.traffic.trace = struct( ...
     "flowDirection", "BIDIR", ...
     "packetDelayBudget_ms", double(cfg.traffic.packetDelayBudget_ms));
 
-cfg.phy.carrier.NSizeGrid = 48;
+% Use the exact TS 38.104 FR1 20 MHz / 30 kHz carrier-grid row. A
+% non-standard 48-RB shortcut is rejected by strict carrier validation.
+cfg.phy.channelBandwidth_MHz = 20;
+cfg.channel.bandwidth_Hz = 20e6;
+cfg.frequency.bandwidth_hz = 20e6;
+cfg.phy.carrier.NSizeGrid = 51;
 cfg = localSetNestedField(cfg, "phy.pdcch.nStartBWP", 0);
-cfg = localSetNestedField(cfg, "phy.pdcch.nSizeBWP", 48);
+cfg = localSetNestedField(cfg, "phy.pdcch.nSizeBWP", 51);
 cfg = localSetNestedField(cfg, "phy.pdsch.prbSet", 0:5);
 cfg = localSetNestedField(cfg, "phy.pdsch.PRBSet", 0:5);
 cfg = localSetNestedField(cfg, "phy.pdsch.symbolAllocation", [0 10]);

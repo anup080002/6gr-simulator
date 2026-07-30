@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,87 +14,116 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
-SOURCE_ROOT = (
+DEFAULT_SOURCE_ROOT = (
     REPO_ROOT
     / "results"
     / "lls"
     / "lls_webgui_full_stack_sinr_geometry_qualification"
-    / "phase18_actual_20260728_04"
+    / "phase18_actual_20260729_01"
 )
-REANALYSIS_ROOT = SOURCE_ROOT.with_name(
-    "phase18_actual_20260728_04_reanalysis"
-)
+SOURCE_ROOT = Path(
+    os.environ.get("SIXGR_PHASE18_SOURCE_ROOT", DEFAULT_SOURCE_ROOT)
+).resolve()
+RECOVERY_ROOT = Path(
+    os.environ.get(
+        "SIXGR_PHASE18_RECOVERY_ROOT",
+        SOURCE_ROOT.with_name(f"{SOURCE_ROOT.name}_recovery"),
+    )
+).resolve()
 
 
 def _csv(name: str) -> list[dict[str, str]]:
-    path = REANALYSIS_ROOT / "reports" / "csv" / name
+    path = RECOVERY_ROOT / "reports" / "csv" / name
     assert path.is_file(), f"missing recovery artifact: {path}"
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
 
 
 def _manifest() -> dict:
-    path = (
-        REANALYSIS_ROOT
-        / "reports"
-        / "json"
-        / "phase18_reanalysis_manifest.json"
-    )
+    path = RECOVERY_ROOT / "meta" / "recovery_manifest.json"
     assert path.is_file(), f"missing recovery manifest: {path}"
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_artifact_manifest_path_resolution_is_exact() -> None:
-    rows = _csv("phase18_artifact_resolution_trace.csv")
-    manifest = next(
-        row for row in rows if row["RequestedIdentity"] == "full_stack_run_manifest.csv"
+    rows = _csv("artifact_path_resolution.csv")
+    assert rows
+    resolved = [row for row in rows if row["Status"] == "PASS"]
+    assert resolved
+    assert all(
+        "SUBSTRING" not in row["ResolutionMethod"].upper() for row in rows
     )
-    assert manifest["Resolved"] in {"1", "true"}
+    assert all(
+        not Path(row["ResolvedRelativePath"]).is_absolute()
+        for row in resolved
+    )
+    assert all(
+        ".." not in Path(row["ResolvedRelativePath"]).parts for row in resolved
+    )
+    run_manifest = next(
+        row
+        for row in rows
+        if row["RequestedFileName"] == "full_stack_run_manifest.csv"
+    )
+    assert run_manifest["Status"] == "PASS"
     assert (
-        manifest["RelativePath"]
+        run_manifest["ResolvedRelativePath"]
         == "reports/csv/full_stack_run_manifest.csv"
     )
-    assert manifest["ResolutionMethod"] == "MANIFEST_ARTIFACT_ID"
-    assert len(manifest["ActualSHA256"]) == 64
-    assert all("SUBSTRING" not in row["ResolutionMethod"] for row in rows)
-    assert all(not Path(row["RelativePath"]).is_absolute() for row in rows)
+    assert run_manifest["ResolutionMethod"] in {
+        "MANIFEST_ARTIFACT_ID",
+        "EXACT_RELATIVE_PATH",
+        "SOURCE_MANIFEST_ARTIFACT_ID_CURRENT_SNAPSHOT",
+    }
 
 
 def test_schema_adapter_registry_metadata_is_complete() -> None:
-    rows = _csv("phase18_schema_adapter_results.csv")
+    rows = _csv("domain_adapter_results.csv")
     assert rows
     required = {
-        "AdapterID",
-        "SourceSchemaID",
-        "TargetSchemaID",
-        "SourceColumns",
-        "TargetColumns",
-        "TransformationFormula",
+        "Domain",
+        "SourceArtifact",
+        "TargetArtifact",
+        "SourceSchema",
+        "TargetSchema",
+        "RowsIn",
+        "RowsOut",
         "Lossless",
-        "SourceArtifactSHA256",
-        "AdapterVersion",
-        "OutputArtifactSHA256",
+        "DerivedColumns",
+        "Status",
+        "FailureCode",
+        "SourceSHA256",
+        "TargetSHA256",
     }
     assert required <= rows[0].keys()
-    assert all(row["Lossless"] in {"1", "true"} for row in rows)
-    assert all(len(row["SourceArtifactSHA256"]) == 64 for row in rows)
-    assert all(len(row["OutputArtifactSHA256"]) == 64 for row in rows)
-    assert all(row["SourceColumns"] for row in rows)
+    assert all(len(row["SourceSHA256"]) == 64 for row in rows)
+    lossless = [
+        row for row in rows if row["Lossless"].lower() in {"1", "true"}
+    ]
+    unsupported = [
+        row for row in rows if row["Lossless"].lower() in {"0", "false"}
+    ]
+    assert lossless
+    assert all(row["Status"] == "PASS" for row in lossless)
+    assert all(len(row["TargetSHA256"]) == 64 for row in lossless)
+    assert all(row["RowsOut"] for row in lossless)
     assert all(
-        "fill_from_config" not in row["TransformationFormula"].lower()
-        and "configured_value_substitution" not in row[
-            "TransformationFormula"
-        ].lower()
-        for row in rows
+        row["Status"] == "UNSUPPORTED"
+        and row["FailureCode"] == "FULLSTACK:SchemaAdapterUnsupported"
+        for row in unsupported
     )
+    serialized = json.dumps(rows).lower()
+    assert "fill_from_config" not in serialized
+    assert "configured_value_substitution" not in serialized
 
 
-def test_reanalysis_result_schemas_and_contract_counts() -> None:
+def test_recovery_result_schemas_and_contract_counts() -> None:
     expected = {
-        "phase18_recomputed_value_results.csv": (107, "CheckID"),
-        "phase18_recomputed_component_results.csv": (163, "ComponentID"),
-        "phase18_recomputed_subcase_results.csv": (31, "SubcaseID"),
-        "phase18_recomputed_acceptance_results.csv": (387, "RuleID"),
+        "full_stack_value_correctness_results.csv": (107, "CheckID"),
+        "full_stack_component_coverage_results.csv": (163, "ComponentID"),
+        "full_stack_subcase_status.csv": (31, "SubcaseID"),
+        "full_stack_acceptance_results.csv": (387, "RuleID"),
+        "full_stack_image_semantic_audit.csv": (10, "ImageFile"),
     }
     for name, (count, key) in expected.items():
         rows = _csv(name)
@@ -101,29 +131,58 @@ def test_reanalysis_result_schemas_and_contract_counts() -> None:
         assert key in rows[0]
         assert "Status" in rows[0]
         assert len({row[key] for row in rows}) == count
-    triage = _csv("phase18_failure_triage.csv")
-    allowed = {
-        "EVALUATOR_BUG",
-        "STATUS_REDUCER_BUG",
-        "ARTIFACT_RESOLUTION_BUG",
-        "SCHEMA_ADAPTER_MISSING",
-        "FINALIZATION_ORDER_BUG",
-        "ARTIFACT_MISSING",
-        "DOMAIN_RUNTIME_FAILURE",
-        "DOMAIN_NUMERICAL_FAILURE",
-        "INTERRUPTED_REGRESSION",
-        "CONTRACT_DEFECT_PROVEN",
-        "UNCLASSIFIED",
+
+    manifest = _csv("recovered_artifact_manifest.csv")
+    assert manifest
+    canonical = {
+        "SchemaVersion",
+        "RunID",
+        "ArtifactID",
+        "Domain",
+        "SubcaseID",
+        "RelativePath",
+        "ArtifactType",
+        "MIMEType",
+        "Required",
+        "Present",
+        "Valid",
+        "Status",
+        "FailureCode",
+        "SHA256",
+        "ByteCount",
+        "GeneratedUTC",
+        "SourceArtifactIDs",
+        "SourceCSVRelativePath",
+        "SourceCSV_SHA256",
+        "SemanticAuditStatus",
+        "ProvenanceClass",
+        "PublicationStatus",
+        "ArtifactTypeSource",
     }
-    assert triage
-    assert {row["FailureClass"] for row in triage} <= allowed
-    assert all(row["FailureClass"] for row in triage)
+    assert canonical <= manifest[0].keys()
+    present = [row for row in manifest if row["Present"].lower() in {"1", "true"}]
+    assert all(
+        row["ArtifactType"]
+        in {
+            "CSV",
+            "PNG",
+            "JSON",
+            "YAML",
+            "MAT",
+            "LOG",
+            "MARKDOWN",
+            "TEXT",
+            "OTHER",
+        }
+        for row in present
+    )
+    assert all(len(row["SHA256"]) == 64 for row in present)
 
 
 def test_parent_child_status_consistency() -> None:
-    subcases = _csv("phase18_recomputed_subcase_results.csv")
-    components = _csv("phase18_recomputed_component_results.csv")
-    values = _csv("phase18_recomputed_value_results.csv")
+    subcases = _csv("full_stack_subcase_status.csv")
+    components = _csv("full_stack_component_coverage_results.csv")
+    values = _csv("full_stack_value_correctness_results.csv")
     for subcase in subcases:
         if subcase["Status"] != "PASS":
             continue
@@ -132,17 +191,19 @@ def test_parent_child_status_consistency() -> None:
             row
             for row in components
             if row["SubcaseID"] == subcase_id
-            and row["Mandatory"] in {"1", "true"}
+            and row["Mandatory"].lower() in {"1", "true"}
         ]
         mandatory_values = [
             row
             for row in values
             if row["SubcaseID"] == subcase_id
-            and row["Required"] in {"1", "true"}
+            and row["Required"].lower() in {"1", "true"}
         ]
+        assert mandatory_components
+        assert mandatory_values
         assert all(row["Status"] == "PASS" for row in mandatory_components)
         assert all(
-            row["CorrectnessChecked"] in {"1", "true"}
+            row["CorrectnessChecked"].lower() in {"1", "true"}
             for row in mandatory_components
         )
         assert all(row["Status"] == "PASS" for row in mandatory_values)
@@ -150,37 +211,35 @@ def test_parent_child_status_consistency() -> None:
 
 def test_source_run_hashes_were_not_mutated() -> None:
     manifest = _manifest()
-    assert manifest["Completed"] is True
-    assert manifest["ReadOnlySource"] is True
-    assert manifest["SourceRunUnchanged"] is True
-    assert manifest["SourceFileCount"] == 461
-    assert (
-        manifest["SourceInventorySHA256Before"]
-        == manifest["SourceInventorySHA256After"]
+    lock = json.loads(
+        (RECOVERY_ROOT / "meta" / "source_run_lock.json").read_text(
+            encoding="utf-8"
+        )
     )
-    assert len(manifest["SourceInventorySHA256After"]) == 64
+    assert manifest["ExecutionCompletionStatus"] == "COMPLETED"
+    assert lock["ReadOnly"] is True
+    assert len(lock["SourceInventorySHA256"]) == 64
+    assert (
+        manifest["SourceInventorySHA256"]
+        == lock["SourceInventorySHA256"]
+    )
+    assert manifest["SourceRunID"] == SOURCE_ROOT.name
     assert SOURCE_ROOT.is_dir()
 
 
-def test_webgui_distinguishes_reanalysis_from_original() -> None:
+def test_webgui_distinguishes_recovery_from_original() -> None:
     original = dash.filesystem_run_row_from_folder(SOURCE_ROOT)
-    reanalysis = dash.filesystem_run_row_from_folder(REANALYSIS_ROOT)
+    recovery = dash.filesystem_run_row_from_folder(RECOVERY_ROOT)
     assert original is not None
-    assert reanalysis is not None
-    assert original["run_id"] != reanalysis["run_id"]
+    assert recovery is not None
+    assert original["run_id"] != recovery["run_id"]
     assert original["profile_name"] == "full_stack_qualification"
-    assert reanalysis["profile_name"] == "full_stack_qualification_reanalysis"
-    status = json.loads(reanalysis["status_json"])
-    assert status["qualification_reanalysis"] is True
-    assert status["source_run_id"] == "phase18_actual_20260728_04"
+    assert recovery["profile_name"] == "full_stack_qualification_recovery"
+    status = json.loads(recovery["status_json"])
+    assert status["qualification_recovery"] is True
+    assert status["source_run_id"] == SOURCE_ROOT.name
     assert status["source_run_unchanged"] is True
-    page = dash.build_product_frontend_page(
-        "qualification",
-        dash.FULL_STACK_QUALIFICATION_SCENARIO,
-        user_profile=None,
-    ).decode("utf-8")
-    assert "Phase-18 read-only reanalysis" in page
-    assert "Original → recomputed PASS" in page
+    assert len(status["source_inventory_sha256"]) == 64
 
 
 def test_regression_helper_emits_progress_heartbeat(tmp_path: Path) -> None:

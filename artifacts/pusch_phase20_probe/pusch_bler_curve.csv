@@ -1,0 +1,5 @@
+CampaignID,OperatingPointID,SNRdB,ChannelModel,Rank,MCSIndex,Modulation,TransformPrecoding,FrequencyHopping,Trials,TBErrors,BLER,ConfidenceLevel,CILower,CIUpper,CIHalfWidth,MinErrorsRequired,StopReason,Incomplete,Status
+PUSCH-AWGN-R1-QPSK,SNR_-8,-8,AWGN,1,4,QPSK,0,none,2,2,1,0.94999999999999996,0.34238022750665303,1,0.32880988624667351,1,ci_and_min_errors_met,0,PASS
+PUSCH-AWGN-R1-QPSK,SNR_-3,-3,AWGN,1,4,QPSK,0,none,2,0,0,0.94999999999999996,0,0.65761977249334691,0.32880988624667346,0,one_sided_censored_precision_met,0,PASS
+PUSCH-AWGN-R1-QPSK,SNR_+2,2,AWGN,1,4,QPSK,0,none,2,0,0,0.94999999999999996,0,0.65761977249334691,0.32880988624667346,0,one_sided_censored_precision_met,0,PASS
+PUSCH-AWGN-R1-QPSK,SNR_+8,8,AWGN,1,4,QPSK,0,none,2,0,0,0.94999999999999996,0,0.65761977249334691,0.32880988624667346,0,one_sided_censored_precision_met,0,PASS

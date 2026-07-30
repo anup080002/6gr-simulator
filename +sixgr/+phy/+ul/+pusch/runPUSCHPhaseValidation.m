@@ -58,7 +58,12 @@ if ~isfolder(parentDir)
         error("sixgr:pusch:PhaseOutputParentCreateFailed", "%s", message);
     end
 end
-stageDir = tempname(parentDir);
+stageDir = fullfile(parentDir, ".pusch-stage-" + ...
+    string(java.util.UUID.randomUUID()));
+if isfile(stageDir) || isfolder(stageDir)
+    error("sixgr:pusch:PhaseStageCollision", ...
+        "Unique transactional stage already exists: %s",stageDir);
+end
 [ok, message] = mkdir(stageDir);
 if ~ok
     error("sixgr:pusch:PhaseStageCreateFailed", "%s", message);
@@ -74,9 +79,32 @@ if exported.CSVCount ~= 20 || exported.PNGCount ~= 11
         "Contracted output is %d CSV and %d PNG, expected 20 and 11.", ...
         exported.CSVCount, exported.PNGCount);
 end
-
+if ~isfolder(stageDir)
+    error("sixgr:pusch:PhaseStageLostBeforeVerification", ...
+        "Transactional PUSCH stage disappeared before verification: %s", ...
+        stageDir);
+end
+verificationDir = tempname;
+[copied, copyMessage] = copyfile(stageDir, verificationDir);
+if ~copied
+    error("sixgr:pusch:PhaseVerificationSnapshotFailed", ...
+        "Unable to snapshot the PUSCH stage: %s",copyMessage);
+end
+verificationCleanup = onCleanup(@() localRemoveStage(verificationDir));
 [artifactStatus, artifactOutput, artifactCommand] = ...
-    localRunPython(fullfile(vectorRoot, "verify_pusch_artifacts.py"), stageDir);
+    localRunPython(fullfile(vectorRoot, "verify_pusch_artifacts.py"), ...
+    verificationDir);
+verificationAudit = fullfile(verificationDir, ...
+    "pusch_artifact_verification.csv");
+if isfile(verificationAudit)
+    [copied, copyMessage] = copyfile(verificationAudit,stageDir,"f");
+    if ~copied
+        error("sixgr:pusch:PhaseVerificationAuditPublishFailed", ...
+            "Unable to publish the PUSCH verifier audit: %s",copyMessage);
+    end
+end
+clear verificationCleanup
+localRemoveStage(verificationDir);
 if artifactStatus ~= 0
     error("sixgr:pusch:ArtifactVerificationFailed", ...
         "PUSCH artifact verification failed:\n%s", artifactOutput);

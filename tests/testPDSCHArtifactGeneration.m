@@ -178,11 +178,29 @@ if contains(string(verifier), '"') ...
         "Artifact validation paths contain an unsupported quote.");
 end
 
+verificationDir = tempname;
+[copied, copyMessage] = copyfile(stageDir,verificationDir);
+if ~copied
+    error("sixgr:test:PDSCHArtifactGeneration:SnapshotFailed", ...
+        "Unable to snapshot the artifact stage: %s",copyMessage);
+end
+verificationCleanup = onCleanup(@() localRemove(verificationDir));
 command = sprintf('python "%s" "%s" --vector-root "%s"', ...
-    verifier, stageDir, vectorRoot);
+    verifier, verificationDir, vectorRoot);
 started = tic;
 [verifierExitCode, verifierOutput] = system(command);
 durationSeconds = toc(started);
+verificationAudit = fullfile(verificationDir, ...
+    "pdsch_artifact_verification.csv");
+if isfile(verificationAudit)
+    [copied, copyMessage] = copyfile(verificationAudit,stageDir,"f");
+    if ~copied
+        error("sixgr:test:PDSCHArtifactGeneration:AuditPublishFailed", ...
+            "Unable to publish the verifier audit: %s",copyMessage);
+    end
+end
+clear verificationCleanup
+localRemove(verificationDir);
 
 inventory = sixgr.pdsch.PDSCHPhaseArtifactPublisher.inventory(stageDir);
 csvCount = nnz(inventory.Kind == "CSV");

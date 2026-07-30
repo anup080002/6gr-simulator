@@ -121,7 +121,9 @@ mkdir(root);
 cleanup = onCleanup(@()rmdir(root,"s")); %#ok<NASGU>
 ctx = localMinimalContext(root,testCase.TestData.Profile);
 T = sixgr.integration.qualification.FullStackRegressionRunner.pending(ctx);
-verifyEqual(testCase,height(T),10);
+verifyEqual(testCase,height(T),11);
+verifyEqual(testCase,string(T.Suite(end)), ...
+    "QUALIFICATION_ARTIFACT_VERIFIER");
 verifyTrue(testCase,all(string(T.Status)=="FAIL"));
 verifyTrue(testCase,all(T.BlockedTests==1));
 end

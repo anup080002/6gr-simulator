@@ -3,9 +3,19 @@ function ok = test6GScenarioRunner()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+previousScratch = string(getenv("SIXGR_REGRESSION_SCRATCH_ROOT"));
+scratchRoot = previousScratch;
+ownsScratchRoot = strlength(strtrim(scratchRoot)) == 0;
+if ownsScratchRoot
+    scratchRoot = string(tempname);
+    mkdir(scratchRoot);
+    setenv("SIXGR_REGRESSION_SCRATCH_ROOT", scratchRoot);
+end
+scratchCleanup = onCleanup(@() localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)); %#ok<NASGU>
+
+tmp = localScratchChild(scratchRoot, "s", ownsScratchRoot);
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+c = onCleanup(@() localRemoveFolder(tmp)); %#ok<NASGU>
 
 scenarioPath = fullfile(tmp, "pdcch_smoke.yaml");
 fid = fopen(scenarioPath, "w");
@@ -41,4 +51,26 @@ assert(isfield(manifest, "RunScope"), "Scenario manifest must include RunScope."
 assert(isfield(manifest, "RunCompletion"), "Scenario manifest must include RunCompletion.");
 
 ok = true;
+end
+
+function localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)
+setenv("SIXGR_REGRESSION_SCRATCH_ROOT", previousScratch);
+if ownsScratchRoot
+    localRemoveFolder(scratchRoot);
+end
+end
+
+function pathValue = localScratchChild(scratchRoot, prefix, ownsScratchRoot)
+if ownsScratchRoot
+    pathValue = fullfile(scratchRoot, prefix);
+else
+    token = char(java.util.UUID.randomUUID());
+    pathValue = fullfile(scratchRoot, prefix + string(token(1:8)));
+end
+end
+
+function localRemoveFolder(pathValue)
+if isfolder(pathValue)
+    rmdir(pathValue, "s");
+end
 end

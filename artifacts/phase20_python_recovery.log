@@ -1,0 +1,19 @@
+tests/test_phase18_recovery.py::test_artifact_manifest_path_resolution_is_exact
+tests/test_phase18_recovery.py::test_schema_adapter_registry_metadata_is_complete
+tests/test_phase18_recovery.py::test_recovery_result_schemas_and_contract_counts
+tests/test_phase18_recovery.py::test_parent_child_status_consistency
+tests/test_phase18_recovery.py::test_source_run_hashes_were_not_mutated
+tests/test_phase18_recovery.py::test_webgui_distinguishes_recovery_from_original
+tests/test_phase18_recovery.py::test_regression_helper_emits_progress_heartbeat
+tests/test_phase18_recovery.py::test_regression_helper_enforces_per_test_timeout
+tests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable
+tests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed
+tests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token
+tests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator
+tests/test_pytest_collection_isolated_from_results.py::test_pytest_collection_isolated_from_results
+tests/test_validation_oracle_materializer.py::test_oracle_materializer_supports_deep_recovery_output
+
+14 tests collected in 0.13s
+..............                                                           [100%]
+- generated xml file: C:\Users\anup0\AppData\Local\Temp\sixgr-pytest-gate-ggedybqr\junit.xml -
+14 passed in 10.25s

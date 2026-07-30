@@ -1,0 +1,94 @@
+tests/test_actual_lls_implementation_harness.py::test_actual_lls_implementation_harness
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_unavailable_plotted_metric_status
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_negative_fixture
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs
+tests/test_dut_reference_comparison.py::test_dut_reference_comparison
+tests/test_dut_yaml_catalog.py::test_dut_yaml_catalog_is_complete_and_overlay_only
+tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_is_a_canonical_webgui_mode
+tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_resolves_and_is_launchable
+tests/test_full_stack_webgui_contract.py::test_full_stack_page_contract_is_rendered_in_single_webgui
+tests/test_full_stack_webgui_contract.py::test_bounded_command_reports_success_and_timeout
+tests/test_full_stack_webgui_contract.py::test_incomplete_full_stack_run_remains_filesystem_indexable
+tests/test_full_stack_webgui_e2e.py::test_full_stack_webgui_actual_run_workflow
+tests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable
+tests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed
+tests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token
+tests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_blocks_open_high_issue
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_allows_verified_issue
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_rejects_critical_waiver
+tests/test_lls_browser_fixed_snr_plot_gallery.py::test_reference_gallery_matches_fixed_snr_plot_filenames
+tests/test_lls_complete_output_contract.py::test_contract_sections_and_context
+tests/test_lls_complete_output_contract.py::test_contract_covers_required_domains
+tests/test_lls_complete_output_contract.py::test_generated_deliverables_exist_and_are_additive
+tests/test_lls_complete_output_contract.py::test_browser_uses_one_compact_shell_and_preserves_deep_links
+tests/test_lls_dashboard_filesystem_results.py::test_dashboard_discovers_filesystem_only_result_run
+tests/test_lls_dashboard_optional_mysql.py::test_dashboard_imports_without_mysql_connector
+tests/test_lls_dashboard_process_lifecycle.py::test_pid_reuse_requires_matching_matlab_command_identity
+tests/test_lls_dashboard_process_lifecycle.py::test_browser_runtime_config_disables_automatic_parallel_pool
+tests/test_lls_dashboard_process_lifecycle.py::test_browser_matlab_child_activates_webgui_database_contract
+tests/test_lls_dashboard_process_lifecycle.py::test_terminate_dashboard_run_refuses_unverified_process
+tests/test_lls_dashboard_process_lifecycle.py::test_verified_windows_stop_uses_exact_taskkill_and_removes_only_target_record
+tests/test_lls_outcome_summary.py::test_lls_outcome_summary
+tests/test_no_label_only_success.py::test_no_label_only_success
+tests/test_phase18_recovery.py::test_artifact_manifest_path_resolution_is_exact
+tests/test_phase18_recovery.py::test_schema_adapter_registry_metadata_is_complete
+tests/test_phase18_recovery.py::test_reanalysis_result_schemas_and_contract_counts
+tests/test_phase18_recovery.py::test_parent_child_status_consistency
+tests/test_phase18_recovery.py::test_source_run_hashes_were_not_mutated
+tests/test_phase18_recovery.py::test_webgui_distinguishes_reanalysis_from_original
+tests/test_phase18_recovery.py::test_regression_helper_emits_progress_heartbeat
+tests/test_phase18_recovery.py::test_regression_helper_enforces_per_test_timeout
+tests/test_phy_value_invariants.py::test_phy_value_invariants
+tests/test_prompt11_lls_manifest.py::test_manifest_audit_rejects_configured_noise_and_perfect_channel
+tests/test_prompt11_lls_manifest.py::test_csv_generator_derives_runtime_tables_without_fake_tbs_reference
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+tests/test_prompt11_lls_manifest.py::test_acceptance_gate_reports_missing_manifest_without_throwing
+tests/test_pytest_collection_isolated_from_results.py::test_pytest_collection_isolated_from_results
+tests/test_real_function_coverage.py::test_real_function_coverage
+tests/test_single_webgui_implementation.py::test_repository_retains_one_webgui_implementation_and_launcher
+tests/test_single_webgui_implementation.py::test_profile_redirects_into_the_single_product_gui
+tests/test_single_webgui_implementation.py::test_protected_login_uses_the_compact_product_shell
+tests/test_webgui_mode_validation_outputs.py::test_mode_validation_aliases_are_registered
+tests/test_webgui_mode_validation_outputs.py::test_output_contract_surfaces_mode_sections
+tests/test_webgui_mode_validation_outputs.py::test_webgui_bucket_classifiers_cover_mode_outputs
+tests/test_webgui_mode_validation_outputs.py::test_reference_plot_gallery_has_mode_specific_aliases
+tests/test_webgui_run_management.py::test_uploaded_yaml_uses_selected_master_without_overwriting_catalog
+tests/test_webgui_run_management.py::test_filesystem_run_delete_removes_only_the_selected_run_outputs
+tests/test_webgui_run_management.py::test_run_delete_rejects_broad_or_unrelated_output_paths
+tests/test_webgui_run_management.py::test_bulk_delete_deduplicates_ids_and_preflights_active_runs
+tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_geometry_master_is_self_contained_and_launchable
+tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view
+tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_high_mobility_derives_cdlc_and_doppler
+tests/test_webgui_two_lls_scenario_modes.py::test_webgui_lists_new_lls_scenario_modes
+tests/test_webgui_two_lls_scenario_modes.py::test_webgui_snr_sweep_metadata_and_label
+tests/test_webgui_two_lls_scenario_modes.py::test_webgui_geometry_metadata_and_label
+tests/test_webgui_two_lls_scenario_modes.py::test_home_page_surfaces_scenario_validation_mode_panel
+
+============================== warnings summary ===============================
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+68 tests collected in 2.24s

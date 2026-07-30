@@ -3,9 +3,20 @@ function ok = test6GLLSMultiUserBeamforming()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+previousScratch = string(getenv("SIXGR_REGRESSION_SCRATCH_ROOT"));
+scratchRoot = previousScratch;
+ownsScratchRoot = strlength(strtrim(scratchRoot)) == 0;
+if ownsScratchRoot
+    scratchRoot = string(tempname);
+    mkdir(scratchRoot);
+    setenv("SIXGR_REGRESSION_SCRATCH_ROOT", scratchRoot);
+elseif ~isfolder(scratchRoot)
+    mkdir(scratchRoot);
+end
+scratchCleanup = onCleanup(@() localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)); %#ok<NASGU>
+tmp = localScratchChild(scratchRoot, "u", ownsScratchRoot);
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+c = onCleanup(@() localRemoveFolder(tmp)); %#ok<NASGU>
 
 baseScenario = fullfile(pwd, "simulator", "configs", "scenarios", "lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml");
 scenarioPath = fullfile(tmp, "lls_multiuser_smoke.yaml");
@@ -14,6 +25,7 @@ fprintf(fid, "%s", ['{' ...
     '"inherits":["' strrep(baseScenario, '\', '\\') '"],' ...
     '"meta":{"scenario_id":"lls_multiuser_smoke","description":"multi-user smoke","version":"1","owner":"test","maturity_tag":"smoke"},' ...
     '"simulation":{"n_frames":1,"n_slots":1,"monte_carlo_iterations":1,"random_seed":19,"snr_db":34},' ...
+    '"pdsch":{"execution_profile":"phy_calibration"},' ...
     '"users":{"enabled":true,"n_users":2,"rnti_start":101,"seed_stride":29,' ...
     '"execution_model":"independent_link_sweep","beam_selection_strategy":"round_robin_codebook","save_user_tables":true},' ...
     '"output":{"save_figures":false,"save_mat":false,"profile":"lls_multiuser_smoke"}}']);
@@ -48,6 +60,9 @@ assert(any(double(dl.ConfiguredLayers) == 2), "DL trials must preserve the confi
 assert(any(double(ul.ConfiguredLayers) == 2), "UL trials must preserve the configured layer count.");
 assert(all(double(dl.Layers) == 2), "DL waveform trials must execute at two layers in this scenario.");
 assert(all(double(ul.Layers) == 2), "UL waveform trials must execute at two layers in this scenario.");
+assert(ismember("ExecutionProfile", dl.Properties.VariableNames) && ...
+    all(string(dl.ExecutionProfile) == "phy_calibration"), ...
+    "Independent-link AWGN validation must use phy_calibration, not scheduler_truth without a decoded grant.");
 localAssertPerLayerSINR(dl, "DL", 2);
 localAssertPerLayerSINR(ul, "UL", 2);
 assert(ismember("BeamIndexSet", beam.Properties.VariableNames), "Beam diagnostics must export selected beam indices.");
@@ -106,4 +121,26 @@ raw = strrep(raw, "]", "");
 parts = regexp(raw, "[\|\s,;]+", "split");
 parts = parts(~cellfun(@isempty, parts));
 values = str2double(parts);
+end
+
+function localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)
+setenv("SIXGR_REGRESSION_SCRATCH_ROOT", previousScratch);
+if ownsScratchRoot
+    localRemoveFolder(scratchRoot);
+end
+end
+
+function pathValue = localScratchChild(scratchRoot, prefix, ownsScratchRoot)
+if ownsScratchRoot
+    pathValue = fullfile(scratchRoot, prefix);
+else
+    token = char(java.util.UUID.randomUUID());
+    pathValue = fullfile(scratchRoot, prefix + string(token(1:8)));
+end
+end
+
+function localRemoveFolder(pathValue)
+if isfolder(pathValue)
+    rmdir(pathValue, "s");
+end
 end

@@ -1,0 +1,49 @@
+Running testQualificationFinalizationResume
+
+================================================================================
+Error occurred in testQualificationFinalizationResume/testInterruptedRecoveryResumesAtNextStage and it did not run to completion.
+    ---------
+    Error ID:
+    ---------
+    'MATLAB:UndefinedFunction'
+    --------------
+    Error Details:
+    --------------
+    Undefined function 'localInputManifestDigest' for input arguments of type 'string'.
+    
+    Error in sixgr.integration.qualification.QualificationFinalizationRecoveryRunner.run (line 28)
+                inputDigest=localInputManifestDigest(sourceDigest);
+    
+    Error in sixgr.integration.qualification.resumeFinalize (line 9)
+    result=sixgr.integration.qualification. ...
+    
+    Error in testQualificationFinalizationResume>testInterruptedRecoveryResumesAtNextStage (line 7)
+    first=sixgr.integration.qualification.resumeFinalize( ...
+================================================================================
+.
+Done testQualificationFinalizationResume
+__________
+
+Running testQualificationFinalizationIdempotence
+.
+Done testQualificationFinalizationIdempotence
+__________
+
+Failure Summary:
+
+     Name                                                                           Failed  Incomplete  Reason(s)
+    ==============================================================================================================
+     testQualificationFinalizationResume/testInterruptedRecoveryResumesAtNextStage    X         X       Errored.
+  12 TestResult array with properties:
+
+    Name
+    Passed
+    Failed
+    Incomplete
+    Duration
+    Details
+
+Totals:
+   1 Passed, 1 Failed, 1 Incomplete.
+   36.7182 seconds testing time.
+

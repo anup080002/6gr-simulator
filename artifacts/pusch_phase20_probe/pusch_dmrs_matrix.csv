@@ -1,0 +1,2 @@
+CaseID,MappingType,TransformPrecoding,DMRSConfigurationType,DMRSLength,DMRSAdditionalPosition,DMRSTypeAPosition,NumCDMGroupsWithoutData,NIDNSCID,NSCID,GroupHopping,SequenceHopping,RequestedDMRSPortSet,AppliedDMRSPortSet,AntennaPortField,DMRSSymbols,DMRSRECount,SequenceDigest,SequenceNMSE,IndexMismatchCount,InputMutationCount,Status
+RESOURCE-R1-PTRS,A,0,1,1,0,2,2,,0,false,0,0,0,0,2,72,51e2f130a68d1f38df08c6aeed2817393cbaa7c4b7ff7ce514f0817b0df3dde9,0,0,0,PASS

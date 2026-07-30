@@ -129,6 +129,7 @@ cfg.outputs.saveFigures = false;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 60;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.phy.nTxAnt = 4;
 cfg.phy.nRxAnt = 4;
 cfg.channel.nTxAnt = 4;

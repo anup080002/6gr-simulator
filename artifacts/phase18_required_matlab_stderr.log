@@ -1,0 +1,8 @@
+{Error using assert
+At least one test failed in the test session.
+
+Error in matlab.unittest.internal.BaseTestResult/assertSuccess (line 126)
+             assert(~any([resultArray.Failed]),message('MATLAB:unittest:TestResult:UnsuccessfulRun'));
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

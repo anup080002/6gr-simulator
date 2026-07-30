@@ -7,6 +7,7 @@ cfg = sixgr.config.defaultConfig();
 cfg.run.strictMode = true;
 cfg.run.noProxyTruthContract = true;
 cfg.phy.linkAdaptation.mode = "fixed";
+cfg.validation.RunClass = "fixed_lls_anchor";
 cfg.phy.pdsch.mcsIndex = 20;
 cfg.phy.pdsch.modulation = "256QAM";
 cfg.phy.pdsch.nLayers = 2;

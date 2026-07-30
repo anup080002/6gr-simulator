@@ -14,6 +14,7 @@ import argparse
 import csv
 import hashlib
 import math
+import os
 import random
 from pathlib import Path
 
@@ -41,17 +42,29 @@ EXTERNAL = {
 }
 
 
+def io_path(path: Path) -> Path:
+    """Return a Windows extended-length path while keeping manifests portable."""
+    resolved = path.resolve()
+    text = str(resolved)
+    if os.name != "nt" or text.startswith("\\\\?\\"):
+        return resolved
+    if text.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + text[2:])
+    return Path("\\\\?\\" + text)
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    with io_path(path).open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
 
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as stream:
+    target = io_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)

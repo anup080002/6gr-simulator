@@ -32,6 +32,7 @@ cfgUL.antenna.ue.numElements = 4;
 cfgUL.phy.pusch.NumAntennaPorts = 2;
 cfgUL.phy.pusch.numAntennaPorts = 2;
 cfgUL.phy.pusch.numPorts = 2;
+cfgUL.phy.pusch.transformPrecoding = false;
 pusch = nrPUSCHConfig;
 pusch.NumLayers = 1;
 pusch.NumAntennaPorts = 2;

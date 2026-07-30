@@ -1,0 +1,29 @@
+{Error using sixgr.lls6g.config.validateScenarioConfig>localRejectUnknownSectionFields (line 151)
+Unknown keys in section 'run_control' of C:\Users\anup0\AppData\Local\Temp\sixgr-phase20-matrix\matrix-summary-36123e75-f930-401e-9edd-d59cc591f8df\scenario_a.yaml: sweep
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateScenarioSections (line 72)
+    localRejectUnknownSectionFields(cfg.(sec), allowedSections.(sec), sec, ctx);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.validateScenarioConfig (line 21)
+        localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 20)
+sixgr.lls6g.config.validateScenarioConfig(raw, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 13)
+scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runMatrix (line 67)
+            result = sixgr.lls6g.runners.runSingle(scenarioPath, fullfile(matrixRoot, "runs"), scenarioRunTag);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in run_6g_phy_lls_matrix (line 14)
+out = sixgr.lls6g.runners.runMatrix(configPath, outputDir, runTag);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in test6GScenarioMatrixRunner (line 78)
+out = run_6g_phy_lls_matrix(matrixPath, tmp, "smoke");
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

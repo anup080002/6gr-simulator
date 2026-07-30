@@ -1,0 +1,66 @@
+tests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable
+tests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed
+tests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token
+tests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator
+tests/test_lls_dashboard_process_lifecycle.py::test_pid_reuse_requires_matching_matlab_command_identity
+tests/test_lls_dashboard_process_lifecycle.py::test_browser_runtime_config_disables_automatic_parallel_pool
+tests/test_lls_dashboard_process_lifecycle.py::test_browser_matlab_child_activates_webgui_database_contract
+tests/test_lls_dashboard_process_lifecycle.py::test_terminate_dashboard_run_refuses_unverified_process
+tests/test_lls_dashboard_process_lifecycle.py::test_verified_windows_stop_uses_exact_taskkill_and_removes_only_target_record
+tests/test_webgui_run_management.py::test_uploaded_yaml_uses_selected_master_without_overwriting_catalog
+tests/test_webgui_run_management.py::test_filesystem_run_delete_removes_only_the_selected_run_outputs
+tests/test_webgui_run_management.py::test_run_delete_rejects_broad_or_unrelated_output_paths
+tests/test_webgui_run_management.py::test_bulk_delete_deduplicates_ids_and_preflights_active_runs
+
+============================== warnings summary ===============================
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+13/68 tests collected (55 deselected) in 2.26s
+.............                                                            [100%]
+============================== warnings summary ===============================
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\anup0\AppData\Local\Temp\sixgr-pytest-gate-00h3emjz\junit.xml -
+13 passed, 55 deselected, 13 warnings in 3.96s

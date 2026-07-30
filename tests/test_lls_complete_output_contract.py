@@ -120,6 +120,7 @@ def test_browser_uses_one_compact_shell_and_preserves_deep_links() -> None:
         ("run_control", "Run", "/run-control"),
         ("runs", "Runs", "/runs"),
         ("realtime", "Live", "/realtime"),
+        ("qualification", "Qualification", "/qualification"),
         ("plots", "Results & Evidence", "/plots"),
     ]
     assert dash.PRODUCT_NAV == expected_nav

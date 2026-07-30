@@ -22,9 +22,11 @@ assert(string(res.RuntimeTransportMode) == "coupled_runtime_stage_waveform_compo
     "Runtime transport mode must disclose coupled stage-waveform composition.");
 
 T = res.ArtifactTables.ra_runtime_stage_waveforms;
-assert(height(T) == 4, "Strict runtime RA must publish one composed transport row per message.");
-assert(isequal(string(T.StageName).', ["Msg1","Msg2","Msg3","Msg4"]), ...
-    "Strict runtime RA stages must be ordered Msg1, Msg2, Msg3, Msg4.");
+expectedStages = ["Msg1","Msg2","Msg3","Msg4","RRCSetupComplete"];
+assert(height(T) == numel(expectedStages), ...
+    "Strict runtime RA must publish one composed transport row per waveform-carried message.");
+assert(isequal(string(T.StageName).', expectedStages), ...
+    "Strict runtime RA stages must include ordered Msg1-Msg4 and RRCSetupComplete.");
 assert(all(logical(T.RuntimeStageWaveformUsed)), ...
     "Every RA stage must consume a composed propagated waveform.");
 assert(all(logical(T.RuntimeChannelStateUsed)), ...
@@ -38,4 +40,3 @@ assert(any(contains(string(T.RuntimeChannelLinkKey), "dir=UL")) && ...
     "Strict composed RA must use both UL and DL persistent link keys.");
 ok = true;
 end
-

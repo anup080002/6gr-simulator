@@ -306,6 +306,7 @@ DEFAULT_DASHBOARD_AUTH_MODE = os.environ.get("SIXGR_DASHBOARD_AUTH_MODE", "open"
 if DEFAULT_DASHBOARD_AUTH_MODE not in {"open", "login"}:
     DEFAULT_DASHBOARD_AUTH_MODE = "open"
 RAW_DASHBOARD_USERS_JSON = os.environ.get("SIXGR_DASHBOARD_USERS_JSON", "").strip()
+EPHEMERAL_TEST_CREDENTIAL_ENV = "SIXGR_WEBGUI_TEST_CREDENTIAL_DIR"
 OPEN_ACCESS_PROFILE = {
     "username": "open",
     "display_name": "Open Access",
@@ -1010,10 +1011,113 @@ def run_has_recent_db_activity(run_id: int, cutoff: datetime) -> bool:
 def clone_user_profile(username: str) -> dict[str, Any] | None:
     if str(username or "").strip().lower() == str(OPEN_ACCESS_PROFILE["username"]):
         return dict(OPEN_ACCESS_PROFILE)
-    profile = USER_PROFILES.get(str(username or "").strip().lower())
+    normalized = str(username or "").strip().lower()
+    profile = USER_PROFILES.get(normalized)
+    if profile is None:
+        profile = load_ephemeral_test_profile(normalized)
     if profile is None:
         return None
     return dict(profile)
+
+
+def _ephemeral_test_credential_root() -> Path | None:
+    raw = str(os.environ.get(EPHEMERAL_TEST_CREDENTIAL_ENV) or "").strip()
+    if not raw:
+        return None
+    root = Path(raw).expanduser()
+    return root if root.is_dir() else None
+
+
+def load_ephemeral_test_profile(
+    username: str,
+) -> dict[str, Any] | None:
+    """Load one short-lived test identity from the server-owned directory."""
+    normalized = str(username or "").strip().lower()
+    if not re.fullmatch(r"phase18-[0-9a-f]{16}", normalized):
+        return None
+    root = _ephemeral_test_credential_root()
+    if root is None:
+        return None
+    path = root / f"credential-{normalized}.json"
+    try:
+        if not path.is_file() or path.stat().st_size > 16384:
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") != (
+            "sixgr-webgui-test-credential/v1"
+        ):
+            return None
+        if str(payload.get("username") or "").strip().lower() != normalized:
+            return None
+        if bool(payload.get("revoked")):
+            return None
+        expiry = datetime.fromisoformat(str(payload.get("expires_utc") or ""))
+        if expiry.tzinfo is None or expiry <= datetime.now(timezone.utc):
+            return None
+        password = str(payload.get("password") or "")
+        role = str(payload.get("role") or "")
+        if not password or role not in {"Operator", "Viewer"}:
+            return None
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    return {
+        "username": normalized,
+        "password": password,
+        "display_name": "Phase-18 Test " + role,
+        "role": role,
+        "theme": "signal",
+        "bio": "Short-lived automated qualification identity.",
+        "ephemeral": True,
+        "expires_utc": expiry,
+    }
+
+
+def resolve_dashboard_login_profile(
+    username: str, password: str
+) -> dict[str, Any] | None:
+    normalized = str(username or "").strip().lower()
+    profile = USER_PROFILES.get(normalized)
+    if profile is None:
+        profile = load_ephemeral_test_profile(normalized)
+    if profile is None:
+        return None
+    expected = str(profile.get("password") or "")
+    if not expected or not secrets.compare_digest(str(password), expected):
+        return None
+    return dict(profile)
+
+
+def dashboard_has_login_profiles() -> bool:
+    if USER_PROFILES:
+        return True
+    root = _ephemeral_test_credential_root()
+    if root is None:
+        return False
+    return any(
+        load_ephemeral_test_profile(path.stem.removeprefix("credential-"))
+        is not None
+        for path in root.glob("credential-phase18-*.json")
+    )
+
+
+def user_profile_can_mutate(profile: dict[str, Any] | None) -> bool:
+    role = str((profile or {}).get("role") or "").strip().lower()
+    return role in {"operator", "administrator", "admin"}
+
+
+def operator_authorized_for_route(
+    profile: dict[str, Any] | None, route: str
+) -> bool:
+    protected = {
+        "/run",
+        "/run/stop",
+        "/admin/clear",
+        "/admin/delete-runs",
+        "/admin/delete-run",
+        "/scenario/upload",
+        "/run-prach-comparison",
+    }
+    return str(route) not in protected or user_profile_can_mutate(profile)
 
 
 def auth_mode_open() -> bool:
@@ -4587,6 +4691,7 @@ def _filesystem_run_folders() -> list[Path]:
                         / "json"
                         / "phase18_reanalysis_manifest.json"
                     ).is_file()
+                    or (run_dir / "meta" / "recovery_manifest.json").is_file()
                 ):
                     folders.append(run_dir)
     return folders
@@ -4606,11 +4711,19 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         / "json"
         / "phase18_reanalysis_manifest.json"
     )
+    recovery_path = run_folder / "meta" / "recovery_manifest.json"
     manifest = _read_json_file(manifest_path)
     summary = _read_first_csv_record(summary_path)
     qualification = _read_first_csv_record(qualification_path)
     reanalysis = _read_json_file(reanalysis_path)
-    if not manifest and not summary and not qualification and not reanalysis:
+    recovery = _read_json_file(recovery_path)
+    if (
+        not manifest
+        and not summary
+        and not qualification
+        and not reanalysis
+        and not recovery
+    ):
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
     scenario_id = str(
@@ -4618,7 +4731,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         or qualification.get("ScenarioID")
         or (
             FULL_STACK_QUALIFICATION_SCENARIO
-            if reanalysis
+            if reanalysis or recovery
             else ""
         )
         or manifest.get("ScenarioID")
@@ -4644,6 +4757,15 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             "INTERRUPTED": "interrupted",
             "FAIL": "failed",
         }.get(reanalysis_status, "reanalysed")
+    if not run_completion and recovery:
+        recovery_status = str(
+            recovery.get("ExecutionCompletionStatus") or ""
+        ).strip().upper()
+        run_completion = {
+            "COMPLETED": "completed",
+            "INTERRUPTED": "interrupted",
+            "FAILED": "failed",
+        }.get(recovery_status, "recovered")
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
@@ -4653,6 +4775,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         or manifest.get("ResultOk")
         or qualification.get("FinalStatus")
         or reanalysis.get("FinalStatus")
+        or recovery.get("QualificationStatus")
     )
     required_failures = _int_value(summary.get("RequiredFailureCount") or manifest.get("RequiredFailureCount"))
     truth_ok = _truthy_value(summary.get("RuntimeTruthContractOk") or manifest.get("RuntimeTruthContractOk"))
@@ -4662,6 +4785,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             summary_path,
             qualification_path,
             reanalysis_path,
+            recovery_path,
             run_folder,
         ]
     )
@@ -4695,14 +4819,29 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             else (
                 "reports/json/phase18_reanalysis_manifest.json"
                 if reanalysis
-                else ""
+                else (
+                    "meta/recovery_manifest.json"
+                    if recovery
+                    else ""
+                )
             )
         ),
         "qualification_reanalysis": bool(reanalysis),
-        "source_run_id": str(reanalysis.get("SourceRunID") or ""),
-        "source_run_unchanged": reanalysis.get("SourceRunUnchanged"),
+        "qualification_recovery": bool(recovery),
+        "source_run_id": str(
+            reanalysis.get("SourceRunID")
+            or recovery.get("SourceRunID")
+            or ""
+        ),
+        "source_run_unchanged": (
+            reanalysis.get("SourceRunUnchanged")
+            if reanalysis
+            else bool(recovery.get("SourceInventorySHA256"))
+        ),
         "source_inventory_sha256": str(
-            reanalysis.get("SourceInventorySHA256After") or ""
+            reanalysis.get("SourceInventorySHA256After")
+            or recovery.get("SourceInventorySHA256")
+            or ""
         ),
     }
     return {
@@ -4713,7 +4852,12 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "run_folder": str(run_folder.absolute()),
         "bucket": str(manifest.get("OutputBucket") or "filesystem"),
         "profile_name": str(
-            summary.get("RunnerProfile")
+            (
+                "full_stack_qualification_recovery"
+                if recovery
+                else ""
+            )
+            or summary.get("RunnerProfile")
             or manifest.get("RunnerProfile")
             or (
                 "full_stack_qualification"
@@ -14224,7 +14368,7 @@ def build_login_page(message: str = "", next_url: str = "/home") -> bytes:
             "Continue to the simulator.",
             '<div class="toolbar"><a class="button-link primary" href="/home">Open simulator</a></div>',
         )
-    if not USER_PROFILES:
+    if not dashboard_has_login_profiles():
         return build_compact_access_page(
             "Access unavailable",
             "Protected access needs an operator profile.",
@@ -21191,8 +21335,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 username = str(fields.get("username", [""])[0]).strip().lower()
                 password = str(fields.get("password", [""])[0])
                 next_url = str(fields.get("next", ["/home"])[0] or "/home")
-                profile = USER_PROFILES.get(username)
-                if profile is None or password != str(profile.get("password") or ""):
+                profile = resolve_dashboard_login_profile(
+                    username, password
+                )
+                if profile is None:
                     self.redirect(f"/login?message={urllib.parse.quote('Invalid username or password.')}&next={urllib.parse.quote(next_url)}")
                     return
                 self.finish_login(username, next_url if next_url.startswith("/") else "/home")
@@ -21206,6 +21352,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             auth = self.require_authentication(parsed)
             if auth is None:
+                return
+            _, user_profile = auth
+            if not auth_mode_open() and not operator_authorized_for_route(
+                user_profile, parsed.path
+            ):
+                self.respond_error(
+                    HTTPStatus.FORBIDDEN,
+                    "The current role is not authorized for this operation.",
+                )
                 return
             next_url = str(fields.get("next", ["/home"])[0] or "/home")
             next_url = next_url if next_url.startswith("/") else "/home"

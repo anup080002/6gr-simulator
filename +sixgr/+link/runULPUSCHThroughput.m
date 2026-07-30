@@ -59,6 +59,13 @@ if isRetransmission
 end
 schedulerDrivenGrant = (isstruct(grantSnapshotOverride) && ~isempty(fieldnames(grantSnapshotOverride))) || ...
     (isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride)));
+configuredExecutionProfile = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg, "phy.pusch.executionProfile", ""))));
+if schedulerDrivenGrant && configuredExecutionProfile == "phy_calibration"
+    error("sixgr:pusch:CalibrationSchedulerOwnershipForbidden", ...
+        ['A scheduler/frozen grant cannot be relabeled as phy_calibration. ' ...
+        'Use a scheduler-owned execution profile with decoded control binding evidence.']);
+end
 expectedUCIBits = localResolveExpectedUCIBits(p.Results.ExpectedUCIBits, grantSnapshotOverride, harqContext);
 expectedUCIPayload = sixgr.phy.ul.pusch.PUSCHUCIPayload("HARQACK", expectedUCIBits);
 

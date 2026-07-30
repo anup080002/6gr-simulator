@@ -3,18 +3,27 @@ from __future__ import annotations
 import csv
 import hashlib
 import os
+import sys
 import time
 from pathlib import Path
 from urllib.parse import urljoin
 
 from playwright.sync_api import Page, sync_playwright
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+
+from webgui_test_credential_broker import (  # noqa: E402
+    CredentialSetupError,
+    load as load_test_credential,
+)
 PACK_ROOT = (
     REPO_ROOT / "audit" / "6gr_webgui_full_stack_qualification_pack"
 )
 SCENARIO = "lls_webgui_full_stack_sinr_geometry_qualification"
+pytestmark = pytest.mark.webgui_e2e
 
 
 def _login_if_required(page: Page, base_url: str) -> None:
@@ -22,11 +31,20 @@ def _login_if_required(page: Page, base_url: str) -> None:
     if "/login" not in page.url:
         return
     username = os.environ.get("SIXGR_WEBGUI_TEST_USERNAME", "")
-    password = os.environ.get("SIXGR_WEBGUI_TEST_PASSWORD", "")
-    assert username and password, (
-        "The secured WebGUI requested login, but the Playwright operator "
-        "credentials were not configured."
+    password_file = os.environ.get("SIXGR_WEBGUI_TEST_PASSWORD_FILE", "")
+    if not username or not password_file:
+        raise CredentialSetupError(
+            "secured WebGUI login requires an ephemeral username and "
+            "SIXGR_WEBGUI_TEST_PASSWORD_FILE"
+        )
+    credential = load_test_credential(
+        Path(password_file), expected_username=username
     )
+    if str(credential["role"]).lower() != "operator":
+        raise CredentialSetupError(
+            "the full-stack Playwright workflow requires the Operator role"
+        )
+    password = str(credential["password"])
     page.locator("#username").fill(username)
     page.locator("#password").fill(password)
     page.get_by_role("button", name="Sign in").click()

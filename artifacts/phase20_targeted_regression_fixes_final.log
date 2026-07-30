@@ -1,0 +1,504 @@
+[2026-07-30T02:02:04Z] INFO Preparing LLS run: scenario=pdcch_smoke runTag=smoke runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+[2026-07-30T02:02:15Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T02:02:15Z] INFO Writing resolved snapshots.
+[2026-07-30T02:02:16Z] INFO Exporting live geometry artifacts.
+[2026-07-30T02:02:16Z] INFO Executing runner profile=pdcch_blind_decode_sweep.
+[2026-07-30T02:02:22Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T02:02:22Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T02:02:22Z] INFO Annotating CSV artifacts.
+[2026-07-30T02:02:23Z] INFO Writing scenario summary CSV.
+[2026-07-30T02:02:23Z] INFO Writing runtime and environment summaries.
+[2026-07-30T02:02:25Z] INFO Writing scenario manifest.
+[2026-07-30T02:02:25Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T02:03:22Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=0 strictFailures=2
+[2026-07-30T02:03:22Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T02:03:24Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T02:03:24Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T02:05:47Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T02:05:47Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s\lls\pdcch_smoke\smoke
+[2026-07-30T02:06:27Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T02:07:21Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:07:21Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T02:07:22Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T02:07:22Z] INFO Writing artifact manifest.
+[2026-07-30T02:07:22Z] INFO Writing scenario markdown report.
+[2026-07-30T02:07:22Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T02:07:22Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T02:07:22Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T02:07:22Z] INFO Writing MAT result bundle.
+[2026-07-30T02:07:24Z] INFO Pruning empty result directories.
+[2026-07-30T02:07:24Z] INFO Run completed successfully in 320.931 seconds.
+[Warning: The following error was caught while executing 'onCleanup' class destructor:
+Error using rmdir
+C:\Users\anup0\AppData\Local\Temp\tp7d17c9cc_0ea5_460a_8f77_96b0f5f72370\s is not a directory.
+
+
+Error in test6GScenarioRunner>@()rmdir(tmp,"s") (line 18)
+c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+                  ^^^^^^^^^^^^^^^
+Error in onCleanup/delete (line 29)
+            obj.task();
+            ^^^^^^^^^^
+Error in test6GScenarioRunner (line 54)
+end
+   ^
+Error in runFocusedTests (line 37)
+        feval(fn);
+        ^^^^^^^^^
+Error in testAll (line 18)
+    report = runFocusedTests(requestedNames, "ShowSlowest", double(opt.ShowSlowest));
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^] 
+[> In test6GScenarioRunner (line 54)
+In runFocusedTests (line 37)
+In testAll (line 18)] 
+[PASS] test6GScenarioRunner (366.53s)
+[2026-07-30T02:07:29Z] INFO Preparing LLS run: scenario=matrix_prach_no_summary runTag=repeat_1 runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+[2026-07-30T02:07:30Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T02:07:30Z] INFO Writing resolved snapshots.
+[2026-07-30T02:07:30Z] INFO Exporting live geometry artifacts.
+[2026-07-30T02:07:30Z] INFO Executing runner profile=prach_detection.
+[2026-07-30T02:08:10Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T02:08:10Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T02:08:10Z] INFO Annotating CSV artifacts.
+[2026-07-30T02:08:34Z] INFO Writing scenario summary CSV.
+[2026-07-30T02:08:34Z] INFO Writing runtime and environment summaries.
+[2026-07-30T02:08:35Z] INFO Writing scenario manifest.
+[2026-07-30T02:08:35Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T02:09:24Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:09:24Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T02:09:26Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T02:09:26Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T02:11:31Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T02:11:31Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+[2026-07-30T02:12:13Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T02:13:02Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:13:02Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T02:13:04Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T02:13:04Z] INFO Writing artifact manifest.
+[2026-07-30T02:13:04Z] INFO Writing scenario markdown report.
+[2026-07-30T02:13:04Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T02:13:04Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T02:13:04Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T02:13:04Z] INFO Writing MAT result bundle.
+[2026-07-30T02:13:07Z] INFO Pruning empty result directories.
+[2026-07-30T02:13:07Z] INFO Run completed successfully in 338.321 seconds.
+[Warning: The following error was caught while executing 'onCleanup' class destructor:
+Error using rmdir
+C:\Users\anup0\AppData\Local\Temp\tp80fb43c0_a7f0_4c20_9b20_981649c54657\n is not a directory.
+
+
+Error in test6GScenarioMatrixRunnerNoSummary>@()rmdir(tmp,"s") (line 18)
+cleanup=onCleanup(@()rmdir(tmp,"s")); %#ok<NASGU>
+                     ^^^^^^^^^^^^^^
+Error in onCleanup/delete (line 29)
+            obj.task();
+            ^^^^^^^^^^
+Error in test6GScenarioMatrixRunnerNoSummary (line 53)
+end
+   ^
+Error in runFocusedTests (line 37)
+        feval(fn);
+        ^^^^^^^^^
+Error in testAll (line 18)
+    report = runFocusedTests(requestedNames, "ShowSlowest", double(opt.ShowSlowest));
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^] 
+[> In test6GScenarioMatrixRunnerNoSummary (line 53)
+In runFocusedTests (line 37)
+In testAll (line 18)] 
+[PASS] test6GScenarioMatrixRunnerNoSummary (343.54s)
+[2026-07-30T02:13:11Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag=repeat_1 runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+[2026-07-30T02:13:13Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T02:13:13Z] INFO Writing resolved snapshots.
+[2026-07-30T02:13:13Z] INFO Exporting live geometry artifacts.
+[2026-07-30T02:13:13Z] INFO Executing runner profile=generic_sweep.
+[2026-07-30T02:13:14Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag= runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+[2026-07-30T02:13:15Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T02:13:15Z] INFO Writing resolved snapshots.
+[2026-07-30T02:13:16Z] INFO Exporting live geometry artifacts.
+[2026-07-30T02:13:16Z] INFO Executing runner profile=ai_benchmark.
+[2026-07-30T02:13:18Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T02:13:18Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T02:13:18Z] INFO Annotating CSV artifacts.
+[2026-07-30T02:13:18Z] INFO Writing scenario summary CSV.
+[2026-07-30T02:13:18Z] INFO Writing runtime and environment summaries.
+[2026-07-30T02:13:19Z] INFO Writing scenario manifest.
+[2026-07-30T02:13:19Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T02:14:06Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:14:06Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T02:14:07Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T02:14:07Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T02:15:46Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T02:15:47Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+[2026-07-30T02:16:18Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T02:17:06Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:17:06Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T02:17:07Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T02:17:07Z] INFO Writing artifact manifest.
+[2026-07-30T02:17:07Z] INFO Writing scenario markdown report.
+[2026-07-30T02:17:07Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T02:17:07Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T02:17:07Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T02:17:07Z] INFO Writing MAT result bundle.
+[2026-07-30T02:17:09Z] INFO Pruning empty result directories.
+[2026-07-30T02:17:09Z] INFO Run completed successfully in 235.003 seconds.
+[2026-07-30T02:17:10Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag= runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+[2026-07-30T02:17:12Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T02:17:12Z] INFO Writing resolved snapshots.
+[2026-07-30T02:17:12Z] INFO Exporting live geometry artifacts.
+[2026-07-30T02:17:12Z] INFO Executing runner profile=ai_benchmark.
+[2026-07-30T02:17:13Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T02:17:13Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T02:17:13Z] INFO Annotating CSV artifacts.
+[2026-07-30T02:17:13Z] INFO Writing scenario summary CSV.
+[2026-07-30T02:17:13Z] INFO Writing runtime and environment summaries.
+[2026-07-30T02:17:14Z] INFO Writing scenario manifest.
+[2026-07-30T02:17:14Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T02:18:03Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:18:03Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T02:18:05Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T02:18:05Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T02:19:42Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T02:19:42Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+[2026-07-30T02:20:13Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T02:21:01Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:21:01Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T02:21:02Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T02:21:02Z] INFO Writing artifact manifest.
+[2026-07-30T02:21:02Z] INFO Writing scenario markdown report.
+[2026-07-30T02:21:02Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T02:21:02Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T02:21:02Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T02:21:02Z] INFO Writing MAT result bundle.
+[2026-07-30T02:21:03Z] INFO Pruning empty result directories.
+[2026-07-30T02:21:03Z] INFO Run completed successfully in 233.493 seconds.
+[2026-07-30T02:21:03Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T02:21:03Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T02:21:03Z] INFO Annotating CSV artifacts.
+[2026-07-30T02:21:23Z] INFO Writing scenario summary CSV.
+[2026-07-30T02:21:24Z] INFO Writing runtime and environment summaries.
+[2026-07-30T02:21:25Z] INFO Writing scenario manifest.
+[2026-07-30T02:21:25Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T02:22:15Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:22:15Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T02:22:17Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T02:22:17Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T02:24:07Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T02:24:07Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+[2026-07-30T02:24:43Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T02:25:28Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:25:28Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T02:25:29Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T02:25:29Z] INFO Writing artifact manifest.
+[2026-07-30T02:25:30Z] INFO Writing scenario markdown report.
+[2026-07-30T02:25:30Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T02:25:30Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T02:25:30Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T02:25:30Z] INFO Writing MAT result bundle.
+[2026-07-30T02:25:31Z] INFO Pruning empty result directories.
+[2026-07-30T02:25:31Z] INFO Run completed successfully in 740.306 seconds.
+[2026-07-30T02:25:33Z] INFO Preparing LLS run: scenario=matrix_prach_b runTag=repeat_1 runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+[2026-07-30T02:25:34Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T02:25:34Z] INFO Writing resolved snapshots.
+[2026-07-30T02:25:34Z] INFO Exporting live geometry artifacts.
+[2026-07-30T02:25:34Z] INFO Executing runner profile=prach_detection.
+[2026-07-30T02:26:15Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T02:26:15Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T02:26:15Z] INFO Annotating CSV artifacts.
+[2026-07-30T02:26:40Z] INFO Writing scenario summary CSV.
+[2026-07-30T02:26:40Z] INFO Writing runtime and environment summaries.
+[2026-07-30T02:26:41Z] INFO Writing scenario manifest.
+[2026-07-30T02:26:41Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T02:27:27Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:27:27Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T02:27:29Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T02:27:29Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T02:29:32Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T02:29:33Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+[2026-07-30T02:30:15Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T02:31:03Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T02:31:03Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T02:31:04Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T02:31:04Z] INFO Writing artifact manifest.
+[2026-07-30T02:31:04Z] INFO Writing scenario markdown report.
+[2026-07-30T02:31:04Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T02:31:04Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T02:31:04Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T02:31:04Z] INFO Writing MAT result bundle.
+[2026-07-30T02:31:07Z] INFO Pruning empty result directories.
+[2026-07-30T02:31:07Z] INFO Run completed successfully in 334.291 seconds.
+[Warning: The following error was caught while executing 'onCleanup' class destructor:
+Error using rmdir
+C:\Users\anup0\AppData\Local\Temp\tp3977b9d6_c227_4456_bc5e_3bd10c1c1b0a\m is not a directory.
+
+
+Error in test6GScenarioMatrixRunner>@()rmdir(tmp,"s") (line 19)
+c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+                  ^^^^^^^^^^^^^^^
+Error in onCleanup/delete (line 29)
+            obj.task();
+            ^^^^^^^^^^
+Error in test6GScenarioMatrixRunner (line 148)
+end
+   ^
+Error in runFocusedTests (line 37)
+        feval(fn);
+        ^^^^^^^^^
+Error in testAll (line 18)
+    report = runFocusedTests(requestedNames, "ShowSlowest", double(opt.ShowSlowest));
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^] 
+[> In test6GScenarioMatrixRunner (line 148)
+In runFocusedTests (line 37)
+In testAll (line 18)] 
+[PASS] test6GScenarioMatrixRunner (1081.22s)
+[PASS] testResolveResultsRoot (0.21s)
+Slowest 4 test(s):
+   1. test6GScenarioMatrixRunner (1081.22s)
+   2. test6GScenarioRunner (366.53s)
+   3. test6GScenarioMatrixRunnerNoSummary (343.54s)
+   4. testResolveResultsRoot (0.21s)

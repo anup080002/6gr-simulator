@@ -1,0 +1,2 @@
+CaseID,Codeword,TBS,TBCRCType,TBCRCLength,BaseGraph,NumCodeBlocks,CodeBlockCRCType,LiftingSize,K,N,Ncb,FillerBits,RV,K0,EPerCodeBlock,G,RateMatchedBits,RateRecoveredBits,CRCOK,Status
+ULSCH-NO-NOISE-R1,0,576,16,16,2,1,,72,720,3600,3600,128,0,0,1872,1872,1872,3600,1,PASS

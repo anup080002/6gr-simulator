@@ -242,9 +242,20 @@ else
 end
 coreset.FrequencyResources = fr;
 
-% Optional CORESET parameters
-coreset.REGBundleSize = double(sixgr.util.structGet(cfg, 'phy.pdcch.coreset.regBundleSize', coreset.REGBundleSize));
-coreset.InterleaverSize = double(sixgr.util.structGet(cfg, 'phy.pdcch.coreset.interleaverSize', coreset.InterleaverSize));
+% Optional CORESET parameters.  nrCORESETConfig validates interleaver
+% properties even when the configured mapping is non-interleaved, so do
+% not write a non-applicable zero-valued interleaver into the toolbox
+% object.
+mappingType = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg, 'phy.pdcch.coreset.mappingType', 'noninterleaved'))));
+[coreset, ~] = localSetPropIfPresent(coreset, ...
+    {'CCEREGMapping','CCEToREGMapping'}, char(mappingType));
+coreset.REGBundleSize = double(sixgr.util.structGet( ...
+    cfg, 'phy.pdcch.coreset.regBundleSize', coreset.REGBundleSize));
+if mappingType == "interleaved"
+    coreset.InterleaverSize = double(sixgr.util.structGet( ...
+        cfg, 'phy.pdcch.coreset.interleaverSize', coreset.InterleaverSize));
+end
 coreset.ShiftIndex = double(sixgr.util.structGet(cfg, 'phy.pdcch.coreset.shiftIndex', nCellID));
 
 % Search space

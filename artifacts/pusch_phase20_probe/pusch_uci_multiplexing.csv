@@ -1,0 +1,2 @@
+CaseID,Codeword,NumULSCHTB,UCIOnly,OACK,OCSI1,OCSI2,OCGUCI,BetaOffsetACK,BetaOffsetCSI1,BetaOffsetCSI2,ScalingAlpha,UCIOwnerCodeword,G,ULSCHBitCount,ACKCodedBitCount,CSI1CodedBitCount,CSI2CodedBitCount,CGUCICodedBitCount,PlaceholderXCount,PlaceholderYCount,MuxedBitCount,DemuxedACKBits,DemuxedCSI1Bits,DemuxedCSI2Bits,DemuxedCGUCIBits,ACKCRCOK,CSI1CRCOK,CSI2CRCOK,PayloadMatch,Status
+UCI-TYPED-ACK-CSI-CG,0,1,0,2,4,6,2,1,1.25,1.25,1,0,7488,7332,22,52,104,0,0,0,7488,10,1011,011010,11,1,1,1,1,PASS

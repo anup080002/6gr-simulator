@@ -1,0 +1,515 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-7.4.4, pluggy-1.0.0 -- C:\ProgramData\anaconda3\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main
+configfile: pytest.ini
+plugins: anyio-4.2.0
+collecting ... collected 68 items / 1 deselected / 67 selected
+
+tests/test_actual_lls_implementation_harness.py::test_actual_lls_implementation_harness PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_unavailable_plotted_metric_status PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_negative_fixture PASSED
+tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs PASSED
+tests/test_dut_reference_comparison.py::test_dut_reference_comparison PASSED
+tests/test_dut_yaml_catalog.py::test_dut_yaml_catalog_is_complete_and_overlay_only PASSED
+tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_is_a_canonical_webgui_mode PASSED
+tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_resolves_and_is_launchable PASSED
+tests/test_full_stack_webgui_contract.py::test_full_stack_page_contract_is_rendered_in_single_webgui PASSED
+tests/test_full_stack_webgui_contract.py::test_bounded_command_reports_success_and_timeout PASSED
+tests/test_full_stack_webgui_contract.py::test_incomplete_full_stack_run_remains_filesystem_indexable PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token PASSED
+tests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator PASSED
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_blocks_open_high_issue PASSED
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_allows_verified_issue PASSED
+tests/test_issue_backlog_gate.py::test_issue_backlog_gate_rejects_critical_waiver PASSED
+tests/test_lls_browser_fixed_snr_plot_gallery.py::test_reference_gallery_matches_fixed_snr_plot_filenames PASSED
+tests/test_lls_complete_output_contract.py::test_contract_sections_and_context PASSED
+tests/test_lls_complete_output_contract.py::test_contract_covers_required_domains PASSED
+tests/test_lls_complete_output_contract.py::test_generated_deliverables_exist_and_are_additive PASSED
+tests/test_lls_complete_output_contract.py::test_browser_uses_one_compact_shell_and_preserves_deep_links PASSED
+tests/test_lls_dashboard_filesystem_results.py::test_dashboard_discovers_filesystem_only_result_run PASSED
+tests/test_lls_dashboard_optional_mysql.py::test_dashboard_imports_without_mysql_connector PASSED
+tests/test_lls_dashboard_process_lifecycle.py::test_pid_reuse_requires_matching_matlab_command_identity PASSED
+tests/test_lls_dashboard_process_lifecycle.py::test_browser_runtime_config_disables_automatic_parallel_pool PASSED
+tests/test_lls_dashboard_process_lifecycle.py::test_browser_matlab_child_activates_webgui_database_contract PASSED
+tests/test_lls_dashboard_process_lifecycle.py::test_terminate_dashboard_run_refuses_unverified_process PASSED
+tests/test_lls_dashboard_process_lifecycle.py::test_verified_windows_stop_uses_exact_taskkill_and_removes_only_target_record PASSED
+tests/test_lls_outcome_summary.py::test_lls_outcome_summary PASSED
+tests/test_no_label_only_success.py::test_no_label_only_success PASSED
+tests/test_phase18_recovery.py::test_artifact_manifest_path_resolution_is_exact FAILED
+tests/test_phase18_recovery.py::test_schema_adapter_registry_metadata_is_complete FAILED
+tests/test_phase18_recovery.py::test_reanalysis_result_schemas_and_contract_counts FAILED
+tests/test_phase18_recovery.py::test_parent_child_status_consistency FAILED
+tests/test_phase18_recovery.py::test_source_run_hashes_were_not_mutated FAILED
+tests/test_phase18_recovery.py::test_webgui_distinguishes_reanalysis_from_original FAILED
+tests/test_phase18_recovery.py::test_regression_helper_emits_progress_heartbeat PASSED
+tests/test_phase18_recovery.py::test_regression_helper_enforces_per_test_timeout PASSED
+tests/test_phy_value_invariants.py::test_phy_value_invariants PASSED
+tests/test_prompt11_lls_manifest.py::test_manifest_audit_rejects_configured_noise_and_perfect_channel PASSED
+tests/test_prompt11_lls_manifest.py::test_csv_generator_derives_runtime_tables_without_fake_tbs_reference PASSED
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv PASSED
+tests/test_prompt11_lls_manifest.py::test_acceptance_gate_reports_missing_manifest_without_throwing PASSED
+tests/test_pytest_collection_isolated_from_results.py::test_pytest_collection_isolated_from_results FAILED
+tests/test_real_function_coverage.py::test_real_function_coverage PASSED
+tests/test_single_webgui_implementation.py::test_repository_retains_one_webgui_implementation_and_launcher PASSED
+tests/test_single_webgui_implementation.py::test_profile_redirects_into_the_single_product_gui PASSED
+tests/test_single_webgui_implementation.py::test_protected_login_uses_the_compact_product_shell PASSED
+tests/test_webgui_mode_validation_outputs.py::test_mode_validation_aliases_are_registered PASSED
+tests/test_webgui_mode_validation_outputs.py::test_output_contract_surfaces_mode_sections PASSED
+tests/test_webgui_mode_validation_outputs.py::test_webgui_bucket_classifiers_cover_mode_outputs PASSED
+tests/test_webgui_mode_validation_outputs.py::test_reference_plot_gallery_has_mode_specific_aliases PASSED
+tests/test_webgui_run_management.py::test_uploaded_yaml_uses_selected_master_without_overwriting_catalog PASSED
+tests/test_webgui_run_management.py::test_filesystem_run_delete_removes_only_the_selected_run_outputs PASSED
+tests/test_webgui_run_management.py::test_run_delete_rejects_broad_or_unrelated_output_paths PASSED
+tests/test_webgui_run_management.py::test_bulk_delete_deduplicates_ids_and_preflights_active_runs PASSED
+tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_geometry_master_is_self_contained_and_launchable PASSED
+tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view PASSED
+tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_high_mobility_derives_cdlc_and_doppler PASSED
+tests/test_webgui_two_lls_scenario_modes.py::test_webgui_lists_new_lls_scenario_modes FAILED
+tests/test_webgui_two_lls_scenario_modes.py::test_webgui_snr_sweep_metadata_and_label PASSED
+tests/test_webgui_two_lls_scenario_modes.py::test_webgui_geometry_metadata_and_label PASSED
+tests/test_webgui_two_lls_scenario_modes.py::test_home_page_surfaces_scenario_validation_mode_panel PASSED
+
+================================== FAILURES ===================================
+_______________ test_artifact_manifest_path_resolution_is_exact _______________
+
+    def test_artifact_manifest_path_resolution_is_exact() -> None:
+>       rows = _csv("phase18_artifact_resolution_trace.csv")
+
+tests\test_phase18_recovery.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'phase18_artifact_resolution_trace.csv'
+
+    def _csv(name: str) -> list[dict[str, str]]:
+        path = REANALYSIS_ROOT / "reports" / "csv" / name
+>       assert path.is_file(), f"missing recovery artifact: {path}"
+E       AssertionError: missing recovery artifact: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260728_04_reanalysis\reports\csv\phase18_artifact_resolution_trace.csv
+E       assert False
+E        +  where False = <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_artifact_resolution_trace.csv')>()
+E        +    where <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_artifact_resolution_trace.csv')> = WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_artifact_resolution_trace.csv').is_file
+
+tests\test_phase18_recovery.py:30: AssertionError
+______________ test_schema_adapter_registry_metadata_is_complete ______________
+
+    def test_schema_adapter_registry_metadata_is_complete() -> None:
+>       rows = _csv("phase18_schema_adapter_results.csv")
+
+tests\test_phase18_recovery.py:63: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'phase18_schema_adapter_results.csv'
+
+    def _csv(name: str) -> list[dict[str, str]]:
+        path = REANALYSIS_ROOT / "reports" / "csv" / name
+>       assert path.is_file(), f"missing recovery artifact: {path}"
+E       AssertionError: missing recovery artifact: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260728_04_reanalysis\reports\csv\phase18_schema_adapter_results.csv
+E       assert False
+E        +  where False = <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_schema_adapter_results.csv')>()
+E        +    where <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_schema_adapter_results.csv')> = WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_schema_adapter_results.csv').is_file
+
+tests\test_phase18_recovery.py:30: AssertionError
+_____________ test_reanalysis_result_schemas_and_contract_counts ______________
+
+    def test_reanalysis_result_schemas_and_contract_counts() -> None:
+        expected = {
+            "phase18_recomputed_value_results.csv": (107, "CheckID"),
+            "phase18_recomputed_component_results.csv": (163, "ComponentID"),
+            "phase18_recomputed_subcase_results.csv": (31, "SubcaseID"),
+            "phase18_recomputed_acceptance_results.csv": (387, "RuleID"),
+        }
+        for name, (count, key) in expected.items():
+>           rows = _csv(name)
+
+tests\test_phase18_recovery.py:99: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'phase18_recomputed_value_results.csv'
+
+    def _csv(name: str) -> list[dict[str, str]]:
+        path = REANALYSIS_ROOT / "reports" / "csv" / name
+>       assert path.is_file(), f"missing recovery artifact: {path}"
+E       AssertionError: missing recovery artifact: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260728_04_reanalysis\reports\csv\phase18_recomputed_value_results.csv
+E       assert False
+E        +  where False = <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_recomputed_value_results.csv')>()
+E        +    where <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_recomputed_value_results.csv')> = WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_recomputed_value_results.csv').is_file
+
+tests\test_phase18_recovery.py:30: AssertionError
+____________________ test_parent_child_status_consistency _____________________
+
+    def test_parent_child_status_consistency() -> None:
+>       subcases = _csv("phase18_recomputed_subcase_results.csv")
+
+tests\test_phase18_recovery.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'phase18_recomputed_subcase_results.csv'
+
+    def _csv(name: str) -> list[dict[str, str]]:
+        path = REANALYSIS_ROOT / "reports" / "csv" / name
+>       assert path.is_file(), f"missing recovery artifact: {path}"
+E       AssertionError: missing recovery artifact: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260728_04_reanalysis\reports\csv\phase18_recomputed_subcase_results.csv
+E       assert False
+E        +  where False = <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_recomputed_subcase_results.csv')>()
+E        +    where <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_recomputed_subcase_results.csv')> = WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/csv/phase18_recomputed_subcase_results.csv').is_file
+
+tests\test_phase18_recovery.py:30: AssertionError
+___________________ test_source_run_hashes_were_not_mutated ___________________
+
+    def test_source_run_hashes_were_not_mutated() -> None:
+>       manifest = _manifest()
+
+tests\test_phase18_recovery.py:152: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def _manifest() -> dict:
+        path = (
+            REANALYSIS_ROOT
+            / "reports"
+            / "json"
+            / "phase18_reanalysis_manifest.json"
+        )
+>       assert path.is_file(), f"missing recovery manifest: {path}"
+E       AssertionError: missing recovery manifest: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase18_actual_20260728_04_reanalysis\reports\json\phase18_reanalysis_manifest.json
+E       assert False
+E        +  where False = <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/json/phase18_reanalysis_manifest.json')>()
+E        +    where <bound method Path.is_file of WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/json/phase18_reanalysis_manifest.json')> = WindowsPath('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/results/lls/lls_webgui_full_stack_sinr_geometry_qualification/phase18_actual_20260728_04_reanalysis/reports/json/phase18_reanalysis_manifest.json').is_file
+
+tests\test_phase18_recovery.py:42: AssertionError
+_____________ test_webgui_distinguishes_reanalysis_from_original ______________
+
+    def test_webgui_distinguishes_reanalysis_from_original() -> None:
+        original = dash.filesystem_run_row_from_folder(SOURCE_ROOT)
+        reanalysis = dash.filesystem_run_row_from_folder(REANALYSIS_ROOT)
+>       assert original is not None
+E       assert None is not None
+
+tests\test_phase18_recovery.py:168: AssertionError
+________________ test_pytest_collection_isolated_from_results _________________
+
+tmp_path = WindowsPath('C:/Users/anup0/AppData/Local/Temp/pytest-of-anup0/pytest-86/test_pytest_collection_isolate0')
+
+    def test_pytest_collection_isolated_from_results(tmp_path: Path) -> None:
+        probe = REPO_ROOT / "results" / "pytest_collection_isolation_probe"
+        if probe.exists():
+            shutil.rmtree(probe)
+        probe.mkdir(parents=True)
+        shadow = probe / "test_generated_result_shadow.py"
+        shadow.write_text(
+            "raise RuntimeError('generated result tree was collected')\n",
+            encoding="utf-8",
+        )
+        try:
+            first = _collect(REPO_ROOT)
+            shadow.unlink()
+            probe.rmdir()
+            second = _collect(tmp_path)
+        finally:
+            if probe.exists():
+                shutil.rmtree(probe)
+        assert first.returncode == 0, first.stdout
+>       assert second.returncode == 0, second.stdout
+E       AssertionError: tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics
+E         tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens
+E         tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_unavailable_plotted_metric_status
+E         tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_negative_fixture
+E         tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs
+E         tests/test_dut_yaml_catalog.py::test_dut_yaml_catalog_is_complete_and_overlay_only
+E         tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_is_a_canonical_webgui_mode
+E         tests/test_full_stack_webgui_contract.py::test_full_stack_scenario_resolves_and_is_launchable
+E         tests/test_full_stack_webgui_contract.py::test_full_stack_page_contract_is_rendered_in_single_webgui
+E         tests/test_full_stack_webgui_contract.py::test_bounded_command_reports_success_and_timeout
+E         tests/test_full_stack_webgui_contract.py::test_incomplete_full_stack_run_remains_filesystem_indexable
+E         tests/test_full_stack_webgui_e2e.py::test_full_stack_webgui_actual_run_workflow
+E         tests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable
+E         tests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed
+E         tests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token
+E         tests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator
+E         tests/test_issue_backlog_gate.py::test_issue_backlog_gate_blocks_open_high_issue
+E         tests/test_issue_backlog_gate.py::test_issue_backlog_gate_allows_verified_issue
+E         tests/test_issue_backlog_gate.py::test_issue_backlog_gate_rejects_critical_waiver
+E         tests/test_lls_browser_fixed_snr_plot_gallery.py::test_reference_gallery_matches_fixed_snr_plot_filenames
+E         tests/test_lls_complete_output_contract.py::test_contract_sections_and_context
+E         tests/test_lls_complete_output_contract.py::test_contract_covers_required_domains
+E         tests/test_lls_complete_output_contract.py::test_generated_deliverables_exist_and_are_additive
+E         tests/test_lls_complete_output_contract.py::test_browser_uses_one_compact_shell_and_preserves_deep_links
+E         tests/test_lls_dashboard_filesystem_results.py::test_dashboard_discovers_filesystem_only_result_run
+E         tests/test_lls_dashboard_optional_mysql.py::test_dashboard_imports_without_mysql_connector
+E         tests/test_lls_dashboard_process_lifecycle.py::test_pid_reuse_requires_matching_matlab_command_identity
+E         tests/test_lls_dashboard_process_lifecycle.py::test_browser_runtime_config_disables_automatic_parallel_pool
+E         tests/test_lls_dashboard_process_lifecycle.py::test_browser_matlab_child_activates_webgui_database_contract
+E         tests/test_lls_dashboard_process_lifecycle.py::test_terminate_dashboard_run_refuses_unverified_process
+E         tests/test_lls_dashboard_process_lifecycle.py::test_verified_windows_stop_uses_exact_taskkill_and_removes_only_target_record
+E         tests/test_phase18_recovery.py::test_artifact_manifest_path_resolution_is_exact
+E         tests/test_phase18_recovery.py::test_schema_adapter_registry_metadata_is_complete
+E         tests/test_phase18_recovery.py::test_reanalysis_result_schemas_and_contract_counts
+E         tests/test_phase18_recovery.py::test_parent_child_status_consistency
+E         tests/test_phase18_recovery.py::test_source_run_hashes_were_not_mutated
+E         tests/test_phase18_recovery.py::test_webgui_distinguishes_reanalysis_from_original
+E         tests/test_phase18_recovery.py::test_regression_helper_emits_progress_heartbeat
+E         tests/test_phase18_recovery.py::test_regression_helper_enforces_per_test_timeout
+E         tests/test_prompt11_lls_manifest.py::test_manifest_audit_rejects_configured_noise_and_perfect_channel
+E         tests/test_prompt11_lls_manifest.py::test_csv_generator_derives_runtime_tables_without_fake_tbs_reference
+E         tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+E         tests/test_prompt11_lls_manifest.py::test_acceptance_gate_reports_missing_manifest_without_throwing
+E         tests/test_pytest_collection_isolated_from_results.py::test_pytest_collection_isolated_from_results
+E         tests/test_single_webgui_implementation.py::test_repository_retains_one_webgui_implementation_and_launcher
+E         tests/test_single_webgui_implementation.py::test_profile_redirects_into_the_single_product_gui
+E         tests/test_single_webgui_implementation.py::test_protected_login_uses_the_compact_product_shell
+E         tests/test_webgui_mode_validation_outputs.py::test_mode_validation_aliases_are_registered
+E         tests/test_webgui_mode_validation_outputs.py::test_output_contract_surfaces_mode_sections
+E         tests/test_webgui_mode_validation_outputs.py::test_webgui_bucket_classifiers_cover_mode_outputs
+E         tests/test_webgui_mode_validation_outputs.py::test_reference_plot_gallery_has_mode_specific_aliases
+E         tests/test_webgui_run_management.py::test_uploaded_yaml_uses_selected_master_without_overwriting_catalog
+E         tests/test_webgui_run_management.py::test_filesystem_run_delete_removes_only_the_selected_run_outputs
+E         tests/test_webgui_run_management.py::test_run_delete_rejects_broad_or_unrelated_output_paths
+E         tests/test_webgui_run_management.py::test_bulk_delete_deduplicates_ids_and_preflights_active_runs
+E         tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_geometry_master_is_self_contained_and_launchable
+E         tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view
+E         tests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_high_mobility_derives_cdlc_and_doppler
+E         tests/test_webgui_two_lls_scenario_modes.py::test_webgui_lists_new_lls_scenario_modes
+E         tests/test_webgui_two_lls_scenario_modes.py::test_webgui_snr_sweep_metadata_and_label
+E         tests/test_webgui_two_lls_scenario_modes.py::test_webgui_geometry_metadata_and_label
+E         tests/test_webgui_two_lls_scenario_modes.py::test_home_page_surfaces_scenario_validation_mode_panel
+E         
+E         =================================== ERRORS ====================================
+E         ______ ERROR collecting tests/test_actual_lls_implementation_harness.py _______
+E         ImportError while importing test module 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_actual_lls_implementation_harness.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         C:\ProgramData\anaconda3\Lib\importlib\__init__.py:90: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E         C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_actual_lls_implementation_harness.py:3: in <module>
+E             from tests._actual_lls_test_helper import run_isolated_matlab_test
+E         E   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'
+E         ___________ ERROR collecting tests/test_dut_reference_comparison.py ___________
+E         ImportError while importing test module 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_dut_reference_comparison.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         C:\ProgramData\anaconda3\Lib\importlib\__init__.py:90: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E         C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_dut_reference_comparison.py:3: in <module>
+E             from tests._actual_lls_test_helper import run_isolated_matlab_test
+E         E   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'
+E         _____________ ERROR collecting tests/test_lls_outcome_summary.py ______________
+E         ImportError while importing test module 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_lls_outcome_summary.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         C:\ProgramData\anaconda3\Lib\importlib\__init__.py:90: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E         C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_lls_outcome_summary.py:3: in <module>
+E             from tests._actual_lls_test_helper import run_isolated_matlab_test
+E         E   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'
+E         ____________ ERROR collecting tests/test_no_label_only_success.py _____________
+E         ImportError while importing test module 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_no_label_only_success.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         C:\ProgramData\anaconda3\Lib\importlib\__init__.py:90: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E         C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_no_label_only_success.py:3: in <module>
+E             from tests._actual_lls_test_helper import run_isolated_matlab_test
+E         E   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'
+E         _____________ ERROR collecting tests/test_phy_value_invariants.py _____________
+E         ImportError while importing test module 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_phy_value_invariants.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         C:\ProgramData\anaconda3\Lib\importlib\__init__.py:90: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E         C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_phy_value_invariants.py:3: in <module>
+E             from tests._actual_lls_test_helper import run_isolated_matlab_test
+E         E   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'
+E         ____________ ERROR collecting tests/test_real_function_coverage.py ____________
+E         ImportError while importing test module 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_real_function_coverage.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         C:\ProgramData\anaconda3\Lib\importlib\__init__.py:90: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E         C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_real_function_coverage.py:3: in <module>
+E             from tests._actual_lls_test_helper import run_isolated_matlab_test
+E         E   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'
+E         ============================== warnings summary ===============================
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+E           C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+E             parse = parser.parseString(pattern)
+E         
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+E           C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+E             parser.resetCache()
+E         
+E         ..\..\..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+E           C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+E             ParserElement.enablePackrat()
+E         
+E         -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+E         =========================== short test summary info ===========================
+E         ERROR ..\..\..\..\..\..\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_actual_lls_implementation_harness.py
+E         ERROR ..\..\..\..\..\..\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_dut_reference_comparison.py
+E         ERROR ..\..\..\..\..\..\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_lls_outcome_summary.py
+E         ERROR ..\..\..\..\..\..\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_no_label_only_success.py
+E         ERROR ..\..\..\..\..\..\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_phy_value_invariants.py
+E         ERROR ..\..\..\..\..\..\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\test_real_function_coverage.py
+E         !!!!!!!!!!!!!!!!!!! Interrupted: 6 errors during collection !!!!!!!!!!!!!!!!!!!
+E         62 tests collected, 6 errors in 3.33s
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['C:\\ProgramData\\anaconda3\\python.exe', '-m', 'pytest', '--collect-only', '-q', 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests'], returncode=2, stdout="tests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics\ntests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_ignores_unrelated_unavailable_source_tokens\ntests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_unavailable_plotted_metric_status\ntests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_rejects_negative_fixture\ntests/test_audit_lls_visual_artifacts.py::test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs\ntests/test_dut_yaml_catalog.py::test_dut_yaml_catalog_is_complete_and_overlay_only\ntests/test_full_stack_webgui_contract.py::test_full_stack_scenario_is_a_canonical_webgui_mode\ntests/test_full_stack_webgui_contract.py::test_full_stack_scenario_resolves_and_is_launchable\ntests/test_full_stack_webgui_contract.py::test_full_stack_page_contract_is_rendered_in_single_webgui\ntests/test_full_stack_webgui_contract.py::test_bounded_command_reports_success_and_timeout\ntests/test_full_stack_webgui_contract.py::test_incomplete_full_stack_run_remains_filesystem_indexable\ntests/test_full_stack_webgui_e2e.py::test_full_stack_webgui_actual_run_workflow\ntests/test_full_stack_webgui_e2e_credentials.py::test_ephemeral_credential_is_file_backed_and_revocable\ntests/test_full_stack_webgui_e2e_credentials.py::test_expired_and_viewer_credentials_fail_closed\ntests/test_full_stack_webgui_e2e_credentials.py::test_secret_redaction_removes_password_and_token\ntests/test_full_stack_webgui_e2e_credentials.py::test_dashboard_resolves_and_revokes_ephemeral_operator\ntests/test_issue_backlog_gate.py::test_issue_backlog_gate_blocks_open_high_issue\ntests/test_issue_backlog_gate.py::test_issue_backlog_gate_allows_verified_issue\ntests/test_issue_backlog_gate.py::test_issue_backlog_gate_rejects_critical_waiver\ntests/test_lls_browser_fixed_snr_plot_gallery.py::test_reference_gallery_matches_fixed_snr_plot_filenames\ntests/test_lls_complete_output_contract.py::test_contract_sections_and_context\ntests/test_lls_complete_output_contract.py::test_contract_covers_required_domains\ntests/test_lls_complete_output_contract.py::test_generated_deliverables_exist_and_are_additive\ntests/test_lls_complete_output_contract.py::test_browser_uses_one_compact_shell_and_preserves_deep_links\ntests/test_lls_dashboard_filesystem_results.py::test_dashboard_discovers_filesystem_only_result_run\ntests/test_lls_dashboard_optional_mysql.py::test_dashboard_imports_without_mysql_connector\ntests/test_lls_dashboard_process_lifecycle.py::test_pid_reuse_requires_matching_matlab_command_identity\ntests/test_lls_dashboard_process_lifecycle.py::test_browser_runtime_config_disables_automatic_parallel_pool\ntests/test_lls_dashboard_process_lifecycle.py::test_browser_matlab_child_activates_webgui_database_contract\ntests/test_lls_dashboard_process_lifecycle.py::test_terminate_dashboard_run_refuses_unverified_process\ntests/test_lls_dashboard_process_lifecycle.py::test_verified_windows_stop_uses_exact_taskkill_and_removes_only_target_record\ntests/test_phase18_recovery.py::test_artifact_manifest_path_resolution_is_exact\ntests/test_phase18_recovery.py::test_schema_adapter_registry_metadata_is_complete\ntests/test_phase18_recovery.py::test_reanalysis_result_schemas_and_contract_counts\ntests/test_phase18_recovery.py::test_parent_child_status_consistency\ntests/test_phase18_recovery.py::test_source_run_hashes_were_not_mutated\ntests/test_phase18_recovery.py::test_webgui_distinguishes_reanalysis_from_original\ntests/test_phase18_recovery.py::test_regression_helper_emits_progress_heartbeat\ntests/test_phase18_recovery.py::test_regression_helper_enforces_per_test_timeout\ntests/test_prompt11_lls_manifest.py::test_manifest_audit_rejects_configured_noise_and_perfect_channel\ntests/test_prompt11_lls_manifest.py::test_csv_generator_derives_runtime_tables_without_fake_tbs_reference\ntests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv\ntests/test_prompt11_lls_manifest.py::test_acceptance_gate_reports_missing_manifest_without_throwing\ntests/test_pytest_collection_isolated_from_results.py::test_pytest_collection_isolated_from_results\ntests/test_single_webgui_implementation.py::test_repository_retains_one_webgui_implementation_and_launcher\ntests/test_single_webgui_implementation.py::test_profile_redirects_into_the_single_product_gui\ntests/test_single_webgui_implementation.py::test_protected_login_uses_the_compact_product_shell\ntests/test_webgui_mode_validation_outputs.py::test_mode_validation_aliases_are_registered\ntests/test_webgui_mode_validation_outputs.py::test_output_contract_surfaces_mode_sections\ntests/test_webgui_mode_validation_outputs.py::test_webgui_bucket_classifiers_cover_mode_outputs\ntests/test_webgui_mode_validation_outputs.py::test_reference_plot_gallery_has_mode_specific_aliases\ntests/test_webgui_run_management.py::test_uploaded_yaml_uses_selected_master_without_overwriting_catalog\ntests/test_webgui_run_management.py::test_filesystem_run_delete_removes_only_the_selected_run_outputs\ntests/test_webgui_run_management.py::test_run_delete_rejects_broad_or_unrelated_output_paths\ntests/test_webgui_run_management.py::test_bulk_delete_deduplicates_ids_and_preflights_active_runs\ntests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_geometry_master_is_self_contained_and_launchable\ntests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_canonical_topology_derives_large_scale_runtime_view\ntests/test_webgui_singlefile_full_lls_yaml.py::test_webgui_singlefile_high_mobility_derives_cdlc_and_doppler\ntests/test_webgui_two_lls_scenario_modes.py::test_webgui_lists_new_lls_scenario_modes\ntests/test_webgui_two_lls_scenario_modes.py::test_webgui_snr_sweep_metadata_and_label\ntests/test_webgui_two_lls_scenario_modes.py::test_webgui_geometry_metadata_and_label\ntests/test_webgui_two_lls_scenario_modes.py::test_home_page_surfaces_scenario_validation_mode_panel\n\n=================================== ERRORS ====================================\n______ ERROR collecting tests/test_actual_lls_implementation_harness.py _______\nImportError while importing test module 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_actual_lls_implementation_harness.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\nC:\\ProgramData\\anaconda3\\Lib\\importlib\\__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\nC:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_actual_lls_implementation_harness.py:3: in <module>\n    from tests._actual_lls_test_helper import run_isolated_matlab_test\nE   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'\n___________ ERROR collecting tests/test_dut_reference_comparison.py ___________\nImportError while importing test module 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_dut_reference_comparison.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\nC:\\ProgramData\\anaconda3\\Lib\\importlib\\__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\nC:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_dut_reference_comparison.py:3: in <module>\n    from tests._actual_lls_test_helper import run_isolated_matlab_test\nE   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'\n_____________ ERROR collecting tests/test_lls_outcome_summary.py ______________\nImportError while importing test module 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_lls_outcome_summary.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\nC:\\ProgramData\\anaconda3\\Lib\\importlib\\__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\nC:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_lls_outcome_summary.py:3: in <module>\n    from tests._actual_lls_test_helper import run_isolated_matlab_test\nE   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'\n____________ ERROR collecting tests/test_no_label_only_success.py _____________\nImportError while importing test module 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_no_label_only_success.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\nC:\\ProgramData\\anaconda3\\Lib\\importlib\\__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\nC:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_no_label_only_success.py:3: in <module>\n    from tests._actual_lls_test_helper import run_isolated_matlab_test\nE   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'\n_____________ ERROR collecting tests/test_phy_value_invariants.py _____________\nImportError while importing test module 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_phy_value_invariants.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\nC:\\ProgramData\\anaconda3\\Lib\\importlib\\__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\nC:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_phy_value_invariants.py:3: in <module>\n    from tests._actual_lls_test_helper import run_isolated_matlab_test\nE   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'\n____________ ERROR collecting tests/test_real_function_coverage.py ____________\nImportError while importing test module 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_real_function_coverage.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\nC:\\ProgramData\\anaconda3\\Lib\\importlib\\__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\nC:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_real_function_coverage.py:3: in <module>\n    from tests._actual_lls_test_helper import run_isolated_matlab_test\nE   ModuleNotFoundError: No module named 'tests._actual_lls_test_helper'\n============================== warnings summary ===============================\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88\n  C:\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'\n    parse = parser.parseString(pattern)\n\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92\n  C:\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'\n    parser.resetCache()\n\n..\\..\\..\\..\\..\\..\\..\\..\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_mathtext.py:45\n  C:\\ProgramData\\anaconda3\\Lib\\site-packages\\matplotlib\\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'\n    ParserElement.enablePackrat()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ===========================\nERROR ..\\..\\..\\..\\..\\..\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_actual_lls_implementation_harness.py\nERROR ..\\..\\..\\..\\..\\..\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_dut_reference_comparison.py\nERROR ..\\..\\..\\..\\..\\..\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_lls_outcome_summary.py\nERROR ..\\..\\..\\..\\..\\..\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_no_label_only_success.py\nERROR ..\\..\\..\\..\\..\\..\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_phy_value_invariants.py\nERROR ..\\..\\..\\..\\..\\..\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\tests\\test_real_function_coverage.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 6 errors during collection !!!!!!!!!!!!!!!!!!!\n62 tests collected, 6 errors in 3.33s\n").returncode
+
+tests\test_pytest_collection_isolated_from_results.py:49: AssertionError
+__________________ test_webgui_lists_new_lls_scenario_modes ___________________
+
+    def test_webgui_lists_new_lls_scenario_modes() -> None:
+        scenarios = dash.list_scenarios()
+        assert SNR_SWEEP_SCENARIO in scenarios
+        assert GEOMETRY_SCENARIO in scenarios
+>       assert dash.OPERATOR_MASTER_SCENARIOS == (
+            SNR_SWEEP_SCENARIO,
+            GEOMETRY_SCENARIO,
+        )
+E       AssertionError: assert ('master_sinr_sweep.yaml', 'master_geometry_based.yaml', 'lls_webgui_full_stack_sinr_geometry_qualification.yaml') == ('master_sinr_sweep.yaml', 'master_geometry_based.yaml')
+E         Left contains one more item: 'lls_webgui_full_stack_sinr_geometry_qualification.yaml'
+E         Full diff:
+E           (
+E            'master_sinr_sweep.yaml',
+E            'master_geometry_based.yaml',
+E         +  'lls_webgui_full_stack_sinr_geometry_qualification.yaml',
+E           )
+
+tests\test_webgui_two_lls_scenario_modes.py:21: AssertionError
+============================== warnings summary ===============================
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+..\..\..\..\..\..\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+tests/test_prompt11_lls_manifest.py: 25 warnings
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:88: PyparsingDeprecationWarning:
+  
+  'parseString' deprecated - use 'parse_string'
+
+tests/test_prompt11_lls_manifest.py: 25 warnings
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_fontconfig_pattern.py:92: PyparsingDeprecationWarning:
+  
+  'resetCache' deprecated - use 'reset_cache'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2010: PyparsingDeprecationWarning:
+  
+  'oneOf' deprecated - use 'one_of'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2012: PyparsingDeprecationWarning:
+  
+  'oneOf' deprecated - use 'one_of'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2020: PyparsingDeprecationWarning:
+  
+  'leaveWhitespace' deprecated - use 'leave_whitespace'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2024: PyparsingDeprecationWarning:
+  
+  'oneOf' deprecated - use 'one_of'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2027: PyparsingDeprecationWarning:
+  
+  'oneOf' deprecated - use 'one_of'
+
+tests/test_prompt11_lls_manifest.py: 45 warnings
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:1984: PyparsingDeprecationWarning:
+  
+  'setName' deprecated - use 'set_name'
+
+tests/test_prompt11_lls_manifest.py: 44 warnings
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:1987: PyparsingDeprecationWarning:
+  
+  'setParseAction' deprecated - use 'set_parse_action'
+
+tests/test_prompt11_lls_manifest.py: 16 warnings
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:1748: PyparsingDeprecationWarning:
+  
+  'setParseAction' deprecated - use 'set_parse_action'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2080: PyparsingDeprecationWarning:
+  
+  'endQuoteChar' argument is deprecated, use 'end_quote_char'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2089: PyparsingDeprecationWarning:
+  
+  'oneOf' deprecated - use 'one_of'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2138: PyparsingDeprecationWarning:
+  
+  'unquoteResults' argument is deprecated, use 'unquote_results'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2139: PyparsingDeprecationWarning:
+  
+  'leaveWhitespace' deprecated - use 'leave_whitespace'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2162: PyparsingDeprecationWarning:
+  
+  'parseString' deprecated - use 'parse_string'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2189: PyparsingDeprecationWarning:
+  
+  'parseString' deprecated - use 'parse_string'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\Users\anup0\AppData\Roaming\Python\Python312\site-packages\pyparsing\util.py:466: PyparsingDeprecationWarning:
+  
+  'parseAll' argument is deprecated, use 'parse_all'
+
+tests/test_prompt11_lls_manifest.py::test_plot_generator_renders_measured_sinr_html_and_png_from_real_csv
+  C:\ProgramData\anaconda3\Lib\site-packages\matplotlib\_mathtext.py:2170: PyparsingDeprecationWarning:
+  
+  'resetCache' deprecated - use 'reset_cache'
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_phase18_recovery.py::test_artifact_manifest_path_resolution_is_exact
+FAILED tests/test_phase18_recovery.py::test_schema_adapter_registry_metadata_is_complete
+FAILED tests/test_phase18_recovery.py::test_reanalysis_result_schemas_and_contract_counts
+FAILED tests/test_phase18_recovery.py::test_parent_child_status_consistency
+FAILED tests/test_phase18_recovery.py::test_source_run_hashes_were_not_mutated
+FAILED tests/test_phase18_recovery.py::test_webgui_distinguishes_reanalysis_from_original
+FAILED tests/test_pytest_collection_isolated_from_results.py::test_pytest_collection_isolated_from_results
+FAILED tests/test_webgui_two_lls_scenario_modes.py::test_webgui_lists_new_lls_scenario_modes
+==== 8 failed, 59 passed, 1 deselected, 181 warnings in 335.15s (0:05:35) =====

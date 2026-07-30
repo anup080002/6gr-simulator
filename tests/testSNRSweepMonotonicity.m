@@ -6,6 +6,7 @@ rng(1234, "twister");
 
 cfg = sixgr.config.defaultConfig();
 cfg.channel.model = "AWGN";
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;

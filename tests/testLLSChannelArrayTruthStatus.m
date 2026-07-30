@@ -35,6 +35,10 @@ assert(logical(tdl.Meta.ChannelUsesCountOnlyAntennaModel) && ~logical(tdl.Meta.C
 
 cfgTDL.phy.bsArray = [2 2 1];
 cfgTDL.phy.ueArray = [2 1 1];
+cfgTDL.phy.pdsch.numPorts = 4;
+cfgTDL.phy.pdsch.nPorts = 4;
+cfgTDL.phy.pusch.NumAntennaPorts = 2;
+cfgTDL.phy.pusch.numPorts = 2;
 cfgTDL.antenna.bs.geometry = "URA";
 cfgTDL.antenna.ue.geometry = "ULA";
 cfgTDL.antenna.bs.spacingLambda = [0.5 0.5];

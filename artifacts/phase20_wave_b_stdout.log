@@ -1,0 +1,74 @@
+PDSCH standards baseline: 3GPP TS 38.211 V18.8.0 | 3GPP TS 38.212 V18.8.0 | 3GPP TS 38.213 V18.8.0 | 3GPP TS 38.214 V18.8.0 | 3GPP TS 38.331 V18.8.0 | MATLAB 2026a
+PDSCHSchedulingAssignment: 22/22 frozen rows passed.\nPDSCHSPSAssignment: 6 frozen SPS rows passed.\nPDSCH FDRA: type-0, type-1, dynamic decode and four negatives passed.\nPDSCH TDRA: mapping A/B, extended CP, repetition and four negatives passed.\nPDSCH MCS resolver: 113 normative entries and 15 reserved entries passed.
+PDSCH 1024QAM applicability: 74 bands, 5 deployment bindings, 3 DCI formats, 2 capability variants, 4 additional valid resolver contexts, 1 connected-strict DCI 1_3 assignment, and 30 explicit negative contexts passed.
+PDSCH phase evidence MCS fail-closed: 1/1 passed.
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.
+PDSCH config materializer: immutable one-way adapter passed.\nPDSCH TBS/base graph: frozen positives 18/18, negatives 5/5, production plans 12; mismatches=0
+PDSCH TB CRC vectors: 18/18 pass; exact bit mismatches=0
+PDSCH segmentation: 11 independent boundary cases, multi-CB=3, with-filler=9; mismatches=0
+PDSCH independent external LDPC fixtures: 2/2 exact, digest mismatches=0
+PDSCH rate matching: 20 independent RV/index comparisons (including Nref); mismatches=0
+PDSCH no-noise DL-SCH: 4/4 CRC pass, total bit errors=0, multi-CB=1
+PDSCH two-codeword coding: rank=5 layers=[2 3], CRC pass=2/2, bit errors=0
+PDSCH scrambling vectors: 12/12 pass; exact bit mismatches=0
+PDSCH modulation vectors: 20/20 pass, negatives 4/4; max error 6.28e-15
+PDSCH soft-demodulation LLR convention: 960 bits across 5 modulations pass
+PDSCH 1024-QAM round trip: 1024/1024 points and 10240/10240 bits pass
+PDSCH layer vectors: 8/8 ranks, 36/36 layers, negatives 5/5 pass
+PDSCH strict RX no-noise: ranks 1-8, 12 codewords, max bit errors=0
+PDSCH precoder vectors: 9/9 valid, 6/6 typed negatives; TX applications=30 RX consumptions=30 max inverse error=5.35e-15
+PDSCH PRG independent multiplies: 48/48 pass; max error 0
+PDSCH data/DM-RS/PT-RS consistency: 24/24 applications pass
+PDSCH frequency-selective end-to-end: 32 resources pass; correct error 3.23e-15 stale-wideband error 4.74
+PDSCH precoder power: 9/9 slices pass; max relative error 4.11e-16
+PDSCH strict RX no-noise: ranks 1-8, 12 codewords, max bit errors=0
+PDSCH strict RX no-signal: typed fail-closed pass
+PDSCH strict RX AWGN: CRC pass, estimated noise 2.77e-05
+PDSCH TDL truth receiver: BLER 0.000, SINR 40.63 dB
+PDSCH CDL truth receiver: BLER 0.000, SINR 35.29 dB
+PDSCH strict RX LLR convention: sign and typed guard pass
+PDSCH strict RX wrong RNTI: controlled CRC failure pass
+PDSCH strict RX wrong scrambling identity: controlled CRC failure pass
+PDSCH strict RX wrong DM-RS port: controlled CRC failure pass
+PDSCH strict RX wrong PRG map: controlled CRC failure pass
+PDSCH high-rank fading: rank3 SINR 1.79 dB, rank6 SINR -0.82 dB
+PDSCH BLER stop policy: 0/4 errors, FIXED_TRIAL_BUDGET_COMPLETE
+PDSCH HARQ transitions: 11/11 frozen rows passed.\nPDSCH HARQ position-aware combining passed.\nPDSCH HARQ RV sequence [0 2 3 1] passed.\nPDSCH HARQ NDI reset passed.\nPDSCH HARQ two-codeword isolation passed.\nPDSCH HARQ incompatible retransmission negatives passed.\nPDSCH HARQ gain: single=21/240 CI=[0.058 0.130], combined=123/240 CI=[0.450 0.575].\nPDSCH active-BWP binding passed.\nPDSCH cross-carrier binding passed.\nPDSCH TCI-state binding passed.\nPDSCH QCL propagation passed.\nPDSCH two-TRP: 2 canonical TX/RX occasions, actual receiver LLR sum, combined CRC and exact TB passed.\nPDSCH declared coverage: 112 executions, 85 typed negatives, 30 fading truth anchors
+PDSCH runner honesty: observed accounting passes; artifact test is nonrecursive and runner records its real validator result.
+Campaign PDSCH calibration binding: 6/6 TX profiles, 4/4 RX coding-plan/profile bindings, 4/4 throughput profiles.
+[2026-07-29T17:25:37Z] INFO Preparing LLS run: scenario=pdsch6gr_runner_smoke runTag=pdsch6gr_runner_smoke runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdsch6gr_runner_smoke\pdsch6gr_runner_smoke
+[2026-07-29T17:25:39Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-29T17:25:39Z] INFO Writing resolved snapshots.
+[2026-07-29T17:25:40Z] INFO Exporting live geometry artifacts.
+[2026-07-29T17:25:40Z] INFO Executing runner profile=pdsch6gr_truth_study.
+[2026-07-29T17:26:48Z] INFO Runner profile completed. result.Ok=1
+[2026-07-29T17:26:48Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-29T17:26:48Z] INFO Annotating CSV artifacts.
+[2026-07-29T17:26:51Z] INFO Writing scenario summary CSV.
+[2026-07-29T17:26:51Z] INFO Writing runtime and environment summaries.
+[2026-07-29T17:26:52Z] INFO Writing scenario manifest.
+[2026-07-29T17:26:53Z] INFO Smoke publication mode active; skipping release truth-contract/report bundle publication.
+PDSCH two-codeword HARQ: 2 TB contexts, aggregate 2344 bits, typed mismatch guard PASS
+PDSCH codeword/layer ranks=1:8 maxLayerInverseErr=0 maxBER=0
+PDSCH study immutable coding plans: 1 production repetition, 1 position-aware combine, 5/5 typed legacy-signature rejections.
+PDSCH grant-driven exact vectors=30 maxLayerErr=3.14e-16 maxPortErr=9.69e-16 maxGridErr=9.69e-16 maxPowerErr=0
+PDSCHLLRScalingConvention: direct-demapper match, G lineage and perturbation sensitivity verified.
+Multi-port DM-RS metrics: ranks 2/3/4/8 finite, port-aware, perturbation-sensitive PASS
+ResourceAccountingExact: PDSCH=200 PUSCH=200 maxTBSDelta=0 auditedULG=83532
+CodingLayoutContracts: configs=4 rv=4 randomRoundTrips=100 bitErrors=0
+Running testPUSCHULSCHPhaseCore
+...
+Done testPUSCHULSCHPhaseCore
+__________
+
+Running testUCIPUSCHPhaseCore
+....
+Done testUCIPUSCHPhaseCore
+__________
+
+                 ParentRunID                 SubcaseID    ExecutionGroup    Executed    EvidencePresent    CorrectnessChecked                                                                                          RequiredArtifacts                                                                                           MatchedArtifacts    Status                    FailureCode                                                                                                    OutputRoot                                                                                 
+    _____________________________________    _________    ______________    ________    _______________    __________________    ______________________________________________________________________________________________________________________________________________________________________________________________    ________________    ______    ___________________________________________    ___________________________________________________________________________________________________________________________________________________________________________
+
+    "phase18_actual_20260729_01_recovery"     "SC-08"        "PDSCH"         true            false               false           "pdsch_re_mapping.csv|pdsch_dmrs_matrix.csv|pdsch_ptrs_matrix.csv|pdsch_coding_chain.csv|pdsch_resource_grid_ownership.png|pdsch_dmrs_ptrs_map.png|pdsch_codeword_layer_mapping.png"                     ""           "FAIL"    "sixgr:pdsch:PDSCHFocusedTests:SuiteFailed"    "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase20_targeted_wave_b_20260729_01"
+    "phase18_actual_20260729_01_recovery"     "SC-09"        "PUSCH"         true            false               false           "pusch_uci_multiplexing.csv|pusch_dmrs_matrix.csv|pusch_ptrs_matrix.csv|pusch_frequency_hopping.csv|pusch_uci_bit_allocation.png|pusch_dmrs_ptrs_hop_map.png|pusch_frequency_hop_timeline.png"           ""           "FAIL"    "sixgr:pusch:ArtifactVerificationFailed"       "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\lls_webgui_full_stack_sinr_geometry_qualification\phase20_targeted_wave_b_20260729_01"
+

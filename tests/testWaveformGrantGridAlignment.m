@@ -27,6 +27,8 @@ cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdcch.symbolAllocation = [0 2];
 cfg.phy.pdsch.symbolAllocation = [2 12];
 cfg.phy.pdsch.mappingType = "A";
+cfg.phy.pdsch.dmrs.portSet = 0;
+cfg.phy.pusch.dmrs.portSet = 0;
 
 cfg.channel.awgnOnly = false;
 cfg.channel.model = "TDL-C";

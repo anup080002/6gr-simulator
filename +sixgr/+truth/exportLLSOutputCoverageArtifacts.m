@@ -5219,8 +5219,7 @@ T = table( ...
 end
 
 function repoRoot = localRepoRootFromThisFile()
-thisFile = string(mfilename("fullpath"));
-repoRoot = string(fileparts(fileparts(fileparts(char(thisFile)))));
+repoRoot = string(sixgr.utils.getRepoRoot());
 if exist(fullfile(repoRoot, ".git"), "dir") ~= 7 && exist(fullfile(repoRoot, "tools", "audit_lls_visual_artifacts.py"), "file") ~= 2
     repoRoot = "";
 end
@@ -6964,7 +6963,9 @@ if nargin < 1 || strlength(string(startPath)) == 0
 end
 current = string(startPath);
 while strlength(current) > 0
-    if isfolder(fullfile(current, ".git"))
+    if isfolder(fullfile(current, ".git")) && ...
+            isfile(fullfile(current, "setup6GRSimToolkit.m")) && ...
+            isfolder(fullfile(current, "+sixgr"))
         repoRoot = current;
         return;
     end

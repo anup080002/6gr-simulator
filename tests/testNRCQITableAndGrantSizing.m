@@ -65,6 +65,8 @@ assert(double(mcsProfile.SpectralEfficiency) <= double(cqiProfile.SpectralEffici
 
 cfgStrict = sixgr.config.defaultConfig();
 cfgStrict.run.strictMode = true;
+cfgStrict.phy.pdsch.symbolAllocation = [0 14];
+cfgStrict.phy.pdsch.mappingType = "B";
 cfgStrict = sixgr.config.normalizeConfig(cfgStrict);
 schStrict = sixgr.l2.mac.SchedulerPF(cfgStrict, "Direction", "DL");
 [~, ~, nrePerPRB, info] = schStrict.estimateTBS("QPSK", 1, 12, [0 14], 0.5);

@@ -1,0 +1,2 @@
+CaseID,TransformPrecoding,TimeDensity,FrequencyDensity,REOffset,PTRSPortSet,AssociatedDMRSPort,Hop,PTRSRECount,ExpectedPresent,PresenceReason,CPEBeforeDeg,CPEAfterDeg,EVMBeforePercent,EVMAfterPercent,SequenceDigest,IndexMismatchCount,InputMutationCount,Status
+RESOURCE-R1-PTRS,0,1,2,00,0,0,0,78,1,release_valid_ptrs_enabled,0,0,0,0,5522c723e860465db40b1b3ef7bc2005fe8c3a6462e795984cf78be44741818a,0,0,PASS

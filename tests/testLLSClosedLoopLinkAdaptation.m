@@ -8,6 +8,7 @@ cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.phy.nTxAnt = 2;

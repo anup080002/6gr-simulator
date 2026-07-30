@@ -2,9 +2,10 @@ function p = resolveResultsRoot(inPath)
 %RESOLVERESULTSROOT Anchor campaign results under the repo-local results tree.
 %
 % Relative paths are always interpreted from the repository root, never the
-% caller's current working directory. Absolute paths are only accepted when
-% they already live under <repo>/results; everything else is redirected to
-% the repo-local results root to keep artifacts inside the repository.
+% caller's current working directory. Absolute paths are accepted when they
+% live under <repo>/results.  Regression workers may additionally opt into
+% one externally configured scratch tree through
+% SIXGR_REGRESSION_SCRATCH_ROOT; no other external path is accepted.
 
 repoRoot = localRepoRoot();
 repoResults = localNormalizePath(fullfile(repoRoot, "results"));
@@ -16,7 +17,10 @@ if strlength(string(p)) == 0
 end
 
 if localIsAbsolutePath(p)
-    if localPathStartsWith(p, repoResults)
+    regressionScratch = localRegressionScratchRoot();
+    if localPathStartsWith(p, repoResults) || ...
+            (strlength(string(regressionScratch)) > 0 && ...
+            localPathStartsWith(p, regressionScratch))
         return;
     end
     p = repoResults;
@@ -32,6 +36,13 @@ if strcmpi(p, "results") || startsWith(lower(string(p)), lower("results" + files
     p = localNormalizePath(fullfile(repoRoot, p));
 else
     p = localNormalizePath(fullfile(repoResults, p));
+end
+end
+
+function root = localRegressionScratchRoot()
+root = localNormalizePath(getenv("SIXGR_REGRESSION_SCRATCH_ROOT"));
+if strlength(string(root)) == 0 || ~localIsAbsolutePath(root)
+    root = "";
 end
 end
 

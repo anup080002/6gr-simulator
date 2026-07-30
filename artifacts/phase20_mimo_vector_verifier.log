@@ -1,0 +1,8 @@
+{
+  "manifest_files": 24,
+  "vector_rows": 4228,
+  "impact_families": 64,
+  "impact_experiments": 768,
+  "acceptance_rules": 96,
+  "failures": []
+}

@@ -86,6 +86,7 @@ cfg = sixgr.config.defaultConfig();
 cfg = sixgr.config.normalizeConfig(cfg);
 cfg = sixgr.util.structSet(cfg, "phy.ofdm.windowingPercent", 0.025);
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", 24);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.executionProfile", "phy_calibration");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.prbSet", 0:11);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.prbSet", 0:11);
 

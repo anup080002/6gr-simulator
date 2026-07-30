@@ -95,7 +95,8 @@ strictCfg.ShiftIndex = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.shift
 strictCfg.PrecoderGranularity = string(sixgr.util.structGet(cfg, ...
     "phy.pdcch.coreset.precoderGranularity", "sameAsREG-bundle"));
 strictCfg.SearchSpaceId = double(sixgr.util.structGet(cfg, "phy.pdcch.searchSpace.id", 1));
-strictCfg.SearchSpaceType = string(sixgr.util.structGet(cfg, "phy.pdcch.searchSpaceType", "ue"));
+strictCfg.SearchSpaceType = localCanonicalSearchSpaceType( ...
+    sixgr.util.structGet(cfg, "phy.pdcch.searchSpaceType", "ue"));
 strictCfg.SearchSpacePeriodicity = double(sixgr.util.structGet(cfg, ...
     "phy.pdcch.searchSpace.slotPeriodAndOffset", [1 0]));
 if numel(strictCfg.SearchSpacePeriodicity) >= 2
@@ -356,6 +357,18 @@ if ~(isstruct(source) && isscalar(source) && isfield(source, name)) || ...
         "Strict operator PDCCH configuration is missing '%s'.", name);
 end
 value = source.(name);
+end
+
+function value = localCanonicalSearchSpaceType(raw)
+token = lower(strtrim(string(raw)));
+switch token
+    case {"ue", "ue_specific", "ue-specific", "uss"}
+        value = "USS";
+    case {"common", "css"}
+        value = "CSS";
+    otherwise
+        value = string(raw);
+end
 end
 
 function bitmap = localFrequencyBitmap(rbStart, nRB)

@@ -49,7 +49,6 @@ assert(~isempty(dlCurve) && all(isfinite(double(dlCurve.CI_HalfWidth))), ...
 requiredAirCsv = [
     "air_interface/csv/lls_fixed_link_campaign.csv"
     "air_interface/csv/lls_snr_sweep.csv"
-    "air_interface/csv/lls_reference_snr_sweep.csv"
     "air_interface/csv/fixed_link_campaign_task_plan.csv"
     "air_interface/csv/dl_fixed_link_campaign_trials.csv"
     "air_interface/csv/ul_fixed_link_campaign_trials.csv"
@@ -60,6 +59,10 @@ for relPath = requiredAirCsv.'
     Ta = readtable(absPath, "VariableNamingRule", "preserve");
     assert(height(Ta) >= 1, "Fixed-link air-interface CSV is empty: %s", relPath);
 end
+assert(exist(fullfile(tmp, "air_interface", "csv", ...
+    "lls_reference_snr_sweep.csv"), "file") ~= 2, ...
+    ["A DUT fixed-link sweep must not be duplicated and mislabeled as an " ...
+    "independent reference sweep when no independent oracle was supplied."]);
 
 requiredReportCsv = [
     "reports/csv/fixed_snr_sweep_curve_summary.csv"

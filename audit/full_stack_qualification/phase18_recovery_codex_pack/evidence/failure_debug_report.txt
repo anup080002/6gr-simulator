@@ -1,0 +1,18 @@
+Error using . (line 236)
+Unrecognized table variable name 'ArtifactType'.
+
+Error in sixgr.integration.qualification.QualificationFinalizationCoordinator.assess (line 35)
+            png = string(audit.ArtifactType)=="PNG";
+                         ^^^^^^^^^^^^^^^^^^
+Error in sixgr.integration.qualification.FullStackQualificationRunner.run (line 158)
+            finalization = sixgr.integration.qualification. ...
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2039)
+            result = sixgr.integration.qualification. ...
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 39)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in run_6g_phy_lls_single (line 14)
+out = sixgr.lls6g.runners.runSingle(configPath, outputDir, runTag);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -12,6 +12,7 @@ import lls_web_dashboard as dash  # noqa: E402
 
 SNR_SWEEP_SCENARIO = "master_sinr_sweep.yaml"
 GEOMETRY_SCENARIO = "master_geometry_based.yaml"
+FULL_STACK_SCENARIO = "lls_webgui_full_stack_sinr_geometry_qualification.yaml"
 
 
 def test_webgui_lists_new_lls_scenario_modes() -> None:
@@ -21,6 +22,7 @@ def test_webgui_lists_new_lls_scenario_modes() -> None:
     assert dash.OPERATOR_MASTER_SCENARIOS == (
         SNR_SWEEP_SCENARIO,
         GEOMETRY_SCENARIO,
+        FULL_STACK_SCENARIO,
     )
     assert not any(name.endswith("_smoke.yaml") for name in scenarios)
 

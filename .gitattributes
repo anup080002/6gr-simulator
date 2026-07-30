@@ -1,1 +1,7 @@
+# Captured console logs preserve terminal formatting and are not source text.
+artifacts/phase18_*.log -text -whitespace
+artifacts/phase18_*.err -text -whitespace
+artifacts/phase20_*.log -text -whitespace
+artifacts/phase20_*.err -text -whitespace
+audit/full_stack_qualification/phase18_recovery_*/evidence/full_stack_regression_summary.csv -whitespace
 *.mat filter=lfs diff=lfs merge=lfs -text

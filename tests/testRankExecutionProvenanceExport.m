@@ -25,7 +25,10 @@ plan = scheduler.buildNewDataGrantPlan(ue, 0:15, [0 14], 2400);
 assert(logical(plan.Valid), "%s scheduler plan must remain valid after rank provenance wiring.", direction);
 localAssertRankFields(plan, expectedReason, "scheduler plan");
 
-[grants, ~] = scheduler.schedule(0, ue, struct("PRBSet", 0:15, "SymbolAllocation", [0 14]));
+[grants, ~] = scheduler.schedule(0, ue, struct( ...
+    "PRBSet", 0:15, ...
+    "ControlSymbolAllocation", [0 2], ...
+    "SymbolAllocation", [2 12]));
 assert(~isempty(grants), "%s scheduler must emit a grant for the provenance fixture.", direction);
 localAssertRankFields(grants(1), expectedReason, "finalized grant");
 end
@@ -42,17 +45,38 @@ grant = struct( ...
     "RankDowngradeApplied", true, ...
     "MaxSupportedLayers", 1);
 
+rejectedMixedOwnership = false;
 if direction == "DL"
+    try
+        sixgr.link.runDLPDSCHThroughput(cfg, ...
+            "NumFrames", 1, ...
+            "SNR_dB", 24, ...
+            "GrantSnapshot", grant, ...
+            "InterferenceBundle", struct([]));
+    catch ME
+        rejectedMixedOwnership = contains(string(ME.identifier), ...
+            "CalibrationSchedulerOwnershipForbidden");
+    end
+    assert(rejectedMixedOwnership, ...
+        "DL calibration must reject injected scheduler rank provenance.");
     out = sixgr.link.runDLPDSCHThroughput(cfg, ...
-        "NumFrames", 1, ...
-        "SNR_dB", 24, ...
-        "GrantSnapshot", grant, ...
+        "NumFrames", 1, "SNR_dB", 24, ...
         "InterferenceBundle", struct([]));
 else
+    try
+        sixgr.link.runULPUSCHThroughput(cfg, ...
+            "NumFrames", 1, ...
+            "SNR_dB", 24, ...
+            "GrantSnapshot", grant, ...
+            "InterferenceBundle", struct([]));
+    catch ME
+        rejectedMixedOwnership = contains(string(ME.identifier), ...
+            "CalibrationSchedulerOwnershipForbidden");
+    end
+    assert(rejectedMixedOwnership, ...
+        "UL calibration must reject injected scheduler rank provenance.");
     out = sixgr.link.runULPUSCHThroughput(cfg, ...
-        "NumFrames", 1, ...
-        "SNR_dB", 24, ...
-        "GrantSnapshot", grant, ...
+        "NumFrames", 1, "SNR_dB", 24, ...
         "InterferenceBundle", struct([]));
 end
 
@@ -63,16 +87,11 @@ required = ["RankSelectionPolicy","RankSelectionSource","RankDecisionReason", ..
     "RankDowngradeApplied","MaxSupportedLayers"];
 assert(all(ismember(required, string(T.Properties.VariableNames))), ...
     "%s trial table must export rank execution provenance columns.", direction);
-assert(strcmp(string(T.RankSelectionPolicy(1)), "adaptive"), ...
-    "%s trial table must preserve rank selection policy.", direction);
-assert(strcmp(string(T.RankSelectionSource(1)), expectedReason), ...
-    "%s trial table must preserve actionable rank selection source.", direction);
-assert(strcmp(string(T.RankDecisionReason(1)), expectedReason), ...
-    "%s trial table must preserve rank decision reason.", direction);
-assert(logical(T.RankDowngradeApplied(1)), ...
-    "%s trial table must preserve rank downgrade flag.", direction);
-assert(double(T.MaxSupportedLayers(1)) == 1, ...
-    "%s trial table must preserve max supported layer count.", direction);
+assert(strlength(string(T.RankSelectionSource(1))) == 0 && ...
+        strlength(string(T.RankDecisionReason(1))) == 0, ...
+    "%s calibration rows must not claim scheduler rank provenance.", direction);
+assert(~logical(T.RankDowngradeApplied(1)), ...
+    "%s calibration rows must not claim a scheduler rank downgrade.", direction);
 end
 
 function localAssertRankFields(s, expectedReason, label)
@@ -115,6 +134,7 @@ if direction == "DL"
     cfg.phy.pdsch.NumAntennaPorts = 1;
     cfg.phy.pdsch.mcsTable = "qam64_table1";
     cfg.phy.pdsch.modulation = "QPSK";
+    cfg.phy.pdsch.dmrs.portSet = 0;
     cfg.scenario.bs.nTxAnt = 1;
     cfg.scenario.ue.nRxAnt = 1;
     cfg.phy.nTxAnt = 1;
@@ -126,12 +146,14 @@ else
     cfg.phy.pusch.NumAntennaPorts = 1;
     cfg.phy.pusch.mcsTable = "qam64_table1";
     cfg.phy.pusch.modulation = "QPSK";
+    cfg.phy.pusch.dmrs.portSet = 0;
     cfg.phy.pusch.transmissionScheme = "codebook";
     cfg.scenario.ue.nTxAnt = 1;
     cfg.scenario.bs.nRxAnt = 1;
     cfg.phy.nTxAnt = 1;
     cfg.phy.nRxAnt = 1;
 end
+cfg = withCanonicalSchedulerTiming(cfg);
 end
 
 function cfg = localWaveformCfg(direction)
@@ -151,6 +173,10 @@ if direction == "DL"
     cfg.phy.pdsch.mcsIndex = 4;
     cfg.phy.pdsch.modulation = "QPSK";
     cfg.phy.pdsch.mcsTable = "qam64_table1";
+    cfg.phy.pdsch.executionProfile = "phy_calibration";
+    cfg.phy.pdsch.symbolAllocation = [2 12];
+    cfg.phy.pdsch.mappingType = "A";
+    cfg.phy.pdsch.dmrs.portSet = 0;
 else
     cfg.phy.pusch.nLayers = 1;
     cfg.phy.pusch.numLayers = 1;
@@ -158,6 +184,10 @@ else
     cfg.phy.pusch.modulation = "QPSK";
     cfg.phy.pusch.mcsTable = "qam64_table1";
     cfg.phy.pusch.transmissionScheme = "codebook";
+    cfg.phy.pusch.executionProfile = "phy_calibration";
+    cfg.phy.pusch.symbolAllocation = [2 12];
+    cfg.phy.pusch.mappingType = "A";
+    cfg.phy.pusch.dmrs.portSet = 0;
 end
 end
 

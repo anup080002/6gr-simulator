@@ -992,7 +992,14 @@ methods(Static, Access=private)
             if isempty(scheduler)
                 continue;
             end
-            [cellGrants, schedInfo] = scheduler.schedule(double(state.CurrentSlot), ueStates, budget);
+            % Runtime state exposes canonical slots one-based to MATLAB
+            % callers; scheduler timing and ScheduledAbsoluteSlot are
+            % zero-based.  Crossing this boundary without conversion makes
+            % K0/K2=0 appear to target the past and shifts every grant by
+            % one slot.
+            schedulerAbsoluteSlot = double(state.CurrentSlot) - 1;
+            [cellGrants, schedInfo] = scheduler.schedule( ...
+                schedulerAbsoluteSlot, ueStates, budget);
             state = sixgr.truth.CoupledTruthRuntime.appendSchedulerDecisionRows(state, schedInfo, direction, cellId);
             if isempty(cellGrants)
                 continue;

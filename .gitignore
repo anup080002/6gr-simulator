@@ -40,6 +40,16 @@ artifacts/frame_grid_phase_*probe*/
 artifacts/frame_grid_phase_*agent*/
 artifacts/frame_grid_phase_regression/
 
+# Local Phase-18/20 recovery diagnostics and disposable probes
+artifacts/phase18_*.log
+artifacts/phase18_*.err
+artifacts/phase18_*_counts.csv
+artifacts/phase20_*.log
+artifacts/phase20_*.err
+artifacts/phase20_*_pid.txt
+artifacts/phase20_*_counts*.csv
+artifacts/pusch_phase20_probe/
+
 # Web/dashboard runtime state and generated scenarios
 tmp_web_runs/
 tmp_dashboard/

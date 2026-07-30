@@ -1,0 +1,822 @@
+FULLSTACK_TEST_START testConfig
+FULLSTACK_TEST_END testConfig PASS
+[PASS] testConfig (23.03s)
+FULLSTACK_TEST_START testFrameNumerologyCatalog
+FULLSTACK_TEST_END testFrameNumerologyCatalog PASS
+[PASS] testFrameNumerologyCatalog (1.79s)
+FULLSTACK_TEST_START testNumerologyCallerMigration
+FULLSTACK_TEST_END testNumerologyCallerMigration PASS
+[PASS] testNumerologyCallerMigration (1.67s)
+FULLSTACK_TEST_START testTransmissionBandwidthCatalog
+FULLSTACK_TEST_END testTransmissionBandwidthCatalog PASS
+[PASS] testTransmissionBandwidthCatalog (1.03s)
+FULLSTACK_TEST_START testOFDMSamplingResolver
+FULLSTACK_TEST_END testOFDMSamplingResolver PASS
+[PASS] testOFDMSamplingResolver (2.06s)
+FULLSTACK_TEST_START testOFDMWindowingCallers
+FULLSTACK_TEST_END testOFDMWindowingCallers PASS
+[PASS] testOFDMWindowingCallers (3.86s)
+FULLSTACK_TEST_START testTDDCommonPattern
+FULLSTACK_TEST_END testTDDCommonPattern PASS
+[PASS] testTDDCommonPattern (3.47s)
+FULLSTACK_TEST_START testTDDDedicatedOverride
+FULLSTACK_TEST_END testTDDDedicatedOverride PASS
+[PASS] testTDDDedicatedOverride (1.73s)
+FULLSTACK_TEST_START testTDDMultiNumerologyExpansion
+FULLSTACK_TEST_END testTDDMultiNumerologyExpansion PASS
+[PASS] testTDDMultiNumerologyExpansion (2.73s)
+FULLSTACK_TEST_START testFlexibleSymbolAllocator
+FULLSTACK_TEST_END testFlexibleSymbolAllocator PASS
+[PASS] testFlexibleSymbolAllocator (0.38s)
+FULLSTACK_TEST_START testFDDSeparateFrameGrids
+FULLSTACK_TEST_END testFDDSeparateFrameGrids PASS
+[PASS] testFDDSeparateFrameGrids (3.51s)
+FULLSTACK_TEST_START testControlDataAllocationIndependence
+FULLSTACK_TEST_END testControlDataAllocationIndependence PASS
+[PASS] testControlDataAllocationIndependence (10.08s)
+FULLSTACK_TEST_START testResourceAllocationValidator
+FULLSTACK_TEST_END testResourceAllocationValidator PASS
+[PASS] testResourceAllocationValidator (3.96s)
+FULLSTACK_TEST_START testSSBTimingResolver
+FULLSTACK_TEST_END testSSBTimingResolver PASS
+[PASS] testSSBTimingResolver (7.88s)
+FULLSTACK_TEST_START testPRACHOccasionResolver
+[Warning: ZeroCorrelationZone=0 gives N_CS=0 with no cyclic-shift guard interval; use ZCZ >= 1 for non-zero cell-radius studies.] 
+[> In sixgr.rach.PRACHConfig>localValidateResolvedConfig (line 467)
+In sixgr.rach.PRACHConfig (line 221)
+In sixgr.phy.ra.buildPRACHConfigFromRACHCommon (line 30)
+In sixgr.phy.ra.generateMsg1PRACHWaveform (line 3)
+In testPRACHOccasionResolver (line 145)
+In testAll (line 427)] 
+FULLSTACK_TEST_END testPRACHOccasionResolver PASS
+[PASS] testPRACHOccasionResolver (71.17s)
+FULLSTACK_TEST_START testTimingRelationEngine
+FULLSTACK_TEST_END testTimingRelationEngine PASS
+[PASS] testTimingRelationEngine (33.29s)
+FULLSTACK_TEST_START testMultiBWPFrameGrid
+FULLSTACK_TEST_END testMultiBWPFrameGrid PASS
+[PASS] testMultiBWPFrameGrid (10.01s)
+FULLSTACK_TEST_START testCarrierAggregationFrameTiming
+FULLSTACK_TEST_END testCarrierAggregationFrameTiming PASS
+[PASS] testCarrierAggregationFrameTiming (7.33s)
+FULLSTACK_TEST_START testFrameGridArtifacts
+[Warning: ZeroCorrelationZone=0 gives N_CS=0 with no cyclic-shift guard interval; use ZCZ >= 1 for non-zero cell-radius studies.] 
+[> In sixgr.rach.PRACHConfig>localValidateResolvedConfig (line 467)
+In sixgr.rach.PRACHConfig (line 221)
+In sixgr.phy.ra.buildPRACHConfigFromRACHCommon (line 30)
+In sixgr.phy.ra.generateMsg1PRACHWaveform (line 3)
+In testPRACHOccasionResolver (line 145)
+In runFrameGridPhaseTests>localRunMandatoryTests (line 120)
+In runFrameGridPhaseTests (line 17)
+In testFrameGridArtifacts (line 8)
+In testAll (line 427)] 
+Frame/grid phase: 15 CSVs, 9 PNGs, all rows PASS.
+FULLSTACK_TEST_END testFrameGridArtifacts PASS
+[PASS] testFrameGridArtifacts (209.43s)
+FULLSTACK_TEST_START testFrameStructureEngine
+FULLSTACK_TEST_END testFrameStructureEngine PASS
+[PASS] testFrameStructureEngine (1.64s)
+FULLSTACK_TEST_START testFrameRuntimeStateBuilder
+FULLSTACK_TEST_END testFrameRuntimeStateBuilder PASS
+[PASS] testFrameRuntimeStateBuilder (34.22s)
+FULLSTACK_TEST_START testProductionTimingCallerMigration
+FULLSTACK_TEST_END testProductionTimingCallerMigration PASS
+[PASS] testProductionTimingCallerMigration (2.27s)
+FULLSTACK_TEST_START testCoreConfigCatalog
+FULLSTACK_TEST_END testCoreConfigCatalog PASS
+[PASS] testCoreConfigCatalog (1.51s)
+FULLSTACK_TEST_START test6GScenarioConfigValidation
+FULLSTACK_TEST_END test6GScenarioConfigValidation PASS
+[PASS] test6GScenarioConfigValidation (15.88s)
+FULLSTACK_TEST_START testOperatorMasterConfigurationContract
+FULLSTACK_TEST_END testOperatorMasterConfigurationContract PASS
+[PASS] testOperatorMasterConfigurationContract (17.85s)
+FULLSTACK_TEST_START testFixedLinkMasterYAMLAuthority
+Fixed-link master authority: carrier/BWP/PRB/MCS/rank/DMRS/PTRS/HARQ/channel/SNR/stopping/seeds verified; 1 DL + 1 UL production trial executed.
+FULLSTACK_TEST_END testFixedLinkMasterYAMLAuthority PASS
+[PASS] testFixedLinkMasterYAMLAuthority (60.80s)
+FULLSTACK_TEST_START testGeometryMasterRuntimeAuthority
+FULLSTACK_TEST_END testGeometryMasterRuntimeAuthority PASS
+[PASS] testGeometryMasterRuntimeAuthority (5.44s)
+FULLSTACK_TEST_START test6GParameterCatalog
+FULLSTACK_TEST_END test6GParameterCatalog PASS
+[PASS] test6GParameterCatalog (0.87s)
+FULLSTACK_TEST_START test6GScenarioRegistry
+FULLSTACK_TEST_END test6GScenarioRegistry PASS
+[PASS] test6GScenarioRegistry (17.00s)
+FULLSTACK_TEST_START test6GScenarioPromptCompliance
+FULLSTACK_TEST_END test6GScenarioPromptCompliance PASS
+[PASS] test6GScenarioPromptCompliance (23.14s)
+FULLSTACK_TEST_START test6GDeliverablesPack
+FULLSTACK_TEST_END test6GDeliverablesPack PASS
+[PASS] test6GDeliverablesPack (0.12s)
+FULLSTACK_TEST_START test6GRequiredScenarioFamilies
+FULLSTACK_TEST_END test6GRequiredScenarioFamilies PASS
+[PASS] test6GRequiredScenarioFamilies (1.22s)
+FULLSTACK_TEST_START test6GValidationRules
+FULLSTACK_TEST_END test6GValidationRules PASS
+[PASS] test6GValidationRules (14.49s)
+FULLSTACK_TEST_START test6GTopLevelSchemaSections
+FULLSTACK_TEST_END test6GTopLevelSchemaSections PASS
+[PASS] test6GTopLevelSchemaSections (2.07s)
+FULLSTACK_TEST_START testLLS4GHzUMaChannelProfileWiring
+FULLSTACK_TEST_END testLLS4GHzUMaChannelProfileWiring PASS
+[PASS] testLLS4GHzUMaChannelProfileWiring (17.12s)
+FULLSTACK_TEST_START testPrompt2TopologySRSPRACHRuntimeWiring
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=0
+[Warning: Speed_kmh=200 exceeds 120 km/h while RestrictedSet='UnrestrictedSet'; consider a restricted set for high-Doppler PRACH studies.] 
+[> In sixgr.rach.PRACHConfig>localValidateResolvedConfig (line 471)
+In sixgr.rach.PRACHConfig (line 221)
+In testPrompt2TopologySRSPRACHRuntimeWiring (line 92)
+In testAll (line 427)] 
+[Warning: Speed_kmh=200 exceeds 120 km/h while RestrictedSet='UnrestrictedSet'; consider a restricted set for high-Doppler PRACH studies.] 
+[> In sixgr.rach.PRACHConfig>localValidateResolvedConfig (line 471)
+In sixgr.rach.PRACHConfig (line 221)
+In sixgr.phy.prach.buildPRACHConfigFromScenario (line 58)
+In sixgr.phy.prach.PRACHConfigStrict (line 4)
+In testPrompt2TopologySRSPRACHRuntimeWiring (line 96)
+In testAll (line 427)] 
+FULLSTACK_TEST_END testPrompt2TopologySRSPRACHRuntimeWiring PASS
+[PASS] testPrompt2TopologySRSPRACHRuntimeWiring (14.30s)
+FULLSTACK_TEST_START testPrompt3AMCCQIRankWiring
+FULLSTACK_TEST_END testPrompt3AMCCQIRankWiring PASS
+[PASS] testPrompt3AMCCQIRankWiring (6.83s)
+FULLSTACK_TEST_START testPrompt4HARQClosedLoopIRCombining
+FULLSTACK_TEST_END testPrompt4HARQClosedLoopIRCombining PASS
+[PASS] testPrompt4HARQClosedLoopIRCombining (34.14s)
+FULLSTACK_TEST_START test6GProcessingChainsSchema
+FULLSTACK_TEST_END test6GProcessingChainsSchema PASS
+[PASS] test6GProcessingChainsSchema (1.76s)
+FULLSTACK_TEST_START test6GCSIReportingCoverage
+FULLSTACK_TEST_END test6GCSIReportingCoverage PASS
+[PASS] test6GCSIReportingCoverage (5.06s)
+FULLSTACK_TEST_START test6GReferenceSignalChainCoverage
+FULLSTACK_TEST_END test6GReferenceSignalChainCoverage PASS
+[PASS] test6GReferenceSignalChainCoverage (1.59s)
+FULLSTACK_TEST_START testFeatureParameterFiltering
+FULLSTACK_TEST_END testFeatureParameterFiltering PASS
+[PASS] testFeatureParameterFiltering (17.22s)
+FULLSTACK_TEST_START testLLSConfigOwnershipAuditExports
+FULLSTACK_TEST_END testLLSConfigOwnershipAuditExports PASS
+[PASS] testLLSConfigOwnershipAuditExports (64.78s)
+FULLSTACK_TEST_START testLLSBrowserInheritedDBConsistency
+FULLSTACK_TEST_END testLLSBrowserInheritedDBConsistency PASS
+[PASS] testLLSBrowserInheritedDBConsistency (73.53s)
+FULLSTACK_TEST_START testCSIRuntimeExecution
+FULLSTACK_TEST_END testCSIRuntimeExecution PASS
+[PASS] testCSIRuntimeExecution (93.24s)
+FULLSTACK_TEST_START testCSIPayloadPackingRuntime
+FULLSTACK_TEST_END testCSIPayloadPackingRuntime PASS
+[PASS] testCSIPayloadPackingRuntime (0.39s)
+FULLSTACK_TEST_START testTRSReferenceSignalExecution
+FULLSTACK_TEST_END testTRSReferenceSignalExecution PASS
+[PASS] testTRSReferenceSignalExecution (45.27s)
+FULLSTACK_TEST_START testSynchronizationStateSignConventions
+FULLSTACK_TEST_END testSynchronizationStateSignConventions PASS
+[PASS] testSynchronizationStateSignConventions (0.04s)
+FULLSTACK_TEST_START testDopplerPerPathDeembedding
+FULLSTACK_TEST_END testDopplerPerPathDeembedding PASS
+[PASS] testDopplerPerPathDeembedding (0.25s)
+FULLSTACK_TEST_START testTRSConfigStrictValidation
+FULLSTACK_TEST_END testTRSConfigStrictValidation PASS
+[PASS] testTRSConfigStrictValidation (5.91s)
+FULLSTACK_TEST_START testTRSGridGeneration
+FULLSTACK_TEST_END testTRSGridGeneration PASS
+[PASS] testTRSGridGeneration (0.33s)
+FULLSTACK_TEST_START testTRSDetectionPositiveAWGN
+FULLSTACK_TEST_END testTRSDetectionPositiveAWGN PASS
+[PASS] testTRSDetectionPositiveAWGN (0.23s)
+FULLSTACK_TEST_START testTRSTimingTrackingPositive
+FULLSTACK_TEST_END testTRSTimingTrackingPositive PASS
+[PASS] testTRSTimingTrackingPositive (0.24s)
+FULLSTACK_TEST_START testTRSFrequencyTrackingPositive
+FULLSTACK_TEST_END testTRSFrequencyTrackingPositive PASS
+[PASS] testTRSFrequencyTrackingPositive (0.23s)
+FULLSTACK_TEST_START testTRSChannelEstimationPositive
+FULLSTACK_TEST_END testTRSChannelEstimationPositive PASS
+[PASS] testTRSChannelEstimationPositive (0.21s)
+FULLSTACK_TEST_START testTRSNoSignalNegative
+FULLSTACK_TEST_END testTRSNoSignalNegative PASS
+[PASS] testTRSNoSignalNegative (0.22s)
+FULLSTACK_TEST_START testTRSWrongScramblingIdNegative
+FULLSTACK_TEST_END testTRSWrongScramblingIdNegative PASS
+[PASS] testTRSWrongScramblingIdNegative (0.23s)
+FULLSTACK_TEST_START testTRSWrongResourceMappingNegative
+FULLSTACK_TEST_END testTRSWrongResourceMappingNegative PASS
+[PASS] testTRSWrongResourceMappingNegative (0.23s)
+FULLSTACK_TEST_START testTRSCorruptedSymbolsNegative
+FULLSTACK_TEST_END testTRSCorruptedSymbolsNegative PASS
+[PASS] testTRSCorruptedSymbolsNegative (0.25s)
+FULLSTACK_TEST_START testTRSMissingResourceCoverageNegative
+FULLSTACK_TEST_END testTRSMissingResourceCoverageNegative PASS
+[PASS] testTRSMissingResourceCoverageNegative (0.23s)
+FULLSTACK_TEST_START testTRSLowSNRSweep
+FULLSTACK_TEST_END testTRSLowSNRSweep PASS
+[PASS] testTRSLowSNRSweep (0.24s)
+FULLSTACK_TEST_START testTRSTimingOffsetSweep
+FULLSTACK_TEST_END testTRSTimingOffsetSweep PASS
+[PASS] testTRSTimingOffsetSweep (0.20s)
+FULLSTACK_TEST_START testTRSFrequencyOffsetSweep
+FULLSTACK_TEST_END testTRSFrequencyOffsetSweep PASS
+[PASS] testTRSFrequencyOffsetSweep (0.25s)
+FULLSTACK_TEST_START testTRSOracleGuard
+FULLSTACK_TEST_END testTRSOracleGuard PASS
+[PASS] testTRSOracleGuard (0.23s)
+FULLSTACK_TEST_START testTRSTruthContractInvariants
+FULLSTACK_TEST_END testTRSTruthContractInvariants PASS
+[PASS] testTRSTruthContractInvariants (16.32s)
+FULLSTACK_TEST_START testTRSArtifactSchemas
+FULLSTACK_TEST_END testTRSArtifactSchemas PASS
+[PASS] testTRSArtifactSchemas (0.46s)
+FULLSTACK_TEST_START testReferenceSignalCausalProducersConsumers
+FULLSTACK_TEST_END testReferenceSignalCausalProducersConsumers PASS
+[PASS] testReferenceSignalCausalProducersConsumers (2.06s)
+FULLSTACK_TEST_START testSRSConfigStrictValidation
+FULLSTACK_TEST_END testSRSConfigStrictValidation PASS
+[PASS] testSRSConfigStrictValidation (13.03s)
+FULLSTACK_TEST_START testSRSGridGeneration
+FULLSTACK_TEST_END testSRSGridGeneration PASS
+[PASS] testSRSGridGeneration (0.49s)
+FULLSTACK_TEST_START testSRSDetectionPositiveAWGN
+FULLSTACK_TEST_END testSRSDetectionPositiveAWGN PASS
+[PASS] testSRSDetectionPositiveAWGN (0.30s)
+FULLSTACK_TEST_START testSRSChannelEstimationPositive
+FULLSTACK_TEST_END testSRSChannelEstimationPositive PASS
+[PASS] testSRSChannelEstimationPositive (0.39s)
+FULLSTACK_TEST_START testSRSFullCarrierCoveragePositive
+FULLSTACK_TEST_END testSRSFullCarrierCoveragePositive PASS
+[PASS] testSRSFullCarrierCoveragePositive (0.33s)
+FULLSTACK_TEST_START testSRSResolvedFullCarrierTolerance
+FULLSTACK_TEST_END testSRSResolvedFullCarrierTolerance PASS
+[PASS] testSRSResolvedFullCarrierTolerance (0.28s)
+FULLSTACK_TEST_START testSRSRuntimeCanonicalWidebandResource
+FULLSTACK_TEST_END testSRSRuntimeCanonicalWidebandResource PASS
+[PASS] testSRSRuntimeCanonicalWidebandResource (10.34s)
+FULLSTACK_TEST_START testSRSPartialBandDoesNotSatisfyFullClaim
+FULLSTACK_TEST_END testSRSPartialBandDoesNotSatisfyFullClaim PASS
+[PASS] testSRSPartialBandDoesNotSatisfyFullClaim (0.27s)
+FULLSTACK_TEST_START testSRSFrequencyHoppingCoverage
+FULLSTACK_TEST_END testSRSFrequencyHoppingCoverage PASS
+[PASS] testSRSFrequencyHoppingCoverage (0.35s)
+FULLSTACK_TEST_START testSRSPeriodicSchedule
+FULLSTACK_TEST_END testSRSPeriodicSchedule PASS
+[PASS] testSRSPeriodicSchedule (0.23s)
+FULLSTACK_TEST_START testSRSAperiodicTriggerValidation
+FULLSTACK_TEST_END testSRSAperiodicTriggerValidation PASS
+[PASS] testSRSAperiodicTriggerValidation (0.23s)
+FULLSTACK_TEST_START testSRSSemiPersistentActivationValidation
+FULLSTACK_TEST_END testSRSSemiPersistentActivationValidation PASS
+[PASS] testSRSSemiPersistentActivationValidation (0.28s)
+FULLSTACK_TEST_START testSRSNoSignalNegative
+FULLSTACK_TEST_END testSRSNoSignalNegative PASS
+[PASS] testSRSNoSignalNegative (0.30s)
+FULLSTACK_TEST_START testSRSWrongSequenceNegative
+FULLSTACK_TEST_END testSRSWrongSequenceNegative PASS
+[PASS] testSRSWrongSequenceNegative (0.20s)
+FULLSTACK_TEST_START testSRSWrongResourceMappingNegative
+FULLSTACK_TEST_END testSRSWrongResourceMappingNegative PASS
+[PASS] testSRSWrongResourceMappingNegative (0.23s)
+FULLSTACK_TEST_START testSRSWrongCombCyclicShiftNegative
+FULLSTACK_TEST_END testSRSWrongCombCyclicShiftNegative PASS
+[PASS] testSRSWrongCombCyclicShiftNegative (0.19s)
+FULLSTACK_TEST_START testSRSWrongPortNegative
+FULLSTACK_TEST_END testSRSWrongPortNegative PASS
+[PASS] testSRSWrongPortNegative (0.18s)
+FULLSTACK_TEST_START testSRSCorruptedSymbolsNegative
+FULLSTACK_TEST_END testSRSCorruptedSymbolsNegative PASS
+[PASS] testSRSCorruptedSymbolsNegative (0.18s)
+FULLSTACK_TEST_START testSRSLowSNRSweep
+FULLSTACK_TEST_END testSRSLowSNRSweep PASS
+[PASS] testSRSLowSNRSweep (0.23s)
+FULLSTACK_TEST_START testSRSTimingOffsetSweep
+FULLSTACK_TEST_END testSRSTimingOffsetSweep PASS
+[PASS] testSRSTimingOffsetSweep (0.19s)
+FULLSTACK_TEST_START testSRSMultiUEOrthogonality
+FULLSTACK_TEST_END testSRSMultiUEOrthogonality PASS
+[PASS] testSRSMultiUEOrthogonality (0.19s)
+FULLSTACK_TEST_START testSRSMultiUECollision
+FULLSTACK_TEST_END testSRSMultiUECollision PASS
+[PASS] testSRSMultiUECollision (0.21s)
+FULLSTACK_TEST_START testSRSOracleGuard
+FULLSTACK_TEST_END testSRSOracleGuard PASS
+[PASS] testSRSOracleGuard (0.18s)
+FULLSTACK_TEST_START testSRSTruthContractInvariants
+FULLSTACK_TEST_END testSRSTruthContractInvariants PASS
+[PASS] testSRSTruthContractInvariants (19.71s)
+FULLSTACK_TEST_START testSRSArtifactSchemas
+FULLSTACK_TEST_END testSRSArtifactSchemas PASS
+[PASS] testSRSArtifactSchemas (0.49s)
+FULLSTACK_TEST_START testChannelRFConfigStrictValidation
+FULLSTACK_TEST_END testChannelRFConfigStrictValidation PASS
+[PASS] testChannelRFConfigStrictValidation (5.38s)
+FULLSTACK_TEST_START testChannelGeometryAndLargeScaleParameters
+FULLSTACK_TEST_END testChannelGeometryAndLargeScaleParameters PASS
+[PASS] testChannelGeometryAndLargeScaleParameters (0.02s)
+FULLSTACK_TEST_START testTDLChannelAppliedToWaveform
+FULLSTACK_TEST_END testTDLChannelAppliedToWaveform PASS
+[PASS] testTDLChannelAppliedToWaveform (0.03s)
+FULLSTACK_TEST_START testCDLChannelAppliedToMIMOWaveform
+FULLSTACK_TEST_END testCDLChannelAppliedToMIMOWaveform PASS
+[PASS] testCDLChannelAppliedToMIMOWaveform (0.05s)
+FULLSTACK_TEST_START testO2IAndShadowingApplied
+FULLSTACK_TEST_END testO2IAndShadowingApplied PASS
+[PASS] testO2IAndShadowingApplied (0.02s)
+FULLSTACK_TEST_START testDopplerMobilityApplied
+FULLSTACK_TEST_END testDopplerMobilityApplied PASS
+[PASS] testDopplerMobilityApplied (0.03s)
+FULLSTACK_TEST_START testInterferenceTopologyAndPower
+FULLSTACK_TEST_END testInterferenceTopologyAndPower PASS
+[PASS] testInterferenceTopologyAndPower (0.02s)
+FULLSTACK_TEST_START testSharedSlotInterferenceSuperposition
+FULLSTACK_TEST_END testSharedSlotInterferenceSuperposition PASS
+[PASS] testSharedSlotInterferenceSuperposition (0.37s)
+FULLSTACK_TEST_START testSharedSlotReceiverFrontEndOrder
+FULLSTACK_TEST_END testSharedSlotReceiverFrontEndOrder PASS
+[PASS] testSharedSlotReceiverFrontEndOrder (0.40s)
+FULLSTACK_TEST_START testThermalNoiseAndNoiseFigure
+FULLSTACK_TEST_END testThermalNoiseAndNoiseFigure PASS
+[PASS] testThermalNoiseAndNoiseFigure (0.01s)
+FULLSTACK_TEST_START testPowerContextPhysicalUnits
+FULLSTACK_TEST_END testPowerContextPhysicalUnits PASS
+[PASS] testPowerContextPhysicalUnits (1.05s)
+FULLSTACK_TEST_START testRFImpairmentOrderedChain
+FULLSTACK_TEST_END testRFImpairmentOrderedChain PASS
+[PASS] testRFImpairmentOrderedChain (0.98s)
+FULLSTACK_TEST_START testRFImpairmentChainApplied
+FULLSTACK_TEST_END testRFImpairmentChainApplied PASS
+[PASS] testRFImpairmentChainApplied (0.20s)
+FULLSTACK_TEST_START testChannelConfiguredVsAppliedGate
+FULLSTACK_TEST_END testChannelConfiguredVsAppliedGate PASS
+[PASS] testChannelConfiguredVsAppliedGate (0.07s)
+FULLSTACK_TEST_START testChannelReproducibleSeeds
+FULLSTACK_TEST_END testChannelReproducibleSeeds PASS
+[PASS] testChannelReproducibleSeeds (7.00s)
+FULLSTACK_TEST_START testRuntimeChannelContinuity
+FULLSTACK_TEST_END testRuntimeChannelContinuity PASS
+[PASS] testRuntimeChannelContinuity (1.05s)
+FULLSTACK_TEST_START testStandaloneRuntimeChannelState
+FULLSTACK_TEST_END testStandaloneRuntimeChannelState PASS
+[PASS] testStandaloneRuntimeChannelState (0.48s)
+FULLSTACK_TEST_START testChannelDownstreamReferences
+FULLSTACK_TEST_END testChannelDownstreamReferences PASS
+[PASS] testChannelDownstreamReferences (0.02s)
+FULLSTACK_TEST_START testPerfectChannelOracleGuard
+FULLSTACK_TEST_END testPerfectChannelOracleGuard PASS
+[PASS] testPerfectChannelOracleGuard (0.01s)
+FULLSTACK_TEST_START testChannelRFNegativeTrials
+FULLSTACK_TEST_END testChannelRFNegativeTrials PASS
+[PASS] testChannelRFNegativeTrials (0.01s)
+FULLSTACK_TEST_START testChannelRFTruthContractInvariants
+FULLSTACK_TEST_END testChannelRFTruthContractInvariants PASS
+[PASS] testChannelRFTruthContractInvariants (8.66s)
+FULLSTACK_TEST_START testChannelRFArtifactSchemas
+FULLSTACK_TEST_END testChannelRFArtifactSchemas PASS
+[PASS] testChannelRFArtifactSchemas (0.26s)
+FULLSTACK_TEST_START test6GMandatoryStudyPackScenarios
+FULLSTACK_TEST_END test6GMandatoryStudyPackScenarios PASS
+[PASS] test6GMandatoryStudyPackScenarios (202.85s)
+FULLSTACK_TEST_START test6GExactScenarioSuites
+FULLSTACK_TEST_END test6GExactScenarioSuites PASS
+[PASS] test6GExactScenarioSuites (3.49s)
+FULLSTACK_TEST_START test6GScenarioRunner
+[Warning: Directory already exists.] 
+[> In sixgr.util.ensureFolder (line 17)
+In sixgr.lls6g.runners.runSingle>localEnsureScenarioDirs (line 3685)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 1940)
+In sixgr.lls6g.runners.runSingle (line 39)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 21)
+In testAll (line 427)] 
+[Warning: Directory already exists.] 
+[> In sixgr.util.ensureFolder (line 17)
+In sixgr.visual.clearRunImageDirectories (line 25)
+In sixgr.lls6g.runners.runSingle>localEnsureScenarioDirs (line 3687)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 1940)
+In sixgr.lls6g.runners.runSingle (line 39)
+In run_6g_phy_lls_single (line 14)
+In test6GScenarioRunner (line 21)
+In testAll (line 427)] 
+[2026-07-30T00:54:45Z] INFO Preparing LLS run: scenario=pdcch_smoke runTag=smoke runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+[2026-07-30T00:54:47Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T00:54:47Z] INFO Writing resolved snapshots.
+[2026-07-30T00:54:48Z] INFO Exporting live geometry artifacts.
+[2026-07-30T00:54:48Z] INFO Executing runner profile=pdcch_blind_decode_sweep.
+[2026-07-30T00:54:50Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T00:54:50Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T00:54:50Z] INFO Annotating CSV artifacts.
+[2026-07-30T00:54:51Z] INFO Writing scenario summary CSV.
+[2026-07-30T00:54:51Z] INFO Writing runtime and environment summaries.
+[2026-07-30T00:54:53Z] INFO Writing scenario manifest.
+[2026-07-30T00:54:53Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T00:55:56Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=0 strictFailures=2
+[2026-07-30T00:55:56Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T00:55:58Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T00:55:58Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T00:58:38Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T00:58:38Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\pdcch_smoke\smoke
+[2026-07-30T00:59:50Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T01:01:11Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=0 roundtripMismatch=0 evidenceMissing=0 strictFailures=1
+[2026-07-30T01:01:11Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T01:01:13Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T01:01:13Z] INFO Writing artifact manifest.
+[2026-07-30T01:01:14Z] INFO Writing scenario markdown report.
+[2026-07-30T01:01:14Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T01:01:14Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T01:01:14Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T01:01:14Z] INFO Writing MAT result bundle.
+[2026-07-30T01:01:16Z] INFO Pruning empty result directories.
+[2026-07-30T01:01:16Z] WARN Run completed with truth/status failures in 390.720 seconds: requiredFailures=1 strictTruthFailures=1
+FULLSTACK_TEST_END test6GScenarioRunner FAIL
+[FAIL] test6GScenarioRunner (395.51s)
+       Single 6G scenario runner should complete.
+FULLSTACK_TEST_START test6GScenarioMatrixRunner
+[2026-07-30T01:01:22Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag=repeat_1 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+[2026-07-30T01:01:23Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T01:01:23Z] INFO Writing resolved snapshots.
+[2026-07-30T01:01:24Z] INFO Exporting live geometry artifacts.
+[2026-07-30T01:01:24Z] INFO Executing runner profile=generic_sweep.
+[2026-07-30T01:01:25Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag= runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+[2026-07-30T01:01:26Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T01:01:26Z] INFO Writing resolved snapshots.
+[2026-07-30T01:01:26Z] INFO Exporting live geometry artifacts.
+[2026-07-30T01:01:26Z] INFO Executing runner profile=ai_benchmark.
+[2026-07-30T01:01:28Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T01:01:28Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T01:01:28Z] INFO Annotating CSV artifacts.
+[2026-07-30T01:01:28Z] INFO Writing scenario summary CSV.
+[2026-07-30T01:01:28Z] INFO Writing runtime and environment summaries.
+[2026-07-30T01:01:30Z] INFO Writing scenario manifest.
+[2026-07-30T01:01:30Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T01:02:41Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:02:41Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T01:02:43Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T01:02:43Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T01:04:54Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T01:04:54Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\baseline_point
+[2026-07-30T01:05:42Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T01:06:45Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:06:45Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T01:06:47Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T01:06:47Z] INFO Writing artifact manifest.
+[2026-07-30T01:06:47Z] INFO Writing scenario markdown report.
+[2026-07-30T01:06:47Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T01:06:47Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T01:06:47Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T01:06:47Z] INFO Writing MAT result bundle.
+[2026-07-30T01:06:49Z] INFO Pruning empty result directories.
+[2026-07-30T01:06:49Z] WARN Run completed with truth/status failures in 324.363 seconds: requiredFailures=1 strictTruthFailures=0
+[2026-07-30T01:06:51Z] INFO Preparing LLS run: scenario=matrix_ai_sweep_a runTag= runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+[2026-07-30T01:06:53Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T01:06:53Z] INFO Writing resolved snapshots.
+[2026-07-30T01:06:53Z] INFO Exporting live geometry artifacts.
+[2026-07-30T01:06:53Z] INFO Executing runner profile=ai_benchmark.
+[2026-07-30T01:06:54Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T01:06:54Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T01:06:54Z] INFO Annotating CSV artifacts.
+[2026-07-30T01:06:54Z] INFO Writing scenario summary CSV.
+[2026-07-30T01:06:55Z] INFO Writing runtime and environment summaries.
+[2026-07-30T01:06:56Z] INFO Writing scenario manifest.
+[2026-07-30T01:06:56Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T01:08:18Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:08:19Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T01:08:20Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T01:08:20Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T01:10:29Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T01:10:30Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1\sweeps\candidate_point
+[2026-07-30T01:11:15Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T01:12:17Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:12:17Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T01:12:19Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T01:12:19Z] INFO Writing artifact manifest.
+[2026-07-30T01:12:19Z] INFO Writing scenario markdown report.
+[2026-07-30T01:12:19Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T01:12:19Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T01:12:19Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T01:12:19Z] INFO Writing MAT result bundle.
+[2026-07-30T01:12:20Z] INFO Pruning empty result directories.
+[2026-07-30T01:12:21Z] INFO Run completed successfully in 330.210 seconds.
+[2026-07-30T01:12:21Z] INFO Runner profile completed. result.Ok=0
+[2026-07-30T01:12:21Z] INFO Scenario status aggregated: completion=completed_with_failures resultOk=0 requiredFailures=1 optionalPruned=0
+[2026-07-30T01:12:21Z] INFO Annotating CSV artifacts.
+[2026-07-30T01:12:55Z] INFO Writing scenario summary CSV.
+[2026-07-30T01:12:56Z] INFO Writing runtime and environment summaries.
+[2026-07-30T01:12:58Z] INFO Writing scenario manifest.
+[2026-07-30T01:12:58Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T01:14:23Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:14:23Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T01:14:25Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T01:14:25Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T01:16:38Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T01:16:38Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_ai_sweep_a\repeat_1
+[2026-07-30T01:17:25Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T01:18:26Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:18:26Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T01:18:28Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T01:18:28Z] INFO Writing artifact manifest.
+[2026-07-30T01:18:28Z] INFO Writing scenario markdown report.
+[2026-07-30T01:18:28Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T01:18:28Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T01:18:28Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T01:18:28Z] INFO Writing MAT result bundle.
+[2026-07-30T01:18:29Z] INFO Pruning empty result directories.
+[2026-07-30T01:18:30Z] WARN Run completed with truth/status failures in 1028.468 seconds: requiredFailures=1 strictTruthFailures=0
+[2026-07-30T01:18:32Z] INFO Preparing LLS run: scenario=matrix_prach_b runTag=repeat_1 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+[2026-07-30T01:18:33Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T01:18:33Z] INFO Writing resolved snapshots.
+[2026-07-30T01:18:34Z] INFO Exporting live geometry artifacts.
+[2026-07-30T01:18:34Z] INFO Executing runner profile=prach_detection.
+[2026-07-30T01:19:37Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T01:19:37Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T01:19:37Z] INFO Annotating CSV artifacts.
+[2026-07-30T01:20:26Z] INFO Writing scenario summary CSV.
+[2026-07-30T01:20:26Z] INFO Writing runtime and environment summaries.
+[2026-07-30T01:20:28Z] INFO Writing scenario manifest.
+[2026-07-30T01:20:28Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T01:21:51Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:21:51Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T01:21:53Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T01:21:53Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T01:24:39Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-07-30T01:24:40Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\smoke_matrix\smoke\runs\lls\matrix_prach_b\repeat_1
+[2026-07-30T01:25:38Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-07-30T01:26:42Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:26:42Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-07-30T01:26:44Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-07-30T01:26:44Z] INFO Writing artifact manifest.
+[2026-07-30T01:26:44Z] INFO Writing scenario markdown report.
+[2026-07-30T01:26:44Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-07-30T01:26:44Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-07-30T01:26:44Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-07-30T01:26:44Z] INFO Writing MAT result bundle.
+[2026-07-30T01:26:48Z] INFO Pruning empty result directories.
+[2026-07-30T01:26:49Z] INFO Run completed successfully in 496.396 seconds.
+FULLSTACK_TEST_END test6GScenarioMatrixRunner FAIL
+[FAIL] test6GScenarioMatrixRunner (1534.39s)
+       Matrix runner should complete.
+FULLSTACK_TEST_START test6GScenarioMatrixRunnerNoSummary
+[2026-07-30T01:26:56Z] INFO Preparing LLS run: scenario=matrix_prach_no_summary runTag=repeat_1 runFolder=C:\Users\anup0\AppData\Local\Temp\tp6525bf42_63c7_4c17_b526_636835492af9\matrix-no-summary-5868e3af-5134-4641-aa34-ddb61a140c39\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1
+[2026-07-30T01:26:58Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-07-30T01:26:58Z] INFO Writing resolved snapshots.
+[2026-07-30T01:26:58Z] INFO Exporting live geometry artifacts.
+[2026-07-30T01:26:58Z] INFO Executing runner profile=prach_detection.
+[2026-07-30T01:27:59Z] INFO Runner profile completed. result.Ok=1
+[2026-07-30T01:27:59Z] INFO Scenario status aggregated: completion=completed resultOk=1 requiredFailures=0 optionalPruned=0
+[2026-07-30T01:27:59Z] INFO Annotating CSV artifacts.
+[2026-07-30T01:28:41Z] INFO Writing scenario summary CSV.
+[2026-07-30T01:28:41Z] INFO Writing runtime and environment summaries.
+[2026-07-30T01:28:43Z] INFO Writing scenario manifest.
+[2026-07-30T01:28:43Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-07-30T01:29:55Z] INFO Runtime truth contract evaluated: ok=1 roundtripMismatch=0 evidenceMissing=0 strictFailures=0
+[2026-07-30T01:29:55Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-07-30T01:29:56Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-07-30T01:29:56Z] INFO Exporting LLS reporting bundle.
+[2026-07-30T01:30:23Z] ERROR Run failed: MATLAB:print:fileNotCreated | Output file 'C:\Users\anup0\AppData\Local\Temp\tp6525bf42_63c7_4c17_b526_636835492af9\matrix-no-summary-5868e3af-5134-4641-aa34-ddb61a140c39\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1\reports\image\tp8aa0eb4c_651c_4808_98ba_d329678d4f4b.svg' was not created. The file name may not be valid.
+[2026-07-30T01:30:24Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.
+[2026-07-30T01:32:07Z] WARN Failed-run artifact recovery did not complete: MATLAB:print:fileNotCreated | Output file 'C:\Users\anup0\AppData\Local\Temp\tp6525bf42_63c7_4c17_b526_636835492af9\matrix-no-summary-5868e3af-5134-4641-aa34-ddb61a140c39\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1\reports\image\tpacd61bae_746b_470a_ad43_fd642c2a030f.svg' was not created. The file name may not be valid.
+[Warning: The following error was caught while executing 'onCleanup' class destructor:
+Error using rmdir
+C:\Users\anup0\AppData\Local\Temp\tp6525bf42_63c7_4c17_b526_636835492af9\matrix-no-summary-5868e3af-5134-4641-aa34-ddb61a140c39 is not a directory.
+
+
+Error in test6GScenarioMatrixRunnerNoSummary>@()rmdir(tmp,"s") (line 19)
+cleanup=onCleanup(@()rmdir(tmp,"s")); %#ok<NASGU>
+                     ^^^^^^^^^^^^^^
+Error in onCleanup/delete (line 29)
+            obj.task();
+            ^^^^^^^^^^
+Error in test6GScenarioMatrixRunnerNoSummary (line 4)
+setup6GRSimToolkit("Verbose",false);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testAll (line 427)
+        feval(fn);
+        ^^^^^^^^^] 
+[> In test6GScenarioMatrixRunnerNoSummary (line 4)
+In testAll (line 427)] 
+FULLSTACK_TEST_END test6GScenarioMatrixRunnerNoSummary FAIL
+[FAIL] test6GScenarioMatrixRunnerNoSummary (317.37s)
+       Output file 'C:\Users\anup0\AppData\Local\Temp\tp6525bf42_63c7_4c17_b526_636835492af9\matrix-no-summary-5868e3af-5134-4641-aa34-ddb61a140c39\lls\smoke_matrix_nosummary\nosummary\runs\lls\matrix_prach_no_summary\repeat_1\reports\image\tp8aa0eb4c_651c_4808_98ba_d329678d4f4b.svg' was not created. The file name may not be valid.
+FULLSTACK_TEST_START testLLSDeploymentTopologyConfigWiring
+FULLSTACK_TEST_END testLLSDeploymentTopologyConfigWiring PASS
+[PASS] testLLSDeploymentTopologyConfigWiring (2.85s)
+FULLSTACK_TEST_START testLLSMobile2UEScenarioYamlWiring
+[2026-07-30T01:32:20Z] INFO system_level_lls_started slot=0/4 completion=0.0000 elapsed_s=0.6 slot_direction=initializing active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:20Z] INFO system_level_lls_slot1_post_mobility_update slot=0/4 completion=0.0000 elapsed_s=0.9 slot_direction=slot1_post_mobility_update active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:21Z] INFO system_level_lls_slot1_large_scale_ready slot=0/4 completion=0.0000 elapsed_s=1.2 slot_direction=slot1_large_scale_ready active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:21Z] INFO system_level_lls_slot1_active_ues_ready slot=0/4 completion=0.0000 elapsed_s=1.8 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:21Z] INFO system_level_lls_slot1_ue_by_cell_ready slot=0/4 completion=0.0000 elapsed_s=2.0 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:22Z] INFO system_level_lls_slot1_scheduler_inputs_ready slot=0/4 completion=0.0000 elapsed_s=2.2 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:22Z] INFO system_level_lls_slot1_dl_scheduler_cell_1_started slot=0/4 completion=0.0000 elapsed_s=2.3 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:28Z] INFO system_level_lls_slot1_dl_scheduler_cell_1_finished slot=0/4 completion=0.0000 elapsed_s=8.3 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:28Z] INFO system_level_lls_slot1_dl_scheduler_ready slot=0/4 completion=0.0000 elapsed_s=8.4 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:28Z] INFO system_level_lls_slot1_scheduler_ready slot=0/4 completion=0.0000 elapsed_s=8.5 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:28Z] INFO system_level_lls_slot_progress slot=1/4 completion=0.2500 elapsed_s=8.5 slot_direction=DL active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:36Z] INFO system_level_lls_slot_progress slot=4/4 completion=1.0000 elapsed_s=17.0 slot_direction=FLEXIBLE_OR_MIXED active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:37Z] INFO system_level_lls_finalizing_exports slot=4/4 completion=1.0000 elapsed_s=17.0 slot_direction=finalizing active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:37Z] INFO system_level_lls_finalizing_tables_started slot=4/4 completion=1.0000 elapsed_s=17.1 slot_direction=finalizing_tables active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:40Z] INFO system_level_lls_finalizing_tables_ready slot=4/4 completion=1.0000 elapsed_s=20.6 slot_direction=finalizing_tables_ready active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0
+[2026-07-30T01:32:40Z] INFO system_level_lls_finalizing_persistence_started slot=4/4 completion=1.0000 elapsed_s=20.7 slot_direction=finalizing_persistence active_ue=2 cells=1 grants=0 served_bits=0 dropped_bits=0 overflow_events=0

@@ -88,13 +88,19 @@ if exported.CSVCount ~= 31 || exported.PNGCount ~= 20
         exported.CSVCount, exported.PNGCount);
 end
 
+verificationDir = localBuildVerifierSnapshot(stageDir);
+verificationCleanup = onCleanup(@() localRemoveStage(verificationDir));
 [artifactStatus, artifactOutput, artifactCommand] = localRunPython( ...
-    fullfile(vectorRoot, "verify_initial_access_artifacts.py"), stageDir);
+    fullfile(vectorRoot, "verify_initial_access_artifacts.py"), ...
+    verificationDir);
 if artifactStatus ~= 0
     error("sixgr:phy:ia:ArtifactVerificationFailed", ...
         "Initial-access artifact verification failed:\n%s", ...
         artifactOutput);
 end
+localAssertVerifierSnapshot(stageDir,verificationDir);
+clear verificationCleanup
+localRemoveStage(verificationDir);
 
 inventory = localInventory(stageDir, exported);
 [moved, moveMessage] = movefile(stageDir, outputDir);
@@ -130,6 +136,48 @@ summary = struct( ...
     "ArtifactVerifierOutput", string(strtrim(artifactOutput)), ...
     "ArtifactInventory", inventory, ...
     "DurationSeconds", toc(started));
+end
+
+function snapshotDir = localBuildVerifierSnapshot(stageDir)
+% Python on Windows cannot reliably traverse >260-character run paths.
+% Verify an exact byte-for-byte short-path snapshot, then publish the
+% original transaction only after snapshot equivalence is rechecked.
+snapshotDir = tempname;
+[ok,message] = copyfile(stageDir,snapshotDir);
+if ~ok
+    error("sixgr:phy:ia:VerifierSnapshotCreateFailed", ...
+        "Unable to create the exact verifier snapshot: %s",message);
+end
+localAssertVerifierSnapshot(stageDir,snapshotDir);
+end
+
+function localAssertVerifierSnapshot(sourceDir,snapshotDir)
+source = localTreeDigest(sourceDir);
+snapshot = localTreeDigest(snapshotDir);
+if ~isequal(source.RelativePath,snapshot.RelativePath) ...
+        || ~isequal(source.Bytes,snapshot.Bytes) ...
+        || ~isequal(source.SHA256,snapshot.SHA256)
+    error("sixgr:phy:ia:VerifierSnapshotMismatch", ...
+        "The short-path verifier snapshot is not byte-identical to the publication transaction.");
+end
+end
+
+function inventory = localTreeDigest(root)
+files = dir(fullfile(root,"**","*"));
+files = files(~[files.isdir]);
+relative = strings(numel(files),1);
+bytes = zeros(numel(files),1);
+hash = strings(numel(files),1);
+prefix = string(root)+filesep;
+for index = 1:numel(files)
+    pathName = fullfile(files(index).folder,files(index).name);
+    relative(index) = erase(string(pathName),prefix);
+    bytes(index) = double(files(index).bytes);
+    hash(index) = localFileSHA256(pathName);
+end
+[relative,order] = sort(relative);
+inventory = table(relative,bytes(order),hash(order), ...
+    'VariableNames',{'RelativePath','Bytes','SHA256'});
 end
 
 function summary = localRunFocusedTests()

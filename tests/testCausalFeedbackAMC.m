@@ -23,6 +23,8 @@ cfgUL = cfg;
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.transmissionScheme", "codebook");
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.transformPrecoding", false);
 cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.maxRankDefault", 2);
+cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.NumAntennaPorts", 2);
+cfgUL = sixgr.util.structSet(cfgUL, "phy.pusch.numAntennaPorts", 2);
 Hest = repmat(reshape(eye(2), 1, 1, 2, 2), [24, 2, 1, 1]);
 est = sixgr.phy.ul.estimateSRSRITPMI(Hest, 0.01, cfgUL);
 assert(logical(est.Valid) && double(est.RI) == 2, ...
