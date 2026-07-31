@@ -998,6 +998,31 @@ methods(Static, Access=private)
             % K0/K2=0 appear to target the past and shifts every grant by
             % one slot.
             schedulerAbsoluteSlot = double(state.CurrentSlot) - 1;
+            if direction == "DL"
+                timingProbe = struct( ...
+                    "Direction", "DL", ...
+                    "ControlAbsoluteSlot", double(budget.ControlAbsoluteSlot), ...
+                    "ControlSymbolAllocation", ...
+                        reshape(double(budget.ControlSymbolAllocation), 1, []), ...
+                    "SymbolAllocation", ...
+                        reshape(double(budget.SymbolAllocation), 1, []), ...
+                    "HARQProcess", 0);
+                timingDecision = sixgr.phy.frame.TimingRelationEngine. ...
+                    resolveProductionGrant(cfg, timingProbe);
+                if ~logical(timingDecision.Valid)
+                    if sixgr.truth.isDeferrableCoupledHARQACKTimingDecision( ...
+                            timingDecision)
+                        info.ResourceUnavailableReason = char(string( ...
+                            timingDecision.ReasonCode));
+                        info.TimingDecision = timingDecision;
+                        continue;
+                    end
+                    error("sixgr:SchedulerBase:TimingDecisionRejected", ...
+                        "Canonical production timing rejected the grant: %s (%s)", ...
+                        char(string(timingDecision.ReasonCode)), ...
+                        char(string(timingDecision.Diagnostic)));
+                end
+            end
             [cellGrants, schedInfo] = scheduler.schedule( ...
                 schedulerAbsoluteSlot, ueStates, budget);
             state = sixgr.truth.CoupledTruthRuntime.appendSchedulerDecisionRows(state, schedInfo, direction, cellId);
@@ -4726,7 +4751,10 @@ methods(Static, Access=private)
             allowExecution = true;
             return;
         end
-        gatingActive = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
+        gatingActive = logical(sixgr.util.structGet( ...
+            state.ControlGating, "PDCCHRequired", false)) || ...
+            sixgr.control.isPDCCHGrantBindingRequired( ...
+                state.CfgMobility, direction);
         [pdcchOk, pdcchReason] = sixgr.truth.CoupledTruthRuntime.pdcchCausalGrantDecodePassed(trialT);
         pdcchRow = table();
         if istable(trialT) && ~isempty(trialT)
@@ -8889,6 +8917,17 @@ methods(Static, Access=private)
         if ~(isfinite(double(ueIdx)) && double(ueIdx) >= 1)
             return;
         end
+        cfgEval = cfg;
+        if ~(isstruct(cfgEval) && ~isempty(fieldnames(cfgEval)))
+            cfgEval = sixgr.util.structGet(state, "CfgMobility", struct());
+        end
+        configuredSNR = double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN));
+        [configuredReplaySNR, configuredReplay] = ...
+            sixgr.truth.resolveCoupledReplaySNR(cfgEval, configuredSNR);
+        if configuredReplay
+            snr_dB = configuredReplaySNR;
+            return;
+        end
         feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
         feedbackSINR = double(sixgr.util.structGet(feedback, "SINR_dB", NaN));
         if logical(sixgr.util.structGet(feedback, "Valid", false)) && isfinite(feedbackSINR)
@@ -8916,10 +8955,6 @@ methods(Static, Access=private)
         servingCell = NaN;
         if double(ueIdx) <= numel(servingVec)
             servingCell = double(servingVec(ueIdx));
-        end
-        cfgEval = cfg;
-        if ~(isstruct(cfgEval) && ~isempty(fieldnames(cfgEval)))
-            cfgEval = sixgr.util.structGet(state, "CfgMobility", struct());
         end
         interferenceMode = string(sixgr.util.structGet(cfgEval, "run.interferenceExecutionMode", ...
             sixgr.util.structGet(cfgEval, "interference.inter_cell_execution_mode", "")));

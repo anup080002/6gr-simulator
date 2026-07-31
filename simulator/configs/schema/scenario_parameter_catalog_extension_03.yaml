@@ -96,7 +96,8 @@
       "crc_checker": {"required": true, "type": "string"}, "error_detection_policy": {"required": true, "type": "string"},
       "harq_combiner": {"required": true, "type": "string"}, "pdcch_candidate_generator": {"required": true, "type": "string"},
       "prach_detector": {"required": true, "type": "string"}, "csi_estimator": {"required": true, "type": "string"},
-      "beam_selector": {"required": true, "type": "string"}, "ai_receiver_hook": {"required": true, "type": "string"}
+      "beam_selector": {"required": true, "type": "string"}, "ai_receiver_hook": {"required": true, "type": "string"},
+      "ssb_cfo_search_bw_hz": {"required": false, "type": "number", "min": 0}
     }},
     "impairments": {"parameters": {
       "awgn": {"required": true, "type": "struct"}, "cfo": {"required": true, "type": "struct"}, "to": {"required": true, "type": "struct"},

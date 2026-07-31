@@ -15,6 +15,12 @@ cfg.phy.pdsch.numLayers = 1;
 
 assert(sixgr.control.isPDCCHGrantBindingRequired(cfg, "DL"), ...
     "DL grant binding must become required when control gating requires PDCCH.");
+cfgSchedulerTruth = cfg;
+cfgSchedulerTruth.control_gating.pdcch_required = false;
+cfgSchedulerTruth.phy.pdsch.executionProfile = "scheduler_truth";
+cfgSchedulerTruth.run.pdschExecutionProfile = "scheduler_truth";
+assert(sixgr.control.isPDCCHGrantBindingRequired(cfgSchedulerTruth, "DL"), ...
+    "scheduler_truth PDSCH must require decoded DCI binding even when access gating is disabled.");
 
 T = localMinimalBoundlessDLTrialTable();
 res = sixgr.truth.evaluatePDSCHObjectiveStrict(T, cfg, ...

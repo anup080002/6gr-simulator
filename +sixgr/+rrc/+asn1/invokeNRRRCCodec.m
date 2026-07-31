@@ -16,7 +16,7 @@ end
 inputPath = tempname + ".json";
 outputPath = tempname + ".json";
 cleanup = onCleanup(@() localCleanup([inputPath, outputPath])); %#ok<NASGU>
-sixgr.util.jsonWrite(inputPath, input);
+localWriteProcessInputJSON(inputPath, input);
 python = localPythonExecutable();
 command = sprintf('"%s" "%s" %s "%s" "%s"', ...
     python, script, operation, inputPath, outputPath);
@@ -31,6 +31,29 @@ if string(output.codec) ~= "pycrate_asn1dir.RRCNR" || ...
         "3gpp_ts38331_v18_bounded_fr1_sib1"
     error("sixgr:rrc:asn1:CodecProvenanceMismatch", ...
         "NR RRC codec returned unexpected provenance.");
+end
+end
+
+function localWriteProcessInputJSON(filePath, input)
+% The codec is an external process and therefore requires a physical file.
+% Do not route this process-handoff JSON through the active artifact store:
+% mysql_web persistence can correctly consume an artifact without creating
+% the temporary filesystem file that Python must open.
+try
+    text = jsonencode(input, "PrettyPrint", true);
+catch
+    text = jsonencode(input);
+end
+fid = fopen(char(filePath), "w", "n", "UTF-8");
+if fid < 0
+    error("sixgr:rrc:asn1:CodecInputWriteFailed", ...
+        "Cannot create the NR RRC codec input file: %s", filePath);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+written = fwrite(fid, char(text), "char");
+if written ~= strlength(string(text))
+    error("sixgr:rrc:asn1:CodecInputWriteFailed", ...
+        "NR RRC codec input file was only partially written: %s", filePath);
 end
 end
 

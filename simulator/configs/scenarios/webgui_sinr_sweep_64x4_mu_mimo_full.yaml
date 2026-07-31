@@ -1,0 +1,399 @@
+# Full, operator-owned WebGUI LLS campaign derived from the canonical SINR master.
+# The inherited master supplies the complete PHY/MAC/control/reporting surface;
+# every field below is an intentional override for this 64x4 coupled MU-MIMO run.
+inherits: master_sinr_sweep.yaml
+
+canonical_control:
+  identity:
+    scenario_id: webgui_sinr_sweep_64x4_mu_mimo_full
+    scenario_name: Full WebGUI SINR sweep — 64x4 coupled MU-MIMO
+    description: Full waveform LLS sweep at -20, 0, and 20 dB with one 64-element gNB, four 4-element UEs, and slot-coupled MU-MIMO truth execution.
+    version: 1.0.0
+    owner: operator
+    research_class: study_item_candidate
+    maturity_tag: experimental
+    purpose: Complete WebGUI-launched multi-user waveform LLS execution for the requested 64x4 antenna configuration.
+    baseline_reference_name: master_sinr_sweep
+    comparison_group_name: coupled_mu_mimo_64x4_three_point_sinr
+    tags:
+      - lls
+      - webgui
+      - awgn
+      - sinr_sweep
+      - mu_mimo
+      - 64tx
+      - 4rx
+      - slot_coupled_truth
+      - waveform_bundle
+  launch:
+    runner_profile: waveform_bundle
+    target_cases: [bundle]
+    bundle_anchor_cases: [dl_pdsch_throughput, ul_pusch_throughput]
+    expected_outputs:
+      - reports/csv/scenario_summary.csv
+      - reports/csv/runtime_operating_mode.csv
+      - reports/csv/run_classification.csv
+      - reports/csv/slot_trace.csv
+      - reports/csv/live_control_gating_summary.csv
+      - reports/csv/config_roundtrip_verification.csv
+      - reports/csv/browser_runtime_db_consistency.csv
+      - reports/csv/summary_vs_raw_consistency.csv
+      - reports/csv/value_source_audit.csv
+      - air_interface/csv/dl_pdsch_trials.csv
+      - air_interface/csv/ul_pusch_trials.csv
+      - packet_flow/csv/live_dl_scheduler_grants.csv
+      - packet_flow/csv/live_ul_scheduler_grants.csv
+    honesty_mode: strict
+    unsupported_output_policy: show_unavailable_with_reason
+    provenance_logging: true
+    notes: The three configured values are controlled AWGN operating-point inputs; measured post-equalization SINR remains separately reported.
+    run_class: adaptive_system_diagnostic
+    scenario_mode: sinr_sweep_coupled_mu_mimo
+    sweep_enabled: true
+    fixed_link_campaign_enabled: false
+    geometry_enabled: false
+  run:
+    seed: 104729
+    deterministic_mode: true
+    link_direction: both
+    n_frames: 1
+    total_slots: 20
+    total_time_ms: 10
+    warmup_slots: 0
+    measurement_slots: 20
+    n_subframes: 10
+    monte_carlo_iterations: 1
+    num_seeds: 1
+    seed_list: [104729]
+    campaign_mode: single_seed_coupled_truth
+    fixed_link_campaign_enabled: false
+    fixed_link_snr_grid_db: [-20, 0, 20]
+    min_campaign_snr_points: 3
+    # Twenty coupled slots per point provide a diagnostic sweep, not a
+    # publication-scale confidence campaign. Require two real trials in an
+    # aggregate measured-SINR bin and retain every raw trial in the export.
+    min_trials_per_sinr_bin: 2
+    snr_db: 0
+    noise_operating_mode: standalone_awgn_snr_argument
+    snr_sweep_offsets_db: []
+    execution_mode: LLS
+    study_mode: campaign
+    simulation_mode: full_phy
+    run_profile: exhaustive
+    trace_capture_level: full
+    save_intermediate: true
+    fixed_link_campaign_only: false
+  topology:
+    site_layout: hex_grid
+    cell_type: UMa
+    num_sites: 1
+    num_sectors_per_site: 1
+    num_cells: 1
+    num_trps: 1
+    num_ues: 4
+    users_enabled: true
+    rnti_start: 1
+    seed_stride: 17
+    execution_model: slot_coupled_truth
+    beam_selection_strategy: runtime_best_beam_per_link
+    save_user_tables: true
+  antenna:
+    bs_array_geometry: URA
+    ue_array_geometry: ULA
+    bs_num_antenna_elements: 64
+    ue_num_antenna_elements: 4
+    polarization: dual
+    element_spacing_h: 0.5
+    element_spacing_v: 0.5
+    digital_precoder_family: wideband
+  mimo:
+    mode: mu_mimo
+    n_tx_ant: 64
+    n_rx_ant: 4
+    n_layers: 2
+    max_dl_layers: 2
+    max_ul_layers: 2
+    max_simultaneous_ue_dl: 2
+    max_simultaneous_ue_ul: 2
+    precoder_type: wideband
+    codebook_type: type2
+    beam_codebook_type: type2_mu_mimo
+    beam_sweep_enabled: true
+    beam_count: 32
+    panel_count: 2
+    trp_count: 1
+    reciprocity_mode: TDD
+    rank_adaptation_enable: true
+    rank_adaptation_policy: csi_feedback
+    su_mu_selection_policy: proportional_fair_mu
+    mu_mimo_enable: true
+    ul_mu_mimo_enable: true
+    mu_mimo_max_users_per_prb: 2
+  scheduler:
+    type: PF
+    # Two simultaneously scheduled UEs match the configured spatial
+    # multiplexing limit. PF still rotates all four configured UEs.
+    max_active_ues_per_slot: 2
+    max_active_ues_per_cell_per_slot: 2
+    max_active_ues_per_cell_per_slot_dl: 2
+    max_active_ues_per_cell_per_slot_ul: 2
+    max_prb_allocation_per_ue: 273
+    fairness_alpha: 1.0
+    proportional_fair_window_ms: 100
+    beam_aware: true
+    energy_aware: true
+    qos_aware: true
+    slice_aware: true
+    starvation_guard: true
+    cell_edge_boost: true
+    tbsMode: faithful
+    fastNREApprox: false
+  reference_signals:
+    ssb_enabled: true
+    pbch_enabled: true
+    pdcch_dmrs_enabled: true
+    csi_rs_enabled: true
+    srs_enabled: true
+    trs_enabled: true
+    tracking_rs_enabled: true
+    ptrs_enabled: true
+    csi_feedback_mode: PMI+CQI+RI+CRI
+    csi_acquisition_mode: joint_dl_ul
+    operation_orientation: tdd_reciprocity
+    dmrs_csi_tracking_enabled: true
+    cqi_reporting_enabled: true
+    pmi_reporting_enabled: true
+    ri_reporting_enabled: true
+    cri_reporting_enabled: true
+    pdsch_dmrs_ports: 2
+    pusch_dmrs_ports: 2
+    csi_rs_ports: 4
+    srs_ports: 4
+    trs_ports: 1
+    srs_max_ues_per_slot: 4
+    srs_scheduling_policy: multiplex_due_users
+  control:
+    pdcch_enabled: true
+    pucch_enabled: true
+    pbch_required: false
+    prach_required: false
+    pdcch_required: false
+    srs_required: false
+    trs_required: false
+    srs_max_age_slots: 20
+    trs_max_age_slots: 20
+    pre_attach_ues_before_measurement: true
+  initial_access:
+    enabled: true
+    ssb:
+      enabled: true
+      # FR1 NCRBSSB/KSSB use the 15 kHz Point-A common raster. For this
+      # 100 MHz, 30 kHz, 273-PRB carrier, 253*12*15 kHz places the
+      # 7.2 MHz SSB exactly at carrier centre.
+      n_crb_ssb: 253
+      k_ssb: 0
+    mib:
+      enabled: true
+    sib1:
+      enabled: true
+      decode_from_waveform_required: false
+    rrc:
+      require_setup_complete: false
+  random_access:
+    enabled: true
+    four_step_ra_required: false
+    msg4_contention_resolution_required: false
+    msg3_enabled: true
+    min_detection_trials: 8
+  random_access_evidence:
+    four_step_ra_required: false
+    msg1_prach_required: false
+    msg2_rar_pdcch_pdsch_required: false
+    msg3_pusch_required: false
+    msg4_contention_resolution_required: false
+    ra_rnti_decode_required: false
+    rar_mac_ce_decode_required: false
+  csi:
+    cqi_policy: adaptive
+    pmi_policy: adaptive
+    ri_policy: adaptive
+    cri_policy: adaptive
+    pmi_codebook_mode: type2_mu_mimo
+  energy:
+    enabled: true
+    tx_power_dbm: 46
+    pa_efficiency: 0.35
+    rf_chain_count: 64
+  output:
+    profiler_enabled: false
+  runtime_overrides:
+    - path: output.emit_disabled_audit_artifacts
+      value: true
+    - path: output.persist_to_database
+      value: true
+    - path: output.persist_to_results_folder
+      value: true
+    - path: interference.inter_cell_interference_flag
+      value: false
+    - path: interference.intra_cell_interference_flag
+      value: true
+    - path: link_adaptation.fixed_or_amc
+      value: amc
+    - path: link_adaptation.rank_adaptation_policy
+      value: csi_feedback
+    - path: link_adaptation.al_adaptation_policy
+      value: cqi_driven
+    - path: link_adaptation.cqi_source
+      value: csi_feedback
+    - path: link_adaptation.pdsch_link_adaptation_policy
+      value: cqi_driven
+    - path: link_adaptation.pusch_link_adaptation_policy
+      value: cqi_driven
+    - path: receiver_algorithms.ssb_cfo_search_bw_hz
+      value: 0
+    - path: synchronization.max_timing_uncertainty_samples
+      value: 0
+  pdsch:
+    execution_profile: scheduler_truth
+  harq:
+    k2: 4
+
+csi_acquisition_and_reporting:
+  # This is the production buildInternalConfig authority consumed by
+  # SchedulerPF and the waveform precoder path.
+  pmi_codebook_mode: type2_mu_mimo
+
+pucch_resources:
+  enabled: true
+  # K1 resolves DL feedback onto the special slot of the D,D,D,F,U
+  # pattern. That slot has 12 DL symbols, one guard symbol, and only
+  # symbol 13 for UL. Resource 0 is therefore a one-symbol Format-0
+  # HARQ-ACK resource; the remaining resources retain the master catalog
+  # allocations for full-UL-slot SR/CSI operation.
+  resources:
+  - id: 0
+    format: 0
+    starting_prb: 0
+    nrof_prbs: 1
+    starting_symbol: 13
+    nrof_symbols: 1
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 1
+    format: 1
+    starting_prb: 1
+    nrof_prbs: 1
+    starting_symbol: 10
+    nrof_symbols: 4
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 3
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 10
+    format: 2
+    starting_prb: 4
+    nrof_prbs: 2
+    starting_symbol: 12
+    nrof_symbols: 2
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 11
+    format: 3
+    starting_prb: 8
+    nrof_prbs: 2
+    starting_symbol: 10
+    nrof_symbols: 4
+    intra_slot_hopping: true
+    second_hop_start_prb: 20
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: true
+    pi2_bpsk: true
+    nid: 1
+    hopping_id: 1
+  - id: 12
+    format: 4
+    starting_prb: 12
+    nrof_prbs: 1
+    starting_symbol: 10
+    nrof_symbols: 4
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 2
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+
+tdd_timing:
+  pdcch_to_pusch_k2: 4
+  ul_grant_k2: 4
+
+pdsch6gr:
+  n_tx: 64
+  n_rx: 4
+  num_layers: 2
+  dmrs_num_ports: 2
+  dmrs_port_set: [0, 1]
+
+pusch:
+  num_layers: 2
+  num_antenna_ports: 2
+  dmrs_port_set: [0, 1]
+
+validation:
+  run_class: adaptive_system_diagnostic
+  fixed_snr_sweep_required: false
+  geometry_evidence_required: false
+  fixed_link_campaign:
+    enabled: false
+    fixed_reference_mode: false
+    single_user_mode: false
+    configuration_authority: master_yaml
+    direction: both
+    channel_model: AWGN
+    noise_operating_mode: standalone_awgn_snr_argument
+    snr_db: [-20, 0, 20]
+
+control_gating:
+  pre_attach_ues_before_measurement: true
+  pbch_required: false
+  prach_required: false
+  pdcch_required: false
+  srs_required: false
+  srs_max_age_slots: 20
+  trs_required: false
+  trs_max_age_slots: 20
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: true
+    values_db: [-20, 0, 20]
+  fixed_link_calibration:
+    enabled: false
+    only: false
+    direction: both
+    channel_model: AWGN
+    snr_db: [-20, 0, 20]

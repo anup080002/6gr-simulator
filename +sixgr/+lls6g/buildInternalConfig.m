@@ -2605,6 +2605,19 @@ if strlength(rxEqualizer) > 0
     cfg = sixgr.util.structSet(cfg, "phy.pusch.equalizer", char(rxEqualizer));
     cfg = sixgr.util.structSet(cfg, "phy.equalization.algorithm", char(rxEqualizer));
 end
+ssbCFOSearchBandwidthHz = localGetNested( ...
+    s, "receiver_algorithms.ssb_cfo_search_bw_hz", []);
+if ~isempty(ssbCFOSearchBandwidthHz)
+    ssbCFOSearchBandwidthHz = double(ssbCFOSearchBandwidthHz);
+    if ~(isscalar(ssbCFOSearchBandwidthHz) && ...
+            isfinite(ssbCFOSearchBandwidthHz) && ...
+            ssbCFOSearchBandwidthHz >= 0)
+        error("sixgr:lls6g:config:InvalidSSBCFOSearchBandwidth", ...
+            "receiver_algorithms.ssb_cfo_search_bw_hz must be a finite nonnegative scalar.");
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.sync.freqSearchBW_Hz", ssbCFOSearchBandwidthHz);
+end
 end
 
 function cfg = localApplyTimingAndRFHardwareSurface(cfg, s)

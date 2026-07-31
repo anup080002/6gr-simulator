@@ -39,6 +39,22 @@ rows = repmat(localRowTemplate(cfg, snr_dB), beamCount, 1);
 for ssbIdx = 0:(beamCount - 1)
     cfgBeam = sixgr.util.structSet(cfg, "phy.ssb.runtimeSSBIndex", double(ssbIdx));
     cfgBeam = sixgr.util.structSet(cfgBeam, "phy.ssb.SSBIndex", double(ssbIdx));
+    % A targeted beam trial transmits exactly the requested SSB index.
+    % Override the inherited burst bitmap as trial stimulus; otherwise an
+    % explicit master bitmap (for example 10000000) silently keeps every
+    % sweep row on beam zero.
+    lmax = round(double(sixgr.util.structGet(cfgBeam, "phy.ssb.Lmax", 0)));
+    if ~(isscalar(lmax) && isfinite(lmax) && lmax >= beamCount && ssbIdx < lmax)
+        error("sixgr:link:InvalidSSBBeamSweep", ...
+            "SSB beam %d cannot be materialized for configured Lmax=%g.", ...
+            ssbIdx, lmax);
+    end
+    trialBitmap = false(1, lmax);
+    trialBitmap(ssbIdx + 1) = true;
+    cfgBeam = sixgr.util.structSet( ...
+        cfgBeam, "phy.ssb.activeBitmap", trialBitmap);
+    cfgBeam = sixgr.util.structSet( ...
+        cfgBeam, "phy.ssb.positionsInBurst", char('0' + trialBitmap));
     row = localRowTemplate(cfgBeam, snr_dB);
     row.SSBIndex = double(ssbIdx);
     row.BeamIndex = double(ssbIdx + 1);

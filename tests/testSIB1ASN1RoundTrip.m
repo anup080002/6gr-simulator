@@ -27,6 +27,22 @@ for restrictedSet = ["RestrictedSetTypeA", "RestrictedSetTypeB"]
         "Supported restricted-set PRACH IE must roundtrip exactly.");
 end
 
+% Short-sequence PRACH formats are derived from configuration index and
+% duplex table. Index 157 in FR1 TDD is B4, not the historical A1 default.
+b4cfg = cfg;
+b4cfg.frequency.band_name = "n77";
+b4cfg.phy.fc_Hz = 4e9;
+b4cfg.phy.carrier.NSizeGrid = 273;
+b4cfg.phy.prach.configurationIndex = 157;
+b4cfg.phy.prach.subcarrierSpacing_kHz = 30;
+b4cfg.phy.prach.preambleFormat = "B4";
+b4tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(b4cfg);
+b4bits = sixgr.rrc.asn1.encodeSIB1UPER(b4tree);
+b4decoded = sixgr.rrc.asn1.decodeSIB1UPER(b4bits);
+[b4equal, ~] = sixgr.rrc.asn1.compareSIB1Trees(b4tree, b4decoded);
+assert(logical(b4equal), ...
+    "FR1 TDD PRACH configuration index 157/B4 must roundtrip semantically.");
+
 bad = tree;
 bad.message.c1.systemInformationBlockType1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon.restrictedSet = "RestrictedSetTypeC";
 assertThrows(@() sixgr.rrc.asn1.encodeSIB1UPER(bad), ...

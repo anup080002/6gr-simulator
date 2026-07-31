@@ -5526,7 +5526,14 @@ if exist(scriptPath, "file") ~= 2
     out.Message = "scripts/materialize_lls_contract_artifacts.py was not found in the repo root.";
     return;
 end
-pythonExe = localResolvePythonExecutable();
+pythonRuntime = sixgr.lls6g.runners.resolveWebGUIContractPython();
+if ~logical(sixgr.util.structGet(pythonRuntime, "Ok", false))
+    out.Identifier = "webgui_contract_python_unavailable";
+    out.Message = char(string(sixgr.util.structGet(pythonRuntime, ...
+        "Message", "A WebGUI Python runtime with MySQL support was not found.")));
+    return;
+end
+pythonExe = char(string(pythonRuntime.Executable));
 cmd = sprintf('"%s" "%s" --run-id %d --strict', ...
     localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), round(runID));
 [status, raw] = system(cmd);
@@ -5550,26 +5557,6 @@ if status == 0
 else
     out.Identifier = "browser_contract_materialization_failed";
     out.Message = char(string(raw));
-end
-end
-
-function exe = localResolvePythonExecutable()
-exe = "";
-try
-    runtimeInfo = sixgr.lls6g.config.ensureYAMLRuntime(ConfigurePyEnv=false);
-    exe = string(sixgr.util.structGet(runtimeInfo, "PythonExecutable", ""));
-catch
-    exe = "";
-end
-exe = strtrim(exe);
-if strlength(exe) == 0
-    [status, outTxt] = system('python -c "import sys; print(sys.executable)"');
-    if status == 0
-        exe = strtrim(string(outTxt));
-    end
-end
-if strlength(exe) == 0
-    exe = "python";
 end
 end
 

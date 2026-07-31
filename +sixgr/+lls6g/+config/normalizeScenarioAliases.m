@@ -550,6 +550,7 @@ mappings = {
     "mimo.panel_count", "mimo.panel_count", "identity"
     "mimo.trp_count", "mimo.trp_count", "identity"
     "mimo.mu_mimo_enable", "mimo.mu_mimo_enable", "identity"
+    "mimo.ul_mu_mimo_enable", "mimo.ul_mu_mimo_enable", "identity"
     "mimo.mu_mimo_max_users_per_prb", "mimo.mu_mimo_max_users_per_prb", "identity"
     "mimo.phase07_strict", "mimo.phase07_strict", "identity"
     "scheduler.type", "system.scheduler.type", "identity"

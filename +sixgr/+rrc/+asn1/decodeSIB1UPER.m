@@ -90,7 +90,8 @@ cfg.phy.prach.rootSeqIndex = double(s.root_sequence_index);
 cfg.phy.prach.zeroCorrelationZone = double(s.zero_correlation_zone);
 cfg.phy.prach.nPreambles = double(s.num_preambles);
 cfg.phy.prach.preambleFormat = localPreambleFormat( ...
-    double(s.prach_configuration_index), string(s.root_sequence_choice));
+    double(s.prach_configuration_index), string(s.root_sequence_choice), ...
+    double(s.band), double(s.msg1_subcarrier_spacing_khz));
 cfg.phy.prach.subcarrierSpacing_kHz = ...
     double(s.msg1_subcarrier_spacing_khz);
 cfg.phy.prach.restrictedSet = localRestrictedSet( ...
@@ -114,15 +115,56 @@ cfg.random_access = struct( ...
         localEnumNumber(string(s.contention_resolution_timer)));
 end
 
-function format = localPreambleFormat(index, rootChoice)
-if rootChoice == "l839"
-    if index >= 48 && index <= 63
-        format = "3";
-    else
-        format = "0";
-    end
+function format = localPreambleFormat(index, rootChoice, band, scsKHz)
+% PRACH format is not an ASN.1 field. TS 38.331 carries the configuration
+% index and root-sequence choice; resolve the actual format from the same
+% TS 38.211 table-backed Toolbox object used by scenario validation.
+if isempty(which("nrPRACHConfig"))
+    error("sixgr:rrc:asn1:DecodeFailed", ...
+        "Canonical PRACH-format recovery requires nrPRACHConfig.");
+end
+duplex = localBandDuplexMode(band);
+try
+    prach = nrPRACHConfig;
+    prach.FrequencyRange = "FR1";
+    prach.DuplexMode = char(duplex);
+    prach.ConfigurationIndex = double(index);
+    prach.SubcarrierSpacing = double(scsKHz);
+    format = string(prach.Format);
+catch cause
+    failure = MException("sixgr:rrc:asn1:DecodeFailed", ...
+        "Cannot resolve PRACH format for FR1 band n%d, %s, " + ...
+        "configuration index %d and SCS %g kHz: %s", ...
+        round(double(band)), duplex, round(double(index)), ...
+        double(scsKHz), cause.message);
+    failure = addCause(failure, cause);
+    throwAsCaller(failure);
+end
+
+longFormat = any(upper(format) == ["0","1","2","3"]);
+if (rootChoice == "l839") ~= longFormat
+    error("sixgr:rrc:asn1:DecodeFailed", ...
+        "Decoded PRACH root-sequence choice %s conflicts with resolved " + ...
+        "format %s for configuration index %d.", ...
+        rootChoice, format, round(double(index)));
+end
+end
+
+function duplex = localBandDuplexMode(band)
+% Concrete FR1 unpaired bands from TS 38.101-1. The bounded SIB1 profile
+% rejects SUL/FR2 contexts rather than guessing a duplex table.
+band = round(double(band));
+unpaired = [34 38 39 40 41 46 47 48 50 51 53 54 ...
+    77 78 79 90 96 101 102 104];
+sul = [80 81 82 83 84 86 89 95 97 98 99];
+if any(band == sul) || band < 1 || band > 256
+    error("sixgr:rrc:asn1:DecodeFailed", ...
+        "Band n%d is outside the bounded FR1 paired/unpaired SIB1 profile.", ...
+        band);
+elseif any(band == unpaired)
+    duplex = "TDD";
 else
-    format = "A1";
+    duplex = "FDD";
 end
 end
 

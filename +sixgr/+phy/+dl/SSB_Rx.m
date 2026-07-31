@@ -49,6 +49,8 @@ end
 try
     [rxF, fOffHz, NID2, finfo] = sixgr.phy.sync.freqOffsetCorrect(rxWaveform, blockPattern, fs, ...
         'SearchBW_Hz', sixgr.util.structGet(cfg,'phy.sync.freqSearchBW_Hz',[]), ...
+        'TimingSearchGuardSamples', sixgr.util.structGet( ...
+            cfg, 'phy.synchronization.maxTimingUncertaintySamples', 0), ...
         'SSBTiming', timing);
 catch ME
     error('sixgr:phy:ia:SSBNotDetected', ...
@@ -56,14 +58,20 @@ catch ME
 end
 NID2 = mod(double(NID2),3);
 
-% Timing estimation (PSS-based)
-try
-    [tOff, tinfo] = sixgr.phy.sync.timingEstimate( ...
-        rxF, NID2, blockPattern, fs, 'SSBTiming', timing);
-catch ME
-    error('sixgr:phy:ia:SSBNotDetected', ...
-        'PSS timing search failed without fallback: %s', ME.message);
-end
+% The blind PSS/NID2 search already evaluates every canonical SS/PBCH
+% candidate window.  Reuse its winning correlation lag as the timing
+% estimate; a second broad search can lock to later PDSCH symbols.
+tOff = double(sixgr.util.structGet( ...
+    finfo, "SelectedTimingOffsetSamples", NaN));
+tinfo = struct( ...
+    "Detector", "blind_pss_candidate_window_correlation", ...
+    "SelectedCandidateWindowIndex", double(sixgr.util.structGet( ...
+        finfo, "SelectedCandidateWindowIndex", NaN)), ...
+    "SelectedCorrelationLagSamples", double(sixgr.util.structGet( ...
+        finfo, "SelectedCorrelationLagSamples", NaN)), ...
+    "SearchWindows", sixgr.util.structGet( ...
+        finfo, "CandidateSearchWindows", zeros(0, 2)), ...
+    "SSBTiming", timing);
 if ~(isscalar(tOff) && isfinite(double(tOff)))
     error('sixgr:phy:ia:SSBNotDetected', ...
         'PSS timing search did not return a finite hypothesis.');
@@ -79,12 +87,23 @@ if startIdx > size(rxF,1)
     error('sixgr:phy:ia:SSBNotDetected', ...
         'Resolved SSB timing starts beyond the received waveform.');
 end
-rxSync = rxF(startIdx:end, :);
 
-% OFDM demodulation at SSB numerology (nrbSSB=20)
+% OFDM demodulation at SSB numerology (nrbSSB=20).  The PSS timing points
+% to the selected SSB candidate symbol, which is not generally slot symbol
+% zero.  Start demodulation at that candidate's slot boundary and extract
+% the four symbols at their true within-slot positions so the applicable
+% cyclic-prefix sequence remains exact.
 nrbSSB = 20;
 scsSSB = double(timing.SSBSubcarrierSpacingKHz);
-nSlot = 0;
+candidateStartSymbol = double(sixgr.util.structGet( ...
+    finfo, "SelectedCandidateStartSymbol", NaN));
+if ~(isscalar(candidateStartSymbol) && isfinite(candidateStartSymbol) && ...
+        candidateStartSymbol >= 0 && candidateStartSymbol == round(candidateStartSymbol))
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'PSS timing search did not identify a canonical candidate symbol.');
+end
+nSlot = floor(candidateStartSymbol / 14);
+symbolWithinSlot = mod(candidateStartSymbol, 14);
 
 ssbCarrier = nrCarrierConfig;
 ssbCarrier.NCellID = 0;
@@ -96,6 +115,16 @@ ssbCarrier.NFrame = 0;
 ssbCarrier.NSlot = nSlot;
 ssbSampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
     ssbCarrier, "SampleRate", fs);
+slotSymbolLengths = double(ssbSampling.CyclicPrefixLengthsPerSlot(:)).' + ...
+    double(ssbSampling.Nfft);
+prefixSamples = sum(slotSymbolLengths(1:symbolWithinSlot));
+demodStartIdx = startIdx - prefixSamples;
+if demodStartIdx >= 1
+    rxSync = rxF(demodStartIdx:end, :);
+else
+    rxSync = [complex(zeros(1 - demodStartIdx, size(rxF, 2), ...
+        "like", rxF)); rxF];
+end
 rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
     ssbCarrier, rxSync, ...
     "Nfft", ssbSampling.Nfft, ...
@@ -107,16 +136,14 @@ if ndims(rxGrid) == 2
 end
 
 
-% nrTimingEstimate used above is driven by a 4-symbol SSB reference grid, so
-% the synchronized waveform starts at the SS/PBCH block boundary. Extract the
-% first four demodulated symbols; shifting to 2:5 corrupts PBCH DM-RS/BCH.
-if size(rxGrid,2) < 4
+ssbSymbolColumns = symbolWithinSlot + (1:4);
+if size(rxGrid,2) < ssbSymbolColumns(end)
     error('sixgr:phy:ia:SSBNotDetected', ...
         'The synchronized waveform contains fewer than four SSB symbols.');
 end
 
-% Extract SS/PBCH block (symbols 1..4 after synchronization)
-rxSSBGrid = rxGrid(:, 1:4, :);
+% Extract the four SS/PBCH symbols at the canonical candidate location.
+rxSSBGrid = rxGrid(:, ssbSymbolColumns, :);
 
 % Ensure 240-by-4-by-Nr
 if ndims(rxSSBGrid) == 2
@@ -156,6 +183,9 @@ sync.FreqInfo = finfo;
 sync.TimingInfo = tinfo;
 sync.SSSInfo = sssInfo;
 sync.SSBTiming = timing;
+sync.SelectedCandidateStartSymbol = candidateStartSymbol;
+sync.DemodulationSlot = double(nSlot);
+sync.SSBSymbolColumnsOneBased = double(ssbSymbolColumns);
 
 end
 

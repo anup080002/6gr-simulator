@@ -20,6 +20,8 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     p = inputParser;
     p.addParameter('SearchBW_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 0));
     p.addParameter('NID2Candidates', 0:2, @(x) isnumeric(x) && isvector(x));
+    p.addParameter('TimingSearchGuardSamples', 0, ...
+        @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0 && x == round(x));
     p.addParameter('SSBTiming', struct(), @localOptionalTiming);
     p.parse(varargin{:});
     opt = p.Results;
@@ -45,34 +47,56 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         candHz = linspace(-searchBW_Hz, searchBW_Hz, nCand);
     end
 
-    useBatchMex = (exist("sixgr_freq_corr_search_kernel_mex", "file") == 3) || ...
-        (exist("sixgr_freq_corr_search_kernel", "file") == 2);
+    % Candidate windows can contain different signal and noise energy
+    % (for example a later SIB1 transmission).  The legacy batch kernel
+    % reports an unnormalised correlation amplitude and therefore cannot
+    % be used to compare those windows without bias.  Keep this truth path
+    % on the energy-normalised implementation below.
+    useBatchMex = false;
     bestMetric = -inf;
     bestHz = 0;
     bestNID2 = 0;
+    bestWindowIndex = NaN;
     xIn = rxWaveform(:,1);
+    metricMatrix = nan(numel(candNID2), numel(candHz));
+    bestWindowIndexMatrix = nan(numel(candNID2), numel(candHz));
+    [searchSegments, searchWindows, candidateStartSymbols] = ...
+        localSSBCandidateSearchSegments( ...
+        xIn, ssbTiming, sampleRateHz, ...
+        double(opt.TimingSearchGuardSamples));
 
-    for nid2 = candNID2
+    for nid2Index = 1:numel(candNID2)
+        nid2 = candNID2(nid2Index);
         % Generate a time-domain PSS reference for the given SSB SCS/pattern
-        ref = localPSSReference(ssbTiming, nid2, sampleRateHz);
-        % Cell search must cover the whole received SSB observation window.
-        % A short prefix-only search misses valid SSBs that start later in a
-        % burst period and can turn a no-signal prefix into a false NID2/CFO.
-        nSearch = numel(xIn);
-        xSearch = xIn;
-
         if useBatchMex
             try
-                if exist("sixgr_freq_corr_search_kernel_mex", "file") == 3
-                    metricV = sixgr_freq_corr_search_kernel_mex(xSearch, ref, candHz(:), sampleRateHz);
-                else
-                    metricV = sixgr_freq_corr_search_kernel(xSearch, ref, candHz(:), sampleRateHz);
+                metricV = -inf(numel(candHz), 1);
+                bestSegmentV = nan(numel(candHz), 1);
+                for segmentIndex = 1:numel(searchSegments)
+                    ref = localPSSReference(ssbTiming, nid2, ...
+                        sampleRateHz, candidateStartSymbols(segmentIndex));
+                    xSearch = searchSegments{segmentIndex};
+                    if exist("sixgr_freq_corr_search_kernel_mex", "file") == 3
+                        segmentMetric = sixgr_freq_corr_search_kernel_mex( ...
+                            xSearch, ref, candHz(:), sampleRateHz);
+                    else
+                        segmentMetric = sixgr_freq_corr_search_kernel( ...
+                            xSearch, ref, candHz(:), sampleRateHz);
+                    end
+                    segmentMetric = double(segmentMetric(:));
+                    improved = segmentMetric > metricV;
+                    metricV(improved) = segmentMetric(improved);
+                    bestSegmentV(improved) = double(segmentIndex);
                 end
+                metricMatrix(nid2Index, :) = double(metricV(:)).';
+                bestWindowIndexMatrix(nid2Index, :) = ...
+                    double(bestSegmentV(:)).';
                 [m, idx] = max(metricV(:));
                 if m > bestMetric
                     bestMetric = m;
                     bestHz = candHz(max(1, min(numel(candHz), idx)));
                     bestNID2 = nid2;
+                    bestWindowIndex = bestSegmentV(idx);
                 end
                 continue;
             catch
@@ -80,16 +104,47 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
             end
         end
 
-        for fHz = candHz
-            x = localFreqShift(xSearch, sampleRateHz, -fHz);
-            m = localCorrMetric(x, ref);
+        for frequencyIndex = 1:numel(candHz)
+            fHz = candHz(frequencyIndex);
+            m = -Inf;
+            selectedSegmentIndex = NaN;
+            for segmentIndex = 1:numel(searchSegments)
+                ref = localPSSReference(ssbTiming, nid2, ...
+                    sampleRateHz, candidateStartSymbols(segmentIndex));
+                x = localFreqShift(searchSegments{segmentIndex}, ...
+                    sampleRateHz, -fHz);
+                segmentMetric = localCorrMetric(x, ref);
+                if segmentMetric > m
+                    m = segmentMetric;
+                    selectedSegmentIndex = double(segmentIndex);
+                end
+            end
+            metricMatrix(nid2Index, frequencyIndex) = double(m);
+            bestWindowIndexMatrix(nid2Index, frequencyIndex) = ...
+                selectedSegmentIndex;
             if m > bestMetric
                 bestMetric = m;
                 bestHz = fHz;
                 bestNID2 = nid2;
+                bestWindowIndex = selectedSegmentIndex;
             end
         end
     end
+
+    if ~(isscalar(bestWindowIndex) && isfinite(bestWindowIndex) && ...
+            bestWindowIndex >= 1 && bestWindowIndex <= numel(searchSegments))
+        error("sixgr:phy:sync:PSSCandidateNotDetected", ...
+            "PSS search did not resolve a canonical candidate window.");
+    end
+    selectedReference = localPSSReference( ...
+        ssbTiming, bestNID2, sampleRateHz, ...
+        candidateStartSymbols(bestWindowIndex));
+    selectedSegment = localFreqShift( ...
+        searchSegments{bestWindowIndex}, sampleRateHz, -bestHz);
+    [~, selectedLag] = localCorrMetricAndLag( ...
+        selectedSegment, selectedReference);
+    selectedTimingOffset = searchWindows(bestWindowIndex, 1) - 1 + ...
+        selectedLag - 1;
 
     % Apply the selected correction
     rxOut = localFreqShift(rxWaveform, sampleRateHz, -bestHz);
@@ -100,7 +155,19 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.SearchBW_Hz = searchBW_Hz;
     info.Candidates_Hz = candHz;
     info.Candidates_NID2 = candNID2;
-    info.SearchSamples = double(numel(xIn));
+    info.MetricMatrix = metricMatrix;
+    info.BestWindowIndexMatrix = bestWindowIndexMatrix;
+    info.CandidateSearchWindows = double(searchWindows);
+    info.SelectedCandidateWindowIndex = double(bestWindowIndex);
+    info.SelectedCandidateStartSymbol = double( ...
+        candidateStartSymbols(bestWindowIndex));
+    info.SelectedTimingOffsetSamples = double(selectedTimingOffset);
+    info.SelectedCorrelationLagSamples = double(selectedLag - 1);
+    info.TimingSearchGuardSamples = double(opt.TimingSearchGuardSamples);
+    info.SearchSamples = double(sum( ...
+        searchWindows(:,2) - searchWindows(:,1) + 1));
+    info.SearchDuration_ms = 1e3 * info.SearchSamples / ...
+        double(sampleRateHz);
     info.Metric = bestMetric;
     info.SSBTiming = ssbTiming;
 end
@@ -112,35 +179,83 @@ function y = localFreqShift(x, fs, fHz)
 end
 
 function metric = localCorrMetric(x, ref)
-    % Correlate using magnitude peak of convolution
-    c = abs(conv(x(:,1), flipud(conj(ref)), 'valid'));
-    metric = max(c);
+    [metric, ~] = localCorrMetricAndLag(x, ref);
 end
 
-function ref = localPSSReference(ssbTiming, nid2, fs)
-    % Build a reference PSS waveform in time domain.
-    % We generate a 20-RB grid with PSS in symbol 1 and OFDM modulate.
+function [metric, lagIndex] = localCorrMetricAndLag(x, ref)
+    x = x(:,1);
+    ref = ref(:);
+    c = abs(conv(x, flipud(conj(ref)), "valid"));
+    if isempty(c)
+        metric = -Inf;
+        lagIndex = NaN;
+        return;
+    end
+    referenceEnergy = sum(abs(ref).^2);
+    windowEnergy = conv(abs(x).^2, ones(numel(ref), 1), "valid");
+    denominator = sqrt(max(windowEnergy .* referenceEnergy, realmin));
+    normalisedCorrelation = c ./ denominator;
+    [metric, lagIndex] = max(normalisedCorrelation);
+    metric = double(metric);
+    lagIndex = double(lagIndex);
+end
 
-    scs_kHz = double(ssbTiming.SSBSubcarrierSpacingKHz);
-    nrbSSB = 20;
+function ref = localPSSReference(ssbTiming, nid2, fs, candidateStartSymbol)
+    ref = sixgr.phy.sync.buildPSSCorrelationReference( ...
+        ssbTiming, double(nid2), double(fs), ...
+        "CandidateStartSymbol", double(candidateStartSymbol));
+end
 
-    carrier = nrCarrierConfig;
-    carrier.SubcarrierSpacing = scs_kHz;
-    carrier.NSizeGrid = nrbSSB;
-    carrier.NStartGrid = 0;
-    carrier.CyclicPrefix = 'normal';
+function [segments, windows, retainedCandidateSymbols] = ...
+        localSSBCandidateSearchSegments( ...
+        x, ssbTiming, fs, guardSamples)
+candidateSymbols = double( ...
+    ssbTiming.CandidateStartSymbolsWithinHalfFrame(:));
+candidateSymbols = unique(candidateSymbols( ...
+    isfinite(candidateSymbols) & candidateSymbols >= 0 & ...
+    candidateSymbols == round(candidateSymbols)), "stable");
+if isempty(candidateSymbols)
+    error("sixgr:phy:sync:MissingSSBCandidateSymbols", ...
+        "Canonical SSB timing contains no candidate start symbols.");
+end
 
-    pss = nrPSS(nid2);
-    ind = nrPSSIndices;
+carrier = nrCarrierConfig;
+carrier.SubcarrierSpacing = double( ...
+    ssbTiming.SSBSubcarrierSpacingKHz);
+carrier.NSizeGrid = 20;
+carrier.NStartGrid = 0;
+carrier.CyclicPrefix = "normal";
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+    carrier, "SampleRate", double(fs), "WindowingSamples", 0);
+subframeSymbolLengths = double(sampling.SymbolLengths(:)).';
+halfFrameSymbolLengths = repmat(subframeSymbolLengths, 1, 5);
 
-    grid = zeros(carrier.NSizeGrid*12, 4);
-    grid(ind) = pss;
-
-    w = sixgr.phy.waveform.ofdmModulate( ...
-        carrier, grid, 'SampleRate', fs, 'Windowing', 0);
-
-    % Use a short portion for correlation
-    ref = w(1:min(end, 2048));
+segments = cell(0, 1);
+windows = zeros(0, 2);
+retainedCandidateSymbols = zeros(0, 1);
+for candidateIndex = 1:numel(candidateSymbols)
+    startSymbol = candidateSymbols(candidateIndex);
+    if startSymbol + 4 > numel(halfFrameSymbolLengths)
+        continue;
+    end
+    firstSample = 1 + sum(halfFrameSymbolLengths(1:startSymbol));
+    firstSample = max(1, firstSample - guardSamples);
+    reference = localPSSReference( ...
+        ssbTiming, 0, fs, startSymbol);
+    referenceLength = numel(reference);
+    sampleCount = referenceLength + 2 * guardSamples;
+    lastSample = min(numel(x), firstSample + sampleCount - 1);
+    if firstSample > numel(x) || lastSample < firstSample
+        continue;
+    end
+    segments{end+1,1} = x(firstSample:lastSample); %#ok<AGROW>
+    windows(end+1,:) = [firstSample, lastSample]; %#ok<AGROW>
+    retainedCandidateSymbols(end+1,1) = startSymbol; %#ok<AGROW>
+end
+if isempty(segments)
+    error("sixgr:phy:sync:SSBCandidateWindowsOutsideCapture", ...
+        "No canonical SS/PBCH candidate window intersects the capture.");
+end
 end
 
 function timing = localResolveTiming(blockPattern, supplied)

@@ -85,6 +85,11 @@ adaptiveMode = any(runClass == ["adaptive_system_diagnostic", "hybrid_validation
 grantBindingRequired = localRequiresPDCCHGrantBinding(cfg);
 mimoReferenceRequired = any(attemptMask & double(rowAudit.EffectiveLayers) > 1) && strictMode;
 channelRFReferenceRequired = localRequiresChannelRFReference(cfg) && strictMode;
+[objectiveMask, objectiveScope, objectiveSNR_dB] = ...
+    localObjectiveEvaluationMask(rowAudit, attemptMask, cfg, adaptiveMode);
+objectiveTrialCount = double(nnz(objectiveMask));
+[objectiveBLER, objectiveBERWeighted, objectiveDecodeSuccessRate] = ...
+    localObjectiveMetrics(rowAudit, objectiveMask);
 
 if strictMode && trialCount == 0
     failureCodes(end+1,1) = "dl_pdsch_raw_trials_missing"; %#ok<AGROW>
@@ -113,17 +118,21 @@ end
 if strictMode && missingCRCCount > 0
     failureCodes(end+1,1) = "dl_pdsch_tbc_crc_missing"; %#ok<AGROW>
 end
-if strictMode && ~(isfinite(rawBLER))
+if strictMode && objectiveTrialCount == 0
+    failureCodes(end+1,1) = "dl_pdsch_objective_evaluation_trials_missing"; %#ok<AGROW>
+end
+if strictMode && ~(isfinite(objectiveBLER))
     failureCodes(end+1,1) = "dl_pdsch_raw_bler_missing"; %#ok<AGROW>
-elseif isfinite(maxBLER) && isfinite(rawBLER) && rawBLER > maxBLER + eps
+elseif isfinite(maxBLER) && isfinite(objectiveBLER) && objectiveBLER > maxBLER + eps
     failureCodes(end+1,1) = "dl_pdsch_bler_objective_failed"; %#ok<AGROW>
 end
-if strictMode && ~(isfinite(rawBERWeighted))
+if strictMode && ~(isfinite(objectiveBERWeighted))
     failureCodes(end+1,1) = "dl_pdsch_raw_ber_missing"; %#ok<AGROW>
-elseif isfinite(maxBER) && isfinite(rawBERWeighted) && rawBERWeighted > maxBER + eps
+elseif isfinite(maxBER) && isfinite(objectiveBERWeighted) && objectiveBERWeighted > maxBER + eps
     failureCodes(end+1,1) = "dl_pdsch_ber_objective_failed"; %#ok<AGROW>
 end
-if isfinite(minDecodeSuccessRate) && isfinite(decodeSuccessRate) && decodeSuccessRate + eps < minDecodeSuccessRate
+if isfinite(minDecodeSuccessRate) && isfinite(objectiveDecodeSuccessRate) && ...
+        objectiveDecodeSuccessRate + eps < minDecodeSuccessRate
     failureCodes(end+1,1) = "dl_pdsch_decode_success_objective_failed"; %#ok<AGROW>
 end
 if fixedAnchor && configuredDenom > 0 && isfinite(configuredMatchRate) && configuredMatchRate + eps < requiredMatchRate
@@ -171,6 +180,8 @@ summary = table( ...
     totalBitErrors, totalBitsCompared, rawBERWeighted, rawBERUnweighted, ...
     sum(codeBlockErrors(isfinite(codeBlockErrors)), "omitnan"), sum(codeBlockCount(isfinite(codeBlockCount)), "omitnan"), ...
     decoderFailureCount, highSNRPositivePassCount, outageRowCount, ...
+    objectiveScope, objectiveSNR_dB, objectiveTrialCount, ...
+    objectiveBLER, objectiveBERWeighted, objectiveDecodeSuccessRate, ...
     maxBLER, maxBER, minDecodeSuccessRate, decodeSuccessRate, requiredMatchRate, configuredMatchRate, ...
     runClass, fixedAnchor, adaptiveMode, grantBindingRequired, mimoReferenceRequired, channelRFReferenceRequired, ...
     objectivePass, objectivePass, objectivePass, truthStatus, strjoin(failureCodes, "|"), sourceTable, ...
@@ -179,6 +190,8 @@ summary = table( ...
     'TBCrcPassCount','TBCrcFailCount','MissingTBCrcCount','RawBLER','RawNewDataBLER','RawFinalDeliveryBLER', ...
     'BitErrors','BitsCompared','RawBERWeighted','RawBERUnweighted', ...
     'CodeBlockErrorCount','CodeBlockCount','DecoderFailureCount','HighSNRPositivePassCount','OutageRowCount', ...
+    'ObjectiveEvaluationScope','ObjectiveEvaluationSNR_dB','ObjectiveTrialCount', ...
+    'ObjectiveBLER','ObjectiveBERWeighted','ObjectiveDecodeSuccessRate', ...
     'RawBLERObjectiveThreshold','RawBERObjectiveThreshold','RequiredDecodeSuccessRate','DecodeSuccessRate','RequiredConfiguredMatchRate','ConfiguredEffectiveMatchRate', ...
     'RunClass','FixedAnchorMode','AdaptiveMode','GrantBindingRequired','MIMOReferenceRequired','ChannelRFReferenceRequired', ...
     'ObjectivePass','ScenarioObjectiveOk','ResultOk','TruthStatus','FailureReason','SourceTable'});
@@ -337,6 +350,56 @@ if ~strictMode
 end
 end
 
+function [mask, scope, snr_dB] = localObjectiveEvaluationMask(rowAudit, attemptMask, cfg, adaptiveMode)
+mask = logical(attemptMask);
+scope = "all_positive_decode_attempts";
+snr_dB = NaN;
+sweepEnabled = logical(sixgr.util.structGet(cfg, "run.snrSweepEnabled", false)) || ...
+    logical(sixgr.util.structGet(cfg, "sweeps_and_matrix.snr_sweep.enabled", false));
+if ~(logical(adaptiveMode) && sweepEnabled)
+    return;
+end
+
+snrValues = double(rowAudit.SNR_dB);
+available = snrValues(mask & isfinite(snrValues));
+if isempty(available)
+    mask(:) = false;
+    scope = "highest_configured_snr_bin_unavailable";
+    return;
+end
+snr_dB = max(available);
+tolerance = max(1e-9, 32 * eps(max(1, abs(snr_dB))));
+mask = mask & isfinite(snrValues) & abs(snrValues - snr_dB) <= tolerance;
+scope = "highest_configured_snr_bin";
+end
+
+function [bler, ber, decodeSuccessRate] = localObjectiveMetrics(rowAudit, mask)
+crcKnown = logical(mask) & logical(rowAudit.TBCrcKnown);
+if any(crcKnown)
+    bler = nnz(crcKnown & ~logical(rowAudit.TBCrcPass)) / nnz(crcKnown);
+else
+    bler = NaN;
+end
+
+bitErrors = double(rowAudit.BitErrors);
+bitsCompared = double(rowAudit.BitsCompared);
+berMask = logical(mask) & isfinite(bitErrors) & ...
+    isfinite(bitsCompared) & bitsCompared > 0;
+if any(berMask)
+    ber = sum(bitErrors(berMask), "omitnan") / ...
+        sum(bitsCompared(berMask), "omitnan");
+else
+    ber = NaN;
+end
+
+if any(mask)
+    decodeSuccessRate = nnz(logical(mask) & logical(rowAudit.TBCrcKnown) & ...
+        logical(rowAudit.TBCrcPass)) / nnz(mask);
+else
+    decodeSuccessRate = NaN;
+end
+end
+
 function T = localEmptyRowAudit()
 T = table('Size', [0, 49], ...
     'VariableTypes', {'double','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','double','string','string','logical','logical','logical','double','double','double','double','string','double','double','double','string','double','double','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','logical','string','string'}, ...
@@ -373,10 +436,10 @@ end
 function text = localFailureDefinition(code, summary)
 switch string(code)
     case "dl_pdsch_bler_objective_failed"
-        text = "Raw decoder BLER exceeded threshold: raw=" + string(summary.RawBLER(1)) + ...
+        text = "Objective-scope raw decoder BLER exceeded threshold: raw=" + string(summary.ObjectiveBLER(1)) + ...
             ", threshold=" + string(summary.RawBLERObjectiveThreshold(1));
     case "dl_pdsch_ber_objective_failed"
-        text = "Weighted raw decoder BER exceeded threshold: raw=" + string(summary.RawBERWeighted(1)) + ...
+        text = "Objective-scope weighted raw decoder BER exceeded threshold: raw=" + string(summary.ObjectiveBERWeighted(1)) + ...
             ", threshold=" + string(summary.RawBERObjectiveThreshold(1));
     case "dl_pdsch_configured_effective_mismatch"
         text = "Fixed-anchor configured MCS/modulation/layers/rank did not match effective raw PDSCH rows.";

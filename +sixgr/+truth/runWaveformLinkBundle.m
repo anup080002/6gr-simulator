@@ -3010,6 +3010,7 @@ end
 snrGrid = unique(sort(double(snrGrid(:))));
 numUsers = max(1, round(double(sixgr.util.structGet(multiUser, "NumUsers", 1))));
 nFramesPerPoint = max(1, round(double(nTrials)));
+totalCanonicalSlots = nFramesPerPoint * numel(snrGrid);
 userCfg = cell(numUsers, 1);
 for ueIdx = 1:numUsers
     userCfg{ueIdx} = localPrepareUserCfg(cfg, multiUser, ueIdx);
@@ -3034,9 +3035,9 @@ for sweepIdx = 1:numel(snrGrid)
             round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
             char(string(slotLabel)), double(logical(allowDL)), double(logical(allowUL)));
         if allowDL
-            runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "DL", sweepIdx, numel(snrGrid), absoluteFrame, nFramesPerPoint, snrVal);
+            runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "DL", sweepIdx, numel(snrGrid), absoluteFrame, totalCanonicalSlots, snrVal);
         elseif allowUL
-            runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "UL", sweepIdx, numel(snrGrid), absoluteFrame, nFramesPerPoint, snrVal);
+            runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "UL", sweepIdx, numel(snrGrid), absoluteFrame, totalCanonicalSlots, snrVal);
         else
             localAppendRuntimeLog("WARN", ...
                 "Coupled canonical slot skipped because no duplex direction is enabled: sweep=%d/%d slot=%d/%d duplex=%s.", ...
@@ -3056,6 +3057,15 @@ for sweepIdx = 1:numel(snrGrid)
             "WriteRawTables", false, "SlotComplete", false, "PublishReason", "slot_pre_schedule_status");
         if allowDL
             [runtimeState, dlGrants, dlInfo] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(runtimeState, cfg, "DL");
+            dlUnavailableReason = string(sixgr.util.structGet( ...
+                dlInfo, "ResourceUnavailableReason", ""));
+            if strlength(strtrim(dlUnavailableReason)) > 0
+                localAppendRuntimeLog("INFO", ...
+                    "Coupled DL scheduling deferred: sweep=%d/%d slot=%d/%d reason=%s policy=no_valid_harq_ack_occasion_from_current_dl_slot.", ...
+                    round(double(sweepIdx)), round(double(numel(snrGrid))), ...
+                    round(double(frameLocal)), round(double(nFramesPerPoint)), ...
+                    char(dlUnavailableReason));
+            end
             localAppendRuntimeLog("INFO", ...
                 "Coupled DL schedule complete: sweep=%d/%d slot=%d/%d active=%d granted=%d grants=%d.", ...
                 round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
@@ -3074,7 +3084,7 @@ for sweepIdx = 1:numel(snrGrid)
         end
         if allowUL
             if allowDL
-                runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "UL", sweepIdx, numel(snrGrid), absoluteFrame, nFramesPerPoint, snrVal);
+                runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "UL", sweepIdx, numel(snrGrid), absoluteFrame, totalCanonicalSlots, snrVal);
             end
             [ulGrants, pendingULGrants, staleCount] = localPopDueCoupledULGrants(pendingULGrants, absoluteFrame);
             if staleCount > 0
@@ -3144,9 +3154,18 @@ end
 controlSlot = double(sixgr.util.structGet(state, "CurrentSlot", frameLocal));
 timingDecision = localResolveCoupledULTimingDecision( ...
     state, cfg, controlSlot);
+if ~logical(sixgr.util.structGet(timingDecision, "Valid", false))
+    localAppendRuntimeLog("INFO", ...
+        "Coupled UL K2 preschedule deferred: control_slot=%d reason=%s policy=no_valid_ul_occasion_from_current_dl_control_slot.", ...
+        round(double(controlSlot)), ...
+        char(string(sixgr.util.structGet(timingDecision, "ReasonCode", ""))));
+    return;
+end
 k2Slots = double(timingDecision.K2);
 dueSlot = double(timingDecision.DataAbsoluteSlot) + 1;
-if ~(isfinite(dueSlot) && dueSlot >= 1 && dueSlot <= nFramesPerPoint)
+sweepStartSlot = (sweepIdx - 1) * nFramesPerPoint + 1;
+sweepEndSlot = sweepIdx * nFramesPerPoint;
+if ~(isfinite(dueSlot) && dueSlot >= sweepStartSlot && dueSlot <= sweepEndSlot)
     return;
 end
 [~, dueAllowUL] = localCoupledSlotDuplexState(cfg, dueSlot);
@@ -3157,7 +3176,9 @@ if localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
     return;
 end
 
-planState = sixgr.truth.CoupledTruthRuntime.startSlot(state, cfg, "UL", sweepIdx, sweepCount, dueSlot, nFramesPerPoint, snr_dB);
+planState = sixgr.truth.CoupledTruthRuntime.startSlot( ...
+    state, cfg, "UL", sweepIdx, sweepCount, dueSlot, ...
+    nFramesPerPoint * sweepCount, snr_dB);
 planState.TimingControlAbsoluteSlot0Based = controlSlot - 1;
 planState.TimingControlSymbolAllocation = ...
     localCoupledControlSymbolAllocation(state, cfg);
@@ -3254,6 +3275,9 @@ probe = struct( ...
 decision = sixgr.phy.frame.TimingRelationEngine. ...
     resolveProductionGrant(cfg, probe);
 if ~decision.Valid
+    if sixgr.truth.isDeferrableCoupledULTimingDecision(decision)
+        return;
+    end
     error("sixgr:truth:CoupledULTimingRejected", ...
         "Canonical coupled UL K2 timing rejected control slot %d: %s", ...
         round(double(controlSlot)), char(string(decision.ReasonCode)));
@@ -6578,7 +6602,11 @@ switch duplexMode
         allowUL = true;
         slotLabel = "FDD";
     case "TDD"
-        partition = sixgr.util.resolveTDDSlotPartition(cfg, canonicalSlot);
+        % The coupled runtime uses one-based physical slot numbers while
+        % resolveTDDSlotPartition implements the canonical zero-based slot
+        % convention used by the timing engine.
+        partition = sixgr.util.resolveTDDSlotPartition( ...
+            cfg, double(canonicalSlot) - 1);
         allowDL = logical(partition.AllowDL);
         allowUL = logical(partition.AllowUL);
         slotLabel = string(partition.SlotLabel);
@@ -7327,7 +7355,9 @@ direction = upper(string(direction));
 if ~(isstruct(grants) && ~isempty(grants))
     return;
 end
-pdcchRequired = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
+pdcchRequired = logical(sixgr.util.structGet( ...
+    state.ControlGating, "PDCCHRequired", false)) || ...
+    sixgr.control.isPDCCHGrantBindingRequired(state.CfgMobility, direction);
 slotDLControlAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true)) && ...
     double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 0)) > 0;
 pdcchCCEUsedByResource = containers.Map('KeyType', 'char', 'ValueType', 'double');
@@ -7636,10 +7666,12 @@ cfgEval = cfg;
 if ~(isstruct(cfgEval) && ~isempty(fieldnames(cfgEval)))
     cfgEval = sixgr.util.structGet(state, "CfgMobility", struct());
 end
-if localUsesReceiverNoiseMeasurement(cfgEval, struct())
-    linkSNR_dB = NaN;
-else
-    linkSNR_dB = double(fallbackSNR_dB);
+[linkSNR_dB, configuredReplay] = sixgr.truth.resolveCoupledReplaySNR( ...
+    cfgEval, fallbackSNR_dB);
+if configuredReplay
+    % CSI and geometry may drive scheduling in a controlled sweep, but
+    % must not replace the requested physical AWGN operating point.
+    return;
 end
 if ~(isfinite(double(ueIdx)) && ueIdx >= 1)
     return;
@@ -9641,6 +9673,7 @@ end
 function T = localCollectPBCHTrials(cfg, snr_dB, nTrials)
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
+cfgPoint = sixgr.truth.bindStandaloneSNRPoint(cfg, double(snr_dB));
 pbchObservationSubframes = localResolvePBCHObservationSubframes(cfg);
 rootRunFolder = string(sixgr.util.structGet(cfg, "run.rootRunFolder", ""));
 writeSIB1Artifacts = strlength(rootRunFolder) > 0 && ...
@@ -9650,12 +9683,14 @@ for k = 1:nTrials
     r.Status = "FAIL";
     try
         ssbIndex = localResolvePBCHSSBIndex(cfg, k);
+        cfgTrial = sixgr.truth.bindStandalonePBCHTrial( ...
+            cfgPoint, double(snr_dB), k, ssbIndex);
         cellSearchArgs = {"NumSubframes", pbchObservationSubframes, "SSBIndex", ssbIndex};
         if writeSIB1Artifacts && k == 1
             cellSearchArgs = [cellSearchArgs, {"RunFolder", rootRunFolder, ...
                 "RunId", "sib1_runtime_waveform", "WriteArtifacts", true}]; %#ok<AGROW>
         end
-        out = sixgr.link.runCellSearch_MIB_SIB1(cfg, cellSearchArgs{:});
+        out = sixgr.link.runCellSearch_MIB_SIB1(cfgTrial, cellSearchArgs{:});
         skipped = logical(sixgr.util.structGet(out, "Skipped", false));
         pbch = sixgr.util.structGet(out, "PBCH", struct());
         sib1 = sixgr.util.structGet(out, "SIB1", struct());
@@ -13414,7 +13449,14 @@ if istable(trialRowsOrTable)
 elseif isnumeric(trialRowsOrTable) && isscalar(trialRowsOrTable) && isfinite(trialRowsOrTable)
     rowCount = double(trialRowsOrTable);
 end
-summary = localFormatOperatingPointSINRObservabilitySummary(trialT, configuredSNR_dB);
+pointT = trialT;
+if istable(pointT) && ~isempty(pointT) && isfinite(configuredSNR_dB) && ...
+        ismember("ConfiguredSNR_dB", string(pointT.Properties.VariableNames))
+    configured = double(pointT.ConfiguredSNR_dB);
+    pointT = pointT(isfinite(configured) & ...
+        abs(configured - double(configuredSNR_dB)) <= 1e-9, :);
+end
+summary = localFormatOperatingPointSINRObservabilitySummary(pointT, configuredSNR_dB);
 end
 
 function summary = localFormatOperatingPointSINRObservabilitySummary(trialT, configuredSNR_dB)
@@ -14491,6 +14533,14 @@ if nargin < 5
     pruneMissingPrimaryEvidence = false;
 end
 snrGrid = unique(sort(double(snrGrid(:))));
+if logical(pruneMissingPrimaryEvidence)
+    % Coupled truth deliberately skips the legacy preflight execution.  Its
+    % authoritative KPI rows must therefore be created from the primary
+    % slot-runtime evidence before the aggregate results are applied.  An
+    % empty legacy table is not evidence that the completed coupled bundle
+    % failed.
+    res = localEnsureCoupledPrimaryKPIRows(res, rawTrials);
+end
 if isfield(rawTrials, "PBCH") && istable(rawTrials.PBCH) && ~isempty(rawTrials.PBCH)
     aggPBCH = localAggregatePrimaryPassFailCase(rawTrials.PBCH, "PBCH geometry-driven");
     res = localReplaceCaseResult(res, "CellSearch_MIB_SIB1", aggPBCH);
@@ -14517,6 +14567,48 @@ if logical(pruneMissingPrimaryEvidence)
     res = localPrunePrimaryCasesWithoutEvidence(res, rawTrials);
 end
 res.Ok = localLinkKPITableHealthy(res.KPITable);
+end
+
+function res = localEnsureCoupledPrimaryKPIRows(res, rawTrials)
+specs = [ ...
+    struct("Case", "CellSearch_MIB_SIB1", "Field", "PBCH"); ...
+    struct("Case", "PRACH_Detection", "Field", "PRACH"); ...
+    struct("Case", "DL_PDSCH_Throughput", "Field", "DL"); ...
+    struct("Case", "UL_PUSCH_Throughput", "Field", "UL"); ...
+    struct("Case", "UL_SRS_ChannelEst", "Field", "SRS"); ...
+    struct("Case", "UL_LowPAPR", "Field", "UL")];
+
+if ~(isfield(res, "KPITable") && istable(res.KPITable))
+    res.KPITable = table();
+end
+existingCases = strings(0, 1);
+if ~isempty(res.KPITable) && ismember("Case", string(res.KPITable.Properties.VariableNames))
+    existingCases = string(res.KPITable.Case);
+end
+
+newRows = repmat(localMakeBundleAnchorKpiRow("", struct()), 0, 1);
+for i = 1:numel(specs)
+    if ~localHasPrimaryEvidence(rawTrials, specs(i).Field) || ...
+            any(strcmpi(existingCases, specs(i).Case))
+        continue;
+    end
+    deferred = struct( ...
+        "Ok", false, ...
+        "Skipped", false, ...
+        "Notes", "pending_primary_coupled_runtime_aggregation");
+    newRows(end+1, 1) = localMakeBundleAnchorKpiRow(specs(i).Case, deferred); %#ok<AGROW>
+    existingCases(end+1, 1) = specs(i).Case; %#ok<AGROW>
+end
+
+if isempty(newRows)
+    return;
+end
+newTable = struct2table(newRows);
+if isempty(res.KPITable)
+    res.KPITable = newTable;
+else
+    res.KPITable = localAppendCompatTable(res.KPITable, newTable);
+end
 end
 
 function res = localPrunePrimaryCasesWithoutEvidence(res, rawTrials)
