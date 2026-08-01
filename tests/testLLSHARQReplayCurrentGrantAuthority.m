@@ -106,5 +106,34 @@ assert(logical(sixgr.util.structGet(replayGrant.PHYGrant, ...
     "HARQProcessKey.IsRetransmission", false)), ...
     "HARQ replay must refreeze the PHY grant with retransmission HARQ context.");
 
+% Execution commit must reduce all exported spatial aliases from the same
+% actual waveform rank.  A prior defect updated precoder metadata while the
+% scheduler trace retained rank one, making rank-two UL retransmissions look
+% like single-layer transmissions in the WebGUI.
+traceGrant = currentGrant;
+traceGrant.Direction = "UL";
+traceGrant.NumLayers = 1;
+traceGrant.Layers = 1;
+traceGrant.RIUsed = 1;
+traceGrant.Rank = 1;
+state = sixgr.truth.CoupledTruthRuntime.appendGrantTraceRuntime( ...
+    state, traceGrant, "UL", struct());
+executedGrant = traceGrant;
+executedGrant.NumLayers = 2;
+executedGrant.Layers = 2;
+executedGrant.RI = 2;
+executedGrant.RIUsed = 2;
+executedGrant.Rank = 2;
+executedGrant.RankIndicator = 2;
+state = sixgr.truth.CoupledTruthRuntime.commitGrantExecution( ...
+    state, 1, "UL", executedGrant);
+assert(height(state.ULGrantTraceTable) == 1, ...
+    "Regression fixture must retain one UL grant trace row.");
+assert(double(state.ULGrantTraceTable.NumLayers(1)) == 2 && ...
+    double(state.ULGrantTraceTable.Layers(1)) == 2 && ...
+    double(state.ULGrantTraceTable.RIUsed(1)) == 2 && ...
+    double(state.ULGrantTraceTable.Rank(1)) == 2, ...
+    "Execution commit must synchronize NumLayers/Layers/RIUsed/Rank to the waveform rank.");
+
 ok = true;
 end

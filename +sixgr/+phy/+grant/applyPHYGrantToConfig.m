@@ -45,11 +45,15 @@ cfgOut = sixgr.util.structSet(cfgOut, "channel.nTxAnt", numWaveformColumns);
 cfgOut = sixgr.util.structSet(cfgOut, "channel.nRxAnt", numRxAntennas);
 
 if direction == "DL"
+    logicalMatrix = sixgr.util.structGet(prec, "MatrixLogicalPorts", prec.Matrix);
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", numLogicalPorts);
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", numLogicalPorts);
-    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.matrix", double(prec.Matrix));
-    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precodingMatrix", double(prec.Matrix));
-    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.W", double(prec.Matrix));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.matrix", double(logicalMatrix));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precodingMatrix", double(logicalMatrix));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.W", double(logicalMatrix));
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.selectedPrecoderSHA256", ...
+        char(string(sixgr.util.structGet(prec, "SelectedMatrixSHA256", ...
+        sixgr.phy.mimo.MatrixContract.digest(double(prec.Matrix))))));
     if logical(sixgr.util.structGet(cfgOut, "phy.csirs.enable", false))
         cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.nPorts", numWaveformColumns);
         cfgOut = sixgr.util.structSet(cfgOut, "phy.csirs.numPorts", numWaveformColumns);

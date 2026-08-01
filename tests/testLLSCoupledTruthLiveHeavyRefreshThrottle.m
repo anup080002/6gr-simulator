@@ -44,9 +44,11 @@ caught = [];
 out = struct("Ok", false);
 logText = evalc('try, out = sixgr.truth.runWaveformLinkBundle(cfg, runFolder, opt); catch ME, caught = ME; end');
 if ~isempty(caught)
-    assert(contains(string(caught.identifier), "PrimarySummarySkipped") || ...
-        contains(string(caught.message), "Primary link KPI summary contains skipped rows"), ...
-        "Live refresh throttle regression should only tolerate the known primary-summary coverage guard.");
+    knownCoverageGuard = contains(string(caught.identifier), "PrimarySummarySkipped") || ...
+        contains(string(caught.message), "Primary link KPI summary contains skipped rows");
+    if ~knownCoverageGuard
+        rethrow(caught);
+    end
 else
     assert(logical(sixgr.util.structGet(out, "Ok", false)), ...
         "Coupled truth live refresh throttle bundle should complete cleanly.");

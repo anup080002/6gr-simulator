@@ -3962,7 +3962,9 @@ if ~(isstruct(trialContext) && isstruct(sixgr.util.structGet(trialContext, "Gran
 end
 grant = sixgr.util.structGet(trialContext, "GrantSnapshot", struct());
 direction = upper(string(direction));
-isRetx = logical(sixgr.util.structGet(sixgr.util.structGet(trialContext, "HARQContext", struct()), "IsRetransmission", false));
+isRetx = sixgr.util.logicalAny(sixgr.util.structGet( ...
+    sixgr.util.structGet(trialContext, "HARQContext", struct()), ...
+    "IsRetransmission", false));
 queueBitsUpper = 8 * floor(max(0, double(sixgr.util.structGet(grant, "BufferBytesBefore", sixgr.util.structGet(grant, "TBSBytes", 0)))));
 if isRetx
     replayBits = double(numel(sixgr.util.structGet(trialContext, "TransportBlockBits", [])));
@@ -5307,9 +5309,9 @@ tf = false;
 if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
     return;
 end
-tf = logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
-    logical(sixgr.util.structGet(grant, "HARQIsRetransmission", false)) || ...
-    logical(sixgr.util.structGet(grant, "HARQProcessKey.IsRetransmission", false)) || ...
+tf = sixgr.util.logicalAny(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+    sixgr.util.logicalAny(sixgr.util.structGet(grant, "HARQIsRetransmission", false)) || ...
+    sixgr.util.logicalAny(sixgr.util.structGet(grant, "HARQProcessKey.IsRetransmission", false)) || ...
     contains(lower(strtrim(string(sixgr.util.structGet(grant, "GrantReason", "")))), "retrans");
 end
 
@@ -5537,6 +5539,35 @@ for i = 1:numel(numericFields)
         grant.(char(fieldName)) = double(T.(char(fieldName))(1));
     end
 end
+
+% The executed trial, rather than the pre-execution scheduler shell, is the
+% authority for the spatial rank that reached the waveform chain.  Keep all
+% canonical grant aliases synchronized before the snapshot is committed to
+% the grant trace and HARQ entity.  This is especially important for HARQ
+% replays: a stale rank-one scheduler shell must not overwrite a rank-two
+% waveform execution in the persisted evidence or in the next replay.
+executedLayers = NaN;
+layerFields = ["EffectiveLayers", "Layers", "PrecodingNumLayers", "ConfiguredLayers"];
+for i = 1:numel(layerFields)
+    fieldName = layerFields(i);
+    if ~ismember(fieldName, vars)
+        continue;
+    end
+    candidate = double(T.(char(fieldName))(1));
+    if isscalar(candidate) && isfinite(candidate) && candidate >= 1
+        executedLayers = max(1, round(candidate));
+        break;
+    end
+end
+if isfinite(executedLayers)
+    grant.NumLayers = double(executedLayers);
+    grant.Layers = double(executedLayers);
+    grant.RI = double(executedLayers);
+    grant.RIUsed = double(executedLayers);
+    grant.Rank = double(executedLayers);
+    grant.RankIndicator = double(executedLayers);
+    grant.TBSInputNumLayers = double(executedLayers);
+end
 end
 
 function token = localTrialStructStringValue(value)
@@ -5723,12 +5754,23 @@ else
         precMatrix = localAdaptDLPrecodingMatrix(rawPrecodingMatrix, double(pdsch.NumLayers));
     end
     if precActive && ~isempty(precMatrix)
-        precMatrix = localAdaptDLPrecodingMatrix(precMatrix, double(pdsch.NumLayers));
-        if isempty(precMatrix)
+        % resolvePDSCHPrecoding already owns orientation, normalization, and
+        % hybrid element expansion. Re-normalizing only the physical matrix
+        % here breaks its exact relationship to MatrixLogicalPorts and
+        % silently changes the selected scheduler beam.
+        if ndims(precMatrix) > 2 && size(precMatrix, 3) == 1
+            precMatrix = squeeze(precMatrix);
+        end
+        if ~isnumeric(precMatrix) || ~ismatrix(precMatrix) || ...
+                size(precMatrix, 2) ~= double(pdsch.NumLayers) || ...
+                size(precMatrix, 1) < double(pdsch.NumLayers) || ...
+                any(~isfinite(real(precMatrix(:)))) || ...
+                any(~isfinite(imag(precMatrix(:))))
             error("sixgr:truth:BadGrantDLPrecodingMatrix", ...
-                "DL grant hydration could not resolve a %d-layer precoder from the configured/grant matrix.", ...
+                "DL grant hydration received an invalid resolved %d-layer precoder.", ...
                 round(double(pdsch.NumLayers)));
         end
+        precMatrix = double(precMatrix);
     end
     numTxAnt = localResolveDLPDSCHLogicalPortCount(cfgGrant, grant, double(pdsch.NumLayers));
     matrixPorts = localPrecodingPortCount(precMatrix, double(pdsch.NumLayers));
@@ -5759,6 +5801,21 @@ else
     grant.NREPerPRB = double(nrePerPRB);
     grant.NumTxAnt = double(numTxAnt);
     grant.PrecodingMatrix = precMatrix;
+    grant.PrecodingMatrixLogicalPorts = sixgr.util.structGet(prec, ...
+        "MatrixLogicalPorts", precMatrix);
+    % Preserve the exact RF/baseband architecture that produced the
+    % element-domain matrix.  Reconstructing this later from a broader
+    % scenario config can select a different RF-chain partition even when
+    % the physical element and logical-port counts are unchanged.
+    grant.NumElements = double(sixgr.util.structGet(prec, "NumElements", ...
+        size(precMatrix, 1)));
+    grant.NumRFChains = double(sixgr.util.structGet(prec, "NumRFChains", NaN));
+    grant.HybridElementToPortMatrix = sixgr.util.structGet(prec, ...
+        "HybridElementToPortMatrix", []);
+    grant.HybridAnalogPrecoderMatrix = sixgr.util.structGet(prec, ...
+        "HybridAnalogPrecoderMatrix", []);
+    grant.HybridDigitalPortToRFChainMatrix = sixgr.util.structGet(prec, ...
+        "HybridDigitalPortToRFChainMatrix", []);
     grant.ConfiguredBeamSelectionStrategy = char(string(sixgr.util.structGet(cfgGrant, "lls6g.userContext.BeamSelectionStrategy", ...
         sixgr.util.structGet(grant, "ConfiguredBeamSelectionStrategy", ""))));
     grant.PrecoderSource = char(string(sixgr.util.structGet(prec, "Source", sixgr.util.structGet(grant, "PrecoderSource", "none"))));
@@ -5773,6 +5830,8 @@ else
     grant.AppliedPrecoderCodebookMode = char(string(sixgr.util.structGet(prec, "CodebookMode", "")));
     if ~isempty(precMatrix)
         grant.PrecodingNumPorts = double(size(precMatrix, 1));
+        grant.PrecodingNumLogicalPorts = double(sixgr.util.structGet(prec, ...
+            "NumLogicalPorts", double(pdsch.NumLayers)));
         grant.PrecodingNumLayers = double(size(precMatrix, 2));
         grant.PrecodingMatrixRows = double(size(precMatrix, 1));
         grant.PrecodingMatrixCols = double(size(precMatrix, 2));
@@ -8554,12 +8613,19 @@ if ~(isfinite(completedFrames) && completedFrames >= 1)
     return;
 end
 roundedFrame = max(1, round(double(completedFrames)));
+refreshEachSweepPoint = logical(sixgr.util.structGet(cfg, ...
+    "outputs.liveHeavyRefreshEachSweepPoint", true));
+sweepPointIndex = double(sixgr.util.structGet(meta, "SweepPointIndex", 1));
+sweepPointCount = double(sixgr.util.structGet(meta, "SweepPointCount", 1));
+multiPointCampaign = isfinite(sweepPointIndex) && isfinite(sweepPointCount) && ...
+    sweepPointCount > 1;
 if roundedFrame <= 1
-    tf = true;
+    tf = refreshEachSweepPoint || ~multiPointCampaign || sweepPointIndex <= 1;
     return;
 end
 if isfinite(totalFrames) && roundedFrame >= round(double(totalFrames))
-    tf = true;
+    tf = refreshEachSweepPoint || ~multiPointCampaign || ...
+        sweepPointIndex >= sweepPointCount;
     return;
 end
 tf = mod(roundedFrame, interval) == 0;
@@ -9651,23 +9717,7 @@ end
 end
 
 function model = localResolveRequestedLinkChannelModel(cfg)
-model = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", "AWGN"))));
-if strlength(model) == 0 || model == "NONE" || model == "OFF"
-    model = "AWGN";
-end
-if model == "TDL"
-    prof = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.tdlProfile", ...
-        sixgr.util.structGet(cfg, "channel.fading.profile", "")))));
-    if strlength(prof) > 0
-        model = prof;
-    end
-elseif model == "CDL"
-    prof = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.cdlProfile", ...
-        sixgr.util.structGet(cfg, "channel.fading.profile", "")))));
-    if strlength(prof) > 0
-        model = prof;
-    end
-end
+model = sixgr.channel.resolveConcreteProfile(cfg);
 end
 
 function T = localCollectPBCHTrials(cfg, snr_dB, nTrials)
@@ -11674,8 +11724,7 @@ for k = 1:nTrials
             "Report",connected.Report, ...
             "ReceiverContext",connected.ReceiverContext, ...
             "SNR_dB", snr_dB, ...
-            "ChannelProfile",string(sixgr.util.structGet( ...
-                cfg,"channel.model","AWGN")), ...
+            "ChannelProfile",sixgr.channel.resolveConcreteProfile(cfg), ...
             "Seed",k);
         ok = logical(sixgr.util.structGet(out, "Ok", false)) && ~logical(sixgr.util.structGet(out, "Skipped", false));
         r.TBSize_bits = double(numel(uci));
@@ -12070,7 +12119,14 @@ row.Layers = NaN;
 row.Modulation = "";
     row.TargetCodeRate = NaN;
 row.TBSize_bits = NaN;
-row.ChannelModel = localResolveRequestedLinkChannelModel(cfg);
+if isempty(fieldnames(cfg)) && strlength(strtrim(string(direction))) == 0
+    % Schema-only template row used by localEmptyLinkTrialTable.  It has no
+    % channel claim; concrete profile resolution is required for every
+    % actual DL/UL trial row below.
+    row.ChannelModel = "";
+else
+    row.ChannelModel = localResolveRequestedLinkChannelModel(cfg);
+end
 row.ChannelModelApplied = "";
 row.ChannelFadingApplied = false;
 row.DopplerHz = dopp;
@@ -12931,9 +12987,35 @@ cfgU = sixgr.util.structSet(cfgU, "phy.pusch.RNTI", rnti);
 [W, beamMeta] = localSelectUserBeamforming(cfgU, multiUser, userIdx);
 cfgU = sixgr.util.structSet(cfgU, "lls6g.userContext", beamMeta);
 if ~isempty(W)
-    cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.precoding.matrix", W);
-    cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.numPorts", size(W, 1));
-    cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.nPorts", size(W, 1));
+    nLayers = max(1, round(double(localConfiguredLayerCount(cfgU, "DL"))));
+    hybridEnabled = logical(sixgr.util.structGet(cfgU, ...
+        "phy.beamManagement.hybridBeamformingEnabled", false));
+    if hybridEnabled
+        if size(W, 2) ~= nLayers
+            error("sixgr:truth:HybridUserBeamLayerMismatch", ...
+                "Selected user beam is %dx%d but configured DL rank is %d.", ...
+                size(W, 1), size(W, 2), nLayers);
+        end
+        cfgU = sixgr.util.structSet(cfgU, ...
+            "phy.pdsch.hybridElementToPortMatrix", W);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.numRFChains", nLayers);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.precoding.matrix", eye(nLayers));
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.selectedPrecoderSHA256", ...
+            char(sixgr.phy.mimo.MatrixContract.digest(W)));
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.NumAntennaPorts", nLayers);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.numAntennaPorts", nLayers);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.numPorts", nLayers);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.nPorts", nLayers);
+        beamMeta.NumLogicalPorts = double(nLayers);
+        beamMeta.NumWaveformColumns = double(size(W, 1));
+        beamMeta.HybridElementDomainApplied = true;
+        beamMeta.SelectedMatrixSHA256 = char(sixgr.phy.mimo.MatrixContract.digest(W));
+        cfgU = sixgr.util.structSet(cfgU, "lls6g.userContext", beamMeta);
+    else
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.precoding.matrix", W);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.numPorts", size(W, 1));
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.nPorts", size(W, 1));
+    end
     cfgU.phy.nTxAnt = size(W, 1);
 end
 end
@@ -12995,6 +13077,12 @@ if numel(beamIdx) < nLayers
 end
 beamIdx = beamIdx(1:nLayers);
 W = codebook(:, beamIdx);
+selectedPower = real(trace(W * W'));
+if ~(isfinite(selectedPower) && selectedPower > 0)
+    error("sixgr:truth:InvalidSelectedUserBeamPower", ...
+        "Selected user beam has invalid Frobenius power.");
+end
+W = W ./ sqrt(selectedPower);
 
 meta.BeamformingApplied = true;
 meta.PrecoderSource = "codebook_dft";

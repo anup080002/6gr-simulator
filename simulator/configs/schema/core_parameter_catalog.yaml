@@ -465,6 +465,7 @@
       "plotVisible": {"value_type": "boolean", "default": false},
       "livePublishFrameInterval": {"value_type": "integer", "default": 1, "min": 1},
       "liveHeavyRefreshFrameInterval": {"value_type": "integer", "default": 4, "min": 1},
+      "liveHeavyRefreshEachSweepPoint": {"value_type": "boolean", "default": true},
       "kpi": {
         "enable": {"value_type": "boolean", "default": true},
         "list": {"value_type": "string_list", "default": ["throughput", "bler", "ber", "evm", "papr", "sinr", "cqi"]}

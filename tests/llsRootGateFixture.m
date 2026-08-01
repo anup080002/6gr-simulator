@@ -44,6 +44,10 @@ switch caseName
         target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
         effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);
         scenarioMode = "adaptive_link";
+    case "adaptive_fixed_rank"
+        target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
+        effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);
+        scenarioMode = "adaptive_link";
     case "hybrid_missing_campaign"
         target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
         effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);
@@ -86,12 +90,17 @@ else
     scfg = sixgr.util.structSet(scfg, "link_adaptation.pdsch_link_adaptation_policy", "fixed");
     scfg = sixgr.util.structSet(scfg, "link_adaptation.pusch_link_adaptation_policy", "fixed");
 end
+if caseName == "adaptive_fixed_rank"
+    scfg = sixgr.util.structSet(scfg, "mimo.rank_adaptation_policy", "fixed_rank_anchor");
+end
 
 cfg = struct();
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mode", string(scenarioMode));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.dlPolicy", string(scfg.link_adaptation.pdsch_link_adaptation_policy));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ulPolicy", string(scfg.link_adaptation.pusch_link_adaptation_policy));
-if scenarioMode == "adaptive_link"
+if caseName == "adaptive_fixed_rank"
+    rankPolicy = "fixed_rank_anchor";
+elseif scenarioMode == "adaptive_link"
     rankPolicy = "adaptive";
 else
     rankPolicy = "fixed";

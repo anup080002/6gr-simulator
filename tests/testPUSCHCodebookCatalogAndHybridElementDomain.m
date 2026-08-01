@@ -54,6 +54,7 @@ end
 
 localAssertResolveCatalogEvidence(expected);
 localAssertHybridULElementWaveform();
+localAssertHybridNonCodebookReplayPortRecovery();
 localAssertTransformCodebookWaveform();
 ok = true;
 end
@@ -121,6 +122,54 @@ assert(all(pageEnergy > 0), ...
     "Hybrid UL PUSCH element waveform columns must carry nonzero energy; empty padding is not allowed.");
 assert(size(tx.Waveform, 2) == 4 && size(tx.Grid, 3) >= 4, ...
     "Hybrid UL PUSCH must materialize physical UE element waveform columns and grid pages.");
+end
+
+function localAssertHybridNonCodebookReplayPortRecovery()
+% A replay grant may expose NumAntennaPorts=NumLayers even though the UE
+% runtime has four logical RF/antenna ports.  The resolver must retain the
+% architecture domain so the hybrid matrix composes exactly.
+cfg = sixgr.config.defaultConfig();
+cfg.phy.ueArray = [2 2 1];
+cfg.antenna.ue.numElements = 4;
+cfg.scenario.ue.nTxAnt = 4;
+cfg.phy.pusch.NumAntennaPorts = 4;
+cfg.phy.pusch.numAntennaPorts = 4;
+cfg.phy.pusch.numPorts = 4;
+cfg.phy.pusch.transformPrecoding = false;
+cfg.rf.ue.hybridBeamformingEnabled = true;
+cfg.rf.ue.numRFChains = 4;
+
+pusch = struct( ...
+    "NumLayers", 2, ...
+    "NumAntennaPorts", 2, ...
+    "TransmissionScheme", "nonCodebook", ...
+    "TransformPrecoding", false, ...
+    "NumCodewords", 1);
+prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg, "FixedReferenceMode", true);
+assert(prec.HybridElementDomainApplied, ...
+    "Hybrid non-codebook replay must apply the element-domain matrix.");
+assert(isequal(size(prec.MatrixLogicalPorts), [4 2]) && ...
+        isequal(size(prec.MatrixPorts), [4 2]), ...
+    "Hybrid non-codebook replay must preserve the 4-port-by-2-layer architecture domain.");
+assert(prec.NumLogicalPorts == 4 && prec.NumPorts == 4, ...
+    "Hybrid non-codebook replay must expose four logical and physical UE ports.");
+
+puschTx = nrPUSCHConfig;
+puschTx.NumLayers = 2;
+puschTx.NumAntennaPorts = 2;
+puschTx.TransmissionScheme = "nonCodebook";
+puschTx.TransformPrecoding = false;
+puschTx.Modulation = "QPSK";
+puschTx.PRBSet = 0:5;
+puschTx.SymbolAllocation = [0 14];
+puschTx.DMRS.DMRSPortSet = 0:1;
+puschTx.NID = 29;
+puschTx.RNTI = 409;
+tx = sixgr.phy.ul.PUSCH_Tx(cfg, "PUSCH", puschTx, "CompactOutput", false);
+assert(size(tx.PUSCHPortSymbols,2) == 4 && size(tx.Waveform,2) == 4, ...
+    "Hybrid non-codebook PUSCH must materialize four logical ports and four UE element waveforms.");
+assert(logical(tx.SymbolDomainInfo.ResolvedLogicalPortPrecode.Applied), ...
+    "Hybrid non-codebook PUSCH must disclose the resolved logical-port expansion.");
 end
 
 function localAssertTransformCodebookWaveform()

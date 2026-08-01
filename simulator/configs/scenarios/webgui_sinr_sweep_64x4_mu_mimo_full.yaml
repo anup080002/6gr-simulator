@@ -7,7 +7,7 @@ canonical_control:
   identity:
     scenario_id: webgui_sinr_sweep_64x4_mu_mimo_full
     scenario_name: Full WebGUI SINR sweep — 64x4 coupled MU-MIMO
-    description: Full waveform LLS sweep at -20, 0, and 20 dB with one 64-element gNB, four 4-element UEs, and slot-coupled MU-MIMO truth execution.
+    description: Full CDL-C waveform LLS sweep at -20, 0, and 20 dB with one 64-element gNB, four 4-element UEs, element-domain hybrid precoding, and slot-coupled MU-MIMO truth execution.
     version: 1.0.0
     owner: operator
     research_class: study_item_candidate
@@ -18,7 +18,7 @@ canonical_control:
     tags:
       - lls
       - webgui
-      - awgn
+      - cdl_c
       - sinr_sweep
       - mu_mimo
       - 64tx
@@ -46,7 +46,7 @@ canonical_control:
     honesty_mode: strict
     unsupported_output_policy: show_unavailable_with_reason
     provenance_logging: true
-    notes: The three configured values are controlled AWGN operating-point inputs; measured post-equalization SINR remains separately reported.
+    notes: The three configured values control post-CDL waveform noise injection; receiver-derived post-equalization SINR remains separately reported.
     run_class: adaptive_system_diagnostic
     scenario_mode: sinr_sweep_coupled_mu_mimo
     sweep_enabled: true
@@ -83,6 +83,30 @@ canonical_control:
     trace_capture_level: full
     save_intermediate: true
     fixed_link_campaign_only: false
+  radio:
+    # Keep the requested full 64x4 element-domain channel, but use a
+    # diagnostic 10 MHz carrier so the 64x4 CDL tensor remains bounded.
+    # This is an explicit scenario choice, not a runtime hardcoded cap.
+    bandwidth_hz: 10000000
+    bandwidth_options_hz: [10000000]
+    occupied_bandwidth_hz: 8640000
+    n_size_grid: 24
+    sample_rate_hz: 15360000
+    fft_size: 512
+  channel:
+    model_type: CDL
+    profile: CDL-C
+    delay_spread_ns: 100
+    doppler_hz: 0
+    doppler_source_mode: configured
+    mobility_kmph: 0
+    los_enabled: false
+    spatial_consistency_enabled: false
+    pathloss_enabled: false
+    shadow_fading_enabled: false
+    pathloss_model: nrPathLoss
+    shadow_fading_std_db: 6
+    inter_cell_execution_mode: none
   topology:
     site_layout: hex_grid
     cell_type: UMa
@@ -102,6 +126,8 @@ canonical_control:
     ue_array_geometry: ULA
     bs_num_antenna_elements: 64
     ue_num_antenna_elements: 4
+    bs_panel_count: 2
+    ue_panel_count: 1
     polarization: dual
     element_spacing_h: 0.5
     element_spacing_v: 0.5
@@ -123,8 +149,9 @@ canonical_control:
     panel_count: 2
     trp_count: 1
     reciprocity_mode: TDD
-    rank_adaptation_enable: true
-    rank_adaptation_policy: csi_feedback
+    hybrid_beamforming_flag: true
+    rank_adaptation_enable: false
+    rank_adaptation_policy: fixed_rank_anchor
     su_mu_selection_policy: proportional_fair_mu
     mu_mimo_enable: true
     ul_mu_mimo_enable: true
@@ -137,7 +164,7 @@ canonical_control:
     max_active_ues_per_cell_per_slot: 2
     max_active_ues_per_cell_per_slot_dl: 2
     max_active_ues_per_cell_per_slot_ul: 2
-    max_prb_allocation_per_ue: 273
+    max_prb_allocation_per_ue: 24
     fairness_alpha: 1.0
     proportional_fair_window_ms: 100
     beam_aware: true
@@ -146,6 +173,11 @@ canonical_control:
     slice_aware: true
     starvation_guard: true
     cell_edge_boost: true
+    # This scenario is an explicit waveform SNR sweep. Every configured
+    # operating point must execute; the scheduler must not censor low-SNR
+    # samples before the PHY can measure their BLER/BER.
+    coverageOutageGuardEnabled: false
+    minSchedulingSINR_dB: -100
     tbsMode: faithful
     fastNREApprox: false
   reference_signals:
@@ -175,6 +207,16 @@ canonical_control:
   control:
     pdcch_enabled: true
     pucch_enabled: true
+    # Four six-PRB bitmap groups exactly cover this scenario's 24-PRB BWP.
+    coreset_frequency_resources: [1, 1, 1, 1]
+    # A 24-PRB, two-symbol CORESET contains eight CCEs. Do not inherit the
+    # qualification master's aggregation-level-16 candidate, which cannot
+    # exist in this bounded runtime CORESET.
+    aggregation_levels: [4, 8]
+    candidate_aggregation_levels: [4, 8]
+    scheduler_aggregation_level: 4
+    aggregation_selection_policy: configured_scheduler_level
+    search_space_num_candidates: [0, 0, 2, 1, 0]
     pbch_required: false
     prach_required: false
     pdcch_required: false
@@ -183,14 +225,32 @@ canonical_control:
     srs_max_age_slots: 20
     trs_max_age_slots: 20
     pre_attach_ues_before_measurement: true
+    # The strict contextual PDCCH builder consumes these operator-control
+    # fields after the public pdcch aliases. Keep the DCI widths and CORESET
+    # inside this scenario's 24-PRB carrier instead of inheriting the
+    # 273/72-PRB qualification-master values.
+    pdcch_strict:
+      dci_context:
+        initial_dl_bwp_size: 24
+        active_dl_bwp_size: 24
+        initial_ul_bwp_size: 24
+        active_ul_bwp_size: 24
+      coreset:
+        n_rb: 24
+        rb_start: 0
+      search_space:
+        # Keep the contextual blind-search contract consistent with the
+        # public bounded-CORESET candidate vector above.  The strict builder
+        # intentionally gives this contextual structure final authority.
+        num_candidates: [0, 0, 2, 1, 0]
   initial_access:
     enabled: true
     ssb:
       enabled: true
       # FR1 NCRBSSB/KSSB use the 15 kHz Point-A common raster. For this
-      # 100 MHz, 30 kHz, 273-PRB carrier, 253*12*15 kHz places the
-      # 7.2 MHz SSB exactly at carrier centre.
-      n_crb_ssb: 253
+      # 10 MHz, 30 kHz, 24-PRB carrier, 4*12*15 kHz places the 7.2 MHz
+      # SSB inside the 8.64 MHz active grid.
+      n_crb_ssb: 4
       k_ssb: 0
     mib:
       enabled: true
@@ -226,6 +286,10 @@ canonical_control:
     rf_chain_count: 64
   output:
     profiler_enabled: false
+    # Publish lightweight run state every slot, but rebuild the expensive
+    # derived browser gallery only at campaign start and final completion.
+    live_heavy_refresh_interval_frames: 20
+    live_heavy_refresh_each_sweep_point: false
   runtime_overrides:
     - path: output.emit_disabled_audit_artifacts
       value: true
@@ -240,7 +304,7 @@ canonical_control:
     - path: link_adaptation.fixed_or_amc
       value: amc
     - path: link_adaptation.rank_adaptation_policy
-      value: csi_feedback
+      value: fixed_rank_anchor
     - path: link_adaptation.al_adaptation_policy
       value: cqi_driven
     - path: link_adaptation.cqi_source
@@ -255,6 +319,8 @@ canonical_control:
       value: 0
   pdsch:
     execution_profile: scheduler_truth
+    prb_start: 0
+    num_prb: 24
   harq:
     k2: 4
 
@@ -351,17 +417,71 @@ tdd_timing:
   pdcch_to_pusch_k2: 4
   ul_grant_k2: 4
 
+bwp:
+  dl:
+    n_start_bwp: 0
+    n_size_bwp: 24
+  ul:
+    n_start_bwp: 0
+    n_size_bwp: 24
+  component_carriers:
+  - cc_id: 0
+    serving_cell_id: 1
+    scheduling_cc_ids: [0]
+    center_frequency_hz: 4000000000
+    band: lab_default_n77_style_midband
+    frequency_range: FR1
+    channel_bandwidth_mhz: 10
+    duplex_mode: TDD
+    dl_carrier_grid:
+      n_start_grid: 0
+      n_size_grid: 24
+      scs_khz: 30
+    ul_carrier_grid:
+      n_start_grid: 0
+      n_size_grid: 24
+      scs_khz: 30
+    carrier_indicator_map:
+    - indicator: 0
+      scheduled_cc_id: 0
+
 pdsch6gr:
+  channel_bandwidth_mhz: 10
+  n_size_grid: 24
   n_tx: 64
   n_rx: 4
   num_layers: 2
   dmrs_num_ports: 2
   dmrs_port_set: [0, 1]
 
+pdsch:
+  execution_profile: scheduler_truth
+  prb_start: 0
+  num_prb: 24
+
 pusch:
+  prb_start: 0
+  num_prb: 24
   num_layers: 2
   num_antenna_ports: 2
   dmrs_port_set: [0, 1]
+
+# A count-only AWGN shortcut cannot exercise the configured physical array.
+# CDL-C consumes the same runtime 64-element gNB and 4-element UE array
+# objects as the element-domain PDSCH/PUSCH waveform paths.
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 100
+  doppler_hz: 0
+  doppler_source_mode: configured
+  mobility_kmph: 0
+  normalize_path_gains: true
+  normalize_channel_outputs: true
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  los_enabled: false
 
 validation:
   run_class: adaptive_system_diagnostic

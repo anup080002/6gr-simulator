@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import cmath
 import csv
+import hashlib
 import html
 import io
 import json
@@ -21,10 +23,19 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-06-11-contract-v25-chart-family-visual-cards"
+MATERIALIZER_VERSION = "2026-08-01-contract-v29-runtime-audit-and-status"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
+OPTIONAL_6G_POLICY_KEYS = (
+    "ai_enabled",
+    "ntn_enabled",
+    "sensing_enabled",
+    "localization_enabled",
+    "ris_enabled",
+    "cell_free_enabled",
+    "sub_thz_enabled",
+)
 EXACT_CHART_FAMILY_CONTRACTS: dict[str, dict[str, Any]] = {
     "heatmap": {
         "source_table": "explicit_direct_alias_only",
@@ -80,6 +91,300 @@ def chart_contract_image_path(chart_spec: dict[str, Any]) -> str:
     section_slug = str(chart_spec.get("section_slug") or "section").strip().lower() or "section"
     chart_slug = slugify(str(chart_spec.get("chart_name") or "chart"))
     return f"{kind}/image/contract__{section_slug}__{chart_slug}.svg"
+
+
+def optional_6g_features_enabled(feature_policy: dict[str, Any] | None) -> bool:
+    policy = feature_policy or {}
+    return any(bool(policy.get(key, False)) for key in OPTIONAL_6G_POLICY_KEYS)
+
+
+def contract_artifact_is_policy_filtered(
+    logical_path: str,
+    feature_policy: dict[str, Any] | None,
+    *,
+    contract_name: str = "",
+) -> bool:
+    """Return whether a contract item is genuinely inapplicable to this run.
+
+    This is configuration-driven only.  It never hides a missing artifact merely
+    because no source rows happened to be written: an enabled objective with
+    missing runtime evidence must remain missing and fail strict materialization.
+    """
+    policy = feature_policy or {}
+    path = str(logical_path or "").strip().lower().replace("\\", "/")
+    name = str(contract_name or "").strip().lower()
+    identity = f"{path}|{name}"
+
+    if name in {item.lower() for item in OPTIONAL_6G_TABLES | OPTIONAL_6G_CHARTS}:
+        return not optional_6g_features_enabled(policy)
+
+    if not bool(policy.get("fixed_link_campaign_enabled", False)) and name in {
+        "fixed_snr_sweep_audit",
+        "fixed_snr_sweep_curve_summary",
+        "dl_fixed_snr_bler_curve",
+        "ul_fixed_snr_bler_curve",
+    }:
+        return True
+
+    if not bool(policy.get("geometry_enabled", False)) and (
+        name == "geometry_runtime_audit"
+        or "geometry_runtime_audit.csv" in path
+        or name in {"topology_map", "ue_trajectory_xy"}
+    ):
+        return True
+
+    if not bool(policy.get("mobility_enabled", False)) and name in {
+        "ue trajectory overlay",
+        "mobility event timeline",
+        "doppler vs speed plot",
+        "doppler_vs_slot",
+        "ue_trajectory_xy",
+        "ue trajectory views",
+        "serving cell timeline",
+        "neighbor ranking timeline",
+        "selection/reselection trigger tables",
+        "selection/reselection trigger histogram",
+        "hysteresis / ttt scatter",
+        "hysteresis / ttt studies",
+        "mobility robustness summaries",
+        "access delay vs mobility",
+        "measurement filtering analytics",
+    }:
+        return True
+
+    if not bool(policy.get("handover_enabled", False)) and (
+        "handover" in identity or name == "live_handover_state"
+    ):
+        return True
+
+    if not bool(policy.get("comparison_enabled", False)) and name in {
+        "kpi delta tables",
+        "baseline vs candidate overlays",
+        "throughput delta",
+        "bler delta",
+        "ber delta",
+        "evm delta",
+        "nmse delta",
+        "p_fa / p_md delta",
+        "harq delta",
+        "beam hit/gap delta",
+        "latency delta",
+        "power / energy delta",
+        "determinism delta",
+        "schema drift delta",
+        "fallback / placeholder / smoke regressions",
+    }:
+        return True
+
+    if not bool(policy.get("harq_enabled", False)) and (
+        "harq" in name
+        or name in {
+            "combining gain histogram",
+            "retransmission count histogram",
+            "ack/nack timeline",
+            "retransmission rate trend",
+            "newtx vs retx comparison",
+            "residual failure patterns",
+            "residual bler after harq",
+            "goodput vs retransmissions",
+            "combiner summary",
+        }
+    ):
+        return True
+
+    if not bool(policy.get("profiler_enabled", False)) and name in {
+        "pdcch stage latency waterfall",
+        "pbch stage latency",
+        "csi-rs latency trend",
+        "ldpc stage latency waterfall",
+        "channel estimation latency",
+        "equalizer latency",
+        "per-format latency histograms",
+        "api message rate",
+        "orchestration latency chart",
+        "per-worker workload chart",
+        "cpu cycles and memory usage time series",
+        "latency breakdown stacked chart",
+        "db write latency over time",
+        "export lag over time",
+        "artifact creation rate",
+        "block execution time",
+        "stage latency",
+        "end-to-end latency",
+        "compute latency",
+        "decode latency",
+        "cpu cycles",
+        "memory usage",
+        "worker timelines",
+        "lock/contention observations",
+        "db write latency",
+        "export lag",
+        "single-thread vs multi-thread determinism",
+    }:
+        return True
+
+    if not bool(policy.get("rf_impairments_enabled", False)) and name in {
+        "impairment contribution bar chart",
+        "phase noise summary",
+        "pa nonlinearity summary",
+        "clipping summary",
+        "quantization summary",
+        "impairment order trace",
+        "contribution decomposition if measurable",
+        "pa backoff distribution",
+        "rf chain power",
+        "thermal/throttling analytics if available",
+    }:
+        return True
+
+    if not bool(policy.get("power_control_enabled", False)) and name in {
+        "power control command timeline",
+        "phr distribution",
+        "ue power headroom timeline",
+        "ul tx power per ue",
+        "power control behavior",
+    }:
+        return True
+
+    if not bool(policy.get("raw_iq_capture_enabled", False)) and name in {
+        "pre-channel waveform",
+        "post-channel waveform",
+        "post-impairment waveform",
+        "stage overlay plots",
+        "ue-wise / link-wise waveform comparison",
+        "pre-equalization constellation",
+    }:
+        return True
+
+    if not bool(policy.get("raw_grid_capture_enabled", False)) and name in {
+        "dmrs/ptrs occupancy plot",
+        "dmrs/ptrs occupancy map",
+    }:
+        return True
+
+    if not bool(policy.get("channel_snapshot_capture_enabled", False)) and name in {
+        "true h(tau) if available",
+        "estimated hhat(tau)",
+        "channel impulse response",
+        "true h(f) if available",
+        "estimated hhat(f)",
+        "channel magnitude heatmap",
+        "channel phase heatmap",
+        "tap power profile",
+        "channel heatmap artifact links",
+    }:
+        return True
+
+    if not bool(policy.get("pathloss_enabled", False)) and name in {
+        "distance distribution histogram",
+        "azimuth/elevation rose plots",
+        "path geometry summary charts",
+        "pathloss/shadowing distributions",
+        "pathloss distribution",
+        "o2i distribution",
+    }:
+        return True
+
+    if not bool(policy.get("shadowing_enabled", False)) and name == "shadowing distribution":
+        return True
+
+    if not bool(policy.get("interference_enabled", False)) and name in {
+        "interference power timeline",
+        "serving vs interferer decomposition",
+        "inter-user leakage",
+    }:
+        return True
+
+    if not bool(policy.get("initial_access_enabled", False)) and (
+        any(token in name for token in ("ssb", "pbch", "access latency", "retry count", "timing advance"))
+        or "initial-access" in path
+    ):
+        return True
+
+    if not bool(policy.get("prach_enabled", False)) and (
+        "prach" in name
+        or "preamble" in name
+        or name in {"peak value histogram", "noise floor trend", "access attempt/success timeline", "collision summary if modeled"}
+    ):
+        return True
+
+    if not bool(policy.get("prach_runtime_required", True)) and name in {
+        "prach peak search timeline",
+        "noise floor trend",
+        "peak value histogram",
+        "preamble usage chart",
+        "ta estimate trend",
+        "access attempt/success timeline",
+        "prach correlation peak distributions",
+        "prach noise floor distributions",
+        "prach peak search results",
+        "threshold sweep plots if data exists",
+        "access latency",
+        "retry count distribution",
+        "timing advance distribution",
+        "preamble/root/cyclic-shift usage summary",
+        "timing offset true vs estimated vs residual",
+        "ta estimate timeline",
+        "prach opportunity map",
+    }:
+        return True
+
+    if not bool(policy.get("pbch_runtime_required", True)) and name == "pbch decode retry timeline":
+        return True
+
+    if not bool(policy.get("fading_enabled", False)) and name in {
+        "delay spread chart",
+        "angle spread chart",
+    }:
+        return True
+
+    if not bool(policy.get("prach_collision_enabled", True)) and name in {
+        "collision summary if modeled",
+        "re collision heatmap / table",
+    }:
+        return True
+
+    if (
+        not bool(policy.get("prach_threshold_sweep_enabled", True))
+        and name == "threshold sweep plots if data exists"
+    ):
+        return True
+
+    if (
+        not bool(policy.get("reciprocity_calibration_enabled", True))
+        and name == "calibration / reciprocity diagnostics if modeled"
+    ):
+        return True
+
+    if not bool(policy.get("profiler_enabled", False)) and name == "cpu power if available":
+        return True
+
+    if not bool(policy.get("pdcch_enabled", False)) and (
+        "pdcch" in name or "coreset" in name
+    ):
+        return True
+
+    if not bool(policy.get("pucch_enabled", False)) and "pucch" in name:
+        return True
+
+    if not bool(policy.get("srs_enabled", False)) and "srs" in name:
+        return True
+
+    if not bool(policy.get("energy_enabled", False)) and (
+        "energy" in name
+        or "power vs" in name
+        or name in {"joules/gb", "papr vs power", "sleep-state timeline", "sleep/idle/active state occupancy"}
+    ):
+        return True
+
+    match = re.fullmatch(r"live_pucch_f([0-4])_table", name)
+    if match:
+        enabled_formats = {
+            str(value).strip()
+            for value in policy.get("active_pucch_formats", ["0"])
+        }
+        return match.group(1) not in enabled_formats
+    return False
 
 
 def manifest_logical_path() -> str:
@@ -1693,10 +1998,57 @@ def _specialized_table_materialization(
     if not match:
         return None
     target_format = match.group(1)
-    source_path = "control/csv/pucch_table.csv" if "control/csv/pucch_table.csv" in source_lookup else ""
-    if not source_path:
+    candidate_paths = (
+        "air_interface/csv/pucch_trials.csv",
+        "packet_flow/csv/live_pucch_grants.csv",
+        "control/csv/pucch_table.csv",
+    )
+
+    def normalized_pucch_format(row: dict[str, Any]) -> str:
+        token = _row_text(
+            row,
+            "ResolvedFormat",
+            "RequestedFormat",
+            "PUCCHFormat",
+            "Format",
+        ).strip().upper().replace(" ", "").replace("_", "").replace("-", "")
+        matched = re.fullmatch(r"(?:PUCCH)?(?:FORMAT|F)?([0-4])", token)
+        return matched.group(1) if matched else ""
+
+    available_path = ""
+    available_header: list[str] = []
+    available_rows: list[dict[str, str]] = []
+    source_path = ""
+    header: list[str] = []
+    rows: list[dict[str, str]] = []
+    filtered_rows: list[dict[str, str]] = []
+    for candidate_path in candidate_paths:
+        artifact = source_lookup.get(candidate_path)
+        if artifact is None:
+            continue
+        candidate_header, candidate_rows = _decode_csv_dicts(
+            fetch_artifact_bytes(int(artifact["artifact_id"]))
+        )
+        if not available_path:
+            available_path = candidate_path
+            available_header = candidate_header
+            available_rows = candidate_rows
+        candidate_filtered = [
+            row for row in candidate_rows
+            if normalized_pucch_format(row) == target_format
+        ]
+        if candidate_filtered:
+            source_path = candidate_path
+            header = candidate_header
+            rows = candidate_rows
+            filtered_rows = candidate_filtered
+            break
+    if not available_path:
         return None
-    header, rows = _decode_csv_dicts(fetch_artifact_bytes(int(source_lookup[source_path]["artifact_id"])))
+    if not source_path:
+        source_path = available_path
+        header = available_header
+        rows = available_rows
     if not rows:
         summary_header, summary_rows = _summary_csv_rows(
             run_id,
@@ -1714,10 +2066,6 @@ def _specialized_table_materialization(
             "source_logical_path": source_path,
             "source_row_count": 0,
         }
-    filtered_rows = [
-        row for row in rows
-        if _row_text(row, "ResolvedFormat", "RequestedFormat") == target_format
-    ]
     if not filtered_rows:
         summary_header, summary_rows = _summary_csv_rows(
             run_id,
@@ -1905,6 +2253,156 @@ def _artifact_inventory_rows(
     return rows
 
 
+def _numeric_csv_audit_counts(
+    header: list[str], rows: list[dict[str, str]],
+) -> tuple[int, int, int, list[str]]:
+    """Compute conservative numeric/missing counts from persisted CSV text.
+
+    A column is classified numeric only when every nonblank token parses as
+    a finite or explicit nonfinite number. This avoids inventing type
+    information that is not present in the DB artifact schema.
+    """
+    numeric_count = 0
+    finite_count = 0
+    missing_count = 0
+    blank_columns: list[str] = []
+    for column in header:
+        tokens = [str(row.get(column, "") or "").strip() for row in rows]
+        nonblank = [token for token in tokens if token]
+        if not nonblank:
+            blank_columns.append(column)
+            continue
+        parsed: list[float] = []
+        numeric = True
+        for token in nonblank:
+            try:
+                parsed.append(float(token))
+            except (TypeError, ValueError):
+                numeric = False
+                break
+        if not numeric:
+            continue
+        numeric_count += 1
+        finite_count += sum(1 for value in parsed if math.isfinite(value))
+        missing_count += sum(1 for token in tokens if not token)
+    return numeric_count, finite_count, missing_count, blank_columns
+
+
+def _db_artifact_audit_table(
+    table_name: str,
+    source_lookup: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Audit persisted DB artifacts without fabricating filesystem evidence."""
+    is_csv = table_name == "all_csv_artifact_audit"
+    is_image = table_name == "all_image_artifact_audit"
+    if not (is_csv or is_image):
+        return None
+    rows: list[dict[str, Any]] = []
+    for artifact in sorted(source_lookup.values(), key=lambda item: int(item.get("artifact_id") or 0)):
+        artifact_id = int(artifact.get("artifact_id") or 0)
+        logical_path = str(artifact.get("logical_path") or "").strip()
+        kind = str(artifact.get("artifact_kind") or "").strip().lower()
+        mime = str(artifact.get("mime_type") or "").strip().lower()
+        if artifact_id <= 0 or not logical_path:
+            continue
+        if is_csv and not (kind == "table_csv" or logical_path.lower().endswith(".csv")):
+            continue
+        if is_image and not (
+            kind.startswith("image_")
+            or mime.startswith("image/")
+            or logical_path.lower().endswith((".png", ".jpg", ".jpeg", ".svg"))
+        ):
+            continue
+        try:
+            payload = bytes(fetch_artifact_bytes(artifact_id))
+        except Exception:
+            continue
+        digest = hashlib.sha256(payload).hexdigest()
+        if is_csv:
+            header, csv_rows = _decode_csv_dicts(payload)
+            numeric_columns, finite_values, missing_values, blank_columns = _numeric_csv_audit_counts(header, csv_rows)
+            rows.append({
+                "run_id": run_id,
+                "path": f"db://sim_artifacts/{artifact_id}",
+                "relative_path": logical_path,
+                "bytes": len(payload),
+                "sha256": digest,
+                "readable_by_readtable": int(bool(header)),
+                "row_count": len(csv_rows),
+                "column_count": len(header),
+                "column_names_json": json.dumps(header, ensure_ascii=False),
+                "numeric_column_count": numeric_columns,
+                "finite_numeric_count": finite_values,
+                "missing_numeric_count": missing_values,
+                "all_blank_columns_json": json.dumps(blank_columns, ensure_ascii=False),
+                "has_required_columns": "",
+                "status": "observed" if header else "unreadable",
+                "failure_code": "" if header else "csv_header_unreadable",
+                "first_issue": "" if header else "persisted_csv_has_no_decodable_header",
+                "required": "",
+                "artifact_spec": "db_persisted_artifact_inventory",
+                "required_columns_json": "[]",
+                "audit_scope": "mysql_web_persisted_bytes",
+            })
+            continue
+        width = ""
+        height = ""
+        fmt = ""
+        readable = False
+        if payload.startswith(b"\x89PNG\r\n\x1a\n") and len(payload) >= 24:
+            fmt = "png"
+            width = int.from_bytes(payload[16:20], "big")
+            height = int.from_bytes(payload[20:24], "big")
+            readable = width > 0 and height > 0
+        elif b"<svg" in payload[:4096].lower():
+            fmt = "svg"
+            text = payload[:8192].decode("utf-8", errors="ignore")
+            width_match = re.search(r"\bwidth=[\"']([0-9.]+)", text, re.IGNORECASE)
+            height_match = re.search(r"\bheight=[\"']([0-9.]+)", text, re.IGNORECASE)
+            width = float(width_match.group(1)) if width_match else ""
+            height = float(height_match.group(1)) if height_match else ""
+            readable = True
+        elif payload[:2] == b"\xff\xd8":
+            fmt = "jpeg"
+            readable = True
+        rows.append({
+            "run_id": run_id,
+            "path": f"db://sim_artifacts/{artifact_id}",
+            "relative_path": logical_path,
+            "bytes": len(payload),
+            "sha256": digest,
+            "format": fmt,
+            "width_px": width,
+            "height_px": height,
+            "readable": int(readable),
+            "color_or_grayscale": "not_evaluated_from_db_bytes",
+            "estimated_unique_color_count": "",
+            "pixel_std": "",
+            "blank_or_low_information": "",
+            "source_csv": "",
+            "source_csv_exists": "",
+            "status": "observed" if readable else "unreadable",
+            "failure_code": "" if readable else "image_header_unreadable",
+            "first_issue": "" if readable else "persisted_image_has_no_supported_header",
+            "required": "",
+            "audit_scope": "mysql_web_persisted_bytes",
+        })
+    if not rows:
+        return None
+    return {
+        "data": _encode_rows_from_dicts(rows),
+        "status": "specialized_db_artifact_audit",
+        "note": (
+            "Artifact audit is computed from exact persisted sim_artifacts bytes; "
+            "unknown requirement or image-content classifications remain blank rather than inferred."
+        ),
+        "source_logical_path": "sim_artifacts",
+        "source_row_count": len(rows),
+    }
+
+
 def _table_source_health(
     table_name: str,
     source_lookup: dict[str, dict[str, Any]],
@@ -1968,6 +2466,12 @@ def _specialized_live_report_table(
     beam_probe = _artifact_rows_by_path(source_lookup, fetch_artifact_bytes, "beamforming/csv/probe_beam_mimo.csv")[1]
     energy_rows = _artifact_rows_by_path(source_lookup, fetch_artifact_bytes, "rf/csv/energy_timeline_trace.csv")[1]
     artifact_rows = _artifact_inventory_rows(source_lookup)
+
+    artifact_audit = _db_artifact_audit_table(
+        table_name, source_lookup, fetch_artifact_bytes, run_id
+    )
+    if artifact_audit is not None:
+        return artifact_audit
 
     if table_name == "live_run_overview":
         rows = [{
@@ -4594,6 +5098,676 @@ def _runtime_delay_spread_chart(
     }
 
 
+def _configured_sweep_chart_materialization(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Materialize configured-SNR plots only from persisted waveform trials."""
+    chart_key = str(chart_name or "").strip().lower()
+    supported = {
+        "dl_bler_vs_snr",
+        "ul_bler_vs_snr",
+        "dl_ber_vs_snr",
+        "ul_ber_vs_snr",
+        "throughput_vs_snr",
+        "measured_sinr_vs_configured_snr",
+    }
+    if chart_key not in supported:
+        return None
+
+    trial_sources = _all_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"],
+    )
+    if not trial_sources:
+        return None
+
+    required_direction = "DL" if chart_key.startswith("dl_") else ("UL" if chart_key.startswith("ul_") else "")
+    pairs: list[tuple[float, float]] = []
+    used_paths: list[str] = []
+    for source_path, rows in trial_sources:
+        source_direction = "DL" if "dl_pdsch" in source_path else "UL"
+        if required_direction and source_direction != required_direction:
+            continue
+        source_used = False
+        for row in rows:
+            configured_snr = _row_float(row, "ConfiguredSNR_dB", "SNR_dB", "AppliedAWGNSNR_dB")
+            if configured_snr is None or not math.isfinite(float(configured_snr)):
+                continue
+            if chart_key.endswith("bler_vs_snr"):
+                metric = _trial_row_bler(row)
+            elif chart_key.endswith("ber_vs_snr"):
+                metric = _trial_row_ber(row)
+            elif chart_key == "throughput_vs_snr":
+                metric = _row_float(row, "Throughput_Mbps", "MeasuredThroughput_Mbps", "Goodput_Mbps")
+            else:
+                metric, _metric_source = _row_quality_axis_value(row, allow_receiver_hest=False)
+            if metric is None or not math.isfinite(float(metric)):
+                continue
+            pairs.append((float(configured_snr), float(metric)))
+            source_used = True
+        if source_used:
+            used_paths.append(source_path)
+    if not pairs:
+        return None
+
+    if chart_key.endswith("bler_vs_snr"):
+        y_label = "BLER"
+    elif chart_key.endswith("ber_vs_snr"):
+        y_label = "BER"
+    elif chart_key == "throughput_vs_snr":
+        y_label = "Throughput_Mbps"
+    else:
+        y_label = "MeasuredPostEqSINR_dB"
+    source_path_text = "|".join(used_paths)
+    csv_bytes, dataset = _metric_rows_by_exact_x(
+        pairs,
+        x_label="ConfiguredSNR_dB",
+        y_label=y_label,
+        chart_name=chart_name,
+        run_id=run_id,
+        source_path=source_path_text,
+    )
+    dataset["mode"] = _honest_chart_mode(dataset.get("points", []), "line")
+    return {
+        "csv_bytes": csv_bytes,
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "Configured operating-point sweep aggregated only from persisted waveform trial measurements.",
+            dataset,
+            [
+                f"direction={required_direction or 'DL+UL'}",
+                f"samples={len(pairs)}",
+                f"source={source_path_text}",
+            ],
+        ),
+        "csv_status": "specialized_runtime_configured_sweep_dataset",
+        "image_status": "generated_specialized_runtime_sweep_svg",
+        "source_table_path": source_path_text,
+        "source_row_count": len(pairs),
+        "note": (
+            "Configured SNR is the explicit sweep axis. Metrics come from real PDSCH/PUSCH trial rows; "
+            "measured SINR uses receiver post-equalization evidence."
+        ),
+    }
+
+
+def _explicit_runtime_metric_chart_materialization(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Render explicitly mapped runtime metrics without numeric-column guessing."""
+    specs: dict[str, dict[str, Any]] = {
+        "TB size over time": {"sources": ["reports/csv/live_pdsch_transport_block_table.csv"], "fields": ["tbs_bits", "TBSBits", "TBSize_bits"], "kind": "timeline", "label": "Transport block size (bits)"},
+        "MCS/code-rate timeline": {"sources": ["reports/csv/live_pdsch_transport_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["code_rate", "TargetCodeRate"], "kind": "timeline", "label": "Target code rate"},
+        "code-block count histogram": {"sources": ["reports/csv/live_pdsch_code_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["num_code_blocks", "NumCodeBlocks", "CodeBlockCount"], "kind": "distribution", "label": "Code-block count"},
+        "decoder iteration histogram": {"sources": ["reports/csv/live_decoder_summary.csv", "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["decoder_iterations", "DecoderIterations"], "kind": "distribution", "label": "Decoder iterations"},
+        "LLR statistics over time": {"sources": ["reports/csv/live_llr_summary.csv"], "fields": ["llr_mean_abs", "LLRMeanAbs"], "kind": "timeline", "label": "Mean absolute LLR"},
+        "PUCCH decode success/failure trend": {"sources": ["reports/csv/live_pucch_summary.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["PUCCHDecodeOk", "DecodeSuccess", "SuccessFlag"], "kind": "timeline", "label": "Decode success flag"},
+        "ACK/NACK match chart": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["UCIContentMatch"], "kind": "timeline", "label": "ACK/NACK content match"},
+        "DTX detection chart": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["DTXFlag"], "kind": "distribution", "label": "DTX flag"},
+        "UCI bit count distribution": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["UCIBitCount", "ExpectedBitCount"], "kind": "distribution", "label": "UCI bit count"},
+        "SRS validity timeline": {"sources": ["reports/csv/live_srs_stage_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["SRSRuntimeEvidenceUsable", "MeasurementUsable", "DetectionUsable"], "kind": "timeline", "label": "SRS usable flag"},
+        "channel estimate quality trend": {"sources": ["reports/csv/live_srs_channel_estimation_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["NMSE_dB", "TrueChannelNMSE_dB"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
+        "RSRP/CSI-RSRP timeline": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dB"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dB)"},
+        "CQI / PMI / RI / CRI timeline": {"sources": ["reports/csv/live_measurement_table.csv", "reports/csv/live_link_adaptation_input_table.csv"], "fields": ["wideband_cqi", "WidebandCQI", "ri", "RI"], "kind": "timeline", "label": "Reported CQI / RI"},
+        "MU grouping summary": {"sources": ["packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], "fields": ["MUMIMOGroupSize"], "kind": "distribution", "label": "MU-MIMO group size"},
+        "UE Tx power timeline": {"sources": ["reports/csv/live_ue_power_state.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["ul_tx_power_dbm"], "kind": "timeline", "label": "UE Tx power (dBm)"},
+        "TX power timeline per cell": {"sources": ["reports/csv/live_power_runtime_table.csv"], "fields": ["dl_tx_power_dbm"], "kind": "timeline", "label": "Cell Tx power (dBm)"},
+        "TX power timeline per UE": {"sources": ["reports/csv/live_power_runtime_table.csv"], "fields": ["ul_tx_power_dbm"], "kind": "timeline", "label": "UE Tx power (dBm)"},
+        "energy per bit over time": {"sources": ["reports/csv/live_energy_efficiency_table.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["energy_per_bit_j"], "kind": "timeline", "label": "Energy per bit (J/bit)"},
+        "joules/GB over time": {"sources": ["reports/csv/live_energy_efficiency_table.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["joules_per_gb"], "kind": "timeline", "label": "Energy (J/GB)"},
+        "PAPR distribution": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PAPR_dB"], "kind": "distribution", "label": "PAPR (dB)"},
+        "measured_sinr_vs_slot": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PostEqSINR_dB", "MeasuredTrialSINR_dB"], "kind": "timeline", "label": "Measured post-equalization SINR (dB)"},
+        "noise variance trend": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NoiseVariance", "LLRNoiseVariance"], "kind": "timeline", "label": "Noise variance"},
+        "clipping event histogram": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PeakClippingEvents"], "kind": "distribution", "label": "Clipping events"},
+        "code-block error rates": {"sources": ["reports/csv/live_pdsch_code_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["code_block_bler", "CodeBlockBLER"], "kind": "distribution", "label": "Code-block BLER"},
+        "CBG error rates": {"sources": ["reports/csv/live_pdsch_code_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["cbg_bler", "CBGBLER"], "kind": "distribution", "label": "CBG BLER"},
+        "per-layer SINR": {"sources": ["beamforming/csv/mimo_layer_metrics.csv"], "fields": ["PostEqSINRdB", "MeasuredSINR_dB", "LayerSINR_dB"], "kind": "distribution", "label": "Layer SINR (dB)"},
+        "PAPR vs power": {"sources": ["rf/csv/energy_timeline_trace.csv"], "fields": ["PAPR_dB"], "kind": "timeline", "label": "PAPR (dB)"},
+        "run health timeline": {"sources": ["reports/csv/live_run_overview.csv"], "fields": ["run_completion"], "status_fields": ["status_text"], "kind": "timeline", "label": "Run healthy/completed flag"},
+        "error/warning/fallback stacked time series": {"sources": ["reports/csv/live_case_status.csv"], "fields": ["fallback_rows", "placeholder_rows"], "kind": "timeline", "label": "Fallback/placeholder rows"},
+        "truth policy violations by category": {"sources": ["analytics/csv/truth_policy_analytics.csv"], "fields": ["StrictTruthFailureCount", "StrictProxyGuardFailureCount"], "kind": "distribution", "label": "Truth-policy violation count"},
+        "frame/slot/symbol occupancy timeline": {"sources": ["reports/csv/slot_trace.csv"], "fields": ["DLNumSymbols", "ULNumSymbols", "GuardNumSymbols"], "x_fields": ["CanonicalSlot"], "kind": "timeline", "label": "Occupied symbols"},
+        "DL/UL/guard slot pattern chart": {"sources": ["reports/csv/slot_trace.csv"], "fields": ["DLNumSymbols", "ULNumSymbols", "GuardNumSymbols"], "x_fields": ["CanonicalSlot"], "kind": "timeline", "label": "DL/UL/guard symbols"},
+        "SSB occasion timeline": {"sources": ["reports/csv/live_ssb_occasion_state.csv"], "fields": ["SSBIndex", "BeamIndex"], "x_fields": ["Slot"], "kind": "timeline", "label": "SSB index"},
+        "PRACH occasion timeline": {"sources": ["reports/csv/live_prach_occasion_state.csv"], "fields": ["PRACHCarrierSlot"], "x_fields": ["Slot"], "kind": "timeline", "label": "PRACH carrier slot"},
+        "CORESET/search-space occupancy chart": {"sources": ["reports/csv/live_coreset_state.csv", "air_interface/csv/pdcch_trials.csv"], "fields": ["UsedCCECount", "CORESETUtilization", "ControlCapacityUtilization", "AggregationLevel"], "x_fields": ["Slot"], "kind": "timeline", "label": "Used CCE / aggregation level"},
+        "SR/BSR event timeline": {"sources": ["reports/csv/live_sr_state.csv", "reports/csv/live_bsr_state.csv"], "fields": ["RuntimeStateUpdated", "TBSBits"], "x_fields": ["Slot"], "kind": "timeline", "label": "SR/BSR runtime event"},
+        "sync success/failure timeline if available": {"sources": ["reports/csv/live_ssb_stage_table.csv", "air_interface/csv/pbch_trials.csv"], "fields": ["DecodeSuccess", "BCHCrcPass", "CRCPass"], "x_fields": ["Slot"], "kind": "timeline", "label": "Synchronization success"},
+        "port usage chart": {"sources": ["reports/csv/live_mimo_state_table.csv", "beamforming/csv/rank_layer_trials.csv"], "fields": ["num_tx_ports", "NumTxPorts"], "x_fields": ["slot", "Slot"], "kind": "timeline", "label": "Logical transmit ports"},
+        "precoder / beam selection timeline": {"sources": ["reports/csv/live_beam_selection_table.csv", "reports/csv/live_precoder_table.csv"], "fields": ["selected_beam_index", "applied_precoder_pmi"], "x_fields": ["slot"], "kind": "timeline", "label": "Selected beam / PMI"},
+        "crash/error timeline": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["Crash", "FailureFlag"], "x_fields": ["Slot"], "kind": "timeline", "label": "Crash/error flag"},
+        "SRS consumption by scheduler/beam module": {"sources": ["reports/csv/live_srs_stage_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["SRSOccupiedPRBCount", "SRSRuntimeEvidenceUsable"], "x_fields": ["Slot"], "kind": "timeline", "label": "SRS resources / usable evidence"},
+        "channel quality timeline": {"sources": ["reports/csv/live_channel_state_tti.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["PostEqSINR_dB", "MeasuredTrialSINR_dB"], "x_fields": ["Slot"], "kind": "timeline", "label": "Measured post-equalization SINR (dB)"},
+        "interference power timeline": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["interference_rx_power_dbm", "residual_interference_power_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Interference power (dB/dBm)"},
+        "measurement source coverage chart": {"sources": ["reports/csv/measurement_output_integrity_audit.csv"], "fields": ["MeasurementRows"], "kind": "distribution", "label": "Measurement rows by source"},
+        "config-vs-measured conflict dashboard": {"sources": ["reports/csv/reports_config_vs_measured_conflicts_v.csv"], "fields": ["mean_measured_sinr_db", "configured_snr_db"], "kind": "timeline", "label": "Configured/measured value (dB)"},
+        "config vs measured conflict dashboard": {"sources": ["reports/csv/reports_config_vs_measured_conflicts_v.csv"], "fields": ["mean_measured_sinr_db", "configured_snr_db"], "kind": "timeline", "label": "Configured/measured value (dB)"},
+        "UE control/report timeline": {"sources": ["reports/csv/live_ue_control_state.csv"], "fields": ["ValueNumeric"], "kind": "timeline", "label": "UE control/report metric"},
+        "DRX state timeline": {"sources": ["reports/csv/live_drx_state.csv"], "fields": ["active_samples", "sleep_samples", "idle_samples"], "kind": "timeline", "label": "DRX state samples"},
+        "UE energy proxy timeline": {"sources": ["reports/csv/live_ue_power_state.csv"], "fields": ["energy_per_bit_j", "cumulative_energy_j"], "x_fields": ["slot", "timestamp_sim_ms"], "kind": "timeline", "label": "UE measured energy"},
+        "per-cell context health timeline": {"sources": ["reports/csv/live_per_cell_context.csv"], "fields": ["dl_grant_count", "ul_grant_count"], "kind": "timeline", "label": "Per-cell executed grant count"},
+        "sleep-state timeline": {"sources": ["reports/csv/live_sleep_state_table.csv"], "fields": ["metric_value", "energy_per_bit_j"], "x_fields": ["slot", "timestamp_sim_ms"], "kind": "timeline", "label": "Sleep-state runtime metric"},
+        "efficiency scatter plots": {"sources": ["analytics/csv/energy_efficiency_analytics.csv"], "fields": ["ue_energy_efficiency", "cell_energy_efficiency"], "x_fields": ["ue_id", "cell_id"], "kind": "timeline", "label": "Energy efficiency"},
+        "truth violation rollup": {"sources": ["analytics/csv/truth_policy_analytics.csv"], "fields": ["StrictTruthFailureCount", "StrictProxyGuardFailureCount", "CanonicalArtifactGapCount"], "kind": "distribution", "label": "Truth violation count"},
+        "partial or missing data dashboard": {"sources": ["reports/csv/reports_partial_or_missing_v.csv"], "fields": ["source_row_count", "present_source_count"], "kind": "distribution", "label": "Persisted source rows"},
+        "value semantics coverage chart": {"sources": ["reports/csv/reports_value_semantics_coverage_v.csv"], "fields": ["observation_count"], "kind": "distribution", "label": "Value-semantics observations"},
+        "NMSE vs SNR / SINR": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NMSE_dB"], "x_fields": ["ConfiguredSNR_dB"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
+        "estimator bias / variance summaries": {"sources": ["reports/csv/live_channel_estimation_stats.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["NMSE_dB", "MeanNMSE_dB"], "kind": "distribution", "label": "Estimator error (dB)"},
+        "angle spread chart": {"sources": ["reports/csv/channel_rf_cdlc_realization_table.csv", "channel/csv/path_gains.csv"], "fields": ["AngleAoD_deg", "AngleAoA_deg", "AngleZoD_deg", "AngleZoA_deg"], "kind": "distribution", "label": "Runtime channel path angle (deg)"},
+        "serving vs interferer decomposition": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["interference_rx_power_dbm", "residual_interference_power_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Interference contribution (dB/dBm)"},
+        "SSB detection statistics": {"sources": ["air_interface/csv/pbch_trials.csv"], "fields": ["DecodeSuccess", "BCHCrcPass", "CRCPass"], "kind": "distribution", "label": "SSB/PBCH detection success"},
+        "control decode success/failure tables": {"sources": ["air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv", "air_interface/csv/pbch_trials.csv"], "fields": ["DecodeSuccess", "CRCPass", "PUCCHDecodeOk"], "kind": "distribution", "label": "Control decode success"},
+        "PBCH/PDCCH/PUCCH detection and decode timelines": {"sources": ["air_interface/csv/pbch_trials.csv", "air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["DecodeSuccess", "CRCPass", "PUCCHDecodeOk"], "x_fields": ["Slot"], "kind": "timeline", "label": "Control decode success"},
+        "per-channel reliability breakdown": {"sources": ["reports/csv/control_pass_rates.csv"], "fields": ["PassRate", "SuccessRate", "Rate"], "kind": "distribution", "label": "Channel reliability"},
+        "per-format reliability breakdown": {"sources": ["air_interface/csv/pucch_trials.csv"], "fields": ["PUCCHDecodeOk", "DecodeSuccess", "CRCPass"], "kind": "distribution", "label": "PUCCH format reliability"},
+        "ServingRSRP / RSRP / CSI-RSRP trends": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dB"], "x_fields": ["Slot"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dB/dBm)"},
+        "per-beam quality plot": {"sources": ["reports/csv/live_beam_selection_table.csv"], "fields": ["selected_beam_gain_db", "best_beam_gain_db", "beam_gain_gap_db"], "x_fields": ["selected_beam_index"], "kind": "timeline", "label": "Beam quality (dB)"},
+        "per-layer quality plot": {"sources": ["beamforming/csv/mimo_layer_metrics.csv"], "fields": ["PostEqSINRdB", "ChannelEstimateNMSEdB"], "x_fields": ["LayerIndex"], "kind": "timeline", "label": "Per-layer quality (dB)"},
+        "inter-user leakage": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["residual_interference_power_db", "interference_rx_power_dbm"], "x_fields": ["slot"], "kind": "timeline", "label": "Inter-user leakage (dB/dBm)"},
+        "MU grouping analytics": {"sources": ["packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], "fields": ["MUMIMOGroupSize"], "kind": "distribution", "label": "MU-MIMO group size"},
+        "baseband power": {"sources": ["reports/csv/live_bb_power_table.csv"], "fields": ["digital_baseband_power_w", "metric_value"], "x_fields": ["slot"], "kind": "timeline", "label": "Baseband power (W)"},
+        "energy/bit": {"sources": ["reports/csv/live_energy_efficiency_table.csv"], "fields": ["energy_per_bit_j"], "kind": "distribution", "label": "Energy per bit (J/bit)"},
+        "joules/GB": {"sources": ["reports/csv/live_energy_efficiency_table.csv"], "fields": ["joules_per_gb"], "kind": "distribution", "label": "Energy (J/GB)"},
+        "energy efficiency by UE": {"sources": ["analytics/csv/energy_efficiency_analytics.csv"], "fields": ["ue_energy_efficiency"], "x_fields": ["ue_id"], "kind": "timeline", "label": "UE energy efficiency"},
+        "energy efficiency by cell": {"sources": ["analytics/csv/energy_efficiency_analytics.csv"], "fields": ["cell_energy_efficiency"], "x_fields": ["cell_id"], "kind": "timeline", "label": "Cell energy efficiency"},
+        "sleep/idle/active state occupancy": {"sources": ["reports/csv/live_drx_state.csv"], "fields": ["active_samples", "sleep_samples", "idle_samples"], "kind": "distribution", "label": "State occupancy samples"},
+        "decoder complexity units": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["DecoderComplexityUnits"], "kind": "distribution", "label": "Decoder complexity units"},
+        "normalized decoder complexity": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NormalizedDecoderComplexity"], "kind": "distribution", "label": "Normalized decoder complexity"},
+        "CSV vs DB consistency": {"sources": ["analytics/csv/export_consistency_analytics.csv"], "fields": ["BrowserVisible"], "kind": "distribution", "label": "CSV/DB consistency observation"},
+        "DB vs browser consistency": {"sources": ["reports/csv/browser_runtime_db_consistency.csv"], "fields": ["BrowserVisible"], "kind": "distribution", "label": "DB/browser consistency observation"},
+        "source row count vs analytics row count": {"sources": ["reports/csv/output_completeness_table.csv"], "fields": ["actual_row_count", "expected_row_count"], "kind": "timeline", "label": "Source/analytics row count"},
+        "missing-field audits": {"sources": ["reports/csv/all_csv_artifact_audit.csv"], "fields": ["missing_numeric_count"], "kind": "distribution", "label": "Missing numeric field count"},
+        "schema drift": {"sources": ["analytics/csv/schema_drift_analytics.csv"], "fields": ["FinalizedFlag"], "kind": "distribution", "label": "Observed schema field"},
+        "config drift": {"sources": ["reports/csv/config_roundtrip_verification.csv"], "fields": ["Match", "MismatchFlag"], "kind": "distribution", "label": "Configuration round-trip match"},
+        "truth-policy violation counts": {"sources": ["analytics/csv/truth_policy_analytics.csv"], "fields": ["StrictTruthFailureCount", "StrictProxyGuardFailureCount"], "kind": "distribution", "label": "Truth-policy violations"},
+        "placeholder exposure checks": {"sources": ["reports/csv/live_case_status.csv"], "fields": ["placeholder_rows"], "kind": "distribution", "label": "Placeholder exposure rows"},
+        "fallback event summaries": {"sources": ["reports/csv/live_case_status.csv"], "fields": ["fallback_rows"], "kind": "distribution", "label": "Fallback rows"},
+        "run status truth checks": {"sources": ["reports/csv/result_status_summary.csv"], "fields": ["ResultOk", "RuntimeTruthContractOk", "ConfiguredEffectiveOk"], "kind": "distribution", "label": "Run truth status"},
+        "summary-vs-raw contradiction checks": {"sources": ["reports/csv/summary_vs_raw_consistency.csv"], "fields": ["SummaryValue", "RawDerivedValue"], "kind": "timeline", "label": "Summary/raw value"},
+    }
+    spec = specs.get(str(chart_name or ""))
+    if spec is None:
+        return None
+
+    source_path = ""
+    samples: list[tuple[float, float]] = []
+    raw_values: list[float] = []
+    for candidate in spec["sources"]:
+        _header, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, candidate)
+        candidate_samples: list[tuple[float, float]] = []
+        candidate_values: list[float] = []
+        for index, row in enumerate(rows, start=1):
+            value = _row_float(row, *spec["fields"])
+            if value is None:
+                status_token = ""
+                for status_field in spec.get("status_fields", []):
+                    status_token = _row_text(row, status_field).strip().lower()
+                    if status_token:
+                        break
+                if status_token:
+                    positive = {
+                        "ok", "pass", "passed", "complete", "completed",
+                        "generated", "available", "observed", "consistent",
+                        "implemented", "success", "succeeded", "true",
+                    }
+                    negative = {
+                        "fail", "failed", "error", "missing", "unavailable",
+                        "incomplete", "false", "crash", "crashed",
+                    }
+                    if status_token in positive:
+                        value = 1.0
+                    elif status_token in negative:
+                        value = 0.0
+                    elif any(token in status_token for token in ("fail", "error", "crash", "missing")):
+                        value = 0.0
+                    elif any(token in status_token for token in ("complete", "pass", "success")):
+                        value = 1.0
+            if value is None or not math.isfinite(float(value)):
+                continue
+            x_value = _row_float(row, *spec.get("x_fields", []))
+            if x_value is None:
+                x_value = _timeline_axis_value(row, index)
+            candidate_values.append(float(value))
+            candidate_samples.append((float(x_value), float(value)))
+        if candidate_values:
+            source_path = candidate
+            samples = candidate_samples
+            raw_values = candidate_values
+            break
+    if not raw_values:
+        return None
+
+    if spec["kind"] == "distribution":
+        counts = Counter(round(float(value), 9) for value in raw_values)
+        if len(counts) <= 16:
+            points = [[float(value), float(count)] for value, count in sorted(counts.items())]
+        else:
+            min_value = min(raw_values)
+            max_value = max(raw_values)
+            if math.isclose(min_value, max_value):
+                points = [[float(min_value), float(len(raw_values))]]
+            else:
+                width = (max_value - min_value) / 16.0
+                bins = [0] * 16
+                for value in raw_values:
+                    idx = min(15, max(0, int((value - min_value) / max(width, 1e-12))))
+                    bins[idx] += 1
+                points = [[min_value + width * (idx + 0.5), float(count)] for idx, count in enumerate(bins) if count]
+        dataset = {"mode": "bar", "x_label": spec["label"], "y_label": "Sample count", "points": points}
+    else:
+        grouped: dict[float, list[float]] = defaultdict(list)
+        for x_value, metric_value in samples:
+            grouped[round(float(x_value), 9)].append(float(metric_value))
+        points = [[x_value, sum(values) / len(values)] for x_value, values in sorted(grouped.items())]
+        dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot / runtime sample", "y_label": spec["label"], "points": points}
+    if not dataset.get("points"):
+        return None
+    return {
+        "csv_bytes": _chart_dataset_csv(
+            run_id, chart_name, dataset, source_path, len(raw_values),
+            "explicit_runtime_metric_dataset",
+            f"Explicit {spec['label']} mapping from {source_path}.",
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            f"{spec['label']} derived from explicitly mapped persisted runtime fields.",
+            dataset,
+            [f"samples={len(raw_values)}", f"source={source_path}"],
+        ),
+        "csv_status": "explicit_runtime_metric_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(raw_values),
+        "note": "Only explicitly named runtime fields are used; no generic numeric-column inference or placeholder rows are allowed.",
+    }
+
+
+def _runtime_point_chart(
+    chart_name: str,
+    run_id: int,
+    source_path: str,
+    points: list[list[float]],
+    x_label: str,
+    y_label: str,
+    note: str,
+    *,
+    mode: str = "line",
+) -> dict[str, Any] | None:
+    finite = [
+        [float(point[0]), float(point[1])]
+        for point in points
+        if len(point) >= 2
+        and _coerce_float(point[0]) is not None
+        and _coerce_float(point[1]) is not None
+    ]
+    if not finite:
+        return None
+    csv_rows = [
+        {
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "point_index": index,
+            "x_value": point[0],
+            "y_value": point[1],
+            "source_table_logical_path": source_path,
+        }
+        for index, point in enumerate(finite, start=1)
+    ]
+    dataset = {
+        "mode": mode,
+        "x_label": x_label,
+        "y_label": y_label,
+        "points": _downsample_points(finite, 256),
+    }
+    return {
+        "csv_bytes": _encode_dict_rows(
+            ["run_id", "chart_name", "point_index", "x_value", "y_value", "source_table_logical_path"],
+            csv_rows,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            note,
+            dataset,
+            [f"source={source_path}", f"observations={len(finite)}"],
+        ),
+        "csv_status": "specialized_runtime_exact_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(finite),
+        "note": note,
+    }
+
+
+def _runtime_resource_occupancy_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    supported = {
+        "RE occupancy heatmap",
+        "SSB/PBCH occupancy map",
+        "DMRS/PTRS occupancy plot",
+        "DMRS/PTRS occupancy map",
+        "PRACH opportunity map",
+    }
+    if chart_name not in supported:
+        return None
+    source_path = "reports/csv/live_re_allocation_snapshot.csv"
+    _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
+    if not records:
+        return None
+    token_filters: tuple[str, ...] = ()
+    if chart_name == "SSB/PBCH occupancy map":
+        token_filters = ("SSB", "PBCH", "PSS", "SSS")
+    elif chart_name in {"DMRS/PTRS occupancy plot", "DMRS/PTRS occupancy map"}:
+        token_filters = ("DMRS", "PTRS")
+    elif chart_name == "PRACH opportunity map":
+        token_filters = ("PRACH",)
+    aggregate: dict[tuple[int, int], float] = defaultdict(float)
+    chosen_cell = _selected_cell(records, "cell_id", "CellID", "BaseStationID")
+    for row in records:
+        if chosen_cell and _row_text(row, "cell_id", "CellID", "BaseStationID") != chosen_cell:
+            continue
+        family = " ".join(
+            _row_text(row, field).upper()
+            for field in ("signal_family", "channel", "signal_name", "occupancy_role")
+        )
+        if token_filters and not any(token in family for token in token_filters):
+            continue
+        slot = _row_float(row, "slot", "Slot", "sfn")
+        rb = _row_float(row, "rb_index", "PRBStart")
+        occupancy = _row_float(row, "occupancy_value", "count")
+        if slot is None or rb is None or occupancy is None:
+            continue
+        key = (int(round(slot)), int(round(rb)))
+        aggregate[key] = max(aggregate[key], float(occupancy))
+    grid_rows = [
+        {"slot": slot, "rb_index": rb, "occupancy_value": value}
+        for (slot, rb), value in sorted(aggregate.items())
+    ]
+    if not grid_rows:
+        return None
+    x_labels, y_labels, matrix = _grid_rows_to_heatmap(
+        grid_rows, "slot", "rb_index", "occupancy_value"
+    )
+    csv_rows = [
+        {
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "cell_id": chosen_cell,
+            **row,
+            "source_table_logical_path": source_path,
+        }
+        for row in grid_rows
+    ]
+    return {
+        "csv_bytes": _encode_dict_rows(
+            ["run_id", "chart_name", "cell_id", "slot", "rb_index", "occupancy_value", "source_table_logical_path"],
+            csv_rows,
+        ),
+        "img_bytes": _render_heatmap_svg(
+            chart_name,
+            "Resource occupancy aggregated from persisted runtime RE-allocation rows.",
+            x_labels,
+            y_labels,
+            matrix,
+            [f"source={source_path}", f"cell={chosen_cell or 'all'}", f"occupied_slot_rb_pairs={len(grid_rows)}"],
+            "Slot",
+            "RB index",
+        ),
+        "csv_status": "specialized_runtime_re_occupancy_dataset",
+        "image_status": "generated_specialized_runtime_heatmap_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(grid_rows),
+        "note": "No inferred allocations are added; every occupied slot/RB pair has a persisted runtime allocation row.",
+    }
+
+
+def _preview_spectrum(
+    samples: list[complex], sample_rate_hz: float
+) -> list[list[float]]:
+    n = len(samples)
+    if n < 4 or not math.isfinite(sample_rate_hz) or sample_rate_hz <= 0:
+        return []
+    window = [0.5 - 0.5 * math.cos(2.0 * math.pi * index / max(n - 1, 1)) for index in range(n)]
+    spectrum: list[tuple[float, float]] = []
+    for k in range(n):
+        value = sum(
+            samples[t] * window[t] * cmath.exp(-2j * math.pi * k * t / n)
+            for t in range(n)
+        )
+        power = (abs(value) ** 2) / max(sum(weight * weight for weight in window), 1e-15)
+        frequency = ((k + n // 2) % n - n // 2) * sample_rate_hz / n
+        spectrum.append((frequency, power))
+    spectrum.sort(key=lambda item: item[0])
+    peak = max((power for _, power in spectrum), default=0.0)
+    if peak <= 0:
+        return []
+    return [[frequency / 1e6, 10.0 * math.log10(max(power / peak, 1e-15))] for frequency, power in spectrum]
+
+
+def _runtime_spectral_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if chart_name not in {
+        "PSD",
+        "occupied bandwidth",
+        "out-of-band spectral summaries if measurable",
+        "power spectral comparison before/after impairment",
+    }:
+        return None
+    source_path = "reports/csv/live_waveform_preview.csv"
+    _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
+    if not records:
+        return None
+    records = sorted(records, key=lambda row: _row_float(row, "SampleIndex") or 0.0)[:256]
+    time_values = [value for value in (_row_float(row, "Time_s") for row in records) if value is not None]
+    deltas = [b - a for a, b in zip(time_values, time_values[1:]) if b > a]
+    sample_rate_hz = 1.0 / (sum(deltas) / len(deltas)) if deltas else float("nan")
+    tx = [complex(_row_float(row, "TxReal") or 0.0, _row_float(row, "TxImag") or 0.0) for row in records]
+    rx = [complex(_row_float(row, "RxReal") or 0.0, _row_float(row, "RxImag") or 0.0) for row in records]
+    tx_psd = _preview_spectrum(tx, sample_rate_hz)
+    rx_psd = _preview_spectrum(rx, sample_rate_hz)
+    if not tx_psd and not rx_psd:
+        return None
+    series = []
+    csv_rows: list[dict[str, Any]] = []
+    for name, values in (("TX", tx_psd), ("RX", rx_psd)):
+        if not values:
+            continue
+        series.append({"name": name, "points": values})
+        for frequency_mhz, psd_db in values:
+            csv_rows.append(
+                {
+                    "run_id": run_id,
+                    "chart_name": chart_name,
+                    "series_name": name,
+                    "frequency_mhz": frequency_mhz,
+                    "relative_psd_db": psd_db,
+                    "source_table_logical_path": source_path,
+                }
+            )
+    note = "Preview-sample periodogram; it is not relabeled as a full raw-IQ spectral mask measurement."
+    if chart_name in {"occupied bandwidth", "out-of-band spectral summaries if measurable"}:
+        # Estimate the 99-percent occupied bandwidth from the actual preview periodogram.
+        linear = [(point[0], 10.0 ** (point[1] / 10.0)) for point in tx_psd]
+        total = sum(power for _, power in linear)
+        ordered = sorted(linear, key=lambda item: abs(item[0]))
+        cumulative = 0.0
+        half_band_mhz = 0.0
+        for frequency_mhz, power in ordered:
+            cumulative += power
+            half_band_mhz = max(half_band_mhz, abs(frequency_mhz))
+            if total > 0 and cumulative / total >= 0.99:
+                break
+        occupied_mhz = 2.0 * half_band_mhz
+        in_band = sum(power for frequency, power in linear if abs(frequency) <= half_band_mhz)
+        out_band = max(total - in_band, 0.0)
+        metric_points = [[0.0, occupied_mhz]] if chart_name == "occupied bandwidth" else [[0.0, 10.0 * math.log10(max(out_band / max(in_band, 1e-15), 1e-15))]]
+        return _runtime_point_chart(
+            chart_name,
+            run_id,
+            source_path,
+            metric_points,
+            "Preview measurement",
+            "99% occupied bandwidth (MHz)" if chart_name == "occupied bandwidth" else "Out/in-band power ratio (dB)",
+            note,
+            mode="bar",
+        )
+    return {
+        "csv_bytes": _encode_dict_rows(
+            ["run_id", "chart_name", "series_name", "frequency_mhz", "relative_psd_db", "source_table_logical_path"],
+            csv_rows,
+        ),
+        "img_bytes": _render_multi_series_svg(
+            chart_name,
+            note,
+            series,
+            [f"source={source_path}", f"sample_rate_hz={sample_rate_hz:.9g}", f"samples={len(records)}"],
+            x_label="Frequency (MHz)",
+            y_label="Relative PSD (dB)",
+        ),
+        "csv_status": "specialized_runtime_preview_periodogram_dataset",
+        "image_status": "generated_specialized_runtime_spectrum_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(records),
+        "note": note,
+    }
+
+
+def _runtime_contract_gap_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if chart_name == "required vs failed case bar chart":
+        source = "reports/csv/live_required_vs_optional_case_status.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        counts = Counter()
+        for row in rows:
+            required = bool((_row_float(row, "required_flag") or 0.0) > 0.5)
+            status = _row_text(row, "status").lower()
+            failed = any(token in status for token in ("fail", "missing", "error", "unavailable"))
+            counts[(required, failed)] += 1
+        points = [[float(index), float(counts[key])] for index, key in enumerate(((True, False), (True, True), (False, False), (False, True)))]
+        return _runtime_point_chart(chart_name, run_id, source, points, "Required/pass category", "Case count", "Counts are reduced from persisted required_flag and status fields.", mode="bar")
+    if chart_name == "HOL delay over time":
+        source = "packet_flow/csv/live_application_packet_delivery_ledger.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        points = []
+        for index, row in enumerate(rows, start=1):
+            enqueue = _row_float(row, "EnqueueTime_s")
+            first_grant = _row_float(row, "FirstGrantTime_s")
+            if enqueue is not None and first_grant is not None and first_grant >= enqueue:
+                points.append([float(index), 1000.0 * (first_grant - enqueue)])
+        return _runtime_point_chart(chart_name, run_id, source, points, "Packet observation", "HOL-to-first-grant delay (ms)", "Derived exactly as FirstGrantTime_s minus EnqueueTime_s for persisted application packets.")
+    if chart_name in {"duplicate write count trend", "dropped row / duplicate write analytics"}:
+        source = "reports/csv/artifact_inventory.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        paths = [_row_text(row, "RelativePath") for row in rows if _row_text(row, "RelativePath")]
+        counts = Counter(paths)
+        points = [[float(index), float(max(counts[path] - 1, 0))] for index, path in enumerate(paths, start=1)]
+        return _runtime_point_chart(chart_name, run_id, source, points, "Inventory row", "Duplicate write count", "Duplicate counts are exact RelativePath multiplicities in the persisted artifact inventory.")
+    if chart_name == "consistency failure trend":
+        source = "reports/csv/live_consistency_check_table.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        points = []
+        for index, row in enumerate(rows, start=1):
+            status = _row_text(row, "status").lower()
+            points.append([float(index), float(any(token in status for token in ("fail", "missing", "error", "invalid")))])
+        return _runtime_point_chart(chart_name, run_id, source, points, "Consistency check", "Failure flag", "Failure flags are reduced from persisted consistency-check status values.")
+    if chart_name == "investigator stage lineage graph":
+        source = "reports/csv/raw_to_derived_lineage.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        points = []
+        for index, row in enumerate(rows, start=1):
+            status = (_row_text(row, "RuntimeEvidenceStatus") + " " + _row_text(row, "DerivationStatus")).lower()
+            points.append([float(index), 0.0 if any(token in status for token in ("fail", "missing", "unavailable")) else 1.0])
+        return _runtime_point_chart(chart_name, run_id, source, points, "Lineage edge", "Published/derived flag", "Each point is an exact raw-to-derived lineage edge and its persisted evidence/derivation status.")
+    if chart_name == "config drift":
+        source = "reports/csv/config_roundtrip_verification.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        points = []
+        for index, row in enumerate(rows, start=1):
+            status = _row_text(row, "ConsistencyStatus").lower()
+            points.append([float(index), 0.0 if status in {"consistent", "match", "matched", "ok", "pass", "passed"} else 1.0])
+        return _runtime_point_chart(chart_name, run_id, source, points, "Configured field", "Drift flag", "Drift is reduced only from persisted configuration round-trip consistency status.")
+    if chart_name == "smoke exposure checks":
+        source = "reports/csv/run_classification.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        points = [[float(index), float("smoke" in _row_text(row, "RunClass").lower())] for index, row in enumerate(rows, start=1)]
+        return _runtime_point_chart(chart_name, run_id, source, points, "Run classification", "Smoke classification flag", "Smoke exposure is derived only from the persisted RunClass token.", mode="bar")
+    if chart_name == "assumption usage summaries":
+        source = "reports/csv/value_source_audit.csv"
+        _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
+        roles = Counter(_row_text(row, "ValueRole") or "unspecified" for row in rows)
+        points = [[float(index), float(count)] for index, (_role, count) in enumerate(sorted(roles.items()), start=1)]
+        return _runtime_point_chart(chart_name, run_id, source, points, "Value-role category", "Audited field count", "Counts come from explicit ValueRole classifications in the persisted value-source audit.", mode="bar")
+    return None
+
+
+def _runtime_energy_relation_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if chart_name not in {"power vs throughput", "power vs BLER", "PAPR vs power"}:
+        return None
+    energy_path = "rf/csv/energy_timeline_trace.csv"
+    _, energy_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, energy_path)
+    trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
+    tx_power: dict[tuple[str, int, int], list[float]] = defaultdict(list)
+    for row in energy_rows:
+        if "tx" not in _row_text(row, "State").lower():
+            continue
+        direction = _row_text(row, "Direction").upper()
+        frame = _row_float(row, "Frame")
+        slot = _row_float(row, "Slot")
+        power = _row_float(row, "Power_W")
+        if direction and frame is not None and slot is not None and power is not None:
+            tx_power[(direction, int(round(frame)), int(round(slot)))].append(float(power))
+    points: list[list[float]] = []
+    for source_path, rows in trial_sources:
+        default_direction = "DL" if "dl_pdsch" in source_path else "UL"
+        for row in rows:
+            direction = _row_text(row, "Direction").upper() or default_direction
+            frame = _row_float(row, "Frame")
+            slot = _row_float(row, "Slot")
+            if frame is None or slot is None:
+                continue
+            powers = tx_power.get((direction, int(round(frame)), int(round(slot))), [])
+            if not powers:
+                continue
+            power = sum(powers) / len(powers)
+            if chart_name == "power vs throughput":
+                metric = _row_float(row, "Goodput_Mbps", "Throughput_Mbps")
+                if metric is None:
+                    bits = _row_float(row, "GoodBits")
+                    duration_ms = _row_float(row, "AirInterfaceTTI_ms")
+                    metric = bits / max(duration_ms, 1e-12) / 1000.0 if bits is not None and duration_ms is not None else None
+            elif chart_name == "power vs BLER":
+                metric = _trial_row_bler(row)
+            else:
+                metric = _row_float(row, "PAPR_dB")
+            if metric is not None:
+                points.append([power, float(metric)])
+    y_label = {"power vs throughput": "Goodput (Mbps)", "power vs BLER": "BLER", "PAPR vs power": "PAPR (dB)"}[chart_name]
+    return _runtime_point_chart(chart_name, run_id, energy_path + "|air_interface/csv/*_trials.csv", points, "TX power (W)", y_label, "Power is joined to waveform trial metrics by exact direction/frame/slot keys.", mode="scatter")
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -4601,6 +5775,34 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    configured_sweep = _configured_sweep_chart_materialization(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if configured_sweep is not None:
+        return configured_sweep
+    explicit_metric = _explicit_runtime_metric_chart_materialization(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if explicit_metric is not None:
+        return explicit_metric
+    resource_occupancy = _runtime_resource_occupancy_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if resource_occupancy is not None:
+        return resource_occupancy
+    spectral = _runtime_spectral_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+    if spectral is not None:
+        return spectral
+    contract_gap = _runtime_contract_gap_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if contract_gap is not None:
+        return contract_gap
+    energy_relation = _runtime_energy_relation_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if energy_relation is not None:
+        return energy_relation
     if chart_name == "antenna element layout":
         return _runtime_antenna_layout_chart(chart_name, existing, fetch_artifact_bytes, run_id)
     if chart_name == "antenna radiation pattern":
@@ -4638,6 +5840,7 @@ def _specialized_chart_materialization(
         if srs_chart is not None:
             return srs_chart
     scheduler_chart_names = {
+        "scheduled PRBs per UE over time",
         "MCS over time",
         "CQI vs selected MCS",
         "queue depth over time",
@@ -4647,6 +5850,7 @@ def _specialized_chart_materialization(
         "grant reason distribution",
     }
     harq_chart_names = {
+        "HARQ process timeline",
         "RV usage distribution",
         "retransmission count histogram",
         "ACK/NACK timeline",
@@ -4659,15 +5863,59 @@ def _specialized_chart_materialization(
         "residual failure patterns",
     }
     if chart_name in scheduler_chart_names:
+        scheduler_sources = {
+            "scheduled PRBs per UE over time": [
+                "packet_flow/csv/live_dl_scheduler_grants.csv",
+                "packet_flow/csv/live_ul_scheduler_grants.csv",
+                "reports/csv/live_scheduler_cycle.csv",
+            ],
+            "queue depth over time": [
+                "reports/csv/live_queue_state.csv",
+                "packet_flow/csv/live_dl_scheduler_grants.csv",
+                "packet_flow/csv/live_ul_scheduler_grants.csv",
+            ],
+            "SR/BSR event timeline": [
+                "reports/csv/live_bsr_state.csv",
+                "reports/csv/live_sr_state.csv",
+                "reports/csv/live_scheduler_cycle.csv",
+            ],
+            "power control command timeline": [
+                "reports/csv/live_power_control_state.csv",
+                "packet_flow/csv/live_ul_scheduler_grants.csv",
+                "reports/csv/live_scheduler_cycle.csv",
+            ],
+            "PHR distribution": [
+                "reports/csv/live_phr_state.csv",
+                "packet_flow/csv/live_ul_scheduler_grants.csv",
+                "reports/csv/live_scheduler_cycle.csv",
+            ],
+        }.get(
+            chart_name,
+            [
+                "reports/csv/live_scheduler_cycle.csv",
+                "packet_flow/csv/live_dl_scheduler_grants.csv",
+                "packet_flow/csv/live_ul_scheduler_grants.csv",
+            ],
+        )
         source_path, records = _first_available_rows(
             existing,
             fetch_artifact_bytes,
-            ["reports/csv/live_scheduler_cycle.csv", "packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"],
+            scheduler_sources,
         )
         if records:
             dataset = None
             note = "Scheduler chart derived from persisted scheduler-cycle or grant runtime rows."
-            if chart_name == "MCS over time":
+            if chart_name == "scheduled PRBs per UE over time":
+                grouped: dict[int, list[float]] = defaultdict(list)
+                for row in records:
+                    slot = _row_float(row, "Slot", "ScheduledAbsoluteSlot")
+                    prb_count = _row_float(row, "AllocatedPRBCount", "PRBCount", "prb_count")
+                    if slot is None or prb_count is None:
+                        continue
+                    grouped[int(round(slot))].append(float(prb_count))
+                points = [[float(slot), sum(vals) / len(vals)] for slot, vals in sorted(grouped.items())]
+                dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot", "y_label": "Mean scheduled PRBs per grant", "points": points}
+            elif chart_name == "MCS over time":
                 points = [[idx + 1, float(_row_float(row, "MCSIndex") or 0.0)] for idx, row in enumerate(records[:MAX_PREVIEW_ROWS]) if _row_float(row, "MCSIndex") is not None]
                 dataset = {"mode": _honest_chart_mode(points), "x_label": "Grant sample", "y_label": "MCSIndex", "points": points}
             elif chart_name == "CQI vs selected MCS":
@@ -4711,7 +5959,14 @@ def _specialized_chart_materialization(
                 points = [[float(slot), float(count)] for slot, count in sorted(grouped.items())]
                 dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot", "y_label": "Power-control commands", "points": points}
             elif chart_name == "PHR distribution":
-                values = [float(value) for value in (_row_float(row, "phr_db") for row in records) if value is not None]
+                values = []
+                for row in records:
+                    metric_token = _row_text(row, "MetricKey", "MetricName").strip().lower()
+                    if metric_token and "phr" not in metric_token and "headroom" not in metric_token:
+                        continue
+                    value = _row_float(row, "phr_db", "ValueNumeric")
+                    if value is not None:
+                        values.append(float(value))
                 if values:
                     bins = min(12, max(3, len(values)))
                     lo = min(values)
@@ -4755,7 +6010,16 @@ def _specialized_chart_materialization(
             dataset = None
             img_bytes_override: bytes | None = None
             note = "HARQ chart derived from persisted runtime HARQ observation rows."
-            if chart_name == "RV usage distribution":
+            if chart_name == "HARQ process timeline":
+                points = []
+                for index, row in enumerate(records, start=1):
+                    slot = _row_float(row, "Slot", "last_tx_time", "LastTxTime")
+                    process_id = _row_float(row, "HarqID", "HARQProcess", "harq_id")
+                    if process_id is None:
+                        continue
+                    points.append([float(slot) if slot is not None else float(index), float(process_id)])
+                dataset = {"mode": "scatter", "x_label": "Slot / transmission index", "y_label": "HARQ process", "points": points}
+            elif chart_name == "RV usage distribution":
                 counts = Counter(int(round(_row_float(row, "RV") or -1)) for row in records if _row_float(row, "RV") is not None)
                 points = [[float(rv), float(count)] for rv, count in sorted((rv, count) for rv, count in counts.items() if rv >= 0)]
                 dataset = {"mode": "bar", "x_label": "RV", "y_label": "Count", "points": points}
@@ -5266,7 +6530,7 @@ def _specialized_chart_materialization(
             "source_row_count": len(rows),
             "note": "Control-region occupancy derived from PDCCH runtime trials.",
         }
-    if chart_name == "PBCH/SSB map":
+    if chart_name in {"PBCH/SSB map", "SSB/PBCH occupancy map"}:
         _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, "air_interface/csv/pbch_trials.csv")
         rows = []
         for row in records:
@@ -6621,14 +7885,18 @@ def _existing_contract_artifacts_current(
     feature_policy = dict(feature_policy or {})
     for table_spec in _table_specs():
         table_name = str(table_spec.get("table_name") or "")
-        if table_name in OPTIONAL_6G_TABLES and not any(feature_policy.values()):
+        if contract_artifact_is_policy_filtered(
+            table_contract_path(table_spec), feature_policy, contract_name=table_name
+        ):
             continue
         artifact = existing.get(table_contract_path(table_spec))
         if artifact is None or not _artifact_has_current_materializer_version(artifact, db_connection_factory):
             return False
     for chart_spec in _chart_specs():
         chart_name = str(chart_spec.get("chart_name") or "")
-        if chart_name in OPTIONAL_6G_CHARTS and not any(feature_policy.values()):
+        if contract_artifact_is_policy_filtered(
+            chart_contract_csv_path(chart_spec), feature_policy, contract_name=chart_name
+        ):
             continue
         csv_artifact = existing.get(chart_contract_csv_path(chart_spec))
         image_artifact = existing.get(chart_contract_image_path(chart_spec))
@@ -6655,18 +7923,22 @@ def coverage_summary(
     policy_disabled_charts = 0
     for table_spec in table_specs:
         table_name = str(table_spec.get("table_name") or "")
-        if table_name in OPTIONAL_6G_TABLES and not any(feature_policy.values()):
+        target_path = table_contract_path(table_spec)
+        if contract_artifact_is_policy_filtered(
+            target_path, feature_policy, contract_name=table_name
+        ):
             policy_disabled_tables += 1
             continue
-        target_path = table_contract_path(table_spec)
         if target_path not in logical_paths:
             missing_tables.append(target_path)
     for chart_spec in chart_specs:
         chart_name = str(chart_spec.get("chart_name") or "")
-        if chart_name in OPTIONAL_6G_CHARTS and not any(feature_policy.values()):
+        csv_path = chart_contract_csv_path(chart_spec)
+        if contract_artifact_is_policy_filtered(
+            csv_path, feature_policy, contract_name=chart_name
+        ):
             policy_disabled_charts += 1
             continue
-        csv_path = chart_contract_csv_path(chart_spec)
         img_path = chart_contract_image_path(chart_spec)
         if csv_path not in logical_paths or img_path not in logical_paths:
             missing_charts.append(chart_name)
@@ -6745,9 +8017,11 @@ def materialize_run_contract_artifacts(
 
         for table_spec in _table_specs():
             table_name = str(table_spec.get("table_name") or "")
-            if table_name in OPTIONAL_6G_TABLES and not any(feature_policy.values()):
-                continue
             target_path = table_contract_path(table_spec)
+            if contract_artifact_is_policy_filtered(
+                target_path, feature_policy, contract_name=table_name
+            ):
+                continue
             if not target_path or target_path in existing:
                 continue
             source_art = None
@@ -6838,9 +8112,11 @@ def materialize_run_contract_artifacts(
 
         for chart_spec in _chart_specs():
             chart_name = str(chart_spec.get("chart_name") or "")
-            if chart_name in OPTIONAL_6G_CHARTS and not any(feature_policy.values()):
-                continue
             target_csv = chart_contract_csv_path(chart_spec)
+            if contract_artifact_is_policy_filtered(
+                target_csv, feature_policy, contract_name=chart_name
+            ):
+                continue
             target_img = chart_contract_image_path(chart_spec)
             if target_csv in existing and target_img in existing:
                 continue

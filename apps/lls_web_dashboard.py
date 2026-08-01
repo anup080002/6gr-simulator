@@ -3887,6 +3887,26 @@ def build_runtime_overlay_payload(
                 merge_runtime_override_lists(base_overrides, source_overrides),
             )
         candidate_payload = merge_config_dict(copy.deepcopy(base_payload), source)
+        # A partial uploaded/legacy overlay may set a public runtime field
+        # such as run_control.total_slots without repeating the inherited
+        # canonical_control tree.  Expand that explicit value into the
+        # canonical tree before canonicalization; otherwise the inherited
+        # canonical value wins and silently discards the user's override.
+        source_control = source.get("canonical_control")
+        if not isinstance(source_control, dict):
+            source_control = {}
+        for control_path, public_path, transform_mode in CANONICAL_CONTROL_PATH_MAP:
+            if transform_mode != "identity":
+                continue
+            explicit_public = path_get(source, public_path)
+            explicit_canonical = path_get(source_control, control_path)
+            if explicit_public is PATH_MISSING or explicit_canonical is not PATH_MISSING:
+                continue
+            path_set(
+                candidate_payload,
+                f"canonical_control.{control_path}",
+                copy.deepcopy(explicit_public),
+            )
     else:
         candidate_payload = payload
     base_with_aliases = canonicalize_browser_config_payload(base_payload, keep_legacy_aliases=True)
@@ -9945,8 +9965,38 @@ def _config_get_nested(config: dict[str, Any], path: str, default: Any = None) -
     return current
 
 
-def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, bool]:
+def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     config = parse_config_json(run_row)
+
+    def config_bool(*paths: str, default: bool = False) -> bool:
+        for path in paths:
+            value = _config_get_nested(config, path, None)
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            token = str(value).strip().lower()
+            if token in {"1", "true", "yes", "on", "enabled"}:
+                return True
+            if token in {"0", "false", "no", "off", "disabled", "none", ""}:
+                return False
+        return bool(default)
+
+    def config_number(*paths: str, default: float = 0.0) -> float:
+        for path in paths:
+            value = _config_get_nested(config, path, None)
+            if isinstance(value, (list, tuple)):
+                finite = [coerce_numeric(item) for item in value]
+                finite = [float(item) for item in finite if item is not None and math.isfinite(float(item))]
+                if finite:
+                    return max(abs(item) for item in finite)
+            number = coerce_numeric(value)
+            if number is not None and math.isfinite(number):
+                return float(number)
+        return float(default)
+
     ai_enabled = bool(
         _config_get_nested(config, "ai.enable", False)
         or _config_get_nested(config, "lls6g.resolvedConfig.ai.enable", False)
@@ -9983,6 +10033,189 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, bool]:
     sub_thz_enabled = bool(
         center_frequency_hz is not None and math.isfinite(center_frequency_hz) and center_frequency_hz >= 90e9
     )
+
+    run_mode = str(_config_get_nested(config, "run.mode", "")).strip().lower()
+    geometry_enabled = config_bool(
+        "canonical_control.launch.geometry_enabled",
+        "lls6g.resolvedConfig.launch.geometry_enabled",
+        "lls6g.scenario.geometry_enabled",
+        default=run_mode in {"system", "geometry", "geometry_based", "system_level"},
+    )
+    mobility_enabled = config_bool(
+        "scenario.mobility.enable",
+        "lls6g.resolvedConfig.mobility.enabled",
+        "lls6g.resolvedConfig.scenario.mobility.enabled",
+        default=False,
+    ) or config_number(
+        "scenario.mobility.speed_kmh",
+        "scenario.mobility.speed_mps",
+        "lls6g.scenario.mobility.speed_kmh",
+        "lls6g.resolvedConfig.channel.mobility_kmph",
+    ) > 0.0
+    handover_enabled = bool(
+        geometry_enabled
+        and mobility_enabled
+        and config_bool(
+            "system.handover.enable",
+            "lls6g.resolvedConfig.handover.enabled",
+            "lls6g.resolvedConfig.mobility.handover_enabled",
+        )
+    )
+    fixed_link_campaign_enabled = config_bool(
+        "canonical_control.launch.fixed_link_campaign_enabled",
+        "canonical_control.run.fixed_link_campaign_enabled",
+        "run.fixedLinkCampaignEnabled",
+        "lls6g.resolvedConfig.launch.fixed_link_campaign_enabled",
+        "lls6g.resolvedConfig.fixed_link_campaign.enabled",
+    )
+    profiler_enabled = config_bool(
+        "run.timeProfilingEnabled",
+        "lls6g.resolvedConfig.output.profiler_enabled",
+        "output.profiler_enabled",
+    )
+    comparison_enabled = bool(
+        str(_config_get_nested(config, "run.comparisonBaselineRunID", "")).strip()
+        or str(_config_get_nested(config, "lls6g.resolvedConfig.comparison.baseline_run_id", "")).strip()
+    )
+    active_pucch_formats = _config_get_nested(
+        config,
+        "lls6g.resolvedConfig.output.browser_contract.active_pucch_formats",
+        _config_get_nested(config, "output.browser_contract.active_pucch_formats", [0]),
+    )
+    if not isinstance(active_pucch_formats, (list, tuple, set)):
+        active_pucch_formats = [active_pucch_formats]
+    harq_enabled = config_bool(
+        "canonical_control.harq.enabled",
+        "phy.harq.enable",
+        "mac.harq.enable",
+        "lls6g.resolvedConfig.harq.enabled",
+        default=True,
+    )
+    rf_impairments_enabled = config_bool(
+        "canonical_control.rf_frontend.enabled",
+        "rf.frontend.enabled",
+        "rf.enable",
+        "lls6g.resolvedConfig.rf_frontend.enabled",
+        default=True,
+    )
+    power_control_enabled = config_bool(
+        "canonical_control.power_control.enabled",
+        "phy.pusch.power_control.enabled",
+        "phy.pusch.powerControl.enabled",
+        "lls6g.resolvedConfig.pusch.power_control.enabled",
+        default=True,
+    )
+    raw_iq_capture_enabled = config_bool(
+        "run.rawIQCaptureEnabled",
+        "outputs.rawIQCaptureEnabled",
+        "lls6g.resolvedConfig.run_control.raw_iq_capture_enable",
+        default=True,
+    )
+    raw_grid_capture_enabled = config_bool(
+        "run.rawGridCaptureEnabled",
+        "outputs.rawGridCaptureEnabled",
+        "lls6g.resolvedConfig.run_control.raw_grid_capture_enable",
+        default=True,
+    )
+    channel_snapshot_capture_enabled = config_bool(
+        "outputs.saveChannelSnapshots",
+        "lls6g.resolvedConfig.run_control.save_channel_tensors",
+        default=True,
+    )
+    pathloss_enabled = config_bool(
+        "canonical_control.channel.pathloss_enabled",
+        "channel.pathlossEnabled",
+        "lls6g.resolvedConfig.channel.pathloss_enabled",
+        default=True,
+    )
+    shadowing_enabled = config_bool(
+        "canonical_control.channel.shadow_fading_enabled",
+        "channel.shadowFadingEnabled",
+        "lls6g.resolvedConfig.channel.shadow_fading_enabled",
+        default=True,
+    )
+    interference_enabled = config_bool(
+        "channel.interference.interCellEnabled",
+        "interference.interCellEnabled",
+        default=True,
+    ) or config_bool(
+        "channel.interference.intraCellEnabled",
+        "interference.intraCellEnabled",
+    )
+    initial_access_enabled = config_bool(
+        "canonical_control.initial_access.enabled",
+        "initial_access.enabled",
+        "lls6g.resolvedConfig.initial_access.enabled",
+        default=True,
+    )
+    prach_enabled = config_bool(
+        "canonical_control.random_access.enabled",
+        "random_access.enabled",
+        "phy.prach.enable",
+        default=True,
+    )
+    prach_runtime_required = config_bool(
+        "run.controlGating.prachRequired",
+        "control_gating.prach_required",
+        "canonical_control.control.prach_required",
+        "validation.random_access_evidence.msg1_prach_required",
+        default=True,
+    )
+    pbch_runtime_required = config_bool(
+        "run.controlGating.pbchRequired",
+        "canonical_control.control.pbch_required",
+        default=True,
+    )
+    pdcch_enabled = config_bool(
+        "canonical_control.control.pdcch_enabled",
+        "phy.pdcch.enable",
+        "lls6g.resolvedConfig.pdcch.enabled",
+        default=True,
+    )
+    pucch_enabled = config_bool(
+        "canonical_control.control.pucch_enabled",
+        "phy.pucch.enable",
+        default=True,
+    )
+    srs_enabled = config_bool(
+        "canonical_control.reference_signals.srs_enabled",
+        "phy.srs.enable",
+        "lls6g.resolvedConfig.reference_signals.srs.enabled",
+        default=True,
+    )
+    energy_enabled = config_bool(
+        "canonical_control.energy.enabled",
+        "energy.enable",
+        "lls6g.resolvedConfig.energy.enable",
+        default=True,
+    )
+    prach_collision_enabled = config_bool(
+        "random_access.enable_collision_mode",
+        "prach_lls.EnableCollisionMode",
+        default=True,
+    )
+    prach_threshold_sweep_enabled = config_bool(
+        "random_access.parameterized_config_enabled",
+        default=True,
+    )
+    reciprocity_calibration_enabled = config_bool(
+        "phy.mimo.ulSRSAuthority.enabled",
+        "canonical_control.csi.ul_csi_enabled",
+        default=True,
+    )
+    channel_model = str(
+        _config_get_nested(
+            config,
+            "channel.model",
+            _config_get_nested(
+                config,
+                "lls6g.resolvedConfig.channels.profile",
+                _config_get_nested(config, "lls6g.resolvedConfig.channels.model_type", "AWGN"),
+            ),
+        )
+        or "AWGN"
+    ).strip().upper()
+    fading_enabled = channel_model not in {"", "AWGN", "NONE", "OFF"}
     return {
         "ai_enabled": ai_enabled,
         "ntn_enabled": ntn_enabled,
@@ -9991,10 +10224,38 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, bool]:
         "ris_enabled": ris_enabled,
         "cell_free_enabled": cell_free_enabled,
         "sub_thz_enabled": sub_thz_enabled,
+        "geometry_enabled": geometry_enabled,
+        "mobility_enabled": mobility_enabled,
+        "handover_enabled": handover_enabled,
+        "fixed_link_campaign_enabled": fixed_link_campaign_enabled,
+        "profiler_enabled": profiler_enabled,
+        "comparison_enabled": comparison_enabled,
+        "active_pucch_formats": [str(value).strip() for value in active_pucch_formats],
+        "harq_enabled": harq_enabled,
+        "rf_impairments_enabled": rf_impairments_enabled,
+        "power_control_enabled": power_control_enabled,
+        "raw_iq_capture_enabled": raw_iq_capture_enabled,
+        "raw_grid_capture_enabled": raw_grid_capture_enabled,
+        "channel_snapshot_capture_enabled": channel_snapshot_capture_enabled,
+        "pathloss_enabled": pathloss_enabled,
+        "shadowing_enabled": shadowing_enabled,
+        "interference_enabled": interference_enabled,
+        "initial_access_enabled": initial_access_enabled,
+        "prach_enabled": prach_enabled,
+        "prach_runtime_required": prach_runtime_required,
+        "pbch_runtime_required": pbch_runtime_required,
+        "pdcch_enabled": pdcch_enabled,
+        "pucch_enabled": pucch_enabled,
+        "srs_enabled": srs_enabled,
+        "energy_enabled": energy_enabled,
+        "prach_collision_enabled": prach_collision_enabled,
+        "prach_threshold_sweep_enabled": prach_threshold_sweep_enabled,
+        "reciprocity_calibration_enabled": reciprocity_calibration_enabled,
+        "fading_enabled": fading_enabled,
     }
 
 
-def artifact_is_policy_filtered(logical_path: str, feature_policy: dict[str, bool] | None) -> bool:
+def artifact_is_policy_filtered(logical_path: str, feature_policy: dict[str, Any] | None) -> bool:
     path = str(logical_path or "").strip().lower()
     policy = feature_policy or {}
     if not path:
@@ -10021,12 +10282,14 @@ def artifact_is_policy_filtered(logical_path: str, feature_policy: dict[str, boo
         return True
     if has_feature_token("sub_thz") and not policy.get("sub_thz_enabled", False):
         return True
+    if contract_materializer.contract_artifact_is_policy_filtered(path, policy):
+        return True
     return False
 
 
 def filter_public_artifacts_for_policy(
     artifacts: list[dict[str, Any]],
-    feature_policy: dict[str, bool] | None,
+    feature_policy: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     return [
         art

@@ -434,6 +434,7 @@
     "phy_signal_diagnostic_constellation_points": 512,
     "live_publish_frame_interval": 1,
     "live_heavy_refresh_interval_frames": 4,
+    "live_heavy_refresh_each_sweep_point": true,
     "profiler_enabled": false,
     "profiler_top_functions": 160,
     "profiler_top_edges": 320,

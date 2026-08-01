@@ -1238,7 +1238,8 @@ methods(Static, Access=private)
     function [state, context, grantRow] = buildTrialContextFromGrantImpl(state, cfg, ueIdx, direction, grant)
         direction = upper(string(direction));
         grant = sixgr.truth.CoupledTruthRuntime.normalizeGrantSnapshot(grant, direction, state, ueIdx);
-        isRetx = logical(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
+        isRetx = sixgr.util.logicalAny(sixgr.util.structGet( ...
+            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
         if isRetx
             context = sixgr.truth.CoupledTruthRuntime.resolveHARQTrialContextImpl(state, ueIdx, direction);
             replayGrant = sixgr.util.structGet(context, "GrantSnapshot", struct());
@@ -1437,8 +1438,16 @@ methods(Static, Access=private)
         linkKey = sixgr.channel.ChannelFactory.runtimeChannelKey(cfg, direction, ...
             "UEIndex", ueIdx, "ServingCell", servingCell);
         [state, chState] = sixgr.truth.CoupledTruthRuntime.resolveRuntimeChannelState(state, cfg, direction, linkKey, ueIdx, servingCell);
+        slotDuration_s = double(sixgr.util.structGet(state, "SlotDuration_s", NaN));
+        if ~(isscalar(slotDuration_s) && isfinite(slotDuration_s) && slotDuration_s > 0)
+            % Use the repository's canonical numerology authority.  Do not
+            % place this call inside structGet's default argument: MATLAB
+            % evaluates function arguments eagerly even when the state field
+            % exists, which previously invoked a nonexistent class method.
+            slotDuration_s = sixgr.time.slotDurationSec(cfg);
+        end
         slotStartTime_s = max(0, double(sixgr.util.structGet(state, "CurrentSlot", 1)) - 1) * ...
-            double(sixgr.util.structGet(state, "SlotDuration_s", sixgr.truth.CoupledTruthRuntime.slotDuration(cfg)));
+            slotDuration_s;
         chState.TargetSlotStartTime_s = double(slotStartTime_s);
         chState.TargetSlot = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
         chState.TargetFrame = double(sixgr.util.structGet(state, "CurrentFrame", NaN));
@@ -1623,7 +1632,8 @@ methods(Static, Access=private)
         if ~(isfinite(tbsBits) && tbsBits > 0)
             tbsBits = 0;
         end
-        isRetx = logical(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
+        isRetx = sixgr.util.logicalAny(sixgr.util.structGet( ...
+            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
         if ~isRetx && tbsBits > 0
             state = sixgr.truth.CoupledTruthRuntime.reserveGrantBits(state, ueIdx, direction, tbsBits, grant);
         end
@@ -1691,7 +1701,17 @@ methods(Static, Access=private)
             traceT.TargetCodeRate(idx) = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
         end
         if ismember("NumLayers", string(traceT.Properties.VariableNames))
-            traceT.NumLayers(idx) = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
+            executedLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
+            traceT.NumLayers(idx) = executedLayers;
+            if ismember("Layers", string(traceT.Properties.VariableNames))
+                traceT.Layers(idx) = executedLayers;
+            end
+            if ismember("RIUsed", string(traceT.Properties.VariableNames))
+                traceT.RIUsed(idx) = executedLayers;
+            end
+            if ismember("Rank", string(traceT.Properties.VariableNames))
+                traceT.Rank(idx) = executedLayers;
+            end
         end
         if ismember("PMI", string(traceT.Properties.VariableNames))
             traceT.PMI(idx) = double(sixgr.util.structGet(grant, "PMI", NaN));
@@ -2165,7 +2185,7 @@ methods(Static, Access=private)
         direction = upper(string(direction));
         harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
         harqId0 = double(sixgr.util.structGet(harqStruct, "HarqID", NaN));
-        isRetx = logical(sixgr.util.structGet(harqStruct, "IsRetransmission", false));
+        isRetx = sixgr.util.logicalAny(sixgr.util.structGet(harqStruct, "IsRetransmission", false));
         rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
         if ~(isfinite(rnti) && isfinite(harqId0)) || isRetx
             return;
@@ -2208,7 +2228,7 @@ methods(Static, Access=private)
             harq = state.DLHarq;
             buffers = state.DLCombinedLLR;
         end
-        isRetx = logical(sixgr.util.structGet(context, "IsRetransmission", false));
+        isRetx = sixgr.util.logicalAny(sixgr.util.structGet(context, "IsRetransmission", false));
         hasScheduledHarq = isfinite(double(sixgr.util.structGet(context, "HarqID", NaN)));
         if isRetx
             harqId0 = double(sixgr.util.structGet(context, "HarqID", NaN));
@@ -2985,6 +3005,8 @@ methods(Static, Access=private)
             harq = state.DLHarq;
             layersCfg = double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", sixgr.util.structGet(cfg, "phy.pdsch.numLayers", 1)));
         end
+        layersCfg = max(1,round(layersCfg));
+        rankDecision = sixgr.mimo.resolveRankExecutionPolicy(cfg,direction,layersCfg);
         hasRetx = false;
         try
             hasRetx = harq.hasPendingRetx(rnti, sixgr.util.structGet(state, "CurrentSlot", NaN));
@@ -3059,7 +3081,15 @@ methods(Static, Access=private)
         ueState.ServingCell = double(servingCell);
         ueState.RNTI = double(rnti);
         ueState.CQI = double(schedulerCQI);
-        ueState.RI = max(1, round(double(sixgr.util.structGet(feedback, "RI", layersCfg))));
+        if logical(rankDecision.FixedRankAnchor)
+            ueState.RI = double(rankDecision.EffectiveRank);
+            ueState.NumLayers = double(rankDecision.EffectiveRank);
+            ueState.RankAuthority = "configured_fixed_rank_anchor";
+        else
+            ueState.RI = max(1, round(double(sixgr.util.structGet(feedback, "RI", layersCfg))));
+            ueState.NumLayers = double(ueState.RI);
+            ueState.RankAuthority = "runtime_feedback_ri";
+        end
         ueState.PMI = double(sixgr.util.structGet(feedback, "PMI", NaN));
         ueState.CRI = double(sixgr.util.structGet(feedback, "CRI", NaN));
         ueState.MeasuredSINR_dB = double(sixgr.util.structGet(feedback, "SINR_dB", NaN));
@@ -3118,8 +3148,11 @@ methods(Static, Access=private)
                 if isfinite(previewCQI) && isfinite(double(ueState.CQI))
                     ueState.CQI = min(double(ueState.CQI), previewCQI);
                 end
-                ueState.RI = 1;
-                ueState.NumLayers = 1;
+                if ~logical(rankDecision.FixedRankAnchor)
+                    ueState.RI = 1;
+                    ueState.NumLayers = 1;
+                    ueState.RankAuthority = "ul_shared_reuse_probe_conservative_rank";
+                end
                 ueState.MCSIndex = double(probeMCS);
                 ueState.MCSIndexAuthority = "ul_shared_reuse_probe_conservative_mcs";
                 ueState.Modulation = char(string(probeProfile.Modulation));
@@ -5848,7 +5881,8 @@ methods(Static, Access=private)
         row.ServingCell = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "ServingCell", NaN), NaN);
         row.BaseStationID = row.ServingCell;
         row.GrantReason = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "GrantReason", ""), "");
-        row.IsRetransmission = logical(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
+        row.IsRetransmission = sixgr.util.logicalAny(sixgr.util.structGet( ...
+            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
         row.HarqID = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "HarqID", NaN), NaN);
         row.NDI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "NDI", NaN), NaN);
         row.RV = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "RV", NaN), NaN);
@@ -6055,6 +6089,8 @@ methods(Static, Access=private)
             sixgr.util.structGet(feedback, "SchedulerSINRBackoff_dB", NaN)), NaN);
         grant.SchedulerCQISource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "SchedulerCQISource", ...
             sixgr.util.structGet(feedback, "SchedulerCQISource", "")), "");
+        grant.CQIProvenance = sixgr.truth.CoupledTruthRuntime.firstString( ...
+            sixgr.util.structGet(grant, "CQIProvenance", ""), "");
         if strlength(strtrim(string(grant.CQIProvenance))) == 0 && strlength(strtrim(string(grant.SchedulerCQISource))) > 0
             grant.CQIProvenance = char(string(grant.SchedulerCQISource));
         end
@@ -6849,6 +6885,30 @@ methods(Static, Access=private)
     end
 
     function grant = applyMeasuredFeedbackRankToGrant(grant, feedback, cfg, direction)
+        if upper(string(direction)) == "UL"
+            configuredRank = double(sixgr.util.structGet(cfg,"phy.pusch.nLayers", ...
+                sixgr.util.structGet(cfg,"phy.pusch.numLayers",1)));
+        else
+            configuredRank = double(sixgr.util.structGet(cfg,"phy.pdsch.nLayers", ...
+                sixgr.util.structGet(cfg,"phy.pdsch.numLayers",1)));
+        end
+        rankDecision = sixgr.mimo.resolveRankExecutionPolicy( ...
+            cfg,direction,max(1,round(configuredRank)));
+        if logical(rankDecision.FixedRankAnchor)
+            nLayers = double(rankDecision.EffectiveRank);
+            grant.RI = nLayers;
+            grant.RIUsed = nLayers;
+            grant.Rank = nLayers;
+            grant.RankIndicator = nLayers;
+            grant.NumLayers = nLayers;
+            grant.Layers = nLayers;
+            grant.PrecodingNumLayers = nLayers;
+            grant.RankAuthority = "configured_fixed_rank_anchor";
+            grant.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
+                sixgr.util.structGet(feedback,"PMI",sixgr.util.structGet(grant,"PMI",NaN)), ...
+                cfg,direction,nLayers));
+            return;
+        end
         finalizedGrant = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
         phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
         if ~finalizedGrant && isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
@@ -6893,6 +6953,13 @@ methods(Static, Access=private)
     function tf = smallPRBWidebandFeedbackGuardApplies(grant, feedback, cfg, direction, candidateMCS)
         tf = false;
         if upper(string(direction)) ~= "UL"
+            return;
+        end
+        configuredRank = double(sixgr.util.structGet(cfg,"phy.pusch.nLayers", ...
+            sixgr.util.structGet(cfg,"phy.pusch.numLayers",1)));
+        rankDecision = sixgr.mimo.resolveRankExecutionPolicy( ...
+            cfg,"UL",max(1,round(configuredRank)));
+        if logical(rankDecision.FixedRankAnchor)
             return;
         end
         sourceToken = lower(strjoin([ ...
@@ -10474,8 +10541,7 @@ methods(Static, Access=private)
         connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
             cfgU,ueState,expectedAck,frameState);
         carrier=sixgr.phy.grid.makeCarrier(cfgU);
-        channelProfile=string(sixgr.util.structGet( ...
-            cfgU,"channel.model","AWGN"));
+        channelProfile = sixgr.channel.resolveConcreteProfile(cfgU);
         trial = sixgr.link.runPUCCHWaveformTrial(cfgU, ...
             "Carrier",carrier,"Assignment",connected.Assignment, ...
             "Report",connected.Report, ...

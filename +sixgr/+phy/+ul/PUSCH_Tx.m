@@ -247,6 +247,12 @@ else
     localAssertPUSCHMultiCodewordSymbolContract( ...
         codewords, dftInputSym, puschLayerSym, puschSym, puschInd, pusch);
 end
+[puschSym, puschInd, logicalDataPrecodeInfo] = ...
+    localApplyResolvedLogicalPortPrecode( ...
+    carrier, puschSym, puschInd, prec, "PUSCH");
+puschDomainInfo.ResolvedLogicalPortPrecode = logicalDataPrecodeInfo;
+puschDomainInfo.NumPorts = double(size(puschSym, 2));
+puschDomainInfo.PortSymbolCount = double(numel(puschSym));
 puschLayerInd = localLayerIndicesFromPortIndices(puschInd, puschLayerSym);
 puschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschLayerInd, "layer");
 puschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschInd, "port");
@@ -262,6 +268,10 @@ dmrsInfo.DMRSAmplitudeScale = double(dmrsPowerInfo.DMRSAmplitudeScale);
 dmrsInfo.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
 dmrsInfo.EPREConfigSource = char(string(dmrsPowerInfo.Source));
 dmrsInfo.EPREScalePolicy = char(string(dmrsPowerInfo.ScalePolicy));
+[dmrsSym, dmrsInd, dmrsLogicalPrecodeInfo] = ...
+    localApplyResolvedLogicalPortPrecode( ...
+    carrier, dmrsSym, dmrsInd, prec, "PUSCH DMRS");
+dmrsInfo.ResolvedLogicalPortPrecode = dmrsLogicalPrecodeInfo;
 
 % PTRS (optional)
 ptrsInd = [];
@@ -269,6 +279,9 @@ if ~isempty(ptrsSym)
     ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
         carrier, pusch, "IndexBase", "1based");
 end
+[ptrsSym, ptrsInd, ptrsLogicalPrecodeInfo] = ...
+    localApplyResolvedLogicalPortPrecode( ...
+    carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS");
 localAssertSignalResourceDisjoint(puschInd, dmrsInd, ptrsInd);
 
 puschWaveformSym = puschSym;
@@ -995,6 +1008,65 @@ if size(elementSym, 1) ~= numel(baseInd)
         char(string(label)), size(elementSym, 1), numel(baseInd));
 end
 elementInd = baseInd + (0:size(H, 1)-1) * planeSize;
+end
+
+function [logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
+        carrier, nativePortSym, nativePortInd, prec, label)
+% Expand non-codebook layer/native-port symbols into the resolved logical
+% antenna-port domain before hybrid RF/element precoding. nrPUSCH emits one
+% native column per layer for non-codebook transmission, while a replayed
+% grant can still execute on a wider configured UE logical-port domain.
+logicalSym = nativePortSym;
+logicalInd = nativePortInd;
+info = struct( ...
+    "Applied", false, ...
+    "Source", "native_nrPUSCH_port_domain", ...
+    "InputPortCount", double(size(localEnsure2D(nativePortSym), 2)), ...
+    "OutputPortCount", double(size(localEnsure2D(nativePortSym), 2)), ...
+    "MatrixRows", NaN, ...
+    "MatrixCols", NaN, ...
+    "Equation", "X_logical=X_native");
+if isempty(nativePortSym) || isempty(nativePortInd) || ...
+        logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+    return;
+end
+nativePortSym = localEnsure2D(nativePortSym);
+Wlogical = double(sixgr.util.structGet(prec, "MatrixLogicalPorts", []));
+if isempty(Wlogical) || ~ismatrix(Wlogical)
+    error("sixgr:phy:ul:PUSCHLogicalPortPrecode:MissingMatrix", ...
+        "Resolved logical-port matrix is missing for %s.", char(string(label)));
+end
+if size(Wlogical, 2) ~= size(nativePortSym, 2)
+    error("sixgr:phy:ul:PUSCHLogicalPortPrecode:PortMismatch", ...
+        ["%s has %d native port/layer column(s), but the resolved " ...
+         "logical-port matrix is %dx%d."], ...
+        char(string(label)), size(nativePortSym, 2), ...
+        size(Wlogical, 1), size(Wlogical, 2));
+end
+logicalSym = nativePortSym * Wlogical.';
+logicalPortCount = size(Wlogical, 1);
+probeGrid = nrResourceGrid(carrier, logicalPortCount);
+planeSize = size(probeGrid, 1) * size(probeGrid, 2);
+nativePortInd = double(nativePortInd);
+if isvector(nativePortInd)
+    baseInd = mod(nativePortInd(:) - 1, planeSize) + 1;
+else
+    baseInd = mod(nativePortInd(:, 1) - 1, planeSize) + 1;
+end
+if size(logicalSym, 1) ~= numel(baseInd)
+    error("sixgr:phy:ul:PUSCHLogicalPortPrecode:IndexCountMismatch", ...
+        "%s produced %d symbol rows for %d allocated RE locations.", ...
+        char(string(label)), size(logicalSym, 1), numel(baseInd));
+end
+logicalInd = baseInd + (0:logicalPortCount-1) * planeSize;
+info.Applied = logicalPortCount ~= size(nativePortSym, 2) || ...
+    localMaxAbs(logicalSym(:) - nativePortSym(:)) > 1e-12;
+info.Source = "resolved_noncodebook_logical_port_matrix";
+info.InputPortCount = double(size(nativePortSym, 2));
+info.OutputPortCount = double(logicalPortCount);
+info.MatrixRows = double(size(Wlogical, 1));
+info.MatrixCols = double(size(Wlogical, 2));
+info.Equation = "X_logical=X_native*W_logical''";
 end
 
 function dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword)

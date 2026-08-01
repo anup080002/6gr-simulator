@@ -574,7 +574,8 @@ token = "";
 end
 
 function tokens = localRunClassFixedTokens()
-tokens = ["fixed", "fixed_mcs", "configured_fixed", "disabled", "off", "none", "false"];
+tokens = ["fixed", "fixed_mcs", "fixed_rank", "fixed_rank_anchor", ...
+    "configured_fixed", "disabled", "off", "none", "false"];
 end
 
 function tokens = localRunClassAdaptiveTokens()
@@ -739,11 +740,12 @@ end
 
 fixed = runClassProfile.RunClass == "fixed_lls_anchor";
 adaptive = any(runClassProfile.RunClass == ["adaptive_system_diagnostic", "hybrid_validation"]);
+fixedRank = localRunClassRankFixed(scfg, cfg);
 missing = strings(0, 1);
-if fixed && required.DL && dlCount <= 0
+if (fixed || (adaptive && fixedRank)) && required.DL && dlCount <= 0
     missing(end+1, 1) = "missing_dl_configured_effective_rows"; %#ok<AGROW>
 end
-if fixed && required.UL && ulCount <= 0
+if (fixed || (adaptive && fixedRank)) && required.UL && ulCount <= 0
     missing(end+1, 1) = "missing_ul_configured_effective_rows"; %#ok<AGROW>
 end
 if fixed && required.DL && ~(isfinite(dlRate) && dlRate + eps >= threshold)
@@ -753,11 +755,28 @@ if fixed && required.UL && ~(isfinite(ulRate) && ulRate + eps >= threshold)
     missing(end+1, 1) = "ul_exact_match_rate_below_required:" + string(sprintf("%.6g", ulRate)); %#ok<AGROW>
 end
 
+% AMC may change modulation/MCS, but it must not excuse collapse of an
+% independently fixed rank/layer contract. Adaptive MCS mismatches remain
+% visible in the detailed table without failing this spatial gate.
+if adaptive && fixedRank && height(rows) > 0
+    eligibleMask = logical(rows.StrictEligible);
+    spatialMismatch = contains(string(rows.MismatchFields), "rank") | ...
+        contains(string(rows.MismatchFields), "layers");
+    dlSpatialMismatch = sum(eligibleMask & string(rows.Direction) == "DL" & spatialMismatch);
+    ulSpatialMismatch = sum(eligibleMask & string(rows.Direction) == "UL" & spatialMismatch);
+    if required.DL && dlSpatialMismatch > 0
+        missing(end+1, 1) = "dl_fixed_rank_layer_mismatch_count:" + string(dlSpatialMismatch); %#ok<AGROW>
+    end
+    if required.UL && ulSpatialMismatch > 0
+        missing(end+1, 1) = "ul_fixed_rank_layer_mismatch_count:" + string(ulSpatialMismatch); %#ok<AGROW>
+    end
+end
+
 mismatchCount = 0;
 if height(rows) > 0 && ismember("StrictEligible", string(rows.Properties.VariableNames))
     mismatchCount = sum(logical(rows.StrictEligible) & ~logical(rows.ExactOperatingPointMatch));
 end
-ok = ~fixed || isempty(missing);
+ok = (~fixed && ~(adaptive && fixedRank)) || isempty(missing);
 
 summary = struct();
 summary.RunId = meta.RunId;
@@ -830,19 +849,29 @@ configuredMCS = repmat(double(configured.MCS), n, 1);
 configuredTable = repmat(string(configured.MCSTable), n, 1);
 configuredTBS = repmat(double(configured.TBS), n, 1);
 
+% Configured-vs-executed rank/layers are transmission properties. A CRC
+% failure can make decoded rank unavailable or zero, but must not rewrite
+% the rank and layer count that the waveform actually transmitted.
+rankForMatch = effectiveRank;
+rankTxMask = isfinite(transmittedRank);
+rankForMatch(rankTxMask) = transmittedRank(rankTxMask);
+layersForMatch = effectiveLayers;
+layersTxMask = isfinite(transmittedLayers);
+layersForMatch(layersTxMask) = transmittedLayers(layersTxMask);
+
 exact = true(n, 1);
 mismatchFields = strings(n, 1);
 mismatchCause = strings(n, 1);
 for ii = 1:n
     fields = strings(0, 1);
-    if isfinite(configuredRank(ii)) && isfinite(effectiveRank(ii)) && configuredRank(ii) ~= effectiveRank(ii)
+    if isfinite(configuredRank(ii)) && isfinite(rankForMatch(ii)) && configuredRank(ii) ~= rankForMatch(ii)
         fields(end+1, 1) = "rank"; %#ok<AGROW>
-    elseif isfinite(configuredRank(ii)) && ~isfinite(effectiveRank(ii))
+    elseif isfinite(configuredRank(ii)) && ~isfinite(rankForMatch(ii))
         fields(end+1, 1) = "rank_missing"; %#ok<AGROW>
     end
-    if isfinite(configuredLayers(ii)) && isfinite(effectiveLayers(ii)) && configuredLayers(ii) ~= effectiveLayers(ii)
+    if isfinite(configuredLayers(ii)) && isfinite(layersForMatch(ii)) && configuredLayers(ii) ~= layersForMatch(ii)
         fields(end+1, 1) = "layers"; %#ok<AGROW>
-    elseif isfinite(configuredLayers(ii)) && ~isfinite(effectiveLayers(ii))
+    elseif isfinite(configuredLayers(ii)) && ~isfinite(layersForMatch(ii))
         fields(end+1, 1) = "layers_missing"; %#ok<AGROW>
     end
     if strlength(configuredMod(ii)) > 0 && strlength(effectiveMod(ii)) > 0 && ~localModulationEqual(configuredMod(ii), effectiveMod(ii))

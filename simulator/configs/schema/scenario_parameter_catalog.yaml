@@ -1078,6 +1078,7 @@ sections:
       generate_summary_plots: {required: true, type: boolean}
       live_publish_frame_interval: {required: false, type: integer, min: 1}
       live_heavy_refresh_interval_frames: {required: false, type: integer, min: 1}
+      live_heavy_refresh_each_sweep_point: {required: false, type: boolean}
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}
 nested_sections:

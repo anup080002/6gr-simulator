@@ -136,13 +136,28 @@ if ~isCodebook
         prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
         return;
     end
-    prec.MatrixPorts = localRectIdentity(nLayers, nLayers);
+    % Non-codebook PUSCH still occupies the configured logical antenna-port
+    % domain before any hybrid element expansion.  Retransmission grants can
+    % carry NumAntennaPorts=NumLayers even when the runtime UE architecture
+    % has more logical ports.  Collapsing the matrix to NumLayers-by-
+    % NumLayers in that case makes the hybrid element-to-port matrix
+    % impossible to compose (for example, 4x4 * 2x2 in a 4-element UE).
+    % Preserve the architecture/configured logical-port count and use a
+    % rectangular identity layer mapper instead.
+    architectureLogicalPorts = nPorts;
+    if logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+        architectureLogicalPorts = double(sixgr.util.structGet(arch, ...
+            "NumLogicalPorts",sixgr.util.structGet(arch,"NumPorts",nPorts)));
+    end
+    logicalPortCount = max([nLayers,nPorts,architectureLogicalPorts]);
+    logicalPortCount = max(1, round(double(logicalPortCount)));
+    prec.MatrixPorts = localRectIdentity(logicalPortCount, nLayers);
     prec.MatrixLogicalPorts = prec.MatrixPorts;
-    prec.MatrixRows = NaN;
-    prec.MatrixCols = NaN;
-    prec.NumPorts = double(nLayers);
-    prec.NumLogicalPorts = double(nLayers);
-    prec.NumWaveformColumns = double(nLayers);
+    prec.MatrixRows = double(logicalPortCount);
+    prec.MatrixCols = double(nLayers);
+    prec.NumPorts = double(logicalPortCount);
+    prec.NumLogicalPorts = double(logicalPortCount);
+    prec.NumWaveformColumns = double(logicalPortCount);
     prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
     prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
     return;

@@ -658,7 +658,11 @@ defs = [
     localRecon("UL_BLER", ul, "BLER", "BLER_UL_min");
     localRecon("DL_BLER", dl, "BLER", "BLER_DL_min");
     localRecon("UL_BER", ul, "BER", "");
-    localRecon("DL_BER", dl, "BER", "")
+    localRecon("DL_BER", dl, "BER", "");
+    localRecon("Scenario_Total_UL_DeliveredBits", ul, "DeliveredBits", "");
+    localRecon("Scenario_Total_DL_DeliveredBits", dl, "DeliveredBits", "");
+    localRecon("Scenario_Total_UL_ScheduledBits", ul, "ScheduledBits", "");
+    localRecon("Scenario_Total_DL_ScheduledBits", dl, "ScheduledBits", "")
     ];
 if localLayerEvidencePresent(ul, "MAC")
     defs = [defs; localRecon("UL_MAC_Goodput_Mbps", ul.MAC, "ComputedGoodput_Mbps", "")]; %#ok<AGROW>
@@ -1388,7 +1392,11 @@ end
 end
 
 function v = localNumeratorValue(metrics, kpiName)
-if contains(kpiName, "ScheduledThroughput")
+if contains(kpiName, "_ScheduledBits")
+    v = metrics.ScheduledBits;
+elseif contains(kpiName, "_DeliveredBits")
+    v = metrics.DeliveredBits;
+elseif contains(kpiName, "ScheduledThroughput")
     v = metrics.ScheduledBits;
 elseif contains(kpiName, "Goodput")
     v = metrics.DeliveredBits;

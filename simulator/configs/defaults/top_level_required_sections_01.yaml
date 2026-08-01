@@ -251,6 +251,8 @@
     "bs_num_rxrus": 2,
     "bs_num_antenna_elements": 2,
     "ue_num_antenna_elements": 2,
+    "bs_panel_count": 1,
+    "ue_panel_count": 1,
     "panels": 1,
     "panel_spacing": 0.5,
     "element_spacing_h": 0.5,

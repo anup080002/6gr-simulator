@@ -193,7 +193,8 @@ end
 ant = sixgr.util.structGet(value, "AntennaArchitecture", struct());
 coding = sixgr.util.structGet(value, "CodingLayout", struct());
 prec = sixgr.util.structGet(value, "PrecodingState", struct());
-numPorts = round(double(sixgr.util.structGet(ant, "NumLogicalPorts", NaN)));
+numPorts = round(double(sixgr.util.structGet(ant, "NumWaveformColumns", NaN)));
+numLogicalPorts = round(double(sixgr.util.structGet(ant, "NumLogicalPorts", NaN)));
 numLayers = round(double(sixgr.util.structGet(coding, "NumLayers", ...
     sixgr.util.structGet(ant, "NumLayers", NaN))));
 W = sixgr.util.structGet(prec, "MatrixPorts", sixgr.util.structGet(prec, "Matrix", []));
@@ -206,8 +207,15 @@ end
 if ~ismatrix(W)
     return;
 end
-tf = isfinite(numPorts) && isfinite(numLayers) && numPorts >= numLayers && ...
-    size(W, 1) == numPorts && size(W, 2) == numLayers;
+Wlogical = sixgr.util.structGet(prec, "MatrixLogicalPorts", []);
+logicalOK = true;
+if logical(sixgr.util.structGet(prec, "HybridElementDomainApplied", false))
+    logicalOK = isnumeric(Wlogical) && ismatrix(Wlogical) && ...
+        size(Wlogical, 1) == numLogicalPorts && size(Wlogical, 2) == numLayers;
+end
+tf = isfinite(numPorts) && isfinite(numLogicalPorts) && isfinite(numLayers) && ...
+    numLogicalPorts >= numLayers && numPorts >= numLogicalPorts && ...
+    size(W, 1) == numPorts && size(W, 2) == numLayers && logicalOK;
 end
 
 function tf = localCanReuseFrozenPHYGrant(existing, cfg, direction, grant, opt)
@@ -420,6 +428,10 @@ end
 
 function [ant, prec] = localResolveAntennaAndPrecoding(cfg, grant, direction, numLayers, numCodewords)
 isUL = direction == "UL";
+matrixLogicalPorts = [];
+elementDomainApplied = false;
+waveformDomain = "logical_port";
+hybridElementToPortMatrix = [];
 if isUL
     txEntity = "UE";
     rxEntity = "gNB";
@@ -447,8 +459,17 @@ if isUL
         sixgr.util.structGet(cfg, "phy.pusch.nPorts", []), ...
         sixgr.util.structGet(grant, "NumTxAnt", []), numElements), numLayers);
     logicalPorts = min(max(logicalPorts, numLayers), max(numElements, numLayers));
-    numWaveformColumns = logicalPorts;
-    matrixPorts = localRectIdentity(logicalPorts, numLayers);
+    ulLogicalRaw = localFirstMatrix(sixgr.util.structGet(grant, "PrecodingMatrixLogicalPorts", []), ...
+        sixgr.util.structGet(grant, "LogicalPrecodingMatrix", []));
+    ulRaw = sixgr.util.structGet(grant, "PrecodingMatrix", []);
+    if isempty(ulLogicalRaw)
+        matrixLogicalPorts = [];
+    else
+        matrixLogicalPorts = localNormalizeDLMatrix(ulLogicalRaw, logicalPorts, numLayers);
+    end
+    [matrixPorts, numWaveformColumns, waveformDomain, elementDomainApplied, hybridElementToPortMatrix, matrixLogicalPorts] = ...
+        localMaterializeElementDomainPrecoder(cfg, "ue", "PUSCH", numElements, logicalPorts, ...
+        numLayers, matrixLogicalPorts, ulRaw, grant);
     active = logical(sixgr.util.structGet(grant, "PrecodingActive", false));
     mode = localFirstNonempty(sixgr.util.structGet(grant, "PrecodingMode", ""), "ul_direct_mapping");
     source = localFirstNonempty(sixgr.util.structGet(grant, "PrecoderSource", ""), "ul_frozen_logical_ports");
@@ -479,22 +500,30 @@ else
         sixgr.util.structGet(cfg, "phy.nRxAnt", []), numLayers), numLayers);
     logicalPorts = localResolveDLLogicalPortCount(cfg, grant, numLayers);
     logicalPorts = min(max(logicalPorts, numLayers), max(numElements, numLayers));
+    wLogicalRaw = localFirstMatrix( ...
+        sixgr.util.structGet(grant, "PrecodingMatrixLogicalPorts", []), ...
+        sixgr.util.structGet(grant, "LogicalPrecodingMatrix", []));
     matrixPortCount = localMatrixPortCount(wRaw, numLayers);
     matrixSourceOverride = "";
     inputMatrixUsed = false;
-    if isempty(wRaw)
-        matrixPorts = localRectIdentity(logicalPorts, numLayers);
+    if isempty(wRaw) && isempty(wLogicalRaw)
+        matrixLogicalPorts = localRectIdentity(logicalPorts, numLayers);
         matrixSourceOverride = "frozen_identity_ports";
+    elseif ~isempty(wLogicalRaw)
+        matrixLogicalPorts = localNormalizeDLMatrix(wLogicalRaw, logicalPorts, numLayers);
+        inputMatrixUsed = true;
     elseif isfinite(matrixPortCount) && round(double(matrixPortCount)) == logicalPorts
-        matrixPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
+        matrixLogicalPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
         inputMatrixUsed = true;
     elseif isfinite(matrixPortCount) && matrixPortCount > logicalPorts && ~localDLHybridElementDomainEnabled(cfg)
-        [matrixPorts, matrixSourceOverride] = localResolveDLLogicalPrecoder(cfg, grant, numLayers, logicalPorts);
+        [matrixLogicalPorts, matrixSourceOverride] = localResolveDLLogicalPrecoder(cfg, grant, numLayers, logicalPorts);
     else
-        matrixPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
+        matrixLogicalPorts = [];
         inputMatrixUsed = true;
     end
-    numWaveformColumns = logicalPorts;
+    [matrixPorts, numWaveformColumns, waveformDomain, elementDomainApplied, hybridElementToPortMatrix, matrixLogicalPorts] = ...
+        localMaterializeElementDomainPrecoder(cfg, "bs", "PDSCH", numElements, logicalPorts, ...
+        numLayers, matrixLogicalPorts, wRaw, grant);
     active = logicalPorts > 1 || numLayers > 1 || inputMatrixUsed;
     mode = localFirstNonempty(sixgr.util.structGet(grant, "PrecodingMode", ""), ...
         localTernary(active, "explicit-wideband", "siso-bypass"));
@@ -519,6 +548,8 @@ ant = struct( ...
     "NumLayers", double(numLayers), ...
     "NumCodewords", double(numCodewords), ...
     "NumWaveformColumns", double(numWaveformColumns), ...
+    "WaveformDomain", char(waveformDomain), ...
+    "ElementDomainPrecoding", logical(elementDomainApplied), ...
     "NumRxAntennas", double(numRx), ...
     "NumTxAntennas", double(numWaveformColumns));
 
@@ -527,19 +558,111 @@ prec = struct( ...
     "Mode", char(string(mode)), ...
     "Source", char(string(source)), ...
     "ApplicationStage", char(string(stage)), ...
-    "NumPorts", double(logicalPorts), ...
+    "NumPorts", double(numWaveformColumns), ...
+    "NumLogicalPorts", double(logicalPorts), ...
+    "NumWaveformColumns", double(numWaveformColumns), ...
     "NumLayers", double(numLayers), ...
     "NumCodewords", double(numCodewords), ...
     "Matrix", double(matrixPorts), ...
     "MatrixPorts", double(matrixPorts), ...
+    "MatrixPhysicalPorts", double(matrixPorts), ...
+    "MatrixLogicalPorts", double(matrixLogicalPorts), ...
     "MatrixRows", double(size(matrixPorts, 1)), ...
     "MatrixCols", double(size(matrixPorts, 2)), ...
+    "WaveformDomain", char(waveformDomain), ...
+    "HybridElementDomainApplied", logical(elementDomainApplied), ...
+    "HybridElementToPortMatrix", double(hybridElementToPortMatrix), ...
+    "SelectedMatrixSHA256", char(sixgr.phy.mimo.MatrixContract.digest(double(matrixPorts))), ...
+    "AppliedMatrixSHA256", char(sixgr.phy.mimo.MatrixContract.digest(double(matrixPorts))), ...
     "WidebandOnly", true, ...
     "PMI", localFirstFiniteScalar(sixgr.util.structGet(grant, "PMI", []), ...
         sixgr.util.structGet(grant, "AppliedPrecoderPMI", []), NaN), ...
     "TPMI", localFirstFiniteScalar(sixgr.util.structGet(grant, "TPMI", []), ...
         sixgr.util.structGet(grant, "PMI", []), NaN), ...
     "BeamIndices", double(sixgr.util.structGet(grant, "BeamIndices", [])));
+end
+
+function [Wphysical, nWaveformColumns, waveformDomain, elementDomainApplied, F, Wlogical] = ...
+        localMaterializeElementDomainPrecoder(cfg, role, signal, nElements, nLogicalPorts, nLayers, Wlogical, Wraw, grant)
+% Preserve the two distinct contracts: NR mapping uses logical ports, while
+% an enabled hybrid RF/baseband architecture emits one waveform column per
+% physical element. A frozen grant stores both matrices explicitly.
+if isempty(Wlogical)
+    Wlogical = [];
+else
+    Wlogical = localNormalizeDLMatrix(Wlogical, nLogicalPorts, nLayers);
+end
+Wphysical = Wlogical;
+nWaveformColumns = nLogicalPorts;
+waveformDomain = "logical_port";
+elementDomainApplied = false;
+F = [];
+
+frozenRFChains = double(sixgr.util.structGet(grant, "NumRFChains", NaN));
+if ~(isscalar(frozenRFChains) && isfinite(frozenRFChains) && frozenRFChains >= nLogicalPorts && ...
+        frozenRFChains == round(frozenRFChains))
+    frozenRFChains = NaN;
+end
+arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, string(role), ...
+    "Signal", string(signal), "NumElements", double(nElements), ...
+    "NumPorts", double(nLogicalPorts), "NumRFChains", frozenRFChains, ...
+    "MinimumPorts", double(nLayers));
+if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
+    if isempty(Wlogical)
+        Wlogical = localNormalizeDLMatrix(Wraw, nLogicalPorts, nLayers);
+    end
+    Wphysical = Wlogical;
+    return;
+end
+
+F = double(sixgr.util.structGet(arch, "HybridElementToPortMatrix", []));
+if isempty(F) || ~ismatrix(F) || size(F, 1) ~= nElements || size(F, 2) ~= nLogicalPorts
+    error("sixgr:phy:grant:HybridMatrixShapeMismatch", ...
+        "Hybrid %s architecture matrix is %dx%d; expected %dx%d element-by-logical-port.", ...
+        char(signal), size(F, 1), size(F, 2), nElements, nLogicalPorts);
+end
+frozenF = double(sixgr.util.structGet(grant, "HybridElementToPortMatrix", []));
+if ~isempty(frozenF)
+    if ~ismatrix(frozenF) || ~isequal(size(frozenF), [nElements nLogicalPorts]) || ...
+            any(~isfinite(real(frozenF(:)))) || any(~isfinite(imag(frozenF(:))))
+        error("sixgr:phy:grant:FrozenHybridArchitectureShapeMismatch", ...
+            "Frozen %s hybrid architecture must be a finite %dx%d element-by-logical-port matrix.", ...
+            char(signal), nElements, nLogicalPorts);
+    end
+    architectureResidual = norm(F - frozenF, "fro") / max(norm(frozenF, "fro"), eps);
+    if architectureResidual > 1e-12
+        error("sixgr:phy:grant:FrozenHybridArchitectureMismatch", ...
+            ["Frozen %s RF/baseband architecture differs from the architecture resolved with " ...
+             "the frozen RF-chain count (relative residual %.3g)."], ...
+            char(signal), architectureResidual);
+    end
+    F = frozenF;
+end
+
+rawPorts = localMatrixPortCount(Wraw, nLayers);
+if isempty(Wlogical) && isfinite(rawPorts) && round(rawPorts) == nElements
+    WrawPhysical = localNormalizeDLMatrix(Wraw, nElements, nLayers);
+    Wlogical = pinv(F) * WrawPhysical;
+elseif isempty(Wlogical)
+    Wlogical = localNormalizeDLMatrix(Wraw, nLogicalPorts, nLayers);
+end
+if isempty(Wlogical)
+    Wlogical = localRectIdentity(nLogicalPorts, nLayers);
+end
+Wphysical = F * Wlogical;
+if isfinite(rawPorts) && round(rawPorts) == nElements
+    WrawPhysical = localNormalizeDLMatrix(Wraw, nElements, nLayers);
+    residual = norm(Wphysical - WrawPhysical, "fro") / max(norm(WrawPhysical, "fro"), eps);
+    if residual > 1e-9
+        error("sixgr:phy:grant:HybridPrecoderSubspaceMismatch", ...
+            "The frozen %s %dx%d element-domain precoder is outside the configured %dx%d hybrid logical-port subspace (relative residual %.3g).", ...
+            char(signal), size(WrawPhysical, 1), size(WrawPhysical, 2), size(F, 1), size(F, 2), residual);
+    end
+    Wphysical = WrawPhysical;
+end
+nWaveformColumns = size(Wphysical, 1);
+waveformDomain = "element";
+elementDomainApplied = true;
 end
 
 function W = localNormalizeDLMatrix(Wraw, nPorts, nLayers)

@@ -254,6 +254,8 @@
       "bs_num_rxrus": {"required": true, "type": "integer", "min": 1, "recommended_values": [1, 2, 4, 8, 16, 32, 64, 128]},
       "bs_num_antenna_elements": {"required": true, "type": "integer", "min": 1, "recommended_values": [1, 2, 4, 8, 16, 32, 64, 128]},
       "ue_num_antenna_elements": {"required": true, "type": "integer", "min": 1, "recommended_values": [1, 2, 4, 8, 16, 32, 64, 128]},
+      "bs_panel_count": {"required": false, "type": "integer", "min": 1},
+      "ue_panel_count": {"required": false, "type": "integer", "min": 1},
       "panels": {"required": true, "type": "integer", "min": 1},
       "panel_spacing": {"required": true, "type": "number", "min": 0},
       "element_spacing_h": {"required": true, "type": "number", "min": 0},

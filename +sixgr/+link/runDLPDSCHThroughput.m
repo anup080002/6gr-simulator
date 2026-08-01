@@ -5559,8 +5559,12 @@ grant.NumLayers = double(sixgr.util.structGet(coding, "NumLayers", ...
 grant.Layers = double(grant.NumLayers);
 grant.PrecodingMatrix = sixgr.util.structGet(prec, "MatrixPorts", ...
     sixgr.util.structGet(prec, "Matrix", sixgr.util.structGet(grant, "PrecodingMatrix", [])));
+grant.PrecodingMatrixLogicalPorts = sixgr.util.structGet(prec, "MatrixLogicalPorts", ...
+    sixgr.util.structGet(grant, "PrecodingMatrixLogicalPorts", grant.PrecodingMatrix));
 grant.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", ...
     sixgr.util.structGet(grant, "PrecodingNumPorts", NaN)));
+grant.PrecodingNumLogicalPorts = double(sixgr.util.structGet(prec, "NumLogicalPorts", ...
+    sixgr.util.structGet(grant, "PrecodingNumLogicalPorts", grant.NumLayers)));
 grant.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", ...
     sixgr.util.structGet(grant, "PrecodingNumLayers", NaN)));
 grant.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", ...
@@ -6108,7 +6112,8 @@ if direction == "DL"
     precodingMatrix = sixgr.util.structGet(grant, "PrecodingMatrix", []);
     useExplicitPrecoding = localGrantHasExplicitDLPrecoding(grant, precodingMatrix);
     if hasPHYGrant
-        precodingMatrix = double(phyGrant.PrecodingState.Matrix);
+        precodingMatrix = double(sixgr.util.structGet(phyGrant.PrecodingState, ...
+            "MatrixLogicalPorts", phyGrant.PrecodingState.Matrix));
         useExplicitPrecoding = logical(phyGrant.PrecodingState.Active);
     end
     if isfinite(pmi)
@@ -6120,6 +6125,9 @@ if direction == "DL"
     end
     if useExplicitPrecoding
         nPorts = localReplayPrecodingPortCount(precodingMatrix, numLayers);
+        if hasPHYGrant
+            nPorts = double(phyGrant.AntennaArchitecture.NumLogicalPorts);
+        end
         logicalPorts = localResolveDLReplayLogicalPortCount(cfgOut, grant, numLayers);
         if nPorts > localMaxNRLogicalPDSCHPorts() && nPorts ~= logicalPorts
             precodingMatrix = localBuildDLReplayLogicalPrecoder(cfgOut, grant, numLayers, logicalPorts);

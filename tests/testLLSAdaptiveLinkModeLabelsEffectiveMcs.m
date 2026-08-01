@@ -17,5 +17,32 @@ assert(logical(statusT.ConfiguredEffectiveOk(1)), "Adaptive mode must not be fai
 assert(~logical(classT.PublicationLLSEligible(1)), "Adaptive diagnostic runs must not claim fixed-link publication eligibility.");
 assert(~all(logical(opT.ExactOperatingPointMatch)), "Adaptive rows must still expose the configured/effective mismatch honestly.");
 
+fixedRankCtx = llsRootGateFixture("adaptive_fixed_rank");
+sixgr.truth.evaluateLLSRuntimeTruthContract( ...
+    fixedRankCtx.RunFolder, fixedRankCtx.ScenarioConfig, fixedRankCtx.InternalConfig);
+fixedRankStatus = readtable(fullfile(fixedRankCtx.Layout.ReportCSVDir, ...
+    "result_status_summary.csv"), "VariableNamingRule", "preserve");
+assert(~logical(fixedRankStatus.ConfiguredEffectiveOk(1)), ...
+    "AMC must not hide collapse of an independently fixed rank/layer contract.");
+
+% A decoder outage must not be confused with a transmission-rank collapse:
+% the transmitted rank/layers remain authoritative for configured execution.
+for fileName = ["dl_pdsch_trials.csv", "ul_pusch_trials.csv"]
+    pathValue = fullfile(fixedRankCtx.Layout.AirInterfaceCSVDir, fileName);
+    trialT = readtable(pathValue, "VariableNamingRule", "preserve");
+    trialT.TransmittedRank(:) = 2;
+    trialT.TransmittedLayers(:) = 2;
+    trialT.EffectiveRank(:) = 0;
+    trialT.EffectiveLayers(:) = 0;
+    trialT.CRCPass(:) = false;
+    sixgr.util.csvWriteTable(pathValue, trialT);
+end
+sixgr.truth.evaluateLLSRuntimeTruthContract( ...
+    fixedRankCtx.RunFolder, fixedRankCtx.ScenarioConfig, fixedRankCtx.InternalConfig);
+outageStatus = readtable(fullfile(fixedRankCtx.Layout.ReportCSVDir, ...
+    "result_status_summary.csv"), "VariableNamingRule", "preserve");
+assert(logical(outageStatus.ConfiguredEffectiveOk(1)), ...
+    "CRC failure must preserve configured/executed rank when transmitted rank/layers match.");
+
 ok = true;
 end

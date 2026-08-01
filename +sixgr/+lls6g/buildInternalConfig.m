@@ -191,6 +191,7 @@ cfg.outputs.savePNG = logical(s.output.save_png);
 cfg.outputs.plotVisible = false;
 cfg.outputs.livePublishFrameInterval = double(localGetNested(s, "output.live_publish_frame_interval", 1));
 cfg.outputs.liveHeavyRefreshFrameInterval = double(localGetNested(s, "output.live_heavy_refresh_interval_frames", 4));
+cfg.outputs.liveHeavyRefreshEachSweepPoint = logical(localGetNested(s, "output.live_heavy_refresh_each_sweep_point", true));
 cfg.outputs.storageBackend = char(string(localRequireNested(s, "output.backend", "output.backend")));
 cfg.outputs.persistenceMode = char(string(localGetNested(s, "output.persistence_mode", ...
     localGetNested(s, "output_control.output_persistence_mode", ...
@@ -320,6 +321,12 @@ if ~(isfinite(ueTxAnt) && ueTxAnt >= 1)
     ueTxAnt = min(double(s.mimo.n_rx_ant), double(s.mimo.n_tx_ant));
 end
 cfg.scenario.ue.nTxAnt = double(max(1, round(ueTxAnt)));
+% The same physical arrays serve transmit and receive in the configured
+% TDD topology. Keep the reciprocal UL channel counts explicit rather
+% than falling back to the DL UE receive count.
+cfg.scenario.bs.nRxAnt = double(cfg.scenario.bs.nTxAnt);
+cfg.channel.nTxAntUL = double(cfg.scenario.ue.nTxAnt);
+cfg.channel.nRxAntUL = double(cfg.scenario.bs.nRxAnt);
 cfg.scenario.ue.noiseFigure_dB = double(localResolveUENoiseFigure_dB(s));
 
 ueCount = max(1, round(double(localRequireFirstNested(s, ...
@@ -1582,6 +1589,13 @@ cfg = sixgr.util.structSet(cfg, "phy.beamManagement.beamCount", double(s.mimo.be
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.mtrpReady", logical(s.mimo.mtrp_ready));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.multiPanelReady", logical(s.mimo.multi_panel_ready));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.panelCount", double(s.mimo.panel_count));
+cfg = sixgr.util.structSet(cfg, "phy.beamManagement.hybridBeamformingEnabled", ...
+    logical(localGetNested(s,"mimo.hybrid_beamforming_flag",false)));
+cfg = sixgr.util.structSet(cfg, "mimo.hybrid_beamforming_flag", ...
+    logical(localGetNested(s,"mimo.hybrid_beamforming_flag",false)));
+cfg = sixgr.util.structSet(cfg, "mimo.rank_adaptation_policy", ...
+    char(string(localGetNested(s,"mimo.rank_adaptation_policy", ...
+    localGetNested(s,"link_adaptation.rank_adaptation_policy","fixed")))));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.trpCount", ...
     double(localRequireFirstNested(s, ["deployment_topology.num_trps","mimo.trp_count"], "deployment_topology.num_trps or mimo.trp_count")));
 exportSSBBeamSweep = logical(localGetNested(s, "outputs.export_ssb_beam_sweep", ...
@@ -3833,6 +3847,14 @@ spacingH = double(localRequireNested(s, "antenna_and_array.element_spacing_h", "
 spacingV = double(localRequireNested(s, "antenna_and_array.element_spacing_v", "antenna_and_array.element_spacing_v"));
 bsCount = max(1, round(double(localRequireNested(s, "antenna_and_array.bs_num_antenna_elements", "antenna_and_array.bs_num_antenna_elements"))));
 ueCount = max(1, round(double(localRequireNested(s, "antenna_and_array.ue_num_antenna_elements", "antenna_and_array.ue_num_antenna_elements"))));
+% Panel count is part of the physical-element factorization only when the
+% operator explicitly supplies it in antenna_and_array.  Legacy scenarios
+% may use mimo.panel_count as a beam-management capability without meaning
+% that their already-total antenna element count should be multiplied.
+bsPanelCount = max(1, round(double(localGetNested(s, ...
+    "antenna_and_array.bs_panel_count", 1))));
+uePanelCount = max(1, round(double(localGetNested(s, ...
+    "antenna_and_array.ue_panel_count", 1))));
 bsMechanicalTiltDeg = localResolveFirstFiniteNumeric(s, ...
     ["antenna_and_array.bs_mechanical_tilt_deg", ...
      "antenna_and_array.mechanical_tilt_deg", ...
@@ -3842,13 +3864,16 @@ cfg.channel.nTxAnt = double(bsCount);
 cfg.channel.nRxAnt = double(ueCount);
 cfg.phy.nTxAnt = double(bsCount);
 cfg.phy.nRxAnt = double(ueCount);
-cfg = sixgr.util.structSet(cfg, "phy.bsArray", localResolveArrayShape(bsGeom, bsCount, polToken));
-cfg = sixgr.util.structSet(cfg, "phy.ueArray", localResolveArrayShape(ueGeom, ueCount, polToken));
+cfg = sixgr.util.structSet(cfg, "phy.bsArray", ...
+    localResolveArrayShape(bsGeom, bsCount, polToken, bsPanelCount, "BS"));
+cfg = sixgr.util.structSet(cfg, "phy.ueArray", ...
+    localResolveArrayShape(ueGeom, ueCount, polToken, uePanelCount, "UE"));
 
 cfg = sixgr.util.structSet(cfg, "antenna.bs.geometry", char(lower(strtrim(bsGeom))));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingLambda", [double(spacingH) double(spacingV)]);
 cfg = sixgr.util.structSet(cfg, "antenna.bs.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.numElements", double(bsCount));
+cfg = sixgr.util.structSet(cfg, "antenna.bs.panelCount", double(bsPanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.source", "browser_yaml_antenna_and_array");
 if isfinite(bsMechanicalTiltDeg)
     cfg = sixgr.util.structSet(cfg, "antenna.bs.tilt_deg", double(bsMechanicalTiltDeg));
@@ -3859,18 +3884,36 @@ cfg = sixgr.util.structSet(cfg, "antenna.ue.geometry", char(lower(strtrim(ueGeom
 cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingLambda", [double(spacingH) double(spacingV)]);
 cfg = sixgr.util.structSet(cfg, "antenna.ue.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.numElements", double(ueCount));
+cfg = sixgr.util.structSet(cfg, "antenna.ue.panelCount", double(uePanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.source", "browser_yaml_antenna_and_array");
 end
 
-function shape = localResolveArrayShape(geometryToken, totalElements, polarizationToken)
+function shape = localResolveArrayShape(geometryToken, totalElements, polarizationToken, panelCount, roleLabel)
 totalElements = max(1, round(double(totalElements)));
+if nargin < 4 || isempty(panelCount)
+    panelCount = 1;
+end
+if nargin < 5 || strlength(strtrim(string(roleLabel))) == 0
+    roleLabel = "array";
+end
+panelCount = max(1, round(double(panelCount)));
 polCount = 1;
-polTok = lower(strtrim(char(string(polarizationToken))));
-if any(strcmp(polTok, {"dual","dual_pol","dualpolarized","dual-polarized","cross","cross_pol","cross-polarized","cross_polarized"})) && ...
+polTok = lower(strtrim(string(polarizationToken)));
+dualPolarizationTokens = ["dual","dual_pol","dualpolarized", ...
+    "dual-polarized","cross","cross_pol","cross-polarized", ...
+    "cross_polarized"];
+if ismember(polTok, dualPolarizationTokens) && ...
         mod(totalElements, 2) == 0
     polCount = 2;
 end
-spatialElements = max(1, round(totalElements / polCount));
+factorCount = polCount * panelCount;
+if mod(totalElements, factorCount) ~= 0
+    error("sixgr:lls6g:InvalidAntennaElementFactorization", ...
+        ["%s total antenna element count %d must be divisible by " ...
+         "polarization count %d times panel count %d."], ...
+        char(string(roleLabel)), totalElements, polCount, panelCount);
+end
+spatialElements = totalElements / factorCount;
 geom = lower(strtrim(char(string(geometryToken))));
 switch geom
     case {"ura","upa","planar","rectangular"}
@@ -3883,7 +3926,9 @@ switch geom
         nRow = 1;
         nCol = spatialElements;
 end
-shape = [double(nRow) double(nCol) double(polCount)];
+% The 5-D shape is [rows, columns, polarizations, panelRows, panelCols].
+% Its product is exactly the operator-configured total element count.
+shape = [double(nRow) double(nCol) double(polCount) double(panelCount) 1];
 end
 
 function deploymentType = localResolveDeploymentLayoutType(s, nSites, nSectorsPerSite)

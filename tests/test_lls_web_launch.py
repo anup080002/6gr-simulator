@@ -18,6 +18,17 @@ DEFAULT_WAVEFORM_SCENARIO = "master_geometry_based.yaml"
 MASTER_SCENARIO = "master_geometry_based.yaml"
 
 
+def test_partial_legacy_run_controls_override_inherited_canonical_control() -> None:
+    payload = {
+        "run_control": {"execution_mode": "LLS", "total_slots": 100},
+        "simulation": {"n_slots": 100, "n_frames": 5},
+    }
+    normalized = json.loads(dash.normalize_run_yaml(json.dumps(payload), MASTER_SCENARIO))
+    assert normalized["run_control"]["total_slots"] == 100
+    assert normalized["simulation"]["n_slots"] == 100
+    assert normalized["simulation"]["n_frames"] == 5
+
+
 def main() -> None:
     text = (REPO_ROOT / "apps" / "lls_web_dashboard.py").read_text(encoding="utf-8")
     assert 'parsed.path != "/run"' in text

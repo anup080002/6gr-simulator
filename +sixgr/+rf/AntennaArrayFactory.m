@@ -306,6 +306,62 @@ classdef AntennaArrayFactory
             [analogPrecoder, rfElementsPerChain] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numRFChains);
             digitalPortToRF = sixgr.rf.AntennaArrayFactory.localRectIdentity(numRFChains, numPorts);
             portToElement = analogPrecoder * digitalPortToRF;
+            configuredElementToPort = [];
+            configuredElementToPortSource = "";
+            signalL = lower(strtrim(string(opts.Signal)));
+            configuredMatrixPaths = strings(0, 1);
+            if strlength(signalL) > 0
+                configuredMatrixPaths = [configuredMatrixPaths; ...
+                    "phy." + signalL + ".hybridElementToPortMatrix"];
+            end
+            configuredMatrixPaths = [configuredMatrixPaths; ...
+                "rf." + roleL + ".hybridElementToPortMatrix"; ...
+                "antenna." + roleL + ".hybridElementToPortMatrix"];
+            for matrixPath = configuredMatrixPaths.'
+                candidate = sixgr.util.structGet(cfg, matrixPath, []);
+                if ~isempty(candidate)
+                    configuredElementToPort = double(candidate);
+                    configuredElementToPortSource = string(matrixPath);
+                    break;
+                end
+            end
+            if ~isempty(configuredElementToPort)
+                if ~hybridEnabled
+                    error("AntennaArrayFactory:ConfiguredHybridMatrixWithoutHybridMode", ...
+                        "Configured %s requires hybrid beamforming to be enabled.", ...
+                        char(configuredElementToPortSource));
+                end
+                if numRFChains ~= numPorts
+                    error("AntennaArrayFactory:ConfiguredHybridMatrixRFChainMismatch", ...
+                        ["Configured combined element-to-port weights require NumRFChains=NumPorts; " ...
+                         "resolved %d RF chains and %d logical ports."], ...
+                        numRFChains, numPorts);
+                end
+                if ~ismatrix(configuredElementToPort) || ...
+                        ~isequal(size(configuredElementToPort), [numElements numPorts]) || ...
+                        any(~isfinite(real(configuredElementToPort(:)))) || ...
+                        any(~isfinite(imag(configuredElementToPort(:))))
+                    error("AntennaArrayFactory:ConfiguredHybridMatrixShapeMismatch", ...
+                        "Configured %s must be a finite %dx%d element-by-logical-port matrix.", ...
+                        char(configuredElementToPortSource), numElements, numPorts);
+                end
+                if any(sum(abs(configuredElementToPort).^2, 1) <= eps)
+                    error("AntennaArrayFactory:ConfiguredHybridMatrixZeroColumn", ...
+                        "Configured %s contains an all-zero logical-port column.", ...
+                        char(configuredElementToPortSource));
+                end
+                % This path carries the already selected combined RF/baseband
+                % beam. Factor it without changing the combined matrix: F_RF
+                % has unit-norm columns and F_BB retains the selected power.
+                selectedColumnNorm = sqrt(sum(abs(configuredElementToPort).^2, 1));
+                analogPrecoder = configuredElementToPort ./ selectedColumnNorm;
+                digitalPortToRF = diag(selectedColumnNorm);
+                % Keep the submitted combined matrix bit-for-bit so selected
+                % and applied SHA-256 identities remain stable across replay.
+                portToElement = configuredElementToPort;
+                rfElementsPerChain = sum(abs(analogPrecoder) > 0, 1);
+                rfSource = "configured_combined_matrix:" + configuredElementToPortSource;
+            end
             [~, elementsPerPort] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numPorts);
             portToRF = digitalPortToRF;
             rfToPort = portToRF.';
@@ -339,6 +395,7 @@ classdef AntennaArrayFactory
                 "HybridElementToPortMatrix", portToElement, ...
                 "HybridBeamformingEnabled", logical(hybridEnabled), ...
                 "HybridPowerNormalization", "unit_norm_rf_chain_columns_trace_preserved_after_baseband_precoding", ...
+                "HybridElementToPortMatrixSource", char(configuredElementToPortSource), ...
                 "RFElementsPerChain", double(rfElementsPerChain(:).'), ...
                 "ElementsPerPort", double(elementsPerPort(:).'));
         end
