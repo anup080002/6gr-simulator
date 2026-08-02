@@ -8720,6 +8720,12 @@ PHY_GRID_CHANNEL_SPECS: dict[str, dict[str, Any]] = {
 
 
 PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
+    "slot_trace": {
+        "canonical_path": "reports/csv/slot_trace.csv",
+        "legacy_paths": ["packet_flow/csv/slot_trace.csv"],
+        "owner_kind": "slot_trace",
+        "render_events": False,
+    },
     "re_occupancy": {
         "canonical_path": "reports/csv/live_re_allocation_snapshot.csv",
         "legacy_paths": ["reports/csv/dl_resource_grid_heatmap.csv", "reports/csv/ul_resource_grid_heatmap.csv"],
@@ -8800,6 +8806,11 @@ def phy_grid_ue_value(row: dict[str, Any]) -> str:
         "",
     )
     text = str(value or "").strip()
+    if text.lower() in {"nan", "+nan", "-nan", "none", "null", "n/a", "na"}:
+        return ""
+    numeric = coerce_numeric(value)
+    if numeric is not None and not math.isfinite(float(numeric)):
+        return ""
     if text.endswith(".0"):
         text = text[:-2]
     return text
@@ -8811,6 +8822,164 @@ def phy_grid_tdd_token(pattern: str, slot: int, one_based_slots: bool) -> str:
         return "?"
     idx = slot - 1 if one_based_slots else slot
     return clean[idx % len(clean)]
+
+
+def phy_grid_row_bool(row: dict[str, Any], names: list[str], default: bool = False) -> bool:
+    value = first_present_value(row, names, "")
+    numeric = coerce_numeric(value)
+    if numeric is not None and math.isfinite(float(numeric)):
+        return bool(float(numeric))
+    text = str(value or "").strip().lower()
+    if text in {"true", "yes", "on", "pass", "passed"}:
+        return True
+    if text in {"false", "no", "off", "fail", "failed"}:
+        return False
+    return bool(default)
+
+
+def phy_grid_slot_state(row: dict[str, Any]) -> dict[str, Any]:
+    """Reduce one canonical SlotTrace row without inventing allocations."""
+    slot = phy_grid_slot_value(row)
+    label = str(first_present_value(row, ["SlotDuplexLabel", "DuplexLabel"], "")).strip().upper()
+    dl_symbols = max(0, bounded_int(first_present_number(row, ["DLNumSymbols"], 0), 0, 0, 28))
+    guard_symbols = max(0, bounded_int(first_present_number(row, ["GuardNumSymbols"], 0), 0, 0, 28))
+    ul_symbols = max(0, bounded_int(first_present_number(row, ["ULNumSymbols"], 0), 0, 0, 28))
+    special = phy_grid_row_bool(row, ["SpecialSlotActive", "IsSpecialSlot"], False)
+    if "FDD" in label or label in {"F", "FLEX", "FLEXIBLE"}:
+        token = "F"
+    elif label in {"D", "DL", "DOWNLINK"}:
+        token = "D"
+    elif label in {"U", "UL", "UPLINK"}:
+        token = "U"
+    elif label in {"S", "SPECIAL"}:
+        token = "S"
+    elif special or (dl_symbols > 0 and ul_symbols > 0) or guard_symbols > 0:
+        token = "S"
+    elif dl_symbols > 0:
+        token = "D"
+    elif ul_symbols > 0:
+        token = "U"
+    else:
+        token = "?"
+
+    dl_grants = first_present_number(row, ["DLGrantCount", "DLExecutedGrantCount", "DLTrialRows"], 0)
+    ul_grants = first_present_number(row, ["ULGrantCount", "ULExecutedGrantCount", "ULTrialRows"], 0)
+    dl_active = first_present_number(row, ["DLActiveUsers"], 0)
+    ul_active = first_present_number(row, ["ULActiveUsers"], 0)
+    dl_queue = first_present_number(row, ["DLQueueBits"], 0)
+    ul_queue = first_present_number(row, ["ULQueueBits"], 0)
+    dl_reason = str(first_present_value(row, ["DLNoGrantReason"], "")).strip()
+    ul_reason = str(first_present_value(row, ["ULNoGrantReason"], "")).strip()
+    has_dl = math.isfinite(dl_grants) and dl_grants > 0
+    has_ul = math.isfinite(ul_grants) and ul_grants > 0
+
+    if has_dl or has_ul:
+        activity = "allocated"
+        state_label = "DL + UL allocated" if has_dl and has_ul else ("DL allocated" if has_dl else "UL allocated")
+        reason = ""
+    elif token == "D":
+        activity = "idle"
+        state_label = "DL idle — no grant"
+        reason = dl_reason
+        if not reason:
+            if dl_active <= 0:
+                reason = "no_active_eligible_users"
+            elif dl_queue <= 0:
+                reason = "no_queued_data"
+            else:
+                reason = "no_grant_reason_not_exported_by_legacy_run"
+    elif token == "U":
+        activity = "idle"
+        state_label = "UL idle — no grant"
+        reason = ul_reason
+        if not reason:
+            if ul_active <= 0:
+                reason = "no_active_eligible_users"
+            elif ul_queue <= 0:
+                reason = "no_queued_data"
+            else:
+                reason = "no_grant_reason_not_exported_by_legacy_run"
+    elif token == "S":
+        activity = "special"
+        state_label = "Special DL/guard/UL slot"
+        reason = dl_reason or ul_reason
+    elif token == "F":
+        activity = "flexible"
+        state_label = "Flexible/FDD slot"
+        reason = dl_reason or ul_reason
+    else:
+        activity = "unknown"
+        state_label = "Slot format unavailable"
+        reason = "slot_trace_partition_unavailable"
+    return {
+        "slot": slot,
+        "tdd": token,
+        "activity": activity,
+        "state_label": state_label,
+        "reason": reason,
+        "dl_symbols": dl_symbols,
+        "guard_symbols": guard_symbols,
+        "ul_symbols": ul_symbols,
+        "source": "slot_trace.csv",
+    }
+
+
+def phy_grid_configured_tdd_pattern(cfg: dict[str, Any]) -> str:
+    direct = str(
+        path_get(
+            cfg,
+            "frame_timing.tdd_pattern",
+            path_get(cfg, "frame.tdd_pattern", path_get(cfg, "phy.duplex.tddPattern", "")),
+        )
+        or ""
+    )
+    clean = "".join(ch for ch in direct.upper() if ch in {"D", "U", "S", "F"})
+    if clean:
+        return clean
+    common = path_get(
+        cfg,
+        "frame_timing.tdd_common",
+        path_get(cfg, "frame.tdd_common", path_get(cfg, "phy.duplex.tddCommon", {})),
+    )
+    if not isinstance(common, dict):
+        return ""
+    slot_duration_ms = first_present_number(
+        {"slot_duration_ms": path_get(cfg, "frame_timing.slot_duration_ms", 0.5)},
+        ["slot_duration_ms"],
+        0.5,
+    )
+    if not math.isfinite(slot_duration_ms) or slot_duration_ms <= 0:
+        slot_duration_ms = 0.5
+    tokens: list[str] = []
+    for pattern_name in ("Pattern1", "Pattern2"):
+        pattern = common.get(pattern_name) or common.get(pattern_name.lower())
+        if not isinstance(pattern, dict) or not pattern:
+            continue
+        n_dl = bounded_int(pattern.get("NumDownlinkSlots", pattern.get("num_downlink_slots", 0)), 0, 0, 1000)
+        n_ul = bounded_int(pattern.get("NumUplinkSlots", pattern.get("num_uplink_slots", 0)), 0, 0, 1000)
+        dl_sym = bounded_int(pattern.get("NumDownlinkSymbols", pattern.get("num_downlink_symbols", 0)), 0, 0, 28)
+        ul_sym = bounded_int(pattern.get("NumUplinkSymbols", pattern.get("num_uplink_symbols", 0)), 0, 0, 28)
+        periodicity = coerce_numeric(pattern.get("PeriodicityMilliseconds", pattern.get("periodicity_ms")))
+        period_slots = int(round(float(periodicity) / slot_duration_ms)) if periodicity is not None else n_dl + n_ul
+        residual = max(0, period_slots - n_dl - n_ul)
+        part = ["D"] * n_dl
+        if residual > 0:
+            part.append("S" if (dl_sym > 0 or ul_sym > 0) else "F")
+            part.extend(["F"] * (residual - 1))
+        part.extend(["U"] * n_ul)
+        tokens.extend(part)
+    return "".join(tokens)
+
+
+def phy_grid_shortest_repeating_pattern(tokens: list[str]) -> str:
+    clean = [str(token).upper() for token in tokens if str(token).upper() in {"D", "U", "S", "F"}]
+    if not clean:
+        return ""
+    for size in range(1, min(len(clean), 40) + 1):
+        candidate = clean[:size]
+        if all(token == candidate[index % size] for index, token in enumerate(clean)):
+            return "".join(candidate)
+    return "".join(clean[: min(20, len(clean))])
 
 
 def phy_grid_prb_count_from_set(value: Any) -> float:
@@ -9056,26 +9225,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         4096,
     )
     symbols_per_slot = bounded_int(path_get(cfg, "frame_timing.symbols_per_slot", 14), 14, 1, 28)
-    tdd_pattern = str(
-        path_get(
-            cfg,
-            "frame_timing.tdd_pattern",
-            path_get(
-                cfg,
-                "frame.tdd_pattern",
-                path_get(
-                    cfg,
-                    "phy.duplex.tddPattern",
-                    path_get(
-                        cfg,
-                        "lls6g.resolvedConfig.frame_timing.tdd_pattern",
-                        path_get(cfg, "lls6g.frame.tdd_pattern", ""),
-                    ),
-                ),
-            ),
-        )
-        or ""
-    )
+    tdd_pattern = phy_grid_configured_tdd_pattern(cfg)
     channel_specs = phy_grid_dynamic_specs(cfg, nrb, symbols_per_slot)
     table_rows: dict[str, list[dict[str, Any]]] = {}
     table_meta: dict[str, dict[str, Any]] = {}
@@ -9122,17 +9272,52 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
     slot_start = 1 if one_based_slots else 0
     if raw_slots:
         slot_start = min(raw_slots)
-    slots = [
-        {
-            "slot": slot_start + idx,
-            "tdd": phy_grid_tdd_token(tdd_pattern, slot_start + idx, one_based_slots),
-        }
-        for idx in range(slot_limit)
-    ]
+    trace_by_slot: dict[int, dict[str, Any]] = {}
+    for row in table_rows.get("slot_trace", []):
+        trace_state = phy_grid_slot_state(row)
+        trace_slot = trace_state.get("slot")
+        if trace_slot is not None:
+            trace_by_slot[int(trace_slot)] = trace_state
+    slots: list[dict[str, Any]] = []
+    for idx in range(slot_limit):
+        slot_value = slot_start + idx
+        trace_state = trace_by_slot.get(slot_value)
+        if trace_state:
+            slots.append(dict(trace_state))
+            continue
+        token = phy_grid_tdd_token(tdd_pattern, slot_value, one_based_slots)
+        slots.append(
+            {
+                "slot": slot_value,
+                "tdd": token,
+                "activity": "unobserved",
+                "state_label": "No canonical slot-trace row",
+                "reason": "slot_trace_row_unavailable",
+                "dl_symbols": None,
+                "guard_symbols": None,
+                "ul_symbols": None,
+                "source": "resolved_config" if token != "?" else "unavailable",
+            }
+        )
+    observed_pattern = phy_grid_shortest_repeating_pattern(
+        [
+            str(item.get("tdd") or "")
+            for item in slots
+            if str(item.get("source") or "") == "slot_trace.csv"
+        ]
+    )
+    effective_tdd_pattern = observed_pattern or tdd_pattern
+    tdd_pattern_source = (
+        "slot_trace.csv"
+        if observed_pattern
+        else ("resolved_config" if tdd_pattern else "unavailable")
+    )
     slot_set = {int(slot["slot"]) for slot in slots}
 
     events: list[dict[str, Any]] = []
     for table_key, rows in table_rows.items():
+        if not bool(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("render_events", True)):
+            continue
         spec = channel_specs.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
         selected_path = str(table_meta.get(table_key, {}).get("selected_logical_path") or "")
         for row in rows:
@@ -9176,6 +9361,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
     ]
     provenance_notes = [
         "Grid cells are built from run CSV artifacts only; no synthetic pass/fail or fake RE positions are created.",
+        "Slot D/U/S/F labels and idle reasons come from the canonical slot trace when available; resolved configuration is only the fallback.",
         "PDSCH/PUSCH allocation rectangles use exported PRB/symbol columns when present; otherwise the runtime row and selected artifact are shown as unavailable/estimated.",
         "DMRS/PTRS overlays are drawn only when exported RE counts are present. Exact per-RE index export is still required for full RE-level coloring.",
         "PSS/SSS/PBCH component symbols are shown relative to each exported SSB/PBCH row.",
@@ -9192,7 +9378,8 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             "slots": slots,
             "nrb": nrb,
             "symbols_per_slot": symbols_per_slot,
-            "tdd_pattern": tdd_pattern,
+            "tdd_pattern": effective_tdd_pattern,
+            "tdd_pattern_source": tdd_pattern_source,
             "selected_ue_id": selected_ue,
             "ue_options": ue_values[:500],
             "lanes": lanes,
@@ -12352,6 +12539,171 @@ def build_debug_payload(run_row: dict[str, Any], artifacts: list[dict[str, Any]]
     }
 
 
+REALTIME_COMPONENT_SPECS: tuple[dict[str, Any], ...] = (
+    {"id": "waveform", "label": "Waveform", "group": "PHY", "tokens": ("waveform", "ofdm", "constellation", "spectrum", "spectral")},
+    {"id": "ssb_pbch", "folder": "ssb", "label": "SSB / PBCH", "group": "Access", "tokens": ("ssb", "pbch", "pss", "sss")},
+    {"id": "prach_rach", "folder": "prach", "label": "PRACH / RACH", "group": "Access", "tokens": ("prach", "random_access", "four_step_ra", "contention")},
+    {"id": "initial_access", "label": "Initial Access", "group": "Access", "tokens": ("initial_access", "sib1", "attach_state", "cell_acquisition")},
+    {"id": "pdcch", "label": "PDCCH / DCI", "group": "Control", "tokens": ("pdcch", "dci", "coreset", "search_space")},
+    {"id": "pdsch", "label": "PDSCH / DL-SCH", "group": "Data PHY", "tokens": ("pdsch", "dlsch", "dl_pdsch", "dl_scheduler_grant")},
+    {"id": "pusch", "label": "PUSCH / UL-SCH", "group": "Data PHY", "tokens": ("pusch", "ulsch", "ul_pusch", "ul_scheduler_grant")},
+    {"id": "pucch", "label": "PUCCH / UCI", "group": "Control", "tokens": ("pucch", "uci_")},
+    {"id": "air_interface", "label": "Air Interface", "group": "PHY", "tokens": ("air_interface/", "tx_rx_stage", "resource_grid")},
+    {"id": "mimo", "label": "MIMO / Beamforming", "group": "Spatial", "tokens": ("mimo", "beamforming", "beam_", "precoder", "rank_layer")},
+    {"id": "reference_signals", "label": "Reference Signals", "group": "PHY", "tokens": ("csi_rs", "csirs", "srs", "trs", "dmrs", "ptrs", "reference_signal")},
+    {"id": "l2", "label": "Layer 2", "group": "Protocol", "tokens": ("/mac", "mac_", "harq", "rlc", "pdcp", "sdap", "bearer")},
+    {"id": "l3", "label": "Layer 3", "group": "Protocol", "tokens": ("rrc", "handover", "mobility_event", "sib1")},
+    {"id": "traffic", "label": "Traffic / QoS", "group": "Traffic", "tokens": ("traffic", "packet_flow", "flow_", "goodput", "latency", "qos")},
+)
+
+
+def realtime_component_for_text(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return "system"
+    for spec in REALTIME_COMPONENT_SPECS:
+        if any(token in text for token in spec["tokens"]):
+            return str(spec["id"])
+    return "system"
+
+
+def build_realtime_component_dashboard(
+    artifacts: list[dict[str, Any]], run_status: str
+) -> list[dict[str, Any]]:
+    """Build evidence-presence status without converting presence into a pass claim."""
+    rows: list[dict[str, Any]] = []
+    running = str(run_status or "").strip().lower() == "running"
+    for spec in REALTIME_COMPONENT_SPECS:
+        matches = []
+        for artifact in artifacts:
+            logical_path = str(artifact.get("logical_path") or "").replace("\\", "/")
+            lowered = logical_path.lower()
+            if any(token in lowered for token in spec["tokens"]):
+                matches.append(artifact)
+        csv_count = sum(
+            1
+            for artifact in matches
+            if str(artifact.get("logical_path") or "").lower().endswith(".csv")
+        )
+        image_count = sum(
+            1
+            for artifact in matches
+            if str(artifact.get("logical_path") or "").lower().endswith((".png", ".jpg", ".jpeg"))
+        )
+        legacy_svg_count = sum(
+            1
+            for artifact in matches
+            if str(artifact.get("logical_path") or "").lower().endswith(".svg")
+            or str(artifact.get("mime_type") or "").lower() == "image/svg+xml"
+        )
+        matches = sorted(matches, key=artifact_sort_key, reverse=True)
+        status = "active_evidence" if running and matches else ("evidence_available" if matches else "not_published")
+        rows.append(
+            {
+                "component_id": spec["id"],
+                "label": spec["label"],
+                "group": spec["group"],
+                "status": status,
+                "artifact_count": len(matches),
+                "csv_count": csv_count,
+                "image_count": image_count,
+                "legacy_svg_count": legacy_svg_count,
+                "planned_folder": str(spec.get("folder") or spec["id"]),
+                "latest_artifacts": [build_artifact_descriptor(item) for item in matches[:4]],
+                "status_note": (
+                    "Persisted evidence is available; this is not itself a pass verdict."
+                    + (" Legacy SVG is retained only because this is an older immutable run." if legacy_svg_count else "")
+                    if matches
+                    else "No persisted evidence matching this component is available for the selected run."
+                ),
+            }
+        )
+    return rows
+
+
+def build_realtime_ue_status(
+    metric_explorer: dict[str, Any], runtime_context: dict[str, Any]
+) -> list[dict[str, Any]]:
+    summaries = metric_explorer.get("ue_summaries") if isinstance(metric_explorer, dict) else {}
+    if not isinstance(summaries, dict):
+        summaries = {}
+    control_rows = runtime_context.get("control_state_preview") if isinstance(runtime_context, dict) else []
+    if not isinstance(control_rows, list):
+        control_rows = []
+    control_by_ue: dict[str, dict[str, Any]] = {}
+    for row in control_rows:
+        if not isinstance(row, dict):
+            continue
+        raw_ue = first_present_value(row, ["UEIndex", "UEID", "UEId", "RNTI"], "")
+        ue_text = str(raw_ue or "").strip()
+        if ue_text.endswith(".0"):
+            ue_text = ue_text[:-2]
+        if ue_text and ue_text.lower() != "nan":
+            control_by_ue[ue_text] = row
+    ue_ids = sorted(set(str(key) for key in summaries) | set(control_by_ue), key=lambda value: (coerce_numeric(value) is None, coerce_numeric(value) or 0, value))
+    rows: list[dict[str, Any]] = []
+    for ue_id in ue_ids:
+        perf = summaries.get(ue_id) or summaries.get(str(int(float(ue_id))) if coerce_numeric(ue_id) is not None else ue_id) or {}
+        control = control_by_ue.get(ue_id, {})
+        eligible = first_present_value(control, ["SchedulingEligibility", "SharedSchedulingEligibility"], None)
+        eligible_bool = is_truthy_value(eligible) if eligible not in {None, ""} else None
+        failure_fields = ("PBCHFailureCount", "PRACHFailureCount", "ControlDecodeFailureCount", "PUCCHDecodeFailureCount", "TRSFailureCount")
+        failure_count = sum(max(0.0, coerce_numeric(control.get(name)) or 0.0) for name in failure_fields)
+        dl_bler = coerce_numeric(perf.get("dl_bler"))
+        ul_bler = coerce_numeric(perf.get("ul_bler"))
+        needs_attention = failure_count > 0 or any(value is not None and value > 0 for value in (dl_bler, ul_bler))
+        if eligible_bool is False:
+            health = "blocked"
+        elif needs_attention:
+            health = "attention"
+        elif perf or control:
+            health = "evidence_available"
+        else:
+            health = "unavailable"
+        rows.append(
+            {
+                "ue_id": ue_id,
+                "health": health,
+                "serving_cell": first_present_value(control, ["ServingCell", "ServingCellID"], ""),
+                "scheduling_direction": first_present_value(control, ["CurrentSchedulingDirection"], ""),
+                "scheduling_eligible": eligible_bool,
+                "access_state": first_present_value(control, ["AccessState", "CellAcquisitionState"], "unavailable"),
+                "pdcch_state": first_present_value(control, ["LastPDCCHStatus"], "unavailable"),
+                "srs_state": first_present_value(control, ["SRSValidityState"], "unavailable"),
+                "csi_state": first_present_value(control, ["CSIValidityState"], "unavailable"),
+                "trs_state": first_present_value(control, ["TRSValidityState"], "unavailable"),
+                "dl_bler": dl_bler,
+                "ul_bler": ul_bler,
+                "dl_sinr_db": coerce_numeric(perf.get("dl_mean_measured_sinr_dB")),
+                "ul_sinr_db": coerce_numeric(perf.get("ul_mean_measured_sinr_dB")),
+                "dl_throughput_mbps": coerce_numeric(perf.get("dl_throughput_mbps")),
+                "ul_throughput_mbps": coerce_numeric(perf.get("ul_throughput_mbps")),
+                "failure_count": failure_count,
+                "last_pdcch_slot": coerce_numeric(control.get("LastSuccessfulPDCCHSlot")),
+                "last_pucch_slot": coerce_numeric(control.get("LastSuccessfulPUCCHSlot")),
+                "last_srs_slot": coerce_numeric(control.get("LastSuccessfulSRSSlot")),
+                "last_trs_slot": coerce_numeric(control.get("LastSuccessfulTRSSlot")),
+                "performance_source": str(perf.get("source_table") or ""),
+                "performance_fidelity": str(perf.get("fidelity_level") or "unavailable"),
+                "control_source": "reports/csv/live_control_gating_state.csv" if control else "",
+            }
+        )
+    return rows
+
+
+def annotate_realtime_logs(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for source_row in logs:
+        row = dict(source_row)
+        combined = " ".join(
+            str(row.get(name) or "")
+            for name in ("source", "module", "message_text", "message", "line_text", "log_message")
+        )
+        row["component"] = realtime_component_for_text(combined)
+        annotated.append(row)
+    return annotated
+
+
 def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any] | None:
     header, rows = load_cached_csv_preview(int(artifact["artifact_id"]), MAX_ACTIVITY_POINTS)
     if not rows or not header:
@@ -13990,6 +14342,7 @@ def condense_live_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
         "counts": full_payload.get("counts"),
         "metrics": full_payload.get("metrics"),
         "runtime_context": full_payload.get("runtime_context"),
+        "realtime_dashboard": full_payload.get("realtime_dashboard"),
         "section_counts": full_payload.get("section_counts"),
         "analysis_mode": full_payload.get("analysis_mode"),
         "logs_recent": full_payload.get("logs_recent"),
@@ -14189,6 +14542,39 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         or any(token in str(art["logical_path"]).lower() for token in ("summary", "sweep", "kpi", "status"))
     ]
     summary = build_live_summary(run_row, artifacts, runtime_context)
+    metric_explorer = build_metric_explorer_payload(artifacts, summary)
+    component_manifest_artifact = find_artifact_by_logical_path(
+        artifacts, "reports/csv/component_artifact_publication_manifest.csv"
+    )
+    realtime_dashboard = {
+        "components": build_realtime_component_dashboard(
+            public_artifacts, status_text
+        ),
+        "ue_status": build_realtime_ue_status(
+            metric_explorer, runtime_context
+        ),
+        "logs": annotate_realtime_logs(logs_recent[-200:]),
+        "folder_policy": {
+            "status": (
+                "published_hash_verified_component_views"
+                if component_manifest_artifact
+                else "configured_for_new_runs_not_present_in_selected_legacy_run"
+            ),
+            "manifest": (
+                build_artifact_descriptor(component_manifest_artifact)
+                if component_manifest_artifact
+                else None
+            ),
+            "canonical_files_move": False,
+            "mirror_truth_required": True,
+            "hash_verification_required": True,
+            "root_layout": "<run_folder>/<component>/{csv,image,json,mat}",
+            "note": (
+                "Existing canonical artifacts remain authoritative. Component folders may only "
+                "publish byte-identical, hash-verified mirrors with an explicit source manifest."
+            ),
+        },
+    }
     mode_validation = build_mode_validation_payload(run_row, artifacts)
     full_stack_mode = (
         str(run_row.get("scenario_id") or "")
@@ -14294,7 +14680,8 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         "images_recent": recent_images,
         "section_counts": section_counts,
         "analysis_mode": analysis_mode,
-        "logs_recent": logs_recent[-60:],
+        "logs_recent": logs_recent[-120:],
+        "realtime_dashboard": realtime_dashboard,
         "charts": {
             "artifact_activity": build_activity_series(artifacts, "Artifacts"),
             "log_activity": build_activity_series(logs_recent, "Logs"),
@@ -14305,7 +14692,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         "reference_plot_gallery": build_reference_plot_gallery(reference_gallery_charts, all_images),
         "timing": build_timing_payload(artifacts),
         "map": build_map_payload(run_id, artifacts),
-        "metric_explorer": build_metric_explorer_payload(artifacts, summary),
+        "metric_explorer": metric_explorer,
         "debug": build_debug_payload(run_row, artifacts, logs_recent),
         "payload_version": cache_version,
         "artifact_version": artifact_version,
@@ -15404,9 +15791,10 @@ button,.button-link,select,input,textarea{font:inherit;border-radius:10px}button
 .product-header{margin:14px 18px 0;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr)auto;gap:16px;align-items:center}.product-header h2{margin:2px 0 2px;font-size:22px;letter-spacing:-.02em}.product-header .badge{margin:0}.top-actions{display:flex;gap:7px;flex-wrap:nowrap;justify-content:flex-end;align-items:center}.top-actions select{width:min(32vw,330px)}#runForm,#scenarioUploadForm{display:inline-flex}.message{margin-top:8px;padding:9px 11px;background:#fff8e8;color:#6b4500;border:1px solid #e9c77d;border-radius:10px}.hidden{display:none!important}.grid{display:grid;gap:10px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.panel{padding:14px}.panel h3,.tile h3{margin:0 0 7px;font-size:17px}.tile{padding:13px;min-width:0}.tile h4{margin:0 0 5px;font-size:15px}.tile p{margin:0;color:var(--muted);line-height:1.4}.metric{border-left:3px solid var(--teal)}.metric .value{font-size:20px;font-weight:800;margin-top:3px}
 .workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.workflow .tile{cursor:pointer;min-height:148px}.workflow .tile:hover,.block-card:hover{border-color:var(--blue)}.badge{display:inline-flex;align-items:center;border:1px solid var(--strong);border-radius:8px;padding:4px 8px;font-size:12px;color:var(--muted);background:#f7f9fc;margin:3px 4px 3px 0}.badge.good{color:var(--green);border-color:#a9d5b7;background:#f2fbf5}.badge.warn{color:var(--amber);border-color:#e3c78d;background:#fff8e8}.badge.bad{color:var(--red);border-color:#e3a8b2;background:#fff3f5}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.config-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.config-group{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fbfdfc}.config-group[open]{grid-column:1/-1}.config-group summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;cursor:pointer;color:#315650;font-weight:800;list-style:none}.config-group summary::-webkit-details-marker{display:none}.config-group summary::before{content:"›";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-3px;border-radius:6px;background:#e5f4f0;color:var(--blue);font-size:18px;line-height:1;transition:transform .15s ease}.config-group[open] summary::before{transform:rotate(90deg)}.config-group[open] summary{border-bottom:1px solid var(--line);background:#f3faf7}.config-group summary>span:first-of-type{flex:1}.config-group>.form-grid{padding:12px}.config-group .param-editor{padding:10px;border:1px solid #e4eeeb;border-radius:10px;background:#fff;min-width:0}.config-group .param-editor .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
-.table-wrap{overflow:auto;max-height:calc(100vh - 270px);overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:calc(100vh - 300px)}.table-wrap.tall-scroll{max-height:calc(100vh - 330px)}table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f8f7;z-index:1;color:#405d58}.stream{max-height:280px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}.log-warn{border-left:3px solid var(--amber)}.log-error{border-left:3px solid var(--red)}.warning{border-left:3px solid var(--amber);padding:9px 11px;background:#fff8e8;color:#6b4500;border-radius:10px}.map-box{min-height:420px;overflow:hidden}#geometryMap,#realtimeMap{height:420px;width:100%}.chart-box{height:calc(100vh - 310px);min-height:300px;border:1px solid var(--line);border-radius:12px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.toolbar label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:130px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:112px}.metric-explorer-note{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.artifact-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.artifact-card h4{margin:0 0 7px}.artifact-card img{display:block;width:100%;max-height:280px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:10px}.interactive-image-stage{position:relative;height:calc(100vh - 300px);min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.4}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:10px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:9px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}.section-tabs{display:flex;gap:6px;overflow:auto;margin:0 0 10px;padding-bottom:2px}.section-tabs .button-link{padding:7px 10px;font-size:13px}.section-tabs .active{background:#e5f4f0;color:var(--blue);border-color:#9acdc2}.step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.step-card{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fff}.step-number{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e5f4f0;color:var(--blue);font-weight:900}.action-menu{position:relative}.action-menu summary{cursor:pointer;font-weight:700}.action-menu[open]{z-index:3}.action-menu-body{position:absolute;right:0;top:calc(100% + 5px);display:grid;gap:5px;width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}.rg-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#f8fbfa}.resource-grid{display:grid;gap:3px;min-width:max-content;padding:8px}.rg-label,.rg-head,.rg-cell{min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px}.rg-label{position:sticky;left:0;z-index:2;justify-content:flex-start;padding:0 8px;background:#eef5f3;color:#315650;font-weight:700}.rg-head{position:sticky;top:0;z-index:1;flex-direction:column;background:#e8f1ef;font-weight:800}.rg-head span{font-size:9px;color:var(--muted)}.rg-cell{background:#eef3f2;border:1px solid #e4ecea}.rg-cell.active{color:#fff;font-weight:800}.rg-cell.dl{background:#2679a8;border-color:#2679a8}.rg-cell.ul{background:#9b5cc2;border-color:#9b5cc2}.rg-cell.ref{background:#0d8c72;border-color:#0d8c72}
+.table-wrap{overflow:auto;max-height:calc(100vh - 270px);overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:calc(100vh - 300px)}.table-wrap.tall-scroll{max-height:calc(100vh - 330px)}table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f8f7;z-index:1;color:#405d58}.stream{max-height:280px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}.log-warn{border-left:3px solid var(--amber)}.log-error{border-left:3px solid var(--red)}.warning{border-left:3px solid var(--amber);padding:9px 11px;background:#fff8e8;color:#6b4500;border-radius:10px}.map-box{min-height:420px;overflow:hidden}#geometryMap,#realtimeMap{height:420px;width:100%}.chart-box{height:calc(100vh - 310px);min-height:300px;border:1px solid var(--line);border-radius:12px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.toolbar label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:130px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:112px}.metric-explorer-note{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.artifact-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.artifact-card h4{margin:0 0 7px}.artifact-card img{display:block;width:100%;max-height:280px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:10px}.interactive-image-stage{position:relative;height:calc(100vh - 300px);min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.4}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:10px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:9px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}.section-tabs{display:flex;gap:6px;overflow:auto;margin:0 0 10px;padding-bottom:2px}.section-tabs .button-link{padding:7px 10px;font-size:13px}.section-tabs .active{background:#e5f4f0;color:var(--blue);border-color:#9acdc2}.step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.step-card{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fff}.step-number{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e5f4f0;color:var(--blue);font-weight:900}.action-menu{position:relative}.action-menu summary{cursor:pointer;font-weight:700}.action-menu[open]{z-index:3}.action-menu-body{position:absolute;right:0;top:calc(100% + 5px);display:grid;gap:5px;width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}.rg-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#f8fbfa}.resource-grid{display:grid;gap:3px;min-width:max-content;padding:8px}.rg-label,.rg-head,.rg-cell{min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px}.rg-label{position:sticky;left:0;z-index:2;justify-content:flex-start;padding:0 8px;background:#eef5f3;color:#315650;font-weight:700}.rg-head{position:sticky;top:0;z-index:1;flex-direction:column;background:#e8f1ef;font-weight:800}.rg-head span{font-size:9px;color:var(--muted)}.rg-head.tdd-D,.rg-cell.tdd-D:not(.active){background:#e8f3fa}.rg-head.tdd-U,.rg-cell.tdd-U:not(.active){background:#f3eafa}.rg-head.tdd-S,.rg-cell.tdd-S:not(.active){background:#fff4d9}.rg-head.tdd-F,.rg-cell.tdd-F:not(.active){background:#edf7ef}.rg-head.activity-idle{box-shadow:inset 0 -3px 0 #d89b2b}.rg-cell{background:#eef3f2;border:1px solid #e4ecea}.rg-cell.active{color:#fff;font-weight:800}.rg-cell.dl{background:#2679a8;border-color:#2679a8}.rg-cell.ul{background:#9b5cc2;border-color:#9b5cc2}.rg-cell.ref{background:#0d8c72;border-color:#0d8c72}
+.realtime-component-grid{display:grid;grid-template-columns:repeat(7,minmax(135px,1fr));gap:8px}.realtime-component{padding:11px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(145deg,#fff,#f7fbfa);min-width:0}.realtime-component.evidence_available,.realtime-component.active_evidence{border-top:3px solid var(--green)}.realtime-component.not_published{border-top:3px solid var(--amber)}.realtime-component h4,.ue-status-card h4{margin:0 0 6px}.realtime-component .counts{font-size:12px;color:var(--muted)}.realtime-component .source-link{display:block;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--blue)}.ue-status-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:9px}.ue-status-card{padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}.ue-status-card.evidence_available{border-left:4px solid var(--green)}.ue-status-card.attention{border-left:4px solid var(--amber)}.ue-status-card.blocked{border-left:4px solid var(--red)}.ue-status-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;font-size:12px}.ue-status-metrics span{padding:5px 7px;border-radius:7px;background:#f3f8f7;overflow:hidden;text-overflow:ellipsis}.live-log-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) 180px 150px;gap:8px;margin-bottom:10px}.live-log-meta{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:11px}.live-log-component{font-weight:800;color:var(--blue)}
 .scenario-mode-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.scenario-mode-card{position:relative;display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:15px;text-align:left;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#fff,#f7fbfa);box-shadow:none;white-space:normal}.scenario-mode-card:hover{transform:translateY(-1px);border-color:#82bfb2;box-shadow:0 10px 24px rgba(8,122,112,.1)}.scenario-mode-card.active{border-color:var(--blue);background:linear-gradient(145deg,#effaf6,#fff);box-shadow:0 0 0 2px rgba(8,122,112,.1)}.scenario-mode-card .mode-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:13px;background:#e1f4ef;color:var(--blue);font-size:13px;font-weight:900;letter-spacing:.03em}.scenario-mode-card h4{margin:0 0 3px;font-size:16px}.scenario-mode-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.35}.scenario-mode-card .mode-check{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--strong);color:transparent}.scenario-mode-card.active .mode-check{border-color:var(--blue);background:var(--blue);color:#fff}.upload-dropzone{display:grid;place-items:center;min-height:94px;margin-top:10px;padding:14px;border:1.5px dashed #8abcb2;border-radius:13px;background:#f5fbf9;color:#315650;text-align:center;cursor:pointer;transition:.15s ease}.upload-dropzone:hover{border-color:var(--blue);background:#edf9f5;color:var(--blue)}.upload-dropzone strong{display:block;margin-bottom:3px;color:var(--ink)}.launch-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:10px;margin-top:10px}.launch-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.launch-actions .param-editor{flex:1 1 220px}.run-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.run-history-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.check-label{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;font-weight:700}.check-label input,.run-select{width:17px;height:17px;margin:0;accent-color:var(--blue)}.run-table th:first-child,.run-table td:first-child{width:42px;text-align:center}.run-table tbody tr:hover{background:#f7fbfa}.run-table .run-title{font-weight:800}.status-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef3f2;color:#536a65;font-size:12px;font-weight:800}.status-pill.good{background:#e8f7ef;color:var(--green)}.status-pill.warn{background:#fff4d9;color:var(--amber)}.status-pill.bad{background:#fff0f2;color:var(--red)}button.danger,.button-link.danger{border-color:#e8a7b1;background:#fff5f6;color:var(--red)}button.danger:hover,.button-link.danger:hover{border-color:var(--red);background:var(--red);color:#fff}.action-menu-body .button-link,.action-menu-body button{width:100%;justify-content:flex-start}.empty-state{display:grid;place-items:center;min-height:180px;padding:24px;text-align:center;color:var(--muted)}
-@media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.launch-grid{grid-template-columns:1fr}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups,.scenario-mode-grid,.launch-grid{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group,.scenario-mode-card{margin-bottom:10px}.run-history-header{align-items:flex-start;flex-direction:column}}
+@media(max-width:1300px){.realtime-component-grid{grid-template-columns:repeat(4,minmax(150px,1fr))}.ue-status-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}}@media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.launch-grid{grid-template-columns:1fr}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups,.scenario-mode-grid,.launch-grid,.realtime-component-grid,.ue-status-grid,.live-log-toolbar{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group,.scenario-mode-card,.realtime-component,.ue-status-card{margin-bottom:10px}.run-history-header{align-items:flex-start;flex-direction:column}}
 </style>
 """
 
@@ -15618,7 +16006,7 @@ window.addEventListener('DOMContentLoaded', function () {
   const initialConfig = root.config && typeof root.config === 'object' ? root.config : {};
   const initialConfigLoaded = !!(root.config_loaded && Object.keys(initialConfig).length);
   const LIVE_API_TEMPLATE = "/api/run/${id}/live";
-  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', qualificationSection: query.get('section') || 'Overview', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: query.get('artifact_id') || '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', tableBrowserPreviewCache: {}, tableBrowserPreviewPending: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
+  const state = {page: root.page || 'home', mode: String(root.initial_mode || (((initialConfig || {}).run_control || {}).execution_mode || 'LLS')).trim().toUpperCase(), config: initialConfig, configLoaded: initialConfigLoaded, configLoading: false, fields: Array.isArray(root.fields) ? root.fields : [], fieldsLoaded: Array.isArray(root.fields) && root.fields.length > 0, fieldsLoading: false, live: null, liveVersion: '', liveArtifactVersion: '', liveFullPayload: null, liveFullFetchPending: '', sectionEvidence: null, sectionEvidenceVersion: '', runs: [], runsDigest: '', selectedBlock: null, activeFamily: ((root.phy_families || [])[0] || {}).id || '', filter: '', liveComponentFilter: 'all', liveLogLevel: 'all', qualificationSection: query.get('section') || 'Overview', compareBaseline: storage.get('sixgr_compare_baseline'), compareCandidate: storage.get('sixgr_compare_candidate'), compareBaselineLive: null, compareCandidateLive: null, compareLoading: false, uiInteractionUntil: 0, analyticsPublishedChartId: '', referencePlotId: '', plotBrowserId: '', plotBrowserRunId: '', plotBrowserPayload: null, plotBrowserChartCache: {}, plotBrowserCatalogMode: 'canonical', plotBrowserBucket: 'all', tableBrowserId: query.get('artifact_id') || '', tableBrowserRunId: '', tableBrowserPayload: null, tableBrowserBucket: 'all', tableBrowserPreviewCache: {}, tableBrowserPreviewPending: '', metricExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}, analyticsExplorer: {xAxis: 'slot', metrics: [], secondaryMetric: '', scope: 'all_configured_ues', selectedUE: '', direction: 'all', overlayMode: 'per_ue_overlay'}};
   state.phyGrid = null;
   state.phyGridLoading = false;
   state.backendLoading = false;
@@ -16674,6 +17062,57 @@ window.addEventListener('DOMContentLoaded', function () {
     const ueOptions = (explorer.ue_ids || []).map(ueid => `<option value="${esc(ueid)}"${String(ueid) === String(explorerState('analytics').selectedUE || '') ? ' selected' : ''}>UE ${esc(ueid)}</option>`).join('');
     return `<section class="panel"><h3>Analytics Explorer</h3><p class="subtle">Plot any published numeric runtime metric against slot, time, or another published numeric metric. This panel uses the same truthful live metric payload as Realtime; it does not invent missing telemetry.</p><div class="toolbar"><label>X Axis<select id="analyticsXAxisSelect">${xAxisOptions}</select></label><label>Primary Y Metrics<select id="analyticsMetricSelect" multiple>${metricOptions}</select></label><label>Secondary Y<select id="analyticsSecondaryMetricSelect">${secondaryOptions}</select></label><label>Overlay<select id="analyticsOverlaySelect"><option value="per_ue_overlay"${explorerState('analytics').overlayMode === 'per_ue_overlay' ? ' selected' : ''}>Per-UE overlay</option><option value="per_cell_overlay"${explorerState('analytics').overlayMode === 'per_cell_overlay' ? ' selected' : ''}>Per-cell overlay</option></select></label><label>UE Scope<select id="analyticsUEScopeSelect"><option value="all_configured_ues"${explorerState('analytics').scope === 'all_configured_ues' ? ' selected' : ''}>All configured UEs</option><option value="selected_ue_only"${explorerState('analytics').scope === 'selected_ue_only' ? ' selected' : ''}>Selected UE</option></select></label><label>Selected UE<select id="analyticsUESelect"${explorerState('analytics').scope === 'selected_ue_only' ? '' : ' disabled'}>${ueOptions}</select></label><label>Direction<select id="analyticsDirectionSelect"><option value="all"${explorerState('analytics').direction === 'all' ? ' selected' : ''}>All</option><option value="DL"${explorerState('analytics').direction === 'DL' ? ' selected' : ''}>DL</option><option value="UL"${explorerState('analytics').direction === 'UL' ? ' selected' : ''}>UL</option><option value="channel"${explorerState('analytics').direction === 'channel' ? ' selected' : ''}>Channel / measurement only</option></select></label><button type="button" id="analyticsMetricExportBtn">Export Filtered Rows</button></div><div id="analyticsMetricExplorer" class="chart-box"></div><div id="analyticsMetricSummary"></div></section>`;
   }
+  function realtimeValue(value, suffix = '', digits = 2) {
+    if (value === null || value === undefined || value === '') return '—';
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return `${numeric.toFixed(digits)}${suffix}`;
+    return String(value);
+  }
+  function realtimeComponentPanel() {
+    const dashboard = ((state.live || {}).realtime_dashboard || {});
+    const components = Array.isArray(dashboard.components) ? dashboard.components : [];
+    if (!components.length) return `<section class="panel"><h3>Radio & Protocol Pipeline</h3>${unavailable('Component evidence is loading from the canonical live payload.')}</section>`;
+    const cards = components.map(component => {
+      const latest = Array.isArray(component.latest_artifacts) ? component.latest_artifacts : [];
+      const links = latest.slice(0, 2).map(item => `<a class="source-link mono" href="${esc(item.view_url || item.download_url || '#')}" title="${esc(item.logical_path || '')}">${esc(item.logical_path || 'artifact')}</a>`).join('');
+      const badgeClass = component.status === 'not_published' ? 'warn' : 'good';
+      const legacyVector = Number(component.legacy_svg_count || 0) > 0 ? `<span class="badge warn">${esc(component.legacy_svg_count)} legacy SVG</span>` : '';
+      return `<article class="realtime-component ${esc(component.status || '')}"><span class="badge ${badgeClass}">${esc(component.group || 'Component')}</span>${legacyVector}<h4>${esc(component.label || component.component_id)}</h4><div class="counts"><strong>${esc(component.artifact_count || 0)}</strong> evidence · ${esc(component.csv_count || 0)} CSV · ${esc(component.image_count || 0)} PNG/JPEG</div><div class="small mono">/${esc(component.planned_folder || component.component_id)}/{csv,image,json,mat}</div>${links || '<div class="small" style="margin-top:5px">No published source yet</div>'}</article>`;
+    }).join('');
+    const policy = dashboard.folder_policy || {};
+    return `<section class="panel"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Radio & Protocol Pipeline</h3><p class="subtle">Evidence presence is shown independently from pass/fail. Open a source to inspect the exact persisted rows or raster image.</p></div><div><span class="badge ${policy.manifest ? 'good' : 'warn'}">${esc(String(policy.status || 'folder policy unavailable').replaceAll('_',' '))}</span><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div></div><div class="realtime-component-grid">${cards}</div><p class="mini-note" style="margin-top:9px">${esc(policy.note || 'Canonical paths remain authoritative; component views must be hash-verified mirrors.')}</p></section>`;
+  }
+  function realtimeUEStatusPanel() {
+    const dashboard = ((state.live || {}).realtime_dashboard || {});
+    const items = Array.isArray(dashboard.ue_status) ? dashboard.ue_status : [];
+    if (!items.length) return `<section class="panel"><h3>UE Status</h3>${unavailable('No per-UE performance/control evidence is available for the selected run.')}</section>`;
+    const cards = items.map(ue => {
+      const badgeClass = ue.health === 'blocked' ? 'bad' : (ue.health === 'attention' ? 'warn' : 'good');
+      return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>Eligible <strong>${esc(ue.scheduling_eligible === null ? '—' : (ue.scheduling_eligible ? 'yes' : 'no'))}</strong></span><span>DL SINR <strong>${esc(realtimeValue(ue.dl_sinr_db, ' dB'))}</strong></span><span>UL SINR <strong>${esc(realtimeValue(ue.ul_sinr_db, ' dB'))}</strong></span><span>DL BLER <strong>${esc(realtimeValue(ue.dl_bler, '', 3))}</strong></span><span>UL BLER <strong>${esc(realtimeValue(ue.ul_bler, '', 3))}</strong></span><span>DL rate <strong>${esc(realtimeValue(ue.dl_throughput_mbps, ' Mbps'))}</strong></span><span>UL rate <strong>${esc(realtimeValue(ue.ul_throughput_mbps, ' Mbps'))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
+    }).join('');
+    return `<section class="panel"><h3>UE Status</h3><p class="subtle">Control eligibility and measured performance remain source-labeled; abstraction-level summaries are not presented as waveform truth.</p><div class="ue-status-grid">${cards}</div></section>`;
+  }
+  function realtimeLogPanel() {
+    const live = state.live || {};
+    const dashboard = live.realtime_dashboard || {};
+    const sourceLogs = Array.isArray(dashboard.logs) && dashboard.logs.length ? dashboard.logs : (live.logs_recent || []);
+    const componentIds = ['all', ...new Set(sourceLogs.map(row => String(row.component || 'system')))];
+    const componentOptions = componentIds.map(id => `<option value="${esc(id)}"${state.liveComponentFilter === id ? ' selected' : ''}>${esc(id === 'all' ? 'All components' : id.replaceAll('_',' '))}</option>`).join('');
+    const levelOptions = ['all','info','warn','error'].map(level => `<option value="${level}"${state.liveLogLevel === level ? ' selected' : ''}>${level === 'all' ? 'All levels' : level.toUpperCase()}</option>`).join('');
+    const logs = sourceLogs.filter(row => {
+      const raw = JSON.stringify(row).toLowerCase();
+      const level = String(row.level_str || row.level || '').toLowerCase();
+      return (!state.filter || raw.includes(state.filter.toLowerCase())) && (state.liveComponentFilter === 'all' || String(row.component || 'system') === state.liveComponentFilter) && (state.liveLogLevel === 'all' || level.includes(state.liveLogLevel));
+    });
+    const items = logs.map(row => {
+      const raw = JSON.stringify(row);
+      const level = String(row.level_str || row.level || 'INFO').toUpperCase();
+      const cls = /error|fail/i.test(level + raw) ? 'log-error' : (/warn/i.test(level + raw) ? 'log-warn' : '');
+      const message = row.message_text || row.message || row.line_text || row.log_message || raw;
+      return `<div class="stream-item ${cls}"><div class="live-log-meta"><span>${esc(row.time_str || row.created_utc || '')}</span><span class="live-log-component">${esc(row.component || 'system')}</span><span>${esc(level)}</span></div><strong>${esc(row.source || row.module || 'runtime')}</strong><br>${esc(message)}</div>`;
+    }).join('');
+    return `<section class="panel" id="realtimeLogPanel"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Runtime Event Stream</h3><p class="subtle">Exact persisted runtime log rows, newest payload refresh automatically.</p></div><span class="badge">${logs.length}/${sourceLogs.length} visible</span></div><div class="live-log-toolbar"><input id="liveFilter" placeholder="Search messages, UE, slot or stage" value="${esc(state.filter)}"><select id="liveComponentFilter">${componentOptions}</select><select id="liveLogLevel">${levelOptions}</select></div><div class="stream" data-scroll-key="realtime-logs">${items || unavailable('No runtime log rows were persisted for this selected run. Component and UE evidence above remains available from canonical CSV artifacts.')}</div></section>`;
+  }
   function realtime() {
     title('Real-Time Data', 'Canonical MySQL live payload, logs, grants, control, PHY, channel, warnings, and a live UE metric explorer.');
     const live = state.live;
@@ -16688,6 +17127,15 @@ window.addEventListener('DOMContentLoaded', function () {
     const secondaryOptions = ['<option value="">None</option>'].concat((explorer.available_metrics || []).map(metric => `<option value="${esc(metric.id)}"${String(metric.id) === String(viewState.secondaryMetric || '') ? ' selected' : ''}>${esc(metric.label)}</option>`)).join('');
     const ueOptions = (explorer.ue_ids || []).map(ueid => `<option value="${esc(ueid)}"${String(ueid) === String(viewState.selectedUE) ? ' selected' : ''}>UE ${esc(ueid)}</option>`).join('');
     main.innerHTML = `<section class="panel"><h3>Run Selection</h3>${pageRunSelector('realtimeRunSelect', 'Selected Run', {showRunningBadge: true, runningOnly: false, note: 'Realtime defaults to an active running run when one exists. Stored runs remain selectable for post-run inspection.'})}</section><div class="grid four">${[['Run Status',(live.run || {}).status_text],['ResultOk',(live.summary || {}).result_ok],['RequiredFailureCount',(live.summary || {}).required_failure_count],['Configured UEs',(live.summary || {}).configured_users]].map(x => `<div class="tile metric"><h4>${esc(x[0])}</h4><div class="value">${esc(text(x[1] ?? 'unavailable'))}</div><p>canonical live payload</p></div>`).join('')}</div><section class="panel"><h3>Live UE Metric Explorer</h3><p class="subtle">X-axis defaults to slot. Y-axis metrics come only from the selected run's real serving-trace and waveform trial tables; missing metrics stay unavailable instead of being invented.</p><div class="toolbar"><label>X Axis<select id="liveXAxisSelect">${xAxisOptions}</select></label><label>Primary Y Metrics<select id="liveMetricSelect" multiple>${metricOptions}</select></label><label>Secondary Y<select id="liveSecondaryMetricSelect">${secondaryOptions}</select></label><label>Overlay<select id="liveOverlaySelect"><option value="per_ue_overlay"${viewState.overlayMode === 'per_ue_overlay' ? ' selected' : ''}>Per-UE overlay</option><option value="per_cell_overlay"${viewState.overlayMode === 'per_cell_overlay' ? ' selected' : ''}>Per-cell overlay</option></select></label><label>UE Scope<select id="liveUEScopeSelect"><option value="all_configured_ues"${viewState.scope === 'all_configured_ues' ? ' selected' : ''}>All configured UEs</option><option value="selected_ue_only"${viewState.scope === 'selected_ue_only' ? ' selected' : ''}>Selected UE</option></select></label><label>Selected UE<select id="liveUESelect"${viewState.scope === 'selected_ue_only' ? '' : ' disabled'}>${ueOptions}</select></label><label>Direction<select id="liveDirectionSelect"><option value="all"${viewState.direction === 'all' ? ' selected' : ''}>All</option><option value="DL"${viewState.direction === 'DL' ? ' selected' : ''}>DL</option><option value="UL"${viewState.direction === 'UL' ? ' selected' : ''}>UL</option><option value="channel"${viewState.direction === 'channel' ? ' selected' : ''}>Channel / measurement only</option></select></label><button type="button" id="liveMetricExportBtn">Export Filtered Rows</button></div><div id="liveMetricExplorer" class="chart-box"></div><div id="liveMetricSummary"></div></section><div class="split"><section class="panel"><h3>Frame / Slot / Stage</h3>${objectTable(rt.stage || {}, 'No canonical stage row is available.', {className:'tall-scroll', scrollKey:'realtime-stage'})}<h3>Live Scheduler Grants</h3>${rows([...(rt.pucch_grants || [])], 'No canonical scheduler grant rows are available in this live payload.', {className:'tall-scroll', scrollKey:'realtime-grants'})}</section><section class="panel"><h3>Control / PHY / Channel State</h3>${controlTruthNote()}${objectTable(rt.control_summary || {}, 'No control summary is available.', {className:'tall-scroll', scrollKey:'realtime-control-summary'})}${rows(rt.control_state_preview || [], 'No live control state rows are available.', {className:'tall-scroll', scrollKey:'realtime-control-state'})}${rows(rt.channel_array_consistency_preview || [], 'No channel state rows are available.', {className:'tall-scroll', scrollKey:'realtime-channel-state'})}</section></div>${dataTrialEvidencePanel()}${controlTrialEvidencePanel()}${issueRegistryTable()}<section class="panel"><div class="toolbar"><h3 style="margin:0;">Logs / Event Stream</h3><input id="liveFilter" placeholder="Filter logs" value="${esc(state.filter)}"></div><div class="stream" data-scroll-key="realtime-logs">${logs.map(l => `<div class="stream-item ${/error/i.test(JSON.stringify(l)) ? 'log-error' : /warn/i.test(JSON.stringify(l)) ? 'log-warn' : ''}"><strong>${esc(l.source || l.module || l.created_utc || 'log')}</strong><br>${esc(l.message || l.line_text || l.log_message || JSON.stringify(l))}</div>`).join('') || unavailable('No logs are available for this run yet.')}</div></section>`;
+    const legacyLogPanel = [...main.querySelectorAll('section.panel')].find(panel => {
+      const heading = panel.querySelector('h3');
+      return heading && heading.textContent.trim() === 'Logs / Event Stream';
+    });
+    if (legacyLogPanel) legacyLogPanel.remove();
+    const runPanel = main.querySelector('section.panel');
+    if (runPanel) {
+      runPanel.insertAdjacentHTML('afterend', `${realtimeComponentPanel()}${realtimeUEStatusPanel()}${realtimeLogPanel()}`);
+    }
     renderMetricExplorer('realtime');
   }
   function contractSlug(kind) { const parts = location.pathname.split('/').filter(Boolean); return parts[0] === kind ? (parts[1] || '') : ''; }
@@ -17249,7 +17697,7 @@ window.addEventListener('DOMContentLoaded', function () {
     if (!previous) return incoming;
     if (!incoming) return previous;
     const merged = { ...previous, ...incoming };
-    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug', 'mode_validation'];
+    const stickyKeys = ['tables_all', 'tables_recent', 'tables_summary', 'images_all', 'images_recent', 'output_coverage', 'feature_policy', 'contract_surface', 'output_contract', 'timing', 'map', 'metric_explorer', 'reference_plot_gallery', 'debug', 'mode_validation', 'realtime_dashboard'];
     stickyKeys.forEach((key) => {
       if (incoming[key] === undefined) merged[key] = previous[key];
     });
@@ -17610,12 +18058,18 @@ window.addEventListener('DOMContentLoaded', function () {
       if (!byCell.has(key)) byCell.set(key, []);
       byCell.get(key).push(event);
     });
-    const header = `<div class="rg-label"></div>${slots.map(slot => `<div class="rg-head">${esc(slot.slot)}<span>${esc(slot.tdd || '')}</span></div>`).join('')}`;
+    const header = `<div class="rg-label"></div>${slots.map(slot => {
+      const slotTitle = `${slot.state_label || 'Slot state'}${slot.reason ? ` · ${slot.reason}` : ''} · symbols D/G/U ${slot.dl_symbols ?? '?'} / ${slot.guard_symbols ?? '?'} / ${slot.ul_symbols ?? '?'}`;
+      const activity = slot.activity === 'allocated' ? 'active' : (slot.activity || '');
+      return `<div class="rg-head tdd-${esc(slot.tdd || '?')} activity-${esc(slot.activity || '')}" title="${esc(slotTitle)}">${esc(slot.slot)}<span>${esc(slot.tdd || '?')}${activity ? ` · ${esc(activity)}` : ''}</span></div>`;
+    }).join('')}`;
     const rowsHtml = lanes.map(lane => `<div class="rg-label">${esc(lane)}</div>${slots.map(slot => {
       const cellEvents = byCell.get(`${lane}|${slot.slot}`) || [];
-      const titleText = cellEvents.map(event => `${event.channel} · slot ${event.slot} · PRB ${event.prb_start ?? '?'}+${event.prb_count ?? '?'}`).join('\\n');
+      const titleText = cellEvents.length
+        ? cellEvents.map(event => `${event.channel} · slot ${event.slot} · PRB ${event.prb_start ?? '?'}+${event.prb_count ?? '?'}`).join('\\n')
+        : `${slot.state_label || 'No exported allocation'}${slot.reason ? ` · ${slot.reason}` : ''}`;
       const flavor = /PUSCH|PUCCH|PRACH|SRS|UL/i.test(lane) ? 'ul' : (/PDSCH|PDCCH|PBCH|SSB|PSS|SSS|DL/i.test(lane) ? 'dl' : 'ref');
-      return `<div class="rg-cell ${cellEvents.length ? `active ${flavor}` : ''}" title="${esc(titleText)}">${cellEvents.length ? esc(cellEvents.length) : ''}</div>`;
+      return `<div class="rg-cell tdd-${esc(slot.tdd || '?')} ${cellEvents.length ? `active ${flavor}` : ''}" title="${esc(titleText)}">${cellEvents.length ? esc(cellEvents.length) : ''}</div>`;
     }).join('')}`).join('');
     const emptyNote = events.length
       ? ''
@@ -17786,6 +18240,8 @@ window.addEventListener('DOMContentLoaded', function () {
     if (target.id === 'liveUEScopeSelect') { state.metricExplorer.scope = target.value || 'all_configured_ues'; refreshRealtimeExplorerUI(); return; }
     if (target.id === 'liveUESelect') { state.metricExplorer.selectedUE = target.value || ''; refreshRealtimeExplorerUI(); return; }
     if (target.id === 'liveDirectionSelect') { state.metricExplorer.direction = target.value || 'all'; refreshRealtimeExplorerUI(); return; }
+    if (target.id === 'liveComponentFilter') { state.liveComponentFilter = target.value || 'all'; if (state.page === 'realtime') render({preserveScroll:true}); return; }
+    if (target.id === 'liveLogLevel') { state.liveLogLevel = target.value || 'all'; if (state.page === 'realtime') render({preserveScroll:true}); return; }
     if (target.id === 'analyticsXAxisSelect') { state.analyticsExplorer.xAxis = target.value || 'slot'; refreshAnalyticsExplorerUI(); return; }
     if (target.id === 'analyticsMetricSelect') { state.analyticsExplorer.metrics = selectValues(target); refreshAnalyticsExplorerUI(); return; }
     if (target.id === 'analyticsSecondaryMetricSelect') { state.analyticsExplorer.secondaryMetric = target.value || ''; refreshAnalyticsExplorerUI(); return; }
@@ -18191,6 +18647,11 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
 .phy-table th, .phy-table td { border:1px solid rgba(133,150,178,0.24); padding:6px; vertical-align:top; min-width:92px; }
 .phy-table th { position:sticky; left:0; background:#f7fbff; z-index:2; }
 .phy-slot-head { position:sticky; top:0; background:#eef7fb; z-index:3; }
+.phy-slot-head.tdd-D { background:#e8f3fa; }
+.phy-slot-head.tdd-U { background:#f3eafa; }
+.phy-slot-head.tdd-S { background:#fff4d9; }
+.phy-slot-head.tdd-F { background:#edf7ef; }
+.phy-slot-head.activity-idle { box-shadow:inset 0 -4px 0 #d89b2b; }
 .phy-cell { height:66px; background:rgba(255,255,255,0.78); }
 .phy-cell.tdd-D { background:rgba(15,139,141,0.08); }
 .phy-cell.tdd-U { background:rgba(255,122,89,0.08); }
@@ -18236,7 +18697,7 @@ function renderPhyGrid(payload) {{
     ['Scenario', payload.run?.scenario_id || 'n/a'],
     ['Selected UE', grid.selected_ue_id || 'broadcast/all'],
     ['Grid', `${{grid.nrb || '?'}} RB x ${{grid.symbols_per_slot || '?'}} symbols`],
-    ['TDD', grid.tdd_pattern || 'n/a'],
+    ['TDD', `${{grid.tdd_pattern || 'n/a'}} · ${{grid.tdd_pattern_source || 'unavailable'}}`],
     ['Events', String(grid.event_count || events.length || 0)]
   ].map(([label, value]) => `<div class="metric-card"><div class="metric-value">${{escPhy(value)}}</div><div class="metric-label">${{escPhy(label)}}</div></div>`).join('');
   const loadState = document.getElementById('phyLoadState');
@@ -18246,7 +18707,11 @@ function renderPhyGrid(payload) {{
   if (!lanes.length || !slots.length) {{
     gridTable.innerHTML = '<p class="warning">No grid events are available yet for this run. The view will populate as MATLAB publishes the runtime CSV artifacts.</p>';
   }} else {{
-    const head = `<tr><th class="phy-slot-head">Channel</th>${{slots.map(slot => `<th class="phy-slot-head">Slot ${{escPhy(slot.slot)}}<br><span class="mini-note">${{escPhy(slot.tdd)}}</span></th>`).join('')}}</tr>`;
+    const head = `<tr><th class="phy-slot-head">Channel</th>${{slots.map(slot => {{
+      const slotTitle = `${{slot.state_label || 'Slot state'}}${{slot.reason ? ` · ${{slot.reason}}` : ''}} · symbols D/G/U ${{slot.dl_symbols ?? '?'}} / ${{slot.guard_symbols ?? '?'}} / ${{slot.ul_symbols ?? '?'}}`;
+      const activity = slot.activity === 'allocated' ? 'active' : (slot.activity || '');
+      return `<th class="phy-slot-head tdd-${{escPhy(slot.tdd || '?')}} activity-${{escPhy(slot.activity || '')}}" title="${{escPhy(slotTitle)}}">Slot ${{escPhy(slot.slot)}}<br><span class="mini-note">${{escPhy(slot.tdd || '?')}}${{activity ? ` · ${{escPhy(activity)}}` : ''}}</span></th>`;
+    }}).join('')}}</tr>`;
     const rows = lanes.map(lane => {{
       const cells = slots.map(slot => {{
         const list = byKey.get(`${{lane}}|${{slot.slot}}`) || [];
@@ -18255,7 +18720,8 @@ function renderPhyGrid(payload) {{
           return `<span class="phy-badge ${{eventClass(event)}}" title="${{escPhy(title)}}">${{escPhy(event.channel)}}<span class="phy-mini">UE ${{escPhy(event.ue_id || '-')}} | PRB ${{escPhy(event.prb_start)}}+${{escPhy(event.prb_count)}} | sym ${{escPhy(event.symbol_start)}}+${{escPhy(event.symbol_count)}}</span></span>`;
         }}).join('');
         const more = list.length > 8 ? `<span class="mini-note">+${{list.length - 8}} more</span>` : '';
-        return `<td class="phy-cell tdd-${{escPhy(slot.tdd)}}">${{badges || '<span class="mini-note">-</span>'}}${{more}}</td>`;
+        const emptyTitle = `${{slot.state_label || 'No exported allocation'}}${{slot.reason ? ` · ${{slot.reason}}` : ''}}`;
+        return `<td class="phy-cell tdd-${{escPhy(slot.tdd || '?')}}" title="${{escPhy(list.length ? '' : emptyTitle)}}">${{badges || '<span class="mini-note">-</span>'}}${{more}}</td>`;
       }}).join('');
       return `<tr><th>${{escPhy(lane)}}</th>${{cells}}</tr>`;
     }}).join('');

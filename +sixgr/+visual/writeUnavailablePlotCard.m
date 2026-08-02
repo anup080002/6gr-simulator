@@ -1,5 +1,5 @@
 function writeUnavailablePlotCard(filePath, plotTitle, message)
-%WRITEUNAVAILABLEPLOTCARD Write an explicit unavailable SVG card.
+%WRITEUNAVAILABLEPLOTCARD Write an explicit unavailable PNG card.
 
 filePath = sixgr.visual.unavailableArtifactPath(filePath);
 outputFolder = fileparts(char(filePath));
@@ -17,14 +17,18 @@ text(ax, 0.5, 0.34, char(string(message)), ...
     "HorizontalAlignment", "center", "FontSize", 10, "Interpreter", "none");
 
 % Render beside the destination and publish with a replace operation.  A
-% browser or OneDrive indexer can briefly hold an existing SVG open on
+% browser or OneDrive indexer can briefly hold an existing PNG open on
 % Windows; printing directly to that path then fails before MATLAB has a
 % complete replacement artifact.
 temporaryToken = char(java.util.UUID.randomUUID());
 temporaryPath = string(fullfile(outputFolder, ...
-    "u" + string(temporaryToken(1:8)) + ".svg"));
+    "u" + string(temporaryToken(1:8)) + ".png"));
 temporaryCleanup = onCleanup(@() localDeleteIfPresent(temporaryPath)); %#ok<NASGU>
-print(fig, char(temporaryPath), "-dsvg");
+try
+    exportgraphics(fig, char(temporaryPath), "Resolution", 160);
+catch
+    print(fig, char(temporaryPath), "-dpng", "-r160");
+end
 localPublishWithRetry(temporaryPath, filePath);
 end
 

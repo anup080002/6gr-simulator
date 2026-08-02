@@ -27,9 +27,9 @@ def main() -> None:
         },
         {
             "artifact_id": 11,
-            "logical_path": "reports/image/contract__scheduler-mac-queue-qos-power-control-uci-flow__scheduled-prbs-per-ue-over-time.svg",
-            "artifact_kind": "image_svg",
-            "mime_type": "image/svg+xml",
+            "logical_path": "reports/image/contract__scheduler-mac-queue-qos-power-control-uci-flow__scheduled-prbs-per-ue-over-time.png",
+            "artifact_kind": "image_png",
+            "mime_type": "image/png",
             "byte_size": 1024,
         },
         {

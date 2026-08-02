@@ -50,4 +50,25 @@ for fieldName = stringFields
     end
     T.(char(fieldName)) = repmat(value, n, 1);
 end
+
+% Shared-resource execution is part of the immutable grant contract. Keep
+% its allocation beside the waveform trial so downstream MU validation
+% compares the two actually transmitted members without joining on a
+% report-time scheduler approximation.
+prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
+symbolAllocation = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
+muEnabled = logical(sixgr.util.structGet(grant, "MUMIMOEnabled", false));
+if muEnabled && (isempty(prbSet) || numel(symbolAllocation) ~= 2 || ...
+        any(~isfinite(prbSet(:))) || any(~isfinite(symbolAllocation(:))))
+    error("sixgr:truth:MissingFrozenMUMIMOAllocation", ...
+        "A frozen MU-MIMO grant requires finite PRBSet and [start count] SymbolAllocation values.");
+end
+if ~isempty(prbSet)
+    T.PRBStart = repmat(double(min(prbSet(:))), n, 1);
+    T.PRBCount = repmat(double(numel(unique(prbSet(:)))), n, 1);
+end
+if numel(symbolAllocation) == 2 && all(isfinite(symbolAllocation(:)))
+    T.SymbolStart = repmat(double(symbolAllocation(1)), n, 1);
+    T.NumSymbols = repmat(double(symbolAllocation(2)), n, 1);
+end
 end

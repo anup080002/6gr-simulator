@@ -1,4 +1,4 @@
-function out = runPhase19RepairVerticalSlice(outputRoot)
+function out = runPhase19RepairVerticalSlice(outputRoot, runTag)
 %RUNPHASE19REPAIRVERTICALSLICE Execute the bounded coupled-truth repair gate.
 
 if nargin < 1 || strlength(string(outputRoot)) == 0
@@ -6,28 +6,20 @@ if nargin < 1 || strlength(string(outputRoot)) == 0
         "phase19_repair_vertical_slice_20260801_01");
 end
 outputRoot = char(string(outputRoot));
+if nargin < 2 || strlength(string(runTag)) == 0
+    runTag = "phase19_repair_vertical_slice";
+end
+runTag = char(string(runTag));
 
 scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
     pwd, "simulator", "configs", "scenarios", ...
-    "webgui_sinr_sweep_64x4_mu_mimo_full.yaml"));
-cfg = sixgr.lls6g.buildInternalConfig(scenario, outputRoot);
-cfg.run.numFrames = 20;
-cfg.run.numTTI = 20;
-cfg.channel.snr_dB = 20;
-
-options = struct( ...
-    "LinkDuration_s", 0.010, ...
-    "LinkMaxSimFrames", 20, ...
-    "LinkSNR_dB", 20, ...
-    "LinkSNRGrid_dB", 20, ...
-    "LinkSweepMaxPoints", 1, ...
-    "SaveFigures", false, ...
-    "PersistenceEnabled", true);
-out = sixgr.truth.runWaveformLinkBundle( ...
-    cfg, fullfile(outputRoot, "air_interface"), options);
-
-dl = out.RawTrials.DL;
-ul = out.RawTrials.UL;
+    "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml"));
+scenarioPath = string(scenario.ConfigPath);
+out = sixgr.lls6g.runners.runSingle(scenarioPath, outputRoot, runTag);
+link = sixgr.util.structGet(out.Result, "Link", struct());
+rawTrials = sixgr.util.structGet(link, "RawTrials", struct());
+dl = sixgr.util.structGet(rawTrials, "DL", table());
+ul = sixgr.util.structGet(rawTrials, "UL", table());
 fprintf("VERTICAL ok=%d dl=%d ul=%d\n", out.Ok, height(dl), height(ul));
 assert(height(dl) >= 2 && height(ul) >= 2, ...
     "The coupled truth gate requires at least two real DL and UL trials.");

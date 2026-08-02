@@ -13,7 +13,7 @@ gate = struct( ...
     "UnavailablePath", "");
 
 filePath = string(filePath);
-if endsWith(lower(filePath), "_unavailable.svg")
+if endsWith(lower(filePath), "_unavailable.png")
     return;
 end
 

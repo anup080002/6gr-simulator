@@ -27,7 +27,7 @@ required = [
     "reports/binary/trs_positive_grid.bin"
     "reports/binary/trs_no_signal_grid.bin"
     "reports/figures/trs_resource_grid.png"
-    "reports/figures/trs_tracking_flow.svg"];
+    "reports/figures/trs_tracking_flow.png"];
 for ii = 1:numel(required)
     assert(exist(fullfile(root, required(ii)), "file") == 2, "Missing TRS artifact: %s", required(ii));
 end

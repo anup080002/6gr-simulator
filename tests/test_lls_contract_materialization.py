@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
+
+from PIL import Image
 
 
 REPO_ROOT = Path(__file__).absolute().parents[1]
@@ -32,7 +35,7 @@ def main() -> None:
     assert materializer.chart_contract_image_path(tx_chart) in chart_paths
 
     chart_path = materializer.chart_contract_image_path(tx_chart)
-    assert chart_path.endswith(".svg")
+    assert chart_path.endswith(".png")
     assert "waveform-time-domain-analytics" in chart_path
     assert "tx-waveform" in chart_path
 
@@ -83,6 +86,29 @@ def main() -> None:
     ).decode("utf-8")
     assert "visual_gate=" not in useful_bar_svg
     assert "<rect" in useful_bar_svg
+
+    raster_png = materializer._rasterize_contract_png(  # noqa: SLF001
+        useful_bar_svg.encode("utf-8"),
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/rank-distribution.svg",
+    )
+    assert raster_png.startswith(b"\x89PNG\r\n\x1a\n")
+    with Image.open(io.BytesIO(raster_png)) as raster_image:
+        assert raster_image.format == "PNG"
+        assert raster_image.width >= 640
+        assert raster_image.height >= 360
+
+    jpeg_buffer = io.BytesIO()
+    Image.new("RGB", (32, 24), color=(8, 122, 112)).save(jpeg_buffer, format="JPEG")
+    jpeg_as_png = materializer._rasterize_contract_png(  # noqa: SLF001
+        jpeg_buffer.getvalue(),
+        source_mime_type="image/jpeg",
+        source_logical_path="reports/image/legacy-source.jpeg",
+    )
+    assert jpeg_as_png.startswith(b"\x89PNG\r\n\x1a\n")
+    with Image.open(io.BytesIO(jpeg_as_png)) as converted_image:
+        assert converted_image.format == "PNG"
+        assert converted_image.size == (32, 24)
 
     assert materializer.EXACT_CHART_FAMILY_CONTRACTS["heatmap"]["required_columns"] == ("x_value", "y_value", "z_value")
     assert materializer.EXACT_CHART_FAMILY_CONTRACTS["timeline"]["required_columns"] == ("x_value", "y_value")

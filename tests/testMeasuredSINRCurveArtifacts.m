@@ -135,10 +135,8 @@ for i = 1:size(legacy, 1)
     T = table(repmat(legacy(i, 2), 2, 1), [0; 1], [0.5; 0.25], ...
         'VariableNames', {'chart_name','SNR_dB','MetricValue'});
     writetable(T, fullfile(csvDir, legacy(i, 1) + ".csv"));
-    fid = fopen(fullfile(imgDir, legacy(i, 1) + ".svg"), "w");
-    assert(fid > 0, "Could not create legacy analytics SVG fixture.");
-    cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
-    fwrite(fid, char("<svg><text>" + legacy(i, 2) + "</text><text>Applied AWGN SNR (dB)</text></svg>"));
+    imwrite(uint8(repmat(reshape([8 122 112], 1, 1, 3), 24, 32, 1)), ...
+        fullfile(imgDir, legacy(i, 1) + ".png"));
 end
 end
 
@@ -158,11 +156,10 @@ for i = 1:size(specs, 1)
             ismember("PostEqSINR_dB", string(T.Properties.VariableNames)) && ...
             ~ismember("SNR_dB", string(T.Properties.VariableNames)), ...
             "Analytics CSV must be relabeled to measured PostEq SINR without SNR_dB injection axis: %s", stem);
-        svgPath = fullfile(imgDir, stem + ".svg");
-        assert(exist(svgPath, "file") == 2, "Missing relabeled analytics SVG: %s", stem);
-        txt = string(fileread(svgPath));
-        assert(contains(txt, "Measured PostEq SINR (dB)") && ~contains(txt, "Applied AWGN"), ...
-            "Analytics SVG must relabel the x-axis to measured PostEq SINR: %s", stem);
+        pngPath = fullfile(imgDir, stem + ".png");
+        info = sixgr.visual.inspectVisualArtifactFile(pngPath);
+        assert(exist(pngPath, "file") == 2 && string(info.actual_mime_type) == "image/png", ...
+            "Missing valid relabeled analytics PNG: %s", stem);
     end
 end
 end

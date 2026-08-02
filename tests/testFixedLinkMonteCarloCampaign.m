@@ -199,25 +199,15 @@ if usejava("jvm")
     plotInfo = sixgr.visual.plotFixedSNRSweepCurves(tmp);
     expectedPlots = [
         "reports/image/dl_bler_vs_snr.png"
-        "reports/image/dl_bler_vs_snr.svg"
         "reports/image/ul_bler_vs_snr.png"
-        "reports/image/ul_bler_vs_snr.svg"
         "reports/image/dl_ber_vs_snr.png"
-        "reports/image/dl_ber_vs_snr.svg"
         "reports/image/ul_ber_vs_snr.png"
-        "reports/image/ul_ber_vs_snr.svg"
         "reports/image/dl_throughput_vs_snr.png"
-        "reports/image/dl_throughput_vs_snr.svg"
         "reports/image/ul_throughput_vs_snr.png"
-        "reports/image/ul_throughput_vs_snr.svg"
         "reports/image/measured_sinr_vs_configured_snr.png"
-        "reports/image/measured_sinr_vs_configured_snr.svg"
         "reports/image/fixed_snr_trials_per_point.png"
-        "reports/image/fixed_snr_trials_per_point.svg"
         "reports/image/fixed_snr_ci_width_vs_snr.png"
-        "reports/image/fixed_snr_ci_width_vs_snr.svg"
         "reports/image/fixed_snr_curve_dashboard.png"
-        "reports/image/fixed_snr_curve_dashboard.svg"
         ];
     for relPath = expectedPlots.'
         absPath = fullfile(tmp, strrep(relPath, "/", filesep));
@@ -225,13 +215,13 @@ if usejava("jvm")
     end
     lineage = readtable(fullfile(tmp, "reports", "csv", "fixed_snr_plot_lineage.csv"), "VariableNamingRule", "preserve");
     assert(height(lineage) == numel(expectedPlots), ...
-        "Fixed-SNR plot lineage must contain one row per emitted PNG/SVG plot file.");
+        "Fixed-SNR plot lineage must contain one row per emitted PNG plot file.");
     assert(all(string(lineage.Status) == "rendered"), ...
         "Fixed-SNR plot lineage must report rendered status for every required plot.");
     assert(all(strlength(string(lineage.SourceCSV_SHA256)) == 64), ...
         "Fixed-SNR plot lineage must hash each source CSV.");
     assert(numel(plotInfo.Plots) == numel(expectedPlots), ...
-        "Fixed-SNR plot helper must return every rendered PNG/SVG path.");
+        "Fixed-SNR plot helper must return every rendered PNG path.");
 end
 
 tmp2 = tempname;

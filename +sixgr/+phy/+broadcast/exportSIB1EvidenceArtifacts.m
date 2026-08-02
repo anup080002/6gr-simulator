@@ -118,12 +118,14 @@ paths.CORESET0GridPNG = fullfile(figDir, "sib1_coreset0_resource_grid.png");
 paths.PDCCHMetricPNG = fullfile(figDir, "sib1_pdcch_candidate_metrics.png");
 paths.PDSCHGridPNG = fullfile(figDir, "sib1_pdsch_resource_grid.png");
 paths.PDSCHConstellationPNG = fullfile(figDir, "sib1_pdsch_constellation.png");
-paths.DecodeFlowSVG = fullfile(figDir, "sib1_decode_flow.svg");
+paths.DecodeFlowPNG = fullfile(figDir, "sib1_decode_flow.png");
 localWriteGridFigure(paths.CORESET0GridPNG, tx.SIB1Grid, "SIB1 CORESET0/PDSCH resource grid");
 localWriteCandidateFigure(paths.PDCCHMetricPNG, candidateT);
 localWriteGridFigure(paths.PDSCHGridPNG, tx.SIB1Grid, "SIB1 PDSCH resource grid");
 localWriteGridFigure(paths.PDSCHConstellationPNG, tx.SIB1Grid, "SIB1 equalized constellation lineage grid");
-localWriteSVG(paths.DecodeFlowSVG, logical(result.StrictOk));
+sixgr.visual.writeFlowDiagramPNG(paths.DecodeFlowPNG, "Strict SIB1 evidence flow", ...
+    ["SSB", "PBCH / MIB", "Type0-PDCCH SI-RNTI", "PDSCH / DL-SCH", "SIB1 ASN.1"], ...
+    logical(result.StrictOk));
 
 artifacts = paths;
 artifacts.RowCounts = struct("Recovery", height(trialT), "Candidates", height(candidateT), ...
@@ -366,9 +368,13 @@ function T = localRoundtripTable(runId, txTree, rxTree, equal)
 paths = ["message.c1.systemInformationBlockType1", ...
     "cellAccessRelatedInfo", "servingCellConfigCommon", "uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon"];
 n = numel(paths);
+status = "FAIL";
+if logical(equal)
+    status = "PASS";
+end
 T = table(repmat(runId, n, 1), paths(:), repmat("", n, 1), repmat("", n, 1), ...
     repmat(logical(equal), n, 1), nan(n, 1), nan(n, 1), repmat("anchor_profile_constraint", n, 1), ...
-    repmat(string(ternary(equal, "PASS", "FAIL")), n, 1), ...
+    repmat(status, n, 1), ...
     'VariableNames', {'RunId','IEPath','TxValue','RxValue','Equal','EncodedBitOffsetStart', ...
     'EncodedBitOffsetEnd','ConstraintName','Status'});
 if ~isempty(fieldnames(txTree)) && ~isempty(fieldnames(rxTree))
@@ -446,25 +452,6 @@ ylabel("CRC pass");
 drawnow;
 saveas(fig, pathValue);
 close(fig);
-end
-
-function localWriteSVG(pathValue, strictOk)
-sixgr.util.ensureDir(pathValue);
-status = ternary(strictOk, "PASS", "FAIL");
-txt = sprintf(['<svg xmlns="http://www.w3.org/2000/svg" width="760" height="160">' ...
-    '<rect width="100%%" height="100%%" fill="#f8fafc"/>' ...
-    '<text x="24" y="44" font-family="monospace" font-size="18">SSB -> PBCH/MIB -> Type0-PDCCH SI-RNTI -> PDSCH/DL-SCH -> SIB1 ASN.1</text>' ...
-    '<text x="24" y="92" font-family="monospace" font-size="16">Strict SIB1 evidence: %s</text>' ...
-    '</svg>'], status);
-localWriteText(pathValue, txt);
-end
-
-function out = ternary(cond, a, b)
-if cond
-    out = a;
-else
-    out = b;
-end
 end
 
 function value = localGetStructOrObjectField(obj, fieldName, defaultValue)

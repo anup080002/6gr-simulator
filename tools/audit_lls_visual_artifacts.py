@@ -118,6 +118,11 @@ LOW_INFORMATION_VISUAL_MARKERS = (
     "requires two independent axes",
     "every heatmap cell is zero",
 )
+UNAVAILABLE_VISUAL_SUFFIXES = ("_unavailable.png", "_unavailable.svg")
+
+
+def is_unavailable_visual_path(path: str) -> bool:
+    return str(path or "").strip().lower().endswith(UNAVAILABLE_VISUAL_SUFFIXES)
 
 
 @dataclass
@@ -248,27 +253,29 @@ def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditR
     unavailable_card_visual = (
         is_unavailable_card
         or manifest_status == "rendered_unavailable_card"
-        or image_path.endswith("_unavailable.svg")
+        or is_unavailable_visual_path(image_path)
     )
     source_semantics_required = is_rendered_status(manifest_status) and not unavailable_card_visual and visual_validity != "unavailable"
     normal_rendered = (
         source_semantics_required
         and not is_unavailable_card
         and visual_validity != "unavailable"
-        and not image_path.endswith("_unavailable.svg")
+        and not is_unavailable_visual_path(image_path)
     )
     file_info = inspect_file(run_folder, image_path)
     source_stats = inspect_source_csv(run_folder, source_csv, x_col, y_col)
 
     failures: list[tuple[str, str]] = []
+    if file_info.extension == ".svg" or file_info.actual_mime_type == "image/svg+xml":
+        failures.append(("vector_visual_format_forbidden", "persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input"))
     if file_info.exists and not file_info.signature_ok:
         failures.append((file_info.signature_status, "visual artifact file extension does not match its byte signature"))
     if file_info.extension == ".svg" and file_info.actual_mime_type == "image/png":
         failures.append(("png_bytes_in_svg", ".svg artifact contains PNG bytes"))
-    if is_suppressed_status(manifest_status) and file_info.exists and not image_path.endswith("_unavailable.svg"):
+    if is_suppressed_status(manifest_status) and file_info.exists and not is_unavailable_visual_path(image_path):
         failures.append(("stale_suppressed_normal_artifact", "normal plot file exists but manifest says suppressed/not rendered"))
-    if unavailable_card_visual and not image_path.endswith("_unavailable.svg"):
-        failures.append(("unavailable_card_bad_name", "unavailable visual artifacts must end with _unavailable.svg"))
+    if unavailable_card_visual and not image_path.endswith("_unavailable.png"):
+        failures.append(("unavailable_card_bad_name", "new unavailable visual artifacts must end with _unavailable.png"))
     if unavailable_card_visual and image_path and not file_info.exists:
         failures.append(("unavailable_card_missing", "manifest declares an unavailable visual card but the card file is missing"))
 
@@ -340,7 +347,7 @@ def audit_stale_normal_siblings(run_folder: Path, manifest_row: dict[str, str]) 
     image_path = get_field(manifest_row, "ImagePath", "file_path", "ArtifactPath")
     manifest_status = lower_token(get_field(manifest_row, "PlotRenderStatus", "render_status"))
     is_unavailable_card = parse_bool(get_field(manifest_row, "IsUnavailableCard", "is_unavailable_card"))
-    if not (is_unavailable_card or image_path.endswith("_unavailable.svg") or is_suppressed_status(manifest_status)):
+    if not (is_unavailable_card or is_unavailable_visual_path(image_path) or is_suppressed_status(manifest_status)):
         return []
     image_rel = Path(image_path.replace("\\", "/"))
     stem = image_rel.stem
@@ -374,6 +381,8 @@ def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
     source_csv = companion_contract_csv_path(rel_path)
     source_stats = inspect_source_csv(run_folder, source_csv, "", "") if source_csv else SourceStats()
     failures: list[tuple[str, str]] = []
+    if info.extension == ".svg" or info.actual_mime_type == "image/svg+xml":
+        failures.append(("vector_visual_format_forbidden", "persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input"))
     if not info.signature_ok:
         failures.append((info.signature_status, "unmanifested visual artifact has invalid byte signature"))
     if info.extension == ".svg" and info.actual_mime_type == "image/png":
@@ -576,19 +585,18 @@ def inspect_file(run_folder: Path, rel_path: str) -> FileInfo:
         info.signature_status = "unknown_signature"
     else:
         info.signature_status = "extension_mime_mismatch"
-    if info.actual_mime_type in {"image/svg+xml", "text/html"}:
-        text_prefix = data[:8192].decode("utf-8", errors="ignore").lower()
-        info.contains_low_information_explanation = any(marker in text_prefix for marker in LOW_INFORMATION_VISUAL_MARKERS)
+    text_payload = data[:65536].decode("utf-8", errors="ignore").lower()
+    info.contains_low_information_explanation = any(marker in text_payload for marker in LOW_INFORMATION_VISUAL_MARKERS)
     return info
 
 
 def companion_contract_csv_path(rel_path: str) -> str:
     rel = normalize_rel_path(rel_path)
-    if "/contract__" not in rel or not rel.endswith(".svg"):
+    if "/contract__" not in rel or not rel.endswith((".png", ".svg")):
         return ""
     if "/image/" not in rel:
         return ""
-    return rel.replace("/image/", "/csv/")[:-4] + ".csv"
+    return rel.replace("/image/", "/csv/").rsplit(".", 1)[0] + ".csv"
 
 
 def inventory_visual_files(run_folder: Path) -> Iterable[Path]:

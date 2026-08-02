@@ -182,7 +182,7 @@ paths = [
     string(fullfile(figDir, "trs_frequency_offset_sweep.png"))
     string(fullfile(figDir, "trs_channel_estimation_nmse.png"))
     string(fullfile(figDir, "trs_negative_trial_outcomes.png"))
-    string(fullfile(figDir, "trs_tracking_flow.svg"))];
+    string(fullfile(figDir, "trs_tracking_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
 localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid(:,:,1))));
 rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.trs.exportStrictTRSArtifacts");
@@ -203,9 +203,9 @@ rows(6) = localManifestRow(paths(6), "image/png", "figure", height(ch), "sixgr.p
 neg = result.ArtifactTables.trs_negative_trials;
 localWritePNG(paths(7), localBarImage(double(neg.NegativeExpectedOk)));
 rows(7) = localManifestRow(paths(7), "image/png", "figure", height(neg), "sixgr.phy.trs.exportStrictTRSArtifacts");
-localWriteFlowSVG(paths(8), "Strict TRS tracking flow", ...
+sixgr.visual.writeFlowDiagramPNG(paths(8), "Strict TRS tracking flow", ...
     ["NZP-CSI-RS/TRS grid","Timing estimate","CFO phase slope","nrChannelEstimate","Strict gate"], result.StrictOk);
-rows(8) = localManifestRow(paths(8), "image/svg+xml", "figure", NaN, "sixgr.phy.trs.exportStrictTRSArtifacts");
+rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.trs.exportStrictTRSArtifacts");
 end
 
 function localWritePNG(path, img)
@@ -326,21 +326,6 @@ if x2 < x1 || y2 < y1
 end
 rgb = uint8(reshape(color, 1, 1, 3));
 img(y1:y2, x1:x2, :) = repmat(rgb, y2 - y1 + 1, x2 - x1 + 1, 1);
-end
-
-function localWriteFlowSVG(path, titleText, labels, ok)
-labels = string(labels(:));
-x = round(linspace(35, 700, numel(labels)));
-txt = string(sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="920" height="240"><rect width="920" height="240" fill="white"/><text x="24" y="36" font-family="Arial" font-size="20">%s</text>', char(string(titleText))));
-for ii = 1:numel(labels)
-    txt = txt + sprintf('<rect x="%d" y="84" width="150" height="62" fill="#e8f8f2" stroke="#264"/>', x(ii));
-    txt = txt + sprintf('<text x="%d" y="118" font-family="Arial" font-size="12">%s</text>', x(ii)+10, char(labels(ii)));
-    if ii < numel(labels)
-        txt = txt + sprintf('<line x1="%d" y1="115" x2="%d" y2="115" stroke="#333"/>', x(ii)+150, x(ii+1));
-    end
-end
-txt = txt + sprintf('<text x="740" y="185" font-family="Arial" font-size="12">StrictOk=%d</text></svg>', double(logical(ok)));
-sixgr.util.writeTextFile(path, txt, "MimeType", "image/svg+xml", "ArtifactKind", "image_svg");
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer)

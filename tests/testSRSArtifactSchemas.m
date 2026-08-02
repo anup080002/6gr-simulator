@@ -35,8 +35,8 @@ required = [
     "reports/text/srs_trial_hashes.txt"
     "reports/binary/srs_positive_grid.bin"
     "reports/binary/srs_no_signal_grid.bin"
-    "reports/figures/srs_resource_grid.svg"
-    "reports/figures/srs_strict_flow.svg"];
+    "reports/figures/srs_resource_grid.png"
+    "reports/figures/srs_strict_flow.png"];
 for ii = 1:numel(required)
     assert(exist(fullfile(root, required(ii)), "file") == 2, "Missing SRS artifact: %s", required(ii));
 end
@@ -55,7 +55,7 @@ assert(all(ismember(["NMSEReferenceSource","RIEstimate","TPMIEstimate","RISource
 prb = readtable(fullfile(root, "reference_signals", "csv", "srs_channel_estimation_per_prb.csv"), "TextType", "string");
 assert(height(prb) > 0 && all(ismember(["PRB","Port","EstimateI","EstimateQ","EstimateAvailable"], string(prb.Properties.VariableNames))), ...
     "SRS per-PRB estimator artifact must expose measured PRB/port channel estimates.");
-figs = dir(fullfile(root, "reports", "figures", "srs_*_unavailable.svg"));
+figs = dir(fullfile(root, "reports", "figures", "srs_*_unavailable.png"));
 assert(isempty(figs), "Strict SRS figures must not be unavailable cards.");
 ok = true;
 end

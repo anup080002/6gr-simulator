@@ -97,8 +97,8 @@ fid = fopen(stalePng, "w");
 fprintf(fid, "stale");
 fclose(fid);
 sixgr.visual.enforceVisualArtifactContract(tmp, "StrictMode", true, "CreateUnavailableCards", true);
-unavailableSvg = fullfile(tmp, "reports", "image", "latency_cdf_unavailable.svg");
-assert(exist(stalePng, "file") ~= 2 && exist(unavailableSvg, "file") == 2, ...
+unavailablePng = fullfile(tmp, "reports", "image", "latency_cdf_unavailable.png");
+assert(exist(stalePng, "file") ~= 2 && exist(unavailablePng, "file") == 2, ...
     "Suppressed plots must not leave normal PNG artifacts in strict mode.");
 
 tmpConst = string(tempname);
@@ -111,8 +111,8 @@ writetable(table([0; 1; 0], [0; 0; 1], ...
 staleConstPng = fullfile(tmpConst, "reports", "image", "equalized_constellations.png");
 localWriteBytes(staleConstPng, uint8([137 80 78 71 13 10 26 10 9 9 9 9]));
 sixgr.visual.enforceVisualArtifactContract(tmpConst, "StrictMode", true, "CreateUnavailableCards", true);
-constUnavailableSvg = fullfile(tmpConst, "reports", "image", "equalized_constellations_unavailable.svg");
-assert(exist(staleConstPng, "file") ~= 2 && exist(constUnavailableSvg, "file") == 2, ...
+constUnavailablePng = fullfile(tmpConst, "reports", "image", "equalized_constellations_unavailable.png");
+assert(exist(staleConstPng, "file") ~= 2 && exist(constUnavailablePng, "file") == 2, ...
     "Constellation plots must be suppressed when modulation/layer/SNR lineage is missing.");
 
 tmpConstRuntime = string(tempname);
@@ -157,7 +157,7 @@ sixgr.truth.exportLLSReportingBundle(tmpConstRuntime, runtimeScfg, runtimeCfg, s
 runtimeEqCsv = fullfile(tmpConstRuntime, "reports", "csv", "equalized_constellations.csv");
 runtimeEqPng = fullfile(tmpConstRuntime, "reports", "image", "equalized_constellations.png");
 runtimeWaterfallPng = fullfile(tmpConstRuntime, "reports", "image", "gains_losses_waterfall.png");
-runtimeWaterfallUnavailable = fullfile(tmpConstRuntime, "reports", "image", "gains_losses_waterfall_unavailable.svg");
+runtimeWaterfallUnavailable = fullfile(tmpConstRuntime, "reports", "image", "gains_losses_waterfall_unavailable.png");
 assert(exist(runtimeEqCsv, "file") == 2 && exist(runtimeEqPng, "file") == 2, ...
     "Measured runtime-prefixed constellation samples must produce the equalized constellation CSV and PNG.");
 assert(exist(runtimeWaterfallPng, "file") ~= 2 && exist(runtimeWaterfallUnavailable, "file") == 2, ...
@@ -176,8 +176,8 @@ prov = sixgr.truth.buildLLSReportingProvenanceTables(tmp, struct(), struct(), ta
 latencyRow = prov.plot_manifest(strcmp(string(prov.plot_manifest.PlotId), "latency_cdf"), :);
 assert(~isempty(latencyRow) && strcmp(string(latencyRow.PlotRenderStatus), "rendered_unavailable_card") && ...
     strcmp(string(latencyRow.VisualValidity), "unavailable") && logical(latencyRow.IsUnavailableCard) && ...
-    endsWith(string(latencyRow.ImagePath), "_unavailable.svg"), ...
-    "Unavailable cards must be explicit SVG artifacts with no stale normal image.");
+    endsWith(string(latencyRow.ImagePath), "_unavailable.png"), ...
+    "Unavailable cards must be explicit PNG artifacts with no stale normal image.");
 
 tmpIntegrity = string(tempname);
 cleanupTmpIntegrity = onCleanup(@() localRemoveFolder(tmpIntegrity)); %#ok<NASGU>
@@ -193,8 +193,8 @@ pngAsSvgRow = sixgr.visual.writePlotManifestRow( ...
     "PlotType", "relation", "PlotRenderStatus", "rendered_real_plot", ...
     "CountsAsRealPlot", true, "VisualValidity", "real_lls_evidence");
 integrityT = sixgr.visual.verifyVisualArtifacts(tmpIntegrity, struct2table(pngAsSvgRow));
-assert(any(~logical(integrityT.IntegrityOk) & string(integrityT.FailureCode) == "extension_mime_mismatch"), ...
-    "The visual artifact verifier must fail PNG bytes written with a .svg extension.");
+assert(any(~logical(integrityT.IntegrityOk) & string(integrityT.FailureCode) == "vector_visual_format_forbidden"), ...
+    "The visual artifact verifier must fail every persisted .svg path, including PNG bytes hidden under that extension.");
 
 tmpStale = string(tempname);
 cleanupTmpStale = onCleanup(@() localRemoveFolder(tmpStale)); %#ok<NASGU>
@@ -214,15 +214,16 @@ tmpCard = string(tempname);
 cleanupTmpCard = onCleanup(@() localRemoveFolder(tmpCard)); %#ok<NASGU>
 mkdir(fullfile(tmpCard, "reports", "image"));
 sixgr.visual.writeUnavailablePlotCard(fullfile(tmpCard, "reports", "image", "good_card.png"), "good_card", "not enough runtime evidence");
-goodCardPath = fullfile(tmpCard, "reports", "image", "good_card_unavailable.svg");
+goodCardPath = fullfile(tmpCard, "reports", "image", "good_card_unavailable.png");
 goodCardInfo = sixgr.visual.inspectVisualArtifactFile(goodCardPath);
-assert(exist(goodCardPath, "file") == 2 && strcmp(string(goodCardInfo.actual_mime_type), "image/svg+xml"), ...
-    "Unavailable cards must be written as real SVG XML artifacts ending _unavailable.svg.");
+assert(exist(goodCardPath, "file") == 2 && strcmp(string(goodCardInfo.actual_mime_type), "image/png"), ...
+    "Unavailable cards must be written as real PNG artifacts ending _unavailable.png.");
+firstCardHash = string(goodCardInfo.sha256);
 sixgr.visual.writeUnavailablePlotCard(fullfile(tmpCard, "reports", "image", "good_card.png"), "good_card", "replacement evidence unavailable");
 replacedCardInfo = sixgr.visual.inspectVisualArtifactFile(goodCardPath);
-assert(exist(goodCardPath, "file") == 2 && strcmp(string(replacedCardInfo.actual_mime_type), "image/svg+xml") && ...
-        contains(string(fileread(goodCardPath)), "replacement evidence unavailable"), ...
-    "Unavailable-card publication must atomically replace an existing SVG artifact.");
+assert(exist(goodCardPath, "file") == 2 && strcmp(string(replacedCardInfo.actual_mime_type), "image/png") && ...
+        string(replacedCardInfo.sha256) ~= firstCardHash, ...
+    "Unavailable-card publication must atomically replace an existing PNG artifact.");
 badCardPath = fullfile(tmpCard, "reports", "image", "bad_card.svg");
 localWriteText(badCardPath, "<svg xmlns=""http://www.w3.org/2000/svg""><text>Unavailable</text></svg>");
 badCardRow = sixgr.visual.writePlotManifestRow( ...
@@ -231,8 +232,23 @@ badCardRow = sixgr.visual.writePlotManifestRow( ...
     "PlotType", "card", "PlotRenderStatus", "rendered_unavailable_card", ...
     "IsUnavailableCard", true, "CountsAsRealPlot", false, "VisualValidity", "unavailable");
 badCardIntegrityT = sixgr.visual.verifyVisualArtifacts(tmpCard, struct2table(badCardRow));
-assert(any(~logical(badCardIntegrityT.IntegrityOk) & string(badCardIntegrityT.FailureCode) == "bad_unavailable_card_name"), ...
-    "Unavailable cards must fail integrity unless the artifact name ends with _unavailable.svg.");
+assert(any(~logical(badCardIntegrityT.IntegrityOk) & string(badCardIntegrityT.FailureCode) == "vector_visual_format_forbidden"), ...
+    "SVG unavailable cards must fail the raster-only visual policy.");
+
+tmpRedirect = string(tempname);
+cleanupTmpRedirect = onCleanup(@() localRemoveFolder(tmpRedirect)); %#ok<NASGU>
+mkdir(fullfile(tmpRedirect, "reports", "image"));
+legacySvgRequest = fullfile(tmpRedirect, "reports", "image", "legacy_request.svg");
+fig = figure("Visible", "off", "Color", "w");
+cleanupRedirectFig = onCleanup(@() close(fig)); %#ok<NASGU>
+plot([0 1 2], [0.2 0.5 0.9]);
+actualRasterPath = string(sixgr.util.exportFigureArtifact(fig, legacySvgRequest));
+clear cleanupRedirectFig;
+redirectedPng = fullfile(tmpRedirect, "reports", "image", "legacy_request.png");
+redirectedInfo = sixgr.visual.inspectVisualArtifactFile(redirectedPng);
+assert(actualRasterPath == string(redirectedPng) && exist(legacySvgRequest, "file") ~= 2 && ...
+        exist(redirectedPng, "file") == 2 && string(redirectedInfo.actual_mime_type) == "image/png", ...
+    "Legacy SVG export requests must persist a real PNG and must not leave an SVG file.");
 
 tmpSNR = string(tempname);
 cleanupTmpSNR = onCleanup(@() localRemoveFolder(tmpSNR)); %#ok<NASGU>
@@ -245,7 +261,7 @@ cleanupFig = onCleanup(@() close(fig)); %#ok<NASGU>
 plot([0 1 2], [0.8 0.5 0.2]);
 sixgr.util.exportFigureArtifact(fig, snrPng);
 clear cleanupFig;
-snrUnavailable = fullfile(tmpSNR, "reports", "image", "bler_vs_snr_unavailable.svg");
+snrUnavailable = fullfile(tmpSNR, "reports", "image", "bler_vs_snr_unavailable.png");
 assert(exist(snrPng, "file") ~= 2 && exist(snrUnavailable, "file") == 2, ...
     "An empty controlled SNR sweep must not produce a normal BLER-vs-SNR PNG.");
 

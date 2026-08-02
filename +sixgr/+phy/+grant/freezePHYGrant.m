@@ -810,36 +810,7 @@ end
 end
 
 function nPorts = localResolveDLLogicalPortCount(cfg, grant, nLayers)
-nLayers = max(1, round(double(nLayers)));
-% A finalized MU grant may require more aggregate logical ports than one
-% user's configured layer ceiling (for example, two rank-2 users need four
-% disjoint DM-RS/baseband ports). The explicit scheduler grant is therefore
-% authoritative when present; the single-user config remains the fallback.
-grantPorts = localFirstFiniteScalar( ...
-    sixgr.util.structGet(grant, "NumLogicalPorts", []), ...
-    sixgr.util.structGet(grant, "PortCount", []), NaN);
-if isfinite(grantPorts) && grantPorts <= localMaxNRLogicalPDSCHPorts()
-    nPorts = localPositiveInteger(grantPorts, nLayers);
-    return;
-end
-configuredPorts = localFirstFiniteScalar( ...
-    sixgr.util.structGet(cfg, "phy.maxDLLayers", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.maxLayers", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.nPorts", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.numPorts", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.nPorts", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.NumAntennaPorts", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.numAntennaPorts", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.numLayers", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", []), NaN);
-if isfinite(configuredPorts)
-    if configuredPorts <= localMaxNRLogicalPDSCHPorts()
-        nPorts = localPositiveInteger(configuredPorts, nLayers);
-        return;
-    end
-end
-
-nPorts = nLayers;
+    nPorts = sixgr.phy.grant.resolveDLLogicalPortCount(cfg, grant, nLayers);
 end
 
 function nPorts = localMaxNRLogicalPDSCHPorts()

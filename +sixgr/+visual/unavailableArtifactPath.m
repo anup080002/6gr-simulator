@@ -4,9 +4,9 @@ function out = unavailableArtifactPath(filePath)
 filePath = string(filePath);
 [folder, name] = fileparts(filePath);
 if endsWith(name, "_unavailable")
-    out = fullfile(folder, name + ".svg");
+    out = fullfile(folder, name + ".png");
 else
-    out = fullfile(folder, name + "_unavailable.svg");
+    out = fullfile(folder, name + "_unavailable.png");
 end
 out = string(out);
 end

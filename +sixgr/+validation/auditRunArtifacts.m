@@ -2,7 +2,7 @@ function audit = auditRunArtifacts(runFolder, varargin)
 %AUDITRUNARTIFACTS Recursively audit CSV and image artifacts for a run.
 %
 %   audit = sixgr.validation.auditRunArtifacts(runFolder) scans every CSV,
-%   PNG, JPG, JPEG, and SVG under the run folder, overlays required
+%   PNG, JPG, JPEG, and legacy SVG files under the run folder, overlays required
 %   run-class-specific artifacts, and writes:
 %     reports/csv/all_csv_artifact_audit.csv
 %     reports/csv/all_image_artifact_audit.csv
@@ -325,6 +325,12 @@ row.sha256 = localFileSHA256(row.path);
 
 [~, ~, ext] = fileparts(char(row.path));
 ext = lower(string(ext));
+if ext == ".svg"
+    row.status = "fail";
+    row.failure_code = "vector_visual_format_forbidden";
+    row.first_issue = "Persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input.";
+    return;
+end
 if any(ext == [".png", ".jpg", ".jpeg"])
     [imageInfo, reason] = localAnalyzeRasterImage(row.path);
 else

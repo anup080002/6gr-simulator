@@ -955,7 +955,11 @@ methods(Static, Access=private)
         end
         state.CurrentDirection = direction;
         grants = repmat(struct(), 0, 1);
-        info = struct("Direction", char(direction), "ActiveUsers", 0, "GrantedUsers", 0, "GrantCount", 0, "QueueBits", 0);
+        info = struct("Direction", char(direction), "ActiveUsers", 0, ...
+            "GrantedUsers", 0, "GrantCount", 0, "QueueBits", 0, ...
+            "SchedulerDecisionRows", 0, "NoGrantReason", "");
+        decisionRowsBefore = height(sixgr.util.structGet( ...
+            state, "SchedulerDecisionTable", table()));
         slotDLAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true));
         slotULAllowed = logical(sixgr.util.structGet(state, "CurrentSlotULAllowed", true));
         if (direction == "DL" && ~slotDLAllowed) || (direction == "UL" && ~slotULAllowed)
@@ -1004,10 +1008,16 @@ methods(Static, Access=private)
             end
             if sixgr.truth.CoupledTruthRuntime.shouldDeferConservativeBootstrapCell(state, direction, cellId, ueStates)
                 state = sixgr.truth.CoupledTruthRuntime.recordConservativeBootstrapCellDeferral(state, ueStates);
+                info.ConservativeBootstrapDeferredCells = double(sixgr.util.structGet( ...
+                    info, "ConservativeBootstrapDeferredCells", 0)) + 1;
+                info.NoGrantReason = "conservative_intercell_bootstrap_reuse_guard";
                 continue;
             end
             scheduler = sixgr.truth.CoupledTruthRuntime.schedulerForDirection(state, direction, cellId);
             if isempty(scheduler)
+                info.MissingSchedulerCells = double(sixgr.util.structGet( ...
+                    info, "MissingSchedulerCells", 0)) + 1;
+                info.NoGrantReason = "scheduler_instance_unavailable";
                 continue;
             end
             % Runtime state exposes canonical slots one-based to MATLAB
@@ -1033,6 +1043,7 @@ methods(Static, Access=private)
                         info.ResourceUnavailableReason = char(string( ...
                             timingDecision.ReasonCode));
                         info.TimingDecision = timingDecision;
+                        info.NoGrantReason = char(string(timingDecision.ReasonCode));
                         continue;
                     end
                     error("sixgr:SchedulerBase:TimingDecisionRejected", ...
@@ -1147,6 +1158,7 @@ methods(Static, Access=private)
                         "ExactPHYInfeasibilityReason", ...
                         sixgr.util.structGet(grant, "GrantBlocker", ...
                         "exact_phy_feasibility_rejected"))));
+                    info.NoGrantReason = char(string(info.LastExactPHYRejectionReason));
                     continue;
                 end
                 grantedUsers(end + 1, 1) = double(ueIdx); %#ok<AGROW>
@@ -1250,6 +1262,26 @@ methods(Static, Access=private)
         info.GrantedUsers = numel(unique(grantedUsers));
         info.GrantCount = nGrant;
         info.QueueBits = queueBits;
+        info.SchedulerDecisionRows = max(0, height(sixgr.util.structGet( ...
+            state, "SchedulerDecisionTable", table())) - decisionRowsBefore);
+        if nGrant > 0
+            info.NoGrantReason = "";
+        elseif strlength(strtrim(string(sixgr.util.structGet(info, ...
+                "NoGrantReason", "")))) == 0
+            resourceReason = strtrim(string(sixgr.util.structGet(info, ...
+                "ResourceUnavailableReason", "")));
+            if strlength(resourceReason) > 0
+                info.NoGrantReason = char(resourceReason);
+            elseif activeUsers < 1
+                info.NoGrantReason = "no_active_eligible_users";
+            elseif queueBits <= 0
+                info.NoGrantReason = "no_queued_data";
+            elseif info.SchedulerDecisionRows < 1
+                info.NoGrantReason = "scheduler_produced_no_decision_rows";
+            else
+                info.NoGrantReason = "scheduler_selected_no_executable_grant";
+            end
+        end
         state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceSchedule(state, direction, info);
     end
 
@@ -9016,14 +9048,30 @@ methods(Static, Access=private)
             traceT.ULGrantedUsers(rowIdx) = double(sixgr.util.structGet(info, "GrantedUsers", 0));
             traceT.ULGrantCount(rowIdx) = double(sixgr.util.structGet(info, "GrantCount", 0));
             traceT.ULQueueBits(rowIdx) = double(sixgr.util.structGet(info, "QueueBits", 0));
-            traceT.ULStatus(rowIdx) = "scheduled";
+            traceT.ULSchedulerDecisionRows(rowIdx) = double(sixgr.util.structGet( ...
+                info, "SchedulerDecisionRows", 0));
+            traceT.ULNoGrantReason(rowIdx) = string(sixgr.util.structGet( ...
+                info, "NoGrantReason", ""));
+            if traceT.ULGrantCount(rowIdx) > 0
+                traceT.ULStatus(rowIdx) = "granted";
+            else
+                traceT.ULStatus(rowIdx) = "idle_no_grant";
+            end
         else
             traceT.DLScheduled(rowIdx) = true;
             traceT.DLActiveUsers(rowIdx) = double(sixgr.util.structGet(info, "ActiveUsers", 0));
             traceT.DLGrantedUsers(rowIdx) = double(sixgr.util.structGet(info, "GrantedUsers", 0));
             traceT.DLGrantCount(rowIdx) = double(sixgr.util.structGet(info, "GrantCount", 0));
             traceT.DLQueueBits(rowIdx) = double(sixgr.util.structGet(info, "QueueBits", 0));
-            traceT.DLStatus(rowIdx) = "scheduled";
+            traceT.DLSchedulerDecisionRows(rowIdx) = double(sixgr.util.structGet( ...
+                info, "SchedulerDecisionRows", 0));
+            traceT.DLNoGrantReason(rowIdx) = string(sixgr.util.structGet( ...
+                info, "NoGrantReason", ""));
+            if traceT.DLGrantCount(rowIdx) > 0
+                traceT.DLStatus(rowIdx) = "granted";
+            else
+                traceT.DLStatus(rowIdx) = "idle_no_grant";
+            end
         end
         traceT.TraceStatus(rowIdx) = sixgr.truth.CoupledTruthRuntime.slotTraceStatus(traceT(rowIdx, :));
         state.RunState = sixgr.truth.CoupledTruthRuntime.refreshRunState(state);
@@ -9332,6 +9380,8 @@ methods(Static, Access=private)
             rowIdx = height(traceT);
         end
         traceT.SpecialSlotActive(rowIdx) = logical(sixgr.util.structGet(state, "CurrentSlotIsSpecial", false));
+        traceT.SlotDuplexLabel(rowIdx) = string(sixgr.util.structGet( ...
+            state, "CurrentSlotDuplexLabel", ""));
         traceT.DLSymbolStart(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotDLSymbolStart", 0));
         traceT.DLNumSymbols(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 14));
         traceT.GuardSymbolStart(rowIdx) = double(sixgr.util.structGet(state, "CurrentSlotGuardSymbolStart", 14));
@@ -9372,7 +9422,7 @@ methods(Static, Access=private)
             "ConfiguredSNR_dB", NaN, "ConfiguredSNRSource", "", ...
             "CurrentSNR_dB", NaN, "CurrentSNRSource", "", "CurrentSNRValueRole", "", "CurrentSNRValueStatus", "", ...
             "SNR_dB", NaN, "SweepPointIndex", NaN, "SweepPointCount", NaN, ...
-            "SpecialSlotActive", false, ...
+            "SlotDuplexLabel", "", "SpecialSlotActive", false, ...
             "DLSymbolStart", 0, "DLNumSymbols", 14, ...
             "GuardSymbolStart", 14, "GuardNumSymbols", 0, ...
             "ULSymbolStart", 0, "ULNumSymbols", 14, ...
@@ -9382,6 +9432,8 @@ methods(Static, Access=private)
             "DLActiveUsers", 0, "ULActiveUsers", 0, ...
             "DLGrantedUsers", 0, "ULGrantedUsers", 0, ...
             "DLGrantCount", 0, "ULGrantCount", 0, ...
+            "DLSchedulerDecisionRows", 0, "ULSchedulerDecisionRows", 0, ...
+            "DLNoGrantReason", "", "ULNoGrantReason", "", ...
             "DLExecutedGrantCount", 0, "ULExecutedGrantCount", 0, ...
             "DLTrialRows", 0, "ULTrialRows", 0, ...
             "DLSuccessCount", 0, "ULSuccessCount", 0, ...

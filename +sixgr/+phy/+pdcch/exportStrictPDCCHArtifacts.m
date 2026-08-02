@@ -161,8 +161,8 @@ paths = [
     string(fullfile(figDir, "pdcch_wrong_rnti_rejections.png"))
     string(fullfile(figDir, "pdcch_false_alarm_probability.png"))
     string(fullfile(figDir, "pdcch_low_snr_detection_probability.png"))
-    string(fullfile(figDir, "pdcch_decode_flow.svg"))
-    string(fullfile(figDir, "pdcch_dci_to_grant_flow.svg"))];
+    string(fullfile(figDir, "pdcch_decode_flow.png"))
+    string(fullfile(figDir, "pdcch_dci_to_grant_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
 localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid(:,:,1))));
 rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
@@ -178,10 +178,10 @@ rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.pdcc
 ls = result.ArtifactTables.pdcch_low_snr_sweep;
 localWritePNG(paths(5), localLineImage(double(ls.SNRdB), double(ls.DetectionProbability)));
 rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
-localWriteFlowSVG(paths(6), "Strict PDCCH blind decode", ["PDCCH waveform","CORESET/search-space candidates","RNTI CRC + DCI decode","Score after decode"], result.StrictOk);
-rows(6) = localManifestRow(paths(6), "image/svg+xml", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
-localWriteFlowSVG(paths(7), "PDCCH DCI to grant flow", ["Decoded DCI bits","Field parser","Grant validator","PDSCH/PUSCH reference ID"], result.StrictOk);
-rows(7) = localManifestRow(paths(7), "image/svg+xml", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+sixgr.visual.writeFlowDiagramPNG(paths(6), "Strict PDCCH blind decode", ["PDCCH waveform","CORESET/search-space candidates","RNTI CRC + DCI decode","Score after decode"], result.StrictOk);
+rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+sixgr.visual.writeFlowDiagramPNG(paths(7), "PDCCH DCI to grant flow", ["Decoded DCI bits","Field parser","Grant validator","PDSCH/PUSCH reference ID"], result.StrictOk);
+rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
 end
 
 function localWritePNG(path, img)
@@ -302,21 +302,6 @@ for c = 1:3
     plane(sub2ind(size(plane), rows, cols)) = uint8(color(c));
     img(:,:,c) = plane;
 end
-end
-
-function localWriteFlowSVG(path, titleText, labels, ok)
-labels = string(labels(:));
-x = [40 250 460 670];
-txt = string(sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="230"><rect width="900" height="230" fill="white"/><text x="24" y="36" font-family="Arial" font-size="20">%s</text>', char(string(titleText))));
-for ii = 1:numel(labels)
-    txt = txt + sprintf('<rect x="%d" y="84" width="165" height="62" fill="#e8f4ff" stroke="#245"/>', x(ii));
-    txt = txt + sprintf('<text x="%d" y="118" font-family="Arial" font-size="13">%s</text>', x(ii)+14, char(labels(ii)));
-    if ii < numel(labels)
-        txt = txt + sprintf('<line x1="%d" y1="115" x2="%d" y2="115" stroke="#333"/>', x(ii)+165, x(ii+1));
-    end
-end
-txt = txt + sprintf('<text x="725" y="170" font-family="Arial" font-size="12">StrictOk=%d</text></svg>', double(logical(ok)));
-sixgr.util.writeTextFile(path, txt, "MimeType", "image/svg+xml", "ArtifactKind", "image_svg");
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer)

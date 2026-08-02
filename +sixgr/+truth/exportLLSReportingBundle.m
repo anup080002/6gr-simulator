@@ -366,7 +366,7 @@ for i = find(aliasMask(:).')
         continue;
     end
     [folderPart, baseName, ~] = fileparts(char(rel));
-    cardRel = localPortablePath(fullfile(folderPart, string(baseName) + "_unavailable.svg"));
+    cardRel = localPortablePath(fullfile(folderPart, string(baseName) + "_unavailable.png"));
     cardAbs = fullfile(runFolder, strrep(char(cardRel), '/', filesep));
     targetAbs = fullfile(runFolder, strrep(char(rel), '/', filesep));
     if exist(targetAbs, "file") == 2 || exist(cardAbs, "file") ~= 2

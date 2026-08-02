@@ -95,11 +95,14 @@ end
 function row = localApplyManifestRules(row)
 status = lower(strtrim(string(row.PlotRenderStatus)));
 isSuppressed = any(status == ["suppressed","source_csv_missing","not_rendered","invalid_stale_artifact"]) || contains(status, "suppressed");
-if row.IsUnavailableCard
-    if ~endsWith(lower(string(row.ArtifactPath)), "_unavailable.svg")
-        row = localFail(row, "bad_unavailable_card_name", "Unavailable visual cards must end with _unavailable.svg.");
-    elseif row.ActualMimeType ~= "image/svg+xml"
-        row = localFail(row, "unavailable_card_mime_mismatch", "Unavailable visual card is not SVG XML.");
+if lower(string(row.Extension)) == ".svg" || lower(string(row.ActualMimeType)) == "image/svg+xml"
+    row = localFail(row, "vector_visual_format_forbidden", ...
+        "Persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input.");
+elseif row.IsUnavailableCard
+    if ~endsWith(lower(string(row.ArtifactPath)), "_unavailable.png")
+        row = localFail(row, "bad_unavailable_card_name", "Unavailable visual cards must end with _unavailable.png.");
+    elseif row.ActualMimeType ~= "image/png"
+        row = localFail(row, "unavailable_card_mime_mismatch", "Unavailable visual card is not a valid PNG image.");
     elseif row.IntegrityOk
         row.FailureCode = "";
         row.FailureReason = "";
@@ -116,10 +119,13 @@ end
 end
 
 function row = localApplyFileRules(row)
-if ~row.IntegrityOk
+if lower(string(row.Extension)) == ".svg" || lower(string(row.ActualMimeType)) == "image/svg+xml"
+    row = localFail(row, "vector_visual_format_forbidden", ...
+        "Persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input.");
+elseif ~row.IntegrityOk
     row = localFail(row, string(row.FailureCode), string(row.FailureReason));
-elseif endsWith(lower(string(row.ArtifactPath)), "_unavailable.svg") && row.ActualMimeType ~= "image/svg+xml"
-    row = localFail(row, "unavailable_card_mime_mismatch", "Unavailable visual card is not SVG XML.");
+elseif endsWith(lower(string(row.ArtifactPath)), "_unavailable.png") && row.ActualMimeType ~= "image/png"
+    row = localFail(row, "unavailable_card_mime_mismatch", "Unavailable visual card is not a valid PNG image.");
 end
 end
 

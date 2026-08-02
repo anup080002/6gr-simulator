@@ -38,7 +38,7 @@ assert(all(ismember(["StageName","Direction","WaveformSource","RuntimeTransportM
     "ra_runtime_stage_waveforms.csv schema is missing runtime transport evidence columns.");
 figDir = fullfile(tmp, "reports", "figures");
 figs = ["ra_procedure_timeline.png","msg1_prach_correlation.png","msg2_rar_pdcch_candidates.png", ...
-    "msg3_pusch_constellation.png","msg4_contention_resolution_flow.svg","ra_collision_outcome.png"];
+    "msg3_pusch_constellation.png","msg4_contention_resolution_flow.png","ra_collision_outcome.png"];
 for ii = 1:numel(figs)
     assert(exist(fullfile(figDir, figs(ii)), "file") == 2, "Missing RA figure: %s", figs(ii));
 end

@@ -14,7 +14,11 @@ fprintf(fid, "%s", ['{' ...
     '"inherits":["' strrep(baseScenario, '\', '\\') '"],' ...
     '"meta":{"scenario_id":"lls_report_bundle","description":"report bundle smoke","version":"1","owner":"test","maturity_tag":"smoke"},' ...
     '"simulation":{"n_frames":4,"n_slots":4,"monte_carlo_iterations":2,"snr_sweep_offsets_db":[-12,0],"random_seed":19},' ...
-    '"pdsch":{"execution_profile":"scheduler_truth","mapping_type":"A","start_symbol":2,"num_symbols":12},' ...
+    '"bwp":{"dl":{"bwp_id":0,"direction":"DL","n_start_bwp":0,"n_size_bwp":273,"scs_khz":30,"cp_type":"normal","active":true},' ...
+    '"ul":{"bwp_id":0,"direction":"UL","n_start_bwp":0,"n_size_bwp":273,"scs_khz":30,"cp_type":"normal","active":true}},' ...
+    '"pdsch":{"execution_profile":"scheduler_truth","mapping_type":"A","start_symbol":2,"num_symbols":12,"prb_start":0,"num_prb":273},' ...
+    '"pusch":{"mapping_type":"A","start_symbol":0,"num_symbols":14,"prb_start":0,"num_prb":273},' ...
+    '"pdcch":{"start_symbol":0,"num_symbols":2},' ...
     '"channels":{"doppler_hz":30},' ...
     '"reference_signals":{"trs_enabled":true},' ...
     '"impairments":{"cfo_hz":40,"timing_offset_samples":16},' ...
@@ -49,28 +53,28 @@ mustExist = {
     fullfile(runFolder, "reports", "csv", "cfo_to_tracking_traces.csv")
     fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv")
     fullfile(runFolder, "reports", "csv", "ai_confidence_trace.csv")
-    fullfile(runFolder, "reports", "image", "bler_vs_snr_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "bler_vs_sinr_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "throughput_vs_snr_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "nmse_vs_snr_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "ber_vs_sinr_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "ber_vs_bler_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "ber_vs_ecno_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "bler_vs_ecno_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "gains_losses_waterfall_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "papr_ccdf_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "bler_vs_snr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_sinr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "throughput_vs_snr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "nmse_vs_snr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_sinr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_bler_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_ecno_unavailable.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_ecno_unavailable.png")
+    fullfile(runFolder, "reports", "image", "gains_losses_waterfall_unavailable.png")
+    fullfile(runFolder, "reports", "image", "papr_ccdf_unavailable.png")
     fullfile(runFolder, "reports", "image", "latency_cdf.png")
-    fullfile(runFolder, "reports", "image", "access_delay_cdf_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "energy_vs_throughput_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "access_delay_cdf_unavailable.png")
+    fullfile(runFolder, "reports", "image", "energy_vs_throughput_unavailable.png")
     fullfile(runFolder, "reports", "image", "complexity_vs_gain.png")
     fullfile(runFolder, "reports", "image", "equalized_constellations.png")
     fullfile(runFolder, "reports", "image", "llr_histograms.png")
     fullfile(runFolder, "reports", "image", "cfo_to_tracking_traces.png")
     fullfile(runFolder, "reports", "image", "prach_correlation_traces.png")
-    fullfile(runFolder, "reports", "image", "ai_confidence_trace_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi_unavailable.svg")
-    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "ai_confidence_trace_unavailable.png")
+    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi_unavailable.png")
+    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi_unavailable.png")
+    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi_unavailable.png")
     fullfile(runFolder, "reports", "automatic_markdown_summary.md")
     fullfile(runFolder, "reports", "executive_summary.md")
     fullfile(runFolder, "reports", "technical_report.md")
@@ -117,10 +121,10 @@ mustNotExist = {
     fullfile(runFolder, "reports", "image", "bler_vs_ecno.png")
     fullfile(runFolder, "reports", "image", "gains_losses_waterfall.png")
     fullfile(runFolder, "reports", "image", "papr_ccdf.png")
-    fullfile(runFolder, "reports", "image", "latency_cdf_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "latency_cdf_unavailable.png")
     fullfile(runFolder, "reports", "image", "access_delay_cdf.png")
     fullfile(runFolder, "reports", "image", "energy_vs_throughput.png")
-    fullfile(runFolder, "reports", "image", "prach_correlation_traces_unavailable.svg")
+    fullfile(runFolder, "reports", "image", "prach_correlation_traces_unavailable.png")
     fullfile(runFolder, "reports", "image", "ai_confidence_trace.png")
     fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi.png")
     fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi.png")
@@ -128,7 +132,7 @@ mustNotExist = {
     };
 for i = 1:numel(mustNotExist)
     assert(exist(mustNotExist{i}, "file") ~= 2, ...
-        "Strict visual artifact gate must not leave stale normal PNG/SVG for suppressed plot: %s", mustNotExist{i});
+        "Strict visual artifact gate must not leave a stale normal raster image for a suppressed plot: %s", mustNotExist{i});
 end
 
 catalogPath = fullfile(pwd, "simulator", "configs", "defaults", "lls_result_output_catalog.yaml");

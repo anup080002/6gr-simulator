@@ -307,81 +307,76 @@ end
 
 function rows = localWriteFigures(figDir, result)
 paths = [
-    string(fullfile(figDir, "srs_resource_grid.svg"))
-    string(fullfile(figDir, "srs_detection_metric_by_trial.svg"))
-    string(fullfile(figDir, "srs_coverage_summary.svg"))
-    string(fullfile(figDir, "srs_channel_estimation_nmse.svg"))
-    string(fullfile(figDir, "srs_low_snr_sweep.svg"))
-    string(fullfile(figDir, "srs_timing_offset_sweep.svg"))
-    string(fullfile(figDir, "srs_negative_trial_outcomes.svg"))
-    string(fullfile(figDir, "srs_strict_flow.svg"))];
+    string(fullfile(figDir, "srs_resource_grid.png"))
+    string(fullfile(figDir, "srs_detection_metric_by_trial.png"))
+    string(fullfile(figDir, "srs_coverage_summary.png"))
+    string(fullfile(figDir, "srs_channel_estimation_nmse.png"))
+    string(fullfile(figDir, "srs_low_snr_sweep.png"))
+    string(fullfile(figDir, "srs_timing_offset_sweep.png"))
+    string(fullfile(figDir, "srs_negative_trial_outcomes.png"))
+    string(fullfile(figDir, "srs_strict_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
 gridPower = abs(result.PositiveGrid(:,:,1));
-localWriteHeatSVG(paths(1), "SRS resource grid power", gridPower);
-rows(1) = localManifestRow(paths(1), "image/svg+xml", "figure", numel(gridPower), "sixgr.phy.srs.exportStrictSRSArtifacts");
+localWriteHeatPNG(paths(1), "SRS resource grid power", gridPower);
+rows(1) = localManifestRow(paths(1), "image/png", "figure", numel(gridPower), "sixgr.phy.srs.exportStrictSRSArtifacts");
 det = result.ArtifactTables.srs_detection_metrics;
-localWriteLineSVG(paths(2), "SRS detection metric by trial", double(det.TrialId), double(det.DetectionMetric));
-rows(2) = localManifestRow(paths(2), "image/svg+xml", "figure", height(det), "sixgr.phy.srs.exportStrictSRSArtifacts");
+localWriteLinePNG(paths(2), "SRS detection metric by trial", double(det.TrialId), double(det.DetectionMetric));
+rows(2) = localManifestRow(paths(2), "image/png", "figure", height(det), "sixgr.phy.srs.exportStrictSRSArtifacts");
 cov = result.ArtifactTables.srs_coverage;
-localWriteBarSVG(paths(3), "SRS coverage percent", double(cov.CoveragePercent));
-rows(3) = localManifestRow(paths(3), "image/svg+xml", "figure", height(cov), "sixgr.phy.srs.exportStrictSRSArtifacts");
+localWriteBarPNG(paths(3), "SRS coverage percent", double(cov.CoveragePercent));
+rows(3) = localManifestRow(paths(3), "image/png", "figure", height(cov), "sixgr.phy.srs.exportStrictSRSArtifacts");
 ch = result.ArtifactTables.srs_channel_estimation;
-localWriteLineSVG(paths(4), "SRS channel NMSE by trial", double(ch.TrialId), double(ch.NMSE_dB));
-rows(4) = localManifestRow(paths(4), "image/svg+xml", "figure", height(ch), "sixgr.phy.srs.exportStrictSRSArtifacts");
+localWriteLinePNG(paths(4), "SRS channel NMSE by trial", double(ch.TrialId), double(ch.NMSE_dB));
+rows(4) = localManifestRow(paths(4), "image/png", "figure", height(ch), "sixgr.phy.srs.exportStrictSRSArtifacts");
 low = result.ArtifactTables.srs_low_snr_sweep;
-localWriteLineSVG(paths(5), "SRS low-SNR detection probability", double(low.SNRdB), double(low.DetectionProbability));
-rows(5) = localManifestRow(paths(5), "image/svg+xml", "figure", height(low), "sixgr.phy.srs.exportStrictSRSArtifacts");
+localWriteLinePNG(paths(5), "SRS low-SNR detection probability", double(low.SNRdB), double(low.DetectionProbability));
+rows(5) = localManifestRow(paths(5), "image/png", "figure", height(low), "sixgr.phy.srs.exportStrictSRSArtifacts");
 tim = result.ArtifactTables.srs_timing_offset_sweep;
-localWriteLineSVG(paths(6), "SRS timing error sweep", double(tim.InjectedTimingOffsetSamples), abs(double(tim.MeanTimingErrorSamples)));
-rows(6) = localManifestRow(paths(6), "image/svg+xml", "figure", height(tim), "sixgr.phy.srs.exportStrictSRSArtifacts");
+localWriteLinePNG(paths(6), "SRS timing error sweep", double(tim.InjectedTimingOffsetSamples), abs(double(tim.MeanTimingErrorSamples)));
+rows(6) = localManifestRow(paths(6), "image/png", "figure", height(tim), "sixgr.phy.srs.exportStrictSRSArtifacts");
 neg = result.ArtifactTables.srs_negative_trials;
-localWriteBarSVG(paths(7), "SRS negative trial expected failures", double(neg.NegativeExpectedOk));
-rows(7) = localManifestRow(paths(7), "image/svg+xml", "figure", height(neg), "sixgr.phy.srs.exportStrictSRSArtifacts");
-localWriteFlowSVG(paths(8), "Strict SRS channel sounding flow", ...
+localWriteBarPNG(paths(7), "SRS negative trial expected failures", double(neg.NegativeExpectedOk));
+rows(7) = localManifestRow(paths(7), "image/png", "figure", height(neg), "sixgr.phy.srs.exportStrictSRSArtifacts");
+sixgr.visual.writeFlowDiagramPNG(paths(8), "Strict SRS channel sounding flow", ...
     ["nrSRS generation","UL OFDM waveform","gNB resource extraction","LS/MMSE/DFT channel estimate","coverage gate"], result.StrictOk);
-rows(8) = localManifestRow(paths(8), "image/svg+xml", "figure", NaN, "sixgr.phy.srs.exportStrictSRSArtifacts");
+rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.srs.exportStrictSRSArtifacts");
 end
 
-function localWriteLineSVG(path, titleText, x, y)
+function localWriteLinePNG(path, titleText, x, y)
 x = double(x(:));
 y = double(y(:));
 mask = isfinite(x) & isfinite(y);
 x = x(mask);
 y = y(mask);
-poly = "";
-if ~isempty(x)
-    px = localScale(x, 60, 700);
-    py = localScale(y, 300, 60);
-    points = strings(numel(px), 1);
-    for ii = 1:numel(px)
-        points(ii) = sprintf("%.1f,%.1f", px(ii), py(ii));
-    end
-    poly = string(sprintf('<polyline points="%s" fill="none" stroke="#1f5a9d" stroke-width="3"/>', strjoin(points, " ")));
-    for ii = 1:numel(px)
-        poly = poly + string(sprintf('<circle cx="%.1f" cy="%.1f" r="4" fill="#d94b2b"/>', px(ii), py(ii)));
-    end
+fig = localPlotFigure();
+cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig);
+if isempty(x)
+    axis(ax, "off"); text(ax, 0.5, 0.5, "No finite runtime samples", "HorizontalAlignment", "center");
+else
+    plot(ax, x, y, "-o", "LineWidth", 1.6, "MarkerSize", 5);
+    grid(ax, "on");
 end
-txt = sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360"><rect width="760" height="360" fill="white"/><text x="24" y="32" font-family="Arial" font-size="20">%s</text><line x1="60" y1="300" x2="720" y2="300" stroke="#444"/><line x1="60" y1="300" x2="60" y2="50" stroke="#444"/>%s</svg>', char(titleText), char(poly));
-sixgr.util.writeTextFile(path, string(txt), "MimeType", "image/svg+xml", "ArtifactKind", "image_svg");
+title(ax, string(titleText), "Interpreter", "none");
+sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
 
-function localWriteBarSVG(path, titleText, y)
+function localWriteBarPNG(path, titleText, y)
 y = double(y(:));
 y = y(isfinite(y));
-bars = "";
-if ~isempty(y)
-    x = linspace(90, 680, numel(y));
-    py = localScale(y, 280, 80);
-    for ii = 1:numel(y)
-        h = max(1, 300 - py(ii));
-        bars = bars + string(sprintf('<rect x="%.1f" y="%.1f" width="28" height="%.1f" fill="#317d7e"/>', x(ii), py(ii), h));
-    end
+fig = localPlotFigure();
+cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig);
+if isempty(y)
+    axis(ax, "off"); text(ax, 0.5, 0.5, "No finite runtime samples", "HorizontalAlignment", "center");
+else
+    bar(ax, y, "FaceColor", [0.19 0.49 0.49]); grid(ax, "on");
 end
-txt = sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360"><rect width="760" height="360" fill="white"/><text x="24" y="32" font-family="Arial" font-size="20">%s</text><line x1="60" y1="300" x2="720" y2="300" stroke="#444"/><line x1="60" y1="300" x2="60" y2="50" stroke="#444"/>%s</svg>', char(titleText), char(bars));
-sixgr.util.writeTextFile(path, string(txt), "MimeType", "image/svg+xml", "ArtifactKind", "image_svg");
+title(ax, string(titleText), "Interpreter", "none");
+sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
 
-function localWriteHeatSVG(path, titleText, M)
+function localWriteHeatPNG(path, titleText, M)
 M = abs(double(M));
 M(~isfinite(M)) = 0;
 if isempty(M)
@@ -392,45 +387,16 @@ cols = min(24, size(M, 2));
 ridx = max(1, round(linspace(1, size(M, 1), rows)));
 cidx = max(1, round(linspace(1, size(M, 2), cols)));
 M = M(ridx, cidx);
-if max(M(:)) > min(M(:))
-    M = (M - min(M(:))) ./ (max(M(:)) - min(M(:)));
-else
-    M = zeros(size(M));
-end
-cells = "";
-for r = 1:size(M, 1)
-    for c = 1:size(M, 2)
-        val = M(r, c);
-        color = sprintf("#%02x%02x%02x", round(255 * val), round(110 * (1 - val)), round(220 * (1 - val)));
-        cells = cells + string(sprintf('<rect x="%d" y="%d" width="20" height="12" fill="%s"/>', 60 + (c-1)*20, 55 + (r-1)*12, color));
-    end
-end
-txt = sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360"><rect width="760" height="360" fill="white"/><text x="24" y="32" font-family="Arial" font-size="20">%s</text>%s</svg>', char(titleText), char(cells));
-sixgr.util.writeTextFile(path, string(txt), "MimeType", "image/svg+xml", "ArtifactKind", "image_svg");
+fig = localPlotFigure();
+cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig);
+imagesc(ax, M); axis(ax, "xy"); colorbar(ax); colormap(ax, "turbo");
+title(ax, string(titleText), "Interpreter", "none");
+sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
 
-function localWriteFlowSVG(path, titleText, labels, ok)
-labels = string(labels(:));
-x = round(linspace(35, 565, numel(labels)));
-txt = string(sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="760" height="240"><rect width="760" height="240" fill="white"/><text x="24" y="36" font-family="Arial" font-size="20">%s</text>', char(string(titleText))));
-for ii = 1:numel(labels)
-    txt = txt + sprintf('<rect x="%d" y="84" width="135" height="62" fill="#e8f8f2" stroke="#264"/>', x(ii));
-    txt = txt + sprintf('<text x="%d" y="118" font-family="Arial" font-size="11">%s</text>', x(ii)+8, char(labels(ii)));
-    if ii < numel(labels)
-        txt = txt + sprintf('<line x1="%d" y1="115" x2="%d" y2="115" stroke="#333"/>', x(ii)+135, x(ii+1));
-    end
-end
-txt = txt + sprintf('<text x="590" y="190" font-family="Arial" font-size="12">StrictOk=%d</text></svg>', double(logical(ok)));
-sixgr.util.writeTextFile(path, txt, "MimeType", "image/svg+xml", "ArtifactKind", "image_svg");
-end
-
-function pix = localScale(v, pMin, pMax)
-v = double(v(:));
-if isempty(v) || max(v) <= min(v)
-    pix = round((pMin + pMax) / 2) * ones(size(v));
-else
-    pix = pMin + (v - min(v)) ./ (max(v) - min(v)) .* (pMax - pMin);
-end
+function fig = localPlotFigure()
+fig = figure("Visible", "off", "Color", "w", "Position", [100 100 820 480]);
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer)

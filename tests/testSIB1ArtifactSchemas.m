@@ -19,6 +19,10 @@ cfg = sixgr.config.defaultConfig();
 cfg.channel.bandwidth_Hz = 20e6;
 cfg.phy.channelBandwidth_Hz = 20e6;
 cfg.phy.carrier.NSizeGrid = 51;
+% SIB1 is scheduled through Type-0 PDCCH and therefore requires both the
+% control channel and its DM-RS in this explicit low-level fixture.
+cfg.phy.pdcch.enable = true;
+cfg.phy.pdcch.dmrs.enable = true;
 cfg.initial_access.type0 = struct("monitoring_occasion_ordinal", 2);
 cfg.initial_access.sib1.pdsch = struct("prb_start", 0, ...
     "num_prb", 24, "symbol_start", 2, "num_symbols", 12, ...
@@ -43,7 +47,7 @@ required = [ ...
     "reports/json/sib1_rx_tree.json"
     "reports/binary/sib1_tx_payload.bin"
     "reports/binary/sib1_rx_payload.bin"
-    "reports/figures/sib1_decode_flow.svg"];
+    "reports/figures/sib1_decode_flow.png"];
 for i = 1:numel(required)
     assert(exist(fullfile(runFolder, required(i)), "file") == 2, "Missing SIB1 artifact: " + required(i));
 end

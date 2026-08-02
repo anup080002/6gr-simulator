@@ -1089,6 +1089,12 @@ canonical_control:
     live_publish_frame_interval: 1
     live_heavy_refresh_interval_frames: 1
     emit_placeholder_artifacts: false
+    component_artifact_views:
+      enabled: true
+      required: true
+      mirror_mode: byte_identical_hash_verified
+      image_formats: [png, jpg, jpeg]
+      canonical_files_move: false
   logging:
     level: info
     save_logs: true
@@ -1736,7 +1742,14 @@ tdd_timing:
   pdcch_to_pdsch_k0: 0
   pdcch_to_pusch_k2: 1
   dl_harq_feedback_k1:
+  - 1
+  - 2
+  - 3
   - 4
+  - 5
+  - 6
+  - 7
+  - 8
   ul_grant_k2: 1
   harq_roundtrip_slots: 8
   dl_to_ul_guard_time_us: 16.276

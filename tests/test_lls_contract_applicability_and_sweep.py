@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 from pathlib import Path
+
+from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +13,36 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_contract_materializer as materializer  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
+
+
+def test_contract_chart_persistence_is_raster_png_only() -> None:
+    chart_spec = {
+        "kind": "analytics",
+        "section_slug": "waveform-time-domain-analytics",
+        "chart_name": "Tx waveform",
+    }
+    assert materializer.chart_contract_image_path(chart_spec).endswith(".png")
+
+    svg_bytes = materializer._render_svg_plot(  # noqa: SLF001
+        "Tx waveform",
+        "Persisted runtime preview",
+        {
+            "mode": "line",
+            "x_label": "sample",
+            "y_label": "amplitude",
+            "points": [[0.0, 0.0], [1.0, 0.5], [2.0, -0.25]],
+        },
+        ["source=runtime"],
+    )
+    png_bytes = materializer._rasterize_contract_png(  # noqa: SLF001
+        svg_bytes,
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/tx-waveform.svg",
+    )
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    with Image.open(io.BytesIO(png_bytes)) as image:
+        image.verify()
+        assert image.format == "PNG"
 
 
 def test_config_driven_contract_applicability_does_not_enable_optional_6g() -> None:
@@ -385,3 +418,37 @@ def test_terminal_run_health_and_cdl_angles_use_runtime_evidence() -> None:
     assert angles is not None
     assert angles["source_table_path"] == "reports/csv/channel_rf_cdlc_realization_table.csv"
     assert "Runtime channel path angle (deg)" in angles["csv_bytes"].decode("utf-8")
+
+
+def test_cfo_chart_uses_persisted_true_estimated_and_residual_series() -> None:
+    cfo_csv = materializer._encode_csv(  # noqa: SLF001
+        [
+            "TraceSource", "Direction", "Frame", "Slot", "TrueCFO_Hz",
+            "EstimatedCFO_PreCorrection_Hz", "ResidualCFO_PostCorrection_Hz",
+        ],
+        [
+            ["PDSCH", "DL", 1, 1, 120.0, 118.5, 1.5],
+            ["PUSCH", "UL", 1, 2, -80.0, -79.0, -1.0],
+            ["PDSCH", "DL", 1, 3, 40.0, 39.75, 0.25],
+        ],
+    )
+    existing = {
+        "reports/csv/cfo_to_tracking_traces.csv": {
+            "artifact_id": 71,
+            "logical_path": "reports/csv/cfo_to_tracking_traces.csv",
+        }
+    }
+    fetch = lambda artifact_id: {71: cfo_csv}[artifact_id]
+
+    chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CFO true vs estimated vs residual", existing, fetch, 97
+    )
+
+    assert chart is not None
+    assert chart["source_mapping_status"] == "exact"
+    assert chart["source_table_path"] == "reports/csv/cfo_to_tracking_traces.csv"
+    csv_text = chart["csv_bytes"].decode("utf-8")
+    svg_text = chart["img_bytes"].decode("utf-8")
+    assert "true_cfo_hz,estimated_cfo_hz,residual_cfo_hz" in csv_text
+    assert "120.0,118.5,1.5" in csv_text
+    assert "True CFO" in svg_text and "Estimated CFO" in svg_text and "Residual CFO" in svg_text

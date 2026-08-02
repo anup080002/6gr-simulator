@@ -11,6 +11,7 @@ antenna_and_array:
   bs_num_rxrus: 4
   ue_num_txrus: 2
   ue_num_rxrus: 4
+  reciprocity_assumption: tdd_reciprocity
 
 canonical_control:
   identity:
@@ -538,6 +539,26 @@ channels:
   pathloss_enabled: false
   shadow_fading_enabled: false
   los_enabled: false
+
+# The browser contract exposes channel-path and angle-spread evidence for
+# fading scenarios. Produce it through the strict waveform-backed Channel/RF
+# validator instead of inferring angles from configured delay spread.
+channel_rf_configured_vs_applied:
+  enabled: true
+  require_channel_realization_id: true
+  require_rf_impairment_chain_id: true
+  require_waveform_hash_before_after_channel: true
+  require_waveform_hash_before_after_rf: true
+  require_path_gains_hash_for_cdl_tdl: true
+  require_doppler_evidence: true
+  require_noise_power_validation: true
+  require_cfo_before_after_evidence: true
+  require_phase_noise_evidence: true
+  require_iq_imbalance_evidence: true
+  require_pa_nonlinearity_evidence: true
+  fail_if_cdl_configured_awgn_applied: true
+  fail_if_impairment_configured_but_hash_unchanged: true
+  fail_if_downstream_trials_lack_channel_reference: true
 
 validation:
   run_class: adaptive_system_diagnostic

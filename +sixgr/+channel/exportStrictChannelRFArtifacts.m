@@ -46,8 +46,8 @@ artifacts.InterferenceTopologyCSV = fullfile(interferenceCsvDir, "interference_t
 artifacts.DownstreamReferencesCSV = fullfile(airCsvDir, "downstream_channel_references.csv");
 artifacts.ToolboxCapabilitiesJSON = fullfile(jsonDir, "channel_rf_toolbox_capabilities.json");
 artifacts.ConformanceSummaryJSON = fullfile(jsonDir, "channel_rf_conformance_summary.json");
-artifacts.ConfiguredVsAppliedSVG = fullfile(channelImageDir, "channel_configured_vs_applied.svg");
-artifacts.RFImpairmentSVG = fullfile(layout.ReportImageDir, "rf_impairment_chain.svg");
+artifacts.ConfiguredVsAppliedPNG = fullfile(channelImageDir, "channel_configured_vs_applied.png");
+artifacts.RFImpairmentPNG = fullfile(layout.ReportImageDir, "rf_impairment_chain.png");
 
 sixgr.util.csvWriteTable(artifacts.ChannelRFConfigStrictCSV, result.ConfigStrict);
 sixgr.util.csvWriteTable(artifacts.LinkGeometryCSV, result.Geometry.LinkTable);
@@ -85,8 +85,8 @@ summary.StrictModeToolboxFallbackAllowed = false;
 summary.ProducerModule = "sixgr.channel.exportStrictChannelRFArtifacts";
 sixgr.util.jsonWrite(artifacts.ConformanceSummaryJSON, summary);
 
-localWriteConfiguredVsAppliedSVG(artifacts.ConfiguredVsAppliedSVG, result.ConfiguredVsApplied);
-localWriteRFSVG(artifacts.RFImpairmentSVG, result.RFImpairmentChain);
+localWriteConfiguredVsAppliedPNG(artifacts.ConfiguredVsAppliedPNG, result.ConfiguredVsApplied);
+localWriteRFPNG(artifacts.RFImpairmentPNG, result.RFImpairmentChain);
 artifacts.ArtifactManifest = localArtifactManifest(artifacts);
 sixgr.util.csvWriteTable(fullfile(channelCsvDir, "channel_rf_strict_artifact_manifest.csv"), artifacts.ArtifactManifest);
 end
@@ -269,42 +269,40 @@ row = struct("RunId", "", "ScenarioName", "", "LinkId", "", ...
     "MeasuredDeltaDb", NaN, "AppliedOk", false, "TruthStatus", "");
 end
 
-function localWriteConfiguredVsAppliedSVG(path, T)
+function localWriteConfiguredVsAppliedPNG(path, T)
 ok = double(logical(T.StrictOk));
-x = 30 + (0:height(T)-1) * 34;
-h = 120;
-w = max(360, 60 + max(x));
-fid = fopen(path, "w");
-cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fprintf(fid, '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d">\n', w, h);
-fprintf(fid, '<rect width="100%%" height="100%%" fill="#f8fbf7"/>\n');
-fprintf(fid, '<text x="20" y="24" font-family="Arial" font-size="14" font-weight="700">Channel/RF configured-vs-applied strict evidence</text>\n');
-for i = 1:height(T)
-    color = "#2d7a35";
-    if ~ok(i)
-        color = "#a33a2d";
+fig = figure("Visible", "off", "Color", "w", "Position", [100 100 max(720, 28 * max(height(T), 1)) 460]);
+cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig);
+bars = bar(ax, 1:max(numel(ok), 1), [ok(:); zeros(max(0, 1-numel(ok)), 1)], 0.72);
+bars.FaceColor = "flat";
+for i = 1:numel(ok)
+    if ok(i)
+        bars.CData(i, :) = [0.18 0.48 0.21];
+    else
+        bars.CData(i, :) = [0.64 0.23 0.18];
     end
-    fprintf(fid, '<rect x="%g" y="%g" width="22" height="%g" fill="%s"/>\n', x(i), 88 - 44 * ok(i), 20 + 44 * ok(i), color);
 end
-fprintf(fid, '<text x="20" y="110" font-family="Arial" font-size="11">green=positive applied, red=negative rejected</text>\n');
-fprintf(fid, '</svg>\n');
+ylim(ax, [0 1.15]); grid(ax, "on");
+xlabel(ax, "Configured feature evidence row"); ylabel(ax, "Strict applied match");
+title(ax, "Channel/RF configured-vs-applied strict evidence", "Interpreter", "none");
+sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
 
-function localWriteRFSVG(path, T)
-if ~exist(fileparts(path), "dir")
-    mkdir(fileparts(path));
-end
-fid = fopen(path, "w");
-cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+function localWriteRFPNG(path, T)
 evm = double(T.EVMMeasuredPercent(1));
-fprintf(fid, '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="140">\n');
-fprintf(fid, '<rect width="100%%" height="100%%" fill="#fbfaf4"/>\n');
-fprintf(fid, '<text x="20" y="28" font-family="Arial" font-size="14" font-weight="700">RF impairment chain applied to samples</text>\n');
-fprintf(fid, '<text x="20" y="58" font-family="Arial" font-size="12">CFO %.3f Hz, IQ %s, PA %s, timing %.0f samples</text>\n', ...
-    double(T.CFOHzApplied(1)), char(string(T.IQImbalanceEnabled(1))), char(string(T.PAEnabled(1))), double(T.TimingOffsetSamplesApplied(1)));
-fprintf(fid, '<rect x="20" y="82" width="%g" height="18" fill="#416f7b"/>\n', min(360, max(4, evm * 20)));
-fprintf(fid, '<text x="20" y="118" font-family="Arial" font-size="11">Measured EVM %.3f %% from before/after waveform samples</text>\n', evm);
-fprintf(fid, '</svg>\n');
+fig = figure("Visible", "off", "Color", "w", "Position", [100 100 760 420]);
+cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
+ax = axes(fig, "Position", [0.10 0.18 0.82 0.60]);
+barh(ax, evm, "FaceColor", [0.25 0.44 0.48]);
+xlabel(ax, "Measured EVM (%) from before/after waveform samples");
+yticks(ax, 1); yticklabels(ax, "Runtime RF chain"); grid(ax, "on");
+title(ax, "RF impairment chain applied to samples", "Interpreter", "none");
+subtitleText = sprintf("CFO %.3f Hz | IQ %s | PA %s | timing %.0f samples", ...
+    double(T.CFOHzApplied(1)), char(string(T.IQImbalanceEnabled(1))), ...
+    char(string(T.PAEnabled(1))), double(T.TimingOffsetSamplesApplied(1)));
+text(ax, 0.5, 1.08, subtitleText, "Units", "normalized", "HorizontalAlignment", "center", "Interpreter", "none");
+sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
 
 function T = localArtifactManifest(artifacts)

@@ -87,6 +87,12 @@ channels:
   pathloss_model: none
   shadow_fading_std_db: 0
 
+# This is a TRS-only anchor. Keep the inherited control catalog disabled
+# explicitly so PDCCH and its DM-RS share one YAML authority state.
+control:
+  pdcch_enabled: false
+  blind_search_enabled: false
+
 reference_signals:
   ssb_enabled: false
   pbch_enabled: false

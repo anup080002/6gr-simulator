@@ -66,6 +66,7 @@ def main() -> None:
             ("run_control", "Run", "/run-control"),
             ("runs", "Runs", "/runs"),
             ("realtime", "Live", "/realtime"),
+            ("qualification", "Qualification", "/qualification"),
             ("plots", "Results & Evidence", "/plots"),
         ]
         assert dash.PRODUCT_NAV == expected_nav

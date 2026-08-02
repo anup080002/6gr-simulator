@@ -471,10 +471,7 @@ end
 end
 
 function expectedPaths = localExpectedPlotPaths(layout, stem)
-expectedPaths = [ ...
-    string(fullfile(layout.ReportImageDir, stem + ".png"))
-    string(fullfile(layout.ReportImageDir, stem + ".svg"))
-    ];
+expectedPaths = string(fullfile(layout.ReportImageDir, stem + ".png"));
 end
 
 function plotPaths = localExportFigurePair(fig, expectedPaths)
@@ -491,17 +488,9 @@ function localSaveFigure(fig, filePath)
 sixgr.util.ensureDir(filePath);
 [~, ~, ext] = fileparts(char(filePath));
 try
-    if strcmpi(ext, ".svg")
-        exportgraphics(fig, filePath, "ContentType", "vector");
-    else
-        exportgraphics(fig, filePath, "Resolution", 160);
-    end
+    exportgraphics(fig, filePath, "Resolution", 160);
 catch
-    if strcmpi(ext, ".svg")
-        print(fig, char(filePath), "-dsvg");
-    else
-        print(fig, char(filePath), "-dpng", "-r160");
-    end
+    print(fig, char(filePath), "-dpng", "-r160");
 end
 end
 

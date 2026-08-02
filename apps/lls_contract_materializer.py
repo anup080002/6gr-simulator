@@ -14,6 +14,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
+import resvg_py
+from PIL import Image, UnidentifiedImageError
+from PIL.PngImagePlugin import PngInfo
+
 import lls_output_contract as output_contract
 from lls_contract_aliases import (
     CONTRACT_CHART_ALIAS_PATHS,
@@ -23,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-01-contract-v29-runtime-audit-and-status"
+MATERIALIZER_VERSION = "2026-08-02-contract-v30-raster-png"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -90,7 +94,7 @@ def chart_contract_image_path(chart_spec: dict[str, Any]) -> str:
     kind = str(chart_spec.get("kind") or "reports").strip().lower() or "reports"
     section_slug = str(chart_spec.get("section_slug") or "section").strip().lower() or "section"
     chart_slug = slugify(str(chart_spec.get("chart_name") or "chart"))
-    return f"{kind}/image/contract__{section_slug}__{chart_slug}.svg"
+    return f"{kind}/image/contract__{section_slug}__{chart_slug}.png"
 
 
 def optional_6g_features_enabled(feature_policy: dict[str, Any] | None) -> bool:
@@ -623,6 +627,78 @@ def _finalize_chart_materialization_result(result: dict[str, Any] | None) -> dic
     if "csv_bytes" in out:
         out["csv_bytes"] = _ensure_source_mapping_status_csv(bytes(out["csv_bytes"]), source_mapping_status)
     return out
+
+
+def _rasterize_contract_png(
+    image_bytes: bytes,
+    *,
+    source_mime_type: str = "",
+    source_logical_path: str = "",
+) -> bytes:
+    """Return a validated PNG for every persisted contract image.
+
+    Contract renderers intentionally remain vector-first internally so text and
+    axes stay easy to compose.  This function is the persistence boundary: SVG,
+    JPEG, and other Pillow-readable image inputs are decoded and re-encoded as
+    real PNG bytes.  Invalid or unsupported image evidence fails loudly instead
+    of being copied beneath a misleading ``.png`` suffix.
+    """
+    payload = bytes(image_bytes or b"")
+    if not payload:
+        raise ValueError("Cannot persist an empty contract image as PNG.")
+
+    mime = str(source_mime_type or "").strip().lower()
+    path = str(source_logical_path or "").strip().lower()
+    prefix = payload.lstrip()[:256].lower()
+    is_svg = (
+        mime == "image/svg+xml"
+        or path.endswith(".svg")
+        or prefix.startswith(b"<svg")
+        or b"<svg" in prefix
+    )
+    semantic_description = ""
+    try:
+        if is_svg:
+            svg_text = payload.decode("utf-8-sig")
+            semantic_description = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", svg_text))).strip()[:12000]
+            png_bytes = resvg_py.svg_to_bytes(
+                svg_string=svg_text,
+                background="#ffffff",
+                text_rendering="optimize_legibility",
+                image_rendering="optimize_quality",
+            )
+        else:
+            with Image.open(io.BytesIO(payload)) as source_image:
+                source_image.load()
+                if source_image.mode not in {"RGB", "RGBA"}:
+                    source_image = source_image.convert("RGBA" if "transparency" in source_image.info else "RGB")
+                output = io.BytesIO()
+                source_image.save(output, format="PNG", optimize=False, compress_level=6)
+                png_bytes = output.getvalue()
+    except (OSError, UnicodeDecodeError, UnidentifiedImageError, ValueError) as exc:
+        identity = source_logical_path or source_mime_type or "unknown image source"
+        raise ValueError(f"Failed to rasterize contract image from {identity}: {exc}") from exc
+
+    if semantic_description:
+        with Image.open(io.BytesIO(png_bytes)) as rendered_image:
+            rendered_image.load()
+            png_info = PngInfo()
+            png_info.add_text("sixgr_visual_semantics", semantic_description, zip=False)
+            output = io.BytesIO()
+            rendered_image.save(output, format="PNG", pnginfo=png_info, optimize=False, compress_level=6)
+            png_bytes = output.getvalue()
+
+    if not png_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Contract image rasterizer did not produce a PNG signature.")
+    try:
+        with Image.open(io.BytesIO(png_bytes)) as check:
+            check.verify()
+            width, height = check.size
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValueError(f"Contract image rasterizer produced an invalid PNG: {exc}") from exc
+    if width <= 0 or height <= 0:
+        raise ValueError(f"Contract image rasterizer produced invalid dimensions {width}x{height}.")
+    return png_bytes
 
 
 def _chart_image_from_dataset(chart_name: str, subtitle: str, dataset: dict[str, Any] | None, summary_lines: list[str]) -> bytes:
@@ -2148,6 +2224,7 @@ def _is_placeholder_materialization_status(status: str) -> bool:
         "empty_source_summary",
         "missing_source_summary",
         "generated_unavailable_reason_svg",
+        "generated_unavailable_reason_png",
     }
 
 
@@ -5768,6 +5845,163 @@ def _runtime_energy_relation_chart(
     return _runtime_point_chart(chart_name, run_id, energy_path + "|air_interface/csv/*_trials.csv", points, "TX power (W)", y_label, "Power is joined to waveform trial metrics by exact direction/frame/slot keys.", mode="scatter")
 
 
+def _render_cfo_tracking_svg(
+    title: str,
+    series: dict[str, list[tuple[float, float]]],
+    summary_lines: list[str],
+) -> bytes:
+    width, height = 1180, 700
+    left, top, plot_w, plot_h = 82.0, 118.0, 760.0, 480.0
+    all_points = [point for points in series.values() for point in points]
+    if not all_points:
+        return _render_reason_svg(title, "CFO tracking evidence", summary_lines)
+    xs = [point[0] for point in all_points]
+    ys = [point[1] for point in all_points]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    if math.isclose(x_min, x_max):
+        x_max = x_min + 1.0
+    if math.isclose(y_min, y_max):
+        pad = max(1.0, abs(y_min) * 0.1)
+        y_min -= pad
+        y_max += pad
+    else:
+        pad = 0.08 * (y_max - y_min)
+        y_min -= pad
+        y_max += pad
+
+    def project(point: tuple[float, float]) -> tuple[float, float]:
+        x_val, y_val = point
+        px = left + (x_val - x_min) / (x_max - x_min) * plot_w
+        py = top + plot_h - (y_val - y_min) / (y_max - y_min) * plot_h
+        return px, py
+
+    colors = {
+        "True CFO": "#0f766e",
+        "Estimated CFO": "#2563eb",
+        "Residual CFO": "#dc2626",
+    }
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#f8fafc"/>',
+        f'<text x="40" y="48" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
+        '<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">Persisted runtime CFO truth, receiver estimate, and post-correction residual.</text>',
+        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+    ]
+    for tick in range(6):
+        frac = tick / 5.0
+        y = top + plot_h - frac * plot_h
+        value = y_min + frac * (y_max - y_min)
+        parts.append(f'<line x1="{left}" y1="{y:.2f}" x2="{left + plot_w}" y2="{y:.2f}" stroke="#e2e8f0" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 10}" y="{y + 4:.2f}" text-anchor="end" font-family="Consolas,monospace" font-size="11" fill="#475569">{value:.3g}</text>')
+    for name, points in series.items():
+        if not points:
+            continue
+        projected = [project(point) for point in points]
+        polyline = " ".join(f"{x:.2f},{y:.2f}" for x, y in projected)
+        color = colors.get(name, "#475569")
+        parts.append(f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="2.4"/>')
+        for x, y in projected:
+            parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="3" fill="{color}"/>')
+    parts.extend([
+        f'<text x="{left + plot_w / 2}" y="{top + plot_h + 42}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">Runtime observation index</text>',
+        f'<text x="25" y="{top + plot_h / 2}" transform="rotate(-90 25 {top + plot_h / 2})" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">CFO (Hz)</text>',
+    ])
+    info_x = 875
+    parts.append(f'<rect x="{info_x}" y="{top}" width="265" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
+    parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Evidence</text>')
+    y_pos = top + 62
+    for name in ("True CFO", "Estimated CFO", "Residual CFO"):
+        color = colors[name]
+        count = len(series.get(name, []))
+        parts.append(f'<line x1="{info_x + 18}" y1="{y_pos}" x2="{info_x + 48}" y2="{y_pos}" stroke="{color}" stroke-width="3"/>')
+        parts.append(f'<text x="{info_x + 58}" y="{y_pos + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(name)} ({count})</text>')
+        y_pos += 28
+    y_pos += 18
+    for line in summary_lines[:12]:
+        parts.append(f'<text x="{info_x + 18}" y="{y_pos}" font-family="Consolas,monospace" font-size="12" fill="#475569">{html.escape(line)}</text>')
+        y_pos += 21
+    parts.append('</svg>')
+    return "".join(parts).encode("utf-8")
+
+
+def _runtime_cfo_tracking_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if str(chart_name or "").strip() != "CFO true vs estimated vs residual":
+        return None
+    source_path, rows = _first_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["reports/csv/cfo_to_tracking_traces.csv"],
+    )
+    if not rows:
+        return None
+    csv_rows: list[dict[str, Any]] = []
+    series: dict[str, list[tuple[float, float]]] = {
+        "True CFO": [],
+        "Estimated CFO": [],
+        "Residual CFO": [],
+    }
+    for row in rows:
+        true_cfo = _row_float(row, "TrueCFO_Hz")
+        estimated_cfo = _row_float(
+            row, "EstimatedCFO_PreCorrection_Hz", "EstimatedCFO_Hz"
+        )
+        residual_cfo = _row_float(row, "ResidualCFO_PostCorrection_Hz")
+        if true_cfo is None and estimated_cfo is None and residual_cfo is None:
+            continue
+        sample_index = float(len(csv_rows) + 1)
+        csv_rows.append({
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "sample_index": int(sample_index),
+            "trace_source": _row_text(row, "TraceSource"),
+            "direction": _row_text(row, "Direction"),
+            "frame": _row_text(row, "Frame"),
+            "slot": _row_text(row, "Slot"),
+            "true_cfo_hz": "" if true_cfo is None else float(true_cfo),
+            "estimated_cfo_hz": "" if estimated_cfo is None else float(estimated_cfo),
+            "residual_cfo_hz": "" if residual_cfo is None else float(residual_cfo),
+            "source_table_logical_path": source_path,
+        })
+        if true_cfo is not None:
+            series["True CFO"].append((sample_index, float(true_cfo)))
+        if estimated_cfo is not None:
+            series["Estimated CFO"].append((sample_index, float(estimated_cfo)))
+        if residual_cfo is not None:
+            series["Residual CFO"].append((sample_index, float(residual_cfo)))
+    if not csv_rows or any(not series[name] for name in series):
+        return None
+    summary = [
+        f"source={source_path}",
+        f"rows={len(csv_rows)}",
+        "missing values remain blank",
+        "no configured-value substitution",
+    ]
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "sample_index", "trace_source",
+                "direction", "frame", "slot", "true_cfo_hz",
+                "estimated_cfo_hz", "residual_cfo_hz",
+                "source_table_logical_path",
+            ],
+            csv_rows,
+        ),
+        "img_bytes": _render_cfo_tracking_svg(chart_name, series, summary),
+        "csv_status": "explicit_runtime_cfo_tracking_dataset",
+        "image_status": "generated_runtime_cfo_tracking_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(csv_rows),
+        "source_mapping_status": "exact",
+        "note": "CFO series use only persisted runtime truth, estimate, and residual fields.",
+    }
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -5775,6 +6009,11 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    cfo_tracking = _runtime_cfo_tracking_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if cfo_tracking is not None:
+        return cfo_tracking
     configured_sweep = _configured_sweep_chart_materialization(
         chart_name, existing, fetch_artifact_bytes, run_id
     )
@@ -8125,15 +8364,19 @@ def materialize_run_contract_artifacts(
             )
             if special is not None:
                 chart_csv_bytes = bytes(special["csv_bytes"])
-                image_bytes = bytes(special["img_bytes"])
+                image_bytes = _rasterize_contract_png(
+                    bytes(special["img_bytes"]),
+                    source_mime_type="image/svg+xml",
+                    source_logical_path=f"internal://specialized/{slugify(chart_name)}.vector",
+                )
                 csv_status = str(special.get("csv_status") or "specialized_contract_dataset")
-                image_status = str(special.get("image_status") or "generated_specialized_contract_image")
+                image_status = str(special.get("image_status") or "generated_specialized_contract_image").replace("_svg", "_png")
                 source_table_path = str(special.get("source_table_path") or "")
                 source_mapping_status = str(special.get("source_mapping_status") or _source_mapping_status_for_status(csv_status, image_status))
                 source_row_count = int(special.get("source_row_count") or 0)
                 chart_csv_note = str(special.get("note") or "")
-                image_kind = "image_svg"
-                image_mime = "image/svg+xml"
+                image_kind = "image_png"
+                image_mime = "image/png"
                 source_image = None
                 source_table = source_lookup.get(source_table_path)
                 csv_meta = {
@@ -8153,6 +8396,7 @@ def materialize_run_contract_artifacts(
                     "source_table_logical_path": source_table_path,
                     "materialization_status": image_status,
                     "source_mapping_status": source_mapping_status,
+                    "output_format": "png",
                 }
                 if (
                     not allow_placeholder_artifacts
@@ -8281,10 +8525,16 @@ def materialize_run_contract_artifacts(
                 source_mapping_status,
             )
             if source_image:
-                image_bytes = fetch_artifact_bytes(int(source_image["artifact_id"]))
-                image_kind = str(source_image.get("artifact_kind") or "image")
-                image_mime = str(source_image.get("mime_type") or "image/png")
-                image_status = "copied_source_image"
+                source_image_mime = str(source_image.get("mime_type") or "")
+                source_image_path = str(source_image.get("logical_path") or "")
+                image_bytes = _rasterize_contract_png(
+                    fetch_artifact_bytes(int(source_image["artifact_id"])),
+                    source_mime_type=source_image_mime,
+                    source_logical_path=source_image_path,
+                )
+                image_kind = "image_png"
+                image_mime = "image/png"
+                image_status = "rasterized_source_image_png"
             elif csv_status in {
                 "source_artifact_missing",
                 "source_artifact_present_but_empty",
@@ -8292,24 +8542,32 @@ def materialize_run_contract_artifacts(
                 "missing_source_summary",
                 "invalid_source_mapping",
             }:
-                image_bytes = _render_reason_svg(
-                    chart_name,
-                    "No truthful numeric chart was materialized from the selected source table for this run.",
-                    summary_lines + [chart_csv_note],
+                image_bytes = _rasterize_contract_png(
+                    _render_reason_svg(
+                        chart_name,
+                        "No truthful numeric chart was materialized from the selected source table for this run.",
+                        summary_lines + [chart_csv_note],
+                    ),
+                    source_mime_type="image/svg+xml",
+                    source_logical_path=f"internal://unavailable/{slugify(chart_name)}.vector",
                 )
-                image_kind = "image_svg"
-                image_mime = "image/svg+xml"
-                image_status = "generated_unavailable_reason_svg"
+                image_kind = "image_png"
+                image_mime = "image/png"
+                image_status = "generated_unavailable_reason_png"
             else:
-                image_bytes = _chart_image_from_dataset(
-                    chart_name,
-                    "Canonical post-run chart materialized from the selected run's persisted source artifacts.",
-                    dataset,
-                    summary_lines,
+                image_bytes = _rasterize_contract_png(
+                    _chart_image_from_dataset(
+                        chart_name,
+                        "Canonical post-run chart materialized from the selected run's persisted source artifacts.",
+                        dataset,
+                        summary_lines,
+                    ),
+                    source_mime_type="image/svg+xml",
+                    source_logical_path=f"internal://contract/{slugify(chart_name)}.vector",
                 )
-                image_kind = "image_svg"
-                image_mime = "image/svg+xml"
-                image_status = "generated_contract_summary_svg"
+                image_kind = "image_png"
+                image_mime = "image/png"
+                image_status = "generated_contract_summary_png"
 
             csv_meta = {
                 "materializer_version": MATERIALIZER_VERSION,
@@ -8328,6 +8586,8 @@ def materialize_run_contract_artifacts(
                 "source_table_logical_path": str(source_table.get("logical_path") or "") if source_table else "",
                 "materialization_status": image_status,
                 "source_mapping_status": source_mapping_status,
+                "source_image_mime_type": str(source_image.get("mime_type") or "") if source_image else "",
+                "output_format": "png",
             }
             if (
                 not allow_placeholder_artifacts

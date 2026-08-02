@@ -595,17 +595,17 @@ def check_csv_spec(run_dir: Path, spec: CsvSpec) -> dict[str, Any]:
     return row
 
 
-def _unavailable_svg_present(run_dir: Path, spec: ImageSpec) -> bool:
+def _unavailable_raster_present(run_dir: Path, spec: ImageSpec) -> bool:
     image_dir = run_dir / "reports" / "image"
     stems = spec.unavailable_stems or (Path(spec.path).stem,)
-    return any((image_dir / f"{stem}_unavailable.svg").exists() for stem in stems)
+    return any((image_dir / f"{stem}_unavailable.png").exists() for stem in stems)
 
 
 def check_image_spec(run_dir: Path, spec: ImageSpec) -> dict[str, Any]:
     path = run_dir / spec.path
     source_exists = spec.source_csv == "__all__" or (run_dir / spec.source_csv).exists()
     exists = path.exists() and path.is_file()
-    blocked_unavailable = _unavailable_svg_present(run_dir, spec)
+    blocked_unavailable = _unavailable_raster_present(run_dir, spec)
     if exists:
         status = "PASS"
     elif not source_exists:

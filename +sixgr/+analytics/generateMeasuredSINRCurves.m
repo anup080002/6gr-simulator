@@ -92,7 +92,7 @@ if logical(opt.UpdateAnchorKPIs)
 end
 gateTables = localWriteKPIReconciliationGates(layout, kpiSummary, anchorKPIs, trialData, slotDuration_s);
 
-localRelabelAnalyticsCSVAndSVG(layout);
+localRelabelAnalyticsCSVAndPNG(layout);
 
 tables = struct( ...
     "DLBlerCurve", dlBler, ...
@@ -980,8 +980,8 @@ paths = [
     fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv")
     fullfile(layout.AirInterfaceCSVDir, "live_link_snr_sweep.csv")
     fullfile(layout.ReportCSVDir, "per_sweep_comparison_tables.csv")
-    fullfile(layout.ReportImageDir, "bler_vs_snr_unavailable.svg")
-    fullfile(layout.ReportImageDir, "throughput_vs_snr_unavailable.svg")
+    fullfile(layout.ReportImageDir, "bler_vs_snr_unavailable.png")
+    fullfile(layout.ReportImageDir, "throughput_vs_snr_unavailable.png")
     fullfile(layout.ReportImageDir, "bler_vs_snr.png")
     fullfile(layout.ReportImageDir, "throughput_vs_snr.png")
     ];
@@ -992,7 +992,7 @@ for i = 1:numel(paths)
 end
 end
 
-function localRelabelAnalyticsCSVAndSVG(layout)
+function localRelabelAnalyticsCSVAndPNG(layout)
 csvDir = fullfile(layout.Root, "analytics", "csv");
 imgDir = fullfile(layout.Root, "analytics", "image");
 specs = [
@@ -1019,28 +1019,12 @@ for i = 1:size(specs, 1)
         catch
         end
     end
-    svgPath = fullfile(imgDir, stem + ".svg");
-    if exist(svgPath, "file") == 2
+    pngPath = fullfile(imgDir, stem + ".png");
+    if exist(pngPath, "file") == 2
         try
-            txt = string(fileread(svgPath));
-            txt = replace(txt, "BLER vs SNR", "BLER vs Measured SINR");
-            txt = replace(txt, "BER vs SNR", "BER vs Measured SINR");
-            txt = replace(txt, "throughput vs SNR", "Throughput vs Measured SINR");
-            txt = replace(txt, "Throughput vs SNR", "Throughput vs Measured SINR");
-            txt = replace(txt, "Applied AWGN SNR (dB)", "Measured PostEq SINR (dB)");
-            txt = replace(txt, "SNR (dB)", "Measured PostEq SINR (dB)");
-            fid = fopen(svgPath, "w");
-            if fid > 0
-                cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
-                fwrite(fid, char(txt));
-            end
-            aliasSvgPath = fullfile(imgDir, aliasStem + ".svg");
-            sixgr.util.ensureDir(aliasSvgPath);
-            fidAlias = fopen(aliasSvgPath, "w");
-            if fidAlias > 0
-                cleanupAlias = onCleanup(@() fclose(fidAlias)); %#ok<NASGU>
-                fwrite(fidAlias, char(txt));
-            end
+            aliasPngPath = fullfile(imgDir, aliasStem + ".png");
+            sixgr.util.ensureDir(aliasPngPath);
+            copyfile(pngPath, aliasPngPath, "f");
         catch
         end
     end

@@ -6422,7 +6422,7 @@ switch string(outName)
         paths = "reports/csv/energy_root_cause_table.csv";
     case {"pdcch_cce_occupancy_plot"}
         paths = ["reports/csv/contract__dl-control-phy-pdcch__cce-usage-heatmap.csv", ...
-            "reports/image/contract__dl-control-phy-pdcch__cce-usage-heatmap.svg"];
+            "reports/image/contract__dl-control-phy-pdcch__cce-usage-heatmap.png"];
     case {"ssb_burst_beam_plot"}
         paths = ["reports/csv/contract__ssb-pbch-pss-sss__ssb-index-timeline.csv", ...
             "reports/csv/contract__ssb-pbch-pss-sss__ssb-pbch-occupancy-map.csv"];

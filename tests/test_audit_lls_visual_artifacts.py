@@ -39,8 +39,7 @@ def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantic
     image_dir.mkdir(parents=True)
     csv_dir.mkdir(parents=True)
 
-    unavailable_svg = "<svg xmlns='http://www.w3.org/2000/svg'><text>Unavailable</text></svg>"
-    (image_dir / "prach_correlation_traces_unavailable.svg").write_text(unavailable_svg, encoding="utf-8")
+    (image_dir / "prach_correlation_traces_unavailable.png").write_bytes(PNG_BYTES)
 
     write_csv(
         csv_dir / "plot_manifest.csv",
@@ -58,7 +57,7 @@ def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantic
         [
             {
                 "PlotId": "prach_correlation_traces",
-                "ImagePath": "reports/image/prach_correlation_traces_unavailable.svg",
+                "ImagePath": "reports/image/prach_correlation_traces_unavailable.png",
                 "SourceCSV": "reports/csv/prach_correlation_trace.csv",
                 "XVariable": "lag_samples",
                 "YVariables": "correlation_abs",
@@ -387,7 +386,7 @@ def test_visual_artifact_audit_rejects_negative_fixture(tmp_path: Path) -> None:
     assert "plot_source_forbidden_truth_status" in codes
 
 
-def test_visual_artifact_audit_requires_low_information_explanation_for_contract_svgs(tmp_path: Path) -> None:
+def test_visual_artifact_audit_requires_low_information_explanation_for_contract_pngs(tmp_path: Path) -> None:
     run = tmp_path / "run"
     image_dir = run / "analytics" / "image"
     csv_dir = run / "analytics" / "csv"
@@ -396,10 +395,8 @@ def test_visual_artifact_audit_requires_low_information_explanation_for_contract
     csv_dir.mkdir(parents=True)
     report_csv_dir.mkdir(parents=True)
 
-    (image_dir / "contract__beamforming__beam-gain-gap-histogram.svg").write_text(
-        "<svg xmlns='http://www.w3.org/2000/svg'><text>Beam gain gap histogram</text></svg>",
-        encoding="utf-8",
-    )
+    image_path = image_dir / "contract__beamforming__beam-gain-gap-histogram.png"
+    image_path.write_bytes(PNG_BYTES)
     write_csv(
         csv_dir / "contract__beamforming__beam-gain-gap-histogram.csv",
         ["run_id", "chart_name", "beam_gap_value", "source_mapping_status"],
@@ -422,10 +419,7 @@ def test_visual_artifact_audit_requires_low_information_explanation_for_contract
     codes = read_audit_codes(report_csv_dir / "visual_artifact_audit.csv")
     assert "low_information_visual_without_explanation" in codes
 
-    (image_dir / "contract__beamforming__beam-gain-gap-histogram.svg").write_text(
-        "<svg xmlns='http://www.w3.org/2000/svg'><text>visual_gate=constant_chart_source</text></svg>",
-        encoding="utf-8",
-    )
+    image_path.write_bytes(PNG_BYTES + b"visual_gate=constant_chart_source")
     proc = subprocess.run(
         [sys.executable, str(AUDIT_TOOL), str(run), "--non-strict"],
         cwd=REPO_ROOT,

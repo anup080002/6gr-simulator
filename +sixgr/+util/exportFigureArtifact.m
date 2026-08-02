@@ -8,6 +8,14 @@ if strlength(string(ext)) == 0
     ext = ".png";
     filePath = char(string(filePath) + ".png");
 end
+% Runtime visual evidence is persisted as raster imagery.  Preserve support
+% for legacy callers that still request an SVG name, but redirect the actual
+% and logical artifacts to PNG instead of emitting a second vector copy.
+if lower(string(ext)) == ".svg"
+    ext = ".png";
+    filePath = char(localPathWithExtension(filePath, ext));
+    logicalPath = localPathWithExtension(logicalPath, ext);
+end
 gate = sixgr.visual.checkVisualArtifactRenderGate(filePath);
 if isstruct(gate) && isfield(gate, "Matched") && logical(gate.Matched)
     if ~logical(gate.AllowRender)
@@ -99,11 +107,11 @@ out = string(fullfile(folder, name + string(ext)));
 end
 
 function localExportGraphics(figHandle, filePath, ext, varargin)
-if lower(string(ext)) == ".svg"
-    print(figHandle, char(filePath), "-dsvg");
-else
-    exportgraphics(figHandle, filePath, varargin{:});
+if ~any(lower(string(ext)) == [".png", ".jpg", ".jpeg"])
+    error("sixgr:visual:UnsupportedRasterFormat", ...
+        "Figure artifacts must be persisted as PNG or JPEG, not %s.", string(ext));
 end
+exportgraphics(figHandle, filePath, varargin{:});
 end
 
 function localDeleteIfExists(filePath)

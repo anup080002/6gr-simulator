@@ -251,6 +251,7 @@ classdef AntennaArrayFactory
                 opts.NumPorts (1,1) double = NaN
                 opts.NumRFChains (1,1) double = NaN
                 opts.MinimumPorts (1,1) double = 1
+                opts.MatrixAuthorityScope (1,1) string = "signal_then_role"
             end
 
             roleL = lower(string(role));
@@ -309,8 +310,13 @@ classdef AntennaArrayFactory
             configuredElementToPort = [];
             configuredElementToPortSource = "";
             signalL = lower(strtrim(string(opts.Signal)));
+            matrixAuthorityScope = lower(strtrim(string(opts.MatrixAuthorityScope)));
+            if ~ismember(matrixAuthorityScope, ["signal_then_role", "role_only"])
+                error("AntennaArrayFactory:InvalidMatrixAuthorityScope", ...
+                    "MatrixAuthorityScope must be signal_then_role or role_only.");
+            end
             configuredMatrixPaths = strings(0, 1);
-            if strlength(signalL) > 0
+            if matrixAuthorityScope == "signal_then_role" && strlength(signalL) > 0
                 configuredMatrixPaths = [configuredMatrixPaths; ...
                     "phy." + signalL + ".hybridElementToPortMatrix"];
             end
@@ -399,6 +405,7 @@ classdef AntennaArrayFactory
                 "HybridBeamformingEnabled", logical(hybridEnabled), ...
                 "HybridPowerNormalization", "unit_norm_rf_chain_columns_trace_preserved_after_baseband_precoding", ...
                 "HybridElementToPortMatrixSource", char(configuredElementToPortSource), ...
+                "MatrixAuthorityScope", char(matrixAuthorityScope), ...
                 "RFElementsPerChain", double(rfElementsPerChain(:).'), ...
                 "ElementsPerPort", double(elementsPerPort(:).'));
         end

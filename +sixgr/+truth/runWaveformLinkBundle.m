@@ -3919,7 +3919,7 @@ if direction ~= "DL"
 end
 nLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
 if isfinite(nLayers) && nLayers >= 1
-    cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgOut, nLayers);
+    cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgOut, nLayers, grant);
 end
 expectedPorts = localResolveDLPDSCHLogicalPortCount(cfgOut, grant, nLayers);
 hybridMatrix = sixgr.util.structGet(grant, "HybridElementToPortMatrix", ...
@@ -5874,7 +5874,7 @@ else
             round(double(pdsch.NumLayers)), round(double(grantSpatialContract.NumLayers)), ...
             char(grantSpatialContract.AliasSummary));
     end
-    cfgGrant = localPruneIncompatibleDLPrecodingConfig(cfgGrant, pdsch);
+    cfgGrant = localPruneIncompatibleDLPrecodingConfig(cfgGrant, pdsch, grant);
     localAssertDLPrecodingConfigMatchesGrant(cfgGrant, grant, "after_precoding_prune");
     [grant, cfgGrant] = localSanitizeDLGrantFeedback(cfgGrant, pdsch, grant);
     localAssertDLPrecodingConfigMatchesGrant(cfgGrant, grant, "after_feedback_sanitize");
@@ -6233,34 +6233,7 @@ end
 end
 
 function nPorts = localResolveDLPDSCHLogicalPortCount(cfg, grant, nLayers)
-nLayers = max(1, round(double(nLayers)));
-nPorts = localFirstFiniteAtLeastNumeric(nLayers, ...
-    sixgr.util.structGet(grant, "NumLogicalPorts", NaN), ...
-    sixgr.util.structGet(grant, "PortCount", NaN));
-if isfinite(nPorts) && nPorts > localMaxNRLogicalPDSCHPorts()
-    error("sixgr:truth:GrantLogicalPortCountOutOfRange", ...
-        "The finalized DL grant requests %d logical ports; maximum supported is %d.", ...
-        round(double(nPorts)), localMaxNRLogicalPDSCHPorts());
-end
-if ~(isfinite(nPorts) && nPorts >= nLayers)
-    nPorts = localFirstFiniteAtLeastNumeric(nLayers, ...
-    sixgr.util.structGet(cfg, "phy.maxDLLayers", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.maxLayers", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.nPorts", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.numPorts", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.nPorts", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.NumAntennaPorts", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.numAntennaPorts", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.numLayers", NaN), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN));
-end
-if isfinite(nPorts) && nPorts > localMaxNRLogicalPDSCHPorts()
-    nPorts = NaN;
-end
-if ~(isfinite(nPorts) && nPorts >= nLayers)
-    nPorts = nLayers;
-end
-nPorts = max(nLayers, round(double(nPorts)));
+nPorts = sixgr.phy.grant.resolveDLLogicalPortCount(cfg, grant, nLayers);
 end
 
 function nPorts = localMaxNRLogicalPDSCHPorts()
@@ -6341,14 +6314,17 @@ end
 token = join(parts, "|");
 end
 
-function cfgOut = localPruneIncompatibleDLPrecodingConfig(cfgIn, pdsch)
+function cfgOut = localPruneIncompatibleDLPrecodingConfig(cfgIn, pdsch, grant)
 cfgOut = cfgIn;
+if nargin < 3 || ~isstruct(grant)
+    grant = struct();
+end
 nLayers = double(sixgr.util.structGet(pdsch, "NumLayers", 1));
 if ~(isfinite(nLayers) && nLayers >= 1)
     nLayers = 1;
 end
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
-expectedPorts = localResolveDLPDSCHLogicalPortCount(cfgOut, struct(), nLayers);
+expectedPorts = localResolveDLPDSCHLogicalPortCount(cfgOut, grant, nLayers);
 resolvedPorts = NaN;
 for i = 1:numel(paths)
     path = paths(i);
@@ -6644,7 +6620,7 @@ if strlength(strtrim(grantCQITable)) > 0
 end
 if direction == "DL"
     if isfinite(grantLayers) && grantLayers >= 1
-        cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgOut, grantLayers);
+        cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgOut, grantLayers, grant);
     end
     if isfinite(grantPMI)
         cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.PMI", grantPMI);
@@ -6825,11 +6801,14 @@ switch token
 end
 end
 
-function cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgIn, nLayers)
+function cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgIn, nLayers, grant)
 cfgOut = cfgIn;
+if nargin < 3 || ~isstruct(grant)
+    grant = struct();
+end
 nLayers = max(1, round(double(nLayers)));
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
-expectedPorts = localResolveDLPDSCHLogicalPortCount(cfgOut, struct(), nLayers);
+expectedPorts = localResolveDLPDSCHLogicalPortCount(cfgOut, grant, nLayers);
 resolvedPorts = NaN;
 for i = 1:numel(paths)
     path = paths(i);

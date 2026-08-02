@@ -460,7 +460,7 @@ end
 
 function paths = localExportFigurePair(fig, outDir, stem)
 paths = strings(0, 1);
-for ext = [".png", ".svg"]
+for ext = ".png"
     filePath = string(fullfile(outDir, stem + ext));
     localSaveFigure(fig, filePath);
     if exist(filePath, "file") == 2
@@ -473,17 +473,9 @@ function localSaveFigure(fig, filePath)
 sixgr.util.ensureDir(filePath);
 [~, ~, ext] = fileparts(char(filePath));
 try
-    if strcmpi(ext, ".svg")
-        exportgraphics(fig, filePath, "ContentType", "vector");
-    else
-        exportgraphics(fig, filePath, "Resolution", 160);
-    end
+    exportgraphics(fig, filePath, "Resolution", 160);
 catch
-    if strcmpi(ext, ".svg")
-        print(fig, char(filePath), "-dsvg");
-    else
-        print(fig, char(filePath), "-dpng", "-r160");
-    end
+    print(fig, char(filePath), "-dpng", "-r160");
 end
 end
 
