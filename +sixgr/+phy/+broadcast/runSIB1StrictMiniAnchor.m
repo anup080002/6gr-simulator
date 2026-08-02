@@ -14,7 +14,15 @@ if nargin < 2 || isempty(cfg)
     cfg = sixgr.config.defaultConfig();
 end
 cfg.run.strictMode = true;
-cfg.phy.sib1.enable = true;
+sib1Enabled = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
+if isfield(cfg, "runtime") && isfield(cfg.runtime, "features")
+    sixgr.config.assertRuntimeFeatureUse(cfg, "sib1", sib1Enabled, ...
+        "runSIB1StrictMiniAnchor");
+end
+if ~sib1Enabled
+    error("sixgr:phy:broadcast:SIB1DisabledByYAML", ...
+        "The strict SIB1 mini-anchor cannot run because configuration disabled SIB1.");
+end
 cfg.phy.sib1.ssbObservationSubframes = double(sixgr.util.structGet(cfg, ...
     "phy.sib1.ssbObservationSubframes", sixgr.util.structGet(cfg, ...
     "initial_access.ssb.observation_subframes", 5)));

@@ -73,7 +73,8 @@ sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifes
 
 configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
 scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
-    sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result));
+    sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result), ...
+    runFolder, cfg);
 summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
 manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
@@ -86,7 +87,8 @@ sanitizedCSVs = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
 configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
 reportBundle.ConfigOwnershipArtifacts = configOwnership;
 scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
-    sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result));
+    sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result), ...
+    runFolder, cfg);
 summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
 manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
@@ -332,7 +334,7 @@ status.RuntimeTruthContractOk = false;
 status.TruthContractOk = false;
 status.StandardsConformanceOk = false;
 status.ScenarioObjectiveOk = false;
-status.ConfiguredEffectiveOk = true;
+status.ConfiguredEffectiveOk = false;
 status.MandatorySubsystemsOk = false;
 status.ActiveIssueGateOk = false;
 status.KpiConsistencyOk = false;
@@ -358,16 +360,18 @@ status.ErrorMessage = string(errorMessage);
 status.AuthoritativeStatusSource = "recovered_failed_run_artifacts";
 end
 
-function status = localApplyTruthVerdict(status, verdict)
+function status = localApplyTruthVerdict(status, verdict, runFolder, cfg)
 status.RuntimeTruthContractOk = logical(sixgr.util.structGet(verdict, "RuntimeTruthContractOk", false));
 status.TruthContractOk = logical(status.RuntimeTruthContractOk);
 rootStatus = sixgr.util.structGet(verdict, "ResultStatus", struct());
 status.StandardsConformanceOk = logical(sixgr.util.structGet(rootStatus, "StandardsConformanceOk", status.RuntimeTruthContractOk));
 status.ScenarioObjectiveOk = logical(sixgr.util.structGet(rootStatus, "ScenarioObjectiveOk", status.RuntimeTruthContractOk));
-status.ConfiguredEffectiveOk = logical(sixgr.util.structGet(rootStatus, "ConfiguredEffectiveOk", true));
+status.ConfiguredEffectiveOk = logical(sixgr.util.structGet(rootStatus, "ConfiguredEffectiveOk", false));
+status = sixgr.truth.applyPersistedMIMOConfiguredEffectiveStatus( ...
+    status, runFolder, cfg);
 status.MandatorySubsystemsOk = logical(sixgr.util.structGet(rootStatus, "MandatorySubsystemsOk", status.RuntimeTruthContractOk));
 status.ActiveIssueGateOk = logical(sixgr.util.structGet(rootStatus, "ActiveIssueGateOk", status.RuntimeTruthContractOk));
-status.KpiConsistencyOk = logical(sixgr.util.structGet(rootStatus, "KpiConsistencyOk", status.RuntimeTruthContractOk));
+status.KpiConsistencyOk = logical(sixgr.util.structGet(rootStatus, "KpiConsistencyOk", false));
 status.StrictAnchorEligible = logical(sixgr.util.structGet(rootStatus, "StrictAnchorEligible", false));
 status.StrictAnchorPass = logical(sixgr.util.structGet(rootStatus, "StrictAnchorPass", status.RuntimeTruthContractOk));
 status.ResultStatusReason = string(sixgr.util.structGet(rootStatus, "ResultStatusReason", ""));
@@ -428,12 +432,12 @@ manifest.RuntimeTruthContractOk = logical(scenarioStatus.RuntimeTruthContractOk)
 manifest.TruthContractOk = logical(sixgr.util.structGet(scenarioStatus, "TruthContractOk", scenarioStatus.RuntimeTruthContractOk));
 manifest.StandardsConformanceOk = logical(sixgr.util.structGet(scenarioStatus, "StandardsConformanceOk", scenarioStatus.RuntimeTruthContractOk));
 manifest.ScenarioObjectiveOk = logical(sixgr.util.structGet(scenarioStatus, "ScenarioObjectiveOk", scenarioStatus.ResultOk));
-manifest.ConfiguredEffectiveOk = logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", true));
-manifest.MandatorySubsystemsOk = logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", true));
-manifest.ActiveIssueGateOk = logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", true));
-manifest.KpiConsistencyOk = logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", true));
+manifest.ConfiguredEffectiveOk = logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", false));
+manifest.MandatorySubsystemsOk = logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", false));
+manifest.ActiveIssueGateOk = logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", false));
+manifest.KpiConsistencyOk = logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", false));
 manifest.StrictAnchorEligible = logical(sixgr.util.structGet(scenarioStatus, "StrictAnchorEligible", false));
-manifest.StrictAnchorPass = logical(sixgr.util.structGet(scenarioStatus, "StrictAnchorPass", true));
+manifest.StrictAnchorPass = logical(sixgr.util.structGet(scenarioStatus, "StrictAnchorPass", false));
 manifest.ResultStatusReason = char(string(sixgr.util.structGet(scenarioStatus, "ResultStatusReason", "")));
 manifest.ActiveMandatoryIssueCount = double(sixgr.util.structGet(scenarioStatus, "ActiveMandatoryIssueCount", 0));
 manifest.ActiveCriticalIssueCount = double(sixgr.util.structGet(scenarioStatus, "ActiveCriticalIssueCount", 0));
@@ -496,12 +500,12 @@ T = table( ...
     logical(sixgr.util.structGet(scenarioStatus, "TruthContractOk", scenarioStatus.RuntimeTruthContractOk)), ...
     logical(sixgr.util.structGet(scenarioStatus, "StandardsConformanceOk", scenarioStatus.RuntimeTruthContractOk)), ...
     logical(sixgr.util.structGet(scenarioStatus, "ScenarioObjectiveOk", scenarioStatus.ResultOk)), ...
-    logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", true)), ...
-    logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", true)), ...
-    logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", true)), ...
-    logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", true)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", false)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", false)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", false)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", false)), ...
     logical(sixgr.util.structGet(scenarioStatus, "StrictAnchorEligible", false)), ...
-    logical(sixgr.util.structGet(scenarioStatus, "StrictAnchorPass", true)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "StrictAnchorPass", false)), ...
     string(sixgr.util.structGet(scenarioStatus, "ResultStatusReason", "")), ...
     double(sixgr.util.structGet(scenarioStatus, "ActiveMandatoryIssueCount", 0)), ...
     double(sixgr.util.structGet(scenarioStatus, "ActiveCriticalIssueCount", 0)), ...

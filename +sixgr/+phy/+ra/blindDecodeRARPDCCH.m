@@ -10,7 +10,10 @@ cfgRx.phy.carrier.SubcarrierSpacing = double(raCfg.CarrierSCSkHz);
 cfgRx.phy.pdcch.rnti = double(p.Results.RNTIAttempted);
 cfgRx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
 cfgRx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);
-cfgRx.phy.pdcch.blindSearch = true;
+cfgRx.phy.pdcch.blindSearch = logical(sixgr.util.structGet(cfg, ...
+    "phy.pdcch.blindSearch", false));
+sixgr.config.assertRuntimeFeatureUse(cfgRx, "pdcch_blind_search", ...
+    cfgRx.phy.pdcch.blindSearch, "blindDecodeRARPDCCH");
 cfgRx.phy.pdcch.allowBlindCandidateTimingEstimate = false;
 cfgRx.phy.pdcch.aggregationLevel = 4;
 cfgRx.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];

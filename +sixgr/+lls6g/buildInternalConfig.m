@@ -182,6 +182,20 @@ snrSweepOffsets_dB = double(localGetNested(s, "simulation.snr_sweep_offsets_db",
 cfg.run.snrSweepOffsets_dB = snrSweepOffsets_dB(:).';
 cfg.run.snrSweepEnabled = logical(localGetNested(s, "sweeps_and_matrix.snr_sweep.enabled", ...
     ~isempty(cfg.run.snrSweepOffsets_dB)));
+cfg.run.referenceSweepEnabled = logical(localRequireNested(s, ...
+    "simulation.reference_sweep_enabled", "simulation.reference_sweep_enabled"));
+cfg.run.referenceTrialsPerSNR = double(localRequireNested(s, ...
+    "simulation.reference_trials_per_snr", "simulation.reference_trials_per_snr"));
+cfg.run.harqDiagnosticsEnabled = logical(localRequireNested(s, ...
+    "simulation.harq_diagnostics_enabled", "simulation.harq_diagnostics_enabled"));
+cfg.run.adaptiveSweepEnabled = logical(localRequireNested(s, ...
+    "simulation.adaptive_sweep_enabled", "simulation.adaptive_sweep_enabled"));
+cfg.run.adaptiveSweepStep_dB = double(localRequireNested(s, ...
+    "simulation.adaptive_sweep_step_db", "simulation.adaptive_sweep_step_db"));
+cfg.run.adaptiveSweepMaxPoints = double(localRequireNested(s, ...
+    "simulation.adaptive_sweep_max_points", "simulation.adaptive_sweep_max_points"));
+cfg.run.maxRawRowsPerSweep = double(localRequireNested(s, ...
+    "simulation.max_raw_rows_per_sweep", "simulation.max_raw_rows_per_sweep"));
 
 cfg.outputs.saveCSV = logical(s.output.save_csv);
 cfg.outputs.saveMAT = logical(s.output.save_mat);
@@ -612,8 +626,15 @@ cfg = sixgr.util.structSet(cfg, "phy.waveform.experimentalDLDftsOfdmEnabled", ..
     logical(s.waveform.experimental_dl_dfts_ofdm_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.channelEstimation.method", char(string(localGetNested(s, ...
     "phy.channelEstimation.method", localGetNested(s, "receiver_algorithms.channel_estimation_method", "LS")))));
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.enableCPECorrection", logical(localGetNested(s, ...
-    "phy.pdsch.ptrs.enableCPECorrection", true)));
+ptrsCPECorrectionEnabled = logical(localRequireNested(s, ...
+    "reference_signals.ptrs_cpe_correction_enabled", ...
+    "reference_signals.ptrs_cpe_correction_enabled"));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.enableCPECorrection", ...
+    ptrsCPECorrectionEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.ptrs.enableCPECorrection", ...
+    ptrsCPECorrectionEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.ptrs.enableCPECorrection", ...
+    ptrsCPECorrectionEnabled);
 
 cfg.phy.ssb.enable = logical(s.reference_signals.ssb_enabled);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.blockPattern", ...
@@ -674,6 +695,11 @@ if builtin("isstruct", initialAccess) && ~isempty(fieldnames(initialAccess))
 end
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindSearch", ...
+    logical(localRequireNested(s, "control.blind_search_enabled", ...
+    "control.blind_search_enabled")));
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.dmrs.enable", ...
+    logical(s.reference_signals.pdcch_dmrs_enabled));
 cfg.phy.pdcch.searchSpaceType = char(localNormalizePDCCHSearchSpaceType(s.control.search_space_type));
 cfg.phy.pdcch.aggregationLevels = double(s.control.aggregation_levels);
 cfg.phy.pdcch.aggregationLevel = double(localResolveDefaultPDCCHAggregationLevel(s.control.aggregation_levels));
@@ -722,7 +748,8 @@ cfg.ctrl6gr.SNRdB = double(localGetNested(s, "control.pdcch6gr.snr_db", cfg.chan
 cfg.ctrl6gr.NoiseVarianceMode = char(string(localGetNested(s, "control.pdcch6gr.noise_variance_mode", "from_snr_db")));
 cfg.ctrl6gr.ChannelEstimationMode = char(string(localGetNested(s, "control.pdcch6gr.channel_estimation_mode", "realistic")));
 cfg.ctrl6gr.EqualizerType = char(string(localGetNested(s, "control.pdcch6gr.equalizer_type", "MMSE")));
-cfg.ctrl6gr.BlindDetectionEnabled = logical(localGetNested(s, "control.pdcch6gr.blind_detection_enabled", true));
+cfg.ctrl6gr.BlindDetectionEnabled = logical(localRequireNested(s, ...
+    "control.blind_search_enabled", "control.blind_search_enabled"));
 cfg.ctrl6gr.MonitoringPeriodicitySlots = double(localGetNested(s, "control.pdcch6gr.monitoring_periodicity_slots", 1));
 cfg.ctrl6gr.EnableCSS = logical(localGetNested(s, "control.pdcch6gr.enable_css", true));
 cfg.ctrl6gr.EnableUSS = logical(localGetNested(s, "control.pdcch6gr.enable_uss", true));
@@ -803,7 +830,9 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", struct( ...
     "FrequencyRangeAllows1024QAM", cfg.pdsch6gr.MCSFrequencyRangeAllows1024QAM, ...
     "BandAllows1024QAM", cfg.pdsch6gr.MCSBandAllows1024QAM));
 cfg.pdsch6gr.LinkAdaptationMode = char(string(localGetNested(s, "pdsch6gr.link_adaptation_mode", "actual_bler_based")));
-cfg.pdsch6gr.HARQEnabled = logical(localGetNested(s, "pdsch6gr.harq_enabled", true));
+% HARQ has one YAML authority.  The phase-specific surface is a compatibility
+% view, never a second enable switch.
+cfg.pdsch6gr.HARQEnabled = logical(s.harq.enabled);
 cfg.pdsch6gr.HARQProcessCount = double(localGetNested(s, "pdsch6gr.harq_process_count", 4));
 cfg.pdsch6gr.MaxHARQTx = double(localGetNested(s, "pdsch6gr.max_harq_tx", 1));
 cfg.pdsch6gr.EnableCrossSlotPDSCH = logical(localGetNested(s, "pdsch6gr.enable_cross_slot_pdsch", false));
@@ -825,6 +854,28 @@ ulMuMimoEnabled = logical(localGetNested(s, "mimo.ul_mu_mimo_enable", ...
     localGetNested(s, "system.scheduler.ulMuMimoEnabled", false)));
 muMimoMaxUsers = max(2, min(4, round(double(localGetNested(s, "mimo.mu_mimo_max_users_per_prb", ...
     localGetNested(s, "system.scheduler.muMimoMaxUsersPerPRB", 2))))));
+muMimoLeakageThreshold_dB = double(localGetNested(s, ...
+    "mimo.mu_mimo_precoder_leakage_threshold_db", -15));
+muMimoMinimumDesiredGain_dB = double(localGetNested(s, ...
+    "mimo.mu_mimo_minimum_desired_subspace_gain_db", -30));
+muMimoHybridRFDesignPolicy = lower(strtrim(string(localGetNested(s, ...
+    "mimo.mu_mimo_hybrid_rf_design_policy", "fixed_configured_matrix"))));
+if muMimoEnabled && ~(isscalar(muMimoLeakageThreshold_dB) && ...
+        isfinite(muMimoLeakageThreshold_dB) && muMimoLeakageThreshold_dB < 0)
+    error("sixgr:lls6g:config:InvalidMUMIMOLeakageThreshold", ...
+        "mimo.mu_mimo_precoder_leakage_threshold_db must be a finite negative scalar when MU-MIMO is enabled.");
+end
+if muMimoEnabled && ~(isscalar(muMimoMinimumDesiredGain_dB) && ...
+        isfinite(muMimoMinimumDesiredGain_dB) && muMimoMinimumDesiredGain_dB <= 0)
+    error("sixgr:lls6g:config:InvalidMUMIMODesiredGainThreshold", ...
+        "mimo.mu_mimo_minimum_desired_subspace_gain_db must be a finite nonpositive scalar when MU-MIMO is enabled.");
+end
+if muMimoEnabled && ~ismember(muMimoHybridRFDesignPolicy, ...
+        ["fixed_configured_matrix", "measured_srs_phase_only_subarray"])
+    error("sixgr:lls6g:config:InvalidMUMIMOHybridRFDesignPolicy", ...
+        ["mimo.mu_mimo_hybrid_rf_design_policy must be fixed_configured_matrix " ...
+         "or measured_srs_phase_only_subarray when MU-MIMO is enabled."]);
+end
 cfg.pdsch6gr.EnableMUMIMOStudy = logical(localGetNested(s, "pdsch6gr.enable_mumimo_study", false)) || muMimoEnabled;
 cfg = sixgr.util.structSet(cfg, "mimo.mu_mimo_enable", muMimoEnabled);
 cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoEnabled", muMimoEnabled);
@@ -833,6 +884,12 @@ cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoMaxUsersPerPRB", muMimoMaxUsers)
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoEnabled", muMimoEnabled);
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.ulMuMimoEnabled", ulMuMimoEnabled);
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoMaxUsersPerPRB", muMimoMaxUsers);
+cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoPrecoderLeakageThreshold_dB", muMimoLeakageThreshold_dB);
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoPrecoderLeakageThreshold_dB", muMimoLeakageThreshold_dB);
+cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoMinimumDesiredSubspaceGain_dB", muMimoMinimumDesiredGain_dB);
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoMinimumDesiredSubspaceGain_dB", muMimoMinimumDesiredGain_dB);
+cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoHybridRFDesignPolicy", char(muMimoHybridRFDesignPolicy));
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoHybridRFDesignPolicy", char(muMimoHybridRFDesignPolicy));
 cfg.pdsch6gr.EnableMRSS = logical(localGetNested(s, "pdsch6gr.enable_mrss", false));
 cfg.pdsch6gr.EnablePhaseNoise = logical(localGetNested(s, "pdsch6gr.enable_phase_noise", false));
 cfg.pdsch6gr.EnableWidebandUncalibratedPhaseErrors = logical(localGetNested(s, "pdsch6gr.enable_wideband_uncalibrated_phase_errors", false));
@@ -928,6 +985,32 @@ cfg.phy.pdsch.rank = double(dlLayerCount);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxLayers", double(dlLayerCount));
 cfg = sixgr.util.structSet(cfg, "phy.maxDLLayers", double(dlLayerCount));
 cfg.phy.pdsch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
+cfg.pdsch6gr.EnablePTRS = cfg.phy.pdsch.enablePTRS;
+ptrsPortAssociationPolicy = lower(strtrim(string(localGetNested(s, ...
+    "reference_signals.ptrs_port_association_policy", ""))));
+if cfg.phy.pdsch.enablePTRS && strlength(ptrsPortAssociationPolicy) == 0
+    error("sixgr:lls6g:config:MissingPTRSPortAssociationPolicy", ...
+        ['reference_signals.ptrs_enabled=true requires explicit ' ...
+         'reference_signals.ptrs_port_association_policy.']);
+end
+if strlength(ptrsPortAssociationPolicy) > 0 && ...
+        ~ismember(ptrsPortAssociationPolicy, ...
+        ["configured_absolute_port","first_scheduled_dmrs_port"])
+    error("sixgr:lls6g:config:InvalidPTRSPortAssociationPolicy", ...
+        "reference_signals.ptrs_port_association_policy has unsupported value '%s'.", ...
+        char(ptrsPortAssociationPolicy));
+end
+if strlength(ptrsPortAssociationPolicy) > 0
+    cfg = sixgr.util.structSet(cfg, "phy.ptrs.portAssociationPolicy", ...
+        char(ptrsPortAssociationPolicy));
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.portAssociationPolicy", ...
+        char(ptrsPortAssociationPolicy));
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.ptrs.portAssociationPolicy", ...
+        char(ptrsPortAssociationPolicy));
+    cfg = sixgr.util.structSet(cfg, ...
+        "referenceSignals.ptrsPortAssociationPolicy", ...
+        char(ptrsPortAssociationPolicy));
+end
 cfg.phy.pdsch.dmrs.numCDMGroupsWithoutData = double(s.reference_signals.pdsch_dmrs_num_cdm_groups_without_data);
 cfg.phy.pdsch.dmrs.typeApos = double(s.reference_signals.pdsch_dmrs_type_a_position);
 cfg.phy.pdsch.dmrs.configType = double(s.reference_signals.pdsch_dmrs_config_type);
@@ -939,7 +1022,10 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", char(dlMCSTable));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.nPorts", double(s.reference_signals.pdsch_dmrs_ports));
 
 cfg.phy.csirs.enable = logical(s.reference_signals.csi_rs_enabled);
-cfg.phy.csirs.nPorts = double(s.reference_signals.pdsch_dmrs_ports);
+csiRSPorts = double(localGetNested(s, "reference_signals.csi_rs_ports", ...
+    s.reference_signals.pdsch_dmrs_ports));
+cfg.phy.csirs.nPorts = csiRSPorts;
+cfg.phy.csirs.numPorts = csiRSPorts;
 cfg.phy.csirs.scramblingID = double(localGetNested(s, "reference_signals.csirs_scrambling_id", ...
     localGetNested(s, "reference_signals.csi_rs_scrambling_id", cfg.phy.carrier.NCellID)));
 cfg = sixgr.util.structSet(cfg, "phy.csirs.numResources", ...
@@ -953,22 +1039,28 @@ csiMode = string(localRequireFirstNested(s, ...
 pmiCodebookMode = string(localRequireFirstNested(s, ...
     ["csi_acquisition_and_reporting.pmi_codebook_mode","reference_signals.pmi_codebook_mode"], ...
     "csi_acquisition_and_reporting.pmi_codebook_mode or reference_signals.pmi_codebook_mode"));
-cqiPolicy = localRequireFirstNested(s, ...
-    ["csi_acquisition_and_reporting.cqi_policy","reference_signals.cqi_reporting_enabled"], ...
-    "csi_acquisition_and_reporting.cqi_policy or reference_signals.cqi_reporting_enabled");
-pmiPolicy = localRequireFirstNested(s, ...
-    ["csi_acquisition_and_reporting.pmi_policy","reference_signals.pmi_reporting_enabled"], ...
-    "csi_acquisition_and_reporting.pmi_policy or reference_signals.pmi_reporting_enabled");
-riPolicy = localRequireFirstNested(s, ...
-    ["csi_acquisition_and_reporting.ri_policy","reference_signals.ri_reporting_enabled"], ...
-    "csi_acquisition_and_reporting.ri_policy or reference_signals.ri_reporting_enabled");
-criPolicy = localRequireFirstNested(s, ...
-    ["csi_acquisition_and_reporting.cri_policy","reference_signals.cri_reporting_enabled"], ...
-    "csi_acquisition_and_reporting.cri_policy or reference_signals.cri_reporting_enabled");
-reportCQI = localPolicyFlag(cqiPolicy);
-reportPMI = localPolicyFlag(pmiPolicy);
-reportRI = localPolicyFlag(riPolicy);
-reportCRI = localPolicyFlag(criPolicy);
+cqiPolicy = localRequireNested(s, "csi_acquisition_and_reporting.cqi_policy", ...
+    "csi_acquisition_and_reporting.cqi_policy");
+pmiPolicy = localRequireNested(s, "csi_acquisition_and_reporting.pmi_policy", ...
+    "csi_acquisition_and_reporting.pmi_policy");
+riPolicy = localRequireNested(s, "csi_acquisition_and_reporting.ri_policy", ...
+    "csi_acquisition_and_reporting.ri_policy");
+criPolicy = localRequireNested(s, "csi_acquisition_and_reporting.cri_policy", ...
+    "csi_acquisition_and_reporting.cri_policy");
+% Policy fields select how a report is produced; they do not enable it.
+% Enable/disable authority is exclusively the explicit YAML boolean.
+reportCQI = logical(localRequireNested(s, ...
+    "reference_signals.cqi_reporting_enabled", ...
+    "reference_signals.cqi_reporting_enabled"));
+reportPMI = logical(localRequireNested(s, ...
+    "reference_signals.pmi_reporting_enabled", ...
+    "reference_signals.pmi_reporting_enabled"));
+reportRI = logical(localRequireNested(s, ...
+    "reference_signals.ri_reporting_enabled", ...
+    "reference_signals.ri_reporting_enabled"));
+reportCRI = logical(localRequireNested(s, ...
+    "reference_signals.cri_reporting_enabled", ...
+    "reference_signals.cri_reporting_enabled"));
 reportCSI = logical(localRequireNested(s, "reference_signals.csi_reporting_enabled", "reference_signals.csi_reporting_enabled"));
 reportPayloadMode = string(localRequireNested(s, "csi_acquisition_and_reporting.report_payload_mode", ...
     "csi_acquisition_and_reporting.report_payload_mode"));
@@ -981,8 +1073,17 @@ cfg.phy.csi.feedbackMode = char(csiMode);
 cfg = sixgr.util.structSet(cfg, "phy.csi.channelStateInformationMode", char(csiMode));
 csiAcquisitionMode = string(localGetNested(s, "reference_signals.csi_acquisition_mode", ""));
 operationOrientation = string(localGetNested(s, "reference_signals.operation_orientation", ""));
+jointDLULCSIEnabled = logical(localGetNested(s, ...
+    "csi_acquisition_and_reporting.joint_dl_ul_csi_enabled", false));
+jointPortMappingPolicy = string(localGetNested(s, ...
+    "csi_acquisition_and_reporting.joint_port_mapping_policy", "disabled"));
+jointTimelinePolicy = string(localGetNested(s, ...
+    "csi_acquisition_and_reporting.joint_timeline_policy", "disabled"));
 cfg = sixgr.util.structSet(cfg, "phy.csi.acquisitionMode", char(csiAcquisitionMode));
 cfg = sixgr.util.structSet(cfg, "phy.csi.operationOrientation", char(operationOrientation));
+cfg = sixgr.util.structSet(cfg, "phy.csi.jointDLULCSIEnabled", jointDLULCSIEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.csi.jointPortMappingPolicy", char(jointPortMappingPolicy));
+cfg = sixgr.util.structSet(cfg, "phy.csi.jointTimelinePolicy", char(jointTimelinePolicy));
 cfg = sixgr.util.structSet(cfg, "referenceSignals.csiAcquisitionMode", char(csiAcquisitionMode));
 cfg = sixgr.util.structSet(cfg, "referenceSignals.operationOrientation", char(operationOrientation));
 cfg = sixgr.util.structSet(cfg, "reference_signals.csi_acquisition_mode", char(csiAcquisitionMode));
@@ -1072,34 +1173,6 @@ if isfinite(blerCurveSlope_dB) && blerCurveSlope_dB > 0
     cfg = sixgr.util.structSet(cfg, "phy.csi.blerCurveSlope_dB", double(blerCurveSlope_dB));
     cfg = sixgr.util.structSet(cfg, "phy.pdsch.blerCurveSlope_dB", double(blerCurveSlope_dB));
     cfg = sixgr.util.structSet(cfg, "phy.pusch.blerCurveSlope_dB", double(blerCurveSlope_dB));
-end
-scenarioId = string(localGetNested(s, "meta.scenario_id", ""));
-if scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    if strlength(sinrToCQIMode) == 0
-        cfg = sixgr.util.structSet(cfg, "phy.csi.sinrToCQIMode", "threshold_table");
-        cfg = sixgr.util.structSet(cfg, "phy.pdsch.sinrToCQIMode", "threshold_table");
-        cfg = sixgr.util.structSet(cfg, "phy.pusch.sinrToCQIMode", "threshold_table");
-    end
-    if strlength(effectiveSINRMethod) == 0
-        cfg = sixgr.util.structSet(cfg, "phy.csi.effectiveSINRMethod", "eesm");
-        cfg = sixgr.util.structSet(cfg, "phy.pdsch.effectiveSINRMethod", "eesm");
-        cfg = sixgr.util.structSet(cfg, "phy.pusch.effectiveSINRMethod", "eesm");
-    end
-    if ~(isfinite(eesmBeta_dB) && eesmBeta_dB > 0)
-        cfg = sixgr.util.structSet(cfg, "phy.csi.eesmBeta_dB", 1.5);
-        cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBeta_dB", 1.5);
-        cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBeta_dB", 1.5);
-    end
-    if ~(isfinite(targetBLER) && targetBLER > 0 && targetBLER < 1)
-        cfg = sixgr.util.structSet(cfg, "phy.csi.targetBLER", 0.1);
-        cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetBLER", 0.1);
-        cfg = sixgr.util.structSet(cfg, "phy.pusch.targetBLER", 0.1);
-    end
-    if ~(isfinite(blerCurveSlope_dB) && blerCurveSlope_dB > 0)
-        cfg = sixgr.util.structSet(cfg, "phy.csi.blerCurveSlope_dB", 1.5);
-        cfg = sixgr.util.structSet(cfg, "phy.pdsch.blerCurveSlope_dB", 1.5);
-        cfg = sixgr.util.structSet(cfg, "phy.pusch.blerCurveSlope_dB", 1.5);
-    end
 end
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMIType1", reportPMI && pmiCodebookMode == "type1_su_mimo");
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMIType2", reportPMI && pmiCodebookMode == "type2_mu_mimo");
@@ -1425,7 +1498,12 @@ cfg = sixgr.util.structSet(cfg, "phy.ldpc.useMexBatchDecode", ...
     ~localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile));
 cfoHz = localResolveRuntimeCFOHz(s);
 timingOffsetSamples = localResolveRuntimeTimingOffsetSamples(s);
-cfg.phy.rx.cfoCompensation = abs(double(cfoHz)) > 0;
+cfoEnabled = logical(localRequireNested(s, ...
+    "impairments.cfo_enabled", "impairments.cfo_enabled"));
+cfoCorrectionEnabled = logical(localRequireNested(s, ...
+    "impairments.cfo_correction_enable", ...
+    "impairments.cfo_correction_enable"));
+cfg.phy.rx.cfoCompensation = cfoEnabled && cfoCorrectionEnabled;
 cfg.phy.rx.useFastChannelEstMex = false;
 cfg = sixgr.util.structSet(cfg, "phy.rx.useIdealTimingSync", logical(localRequireNested(s, ...
     "receiver.use_ideal_timing_sync", "receiver.use_ideal_timing_sync")));
@@ -1435,11 +1513,12 @@ cfg = localApplyRuntimeAntennaConfig(cfg, s);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(cfoHz));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoEstimationMethod", ...
     char(string(localGetNested(s, "impairments.cfo_estimation_method", "cyclic_prefix"))));
-cfoCorrectionEnabled = logical(localGetNested(s, "impairments.cfo_correction_enable", true));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoCorrectionEnabled", cfoCorrectionEnabled);
 cfg = sixgr.util.structSet(cfg, "phy.rx.cfoCorrectionEnabled", cfoCorrectionEnabled);
-phaseNoiseEnabled = logical(s.impairments.phase_noise_enabled) || ...
-    logical(localGetNested(s, "impairments.phase_noise.enabled", false));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoEnabled", cfoEnabled);
+phaseNoiseEnabled = logical(localRequireNested(s, ...
+    "impairments.phase_noise_enabled", ...
+    "impairments.phase_noise_enabled"));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", logical(phaseNoiseEnabled));
 cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.enable", logical(phaseNoiseEnabled));
 phaseNoiseModel = string(localGetNested(s, "impairments.phase_noise_model", ...
@@ -1480,15 +1559,16 @@ iqPhaseImb_deg = localResolveFirstFiniteNumeric(s, [ ...
     "impairments.iq_phase_imbalance_deg"
     "impairments.iq_imbalance.phase_imbalance_deg"
     "impairments.iq_imbalance.phase_imb_deg"], NaN);
-iqEnabled = logical(s.impairments.iq_imbalance_enabled) || ...
-    logical(localGetNested(s, "impairments.iq_imbalance.enabled", false)) || ...
-    (isfinite(iqGainImb_dB) && abs(double(iqGainImb_dB)) > 1e-12) || ...
-    (isfinite(iqPhaseImb_deg) && abs(double(iqPhaseImb_deg)) > 1e-12);
+iqEnabled = logical(localRequireNested(s, ...
+    "impairments.iq_imbalance_enabled", ...
+    "impairments.iq_imbalance_enabled"));
 cfg = sixgr.util.structSet(cfg, "rf.enable", ...
     abs(double(cfoHz)) > 0 || logical(phaseNoiseEnabled) || logical(iqEnabled) || ...
     logical(s.impairments.pa_nonlinearity_enabled) || abs(double(timingOffsetSamples)) > 0);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceEnabled", logical(iqEnabled));
-iqCorrectionEnabled = logical(localGetNested(s, "impairments.iq_imbalance_correction_enable", true));
+iqCorrectionEnabled = logical(localRequireNested(s, ...
+    "impairments.iq_imbalance_correction_enable", ...
+    "impairments.iq_imbalance_correction_enable"));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceCorrectionEnabled", iqCorrectionEnabled);
 cfg = sixgr.util.structSet(cfg, "phy.rx.iqImbalanceCorrectionEnabled", iqCorrectionEnabled);
 cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.enable", logical(iqEnabled));
@@ -1507,6 +1587,9 @@ cfg = sixgr.util.structSet(cfg, "rf.pa.backoff_dB", double(localGetNested(s, "im
 cfg = sixgr.util.structSet(cfg, "phy.impairments.adcQuantizationBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.dacQuantizationBits", double(s.impairments.dac_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetSamples", double(timingOffsetSamples));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetEnabled", ...
+    logical(localRequireNested(s, "impairments.timing_offset_enabled", ...
+    "impairments.timing_offset_enabled")));
 cfg = sixgr.util.structSet(cfg, "rf.adcBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "rf.dacBits", double(s.impairments.dac_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "rf.timingOffsetSamples", double(timingOffsetSamples));
@@ -1522,6 +1605,24 @@ interCellInterferenceEnabled = logical(localGetNested(s, "interference.inter_cel
     localGetNested(s, "interference.inter_cell_interference_enable", false)));
 intraCellInterferenceEnabled = logical(localGetNested(s, "interference.intra_cell_interference_flag", ...
     localGetNested(s, "interference.intra_cell_interference_enable", false)));
+intraCellInterferenceMode = lower(strtrim(string(localGetNested(s, ...
+    "interference.intra_cell_execution_mode", "none"))));
+if ~any(intraCellInterferenceMode == ["none","shared_slot_waveform_superposition"])
+    error("sixgr:lls6g:config:UnsupportedIntraCellInterferenceMode", ...
+        ['interference.intra_cell_execution_mode must be none or ' ...
+        'shared_slot_waveform_superposition; got ''%s''.'], ...
+        char(intraCellInterferenceMode));
+end
+if intraCellInterferenceEnabled && ...
+        logical(sixgr.util.structGet(cfg, "mac.scheduler.muMimoEnabled", false)) && ...
+        intraCellInterferenceMode ~= "shared_slot_waveform_superposition"
+    error("sixgr:lls6g:config:MissingMUMIMOWaveformSuperposition", ...
+        ['MU-MIMO with intra-cell interference enabled requires ' ...
+        'interference.intra_cell_execution_mode=' ...
+        'shared_slot_waveform_superposition.']);
+end
+cfg = sixgr.util.structSet(cfg, "run.intraCellInterferenceExecutionMode", ...
+    char(intraCellInterferenceMode));
 cfg = sixgr.util.structSet(cfg, "channel.interference.interCellEnabled", interCellInterferenceEnabled);
 cfg = sixgr.util.structSet(cfg, "channel.interference.intraCellEnabled", intraCellInterferenceEnabled);
 cfg = sixgr.util.structSet(cfg, "interference.interCellEnabled", interCellInterferenceEnabled);
@@ -1634,6 +1735,23 @@ bootstrapMCSIndex = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.b
 if isfinite(bootstrapMCSIndex) && bootstrapMCSIndex >= 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", max(0, min(31, round(double(bootstrapMCSIndex)))));
 end
+initialMCSIndex = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.initial_mcs", bootstrapMCSIndex));
+maximumMCSIndex = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.maximum_mcs", 31));
+if isfinite(initialMCSIndex)
+    initialMCSIndex = max(0, min(31, round(double(initialMCSIndex))));
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.initialMCSIndex", initialMCSIndex);
+end
+if isfinite(maximumMCSIndex)
+    maximumMCSIndex = max(0, min(31, round(double(maximumMCSIndex))));
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.maximumMCSIndex", maximumMCSIndex);
+end
+if isfinite(initialMCSIndex) && isfinite(maximumMCSIndex) && initialMCSIndex > maximumMCSIndex
+    error("sixgr:lls6g:config:InvalidAdaptiveMCSBounds", ...
+        "link_adaptation.initial_mcs=%d must not exceed maximum_mcs=%d.", ...
+        initialMCSIndex, maximumMCSIndex);
+end
 cqiSmoothingAlpha = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.cqi_smoothing_alpha", NaN));
 cqiSmoothingMode = lower(strtrim(string(localGetNested(s, "link_adaptation.cqi_smoothing_mode", ""))));
 if strlength(cqiSmoothingMode) > 0
@@ -1641,46 +1759,32 @@ if strlength(cqiSmoothingMode) > 0
 end
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", double(cqiSmoothingAlpha));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", 0.2);
 end
 ollaStepDown = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_down", ...
     localGetNested(s, "link_adaptation.olla_step_down_db", NaN)));
 if isfinite(ollaStepDown) && ollaStepDown > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", double(ollaStepDown));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 1.0);
 end
 ollaStepUp = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_up", ...
     localGetNested(s, "link_adaptation.olla_step_up_db", NaN)));
 if isfinite(ollaStepUp) && ollaStepUp > 0
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", double(ollaStepUp));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", 0.12);
 end
 ollaMarginMinDb = double(localGetNested(s, "link_adaptation.olla_margin_min_db", ...
     localGetNested(s, "link_adaptation.delta_mcs_min", NaN)));
 if isfinite(ollaMarginMinDb)
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMinDb", double(ollaMarginMinDb));
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", double(ollaMarginMinDb));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMinDb", -10);
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMin", -10);
 end
 ollaMarginMaxDb = double(localGetNested(s, "link_adaptation.olla_margin_max_db", ...
     localGetNested(s, "link_adaptation.delta_mcs_max", NaN)));
 if isfinite(ollaMarginMaxDb)
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", double(ollaMarginMaxDb));
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", double(ollaMarginMaxDb));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", 10);
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSMax", 10);
 end
 resetOnRIChange = localGetNested(s, "link_adaptation.reset_on_ri_change", []);
 if ~isempty(resetOnRIChange)
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnRIChange", logical(resetOnRIChange));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnRIChange", true);
 end
 rankThreshold = double(localGetNested(s, "link_adaptation.rank_threshold", NaN));
 if isfinite(rankThreshold) && rankThreshold >= 0
@@ -1694,15 +1798,11 @@ end
 cqiJumpResetThreshold = double(localGetNested(s, "link_adaptation.cqi_jump_reset_threshold", NaN));
 if isfinite(cqiJumpResetThreshold) && cqiJumpResetThreshold >= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", double(cqiJumpResetThreshold));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", 4);
 end
 rankEigenThreshold_dB = double(localGetNested(s, "reference_signals.srs_rank_eigen_threshold_db", ...
     localGetNested(s, "link_adaptation.srs_rank_eigen_threshold_db", NaN)));
 if isfinite(rankEigenThreshold_dB) && rankEigenThreshold_dB > 0
     cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", double(rankEigenThreshold_dB));
-elseif scenarioId == "lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame"
-cfg = sixgr.util.structSet(cfg, "phy.srs.rankEigenThreshold_dB", 10);
 end
 
 cfg = localApplySystemConfig(cfg, s);
@@ -1773,6 +1873,10 @@ if strlength(explicitRunClass) > 0
 else
     cfg = localApplyValidationRunClass(cfg, s);
 end
+% Install one configured operating authority only after normalization and
+% strict validation have completed.  Legacy aliases remain compatibility
+% views, while contradictory YAML authorities now fail before execution.
+cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -1879,7 +1983,12 @@ if builtin("isstruct", sib1Section) && ~isempty(fieldnames(sib1Section))
         logical(localGetNested(s, "sib1_and_initial_access.cell_search_required", false)) || ...
         logical(localGetNested(s, "sib1_and_initial_access.sib1_decode_from_waveform_required", false));
     if sib1Required
-        cfg = sixgr.util.structSet(cfg, "phy.sib1.enable", true);
+        if ~logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false))
+            error("sixgr:lls6g:config:SIB1RequirementContradictsFeatureAuthority", ...
+                ['sib1_and_initial_access requires SIB1 execution, but ' ...
+                 'initial_access.sib1.enabled=false. Validation requirements ' ...
+                 'cannot silently enable a YAML-disabled waveform feature.']);
+        end
         cfg = localAppendValidationObjectives(cfg, "cell_search_mib_sib1");
     end
     siRNTI = double(localGetNested(s, "sib1_and_initial_access.si_rnti", NaN));
@@ -1967,7 +2076,41 @@ cfg = localReconcileULWaveformPUSCHSurface(cfg, s);
 cfg = localApplyPDCCHSurface(cfg, s);
 cfg = localApplyReceiverSurface(cfg, s);
 cfg = localApplyTimingAndRFHardwareSurface(cfg, s);
+cfg = localReconcileCanonicalImpairmentAuthority(cfg, s);
 cfg = localApplyAuxiliaryPHYKnobs(cfg, s);
+end
+
+function cfg = localReconcileCanonicalImpairmentAuthority(cfg, s)
+% canonical_control.impairments owns the common waveform-impairment
+% switches. Detailed rf_frontend fields select models and parameters, but
+% cannot silently override these operator-facing enable/disable decisions.
+if isempty(sixgr.util.structGet(s, "canonical_control.impairments", []))
+    return;
+end
+phaseNoiseEnabled = logical(localRequireNested(s, ...
+    "impairments.phase_noise_enabled", ...
+    "impairments.phase_noise_enabled"));
+iqEnabled = logical(localRequireNested(s, ...
+    "impairments.iq_imbalance_enabled", ...
+    "impairments.iq_imbalance_enabled"));
+paEnabled = logical(localRequireNested(s, ...
+    "impairments.pa_nonlinearity_enabled", ...
+    "impairments.pa_nonlinearity_enabled"));
+cfoEnabled = logical(localRequireNested(s, ...
+    "impairments.cfo_enabled", "impairments.cfo_enabled"));
+timingEnabled = logical(localRequireNested(s, ...
+    "impairments.timing_offset_enabled", ...
+    "impairments.timing_offset_enabled"));
+cfg = sixgr.util.structSet(cfg, "rf.phaseNoise.enable", phaseNoiseEnabled);
+cfg = sixgr.util.structSet(cfg, "rf.iqImbalance.enable", iqEnabled);
+cfg = sixgr.util.structSet(cfg, "rf.pa.enable", paEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.impairments.phaseNoiseEnabled", phaseNoiseEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.impairments.iqImbalanceEnabled", iqEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.impairments.paNonlinearityEnabled", paEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoEnabled", cfoEnabled);
+cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetEnabled", timingEnabled);
+cfg = sixgr.util.structSet(cfg, "rf.enable", ...
+    phaseNoiseEnabled || iqEnabled || paEnabled || cfoEnabled || timingEnabled);
 end
 
 function cfg = localApplyBWPSurface(cfg, s)
@@ -2166,6 +2309,9 @@ function cfg = localApplyPUSCHDetailSurface(cfg, s, targetBase)
 % consumed by the production allocator, transmitter, receiver, and power
 % controller. Runtime grants may replace scheduling state, but MATLAB
 % literals must not silently replace configured initial PHY policy.
+% PT-RS enablement is deliberately absent from this legacy detail surface:
+% reference_signals.ptrs_enabled is the single canonical YAML authority for
+% both PDSCH and PUSCH. The PUSCH section only owns PT-RS density/offset.
 scalarPairs = {
     "rnti", "RNTI"
     "scrambling_id", "NID"
@@ -2193,7 +2339,6 @@ scalarPairs = {
     "dmrs_nrs_id", "dmrs.NRSID"
     "dmrs_group_hopping", "dmrs.groupHopping"
     "dmrs_sequence_hopping", "dmrs.sequenceHopping"
-    "ptrs_enabled", "enablePTRS"
     "ptrs_time_density", "ptrs.timeDensity"
     "ptrs_frequency_density", "ptrs.frequencyDensity"
     "ptrs_re_offset", "ptrs.reOffset"
@@ -2440,8 +2585,15 @@ end
 function cfg = localReconcileULWaveformPUSCHSurface(cfg, s)
 ulWaveform = upper(strtrim(string(localGetNested(s, "waveform.ul_waveform", ""))));
 transformEnabled = logical(localGetNested(s, "waveform.transform_precoding_enabled", false));
-if ulWaveform == "DFT-S-OFDM" || transformEnabled
-    cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", true);
+waveformRequiresTransform = ulWaveform == "DFT-S-OFDM";
+if waveformRequiresTransform ~= transformEnabled
+    error("sixgr:lls6g:config:ContradictoryULWaveformAuthority", ...
+        ['waveform.ul_waveform=%s and waveform.transform_precoding_enabled=%d disagree. ' ...
+         'The YAML must declare one consistent UL waveform operating point.'], ...
+        char(ulWaveform), transformEnabled);
+end
+cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", transformEnabled);
+if transformEnabled
     cfg = sixgr.util.structSet(cfg, "phy.pusch.codebookBasedTransmission", false);
     cfg = sixgr.util.structSet(cfg, "phy.pusch.transmissionScheme", "noncodebook");
     cfg = sixgr.util.structSet(cfg, "phy.pusch.TransmissionScheme", "noncodebook");
@@ -3847,6 +3999,33 @@ spacingH = double(localRequireNested(s, "antenna_and_array.element_spacing_h", "
 spacingV = double(localRequireNested(s, "antenna_and_array.element_spacing_v", "antenna_and_array.element_spacing_v"));
 bsCount = max(1, round(double(localRequireNested(s, "antenna_and_array.bs_num_antenna_elements", "antenna_and_array.bs_num_antenna_elements"))));
 ueCount = max(1, round(double(localRequireNested(s, "antenna_and_array.ue_num_antenna_elements", "antenna_and_array.ue_num_antenna_elements"))));
+requestedBsTxRUs = max(1, round(double(localRequireNested(s, ...
+    "antenna_and_array.bs_num_txrus", "antenna_and_array.bs_num_txrus"))));
+requestedBsRxRUs = max(1, round(double(localRequireNested(s, ...
+    "antenna_and_array.bs_num_rxrus", "antenna_and_array.bs_num_rxrus"))));
+requestedUeTxRUs = max(1, round(double(localGetNested(s, ...
+    "antenna_and_array.ue_num_txrus", ...
+    localGetNested(s, "mimo.max_ul_layers", 1)))));
+requestedUeRxRUs = max(1, round(double(localGetNested(s, ...
+    "antenna_and_array.ue_num_rxrus", ueCount))));
+muMimoRequested = logical(localGetNested(s, "mimo.mu_mimo_enable", ...
+    localGetNested(s, "mimo.mu_mimo_enabled", false)));
+if muMimoRequested && (requestedBsTxRUs > bsCount || ...
+        requestedBsRxRUs > bsCount || requestedUeTxRUs > ueCount || ...
+        requestedUeRxRUs > ueCount)
+    error("sixgr:lls6g:config:RFChainCountExceedsPhysicalElements", ...
+        "Directional RF-chain counts cannot exceed their physical array " + ...
+        "element counts (gNB TX/RX=%d/%d of %d; UE TX/RX=%d/%d of %d).", ...
+        requestedBsTxRUs, requestedBsRxRUs, bsCount, ...
+        requestedUeTxRUs, requestedUeRxRUs, ueCount);
+end
+% Legacy SU scenarios can inherit broad catalog RF-chain defaults.  Their
+% effective hardware authority is bounded by the explicitly configured
+% physical arrays; strict MU scenarios above fail instead of being capped.
+bsTxRUs = min(requestedBsTxRUs, bsCount);
+bsRxRUs = min(requestedBsRxRUs, bsCount);
+ueTxRUs = min(requestedUeTxRUs, ueCount);
+ueRxRUs = min(requestedUeRxRUs, ueCount);
 % Panel count is part of the physical-element factorization only when the
 % operator explicitly supplies it in antenna_and_array.  Legacy scenarios
 % may use mimo.panel_count as a beam-management capability without meaning
@@ -3873,6 +4052,11 @@ cfg = sixgr.util.structSet(cfg, "antenna.bs.geometry", char(lower(strtrim(bsGeom
 cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingLambda", [double(spacingH) double(spacingV)]);
 cfg = sixgr.util.structSet(cfg, "antenna.bs.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.numElements", double(bsCount));
+cfg = sixgr.util.structSet(cfg, "antenna.bs.numTxRFChains", double(bsTxRUs));
+cfg = sixgr.util.structSet(cfg, "antenna.bs.numRxRFChains", double(bsRxRUs));
+cfg = sixgr.util.structSet(cfg, "antenna.bs.numRFChains", double(max(bsTxRUs, bsRxRUs)));
+cfg = sixgr.util.structSet(cfg, "scenario.bs.numTxRFChains", double(bsTxRUs));
+cfg = sixgr.util.structSet(cfg, "scenario.bs.numRxRFChains", double(bsRxRUs));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.panelCount", double(bsPanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.source", "browser_yaml_antenna_and_array");
 if isfinite(bsMechanicalTiltDeg)
@@ -3884,6 +4068,11 @@ cfg = sixgr.util.structSet(cfg, "antenna.ue.geometry", char(lower(strtrim(ueGeom
 cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingLambda", [double(spacingH) double(spacingV)]);
 cfg = sixgr.util.structSet(cfg, "antenna.ue.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.numElements", double(ueCount));
+cfg = sixgr.util.structSet(cfg, "antenna.ue.numTxRFChains", double(ueTxRUs));
+cfg = sixgr.util.structSet(cfg, "antenna.ue.numRxRFChains", double(ueRxRUs));
+cfg = sixgr.util.structSet(cfg, "antenna.ue.numRFChains", double(max(ueTxRUs, ueRxRUs)));
+cfg = sixgr.util.structSet(cfg, "scenario.ue.numTxRFChains", double(ueTxRUs));
+cfg = sixgr.util.structSet(cfg, "scenario.ue.numRxRFChains", double(ueRxRUs));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.panelCount", double(uePanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.source", "browser_yaml_antenna_and_array");
 end
@@ -4021,7 +4210,7 @@ if channelModel ~= "CDL"
     return;
 end
 
-losEnabled = logical(localGetNested(s, "channels.los_enabled", true));
+losEnabled = logical(localGetNested(s, "channels.los_enabled", false));
 if any(configuredProfile == ["CDL-D", "CDL-E"]) && ~losEnabled
     error("sixgr:lls6g:config:ChannelProfileLOSConflict", ...
         "Configured channels.profile='%s' is a LOS CDL profile, but " + ...
@@ -4389,10 +4578,8 @@ end
 
 function cfoHz = localResolveRuntimeCFOHz(s)
 explicit = localNumericScalarOrNaN(localGetNested(s, "impairments.cfo_hz", NaN));
-explicitNonzero = isfinite(explicit) && abs(double(explicit)) > 0;
-enabled = logical(localGetNested(s, "impairments.cfo_enabled", ...
-    localGetNested(s, "impairments.cfo.enabled", explicitNonzero)));
-enabled = logical(enabled || explicitNonzero);
+enabled = logical(localRequireNested(s, ...
+    "impairments.cfo_enabled", "impairments.cfo_enabled"));
 if ~enabled
     cfoHz = 0;
     return;
@@ -4450,12 +4637,9 @@ end
 
 function timingOffset = localResolveRuntimeTimingOffsetSamples(s)
 explicit = localNumericScalarOrNaN(localGetNested(s, "impairments.timing_offset_samples", NaN));
-% A nonzero numeric timing offset is itself an enabled impairment request.
-% Defaults may carry timing_offset_enabled=false for the zero-offset case;
-% that default must not suppress a scenario override that sets samples != 0.
-enabled = logical(localGetNested(s, "impairments.timing_offset_enabled", false)) || ...
-    logical(localGetNested(s, "impairments.to.enabled", false)) || ...
-    (isfinite(explicit) && abs(explicit) > 0);
+enabled = logical(localRequireNested(s, ...
+    "impairments.timing_offset_enabled", ...
+    "impairments.timing_offset_enabled"));
 if ~enabled
     timingOffset = 0;
     return;

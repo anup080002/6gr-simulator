@@ -1,0 +1,2 @@
+ConfiguredDLLayers,ConfiguredULLayers,AchievedDL_RI_mean,AchievedDL_RI_max,DL_Rank2_Fraction,AchievedUL_RI_mean,AchievedUL_RI_max,UL_Rank2_Fraction,MimoKpiReconciliationOk,EvidenceSource
+2,2,2,2,1,NaN,NaN,NaN,0,"trial_rank_layer_runtime_columns"

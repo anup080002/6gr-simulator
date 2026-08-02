@@ -17,6 +17,12 @@
     "bundle_anchor_cases": ["dl_pdsch_throughput", "ul_pusch_throughput"],
     "notes": "Config-driven multi-user beamformed 4x4 waveform LLS."
   },
+  "antenna_and_array": {
+    "bs_num_txrus": 4,
+    "bs_num_rxrus": 4,
+    "ue_num_txrus": 4,
+    "ue_num_rxrus": 4
+  },
   "mimo": {
     "n_tx_ant": 4,
     "n_rx_ant": 4,
@@ -24,6 +30,8 @@
     "precoder_type": "wideband",
     "codebook_type": "type1",
     "reciprocity_mode": "TDD",
+    "mu_mimo_enable": true,
+    "ul_mu_mimo_enable": true,
     "beam_sweep_enabled": true,
     "beam_count": 8,
     "mtrp_ready": false,
@@ -33,6 +41,74 @@
   "reference_signals": {
     "pdsch_dmrs_ports": 4,
     "pusch_dmrs_ports": 4
+  },
+  "initial_access": {
+    "enabled": false,
+    "profile": "fr1_data_only_no_access_procedure",
+    "configuration_epoch": 1,
+    "band_context": "n77",
+    "spectrum": "paired",
+    "shared_spectrum": false,
+    "random_access_procedure": "disabled",
+    "require_explicit_ssb_bitmap": true,
+    "validation_snr_db": 34,
+    "validation_seed": 1501,
+    "ssb": {
+      "enabled": true,
+      "case": "Case C",
+      "scs_khz": 30,
+      "lmax": 8,
+      "beam_count": 1,
+      "periodicity_ms": 20,
+      "positions_in_burst": "10000000",
+      "per_ssb_power_db": [0, 0, 0, 0, 0, 0, 0, 0],
+      "precoder_ids": ["identity", "identity", "identity", "identity", "identity", "identity", "identity", "identity"],
+      "k_ssb": 0,
+      "n_crb_ssb": 0,
+      "selected_ssb_index": 0,
+      "observation_subframes": 5
+    },
+    "mib": {
+      "enabled": true,
+      "pdcch_config_sib1": 0,
+      "dmrs_type_a_position": 2
+    },
+    "type0": {
+      "si_rnti": 65535,
+      "dci_format": "1_0",
+      "monitoring_occasion_ordinal": 2,
+      "note17_band": false
+    },
+    "sib1": {
+      "enabled": false,
+      "si_rnti": 65535,
+      "coreset0_from_mib_required": false,
+      "searchspace0_from_mib_required": false,
+      "decode_from_waveform_required": false,
+      "observation_subframes": 5,
+      "pdsch": {
+        "prb_start": 0,
+        "num_prb": 24,
+        "symbol_start": 2,
+        "num_symbols": 12,
+        "mcs": 0,
+        "rv": 0
+      }
+    },
+    "rrc": {
+      "require_setup_complete": false,
+      "transaction_id": 0,
+      "srb1_lcid": 1
+    },
+    "extensions": {
+      "two_step_ra": false,
+      "contention_free_ra": false,
+      "beam_failure_recovery": false,
+      "supplementary_uplink": false,
+      "ntn_access": false,
+      "redcap_access": false,
+      "eredcap_access": false
+    }
   },
   "modulation": {
     "dl_modulation_order": 4,
@@ -62,6 +138,7 @@
   },
   "pdsch": {
     "execution_profile": "scheduler_truth",
+    "layer_count": 2,
     "prb_start": 0,
     "num_prb": 106,
     "mapping_type": "typeA",
@@ -69,6 +146,7 @@
     "num_symbols": 12
   },
   "pusch": {
+    "layer_count": 2,
     "prb_start": 0,
     "num_prb": 106,
     "mapping_type": "typeA",

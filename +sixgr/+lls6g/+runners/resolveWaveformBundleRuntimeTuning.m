@@ -1,20 +1,58 @@
 function tuning = resolveWaveformBundleRuntimeTuning(scfg, cfg, snrGrid)
-%RESOLVEWAVEFORMBUNDLERUNTIMETUNING Bound oversized truth runs sanely.
+%RESOLVEWAVEFORMBUNDLERUNTIMETUNING Resolve exact YAML-owned truth runtime.
 
 if nargin < 3
     snrGrid = [];
 end
 
 numUsers = max(1, round(double(scfg.get("users.n_users", 1))));
-requestedFrames = max(1, round(double(sixgr.util.structGet(cfg, "run.numFrames", 1))));
+requestedSlots = max(1, round(double(sixgr.util.structGet(cfg, "run.totalSlots", ...
+    sixgr.util.structGet(cfg, "run.numTTI", sixgr.util.structGet(cfg, "run.numFrames", 1))))));
 mcIterations = max(1, round(double(scfg.get("simulation.monte_carlo_iterations", 1))));
-requestedPrimaryTrials = max(requestedFrames, requestedFrames * mcIterations);
-requestedReferenceTrials = max(requestedPrimaryTrials, ceil(1.5 * requestedPrimaryTrials));
+requestedPrimaryTrials = requestedSlots * mcIterations;
+referenceSweepEnabled = logical(sixgr.util.structGet(cfg, ...
+    "run.referenceSweepEnabled", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "reference_sweep", ...
+    referenceSweepEnabled, "resolveWaveformBundleRuntimeTuning");
+requestedReferenceTrials = round(double(sixgr.util.structGet(cfg, ...
+    "run.referenceTrialsPerSNR", NaN)));
+if ~referenceSweepEnabled
+    requestedReferenceTrials = 0;
+elseif requestedReferenceTrials < 1
+    error("sixgr:lls6g:InvalidReferenceSweepTrials", ...
+        "simulation.reference_trials_per_snr must be at least 1 when reference_sweep_enabled=true.");
+end
+harqDiagnosticsEnabled = logical(sixgr.util.structGet(cfg, ...
+    "run.harqDiagnosticsEnabled", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "harq_diagnostics", ...
+    harqDiagnosticsEnabled, "resolveWaveformBundleRuntimeTuning");
+adaptiveSweepEnabled = logical(sixgr.util.structGet(cfg, ...
+    "run.adaptiveSweepEnabled", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "adaptive_sweep", ...
+    adaptiveSweepEnabled, "resolveWaveformBundleRuntimeTuning");
+adaptiveSweepStep_dB = double(sixgr.util.structGet(cfg, ...
+    "run.adaptiveSweepStep_dB", NaN));
+adaptiveSweepMaxPoints = round(double(sixgr.util.structGet(cfg, ...
+    "run.adaptiveSweepMaxPoints", NaN)));
+maxRawRowsPerSweep = round(double(sixgr.util.structGet(cfg, ...
+    "run.maxRawRowsPerSweep", NaN)));
+if adaptiveSweepEnabled && adaptiveSweepMaxPoints < 1
+    error("sixgr:lls6g:InvalidAdaptiveSweepPoints", ...
+        "simulation.adaptive_sweep_max_points must be at least 1 when adaptive_sweep_enabled=true.");
+end
 snrPointCount = max(1, numel(unique(sort(double(snrGrid(:))))));
 requestedRawRowsPerSweep = 2 * numUsers * requestedPrimaryTrials;
 
+if maxRawRowsPerSweep > 0 && requestedRawRowsPerSweep > maxRawRowsPerSweep
+    error("sixgr:lls6g:RuntimeRowBudgetExceeded", ...
+        "The YAML requests %d raw DL/UL rows per SNR point, exceeding " + ...
+        "simulation.max_raw_rows_per_sweep=%d. Increase that YAML limit, reduce users.n_users, " + ...
+        "simulation.n_slots, or simulation.monte_carlo_iterations. MATLAB will not auto-reduce a truth run.", ...
+        requestedRawRowsPerSweep, maxRawRowsPerSweep);
+end
+
 tuning = struct();
-tuning.Policy = "default_truth_runtime";
+tuning.Policy = "yaml_exact_truth_runtime";
 tuning.AutoTuned = false;
 tuning.NumUsers = double(numUsers);
 tuning.RequestedPrimaryTrialsPerSNR = double(requestedPrimaryTrials);
@@ -24,60 +62,15 @@ tuning.ReferenceTrialsPerSNR = double(requestedReferenceTrials);
 tuning.RequestedRawRowsPerSweep = double(requestedRawRowsPerSweep);
 tuning.RawRowsPerSweep = double(requestedRawRowsPerSweep);
 tuning.RawRowsAcrossAllSweeps = double(requestedRawRowsPerSweep * snrPointCount);
-tuning.ReferenceSweepEnabled = true;
-tuning.HARQDiagnosticsEnabled = true;
-tuning.AdaptiveSweepEnabled = true;
-tuning.AdaptiveSweepStep_dB = 2;
-tuning.AdaptiveSweepMaxPoints = 12;
-tuning.MaxRawRowsPerSweep = NaN;
-tuning.Notes = "";
-
-if requestedRawRowsPerSweep <= 4096 && numUsers < 32
-    return;
-end
-
-if numUsers >= 64
-    maxRawRowsPerSweep = 2048;
-elseif numUsers >= 32
-    maxRawRowsPerSweep = 3072;
+tuning.ReferenceSweepEnabled = referenceSweepEnabled;
+tuning.HARQDiagnosticsEnabled = harqDiagnosticsEnabled;
+tuning.AdaptiveSweepEnabled = adaptiveSweepEnabled;
+tuning.AdaptiveSweepStep_dB = adaptiveSweepStep_dB;
+tuning.AdaptiveSweepMaxPoints = double(adaptiveSweepMaxPoints);
+if maxRawRowsPerSweep == 0
+    tuning.MaxRawRowsPerSweep = NaN;
 else
-    maxRawRowsPerSweep = 4096;
+    tuning.MaxRawRowsPerSweep = double(maxRawRowsPerSweep);
 end
-
-tunedPrimaryTrials = max(8, floor(maxRawRowsPerSweep / max(2 * numUsers, 1)));
-tunedPrimaryTrials = min(requestedPrimaryTrials, tunedPrimaryTrials);
-tunedPrimaryTrials = max(8, tunedPrimaryTrials);
-
-tuning.Policy = "large_multiuser_truth_runtime";
-tuning.AutoTuned = tunedPrimaryTrials < requestedPrimaryTrials || numUsers >= 32;
-tuning.PrimaryTrialsPerSNR = double(tunedPrimaryTrials);
-tuning.ReferenceTrialsPerSNR = double(max(tunedPrimaryTrials, min(requestedReferenceTrials, 16)));
-tuning.RawRowsPerSweep = double(2 * numUsers * tunedPrimaryTrials);
-tuning.RawRowsAcrossAllSweeps = double(tuning.RawRowsPerSweep * snrPointCount);
-tuning.MaxRawRowsPerSweep = double(maxRawRowsPerSweep);
-tuning.AdaptiveSweepEnabled = numUsers < 16;
-
-if numUsers >= 32
-    tuning.ReferenceSweepEnabled = false;
-    tuning.HARQDiagnosticsEnabled = false;
-    tuning.AdaptiveSweepEnabled = false;
-    tuning.ReferenceTrialsPerSNR = 0;
-end
-
-noteParts = strings(0, 1);
-if tunedPrimaryTrials < requestedPrimaryTrials
-    noteParts(end+1, 1) = "reduced_primary_trials_per_snr_to_" + string(tunedPrimaryTrials); %#ok<AGROW>
-end
-if ~tuning.ReferenceSweepEnabled
-    noteParts(end+1, 1) = "disabled_reference_sweep"; %#ok<AGROW>
-end
-if ~tuning.HARQDiagnosticsEnabled
-    noteParts(end+1, 1) = "disabled_harq_diagnostics"; %#ok<AGROW>
-end
-if ~tuning.AdaptiveSweepEnabled
-    noteParts(end+1, 1) = "disabled_adaptive_refinement"; %#ok<AGROW>
-end
-if ~isempty(noteParts)
-    tuning.Notes = strjoin(noteParts, ", ");
-end
+tuning.Notes = "exact_yaml_runtime_no_auto_reduction";
 end

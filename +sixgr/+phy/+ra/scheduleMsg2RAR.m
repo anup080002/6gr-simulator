@@ -39,7 +39,7 @@ pdsch.DMRS.NumCDMGroupsWithoutData = 1;
 pdsch.DMRS.NIDNSCID = double(raCfg.NCellID);
 pdsch.DMRS.NSCID = 0;
 pdsch.DMRS.DMRSPortSet = 0;
-pdsch.EnablePTRS = false;
+pdsch.EnablePTRS = logical(sixgr.util.structGet(s, "EnablePTRS", false));
 end
 
 function bits = localBuildDCI32(s, rv)

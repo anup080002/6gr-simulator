@@ -181,15 +181,41 @@ if isfield(cfg,'phy') && isa(cfg.phy,'struct')
 
     if isfield(cfg.phy,'waveform') && isstruct(cfg.phy.waveform) && isfield(cfg.phy.waveform,'type')
         typ = upper(strtrim(char(string(cfg.phy.waveform.type))));
+        expectedTransformPrecoding = [];
         if strcmp(typ,'CP-OFDM')
             cfg.phy.waveform.dl = 'CP-OFDM';
             cfg.phy.waveform.ul = 'CP-OFDM';
-            cfg.phy.pusch = localStructEnsure(cfg.phy, 'pusch');
-            cfg.phy.pusch.transformPrecoding = false;
+            expectedTransformPrecoding = false;
         elseif contains(typ,'DFT')
             cfg.phy.waveform.ul = 'DFT-s-OFDM';
+            expectedTransformPrecoding = true;
+        end
+        if ~isempty(expectedTransformPrecoding)
             cfg.phy.pusch = localStructEnsure(cfg.phy, 'pusch');
-            cfg.phy.pusch.transformPrecoding = true;
+            explicitTransformPrecoding = sixgr.util.structGet( ...
+                cfg, "phy.pusch.transformPrecoding", []);
+            if ~isempty(explicitTransformPrecoding) && ...
+                    ~localIsBooleanScalar(explicitTransformPrecoding)
+                error("sixgr:config:InvalidTransformPrecodingAuthority", ...
+                    "phy.pusch.transformPrecoding must be one boolean scalar.");
+            end
+            if ~isempty(explicitTransformPrecoding) && ...
+                    logical(explicitTransformPrecoding) ~= expectedTransformPrecoding
+                error("sixgr:config:ContradictoryULWaveformAuthority", ...
+                    ['phy.waveform.type=%s requires transformPrecoding=%d, ' ...
+                     'but the explicit configured value is %d.'], ...
+                    typ, expectedTransformPrecoding, ...
+                    logical(explicitTransformPrecoding));
+            end
+            if isfield(cfg, 'runtime') && isstruct(cfg.runtime) && ...
+                    isfield(cfg.runtime, 'features') && ...
+                    isfield(cfg.runtime.features, 'transform_precoding')
+                sixgr.config.assertRuntimeFeatureUse(cfg, ...
+                    "transform_precoding", expectedTransformPrecoding, ...
+                    "normalizeConfig.phy.waveform.type");
+            end
+            cfg.phy.pusch.transformPrecoding = ...
+                logical(expectedTransformPrecoding);
         end
     end
 
@@ -237,6 +263,17 @@ if isfield(cfg,'phy') && isa(cfg.phy,'struct')
     cfg.phy.linkAdaptation.bootstrapMCSIndex = max(0, min(31, round(double(localFirstNonEmpty( ...
         sixgr.util.structGet(cfg, "phy.linkAdaptation.bootstrapMCSIndex", []), ...
         sixgr.util.structGet(cfg, "mac.scheduler.bootstrapMCSIndex", []), 1)))));
+    cfg.phy.linkAdaptation.initialMCSIndex = max(0, min(31, round(double(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.initialMCSIndex", []), ...
+        cfg.phy.linkAdaptation.bootstrapMCSIndex)))));
+    cfg.phy.linkAdaptation.maximumMCSIndex = max(0, min(31, round(double(localFirstNonEmpty( ...
+        sixgr.util.structGet(cfg, "phy.linkAdaptation.maximumMCSIndex", []), 31)))));
+    if cfg.phy.linkAdaptation.initialMCSIndex > cfg.phy.linkAdaptation.maximumMCSIndex
+        error("sixgr:config:InvalidAdaptiveMCSBounds", ...
+            "phy.linkAdaptation.initialMCSIndex=%d must not exceed maximumMCSIndex=%d.", ...
+            cfg.phy.linkAdaptation.initialMCSIndex, ...
+            cfg.phy.linkAdaptation.maximumMCSIndex);
+    end
 
     cfg.phy.pdsch.mcsTable = defaultDLMCS;
     cfg.phy.pusch.mcsTable = defaultULMCS;
@@ -436,6 +473,20 @@ cfg.gui.enable = logical(cfg.gui.enable);
 cfg.gui.useSiteViewer = logical(cfg.gui.useSiteViewer);
 cfg.gui.showUEMobility = logical(cfg.gui.showUEMobility);
 
+% Once a YAML scenario has installed its immutable operating authority,
+% compatibility normalization is not permitted to change any feature
+% switch. This catches legacy aliases that would otherwise silently
+% re-enable a signal after the YAML disabled it (or vice versa).
+runtimeFeatures = sixgr.util.structGet(cfg, "runtime.features", struct());
+if isstruct(runtimeFeatures) && ~isempty(fieldnames(runtimeFeatures))
+    sixgr.config.assertRuntimeFeatureAuthority(cfg);
+end
+
+end
+
+function tf = localIsBooleanScalar(value)
+tf = (islogical(value) || isnumeric(value)) && isscalar(value) && ...
+    isfinite(double(value)) && any(double(value) == [0 1]);
 end
 
 % -------------------------------------------------------------------------

@@ -13,6 +13,15 @@ addRequired(p,"assignment", ...
 addRequired(p,"report",@(x) isa(x,"sixgr.phy.pucch.UCIReport"));
 addParameter(p,"Carrier",[],@(x) isempty(x)||isa(x,"nrCarrierConfig"));
 parse(p,cfg,assignment,report,varargin{:});
+if isstruct(cfg)
+    configuredPUCCH = logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+    sixgr.config.assertRuntimeFeatureUse(cfg, "pucch", configuredPUCCH, ...
+        "PUCCH_Tx");
+    if ~configuredPUCCH
+        error("sixgr:phy:pucch:DisabledByYAML", ...
+            "PUCCH Tx cannot execute when PUCCH is disabled by YAML.");
+    end
+end
 
 carrier = p.Results.Carrier;
 if isempty(carrier)

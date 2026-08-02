@@ -31,7 +31,14 @@
     "snr_db": 20,
     "noise_operating_mode": "receiver_noise_figure_thermal_noise",
     "min_duration_s": 0.02,
-    "snr_sweep_offsets_db": [0]
+    "snr_sweep_offsets_db": [0],
+    "reference_sweep_enabled": true,
+    "reference_trials_per_snr": 1,
+    "harq_diagnostics_enabled": true,
+    "adaptive_sweep_enabled": true,
+    "adaptive_sweep_step_db": 2,
+    "adaptive_sweep_max_points": 12,
+    "max_raw_rows_per_sweep": 0
   },
   "frequency": {
     "range_name": "FR1",
@@ -128,6 +135,7 @@
     "trs_enabled": false,
     "tracking_rs_enabled": false,
     "ptrs_enabled": false,
+    "ptrs_cpe_correction_enabled": false,
     "csi_reporting_enabled": true,
     "csi_feedback_mode": "PMI+CQI+RI",
     "csi_acquisition_mode": "dl_based",
@@ -158,6 +166,8 @@
     "codebook_type": "type1",
     "reciprocity_mode": "FDD",
     "beam_sweep_enabled": false,
+    "mu_mimo_enable": false,
+    "ul_mu_mimo_enable": false,
     "beam_count": 4,
     "mtrp_ready": false,
     "multi_panel_ready": false,
@@ -206,6 +216,7 @@
   },
   "control": {
     "pdcch_enabled": true,
+    "blind_search_enabled": true,
     "coreset_type": "common",
     "search_space_type": "ue",
     "aggregation_levels": [4],
@@ -240,6 +251,26 @@
     "ack_nack_dtx_model": "ack_nack_only",
     "pdcch_miss_behavior": "treat_as_dtx",
     "detection_feedback_interaction_enabled": false
+  },
+  "initial_access": {
+    "enabled": false,
+    "profile": "disabled",
+    "configuration_epoch": 0,
+    "band_context": "n77",
+    "spectrum": "unpaired",
+    "shared_spectrum": false,
+    "random_access_procedure": "disabled",
+    "require_explicit_ssb_bitmap": false,
+    "validation_snr_db": 20,
+    "validation_seed": 1,
+    "ssb": {},
+    "mib": {},
+    "type0": {},
+    "sib1": {
+      "enabled": false
+    },
+    "rrc": {},
+    "extensions": {}
   },
   "random_access": {
     "enabled": true,
@@ -313,12 +344,16 @@
     "timing_tolerance_us": 0.25
   },
   "impairments": {
+    "cfo_enabled": false,
     "cfo_hz": 0,
+    "cfo_correction_enable": true,
     "phase_noise_enabled": false,
     "iq_imbalance_enabled": false,
+    "iq_imbalance_correction_enable": true,
     "pa_nonlinearity_enabled": false,
     "adc_quantization_bits": 12,
     "dac_quantization_bits": 12,
+    "timing_offset_enabled": false,
     "timing_offset_samples": 0,
     "cfo_acquisition_mode": "initial_acquisition",
     "cfo_drift_hz_per_s": 0,

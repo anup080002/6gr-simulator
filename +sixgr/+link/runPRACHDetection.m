@@ -114,7 +114,10 @@ out.ChannelFadingApplied = false;
 out.Notes = "";
 out.CorrelationTraceTable = table();
 
-if ~logical(sixgr.util.structGet(cfg, "phy.prach.enable", true))
+configuredPRACH = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "prach", configuredPRACH, ...
+    "runPRACHDetection");
+if ~configuredPRACH
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.prach.enable=true for PRACH coverage.");
     out.Skipped = true;

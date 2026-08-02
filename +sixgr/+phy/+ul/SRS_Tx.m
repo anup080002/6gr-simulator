@@ -27,6 +27,13 @@ ip.addParameter('NumSRSPorts', [], @(x) isempty(x) || (isnumeric(x) && isscalar(
 ip.addParameter('SRSPeriod', [], @(x) isempty(x) || (isnumeric(x) && numel(x)==2));
 ip.parse(varargin{:});
 opt = ip.Results;
+configuredSRS = logical(sixgr.util.structGet(cfg, "phy.srs.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "srs", configuredSRS, ...
+    "SRS_Tx");
+if ~configuredSRS
+    error("sixgr:phy:srs:DisabledByYAML", ...
+        "SRS Tx cannot execute when SRS is disabled by YAML.");
+end
 
 % Carrier
 if isempty(opt.Carrier)

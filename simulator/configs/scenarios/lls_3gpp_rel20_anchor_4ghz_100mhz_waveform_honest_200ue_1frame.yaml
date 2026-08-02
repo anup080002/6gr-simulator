@@ -76,5 +76,24 @@ system:
     maxActiveUEsPerCellPerSlotUL: 12
     maxPRBAllocationPerUE: 273
 
+# The bounded one-frame campaign owns its complete adaptation policy here.
+# These values were formerly selected by a MATLAB scenario-ID branch.
+csi_acquisition_and_reporting:
+  sinr_to_cqi_mode: threshold_table
+  effective_sinr_method: eesm
+  eesm_beta_db: 1.5
+  target_bler: 0.1
+  bler_curve_slope_db: 1.5
+
+link_adaptation:
+  cqi_smoothing_alpha: 0.2
+  olla_step_down: 1.0
+  olla_step_up: 0.12
+  olla_margin_min_db: -10
+  olla_margin_max_db: 10
+  reset_on_ri_change: true
+  cqi_jump_reset_threshold: 4
+  srs_rank_eigen_threshold_db: 10
+
 output:
   profile: lls_3gpp_rel20_anchor_4ghz_100mhz_waveform_honest_200ue_1frame

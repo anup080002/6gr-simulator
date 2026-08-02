@@ -7,7 +7,10 @@ cfgTx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgTx, sched.PDSCH);
 cfgTx.phy.pdcch.rnti = double(raCfg.RARNTI);
 cfgTx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
 cfgTx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);
-cfgTx.phy.pdcch.blindSearch = true;
+cfgTx.phy.pdcch.blindSearch = logical(sixgr.util.structGet(cfg, ...
+    "phy.pdcch.blindSearch", false));
+sixgr.config.assertRuntimeFeatureUse(cfgTx, "pdcch_blind_search", ...
+    cfgTx.phy.pdcch.blindSearch, "generateMsg2RARWaveform");
 cfgTx.phy.pdcch.allowBlindCandidateTimingEstimate = false;
 cfgTx.phy.pdcch.aggregationLevel = 4;
 cfgTx.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];

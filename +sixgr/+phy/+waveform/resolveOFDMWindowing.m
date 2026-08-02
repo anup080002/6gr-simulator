@@ -41,6 +41,8 @@ elseif ~isempty(explicitPercent)
 else
     windowingSamples = 0;
 end
+sixgr.config.assertRuntimeFeatureUse(cfg, "waveform_windowing", ...
+    logical(windowingSamples > 0), "resolveOFDMWindowing");
 
 validation = sixgr.phy.frame.OFDMSamplingResolver.validateWindowing( ...
     carrier, windowingSamples);

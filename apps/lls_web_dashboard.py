@@ -5532,7 +5532,46 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
         output_cfg = {}
     persistence_mode = normalize_output_persistence_mode(output_cfg.get("persistence_mode"))
     mysql_ok, mysql_reason = dashboard_mysql_available()
-    if persistence_mode in {"database", "both"} and mysql_ok:
+    backend_override = str(os.environ.get("SIXGR_OUTPUT_BACKEND_OVERRIDE") or "").strip().lower()
+    if backend_override and backend_override not in {"filesystem", "mysql_web"}:
+        raise ValueError(
+            "SIXGR_OUTPUT_BACKEND_OVERRIDE must be filesystem or mysql_web, "
+            f"not {backend_override!r}."
+        )
+    if backend_override == "mysql_web":
+        # runSingle applies the same environment authority after loading this
+        # runtime file. Persist that effective authority in the overlay too,
+        # otherwise the round-trip audit sees filesystem here and mysql_web in
+        # MATLAB/DB even though both processes followed the same launch.
+        persistence_mode = "both"
+        output_cfg["persistence_mode"] = persistence_mode
+        control_overlay = payload.get("output_control")
+        if not isinstance(control_overlay, dict):
+            control_overlay = {}
+            payload["output_control"] = control_overlay
+        control_overlay["output_persistence_mode"] = persistence_mode
+        output_cfg["backend"] = "mysql_web"
+        output_cfg["database_host"] = MYSQL_HOST
+        output_cfg["database_port"] = MYSQL_PORT
+        output_cfg["database_schema"] = MYSQL_DATABASE
+        output_cfg["persist_to_database"] = True
+        output_cfg["persist_to_results_folder"] = True
+        output_cfg["persistence_effective_mode"] = persistence_mode
+        output_cfg["persistence_fallback_reason"] = ""
+    elif backend_override == "filesystem":
+        persistence_mode = "results_folder"
+        output_cfg["persistence_mode"] = persistence_mode
+        control_overlay = payload.get("output_control")
+        if not isinstance(control_overlay, dict):
+            control_overlay = {}
+            payload["output_control"] = control_overlay
+        control_overlay["output_persistence_mode"] = persistence_mode
+        output_cfg["backend"] = "filesystem"
+        output_cfg["persist_to_database"] = False
+        output_cfg["persist_to_results_folder"] = True
+        output_cfg["persistence_effective_mode"] = persistence_mode
+        output_cfg["persistence_fallback_reason"] = ""
+    elif persistence_mode in {"database", "both"} and mysql_ok:
         output_cfg["backend"] = "mysql_web"
         output_cfg["database_host"] = MYSQL_HOST
         output_cfg["database_port"] = MYSQL_PORT

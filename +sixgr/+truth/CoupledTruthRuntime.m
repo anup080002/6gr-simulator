@@ -311,6 +311,18 @@ methods(Static)
         feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
     end
 
+    function grant = applyMeasuredFeedbackAMCToGrantRuntime(grant, feedback, scheduler, cfg, direction)
+        % Public boundary used by focused scheduler/HARQ contract tests.
+        grant = sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrant( ...
+            grant, feedback, scheduler, cfg, direction);
+    end
+
+    function grant = mergeReplayCurrentGrantAuthorityRuntime(replayGrant, currentGrant)
+        % Public boundary for focused HARQ replay/current-slot authority tests.
+        grant = sixgr.truth.CoupledTruthRuntime.mergeReplayCurrentGrantAuthority( ...
+            replayGrant, currentGrant);
+    end
+
     function state = appendGrantTraceRuntime(state, grant, direction, feedback)
         % Public wrapper for queued cross-slot grants built outside the class.
         state = sixgr.truth.CoupledTruthRuntime.appendGrantTrace(state, grant, direction, feedback);
@@ -352,6 +364,12 @@ methods(Static)
 
     function state = applySRSTrial(state, ueIdx, trialT)
         state = sixgr.truth.CoupledTruthRuntime.applySRSTrialImpl(state, ueIdx, trialT);
+    end
+
+    function feedback = preserveCausalMeasuredSRSSpatialSignatureRuntime( ...
+            feedback, priorFeedback, cfg, consumerDirection, currentSlot)
+        feedback = sixgr.truth.CoupledTruthRuntime.preserveCausalMeasuredSRSSpatialSignature( ...
+            feedback, priorFeedback, cfg, consumerDirection, currentSlot);
     end
 
     function state = applyTRSTrial(state, servingCell, trialT)
@@ -1389,6 +1407,18 @@ methods(Static, Access=private)
             return;
         end
         authorityFields = [ ...
+            ... % Current-slot scheduling and shared-resource identity.
+            "GrantReason", "PRBSet", "PRBs", "PRBStart", ...
+            "SymbolAllocation", "DMRSPortSet", "DMRSPortSetSource", ...
+            "PTRSEnabled", "PTRSPortSet", "PTRSPortSetSource", ...
+            "MUMIMOEnabled", "MUMIMOGroupSize", "MUMIMOGroupId", ...
+            "MUMIMOPairingStatus", "MUMIMOPairingMetricSource", ...
+            "MUMIMOPairingMetricValue_dB", ...
+            "MUMIMOPairingWorstMetricValue_dB", ...
+            "MUMIMOPairingEvidenceSource", ...
+            "PriorMUMIMOGroupId", "PriorMUMIMOGroupSize", ...
+            "PriorMUMIMOPairingEvidenceSource", ...
+            ... % Current decoded-control and exact-feasibility authority.
             "DCI", "Valid", "GrantBlocker", ...
             "ExactPHYFeasibilityChecked", "ExactPHYFeasible", ...
             "ExactPHYFeasibilitySource", "ExactPHYInfeasibilityReason", ...
@@ -2015,7 +2045,8 @@ methods(Static, Access=private)
         row = trialT(end, :);
         [state, harqFields] = sixgr.truth.CoupledTruthRuntime.updateHARQState(state, ueIdx, direction, cfgU, row, res);
         trialT = sixgr.truth.CoupledTruthRuntime.annotateHARQTrialTable(trialT, harqFields);
-        state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport(state, ueIdx, direction, trialT(end, :));
+        state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
+            state, ueIdx, direction, trialT(end, :), cfgU);
         state = sixgr.truth.CoupledTruthRuntime.appendTelemetry(state, ueIdx, trialT(end, :));
         state = sixgr.truth.CoupledTruthRuntime.updateUserStats(state, ueIdx, direction, trialT(end, :));
         state = sixgr.truth.CoupledTruthRuntime.updateDecodeSuccessCount(state, ueIdx, direction, trialT(end, :));
@@ -2126,6 +2157,11 @@ methods(Static, Access=private)
                 continue;
             end
             rowDirection = upper(string(row.Direction));
+            if rowDirection == "UL"
+                priorLatest = state.LatestULFeedback(ueIdx);
+            else
+                priorLatest = state.LatestDLFeedback(ueIdx);
+            end
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
             latest.Valid = true;
             latest.CQI = double(row.CQI);
@@ -2170,6 +2206,14 @@ methods(Static, Access=private)
             latest.SchedulerAdjustedSINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SchedulerAdjustedSINR_dB", NaN));
             latest.SchedulerSINRBackoff_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SchedulerSINRBackoff_dB", NaN));
             latest.SchedulerCQISource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SchedulerCQISource", "")));
+            latest.SpatialSignatureToken = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SpatialSignatureToken", "")));
+            latest.SpatialSignatureSHA256 = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SpatialSignatureSHA256", "")));
+            latest.SpatialSignatureSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SpatialSignatureSource", "")));
+            latest.SpatialSignatureSourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SpatialSignatureSourceSlot", NaN));
+            latest.SpatialSignatureMeasurementDirection = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SpatialSignatureMeasurementDirection", "")));
+            latest.SpatialSignatureReciprocityMode = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SpatialSignatureReciprocityMode", "")));
+            latest = sixgr.truth.CoupledTruthRuntime.preserveCausalMeasuredSRSSpatialSignature( ...
+                latest, priorLatest, state.CfgMobility, rowDirection, state.CurrentSlot);
             latest.FeedbackSourceSignal = char(rowDirection + "_CSI_REPORT");
             latest.FeedbackCRCPass = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRCPass", NaN));
             if rowDirection == "UL"
@@ -3092,6 +3136,44 @@ methods(Static, Access=private)
         end
         ueState.PMI = double(sixgr.util.structGet(feedback, "PMI", NaN));
         ueState.CRI = double(sixgr.util.structGet(feedback, "CRI", NaN));
+        ueState.MUMIMOSpatialSignature = sixgr.truth.CoupledTruthRuntime.decodeFeedbackSpatialSignature(feedback);
+        ueState.MUMIMOSpatialSignatureSHA256 = char(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureSHA256", "")));
+        ueState.MUMIMOSpatialSignatureSource = char(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureSource", "")));
+        ueState.MUMIMOSpatialSignatureSourceSlot = double(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureSourceSlot", NaN));
+        ueState.MUMIMOSpatialSignatureMeasurementDirection = char(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureMeasurementDirection", "")));
+        ueState.MUMIMOSpatialSignatureReciprocityMode = char(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureReciprocityMode", "")));
+        ueState.MUMIMOSpatialSignatureAgeSlots = double(state.CurrentSlot) - ...
+            double(ueState.MUMIMOSpatialSignatureSourceSlot);
+        ueState.MUMIMOSpatialSignatureConsumerRuntimeSlot = double(state.CurrentSlot);
+        spatialMaxAge = double(sixgr.util.structGet(cfg, ...
+            "phy.mimo.measurementMaxAgeSlots", NaN));
+        measuredSRSSource = startsWith(lower(strtrim(string( ...
+            ueState.MUMIMOSpatialSignatureSource))), ...
+            "measured_srs_receiver_channel_estimate");
+        directionAuthorityOk = upper(strtrim(string( ...
+            ueState.MUMIMOSpatialSignatureMeasurementDirection))) == "UL";
+        if direction == "DL"
+            directionAuthorityOk = directionAuthorityOk && ...
+                lower(strtrim(string(ueState.MUMIMOSpatialSignatureReciprocityMode))) == ...
+                "tdd_reciprocity";
+        elseif direction == "UL"
+            directionAuthorityOk = directionAuthorityOk && ...
+                lower(strtrim(string(ueState.MUMIMOSpatialSignatureReciprocityMode))) == ...
+                "direct_ul_srs";
+        else
+            directionAuthorityOk = false;
+        end
+        ueState.MUMIMOSpatialSignatureValid = logical( ...
+            ~isempty(ueState.MUMIMOSpatialSignature) && measuredSRSSource && ...
+            directionAuthorityOk && isfinite(spatialMaxAge) && spatialMaxAge >= 0 && ...
+            isfinite(ueState.MUMIMOSpatialSignatureAgeSlots) && ...
+            ueState.MUMIMOSpatialSignatureAgeSlots >= 0 && ...
+            ueState.MUMIMOSpatialSignatureAgeSlots <= spatialMaxAge);
         ueState.MeasuredSINR_dB = double(sixgr.util.structGet(feedback, "SINR_dB", NaN));
         ueState.CSIAgingModel = char(string(sixgr.util.structGet(feedback, "CSIAgingModel", "")));
         ueState.SubbandSINRVector_dB = char(string(sixgr.util.structGet(feedback, "SubbandSINRVector_dB", "")));
@@ -3467,11 +3549,17 @@ methods(Static, Access=private)
 
     function tf = schedulerUsesCQITableForDirection(cfg, direction)
         direction = upper(string(direction));
-        mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed"))));
+        mode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+            "runtime.link_adaptation.Mode", ...
+            sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed")))));
         if direction == "UL"
-            policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", mode))));
+            policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+                "runtime.link_adaptation.ULPolicy", ...
+                sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", mode)))));
         else
-            policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", mode))));
+            policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+                "runtime.link_adaptation.DLPolicy", ...
+                sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", mode)))));
         end
         fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
         tf = ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
@@ -4227,6 +4315,22 @@ methods(Static, Access=private)
                 latest.PMI = double(round(sanitizedTPMI));
             end
         end
+        spatialToken = string(sixgr.truth.CoupledTruthRuntime.rowFirstString( ...
+            row, ["SpatialSignatureToken","MUMIMOSpatialSignatureToken"], ""));
+        spatialDigest = string(sixgr.truth.CoupledTruthRuntime.rowFirstString( ...
+            row, ["SpatialSignatureSHA256","MUMIMOSpatialSignatureSHA256"], ""));
+        spatialSource = string(sixgr.truth.CoupledTruthRuntime.rowFirstString( ...
+            row, ["SpatialSignatureSource","MUMIMOSpatialSignatureSource"], ""));
+        if strlength(strtrim(spatialToken)) > 0 && strlength(strtrim(spatialDigest)) > 0
+            sixgr.phy.mimo.MatrixContract.deserialize(spatialToken, ...
+                "ExpectedDigest", spatialDigest);
+            latest.SpatialSignatureToken = char(spatialToken);
+            latest.SpatialSignatureSHA256 = char(spatialDigest);
+            latest.SpatialSignatureSource = char(spatialSource);
+            latest.SpatialSignatureSourceSlot = double(slotIdx);
+            latest.SpatialSignatureMeasurementDirection = "UL";
+            latest.SpatialSignatureReciprocityMode = "direct_ul_srs";
+        end
         servingCell = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["ServingCell","BaseStationID","CellID"], NaN);
         if isfinite(servingCell)
@@ -4301,6 +4405,18 @@ methods(Static, Access=private)
                 tpmi, state.CfgMobility, "DL", dlLatest.RI);
             if isfinite(dlPMI)
                 dlLatest.PMI = double(round(dlPMI));
+            end
+            % In TDD, the same measured SRS channel observation that supplies
+            % reciprocal RI/TPMI also supplies the spatial subspace used by
+            % the DL MU scheduler. Preserve the exact serialized matrix and
+            % digest; do not reconstruct a signature from CQI/PMI labels.
+            if strlength(strtrim(spatialToken)) > 0 && strlength(strtrim(spatialDigest)) > 0
+                dlLatest.SpatialSignatureToken = char(spatialToken);
+                dlLatest.SpatialSignatureSHA256 = char(spatialDigest);
+                dlLatest.SpatialSignatureSource = char(spatialSource);
+                dlLatest.SpatialSignatureSourceSlot = double(slotIdx);
+                dlLatest.SpatialSignatureMeasurementDirection = "UL";
+                dlLatest.SpatialSignatureReciprocityMode = "tdd_reciprocity";
             end
             if isfinite(servingCell)
                 dlLatest.ServingCell = double(servingCell);
@@ -5039,26 +5155,36 @@ methods(Static, Access=private)
         if ueIdx >= 1 && ueIdx <= numel(state.CurrentServingIdx)
             feedback.ServingCell = double(state.CurrentServingIdx(ueIdx));
         end
-        linkAdaptationMode = lower(string(sixgr.util.structGet(state.CfgMobility, "phy.linkAdaptation.mode", "fixed")));
+        linkAdaptationMode = lower(string(sixgr.util.structGet(state.CfgMobility, ...
+            "runtime.link_adaptation.Mode", ...
+            sixgr.util.structGet(state.CfgMobility, "phy.linkAdaptation.mode", "fixed"))));
         fixedAdaptation = ismember(linkAdaptationMode, ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"]);
         modulation = "";
         targetCodeRate = NaN;
         mcsIndex = NaN;
         if direction == "UL"
-            rankHint = double(sixgr.util.structGet(state.CfgMobility, "phy.pusch.nLayers", ...
-                sixgr.util.structGet(state.CfgMobility, "phy.pusch.numLayers", 1)));
+            rankHint = double(sixgr.util.structGet(state.CfgMobility, "runtime.phy.ul.NumLayers", ...
+                sixgr.util.structGet(state.CfgMobility, "phy.pusch.nLayers", ...
+                sixgr.util.structGet(state.CfgMobility, "phy.pusch.numLayers", 1))));
             if fixedAdaptation
-                modulation = string(sixgr.util.structGet(state.CfgMobility, "phy.pusch.modulation", "QPSK"));
-                targetCodeRate = double(sixgr.util.structGet(state.CfgMobility, "phy.pusch.codeRate", 0.5));
-                mcsIndex = double(sixgr.util.structGet(state.CfgMobility, "phy.pusch.mcsIndex", NaN));
+                modulation = string(sixgr.util.structGet(state.CfgMobility, "runtime.phy.ul.Modulation", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.pusch.modulation", "QPSK")));
+                targetCodeRate = double(sixgr.util.structGet(state.CfgMobility, "runtime.phy.ul.TargetCodeRate", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.pusch.codeRate", 0.5)));
+                mcsIndex = double(sixgr.util.structGet(state.CfgMobility, "runtime.phy.ul.MCSIndex", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.pusch.mcsIndex", NaN)));
             end
         else
-            rankHint = double(sixgr.util.structGet(state.CfgMobility, "phy.pdsch.nLayers", ...
-                sixgr.util.structGet(state.CfgMobility, "phy.pdsch.numLayers", 1)));
+            rankHint = double(sixgr.util.structGet(state.CfgMobility, "runtime.phy.dl.NumLayers", ...
+                sixgr.util.structGet(state.CfgMobility, "phy.pdsch.nLayers", ...
+                sixgr.util.structGet(state.CfgMobility, "phy.pdsch.numLayers", 1))));
             if fixedAdaptation
-                modulation = string(sixgr.util.structGet(state.CfgMobility, "phy.pdsch.modulation", "QPSK"));
-                targetCodeRate = double(sixgr.util.structGet(state.CfgMobility, "phy.pdsch.codeRate", 0.5));
-                mcsIndex = double(sixgr.util.structGet(state.CfgMobility, "phy.pdsch.mcsIndex", NaN));
+                modulation = string(sixgr.util.structGet(state.CfgMobility, "runtime.phy.dl.Modulation", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.pdsch.modulation", "QPSK")));
+                targetCodeRate = double(sixgr.util.structGet(state.CfgMobility, "runtime.phy.dl.TargetCodeRate", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.pdsch.codeRate", 0.5)));
+                mcsIndex = double(sixgr.util.structGet(state.CfgMobility, "runtime.phy.dl.MCSIndex", ...
+                    sixgr.util.structGet(state.CfgMobility, "phy.pdsch.mcsIndex", NaN)));
             end
         end
         mcsTable = sixgr.link.resolveConfiguredMCSTable(state.CfgMobility, direction);
@@ -5952,7 +6078,25 @@ methods(Static, Access=private)
         row.MUMIMOGroupId = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOGroupId", NaN), NaN);
         row.MUMIMOPairingStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingStatus", ""), "");
         row.MUMIMOPairingMetricSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingMetricSource", ""), "");
+        row.MUMIMOPairingMetricValue_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOPairingMetricValue_dB", NaN), NaN);
+        row.MUMIMOPairingWorstMetricValue_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOPairingWorstMetricValue_dB", NaN), NaN);
+        row.MUMIMOPairingEvidenceSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingEvidenceSource", ""), "");
         row.MUMIMOPrecoderType = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPrecoderType", ""), "");
+        row.MUMIMORequiredLeakageThreshold_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMORequiredLeakageThreshold_dB", NaN), NaN);
+        row.MUMIMODesiredSubspaceGain_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMODesiredSubspaceGain_dB", NaN), NaN);
+        row.MUMIMORequiredMinimumDesiredGain_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMORequiredMinimumDesiredGain_dB", NaN), NaN);
+        row.MUMIMOSpatialDesignStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialDesignStatus", ""), "");
+        row.MUMIMOSpatialDesignContractVersion = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialDesignContractVersion", ""), "");
+        row.MUMIMOSpatialDesignEvidenceSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialDesignEvidenceSource", ""), "");
+        row.MUMIMOSpatialFilterMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialFilterMatrixSHA256", ""), "");
+        row.MUMIMOReceiveCombiningMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOReceiveCombiningMatrixSHA256", ""), "");
+        row.MUMIMOReceiverAlgorithm = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOReceiverAlgorithm", ""), "");
+        row.MUMIMOHybridRFDesignPolicy = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOHybridRFDesignPolicy", ""), "");
+        row.MUMIMOHybridRFDesignStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOHybridRFDesignStatus", ""), "");
+        row.HybridElementToPortMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "HybridElementToPortMatrixSHA256", ""), "");
+        row.BaseHybridElementToPortMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "BaseHybridElementToPortMatrixSHA256", ""), "");
+        row.NumLogicalPorts = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "NumLogicalPorts", NaN), NaN);
+        row.NumRFChains = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "NumRFChains", NaN), NaN);
         row.ConfiguredBeamSelectionStrategy = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "ConfiguredBeamSelectionStrategy", ""), "");
         row.PrecoderSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "PrecoderSource", ""), "");
         row.PrecodingMode = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "PrecodingMode", ""), "");
@@ -6055,7 +6199,25 @@ methods(Static, Access=private)
         grant.MUMIMOGroupId = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOGroupId", NaN), NaN);
         grant.MUMIMOPairingStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingStatus", ""), "");
         grant.MUMIMOPairingMetricSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingMetricSource", ""), "");
+        grant.MUMIMOPairingMetricValue_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOPairingMetricValue_dB", NaN), NaN);
+        grant.MUMIMOPairingWorstMetricValue_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMOPairingWorstMetricValue_dB", NaN), NaN);
+        grant.MUMIMOPairingEvidenceSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPairingEvidenceSource", ""), "");
         grant.MUMIMOPrecoderType = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOPrecoderType", ""), "");
+        grant.MUMIMORequiredLeakageThreshold_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMORequiredLeakageThreshold_dB", NaN), NaN);
+        grant.MUMIMODesiredSubspaceGain_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMODesiredSubspaceGain_dB", NaN), NaN);
+        grant.MUMIMORequiredMinimumDesiredGain_dB = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "MUMIMORequiredMinimumDesiredGain_dB", NaN), NaN);
+        grant.MUMIMOSpatialDesignStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialDesignStatus", ""), "");
+        grant.MUMIMOSpatialDesignContractVersion = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialDesignContractVersion", ""), "");
+        grant.MUMIMOSpatialDesignEvidenceSource = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialDesignEvidenceSource", ""), "");
+        grant.MUMIMOSpatialFilterMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOSpatialFilterMatrixSHA256", ""), "");
+        grant.MUMIMOReceiveCombiningMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOReceiveCombiningMatrixSHA256", ""), "");
+        grant.MUMIMOReceiverAlgorithm = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOReceiverAlgorithm", ""), "");
+        grant.MUMIMOHybridRFDesignPolicy = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOHybridRFDesignPolicy", ""), "");
+        grant.MUMIMOHybridRFDesignStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOHybridRFDesignStatus", ""), "");
+        grant.HybridElementToPortMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "HybridElementToPortMatrixSHA256", ""), "");
+        grant.BaseHybridElementToPortMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "BaseHybridElementToPortMatrixSHA256", ""), "");
+        grant.NumLogicalPorts = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "NumLogicalPorts", NaN), NaN);
+        grant.NumRFChains = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "NumRFChains", NaN), NaN);
         grant.ServingCell = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "ServingCell", NaN), NaN);
         if ~isfinite(double(grant.ServingCell))
             servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
@@ -6141,6 +6303,20 @@ methods(Static, Access=private)
     end
 
     function grant = applyMeasuredFeedbackAMCToGrant(grant, feedback, scheduler, cfg, direction)
+        isRetransmission = sixgr.util.logicalAny(sixgr.util.structGet( ...
+            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", ...
+            sixgr.util.structGet(grant, "IsRetransmission", false)));
+        if isRetransmission
+            % HARQ feedback may inform a later new-data grant, but it must
+            % never rewrite the modulation, code rate, TBS or spatial rank
+            % of an in-flight transport block.  The scheduler normalized
+            % this grant from the stored first-transmission snapshot and
+            % already refroze its exact current-slot resource/control
+            % contract.  Returning it unchanged preserves that immutable
+            % coding/spatial authority while buildTrialContextFromGrant
+            % binds the current DCI and current-slot allocation.
+            return;
+        end
         if ~(isstruct(grant) && isstruct(feedback) && logical(sixgr.util.structGet(feedback, "Valid", false)))
             return;
         end
@@ -6212,6 +6388,31 @@ methods(Static, Access=private)
             targetCodeRate = double(cqiTargetCodeRate);
             mcsClampedToCQI = true;
         end
+        maximumMCSBoundApplied = false;
+        configuredMaximumMCS = double(sixgr.util.structGet(cfg, ...
+            "runtime.link_adaptation.MaximumMCSIndex", ...
+            sixgr.util.structGet(cfg, "phy.linkAdaptation.maximumMCSIndex", 31)));
+        configuredInitialMCS = double(sixgr.util.structGet(cfg, ...
+            "runtime.link_adaptation.InitialMCSIndex", ...
+            sixgr.util.structGet(cfg, "phy.linkAdaptation.initialMCSIndex", NaN)));
+        if ~(isscalar(configuredMaximumMCS) && isfinite(configuredMaximumMCS) && ...
+                configuredMaximumMCS >= 0 && configuredMaximumMCS <= 31 && ...
+                configuredMaximumMCS == fix(configuredMaximumMCS))
+            error("sixgr:truth:InvalidAdaptiveMaximumMCS", ...
+                "Measured-feedback AMC requires an integer maximum MCS in [0,31].");
+        end
+        if isfinite(mcsIndex) && round(double(mcsIndex)) > configuredMaximumMCS
+            boundedProfile = sixgr.link.resolveMCSProfile(mcsTable, configuredMaximumMCS);
+            if ~logical(sixgr.util.structGet(boundedProfile, "Valid", false))
+                error("sixgr:truth:UnsupportedAdaptiveMaximumMCS", ...
+                    "Configured adaptive maximum MCS %d is unavailable in table '%s'.", ...
+                    configuredMaximumMCS, char(string(mcsTable)));
+            end
+            mcsIndex = double(configuredMaximumMCS);
+            modStr = char(string(boundedProfile.Modulation));
+            targetCodeRate = double(boundedProfile.TargetCodeRate);
+            maximumMCSBoundApplied = true;
+        end
         if ~(isfinite(mcsIndex) && mcsIndex >= 0 && isfinite(targetCodeRate) && targetCodeRate > 0)
             return;
         end
@@ -6279,6 +6480,13 @@ methods(Static, Access=private)
         if mcsClampedToCQI
             grant.MCSValueStatus = "clamped_to_cqi_max";
         end
+        if maximumMCSBoundApplied
+            grant.MCSValueStatus = char(sixgr.truth.CoupledTruthRuntime.appendSourceToken( ...
+                string(grant.MCSValueStatus), "clamped_to_yaml_maximum_mcs"));
+        end
+        grant.ConfiguredInitialMCSIndex = double(configuredInitialMCS);
+        grant.ConfiguredMaximumMCSIndex = double(configuredMaximumMCS);
+        grant.MaximumMCSBoundApplied = logical(maximumMCSBoundApplied);
         if smallPRBGuardApplied
             selectionSource = sixgr.truth.CoupledTruthRuntime.appendSourceToken( ...
                 selectionSource, smallPRBGuardSource);
@@ -6373,7 +6581,10 @@ methods(Static, Access=private)
         end
     end
 
-    function state = enqueueCSIReport(state, ueIdx, direction, row)
+    function state = enqueueCSIReport(state, ueIdx, direction, row, cfgExecuted)
+        if nargin < 5 || ~isstruct(cfgExecuted)
+            cfgExecuted = struct();
+        end
         report = sixgr.truth.CoupledTruthRuntime.emptyCSIReportRow();
         report.Direction = char(upper(string(direction)));
         report.UEIndex = double(ueIdx);
@@ -6413,6 +6624,11 @@ methods(Static, Access=private)
             sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ["SubbandDopplerHz","SubbandDoppler_Hz","PerSubbandDopplerHz","PerRBDopplerHz"]));
         report.LayerDopplerHz = sixgr.truth.CoupledTruthRuntime.numericVectorToken( ...
             sixgr.truth.CoupledTruthRuntime.rowFirstNumericVector(row, ["LayerDopplerHz","LayerDoppler_Hz","PerLayerDopplerHz"]));
+        % A frozen transmit/receive filter is not a measured channel
+        % subspace.  Do not feed phy.canonicalGrant.spatialSignature back as
+        % scheduler CSI: doing so creates a circular, configured-by-execution
+        % MU pairing authority.  Measured SRS state is merged below with its
+        % original timestamp, digest, direction and reciprocity provenance.
         servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
         if ueIdx >= 1 && ueIdx <= numel(servingVec)
             report.ServingCell = double(servingVec(ueIdx));
@@ -6430,6 +6646,11 @@ methods(Static, Access=private)
             "MeasurementSource", "CoupledTruthRuntime.enqueueCSIReport");
         state.PendingCSITable = sixgr.truth.CoupledTruthRuntime.appendCompatTable(state.PendingCSITable, struct2table(report, "AsArray", true));
         if report.DueSlot <= state.CurrentSlot
+            if upper(string(direction)) == "UL"
+                priorLatest = state.LatestULFeedback(ueIdx);
+            else
+                priorLatest = state.LatestDLFeedback(ueIdx);
+            end
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
             latest.Valid = true;
             latest.CQI = report.CQI;
@@ -6477,6 +6698,14 @@ methods(Static, Access=private)
             latest.SchedulerAdjustedSINR_dB = report.SchedulerAdjustedSINR_dB;
             latest.SchedulerSINRBackoff_dB = report.SchedulerSINRBackoff_dB;
             latest.SchedulerCQISource = report.SchedulerCQISource;
+            latest.SpatialSignatureToken = report.SpatialSignatureToken;
+            latest.SpatialSignatureSHA256 = report.SpatialSignatureSHA256;
+            latest.SpatialSignatureSource = report.SpatialSignatureSource;
+            latest.SpatialSignatureSourceSlot = report.SpatialSignatureSourceSlot;
+            latest.SpatialSignatureMeasurementDirection = report.SpatialSignatureMeasurementDirection;
+            latest.SpatialSignatureReciprocityMode = report.SpatialSignatureReciprocityMode;
+            latest = sixgr.truth.CoupledTruthRuntime.preserveCausalMeasuredSRSSpatialSignature( ...
+                latest, priorLatest, state.CfgMobility, upper(string(direction)), state.CurrentSlot);
             latest.FeedbackSourceSignal = char(upper(string(direction)) + "_CSI_REPORT");
             latest.FeedbackCRCPass = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRCPass", NaN));
             if upper(string(direction)) == "UL"
@@ -6929,6 +7158,8 @@ methods(Static, Access=private)
                 grant.NumLayers = double(nLayers);
                 grant.Layers = double(nLayers);
                 grant.PrecodingNumLayers = double(nLayers);
+                grant.RankAuthority = "finalized_grant_spatial_contract";
+                grant.RankDecisionReason = "measured_ri_deferred_to_future_grant";
                 grant.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
                     sixgr.util.structGet(feedback, "PMI", sixgr.util.structGet(grant, "PMI", NaN)), cfg, direction, nLayers));
                 return;
@@ -10304,11 +10535,100 @@ methods(Static, Access=private)
             "SubbandAgingPenaltyVector_dB", "", "LayerAgingPenaltyVector_dB", "", ...
             "SubbandCSIAgeSlots", "", "LayerCSIAgeSlots", "", ...
             "SubbandDopplerHz", "", "LayerDopplerHz", "", ...
+            "SpatialSignatureToken", "", "SpatialSignatureSHA256", "", ...
+            "SpatialSignatureSource", "", "SpatialSignatureSourceSlot", NaN, ...
+            "SpatialSignatureMeasurementDirection", "", ...
+            "SpatialSignatureReciprocityMode", "", ...
             "OuterLoopEnabled", false, "InnerLoopEnabled", false, ...
             "LinkAdaptationStateUpdateCount", NaN, ...
             "SchedulerCQIRawCQI", NaN, "SchedulerAdjustedSINR_dB", NaN, ...
             "SchedulerSINRBackoff_dB", NaN, "SchedulerCQISource", "", ...
             "CRCPass", NaN, "ServingCell", NaN, "Processed", false);
+    end
+
+    function signature = decodeFeedbackSpatialSignature(feedback)
+        signature = [];
+        token = string(sixgr.util.structGet(feedback, "SpatialSignatureToken", ""));
+        digest = string(sixgr.util.structGet(feedback, "SpatialSignatureSHA256", ""));
+        if strlength(strtrim(token)) == 0 || strlength(strtrim(digest)) == 0
+            return;
+        end
+        signature = sixgr.phy.mimo.MatrixContract.deserialize( ...
+            token, "ExpectedDigest", digest);
+    end
+
+    function latest = preserveCausalMeasuredSRSSpatialSignature( ...
+            latest, priorLatest, cfg, consumerDirection, currentSlot)
+        % A data/CSI completion can update CQI/RI without producing a new
+        % measured spatial subspace.  In that case retain the most recent
+        % causal SRS channel estimate; never replace it with the frozen
+        % transmit/receive matrix that was selected using that estimate.
+        consumerDirection = upper(strtrim(string(consumerDirection)));
+        if sixgr.truth.CoupledTruthRuntime.isCausalMeasuredSRSSpatialSignature( ...
+                latest, cfg, consumerDirection, currentSlot)
+            return;
+        end
+        if ~sixgr.truth.CoupledTruthRuntime.isCausalMeasuredSRSSpatialSignature( ...
+                priorLatest, cfg, consumerDirection, currentSlot)
+            latest.SpatialSignatureToken = "";
+            latest.SpatialSignatureSHA256 = "";
+            latest.SpatialSignatureSource = "";
+            latest.SpatialSignatureSourceSlot = NaN;
+            latest.SpatialSignatureMeasurementDirection = "";
+            latest.SpatialSignatureReciprocityMode = "";
+            return;
+        end
+        fields = ["SpatialSignatureToken","SpatialSignatureSHA256", ...
+            "SpatialSignatureSource","SpatialSignatureSourceSlot", ...
+            "SpatialSignatureMeasurementDirection", ...
+            "SpatialSignatureReciprocityMode"];
+        for i = 1:numel(fields)
+            latest.(fields(i)) = priorLatest.(fields(i));
+        end
+    end
+
+    function tf = isCausalMeasuredSRSSpatialSignature( ...
+            feedback, cfg, consumerDirection, currentSlot)
+        tf = false;
+        token = string(sixgr.util.structGet(feedback, "SpatialSignatureToken", ""));
+        digest = string(sixgr.util.structGet(feedback, "SpatialSignatureSHA256", ""));
+        source = lower(strtrim(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureSource", ""))));
+        sourceSlot = double(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureSourceSlot", NaN));
+        measurementDirection = upper(strtrim(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureMeasurementDirection", ""))));
+        reciprocityMode = lower(strtrim(string(sixgr.util.structGet( ...
+            feedback, "SpatialSignatureReciprocityMode", ""))));
+        consumerDirection = upper(strtrim(string(consumerDirection)));
+        if strlength(strtrim(token)) == 0 || strlength(strtrim(digest)) == 0 || ...
+                ~startsWith(source, "measured_srs_receiver_channel_estimate") || ...
+                measurementDirection ~= "UL" || ...
+                ~(isscalar(sourceSlot) && isfinite(sourceSlot) && sourceSlot >= 0 && ...
+                  sourceSlot <= double(currentSlot))
+            return;
+        end
+        if consumerDirection == "DL"
+            if reciprocityMode ~= "tdd_reciprocity" || ...
+                    ~sixgr.truth.CoupledTruthRuntime.srsReciprocityFeedsDLFeedback(cfg)
+                return;
+            end
+        elseif consumerDirection == "UL"
+            if reciprocityMode ~= "direct_ul_srs"
+                return;
+            end
+        else
+            return;
+        end
+        try
+            signature = sixgr.phy.mimo.MatrixContract.deserialize( ...
+                token, "ExpectedDigest", digest);
+            tf = isnumeric(signature) && ~isempty(signature) && ...
+                all(isfinite(real(signature(:)))) && ...
+                all(isfinite(imag(signature(:)))) && norm(signature, "fro") > 0;
+        catch
+            tf = false;
+        end
     end
 
     function row = emptyLatestFeedbackRow()
@@ -10340,6 +10660,10 @@ methods(Static, Access=private)
             "PreviewCQISource", "", "BootstrapCQIUsableForScheduling", false, ...
             "SchedulerCQIRawCQI", NaN, "SchedulerAdjustedSINR_dB", NaN, ...
             "SchedulerSINRBackoff_dB", NaN, "SchedulerCQISource", "", ...
+            "SpatialSignatureToken", "", "SpatialSignatureSHA256", "", ...
+            "SpatialSignatureSource", "", "SpatialSignatureSourceSlot", NaN, ...
+            "SpatialSignatureMeasurementDirection", "", ...
+            "SpatialSignatureReciprocityMode", "", ...
             "FeedbackSourceSignal", "", "FeedbackCRCPass", NaN);
     end
 
@@ -10415,7 +10739,17 @@ methods(Static, Access=private)
             "NumLayers", NaN, "Layers", NaN, "CQIUsed", NaN, "RIUsed", NaN, "Rank", NaN, ...
             "PMI", NaN, "CRI", NaN, ...
             "MUMIMOEnabled", false, "MUMIMOGroupSize", NaN, "MUMIMOGroupId", NaN, ...
-            "MUMIMOPairingStatus", "", "MUMIMOPairingMetricSource", "", "MUMIMOPrecoderType", "", ...
+            "MUMIMOPairingStatus", "", "MUMIMOPairingMetricSource", "", ...
+            "MUMIMOPairingMetricValue_dB", NaN, "MUMIMOPairingWorstMetricValue_dB", NaN, ...
+            "MUMIMOPairingEvidenceSource", "", "MUMIMOPrecoderType", "", ...
+            "MUMIMORequiredLeakageThreshold_dB", NaN, "MUMIMODesiredSubspaceGain_dB", NaN, ...
+            "MUMIMORequiredMinimumDesiredGain_dB", NaN, ...
+            "MUMIMOSpatialDesignStatus", "", "MUMIMOSpatialDesignContractVersion", "", ...
+            "MUMIMOSpatialDesignEvidenceSource", "", "MUMIMOSpatialFilterMatrixSHA256", "", ...
+            "MUMIMOReceiveCombiningMatrixSHA256", "", "MUMIMOReceiverAlgorithm", "", ...
+            "MUMIMOHybridRFDesignPolicy", "", "MUMIMOHybridRFDesignStatus", "", ...
+            "HybridElementToPortMatrixSHA256", "", "BaseHybridElementToPortMatrixSHA256", "", ...
+            "NumLogicalPorts", NaN, "NumRFChains", NaN, ...
             "ConfiguredBeamSelectionStrategy", "", "PrecoderSource", "", "PrecodingMode", "", "PrecodingApplicationStage", "", ...
             "PrecodingActive", false, "ExplicitBeamWeightsApplied", false, "TransformPrecodingApplied", false, "BeamformingApplied", false, ...
             "AppliedBeamIndexSet", "", "AppliedPrecoderPMI", NaN, "AppliedPrecoderPMIType", "", "AppliedPrecoderCodebookMode", "", ...
@@ -10489,7 +10823,9 @@ methods(Static, Access=private)
         cfgU = state.CfgMobility;
         [cfgU, state] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgU, state, ueIdx, "UL");
         cfgU = sixgr.util.structSet(cfgU, "phy.rnti", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RNTI", NaN)));
-        cfgU = sixgr.util.structSet(cfgU, "phy.pucch.enable", true);
+        sixgr.config.assertRuntimeFeatureUse(cfgU, "pucch", ...
+            logical(sixgr.util.structGet(cfgU, "phy.pucch.enable", false)), ...
+            "CoupledTruthRuntime.observePUCCHFeedback");
         prbStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHPRBStart", NaN));
         prbCount = max(1, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHPRBCount", 1))));
         if isfinite(prbStart)
@@ -11381,7 +11717,9 @@ methods(Static, Access=private)
             cfgI = state.CfgMobility;
             [cfgI, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgI, state, ueIdx, "UL");
             cfgI = sixgr.util.structSet(cfgI, "phy.rnti", double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RNTI", NaN)));
-            cfgI = sixgr.util.structSet(cfgI, "phy.pucch.enable", true);
+            sixgr.config.assertRuntimeFeatureUse(cfgI, "pucch", ...
+                logical(sixgr.util.structGet(cfgI, "phy.pucch.enable", false)), ...
+                "CoupledTruthRuntime.buildPUCCHInterferenceBundle");
             requestedFormat = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ResolvedFormat", ...
                 sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RequestedFormat", sixgr.util.structGet(cfgI, "phy.pucch.format", NaN))));
             count = count + 1;

@@ -206,7 +206,7 @@ end
 if ~isfinite(phase)
     phase = 0;
 end
-enabled = logical(enabled) || abs(gain) > 1e-12 || abs(phase) > 1e-12;
+enabled = logical(enabled);
 cfgIQ = struct("Enabled", logical(enabled), "GainImbalance_dB", double(gain), ...
     "PhaseImbalance_deg", double(phase), "Endpoint", char(endpoint));
 end

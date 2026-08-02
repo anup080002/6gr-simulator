@@ -231,13 +231,17 @@ trial.ChannelEstimateAttempted = opt.Assignment.Format >= 2 && ...
 trial.ChannelEstimateAvailable = ~trial.ChannelEstimateAttempted || ...
     ~isempty(rx.ChannelEstimate);
 trial.ChannelEstimateSource = localChannelEstimateSource( ...
-    opt.ChannelProfile,trial.ChannelEstimateAttempted);
+    opt.ChannelProfile,trial.ChannelEstimateAttempted,opt.Assignment.Format);
 trial.EqualizationAttempted = trial.ChannelEstimateAttempted;
 trial.EqualizationAvailable = ~trial.EqualizationAttempted || ...
     ~isempty(rx.ChannelEstimate);
 trial.PUCCHControlSINR_dB = rx.MeasuredSINR_dB;
 trial.PUCCHReceiverEvidenceSource = ...
     "canonical_typed_pucch_waveform_receiver";
+trial.NoncoherentSequenceDetection = logical(sixgr.util.structGet( ...
+    rx,"NoncoherentSequenceDetection",false));
+trial.ChannelEstimationMode = char(string(sixgr.util.structGet( ...
+    rx,"ChannelEstimationMode","")));
 trial.StrictReceiverEvidenceOk = logical(rx.ReceiverUsable) && ...
     trial.ResourceExtractionAvailable && ...
     trial.ChannelEstimateAvailable && trial.EqualizationAvailable;
@@ -281,9 +285,11 @@ catch
 end
 end
 
-function value = localChannelEstimateSource(profile,attempted)
+function value = localChannelEstimateSource(profile,attempted,format)
 if attempted
     value = "pucch_dmrs_per_resource_nrChannelEstimate";
+elseif double(format) == 0 && upper(string(profile)) ~= "AWGN"
+    value = "not_applicable_format0_noncoherent_sequence_detection";
 elseif upper(string(profile)) == "AWGN"
     value = "explicit_awgn_unit_channel";
 else

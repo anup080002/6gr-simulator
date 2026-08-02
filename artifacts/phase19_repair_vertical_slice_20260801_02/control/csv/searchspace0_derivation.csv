@@ -1,0 +1,2 @@
+RunId,PDCCHConfigSIB1,SearchSpaceZero,SearchSpaceID,SlotPeriod,SlotOffset,StartSymbolWithinSlot,AggregationLevel,PDCCHCandidatesAttempted
+"sib1_runtime_waveform",0,0,0,40,0,0,4,3

@@ -1561,6 +1561,8 @@ classdef ChannelFactory
             polCount = sixgr.channel.ChannelFactory.localResolveCDLPolarizationCount(numAnt, polarization);
             spatialCount = max(1, round(numAnt / polCount));
             arr.Size = sixgr.channel.ChannelFactory.localResolveCDLArraySize(spatialCount, polCount, geometry);
+            arr.ElementSpacing = sixgr.channel.ChannelFactory.localNonoverlappingCDLSpacing( ...
+                double(arr.Size), 0.5, 0.5);
             arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
                 arr.PolarizationAngles, polCount);
         end
@@ -1636,7 +1638,8 @@ classdef ChannelFactory
             physicalArrayCount = nRow * nCol * nPol * panelRows * panelCols;
             if isfinite(logicalPorts) && round(double(logicalPorts)) == numAnt && physicalArrayCount ~= numAnt
                 spec.Size = [numAnt 1 1 1 1];
-                spec.ElementSpacing = [spacingH spacingV 1 1];
+                spec.ElementSpacing = sixgr.channel.ChannelFactory.localNonoverlappingCDLSpacing( ...
+                    spec.Size, spacingV, spacingH);
                 spec.PolarizationCount = 1;
                 spec.AdapterMeta = struct("LogicalPortProjectionApplied", true, ...
                     "PortMapping", sprintf("logical_%d_ports_projected_from_%d_runtime_elements_via_%s", ...
@@ -1645,7 +1648,8 @@ classdef ChannelFactory
                 return;
             end
             spec.Size = [nRow nCol nPol panelRows panelCols];
-            spec.ElementSpacing = [spacingH spacingV 1 1];
+            spec.ElementSpacing = sixgr.channel.ChannelFactory.localNonoverlappingCDLSpacing( ...
+                spec.Size, spacingV, spacingH);
             spec.PolarizationCount = nPol;
             spec.AdapterMeta = struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports");
             valid = true;
@@ -1694,6 +1698,24 @@ classdef ChannelFactory
             if wantsDual && mod(numAnt, 2) == 0
                 polCount = 2;
             end
+        end
+
+        function spacing = localNonoverlappingCDLSpacing(sizeVec, verticalElementSpacing, horizontalElementSpacing)
+            sizeVec = double(sizeVec(:).');
+            if numel(sizeVec) < 2
+                sizeVec = [sizeVec ones(1, 2 - numel(sizeVec))];
+            end
+            nRows = max(1, round(sizeVec(1)));
+            nCols = max(1, round(sizeVec(2)));
+            verticalElementSpacing = max(eps, double(verticalElementSpacing));
+            horizontalElementSpacing = max(eps, double(horizontalElementSpacing));
+            % nrCDLChannel defines the last two values as panel-center
+            % spacings.  The old fixed [1 1] values overlapped any panel
+            % wider/taller than two half-wavelength-spaced elements.
+            verticalPanelSpacing = (nRows + 1) * verticalElementSpacing;
+            horizontalPanelSpacing = (nCols + 1) * horizontalElementSpacing;
+            spacing = [verticalElementSpacing horizontalElementSpacing ...
+                verticalPanelSpacing horizontalPanelSpacing];
         end
 
         function sizeVec = localResolveCDLArraySize(spatialCount, polCount, geometry)

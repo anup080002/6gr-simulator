@@ -316,7 +316,7 @@ end
 
 pathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", false));
 shadowEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", false));
-losEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", true));
+losEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", false));
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 needsLargeScale = pathlossEnabled || shadowEnabled || any(modelRaw == ["TR38901", "TR38.901", "TR38_901", "ABG", "RAYTRACING", "RT"]);
 if ~needsLargeScale

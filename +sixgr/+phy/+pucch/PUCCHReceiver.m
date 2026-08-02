@@ -42,13 +42,25 @@ classdef PUCCHReceiver
                 sampleNoiseVariance,ofdmInfo, ...
                 "InputDomain",opt.NoiseVarianceDomain, ...
                 "Source","pucch_receiver_argument");
+            format0Noncoherent = assignment.Format == 0 && isempty(dmrs.Indices);
             if channel == "AWGN"
                 eq = nrExtractResources(indices,grid);
                 hest = [];
+                channelEstimationMode = "awgn_direct_resource_extraction";
+            elseif format0Noncoherent
+                % PUCCH Format 0 intentionally has no DM-RS.  Its cyclic-
+                % shift/sequence detector operates noncoherently on the
+                % allocated resource, including on a fading channel.  Do
+                % not manufacture a scalar/full-grid channel estimate and
+                % do not reject a standards-valid Format-0 transmission for
+                % the absence of a reference signal that does not exist.
+                eq = nrExtractResources(indices,grid);
+                hest = [];
+                channelEstimationMode = "format0_noncoherent_sequence_detection";
             else
                 if isempty(dmrs.Indices)
                     error("sixgr:phy:pucch:DMRSGenerationFailed", ...
-                        "Fading-channel PUCCH reception requires DM-RS.");
+                        "Fading-channel PUCCH Formats 1-4 require their configured DM-RS resources.");
                 end
                 [hest,estimatedNoise] = sixgr.phy.rx.channelEstimate( ...
                     carrier,grid,dmrs.Indices,dmrs.Symbols);
@@ -61,6 +73,7 @@ classdef PUCCHReceiver
                 end
                 [eq,~,~] = sixgr.phy.rx.equalizeMMSE( ...
                     grid,hest,nVar,"Indices",indices);
+                channelEstimationMode = "dmrs_per_resource_mmse_equalization";
             end
             totalA = reportContext.Sequence1Length + ...
                 reportContext.Sequence2Length;
@@ -114,7 +127,10 @@ classdef PUCCHReceiver
                 "SampleNoiseVariance",sampleNoiseVariance, ...
                 "GridNoiseVariance",nVar, ...
                 "NoiseVarianceTransform",noiseTransform, ...
-                "ChannelEstimate",hest,"OFDMInfo",ofdmInfo);
+                "ChannelEstimate",hest,"OFDMInfo",ofdmInfo, ...
+                "ChannelEstimateApplicable",logical(~format0Noncoherent && channel ~= "AWGN"), ...
+                "NoncoherentSequenceDetection",logical(format0Noncoherent), ...
+                "ChannelEstimationMode",char(channelEstimationMode));
         end
     end
 end

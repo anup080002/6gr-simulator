@@ -31,6 +31,27 @@ assert(all(logical(fullOut.AntennaArrayConfig.LogicalPortLayerMatch)));
 assert(isequal(double(fullOut.AntennaArrayConfig.ObservedPhysicalTxAntennaCount(:)),[64;4]));
 assert(isequal(double(fullOut.AntennaArrayConfig.ObservedPhysicalRxAntennaCount(:)),[4;64]));
 
+exportRoot = string(tempname);
+mkdir(exportRoot);
+exportCleanup = onCleanup(@()localRemoveTree(exportRoot)); %#ok<NASGU>
+exported = sixgr.mimo.exportMIMOEvidenceArtifacts(exportRoot, fullCfg, fullRaw, ...
+    "RunId", "mimo_export_status_positive", "StrictMode", true);
+assert(isfield(exported, "StrictOk") && isfield(exported, "Ok") && ...
+    logical(exported.StrictOk) && logical(exported.Ok), ...
+    "The MIMO artifact adapter must expose its strict evidence status to runSingle.");
+assert(strlength(string(exported.FailureReason)) == 0, ...
+    "A passing MIMO artifact export must not carry a failure reason.");
+
+failedExportRoot = string(tempname);
+mkdir(failedExportRoot);
+failedExportCleanup = onCleanup(@()localRemoveTree(failedExportRoot)); %#ok<NASGU>
+failedExport = sixgr.mimo.exportMIMOEvidenceArtifacts(failedExportRoot, fullCfg, ...
+    struct("DL", table(), "UL", table()), ...
+    "RunId", "mimo_export_status_missing", "StrictMode", true);
+assert(isfield(failedExport, "StrictOk") && ~logical(failedExport.StrictOk) && ...
+    ~logical(failedExport.Ok) && strlength(string(failedExport.FailureReason)) > 0, ...
+    "The MIMO artifact adapter must preserve missing-evidence failure status at its top level.");
+
 adaptiveCfg = fullCfg;
 adaptiveCfg.link_adaptation.fixed_or_amc = "amc";
 adaptiveRaw = fullRaw;
@@ -38,14 +59,100 @@ adaptiveRaw.DL.Modulation(:) = "QPSK";
 adaptiveRaw.DL.MCS(:) = 1;
 adaptiveRaw.UL.Modulation(:) = "16QAM";
 adaptiveRaw.UL.MCS(:) = 10;
+adaptiveRaw.DL = localAddAdaptivePolicyEvidence(adaptiveRaw.DL);
+adaptiveRaw.UL = localAddAdaptivePolicyEvidence(adaptiveRaw.UL);
 adaptiveOut = sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,adaptiveRaw, ...
     "RunId","mimo_fixed_rank_amc","StrictMode",true);
 assert(all(logical(adaptiveOut.MIMOConfigStrict.FixedAnchorMode)) && ...
     all(logical(adaptiveOut.MIMOConfigStrict.AdaptiveMode)), ...
     "Fixed-rank anchoring and AMC must remain independent runtime controls.");
 assert(logical(adaptiveOut.StrictOk) && ...
-    all(double(adaptiveOut.ConfiguredVsEffective.ExactMatchPercent) >= 0.999), ...
-    "AMC-selected modulation/MCS changes must not be mislabeled as MIMO rank/antenna mismatches.");
+    all(double(adaptiveOut.ConfiguredVsEffective.ExactMatchPercent) == 0) && ...
+    all(double(adaptiveOut.ConfiguredVsEffective.ExecutionContractMatchPercent) >= 0.999), ...
+    "AMC changes must remain exact operating-point mismatches while passing a separately proven adaptive policy contract.");
+assert(all(logical(adaptiveOut.RankLayerTrials.ExactSpatialMatch)) && ...
+    all(~logical(adaptiveOut.RankLayerTrials.ExactOperatingPointMatch)) && ...
+    all(logical(adaptiveOut.RankLayerTrials.AdaptivePolicyMatch)), ...
+    "Spatial exactness, configured operating-point equality, and adaptive-policy compliance must be separate evidence fields.");
+assert(all(logical(adaptiveOut.ConfiguredVsEffective.SpatialContractMatch)) && ...
+    all(~logical(adaptiveOut.ConfiguredVsEffective.FixedOperatingPointMatch)) && ...
+    all(~logical(adaptiveOut.ConfiguredVsEffective.FixedOperatingPointRequired)) && ...
+    all(logical(adaptiveOut.ConfiguredVsEffective.AdaptivePolicyConformance)) && ...
+    all(logical(adaptiveOut.ConfiguredVsEffective.MUExecutionMatch)), ...
+    "The four MIMO gates must remain explicit; disabled MU is a visible not-applicable pass.");
+
+muCfg = adaptiveCfg;
+muCfg.mimo.mu_mimo_enable = true;
+muCfg.mimo.ul_mu_mimo_enable = true;
+muCfg.mimo.mu_mimo_max_users_per_prb = 2;
+muCfg.mac.scheduler.muMimoEnabled = true;
+muCfg.mac.scheduler.ulMuMimoEnabled = true;
+muCfg.mac.scheduler.muMimoMaxUsersPerPRB = 2;
+muCfg.mac.scheduler.muMimoPrecoderLeakageThreshold_dB = -15;
+muCfg.run.intraCellInterferenceExecutionMode = "shared_slot_waveform_superposition";
+muRaw = adaptiveRaw;
+muRaw.DL = localAddMUExecutionEvidence(muRaw.DL, 1001);
+muRaw.UL = localAddMUExecutionEvidence(muRaw.UL, 2001);
+muOut = sixgr.mimo.resolveNominalVsEffectiveMIMO(muCfg, muRaw, ...
+    "RunId","mimo_physical_mu_positive","StrictMode",true);
+assert(logical(muOut.StrictOk) && ...
+    all(logical(muOut.ConfiguredVsEffective.MUExecutionRequired)) && ...
+    all(logical(muOut.ConfiguredVsEffective.MUExecutionMatch)) && ...
+    all(double(muOut.ConfiguredVsEffective.MUExecutedDistinctGroupCount) == 1) && ...
+    all(double(muOut.ConfiguredVsEffective.MUExecutedTrialRowCount) == 2), ...
+    "A complete causally paired shared-waveform MU opportunity must pass its independent execution gate.");
+muMissingWaveform = muRaw;
+muMissingWaveform.DL.InterferenceContributorCount(:) = 0;
+muMissingWaveformOut = sixgr.mimo.resolveNominalVsEffectiveMIMO(muCfg, muMissingWaveform, ...
+    "RunId","mimo_mu_missing_waveform","StrictMode",true);
+dlMUSummary = muMissingWaveformOut.ConfiguredVsEffective( ...
+    string(muMissingWaveformOut.ConfiguredVsEffective.Direction) == "DL", :);
+assert(~logical(muMissingWaveformOut.StrictOk) && ...
+    ~logical(dlMUSummary.MUExecutionMatch) && ...
+    contains(string(dlMUSummary.FailureReason), "mu_execution_contract_failed"), ...
+    "Scheduler MU labels without peer waveform superposition must fail closed.");
+muWeakCovariance = muRaw;
+muWeakCovariance.UL.InterferenceCovarianceSource(:) = ...
+    "runtime_covariance_without_shared_contribution_grid_binding";
+muWeakCovarianceOut = sixgr.mimo.resolveNominalVsEffectiveMIMO( ...
+    muCfg, muWeakCovariance, "RunId", "mimo_mu_unbound_ul_covariance", ...
+    "StrictMode", true);
+ulWeakCovarianceSummary = muWeakCovarianceOut.ConfiguredVsEffective( ...
+    string(muWeakCovarianceOut.ConfiguredVsEffective.Direction) == "UL", :);
+assert(~logical(muWeakCovarianceOut.StrictOk) && ...
+    ~logical(ulWeakCovarianceSummary.MUExecutionMatch), ...
+    "UL MU execution must fail unless IRC is bound to the exact shared-slot contribution-grid covariance.");
+
+overMaximumRaw = adaptiveRaw;
+overMaximumRaw.DL.MCS(:) = 21;
+overMaximumRaw.DL.ScheduledMCS(:) = 21;
+overMaximumRaw.DL.CQIDerivedMCS(:) = 21;
+overMaximum = sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,overMaximumRaw, ...
+    "RunId","mimo_adaptive_maximum_violation","StrictMode",true);
+overMaximumDL = overMaximum.RankLayerTrials( ...
+    string(overMaximum.RankLayerTrials.Direction) == "DL", :);
+assert(~logical(overMaximum.StrictOk) && ...
+    all(~logical(overMaximumDL.AdaptivePolicyMatch)) && ...
+    all(contains(string(overMaximumDL.AdaptivePolicyFailureReason), ...
+    "adaptive_maximum_mcs_exceeded")), ...
+    "Adaptive MIMO evidence must fail when a scheduled/transmitted MCS exceeds the YAML maximum.");
+
+unprovenAdaptiveRaw = adaptiveRaw;
+for direction = ["DL","UL"]
+    unprovenAdaptiveRaw.(direction).MCSSelectionSource(:) = "";
+    unprovenAdaptiveRaw.(direction).MCSAuthority(:) = "";
+    unprovenAdaptiveRaw.(direction).ModulationAuthority(:) = "";
+    unprovenAdaptiveRaw.(direction).AppliedOperatingPointSource(:) = "";
+    unprovenAdaptiveRaw.(direction).GrantContextId(:) = "";
+    unprovenAdaptiveRaw.(direction).CSIPayloadHex(:) = "";
+end
+unprovenAdaptiveOut = sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,unprovenAdaptiveRaw, ...
+    "RunId","mimo_unproven_amc","StrictMode",true);
+assert(~logical(unprovenAdaptiveOut.StrictOk) && ...
+    all(~logical(unprovenAdaptiveOut.RankLayerTrials.AdaptivePolicyMatch)) && ...
+    all(contains(string(unprovenAdaptiveOut.RankLayerTrials.AdaptivePolicyFailureReason), ...
+    "adaptive_decision_lineage_missing")), ...
+    "A modulation/MCS change without measured adaptive-decision lineage must fail closed.");
 
 lowSNRRaw = adaptiveRaw;
 lowSNRRaw.DL.CRCPass(1) = false;
@@ -56,17 +163,18 @@ lowSNRRaw.UL.DecodeUsable(1) = false;
 lowSNRRaw.UL.ReceiverUsable(1) = false;
 lowSNROut = sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,lowSNRRaw, ...
     "RunId","mimo_fixed_rank_amc_low_snr","StrictMode",true);
-assert(all(double(lowSNROut.ConfiguredVsEffective.ExactMatchPercent) >= 0.999) && ...
+assert(all(double(lowSNROut.ConfiguredVsEffective.ExecutionContractMatchPercent) >= 0.999) && ...
     all(logical(lowSNROut.ConfiguredVsEffective.ScenarioObjectivePass)), ...
     "Low-SNR CRC failures must remain reliability failures, not false rank/layer execution mismatches.");
 failedRows = lowSNROut.RankLayerTrials(~logical(lowSNROut.RankLayerTrials.DecodeCrcPass), :);
 assert(all(double(failedRows.TransmittedRank) == 2) && ...
     all(double(failedRows.EffectiveDecodedRank) == 0) && ...
-    all(logical(failedRows.ExactConfiguredMatch)), ...
+    all(logical(failedRows.ExecutionContractMatch)), ...
     "MIMO evidence must preserve transmitted rank two while keeping failed decoded rank explicitly zero.");
 
 badRaw = fullRaw;
-badRaw.DL.BSAntennaNumPorts(:) = 2;
+badRaw.DL.TxWaveformColumns(:) = 2;
+badRaw.DL.PhysicalTxAntennas(:) = 2;
 badOut = sixgr.mimo.resolveNominalVsEffectiveMIMO(fullCfg,badRaw, ...
     "RunId","mimo_full_element_bad","StrictMode",true);
 assert(~logical(badOut.StrictOk), ...
@@ -79,6 +187,13 @@ assert(all(double(noRaw.ConfiguredVsEffective.StrictEligibleRowCount) == 0), ...
     "Missing raw trial rows must remain visible in configured-vs-effective evidence.");
 
 ok = true;
+end
+
+function localRemoveTree(folder)
+folder = char(string(folder));
+if isfolder(folder)
+    rmdir(folder, "s");
+end
 end
 
 function cfg = localCfg(layers, mcs, modulation)
@@ -100,6 +215,8 @@ cfg.phy.pusch.mcsIndex = mcs;
 cfg.phy.pusch.modulation = modulation;
 cfg.phy.pusch.NumAntennaPorts = layers;
 cfg.link_adaptation.fixed_or_amc = "fixed";
+cfg.link_adaptation.initial_mcs = 1;
+cfg.link_adaptation.maximum_mcs = 20;
 cfg.mimo.rank_adaptation_policy = "fixed";
 end
 
@@ -113,17 +230,77 @@ T = table(repmat(string(direction), 2, 1), [1; 2], [10; 11], [1; 1], [2; 2], [2;
     'LLRMeanAbs','BitErrors','BitsCompared','AppliedPrecoderPMI','SelectedBeamIndex','CSIPayloadHex'});
 end
 
+function T = localAddAdaptivePolicyEvidence(T)
+n = height(T);
+T.ScheduledLayers = T.Layers;
+T.ScheduledRank = T.RankEstimate;
+T.ScheduledModulation = T.Modulation;
+T.ScheduledMCS = T.MCS;
+T.ActualMCSSelectionMode = repmat("scheduler_grant", n, 1);
+T.MCSSelectionSource = repmat("runtime_cqi_table_raw", n, 1);
+T.MCSAuthority = repmat("cqi_link_adaptation", n, 1);
+T.ModulationAuthority = repmat("cqi_link_adaptation", n, 1);
+T.AppliedOperatingPointSource = repmat("cqi_link_adaptation", n, 1);
+T.LinkAdaptationScheduled = true(n, 1);
+T.LinkAdaptationApplied = true(n, 1);
+T.WidebandCQI = repmat(8, n, 1);
+T.CQIDerivedMCS = T.MCS;
+T.GrantContextId = "grant_" + string((1:n).');
+end
+
+function T = localAddMUExecutionEvidence(T, groupId)
+n = height(T);
+assert(n == 2, "MU evidence fixture requires exactly two group members.");
+T.UEIndex = (1:n).';
+T.MUMIMOEnabled = true(n, 1);
+T.MUMIMOGroupSize = repmat(n, n, 1);
+T.MUMIMOGroupId = repmat(double(groupId), n, 1);
+T.MUMIMOPairingStatus = repmat("paired_shared_prb_spatial_multiplexing", n, 1);
+T.MUMIMOPairingMetricValue_dB = repmat(-100, n, 1);
+T.MUMIMOSpatialFilterMatrixSHA256 = repmat(string(repmat('a', 1, 64)), n, 1);
+if upper(string(T.Direction(1))) == "DL"
+    T.MUMIMOPairingMetricSource = repmat( ...
+        "measured_tdd_srs_reciprocal_hybrid_block_diagonalized_precoder_leakage", n, 1);
+    T.MUMIMOPairingEvidenceSource = repmat( ...
+        "causal_measured_srs_reciprocity_phase_only_hybrid_and_frozen_baseband", n, 1);
+else
+    T.MUMIMOPairingMetricSource = repmat( ...
+        "measured_srs_irc_receive_projection_leakage", n, 1);
+    T.MUMIMOPairingEvidenceSource = repmat( ...
+        "causal_measured_srs_subspace_and_runtime_irc_covariance", n, 1);
+    T.EqualizerType = repmat("MMSE_IRC", n, 1);
+    T.InterferenceCovarianceSource = repmat( ...
+        "shared_slot_contribution_grid_covariance", n, 1);
+end
+T.InterferenceMode = repmat("shared_slot_waveform_superposition", n, 1);
+T.InterferenceContributorCount = ones(n, 1);
+T.PRBStart = zeros(n, 1);
+T.PRBCount = repmat(12, n, 1);
+T.SymbolStart = repmat(2, n, 1);
+T.NumSymbols = repmat(10, n, 1);
+end
+
 function T = localFullElementRows(direction)
 T = localRank2Rows(direction);
 if upper(string(direction)) == "UL"
-    T.NumTxPorts = repmat(4,height(T),1);
+    T.NumTxPorts = repmat(2,height(T),1);
     T.NumRxAntennas = repmat(64,height(T),1);
+    T.TxWaveformColumns = repmat(4,height(T),1);
+    T.PhysicalTxAntennas = repmat(4,height(T),1);
+    T.RxWaveformBranches = repmat(64,height(T),1);
+    T.PhysicalRxAntennas = repmat(64,height(T),1);
 else
-    T.NumTxPorts = repmat(64,height(T),1);
+    T.NumTxPorts = repmat(4,height(T),1);
     T.NumRxAntennas = repmat(4,height(T),1);
+    T.TxWaveformColumns = repmat(64,height(T),1);
+    T.PhysicalTxAntennas = repmat(64,height(T),1);
+    T.RxWaveformBranches = repmat(4,height(T),1);
+    T.PhysicalRxAntennas = repmat(4,height(T),1);
 end
 T.PrecodingNumLayers = repmat(2,height(T),1);
-T.BSAntennaNumPorts = repmat(64,height(T),1);
+T.BSAntennaElements = repmat(64,height(T),1);
+T.BSAntennaNumPorts = repmat(4,height(T),1);
+T.UEAntennaElements = repmat(4,height(T),1);
 T.UEAntennaNumPorts = repmat(4,height(T),1);
 T.AntennaRuntimeObjectCreated = true(height(T),1);
 T.ChannelUsesSameRuntimeAntennaAssumptions = true(height(T),1);

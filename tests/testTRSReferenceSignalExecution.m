@@ -13,6 +13,7 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.phy.trs.enable = true;
+cfg.phy.trackingRS.enable = true;
 cfg.phy.carrier.NSizeGrid = 24;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;

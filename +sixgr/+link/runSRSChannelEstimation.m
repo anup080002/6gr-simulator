@@ -103,9 +103,17 @@ out.SRSBandwidthFraction = NaN;
 out.SRSFrequencyPRBStart = NaN;
 out.SRSFrequencyPRBEnd = NaN;
 out.SRSBandwidthCoverageStatus = "";
+out.SpatialSignatureToken = "";
+out.SpatialSignatureSHA256 = "";
+out.SpatialSignatureRows = NaN;
+out.SpatialSignatureColumns = NaN;
+out.SpatialSignatureSource = "";
 out.ChannelState = p.Results.ChannelState;
 
-if ~logical(sixgr.util.structGet(cfg, "phy.srs.enable", true))
+configuredSRS = logical(sixgr.util.structGet(cfg, "phy.srs.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "srs", configuredSRS, ...
+    "runSRSChannelEstimation");
+if ~configuredSRS
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.srs.enable=true for SRS coverage.");
     out.Skipped = true;
@@ -260,6 +268,16 @@ try
     out.TPMICandidateCount = double(sixgr.util.structGet(srsULCSI, "TPMICandidateCount", NaN));
     out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
+    spatialSignature = sixgr.phy.mimo.spatialSignatureFromChannelEstimate( ...
+        rx.Hest, "Rank", out.EstimatedRI);
+    out.SpatialSignatureToken = char( ...
+        sixgr.phy.mimo.MatrixContract.serialize(spatialSignature));
+    out.SpatialSignatureSHA256 = char( ...
+        sixgr.phy.mimo.MatrixContract.digest(spatialSignature));
+    out.SpatialSignatureRows = double(size(spatialSignature, 1));
+    out.SpatialSignatureColumns = double(size(spatialSignature, 2));
+    out.SpatialSignatureSource = ...
+        "measured_srs_receiver_channel_estimate_dominant_rank_subspace";
     linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
         "ReceivedGrid", rx.RxGrid, ...
         "ReferenceIndices", tx.SRSIndices, ...

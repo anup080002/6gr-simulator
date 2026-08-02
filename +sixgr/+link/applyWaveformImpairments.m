@@ -31,6 +31,7 @@ p.addParameter("ApplyADC", true, @(v) islogical(v) || (isnumeric(v) && isscalar(
 p.addParameter("ApplyRFChain", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
 p.parse(varargin{:});
 opt = p.Results;
+localAssertYAMLImpairmentAuthority(cfg);
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.link.applyWaveformImpairments", ...
     "Stage", "rf_impairments", ...
     "Metadata", struct("NSamples", double(numel(x)))); %#ok<NASGU>
@@ -52,6 +53,26 @@ else
     replay.RFConfiguredStageCount = 0;
     replay.RFAppliedStageCount = 0;
     replay.RFExecutionStatus = "deferred_composite_receiver_front_end";
+end
+end
+
+function localAssertYAMLImpairmentAuthority(cfg)
+% Guard the last production boundary before sample-domain mutation. Manual
+% unit configs remain supported by assertRuntimeFeatureUse; resolved YAML
+% runs must retain exact agreement with their immutable feature authority.
+mappings = {
+    "cfo", "phy.impairments.cfoEnabled"
+    "phase_noise", "phy.impairments.phaseNoiseEnabled"
+    "iq_imbalance", "phy.impairments.iqImbalanceEnabled"
+    "timing_offset", "phy.impairments.timingOffsetEnabled"
+    "pa_nonlinearity", "phy.impairments.paNonlinearityEnabled"
+    };
+for i = 1:size(mappings, 1)
+    feature = string(mappings{i, 1});
+    path = string(mappings{i, 2});
+    actual = sixgr.util.structGet(cfg, path, false);
+    sixgr.config.assertRuntimeFeatureUse(cfg, feature, actual, ...
+        "applyWaveformImpairments:" + path);
 end
 end
 
@@ -529,9 +550,6 @@ source = char(localFirstNonEmptyString( ...
     localSourceIfSet(resolved, "power_and_rf_frontend.iq_imbalance"), ...
     localSourceIfSet(cfg, "rf.iqImbalance.model")));
 enabled = logical(sixgr.util.structGet(cfg, "phy.impairments.iqImbalanceEnabled", false));
-if ~enabled
-    enabled = localModelImpliesEnabled(model);
-end
 gainImbalance_dB = localFirstFiniteValue( ...
     sixgr.util.structGet(cfg, "rf.iqImbalance.ampImb_dB", NaN), ...
     sixgr.util.structGet(cfg, "rf.iqImbalance.gainImbalance_dB", NaN), ...

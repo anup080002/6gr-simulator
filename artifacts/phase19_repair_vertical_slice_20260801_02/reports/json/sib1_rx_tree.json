@@ -1,0 +1,146 @@
+{
+  "asn1Release": "3GPP_TS_38_331_V18_9_0",
+  "profile": "3gpp_ts38331_v18_bounded_fr1_sib1",
+  "message": {
+    "c1": {
+      "systemInformationBlockType1": {
+        "cellSelectionInfo": {
+          "q_RxLevMin": -70,
+          "q_QualMin": -20
+        },
+        "cellAccessRelatedInfo": {
+          "plmn_IdentityList": {
+            "mcc": "001",
+            "mnc": "01",
+            "trackingAreaCode": 1,
+            "cellIdentity": 1
+          },
+          "trackingAreaCode": 1,
+          "cellIdentity": 1,
+          "cellReservedForOperatorUse": "notReserved"
+        },
+        "si_SchedulingInfo": {
+          "si_WindowLength": "s20",
+          "schedulingInfoList": {
+            "si_BroadcastStatus": "broadcasting",
+            "si_Periodicity": "rf16",
+            "mappedSIBType": "sibType2"
+          }
+        },
+        "servingCellConfigCommon": {
+          "downlinkConfigCommon": {
+            "frequencyInfoDL": {
+              "frequencyBandList": {
+                "freqBandIndicatorNR": 77
+              },
+              "absoluteFrequencySSB": 666667,
+              "dl_AbsoluteFrequencyPointA": 666667,
+              "offsetToPointA": 0,
+              "scs_SpecificCarrierList": {
+                "offsetToCarrier": 0,
+                "subcarrierSpacing": "kHz30",
+                "carrierBandwidth": 24
+              }
+            },
+            "initialDownlinkBWP": {
+              "genericParameters": {
+                "locationAndBandwidth": 6325,
+                "subcarrierSpacing": "kHz30",
+                "cyclicPrefix": "normal"
+              },
+              "pdcch_ConfigCommon": {
+                "pdcch_ConfigSIB1": {
+                  "controlResourceSetZero": 0,
+                  "searchSpaceZero": 0
+                },
+                "commonSearchSpaceList": {
+                  "searchSpaceId": 0
+                }
+              },
+              "pdsch_ConfigCommon": {
+                "pdsch_TimeDomainAllocationList": {
+                  "mappingType": "typeA",
+                  "startSymbolAndLength": 12
+                }
+              }
+            },
+            "bcch_Config": {
+              "modificationPeriodCoeff": "n2"
+            },
+            "pcch_Config": {
+              "defaultPagingCycle": "rf128",
+              "nAndPagingFrameOffset": {
+                "choice": "oneT",
+                "offset": 0
+              },
+              "ns": "one"
+            }
+          },
+          "uplinkConfigCommon": {
+            "frequencyInfoUL": {
+              "frequencyBandList": {
+                "freqBandIndicatorNR": 77
+              },
+              "absoluteFrequencyPointA": 666667,
+              "scs_SpecificCarrierList": {
+                "offsetToCarrier": 0,
+                "subcarrierSpacing": "kHz30",
+                "carrierBandwidth": 24
+              }
+            },
+            "initialUplinkBWP": {
+              "genericParameters": {
+                "locationAndBandwidth": 6325,
+                "subcarrierSpacing": "kHz30",
+                "cyclicPrefix": "normal"
+              },
+              "rach_ConfigCommon": {
+                "configurationIndex": 157,
+                "rootSequenceIndex": 1,
+                "zeroCorrelationZoneConfig": 8,
+                "restrictedSet": "UnrestrictedSet",
+                "msg1SubcarrierSpacing_kHz": 30,
+                "msg1FDM": "one",
+                "msg1FrequencyStart": 0,
+                "preambleReceivedTargetPower_dBm": -96,
+                "preambleTransMax": "n10",
+                "powerRampingStep": "dB2",
+                "raResponseWindow": "sl20",
+                "nPreambles": 64,
+                "preambleFormat": "B4",
+                "ssbPerRACHChoice": "one",
+                "cbPreamblesPerSSB": "n64",
+                "contentionResolutionTimer": "sf64"
+              },
+              "pusch_ConfigCommon": {
+                "msg3_DeltaPreamble": 0
+              },
+              "pucch_ConfigCommon": {
+                "pucch_ResourceCommon": 0
+              }
+            },
+            "timeAlignmentTimerCommon": "infinity"
+          },
+          "ssb_PositionsInBurst": {
+            "inOneGroup": "10000000"
+          },
+          "ssb_periodicityServingCell": "ms20",
+          "ss_PBCH_BlockPower": -25,
+          "dmrs_TypeA_Position": 2
+        },
+        "ue_TimersAndConstants": {
+          "t300": "ms200",
+          "t301": "ms200",
+          "t310": "ms100",
+          "n310": "n1",
+          "t311": "ms1000",
+          "n311": "n1",
+          "t319": "ms200"
+        },
+        "uac_BarringInfo": {
+          "present": false
+        }
+      }
+    }
+  }
+}

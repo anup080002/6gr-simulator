@@ -127,6 +127,13 @@ sections:
         allowed_values: [receiver_noise_figure_thermal_noise]
       min_duration_s: {required: true, type: number, min_exclusive: 0}
       snr_sweep_offsets_db: {required: true, type: number_list, min_items: 0}
+      reference_sweep_enabled: {required: true, type: boolean}
+      reference_trials_per_snr: {required: true, type: integer, min: 0}
+      harq_diagnostics_enabled: {required: true, type: boolean}
+      adaptive_sweep_enabled: {required: true, type: boolean}
+      adaptive_sweep_step_db: {required: true, type: number, min_exclusive: 0}
+      adaptive_sweep_max_points: {required: true, type: integer, min: 0}
+      max_raw_rows_per_sweep: {required: true, type: integer, min: 0}
   frequency:
     required: true
     parameters:
@@ -270,6 +277,11 @@ sections:
       trs_enabled: {required: true, type: boolean}
       tracking_rs_enabled: {required: false, type: boolean}
       ptrs_enabled: {required: true, type: boolean}
+      ptrs_cpe_correction_enabled: {required: true, type: boolean}
+      ptrs_port_association_policy:
+        required: false
+        type: string
+        allowed_values: [configured_absolute_port, first_scheduled_dmrs_port]
       csi_reporting_enabled: {required: false, type: boolean}
       csi_feedback_mode:
         required: true
@@ -390,6 +402,18 @@ sections:
         required: false
         type: integer
         min: 2
+      mu_mimo_precoder_leakage_threshold_db:
+        required: false
+        type: number
+        max: 0
+      mu_mimo_minimum_desired_subspace_gain_db:
+        required: false
+        type: number
+        max: 0
+      mu_mimo_hybrid_rf_design_policy:
+        required: false
+        type: string
+        allowed_values: [fixed_configured_matrix, measured_srs_phase_only_subarray]
       reciprocity_mode:
         required: true
         type: string
@@ -511,6 +535,7 @@ sections:
     required: true
     parameters:
       pdcch_enabled: {required: true, type: boolean}
+      blind_search_enabled: {required: true, type: boolean}
       coreset_type:
         required: true
         type: string

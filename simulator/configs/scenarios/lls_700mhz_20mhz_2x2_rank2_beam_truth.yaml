@@ -115,6 +115,16 @@
     "trp_count": 1,
     "precoding_granularity": "prg_wideband"
   },
+  "pdsch": {
+    "layer_count": 2,
+    "modulation": "16QAM"
+  },
+  "pusch": {
+    "layer_count": 2,
+    "num_layers": 2,
+    "modulation": "16QAM",
+    "mcs_index": 10
+  },
   "control": {
     "pdcch_enabled": true,
     "aggregation_levels": [1, 2, 4, 8],

@@ -23,6 +23,17 @@ p.addParameter("EnableCSIRS", false, @localLogicalScalar);
 p.addParameter("TimingOnly", false, @localLogicalScalar);
 p.parse(varargin{:});
 opt = p.Results;
+configuredSSB = logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false));
+configuredPBCH = logical(sixgr.util.structGet(cfg, "phy.pbch.enable", ...
+    sixgr.util.structGet(cfg, "phy.mib.enable", false)));
+sixgr.config.assertRuntimeFeatureUse(cfg, "ssb", configuredSSB, ...
+    "SSB_Tx");
+sixgr.config.assertRuntimeFeatureUse(cfg, "pbch", configuredPBCH, ...
+    "SSB_Tx.PBCH");
+if ~(configuredSSB && configuredPBCH)
+    error("sixgr:phy:ssb:DisabledByYAML", ...
+        "SSB/PBCH Tx cannot execute when SSB or PBCH is disabled by YAML.");
+end
 
 nCellID = double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 1));
 if ~isempty(opt.NCellID)
@@ -190,7 +201,7 @@ bwp.NSizeBWP = nSizeBWP;
 cfgDL.BandwidthParts = {bwp};
 
 ssb = nrWavegenSSBurstConfig;
-ssb.Enable = true;
+ssb.Enable = configuredSSB;
 ssb.BlockPattern = timing.BlockPattern;
 if isprop(ssb, "SubcarrierSpacingCommon")
     ssb.SubcarrierSpacingCommon = timing.SSBSubcarrierSpacingKHz;

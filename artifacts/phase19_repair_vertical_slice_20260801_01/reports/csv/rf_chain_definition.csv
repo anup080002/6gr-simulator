@@ -1,0 +1,2 @@
+TX_chain,RX_chain,PA_model,DAC_bits,ADC_bits,OscillatorProfile,UE_RFChainCount,BS_RFChainCount,RfChainDefinitionOk,EvidenceSource
+"DAC->RF_impairment_chain->PA->antenna_port","antenna_port->LNA_noise_figure->ADC->baseband","ideal_linear",12,12,"lab_clean",4,64,1,"resolved_runtime_rf_chain_configuration"

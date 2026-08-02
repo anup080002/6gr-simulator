@@ -64,14 +64,21 @@ prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 localAssertPDSCHCodewordLayerScope(nLayers, nCodewords);
 
 Wcfg = opt.PrecodingMatrix;
+WcfgSource = "PrecodingMatrix argument";
 if isempty(Wcfg)
     Wcfg = sixgr.util.structGet(cfg, "phy.pdsch.precoding.matrix", []);
+    WcfgSource = "phy.pdsch.precoding.matrix";
 end
 if isempty(Wcfg)
     Wcfg = sixgr.util.structGet(cfg, "phy.pdsch.precodingMatrix", []);
+    WcfgSource = "phy.pdsch.precodingMatrix";
 end
 if isempty(Wcfg)
     Wcfg = sixgr.util.structGet(cfg, "phy.pdsch.W", []);
+    WcfgSource = "phy.pdsch.W";
+end
+if isempty(Wcfg)
+    WcfgSource = "none";
 end
 
 requestedPorts = localResolvePDSCHRequestedPorts(cfg);
@@ -102,9 +109,9 @@ if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
     else
         sz = size(Wcfg);
         error("sixgr:phy:dl:PDSCHPrecoding:StaleExplicitMatrixContext", ...
-            ["Explicit PDSCH precoding matrix is %dx%d for %d layer(s). " ...
-            "An available PMI does not authorize discarding or replacing it."], ...
-            sz(1), sz(2), nLayers);
+            ['Explicit PDSCH precoding matrix from %s is %dx%d for %d layer(s). ' ...
+            'An available PMI does not authorize discarding or replacing it.'], ...
+            char(WcfgSource), sz(1), sz(2), nLayers);
     end
 end
 
@@ -208,6 +215,7 @@ else
     prec.Mode = "explicit-wideband";
 end
 prec.Source = source;
+prec.ExplicitMatrixConfigSource = char(WcfgSource);
 prec.ApplicationStage = "nrPDSCHPrecode_before_RE_mapping";
 prec.NormalizeW = normalizeW;
 prec.NumPorts = size(Wports, 1);

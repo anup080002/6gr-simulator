@@ -47,6 +47,13 @@ simulation:
   snr_db: 35
   min_duration_s: 0.001
   snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  reference_trials_per_snr: 0
+  harq_diagnostics_enabled: false
+  adaptive_sweep_enabled: false
+  adaptive_sweep_step_db: 2
+  adaptive_sweep_max_points: 0
+  max_raw_rows_per_sweep: 0
 
 frequency:
   range_name: FR1
@@ -86,6 +93,11 @@ channels:
   shadow_fading_enabled: false
   pathloss_model: none
   shadow_fading_std_db: 0
+
+control:
+  pdcch_enabled: false
+  blind_search_enabled: false
+  pucch_enabled: false
 
 reference_signals:
   ssb_enabled: false

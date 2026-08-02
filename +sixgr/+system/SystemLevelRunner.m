@@ -155,7 +155,7 @@ classdef SystemLevelRunner
 
             % Mobility-control closed loop: measurement -> beam update ->
             % handover trigger/execution -> interruption -> resumed data.
-            handoverEnable = logical(sixgr.util.structGet(cfg, "system.handover.enable", nCells > 1));
+            handoverEnable = logical(sixgr.util.structGet(cfg, "system.handover.enable", false));
             hoA3Offset_dB = double(sixgr.util.structGet(cfg, "system.handover.a3Offset_dB", 3.0));
             hoHyst_dB = double(sixgr.util.structGet(cfg, "system.handover.hysteresis_dB", 1.0));
             hoTTTslots = max(1, round(double(sixgr.util.structGet(cfg, "system.handover.timeToTrigger_slots", 6))));
@@ -167,7 +167,7 @@ classdef SystemLevelRunner
             measPeriodSlots = max(1, round(double(sixgr.util.structGet(cfg, "system.measurement.periodSlots", 2))));
             measAlpha = min(max(double(sixgr.util.structGet(cfg, "system.measurement.filterAlpha", 0.7)), 0), 0.99);
 
-            beamEnable = logical(sixgr.util.structGet(cfg, "system.beam.enable", true));
+            beamEnable = logical(sixgr.util.structGet(cfg, "system.beam.enable", false));
             beamUpdatePeriodSlots = max(1, round(double(sixgr.util.structGet(cfg, "system.beam.updatePeriod_slots", 4))));
             nBeams = max(1, round(double(sixgr.util.structGet(cfg, "system.beam.numBeams", ...
                 sixgr.util.structGet(cfg, "phy.ssb.nBeams", 8)))));
@@ -243,7 +243,7 @@ classdef SystemLevelRunner
                 fastFading_dB = zeros(nTTI, K);
                 interfVar_dB = zeros(nTTI, K);
             end
-            mobilityEnable = logical(sixgr.util.structGet(cfg, "scenario.mobility.enable", true));
+            mobilityEnable = logical(sixgr.util.structGet(cfg, "scenario.mobility.enable", false));
             mobilityPeriod_s = max(tti_s, double(sixgr.util.structGet(cfg, "scenario.mobility.updatePeriod_s", tti_s)));
             mobilityUpdateSlots = sixgr.util.structGet(cfg, "system.mobility.updatePeriod_slots", []);
             if isempty(mobilityUpdateSlots)

@@ -39,7 +39,52 @@ catch cause
     throwAsCaller(failure);
 end
 
+catalog = localInstallRuntimeFeatureDefaults(catalog, catalogPath);
 localValidateCatalog(catalog, catalogPath);
+end
+
+function catalog = localInstallRuntimeFeatureDefaults(catalog, catalogPath)
+if ~isstruct(catalog) || ~isfield(catalog, "runtime_feature_defaults")
+    localInvalid(catalogPath, "catalog.runtime_feature_defaults", ...
+        "is required so conformance waveform features are YAML-owned");
+end
+defaults = catalog.runtime_feature_defaults;
+localRequireScalarStruct(defaults, "catalog.runtime_feature_defaults", catalogPath);
+localRequireFields(defaults, {"authority", "ssb_enabled", ...
+    "csi_rs_enabled", "ptrs"}, "catalog.runtime_feature_defaults", catalogPath);
+if localRequireNonemptyText(defaults.authority, ...
+        "catalog.runtime_feature_defaults.authority", catalogPath) ~= ...
+        "frc_catalog_yaml"
+    localInvalid(catalogPath, "catalog.runtime_feature_defaults.authority", ...
+        "must be 'frc_catalog_yaml'");
+end
+localRequireLogicalScalar(defaults.ssb_enabled, ...
+    "catalog.runtime_feature_defaults.ssb_enabled", catalogPath);
+localRequireLogicalScalar(defaults.csi_rs_enabled, ...
+    "catalog.runtime_feature_defaults.csi_rs_enabled", catalogPath);
+localValidatePTRS(defaults.ptrs, "catalog.runtime_feature_defaults", catalogPath);
+
+entries = catalog.entries;
+for idx = 1:numel(entries)
+    if iscell(entries)
+        entry = entries{idx};
+    else
+        entry = entries(idx);
+    end
+    if ~isfield(entry, "ptrs")
+        entry.ptrs = defaults.ptrs;
+    end
+    entry.runtime_feature_authority = struct( ...
+        "source", "frc_catalog_yaml", ...
+        "ssb_enabled", logical(defaults.ssb_enabled), ...
+        "csi_rs_enabled", logical(defaults.csi_rs_enabled));
+    if iscell(entries)
+        entries{idx} = entry;
+    else
+        entries(idx) = entry;
+    end
+end
+catalog.entries = entries;
 end
 
 function localValidateCatalog(catalog, catalogPath)
@@ -47,7 +92,7 @@ localRequireScalarStruct(catalog, "catalog", catalogPath);
 localRequireFields(catalog, { ...
     "schema_version", "catalog_id", "research_class", "catalog_status", ...
     "expected_entry_count", "coverage", "standards", "project_diagnostic_policy", ...
-    "entries"}, "catalog", catalogPath);
+    "runtime_feature_defaults", "entries"}, "catalog", catalogPath);
 
 localRequireNonemptyText(catalog.schema_version, "catalog.schema_version", catalogPath);
 localRequireNonemptyText(catalog.catalog_id, "catalog.catalog_id", catalogPath);

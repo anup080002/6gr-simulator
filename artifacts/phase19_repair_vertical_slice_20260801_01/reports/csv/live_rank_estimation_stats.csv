@@ -1,0 +1,7 @@
+Direction,TraceSource,SNR_dB,QualityAxis,QualityValueRole,QualitySource,Metric,MeanValue,P05Value,P95Value,SampleCount
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","RankIndicator",2,2,2,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","RankEstimate",4,4,4,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","Layers",2,2,2,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","RankIndicator",2,2,2,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","RankEstimate",4,4,4,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","Layers",2,2,2,1

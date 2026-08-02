@@ -1,0 +1,59 @@
+inherits: webgui_sinr_sweep_64x4_mu_mimo_full.yaml
+
+canonical_control:
+  identity:
+    scenario_id: webgui_sinr_sweep_64x4_mu_mimo_repair_slice
+    scenario_name: WebGUI 64x4 MU-MIMO repair truth slice
+    description: One-point, twenty-slot production truth slice long enough for causal CSI/SRS feedback and a measured shared-PRB MU-MIMO opportunity, while validating frozen grants, rank-2 64x4/4x64 waveforms, decoded PDCCH binding, MySQL persistence, and fail-closed finalization before the full three-point campaign.
+    comparison_group_name: phase19_64x4_mu_mimo_repair
+    tags:
+      - lls
+      - webgui
+      - repair_slice
+      - production_truth
+      - mu_mimo
+      - rank2
+  launch:
+    run_class: adaptive_system_diagnostic
+    scenario_mode: sinr_sweep_coupled_mu_mimo
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    notes: Bounded production execution through the same browser-owned MATLAB and MySQL path as the full scenario; this is not a proxy or calibration run.
+  run:
+    n_frames: 1
+    total_slots: 20
+    total_time_ms: 10.0
+    warmup_slots: 0
+    measurement_slots: 20
+    n_subframes: 10
+    monte_carlo_iterations: 1
+    fixed_link_snr_grid_db: [20]
+    min_campaign_snr_points: 1
+    min_trials_per_sinr_bin: 1
+    snr_db: 20
+    snr_sweep_offsets_db: []
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    values_db: [20]
+  fixed_link_calibration:
+    enabled: false
+    only: false
+    direction: both
+    channel_model: AWGN
+    snr_db: [20]
+
+validation:
+  run_class: adaptive_system_diagnostic
+  fixed_snr_sweep_required: false
+  geometry_evidence_required: false
+  fixed_link_campaign:
+    enabled: false
+    fixed_reference_mode: false
+    single_user_mode: false
+    configuration_authority: master_yaml
+    direction: both
+    channel_model: AWGN
+    noise_operating_mode: standalone_awgn_snr_argument
+    snr_db: [20]

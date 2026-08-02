@@ -1,0 +1,13 @@
+Direction,TraceSource,SNR_dB,QualityAxis,QualityValueRole,QualitySource,Metric,MeanValue,P05Value,P95Value,SampleCount
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","WidebandCQI",7,7,7,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","CQIDerivedMCS",5,5,5,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","CQIDerivedTargetCodeRate",0.369140625,0.369140625,0.369140625,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","CSIPayloadBitLength",23,23,23,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","PMI",3,3,3,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","RankIndicator",2,2,2,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","WidebandCQI",9,9,9,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","CQIDerivedMCS",9,9,9,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","CQIDerivedTargetCodeRate",0.6015625,0.6015625,0.6015625,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","CSIPayloadBitLength",23,23,23,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","PMI",3,3,3,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","RankIndicator",2,2,2,1

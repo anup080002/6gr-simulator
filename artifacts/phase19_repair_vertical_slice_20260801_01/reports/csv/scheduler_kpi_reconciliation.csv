@@ -1,0 +1,2 @@
+DL_GrantCount,UL_GrantCount,DL_GoodBits,UL_GoodBits,DL_Airtime_s,UL_Airtime_s,DL_Goodput_Mbps,UL_Goodput_Mbps,DL_BLER,UL_BLER,SchedulerKpiReconciliationOk,EvidenceSource
+2,0,2384,0,0.001,0,2.384,NaN,0,NaN,0,"trial_crc_goodbits_airtime_columns"

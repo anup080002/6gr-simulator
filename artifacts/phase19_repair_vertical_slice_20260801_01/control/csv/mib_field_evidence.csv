@@ -1,0 +1,13 @@
+RunId,MIBEvidenceField,BitLength,NumericValue,BitOrHexValue,SHA256,DecodedBitSource,BCHCrcPass
+"sib1_runtime_waveform","BCHTransportBlock",24,NaN,"010000","54301a433524372b04845c1cdd07a675642da9754e7aae7f5cf0b29f1f13eac8","nrBCHDecode",1
+"sib1_runtime_waveform","BCHScrambledBlock",32,NaN,"08A0C06E","f11ac33d04a4b41fb2e0d78bb285fb53d69d55c340c9e0aa90ecee7c8639d3b5","nrBCHDecode",1
+"sib1_runtime_waveform","pdcch-ConfigSIB1",8,0,"00000000","","nrBCHDecode",1
+"sib1_runtime_waveform","controlResourceSetZero",4,0,"","","nrBCHDecode",1
+"sib1_runtime_waveform","searchSpaceZero",4,0,"","","nrBCHDecode",1
+"sib1_runtime_waveform","dmrs-TypeA-Position",1,2,"","","nrBCHDecode",1
+"sib1_runtime_waveform","SFN4LSB",4,0,"0000","","nrBCHDecode",1
+"sib1_runtime_waveform","HalfFrame",1,0,"0","","nrBCHDecode",1
+"sib1_runtime_waveform","SSBIndex",NaN,0,"","","nrBCHDecode",1
+"sib1_runtime_waveform","kSSBSubcarrierOffset",NaN,0,"","","nrBCHDecode",1
+"sib1_runtime_waveform","iBarSSB",NaN,0,"","","nrBCHDecode",1
+"sib1_runtime_waveform","PBCHv",NaN,0,"","","nrBCHDecode",1

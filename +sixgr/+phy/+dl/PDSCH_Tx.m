@@ -83,6 +83,9 @@ opt = ip.Results;
 phyGrant = opt.PHYGrant;
 hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
 executionProfile = localResolveExecutionProfile(cfg, opt.ExecutionProfile, opt.Assignment);
+sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs", ...
+    localRequestedPTRSEnabled(cfg, opt, phyGrant, hasPHYGrant), ...
+    "PDSCH_Tx:" + executionProfile);
 localPreflightConfiguredTDRA( ...
     cfg, opt, hasPHYGrant, executionProfile);
 strictAssignmentProfile = any(executionProfile == ...
@@ -1801,7 +1804,10 @@ csirsSym = zeros(0, 1, "like", 1i);
 csirsInfo = struct("Channel", "CSI-RS", "Enabled", false);
 csirsCfg = [];
 event = localEmptyCSIRSEvent(cfg);
-if ~logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false))
+configuredCSIRS = logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "csi_rs", configuredCSIRS, ...
+    "PDSCH_Tx.CSI-RS");
+if ~configuredCSIRS
     event.RuntimeMaterializationStatus = "disabled";
     event.Blocker = "phy.csirs.enable_false";
     event.UpdateOutcome = "not_scheduled";
@@ -1866,6 +1872,7 @@ csirsSet = localIndexSet(csirsInd);
 if isempty(csirsSet)
     return;
 end
+
 checks = {pdschInd, "pdsch"; dmrsInd, "dmrs"; ptrsInd, "ptrs"};
 for i = 1:size(checks, 1)
     other = localIndexSet(checks{i, 1});
@@ -1874,6 +1881,21 @@ for i = 1:size(checks, 1)
             "CSI-RS collides with resolved %s resources before PDSCH coding.", ...
             string(checks{i, 2}));
     end
+end
+end
+
+function enabled = localRequestedPTRSEnabled(cfg, opt, phyGrant, hasPHYGrant)
+if hasPHYGrant
+    enabled = logical(sixgr.util.structGet(phyGrant, ...
+        "CodingLayout.PTRSEnabled", false));
+elseif ~isempty(opt.PDSCH)
+    enabled = logical(localObjectValue(opt.PDSCH, "EnablePTRS", false));
+elseif isa(opt.ReferenceSignalConfig, ...
+        "sixgr.pdsch.PDSCHReferenceSignalConfig")
+    enabled = logical(opt.ReferenceSignalConfig.get("EnablePTRS"));
+else
+    enabled = logical(sixgr.util.structGet(cfg, "phy.pdsch.enablePTRS", ...
+        sixgr.util.structGet(cfg, "phy.ptrs.enable", false)));
 end
 end
 

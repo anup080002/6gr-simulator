@@ -17,6 +17,12 @@ for i = 1:2:numel(varargin)
     end
 end
 
+if isstruct(cfgOrTrs) && isfield(cfgOrTrs, "runtime")
+    configuredTRS = logical(sixgr.util.structGet(cfgOrTrs, ...
+        "phy.trs.enable", false));
+    sixgr.config.assertRuntimeFeatureUse(cfgOrTrs, "trs", configuredTRS, ...
+        "sixgr.phy.refsig.trs");
+end
 cfg = localResolveTRSCfg(cfgOrTrs);
 enabled = logical(sixgr.util.structGet(cfg, "enable", false));
 if ~enabled

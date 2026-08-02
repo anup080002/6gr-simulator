@@ -29,6 +29,37 @@ def test_partial_legacy_run_controls_override_inherited_canonical_control() -> N
     assert normalized["simulation"]["n_frames"] == 5
 
 
+def test_runtime_backend_override_is_persisted_in_browser_overlay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {"output": {"persistence_mode": "results_folder"}}
+    monkeypatch.setenv("SIXGR_OUTPUT_BACKEND_OVERRIDE", "mysql_web")
+    monkeypatch.setattr(
+        dash,
+        "dashboard_mysql_available",
+        lambda: (False, "dashboard probe intentionally unavailable"),
+    )
+    normalized = json.loads(
+        dash.normalize_run_yaml(json.dumps(payload), MASTER_SCENARIO)
+    )
+    assert normalized["output"]["backend"] == "mysql_web"
+    assert normalized["output"]["persistence_mode"] == "both"
+    assert normalized["output"]["persist_to_database"] is True
+    assert normalized["output"]["persist_to_results_folder"] is True
+    assert normalized["output_control"]["output_persistence_mode"] == "both"
+
+
+def test_invalid_runtime_backend_override_fails_before_launch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SIXGR_OUTPUT_BACKEND_OVERRIDE", "invalid_backend")
+    with pytest.raises(ValueError, match="SIXGR_OUTPUT_BACKEND_OVERRIDE"):
+        dash.normalize_run_yaml(
+            json.dumps({"output": {"persistence_mode": "both"}}),
+            MASTER_SCENARIO,
+        )
+
+
 def main() -> None:
     text = (REPO_ROOT / "apps" / "lls_web_dashboard.py").read_text(encoding="utf-8")
     assert 'parsed.path != "/run"' in text

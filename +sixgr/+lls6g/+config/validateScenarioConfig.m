@@ -431,9 +431,12 @@ localValidateFixedLinkMasterAuthority(cfg, ctx);
 localValidateRunClassScenarioRequirements(cfg, ctx);
 
 ulWf = upper(string(cfg.waveform.ul_waveform));
-if ulWf == "DFT-S-OFDM" && ~logical(cfg.waveform.transform_precoding_enabled)
+transformEnabled = logical(cfg.waveform.transform_precoding_enabled);
+if (ulWf == "DFT-S-OFDM") ~= transformEnabled
     error("sixgr:lls6g:config:BadDFTSOFDM", ...
-        "UL DFT-s-OFDM in %s requires waveform.transform_precoding_enabled=true.", localCtx(ctx));
+        ['waveform.ul_waveform=%s and transform_precoding_enabled=%d in %s ' ...
+         'must describe the same UL waveform.'], ...
+        char(ulWf), transformEnabled, localCtx(ctx));
 end
 
 if upper(string(cfg.coding.data_code_type)) == "POLAR"
@@ -1347,13 +1350,6 @@ if configuredPTRS ~= logical(campaign.enable_ptrs)
         localCtx(ctx));
 end
 if any(direction == ["ul","both"])
-    configuredPUSCHPTRS = logical(localOptionalStructValue( ...
-        cfg, "pusch.ptrs_enabled", false));
-    if configuredPUSCHPTRS ~= logical(campaign.enable_ptrs)
-        error("sixgr:lls6g:config:FixedLinkMasterPUSCHPTRSAuthorityConflict", ...
-            char("pusch.ptrs_enabled and validation.fixed_link_campaign." + ...
-            "enable_ptrs conflict in %s."), localCtx(ctx));
-    end
     configuredPUSCHPorts = double(localOptionalStructValue( ...
         cfg, "pusch.num_antenna_ports", NaN));
     configuredUEElements = double(localOptionalStructValue( ...

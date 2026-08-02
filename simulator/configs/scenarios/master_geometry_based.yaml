@@ -98,6 +98,13 @@ canonical_control:
     noise_operating_mode: receiver_noise_figure_thermal_noise
     min_duration_s: 0.03
     snr_sweep_offsets_db: []
+    reference_sweep_enabled: false
+    reference_trials_per_snr: 0
+    harq_diagnostics_enabled: true
+    adaptive_sweep_enabled: false
+    adaptive_sweep_step_db: 2
+    adaptive_sweep_max_points: 0
+    max_raw_rows_per_sweep: 0
     execution_mode: LLS
     study_mode: campaign
     simulation_mode: full_phy
@@ -300,7 +307,11 @@ canonical_control:
     panel_count: 2
     trp_count: 2
     mu_mimo_enable: true
+    ul_mu_mimo_enable: false
     mu_mimo_max_users_per_prb: 2
+    mu_mimo_precoder_leakage_threshold_db: -15
+    mu_mimo_minimum_desired_subspace_gain_db: -30
+    mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
     phase07_strict:
       enabled: false
       profile_id: fr1_typeI_single_panel_strict
@@ -431,11 +442,18 @@ canonical_control:
     csi_rs_enabled: true
     srs_enabled: true
     trs_enabled: true
+    tracking_rs_enabled: true
+    tracking_rs:
+      trp_transmission_assumption: noncoherent_multi_trp
     ptrs_enabled: true
+    ptrs_cpe_correction_enabled: true
+    ptrs_port_association_policy: first_scheduled_dmrs_port
     csi_feedback_mode: PMI+CQI+RI
     cqi_reporting_enabled: true
     pmi_reporting_enabled: true
     ri_reporting_enabled: true
+    cri_reporting_enabled: false
+    csi_reporting_enabled: true
     pdsch_dmrs_ports: 2
     pusch_dmrs_ports: 2
     csi_rs_ports: 4
@@ -558,6 +576,7 @@ canonical_control:
     crc_free_mode: false
   control:
     pdcch_enabled: true
+    blind_search_enabled: true
     pucch_enabled: true
     pucch_format: 2
     coreset_type: ue_specific
@@ -1218,6 +1237,8 @@ canonical_control:
     value: baseline
   pdsch:
     execution_profile: connected_strict
+    layer_count: 2
+    modulation: 256QAM
 validation:
   run_class: ue_placement_geometry_lls
 bwp:
@@ -1316,7 +1337,6 @@ pdsch6gr:
   enable_pdsch_repetition: false
   repetition_mode: none
   repetition_count: 1
-  enable_ptrs: true
   ptrs_band_policy: optional_fr1_7ghz
   channel_estimation_mode: realistic
   parameter_estimation_mode: practical
@@ -1377,6 +1397,8 @@ pdsch:
   execution_profile: connected_strict
   prb_start: 0
   num_prb: 273
+  layer_count: 2
+  modulation: 256QAM
   resource_allocation_type: type1
   mapping_type: A
   start_symbol: 2
@@ -1392,6 +1414,7 @@ pdsch:
 pusch:
   prb_start: 0
   num_prb: 273
+  layer_count: 2
   resource_allocation_type: type1
   mapping_type: A
   start_symbol: 0
@@ -1433,7 +1456,6 @@ pusch:
   dmrs_nrs_id: 1
   dmrs_group_hopping: false
   dmrs_sequence_hopping: false
-  ptrs_enabled: true
   ptrs_time_density: 2
   ptrs_frequency_density: 2
   ptrs_re_offset: '00'

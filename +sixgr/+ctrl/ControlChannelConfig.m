@@ -24,7 +24,7 @@ phy = sixgr.util.structGet(fullCfg, "phy", struct());
 channel = sixgr.util.structGet(fullCfg, "channel", struct());
 
 cfg = struct();
-cfg.Enable6GRPDCCH = logical(sixgr.util.structGet(ctrl, "enable", true));
+cfg.Enable6GRPDCCH = logical(sixgr.util.structGet(ctrl, "enable", false));
 cfg.CellID = double(sixgr.util.structGet(phy, "carrier.NCellID", 1));
 cfg.RNTI = double(sixgr.util.structGet(ctrl, "RNTI", sixgr.util.structGet(phy, "pdcch.rnti", 4660)));
 cfg.SlotNumber = double(sixgr.util.structGet(ctrl, "SlotNumber", 0));
@@ -58,7 +58,7 @@ cfg.SNRdB = double(sixgr.util.structGet(ctrl, "SNRdB", sixgr.util.structGet(chan
 cfg.NoiseVarianceMode = char(string(sixgr.util.structGet(ctrl, "NoiseVarianceMode", "from_snr_db")));
 cfg.ChannelEstimationMode = char(string(sixgr.util.structGet(ctrl, "ChannelEstimationMode", "realistic")));
 cfg.EqualizerType = char(string(sixgr.util.structGet(ctrl, "EqualizerType", "MMSE")));
-cfg.BlindDetectionEnabled = logical(sixgr.util.structGet(ctrl, "BlindDetectionEnabled", true));
+cfg.BlindDetectionEnabled = logical(sixgr.util.structGet(ctrl, "BlindDetectionEnabled", false));
 cfg.MonitoringPeriodicitySlots = max(1, round(double(sixgr.util.structGet(ctrl, "MonitoringPeriodicitySlots", 1))));
 cfg.EnableCSS = logical(sixgr.util.structGet(ctrl, "EnableCSS", true));
 cfg.EnableUSS = logical(sixgr.util.structGet(ctrl, "EnableUSS", true));

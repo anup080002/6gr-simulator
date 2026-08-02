@@ -93,7 +93,7 @@ classdef SystemInformation < handle
             end
 
             prach = struct();
-            prach.enable = logical(sixgr.util.structGet(cfg,'phy.prach.enable',true));
+            prach.enable = logical(sixgr.util.structGet(cfg,'phy.prach.enable',false));
             prach.configurationIndex = double(sixgr.util.structGet(cfg,'phy.prach.configurationIndex',16));
             prach.subcarrierSpacing_kHz = double(sixgr.util.structGet(cfg,'phy.prach.subcarrierSpacing_kHz',1.25));
             prach.preambleFormat = char(string(sixgr.util.structGet(cfg,'phy.prach.preambleFormat','A1')));

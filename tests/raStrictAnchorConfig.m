@@ -18,6 +18,12 @@ cfg.frequency = struct( ...
     "band_name","n78", ...
     "bandwidth_hz",20e6);
 cfg.phy.channelBandwidth_MHz = 20;
+cfg.phy.pdcch.enable = true;
+cfg.phy.pdcch.blindSearch = true;
+cfg.phy.pdcch.dmrs.enable = true;
+cfg.phy.pdsch.enable = true;
+cfg.phy.pusch.enable = true;
+cfg.phy.prach.enable = true;
 cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
 cfg.initial_access.sib1.pdsch = struct("prb_start",0, ...
     "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0);

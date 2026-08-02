@@ -190,6 +190,9 @@ for direction = ["DL","UL"]
         row.ConfiguredLayers = double(cfgRow.ConfiguredLayers(1));
         row.ConfiguredModulation = string(cfgRow.ConfiguredModulation(1));
         row.ConfiguredMCS = double(cfgRow.ConfiguredMCS(1));
+        row.ConfiguredInitialMCS = double(cfgRow.ConfiguredInitialMCS(1));
+        row.ConfiguredMaximumMCS = double(cfgRow.ConfiguredMaximumMCS(1));
+        row.ConfiguredMCSSelectionPolicy = string(cfgRow.ConfiguredMCSSelectionPolicy(1));
         row.ScheduledRank = localFirstNum(tr, ["ScheduledRank","ScheduledLayers","PrecodingNumLayers","RankIndicator","RI","Layers"], NaN);
         row.ScheduledLayers = localFirstNum(tr, ["ScheduledLayers","PrecodingNumLayers","Layers"], NaN);
         row.ScheduledModulation = localFirstTextTable(tr, ["ScheduledModulation","Modulation"], "");
@@ -198,9 +201,26 @@ for direction = ["DL","UL"]
         row.TransmittedLayers = localFirstNum(tr, ["TransmittedLayers","PrecodingNumLayers","Layers"], NaN);
         row.TransmittedModulation = localFirstTextTable(tr, ["TransmittedModulation","Modulation"], "");
         row.TransmittedMCS = localFirstNum(tr, ["TransmittedMCS","MCS","MCSIndex"], NaN);
+        row.ActualMCSSelectionMode = localFirstTextTable(tr, ["ActualMCSSelectionMode"], "");
+        row.MCSSelectionSource = localFirstTextTable(tr, ["MCSSelectionSource"], "");
+        row.MCSAuthority = localFirstTextTable(tr, ["MCSAuthority","GrantOperatingPointSource"], "");
+        row.ModulationAuthority = localFirstTextTable(tr, ["ModulationAuthority","GrantOperatingPointSource"], "");
+        row.AppliedOperatingPointSource = localFirstTextTable(tr, ["AppliedOperatingPointSource","GrantOperatingPointSource"], "");
+        row.LinkAdaptationScheduled = localBool(tr, "LinkAdaptationScheduled", false);
+        row.LinkAdaptationApplied = localBool(tr, "LinkAdaptationApplied", false);
+        row.WidebandCQI = localFirstNum(tr, ["WidebandCQI","CQI"], NaN);
+        row.CQIDerivedMCS = localFirstNum(tr, ["CQIDerivedMCS","RawCQIDerivedMCS"], NaN);
         row.ReceiverEstimatedRank = localFirstNum(tr, ["ReceiverEstimatedRank","RankEstimate"], NaN);
         row.NumRxAntennas = localFirstNum(tr, ["NumRxAntennas","NumRxAnt","RxAntennaCount"], NaN);
         row.NumTxPorts = localFirstNum(tr, ["NumTxPorts","PrecodingNumPorts","TxAntennaPortCount"], NaN);
+        row.TxWaveformColumns = localFirstNum(tr, ...
+            ["TxWaveformColumns","PhysicalTxAntennas"], NaN);
+        row.PhysicalTxAntennas = localFirstNum(tr, ...
+            ["PhysicalTxAntennas","TxWaveformColumns"], NaN);
+        row.RxWaveformBranches = localFirstNum(tr, ...
+            ["RxWaveformBranches","PhysicalRxAntennas"], NaN);
+        row.PhysicalRxAntennas = localFirstNum(tr, ...
+            ["PhysicalRxAntennas","RxWaveformBranches"], NaN);
         row.LogicalTxPortCount = localFirstNum(tr, ...
             ["NumLogicalTxPorts","PrecodingNumLogicalPorts","PrecodingNumLayers","Layers"],NaN);
         row.LogicalRxBranchCount = localFirstNum(tr, ...
@@ -209,6 +229,10 @@ for direction = ["DL","UL"]
             ["BSAntennaNumPorts","ConfiguredBSAntennaCount"],NaN);
         row.UEAntennaNumPorts = localFirstNum(tr, ...
             ["UEAntennaNumPorts","ConfiguredUEAntennaCount"],NaN);
+        row.BSAntennaElements = localFirstNum(tr, ...
+            ["BSAntennaElements","ConfiguredBSAntennaCount"],NaN);
+        row.UEAntennaElements = localFirstNum(tr, ...
+            ["UEAntennaElements","ConfiguredUEAntennaCount"],NaN);
         row.AntennaRuntimeObjectCreated = localBool( ...
             tr,"AntennaRuntimeObjectCreated",false);
         row.ChannelUsesSameRuntimeAntennaAssumptions = localBool( ...
@@ -258,14 +282,49 @@ for direction = ["DL","UL"]
         row.LayerSINRdB = localVectorToken(perLayer);
         row.AdaptiveMode = logical(cfgRow.AdaptiveMode(1));
         row.FixedAnchorMode = logical(cfgRow.FixedAnchorMode(1));
+        row.MUExecutionRequired = logical(cfgRow.ConfiguredMUMIMOEnabled(1));
+        row.RequiredMUUserCount = double(cfgRow.ConfiguredMUUsersPerPRB(1));
+        row.RequiredMULeakageThreshold_dB = double(cfgRow.ConfiguredMUMIMOLeakageThreshold_dB(1));
+        row.RequiredMUExecutionMode = string(cfgRow.ConfiguredMUMIMOExecutionMode(1));
+        row.MUMIMOEnabled = localBool(tr, "MUMIMOEnabled", false);
+        row.MUMIMOGroupSize = localFirstNum(tr, ["MUMIMOGroupSize","MUGroupSize"], NaN);
+        row.MUMIMOGroupId = localFirstNum(tr, ["MUMIMOGroupId","MUGroupId"], NaN);
+        row.MUMIMOPairingStatus = localFirstTextTable(tr, ["MUMIMOPairingStatus","MUPairingStatus"], "");
+        row.MUMIMOPairingMetricSource = localFirstTextTable(tr, ["MUMIMOPairingMetricSource","MUPairingMetricSource"], "");
+        row.MUMIMOPairingMetricValue_dB = localFirstNum(tr, ["MUMIMOPairingMetricValue_dB","MUPairingMetricValue_dB"], NaN);
+        row.MUMIMOPairingEvidenceSource = localFirstTextTable(tr, ["MUMIMOPairingEvidenceSource","MUPairingEvidenceSource"], "");
+        row.MUMIMOSpatialFilterMatrixSHA256 = localFirstTextTable(tr, ...
+            ["MUMIMOSpatialFilterMatrixSHA256","MUMIMOReceiveCombiningMatrixSHA256"], "");
+        row.MUMIMOReceiverAlgorithm = localFirstTextTable(tr, ...
+            ["EqualizerType","EqualizerRequestedType","EqualizerEngine", ...
+             "EqualizerAlgorithm","EqualizerAlgorithmUsed","MUMIMOReceiverAlgorithm"], "");
+        row.InterferenceCovarianceSource = localFirstTextTable(tr, ...
+            ["InterferenceCovarianceSource","EqualizerCovarianceSource"], "");
+        row.InterferenceMode = localFirstTextTable(tr, ["InterferenceMode"], "");
+        row.InterferenceContributorCount = localFirstNum(tr, ["InterferenceContributorCount"], 0);
+        row.PRBStart = localFirstNum(tr, ["PRBStart"], NaN);
+        row.PRBCount = localFirstNum(tr, ["PRBCount","AllocatedPRBCount"], NaN);
+        row.SymbolStart = localFirstNum(tr, ["SymbolStart"], NaN);
+        row.NumSymbols = localFirstNum(tr, ["NumSymbols"], NaN);
         row.DecodeCrcPass = crcPass;
-        row.ExactConfiguredMatch = localExactMatch(row);
-        row.MismatchCause = localMismatchCause(row);
         row.AdaptationEvidenceId = localFirstTextTable(tr, ["CSIReportId","CSIPayloadHex","GrantContextId"], "");
+        row.ExactSpatialMatch = localExactSpatialMatch(row);
+        row.SpatialContractMatch = row.ExactSpatialMatch;
+        row.ExactOperatingPointMatch = localExactOperatingPointMatch(row);
+        row.FixedOperatingPointMatch = row.ExactOperatingPointMatch;
+        row.AdaptivePolicyRequired = row.AdaptiveMode;
+        [row.AdaptivePolicyMatch, row.AdaptivePolicyFailureReason] = localAdaptivePolicyMatch(row);
+        row.AdaptivePolicyConformance = row.AdaptivePolicyMatch;
+        row.OperatingPointContractMatch = (~row.AdaptiveMode && row.ExactOperatingPointMatch) || ...
+            (row.AdaptiveMode && row.AdaptivePolicyMatch);
+        row.MUExecutionMatch = localMURowExecutionMatch(row);
+        row.ExactConfiguredMatch = row.ExactSpatialMatch && row.ExactOperatingPointMatch;
+        row.ExecutionContractMatch = row.ExactSpatialMatch && row.OperatingPointContractMatch;
+        row.MismatchCause = localMismatchCause(row);
         row.StrictEligible = ~localBool(tr, "IsWarmupFrame", false);
         row.SourceArtifactRef = sourceArtifact;
         row.SourceRowsHash = sourceHash;
-        row.StrictOk = row.StrictEligible && row.DecodeCrcPass && row.ExactConfiguredMatch && ...
+        row.StrictOk = row.StrictEligible && row.DecodeCrcPass && row.ExecutionContractMatch && ...
             isfinite(row.EffectiveDecodedRank) && row.EffectiveDecodedRank == row.ConfiguredRank;
         if row.FixedAnchorMode && row.StrictEligible && ~row.StrictOk
             row.Status = "fail";
@@ -315,6 +374,16 @@ for i = 1:height(cfgT)
     row.ConfiguredLayers = double(cfgT.ConfiguredLayers(i));
     row.ConfiguredModulation = string(cfgT.ConfiguredModulation(i));
     row.ConfiguredMCS = double(cfgT.ConfiguredMCS(i));
+    row.ConfiguredInitialMCS = double(cfgT.ConfiguredInitialMCS(i));
+    row.ConfiguredMaximumMCS = double(cfgT.ConfiguredMaximumMCS(i));
+    row.AdaptiveMode = logical(cfgT.AdaptiveMode(i));
+    row.SpatialContractRequired = true;
+    row.FixedOperatingPointRequired = ~row.AdaptiveMode;
+    row.AdaptivePolicyRequired = row.AdaptiveMode;
+    row.MUExecutionRequired = logical(cfgT.ConfiguredMUMIMOEnabled(i));
+    row.RequiredMUUserCount = double(cfgT.ConfiguredMUUsersPerPRB(i));
+    row.RequiredMULeakageThreshold_dB = double(cfgT.ConfiguredMUMIMOLeakageThreshold_dB(i));
+    row.RequiredMUExecutionMode = string(cfgT.ConfiguredMUMIMOExecutionMode(i));
     row.StrictEligibleRowCount = height(subset);
     if height(subset) > 0
         row.DominantScheduledRank = localMode(subset.ScheduledRank);
@@ -327,6 +396,20 @@ for i = 1:height(cfgT)
         row.DominantEffectiveMCS = localMode(subset.EffectiveDecodedMCS);
         row.ExactMatchRowCount = sum(logical(subset.ExactConfiguredMatch));
         row.ExactMatchPercent = row.ExactMatchRowCount / max(row.StrictEligibleRowCount, 1);
+        row.ExactSpatialMatchRowCount = sum(logical(subset.ExactSpatialMatch));
+        row.ExactSpatialMatchPercent = row.ExactSpatialMatchRowCount / max(row.StrictEligibleRowCount, 1);
+        row.ExactOperatingPointMatchRowCount = sum(logical(subset.ExactOperatingPointMatch));
+        row.ExactOperatingPointMatchPercent = row.ExactOperatingPointMatchRowCount / max(row.StrictEligibleRowCount, 1);
+        row.AdaptivePolicyMatchRowCount = sum(logical(subset.AdaptivePolicyMatch));
+        row.AdaptivePolicyMatchPercent = row.AdaptivePolicyMatchRowCount / max(row.StrictEligibleRowCount, 1);
+        row.ExecutionContractMatchRowCount = sum(logical(subset.ExecutionContractMatch));
+        row.ExecutionContractMatchPercent = row.ExecutionContractMatchRowCount / max(row.StrictEligibleRowCount, 1);
+        row.SpatialContractMatch = all(logical(subset.SpatialContractMatch));
+        row.FixedOperatingPointMatch = all(logical(subset.FixedOperatingPointMatch));
+        row.AdaptivePolicyConformance = all(logical(subset.AdaptivePolicyConformance));
+        [row.MUExecutionMatch, row.MUExecutedTrialRowCount, ...
+            row.MUExecutedDistinctGroupCount, row.MUExecutionFailureReason] = ...
+            localMUSummaryExecutionMatch(subset, row);
         row.RuntimePopulated = true;
         row.RuntimeTrialCount = height(subset);
         row.RuntimeRank2Fraction = mean(double(subset.TransmittedRank) == 2 | double(subset.EffectiveDecodedRank) == 2, "omitnan");
@@ -337,11 +420,25 @@ for i = 1:height(cfgT)
         row.RuntimeEvidenceSource = "rank_layer_trials_from_air_interface_raw_trials";
         row.EvidenceClass = "DIRECT_RUNTIME_EVIDENCE";
     end
-    row.RequiredExactMatchPercent = localTernary(logical(cfgT.FixedAnchorMode(i)) || strictMode, 0.999, NaN);
+    row.RequiredExactMatchPercent = localTernary(~row.AdaptiveMode && ...
+        (logical(cfgT.FixedAnchorMode(i)) || strictMode), 0.999, NaN);
+    row.RequiredExecutionContractMatchPercent = localTernary(logical(cfgT.FixedAnchorMode(i)) || strictMode, 0.999, NaN);
     row.ScenarioObjectivePass = row.StrictEligibleRowCount > 0 && ...
-        (~isfinite(row.RequiredExactMatchPercent) || row.ExactMatchPercent + eps >= row.RequiredExactMatchPercent);
+        (~isfinite(row.RequiredExactMatchPercent) || row.ExactMatchPercent + eps >= row.RequiredExactMatchPercent) && ...
+        (~isfinite(row.RequiredExecutionContractMatchPercent) || ...
+        row.ExecutionContractMatchPercent + eps >= row.RequiredExecutionContractMatchPercent) && ...
+        (~row.SpatialContractRequired || row.SpatialContractMatch) && ...
+        (~row.FixedOperatingPointRequired || row.FixedOperatingPointMatch) && ...
+        (~row.AdaptivePolicyRequired || row.AdaptivePolicyConformance) && ...
+        row.MUExecutionMatch;
     row.Status = string(localTernary(row.ScenarioObjectivePass, "pass", "fail"));
-    row.FailureReason = string(localTernary(row.ScenarioObjectivePass, "", "mimo_configured_effective_mismatch_or_missing_rows"));
+    if row.ScenarioObjectivePass
+        row.FailureReason = "";
+    elseif row.MUExecutionRequired && ~row.MUExecutionMatch
+        row.FailureReason = "mu_execution_contract_failed:" + string(row.MUExecutionFailureReason);
+    else
+        row.FailureReason = "mimo_configured_effective_mismatch_or_missing_rows";
+    end
     rows(end+1, 1) = row; %#ok<AGROW>
 end
 T = struct2table(rows);
@@ -463,14 +560,18 @@ for i = 1:height(cfgT)
     end
     if upper(string(cfgT.Direction(i))) == "UL"
         rows(i).ObservedPhysicalTxAntennaCount = localMode( ...
-            localColumn(sub,"UEAntennaNumPorts"));
+            localFirstAvailableColumn(sub, ...
+            ["TxWaveformColumns","PhysicalTxAntennas","UEAntennaElements","UEAntennaNumPorts"]));
         rows(i).ObservedPhysicalRxAntennaCount = localMode( ...
-            localColumn(sub,"BSAntennaNumPorts"));
+            localFirstAvailableColumn(sub, ...
+            ["RxWaveformBranches","PhysicalRxAntennas","BSAntennaElements","BSAntennaNumPorts"]));
     else
         rows(i).ObservedPhysicalTxAntennaCount = localMode( ...
-            localColumn(sub,"BSAntennaNumPorts"));
+            localFirstAvailableColumn(sub, ...
+            ["TxWaveformColumns","PhysicalTxAntennas","BSAntennaElements","BSAntennaNumPorts"]));
         rows(i).ObservedPhysicalRxAntennaCount = localMode( ...
-            localColumn(sub,"UEAntennaNumPorts"));
+            localFirstAvailableColumn(sub, ...
+            ["RxWaveformBranches","PhysicalRxAntennas","NumRxAntennas","UEAntennaElements","UEAntennaNumPorts"]));
     end
     rows(i).RuntimePopulated = height(sub) > 0;
     if rows(i).RuntimePopulated
@@ -690,6 +791,17 @@ if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
 end
 end
 
+function out = localFirstAvailableColumn(T, names)
+out = [];
+for name = string(names)
+    candidate = localColumn(T, name);
+    if ~isempty(candidate) && any(isfinite(candidate))
+        out = candidate;
+        return;
+    end
+end
+end
+
 function v = localNum(T, name, defaultValue)
 v = defaultValue;
 if istable(T) && ismember(string(name), string(T.Properties.VariableNames))
@@ -757,7 +869,7 @@ else
 end
 end
 
-function tf = localExactMatch(row)
+function tf = localExactSpatialMatch(row)
 % Configured-vs-effective MIMO execution is a transmitted waveform
 % contract. A CRC failure at a deliberately low-SNR sweep point does not
 % turn a physically transmitted rank-two allocation into rank zero. Keep
@@ -765,11 +877,177 @@ function tf = localExactMatch(row)
 % evidence while comparing configuration to the waveform that actually ran.
 tf = isfinite(row.TransmittedRank) && isfinite(row.TransmittedLayers) && ...
     row.TransmittedRank == row.ConfiguredRank && ...
-    row.TransmittedLayers == row.ConfiguredLayers && ...
-    (row.AdaptiveMode || strlength(row.ConfiguredModulation) == 0 || ...
-        row.TransmittedModulation == row.ConfiguredModulation) && ...
-    (row.AdaptiveMode || ~isfinite(row.ConfiguredMCS) || ...
-        row.TransmittedMCS == row.ConfiguredMCS);
+    row.TransmittedLayers == row.ConfiguredLayers;
+end
+
+function tf = localExactOperatingPointMatch(row)
+configuredModulation = upper(strtrim(string(row.ConfiguredModulation)));
+transmittedModulation = upper(strtrim(string(row.TransmittedModulation)));
+tf = (strlength(configuredModulation) == 0 || transmittedModulation == configuredModulation) && ...
+    (~isfinite(row.ConfiguredMCS) || ...
+    (isfinite(row.TransmittedMCS) && row.TransmittedMCS == row.ConfiguredMCS));
+end
+
+function tf = localMURowExecutionMatch(row)
+% This is physical execution evidence, not a scheduler-intent test. A row
+% passes only when a causally measured MU pair was transmitted on the same
+% opportunity and the receiver saw the peer waveform contribution.
+if ~logical(row.MUExecutionRequired)
+    tf = true;
+    return;
+end
+requiredUsers = max(2, round(double(row.RequiredMUUserCount)));
+requiredMode = lower(strtrim(string(row.RequiredMUExecutionMode)));
+tf = logical(row.MUMIMOEnabled) && ...
+    isfinite(row.MUMIMOGroupSize) && row.MUMIMOGroupSize >= requiredUsers && ...
+    isfinite(row.MUMIMOGroupId) && ...
+    lower(strtrim(string(row.MUMIMOPairingStatus))) == "paired_shared_prb_spatial_multiplexing" && ...
+    localVerifiedMUSpatialExecution(row) && ...
+    isfinite(row.MUMIMOPairingMetricValue_dB) && ...
+    isfinite(row.RequiredMULeakageThreshold_dB) && ...
+    row.MUMIMOPairingMetricValue_dB <= row.RequiredMULeakageThreshold_dB && ...
+    lower(strtrim(string(row.InterferenceMode))) == "shared_slot_waveform_superposition" && ...
+    row.InterferenceContributorCount >= requiredUsers - 1;
+if strlength(requiredMode) > 0 && requiredMode ~= "none"
+    tf = tf && lower(strtrim(string(row.InterferenceMode))) == requiredMode;
+end
+end
+
+function tf = localVerifiedMUSpatialExecution(row)
+direction = upper(strtrim(string(row.Direction)));
+metricSource = lower(strtrim(string(row.MUMIMOPairingMetricSource)));
+evidenceSource = lower(strtrim(string(row.MUMIMOPairingEvidenceSource)));
+matrixDigestPresent = strlength(strtrim(string(row.MUMIMOSpatialFilterMatrixSHA256))) == 64;
+if direction == "DL"
+    tf = metricSource == "measured_tdd_srs_reciprocal_hybrid_block_diagonalized_precoder_leakage" && ...
+        evidenceSource == "causal_measured_srs_reciprocity_phase_only_hybrid_and_frozen_baseband" && ...
+        matrixDigestPresent;
+elseif direction == "UL"
+    receiver = upper(strtrim(string(row.MUMIMOReceiverAlgorithm)));
+    covarianceSource = lower(strtrim(string(row.InterferenceCovarianceSource)));
+    tf = metricSource == "measured_srs_irc_receive_projection_leakage" && ...
+        evidenceSource == "causal_measured_srs_subspace_and_runtime_irc_covariance" && ...
+        matrixDigestPresent && contains(receiver, "IRC") && ...
+        covarianceSource == "shared_slot_contribution_grid_covariance";
+else
+    tf = false;
+end
+end
+
+function [tf, executedRows, passedGroups, reason] = localMUSummaryExecutionMatch(subset, summaryRow)
+executedRows = 0;
+passedGroups = 0;
+reason = "";
+if ~logical(summaryRow.MUExecutionRequired)
+    tf = true;
+    reason = "not_applicable_mu_disabled";
+    return;
+end
+requiredUsers = max(2, round(double(summaryRow.RequiredMUUserCount)));
+if lower(strtrim(string(summaryRow.RequiredMUExecutionMode))) ~= "shared_slot_waveform_superposition"
+    tf = false;
+    reason = "configured_mu_execution_mode_is_not_shared_waveform_superposition";
+    return;
+end
+candidate = logical(subset.MUMIMOEnabled) & ...
+    isfinite(double(subset.MUMIMOGroupSize)) & double(subset.MUMIMOGroupSize) >= requiredUsers & ...
+    isfinite(double(subset.MUMIMOGroupId));
+if ~any(candidate)
+    tf = false;
+    reason = "no_shared_prb_mu_trial_rows";
+    return;
+end
+candidateT = subset(candidate, :);
+groupIds = unique(double(candidateT.MUMIMOGroupId));
+invalidGroups = 0;
+for gi = 1:numel(groupIds)
+    groupT = candidateT(double(candidateT.MUMIMOGroupId) == groupIds(gi), :);
+    uniqueUE = unique(double(groupT.UEId(isfinite(double(groupT.UEId)))));
+    groupOk = height(groupT) >= requiredUsers && numel(uniqueUE) >= requiredUsers && ...
+        all(logical(groupT.MUExecutionMatch)) && ...
+        localAllSameFinite(groupT.PRBStart) && localAllSameFinite(groupT.PRBCount) && ...
+        localAllSameFinite(groupT.SymbolStart) && localAllSameFinite(groupT.NumSymbols);
+    if groupOk
+        passedGroups = passedGroups + 1;
+        executedRows = executedRows + height(groupT);
+    else
+        invalidGroups = invalidGroups + 1;
+    end
+end
+tf = passedGroups > 0 && invalidGroups == 0;
+if ~tf
+    if passedGroups == 0
+        reason = "no_complete_physical_mu_group";
+    else
+        reason = "one_or_more_labeled_mu_groups_failed_shared_resource_or_waveform_contract";
+    end
+end
+end
+
+function tf = localAllSameFinite(values)
+values = double(values(:));
+tf = ~isempty(values) && all(isfinite(values)) && all(values == values(1));
+end
+
+function [tf, reason] = localAdaptivePolicyMatch(row)
+if ~row.AdaptiveMode
+    tf = true;
+    reason = "not_applicable_fixed_operating_point";
+    return;
+end
+parts = strings(0,1);
+policy = lower(strtrim(string(row.ConfiguredMCSSelectionPolicy)));
+selectionMode = lower(strtrim(string(row.ActualMCSSelectionMode)));
+selectionSource = lower(strtrim(string(row.MCSSelectionSource)));
+mcsAuthority = lower(strtrim(string(row.MCSAuthority)));
+modulationAuthority = lower(strtrim(string(row.ModulationAuthority)));
+appliedSource = lower(strtrim(string(row.AppliedOperatingPointSource)));
+lineage = [selectionMode; selectionSource; mcsAuthority; modulationAuthority; appliedSource];
+forbidden = ["proxy","fallback","configured_fixed","legacy_mcs","missing","unavailable","error","rejected"];
+if strlength(policy) == 0 || ismember(policy, ["fixed","configured_fixed","disabled","off","none"])
+    parts(end+1,1) = "adaptive_policy_not_configured"; %#ok<AGROW>
+end
+if ~(row.LinkAdaptationScheduled && row.LinkAdaptationApplied)
+    parts(end+1,1) = "adaptive_schedule_or_apply_evidence_missing"; %#ok<AGROW>
+end
+if ~(isfinite(row.ScheduledMCS) && isfinite(row.TransmittedMCS) && row.ScheduledMCS == row.TransmittedMCS)
+    parts(end+1,1) = "scheduled_transmitted_mcs_mismatch"; %#ok<AGROW>
+end
+if ~isfinite(row.ConfiguredMaximumMCS)
+    parts(end+1,1) = "adaptive_maximum_mcs_not_configured"; %#ok<AGROW>
+elseif (isfinite(row.ScheduledMCS) && row.ScheduledMCS > row.ConfiguredMaximumMCS) || ...
+        (isfinite(row.TransmittedMCS) && row.TransmittedMCS > row.ConfiguredMaximumMCS)
+    parts(end+1,1) = "adaptive_maximum_mcs_exceeded"; %#ok<AGROW>
+end
+if ~isfinite(row.ConfiguredInitialMCS)
+    parts(end+1,1) = "adaptive_initial_mcs_not_configured"; %#ok<AGROW>
+end
+if strlength(strtrim(string(row.ScheduledModulation))) == 0 || ...
+        upper(strtrim(string(row.ScheduledModulation))) ~= upper(strtrim(string(row.TransmittedModulation)))
+    parts(end+1,1) = "scheduled_transmitted_modulation_mismatch"; %#ok<AGROW>
+end
+if strlength(strtrim(string(row.AdaptationEvidenceId))) == 0 || all(strlength(lineage) == 0)
+    parts(end+1,1) = "adaptive_decision_lineage_missing"; %#ok<AGROW>
+end
+lineageForbidden = false;
+for i = 1:numel(forbidden)
+    lineageForbidden = lineageForbidden || any(contains(lineage, forbidden(i)));
+end
+if lineageForbidden
+    parts(end+1,1) = "adaptive_decision_lineage_not_truth_eligible"; %#ok<AGROW>
+end
+cqiPolicy = contains(policy, "cqi") || policy == "amc" || policy == "adaptive";
+if cqiPolicy && ~(isfinite(row.WidebandCQI) && isfinite(row.CQIDerivedMCS) && ...
+        any(contains(lineage, "cqi")))
+    parts(end+1,1) = "cqi_policy_runtime_measurement_lineage_missing"; %#ok<AGROW>
+end
+effectiveSINRPolicy = contains(policy, "effective_sinr");
+if effectiveSINRPolicy && ~any(contains(lineage, "effective_sinr"))
+    parts(end+1,1) = "effective_sinr_policy_lineage_missing"; %#ok<AGROW>
+end
+parts = unique(parts, "stable");
+tf = isempty(parts);
+reason = strjoin(parts, "|");
 end
 
 function reason = localMismatchCause(row)
@@ -780,13 +1058,16 @@ end
 if ~(isfinite(row.TransmittedLayers) && row.TransmittedLayers == row.ConfiguredLayers)
     parts(end+1,1) = "transmitted_layers_mismatch"; %#ok<AGROW>
 end
-if ~row.AdaptiveMode && strlength(row.ConfiguredModulation) > 0 && ...
-        row.TransmittedModulation ~= row.ConfiguredModulation
+if strlength(row.ConfiguredModulation) > 0 && ...
+        upper(strtrim(string(row.TransmittedModulation))) ~= upper(strtrim(string(row.ConfiguredModulation)))
     parts(end+1,1) = "modulation_mismatch"; %#ok<AGROW>
 end
-if ~row.AdaptiveMode && isfinite(row.ConfiguredMCS) && ...
+if isfinite(row.ConfiguredMCS) && ...
         row.TransmittedMCS ~= row.ConfiguredMCS
     parts(end+1,1) = "mcs_mismatch"; %#ok<AGROW>
+end
+if row.AdaptiveMode && ~row.AdaptivePolicyMatch
+    parts(end+1,1) = "adaptive_policy_mismatch:" + string(row.AdaptivePolicyFailureReason); %#ok<AGROW>
 end
 if isempty(parts)
     reason = "";
@@ -866,17 +1147,40 @@ row = struct("RunId","", "ScenarioName","", "TrialId",NaN, "Direction","", ...
     "ScheduledLayers",NaN, "TransmittedRank",NaN, "TransmittedLayers",NaN, ...
     "ReceiverEstimatedRank",NaN, "EffectiveDecodedRank",NaN, "EffectiveDecodedLayers",NaN, ...
     "NumRxAntennas",NaN, "NumTxPorts",NaN, ...
+    "TxWaveformColumns",NaN, "PhysicalTxAntennas",NaN, ...
+    "RxWaveformBranches",NaN, "PhysicalRxAntennas",NaN, ...
     "LogicalTxPortCount",NaN, "LogicalRxBranchCount",NaN, ...
     "BSAntennaNumPorts",NaN, "UEAntennaNumPorts",NaN, ...
+    "BSAntennaElements",NaN, "UEAntennaElements",NaN, ...
     "AntennaRuntimeObjectCreated",false, ...
     "ChannelUsesSameRuntimeAntennaAssumptions",false, "ConditionNumber_dB",NaN, ...
     "ConfiguredModulation","", "ScheduledModulation","", "TransmittedModulation","", ...
-    "EffectiveDecodedModulation","", "ConfiguredMCS",NaN, "ScheduledMCS",NaN, ...
+    "EffectiveDecodedModulation","", "ConfiguredMCS",NaN, ...
+    "ConfiguredInitialMCS",NaN, "ConfiguredMaximumMCS",NaN, "ScheduledMCS",NaN, ...
     "TransmittedMCS",NaN, "EffectiveDecodedMCS",NaN, "DMRSPorts","", ...
+    "ConfiguredMCSSelectionPolicy","", "ActualMCSSelectionMode","", ...
+    "MCSSelectionSource","", "MCSAuthority","", "ModulationAuthority","", ...
+    "AppliedOperatingPointSource","", "LinkAdaptationScheduled",false, ...
+    "LinkAdaptationApplied",false, "WidebandCQI",NaN, "CQIDerivedMCS",NaN, ...
     "PrecoderId","", "BeamId","", "CSIReportId","", "LayerSINRdB","", ...
     "RuntimeRI",NaN, "RuntimePMI",NaN, "RuntimeRankSelectionSource","", ...
     "EffectiveRankDecisionReason","", "RateRank1_bpsHz",NaN, "RateRank2_bpsHz",NaN, ...
-    "DecodeCrcPass",false, "ExactConfiguredMatch",false, "MismatchCause","", ...
+    "DecodeCrcPass",false, "ExactSpatialMatch",false, "SpatialContractMatch",false, ...
+    "ExactOperatingPointMatch",false, "FixedOperatingPointMatch",false, ...
+    "AdaptivePolicyRequired",false, "AdaptivePolicyMatch",false, ...
+    "AdaptivePolicyConformance",false, "AdaptivePolicyFailureReason","", ...
+    "OperatingPointContractMatch",false, ...
+    "MUExecutionRequired",false, "RequiredMUUserCount",NaN, ...
+    "RequiredMULeakageThreshold_dB",NaN, "RequiredMUExecutionMode","", ...
+    "MUMIMOEnabled",false, "MUMIMOGroupSize",NaN, "MUMIMOGroupId",NaN, ...
+    "MUMIMOPairingStatus","", "MUMIMOPairingMetricSource","", ...
+    "MUMIMOPairingMetricValue_dB",NaN, "MUMIMOPairingEvidenceSource","", ...
+    "MUMIMOSpatialFilterMatrixSHA256","", "MUMIMOReceiverAlgorithm","", ...
+    "InterferenceCovarianceSource","", ...
+    "InterferenceMode","", "InterferenceContributorCount",0, ...
+    "PRBStart",NaN, "PRBCount",NaN, "SymbolStart",NaN, "NumSymbols",NaN, ...
+    "MUExecutionMatch",false, ...
+    "ExactConfiguredMatch",false, "ExecutionContractMatch",false, "MismatchCause","", ...
     "AdaptiveMode",false, "AdaptationEvidenceId","", "FixedAnchorMode",false, ...
     "StrictEligible",false, "StrictOk",false, "SourceArtifactRef","", "SourceRowsHash","", ...
     "Status","not_evaluated", "FailureReason","");
@@ -896,8 +1200,22 @@ row = struct("RunId","", "ScenarioName","", "Direction","", ...
     "DominantEffectiveDecodedRank",NaN, "ConfiguredLayers",NaN, "DominantScheduledLayers",NaN, ...
     "DominantTransmittedLayers",NaN, "DominantEffectiveDecodedLayers",NaN, ...
     "ConfiguredModulation","", "DominantEffectiveModulation","", "ConfiguredMCS",NaN, ...
-    "DominantEffectiveMCS",NaN, "StrictEligibleRowCount",0, "ExactMatchRowCount",0, ...
-    "ExactMatchPercent",NaN, "RequiredExactMatchPercent",NaN, "ScenarioObjectivePass",false, ...
+    "ConfiguredInitialMCS",NaN, "ConfiguredMaximumMCS",NaN, ...
+    "DominantEffectiveMCS",NaN, "AdaptiveMode",false, "StrictEligibleRowCount",0, ...
+    "ExactMatchRowCount",0, "ExactMatchPercent",NaN, ...
+    "ExactSpatialMatchRowCount",0, "ExactSpatialMatchPercent",NaN, ...
+    "ExactOperatingPointMatchRowCount",0, "ExactOperatingPointMatchPercent",NaN, ...
+    "AdaptivePolicyMatchRowCount",0, "AdaptivePolicyMatchPercent",NaN, ...
+    "ExecutionContractMatchRowCount",0, "ExecutionContractMatchPercent",NaN, ...
+    "SpatialContractRequired",true, "SpatialContractMatch",false, ...
+    "FixedOperatingPointRequired",false, "FixedOperatingPointMatch",false, ...
+    "AdaptivePolicyRequired",false, "AdaptivePolicyConformance",false, ...
+    "MUExecutionRequired",false, "RequiredMUUserCount",NaN, ...
+    "RequiredMULeakageThreshold_dB",NaN, "RequiredMUExecutionMode","", ...
+    "MUExecutedTrialRowCount",0, "MUExecutedDistinctGroupCount",0, ...
+    "MUExecutionMatch",false, "MUExecutionFailureReason","", ...
+    "RequiredExactMatchPercent",NaN, "RequiredExecutionContractMatchPercent",NaN, ...
+    "ScenarioObjectivePass",false, ...
     "RuntimePopulated",false, "RuntimeTrialCount",0, "RuntimeRank2Fraction",NaN, ...
     "RuntimeExactMatchFraction",NaN, "RuntimeMeanConditionNumber_dB",NaN, ...
     "RuntimeMeanRateRank1_bpsHz",NaN, "RuntimeMeanRateRank2_bpsHz",NaN, ...

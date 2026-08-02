@@ -255,6 +255,8 @@ mimo:
   n_tx_ant: 64
   n_rx_ant: 4
   n_layers: 2
+  max_dl_layers: 2
+  max_ul_layers: 2
   precoder_type: wideband
   codebook_type: type1
   reciprocity_mode: FDD
@@ -265,6 +267,18 @@ mimo:
   panel_count: 2
   trp_count: 21
   precoding_granularity: prg_wideband
+
+# Directional detail aliases must agree with the canonical rank-2 Rel-20
+# operating point inherited by every bounded anchor scenario.
+pdsch:
+  layer_count: 2
+  modulation: 256QAM
+
+pusch:
+  layer_count: 2
+  num_layers: 2
+  num_antenna_ports: 2
+  modulation: 256QAM
 
 system:
   queueMaxBits: 200000000

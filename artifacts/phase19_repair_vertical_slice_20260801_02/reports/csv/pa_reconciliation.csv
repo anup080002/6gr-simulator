@@ -1,0 +1,2 @@
+ConfiguredPAEnabled,AppliedPAEnabled,ConfiguredModel,IIP3_dBm,P1dB_dBm,PaConfiguredAppliedOk,EvidenceSource
+0,0,"ideal_linear",60,50,1,"configured_clean_identity_rf_stage"

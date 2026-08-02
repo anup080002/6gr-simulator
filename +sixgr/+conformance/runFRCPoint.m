@@ -791,8 +791,8 @@ cfg.phy.impairments.cfoHz = double(entry.condition.frequency_offset_hz);
 cfg.phy.impairments.timingOffsetSamples = 0;
 cfg.phy.ldpc.maxIterations = 25;
 cfg.phy.ldpc.useMexBatchDecode = false;
-cfg.phy.ssb.enable = false;
-cfg.phy.ssb.enabled = false;
+cfg.phy.ssb.enable = logical(entry.runtime_feature_authority.ssb_enabled);
+cfg.phy.ssb.enabled = cfg.phy.ssb.enable;
 if ~isempty(opt.MaxDecoderIterations)
     cfg.phy.ldpc.maxIterations = double(opt.MaxDecoderIterations);
 end
@@ -824,7 +824,7 @@ pdsch.Modulation = char(string(entry.coding.modulation));
 pdsch.NumLayers = double(entry.mimo.layers);
 pdsch.RNTI = 1;
 pdsch.NID = 0;
-pdsch.EnablePTRS = false;
+pdsch.EnablePTRS = logical(entry.ptrs.enabled);
 pdsch.VRBToPRBInterleaving = false;
 pdsch.DMRS.DMRSConfigurationType = double(entry.dmrs.configuration_type);
 pdsch.DMRS.DMRSTypeAPosition = double(entry.dmrs.type_a_position);
@@ -864,7 +864,7 @@ cfg.phy.pdsch.nLayers = nLayers;
 cfg.phy.pdsch.numLayers = nLayers;
 cfg.phy.pdsch.numPorts = nTx;
 cfg.phy.pdsch.nPorts = nTx;
-cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.pdsch.enablePTRS = logical(entry.ptrs.enabled);
 % TS 38.101-4 clause 4.4.2 excludes precoding gain from the conducted
 % SNR reference. The conformance runner supplies Type-I pages with unit
 % total power, so the general PHY column-normalization default must not
@@ -873,8 +873,8 @@ cfg.phy.pdsch.normalizePrecodingMatrix = false;
 cfg.phy.pdsch.dmrs.nPorts = nLayers;
 cfg.phy.pdsch.dmrs.dataToDMRSEPREDifference_dB = ...
     double(entry.dmrs.data_to_dmrs_epre_db);
-cfg.phy.csirs.enabled = false;
-cfg.phy.csirs.enable = false;
+cfg.phy.csirs.enabled = logical(entry.runtime_feature_authority.csi_rs_enabled);
+cfg.phy.csirs.enable = cfg.phy.csirs.enabled;
 cfg.phy.csirs.nPorts = nTx;
 cfg.scenario.bs.nTxAnt = nTx;
 cfg.scenario.ue.nRxAnt = double(entry.mimo.rx_antennas);
@@ -914,11 +914,11 @@ pusch.Modulation = char(string(entry.coding.modulation));
 pusch.NumLayers = double(entry.mimo.layers);
 pusch.RNTI = 1;
 pusch.NID = 0;
-pusch.TransformPrecoding = false;
+pusch.TransformPrecoding = logical(entry.waveform.transform_precoding);
 pusch.TransmissionScheme = "nonCodebook";
 pusch.NumAntennaPorts = double(entry.mimo.tx_antennas);
 pusch.FrequencyHopping = "neither";
-pusch.EnablePTRS = false;
+pusch.EnablePTRS = logical(entry.ptrs.enabled);
 pusch.DMRS.DMRSConfigurationType = double(entry.dmrs.configuration_type);
 pusch.DMRS.DMRSTypeAPosition = double(entry.dmrs.type_a_position);
 pusch.DMRS.DMRSAdditionalPosition = double(entry.dmrs.additional_position);
@@ -941,8 +941,8 @@ cfg.phy.pusch.nPorts = double(entry.mimo.tx_antennas);
 cfg.phy.pusch.numPorts = double(entry.mimo.tx_antennas);
 cfg.phy.pusch.numAntennaPorts = double(entry.mimo.tx_antennas);
 cfg.phy.pusch.transmissionScheme = "nonCodebook";
-cfg.phy.pusch.transformPrecoding = false;
-cfg.phy.pusch.enablePTRS = false;
+cfg.phy.pusch.transformPrecoding = logical(entry.waveform.transform_precoding);
+cfg.phy.pusch.enablePTRS = logical(entry.ptrs.enabled);
 cfg.phy.pusch.dmrs.nPorts = double(entry.mimo.layers);
 cfg.phy.pusch.dmrs.dataToDMRSEPREDifference_dB = ...
     double(entry.dmrs.data_to_dmrs_epre_db);

@@ -42,7 +42,7 @@ cfg.MCSMode = char(lower(string(sixgr.util.structGet(pdsch6gr, "MCSMode", "fixed
 cfg.FixedMCS = max(0, round(double(sixgr.util.structGet(pdsch6gr, "FixedMCS", 10))));
 cfg.MCSContext = localResolveMCSContext(pdsch6gr);
 cfg.LinkAdaptationMode = char(lower(string(sixgr.util.structGet(pdsch6gr, "LinkAdaptationMode", "actual_bler_based"))));
-cfg.HARQEnabled = logical(sixgr.util.structGet(pdsch6gr, "HARQEnabled", true));
+cfg.HARQEnabled = logical(sixgr.util.structGet(pdsch6gr, "HARQEnabled", false));
 cfg.HARQProcessCount = max(1, round(double(sixgr.util.structGet(pdsch6gr, "HARQProcessCount", 4))));
 cfg.MaxHARQTx = max(1, round(double(sixgr.util.structGet(pdsch6gr, "MaxHARQTx", 1))));
 cfg.EnableCrossSlotPDSCH = logical(sixgr.util.structGet(pdsch6gr, "EnableCrossSlotPDSCH", false));
@@ -118,7 +118,7 @@ end
 
 function dmrs = localResolveDMRSConfig(pdsch6gr)
 dmrs = struct();
-dmrs.DMRSEnabled = logical(sixgr.util.structGet(pdsch6gr, "DMRSEnabled", true));
+dmrs.DMRSEnabled = logical(sixgr.util.structGet(pdsch6gr, "DMRSEnabled", false));
 dmrs.ConfigType = max(1, round(double(sixgr.util.structGet(pdsch6gr, "DMRSConfigType", 1))));
 dmrs.TypeAorB = char(upper(string(sixgr.util.structGet(pdsch6gr, "DMRSTypeAorB", "A"))));
 dmrs.AdditionalPosition = max(0, round(double(sixgr.util.structGet(pdsch6gr, "DMRSAdditionalPosition", 1))));

@@ -1,0 +1,7 @@
+StageOrder,StageName,StageElapsed_s,BundleElapsed_s,CompletedUTC,Notes
+1,"anchor_link_run",0.0383651,0.0602958,"2026-08-01T18:23:04Z","Initial waveform preflight run completed."
+2,"runtime_reference_artifacts",0.6636571,1.5911521,"2026-08-01T18:23:05Z","Reference runtime, CQI, MCS, and deployment tables published."
+3,"live_mobility_deferred_to_coupled_runtime",0.0001333,1.6801383,"2026-08-01T18:23:05Z","Coupled truth mode defers live mobility/map telemetry to the canonical slot runtime."
+4,"harq_export_deferred",0,1.7344777,"2026-08-01T18:23:05Z","HARQ diagnostics deferred until DL/UL raw trials are available."
+5,"raw_trials_export",218.118916,220.1459513,"2026-08-01T18:26:44Z","Primary raw trial tables published."
+6,"profile_debug_stop",0,220.321301,"2026-08-01T18:26:44Z","Profile debug stop requested before publication-grade derived exports: requested_pusch_grant_count_observed"

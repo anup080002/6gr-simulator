@@ -34,9 +34,9 @@ methods(Static)
         state.CarrierFrequency_Hz = sixgr.system.GeometryEngine.resolveCarrierFrequency(cfg, plModel);
         state.SpeedOfLight_mps = sixgr.system.GeometryEngine.lightSpeed();
         state.PropagationScenario = string(sixgr.util.structGet(cfg, "channel.propagationScenario", sixgr.util.structGet(cfg, "run.scenario", "UMa")));
-        state.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", true));
-        state.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", true));
-        state.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", true));
+        state.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", false));
+        state.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", false));
+        state.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", false));
 
         [d2d, dxy] = sixgr.system.GeometryEngine.distanceAndDelta(uePos, layout);
         dz = uePos(:,3) - bsPos(:,3).';
@@ -170,7 +170,7 @@ methods(Static)
 
     function p = resolveLOSProbability(cfg, geometryState)
         K = size(geometryState.d2d_m,1); nCells = size(geometryState.d2d_m,2); p = zeros(K, nCells);
-        if ~logical(sixgr.util.structGet(geometryState, "LOSEnabled", true)), return; end
+        if ~logical(sixgr.util.structGet(geometryState, "LOSEnabled", false)), return; end
         hUT = geometryState.UEPosition_m(:,3);
         scenarioName = string(sixgr.util.structGet(geometryState, "PropagationScenario", sixgr.util.structGet(cfg, "channel.propagationScenario", "UMa")));
         for c = 1:nCells

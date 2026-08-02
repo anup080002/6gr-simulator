@@ -49,7 +49,21 @@ end
 
 function cfg = localPrepareInitialAccessCfg(cfg)
 cfg.run.strictMode = true;
-cfg.phy.sib1.enable = true;
+required = ["ssb", "pbch", "pdcch", "sib1", "prach"];
+paths = ["phy.ssb.enable", "phy.pbch.enable", "phy.pdcch.enable", ...
+    "phy.sib1.enable", "phy.prach.enable"];
+for featureIndex = 1:numel(required)
+    value = logical(sixgr.util.structGet(cfg, paths(featureIndex), false));
+    if isfield(cfg, "runtime") && isfield(cfg.runtime, "features")
+        sixgr.config.assertRuntimeFeatureUse(cfg, required(featureIndex), ...
+            value, "runInitialAccessWithRAAnchor");
+    end
+    if ~value
+        error("sixgr:phy:broadcast:InitialAccessFeatureDisabledByYAML", ...
+            "Integrated initial access requires configured feature %s=true.", ...
+            char(required(featureIndex)));
+    end
+end
 cfg.phy.sib1.ssbObservationSubframes = double(sixgr.util.structGet(cfg, "phy.sib1.ssbObservationSubframes", 5));
 cfg.phy.carrier.NCellID = double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 17));
 cfg.phy.carrier.SubcarrierSpacing = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
@@ -61,7 +75,6 @@ if ~isfield(cfg, "random_access") || ~isstruct(cfg.random_access)
     error("sixgr:phy:broadcast:MissingRandomAccessForInitialAccess", ...
         "Integrated initial-access/RA anchor requires explicit random_access config.");
 end
-cfg.random_access.enabled = true;
 cfg = localMirrorRandomAccessIntoSIB1Prach(cfg);
 end
 

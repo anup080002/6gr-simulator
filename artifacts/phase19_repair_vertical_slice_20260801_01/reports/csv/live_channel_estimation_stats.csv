@@ -1,0 +1,15 @@
+Direction,TraceSource,SNR_dB,QualityAxis,QualityValueRole,QualitySource,Metric,MeanValue,P05Value,P95Value,SampleCount
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","PostEqSINR_dB",10.4661781105693,10.4661781105693,10.4661781105693,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","ReceiverHestSINR_dB",10.4661781105693,10.4661781105693,10.4661781105693,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","NMSE_dB",-25.7636620050787,-25.7636620050787,-25.7636620050787,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","ChannelGain_dB",17.6459976596417,17.6459976596417,17.6459976596417,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","ConditionNumber_dB",29.7798185061101,29.7798185061101,29.7798185061101,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","EstimatedDopplerHz",0,0,0,1
+"DL","dl_pdsch_trials",10,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","PhaseTrackingError_deg",0,0,0,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","PostEqSINR_dB",15.9445900882332,15.9445900882332,15.9445900882332,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","ReceiverHestSINR_dB",15.9445900882332,15.9445900882332,15.9445900882332,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","NMSE_dB",-29.4868086715376,-29.4868086715376,-29.4868086715376,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","ChannelGain_dB",17.4334865998011,17.4334865998011,17.4334865998011,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","ConditionNumber_dB",31.950229081953,31.950229081953,31.950229081953,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","EstimatedDopplerHz",0,0,0,1
+"DL","dl_pdsch_trials",16,"PostEqSINR_dB","measured_post_equalization_scheduling_input","PostEqSINR_dB","PhaseTrackingError_deg",0,0,0,1

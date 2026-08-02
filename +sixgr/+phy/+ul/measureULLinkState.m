@@ -17,7 +17,9 @@ ip.addParameter("ReferenceSymbols", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("PrecoderInfo", struct(), @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
-reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", true));
+reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "cqi_reporting", reportCQI, ...
+    "measureULLinkState.CQI");
 
 metrics = struct( ...
     "NMSE_dB", NaN, ...

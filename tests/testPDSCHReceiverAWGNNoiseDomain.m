@@ -11,14 +11,15 @@ tx = sixgr.pdsch.PDSCHTransmitter( ...
     fixture.Carrier,fixture.ReferenceConfig, ...
     "PrecoderBundle",fixture.PrecoderBundle);
 channelGain = 9*exp(1j*0.37);
-snrPoints = [-8 10];
+snrPoints = [-20 0 20];
+measuredPoints = nan(size(snrPoints));
+rng(9200,"twister");
+unitNoise = complex(randn(size(tx.Waveform)),randn(size(tx.Waveform)))/sqrt(2);
 for index = 1:numel(snrPoints)
-    rng(9200+index,"twister");
     gridNoiseVariance = abs(channelGain)^2/10^(snrPoints(index)/10);
     timeNoiseVariance = gridNoiseVariance/ ...
         double(tx.OFDMInfo.SampleToGridNoiseVarianceGain);
-    noise = sqrt(timeNoiseVariance/2)*complex( ...
-        randn(size(tx.Waveform)),randn(size(tx.Waveform)));
+    noise = sqrt(timeNoiseVariance)*unitNoise;
     receiver = fixture.ReceiverConfig;
     receiver.NoiseVariance = gridNoiseVariance;
     rx = sixgr.pdsch.PDSCHReceiver( ...
@@ -28,6 +29,7 @@ for index = 1:numel(snrPoints)
         "PrecoderBundle",fixture.PrecoderBundle);
     measured = double( ...
         rx.Metrics.MeasuredPostEqualizationSINRdBPerLayer);
+    measuredPoints(index) = mean(measured,"omitnan");
     estimatedGain = double(rx.ChannelGainPerPhysicalPort);
     expectedMeasured = 10*log10( ...
         abs(estimatedGain)^2/double(rx.EstimatedNoiseVariance));
@@ -40,4 +42,8 @@ for index = 1:numel(snrPoints)
     verifyEqual(testCase,string(rx.Source), ...
         "explicit_pdsch_dlsch_production_receiver");
 end
+verifyGreaterThan(testCase,diff(measuredPoints),[8 8], ...
+    "Receiver-derived post-equalization SINR must be monotonic across [-20,0,20] dB.");
+verifyGreaterThan(testCase,measuredPoints(end),10, ...
+    "A clean +20 dB AWGN decode must not report a negative post-equalization SINR.");
 end

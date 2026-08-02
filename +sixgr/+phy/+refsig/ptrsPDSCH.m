@@ -34,6 +34,10 @@ try
 catch
     enabled = false;
 end
+if isstruct(cfgOrPdsch)
+    sixgr.config.assertRuntimeFeatureUse(cfgOrPdsch, "ptrs", enabled, ...
+        "sixgr.phy.refsig.ptrsPDSCH");
+end
 
 if ~enabled
     ptrsInd = zeros(0,1);

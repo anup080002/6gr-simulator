@@ -118,6 +118,8 @@ strictCfg.DCIMonitoringFormats = dciFormats(:).';
 strictCfg.RNTIType = rntiType;
 strictCfg.RNTIValue = rntiValue;
 strictCfg.DCIFormat = dciFormats(1);
+strictCfg.BlindSearchEnabled = logical(sixgr.util.structGet(cfg, ...
+    "phy.pdcch.blindSearch", false));
 if hasContextualOperatorConfig
     coresetRaw = operatorStrict.coreset;
     searchRaw = operatorStrict.search_space;
@@ -345,7 +347,8 @@ cfg = sixgr.util.structSet(cfg, "phy.pdcch.searchSpace.numCandidates", ...
     [double(strictCfg.NumCandidatesAL1) double(strictCfg.NumCandidatesAL2) ...
     double(strictCfg.NumCandidatesAL4) double(strictCfg.NumCandidatesAL8) ...
     double(strictCfg.NumCandidatesAL16)]);
-cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindSearch", true);
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindSearch", ...
+    logical(strictCfg.BlindSearchEnabled));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.nStartBWP", double(strictCfg.NStartGrid));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.nSizeBWP", double(strictCfg.NSizeGrid));
 end

@@ -98,6 +98,13 @@ canonical_control:
     noise_operating_mode: standalone_awgn_snr_argument
     min_duration_s: 0.03
     snr_sweep_offsets_db: []
+    reference_sweep_enabled: true
+    reference_trials_per_snr: 1
+    harq_diagnostics_enabled: false
+    adaptive_sweep_enabled: true
+    adaptive_sweep_step_db: 2
+    adaptive_sweep_max_points: 12
+    max_raw_rows_per_sweep: 0
     execution_mode: LLS
     study_mode: campaign
     simulation_mode: full_phy
@@ -297,7 +304,11 @@ canonical_control:
     panel_count: 1
     trp_count: 1
     mu_mimo_enable: false
+    ul_mu_mimo_enable: false
     mu_mimo_max_users_per_prb: 2
+    mu_mimo_precoder_leakage_threshold_db: -15
+    mu_mimo_minimum_desired_subspace_gain_db: -30
+    mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
     phase07_strict:
       enabled: false
       profile_id: fr1_typeI_single_panel_strict
@@ -428,11 +439,16 @@ canonical_control:
     csi_rs_enabled: false
     srs_enabled: false
     trs_enabled: false
+    tracking_rs_enabled: false
     ptrs_enabled: false
+    ptrs_cpe_correction_enabled: false
+    ptrs_port_association_policy: first_scheduled_dmrs_port
     csi_feedback_mode: none
     cqi_reporting_enabled: false
     pmi_reporting_enabled: false
     ri_reporting_enabled: false
+    cri_reporting_enabled: false
+    csi_reporting_enabled: false
     pdsch_dmrs_ports: 1
     pusch_dmrs_ports: 1
     csi_rs_ports: 1
@@ -555,6 +571,7 @@ canonical_control:
     crc_free_mode: false
   control:
     pdcch_enabled: false
+    blind_search_enabled: false
     pucch_enabled: false
     pucch_format: 2
     coreset_type: ue_specific
@@ -1250,7 +1267,6 @@ pdsch6gr:
   enable_pdsch_repetition: false
   repetition_mode: none
   repetition_count: 1
-  enable_ptrs: false
   ptrs_band_policy: disabled
   channel_estimation_mode: realistic
   parameter_estimation_mode: practical
@@ -1372,7 +1388,6 @@ pusch:
   dmrs_nrs_id: 1
   dmrs_group_hopping: false
   dmrs_sequence_hopping: false
-  ptrs_enabled: false
   ptrs_time_density: 2
   ptrs_frequency_density: 2
   ptrs_re_offset: '00'

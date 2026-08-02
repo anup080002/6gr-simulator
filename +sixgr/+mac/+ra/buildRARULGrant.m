@@ -52,6 +52,7 @@ grant.TargetCodeRate = double(sched.TargetCodeRate);
 grant.TPCCommand = double(tpc);
 grant.CSIRequest = false;
 grant.TransformPrecoding = logical(transformPrecoding);
+grant.EnablePTRS = logical(sixgr.util.structGet(sched, "EnablePTRS", false));
 grant.RV = double(sched.RV);
 grant.NLayers = double(sched.NLayers);
 grant.BitVector = bits;

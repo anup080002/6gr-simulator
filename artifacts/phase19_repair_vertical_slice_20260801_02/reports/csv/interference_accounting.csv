@@ -1,0 +1,3 @@
+Direction,ObservedRows,ConfiguredInterferenceMode,ObservedInterferenceMode,MaxContributorCount,MeanInterferencePower_dBm,InterferencePowerSource,InterferenceTruthChannelUsed,InterferenceAccountingOk,EvidenceSource
+"DL",2,"","none",0,NaN,"",0,0,"trial_shared_slot_interference_columns"
+"UL",2,"","none",0,NaN,"",0,0,"trial_shared_slot_interference_columns"

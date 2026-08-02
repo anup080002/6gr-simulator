@@ -1,0 +1,2 @@
+RunId,PDCCHConfigSIB1,PDCCHConfigSIB1Bits,ControlResourceSetZero,SearchSpaceZero,DMRSTypeAPosition,RecoveredPDCCHConfigSIB1,DerivationSource,BCHCrcPass
+"sib1_runtime_waveform",0,"00000000",0,0,2,0,"decoded_mib_bch_transport_block",1

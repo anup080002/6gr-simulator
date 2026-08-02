@@ -1,0 +1,5 @@
+Direction,UEIndex,RNTI,CandidateCount,ScheduledGrantCount,RejectedCount,HARQBlockedCount,ScheduledFrac,MeanPFMetric,MeanInstantRate_bps,MeanAvgThroughput_bps,SourceArtifact
+"DL",1,1,1,1,0,0,0.5,2384000,2384000,1,"packet_flow/csv/scheduler_decision_log.csv"
+"DL",2,2,1,1,0,0,0.5,2384000,2384000,1,"packet_flow/csv/scheduler_decision_log.csv"
+"DL",3,3,1,0,1,0,0,2384000,2384000,1,"packet_flow/csv/scheduler_decision_log.csv"
+"DL",4,4,1,0,1,0,0,2384000,2384000,1,"packet_flow/csv/scheduler_decision_log.csv"

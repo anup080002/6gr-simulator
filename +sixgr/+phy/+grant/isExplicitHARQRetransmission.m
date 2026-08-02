@@ -1,0 +1,30 @@
+function tf = isExplicitHARQRetransmission(grant, phyGrant, harqContext)
+%ISEXPLICITHARQRETRANSMISSION Resolve retransmission only from mode evidence.
+%
+% A transport-block context is present for both a newly transmitted TB and
+% its later retransmissions. Its presence, payload length, or matching NDI
+% therefore cannot classify the current grant as a retransmission. Runtime
+% replay is authorized only by an explicit retransmission flag carried by
+% the scheduler, HARQ context, or frozen PHY grant.
+
+if nargin < 1 || ~isstruct(grant)
+    grant = struct();
+end
+if nargin < 2 || ~isstruct(phyGrant)
+    phyGrant = struct();
+end
+if nargin < 3 || ~isstruct(harqContext)
+    harqContext = struct();
+end
+
+grantHARQ = sixgr.util.structGet(grant, "HARQ", struct());
+tf = sixgr.util.logicalAny(sixgr.util.structGet(harqContext, ...
+        "IsRetransmission", false)) || ...
+    sixgr.util.logicalAny(sixgr.util.structGet(grantHARQ, ...
+        "IsRetransmission", false)) || ...
+    sixgr.util.logicalAny(sixgr.util.structGet(grant, ...
+        "IsRetransmission", false)) || ...
+    sixgr.util.logicalAny(sixgr.util.structGet(phyGrant, ...
+        "HARQProcessKey.IsRetransmission", false));
+tf = logical(tf);
+end

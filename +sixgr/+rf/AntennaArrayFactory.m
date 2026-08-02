@@ -331,12 +331,6 @@ classdef AntennaArrayFactory
                         "Configured %s requires hybrid beamforming to be enabled.", ...
                         char(configuredElementToPortSource));
                 end
-                if numRFChains ~= numPorts
-                    error("AntennaArrayFactory:ConfiguredHybridMatrixRFChainMismatch", ...
-                        ["Configured combined element-to-port weights require NumRFChains=NumPorts; " ...
-                         "resolved %d RF chains and %d logical ports."], ...
-                        numRFChains, numPorts);
-                end
                 if ~ismatrix(configuredElementToPort) || ...
                         ~isequal(size(configuredElementToPort), [numElements numPorts]) || ...
                         any(~isfinite(real(configuredElementToPort(:)))) || ...
@@ -351,11 +345,20 @@ classdef AntennaArrayFactory
                         char(configuredElementToPortSource));
                 end
                 % This path carries the already selected combined RF/baseband
-                % beam. Factor it without changing the combined matrix: F_RF
-                % has unit-norm columns and F_BB retains the selected power.
-                selectedColumnNorm = sqrt(sum(abs(configuredElementToPort).^2, 1));
-                analogPrecoder = configuredElementToPort ./ selectedColumnNorm;
-                digitalPortToRF = diag(selectedColumnNorm);
+                % beam. More RF chains than logical ports is a valid hybrid
+                % architecture. Split each logical beam deterministically over
+                % its RF chains while preserving the combined matrix exactly.
+                [analogPrecoder, digitalPortToRF] = ...
+                    sixgr.rf.AntennaArrayFactory.localFactorCombinedHybridMatrix( ...
+                    configuredElementToPort, numRFChains);
+                factorResidual = norm(analogPrecoder * digitalPortToRF - ...
+                    configuredElementToPort, "fro");
+                factorTolerance = 1e-12 * max(1, norm(configuredElementToPort, "fro"));
+                if ~(isfinite(factorResidual) && factorResidual <= factorTolerance)
+                    error("AntennaArrayFactory:ConfiguredHybridMatrixFactorizationMismatch", ...
+                        "Exact hybrid factorization residual %.17g exceeds tolerance %.17g for %d RF chains and %d logical ports.", ...
+                        factorResidual, factorTolerance, numRFChains, numPorts);
+                end
                 % Keep the submitted combined matrix bit-for-bit so selected
                 % and applied SHA-256 identities remain stable across replay.
                 portToElement = configuredElementToPort;
@@ -752,6 +755,33 @@ classdef AntennaArrayFactory
             M = zeros(max(1, round(double(nRows))), max(1, round(double(nCols))));
             for ii = 1:min(size(M, 1), size(M, 2))
                 M(ii, ii) = 1;
+            end
+        end
+
+        function [F_RF, F_BB] = localFactorCombinedHybridMatrix(combinedMatrix, numRFChains)
+            %LOCALFACTORCOMBINEDHYBRIDMATRIX Exact deterministic RF/BB split.
+            W = double(combinedMatrix);
+            nPorts = size(W, 2);
+            numRFChains = max(1, round(double(numRFChains)));
+            if numRFChains < nPorts
+                error("AntennaArrayFactory:RFChainsLessThanPorts", ...
+                    "RF chain count %d is smaller than logical port count %d.", ...
+                    numRFChains, nPorts);
+            end
+            columnNorms = sqrt(sum(abs(W).^2, 1));
+            if any(~isfinite(columnNorms)) || any(columnNorms <= eps)
+                error("AntennaArrayFactory:ConfiguredHybridMatrixZeroColumn", ...
+                    "Configured combined hybrid matrix contains an invalid or all-zero logical-port column.");
+            end
+            normalizedColumns = W ./ columnNorms;
+            assignments = mod(0:(numRFChains - 1), nPorts) + 1;
+            assignmentCounts = accumarray(assignments(:), 1, [nPorts 1]).';
+            F_RF = zeros(size(W, 1), numRFChains, "like", W);
+            F_BB = zeros(numRFChains, nPorts, "like", W);
+            for rfIdx = 1:numRFChains
+                portIdx = assignments(rfIdx);
+                F_RF(:, rfIdx) = normalizedColumns(:, portIdx);
+                F_BB(rfIdx, portIdx) = columnNorms(portIdx) ./ assignmentCounts(portIdx);
             end
         end
         function pos = localURAElementPositions(nRow, nCol, d)

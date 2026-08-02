@@ -170,6 +170,26 @@ for channel=["TDL-A","CDL-A"]
 end
 end
 
+function testPUCCHFormat0FadingNoncoherent(t)
+% Format 0 has no DM-RS by specification.  A fading receiver must use the
+% physical sequence/cyclic-shift detector rather than reject the waveform
+% or fabricate a channel estimate.
+for channel=["TDL-A","CDL-A"]
+    trial=waveTrial(0,50,channel,true);
+    verifyTrue(t,trial.WaveformGenerated);
+    verifyFalse(t,trial.ReceiverDecodeFailed, ...
+        sprintf("Format-0 %s receiver failed: %s | %s",channel, ...
+        string(trial.ErrorID),string(trial.ErrorMessage)));
+    verifyTrue(t,trial.Ok);
+    verifyTrue(t,trial.NoncoherentSequenceDetection);
+    verifyEqual(t,string(trial.ChannelEstimationMode), ...
+        "format0_noncoherent_sequence_detection");
+    verifyFalse(t,trial.ChannelEstimateAttempted);
+    verifyTrue(t,trial.ChannelEstimateAvailable);
+    verifyEqual(t,trial.BitErrors,0);
+end
+end
+
 function testPUCCHNoSignalFalseAlarm(t)
 trial=waveTrial(0,20,"AWGN",false);verifyTrue(t,trial.ReceiverDTX);
 end

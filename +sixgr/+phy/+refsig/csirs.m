@@ -31,6 +31,8 @@ if isa(cfgOrCsirs, 'nrCSIRSConfig')
     enabled = true;
 elseif isstruct(cfgOrCsirs)
     enabled = logical(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.enable', false));
+    sixgr.config.assertRuntimeFeatureUse(cfgOrCsirs, "csi_rs", enabled, ...
+        "sixgr.phy.refsig.csirs");
     if ~enabled
         csirsInd = zeros(0,1);
         csirsSym = complex(zeros(0,1));

@@ -6,6 +6,7 @@ setup6GRSimToolkit("Verbose", false);
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "lls_sinr_field_truth"));
+cfg = localConfigureIsolatedTruthProbe(cfg);
 
 dl = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 3, "SNR_dB", 8);
 ul = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 3, "SNR_dB", 8);
@@ -19,6 +20,31 @@ localAssertSINRTruth(dl.TrialTable, "DL");
 localAssertSINRTruth(ul.TrialTable, "UL");
 
 ok = true;
+end
+
+function cfg = localConfigureIsolatedTruthProbe(cfg)
+cfg.phy.pdsch.executionProfile = "phy_calibration";
+cfg.phy.pusch.executionProfile = "phy_calibration";
+cfg.phy.pdsch.symbolAllocation = [0 14];
+cfg.phy.pdsch.mappingType = "A";
+cfg.phy.pusch.symbolAllocation = [0 14];
+cfg.phy.pusch.mappingType = "A";
+prbSet = 0:(double(cfg.phy.carrier.NSizeGrid) - 1);
+cfg.phy.pdsch.prbSet = prbSet;
+cfg.phy.pusch.prbSet = prbSet;
+cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.pusch.enablePTRS = false;
+cfg.phy.ptrs.enable = false;
+cfg.phy.pdsch.mcsContext = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "sinr_field_truth_calibration");
 end
 
 function localAssertSINRTruth(T, direction)
@@ -37,8 +63,11 @@ if any(cfgMask)
     assert(~all(copiedSweepMask), ...
         sprintf("%s ReceiverHestSINR_dB must be receiver-estimated, not copied wholesale from ConfiguredSNR_dB.", direction));
 end
-assert(all(strcmp(string(T.ReceiverHestSINRSource(receiverMask)), "receiver_hest_reference_signal_measurement")), ...
-    sprintf("%s ReceiverHestSINRSource must stay explicit.", direction));
+receiverSources = string(T.ReceiverHestSINRSource(receiverMask));
+allowedReceiverSources = ["receiver_hest_reference_signal_measurement", ...
+    "canonical_dmrs_estimate_and_equalizer"];
+assert(all(ismember(receiverSources, allowedReceiverSources)), ...
+    sprintf("%s ReceiverHestSINRSource must identify an actual receiver estimate/equalizer path.", direction));
 
 measuredMask = isfinite(double(T.MeasuredTrialSINR_dB));
 assert(any(measuredMask), sprintf("%s trials must export at least one finite MeasuredTrialSINR_dB sample.", direction));
@@ -72,7 +101,9 @@ if strcmpi(direction, "UL")
     assert(all(ismember(string(T.MeasuredTrialSINRSource(measuredMask)), allowedULSources)), ...
         "UL MeasuredTrialSINR_dB must come from post-eq or explicitly receiver-evidence-limited measured UL RS evidence.");
 else
-    assert(all(strcmp(string(T.MeasuredTrialSINRSource(measuredMask)), "post_equalization_sinr_from_equalizer_channel_estimate")), ...
+    allowedDLPostEqSources = ["post_equalization_sinr_from_equalizer_channel_estimate", ...
+        "canonical_post_equalization_sinr"];
+    assert(all(ismember(string(T.MeasuredTrialSINRSource(measuredMask)), allowedDLPostEqSources)), ...
         sprintf("%s MeasuredTrialSINR_dB must come from true post-equalization receiver evidence.", direction));
 end
 if strcmpi(direction, "UL")

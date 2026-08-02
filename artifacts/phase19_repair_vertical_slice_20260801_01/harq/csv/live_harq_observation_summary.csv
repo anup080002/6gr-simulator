@@ -1,0 +1,2 @@
+Direction,FramesObserved,RetxObserved,AckRate,NackRate,MeanMeasuredSINR_dB,MeanWidebandCQI,MeanCQIDerivedMCS,Notes
+"DL",2,0,1,0,13.2053840994013,8,7,"Canonical slot-runtime HARQ process summary."

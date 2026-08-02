@@ -151,18 +151,18 @@ classdef (Abstract) SchedulerBase < handle
             end
             localWarnIfPFAlphaOutOfRange(obj.Alpha, obj.SlotDuration_s);
 
-            % HARQ default (optional)
-            try
-                harqEnable = logical(sixgr.util.structGet(cfg,"mac.harq.enable",true));
-                if harqEnable && isempty(obj.HARQ)
-                    if strcmpi(obj.Direction, "DL")
-                        obj.HARQ = sixgr.l2.mac.HARQEntityDL(cfg,'Logger',obj.Logger);
-                    else
-                        obj.HARQ = sixgr.l2.mac.HARQEntityUL(cfg,'Logger',obj.Logger);
-                    end
+            % HARQ execution is owned by the resolved YAML feature flag.
+            % Do not swallow configuration/constructor failures: that would
+            % silently turn an enabled HARQ scenario into non-HARQ execution.
+            harqEnable = logical(sixgr.util.structGet(cfg,"mac.harq.enable",false));
+            sixgr.config.assertRuntimeFeatureUse(cfg, "harq", harqEnable, ...
+                "SchedulerBase.HARQ");
+            if harqEnable && isempty(obj.HARQ)
+                if strcmpi(obj.Direction, "DL")
+                    obj.HARQ = sixgr.l2.mac.HARQEntityDL(cfg,'Logger',obj.Logger);
+                else
+                    obj.HARQ = sixgr.l2.mac.HARQEntityUL(cfg,'Logger',obj.Logger);
                 end
-            catch
-                % ignore
             end
 
             obj.CacheScopeToken = localSchedulerCacheScopeToken(cfg, obj.Direction, obj.Carrier, obj.SymbolsPerSlot);
@@ -491,19 +491,33 @@ classdef (Abstract) SchedulerBase < handle
                 localResolveUECausalFeedback(ue, obj.Cfg, dir);
 
             if strcmp(dir,'DL')
-                modStr = char(string(sixgr.util.structGet(obj.Cfg,"phy.pdsch.modulation","16QAM")));
-                nLayers = double(sixgr.util.structGet(obj.Cfg,"phy.pdsch.nLayers",1));
-                targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"phy.pdsch.codeRate",0.5));
-                cfgMCSIndex = double(sixgr.util.structGet(obj.Cfg,"phy.pdsch.mcsIndex", NaN));
-                linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.dlPolicy", "");
+                modStr = char(string(sixgr.util.structGet(obj.Cfg,"runtime.phy.dl.Modulation", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pdsch.modulation","16QAM"))));
+                nLayers = double(sixgr.util.structGet(obj.Cfg,"runtime.phy.dl.NumLayers", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pdsch.nLayers",1)));
+                targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"runtime.phy.dl.TargetCodeRate", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pdsch.codeRate",0.5)));
+                cfgMCSIndex = double(sixgr.util.structGet(obj.Cfg,"runtime.phy.dl.MCSIndex", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pdsch.mcsIndex", NaN)));
+                linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, ...
+                    "runtime.link_adaptation.DLPolicy", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.dlPolicy", ""));
             else
-                modStr = char(string(sixgr.util.structGet(obj.Cfg,"phy.pusch.modulation","16QAM")));
-                nLayers = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.nLayers",1));
-                targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.codeRate",0.5));
-                cfgMCSIndex = double(sixgr.util.structGet(obj.Cfg,"phy.pusch.mcsIndex", NaN));
-                linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.ulPolicy", "");
+                modStr = char(string(sixgr.util.structGet(obj.Cfg,"runtime.phy.ul.Modulation", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pusch.modulation","16QAM"))));
+                nLayers = double(sixgr.util.structGet(obj.Cfg,"runtime.phy.ul.NumLayers", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pusch.nLayers",1)));
+                targetCodeRate = double(sixgr.util.structGet(obj.Cfg,"runtime.phy.ul.TargetCodeRate", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pusch.codeRate",0.5)));
+                cfgMCSIndex = double(sixgr.util.structGet(obj.Cfg,"runtime.phy.ul.MCSIndex", ...
+                    sixgr.util.structGet(obj.Cfg,"phy.pusch.mcsIndex", NaN)));
+                linkAdaptationPolicy = sixgr.util.structGet(obj.Cfg, ...
+                    "runtime.link_adaptation.ULPolicy", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.ulPolicy", ""));
             end
-            linkAdaptationMode = sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.mode", "fixed");
+            linkAdaptationMode = sixgr.util.structGet(obj.Cfg, ...
+                "runtime.link_adaptation.Mode", ...
+                sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.mode", "fixed"));
             fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"];
 
             if isfield(ue,'Modulation') && ~isempty(ue.Modulation)
@@ -543,6 +557,13 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSSelectionSource", "configured_profile", ...
                 "CQIProvenance", "unavailable", ...
                 "MCSValueStatus", "unresolved", ...
+                "ConfiguredInitialMCSIndex", double(sixgr.util.structGet(obj.Cfg, ...
+                    "runtime.link_adaptation.InitialMCSIndex", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.initialMCSIndex", NaN))), ...
+                "ConfiguredMaximumMCSIndex", double(sixgr.util.structGet(obj.Cfg, ...
+                    "runtime.link_adaptation.MaximumMCSIndex", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.linkAdaptation.maximumMCSIndex", NaN))), ...
+                "MaximumMCSBoundApplied", false, ...
                 "RawCQIDerivedMCS", NaN, ...
                 "CausalFeedbackUsable", logical(causalFeedbackUsable), ...
                 "CausalFeedbackStatus", char(causalFeedbackStatus), ...
@@ -739,6 +760,10 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
 
+            [amc, modStr, targetCodeRate] = localApplyAdaptiveMCSBounds( ...
+                obj.Cfg, amc, modStr, targetCodeRate, mcsTable, ...
+                linkAdaptationMode, linkAdaptationPolicy);
+
             requestedLayers = max(1, min(8, round(nLayers)));
             rankDecision = sixgr.mimo.resolveRankExecutionPolicy(obj.Cfg, dir, requestedLayers, ...
                 "WaveformFadingULSafetyRequested", localUseWaveformULSingleLayerSafety(obj.Cfg), ...
@@ -760,11 +785,13 @@ classdef (Abstract) SchedulerBase < handle
 
         function tableName = resolveMCSTable(obj)
             if strcmpi(obj.Direction, 'UL')
-                token = sixgr.util.structGet(obj.Cfg, "phy.pusch.mcsTable", ...
-                    localDefaultMCSTable(sixgr.util.structGet(obj.Cfg, "phy.pusch.modulation", "16QAM")));
+                token = sixgr.util.structGet(obj.Cfg, "runtime.phy.ul.MCSTable", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.pusch.mcsTable", ...
+                    localDefaultMCSTable(sixgr.util.structGet(obj.Cfg, "phy.pusch.modulation", "16QAM"))));
             else
-                token = sixgr.util.structGet(obj.Cfg, "phy.pdsch.mcsTable", ...
-                    localDefaultMCSTable(sixgr.util.structGet(obj.Cfg, "phy.pdsch.modulation", "16QAM")));
+                token = sixgr.util.structGet(obj.Cfg, "runtime.phy.dl.MCSTable", ...
+                    sixgr.util.structGet(obj.Cfg, "phy.pdsch.mcsTable", ...
+                    localDefaultMCSTable(sixgr.util.structGet(obj.Cfg, "phy.pdsch.modulation", "16QAM"))));
             end
             tableName = char(lower(string(token)));
         end
@@ -1030,6 +1057,9 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSSelectionSource", char(string(sixgr.util.structGet(amc, "MCSSelectionSource", ""))), ...
                 "CQIProvenance", char(string(sixgr.util.structGet(amc, "CQIProvenance", ""))), ...
                 "MCSValueStatus", char(string(sixgr.util.structGet(amc, "MCSValueStatus", ""))), ...
+                "ConfiguredInitialMCSIndex", double(sixgr.util.structGet(amc, "ConfiguredInitialMCSIndex", NaN)), ...
+                "ConfiguredMaximumMCSIndex", double(sixgr.util.structGet(amc, "ConfiguredMaximumMCSIndex", NaN)), ...
+                "MaximumMCSBoundApplied", logical(sixgr.util.structGet(amc, "MaximumMCSBoundApplied", false)), ...
                 "CausalFeedbackUsable", logical(sixgr.util.structGet(amc, "CausalFeedbackUsable", true)), ...
                 "CausalFeedbackStatus", char(string(sixgr.util.structGet(amc, "CausalFeedbackStatus", ""))), ...
                 "FeedbackAgeSlots", double(sixgr.util.structGet(amc, "FeedbackAgeSlots", NaN)), ...
@@ -1165,6 +1195,13 @@ classdef (Abstract) SchedulerBase < handle
                 "HARQContext", sixgr.util.structGet(grantOut, "HARQ", struct()));
             grantOut.PHYGrant = phyGrant;
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
+            grantOut.DMRSPortSet = double(phyGrant.CodingLayout.DMRSPortSet(:).');
+            grantOut.DMRSPortSetSource = char(string( ...
+                phyGrant.CodingLayout.DMRSPortSetSource));
+            grantOut.PTRSEnabled = logical(phyGrant.CodingLayout.PTRSEnabled);
+            grantOut.PTRSPortSet = double(phyGrant.CodingLayout.PTRSPortSet(:).');
+            grantOut.PTRSPortSetSource = char(string( ...
+                phyGrant.CodingLayout.PTRSPortSetSource));
         end
 
         function grantOut = attachCanonicalTimingDecision(obj, grantIn)
@@ -2187,7 +2224,7 @@ mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode",
 dlPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", ""))));
 ulPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", ""))));
 deltaPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSPolicy", ""))));
-outerFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true));
+outerFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false));
 fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false",""];
 policyUnspecified = strlength(dlPolicy) == 0 && strlength(ulPolicy) == 0;
 policyEnabled = ~ismember(mode, fixedTokens) && (policyUnspecified || ~ismember(dlPolicy, fixedTokens) || ~ismember(ulPolicy, fixedTokens));
@@ -3162,4 +3199,54 @@ if ~(isnumeric(raw) && isreal(raw) && isscalar(raw) && ...
         "Canonical TimingDecision did not provide required %s.", field);
 end
 value = double(raw);
+end
+
+function [amc, modulation, targetCodeRate] = localApplyAdaptiveMCSBounds( ...
+        cfg, amc, modulation, targetCodeRate, mcsTable, mode, policy)
+adaptiveTokens = ["amc","adaptive","cqi","cqi_driven", ...
+    "effective_sinr","effective_sinr_driven","olla","actual_bler_based"];
+tokens = lower(strtrim([string(mode), string(policy)]));
+if ~any(ismember(tokens, adaptiveTokens)) || ...
+        ~(isfinite(double(amc.MCSIndex)) && double(amc.MCSIndex) >= 0)
+    return;
+end
+maximumMCS = double(sixgr.util.structGet(cfg, ...
+    "runtime.link_adaptation.MaximumMCSIndex", ...
+    sixgr.util.structGet(cfg, "phy.linkAdaptation.maximumMCSIndex", 31)));
+if ~(isscalar(maximumMCS) && isfinite(maximumMCS) && ...
+        maximumMCS >= 0 && maximumMCS <= 31)
+    error("sixgr:SchedulerBase:InvalidAdaptiveMaximumMCS", ...
+        "Adaptive maximum MCS must be a finite integer in [0,31].");
+end
+maximumMCS = round(maximumMCS);
+if double(amc.MCSIndex) <= maximumMCS
+    return;
+end
+boundedMCS = maximumMCS;
+profile = sixgr.link.resolveMCSProfile(mcsTable, boundedMCS);
+if ~logical(sixgr.util.structGet(profile, "Valid", false))
+    error("sixgr:SchedulerBase:UnsupportedAdaptiveMaximumMCS", ...
+        "Configured adaptive maximum MCS %d is unavailable in table '%s'.", ...
+        boundedMCS, char(string(mcsTable)));
+end
+amc.MCSIndex = double(boundedMCS);
+amc.MCSProfile = profile;
+amc.MaximumMCSBoundApplied = true;
+amc.MCSValueStatus = char(localAppendStatusToken( ...
+    sixgr.util.structGet(amc, "MCSValueStatus", ""), ...
+    "clamped_to_yaml_maximum_mcs"));
+modulation = char(string(profile.Modulation));
+targetCodeRate = double(profile.TargetCodeRate);
+end
+
+function value = localAppendStatusToken(existing, suffix)
+existing = strtrim(string(existing));
+suffix = strtrim(string(suffix));
+if strlength(existing) == 0
+    value = suffix;
+elseif contains(existing, suffix)
+    value = existing;
+else
+    value = existing + "_" + suffix;
+end
 end

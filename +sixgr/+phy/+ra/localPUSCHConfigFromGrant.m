@@ -15,4 +15,10 @@ try
     pusch.TransformPrecoding = logical(grant.TransformPrecoding);
 catch
 end
+try
+    pusch.EnablePTRS = logical(sixgr.util.structGet(grant, ...
+        "EnablePTRS", sixgr.util.structGet(raCfg, ...
+        "Msg3PUSCH.EnablePTRS", false)));
+catch
+end
 end

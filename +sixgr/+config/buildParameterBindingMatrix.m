@@ -833,7 +833,7 @@ function reason = localFeatureDisabledReason(featureFamily, scenarioStruct)
 reason = "";
 switch string(featureFamily)
     case "Random_Access_PRACH"
-        enabled = logical(sixgr.util.structGet(scenarioStruct, "random_access.enabled", true));
+        enabled = logical(sixgr.util.structGet(scenarioStruct, "random_access.enabled", false));
         if ~enabled
             reason = "prach_disabled_by_config";
         end

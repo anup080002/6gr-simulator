@@ -21,6 +21,15 @@ addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
 addParameter(p,"DetectionThreshold",0.2, ...
     @(x) isnumeric(x)&&isscalar(x)&&x>=0&&x<=1);
 parse(p,rxWaveform,cfg,assignment,reportContext,varargin{:});
+if isstruct(cfg)
+    configuredPUCCH = logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+    sixgr.config.assertRuntimeFeatureUse(cfg, "pucch", configuredPUCCH, ...
+        "PUCCH_Rx");
+    if ~configuredPUCCH
+        error("sixgr:phy:pucch:DisabledByYAML", ...
+            "PUCCH Rx cannot execute when PUCCH is disabled by YAML.");
+    end
+end
 
 carrier = p.Results.Carrier;
 if isempty(carrier)

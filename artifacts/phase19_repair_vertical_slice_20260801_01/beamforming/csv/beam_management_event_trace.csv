@@ -1,0 +1,3 @@
+Direction,SNR_dB,Frame,Slot,UEIndex,RNTI,TrialOrdinal,AbsoluteSlot,SelectedBeamIndex,BestBeamIndex,BeamHit,TopKBeamHit,BeamCandidateCount,BeamGainGap_dB,BeamSelectionStrategy,ExecutionModel,Status,EventType,AcquisitionEventFlag,SwitchEventFlag,FirstHitEventFlag,BeamDetectedEventFlag,MisalignmentEventFlag,FailureEventFlag,TrialsToFirstHit,StateBefore,StateAfter
+"DL",20,1,1,1,1,1,21,4,4,1,1,32,0,"runtime_best_beam_per_link","slot_coupled_truth","PASS","BEAM_ACQUIRED|BEAM_REFINEMENT_CONVERGED|BEAM_DETECTED",1,0,1,1,0,0,1,"uninitialized","aligned"
+"DL",20,1,1,2,2,1,21,4,4,1,1,32,0,"runtime_best_beam_per_link","slot_coupled_truth","PASS","BEAM_ACQUIRED|BEAM_REFINEMENT_CONVERGED|BEAM_DETECTED",1,0,1,1,0,0,1,"uninitialized","aligned"

@@ -190,6 +190,9 @@ cfg = localSyncNestedFlag(cfg, newBase, oldBase, "reference_signals.srs.enabled"
 cfg = localSyncNestedFlag(cfg, newBase, oldBase, "reference_signals.trs.enabled", "reference_signals.trs_enabled");
 cfg = localSyncNestedFlag(cfg, newBase, oldBase, "reference_signals.tracking_rs.enabled", "reference_signals.tracking_rs_enabled");
 cfg = localSyncNestedFlag(cfg, newBase, oldBase, "reference_signals.ptrs.enabled", "reference_signals.ptrs_enabled");
+cfg = localSyncValue(cfg, newBase, oldBase, ...
+    "reference_signals.ptrs_port_association_policy", ...
+    "reference_signals.ptrs_port_association_policy", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.ssb_Lmax", "reference_signals.ssb_lmax", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.ssb_beam_count", "reference_signals.ssb_beam_count", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.csi_rs_port_count", "reference_signals.csi_rs_ports", "identity");
@@ -230,10 +233,13 @@ cfg = localSyncValue(cfg, newBase, oldBase, "power_control.ue_max_power_dBm", "p
 cfg = localSyncValue(cfg, newBase, oldBase, "power_control.pcmax_dBm", "power_and_rf_frontend.ue_max_power_dbm", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.cfo_enabled", "impairments.cfo.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.cfo_max_hz", "impairments.cfo.value_hz", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "impairments.cfo_hz", "impairments.cfo.value_hz", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_enabled", "impairments.to.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_max_samples", "impairments.to.value_samples", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "impairments.timing_offset_samples", "impairments.to.value_samples", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_enabled", "impairments.phase_noise.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "impairments.phase_noise_model", "impairments.phase_noise.model", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, "impairments.iq_imbalance_enabled", "impairments.iq_imbalance.enabled", "identity");
 cfg = localPreferModernRuntimeValue(cfg, "simulation.monte_carlo_iterations", "run.monte_carlo_iterations", "identity");
 cfg = localApplyBrowserOverlayDurationAliases(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localNormalizeFixedLinkCalibrationMode(cfg);
@@ -242,13 +248,17 @@ cfg = localApplyDerivedNumerologyAliases(cfg, newBase, oldBase, opt.Authority);
 cfg = localApplyAuthorityDerivedCarrierGrid(cfg, opt.Authority);
 cfg = localApplyDerivedRandomAccessCarrierAliases(cfg, oldBase, opt.Authority);
 cfg = localApplyDeclaredRadioAliases(cfg, newBase);
+% canonical_control is the resolved YAML authority. Reapply it after all
+% legacy compatibility aliases so an inherited legacy field cannot silently
+% override an explicit feature enable/disable decision from the YAML file.
+cfg = localExpandCanonicalControl(cfg, newBase);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
 end
 end
 
 function cfg = localApplyDerivedRandomAccessCarrierAliases(cfg, oldBase, authority)
-if ~logical(sixgr.util.structGet(cfg, "random_access.enabled", true))
+if ~logical(sixgr.util.structGet(cfg, "random_access.enabled", false))
     return;
 end
 mappings = {
@@ -426,6 +436,13 @@ mappings = {
     "run.noise_operating_mode", "simulation.noise_operating_mode", "identity"
     "run.min_duration_s", "simulation.min_duration_s", "identity"
     "run.snr_sweep_offsets_db", "simulation.snr_sweep_offsets_db", "identity"
+    "run.reference_sweep_enabled", "simulation.reference_sweep_enabled", "identity"
+    "run.reference_trials_per_snr", "simulation.reference_trials_per_snr", "identity"
+    "run.harq_diagnostics_enabled", "simulation.harq_diagnostics_enabled", "identity"
+    "run.adaptive_sweep_enabled", "simulation.adaptive_sweep_enabled", "identity"
+    "run.adaptive_sweep_step_db", "simulation.adaptive_sweep_step_db", "identity"
+    "run.adaptive_sweep_max_points", "simulation.adaptive_sweep_max_points", "identity"
+    "run.max_raw_rows_per_sweep", "simulation.max_raw_rows_per_sweep", "identity"
     "run.execution_mode", "run_control.execution_mode", "identity"
     "run.study_mode", "run_control.study_mode", "identity"
     "run.simulation_mode", "run_control.simulation_mode", "identity"
@@ -554,6 +571,9 @@ mappings = {
     "mimo.mu_mimo_enable", "mimo.mu_mimo_enable", "identity"
     "mimo.ul_mu_mimo_enable", "mimo.ul_mu_mimo_enable", "identity"
     "mimo.mu_mimo_max_users_per_prb", "mimo.mu_mimo_max_users_per_prb", "identity"
+    "mimo.mu_mimo_precoder_leakage_threshold_db", "mimo.mu_mimo_precoder_leakage_threshold_db", "identity"
+    "mimo.mu_mimo_minimum_desired_subspace_gain_db", "mimo.mu_mimo_minimum_desired_subspace_gain_db", "identity"
+    "mimo.mu_mimo_hybrid_rf_design_policy", "mimo.mu_mimo_hybrid_rf_design_policy", "identity"
     "mimo.hybrid_beamforming_flag", "mimo.hybrid_beamforming_flag", "identity"
     "mimo.rank_adaptation_enable", "mimo.rank_adaptation_enable", "identity"
     "mimo.rank_adaptation_policy", "mimo.rank_adaptation_policy", "identity"
@@ -595,11 +615,20 @@ mappings = {
     "reference_signals.csi_rs_enabled", "reference_signals.csi_rs_enabled", "identity"
     "reference_signals.srs_enabled", "reference_signals.srs_enabled", "identity"
     "reference_signals.trs_enabled", "reference_signals.trs_enabled", "identity"
+    "reference_signals.tracking_rs_enabled", "reference_signals.tracking_rs_enabled", "identity"
+    "reference_signals.tracking_rs_enabled", "reference_signals.tracking_rs.enabled", "identity"
+    "reference_signals.tracking_rs.trp_transmission_assumption", "reference_signals.tracking_rs.trp_transmission_assumption", "identity"
     "reference_signals.ptrs_enabled", "reference_signals.ptrs_enabled", "identity"
+    "reference_signals.ptrs_cpe_correction_enabled", "reference_signals.ptrs_cpe_correction_enabled", "identity"
+    "reference_signals.ptrs_port_association_policy", "reference_signals.ptrs_port_association_policy", "identity"
     "reference_signals.csi_feedback_mode", "reference_signals.csi_feedback_mode", "identity"
+    "reference_signals.csi_acquisition_mode", "reference_signals.csi_acquisition_mode", "identity"
+    "reference_signals.operation_orientation", "reference_signals.operation_orientation", "identity"
     "reference_signals.cqi_reporting_enabled", "reference_signals.cqi_reporting_enabled", "identity"
     "reference_signals.pmi_reporting_enabled", "reference_signals.pmi_reporting_enabled", "identity"
     "reference_signals.ri_reporting_enabled", "reference_signals.ri_reporting_enabled", "identity"
+    "reference_signals.cri_reporting_enabled", "reference_signals.cri_reporting_enabled", "identity"
+    "reference_signals.csi_reporting_enabled", "reference_signals.csi_reporting_enabled", "identity"
     "reference_signals.pdsch_dmrs_ports", "reference_signals.pdsch_dmrs_ports", "identity"
     "reference_signals.pusch_dmrs_ports", "reference_signals.pusch_dmrs_ports", "identity"
     "reference_signals.csi_rs_ports", "reference_signals.csi_rs_ports", "identity"
@@ -640,6 +669,7 @@ mappings = {
     "csi.crc_free_mode", "csi_acquisition_and_reporting.crc_free_mode", "identity"
     "control.pdcch_enabled", "control.pdcch_enabled", "identity"
     "control.pdcch_enabled", "pdcch.enabled", "identity"
+    "control.blind_search_enabled", "control.blind_search_enabled", "identity"
     "control.pucch_enabled", "control.pucch_enabled", "identity"
     "control.pucch_enabled", "pucch.enabled", "identity"
     "control.pucch_format", "control.pucch_format", "identity"
@@ -684,6 +714,7 @@ mappings = {
     "random_access.restricted_set", "random_access.restricted_set", "identity"
     "random_access.frequency_start", "random_access.frequency_start", "identity"
     "random_access.preamble_index", "random_access.preamble_index", "identity"
+    "random_access.occasion", "random_access.occasion", "identity"
     "random_access.prach_format", "random_access.prach_format", "identity"
     "random_access.prach_format", "prach.format", "identity"
     "random_access.channel_model", "random_access.channel_model", "identity"
@@ -748,6 +779,22 @@ mappings = {
     "receiver.equalizer", "receiver_algorithms.equalizer", "identity"
     "receiver.decoder_iterations", "receiver_algorithms.decoder_iterations", "identity"
     "pdsch.execution_profile", "pdsch.execution_profile", "identity"
+    "impairments.cfo.enabled", "impairments.cfo_enabled", "identity"
+    "impairments.cfo.value_hz", "impairments.cfo_hz", "identity"
+    "impairments.cfo.value_hz", "impairments.cfo_max_hz", "identity"
+    "impairments.cfo.model", "impairments.cfo_model", "identity"
+    "impairments.phase_noise.enabled", "impairments.phase_noise_enabled", "identity"
+    "impairments.phase_noise.model", "impairments.phase_noise_model", "identity"
+    "impairments.phase_noise.psd_floor_dbc_hz", "impairments.phase_noise_floor_dBcHz", "identity"
+    "impairments.iq_imbalance.enabled", "impairments.iq_imbalance_enabled", "identity"
+    "impairments.iq_imbalance.amplitude_imbalance_db", "impairments.iq_amplitude_imbalance_dB", "identity"
+    "impairments.iq_imbalance.phase_imbalance_deg", "impairments.iq_phase_imbalance_deg", "identity"
+    "impairments.to.enabled", "impairments.timing_offset_enabled", "identity"
+    "impairments.to.value_samples", "impairments.timing_offset_samples", "identity"
+    "impairments.to.value_samples", "impairments.timing_offset_max_samples", "identity"
+    "impairments.to.model", "impairments.timing_offset_model", "identity"
+    "impairments.pa_nonlinearity.enabled", "impairments.pa_nonlinearity_enabled", "identity"
+    "impairments.pa_nonlinearity.model", "impairments.pa_model", "identity"
     "ai_ml.enabled", "ai_ml.enabled", "identity"
     "ai_ml.use_case", "ai_ml.use_case", "identity"
     "ai_ml.mode", "ai_ml.mode", "identity"

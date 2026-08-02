@@ -110,19 +110,22 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 obj.prewarmUEAverage(ueStates(ueIdx(t)), maxUE);
             end
             [controlBudgetActive, controlCCERemaining] = localPDCCHCCEBudget(budget);
+            muEnabled = localMUMIMOEnabled(obj.Cfg, obj.Direction);
+            muMaxUsers = localMUMIMOMaxUsers(obj.Cfg);
+            scheduledRetxUECount = 0;
 
             % ------------------ 1) HARQ retransmissions first ------------------
             if ~isempty(obj.HARQ)
+                retxProcessed = false(1, numel(ueIdx));
                 for t = 1:numel(ueIdx)
+                    if retxProcessed(t) || scheduledRetxUECount >= maxUE
+                        continue;
+                    end
                     k = ueIdx(t);
                     rnti = double(ueStates(k).RNTI);
                     if obj.HARQ.hasPendingRetx(rnti, slot)
                         retx = obj.HARQ.peekRetx(rnti, slot);
                         if isempty(retx)
-                            continue;
-                        end
-                        neededCCE = localUEPDCCHCCE(ueStates(k), budget);
-                        if controlBudgetActive && neededCCE > controlCCERemaining
                             continue;
                         end
                         g = localNormalizeGrant(retx.LastGrant, tmpl, obj.Direction, slot);
@@ -138,41 +141,118 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         if nNeed <= 0 || numel(prbAvail) < nNeed
                             continue;
                         end
+                        neededCCE = localUEPDCCHCCE(ueStates(k), budget);
+                        if controlBudgetActive && neededCCE > controlCCERemaining
+                            continue;
+                        end
+
+                        peerT = NaN;
+                        peerRetx = struct();
+                        muSpatialDesign = struct();
+                        if muEnabled && muMaxUsers >= 2 && ...
+                                scheduledRetxUECount + 2 <= maxUE
+                            for tt = (t + 1):numel(ueIdx)
+                                if retxProcessed(tt)
+                                    continue;
+                                end
+                                peerK = ueIdx(tt);
+                                peerRNTI = double(ueStates(peerK).RNTI);
+                                if ~obj.HARQ.hasPendingRetx(peerRNTI, slot)
+                                    continue;
+                                end
+                                candidatePeerRetx = obj.HARQ.peekRetx(peerRNTI, slot);
+                                if isempty(candidatePeerRetx)
+                                    continue;
+                                end
+                                peerGrant = localNormalizeGrant(candidatePeerRetx.LastGrant, ...
+                                    tmpl, obj.Direction, slot);
+                                peerNeed = numel(peerGrant.PRBSet);
+                                if peerNeed <= 0
+                                    peerNeed = max(1, round(double(sixgr.util.structGet(peerGrant, ...
+                                        "NPRB", sixgr.util.structGet(peerGrant, "PRBCount", ...
+                                        sixgr.util.structGet(peerGrant, "NumPRB", NaN))))));
+                                end
+                                peerCCE = localUEPDCCHCCE(ueStates(peerK), budget);
+                                sameAllocationShape = peerNeed == nNeed && ...
+                                    isequal(double(peerGrant.SymbolAllocation(:).'), ...
+                                    double(g.SymbolAllocation(:).'));
+                                enoughCCE = ~controlBudgetActive || ...
+                                    neededCCE + peerCCE <= controlCCERemaining;
+                                [pairOK, ~, ~, candidateDesign] = localMUMIMOCompatible( ...
+                                    ueStates(k), ueStates(peerK), obj.Cfg, obj.Direction, slot);
+                                if sameAllocationShape && enoughCCE && pairOK
+                                    peerT = tt;
+                                    peerRetx = candidatePeerRetx;
+                                    muSpatialDesign = candidateDesign;
+                                    break;
+                                end
+                            end
+                        end
+
+                        if isfinite(peerT)
+                            if all(ismember(g.PRBSet, prbAvail))
+                                sharedPRBSet = double(g.PRBSet(:).');
+                            else
+                                sharedPRBSet = double(prbAvail(1:nNeed));
+                            end
+                            memberT = [t peerT];
+                            memberRetx = {retx, peerRetx};
+                            groupId = double(localMUMIMOGroupId(slot, min(sharedPRBSet) + 1));
+                            for memberIndex = 1:2
+                                stateIndex = ueIdx(memberT(memberIndex));
+                                memberRNTI = double(ueStates(stateIndex).RNTI);
+                                memberCCE = localUEPDCCHCCE(ueStates(stateIndex), budget);
+                                memberGrant = localNormalizeGrant( ...
+                                    memberRetx{memberIndex}.LastGrant, tmpl, obj.Direction, slot);
+                                memberGrant.PRBSet = sharedPRBSet;
+                                memberGrant = localPrepareRetransmissionGrant(memberGrant, ...
+                                    memberRetx{memberIndex}, ueStates(stateIndex), obj.Direction, ...
+                                    slot, controlAbsoluteSlot, controlSymbolAllocation, ssid, ...
+                                    coreset, memberCCE, bufBytes(stateIndex), obj.resolveMCSTable());
+                                memberGrant.GrantReason = "harq_retx_mu_mimo";
+                                memberGrant.MUMIMOEnabled = true;
+                                memberGrant.MUMIMOGroupSize = 2;
+                                memberGrant.MUMIMOGroupId = groupId;
+                                memberGrant.MUMIMOPairingStatus = ...
+                                    "paired_shared_prb_spatial_multiplexing";
+                                memberGrant.DMRSPortSet = localMUMIMODMRSPortSet( ...
+                                    obj.Cfg, obj.Direction, memberGrant.NumLayers, memberIndex, 2);
+                                memberGrant = localApplyMUMIMOSpatialDesign( ...
+                                    memberGrant, muSpatialDesign, memberIndex, obj.Direction);
+                                [memberGrant.DMRSPortSet, memberGrant.DMRSPortSetSource] = ...
+                                    sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+                                    obj.Cfg, obj.Direction, memberGrant.NumLayers, memberGrant);
+                                memberGrant = obj.freezePHYGrantForGrant(memberGrant);
+                                memberGrant.DCI = obj.buildDCIBitfield(memberGrant);
+                                grants = localAppendGrant(grants, memberGrant);
+                                if controlBudgetActive
+                                    controlCCERemaining = max(0, controlCCERemaining - memberCCE);
+                                end
+                            end
+                            prbAvail = setdiff(prbAvail, sharedPRBSet, 'stable');
+                            retxProcessed(memberT) = true;
+                            scheduledRetxUECount = scheduledRetxUECount + 2;
+                            continue;
+                        end
+
                         if ~all(ismember(g.PRBSet, prbAvail))
                             g.PRBSet = prbAvail(1:nNeed);
                         end
                         prbAvail = setdiff(prbAvail, g.PRBSet, 'stable');
-
-                        g.Slot = slot;
-                        if ~isempty(controlAbsoluteSlot)
-                            g.ControlAbsoluteSlot = controlAbsoluteSlot;
-                        end
-                        if ~isempty(controlSymbolAllocation)
-                            g.ControlSymbolAllocation = ...
-                                controlSymbolAllocation;
-                        end
-                        g.Direction = obj.Direction;
-                        if ~isfield(g, "MCSTable") || strlength(string(g.MCSTable)) == 0
-                            g.MCSTable = obj.resolveMCSTable();
-                        end
-                        g.HARQ = retx.HARQ;
-                        g.CQIUsed = double(sixgr.util.structGet(g, "CQIUsed", localUECQI(ueStates(k))));
-                        g.PDCCHAggregationLevel = double(neededCCE);
-                        g.DAI = 1;
-                        g.SearchSpaceID = ssid;
-                        g.CORESETID = coreset;
-                        g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
-                        g.BufferBytesBefore = bufBytes(k);
-                        g.TBSBits = double(sixgr.util.structGet(g, "TBSBits", sixgr.util.structGet(g, "TransportBlockSize", 0)));
-                        g.TBSBytes = floor(max(g.TBSBits, 0) / 8);
-                        g.BufferBytesAfter = max(bufBytes(k) - double(g.TBSBytes), 0);
+                        g = localPrepareRetransmissionGrant(g, retx, ueStates(k), ...
+                            obj.Direction, slot, controlAbsoluteSlot, ...
+                            controlSymbolAllocation, ssid, coreset, neededCCE, bufBytes(k), ...
+                            obj.resolveMCSTable());
                         g.GrantReason = "harq_retx";
+                        g = localMarkUnpairedRetransmission(g);
                         g = obj.freezePHYGrantForGrant(g);
                         g.DCI = obj.buildDCIBitfield(g);
                         grants = localAppendGrant(grants, g);
                         if controlBudgetActive
                             controlCCERemaining = max(0, controlCCERemaining - neededCCE);
                         end
+                        retxProcessed(t) = true;
+                        scheduledRetxUECount = scheduledRetxUECount + 1;
                     end
                 end
             end
@@ -300,15 +380,20 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 localDecayUnscheduledCandidates(obj, ueStates, ueIdx, grants);
                 return;
             end
-            ord = ord(1:min(numel(ord), maxUE));
-
             cursor = 1;
-            muEnabled = localMUMIMOEnabled(obj.Cfg, obj.Direction);
-            muMaxUsers = localMUMIMOMaxUsers(obj.Cfg);
             usedOrd = false(1, numel(ord));
+            scheduledNewUECount = 0;
             allocTimer = tic;
             finalPlanElapsed_s = zeros(1, numel(ord));
             for ii = 1:numel(ord)
+                % MaxUEPerSlot limits transmitted UEs, not the CSI
+                % compatibility search space.  Truncating ord before MU
+                % pairing can hide a compatible third/fourth UE behind an
+                % incompatible higher-PF candidate and silently turn an MU
+                % opportunity into two orthogonal SU grants.
+                if scheduledRetxUECount + scheduledNewUECount >= maxUE
+                    break;
+                end
                 if usedOrd(ii)
                     continue;
                 end
@@ -322,11 +407,33 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
                 groupOrd = ord(ii);
                 if muEnabled
+                    groupCapacity = min(muMaxUsers, ...
+                        maxUE - scheduledRetxUECount - scheduledNewUECount);
                     for jj = (ii + 1):numel(ord)
-                        if usedOrd(jj) || numel(groupOrd) >= muMaxUsers
+                        if usedOrd(jj) || numel(groupOrd) >= groupCapacity
                             continue;
                         end
-                        if localMUMIMOCompatible(ueStates(ueIdx(groupOrd(1))), ueStates(ueIdx(ord(jj))), obj.Cfg)
+                        compatibleWithGroup = true;
+                        for existingIndex = 1:numel(groupOrd)
+                            existingUE = ueStates(ueIdx(groupOrd(existingIndex)));
+                            candidateUE = ueStates(ueIdx(ord(jj)));
+                            [pairOK, pairLeakage_dB, pairEvidence, candidateDesign] = ...
+                                localMUMIMOCompatible(existingUE, candidateUE, ...
+                                obj.Cfg, obj.Direction, slot);
+                            candidateRows = localRecordMUMIMOAdmission( ...
+                                candidateRows, double(existingUE.RNTI), ...
+                                double(candidateUE.RNTI), pairOK, ...
+                                pairLeakage_dB, pairEvidence, candidateDesign);
+                            candidateRows = localRecordMUMIMOAdmission( ...
+                                candidateRows, double(candidateUE.RNTI), ...
+                                double(existingUE.RNTI), pairOK, ...
+                                pairLeakage_dB, pairEvidence, candidateDesign);
+                            if ~pairOK
+                                compatibleWithGroup = false;
+                                break;
+                            end
+                        end
+                        if compatibleWithGroup
                             groupOrd(end + 1) = ord(jj); %#ok<AGROW>
                         end
                     end
@@ -431,6 +538,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.MCSSelectionSource = char(string(sixgr.util.structGet(plan, "MCSSelectionSource", "")));
                     g.CQIProvenance = char(string(sixgr.util.structGet(plan, "CQIProvenance", "")));
                     g.MCSValueStatus = char(string(sixgr.util.structGet(plan, "MCSValueStatus", "")));
+                    g.ConfiguredInitialMCSIndex = double(sixgr.util.structGet(plan, "ConfiguredInitialMCSIndex", NaN));
+                    g.ConfiguredMaximumMCSIndex = double(sixgr.util.structGet(plan, "ConfiguredMaximumMCSIndex", NaN));
+                    g.MaximumMCSBoundApplied = logical(sixgr.util.structGet(plan, "MaximumMCSBoundApplied", false));
                     g.CQIUsed = double(sixgr.util.structGet(plan, "CQIUsed", localUECQI(ueStates(k))));
                     g.RawCQIDerivedMCS = double(sixgr.util.structGet(plan, "RawCQIDerivedMCS", NaN));
                     g.CQIBasedMCS = double(sixgr.util.structGet(plan, "CQIBasedMCS", NaN));
@@ -473,18 +583,22 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.HeadOfLineDelay_ms = localUEHoLDelay(ueStates(k));
                     g.BufferBytesBefore = bufBytes(k);
                     g.BufferBytesAfter = max(bufBytes(k) - double(servedBytes), 0);
-                    g.GrantReason = localTernary(muEnabled && numel(groupOrd) > 1, "new_data_pf_mu_mimo", "new_data_pf");
-                    g.MUMIMOEnabled = logical(muEnabled);
-                    g.MUMIMOGroupSize = double(numel(groupOrd));
-                    g.MUMIMOGroupId = double(localMUMIMOGroupId(slot, cursor));
-                    g.MUMIMOPairingStatus = char(localTernary(muEnabled && numel(groupOrd) > 1, "paired_shared_prb_spatial_multiplexing", "single_user_or_mu_disabled"));
-                    g.MUMIMOPairingMetricSource = "pf_order_cqi_ri_pmi_orthogonality";
+                    % Group status is finalized only after every member has
+                    % produced a valid exact PHY plan.  A rejected peer must
+                    % not inflate MUMIMOGroupSize or label a lone waveform as
+                    % shared-PRB MU execution.
+                    g.GrantReason = "new_data_pf";
+                    g.MUMIMOEnabled = false;
+                    g.MUMIMOGroupSize = 1;
+                    g.MUMIMOGroupId = NaN;
+                    g.MUMIMOPairingStatus = "single_user_or_mu_disabled";
+                    g.MUMIMOPairingMetricSource = "";
+                    g.MUMIMOPairingMetricValue_dB = NaN;
+                    g.MUMIMOPairingEvidenceSource = "";
                     g.MUMIMOPrecoderType = char(localMUMIMOPrecoderType(obj.Cfg));
                     [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
                         sprintf("%s %s RNTI=%d", class(obj), char(g.GrantReason), round(rnti)));
                     g.TBSBytes = g.TBSBits / 8;
-                    g = obj.freezePHYGrantForGrant(g);
-                    g.DCI = obj.buildDCIBitfield(g);
                     groupGrants = localAppendGrant(groupGrants, g);
                     groupValid(gg) = true;
                     if controlBudgetActive
@@ -495,9 +609,62 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     usedOrd(ii) = true;
                     continue;
                 end
+                actualGroupSize = numel(groupGrants);
+                isActualMUGroup = logical(muEnabled && actualGroupSize > 1);
+                if isActualMUGroup
+                    localAssertSharedMUResources(groupGrants);
+                end
+                groupId = double(localMUMIMOGroupId(slot, cursor));
+                muSpatialDesign = struct();
+                if isActualMUGroup
+                    if actualGroupSize ~= 2
+                        error("sixgr:l2:mac:UnsupportedMUMIMOGroupSize", ...
+                            "The production measured spatial designer currently requires exactly two MU users; got %d.", ...
+                            actualGroupSize);
+                    end
+                    [compatibleMUDesign, ~, ~, muSpatialDesign] = localMUMIMOCompatible( ...
+                        ueStates(ueIdx(groupOrd(1))), ueStates(ueIdx(groupOrd(2))), ...
+                        obj.Cfg, obj.Direction, slot);
+                    if ~compatibleMUDesign
+                        error("sixgr:l2:mac:MUMIMOSpatialDesignInvalidated", ...
+                            "The measured MU spatial design became invalid before grant freezing (%s).", ...
+                            char(string(sixgr.util.structGet(muSpatialDesign, "Status", "unknown"))));
+                    end
+                end
+                finalizedGroupGrants = repmat(tmpl, 0, 1);
+                for gg = 1:actualGroupSize
+                    g = groupGrants(gg);
+                    g.GrantReason = char(localTernary(isActualMUGroup, ...
+                        "new_data_pf_mu_mimo", "new_data_pf"));
+                    g.MUMIMOEnabled = logical(isActualMUGroup);
+                    g.MUMIMOGroupSize = double(actualGroupSize);
+                    g.MUMIMOGroupId = double(localTernary(isActualMUGroup, groupId, NaN));
+                    g.MUMIMOPairingStatus = char(localTernary(isActualMUGroup, ...
+                        "paired_shared_prb_spatial_multiplexing", ...
+                        "single_user_or_mu_disabled"));
+                    if isActualMUGroup
+                        g.DMRSPortSet = localMUMIMODMRSPortSet( ...
+                            obj.Cfg, obj.Direction, g.NumLayers, gg, actualGroupSize);
+                        g = localApplyMUMIMOSpatialDesign(g, muSpatialDesign, gg, obj.Direction);
+                    else
+                        g.MUMIMOPairingMetricSource = "not_applicable_single_user";
+                        g.MUMIMOPairingEvidenceSource = "no_mu_pair_transmitted";
+                    end
+                    [g.DMRSPortSet, g.DMRSPortSetSource] = ...
+                        sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+                        obj.Cfg, obj.Direction, g.NumLayers, g);
+                    [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                        sprintf("%s %s RNTI=%d", class(obj), char(g.GrantReason), round(g.RNTI)));
+                    g.TBSBytes = g.TBSBits / 8;
+                    g = obj.freezePHYGrantForGrant(g);
+                    g.DCI = obj.buildDCIBitfield(g);
+                    finalizedGroupGrants = localAppendGrant(finalizedGroupGrants, g);
+                end
+                groupGrants = finalizedGroupGrants;
                 cursor = cursor + max(1, numel(prbSetForGroup));
                 usedOrd(ii) = true;
                 usedOrd(ismember(ord, groupOrd(groupValid))) = true;
+                scheduledNewUECount = scheduledNewUECount + actualGroupSize;
                 if controlBudgetActive
                     controlCCERemaining = max(0, controlCCERemaining - groupCCEUsed);
                 end
@@ -660,6 +827,37 @@ else
 end
 end
 
+function grant = localPrepareRetransmissionGrant(grant, retx, ue, direction, ...
+        slot, controlAbsoluteSlot, controlSymbolAllocation, searchSpaceID, ...
+        coresetID, neededCCE, bufferBytes, resolvedMCSTable)
+grant.Slot = double(slot);
+if ~isempty(controlAbsoluteSlot)
+    grant.ControlAbsoluteSlot = controlAbsoluteSlot;
+end
+if ~isempty(controlSymbolAllocation)
+    grant.ControlSymbolAllocation = controlSymbolAllocation;
+end
+grant.Direction = char(string(direction));
+if ~isfield(grant, "MCSTable") || strlength(string(grant.MCSTable)) == 0
+    grant.MCSTable = char(string(resolvedMCSTable));
+end
+grant.HARQ = retx.HARQ;
+grant.HARQTBContext = sixgr.util.structGet(retx, "TBContext", ...
+    sixgr.util.structGet(grant, "HARQTBContext", struct()));
+grant.IsRetransmission = true;
+grant.CQIUsed = double(sixgr.util.structGet(grant, "CQIUsed", localUECQI(ue)));
+grant.PDCCHAggregationLevel = double(neededCCE);
+grant.DAI = 1;
+grant.SearchSpaceID = searchSpaceID;
+grant.CORESETID = coresetID;
+grant.HeadOfLineDelay_ms = localUEHoLDelay(ue);
+grant.BufferBytesBefore = double(bufferBytes);
+grant.TBSBits = double(sixgr.util.structGet(grant, "TBSBits", ...
+    sixgr.util.structGet(grant, "TransportBlockSize", 0)));
+grant.TBSBytes = floor(max(grant.TBSBits, 0) / 8);
+grant.BufferBytesAfter = max(double(bufferBytes) - double(grant.TBSBytes), 0);
+end
+
 function g = localGrantTemplate(direction, slot)
 g = struct();
 g.Direction = char(string(direction));
@@ -705,6 +903,9 @@ g.OLLAState = "";
 g.MCSSelectionSource = "";
 g.CQIProvenance = "";
 g.MCSValueStatus = "";
+g.ConfiguredInitialMCSIndex = NaN;
+g.ConfiguredMaximumMCSIndex = NaN;
+g.MaximumMCSBoundApplied = false;
 g.RankSelectionPolicy = "";
 g.RankSelectionSource = "";
 g.RankDecisionReason = "";
@@ -758,6 +959,8 @@ g.MUMIMOGroupSize = 1;
 g.MUMIMOGroupId = NaN;
 g.MUMIMOPairingStatus = "";
 g.MUMIMOPairingMetricSource = "";
+g.MUMIMOPairingMetricValue_dB = NaN;
+g.MUMIMOPairingEvidenceSource = "";
 g.MUMIMOPrecoderType = "";
 g.PHYGrant = struct();
 g.PHYGrantContextId = "";
@@ -822,12 +1025,19 @@ end
 
 function tf = localMUMIMOEnabled(cfg, direction)
 direction = upper(string(direction));
-tf = logical(sixgr.util.structGet(cfg, "mac.scheduler.muMimoEnabled", ...
+muEnabled = logical(sixgr.util.structGet(cfg, "mac.scheduler.muMimoEnabled", ...
     sixgr.util.structGet(cfg, "phy.mimo.muMimoEnabled", ...
     sixgr.util.structGet(cfg, "mimo.mu_mimo_enable", false))));
+sixgr.config.assertRuntimeFeatureUse(cfg, "mu_mimo", muEnabled, ...
+    "SchedulerPF.MU-MIMO");
+tf = muEnabled;
 if direction ~= "DL"
-    tf = tf && logical(sixgr.util.structGet(cfg, "mac.scheduler.ulMuMimoEnabled", ...
+    ulEnabled = logical(sixgr.util.structGet(cfg, ...
+        "mac.scheduler.ulMuMimoEnabled", ...
         sixgr.util.structGet(cfg, "phy.mimo.ulMuMimoEnabled", false)));
+    sixgr.config.assertRuntimeFeatureUse(cfg, "ul_mu_mimo", ulEnabled, ...
+        "SchedulerPF.UL-MU-MIMO");
+    tf = tf && ulEnabled;
 end
 end
 
@@ -840,73 +1050,213 @@ end
 n = max(2, min(8, round(n)));
 end
 
-function tf = localMUMIMOCompatible(ueA, ueB, cfg)
+function [tf, leakage_dB, evidenceSource, design] = localMUMIMOCompatible(ueA, ueB, cfg, direction, currentSlot)
+tf = false;
+leakage_dB = NaN;
+evidenceSource = "";
+design = struct("Compatible", false, "Status", "not_evaluated");
+if ~(logical(sixgr.util.structGet(ueA, "FeedbackValid", false)) && ...
+        logical(sixgr.util.structGet(ueB, "FeedbackValid", false)) && ...
+        logical(sixgr.util.structGet(ueA, "CausalFeedbackUsable", false)) && ...
+        logical(sixgr.util.structGet(ueB, "CausalFeedbackUsable", false)))
+    evidenceSource = "missing_causal_measured_feedback";
+    return;
+end
+[validSpatialA, spatialReasonA] = localMeasuredSpatialFeedbackValid(ueA, cfg, direction, currentSlot);
+[validSpatialB, spatialReasonB] = localMeasuredSpatialFeedbackValid(ueB, cfg, direction, currentSlot);
+if ~(validSpatialA && validSpatialB)
+    if ~validSpatialA
+        evidenceSource = "ue_a_" + spatialReasonA;
+    else
+        evidenceSource = "ue_b_" + spatialReasonB;
+    end
+    return;
+end
 cqiA = localUECQI(ueA);
 cqiB = localUECQI(ueB);
 if min(cqiA, cqiB) <= 0
-    tf = false;
+    evidenceSource = "nonpositive_measured_cqi";
     return;
 end
 maxDeltaCQI = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoMaxCQIDelta", 4));
 if abs(cqiA - cqiB) > maxDeltaCQI
-    tf = false;
+    evidenceSource = "measured_cqi_delta_exceeds_limit";
     return;
 end
 riA = double(sixgr.util.structGet(ueA, "RI", 1));
 riB = double(sixgr.util.structGet(ueB, "RI", 1));
 if ~(isfinite(riA) && isfinite(riB) && riA >= 1 && riB >= 1)
-    tf = false;
+    evidenceSource = "invalid_measured_rank";
     return;
 end
-[hasPrec, leakage_dB] = localPrecoderLeakage_dB(ueA, ueB);
-if hasPrec
-    threshold_dB = double(sixgr.util.structGet(cfg, "mac.scheduler.muMimoPrecoderLeakageThreshold_dB", ...
-        sixgr.util.structGet(cfg, "phy.mimo.muMimoPrecoderLeakageThreshold_dB", -15)));
-    if ~(isfinite(threshold_dB) && threshold_dB < 0)
-        threshold_dB = -15;
-    end
-    tf = leakage_dB <= threshold_dB;
-    return;
-end
-pmiA = double(sixgr.util.structGet(ueA, "PMI", NaN));
-pmiB = double(sixgr.util.structGet(ueB, "PMI", NaN));
-if isfinite(pmiA) && isfinite(pmiB)
-    tf = round(pmiA) ~= round(pmiB);
-else
-    sinrA = double(sixgr.util.structGet(ueA, "MeasuredSINR_dB", NaN));
-    sinrB = double(sixgr.util.structGet(ueB, "MeasuredSINR_dB", NaN));
-    tf = isfinite(sinrA) && isfinite(sinrB) && abs(sinrA - sinrB) <= 6;
-end
-end
-
-function [tf, leakage_dB] = localPrecoderLeakage_dB(ueA, ueB)
-tf = false;
-leakage_dB = NaN;
-wA = localPrecoderVector(ueA);
-wB = localPrecoderVector(ueB);
+wA = localSpatialSignature(ueA);
+wB = localSpatialSignature(ueB);
 if isempty(wA) || isempty(wB)
+    evidenceSource = "measured_spatial_signature_unavailable";
     return;
 end
-n = min(numel(wA), numel(wB));
-wA = wA(1:n);
-wB = wB(1:n);
-na = norm(wA);
-nb = norm(wB);
-if ~(isfinite(na) && isfinite(nb) && na > 0 && nb > 0)
+try
+    design = sixgr.phy.mimo.designMeasuredMUMIMOPair(wA, wB, cfg, direction, riA, riB);
+catch ME
+    evidenceSource = "measured_spatial_design_error:" + string(ME.identifier);
     return;
 end
-leakage = abs((wA(:)' * wB(:)) ./ (na * nb)).^2;
-leakage_dB = 10 * log10(max(double(leakage), realmin));
-tf = isfinite(leakage_dB);
+tf = logical(sixgr.util.structGet(design, "Compatible", false));
+leakage_dB = double(sixgr.util.structGet(design, "WorstLeakage_dB", NaN));
+evidenceSource = string(sixgr.util.structGet(design, "EvidenceSource", ...
+    sixgr.util.structGet(design, "Status", "measured_spatial_design_unavailable")));
 end
 
-function w = localPrecoderVector(ue)
+function grant = localApplyMUMIMOSpatialDesign(grant, design, memberIndex, direction)
+memberIndex = round(double(memberIndex));
+direction = upper(string(direction));
+if ~(memberIndex == 1 || memberIndex == 2) || ...
+        ~logical(sixgr.util.structGet(design, "Compatible", false))
+    error("sixgr:l2:mac:InvalidMUMIMOSpatialDesign", ...
+        "A compatible two-member measured spatial design is required.");
+end
+grant.MUMIMOPairingMetricSource = char(string(design.MetricSource));
+grant.MUMIMOPairingMetricValue_dB = double(design.MemberLeakage_dB(memberIndex));
+grant.MUMIMOPairingWorstMetricValue_dB = double(design.WorstLeakage_dB);
+grant.MUMIMOPairingEvidenceSource = char(string(design.EvidenceSource));
+grant.MUMIMORequiredLeakageThreshold_dB = double(design.RequiredLeakageThreshold_dB);
+grant.MUMIMODesiredSubspaceGain_dB = double(design.MemberDesiredGain_dB(memberIndex));
+grant.MUMIMORequiredMinimumDesiredGain_dB = double(design.RequiredMinimumDesiredGain_dB);
+grant.MUMIMOSpatialDesignStatus = char(string(design.Status));
+grant.MUMIMOSpatialDesignContractVersion = char(string(design.ContractVersion));
+grant.MUMIMOSpatialDesignEvidenceSource = char(string(design.EvidenceSource));
+grant.MUMIMOSpatialFilterMatrixSHA256 = char(string( ...
+    design.("Member" + string(memberIndex) + "MatrixSHA256")));
+if direction == "DL"
+    logicalMatrix = design.("Member" + string(memberIndex) + "PrecoderLogicalPorts");
+    physicalMatrix = design.("Member" + string(memberIndex) + "PrecoderPhysical");
+    grant.NumLogicalPorts = double(design.TotalLogicalPorts);
+    grant.NumRFChains = double(design.NumRFChains);
+    grant.PrecodingMatrixLogicalPorts = double(logicalMatrix);
+    grant.LogicalPrecodingMatrix = double(logicalMatrix);
+    grant.PrecodingMatrix = double(physicalMatrix);
+    grant.HybridElementToPortMatrix = double(design.HybridElementToPortMatrix);
+    grant.HybridElementToPortMatrixSHA256 = char(string( ...
+        design.HybridElementToPortMatrixSHA256));
+    grant.BaseHybridElementToPortMatrixSHA256 = char(string( ...
+        design.BaseHybridElementToPortMatrixSHA256));
+    grant.MUMIMOHybridRFDesignPolicy = char(string(design.HybridRFDesignPolicy));
+    grant.MUMIMOHybridRFDesignStatus = char(string(design.HybridRFDesignStatus));
+    grant.PrecodingActive = true;
+    grant.PrecodingMode = "measured_tdd_srs_block_diagonalization";
+    grant.PrecoderSource = "causal_measured_srs_mu_block_diagonalization";
+    grant.PrecodingApplicationStage = "hybrid_rf_bb_before_nrPDSCH_RE_mapping";
+    grant.MUMIMOPrecoderType = "measured_block_diagonalization";
+else
+    receiveCombiner = design.("Member" + string(memberIndex) + "ReceiveCombiner");
+    grant.MUMIMOReceiveCombiningMatrix = double(receiveCombiner);
+    grant.MUMIMOReceiveCombiningMatrixSHA256 = char( ...
+        sixgr.phy.mimo.MatrixContract.digest(double(receiveCombiner)));
+    grant.MUMIMOReceiverAlgorithm = "IRC";
+    grant.MUMIMOPrecoderType = "measured_srs_irc_receive_projection";
+end
+end
+
+function [tf, reason] = localMeasuredSpatialFeedbackValid(ue, cfg, direction, currentSlot)
+tf = false;
+reason = "measured_spatial_signature_invalid";
+if ~logical(sixgr.util.structGet(ue, "MUMIMOSpatialSignatureValid", false))
+    reason = "measured_spatial_signature_not_causal_or_fresh";
+    return;
+end
+w = localSpatialSignature(ue);
+digest = lower(strtrim(string(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureSHA256", ""))));
+source = lower(strtrim(string(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureSource", ""))));
+measurementDirection = upper(strtrim(string(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureMeasurementDirection", ""))));
+reciprocityMode = lower(strtrim(string(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureReciprocityMode", ""))));
+sourceSlot = double(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureSourceSlot", NaN));
+ageSlots = double(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureAgeSlots", NaN));
+consumerRuntimeSlot = double(sixgr.util.structGet( ...
+    ue, "MUMIMOSpatialSignatureConsumerRuntimeSlot", NaN));
+maxAgeSlots = double(sixgr.util.structGet(cfg, ...
+    "phy.mimo.measurementMaxAgeSlots", NaN));
+if isempty(w) || strlength(digest) ~= 64 || ...
+        digest ~= lower(string(sixgr.phy.mimo.MatrixContract.digest(w)))
+    reason = "measured_spatial_signature_digest_mismatch";
+    return;
+end
+if ~startsWith(source, "measured_srs_receiver_channel_estimate") || ...
+        measurementDirection ~= "UL"
+    reason = "measured_spatial_signature_source_invalid";
+    return;
+end
+if ~(isscalar(sourceSlot) && isfinite(sourceSlot) && sourceSlot >= 0 && ...
+        isscalar(ageSlots) && isfinite(ageSlots) && ageSlots >= 0 && ...
+        isscalar(maxAgeSlots) && isfinite(maxAgeSlots) && maxAgeSlots >= 0 && ...
+        ageSlots <= maxAgeSlots && ...
+        isscalar(consumerRuntimeSlot) && isfinite(consumerRuntimeSlot) && ...
+        isscalar(currentSlot) && isfinite(currentSlot) && ...
+        abs((sourceSlot + ageSlots) - consumerRuntimeSlot) <= 1e-9 && ...
+        abs(consumerRuntimeSlot - (double(currentSlot) + 1)) <= 1e-9)
+    reason = "measured_spatial_signature_stale";
+    return;
+end
+direction = upper(strtrim(string(direction)));
+if direction == "DL"
+    if reciprocityMode ~= "tdd_reciprocity"
+        reason = "measured_spatial_signature_missing_tdd_reciprocity";
+        return;
+    end
+elseif direction == "UL"
+    if reciprocityMode ~= "direct_ul_srs"
+        reason = "measured_spatial_signature_not_direct_ul_srs";
+        return;
+    end
+else
+    reason = "measured_spatial_signature_direction_invalid";
+    return;
+end
+tf = true;
+reason = "causal_measured_srs_spatial_signature";
+end
+
+function grant = localMarkUnpairedRetransmission(grant)
+% A retransmission keeps the frozen spatial filter used by its immutable
+% HARQ contract, but it is not a current MU execution unless a peer is
+% scheduled over the same PRBs and symbols in this slot.
+wasMU = logical(sixgr.util.structGet(grant, "MUMIMOEnabled", false)) || ...
+    double(sixgr.util.structGet(grant, "MUMIMOGroupSize", 1)) > 1;
+if wasMU
+    grant.PriorMUMIMOGroupId = double(sixgr.util.structGet( ...
+        grant, "MUMIMOGroupId", NaN));
+    grant.PriorMUMIMOGroupSize = double(sixgr.util.structGet( ...
+        grant, "MUMIMOGroupSize", NaN));
+    grant.PriorMUMIMOPairingEvidenceSource = char(string(sixgr.util.structGet( ...
+        grant, "MUMIMOPairingEvidenceSource", "")));
+end
+grant.MUMIMOEnabled = false;
+grant.MUMIMOGroupSize = 1;
+grant.MUMIMOGroupId = NaN;
+grant.MUMIMOPairingStatus = "retransmission_without_current_shared_mu_peer";
+grant.MUMIMOPairingMetricSource = "not_applicable_current_orthogonal_retransmission";
+grant.MUMIMOPairingMetricValue_dB = NaN;
+grant.MUMIMOPairingWorstMetricValue_dB = NaN;
+grant.MUMIMOPairingEvidenceSource = "no_current_shared_prb_mu_peer";
+end
+
+function w = localSpatialSignature(ue)
 w = [];
-fields = ["PrecoderVector","SelectedPrecoder","Precoder","PMIVector","BeamWeights"];
+fields = ["MUMIMOSpatialSignature","MeasuredSpatialSignature", ...
+    "SelectedPrecoder","PrecoderVector"];
 for i = 1:numel(fields)
     raw = sixgr.util.structGet(ue, fields(i), []);
     if isnumeric(raw) && ~isempty(raw)
-        w = double(raw(:));
+        raw = double(raw);
+        if all(isfinite(real(raw(:)))) && all(isfinite(imag(raw(:)))) && ...
+                norm(raw, "fro") > 0
+            w = raw;
+        end
         return;
     end
 end
@@ -926,6 +1276,66 @@ elseif contains(mode, "noncodebook")
 else
     token = "type1_codebook";
 end
+end
+
+function localAssertSharedMUResources(grants)
+% A scheduler MU group is meaningful only when every transmitted member
+% owns the exact same time-frequency opportunity.  Partial overlap cannot
+% be upgraded to shared-PRB MU truth.
+if numel(grants) < 2
+    return;
+end
+referencePRBs = sort(double(grants(1).PRBSet(:)));
+referenceSymbols = double(grants(1).SymbolAllocation(:).');
+for index = 2:numel(grants)
+    candidatePRBs = sort(double(grants(index).PRBSet(:)));
+    candidateSymbols = double(grants(index).SymbolAllocation(:).');
+    if ~isequal(referencePRBs, candidatePRBs) || ...
+            ~isequal(referenceSymbols, candidateSymbols)
+        error("sixgr:l2:mac:MUMIMOResourceContractMismatch", ...
+            ['MU group members must have identical PRBSet and ' ...
+            'SymbolAllocation values. Member 1 has %d PRBs/%s; member %d ' ...
+            'has %d PRBs/%s.'], ...
+            numel(referencePRBs), mat2str(referenceSymbols), index, ...
+            numel(candidatePRBs), mat2str(candidateSymbols));
+    end
+end
+end
+
+function portSet = localMUMIMODMRSPortSet(cfg, direction, numLayers, memberIndex, groupSize)
+% Allocate disjoint logical DM-RS ports within the immutable MU occasion.
+% These are logical pilot ports, not physical antenna elements or RF chains.
+direction = upper(string(direction));
+numLayers = max(1, round(double(numLayers)));
+memberIndex = max(1, round(double(memberIndex)));
+groupSize = max(1, round(double(groupSize)));
+requiredPorts = numLayers * groupSize;
+if direction == "UL"
+    candidates = [ ...
+        double(sixgr.util.structGet(cfg, "runtime.antenna.gnb.NumRxRFChains", NaN)), ...
+        double(sixgr.util.structGet(cfg, "antenna.bs.numRxRFChains", NaN)), ...
+        double(sixgr.util.structGet(cfg, "scenario.bs.numRxRFChains", NaN))];
+else
+    candidates = [ ...
+        double(sixgr.util.structGet(cfg, "runtime.antenna.gnb.NumTxRFChains", NaN)), ...
+        double(sixgr.util.structGet(cfg, "antenna.bs.numTxRFChains", NaN)), ...
+        double(sixgr.util.structGet(cfg, "scenario.bs.numTxRFChains", NaN))];
+end
+validCapacity = candidates(isfinite(candidates) & candidates >= 1);
+if isempty(validCapacity)
+    capacity = requiredPorts;
+else
+    capacity = max(validCapacity);
+end
+capacity = floor(double(capacity));
+if capacity < requiredPorts
+    error("sixgr:l2:mac:InsufficientMUDMRSPorts", ...
+        ['A %s MU group with %d users and %d layers per user requires at ' ...
+        'least %d logical DM-RS ports, but the runtime authority exposes %d.'], ...
+        char(direction), groupSize, numLayers, requiredPorts, capacity);
+end
+firstPort = (memberIndex - 1) * numLayers;
+portSet = firstPort:(firstPort + numLayers - 1);
 end
 
 function avg = localUEAverageThroughput(obj, rnti)
@@ -982,6 +1392,12 @@ row = struct( ...
     "CQIProvenance", "", ...
     "MCSValueStatus", "", ...
     "GrantBlocker", "", ...
+    "MUMIMOAdmissionEvaluated", false, ...
+    "MUMIMOAdmissionPeerRNTI", NaN, ...
+    "MUMIMOAdmissionCompatible", false, ...
+    "MUMIMOAdmissionStatus", "not_evaluated", ...
+    "MUMIMOAdmissionEvidenceSource", "", ...
+    "MUMIMOAdmissionWorstLeakage_dB", NaN, ...
     "Scheduled", false, ...
     "Rejected", false, ...
     "RejectionReason", "", ...
@@ -1015,6 +1431,37 @@ for rankIdx = 1:numel(rankedMetricIdx)
     if rowIdx >= 1 && rowIdx <= numel(rows)
         rows(rowIdx).PFRank = double(rankIdx);
     end
+end
+end
+
+function rows = localRecordMUMIMOAdmission(rows, rnti, peerRNTI, compatible, leakage_dB, evidenceSource, design)
+if isempty(rows)
+    return;
+end
+for i = 1:numel(rows)
+    if abs(double(rows(i).RNTI) - double(rnti)) >= 1e-9 || ...
+            string(rows(i).CandidateScope) ~= "new_data_pf"
+        continue;
+    end
+    % Once a candidate has a compatible measured peer, retain that exact
+    % successful admission even if the wider search later examines another
+    % incompatible peer. Failed attempts remain visible until a success is
+    % found; they are never silently converted into "not evaluated".
+    if logical(rows(i).MUMIMOAdmissionEvaluated) && ...
+            logical(rows(i).MUMIMOAdmissionCompatible) && ~logical(compatible)
+        return;
+    end
+    status = string(sixgr.util.structGet(design, "Status", ""));
+    if strlength(strtrim(status)) == 0 || status == "not_evaluated"
+        status = string(evidenceSource);
+    end
+    rows(i).MUMIMOAdmissionEvaluated = true;
+    rows(i).MUMIMOAdmissionPeerRNTI = double(peerRNTI);
+    rows(i).MUMIMOAdmissionCompatible = logical(compatible);
+    rows(i).MUMIMOAdmissionStatus = status;
+    rows(i).MUMIMOAdmissionEvidenceSource = string(evidenceSource);
+    rows(i).MUMIMOAdmissionWorstLeakage_dB = double(leakage_dB);
+    return;
 end
 end
 

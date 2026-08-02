@@ -51,6 +51,19 @@ p.addParameter('OFDMModulate', true, @(x) islogical(x) && isscalar(x));
 p.addParameter('AllowRandomDCI', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 p.parse(varargin{:});
 opt = p.Results;
+% An explicit low-level/unit call historically means "execute PDCCH".  A
+% resolved YAML scenario, however, always installs both booleans and the
+% authority guard below rejects any object/default that disagrees with it.
+configuredPDCCH = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
+configuredDMRS = logical(sixgr.util.structGet(cfg, "phy.pdcch.dmrs.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch", configuredPDCCH, ...
+    "PDCCH_Tx");
+sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch_dmrs", configuredDMRS, ...
+    "PDCCH_Tx.DMRS");
+if ~(configuredPDCCH && configuredDMRS)
+    error("sixgr:phy:pdcch:DisabledByYAML", ...
+        "PDCCH Tx cannot execute when PDCCH or its DM-RS is disabled by YAML.");
+end
 
 % Carrier
 if isempty(opt.Carrier)

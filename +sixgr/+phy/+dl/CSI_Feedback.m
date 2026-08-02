@@ -20,9 +20,29 @@ ip.addParameter("ReportConfiguration", [], @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
+reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", false));
+reportPMI = logical(sixgr.util.structGet(cfg, "phy.csi.reportPMI", false));
+reportRI = logical(sixgr.util.structGet(cfg, "phy.csi.reportRI", false));
+reportCRI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCRI", false));
+reportCSI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCSI", ...
+    reportCQI || reportPMI || reportRI || reportCRI));
+sixgr.config.assertRuntimeFeatureUse(cfg, "csi_reporting", reportCSI, ...
+    "CSI_Feedback");
+sixgr.config.assertRuntimeFeatureUse(cfg, "cqi_reporting", reportCQI, ...
+    "CSI_Feedback.CQI");
+sixgr.config.assertRuntimeFeatureUse(cfg, "pmi_reporting", reportPMI, ...
+    "CSI_Feedback.PMI");
+sixgr.config.assertRuntimeFeatureUse(cfg, "ri_reporting", reportRI, ...
+    "CSI_Feedback.RI");
+sixgr.config.assertRuntimeFeatureUse(cfg, "cri_reporting", reportCRI, ...
+    "CSI_Feedback.CRI");
 strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
     sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
 if strictMIMO
+    if ~reportCSI
+        error("sixgr:phy:csi:DisabledByYAML", ...
+            "Strict CSI report generation cannot execute when CSI reporting is disabled by YAML.");
+    end
     [csi,info] = localStrictCSI(hEst,nVar,cfg,opt);
     return;
 end
@@ -50,10 +70,6 @@ else
 end
 svdRank = localEstimateRIFromSVD(hEst, cfg, maxRank);
 
-reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", true));
-reportPMI = logical(sixgr.util.structGet(cfg, "phy.csi.reportPMI", true));
-reportRI = logical(sixgr.util.structGet(cfg, "phy.csi.reportRI", true));
-reportCRI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCRI", false));
 csiMode = string(sixgr.util.structGet(cfg, "phy.csi.channelStateInformationMode", ...
     sixgr.util.structGet(cfg, "phy.csi.feedbackMode", "PMI+CQI+RI")));
 codebookMode = string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo"));
@@ -181,10 +197,18 @@ csi.ReportCQI = reportCQI;
 csi.ReportPMI = reportPMI;
 csi.ReportRI = reportRI;
 csi.ReportCRI = reportCRI;
-csi.SubbandCQI = double(subband.CQI);
-csi.SubbandCQIVector = char(subband.CQIVector);
-csi.SubbandPMI = double(subband.PMI);
-csi.SubbandPMIVector = char(subband.PMIVector);
+csi.SubbandCQI = double(localReportedScalar(subband.CQI, reportCQI));
+if reportCQI
+    csi.SubbandCQIVector = char(subband.CQIVector);
+else
+    csi.SubbandCQIVector = "";
+end
+csi.SubbandPMI = double(localReportedScalar(subband.PMI, reportPMI));
+if reportPMI
+    csi.SubbandPMIVector = char(subband.PMIVector);
+else
+    csi.SubbandPMIVector = "";
+end
 csi.SubbandSINR_dB = char(subband.SINRVector);
 csi.SubbandSizePRB = double(subband.SubbandSizePRB);
 csi.SubbandCount = double(subband.SubbandCount);
@@ -192,10 +216,14 @@ csi.WidebandOrSubband = char(subband.ReportMode);
 csi.SubbandCQISource = char(subband.Source);
 csi.SubbandCQIValueStatus = char(subband.ValueStatus);
 
-payload = sixgr.phy.dl.packCSIFeedbackPayload(csi, cfg, ...
-    "Candidate", sixgr.util.structGet(best, "Candidate", struct()), ...
-    "CodebookInfo", sixgr.util.structGet(best, "CodebookInfo", struct()), ...
-    "MaxRank", maxRank);
+if reportCSI
+    payload = sixgr.phy.dl.packCSIFeedbackPayload(csi, cfg, ...
+        "Candidate", sixgr.util.structGet(best, "Candidate", struct()), ...
+        "CodebookInfo", sixgr.util.structGet(best, "CodebookInfo", struct()), ...
+        "MaxRank", maxRank);
+else
+    payload = localDisabledCSIPayload();
+end
 csi.CSIPayloadBits = payload.Bits;
 csi.CSIPayloadBitLength = double(payload.BitLength);
 csi.CSIPayloadHex = char(string(payload.Hex));
@@ -1093,6 +1121,18 @@ for i = 1:size(W, 2)
 end
 end
 
+function payload = localDisabledCSIPayload()
+payload = struct( ...
+    "Bits", zeros(0, 1, "int8"), ...
+    "BitLength", 0, ...
+    "Hex", "", ...
+    "Mode", "disabled_by_yaml", ...
+    "StandardProfile", "not_applicable", ...
+    "CRCEnabled", false, ...
+    "FieldCount", 0, ...
+    "FieldLayout", table());
+end
+
 function [csi,info] = localStrictCSI(hEst,nVar,cfg,opt)
 measurement = opt.MeasurementState;
 if isempty(measurement)
@@ -1136,6 +1176,14 @@ csi.ReportCQI = contains(lower(string(core.ChannelStateInformationMode)),"cqi");
 csi.ReportPMI = contains(lower(string(core.ChannelStateInformationMode)),"pmi");
 csi.ReportRI = contains(lower(string(core.ChannelStateInformationMode)),"ri");
 csi.ReportCRI = contains(lower(string(core.ChannelStateInformationMode)),"cri");
+sixgr.config.assertRuntimeFeatureUse(cfg, "cqi_reporting", csi.ReportCQI, ...
+    "CSI_Feedback.strict.CQI");
+sixgr.config.assertRuntimeFeatureUse(cfg, "pmi_reporting", csi.ReportPMI, ...
+    "CSI_Feedback.strict.PMI");
+sixgr.config.assertRuntimeFeatureUse(cfg, "ri_reporting", csi.ReportRI, ...
+    "CSI_Feedback.strict.RI");
+sixgr.config.assertRuntimeFeatureUse(cfg, "cri_reporting", csi.ReportCRI, ...
+    "CSI_Feedback.strict.CRI");
 csi.PMICodebookMode = string(core.CSIReportConfiguration.CodebookType);
 csi.CSIPayloadBits = payload.Bits;
 csi.CSIPayloadBitLength = payload.BitLength;

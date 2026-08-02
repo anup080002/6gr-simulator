@@ -263,25 +263,6 @@ end
 
 function cfgOut = localPrepareLargeScaleSidecarConfig(cfg)
 cfgOut = cfg;
-
-cfgOut = sixgr.util.structSet(cfgOut, "channel.pathlossEnabled", true);
-cfgOut = sixgr.util.structSet(cfgOut, "channel.losEnabled", true);
-
-pathlossModel = string(sixgr.util.structGet(cfgOut, "channel.pathlossModel", "nrPathLoss"));
-if strlength(strtrim(pathlossModel)) == 0 || any(lower(strtrim(pathlossModel)) == ["none","off","disabled"])
-    cfgOut = sixgr.util.structSet(cfgOut, "channel.pathlossModel", "nrPathLoss");
-end
-
-shadowSigma = localScalarNumeric(sixgr.util.structGet(cfgOut, "channel.shadowSigma_dB", NaN));
-if ~(isfinite(shadowSigma) && shadowSigma > 0)
-    shadowSigma = localScalarNumeric(sixgr.util.structGet(cfgOut, "channel.shadowFadingStd_dB", NaN));
-end
-if ~(isfinite(shadowSigma) && shadowSigma > 0)
-    shadowSigma = 6;
-end
-cfgOut = sixgr.util.structSet(cfgOut, "channel.shadowSigma_dB", shadowSigma);
-cfgOut = sixgr.util.structSet(cfgOut, "channel.shadowFadingStd_dB", shadowSigma);
-cfgOut = sixgr.util.structSet(cfgOut, "channel.shadowFadingEnabled", true);
 end
 
 function tf = localLargeScaleConfigDiffers(cfgA, cfgB)

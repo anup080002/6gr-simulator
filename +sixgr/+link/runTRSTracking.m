@@ -61,10 +61,17 @@ out.StrictOk = false;
 out.FailureReason = "";
 out.Notes = "";
 
-if ~logical(sixgr.util.structGet(cfg, "phy.trs.enable", false))
+configuredTRS = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
+configuredTracking = logical(sixgr.util.structGet(cfg, ...
+    "phy.trackingRS.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "trs", configuredTRS, ...
+    "runTRSTracking");
+sixgr.config.assertRuntimeFeatureUse(cfg, "tracking_rs", configuredTracking, ...
+    "runTRSTracking.tracking_receiver");
+if ~(configuredTRS && configuredTracking)
     out.Skipped = true;
     out.Ok = true;
-    out.Notes = "Skipped: cfg.phy.trs.enable=false";
+    out.Notes = "Skipped: TRS transmission or tracking receiver disabled by YAML";
     return;
 end
 

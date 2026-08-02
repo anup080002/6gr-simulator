@@ -624,12 +624,13 @@ end
 function gate = localKPIConsistencyGate(layout, meta, scfg, cfg, strictEligible)
 summaryPath = fullfile(layout.AirInterfaceCSVDir, "lls_kpi_summary.csv");
 reconPath = fullfile(layout.ReportCSVDir, "kpi_reconstruction_summary.csv");
+bindingPath = fullfile(layout.ReportCSVDir, "kpi_objective_binding.csv");
 summaryT = localReadTable(summaryPath);
 reconT = localReadTable(reconPath);
-kpiRequired = logical(strictEligible) && (isfile(summaryPath) || isfile(reconPath) || ...
-    localScenarioGetBool(scfg, cfg, "kpi.required", false));
+bindingT = localReadTable(bindingPath);
+kpiRequired = logical(strictEligible);
 
-rows = localKpiGateRows(meta, kpiRequired, summaryPath, reconPath, summaryT, reconT);
+rows = localKpiGateRows(meta, kpiRequired, summaryPath, reconPath, bindingPath, summaryT, reconT, bindingT);
 failMask = localToLogical(localColumnOrDefault(rows, "Required", false)) & ...
     ~localToLogical(localColumnOrDefault(rows, "Pass", false));
 gate = struct();
@@ -647,7 +648,7 @@ gate.Summary = struct( ...
     "SummaryArtifact", "reports/csv/kpi_consistency_gate.csv");
 end
 
-function rows = localKpiGateRows(meta, required, summaryPath, reconPath, summaryT, reconT)
+function rows = localKpiGateRows(meta, required, summaryPath, reconPath, bindingPath, summaryT, reconT, bindingT)
 schemaNames = {'RunId','ScenarioName','GateName','Required','Pass','EvidenceArtifact','FailureCount','FailureReason'};
 schemaTypes = {'string','string','string','logical','logical','string','double','string'};
 rows = table('Size', [0 numel(schemaNames)], 'VariableTypes', schemaTypes, 'VariableNames', schemaNames);
@@ -655,13 +656,18 @@ rows = localAppendKpiGateRow(rows, meta, "kpi_summary_present", required, ...
     ~required || (istable(summaryT) && height(summaryT) > 0), summaryPath, 0, "missing_lls_kpi_summary");
 rows = localAppendKpiGateRow(rows, meta, "kpi_reconstruction_present", required, ...
     ~required || (istable(reconT) && height(reconT) > 0), reconPath, 0, "missing_kpi_reconstruction_summary");
-if ~(required && istable(summaryT) && height(summaryT) > 0)
+rows = localAppendKpiGateRow(rows, meta, "kpi_objective_binding_present", required, ...
+    ~required || (istable(bindingT) && height(bindingT) > 0), bindingPath, 0, "missing_kpi_objective_binding");
+summaryColumns = ["StrictOk","KPIReconciliationPass","Status"];
+summarySchemaOk = istable(summaryT) && height(summaryT) > 0 && ...
+    all(ismember(summaryColumns, string(summaryT.Properties.VariableNames)));
+if ~(required && summarySchemaOk)
     summaryOk = ~required;
-    summaryFail = double(required && ~(istable(summaryT) && height(summaryT) > 0));
+    summaryFail = double(required && ~summarySchemaOk);
 else
-    summaryStrict = localOptionalBoolColumn(summaryT, "StrictOk", true);
-    summaryRecon = localOptionalBoolColumn(summaryT, "KPIReconciliationPass", true);
-    summaryStatus = lower(strtrim(string(localColumnOrDefault(summaryT, "Status", "pass"))));
+    summaryStrict = localToLogical(summaryT.StrictOk);
+    summaryRecon = localToLogical(summaryT.KPIReconciliationPass);
+    summaryStatus = lower(strtrim(string(summaryT.Status)));
     summaryReason = strtrim(string(localColumnOrDefault(summaryT, "FailureReason", "")));
     bad = ~summaryStrict | ~summaryRecon | ismember(summaryStatus, ["fail", "failed", "error"]) | ...
         (strlength(summaryReason) > 0 & ~ismissing(summaryReason));
@@ -671,17 +677,21 @@ end
 rows = localAppendKpiGateRow(rows, meta, "kpi_summary_strict_reconciled", required, ...
     summaryOk, summaryPath, summaryFail, "measured_sinr_kpi_summary_not_strict_or_reconciled");
 
-if ~(required && istable(reconT) && height(reconT) > 0)
+reconColumns = ["StrictOk","ReconciliationPass","FormulaExecuted", ...
+    "SchemaValid","MissingRawData","DurationSource","Status"];
+reconSchemaOk = istable(reconT) && height(reconT) > 0 && ...
+    all(ismember(reconColumns, string(reconT.Properties.VariableNames)));
+if ~(required && reconSchemaOk)
     reconOk = ~required;
-    reconFail = double(required && ~(istable(reconT) && height(reconT) > 0));
+    reconFail = double(required && ~reconSchemaOk);
 else
-    reconStrict = localOptionalBoolColumn(reconT, "StrictOk", true);
-    reconPass = localOptionalBoolColumn(reconT, "ReconciliationPass", true);
-    formula = localOptionalBoolColumn(reconT, "FormulaExecuted", true);
-    schema = localOptionalBoolColumn(reconT, "SchemaValid", true);
-    missingRaw = localOptionalBoolColumn(reconT, "MissingRawData", false);
-    duration = lower(strtrim(string(localColumnOrDefault(reconT, "DurationSource", ""))));
-    status = lower(strtrim(string(localColumnOrDefault(reconT, "Status", "pass"))));
+    reconStrict = localToLogical(reconT.StrictOk);
+    reconPass = localToLogical(reconT.ReconciliationPass);
+    formula = localToLogical(reconT.FormulaExecuted);
+    schema = localToLogical(reconT.SchemaValid);
+    missingRaw = localToLogical(reconT.MissingRawData);
+    duration = lower(strtrim(string(reconT.DurationSource)));
+    status = lower(strtrim(string(reconT.Status)));
     reason = strtrim(string(localColumnOrDefault(reconT, "FailureReason", "")));
     bad = ~reconStrict | ~reconPass | ~formula | ~schema | missingRaw | ...
         ismember(duration, ["", "unavailable", "nan", "<missing>"]) | ...
@@ -692,6 +702,47 @@ else
 end
 rows = localAppendKpiGateRow(rows, meta, "kpi_reconstruction_rows_strict", required, ...
     reconOk, reconPath, reconFail, "measured_sinr_kpi_reconstruction_failed_formula_duration_or_reconciliation_rows");
+
+[bindingOk, bindingFail] = localMandatoryKPIObjectiveBindingStatus(bindingT, required);
+rows = localAppendKpiGateRow(rows, meta, "kpi_objective_binding_mandatory_rows", required, ...
+    bindingOk, bindingPath, bindingFail, "mandatory_kpi_objective_binding_missing_or_not_strict");
+end
+
+function [ok, failureCount] = localMandatoryKPIObjectiveBindingStatus(T, required)
+if ~required
+    ok = true;
+    failureCount = 0;
+    return;
+end
+requiredNames = ["Scenario_Total_UL_DeliveredBits"; ...
+    "Scenario_Total_DL_DeliveredBits"; ...
+    "Scenario_Total_UL_ScheduledBits"; ...
+    "Scenario_Total_DL_ScheduledBits"];
+neededColumns = ["KPIName","MandatoryInScenarioObjective","RawEvidenceAvailable", ...
+    "ReconstructionPass","StrictOk","Status"];
+if ~(istable(T) && height(T) > 0 && all(ismember(neededColumns, string(T.Properties.VariableNames))))
+    ok = false;
+    failureCount = double(numel(requiredNames));
+    return;
+end
+names = string(T.KPIName);
+badCount = 0;
+for i = 1:numel(requiredNames)
+    mask = names == requiredNames(i);
+    if nnz(mask) ~= 1
+        badCount = badCount + 1;
+        continue;
+    end
+    row = T(mask, :);
+    rowOk = logical(localToLogical(row.MandatoryInScenarioObjective)) && ...
+        logical(localToLogical(row.RawEvidenceAvailable)) && ...
+        logical(localToLogical(row.ReconstructionPass)) && ...
+        logical(localToLogical(row.StrictOk)) && ...
+        lower(strtrim(string(row.Status))) == "pass";
+    badCount = badCount + double(~rowOk);
+end
+ok = badCount == 0;
+failureCount = double(badCount);
 end
 
 function rows = localAppendKpiGateRow(rows, meta, name, required, pass, artifact, count, reason)
@@ -772,11 +823,35 @@ if adaptive && fixedRank && height(rows) > 0
     end
 end
 
+% When the production MIMO reducer has already published its stricter
+% four-gate summary, the canonical root status must consume it. This keeps
+% recovery and post-run re-evaluation from reporting ConfiguredEffectiveOk
+% when spatial, operating-point, adaptive-policy, or MU execution evidence
+% failed in the authoritative MIMO artifact.
+configuredEffectiveMissing = missing;
+mimoPath = fullfile(layout.BeamformingCSVDir, "mimo_configured_vs_effective.csv");
+mimoT = localReadTable(mimoPath);
+mimoSupplementalEvaluated = istable(mimoT) && height(mimoT) > 0;
+mimoSupplementalOk = true;
+if mimoSupplementalEvaluated
+    requiredMIMOColumns = ["Direction","ScenarioObjectivePass", ...
+        "SpatialContractMatch","FixedOperatingPointMatch", ...
+        "AdaptivePolicyConformance","MUExecutionMatch"];
+    mimoSchemaOk = all(ismember(requiredMIMOColumns, string(mimoT.Properties.VariableNames)));
+    mimoDirectionsOk = mimoSchemaOk && all(ismember(["DL","UL"], upper(string(mimoT.Direction))));
+    mimoRowsOk = mimoSchemaOk && all(localToLogical(mimoT.ScenarioObjectivePass));
+    mimoSupplementalOk = mimoSchemaOk && mimoDirectionsOk && mimoRowsOk;
+    if ~mimoSupplementalOk
+        missing(end+1, 1) = "mimo_four_gate_configured_effective_evidence_failed"; %#ok<AGROW>
+    end
+end
+
 mismatchCount = 0;
 if height(rows) > 0 && ismember("StrictEligible", string(rows.Properties.VariableNames))
     mismatchCount = sum(logical(rows.StrictEligible) & ~logical(rows.ExactOperatingPointMatch));
 end
-ok = (~fixed && ~(adaptive && fixedRank)) || isempty(missing);
+baseOk = (~fixed && ~(adaptive && fixedRank)) || isempty(configuredEffectiveMissing);
+ok = logical(baseOk) && logical(mimoSupplementalOk);
 
 summary = struct();
 summary.RunId = meta.RunId;
@@ -792,6 +867,9 @@ summary.DLStrictEligibleRows = double(dlCount);
 summary.ULStrictEligibleRows = double(ulCount);
 summary.ConfiguredEffectiveMismatchCount = double(mismatchCount);
 summary.ConfiguredEffectiveOk = logical(ok);
+summary.MIMOSupplementalEvaluated = logical(mimoSupplementalEvaluated);
+summary.MIMOSupplementalOk = logical(mimoSupplementalOk);
+summary.MIMOSupplementalArtifact = "antenna_beamforming/csv/mimo_configured_vs_effective.csv";
 summary.FailureReason = string(strjoin(missing, "; "));
 summary.StrictAnchorEligible = logical(strictEligible);
 summary.Artifact = "reports/csv/configured_effective_operating_point.csv";
@@ -1516,7 +1594,11 @@ gate.Required = ~isempty(requiredDirections);
 gate.RequiredDirections = requiredDirections;
 gate.RequiredGrantCount = double(height(rows));
 gate.FailingGrantCount = double(nnz(failingMask));
-gate.BindingGateOk = gate.RequiredGrantCount == 0 || gate.FailingGrantCount == 0;
+gate.BindingGateOk = ~gate.Required || ...
+    (gate.RequiredGrantCount > 0 && gate.FailingGrantCount == 0);
+if gate.Required && gate.RequiredGrantCount == 0
+    failureReasons = "missing_required_grant_binding_evidence";
+end
 gate.FailureReasons = failureReasons(:);
 gate.Rows = rows;
 gate.Summary = struct( ...
@@ -1790,7 +1872,7 @@ end
 if isfield(status, "RunClassGateOk") && ~logical(status.RunClassGateOk)
     failures(end+1, 1) = "run_classification_gate_failed:" + string(sixgr.util.structGet(status, "RunClassReason", "")); %#ok<AGROW>
 end
-if nargin >= 4 && isstruct(bindingGate) && ~logical(sixgr.util.structGet(bindingGate, "BindingGateOk", true))
+if nargin >= 4 && isstruct(bindingGate) && ~logical(sixgr.util.structGet(bindingGate, "BindingGateOk", false))
     failures(end+1, 1) = "pdcch_grant_binding_gate_failed:" + ...
         strjoin(string(sixgr.util.structGet(bindingGate, "FailureReasons", strings(0, 1))), "; "); %#ok<AGROW>
 end
@@ -1800,7 +1882,7 @@ end
 if ~logical(activeIssueGate.ActiveIssueGateOk)
     failures(end+1, 1) = "active_issue_gate_failed:" + strjoin(activeIssueGate.BlockingIssueIds, "|"); %#ok<AGROW>
 end
-if nargin >= 6 && isstruct(kpiGate) && ~logical(sixgr.util.structGet(kpiGate, "KpiConsistencyOk", true))
+if nargin >= 6 && isstruct(kpiGate) && ~logical(sixgr.util.structGet(kpiGate, "KpiConsistencyOk", false))
     failures(end+1, 1) = "kpi_consistency_gate_failed:" + ...
         strjoin(string(sixgr.util.structGet(kpiGate, "FailureReasons", strings(0, 1))), "; "); %#ok<AGROW>
 end

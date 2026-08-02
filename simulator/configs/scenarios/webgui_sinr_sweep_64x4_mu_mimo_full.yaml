@@ -3,6 +3,15 @@
 # every field below is an intentional override for this 64x4 coupled MU-MIMO run.
 inherits: master_sinr_sweep.yaml
 
+# Directional digital/RF-chain capacities are explicit because two rank-2
+# users require four simultaneous gNB spatial streams.  Physical element
+# counts remain 64 at the gNB and 4 at each UE.
+antenna_and_array:
+  bs_num_txrus: 4
+  bs_num_rxrus: 4
+  ue_num_txrus: 2
+  ue_num_rxrus: 4
+
 canonical_control:
   identity:
     scenario_id: webgui_sinr_sweep_64x4_mu_mimo_full
@@ -76,6 +85,13 @@ canonical_control:
     snr_db: 0
     noise_operating_mode: standalone_awgn_snr_argument
     snr_sweep_offsets_db: []
+    reference_sweep_enabled: true
+    reference_trials_per_snr: 1
+    harq_diagnostics_enabled: true
+    adaptive_sweep_enabled: true
+    adaptive_sweep_step_db: 2
+    adaptive_sweep_max_points: 12
+    max_raw_rows_per_sweep: 0
     execution_mode: LLS
     study_mode: campaign
     simulation_mode: full_phy
@@ -156,6 +172,12 @@ canonical_control:
     mu_mimo_enable: true
     ul_mu_mimo_enable: true
     mu_mimo_max_users_per_prb: 2
+    # A pair is admitted only after a causal SRS-derived, executable spatial
+    # filter meets both bounds. These are operator inputs, not report-time
+    # thresholds or configured-value substitutions.
+    mu_mimo_precoder_leakage_threshold_db: -15
+    mu_mimo_minimum_desired_subspace_gain_db: -30
+    mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
   scheduler:
     type: PF
     # Two simultaneously scheduled UEs match the configured spatial
@@ -189,10 +211,12 @@ canonical_control:
     trs_enabled: true
     tracking_rs_enabled: true
     ptrs_enabled: true
+    ptrs_cpe_correction_enabled: true
     csi_feedback_mode: PMI+CQI+RI+CRI
     csi_acquisition_mode: joint_dl_ul
     operation_orientation: tdd_reciprocity
     dmrs_csi_tracking_enabled: true
+    csi_reporting_enabled: true
     cqi_reporting_enabled: true
     pmi_reporting_enabled: true
     ri_reporting_enabled: true
@@ -206,6 +230,7 @@ canonical_control:
     srs_scheduling_policy: multiplex_due_users
   control:
     pdcch_enabled: true
+    blind_search_enabled: true
     pucch_enabled: true
     # Four six-PRB bitmap groups exactly cover this scenario's 24-PRB BWP.
     coreset_frequency_resources: [1, 1, 1, 1]
@@ -301,6 +326,8 @@ canonical_control:
       value: false
     - path: interference.intra_cell_interference_flag
       value: true
+    - path: interference.intra_cell_execution_mode
+      value: shared_slot_waveform_superposition
     - path: link_adaptation.fixed_or_amc
       value: amc
     - path: link_adaptation.rank_adaptation_policy
@@ -313,6 +340,12 @@ canonical_control:
       value: cqi_driven
     - path: link_adaptation.pusch_link_adaptation_policy
       value: cqi_driven
+    - path: link_adaptation.initial_mcs
+      value: 1
+    - path: link_adaptation.maximum_mcs
+      value: 20
+    - path: link_adaptation.bootstrap_mcs_index
+      value: 1
     - path: receiver_algorithms.ssb_cfo_search_bw_hz
       value: 0
     - path: synchronization.max_timing_uncertainty_samples
@@ -321,13 +354,30 @@ canonical_control:
     execution_profile: scheduler_truth
     prb_start: 0
     num_prb: 24
+    # Keep inherited legacy aliases identical to the canonical MIMO/data
+    # operating point.  These remain configuration inputs; the runtime
+    # authority builder rejects contradictory duplicates before execution.
+    layer_count: 2
+    modulation: 256QAM
   harq:
+    enabled: true
     k2: 4
+
+# Adaptive MCS is a policy range, not an exact configured-MCS claim.
+# Bootstrap starts conservatively; measured CQI/OLLA may select up to
+# MCS 20 while the rank remains the fixed two-layer anchor above.
+link_adaptation:
+  initial_mcs: 1
+  maximum_mcs: 20
+  bootstrap_mcs_index: 1
 
 csi_acquisition_and_reporting:
   # This is the production buildInternalConfig authority consumed by
   # SchedulerPF and the waveform precoder path.
   pmi_codebook_mode: type2_mu_mimo
+  joint_dl_ul_csi_enabled: true
+  joint_port_mapping_policy: explicit_joint_port_map
+  joint_timeline_policy: scheduler_defined_joint_timeline
 
 pucch_resources:
   enabled: true
@@ -446,6 +496,7 @@ bwp:
       scheduled_cc_id: 0
 
 pdsch6gr:
+  harq_enabled: true
   channel_bandwidth_mhz: 10
   n_size_grid: 24
   n_tx: 64
@@ -458,12 +509,17 @@ pdsch:
   execution_profile: scheduler_truth
   prb_start: 0
   num_prb: 24
+  layer_count: 2
+  modulation: 256QAM
 
 pusch:
   prb_start: 0
   num_prb: 24
+  layer_count: 2
   num_layers: 2
   num_antenna_ports: 2
+  modulation: 256QAM
+  mcs_index: 20
   dmrs_port_set: [0, 1]
 
 # A count-only AWGN shortcut cannot exercise the configured physical array.

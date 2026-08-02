@@ -43,6 +43,7 @@ grant.TargetCodeRate = double(s.TargetCodeRate);
 grant.RV = double(s.RV);
 grant.NLayers = double(s.NLayers);
 grant.TransformPrecoding = logical(s.TransformPrecoding);
+grant.EnablePTRS = logical(sixgr.util.structGet(s, "EnablePTRS", false));
 grant.TemporaryCRNTI = double(raCfg.FinalCRNTI);
 end
 

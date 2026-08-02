@@ -773,7 +773,7 @@ imp.IQImbalanceCorrectionNoiseScale = NaN;
 imp.IQImbalanceCorrectionStatus = "not_applied";
 
 enabled = logical(sixgr.util.structGet(cfg, "phy.rx.iqImbalanceCorrectionEnabled", ...
-    sixgr.util.structGet(cfg, "phy.impairments.iqImbalanceCorrectionEnabled", true)));
+    sixgr.util.structGet(cfg, "phy.impairments.iqImbalanceCorrectionEnabled", false)));
 if ~enabled
     imp.IQImbalanceCorrectionStatus = "disabled_by_config";
     state.ImpairmentReplay = imp;

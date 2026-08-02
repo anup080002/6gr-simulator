@@ -1,0 +1,2 @@
+RunId,ScenarioName,IssueId,StrictOk,Status,FailureReason,RxPayloadHash,RxTreeHash,TreeEqual,SupportedProfile
+"sib1_runtime_waveform","lls_sib1_strict_mini_anchor","AUD-015",1,"PASS","","730a6b51b64c022ec1dffdf3e5858465e3c9e0fea8bb054fb3a19f81c54e5880","031d9f995f0ea017e0b4543d2157cdbda37ae31b5eabc3f174f11d1cf618e648",0,"sixgr_sib1_anchor_profile_v1"

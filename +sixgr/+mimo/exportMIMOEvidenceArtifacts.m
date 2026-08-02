@@ -21,7 +21,25 @@ evidence = sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg, rawTrials, ...
     "StrictMode", ip.Results.StrictMode);
 clear tpResolve;
 
-artifacts = struct("Evidence", evidence, "csv", {{}}, "json", {{}});
+% The runner consumes supplemental validators through a small common
+% contract (StrictOk/Ok/FailureReason).  Keep the complete evidence object,
+% but do not make callers infer its status from the generated files.
+% Missing status is deliberately fail-closed because runSingle defaults an
+% absent supplemental status to false.
+strictOk = logical(sixgr.util.structGet(evidence, "StrictOk", false));
+failureReason = string(sixgr.util.structGet(evidence, "FailureReason", ""));
+if strictOk
+    failureReason = "";
+elseif strlength(strtrim(failureReason)) == 0
+    failureReason = "mimo_strict_evidence_failed";
+end
+artifacts = struct( ...
+    "Evidence", evidence, ...
+    "StrictOk", strictOk, ...
+    "Ok", strictOk, ...
+    "FailureReason", char(failureReason), ...
+    "csv", {{}}, ...
+    "json", {{}});
 csvSpecs = {
     fullfile(layout.BeamformingCSVDir, "mimo_config_strict.csv"), evidence.MIMOConfigStrict;
     fullfile(layout.BeamformingCSVDir, "mimo_config_validation.csv"), evidence.ConfigValidation;

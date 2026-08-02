@@ -43,6 +43,16 @@ ip.addParameter('NoiseOnlyWaveform', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.parse(varargin{:});
 opt = ip.Results;
+configuredPDCCH = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
+configuredDMRS = logical(sixgr.util.structGet(cfg, "phy.pdcch.dmrs.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch", configuredPDCCH, ...
+    "PDCCH_Rx");
+sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch_dmrs", configuredDMRS, ...
+    "PDCCH_Rx.DMRS");
+if ~(configuredPDCCH && configuredDMRS)
+    error("sixgr:phy:pdcch:DisabledByYAML", ...
+        "PDCCH Rx cannot execute when PDCCH or its DM-RS is disabled by YAML.");
+end
 
 % Carrier
 if isempty(opt.Carrier)
@@ -84,6 +94,8 @@ if isempty(listLen)
 end
 
 blind = logical(sixgr.util.structGet(cfg, 'phy.pdcch.blindSearch', false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch_blind_search", blind, ...
+    "PDCCH_Rx.blindSearch");
 
 % ---------------------- Candidate resources ----------------------
 % Known mapping (single candidate) or blind candidates

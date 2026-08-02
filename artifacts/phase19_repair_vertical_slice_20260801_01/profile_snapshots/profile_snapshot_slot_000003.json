@@ -1,0 +1,8 @@
+{
+  "mode": "phase19_vertical_repair",
+  "slot": 3,
+  "elapsed_s": 70.9622905,
+  "access_state": "not_required,not_required,not_required,not_required",
+  "scheduling_eligible": "true,true,true,true",
+  "profile_function_rows": 0
+}

@@ -103,7 +103,10 @@ out.SignalDiagnostic = struct( ...
     "SourceTable", table());
 out.HARQ = struct();
 
-if ~logical(sixgr.util.structGet(cfg, "phy.pusch.enable", true))
+configuredPUSCH = logical(sixgr.util.structGet(cfg, "phy.pusch.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "scheduled_pusch", ...
+    configuredPUSCH, "sixgr.link.runULPUSCHThroughput");
+if ~configuredPUSCH
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.pusch.enable=true for PUSCH coverage.");
     sixgr.perf.TimeProfiler.markSkipped("sixgr.link.runULPUSCHThroughput", "ul_pusch", ...
@@ -187,6 +190,8 @@ trialHARQContextHash = strings(numFrames,1);
 trialHARQContextStatus = strings(numFrames,1);
 trialPRB = NaN(numFrames,1);
 trialPRBStart = NaN(numFrames,1);
+trialSymbolStart = NaN(numFrames,1);
+trialNumSymbols = NaN(numFrames,1);
 trialLayers = NaN(numFrames,1);
 trialModulation = strings(numFrames,1);
 trialCodeRate = NaN(numFrames,1);
@@ -376,6 +381,12 @@ trialRank = NaN(numFrames,1);
 trialCond = NaN(numFrames,1);
 trialRxAnt = NaN(numFrames,1);
 trialTxPorts = NaN(numFrames,1);
+trialTxWaveformColumns = NaN(numFrames,1);
+trialPhysicalTxAntennas = NaN(numFrames,1);
+trialRxWaveformBranches = NaN(numFrames,1);
+trialPhysicalRxAntennas = NaN(numFrames,1);
+trialTxWaveformDomain = strings(numFrames,1);
+trialHybridElementDomainApplied = false(numFrames,1);
 trialSelectedBeam = NaN(numFrames,1);
 trialBestBeam = NaN(numFrames,1);
 trialBeamHit = NaN(numFrames,1);
@@ -606,6 +617,15 @@ for n = 1:numFrames
                 "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
         end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
+        trialTxWaveformColumns(n) = double(size(tx.Waveform, 2));
+        trialPhysicalTxAntennas(n) = double(sixgr.util.structGet(txInfo, ...
+            "UEPhysicalTxAntennas", size(tx.Waveform, 2)));
+        ulTxPrecoding = sixgr.util.structGet(txInfo, "Precoding", struct());
+        trialTxWaveformDomain(n) = string(sixgr.util.structGet(ulTxPrecoding, ...
+            "WaveformDomain", "logical_port"));
+        trialHybridElementDomainApplied(n) = logical(sixgr.util.structGet( ...
+            ulTxPrecoding, "HybridElementDomainApplied", false));
+        localAssertULHybridTransmitElementDomain(cfgFrame, tx, txInfo);
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
         [grantSnapshot, harqContext, harqTBContext, harqTBStatus] = localApplyHARQTransportBlockContext( ...
             "UL", cfgFrame, grantSnapshot, tx, harqContext, previousCombinedLLR);
@@ -696,6 +716,23 @@ for n = 1:numFrames
         else
             trialPRBStart(n) = double(sixgr.util.structGet(grantSnapshot, "PRBStart", NaN));
         end
+        frozenPHYGrant = sixgr.util.structGet(grantSnapshot, ...
+            "PHYGrant", struct());
+        symbolAllocationSnapshot = double(sixgr.util.structGet( ...
+            grantSnapshot, "SymbolAllocation", sixgr.util.structGet( ...
+            frozenPHYGrant, "ResourceAllocation.SymbolAllocation", [])));
+        if numel(symbolAllocationSnapshot) >= 2 && ...
+                all(isfinite(symbolAllocationSnapshot(1:2)))
+            trialSymbolStart(n) = symbolAllocationSnapshot(1);
+            trialNumSymbols(n) = symbolAllocationSnapshot(2);
+        else
+            trialSymbolStart(n) = double(sixgr.util.structGet( ...
+                grantSnapshot, "SymbolStart", sixgr.util.structGet( ...
+                frozenPHYGrant, "ResourceAllocation.SymbolStart", NaN)));
+            trialNumSymbols(n) = double(sixgr.util.structGet( ...
+                grantSnapshot, "NumSymbols", sixgr.util.structGet( ...
+                frozenPHYGrant, "ResourceAllocation.NumSymbols", NaN)));
+        end
         ulPrecoding = localResolveULPrecodingTrace(cfgFrame, tx, grantSnapshot);
         trialPrecoderSource(n) = string(ulPrecoding.PrecoderSource);
         trialPrecodingMode(n) = string(ulPrecoding.PrecodingMode);
@@ -769,6 +806,9 @@ for n = 1:numFrames
         trialPUSCHPowerScale(n) = double(powerCtrl.AmplitudeScale);
         trialPUSCHPowerControlPathloss(n) = double(powerCtrl.Pathloss_dB);
         [rxWave, replay, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, interferenceBundle);
+        trialRxWaveformBranches(n) = double(size(rxWave, 2));
+        trialPhysicalRxAntennas(n) = double(size(rxWave, 2));
+        localAssertULHybridReceiveElementDomain(cfgFrameRx, rxWave);
         cfgFrame = localAttachReceiverSyncRuntimeContext(cfgFrame, chState, replay);
         cfgFrameRx = localAttachReceiverSyncRuntimeContext(cfgFrameRx, chState, replay);
 
@@ -1604,6 +1644,12 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.ComputedE_TS38212 = trialComputedE_TS38212(idx);
         T.RateMatchedBitsDelta_TS38212 = trialRateMatchedBits(idx) - trialComputedE_TS38212(idx);
         T.ConfiguredSNR_dB = trialConfiguredSNR(idx);
+        T.TxWaveformColumns = trialTxWaveformColumns(idx);
+        T.PhysicalTxAntennas = trialPhysicalTxAntennas(idx);
+        T.RxWaveformBranches = trialRxWaveformBranches(idx);
+        T.PhysicalRxAntennas = trialPhysicalRxAntennas(idx);
+        T.TxWaveformDomain = trialTxWaveformDomain(idx);
+        T.HybridElementDomainApplied = trialHybridElementDomainApplied(idx);
         configuredLayers = localFirstFiniteScalar( ...
             sixgr.util.structGet(cfg, "phy.pusch.nLayers", NaN), ...
             sixgr.util.structGet(cfg, "phy.pusch.numLayers", NaN));
@@ -1641,6 +1687,9 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.HARQContextStatus = trialHARQContextStatus(idx);
         T.AllocatedPRBCount = trialPRB(idx);
         T.PRBStart = trialPRBStart(idx);
+        T.PRBCount = trialPRB(idx);
+        T.SymbolStart = trialSymbolStart(idx);
+        T.NumSymbols = trialNumSymbols(idx);
         T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
         T.InjectedCarrierPhaseOffset_rad = trialCarrierPhaseOffsetRad(idx);
@@ -2072,8 +2121,8 @@ T.CQISource = localResolveCQISourceColumn(T, configuredDomain);
 T.MCSSelectionSource = mcsSelectionSource;
 T.MCSValueStatus = mcsValueStatus;
 T.OLLADomain = repmat(localResolveOLLADomainToken(cfg, direction), n, 1);
-outerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true));
-innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", true));
+outerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false));
+innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", false));
 linkModeColumn = lower(string(localOptionalColumn(T, "LinkAdaptationMode", configuredLinkMode)));
 schedulerReplayMask = linkModeColumn == "scheduler_grant_replay";
 linkAdaptationRuntimeMask = ~schedulerReplayMask & ~ismember(lower(string(configuredLinkMode)), ["fixed","disabled","none","off","false",""]);
@@ -2653,6 +2702,7 @@ if ~(isstruct(state) && isfield(state, "ContractVersion"))
         "UEIndex", double(sixgr.util.structGet(userMeta, "RuntimeUEIndex", sixgr.util.structGet(userMeta, "UEIndex", 1))), ...
         "ServingCell", double(sixgr.util.structGet(userMeta, "RuntimeServingCell", 1)));
 end
+
 numTx = max(1, size(tx.Waveform, 2));
 runtimeNumTx = localResolveRuntimeTxPortCapacity(userMeta, cfg, numTx);
 numRx = localResolveULNumRxAnt(cfg, numTx);
@@ -2671,6 +2721,60 @@ state = sixgr.channel.ChannelFactory.materializeRuntimeChannelState(state, cfg, 
 slotStart_s = double(sixgr.util.structGet(userMeta, "RuntimeSlotStartTime_s", NaN));
 if isfinite(slotStart_s) && slotStart_s >= 0
     state = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(state, slotStart_s, runtimeNumTx, tx.Waveform);
+end
+end
+
+function localAssertULHybridTransmitElementDomain(cfg, tx, txInfo)
+hybridRequired = logical(sixgr.util.structGet(cfg, ...
+    "phy.beamManagement.hybridBeamformingEnabled", ...
+    sixgr.util.structGet(cfg, "mimo.hybrid_beamforming_flag", false)));
+if ~hybridRequired
+    return;
+end
+expectedElements = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", NaN), ...
+    sixgr.util.structGet(cfg, "antenna.ue.numElements", NaN), ...
+    sixgr.util.structGet(cfg, "channel.ul.nTxAnt", NaN), ...
+    sixgr.util.structGet(cfg, "phy.ul.nTxAnt", NaN));
+actualColumns = double(size(sixgr.util.structGet(tx, "Waveform", []), 2));
+declaredPhysical = double(sixgr.util.structGet(txInfo, ...
+    "UEPhysicalTxAntennas", NaN));
+prec = sixgr.util.structGet(txInfo, "Precoding", struct());
+elementDomainApplied = logical(sixgr.util.structGet(prec, ...
+    "HybridElementDomainApplied", false));
+waveformDomain = lower(strtrim(string(sixgr.util.structGet(prec, ...
+    "WaveformDomain", ""))));
+if ~(isfinite(expectedElements) && expectedElements >= 1 && ...
+        actualColumns == round(expectedElements) && ...
+        declaredPhysical == round(expectedElements) && ...
+        elementDomainApplied && waveformDomain == "element")
+    error("sixgr:link:ULHybridElementDomainExecutionMismatch", ...
+        ['Hybrid PUSCH requires %d physical UE element-domain waveform columns; ' ...
+        'the transmitter emitted %d, declared %g physical antennas, domain=%s, applied=%d.'], ...
+        round(double(expectedElements)), round(actualColumns), declaredPhysical, ...
+        char(waveformDomain), double(elementDomainApplied));
+end
+end
+
+function localAssertULHybridReceiveElementDomain(cfg, rxWave)
+hybridRequired = logical(sixgr.util.structGet(cfg, ...
+    "phy.beamManagement.hybridBeamformingEnabled", ...
+    sixgr.util.structGet(cfg, "mimo.hybrid_beamforming_flag", false)));
+if ~hybridRequired
+    return;
+end
+expectedBranches = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", NaN), ...
+    sixgr.util.structGet(cfg, "antenna.bs.numElements", NaN), ...
+    sixgr.util.structGet(cfg, "channel.ul.nRxAnt", NaN), ...
+    sixgr.util.structGet(cfg, "phy.ul.nRxAnt", NaN));
+actualBranches = double(size(rxWave, 2));
+if ~(isfinite(expectedBranches) && expectedBranches >= 1 && ...
+        actualBranches == round(expectedBranches))
+    error("sixgr:link:ULPhysicalReceiveBranchMismatch", ...
+        ['Hybrid PUSCH reception requires %d physical gNB receive branches; ' ...
+        'the channel produced %d.'], ...
+        round(double(expectedBranches)), round(actualBranches));
 end
 end
 
@@ -2863,7 +2967,7 @@ pc = struct( ...
 
 enabled = logical(sixgr.util.structGet(cfg, "phy.pusch.powerControl.enabled", ...
     sixgr.util.structGet(cfg, "phy.pusch.power_control.enabled", ...
-    sixgr.util.structGet(cfg, "powerAndRF.puschPowerControlEnabled", true))));
+    sixgr.util.structGet(cfg, "powerAndRF.puschPowerControlEnabled", false))));
 pc.Enabled = enabled;
 if ~enabled
     return;
@@ -3530,6 +3634,12 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'string','logical','logical','logical','string'};
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConfiguredSNR_dB = zeros(0,1);
+T.TxWaveformColumns = zeros(0,1);
+T.PhysicalTxAntennas = zeros(0,1);
+T.RxWaveformBranches = zeros(0,1);
+T.PhysicalRxAntennas = zeros(0,1);
+T.TxWaveformDomain = strings(0,1);
+T.HybridElementDomainApplied = false(0,1);
 T.ConfiguredLayers = zeros(0,1);
 T.ConfiguredTxAntennas = zeros(0,1);
 T.ConfiguredRxAntennas = zeros(0,1);
@@ -3992,7 +4102,7 @@ status(strlength(existingStatus) > 0) = existingStatus(strlength(existingStatus)
 end
 
 function token = localResolveOLLADomainToken(cfg, direction)
-if ~logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", true))
+if ~logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false))
     token = "disabled";
     return;
 end
@@ -5198,6 +5308,7 @@ grant = struct( ...
     "MCSIndex", double(sixgr.util.structGet(seedGrant, "MCSIndex", mcsIndex)), ...
     "Modulation", localSafeCharToken(puschMod), ...
     "TargetCodeRate", double(sixgr.util.structGet(tx, "TargetCodeRate", NaN)), ...
+    "NumLayers", double(puschLayers), ...
     "Layers", double(puschLayers), ...
     "PRBs", double(numel(puschPRBSet)), ...
     "PRBSet", puschPRBSet, ...
@@ -5248,7 +5359,19 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "RankSelectionPolicy","RankSelectionSource","RankDecisionReason","RankDowngradeApplied","MaxSupportedLayers", ...
     "RawCQIDerivedMCS","LinkAdaptationMCSIndex","LinkAdaptationDecisionReason", ...
     "CQIBasedMCS","SmoothedCQI","InstantaneousCQIMCS","DeltaMCS","StaticDeltaMCS", ...
-    "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ", ...
+    "MCSSelectionSource","CQIProvenance","MCSValueStatus","GrantReason","Frame","Slot","HARQ","IsRetransmission", ...
+    "DMRSPortSet","DMRSPortSetSource","PTRSEnabled","PTRSPortSet","PTRSPortSetSource", ...
+    "MUMIMOEnabled","MUMIMOGroupSize","MUMIMOGroupId","MUMIMOPairingStatus", ...
+    "MUMIMOPairingMetricSource","MUMIMOPairingMetricValue_dB","MUMIMOPairingEvidenceSource","MUMIMOPrecoderType", ...
+    "MUMIMOPairingWorstMetricValue_dB","MUMIMORequiredLeakageThreshold_dB", ...
+    "MUMIMODesiredSubspaceGain_dB","MUMIMORequiredMinimumDesiredGain_dB", ...
+    "MUMIMOSpatialDesignStatus","MUMIMOSpatialDesignContractVersion", ...
+    "MUMIMOSpatialDesignEvidenceSource","MUMIMOSpatialFilterMatrixSHA256", ...
+    "MUMIMOReceiveCombiningMatrix", ...
+    "MUMIMOReceiveCombiningMatrixSHA256","MUMIMOReceiverAlgorithm", ...
+    "MUMIMOHybridRFDesignPolicy","MUMIMOHybridRFDesignStatus", ...
+    "HybridElementToPortMatrixSHA256","BaseHybridElementToPortMatrixSHA256", ...
+    "NumLogicalPorts","NumRFChains", ...
     "SchedulerCQIRawCQI","SchedulerAdjustedSINR_dB","SchedulerSINRBackoff_dB","SchedulerCQISource", ...
     "MCSIndexAuthority","GrantOperatingPointSource", ...
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk", ...
@@ -5278,6 +5401,7 @@ if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
     grant.PHYGrant = txPHYGrant;
     grant.PHYGrantContextId = char(string(txPHYGrant.GrantContextId));
 end
+grant = sixgr.link.finalizeHARQGrantSpatialSnapshot(grant, "UL");
 if ~(isfield(grant, "GrantContextId") && strlength(strtrim(string(grant.GrantContextId))) > 0)
     grant.GrantContextId = localComposeReplayGrantContextId(seedGrant, "UL");
 end
@@ -5394,6 +5518,13 @@ token = sprintf('%d', value);
 end
 
 function [grant, phyGrant] = localNormalizeHARQReplayGrantInputs(cfg, grant, phyGrant, tbBits, harqContext, snr_dB, frameIdx, slotIdx)
+isRetx = localInferHARQReplayMode(grant, phyGrant, harqContext, tbBits);
+if ~isRetx
+    % New-data TB context does not authorize a second grant freeze. Preserve
+    % the scheduler's exact frozen spatial and coding contract; only an
+    % explicitly identified retransmission may enter the replay normalizer.
+    return;
+end
 replayBits = double(numel(tbBits));
 tbContext = localReplayTBContext(grant, harqContext);
 resolvedTBSBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
@@ -5407,7 +5538,6 @@ elseif isfinite(replayBits) && replayBits > 0 && round(resolvedTBSBits) ~= round
         "UL HARQ replay context TBSBits=%d does not match stored TB bits=%d.", ...
         round(resolvedTBSBits), round(replayBits));
 end
-isRetx = localInferHARQReplayMode(grant, phyGrant, harqContext, tbBits);
 if ~isstruct(grant)
     grant = struct();
 end
@@ -5492,19 +5622,8 @@ if ~hasReplayPayload
     tf = false;
     return;
 end
-grantHarq = sixgr.util.structGet(grant, "HARQ", struct());
-tf = logical(sixgr.util.structGet(harqContext, "IsRetransmission", false)) || ...
-    logical(sixgr.util.structGet(grantHarq, "IsRetransmission", false)) || ...
-    logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
-    logical(sixgr.util.structGet(phyGrant, "HARQProcessKey.IsRetransmission", false));
-if tf
-    return;
-end
-if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
-    tf = true;
-    return;
-end
-tf = localHARQNDIMatchesTBContext(grant, harqContext, tbContext);
+    tf = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+        grant, phyGrant, harqContext);
 end
 
 function tf = localHARQNDIMatchesTBContext(grant, harqContext, tbContext)

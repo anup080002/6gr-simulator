@@ -96,6 +96,12 @@ else
         [puschInd, puschInfo] = nrPUSCHIndices(carrier, pusch);
     end
 end
+sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs", ...
+    logical(localObjectValue(pusch, "EnablePTRS", false)), ...
+    "PUSCH_Tx.nrPUSCHConfig.EnablePTRS");
+sixgr.config.assertRuntimeFeatureUse(cfg, "transform_precoding", ...
+    logical(localObjectValue(pusch, "TransformPrecoding", false)), ...
+    "PUSCH_Tx.nrPUSCHConfig.TransformPrecoding");
 
 % PUSCH parameters
 nCodewords = double(pusch.NumCodewords);
@@ -280,8 +286,8 @@ if ~isempty(ptrsSym)
         carrier, pusch, "IndexBase", "1based");
 end
 [ptrsSym, ptrsInd, ptrsLogicalPrecodeInfo] = ...
-    localApplyResolvedLogicalPortPrecode( ...
-    carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS");
+    localApplyResolvedPTRSPortPrecode( ...
+    carrier, ptrsSym, ptrsInd, prec, pusch, phyGrant);
 localAssertSignalResourceDisjoint(puschInd, dmrsInd, ptrsInd);
 
 puschWaveformSym = puschSym;
@@ -393,6 +399,13 @@ tx.CodewordLayerMapping = codewordLayerMapping;
 tx.ResourceAccounting = resourceAccounting;
 tx.PrecodeInfo = prec;
 tx.PrecodePowerInfo = precodePowerInfo;
+tx.PTRSExecution = struct( ...
+    "Enabled", logical(localObjectValue(pusch, "EnablePTRS", false)), ...
+    "NativeSymbolCount", double(numel(ptrsSym)), ...
+    "LogicalMappedRECount", double(numel(ptrsInd)), ...
+    "WaveformMappedRECount", double(numel(ptrsGridInd)), ...
+    "LogicalPrecode", ptrsLogicalPrecodeInfo, ...
+    "GridMapping", ptrsGridMapInfo);
 tx.DMRSEPREDifference = dmrsPowerInfo;
 tx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
 tx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
@@ -456,6 +469,7 @@ info.OFDMWindowing = windowingInfo;
 info.Precoding = prec;
 info.PrecodePowerInfo = precodePowerInfo;
 info.DMRS = dmrsInfo;
+info.PTRS = tx.PTRSExecution;
 info.DMRSEPREDifference = dmrsPowerInfo;
 info.NumWaveformColumns = double(size(txWaveform, 2));
 info.UEPhysicalTxAntennas = double(uePhysicalTxAnt);
@@ -1011,11 +1025,14 @@ elementInd = baseInd + (0:size(H, 1)-1) * planeSize;
 end
 
 function [logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
-        carrier, nativePortSym, nativePortInd, prec, label)
+        carrier, nativePortSym, nativePortInd, prec, label, selectedLayerColumns)
 % Expand non-codebook layer/native-port symbols into the resolved logical
 % antenna-port domain before hybrid RF/element precoding. nrPUSCH emits one
 % native column per layer for non-codebook transmission, while a replayed
 % grant can still execute on a wider configured UE logical-port domain.
+if nargin < 6
+    selectedLayerColumns = [];
+end
 logicalSym = nativePortSym;
 logicalInd = nativePortInd;
 info = struct( ...
@@ -1036,10 +1053,23 @@ if isempty(Wlogical) || ~ismatrix(Wlogical)
     error("sixgr:phy:ul:PUSCHLogicalPortPrecode:MissingMatrix", ...
         "Resolved logical-port matrix is missing for %s.", char(string(label)));
 end
+if ~isempty(selectedLayerColumns)
+    selectedLayerColumns = double(selectedLayerColumns(:).');
+    if any(~isfinite(selectedLayerColumns) | ...
+            selectedLayerColumns ~= fix(selectedLayerColumns) | ...
+            selectedLayerColumns < 1 | ...
+            selectedLayerColumns > size(Wlogical, 2)) || ...
+            numel(unique(selectedLayerColumns)) ~= numel(selectedLayerColumns)
+        error("sixgr:phy:ul:PUSCHReferencePrecode:BadLayerSelection", ...
+            "%s selected invalid logical-precoder layer column(s) %s.", ...
+            char(string(label)), mat2str(selectedLayerColumns));
+    end
+    Wlogical = Wlogical(:, selectedLayerColumns);
+end
 if size(Wlogical, 2) ~= size(nativePortSym, 2)
     error("sixgr:phy:ul:PUSCHLogicalPortPrecode:PortMismatch", ...
-        ["%s has %d native port/layer column(s), but the resolved " ...
-         "logical-port matrix is %dx%d."], ...
+        "%s has %d native port/layer column(s), but the resolved " + ...
+        "logical-port matrix is %dx%d.", ...
         char(string(label)), size(nativePortSym, 2), ...
         size(Wlogical, 1), size(Wlogical, 2));
 end
@@ -1067,6 +1097,63 @@ info.OutputPortCount = double(logicalPortCount);
 info.MatrixRows = double(size(Wlogical, 1));
 info.MatrixCols = double(size(Wlogical, 2));
 info.Equation = "X_logical=X_native*W_logical''";
+end
+
+function [logicalSym, logicalInd, info] = localApplyResolvedPTRSPortPrecode( ...
+        carrier, ptrsSym, ptrsInd, prec, pusch, phyGrant)
+% PT-RS is associated with one scheduled DM-RS port, not with every data
+% layer.  nrPUSCH therefore emits one PT-RS column even for a rank-2
+% non-codebook transmission.  Project that reference through exactly the
+% corresponding frozen logical-precoder column before hybrid RF expansion.
+if isempty(ptrsSym) || isempty(ptrsInd) || ...
+        logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+    [logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
+        carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS");
+    info.AssociatedDMRSPortSet = [];
+    info.AssociatedLayerColumns = [];
+    return;
+end
+
+dmrsPortSet = [];
+ptrsPortSet = [];
+if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
+    dmrsPortSet = double(sixgr.util.structGet( ...
+        phyGrant, "CodingLayout.DMRSPortSet", []));
+    ptrsPortSet = double(sixgr.util.structGet( ...
+        phyGrant, "CodingLayout.PTRSPortSet", []));
+end
+if isempty(dmrsPortSet)
+    dmrs = localObjectValue(pusch, "DMRS", []);
+    dmrsPortSet = double(localObjectValue(dmrs, "DMRSPortSet", []));
+end
+if isempty(ptrsPortSet)
+    ptrs = localObjectValue(pusch, "PTRS", []);
+    ptrsPortSet = double(localObjectValue(ptrs, "PTRSPortSet", []));
+end
+dmrsPortSet = double(dmrsPortSet(:).');
+ptrsPortSet = double(ptrsPortSet(:).');
+if isempty(dmrsPortSet) || isempty(ptrsPortSet) || ...
+        numel(ptrsPortSet) ~= size(localEnsure2D(ptrsSym), 2)
+    error("sixgr:phy:ul:PUSCHPTRSPrecode:MissingPortAssociation", ...
+        "Enabled PUSCH PT-RS requires one explicit scheduled DM-RS port " + ...
+        "association per native PT-RS column.");
+end
+selectedLayerColumns = zeros(1, numel(ptrsPortSet));
+for portIndex = 1:numel(ptrsPortSet)
+    match = find(dmrsPortSet == ptrsPortSet(portIndex));
+    if numel(match) ~= 1
+        error("sixgr:phy:ul:PUSCHPTRSPrecode:PortNotScheduled", ...
+            "PUSCH PT-RS port %d does not identify exactly one scheduled " + ...
+            "DM-RS layer in %s.", ptrsPortSet(portIndex), ...
+            mat2str(dmrsPortSet));
+    end
+    selectedLayerColumns(portIndex) = match;
+end
+[logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
+    carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS", selectedLayerColumns);
+info.Source = "scheduled_ptrs_dmrs_port_association_through_frozen_logical_precoder";
+info.AssociatedDMRSPortSet = ptrsPortSet;
+info.AssociatedLayerColumns = selectedLayerColumns;
 end
 
 function dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword)

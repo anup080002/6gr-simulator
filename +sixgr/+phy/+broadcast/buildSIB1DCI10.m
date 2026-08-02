@@ -131,7 +131,8 @@ try
     pdsch.DMRS.NSCID = 0;
 catch
 end
-pdsch.EnablePTRS = false;
+pdsch.EnablePTRS = logical(sixgr.util.structGet(cfg, ...
+    "phy.pdsch.enablePTRS", false));
 end
 
 function width = localRIVWidth(nRB)

@@ -114,9 +114,11 @@ end
 if size(Wports, 1) < nLayers || size(Wports, 2) ~= nLayers
     return;
 end
-colNorm = sqrt(sum(abs(Wports).^2, 1));
-colNorm(colNorm <= eps) = 1;
-Wports = Wports ./ colNorm;
+% The selected physical matrix is part of the immutable scheduler/grant
+% contract.  resolvePDSCHPrecoding owns any configured normalization before
+% the grant is frozen.  Normalizing the element-domain columns here changes
+% F*Wlogical while leaving both F and Wlogical untouched, so replay no
+% longer lies in its frozen hybrid subspace.
 grant.PrecodingMatrix = Wports;
 grant.PrecodingNumPorts = double(size(Wports, 1));
 grant.PrecodingNumLayers = double(size(Wports, 2));
@@ -198,12 +200,8 @@ if ~hasReplayPayload
     tf = false;
     return;
 end
-grantHarq = sixgr.util.structGet(grant, "HARQ", struct());
-tf = sixgr.util.logicalAny(sixgr.util.structGet(harqContext, "IsRetransmission", false)) || ...
-    sixgr.util.logicalAny(sixgr.util.structGet(grantHarq, "IsRetransmission", false)) || ...
-    sixgr.util.logicalAny(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
-    sixgr.util.logicalAny(sixgr.util.structGet(sixgr.util.structGet(grant, "PHYGrant", struct()), "HARQProcessKey.IsRetransmission", false)) || ...
-    (isstruct(tbContext) && ~isempty(fieldnames(tbContext)));
+tf = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+    grant, sixgr.util.structGet(grant, "PHYGrant", struct()), harqContext);
 end
 
 function replayBits = localReplayTransportBlockBits(trialContext)

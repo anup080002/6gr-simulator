@@ -374,7 +374,10 @@ cfg.phy.carrier.NSlot = 0;
 cfg.phy.carrier.NFrame = 0;
 cfg.phy.pdcch.rnti = double(rnti);
 cfg.phy.pdcch.scramblingRNTI = 0;
-cfg.phy.pdcch.blindSearch = true;
+cfg.phy.pdcch.blindSearch = logical(sixgr.util.structGet(cfg, ...
+    "phy.pdcch.blindSearch", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch_blind_search", ...
+    cfg.phy.pdcch.blindSearch, "recoverSIB1FromWaveform");
 cfg.phy.pdcch.allowBlindCandidateTimingEstimate = false;
 cfg.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];
 end

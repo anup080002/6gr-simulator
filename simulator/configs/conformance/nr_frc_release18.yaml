@@ -59,6 +59,17 @@
     "normative_requirement_semantics": "one_sided_minimum_performance_at_required_snr",
     "warning": "The absolute measured-minus-required SNR crossing check is a simulator regression diagnostic only. 3GPP specifies one-sided minimum performance at the stated SNR, so a receiver that exceeds the requirement must not be declared nonconformant merely because its crossing is lower."
   },
+  "runtime_feature_defaults": {
+    "authority": "frc_catalog_yaml",
+    "ssb_enabled": false,
+    "csi_rs_enabled": false,
+    "ptrs": {
+      "enabled": false,
+      "frequency_density": "disabled",
+      "time_density": "disabled",
+      "requirement_variant": "No"
+    }
+  },
   "entries": [
     {
       "id": "dl_r_pdsch_1_1_4_fdd_awgn",

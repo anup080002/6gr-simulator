@@ -61,5 +61,67 @@ classdef MatrixContract
                     selectedDigest, appliedDigest);
             end
         end
+
+        function token = serialize(W)
+            %SERIALIZE Persist an exact finite complex matrix with a digest.
+            if ~isnumeric(W) || isempty(W) || ...
+                    any(~isfinite(real(W(:))) | ~isfinite(imag(W(:))))
+                error("sixgr:mimo:InvalidSerializedMatrix", ...
+                    "Only nonempty finite numeric matrices can be serialized.");
+            end
+            W = double(W);
+            payload = struct( ...
+                "ContractVersion", "sixgr_complex_matrix/v1", ...
+                "Rows", double(size(W, 1)), ...
+                "Columns", double(size(W, 2)), ...
+                "RealColumnMajor", double(real(W(:)).'), ...
+                "ImagColumnMajor", double(imag(W(:)).'), ...
+                "MatrixSHA256", char(sixgr.phy.mimo.MatrixContract.digest(W)));
+            token = string(jsonencode(payload));
+        end
+
+        function W = deserialize(token, options)
+            %DESERIALIZE Reconstruct and verify a serialized complex matrix.
+            arguments
+                token (1,1) string
+                options.ExpectedDigest (1,1) string = ""
+            end
+            if strlength(strtrim(token)) == 0
+                error("sixgr:mimo:InvalidSerializedMatrix", ...
+                    "Serialized matrix token is empty.");
+            end
+            try
+                payload = jsondecode(char(token));
+            catch ME
+                error("sixgr:mimo:InvalidSerializedMatrix", ...
+                    "Serialized matrix JSON is invalid: %s", ME.message);
+            end
+            required = ["ContractVersion","Rows","Columns", ...
+                "RealColumnMajor","ImagColumnMajor","MatrixSHA256"];
+            if ~isstruct(payload) || ~all(isfield(payload, cellstr(required))) || ...
+                    string(payload.ContractVersion) ~= "sixgr_complex_matrix/v1"
+                error("sixgr:mimo:InvalidSerializedMatrix", ...
+                    "Serialized matrix does not satisfy sixgr_complex_matrix/v1.");
+            end
+            nRows = double(payload.Rows);
+            nCols = double(payload.Columns);
+            re = double(payload.RealColumnMajor(:));
+            im = double(payload.ImagColumnMajor(:));
+            if ~(isscalar(nRows) && isfinite(nRows) && nRows >= 1 && nRows == fix(nRows) && ...
+                    isscalar(nCols) && isfinite(nCols) && nCols >= 1 && nCols == fix(nCols) && ...
+                    numel(re) == nRows * nCols && numel(im) == nRows * nCols && ...
+                    all(isfinite(re)) && all(isfinite(im)))
+                error("sixgr:mimo:InvalidSerializedMatrix", ...
+                    "Serialized matrix dimensions or coefficients are invalid.");
+            end
+            W = reshape(complex(re, im), nRows, nCols);
+            actualDigest = sixgr.phy.mimo.MatrixContract.digest(W);
+            storedDigest = string(payload.MatrixSHA256);
+            if actualDigest ~= storedDigest || ...
+                    (strlength(options.ExpectedDigest) > 0 && actualDigest ~= options.ExpectedDigest)
+                error("sixgr:mimo:PrecoderDigestMismatch", ...
+                    "Serialized matrix digest verification failed.");
+            end
+        end
     end
 end

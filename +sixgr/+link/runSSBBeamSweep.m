@@ -17,7 +17,14 @@ if ~isempty(opt.MaxBeams)
     beamCount = min(beamCount, max(1, round(double(opt.MaxBeams))));
 end
 
-if ~logical(sixgr.util.structGet(cfg, "phy.ssb.enable", true)) || beamCount < 1
+configuredSSB = logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false));
+configuredBeamSweep = logical(sixgr.util.structGet(cfg, ...
+    "phy.beamManagement.enabled", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "ssb", configuredSSB, ...
+    "runSSBBeamSweep.SSB");
+sixgr.config.assertRuntimeFeatureUse(cfg, "beam_sweep", configuredBeamSweep, ...
+    "runSSBBeamSweep.beam_sweep");
+if ~(configuredSSB && configuredBeamSweep) || beamCount < 1
     T = localEmptyTable();
     out = struct("Ok", true, "TrialTable", T, "BeamCount", double(beamCount), ...
         "OutputPath", string(opt.OutputPath));

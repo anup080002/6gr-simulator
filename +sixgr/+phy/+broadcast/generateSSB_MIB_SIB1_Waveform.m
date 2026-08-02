@@ -16,6 +16,11 @@ end
 if ~isempty(p.Results.Seed)
     rng(round(double(p.Results.Seed)), "twister");
 end
+localRequireBroadcastFeature(cfg, "ssb", "phy.ssb.enable");
+localRequireBroadcastFeature(cfg, "pbch", "phy.pbch.enable");
+localRequireBroadcastFeature(cfg, "pdcch", "phy.pdcch.enable");
+localRequireBroadcastFeature(cfg, "sib1", "phy.sib1.enable");
+localRequireEnabledPath(cfg, "phy.pdsch.enable", "SIB1 PDSCH");
 
 cfg = localNormalizeBroadcastCfg(cfg);
 tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
@@ -174,10 +179,30 @@ cfg.phy.carrier.NStartGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NStar
 cfg.phy.carrier.NSlot = 0;
 cfg.phy.carrier.NFrame = 0;
 cfg.phy.carrier.CyclicPrefix = char(string(sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal")));
-cfg.phy.ssb.enable = true;
-cfg.phy.sib1.enable = true;
-cfg.phy.pdcch.enable = true;
-cfg.phy.pdsch.enable = true;
+end
+
+function localRequireBroadcastFeature(cfg, featureName, runtimePath)
+actual = sixgr.util.structGet(cfg, runtimePath, []);
+sixgr.config.assertRuntimeFeatureUse(cfg, featureName, actual, ...
+    "generateSSB_MIB_SIB1_Waveform:" + featureName);
+if ~logical(actual)
+    error("sixgr:phy:broadcast:FeatureDisabledByConfiguration", ...
+        "Cannot generate the SIB1 acquisition waveform because YAML feature %s is disabled.", ...
+        char(featureName));
+end
+end
+
+function localRequireEnabledPath(cfg, runtimePath, label)
+actual = sixgr.util.structGet(cfg, runtimePath, []);
+if ~((islogical(actual) || isnumeric(actual)) && isscalar(actual) && ...
+        isfinite(double(actual)) && any(double(actual) == [0 1]))
+    error("sixgr:phy:broadcast:MissingFeatureConfiguration", ...
+        "%s requires an explicit boolean %s.", char(label), char(runtimePath));
+end
+if ~logical(actual)
+    error("sixgr:phy:broadcast:FeatureDisabledByConfiguration", ...
+        "%s is disabled by %s=false.", char(label), char(runtimePath));
+end
 end
 
 function [pdsch, dci, targetCodeRate, paddedBits] = localSelectSIB1Allocation(carrier, cfg, sib1Bits)

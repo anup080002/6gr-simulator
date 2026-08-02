@@ -187,6 +187,8 @@ try
         grantRx.TargetCodeRate = double(raCfg.Msg3PUSCH.TargetCodeRate);
         grantRx.RV = double(raCfg.Msg3PUSCH.RV);
         grantRx.NLayers = double(raCfg.Msg3PUSCH.NLayers);
+        grantRx.EnablePTRS = logical(sixgr.util.structGet( ...
+            raCfg.Msg3PUSCH, "EnablePTRS", false));
         grantRx.TemporaryCRNTI = double(rarRx.TemporaryCRNTI);
     else
         grantRx = struct();

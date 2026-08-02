@@ -1,0 +1,4 @@
+RunId,CandidateIndex,SearchSpaceType,RNTIAttempted,ExpectedRNTI,CrcPass,DciFormatDecoded,Metric,IsSelectedCandidate
+"sib1_runtime_waveform",1,"Type0-PDCCH-CSS",65535,65535,1,"1_0",38.8374472596058,1
+"sib1_runtime_waveform",2,"Type0-PDCCH-CSS",65535,65535,0,"1_0",-11.1618371001044,0
+"sib1_runtime_waveform",3,"Type0-PDCCH-CSS",65535,65535,0,"1_0",13.7541108093945,0

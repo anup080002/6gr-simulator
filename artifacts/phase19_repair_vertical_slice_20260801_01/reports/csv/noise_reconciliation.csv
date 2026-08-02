@@ -1,0 +1,2 @@
+BandwidthHz,ThermalNoiseDensity_dBmHz,ThermalNoisePower_dBm,UE_NoiseFigure_dB,BS_NoiseFigure_dB,UE_NoiseFloor_dBm,BS_NoiseFloor_dBm,NoiseOperatingMode,NoiseReconciliationOk,EvidenceSource
+10000000,-174,-104,7,7,-97,-97,"receiver_noise_figure_thermal_noise",1,"resolved_config_noise_figure_thermal_noise"

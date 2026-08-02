@@ -1,0 +1,46 @@
+function ok = testMIMOSpatialSignatureContract()
+%TESTMIMOSPATIALSIGNATURECONTRACT Exact matrix persistence and channel reduction.
+
+setup6GRSimToolkit("Verbose", false);
+rng(41, "twister");
+W = complex(randn(8, 2), randn(8, 2));
+W = W ./ norm(W, "fro");
+token = sixgr.phy.mimo.MatrixContract.serialize(W);
+digest = sixgr.phy.mimo.MatrixContract.digest(W);
+roundTrip = sixgr.phy.mimo.MatrixContract.deserialize( ...
+    token, "ExpectedDigest", digest);
+assert(isequal(W, roundTrip), ...
+    "Complex matrix serialization must be exact and column-major stable.");
+
+tampered = jsondecode(char(token));
+tampered.RealColumnMajor(1) = tampered.RealColumnMajor(1) + 1e-6;
+localAssertTypedError(@()sixgr.phy.mimo.MatrixContract.deserialize( ...
+    string(jsonencode(tampered))), "sixgr:mimo:PrecoderDigestMismatch");
+
+h = complex(zeros(12, 14, 4, 2));
+h(:, :, 1, 1) = 1;
+h(:, :, 3, 2) = 1i;
+signature = sixgr.phy.mimo.spatialSignatureFromChannelEstimate(h);
+assert(isequal(size(signature), [4 2]) && ...
+    abs(norm(signature, "fro") - 1) < 1e-12 && ...
+    abs(signature(1, 1)) > 0 && abs(signature(3, 2)) > 0, ...
+    "Channel-estimate reduction must preserve receiver/transmitter spatial axes.");
+rankTwoSignature = sixgr.phy.mimo.spatialSignatureFromChannelEstimate(h, "Rank", 2);
+assert(isequal(size(rankTwoSignature), [4 2]) && ...
+    abs(norm(rankTwoSignature, "fro") - 1) < 1e-12 && ...
+    norm(rankTwoSignature' * rankTwoSignature - eye(2) ./ 2, "fro") < 1e-12, ...
+    "A measured rank-2 SRS signature must expose the dominant orthonormal rank-2 subspace.");
+ok = true;
+end
+
+function localAssertTypedError(fn, expectedId)
+threw = false;
+try
+    fn();
+catch ME
+    threw = true;
+    assert(string(ME.identifier) == string(expectedId), ...
+        "Expected %s, received %s.", expectedId, ME.identifier);
+end
+assert(threw, "Expected typed error %s.", expectedId);
+end

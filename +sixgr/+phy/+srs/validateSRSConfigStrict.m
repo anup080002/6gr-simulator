@@ -11,7 +11,7 @@ for ii = 1:numel(needed)
         reasons(end+1, 1) = "toolbox_missing:" + needed(ii); %#ok<AGROW>
     end
 end
-if ~logical(sixgr.util.structGet(srsCfg.BaseConfig, "phy.srs.enable", true))
+if ~logical(sixgr.util.structGet(srsCfg.BaseConfig, "phy.srs.enable", false))
     reasons(end+1, 1) = "srs_disabled_in_strict_config"; %#ok<AGROW>
 end
 if ~ismember(lower(string(srsCfg.ResourceSetUsage)), ["codebook","noncodebook","beammanagement"])

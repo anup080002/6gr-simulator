@@ -74,7 +74,14 @@ out.SIB1PDSCHReceiverHestSINR_dB = NaN;
 out.SIB1PDSCHReceiverHestSINRSource = "";
 out.SIB1PDSCHStrictReceiverEvidenceOk = false;
 
-if ~logical(sixgr.util.structGet(cfg, "phy.ssb.enable", true))
+configuredSSB = logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "ssb", configuredSSB, ...
+    "runCellSearch_MIB_SIB1.SSB");
+configuredPBCH = logical(sixgr.util.structGet(cfg, "phy.pbch.enable", ...
+    sixgr.util.structGet(cfg, "phy.mib.enable", false)));
+sixgr.config.assertRuntimeFeatureUse(cfg, "pbch", configuredPBCH, ...
+    "runCellSearch_MIB_SIB1.PBCH");
+if ~(configuredSSB && configuredPBCH)
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageDisabled", ...
         "Strict mode requires phy.ssb.enable=true for CellSearch_MIB_SIB1 coverage.");
     out.Skipped = true;
@@ -93,6 +100,8 @@ if exist("nrWaveformGenerator","file") ~= 2
 end
 
 wantSIB1 = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
+sixgr.config.assertRuntimeFeatureUse(cfg, "sib1", wantSIB1, ...
+    "runCellSearch_MIB_SIB1.SIB1");
 if wantSIB1
     try
         cfg = localSanitizeSIB1PrecodingConfig(cfg);
