@@ -7477,6 +7477,12 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
         db_artifacts = fetch_artifacts(run_id)
         artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
+    component_manifest_artifact = find_artifact_by_logical_path(
+        artifacts, "reports/csv/component_artifact_publication_manifest.csv"
+    )
+    public_artifacts = prefer_canonical_artifacts_over_component_views(
+        public_artifacts, component_manifest_artifact
+    )
     sorted_artifacts = sorted(public_artifacts, key=artifact_sort_key)
     table_artifacts = dedupe_table_descriptors_for_ui(
         [
@@ -12540,6 +12546,7 @@ def build_debug_payload(run_row: dict[str, Any], artifacts: list[dict[str, Any]]
 
 
 REALTIME_COMPONENT_SPECS: tuple[dict[str, Any], ...] = (
+    {"id": "frame_grid", "label": "Frame / Grid / Numerology", "group": "PHY", "tokens": ("frame_grid", "resource_grid", "numerology", "slot_symbol", "carrier_grid", "component_carrier", "guardband", "bwp_", "tdd_", "fdd_")},
     {"id": "waveform", "label": "Waveform", "group": "PHY", "tokens": ("waveform", "ofdm", "constellation", "spectrum", "spectral")},
     {"id": "ssb_pbch", "folder": "ssb", "label": "SSB / PBCH", "group": "Access", "tokens": ("ssb", "pbch", "pss", "sss")},
     {"id": "prach_rach", "folder": "prach", "label": "PRACH / RACH", "group": "Access", "tokens": ("prach", "random_access", "four_step_ra", "contention")},
@@ -12550,11 +12557,45 @@ REALTIME_COMPONENT_SPECS: tuple[dict[str, Any], ...] = (
     {"id": "pucch", "label": "PUCCH / UCI", "group": "Control", "tokens": ("pucch", "uci_")},
     {"id": "air_interface", "label": "Air Interface", "group": "PHY", "tokens": ("air_interface/", "tx_rx_stage", "resource_grid")},
     {"id": "mimo", "label": "MIMO / Beamforming", "group": "Spatial", "tokens": ("mimo", "beamforming", "beam_", "precoder", "rank_layer")},
-    {"id": "reference_signals", "label": "Reference Signals", "group": "PHY", "tokens": ("csi_rs", "csirs", "srs", "trs", "dmrs", "ptrs", "reference_signal")},
-    {"id": "l2", "label": "Layer 2", "group": "Protocol", "tokens": ("/mac", "mac_", "harq", "rlc", "pdcp", "sdap", "bearer")},
+    {"id": "reference_signals", "label": "Reference Signals / Link Adaptation", "group": "PHY", "tokens": ("csi_rs", "csirs", "srs", "trs", "dmrs", "ptrs", "reference_signal", "rsla", "link_adaptation", "cqi")},
+    {"id": "channel", "label": "Channel / Geometry / Mobility", "group": "Propagation", "tokens": ("channel_", "geometry", "mobility", "interference", "pathloss", "fading", "doppler", "blockage", "delay_spread", "angle_spread")},
+    {"id": "rf", "label": "RF / Frontend / Power", "group": "RF", "tokens": ("rf_", "frontend", "agc", "cfo", "phase_noise", "iq_imbalance", "adc_", "dac_", "aclr", "power_control")},
+    {"id": "mac_harq_scheduler", "label": "MAC / HARQ / Scheduler", "group": "Protocol", "tokens": ("mac_", "harq", "scheduler", "bsr", "phr", "logical_channel", "lcp_")},
+    {"id": "l2", "label": "Layer 2 / Bearers", "group": "Protocol", "tokens": ("protocol_stack", "protocol_", "rlc", "pdcp", "sdap", "bearer")},
     {"id": "l3", "label": "Layer 3", "group": "Protocol", "tokens": ("rrc", "handover", "mobility_event", "sib1")},
     {"id": "traffic", "label": "Traffic / QoS", "group": "Traffic", "tokens": ("traffic", "packet_flow", "flow_", "goodput", "latency", "qos")},
+    {"id": "system", "label": "System / Multi-UE", "group": "System", "tokens": ("system_", "mmtc", "cell_load", "system_level")},
+    {"id": "validation", "label": "Validation / Publication", "group": "Evidence", "tokens": ("validation", "audit", "coverage", "manifest", "contract", "acceptance", "negative_test", "verifier", "schema", "truth_", "configured_effective", "scenario_summary", "integration")},
 )
+
+
+COMPONENT_VIEW_ROOTS = frozenset(
+    str(spec.get("folder") or spec["id"])
+    for spec in REALTIME_COMPONENT_SPECS
+    if str(spec["id"]) not in {"air_interface", "system"}
+)
+COMPONENT_VIEW_KINDS = frozenset({"csv", "image", "json", "mat"})
+
+
+def is_component_view_artifact_path(value: Any) -> bool:
+    parts = str(value or "").strip().lower().replace("\\", "/").split("/")
+    return (
+        len(parts) >= 3
+        and parts[0] in COMPONENT_VIEW_ROOTS
+        and parts[1] in COMPONENT_VIEW_KINDS
+    )
+
+
+def prefer_canonical_artifacts_over_component_views(
+    artifacts: list[dict[str, Any]], manifest_artifact: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    if not manifest_artifact:
+        return list(artifacts)
+    return [
+        artifact
+        for artifact in artifacts
+        if not is_component_view_artifact_path(artifact.get("logical_path"))
+    ]
 
 
 def realtime_component_for_text(value: Any) -> str:
@@ -12574,12 +12615,18 @@ def build_realtime_component_dashboard(
     rows: list[dict[str, Any]] = []
     running = str(run_status or "").strip().lower() == "running"
     for spec in REALTIME_COMPONENT_SPECS:
-        matches = []
+        all_matches = []
         for artifact in artifacts:
             logical_path = str(artifact.get("logical_path") or "").replace("\\", "/")
             lowered = logical_path.lower()
             if any(token in lowered for token in spec["tokens"]):
-                matches.append(artifact)
+                all_matches.append(artifact)
+        canonical_matches = [
+            artifact
+            for artifact in all_matches
+            if not is_component_view_artifact_path(artifact.get("logical_path"))
+        ]
+        matches = canonical_matches if canonical_matches else all_matches
         csv_count = sum(
             1
             for artifact in matches
@@ -12611,7 +12658,7 @@ def build_realtime_component_dashboard(
                 "planned_folder": str(spec.get("folder") or spec["id"]),
                 "latest_artifacts": [build_artifact_descriptor(item) for item in matches[:4]],
                 "status_note": (
-                    "Persisted evidence is available; this is not itself a pass verdict."
+                    "Canonical persisted evidence is available; this is not itself a pass verdict."
                     + (" Legacy SVG is retained only because this is an older immutable run." if legacy_svg_count else "")
                     if matches
                     else "No persisted evidence matching this component is available for the selected run."
@@ -14509,6 +14556,12 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     runtime_context = extract_runtime_context(run_row, artifacts)
     output_coverage = build_output_coverage_context(artifacts)
     public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
+    component_manifest_artifact = find_artifact_by_logical_path(
+        artifacts, "reports/csv/component_artifact_publication_manifest.csv"
+    )
+    public_artifacts = prefer_canonical_artifacts_over_component_views(
+        public_artifacts, component_manifest_artifact
+    )
     if not output_coverage.get("issue_registry"):
         status_issue_rows = build_status_issue_registry_rows(run_row, runtime_context)
         if status_issue_rows:
@@ -14543,9 +14596,6 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     ]
     summary = build_live_summary(run_row, artifacts, runtime_context)
     metric_explorer = build_metric_explorer_payload(artifacts, summary)
-    component_manifest_artifact = find_artifact_by_logical_path(
-        artifacts, "reports/csv/component_artifact_publication_manifest.csv"
-    )
     realtime_dashboard = {
         "components": build_realtime_component_dashboard(
             public_artifacts, status_text

@@ -28,11 +28,14 @@ def test_component_dashboard_separates_raster_from_legacy_svg() -> None:
             artifact("reports/image/prach_correlation.png", "image/png", 2),
             artifact("reports/image/prach_legacy.svg", "image/svg+xml", 3),
             artifact("air_interface/csv/dl_pdsch_trials.csv", artifact_id=4),
+            artifact("prach/csv/prach_trials.csv", artifact_id=5),
+            artifact("reports/csv/mac_harq_trials.csv", artifact_id=6),
+            artifact("reports/image/channel_geometry.png", "image/png", 7),
         ],
         "completed",
     )
     by_id = {row["component_id"]: row for row in rows}
-    assert len(rows) == 14
+    assert len(rows) == 20
     assert by_id["prach_rach"]["status"] == "evidence_available"
     assert by_id["prach_rach"]["csv_count"] == 1
     assert by_id["prach_rach"]["image_count"] == 1
@@ -40,6 +43,12 @@ def test_component_dashboard_separates_raster_from_legacy_svg() -> None:
     assert by_id["prach_rach"]["planned_folder"] == "prach"
     assert "pass" not in by_id["prach_rach"]["status"]
     assert by_id["l3"]["status"] == "not_published"
+    assert by_id["mac_harq_scheduler"]["csv_count"] == 1
+    assert by_id["channel"]["image_count"] == 1
+    assert dashboard.is_component_view_artifact_path("prach/csv/prach_trials.csv")
+    assert not dashboard.is_component_view_artifact_path(
+        "control/csv/prach_trials.csv"
+    )
 
 
 def test_ue_status_merges_control_and_performance_without_upgrading_fidelity() -> None:
@@ -85,3 +94,27 @@ def test_runtime_log_component_annotation_preserves_original_message() -> None:
     assert rows[0]["component"] == "pdcch"
     assert rows[0]["message_text"] == source[0]["message_text"]
     assert "component" not in source[0]
+
+
+def test_component_view_detection_does_not_hide_canonical_roots() -> None:
+    assert not dashboard.is_component_view_artifact_path(
+        "air_interface/csv/dl_pdsch_trials.csv"
+    )
+    assert not dashboard.is_component_view_artifact_path(
+        "system/image/system_topology.png"
+    )
+    assert dashboard.is_component_view_artifact_path(
+        "pdsch/image/dl_bler_vs_snr.png"
+    )
+
+
+def test_manifest_hides_mirrors_from_primary_gallery_only() -> None:
+    rows = [
+        artifact("air_interface/csv/dl_pdsch_trials.csv", artifact_id=1),
+        artifact("pdsch/csv/dl_pdsch_trials.csv", artifact_id=2),
+    ]
+    assert dashboard.prefer_canonical_artifacts_over_component_views(rows, None) == rows
+    filtered = dashboard.prefer_canonical_artifacts_over_component_views(
+        rows, artifact("reports/csv/component_artifact_publication_manifest.csv", artifact_id=3)
+    )
+    assert [row["artifact_id"] for row in filtered] == [1]

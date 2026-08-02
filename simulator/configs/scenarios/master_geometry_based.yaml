@@ -1,4 +1,9 @@
-# Self-contained operator master. Edit this file directly or through the WebGUI.
+# Self-contained operator master for UE_PLACEMENT_GEOMETRY mode.
+# Edit this file directly or through the WebGUI; it is the scenario authority.
+# Every supported feature family remains present even when disabled. A null value
+# means "derive from the named standards/runtime context" and never means a hidden
+# MATLAB default. Units are encoded in field suffixes: _hz, _khz, _mhz, _db,
+# _dbm, _ms, _us, _ns, _s, _samples, _slots, _symbols, _rb or _prb.
 # No inherited scenario values or checked-in smoke variants are used.
 canonical_control:
   identity:
@@ -6,7 +11,7 @@ canonical_control:
     scenario_name: Master geometry-based UE placement scenario
     description: WebGUI-selectable waveform-bundle geometry and mobility validation scenario for two cells, two UEs, and 200
       km/h motion at 4 GHz.
-    version: 2.0.0
+    version: 3.0.0
     owner: codex
     research_class: baseline_benchmark
     maturity_tag: baseline
@@ -115,6 +120,7 @@ canonical_control:
     trace_capture_level: full
     save_intermediate: true
     total_time_ms: 200
+    fixed_link_campaign_only: false
   topology:
     site_layout: hex_grid
     cell_type: UMa
@@ -281,6 +287,8 @@ canonical_control:
     ue_array_geometry: ULA
     bs_num_antenna_elements: 64
     ue_num_antenna_elements: 4
+    bs_panel_count: 2
+    ue_panel_count: 1
     polarization: dual
     element_spacing_h: 0.5
     element_spacing_v: 0.5
@@ -312,6 +320,9 @@ canonical_control:
     mu_mimo_precoder_leakage_threshold_db: -15
     mu_mimo_minimum_desired_subspace_gain_db: -30
     mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
+    hybrid_beamforming_flag: false
+    rank_adaptation_enable: true
+    rank_adaptation_policy: dynamic
     phase07_strict:
       enabled: false
       profile_id: fr1_typeI_single_panel_strict
@@ -365,6 +376,8 @@ canonical_control:
     slice_aware: true
     starvation_guard: true
     cell_edge_boost: true
+    coverageOutageGuardEnabled: true
+    minSchedulingSINR_dB: -5
     tbsMode: faithful
     fastNREApprox: false
     large_scale_update_period_slots: 1
@@ -449,6 +462,10 @@ canonical_control:
     ptrs_cpe_correction_enabled: true
     ptrs_port_association_policy: first_scheduled_dmrs_port
     csi_feedback_mode: PMI+CQI+RI
+    # DL CSI-RS is the acquisition authority. UL SRS remains independently
+    # enabled below; do not claim joint CSI without an explicit port map.
+    csi_acquisition_mode: dl_based
+    operation_orientation: tdd_reciprocity
     cqi_reporting_enabled: true
     pmi_reporting_enabled: true
     ri_reporting_enabled: true
@@ -579,6 +596,8 @@ canonical_control:
     blind_search_enabled: true
     pucch_enabled: true
     pucch_format: 2
+    # Null requires the strict DCI-context resolver to derive the exact size.
+    pdcch_payload_bits: null
     coreset_type: ue_specific
     search_space_type: ue_specific
     dci_formats:
@@ -1093,6 +1112,7 @@ canonical_control:
     profiler_top_edges: 500
     live_publish_frame_interval: 1
     live_heavy_refresh_interval_frames: 1
+    live_heavy_refresh_each_sweep_point: true
     emit_placeholder_artifacts: false
     component_artifact_views:
       enabled: true
@@ -1100,6 +1120,25 @@ canonical_control:
       mirror_mode: byte_identical_hash_verified
       image_formats: [png, jpg, jpeg]
       canonical_files_move: false
+      required_components:
+      - prach
+      - initial_access
+      - ssb
+      - pdcch
+      - pdsch
+      - pusch
+      - pucch
+      - reference_signals
+      - mimo
+      - frame_grid
+      - waveform
+      - l3
+      - channel
+      - rf
+      - mac_harq_scheduler
+      - l2
+      - traffic
+      - validation
   logging:
     level: info
     save_logs: true
@@ -1111,12 +1150,18 @@ canonical_control:
     snr_sweep_enabled: false
     topology_sweep_enabled: false
     ue_count_sweep_enabled: false
+  validation:
+    run_class: ue_placement_geometry_lls
   manifest:
     config_contract: canonical_single_source_of_truth
     runtime_expansion: loader_generated_required_sections_and_aliases
     duplication_policy: do_not_add_runtime_mirror_sections_to_this_yaml
     arbitrary_scale_policy: derive_cells_from_num_sites_times_num_sectors_per_site_when_num_cells_is_omitted
     advanced_override_policy: use runtime_overrides with one dot path per low-level parameter
+    disabled_feature_policy: retain_every_parameter_and_gate_execution_with_enabled_false
+    null_value_policy: only_for_context_derived_or_mutually_exclusive_values
+    unit_policy: units_are_mandatory_in_parameter_names
+    parameter_surface_version: 3.0.0
   runtime_overrides:
   - path: output.emit_disabled_audit_artifacts
     value: true
@@ -1124,6 +1169,18 @@ canonical_control:
     value: true
   - path: output.persist_to_results_folder
     value: true
+  - path: antenna_and_array.bs_num_txrus
+    value: 4
+  - path: antenna_and_array.bs_num_rxrus
+    value: 4
+  - path: antenna_and_array.ue_num_txrus
+    value: 2
+  - path: antenna_and_array.ue_num_rxrus
+    value: 4
+  - path: antenna_and_array.reciprocity_assumption
+    value: tdd_reciprocity
+  - path: mimo_and_beam_management.reciprocity_mode
+    value: tdd_reciprocity
   - path: channel_model.k_factor
     value: -999
   - path: channel_model.shadow_fading_model
@@ -1160,6 +1217,10 @@ canonical_control:
     value: estimated
   - path: link_adaptation.bootstrap_mcs_index
     value: 0
+  - path: link_adaptation.initial_mcs
+    value: 0
+  - path: link_adaptation.maximum_mcs
+    value: 20
   - path: link_adaptation.dl_bootstrap_min_cqi_for_scheduling
     value: 2
   - path: link_adaptation.bootstrap_preview_backoff_db
@@ -1246,8 +1307,46 @@ canonical_control:
     layer_count: 2
     modulation: 256QAM
 validation:
+  RunClass: ue_placement_geometry_lls
   run_class: ue_placement_geometry_lls
+  publication_mode: strict_actual_evidence
+  required_artifact_audit: true
+  fixed_snr_sweep_required: false
+  geometry_evidence_required: true
+  strict_after_run_artifact_audit: true
+  # Retain the full fixed-link contract as an explicitly disabled feature.
+  # Enabling it requires the fixed-link noise/profile values below to become
+  # the active run authority; geometry mode never silently activates them.
+  fixed_link_campaign:
+    enabled: false
+    fixed_reference_mode: false
+    single_user_mode: false
+    configuration_authority: master_yaml
+    direction: both
+    channel_model: AWGN
+    noise_operating_mode: standalone_awgn_snr_argument
+    pdsch_execution_profile: phy_calibration
+    link_adaptation_mode: fixed
+    harq_enabled: false
+    snr_db: [-20, 0, 20]
+    mcs: [20]
+    rank: 2
+    layers: 2
+    n_prb: 273
+    min_tb_per_point: 5000
+    max_tb_per_point: 20000
+    min_errors_for_ci: 100
+    max_ci_half_width: 0.05
+    seeds: [104729]
+    target_bler: [0.1, 0.01]
+    confidence_level: 0.95
+    trials_per_drop: 200
+    disable_auxiliary_signals: false
+    enable_ptrs: true
 bwp:
+  # No scheduled BWP transition in this master. Add commands here rather
+  # than editing MATLAB when a multi-BWP campaign is required.
+  switch_commands: []
   dl:
     bwp_id: 0
     direction: DL
@@ -1343,6 +1442,7 @@ pdsch6gr:
   enable_pdsch_repetition: false
   repetition_mode: none
   repetition_count: 1
+  enable_ptrs: true
   ptrs_band_policy: optional_fr1_7ghz
   channel_estimation_mode: realistic
   parameter_estimation_mode: practical
@@ -1400,7 +1500,39 @@ pdsch6gr:
   - 1
   study_num_trials: 1
 pdsch:
+  enabled: true
+  tbs_policy: allocation_based_exact_38214
+  codeword_count: 1
+  cw_to_layer_mapping: single_codeword_all_layers
+  modulation_table: qam256_table2
+  mixed_modulation_flag: false
+  shaping_policy: none
+  distribution_matching_policy: none
+  scrambling_policy: nr_38211
+  dmrs_policy: configured_type1_mapping_a
+  ptrs_policy: enabled_from_yaml
+  csi_rs_association: measured_periodic_nzp_csi_rs
+  mimo_mode: mu_mimo
+  rank: 2
+  precoder_family: wideband_csi_codebook
+  prg_policy: dynamic_bundle_size_4
+  link_adaptation_mode: amc
+  mcs_table: qam256_table2
+  fixed_mcs: 20
+  amc_policy: measured_cqi_olla
+  harq_id_space: 16
+  rv_sequence: [0, 2, 3, 1]
+  retransmission_policy: incremental_redundancy
+  rate_matching_policy: exact_nr_ldpc_allocation
+  puncturing_policy: configured_coreset_and_reserved_re
+  power_allocation_policy: equal_total_power_per_scheduled_ue
+  beam_policy: measured_csi_wideband
+  mtrp_policy: noncoherent_configured_trp_selection
+  mrss_constraints: measured_reference_signal_only
+  throughput_eval_policy: first_success_decoded_transport_block_bits
   execution_profile: connected_strict
+  # prb_set is mutually exclusive with the authoritative prb_start/num_prb
+  # allocation below and is therefore intentionally not instantiated.
   prb_start: 0
   num_prb: 273
   layer_count: 2
@@ -1418,9 +1550,36 @@ pdsch:
   tbs_scaling: 1
   cbg_transmission: false
 pusch:
+  enabled: true
+  waveform: CP-OFDM
+  tbs_policy: allocation_based_exact_38214
+  ulsch_enabled: true
+  uci_multiplexing_mode: configured_uci_on_pusch_when_colliding
+  dmrs_policy: configured_type1_mapping_a
+  ptrs_policy: enabled_from_yaml
+  codeword_count: 1
   prb_start: 0
   num_prb: 273
   layer_count: 2
+  modulation_table: qam256_table2
+  shaping_policy: none
+  scrambling_policy: nr_38211
+  fixed_mcs: 20
+  amc_policy: measured_cqi_olla
+  low_papr_mode: none
+  dft_size: 4096
+  fd_mapping: localized
+  non_contiguous_mapping: false
+  prep_time_model: explicit_k2_and_n2
+  simultaneous_pusch_pucch_policy: multiplex_uci_on_pusch
+  unknown_size_uci_policy: reject
+  grant_timing: decoded_dci_k2
+  beam_policy: measured_srs_codebook
+  msg3_flag: false
+  rv_sequence: [0, 2, 3, 1]
+  retransmission_policy: incremental_redundancy
+  # prb_set is mutually exclusive with the authoritative prb_start/num_prb
+  # allocation below and is therefore intentionally not instantiated.
   resource_allocation_type: type1
   mapping_type: A
   start_symbol: 0
@@ -1468,6 +1627,7 @@ pusch:
   ptrs_port_set:
   - 0
   ptrs_nid: 1
+  ptrs_enabled: true
   uci_beta_offset_ack: 20
   uci_beta_offset_csi1: 6.25
   uci_beta_offset_csi2: 6.25
@@ -1496,8 +1656,81 @@ pusch:
   cbg_transmission: false
   tp_pi2_bpsk: false
 pdcch:
+  enabled: true
+  coreset_definitions:
+  - id: 1
+    n_rb: 72
+    rb_start: 0
+    duration_symbols: 2
+    mapping_type: noninterleaved
+  search_space_definitions:
+  - id: 1
+    type: USS
+    coreset_id: 1
+    period_slots: 1
+    offset_slots: 0
+  css_uss_policy: common_and_ue_specific
+  candidate_locations:
+  - aggregation_level: 1
+    candidates: 8
+  - aggregation_level: 2
+    candidates: 8
+  - aggregation_level: 4
+    candidates: 4
+  - aggregation_level: 8
+    candidates: 2
+  - aggregation_level: 16
+    candidates: 1
+  dci_families: ['0_0', '0_1', '1_0', '1_1']
+  dci_size_policy: context_derived_exact
+  crc_length: 24
+  virtual_crc_flag: false
+  modulation: QPSK
+  aggregation_levels: [1, 2, 4, 8, 16]
+  cce_to_reg_mapping: noninterleaved
+  reg_bundle_size: 6
+  dmrs_policy: nr_38211_coreset_scrambling
+  blind_decode_policy: exhaustive_configured_candidates
+  max_blind_decodes: 16
+  max_non_overlapped_cces: 16
+  slot_monitoring_policy: every_configured_monitoring_occasion
+  span_monitoring_policy: disabled
+  monitoring_adaptation_policy: measured_bler_aggregation_selection
+  pdcch_repetition_policy: none
+  miss_detection_feedback_policy: scheduler_dtx_event
+  pdcch_detection_feedback_policy: decoded_grant_binding
+  prior_information_aided_decoding: false
+  two_stage_dci_policy: disabled
+  multi_stage_dci_policy: disabled
+  control_capacity_eval_policy: exact_cce_occupancy
+  control_blocking_eval_policy: exact_candidate_collision
+  mu_mimo_policy: per_ue_contextual_dci
+  mtrp_policy: active_tci_state
+  interference_mitigation_policy: measured_channel_mmse
+  ue_energy_measurement_policy: monitored_candidate_count
+  non_qpsk_candidate_enabled: false
+  coreset_duration_symbols: 2
+  coreset_bandwidth_rb: 72
+  # The monitored DCI family is a list in canonical_control. These scalar
+  # compatibility aliases intentionally remain context-derived.
+  dci_format_dl: null
+  dci_format_ul: null
+  search_space_type: ue_specific
+  al_policy: configured_scheduler_level
+  target_pdcch_bler: 0.01
+  scrambling_id: 1
   start_symbol: 0
   num_symbols: 2
+  # Legacy plural aliases are deliberately unset; coreset_definitions and
+  # search_space_definitions above are the configured collections.
+  coreset: null
+  coresets: null
+  search_spaces: null
+  blind_decoding_attempts: 16
+  dmrs_scrambling_id_source: physical_cell_id
+  rnti_config:
+    type: C-RNTI
+    value: 4660
 rf_hardware:
   adc_resolution_bits: 12
   dac_resolution_bits: 12
@@ -1505,9 +1738,19 @@ rf_hardware:
   adc_full_scale_power_dBm: 0
   adc_full_scale: 1.0
   agc_enable: true
+  agc_target_level_dBm: -20
   agc_target_rms: 0.5
   agc_max_gain_db: 120
   agc_min_gain_db: -60
+  agc_attack_time_us: 10
+  agc_release_time_us: 100
+  dc_offset_enable: false
+  dc_offset_level_dBc: -120
+  dc_offset_compensation_enable: false
+  lna_gain_dB: 20
+  rx_gain_dB: 0
+  tx_gain_dB: 0
+  mutual_coupling_matrix_enable: false
 rf_frontend:
   enabled: false
   profile_id: ideal_phy_strict
@@ -1806,6 +2049,20 @@ pucch_resources:
     maximum_age_slots: 20
     selected_beam_id: 0
     applied_beam_id: 0
+  sr:
+    periodicity_slots: 20
+    offset_slots: 0
+    require_scheduler_request_state_update: true
+  csi:
+    periodicity_slots: 20
+    offset_slots: 1
+    include_cqi: true
+    include_ri: true
+    include_pmi: true
+  overlap_policy:
+    detect_pucch_pusch_overlap: true
+    uci_on_pusch_enabled: true
+    unsupported_overlap_policy: reject_before_waveform
 tdd_timing:
   pdcch_to_pdsch_k0: 0
   pdcch_to_pusch_k2: 1
@@ -1822,6 +2079,7 @@ tdd_timing:
   harq_roundtrip_slots: 8
   dl_to_ul_guard_time_us: 16.276
   timing_advance_max_us: 667
+  timing_advance_ticks: 0
   n1_pdsch_processing_time_symbols: 10
   n2_pusch_preparation_time_symbols: 12
   capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
@@ -1829,6 +2087,46 @@ sweeps_and_matrix:
   snr_sweep:
     enabled: false
     values_db: []
+  # Geometry and mobility are sampled from the configured topology/drop
+  # model. Optional Cartesian-product campaign axes are explicit but off.
+  sinr_sweep: {enabled: false, values_db: []}
+  esno_sweep: {enabled: false, values_db: []}
+  speed_sweep: {enabled: false, values_kmh: []}
+  delay_spread_sweep: {enabled: false, values_ns: []}
+  bandwidth_sweep: {enabled: false, values_mhz: []}
+  frequency_sweep: {enabled: false, values_hz: []}
+  rank_sweep: {enabled: false, values: []}
+  trp_sweep: {enabled: false, values: []}
+  beam_count_sweep: {enabled: false, values: []}
+  impairment_sweep: {enabled: false, profiles: []}
+  ai_generalization_sweep: {enabled: false, profiles: []}
+  harq_sweep: {enabled: false, max_retx_values: []}
+  report_periodicity_sweep: {enabled: false, values_slots: []}
+  periodicity_sweep: {enabled: false, values_slots: []}
+  repetition_sweep: {enabled: false, counts: []}
+  mcs_sweep: {enabled: false, values: []}
+  modulation_sweep: {enabled: false, values: []}
+  shaping_sweep: {enabled: false, policies: []}
+  decode_iteration_sweep: {enabled: false, values: []}
+  fixed_link_calibration:
+    enabled: false
+    only: false
+    direction: both
+    channel_model: AWGN
+    snr_db: [-20, 0, 20]
+    min_trials: 5000
+    max_trials: 20000
+    trials_per_drop: 200
+    error_target: 100
+    ci_width_target: 0.1
+    confidence_level: 0.95
+    target_bler: 0.1
+    seed: 104729
+    require_monotonic_bler: true
+    require_high_snr_pass: true
+    max_sinr_snr_delta_db: 0.5
+    smoke_min_trials: 40
+    truth_min_trials: 5000
 mac_phase08:
   enabled: true
   profile_id: nr_rel18_ca_scheduler_strict
@@ -1930,6 +2228,12 @@ mac_phase08:
     enabled: true
     byte_conservation: strict
     delivery_counting: first_success_only
+  harq_roundtrip_slots: 8
+  dl_to_ul_guard_time_us: 16.276
+  timing_advance_max_us: 667
+  n1_pdsch_processing_time_symbols: 10
+  n2_pusch_preparation_time_symbols: 12
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
 execution_scales:
   default: full
   smoke:
@@ -1939,6 +2243,11 @@ execution_scales:
           total_slots: 10
           total_time_ms: 5
           measurement_slots: 8
+          fixed_link_snr_grid_db: [-20, 0, 20]
+          snr_db: null
+          noise_operating_mode: receiver_noise_figure_thermal_noise
+          min_trials_per_sinr_bin: 40
+          max_trials_per_sinr_bin: 40
           num_workers: 1
           batch_size_links: 1
           auto_start_parallel_pool: false
@@ -1959,3 +2268,27 @@ execution_scales:
         num_workers: 1
         batch_size_links: 1
         auto_start_parallel_pool: false
+      simulation:
+        snr_db: null
+        noise_operating_mode: receiver_noise_figure_thermal_noise
+      validation:
+        fixed_link_campaign:
+          snr_db: [-20, 0, 20]
+          min_tb_per_point: 40
+          max_tb_per_point: 40
+          min_errors_for_ci: 0
+          trials_per_drop: 40
+      sweeps_and_matrix:
+        snr_sweep:
+          enabled: false
+          values_db: []
+        fixed_link_calibration:
+          enabled: false
+          only: false
+          snr_db: [-20, 0, 20]
+          min_trials: 40
+          max_trials: 40
+          trials_per_drop: 40
+          error_target: 0
+  full:
+    overlay: {}

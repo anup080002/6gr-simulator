@@ -25,6 +25,7 @@ geometry = localLoadAndBuild(scenarioDir, "master_geometry_based.yaml", ...
     "ue_placement_geometry", tmp);
 
 localAssertModeDifferences(fixed, geometry);
+localAssertMasterSurfaceParity(fixed.Raw, geometry.Raw);
 localAssertMutationsPropagate(fixed.Raw, tmp);
 
 ok = true;
@@ -37,6 +38,7 @@ raw = sixgr.lls6g.config.readConfigFile(path);
 assert(~isfield(raw, "inherits"), ...
     "%s must be self-contained and must not inherit another YAML.", fileName);
 localAssertExplicitOperatorSurface(raw, fileName);
+localAssertCatalogSurface(raw, fileName);
 
 scfg = sixgr.lls6g.config.loadScenarioConfig(path);
 assert(numel(scfg.SourceFiles) == 1, ...
@@ -56,6 +58,31 @@ assert(string(sixgr.util.structGet(cfg, "validation.RunClass", "")) == runClass,
 localAssertBuiltSurface(raw, cfg, fileName);
 
 result = struct("Raw", raw, "Resolved", scfg.toStruct(), "Cfg", cfg);
+end
+
+function localAssertCatalogSurface(raw, fileName)
+% Every compatibility section deliberately carried by an operator master
+% must enumerate the complete merged catalog surface. PRBSet is the sole
+% exception because it is mutually exclusive with PRBStart/NumPRB.
+catalog = sixgr.lls6g.config.loadParameterCatalog("scenario");
+sections = fieldnames(raw);
+for i = 1:numel(sections)
+    section = string(sections{i});
+    rules = sixgr.util.structGet(catalog, "sections." + section + ".parameters", struct());
+    if ~isstruct(rules) || isempty(fieldnames(rules)) || ~isstruct(raw.(section))
+        continue;
+    end
+    expected = string(fieldnames(rules));
+    if any(section == ["pdsch", "pusch"])
+        expected(expected == "prb_set") = [];
+        assert(isfield(raw.(section), "prb_start") && isfield(raw.(section), "num_prb"), ...
+            "%s must use the explicit contiguous %s PRB allocation.", fileName, section);
+    end
+    missing = setdiff(expected, string(fieldnames(raw.(section))), "stable");
+    assert(isempty(missing), ...
+        "%s omits catalog parameter(s) from %s: %s.", ...
+        fileName, section, strjoin(missing, ", "));
+end
 end
 
 function localAssertExplicitOperatorSurface(raw, fileName)
@@ -175,8 +202,9 @@ localAssertEqual(double(cfg.phy.tddTiming.ulGrantK2), ...
 policy = cfg.phy.frameStructure.TimingContext.Policy;
 localAssertEqual(double(policy.SelectedK0), ...
     double(timing.pdcch_to_pdsch_k0), fileName + " frame policy K0");
-localAssertEqual(double(policy.SelectedK1), ...
-    double(timing.dl_harq_feedback_k1(1)), fileName + " frame policy K1");
+localAssertEqual(reshape(double(policy.AllowedK1), 1, []), ...
+    reshape(double(timing.dl_harq_feedback_k1), 1, []), ...
+    fileName + " frame policy K1 candidates");
 localAssertEqual(double(policy.SelectedK2), ...
     double(timing.ul_grant_k2), fileName + " frame policy K2");
 
@@ -257,6 +285,93 @@ assert(double(fixed.Cfg.phy.pdsch.numPRB) == 50 && ...
     "The two modes must retain their independently configured PDSCH allocations.");
 end
 
+function localAssertMasterSurfaceParity(fixed, geometry)
+fixedPaths = sort(unique(localCollectSchemaPaths(fixed, "")));
+geometryPaths = sort(unique(localCollectSchemaPaths(geometry, "")));
+fixedOnly = setdiff(fixedPaths, geometryPaths, "stable");
+geometryOnly = setdiff(geometryPaths, fixedPaths, "stable");
+assert(isempty(fixedOnly) && isempty(geometryOnly), ...
+    "Operator masters must expose the same parameter surface. " + ...
+    "Sweep-only: %s; geometry-only: %s.", ...
+    strjoin(fixedOnly, ", "), strjoin(geometryOnly, ", "));
+
+fixedOverrides = string({fixed.canonical_control.runtime_overrides.path});
+geometryOverrides = string({geometry.canonical_control.runtime_overrides.path});
+assert(numel(fixedOverrides) == numel(unique(fixedOverrides)) && ...
+    numel(geometryOverrides) == numel(unique(geometryOverrides)), ...
+    "Each runtime override path must be unique within its master YAML.");
+assert(isequal(sort(fixedOverrides), sort(geometryOverrides)), ...
+    "Both master YAMLs must expose the same low-level runtime override paths.");
+
+for raw = {fixed, geometry}
+    value = raw{1};
+    expectedDLModulation = localModulationFromOrder( ...
+        value.canonical_control.modulation.dl_modulation_order);
+    expectedULModulation = localModulationFromOrder( ...
+        value.canonical_control.modulation.ul_modulation_order);
+    assert(logical(value.pdsch6gr.enable_ptrs) == ...
+            logical(value.canonical_control.reference_signals.ptrs_enabled) && ...
+        logical(value.pusch.ptrs_enabled) == ...
+            logical(value.canonical_control.reference_signals.ptrs_enabled), ...
+        "PDSCH/PUSCH PTRS compatibility fields must follow canonical YAML authority.");
+    assert(strcmpi(string(value.pdsch.modulation), expectedDLModulation) && ...
+        strcmpi(string(value.pusch.modulation), expectedULModulation) && ...
+        double(value.pdsch.fixed_mcs) == ...
+            double(value.canonical_control.modulation.dl_mcs_index) && ...
+        double(value.pusch.fixed_mcs) == ...
+            double(value.canonical_control.modulation.ul_mcs_index), ...
+        "Compatibility PHY fields must not contradict canonical modulation/MCS authority.");
+    assert(string(value.validation.RunClass) == string(value.validation.run_class), ...
+        "RunClass aliases must be explicit and equal.");
+end
+
+assert(logical(fixed.sweeps_and_matrix.snr_sweep.enabled) && ...
+    logical(fixed.sweeps_and_matrix.fixed_link_calibration.enabled) && ...
+    ~logical(geometry.sweeps_and_matrix.snr_sweep.enabled) && ...
+    ~logical(geometry.sweeps_and_matrix.fixed_link_calibration.enabled), ...
+    "Only the fixed-SNR master may activate the fixed-link sweep campaign.");
+end
+
+function value = localModulationFromOrder(order)
+order = double(order);
+if order == 1
+    value = "BPSK";
+elseif order == 2
+    value = "QPSK";
+else
+    value = string(2^order) + "QAM";
+end
+end
+
+function paths = localCollectSchemaPaths(value, prefix)
+paths = strings(0,1);
+if isstruct(value)
+    names = fieldnames(value);
+    for element = 1:numel(value)
+        itemPrefix = prefix;
+        if numel(value) > 1
+            itemPrefix = prefix + "[]";
+        end
+        for i = 1:numel(names)
+            name = string(names{i});
+            if strlength(itemPrefix) == 0
+                path = name;
+            else
+                path = itemPrefix + "." + name;
+            end
+            paths(end+1,1) = path; %#ok<AGROW>
+            paths = [paths; localCollectSchemaPaths(value(element).(names{i}), path)]; %#ok<AGROW>
+        end
+    end
+elseif iscell(value)
+    for i = 1:numel(value)
+        if isstruct(value{i}) || iscell(value{i})
+            paths = [paths; localCollectSchemaPaths(value{i}, prefix + "[]")]; %#ok<AGROW>
+        end
+    end
+end
+end
+
 function localAssertMutationsPropagate(raw, tmp)
 raw.canonical_control.identity.scenario_id = ...
     "master_sinr_sweep_contract_mutation";
@@ -280,8 +395,18 @@ raw.tdd_timing.ul_grant_k2 = 2;
 raw.canonical_control.harq.k2 = 2;
 raw.canonical_control.modulation.dl_mcs_index = 10;
 raw.canonical_control.modulation.ul_mcs_index = 10;
+raw.pdsch.fixed_mcs = 10;
+raw.pusch.fixed_mcs = 10;
+raw.pusch.mcs_index = 10;
 raw.pdsch6gr.fixed_mcs = 10;
 raw.pdsch6gr.mcs_operating_band = "n78";
+for i = 1:numel(raw.canonical_control.runtime_overrides)
+    path = string(raw.canonical_control.runtime_overrides(i).path);
+    if any(path == ["link_adaptation.bootstrap_mcs_index", ...
+            "link_adaptation.initial_mcs", "link_adaptation.maximum_mcs"])
+        raw.canonical_control.runtime_overrides(i).value = 10;
+    end
+end
 raw.validation.fixed_link_campaign.mcs = 10;
 raw.validation.fixed_link_campaign.n_prb = 23;
 
@@ -296,6 +421,8 @@ localAssertBuiltSurface(raw, cfg, "mutated fixed master");
 assert(double(cfg.phy.pdsch.configuredMCSIndex) == 10 && ...
     double(cfg.phy.pusch.configuredMCSIndex) == 10 && ...
     double(cfg.pdsch6gr.FixedMCS) == 10 && ...
+    double(cfg.runtime.link_adaptation.InitialMCSIndex) == 10 && ...
+    double(cfg.runtime.link_adaptation.MaximumMCSIndex) == 10 && ...
     double(cfg.validation.fixed_link_campaign.mcs) == 10 && ...
     double(cfg.validation.fixed_link_campaign.n_prb) == 23 && ...
     strcmpi(string(cfg.phy.pdsch.mcsContext.OperatingBand), "n78"), ...

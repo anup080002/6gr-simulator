@@ -740,6 +740,7 @@ mappings = {
     "random_access.msg2_pdsch", "random_access.msg2_pdsch", "identity"
     "random_access.msg3_pusch", "random_access.msg3_pusch", "identity"
     "random_access.msg4_pdsch", "random_access.msg4_pdsch", "identity"
+    "random_access.setup_complete_pusch", "random_access.setup_complete_pusch", "identity"
     "random_access_evidence.four_step_ra_required", "random_access_evidence.four_step_ra_required", "identity"
     "random_access_evidence.msg1_prach_required", "random_access_evidence.msg1_prach_required", "identity"
     "random_access_evidence.msg2_rar_pdcch_pdsch_required", "random_access_evidence.msg2_rar_pdcch_pdsch_required", "identity"

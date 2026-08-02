@@ -3,7 +3,7 @@ function ok = testYAMLImpairmentFeatureAuthority()
 
 setup6GRSimToolkit("Verbose", false);
 basePath = fullfile(pwd, "simulator", "configs", "scenarios", ...
-    "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml");
+    "master_sinr_sweep.yaml");
 base = sixgr.lls6g.config.loadScenarioConfig(basePath).toStruct();
 assert(isfield(base.canonical_control, "impairments"), ...
     "The master scenario must expose canonical_control.impairments.");

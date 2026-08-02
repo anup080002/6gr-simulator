@@ -8,9 +8,8 @@ cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
 scenarios = [ ...
     "master_sinr_sweep.yaml", ...
-    "master_geometry_based.yaml", ...
-    "webgui_sinr_sweep_64x4_mu_mimo_full.yaml"];
-requiresPhysicalFeedback = [false, true, true];
+    "master_geometry_based.yaml"];
+requiresPhysicalFeedback = [false, true];
 for scenarioIndex = 1:numel(scenarios)
     fileName = scenarios(scenarioIndex);
     path = fullfile(pwd, "simulator", "configs", "scenarios", fileName);
