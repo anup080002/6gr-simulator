@@ -35,6 +35,11 @@ cfgRank2.phy.pdsch.numLayers = 2;
 cfgRank2.phy.pdsch.nLayers = 2;
 cfgRank2.phy.pdsch.numPorts = 8;
 cfgRank2.phy.pdsch.nPorts = 8;
+cfgRank2.phy.pdsch.enablePTRS = true;
+cfgRank2.phy.pdsch.ptrs.enable = true;
+cfgRank2.pdsch6gr.enable_ptrs = true;
+cfgRank2.phy.pdsch.dmrs.portSet = [0 1];
+cfgRank2.pdsch6gr.DMRSPortSet = [0 1];
 cfgRank2.phy.pdsch.precoding.matrix = localRank2Precoder(8);
 txRank2 = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfgRank2, "SNRdB", 35, "Seed", 1502);
 rxRank2 = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
@@ -43,6 +48,13 @@ assert(logical(rxRank2.StrictOk), ...
     "SIB1 broadcast PDSCH must not inherit incompatible rank-2 UE-data precoding.");
 assert(logical(rxRank2.StrictReceiverEvidenceOk) && isfinite(double(rxRank2.ReceiverHestSINR_dB)), ...
     "Rank-2 scenario precoding isolation must still preserve measured PBCH/SIB1 receiver evidence.");
+assert(~logical(txRank2.PDSCH.EnablePTRS), ...
+    "SIB1 common PDSCH must obey its own PT-RS authority, not connected-data PT-RS.");
+assert(isequal(double(txRank2.PDSCH.DMRS.DMRSPortSet(:).'), 0), ...
+    "SIB1 common PDSCH must use the exact single-layer DM-RS port set.");
+assert(logical(cfgRank2.phy.pdsch.enablePTRS) && ...
+    isequal(double(cfgRank2.phy.pdsch.dmrs.portSet), [0 1]), ...
+    "SIB1 generation must not mutate connected-data reference-signal configuration.");
 ok = true;
 end
 
@@ -61,7 +73,8 @@ cfg.phy.channelBandwidth_MHz = 20;
 cfg.frequency.bandwidth_hz = 20e6;
 cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
 cfg.initial_access.sib1.pdsch = struct("prb_start",0, ...
-    "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0);
+    "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0, ...
+    "ptrs_enabled",false);
 cfg.phy.sib1.coreset0Index = 0;
 cfg.phy.sib1.searchSpaceZero = 0;
 end

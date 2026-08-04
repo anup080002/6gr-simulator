@@ -1,0 +1,13 @@
+RunId,Direction,ValidationRule,Pass,Status,FailureReason,ConfigHash
+"","DL","physical_antenna_counts_present",1,"pass","","e04d7a488ddc489b79796e47e02e196a8b85497f25462bcc9ea4e695ccc3f27e"
+"","DL","antenna_ports_present",1,"pass","","e04d7a488ddc489b79796e47e02e196a8b85497f25462bcc9ea4e695ccc3f27e"
+"","DL","configured_rank_supported_by_ports",1,"pass","","e04d7a488ddc489b79796e47e02e196a8b85497f25462bcc9ea4e695ccc3f27e"
+"","DL","configured_layers_supported_by_ports",1,"pass","","e04d7a488ddc489b79796e47e02e196a8b85497f25462bcc9ea4e695ccc3f27e"
+"","DL","dmrs_ports_cover_layers",1,"pass","","e04d7a488ddc489b79796e47e02e196a8b85497f25462bcc9ea4e695ccc3f27e"
+"","DL","unsupported_codebook_modes_fail_closed",1,"pass","","e04d7a488ddc489b79796e47e02e196a8b85497f25462bcc9ea4e695ccc3f27e"
+"","UL","physical_antenna_counts_present",1,"pass","","09ef62bde1f4ac9b6f1ce431626e0e247aaac65ab270a4644ecff8e96c5065d1"
+"","UL","antenna_ports_present",1,"pass","","09ef62bde1f4ac9b6f1ce431626e0e247aaac65ab270a4644ecff8e96c5065d1"
+"","UL","configured_rank_supported_by_ports",1,"pass","","09ef62bde1f4ac9b6f1ce431626e0e247aaac65ab270a4644ecff8e96c5065d1"
+"","UL","configured_layers_supported_by_ports",1,"pass","","09ef62bde1f4ac9b6f1ce431626e0e247aaac65ab270a4644ecff8e96c5065d1"
+"","UL","dmrs_ports_cover_layers",1,"pass","","09ef62bde1f4ac9b6f1ce431626e0e247aaac65ab270a4644ecff8e96c5065d1"
+"","UL","unsupported_codebook_modes_fail_closed",1,"pass","","09ef62bde1f4ac9b6f1ce431626e0e247aaac65ab270a4644ecff8e96c5065d1"

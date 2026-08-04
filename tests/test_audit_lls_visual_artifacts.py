@@ -216,6 +216,88 @@ def test_visual_artifact_audit_rejects_unavailable_plotted_metric_status(tmp_pat
     assert "plot_source_forbidden_truth_status" in codes
 
 
+def test_visual_artifact_audit_accepts_multisource_union_and_tied_measured_cdf(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "reports" / "image"
+    report_csv_dir = run / "reports" / "csv"
+    air_csv_dir = run / "air_interface" / "csv"
+    control_csv_dir = run / "control" / "csv"
+    image_dir.mkdir(parents=True)
+    report_csv_dir.mkdir(parents=True)
+    air_csv_dir.mkdir(parents=True)
+    control_csv_dir.mkdir(parents=True)
+    (image_dir / "bler_vs_measured_sinr.png").write_bytes(PNG_BYTES)
+    (image_dir / "access_delay_cdf.png").write_bytes(PNG_BYTES)
+
+    write_csv(
+        report_csv_dir / "plot_manifest.csv",
+        [
+            "PlotId", "ImagePath", "SourceCSV", "XVariable", "YVariables",
+            "PlotType", "PlotRenderStatus", "VisualValidity", "IsUnavailableCard",
+        ],
+        [
+            {
+                "PlotId": "bler_vs_measured_sinr",
+                "ImagePath": "reports/image/bler_vs_measured_sinr.png",
+                "SourceCSV": "air_interface/csv/dl_curve.csv|air_interface/csv/ul_curve.csv",
+                "XVariable": "PostEqSINR_dB_BinCenter",
+                "YVariables": "BLER",
+                "PlotType": "relation",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+            {
+                "PlotId": "access_delay_cdf",
+                "ImagePath": "reports/image/access_delay_cdf.png",
+                "SourceCSV": "control/csv/initial_access_lifecycle_trace.csv",
+                "XVariable": "ProcedureDelay_ms",
+                "YVariables": "ProcedureDelay_ms",
+                "PlotType": "cdf",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+                "IsUnavailableCard": "false",
+            },
+        ],
+    )
+    # UL is intentionally absent: a direction-specific run may satisfy the
+    # declared union with only its existing canonical member.
+    write_csv(
+        air_csv_dir / "dl_curve.csv",
+        ["PostEqSINR_dB_BinCenter", "BLER", "TruthStatus"],
+        [
+            {"PostEqSINR_dB_BinCenter": -5, "BLER": 1.0, "TruthStatus": "real_lls_evidence"},
+            {"PostEqSINR_dB_BinCenter": 0, "BLER": 0.4, "TruthStatus": "real_lls_evidence"},
+            {"PostEqSINR_dB_BinCenter": 5, "BLER": 0.0, "TruthStatus": "real_lls_evidence"},
+        ],
+    )
+    write_csv(
+        control_csv_dir / "initial_access_lifecycle_trace.csv",
+        ["ProcedureDelay_ms", "ValueRole", "Notes"],
+        [
+            {
+                "ProcedureDelay_ms": 5,
+                "ValueRole": "measured_runtime_procedure_delay",
+                "Notes": "contention-resolution waveform evidence",
+            }
+            for _ in range(4)
+        ],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    codes = read_audit_codes(report_csv_dir / "visual_artifact_audit.csv")
+    assert "rendered_plot_source_csv_missing" not in codes
+    assert "low_information_visual_without_explanation" not in codes
+    assert "plot_source_forbidden_truth_status" not in codes
+
+
 def test_visual_artifact_audit_rejects_negative_fixture(tmp_path: Path) -> None:
     run = tmp_path / "run"
     image_dir = run / "reports" / "image"

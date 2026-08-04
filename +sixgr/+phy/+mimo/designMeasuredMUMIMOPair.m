@@ -22,6 +22,12 @@ threshold_dB = double(sixgr.util.structGet(cfg, ...
 minimumDesiredGain_dB = double(sixgr.util.structGet(cfg, ...
     "mac.scheduler.muMimoMinimumDesiredSubspaceGain_dB", ...
     sixgr.util.structGet(cfg, "phy.mimo.muMimoMinimumDesiredSubspaceGain_dB", NaN)));
+projectionMaxIterations = double(sixgr.util.structGet(cfg, ...
+    "mac.scheduler.muMimoPhaseOnlyProjectionMaxIterations", ...
+    sixgr.util.structGet(cfg, "phy.mimo.muMimoPhaseOnlyProjectionMaxIterations", NaN)));
+projectionTolerance = double(sixgr.util.structGet(cfg, ...
+    "mac.scheduler.muMimoPhaseOnlyProjectionTolerance", ...
+    sixgr.util.structGet(cfg, "phy.mimo.muMimoPhaseOnlyProjectionTolerance", NaN)));
 if ~(isscalar(threshold_dB) && isfinite(threshold_dB) && threshold_dB < 0)
     error("sixgr:mimo:MissingMUMIMOLeakageThreshold", ...
         "Strict MU-MIMO requires a finite negative configured leakage threshold.");
@@ -31,8 +37,19 @@ if ~(isscalar(minimumDesiredGain_dB) && isfinite(minimumDesiredGain_dB) && ...
     error("sixgr:mimo:MissingMUMIMODesiredGainThreshold", ...
         "Strict MU-MIMO requires a finite configured minimum desired-subspace gain in dB.");
 end
+if ~(isscalar(projectionMaxIterations) && isfinite(projectionMaxIterations) && ...
+        projectionMaxIterations >= 1 && projectionMaxIterations == round(projectionMaxIterations))
+    error("sixgr:mimo:MissingMUMIMOPhaseOnlyProjectionIterations", ...
+        "Strict MU-MIMO requires a configured positive integer phase-only projection iteration limit.");
+end
+if ~(isscalar(projectionTolerance) && isfinite(projectionTolerance) && ...
+        projectionTolerance > 0 && projectionTolerance < 1)
+    error("sixgr:mimo:MissingMUMIMOPhaseOnlyProjectionTolerance", ...
+        "Strict MU-MIMO requires a configured phase-only projection tolerance strictly between zero and one.");
+end
 
-design = localEmptyDesign(direction, threshold_dB, minimumDesiredGain_dB);
+design = localEmptyDesign(direction, threshold_dB, minimumDesiredGain_dB, ...
+    projectionMaxIterations, projectionTolerance);
 if isempty(qA) || isempty(qB)
     design.Status = char("invalid_measured_subspace:" + statusA + ":" + statusB);
     return;
@@ -54,16 +71,22 @@ if direction == "DL"
         design.Status = "insufficient_gnb_tx_rf_chains";
         return;
     end
+    % The hybrid baseband domain is the configured RF-chain domain, not
+    % merely the number of scheduled streams. Collapsing F_RF to four
+    % columns for two rank-2 UEs removes the nullspace required to suppress
+    % every detectable frequency-selective peer mode even when the YAML
+    % provisions additional RF chains.
+    logicalRFPorts = double(nRF);
     arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "bs", ...
         "Signal", "PDSCH", "NumElements", nElements, ...
-        "NumPorts", totalPorts, "NumRFChains", nRF, ...
+        "NumPorts", logicalRFPorts, "NumRFChains", nRF, ...
         "MinimumPorts", totalPorts, "MatrixAuthorityScope", "role_only");
     if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
         design.Status = "dl_mu_requires_element_domain_hybrid_precoding";
         return;
     end
     baseF = double(sixgr.util.structGet(arch, "HybridElementToPortMatrix", []));
-    if ~isequal(size(baseF), [nElements totalPorts])
+    if ~isequal(size(baseF), [nElements logicalRFPorts])
         design.Status = "hybrid_element_to_port_shape_mismatch";
         return;
     end
@@ -80,14 +103,19 @@ if direction == "DL"
     % transmit side because H_DL = H_UL.' (nonconjugate transpose).
     qADL = conj(qA);
     qBDL = conj(qB);
-    [F, rfStatus] = localDesignHybridRF(baseF, qADL, qBDL, rankA, rankB, rfDesignPolicy);
+    [F, rfStatus, rfResidual] = localDesignHybridRF(baseF, qADL, qBDL, ...
+        rankA, rankB, rfDesignPolicy, projectionMaxIterations, projectionTolerance);
     if isempty(F)
         design.Status = char(rfStatus);
         return;
     end
-    [wA, pA, leakA, gainA, okA, reasonA] = localNullPeer(qADL, qBDL, F, rankA);
-    [wB, pB, leakB, gainB, okB, reasonB] = localNullPeer(qBDL, qADL, F, rankB);
-    design.TotalLogicalPorts = double(totalPorts);
+    [wA, pA, leakA, gainA, okA, reasonA] = localNullPeer( ...
+        qADL, qBDL, F, rankA, projectionTolerance, ...
+        "unit_total_transmit_power");
+    [wB, pB, leakB, gainB, okB, reasonB] = localNullPeer( ...
+        qBDL, qADL, F, rankB, projectionTolerance, ...
+        "unit_total_transmit_power");
+    design.TotalLogicalPorts = double(logicalRFPorts);
     design.NumRFChains = double(nRF);
     design.HybridElementToPortMatrix = F;
     design.BaseHybridElementToPortMatrixSHA256 = char( ...
@@ -96,14 +124,15 @@ if direction == "DL"
         sixgr.phy.mimo.MatrixContract.digest(F));
     design.HybridRFDesignPolicy = char(rfDesignPolicy);
     design.HybridRFDesignStatus = char(rfStatus);
+    design.HybridRFCompletePeerResidual = double(rfResidual);
     design.Member1PrecoderLogicalPorts = wA;
     design.Member2PrecoderLogicalPorts = wB;
     design.Member1PrecoderPhysical = pA;
     design.Member2PrecoderPhysical = pB;
     design.Member1ReceiveCombiner = [];
     design.Member2ReceiveCombiner = [];
-    design.MetricSource = "measured_tdd_srs_reciprocal_hybrid_block_diagonalized_precoder_leakage";
-    design.EvidenceSource = "causal_measured_srs_reciprocity_phase_only_hybrid_and_frozen_baseband";
+    design.MetricSource = "measured_tdd_srs_reciprocal_complete_peer_subspace_hybrid_block_diagonalized_precoder_leakage";
+    design.EvidenceSource = "causal_measured_srs_complete_peer_subspace_reciprocity_phase_only_hybrid_and_frozen_baseband";
 else
     requested = upper(strtrim(string(sixgr.util.structGet(cfg, ...
         "phy.pusch.equalizer", sixgr.util.structGet(cfg, "phy.rx.equalizer", "")))));
@@ -112,12 +141,16 @@ else
         return;
     end
     F = eye(size(qA, 1));
-    [cA, ~, leakA, gainA, okA, reasonA] = localNullPeer(qA, qB, F, rankA);
-    [cB, ~, leakB, gainB, okB, reasonB] = localNullPeer(qB, qA, F, rankB);
+    [cA, ~, leakA, gainA, okA, reasonA] = localNullPeer( ...
+        qA, qB, F, rankA, projectionTolerance, ...
+        "semi_unitary_receive_combiner");
+    [cB, ~, leakB, gainB, okB, reasonB] = localNullPeer( ...
+        qB, qA, F, rankB, projectionTolerance, ...
+        "semi_unitary_receive_combiner");
     design.Member1ReceiveCombiner = cA;
     design.Member2ReceiveCombiner = cB;
-    design.MetricSource = "measured_srs_irc_receive_projection_leakage";
-    design.EvidenceSource = "causal_measured_srs_subspace_and_runtime_irc_covariance";
+    design.MetricSource = "measured_srs_complete_peer_subspace_irc_receive_projection_leakage";
+    design.EvidenceSource = "causal_measured_srs_complete_peer_subspace_and_runtime_irc_covariance";
 end
 
 design.MemberLeakage_dB = double([leakA leakB]);
@@ -140,20 +173,27 @@ else
 end
 end
 
-function [F, status] = localDesignHybridRF(baseF, qA, qB, rankA, rankB, policy)
+function [F, status, worstResidual] = localDesignHybridRF( ...
+        baseF, qA, qB, rankA, rankB, policy, maxIterations, tolerance)
 F = [];
 status = "hybrid_rf_design_not_evaluated";
+worstResidual = NaN;
 if policy == "fixed_configured_matrix"
     F = baseF;
     status = "fixed_configured_hybrid_matrix";
+    peerResiduals = [localNormalizedPeerResidual(qB, F(:,1:rankA)), ...
+        localNormalizedPeerResidual(qA, F(:,rankA+(1:rankB)))];
+    worstResidual = max(peerResiduals);
     return;
 end
 targets = [qA(:, 1:rankA), qB(:, 1:rankB)];
+peerSubspaces = {qB, qA};
 if size(targets, 2) ~= size(baseF, 2)
     status = "hybrid_rf_target_stream_count_mismatch";
     return;
 end
 F = complex(zeros(size(baseF)));
+columnResiduals = NaN(1, size(baseF, 2));
 for column = 1:size(baseF, 2)
     magnitude = abs(baseF(:, column));
     support = magnitude > 1e-14;
@@ -162,18 +202,94 @@ for column = 1:size(baseF, 2)
         status = "hybrid_rf_base_matrix_zero_column";
         return;
     end
-    target = targets(:, column);
-    phase = angle(baseF(:, column));
-    usable = support & abs(target) > 1e-14;
-    phase(usable) = angle(target(usable));
-    F(support, column) = magnitude(support) .* exp(1i .* phase(support));
+    if column <= rankA
+        peer = peerSubspaces{1};
+    else
+        peer = peerSubspaces{2};
+    end
+    [columnVector, columnResidual, columnStatus] = ...
+        localPhaseOnlyPeerNullColumn(targets(:, column), peer, ...
+        magnitude, support, baseF(:, column), maxIterations, tolerance);
+    if isempty(columnVector)
+        F = [];
+        status = "hybrid_rf_complete_peer_projection_failed:" + columnStatus;
+        worstResidual = columnResidual;
+        return;
+    end
+    F(:, column) = columnVector;
+    columnResiduals(column) = columnResidual;
 end
 if ~localSamePhaseOnlyHardwareContract(baseF, F)
     F = [];
     status = "hybrid_rf_phase_only_hardware_contract_failed";
     return;
 end
-status = "measured_srs_phase_only_subarray_rf_matrix";
+worstResidual = max(columnResiduals);
+if ~(isfinite(worstResidual) && worstResidual <= tolerance)
+    F = [];
+    status = "hybrid_rf_complete_peer_projection_tolerance_not_met";
+    return;
+end
+status = "measured_srs_phase_only_subarray_complete_peer_null_rf_matrix";
+end
+
+function [columnVector, bestResidual, status] = localPhaseOnlyPeerNullColumn( ...
+        target, peerSubspace, magnitude, support, baseColumn, maxIterations, tolerance)
+columnVector = [];
+bestResidual = Inf;
+status = "not_evaluated";
+supportIndex = find(support);
+peerOnSupport = double(peerSubspace(supportIndex, :));
+if isempty(peerOnSupport)
+    status = "peer_subspace_empty_on_rf_support";
+    return;
+end
+nullBasis = null(peerOnSupport');
+if isempty(nullBasis)
+    status = "no_constant_modulus_support_peer_nullspace";
+    return;
+end
+targetOnSupport = double(target(supportIndex));
+projectedTarget = nullBasis * (nullBasis' * targetOnSupport);
+if norm(projectedTarget) <= eps
+    projectedTarget = nullBasis(:, 1);
+end
+supportMagnitude = double(magnitude(supportIndex));
+phaseSeed = angle(projectedTarget);
+zeroSeed = abs(projectedTarget) <= 1e-14;
+phaseSeed(zeroSeed) = angle(double(baseColumn(supportIndex(zeroSeed))));
+candidate = supportMagnitude .* exp(1i .* phaseSeed);
+bestCandidate = candidate;
+bestGain = -Inf;
+for iteration = 1:round(maxIterations)
+    projected = nullBasis * (nullBasis' * candidate);
+    if norm(projected) <= eps || any(~isfinite(real(projected)) | ~isfinite(imag(projected)))
+        status = "nonfinite_or_zero_peer_null_projection";
+        return;
+    end
+    updated = supportMagnitude .* exp(1i .* angle(projected));
+    residual = norm(peerOnSupport' * updated) ./ max(norm(updated), eps);
+    desiredGain = abs(targetOnSupport' * updated) ./ ...
+        max(norm(targetOnSupport) * norm(updated), eps);
+    if residual < bestResidual || ...
+            (abs(residual - bestResidual) <= eps(max(1, bestResidual)) && desiredGain > bestGain)
+        bestResidual = double(residual);
+        bestGain = double(desiredGain);
+        bestCandidate = updated;
+    end
+    candidate = updated;
+end
+if ~(isfinite(bestResidual) && bestResidual <= tolerance)
+    status = "phase_only_alternating_projection_did_not_converge";
+    return;
+end
+columnVector = complex(zeros(size(target)));
+columnVector(supportIndex) = bestCandidate;
+status = "ok";
+end
+
+function residual = localNormalizedPeerResidual(peerSubspace, candidate)
+residual = norm(peerSubspace' * candidate, "fro") ./ max(norm(candidate, "fro"), eps);
 end
 
 function tf = localSamePhaseOnlyHardwareContract(baseF, candidateF)
@@ -214,12 +330,16 @@ if nnz(singularValues > tol) < requestedRank
     status = "rank_deficient_measured_subspace";
     return;
 end
-q = u(:, 1:requestedRank);
+% Preserve every numerically detectable measured peer-channel dimension.
+% requestedRank remains a minimum validity condition, not a truncation
+% instruction.  MU nulling against only the scheduled layer count leaves
+% the peer's remaining measured spatial modes as real interference.
+q = u(:, 1:nnz(singularValues > tol));
 status = "ok";
 end
 
 function [wLogical, wPhysical, leakage_dB, gain_dB, ok, reason] = ...
-        localNullPeer(qDesired, qPeer, F, nStreams)
+        localNullPeer(qDesired, qPeer, F, nStreams, designedNullTolerance, normalizationMode)
 wLogical = [];
 wPhysical = [];
 leakage_dB = NaN;
@@ -229,7 +349,9 @@ reason = "uninitialized";
 peerEffective = qPeer' * F;
 [~, sPeer, vPeer] = svd(peerEffective);
 svPeer = diag(sPeer);
-tolPeer = max(size(peerEffective)) * eps(max([svPeer(:); 1]));
+machineTolerance = max(size(peerEffective)) * eps(max([svPeer(:); 1]));
+designedTolerance = double(designedNullTolerance) * max([svPeer(:); 1]);
+tolPeer = max(machineTolerance, designedTolerance);
 peerRank = nnz(svPeer > tolPeer);
 if size(vPeer, 2) - peerRank < nStreams
     reason = "insufficient_peer_nullspace";
@@ -253,8 +375,39 @@ for column = 1:size(wPhysical, 2)
         reason = "zero_or_nonfinite_physical_precoder_column";
         return;
     end
-    wPhysical(:, column) = wPhysical(:, column) ./ columnNorm;
-    wLogical(:, column) = wLogical(:, column) ./ columnNorm;
+end
+normalizationMode = lower(strtrim(string(normalizationMode)));
+if normalizationMode == "unit_total_transmit_power"
+    % A precoder allocates one UE's configured total transmit power across
+    % all scheduled layers. Apply the same scalar to the logical and
+    % physical matrices so the frozen hybrid factorization replays exactly.
+    totalPowerNorm = norm(wPhysical, "fro");
+    if ~(isfinite(totalPowerNorm) && totalPowerNorm > eps)
+        reason = "zero_or_nonfinite_total_physical_precoder_power";
+        return;
+    end
+    wLogical = wLogical ./ totalPowerNorm;
+    wPhysical = F * wLogical;
+    normalizedPower = norm(wPhysical, "fro").^2;
+    if ~(isfinite(normalizedPower) && abs(normalizedPower - 1) <= 1e-10)
+        reason = "unit_total_power_reconstruction_mismatch";
+        return;
+    end
+elseif normalizationMode == "semi_unitary_receive_combiner"
+    % A receive projection does not allocate transmit power. Its columns
+    % must remain orthonormal so white thermal noise remains white with the
+    % same scalar variance after projection. The QR result above provides
+    % that contract for the identity receive-domain mapping used by UL IRC.
+    gramResidual = norm(wPhysical' * wPhysical - eye(nStreams), "fro") ./ ...
+        max(1, norm(wPhysical' * wPhysical, "fro"));
+    if ~(isfinite(gramResidual) && gramResidual <= 1e-10)
+        reason = "receive_combiner_not_semi_unitary";
+        return;
+    end
+else
+    error("sixgr:mimo:InvalidMUMIMONormalizationMode", ...
+        "Unsupported measured MU matrix normalization mode '%s'.", ...
+        char(normalizationMode));
 end
 leakage = norm(qPeer' * wPhysical, "fro").^2 ./ max(1, nStreams);
 desiredGain = norm(qDesired' * wPhysical, "fro").^2 ./ max(1, nStreams);
@@ -289,9 +442,10 @@ else
 end
 end
 
-function design = localEmptyDesign(direction, threshold_dB, minimumDesiredGain_dB)
+function design = localEmptyDesign(direction, threshold_dB, minimumDesiredGain_dB, ...
+        projectionMaxIterations, projectionTolerance)
 design = struct( ...
-    "ContractVersion", "MeasuredMUMIMOPairDesign/v2", ...
+    "ContractVersion", "MeasuredMUMIMOPairDesign/v5", ...
     "Direction", char(direction), ...
     "Compatible", false, ...
     "Status", "not_evaluated", ...
@@ -310,6 +464,9 @@ design = struct( ...
     "HybridElementToPortMatrixSHA256", "", ...
     "HybridRFDesignPolicy", "", ...
     "HybridRFDesignStatus", "", ...
+    "HybridRFCompletePeerResidual", NaN, ...
+    "PhaseOnlyProjectionMaxIterations", double(projectionMaxIterations), ...
+    "PhaseOnlyProjectionTolerance", double(projectionTolerance), ...
     "Member1PrecoderLogicalPorts", [], ...
     "Member2PrecoderLogicalPorts", [], ...
     "Member1PrecoderPhysical", [], ...

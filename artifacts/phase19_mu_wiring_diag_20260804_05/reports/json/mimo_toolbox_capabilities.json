@@ -1,0 +1,20 @@
+{
+  "MATLABVersion": "26.1.0.3312084 (R2026a) Update 4",
+  "ToolboxVersion": "",
+  "nrPDSCHConfigAvailable": true,
+  "nrPUSCHConfigAvailable": true,
+  "nrPDSCHAvailable": true,
+  "nrPDSCHDecodeAvailable": true,
+  "nrPUSCHAvailable": true,
+  "nrPUSCHDecodeAvailable": true,
+  "nrCDLChannelAvailable": true,
+  "nrTDLChannelAvailable": true,
+  "nrChannelEstimateAvailable": true,
+  "nrEqualizeMMSEAvailable": true,
+  "nrCSIRSAvailable": true,
+  "nrSRSAvailable": true,
+  "PhasedArrayToolboxAvailable": true,
+  "StrictModeToolboxFallbackAllowed": false,
+  "GeneratedAt": "2026-08-03T19:32:51Z",
+  "ProducerModule": "sixgr.mimo.resolveNominalVsEffectiveMIMO"
+}

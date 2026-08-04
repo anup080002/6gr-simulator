@@ -384,7 +384,8 @@ classdef ChannelFactory
             if ~(isfinite(baseSeed) && baseSeed >= 0)
                 baseSeed = 1;
             end
-            seed = mod(round(baseSeed) * 1664525 + sixgr.channel.ChannelFactory.localStringHash(linkKey) + 1013904223, 2^31 - 1);
+            seedKey = sixgr.channel.ChannelFactory.localRuntimeSeedKey(cfg, linkKey);
+            seed = mod(round(baseSeed) * 1664525 + sixgr.channel.ChannelFactory.localStringHash(seedKey) + 1013904223, 2^31 - 1);
             if ~(isfinite(seed) && seed >= 1)
                 seed = 1;
             end
@@ -454,6 +455,39 @@ classdef ChannelFactory
             state.Initialized = true;
             state.CurrentSampleIndex = max(0, round(double(opt.AbsoluteSampleIndex)));
             state.CurrentTime_s = 0;
+        end
+
+        function forkedState = forkRuntimeChannelState(state)
+            %FORKRUNTIMECHANNELSTATE Deep-copy a channel at one time origin.
+            %
+            % Shared-slot MU signals are concurrent, not consecutive calls
+            % through one mutable System object.  A contribution therefore
+            % receives a deep copy of the exact slot-start channel state.
+            % Executing the copy must not advance the canonical per-link
+            % state later consumed by the desired waveform.
+            forkedState = state;
+            if ~(isstruct(state) && isfield(state, "ContractVersion"))
+                return;
+            end
+            if ~logical(sixgr.util.structGet(state, "Materialized", false))
+                error("ChannelFactory:RuntimeChannelForkBeforeMaterialization", ...
+                    ['Runtime channel ''%s'' must be materialized once in the canonical ' ...
+                     'per-link state before a shared-slot fork is created.  Forking ' ...
+                     'an unmaterialized state lets concurrent sources instantiate ' ...
+                     'different channel realizations.'], ...
+                    char(string(sixgr.util.structGet(state, "LinkKey", ""))));
+            end
+            if logical(sixgr.util.structGet(state, "UseFading", false)) && ...
+                    isfield(state, "Obj") && ~isempty(state.Obj)
+                if ~ismethod(state.Obj, "clone")
+                    error("ChannelFactory:RuntimeChannelNotForkable", ...
+                        ["Runtime channel '%s' uses %s, which cannot be deep-cloned " ...
+                         "for coherent shared-slot waveform superposition."], ...
+                        char(string(sixgr.util.structGet(state, "LinkKey", ""))), ...
+                        class(state.Obj));
+                end
+                forkedState.Obj = clone(state.Obj);
+            end
         end
 
         function state = materializeRuntimeChannelState(state, cfg, waveform, txInfo, varargin)
@@ -531,16 +565,21 @@ classdef ChannelFactory
                 numRx = max(1, double(sixgr.util.structGet(cfg, "phy.nRxAnt", numTx)));
             end
 
-            ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
-                "Model", cfgCh.channel.model, ...
-                "SampleRate", fs, ...
-                "NumTxAnt", max(1, round(numTx)), ...
-                "NumRxAnt", max(1, round(numRx)), ...
-                "Seed", double(state.Seed), ...
-                "TransmitAntennaRuntime", opt.TransmitAntennaRuntime, ...
-                "ReceiveAntennaRuntime", opt.ReceiveAntennaRuntime, ...
-                "TransmitAntennaMeta", opt.TransmitAntennaMeta, ...
-                "ReceiveAntennaMeta", opt.ReceiveAntennaMeta);
+            if sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfgCh)
+                ch = sixgr.channel.ChannelFactory.localCreateStaticTDDReciprocalChannel( ...
+                    cfgCh,state,fs,max(1,round(numTx)),max(1,round(numRx)),opt);
+            else
+                ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
+                    "Model", cfgCh.channel.model, ...
+                    "SampleRate", fs, ...
+                    "NumTxAnt", max(1, round(numTx)), ...
+                    "NumRxAnt", max(1, round(numRx)), ...
+                    "Seed", double(state.Seed), ...
+                    "TransmitAntennaRuntime", opt.TransmitAntennaRuntime, ...
+                    "ReceiveAntennaRuntime", opt.ReceiveAntennaRuntime, ...
+                    "TransmitAntennaMeta", opt.TransmitAntennaMeta, ...
+                    "ReceiveAntennaMeta", opt.ReceiveAntennaMeta);
+            end
             state.Meta = sixgr.util.structGet(ch, "Meta", struct());
             state.Meta = sixgr.channel.ChannelFactory.localAttachRuntimeGeometryMeta(state.Meta, cfgCh);
             state.SampleRate_Hz = double(fs);
@@ -755,9 +794,120 @@ classdef ChannelFactory
             padSamples = max(0, round(filterDelay + maxPathDelay));
             trimSamples = max(0, round(filterDelay));
         end
+
+        function tf = supportsRuntimeTDDReciprocity(cfg)
+            duplexMode = sixgr.channel.ChannelFactory.localFirstConfigToken(cfg, ...
+                ["phy.duplex.mode","frequency.duplex_mode", ...
+                 "global_radio_scope.duplex_mode"]);
+            orientation = sixgr.channel.ChannelFactory.localFirstConfigToken(cfg, ...
+                ["lls6g.reference_signals.operation_orientation", ...
+                 "referenceSignals.operationOrientation", ...
+                 "reference_signals.operation_orientation", ...
+                 "phy.csi.operationOrientation"]);
+            reciprocityMode = sixgr.channel.ChannelFactory.localFirstConfigToken(cfg, ...
+                ["lls6g.mimo.reciprocity_mode","mimo.reciprocity_mode", ...
+                 "antenna_and_array.reciprocity_assumption"]);
+            model = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+                "channel.model", "AWGN"))));
+            doppler = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
+                sixgr.util.structGet(cfg, "channel.dopplerHz", ...
+                sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", NaN))));
+            tddRequested = duplexMode == "tdd" || reciprocityMode == "tdd" || ...
+                contains(reciprocityMode,"tdd_reciprocity") || contains(orientation,"tdd");
+            tf = logical(tddRequested && (startsWith(model,"TDL") || startsWith(model,"CDL") ...
+                || any(model == ["NRTDL","NRCDL"])) && isscalar(doppler) && ...
+                isfinite(doppler) && abs(doppler) <= eps);
+        end
     end
 
     methods(Static, Access=private)
+        function key = localRuntimeSeedKey(cfg, linkKey)
+            key = char(string(linkKey));
+            if ~sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg)
+                return;
+            end
+            token = string(key);
+            tx = regexp(token,"(?:^|;)tx=([^;]+)","tokens","once");
+            rx = regexp(token,"(?:^|;)rx=([^;]+)","tokens","once");
+            carrier = regexp(token,"(?:^|;)carrier=(.*)$","tokens","once");
+            if isempty(tx) || isempty(rx)
+                return;
+            end
+            endpoints = sort([string(tx{1}),string(rx{1})]);
+            carrierToken = "";
+            if ~isempty(carrier)
+                carrierToken = string(carrier{1});
+            end
+            key = char("tdd_reciprocal;endpoint_a=" + endpoints(1) + ...
+                ";endpoint_b=" + endpoints(2) + ";carrier=" + carrierToken);
+        end
+
+        function token = localFirstConfigToken(cfg, paths)
+            token = "";
+            for path = string(paths(:)).'
+                value = lower(strtrim(string(sixgr.util.structGet(cfg,path,""))));
+                value = value(strlength(value) > 0);
+                if ~isempty(value)
+                    token = value(1);
+                    return;
+                end
+            end
+        end
+
+        function ch = localCreateStaticTDDReciprocalChannel(cfg,state,fs,numTx,numRx,opt)
+            direction = upper(strtrim(string(sixgr.util.structGet(state,"Direction","DL"))));
+            if direction ~= "UL"
+                direction = "DL";
+            end
+            if direction == "DL"
+                canonicalTx = numTx;
+                canonicalRx = numRx;
+                txRuntime = opt.TransmitAntennaRuntime;
+                rxRuntime = opt.ReceiveAntennaRuntime;
+                txMeta = opt.TransmitAntennaMeta;
+                rxMeta = opt.ReceiveAntennaMeta;
+            else
+                canonicalTx = numRx;
+                canonicalRx = numTx;
+                txRuntime = opt.ReceiveAntennaRuntime;
+                rxRuntime = opt.TransmitAntennaRuntime;
+                txMeta = opt.ReceiveAntennaMeta;
+                rxMeta = opt.TransmitAntennaMeta;
+            end
+            source = sixgr.channel.ChannelFactory.create(cfg, ...
+                "Model", cfg.channel.model, "SampleRate", fs, ...
+                "NumTxAnt", canonicalTx, "NumRxAnt", canonicalRx, ...
+                "Seed", double(state.Seed), ...
+                "TransmitAntennaRuntime", txRuntime, ...
+                "ReceiveAntennaRuntime", rxRuntime, ...
+                "TransmitAntennaMeta", txMeta, ...
+                "ReceiveAntennaMeta", rxMeta);
+            [canonicalImpulse,evidence] = ...
+                sixgr.channel.measureStaticMIMOImpulseResponse( ...
+                source.Object,canonicalTx,canonicalRx,fs);
+            if direction == "UL"
+                endpointImpulse = permute(canonicalImpulse,[1 3 2]);
+            else
+                endpointImpulse = canonicalImpulse;
+            end
+            endpoint = sixgr.channel.StaticReciprocalMIMOChannel( ...
+                endpointImpulse,fs, ...
+                "SourceChannelClass",class(source.Object), ...
+                "SourceChannelSeed",double(state.Seed), ...
+                "Direction",direction);
+            ch = source;
+            ch.Object = endpoint;
+            ch.Type = char(string(source.Type) + "_StaticTDDReciprocal");
+            ch.Meta.RuntimeTDDReciprocityExact = true;
+            ch.Meta.RuntimeTDDReciprocityDirection = char(direction);
+            ch.Meta.RuntimeTDDReciprocitySource = ...
+                "exact_static_toolbox_channel_impulse_and_nonconjugate_spatial_transpose";
+            ch.Meta.RuntimeTDDReciprocityApproximationMode = "none_static_lti_exact";
+            ch.Meta.RuntimeTDDReciprocityEvidence = evidence;
+            ch.Meta.RuntimeTDDCanonicalImpulseSHA256 = char( ...
+                sixgr.phy.mimo.MatrixContract.digest(canonicalImpulse));
+        end
+
         function fs = localRuntimeSampleRate(tx, txInfo)
             fs = [];
             if nargin >= 2 && isstruct(txInfo)

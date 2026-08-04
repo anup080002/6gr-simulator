@@ -1,0 +1,5 @@
+Direction,UEIndex,RNTI,PostEqSINR_dB_BinCenter,PostEqSINR_dB_BinMin,PostEqSINR_dB_BinMax,Goodput_Mbps_mean,Goodput_Mbps_p5,Goodput_Mbps_p50,Goodput_Mbps_p95,OfferedThroughput_Mbps_mean,SpectralEfficiency_bps_Hz_mean,TrialCount,SourceArtifact
+"UL",NaN,1,4.5,4,5,0,0,0,0,401.616,0,1,"ul_pusch_trials.csv"
+"UL",NaN,2,5.5,5,6,0,0,0,0,401.616,0,1,"ul_pusch_trials.csv"
+"UL",1,1,4.5,4,5,0,0,0,0,401.616,0,1,"ul_pusch_trials.csv"
+"UL",2,2,5.5,5,6,0,0,0,0,401.616,0,1,"ul_pusch_trials.csv"

@@ -1,0 +1,8 @@
+{
+  "KpiConsistencyOk": false,
+  "RadioDurationUnavailable": false,
+  "LineageRows": 22,
+  "LineageRadioDurationOk": true,
+  "FormulaRegistryVersion": "kpi_registry_v1",
+  "ProducerModule": "sixgr.link.exportLinkKPIs"
+}

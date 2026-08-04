@@ -8,7 +8,7 @@ runFolder = b.RunFolder;
 
 requiredCsv = [
     "control/csv/prach_config_strict.csv"
-    "control/csv/prach_trials.csv"
+    "control/csv/prach_strict_trials.csv"
     "control/csv/prach_detection_candidates.csv"
     "control/csv/prach_restricted_set_mapping.csv"
     "control/csv/prach_root_sequence_budget.csv"
@@ -29,7 +29,7 @@ for ii = 1:numel(requiredCsv)
     assert(height(T) > 0, "Strict PRACH CSV artifact must not be empty: " + requiredCsv(ii));
 end
 
-trialT = readtable(fullfile(runFolder, "control", "csv", "prach_trials.csv"), ...
+trialT = readtable(fullfile(runFolder, "control", "csv", "prach_strict_trials.csv"), ...
     "FileType", "text", "Delimiter", ",", "ReadVariableNames", true, "VariableNamingRule", "preserve");
 assert(all(ismember(["RunId","TrialType","PreambleIndexTx","PreambleIndexDetected", ...
     "ConfigHash","WaveformHash","ProxyUsed","Skipped","ToolboxMissing","UsedOracleFields","StrictOk"], ...

@@ -308,6 +308,12 @@ localCoverageLog("measurement_sidecars_written", runFolder);
 localReconcileLiveStageControlAttemptCounts(runFolder);
 localCoverageLog("live_stage_control_counts_reconciled", runFolder);
 
+% buildPhase7ReadinessArtifacts runs before the late coverage figures are
+% emitted. Refresh publication readiness now so completeness is based on
+% the final filesystem, not on the pre-publication scan.
+publicationReadiness = sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
+localCoverageLog("publication_readiness_refreshed", runFolder);
+
 inventory = localBuildArtifactInventory(runFolder);
 localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", inventory);
 localCoverageLog("inventory_written", runFolder);
@@ -326,6 +332,7 @@ out.MeasurementSidecars = measurementSidecars;
 out.VisualArtifactIntegrity = tables.visual_artifact_integrity;
 out.VisualArtifactIntegrityOk = all(logical(tables.visual_artifact_integrity.IntegrityOk));
 out.UpdatedArtifactInventory = inventory;
+out.PublicationReadiness = publicationReadiness;
 out.ManifestUnavailableEntries = localManifestUnavailableEntries(unavailable);
 localCoverageLog("done", runFolder);
 end
@@ -4231,7 +4238,11 @@ for i = 1:height(sourceTable)
         end
     end
     crcPass = localAsBoolScalar(localTableValue(row, "CRCPass", localTableValue(row, "Ack", [])), false);
+    backedLowSINRSuccess = false;
     if strcmpi(string(direction), "UL") && isfinite(sinr) && sinr < 0 && crcPass
+        backedLowSINRSuccess = sixgr.truth.hasStrictULReceiverDecoderEvidence(row);
+    end
+    if strcmpi(string(direction), "UL") && isfinite(sinr) && sinr < 0 && crcPass && ~backedLowSINRSuccess
         ue = double(localTableValue(row, "UE", localTableValue(row, "UEID", localTableValue(row, "RNTI", NaN))));
         cellID = double(localTableValue(row, "CellID", localTableValue(row, "ServingCell", NaN)));
         rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>

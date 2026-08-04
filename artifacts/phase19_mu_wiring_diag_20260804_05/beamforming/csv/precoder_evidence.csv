@@ -1,0 +1,9 @@
+RunId,TrialId,Direction,PrecoderId,PMI,PrecoderSource,PrecodingActive,SourceRowsHash,Status,FailureReason
+"",1,"DL","0","0","air_interface_trial_precoder_fields",1,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",2,"DL","0","0","air_interface_trial_precoder_fields",1,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",3,"DL","0","0","air_interface_trial_precoder_fields",1,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",4,"DL","0","0","air_interface_trial_precoder_fields",1,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",5,"DL","0","0","air_interface_trial_precoder_fields",1,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",6,"DL","0","0","air_interface_trial_precoder_fields",1,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",1,"UL","0","0","air_interface_trial_precoder_fields",1,"3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","pass",""
+"",2,"UL","0","0","air_interface_trial_precoder_fields",1,"3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","pass",""

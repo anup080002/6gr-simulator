@@ -1,0 +1,3 @@
+RunId,KPIName,Direction,SourceTablePath,SourceDirection,RowsWithExpectedDirection,RowsWithWrongDirection,CrossDirectionSourceUsed,SourceRowsHash,OppositeDirectionRowsHash,HashCollisionOrCopySuspected,Status,FailureReason
+"","UL_directional_kpi_sources","UL","air_interface/csv/ul_pusch_trials.csv","UL",2,0,0,"3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0",0,"pass",""
+"","DL_directional_kpi_sources","DL","air_interface/csv/dl_pdsch_trials.csv","DL",6,0,0,"22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46",0,"pass",""

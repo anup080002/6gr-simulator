@@ -38,9 +38,8 @@ scenarioMode = localScenarioMode(scfg, cfg);
 strictEligible = localStrictAnchorEligible(scfg, cfg, scenarioMode, meta);
 required = localRequiredDirections(scfg, cfg);
 runCompleted = localRunCompleted(layout);
-artifactsWritten = double(sixgr.util.structGet(verdict, "CanonicalArtifactGapCount", 0)) == 0 && ...
-    double(sixgr.util.structGet(verdict, "RequiredRuntimeEvidenceMissingCount", 0)) == 0 && ...
-    double(sixgr.util.structGet(verdict, "RoundtripMismatchCount", 0)) == 0;
+artifactsWritten = localArtifactsPhysicallyWritten(layout, required);
+artifactCompletenessOk = localArtifactCompletenessStatus(layout, verdict);
 truthContractOk = isempty(preRootFailures);
 runtimeTruthContractOk = truthContractOk;
 
@@ -77,14 +76,14 @@ proxyEvidenceCount = double(sixgr.util.structGet(verdict, "StrictProxyGuardFailu
 skippedEvidenceCount = localFailureTokenCount(preRootFailures, ["skipped", "skip"]);
 fallbackEvidenceCount = localFailureTokenCount(preRootFailures, ["fallback"]);
 
-resultOk = logical(runCompleted) && logical(artifactsWritten) && logical(truthContractOk) && ...
+resultOk = logical(runCompleted) && logical(artifactsWritten) && logical(artifactCompletenessOk) && logical(truthContractOk) && ...
     logical(runtimeTruthContractOk) && logical(standardsConformanceOk) && logical(scenarioObjectiveOk) && ...
     logical(configuredGate.ConfiguredEffectiveOk) && logical(mandatoryGate.MandatorySubsystemsOk) && ...
     logical(activeIssueGate.ActiveIssueGateOk) && logical(kpiConsistencyOk) && ...
     logical(visualArtifactGateOk) && logical(duplicateArtifactGateOk);
 
 strictAnchorPass = ~strictEligible || resultOk;
-failureReasons = localStatusFailureReasons(runCompleted, artifactsWritten, truthContractOk, ...
+failureReasons = localStatusFailureReasons(runCompleted, artifactsWritten, artifactCompletenessOk, truthContractOk, ...
     standardsConformanceOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, ...
     kpiConsistencyOk, visualArtifactGateOk, duplicateArtifactGateOk);
 resultReason = localResultReason(resultOk, failureReasons);
@@ -102,7 +101,7 @@ status.ClaimFailureReason = claimGate.ClaimFailureReason;
 status.RunCompleted = logical(runCompleted);
 status.RunCompletionReason = localRunCompletionReason(layout, runCompleted);
 status.ArtifactsWritten = logical(artifactsWritten);
-status.ArtifactCompletenessOk = logical(artifactsWritten);
+status.ArtifactCompletenessOk = logical(artifactCompletenessOk);
 status.TruthContractOk = logical(truthContractOk);
 status.RuntimeTruthContractOk = logical(runtimeTruthContractOk);
 status.StandardsConformanceOk = logical(standardsConformanceOk);
@@ -279,6 +278,8 @@ end
 
 function profile = localResolveRunClassProfile(scfg, cfg, scenarioMode)
 explicit = localNormalizeRunClassToken(localFirstNonBlankString([
+    localScalarString(localScenarioGet(scfg, cfg, "scenario.run_class", ""))
+    localScalarString(localScenarioGet(scfg, cfg, "scenario.runClass", ""))
     localScalarString(localScenarioGet(scfg, cfg, "validation.RunClass", ""))
     localScalarString(localScenarioGet(scfg, cfg, "validation.run_class", ""))
     localScalarString(localScenarioGet(scfg, cfg, "validation.runClass", ""))
@@ -289,6 +290,13 @@ rankFixed = localRunClassRankFixed(scfg, cfg);
 layersFixed = localRunClassLayersFixed(configured);
 modulationFixed = localRunClassModulationFixed(configured, fixedMCSActive);
 adaptiveMode = localRunClassAdaptiveMode(scfg, cfg, scenarioMode);
+% An explicit run classification is itself an operator-owned semantic
+% contract.  Preserve that authority even when a recovery caller supplies
+% only a reduced internal config that no longer contains the original AMC
+% policy fields.
+if any(explicit == ["adaptive_system_diagnostic", "hybrid_validation"])
+    adaptiveMode = true;
+end
 fixedCampaignEnabled = localScenarioGetBool(scfg, cfg, "validation.fixed_link_campaign.enabled", false);
 
 runClass = explicit;
@@ -301,6 +309,14 @@ if strlength(runClass) == 0
         % Bias away from publication-safe anchor claims unless the config proves them.
         runClass = "adaptive_system_diagnostic";
     end
+end
+% If the fixed-MCS contract is explicitly inactive, the conservative
+% adaptive-system classification must not subsequently serialize an
+% impossible AdaptiveMode=false combination.  This also keeps recovery
+% stable when its reduced cfg retained FixedMCSActive but not every original
+% link-adaptation spelling.
+if runClass == "adaptive_system_diagnostic" && ~fixedMCSActive
+    adaptiveMode = true;
 end
 
 profile = struct( ...
@@ -619,6 +635,34 @@ if ~isempty(summary) && height(summary) > 0
         reason = "run_completion_not_terminal";
     end
 end
+end
+
+function tf = localArtifactsPhysicallyWritten(layout, required)
+% File creation is independent of evidence completeness or scientific pass.
+tf = exist(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), "file") == 2;
+if logical(required.DL)
+    tf = tf && exist(fullfile(layout.AirInterfaceCSVDir, ...
+        "dl_pdsch_trials.csv"), "file") == 2;
+end
+if logical(required.UL)
+    tf = tf && exist(fullfile(layout.AirInterfaceCSVDir, ...
+        "ul_pusch_trials.csv"), "file") == 2;
+end
+end
+
+function tf = localArtifactCompletenessStatus(layout, verdict)
+summary = localReadTable(fullfile(layout.ReportCSVDir, ...
+    "artifact_completeness_summary.csv"));
+if istable(summary) && height(summary) > 0 && ...
+        ismember("ArtifactCompletenessOk", string(summary.Properties.VariableNames))
+    tf = all(localToLogical(summary.ArtifactCompletenessOk));
+    return;
+end
+% Before the final publication scan exists, use artifact-only contract
+% checks. Runtime evidence availability is intentionally not conflated with
+% whether files were written or whether their filesystem contract is whole.
+tf = double(sixgr.util.structGet(verdict, "CanonicalArtifactGapCount", 0)) == 0 && ...
+    double(sixgr.util.structGet(verdict, "RoundtripMismatchCount", 0)) == 0;
 end
 
 function gate = localKPIConsistencyGate(layout, meta, scfg, cfg, strictEligible)
@@ -1080,7 +1124,7 @@ rows = localAddMandatoryRow(rows, "random_access", localNestedLogical(details, [
 rows = localAddMandatoryRow(rows, "prach", localNestedLogical(details, ["PRACH", "PRACHRequired"], false), ...
     localNestedLogical(details, ["PRACH", "PRACHStrictOk"], false), "control/csv/prach_trials.csv");
 rows = localAddMandatoryRow(rows, "pdcch", localNestedLogical(details, ["PDCCH", "PDCCHRequired"], false), ...
-    localNestedLogical(details, ["PDCCH", "PDCCHStrictOk"], false), "control/csv/pdcch_trials.csv");
+    localNestedLogical(details, ["PDCCH", "PDCCHStrictOk"], false), "control/csv/pdcch_strict_trials.csv|control/csv/pdcch_trials.csv");
 rows = localAddMandatoryRow(rows, "trs", localNestedLogical(details, ["TRS", "TRSRequired"], false), ...
     localNestedLogical(details, ["TRS", "TRSStrictOk"], false), "reference_signals/csv/trs_trials.csv");
 rows = localAddMandatoryRow(rows, "srs", localNestedLogical(details, ["SRS", "SRSRequired"], false), ...
@@ -1468,12 +1512,15 @@ rows = table( ...
     'VariableNames', schemaNames);
 end
 
-function reasons = localStatusFailureReasons(runCompleted, artifactsWritten, truthOk, standardsOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, kpiOk, visualOk, duplicateOk)
+function reasons = localStatusFailureReasons(runCompleted, artifactsWritten, artifactCompletenessOk, truthOk, standardsOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, kpiOk, visualOk, duplicateOk)
 reasons = strings(0, 1);
 if ~runCompleted
     reasons(end+1, 1) = "run_not_completed"; %#ok<AGROW>
 end
 if ~artifactsWritten
+    reasons(end+1, 1) = "artifacts_not_written"; %#ok<AGROW>
+end
+if ~artifactCompletenessOk
     reasons(end+1, 1) = "required_artifacts_missing_or_incomplete"; %#ok<AGROW>
 end
 if ~truthOk
@@ -1525,7 +1572,7 @@ end
 function T = localResultStatusTable(status)
 T = struct2table(status, "AsArray", true);
 required = ["RunId","ScenarioName","ScenarioClass","ScenarioMode","ClaimProfile","ClaimStatus","ClaimAllowed", ...
-    "RunCompleted","ArtifactsWritten","TruthContractOk","RuntimeTruthContractOk","StandardsConformanceOk", ...
+    "RunCompleted","ArtifactsWritten","ArtifactCompletenessOk","TruthContractOk","RuntimeTruthContractOk","StandardsConformanceOk", ...
     "ScenarioObjectiveOk","ConfiguredEffectiveOk","RunClass","RunClassGateOk","PublicationLLSEligible","MandatorySubsystemsOk","ActiveIssueGateOk","KpiConsistencyOk", ...
     "VisualArtifactGateOk","DuplicateArtifactGateOk","ResultOk","ActiveCriticalIssueCount","ActiveHighIssueCount", ...
     "ActiveMediumIssueCount","ActiveMandatoryIssueCount","ProxyEvidenceCount","SkippedEvidenceCount","FallbackEvidenceCount", ...
@@ -1684,7 +1731,8 @@ end
 
 directions = upper(localFirstStringColumn(controlT, ["LinkedPDSCHOrPUSCH", "Direction"]));
 grantIds = localFirstStringOrNumericAsString(controlT, ["GrantContextId", "LinkedGrantId", "GrantId"]);
-requiredMask = localPDCCHGrantBindingRequiredMask(cfg, directions, localColumnBoolDefault(controlT, "GrantBindingRequired", false));
+explicitRequired = localColumnBoolDefault(controlT, "GrantBindingRequired", false);
+requiredMask = localPDCCHGrantBindingRequiredMask(cfg, directions, explicitRequired);
 bindingOk = localColumnBoolDefault(controlT, "GrantBindingOk", false);
 bindingStatus = localFirstStringOrNumericAsString(controlT, ["GrantBindingStatus"]);
 bindingStatus(bindingOk & strlength(strtrim(bindingStatus)) == 0) = "bound";
@@ -1693,7 +1741,15 @@ failureCode = localFirstStringOrNumericAsString(controlT, ["GrantBindingFailureC
 failureCode(~bindingOk & strlength(strtrim(failureCode)) == 0 & strlength(strtrim(grantIds)) == 0) = "grant_id_missing";
 failureCode(~bindingOk & strlength(strtrim(failureCode)) == 0 & strlength(strtrim(grantIds)) > 0) = "grant_binding_failed";
 
-mask = requiredMask & (strlength(strtrim(grantIds)) > 0 | bindingOk | strlength(strtrim(bindingStatus)) > 0 | strlength(strtrim(failureCode)) > 0);
+% Standalone PDCCH positive/negative conformance trials share this table but
+% do not schedule PDSCH/PUSCH and therefore are not grant-binding evidence.
+% Only rows explicitly marked by the runtime binding producer, or rows with
+% a concrete linked grant identity, belong in this gate. Configuration-level
+% PDCCH requirements must not turn every blind-search trial into a missing
+% scheduler grant.
+schedulerBindingRow = explicitRequired | strlength(strtrim(grantIds)) > 0;
+linkedDataDirection = ismember(directions, ["DL","UL"]);
+mask = requiredMask & schedulerBindingRow & linkedDataDirection;
 if ~any(mask)
     return;
 end
@@ -1844,10 +1900,10 @@ names = {'Direction','CellId','UeId','CanonicalSlot','GrantId','DCIId','HARQProc
 end
 
 function T = localStrictAnchorAcceptanceTable(meta, status)
-gateNames = ["RunCompleted"; "ArtifactsWritten"; "RuntimeTruthContractOk"; "StandardsConformanceOk"; ...
+gateNames = ["RunCompleted"; "ArtifactsWritten"; "ArtifactCompletenessOk"; "RuntimeTruthContractOk"; "StandardsConformanceOk"; ...
     "ScenarioObjectiveOk"; "ConfiguredEffectiveOk"; "RunClassGateOk"; "PDCCHGrantBindingOk"; "MandatorySubsystemsOk"; "ActiveIssueGateOk"; ...
     "KpiConsistencyOk"; "VisualArtifactGateOk"; "DuplicateArtifactGateOk"; "ResultOk"];
-passes = [status.RunCompleted; status.ArtifactsWritten; status.RuntimeTruthContractOk; status.StandardsConformanceOk; ...
+passes = [status.RunCompleted; status.ArtifactsWritten; status.ArtifactCompletenessOk; status.RuntimeTruthContractOk; status.StandardsConformanceOk; ...
     status.ScenarioObjectiveOk; status.ConfiguredEffectiveOk; status.RunClassGateOk; status.PDCCHGrantBindingOk; status.MandatorySubsystemsOk; status.ActiveIssueGateOk; ...
     status.KpiConsistencyOk; status.VisualArtifactGateOk; status.DuplicateArtifactGateOk; status.ResultOk];
 n = numel(gateNames);

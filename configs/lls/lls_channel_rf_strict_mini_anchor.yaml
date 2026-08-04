@@ -137,6 +137,19 @@ reference_signals:
   pmi_codebook_mode: type1_su_mimo
   channel_state_information_mode: none
 
+# This fixture validates only propagation and RF application. Keep the
+# inherited control aliases explicitly aligned with its disabled control
+# reference signals so runtime authority cannot silently enable PDCCH/SIB1.
+control:
+  pdcch_enabled: false
+  blind_search_enabled: false
+  pucch_enabled: false
+
+initial_access:
+  enabled: false
+  sib1:
+    enabled: false
+
 mimo:
   n_tx_ant: 2
   n_rx_ant: 2

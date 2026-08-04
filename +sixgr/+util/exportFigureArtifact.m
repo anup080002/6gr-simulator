@@ -111,7 +111,41 @@ if ~any(lower(string(ext)) == [".png", ".jpg", ".jpeg"])
     error("sixgr:visual:UnsupportedRasterFormat", ...
         "Figure artifacts must be persisted as PNG or JPEG, not %s.", string(ext));
 end
-exportgraphics(figHandle, filePath, varargin{:});
+resolution = 150;
+if mod(numel(varargin), 2) ~= 0
+    error("sixgr:visual:InvalidRasterExportOptions", ...
+        "Raster export options must be supplied as name-value pairs.");
+end
+for optionIndex = 1:2:numel(varargin)
+    optionName = lower(strtrim(string(varargin{optionIndex})));
+    switch optionName
+        case "resolution"
+            resolution = double(varargin{optionIndex + 1});
+        otherwise
+            error("sixgr:visual:UnsupportedRasterExportOption", ...
+                "The bounded raster backend does not support option '%s'.", ...
+                char(optionName));
+    end
+end
+if ~(isscalar(resolution) && isfinite(resolution) && ...
+        resolution >= 72 && resolution <= 1200)
+    error("sixgr:visual:InvalidRasterResolution", ...
+        "Raster export resolution must be a finite scalar in [72, 1200] dpi.");
+end
+
+% exportgraphics relies on the WebWindow graphics handshake on Windows.
+% Long LLS runs can complete every PHY trial and then hang indefinitely in
+% that handshake while rendering the first post-run figure. The classic
+% print pipeline is synchronous, headless-safe in MATLAB -batch, and emits
+% the same required PNG/JPEG raster evidence without an SVG fallback.
+switch lower(string(ext))
+    case ".png"
+        device = "-dpng";
+    otherwise
+        device = "-djpeg95";
+end
+print(figHandle, filePath, char(device), ...
+    sprintf("-r%d", round(resolution)));
 end
 
 function localDeleteIfExists(filePath)

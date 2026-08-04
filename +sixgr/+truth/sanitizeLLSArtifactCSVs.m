@@ -41,7 +41,8 @@ function [changed, removedCount] = localSanitizeOneCSV(filePath)
 changed = false;
 removedCount = 0;
 try
-    T = readtable(filePath, "VariableNamingRule", "preserve");
+    T = readtable(filePath, "FileType", "text", "Delimiter", ",", ...
+        "ReadVariableNames", true, "VariableNamingRule", "preserve");
 catch
     return;
 end
@@ -59,14 +60,16 @@ originalWidth = width(T);
 T = sixgr.util.pruneStructurallyBlankTableColumns(T);
 removedCount = max(0, inputWidth - originalWidth) + max(0, originalWidth - width(T));
 if removedCount <= 0 && ~canonicalized
-    [rawChanged, rawRemoved] = localPruneRawBlankCSVColumns(filePath);
+    [rawChanged, rawRemoved] = localPruneRawBlankCSVColumns( ...
+        filePath, string(T.Properties.VariableNames));
     changed = rawChanged;
     removedCount = rawRemoved;
     return;
 end
 sixgr.util.csvWriteTable(filePath, T);
 changed = true;
-[rawChanged, rawRemoved] = localPruneRawBlankCSVColumns(filePath);
+[rawChanged, rawRemoved] = localPruneRawBlankCSVColumns( ...
+    filePath, string(T.Properties.VariableNames));
 changed = changed || rawChanged;
 removedCount = removedCount + rawRemoved;
 end
@@ -113,9 +116,12 @@ else
 end
 end
 
-function [changed, removedCount] = localPruneRawBlankCSVColumns(filePath)
+function [changed, removedCount] = localPruneRawBlankCSVColumns(filePath, preserveColumns)
 changed = false;
 removedCount = 0;
+if nargin < 2
+    preserveColumns = strings(0, 1);
+end
 try
     cells = readcell(filePath, "Delimiter", ",");
 catch
@@ -126,7 +132,9 @@ if isempty(cells) || size(cells, 1) < 2 || size(cells, 2) < 1
 end
 keepMask = false(1, size(cells, 2));
 for j = 1:size(cells, 2)
-    keepMask(j) = ~all(arrayfun(@(i)localCellIsBlank(cells{i, j}), 2:size(cells, 1)));
+    header = strtrim(string(cells{1, j}));
+    keepMask(j) = any(strcmpi(header, preserveColumns)) || ...
+        ~all(arrayfun(@(i)localCellIsBlank(cells{i, j}), 2:size(cells, 1)));
 end
 removedCount = sum(~keepMask);
 if removedCount <= 0

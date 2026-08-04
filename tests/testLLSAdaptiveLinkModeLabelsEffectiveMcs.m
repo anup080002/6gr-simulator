@@ -12,6 +12,7 @@ classT = readtable(fullfile(ctx.Layout.ReportCSVDir, "run_classification.csv"), 
 
 assert(string(statusT.ScenarioMode(1)) == "adaptive_link", "Adaptive fixture must be labeled adaptive_link.");
 assert(string(classT.RunClass(1)) == "adaptive_system_diagnostic", "Adaptive fixture must classify as adaptive_system_diagnostic.");
+assert(logical(classT.AdaptiveMode(1)), "Adaptive run classification must preserve AdaptiveMode=true.");
 assert(all(logical(opT.AdaptiveMode)), "Operating-point rows must mark AdaptiveMode=true.");
 assert(logical(statusT.ConfiguredEffectiveOk(1)), "Adaptive mode must not be failed by lower effective MCS alone.");
 assert(~logical(classT.PublicationLLSEligible(1)), "Adaptive diagnostic runs must not claim fixed-link publication eligibility.");

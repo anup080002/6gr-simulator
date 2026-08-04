@@ -1,0 +1,12 @@
+Direction,UEIndex,RNTI,PostEqSINR_dB_BinCenter,PostEqSINR_dB_BinMin,PostEqSINR_dB_BinMax,Goodput_Mbps_mean,Goodput_Mbps_p5,Goodput_Mbps_p50,Goodput_Mbps_p95,OfferedThroughput_Mbps_mean,SpectralEfficiency_bps_Hz_mean,TrialCount,SourceArtifact
+"DL",NaN,1,-1.5,-2,-1,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",NaN,2,-0.5,-1,0,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",NaN,3,1.5,1,2,0,0,0,0,368.848,0,2,"dl_pdsch_trials.csv"
+"DL",NaN,1,9.5,9,10,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",NaN,2,10.5,10,11,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",1,1,-1.5,-2,-1,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",1,1,9.5,9,10,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",2,2,-0.5,-1,0,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",2,2,10.5,10,11,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",3,3,1.5,1,2,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"
+"DL",4,4,1.5,1,2,0,0,0,0,368.848,0,1,"dl_pdsch_trials.csv"

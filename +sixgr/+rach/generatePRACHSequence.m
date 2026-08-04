@@ -73,13 +73,21 @@ prach.ZeroCorrelationZone = double(sixgr.util.structGet(snap, "ZeroCorrelationZo
     sixgr.util.structGet(cfg, "ZeroCorrelationZone", 0)));
 prach.FrequencyStart = double(sixgr.util.structGet(snap, "FrequencyStart", ...
     sixgr.util.structGet(cfg, "FrequencyStart", 0)));
+% ActivePRACHSlot is part of the canonical short-preamble occasion.  Some
+% FR1 unpaired rows (including configuration index 157 / format B4) are
+% invalid with the nrPRACHConfig default of zero.  Restore it before the
+% PRACH slot and derived occasion fields so the reconstructed Toolbox
+% object is identical to the one materialized by mapPRACHToOccasion.
+prach.ActivePRACHSlot = double(sixgr.util.structGet(snap, ...
+    "ActivePRACHSlot", sixgr.util.structGet(occasion, ...
+    "ActivePRACHSlot", 0)));
 prach.NPRACHSlot = double(sixgr.util.structGet(snap, "NPRACHSlot", ...
     max(0, double(sixgr.util.structGet(occasion, "SlotIndex1", 1)) - 1)));
-try
-    prach.TimeIndex = double(sixgr.util.structGet(snap, "TimeIndex", ...
-        sixgr.util.structGet(occasion, "TimeIndex", 0)));
-catch
-end
+prach.TimeIndex = double(sixgr.util.structGet(snap, "TimeIndex", ...
+    sixgr.util.structGet(occasion, "TimeIndex", 0)));
+prach.FrequencyIndex = double(sixgr.util.structGet(snap, ...
+    "FrequencyIndex", sixgr.util.structGet(occasion, ...
+    "FrequencyIndex", 0)));
 end
 
 function value = localFirstPreamble(spec)

@@ -496,18 +496,39 @@ end
 
 function cfgOut = localSanitizeHARQProbeConfig(cfg, direction)
 cfgOut = cfg;
-if upper(string(direction)) ~= "DL"
+direction = upper(string(direction));
+if direction == "UL"
+    nLayers = max(1, round(double(sixgr.util.structGet(cfgOut, ...
+        "phy.pusch.numLayers", sixgr.util.structGet(cfgOut, ...
+        "phy.pusch.nLayers", 1)))));
+    [dmrsPortSet, dmrsPortSource] = ...
+        sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+        cfgOut, "UL", nLayers, struct());
+    cfgOut = sixgr.util.structSet(cfgOut, ...
+        "phy.pusch.dmrs.portSet", dmrsPortSet);
+    cfgOut = sixgr.util.structSet(cfgOut, ...
+        "phy.pusch.dmrs.DMRSPortSet", dmrsPortSet);
+    cfgOut = sixgr.util.structSet(cfgOut, ...
+        "phy.pusch.dmrs.portSetSource", char(dmrsPortSource));
     return;
 end
 
 nLayers = max(1, round(double(sixgr.util.structGet(cfgOut, "phy.pdsch.numLayers", ...
     sixgr.util.structGet(cfgOut, "phy.pdsch.nLayers", 1)))));
-if localHasFiniteDLPMI(cfgOut)
-    return;
-end
-
+[dmrsPortSet, dmrsPortSource] = ...
+    sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+    cfgOut, "DL", nLayers, struct());
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "phy.pdsch.dmrs.portSet", dmrsPortSet);
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "phy.pdsch.dmrs.DMRSPortSet", dmrsPortSet);
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "phy.pdsch.dmrs.portSetSource", char(dmrsPortSource));
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "pdsch6gr.DMRSPortSet", dmrsPortSet);
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
 clearMatrix = false;
+staleMatrix = false;
 for i = 1:numel(paths)
     W = sixgr.util.structGet(cfgOut, paths(i), []);
     if isempty(W)
@@ -520,9 +541,21 @@ for i = 1:numel(paths)
     if localMatrixMatchesPDSCHLayers(W, nLayers)
         return;
     end
+    staleMatrix = true;
     if size(W, 1) > localMaxNRLogicalPDSCHPorts() || size(W, 2) > localMaxNRLogicalPDSCHPorts()
         clearMatrix = true;
     end
+end
+
+if ~staleMatrix
+    return;
+end
+
+if localHasFiniteDLPMI(cfgOut)
+    [Wprobe, pmiMeta] = localMaterializeHARQProbePMIPrecoder(cfgOut, nLayers);
+    cfgOut = localInstallHARQProbePDSCHPrecoder(cfgOut, Wprobe, nLayers, ...
+        "harq_probe_rank_localized_pmi_codebook", pmiMeta);
+    return;
 end
 
 if ~clearMatrix
@@ -538,6 +571,87 @@ for i = 1:numel(paths)
 end
 cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.source", "harq_probe_rank_localized_identity");
 cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.normalizePrecodingMatrix", true);
+end
+
+function [Wprobe, meta] = localMaterializeHARQProbePMIPrecoder(cfg, nLayers)
+pmi = localFiniteDLPMI(cfg);
+if ~isfinite(pmi)
+    error("sixgr:truth:HARQProbePMIUnavailable", ...
+        "Rank-local HARQ probe precoding requires a finite configured PMI/TPMI.");
+end
+
+numPorts = double(sixgr.util.structGet(cfg, "phy.pdsch.numPorts", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.nPorts", nLayers)));
+if ~(isscalar(numPorts) && isfinite(numPorts) && numPorts >= nLayers)
+    error("sixgr:truth:HARQProbePrecodingPortCountInvalid", ...
+        "HARQ probe PDSCH port count must be a finite scalar not smaller than the active layer count.");
+end
+numPorts = round(numPorts);
+
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.csi.pmiCodebookMode", ""))));
+if strlength(mode) == 0
+    codebookType = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+        "phy.csi.codebookType", "type1"))));
+    switch codebookType
+        case "type1"
+            mode = "type1_su_mimo";
+        case "type2"
+            mode = "type2_mu_mimo";
+        case "etype2"
+            mode = "etype2_candidate";
+        otherwise
+            error("sixgr:truth:HARQProbeCodebookModeUnavailable", ...
+                "HARQ probe cannot materialize PMI=%d for unsupported codebook type '%s'.", ...
+                round(pmi), char(codebookType));
+    end
+end
+if mode == "noncodebook"
+    error("sixgr:truth:HARQProbeNonCodebookPMIUnsupported", ...
+        "A scalar PMI cannot materialize a rank-local non-codebook HARQ probe precoder.");
+end
+
+[candidates, info] = sixgr.phy.dl.pmiCodebookCandidates( ...
+    cfg, nLayers, numPorts, "Mode", mode);
+pmiIndex = round(pmi);
+if isempty(candidates) || pmiIndex < 0 || pmiIndex >= numel(candidates)
+    error("sixgr:truth:HARQProbePMIOutOfRange", ...
+        "HARQ probe PMI=%d is out of range for mode '%s', %d port(s), and %d layer(s).", ...
+        pmiIndex, char(mode), numPorts, nLayers);
+end
+
+selected = candidates(pmiIndex + 1);
+Wprobe = selected.W;
+if size(Wprobe, 1) ~= numPorts || size(Wprobe, 2) ~= nLayers
+    error("sixgr:truth:HARQProbePMIMatrixDimensionMismatch", ...
+        "PMI codebook produced a %dx%d matrix for %d port(s) and %d layer(s).", ...
+        size(Wprobe, 1), size(Wprobe, 2), numPorts, nLayers);
+end
+meta = struct( ...
+    "PMI", double(pmiIndex), ...
+    "PMIType", char(string(sixgr.util.structGet(selected, "PMIType", ""))), ...
+    "CodebookMode", char(string(sixgr.util.structGet(selected, "CodebookMode", ...
+        sixgr.util.structGet(info, "Mode", mode)))));
+end
+
+function cfgOut = localInstallHARQProbePDSCHPrecoder(cfgOut, Wprobe, nLayers, source, meta)
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nLayers", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numLayers", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", size(Wprobe, 1));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", size(Wprobe, 1));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.matrix", Wprobe);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precodingMatrix", []);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.W", []);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.source", char(source));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.pmi", double(meta.PMI));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.pmiType", char(meta.PMIType));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.codebookMode", char(meta.CodebookMode));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.selectedPrecoderSHA256", ...
+    char(sixgr.phy.mimo.MatrixContract.digest(Wprobe)));
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.PrecoderSource", char(source));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.normalizePrecodingMatrix", ...
+    ~logical(sixgr.util.structGet(cfgOut, "mimo.strict", ...
+    sixgr.util.structGet(cfgOut, "phy.mimo.strict", false))));
 end
 
 function tf = localMatrixMatchesPDSCHLayers(W, nLayers)
@@ -558,12 +672,16 @@ end
 end
 
 function tf = localHasFiniteDLPMI(cfg)
-tf = false;
+tf = isfinite(localFiniteDLPMI(cfg));
+end
+
+function pmi = localFiniteDLPMI(cfg)
+pmi = NaN;
 paths = ["phy.pdsch.tpmi", "phy.pdsch.TPMI", "phy.pdsch.pmi", "phy.pdsch.PMI"];
 for i = 1:numel(paths)
     value = sixgr.util.structGet(cfg, paths(i), []);
     if isnumeric(value) && isscalar(value) && isfinite(double(value))
-        tf = true;
+        pmi = double(value);
         return;
     end
 end

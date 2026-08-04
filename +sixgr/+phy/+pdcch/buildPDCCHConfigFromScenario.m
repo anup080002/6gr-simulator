@@ -151,6 +151,16 @@ end
 configuredPayloadBits = double(sixgr.util.structGet(cfg, "phy.pdcch.configuredPayloadBits", ...
     sixgr.util.structGet(cfg, "phy.pdcch.dciPayloadBits", ...
     sixgr.util.structGet(cfg, "lls6g.control.pdcch_payload_bits", NaN))));
+% YAML null is decoded as an empty array.  It means that the exact payload
+% width is context-derived, not that the configured-width field contains a
+% vector.  Normalize that explicit absence before using scalar short-circuit
+% logic, and fail closed for a genuinely ambiguous multi-value override.
+if isempty(configuredPayloadBits)
+    configuredPayloadBits = NaN;
+elseif ~isscalar(configuredPayloadBits)
+    error("sixgr:phy:pdcch:InvalidConfiguredPayloadSize", ...
+        "Configured PDCCH payload size must be a scalar or YAML null.");
+end
 contexts = cell(numel(dciFormats), 1);
 payloadRows = repmat(struct("DCIFormat", "", "PayloadBits", NaN, ...
     "ContextDigest", ""), numel(dciFormats), 1);

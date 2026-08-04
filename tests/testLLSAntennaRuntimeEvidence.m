@@ -157,9 +157,9 @@ cfg.phy.pusch.mappingType = "A";
 prbSet = 0:(double(cfg.phy.carrier.NSizeGrid) - 1);
 cfg.phy.pdsch.prbSet = prbSet;
 cfg.phy.pusch.prbSet = prbSet;
-cfg.phy.pdsch.enablePTRS = false;
-cfg.phy.pusch.enablePTRS = false;
-cfg.phy.ptrs.enable = false;
+% Preserve the scenario's reference_signals.ptrs_enabled authority.  This
+% fixture changes only scheduling/allocation details needed by the isolated
+% antenna calibration; it must not silently disable a YAML-enabled signal.
 cfg.phy.pdsch.UECapability1024QAM = false;
 cfg.phy.pdsch.UECapability1024QAMVariant = "not_supported";
 cfg.phy.pdsch.RRCEnabled1024QAM = false;

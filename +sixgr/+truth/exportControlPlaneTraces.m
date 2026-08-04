@@ -25,6 +25,9 @@ trsTrials = localResolveControlTrialTable(runtimeTables, "TRS", fullfile(control
 initialAccessLifecycle = localResolveOptionalTable(runtimeTables, "InitialAccessLifecycleTraceTable", ...
     fullfile(controlDir, "initial_access_lifecycle_trace.csv"), ...
     fullfile(layout.ReportCSVDir, "initial_access_lifecycle_trace.csv"));
+if istable(initialAccessLifecycle) && ~isempty(initialAccessLifecycle)
+    initialAccessLifecycle = sixgr.truth.deriveInitialAccessProcedureDelay(initialAccessLifecycle);
+end
 controlSummary = localResolveOptionalTable(runtimeTables, "ControlGatingSummaryTable", fullfile(layout.ReportCSVDir, "live_control_gating_summary.csv"));
 controlState = localResolveOptionalTable(runtimeTables, "ControlGatingStateTable", fullfile(layout.ReportCSVDir, "live_control_gating_state.csv"));
 

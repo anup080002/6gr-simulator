@@ -1477,7 +1477,12 @@ end
 function stats = localPRACHStrictEvidenceStats(layout, scfg, cfg)
 required = localIsPRACHStrictScenario(scfg, cfg);
 configPath = fullfile(layout.ControlCSVDir, "prach_config_strict.csv");
-trialPath = fullfile(layout.ControlCSVDir, "prach_trials.csv");
+trialPath = fullfile(layout.ControlCSVDir, "prach_strict_trials.csv");
+if exist(trialPath, "file") ~= 2
+    % Legacy strict-only runs used prach_trials.csv. Runtime-integrated
+    % runs now reserve that name for the causal air-interface lifecycle.
+    trialPath = fullfile(layout.ControlCSVDir, "prach_trials.csv");
+end
 candidatePath = fullfile(layout.ControlCSVDir, "prach_detection_candidates.csv");
 mappingPath = fullfile(layout.ControlCSVDir, "prach_restricted_set_mapping.csv");
 rootPath = fullfile(layout.ControlCSVDir, "prach_root_sequence_budget.csv");
@@ -1608,7 +1613,10 @@ function stats = localPDCCHStrictEvidenceStats(layout, scfg, cfg)
 required = localIsPDCCHStrictScenario(scfg, cfg);
 standaloneStrictRequired = localPDCCHStandaloneStrictRequired(scfg, cfg);
 configPath = fullfile(layout.ControlCSVDir, "pdcch_config_strict.csv");
-trialPath = fullfile(layout.ControlCSVDir, "pdcch_trials.csv");
+trialPath = fullfile(layout.ControlCSVDir, "pdcch_strict_trials.csv");
+if exist(trialPath, "file") ~= 2
+    trialPath = fullfile(layout.ControlCSVDir, "pdcch_trials.csv");
+end
 airTrialPath = fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv");
 candidatePath = fullfile(layout.ControlCSVDir, "pdcch_candidates.csv");
 dciFieldPath = fullfile(layout.ControlCSVDir, "pdcch_dci_fields.csv");

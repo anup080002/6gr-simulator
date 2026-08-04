@@ -1,0 +1,120 @@
+function T = deriveInitialAccessProcedureDelay(T, varargin)
+%DERIVEINITIALACCESSPROCEDUREDELAY Bind access delay to runtime event times.
+%
+% The function marks the terminal Msg4 lifecycle row for each UE and adds
+% a procedure-delay sample only when all four-step RA events are present.
+% It never substitutes configured latency or MATLAB compute time.
+
+p = inputParser;
+p.addParameter("SlotDuration_s", NaN, ...
+    @(x)isnumeric(x) && isscalar(x));
+p.parse(varargin{:});
+fallbackSlotDuration_s = double(p.Results.SlotDuration_s);
+
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+requiredColumns = ["UEIndex","EventName","Slot","Time_s"];
+if ~all(ismember(requiredColumns, string(T.Properties.VariableNames)))
+    error("sixgr:truth:InitialAccessLifecycleSchemaMissing", ...
+        "Initial-access lifecycle evidence requires columns: %s.", ...
+        strjoin(requiredColumns, ", "));
+end
+
+n = height(T);
+T = localEnsureNumericColumn(T, "ProcedureStartSlot", n);
+T = localEnsureNumericColumn(T, "ProcedureEndSlot", n);
+T = localEnsureNumericColumn(T, "ProcedureDelay_ms", n);
+T = localEnsureNumericColumn(T, "AccessDelay_ms", n);
+T = localEnsureLogicalColumn(T, "CompleteFlag", n);
+
+ueValues = double(T.UEIndex);
+eventNames = upper(strtrim(string(T.EventName)));
+slots = double(T.Slot);
+times_s = double(T.Time_s);
+for ue = unique(ueValues(isfinite(ueValues))).'
+    ueMask = ueValues == ue;
+    if any(ueMask & logical(T.CompleteFlag) & ...
+            isfinite(double(T.ProcedureDelay_ms)))
+        continue;
+    end
+    requiredEvents = ["SSB_DETECTED","PBCH_DECODED", ...
+        "PRACH_MSG1_DETECTED","MSG2_RAR_DECODED", ...
+        "MSG3_PUSCH_COMPLETED"];
+    if any(arrayfun(@(name)~any(ueMask & eventNames == name), requiredEvents))
+        continue;
+    end
+    terminalMask = ueMask & ismember(eventNames, ...
+        ["MSG4_CONTENTION_RESOLUTION_COMPLETED","MSG4_PDSCH_COMPLETED"]);
+    if ~any(terminalMask)
+        continue;
+    end
+    startMask = ueMask & ismember(eventNames, ["SSB_DETECTED","PBCH_DECODED"]);
+    startRows = find(startMask & isfinite(slots) & isfinite(times_s));
+    terminalRows = find(terminalMask & isfinite(slots) & isfinite(times_s));
+    if isempty(startRows) || isempty(terminalRows)
+        continue;
+    end
+    [~, startLocal] = min(times_s(startRows));
+    [~, endLocal] = max(times_s(terminalRows));
+    startRow = startRows(startLocal);
+    endRow = terminalRows(endLocal);
+    slotDuration_s = fallbackSlotDuration_s;
+    if ismember("SlotDuration_s", string(T.Properties.VariableNames))
+        measuredSlotDuration = double(T.SlotDuration_s(endRow));
+        if isfinite(measuredSlotDuration) && measuredSlotDuration > 0
+            slotDuration_s = measuredSlotDuration;
+        end
+    end
+    if ~(isfinite(slotDuration_s) && slotDuration_s > 0)
+        continue;
+    end
+    delayMs = max(0, ...
+        (times_s(endRow) - times_s(startRow) + slotDuration_s) * 1e3);
+    T.ProcedureStartSlot(endRow) = slots(startRow);
+    T.ProcedureEndSlot(endRow) = slots(endRow);
+    T.ProcedureDelay_ms(endRow) = delayMs;
+    T.AccessDelay_ms(endRow) = delayMs;
+    T.CompleteFlag(endRow) = true;
+    T = localAssignText(T, "LifecycleState", endRow, "CONNECTED");
+    T = localAssignText(T, "ValueSource", endRow, ...
+        "slot_coupled_runtime_initial_access_lifecycle");
+    T = localAssignText(T, "ValueRole", endRow, ...
+        "measured_runtime_procedure_delay");
+    T = localAssignText(T, "ValueStatus", endRow, ...
+        "available_runtime_procedure_sample");
+    T = localAssignText(T, "ValueDefinition", endRow, ...
+        "SSB/PBCH through PRACH/Msg2/Msg3/Msg4 delay from runtime event timestamps");
+    T = localAssignText(T, "Notes", endRow, ...
+        "Delay uses slot-coupled runtime timestamps only; configured values and compute runtime are not substituted.");
+end
+end
+
+function T = localEnsureNumericColumn(T, name, n)
+if ~ismember(name, string(T.Properties.VariableNames))
+    T.(name) = nan(n, 1);
+end
+end
+
+function T = localEnsureLogicalColumn(T, name, n)
+if ~ismember(name, string(T.Properties.VariableNames))
+    T.(name) = false(n, 1);
+else
+    T.(name) = logical(T.(name));
+end
+end
+
+function T = localAssignText(T, name, row, value)
+if ~ismember(name, string(T.Properties.VariableNames))
+    return;
+end
+if iscell(T.(name))
+    T.(name){row} = char(value);
+elseif isstring(T.(name))
+    T.(name)(row) = string(value);
+elseif iscategorical(T.(name))
+    T.(name)(row) = categorical(string(value));
+else
+    T.(name)(row) = value;
+end
+end

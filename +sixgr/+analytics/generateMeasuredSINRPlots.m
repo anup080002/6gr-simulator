@@ -1,5 +1,5 @@
 function results = generateMeasuredSINRPlots(cfg, runTag, varargin)
-%GENERATEMEASUREDSINRPLOTS Plot geometry-driven measured-SINR artifacts.
+%GENERATEMEASUREDSINRPLOTS Plot runtime measured-SINR artifacts.
 
 if nargin < 2
     runTag = "";
@@ -42,7 +42,7 @@ fig = localNewFigure();
 hold on;
 localPlotBlerTable(dl, "DL", "-", minTrials);
 localPlotBlerTable(ul, "UL", "--", minTrials);
-title("BLER vs Measured Post-Equalisation SINR - Geometry-Driven");
+title("BLER vs Measured Post-Equalisation SINR");
 xlabel("Measured post-EQ SINR (dB)");
 ylabel("BLER");
 ylim([0 1]);
@@ -90,7 +90,7 @@ hold on;
 localPlotScalarCurve(dl, "DL", "BER", "-", minTrials);
 localPlotScalarCurve(ul, "UL", "BER", "--", minTrials);
 set(gca, "YScale", "log");
-title("BER vs Measured Post-Equalisation SINR - Geometry-Driven");
+title("BER vs Measured Post-Equalisation SINR");
 xlabel("Measured post-EQ SINR (dB)");
 ylabel("BER");
 ylim([1e-5 1]);
@@ -108,7 +108,7 @@ fig = localNewFigure();
 hold on;
 localPlotThroughputTable(dl, "DL", "-", minTrials);
 localPlotThroughputTable(ul, "UL", "--", minTrials);
-title("Goodput vs Measured Post-Equalisation SINR - Geometry-Driven");
+title("Goodput vs Measured Post-Equalisation SINR");
 xlabel("Measured post-EQ SINR (dB)");
 ylabel("Goodput (Mbps)");
 grid on;

@@ -3,34 +3,55 @@
 # every field below is an intentional override for this 64x4 coupled MU-MIMO run.
 inherits: master_sinr_sweep.yaml
 
-# Directional digital/RF-chain capacities are explicit because two rank-2
-# users require four simultaneous gNB spatial streams.  Physical element
+# Directional digital/RF-chain capacities are explicit. The measured SRS
+# signatures in this frequency-selective scenario retain up to 18 peer
+# modes, so four TX chains cannot leave the two-dimensional nullspace needed
+# by a rank-2 user. Thirty-two TX chains provide a hardware-realizable
+# two-elements-per-subarray hybrid mapping; 64 RX chains match the element-
+# domain branches actually consumed by the UL IRC receiver. Physical element
 # counts remain 64 at the gNB and 4 at each UE.
 antenna_and_array:
-  bs_num_txrus: 4
-  bs_num_rxrus: 4
+  bs_num_txrus: 32
+  bs_num_rxrus: 64
   ue_num_txrus: 2
   ue_num_rxrus: 4
+  # Two dual-polarized panels share the declared 64 physical elements; the
+  # element count is total across panels and polarization branches.
+  bs_panel_count: 2
   reciprocity_assumption: tdd_reciprocity
+
+# The physical channel realization has its own scenario authority. Per-UE
+# payload, decoder and HARQ seeds may be offset without changing the
+# reciprocal UL-SRS/DL-PDSCH propagation channel used by MU precoding.
+seeds:
+  channel_seed: 104729
 
 canonical_control:
   identity:
     scenario_id: webgui_sinr_sweep_64x4_mu_mimo_full
-    scenario_name: Full WebGUI SINR sweep — 64x4 coupled MU-MIMO
-    description: Full CDL-C waveform LLS sweep at -20, 0, and 20 dB with one 64-element gNB, four 4-element UEs, element-domain hybrid precoding, and slot-coupled MU-MIMO truth execution.
-    version: 1.0.0
+    scenario_name: Full WebGUI n78 initial-access SINR sweep — 64x4 coupled MU-MIMO
+    description: True-waveform 3.5 GHz, 100 MHz, 30 kHz SCS TDD CDL-C LLS sweep at -20, 0, and 20 dB with a 64-element dual-polarized gNB, four 4-element UEs, four SSB beams, eight CSI measurement beams, strict initial access, and slot-coupled MU-MIMO execution.
+    version: 2.0.0
     owner: operator
     research_class: study_item_candidate
     maturity_tag: experimental
-    purpose: Complete WebGUI-launched multi-user waveform LLS execution for the requested 64x4 antenna configuration.
+    purpose: Complete WebGUI-launched multi-user waveform LLS execution including cell search, PBCH/MIB, Type-0 SIB1, PRACH miss/false-detection analysis, four-step random access, and RRC Setup Complete.
     baseline_reference_name: master_sinr_sweep
     comparison_group_name: coupled_mu_mimo_64x4_three_point_sinr
     tags:
       - lls
       - webgui
       - cdl_c
+      - n78
+      - 3p5ghz
+      - 100mhz
+      - tdd
       - sinr_sweep
       - mu_mimo
+      - initial_access
+      - four_step_ra
+      - ssb_4beam
+      - csirs_8beam
       - 64tx
       - 4rx
       - slot_coupled_truth
@@ -38,7 +59,11 @@ canonical_control:
   launch:
     runner_profile: waveform_bundle
     target_cases: [bundle]
-    bundle_anchor_cases: [dl_pdsch_throughput, ul_pusch_throughput]
+    # These are the waveform LinkLevelRunner anchor names. PDCCH, strict
+    # PRACH/SRS/TRS, Channel/RF and four-step-RA evidence is enabled by the
+    # explicit feature/gating sections below and runs in the supplemental
+    # strict-evidence stage rather than being mislabeled as a link anchor.
+    bundle_anchor_cases: [cell_search_mib_sib1, prach_detection, dl_pdsch_throughput, ul_pusch_throughput, ul_srs_channelest]
     expected_outputs:
       - reports/csv/scenario_summary.csv
       - reports/csv/runtime_operating_mode.csv
@@ -49,6 +74,15 @@ canonical_control:
       - reports/csv/browser_runtime_db_consistency.csv
       - reports/csv/summary_vs_raw_consistency.csv
       - reports/csv/value_source_audit.csv
+      - control/csv/ssb_pbch_sib1_beam_sweep.csv
+      - control/csv/prach_trials.csv
+      - control/csv/prach_missed_detection_sweep.csv
+      - control/csv/prach_false_alarm_sweep.csv
+      - control/csv/prach_detection_summary.csv
+      - control/csv/prach_probability_sweep.csv
+      - control/csv/prach_correlation_trace.csv
+      - reports/csv/initial_access_trace.csv
+      - reports/csv/rrc_setup_complete.csv
       - air_interface/csv/dl_pdsch_trials.csv
       - air_interface/csv/ul_pusch_trials.csv
       - packet_flow/csv/live_dl_scheduler_grants.csv
@@ -56,7 +90,7 @@ canonical_control:
     honesty_mode: strict
     unsupported_output_policy: show_unavailable_with_reason
     provenance_logging: true
-    notes: The three configured values control post-CDL waveform noise injection; receiver-derived post-equalization SINR remains separately reported.
+    notes: The three configured values control post-CDL waveform noise injection; receiver-derived post-equalization SINR is reported separately. PRACH miss and false-detection sweeps are waveform trials and are not inferred from configured thresholds.
     run_class: adaptive_system_diagnostic
     scenario_mode: sinr_sweep_coupled_mu_mimo
     sweep_enabled: true
@@ -66,12 +100,12 @@ canonical_control:
     seed: 104729
     deterministic_mode: true
     link_direction: both
-    n_frames: 1
-    total_slots: 20
-    total_time_ms: 10
+    n_frames: 2
+    total_slots: 40
+    total_time_ms: 20
     warmup_slots: 0
-    measurement_slots: 20
-    n_subframes: 10
+    measurement_slots: 40
+    n_subframes: 20
     monte_carlo_iterations: 1
     num_seeds: 1
     seed_list: [104729]
@@ -79,9 +113,10 @@ canonical_control:
     fixed_link_campaign_enabled: false
     fixed_link_snr_grid_db: [-20, 0, 20]
     min_campaign_snr_points: 3
-    # Twenty coupled slots per point provide a diagnostic sweep, not a
-    # publication-scale confidence campaign. Require two real trials in an
-    # aggregate measured-SINR bin and retain every raw trial in the export.
+    # Forty coupled slots per point retain strict initial access and leave
+    # repeated post-feedback DL/UL TDD opportunities for bidirectional
+    # throughput and causal MU-MIMO measurement. This remains a single-seed
+    # production diagnostic, not a publication confidence campaign.
     min_trials_per_sinr_bin: 2
     snr_db: 0
     noise_operating_mode: standalone_awgn_snr_argument
@@ -101,15 +136,17 @@ canonical_control:
     save_intermediate: true
     fixed_link_campaign_only: false
   radio:
-    # Keep the requested full 64x4 element-domain channel, but use a
-    # diagnostic 10 MHz carrier so the 64x4 CDL tensor remains bounded.
-    # This is an explicit scenario choice, not a runtime hardcoded cap.
-    bandwidth_hz: 10000000
-    bandwidth_options_hz: [10000000]
-    occupied_bandwidth_hz: 8640000
-    n_size_grid: 24
-    sample_rate_hz: 15360000
-    fft_size: 512
+    range_name: FR1
+    band_name: n78
+    center_frequency_hz: 3500000000
+    bandwidth_hz: 100000000
+    bandwidth_options_hz: [100000000]
+    occupied_bandwidth_hz: 98300000
+    duplex_mode: TDD
+    scs_khz: 30
+    n_size_grid: 273
+    sample_rate_hz: 122880000
+    fft_size: 4096
   channel:
     model_type: CDL
     profile: CDL-C
@@ -162,7 +199,7 @@ canonical_control:
     codebook_type: type2
     beam_codebook_type: type2_mu_mimo
     beam_sweep_enabled: true
-    beam_count: 32
+    beam_count: 8
     panel_count: 2
     trp_count: 1
     reciprocity_mode: TDD
@@ -178,7 +215,23 @@ canonical_control:
     # thresholds or configured-value substitutions.
     mu_mimo_precoder_leakage_threshold_db: -15
     mu_mimo_minimum_desired_subspace_gain_db: -30
-    mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
+    mu_mimo_hybrid_rf_design_policy: fixed_configured_matrix
+    mu_mimo_spatial_signature_mode: complete_detectable_subspace
+    mu_mimo_spatial_subspace_noise_margin_db: 6
+    mu_mimo_phase_only_projection_max_iterations: 500
+    mu_mimo_phase_only_projection_tolerance: 1.0e-6
+    phase07_strict:
+      enabled: false
+      csi_report:
+        report_config_id: csi-report-0
+        epoch: 0
+        report_quantity: cri-RI-PMI-CQI
+        num_csi_resources: 8
+        frequency_granularity: wideband
+        uci_channel: PUCCH
+        num_subbands: 1
+        number_of_beams: 8
+        phase_alphabet_size: 4
   scheduler:
     type: PF
     # Two simultaneously scheduled UEs match the configured spatial
@@ -187,7 +240,7 @@ canonical_control:
     max_active_ues_per_cell_per_slot: 2
     max_active_ues_per_cell_per_slot_dl: 2
     max_active_ues_per_cell_per_slot_ul: 2
-    max_prb_allocation_per_ue: 24
+    max_prb_allocation_per_ue: 273
     fairness_alpha: 1.0
     proportional_fair_window_ms: 100
     beam_aware: true
@@ -205,6 +258,9 @@ canonical_control:
     fastNREApprox: false
   reference_signals:
     ssb_enabled: true
+    # The SSB sweep is four physical analog beams.  Keep this distinct from
+    # the eight-beam CSI-RS measurement codebook below.
+    ssb_beam_count: 4
     pbch_enabled: true
     pdcch_dmrs_enabled: true
     csi_rs_enabled: true
@@ -212,6 +268,10 @@ canonical_control:
     trs_enabled: true
     tracking_rs_enabled: true
     ptrs_enabled: true
+    ptrs_port_association_policy: first_scheduled_dmrs_port
+    ptrs_time_density: 2
+    ptrs_frequency_density: 2
+    ptrs_re_offset: '00'
     ptrs_cpe_correction_enabled: true
     csi_feedback_mode: PMI+CQI+RI+CRI
     csi_acquisition_mode: joint_dl_ul
@@ -224,81 +284,159 @@ canonical_control:
     cri_reporting_enabled: true
     pdsch_dmrs_ports: 2
     pusch_dmrs_ports: 2
+    # Eight beamformed NZP CSI-RS resources are measured through four
+    # logical CSI-RS ports; physical radiation still uses all 64 elements.
     csi_rs_ports: 4
     srs_ports: 4
     trs_ports: 1
     srs_max_ues_per_slot: 4
     srs_scheduling_policy: multiplex_due_users
+    csi_report_periodicity_slots: 5
+    csi_reporting_delay_slots: 1
   control:
     pdcch_enabled: true
     blind_search_enabled: true
     pucch_enabled: true
-    # Four six-PRB bitmap groups exactly cover this scenario's 24-PRB BWP.
-    coreset_frequency_resources: [1, 1, 1, 1]
-    # A 24-PRB, two-symbol CORESET contains eight CCEs. Do not inherit the
-    # qualification master's aggregation-level-16 candidate, which cannot
-    # exist in this bounded runtime CORESET.
-    aggregation_levels: [4, 8]
-    candidate_aggregation_levels: [4, 8]
+    # Twelve six-PRB groups form a 72-PRB CORESET inside the 273-PRB BWP.
+    coreset_frequency_resources: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    aggregation_levels: [1, 2, 4, 8, 16]
+    candidate_aggregation_levels: [1, 2, 4, 8, 16]
     scheduler_aggregation_level: 4
     aggregation_selection_policy: configured_scheduler_level
-    search_space_num_candidates: [0, 0, 2, 1, 0]
-    pbch_required: false
-    prach_required: false
-    pdcch_required: false
-    srs_required: false
-    trs_required: false
+    search_space_num_candidates: [8, 8, 4, 2, 1]
+    pbch_required: true
+    prach_required: true
+    pdcch_required: true
+    srs_required: true
+    trs_required: true
     srs_max_age_slots: 20
     trs_max_age_slots: 20
-    pre_attach_ues_before_measurement: true
+    pre_attach_ues_before_measurement: false
     # The strict contextual PDCCH builder consumes these operator-control
     # fields after the public pdcch aliases. Keep the DCI widths and CORESET
-    # inside this scenario's 24-PRB carrier instead of inheriting the
-    # 273/72-PRB qualification-master values.
+    # consistent with this scenario's 273-PRB carrier.
     pdcch_strict:
       dci_context:
-        initial_dl_bwp_size: 24
-        active_dl_bwp_size: 24
-        initial_ul_bwp_size: 24
-        active_ul_bwp_size: 24
+        initial_dl_bwp_size: 273
+        active_dl_bwp_size: 273
+        initial_ul_bwp_size: 273
+        active_ul_bwp_size: 273
       coreset:
-        n_rb: 24
+        n_rb: 72
         rb_start: 0
       search_space:
         # Keep the contextual blind-search contract consistent with the
         # public bounded-CORESET candidate vector above.  The strict builder
         # intentionally gives this contextual structure final authority.
-        num_candidates: [0, 0, 2, 1, 0]
+        num_candidates: [8, 8, 4, 2, 1]
   initial_access:
     enabled: true
+    profile: fr1_four_step_ra_rrc_connection_strict_r18
+    band_context: n78
+    spectrum: unpaired
+    random_access_procedure: four_step_contention_based
+    require_explicit_ssb_bitmap: true
     ssb:
       enabled: true
-      # FR1 NCRBSSB/KSSB use the 15 kHz Point-A common raster. For this
-      # 10 MHz, 30 kHz, 24-PRB carrier, 4*12*15 kHz places the 7.2 MHz
-      # SSB inside the 8.64 MHz active grid.
-      n_crb_ssb: 4
+      case: Case B
+      scs_khz: 30
+      lmax: 8
+      beam_count: 4
+      periodicity_ms: 20
+      positions_in_burst: '11110000'
+      per_ssb_power_db: [0, 0, 0, 0, 0, 0, 0, 0]
+      precoder_ids: [dft_ura_beam_0, dft_ura_beam_2, dft_ura_beam_4, dft_ura_beam_6, dft_ura_beam_8, dft_ura_beam_10, dft_ura_beam_12, dft_ura_beam_14]
+      precoder_codebook:
+        enabled: true
+        type: dft_ura
+        physical_element_count: 64
+        # A two-panel, dual-polarized 64-element array has 16 spatial
+        # locations per panel/polarization replica.  The DFT indices address
+        # that 4x4 spatial grid; the builder replicates each beam across both
+        # polarizations and panels while preserving unit total power.
+        beam_indices: [0, 2, 4, 6, 8, 10, 12, 14]
+      # Hybrid gNB architecture: retain the exact 64-element analog beam
+      # matrix but propagate the post-analog single RF-chain SSB waveform.
+      waveform_domain: logical_rf_chain_post_analog_precoder
+      # FR1 NCRBSSB/KSSB use the 15 kHz Point-A common raster.  For the
+      # 273-PRB, 30-kHz carrier, NCRBSSB=253 centers the 7.2 MHz Case-B
+      # synchronization block in the 98.28 MHz active carrier grid.
+      n_crb_ssb: 253
       k_ssb: 0
+      selected_ssb_index: 0
+      observation_subframes: 20
     mib:
       enabled: true
     sib1:
       enabled: true
-      decode_from_waveform_required: false
+      decode_from_waveform_required: true
+      observation_subframes: 20
+      pdsch:
+        prb_start: 0
+        num_prb: 24
+        symbol_start: 2
+        num_symbols: 12
+        mcs: 0
+        rv: 0
+        # Keep connected-data PT-RS enabled while explicitly disabling it
+        # for SI-RNTI SIB1 common PDSCH.
+        ptrs_enabled: false
     rrc:
-      require_setup_complete: false
+      require_setup_complete: true
+      transaction_id: 0
+      srb1_lcid: 1
   random_access:
     enabled: true
-    four_step_ra_required: false
-    msg4_contention_resolution_required: false
+    four_step_ra_required: true
+    msg4_contention_resolution_required: true
     msg3_enabled: true
-    min_detection_trials: 8
+    min_detection_trials: 100
+    channel_model: AWGN
+    delay_spread_ns: 0
+    speed_kmh: 0
+    num_rx_antennas: 64
+    num_tx_antennas: 4
+    num_prach_occasions: 4
+    # The requested connected-data PT-RS feature remains authoritative for
+    # every waveform stage.  Common RA links use their explicit rank-one
+    # DM-RS port association rather than inheriting rank-two data ports.
+    msg2_pdsch:
+      ptrs_enabled: true
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
+    msg3_pusch:
+      ptrs_enabled: true
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
+    msg4_pdsch:
+      ptrs_enabled: true
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
+    setup_complete_pusch:
+      ptrs_enabled: true
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
   random_access_evidence:
-    four_step_ra_required: false
-    msg1_prach_required: false
-    msg2_rar_pdcch_pdsch_required: false
-    msg3_pusch_required: false
-    msg4_contention_resolution_required: false
-    ra_rnti_decode_required: false
-    rar_mac_ce_decode_required: false
+    four_step_ra_required: true
+    msg1_prach_required: true
+    msg2_rar_pdcch_pdsch_required: true
+    msg3_pusch_required: true
+    msg4_contention_resolution_required: true
+    ra_rnti_decode_required: true
+    rar_mac_ce_decode_required: true
+    timing_advance_required: true
+    contention_resolution_identity_required: true
+    preamble_collision_test_enabled: true
+    false_alarm_test_enabled: true
+    missed_detection_test_enabled: true
   csi:
     cqi_policy: adaptive
     pmi_policy: adaptive
@@ -309,18 +447,27 @@ canonical_control:
     enabled: true
     tx_power_dbm: 46
     pa_efficiency: 0.35
-    rf_chain_count: 64
+    rf_chain_count: 32
   output:
+    backend: filesystem
+    persistence_mode: results_folder
+    persist_to_database: false
+    persist_to_results_folder: true
     profiler_enabled: false
+    export_ssb_beam_sweep: true
     # Publish lightweight run state every slot, but rebuild the expensive
     # derived browser gallery only at campaign start and final completion.
     live_heavy_refresh_interval_frames: 20
     live_heavy_refresh_each_sweep_point: false
+  validation:
+    run_class: adaptive_system_diagnostic
+    fixed_snr_sweep_required: false
+    geometry_evidence_required: false
   runtime_overrides:
     - path: output.emit_disabled_audit_artifacts
       value: true
     - path: output.persist_to_database
-      value: true
+      value: false
     - path: output.persist_to_results_folder
       value: true
     - path: interference.inter_cell_interference_flag
@@ -347,6 +494,16 @@ canonical_control:
       value: 20
     - path: link_adaptation.bootstrap_mcs_index
       value: 1
+    - path: link_adaptation.mu_mimo_first_data_bootstrap_enabled
+      value: true
+    - path: link_adaptation.mu_mimo_first_data_bootstrap_policy
+      value: yaml_mcs_until_first_data_feedback
+    - path: link_adaptation.mu_mimo_first_data_mcs_index
+      value: 1
+    - path: link_adaptation.dl_mu_mimo_first_data_mcs_index
+      value: 1
+    - path: link_adaptation.ul_mu_mimo_first_data_mcs_index
+      value: 1
     - path: receiver_algorithms.ssb_cfo_search_bw_hz
       value: 0
     - path: synchronization.max_timing_uncertainty_samples
@@ -354,11 +511,12 @@ canonical_control:
   pdsch:
     execution_profile: scheduler_truth
     prb_start: 0
-    num_prb: 24
+    num_prb: 273
     # Keep inherited legacy aliases identical to the canonical MIMO/data
     # operating point.  These remain configuration inputs; the runtime
     # authority builder rejects contradictory duplicates before execution.
     layer_count: 2
+    rank: 2
     modulation: 256QAM
   harq:
     enabled: true
@@ -371,6 +529,20 @@ link_adaptation:
   initial_mcs: 1
   maximum_mcs: 20
   bootstrap_mcs_index: 1
+  # SRS remains the causal rank/spatial-pairing authority. Its pilot-only
+  # SINR is not treated as a post-MU data SINR before the first decoded data
+  # report, so both directions use this conservative YAML-owned first TB.
+  mu_mimo_first_data_bootstrap_enabled: true
+  mu_mimo_first_data_bootstrap_policy: yaml_mcs_until_first_data_feedback
+  mu_mimo_first_data_mcs_index: 1
+  dl_mu_mimo_first_data_mcs_index: 1
+  ul_mu_mimo_first_data_mcs_index: 1
+
+analytics:
+  # This supported top-level authority enables the measured SSB/PBCH/SIB1
+  # beam-sweep export; the eight-beam CSI analytics remain independently
+  # controlled by the CSI and beam-management sections.
+  export_beam_analytics: true
 
 csi_acquisition_and_reporting:
   # This is the production buildInternalConfig authority consumed by
@@ -471,26 +643,26 @@ tdd_timing:
 bwp:
   dl:
     n_start_bwp: 0
-    n_size_bwp: 24
+    n_size_bwp: 273
   ul:
     n_start_bwp: 0
-    n_size_bwp: 24
+    n_size_bwp: 273
   component_carriers:
   - cc_id: 0
     serving_cell_id: 1
     scheduling_cc_ids: [0]
-    center_frequency_hz: 4000000000
-    band: lab_default_n77_style_midband
+    center_frequency_hz: 3500000000
+    band: n78
     frequency_range: FR1
-    channel_bandwidth_mhz: 10
+    channel_bandwidth_mhz: 100
     duplex_mode: TDD
     dl_carrier_grid:
       n_start_grid: 0
-      n_size_grid: 24
+      n_size_grid: 273
       scs_khz: 30
     ul_carrier_grid:
       n_start_grid: 0
-      n_size_grid: 24
+      n_size_grid: 273
       scs_khz: 30
     carrier_indicator_map:
     - indicator: 0
@@ -498,8 +670,9 @@ bwp:
 
 pdsch6gr:
   harq_enabled: true
-  channel_bandwidth_mhz: 10
-  n_size_grid: 24
+  enable_ptrs: true
+  channel_bandwidth_mhz: 100
+  n_size_grid: 273
   n_tx: 64
   n_rx: 4
   num_layers: 2
@@ -509,19 +682,31 @@ pdsch6gr:
 pdsch:
   execution_profile: scheduler_truth
   prb_start: 0
-  num_prb: 24
+  num_prb: 273
   layer_count: 2
+  rank: 2
   modulation: 256QAM
 
 pusch:
   prb_start: 0
-  num_prb: 24
+  num_prb: 273
   layer_count: 2
   num_layers: 2
   num_antenna_ports: 2
   modulation: 256QAM
   mcs_index: 20
   dmrs_port_set: [0, 1]
+  ptrs_enabled: true
+
+# Top-level runtime authority mirrors the detailed canonical-control surface.
+# buildInternalConfig consumes this resolved section after inheritance; keep
+# it explicit so the SINR master cannot silently leave PT-RS disabled.
+reference_signals:
+  ptrs_enabled: true
+  ptrs_port_association_policy: first_scheduled_dmrs_port
+  ptrs_time_density: 2
+  ptrs_frequency_density: 2
+  ptrs_re_offset: '00'
 
 # A count-only AWGN shortcut cannot exercise the configured physical array.
 # CDL-C consumes the same runtime 64-element gNB and 4-element UE array
@@ -575,18 +760,19 @@ validation:
     snr_db: [-20, 0, 20]
 
 control_gating:
-  pre_attach_ues_before_measurement: true
-  pbch_required: false
-  prach_required: false
-  pdcch_required: false
-  srs_required: false
+  pre_attach_ues_before_measurement: false
+  pbch_required: true
+  prach_required: true
+  pdcch_required: true
+  srs_required: true
   srs_max_age_slots: 20
-  trs_required: false
+  trs_required: true
   trs_max_age_slots: 20
 
 sweeps_and_matrix:
   snr_sweep:
     enabled: true
+    state_policy: independent_link_state_per_point
     values_db: [-20, 0, 20]
   fixed_link_calibration:
     enabled: false

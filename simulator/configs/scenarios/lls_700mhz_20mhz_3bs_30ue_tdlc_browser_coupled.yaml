@@ -98,6 +98,10 @@
     "trs_enabled": true,
     "tracking_rs_enabled": true,
     "ptrs_enabled": true,
+    "ptrs_port_association_policy": "first_scheduled_dmrs_port",
+    "ptrs_time_density": 2,
+    "ptrs_frequency_density": 2,
+    "ptrs_re_offset": "00",
     "tracking_rs": {
       "trp_transmission_assumption": "noncoherent_multi_trp"
     }

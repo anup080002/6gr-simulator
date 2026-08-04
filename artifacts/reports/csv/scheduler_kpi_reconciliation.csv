@@ -1,0 +1,2 @@
+RequiredCaseCount,PresentCaseCount,OkCaseCount,KPIFormulaVersion,FailureReason,SchedulerKpiReconciliationOk
+2,2,0,"measured_sinr_geometry_v1","failed=DL_PDSCH_Throughput|UL_PUSCH_Throughput",0

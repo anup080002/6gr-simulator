@@ -1183,16 +1183,56 @@ classdef (Abstract) SchedulerBase < handle
             if ~isfield(grantOut, "Direction") || strlength(string(grantOut.Direction)) == 0
                 grantOut.Direction = obj.Direction;
             end
+            % A retransmission preserves the TB, coding, allocation shape,
+            % and HARQ process, but it is a new transmission occasion.  K0,
+            % K1/K2 and their absolute-slot results belong to the previous
+            % control occasion and must be selected again from the attached
+            % YAML timing catalog.  Retaining an old explicit K1 can point a
+            % later retransmission at a fixed DL slot in TDD even when another
+            % configured K1 candidate is valid.
+            grantOut = sixgr.l2.mac.rebindHARQRetransmissionTiming(grantOut);
             grantOut = obj.attachCanonicalTimingDecision(grantOut);
             grantOut = obj.finalizeExactPHYFeasibility(grantOut);
+            cfgForFreeze = obj.Cfg;
+            priorPHYGrant = sixgr.util.structGet(grantOut, "PHYGrant", struct());
+            isRetransmission = logical(sixgr.util.structGet(grantOut, ...
+                "IsRetransmission", sixgr.util.structGet(grantOut, ...
+                "HARQ.IsRetransmission", false)));
+            currentSharedMU = logical(sixgr.util.structGet(grantOut, ...
+                "MUMIMOEnabled", false)) && ...
+                double(sixgr.util.structGet(grantOut, "MUMIMOGroupSize", 0)) >= 2;
+            if upper(string(grantOut.Direction)) == "DL" && ...
+                    isRetransmission && ~currentSharedMU && ...
+                    isstruct(priorPHYGrant) && ~isempty(fieldnames(priorPHYGrant)) && ...
+                    logical(sixgr.util.structGet(priorPHYGrant, "IsFrozen", false))
+                % The scheduler refreezes current-slot control/timing, but
+                % an orthogonal HARQ replay retains the first transmission's
+                % immutable spatial architecture. Project that frozen grant
+                % into a replay-only config before removing the recursive
+                % PHYGrant field. This is the same authority boundary used
+                % by CoupledTruthRuntime at execution time.
+                sixgr.phy.grant.assertPHYGrantDimensions( ...
+                    priorPHYGrant, "scheduler_harq_replay_refreeze");
+                cfgForFreeze = sixgr.phy.grant.applyPHYGrantToConfig( ...
+                    cfgForFreeze, priorPHYGrant);
+            end
             grantSeed = grantOut;
             if isfield(grantSeed, "PHYGrant")
                 grantSeed = rmfield(grantSeed, "PHYGrant");
             end
-            phyGrant = sixgr.phy.grant.freezePHYGrant(obj.Cfg, grantOut.Direction, grantSeed, ...
+            phyGrant = sixgr.phy.grant.freezePHYGrant(cfgForFreeze, grantOut.Direction, grantSeed, ...
                 "Slot", double(sixgr.util.structGet(grantOut, "Slot", NaN)), ...
                 "Frame", double(sixgr.util.structGet(grantOut, "Frame", sixgr.util.structGet(grantOut, "Slot", NaN))), ...
                 "HARQContext", sixgr.util.structGet(grantOut, "HARQ", struct()));
+            if upper(string(grantOut.Direction)) == "DL" && ...
+                    logical(sixgr.util.structGet(grantOut, "MUMIMOEnabled", false))
+                frozenW = double(sixgr.util.structGet(phyGrant, ...
+                    "PrecodingState.MatrixPhysicalPorts", []));
+                nLayers = double(sixgr.util.structGet(phyGrant, ...
+                    "AntennaArchitecture.NumLayers", NaN));
+                sixgr.phy.mimo.MatrixContract.validate( ...
+                    frozenW, size(frozenW,1), nLayers);
+            end
             grantOut.PHYGrant = phyGrant;
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
             grantOut.DMRSPortSet = double(phyGrant.CodingLayout.DMRSPortSet(:).');
@@ -1327,6 +1367,34 @@ classdef (Abstract) SchedulerBase < handle
             grantOut.MappingTypeSelectionSource = char(mappingDecision.Source);
             grantOut.MappingTypeSelectionReason = char(mappingDecision.Reason);
             cfgExact = localApplyGrantMappingTypeToCfg(obj.Cfg, grantOut.Direction, mappingDecision.MappingType);
+            % Exact TBS/NRE accounting must use the same scheduled DM-RS and
+            % PT-RS port association that will be frozen into the PHY grant.
+            % Reading only the cell-wide config here loses disjoint MU-MIMO
+            % ports and makes a YAML-enabled PT-RS grant appear infeasible
+            % before freezePHYGrant can bind its configured association
+            % policy.  Resolve once from YAML + the actual scheduler grant,
+            % then project that exact resource contract into the accounting
+            % config used by allocREsPDSCH/allocREsPUSCH.
+            [scheduledDMRSPorts, scheduledDMRSSource] = ...
+                sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+                obj.Cfg, grantOut.Direction, nLayers, grantOut);
+            [scheduledPTRSEnabled, scheduledPTRSPorts, scheduledPTRSSource] = ...
+                sixgr.phy.grant.resolveScheduledPTRSPortSet( ...
+                obj.Cfg, grantOut.Direction, scheduledDMRSPorts, grantOut);
+            resourceRoot = localPHYRoot(grantOut.Direction);
+            cfgExact = sixgr.util.structSet(cfgExact, ...
+                resourceRoot + ".dmrs.portSet", double(scheduledDMRSPorts(:).'));
+            cfgExact = sixgr.util.structSet(cfgExact, ...
+                resourceRoot + ".dmrs.DMRSPortSet", double(scheduledDMRSPorts(:).'));
+            cfgExact = sixgr.util.structSet(cfgExact, ...
+                resourceRoot + ".enablePTRS", logical(scheduledPTRSEnabled));
+            cfgExact = sixgr.util.structSet(cfgExact, ...
+                resourceRoot + ".ptrs.portSet", double(scheduledPTRSPorts(:).'));
+            grantOut.DMRSPortSet = double(scheduledDMRSPorts(:).');
+            grantOut.DMRSPortSetSource = char(string(scheduledDMRSSource));
+            grantOut.PTRSEnabled = logical(scheduledPTRSEnabled);
+            grantOut.PTRSPortSet = double(scheduledPTRSPorts(:).');
+            grantOut.PTRSPortSetSource = char(string(scheduledPTRSSource));
             try
                 [exactBits, exactBytes, exactNRE, exactInfo] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
                     "PlanningOnly", false, "ForceExact", true, "ConfigOverride", cfgExact);

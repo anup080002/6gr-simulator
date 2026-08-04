@@ -220,12 +220,13 @@ end
 
 localValidateResolvedConfig(prachCfg);
 [carrier, prach] = localBuildToolboxConfigs(prachCfg);
-localAssertZCZRuntimeResolvable(prachCfg, prach);
 [occasionResolution, requiredSlots] = localResolveOccasionPeriod( ...
     prachCfg, carrier, prach);
 prachCfg.NumSlots = max(prachCfg.NumSlots, requiredSlots);
 [firstOccasion, sampleRateHz, carrier, prach] = ...
     localResolveFirstOccasion(carrier, prach, prachCfg);
+localAssertRequestedFormat(prachCfg, prach);
+localAssertZCZRuntimeResolvable(prachCfg, prach);
 
 prachCfg.ToolboxCarrier = carrier;
 prachCfg.ToolboxPRACH = prach;
@@ -510,8 +511,15 @@ prach.FrequencyStart = double(cfg.FrequencyStart);
 prach.RBOffset = double(cfg.RBOffset);
 prach.RBSetOffset = double(cfg.RBSetOffset);
 
+end
+
+function localAssertRequestedFormat(cfg, prach)
+% Some short-preamble table rows require a nonzero ActivePRACHSlot.  Do
+% not query derived Toolbox properties such as Format until the canonical
+% resolver has installed the exact active/time/frequency occasion.
 resolvedFormat = upper(strtrim(string(prach.Format)));
-requestedFormat = upper(strtrim(string(sixgr.util.structGet(cfg, "RequestedPRACHFormat", ""))));
+requestedFormat = upper(strtrim(string(sixgr.util.structGet( ...
+    cfg, "RequestedPRACHFormat", ""))));
 if isempty(requestedFormat)
     requestedFormat = "";
 else
@@ -520,7 +528,9 @@ end
 if strlength(requestedFormat) > 0 && resolvedFormat ~= requestedFormat
     error("sixgr:rach:PRACHConfig:FormatMismatch", ...
         "Requested PRACHFormat=%s resolves to toolbox format %s for configuration index %g / PRACH SCS %g kHz.", ...
-        requestedFormat, resolvedFormat, double(cfg.PRACHConfigurationIndex), double(cfg.PRACHSubcarrierSpacing));
+        requestedFormat, resolvedFormat, ...
+        double(cfg.PRACHConfigurationIndex), ...
+        double(cfg.PRACHSubcarrierSpacing));
 end
 end
 

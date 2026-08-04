@@ -1,0 +1,3 @@
+RunId,NegativeTrialType,InjectedFault,ExpectedFailureStage,ObservedFailureStage,ExactConfiguredMatch,DecodeCrcPass,StrictOk,NegativeExpectedOk,FailureReason
+"","configured_effective_collapse","observed_runtime_rank_layer_or_mcs_mismatch","configured_vs_effective_gate","configured_vs_effective_gate",0,0,0,1,"mu_execution_contract_failed:no_shared_prb_mu_trial_rows"
+"","configured_effective_collapse","observed_runtime_rank_layer_or_mcs_mismatch","configured_vs_effective_gate","configured_vs_effective_gate",0,0,0,1,"mu_execution_contract_failed:no_shared_prb_mu_trial_rows"

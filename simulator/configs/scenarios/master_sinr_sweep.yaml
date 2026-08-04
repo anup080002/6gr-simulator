@@ -320,6 +320,10 @@ canonical_control:
     mu_mimo_precoder_leakage_threshold_db: -15
     mu_mimo_minimum_desired_subspace_gain_db: -30
     mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
+    mu_mimo_spatial_signature_mode: complete_detectable_subspace
+    mu_mimo_spatial_subspace_noise_margin_db: 6
+    mu_mimo_phase_only_projection_max_iterations: 500
+    mu_mimo_phase_only_projection_tolerance: 1.0e-6
     hybrid_beamforming_flag: false
     rank_adaptation_enable: false
     rank_adaptation_policy: fixed
@@ -423,6 +427,15 @@ canonical_control:
       qfi_to_drb:
       - qfi: 9
         drb_id: 1
+    mac:
+      lcid: 4
+    component_validation:
+      enabled: true
+      packets_per_ue_direction: 2
+      duplicate_reception_check_enabled: true
+      require_configured_bidirectional_execution: true
+      write_png: true
+      png_resolution_dpi: 150
     rrc:
       endpoint_profile: ue_and_gnb
       setup_enabled: true
@@ -461,6 +474,9 @@ canonical_control:
     ptrs_enabled: false
     ptrs_cpe_correction_enabled: false
     ptrs_port_association_policy: first_scheduled_dmrs_port
+    ptrs_time_density: 2
+    ptrs_frequency_density: 2
+    ptrs_re_offset: '00'
     csi_feedback_mode: none
     csi_acquisition_mode: dl_based
     operation_orientation: tdd_reciprocity
@@ -844,6 +860,12 @@ canonical_control:
       - identity
       - identity
       - identity
+      precoder_codebook:
+        enabled: false
+        type: dft_ura
+        physical_element_count: 1
+        beam_indices: [0]
+      waveform_domain: physical_element_domain
       k_ssb: 0
       n_crb_ssb: 0
       selected_ssb_index: 0
@@ -871,6 +893,9 @@ canonical_control:
         num_symbols: 12
         mcs: 0
         rv: 0
+        # SI-RNTI common PDSCH has independent reference-signal authority;
+        # connected-data PT-RS settings do not apply to broadcast SIB1.
+        ptrs_enabled: false
     rrc:
       require_setup_complete: false
       transaction_id: 0
@@ -948,6 +973,11 @@ canonical_control:
       target_code_rate: 0.1171875
       rv: 0
       n_layers: 1
+      ptrs_enabled: false
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
     msg3_pusch:
       prb_start: 0
       num_prb: 24
@@ -959,6 +989,11 @@ canonical_control:
       rv: 0
       n_layers: 1
       transform_precoding: false
+      ptrs_enabled: false
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
     msg4_pdsch:
       prb_start: 0
       num_prb: 24
@@ -969,6 +1004,11 @@ canonical_control:
       target_code_rate: 0.1171875
       rv: 0
       n_layers: 1
+      ptrs_enabled: false
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
     setup_complete_pusch:
       prb_start: 0
       num_prb: 24
@@ -980,6 +1020,11 @@ canonical_control:
       rv: 0
       n_layers: 1
       transform_precoding: false
+      ptrs_enabled: false
+      ptrs_port_set: [0]
+      ptrs_time_density: 1
+      ptrs_frequency_density: 2
+      ptrs_re_offset: '00'
   random_access_evidence:
     four_step_ra_required: false
     msg1_prach_required: false
@@ -1212,6 +1257,16 @@ canonical_control:
   - path: link_adaptation.bootstrap_cqi_mode
     value: none
   - path: link_adaptation.bootstrap_mcs_index
+    value: 20
+  - path: link_adaptation.mu_mimo_first_data_bootstrap_enabled
+    value: false
+  - path: link_adaptation.mu_mimo_first_data_bootstrap_policy
+    value: yaml_mcs_until_first_data_feedback
+  - path: link_adaptation.mu_mimo_first_data_mcs_index
+    value: 20
+  - path: link_adaptation.dl_mu_mimo_first_data_mcs_index
+    value: 20
+  - path: link_adaptation.ul_mu_mimo_first_data_mcs_index
     value: 20
   - path: link_adaptation.initial_mcs
     value: 20
@@ -2099,6 +2154,7 @@ tdd_timing:
 sweeps_and_matrix:
   snr_sweep:
     enabled: true
+    state_policy: independent_link_state_per_point
     values_db:
     - 10
     - 14

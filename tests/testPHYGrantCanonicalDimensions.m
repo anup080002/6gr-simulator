@@ -20,13 +20,14 @@ cfgDL.phy.pdsch.numLayers = 2;
 cfgDL.phy.pdsch.nLayers = 2;
 cfgDL.phy.pdsch.numPorts = 2;
 cfgDL.phy.pdsch.nPorts = 2;
-cfgDL.phy.pdsch.precoding.matrix = eye(2);
-cfgDL.phy.pdsch.precodingMatrix = eye(2);
-cfgDL.phy.pdsch.W = eye(2);
+unitPowerRank2 = eye(2) / sqrt(2);
+cfgDL.phy.pdsch.precoding.matrix = unitPowerRank2;
+cfgDL.phy.pdsch.precodingMatrix = unitPowerRank2;
+cfgDL.phy.pdsch.W = unitPowerRank2;
 
 dlGrant = localGrant("DL", 101, 2);
 dlGrant.NumLogicalPorts = 2;
-dlGrant.PrecodingMatrix = eye(2);
+dlGrant.PrecodingMatrix = unitPowerRank2;
 dlGrant.PrecodingActive = true;
 dlPHYGrant = sixgr.phy.grant.freezePHYGrant(cfgDL, "DL", dlGrant, "SNR_dB", 30, "Frame", 1, "Slot", 1);
 assert(dlPHYGrant.AntennaArchitecture.NumElements == 64, "DL NumElements must keep the gNB array size.");
@@ -185,7 +186,7 @@ cfgHybridUL.antenna.ue.numRFChains = 2;
 cfgHybridUL.rf.ue.numRFChains = 2;
 ulHybridGrant = localGrant("UL", 202, 2);
 ulHybridGrant.NumLogicalPorts = 2;
-ulHybridGrant.PrecodingMatrixLogicalPorts = eye(2);
+ulHybridGrant.PrecodingMatrixLogicalPorts = unitPowerRank2;
 ulHybridPHYGrant = sixgr.phy.grant.freezePHYGrant(cfgHybridUL, "UL", ulHybridGrant, ...
     "SNR_dB", 30, "Frame", 1, "Slot", 1);
 assert(ulHybridPHYGrant.AntennaArchitecture.NumLogicalPorts == 2, ...
@@ -201,6 +202,11 @@ assert(size(txHybridUL.Waveform, 2) == 4, ...
     "Hybrid UL waveform must exercise all four configured UE elements.");
 assert(infoHybridUL.Precoding.NumLogicalPorts == 2 && infoHybridUL.Precoding.NumPorts == 4, ...
     "Hybrid UL runtime must report two logical ports and four physical waveform ports.");
+assert(norm(double(infoHybridUL.Precoding.MatrixPorts) - ...
+        double(ulHybridPHYGrant.PrecodingState.Matrix), "fro") <= 1e-12, ...
+    "Hybrid UL runtime must replay the exact frozen element-domain precoder.");
+assert(abs(sum(abs(double(infoHybridUL.Precoding.MatrixPorts(:))).^2) - 1) <= 1e-12, ...
+    "Hybrid UL frozen/runtime precoder must retain unit total power.");
 
 % Replayed non-codebook grants can retain NumAntennaPorts=NumLayers while
 % the configured UE has four logical RF ports.  Freeze and transmit in the
@@ -226,6 +232,11 @@ assert(size(txHybridUL4.PUSCHPortSymbols,2) == 4 && ...
 assert(infoHybridUL4.Precoding.NumLogicalPorts == 4 && ...
         infoHybridUL4.Precoding.NumLayers == 2, ...
     "Four-RF-chain hybrid UL replay must preserve the 4-port-by-2-layer runtime contract.");
+assert(norm(double(infoHybridUL4.Precoding.MatrixPorts) - ...
+        double(ulHybrid4PHYGrant.PrecodingState.Matrix), "fro") <= 1e-12, ...
+    "Generated four-chain UL runtime precoding must match its frozen grant exactly.");
+assert(abs(sum(abs(double(infoHybridUL4.Precoding.MatrixPorts(:))).^2) - 1) <= 1e-12, ...
+    "Generated rank-2 UL precoding must use unit total transmit power.");
 
 badPHYGrant = dlPHYGrant;
 badPHYGrant.PrecodingState.Matrix = ones(3, 2);

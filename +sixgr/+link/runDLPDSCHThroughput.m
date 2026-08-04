@@ -423,6 +423,7 @@ trialPrecodingNumPorts = NaN(numFrames,1);
 trialPrecodingNumLayers = NaN(numFrames,1);
 trialPrecodingMatrixRows = NaN(numFrames,1);
 trialPrecodingMatrixCols = NaN(numFrames,1);
+trialAppliedPrecoderMatrixSHA256 = strings(numFrames,1);
 trialCfgPMI = NaN(numFrames,1);
 trialCfgCRI = NaN(numFrames,1);
 trialBitErr = NaN(numFrames,1);
@@ -814,6 +815,7 @@ for n = 1:numFrames
         trialPrecodingNumLayers(n) = double(dlPrecoding.PrecodingNumLayers);
         trialPrecodingMatrixRows(n) = double(dlPrecoding.PrecodingMatrixRows);
         trialPrecodingMatrixCols(n) = double(dlPrecoding.PrecodingMatrixCols);
+        trialAppliedPrecoderMatrixSHA256(n) = string(dlPrecoding.AppliedPrecoderMatrixSHA256);
         if isfield(tx, "PDSCH")
             try
                 trialPRB(n) = numel(tx.PDSCH.PRBSet);
@@ -1725,6 +1727,11 @@ end
         T.ComputedE_TS38212 = trialComputedE_TS38212(idx);
         T.RateMatchedBitsDelta_TS38212 = trialRateMatchedBits(idx) - trialComputedE_TS38212(idx);
         T.ConfiguredSNR_dB = trialConfiguredSNR(idx);
+        % DL-SCH transport-block CRC is applicable whenever the real
+        % decoder produced a usable TB decision.  Do not let a missing
+        % generic default relabel decoded data-channel rows as CRC N/A.
+        T.CRCApplicable = logical(trialDLSCHDecodeAttempted(idx) & ...
+            trialDLSCHDecodeAvailable(idx) & isfinite(trialCRC(idx)));
         T.TxWaveformColumns = trialTxWaveformColumns(idx);
         T.PhysicalTxAntennas = trialPhysicalTxAntennas(idx);
         T.TxWaveformDomain = trialTxWaveformDomain(idx);
@@ -1806,6 +1813,8 @@ end
         T.CarrierPhaseOffsetSource = trialCarrierPhaseOffsetSource(idx);
         T.CarrierPhaseOffsetExecutionStatus = trialCarrierPhaseOffsetStatus(idx);
         T.ReceiverHestSINR_dB = trialReceiverHestSINR(idx);
+        T.ReceiverHestSINRApplicable = logical(isfinite(trialReceiverHestSINR(idx)) & ...
+            trialChannelEstimateAvailable(idx) & trialDMRSRECount(idx) > 0);
         T.ReceiverHestSINRSource = trialReceiverHestSINRSource(idx);
         T.ReceiverHestSINRValueRole = trialReceiverHestSINRValueRole(idx);
         T.ReceiverHestSINRValueStatus = trialReceiverHestSINRValueStatus(idx);
@@ -2010,6 +2019,7 @@ end
         T.PrecodingNumLayers = trialPrecodingNumLayers(idx);
         T.PrecodingMatrixRows = trialPrecodingMatrixRows(idx);
         T.PrecodingMatrixCols = trialPrecodingMatrixCols(idx);
+        T.AppliedPrecoderMatrixSHA256 = trialAppliedPrecoderMatrixSHA256(idx);
         T.InterfererBeamformingAppliedCount = trialInterfererBeamformingAppliedCount(idx);
         T.InterfererExplicitBeamWeightCount = trialInterfererExplicitBeamWeightCount(idx);
         T.InterfererTransformPrecodingCount = trialInterfererTransformPrecodingCount(idx);
@@ -3788,6 +3798,7 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'string','logical','logical','logical','string'};
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConfiguredSNR_dB = zeros(0,1);
+T.CRCApplicable = false(0,1);
 T.TxWaveformColumns = zeros(0,1);
 T.PhysicalTxAntennas = zeros(0,1);
 T.TxWaveformDomain = strings(0,1);
@@ -3837,6 +3848,7 @@ T.HARQContextStatus = strings(0,1);
 T.HARQRV = zeros(0,1);
 T.AppliedAWGNSNR_dB = zeros(0,1);
 T.ReceiverHestSINR_dB = zeros(0,1);
+T.ReceiverHestSINRApplicable = false(0,1);
 T.ReceiverHestSINRSource = strings(0,1);
 T.ReceiverHestSINRValueRole = strings(0,1);
 T.ReceiverHestSINRValueStatus = strings(0,1);
@@ -4040,6 +4052,7 @@ T.PrecodingNumPorts = zeros(0,1);
 T.PrecodingNumLayers = zeros(0,1);
 T.PrecodingMatrixRows = zeros(0,1);
 T.PrecodingMatrixCols = zeros(0,1);
+T.AppliedPrecoderMatrixSHA256 = strings(0,1);
 T.InterfererBeamformingAppliedCount = zeros(0,1);
 T.InterfererExplicitBeamWeightCount = zeros(0,1);
 T.InterfererTransformPrecodingCount = zeros(0,1);
@@ -4345,7 +4358,12 @@ trace = struct( ...
     "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", sixgr.util.structGet(grant, "PrecodingNumPorts", NaN))), ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", sixgr.util.structGet(grant, "PrecodingNumLayers", NaN))), ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", sixgr.util.structGet(grant, "PrecodingMatrixRows", NaN))), ...
-    "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", sixgr.util.structGet(grant, "PrecodingMatrixCols", NaN))));
+    "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", sixgr.util.structGet(grant, "PrecodingMatrixCols", NaN))), ...
+    "AppliedPrecoderMatrixSHA256", "");
+appliedMatrix = sixgr.util.structGet(prec, "MatrixPorts", sixgr.util.structGet(prec, "Matrix", []));
+if ~isempty(appliedMatrix)
+    trace.AppliedPrecoderMatrixSHA256 = string(sixgr.phy.mimo.MatrixContract.digest(double(appliedMatrix)));
+end
 end
 
 function trace = localResolveInterferencePrecodingTrace(replay)

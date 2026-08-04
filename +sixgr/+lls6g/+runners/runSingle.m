@@ -1,4 +1,4 @@
-function out = runSingle(configPath, outputDir, runTag)
+function out = runSingle(configPath, outputDir, runTag, executionOptions)
 %RUNSINGLE Execute one config-driven 6G PHY LLS scenario.
 
 if nargin < 2 || strlength(string(outputDir)) == 0
@@ -6,6 +6,9 @@ if nargin < 2 || strlength(string(outputDir)) == 0
 end
 if nargin < 3
     runTag = "";
+end
+if nargin < 4 || ~isstruct(executionOptions)
+    executionOptions = struct();
 end
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
@@ -22,21 +25,39 @@ if strlength(backendOverride) > 0
     backend = backendOverride;
     scfg = localApplyOutputBackendOverride(scfg, backend);
 end
-logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
-if backend == "mysql_web"
-    runFolder = localComposeDBStagingRunFolder(scfg.ScenarioID, leaf);
-    localResetRunFolder(runFolder);
-    localDeleteFolderTreeIfExists(logicalRunFolder);
+resumeExisting = logical(sixgr.util.structGet(executionOptions, ...
+    "ResumeCompletedRuntimeFinalization", false));
+existingRunFolder = string(sixgr.util.structGet(executionOptions, ...
+    "ExistingRunFolder", ""));
+if resumeExisting
+    if strlength(strtrim(existingRunFolder)) == 0 || ...
+            exist(char(existingRunFolder), "dir") ~= 7
+        error("sixgr:lls6g:runner:MissingResumeRunFolder", ...
+            "ResumeCompletedRuntimeFinalization requires an existing ExistingRunFolder.");
+    end
+    if backend ~= "filesystem"
+        error("sixgr:lls6g:runner:UnsupportedResumeBackend", ...
+            "Completed-runtime finalization resume currently requires output.backend=filesystem.");
+    end
+    runFolder = char(existingRunFolder);
+    logicalRunFolder = char(existingRunFolder);
 else
-    runFolder = sixgr.report.defaultRunFolder(outputDir, ...
-        "Bucket", "lls", ...
-        "Profile", scfg.ScenarioID, ...
-        "Leaf", leaf, ...
-        "CleanExisting", true);
+    logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
+    if backend == "mysql_web"
+        runFolder = localComposeDBStagingRunFolder(scfg.ScenarioID, leaf);
+        localResetRunFolder(runFolder);
+        localDeleteFolderTreeIfExists(logicalRunFolder);
+    else
+        runFolder = sixgr.report.defaultRunFolder(outputDir, ...
+            "Bucket", "lls", ...
+            "Profile", scfg.ScenarioID, ...
+            "Leaf", leaf, ...
+            "CleanExisting", true);
+    end
 end
 
 cleanupStaging = onCleanup(@() localCleanupDBOnlyRunFolders(backend, runFolder, logicalRunFolder)); %#ok<NASGU>
-execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder);
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
 
 out = struct();
 out.Ok = logical(execOut.Ok);
@@ -78,7 +99,10 @@ catch ME
 end
 end
 
-function result = localRunWaveformBundleScenario(cfg, scfg, runFolder)
+function result = localRunWaveformBundleScenario(cfg, scfg, runFolder, executionOptions)
+if nargin < 4 || ~isstruct(executionOptions)
+    executionOptions = struct();
+end
 opt = struct();
 numerology = localResolveConfigNumerology(cfg);
 slotDuration_s = double(numerology.SlotDurationSeconds);
@@ -165,6 +189,8 @@ opt.LinkAdaptiveSweepEnabled = logical(tuning.AdaptiveSweepEnabled);
 opt.LinkAdaptiveSweepStep_dB = double(tuning.AdaptiveSweepStep_dB);
 opt.LinkAdaptiveSweepMaxPoints = double(tuning.AdaptiveSweepMaxPoints);
 opt.HARQDiagnosticsEnabled = logical(tuning.HARQDiagnosticsEnabled);
+opt.ResumeCompletedRuntimeFinalization = logical(sixgr.util.structGet( ...
+    executionOptions, "ResumeCompletedRuntimeFinalization", false));
 if strlength(strtrim(string(sixgr.util.structGet(tuning, "Notes", "")))) > 0
     localDBLog("INFO", "Waveform bundle runtime tuning: policy=%s notes=%s", ...
         char(string(sixgr.util.structGet(tuning, "Policy", ""))), ...
@@ -280,7 +306,7 @@ end
 function [link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence(link, cfg, scfg, runFolder)
 strictSupplemental = struct("Ok", true, "SummaryTable", table(), ...
     "PRACH", struct(), "SRS", struct(), "TRS", struct(), "SIB1", struct(), ...
-    "ChannelRF", struct(), "MIMO", struct());
+    "ChannelRF", struct(), "MIMO", struct(), "Protocol", struct());
 rows = repmat(struct("Case", "", "Ok", true, "Skipped", false, "Notes", ""), 0, 1);
 
 if localShouldRunStrictPRACHEvidence(scfg, cfg)
@@ -296,7 +322,7 @@ if localShouldRunStrictPRACHEvidence(scfg, cfg)
     strictSupplemental.PRACH = prach;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "PRACH_StrictValidation", prach, ...
         "strict PRACH waveform validation completed", "strict_prach_validation_failed");
-    link = localAttachRawTrialTable(link, "PRACH", prach, "prach_trials");
+    link = localAttachSupplementalStrictTrialTable(link, "PRACH", prach, "prach_trials");
 end
 
 if localShouldRunStrictSRSEvidence(scfg, cfg)
@@ -312,7 +338,7 @@ if localShouldRunStrictSRSEvidence(scfg, cfg)
     strictSupplemental.SRS = srs;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "SRS_StrictValidation", srs, ...
         "strict SRS waveform channel-sounding validation completed", "strict_srs_validation_failed");
-    link = localAttachRawTrialTable(link, "SRS", srs, "srs_trials");
+    link = localAttachSupplementalStrictTrialTable(link, "SRS", srs, "srs_trials");
 end
 
 if localShouldRunStrictTRSEvidence(scfg, cfg)
@@ -328,7 +354,7 @@ if localShouldRunStrictTRSEvidence(scfg, cfg)
     strictSupplemental.TRS = trs;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "TRS_StrictValidation", trs, ...
         "strict TRS waveform tracking validation completed", "strict_trs_validation_failed");
-    link = localAttachRawTrialTable(link, "TRS", trs, "trs_trials");
+    link = localAttachSupplementalStrictTrialTable(link, "TRS", trs, "trs_trials");
 end
 
 if localShouldRunStrictSIB1Evidence(scfg, cfg)
@@ -371,6 +397,25 @@ if localShouldRunMIMOEvidence(scfg, cfg, link)
         "mimo_nominal_effective_evidence_failed");
 end
 
+if sixgr.lls6g.runners.shouldRunProtocolComponentEvidence(cfg)
+    localDBLog("INFO", ...
+        "Running configured bidirectional L2 protocol component validation.");
+    tp = sixgr.perf.TimeProfiler.scope( ...
+        "sixgr.protocol.runConfiguredProtocolComponentValidation", ...
+        "Stage", "strict_protocol_component_validation");
+    protocol = sixgr.protocol.runConfiguredProtocolComponentValidation( ...
+        cfg, string(runFolder), ...
+        "RunId", string(scfg.ScenarioID), ...
+        "ScenarioName", string(scfg.ScenarioID), ...
+        "WriteArtifacts", true);
+    clear tp;
+    strictSupplemental.Protocol = protocol;
+    [link, rows] = localAttachSupplementalStrictResult(link, rows, ...
+        "Protocol_ConfiguredComponentValidation", protocol, ...
+        "configured bidirectional SDAP/PDCP/RLC/MAC component execution completed", ...
+        "configured_protocol_component_validation_failed");
+end
+
 if ~isempty(rows)
     strictSupplemental.SummaryTable = struct2table(rows, "AsArray", true);
     strictSupplemental.Ok = all(logical(strictSupplemental.SummaryTable.Ok));
@@ -396,7 +441,7 @@ if ~ok
 end
 end
 
-function link = localAttachRawTrialTable(link, fieldName, result, tableName)
+function link = localAttachSupplementalStrictTrialTable(link, fieldName, result, tableName)
 if ~(isstruct(result) && isfield(result, "ArtifactTables"))
     return;
 end
@@ -404,13 +449,11 @@ T = sixgr.util.structGet(result.ArtifactTables, tableName, table());
 if ~(istable(T) && ~isempty(T))
     return;
 end
-rawTrials = sixgr.util.structGet(link, "RawTrials", struct());
 fieldName = char(fieldName);
 T = localPrepareStrictRawTrialTable(fieldName, T);
-existing = sixgr.util.structGet(rawTrials, fieldName, table());
-existing = localPrepareStrictRawTrialTable(fieldName, existing);
-rawTrials.(fieldName) = localAppendCompatTable(existing, T);
-link.RawTrials = rawTrials;
+supplemental = sixgr.util.structGet(link, "SupplementalStrictRawTrials", struct());
+supplemental.(fieldName) = T;
+link.SupplementalStrictRawTrials = supplemental;
 end
 
 function T = localPrepareStrictRawTrialTable(fieldName, T)
@@ -695,14 +738,18 @@ pdcch = sixgr.util.structGet(strictControl, "PDCCH", struct());
 if isstruct(pdcch) && isfield(pdcch, "ArtifactTables")
     T = sixgr.util.structGet(pdcch.ArtifactTables, "pdcch_trials", table());
     if istable(T) && ~isempty(T)
-        canon.RawTrials.PDCCH = T;
+        supplemental = sixgr.util.structGet(canon, "SupplementalStrictRawTrials", struct());
+        supplemental.PDCCH = T;
+        canon.SupplementalStrictRawTrials = supplemental;
     end
 end
 pucch = sixgr.util.structGet(strictControl, "PUCCH", struct());
 if isstruct(pucch) && isfield(pucch, "ArtifactTables")
     T = sixgr.util.structGet(pucch.ArtifactTables, "pucch_trials", table());
     if istable(T) && ~isempty(T)
-        canon.RawTrials.PUCCH = T;
+        supplemental = sixgr.util.structGet(canon, "SupplementalStrictRawTrials", struct());
+        supplemental.PUCCH = T;
+        canon.SupplementalStrictRawTrials = supplemental;
     end
 end
 end
@@ -1942,12 +1989,15 @@ end
 result = struct("Ok", true, "DecisionTable", T);
 end
 
-function execOut = localExecutePreparedScenario(scfg, runFolder, runTag, publicRunFolder)
+function execOut = localExecutePreparedScenario(scfg, runFolder, runTag, publicRunFolder, executionOptions)
 if nargin < 3
     runTag = "";
 end
 if nargin < 4 || strlength(string(publicRunFolder)) == 0
     publicRunFolder = runFolder;
+end
+if nargin < 5 || ~isstruct(executionOptions)
+    executionOptions = struct();
 end
 runStartUTC = localUTCStamp();
 runTimer = tic;
@@ -2023,7 +2073,7 @@ try
     localDBLog("INFO", "Executing runner profile=%s.", char(profile));
     switch profile
         case "waveform_bundle"
-            result = localRunWaveformBundleScenario(cfg, scfg, runFolder);
+            result = localRunWaveformBundleScenario(cfg, scfg, runFolder, executionOptions);
         case "system_level_lls"
             result = localRunSystemLevelScenario(cfg, scfg, runFolder);
         case "pdcch_blind_decode_sweep"
@@ -3324,28 +3374,51 @@ function localAnnotateAllCSV(runFolder, scfg, profile)
 if sixgr.db.isArtifactStoreActive()
     return;
 end
+componentMirrorRoots = ["prach","initial_access","ssb","pdcch", ...
+    "pdsch","pusch","pucch","reference_signals","mimo", ...
+    "frame_grid","waveform","l3","channel","rf", ...
+    "mac_harq_scheduler","l2","traffic","validation"];
 files = dir(fullfile(runFolder, "**", "*.csv"));
 for i = 1:numel(files)
     f = fullfile(files(i).folder, files(i).name);
+    normalizedFile = replace(string(f), "\", "/");
+    normalizedRoot = strip(replace(string(runFolder), "\", "/"), "right", "/");
+    rel = normalizedFile;
+    if startsWith(lower(normalizedFile), lower(normalizedRoot + "/"))
+        rel = extractAfter(normalizedFile, strlength(normalizedRoot) + 1);
+    end
+    topLevel = extractBefore(rel + "/", "/");
+    if any(topLevel == componentMirrorRoots)
+        % These are byte-identical convenience mirrors owned by
+        % publishComponentArtifactViews.  Mutating them here would sever
+        % their canonical hash relationship during resumable finalization.
+        continue;
+    end
     try
         T = readtable(f, 'Delimiter', ',', 'ReadVariableNames', true, ...
             'VariableNamingRule', 'preserve');
     catch
         continue;
     end
+    changed = false;
     if ~ismember("ScenarioID", T.Properties.VariableNames)
         T = addvars(T, localConstantStringColumn(height(T), scfg.ScenarioID), ...
             'Before', 1, 'NewVariableNames', 'ScenarioID');
+        changed = true;
     end
     if ~ismember("ConfigHash", T.Properties.VariableNames)
         T = addvars(T, localConstantStringColumn(height(T), scfg.ConfigHash), ...
             'Before', 2, 'NewVariableNames', 'ConfigHash');
+        changed = true;
     end
     if ~ismember("RunnerProfile", T.Properties.VariableNames)
         T = addvars(T, localConstantStringColumn(height(T), profile), ...
             'Before', min(3, width(T)+1), 'NewVariableNames', 'RunnerProfile');
+        changed = true;
     end
-    sixgr.util.csvWriteTable(f, T);
+    if changed
+        sixgr.util.csvWriteTable(f, T);
+    end
 end
 end
 
@@ -4613,6 +4686,7 @@ status.ResultOk = logical(sixgr.util.structGet(result, "Ok", true));
 status.PartialOk = false;
 status.ArtifactsGenerated = true;
 status.ArtifactsWritten = true;
+status.ArtifactCompletenessOk = false;
 status.RequiredCaseCount = 1;
 status.RequiredFailureCount = double(~status.ResultOk);
 status.OptionalPrunedCount = 0;
@@ -4713,6 +4787,10 @@ issueRegistry = sixgr.util.structGet(details, "IssueRegistry", struct());
 scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct());
 rootResultStatus = sixgr.util.structGet(verdict, "ResultStatus", struct());
 rootResultOk = logical(sixgr.util.structGet(rootResultStatus, "ResultOk", false));
+status.ArtifactsWritten = logical(sixgr.util.structGet(rootResultStatus, ...
+    "ArtifactsWritten", status.ArtifactsGenerated));
+status.ArtifactCompletenessOk = logical(sixgr.util.structGet(rootResultStatus, ...
+    "ArtifactCompletenessOk", false));
 status.ActiveMandatoryIssueCount = double(sixgr.util.structGet(issueRegistry, "BlockingIssueCount", 0));
 status.ActiveCriticalIssueCount = double(sixgr.util.structGet(issueRegistry, "ActiveCriticalCount", 0));
 status.ActiveHighIssueCount = double(sixgr.util.structGet(issueRegistry, "ActiveHighCount", 0));
@@ -4768,7 +4846,8 @@ else
     status.PartialOk = logical(status.ArtifactsGenerated) && ~logical(status.ResultOk);
 end
 status.RunCompleted = any(string(status.RunCompletion) == ["completed", "completed_with_failures"]);
-status.ArtifactsWritten = logical(status.ArtifactsGenerated);
+status.ArtifactsWritten = logical(sixgr.util.structGet(status, ...
+    "ArtifactsWritten", status.ArtifactsGenerated));
 end
 
 function status = localApplyVisualArtifactIntegrityStatus(status, visualIntegrity)

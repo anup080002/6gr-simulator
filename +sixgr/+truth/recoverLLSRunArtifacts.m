@@ -18,6 +18,7 @@ p.addParameter("SourceFiles", strings(0,1), @(x)isstring(x) || iscellstr(x) || i
 p.addParameter("ConfigPath", "", @(x)ischar(x) || isstring(x));
 p.addParameter("ConfigHash", "", @(x)ischar(x) || isstring(x));
 p.addParameter("RunID", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+p.addParameter("FinalizationMode", "failed_recovery", @(x)ischar(x) || isstring(x));
 p.parse(runFolder, scenarioCfg, varargin{:});
 
 runFolder = char(string(p.Results.runFolder));
@@ -28,6 +29,11 @@ end
 layout = sixgr.report.resultLayout(runFolder);
 localEnsureDirs(layout);
 storedMeta = localReadStoredRunMetadata(runFolder);
+finalizationMode = lower(strtrim(string(p.Results.FinalizationMode)));
+if ~ismember(finalizationMode, ["failed_recovery", "completed_run_refinalization"])
+    error("sixgr:truth:recover:InvalidFinalizationMode", ...
+        "FinalizationMode must be failed_recovery or completed_run_refinalization.");
+end
 
 inputCfg = p.Results.scenarioCfg;
 scfg = localResolveScenarioConfig(inputCfg, ...
@@ -54,14 +60,33 @@ localExportLiveGeometryArtifacts(layout, scfg, cfg);
 localRepairRuntimeOperatingMode(layout, cfg);
 
 profile = lower(string(scfg.get("scenario.runner_profile", "")));
-result = struct( ...
-    "Ok", false, ...
-    "RecoveredFromIncompleteRun", true, ...
-    "ProfileReportedOk", false, ...
-    "RunCompletion", string(p.Results.StatusText));
+if finalizationMode == "completed_run_refinalization"
+    persistedResultPath = fullfile(layout.ReportMATDir, "scenario_result.mat");
+    if exist(persistedResultPath, "file") ~= 2
+        error("sixgr:truth:recover:MissingCompletedRunResult", ...
+            "Completed-run re-finalization requires %s.", persistedResultPath);
+    end
+    persisted = load(persistedResultPath, "Result");
+    if ~isfield(persisted, "Result") || ~isstruct(persisted.Result)
+        error("sixgr:truth:recover:InvalidCompletedRunResult", ...
+            "The persisted scenario result does not contain a canonical Result structure.");
+    end
+    result = persisted.Result;
+    result.RefinalizedFromPersistedCompletedRun = true;
+    restoredTruthArtifacts = sixgr.truth.restoreCompletedRunTruthArtifacts( ...
+        runFolder, result);
+else
+    result = struct( ...
+        "Ok", false, ...
+        "RecoveredFromIncompleteRun", true, ...
+        "ProfileReportedOk", false, ...
+        "RunCompletion", string(p.Results.StatusText));
+    restoredTruthArtifacts = table();
+end
 runtimeSummary = localBuildRuntimeSummary(profile, publicRunFolder, cfg);
 environmentSummary = localBuildEnvironmentSummary(cfg);
-scenarioStatus = localBuildScenarioStatus(string(p.Results.StatusText), string(p.Results.ErrorIdentifier), string(p.Results.ErrorMessage));
+scenarioStatus = localBuildScenarioStatus(string(p.Results.StatusText), ...
+    string(p.Results.ErrorIdentifier), string(p.Results.ErrorMessage), finalizationMode);
 
 summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
@@ -69,16 +94,17 @@ sixgr.util.jsonWrite(fullfile(layout.MetaDir, "runtime_summary.json"), runtimeSu
 sixgr.util.jsonWrite(fullfile(layout.MetaDir, "environment.json"), environmentSummary);
 
 manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+localWriteScenarioManifest(layout, manifest);
 
 configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
 scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
     sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result), ...
-    runFolder, cfg);
+    runFolder, cfg, finalizationMode);
+result.Ok = logical(scenarioStatus.ResultOk);
 summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
 manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+localWriteScenarioManifest(layout, manifest);
 
 reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
@@ -91,11 +117,12 @@ configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg,
 reportBundle.ConfigOwnershipArtifacts = configOwnership;
 scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
     sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result), ...
-    runFolder, cfg);
+    runFolder, cfg, finalizationMode);
+result.Ok = logical(scenarioStatus.ResultOk);
 summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
 manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+localWriteScenarioManifest(layout, manifest);
 sanitizedCSVs = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
 componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
     "Enabled", logical(scfg.get( ...
@@ -105,6 +132,17 @@ componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
         "output.component_artifact_views.required", scfg.get( ...
         "canonical_control.output.component_artifact_views.required", false))), ...
     "RequiredComponents", componentViewsRequiredComponents(:));
+% Sanitization and component publication are mutating finalization stages.
+% Re-evaluate the exact persisted tree after both so the root verdict never
+% describes an earlier intermediate filesystem state.
+scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
+    sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result), ...
+    runFolder, cfg, finalizationMode);
+result.Ok = logical(scenarioStatus.ResultOk);
+summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
+manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
+localWriteScenarioManifest(layout, manifest);
 if logical(sixgr.util.structGet(recoveryStore, "Active", false))
     sixgr.db.markRunStatus(char(string(scenarioStatus.RunCompletion)), struct( ...
         "status_authority", char(string(scenarioStatus.StatusAuthority)), ...
@@ -129,7 +167,9 @@ out.TruthArtifactScan = truthArtifactScan;
 out.OutputCoverageArtifacts = outputCoverage;
 out.ComponentArtifactViews = componentViews;
 out.SanitizedCSVs = sanitizedCSVs;
+out.RestoredTruthArtifacts = restoredTruthArtifacts;
 out.RecoveryArtifactStore = recoveryStore;
+out.FinalizationMode = finalizationMode;
 end
 
 function scfg = localResolveScenarioConfig(inputCfg, sourceFiles, configPath, configHash, layout)
@@ -329,7 +369,7 @@ env.UseMex = logical(sixgr.util.structGet(cfg, "acceleration.useMex", false));
 env.UseParallel = logical(sixgr.util.structGet(cfg, "run.useParallel", false));
 end
 
-function status = localBuildScenarioStatus(statusText, errorIdentifier, errorMessage)
+function status = localBuildScenarioStatus(statusText, errorIdentifier, errorMessage, finalizationMode)
 status = struct();
 status.RunCompletion = string(statusText);
 status.ResultOk = false;
@@ -370,12 +410,26 @@ status.ErrorSource = "recovered_failed_run_artifacts";
 status.ErrorIdentifier = string(errorIdentifier);
 status.ErrorMessage = string(errorMessage);
 status.AuthoritativeStatusSource = "recovered_failed_run_artifacts";
+if lower(strtrim(string(finalizationMode))) == "completed_run_refinalization"
+    status.RunCompletion = "completed_with_failures";
+    status.RequiredFailedCases = "completed_run_refinalization_pending_truth_contract";
+    status.StatusAuthority = "completed_run_refinalization_pending_truth_contract";
+    status.StatusNotes = "Completed waveform evidence is being re-finalized; no success is claimed before every canonical root gate passes.";
+    status.ErrorSource = "";
+    status.ErrorIdentifier = "";
+    status.ErrorMessage = "";
+    status.AuthoritativeStatusSource = "completed_run_refinalization_pending_truth_contract";
+end
 end
 
-function status = localApplyTruthVerdict(status, verdict, runFolder, cfg)
+function status = localApplyTruthVerdict(status, verdict, runFolder, cfg, finalizationMode)
 status.RuntimeTruthContractOk = logical(sixgr.util.structGet(verdict, "RuntimeTruthContractOk", false));
 status.TruthContractOk = logical(status.RuntimeTruthContractOk);
 rootStatus = sixgr.util.structGet(verdict, "ResultStatus", struct());
+status.ArtifactsWritten = logical(sixgr.util.structGet(rootStatus, ...
+    "ArtifactsWritten", sixgr.util.structGet(status, "ArtifactsGenerated", false)));
+status.ArtifactCompletenessOk = logical(sixgr.util.structGet(rootStatus, ...
+    "ArtifactCompletenessOk", false));
 status.StandardsConformanceOk = logical(sixgr.util.structGet(rootStatus, "StandardsConformanceOk", status.RuntimeTruthContractOk));
 status.ScenarioObjectiveOk = logical(sixgr.util.structGet(rootStatus, "ScenarioObjectiveOk", status.RuntimeTruthContractOk));
 status.ConfiguredEffectiveOk = logical(sixgr.util.structGet(rootStatus, "ConfiguredEffectiveOk", false));
@@ -402,6 +456,8 @@ if logical(status.RuntimeTruthContractOk)
 else
     status.StatusNotes = localJoinStatusNotes(status.StatusNotes, "Recovered artifacts still reflect a failed/incomplete run and preserve the truth-contract failures explicitly.");
 end
+status = sixgr.truth.applyCompletedRefinalizationVerdict( ...
+    status, verdict, finalizationMode);
 end
 
 function manifest = localBuildManifest(scfg, runFolder, profile, runtimeSummary, environmentSummary, scenarioStatus)
@@ -825,6 +881,12 @@ if isfinite(mu)
     slotDuration_ms = 1e3 * double(numerology.TicksPerSlot) / ...
         double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
 end
+end
+
+function localWriteScenarioManifest(layout, manifest)
+sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_manifest.json"), manifest);
+sixgr.util.ensureDir(fullfile(layout.ReportDir, "json", ".keep"));
+sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "scenario_manifest.json"), manifest);
 end
 
 function slotsPerFrame = localDeriveSlotsPerFrame(mu)

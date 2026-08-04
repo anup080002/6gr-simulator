@@ -1,0 +1,9 @@
+Direction,SNR_dB,Frame,Slot,UEIndex,RNTI,TrialOrdinal,AbsoluteSlot,SelectedBeamIndex,BestBeamIndex,BeamHit,TopKBeamHit,BeamCandidateCount,BeamGainGap_dB,BeamSelectionStrategy,Status,EventType,AcquisitionEventFlag,SwitchEventFlag,FirstHitEventFlag,BeamDetectedEventFlag,MisalignmentEventFlag,FailureEventFlag,SwitchLatencySlots,SwitchLatency_s,TrialsToFirstHit,StateBefore,StateAfter
+"DL",20,1,16,1,1,1,36,8,8,1,1,8,0,"runtime_best_beam_per_link","FAIL","BEAM_ACQUIRED|BEAM_REFINEMENT_CONVERGED|BEAM_DETECTED",1,0,1,1,0,0,NaN,NaN,1,"uninitialized","aligned"
+"DL",20,1,18,1,1,2,38,1,2,0,0,8,0,"runtime_best_beam_per_link","FAIL","BEAM_SWITCH|BEAM_MISALIGNED",0,1,0,0,1,0,2,0.001,1,"aligned","misaligned"
+"DL",20,1,16,2,2,1,36,1,2,0,0,8,0,"runtime_best_beam_per_link","FAIL","BEAM_ACQUIRED|BEAM_DETECTED|BEAM_MISALIGNED",1,0,0,1,1,0,NaN,NaN,NaN,"uninitialized","misaligned"
+"DL",20,1,18,2,2,2,38,1,2,0,1,8,0,"runtime_best_beam_per_link","FAIL","BEAM_MISALIGNED",0,0,0,0,1,0,NaN,NaN,NaN,"misaligned","misaligned"
+"DL",20,1,17,3,3,1,37,1,2,0,1,8,0,"runtime_best_beam_per_link","FAIL","BEAM_ACQUIRED|BEAM_DETECTED|BEAM_MISALIGNED",1,0,0,1,1,0,NaN,NaN,NaN,"uninitialized","misaligned"
+"DL",20,1,17,4,4,1,37,1,1,1,1,8,0,"runtime_best_beam_per_link","FAIL","BEAM_ACQUIRED|BEAM_REFINEMENT_CONVERGED|BEAM_DETECTED",1,0,1,1,0,0,NaN,NaN,1,"uninitialized","aligned"
+"UL",20,1,20,1,1,1,40,1,14,0,0,64,2.87832857877823,"runtime_best_beam_per_link","FAIL","BEAM_ACQUIRED|BEAM_DETECTED|BEAM_MISALIGNED",1,0,0,1,1,0,NaN,NaN,NaN,"uninitialized","misaligned"
+"UL",20,1,20,2,2,1,40,1,16,0,0,64,3.9247836182674,"runtime_best_beam_per_link","FAIL","BEAM_ACQUIRED|BEAM_DETECTED|BEAM_MISALIGNED|BEAM_FAILURE",1,0,0,1,1,1,NaN,NaN,NaN,"uninitialized","failed_alignment"

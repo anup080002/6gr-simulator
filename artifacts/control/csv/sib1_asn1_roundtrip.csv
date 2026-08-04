@@ -1,0 +1,5 @@
+RunId,IEPath,TxValue,RxValue,Equal,ConstraintName,Status
+"sib1_runtime_waveform","message.c1.systemInformationBlockType1","present","present",0,"anchor_profile_constraint","FAIL"
+"sib1_runtime_waveform","cellAccessRelatedInfo","present","present",0,"anchor_profile_constraint","FAIL"
+"sib1_runtime_waveform","servingCellConfigCommon","present","present",0,"anchor_profile_constraint","FAIL"
+"sib1_runtime_waveform","uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon","present","present",0,"anchor_profile_constraint","FAIL"

@@ -89,9 +89,7 @@ context = struct( ...
 end
 
 function model = localChannelModel(cfg)
-model = upper(strtrim(string(sixgr.util.structGet( ...
-    cfg, "channel.model", "AWGN"))));
-if logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false))
-    model = "AWGN";
-end
+% Resolve the validated concrete profile; a bare CDL/TDL family is never a
+% receiver configuration and must not leak into strict Msg4 materialization.
+model = sixgr.channel.resolveConcreteProfile(cfg);
 end

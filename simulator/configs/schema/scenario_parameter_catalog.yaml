@@ -282,6 +282,18 @@ sections:
         required: false
         type: string
         allowed_values: [configured_absolute_port, first_scheduled_dmrs_port]
+      ptrs_time_density:
+        required: false
+        type: integer
+        allowed_numeric_values: [1, 2, 4, 8]
+      ptrs_frequency_density:
+        required: false
+        type: integer
+        allowed_numeric_values: [2, 4]
+      ptrs_re_offset:
+        required: false
+        type: string
+        allowed_values: ['00', '01', '10', '11']
       csi_reporting_enabled: {required: false, type: boolean}
       csi_feedback_mode:
         required: true
@@ -414,6 +426,26 @@ sections:
         required: false
         type: string
         allowed_values: [fixed_configured_matrix, measured_srs_phase_only_subarray]
+      mu_mimo_spatial_signature_mode:
+        required: false
+        type: string
+        allowed_values: [dominant_scheduled_rank, complete_detectable_subspace]
+      mu_mimo_spatial_subspace_noise_margin_db:
+        required: false
+        type: number
+        min: 0
+        max: 60
+        units: dB
+        description: Receiver-noise margin for detecting complete frequency-selective SRS spatial subspaces.
+      mu_mimo_phase_only_projection_max_iterations:
+        required: false
+        type: integer
+        min: 1
+      mu_mimo_phase_only_projection_tolerance:
+        required: false
+        type: number
+        min_exclusive: 0
+        max_exclusive: 1
       reciprocity_mode:
         required: true
         type: string

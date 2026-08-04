@@ -144,6 +144,12 @@ cfgL = sixgr.util.structSet(cfgL, "outputs.phySignalDiagnosticEnabled", diagnost
 cfgExec = sixgr.util.structSet(cfgExec, "outputs.phySignalDiagnosticEnabled", diagnosticEnabled);
 anchorCaseNames = localResolveBundleAnchorCases(opt);
 receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfgExec, opt);
+if logical(sixgr.util.structGet(opt, "ResumeCompletedRuntimeFinalization", false))
+    out = localResumeCompletedRuntimeFinalization(cfgExec, runFolder, opt, ...
+        multiUser, sweepPlan, saveFigures, diagnosticEnabled, ctx, ...
+        bundleStart, stageRows, stageOrder);
+    return;
+end
 
 if receiverNoiseMode
     localLogStage(ctx, "Starting strict waveform LLS bundle: slot_steps=" + string(numFrames) + ...
@@ -437,19 +443,31 @@ end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "sweep_csv_export", toc(stageStart), toc(bundleStart), "Controlled sweep CSV artifact export completed when fixed-link or raw sweep evidence was available.");
 legacyHARQReady = localLegacyHARQArtifactsReady(rootRunFolder);
-runtimeHARQReady = localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
-    localArtifactStructReady(harqArtifacts, "TimelineTable");
+runtimeHARQReady = localArtifactStructReady(harqArtifacts, "TimelineTable");
 harqDiagnosticsEnabled = logical(sixgr.util.structGet(opt, "HARQDiagnosticsEnabled", false));
-if ~harqDiagnosticsEnabled && runtimeHARQReady
+harqExportMode = sixgr.truth.resolveWaveformBundleHARQExportMode( ...
+    isCoupledTruth, runtimeHARQReady, harqDiagnosticsEnabled, ...
+    localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    logical(sixgr.util.structGet(harqArtifacts, "PreviewOnly", false)), ...
+    legacyHARQReady);
+if harqExportMode == "runtime_observation_reuse"
+    localLogStage(ctx, "Publishing HARQ diagnostics from the canonical slot-runtime timeline.");
+    stageStart = tic;
+    harqArtifacts = sixgr.truth.publishRuntimeHARQDiagnostics(cfgExec, runFolder, harqArtifacts);
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
-        "harq_export_runtime_observation_reuse", 0, toc(bundleStart), ...
-        "Live runtime HARQ observation artifacts reused; optional standalone HARQ probe disabled by runtime tuning.");
-elseif ~harqDiagnosticsEnabled
+        "harq_export_runtime_observation_reuse", toc(stageStart), toc(bundleStart), ...
+        "Canonical slot-runtime HARQ observations were adapted to the legacy diagnostic schemas without replaying the PHY.");
+elseif harqExportMode == "unavailable_no_canonical_observation"
+    localLogStage(ctx, ["Canonical coupled runtime produced no HARQ observations; " ...
+        "standalone HARQ replay is forbidden for this run scope."]);
+    [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
+        "harq_export_unavailable_no_canonical_observation", 0, toc(bundleStart), ...
+        "No canonical slot-runtime HARQ observations were available. A standalone PHY campaign was not substituted for coupled-run evidence.");
+elseif harqExportMode == "disabled_no_runtime_observation"
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
         "harq_export_disabled_no_runtime_observation", 0, toc(bundleStart), ...
         "Optional standalone HARQ probe disabled by runtime tuning and no runtime HARQ observation table was available.");
-elseif ~localArtifactStructReady(harqArtifacts, "SummaryTable") || ...
-        logical(sixgr.util.structGet(harqArtifacts, "PreviewOnly", false)) || ~legacyHARQReady
+elseif harqExportMode == "standalone_export"
     localLogStage(ctx, "Exporting HARQ diagnostics.");
     stageStart = tic;
     harqArtifacts = sixgr.truth.exportLLSHARQDiagnostics(cfgExec, runFolder, opt);
@@ -459,18 +477,26 @@ else
     [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
         "harq_export_reuse", 0, toc(bundleStart), "HARQ diagnostics were already available.");
 end
+harqReady = localArtifactStructReady(harqArtifacts, "SummaryTable");
+if harqReady
+    harqStageNotes = "Canonical-scope HARQ diagnostics were exported.";
+elseif isCoupledTruth
+    harqStageNotes = "Canonical coupled runtime produced no HARQ observations; no standalone evidence was substituted.";
+else
+    harqStageNotes = "HARQ diagnostics were unavailable for this run.";
+end
 localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "Stage", "harq_ready", ...
     "AnchorKPIsReady", true, ...
     "DLTrialsReady", true, ...
     "ULTrialsReady", true, ...
     "ControlReady", localRawControlTablesReady(rawTrials), ...
-    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "HARQReady", harqReady, ...
     "BeamReady", false, ...
     "RFReady", false, ...
     "SweepReady", true, ...
     "FinalBundleReady", false, ...
-    "Notes", "HARQ diagnostics were exported."));
+    "Notes", harqStageNotes));
 localLogStage(ctx, "Exporting beamforming diagnostics.");
 stageStart = tic;
 beamArtifacts = localExportBeamformingDiagnostics(cfgExec, runFolder, rawTrials, saveFigures);
@@ -640,6 +666,212 @@ out.MultiUser = multiUser;
 out.PersistenceEnabled = logical(persistenceEnabled);
 out.CoreOnly = ~logical(persistenceEnabled);
 localLogStage(ctx, "Strict waveform LLS bundle completed.");
+end
+
+function out = localResumeCompletedRuntimeFinalization(cfg, runFolder, opt, ...
+        multiUser, sweepPlan, saveFigures, diagnosticEnabled, ctx, ...
+        bundleStart, stageRows, stageOrder)
+% Resume only derived exports after an independently verified terminal PHY.
+
+rootRunFolder = fileparts(char(string(runFolder)));
+snrGrid = unique(sort(double(sixgr.util.structGet(opt, ...
+    "LinkSNRGrid_dB", sixgr.util.structGet(opt, "LinkSNR_dB", NaN)))));
+snrGrid = snrGrid(isfinite(snrGrid));
+direction = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "run.linkDirection", sixgr.util.structGet(cfg, ...
+    "simulation.link_direction", "both")))));
+requireDL = any(direction == ["", "all", "both", "dl", "downlink"]);
+requireUL = any(direction == ["", "all", "both", "ul", "uplink"]);
+expectedSlots = round(double(sixgr.util.structGet(opt, "LinkMaxSimFrames", NaN)));
+if logical(multiUser.Enabled) && ...
+        string(multiUser.ExecutionModel) == "slot_coupled_truth"
+    % LinkMaxSimFrames is the per-operating-point slot budget.  The
+    % coupled runtime persists one terminal counter across the full sweep.
+    expectedSlots = expectedSlots * max(1, numel(snrGrid));
+end
+checkpoint = sixgr.truth.assertCompletedWaveformRuntimeCheckpoint( ...
+    rootRunFolder, "ExpectedTotalSlots", expectedSlots, ...
+    "ExpectedSweepPointCount", numel(snrGrid), ...
+    "RequireDL", requireDL, "RequireUL", requireUL, ...
+    "ReconcileFinalizedControlCounters", true);
+localLogStage(ctx, "Resuming derived finalization from verified terminal waveform runtime checkpoint.");
+
+layout = sixgr.report.resultLayout(rootRunFolder);
+rawTrials = struct();
+rawTrials.DL = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
+rawTrials.UL = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
+rawTrials.DL = sixgr.truth.canonicalizeConfiguredPhysicalAntennaMetadata( ...
+    rawTrials.DL, cfg, "DL");
+rawTrials.UL = sixgr.truth.canonicalizeConfiguredPhysicalAntennaMetadata( ...
+    rawTrials.UL, cfg, "UL");
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, ...
+    "dl_pdsch_trials.csv"), rawTrials.DL);
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, ...
+    "ul_pusch_trials.csv"), rawTrials.UL);
+rawTrials.DLConstellation = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "dl_constellation_samples.csv"));
+rawTrials.ULConstellation = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "ul_constellation_samples.csv"));
+rawTrials.PBCH = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"));
+rawTrials.PRACH = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"));
+rawTrials.PDCCH = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"));
+rawTrials.PUCCH = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"));
+rawTrials.SRS = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
+rawTrials.CSIRS = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "csi_rs_trials.csv"));
+rawTrials.TRS = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"));
+rawTrials.InitialAccessLifecycleTraceTable = localReadPersistedCSV( ...
+    fullfile(layout.ReportCSVDir, "initial_access_lifecycle_trace.csv"));
+rawTrials.ControlGatingSummaryTable = localReadPersistedCSV( ...
+    fullfile(layout.ReportCSVDir, "live_control_gating_summary.csv"));
+rawTrials.ControlGatingStateTable = localReadPersistedCSV( ...
+    fullfile(layout.ReportCSVDir, "live_control_gating_state.csv"));
+
+res = struct();
+res.KPITable = table();
+res.SNRSweep = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"));
+res.ReferenceSweep = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "lls_reference_snr_sweep.csv"));
+res.FixedLinkCampaign = localEmptyFixedLinkCampaignResult(false);
+res = localApplyPrimarySweepResults(res, rawTrials, cfg, snrGrid(:), true);
+res.PAPRCCDF = localBuildPAPRCCDFTable(rawTrials);
+res.RawTrials = rawTrials;
+res.Config = cfg;
+res.CompletedRuntimeCheckpoint = checkpoint;
+res.MultiUserMode = string(multiUser.ExecutionModel);
+res.MultiUserEnabled = logical(multiUser.Enabled);
+res.MultiUserCount = double(multiUser.NumUsers);
+res.Errors = strings(0, 1);
+
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, ...
+    stageRows, stageOrder, "completed_runtime_checkpoint_verified", ...
+    0, toc(bundleStart), ...
+    "Terminal slot/sweep counters and canonical persisted row counts matched exactly.");
+
+harqArtifacts = struct( ...
+    "PacketTable", localReadPersistedCSV(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv")), ...
+    "SummaryTable", localReadPersistedCSV(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv")), ...
+    "TimelineTable", localReadPersistedCSV(fullfile(layout.HARQCSVDir, "harq_process_timeline.csv")), ...
+    "PreviewOnly", false, ...
+    "EvidenceSource", "persisted_canonical_slot_runtime");
+
+stageStart = tic;
+beamArtifacts = localExportBeamformingDiagnostics(cfg, runFolder, rawTrials, saveFigures);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, ...
+    stageRows, stageOrder, "beam_export_resumed", toc(stageStart), ...
+    toc(bundleStart), "Beam diagnostics resumed from canonical raw DL/UL trial rows.");
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "beam_ready", "AnchorKPIsReady", true, ...
+    "DLTrialsReady", requireDL, "ULTrialsReady", requireUL, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "BeamReady", localArtifactStructReady(beamArtifacts, "SummaryTable"), ...
+    "RFReady", false, "SweepReady", true, "FinalBundleReady", false, ...
+    "Notes", "Resumed beam diagnostics completed from persisted terminal runtime evidence."));
+
+stageStart = tic;
+energyArtifacts = sixgr.truth.exportLLSEnergyDiagnostics(cfg, runFolder, rawTrials);
+iqImbalanceArtifacts = sixgr.truth.exportLLSRFImpairmentDiagnostics(cfg, runFolder, rawTrials);
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, ...
+    stageRows, stageOrder, "rf_energy_export_resumed", toc(stageStart), ...
+    toc(bundleStart), "RF, IQ-imbalance, and energy diagnostics resumed from canonical trials.");
+
+stageStart = tic;
+trialPlots = localExportTrialDiagnosticPlots(runFolder, rawTrials, saveFigures);
+phySignalArtifacts = struct( ...
+    "SourceCSV", "", "SourceTable", table(), "DLImage", "", "ULImage", "", ...
+    "DLAvailable", false, "ULAvailable", false, ...
+    "DLReason", "runtime_capture_not_persisted_for_resumable_finalization", ...
+    "ULReason", "runtime_capture_not_persisted_for_resumable_finalization");
+diagnosticExportError = "";
+if diagnosticEnabled
+    try
+        phySignalArtifacts = sixgr.truth.exportPHYSignalDiagnostic(rootRunFolder, cfg, rawTrials);
+    catch ME
+        diagnosticExportError = "phy_signal_diagnostic_export_failed:" + ...
+            string(ME.identifier) + ":" + string(ME.message);
+    end
+end
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, ...
+    stageRows, stageOrder, "trial_plot_export_resumed", toc(stageStart), ...
+    toc(bundleStart), "Trial plots resumed from persisted canonical runtime rows.");
+
+[kpi, integrity] = sixgr.link.enforcePrimaryLinkExportIntegrity(cfg, ...
+    sixgr.util.structGet(res, "KPITable", table()), rawTrials);
+res.KPITable = kpi;
+arts = sixgr.link.exportLinkKPIs(runFolder, kpi, res, ...
+    "SaveCSV", true, "SaveMAT", true, "SaveFigures", saveFigures, ...
+    "SavePNG", true, "FigurePrefix", "link_truth_validation", ...
+    "PlotVisible", false, "FigureResolution", 140);
+arts.PHYSignalDiagnostic = phySignalArtifacts;
+
+measuredSINRArtifacts = struct();
+try
+    measuredSINRArtifacts.Curves = sixgr.analytics.generateMeasuredSINRCurves( ...
+        rootRunFolder, string(sixgr.util.structGet(cfg, "run.runTag", "")), ...
+        "TrialData", rawTrials, "ScenarioConfig", cfg, ...
+        "WriteKPISummary", true, "UpdateAnchorKPIs", true);
+    measuredSINRArtifacts.Plots = sixgr.analytics.generateMeasuredSINRPlots( ...
+        rootRunFolder, string(sixgr.util.structGet(cfg, "run.runTag", "")));
+catch ME
+    measuredSINRArtifacts = struct("Ok", false, ...
+        "Identifier", string(ME.identifier), "Message", string(ME.message));
+end
+
+localPublishWaveformBundleStageStatus(runFolder, struct( ...
+    "Stage", "final_bundle_ready", "AnchorKPIsReady", true, ...
+    "DLTrialsReady", requireDL, "ULTrialsReady", requireUL, ...
+    "ControlReady", localRawControlTablesReady(rawTrials), ...
+    "HARQReady", localArtifactStructReady(harqArtifacts, "SummaryTable"), ...
+    "BeamReady", localArtifactStructReady(beamArtifacts, "SummaryTable"), ...
+    "RFReady", localRFArtifactsReady(struct("Energy", energyArtifacts, ...
+        "IQImpairment", iqImbalanceArtifacts)), ...
+    "SweepReady", true, "FinalBundleReady", true, ...
+    "PBCHAttemptCount", height(rawTrials.PBCH), ...
+    "PRACHAttemptCount", height(rawTrials.PRACH), ...
+    "SRSAttemptCount", height(rawTrials.SRS), ...
+    "TRSAttemptCount", height(rawTrials.TRS), ...
+    "Notes", "Resumable finalization completed from a verified terminal waveform runtime checkpoint."));
+[stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, ...
+    stageRows, stageOrder, "bundle_complete_resumed", 0, toc(bundleStart), ...
+    "Strict waveform LLS derived bundle completed without replaying the PHY runtime.");
+
+out = struct();
+out.Ok = logical(localLinkKPITableHealthy(kpi));
+out.RunFolder = runFolder;
+out.Result = res;
+out.KPITable = kpi;
+out.SNRSweep = res.SNRSweep;
+out.MeasuredSINR = measuredSINRArtifacts;
+out.ReferenceSweep = res.ReferenceSweep;
+out.FixedLinkCampaign = res.FixedLinkCampaign;
+out.RawTrials = rawTrials;
+out.Artifacts = arts;
+out.BeamformingArtifacts = beamArtifacts;
+out.HARQArtifacts = harqArtifacts;
+out.EnergyArtifacts = energyArtifacts;
+out.TrialDiagnosticPlots = trialPlots;
+out.PHYSignalDiagnosticArtifacts = phySignalArtifacts;
+out.LiveMobilityArtifacts = struct();
+out.LiveDerivedArtifacts = struct();
+out.RuntimeStageProfile = struct2table(stageRows);
+out.Integrity = integrity;
+out.Errors = strings(0, 1);
+if strlength(diagnosticExportError) > 0
+    out.Errors = diagnosticExportError;
+    out.Ok = false;
+end
+out.UnsupportedCases = table();
+out.MultiUser = multiUser;
+out.PersistenceEnabled = true;
+out.CoreOnly = false;
+out.ResumedCompletedRuntimeFinalization = true;
+out.CompletedRuntimeCheckpoint = checkpoint;
+end
+
+function T = localReadPersistedCSV(path)
+T = table();
+if exist(char(path), "file") ~= 2
+    return;
+end
+T = readtable(char(path), "FileType", "text", "Delimiter", ",", ...
+    "ReadVariableNames", true, "VariableNamingRule", "preserve");
 end
 
 function tf = localResolvePersistenceEnabled(opt)
@@ -1595,13 +1827,29 @@ pairs = {
     "PRACH", "PRACHAttemptCount";
     "SRS", "SRSAttemptCount";
     "TRS", "TRSAttemptCount"};
+finalized = logical(sixgr.util.structGet(status, "FinalBundleReady", false));
 for i = 1:size(pairs, 1)
     signal = lower(string(pairs{i, 1}));
     fieldName = char(pairs{i, 2});
-    count = double(sixgr.util.structGet(status, fieldName, NaN));
-    count = localMaxFiniteScalar(count, ...
-        localCSVDataRowCount(fullfile(layout.AirInterfaceCSVDir, signal + "_trials.csv")), ...
-        localCSVDataRowCount(fullfile(layout.ControlCSVDir, signal + "_trials.csv")));
+    airCount = localCSVDataRowCount(fullfile( ...
+        layout.AirInterfaceCSVDir, signal + "_trials.csv"));
+    controlCount = localCSVDataRowCount(fullfile( ...
+        layout.ControlCSVDir, signal + "_trials.csv"));
+    if finalized
+        if isfinite(airCount) && isfinite(controlCount) && airCount ~= controlCount
+            error("sixgr:truth:FinalControlMirrorRowCountMismatch", ...
+                ["Final %s runtime table contains %d rows but its control " ...
+                 "mirror contains %d rows."], upper(char(signal)), ...
+                round(double(airCount)), round(double(controlCount)));
+        end
+        % Once the bundle is finalized, the canonical persisted runtime
+        % table—not an earlier heartbeat or in-memory pre-canonical count—
+        % is the row-count authority used by resumable validation.
+        count = localMaxFiniteScalar(airCount, controlCount);
+    else
+        count = double(sixgr.util.structGet(status, fieldName, NaN));
+        count = localMaxFiniteScalar(count, airCount, controlCount);
+    end
     if ~isfinite(count)
         count = 0;
     end
@@ -3020,6 +3268,19 @@ for ueIdx = 1:numUsers
 end
 runtimeState = localInitCoupledTruthRuntimeState(cfg, runFolder, multiUser, controlTrials, nFramesPerPoint * numel(snrGrid));
 pendingULGrants = repmat(struct(), 0, 1);
+sweepStatePolicy = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg, "run.snrSweepStatePolicy", ""))));
+if numel(snrGrid) > 1 && strlength(sweepStatePolicy) == 0
+    error("sixgr:truth:MissingCoupledSNRSweepStatePolicy", ...
+        "A multi-point coupled truth run requires sweeps_and_matrix.snr_sweep.state_policy in YAML. Use independent_link_state_per_point for fixed-SNR measurement or continuous_runtime for a time-varying operating scenario.");
+end
+if strlength(sweepStatePolicy) == 0
+    sweepStatePolicy = "continuous_runtime";
+end
+if ~ismember(sweepStatePolicy, ["independent_link_state_per_point", "continuous_runtime"])
+    error("sixgr:truth:InvalidCoupledSNRSweepStatePolicy", ...
+        "Unsupported coupled truth SNR-sweep state policy '%s'.", char(sweepStatePolicy));
+end
 rootRunFolder = fileparts(char(string(runFolder)));
 profileCtl = localResolveCoupledProfileControl(runFolder, nFramesPerPoint);
 profileCtl.StartTic = tic;
@@ -3027,6 +3288,16 @@ stopCoupledProfile = false;
 
 for sweepIdx = 1:numel(snrGrid)
     snrVal = double(snrGrid(sweepIdx));
+    if sweepIdx > 1 && sweepStatePolicy == "independent_link_state_per_point"
+        sweepStartSlot = (sweepIdx - 1) * nFramesPerPoint + 1;
+        runtimeState = sixgr.truth.CoupledTruthRuntime.resetIndependentSweepPointLinkState( ...
+            runtimeState, cfg, sweepIdx, sweepStartSlot);
+        pendingULGrants = repmat(struct(), 0, 1);
+        localAppendRuntimeLog("INFO", ...
+            "Reset causal HARQ, channel, reference-measurement, scheduler, link-adaptation and traffic-queue state at independent fixed-SNR point boundary: sweep=%d/%d start_slot=%d snr_db=%.3f policy=%s.", ...
+            round(double(sweepIdx)), round(double(numel(snrGrid))), ...
+            round(double(sweepStartSlot)), double(snrVal), char(sweepStatePolicy));
+    end
     dlStates = cell(numUsers, 1);
     ulStates = cell(numUsers, 1);
     for frameLocal = 1:nFramesPerPoint
@@ -3866,7 +4137,7 @@ trialContext = sixgr.util.structGet(plan, "TrialContext", struct());
 if ~(isstruct(trialContext) && isfield(trialContext, "InterferenceBundle"))
     trialContext.InterferenceBundle = struct([]);
 end
-[trialContext.InterferenceBundle, runtimeState] = localBuildCoupledInterferenceBundle( ...
+    [trialContext.InterferenceBundle, runtimeState] = localBuildCoupledInterferenceBundle( ...
     sixgr.util.structGet(plan, "Cfg", struct()), ...
     multiUser, ...
     runtimeState, ...
@@ -3874,6 +4145,8 @@ end
     round(double(sixgr.util.structGet(plan, "GrantIndex", NaN))), ...
     direction, ...
     interferenceCacheKey);
+trialContext = localRefreshTrialContextRuntimeChannelState( ...
+    trialContext, runtimeState);
 planSNR_dB = double(sixgr.util.structGet(plan, "LinkSNR_dB", snr_dB));
 planFrameIdx = double(sixgr.util.structGet(plan.GrantSnapshot, "Frame", ...
     sixgr.util.structGet(runtimeState, "CurrentFrame", absoluteFrame)));
@@ -3915,6 +4188,19 @@ if ~(isstruct(grant) && ~isempty(fieldnames(grant)))
     return;
 end
 if direction ~= "DL"
+    return;
+end
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+        logical(sixgr.util.structGet(phyGrant, "IsFrozen", false))
+    % The immutable PHYGrant is the sole execution authority.  In
+    % particular, retain MatrixLogicalPorts here; clearing it causes the
+    % transmitter to silently resolve a fresh codebook precoder and breaks
+    % the measured-SRS MU spatial contract.
+    cfgOut = sixgr.truth.applyFrozenDLGrantAuthority( ...
+        cfgOut, grant, "localApplyExecutionGrantSnapshot");
+    localAssertDLPrecodingConfigMatchesGrant( ...
+        cfgOut, grant, "localApplyExecutionGrantSnapshot_frozen");
     return;
 end
 nLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
@@ -4827,21 +5113,35 @@ linkKey = char(string(sixgr.util.structGet(bundleEntry, "ChannelLinkKey", "")));
 if strlength(strtrim(string(linkKey))) == 0
     linkKey = char("shared_slot_" + sourceId);
 end
-[runtimeState, chState] = localResolveSharedSlotRuntimeChannelState( ...
-    runtimeState, cfgC, direction, linkKey, double(metricUE), double(metricCell));
-chState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState(chState, cfgC, txWave, txInfoC, ...
+    [runtimeState, canonicalChannelState] = localResolveSharedSlotRuntimeChannelState( ...
+        runtimeState, cfgC, direction, linkKey, double(metricUE), double(metricCell));
+    % Materialize the canonical state before forking it.  On a link's first
+    % scheduled MU slot, forking an unmaterialized descriptor and then
+    % materializing the two copies independently creates two different
+    % fading/array realizations.  The scheduler precoder, peer contribution,
+    % and desired waveform must all use one canonical realization at one
+    % slot-start time origin.
+    canonicalChannelState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+        canonicalChannelState, cfgC, txWave, txInfoC, ...
     "NumTxAnt", runtimeNumTx, ...
     "NumRxAnt", numRx, ...
     "TransmitAntennaRuntime", txRuntimeAntenna, ...
     "ReceiveAntennaRuntime", rxRuntimeAntenna, ...
     "TransmitAntennaMeta", txRuntimeMeta, ...
     "ReceiveAntennaMeta", rxRuntimeMeta);
-slotStart_s = double(sixgr.util.structGet(cfgC, "lls6g.userContext.RuntimeSlotStartTime_s", NaN));
-if isfinite(slotStart_s) && slotStart_s >= 0
-    chState = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime(chState, slotStart_s, runtimeNumTx, txWave);
-end
-[rxContribution, channelReplay, chState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(chState, txWave);
-runtimeState = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(runtimeState, chState);
+    slotStart_s = double(sixgr.util.structGet(cfgC, "lls6g.userContext.RuntimeSlotStartTime_s", NaN));
+    if isfinite(slotStart_s) && slotStart_s >= 0
+        canonicalChannelState = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime( ...
+            canonicalChannelState, slotStart_s, runtimeNumTx, txWave);
+    end
+    runtimeState = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
+        runtimeState, canonicalChannelState);
+    % Every signal in a shared MU slot must see the same materialized channel
+    % state.  Execute the peer on a deep fork so the canonical state remains
+    % available for the desired waveform, which advances it exactly once.
+    chState = sixgr.channel.ChannelFactory.forkRuntimeChannelState( ...
+        canonicalChannelState);
+    [rxContribution, channelReplay, chState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(chState, txWave);
 if size(rxContribution, 2) ~= numRx
     error("sixgr:truth:SharedSlotContributionRxPortMismatch", ...
         "Shared-slot source '%s' produced %d receiver column(s), but the %s source-to-victim channel was materialized for %d receive port(s).", ...
@@ -4858,6 +5158,7 @@ meta = struct( ...
     "SampleRate_Hz", double(sampleRateHz), ...
     "RxPower_dBm", double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN)), ...
     "Source", "runtime_pre_adc_shared_slot_receiver_contribution", ...
+    "RuntimeStatePolicy", "deep_fork_at_shared_slot_time_origin_no_canonical_advance", ...
     "ChannelObjectSource", char(string(sixgr.util.structGet(channelMeta, "ChannelObjectSource", "runtime_shared_slot_source_to_victim_channel"))), ...
     "ChannelObjectClass", char(string(sixgr.util.structGet(channelReplay, "ChannelFadingObjectClass", ""))), ...
     "ChannelArrayHandlingStatus", char(string(sixgr.util.structGet(channelMeta, "ChannelArrayHandlingStatus", ""))), ...
@@ -5053,6 +5354,31 @@ end
 numTx = max(activePortCount, round(double(numTx)));
 end
 
+function trialContext = localRefreshTrialContextRuntimeChannelState(trialContext, runtimeState)
+% Refresh a grant context after a shared-slot peer has materialized the
+% canonical link.  Grant contexts are built before interference bundles, so
+% their ChannelState can otherwise retain the earlier unmaterialized copy.
+if ~(isstruct(trialContext) && isstruct(runtimeState))
+    return;
+end
+linkKey = string(sixgr.util.structGet(trialContext, "RuntimeChannelLinkKey", ...
+    sixgr.util.structGet(trialContext, "GrantSnapshot.RuntimeChannelLinkKey", ...
+    sixgr.util.structGet(trialContext, "HARQContext.ChannelStateKey", ""))));
+if strlength(strtrim(linkKey)) == 0
+    return;
+end
+states = sixgr.util.structGet(runtimeState, "RuntimeChannelStates", repmat(struct(), 0, 1));
+if ~(isstruct(states) && ~isempty(states))
+    return;
+end
+for stateIdx = 1:numel(states)
+    if string(sixgr.util.structGet(states(stateIdx), "LinkKey", "")) == linkKey
+        trialContext.ChannelState = states(stateIdx);
+        return;
+    end
+end
+end
+
 function [ant, meta] = localContributionRuntimeAntennaView(ant, meta, numColumns, sourceToken, direction)
 waveformDomain = lower(strtrim(string(sixgr.util.structGet(ant, "WaveformDomain", ...
     sixgr.util.structGet(meta, "WaveformDomain", "")))));
@@ -5246,7 +5572,8 @@ try
         cfg = localConfigureCoupledDLCalibrationOwnership( ...
             cfg, grantResolved);
         txArgs = {"CompactOutput", true, ...
-            "ExecutionProfile", "phy_calibration"};
+            "ExecutionProfile", "phy_calibration", ...
+            "CellCommonSignalOwnershipMode", "reserve_only"};
         txArgs = localAppendCoupledGrantReplayTxArgs(txArgs, grantResolved, "DL");
         transportBlockBits = sixgr.util.structGet(grantContext, "TransportBlockBits", int8([]));
         if ~isempty(transportBlockBits)
@@ -5802,13 +6129,13 @@ end
 function grant = localHydrateGrantSnapshot(cfgIn, direction, grant)
 originalDLPrecodingMatrix = [];
 if upper(string(direction)) == "DL"
-    localAssertDLPrecodingConfigMatchesGrant(cfgIn, grant, "hydrate_input");
     % The scheduler grant is the sole spatial authority once its measured
     % MU design has been finalized.  Project its logical-port, RF and
     % element-domain matrices before any allocator or precoder consumer is
     % called; a prepared per-user 64x2 beam must not replace a frozen 64x4
     % shared-cell architecture.
     cfgIn = localApplyExecutionGrantSnapshot(cfgIn, "DL", grant);
+    localAssertDLPrecodingConfigMatchesGrant(cfgIn, grant, "after_execution_grant_snapshot");
     originalDLPrecodingMatrix = sixgr.util.structGet(cfgIn, "phy.pdsch.precoding.matrix", ...
         sixgr.util.structGet(cfgIn, "phy.pdsch.precodingMatrix", ...
         sixgr.util.structGet(cfgIn, "phy.pdsch.W", [])));
@@ -6319,6 +6646,16 @@ cfgOut = cfgIn;
 if nargin < 3 || ~isstruct(grant)
     grant = struct();
 end
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+        logical(sixgr.util.structGet(phyGrant, "IsFrozen", false))
+    % A frozen scheduler grant already owns the measured logical, RF and
+    % physical matrices.  The legacy compatibility path below normalizes
+    % every column and would silently change that selected MU-MIMO design.
+    cfgOut = sixgr.truth.applyFrozenDLGrantAuthority( ...
+        cfgOut, grant, "precoding_compatibility_prune");
+    return;
+end
 nLayers = double(sixgr.util.structGet(pdsch, "NumLayers", 1));
 if ~(isfinite(nLayers) && nLayers >= 1)
     nLayers = 1;
@@ -6687,10 +7024,30 @@ end
 function localAssertDLPrecodingConfigMatchesGrant(cfg, grant, stage)
 contract = sixgr.phy.grant.resolveGrantSpatialContract(grant, "Direction", "DL");
 nLayers = double(contract.NumLayers);
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+isFrozen = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+    logical(sixgr.util.structGet(phyGrant, "IsFrozen", false));
+expectedLogical = [];
+expectedLogicalDigest = "";
+if isFrozen
+    expectedLogical = double(sixgr.util.structGet(phyGrant, ...
+        "PrecodingState.MatrixLogicalPorts", []));
+    if isempty(expectedLogical)
+        error("sixgr:truth:FrozenDLLogicalPrecoderMissing", ...
+            "Frozen DL grant at stage '%s' has no logical-port precoder.", ...
+            char(string(stage)));
+    end
+    expectedLogicalDigest = string(sixgr.phy.mimo.MatrixContract.digest(expectedLogical));
+end
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
 for i = 1:numel(paths)
     W = sixgr.util.structGet(cfg, paths(i), []);
     if isempty(W)
+        if isFrozen
+            error("sixgr:truth:FrozenDLLogicalPrecoderAuthorityMismatch", ...
+                "Frozen DL grant at stage '%s' is missing %s.", ...
+                char(string(stage)), char(paths(i)));
+        end
         continue;
     end
     valid = isnumeric(W) && ismatrix(W) && ...
@@ -6702,6 +7059,14 @@ for i = 1:numel(paths)
             char(string(stage)), char(paths(i)), size(W, 1), size(W, 2), ...
             round(nLayers), char(contract.AliasSummary));
     end
+    if isFrozen && string(sixgr.phy.mimo.MatrixContract.digest(double(W))) ~= expectedLogicalDigest
+        error("sixgr:truth:FrozenDLLogicalPrecoderAuthorityMismatch", ...
+            "Frozen DL grant at stage '%s' does not own the exact matrix in %s.", ...
+            char(string(stage)), char(paths(i)));
+    end
+end
+if isFrozen
+    sixgr.truth.applyFrozenDLGrantAuthority(cfg, grant, stage);
 end
 end
 
@@ -6805,6 +7170,15 @@ function cfgOut = localPruneIncompatibleDLPrecodingConfigForLayers(cfgIn, nLayer
 cfgOut = cfgIn;
 if nargin < 3 || ~isstruct(grant)
     grant = struct();
+end
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+        logical(sixgr.util.structGet(phyGrant, "IsFrozen", false))
+    % HARQ-context hydration may update coding/allocation fields, but it
+    % must never renormalize or regenerate a frozen spatial decision.
+    cfgOut = sixgr.truth.applyFrozenDLGrantAuthority( ...
+        cfgOut, grant, "harq_context_precoding_prune");
+    return;
 end
 nLayers = max(1, round(double(nLayers)));
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
@@ -7146,7 +7520,8 @@ prachRequired = logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired
 prachEnabled = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
 shouldAttemptTRS = trsEnabled && slotDLAllowed && (double(sixgr.util.structGet(state, "LastTRSSlot", 0)) <= 0 || ...
     slotIdx <= 1 || (isfinite(slotIdx) && (slotIdx - double(sixgr.util.structGet(state, "LastTRSSlot", 0))) >= trsPeriod));
-prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && localIsActivePRACHOccasion(cfg, slotIdx);
+prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && ...
+    sixgr.truth.isActivePRACHOccasion(cfg, slotIdx);
 prachOccasionActiveThisSlot = prachRequired && prachSignalOpportunityThisSlot;
 sharedPBCHEligible = false(numUsers, 1);
 if logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false)) && slotDLAllowed
@@ -7376,12 +7751,8 @@ for ueIdx = 1:numUsers
         if shouldAttemptSRS
             [cfgSRSU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, "UL"); %#ok<ASGLU>
             srsSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgSRSU, ueIdx, "UL", snr_dB);
-            if ~isfield(state, "SRSChannelStateByUE") || numel(state.SRSChannelStateByUE) < ueIdx
-                state.SRSChannelStateByUE{ueIdx, 1} = [];
-            end
-            [srsRawT, srsChState] = localCollectSRSTrials( ...
-                cfgSRSU, srsSNR_dB, 1, state.SRSChannelStateByUE{ueIdx}, slotIdx);
-            state.SRSChannelStateByUE{ueIdx, 1} = srsChState;
+            [state, srsRawT] = localCollectCoupledSRSTrials( ...
+                state, cfgSRSU, ueIdx, srsSNR_dB, slotIdx);
             srsT = localAnnotateCoupledControlTrial(srsRawT, slotIdx, frameIdx, ueIdx, rnti, "UL");
             srsAttemptCount = srsAttemptCount + 1;
             srsScheduledThisSlot = srsScheduledThisSlot + 1;
@@ -7562,49 +7933,6 @@ preambleIndex = mod(max(1, round(double(ueIdx))) - 1, preambleCount);
 cfgU = sixgr.util.structSet(cfgU, "phy.prach.preambleIndex", double(preambleIndex));
 cfgU = sixgr.util.structSet(cfgU, "random_access.preamble_index", double(preambleIndex));
 cfgU = sixgr.util.structSet(cfgU, "prach_lls.PreambleIndex", double(preambleIndex));
-end
-
-function tf = localIsActivePRACHOccasion(cfg, slotIdx)
-tf = false;
-prachRequired = logical(sixgr.util.structGet( ...
-    cfg, "run.controlGating.prachRequired", false));
-if ~(isfinite(double(slotIdx)) && double(slotIdx) >= 1)
-    return;
-end
-validSlots1 = double(sixgr.util.structGet(cfg, "phy.prach.validSlots1Based", []));
-validSlots1 = validSlots1(isfinite(validSlots1) & validSlots1 >= 1);
-if ~isempty(validSlots1)
-    slotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", ...
-        sixgr.util.structGet(cfg, "frame_timing.slots_per_frame", max(validSlots1))));
-    slotsPerFrame = max(1, round(double(slotsPerFrame)));
-    canonicalSlotInFrame = mod(round(double(slotIdx)) - 1, slotsPerFrame) + 1;
-    if ~ismember(canonicalSlotInFrame, round(validSlots1(:).'))
-        return;
-    end
-else
-    try
-        fs = sixgr.phy.FrameStructureEngine(cfg);
-        if ~fs.IsPRACHSlot(slotIdx)
-            return;
-        end
-    catch ME
-        if prachRequired
-            rethrow(ME);
-        end
-        partition = sixgr.util.resolveTDDSlotPartition(cfg, slotIdx);
-        if ~(logical(partition.AllowUL) && ~logical(partition.IsSpecialSlot))
-            return;
-        end
-    end
-end
-carrierSlot = max(0, round(double(slotIdx)) - 1);
-try
-    [tx, info] = sixgr.phy.ul.PRACH_Tx(cfg, "NPRACHSlot", carrierSlot);
-    tf = logical(sixgr.util.structGet(info, "ActiveOccasionPresent", false)) && ...
-        ~isempty(sixgr.util.structGet(tx, "Waveform", []));
-catch
-    tf = false;
-end
 end
 
 function [state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH(state, userCfg, grants, direction, snr_dB)
@@ -7833,12 +8161,8 @@ else
     if ueIdx > numel(lastSRS) || lastSRS(ueIdx) == 0 || (isfinite(slotIdx) && (slotIdx - lastSRS(ueIdx)) >= srsPeriod)
         [cfgSRSU, state] = localApplyCoupledRuntimeUserContext(cfgU, state, ueIdx, "UL");
         srsSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgSRSU, ueIdx, "UL", snr_dB);
-        if ~isfield(state, "SRSChannelStateByUE") || numel(state.SRSChannelStateByUE) < ueIdx
-            state.SRSChannelStateByUE{ueIdx, 1} = [];
-        end
-        [srsRawT, srsChState] = localCollectSRSTrials( ...
-            cfgSRSU, srsSNR_dB, 1, state.SRSChannelStateByUE{ueIdx}, slotIdx);
-        state.SRSChannelStateByUE{ueIdx, 1} = srsChState;
+        [state, srsRawT] = localCollectCoupledSRSTrials( ...
+            state, cfgSRSU, ueIdx, srsSNR_dB, slotIdx);
         state.ControlTrials.SRS = localAppendCompatTable(state.ControlTrials.SRS, ...
             localAnnotateCoupledControlTrial(srsRawT, slotIdx, frameIdx, ueIdx, rnti, direction));
         if ueIdx > numel(state.LastSRSSlotByUE)
@@ -8971,6 +9295,9 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'MUMIMODesiredSubspaceGain_dB','MUMIMORequiredMinimumDesiredGain_dB', ...
     'MUMIMOSpatialDesignStatus','MUMIMOSpatialDesignContractVersion','MUMIMOSpatialDesignEvidenceSource', ...
     'MUMIMOSpatialFilterMatrixSHA256','MUMIMOReceiveCombiningMatrixSHA256','MUMIMOReceiverAlgorithm', ...
+    'MUMIMOReceiveCombinerApplied','MUMIMOReceiveCombinerStatus','MUMIMOReceiveCombinerSource', ...
+    'MUMIMOReceiveCombinerInputBranches','MUMIMOReceiveCombinerOutputBranches', ...
+    'MUMIMOReceiveCombinerMatrixSHA256','MUMIMOReceiveCombinerInterferenceProjected', ...
     'MUMIMOHybridRFDesignPolicy','MUMIMOHybridRFDesignStatus', ...
     'HybridElementToPortMatrixSHA256','BaseHybridElementToPortMatrixSHA256','NumLogicalPorts','NumRFChains', ...
     'PMICodebookMode','CSIReportMode','CSIPayloadBitLength','CSIPayloadHex', ...
@@ -8983,7 +9310,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'AppliedBeamApplicationSource','AppliedBeamTruthClassification', ...
     'AppliedPrecoderPMIApplicationSource','AppliedPrecoderPMITruthClassification', ...
     'MCSAuthority','ModulationAuthority','GrantOperatingPointSource','AppliedOperatingPointSource', ...
-    'PrecodingNumPorts','PrecodingNumLayers','PrecodingMatrixRows','PrecodingMatrixCols', ...
+    'PrecodingNumPorts','PrecodingNumLayers','PrecodingMatrixRows','PrecodingMatrixCols','AppliedPrecoderMatrixSHA256', ...
     'RequestedFormat','ResolvedFormat','FormatAdapted','FormatAdaptationReason','ControlResourceValidity','ControlResourceSource', ...
     'PUCCHFormat','PUCCHResourceId','PUCCHPRBSet','PUCCHPRBStart','PUCCHPRBCount','PUCCHSymbolStart','PUCCHNumSymbols', ...
     'PUCCHRECount','PUCCHDMRSRECount','ExpectedBitCount','DecodedBitCount','PUCCHExpectedBitCount','PUCCHDecodedBitCount', ...
@@ -9145,8 +9472,9 @@ for i = 1:numel(vars)
                             'MUMIMOPairingStatus','MUMIMOPairingMetricSource','MUMIMOPairingEvidenceSource','MUMIMOPrecoderType', ...
                             'MUMIMOSpatialDesignStatus','MUMIMOSpatialDesignContractVersion','MUMIMOSpatialDesignEvidenceSource', ...
                             'MUMIMOSpatialFilterMatrixSHA256','MUMIMOReceiveCombiningMatrixSHA256','MUMIMOReceiverAlgorithm', ...
+                            'MUMIMOReceiveCombinerStatus','MUMIMOReceiveCombinerSource','MUMIMOReceiveCombinerMatrixSHA256', ...
                             'MUMIMOHybridRFDesignPolicy','MUMIMOHybridRFDesignStatus', ...
-                            'HybridElementToPortMatrixSHA256','BaseHybridElementToPortMatrixSHA256', ...
+                            'HybridElementToPortMatrixSHA256','BaseHybridElementToPortMatrixSHA256','AppliedPrecoderMatrixSHA256', ...
                             'AppliedBeamIndexSet','AppliedPrecoderPMIType','AppliedPrecoderCodebookMode','RequestedVsAppliedPrecoderPMIMatchStatus', ...
                             'BeamSelectionStrategy','BeamSelectionAuthority','BeamSelectionPolicyType', ...
                             'RequestedBeamIndexSet','RequestedPrecoderSource','AppliedPrecoderSource', ...
@@ -9196,7 +9524,7 @@ for i = 1:numel(vars)
                             'FormatAdapted','ControlResourceValidity','UCICRCApplicable','ReceiverHestSINRApplicable', ...
                             'DCICrcPass','PDCCHPayloadMatch','PDCCHCausalGrantDecodeOk','PDCCHMissedDetection','PDCCHFalseAlarm', ...
                             'GrantValid','NegativeExpectedOk','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable', ...
-                            'MUMIMOEnabled', ...
+                            'MUMIMOEnabled','MUMIMOReceiveCombinerApplied','MUMIMOReceiveCombinerInterferenceProjected', ...
                             'BeamSelectionPolicyFixed','LargeScaleSINRFinalizedFlag','SecondaryFieldGapFlag','PartialRowFlag','FinalizedFlag','FallbackFlag','PlaceholderFlag', ...
                             'CountsTowardCoverage','MachineReadable','HumanReadable', ...
                             'GrantWorkerSafe','PDCCHGrantBindingRequired','PDCCHGrantBindingOk', ...
@@ -9231,6 +9559,8 @@ end
 if all(~isfinite(double(T.ConfiguredRxAntennas)))
     T.ConfiguredRxAntennas(:) = double(localConfiguredRxAntennaCount(cfg, direction));
 end
+T = sixgr.truth.canonicalizeConfiguredPhysicalAntennaMetadata( ...
+    T, cfg, direction);
 reqModel = localResolveRequestedLinkChannelModel(cfg);
 if all(strlength(string(T.ChannelModel)) == 0)
     T.ChannelModel(:) = reqModel;
@@ -10420,6 +10750,7 @@ try
         "CellId", double(cellId), ...
         "AttemptId", double(trialIdx), ...
         "RuntimeSlot", double(slotIdx), ...
+        "RuntimeNoiseSNR_dB", double(snr_dB), ...
         "WriteArtifacts", false);
     ok = true;
 catch ME
@@ -12190,6 +12521,13 @@ for k = 1:nTrials
         r.SpatialSignatureRows = double(sixgr.util.structGet(outSRS, "SpatialSignatureRows", NaN));
         r.SpatialSignatureColumns = double(sixgr.util.structGet(outSRS, "SpatialSignatureColumns", NaN));
         r.SpatialSignatureSource = string(sixgr.util.structGet(outSRS, "SpatialSignatureSource", ""));
+        r.SpatialSignatureRawRank = double(sixgr.util.structGet(outSRS, "SpatialSignatureRawRank", NaN));
+        r.SpatialSignatureRetainedRank = double(sixgr.util.structGet(outSRS, "SpatialSignatureRetainedRank", NaN));
+        r.SpatialSignatureDetectionThreshold = double(sixgr.util.structGet(outSRS, "SpatialSignatureDetectionThreshold", NaN));
+        r.SpatialSignatureNoiseVariance = double(sixgr.util.structGet(outSRS, "SpatialSignatureNoiseVariance", NaN));
+        r.SpatialSignatureNoiseMargin_dB = double(sixgr.util.structGet(outSRS, "SpatialSignatureNoiseMargin_dB", NaN));
+        r.SpatialSignatureSnapshotCount = double(sixgr.util.structGet(outSRS, "SpatialSignatureSnapshotCount", NaN));
+        r.SpatialSignatureReductionMode = string(sixgr.util.structGet(outSRS, "SpatialSignatureReductionMode", ""));
         r.RankIndicator = double(sixgr.util.structGet(outSRS, "RIEstimate", outSRS.RankEstimate));
         r.PMI = double(sixgr.util.structGet(outSRS, "TPMIEstimate", NaN));
         r.ConditionNumber_dB = double(sixgr.util.structGet(outSRS, "SRSConditionNumber_dB", r.ConditionNumber_dB));
@@ -12214,6 +12552,30 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function [state, T] = localCollectCoupledSRSTrials(state, cfg, ueIdx, snr_dB, slotIdx)
+% Bind causal SRS to the exact UL runtime channel later used by PUSCH.
+if sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
+    [state, chState] = ...
+        sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
+        state, cfg, ueIdx, "UL");
+    [T, chState] = localCollectSRSTrials(cfg, snr_dB, 1, chState, slotIdx);
+    state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(state, chState);
+    if ~isfield(state, "SRSChannelStateByUE") || numel(state.SRSChannelStateByUE) < ueIdx
+        state.SRSChannelStateByUE{ueIdx, 1} = [];
+    end
+    % Retain only an identity/evidence mirror for compatibility.  The
+    % authoritative mutable channel state lives in RuntimeChannelStates.
+    state.SRSChannelStateByUE{ueIdx, 1} = chState;
+    return;
+end
+if ~isfield(state, "SRSChannelStateByUE") || numel(state.SRSChannelStateByUE) < ueIdx
+    state.SRSChannelStateByUE{ueIdx, 1} = [];
+end
+[T, chState] = localCollectSRSTrials( ...
+    cfg, snr_dB, 1, state.SRSChannelStateByUE{ueIdx}, slotIdx);
+state.SRSChannelStateByUE{ueIdx, 1} = chState;
 end
 
 function T = localCollectTRSTrials(cfg, snr_dB, nTrials)
@@ -12352,6 +12714,7 @@ if isempty(fieldnames(cfg)) && strlength(strtrim(string(direction))) == 0
 else
     row.ChannelModel = localResolveRequestedLinkChannelModel(cfg);
 end
+
 row.ChannelModelApplied = "";
 row.ChannelFadingApplied = false;
 row.DopplerHz = dopp;
@@ -12823,6 +13186,13 @@ row.SpatialSignatureSHA256 = "";
 row.SpatialSignatureRows = NaN;
 row.SpatialSignatureColumns = NaN;
 row.SpatialSignatureSource = "";
+row.SpatialSignatureRawRank = NaN;
+row.SpatialSignatureRetainedRank = NaN;
+row.SpatialSignatureDetectionThreshold = NaN;
+row.SpatialSignatureNoiseVariance = NaN;
+row.SpatialSignatureNoiseMargin_dB = NaN;
+row.SpatialSignatureSnapshotCount = NaN;
+row.SpatialSignatureReductionMode = "";
 row.ResourceExtractionAttempted = false;
 row.ResourceExtractionAvailable = false;
 row.EqualizationAttempted = false;
@@ -14296,12 +14666,24 @@ for i = 1:n
     if ~isempty(dlT)
         dlStats = localSummarizeLinkTrialTable(dlT, cfg);
         row = localApplyLinkSweepStats(row, "DL", dlStats);
+    elseif logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", false))
+        % An enabled link with no executed waveform trial at this operating
+        % point is unavailable evidence, not a zero-error success.
+        row.DL_TrialCount = 0;
+        row.DL_FailureCount = 0;
+        row.DL_Incomplete = true;
+        row.DL_StopReason = "NO_RUNTIME_TRIALS_AT_OPERATING_POINT";
     end
 
     ulT = localSubsetTrialsBySNR(sixgr.util.structGet(rawTrials, "UL", table()), snr);
     if ~isempty(ulT)
         ulStats = localSummarizeLinkTrialTable(ulT, cfg);
         row = localApplyLinkSweepStats(row, "UL", ulStats);
+    elseif logical(sixgr.util.structGet(cfg, "phy.pusch.enable", false))
+        row.UL_TrialCount = 0;
+        row.UL_FailureCount = 0;
+        row.UL_Incomplete = true;
+        row.UL_StopReason = "NO_RUNTIME_TRIALS_AT_OPERATING_POINT";
     end
 
     srsT = localSubsetTrialsBySNR(sixgr.util.structGet(rawTrials, "SRS", table()), snr);
@@ -15685,19 +16067,7 @@ end
 function nTx = localConfiguredTxAntennaCount(cfg, direction)
 direction = upper(string(direction));
 if direction == "UL"
-    userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
-    nTx = localFirstFiniteScalar( ...
-        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumPorts", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumPorts", NaN), ...
-        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "channel.ul.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.ul.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", NaN), ...
-        sixgr.util.structGet(cfg, "phy.pusch.numPorts", NaN), ...
-        sixgr.util.structGet(cfg, "channel.nTxAntUL", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.ue.numPorts", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.ue.numElements", NaN), ...
-        1);
+    nTx = sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", 1);
 else
     nTx = double(sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", ...
         sixgr.util.structGet(cfg, "channel.nTxAnt", sixgr.util.structGet(cfg, "phy.nTxAnt", 1))));
@@ -15711,20 +16081,7 @@ end
 function nRx = localConfiguredRxAntennaCount(cfg, direction)
 direction = upper(string(direction));
 if direction == "UL"
-    userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
-    nRx = localFirstFiniteScalar( ...
-        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumPorts", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumPorts", NaN), ...
-        sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "channel.ul.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.ul.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "channel.nRxAntUL", NaN), ...
-        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.bs.numPorts", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.bs.numElements", NaN), ...
-        sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.nRxAnt", NaN), ...
-        1);
+    nRx = sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", 1);
 else
     nRx = double(sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", ...
         sixgr.util.structGet(cfg, "channel.nRxAnt", sixgr.util.structGet(cfg, "phy.nRxAnt", 1))));

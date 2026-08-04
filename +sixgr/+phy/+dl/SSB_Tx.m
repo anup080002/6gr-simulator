@@ -243,7 +243,7 @@ end
 % carrying its own logical SSB-index bits.
 [waveform, waveInfo] = localGenerateBurstWaveform( ...
     cfgDL, burstPlan, logical(opt.EnablePDSCH), ...
-    logical(opt.EnableCSIRS));
+    logical(opt.EnableCSIRS), localSSBWaveformDomain(cfg));
 
 txCfg = struct;
 txCfg.NCellID = nCellID;
@@ -263,7 +263,9 @@ txCfg.SSBTiming = timing;
 txCfg.SSBBurstPlan = burstPlan;
 txCfg.SSBGridValidation = gridValidation;
 txCfg.SSBResourceOwnership = resourceOwnership;
-txCfg.NumTransmitAntennas = double(burstPlan.NumTransmitAntennas);
+txCfg.NumTransmitAntennas = double(size(waveform, 2));
+txCfg.PhysicalTransmitAntennaElements = double(burstPlan.NumTransmitAntennas);
+txCfg.WaveformDomain = char(localSSBWaveformDomain(cfg));
 txCfg.SSB = struct( ...
     "BlockPattern", char(timing.BlockPattern), ...
     "SSBIndex", double(timing.SelectedSSBIndex), ...
@@ -294,7 +296,7 @@ end
 end
 
 function [waveform, waveInfo] = localGenerateBurstWaveform( ...
-        cfgDL, burstPlan, pdschEnabled, csirsEnabled)
+        cfgDL, burstPlan, pdschEnabled, csirsEnabled, waveformDomain)
 activeIndices = find(logical(burstPlan.ActiveBitmap));
 activePower = double(burstPlan.PerSSBPowerDB(activeIndices));
 heterogeneousPower = any(abs(activePower - activePower(1)) > 1e-12);
@@ -342,7 +344,15 @@ for ordinal = 1:numel(activeIndices)
             "before per-SSB precoding.", size(componentWaveform, 2));
     end
     precoder = burstPlan.PrecoderMatrices{ssbPosition};
-    precoded = componentWaveform * precoder;
+    if waveformDomain == "logical_rf_chain_post_analog_precoder"
+        % The 64-element analog beam is retained in the immutable burst
+        % plan.  The waveform handed to the propagation/receiver stack is
+        % the single logical RF-chain signal after analog precoding; gNB
+        % transmit elements must never be misinterpreted as UE RX branches.
+        precoded = componentWaveform;
+    else
+        precoded = componentWaveform * precoder;
+    end
     if ordinal == 1
         waveform = zeros(size(precoded), "like", precoded);
         waveInfo = componentInfo;
@@ -356,12 +366,26 @@ if isstruct(waveInfo)
     waveInfo.SSBComposite = struct( ...
         "Composed", true, ...
         "ActiveSSBIndices0Based", activeIndices - 1, ...
-        "NumTransmitAntennas", burstPlan.NumTransmitAntennas, ...
+        "NumTransmitAntennas", size(waveform, 2), ...
+        "PhysicalTransmitAntennaElements", burstPlan.NumTransmitAntennas, ...
+        "WaveformDomain", waveformDomain, ...
         "ComponentCount", numel(activeIndices), ...
         "PerSSBPowerDB", burstPlan.PerSSBPowerDB(activeIndices), ...
         "PrecoderMatrixSHA256", ...
             burstPlan.PrecoderMatrixSHA256(activeIndices), ...
         "CompositeResourceGridAvailable", false);
+end
+end
+
+function domain = localSSBWaveformDomain(cfg)
+domain = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.ssb.waveformDomain", "physical_element_domain"))));
+allowed = ["physical_element_domain", ...
+    "logical_rf_chain_post_analog_precoder"];
+if ~isscalar(domain) || ~any(domain == allowed)
+    error("sixgr:phy:ia:InvalidSSBWaveformDomain", ...
+        "phy.ssb.waveformDomain must be one of: %s.", ...
+        char(strjoin(allowed, ", ")));
 end
 end
 

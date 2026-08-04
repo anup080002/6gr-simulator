@@ -200,9 +200,7 @@ if runRandomAccess && isstruct(ra) && ~isempty(fieldnames(ra))
 end
 T = struct2table(rows, "AsArray", true);
 T.StageOrder = (1:height(T)).';
-path = fullfile(layout.ControlCSVDir, "initial_access_lifecycle_trace.csv");
-sixgr.util.csvWriteTable(path, T);
-artifacts = struct("InitialAccessLifecycleCSV", string(path), "InitialAccessLifecycleRows", height(T));
+artifacts = sixgr.phy.broadcast.publishStrictInitialAccessLifecycle(runFolder, T);
 end
 
 function row = localLifecycleRow(stage, attempted, completed, sourceArtifact, failureReason)

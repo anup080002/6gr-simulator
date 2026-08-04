@@ -1,0 +1,2 @@
+LayoutType,NumSites,SectorsPerSite,NumCells,InterSiteDistance_m,NumUEs,NumTRPs,MobilityEnabled,MobilityModel,MobilitySpeedMin_kmh,MobilitySpeedMax_kmh,MultiUserEnabled,ConfiguredUsers,UserExecutionModel
+"hex_grid",1,1,1,1000,4,1,0,"static",0,0,1,4,"slot_coupled_truth"

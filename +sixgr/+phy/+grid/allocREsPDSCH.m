@@ -177,6 +177,21 @@ pdsch.PRBSet = prbVec;
 
 pdsch.SymbolAllocation = double(symAllocCfg(:).');
 pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg);
+% Preserve an explicitly configured logical DM-RS port set. The Toolbox
+% object may retain its own empty calibration value, but a valid supplied
+% set is never overwritten or renumbered.  Resolve this before PT-RS so
+% first_scheduled_dmrs_port observes the actual scheduled port set.
+configuredDMRSPorts = sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+    cfg, "DL", pdsch.NumLayers, struct());
+maxLogicalPort = 11;
+if isprop(pdsch.DMRS, "DMRSEnhancedR18") && ...
+        logical(pdsch.DMRS.DMRSEnhancedR18)
+    maxLogicalPort = 23;
+end
+localValidateDMRSPortSet( ...
+    configuredDMRSPorts,pdsch.NumLayers,maxLogicalPort);
+pdsch.DMRS.DMRSPortSet = double(configuredDMRSPorts(:).');
+
 pdsch = localApplyPDSCHPTRSConfig(pdsch, cfg);
 pdsch = localNormalizePDSCHMapping(pdsch, mapType, mapTypeExplicit, opts.FixedReferenceMode);
 
@@ -189,24 +204,6 @@ try
         pdsch.NID = double(nid);
     end
 catch
-end
-
-% Preserve an explicitly configured logical DM-RS port set. The Toolbox
-% object may retain its own empty calibration value, but a valid supplied
-% set is never overwritten or renumbered.
-configuredDMRSPorts = localFirstNonemptyNumeric( ...
-    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.portSet", []), ...
-    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSPortSet", []), ...
-    sixgr.util.structGet(cfg, "pdsch6gr.DMRSPortSet", []));
-if ~isempty(configuredDMRSPorts)
-    maxLogicalPort = 11;
-    if isprop(pdsch.DMRS, "DMRSEnhancedR18") && ...
-            logical(pdsch.DMRS.DMRSEnhancedR18)
-        maxLogicalPort = 23;
-    end
-    localValidateDMRSPortSet( ...
-        configuredDMRSPorts,pdsch.NumLayers,maxLogicalPort);
-    pdsch.DMRS.DMRSPortSet = double(configuredDMRSPorts(:).');
 end
 
 pdsch = localReserveCSIRSResources(carrier, pdsch, cfg);
@@ -492,6 +489,20 @@ portSet = sixgr.util.structGet(cfg, "phy.pdsch.ptrs.portSet", ...
     sixgr.util.structGet(cfg, "phy.ptrs.portSet", ...
     sixgr.util.structGet(cfg, "pdsch6gr.PTRSPortSet", ...
     sixgr.util.structGet(cfg, "DMRS.PortSet", []))));
+scheduledDMRSPorts = [];
+try
+    if isprop(pdsch, "DMRS") && isprop(pdsch.DMRS, "DMRSPortSet")
+        scheduledDMRSPorts = double(pdsch.DMRS.DMRSPortSet(:).');
+    end
+catch
+    scheduledDMRSPorts = [];
+end
+% Use the same YAML-owned association resolver as grant freezing.  This
+% keeps direct PHY-calibration execution and scheduled execution identical:
+% first_scheduled_dmrs_port follows the actual allocation, whereas
+% configured_absolute_port must name an exact scheduled DM-RS port.
+[~, portSet] = sixgr.phy.grant.resolveScheduledPTRSPortSet( ...
+    cfg, "DL", scheduledDMRSPorts, struct("PTRSPortSet", portSet));
 
 if isempty(timeDensity)
     error("sixgr:pdsch:MissingPTRSTimeDensity", ...
@@ -507,7 +518,8 @@ if strlength(strtrim(reOffset)) == 0
 end
 if isempty(portSet)
     error("sixgr:pdsch:MissingPTRSPortSet", ...
-        "Enabled PDSCH PT-RS requires an explicit associated DM-RS port.");
+        ["Enabled PDSCH PT-RS with configured_absolute_port policy " ...
+         "requires an explicit associated DM-RS port."]);
 end
 localValidateIntegerMember(timeDensity, [1 2 4 8], "InvalidPTRSTimeDensity");
 localValidateIntegerMember(freqDensity, [2 4], "InvalidPTRSFrequencyDensity");

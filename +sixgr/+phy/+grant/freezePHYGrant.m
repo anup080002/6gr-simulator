@@ -668,10 +668,20 @@ if ~(isscalar(frozenRFChains) && isfinite(frozenRFChains) && frozenRFChains >= n
         frozenRFChains == round(frozenRFChains))
     frozenRFChains = NaN;
 end
+matrixAuthorityScope = "signal_then_role";
+if localUsesMeasuredMUMIMOBaseArchitecture(grant, signal)
+    % A signal-level PDSCH matrix is a selection owned by one earlier
+    % grant.  It is not the immutable hybrid-array architecture used to
+    % design a new measured-SRS MU group.  Bind strict measured-MU grants
+    % to the YAML-owned role matrix, exactly as the MU designer does, and
+    % then retain the existing residual/digest guards below.
+    matrixAuthorityScope = "role_only";
+end
 arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, string(role), ...
     "Signal", string(signal), "NumElements", double(nElements), ...
     "NumPorts", double(nLogicalPorts), "NumRFChains", frozenRFChains, ...
-    "MinimumPorts", double(nLayers));
+    "MinimumPorts", double(nLayers), ...
+    "MatrixAuthorityScope", matrixAuthorityScope);
 if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false))
     if isempty(Wlogical)
         Wlogical = localNormalizeDLMatrix(Wraw, nLogicalPorts, nLayers);
@@ -742,6 +752,26 @@ waveformDomain = "element";
 elementDomainApplied = true;
 end
 
+function tf = localUsesMeasuredMUMIMOBaseArchitecture(grant, signal)
+tf = false;
+if upper(strtrim(string(signal))) ~= "PDSCH"
+    return;
+end
+contractVersion = strtrim(string(sixgr.util.structGet(grant, ...
+    "MUMIMOSpatialDesignContractVersion", "")));
+evidenceSource = lower(strtrim(string(sixgr.util.structGet(grant, ...
+    "MUMIMOSpatialDesignEvidenceSource", ""))));
+currentMeasuredMU = logical(sixgr.util.structGet( ...
+    grant, "MUMIMOEnabled", false)) && ...
+    double(sixgr.util.structGet(grant, "MUMIMOGroupSize", 0)) >= 2;
+historicalMeasuredMU = logical(sixgr.util.structGet( ...
+    grant, "IsRetransmission", false)) && ...
+    double(sixgr.util.structGet(grant, "PriorMUMIMOGroupSize", 0)) >= 2;
+tf = (currentMeasuredMU || historicalMeasuredMU) && ...
+    startsWith(contractVersion, "MeasuredMUMIMOPairDesign/") && ...
+    contains(evidenceSource, "measured_srs");
+end
+
 function localValidateAdaptiveHybridGrant(baseF, frozenF, grant)
 contractVersion = string(sixgr.util.structGet(grant, ...
     "MUMIMOSpatialDesignContractVersion", ""));
@@ -749,12 +779,12 @@ designStatus = string(sixgr.util.structGet(grant, "MUMIMOSpatialDesignStatus", "
 evidenceSource = string(sixgr.util.structGet(grant, ...
     "MUMIMOSpatialDesignEvidenceSource", ...
     sixgr.util.structGet(grant, "MUMIMOPairingEvidenceSource", "")));
-if contractVersion ~= "MeasuredMUMIMOPairDesign/v2" || ...
+if contractVersion ~= "MeasuredMUMIMOPairDesign/v5" || ...
         designStatus ~= "compatible_executable_measured_spatial_design" || ...
-        evidenceSource ~= "causal_measured_srs_reciprocity_phase_only_hybrid_and_frozen_baseband"
+        evidenceSource ~= "causal_measured_srs_complete_peer_subspace_reciprocity_phase_only_hybrid_and_frozen_baseband"
     error("sixgr:phy:grant:FrozenHybridArchitectureAuthorityMissing", ...
-        "Adaptive hybrid RF phases require a compatible v2 measured-SRS design " + ...
-        "and its exact causal reciprocity evidence source.");
+        "Adaptive hybrid RF phases require a compatible v5 unit-total-power complete-peer-subspace " + ...
+        "measured-SRS design and its exact causal reciprocity evidence source.");
 end
 baseSupport = abs(baseF) > 1e-14;
 frozenSupport = abs(frozenF) > 1e-14;
@@ -869,8 +899,14 @@ end
 
 function W = localRectIdentity(nPorts, nLayers)
 W = zeros(max(1, nPorts), max(1, nLayers));
-for i = 1:min(size(W, 1), size(W, 2))
-    W(i, i) = 1;
+activeStreams = min(size(W, 1), size(W, 2));
+% This helper is used only when no explicit/codebook matrix is supplied.
+% Freeze an equal-power identity mapping under the repository-wide
+% MatrixContract (unit total Frobenius power), rather than assigning unit
+% power independently to every layer and making rank-R transmit R times
+% the configured total power. Explicit matrices are never changed here.
+for i = 1:activeStreams
+    W(i, i) = 1 / sqrt(activeStreams);
 end
 end
 

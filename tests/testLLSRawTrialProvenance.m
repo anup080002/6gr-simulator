@@ -7,15 +7,28 @@ tmp = tempname;
 mkdir(tmp);
 c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
-scfg = sixgr.lls6g.config.loadScenarioConfig( ...
+scfgResolved = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "simulator", "configs", "scenarios", "lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml"));
+% This focused test owns a PTRS-disabled YAML-equivalent input because it
+% validates grant/control provenance, not phase tracking. Apply the feature
+% decision before buildInternalConfig so no internal MATLAB override can
+% contradict the scenario authority.
+scfg = scfgResolved.toStruct();
+scfg.reference_signals.ptrs_enabled = false;
+scfg.reference_signals.csi_rs_enabled = false;
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
 cfg.run.numFrames = 1;
 cfg.channel.snr_dB = 10;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
-cfg.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 cfg.run.interferenceExecutionMode = "none";
+cfg.phy.rx.useIdealTimingSync = true;
+% Antenna dimensions are channel-state construction inputs. Resolve this
+% focused SISO fixture before CoupledTruthRuntime initializes its persistent
+% channel object; mutating them only after initialization would create an
+% invalid mixed architecture that production correctly rejects.
+cfg = localForceOneByOneWaveformFixture(cfg);
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);
 state.CurrentServingIdx(1) = 1;
@@ -37,8 +50,6 @@ cfgUL = localForceOneByOneWaveformFixture(cfgUL);
 cfgDL.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
 cfgDL.phy.pdsch.dmrs.typeAPosition = 3;
 cfgDL.phy.dmrs.typeAPosition = 3;
-cfgDL.phy.pdsch.enablePTRS = false;
-cfgUL.phy.pusch.enablePTRS = false;
 cfgDL.phy.pdsch.nLayers = 1;
 cfgDL.phy.pdsch.numLayers = 1;
 cfgDL.phy.pdsch.maxLayers = 1;
@@ -154,6 +165,9 @@ grant.NumLayers = double(sixgr.util.structGet( ...
     cfg, root + ".nLayers", 1));
 grant.Layers = grant.NumLayers;
 grant.DMRSPortSet = 0:(grant.NumLayers - 1);
+[grant.PTRSEnabled, grant.PTRSPortSet, grant.PTRSPortSetSource] = ...
+    sixgr.phy.grant.resolveScheduledPTRSPortSet( ...
+    cfg, direction, grant.DMRSPortSet, grant);
 [modulation, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI( ...
     double(grant.CQIUsed), "", NaN, cfg, direction);
 grant.Modulation = char(string(modulation));
@@ -201,18 +215,56 @@ cfg.antenna.bs.numElements = 1;
 cfg.antenna.bs.numPorts = 1;
 cfg.antenna.bs.numRFChains = 1;
 cfg.antenna.bs.hybridBeamformingEnabled = false;
+cfg.antenna.bs.panelRows = 1;
+cfg.antenna.bs.panelCols = 1;
+cfg.antenna.bs.panelCount = 1;
 cfg.antenna.ue.numElements = 1;
 cfg.antenna.ue.numPorts = 1;
 cfg.antenna.ue.numRFChains = 1;
 cfg.antenna.ue.hybridBeamformingEnabled = false;
+cfg.antenna.ue.panelRows = 1;
+cfg.antenna.ue.panelCols = 1;
+cfg.antenna.ue.panelCount = 1;
 cfg.rf.bs.hybridBeamformingEnabled = false;
+cfg.rf.bs.numPorts = 1;
+cfg.rf.bs.numRFChains = 1;
+cfg.rf.bs.panelRows = 1;
+cfg.rf.bs.panelCols = 1;
+cfg.rf.bs.panelCount = 1;
 cfg.rf.ue.hybridBeamformingEnabled = false;
+cfg.rf.ue.numPorts = 1;
+cfg.rf.ue.numRFChains = 1;
+cfg.rf.ue.panelRows = 1;
+cfg.rf.ue.panelCols = 1;
+cfg.rf.ue.panelCount = 1;
 cfg.phy.beamManagement.hybridBeamformingEnabled = false;
+cfg.phy.beamManagement.panelCount = 1;
 cfg.mimo.hybrid_beamforming_flag = false;
+cfg.mimo.panel_count = 1;
+cfg.mimo.nTx = 1;
+cfg.mimo.nRx = 1;
+cfg.mimo.nTxAnt = 1;
+cfg.mimo.nRxAnt = 1;
+cfg.mimo.n_tx_ant = 1;
+cfg.mimo.n_rx_ant = 1;
+cfg.antenna_and_array.bs_num_antenna_elements = 1;
+cfg.antenna_and_array.ue_num_antenna_elements = 1;
 cfg.phy.pdsch.numPorts = 1;
 cfg.phy.pdsch.nPorts = 1;
 cfg.phy.pdsch.numRFChains = 1;
 cfg.phy.pdsch.hybridBeamformingEnabled = false;
+cfg.phy.csirs.numPorts = 1;
+cfg.phy.csirs.nPorts = 1;
+cfg.phy.csirs.rowNumber = 1;
+cfg.phy.csirs.density = "three";
+cfg.phy.csirs.cdmType = "noCDM";
+cfg.phy.csirs.subcarrierLocations = 0;
+cfg.phy.trs.numPorts = 1;
+cfg.pdsch6gr.NTx = 1;
+cfg.pdsch6gr.NRx = 1;
+cfg.pdsch6gr.NumLayers = 1;
+cfg.pdsch6gr.DMRSNumPorts = 1;
+cfg.pdsch6gr.DMRSPortSet = 0;
 cfg.phy.pdsch.precoding.matrix = [];
 cfg.phy.pdsch.precodingMatrix = [];
 cfg.phy.pdsch.W = [];
@@ -361,15 +413,20 @@ assert(strlength(string(T.SourceArtifact(1))) > 0 && strlength(string(T.SourceTa
 assert(isfinite(double(T.PropagationDistance_m(1))) && isfinite(double(T.ToD_s(1))) && isfinite(double(T.ToA_s(1))) && ...
     double(T.ToA_s(1)) >= double(T.ToD_s(1)), ...
     "Raw %s trial table must preserve same-flow timing/geometry evidence.", direction);
+dciVars = {'DCICrcPass','PDCCHPayloadMatch','PDCCHCausalGrantDecodeOk','PDCCHMissedDetection','PDCCHFalseAlarm', ...
+    'GrantValid','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable','PDCCHControlFailureReason','PDCCHControlEvidenceSource','ControlDecodeSource'};
+assert(all(ismember(dciVars, T.Properties.VariableNames)), ...
+    "Raw %s trial table must expose decoded PDCCH/DCI lineage fields.", direction);
+assert(logical(T.DCICrcPass(1)) && logical(T.PDCCHPayloadMatch(1)) && ...
+    logical(T.PDCCHCausalGrantDecodeOk(1)) && logical(T.GrantValid(1)) && ...
+    ~logical(T.PDCCHMissedDetection(1)) && ~logical(T.PDCCHFalseAlarm(1)), ...
+    "Raw %s trial table must preserve successful decoded DCI lineage from the finalized grant.", direction);
+assert(strcmpi(char(string(T.PDCCHControlEvidenceSource(1))), "pdcch_waveform_dci_crc_and_payload_match") && ...
+    strcmpi(char(string(T.ControlDecodeSource(1))), "pdcch_waveform_dci_crc_and_payload_match"), ...
+    "Raw %s trial table must preserve the waveform PDCCH control-evidence source.", direction);
 if strcmpi(direction, "DL")
-    dciVars = {'DCICrcPass','PDCCHPayloadMatch','PDCCHCausalGrantDecodeOk','PDCCHMissedDetection','PDCCHFalseAlarm', ...
-        'GrantValid','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable','PDCCHControlFailureReason','PDCCHControlEvidenceSource','ControlDecodeSource'};
-    assert(all(ismember(dciVars, T.Properties.VariableNames)), ...
-        "DL raw trial table must expose decoded PDCCH/DCI lineage fields.");
-    assert(logical(T.DCICrcPass(1)) && logical(T.PDCCHPayloadMatch(1)) && ...
-        logical(T.PDCCHCausalGrantDecodeOk(1)) && logical(T.GrantValid(1)) && ...
-        ~logical(T.PDCCHMissedDetection(1)) && ~logical(T.PDCCHFalseAlarm(1)), ...
-        "DL raw trial table must preserve successful decoded DCI lineage from the finalized grant.");
+    assert(ismember("AppliedPrecoderMatrixSHA256", string(T.Properties.VariableNames)), ...
+        "DL raw trial truth must expose the exact applied physical precoder digest.");
     assert(strcmpi(char(string(T.SourceArtifact(1))), "air_interface/csv/dl_pdsch_trials.csv") && ...
         strcmpi(char(string(T.SourceTable(1))), "air_interface/csv/dl_pdsch_trials.csv"), ...
         "DL raw trial table must identify itself as PDSCH evidence, not a control-channel artifact.");
@@ -427,6 +484,14 @@ if availability == "missing" || status == "NOT_AVAILABLE"
         status == "NOT_AVAILABLE" && ~isfinite(cfoError), ...
         "Raw %s trial table must preserve missing-estimate CFO lineage instead of backfilling a fake error value.", direction);
 else
+    ulCombinerVars = ["MUMIMOReceiveCombinerApplied", ...
+        "MUMIMOReceiveCombinerStatus", "MUMIMOReceiveCombinerSource", ...
+        "MUMIMOReceiveCombinerInputBranches", ...
+        "MUMIMOReceiveCombinerOutputBranches", ...
+        "MUMIMOReceiveCombinerMatrixSHA256", ...
+        "MUMIMOReceiveCombinerInterferenceProjected"];
+    assert(all(ismember(ulCombinerVars, string(T.Properties.VariableNames))), ...
+        "UL raw trial truth must expose the applied scheduler-frozen receive-combiner contract.");
     assert(availability == "available" && ...
         definition == "residual_post_correction_hz_relative_to_estimated_pre_correction" && ...
         any(status == ["OK","PARTIAL"]) && isfinite(cfoError), ...

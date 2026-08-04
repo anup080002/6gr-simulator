@@ -1,0 +1,47 @@
+{
+  "CORESET0": {
+    "CORESETID": 0,
+    "Table": "13-6",
+    "Index": 0,
+    "Pattern": "multiplexing_pattern_1",
+    "RBStart": 0,
+    "NumRB": 24,
+    "DurationSymbols": 2,
+    "OffsetRB": 0,
+    "FrequencyResourceBitmap": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "REGBundleSize": 6,
+    "InterleaverSize": 2,
+    "ShiftIndex": 1
+  },
+  "SearchSpace0": {
+    "SearchSpaceID": 0,
+    "CORESETID": 0,
+    "Table": "13-11",
+    "Index": 0,
+    "O": 0,
+    "M": 1,
+    "SearchSpaceSetsPerSlot": 1,
+    "FirstSymbolRule": "0",
+    "SlotPeriod": 40,
+    "SlotOffset": 3,
+    "DurationSlots": 1,
+    "StartSymbolWithinSlot": 0,
+    "AggregationLevel": 4,
+    "AggregationLevels": [
+      4,
+      8
+    ],
+    "NumCandidates": [
+      0,
+      0,
+      2,
+      1,
+      0
+    ]
+  }
+}

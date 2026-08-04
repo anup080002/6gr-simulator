@@ -13,6 +13,9 @@ ip.parse(varargin{:});
 opt = ip.Results;
 strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
     sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
+frozenGrantStrict = logical(sixgr.util.structGet(cfg, ...
+    "phy.canonicalGrant.enabled", false));
+strictPrecoder = strictMIMO || frozenGrantStrict;
 
 nLayers = double(pdsch.NumLayers);
 nCodewords = localNumCodewords(pdsch, nLayers);
@@ -53,6 +56,7 @@ prec.HybridAnalogPrecoderMatrix = [];
 prec.HybridDigitalPortToRFChainMatrix = [];
 prec.HybridElementToPortMatrix = [];
 prec.StrictMIMO = strictMIMO;
+prec.ImmutableGrantStrict = frozenGrantStrict;
 prec.SelectedMatrixSHA256 = "";
 prec.AppliedMatrixSHA256 = "";
 prec.MatrixRegenerated = false;
@@ -116,7 +120,7 @@ if ~isempty(Wcfg) && ~localExplicitMatrixHasLayerShape(Wcfg, nLayers)
 end
 
 if isempty(Wcfg)
-    if strictMIMO && ~(nLayers == 1 && requestedPorts == 1)
+    if strictPrecoder && ~(nLayers == 1 && requestedPorts == 1)
         error("sixgr:mimo:MissingAppliedPrecoder", ...
             "Strict multi-port PDSCH requires the scheduler-selected immutable Nport-by-Nlayer matrix.");
     end
@@ -127,16 +131,17 @@ end
 
 normalizeW = opt.NormalizeW;
 if isempty(normalizeW)
-    normalizeW = logical(sixgr.util.structGet(cfg, "phy.pdsch.normalizePrecodingMatrix", ~strictMIMO));
+    normalizeW = logical(sixgr.util.structGet(cfg, "phy.pdsch.normalizePrecodingMatrix", ~strictPrecoder));
 end
-if strictMIMO && normalizeW
+if strictPrecoder && normalizeW
     error("sixgr:mimo:PrecoderNormalizationMismatch", ...
-        "Strict PDSCH must apply the selected matrix unchanged; runtime normalization is forbidden.");
+        ["Strict or immutable-grant PDSCH must apply the selected matrix " ...
+         "unchanged; runtime normalization is forbidden."]);
 end
 
 if isempty(Wcfg)
     if nLayers == 1 && requestedPorts == 1
-        if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false)) && ~strictMIMO
+        if ~logical(sixgr.util.structGet(arch, "HybridBeamformingEnabled", false)) && ~strictPrecoder
             prec.NormalizeW = normalizeW;
             return;
         end
@@ -151,7 +156,7 @@ if isempty(Wcfg)
         source = "identity";
     end
 else
-    WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW, strictMIMO);
+    WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW, strictPrecoder);
     Wports = WportsPerPRG(:, :, 1);
     if isstruct(pmiMeta) && isfield(pmiMeta, "Source") && strlength(string(pmiMeta.Source)) > 0
         source = string(pmiMeta.Source);
@@ -241,17 +246,43 @@ prec.HybridEquation = string(sixgr.util.structGet(hybridMeta, "Equation", ""));
 prec = localAttachArchitecture(prec, arch);
 prec = localAttachPowerInfo(prec, Wports, nLayers);
 prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers);
-if strictMIMO
+if strictPrecoder
     for prg = 1:size(WportsPerPRG,3)
-        sixgr.phy.mimo.MatrixContract.validate( ...
-            WportsPerPRG(:,:,prg),size(WportsPerPRG,1),nLayers);
+        try
+            sixgr.phy.mimo.MatrixContract.validate( ...
+                WportsPerPRG(:,:,prg),size(WportsPerPRG,1),nLayers);
+        catch ME
+            if string(ME.identifier) ~= "sixgr:mimo:PrecoderNormalizationMismatch"
+                rethrow(ME);
+            end
+            configuredHybrid = double(sixgr.util.structGet(cfg, ...
+                "phy.pdsch.hybridElementToPortMatrix", []));
+            resolvedHybrid = double(sixgr.util.structGet(hybridMeta, ...
+                "ElementToPortMatrix", []));
+            canonicalPhysical = double(sixgr.util.structGet(cfg, ...
+                "phy.canonicalGrant.spatialSignature", []));
+            error("sixgr:mimo:PrecoderNormalizationMismatch", ...
+                ['Immutable PDSCH precoder power mismatch: applied=%.17g logical=%.17g ' ...
+                 'canonical_physical=%.17g prg=%d/%d W_source=%s hybrid_source=%s ' ...
+                 'configured_hybrid_digest=%s resolved_hybrid_digest=%s ' ...
+                 'canonical_physical_digest=%s applied_digest=%s. Original: %s'], ...
+                localFrobeniusPower(WportsPerPRG(:,:,prg)), ...
+                localFrobeniusPower(WlogicalPortsPerPRG(:,:,min(prg,size(WlogicalPortsPerPRG,3)))), ...
+                localFrobeniusPower(canonicalPhysical), prg, size(WportsPerPRG,3), ...
+                char(WcfgSource), char(string(sixgr.util.structGet(arch, ...
+                "HybridElementToPortMatrixSource", ""))), ...
+                char(localMatrixDigest(configuredHybrid)), ...
+                char(localMatrixDigest(resolvedHybrid)), ...
+                char(localMatrixDigest(canonicalPhysical)), ...
+                char(localMatrixDigest(WportsPerPRG(:,:,prg))), ME.message);
+        end
     end
     selectedDigest = string(sixgr.util.structGet(cfg, ...
         "phy.pdsch.selectedPrecoderSHA256",""));
     appliedDigest = sixgr.phy.mimo.MatrixContract.digest(WportsPerPRG);
     if strlength(selectedDigest) == 0
         error("sixgr:mimo:MissingAppliedPrecoder", ...
-            "Strict PDSCH requires the scheduler-selected matrix SHA-256 identity.");
+            "Strict or immutable-grant PDSCH requires the selected matrix SHA-256 identity.");
     end
     if ~strcmpi(selectedDigest,appliedDigest)
         error("sixgr:mimo:PrecoderDigestMismatch", ...
@@ -260,10 +291,12 @@ if strictMIMO
     prec.SelectedMatrixSHA256 = selectedDigest;
     prec.AppliedMatrixSHA256 = appliedDigest;
     tciState = double(sixgr.util.structGet(cfg,"phy.pdsch.activeTCIStateID",NaN));
-    requireTCI = logical(sixgr.util.structGet(cfg,"phy.mimo.requireActiveTCIState",false));
-    if requireTCI && ~isfinite(tciState)
-        error("sixgr:mimo:InactiveTCIState", ...
-            "Strict beamformed PDSCH requires a decoded active TCI state.");
+    if strictMIMO
+        requireTCI = logical(sixgr.util.structGet(cfg,"phy.mimo.requireActiveTCIState",false));
+        if requireTCI && ~isfinite(tciState)
+            error("sixgr:mimo:InactiveTCIState", ...
+                "Strict beamformed PDSCH requires a decoded active TCI state.");
+        end
     end
     prec.ActiveTCIStateID = tciState;
     prec.PrecoderTraceTarget = 1;
@@ -271,6 +304,7 @@ if strictMIMO
     prec.TotalPowerPreservingTrace = prec.PrecoderTraceError <= 1e-10;
     prec.NormativeNormalizationPreserved = true;
 end
+
 if isstruct(pmiMeta)
     if isfield(pmiMeta, "PMI")
         prec.PMI = double(pmiMeta.PMI);
@@ -286,6 +320,22 @@ if isstruct(pmiMeta)
     end
 end
 
+end
+
+function power = localFrobeniusPower(W)
+power = NaN;
+if isnumeric(W) && ~isempty(W) && ...
+        all(isfinite(real(W(:)))) && all(isfinite(imag(W(:))))
+    power = double(sum(abs(double(W(:))).^2));
+end
+end
+
+function digest = localMatrixDigest(W)
+digest = "";
+if isnumeric(W) && ~isempty(W) && ...
+        all(isfinite(real(W(:)))) && all(isfinite(imag(W(:))))
+    digest = string(sixgr.phy.mimo.MatrixContract.digest(double(W)));
+end
 end
 
 function requestedPorts = localResolvePDSCHRequestedPorts(cfg)
@@ -630,8 +680,15 @@ meta = struct( ...
     "BeamIndices", []);
 
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+canonicalSource = "";
+if logical(sixgr.util.structGet(cfg, "phy.canonicalGrant.enabled", false))
+    canonicalSource = string(sixgr.util.structGet(cfg, ...
+        "phy.canonicalGrant.precoderSource", ""));
+end
 userSource = string(sixgr.util.structGet(userMeta, "PrecoderSource", ""));
-if strlength(strtrim(userSource)) > 0
+if strlength(strtrim(canonicalSource)) > 0
+    meta.Source = canonicalSource;
+elseif strlength(strtrim(userSource)) > 0
     meta.Source = userSource;
 else
     meta.Source = "explicit-matrix";

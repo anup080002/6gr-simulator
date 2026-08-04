@@ -117,9 +117,20 @@ cfg = sixgr.util.structSet(cfg, "rf.adcBits", ...
     double(sixgr.util.structGet(cfg, "phy.impairments.adcQuantizationBits", 10)));
 cfg = sixgr.util.structSet(cfg, "rf.dacBits", ...
     double(sixgr.util.structGet(cfg, "phy.impairments.dacQuantizationBits", 10)));
+% The strict positive O2I trial is a validation subcase, independent of a
+% parent SINR-sweep disabling large-scale attenuation. O2I cannot be
+% physically applied without the pathloss stage, so enable the dependency
+% atomically for this subcase instead of producing an internally invalid
+% configured-vs-applied report.
+cfg = sixgr.util.structSet(cfg, "channel.pathlossEnabled", true);
+cfg = sixgr.util.structSet(cfg, "channel.pathlossModel", ...
+    char(string(sixgr.util.structGet(cfg, "channel.pathlossModel", "nrPathLoss"))));
 cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", true);
-cfg = sixgr.util.structSet(cfg, "channel.o2i.model", ...
-    char(string(sixgr.util.structGet(cfg, "channel.o2i.model", "low"))));
+o2iModel = lower(strtrim(string(sixgr.util.structGet(cfg, "channel.o2i.model", "low"))));
+if ~any(o2iModel == ["low", "high"])
+    o2iModel = "low";
+end
+cfg = sixgr.util.structSet(cfg, "channel.o2i.model", char(o2iModel));
 end
 
 function [fs, meta] = localResolveSampleRate(cfg)

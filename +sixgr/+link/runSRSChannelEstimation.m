@@ -108,6 +108,13 @@ out.SpatialSignatureSHA256 = "";
 out.SpatialSignatureRows = NaN;
 out.SpatialSignatureColumns = NaN;
 out.SpatialSignatureSource = "";
+out.SpatialSignatureRawRank = NaN;
+out.SpatialSignatureRetainedRank = NaN;
+out.SpatialSignatureDetectionThreshold = NaN;
+out.SpatialSignatureNoiseVariance = NaN;
+out.SpatialSignatureNoiseMargin_dB = NaN;
+out.SpatialSignatureSnapshotCount = NaN;
+out.SpatialSignatureReductionMode = "";
 out.ChannelState = p.Results.ChannelState;
 
 configuredSRS = logical(sixgr.util.structGet(cfg, "phy.srs.enable", false));
@@ -268,16 +275,53 @@ try
     out.TPMICandidateCount = double(sixgr.util.structGet(srsULCSI, "TPMICandidateCount", NaN));
     out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
-    spatialSignature = sixgr.phy.mimo.spatialSignatureFromChannelEstimate( ...
-        rx.Hest, "Rank", out.EstimatedRI);
+    spatialSignatureMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+        "phy.mimo.muMimoSpatialSignatureMode", ...
+        sixgr.util.structGet(cfg, "mac.scheduler.muMimoSpatialSignatureMode", ...
+        "dominant_scheduled_rank")))));
+    spatialSignatureNoiseMargin_dB = double(sixgr.util.structGet(cfg, ...
+        "phy.mimo.muMimoSpatialSubspaceNoiseMargin_dB", ...
+        sixgr.util.structGet(cfg, ...
+        "mac.scheduler.muMimoSpatialSubspaceNoiseMargin_dB", NaN)));
+    spatialSignatureArgs = {"Rank", out.EstimatedRI, ...
+        "SubspaceMode", spatialSignatureMode};
+    if spatialSignatureMode == "complete_detectable_subspace"
+        spatialSignatureEstimate = localPilotSpatialChannelEstimateSlice( ...
+            rx.Hest, tx.SRSIndices);
+        if ~localHasFiniteComplexData(spatialSignatureEstimate)
+            error("sixgr:link:SRS:SpatialPilotEstimateUnavailable", ...
+                "Complete MU-MIMO spatial evidence requires finite channel " + ...
+                "vectors at the actually transmitted SRS pilot REs.");
+        end
+        spatialSignatureArgs = [spatialSignatureArgs, ...
+            {"NoiseVariance", double(rx.NoiseVar), ...
+             "NoiseMargin_dB", spatialSignatureNoiseMargin_dB}]; %#ok<AGROW>
+    else
+        spatialSignatureEstimate = rx.Hest;
+    end
+    [spatialSignature, spatialSignatureInfo] = ...
+        sixgr.phy.mimo.spatialSignatureFromChannelEstimate( ...
+        spatialSignatureEstimate, spatialSignatureArgs{:});
     out.SpatialSignatureToken = char( ...
         sixgr.phy.mimo.MatrixContract.serialize(spatialSignature));
     out.SpatialSignatureSHA256 = char( ...
         sixgr.phy.mimo.MatrixContract.digest(spatialSignature));
     out.SpatialSignatureRows = double(size(spatialSignature, 1));
     out.SpatialSignatureColumns = double(size(spatialSignature, 2));
-    out.SpatialSignatureSource = ...
-        "measured_srs_receiver_channel_estimate_dominant_rank_subspace";
+    out.SpatialSignatureRawRank = double(spatialSignatureInfo.RawNumericalRank);
+    out.SpatialSignatureRetainedRank = double(spatialSignatureInfo.RetainedRank);
+    out.SpatialSignatureDetectionThreshold = double(spatialSignatureInfo.DetectionThreshold);
+    out.SpatialSignatureNoiseVariance = double(spatialSignatureInfo.NoiseVariance);
+    out.SpatialSignatureNoiseMargin_dB = double(spatialSignatureInfo.NoiseMargin_dB);
+    out.SpatialSignatureSnapshotCount = double(spatialSignatureInfo.SnapshotCount);
+    out.SpatialSignatureReductionMode = char(string(spatialSignatureInfo.ReductionMode));
+    if spatialSignatureMode == "complete_detectable_subspace"
+        out.SpatialSignatureSource = ...
+            "measured_srs_receiver_channel_estimate_pilot_re_frequency_selective_complete_detectable_subspace";
+    else
+        out.SpatialSignatureSource = ...
+            "measured_srs_receiver_channel_estimate_dominant_rank_subspace";
+    end
     linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
         "ReceivedGrid", rx.RxGrid, ...
         "ReferenceIndices", tx.SRSIndices, ...
@@ -428,15 +472,22 @@ if nargin < 9
     trialIdx = 1;
 end
 txInfo = struct("OFDM", sixgr.util.structGet(info, "OFDMInfo", struct()));
-if ~(isstruct(state) && logical(sixgr.util.structGet(state, "Initialized", false)))
+if isstruct(state) && isfield(state, "ContractVersion")
+    state = localPrepareFactorySRSChannelState(state, cfg, tx, txInfo);
+    [y, channelReplay, state] = ...
+        sixgr.channel.ChannelFactory.applyRuntimeChannelState(state, x);
+elseif ~(isstruct(state) && logical(sixgr.util.structGet(state, "Initialized", false)))
     state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
     state.ChannelSeed = localTrialSeed(cfg, trialIdx);
+    [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state);
+else
+    [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state);
 end
-[y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state);
 useFading = logical(sixgr.util.structGet(channelReplay, "ChannelFadingApplied", false));
 if ~useFading
     y = localApplyTrackingDoppler(x, sampleRateHz, injectedDopplerHz);
 end
+
 referenceWaveform = y;
 
 cfgReplay = localPrepareSRSReplayCfg(cfg, snr_dB);
@@ -453,6 +504,49 @@ referenceWaveform = desiredWaveform;
 replay.InjectedNoiseVariance = double(nVar);
 if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "srs_replay_reference_waveform_awgn";
+end
+end
+
+function state = localPrepareFactorySRSChannelState(state, cfg, tx, txInfo)
+% Materialize SRS with the same UL antenna and time authority as PUSCH.
+userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
+activeTxPorts = max(1, size(tx.Waveform, 2));
+runtimeNumTx = localFirstFiniteScalar( ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumWaveformColumns", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumLogicalPorts", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumWaveformColumns", []), ...
+    sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumLogicalPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.maxULLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.maxLayers", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", []), ...
+    sixgr.util.structGet(cfg, "phy.pusch.numPorts", []), ...
+    activeTxPorts);
+runtimeNumTx = max(activeTxPorts, min(4, round(double(runtimeNumTx))));
+numRx = max(1, round(double(sixgr.phy.ul.resolveULDirectionalAntennaCount( ...
+    cfg, "rx", runtimeNumTx))));
+
+txRuntimeAntenna = sixgr.util.structGet(userMeta, "RuntimeUEAntenna", struct());
+txRuntimeMeta = sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta", struct());
+[txRuntimeAntenna, txRuntimeMeta] = ...
+    sixgr.rf.AntennaArrayFactory.logicalPortView( ...
+    txRuntimeAntenna, txRuntimeMeta, runtimeNumTx, ...
+    "srs_runtime_waveform_port_count");
+rxRuntimeAntenna = sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna", struct());
+rxRuntimeMeta = sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta", struct());
+
+state = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+    state, cfg, tx.Waveform, txInfo, ...
+    "NumTxAnt", runtimeNumTx, ...
+    "NumRxAnt", numRx, ...
+    "TransmitAntennaRuntime", txRuntimeAntenna, ...
+    "ReceiveAntennaRuntime", rxRuntimeAntenna, ...
+    "TransmitAntennaMeta", txRuntimeMeta, ...
+    "ReceiveAntennaMeta", rxRuntimeMeta);
+slotStart_s = double(sixgr.util.structGet(state, "TargetSlotStartTime_s", ...
+    sixgr.util.structGet(userMeta, "RuntimeSlotStartTime_s", NaN)));
+if isfinite(slotStart_s) && slotStart_s >= 0
+    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime( ...
+        state, slotStart_s, runtimeNumTx, tx.Waveform);
 end
 end
 
@@ -786,6 +880,53 @@ if isvector(pilotObs)
 end
 obs = mean(pilotObs, 2, "omitnan");
 obs = obs(:);
+end
+
+function pilotH = localPilotSpatialChannelEstimateSlice(H, pilotInd)
+% Keep every measured receive vector at each transmitted SRS pilot RE.
+pilotH = [];
+if isempty(H) || isempty(pilotInd)
+    return;
+end
+sz = size(H);
+if numel(sz) < 3
+    return;
+end
+K = sz(1);
+L = sz(2);
+nRx = sz(3);
+nPorts = 1;
+if numel(sz) >= 4
+    nPorts = sz(4);
+end
+flatDim = max(K * L, 1);
+ind = double(pilotInd(:));
+ind = ind(isfinite(ind) & ind >= 1);
+if isempty(ind)
+    return;
+end
+try
+    indexPortDim = max(1, ceil(max(ind) / flatDim));
+    [k, l, port] = ind2sub([K, L, indexPortDim], ind);
+catch
+    return;
+end
+n = numel(ind);
+pilotH = complex(NaN(n, 1, nRx));
+for index = 1:n
+    portIndex = min(max(round(double(port(index))), 1), nPorts);
+    if numel(sz) >= 4
+        value = reshape(H(k(index), l(index), :, portIndex), 1, 1, nRx);
+    else
+        value = reshape(H(k(index), l(index), :), 1, 1, nRx);
+    end
+    pilotH(index, 1, :) = value;
+end
+finiteRows = squeeze(all(isfinite(real(pilotH)) & isfinite(imag(pilotH)), 3));
+pilotH = pilotH(finiteRows, :, :);
+if isempty(pilotH)
+    pilotH = [];
+end
 end
 
 function [hTrue, symTimes_s, symIdx, source] = localReferencePilotChannel(referenceWaveform, carrier, pilotInd, pilotSym, srs, sampleRateHz, dopplerHz)

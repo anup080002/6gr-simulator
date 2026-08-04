@@ -1,0 +1,2 @@
+RunId,NegativeTrialType,InjectedFault,ExpectedFailureStage,ObservedFailureStage,ExactConfiguredMatch,DecodeCrcPass,StrictOk,NegativeExpectedOk,FailureReason
+"","no_negative_runtime_case_observed","none","not_applicable","not_applicable",1,1,0,1,""

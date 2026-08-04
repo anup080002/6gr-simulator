@@ -59,8 +59,16 @@ for ii = 1:numel(names)
 end
 airPath = fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv");
 strictTrialsForAir = localEnsureSRSLineageColumns(tables.srs_trials);
-runtimeTrialsForAir = localRuntimeSRSRows(localEnsureSRSLineageColumns(localReadOptionalTable(airPath)));
-airTrials = localAppendCompatTable(runtimeTrialsForAir, strictTrialsForAir);
+runtimeTrialsForAir = sixgr.truth.selectCanonicalRuntimeControlTrials( ...
+    localEnsureSRSLineageColumns(localReadOptionalTable(airPath)), "srs");
+if isempty(runtimeTrialsForAir)
+    airTrials = strictTrialsForAir;
+else
+    % A coupled scenario's air-interface table is primary runtime truth.
+    % Standalone strict trials remain in reference_signals/csv and must not
+    % be appended into that primary lifecycle.
+    airTrials = runtimeTrialsForAir;
+end
 sixgr.util.csvWriteTable(airPath, airTrials);
 rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(airTrials), ...
     "sixgr.phy.srs.exportStrictSRSArtifacts");

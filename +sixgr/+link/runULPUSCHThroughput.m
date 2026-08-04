@@ -218,6 +218,14 @@ trialPostEqSINRValueRole = strings(numFrames,1);
 trialPostEqSINRValueStatus = strings(numFrames,1);
 trialPostEqSINRNAReason = strings(numFrames,1);
 trialPostEqSINRPerLayer = strings(numFrames,1);
+trialPostEqSINRRawEqualizer = NaN(numFrames,1);
+trialPostEqSINRDMRSResidualBoundApplied = false(numFrames,1);
+trialPostEqSINRDMRSResidual = NaN(numFrames,1);
+trialPostEqDMRSResidualNoiseVar = NaN(numFrames,1);
+trialPostEqDMRSResidualSource = strings(numFrames,1);
+trialPostEqDecisionResidual = NaN(numFrames,1);
+trialPostEqDecisionResidualNoiseVar = NaN(numFrames,1);
+trialPostEqDecisionResidualSource = strings(numFrames,1);
 trialEVMProxySINR = NaN(numFrames,1);
 trialEVMProxySINRSource = strings(numFrames,1);
 trialEVMProxySINRValueRole = strings(numFrames,1);
@@ -292,6 +300,13 @@ trialEqualizerEngine = strings(numFrames,1);
 trialInterferenceCovarianceAvailable = false(numFrames,1);
 trialInterferenceCovarianceSource = strings(numFrames,1);
 trialInterferenceCovarianceStatus = strings(numFrames,1);
+trialMUMIMOReceiveCombinerApplied = false(numFrames,1);
+trialMUMIMOReceiveCombinerStatus = strings(numFrames,1);
+trialMUMIMOReceiveCombinerSource = strings(numFrames,1);
+trialMUMIMOReceiveCombinerInputBranches = NaN(numFrames,1);
+trialMUMIMOReceiveCombinerOutputBranches = NaN(numFrames,1);
+trialMUMIMOReceiveCombinerMatrixSHA256 = strings(numFrames,1);
+trialMUMIMOReceiveCombinerInterferenceProjected = false(numFrames,1);
 trialReceiverUsable = false(numFrames,1);
 trialDecodeAttempted = false(numFrames,1);
 trialDecodeUsable = false(numFrames,1);
@@ -504,6 +519,15 @@ trialPDCCHGatingActive = false(numFrames,1);
 trialSRSGatingActive = false(numFrames,1);
 trialControlEligible = false(numFrames,1);
 trialControlDecodeOk = false(numFrames,1);
+trialDCICrcPass = false(numFrames,1);
+trialPDCCHPayloadMatch = false(numFrames,1);
+trialPDCCHCausalGrantDecodeOk = false(numFrames,1);
+trialPDCCHMissedDetection = false(numFrames,1);
+trialPDCCHFalseAlarm = false(numFrames,1);
+trialGrantValid = false(numFrames,1);
+trialNegativeExpectedOk = false(numFrames,1);
+trialPDCCHBlindSearchEnabled = false(numFrames,1);
+trialPDCCHREGMappingAvailable = false(numFrames,1);
 trialPDCCHGrantBindingRequired = false(numFrames,1);
 trialPDCCHGrantBindingOk = false(numFrames,1);
 trialPDCCHGrantBindingStatus = strings(numFrames,1);
@@ -517,6 +541,9 @@ trialPDCCHGrantAggregationLevel = NaN(numFrames,1);
 trialPDCCHGrantCandidateIndex = NaN(numFrames,1);
 trialPDCCHGrantDCIFormat = strings(numFrames,1);
 trialGrantControlState = strings(numFrames,1);
+trialPDCCHControlFailureReason = strings(numFrames,1);
+trialPDCCHControlEvidenceSource = strings(numFrames,1);
+trialControlDecodeSource = strings(numFrames,1);
 trialCellAcquisitionState = strings(numFrames,1);
 trialAccessState = strings(numFrames,1);
 trialSRSValidityState = strings(numFrames,1);
@@ -670,6 +697,17 @@ for n = 1:numFrames
         trialSRSGatingActive(n) = logical(sixgr.util.structGet(grantSnapshot, "SRSGatingActive", false));
         trialControlEligible(n) = logical(sixgr.util.structGet(grantSnapshot, "ControlEligible", false));
         trialControlDecodeOk(n) = logical(sixgr.util.structGet(grantSnapshot, "ControlDecodeOk", false));
+        trialDCICrcPass(n) = logical(sixgr.util.structGet(grantSnapshot, "DCICrcPass", ...
+            sixgr.util.structGet(grantSnapshot, "PDCCHDCICrcPass", false)));
+        trialPDCCHPayloadMatch(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHPayloadMatch", false));
+        trialPDCCHCausalGrantDecodeOk(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHCausalGrantDecodeOk", false));
+        trialPDCCHMissedDetection(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHMissedDetection", false));
+        trialPDCCHFalseAlarm(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHFalseAlarm", false));
+        trialGrantValid(n) = logical(sixgr.util.structGet(grantSnapshot, "GrantValid", ...
+            sixgr.util.structGet(grantSnapshot, "PDCCHGrantValid", false)));
+        trialNegativeExpectedOk(n) = logical(sixgr.util.structGet(grantSnapshot, "NegativeExpectedOk", false));
+        trialPDCCHBlindSearchEnabled(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHBlindSearchEnabled", false));
+        trialPDCCHREGMappingAvailable(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHREGMappingAvailable", false));
         trialPDCCHGrantBindingRequired(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingRequired", false));
         trialPDCCHGrantBindingOk(n) = logical(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingOk", false));
         trialPDCCHGrantBindingStatus(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantBindingStatus", ""));
@@ -683,6 +721,9 @@ for n = 1:numFrames
         trialPDCCHGrantCandidateIndex(n) = double(sixgr.util.structGet(grantSnapshot, "PDCCHGrantCandidateIndex", NaN));
         trialPDCCHGrantDCIFormat(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHGrantDCIFormat", ""));
         trialGrantControlState(n) = string(sixgr.util.structGet(grantSnapshot, "GrantControlState", ""));
+        trialPDCCHControlFailureReason(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHControlFailureReason", ""));
+        trialPDCCHControlEvidenceSource(n) = string(sixgr.util.structGet(grantSnapshot, "PDCCHControlEvidenceSource", ""));
+        trialControlDecodeSource(n) = string(sixgr.util.structGet(grantSnapshot, "ControlDecodeSource", ""));
         trialCellAcquisitionState(n) = string(sixgr.util.structGet(grantSnapshot, "CellAcquisitionState", ""));
         trialAccessState(n) = string(sixgr.util.structGet(grantSnapshot, "AccessState", ""));
         trialSRSValidityState(n) = string(sixgr.util.structGet(grantSnapshot, "SRSValidityState", ""));
@@ -823,6 +864,17 @@ for n = 1:numFrames
         if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
             rxArgs = [rxArgs {"PHYGrant", phyGrantOverride}]; %#ok<AGROW>
         end
+        receiveCombiner = sixgr.util.structGet(grantSnapshotOverride, ...
+            "MUMIMOReceiveCombiningMatrix", sixgr.util.structGet(phyGrantOverride, ...
+            "LegacyGrantSnapshot.MUMIMOReceiveCombiningMatrix", []));
+        receiveCombinerDigest = string(sixgr.util.structGet(grantSnapshotOverride, ...
+            "MUMIMOReceiveCombiningMatrixSHA256", sixgr.util.structGet(phyGrantOverride, ...
+            "LegacyGrantSnapshot.MUMIMOReceiveCombiningMatrixSHA256", "")));
+        if ~isempty(receiveCombiner)
+            rxArgs = [rxArgs { ...
+                "ReceiveCombiningMatrix", receiveCombiner, ...
+                "ReceiveCombiningMatrixSHA256", receiveCombinerDigest}]; %#ok<AGROW>
+        end
         if expectedUCIPayload.hasPayload()
             rxArgs = [rxArgs {"ExpectedUCIPayload", expectedUCIPayload, ...
                 "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
@@ -878,6 +930,15 @@ for n = 1:numFrames
         trialInterferenceCovarianceAvailable(n) = logical(sixgr.util.structGet(rx, "InterferenceCovarianceAvailable", false));
         trialInterferenceCovarianceSource(n) = string(sixgr.util.structGet(rx, "InterferenceCovarianceSource", ""));
         trialInterferenceCovarianceStatus(n) = string(sixgr.util.structGet(rx, "InterferenceCovarianceStatus", ""));
+        trialMUMIMOReceiveCombinerApplied(n) = logical(sixgr.util.structGet(rx, "MUMIMOReceiveCombinerApplied", false));
+        trialMUMIMOReceiveCombinerStatus(n) = string(sixgr.util.structGet(rx, "MUMIMOReceiveCombinerStatus", ""));
+        trialMUMIMOReceiveCombinerSource(n) = string(sixgr.util.structGet(rx, "MUMIMOReceiveCombinerSource", ""));
+        trialMUMIMOReceiveCombinerInputBranches(n) = double(sixgr.util.structGet(rx, "MUMIMOReceiveCombinerInputBranches", NaN));
+        trialMUMIMOReceiveCombinerOutputBranches(n) = double(sixgr.util.structGet(rx, "MUMIMOReceiveCombinerOutputBranches", NaN));
+        trialMUMIMOReceiveCombinerMatrixSHA256(n) = string(sixgr.util.structGet(rx, "MUMIMOReceiveCombinerMatrixSHA256", ""));
+        trialMUMIMOReceiveCombinerInterferenceProjected(n) = logical(sixgr.util.structGet(rx, ...
+            "MUMIMOReceiveCombinerInterferenceContributionProjected", false)) || logical(sixgr.util.structGet(rx, ...
+            "MUMIMOReceiveCombinerInterferenceCovarianceProjected", false));
         trialReceiverUsable(n) = logical(sixgr.util.structGet(rx, "ReceiverUsable", false));
         trialDecodeAttempted(n) = logical(sixgr.util.structGet(rx, "DecodeAttempted", false));
         trialDecodeUsable(n) = logical(sixgr.util.structGet(rx, "DecodeUsable", false));
@@ -915,6 +976,14 @@ for n = 1:numFrames
         trialPostEqSINRValueStatus(n) = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
         trialPostEqSINRNAReason(n) = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
         trialPostEqSINRPerLayer(n) = localFormatNumericVector(sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN));
+        trialPostEqSINRRawEqualizer(n) = double(sixgr.util.structGet(rx, "PostEqSINRRawEqualizer_dB", NaN));
+        trialPostEqSINRDMRSResidualBoundApplied(n) = logical(sixgr.util.structGet(rx, "PostEqSINRDMRSResidualBoundApplied", false));
+        trialPostEqSINRDMRSResidual(n) = double(sixgr.util.structGet(rx, "PostEqSINRDMRSResidual_dB", NaN));
+        trialPostEqDMRSResidualNoiseVar(n) = double(sixgr.util.structGet(rx, "PostEqDMRSResidualNoiseVar", NaN));
+        trialPostEqDMRSResidualSource(n) = string(sixgr.util.structGet(rx, "PostEqDMRSResidualSource", ""));
+        trialPostEqDecisionResidual(n) = double(sixgr.util.structGet(rx, "PostEqDecisionResidual_dB", NaN));
+        trialPostEqDecisionResidualNoiseVar(n) = double(sixgr.util.structGet(rx, "PostEqDecisionResidualNoiseVar", NaN));
+        trialPostEqDecisionResidualSource(n) = string(sixgr.util.structGet(rx, "PostEqDecisionResidualSource", ""));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
@@ -1644,6 +1713,12 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.ComputedE_TS38212 = trialComputedE_TS38212(idx);
         T.RateMatchedBitsDelta_TS38212 = trialRateMatchedBits(idx) - trialComputedE_TS38212(idx);
         T.ConfiguredSNR_dB = trialConfiguredSNR(idx);
+        % UL-SCH transport-block CRC is applicable whenever the real
+        % decoder produced a usable TB decision.  Keep unavailable/crashed
+        % attempts as not applicable instead of defaulting every data row
+        % to false in downstream lifecycle normalization.
+        T.CRCApplicable = logical(trialULSCHDecodeAttempted(idx) & ...
+            trialULSCHDecodeAvailable(idx) & isfinite(trialCRC(idx)));
         T.TxWaveformColumns = trialTxWaveformColumns(idx);
         T.PhysicalTxAntennas = trialPhysicalTxAntennas(idx);
         T.RxWaveformBranches = trialRxWaveformBranches(idx);
@@ -1712,6 +1787,13 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.InterferenceCovarianceAvailable = trialInterferenceCovarianceAvailable(idx);
         T.InterferenceCovarianceSource = trialInterferenceCovarianceSource(idx);
         T.InterferenceCovarianceStatus = trialInterferenceCovarianceStatus(idx);
+        T.MUMIMOReceiveCombinerApplied = trialMUMIMOReceiveCombinerApplied(idx);
+        T.MUMIMOReceiveCombinerStatus = trialMUMIMOReceiveCombinerStatus(idx);
+        T.MUMIMOReceiveCombinerSource = trialMUMIMOReceiveCombinerSource(idx);
+        T.MUMIMOReceiveCombinerInputBranches = trialMUMIMOReceiveCombinerInputBranches(idx);
+        T.MUMIMOReceiveCombinerOutputBranches = trialMUMIMOReceiveCombinerOutputBranches(idx);
+        T.MUMIMOReceiveCombinerMatrixSHA256 = trialMUMIMOReceiveCombinerMatrixSHA256(idx);
+        T.MUMIMOReceiveCombinerInterferenceProjected = trialMUMIMOReceiveCombinerInterferenceProjected(idx);
         T.ReceiverUsable = trialReceiverUsable(idx);
         T.DecodeAttempted = trialDecodeAttempted(idx);
         T.DecodeUsable = trialDecodeUsable(idx);
@@ -1733,6 +1815,8 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.LLRScaleSource = trialLLRScaleSource(idx);
         T.LLRNoiseVariance = trialLLRNoiseVariance(idx);
         T.ReceiverHestSINR_dB = trialReceiverHestSINR(idx);
+        T.ReceiverHestSINRApplicable = logical(isfinite(trialReceiverHestSINR(idx)) & ...
+            trialChannelEstimateAvailable(idx) & trialDMRSRECount(idx) > 0);
         T.ReceiverHestSINRSource = trialReceiverHestSINRSource(idx);
         T.ReceiverHestSINRValueRole = trialReceiverHestSINRValueRole(idx);
         T.ReceiverHestSINRValueStatus = trialReceiverHestSINRValueStatus(idx);
@@ -1744,6 +1828,14 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.PostEqSINRValueStatus = trialPostEqSINRValueStatus(idx);
         T.PostEqSINRNAReason = trialPostEqSINRNAReason(idx);
         T.PostEqSINRPerLayer_dB = trialPostEqSINRPerLayer(idx);
+        T.PostEqSINRRawEqualizer_dB = trialPostEqSINRRawEqualizer(idx);
+        T.PostEqSINRDMRSResidualBoundApplied = trialPostEqSINRDMRSResidualBoundApplied(idx);
+        T.PostEqSINRDMRSResidual_dB = trialPostEqSINRDMRSResidual(idx);
+        T.PostEqDMRSResidualNoiseVar = trialPostEqDMRSResidualNoiseVar(idx);
+        T.PostEqDMRSResidualSource = trialPostEqDMRSResidualSource(idx);
+        T.PostEqDecisionResidual_dB = trialPostEqDecisionResidual(idx);
+        T.PostEqDecisionResidualNoiseVar = trialPostEqDecisionResidualNoiseVar(idx);
+        T.PostEqDecisionResidualSource = trialPostEqDecisionResidualSource(idx);
         T.PostEqSINRAvailable = trialPostEqSINRAvailable(idx);
         T.PostEqSINRReceiverDerived = trialPostEqSINRReceiverDerived(idx);
         T.SINRValidationStatus = trialSINRValidationStatus(idx);
@@ -1840,6 +1932,15 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.SRSGatingActive = trialSRSGatingActive(idx);
         T.ControlEligible = trialControlEligible(idx);
         T.ControlDecodeOk = trialControlDecodeOk(idx);
+        T.DCICrcPass = trialDCICrcPass(idx);
+        T.PDCCHPayloadMatch = trialPDCCHPayloadMatch(idx);
+        T.PDCCHCausalGrantDecodeOk = trialPDCCHCausalGrantDecodeOk(idx);
+        T.PDCCHMissedDetection = trialPDCCHMissedDetection(idx);
+        T.PDCCHFalseAlarm = trialPDCCHFalseAlarm(idx);
+        T.GrantValid = trialGrantValid(idx);
+        T.NegativeExpectedOk = trialNegativeExpectedOk(idx);
+        T.PDCCHBlindSearchEnabled = trialPDCCHBlindSearchEnabled(idx);
+        T.PDCCHREGMappingAvailable = trialPDCCHREGMappingAvailable(idx);
         T.PDCCHGrantBindingRequired = trialPDCCHGrantBindingRequired(idx);
         T.PDCCHGrantBindingOk = trialPDCCHGrantBindingOk(idx);
         T.PDCCHGrantBindingStatus = trialPDCCHGrantBindingStatus(idx);
@@ -1853,6 +1954,9 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.PDCCHGrantCandidateIndex = trialPDCCHGrantCandidateIndex(idx);
         T.PDCCHGrantDCIFormat = trialPDCCHGrantDCIFormat(idx);
         T.GrantControlState = trialGrantControlState(idx);
+        T.PDCCHControlFailureReason = trialPDCCHControlFailureReason(idx);
+        T.PDCCHControlEvidenceSource = trialPDCCHControlEvidenceSource(idx);
+        T.ControlDecodeSource = trialControlDecodeSource(idx);
         T.CellAcquisitionState = trialCellAcquisitionState(idx);
         T.AccessState = trialAccessState(idx);
         T.SRSValidityState = trialSRSValidityState(idx);
@@ -2916,40 +3020,11 @@ if nargin < 3 || ~(isnumeric(fallback) && isscalar(fallback) && isfinite(fallbac
     fallback = 1;
 end
 role = upper(string(role));
-userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 if role == "RX"
-    values = [ ...
-        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumPorts", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumPorts", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeServingBSAntennaMeta.NumWaveformColumns", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeServingBSAntenna.NumWaveformColumns", NaN), ...
-        sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "channel.ul.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.ul.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "channel.nRxAntUL", NaN), ...
-        sixgr.util.structGet(cfg, "scenario.bs.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.bs.numPorts", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.bs.numElements", NaN), ...
-        sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.nRxAnt", NaN), ...
-        fallback];
+    count = sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", fallback);
 else
-    values = [ ...
-        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumPorts", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumPorts", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeUEAntennaMeta.NumWaveformColumns", NaN), ...
-        sixgr.util.structGet(userMeta, "RuntimeUEAntenna.NumWaveformColumns", NaN), ...
-        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "channel.ul.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.ul.nTxAnt", NaN), ...
-        sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", NaN), ...
-        sixgr.util.structGet(cfg, "phy.pusch.numPorts", NaN), ...
-        sixgr.util.structGet(cfg, "channel.nTxAntUL", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.ue.numPorts", NaN), ...
-        sixgr.util.structGet(cfg, "antenna.ue.numElements", NaN), ...
-        fallback];
+    count = sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", fallback);
 end
-count = localFirstFiniteScalar(values, fallback);
 count = max(1, round(double(count)));
 end
 
@@ -3634,6 +3709,7 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'string','logical','logical','logical','string'};
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConfiguredSNR_dB = zeros(0,1);
+T.CRCApplicable = false(0,1);
 T.TxWaveformColumns = zeros(0,1);
 T.PhysicalTxAntennas = zeros(0,1);
 T.RxWaveformBranches = zeros(0,1);
@@ -3687,6 +3763,13 @@ T.EqualizerEngine = strings(0,1);
 T.InterferenceCovarianceAvailable = false(0,1);
 T.InterferenceCovarianceSource = strings(0,1);
 T.InterferenceCovarianceStatus = strings(0,1);
+T.MUMIMOReceiveCombinerApplied = false(0,1);
+T.MUMIMOReceiveCombinerStatus = strings(0,1);
+T.MUMIMOReceiveCombinerSource = strings(0,1);
+T.MUMIMOReceiveCombinerInputBranches = zeros(0,1);
+T.MUMIMOReceiveCombinerOutputBranches = zeros(0,1);
+T.MUMIMOReceiveCombinerMatrixSHA256 = strings(0,1);
+T.MUMIMOReceiveCombinerInterferenceProjected = false(0,1);
 T.ReceiverUsable = false(0,1);
 T.DecodeAttempted = false(0,1);
 T.DecodeUsable = false(0,1);
@@ -3708,6 +3791,7 @@ T.LLRFinite = false(0,1);
 T.LLRScaleSource = strings(0,1);
 T.LLRNoiseVariance = zeros(0,1);
 T.ReceiverHestSINR_dB = zeros(0,1);
+T.ReceiverHestSINRApplicable = false(0,1);
 T.ReceiverHestSINRSource = strings(0,1);
 T.ReceiverHestSINRValueRole = strings(0,1);
 T.ReceiverHestSINRValueStatus = strings(0,1);
@@ -3719,6 +3803,14 @@ T.PostEqSINRValueRole = strings(0,1);
 T.PostEqSINRValueStatus = strings(0,1);
 T.PostEqSINRNAReason = strings(0,1);
 T.PostEqSINRPerLayer_dB = strings(0,1);
+T.PostEqSINRRawEqualizer_dB = zeros(0,1);
+T.PostEqSINRDMRSResidualBoundApplied = false(0,1);
+T.PostEqSINRDMRSResidual_dB = zeros(0,1);
+T.PostEqDMRSResidualNoiseVar = zeros(0,1);
+T.PostEqDMRSResidualSource = strings(0,1);
+T.PostEqDecisionResidual_dB = zeros(0,1);
+T.PostEqDecisionResidualNoiseVar = zeros(0,1);
+T.PostEqDecisionResidualSource = strings(0,1);
 T.PostEqSINRAvailable = false(0,1);
 T.PostEqSINRReceiverDerived = false(0,1);
 T.SINRValidationStatus = strings(0,1);
@@ -3819,6 +3911,15 @@ T.PDCCHGatingActive = false(0,1);
 T.SRSGatingActive = false(0,1);
 T.ControlEligible = false(0,1);
 T.ControlDecodeOk = false(0,1);
+T.DCICrcPass = false(0,1);
+T.PDCCHPayloadMatch = false(0,1);
+T.PDCCHCausalGrantDecodeOk = false(0,1);
+T.PDCCHMissedDetection = false(0,1);
+T.PDCCHFalseAlarm = false(0,1);
+T.GrantValid = false(0,1);
+T.NegativeExpectedOk = false(0,1);
+T.PDCCHBlindSearchEnabled = false(0,1);
+T.PDCCHREGMappingAvailable = false(0,1);
 T.PDCCHGrantBindingRequired = false(0,1);
 T.PDCCHGrantBindingOk = false(0,1);
 T.PDCCHGrantBindingStatus = strings(0,1);
@@ -3832,6 +3933,9 @@ T.PDCCHGrantAggregationLevel = zeros(0,1);
 T.PDCCHGrantCandidateIndex = zeros(0,1);
 T.PDCCHGrantDCIFormat = strings(0,1);
 T.GrantControlState = strings(0,1);
+T.PDCCHControlFailureReason = strings(0,1);
+T.PDCCHControlEvidenceSource = strings(0,1);
+T.ControlDecodeSource = strings(0,1);
 T.CellAcquisitionState = strings(0,1);
 T.AccessState = strings(0,1);
 T.SRSValidityState = strings(0,1);
@@ -5375,9 +5479,13 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "SchedulerCQIRawCQI","SchedulerAdjustedSINR_dB","SchedulerSINRBackoff_dB","SchedulerCQISource", ...
     "MCSIndexAuthority","GrantOperatingPointSource", ...
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk", ...
+    "DCICrcPass","PDCCHPayloadMatch","PDCCHCausalGrantDecodeOk", ...
+    "PDCCHMissedDetection","PDCCHFalseAlarm","GrantValid", ...
+    "NegativeExpectedOk","PDCCHBlindSearchEnabled","PDCCHREGMappingAvailable", ...
     "PDCCHGrantBindingRequired","PDCCHGrantBindingOk","PDCCHGrantBindingStatus","PDCCHGrantBindingFailureCode", ...
     "PDCCHGrantDCIId","PDCCHGrantDCIFieldsHash","PDCCHGrantFieldsHash","PDCCHGrantSearchSpaceId", ...
     "PDCCHGrantCORESETId","PDCCHGrantAggregationLevel","PDCCHGrantCandidateIndex","PDCCHGrantDCIFormat","GrantControlState", ...
+    "PDCCHControlFailureReason","PDCCHControlEvidenceSource","ControlDecodeSource", ...
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
     "TRSGatingActive","TRSValidityState","TrackingEligibility","TRSAgeSlots","LastSuccessfulTRSSlot","LastEstimatedTRSDopplerHz", ...
     "TRSStateSource","TRSRuntimeConsumer","TRSInfluencedDecision","TRSInfluenceDefinition","TRSReceiverIntegrationStatus","TRSReceiverIntegrationBlocker", ...

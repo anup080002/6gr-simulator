@@ -1,0 +1,7 @@
+Case,Ok,Skipped,BER,BLER,Throughput_Mbps,EVM_rms,PAPR_CP_dB,NMSE_dB,Notes,TrialCount,PassCount,FailCount,CrashCount,RequestedChannelModel,ObservedChannelModel,FallbackUsed
+"CellSearch_MIB_SIB1",1,0,NaN,0,NaN,NaN,NaN,NaN,"PBCH geometry-driven; geometry_driven=true; measured_sinr_source=PostEqSINR_dB; measured_sinr_range_db=[157,157]",4,4,0,0,"CDL-C","CDL-C",0
+"PRACH_Detection",1,0,NaN,0,NaN,NaN,NaN,NaN,"PRACH geometry-driven; geometry_driven=true; measured_sinr_source=not_applicable_or_unavailable",4,4,0,0,"CDL-C","CDL-C",0
+"DL_PDSCH_Throughput",1,0,0,0,737.696,0.0405491962530092,NaN,NaN,"DL geometry-driven; geometry_driven=true; measured_sinr_source=PostEqSINR_dB; measured_sinr_range_db=[28.3,31.3]; steady_state_warmup_rows_excluded=true",6,6,0,0,"CDL-C","CDL-C",0
+"UL_PUSCH_Throughput",1,0,0,0,803.232,0.0359958481630038,NaN,NaN,"UL geometry-driven; geometry_driven=true; measured_sinr_source=PostEqSINR_dB; measured_sinr_range_db=[29.3,30.6]; steady_state_warmup_rows_excluded=true",2,2,0,0,"CDL-C","CDL-C",0
+"UL_SRS_ChannelEst",1,0,NaN,NaN,NaN,NaN,NaN,-48.3229948823695,"SRS geometry-driven; nmse_source=srs_trials.NMSE_dB; measured_sinr_source=MeasuredSINR_dB; measured_sinr_range_db=[34.5,35.5]",4,4,0,0,"CDL-C","CDL-C",0
+"UL_LowPAPR",1,0,NaN,NaN,NaN,NaN,10.9528919292776,NaN,"UL low-PAPR geometry-driven; papr_source=ul_pusch_trials.PAPR_dB; measured_sinr_source=PostEqSINR_dB; measured_sinr_range_db=[29.3,30.6]; dfts_comparison_unavailable_without_transform_precoding_trials",NaN,NaN,NaN,NaN,"","",0

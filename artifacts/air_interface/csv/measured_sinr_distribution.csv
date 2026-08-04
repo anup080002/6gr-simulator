@@ -1,0 +1,9 @@
+Direction,UEIndex,RNTI,PostEqSINR_dB_BinCenter,TrialCount,Fraction,PropagationDistance_m_mean,LargeScaleSINR_dB_mean,ServingRSRP_dBm_mean,AppliedPathloss_dB_mean,AppliedShadowFading_dB_mean,SourceArtifact
+"DL",1,1,-1.5,1,0.5,264.280920400292,NaN,22.475180227167,0,0,"dl_pdsch_trials.csv"
+"DL",1,1,9.5,1,0.5,264.280920400292,NaN,22.475180227167,0,0,"dl_pdsch_trials.csv"
+"DL",2,2,-0.5,1,0.5,431.406921433355,NaN,21.4999392227066,0,0,"dl_pdsch_trials.csv"
+"DL",2,2,10.5,1,0.5,431.406921433355,NaN,21.4999392227066,0,0,"dl_pdsch_trials.csv"
+"DL",3,3,1.5,1,1,388.302990651068,NaN,22.7861924956467,0,0,"dl_pdsch_trials.csv"
+"DL",4,4,1.5,1,1,287.821685364051,NaN,21.903571816293,0,0,"dl_pdsch_trials.csv"
+"UL",1,1,4.5,1,1,264.280920400292,NaN,22.475180227167,0,0,"ul_pusch_trials.csv"
+"UL",2,2,5.5,1,1,431.406921433355,NaN,21.4999392227066,0,0,"ul_pusch_trials.csv"

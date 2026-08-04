@@ -53,8 +53,15 @@ for ii = 1:numel(names)
         "sixgr.phy.trs.exportStrictTRSArtifacts");
 end
 airPath = fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv");
-sixgr.util.csvWriteTable(airPath, tables.trs_trials);
-rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(tables.trs_trials), ...
+runtimeTrialsForAir = sixgr.truth.selectCanonicalRuntimeControlTrials( ...
+    localReadOptionalTable(airPath), "trs");
+if isempty(runtimeTrialsForAir)
+    airTrials = tables.trs_trials;
+else
+    airTrials = runtimeTrialsForAir;
+end
+sixgr.util.csvWriteTable(airPath, airTrials);
+rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(airTrials), ...
     "sixgr.phy.trs.exportStrictTRSArtifacts");
 compatTables = struct( ...
     "trs_config_strict_control", "trs_config_strict", ...
@@ -66,7 +73,11 @@ compatTables = struct( ...
 for ii = 1:numel(compatNames)
     name = compatNames(ii);
     tableName = string(compatTables.(name));
-    T = tables.(tableName);
+    if tableName == "trs_trials"
+        T = airTrials;
+    else
+        T = tables.(tableName);
+    end
     outPath = compatMap.(name);
     sixgr.util.csvWriteTable(outPath, T);
     rows(numel(names) + 1 + ii) = localManifestRow(outPath, "text/csv", "csv", height(T), ...
@@ -99,6 +110,20 @@ sixgr.util.csvWriteTable(manifestPath, manifest);
 manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
     "sixgr.phy.trs.exportStrictTRSArtifacts"), "AsArray", true);
 sixgr.util.csvWriteTable(manifestPath, manifest);
+end
+
+function T = localReadOptionalTable(path)
+T = table();
+if exist(char(string(path)), "file") ~= 2
+    return;
+end
+try
+    T = readtable(char(string(path)), "FileType", "text", ...
+        "Delimiter", ",", "ReadVariableNames", true, ...
+        "VariableNamingRule", "preserve");
+catch
+    T = table();
+end
 end
 
 function payloads = localJsonPayloads(result, csvMap)

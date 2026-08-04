@@ -1,0 +1,9 @@
+RunId,StageOrder,StageName,EvidenceFields,StagePass,UsedOracleFields,FailureReason,ImplementationPath
+"sib1_runtime_waveform",1,"SSB_PSS_SSS_CELL_SEARCH","NCellID,SSBIndex,TimingOffsetSamples,FrequencyOffsetHz",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",2,"PBCH_BCH_MIB_RECOVERY","BCHCrcPass,MIBDecoded,PDCCHConfigSIB1",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",3,"CORESET0_SEARCHSPACE0_RESOLUTION","CORESET0RBStart,CORESET0NumRB,CORESET0DurationSymbols,SearchSpace0ID",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",4,"SI_RNTI_DCI_1_0_BLIND_DECODE","PDCCHCandidatesAttempted,DCICrcPass,DCIRNTI,DCIFormat,DCIPayloadHex",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",5,"SIB1_PDSCH_DMRS_CHANNEL_ESTIMATION","SIB1PDSCHReceiverHestSINR_dB,SIB1PDSCHReceiverHestSINRSource",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",6,"SIB1_PDSCH_EQUALIZATION","PDSCHModulation,PDSCHRBStart,PDSCHNumRB,PDSCHSymbolStart,PDSCHNumSymbols",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",7,"SIB1_DLSCH_CRC","DLSCHCrcPass,SIB1PayloadNumBits,SIB1PayloadHashRx",1,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"
+"sib1_runtime_waveform",8,"SIB1_ASN1_DECODE","SIB1ASN1DecodeOk,SIB1RxTreeHash,SIB1TreeEqual",0,"","","sixgr.phy.broadcast.recoverSIB1FromWaveform"

@@ -333,54 +333,23 @@ end
 
 function cfgOut = localSanitizeSIB1PrecodingConfig(cfgIn)
 cfgOut = cfgIn;
-nLayers = max(1, round(double(sixgr.util.structGet(cfgOut, "phy.pdsch.numLayers", ...
-    sixgr.util.structGet(cfgOut, "phy.pdsch.nLayers", 1)))));
+% SI-RNTI SIB1 is a common, single-layer broadcast allocation.  The
+% scenario data-PDSCH rank and immutable UE-specific precoder are not part
+% of that allocation's context.  Establish the broadcast context before
+% Type-0/PDSCH materialization so a rank-2 data matrix cannot become a
+% stale explicit matrix after deriveType0PDCCHFromMIB sets NumLayers=1.
+nLayers = 1;
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numLayers", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nLayers", nLayers);
 paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
-resolvedPorts = NaN;
 for i = 1:numel(paths)
-    path = paths(i);
-    Wcfg = sixgr.util.structGet(cfgOut, path, []);
-    if isempty(Wcfg)
-        continue;
-    end
-    Wcfg = localAdaptSIB1PrecodingMatrix(Wcfg, nLayers);
-    cfgOut = sixgr.util.structSet(cfgOut, path, Wcfg);
-    if ~isempty(Wcfg)
-        resolvedPorts = size(Wcfg, 1);
-    end
+    cfgOut = sixgr.util.structSet(cfgOut, paths(i), []);
 end
-if isfinite(resolvedPorts) && resolvedPorts >= nLayers
-    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", resolvedPorts);
-    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", resolvedPorts);
-end
-end
-
-function Wout = localAdaptSIB1PrecodingMatrix(Wcfg, nLayers)
-Wout = [];
-if isempty(Wcfg)
-    return;
-end
-nLayers = max(1, round(double(nLayers)));
-sz = size(Wcfg);
-if ndims(Wcfg) > 2 && sz(3) == 1
-    Wcfg = squeeze(Wcfg);
-    sz = size(Wcfg);
-end
-if ndims(Wcfg) > 2 || numel(sz) < 2
-    return;
-end
-if sz(2) >= nLayers
-    Wout = double(Wcfg(:, 1:nLayers));
-elseif sz(1) == nLayers && sz(2) >= nLayers
-    Wout = double(Wcfg.');
-end
-if isempty(Wout) || size(Wout, 1) < nLayers
-    Wout = [];
-    return;
-end
-colNorm = sqrt(sum(abs(Wout).^2, 1));
-colNorm(colNorm <= eps) = 1;
-Wout = Wout ./ colNorm;
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", nLayers);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.enabled", false);
+cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.mode", ...
+    "broadcast_single_port");
 end
 
 function durationMs = localResolvePBCHObservationDurationMs(cfg)

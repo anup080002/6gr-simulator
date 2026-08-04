@@ -1,0 +1,2 @@
+MinBLER,MaxBLER,MinBER,MaxBER,KPIFormulaVersion,BlerBerReconciliationOk,FailureReason
+1,1,0.221774032907055,0.447582744111395,"measured_sinr_geometry_v1",1,""

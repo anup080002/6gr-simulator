@@ -91,6 +91,12 @@ pdsch.DMRS.NIDNSCID = double(raCfg.NCellID);
 pdsch.DMRS.NSCID = 0;
 pdsch.DMRS.DMRSPortSet = 0;
 pdsch.EnablePTRS = logical(sixgr.util.structGet(s, "EnablePTRS", false));
+if pdsch.EnablePTRS
+    pdsch.PTRS.PTRSPortSet = double(sixgr.util.structGet(s, "PTRSPortSet", 0));
+    pdsch.PTRS.TimeDensity = double(sixgr.util.structGet(s, "PTRSTimeDensity", 1));
+    pdsch.PTRS.FrequencyDensity = double(sixgr.util.structGet(s, "PTRSFrequencyDensity", 2));
+    pdsch.PTRS.REOffset = char(string(sixgr.util.structGet(s, "PTRSREOffset", "00")));
+end
 sched = struct();
 sched.RNTI = double(raCfg.TempCRNTI);
 sched.DCIFormat = "1_0";

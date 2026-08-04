@@ -1,0 +1,4 @@
+RunId,FailureIndex,FailureCode,FailureCategory,FailureSeverity,RequiredFailureCountContribution,FailureDefinition
+"",1,"dl_pdsch_bler_objective_failed","dl_pdsch_objective","high",1,"Objective-scope raw decoder BLER exceeded threshold: raw=1, threshold=0.1"
+"",2,"dl_pdsch_ber_objective_failed","dl_pdsch_objective","high",1,"Objective-scope weighted raw decoder BER exceeded threshold: raw=0.34072, threshold=0.001"
+"",3,"dl_pdsch_decode_success_objective_failed","dl_pdsch_objective","high",1,"dl_pdsch_decode_success_objective_failed"

@@ -1,0 +1,109 @@
+    CheckpointOk: 1
+          DLRows: 59
+          ULRows: 20
+
+[2026-08-04T10:02:46Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase19_full_bidir_mu_20260804_04 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_04
+[2026-08-04T10:02:50Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-04T10:02:50Z] INFO Writing resolved snapshots.
+[2026-08-04T10:02:52Z] INFO Exporting live geometry artifacts.
+[2026-08-04T10:02:52Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-04T10:02:52Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-04T10:02:52Z] INFO Waveform bundle starting: snr=0.000 dB sweepPoints=3 canonicalSlots=40 monteCarlo=1 slotDuration_s=0.000500
+[Warning: Ignoring 'InvertHardCopy' property. To control the background when exporting a figure, use the exportgraphics function.]
+[> In print (line 52)
+In sixgr.util.exportFigureArtifact>localExportGraphics (line 148)
+In sixgr.util.exportFigureArtifact (line 43)
+In sixgr.link.exportLinkKPIs (line 171)
+In sixgr.truth.runWaveformLinkBundle>localResumeCompletedRuntimeFinalization (line 783)
+In sixgr.truth.runWaveformLinkBundle (line 148)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 208)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2055)
+In sixgr.lls6g.runners.runSingle (line 60)]
+[2026-08-04T10:04:49Z] INFO Waveform bundle finished: ok=1
+[2026-08-04T10:04:49Z] INFO Running strict waveform-backed control evidence for waveform-bundle scenario target_cases.
+[2026-08-04T10:05:15Z] INFO Strict waveform-backed control evidence finished: ok=1
+[2026-08-04T10:05:15Z] INFO Running supplemental strict PRACH waveform validation for waveform-bundle scenario.
+[2026-08-04T10:05:17Z] INFO Strict PRACH progress: stage=strict_prach_config_validation supplemental_completion=0.020 note=Validating strict PRACH configuration and root-sequence evidence.
+[2026-08-04T10:05:17Z] INFO Strict PRACH progress: stage=strict_prach_positive_high_snr supplemental_completion=0.080 note=Running positive high-SNR PRACH receive validation.
+[2026-08-04T10:05:18Z] INFO Strict PRACH progress: stage=strict_prach_missed_detection_sweep supplemental_completion=0.180 note=Running PRACH missed-detection SNR sweep.
+[2026-08-04T10:05:24Z] INFO Strict PRACH progress: stage=strict_prach_false_alarm_sweep supplemental_completion=0.360 note=Running PRACH false-alarm noise-only sweep.
+[2026-08-04T10:05:28Z] INFO Strict PRACH progress: stage=strict_prach_timing_offset_sweep supplemental_completion=0.540 note=Running PRACH timing-offset sweep.
+[2026-08-04T10:05:29Z] INFO Strict PRACH progress: stage=strict_prach_frequency_offset_sweep supplemental_completion=0.660 note=Running PRACH frequency-offset and restricted-set sweep.
+[2026-08-04T10:05:30Z] INFO Strict PRACH progress: stage=strict_prach_collision_trials supplemental_completion=0.780 note=Running PRACH collision and multi-preamble trials.
+[2026-08-04T10:05:31Z] INFO Strict PRACH progress: stage=strict_prach_multi_occasion_trials supplemental_completion=0.860 note=Running PRACH multi-occasion RARNTI trials.
+[2026-08-04T10:05:32Z] INFO Strict PRACH progress: stage=strict_prach_negative_wrong_config supplemental_completion=0.920 note=Running PRACH negative wrong-root receiver guard.
+[2026-08-04T10:05:33Z] INFO Strict PRACH progress: stage=strict_prach_artifact_export supplemental_completion=0.970 note=Writing strict PRACH waveform evidence artifacts.
+[2026-08-04T10:05:41Z] INFO Strict PRACH progress: stage=strict_prach_validation_complete supplemental_completion=1.000 note=Strict PRACH waveform validation completed.
+[2026-08-04T10:05:41Z] INFO Running supplemental strict SRS waveform validation for waveform-bundle scenario.
+[2026-08-04T10:08:50Z] INFO Running supplemental strict TRS waveform validation for waveform-bundle scenario.
+[2026-08-04T10:09:04Z] INFO Running supplemental strict SIB1/PBCH waveform mini-anchor validation for waveform-bundle scenario.
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=3500000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=0 ShadowEnabled=0 LOSEnabled=0
+[Warning: Ignoring 'InvertHardCopy' property. To control the background when exporting a figure, use the exportgraphics function.]
+[> In print (line 52)
+In sixgr.util.exportFigureArtifact>localExportGraphics (line 148)
+In sixgr.util.exportFigureArtifact (line 43)
+In sixgr.phy.ra.exportRAEvidenceArtifacts>localWriteFigures (line 182)
+In sixgr.phy.ra.exportRAEvidenceArtifacts (line 114)
+In sixgr.phy.ra.runFourStepRA>localFinalize (line 520)
+In sixgr.phy.ra.runFourStepRA (line 441)
+In sixgr.phy.broadcast.runSIB1StrictMiniAnchor (line 60)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleSupplementalStrictEvidence (line 364)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 269)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2055)
+In sixgr.lls6g.runners.runSingle (line 60)]
+[Warning: Ignoring 'InvertHardCopy' property. To control the background when exporting a figure, use the exportgraphics function.]
+[> In print (line 52)
+In sixgr.util.exportFigureArtifact>localExportGraphics (line 148)
+In sixgr.util.exportFigureArtifact (line 43)
+In sixgr.phy.ra.exportRAEvidenceArtifacts>localWriteFigures (line 201)
+In sixgr.phy.ra.exportRAEvidenceArtifacts (line 114)
+In sixgr.phy.ra.runFourStepRA>localFinalize (line 520)
+In sixgr.phy.ra.runFourStepRA (line 441)
+In sixgr.phy.broadcast.runSIB1StrictMiniAnchor (line 60)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleSupplementalStrictEvidence (line 364)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 269)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2055)
+In sixgr.lls6g.runners.runSingle (line 60)]
+[Warning: Ignoring 'InvertHardCopy' property. To control the background when exporting a figure, use the exportgraphics function.]
+[> In print (line 52)
+In sixgr.util.exportFigureArtifact>localExportGraphics (line 148)
+In sixgr.util.exportFigureArtifact (line 43)
+In sixgr.phy.ra.exportRAEvidenceArtifacts>localWriteFigures (line 209)
+In sixgr.phy.ra.exportRAEvidenceArtifacts (line 114)
+In sixgr.phy.ra.runFourStepRA>localFinalize (line 520)
+In sixgr.phy.ra.runFourStepRA (line 441)
+In sixgr.phy.broadcast.runSIB1StrictMiniAnchor (line 60)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleSupplementalStrictEvidence (line 364)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 269)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2055)
+In sixgr.lls6g.runners.runSingle (line 60)]
+[Warning: Ignoring 'InvertHardCopy' property. To control the background when exporting a figure, use the exportgraphics function.]
+[> In print (line 52)
+In sixgr.util.exportFigureArtifact>localExportGraphics (line 148)
+In sixgr.util.exportFigureArtifact (line 43)
+In sixgr.phy.ra.exportRAEvidenceArtifacts>localWriteFigures (line 231)
+In sixgr.phy.ra.exportRAEvidenceArtifacts (line 114)
+In sixgr.phy.ra.runFourStepRA>localFinalize (line 520)
+In sixgr.phy.ra.runFourStepRA (line 441)
+In sixgr.phy.broadcast.runSIB1StrictMiniAnchor (line 60)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleSupplementalStrictEvidence (line 364)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 269)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2055)
+In sixgr.lls6g.runners.runSingle (line 60)]
+[Warning: Ignoring 'InvertHardCopy' property. To control the background when exporting a figure, use the exportgraphics function.]
+[> In print (line 52)
+In sixgr.util.exportFigureArtifact>localExportGraphics (line 148)
+In sixgr.util.exportFigureArtifact (line 43)
+In sixgr.phy.ra.exportRAEvidenceArtifacts>localWriteFigures (line 243)
+In sixgr.phy.ra.exportRAEvidenceArtifacts (line 114)
+In sixgr.phy.ra.runFourStepRA>localFinalize (line 520)
+In sixgr.phy.ra.runFourStepRA (line 441)
+In sixgr.phy.broadcast.runSIB1StrictMiniAnchor (line 60)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleSupplementalStrictEvidence (line 364)
+In sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 269)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2055)
+In sixgr.lls6g.runners.runSingle (line 60)]
+[2026-08-04T10:10:59Z] INFO Running supplemental strict Channel/RF validation for waveform-bundle scenario.
+[2026-08-04T10:11:16Z] INFO Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.
+[2026-08-04T10:11:22Z] ERROR Run failed: sixgr:truth:InitialAccessLifecycleSchemaMissing | Initial-access lifecycle evidence requires columns: UEIndex, EventName, Slot, Time_s.
+[2026-08-04T10:11:23Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.

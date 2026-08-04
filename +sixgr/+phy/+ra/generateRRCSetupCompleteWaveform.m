@@ -44,6 +44,10 @@ grant.RV = double(s.RV);
 grant.NLayers = double(s.NLayers);
 grant.TransformPrecoding = logical(s.TransformPrecoding);
 grant.EnablePTRS = logical(sixgr.util.structGet(s, "EnablePTRS", false));
+grant.PTRSPortSet = double(sixgr.util.structGet(s, "PTRSPortSet", 0));
+grant.PTRSTimeDensity = double(sixgr.util.structGet(s, "PTRSTimeDensity", 1));
+grant.PTRSFrequencyDensity = double(sixgr.util.structGet(s, "PTRSFrequencyDensity", 2));
+grant.PTRSREOffset = string(sixgr.util.structGet(s, "PTRSREOffset", "00"));
 grant.TemporaryCRNTI = double(raCfg.FinalCRNTI);
 end
 

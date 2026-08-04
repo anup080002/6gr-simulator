@@ -1,0 +1,2 @@
+RunId,BLER_DL_min,BLER_UL_min,Goodput_DL_max_Mbps,Goodput_UL_max_Mbps,KPIFormulaVersion,KPIReconciliationPass,StrictOk,Status,FailureReason,ULSourceRowsHash,DLSourceRowsHash,ULSourceRowCount,DLSourceRowCount,ULEligibleRowCount,DLEligibleRowCount,ULSourceDirection,DLSourceDirection
+"",0,0,368.848,401.616,"kpi_registry_v1",1,1,"pass","","3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0",2,6,2,6,"UL","DL"

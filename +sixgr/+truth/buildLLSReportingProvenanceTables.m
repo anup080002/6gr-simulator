@@ -19,21 +19,15 @@ for i = 1:numel(specs)
     spec = specs(i);
     imagePath = fullfile(runFolder, char(spec.ImagePath));
     unavailableImagePath = char(sixgr.visual.unavailableArtifactPath(imagePath));
-    sourceCsvPath = fullfile(runFolder, char(spec.SourceCSV));
     stats = struct("RowCount", NaN, "UniqueXCount", NaN, "UniqueYCount", NaN, "NonNaNYCount", NaN, ...
         "PlotType", spec.PlotType, "PlotRenderStatus", "not_rendered", "PlotSuppressionReason", "", ...
         "CountsAsRealPlot", false, "VisualValidity", "unavailable", "WarningBannerText", "");
-    if exist(sourceCsvPath, "file") == 2
-        try
-            sourceT = readtable(sourceCsvPath, "VariableNamingRule", "preserve");
-        catch
-            sourceT = table();
-        end
+    [sourceT, sourceInfo] = sixgr.visual.readContractSourceData(runFolder, spec.SourceCSV);
+    if logical(sourceInfo.Ok)
         stats = sixgr.visual.evaluateVisualArtifactContract(spec, sourceT);
     else
-        sourceT = table();
         stats.PlotRenderStatus = "source_csv_missing";
-        stats.PlotSuppressionReason = "source_csv_missing";
+        stats.PlotSuppressionReason = string(sourceInfo.Reason);
         stats.CountsAsRealPlot = false;
         stats.VisualValidity = "unavailable";
         stats.WarningBannerText = "";

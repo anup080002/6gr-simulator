@@ -259,11 +259,16 @@ prach.PreambleIndex = double(sixgr.util.structGet(prachIn, "PreambleIndex", 0));
 prach.RestrictedSet = char(string(sixgr.util.structGet(prachIn, "RestrictedSet", "UnrestrictedSet")));
 prach.ZeroCorrelationZone = double(sixgr.util.structGet(prachIn, "ZeroCorrelationZone", 0));
 prach.FrequencyStart = double(sixgr.util.structGet(prachIn, "FrequencyStart", 0));
+% Preserve the exact canonical occasion when rebuilding a Toolbox object
+% from the serializable PRACH snapshot.  For short-preamble rows such as
+% FR1 unpaired index 157/B4, ActivePRACHSlot=0 is invalid and must not be
+% allowed to replace the resolver-owned value.
+prach.ActivePRACHSlot = double(sixgr.util.structGet( ...
+    prachIn, "ActivePRACHSlot", 0));
 prach.NPRACHSlot = double(sixgr.util.structGet(prachIn, "NPRACHSlot", 0));
-try
-    prach.TimeIndex = double(sixgr.util.structGet(prachIn, "TimeIndex", 0));
-catch
-end
+prach.TimeIndex = double(sixgr.util.structGet(prachIn, "TimeIndex", 0));
+prach.FrequencyIndex = double(sixgr.util.structGet( ...
+    prachIn, "FrequencyIndex", 0));
 end
 
 function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet)

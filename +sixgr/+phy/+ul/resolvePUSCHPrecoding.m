@@ -381,8 +381,13 @@ end
 
 function W = localRectIdentity(nPorts, nLayers)
 W = zeros(max(1, round(double(nPorts))), max(1, round(double(nLayers))));
-for i = 1:min(size(W, 1), size(W, 2))
-    W(i, i) = 1;
+activeStreams = min(size(W, 1), size(W, 2));
+% Non-codebook direct mapping is an equal-power layer mapper under the
+% immutable unit-total-power MatrixContract.  Unit coefficients per layer
+% would make rank-R PUSCH transmit R times the configured UE power and
+% would differ from the exact matrix frozen by the scheduler.
+for i = 1:activeStreams
+    W(i, i) = 1 / sqrt(activeStreams);
 end
 end
 

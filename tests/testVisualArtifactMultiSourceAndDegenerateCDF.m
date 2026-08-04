@@ -1,0 +1,96 @@
+function ok = testVisualArtifactMultiSourceAndDegenerateCDF()
+%TESTVISUALARTIFACTMULTISOURCEANDDEGENERATECDF Visual evidence contracts.
+
+setup6GRSimToolkit("Verbose", false);
+runFolder = string(tempname);
+mkdir(runFolder);
+cleanup = onCleanup(@() localRemoveTree(runFolder)); %#ok<NASGU>
+
+airCSV = fullfile(runFolder, "air_interface", "csv");
+reportImage = fullfile(runFolder, "reports", "image");
+controlCSV = fullfile(runFolder, "control", "csv");
+mkdir(airCSV);
+mkdir(reportImage);
+mkdir(controlCSV);
+
+Direction = repmat("DL", 3, 1);
+UEIndex = [1; 1; 1];
+PostEqSINR_dB_BinCenter = [-5; 0; 5];
+BLER = [0; 0; 0];
+BLER_CI_Low = [0; 0; 0];
+BLER_CI_High = [0.2; 0.2; 0.2];
+BER = [0; 0; 0];
+TrialCount = [3; 3; 3];
+FailureCount = [0; 0; 0];
+SourceArtifact = repmat("runtime_dl_trials", 3, 1);
+blerT = table(Direction, UEIndex, PostEqSINR_dB_BinCenter, BLER, ...
+    BLER_CI_Low, BLER_CI_High, BER, TrialCount, FailureCount, SourceArtifact);
+writetable(blerT, fullfile(airCSV, "dl_measured_sinr_bler_curve.csv"));
+
+blerImage = fullfile(reportImage, "bler_vs_measured_sinr.png");
+imwrite(uint8(255 * ones(8, 8, 3)), blerImage);
+enforcement = sixgr.visual.enforceVisualArtifactContract(runFolder, ...
+    "StrictMode", true, "CreateUnavailableCards", false);
+blerRow = enforcement(enforcement.PlotId == "bler_vs_measured_sinr", :);
+assert(height(blerRow) == 1 && ...
+    string(blerRow.EnforcementStatus) == "source_satisfies_contract" && ...
+    exist(blerImage, "file") == 2, ...
+    "A valid DL member of a DL|UL source union was treated as a missing literal path.");
+
+ProcedureDelay_ms = repmat(5, 4, 1);
+ValueRole = repmat("measured_runtime_procedure_delay", 4, 1);
+Notes = repmat("Four-step RA completed through Msg1, Msg2, Msg3, and Msg4 contention-resolution waveform evidence.", 4, 1);
+accessSourceFixture = table(ProcedureDelay_ms, ValueRole, Notes);
+writetable(accessSourceFixture, ...
+    fullfile(controlCSV, "initial_access_lifecycle_trace.csv"), ...
+    "WriteVariableNames", true);
+[accessSourceT, accessSourceInfo] = sixgr.visual.readContractSourceData( ...
+    runFolder, "control/csv/initial_access_lifecycle_trace.csv");
+if ~(logical(accessSourceInfo.Ok) && ...
+        ismember("ProcedureDelay_ms", string(accessSourceT.Properties.VariableNames)))
+    error("sixgr:test:VisualArtifactFixtureSchema", ...
+        "Access fixture reason=%s columns=%s path=%s", ...
+        char(string(accessSourceInfo.Reason)), ...
+        char(strjoin(string(accessSourceT.Properties.VariableNames), "|")), ...
+        char(fullfile(controlCSV, "initial_access_lifecycle_trace.csv")));
+end
+accessImage = fullfile(reportImage, "access_delay_cdf.png");
+gate = sixgr.visual.checkVisualArtifactRenderGate(accessImage);
+if ~(logical(gate.Matched) && logical(gate.AllowRender) && ...
+        string(gate.VisualValidity) == "real_lls_evidence")
+    error("sixgr:test:VisualArtifactAccessDelayRejected", ...
+        "A repeated measured access delay or legitimate contention-resolution note was rejected: %s", ...
+        char(string(gate.SuppressionReason)));
+end
+
+badAccessT = table(ProcedureDelay_ms, ValueRole, ...
+    repmat("lut_approximation", 4, 1), 'VariableNames', ...
+    {'ProcedureDelay_ms','ValueRole','Notes'});
+writetable(badAccessT, ...
+    fullfile(controlCSV, "initial_access_lifecycle_trace.csv"), ...
+    "WriteVariableNames", true);
+badGate = sixgr.visual.checkVisualArtifactRenderGate(accessImage);
+assert(logical(badGate.Matched) && ~logical(badGate.AllowRender) && ...
+    contains(string(badGate.SuppressionReason), "forbidden_truth_status"), ...
+    "A genuine LUT provenance label was not rejected by the real-evidence visual contract.");
+writetable(accessSourceFixture, ...
+    fullfile(controlCSV, "initial_access_lifecycle_trace.csv"), ...
+    "WriteVariableNames", true);
+
+provenance = sixgr.truth.buildLLSReportingProvenanceTables(runFolder, ...
+    struct(), struct(), table(), struct("run_id", "visual_contract_regression"));
+manifestRow = provenance.plot_manifest( ...
+    provenance.plot_manifest.PlotId == "bler_vs_measured_sinr", :);
+assert(height(manifestRow) == 1 && ...
+    string(manifestRow.PlotRenderStatus) == "rendered_real_plot" && ...
+    exist(blerImage, "file") == 2, ...
+    "Provenance reduction deleted a valid multi-source measured BLER image.");
+
+ok = true;
+end
+
+function localRemoveTree(pathValue)
+if exist(pathValue, "dir") == 7
+    rmdir(pathValue, "s");
+end
+end

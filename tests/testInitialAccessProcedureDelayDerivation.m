@@ -1,0 +1,29 @@
+function ok = testInitialAccessProcedureDelayDerivation()
+%TESTINITIALACCESSPROCEDUREDELAYDERIVATION Runtime-event delay, no proxy.
+
+setup6GRSimToolkit("Verbose", false);
+events = ["SSB_DETECTED"; "PBCH_DECODED"; "PRACH_MSG1_DETECTED"; ...
+    "MSG2_RAR_DECODED"; "MSG3_PUSCH_COMPLETED"; ...
+    "MSG4_CONTENTION_RESOLUTION_COMPLETED"];
+slots = [1; 1; 30; 30; 30; 30];
+slotDuration_s = repmat(0.5e-3, numel(events), 1);
+times_s = (slots - 1) .* slotDuration_s;
+T = table(ones(numel(events), 1), events, slots, times_s, slotDuration_s, ...
+    false(numel(events), 1), ...
+    'VariableNames', {'UEIndex','EventName','Slot','Time_s','SlotDuration_s','CompleteFlag'});
+
+actual = sixgr.truth.deriveInitialAccessProcedureDelay(T);
+terminal = actual.EventName == "MSG4_CONTENTION_RESOLUTION_COMPLETED";
+assert(nnz(terminal) == 1 && logical(actual.CompleteFlag(terminal)), ...
+    "Measured Msg4 contention resolution must terminate four-step access.");
+assert(abs(actual.ProcedureDelay_ms(terminal) - 15) < 1e-12 && ...
+    actual.AccessDelay_ms(terminal) == actual.ProcedureDelay_ms(terminal), ...
+    "Access delay must come from the runtime event interval plus terminal slot duration.");
+
+incomplete = T(1:5, :);
+incomplete = sixgr.truth.deriveInitialAccessProcedureDelay(incomplete);
+assert(~any(incomplete.CompleteFlag) && ...
+    all(~isfinite(incomplete.ProcedureDelay_ms)), ...
+    "Missing Msg4 evidence must remain incomplete without a substitute delay.");
+ok = true;
+end

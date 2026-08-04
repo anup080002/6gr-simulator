@@ -23,16 +23,11 @@ for i = 1:numel(contracts)
     spec = contracts(i);
     imagePath = string(fullfile(char(runFolder), char(spec.ImagePath)));
     unavailablePath = sixgr.visual.unavailableArtifactPath(imagePath);
-    sourcePath = string(fullfile(char(runFolder), char(spec.SourceCSV)));
-    if exist(sourcePath, "file") == 2
-        try
-            sourceT = readtable(sourcePath, "VariableNamingRule", "preserve");
-            status = sixgr.visual.evaluateVisualArtifactContract(spec, sourceT);
-        catch ME
-            status = localUnavailableStatus(spec, "source_csv_unreadable:" + string(ME.identifier));
-        end
+    [sourceT, sourceInfo] = sixgr.visual.readContractSourceData(runFolder, spec.SourceCSV);
+    if logical(sourceInfo.Ok)
+        status = sixgr.visual.evaluateVisualArtifactContract(spec, sourceT);
     else
-        status = localUnavailableStatus(spec, "source_csv_missing");
+        status = localUnavailableStatus(spec, string(sourceInfo.Reason));
     end
 
     enforcement = "not_required";

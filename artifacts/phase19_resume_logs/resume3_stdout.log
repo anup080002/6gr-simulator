@@ -1,0 +1,9 @@
+[2026-08-04T10:15:42Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase19_full_bidir_mu_20260804_04 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_04
+[2026-08-04T10:15:49Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-04T10:15:49Z] INFO Writing resolved snapshots.
+[2026-08-04T10:15:50Z] INFO Exporting live geometry artifacts.
+[2026-08-04T10:15:50Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-04T10:15:50Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-04T10:15:50Z] INFO Waveform bundle starting: snr=0.000 dB sweepPoints=3 canonicalSlots=40 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-04T10:15:52Z] ERROR Run failed: sixgr:truth:resume:PersistedRowCountMismatch | SRSAttemptCount reports 16 rows but the canonical persisted table contains 33.
+[2026-08-04T10:15:53Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.

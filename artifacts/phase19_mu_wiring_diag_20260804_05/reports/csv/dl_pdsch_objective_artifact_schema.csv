@@ -1,0 +1,5 @@
+ArtifactId,FilePath,FolderFamily,SemanticRole,MachineReadable
+"dl_pdsch_raw_bler_ber_objective","C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\artifacts\phase19_mu_wiring_diag_20260804_05\reports\csv\dl_pdsch_raw_bler_ber_objective.csv","reports/csv","objective_summary",1
+"dl_pdsch_objective_failures","C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\artifacts\phase19_mu_wiring_diag_20260804_05\reports\csv\dl_pdsch_objective_failures.csv","reports/csv","objective_failures",1
+"dl_pdsch_receiver_evidence_audit","C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\artifacts\phase19_mu_wiring_diag_20260804_05\air_interface\csv\dl_pdsch_receiver_evidence_audit.csv","air_interface/csv","row_receiver_evidence_audit",1
+"dl_pdsch_toolbox_capabilities","C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\artifacts\phase19_mu_wiring_diag_20260804_05\reports\json\dl_pdsch_toolbox_capabilities.json","reports/json","toolbox_capability_manifest",1

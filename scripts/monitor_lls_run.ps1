@@ -1,5 +1,5 @@
 param(
-    [int]$RunId = 0,
+    [long]$RunId = 0,
     [string]$RunTag = "",
     [switch]$Latest,
     [switch]$Once,
@@ -52,16 +52,16 @@ function Resolve-RunId {
     if (-not [string]::IsNullOrWhiteSpace($RunTag)) {
         $tagRuns = Get-Json "$BaseUrl/api/runs?run_tag=$([uri]::EscapeDataString($RunTag))&limit=1"
         if ($tagRuns.runs.Count -ge 1) {
-            return [int]$tagRuns.runs[0].run_id
+            return [long]$tagRuns.runs[0].run_id
         }
     }
     $runs = Get-Json "$BaseUrl/api/runs?limit=25"
     if ($runs.runs.Count -lt 1) { throw "No sim_runs rows are visible through $BaseUrl/api/runs" }
     $running = @($runs.runs | Where-Object { [string]$_.status_text -match '^running' })
     if ($running.Count -ge 1) {
-        return [int]$running[0].run_id
+        return [long]$running[0].run_id
     }
-    return [int]$runs.runs[0].run_id
+    return [long]$runs.runs[0].run_id
 }
 
 do {

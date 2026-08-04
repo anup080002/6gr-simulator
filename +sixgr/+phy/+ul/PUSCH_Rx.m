@@ -19,6 +19,8 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "MaxIterations": LDPC iterations
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %     "PHYGrant"    : frozen canonical grant dimensional contract
+%     "ReceiveCombiningMatrix": frozen Nrx-by-Nout MU receive projection
+%     "ReceiveCombiningMatrixSHA256": expected digest of that projection
 %
 %   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -72,6 +74,8 @@ ip.addParameter('InterferenceContributionDomain', "receiver_sample_waveform_pre_
 ip.addParameter('InterferenceCovariance', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('InterferenceCovarianceSource', "", @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('InterferenceCovarianceIncludesNoise', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('ReceiveCombiningMatrix', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('ReceiveCombiningMatrixSHA256', "", @(x) isempty(x) || ischar(x) || isstring(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 sixgr.config.assertRuntimeFeatureUse(cfg, "cfo_correction", ...
@@ -231,6 +235,8 @@ channelModelToken = localResolveEstimatorChannelModel(cfg);
 numTxPorts = localExpectedTxPorts(pusch);
 [rxWaveform, fastAWGNColumnInfo] = localTrimInactiveFastAWGNColumns( ...
     rxWaveform, channelModelToken, numTxPorts, useFastAWGNPath);
+[rxWaveform, opt, receiveCombinerInfo] = localApplyScheduledReceiveCombiner( ...
+    rxWaveform, opt, phyGrant);
 localValidateFastScalarShortcut(channelModelToken, numTxPorts, ...
     fastAWGNColumnInfo.ActiveColumnCount, useFastAWGNPath, "PUSCH_Rx");
 phyGrantContract = struct();
@@ -429,6 +435,8 @@ if ~logical(noiseStatus.IsValid)
     rx.DMRSPowerScale = double(dmrsPowerInfo.DMRSPowerScale);
     info.DMRS = dmrsInfo;
     info.DMRSEPREDifference = dmrsPowerInfo;
+    rx = localAnnotateReceiveCombiner(rx, receiveCombinerInfo);
+    info.ReceiveCombiner = receiveCombinerInfo;
     return;
 end
 
@@ -622,12 +630,14 @@ if nCodewords == 2
         rx.PHYGrant = phyGrant;
         rx.PHYGrantDimensionContract = phyGrantContract;
     end
+    rx = localAnnotateReceiveCombiner(rx, receiveCombinerInfo);
     info = struct( ...
         "CarrierInfo", cinfo, ...
         "PUSCHInfo", puschInfo, ...
         "CodingLayouts", {codingLayouts}, ...
         "CodewordLayerMapping", codewordLayerMapping, ...
         "UCIOnPUSCH", uciOnPUSCH, ...
+        "ReceiveCombiner", receiveCombinerInfo, ...
         "DecodeLatency_s", decodeLatency_s, ...
         "ExecutionBackend", "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth");
     return;
@@ -986,6 +996,7 @@ if ~logical(opt.CompactOutput)
     rx.InterferenceCovariance = Rint;
     rx.InterferenceCovarianceInfo = rintInfo;
 end
+rx = localAnnotateReceiveCombiner(rx, receiveCombinerInfo);
 
 strictEvidence = sixgr.phy.ul.validatePUSCHReceiverEvidence(rx, "StrictMode", strictMode);
 rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);
@@ -1028,6 +1039,7 @@ info.PostEqualizationDecisionResidual = decisionPostEqInfo;
 info.TimingEstimate = timingResolution;
 info.Equalizer = equalizerInfo;
 info.InterferenceCovariance = rintInfo;
+info.ReceiveCombiner = receiveCombinerInfo;
 info.PTRS = ptrsInfo;
 info.CPECorrection = cpeCorrInfo;
 info.CodingLayout = codingLayout;
@@ -3048,6 +3060,132 @@ if ~(localIsExplicitFlatChannel(channelToken) && numTxPorts <= 1 && numRxAnt <= 
         "%s requires an explicit AWGN/flat SISO validation mode. Channel='%s', TxPorts=%d, RxAnt=%d.", ...
         contextLabel, localDisplayChannelToken(channelToken), numTxPorts, numRxAnt);
 end
+end
+
+function [waveOut, optOut, info] = localApplyScheduledReceiveCombiner(waveIn, optIn, phyGrant)
+% Apply the exact scheduler-frozen UL MU projection in receiver sample
+% space.  The same projection is applied to every interference contributor
+% and any supplied covariance so all receiver evidence remains in one
+% consistent post-combiner observation domain.
+waveOut = waveIn;
+optOut = optIn;
+legacy = sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot", struct());
+W = optIn.ReceiveCombiningMatrix;
+source = "explicit_receiver_option";
+if isempty(W)
+    W = sixgr.util.structGet(legacy, "MUMIMOReceiveCombiningMatrix", []);
+    source = "frozen_phy_grant_legacy_snapshot";
+end
+expectedDigest = strtrim(string(optIn.ReceiveCombiningMatrixSHA256));
+if strlength(expectedDigest) == 0
+    expectedDigest = strtrim(string(sixgr.util.structGet(legacy, ...
+        "MUMIMOReceiveCombiningMatrixSHA256", "")));
+end
+muRequired = logical(sixgr.util.structGet(legacy, "MUMIMOEnabled", false));
+info = struct( ...
+    "ContractVersion", "PUSCHScheduledReceiveCombiner/v1", ...
+    "Applied", false, ...
+    "Status", "not_requested", ...
+    "Source", "no_scheduler_frozen_receive_combiner", ...
+    "InputBranches", double(size(waveIn, 2)), ...
+    "OutputBranches", double(size(waveIn, 2)), ...
+    "MatrixRows", 0, ...
+    "MatrixCols", 0, ...
+    "MatrixSHA256", "", ...
+    "ExpectedMatrixSHA256", char(expectedDigest), ...
+    "OrthonormalityResidual", NaN, ...
+    "InterferenceContributionProjected", false, ...
+    "InterferenceCovarianceProjected", false, ...
+    "NoiseVarianceInvariant", true, ...
+    "Domain", "receiver_sample_waveform");
+if isempty(W)
+    if muRequired
+        error("sixgr:phy:ul:MissingMUMIMOReceiveCombiner", ...
+            "A frozen UL MU-MIMO grant requires its measured receive " + ...
+            "combining matrix, but the matrix is absent.");
+    end
+    return;
+end
+if ~isnumeric(W) || ~ismatrix(W) || isempty(W) || ...
+        size(W, 1) ~= size(waveIn, 2) || size(W, 2) < 1
+    error("sixgr:phy:ul:MUMIMOReceiveCombinerShapeMismatch", ...
+        "The frozen UL MU receive combiner must be Nrx-by-Nout. " + ...
+        "Received %s for an Nrx=%d waveform.", ...
+        mat2str(size(W)), size(waveIn, 2));
+end
+W = double(W);
+if any(~isfinite(real(W(:)))) || any(~isfinite(imag(W(:))))
+    error("sixgr:phy:ul:MUMIMOReceiveCombinerNonfinite", ...
+        "The frozen UL MU receive combiner contains nonfinite entries.");
+end
+digest = string(sixgr.phy.mimo.MatrixContract.digest(W));
+if strlength(expectedDigest) > 0 && lower(digest) ~= lower(expectedDigest)
+    error("sixgr:phy:ul:MUMIMOReceiveCombinerDigestMismatch", ...
+        "Frozen UL MU receive-combiner digest %s differs from expected %s.", ...
+        char(digest), char(expectedDigest));
+end
+gram = W' * W;
+orthResidual = norm(gram - eye(size(gram)), "fro") ./ max(1, norm(gram, "fro"));
+if ~(isfinite(orthResidual) && orthResidual <= 1e-8)
+    error("sixgr:phy:ul:MUMIMOReceiveCombinerNotSemiUnitary", ...
+        "The frozen UL MU receive combiner must be semi-unitary so the " + ...
+        "scalar thermal-noise variance remains valid; residual=%.12g.", ...
+        orthResidual);
+end
+
+waveOut = waveIn * conj(cast(W, "like", waveIn));
+tensor = optIn.InterferenceContributionTensor;
+contributionProjected = false;
+if ~isempty(tensor)
+    if size(tensor, 2) ~= size(W, 1)
+        error("sixgr:phy:ul:MUMIMOInterferenceTensorShapeMismatch", ...
+            "Interference contribution tensor has %d branches; combiner requires %d.", ...
+            size(tensor, 2), size(W, 1));
+    end
+    projected = complex(zeros(size(tensor, 1), size(W, 2), size(tensor, 3), "like", tensor));
+    Wlike = conj(cast(W, "like", tensor));
+    for contributor = 1:size(tensor, 3)
+        projected(:, :, contributor) = tensor(:, :, contributor) * Wlike;
+    end
+    optOut.InterferenceContributionTensor = projected;
+    contributionProjected = true;
+end
+R = optIn.InterferenceCovariance;
+covarianceProjected = false;
+if ~isempty(R)
+    if ~ismatrix(R) || size(R, 1) ~= size(W, 1) || size(R, 2) ~= size(W, 1)
+        error("sixgr:phy:ul:MUMIMOInterferenceCovarianceShapeMismatch", ...
+            "Interference covariance has shape %s; combiner requires %d-by-%d.", ...
+            mat2str(size(R)), size(W, 1), size(W, 1));
+    end
+    optOut.InterferenceCovariance = W' * double(R) * W;
+    covarianceProjected = true;
+end
+info.Applied = true;
+info.Status = "applied_exact_scheduler_frozen_projection";
+info.Source = char(source);
+info.OutputBranches = double(size(waveOut, 2));
+info.MatrixRows = double(size(W, 1));
+info.MatrixCols = double(size(W, 2));
+info.MatrixSHA256 = char(digest);
+info.OrthonormalityResidual = double(orthResidual);
+info.InterferenceContributionProjected = logical(contributionProjected);
+info.InterferenceCovarianceProjected = logical(covarianceProjected);
+end
+
+function rx = localAnnotateReceiveCombiner(rx, info)
+rx.MUMIMOReceiveCombinerApplied = logical(info.Applied);
+rx.MUMIMOReceiveCombinerStatus = char(string(info.Status));
+rx.MUMIMOReceiveCombinerSource = char(string(info.Source));
+rx.MUMIMOReceiveCombinerInputBranches = double(info.InputBranches);
+rx.MUMIMOReceiveCombinerOutputBranches = double(info.OutputBranches);
+rx.MUMIMOReceiveCombinerMatrixRows = double(info.MatrixRows);
+rx.MUMIMOReceiveCombinerMatrixCols = double(info.MatrixCols);
+rx.MUMIMOReceiveCombinerMatrixSHA256 = char(string(info.MatrixSHA256));
+rx.MUMIMOReceiveCombinerExpectedMatrixSHA256 = char(string(info.ExpectedMatrixSHA256));
+rx.MUMIMOReceiveCombinerOrthonormalityResidual = double(info.OrthonormalityResidual);
+rx.MUMIMOReceiveCombinerInterferenceContributionProjected = logical(info.InterferenceContributionProjected);
+rx.MUMIMOReceiveCombinerInterferenceCovarianceProjected = logical(info.InterferenceCovarianceProjected);
 end
 
 function [waveOut, info] = localTrimInactiveFastAWGNColumns(waveIn, channelToken, numTxPorts, useFastAWGNPath)

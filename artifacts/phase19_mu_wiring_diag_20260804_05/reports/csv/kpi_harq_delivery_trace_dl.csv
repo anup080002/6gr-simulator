@@ -1,0 +1,7 @@
+RunId,Direction,UEId,TransportBlockId,Codeword,HARQProcessId,AttemptIndex,RV,NDI,NewDataFlag,RetransmissionFlag,ScheduleTime_s,AttemptStartTime_s,AttemptEndTime_s,FirstSuccessTime_s,DeliveryLatency_ms,ScheduledBits,TBCrcPass,DeliveredThisAttempt,FirstSuccessDelivery,DuplicateDelivery,CountedGoodputBits,ScheduledResourceExposureSec,MeasurementWindowSec,DeliveryStatus,Status,FailureReason
+"","DL",1,"dir=DL;frame=1;slot=16;ue=1;rnti=1;cell=1;harq=0",0,0,1,0,1,1,0,0.0075,0.0075,0.00775,0.00775,0.25,184424,1,1,1,0,184424,0.0015,0.01,"first_success_delivery_counted","pass",""
+"","DL",2,"dir=DL;frame=1;slot=16;ue=2;rnti=2;cell=1;harq=0",0,0,2,0,1,1,0,0.0075,0.0075,0.00775,0.00775,0.25,184424,1,1,1,0,184424,0.0015,0.01,"first_success_delivery_counted","pass",""
+"","DL",3,"dir=DL;frame=1;slot=17;ue=3;rnti=3;cell=1;harq=0",0,0,3,0,1,1,0,0.008,0.008,0.00825,0.00825,0.25,184424,1,1,1,0,184424,0.0015,0.01,"first_success_delivery_counted","pass",""
+"","DL",4,"dir=DL;frame=1;slot=17;ue=4;rnti=4;cell=1;harq=0",0,0,4,0,1,1,0,0.008,0.008,0.00825,0.00825,0.25,184424,1,1,1,0,184424,0.0015,0.01,"first_success_delivery_counted","pass",""
+"","DL",1,"dir=DL;frame=1;slot=18;ue=1;rnti=1;cell=1;harq=1",0,1,5,0,1,1,0,0.0085,0.0085,0.00875,0.00875,0.25,184424,1,1,1,0,184424,0.0015,0.01,"first_success_delivery_counted","pass",""
+"","DL",2,"dir=DL;frame=1;slot=18;ue=2;rnti=2;cell=1;harq=1",0,1,6,0,1,1,0,0.0085,0.0085,0.00875,0.00875,0.25,184424,1,1,1,0,184424,0.0015,0.01,"first_success_delivery_counted","pass",""

@@ -205,25 +205,23 @@ localValidateProcedureSlots(ra);
 ra.TempCRNTI = double(sixgr.util.structGet(raNode, "temp_crnti", 4660));
 ra.FinalCRNTI = double(sixgr.util.structGet(raNode, "final_crnti", ra.TempCRNTI));
 ra.DCIPayloadBits = double(sixgr.util.structGet(raNode, "dci_payload_bits", 32));
-ptrsEnabled = logical(sixgr.util.structGet(cfg, ...
+% Random-access common/control transmissions have independent PT-RS
+% authority from connected user data.  Read each stage from its YAML node;
+% only legacy scenarios without the stage field inherit their direction's
+% connected-data setting.
+dlPTRSDefault = logical(sixgr.util.structGet(cfg, ...
     "phy.pdsch.enablePTRS", false));
-ulPTRSEnabled = logical(sixgr.util.structGet(cfg, ...
-    "phy.pusch.enablePTRS", ptrsEnabled));
-sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs", ptrsEnabled, ...
-    "RAConfig.Msg2/Msg4.PDSCH.PTRS");
-sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs", ulPTRSEnabled, ...
-    "RAConfig.Msg3/SetupComplete.PUSCH.PTRS");
-ra.Msg2PDSCH = localSched(raNode.msg2_pdsch, 0, false);
-ra.Msg2PDSCH.EnablePTRS = ptrsEnabled;
+ulPTRSDefault = logical(sixgr.util.structGet(cfg, ...
+    "phy.pusch.enablePTRS", dlPTRSDefault));
+ra.Msg2PDSCH = localSched(raNode.msg2_pdsch, 0, false, dlPTRSDefault);
 ra.Msg3PUSCH = localSched(raNode.msg3_pusch, ...
     double(sixgr.util.structGet(raNode.msg3_pusch, "mcs", 0)), ...
     logical(sixgr.util.structGet(raNode.msg3_pusch, ...
     "transform_precoding", sixgr.util.structGet(cfg, ...
-    "phy.pusch.transformPrecoding", false))));
-ra.Msg3PUSCH.EnablePTRS = ulPTRSEnabled;
-ra.Msg4PDSCH = localSched(raNode.msg4_pdsch, 0, false);
-ra.Msg4PDSCH.EnablePTRS = ptrsEnabled;
-ra.SetupCompletePUSCH.EnablePTRS = ulPTRSEnabled;
+    "phy.pusch.transformPrecoding", false))), ulPTRSDefault);
+ra.Msg4PDSCH = localSched(raNode.msg4_pdsch, 0, false, dlPTRSDefault);
+ra.SetupCompletePUSCH.EnablePTRS = logical(sixgr.util.structGet( ...
+    raNode.setup_complete_pusch, "ptrs_enabled", ulPTRSDefault));
 ra.RARNTI = double(sixgr.phy.ra.computeRARNTI( ...
     "SymbolIndex", ra.PRACHOccasionSymbol, ...
     "SlotIndex", ra.PRACHOccasionSlot, ...
@@ -239,7 +237,10 @@ ra.ConfigSourceSummary = struct( ...
     "StrictMode", ra.StrictMode);
 end
 
-function s = localSched(node, defaultMCS, transformPrecoding)
+function s = localSched(node, defaultMCS, transformPrecoding, ptrsDefault)
+if nargin < 4
+    ptrsDefault = false;
+end
 s = struct();
 s.PRBStart = double(sixgr.util.structGet(node, "prb_start", 0));
 s.NumPRB = double(sixgr.util.structGet(node, "num_prb", 24));
@@ -251,6 +252,16 @@ s.TargetCodeRate = double(sixgr.util.structGet(node, "target_code_rate", 120/102
 s.RV = double(sixgr.util.structGet(node, "rv", 0));
 s.NLayers = double(sixgr.util.structGet(node, "n_layers", 1));
 s.TransformPrecoding = logical(transformPrecoding);
+s.EnablePTRS = logical(sixgr.util.structGet(node, ...
+    "ptrs_enabled", ptrsDefault));
+s.PTRSPortSet = double(sixgr.util.structGet(node, ...
+    "ptrs_port_set", 0));
+s.PTRSTimeDensity = double(sixgr.util.structGet(node, ...
+    "ptrs_time_density", 1));
+s.PTRSFrequencyDensity = double(sixgr.util.structGet(node, ...
+    "ptrs_frequency_density", 2));
+s.PTRSREOffset = string(sixgr.util.structGet(node, ...
+    "ptrs_re_offset", "00"));
 end
 
 function localValidateProcedureSlots(ra)

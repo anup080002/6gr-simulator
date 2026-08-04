@@ -71,6 +71,10 @@ if direction == "DL"
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.matrix", double(logicalMatrix));
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precodingMatrix", double(logicalMatrix));
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.W", double(logicalMatrix));
+    % A frozen PHYGrant is immutable execution authority. Re-normalizing
+    % its logical matrix at the transmitter changes the selected physical
+    % matrix digest and invalidates MU interference predictions.
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.normalizePrecodingMatrix", false);
     frozenHybridMatrix = double(sixgr.util.structGet(prec, ...
         "HybridElementToPortMatrix", []));
     if logical(sixgr.util.structGet(prec, "HybridElementDomainApplied", false))
@@ -118,4 +122,10 @@ cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.spatialSignatureSHA256
     char(sixgr.phy.mimo.MatrixContract.digest(double(prec.Matrix))));
 cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.spatialSignatureSource", ...
     "executed_frozen_phy_grant_precoding_matrix");
+cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.precoderSource", ...
+    char(string(sixgr.util.structGet(prec, "Source", ...
+    "executed_frozen_phy_grant_precoding_matrix"))));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.precodingApplicationStage", ...
+    char(string(sixgr.util.structGet(prec, "ApplicationStage", ...
+    "nrPDSCHPrecode_before_RE_mapping"))));
 end

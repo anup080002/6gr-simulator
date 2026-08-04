@@ -1,0 +1,2 @@
+ThroughputReconciliationOk,BlerBerReconciliationOk,AccessKpiReconciliationOk,SchedulerKpiReconciliationOk,LatencyReconciliationOk,CanonicalKpiLedgerOk,KPIConsistencyGateOk,KPIFormulaVersion,GeneratedAt,FailureReason
+1,1,1,0,0,0,0,"measured_sinr_geometry_v1","2026-08-04 02:28:20","one_or_more_kpi_reconciliation_gates_failed"

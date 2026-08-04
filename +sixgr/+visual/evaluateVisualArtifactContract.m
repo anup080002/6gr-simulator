@@ -170,13 +170,37 @@ if any(requiredColumns == "truth_status")
 end
 forbidden = ["fallback","synthetic","proxy","fast_proxy","lut","logistic","configured_sinr","reference_sinr", ...
     "anchor_sinr","configured_cqi","reference_cqi","generic","measured_bin","fake","placeholder"];
-if any(contains(tokens, forbidden), "all")
+if localContainsForbiddenSemanticToken(tokens, forbidden)
     diagnosticAllowed = any(allowed == "diagnostic_only") || lower(string(spec.LLSValidity)) == "diagnostic_only";
     if diagnosticAllowed
         ok = true;
     else
         ok = false;
         reason = "forbidden_truth_status:" + status;
+    end
+end
+end
+
+function tf = localContainsForbiddenSemanticToken(tokens, forbidden)
+% Match provenance identifiers as identifiers, not arbitrary substrings in
+% explanatory prose.  A raw contains() check classifies the "lut" letters
+% inside words such as "resolution" as lookup-table evidence.
+tf = false;
+tokens = lower(string(tokens(:)));
+forbidden = lower(string(forbidden(:)));
+for i = 1:numel(forbidden)
+    parts = split(forbidden(i), "_");
+    escaped = strings(numel(parts), 1);
+    for j = 1:numel(parts)
+        escaped(j) = regexptranslate("escape", parts(j));
+    end
+    identifierPattern = strjoin(escaped, "[_ -]+");
+    pattern = "(^|[^a-z0-9])" + identifierPattern + "([^a-z0-9]|$)";
+    for j = 1:numel(tokens)
+        if ~isempty(regexp(char(tokens(j)), char(pattern), "once")) %#ok<RGXP1>
+            tf = true;
+            return;
+        end
     end
 end
 end

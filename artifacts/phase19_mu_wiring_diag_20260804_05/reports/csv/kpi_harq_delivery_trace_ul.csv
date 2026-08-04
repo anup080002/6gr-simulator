@@ -1,0 +1,3 @@
+RunId,Direction,UEId,TransportBlockId,Codeword,HARQProcessId,AttemptIndex,RV,NDI,NewDataFlag,RetransmissionFlag,ScheduleTime_s,AttemptStartTime_s,AttemptEndTime_s,FirstSuccessTime_s,DeliveryLatency_ms,ScheduledBits,TBCrcPass,DeliveredThisAttempt,FirstSuccessDelivery,DuplicateDelivery,CountedGoodputBits,ScheduledResourceExposureSec,MeasurementWindowSec,DeliveryStatus,Status,FailureReason
+"","UL",1,"dir=UL;frame=1;slot=20;ue=1;rnti=1;cell=1;harq=0",0,0,1,0,1,1,0,0.0095,0.0095,0.00975,0.00975,0.25,200808,1,1,1,0,200808,0.0005,0.01,"first_success_delivery_counted","pass",""
+"","UL",2,"dir=UL;frame=1;slot=20;ue=2;rnti=2;cell=1;harq=0",0,0,2,0,1,1,0,0.0095,0.0095,0.00975,0.00975,0.25,200808,1,1,1,0,200808,0.0005,0.01,"first_success_delivery_counted","pass",""

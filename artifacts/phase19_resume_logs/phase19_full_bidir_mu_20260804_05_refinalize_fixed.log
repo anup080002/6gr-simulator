@@ -1,0 +1,114 @@
+[2026-08-04T13:14:31Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase19_full_bidir_mu_20260804_05 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+[2026-08-04T13:14:37Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-04T13:14:37Z] INFO Writing resolved snapshots.
+[2026-08-04T13:14:39Z] INFO Exporting live geometry artifacts.
+[2026-08-04T13:14:39Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-04T13:14:39Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-04T13:14:39Z] INFO Waveform bundle starting: snr=0.000 dB sweepPoints=3 canonicalSlots=40 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-04T13:16:56Z] INFO Waveform bundle finished: ok=1
+[2026-08-04T13:16:56Z] INFO Running strict waveform-backed control evidence for waveform-bundle scenario target_cases.
+[2026-08-04T13:17:25Z] INFO Strict waveform-backed control evidence finished: ok=1
+[2026-08-04T13:17:25Z] INFO Running supplemental strict PRACH waveform validation for waveform-bundle scenario.
+[2026-08-04T13:17:26Z] INFO Strict PRACH progress: stage=strict_prach_config_validation supplemental_completion=0.020 note=Validating strict PRACH configuration and root-sequence evidence.
+[2026-08-04T13:17:26Z] INFO Strict PRACH progress: stage=strict_prach_positive_high_snr supplemental_completion=0.080 note=Running positive high-SNR PRACH receive validation.
+[2026-08-04T13:17:27Z] INFO Strict PRACH progress: stage=strict_prach_missed_detection_sweep supplemental_completion=0.180 note=Running PRACH missed-detection SNR sweep.
+[2026-08-04T13:17:33Z] INFO Strict PRACH progress: stage=strict_prach_false_alarm_sweep supplemental_completion=0.360 note=Running PRACH false-alarm noise-only sweep.
+[2026-08-04T13:17:38Z] INFO Strict PRACH progress: stage=strict_prach_timing_offset_sweep supplemental_completion=0.540 note=Running PRACH timing-offset sweep.
+[2026-08-04T13:17:39Z] INFO Strict PRACH progress: stage=strict_prach_frequency_offset_sweep supplemental_completion=0.660 note=Running PRACH frequency-offset and restricted-set sweep.
+[2026-08-04T13:17:40Z] INFO Strict PRACH progress: stage=strict_prach_collision_trials supplemental_completion=0.780 note=Running PRACH collision and multi-preamble trials.
+[2026-08-04T13:17:41Z] INFO Strict PRACH progress: stage=strict_prach_multi_occasion_trials supplemental_completion=0.860 note=Running PRACH multi-occasion RARNTI trials.
+[2026-08-04T13:17:42Z] INFO Strict PRACH progress: stage=strict_prach_negative_wrong_config supplemental_completion=0.920 note=Running PRACH negative wrong-root receiver guard.
+[2026-08-04T13:17:42Z] INFO Strict PRACH progress: stage=strict_prach_artifact_export supplemental_completion=0.970 note=Writing strict PRACH waveform evidence artifacts.
+[2026-08-04T13:17:51Z] INFO Strict PRACH progress: stage=strict_prach_validation_complete supplemental_completion=1.000 note=Strict PRACH waveform validation completed.
+[2026-08-04T13:17:51Z] INFO Running supplemental strict SRS waveform validation for waveform-bundle scenario.
+[2026-08-04T13:21:00Z] INFO Running supplemental strict TRS waveform validation for waveform-bundle scenario.
+[2026-08-04T13:21:15Z] INFO Running supplemental strict SIB1/PBCH waveform mini-anchor validation for waveform-bundle scenario.
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=3500000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=0 ShadowEnabled=0 LOSEnabled=0
+[2026-08-04T13:23:13Z] INFO Running supplemental strict Channel/RF validation for waveform-bundle scenario.
+[2026-08-04T13:23:28Z] INFO Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.
+[2026-08-04T13:23:37Z] INFO Control-plane trace export complete.
+[2026-08-04T13:23:37Z] INFO Runner profile completed. result.Ok=0
+[2026-08-04T13:23:37Z] INFO Scenario status aggregated: completion=completed_with_failures resultOk=0 requiredFailures=1 optionalPruned=0
+[2026-08-04T13:23:37Z] INFO Annotating CSV artifacts.
+[2026-08-04T13:26:43Z] INFO Writing scenario summary CSV.
+[2026-08-04T13:26:43Z] INFO Writing runtime and environment summaries.
+[2026-08-04T13:26:44Z] INFO Writing scenario manifest.
+[2026-08-04T13:26:44Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-08-04T13:33:09Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=2 strictFailures=3
+[2026-08-04T13:33:09Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-08-04T13:33:10Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-08-04T13:33:10Z] INFO Exporting LLS reporting bundle.
+[2026-08-04T13:36:05Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-08-04T13:36:28Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:packet_flow/csv/table_scheduler_decision.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:packet_flow/csv/live_prb_allocation.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_re_allocation_snapshot.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/prb_allocation_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/dl_resource_grid_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/ul_resource_grid_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/table_mcs_tbs_evolution.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_power_runtime_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_rf_power_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:control/csv/timing_synchronization_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:writing_prb_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:writing_power_energy_figure runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:publication_readiness_refreshed runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05
+[2026-08-04T13:40:05Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-08-04T13:46:20Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=0 roundtripMismatch=0 evidenceMissing=2 strictFailures=3
+[2026-08-04T13:46:20Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-08-04T13:46:22Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-08-04T13:46:22Z] INFO Writing artifact manifest.
+[2026-08-04T13:46:23Z] INFO Writing scenario markdown report.
+[2026-08-04T13:46:24Z] INFO Materializing canonical browser contract artifacts for the completed run.
+[2026-08-04T13:46:24Z] WARN Browser contract artifact materialization did not complete: artifact_store_inactive | MySQL artifact store is inactive, so browser contract materialization was skipped.
+[2026-08-04T13:46:24Z] INFO Publishing component artifact views: enabled=1 required=1.
+[2026-08-04T13:47:02Z] INFO Component artifact views published: files=760 componentsWithoutEvidence=1 skippedLegacySVG=0 manifest=reports/csv/component_artifact_publication_manifest.csv
+[2026-08-04T13:47:02Z] INFO Refreshing artifact manifest after component view publication.
+[2026-08-04T13:47:04Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-08-04T13:47:04Z] INFO Writing MAT result bundle.
+[2026-08-04T13:47:37Z] INFO Pruning empty result directories.
+[2026-08-04T13:47:38Z] INFO Finalizing component artifact views after all canonical report and profiler writes.
+[2026-08-04T13:48:12Z] WARN Run completed with truth/status failures in 2021.990 seconds: requiredFailures=7 strictTruthFailures=3
+REFINALIZE_OK=0
+RUN_FOLDER=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase19_full_bidir_mu_20260804_05

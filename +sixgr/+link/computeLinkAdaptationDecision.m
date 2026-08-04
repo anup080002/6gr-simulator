@@ -52,6 +52,8 @@ decision = struct( ...
     "PMIUpdated", false, ...
     "CRIUpdated", false, ...
     "RankUpdated", false, ...
+    "RankUpdateStatus", "not_requested", ...
+    "RankUpdateBlockedReason", "", ...
     "MCSUpdated", false, ...
     "PMIType", char(string(sixgr.util.structGet(metrics, "PMIType", ""))), ...
     "PMICodebookMode", char(string(sixgr.util.structGet(metrics, "PMICodebookMode", ""))), ...
@@ -138,6 +140,7 @@ if localPolicyEnabled(rankPolicy)
         if abs(requestedLayers - decision.NumLayers) > 1e-9
             decision.NumLayers = requestedLayers;
             decision.RankUpdated = true;
+            decision.RankUpdateStatus = "requested_from_ri";
         end
     end
 end
@@ -153,6 +156,23 @@ if direction == "DL" && localPolicyEnabled(beamPolicy)
         decision.CRI = round(cri);
         decision.CRIUpdated = true;
     end
+end
+
+% Rank and precoder form one spatial decision.  Do not apply an RI-only
+% rank transition while retaining an explicit matrix frozen for the old
+% rank.  Without a simultaneous finite PMI there is no standards-backed
+% codebook choice for the new rank, so hold the previous spatial state and
+% allow any independent MCS decision to proceed.
+if direction == "DL" && logical(decision.RankUpdated) && ...
+        ~logical(decision.PMIUpdated) && ...
+        localHasStaleExplicitPDSCHMatrix(cfg, decision.NumLayers)
+    decision.NumLayers = double(base.NumLayers);
+    decision.RankUpdated = false;
+    decision.RankUpdateStatus = "held_missing_atomic_pmi";
+    decision.RankUpdateBlockedReason = ...
+        "explicit_precoder_rank_transition_requires_simultaneous_finite_pmi";
+elseif logical(decision.RankUpdated)
+    decision.RankUpdateStatus = "ready_to_apply";
 end
 
 decision.Valid = logical(decision.MCSUpdated || decision.RankUpdated || decision.PMIUpdated || decision.CRIUpdated);
@@ -1426,4 +1446,32 @@ end
 
 function tf = localMCSJumpResetEnabled(cfg)
 tf = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.resetOnMCSJump", false));
+end
+
+function tf = localHasStaleExplicitPDSCHMatrix(cfg, requestedLayers)
+tf = false;
+requestedLayers = max(1, round(double(requestedLayers)));
+paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
+for i = 1:numel(paths)
+    W = sixgr.util.structGet(cfg, paths(i), []);
+    if isempty(W)
+        continue;
+    end
+    sz = size(W);
+    if numel(sz) > 2 && all(sz(3:end) == 1)
+        W = reshape(W, sz(1), sz(2));
+    end
+    if ~isnumeric(W) || ~ismatrix(W)
+        tf = true;
+        return;
+    end
+    sz = size(W);
+    layerCompatible = ...
+        (sz(2) == requestedLayers && sz(1) >= requestedLayers) || ...
+        (sz(1) == requestedLayers && sz(2) >= requestedLayers);
+    if ~layerCompatible
+        tf = true;
+        return;
+    end
+end
 end

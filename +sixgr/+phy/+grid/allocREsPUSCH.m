@@ -253,6 +253,9 @@ prbVec = localExpandPRBSet(prb, carrier.NSizeGrid);
 pusch.PRBSet = prbVec;
 pusch.SymbolAllocation = symAlloc;
 pusch = localApplyPUSCHDMRSConfig(pusch, cfg);
+scheduledDMRSPorts = sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+    cfg, "UL", pusch.NumLayers, struct());
+pusch.DMRS.DMRSPortSet = double(scheduledDMRSPorts(:).');
 pusch = localApplyPUSCHPTRSConfig(pusch, cfg);
 pusch = localApplyPUSCHUCIConfig(pusch, cfg);
 pusch = localApplyPUSCHFrequencyHoppingConfig(pusch, cfg, carrier);
@@ -514,10 +517,20 @@ reOffset = string(sixgr.util.structGet(cfg, 'phy.pusch.ptrs.reOffset', ...
     sixgr.util.structGet(cfg, 'phy.ptrs.reOffset', '')));
 portSet = sixgr.util.structGet(cfg, 'phy.pusch.ptrs.portSet', ...
     sixgr.util.structGet(cfg, 'phy.ptrs.portSet', []));
+scheduledDMRSPorts = [];
+try
+    if isprop(pusch, 'DMRS') && isprop(pusch.DMRS, 'DMRSPortSet')
+        scheduledDMRSPorts = double(pusch.DMRS.DMRSPortSet(:).');
+    end
+catch
+    scheduledDMRSPorts = [];
+end
+[~, portSet] = sixgr.phy.grant.resolveScheduledPTRSPortSet( ...
+    cfg, "UL", scheduledDMRSPorts, struct("PTRSPortSet", portSet));
 if ~isfinite(timeDensity) || ~isfinite(freqDensity) ...
-        || strlength(strtrim(reOffset)) == 0 || isempty(portSet)
+        || strlength(strtrim(reOffset)) == 0
     error("sixgr:pusch:InvalidPTRSConfiguration", ...
-        "Enabled PUSCH PT-RS requires explicit timeDensity, frequencyDensity, REOffset, and portSet.");
+        "Enabled PUSCH PT-RS requires explicit timeDensity, frequencyDensity, and REOffset.");
 end
 
 try

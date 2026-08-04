@@ -1,0 +1,2 @@
+CfoOk,PhaseNoiseOk,TimingOffOk,IqOk,PaOk,EvmOk,PaprOk,RfChainOk,ChannelRfConfiguredVsAppliedOk,EvidenceSource
+0,1,1,1,1,0,0,1,0,"derived_from_rf_reconciliation_subgates"

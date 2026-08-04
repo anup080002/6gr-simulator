@@ -1,0 +1,5 @@
+UEIndex,RNTI,DL_FrameCount,UL_FrameCount,DL_CoverageStatus,UL_CoverageStatus,DL_Throughput_Mbps,UL_Throughput_Mbps,DL_BLER,UL_BLER,DL_MeanMeasuredSINR_dB,UL_MeanMeasuredSINR_dB,UserThroughput_Mbps,DL_HARQFailureRate,UL_HARQFailureRate,DL_HARQObservationCount,UL_HARQObservationCount,HARQFailureRate,HARQObservationCount
+1,1,2,1,"executed","executed",0,0,1,1,3.84051047970626,4.89785429021686,0,1,1,2,1,1,3
+2,2,2,1,"executed","executed",0,0,1,1,5.00997319544397,5.42594296123223,0,1,1,2,1,1,3
+3,3,1,0,"executed","not_executed",0,NaN,1,NaN,1.78334819647079,NaN,0,1,NaN,1,NaN,1,1
+4,4,1,0,"executed","not_executed",0,NaN,1,NaN,1.99747680577126,NaN,0,1,NaN,1,NaN,1,1

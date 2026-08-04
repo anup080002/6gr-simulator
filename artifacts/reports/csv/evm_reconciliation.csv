@@ -1,0 +1,3 @@
+Direction,ObservedRows,MeasuredEVMMean_rms,MeasuredEVMMax_rms,MeanPostEqSINR_dB,EVMThreshold_rms,EvmReconciliationOk,EvidenceSource
+"DL",6,0.853109171433273,1.21636270780712,3.58029872542375,0.15,0,"trial_modulation_tracking_evm"
+"UL",2,0.56039339188222,0.567776238250932,5.16189862572454,0.15,0,"trial_modulation_tracking_evm"

@@ -1,0 +1,5 @@
+RunId,LegacyAliasName,KPIName,Direction,Layer,FormulaId,FormulaVersion,AliasValue,CanonicalValue,Equal,Status,FailureReason
+"","Goodput_UL_max_Mbps","UL_Goodput_Max_Mbps","UL","PHY","UL_Goodput_Max_Mbps","kpi_registry_v1",0,0,1,"pass",""
+"","Goodput_DL_max_Mbps","DL_Goodput_Max_Mbps","DL","PHY","DL_Goodput_Max_Mbps","kpi_registry_v1",0,0,1,"pass",""
+"","BLER_UL_min","UL_BLER","UL","PHY","UL_BLER","kpi_registry_v1",1,1,1,"pass",""
+"","BLER_DL_min","DL_BLER","DL","PHY","DL_BLER","kpi_registry_v1",1,1,1,"pass",""

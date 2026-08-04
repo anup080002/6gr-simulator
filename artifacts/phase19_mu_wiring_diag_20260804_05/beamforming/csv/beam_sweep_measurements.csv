@@ -1,0 +1,9 @@
+RunId,TrialId,Direction,SelectedBeamId,CSIReportId,MeasurementSource,SourceRowsHash,Status,FailureReason
+"",1,"DL","1|2","047AE0","csi_or_grant_runtime_evidence","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",2,"DL","1|2","047AE0","csi_or_grant_runtime_evidence","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",3,"DL","1|2","047AE0","csi_or_grant_runtime_evidence","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",4,"DL","1|2","0476C0","csi_or_grant_runtime_evidence","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",5,"DL","1|2","047AE0","csi_or_grant_runtime_evidence","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",6,"DL","1|2","047AE0","csi_or_grant_runtime_evidence","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"",1,"UL","not_recorded_by_active_ul_pusch_trials_runtime","","air_interface_trial_row","3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","pass",""
+"",2,"UL","not_recorded_by_active_ul_pusch_trials_runtime","","air_interface_trial_row","3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","pass",""

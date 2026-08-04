@@ -343,6 +343,11 @@ sections:
       ul_bootstrap_min_cqi_for_scheduling: {required: false, type: integer, min: 1, max: 15}
       ul_srs_to_pusch_sinr_backoff_db: {required: false, type: number, min: 0}
       ul_reference_signal_scheduling_backoff_db: {required: false, type: number, min: 0}
+      mu_mimo_first_data_bootstrap_enabled: {required: false, type: boolean}
+      mu_mimo_first_data_bootstrap_policy: {required: false, type: string, allowed_values: [yaml_mcs_until_first_data_feedback]}
+      mu_mimo_first_data_mcs_index: {required: false, type: integer, min: 0, max: 31}
+      dl_mu_mimo_first_data_mcs_index: {required: false, type: integer, min: 0, max: 31}
+      ul_mu_mimo_first_data_mcs_index: {required: false, type: integer, min: 0, max: 31}
       mcs_backoff_dl_db: {required: false, type: number, min: 0}
       mcs_backoff_ul_db: {required: false, type: number, min: 0}
       sinr_to_cqi_mapping_table: {required: false, type: string}

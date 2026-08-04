@@ -11,6 +11,13 @@ assert(double(configT.ConfiguredDCIPayloadSizeBits(1)) == double(configT.DCIPayl
     "Strict PDCCH anchor YAML payload size must match the standard-derived DCI size.");
 assert(~logical(configT.DCIPayloadConfiguredMismatch(1)), ...
     "Strict PDCCH anchor must not carry a stale configured DCI payload size.");
+
+nullPayload = b.InternalConfig;
+nullPayload.phy.pdcch.configuredPayloadBits = [];
+nullPayloadCfg = sixgr.phy.pdcch.buildPDCCHConfigFromScenario(nullPayload);
+assert(isnan(nullPayloadCfg.ConfiguredDCIPayloadSizeBits) && ...
+    ~logical(nullPayloadCfg.DCIPayloadConfiguredMismatch), ...
+    "YAML-null payload authority must select context-derived DCI sizing without a scalar-logical failure.");
 trialT = b.Result.ArtifactTables.pdcch_trials;
 assert(ismember("ControlResourceValidity", string(trialT.Properties.VariableNames)), ...
     "Strict PDCCH trial rows must expose control-resource validity evidence.");

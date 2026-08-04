@@ -15,9 +15,17 @@ sixgr.util.ensureFolder(binaryDir);
 sixgr.util.ensureFolder(figDir);
 
 tables = result.ArtifactTables;
+airPath = fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv");
+runtimeTrials = sixgr.truth.selectCanonicalRuntimeControlTrials( ...
+    localReadOptionalTable(airPath), "pdcch");
+if isempty(runtimeTrials)
+    strictTrialPath = fullfile(layout.ControlCSVDir, "pdcch_trials.csv");
+else
+    strictTrialPath = fullfile(layout.ControlCSVDir, "pdcch_strict_trials.csv");
+end
 csvMap = struct( ...
     "pdcch_config_strict", fullfile(layout.ControlCSVDir, "pdcch_config_strict.csv"), ...
-    "pdcch_trials", fullfile(layout.ControlCSVDir, "pdcch_trials.csv"), ...
+    "pdcch_trials", strictTrialPath, ...
     "pdcch_candidates", fullfile(layout.ControlCSVDir, "pdcch_candidates.csv"), ...
     "pdcch_dci_fields", fullfile(layout.ControlCSVDir, "pdcch_dci_fields.csv"), ...
     "pdcch_grant_validation", fullfile(layout.ControlCSVDir, "pdcch_grant_validation.csv"), ...
@@ -36,9 +44,14 @@ for ii = 1:numel(names)
     rows(ii) = localManifestRow(csvMap.(name), "text/csv", "csv", height(T), ...
         "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
 end
-airPath = fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv");
-sixgr.util.csvWriteTable(airPath, tables.pdcch_trials);
-rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(tables.pdcch_trials), ...
+if isempty(runtimeTrials)
+    primaryTrials = tables.pdcch_trials;
+else
+    primaryTrials = runtimeTrials;
+    sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "pdcch_trials.csv"), primaryTrials);
+end
+sixgr.util.csvWriteTable(airPath, primaryTrials);
+rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(primaryTrials), ...
     "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
 
 jsonPayloads = localJsonPayloads(result, csvMap);
@@ -69,6 +82,20 @@ sixgr.util.csvWriteTable(manifestPath, manifest);
 manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
     "sixgr.phy.pdcch.exportStrictPDCCHArtifacts"), "AsArray", true);
 sixgr.util.csvWriteTable(manifestPath, manifest);
+end
+
+function T = localReadOptionalTable(path)
+T = table();
+if exist(char(string(path)), "file") ~= 2
+    return;
+end
+try
+    T = readtable(char(string(path)), "FileType", "text", ...
+        "Delimiter", ",", "ReadVariableNames", true, ...
+        "VariableNamingRule", "preserve");
+catch
+    T = table();
+end
 end
 
 function payloads = localJsonPayloads(result, csvMap)

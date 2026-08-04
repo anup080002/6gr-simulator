@@ -124,7 +124,8 @@ out.PublishedCount = height(T);
 out.MissingComponentCount = sum(summaryT.SourceArtifactCount == 0);
 out.Rows = T;
 out.SummaryRows = summaryT;
-out.Ok = ~options.Required || all(T.PublishStatus == "PUBLISHED_HASH_VERIFIED");
+out.Ok = ~options.Required || (out.MissingComponentCount == 0 && ...
+    all(T.PublishStatus == "PUBLISHED_HASH_VERIFIED"));
 end
 
 function value = localIsPublicationControlArtifact(relativePath)

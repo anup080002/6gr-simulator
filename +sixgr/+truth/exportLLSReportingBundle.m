@@ -208,6 +208,12 @@ ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.Contr
 if ~(istable(ctx.Tables.InitialAccessLifecycle) && ~isempty(ctx.Tables.InitialAccessLifecycle))
     ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.ReportCSVDir, "initial_access_lifecycle_trace.csv"));
 end
+if istable(ctx.Tables.InitialAccessLifecycle) && ~isempty(ctx.Tables.InitialAccessLifecycle)
+    ctx.Tables.InitialAccessLifecycle = ...
+        sixgr.truth.deriveInitialAccessProcedureDelay(ctx.Tables.InitialAccessLifecycle);
+    sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
+        "initial_access_lifecycle_trace.csv"), ctx.Tables.InitialAccessLifecycle);
+end
 ctx.Tables.CellSearch = localReadOptionalTable(fullfile(layout.ControlCSVDir, "cell_search_trials.csv"));
 ctx.Tables.PBCHRecovery = localReadOptionalTable(fullfile(layout.ControlCSVDir, "pbch_recovery_trials.csv"));
 ctx.Tables.Beam = localReadOptionalTable(fullfile(layout.BeamformingCSVDir, "probe_beam_mimo.csv"));

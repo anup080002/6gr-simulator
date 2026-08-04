@@ -193,6 +193,15 @@ cfg = localSyncNestedFlag(cfg, newBase, oldBase, "reference_signals.ptrs.enabled
 cfg = localSyncValue(cfg, newBase, oldBase, ...
     "reference_signals.ptrs_port_association_policy", ...
     "reference_signals.ptrs_port_association_policy", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, ...
+    "reference_signals.ptrs_time_density", ...
+    "reference_signals.ptrs_time_density", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, ...
+    "reference_signals.ptrs_frequency_density", ...
+    "reference_signals.ptrs_frequency_density", "identity");
+cfg = localSyncValue(cfg, newBase, oldBase, ...
+    "reference_signals.ptrs_re_offset", ...
+    "reference_signals.ptrs_re_offset", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.ssb_Lmax", "reference_signals.ssb_lmax", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.ssb_beam_count", "reference_signals.ssb_beam_count", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "reference_signals.csi_rs_port_count", "reference_signals.csi_rs_ports", "identity");
@@ -574,6 +583,10 @@ mappings = {
     "mimo.mu_mimo_precoder_leakage_threshold_db", "mimo.mu_mimo_precoder_leakage_threshold_db", "identity"
     "mimo.mu_mimo_minimum_desired_subspace_gain_db", "mimo.mu_mimo_minimum_desired_subspace_gain_db", "identity"
     "mimo.mu_mimo_hybrid_rf_design_policy", "mimo.mu_mimo_hybrid_rf_design_policy", "identity"
+    "mimo.mu_mimo_spatial_signature_mode", "mimo.mu_mimo_spatial_signature_mode", "identity"
+    "mimo.mu_mimo_spatial_subspace_noise_margin_db", "mimo.mu_mimo_spatial_subspace_noise_margin_db", "identity"
+    "mimo.mu_mimo_phase_only_projection_max_iterations", "mimo.mu_mimo_phase_only_projection_max_iterations", "identity"
+    "mimo.mu_mimo_phase_only_projection_tolerance", "mimo.mu_mimo_phase_only_projection_tolerance", "identity"
     "mimo.hybrid_beamforming_flag", "mimo.hybrid_beamforming_flag", "identity"
     "mimo.rank_adaptation_enable", "mimo.rank_adaptation_enable", "identity"
     "mimo.rank_adaptation_policy", "mimo.rank_adaptation_policy", "identity"
@@ -621,6 +634,9 @@ mappings = {
     "reference_signals.ptrs_enabled", "reference_signals.ptrs_enabled", "identity"
     "reference_signals.ptrs_cpe_correction_enabled", "reference_signals.ptrs_cpe_correction_enabled", "identity"
     "reference_signals.ptrs_port_association_policy", "reference_signals.ptrs_port_association_policy", "identity"
+    "reference_signals.ptrs_time_density", "reference_signals.ptrs_time_density", "identity"
+    "reference_signals.ptrs_frequency_density", "reference_signals.ptrs_frequency_density", "identity"
+    "reference_signals.ptrs_re_offset", "reference_signals.ptrs_re_offset", "identity"
     "reference_signals.csi_feedback_mode", "reference_signals.csi_feedback_mode", "identity"
     "reference_signals.csi_acquisition_mode", "reference_signals.csi_acquisition_mode", "identity"
     "reference_signals.operation_orientation", "reference_signals.operation_orientation", "identity"

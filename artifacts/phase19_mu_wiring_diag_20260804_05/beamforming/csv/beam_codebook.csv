@@ -1,0 +1,3 @@
+RunId,Direction,BeamId,WeightVectorHash,SourceRowsHash,Status,FailureReason
+"","DL","1|2","d6c34d88a0ea4f1698e9ee98b716be337b99c98e72d60ed45fb69f6e001a455c","22c517df3ece36be7757f77ff9ec814a0e77e52855716747965c614845e1aac0","pass",""
+"","UL","not_recorded_by_active_ul_pusch_trials_runtime","92d6b05947ce9d32fc1410d5d36846dbfd97eff43cc0e1db64620613c0c9f236","3128651c38e004f4cb86eb919ee4d3cae0fb222366a59469ca95f92c66136f46","pass",""

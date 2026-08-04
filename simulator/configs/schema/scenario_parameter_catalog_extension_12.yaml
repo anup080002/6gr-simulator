@@ -18,6 +18,8 @@ sections:
       rlc: {required: false, type: struct}
       pdcp: {required: false, type: struct}
       sdap: {required: false, type: struct}
+      mac: {required: false, type: struct}
+      component_validation: {required: false, type: struct}
       rrc: {required: false, type: struct}
       traffic: {required: false, type: struct}
   mac_phase08:

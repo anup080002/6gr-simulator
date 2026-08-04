@@ -1,0 +1,3 @@
+Direction,ObservedRows,PAPRMean_dB,PAPRMedian_dB,PAPRMax_dB,PAPRThreshold_dB,PAPRWindow,PaprReconciliationOk,EvidenceSource
+"DL",6,19.4800999569256,19.3781323379401,19.901317546361,13.5,"active_samples_excluding_cp_when_ofdm_metadata_available",0,"trial_waveform_papr"
+"UL",2,10.9528919292776,10.9528919292776,11.33300969219,13.5,"active_samples_excluding_cp_when_ofdm_metadata_available",1,"trial_waveform_papr"

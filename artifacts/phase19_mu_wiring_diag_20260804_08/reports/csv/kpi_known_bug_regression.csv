@@ -1,0 +1,2 @@
+RunId,RegressionCase,DLRawValueMbps,ULRawValueMbps,BadExportedULValueMbps,CorrectExportedULValueMbps,BugDetected,BugPrevented,Status,FailureReason
+"","AUD-KPI-UL-GOODPUT_dl_value_copied_to_ul",0,0,40.137091,0,0,1,"pass",""

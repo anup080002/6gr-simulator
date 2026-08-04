@@ -28,18 +28,11 @@ gate.SourceCSV = string(spec.SourceCSV);
 gate.RunFolder = string(runFolder);
 gate.UnavailablePath = sixgr.visual.unavailableArtifactPath(filePath);
 
-sourcePath = fullfile(char(runFolder), char(spec.SourceCSV));
-if exist(sourcePath, "file") ~= 2
-    status = localUnavailableStatus(spec, "source_csv_missing");
+[sourceT, sourceInfo] = sixgr.visual.readContractSourceData(runFolder, spec.SourceCSV);
+if ~logical(sourceInfo.Ok)
+    status = localUnavailableStatus(spec, string(sourceInfo.Reason));
 else
-    try
-        sourceT = readtable(sourcePath, "VariableNamingRule", "preserve");
-    catch ME
-        status = localUnavailableStatus(spec, "source_csv_unreadable:" + string(ME.identifier));
-    end
-    if exist("sourceT", "var")
-        status = sixgr.visual.evaluateVisualArtifactContract(spec, sourceT);
-    end
+    status = sixgr.visual.evaluateVisualArtifactContract(spec, sourceT);
 end
 
 gate.VisualValidity = string(status.VisualValidity);

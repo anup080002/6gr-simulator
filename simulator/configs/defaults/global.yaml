@@ -267,7 +267,10 @@
     "mib": {},
     "type0": {},
     "sib1": {
-      "enabled": false
+      "enabled": false,
+      "pdsch": {
+        "ptrs_enabled": false
+      }
     },
     "rrc": {},
     "extensions": {}

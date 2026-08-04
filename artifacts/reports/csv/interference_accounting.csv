@@ -1,0 +1,3 @@
+Direction,ObservedRows,ConfiguredInterferenceMode,ObservedInterferenceMode,MaxContributorCount,MeanInterferencePower_dBm,InterferencePowerSource,InterferenceTruthChannelUsed,InterferenceAccountingOk,EvidenceSource
+"DL",6,"","shared_slot_waveform_superposition",1,61.1474973319134,"shared_slot_rx_contribution_sample_power",1,1,"trial_shared_slot_interference_columns"
+"UL",2,"","shared_slot_waveform_superposition",1,57.1409986558206,"shared_slot_rx_contribution_sample_power",1,1,"trial_shared_slot_interference_columns"

@@ -131,8 +131,20 @@ try
     pdsch.DMRS.NSCID = 0;
 catch
 end
-pdsch.EnablePTRS = logical(sixgr.util.structGet(cfg, ...
-    "phy.pdsch.enablePTRS", false));
+% SIB1 is common SI-RNTI PDSCH and has its own higher-layer resource
+% authority.  It must not inherit UE-dedicated data-PDSCH PT-RS merely
+% because PT-RS is enabled for connected traffic in the same scenario.
+% The explicit SIB1 setting remains YAML/config driven; absence retains the
+% NR common-channel default (disabled).
+ptrsEnabled = sixgr.util.structGet(cfg, ...
+    "initial_access.sib1.pdsch.ptrs_enabled", false);
+if ~((islogical(ptrsEnabled) || isnumeric(ptrsEnabled)) && ...
+        isscalar(ptrsEnabled) && isfinite(double(ptrsEnabled)) && ...
+        any(double(ptrsEnabled) == [0 1]))
+    error("sixgr:phy:broadcast:InvalidSIB1PTRSConfiguration", ...
+        "initial_access.sib1.pdsch.ptrs_enabled must be a scalar boolean.");
+end
+pdsch.EnablePTRS = logical(ptrsEnabled);
 end
 
 function width = localRIVWidth(nRB)

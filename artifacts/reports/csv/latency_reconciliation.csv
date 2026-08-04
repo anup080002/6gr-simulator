@@ -1,0 +1,2 @@
+MeanLatency_ms,LatencyEvidenceSource,KPIFormulaVersion,LatencyReconciliationOk,FailureReason
+NaN,"unavailable","measured_sinr_geometry_v1",0,"latency_or_slot_timing_evidence_unavailable"

@@ -1,0 +1,9 @@
+RunId,KPIName,Direction,Bits,DurationSec,ExpectedMbps,ComputedMbps,Delta,Tolerance,Pass,Status,FailureReason
+"","UL_PHY_ScheduledThroughput_Mbps","UL",401616,0.0005,803.232,803.232,0,1e-09,1,"pass",""
+"","DL_PHY_ScheduledThroughput_Mbps","DL",1106544,0.0015,737.696,737.696,0,1e-09,1,"pass",""
+"","UL_TB_Delivery_Goodput_Mbps","UL",401616,0.01,40.1616,40.1616,0,1e-09,1,"pass",""
+"","DL_TB_Delivery_Goodput_Mbps","DL",1106544,0.01,110.6544,110.6544,0,1e-09,1,"pass",""
+"","UL_MAC_Goodput_Mbps","UL",401616,0.01,40.1616,40.1616,0,1e-09,1,"pass",""
+"","DL_MAC_Goodput_Mbps","DL",1106544,0.01,110.6544,110.6544,0,1e-09,1,"pass",""
+"","UL_Application_Goodput_Mbps","UL",360000,0.01,36,36,0,1e-09,1,"pass",""
+"","DL_Application_Goodput_Mbps","DL",1080000,0.01,108,108,0,1e-09,1,"pass",""

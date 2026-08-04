@@ -1,0 +1,2 @@
+RunId,PDCCHConfigSIB1,ControlResourceSetZero,CORESET0Pattern,RBStart,NumRB,DurationSymbols,CORESET0Present
+"sib1_runtime_waveform",0,0,"multiplexing_pattern_1",0,24,2,1

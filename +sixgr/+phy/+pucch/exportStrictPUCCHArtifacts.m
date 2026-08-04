@@ -10,8 +10,16 @@ jsonDir = fullfile(layout.ReportDir, "json");
 sixgr.util.ensureFolder(jsonDir);
 
 tables = result.ArtifactTables;
+airPath = fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv");
+runtimeTrials = sixgr.truth.selectCanonicalRuntimeControlTrials( ...
+    localReadOptionalTable(airPath), "pucch");
+if isempty(runtimeTrials)
+    strictTrialPath = fullfile(layout.ControlCSVDir, "pucch_trials.csv");
+else
+    strictTrialPath = fullfile(layout.ControlCSVDir, "pucch_strict_trials.csv");
+end
 csvMap = struct( ...
-    "pucch_trials", fullfile(layout.ControlCSVDir, "pucch_trials.csv"), ...
+    "pucch_trials", strictTrialPath, ...
     "pucch_resource_mapping", fullfile(layout.ControlCSVDir, "pucch_resource_mapping.csv"), ...
     "pucch_false_alarm_trials", fullfile(layout.ControlCSVDir, "pucch_false_alarm_trials.csv"), ...
     "pucch_summary", fullfile(layout.ControlCSVDir, "pucch_summary.csv"));
@@ -25,9 +33,14 @@ for ii = 1:numel(names)
         "sixgr.phy.pucch.exportStrictPUCCHArtifacts");
 end
 
-airPath = fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv");
-sixgr.util.csvWriteTable(airPath, tables.pucch_trials);
-rows(numel(names) + 1) = localManifestRow(airPath, "text/csv", "csv", height(tables.pucch_trials), ...
+if isempty(runtimeTrials)
+    primaryTrials = tables.pucch_trials;
+else
+    primaryTrials = runtimeTrials;
+    sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "pucch_trials.csv"), primaryTrials);
+end
+sixgr.util.csvWriteTable(airPath, primaryTrials);
+rows(numel(names) + 1) = localManifestRow(airPath, "text/csv", "csv", height(primaryTrials), ...
     "sixgr.phy.pucch.exportStrictPUCCHArtifacts");
 
 summaryJson = fullfile(jsonDir, "pucch_detection_summary.json");
@@ -57,6 +70,20 @@ sixgr.util.csvWriteTable(manifestPath, manifest);
 manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
     "sixgr.phy.pucch.exportStrictPUCCHArtifacts"), "AsArray", true);
 sixgr.util.csvWriteTable(manifestPath, manifest);
+end
+
+function T = localReadOptionalTable(path)
+T = table();
+if exist(char(string(path)), "file") ~= 2
+    return;
+end
+try
+    T = readtable(char(string(path)), "FileType", "text", ...
+        "Delimiter", ",", "ReadVariableNames", true, ...
+        "VariableNamingRule", "preserve");
+catch
+    T = table();
+end
 end
 
 function row = localManifestRow(path, mediaType, kind, rowCount, producer)

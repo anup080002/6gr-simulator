@@ -1,0 +1,2 @@
+DL_Goodput_Mbps,UL_Goodput_Mbps,DL_RadioDuration_s,UL_RadioDuration_s,DL_TrialCount,UL_TrialCount,KPIFormulaVersion,ThroughputReconciliationOk,FailureReason
+0,0,0.003,0.001,6,2,"measured_sinr_geometry_v1",1,""

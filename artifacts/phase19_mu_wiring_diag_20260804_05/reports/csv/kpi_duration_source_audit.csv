@@ -1,0 +1,3 @@
+RunId,Direction,DurationSource,SlotCount,RadioDurationSec,ScheduledResourceExposureSec,MeasurementWindowSec,WarmupDurationSec,AggregationDurationSec,WallClockUsedForRadioThroughput,Pass,Status,FailureReason
+"","UL","configured_measurement_window_sec",2,0.01,0.0005,0.01,0,0.01,0,1,"pass",""
+"","DL","configured_measurement_window_sec",6,0.01,0.0015,0.01,0,0.01,0,1,"pass",""

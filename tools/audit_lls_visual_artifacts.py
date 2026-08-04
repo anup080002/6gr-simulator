@@ -16,13 +16,14 @@ import argparse
 import csv
 import hashlib
 import math
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
 
-VISUAL_EXTENSIONS = {".png", ".svg", ".html", ".htm"}
+VISUAL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".html", ".htm"}
 SUPPRESSED_STATUSES = {
     "suppressed",
     "source_csv_missing",
@@ -264,6 +265,13 @@ def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditR
     )
     file_info = inspect_file(run_folder, image_path)
     source_stats = inspect_source_csv(run_folder, source_csv, x_col, y_col)
+    # A measured empirical CDF remains meaningful when several observations
+    # are tied: it is a single step whose mass is determined by the sample
+    # count.  Do not confuse that legitimate distribution with a fabricated
+    # constant line or one-cell heatmap.
+    if plot_kind == "cdf" and source_stats.non_nan_y_count >= 2:
+        source_stats.low_information_reason = ""
+        source_stats.low_information_details = []
 
     failures: list[tuple[str, str]] = []
     if file_info.extension == ".svg" or file_info.actual_mime_type == "image/svg+xml":
@@ -438,10 +446,14 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
     stats = SourceStats()
     if not source_csv:
         return stats
-    path = run_folder / source_csv.replace("\\", "/")
-    if not path.exists() or not path.is_file():
-        return stats
-    stats.source_exists = True
+    # A visual may be sourced from a canonical DL/UL union.  At least one
+    # existing member is sufficient for a direction-specific run; each
+    # existing member is inspected and contributes to the combined stats.
+    source_members = [
+        member.strip()
+        for member in source_csv.replace("\\", "/").split("|")
+        if member.strip()
+    ]
     x_values: set[str] = set()
     y_values: set[str] = set()
     unit_values: set[str] = set()
@@ -453,35 +465,52 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
     chart_names: set[str] = set()
     saw_y_column = not y_col
     saw_x_column = not x_col
+    axis_columns_available = False
 
-    try:
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            fieldnames = list(reader.fieldnames or [])
-            x_col, y_col = infer_chart_source_columns(fieldnames, x_col, y_col)
-            axis_columns_available = bool(x_col and y_col)
-            plot_truth_columns = plot_scoped_truth_columns(fieldnames, split_plot_columns(x_col, y_col))
-            saw_x_column = saw_x_column or x_col in fieldnames
-            saw_y_column = saw_y_column or y_col in fieldnames
-            for row in reader:
-                stats.row_count += 1
-                if x_col and x_col in row:
-                    value = normalize_cell(row.get(x_col, ""))
-                    if value and not is_nan_token(value):
-                        x_values.add(value)
-                if y_col and y_col in row:
-                    value = normalize_cell(row.get(y_col, ""))
-                    if value and not is_nan_token(value):
-                        stats.non_nan_y_count += 1
-                        y_values.add(value)
-                collect_values(row, UNIT_COLUMNS, unit_values)
-                collect_values(row, CURVE_COLUMNS, curve_values)
-                collect_values(row, TRUTH_COLUMNS, truth_values)
-                collect_values(row, plot_truth_columns, plot_truth_values)
-                collect_values(row, SOURCE_MAPPING_COLUMNS, mapping_values)
-                collect_values(row, CHART_MODE_COLUMNS, chart_modes)
-                collect_values(row, ("chart_name", "ChartName"), chart_names)
-    except UnicodeDecodeError:
+    for member in source_members:
+        path = run_folder / member
+        if not path.exists() or not path.is_file():
+            continue
+        stats.source_exists = True
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                fieldnames = list(reader.fieldnames or [])
+                member_x_col, member_y_col = infer_chart_source_columns(
+                    fieldnames, x_col, y_col
+                )
+                axis_columns_available = axis_columns_available or bool(
+                    member_x_col and member_y_col
+                )
+                plot_truth_columns = plot_scoped_truth_columns(
+                    fieldnames, split_plot_columns(member_x_col, member_y_col)
+                )
+                saw_x_column = saw_x_column or member_x_col in fieldnames
+                saw_y_column = saw_y_column or member_y_col in fieldnames
+                for row in reader:
+                    stats.row_count += 1
+                    if member_x_col and member_x_col in row:
+                        value = normalize_cell(row.get(member_x_col, ""))
+                        if value and not is_nan_token(value):
+                            x_values.add(value)
+                    if member_y_col and member_y_col in row:
+                        value = normalize_cell(row.get(member_y_col, ""))
+                        if value and not is_nan_token(value):
+                            stats.non_nan_y_count += 1
+                            y_values.add(value)
+                    collect_values(row, UNIT_COLUMNS, unit_values)
+                    collect_values(row, CURVE_COLUMNS, curve_values)
+                    collect_values(row, TRUTH_COLUMNS, truth_values)
+                    collect_values(row, plot_truth_columns, plot_truth_values)
+                    collect_values(row, SOURCE_MAPPING_COLUMNS, mapping_values)
+                    collect_values(row, CHART_MODE_COLUMNS, chart_modes)
+                    collect_values(row, ("chart_name", "ChartName"), chart_names)
+        except UnicodeDecodeError:
+            # Fail closed if an existing source member cannot be decoded.
+            stats.source_exists = False
+            return stats
+
+    if not stats.source_exists:
         return stats
 
     stats.unique_x_count = len(x_values)
@@ -497,7 +526,7 @@ def inspect_source_csv(run_folder: Path, source_csv: str, x_col: str, y_col: str
     stats.chart_names = sorted(chart_names)
     stats.x_missing = bool(x_col and not saw_x_column)
     stats.y_missing = bool(y_col and not saw_y_column)
-    if "axis_columns_available" in locals() and axis_columns_available:
+    if axis_columns_available:
         stats.low_information_reason, stats.low_information_details = source_low_information_reason(stats)
     return stats
 
@@ -578,7 +607,14 @@ def inspect_file(run_folder: Path, rel_path: str) -> FileInfo:
     info.sha256 = hashlib.sha256(data).hexdigest()
     info.actual_mime_type = detect_mime(data)
     expected = expected_extension(info.actual_mime_type)
-    info.signature_ok = bool(expected and (ext == expected or (info.actual_mime_type == "text/html" and ext == ".htm")))
+    info.signature_ok = bool(
+        expected
+        and (
+            ext == expected
+            or (info.actual_mime_type == "text/html" and ext == ".htm")
+            or (info.actual_mime_type == "image/jpeg" and ext == ".jpeg")
+        )
+    )
     if info.signature_ok:
         info.signature_status = "ok"
     elif info.actual_mime_type == "unknown":
@@ -825,6 +861,8 @@ def is_rendered_status(status: str) -> bool:
 def declared_mime(ext: str) -> str:
     return {
         ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
         ".svg": "image/svg+xml",
         ".html": "text/html",
         ".htm": "text/html",
@@ -834,6 +872,7 @@ def declared_mime(ext: str) -> str:
 def expected_extension(mime: str) -> str:
     return {
         "image/png": ".png",
+        "image/jpeg": ".jpg",
         "image/svg+xml": ".svg",
         "text/html": ".html",
     }.get(mime.lower(), "")
@@ -842,6 +881,8 @@ def expected_extension(mime: str) -> str:
 def detect_mime(data: bytes) -> str:
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
     prefix = data[:4096].decode("utf-8", errors="ignore").lstrip("\ufeff").strip().lower()
     if prefix.startswith("<svg") or (prefix.startswith("<?xml") and "<svg" in prefix):
         return "image/svg+xml"
@@ -883,12 +924,21 @@ def is_mislabeled_snr_sweep(plot_id: str, image_path: str, stats: SourceStats) -
 
 
 def source_uses_forbidden_truth(stats: SourceStats) -> bool:
-    tokens = " ".join(stats.truth_tokens).lower()
-    plot_tokens = " ".join(stats.plot_truth_tokens).lower()
-    if any(token in tokens for token in STRONG_FORBIDDEN_TRUTH_TOKENS):
+    if semantic_tokens_contain(stats.truth_tokens, STRONG_FORBIDDEN_TRUTH_TOKENS):
         return True
-    if any(token in plot_tokens for token in FORBIDDEN_TRUTH_TOKENS):
+    if semantic_tokens_contain(stats.plot_truth_tokens, FORBIDDEN_TRUTH_TOKENS):
         return True
+    return False
+
+
+def semantic_tokens_contain(values: Iterable[str], forbidden: Iterable[str]) -> bool:
+    """Match provenance identifiers, not letter sequences inside prose."""
+    for forbidden_value in forbidden:
+        parts = [re.escape(part) for part in str(forbidden_value).lower().split("_")]
+        pattern = r"(?:^|[^a-z0-9])" + r"[_ -]+".join(parts) + r"(?:[^a-z0-9]|$)"
+        for value in values:
+            if re.search(pattern, str(value).lower()):
+                return True
     return False
 
 

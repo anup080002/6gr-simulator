@@ -1,0 +1,11 @@
+RunId,SourceTableName,Direction,RequiredColumn,Present,TypeValid,RowCount,MissingCount,InvalidCount,Status,FailureReason
+"","ul_pusch_trials","UL","Direction",1,1,2,0,0,"pass",""
+"","ul_pusch_trials","UL","Goodput_Mbps",1,1,2,0,0,"pass",""
+"","ul_pusch_trials","UL","CRCPass_or_TBCrcPass",1,1,2,0,0,"pass",""
+"","ul_pusch_trials","UL","BitErrors",1,1,2,0,0,"pass",""
+"","ul_pusch_trials","UL","BitsCompared",1,1,2,0,0,"pass",""
+"","dl_pdsch_trials","DL","Direction",1,1,6,0,0,"pass",""
+"","dl_pdsch_trials","DL","Goodput_Mbps",1,1,6,0,0,"pass",""
+"","dl_pdsch_trials","DL","CRCPass_or_TBCrcPass",1,1,6,0,0,"pass",""
+"","dl_pdsch_trials","DL","BitErrors",1,1,6,0,0,"pass",""
+"","dl_pdsch_trials","DL","BitsCompared",1,1,6,0,0,"pass",""
