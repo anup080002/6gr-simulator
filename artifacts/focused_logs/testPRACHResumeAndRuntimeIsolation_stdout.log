@@ -1,0 +1,3 @@
+PASS testRestoreStrictPRACHComponentAnchor: identity/hash restore is fail closed.
+PASS testScenarioCSVAnnotationRuntimeIsolation: runtime journals remain immutable.
+PASS testRuntimeEvidenceCSVRebuild: JSONL truth rebuilt derived CSV views.

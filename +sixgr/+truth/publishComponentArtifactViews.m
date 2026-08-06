@@ -51,7 +51,8 @@ for idx = 1:numel(files)
     sourcePath = string(fullfile(files(idx).folder, files(idx).name));
     rel = localRelativePath(root, sourcePath);
     firstPart = extractBefore(rel + "/", "/");
-    if any(firstPart == componentRoots) || localIsPublicationControlArtifact(rel)
+    if any(firstPart == componentRoots) || firstPart == "component_anchors" || ...
+            localIsPublicationControlArtifact(rel)
         continue;
     end
     [~, stem, ext] = fileparts(sourcePath);

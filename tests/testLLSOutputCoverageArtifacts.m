@@ -642,6 +642,11 @@ ulTrial = localAddTimingLineage(ulTrial, 25, 20, 5, 20, 25, 5, 2, 1, 1, 2, 1, tr
     "available_receiver_timing_estimate", "true_minus_estimated_timing_offset_samples", "OK");
 dlTrial = localAddLatencyLineage(dlTrial, 0.20, 0.05, 0.50, 0.25, 0.10);
 ulTrial = localAddLatencyLineage(ulTrial, 0.30, 0.10, 0.60, 0.25, 0.15);
+% Production air-interface trial rows may legitimately omit the serving
+% cell while still carrying measured precoder/rank evidence.  Exercise that
+% schema explicitly so rank artifacts cannot silently disappear.
+dlTrial.CellID(:) = NaN;
+ulTrial.CellID(:) = NaN;
 localWrite(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), dlTrial);
 localWrite(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ulTrial);
 

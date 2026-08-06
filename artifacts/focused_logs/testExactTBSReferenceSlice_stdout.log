@@ -1,0 +1,14 @@
+RUN testDUTReferenceComparison
+PASS testDUTReferenceComparison
+RUN testPDSCHTBSAndBaseGraphBoundaries
+PDSCH TBS/base graph: frozen positives 18/18, negatives 5/5, production plans 12; mismatches=0
+PASS testPDSCHTBSAndBaseGraphBoundaries
+RUN testPDSCHTBSAndBaseGraphVectors
+PDSCH TBS/base graph: frozen positives 18/18, negatives 5/5, production plans 12; mismatches=0
+PASS testPDSCHTBSAndBaseGraphVectors
+RUN testHARQRetransmissionTBSFailClosed
+PASS testHARQRetransmissionTBSFailClosed
+RUN testPDSCHGrantDrivenTxExact
+PDSCH grant-driven exact vectors=30 maxLayerErr=3.14e-16 maxPortErr=9.69e-16 maxGridErr=9.69e-16 maxPowerErr=0
+PASS testPDSCHGrantDrivenTxExact
+EXACT_TBS_REFERENCE_SLICE_PASS=5

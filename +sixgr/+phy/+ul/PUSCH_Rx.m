@@ -775,11 +775,19 @@ rx.NoiseVarReason = char(string(noiseStatus.Reason));
 rx.NoiseVarStrictFailure = false;
 rx.NoiseVarDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVar = double(nVar);
+rx.PreEqualizationNoiseVariance = double(nVar);
 rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarianceDomain = "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarianceSource = char(string(noiseStatus.Source));
 rx.PreEqualizationNoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
 rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
 rx.DecoderNoiseVar = double(nVarForDecode);
 rx.PostEqualizationNoiseVar = double(nVarPostEqDiagnostic);
+rx.PostEqualizationNoiseVariance = double(nVarPostEqDiagnostic);
+rx.PostEqualizationNoiseVarianceDomain = ...
+    "unit_constellation_layer_symbol_post_equalization";
+rx.PostEqualizationNoiseVarianceSource = char(string(sixgr.util.structGet( ...
+    nVarPostEqInfo, "Source", "post_equalization_noise_variance_unavailable")));
 rx.DecoderNoiseVarStatus = char(string(sixgr.util.structGet(nVarDecodeInfo, "ValueStatus", "OK")));
 rx.DecoderNoiseVarSource = char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "")));
 rx.DecoderNoiseVarReductionMethod = char(string(sixgr.util.structGet(nVarDecodeInfo, "ReductionMethod", "")));
@@ -904,6 +912,12 @@ rx.LLRCSIWeightRawMedian = double(llrCSIInfo.RawCSIMedian);
 rx.LLRCSIWeightMedianBeforeNormalization = double(llrCSIInfo.WeightMedianBeforeNormalization);
 rx.LLRCSIWeightNormalizationScale = double(llrCSIInfo.NormalizationScale);
 rx.LLRNoiseVariance = double(nVarForDecode);
+rx.LLRNoiseVarianceDomain = "unit_constellation_soft_demapper_input";
+rx.LLRNoiseVarianceSource = char(string(sixgr.util.structGet( ...
+    nVarDecodeInfo, "Source", "pusch_soft_demapper")));
+rx.NoiseVarianceUnit = "normalized_complex_power";
+rx.NoiseVarianceNormalization = ...
+    "native_ofdm_grid_then_unit_constellation_equalizer_domains";
 rx.EqualizedSymbolsForEvidence = layerEqSym;
 rx.LayerEqualizedSymbolsForEvidence = layerEqSym;
 rx.LayerEqualizedSymbols = layerEqSym;

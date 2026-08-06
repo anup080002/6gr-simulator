@@ -1,0 +1,2 @@
+PASS testRestoreStrictPRACHComponentAnchor: identity/hash restore is fail closed.
+REAL_RESTORE_OK=1 TRIAL_ROWS=40264 MANIFEST_ROWS=38 LEGACY_SELF_ROW=1

@@ -1,0 +1,2 @@
+PASS testRuntimeIdentityFillerIsolation: identity provenance is no longer fabricated.
+FOCUSED_SCHEMA_PRESERVATION_TESTS_PASS=2\n

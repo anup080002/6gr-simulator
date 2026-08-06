@@ -161,10 +161,19 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     if ~isfinite(g.BufferBytesBefore)
                         g.BufferBytesBefore = 0;
                     end
-                    g.TBSBits = double(sixgr.util.structGet(g, "TBSBits", sixgr.util.structGet(g, "TransportBlockSize", 0)));
-                    g.TBSBytes = floor(max(g.TBSBits, 0) / 8);
+                    [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
+                        sprintf("%s HARQ retransmission RNTI=%d process=%d", ...
+                        class(obj), round(double(g.RNTI)), ...
+                        round(double(sixgr.util.structGet(g, "HARQ.HarqID", -1)))));
+                    if g.TBSBits <= 0
+                        error("sixgr:SchedulerRR:MissingRetransmissionTBS", ...
+                            "HARQ retransmission RNTI=%d has no positive frozen TBS.", ...
+                            round(double(g.RNTI)));
+                    end
+                    g.TBSBytes = g.TBSBits / 8;
                     g.BufferBytesAfter = max(g.BufferBytesBefore - double(g.TBSBytes), 0);
                     g.GrantReason = "harq_retx";
+                    g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
                     g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
 
@@ -346,6 +355,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 [g.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(g, ...
                     sprintf("%s new_data_rr RNTI=%d", class(obj), round(rnti)));
                 g.TBSBytes = g.TBSBits / 8;
+                g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
                 g = obj.freezePHYGrantForGrant(g);
                 g.DCI = obj.buildDCIBitfield(g);
 

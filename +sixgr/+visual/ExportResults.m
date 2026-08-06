@@ -260,7 +260,7 @@ if opt.MakePlots
                 continue;
             end
             f = figs.(n);
-            if ~isempty(f) && ishghandle(f)
+            if localIsScalarFigure(f)
                 base = fullfile(figDir, [n]);
                 if ~isempty(opt.FigurePrefix)
                     base = fullfile(figDir, [opt.FigurePrefix '_' n]);
@@ -299,7 +299,7 @@ if opt.MakePlots
                 if startsWith(n,'_'), continue; end
                 f = figs.(n);
                 try
-                    if ~isempty(f) && ishghandle(f)
+                    if localIsScalarFigure(f)
                         close(f);
                     end
                 catch
@@ -326,6 +326,19 @@ logInfo('ExportResults: done');
 end
 
 % ---------------- local helpers ----------------
+
+function tf = localIsScalarFigure(value)
+tf = false;
+if ~isscalar(value)
+    return;
+end
+try
+    mask = isgraphics(value, 'figure');
+    tf = isscalar(mask) && all(mask(:));
+catch
+    tf = false;
+end
+end
 
 function s = localResultsToStruct(results)
 % Convert results into a struct suitable for saving.

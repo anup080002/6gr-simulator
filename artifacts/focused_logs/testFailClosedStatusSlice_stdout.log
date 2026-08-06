@@ -1,0 +1,4 @@
+PASS testLLSActiveIssueGateMissingRegistry: missing/header-only registry cannot pass.
+PASS testLLSQualificationStatusSeparation: execution, science, publication and browser states are independent.
+PASS testBrowserPublicationReceipt: publication receipt is actual and fail-closed.
+FAIL_CLOSED_STATUS_SLICE_PASS=8\n

@@ -33,6 +33,11 @@ sixgr.util.ensureFolder(fullfile(runFolder, "mat"));
 sixgr.util.ensureFolder(fullfile(runFolder, "image"));
 
 if opt.SaveCSV
+    runId = localRunId(details, localRunRootFolder(runFolder));
+    if strlength(strtrim(runId)) == 0 || any(strcmpi(strtrim(runId), ["nan","<missing>","missing"]))
+        error("sixgr:kpi:MissingRunIdentity", ...
+            "KPI export requires a non-empty authoritative run identity.");
+    end
     fileSuffix = localNormalizeFileSuffix(opt.FileSuffix);
     csvFile = fullfile(runFolder, "csv", localAppendFileSuffix("link_kpis.csv", fileSuffix));
     sixgr.util.csvWriteTable(csvFile, kpiTable);
@@ -47,7 +52,7 @@ if opt.SaveCSV
 
     rawKPI = sixgr.kpi.loadDirectionRawTables(details, "RunFolder", runFolder);
     kpiRecon = sixgr.kpi.reconstructLLSKPISummaryFromRaw(rawKPI, ...
-        "RunId", localRunId(details), ...
+        "RunId", runId, ...
         "ScenarioName", localScenarioName(details), ...
         "SourcePaths", rawKPI.Paths, ...
         "StrictMode", localStrictMode(details), ...
@@ -94,7 +99,7 @@ if opt.SaveCSV
 
     mimoArtifacts = sixgr.mimo.exportMIMOEvidenceArtifacts(localRunRootFolder(runFolder), ...
         localConfig(details), rawKPI, ...
-        "RunId", localRunId(details), ...
+        "RunId", runId, ...
         "ScenarioName", localScenarioName(details), ...
         "StrictMode", localStrictMode(details));
     if isstruct(mimoArtifacts)
@@ -105,7 +110,7 @@ if opt.SaveCSV
 
     pdschArtifacts = sixgr.truth.exportPDSCHObjectiveArtifacts(localRunRootFolder(runFolder), ...
         localConfig(details), rawKPI.DL, ...
-        "RunId", localRunId(details), ...
+        "RunId", runId, ...
         "ScenarioName", localScenarioName(details), ...
         "StrictMode", localStrictMode(details), ...
         "SourceTable", rawKPI.Paths.DL);
@@ -163,7 +168,7 @@ if opt.SaveFigures
                 continue;
             end
             f = figs.(n);
-            if isempty(f) || ~ishghandle(f)
+            if ~localIsScalarFigure(f)
                 continue;
             end
             if opt.SavePNG
@@ -178,9 +183,54 @@ if opt.SaveFigures
             catch
             end
         end
-    catch
-        % Keep data export successful even if plotting fails.
+        if opt.SaveCSV && ~isempty(artifacts.fig)
+            imagePaths = string(artifacts.fig(:));
+            plotIds = strings(numel(imagePaths), 1);
+            sourcePaths = repmat(string(csvFile), numel(imagePaths), 1);
+            paprSource = fullfile(runFolder, "csv", ...
+                localAppendFileSuffix("papr_ccdf.csv", fileSuffix));
+            for i = 1:numel(imagePaths)
+                [~, stem] = fileparts(char(imagePaths(i)));
+                plotIds(i) = string(stem);
+                if contains(lower(plotIds(i)), "papr")
+                    sourcePaths(i) = string(paprSource);
+                end
+            end
+            lineagePath = fullfile(runFolder, "csv", ...
+                localAppendFileSuffix("link_kpi_plot_lineage.csv", fileSuffix));
+            sixgr.visual.writeComponentPlotLineage(localRunRootFolder(runFolder), ...
+                lineagePath, plotIds, imagePaths, sourcePaths, ...
+                "sixgr.link.exportLinkKPIs");
+            artifacts.csv{end+1} = lineagePath;
+        end
+    catch ME
+        if localStrictMode(details)
+            rethrow(ME);
+        end
+        % A non-strict plot failure must not leave unlineaged images behind.
+        for i = 1:numel(artifacts.fig)
+            try
+                if exist(artifacts.fig{i}, "file") == 2
+                    delete(artifacts.fig{i});
+                end
+            catch
+            end
+        end
+        artifacts.fig = {};
     end
+end
+end
+
+function tf = localIsScalarFigure(value)
+tf = false;
+if ~isscalar(value)
+    return;
+end
+try
+    mask = isgraphics(value, "figure");
+    tf = isscalar(mask) && all(mask(:));
+catch
+    tf = false;
 end
 end
 
@@ -302,9 +352,26 @@ else
 end
 end
 
-function runId = localRunId(details)
-runId = string(sixgr.util.structGet(details, "RunId", ...
-    sixgr.util.structGet(details, "run_id", "")));
+function runId = localRunId(details, runFolder)
+cfg = sixgr.util.structGet(details, "Config", struct());
+values = [ ...
+    string(sixgr.util.structGet(details, "RunId", "")); ...
+    string(sixgr.util.structGet(details, "run_id", "")); ...
+    string(sixgr.util.structGet(details, "ScenarioID", "")); ...
+    string(sixgr.util.structGet(cfg, "run.runId", "")); ...
+    string(sixgr.util.structGet(cfg, "run.runTag", "")); ...
+    string(sixgr.util.structGet(cfg, "run.scenarioID", "")); ...
+    string(sixgr.util.structGet(cfg, "meta.lls6gScenarioID", ""))];
+runId = "";
+for i = 1:numel(values)
+    candidate = strtrim(values(i));
+    if strlength(candidate) > 0 && ~any(strcmpi(candidate, ["nan","<missing>","missing"]))
+        runId = candidate;
+        return;
+    end
+end
+[~, leaf] = fileparts(char(string(runFolder)));
+runId = strtrim(string(leaf));
 end
 
 function scenarioName = localScenarioName(details)

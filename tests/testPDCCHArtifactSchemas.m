@@ -23,10 +23,27 @@ for ii = 1:numel(requiredCsv)
     assert(height(T) > 0, "Strict PDCCH CSV artifact must not be empty: " + requiredCsv(ii));
 end
 figDir = fullfile(runFolder, "reports", "figures");
-assert(exist(fullfile(figDir, "pdcch_coreset_resource_grid.png"), "file") == 2, ...
-    "Strict PDCCH must export measured figure artifacts.");
+requiredFigures = [
+    "pdcch_coreset_resource_grid.png"
+    "pdcch_candidate_metrics.png"
+    "pdcch_wrong_rnti_rejections.png"
+    "pdcch_false_alarm_probability.png"
+    "pdcch_low_snr_detection_probability.png"
+    "pdcch_decode_flow.png"
+    "pdcch_dci_to_grant_flow.png"];
+for ii = 1:numel(requiredFigures)
+    assert(exist(fullfile(figDir, requiredFigures(ii)), "file") == 2, ...
+        "Strict PDCCH must atomically export every measured figure artifact: " + requiredFigures(ii));
+end
 assert(isempty(dir(fullfile(figDir, "*unavailable*"))), ...
     "AUD-PDCCH-001 strict artifacts must not use unavailable-card figures.");
+lineagePath = fullfile(runFolder, "control", "csv", "pdcch_plot_lineage.csv");
+assert(exist(lineagePath, "file") == 2, ...
+    "Strict PDCCH figure publication requires source-hash lineage.");
+lineageT = readtable(lineagePath, "FileType", "text", "Delimiter", ",", ...
+    "ReadVariableNames", true, "VariableNamingRule", "preserve");
+assert(height(lineageT) == numel(requiredFigures) && all(string(lineageT.Status) == "pass"), ...
+    "Strict PDCCH figure lineage must cover the complete atomic figure set.");
 manifestPath = fullfile(runFolder, "control", "csv", "pdcch_strict_artifact_manifest.csv");
 manifestT = readtable(manifestPath, "FileType", "text", "Delimiter", ",", ...
     "ReadVariableNames", true, "VariableNamingRule", "preserve");

@@ -38,6 +38,16 @@ for ii = 1:numel(csvNames)
     rows(ii) = localManifestRow(csvMap.(name), "text/csv", "csv", height(T), ...
         "sixgr.phy.prach.exportStrictPRACHArtifacts");
 end
+resourceGridPath = fullfile(layout.ControlCSVDir, "prach_resource_grid.csv");
+resourceGrid = localResourceGridTable(result);
+sixgr.util.csvWriteTable(resourceGridPath, resourceGrid);
+resourceGridRow = localManifestRow(resourceGridPath, "text/csv", "csv", ...
+    height(resourceGrid), "sixgr.phy.prach.exportStrictPRACHArtifacts");
+
+% JSON bindings and plot lineage contain hashes of these primary CSVs. Make
+% their browser-facing bytes final before any dependent hash is recorded.
+sourceCSVPaths = [string(struct2cell(csvMap)); string(resourceGridPath)];
+sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, "OnlyPaths", sourceCSVPaths);
 
 jsonPayloads = localJsonPayloads(result, csvMap);
 jsonMap = struct( ...
@@ -59,14 +69,26 @@ end
 
 textRows = localWriteTextArtifacts(textDir, result);
 binaryRows = localWriteBinaryArtifacts(binaryDir, result);
-figureRows = localWriteFigures(figDir, result);
-manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:)];
-manifest = struct2table(manifestRows, "AsArray", true);
+[figureRows, figurePaths] = localWriteFigures(figDir, result, csvMap, resourceGridPath);
+plotLineagePath = fullfile(layout.ControlCSVDir, "prach_plot_lineage.csv");
+sixgr.visual.writeComponentPlotLineage(runFolder, plotLineagePath, [ ...
+    "prach_resource_grid"; "prach_correlation_positive"; ...
+    "prach_correlation_noise_only"; "prach_false_alarm_probability"; ...
+    "prach_missed_detection_probability"; "prach_timing_error_histogram"; ...
+    "prach_restricted_set_comparison"; "prach_collision_peaks"; ...
+    "prach_multi_occasion_map"; "prach_detection_flow"], figurePaths, [ ...
+    string(resourceGridPath); string(csvMap.prach_detection_candidates); ...
+    string(csvMap.prach_detection_candidates); string(csvMap.prach_false_alarm_sweep); ...
+    string(csvMap.prach_missed_detection_sweep); string(csvMap.prach_timing_offset_sweep); ...
+    string(csvMap.prach_restricted_set_mapping); string(csvMap.prach_collision_trials); ...
+    string(csvMap.prach_multi_occasion_trials); string(csvMap.prach_trials)], ...
+    "sixgr.phy.prach.exportStrictPRACHArtifacts");
+plotLineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", 10, ...
+    "sixgr.phy.prach.exportStrictPRACHArtifacts");
+manifestRows = [rows(:); resourceGridRow; jsonRows(:); textRows(:); ...
+    binaryRows(:); figureRows(:); plotLineageRow];
 manifestPath = fullfile(layout.ControlCSVDir, "prach_strict_artifact_manifest.csv");
-sixgr.util.csvWriteTable(manifestPath, manifest);
-manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
-    "sixgr.phy.prach.exportStrictPRACHArtifacts"), "AsArray", true);
-sixgr.util.csvWriteTable(manifestPath, manifest);
+manifest = sixgr.artifact.writeIntegrityManifest(manifestPath, manifestRows);
 end
 
 function payloads = localJsonPayloads(result, csvMap)
@@ -147,7 +169,7 @@ data = single([real(wave(:)).'; imag(wave(:)).']);
 fwrite(fid, data(:), "single");
 end
 
-function rows = localWriteFigures(figDir, result)
+function [rows, paths] = localWriteFigures(figDir, result, csvMap, resourceGridPath)
 paths = [
     string(fullfile(figDir, "prach_resource_grid.png"))
     string(fullfile(figDir, "prach_correlation_positive.png"))
@@ -161,8 +183,8 @@ paths = [
     string(fullfile(figDir, "prach_detection_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
 
-localWritePNG(paths(1), localHeatImage(localWaveformMatrix(result.PositiveWaveform)));
-rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid)));
+rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", resourceGridPath);
 
 cand = result.ArtifactTables.prach_detection_candidates;
 trialT = result.ArtifactTables.prach_trials;
@@ -170,72 +192,113 @@ posTrial = trialT.TrialId(string(trialT.TrialType) == "positive_high_snr");
 if isempty(posTrial), posTrial = trialT.TrialId(1); end
 mask = cand.TrialId == posTrial(1);
 localWritePNG(paths(2), localBarImage(double(cand.Metric(mask))));
-rows(2) = localManifestRow(paths(2), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(2) = localManifestRow(paths(2), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_detection_candidates);
 
 noiseTrial = trialT.TrialId(string(trialT.TrialType) == "false_alarm_sweep");
 if isempty(noiseTrial), noiseTrial = trialT.TrialId(end); end
 mask = cand.TrialId == noiseTrial(1);
 localWritePNG(paths(3), localBarImage(double(cand.Metric(mask))));
-rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_detection_candidates);
 
 fa = result.ArtifactTables.prach_false_alarm_sweep;
 localWritePNG(paths(4), localLineImage(double(fa.SNRdB), double(fa.FalseAlarmProbability)));
-rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_false_alarm_sweep);
 
 md = result.ArtifactTables.prach_missed_detection_sweep;
 localWritePNG(paths(5), localLineImage(double(md.SNRdB), double(md.MissedDetectionProbability)));
-rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_missed_detection_sweep);
 
 tt = result.ArtifactTables.prach_timing_offset_sweep;
 localWritePNG(paths(6), localHistImage(double(tt.MeanTimingErrorSamples)));
-rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_timing_offset_sweep);
 
 map = result.ArtifactTables.prach_restricted_set_mapping;
 [~, ~, grp] = unique(string(map.RestrictedSet));
 ncs = splitapply(@(x) x(1), double(map.NCS), grp);
 localWritePNG(paths(7), localBarImage(ncs));
-rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_restricted_set_mapping);
 
 coll = result.ArtifactTables.prach_collision_trials;
 localWritePNG(paths(8), localBarImage(double(coll.DetectedCandidateCount)));
-rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_collision_trials);
 
 mo = result.ArtifactTables.prach_multi_occasion_trials;
 localWritePNG(paths(9), localScatterImage(double(mo.OccasionSlot), double(mo.RARNTI)));
-rows(9) = localManifestRow(paths(9), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(9) = localManifestRow(paths(9), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_multi_occasion_trials);
 
 sixgr.visual.writeFlowDiagramPNG(paths(10), "Strict PRACH detection flow", ...
     ["nrPRACH waveform","AWGN / offsets","Rx correlation search","Score after detect"], result.StrictOk);
-rows(10) = localManifestRow(paths(10), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts");
+rows(10) = localManifestRow(paths(10), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_trials);
+end
+
+function T = localResourceGridTable(result)
+grid = complex(sixgr.util.structGet(result, "PositiveGrid", complex(zeros(0, 0))));
+[subcarrier, symbol, port] = ndgrid(0:size(grid, 1)-1, ...
+    0:size(grid, 2)-1, 0:size(grid, 3)-1);
+samples = grid(:);
+T = table(subcarrier(:), symbol(:), port(:), real(samples), imag(samples), ...
+    abs(samples), abs(samples) > 0, repmat("runtime_nr_prach_grid", numel(samples), 1), ...
+    'VariableNames', {'SubcarrierIndex','OFDMSymbolIndex','PortIndex', ...
+    'GridReal','GridImag','GridMagnitude','Occupied','truth_status'});
 end
 
 function localWritePNG(path, img)
-sixgr.util.ensureDir(path);
+targetPath = char(string(path));
+sixgr.util.ensureDir(targetPath);
 img = uint8(img);
-[height, width, channels] = size(img);
+[~, ~, channels] = size(img);
 if channels ~= 3
     error("sixgr:phy:prach:BadPNGImage", "Strict PRACH PNG writer expects RGB image data.");
 end
-rawPath = char(string(tempname) + ".rgb");
-fid = fopen(rawPath, "w");
-if fid < 0
-    error("sixgr:phy:prach:PNGRawOpenFailed", "Cannot open temporary PNG raw buffer.");
+
+targetDir = fileparts(targetPath);
+if isempty(targetDir)
+    targetDir = pwd;
 end
-cleanupClose = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fwrite(fid, permute(img, [3 2 1]), "uint8");
-clear cleanupClose;
-scriptPath = fullfile(localRepoRoot(), "tools", "write_png_from_raw_rgb.py");
-cmd = sprintf('python "%s" "%s" "%s" %d %d', localShellEscape(scriptPath), ...
-    localShellEscape(rawPath), localShellEscape(char(string(path))), width, height);
-[status, out] = system(cmd);
+tempPath = char(string(tempname(targetDir)) + ".png");
+cleanupTemp = onCleanup(@() localDeleteFile(tempPath)); %#ok<NASGU>
 try
-    if exist(rawPath, "file") == 2
-        delete(rawPath);
-    end
-catch
+    imwrite(img, tempPath, "png");
+catch ME
+    throwAsCaller(MException("sixgr:phy:prach:PNGWriteFailed", ...
+        "Strict PRACH PNG encoding failed for %s: %s", targetPath, ME.message));
 end
-if status ~= 0 || exist(char(string(path)), "file") ~= 2
-    error("sixgr:phy:prach:PNGWriteFailed", "Strict PRACH PNG writer failed: %s", string(out));
+
+info = dir(tempPath);
+if isempty(info) || info(1).bytes <= 0
+    error("sixgr:phy:prach:PNGWriteFailed", ...
+        "Strict PRACH PNG encoder produced no data for %s.", targetPath);
+end
+
+lastMessage = "";
+for attempt = 1:12
+    [moved, message] = movefile(tempPath, targetPath, "f");
+    if moved
+        if exist(targetPath, "file") == 2
+            finalInfo = dir(targetPath);
+            if ~isempty(finalInfo) && finalInfo(1).bytes > 0
+                return;
+            end
+        end
+        lastMessage = "destination exists but is empty";
+    else
+        lastMessage = string(message);
+    end
+    pause(min(0.05 * 2^(attempt - 1), 1.0));
+end
+error("sixgr:phy:prach:PNGWriteFailed", ...
+    "Strict PRACH PNG publication failed for %s after 12 attempts: %s", ...
+    targetPath, lastMessage);
+end
+
+function localDeleteFile(path)
+if exist(path, "file") ~= 2
+    return;
+end
+try
+    delete(path);
+catch
+    % Best-effort cleanup only; the primary write or move error is authoritative.
 end
 end
 
@@ -263,21 +326,6 @@ M = M(rowIdx, colIdx);
 img = localBaseImage();
 heat = uint8(cat(3, 255 .* M, 80 .* (1 - M), 255 .* (1 - M)));
 img(40:459, 80:699, :) = heat;
-end
-
-function M = localWaveformMatrix(wave)
-wave = abs(complex(wave(:)));
-if isempty(wave)
-    M = zeros(16, 16);
-    return;
-end
-nRow = max(16, floor(sqrt(double(numel(wave)))));
-nCol = ceil(double(numel(wave)) / double(nRow));
-pad = nRow * nCol - numel(wave);
-if pad > 0
-    wave(end+1:end+pad, 1) = 0;
-end
-M = reshape(wave, nRow, nCol);
 end
 
 function img = localLineImage(x, y)
@@ -422,13 +470,16 @@ title("PRACH measured candidate correlation");
 hold off;
 end
 
-function row = localManifestRow(path, mime, kind, rowCount, producer)
+function row = localManifestRow(path, mime, kind, rowCount, producer, sourceCSV)
 if nargin == 0
     path = "";
     mime = "";
     kind = "";
     rowCount = NaN;
     producer = "";
+    sourceCSV = "";
+elseif nargin < 6
+    sourceCSV = "";
 end
 artifactId = "";
 if strlength(string(path)) > 0
@@ -439,7 +490,8 @@ row = struct("ArtifactId", string(artifactId), "FilePath", string(path), ...
     "ArtifactPath", string(path), "MimeType", string(mime), ...
     "Kind", string(kind), "ArtifactKind", string(kind), ...
     "RowCount", double(rowCount), "ByteCount", localFileBytes(path), ...
-    "SHA256", localFileSHA256(path), "ProducerModule", string(producer));
+    "SHA256", localFileSHA256(path), "ProducerModule", string(producer), ...
+    "SourceCSV", string(sourceCSV));
 end
 
 function bytes = localFileBytes(path)
@@ -465,12 +517,4 @@ end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
 data = fread(fid, Inf, "*uint8");
 hash = sixgr.rrc.asn1.sha256Hex(data);
-end
-
-function root = localRepoRoot()
-root = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
-end
-
-function out = localShellEscape(value)
-out = strrep(char(string(value)), '"', '""');
 end

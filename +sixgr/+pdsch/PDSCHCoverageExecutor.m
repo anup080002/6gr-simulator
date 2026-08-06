@@ -1664,6 +1664,7 @@ for c = 1:numel(campaigns)
             "CIHalfWidth",double((hi-lo)/2), ...
             "MinErrorsRequired",double(minErrors), ...
             "StopReason",string(stopReason), ...
+            "StatisticallyQualified",string(status) == "PASS", ...
             "Status",string(status));
     end
 end
@@ -1715,12 +1716,13 @@ for n = minTrials:available
         return;
     end
 end
-% Exhausting the predeclared maximum is an ordinary, complete fixed-budget
-% observation. It is not mislabeled as a censored one-sided confidence
-% bound when the minimum-error early-stop condition was not reached.
+% Exhausting the predeclared maximum completes data collection, but it does
+% not satisfy the statistical qualification contract when precision or the
+% minimum event count was not reached.  Keep collection completeness and
+% scientific qualification as separate states.
 if available == maxTrials && available >= minTrials
-    stopReason = "FIXED_TRIAL_BUDGET_COMPLETE";
-    status = "PASS";
+    stopReason = "FIXED_TRIAL_BUDGET_COMPLETE_NOT_QUALIFIED";
+    status = "NOT_EVALUATED";
 end
 end
 
@@ -3127,7 +3129,7 @@ row = struct( ...
     "ChannelModel","","Rank",0,"MCSIndex",0,"Modulation","", ...
     "Trials",0,"TBErrors",0,"BLER",0,"ConfidenceLevel",0, ...
     "CILower",0,"CIUpper",0,"CIHalfWidth",0, ...
-    "MinErrorsRequired",0,"StopReason","","Status","");
+    "MinErrorsRequired",0,"StopReason","","StatisticallyQualified",false,"Status","");
 end
 
 function T = localEmptyFadingAnchorTable()

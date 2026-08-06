@@ -4692,37 +4692,7 @@ if ~(istable(beamPrecoderTable) && ~isempty(beamPrecoderTable))
     T = table();
     return;
 end
-dirVals = localColumnAsText(beamPrecoderTable, "direction");
-cellVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["cell_id", "CellID", "cell", "ServingCell"]);
-ueVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["ue_id", "UEID", "UE", "ue"]);
-keys = dirVals + "|" + string(cellVals) + "|" + string(ueVals);
-[uniqueKeys, ~, keyIdx] = unique(keys);
-rows = repmat(struct("direction", "", "cell_id", NaN, "ue_id", NaN, "trial_row_count", NaN, ...
-    "beamforming_applied_count", NaN, "runtime_applied_beam_rows", NaN, ...
-    "runtime_applied_pmi_rows", NaN, "beam_hit_rate", NaN, "mean_precoding_ports", NaN, ...
-    "mean_precoding_layers", NaN, "analytics_value_source", ""), numel(uniqueKeys), 1);
-for i = 1:numel(uniqueKeys)
-    mask = keyIdx == i;
-    subset = beamPrecoderTable(mask, :);
-    beamTruth = localColumnAsText(subset, "applied_beam_truth_classification");
-    pmiTruth = localColumnAsText(subset, "applied_precoder_pmi_truth_classification");
-    hit = localColumnAsDouble(subset, "beam_hit");
-    subsetDir = localColumnAsText(subset, "direction");
-    subsetCell = localFirstAvailableColumnAsDouble(subset, ["cell_id", "CellID", "cell", "ServingCell"]);
-    subsetUE = localFirstAvailableColumnAsDouble(subset, ["ue_id", "UEID", "UE", "ue"]);
-    rows(i).direction = subsetDir(1);
-    rows(i).cell_id = subsetCell(1);
-    rows(i).ue_id = subsetUE(1);
-    rows(i).trial_row_count = height(subset);
-    rows(i).beamforming_applied_count = sum(localColumnAsLogical(subset, "beamforming_applied"));
-    rows(i).runtime_applied_beam_rows = sum(beamTruth == "applied_runtime_value");
-    rows(i).runtime_applied_pmi_rows = sum(pmiTruth == "applied_runtime_value");
-    rows(i).beam_hit_rate = mean(hit(isfinite(hit)), "omitnan");
-    rows(i).mean_precoding_ports = mean(localFirstAvailableColumnAsDouble(subset, ["precoding_num_ports", "PrecodingNumPorts"]), "omitnan");
-    rows(i).mean_precoding_layers = mean(localFirstAvailableColumnAsDouble(subset, ["precoding_num_layers", "PrecodingNumLayers", "num_layers", "NumLayers"]), "omitnan");
-    rows(i).analytics_value_source = "beamforming/csv/beam_precoder_table.csv";
-end
-T = struct2table(rows);
+T = sixgr.truth.aggregateBeamPrecoderEvidence(beamPrecoderTable);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildBeamformingAnalyticsTable", ...
     "beamforming/csv/beam_precoder_table.csv", "implemented", "derived_beamforming_analytics", true, true);
 end
@@ -4732,29 +4702,11 @@ if ~(istable(beamPrecoderTable) && ~isempty(beamPrecoderTable))
     T = table();
     return;
 end
-rankVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["precoding_num_layers", "PrecodingNumLayers", "num_layers", "NumLayers"]);
-dirVals = localColumnAsText(beamPrecoderTable, "direction");
-cellVals = localFirstAvailableColumnAsDouble(beamPrecoderTable, ["cell_id", "CellID", "cell", "ServingCell"]);
-[~, ~, dirIdx] = unique(dirVals);
-groups = unique([double(dirIdx), cellVals, rankVals], "rows");
-groups = groups(isfinite(groups(:, 1)) & isfinite(groups(:, 2)) & isfinite(groups(:, 3)), :);
-if isempty(groups)
+T = sixgr.truth.aggregateMIMORankUtilization(beamPrecoderTable);
+if isempty(T)
     T = table();
     return;
 end
-rows = repmat(struct("direction", "", "cell_id", NaN, "rank_or_layer_count", NaN, ...
-    "trial_row_count", NaN, "utilization_fraction", NaN, "source_artifact_ref", ""), size(groups, 1), 1);
-for i = 1:size(groups, 1)
-    mask = dirIdx == groups(i, 1) & cellVals == groups(i, 2) & rankVals == groups(i, 3);
-    dirMask = dirIdx == groups(i, 1) & cellVals == groups(i, 2);
-    rows(i).direction = dirVals(find(mask, 1, "first"));
-    rows(i).cell_id = groups(i, 2);
-    rows(i).rank_or_layer_count = groups(i, 3);
-    rows(i).trial_row_count = sum(mask);
-    rows(i).utilization_fraction = localSafeDivide(sum(mask), sum(dirMask));
-    rows(i).source_artifact_ref = "beamforming/csv/beam_precoder_table.csv";
-end
-T = struct2table(rows);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildMIMORankUtilizationTable", ...
     "beamforming/csv/beam_precoder_table.csv", "implemented", "derived_mimo_rank_utilization", true, true);
 end

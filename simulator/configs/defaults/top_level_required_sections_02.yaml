@@ -41,14 +41,14 @@
     "enabled": true, "tbs_policy": "allocation_based", "codeword_count": 1, "cw_to_layer_mapping": "baseline", "layer_count": 1, "modulation": "64QAM",
     "modulation_table": "qam64_table1", "mixed_modulation_flag": false, "shaping_policy": "none", "distribution_matching_policy": "none",
     "scrambling_policy": "nr_like", "dmrs_policy": "baseline", "ptrs_policy": "disabled", "csi_rs_association": "default", "mimo_mode": "su_mimo",
-    "rank": 1, "precoder_family": "wideband", "prg_policy": "prg_wideband", "link_adaptation_mode": "amc", "mcs_table": "qam64_table1",
+    "rank": 1, "precoder_family": "wideband", "precoder_normalization_convention": "semi_unitary", "prg_policy": "prg_wideband", "link_adaptation_mode": "amc", "mcs_table": "qam64_table1",
     "fixed_mcs": 11, "amc_policy": "baseline", "harq_id_space": 8, "rv_sequence": [0, 2, 3, 1], "retransmission_policy": "baseline",
     "rate_matching_policy": "baseline", "puncturing_policy": "none", "power_allocation_policy": "equal", "beam_policy": "fixed", "mtrp_policy": "disabled",
     "mrss_constraints": "none", "throughput_eval_policy": "baseline"
   },
   "pusch": {
     "enabled": true, "waveform": "CP-OFDM", "transform_precoding": false, "tbs_policy": "allocation_based", "ulsch_enabled": true, "uci_multiplexing_mode": "baseline",
-    "dmrs_policy": "baseline", "ptrs_policy": "disabled", "codeword_count": 1, "layer_count": 1, "modulation": "16QAM", "modulation_table": "qam64_table1",
+    "dmrs_policy": "baseline", "ptrs_policy": "disabled", "codeword_count": 1, "layer_count": 1, "precoder_normalization_convention": "semi_unitary", "modulation": "16QAM", "modulation_table": "qam64_table1",
     "shaping_policy": "none", "scrambling_policy": "nr_like", "mcs_table": "qam64_table1", "fixed_mcs": 10, "amc_policy": "baseline",
     "low_papr_mode": "none", "dft_size": 1024, "fd_mapping": "localized", "non_contiguous_mapping": false, "power_control": "baseline", "prep_time_model": "baseline",
     "simultaneous_pusch_pucch_policy": "baseline", "unknown_size_uci_policy": "baseline", "grant_timing": "baseline", "beam_policy": "fixed", "msg3_flag": false,

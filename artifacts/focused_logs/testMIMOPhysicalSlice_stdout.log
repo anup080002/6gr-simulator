@@ -1,0 +1,61 @@
+RUN testSchedulerMUMIMOGrouping
+PASS testSchedulerMUMIMOGrouping
+RUN testSRSReciprocalMUMIMOPhysicalLeakage
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=3500000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=0 ShadowEnabled=0 LOSEnabled=0
+PASS testSRSReciprocalMUMIMOPhysicalLeakage
+RUN testLLSULBeamPrecoderTruth
+[2026-08-06T08:01:52Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=1/2 duplex=FDD allow_dl=1 allow_ul=1.
+[2026-08-06T08:01:53Z] INFO Starting coupled pre-scheduling control gating for slot 1/2 with 1 UEs.
+[2026-08-06T08:02:03Z] INFO Coupled control gating progress for slot 1/2: UE 1/1, PBCH=1 PRACH=0 SRS=0 TRS=1.
+[2026-08-06T08:02:03Z] INFO Coupled control gating complete: slot=1 frame=1 pbch_attempts=1 prach_attempts=0 srs_attempts=0 trs_attempts=1 acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=1/3 tracked_serving_users=1/1 eligible=1/1.
+[2026-08-06T08:02:03Z] INFO Coupled control gating complete for slot 1/2: acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=1/3 tracked_serving_users=1/1 eligible=1/1.
+[2026-08-06T08:02:08Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=12.000 ue=0/1 dlDirectionalFrames=0/2 ulDirectionalFrames=0/2 dlRows=0 ulRows=0.
+[2026-08-06T08:02:10Z] INFO Coupled DL schedule complete: sweep=1/1 slot=1/2 active=1 granted=1 grants=1.
+[2026-08-06T08:02:13Z] INFO Coupled DL PDCCH grant binding: ue=1 required=1 ok=1 status=bound failure= dci=665d6dea7c819052cf4814ed7abd347ff64de7edbc0d1894f661a93d1a855b7c grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-06T08:02:13Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=1/2 executable_grants=1.
+[2026-08-06T08:02:13Z] INFO Preparing coupled DL batches: sweep=1/1 slot=1/2 candidate_grants=1 batch_size=1.
+[2026-08-06T08:02:13Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=1.
+[2026-08-06T08:02:14Z] INFO Prepared coupled DL resolved grant cache entries: 1/1.
+[2026-08-06T08:02:14Z] INFO Prepared coupled DL resolved grant cache complete: entries=1 elapsed_s=0.986.
+[2026-08-06T08:02:15Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=1/2 executable_plans=1 chunk=1-1 of 1.
+[2026-08-06T08:02:15Z] INFO Executing coupled DL chunk: sweep=1/1 slot=1/2 chunk=1-1 of 1.
+[2026-08-06T08:02:48Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=1/2 committed_rows=1 current_primary_rows=1.
+[2026-08-06T08:02:53Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=12.000 ue=1/1 dlDirectionalFrames=1/2 ulDirectionalFrames=0/2 dlRows=1 ulRows=0.
+{Error using error
+A message identifier must be followed by a message that is a character vector or string scalar.
+
+Error in sixgr.phy.grant.freezePHYGrant>localResolveAntennaAndPrecoding (line 801)
+        error("sixgr:phy:grant:MissingULCodebookType", ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.grant.freezePHYGrant (line 88)
+[ant, prec] = localResolveAntennaAndPrecoding(cfg, grant, direction, numLayers, numCodewords);
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.l2.mac.SchedulerBase/freezePHYGrantForGrant (line 1223)
+            phyGrant = sixgr.phy.grant.freezePHYGrant(cfgForFreeze, grantOut.Direction, grantSeed, ...
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.l2.mac.SchedulerPF/schedule (line 664)
+                    g = obj.freezePHYGrantForGrant(g);
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledTruthRuntime/scheduleDirectionImpl (line 1210)
+            [cellGrants, schedInfo] = scheduler.schedule( ...
+                                      ^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledTruthRuntime.scheduleDirection (line 369)
+        [state, grants, info] = sixgr.truth.CoupledTruthRuntime.scheduleDirectionImpl(state, cfg, direction);
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localScheduleCoupledFutureULGrantsFromDLControl (line 3481)
+[planState, grants, info] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(planState, cfg, "UL"); %#ok<ASGLU>
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep (line 3358)
+            [runtimeState, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl( ...
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localExportLinkRawTrialTables (line 1367)
+        localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle (line 242)
+rawTrials = localExportLinkRawTrialTables(trialExecutionCfg, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser, saveFigures, liveMobilityArtifacts);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testLLSULBeamPrecoderTruth (line 97)
+sixgr.truth.runWaveformLinkBundle(cfg, runFolder, opt);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+ERROR: MATLAB error Exit Status: 0x00000001

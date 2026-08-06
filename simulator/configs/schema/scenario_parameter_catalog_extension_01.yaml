@@ -127,6 +127,7 @@
       "pbch_required": {"required": false, "type": "boolean"},
       "prach_required": {"required": false, "type": "boolean"},
       "pdcch_required": {"required": false, "type": "boolean"},
+      "pucch_required": {"required": false, "type": "boolean"},
       "srs_required": {"required": false, "type": "boolean"},
       "srs_max_age_slots": {"required": false, "type": "integer", "min": 0},
       "trs_required": {"required": false, "type": "boolean"},

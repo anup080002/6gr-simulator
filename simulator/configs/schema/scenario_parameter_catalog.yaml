@@ -950,6 +950,7 @@ sections:
       phase_noise_std_rad: {required: false, type: number, min: 0}
       inter_cell_relative_power_db: {required: false, type: number}
       target_false_alarm_probability: {required: false, type: number, min_exclusive: 0, max: 1}
+      statistical_qualification: {required: false, type: struct}
       timing_tolerance_us: {required: false, type: number, min: 0}
   impairments:
     required: true
@@ -1032,6 +1033,18 @@ sections:
       tx_power_dbm: {required: true, type: number}
       pa_efficiency: {required: true, type: number, min_exclusive: 0, max: 1}
       rf_chain_count: {required: true, type: integer, min: 1}
+      bs_static_power_w: {required: true, type: number, min: 0}
+      bs_per_rf_chain_power_w: {required: true, type: number, min: 0}
+      bs_sleep_power_w: {required: true, type: number, min: 0}
+      bs_pa_efficiency: {required: true, type: number, min_exclusive: 0, max: 1}
+      ue_idle_power_w: {required: true, type: number, min: 0}
+      ue_rx_power_w: {required: true, type: number, min: 0}
+      ue_sleep_power_w: {required: true, type: number, min: 0}
+      ue_tx_dc_per_watt_rf: {required: true, type: number, min_exclusive: 0}
+      bs_tx_power_dbm: {required: true, type: number}
+      ue_tx_power_dbm: {required: true, type: number}
+      bs_rf_chain_count: {required: true, type: integer, min: 1}
+      ue_rf_chain_count: {required: true, type: integer, min: 1}
       sleep_state_model:
         required: true
         type: string
@@ -1138,7 +1151,40 @@ sections:
       live_heavy_refresh_each_sweep_point: {required: false, type: boolean}
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}
+      artifact_contract_engine: {required: false, type: struct}
 nested_sections:
+  artifact_contract_engine:
+    path: output.artifact_contract_engine
+    parameters:
+      enabled: {required: true, type: boolean}
+      contract_root: {required: true, type: string, nonempty: true}
+      legacy_reference_root: {required: true, type: string, nonempty: true}
+      legacy_reference_usage:
+        required: true
+        type: string
+        allowed_values: [coverage_inventory_only]
+      profiles: {required: true, type: string_list}
+      domains: {required: true, type: string_list}
+      publish_root: {required: true, type: string, nonempty: true}
+      source_policy:
+        required: true
+        type: string
+        allowed_values: [runtime_memory_only]
+      truth_only: {required: true, type: boolean}
+      fail_on_missing_required: {required: true, type: boolean}
+      evidence_scope:
+        required: true
+        type: string
+        allowed_values: [in_path, component_anchor, diagnostic]
+      require_identity_columns: {required: true, type: boolean}
+      require_radio_identity_columns: {required: true, type: boolean}
+      atomic_replace: {required: true, type: boolean}
+      image_format:
+        required: true
+        type: string
+        allowed_values: [png]
+      allow_svg: {required: true, type: boolean}
+      allow_placeholder_evidence: {required: true, type: boolean}
   mimo_phase07_strict:
     path: mimo.phase07_strict
     parameters:

@@ -6,6 +6,8 @@ required = [
     "reference_signals/csv/trs_config_strict.csv"
     "reference_signals/csv/trs_trials.csv"
     "reference_signals/csv/trs_resource_mapping.csv"
+    "reference_signals/csv/trs_resource_grid_power.csv"
+    "reference_signals/csv/trs_plot_lineage.csv"
     "reference_signals/csv/trs_detection_metrics.csv"
     "reference_signals/csv/trs_timing_tracking.csv"
     "reference_signals/csv/trs_frequency_tracking.csv"
@@ -34,5 +36,8 @@ end
 T = readtable(fullfile(root, "reference_signals", "csv", "trs_trials.csv"), "TextType", "string");
 assert(all(ismember(["DetectionAttempted","TRSTimingEstimateAvailable","TRSCFOEstimateAvailable","TRSChannelEstimateAvailable"], ...
     string(T.Properties.VariableNames))), "TRS trial schema must carry strict attempted/available columns.");
+lineage = readtable(fullfile(root, "reference_signals", "csv", "trs_plot_lineage.csv"), "TextType", "string");
+assert(height(lineage) == 8 && all(lineage.Status == "pass") && all(lineage.SourceExists), ...
+    "Every strict TRS PNG must have passing exact-source lineage.");
 ok = true;
 end

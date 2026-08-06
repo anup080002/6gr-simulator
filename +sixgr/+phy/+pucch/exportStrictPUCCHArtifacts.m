@@ -42,6 +42,8 @@ end
 sixgr.util.csvWriteTable(airPath, primaryTrials);
 rows(numel(names) + 1) = localManifestRow(airPath, "text/csv", "csv", height(primaryTrials), ...
     "sixgr.phy.pucch.exportStrictPUCCHArtifacts");
+sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, ...
+    "OnlyPaths", [string(struct2cell(csvMap)); string(airPath)]);
 
 summaryJson = fullfile(jsonDir, "pucch_detection_summary.json");
 payload = struct();
@@ -64,12 +66,8 @@ sixgr.util.jsonWrite(summaryJson, payload);
 rows(numel(names) + 2) = localManifestRow(summaryJson, "application/json", "json", NaN, ...
     "sixgr.phy.pucch.exportStrictPUCCHArtifacts");
 
-manifest = struct2table(rows, "AsArray", true);
 manifestPath = fullfile(layout.ControlCSVDir, "pucch_strict_artifact_manifest.csv");
-sixgr.util.csvWriteTable(manifestPath, manifest);
-manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
-    "sixgr.phy.pucch.exportStrictPUCCHArtifacts"), "AsArray", true);
-sixgr.util.csvWriteTable(manifestPath, manifest);
+manifest = sixgr.artifact.writeIntegrityManifest(manifestPath, rows);
 end
 
 function T = localReadOptionalTable(path)

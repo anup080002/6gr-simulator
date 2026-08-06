@@ -172,6 +172,14 @@ methods(Static)
         state.HARQSummaryTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyHARQSummaryRow(), 0, 1));
         state.PacketDeliveryLedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1));
         state.PacketSDULedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow(), 0, 1));
+        protocolCfg = sixgr.util.structGet(cfgMob, "protocol", struct());
+        state.ProtocolWaveformEnabled = logical(sixgr.util.structGet(protocolCfg, "enabled", false)) && ...
+            logical(sixgr.util.structGet(protocolCfg, "strict", false));
+        if state.ProtocolWaveformEnabled
+            state.ProtocolBridge = sixgr.protocol.WaveformProtocolBridge(protocolCfg, nUsers);
+        else
+            state.ProtocolBridge = [];
+        end
         state.DLHarq = harqDL;
         state.ULHarq = harqUL;
         state.PendingFeedbackTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyFeedbackRow(), 0, 1));
@@ -432,6 +440,15 @@ methods(Static)
 
     function state = commitGrantExecution(state, ueIdx, direction, grant)
         state = sixgr.truth.CoupledTruthRuntime.commitGrantExecutionImpl(state, ueIdx, direction, grant);
+    end
+
+    function timing = decodedTBDeliveryTimingRuntime(state, attemptSlot, feedbackDueSlot)
+        % Public focused-test boundary for the application-delivery/HARQ
+        % feedback timing contract. A decoded TB reaches the receiving
+        % protocol stack at the end of its data slot; the later feedback
+        % occasion is a separate control-plane event.
+        timing = sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTiming( ...
+            state, attemptSlot, feedbackDueSlot);
     end
 
     function context = resolveHARQTrialContext(state, ueIdx, direction)
@@ -1554,7 +1571,7 @@ methods(Static, Access=private)
         end
         [state, context] = sixgr.truth.CoupledTruthRuntime.attachRuntimeChannelStateToGrantContext(state, cfg, ueIdx, direction, context);
         grantRow = sixgr.truth.CoupledTruthRuntime.buildGrantTraceRow( ...
-            sixgr.util.structGet(context, "GrantSnapshot", grant), direction, ...
+            state, sixgr.util.structGet(context, "GrantSnapshot", grant), direction, ...
             sixgr.util.structGet(sixgr.util.structGet(context, "GrantSnapshot", grant), "Slot", state.CurrentSlot), ...
             sixgr.util.structGet(sixgr.util.structGet(context, "GrantSnapshot", grant), "Frame", state.CurrentFrame), ...
             ueIdx, ...
@@ -2520,6 +2537,16 @@ methods(Static, Access=private)
         grantSnapshot = sixgr.util.structGet(harqOut, "GrantSnapshot", ...
             sixgr.util.structGet(context, "GrantSnapshot", struct()));
         if ~(isstruct(grantSnapshot) && ~isempty(fieldnames(grantSnapshot)))
+            if direction == "DL"
+                trialStatus = string(sixgr.truth.CoupledTruthRuntime. ...
+                    rowValue(row, "Status", "UNKNOWN"));
+                trialNotes = string(sixgr.truth.CoupledTruthRuntime. ...
+                    rowValue(row, "Notes", ""));
+                error("sixgr:truth:CoupledTruthRuntime:MissingExecutedDLGrantSnapshot", ...
+                    ['Executed DL scheduler truth did not return its immutable grant snapshot. ' ...
+                    'Trial status=%s; notes=%s'], ...
+                    char(trialStatus), char(trialNotes));
+            end
             grantSnapshot = sixgr.truth.CoupledTruthRuntime.buildGrantSnapshot(cfgU, row, direction, ueIdx, rnti);
         end
         if ~isempty(tbBits)
@@ -2628,6 +2655,8 @@ methods(Static, Access=private)
         t.RNTI = double(rnti);
         t.Slot = double(slotIdx);
         t.Frame = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Frame", state.CurrentFrame));
+        t.SweepPointIndex = double(sixgr.util.structGet(state, "CurrentSweepPointIndex", NaN));
+        t.ConfiguredSNR_dB = double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN));
         t.HarqID = double(harqId0);
         t.NDI = double(ndi);
         t.NDIEpoch = double(sixgr.util.structGet(grantSnapshot, "HARQ.NDIEpoch", ...
@@ -3295,6 +3324,16 @@ methods(Static, Access=private)
         csiState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CSIValidityState", ueIdx, "bootstrap_csi_unavailable");
         controlEligible = sixgr.truth.CoupledTruthRuntime.controlLogicalAt(state, "ControlEligibility", ueIdx, true);
         srsAgeSlots = sixgr.truth.CoupledTruthRuntime.srsAgeSlots(state, ueIdx);
+        lastSuccessfulSRSSlot = double(sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+            state, "LastSuccessfulSRSSlotByUE", ueIdx, NaN));
+        srsCausal = struct("Usable", false, "AgeSlots", NaN, ...
+            "Status", "not_applicable_for_dl_scheduler", "MeasurementId", "");
+        if direction == "UL"
+            srsCausal = sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementImpl( ...
+                state, "SRS", "UE", ueIdx, state.CurrentSlot, ...
+                max(0, round(double(sixgr.util.structGet( ...
+                state.ControlGating, "SRSMaxAgeSlots", 0)))));
+        end
         if direction == "UL" && logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false)) && ...
                 ~(srsState == "valid" && isfinite(srsAgeSlots))
             feedback.Valid = false;
@@ -3480,6 +3519,17 @@ methods(Static, Access=private)
         ueState.CSIValidityState = char(csiState);
         ueState.SRSValid = srsState == "valid";
         ueState.SRSAgeSlots = double(srsAgeSlots);
+        ueState.LastSuccessfulSRSSlot = double(lastSuccessfulSRSSlot);
+        ueState.SRSCausalUsable = logical(sixgr.util.structGet( ...
+            srsCausal, "Usable", false));
+        ueState.SRSCausalAgeSlots = double(sixgr.util.structGet( ...
+            srsCausal, "AgeSlots", NaN));
+        ueState.SRSCausalStatus = char(string(sixgr.util.structGet( ...
+            srsCausal, "Status", "")));
+        ueState.SRSCausalMeasurementId = char(string(sixgr.util.structGet( ...
+            srsCausal, "MeasurementId", "")));
+        ueState.TPMI = double(sixgr.util.structGet(feedback, "PMI", NaN));
+        ueState.SRI = double(sixgr.util.structGet(feedback, "SRI", NaN));
         ueState.HeadOfLineDelay_ms = 0;
         if direction == "UL"
             ueState.ULBufferBytes = queueBytes;
@@ -5747,12 +5797,27 @@ methods(Static, Access=private)
             grant = struct();
         end
         tbsBits = max(0, round(double(tbsBits)));
-        state = sixgr.truth.CoupledTruthRuntime.allocatePacketSegmentsToGrant(state, ueIdx, direction, tbsBits, grant);
+        payloadSameWaveform = logical(sixgr.util.structGet(grant, ...
+            "ProtocolPayloadSameWaveformTruth", false));
+        scheduledPayloadBits = tbsBits;
+        if payloadSameWaveform
+            scheduledPayloadBits = double(sixgr.util.structGet(grant, "ProtocolPayloadBits", NaN));
+            if ~(isfinite(scheduledPayloadBits) && scheduledPayloadBits > 0 && ...
+                    scheduledPayloadBits <= tbsBits && scheduledPayloadBits == fix(scheduledPayloadBits))
+                error("sixgr:protocol:InvalidProtocolPayloadBinding", ...
+                    "Protocol-bound grant payload bits must be an integer in (0,TBSBits].");
+            end
+        elseif logical(sixgr.util.structGet(state, "ProtocolWaveformEnabled", false))
+            error("sixgr:protocol:UnboundNewDataTransportBlock", ...
+                "Strict protocol execution cannot reserve a new-data TB without same-waveform payload evidence.");
+        end
+        state = sixgr.truth.CoupledTruthRuntime.allocatePacketSegmentsToGrant( ...
+            state, ueIdx, direction, scheduledPayloadBits, grant);
         if upper(string(direction)) == "UL"
-            state.ULQueueBits(ueIdx) = max(0, double(state.ULQueueBits(ueIdx)) - tbsBits);
+            state.ULQueueBits(ueIdx) = max(0, double(state.ULQueueBits(ueIdx)) - scheduledPayloadBits);
             state.ULTransmittedBits(ueIdx) = double(state.ULTransmittedBits(ueIdx)) + tbsBits;
         else
-            state.DLQueueBits(ueIdx) = max(0, double(state.DLQueueBits(ueIdx)) - tbsBits);
+            state.DLQueueBits(ueIdx) = max(0, double(state.DLQueueBits(ueIdx)) - scheduledPayloadBits);
             state.DLTransmittedBits(ueIdx) = double(state.DLTransmittedBits(ueIdx)) + tbsBits;
         end
     end
@@ -5830,6 +5895,10 @@ methods(Static, Access=private)
         packetMask = upper(string(packetT.Direction)) == direction & ...
             abs(double(packetT.UEIndex) - double(ueIdx)) < 1e-9 & ...
             double(packetT.RemainingBits) > 0 & ~logical(packetT.DeliverySuccess);
+        protocolPacketId = strtrim(string(sixgr.util.structGet(grant, "ProtocolPacketId", "")));
+        if strlength(protocolPacketId) > 0
+            packetMask = packetMask & string(packetT.PacketId) == protocolPacketId;
+        end
         packetIdx = find(packetMask(:).');
         if isempty(packetIdx)
             return;
@@ -5862,6 +5931,22 @@ methods(Static, Access=private)
             if istable(existingSduT) && ~isempty(existingSduT) && all(ismember(["Direction","PacketId"], string(existingSduT.Properties.VariableNames)))
                 segmentIndex = 1 + sum(upper(string(existingSduT.Direction)) == direction & string(existingSduT.PacketId) == packetId);
             end
+            if logical(sixgr.util.structGet(grant, "ProtocolPayloadSameWaveformTruth", false))
+                boundSegmentIndex = double(sixgr.util.structGet(grant, "ProtocolSegmentIndex", NaN));
+                boundOffsetBits = double(sixgr.util.structGet(grant, "ProtocolPayloadOffsetBits", NaN));
+                boundPayloadBits = double(sixgr.util.structGet(grant, "ProtocolPayloadBits", NaN));
+                actualOffsetBits = double(packetT.OfferedBits(pi)) - double(packetT.RemainingBits(pi));
+                if ~(isfinite(boundSegmentIndex) && boundSegmentIndex == segmentIndex && ...
+                        isfinite(boundOffsetBits) && boundOffsetBits == actualOffsetBits && ...
+                        isfinite(boundPayloadBits) && boundPayloadBits == segBits)
+                    error("sixgr:protocol:ProtocolGrantLedgerDivergence", ...
+                        ["The immutable protocol-to-TB binding for packet %s specifies " + ...
+                         "segment/offset/payload %g/%g/%g, while the application ledger " + ...
+                         "requires %g/%g/%g. Refusing to attach mismatched lineage to a PHY grant."], ...
+                        char(packetId), boundSegmentIndex, boundOffsetBits, boundPayloadBits, ...
+                        double(segmentIndex), actualOffsetBits, double(segBits));
+                end
+            end
             row = sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow();
             row.Direction = direction;
             row.UEIndex = double(ueIdx);
@@ -5876,6 +5961,19 @@ methods(Static, Access=private)
             row.RV = double(rv);
             row.SegmentIndex = double(segmentIndex);
             row.PayloadBits = double(segBits);
+            row.ProtocolPayloadSameWaveformTruth = logical(sixgr.util.structGet( ...
+                grant, "ProtocolPayloadSameWaveformTruth", false));
+            row.ProtocolFragmentId = string(sixgr.util.structGet(grant, "ProtocolFragmentId", ""));
+            row.ProtocolPayloadOffsetBits = double(sixgr.util.structGet(grant, "ProtocolPayloadOffsetBits", NaN));
+            row.ProtocolPayloadSHA256 = string(sixgr.util.structGet(grant, "ProtocolPayloadSHA256", ""));
+            row.ProtocolSDAPHeaderHex = string(sixgr.util.structGet(grant, "ProtocolSDAPHeaderHex", ""));
+            row.ProtocolPDCPHeaderHex = string(sixgr.util.structGet(grant, "ProtocolPDCPHeaderHex", ""));
+            row.ProtocolRLCHeaderHex = string(sixgr.util.structGet(grant, "ProtocolRLCHeaderHex", ""));
+            row.ProtocolEncodedRLC_SHA256 = string(sixgr.util.structGet(grant, "ProtocolEncodedRLC_SHA256", ""));
+            row.ProtocolMACSHA256 = string(sixgr.util.structGet(grant, "ProtocolMACSHA256", ""));
+            row.ProtocolMACPDUBytes = double(sixgr.util.structGet(grant, "ProtocolMACPDUBytes", NaN));
+            row.ProtocolMACPaddingBytes = double(sixgr.util.structGet(grant, "ProtocolMACPaddingBytes", NaN));
+            row.ProtocolEvidenceSource = string(sixgr.util.structGet(grant, "ProtocolEvidenceSource", ""));
             row.ScheduleSlot = double(schedSlot);
             row.ScheduleCanonicalSlot = double(schedSlot);
             row.ScheduleTime_s = double(schedTime);
@@ -5916,23 +6014,44 @@ methods(Static, Access=private)
             return;
         end
         attemptSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "Slot", NaN));
-        feedbackSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "FeedbackDueSlot", attemptSlot));
-        deliveryTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec(state, feedbackSlot);
+        feedbackSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "FeedbackDueSlot", NaN));
+        deliveryTiming = sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTiming( ...
+            state, attemptSlot, feedbackSlot);
+        deliverySlot = double(deliveryTiming.DeliveryCanonicalSlot);
+        deliveryTime = double(deliveryTiming.DeliveryTime_s);
         sduT.HARQAttemptCount(mask) = double(sduT.HARQAttemptCount(mask)) + 1;
         sduT.LastAttemptSlot(mask) = double(attemptSlot);
+        sduT.HARQFeedbackDueSlot(mask) = double(feedbackSlot);
         sduT.LastRV(mask) = double(sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "RV", NaN));
         sduT.TBCrcPass(mask) = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(harqRow, "CombinedDecodeOK", false));
         if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(harqRow, "CombinedDecodeOK", false))
+            protocolDelivered = true;
+            protocolStatus = "not_required";
+            if logical(sixgr.util.structGet(state, "ProtocolWaveformEnabled", false))
+                bridge = sixgr.util.structGet(state, "ProtocolBridge", []);
+                if isempty(bridge) || ~isa(bridge, "sixgr.protocol.WaveformProtocolBridge")
+                    error("sixgr:protocol:WaveformProtocolBridgeMissing", ...
+                        "Decoded protocol-bound TB cannot be delivered without the coordinator bridge.");
+                end
+                [protocolDelivered, protocolEvidence] = bridge.deliver(string(tbId), double(deliveryTime));
+                protocolStatus = string(sixgr.util.structGet(protocolEvidence, "Status", ""));
+                state.ProtocolBridge = bridge;
+            end
             firstMask = mask & ~logical(sduT.DeliverySuccess);
-            sduT.DeliverySuccess(firstMask) = true;
-            sduT.FirstSuccessDelivery(firstMask) = true;
-            sduT.FirstSuccessSlot(firstMask) = double(feedbackSlot);
-            sduT.DeliveryCanonicalSlot(firstMask) = double(feedbackSlot);
-            sduT.DeliveryTime_s(firstMask) = double(deliveryTime);
-            sduT.DeliveryLatency_ms(firstMask) = (double(deliveryTime) - double(sduT.ScheduleTime_s(firstMask))) * 1e3;
-            sduT.TimingStatus(firstMask) = sixgr.truth.CoupledTruthRuntime.packetTimingStatus( ...
-                double(sduT.ScheduleTime_s(firstMask)), double(deliveryTime));
-            sduT.Status(firstMask) = "first_success_delivery";
+            sduT.ProtocolDeliveryStatus(mask) = protocolStatus;
+            if protocolDelivered
+                sduT.DeliverySuccess(firstMask) = true;
+                sduT.FirstSuccessDelivery(firstMask) = true;
+                sduT.FirstSuccessSlot(firstMask) = double(deliverySlot);
+                sduT.DeliveryCanonicalSlot(firstMask) = double(deliverySlot);
+                sduT.DeliveryTime_s(firstMask) = double(deliveryTime);
+                sduT.DeliveryLatency_ms(firstMask) = (double(deliveryTime) - double(sduT.ScheduleTime_s(firstMask))) * 1e3;
+                sduT.TimingStatus(firstMask) = sixgr.truth.CoupledTruthRuntime.packetTimingStatus( ...
+                    double(sduT.ScheduleTime_s(firstMask)), double(deliveryTime));
+                sduT.Status(firstMask) = "first_success_delivery";
+            else
+                sduT.Status(firstMask) = "phy_decode_pass_protocol_delivery_rejected";
+            end
         else
             sduT.Status(mask & ~logical(sduT.DeliverySuccess)) = "harq_pending_or_failed";
         end
@@ -5960,7 +6079,13 @@ methods(Static, Access=private)
             end
             fullyScheduled = double(packetT.RemainingBits(pidx)) <= 0;
             allDelivered = all(logical(sduT.DeliverySuccess(smask)));
-            if ~(fullyScheduled && allDelivered)
+            protocolRequired = logical(sixgr.util.structGet(state, "ProtocolWaveformEnabled", false));
+            protocolComplete = true;
+            if protocolRequired
+                protocolComplete = all(logical(sduT.ProtocolPayloadSameWaveformTruth(smask))) && ...
+                    all(string(sduT.ProtocolDeliveryStatus(smask)) == "delivered_after_exact_phy_decode");
+            end
+            if ~(fullyScheduled && allDelivered && protocolComplete)
                 continue;
             end
             deliveryTime = max(double(sduT.DeliveryTime_s(smask)), [], "omitnan");
@@ -5975,7 +6100,15 @@ methods(Static, Access=private)
             packetT.TimingStatus(pidx) = sixgr.truth.CoupledTruthRuntime.packetTimingStatus( ...
                 double(packetT.EnqueueTime_s(pidx)), double(deliveryTime));
             packetT.HARQAttemptCount(pidx) = sum(double(sduT.HARQAttemptCount(smask)), "omitnan");
-            packetT.DeliverySource(pidx) = "harq_first_success_reassembly";
+            packetT.ProtocolFragmentCount(pidx) = sum(smask);
+            packetT.SameWaveformProtocolComplete(pidx) = logical(protocolComplete && protocolRequired);
+            if protocolRequired
+                packetT.ProtocolReassemblyStatus(pidx) = "sdap_pdcp_rlc_mac_fragments_delivered_after_exact_phy_decode";
+                packetT.DeliverySource(pidx) = "same_waveform_protocol_harq_first_success_reassembly";
+            else
+                packetT.ProtocolReassemblyStatus(pidx) = "not_required";
+                packetT.DeliverySource(pidx) = "harq_first_success_reassembly";
+            end
             packetT.Status(pidx) = "delivered";
             sduT.ReassemblyCompleteFlag(smask) = true;
             sduT.ApplicationDeliveryFlag(smask) = true;
@@ -6026,6 +6159,37 @@ methods(Static, Access=private)
         t = sixgr.time.slotStartTimeSec(max(1, slotIdx), slotDur);
     end
 
+    function timing = decodedTBDeliveryTiming(state, attemptSlot, feedbackDueSlot)
+        attemptSlot = double(attemptSlot);
+        feedbackDueSlot = double(feedbackDueSlot);
+        if ~(isscalar(attemptSlot) && isfinite(attemptSlot) && ...
+                attemptSlot >= 1 && attemptSlot == round(attemptSlot))
+            error("sixgr:protocol:InvalidDataSlot", ...
+                "Decoded protocol delivery requires a finite positive integer data slot.");
+        end
+        if ~(isscalar(feedbackDueSlot) && isfinite(feedbackDueSlot) && ...
+                feedbackDueSlot >= attemptSlot && feedbackDueSlot == round(feedbackDueSlot))
+            error("sixgr:protocol:InvalidHARQFeedbackSlot", ...
+                "HARQ feedback slot must be a finite integer at or after data slot %d.", ...
+                round(attemptSlot));
+        end
+        deliveryTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec( ...
+            state, attemptSlot + 1);
+        feedbackTime = sixgr.truth.CoupledTruthRuntime.slotStartTimeSec( ...
+            state, feedbackDueSlot);
+        if feedbackTime + 1e-15 < deliveryTime
+            error("sixgr:protocol:HARQFeedbackBeforeDelivery", ...
+                "HARQ feedback time cannot precede decoded TB delivery time.");
+        end
+        timing = struct( ...
+            "DataSlot", attemptSlot, ...
+            "DeliveryCanonicalSlot", attemptSlot, ...
+            "DeliveryTime_s", deliveryTime, ...
+            "HARQFeedbackDueSlot", feedbackDueSlot, ...
+            "HARQFeedbackTime_s", feedbackTime, ...
+            "TimingAuthority", "decoded_tb_slot_end_distinct_from_harq_feedback");
+    end
+
     function status = packetTimingStatus(startTime_s, endTime_s)
         startTime_s = double(startTime_s);
         endTime_s = double(endTime_s);
@@ -6053,7 +6217,7 @@ methods(Static, Access=private)
 
     function state = appendGrantTrace(state, grant, direction, feedback)
         rowT = struct2table(sixgr.truth.CoupledTruthRuntime.buildGrantTraceRow( ...
-            grant, direction, ...
+            state, grant, direction, ...
             sixgr.util.structGet(grant, "Slot", state.CurrentSlot), ...
             sixgr.util.structGet(grant, "Frame", state.CurrentFrame), ...
             sixgr.util.structGet(grant, "UEIndex", NaN), ...
@@ -6179,7 +6343,7 @@ methods(Static, Access=private)
         summaryT = struct2table(rows, "AsArray", true);
     end
 
-    function row = buildGrantTraceRow(grant, direction, slotIdx, frameIdx, ueIdx, feedback)
+    function row = buildGrantTraceRow(state, grant, direction, slotIdx, frameIdx, ueIdx, feedback)
         row = sixgr.truth.CoupledTruthRuntime.emptyGrantRow();
         prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
         symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
@@ -6187,6 +6351,8 @@ methods(Static, Access=private)
         row.SFN = mod(max(0, round(double(frameIdx)) - 1), 1024);
         row.Slot = double(slotIdx);
         row.Frame = double(frameIdx);
+        row.SweepPointIndex = double(sixgr.util.structGet(state, "CurrentSweepPointIndex", NaN));
+        row.ConfiguredSNR_dB = double(sixgr.util.structGet(state, "CurrentSNR_dB", NaN));
         row.UEIndex = sixgr.truth.CoupledTruthRuntime.firstNumeric(ueIdx, NaN);
         row.UEID = row.UEIndex;
         row.RNTI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "RNTI", NaN), NaN);
@@ -10261,31 +10427,11 @@ methods(Static, Access=private)
     end
 
     function T = fillBlankCategoricalColumns(T, scopeToken)
-        if ~(istable(T) && ~isempty(T))
-            return;
-        end
-        scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
-        names = string(T.Properties.VariableNames);
-        for idx = 1:numel(names)
-            fieldName = char(names(idx));
-            rawCol = T.(fieldName);
-            if ~(isstring(rawCol) || ischar(rawCol) || iscell(rawCol) || iscategorical(rawCol) || ...
-                    sixgr.truth.CoupledTruthRuntime.isSemanticCategoricalField(fieldName, rawCol))
-                continue;
-            end
-            values = string(rawCol);
-            normalized = lower(strtrim(fillmissing(values, "constant", "")));
-            blankMask = ismissing(values) | strlength(normalized) == 0 | normalized == "nan" | normalized == "<missing>";
-            if ~any(blankMask)
-                continue;
-            end
-            token = sixgr.truth.CoupledTruthRuntime.blankCategoricalToken(fieldName, scopeToken);
-            if strlength(token) == 0
-                continue;
-            end
-            values(blankMask) = token;
-            T.(fieldName) = values;
-        end
+        T = sixgr.truth.fillBlankCategoricalColumns(T, scopeToken);
+    end
+
+    function tf = isImmutableIdentityField(fieldName)
+        tf = sixgr.truth.isImmutableIdentityField(fieldName);
     end
 
     function token = blankCategoricalToken(fieldName, scopeToken)
@@ -10695,6 +10841,8 @@ methods(Static, Access=private)
             "FirstGrantSlot", NaN, "FirstGrantTime_s", NaN, ...
             "ReassemblyCompleteFlag", false, "DeliverySuccess", false, ...
             "DeliverySlot", NaN, "DeliveryCanonicalSlot", NaN, "DeliveryTime_s", NaN, "Latency_ms", NaN, ...
+            "ProtocolFragmentCount", 0, "SameWaveformProtocolComplete", false, ...
+            "ProtocolReassemblyStatus", "", ...
             "PacketizationSource", "", "DeliverySource", "", ...
             "TimingStatus", "", "Status", "", "Notes", "");
     end
@@ -10706,18 +10854,24 @@ methods(Static, Access=private)
             "TransportBlockId", "", "GrantContextId", "", ...
             "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, ...
             "SegmentIndex", NaN, "PayloadBits", NaN, ...
+            "ProtocolPayloadSameWaveformTruth", false, "ProtocolFragmentId", "", ...
+            "ProtocolPayloadOffsetBits", NaN, "ProtocolPayloadSHA256", "", ...
+            "ProtocolSDAPHeaderHex", "", "ProtocolPDCPHeaderHex", "", ...
+            "ProtocolRLCHeaderHex", "", "ProtocolEncodedRLC_SHA256", "", ...
+            "ProtocolMACSHA256", "", "ProtocolMACPDUBytes", NaN, ...
+            "ProtocolMACPaddingBytes", NaN, "ProtocolEvidenceSource", "", ...
             "ScheduleSlot", NaN, "ScheduleCanonicalSlot", NaN, "ScheduleTime_s", NaN, ...
             "FirstSuccessSlot", NaN, "DeliveryCanonicalSlot", NaN, "DeliveryTime_s", NaN, "DeliveryLatency_ms", NaN, ...
-            "HARQAttemptCount", 0, "LastAttemptSlot", NaN, "LastRV", NaN, ...
+            "HARQAttemptCount", 0, "LastAttemptSlot", NaN, "HARQFeedbackDueSlot", NaN, "LastRV", NaN, ...
             "TBCrcPass", false, "DeliverySuccess", false, "FirstSuccessDelivery", false, ...
             "ReassemblyCompleteFlag", false, "ApplicationDeliveryFlag", false, ...
-            "TimingStatus", "", "Status", "", "Notes", "");
+            "ProtocolDeliveryStatus", "", "TimingStatus", "", "Status", "", "Notes", "");
     end
 
     function row = emptyHARQTimelineRow()
         row = struct( ...
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
-            "Slot", NaN, "Frame", NaN, ...
+            "Slot", NaN, "Frame", NaN, "SweepPointIndex", NaN, "ConfiguredSNR_dB", NaN, ...
             "HarqID", NaN, "NDI", NaN, "NDIEpoch", NaN, "RV", NaN, ...
             "IsRetransmission", false, "FeedbackDueSlot", NaN, ...
             "TBId", "", "OriginalTBSBits", NaN, "CurrentTBSBits", NaN, ...
@@ -11008,6 +11162,7 @@ methods(Static, Access=private)
     function row = emptyGrantRow()
         row = struct( ...
             "Direction", "", "SFN", NaN, "Slot", NaN, "Frame", NaN, ...
+            "SweepPointIndex", NaN, "ConfiguredSNR_dB", NaN, ...
             "UEIndex", NaN, "UEID", NaN, "RNTI", NaN, "ServingCell", NaN, "BaseStationID", NaN, ...
             "GrantReason", "", "IsRetransmission", false, ...
             "HarqID", NaN, "NDI", NaN, "RV", NaN, ...

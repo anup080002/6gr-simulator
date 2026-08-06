@@ -11,7 +11,16 @@ raw.DL = table();
 raw.UL = table();
 raw.PacketSDU = table();
 raw.ApplicationPackets = table();
-raw.Paths = struct("DL", "", "UL", "", "PacketSDU", "", "ApplicationPackets", "");
+raw.HARQTimeline = table();
+raw.DLGrants = table();
+raw.ULGrants = table();
+raw.SlotTrace = table();
+raw.GridNumRBs = NaN;
+raw.NumResourceCells = NaN;
+raw.SymbolsPerSlot = NaN;
+raw.Paths = struct("DL", "", "UL", "", "PacketSDU", "", ...
+    "ApplicationPackets", "", "HARQTimeline", "", ...
+    "DLGrants", "", "ULGrants", "", "SlotTrace", "");
 
 if isstruct(details)
     rt = sixgr.util.structGet(details, "RawTrials", struct());
@@ -20,6 +29,10 @@ if isstruct(details)
         [raw.UL, raw.Paths.UL] = localResolveTable(sixgr.util.structGet(rt, "UL", table()), "air_interface/csv/ul_pusch_trials.csv");
         [raw.PacketSDU, raw.Paths.PacketSDU] = localResolveTable(sixgr.util.structGet(rt, "PacketSDU", table()), "packet_flow/csv/live_packet_sdu_delivery_ledger.csv");
         [raw.ApplicationPackets, raw.Paths.ApplicationPackets] = localResolveTable(sixgr.util.structGet(rt, "ApplicationPackets", table()), "packet_flow/csv/live_application_packet_delivery_ledger.csv");
+        [raw.HARQTimeline, raw.Paths.HARQTimeline] = localResolveTable(sixgr.util.structGet(rt, "HARQTimeline", table()), "harq/csv/live_harq_observation_timeline.csv");
+        [raw.DLGrants, raw.Paths.DLGrants] = localResolveTable(sixgr.util.structGet(rt, "DLGrants", table()), "packet_flow/csv/live_dl_scheduler_grants.csv");
+        [raw.ULGrants, raw.Paths.ULGrants] = localResolveTable(sixgr.util.structGet(rt, "ULGrants", table()), "packet_flow/csv/live_ul_scheduler_grants.csv");
+        [raw.SlotTrace, raw.Paths.SlotTrace] = localResolveTable(sixgr.util.structGet(rt, "SlotTrace", table()), "packet_flow/csv/slot_trace.csv");
     end
 
     if isempty(raw.DL)
@@ -35,6 +48,37 @@ if isstruct(details)
             ulCase = sixgr.util.structGet(cases, "UL_PUSCH_Throughput", struct());
             [raw.UL, raw.Paths.UL] = localResolveTable(sixgr.util.structGet(ulCase, "TrialTable", table()), "details.Cases.UL_PUSCH_Throughput.TrialTable");
         end
+    end
+    if isempty(raw.HARQTimeline)
+        [raw.HARQTimeline, raw.Paths.HARQTimeline] = localResolveTable( ...
+            sixgr.util.structGet(details, "HARQTimelineTable", ...
+            sixgr.util.structGet(details, "LiveDerived.HARQ.TimelineTable", table())), ...
+            "harq/csv/live_harq_observation_timeline.csv");
+    end
+    if isempty(raw.DLGrants)
+        [raw.DLGrants, raw.Paths.DLGrants] = localResolveTable( ...
+            sixgr.util.structGet(details, "DLGrantTraceTable", ...
+            sixgr.util.structGet(details, "DLGrantTable", table())), ...
+            "packet_flow/csv/live_dl_scheduler_grants.csv");
+    end
+    if isempty(raw.ULGrants)
+        [raw.ULGrants, raw.Paths.ULGrants] = localResolveTable( ...
+            sixgr.util.structGet(details, "ULGrantTraceTable", ...
+            sixgr.util.structGet(details, "ULGrantTable", table())), ...
+            "packet_flow/csv/live_ul_scheduler_grants.csv");
+    end
+    if isempty(raw.SlotTrace)
+        [raw.SlotTrace, raw.Paths.SlotTrace] = localResolveTable( ...
+            sixgr.util.structGet(details, "SlotTraceTable", table()), ...
+            "packet_flow/csv/slot_trace.csv");
+    end
+    cfg = sixgr.util.structGet(details, "Config", struct());
+    if isstruct(cfg)
+        raw.GridNumRBs = localFirstFiniteScalar(cfg, [ ...
+            "phy.numerology.activeGridNumRBs", "phy.carrier.NSizeGrid"]);
+        raw.NumResourceCells = localFirstFiniteScalar(cfg, [ ...
+            "scenario.layout.nCells", "deployment_topology.num_cells"]);
+        raw.SymbolsPerSlot = localResolveSymbolsPerSlot(cfg);
     end
 end
 
@@ -54,6 +98,47 @@ if strlength(runFolder) > 0
     if isempty(raw.ApplicationPackets)
         p = localCandidatePath(runFolder, "packet_flow/csv/live_application_packet_delivery_ledger.csv", "reports/csv/kpi_application_packet_delivery_ledger.csv");
         [raw.ApplicationPackets, raw.Paths.ApplicationPackets] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.HARQTimeline)
+        p = localCandidatePath(runFolder, "harq/csv/live_harq_observation_timeline.csv", "reports/csv/live_harq_timeline.csv");
+        [raw.HARQTimeline, raw.Paths.HARQTimeline] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.DLGrants)
+        p = localCandidatePath(runFolder, "packet_flow/csv/live_dl_scheduler_grants.csv", "reports/csv/live_dl_scheduler_grants.csv");
+        [raw.DLGrants, raw.Paths.DLGrants] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.ULGrants)
+        p = localCandidatePath(runFolder, "packet_flow/csv/live_ul_scheduler_grants.csv", "reports/csv/live_ul_scheduler_grants.csv");
+        [raw.ULGrants, raw.Paths.ULGrants] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.SlotTrace)
+        p = localCandidatePath(runFolder, "packet_flow/csv/slot_trace.csv", "reports/csv/slot_trace.csv");
+        [raw.SlotTrace, raw.Paths.SlotTrace] = localResolveTable(p, string(p));
+    end
+end
+end
+
+function value = localResolveSymbolsPerSlot(cfg)
+value = localFirstFiniteScalar(cfg, [ ...
+    "phy.numerology.symbolsPerSlot", "frame_timing.symbols_per_slot"]);
+if isfinite(value)
+    return;
+end
+try
+    [~, numerology] = sixgr.time.slotDurationSec(cfg);
+    value = double(numerology.SymbolsPerSlot);
+catch
+    value = NaN;
+end
+end
+
+function value = localFirstFiniteScalar(cfg, paths)
+value = NaN;
+for i = 1:numel(paths)
+    candidate = double(sixgr.util.structGet(cfg, char(paths(i)), NaN));
+    if isscalar(candidate) && isfinite(candidate) && candidate > 0
+        value = candidate;
+        return;
     end
 end
 end

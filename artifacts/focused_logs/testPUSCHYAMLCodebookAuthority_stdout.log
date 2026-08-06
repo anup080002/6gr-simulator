@@ -1,0 +1,7 @@
+Running testPUSCHMasterYAMLAuthority
+PUSCH master YAML authority: both modes materialized; allocation/MCS/rank/DM-RS/PT-RS/UCI/hopping/power/SRS fields verified.
+...
+Done testPUSCHMasterYAMLAuthority
+__________
+
+PUSCH_YAML_CODEBOOK_AUTHORITY_PASS=4

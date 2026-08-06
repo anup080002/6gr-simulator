@@ -182,6 +182,21 @@ if strlength(pdschExecutionProfile) > 0
     cfg.run.pdschExecutionProfile = char(pdschExecutionProfile);
     cfg.phy.pdsch.executionProfile = char(pdschExecutionProfile);
 end
+puschExecutionProfile = lower(strtrim(string(localGetNested( ...
+    s, "pusch.execution_profile", ""))));
+allowedPUSCHExecutionProfiles = [ ...
+    "connected_strict","scheduler_truth","phy_calibration"];
+if ~isscalar(puschExecutionProfile) || ...
+        (strlength(puschExecutionProfile) > 0 && ...
+        ~any(puschExecutionProfile == allowedPUSCHExecutionProfiles))
+    error("sixgr:lls6g:config:InvalidPUSCHExecutionProfile", ...
+        "pusch.execution_profile must be one of: %s.", ...
+        strjoin(cellstr(allowedPUSCHExecutionProfiles), ", "));
+end
+if strlength(puschExecutionProfile) > 0
+    cfg.run.puschExecutionProfile = char(puschExecutionProfile);
+    cfg.phy.pusch.executionProfile = char(puschExecutionProfile);
+end
 cfg.run.executionMode = char(localResolveBrowserExecutionMode(s));
 cfg.run.warmupTime_ms = runTiming.WarmupTime_ms;
 cfg.run.measurementTime_ms = runTiming.MeasurementTime_ms;
@@ -1732,6 +1747,7 @@ cfg = sixgr.util.structSet(cfg, "interference.intraCellEnabled", intraCellInterf
 pbchRequired = logical(localRequireNested(s, "control_gating.pbch_required", "control_gating.pbch_required"));
 prachRequired = logical(localRequireNested(s, "control_gating.prach_required", "control_gating.prach_required"));
 pdcchRequired = logical(localRequireNested(s, "control_gating.pdcch_required", "control_gating.pdcch_required"));
+pucchRequired = logical(localGetNested(s, "control_gating.pucch_required", false));
 srsRequired = logical(localRequireNested(s, "control_gating.srs_required", "control_gating.srs_required"));
 srsMaxAgeSlots = max(0, round(double(localRequireNested(s, ...
     "control_gating.srs_max_age_slots", "control_gating.srs_max_age_slots"))));
@@ -1741,17 +1757,22 @@ trsMaxAgeSlots = max(0, round(double(localRequireNested(s, ...
 cfg = sixgr.util.structSet(cfg, "run.controlGating.pbchRequired", pbchRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.prachRequired", prachRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.pdcchRequired", pdcchRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.pucchRequired", pucchRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.srsRequired", srsRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.srsMaxAgeSlots", srsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", trsRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", trsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "control_gating.pdcch_required", pdcchRequired);
+cfg = sixgr.util.structSet(cfg, "control_gating.pucch_required", pucchRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.srs_required", srsRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.srs_max_age_slots", srsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "control_gating.trs_required", trsRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.trs_max_age_slots", trsMaxAgeSlots);
 if pdcchRequired
     cfg = localAppendValidationObjectives(cfg, "pdcch_strict_validation");
+end
+if pucchRequired
+    cfg = localAppendValidationObjectives(cfg, "pucch_strict_validation");
 end
 if srsRequired
     cfg = localAppendValidationObjectives(cfg, "srs_strict_validation");
@@ -2400,6 +2421,32 @@ fieldPairs = {
 for i = 1:size(fieldPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, section + "." + fieldPairs{i,1}, targetBase + "." + fieldPairs{i,2});
 end
+[normalizationConvention, hasNormalizationConvention] = ...
+    localTryGetNestedStrict(s, section + ".precoder_normalization_convention");
+if hasNormalizationConvention
+    normalizationConvention = lower(strtrim(string(normalizationConvention)));
+    if normalizationConvention == "unit_total_power" || ...
+            normalizationConvention == "equal_per_layer_unit_total_power"
+        normalizationConvention = "unit_frobenius";
+    elseif normalizationConvention == "per_layer_unit_power"
+        normalizationConvention = "semi_unitary";
+    end
+    if ~isscalar(normalizationConvention) || ...
+            ~any(normalizationConvention == ["unit_frobenius", ...
+            "semi_unitary", "explicit_no_normalization"])
+        error("sixgr:mimo:PrecoderNormalizationConventionUnsupported", ...
+            "%s.precoder_normalization_convention contains unsupported value '%s'.", ...
+            char(section), char(join(normalizationConvention, ",")));
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        targetBase + ".precoding.normalizationConvention", ...
+        char(normalizationConvention));
+    cfg = sixgr.util.structSet(cfg, ...
+        targetBase + ".precoderNormalizationConvention", ...
+        char(normalizationConvention));
+end
+cfg = localCopyRuntimeField(cfg, s, section + ".power_allocation_policy", ...
+    targetBase + ".powerAllocationPolicy");
 [mappingType, hasMappingType] = localTryGetNestedStrict(s, section + ".mapping_type");
 if hasMappingType
     cfg = sixgr.util.structSet(cfg, targetBase + ".mappingType", ...
@@ -2465,7 +2512,6 @@ scalarPairs = {
     "num_layers", "numLayers"
     "num_antenna_ports", "NumAntennaPorts"
     "transmission_scheme", "transmissionScheme"
-    "codebook_type", "codebookType"
     "tpmi", "TPMI"
     "sri", "SRI"
     "rv_per_codeword", "rv"
@@ -2499,13 +2545,19 @@ for i = 1:size(scalarPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, ...
         "pusch." + scalarPairs{i,1}, targetBase + "." + scalarPairs{i,2});
 end
+[codebookType, hasCodebookType] = localTryGetNestedStrict( ...
+    s, "pusch.codebook_type");
+if hasCodebookType
+    codebookType = localNormalizePUSCHCodebookType(codebookType);
+    cfg = sixgr.util.structSet(cfg, targetBase + ".codebookType", char(codebookType));
+    cfg = sixgr.util.structSet(cfg, targetBase + ".CodebookType", char(codebookType));
+end
 
 % Maintain the aliases used by existing grant and HARQ materializers.
 cfg = localCopyRuntimeField(cfg, s, "pusch.num_layers", targetBase + ".nLayers");
 cfg = localCopyRuntimeField(cfg, s, "pusch.num_layers", targetBase + ".maxLayers");
 cfg = localCopyRuntimeField(cfg, s, "pusch.num_antenna_ports", targetBase + ".numAntennaPorts");
 cfg = localCopyRuntimeField(cfg, s, "pusch.transmission_scheme", targetBase + ".TransmissionScheme");
-cfg = localCopyRuntimeField(cfg, s, "pusch.codebook_type", targetBase + ".CodebookType");
 cfg = localCopyRuntimeField(cfg, s, "pusch.tpmi", targetBase + ".PMI");
 cfg = localCopyRuntimeField(cfg, s, "pusch.tpmi", targetBase + ".tpmi");
 cfg = localCopyRuntimeField(cfg, s, "pusch.mcs_index", targetBase + ".configuredMCSIndex");
@@ -2636,6 +2688,17 @@ switch token
     otherwise
         error("sixgr:lls6g:config:InvalidPUSCHTransmissionScheme", ...
             "pusch.transmission_scheme must be codebook or nonCodebook.");
+end
+end
+
+function codebookType = localNormalizePUSCHCodebookType(raw)
+codebookType = strtrim(string(raw));
+allowed = ["codebook1_ng1n4n1", "codebook1_ng1n2n2", ...
+    "codebook2", "codebook3", "codebook4"];
+if ~isscalar(codebookType) || ~any(codebookType == allowed)
+    error("sixgr:lls6g:config:InvalidPUSCHCodebookType", ...
+        "pusch.codebook_type must be one of: %s.", ...
+        char(strjoin(allowed, ", ")));
 end
 end
 

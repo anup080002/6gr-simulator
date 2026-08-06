@@ -1,0 +1,4 @@
+PASS testArtifactContractEngine: 659 CSV + 691 PNG contracts normalized; runtime-only publication verified.
+PASS testRuntimeEvidenceCSVRebuild: JSONL truth rebuilt derived CSV views.
+PASS testScenarioCSVAnnotationRuntimeIsolation: runtime journals remain immutable.
+DETERMINISTIC_FINALIZATION_SLICE_PASS=5\n

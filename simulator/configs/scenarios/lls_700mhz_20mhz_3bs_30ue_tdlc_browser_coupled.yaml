@@ -41,6 +41,12 @@
     "execution_model": "slot_coupled_truth",
     "save_user_tables": true
   },
+  "pdsch": {
+    "execution_profile": "scheduler_truth"
+  },
+  "pusch": {
+    "execution_profile": "scheduler_truth"
+  },
   "deployment_topology": {
     "scenario_type": "multi-cell",
     "site_layout": "hex_grid",

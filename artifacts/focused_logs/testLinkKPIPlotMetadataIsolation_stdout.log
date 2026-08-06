@@ -1,0 +1,9 @@
+{Error using sixgr.visual.PlotLinkKPIs
+Error: File: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\+sixgr\+visual\PlotLinkKPIs.m Line: 141 Column: 6
+Invalid text character. Check for unsupported symbol, invisible character, or pasting of non-ASCII characters.
+
+Error in testLinkKPIPlotMetadataIsolation (line 16)
+figs = sixgr.visual.PlotLinkKPIs(plotInput, ...
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+ERROR: MATLAB error Exit Status: 0x00000001

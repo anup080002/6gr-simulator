@@ -1,17 +1,29 @@
 function artifacts = exportLLSEnergyDiagnostics(cfg, airInterfaceRunFolder, rawTrials)
 %EXPORTLLSENERGYDIAGNOSTICS Emit measured/model-backed RF and energy tables for LLS.
 
-artifacts = struct("CSV", "", "TimelineCSV", "", "SummaryTable", table(), "TimelineTable", table());
+artifacts = struct("CSV", "", "TimelineCSV", "", "ModelTermsCSV", "", ...
+    "SummaryTable", table(), "TimelineTable", table(), "ModelTermsTable", table(), ...
+    "Available", false, "FailureReason", "");
 
 rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
 layout = sixgr.report.resultLayout(rootRunFolder);
 sixgr.util.ensureFolder(layout.RFCSVDir);
 
-timelineT = localBuildEnergyTimeline(cfg, rawTrials);
-if isempty(timelineT)
-    return;
+model = sixgr.truth.resolveLLSEnergyModelConfig(cfg);
+modelTermsPath = fullfile(layout.RFCSVDir, "energy_model_terms.csv");
+sixgr.util.csvWriteTable(modelTermsPath, model.TermTable);
+artifacts.ModelTermsCSV = modelTermsPath;
+artifacts.ModelTermsTable = model.TermTable;
+artifacts.Available = logical(model.Available);
+artifacts.FailureReason = string(model.FailureReason);
+
+if model.Available
+    timelineT = localBuildEnergyTimeline(cfg, rawTrials, model.ModelConfig, model.ModelVersion);
+    summaryT = localBuildEnergySummary(cfg, timelineT, model.ModelVersion);
+else
+    timelineT = table();
+    summaryT = localUnavailableEnergySummary(model.ModelVersion, model.FailureReason);
 end
-summaryT = localBuildEnergySummary(cfg, timelineT);
 summaryT = sixgr.truth.finalizeProbeMetricTable(summaryT);
 
 timelinePath = fullfile(layout.RFCSVDir, "energy_timeline_trace.csv");
@@ -25,15 +37,14 @@ artifacts.SummaryTable = summaryT;
 artifacts.TimelineTable = timelineT;
 end
 
-function timelineT = localBuildEnergyTimeline(cfg, rawTrials)
-ueCfg = localBuildEnergyModelCfg(cfg);
-ueModel = sixgr.rf.EnergyModelUE(ueCfg);
-bsModel = sixgr.rf.EnergyModelBS(ueCfg);
+function timelineT = localBuildEnergyTimeline(cfg, rawTrials, modelCfg, modelVersion)
+ueModel = sixgr.rf.EnergyModelUE(modelCfg);
+bsModel = sixgr.rf.EnergyModelBS(modelCfg);
 slotDur_s = localSlotDuration(cfg);
-bsRfChains = localResolveRFChains(cfg, "gNB");
-ueRfChains = localResolveRFChains(cfg, "UE");
-bsTxPowerW = localdBmToW(localResolveTxPowerdBm(cfg, "gNB"));
-ueTxPowerW = localdBmToW(localResolveTxPowerdBm(cfg, "UE"));
+bsRfChains = double(sixgr.util.structGet(modelCfg, "powerAndRF.bsRFChainCount", NaN));
+ueRfChains = double(sixgr.util.structGet(modelCfg, "powerAndRF.ueRFChainCount", NaN));
+bsTxPowerW = localdBmToW(double(sixgr.util.structGet(modelCfg, "powerAndRF.bsTxPower_dBm", NaN)));
+ueTxPowerW = localdBmToW(double(sixgr.util.structGet(modelCfg, "powerAndRF.ueTxPower_dBm", NaN)));
 totalRBs = max(1, double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)));
 
 rows = repmat(localEmptyEnergyRow(), 0, 1);
@@ -49,6 +60,10 @@ if isempty(rows)
     timelineT = table();
 else
     timelineT = struct2table(rows);
+    timelineT.EnergyModelVersion = repmat(string(modelVersion), height(timelineT), 1);
+    timelineT.EvidenceType = repmat("runtime_state_conditioned_engineering_model", height(timelineT), 1);
+    timelineT.Availability = repmat("AVAILABLE", height(timelineT), 1);
+    timelineT.PowerEquation = repmat("configured_state_power_w*observed_interval_s", height(timelineT), 1);
 end
 end
 
@@ -174,9 +189,10 @@ row = struct( ...
     "RFChainCount", NaN, "BBProcessingEnergy_J", NaN, "SourceArtifact", "", "Status", "");
 end
 
-function summaryT = localBuildEnergySummary(cfg, timelineT)
+function summaryT = localBuildEnergySummary(cfg, timelineT, modelVersion)
 summaryT = localEmptyProbeMetricTable();
 if ~(istable(timelineT) && ~isempty(timelineT))
+    summaryT = localUnavailableEnergySummary(modelVersion, "runtime_energy_timeline_empty");
     return;
 end
 
@@ -184,23 +200,15 @@ slotDur_s = localSlotDuration(cfg);
 numFrames = max(1, double(sixgr.util.structGet(cfg, "run.numFrames", 1)));
 scenarioDur = localScenarioMeasurementDuration(cfg, timelineT, numFrames, slotDur_s);
 [successBitsRaw, firstDeliveryCount] = localUniqueDeliveredBits(timelineT);
-successBits = max(successBitsRaw, 1);
 ueMask = string(timelineT.Entity) == "UE";
 gnbMask = string(timelineT.Entity) == "gNB";
 ueEnergy = sum(double(timelineT.Energy_J(ueMask)), "omitnan");
 gnbEnergy = sum(double(timelineT.Energy_J(gnbMask)), "omitnan");
 bbEnergy = sum(double(timelineT.BBProcessingEnergy_J(gnbMask)), "omitnan");
 rfActiveTime = sum(double(timelineT.Duration_s(gnbMask)), "omitnan");
-throughputMbps = (successBits / max(scenarioDur, eps)) / 1e6;
+throughputMbps = (successBitsRaw / max(scenarioDur, eps)) / 1e6;
 avgPowerW = (ueEnergy + gnbEnergy) / max(scenarioDur, eps);
-sleepModel = lower(string(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.sleep_state_model", "none")));
-sleepRatio = max(0, 1 - rfActiveTime / max(scenarioDur, eps));
-raceToSleepGain = 0;
-raceToSleepNote = "Sleep-state model disabled; race-to-sleep gain is zero for this scenario.";
-if sleepModel ~= "none"
-    raceToSleepGain = sleepRatio;
-    raceToSleepNote = "Measured sleep-ratio proxy under the configured sleep-state model.";
-end
+sleepRatio = max(0, 1 - min(rfActiveTime, scenarioDur) / max(scenarioDur, eps));
 clusteringEnabled = logical(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.common_signal_clustering_enabled", ...
     sixgr.util.structGet(cfg, "signals_and_channels_common.common_signal_clustering.enable_flag", false))) || ...
     logical(sixgr.util.structGet(cfg, "lls6g.random_access.beam_clustering_enabled", false)) || ...
@@ -215,20 +223,34 @@ bandwidthAdaptMode = lower(string(sixgr.util.structGet(cfg, "lls6g.energy_effici
 bandwidthAdaptEnabled = logical(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.bandwidth_adaptation_enabled", ...
     sixgr.util.structGet(cfg, "bandwidth_operation.supports_bwp_like_operation", false))) || ...
     ~(bandwidthAdaptMode == "" || any(bandwidthAdaptMode == ["none","disabled","off","false"]));
-bandwidthAdaptEffect = 0;
-bandwidthAdaptNote = "Bandwidth-adaptation energy saving disabled; delta is zero by construction.";
-if bandwidthAdaptEnabled
-    bandwidthAdaptEffect = sleepRatio * avgPowerW;
-    bandwidthAdaptNote = "Measured energy-saving proxy using observed sleep ratio under bandwidth adaptation mode '" + bandwidthAdaptMode + "'.";
+% Counterfactual sleep and bandwidth-adaptation gains require paired
+% executed scenarios.  A single runtime trace cannot measure them.
+bandwidthAdaptEffect = NaN;
+bandwidthAdaptNote = "NOT_EVALUATED: requires a paired executed bandwidth-adaptation scenario; no proxy is emitted.";
+raceToSleepGain = NaN;
+raceToSleepNote = "NOT_EVALUATED: requires explicit executed sleep-state transitions and a paired baseline; no proxy is emitted.";
+
+if successBitsRaw > 0
+    ueEnergyPerBit = ueEnergy / successBitsRaw;
+    gnbEnergyPerBit = gnbEnergy / successBitsRaw;
+    throughputPerWatt = throughputMbps / max(avgPowerW, eps);
+    energyAvailability = "AVAILABLE";
+    energyNotes = "Runtime-conditioned configured energy model divided by unique first-success transport-block bits.";
+else
+    ueEnergyPerBit = NaN;
+    gnbEnergyPerBit = NaN;
+    throughputPerWatt = NaN;
+    energyAvailability = "NOT_EVALUATED";
+    energyNotes = "No successful transport-block delivery exists; energy per bit is undefined.";
 end
 
 summaryT = [summaryT; ... %#ok<AGROW>
-    localProbeMetricRow("ue_energy_per_successful_bit", "UE", "mean", ueEnergy / successBits, "", "J/bit", "UE runtime energy divided by successful bits."); ...
+    localProbeMetricRow("ue_energy_per_successful_bit", "UE", "mean", ueEnergyPerBit, "", "J/bit", energyNotes, energyAvailability, "runtime_state_conditioned_engineering_model", modelVersion); ...
     localProbeMetricRow("first_delivered_bits", "system", "total", successBitsRaw, "", "bit", "Unique first-success delivered bits used as energy denominator."); ...
     localProbeMetricRow("first_delivery_count", "system", "total", firstDeliveryCount, "", "count", "Unique first-success TB delivery events used by energy accounting."); ...
     localProbeMetricRow("measurement_window_duration", "system", "total", scenarioDur, "", "s", "Simulated measurement window used by energy and throughput-per-watt metrics."); ...
     localProbeMetricRow("ue_energy_per_slot_frame_burst", "UE", "per_frame_mean", ueEnergy / numFrames, "", "J/frame", "Average UE energy per frame."); ...
-    localProbeMetricRow("gnb_energy_per_successful_bit", "gNB", "mean", gnbEnergy / successBits, "", "J/bit", "gNB runtime energy divided by successful bits."); ...
+    localProbeMetricRow("gnb_energy_per_successful_bit", "gNB", "mean", gnbEnergyPerBit, "", "J/bit", energyNotes, energyAvailability, "runtime_state_conditioned_engineering_model", modelVersion); ...
     localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "active_ratio", rfActiveTime / max(scenarioDur, eps), "", "fraction", "Active ratio from gNB runtime timeline."); ...
     localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "sleep_ratio", max(0, 1 - rfActiveTime / max(scenarioDur, eps)), "", "fraction", "Residual ratio not spent in active runtime states."); ...
     localProbeMetricRow("rf_chain_active_time", "gNB", "total", rfActiveTime, "", "s", "Accumulated gNB RF-chain active time."); ...
@@ -237,11 +259,16 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("pdcch_monitoring_energy", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring"), "", "J", "UE receive energy while monitoring PDCCH."); ...
     localProbeMetricRow("ssb_pbch_common_signal_energy", "gNB", "total", localDomainEnergy(timelineT, "gNB", "SSB_PBCH"), "", "J", "gNB common-signal transmit energy."); ...
     localProbeMetricRow("prach_common_channel_clustering_energy_effect", "system", "delta_j", clusteringEffect, "", "J", clusteringNote); ...
-    localProbeMetricRow("bandwidth_adaptation_energy_effect", "system", "delta_j", bandwidthAdaptEffect, "", "J", bandwidthAdaptNote); ...
-    localProbeMetricRow("race_to_sleep_gains", "system", "fractional_gain", raceToSleepGain, "", "fraction", raceToSleepNote); ...
-    localProbeMetricRow("throughput_per_watt", "system", "mean", throughputMbps / max(avgPowerW, eps), "", "Mbps/W", "Throughput per average combined UE+gNB power."); ...
+    localProbeMetricRow("bandwidth_adaptation_energy_effect", "system", "delta_j", bandwidthAdaptEffect, "", "J", bandwidthAdaptNote, "NOT_EVALUATED", "paired_counterfactual_required", modelVersion); ...
+    localProbeMetricRow("race_to_sleep_gains", "system", "fractional_gain", raceToSleepGain, "", "fraction", raceToSleepNote, "NOT_EVALUATED", "paired_counterfactual_required", modelVersion); ...
+    localProbeMetricRow("throughput_per_watt", "system", "mean", throughputPerWatt, "", "Mbps/W", energyNotes, energyAvailability, "runtime_state_conditioned_engineering_model", modelVersion); ...
     localProbeMetricRow("energy_delay_product", "system", "mean", (ueEnergy + gnbEnergy) * scenarioDur, "", "J*s", "Energy-delay product over the scenario runtime."); ...
-    localProbeMetricRow("energy_spectral_efficiency_tradeoff", "system", "mean", localEnergySpectralEfficiency(cfg, throughputMbps, avgPowerW), "", "(bit/s/Hz)/W", "Spectral efficiency per watt proxy.")];
+    localProbeMetricRow("energy_spectral_efficiency_tradeoff", "system", "mean", localEnergySpectralEfficiency(cfg, throughputMbps, avgPowerW), "", "(bit/s/Hz)/W", "Derived from runtime delivered bits, configured bandwidth, and the explicit energy model; not a measured circuit-power quantity.", energyAvailability, "runtime_state_conditioned_engineering_model", modelVersion)];
+
+% Record enabled policy without converting it into unexecuted savings.
+summaryT(end+1,:) = localProbeMetricRow("bandwidth_adaptation_policy_enabled", "system", "configured", ...
+    double(bandwidthAdaptEnabled), string(bandwidthAdaptMode), "bool", ...
+    "Configuration fact only; does not claim an energy saving.", "AVAILABLE", "configuration_fact", modelVersion);
 end
 
 function value = localDomainEnergy(T, entity, domain)
@@ -318,86 +345,6 @@ if strlength(strtrim(tb)) > 0 && lower(strtrim(tb)) ~= "nan"
 end
 key = upper(string(T.Direction(i))) + "_ue" + string(T.UEID(i)) + "_rnti" + string(T.RNTI(i)) + ...
     "_harq" + string(T.HARQProcessId(i)) + "_ndi" + string(T.NDI(i)) + "_f" + string(T.Frame(i)) + "_s" + string(T.Slot(i));
-end
-
-function cfgEnergy = localBuildEnergyModelCfg(cfg)
-cfgEnergy = cfg;
-eff = double(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.pa_efficiency", 0.35));
-cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.bs.efficiencyPA", eff);
-cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.ue.txWPerWattRF", 1 / max(eff, eps));
-cfgEnergy = sixgr.util.structSet(cfgEnergy, "energy.bs.perTRxPW", ...
-    double(sixgr.util.structGet(cfg, "energy.bs.perTRxPW", ...
-    sixgr.util.structGet(cfg, "lls6g.energy_efficiency.per_rf_chain_power_w", 5))));
-end
-
-function n = localResolveRFChains(cfg, entity)
-entity = upper(string(entity));
-if entity == "UE"
-    n = localFirstFiniteScalar( ...
-        sixgr.util.structGet(cfg, "powerAndRF.ueRFChainCount", []), ...
-        sixgr.util.structGet(cfg, "rf.ue.numRFChains", []), ...
-        sixgr.util.structGet(cfg, "scenario.ue.numRFChains", []), ...
-        sixgr.util.structGet(cfg, "scenario.ue.nTxAnt", []), ...
-        sixgr.util.structGet(cfg, "scenario.ue.nRxAnt", []), ...
-        1);
-else
-    n = localFirstFiniteScalar( ...
-        sixgr.util.structGet(cfg, "powerAndRF.bsRFChainCount", []), ...
-        sixgr.util.structGet(cfg, "rf.bs.numRFChains", []), ...
-        sixgr.util.structGet(cfg, "scenario.bs.numRFChains", []), ...
-        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.rf_chain_count", []), ...
-        sixgr.util.structGet(cfg, "phy.nTxAnt", []), ...
-        1);
-end
-if ~(isfinite(double(n)) && double(n) >= 1)
-    n = 1;
-else
-    n = max(1, round(double(n)));
-end
-end
-
-function dbm = localResolveTxPowerdBm(cfg, entity)
-entity = upper(string(entity));
-if entity == "UE"
-    dbm = localFirstFiniteScalar( ...
-        sixgr.util.structGet(cfg, "powerAndRF.ueTxPower_dBm", []), ...
-        sixgr.util.structGet(cfg, "lls6g.resolvedConfig.power_and_rf_frontend.ue_tx_power_dbm", []), ...
-        sixgr.util.structGet(cfg, "phy.pusch.powerControl.pcmax_dBm", []), ...
-        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.ue_tx_power_dbm", []), ...
-        23);
-else
-    dbm = localFirstFiniteScalar( ...
-        sixgr.util.structGet(cfg, "powerAndRF.bsTxPower_dBm", []), ...
-        sixgr.util.structGet(cfg, "lls6g.resolvedConfig.power_and_rf_frontend.bs_tx_power_dbm", []), ...
-        sixgr.util.structGet(cfg, "scenario.bs.txPower_dBm", []), ...
-        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.bs_tx_power_dbm", []), ...
-        sixgr.util.structGet(cfg, "lls6g.energy_efficiency.tx_power_dbm", []), ...
-        46);
-end
-end
-
-function value = localFirstFiniteScalar(varargin)
-value = NaN;
-for i = 1:nargin
-    raw = varargin{i};
-    if isempty(raw)
-        continue;
-    end
-    if islogical(raw)
-        raw = double(raw);
-    end
-    if ~isnumeric(raw)
-        numeric = str2double(string(raw));
-    else
-        numeric = double(raw);
-    end
-    numeric = numeric(:);
-    numeric = numeric(isfinite(numeric));
-    if ~isempty(numeric)
-        value = numeric(1);
-        return;
-    end
-end
 end
 
 function T = localResolveTrialTable(v)
@@ -531,15 +478,39 @@ slotDur_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function T = localEmptyProbeMetricTable()
-T = table('Size', [0 7], ...
-    'VariableTypes', {'string','string','string','double','string','string','string'}, ...
-    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes'});
+T = table('Size', [0 10], ...
+    'VariableTypes', {'string','string','string','double','string','string','string','string','string','string'}, ...
+    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes', ...
+    'Availability','EvidenceType','ModelVersion'});
 end
 
-function T = localProbeMetricRow(metricKey, entity, statistic, value, textValue, unit, notes)
+function T = localProbeMetricRow(metricKey, entity, statistic, value, textValue, unit, notes, availability, evidenceType, modelVersion)
+if nargin < 8 || strlength(strtrim(string(availability))) == 0
+    if isfinite(double(value))
+        availability = "AVAILABLE";
+    else
+        availability = "NOT_EVALUATED";
+    end
+end
+if nargin < 9 || strlength(strtrim(string(evidenceType))) == 0
+    evidenceType = "runtime_state_conditioned_engineering_model";
+end
+if nargin < 10 || strlength(strtrim(string(modelVersion))) == 0
+    modelVersion = "lls_energy_accounting_v2";
+end
 if strlength(strtrim(string(textValue))) == 0 && isfinite(double(value))
     textValue = sprintf('%.12g', double(value));
 end
 T = table(string(metricKey), string(entity), string(statistic), double(value), string(textValue), string(unit), string(notes), ...
-    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes'});
+    string(availability), string(evidenceType), string(modelVersion), ...
+    'VariableNames', {'MetricKey','Entity','Statistic','Value','TextValue','Unit','Notes', ...
+    'Availability','EvidenceType','ModelVersion'});
+end
+
+function T = localUnavailableEnergySummary(modelVersion, reason)
+T = [ ...
+    localProbeMetricRow("ue_energy_per_successful_bit", "UE", "mean", NaN, "", "J/bit", ...
+        string(reason), "NOT_EVALUATED", "unavailable", modelVersion); ...
+    localProbeMetricRow("gnb_energy_per_successful_bit", "gNB", "mean", NaN, "", "J/bit", ...
+        string(reason), "NOT_EVALUATED", "unavailable", modelVersion)];
 end

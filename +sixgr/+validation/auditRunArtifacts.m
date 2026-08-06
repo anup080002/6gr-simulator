@@ -16,6 +16,7 @@ p.addParameter("Strict", false, @(x)islogical(x) || (isnumeric(x) && isscalar(x)
 p.addParameter("MaxPreviewRows", 5, @(x)isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
 p.addParameter("FailOnEmptyRequiredCSV", true, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("FailOnBlankRequiredImage", true, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
+p.addParameter("FailOnUnmanifestedImages", true, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("WriteOutputs", true, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
 p.parse(varargin{:});
 opt = p.Results;
@@ -306,8 +307,8 @@ row.failure_code = "";
 row.first_issue = "";
 row.required = logical(required);
 
-if strlength(row.source_csv) > 0
-    row.source_csv_exists = exist(fullfile(rootRunFolder, strrep(char(row.source_csv), "/", filesep)), "file") == 2;
+if strlength(row.source_csv) > 0 && row.source_csv ~= "__manifested_without_source__"
+    row.source_csv_exists = localSourceCSVExists(rootRunFolder, row.source_csv);
 end
 
 if exist(row.path, "file") ~= 2
@@ -350,6 +351,18 @@ if ~row.readable
     row.status = localTernary(required, "fail", "warn");
     row.failure_code = localTernary(required, "required_image_unreadable", "image_unreadable");
     row.first_issue = string(reason);
+    return;
+end
+if logical(opt.FailOnUnmanifestedImages) && strlength(row.source_csv) == 0
+    row.status = "fail";
+    row.failure_code = "unmanifested_visual_artifact";
+    row.first_issue = "Every persisted PNG or JPEG requires exact source lineage.";
+    return;
+end
+if row.source_csv == "__manifested_without_source__"
+    row.status = "fail";
+    row.failure_code = "manifest_source_csv_missing";
+    row.first_issue = "The visual manifest row does not identify its source CSV.";
     return;
 end
 if row.blank_or_low_information && required && logical(opt.FailOnBlankRequiredImage)
@@ -606,7 +619,12 @@ end
 
 function lineageMap = localBuildPlotLineageMap(rootRunFolder, reportCSVDir)
 lineageMap = containers.Map("KeyType", "char", "ValueType", "char");
-files = dir(fullfile(reportCSVDir, "*plot_lineage.csv"));
+files = [dir(fullfile(rootRunFolder, "**", "*plot_lineage.csv")); ...
+    dir(fullfile(reportCSVDir, "plot_manifest.csv"))];
+if ~isempty(files)
+    [~, uniqueIndex] = unique(string(fullfile({files.folder}, {files.name})), "stable");
+    files = files(uniqueIndex);
+end
 for i = 1:numel(files)
     pathValue = fullfile(files(i).folder, files(i).name);
     try
@@ -617,15 +635,22 @@ for i = 1:numel(files)
     if ~(istable(T) && height(T) > 0)
         continue;
     end
-    if ~localHasColumn(T, "PlotFile") || ~localHasColumn(T, "SourceCSV")
+    plotColumn = localFirstColumn(T, ["PlotFile", "ImagePath", "ArtifactPath"]);
+    sourceColumn = localFirstColumn(T, ["SourceCSV", "source_csv"]);
+    if strlength(plotColumn) == 0
         continue;
     end
-    plotFiles = strtrim(string(T.PlotFile));
-    sourceCSVs = strtrim(string(T.SourceCSV));
+    plotFiles = strtrim(string(T.(plotColumn)));
+    if strlength(sourceColumn) == 0
+        sourceCSVs = repmat("__manifested_without_source__", height(T), 1);
+    else
+        sourceCSVs = strtrim(string(T.(sourceColumn)));
+        sourceCSVs(strlength(sourceCSVs) == 0) = "__manifested_without_source__";
+    end
     for k = 1:height(T)
-        plotRel = localNormalizeRelativePath(plotFiles(k));
-        sourceRel = localNormalizeRelativePath(sourceCSVs(k));
-        if strlength(plotRel) == 0 || strlength(sourceRel) == 0
+        plotRel = localManifestArtifactPath(plotFiles(k), rootRunFolder);
+        sourceRel = localManifestSourceSpec(sourceCSVs(k), rootRunFolder);
+        if strlength(plotRel) == 0
             continue;
         end
         if ~isKey(lineageMap, char(plotRel))
@@ -636,6 +661,61 @@ for i = 1:numel(files)
             lineageMap(char(plotAbs)) = char(sourceRel);
         end
     end
+end
+
+function name = localFirstColumn(T, candidates)
+name = "";
+names = string(T.Properties.VariableNames);
+for candidate = string(candidates(:)).'
+    idx = find(strcmpi(names, candidate), 1, "first");
+    if ~isempty(idx)
+        name = names(idx);
+        return;
+    end
+end
+end
+end
+
+function rel = localManifestArtifactPath(pathValue, rootRunFolder)
+pathValue = string(pathValue);
+if isfile(char(pathValue)) || localLooksAbsolute(pathValue)
+    rel = localRelativePath(pathValue, rootRunFolder);
+else
+    rel = pathValue;
+end
+rel = localNormalizeRelativePath(rel);
+end
+
+function sourceSpec = localManifestSourceSpec(value, rootRunFolder)
+value = strtrim(string(value));
+if value == "__manifested_without_source__"
+    sourceSpec = value;
+    return;
+end
+parts = split(value, "|");
+parts = strtrim(parts(:));
+parts = parts(strlength(parts) > 0);
+for i = 1:numel(parts)
+    parts(i) = localManifestArtifactPath(parts(i), rootRunFolder);
+end
+sourceSpec = strjoin(parts, "|");
+end
+
+function tf = localLooksAbsolute(pathValue)
+pathValue = char(string(pathValue));
+tf = ~isempty(regexp(pathValue, '^[A-Za-z]:[\\/]', 'once')) || ...
+    startsWith(string(pathValue), "\\\\") || startsWith(string(pathValue), "/");
+end
+
+function tf = localSourceCSVExists(rootRunFolder, sourceSpec)
+parts = split(string(sourceSpec), "|");
+parts = strtrim(parts(:));
+parts = parts(strlength(parts) > 0);
+tf = ~isempty(parts);
+for i = 1:numel(parts)
+    rel = localNormalizeRelativePath(parts(i));
+    pathValue = fullfile(rootRunFolder, strrep(char(rel), "/", filesep));
+    tf = tf && exist(pathValue, "file") == 2;
 end
 end
 

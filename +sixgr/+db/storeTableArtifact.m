@@ -1,5 +1,10 @@
-function handled = storeTableArtifact(filePath, T)
+function handled = storeTableArtifact(filePath, T, varargin)
 %STORETABLEARTIFACT Persist a table artifact through the active DB sink.
+
+p = inputParser;
+p.addParameter("PreserveSchema", false, ...
+    @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
 
 handled = false;
 if ~sixgr.util.persistenceEnabled() || ~sixgr.db.isArtifactStoreActive()
@@ -11,7 +16,9 @@ cleanupTmp = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>
 sixgr.util.ensureDir(tmpPath);
 
 try
-    T = sixgr.util.pruneStructurallyBlankTableColumns(T);
+    if ~p.Results.PreserveSchema
+        T = sixgr.util.pruneStructurallyBlankTableColumns(T);
+    end
     try
         writetable(T, tmpPath, "Delimiter", ",", "QuoteStrings", true);
     catch

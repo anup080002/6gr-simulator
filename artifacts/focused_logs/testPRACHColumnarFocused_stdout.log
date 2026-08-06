@@ -1,0 +1,15 @@
+{Error using table (line 57)
+All table variables must have the same number of rows.
+
+Error in sixgr.util.structPartsToTable (line 43)
+output = table(columns{:}, "VariableNames", cellstr(fieldNames));
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testStructPartsToTable (line 21)
+actual = sixgr.util.structPartsToTable(parts, template);
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Caused by:
+    If you intended "VariableNames" to specify a parameter name, the recommended syntax is table(..., VariableNames=value).
+
+    Alternatively, for backwards compatibility use the syntax table(..., 'VariableNames', value) with the parameter name specified as a character vector.
+}
+ERROR: MATLAB error Exit Status: 0x00000001

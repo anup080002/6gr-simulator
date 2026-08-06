@@ -14,7 +14,10 @@ assert(string(statusT.ScenarioMode(1)) == "adaptive_link", "Adaptive fixture mus
 assert(string(classT.RunClass(1)) == "adaptive_system_diagnostic", "Adaptive fixture must classify as adaptive_system_diagnostic.");
 assert(logical(classT.AdaptiveMode(1)), "Adaptive run classification must preserve AdaptiveMode=true.");
 assert(all(logical(opT.AdaptiveMode)), "Operating-point rows must mark AdaptiveMode=true.");
-assert(logical(statusT.ConfiguredEffectiveOk(1)), "Adaptive mode must not be failed by lower effective MCS alone.");
+assert(~logical(statusT.ConfiguredEffectiveOk(1)), ...
+    "Adaptive lower MCS must not be mislabeled as an exact configured/effective match.");
+assert(logical(statusT.ConfiguredEffectivePolicyOk(1)), ...
+    "Adaptive lower MCS may conform to policy even though exact match is false.");
 assert(~logical(classT.PublicationLLSEligible(1)), "Adaptive diagnostic runs must not claim fixed-link publication eligibility.");
 assert(~all(logical(opT.ExactOperatingPointMatch)), "Adaptive rows must still expose the configured/effective mismatch honestly.");
 
@@ -25,6 +28,8 @@ fixedRankStatus = readtable(fullfile(fixedRankCtx.Layout.ReportCSVDir, ...
     "result_status_summary.csv"), "VariableNamingRule", "preserve");
 assert(~logical(fixedRankStatus.ConfiguredEffectiveOk(1)), ...
     "AMC must not hide collapse of an independently fixed rank/layer contract.");
+assert(~logical(fixedRankStatus.ConfiguredEffectivePolicyOk(1)), ...
+    "Fixed rank/layer collapse must fail adaptive policy conformance.");
 
 % A decoder outage must not be confused with a transmission-rank collapse:
 % the transmitted rank/layers remain authoritative for configured execution.
@@ -42,8 +47,10 @@ sixgr.truth.evaluateLLSRuntimeTruthContract( ...
     fixedRankCtx.RunFolder, fixedRankCtx.ScenarioConfig, fixedRankCtx.InternalConfig);
 outageStatus = readtable(fullfile(fixedRankCtx.Layout.ReportCSVDir, ...
     "result_status_summary.csv"), "VariableNamingRule", "preserve");
-assert(logical(outageStatus.ConfiguredEffectiveOk(1)), ...
-    "CRC failure must preserve configured/executed rank when transmitted rank/layers match.");
+assert(~logical(outageStatus.ConfiguredEffectiveOk(1)), ...
+    "Adaptive MCS divergence remains an exact mismatch after an outage.");
+assert(logical(outageStatus.ConfiguredEffectivePolicyOk(1)), ...
+    "CRC failure must preserve policy conformance when transmitted rank/layers match.");
 
 ok = true;
 end

@@ -1,0 +1,13 @@
+[2026-08-06T01:34:53Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase10_targeted_webgui_repair_11 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11
+Starting parallel pool (parpool) using the 'Processes' profile ...
+Connected to parallel pool with 4 workers.
+[2026-08-06T01:35:58Z] INFO MATLAB profiler enabled for this run.
+[2026-08-06T01:35:58Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-06T01:35:58Z] INFO Writing resolved snapshots.
+[2026-08-06T01:36:00Z] INFO Exporting live geometry artifacts.
+[2026-08-06T01:36:00Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-06T01:36:00Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-06T01:36:00Z] INFO Waveform bundle starting: snr=0.000 dB sweepPoints=3 canonicalSlots=40 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-06T01:36:04Z] ERROR Run failed: sixgr:truth:resume:ConfiguredSlotCountMismatch | Persisted runtime total slots 20 do not match configured total 120.
+[2026-08-06T01:36:06Z] INFO Writing MATLAB profiler CSV artifacts: functions=250 edges=500
+[2026-08-06T01:36:09Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.

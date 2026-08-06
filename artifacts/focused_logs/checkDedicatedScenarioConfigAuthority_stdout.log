@@ -1,0 +1,5 @@
+REPAIR_SLICE_PRACH_CFO_ENABLED=0 PDSCH_SYMBOLS=[2 12] PUSCH_SYMBOLS=[0 14]
+{Error using assert
+Assertion failed.
+}
+ERROR: MATLAB error Exit Status: 0x00000001

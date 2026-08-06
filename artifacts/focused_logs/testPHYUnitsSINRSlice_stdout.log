@@ -1,0 +1,14 @@
+{Error using sixgr.phy.rx.validateNoiseDomainEvidence/localFinish (line 176)
+Noise-domain evidence failed: sample_to_grid_transform=replay grid variance is not the calibrated OFDM transform of the same pre-front-end sample variance;
+applied_snr_same_plane_identity=AppliedNoiseSNR_dB does not equal signal/noise evidence from its declared reference plane
+
+Error in sixgr.phy.rx.validateNoiseDomainEvidence (line 169)
+report = localFinish();
+         ^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 1663)
+out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testDLPDSCHReceiverEvidenceGate (line 12)
+res = sixgr.link.runDLPDSCHThroughput(cfg, ...
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}

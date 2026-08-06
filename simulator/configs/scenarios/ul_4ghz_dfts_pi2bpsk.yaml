@@ -30,5 +30,9 @@
   "modulation": {
     "ul_modulation_order": 1,
     "ul_mcs_index": 0
+  },
+  "pusch": {
+    "waveform": "DFT-S-OFDM",
+    "transform_precoding": true
   }
 }

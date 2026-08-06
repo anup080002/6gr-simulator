@@ -80,6 +80,8 @@ paths.WaveformDecodeTraceCSV = fullfile(layout.ControlCSVDir, "sib1_waveform_dec
 paths.ControlConformanceSummaryCSV = fullfile(layout.ControlCSVDir, "sib1_conformance_summary.csv");
 paths.AirInterfaceCSV = fullfile(layout.AirInterfaceCSVDir, "pbch_mib_sib1_trials.csv");
 paths.ConformanceSummaryCSV = fullfile(layout.ReportCSVDir, "sib1_conformance_summary.csv");
+paths.ResourceGridCSV = fullfile(layout.ControlCSVDir, "sib1_resource_grid.csv");
+paths.PDSCHEqualizedSymbolsCSV = fullfile(layout.ControlCSVDir, "sib1_pdsch_equalized_symbols.csv");
 sixgr.util.csvWriteTable(paths.RecoveryTrialsCSV, trialT);
 sixgr.util.csvWriteTable(paths.PBCHRecoveryTrialsCSV, pbchRecoveryT);
 sixgr.util.csvWriteTable(paths.MIBFieldEvidenceCSV, mibFieldT);
@@ -93,6 +95,10 @@ sixgr.util.csvWriteTable(paths.WaveformDecodeTraceCSV, traceT);
 sixgr.util.csvWriteTable(paths.ControlConformanceSummaryCSV, summaryT);
 sixgr.util.csvWriteTable(paths.AirInterfaceCSV, trialT);
 sixgr.util.csvWriteTable(paths.ConformanceSummaryCSV, summaryT);
+resourceGridT = localResourceGridTable(runId, tx.SIB1Grid);
+equalizedSymbolT = localEqualizedSymbolTable(runId, result);
+sixgr.util.csvWriteTable(paths.ResourceGridCSV, resourceGridT);
+sixgr.util.csvWriteTable(paths.PDSCHEqualizedSymbolsCSV, equalizedSymbolT);
 
 paths.TxTreeJSON = fullfile(jsonDir, "sib1_tx_tree.json");
 paths.RxTreeJSON = fullfile(jsonDir, "sib1_rx_tree.json");
@@ -122,10 +128,23 @@ paths.DecodeFlowPNG = fullfile(figDir, "sib1_decode_flow.png");
 localWriteGridFigure(paths.CORESET0GridPNG, tx.SIB1Grid, "SIB1 CORESET0/PDSCH resource grid");
 localWriteCandidateFigure(paths.PDCCHMetricPNG, candidateT);
 localWriteGridFigure(paths.PDSCHGridPNG, tx.SIB1Grid, "SIB1 PDSCH resource grid");
-localWriteGridFigure(paths.PDSCHConstellationPNG, tx.SIB1Grid, "SIB1 equalized constellation lineage grid");
+localWriteConstellationFigure(paths.PDSCHConstellationPNG, equalizedSymbolT);
 sixgr.visual.writeFlowDiagramPNG(paths.DecodeFlowPNG, "Strict SIB1 evidence flow", ...
     ["SSB", "PBCH / MIB", "Type0-PDCCH SI-RNTI", "PDSCH / DL-SCH", "SIB1 ASN.1"], ...
     logical(result.StrictOk));
+
+plotIds = ["sib1_coreset0_resource_grid"; "sib1_pdcch_candidate_metrics"; ...
+    "sib1_pdsch_resource_grid"; "sib1_pdsch_constellation"; "sib1_decode_flow"];
+imagePaths = [string(paths.CORESET0GridPNG); string(paths.PDCCHMetricPNG); ...
+    string(paths.PDSCHGridPNG); string(paths.PDSCHConstellationPNG); string(paths.DecodeFlowPNG)];
+sourcePaths = [string(paths.ResourceGridCSV); string(paths.PDCCHCandidatesCSV); ...
+    string(paths.ResourceGridCSV); string(paths.PDSCHEqualizedSymbolsCSV); ...
+    string(paths.WaveformDecodeTraceCSV) + "|" + string(paths.RecoveryTrialsCSV)];
+existsMask = arrayfun(@(x) exist(char(x), "file") == 2, imagePaths);
+paths.PlotLineageCSV = fullfile(layout.ControlCSVDir, "sib1_plot_lineage.csv");
+sixgr.visual.writeComponentPlotLineage(runFolder, paths.PlotLineageCSV, ...
+    plotIds(existsMask), imagePaths(existsMask), sourcePaths(existsMask), ...
+    "sixgr.phy.broadcast.exportSIB1EvidenceArtifacts");
 
 artifacts = paths;
 artifacts.RowCounts = struct("Recovery", height(trialT), "Candidates", height(candidateT), ...
@@ -134,6 +153,32 @@ artifacts.RowCounts = struct("Recovery", height(trialT), "Candidates", height(ca
     "MIBFieldEvidence", height(mibFieldT), "MIBPDCCHConfigSIB1", height(mibPdcchT), ...
     "CORESET0Derivation", height(coresetT), "SearchSpace0Derivation", height(searchSpaceT), ...
     "Summary", height(summaryT));
+end
+
+function T = localResourceGridTable(runId, grid)
+combined = sum(complex(grid), 3);
+[subcarrier, symbol] = ndgrid((0:size(combined, 1)-1).', 0:size(combined, 2)-1);
+value = combined(:);
+T = table(repmat(string(runId), numel(value), 1), subcarrier(:), symbol(:), ...
+    real(value), imag(value), abs(value), abs(value) > 0, ...
+    repmat("runtime_waveform_grid", numel(value), 1), ...
+    'VariableNames', {'RunId','SubcarrierIndex','OFDMSymbolIndex', ...
+    'GridReal','GridImag','GridMagnitude','Occupied','truth_status'});
+end
+
+function T = localEqualizedSymbolTable(runId, result)
+symbols = complex(sixgr.util.structGet(result, ...
+    "SIB1PDSCHEqualizedSymbols", complex(zeros(0, 1))));
+symbols = symbols(:);
+n = numel(symbols);
+T = table(repmat(string(runId), n, 1), (0:n-1).', ones(n, 1), ...
+    repmat(string(sixgr.util.structGet(result, "PDSCHModulation", "")), n, 1), ...
+    real(symbols), imag(symbols), ...
+    repmat(double(sixgr.util.structGet(result, "SIB1PDSCHReceiverHestSINR_dB", NaN)), n, 1), ...
+    repmat(string(sixgr.util.structGet(result, "SIB1PDSCHEqualizedSymbolDomain", "")), n, 1), ...
+    repmat("runtime_receiver_equalized_symbols", n, 1), ...
+    'VariableNames', {'RunId','SymbolIndex','Layer','Modulation', ...
+    'EqualizedReal','EqualizedImag','PostEqSINR_dB','SymbolDomain','truth_status'});
 end
 
 function T = localPBCHRecoveryTable(runId, scenarioName, result)
@@ -427,6 +472,10 @@ fclose(fid);
 end
 
 function localWriteGridFigure(pathValue, grid, titleText)
+localDeleteIfExists(pathValue);
+if isempty(grid)
+    return;
+end
 sixgr.util.ensureDir(pathValue);
 fig = figure("Visible", "off");
 imagesc(abs(sum(grid, 3)) > 0);
@@ -439,19 +488,50 @@ close(fig);
 end
 
 function localWriteCandidateFigure(pathValue, T)
+localDeleteIfExists(pathValue);
+if ~(istable(T) && ~isempty(T))
+    return;
+end
 sixgr.util.ensureDir(pathValue);
 fig = figure("Visible", "off");
-if istable(T) && ~isempty(T)
-    bar(double(T.CandidateIndex), double(T.CrcPass));
-else
-    bar(0, 0);
-end
+bar(double(T.CandidateIndex), double(T.CrcPass));
 title("SIB1 SI-RNTI PDCCH candidate CRC results");
 xlabel("Candidate");
 ylabel("CRC pass");
 drawnow;
 saveas(fig, pathValue);
 close(fig);
+end
+
+function localWriteConstellationFigure(pathValue, T)
+localDeleteIfExists(pathValue);
+if ~(istable(T) && ~isempty(T) && ...
+        all(ismember(["EqualizedReal","EqualizedImag"], string(T.Properties.VariableNames))))
+    return;
+end
+x = double(T.EqualizedReal);
+y = double(T.EqualizedImag);
+valid = isfinite(x) & isfinite(y);
+if nnz(valid) < 2
+    return;
+end
+sixgr.util.ensureDir(pathValue);
+fig = figure("Visible", "off");
+scatter(x(valid), y(valid), 9, "filled");
+axis equal;
+grid on;
+title("SIB1 PDSCH equalized constellation");
+xlabel("In-phase");
+ylabel("Quadrature");
+drawnow;
+sixgr.util.exportFigureArtifact(fig, pathValue, "Resolution", 140);
+close(fig);
+end
+
+function localDeleteIfExists(pathValue)
+if exist(pathValue, "file") == 2
+    delete(pathValue);
+end
 end
 
 function value = localGetStructOrObjectField(obj, fieldName, defaultValue)

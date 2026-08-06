@@ -6,10 +6,14 @@ if ~(isscalar(rawOffset) && isfinite(rawOffset))
 end
 propOffset = double(sixgr.util.structGet(det, "PropagationTimingOffsetSamples", NaN));
 if ~(isscalar(propOffset) && isfinite(propOffset))
-    % The raw correlation peak includes format/occasion alignment. Do not
-    % treat it as propagation TA unless a calibrated propagation-relative
-    % detector field is available.
-    propOffset = 0;
+    ta = struct();
+    ta.RawTimingOffsetSamples = double(rawOffset);
+    ta.TimingOffsetSamples = NaN;
+    ta.TimingAdvanceSamples = NaN;
+    ta.TimingAdvanceCommand = NaN;
+    ta.Valid = false;
+    ta.Source = "msg1_prach_propagation_timing_unavailable";
+    return;
 end
 propOffset = max(0, round(propOffset));
 ta = struct();
@@ -17,5 +21,6 @@ ta.RawTimingOffsetSamples = double(rawOffset);
 ta.TimingOffsetSamples = double(propOffset);
 ta.TimingAdvanceSamples = double(propOffset);
 ta.TimingAdvanceCommand = double(max(0, min(3846, round(propOffset / 16))));
+ta.Valid = true;
 ta.Source = "msg1_prach_calibrated_propagation_timing";
 end

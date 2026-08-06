@@ -54,6 +54,7 @@
     "random_seed": 21,
     "deterministic_mode": true,
     "snr_db": 30,
+    "noise_operating_mode": "standalone_awgn_snr_argument",
     "min_duration_s": 0.008,
     "snr_sweep_offsets_db": [-24, -18, -12, -6, 0]
   },
@@ -161,6 +162,64 @@
     "dl_mcs_index": 10,
     "ul_mcs_index": 10
   },
+  "bwp": {
+    "dl": {
+      "bwp_id": 0,
+      "direction": "DL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 273,
+      "scs_khz": 30,
+      "cp_type": "normal",
+      "active": true
+    },
+    "ul": {
+      "bwp_id": 0,
+      "direction": "UL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 273,
+      "scs_khz": 30,
+      "cp_type": "normal",
+      "active": true
+    }
+  },
+  "pdsch": {
+    "mapping_type": "A",
+    "prb_start": 0,
+    "num_prb": 24,
+    "start_symbol": 2,
+    "num_symbols": 12
+  },
+  "pdsch6gr": {
+    "mcs_mode": "fixed",
+    "fixed_mcs": 10,
+    "mcs_ue_capability_1024qam": false,
+    "mcs_rrc_enabled_1024qam": false,
+    "mcs_dci_enabled_1024qam": false,
+    "mcs_deployment_allows_1024qam": false,
+    "mcs_frequency_range": "FR1",
+    "mcs_operating_band": "n77",
+    "mcs_deployment_class": "waveform_bundle_regression",
+    "mcs_frequency_range_allows_1024qam": false,
+    "mcs_band_allows_1024qam": false
+  },
+  "pusch": {
+    "mapping_type": "A",
+    "prb_start": 0,
+    "num_prb": 24,
+    "start_symbol": 0,
+    "num_symbols": 14,
+    "num_layers": 1,
+    "num_antenna_ports": 2,
+    "transmission_scheme": "codebook",
+    "codebook_based_transmission": true,
+    "codebook_type": "codebook1_ng1n4n1",
+    "tpmi": 0,
+    "transform_precoding": false
+  },
+  "pdcch": {
+    "start_symbol": 0,
+    "num_symbols": 2
+  },
   "control": {
     "pdcch_enabled": true,
     "coreset_type": "common",
@@ -168,7 +227,7 @@
     "aggregation_levels": [1, 2, 4, 8, 16],
     "dci_formats": ["1_0", "0_1"],
     "blind_decode_candidates": 16,
-    "coreset_duration": 3,
+    "coreset_duration": 2,
     "coreset_frequency_resources": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     "search_space_num_candidates": [8, 8, 4, 2, 1],
     "pdcch_payload_bits": 64,
@@ -179,10 +238,105 @@
   "harq": {
     "enabled": true,
     "process_count": 8,
+    "k2": 4,
     "rv_sequence": [0, 2, 3, 1],
     "cbg_enabled": false,
     "feedback_timing_slots": 4,
     "combining_mode": "soft"
+  },
+  "tdd_timing": {
+    "pdcch_to_pusch_k2": 4,
+    "ul_grant_k2": 4,
+    "n1_pdsch_processing_time_symbols": 10,
+    "n2_pusch_preparation_time_symbols": 12
+  },
+  "control_gating": {
+    "pbch_required": false,
+    "prach_required": false,
+    "pdcch_required": false,
+    "pucch_required": false,
+    "srs_required": false,
+    "srs_max_age_slots": 0,
+    "trs_required": false,
+    "trs_max_age_slots": 0,
+    "pre_attach_ues_before_measurement": true
+  },
+  "pucch_resources": {
+    "enabled": true,
+    "profile": "nr_rel18_pucch_strict",
+    "configuration_epoch": 1,
+    "resource_sets": [
+      {"id": 0, "max_payload_bits": 2, "resource_ids": [0]},
+      {"id": 1, "max_payload_bits": 1706, "resource_ids": [10]}
+    ],
+    "resources": [
+      {
+        "id": 0,
+        "format": 0,
+        "starting_prb": 0,
+        "nrof_prbs": 1,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 1,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      },
+      {
+        "id": 10,
+        "format": 2,
+        "starting_prb": 4,
+        "nrof_prbs": 2,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 1,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      }
+    ],
+    "dl_data_to_ul_ack": [4],
+    "harq_ack": {"resource_id": 0, "k1_slots": 4},
+    "sr_resource_ids": [0],
+    "csi_resource_ids": [10],
+    "sps_pucch_an_resource_ids": [0],
+    "power_control": {
+      "mu": 0,
+      "m_rb": 1,
+      "p0_dbm": -80,
+      "pathloss_db": 77,
+      "delta_f_db": 0,
+      "delta_tf_db": 0,
+      "closed_loop_adjustment_db": 0,
+      "pcmax_dbm": 23,
+      "pathloss_reference_rs_id": 1,
+      "tpc_command_source": "decoded_tpc"
+    },
+    "spatial_relations": [
+      {
+        "id": 1,
+        "active_id": 1,
+        "reference_signal_type": "SSB",
+        "reference_signal_id": 0,
+        "pathloss_reference_rs_id": 1,
+        "p0_pucch_id": 1,
+        "closed_loop_index": 0,
+        "state_age_slots": 0,
+        "maximum_age_slots": 20,
+        "selected_beam_id": 0,
+        "applied_beam_id": 0
+      }
+    ]
   },
   "random_access": {
     "enabled": true,

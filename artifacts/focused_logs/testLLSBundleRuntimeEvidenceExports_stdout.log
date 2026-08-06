@@ -1,0 +1,90 @@
+[2026-08-06T07:30:04Z] INFO PBCH standalone diagnostic raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); median PostEqSINR_dB 100.000 dB; median MeasuredTrialSINR_dB 100.000 dB; median ReceiverHestSINR_dB 100.000 dB, rows=2.
+[2026-08-06T07:30:16Z] INFO PRACH standalone diagnostic raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); PostEqSINR_dB pending; MeasuredTrialSINR_dB pending; ReceiverHestSINR_dB pending, rows=2.
+[2026-08-06T07:30:24Z] INFO PDCCH aggregation sweep diagnostic raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); PostEqSINR_dB pending; MeasuredTrialSINR_dB pending; median ReceiverHestSINR_dB 44.462 dB, rows=3.
+[2026-08-06T07:30:25Z] INFO PUCCH standalone diagnostic raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); PostEqSINR_dB pending; MeasuredTrialSINR_dB pending; ReceiverHestSINR_dB pending, rows=3.
+[2026-08-06T07:30:35Z] INFO SRS standalone diagnostic raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); PostEqSINR_dB pending; median MeasuredTrialSINR_dB 10.726 dB; median ReceiverHestSINR_dB 10.726 dB, rows=2.
+[2026-08-06T07:30:36Z] INFO TRS standalone diagnostic raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); PostEqSINR_dB pending; MeasuredTrialSINR_dB pending; ReceiverHestSINR_dB pending, rows=0.
+[2026-08-06T07:30:38Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=1/5 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-06T07:30:38Z] INFO Starting coupled pre-scheduling control gating for slot 1/5 with 1 UEs.
+[2026-08-06T07:30:38Z] INFO Coupled control gating progress for slot 1/5: UE 1/1, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-06T07:30:39Z] INFO Coupled control gating complete: slot=1 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:30:39Z] INFO Coupled control gating complete for slot 1/5: acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:30:40Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=0/1 dlDirectionalFrames=0/5 ulDirectionalFrames=0/5 dlRows=0 ulRows=0.
+[2026-08-06T07:30:43Z] INFO Coupled DL schedule complete: sweep=1/1 slot=1/5 active=1 granted=1 grants=1.
+[2026-08-06T07:30:47Z] INFO Coupled DL PDCCH grant binding: ue=1 required=0 ok=1 status=bound failure= dci=459d1d8b7c4026be5007e6f8d43cb0855cd83e73bb21470c690e7e4f3802e875 grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-06T07:30:47Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=1/5 executable_grants=1.
+[2026-08-06T07:30:47Z] INFO Preparing coupled DL batches: sweep=1/1 slot=1/5 candidate_grants=1 batch_size=1.
+[2026-08-06T07:30:47Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=1.
+[2026-08-06T07:31:00Z] INFO Prepared coupled DL resolved grant cache entries: 1/1.
+[2026-08-06T07:31:00Z] INFO Prepared coupled DL resolved grant cache complete: entries=1 elapsed_s=12.524.
+[2026-08-06T07:31:01Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=1/5 executable_plans=1 chunk=1-1 of 1.
+[2026-08-06T07:31:01Z] INFO Executing coupled DL chunk: sweep=1/1 slot=1/5 chunk=1-1 of 1.
+[2026-08-06T07:31:29Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=1/5 committed_rows=1 current_primary_rows=1.
+[2026-08-06T07:31:36Z] INFO DL heavy live artifact refresh: reason=post_grant_chunk slot=1/5 interval=4.
+[2026-08-06T07:31:36Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=1/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=1 ulRows=0.
+[2026-08-06T07:31:40Z] INFO Retained PUSCH candidates with due HARQ-ACK because UCI-on-PUSCH multiplexing is available: control_slot=1 due_slot=5 due_ues=1 policy=nrULSCHMultiplex_harq_ack_on_pusch.
+[2026-08-06T07:31:41Z] INFO Coupled UL K2 preschedule complete: control_slot=1 due_slot=5 k2=4 active=1 granted=1 grants=1.
+[2026-08-06T07:31:45Z] INFO Coupled UL PDCCH grant binding: ue=1 required=0 ok=1 status=bound failure= dci=f03a0c61d2a1b1bb616a7078d8ed53e99a46a12fa4598e576eaafc3fc3fc5c70 grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-06T07:31:45Z] INFO Queued coupled UL grants after K2 PDCCH qualification: control_slot=1 due_slot=5 executable_grants=1 pending_total=1.
+[2026-08-06T07:31:45Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=2/5 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-06T07:31:45Z] INFO Starting coupled pre-scheduling control gating for slot 2/5 with 1 UEs.
+[2026-08-06T07:31:45Z] INFO Coupled control gating progress for slot 2/5: UE 1/1, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-06T07:31:46Z] INFO Coupled control gating complete: slot=2 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:31:46Z] INFO Coupled control gating complete for slot 2/5: acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:31:46Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=0/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=1 ulRows=0.
+[2026-08-06T07:31:47Z] INFO Coupled DL schedule complete: sweep=1/1 slot=2/5 active=1 granted=1 grants=1.
+[2026-08-06T07:31:49Z] INFO Coupled DL PDCCH grant binding: ue=1 required=0 ok=1 status=bound failure= dci=b8f3cee7f8074883c4cc3ed2b5f189b90ac6f7a9090b6f707a8eede4545e0e3b grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-06T07:31:50Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=2/5 executable_grants=1.
+[2026-08-06T07:31:50Z] INFO Preparing coupled DL batches: sweep=1/1 slot=2/5 candidate_grants=1 batch_size=1.
+[2026-08-06T07:31:50Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=1.
+[2026-08-06T07:31:56Z] INFO Prepared coupled DL resolved grant cache entries: 1/1.
+[2026-08-06T07:31:56Z] INFO Prepared coupled DL resolved grant cache complete: entries=1 elapsed_s=6.649.
+[2026-08-06T07:31:57Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=2/5 executable_plans=1 chunk=1-1 of 1.
+[2026-08-06T07:31:57Z] INFO Executing coupled DL chunk: sweep=1/1 slot=2/5 chunk=1-1 of 1.
+[2026-08-06T07:32:18Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=2/5 committed_rows=1 current_primary_rows=2.
+[2026-08-06T07:32:18Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=1/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=2 ulRows=0.
+[2026-08-06T07:32:18Z] INFO Coupled UL K2 preschedule deferred: control_slot=2 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-06T07:32:19Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=3/5 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-06T07:32:19Z] INFO Starting coupled pre-scheduling control gating for slot 3/5 with 1 UEs.
+[2026-08-06T07:32:19Z] INFO Coupled control gating progress for slot 3/5: UE 1/1, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-06T07:32:19Z] INFO Coupled control gating complete: slot=3 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:32:19Z] INFO Coupled control gating complete for slot 3/5: acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:32:19Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=0/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=2 ulRows=0.
+[2026-08-06T07:32:21Z] INFO Coupled DL schedule complete: sweep=1/1 slot=3/5 active=1 granted=1 grants=1.
+[2026-08-06T07:32:23Z] INFO Coupled DL PDCCH grant binding: ue=1 required=0 ok=1 status=bound failure= dci=43c52dea48b2b82c9aaf5fc15213eac0beaa71cbd9ef5835eb60c65493a4e732 grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-06T07:32:23Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=3/5 executable_grants=1.
+[2026-08-06T07:32:23Z] INFO Preparing coupled DL batches: sweep=1/1 slot=3/5 candidate_grants=1 batch_size=1.
+[2026-08-06T07:32:23Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=1.
+[2026-08-06T07:32:30Z] INFO Prepared coupled DL resolved grant cache entries: 1/1.
+[2026-08-06T07:32:30Z] INFO Prepared coupled DL resolved grant cache complete: entries=1 elapsed_s=7.011.
+[2026-08-06T07:32:31Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=3/5 executable_plans=1 chunk=1-1 of 1.
+[2026-08-06T07:32:31Z] INFO Executing coupled DL chunk: sweep=1/1 slot=3/5 chunk=1-1 of 1.
+[2026-08-06T07:32:45Z] INFO Publishing coupled DL chunk results: sweep=1/1 slot=3/5 committed_rows=1 current_primary_rows=3.
+[2026-08-06T07:32:46Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=1/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=3 ulRows=0.
+[2026-08-06T07:32:46Z] INFO Coupled UL K2 preschedule deferred: control_slot=3 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-06T07:32:46Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=4/5 duplex=UL allow_dl=0 allow_ul=1.
+[2026-08-06T07:32:46Z] INFO Starting coupled pre-scheduling control gating for slot 4/5 with 1 UEs.
+[2026-08-06T07:32:46Z] INFO Coupled control gating progress for slot 4/5: UE 1/1, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-06T07:32:46Z] INFO Coupled control gating complete: slot=4 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:32:46Z] INFO Coupled control gating complete for slot 4/5: acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:32:47Z] INFO UL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=0/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=3 ulRows=0.
+[2026-08-06T07:32:47Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=4/5 due_grants=0 pending_grants=1.
+[2026-08-06T07:32:47Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=5/5 duplex=UL allow_dl=0 allow_ul=1.
+[2026-08-06T07:32:49Z] INFO Starting coupled pre-scheduling control gating for slot 5/5 with 1 UEs.
+[2026-08-06T07:32:49Z] INFO Coupled control gating progress for slot 5/5: UE 1/1, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-06T07:32:49Z] INFO Coupled control gating complete: slot=5 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:32:49Z] INFO Coupled control gating complete for slot 5/5: acquired=1/1 access=1/1 valid_srs=0/1 valid_trs_cells=0/1 tracked_serving_users=0/1 eligible=1/1.
+[2026-08-06T07:32:49Z] INFO UL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=0/1 dlDirectionalFrames=1/5 ulDirectionalFrames=0/5 dlRows=3 ulRows=0.
+[2026-08-06T07:32:49Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=5/5 due_grants=1 pending_grants=0.
+[2026-08-06T07:32:49Z] INFO Preparing coupled UL batches: sweep=1/1 slot=5/5 candidate_grants=1 batch_size=1.
+[2026-08-06T07:32:49Z] INFO Preparing coupled UL resolved grant cache: candidate_grants=1.
+[2026-08-06T07:32:51Z] INFO Prepared coupled UL resolved grant cache entries: 1/1.
+[2026-08-06T07:32:51Z] INFO Prepared coupled UL resolved grant cache complete: entries=1 elapsed_s=1.456.
+[2026-08-06T07:32:51Z] INFO Prepared coupled UL chunk: sweep=1/1 slot=5/5 executable_plans=1 chunk=1-1 of 1.
+[2026-08-06T07:32:51Z] INFO Executing coupled UL chunk: sweep=1/1 slot=5/5 chunk=1-1 of 1.
+[2026-08-06T07:33:15Z] INFO Publishing coupled UL chunk results: sweep=1/1 slot=5/5 committed_rows=1 current_primary_rows=1.
+[2026-08-06T07:33:23Z] INFO UL heavy live artifact refresh: reason=post_grant_chunk slot=5/5 interval=4.
+[2026-08-06T07:33:23Z] INFO UL coupled publish: operating_point 1/1 configured_label_snr_dB=18.000 ue=1/1 dlDirectionalFrames=1/5 ulDirectionalFrames=1/5 dlRows=3 ulRows=1.
+[2026-08-06T07:33:23Z] INFO DL raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); median PostEqSINR_dB -5.971 dB; median MeasuredTrialSINR_dB -5.971 dB; median ReceiverHestSINR_dB -5.971 dB, rows=3.
+[2026-08-06T07:33:23Z] INFO UL raw trial sweep progress: point 1/1, configured operating-point label 18.000 dB (not a measured SINR); median PostEqSINR_dB -12.195 dB; median MeasuredTrialSINR_dB -17.326 dB; median ReceiverHestSINR_dB -17.326 dB, rows=1.
+LLS_BUNDLE_RUNTIME_EVIDENCE_EXPORTS_PASS=1\n

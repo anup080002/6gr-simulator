@@ -108,6 +108,10 @@ sections:
   pusch:
     required: false
     parameters:
+      execution_profile:
+        required: false
+        type: string
+        allowed_values: [connected_strict, scheduler_truth, phy_calibration]
       prb_set: {required: false, type: number_list, integer: true, min_items: 1}
       prb_start: {required: false, type: integer, min: 0}
       num_prb: {required: false, type: integer, min: 1}

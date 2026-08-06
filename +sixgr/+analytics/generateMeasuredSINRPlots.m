@@ -15,6 +15,12 @@ layout = sixgr.report.resultLayout(runDir);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.ReportImageDir);
 sixgr.util.ensureFolder(layout.AirInterfaceImageDir);
+% These plots have one canonical publication location under reports/image.
+% Remove legacy mirrors so re-finalization cannot preserve duplicate evidence.
+for legacyName = ["bler_vs_measured_sinr.png", "ber_vs_measured_sinr.png", ...
+        "throughput_vs_measured_sinr.png"]
+    localDeleteIfExists(fullfile(layout.AirInterfaceImageDir, legacyName));
+end
 
 tables = struct();
 tables.DLBler = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_measured_sinr_bler_curve.csv"));
@@ -38,6 +44,12 @@ results = struct("Ok", true, "RunDir", string(runDir), "RunTag", string(runTag),
 end
 
 function path = localPlotBLER(layout, dl, ul, minTrials)
+path = fullfile(layout.ReportImageDir, "bler_vs_measured_sinr.png");
+localDeleteIfExists(path);
+if ~localHasEligibleRows(dl, "BLER", minTrials) && ~localHasEligibleRows(ul, "BLER", minTrials)
+    path = "";
+    return;
+end
 fig = localNewFigure();
 hold on;
 localPlotBlerTable(dl, "DL", "-", minTrials);
@@ -48,10 +60,7 @@ ylabel("BLER");
 ylim([0 1]);
 grid on;
 legend("Location", "best");
-localEmptyAnnotationIfNeeded([height(dl), height(ul)], "No measured SINR BLER bins available");
-path = fullfile(layout.ReportImageDir, "bler_vs_measured_sinr.png");
 localSaveFigure(fig, path);
-localSaveFigure(fig, fullfile(layout.AirInterfaceImageDir, "bler_vs_measured_sinr.png"));
 close(fig);
 end
 
@@ -85,6 +94,12 @@ end
 end
 
 function path = localPlotBER(layout, dl, ul, minTrials)
+path = fullfile(layout.ReportImageDir, "ber_vs_measured_sinr.png");
+localDeleteIfExists(path);
+if ~localHasEligibleRows(dl, "BER", minTrials) && ~localHasEligibleRows(ul, "BER", minTrials)
+    path = "";
+    return;
+end
 fig = localNewFigure();
 hold on;
 localPlotScalarCurve(dl, "DL", "BER", "-", minTrials);
@@ -96,14 +111,18 @@ ylabel("BER");
 ylim([1e-5 1]);
 grid on;
 legend("Location", "best");
-localEmptyAnnotationIfNeeded([height(dl), height(ul)], "No measured SINR BER bins available");
-path = fullfile(layout.ReportImageDir, "ber_vs_measured_sinr.png");
 localSaveFigure(fig, path);
-localSaveFigure(fig, fullfile(layout.AirInterfaceImageDir, "ber_vs_measured_sinr.png"));
 close(fig);
 end
 
 function path = localPlotThroughput(layout, dl, ul, minTrials)
+path = fullfile(layout.ReportImageDir, "throughput_vs_measured_sinr.png");
+localDeleteIfExists(path);
+if ~localHasEligibleRows(dl, "Goodput_Mbps_mean", minTrials) && ...
+        ~localHasEligibleRows(ul, "Goodput_Mbps_mean", minTrials)
+    path = "";
+    return;
+end
 fig = localNewFigure();
 hold on;
 localPlotThroughputTable(dl, "DL", "-", minTrials);
@@ -113,10 +132,7 @@ xlabel("Measured post-EQ SINR (dB)");
 ylabel("Goodput (Mbps)");
 grid on;
 legend("Location", "best");
-localEmptyAnnotationIfNeeded([height(dl), height(ul)], "No measured SINR throughput bins available");
-path = fullfile(layout.ReportImageDir, "throughput_vs_measured_sinr.png");
 localSaveFigure(fig, path);
-localSaveFigure(fig, fullfile(layout.AirInterfaceImageDir, "throughput_vs_measured_sinr.png"));
 close(fig);
 end
 
@@ -160,66 +176,92 @@ end
 end
 
 function path = localPlotDistribution(layout, T)
-fig = localNewFigure();
-if istable(T) && height(T) > 0
-    dirs = unique(string(T.Direction), "stable");
-    ues = unique(localToDouble(T.UEIndex));
-    nSeries = max(1, numel(dirs) * numel(ues));
-    seriesIdx = 0;
-    hold on;
-    for d = 1:numel(dirs)
-        for i = 1:numel(ues)
-            ue = ues(i);
-            sub = T(strcmpi(string(T.Direction), dirs(d)) & localToDouble(T.UEIndex) == ue, :);
-            if isempty(sub)
-                continue;
-            end
-            seriesIdx = seriesIdx + 1;
-            [x, order] = sort(localToDouble(sub.PostEqSINR_dB_BinCenter));
-            y = localToDouble(sub.Fraction);
-            offset = (seriesIdx - (nSeries + 1) / 2) * 0.12;
-            bar(x + offset, y(order), 0.12, "DisplayName", dirs(d) + " " + localUELabel(ue));
-        end
-    end
-    legend("Location", "best");
-else
-    localEmptyAnnotation("No measured SINR distribution available");
+path = fullfile(layout.ReportImageDir, "measured_sinr_distribution.png");
+localDeleteIfExists(path);
+if ~(istable(T) && height(T) > 0 && ...
+        all(ismember(["Direction","UEIndex","PostEqSINR_dB_BinCenter","Fraction"], ...
+        string(T.Properties.VariableNames))) && ...
+        any(isfinite(localToDouble(T.PostEqSINR_dB_BinCenter)) & isfinite(localToDouble(T.Fraction))))
+    path = "";
+    return;
 end
+fig = localNewFigure();
+dirs = unique(string(T.Direction), "stable");
+ues = unique(localToDouble(T.UEIndex));
+nSeries = max(1, numel(dirs) * numel(ues));
+seriesIdx = 0;
+hold on;
+for d = 1:numel(dirs)
+    for i = 1:numel(ues)
+        ue = ues(i);
+        sub = T(strcmpi(string(T.Direction), dirs(d)) & localToDouble(T.UEIndex) == ue, :);
+        if isempty(sub)
+            continue;
+        end
+        seriesIdx = seriesIdx + 1;
+        [x, order] = sort(localToDouble(sub.PostEqSINR_dB_BinCenter));
+        y = localToDouble(sub.Fraction);
+        offset = (seriesIdx - (nSeries + 1) / 2) * 0.12;
+        bar(x + offset, y(order), 0.12, "DisplayName", dirs(d) + " " + localUELabel(ue));
+    end
+end
+legend("Location", "best");
 title("Measured SINR distribution by UE - geometry-derived");
 xlabel("Measured post-EQ SINR (dB)");
 ylabel("Trial fraction");
 grid on;
-path = fullfile(layout.ReportImageDir, "measured_sinr_distribution.png");
 localSaveFigure(fig, path);
 close(fig);
 end
 
 function path = localPlotDistanceScatter(layout, T)
-fig = localNewFigure();
-if istable(T) && height(T) > 0
-    hold on;
-    ues = unique(localToDouble(T.UEIndex));
-    for i = 1:numel(ues)
-        ue = ues(i);
-        sub = T(localToDouble(T.UEIndex) == ue, :);
-        scatter(localToDouble(sub.PropagationDistance_m), localToDouble(sub.PostEqSINR_dB), 28, "filled", "DisplayName", localUELabel(ue));
-        if localHasColumn(sub, "LargeScaleSINR_dB")
-            scatter(localToDouble(sub.PropagationDistance_m), localToDouble(sub.LargeScaleSINR_dB), 28, "o", "DisplayName", localUELabel(ue) + " large-scale");
-        end
-    end
-    yline(-10, "--", "PBCH min");
-    yline(15, "--", "PDSCH target");
-    legend("Location", "best");
-else
-    localEmptyAnnotation("No distance-vs-SINR rows available");
+path = fullfile(layout.ReportImageDir, "distance_vs_sinr.png");
+localDeleteIfExists(path);
+if ~(istable(T) && height(T) > 0 && ...
+        all(ismember(["UEIndex","PropagationDistance_m","PostEqSINR_dB"], ...
+        string(T.Properties.VariableNames))) && ...
+        any(isfinite(localToDouble(T.PropagationDistance_m)) & isfinite(localToDouble(T.PostEqSINR_dB))))
+    path = "";
+    return;
 end
+fig = localNewFigure();
+hold on;
+ues = unique(localToDouble(T.UEIndex));
+for i = 1:numel(ues)
+    ue = ues(i);
+    sub = T(localToDouble(T.UEIndex) == ue, :);
+    scatter(localToDouble(sub.PropagationDistance_m), localToDouble(sub.PostEqSINR_dB), 28, "filled", "DisplayName", localUELabel(ue));
+    if localHasColumn(sub, "LargeScaleSINR_dB")
+        scatter(localToDouble(sub.PropagationDistance_m), localToDouble(sub.LargeScaleSINR_dB), 28, "o", "DisplayName", localUELabel(ue) + " large-scale");
+    end
+end
+yline(-10, "--", "PBCH min");
+yline(15, "--", "PDSCH target");
+legend("Location", "best");
 title("UE propagation distance vs measured SINR");
 xlabel("Propagation distance (m)");
 ylabel("Measured post-EQ SINR (dB)");
 grid on;
-path = fullfile(layout.ReportImageDir, "distance_vs_sinr.png");
 localSaveFigure(fig, path);
 close(fig);
+end
+
+function tf = localHasEligibleRows(T, valueColumn, minTrials)
+tf = istable(T) && height(T) > 0 && ...
+    all(ismember(["TrialCount","PostEqSINR_dB_BinCenter", string(valueColumn)], ...
+    string(T.Properties.VariableNames)));
+if ~tf
+    return;
+end
+tf = any(localToDouble(T.TrialCount) >= minTrials & ...
+    isfinite(localToDouble(T.PostEqSINR_dB_BinCenter)) & ...
+    isfinite(localToDouble(T.(char(valueColumn)))));
+end
+
+function localDeleteIfExists(pathValue)
+if exist(char(string(pathValue)), "file") == 2
+    delete(char(string(pathValue)));
+end
 end
 
 function fig = localNewFigure()

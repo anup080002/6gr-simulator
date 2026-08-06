@@ -33,6 +33,7 @@ status.ConfiguredEffectiveSupplementalArtifact = ...
 if ~(istable(mimoT) && height(mimoT) > 0)
     if mimoRequired
         status.ConfiguredEffectiveOk = false;
+        status.ConfiguredEffectivePolicyOk = false;
         status.StatusNotes = localJoinStatusNotes( ...
             sixgr.util.structGet(status, "StatusNotes", ""), ...
             "Strict MIMO configured/effective evidence is required but " + ...
@@ -42,21 +43,53 @@ if ~(istable(mimoT) && height(mimoT) > 0)
 end
 
 status.ConfiguredEffectiveSupplementalEvaluated = true;
-requiredColumns = ["Direction","ScenarioObjectivePass"];
+requiredColumns = ["Direction","StrictEligibleRowCount", ...
+    "ExactMatchPercent","SpatialContractMatch", ...
+    "FixedOperatingPointMatch","AdaptivePolicyConformance", ...
+    "MUExecutionMatch","ScenarioObjectivePass"];
 schemaOk = all(ismember(requiredColumns, ...
     string(mimoT.Properties.VariableNames)));
 directionsOk = schemaOk && all(ismember(["DL","UL"], ...
     upper(string(mimoT.Direction))));
-rowsOk = schemaOk && all(localLogicalColumn( ...
-    mimoT.ScenarioObjectivePass));
-mimoOk = schemaOk && directionsOk && rowsOk;
+strictEligible = localNumericColumn(mimoT.StrictEligibleRowCount);
+evidenceRowsOk = schemaOk && all(isfinite(strictEligible) & strictEligible > 0);
+fixedRequired = localPolicyRequirement(mimoT, ...
+    "FixedOperatingPointRequired", "AdaptiveMode", true);
+adaptiveRequired = localPolicyRequirement(mimoT, ...
+    "AdaptivePolicyRequired", "AdaptiveMode", false);
+fixedPolicyOk = ~fixedRequired | localLogicalColumn(mimoT.FixedOperatingPointMatch);
+adaptivePolicyOk = ~adaptiveRequired | localLogicalColumn(mimoT.AdaptivePolicyConformance);
+policyRowsOk = schemaOk && evidenceRowsOk && ...
+    all(localLogicalColumn(mimoT.SpatialContractMatch)) && ...
+    all(fixedPolicyOk) && all(adaptivePolicyOk) && ...
+    all(localLogicalColumn(mimoT.MUExecutionMatch)) && ...
+    all(localLogicalColumn(mimoT.ScenarioObjectivePass));
+threshold = double(sixgr.util.structGet(cfg, ...
+    "scenario.required_configured_match_rate", sixgr.util.structGet(cfg, ...
+    "validation.required_configured_match_rate", 0.999)));
+if ~(isscalar(threshold) && isfinite(threshold) && threshold >= 0 && threshold <= 1)
+    threshold = 0.999;
+end
+exactRate = localNumericColumn(mimoT.ExactMatchPercent);
+exactRowsOk = schemaOk && evidenceRowsOk && ...
+    all(isfinite(exactRate) & exactRate + eps >= threshold);
+exactOk = schemaOk && directionsOk && exactRowsOk;
+policyOk = schemaOk && directionsOk && policyRowsOk;
 status.ConfiguredEffectiveOk = logical(sixgr.util.structGet(status, ...
-    "ConfiguredEffectiveOk", false)) && logical(mimoOk);
-if ~mimoOk
+    "ConfiguredEffectiveOk", false)) && logical(exactOk);
+status.ConfiguredEffectivePolicyOk = logical(sixgr.util.structGet(status, ...
+    "ConfiguredEffectivePolicyOk", false)) && logical(policyOk);
+if ~exactOk
     status.StatusNotes = localJoinStatusNotes( ...
         sixgr.util.structGet(status, "StatusNotes", ""), ...
-        "Persisted MIMO configured/effective evidence failed or is " + ...
-        "incomplete; recovery cannot promote it to success.");
+        "Persisted MIMO exact configured/effective evidence failed or is " + ...
+        "incomplete; recovery cannot promote exact equality to success.");
+end
+if ~policyOk
+    status.StatusNotes = localJoinStatusNotes( ...
+        sixgr.util.structGet(status, "StatusNotes", ""), ...
+        "Persisted MIMO execution-policy evidence failed or is incomplete; " + ...
+        "recovery cannot promote policy conformance to success.");
 end
 end
 
@@ -80,6 +113,32 @@ elseif isnumeric(raw)
 else
     values = ismember(lower(strtrim(string(raw(:)))), ...
         ["true","1","yes","pass","ok"]);
+end
+end
+
+function values = localNumericColumn(raw)
+if isnumeric(raw) || islogical(raw)
+    values = double(raw(:));
+else
+    values = str2double(string(raw(:)));
+end
+end
+
+function required = localPolicyRequirement(T, explicitName, adaptiveName, fixedDefault)
+names = string(T.Properties.VariableNames);
+if ismember(explicitName, names)
+    required = localLogicalColumn(T.(char(explicitName)));
+elseif ismember(adaptiveName, names)
+    adaptive = localLogicalColumn(T.(char(adaptiveName)));
+    if fixedDefault
+        required = ~adaptive;
+    else
+        required = adaptive;
+    end
+else
+    % Legacy evidence did not distinguish policy applicability. Preserve
+    % the old fail-closed requirement until the versioned schema is present.
+    required = true(height(T), 1);
 end
 end
 

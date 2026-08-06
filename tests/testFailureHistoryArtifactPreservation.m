@@ -1,0 +1,43 @@
+function ok = testFailureHistoryArtifactPreservation()
+%TESTFAILUREHISTORYARTIFACTPRESERVATION Later failures never erase history.
+
+root = string(tempname);
+cleanupObj = onCleanup(@()localCleanup(root)); %#ok<NASGU>
+mkdir(root);
+
+first = MException("sixgr:test:FirstFailure", "first failure");
+second = MException("sixgr:test:SecondFailure", "second failure");
+out1 = sixgr.runtime.writeFailureHistoryArtifact(root, first, ...
+    "Stage", "rf_ready");
+out2 = sixgr.runtime.writeFailureHistoryArtifact(root, second, ...
+    "Stage", "finalization_resume");
+
+manifest = readtable(out2.ManifestPath, "FileType", "text", ...
+    "Delimiter", ",", "ReadVariableNames", true, "TextType", "string", ...
+    "VariableNamingRule", "preserve");
+assert(height(manifest) == 2 && numel(unique(manifest.ReportSHA256)) == 2, ...
+    "Two distinct failures must produce two immutable history rows.");
+assert(all(arrayfun(@(p)exist(char(p), "file") == 2, manifest.ReportPath)), ...
+    "Every failure-history row must resolve to immutable report bytes.");
+current = string(fileread(out2.CurrentReportPath));
+assert(contains(current, "second failure") && ~contains(current, "first failure"), ...
+    "The current failure report must identify the latest exception.");
+assert(exist(out1.HistoryReportPath, "file") == 2 && ...
+    exist(out2.HistoryReportPath, "file") == 2, ...
+    "Both content-addressed history reports must remain available.");
+
+sixgr.runtime.writeFailureHistoryArtifact(root, second, ...
+    "Stage", "finalization_resume");
+deduplicated = readtable(out2.ManifestPath, "FileType", "text", ...
+    "Delimiter", ",", "ReadVariableNames", true, "TextType", "string", ...
+    "VariableNamingRule", "preserve");
+assert(height(deduplicated) == 2, ...
+    "Re-recording identical exception bytes must be idempotent.");
+ok = true;
+end
+
+function localCleanup(pathValue)
+if exist(pathValue, "dir") == 7
+    rmdir(pathValue, "s");
+end
+end

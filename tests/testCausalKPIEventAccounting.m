@@ -78,9 +78,9 @@ function T = localApplicationPacketRows()
 T = table( ...
     ["UL"; "UL"; "DL"], [1; 1; 1], ["ul_pkt_1"; "ul_pkt_2"; "dl_pkt_1"], ...
     ["ul_pkt_1"; "ul_pkt_2"; "dl_pkt_1"], [1000; 1000; 1000], [1000; 1000; 1000], ...
-    [true; true; true], [0.0005; 0.0015; 0.0005], [0.002; 0.003; 0.002], [1.5; 1.5; 1.5], ...
+    [true; true; true], [true; true; true], [0.0005; 0.0015; 0.0005], [0.002; 0.003; 0.002], [1.5; 1.5; 1.5], ...
     'VariableNames', {'Direction','UEIndex','PacketId','ApplicationPacketId','OfferedBits', ...
-    'DeliveredBits','DeliverySuccess','EnqueueTime_s','DeliveryTime_s','Latency_ms'});
+    'DeliveredBits','DeliverySuccess','SameWaveformProtocolComplete','EnqueueTime_s','DeliveryTime_s','Latency_ms'});
 end
 
 function row = localRecon(out, name)
@@ -101,10 +101,24 @@ cfg.channel.bandwidth_Hz = 1e6;
 cfg.run.numFrames = 1;
 cfg.energy.ue.idleW = 1;
 cfg.energy.ue.rxW = 0;
+cfg.energy.ue.sleepW = 0.1;
+cfg.energy.ue.txWPerWattRF = 1;
 cfg.energy.bs.staticW = 0;
 cfg.energy.bs.perTRxPW = 0;
+cfg.energy.bs.sleepW = 1;
 cfg.energy.bs.efficiencyPA = 1;
-cfg.lls6g.energy_efficiency.pa_efficiency = 1;
+cfg.lls6g.energy_efficiency.bs_static_power_w = 0;
+cfg.lls6g.energy_efficiency.bs_per_rf_chain_power_w = 0;
+cfg.lls6g.energy_efficiency.bs_sleep_power_w = 1;
+cfg.lls6g.energy_efficiency.bs_pa_efficiency = 1;
+cfg.lls6g.energy_efficiency.ue_idle_power_w = 1;
+cfg.lls6g.energy_efficiency.ue_rx_power_w = 0;
+cfg.lls6g.energy_efficiency.ue_sleep_power_w = 0.1;
+cfg.lls6g.energy_efficiency.ue_tx_dc_per_watt_rf = 1;
+cfg.lls6g.energy_efficiency.bs_tx_power_dbm = 46;
+cfg.lls6g.energy_efficiency.ue_tx_power_dbm = 23;
+cfg.lls6g.energy_efficiency.bs_rf_chain_count = 1;
+cfg.lls6g.energy_efficiency.ue_rf_chain_count = 1;
 
 rawTrials = struct();
 rawTrials.UL = raw.UL(2, :);

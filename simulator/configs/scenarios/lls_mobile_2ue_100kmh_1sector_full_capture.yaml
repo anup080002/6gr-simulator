@@ -416,6 +416,13 @@ mimo:
   type2_codebook_oversampling_factor_O2: 4
   csi_rs_based_precoder_update: true
 
+interference:
+  # MU-MIMO co-scheduled UE interference is realized by summing the actual
+  # per-UE waveforms in the shared slot.  This is explicit scenario
+  # authority; the MATLAB runtime must not infer or replace it.
+  intra_cell_interference_flag: true
+  intra_cell_execution_mode: shared_slot_waveform_superposition
+
 modulation:
   dl_max_modulation: 256QAM
   ul_max_modulation: 256QAM
@@ -933,6 +940,13 @@ random_access:
   restricted_set: UnrestrictedSet
   frequency_start: 0
   preamble_index: 0
+  occasion:
+    # TS 38.211 V18.8.0, FR1 unpaired configuration index 157 resolves
+    # format B4 in the slot-4 UL opportunity of this 30 kHz TDD pattern.
+    frame: 0
+    slot: 4
+    symbol: 0
+    frequency_index: 0
   n_cell_id: 42
   snr_sweep_db: [-10, 0, 10, 20, 30]
   timing_offset_sweep_samples: [0, 4, 8]
@@ -975,6 +989,20 @@ random_access:
     target_code_rate: 0.1171875
   target_false_alarm_probability: 0.001
   cell_radius_m: 500
+
+initial_access:
+  type0:
+    monitoring_occasion_ordinal: 2
+  sib1:
+    enabled: true
+    pdsch:
+      prb_start: 0
+      num_prb: 24
+      symbol_start: 2
+      num_symbols: 12
+      mcs: 0
+      rv: 0
+      ptrs_enabled: false
 
 sib1_and_initial_access:
   sib1_required: true

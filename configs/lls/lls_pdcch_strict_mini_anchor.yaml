@@ -127,6 +127,18 @@ control:
     binding_source: scenario_config
     false_alarm_snr_db: [-6, 0, 6]
     false_alarm_trials: 3
+    statistical_qualification:
+      enabled: true
+      target_false_alarm_probability: 0.01
+      confidence_level: 0.95
+      minimum_waveform_trials: 3
+      maximum_waveform_trials: 3
+      batch_size_waveform_trials: 1
+      minimum_candidate_decisions: 1
+      minimum_false_alarm_events: 0
+      ci_width_target: 0.01
+      planned_looks: 3
+      deterministic_seeds: [240617, 240629, 240643, 240647]
     low_snr_sweep_db: [-8, 0, 10, 35]
     low_snr_trials: 1
     validation_campaign:

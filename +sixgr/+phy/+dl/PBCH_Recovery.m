@@ -147,7 +147,8 @@ for k = 1:numel(ibarCandidates)
     pbchRx = nrExtractResources(pbchInd, rxGrid);
     pbchHest = nrExtractResources(pbchInd, hest);
     [pbchEq, csi] = nrEqualizeMMSE(pbchRx, pbchHest, nVarUse);
-    evidence = localPBCHReceiverEvidence(rxGrid, hest, pbchEq, csi, dmrsInd, ncellid, ibar, nVarUse);
+    evidence = localPBCHReceiverEvidence( ...
+        hest, pbchHest, pbchEq, csi, dmrsInd, nVarUse, nVar);
 
     % CSI replication per bit (same pattern as MathWorks example)
     Qm = pbchIndInfo.G / pbchIndInfo.Gd;
@@ -211,7 +212,8 @@ if ~selectedFound
     pbchRx = nrExtractResources(pbchInd, rxGrid);
     pbchHest = nrExtractResources(pbchInd, hest);
     [pbchEq, csi] = nrEqualizeMMSE(pbchRx, pbchHest, nVarUse);
-    evidence = localPBCHReceiverEvidence(rxGrid, hest, pbchEq, csi, dmrsInd, ncellid, ibar, nVarUse);
+    evidence = localPBCHReceiverEvidence( ...
+        hest, pbchHest, pbchEq, csi, dmrsInd, nVarUse, nVar);
 
     Qm = pbchIndInfo.G / pbchIndInfo.Gd;
     Qm = round(Qm);
@@ -272,6 +274,16 @@ pb.HalfFrame = double(selected.nHalfFrame);
 pb.TransportBlock = selected.trblk;
 pb.ScrambledTransportBlock = selected.scrblk;
 pb.NoiseVar = double(selected.nVar);
+pb.PreEqualizationNoiseVariance = double(sixgr.util.structGet( ...
+    selected.evidence, "PreEqualizationNoiseVariance", selected.nVar));
+pb.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet( ...
+    selected.evidence, "PreEqualizationNoiseVarianceDomain", ""));
+pb.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet( ...
+    selected.evidence, "PreEqualizationNoiseVarianceSource", ""));
+pb.PreEqualizationNoiseVarianceFloorApplied = logical(sixgr.util.structGet( ...
+    selected.evidence, "PreEqualizationNoiseVarianceFloorApplied", false));
+pb.PreEqualizationNoiseVarianceEstimatorValue = double(sixgr.util.structGet( ...
+    selected.evidence, "PreEqualizationNoiseVarianceEstimatorValue", NaN));
 trblkBits = int8(selected.trblk(:));
 scrblkBits = int8(selected.scrblk(:));
 pb.BCHTransportBlockNumBits = double(numel(trblkBits));
@@ -318,12 +330,25 @@ pb.MeasuredTrialSINRValueRole = "measured";
 pb.MeasuredTrialSINRValueStatus = pb.ReceiverHestSINRValueStatus;
 pb.MeasuredTrialSINRNAReason = pb.ReceiverHestSINRNAReason;
 pb.PostEqSINR_dB = double(sixgr.util.structGet(evidence, "PostEqSINR_dB", NaN));
+pb.PostEqSINRAvailable = logical(sixgr.util.structGet( ...
+    evidence, "PostEqSINRAvailable", false));
 pb.PostEqSINRSource = string(sixgr.util.structGet(evidence, "PostEqSINRSource", ""));
 pb.PostEqSINRValueRole = string(sixgr.util.structGet(evidence, "PostEqSINRValueRole", ""));
 pb.PostEqSINRValueStatus = string(sixgr.util.structGet(evidence, "PostEqSINRValueStatus", ""));
 pb.PostEqSINRNAReason = string(sixgr.util.structGet(evidence, "PostEqSINRNAReason", ""));
+pb.PostEqualizationNoiseVariance = double(sixgr.util.structGet( ...
+    evidence, "PostEqualizationNoiseVariance", NaN));
+pb.PostEqualizationNoiseVarianceDomain = string(sixgr.util.structGet( ...
+    evidence, "PostEqualizationNoiseVarianceDomain", ""));
+pb.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet( ...
+    evidence, "PostEqualizationNoiseVarianceSource", ""));
 pb.StrictReceiverEvidenceOk = logical(pb.ChannelEstimateAvailable) && logical(pb.EqualizationAvailable) && ...
-    isfinite(pb.ReceiverHestSINR_dB) && logical(pb.PBCHDecodeAvailable) && logical(pb.BCHDecodeAvailable);
+    isfinite(pb.ReceiverHestSINR_dB) && logical(pb.PostEqSINRAvailable) && ...
+    isfinite(pb.PostEqSINR_dB) && logical(pb.PBCHDecodeAvailable) && ...
+    logical(pb.BCHDecodeAvailable);
+if logical(sixgr.util.structGet(cfg, "run.strictMode", false))
+    sixgr.phy.rx.validatePBCHNoiseDomainEvidence(pb);
+end
 if pb.Ok
     pb.DecodedMIBState = sixgr.phy.ia.DecodedMIBState.create( ...
         pb, sixgr.util.structGet(cfg, ...
@@ -344,7 +369,8 @@ end
 end
 
 % -------------------------------------------------------------------------
-function evidence = localPBCHReceiverEvidence(rxGrid, hest, pbchEq, csi, dmrsInd, ncellid, ibar, nVarUse)
+function evidence = localPBCHReceiverEvidence( ...
+        hest, pbchHest, pbchEq, csi, dmrsInd, nVarUse, nVarEstimator)
 evidence = struct( ...
     "ChannelEstimateAvailable", false, ...
     "ChannelEstimateSource", "", ...
@@ -355,11 +381,23 @@ evidence = struct( ...
     "ReceiverHestSINRValueRole", "unavailable", ...
     "ReceiverHestSINRValueStatus", "unavailable", ...
     "ReceiverHestSINRNAReason", "pbch_dmrs_channel_estimate_not_available", ...
+    "PreEqualizationNoiseVariance", NaN, ...
+    "PreEqualizationNoiseVarianceDomain", ...
+        "resource_grid_pre_equalization_per_receive_branch", ...
+    "PreEqualizationNoiseVarianceSource", "", ...
+    "PreEqualizationNoiseVarianceFloorApplied", false, ...
+    "PreEqualizationNoiseVarianceEstimatorValue", double(nVarEstimator), ...
     "PostEqSINR_dB", NaN, ...
+    "PostEqSINRAvailable", false, ...
     "PostEqSINRSource", "", ...
     "PostEqSINRValueRole", "unavailable", ...
     "PostEqSINRValueStatus", "unavailable", ...
-    "PostEqSINRNAReason", "pbch_equalizer_csi_not_available");
+    "PostEqSINRNAReason", "pbch_equalizer_channel_or_noise_evidence_not_available", ...
+    "PostEqualizationNoiseVariance", NaN, ...
+    "PostEqualizationNoiseVarianceDomain", ...
+        "unit_energy_pbch_symbol_post_equalization", ...
+    "PostEqualizationNoiseVarianceSource", "", ...
+    "PostEqSINRAggregation", "harmonic_mean_across_pbch_resource_elements");
 
 evidence.ChannelEstimateAvailable = ~isempty(hest) && all(isfinite(real(hest(:)))) && all(isfinite(imag(hest(:))));
 if evidence.ChannelEstimateAvailable
@@ -368,24 +406,38 @@ end
 evidence.EqualizationAvailable = ~isempty(pbchEq) && all(isfinite(real(pbchEq(:)))) && ...
     all(isfinite(imag(pbchEq(:)))) && ~isempty(csi) && all(isfinite(double(csi(:))));
 
-if evidence.ChannelEstimateAvailable
+noiseVariance = double(nVarUse);
+noiseAvailable = isscalar(noiseVariance) && isfinite(noiseVariance) && ...
+    noiseVariance > 0;
+if noiseAvailable
+    estimatorValue = double(nVarEstimator);
+    floorApplied = ~(isscalar(estimatorValue) && isfinite(estimatorValue) && ...
+        estimatorValue > 0 && estimatorValue >= noiseVariance * (1 - 32 * eps));
+    evidence.PreEqualizationNoiseVarianceFloorApplied = floorApplied;
+    evidence.PreEqualizationNoiseVariance = noiseVariance;
+    if floorApplied
+        evidence.PreEqualizationNoiseVarianceSource = ...
+            "configured_numeric_floor_after_nrChannelEstimate_pbch_dmrs_sss";
+    else
+        evidence.PreEqualizationNoiseVarianceSource = ...
+            "nrChannelEstimate_pbch_dmrs_sss_grid_noise_variance";
+    end
+end
+
+if evidence.ChannelEstimateAvailable && noiseAvailable
     try
-        refDmrs = nrPBCHDMRS(ncellid, ibar);
-        rxDmrs = nrExtractResources(dmrsInd, rxGrid);
         hDmrs = nrExtractResources(dmrsInd, hest);
-        predicted = hDmrs .* repmat(refDmrs(:), 1, size(hDmrs, 2));
-        residual = rxDmrs - predicted;
-        sigP = localMeanAbs2(predicted);
-        noiseP = localMeanAbs2(residual);
-        if ~(isfinite(noiseP) && noiseP > 0)
-            noiseP = double(nVarUse);
-        end
-        noiseP = max(noiseP, realmin);
-        if isfinite(sigP) && sigP > 0 && isfinite(noiseP) && noiseP > 0
-            evidence.ReceiverHestSINR_dB = 10 * log10(sigP / noiseP);
-            evidence.ReceiverHestSINRSource = "receiver_hest_reference_signal_measurement";
+        dmrsChannelPower = sum(abs(hDmrs).^2, 2);
+        dmrsChannelPower = dmrsChannelPower( ...
+            isfinite(dmrsChannelPower) & dmrsChannelPower > 0);
+        if ~isempty(dmrsChannelPower)
+            dmrsSINRLinear = mean(dmrsChannelPower) / noiseVariance;
+            evidence.ReceiverHestSINR_dB = 10 * log10(dmrsSINRLinear);
+            evidence.ReceiverHestSINRSource = ...
+                "pbch_dmrs_hest_power_over_nrChannelEstimate_noise_variance";
             evidence.ReceiverHestSINRValueRole = "estimated";
-            evidence.ReceiverHestSINRValueStatus = "OK";
+            evidence.ReceiverHestSINRValueStatus = localNoiseStatus( ...
+                evidence.PreEqualizationNoiseVarianceFloorApplied);
             evidence.ReceiverHestSINRNAReason = "";
         end
     catch ME
@@ -393,30 +445,34 @@ if evidence.ChannelEstimateAvailable
     end
 end
 
-if evidence.EqualizationAvailable
-    csiLin = double(csi(:));
-    csiLin = csiLin(isfinite(csiLin) & csiLin > 0);
-    if ~isempty(csiLin)
-        eqMetric = mean(csiLin);
-        if isfinite(eqMetric) && eqMetric > 0
-            evidence.PostEqSINR_dB = 10 * log10(max(eqMetric, realmin) / max(1 - min(eqMetric, 1 - eps), realmin));
-            evidence.PostEqSINRSource = "pbch_mmse_equalizer_csi_measurement";
+if evidence.EqualizationAvailable && noiseAvailable && ~isempty(pbchHest)
+    channelPower = sum(abs(pbchHest).^2, 2);
+    valid = isfinite(channelPower) & channelPower > 0;
+    if any(valid)
+        postEqNoisePerRE = noiseVariance ./ channelPower(valid);
+        postEqNoiseVariance = mean(postEqNoisePerRE);
+        if isfinite(postEqNoiseVariance) && postEqNoiseVariance > 0
+            evidence.PostEqualizationNoiseVariance = postEqNoiseVariance;
+            evidence.PostEqualizationNoiseVarianceSource = ...
+                "pbch_mmse_channel_power_and_pre_equalization_noise_variance";
+            evidence.PostEqSINR_dB = -10 * log10(postEqNoiseVariance);
+            evidence.PostEqSINRAvailable = true;
+            evidence.PostEqSINRSource = ...
+                "pbch_mmse_harmonic_mean_channel_power_over_pre_equalization_noise";
             evidence.PostEqSINRValueRole = "estimated_post_equalization";
-            evidence.PostEqSINRValueStatus = "OK";
+            evidence.PostEqSINRValueStatus = localNoiseStatus( ...
+                evidence.PreEqualizationNoiseVarianceFloorApplied);
             evidence.PostEqSINRNAReason = "";
         end
     end
 end
 end
 
-function pwr = localMeanAbs2(x)
-vals = x(:);
-mask = isfinite(real(vals)) & isfinite(imag(vals));
-vals = vals(mask);
-if isempty(vals)
-    pwr = NaN;
+function status = localNoiseStatus(floorApplied)
+if logical(floorApplied)
+    status = "LOWER_BOUND_NOISE_FLOOR";
 else
-    pwr = mean(abs(vals).^2);
+    status = "OK";
 end
 end
 

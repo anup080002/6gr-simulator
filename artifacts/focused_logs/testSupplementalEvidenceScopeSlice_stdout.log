@@ -1,0 +1,3 @@
+PASS testSupplementalEvidenceScopeIsolation: supplemental evidence is isolated and typed component_anchor.
+PASS testRestoreStrictPRACHComponentAnchor: identity/hash restore is fail closed.
+SUPPLEMENTAL_EVIDENCE_SCOPE_SLICE_PASS=7\n

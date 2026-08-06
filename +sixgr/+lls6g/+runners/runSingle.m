@@ -41,6 +41,12 @@ if resumeExisting
     end
     runFolder = char(existingRunFolder);
     logicalRunFolder = char(existingRunFolder);
+    % Validate the requested resolved YAML against immutable row-level
+    % runtime identity before any snapshot or report in the existing run is
+    % touched.  This prevents a finalization retry from silently rebinding a
+    % completed waveform to a different scenario revision.
+    sixgr.truth.assertResumeConfigurationIdentity(runFolder, ...
+        string(scfg.ScenarioID), string(scfg.ConfigHash));
 else
     logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
     if backend == "mysql_web"
@@ -266,7 +272,8 @@ if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", tab
         ~isempty(sixgr.util.structGet(runtimeControl, "ControlGatingStateTable", table())))
     runtimeControl.ControlGatingStateTable = sixgr.util.structGet(mobilityArtifacts, "ControlGatingStateTable", table());
 end
-[link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence(link, cfg, scfg, runFolder);
+[link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence( ...
+    link, cfg, scfg, runFolder, executionOptions);
 runtimeControl = sixgr.util.structGet(link, "RawTrials", runtimeControl);
 runtimeControl.CoupledRuntime = sixgr.util.structGet(link, "CoupledRuntime", struct());
 if ~(istable(sixgr.util.structGet(runtimeControl, "ControlGatingSummaryTable", table())) && ...
@@ -303,22 +310,39 @@ result.StrictControl = strictControl;
 result.StrictSupplemental = strictSupplemental;
 end
 
-function [link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence(link, cfg, scfg, runFolder)
+function [link, strictSupplemental] = localRunWaveformBundleSupplementalStrictEvidence( ...
+        link, cfg, scfg, runFolder, executionOptions)
+if nargin < 5 || ~isstruct(executionOptions)
+    executionOptions = struct();
+end
+resumeCompleted = logical(sixgr.util.structGet(executionOptions, ...
+    "ResumeCompletedRuntimeFinalization", false));
 strictSupplemental = struct("Ok", true, "SummaryTable", table(), ...
     "PRACH", struct(), "SRS", struct(), "TRS", struct(), "SIB1", struct(), ...
     "ChannelRF", struct(), "MIMO", struct(), "Protocol", struct());
-rows = repmat(struct("Case", "", "Ok", true, "Skipped", false, "Notes", ""), 0, 1);
+rows = repmat(struct("Case", "", "Ok", true, "Skipped", false, ...
+    "EvidenceScope", "component_anchor", "ArtifactRoot", "", "Notes", ""), 0, 1);
 
 if localShouldRunStrictPRACHEvidence(scfg, cfg)
-    localDBLog("INFO", "Running supplemental strict PRACH waveform validation for waveform-bundle scenario.");
-    tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.prach.runStrictPRACHValidation", ...
-        "Stage", "strict_prach_validation");
-    prach = sixgr.phy.prach.runStrictPRACHValidation(cfg, ...
-        "RunFolder", runFolder, ...
-        "RunId", string(scfg.ScenarioID), ...
-        "ScenarioName", string(scfg.ScenarioID), ...
-        "WriteArtifacts", true);
-    clear tp;
+    anchorRoot = sixgr.runtime.prepareComponentAnchorRoot(runFolder, "prach", scfg, cfg);
+    if resumeCompleted
+        localDBLog("INFO", ["Restoring completed strict PRACH evidence from " ...
+            "identity-bound, hash-verified component artifacts."]);
+        prach = sixgr.truth.restoreStrictPRACHComponentAnchor(anchorRoot, ...
+            string(scfg.ScenarioID), string(scfg.ConfigHash));
+    else
+        localDBLog("INFO", "Running supplemental strict PRACH waveform validation for waveform-bundle scenario.");
+        tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.prach.runStrictPRACHValidation", ...
+            "Stage", "strict_prach_validation");
+        prach = sixgr.lls6g.runners.executeSupplementalValidator( ...
+            "PRACH_StrictValidation", @() sixgr.phy.prach.runStrictPRACHValidation(cfg, ...
+            "RunFolder", anchorRoot, ...
+            "RunId", string(scfg.ScenarioID), ...
+            "ScenarioName", string(scfg.ScenarioID), ...
+            "WriteArtifacts", true));
+        clear tp;
+    end
+    prach = localMarkComponentAnchorResult(prach, anchorRoot);
     strictSupplemental.PRACH = prach;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "PRACH_StrictValidation", prach, ...
         "strict PRACH waveform validation completed", "strict_prach_validation_failed");
@@ -329,12 +353,15 @@ if localShouldRunStrictSRSEvidence(scfg, cfg)
     localDBLog("INFO", "Running supplemental strict SRS waveform validation for waveform-bundle scenario.");
     tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.srs.runStrictSRSValidation", ...
         "Stage", "strict_srs_validation");
-    srs = sixgr.phy.srs.runStrictSRSValidation(cfg, ...
-        "RunFolder", runFolder, ...
+    anchorRoot = sixgr.runtime.prepareComponentAnchorRoot(runFolder, "srs", scfg, cfg);
+    srs = sixgr.lls6g.runners.executeSupplementalValidator( ...
+        "SRS_StrictValidation", @() sixgr.phy.srs.runStrictSRSValidation(cfg, ...
+        "RunFolder", anchorRoot, ...
         "RunId", string(scfg.ScenarioID), ...
         "ScenarioName", string(scfg.ScenarioID), ...
-        "WriteArtifacts", true);
+        "WriteArtifacts", true));
     clear tp;
+    srs = localMarkComponentAnchorResult(srs, anchorRoot);
     strictSupplemental.SRS = srs;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "SRS_StrictValidation", srs, ...
         "strict SRS waveform channel-sounding validation completed", "strict_srs_validation_failed");
@@ -345,12 +372,15 @@ if localShouldRunStrictTRSEvidence(scfg, cfg)
     localDBLog("INFO", "Running supplemental strict TRS waveform validation for waveform-bundle scenario.");
     tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.trs.runStrictTRSValidation", ...
         "Stage", "strict_trs_validation");
-    trs = sixgr.phy.trs.runStrictTRSValidation(cfg, ...
-        "RunFolder", runFolder, ...
+    anchorRoot = sixgr.runtime.prepareComponentAnchorRoot(runFolder, "trs", scfg, cfg);
+    trs = sixgr.lls6g.runners.executeSupplementalValidator( ...
+        "TRS_StrictValidation", @() sixgr.phy.trs.runStrictTRSValidation(cfg, ...
+        "RunFolder", anchorRoot, ...
         "RunId", string(scfg.ScenarioID), ...
         "ScenarioName", string(scfg.ScenarioID), ...
-        "WriteArtifacts", true);
+        "WriteArtifacts", true));
     clear tp;
+    trs = localMarkComponentAnchorResult(trs, anchorRoot);
     strictSupplemental.TRS = trs;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "TRS_StrictValidation", trs, ...
         "strict TRS waveform tracking validation completed", "strict_trs_validation_failed");
@@ -361,8 +391,12 @@ if localShouldRunStrictSIB1Evidence(scfg, cfg)
     localDBLog("INFO", "Running supplemental strict SIB1/PBCH waveform mini-anchor validation for waveform-bundle scenario.");
     tp = sixgr.perf.TimeProfiler.scope("sixgr.phy.broadcast.runSIB1StrictMiniAnchor", ...
         "Stage", "strict_sib1_validation");
-    sib1 = sixgr.phy.broadcast.runSIB1StrictMiniAnchor(runFolder, cfg);
+    anchorRoot = sixgr.runtime.prepareComponentAnchorRoot(runFolder, "initial_access", scfg, cfg);
+    sib1 = sixgr.lls6g.runners.executeSupplementalValidator( ...
+        "SIB1_StrictMiniAnchor", ...
+        @() sixgr.phy.broadcast.runSIB1StrictMiniAnchor(anchorRoot, cfg));
     clear tp;
+    sib1 = localMarkComponentAnchorResult(sib1, anchorRoot);
     strictSupplemental.SIB1 = sib1;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "SIB1_StrictMiniAnchor", sib1, ...
         "strict SIB1/PBCH waveform mini-anchor validation completed", "strict_sib1_validation_failed");
@@ -372,12 +406,15 @@ if localShouldRunStrictChannelRFEvidence(scfg, cfg)
     localDBLog("INFO", "Running supplemental strict Channel/RF validation for waveform-bundle scenario.");
     tp = sixgr.perf.TimeProfiler.scope("sixgr.channel.runStrictChannelRFValidation", ...
         "Stage", "strict_channel_rf_validation");
-    channelRF = sixgr.channel.runStrictChannelRFValidation(cfg, ...
-        "RunFolder", runFolder, ...
+    anchorRoot = sixgr.runtime.prepareComponentAnchorRoot(runFolder, "channel_rf", scfg, cfg);
+    channelRF = sixgr.lls6g.runners.executeSupplementalValidator( ...
+        "ChannelRF_StrictValidation", @() sixgr.channel.runStrictChannelRFValidation(cfg, ...
+        "RunFolder", anchorRoot, ...
         "RunId", string(scfg.ScenarioID), ...
         "ScenarioName", string(scfg.ScenarioID), ...
-        "WriteArtifacts", true);
+        "WriteArtifacts", true));
     clear tp;
+    channelRF = localMarkComponentAnchorResult(channelRF, anchorRoot);
     strictSupplemental.ChannelRF = channelRF;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, "ChannelRF_StrictValidation", channelRF, ...
         "strict Channel/RF configured-vs-applied validation completed", "strict_channel_rf_validation_failed");
@@ -385,11 +422,13 @@ end
 
 if localShouldRunMIMOEvidence(scfg, cfg, link)
     localDBLog("INFO", "Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.");
-    mimoArtifacts = sixgr.mimo.exportMIMOEvidenceArtifacts(runFolder, cfg, ...
+    mimoArtifacts = sixgr.lls6g.runners.executeSupplementalValidator( ...
+        "MIMO_NominalEffectiveEvidence", @() sixgr.mimo.exportMIMOEvidenceArtifacts(runFolder, cfg, ...
         sixgr.util.structGet(link, "RawTrials", struct()), ...
         "RunId", string(scfg.ScenarioID), ...
         "ScenarioName", string(scfg.ScenarioID), ...
-        "StrictMode", true);
+        "StrictMode", true));
+    mimoArtifacts = localMarkInPathResult(mimoArtifacts, runFolder);
     strictSupplemental.MIMO = mimoArtifacts;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, ...
         "MIMO_NominalEffectiveEvidence", mimoArtifacts, ...
@@ -403,12 +442,16 @@ if sixgr.lls6g.runners.shouldRunProtocolComponentEvidence(cfg)
     tp = sixgr.perf.TimeProfiler.scope( ...
         "sixgr.protocol.runConfiguredProtocolComponentValidation", ...
         "Stage", "strict_protocol_component_validation");
-    protocol = sixgr.protocol.runConfiguredProtocolComponentValidation( ...
-        cfg, string(runFolder), ...
+    anchorRoot = sixgr.runtime.prepareComponentAnchorRoot(runFolder, "protocol", scfg, cfg);
+    protocol = sixgr.lls6g.runners.executeSupplementalValidator( ...
+        "Protocol_ConfiguredComponentValidation", ...
+        @() sixgr.protocol.runConfiguredProtocolComponentValidation( ...
+        cfg, string(anchorRoot), ...
         "RunId", string(scfg.ScenarioID), ...
         "ScenarioName", string(scfg.ScenarioID), ...
-        "WriteArtifacts", true);
+        "WriteArtifacts", true));
     clear tp;
+    protocol = localMarkComponentAnchorResult(protocol, anchorRoot);
     strictSupplemental.Protocol = protocol;
     [link, rows] = localAttachSupplementalStrictResult(link, rows, ...
         "Protocol_ConfiguredComponentValidation", protocol, ...
@@ -434,7 +477,10 @@ note = string(successNote);
 if ~ok
     note = string(sixgr.util.structGet(result, "FailureReason", failureNote));
 end
-rows(end+1, 1) = struct("Case", string(caseName), "Ok", ok, "Skipped", false, "Notes", note); %#ok<AGROW>
+rows(end+1, 1) = struct("Case", string(caseName), "Ok", ok, "Skipped", false, ...
+    "EvidenceScope", string(sixgr.util.structGet(result, "EvidenceScope", "component_anchor")), ...
+    "ArtifactRoot", string(sixgr.util.structGet(result, "ArtifactRoot", "")), ...
+    "Notes", note); %#ok<AGROW>
 if ~ok
     existing = string(sixgr.util.structGet(link, "Errors", strings(0, 1)));
     link.Errors = [existing(:); string(caseName) + ":" + note];
@@ -486,6 +532,16 @@ if ~ismember("Direction", string(T.Properties.VariableNames))
     else
         T.Direction = repmat("DL", n, 1);
     end
+end
+if ~ismember("EvidenceScope", string(T.Properties.VariableNames))
+    T.EvidenceScope = repmat("component_anchor", n, 1);
+else
+    T.EvidenceScope(:) = "component_anchor";
+end
+if ~ismember("SameScenarioInPathEligible", string(T.Properties.VariableNames))
+    T.SameScenarioInPathEligible = false(n, 1);
+else
+    T.SameScenarioInPathEligible(:) = false;
 end
 end
 
@@ -2008,6 +2064,10 @@ localDBLog("INFO", "Preparing LLS run: scenario=%s runTag=%s runFolder=%s", ...
     char(string(scfg.ScenarioID)), char(string(runTag)), char(string(runFolder)));
 
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+% The contract registry is intentionally per execution and memory-only.
+% Production subsystems may register only tables/renderers they generated
+% during this run; no finalizer is allowed to ingest stale files.
+artifactEvidence = sixgr.artifact.EvidenceRegistry();
 cfg.run.runTag = char(string(runTag));
 configuredProfile = lower(strtrim(string(scfg.get("scenario.runner_profile"))));
 cfg.run.configuredRunnerProfile = char(configuredProfile);
@@ -2056,6 +2116,7 @@ reportBundle = struct();
 configOwnership = struct();
 scenarioStatus = struct();
 truthArtifactScan = struct();
+artifactContractResult = struct();
 optionalArtifactIssues = strings(0, 1);
 profilerArtifacts = struct();
 fixedSNRSweepAudit = struct();
@@ -2234,6 +2295,27 @@ try
     localDBLog("INFO", "Scanning truth primary artifacts for active proxy/fallback markers.");
     truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
     reportBundle.TruthArtifactScan = truthArtifactScan;
+    localDBLog("INFO", "Registering fresh in-memory waveform evidence with the contract publisher.");
+    runtimeArtifactIdentity = struct("RunID", string(runTag), "ExecutionID", "");
+    artifactEvidenceCoverage = sixgr.artifact.registerWaveformLinkEvidence( ...
+        artifactEvidence, result, scfg, cfg, runtimeArtifactIdentity);
+    localDBLog("INFO", "Registering fresh in-memory initial-access evidence with the contract publisher.");
+    initialAccessEvidenceCoverage = sixgr.artifact.registerInitialAccessEvidence( ...
+        artifactEvidence, result, scfg, cfg, runtimeArtifactIdentity);
+    artifactEvidenceCoverage = [artifactEvidenceCoverage; initialAccessEvidenceCoverage];
+    reportBundle.ArtifactEvidenceCoverage = artifactEvidenceCoverage;
+    localDBLog("INFO", "Finalizing YAML-selected runtime-only artifact contracts.");
+    artifactContractResult = sixgr.artifact.finalizeRunFailClosed( ...
+        runFolder, artifactEvidence, scfg, runtimeArtifactIdentity);
+    reportBundle.ArtifactContract = artifactContractResult;
+    if logical(sixgr.util.structGet(artifactContractResult, "Executed", false))
+        localDBLog("INFO", ...
+            "Artifact contract finalization: status=%s contracts=%d failures=%d requiredFailures=%d.", ...
+            char(string(sixgr.util.structGet(artifactContractResult, "Status", "NOT_EVALUATED"))), ...
+            double(sixgr.util.structGet(artifactContractResult, "ContractCount", 0)), ...
+            double(sixgr.util.structGet(artifactContractResult, "FailureCount", 0)), ...
+            double(sixgr.util.structGet(artifactContractResult, "RequiredFailureCount", 0)));
+    end
     localDBLog("INFO", "Exporting output-coverage and honest-unavailable artifacts.");
     outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
     reportBundle.OutputCoverageArtifacts = outputCoverage;
@@ -2251,11 +2333,37 @@ try
             double(sixgr.util.structGet(geometryScenarioAudit, "FailureCount", 0)), ...
             double(sixgr.util.structGet(geometryScenarioAudit, "WarningCount", 0)));
     end
+    localDBLog("INFO", "Materializing strict browser contract artifacts before terminal status reduction.");
+    contractMaterialization = localMaterializeBrowserContractArtifacts();
+    % Root status uses the logical run tag as RunId; retain the database
+    % primary key separately so the receipt cannot conflate the two IDs.
+    contractMaterialization.RunID = string(runTag);
+    contractMaterialization.GeneratedAtUTC = string(sixgr.util.structGet( ...
+        runtimeSummary, "CompletedUTC", ""));
+    browserReceipt = sixgr.artifact.writeBrowserPublicationReceipt( ...
+        runFolder, contractMaterialization);
+    reportBundle.BrowserContractMaterialization = contractMaterialization;
+    reportBundle.BrowserPublicationReceipt = browserReceipt;
+    if logical(sixgr.util.structGet(contractMaterialization, "Ok", false))
+        localDBLog("INFO", "Browser contract artifacts materialized: created=%d missingTables=%d missingCharts=%d", ...
+            double(sixgr.util.structGet(contractMaterialization, "CreatedCount", 0)), ...
+            double(sixgr.util.structGet(contractMaterialization, "MissingTableCount", 0)), ...
+            double(sixgr.util.structGet(contractMaterialization, "MissingChartCount", 0)));
+    else
+        optionalArtifactIssues(end+1, 1) = "browser_contract_materialization:" + ...
+            string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"));
+        localDBLog("WARN", "Browser contract artifact materialization did not complete: %s | %s", ...
+            char(string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"))), ...
+            char(string(sixgr.util.structGet(contractMaterialization, "Message", ""))));
+    end
     scenarioStatus = localApplyRuntimeTruthContract(preTruthScenarioStatus, result, scfg, cfg, runFolder);
     scenarioStatus = localApplyVisualArtifactIntegrityStatus(scenarioStatus, ...
         sixgr.util.structGet(outputCoverage, "VisualArtifactIntegrity", table()));
     scenarioStatus = localApplyFixedSNRSweepAuditStatus(scenarioStatus, fixedSNRSweepAudit);
     scenarioStatus = localApplyGeometryScenarioAuditStatus(scenarioStatus, geometryScenarioAudit);
+    scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
+        scenarioStatus, artifactContractResult);
+    sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
     result = localApplyScenarioStatus(result, scenarioStatus);
     localDBLog("INFO", "Runtime truth contract re-evaluated after final artifact exports: ok=%d roundtripMismatch=%d evidenceMissing=%d strictFailures=%d", ...
         double(logical(scenarioStatus.RuntimeTruthContractOk)), double(scenarioStatus.RoundtripMismatchCount), ...
@@ -2275,19 +2383,6 @@ try
     localWriteScenarioManifest(layout, manifest);
     localDBLog("INFO", "Writing scenario markdown report.");
     localWriteMarkdownReport(fullfile(layout.ReportDir, "scenario_report.md"), scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus);
-    localDBLog("INFO", "Materializing canonical browser contract artifacts for the completed run.");
-    contractMaterialization = localMaterializeBrowserContractArtifacts();
-    if logical(sixgr.util.structGet(contractMaterialization, "Ok", false))
-        localDBLog("INFO", "Browser contract artifacts materialized: created=%d missingTables=%d missingCharts=%d", ...
-            double(sixgr.util.structGet(contractMaterialization, "CreatedCount", 0)), ...
-            double(sixgr.util.structGet(contractMaterialization, "MissingTableCount", 0)), ...
-            double(sixgr.util.structGet(contractMaterialization, "MissingChartCount", 0)));
-    else
-        optionalArtifactIssues(end+1, 1) = "browser_contract_materialization:" + string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"));
-        localDBLog("WARN", "Browser contract artifact materialization did not complete: %s | %s", ...
-            char(string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"))), ...
-            char(string(sixgr.util.structGet(contractMaterialization, "Message", ""))));
-    end
     componentViewsEnabled = logical(scfg.get( ...
         "output.component_artifact_views.enabled", scfg.get( ...
         "canonical_control.output.component_artifact_views.enabled", false)));
@@ -2322,6 +2417,7 @@ try
     artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
     reportBundle.ArtifactAudit = artifactAudit;
     scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
+    sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
     result = localApplyScenarioStatus(result, scenarioStatus);
     if logical(sixgr.util.structGet(artifactAudit, "Required", false))
         localDBLog("INFO", "Recursive artifact audit evaluated: required=1 ok=%d failures=%d warnings=%d", ...
@@ -2441,10 +2537,9 @@ catch ME
         localStopProfilerSession(profilerState);
     end
     try
-        sixgr.util.writeTextFile(fullfile(layout.MetaDir, "failure_debug_report.txt"), ...
-            getReport(ME, "extended", "hyperlinks", "off"), ...
-            "ArtifactKind", "failure_debug_report", ...
-            "MimeType", "text/plain; charset=UTF-8");
+        liveFailureStage = localReadCurrentRuntimeStage(layout);
+        sixgr.runtime.writeFailureHistoryArtifact(layout.MetaDir, ME, ...
+            "Stage", liveFailureStage);
     catch
     end
     if truthGatedCompletionPublished && ...
@@ -3031,6 +3126,8 @@ manifest.TruthContractOk = logical(sixgr.util.structGet(scenarioStatus, "TruthCo
 manifest.StandardsConformanceOk = logical(sixgr.util.structGet(scenarioStatus, "StandardsConformanceOk", scenarioStatus.RuntimeTruthContractOk));
 manifest.ScenarioObjectiveOk = logical(sixgr.util.structGet(scenarioStatus, "ScenarioObjectiveOk", scenarioStatus.ResultOk));
 manifest.ConfiguredEffectiveOk = logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", false));
+manifest.ConfiguredEffectivePolicyOk = logical(sixgr.util.structGet( ...
+    scenarioStatus, "ConfiguredEffectivePolicyOk", false));
 manifest.MandatorySubsystemsOk = logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", false));
 manifest.ActiveIssueGateOk = logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", false));
 manifest.KpiConsistencyOk = logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", false));
@@ -3047,9 +3144,26 @@ manifest.StrictTruthFailureCount = double(scenarioStatus.StrictTruthFailureCount
 manifest.StrictProxyGuardFailureCount = double(scenarioStatus.StrictProxyGuardFailureCount);
 manifest.CanonicalArtifactGapCount = double(scenarioStatus.CanonicalArtifactGapCount);
 manifest.RuntimeTruthContractFailures = cellstr(string(scenarioStatus.RuntimeTruthContractFailures(:)));
-manifest.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true));
+manifest.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", false));
 manifest.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0));
 manifest.VisualArtifactIntegrityFailures = cellstr(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1))));
+manifest.VisualArtifactGateOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateOk", false));
+manifest.VisualArtifactGateStatus = char(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateStatus", "NOT_EVALUATED")));
+manifest.DuplicateArtifactGateOk = logical(sixgr.util.structGet(scenarioStatus, "DuplicateArtifactGateOk", false));
+manifest.DuplicateArtifactGateStatus = char(string(sixgr.util.structGet(scenarioStatus, "DuplicateArtifactGateStatus", "NOT_EVALUATED")));
+manifest.PublicationQualified = logical(sixgr.util.structGet(scenarioStatus, "PublicationQualified", false));
+manifest.PublicationQualificationStatus = char(string(sixgr.util.structGet(scenarioStatus, "PublicationQualificationStatus", "NOT_EVALUATED")));
+manifest.BrowserPublicationRequired = logical(sixgr.util.structGet(scenarioStatus, "BrowserPublicationRequired", false));
+manifest.BrowserPublished = logical(sixgr.util.structGet(scenarioStatus, "BrowserPublished", false));
+manifest.BrowserPublicationStatus = char(string(sixgr.util.structGet(scenarioStatus, "BrowserPublicationStatus", "NOT_EVALUATED")));
+manifest.BrowserPublicationFailureReason = char(string(sixgr.util.structGet(scenarioStatus, "BrowserPublicationFailureReason", "")));
+manifest.ArtifactContractRequired = logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractRequired", false));
+manifest.ArtifactContractExecuted = logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractExecuted", false));
+manifest.ArtifactContractGateOk = logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractGateOk", true));
+manifest.ArtifactContractStatus = char(string(sixgr.util.structGet(scenarioStatus, "ArtifactContractStatus", "NOT_APPLICABLE")));
+manifest.ArtifactContractCount = double(sixgr.util.structGet(scenarioStatus, "ArtifactContractCount", 0));
+manifest.ArtifactContractFailureCount = double(sixgr.util.structGet(scenarioStatus, "ArtifactContractFailureCount", 0));
+manifest.ArtifactContractRequiredFailureCount = double(sixgr.util.structGet(scenarioStatus, "ArtifactContractRequiredFailureCount", 0));
 end
 
 function localWriteScenarioManifest(layout, manifest)
@@ -3175,6 +3289,7 @@ payload = struct( ...
     "standards_conformance_ok", logical(sixgr.util.structGet(scenarioStatus, "StandardsConformanceOk", scenarioStatus.RuntimeTruthContractOk)), ...
     "scenario_objective_ok", logical(sixgr.util.structGet(scenarioStatus, "ScenarioObjectiveOk", scenarioStatus.ResultOk)), ...
     "configured_effective_ok", logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", false)), ...
+    "configured_effective_policy_ok", logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectivePolicyOk", false)), ...
     "mandatory_subsystems_ok", logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", false)), ...
     "active_issue_gate_ok", logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", false)), ...
     "kpi_consistency_ok", logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", false)), ...
@@ -3190,8 +3305,23 @@ payload = struct( ...
     "strict_truth_failure_count", double(scenarioStatus.StrictTruthFailureCount), ...
     "strict_proxy_guard_failure_count", double(scenarioStatus.StrictProxyGuardFailureCount), ...
     "canonical_artifact_gap_count", double(scenarioStatus.CanonicalArtifactGapCount), ...
-    "visual_artifact_integrity_ok", logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true)), ...
+    "visual_artifact_integrity_ok", logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", false)), ...
     "visual_artifact_integrity_failure_count", double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0)), ...
+    "visual_artifact_gate_ok", logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateOk", false)), ...
+    "visual_artifact_gate_status", string(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateStatus", "NOT_EVALUATED")), ...
+    "duplicate_artifact_gate_ok", logical(sixgr.util.structGet(scenarioStatus, "DuplicateArtifactGateOk", false)), ...
+    "duplicate_artifact_gate_status", string(sixgr.util.structGet(scenarioStatus, "DuplicateArtifactGateStatus", "NOT_EVALUATED")), ...
+    "publication_qualified", logical(sixgr.util.structGet(scenarioStatus, "PublicationQualified", false)), ...
+    "publication_qualification_status", string(sixgr.util.structGet(scenarioStatus, "PublicationQualificationStatus", "NOT_EVALUATED")), ...
+    "browser_publication_required", logical(sixgr.util.structGet(scenarioStatus, "BrowserPublicationRequired", false)), ...
+    "browser_published", logical(sixgr.util.structGet(scenarioStatus, "BrowserPublished", false)), ...
+    "browser_publication_status", string(sixgr.util.structGet(scenarioStatus, "BrowserPublicationStatus", "NOT_EVALUATED")), ...
+    "artifact_contract_required", logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractRequired", false)), ...
+    "artifact_contract_executed", logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractExecuted", false)), ...
+    "artifact_contract_gate_ok", logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractGateOk", true)), ...
+    "artifact_contract_status", string(sixgr.util.structGet(scenarioStatus, "ArtifactContractStatus", "NOT_APPLICABLE")), ...
+    "artifact_contract_failure_count", double(sixgr.util.structGet(scenarioStatus, "ArtifactContractFailureCount", 0)), ...
+    "artifact_contract_required_failure_count", double(sixgr.util.structGet(scenarioStatus, "ArtifactContractRequiredFailureCount", 0)), ...
     "error_source", string(scenarioStatus.ErrorSource), ...
     "error_identifier", string(scenarioStatus.ErrorIdentifier), ...
     "error_message", string(scenarioStatus.ErrorMessage), ...
@@ -3374,52 +3504,26 @@ function localAnnotateAllCSV(runFolder, scfg, profile)
 if sixgr.db.isArtifactStoreActive()
     return;
 end
-componentMirrorRoots = ["prach","initial_access","ssb","pdcch", ...
-    "pdsch","pusch","pucch","reference_signals","mimo", ...
-    "frame_grid","waveform","l3","channel","rf", ...
-    "mac_harq_scheduler","l2","traffic","validation"];
-files = dir(fullfile(runFolder, "**", "*.csv"));
-for i = 1:numel(files)
-    f = fullfile(files(i).folder, files(i).name);
-    normalizedFile = replace(string(f), "\", "/");
-    normalizedRoot = strip(replace(string(runFolder), "\", "/"), "right", "/");
-    rel = normalizedFile;
-    if startsWith(lower(normalizedFile), lower(normalizedRoot + "/"))
-        rel = extractAfter(normalizedFile, strlength(normalizedRoot) + 1);
-    end
-    topLevel = extractBefore(rel + "/", "/");
-    if any(topLevel == componentMirrorRoots)
-        % These are byte-identical convenience mirrors owned by
-        % publishComponentArtifactViews.  Mutating them here would sever
-        % their canonical hash relationship during resumable finalization.
-        continue;
-    end
-    try
-        T = readtable(f, 'Delimiter', ',', 'ReadVariableNames', true, ...
-            'VariableNamingRule', 'preserve');
-    catch
-        continue;
-    end
-    changed = false;
-    if ~ismember("ScenarioID", T.Properties.VariableNames)
-        T = addvars(T, localConstantStringColumn(height(T), scfg.ScenarioID), ...
-            'Before', 1, 'NewVariableNames', 'ScenarioID');
-        changed = true;
-    end
-    if ~ismember("ConfigHash", T.Properties.VariableNames)
-        T = addvars(T, localConstantStringColumn(height(T), scfg.ConfigHash), ...
-            'Before', 2, 'NewVariableNames', 'ConfigHash');
-        changed = true;
-    end
-    if ~ismember("RunnerProfile", T.Properties.VariableNames)
-        T = addvars(T, localConstantStringColumn(height(T), profile), ...
-            'Before', min(3, width(T)+1), 'NewVariableNames', 'RunnerProfile');
-        changed = true;
-    end
-    if changed
-        sixgr.util.csvWriteTable(f, T);
-    end
+sixgr.report.annotateScenarioCSVArtifacts(runFolder, scfg.ScenarioID, ...
+    scfg.ConfigHash, profile);
 end
+
+function result = localMarkComponentAnchorResult(result, anchorRoot)
+if ~(isstruct(result) && isscalar(result))
+    return;
+end
+result.EvidenceScope = "component_anchor";
+result.SameScenarioInPathEligible = false;
+result.ArtifactRoot = string(anchorRoot);
+end
+
+function result = localMarkInPathResult(result, artifactRoot)
+if ~(isstruct(result) && isscalar(result))
+    return;
+end
+result.EvidenceScope = "in_path";
+result.SameScenarioInPathEligible = true;
+result.ArtifactRoot = string(artifactRoot);
 end
 
 function col = localConstantStringColumn(nRows, value)
@@ -3461,6 +3565,7 @@ T = table( ...
     logical(sixgr.util.structGet(scenarioStatus, "StandardsConformanceOk", scenarioStatus.RuntimeTruthContractOk)), ...
     logical(sixgr.util.structGet(scenarioStatus, "ScenarioObjectiveOk", scenarioStatus.ResultOk)), ...
     logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectiveOk", false)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "ConfiguredEffectivePolicyOk", false)), ...
     logical(sixgr.util.structGet(scenarioStatus, "MandatorySubsystemsOk", false)), ...
     logical(sixgr.util.structGet(scenarioStatus, "ActiveIssueGateOk", false)), ...
     logical(sixgr.util.structGet(scenarioStatus, "KpiConsistencyOk", false)), ...
@@ -3476,7 +3581,7 @@ T = table( ...
     double(scenarioStatus.StrictTruthFailureCount), ...
     double(scenarioStatus.StrictProxyGuardFailureCount), ...
     double(scenarioStatus.CanonicalArtifactGapCount), ...
-    logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true)), ...
+    logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", false)), ...
     double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0)), ...
     string(strjoin(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1))), "; ")), ...
     string(strjoin(string(scenarioStatus.RuntimeTruthContractFailures(:)), "; ")), ...
@@ -3526,7 +3631,7 @@ T = table( ...
     'RunScope','RunCompletion','RunCompleted','Ok','ResultOk','PartialOk','ArtifactsGenerated','ArtifactsWritten', ...
     'RequiredCaseCount','RequiredFailureCount','OptionalPrunedCount','StatusAuthority', ...
     'RuntimeTruthContractOk','TruthContractOk','StandardsConformanceOk','ScenarioObjectiveOk', ...
-    'ConfiguredEffectiveOk','MandatorySubsystemsOk','ActiveIssueGateOk','KpiConsistencyOk','StrictAnchorEligible','StrictAnchorPass','ResultStatusReason', ...
+    'ConfiguredEffectiveOk','ConfiguredEffectivePolicyOk','MandatorySubsystemsOk','ActiveIssueGateOk','KpiConsistencyOk','StrictAnchorEligible','StrictAnchorPass','ResultStatusReason', ...
     'ActiveMandatoryIssueCount','ActiveCriticalIssueCount','ActiveHighIssueCount','ActiveMediumIssueCount', ...
     'RoundtripMismatchCount','RequiredRuntimeEvidenceMissingCount', ...
     'StrictTruthFailureCount','StrictProxyGuardFailureCount','CanonicalArtifactGapCount','VisualArtifactIntegrityOk','VisualArtifactIntegrityFailureCount','VisualArtifactIntegrityFailures','RuntimeTruthContractFailures','Description', ...
@@ -3537,6 +3642,30 @@ T = table( ...
     'EffectiveULTrialCount','EffectiveULDominantOperatingPoint','EffectiveULLayerHistogram','EffectiveULRankHistogram','EffectiveULModulationHistogram','EffectiveULMCSHistogram','EffectiveULConfiguredMatchRate', ...
     'FailingCaseCount','WarningCount','ErrorSource','ErrorIdentifier','ErrorMessage','AuthoritativeStatusSource', ...
     'EffectiveRuntimeNote'});
+T.PublicationQualified = repmat(logical(sixgr.util.structGet( ...
+    scenarioStatus, "PublicationQualified", false)), height(T), 1);
+T.PublicationQualificationStatus = repmat(string(sixgr.util.structGet( ...
+    scenarioStatus, "PublicationQualificationStatus", "NOT_EVALUATED")), height(T), 1);
+T.BrowserPublicationRequired = repmat(logical(sixgr.util.structGet( ...
+    scenarioStatus, "BrowserPublicationRequired", false)), height(T), 1);
+T.BrowserPublished = repmat(logical(sixgr.util.structGet( ...
+    scenarioStatus, "BrowserPublished", false)), height(T), 1);
+T.BrowserPublicationStatus = repmat(string(sixgr.util.structGet( ...
+    scenarioStatus, "BrowserPublicationStatus", "NOT_EVALUATED")), height(T), 1);
+T.ArtifactContractRequired = repmat(logical(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractRequired", false)), height(T), 1);
+T.ArtifactContractExecuted = repmat(logical(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractExecuted", false)), height(T), 1);
+T.ArtifactContractGateOk = repmat(logical(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractGateOk", true)), height(T), 1);
+T.ArtifactContractStatus = repmat(string(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractStatus", "NOT_APPLICABLE")), height(T), 1);
+T.ArtifactContractCount = repmat(double(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractCount", 0)), height(T), 1);
+T.ArtifactContractFailureCount = repmat(double(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractFailureCount", 0)), height(T), 1);
+T.ArtifactContractRequiredFailureCount = repmat(double(sixgr.util.structGet( ...
+    scenarioStatus, "ArtifactContractRequiredFailureCount", 0)), height(T), 1);
 end
 
 function localWriteMarkdownReport(filePath, scfg, profile, runFolder, result, manifest, reportBundle, scenarioStatus)
@@ -4682,7 +4811,7 @@ function status = localAggregateScenarioStatus(result)
 status = struct();
 status.RunCompletion = "completed";
 status.RunCompleted = true;
-status.ResultOk = logical(sixgr.util.structGet(result, "Ok", true));
+status.ResultOk = logical(sixgr.util.structGet(result, "Ok", false));
 status.PartialOk = false;
 status.ArtifactsGenerated = true;
 status.ArtifactsWritten = true;
@@ -4694,13 +4823,14 @@ status.RequiredFailedCases = strings(0, 1);
 status.OptionalPrunedCases = strings(0, 1);
 status.StatusAuthority = "scenario_status_aggregation_v1";
 status.StatusNotes = "";
-status.ProfileReportedOk = logical(sixgr.util.structGet(result, "Ok", true));
+status.ProfileReportedOk = logical(sixgr.util.structGet(result, "Ok", false));
 status.AuthoritativeStatusSource = "result.Ok";
 status.RuntimeTruthContractOk = false;
 status.TruthContractOk = false;
 status.StandardsConformanceOk = false;
 status.ScenarioObjectiveOk = false;
 status.ConfiguredEffectiveOk = false;
+status.ConfiguredEffectivePolicyOk = false;
 status.ConfiguredEffectiveSupplementalEvaluated = false;
 status.MandatorySubsystemsOk = false;
 status.ActiveIssueGateOk = false;
@@ -4718,9 +4848,31 @@ status.StrictTruthFailureCount = 0;
 status.StrictProxyGuardFailureCount = 0;
 status.CanonicalArtifactGapCount = 0;
 status.RuntimeTruthContractFailures = strings(0, 1);
-status.VisualArtifactIntegrityOk = true;
-status.VisualArtifactIntegrityFailureCount = 0;
-status.VisualArtifactIntegrityFailures = strings(0, 1);
+status.VisualArtifactIntegrityOk = false;
+status.VisualArtifactIntegrityFailureCount = 1;
+status.VisualArtifactIntegrityFailures = "visual_artifact_integrity:not_evaluated";
+status.VisualArtifactGateOk = false;
+status.VisualArtifactGateRequired = false;
+status.VisualArtifactGateStatus = "NOT_EVALUATED";
+status.DuplicateArtifactGateOk = false;
+status.DuplicateArtifactGateStatus = "NOT_EVALUATED";
+status.PublicationQualified = false;
+status.PublicationQualificationStatus = "NOT_EVALUATED";
+status.BrowserPublicationRequired = false;
+status.BrowserPublished = false;
+status.BrowserPublicationStatus = "NOT_EVALUATED";
+status.BrowserPublicationFailureReason = "";
+status.ArtifactContractRequired = false;
+status.ArtifactContractExecuted = false;
+status.ArtifactContractGateOk = true;
+status.ArtifactContractStatus = "NOT_APPLICABLE";
+status.ArtifactContractCount = 0;
+status.ArtifactContractFailureCount = 0;
+status.ArtifactContractRequiredFailureCount = 0;
+status.ArtifactContractAuditPath = "";
+status.ArtifactContractFailurePath = "";
+status.ArtifactContractErrorIdentifier = "";
+status.ArtifactContractErrorMessage = "";
 status.WarningCount = 0;
 status.FailingCaseCount = 0;
 status.CaseOk = logical(status.ResultOk);
@@ -4800,18 +4952,43 @@ status.ScenarioObjectiveOk = logical(sixgr.util.structGet(rootResultStatus, "Sce
 status.StandardsConformanceOk = logical(sixgr.util.structGet(rootResultStatus, "StandardsConformanceOk", ...
     logical(status.RuntimeTruthContractOk) && status.ActiveMandatoryIssueCount == 0));
 rootConfiguredEffectiveOk = logical(sixgr.util.structGet(rootResultStatus,"ConfiguredEffectiveOk",false));
+rootConfiguredEffectivePolicyOk = logical(sixgr.util.structGet( ...
+    rootResultStatus,"ConfiguredEffectivePolicyOk",false));
 if logical(sixgr.util.structGet(status, "ConfiguredEffectiveSupplementalEvaluated", false))
     status.ConfiguredEffectiveOk = logical(sixgr.util.structGet(status, ...
         "ConfiguredEffectiveOk",false)) && rootConfiguredEffectiveOk;
 else
     status.ConfiguredEffectiveOk = rootConfiguredEffectiveOk;
 end
+status.ConfiguredEffectivePolicyOk = rootConfiguredEffectivePolicyOk;
 status.MandatorySubsystemsOk = logical(sixgr.util.structGet(rootResultStatus, "MandatorySubsystemsOk", ...
     false));
 status.ActiveIssueGateOk = logical(sixgr.util.structGet(rootResultStatus, "ActiveIssueGateOk", ...
     false));
 status.KpiConsistencyOk = logical(sixgr.util.structGet(rootResultStatus, "KpiConsistencyOk", ...
     false));
+status.VisualArtifactGateOk = logical(sixgr.util.structGet(rootResultStatus, ...
+    "VisualArtifactGateOk", false));
+status.VisualArtifactGateRequired = logical(sixgr.util.structGet(rootResultStatus, ...
+    "VisualArtifactGateRequired", false));
+status.DuplicateArtifactGateOk = logical(sixgr.util.structGet(rootResultStatus, ...
+    "DuplicateArtifactGateOk", false));
+status.VisualArtifactGateStatus = string(sixgr.util.structGet(rootResultStatus, ...
+    "VisualArtifactGateStatus", "NOT_EVALUATED"));
+status.DuplicateArtifactGateStatus = string(sixgr.util.structGet(rootResultStatus, ...
+    "DuplicateArtifactGateStatus", "NOT_EVALUATED"));
+status.PublicationQualified = logical(sixgr.util.structGet(rootResultStatus, ...
+    "PublicationQualified", false));
+status.PublicationQualificationStatus = string(sixgr.util.structGet( ...
+    rootResultStatus, "PublicationQualificationStatus", "NOT_EVALUATED"));
+status.BrowserPublicationRequired = logical(sixgr.util.structGet( ...
+    rootResultStatus, "BrowserPublicationRequired", false));
+status.BrowserPublished = logical(sixgr.util.structGet(rootResultStatus, ...
+    "BrowserPublished", false));
+status.BrowserPublicationStatus = string(sixgr.util.structGet(rootResultStatus, ...
+    "BrowserPublicationStatus", "NOT_EVALUATED"));
+status.BrowserPublicationFailureReason = string(sixgr.util.structGet( ...
+    rootResultStatus, "BrowserPublicationFailureReason", ""));
 status.StrictAnchorEligible = logical(sixgr.util.structGet(rootResultStatus, "StrictAnchorEligible", ...
     sixgr.util.structGet(status, "StrictAnchorEligible", false)));
 status.StrictAnchorPass = logical(sixgr.util.structGet(rootResultStatus, "StrictAnchorPass", ...
@@ -4851,10 +5028,30 @@ status.ArtifactsWritten = logical(sixgr.util.structGet(status, ...
 end
 
 function status = localApplyVisualArtifactIntegrityStatus(status, visualIntegrity)
+required = logical(sixgr.util.structGet(status, "VisualArtifactGateRequired", false));
 if ~(istable(visualIntegrity) && ~isempty(visualIntegrity) && ismember("IntegrityOk", string(visualIntegrity.Properties.VariableNames)))
-    status.VisualArtifactIntegrityOk = true;
-    status.VisualArtifactIntegrityFailureCount = 0;
-    status.VisualArtifactIntegrityFailures = strings(0, 1);
+    status.VisualArtifactIntegrityOk = false;
+    status.VisualArtifactIntegrityFailureCount = 1;
+    status.VisualArtifactIntegrityFailures = "visual_artifact_integrity:not_evaluated:required_integrity_table_missing_or_empty";
+    if ~required
+        return;
+    end
+    status.ResultOk = false;
+    status.CaseOk = false;
+    status.PartialOk = logical(status.ArtifactsGenerated);
+    status.RunCompletion = "completed_with_failures";
+    status.RequiredFailureCount = double(status.RequiredFailureCount) + 1;
+    status.RequiredFailedCases = unique([string(status.RequiredFailedCases(:)); ...
+        status.VisualArtifactIntegrityFailures(:)], "stable");
+    status.FailingCaseCount = double(numel(string(status.RequiredFailedCases)));
+    status.AuthoritativeStatusSource = "visual_artifact_integrity";
+    status.StatusNotes = localJoinStatusNotes(status.StatusNotes, ...
+        "Required visual artifact integrity evidence was missing or empty; publication fails closed.");
+    if strlength(string(status.ErrorIdentifier)) == 0
+        status.ErrorSource = "visual_artifact_integrity";
+        status.ErrorIdentifier = "visual_artifact_integrity_not_evaluated";
+        status.ErrorMessage = char(status.VisualArtifactIntegrityFailures);
+    end
     return;
 end
 okMask = logical(visualIntegrity.IntegrityOk);
@@ -4862,7 +5059,7 @@ bad = visualIntegrity(~okMask, :);
 status.VisualArtifactIntegrityOk = isempty(bad);
 status.VisualArtifactIntegrityFailureCount = double(height(bad));
 status.VisualArtifactIntegrityFailures = localVisualArtifactFailureStrings(bad);
-if isempty(bad)
+if isempty(bad) || ~required
     return;
 end
 status.ResultOk = false;
@@ -5328,9 +5525,25 @@ result.StrictTruthFailureCount = double(scenarioStatus.StrictTruthFailureCount);
 result.StrictProxyGuardFailureCount = double(scenarioStatus.StrictProxyGuardFailureCount);
 result.CanonicalArtifactGapCount = double(scenarioStatus.CanonicalArtifactGapCount);
 result.RuntimeTruthContractFailures = string(scenarioStatus.RuntimeTruthContractFailures(:));
-result.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", true));
+result.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", false));
 result.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0));
 result.VisualArtifactIntegrityFailures = string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1)));
+result.VisualArtifactGateOk = logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateOk", false));
+result.VisualArtifactGateStatus = string(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateStatus", "NOT_EVALUATED"));
+result.DuplicateArtifactGateOk = logical(sixgr.util.structGet(scenarioStatus, "DuplicateArtifactGateOk", false));
+result.DuplicateArtifactGateStatus = string(sixgr.util.structGet(scenarioStatus, "DuplicateArtifactGateStatus", "NOT_EVALUATED"));
+result.PublicationQualified = logical(sixgr.util.structGet(scenarioStatus, "PublicationQualified", false));
+result.PublicationQualificationStatus = string(sixgr.util.structGet(scenarioStatus, "PublicationQualificationStatus", "NOT_EVALUATED"));
+result.BrowserPublicationRequired = logical(sixgr.util.structGet(scenarioStatus, "BrowserPublicationRequired", false));
+result.BrowserPublished = logical(sixgr.util.structGet(scenarioStatus, "BrowserPublished", false));
+result.BrowserPublicationStatus = string(sixgr.util.structGet(scenarioStatus, "BrowserPublicationStatus", "NOT_EVALUATED"));
+result.ArtifactContractRequired = logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractRequired", false));
+result.ArtifactContractExecuted = logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractExecuted", false));
+result.ArtifactContractGateOk = logical(sixgr.util.structGet(scenarioStatus, "ArtifactContractGateOk", true));
+result.ArtifactContractStatus = string(sixgr.util.structGet(scenarioStatus, "ArtifactContractStatus", "NOT_APPLICABLE"));
+result.ArtifactContractCount = double(sixgr.util.structGet(scenarioStatus, "ArtifactContractCount", 0));
+result.ArtifactContractFailureCount = double(sixgr.util.structGet(scenarioStatus, "ArtifactContractFailureCount", 0));
+result.ArtifactContractRequiredFailureCount = double(sixgr.util.structGet(scenarioStatus, "ArtifactContractRequiredFailureCount", 0));
 result.FixedSNRSweepAuditRequired = logical(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditRequired", false));
 result.FixedSNRSweepAuditExecuted = logical(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditExecuted", false));
 result.FixedSNRSweepAuditOk = logical(sixgr.util.structGet(scenarioStatus, "FixedSNRSweepAuditOk", true));
@@ -5671,7 +5884,11 @@ out = struct( ...
     "Message", "", ...
     "CreatedCount", 0, ...
     "MissingTableCount", NaN, ...
-    "MissingChartCount", NaN);
+    "MissingChartCount", NaN, ...
+    "RunID", "", ...
+    "DatabaseRunID", NaN, ...
+    "DatabasePersisted", false, ...
+    "BrowserMaterialized", false);
 if ~sixgr.db.isArtifactStoreActive()
     out.Identifier = "artifact_store_inactive";
     out.Message = "MySQL artifact store is inactive, so browser contract materialization was skipped.";
@@ -5684,6 +5901,8 @@ if ~(isfinite(runID) && runID > 0)
     out.Message = "The active MySQL artifact store did not expose a valid run_id.";
     return;
 end
+out.DatabaseRunID = double(runID);
+out.DatabasePersisted = true;
 repoRoot = localRepoRoot();
 scriptPath = fullfile(repoRoot, "scripts", "materialize_lls_contract_artifacts.py");
 if exist(scriptPath, "file") ~= 2
@@ -5717,6 +5936,9 @@ if ~isempty(jsonStart)
 end
 if status == 0
     out.Ok = true;
+    out.BrowserMaterialized = isfinite(out.MissingTableCount) && ...
+        out.MissingTableCount == 0 && isfinite(out.MissingChartCount) && ...
+        out.MissingChartCount == 0;
     out.Identifier = "browser_contract_materialization_ok";
     out.Message = char(payloadText);
 else
@@ -6013,6 +6235,30 @@ if ~(isscalar(value) && isfinite(value) && value >= 0)
     value = double(fallback);
 end
 if ~(isscalar(value) && isfinite(value) && value >= 0)
-    value = 0;
+value = 0;
+end
+end
+
+function stage = localReadCurrentRuntimeStage(layout)
+stage = "";
+candidates = [ ...
+    string(fullfile(layout.ReportCSVDir, "live_stage_status.csv")); ...
+    string(fullfile(layout.AirInterfaceDir, "reports", "csv", ...
+    "live_stage_status.csv"))];
+for index = 1:numel(candidates)
+    if exist(char(candidates(index)), "file") ~= 2
+        continue;
+    end
+    try
+        status = readtable(char(candidates(index)), "FileType", "text", ...
+            "Delimiter", ",", "ReadVariableNames", true, ...
+            "TextType", "string", "VariableNamingRule", "preserve");
+        if height(status) == 1 && ...
+                ismember("Stage", string(status.Properties.VariableNames))
+            stage = string(status.Stage(1));
+            return;
+        end
+    catch
+    end
 end
 end

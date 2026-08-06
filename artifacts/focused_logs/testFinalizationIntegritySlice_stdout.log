@@ -1,0 +1,6 @@
+PASS testRuntimeEvidenceSchemaIsolation: mixed CSV/JSONL schemas fail before append.
+PASS testRunEvidenceLifecycle: failed attempts stay isolated; PASS pointer is atomic.
+PASS testArtifactFinalizationFailClosed: enabled missing evidence fails closed without hiding completed execution.
+PASS testArtifactFinalizationStatusGate: artifact publication failure is fail-closed and independent.
+PASS testArtifactEvidenceIdentity: scenario, hash, scope and radio identity are exact.
+FINALIZATION_INTEGRITY_SLICE_PASS=9\n

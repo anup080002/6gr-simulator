@@ -11,6 +11,7 @@ end
 
 [scfg, cfg, target, effective, evidence] = localScenario(caseName);
 localWriteEvidence(layout, scfg, target, effective, evidence);
+localWriteResolvedIssueRegistry(layout);
 if caseName == "critical_waiver"
     localWriteCriticalWaiverIssue(layout);
 end
@@ -81,6 +82,7 @@ scfg = sixgr.util.structSet(scfg, "pusch.modulation", target.Modulation);
 if startsWith(caseName, "hybrid_")
     scfg = sixgr.util.structSet(scfg, "validation.fixed_link_campaign.enabled", true);
 end
+
 if scenarioMode == "adaptive_link"
     scfg = sixgr.util.structSet(scfg, "link_adaptation.fixed_or_amc", "adaptive");
     scfg = sixgr.util.structSet(scfg, "link_adaptation.pdsch_link_adaptation_policy", "cqi_driven");
@@ -118,6 +120,20 @@ cfg = sixgr.util.structSet(cfg, "pdsch6gr.FixedMCSActive", scenarioMode ~= "adap
 if startsWith(caseName, "hybrid_")
     cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign.enabled", true);
 end
+end
+
+function localWriteResolvedIssueRegistry(layout)
+T = table( ...
+    "REGISTRY-000", "info", "resolved", "issue_registry", ...
+    "", NaN, NaN, "issue_registry", "EvaluationStatus", "evaluated", ...
+    "Issue registry was explicitly evaluated with no active blocker.", ...
+    "reports/csv/result_issue_registry.csv", ...
+    "root gate fixture", ...
+    "none", true, ...
+    'VariableNames', {'issue_id','severity','issue_status','issue_category','direction','ue_id','cell_id', ...
+    'block_name','metric_name','observed_value','expected_or_policy','evidence_artifact_ref', ...
+    'root_cause_hint','fix_plan','analytics_visible_flag'});
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "result_issue_registry.csv"), T);
 end
 
 function localWriteEvidence(layout, scfg, target, effective, evidence)

@@ -1,18 +1,27 @@
-function csvWriteTable(filePath, T)
+function csvWriteTable(filePath, T, varargin)
 %CSVWRITETABLE Unified CSV export for simulator KPIs and logs.
 %
 %   sixgr.util.csvWriteTable("results/run1/csv/kpis.csv", T)
 
-arguments
-    filePath {mustBeTextScalar}
-    T table
+if ~(ischar(filePath) || (isstring(filePath) && isscalar(filePath)))
+    error("sixgr:util:csvWriteTable:BadType", ...
+        "filePath must be char or string scalar.");
 end
+if ~istable(T)
+    error("sixgr:util:csvWriteTable:BadTable", "T must be a table.");
+end
+p = inputParser;
+p.addParameter("PreserveSchema", false, ...
+    @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
 
 filePath = char(filePath);
 if ~sixgr.util.persistenceEnabled()
     return;
 end
-T = sixgr.util.pruneStructurallyBlankTableColumns(T);
+if ~p.Results.PreserveSchema
+    T = sixgr.util.pruneStructurallyBlankTableColumns(T);
+end
 sixgr.util.ensureDir(filePath);
 
 targetDir = fileparts(filePath);
@@ -30,7 +39,8 @@ localPublishWithRetry(temporaryPath, filePath);
 
 if sixgr.db.isArtifactStoreActive()
     try
-        sixgr.db.storeTableArtifact(filePath, T);
+        sixgr.db.storeTableArtifact(filePath, T, ...
+            "PreserveSchema", p.Results.PreserveSchema);
     catch ME
         warning("sixgr:util:csvWriteTable:ArtifactStoreMirrorFailed", ...
             "Local CSV '%s' was written, but DB artifact mirroring failed: %s", ...
@@ -67,11 +77,5 @@ end
 function localDeleteIfPresent(filePath)
 if isfile(filePath)
     delete(filePath);
-end
-end
-
-function mustBeTextScalar(x)
-if ~(ischar(x) || (isstring(x) && isscalar(x)))
-    error("sixgr:util:csvWriteTable:BadType","filePath must be char or string scalar.");
 end
 end

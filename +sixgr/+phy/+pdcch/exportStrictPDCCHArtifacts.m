@@ -53,6 +53,8 @@ end
 sixgr.util.csvWriteTable(airPath, primaryTrials);
 rows(numel(names)+1) = localManifestRow(airPath, "text/csv", "csv", height(primaryTrials), ...
     "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, ...
+    "OnlyPaths", [string(struct2cell(csvMap)); string(airPath)]);
 
 jsonPayloads = localJsonPayloads(result, csvMap);
 jsonMap = struct( ...
@@ -74,14 +76,23 @@ end
 
 textRows = localWriteTextArtifacts(textDir, result);
 binaryRows = localWriteBinaryArtifacts(binaryDir, result);
-figureRows = localWriteFigures(figDir, result);
-manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:)];
-manifest = struct2table(manifestRows, "AsArray", true);
+[figureRows, figurePaths] = localWriteFigures(figDir, result, csvMap);
+plotLineagePath = fullfile(layout.ControlCSVDir, "pdcch_plot_lineage.csv");
+sixgr.visual.writeComponentPlotLineage(runFolder, plotLineagePath, ...
+    ["pdcch_coreset_resource_grid"; "pdcch_candidate_metrics"; ...
+    "pdcch_wrong_rnti_rejections"; "pdcch_false_alarm_probability"; ...
+    "pdcch_low_snr_detection_probability"; "pdcch_decode_flow"; ...
+    "pdcch_dci_to_grant_flow"], figurePaths, [ ...
+    string(csvMap.pdcch_config_strict); string(csvMap.pdcch_candidates); ...
+    string(csvMap.pdcch_wrong_rnti_trials); string(csvMap.pdcch_false_alarm_sweep); ...
+    string(csvMap.pdcch_low_snr_sweep); string(csvMap.pdcch_trials); ...
+    string(csvMap.pdcch_dci_fields) + "|" + string(csvMap.pdcch_grant_validation)], ...
+    "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+plotLineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", 7, ...
+    "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:); plotLineageRow];
 manifestPath = fullfile(layout.ControlCSVDir, "pdcch_strict_artifact_manifest.csv");
-sixgr.util.csvWriteTable(manifestPath, manifest);
-manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
-    "sixgr.phy.pdcch.exportStrictPDCCHArtifacts"), "AsArray", true);
-sixgr.util.csvWriteTable(manifestPath, manifest);
+manifest = sixgr.artifact.writeIntegrityManifest(manifestPath, manifestRows);
 end
 
 function T = localReadOptionalTable(path)
@@ -181,7 +192,7 @@ data = single([real(x(:)).'; imag(x(:)).']);
 fwrite(fid, data(:), "single");
 end
 
-function rows = localWriteFigures(figDir, result)
+function [rows, paths] = localWriteFigures(figDir, result, csvMap)
 paths = [
     string(fullfile(figDir, "pdcch_coreset_resource_grid.png"))
     string(fullfile(figDir, "pdcch_candidate_metrics.png"))
@@ -191,24 +202,51 @@ paths = [
     string(fullfile(figDir, "pdcch_decode_flow.png"))
     string(fullfile(figDir, "pdcch_dci_to_grant_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
+
+% Figure publication is a single evidence transaction.  A renderer error
+% must not leave a prefix of apparently valid but unmanifested PNGs in the
+% run folder.  Remove stale targets before starting and delete every target
+% again unless the complete seven-figure set was produced successfully.
+for ii = 1:numel(paths)
+    if exist(char(paths(ii)), "file") == 2
+        delete(char(paths(ii)));
+    end
+end
+committed = false;
+cleanupPartial = onCleanup(@localCleanupUncommittedFigures); %#ok<NASGU>
+
 localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid(:,:,1))));
-rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_config_strict);
 cand = result.ArtifactTables.pdcch_candidates;
 localWritePNG(paths(2), localBarImage(double(cand.Metric)));
-rows(2) = localManifestRow(paths(2), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(2) = localManifestRow(paths(2), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_candidates);
 wr = result.ArtifactTables.pdcch_wrong_rnti_trials;
 localWritePNG(paths(3), localBarImage(double(wr.WrongRNTIRejectCount)));
-rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_wrong_rnti_trials);
 fa = result.ArtifactTables.pdcch_false_alarm_sweep;
 localWritePNG(paths(4), localLineImage(double(fa.SNRdB), double(fa.FalseAlarmProbability)));
-rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_false_alarm_sweep);
 ls = result.ArtifactTables.pdcch_low_snr_sweep;
 localWritePNG(paths(5), localLineImage(double(ls.SNRdB), double(ls.DetectionProbability)));
-rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_low_snr_sweep);
 sixgr.visual.writeFlowDiagramPNG(paths(6), "Strict PDCCH blind decode", ["PDCCH waveform","CORESET/search-space candidates","RNTI CRC + DCI decode","Score after decode"], result.StrictOk);
-rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_trials);
 sixgr.visual.writeFlowDiagramPNG(paths(7), "PDCCH DCI to grant flow", ["Decoded DCI bits","Field parser","Grant validator","PDSCH/PUSCH reference ID"], result.StrictOk);
-rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
+rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", ...
+    string(csvMap.pdcch_dci_fields) + "|" + string(csvMap.pdcch_grant_validation));
+committed = true;
+clear cleanupPartial;
+
+    function localCleanupUncommittedFigures()
+        if committed
+            return;
+        end
+        for jj = 1:numel(paths)
+            if exist(char(paths(jj)), "file") == 2
+                delete(char(paths(jj)));
+            end
+        end
+    end
 end
 
 function localWritePNG(path, img)
@@ -331,9 +369,11 @@ for c = 1:3
 end
 end
 
-function row = localManifestRow(path, mime, kind, rowCount, producer)
+function row = localManifestRow(path, mime, kind, rowCount, producer, sourceCSV)
 if nargin == 0
-    path = ""; mime = ""; kind = ""; rowCount = NaN; producer = "";
+    path = ""; mime = ""; kind = ""; rowCount = NaN; producer = ""; sourceCSV = "";
+elseif nargin < 6
+    sourceCSV = "";
 end
 artifactId = "";
 if strlength(string(path)) > 0
@@ -344,7 +384,8 @@ row = struct("ArtifactId", string(artifactId), "FilePath", string(path), ...
     "ArtifactPath", string(path), "MimeType", string(mime), ...
     "Kind", string(kind), "ArtifactKind", string(kind), ...
     "RowCount", double(rowCount), "ByteCount", localFileBytes(path), ...
-    "SHA256", localFileSHA256(path), "ProducerModule", string(producer));
+    "SHA256", localFileSHA256(path), "ProducerModule", string(producer), ...
+    "SourceCSV", string(sourceCSV));
 end
 
 function bytes = localFileBytes(path)

@@ -15,6 +15,12 @@ scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
 names = string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
+    if sixgr.truth.isImmutableIdentityField(fieldName)
+        % Missing provenance identity must remain visibly missing so the
+        % strict identity gate can fail closed.  Never decorate it with a
+        % semantic availability token.
+        continue;
+    end
     rawCol = T.(fieldName);
     if ~localIsStringLikeColumn(rawCol)
         continue;

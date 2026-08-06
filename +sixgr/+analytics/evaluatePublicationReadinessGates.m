@@ -642,24 +642,30 @@ energyPath = localFirstExisting(runDir, [
     "reports/csv/live_energy_efficiency_table.csv"
     ]);
 rootPath = fullfile(runDir, "reports", "csv", "energy_root_cause_table.csv");
+termsPath = fullfile(runDir, "rf", "csv", "energy_model_terms.csv");
 energy = localReadTable(energyPath);
 root = localReadTable(rootPath);
+terms = localReadTable(termsPath);
 
 ueJ = localMetricValue(energy, ["ue_energy_per_successful_bit","ue_energy_per_bit_j"]);
 gnbJ = localMetricValue(energy, ["gnb_energy_per_successful_bit","gnb_energy_per_bit_j"]);
-observedOk = localAvailabilityOk(energy);
+criticalEnergy = localRowsForMetricKeys(energy, ...
+    ["ue_energy_per_successful_bit","ue_energy_per_bit_j", ...
+     "gnb_energy_per_successful_bit","gnb_energy_per_bit_j"]);
+observedOk = height(criticalEnergy) == 2 && localAvailabilityOk(criticalEnergy);
+modelTermsOk = height(terms) >= 12 && localAvailabilityOk(terms);
 hasUE = localRootHasEntity(root, ["ue"]);
 hasCell = localRootHasEntity(root, ["cell","gnb","gNB"]);
 criticalCount = double(isfinite(ueJ) && ueJ > 0) + double(isfinite(gnbJ) && gnbJ > 0);
 ok = ~isempty(energyPath) && istable(energy) && height(energy) >= 2 && criticalCount == 2 && ...
-    observedOk && exist(rootPath, "file") == 2 && hasUE && hasCell;
+    observedOk && modelTermsOk && exist(rootPath, "file") == 2 && hasUE && hasCell;
 reason = localReason(ok, "energy_metrics_and_entity_root_cause_verified", ...
     "missing_or_nonpositive_energy_metrics_or_root_cause_rows");
 
 T = table(string(localPortable(runDir, energyPath)), string(localPortable(runDir, rootPath)), ...
-    height(energy), height(root), criticalCount, observedOk, ueJ, gnbJ, hasUE, hasCell, ok, reason, ...
+    height(energy), height(root), height(terms), criticalCount, observedOk, modelTermsOk, ueJ, gnbJ, hasUE, hasCell, ok, reason, ...
     'VariableNames', {'EnergySourceCSV','RootCauseSourceCSV','EnergyMetricRows','RootCauseRows', ...
-    'CriticalPositiveMetricCount','AvailabilityOk','UEEnergyPerBit_J','GNBEnergyPerBit_J', ...
+    'EnergyModelTermRows','CriticalPositiveMetricCount','AvailabilityOk','EnergyModelTermsOk','UEEnergyPerBit_J','GNBEnergyPerBit_J', ...
     'HasUEEnergyRows','HasCellEnergyRows','EnergyModelOk','FailureReason'});
 end
 
@@ -905,14 +911,29 @@ if ~tf
 end
 availabilityCol = localFirstColumnName(T, ["Availability","availability","EvidenceStatus","evidence_status"]);
 statusCol = localFirstColumnName(T, ["energy_value_status","value_status","ValueStatus","status"]);
-bad = ["proxy","fallback","synthetic","placeholder","not_available","unavailable","disabled"];
+bad = ["proxy","fallback","synthetic","placeholder","not_available","not_evaluated","unavailable","disabled"];
 if strlength(availabilityCol) > 0
     states = lower(strtrim(string(T.(char(availabilityCol)))));
-    tf = ~any(ismember(states, bad) | contains(states, bad));
+    tf = all(strlength(states) > 0) && ~any(ismember(states, bad) | contains(states, bad));
 elseif strlength(statusCol) > 0
     states = lower(strtrim(string(T.(char(statusCol)))));
     tf = all(states == "ok" | states == "observed" | states == "available" | states == "derived" | states == "runtime_truth_fact");
 end
+end
+
+function T = localRowsForMetricKeys(T, keys)
+if ~(istable(T) && ~isempty(T))
+    T = table();
+    return;
+end
+name = localFirstColumnName(T, ["MetricKey","metric_key","KPIName","kpi_name"]);
+if strlength(name) == 0
+    T = table();
+    return;
+end
+values = lower(strtrim(string(T.(char(name)))));
+wanted = lower(strtrim(string(keys)));
+T = T(ismember(values, wanted), :);
 end
 
 function tf = localRootHasEntity(T, names)

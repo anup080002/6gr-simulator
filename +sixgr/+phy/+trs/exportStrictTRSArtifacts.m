@@ -20,10 +20,12 @@ sixgr.util.ensureFolder(binaryDir);
 sixgr.util.ensureFolder(figDir);
 
 tables = result.ArtifactTables;
+tables.trs_resource_grid_power = localGridEvidence(result.PositiveGrid);
 csvMap = struct( ...
     "trs_config_strict", fullfile(refCsvDir, "trs_config_strict.csv"), ...
     "trs_trials", fullfile(refCsvDir, "trs_trials.csv"), ...
     "trs_resource_mapping", fullfile(refCsvDir, "trs_resource_mapping.csv"), ...
+    "trs_resource_grid_power", fullfile(refCsvDir, "trs_resource_grid_power.csv"), ...
     "trs_detection_metrics", fullfile(refCsvDir, "trs_detection_metrics.csv"), ...
     "trs_timing_tracking", fullfile(refCsvDir, "trs_timing_tracking.csv"), ...
     "trs_frequency_tracking", fullfile(refCsvDir, "trs_frequency_tracking.csv"), ...
@@ -83,6 +85,9 @@ for ii = 1:numel(compatNames)
     rows(numel(names) + 1 + ii) = localManifestRow(outPath, "text/csv", "csv", height(T), ...
         "sixgr.phy.trs.exportStrictTRSArtifacts");
 end
+sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, ...
+    "OnlyPaths", [string(struct2cell(csvMap)); string(airPath); ...
+    string(struct2cell(compatMap))]);
 
 jsonPayloads = localJsonPayloads(result, csvMap);
 jsonMap = struct( ...
@@ -102,14 +107,12 @@ end
 
 textRows = localWriteTextArtifacts(textDir, result);
 binaryRows = localWriteBinaryArtifacts(binaryDir, result);
-figureRows = localWriteFigures(figDir, result);
-manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:)];
-manifest = struct2table(manifestRows, "AsArray", true);
+[figureRows, plotLineagePath] = localWriteFigures(runFolder, refCsvDir, figDir, result, csvMap);
+lineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", height(readtable(plotLineagePath)), ...
+    "sixgr.phy.trs.exportStrictTRSArtifacts");
+manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:); lineageRow];
 manifestPath = fullfile(refCsvDir, "trs_strict_artifact_manifest.csv");
-sixgr.util.csvWriteTable(manifestPath, manifest);
-manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
-    "sixgr.phy.trs.exportStrictTRSArtifacts"), "AsArray", true);
-sixgr.util.csvWriteTable(manifestPath, manifest);
+manifest = sixgr.artifact.writeIntegrityManifest(manifestPath, manifestRows);
 end
 
 function T = localReadOptionalTable(path)
@@ -198,7 +201,7 @@ data = single([real(x(:)).'; imag(x(:)).']);
 fwrite(fid, data(:), "single");
 end
 
-function rows = localWriteFigures(figDir, result)
+function [rows, lineagePath] = localWriteFigures(runFolder, refCsvDir, figDir, result, csvMap)
 paths = [
     string(fullfile(figDir, "trs_resource_grid.png"))
     string(fullfile(figDir, "trs_detection_metric_by_slot.png"))
@@ -231,6 +234,21 @@ rows(7) = localManifestRow(paths(7), "image/png", "figure", height(neg), "sixgr.
 sixgr.visual.writeFlowDiagramPNG(paths(8), "Strict TRS tracking flow", ...
     ["NZP-CSI-RS/TRS grid","Timing estimate","CFO phase slope","nrChannelEstimate","Strict gate"], result.StrictOk);
 rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.trs.exportStrictTRSArtifacts");
+lineagePath = fullfile(refCsvDir, "trs_plot_lineage.csv");
+sourceCSVs = [
+    string(csvMap.trs_resource_grid_power)
+    string(csvMap.trs_detection_metrics)
+    string(csvMap.trs_detection_metrics)
+    string(csvMap.trs_timing_offset_sweep)
+    string(csvMap.trs_frequency_offset_sweep)
+    string(csvMap.trs_channel_estimation)
+    string(csvMap.trs_negative_trials)
+    string(csvMap.trs_config_strict) + "|" + string(csvMap.trs_trials)];
+sixgr.visual.writeComponentPlotLineage(runFolder, lineagePath, ...
+    ["trs_resource_grid","trs_detection_metric_by_slot","trs_coverage_heatmap", ...
+    "trs_timing_error_sweep","trs_frequency_offset_sweep","trs_channel_estimation_nmse", ...
+    "trs_negative_trial_outcomes","trs_tracking_flow"], ...
+    paths, sourceCSVs, "sixgr.phy.trs.exportStrictTRSArtifacts");
 end
 
 function localWritePNG(path, img)
@@ -271,7 +289,10 @@ end
 
 function img = localHeatImage(M)
 M = abs(double(M));
-if isempty(M), M = zeros(16, 16); end
+if isempty(M)
+    error("sixgr:phy:trs:MissingPlotEvidence", ...
+        "Cannot publish a TRS heat map without measured source samples.");
+end
 M = localNormalizeMatrix(M);
 rowIdx = max(1, min(size(M, 1), round(linspace(1, size(M, 1), 420))));
 colIdx = max(1, min(size(M, 2), round(linspace(1, size(M, 2), 620))));
@@ -286,7 +307,10 @@ img = localBaseImage();
 x = double(x(:)); y = double(y(:));
 valid = isfinite(x) & isfinite(y);
 x = x(valid); y = y(valid);
-if isempty(x), return; end
+if isempty(x)
+    error("sixgr:phy:trs:MissingPlotEvidence", ...
+        "Cannot publish a TRS line plot without finite measured samples.");
+end
 px = localScaleToPixels(x, 80, 660);
 py = localScaleToPixels(y, 420, 80);
 for ii = 1:(numel(px)-1)
@@ -300,7 +324,10 @@ end
 function img = localBarImage(y)
 img = localBaseImage();
 y = double(y(:)); y = y(isfinite(y));
-if isempty(y), return; end
+if isempty(y)
+    error("sixgr:phy:trs:MissingPlotEvidence", ...
+        "Cannot publish a TRS bar plot without finite measured samples.");
+end
 py = localScaleToPixels(y, 420, 80);
 x = round(linspace(90, 650, numel(y)));
 for ii = 1:numel(y)
@@ -400,4 +427,19 @@ end
 
 function out = localShellEscape(value)
 out = strrep(char(string(value)), '"', '""');
+end
+
+function T = localGridEvidence(grid)
+if isempty(grid)
+    error("sixgr:phy:trs:MissingGridEvidence", ...
+        "Strict TRS resource-grid evidence is empty.");
+end
+sz = size(grid);
+if numel(sz) < 3
+    sz(3) = 1;
+end
+[subcarrier, symbol, port] = ndgrid(0:(sz(1)-1), 0:(sz(2)-1), 0:(sz(3)-1));
+values = grid(:);
+T = table(subcarrier(:), symbol(:), port(:), real(values), imag(values), abs(values).^2, ...
+    'VariableNames', {'Subcarrier','Symbol','Port','ValueI','ValueQ','Power'});
 end

@@ -48,6 +48,7 @@ artifacts.ToolboxCapabilitiesJSON = fullfile(jsonDir, "channel_rf_toolbox_capabi
 artifacts.ConformanceSummaryJSON = fullfile(jsonDir, "channel_rf_conformance_summary.json");
 artifacts.ConfiguredVsAppliedPNG = fullfile(channelImageDir, "channel_configured_vs_applied.png");
 artifacts.RFImpairmentPNG = fullfile(layout.ReportImageDir, "rf_impairment_chain.png");
+artifacts.PlotLineageCSV = fullfile(channelCsvDir, "channel_rf_plot_lineage.csv");
 
 sixgr.util.csvWriteTable(artifacts.ChannelRFConfigStrictCSV, result.ConfigStrict);
 sixgr.util.csvWriteTable(artifacts.LinkGeometryCSV, result.Geometry.LinkTable);
@@ -87,8 +88,15 @@ sixgr.util.jsonWrite(artifacts.ConformanceSummaryJSON, summary);
 
 localWriteConfiguredVsAppliedPNG(artifacts.ConfiguredVsAppliedPNG, result.ConfiguredVsApplied);
 localWriteRFPNG(artifacts.RFImpairmentPNG, result.RFImpairmentChain);
+sixgr.visual.writeComponentPlotLineage(layout.Root, artifacts.PlotLineageCSV, ...
+    ["channel_configured_vs_applied"; "rf_impairment_chain"], ...
+    [string(artifacts.ConfiguredVsAppliedPNG); string(artifacts.RFImpairmentPNG)], ...
+    [string(artifacts.ConfiguredVsAppliedCSV); string(artifacts.RFImpairmentChainCSV)], ...
+    "sixgr.channel.exportStrictChannelRFArtifacts");
 artifacts.ArtifactManifest = localArtifactManifest(artifacts);
-sixgr.util.csvWriteTable(fullfile(channelCsvDir, "channel_rf_strict_artifact_manifest.csv"), artifacts.ArtifactManifest);
+manifestPath = fullfile(channelCsvDir, "channel_rf_strict_artifact_manifest.csv");
+artifacts.ArtifactManifest = sixgr.artifact.writeIntegrityManifest( ...
+    manifestPath, artifacts.ArtifactManifest);
 end
 
 function T = localReportConfiguredAppliedTable(result)

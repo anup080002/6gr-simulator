@@ -1,0 +1,13 @@
+PASS testRuntimeEvidenceSchemaIsolation: mixed CSV/JSONL schemas fail before append.
+PASS testRuntimeIdentityFillerIsolation: identity provenance is no longer fabricated.
+PASS testArtifactEvidenceIdentity: scenario, hash, scope and radio identity are exact.
+PASS testRunEvidenceLifecycle: failed attempts stay isolated; PASS pointer is atomic.
+PASS testLLSActiveIssueGateMissingRegistry: missing/header-only registry cannot pass.
+PASS testLLSQualificationStatusSeparation: execution, science, publication and browser states are independent.
+PDSCH grant-driven exact vectors=30 maxLayerErr=3.14e-16 maxPortErr=9.69e-16 maxGridErr=9.69e-16 maxPowerErr=0
+
+ans =
+
+  logical
+
+   1

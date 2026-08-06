@@ -1,0 +1,6 @@
+          EventCount: 598
+        RebuiltCount: 3
+        RebuiltPaths: [31 string]
+    QuarantinedCount: 3
+    QuarantinedPaths: [31 string]
+      QuarantineRoot: "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11\runtime\quarantine\csv_schema_rebuild_20260806T041715Z"

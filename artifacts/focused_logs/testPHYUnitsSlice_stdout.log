@@ -1,0 +1,13 @@
+RUN testNoiseDomainEvidenceContract
+PASS testNoiseDomainEvidenceContract
+RUN testPBCHSINRDomainContract
+PASS testPBCHSINRDomainContract
+RUN testPowerContextPhysicalUnits
+PASS testPowerContextPhysicalUnits
+RUN testULNoiseVarianceValidation
+PASS testULNoiseVarianceValidation
+RUN testDLPDSCHReceiverEvidenceGate
+PASS testDLPDSCHReceiverEvidenceGate
+RUN testULPUSCHReceiverEvidenceGate
+PASS testULPUSCHReceiverEvidenceGate
+PHY_UNITS_SLICE_PASS=6

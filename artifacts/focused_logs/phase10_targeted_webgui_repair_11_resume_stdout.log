@@ -1,0 +1,13 @@
+[2026-08-05T23:12:58Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_repair_slice runTag=phase10_targeted_webgui_repair_11 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11
+Starting parallel pool (parpool) using the 'Processes' profile ...
+Connected to parallel pool with 4 workers.
+[2026-08-05T23:14:04Z] INFO MATLAB profiler enabled for this run.
+[2026-08-05T23:14:04Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-05T23:14:04Z] INFO Writing resolved snapshots.
+[2026-08-05T23:14:06Z] INFO Exporting live geometry artifacts.
+[2026-08-05T23:14:06Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-05T23:14:06Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-05T23:14:06Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=20 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-05T23:14:10Z] ERROR Run failed: sixgr:truth:resume:RecordedRuntimeFailure | A runtime failure artifact exists and prevents completed-runtime recovery: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11\meta\failure_debug_report.txt
+[2026-08-05T23:14:11Z] INFO Writing MATLAB profiler CSV artifacts: functions=250 edges=500
+[2026-08-05T23:14:13Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.

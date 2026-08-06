@@ -387,6 +387,7 @@ control.stress_mode,simulator/configs/schema/scenario_parameter_catalog.yaml,str
 control_gating.pbch_required,simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml,boolean,false,,"""""",,,switch,Advanced_Other,Advanced,true,false,
 control_gating.pdcch_required,simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml,boolean,false,,"""""",,,switch,Advanced_Other,Advanced,true,false,
 control_gating.prach_required,simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml,boolean,false,,"""""",,,switch,Advanced_Other,Advanced,true,false,
+control_gating.pucch_required,simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml,boolean,false,,"""""",,,switch,Advanced_Other,Advanced,true,false,
 control_gating.pre_attach_ues_before_measurement,simulator/configs/schema/scenario_parameter_catalog_extension_06.yaml,boolean,false,,"""""",,,switch,Advanced_Other,Advanced,true,false,
 control_gating.srs_max_age_slots,simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml,integer,false,,"""""",0,,number_input,Advanced_Other,Advanced,true,false,
 control_gating.srs_required,simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml,boolean,false,,"""""",,,switch,Advanced_Other,Advanced,true,false,

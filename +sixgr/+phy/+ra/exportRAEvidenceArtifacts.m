@@ -44,6 +44,11 @@ for ii = 1:numel(csvFields)
         "sixgr.phy.ra.exportRAEvidenceArtifacts");
 end
 decodedOwnershipRows = localWriteDecodedOwnershipArtifacts(layout, tables);
+% Stabilize every primary RA CSV before any JSON envelope records its
+% source hash. Figure-only source CSVs are stabilized later by the shared
+% component-lineage writer.
+sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, ...
+    "OnlyPaths", string(struct2cell(csvMap)));
 
 summary = localJsonEnvelope(result, "ra_attempt_summary", csvMap.ra_attempts);
 binding = localJsonEnvelope(result, "ra_config_binding", csvMap.ra_attempts);
@@ -111,14 +116,23 @@ for ii = 1:numel(textFields)
         "sixgr.phy.ra.exportRAEvidenceArtifacts");
 end
 
-figRows = localWriteFigures(figDir, result);
+figRows = localWriteFigures(layout, result);
 manifestRows = [rows(:); decodedOwnershipRows(:); jsonRows(:); textRows(:); figRows(:)];
+manifestRows = localRefreshManifestRows(manifestRows);
 manifest = struct2table(manifestRows, "AsArray", true);
 manifestPath = fullfile(layout.ControlCSVDir, "ra_artifact_manifest.csv");
 sixgr.util.csvWriteTable(manifestPath, manifest);
-manifest(end+1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
-    "sixgr.phy.ra.exportRAEvidenceArtifacts"), "AsArray", true);
-sixgr.util.csvWriteTable(manifestPath, manifest);
+end
+
+function rows = localRefreshManifestRows(rows)
+% Plot-source stabilization may canonically prune a CSV after its first
+% write.  Publish hashes only after every producer and lineage writer has
+% finished.  The manifest intentionally does not contain a self-hash row;
+% a file cannot truthfully embed the SHA-256 of its own final bytes.
+for i = 1:numel(rows)
+    rows(i).ByteCount = localFileBytes(rows(i).ArtifactPath);
+    rows(i).SHA256 = localFileSHA256(rows(i).ArtifactPath);
+end
 end
 
 function rows = localWriteDecodedOwnershipArtifacts(layout, tables)
@@ -158,7 +172,8 @@ payload.ToolboxMissing = logical(result.ToolboxMissing);
 payload.UsedOracleFields = string(result.UsedOracleFields);
 end
 
-function rows = localWriteFigures(figDir, result)
+function rows = localWriteFigures(layout, result)
+figDir = fullfile(layout.ReportDir, "figures");
 paths = [
     string(fullfile(figDir, "ra_procedure_timeline.png"))
     string(fullfile(figDir, "msg1_prach_correlation.png"))
@@ -174,7 +189,8 @@ end
 
 fig = figure("Visible", "off");
 cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
-states = string(result.Events.StateAfter);
+stateSource = fullfile(layout.ControlCSVDir, "ra_state_transitions.csv");
+states = string(result.ArtifactTables.ra_state_transitions.StateAfter);
 plot(1:numel(states), 1:numel(states), "o-", "LineWidth", 1.5);
 grid on; xlabel("transition index"); ylabel("state index");
 title("Four-step random-access state timeline");
@@ -185,16 +201,32 @@ clf(fig);
 
 trace = sixgr.util.structGet(result.Msg1Tx, "PRACHRuntimeConfig", struct()); %#ok<NASGU>
 detTrace = sixgr.util.structGet(result, "Msg1DetectionTrace", struct());
+msg1Source = fullfile(layout.ControlCSVDir, "msg1_prach_detection.csv");
+sourceRows = repmat(localManifestRow(), 0, 1);
 if isempty(fieldnames(detTrace))
-    try
-        det = result.ArtifactTables.msg1_prach_detection;
-        stem(det.PreambleIndexDetected, det.DetectionMetric, "filled");
-        hold on; yline(det.DetectionThreshold(1), "--r", "threshold");
-    catch
-        stem(0, result.PreambleDetectionMetric, "filled");
-    end
+    det = result.ArtifactTables.msg1_prach_detection;
+    stem(det.PreambleIndexDetected, det.DetectionMetric, "filled");
+    hold on; yline(det.DetectionThreshold(1), "--r", "threshold");
 else
-    plot(detTrace.LagSamples, detTrace.CorrelationAbs, "LineWidth", 1.2);
+    lag = double(detTrace.LagSamples(:));
+    correlation = double(detTrace.CorrelationAbs(:));
+    if numel(lag) ~= numel(correlation) || isempty(lag) || ...
+            any(~isfinite(lag)) || any(~isfinite(correlation))
+        error("sixgr:phy:ra:InvalidMsg1CorrelationTrace", ...
+            "MSG1 correlation lineage requires equal-length finite lag and correlation vectors.");
+    end
+    msg1TraceT = table((1:numel(lag)).', lag, correlation, ...
+        repmat("real_lls_evidence", numel(lag), 1), ...
+        repmat("runtime_msg1_waveform_correlation", numel(lag), 1), ...
+        'VariableNames', ["SampleIndex","LagSamples","CorrelationAbs", ...
+        "TruthStatus","ValueSource"]);
+    msg1Source = fullfile(layout.ControlCSVDir, ...
+        "msg1_prach_correlation_trace.csv");
+    sixgr.util.csvWriteTable(msg1Source, msg1TraceT);
+    sourceRows(end+1, 1) = localManifestRow(msg1Source, ... %#ok<AGROW>
+        "text/csv", "csv", height(msg1TraceT), ...
+        "sixgr.phy.ra.exportRAEvidenceArtifacts");
+    plot(lag, correlation, "LineWidth", 1.2);
 end
 grid on; xlabel("lag / detected preamble evidence"); ylabel("correlation metric");
 title("MSG1 PRACH measured correlation evidence");
@@ -211,6 +243,7 @@ rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.ra.e
 clf(fig);
 
 eq = complex([]);
+constellationSource = "post_equalized_msg3_pusch_symbols";
 try
     eq = result.Msg3Rx.EqualizedSymbolsForEvidence;
 catch
@@ -218,6 +251,7 @@ end
 if isempty(eq)
     try
         eq = result.Msg3Tx.PUSCHSymbolsForEvidence;
+        constellationSource = "transmitted_msg3_pusch_symbols";
     catch
     end
 end
@@ -225,7 +259,16 @@ if isempty(eq)
     error("sixgr:phy:ra:MissingMsg3ConstellationEvidence", ...
         "MSG3 constellation plot requires runtime PUSCH symbol evidence.");
 end
-scatter(real(eq(:)), imag(eq(:)), 10, "filled");
+msg3ConstellationT = table((1:numel(eq)).', real(eq(:)), imag(eq(:)), ...
+    repmat(constellationSource, numel(eq), 1), ...
+    'VariableNames', ["SampleIndex","InPhase","Quadrature","SymbolSource"]);
+msg3Source = fullfile(layout.ControlCSVDir, ...
+    "msg3_pusch_constellation_samples.csv");
+sixgr.util.csvWriteTable(msg3Source, msg3ConstellationT);
+sourceRows(end+1, 1) = localManifestRow(msg3Source, ... %#ok<AGROW>
+    "text/csv", "csv", height(msg3ConstellationT), ...
+    "sixgr.phy.ra.exportRAEvidenceArtifacts");
+scatter(msg3ConstellationT.InPhase, msg3ConstellationT.Quadrature, 10, "filled");
 axis equal; grid on; xlabel("I"); ylabel("Q");
 title("MSG3 PUSCH runtime constellation evidence");
 sixgr.util.exportFigureArtifact(fig, paths(4));
@@ -237,11 +280,36 @@ sixgr.visual.writeFlowDiagramPNG(paths(5), "MSG4 contention-resolution flow", ..
      "UE identity match=" + string(logical(result.ContentionIdentityMatches))], result.RACompleted);
 rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.ra.exportRAEvidenceArtifacts");
 
-bar(categorical(["collision_detected","ra_completed"]), double([result.CollisionDetected, result.RACompleted]));
+collisionT = table(["collision_detected";"ra_completed"], ...
+    double([result.CollisionDetected; result.RACompleted]), ...
+    'VariableNames', ["Outcome","Value"]);
+collisionSource = fullfile(layout.ControlCSVDir, "ra_collision_outcome.csv");
+sixgr.util.csvWriteTable(collisionSource, collisionT);
+sourceRows(end+1, 1) = localManifestRow(collisionSource, ... %#ok<AGROW>
+    "text/csv", "csv", height(collisionT), ...
+    "sixgr.phy.ra.exportRAEvidenceArtifacts");
+bar(categorical(collisionT.Outcome), collisionT.Value);
 ylim([0 1.2]); grid on; ylabel("boolean");
 title("RA collision and completion outcome");
 sixgr.util.exportFigureArtifact(fig, paths(6));
 rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.ra.exportRAEvidenceArtifacts");
+
+plotIds = ["ra_procedure_timeline"; "msg1_prach_correlation"; ...
+    "msg2_rar_pdcch_candidates"; "msg3_pusch_constellation"; ...
+    "msg4_contention_resolution_flow"; "ra_collision_outcome"];
+msg4Source = string(fullfile(layout.ControlCSVDir, ...
+    "msg4_contention_resolution.csv")) + "|" + ...
+    string(fullfile(layout.ControlCSVDir, "ra_attempts.csv"));
+plotSources = [string(stateSource); string(msg1Source); ...
+    string(fullfile(layout.ControlCSVDir, "msg2_pdcch_candidates.csv")); ...
+    string(msg3Source); msg4Source; string(collisionSource)];
+lineagePath = fullfile(layout.ControlCSVDir, "ra_plot_lineage.csv");
+sixgr.visual.writeComponentPlotLineage(layout.Root, lineagePath, ...
+    plotIds, paths, plotSources, ...
+    "sixgr.phy.ra.exportRAEvidenceArtifacts");
+lineageRow = localManifestRow(lineagePath, "text/csv", "csv", ...
+    numel(plotIds), "sixgr.phy.ra.exportRAEvidenceArtifacts");
+rows = [rows(:); sourceRows(:); lineageRow];
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer)

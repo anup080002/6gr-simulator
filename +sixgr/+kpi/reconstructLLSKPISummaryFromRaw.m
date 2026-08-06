@@ -28,8 +28,10 @@ schemaAudit = sixgr.kpi.validateRawKPITables(raw);
     measurementWindowSec, warmupDurationSec, effectiveBandwidthHz);
 [dlMetrics, dlContrib, dlTrace] = localComputeDirection(raw, sourcePaths, "DL", runId, scenarioName, ...
     measurementWindowSec, warmupDurationSec, effectiveBandwidthHz);
-[ulMetrics, ulPacketSDU, ulAppPackets] = localAttachPacketMetrics(raw, sourcePaths, "UL", ulMetrics, measurementWindowSec, warmupDurationSec);
-[dlMetrics, dlPacketSDU, dlAppPackets] = localAttachPacketMetrics(raw, sourcePaths, "DL", dlMetrics, measurementWindowSec, warmupDurationSec);
+[ulMetrics, ulPacketSDU, ulAppPackets] = localAttachPacketMetrics(raw, sourcePaths, "UL", ulMetrics, measurementWindowSec, warmupDurationSec, strictMode);
+[dlMetrics, dlPacketSDU, dlAppPackets] = localAttachPacketMetrics(raw, sourcePaths, "DL", dlMetrics, measurementWindowSec, warmupDurationSec, strictMode);
+ulMetrics = localAttachHARQAndSchedulerMetrics(raw, sourcePaths, "UL", ulMetrics);
+dlMetrics = localAttachHARQAndSchedulerMetrics(raw, sourcePaths, "DL", dlMetrics);
 
 summary = localBuildLegacySummary(runId, scenarioName, ulMetrics, dlMetrics, strictMode);
 recon = localBuildReconstructionSummary(runId, scenarioName, registry, ulMetrics, dlMetrics, exportedSummary);
@@ -225,7 +227,7 @@ metrics.FailureReason = "";
 contribT = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, traceT, resourceExposureSec, durationSec);
 end
 
-function [metrics, macLedger, appLedger] = localAttachPacketMetrics(raw, sourcePaths, direction, metrics, measurementWindowSec, warmupDurationSec)
+function [metrics, macLedger, appLedger] = localAttachPacketMetrics(raw, sourcePaths, direction, metrics, measurementWindowSec, warmupDurationSec, strictMode)
 direction = upper(string(direction));
 macSourcePath = localSourcePath(sourcePaths, "PacketSDU");
 appSourcePath = localSourcePath(sourcePaths, "ApplicationPackets");
@@ -263,6 +265,27 @@ if istable(appLedger) && ~isempty(appLedger)
         metrics.Application.FailureReason = "missing_required_columns:" + missing;
     else
         success = localOptionalLogical(appLedger, "DeliverySuccess", false(height(appLedger), 1));
+        if strictMode
+            if ~ismember("SameWaveformProtocolComplete", string(appLedger.Properties.VariableNames))
+                metrics.Application.Status = "schema_invalid";
+                metrics.Application.FailureReason = "same_waveform_protocol_completion_evidence_missing";
+                metrics.Application.SchemaValid = false;
+                metrics.Status = "schema_invalid";
+                metrics.FailureReason = metrics.Application.FailureReason;
+                metrics.SchemaValid = false;
+                return;
+            end
+            protocolComplete = logical(appLedger.SameWaveformProtocolComplete);
+            if any(success & ~protocolComplete)
+                metrics.Application.Status = "schema_invalid";
+                metrics.Application.FailureReason = "application_delivery_claim_not_backed_by_same_waveform_protocol_completion";
+                metrics.Application.SchemaValid = false;
+                metrics.Status = "schema_invalid";
+                metrics.FailureReason = metrics.Application.FailureReason;
+                metrics.SchemaValid = false;
+                return;
+            end
+        end
         bits = localFirstNumeric(appLedger, ["DeliveredBits","ApplicationPayloadBits","OfferedBits","PayloadBits"], NaN(height(appLedger), 1));
         ids = string(appLedger.PacketId);
         if ismember("ApplicationPacketId", string(appLedger.Properties.VariableNames))
@@ -285,6 +308,284 @@ if istable(appLedger) && ~isempty(appLedger)
             metrics.MeanDeliveryLatency_ms = metrics.Application.MeanDeliveryLatency_ms;
             metrics.P95DeliveryLatency_ms = metrics.Application.P95DeliveryLatency_ms;
         end
+    end
+end
+end
+
+function metrics = localAttachHARQAndSchedulerMetrics(raw, sourcePaths, direction, metrics)
+direction = upper(string(direction));
+metrics.HARQ = localHARQMetrics(raw, sourcePaths, direction, metrics);
+metrics.Scheduler = localSchedulerMetrics(raw, sourcePaths, direction, metrics);
+end
+
+function layer = localHARQMetrics(raw, sourcePaths, direction, parent)
+layer = localEmptyLayerMetrics(parent, "HARQ", localSourcePath(sourcePaths, "HARQTimeline"));
+layer.NACKCount = NaN;
+layer.ACKNACKEventCount = NaN;
+layer.NACKRate = NaN;
+layer.RetransmissionAttemptCount = NaN;
+layer.TotalAttemptCount = NaN;
+layer.RetransmissionRate = NaN;
+layer.FailureReason = "harq_timeline_missing_or_empty";
+
+T = localFilterRawDirectionTable(localRawTable(raw, "HARQTimeline"), direction);
+if isempty(T)
+    return;
+end
+layer.SourceRowCount = height(T);
+layer.RowsWithExpectedDirection = height(T);
+layer.MissingRawData = false;
+vars = string(T.Properties.VariableNames);
+hasProcess = any(ismember(["HarqID","HARQProcessId","HARQProcess"], vars));
+hasTime = any(ismember(["EventTimeSec","Slot","CanonicalSlot","FeedbackDueSlot"], vars));
+hasOutcome = any(ismember(["AckNack","CombinedDecodeOK","Ack"], vars));
+hasRetx = any(ismember(["IsRetransmission","RetransmissionFlag","HARQIsRetransmission"], vars));
+if ~(ismember("Direction", vars) && hasProcess && hasTime && hasOutcome && hasRetx)
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "harq_timeline_missing_direction_process_time_outcome_or_retransmission_fields";
+    return;
+end
+
+proxy = localOptionalLogical(T, "ProxyUsed", false(height(T), 1));
+skipped = localOptionalLogical(T, "Skipped", false(height(T), 1));
+eligible = ~proxy & ~skipped;
+layer.ProxyRowsExcluded = sum(proxy);
+layer.SkippedRowsExcluded = sum(skipped);
+layer.EligibleRowCount = sum(eligible);
+layer.ExcludedRowCount = height(T) - layer.EligibleRowCount;
+if ~any(eligible)
+    layer.Status = "no_eligible_rows";
+    layer.FailureReason = "all_harq_rows_proxy_or_skipped";
+    return;
+end
+E = T(eligible, :);
+[ack, validOutcome] = localHARQAckOutcome(E);
+retx = localFirstLogical(E, ["IsRetransmission","RetransmissionFlag","HARQIsRetransmission"], false(height(E), 1));
+if ~all(validOutcome)
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "harq_timeline_contains_invalid_ack_nack_outcomes";
+    return;
+end
+layer.SourceRowsHash = sixgr.kpi.hashKPISourceRows(E);
+layer.SchemaValid = true;
+layer.NACKCount = sum(~ack);
+layer.ACKNACKEventCount = numel(ack);
+layer.NACKRate = layer.NACKCount / max(layer.ACKNACKEventCount, 1);
+layer.RetransmissionAttemptCount = sum(retx);
+layer.TotalAttemptCount = numel(retx);
+layer.RetransmissionRate = layer.RetransmissionAttemptCount / max(layer.TotalAttemptCount, 1);
+layer.Status = "pass";
+layer.FailureReason = "";
+end
+
+function [ack, valid] = localHARQAckOutcome(T)
+n = height(T);
+ack = false(n, 1);
+valid = false(n, 1);
+vars = string(T.Properties.VariableNames);
+if ismember("AckNack", vars)
+    token = upper(strtrim(string(T.AckNack)));
+    valid = token == "ACK" | token == "NACK";
+    ack = token == "ACK";
+elseif ismember("CombinedDecodeOK", vars)
+    ack = logical(T.CombinedDecodeOK);
+    valid = true(n, 1);
+elseif ismember("Ack", vars)
+    ack = logical(T.Ack);
+    valid = true(n, 1);
+end
+end
+
+function layer = localSchedulerMetrics(raw, sourcePaths, direction, parent)
+grantField = direction + "Grants";
+layer = localEmptyLayerMetrics(parent, "scheduler", localSourcePath(sourcePaths, grantField));
+layer.AllocatedPRBSymbols = NaN;
+layer.AvailablePRBSymbols = NaN;
+layer.PRBUtilization = NaN;
+layer.FailureReason = "scheduler_grants_or_slot_trace_missing";
+G = localFilterRawDirectionTable(localRawTable(raw, grantField), direction);
+S = localRawTable(raw, "SlotTrace");
+if isempty(G) || isempty(S)
+    return;
+end
+layer.SourceRowCount = height(G);
+layer.RowsWithExpectedDirection = height(G);
+layer.MissingRawData = false;
+gvars = string(G.Properties.VariableNames);
+requiredGroups = { ["PRBStart"], ["PRBCount","AllocatedPRBCount","NumPRB"], ...
+    ["SymbolStart"], ["NumSymbols"], ["Slot","CanonicalSlot","TTI"] };
+for i = 1:numel(requiredGroups)
+    if ~any(ismember(requiredGroups{i}, gvars))
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "scheduler_grant_missing_exact_allocation_fields";
+        return;
+    end
+end
+nRB = double(sixgr.util.structGet(raw, "GridNumRBs", NaN));
+nCells = double(sixgr.util.structGet(raw, "NumResourceCells", NaN));
+nSymbolsPerSlot = double(sixgr.util.structGet(raw, "SymbolsPerSlot", NaN));
+if ~(isscalar(nRB) && isfinite(nRB) && nRB >= 1)
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "active_grid_num_rbs_unavailable";
+    return;
+end
+if ~(isscalar(nSymbolsPerSlot) && isfinite(nSymbolsPerSlot) && ...
+        nSymbolsPerSlot >= 1 && nSymbolsPerSlot == fix(nSymbolsPerSlot))
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "symbols_per_slot_unavailable";
+    return;
+end
+
+cellValues = localFirstNumeric(G, ["BaseStationID","CellID","ServingCell"], NaN(height(G), 1));
+finiteCells = unique(cellValues(isfinite(cellValues)));
+if ~(isscalar(nCells) && isfinite(nCells) && nCells >= 1)
+    if numel(finiteCells) == 1
+        nCells = 1;
+    else
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "resource_cell_count_unavailable";
+        return;
+    end
+end
+nCells = round(nCells);
+if isempty(finiteCells) && nCells == 1
+    cellValues(:) = 1;
+elseif any(~isfinite(cellValues))
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "scheduler_grant_cell_identity_missing";
+    return;
+end
+
+proxy = localOptionalLogical(G, "ProxyUsed", false(height(G), 1));
+skipped = localOptionalLogical(G, "Skipped", false(height(G), 1));
+eligible = ~proxy & ~skipped;
+layer.ProxyRowsExcluded = sum(proxy);
+layer.SkippedRowsExcluded = sum(skipped);
+layer.EligibleRowCount = sum(eligible);
+layer.ExcludedRowCount = height(G) - layer.EligibleRowCount;
+if ~any(eligible)
+    layer.Status = "no_eligible_rows";
+    layer.FailureReason = "all_scheduler_grants_proxy_or_skipped";
+    return;
+end
+G = G(eligible, :);
+cellValues = cellValues(eligible);
+
+[available, slotIndex, slotSweep, symStart, symCount, slotOk, slotReason] = ...
+    localAvailablePRBSymbols(S, direction, nRB, nCells, nSymbolsPerSlot);
+if ~slotOk
+    layer.Status = "schema_invalid";
+    layer.FailureReason = slotReason;
+    return;
+end
+grantSlot = localFirstNumeric(G, ["CanonicalSlot","TTI","Slot"], NaN(height(G), 1));
+grantSweep = localFirstNumeric(G, ["SweepPointIndex"], NaN(height(G), 1));
+prbStart = localFirstNumeric(G, ["PRBStart"], NaN(height(G), 1));
+prbCount = localFirstNumeric(G, ["PRBCount","AllocatedPRBCount","NumPRB"], NaN(height(G), 1));
+grantSymStart = localFirstNumeric(G, ["SymbolStart"], NaN(height(G), 1));
+grantSymCount = localFirstNumeric(G, ["NumSymbols"], NaN(height(G), 1));
+occupiedKeys = strings(0, 1);
+for i = 1:height(G)
+    traceMatch = slotIndex == grantSlot(i);
+    if isfinite(grantSweep(i))
+        traceMatch = traceMatch & slotSweep == grantSweep(i);
+    elseif sum(traceMatch) > 1
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "scheduler_grant_sweep_identity_missing_for_repeated_slot";
+        return;
+    end
+    traceRow = find(traceMatch, 1);
+    if isempty(traceRow)
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "scheduler_grant_has_no_matching_slot_trace";
+        return;
+    end
+    values = [prbStart(i), prbCount(i), grantSymStart(i), grantSymCount(i)];
+    if any(~isfinite(values)) || prbStart(i) < 0 || prbCount(i) < 1 || ...
+            prbStart(i) + prbCount(i) > nRB || grantSymCount(i) < 1 || ...
+            grantSymStart(i) < symStart(traceRow) || ...
+            grantSymStart(i) + grantSymCount(i) > symStart(traceRow) + symCount(traceRow)
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "scheduler_grant_allocation_outside_active_slot_grid";
+        return;
+    end
+    for prb = round(prbStart(i)):(round(prbStart(i) + prbCount(i)) - 1)
+        for sym = round(grantSymStart(i)):(round(grantSymStart(i) + grantSymCount(i)) - 1)
+            occupiedKeys(end+1, 1) = "s" + string(grantSweep(i)) + ... %#ok<AGROW>
+                "_t" + string(grantSlot(i)) + "_c" + string(cellValues(i)) + ...
+                "_p" + string(prb) + "_y" + string(sym);
+        end
+    end
+end
+allocated = numel(unique(occupiedKeys));
+if allocated > available
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "allocated_prb_symbols_exceed_available_resources";
+    return;
+end
+layer.SourceRowsHash = sixgr.kpi.hashKPISourceRows(G);
+layer.SchemaValid = true;
+layer.AllocatedPRBSymbols = allocated;
+layer.AvailablePRBSymbols = available;
+layer.PRBUtilization = allocated / available;
+layer.Status = "pass";
+layer.FailureReason = "";
+end
+
+function [available, slotIndex, slotSweep, symStart, symCount, ok, reason] = localAvailablePRBSymbols(S, direction, nRB, nCells, symbolsPerSlot)
+available = NaN;
+slotIndex = [];
+slotSweep = [];
+symStart = [];
+symCount = [];
+ok = false;
+reason = "slot_trace_schema_invalid";
+vars = string(S.Properties.VariableNames);
+if ~any(ismember(["CanonicalSlot","Slot","TTI"], vars))
+    return;
+end
+if direction == "DL"
+    startName = "DLSymbolStart";
+    countName = "DLNumSymbols";
+else
+    startName = "ULSymbolStart";
+    countName = "ULNumSymbols";
+end
+if ~all(ismember([startName,countName], vars))
+    reason = "slot_trace_directional_symbol_partition_missing";
+    return;
+end
+slotIndex = localFirstNumeric(S, ["CanonicalSlot","Slot","TTI"], NaN(height(S), 1));
+slotSweep = localFirstNumeric(S, ["SweepPointIndex"], NaN(height(S), 1));
+symStart = double(S.(char(startName)));
+symCount = double(S.(char(countName)));
+if any(~isfinite(slotIndex)) || any(~isfinite(symStart)) || any(~isfinite(symCount)) || ...
+        any(symStart < 0) || any(symCount < 0) || ...
+        any(symStart + symCount > double(symbolsPerSlot))
+    reason = "slot_trace_contains_invalid_slot_or_symbol_partition";
+    return;
+end
+slotKey = "s" + string(slotSweep) + "_t" + string(slotIndex);
+if numel(unique(slotKey)) ~= height(S)
+    reason = "slot_trace_contains_duplicate_resource_opportunities";
+    return;
+end
+available = sum(symCount, "omitnan") * double(nRB) * double(nCells);
+if ~(isfinite(available) && available > 0)
+    reason = "direction_has_no_available_prb_symbol_resources";
+    return;
+end
+ok = true;
+reason = "";
+end
+
+function values = localFirstLogical(T, names, defaultValue)
+values = defaultValue;
+vars = string(T.Properties.VariableNames);
+for name = string(names)
+    if ismember(name, vars)
+        values = logical(T.(char(name)));
+        return;
     end
 end
 end
@@ -659,6 +960,12 @@ defs = [
     localRecon("DL_BLER", dl, "BLER", "BLER_DL_min");
     localRecon("UL_BER", ul, "BER", "");
     localRecon("DL_BER", dl, "BER", "");
+    localRecon("UL_HARQ_NACK_Rate", ul.HARQ, "NACKRate", "");
+    localRecon("DL_HARQ_NACK_Rate", dl.HARQ, "NACKRate", "");
+    localRecon("UL_Retransmission_Rate", ul.HARQ, "RetransmissionRate", "");
+    localRecon("DL_Retransmission_Rate", dl.HARQ, "RetransmissionRate", "");
+    localRecon("UL_PRB_Utilization", ul.Scheduler, "PRBUtilization", "");
+    localRecon("DL_PRB_Utilization", dl.Scheduler, "PRBUtilization", "");
     localRecon("Scenario_Total_UL_DeliveredBits", ul, "DeliveredBits", "");
     localRecon("Scenario_Total_DL_DeliveredBits", dl, "DeliveredBits", "");
     localRecon("Scenario_Total_UL_ScheduledBits", ul, "ScheduledBits", "");
@@ -877,8 +1184,16 @@ for i = 1:height(registry)
         row.ReconstructionPass = logical(recon.ReconciliationPass(idx));
         row.StrictOk = logical(recon.StrictOk(idx));
         row.ScenarioObjectiveContribution = string(localTernary(row.MandatoryInScenarioObjective, "mandatory", "optional"));
-        row.Status = string(localTernary(row.StrictOk || ~row.MandatoryInScenarioObjective, "pass", "fail"));
-        row.FailureReason = string(localTernary(strcmp(row.Status, "pass"), "", string(recon.FailureReason(idx))));
+        if ~row.RawEvidenceAvailable
+            row.Status = string(localTernary(row.MandatoryInScenarioObjective, "fail", "not_evaluated"));
+            row.FailureReason = string(recon.FailureReason(idx));
+        elseif row.StrictOk
+            row.Status = "pass";
+            row.FailureReason = "";
+        else
+            row.Status = "fail";
+            row.FailureReason = string(recon.FailureReason(idx));
+        end
     end
     rows(end+1, 1) = row; %#ok<AGROW>
 end
@@ -907,7 +1222,11 @@ function T = localBuildSourceManifest(runId, scenarioName, raw, sourcePaths)
 rows = [localManifestRow(runId, scenarioName, raw, sourcePaths, "UL"); ...
     localManifestRow(runId, scenarioName, raw, sourcePaths, "DL"); ...
     localManifestRow(runId, scenarioName, raw, sourcePaths, "PacketSDU"); ...
-    localManifestRow(runId, scenarioName, raw, sourcePaths, "ApplicationPackets")];
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "ApplicationPackets"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "HARQTimeline"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "ULGrants"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "DLGrants"); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "SlotTrace")];
 T = struct2table(rows);
 end
 
@@ -925,6 +1244,10 @@ if string(direction) == "PacketSDU"
 elseif string(direction) == "ApplicationPackets"
     layer = "application";
     required = false;
+elseif string(direction) == "HARQTimeline"
+    layer = "HARQ";
+elseif any(string(direction) == ["ULGrants","DLGrants","SlotTrace"])
+    layer = "scheduler";
 end
 row = struct("RunId",string(runId), "ScenarioName",string(scenarioName), ...
     "SourceTablePath",string(path), "SourceTableName",string(localSourceName(direction)), ...
@@ -952,6 +1275,14 @@ if strlength(path) == 0
         path = "packet_flow/csv/live_packet_sdu_delivery_ledger.csv";
     elseif direction == "ApplicationPackets"
         path = "packet_flow/csv/live_application_packet_delivery_ledger.csv";
+    elseif direction == "HARQTimeline"
+        path = "harq/csv/live_harq_observation_timeline.csv";
+    elseif direction == "ULGrants"
+        path = "packet_flow/csv/live_ul_scheduler_grants.csv";
+    elseif direction == "DLGrants"
+        path = "packet_flow/csv/live_dl_scheduler_grants.csv";
+    elseif direction == "SlotTrace"
+        path = "packet_flow/csv/slot_trace.csv";
     else
         path = "";
     end
@@ -1392,7 +1723,13 @@ end
 end
 
 function v = localNumeratorValue(metrics, kpiName)
-if contains(kpiName, "_ScheduledBits")
+if contains(kpiName, "HARQ_NACK_Rate")
+    v = metrics.NACKCount;
+elseif contains(kpiName, "Retransmission_Rate")
+    v = metrics.RetransmissionAttemptCount;
+elseif contains(kpiName, "PRB_Utilization")
+    v = metrics.AllocatedPRBSymbols;
+elseif contains(kpiName, "_ScheduledBits")
     v = metrics.ScheduledBits;
 elseif contains(kpiName, "_DeliveredBits")
     v = metrics.DeliveredBits;
@@ -1417,7 +1754,13 @@ end
 end
 
 function v = localDenominatorValue(metrics, kpiName)
-if contains(kpiName, "ScheduledThroughput")
+if contains(kpiName, "HARQ_NACK_Rate")
+    v = metrics.ACKNACKEventCount;
+elseif contains(kpiName, "Retransmission_Rate")
+    v = metrics.TotalAttemptCount;
+elseif contains(kpiName, "PRB_Utilization")
+    v = metrics.AvailablePRBSymbols;
+elseif contains(kpiName, "ScheduledThroughput")
     v = metrics.ScheduledResourceExposureSec;
 elseif contains(kpiName, "Goodput")
     v = metrics.MeasurementWindowSec;
@@ -1462,6 +1805,14 @@ elseif direction == "PacketSDU"
     name = "packet_sdu_delivery_ledger";
 elseif direction == "ApplicationPackets"
     name = "application_packet_delivery_ledger";
+elseif direction == "HARQTimeline"
+    name = "harq_observation_timeline";
+elseif direction == "ULGrants"
+    name = "scheduler_ul_grants";
+elseif direction == "DLGrants"
+    name = "scheduler_dl_grants";
+elseif direction == "SlotTrace"
+    name = "slot_trace";
 else
     name = "unknown";
 end

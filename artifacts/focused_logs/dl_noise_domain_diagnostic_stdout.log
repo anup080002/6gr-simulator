@@ -1,0 +1,18 @@
+    ReplaySampleNoiseVariance    ReplayGridNoiseVariance    SampleToGridNoiseVarianceGain    SignalEnergyPerOccupiedRE    AppliedNoiseSNR_dB                    SNRReferencePlane                     DesiredSignalPowerBeforeNoise          NoiseVarianceSource           ReplaySampleNoiseVarianceSource                     ReplayGridNoiseVarianceSource                     ReceiverInputSampleNoiseVariance    PreEqualizationNoiseVariance    PostEqualizationNoiseVariance
+    _________________________    _______________________    _____________________________    _________________________    __________________    __________________________________________________    _____________________________    ________________________________    ________________________________    ______________________________________________________________    ________________________________    ____________________________    _____________________________
+
+               NaN                         NaN                           256                            NaN                      NaN            "receiver_sample_waveform_pre_composite_front_end"               4976.3                "thermal_noise_plus_receiver_nf"    "thermal_noise_plus_receiver_nf"    "thermal_noise_plus_receiver_nf_ofdm_sample_to_grid_transform"                  NaN                            1.2176e-25                      2.2204e-16
+
+                    Check                    Status    MaxError                                                   Reason
+    _____________________________________    ______    ________    _____________________________________________________________________________________________________
+
+    "input_is_table"                         "PASS"        0       ""
+    "evidence_rows_present"                  "PASS"        0       ""
+    "required_columns"                       "PASS"        0       ""
+    "domains_are_explicit"                   "PASS"        0       "one or more executed rows omit a noise or signal domain"
+    "sources_are_explicit"                   "PASS"        0       "one or more executed rows omit noise provenance"
+    "sample_planes_are_separated"            "PASS"        0       "pre-front-end signal/noise and receiver-input noise were not kept on distinct declared planes"
+    "sample_to_grid_transform"               "FAIL"      NaN       "replay grid variance is not the calibrated OFDM transform of the same pre-front-end sample variance"
+    "applied_snr_same_plane_identity"        "FAIL"      NaN       "AppliedNoiseSNR_dB does not equal signal/noise evidence from its declared reference plane"
+    "legacy_noise_variance_alias"            "PASS"        0       "legacy NoiseVariance is not an exact, explicitly named DL/UL compatibility alias"
+    "post_equalization_sinr_availability"    "PASS"        0       "post-equalization SINR availability, value and status disagree"

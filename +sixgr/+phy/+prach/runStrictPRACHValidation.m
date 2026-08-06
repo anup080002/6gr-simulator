@@ -17,6 +17,7 @@ scenarioName = string(opt.ScenarioName);
 cfg = sixgr.phy.prach.buildPRACHConfigFromScenario(baseCfg, ...
     "RunFolder", runFolder, "ScenarioName", scenarioName);
 configHash = string(cfg.ConfigHash);
+[parallelPool, parallelExecution] = localResolveParallelExecution(cfg);
 
 localMarkStrictProgress(runId, "strict_prach_config_validation", 0.02, ...
     "Validating strict PRACH configuration and root-sequence evidence.");
@@ -26,10 +27,10 @@ zczT = sixgr.phy.prach.deriveCyclicShiftSet(runId, configHash, cfg);
 configT = localConfigTable(runId, scenarioName, cfg);
 toolboxCapabilities = localToolboxCapabilities();
 
-trialRows = repmat(localTrialRowTemplate(), 0, 1);
-candidateRows = repmat(localCandidateRowTemplate(), 0, 1);
-oracleRows = repmat(localOracleRowTemplate(), 0, 1);
-negativeRows = repmat(localNegativeRowTemplate(), 0, 1);
+trialTableParts = cell(0, 1);
+candidateTableParts = cell(0, 1);
+oracleTableParts = cell(0, 1);
+negativeTableParts = cell(0, 1);
 
 trialId = 0;
 occ1 = sixgr.rach.mapPRACHToOccasion(cfg, "OccasionIndex", 1);
@@ -39,39 +40,41 @@ threshold = double(cfg.DetectionThreshold);
 
 localMarkStrictProgress(runId, "strict_prach_positive_high_snr", 0.08, ...
     "Running positive high-SNR PRACH receive validation.");
+positiveTx = sixgr.phy.prach.generatePRACHWaveform(cfg, ...
+    "Occasion", occ1, "PreambleIndex", preamble);
 [trialId, pos, cand, oracle, positiveWaveform] = localRunOneTrial( ...
     trialId, "positive_high_snr", cfg, occ1, preamble, highSNR, 0, 0, ...
-    true, false, threshold, runId, scenarioName, configHash);
-trialRows(end + 1, 1) = pos; %#ok<AGROW>
-candidateRows = [candidateRows; table2struct(cand)]; %#ok<AGROW>
-oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
+    true, false, threshold, runId, scenarioName, configHash, positiveTx);
+trialTableParts{end + 1, 1} = struct2table(pos, "AsArray", true); %#ok<AGROW>
+candidateTableParts{end + 1, 1} = cand; %#ok<AGROW>
+oracleTableParts{end + 1, 1} = oracle; %#ok<AGROW>
 
 localMarkStrictProgress(runId, "strict_prach_missed_detection_sweep", 0.18, ...
     "Running PRACH missed-detection SNR sweep.");
 [missedT, missTrials, missCand, missOracle] = localMissedDetectionSweep( ...
-    cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId);
+    cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId, ~isempty(parallelPool));
 trialId = trialId + height(missTrials);
-trialRows = [trialRows; table2struct(missTrials)]; %#ok<AGROW>
-candidateRows = [candidateRows; table2struct(missCand)]; %#ok<AGROW>
-oracleRows = [oracleRows; table2struct(missOracle)]; %#ok<AGROW>
+trialTableParts{end + 1, 1} = missTrials; %#ok<AGROW>
+candidateTableParts{end + 1, 1} = missCand; %#ok<AGROW>
+oracleTableParts{end + 1, 1} = missOracle; %#ok<AGROW>
 
 localMarkStrictProgress(runId, "strict_prach_false_alarm_sweep", 0.36, ...
     "Running PRACH false-alarm noise-only sweep.");
 [falseAlarmT, falseTrials, falseCand, falseOracle, noiseWaveform] = localFalseAlarmSweep( ...
-    cfg, occ1, runId, scenarioName, configHash, threshold, trialId);
+    cfg, occ1, runId, scenarioName, configHash, threshold, trialId, ~isempty(parallelPool));
 trialId = trialId + height(falseTrials);
-trialRows = [trialRows; table2struct(falseTrials)]; %#ok<AGROW>
-candidateRows = [candidateRows; table2struct(falseCand)]; %#ok<AGROW>
-oracleRows = [oracleRows; table2struct(falseOracle)]; %#ok<AGROW>
+trialTableParts{end + 1, 1} = falseTrials; %#ok<AGROW>
+candidateTableParts{end + 1, 1} = falseCand; %#ok<AGROW>
+oracleTableParts{end + 1, 1} = falseOracle; %#ok<AGROW>
 
 localMarkStrictProgress(runId, "strict_prach_timing_offset_sweep", 0.54, ...
     "Running PRACH timing-offset sweep.");
 [timingT, timingTrials, timingCand, timingOracle] = localTimingOffsetSweep( ...
     cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId, highSNR);
 trialId = trialId + height(timingTrials);
-trialRows = [trialRows; table2struct(timingTrials)]; %#ok<AGROW>
-candidateRows = [candidateRows; table2struct(timingCand)]; %#ok<AGROW>
-oracleRows = [oracleRows; table2struct(timingOracle)]; %#ok<AGROW>
+trialTableParts{end + 1, 1} = timingTrials; %#ok<AGROW>
+candidateTableParts{end + 1, 1} = timingCand; %#ok<AGROW>
+oracleTableParts{end + 1, 1} = timingOracle; %#ok<AGROW>
 
 localMarkStrictProgress(runId, "strict_prach_frequency_offset_sweep", 0.66, ...
     "Running PRACH frequency-offset and restricted-set sweep.");
@@ -79,7 +82,7 @@ freqT = localFrequencyOffsetSweep(cfg, occ1, preamble, runId, configHash, thresh
 localMarkStrictProgress(runId, "strict_prach_collision_trials", 0.78, ...
     "Running PRACH collision and multi-preamble trials.");
 [collisionT, collisionCandidates] = localCollisionTrials(cfg, occ1, preamble, runId, scenarioName, configHash, threshold, highSNR);
-candidateRows = [candidateRows; table2struct(collisionCandidates)]; %#ok<AGROW>
+candidateTableParts{end + 1, 1} = collisionCandidates; %#ok<AGROW>
 localMarkStrictProgress(runId, "strict_prach_multi_occasion_trials", 0.86, ...
     "Running PRACH multi-occasion RARNTI trials.");
 multiOccasionT = localMultiOccasionTrials(cfg, preamble, runId, scenarioName, configHash, threshold, highSNR);
@@ -87,15 +90,15 @@ localMarkStrictProgress(runId, "strict_prach_negative_wrong_config", 0.92, ...
     "Running PRACH negative wrong-root receiver guard.");
 [negativeT, negTrial, negCand, negOracle] = localNegativeWrongConfigTrial( ...
     cfg, occ1, preamble, runId, scenarioName, configHash, threshold, trialId + 1, highSNR);
-trialRows = [trialRows; table2struct(negTrial)]; %#ok<AGROW>
-candidateRows = [candidateRows; table2struct(negCand)]; %#ok<AGROW>
-oracleRows = [oracleRows; table2struct(negOracle)]; %#ok<AGROW>
-negativeRows = [negativeRows; table2struct(negativeT)]; %#ok<AGROW>
+trialTableParts{end + 1, 1} = negTrial; %#ok<AGROW>
+candidateTableParts{end + 1, 1} = negCand; %#ok<AGROW>
+oracleTableParts{end + 1, 1} = negOracle; %#ok<AGROW>
+negativeTableParts{end + 1, 1} = negativeT; %#ok<AGROW>
 
-trialT = struct2table(trialRows, "AsArray", true);
-candidateT = struct2table(candidateRows, "AsArray", true);
-oracleT = struct2table(oracleRows, "AsArray", true);
-negativeTrialT = struct2table(negativeRows, "AsArray", true);
+trialT = sixgr.util.tablePartsToTable(trialTableParts, localTrialRowTemplate());
+candidateT = sixgr.util.tablePartsToTable(candidateTableParts, localCandidateRowTemplate());
+oracleT = sixgr.util.tablePartsToTable(oracleTableParts, localOracleRowTemplate());
+negativeTrialT = sixgr.util.tablePartsToTable(negativeTableParts, localNegativeRowTemplate());
 
 strictPositiveOk = any(logical(trialT.StrictOk) & string(trialT.TrialType) == "positive_high_snr");
 artifactRowsOk = height(mappingT) > 0 && height(rootBudgetT) > 0 && height(zczT) > 0 && ...
@@ -105,8 +108,9 @@ artifactRowsOk = height(mappingT) > 0 && height(rootBudgetT) > 0 && height(zczT)
 oracleOk = ~any(logical(oracleT.Violation));
 configOk = logical(cfg.StrictValidation.StrictValid) && all(logical(rootBudgetT.BudgetOk));
 noProxySkip = ~any(logical(trialT.ProxyUsed) | logical(trialT.Skipped) | logical(trialT.ToolboxMissing));
-missedEvidenceOk = all(double(missedT.NumMissed) == 0) && any(double(missedT.NumDetected) > 0) && ...
-    all(double(missedT.DetectionProbability) >= 0 & double(missedT.DetectionProbability) <= 1);
+missedEvidenceOk = any(double(missedT.NumDetected) > 0) && ...
+    all(double(missedT.DetectionProbability) >= 0 & double(missedT.DetectionProbability) <= 1) && ...
+    all(double(missedT.MissedDetectionProbability) >= 0 & double(missedT.MissedDetectionProbability) <= 1);
 falseAlarmEvidenceOk = all(double(falseAlarmT.FalseAlarmProbability) >= 0 & double(falseAlarmT.FalseAlarmProbability) <= 1);
 timingEvidenceOk = all(double(timingT.WithinToleranceProbability) == 1) && ...
     all(isfinite(double(timingT.MaxAbsTimingErrorSamples)));
@@ -129,6 +133,9 @@ result.Config = cfg;
 result.ConfigHash = configHash;
 result.StrictOk = logical(strictOk);
 result.Ok = logical(strictOk);
+result.StatisticallyQualified = logical(summary.StatisticallyQualified);
+result.StatisticalQualification = string(summary.StatisticalQualification);
+result.ParallelExecution = parallelExecution;
 result.FailureReason = string(ternary(strictOk, "", "strict_prach_validation_failed"));
 result.ProxyUsed = false;
 result.Skipped = false;
@@ -137,6 +144,7 @@ result.UsedOracleFields = "";
 result.ToolboxCapabilities = toolboxCapabilities;
 result.DetectionSummary = summary;
 result.PositiveWaveform = positiveWaveform;
+result.PositiveGrid = positiveTx.Grid;
 result.NoiseOnlyWaveform = noiseWaveform;
 result.ArtifactTables = struct( ...
     "prach_config_strict", configT, ...
@@ -222,23 +230,34 @@ end
 
 function [nextTrialId, row, candidateT, oracleT, waveform] = localRunOneTrial( ...
     trialId, trialType, cfg, occ, preamble, snrDb, timingOffsetSamples, freqOffsetHz, ...
-    preamblePresent, collisionInjected, threshold, runId, scenarioName, configHash)
+    preamblePresent, collisionInjected, threshold, runId, scenarioName, configHash, preparedTx)
 nextTrialId = trialId + 1;
-if preamblePresent
+if nargin >= 15 && isstruct(preparedTx) && isfield(preparedTx, "Waveform")
+    tx = preparedTx;
+elseif preamblePresent
     tx = sixgr.phy.prach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", preamble);
+else
+    tx = sixgr.phy.prach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", preamble);
+end
+if preamblePresent
     waveform = tx.Waveform;
 else
-    ref = sixgr.phy.prach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", preamble);
-    tx = ref;
-    waveform = complex(zeros(size(ref.Waveform)));
+    waveform = complex(zeros(size(tx.Waveform)));
 end
 waveform = localApplyIntegerDelay(waveform, timingOffsetSamples);
 [waveform, channelInfo] = localApplyStrictChannel(waveform, cfg, nextTrialId + 977);
 trueTimingOffsetSamples = double(timingOffsetSamples) + double(sixgr.util.structGet(channelInfo, "ChannelFilterDelay", 0));
 waveform = localApplyFrequencyOffset(waveform, freqOffsetHz, tx.SampleRate_Hz);
-[rx, noiseVar] = localAddNoise(waveform, snrDb, nextTrialId + 991);
-if ~preamblePresent
-    rx = localNoiseOnly(size(rx), noiseVar, nextTrialId + 992);
+noiseSeed = double(sixgr.util.structGet(cfg, "NoiseSeedOverride", double(cfg.Seed) + nextTrialId + 991));
+if preamblePresent
+    [rx, noiseVar] = localAddNoise(waveform, snrDb, noiseSeed);
+else
+    % localAddNoise historically derives unit-reference noise variance for
+    % an all-zero input and then discards that first noise realization.
+    % Compute the same variance directly and generate only the receiver
+    % noise realization that is actually consumed by the detector.
+    noiseVar = 1 / max(10^(double(snrDb) / 10), eps);
+    rx = localNoiseOnly(size(waveform), noiseVar, noiseSeed + 1);
 end
 txMeta = struct("PreambleIndexTx", double(preamble), "InjectedTimingOffsetSamples", double(trueTimingOffsetSamples), ...
     "PreamblePresent", logical(preamblePresent));
@@ -249,6 +268,7 @@ waveform = rx;
 score = sixgr.phy.prach.scorePRACHDetection(det, txMeta, cfg, "TrialType", trialType);
 row = localTrialRowFromDetection(runId, scenarioName, nextTrialId, trialType, cfg, occ, tx, det, score, ...
     snrDb, trueTimingOffsetSamples, freqOffsetHz, collisionInjected, configHash);
+row.NoiseSeed = noiseSeed;
 candidateT = localCandidateTable(runId, nextTrialId, cfg, occ, det, freqOffsetHz);
 oracleT = localOracleGuardTable(runId, nextTrialId);
 end
@@ -340,7 +360,7 @@ row = struct("RunId", "", "ScenarioName", "", "TrialId", NaN, "TrialType", "", .
     "PreambleIndexTx", NaN, "PreambleIndexDetected", NaN, "PreambleIndexMatch", false, ...
     "OccasionFrame", NaN, "OccasionSlot", NaN, "OccasionSymbol", NaN, ...
     "OccasionFrequencyIndex", NaN, "RARNTI", NaN, "WaveformSampleRateHz", NaN, ...
-    "WaveformNumSamples", NaN, "WaveformHash", "", "ChannelModel", "", "SNRdB", NaN, ...
+    "WaveformNumSamples", NaN, "WaveformHash", "", "ChannelModel", "", "NoiseSeed", NaN, "SNRdB", NaN, ...
     "InjectedTimingOffsetSamples", NaN, "EstimatedTimingOffsetSamples", NaN, ...
     "TimingErrorSamples", NaN, "InjectedFrequencyOffsetHz", NaN, "DetectionThreshold", NaN, ...
     "DetectionMetric", NaN, "PeakToSecondPeakRatio", NaN, "CandidateCount", NaN, ...
@@ -408,6 +428,34 @@ row = struct("RunId", "", "TrialId", NaN, "Stage", "", "OracleFieldName", "", ..
     "WasAccessed", false, "Allowed", false, "Violation", false, "Status", "");
 end
 
+function localPrintStatisticalProgress(metricName, snrDb, numTrials, maximumTrials, lookIndex, qualification, cfg, runId)
+if ~(lookIndex == 1 || mod(lookIndex, 5) == 0 || ...
+        ~logical(qualification.ContinueSampling) || numTrials == maximumTrials)
+    return;
+end
+message = sprintf(['PRACH_STAT metric=%s snr_db=%.6g trials=%d/%d look=%d ' ...
+    'events_ci=[%.6g,%.6g] width=%.6g qualification=%s stopping=%s\n'], ...
+    char(string(metricName)), double(snrDb), round(double(numTrials)), ...
+    round(double(maximumTrials)), round(double(lookIndex)), ...
+    double(qualification.CILower), double(qualification.CIUpper), ...
+    double(qualification.CIWidth), char(string(qualification.Qualification)), ...
+    char(string(qualification.StoppingReason)));
+fprintf(1, "%s", message);
+runFolder = strtrim(string(sixgr.util.structGet(cfg, "RunFolder", "")));
+if strlength(runFolder) == 0
+    return;
+end
+try
+    sixgr.runtime.RuntimeEvidenceBus.appendStandaloneEvent(runFolder, ...
+        "HEARTBEAT", "RunId", runId, ...
+        "StageName", "strict_prach_" + string(metricName), ...
+        "Status", "progress", "Message", strtrim(string(message)), ...
+        "EvidenceClass", "LIVE_RUNTIME_PROGRESS");
+catch
+    % Runtime telemetry must never alter the exact receiver result.
+end
+end
+
 function row = localNegativeRowTemplate()
 row = struct("RunId", "", "NegativeTrialType", "", "InjectedFault", "", ...
     "ExpectedFailureStage", "", "ObservedFailureStage", "", "FalseAlarm", false, ...
@@ -415,74 +463,318 @@ row = struct("RunId", "", "NegativeTrialType", "", "InjectedFault", "", ...
     "FailureReason", "");
 end
 
-function [sweepT, trialT, candT, oracleT] = localMissedDetectionSweep(cfg, occ, preamble, runId, scenarioName, configHash, threshold, trialIdStart)
-snrs = localVectorOrDefault(sixgr.util.structGet(cfg, "SNRSweep_dB", []), [-24 -12 0 18]);
-numTrials = max(1, min(3, round(double(cfg.NumTrials))));
-rows = repmat(struct("RunId","", "SweepId",NaN, "ConfigHash","", "SNRdB",NaN, ...
-    "NumTrials",NaN, "NumDetected",NaN, "NumMissed",NaN, "DetectionProbability",NaN, ...
-    "MissedDetectionProbability",NaN, "Threshold",NaN, "Status",""), numel(snrs), 1);
-trialRows = repmat(localTrialRowTemplate(), 0, 1);
-candRows = repmat(localCandidateRowTemplate(), 0, 1);
-oracleRows = repmat(localOracleRowTemplate(), 0, 1);
-trialId = trialIdStart;
-for iSNR = 1:numel(snrs)
-    detected = false(numTrials, 1);
-    missed = false(numTrials, 1);
-    for iTrial = 1:numTrials
-        [trialId, row, cand, oracle] = localRunOneTrial(trialId, "missed_detection_sweep", cfg, occ, ...
-            preamble, snrs(iSNR), 0, 0, true, false, threshold, runId, scenarioName, configHash);
-        row.StrictOk = false;
-        detected(iTrial) = ~row.MissedDetection && isfinite(row.PreambleIndexDetected);
-        missed(iTrial) = logical(row.MissedDetection);
-        trialRows(end + 1, 1) = row; %#ok<AGROW>
-        candRows = [candRows; table2struct(cand)]; %#ok<AGROW>
-        oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
+function [rows, candidateParts, oracleParts, firstWave] = localRunStatisticalBatch( ...
+    cfg, occ, preamble, snrDb, threshold, runId, scenarioName, configHash, ...
+    preparedTx, trialIdBeforeBatch, trialIndices, seedSet, seedOffset, ...
+    preamblePresent, trialType, useParallel, retainFirstWave)
+n = numel(trialIndices);
+rows = repmat(localTrialRowTemplate(), n, 1);
+candidateParts = cell(n, 1);
+oracleParts = cell(n, 1);
+waveParts = cell(n, 1);
+if useParallel
+    parfor j = 1:n
+        [rows(j), candidateParts{j}, oracleParts{j}, waveParts{j}] = ...
+            localRunStatisticalBatchTrial(cfg, occ, preamble, snrDb, ...
+            threshold, runId, scenarioName, configHash, preparedTx, ...
+            trialIdBeforeBatch, trialIndices(j), j, seedSet, seedOffset, ...
+            preamblePresent, trialType, retainFirstWave && j == 1);
     end
-    rows(iSNR) = struct("RunId", string(runId), "SweepId", double(iSNR), "ConfigHash", string(configHash), ...
-        "SNRdB", double(snrs(iSNR)), "NumTrials", double(numTrials), "NumDetected", double(sum(detected)), ...
-        "NumMissed", double(sum(missed)), "DetectionProbability", mean(double(detected)), ...
-        "MissedDetectionProbability", mean(double(missed)), "Threshold", double(threshold), "Status", "measured");
+else
+    for j = 1:n
+        [rows(j), candidateParts{j}, oracleParts{j}, waveParts{j}] = ...
+            localRunStatisticalBatchTrial(cfg, occ, preamble, snrDb, ...
+            threshold, runId, scenarioName, configHash, preparedTx, ...
+            trialIdBeforeBatch, trialIndices(j), j, seedSet, seedOffset, ...
+            preamblePresent, trialType, retainFirstWave && j == 1);
+    end
 end
-sweepT = struct2table(rows, "AsArray", true);
-trialT = struct2table(trialRows, "AsArray", true);
-candT = struct2table(candRows, "AsArray", true);
-oracleT = struct2table(oracleRows, "AsArray", true);
+firstWave = complex([]);
+if retainFirstWave && ~isempty(waveParts) && ~isempty(waveParts{1})
+    firstWave = waveParts{1};
+end
 end
 
-function [sweepT, trialT, candT, oracleT, noiseWaveform] = localFalseAlarmSweep(cfg, occ, runId, scenarioName, configHash, threshold, trialIdStart)
+function [row, candidateRows, oracleRows, retainedWave] = localRunStatisticalBatchTrial( ...
+    cfg, occ, preamble, snrDb, threshold, runId, scenarioName, configHash, ...
+    preparedTx, trialIdBeforeBatch, trialNumber, batchOrdinal, seedSet, seedOffset, ...
+    preamblePresent, trialType, retainWave)
+cfgTrial = cfg;
+seedBase = seedSet(mod(trialNumber - 1, numel(seedSet)) + 1);
+cfgTrial.NoiseSeedOverride = seedBase + seedOffset + trialNumber;
+inputTrialId = trialIdBeforeBatch + batchOrdinal - 1;
+[~, row, cand, oracle, wave] = localRunOneTrial(inputTrialId, trialType, ...
+    cfgTrial, occ, preamble, snrDb, 0, 0, preamblePresent, false, ...
+    threshold, runId, scenarioName, configHash, preparedTx);
+candidateRows = table2struct(cand);
+oracleRows = table2struct(oracle);
+if retainWave
+    retainedWave = wave;
+else
+    retainedWave = complex([]);
+end
+end
+
+function [sweepT, trialT, candT, oracleT] = localMissedDetectionSweep(cfg, occ, preamble, runId, scenarioName, configHash, threshold, trialIdStart, useParallel)
 snrs = localVectorOrDefault(sixgr.util.structGet(cfg, "SNRSweep_dB", []), [-24 -12 0 18]);
-numTrials = max(1, min(3, round(double(cfg.NumTrials))));
+design = cfg.StatisticalQualification;
+seedSet = double(design.DeterministicSeeds(:).');
 rows = repmat(struct("RunId","", "SweepId",NaN, "ConfigHash","", "SNRdB",NaN, ...
-    "NumTrials",NaN, "NumFalseAlarms",NaN, "FalseAlarmProbability",NaN, ...
-    "Threshold",NaN, "TargetFalseAlarmProbability",NaN, "Status",""), numel(snrs), 1);
-trialRows = repmat(localTrialRowTemplate(), 0, 1);
-candRows = repmat(localCandidateRowTemplate(), 0, 1);
-oracleRows = repmat(localOracleRowTemplate(), 0, 1);
+    "NumTrials",NaN, "NumDetected",NaN, "NumMissed",NaN, "DetectionProbability",NaN, ...
+    "MissedDetectionProbability",NaN, "Threshold",NaN, ...
+    "TargetMissedDetectionProbability",NaN, "QualificationRequired",false, ...
+    "MissedDetectionCILower",NaN, "MissedDetectionCIUpper",NaN, ...
+    "DetectionCILower",NaN, "DetectionCIUpper",NaN, "CIWidth",NaN, ...
+    "CIWidthTarget",NaN, "ConfidenceLevel",NaN, ...
+    "EffectiveDirectionalConfidenceLevel",NaN, "AlphaSpentThisLook",NaN, ...
+    "IntervalMethod","", "SequentialDesign","", "LookIndex",NaN, "PlannedLooks",NaN, ...
+    "MinimumTrials",NaN, "MaximumTrials",NaN, "MinimumMissedDetectionEvents",NaN, ...
+    "PointEstimatePass",false, "StatisticalQualification","NOT_EVALUATED", ...
+    "StatisticallyQualified",false, "StoppingReason","", ...
+    "DeterministicSeedCount",NaN, "DeterministicSeedSet","", "SeedDerivation","", ...
+    "EvidenceUnit","preamble_present_prach_occasion", "Status","NOT_EVALUATED"), numel(snrs), 1);
+maxRowBudget = numel(snrs) * max(round(double(design.DetectionMaximumTrials)), ...
+    max(1, min(3, round(double(cfg.NumTrials)))));
+trialRows = repmat(localTrialRowTemplate(), maxRowBudget, 1);
+candidateTableParts = cell(numel(snrs), 1);
+oracleTableParts = cell(numel(snrs), 1);
+writeIndex = 0;
 trialId = trialIdStart;
-noiseWaveform = complex([]);
+preparedTx = sixgr.phy.prach.generatePRACHWaveform(cfg, ...
+    "Occasion", occ, "PreambleIndex", preamble);
 for iSNR = 1:numel(snrs)
-    falseAlarm = false(numTrials, 1);
-    for iTrial = 1:numTrials
-        [trialId, row, cand, oracle, wave] = localRunOneTrial(trialId, "false_alarm_sweep", cfg, occ, ...
-            localFirstPreamble(cfg), snrs(iSNR), 0, 0, false, false, threshold, runId, scenarioName, configHash);
-        row.StrictOk = false;
-        falseAlarm(iTrial) = logical(row.FalseAlarm);
-        trialRows(end + 1, 1) = row; %#ok<AGROW>
-        candRows = [candRows; table2struct(cand)]; %#ok<AGROW>
-        oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
-        if isempty(noiseWaveform)
-            noiseWaveform = wave;
+    qualificationRequired = any(abs(double(snrs(iSNR))-double(design.DetectionRequiredSNRdB(:).')) < 1e-9);
+    if qualificationRequired
+        maximumTrials = round(double(design.DetectionMaximumTrials));
+        minimumTrials = round(double(design.DetectionMinimumTrials));
+        batchSize = round(double(design.DetectionBatchSizeTrials));
+        plannedLooks = round(double(design.DetectionPlannedLooks));
+        widthTarget = double(design.DetectionCIWidthTarget);
+        minimumEvents = round(double(design.MinimumMissedDetectionEvents));
+    else
+        maximumTrials = max(1,min(3,round(double(cfg.NumTrials))));
+        minimumTrials = maximumTrials;
+        batchSize = maximumTrials;
+        plannedLooks = 1;
+        widthTarget = 1;
+        minimumEvents = 0;
+    end
+    detected = false(maximumTrials, 1);
+    missed = false(maximumTrials, 1);
+    maximumBatches = ceil(maximumTrials / batchSize);
+    pointCandidateTableParts = cell(maximumBatches, 1);
+    pointOracleTableParts = cell(maximumBatches, 1);
+    pointBatchIndex = 0;
+    qualification = localUnevaluatedQualification("no_preamble_present_trials_observed");
+    actualTrials = 0;
+    lookIndex = 0;
+    iTrial = 0;
+    while iTrial < maximumTrials
+        batchEnd = min(maximumTrials, iTrial + batchSize);
+        trialIndices = (iTrial + 1):batchEnd;
+        [batchRows, batchCandidates, batchOracles] = localRunStatisticalBatch( ...
+            cfg, occ, preamble, snrs(iSNR), threshold, runId, scenarioName, ...
+            configHash, preparedTx, trialId, trialIndices, seedSet, ...
+            200000*iSNR, true, "missed_detection_sweep", useParallel, false);
+        nBatch = numel(trialIndices);
+        for j = 1:nBatch
+            row = batchRows(j);
+            row.StrictOk = false;
+            trialNumber = trialIndices(j);
+            detected(trialNumber) = ~row.MissedDetection && isfinite(row.PreambleIndexDetected);
+            missed(trialNumber) = logical(row.MissedDetection);
+            writeIndex = writeIndex + 1;
+            trialRows(writeIndex, 1) = row;
+        end
+        pointBatchIndex = pointBatchIndex + 1;
+        pointCandidateTableParts{pointBatchIndex} = sixgr.util.structPartsToTable( ...
+            batchCandidates, localCandidateRowTemplate());
+        pointOracleTableParts{pointBatchIndex} = sixgr.util.structPartsToTable( ...
+            batchOracles, localOracleRowTemplate());
+        trialId = trialId + nBatch;
+        iTrial = batchEnd;
+        actualTrials = iTrial;
+        if iTrial >= minimumTrials
+            lookIndex = lookIndex + 1;
+            qualification = sixgr.stats.evaluateBinomialStopping( ...
+                sum(missed(1:iTrial)),iTrial,double(design.DetectionTargetProbability), ...
+                "ConfidenceLevel",double(design.ConfidenceLevel), ...
+                "MinimumTrials",minimumTrials,"MaximumTrials",maximumTrials, ...
+                "MinimumEvents",minimumEvents,"CIWidthTarget",widthTarget, ...
+                "LookIndex",lookIndex,"PlannedLooks",plannedLooks, ...
+                "FinalLook",iTrial == maximumTrials, ...
+                "MetricName","prach_missed_detection_probability");
+            localPrintStatisticalProgress("missed_detection", snrs(iSNR), ...
+                iTrial, maximumTrials, lookIndex, qualification, cfg, runId);
+            if ~qualification.ContinueSampling
+                break;
+            end
         end
     end
+    detectedCount = sum(detected(1:actualTrials));
+    missedCount = sum(missed(1:actualTrials));
+    statisticalQualification = qualification.Qualification;
+    statisticallyQualified = qualification.StatisticallyQualified;
+    stoppingReason = qualification.StoppingReason;
+    if ~qualificationRequired
+        statisticalQualification = "NOT_APPLICABLE";
+        statisticallyQualified = false;
+        stoppingReason = "informational_snr_not_selected_for_qualification:" + stoppingReason;
+    end
     rows(iSNR) = struct("RunId", string(runId), "SweepId", double(iSNR), "ConfigHash", string(configHash), ...
-        "SNRdB", double(snrs(iSNR)), "NumTrials", double(numTrials), "NumFalseAlarms", double(sum(falseAlarm)), ...
-        "FalseAlarmProbability", mean(double(falseAlarm)), "Threshold", double(threshold), ...
-        "TargetFalseAlarmProbability", double(cfg.TargetFalseAlarmProbability), "Status", "measured");
+        "SNRdB", double(snrs(iSNR)), "NumTrials", double(actualTrials), "NumDetected", double(detectedCount), ...
+        "NumMissed", double(missedCount), "DetectionProbability", double(detectedCount/max(actualTrials,1)), ...
+        "MissedDetectionProbability", double(missedCount/max(actualTrials,1)), "Threshold", double(threshold), ...
+        "TargetMissedDetectionProbability",double(design.DetectionTargetProbability), ...
+        "QualificationRequired",logical(qualificationRequired), ...
+        "MissedDetectionCILower",qualification.CILower, ...
+        "MissedDetectionCIUpper",qualification.CIUpper, ...
+        "DetectionCILower",1-qualification.CIUpper, ...
+        "DetectionCIUpper",1-qualification.CILower, ...
+        "CIWidth",qualification.CIWidth, "CIWidthTarget",widthTarget, ...
+        "ConfidenceLevel",double(design.ConfidenceLevel), ...
+        "EffectiveDirectionalConfidenceLevel",qualification.EffectiveDirectionalConfidenceLevel, ...
+        "AlphaSpentThisLook",qualification.AlphaSpentThisLook, ...
+        "IntervalMethod",qualification.IntervalMethod, "SequentialDesign",qualification.SequentialDesign, ...
+        "LookIndex",qualification.LookIndex, "PlannedLooks",double(plannedLooks), ...
+        "MinimumTrials",double(minimumTrials), "MaximumTrials",double(maximumTrials), ...
+        "MinimumMissedDetectionEvents",double(minimumEvents), ...
+        "PointEstimatePass",qualification.PointEstimatePass, ...
+        "StatisticalQualification",string(statisticalQualification), ...
+        "StatisticallyQualified",logical(statisticallyQualified), ...
+        "StoppingReason",string(stoppingReason), ...
+        "DeterministicSeedCount",double(numel(seedSet)), ...
+        "DeterministicSeedSet",strjoin(string(seedSet),"|"), ...
+        "SeedDerivation","configured_seed_plus_snr_and_trial_index", ...
+        "EvidenceUnit","preamble_present_prach_occasion", ...
+        "Status",string(statisticalQualification));
+    candidateTableParts{iSNR} = sixgr.util.tablePartsToTable( ...
+        pointCandidateTableParts(1:pointBatchIndex), localCandidateRowTemplate());
+    oracleTableParts{iSNR} = sixgr.util.tablePartsToTable( ...
+        pointOracleTableParts(1:pointBatchIndex), localOracleRowTemplate());
 end
+trialRows = trialRows(1:writeIndex);
 sweepT = struct2table(rows, "AsArray", true);
 trialT = struct2table(trialRows, "AsArray", true);
-candT = struct2table(candRows, "AsArray", true);
-oracleT = struct2table(oracleRows, "AsArray", true);
+candT = sixgr.util.tablePartsToTable(candidateTableParts, localCandidateRowTemplate());
+oracleT = sixgr.util.tablePartsToTable(oracleTableParts, localOracleRowTemplate());
+end
+
+function [sweepT, trialT, candT, oracleT, noiseWaveform] = localFalseAlarmSweep(cfg, occ, runId, scenarioName, configHash, threshold, trialIdStart, useParallel)
+snrs = localVectorOrDefault(sixgr.util.structGet(cfg, "SNRSweep_dB", []), [-24 -12 0 18]);
+design = cfg.StatisticalQualification;
+maximumTrials = round(double(design.MaximumTrials));
+batchSize = round(double(design.BatchSizeTrials));
+seedSet = double(design.DeterministicSeeds(:).');
+rows = repmat(struct("RunId","", "SweepId",NaN, "ConfigHash","", "SNRdB",NaN, ...
+    "NumTrials",NaN, "NumFalseAlarms",NaN, "FalseAlarmProbability",NaN, ...
+    "Threshold",NaN, "TargetFalseAlarmProbability",NaN, ...
+    "CILower",NaN, "CIUpper",NaN, "CIWidth",NaN, "CIWidthTarget",NaN, ...
+    "ConfidenceLevel",NaN, "EffectiveDirectionalConfidenceLevel",NaN, ...
+    "AlphaSpentThisLook",NaN, "IntervalMethod","", "SequentialDesign","", ...
+    "LookIndex",NaN, "PlannedLooks",NaN, "MinimumTrials",NaN, "MaximumTrials",NaN, ...
+    "MinimumFalseAlarmEvents",NaN, "PointEstimatePass",false, ...
+    "StatisticalQualification","NOT_EVALUATED", "StatisticallyQualified",false, ...
+    "StoppingReason","", "DeterministicSeedCount",NaN, "DeterministicSeedSet","", ...
+    "SeedDerivation","", "EvidenceUnit","no_signal_prach_occasion", ...
+    "Status","NOT_EVALUATED"), numel(snrs), 1);
+maxRowBudget = numel(snrs) * maximumTrials;
+trialRows = repmat(localTrialRowTemplate(), maxRowBudget, 1);
+candidateTableParts = cell(numel(snrs), 1);
+oracleTableParts = cell(numel(snrs), 1);
+writeIndex = 0;
+trialId = trialIdStart;
+noiseWaveform = complex([]);
+preparedTx = sixgr.phy.prach.generatePRACHWaveform(cfg, ...
+    "Occasion", occ, "PreambleIndex", localFirstPreamble(cfg));
+for iSNR = 1:numel(snrs)
+    falseAlarm = false(maximumTrials, 1);
+    maximumBatches = ceil(maximumTrials / batchSize);
+    pointCandidateTableParts = cell(maximumBatches, 1);
+    pointOracleTableParts = cell(maximumBatches, 1);
+    pointBatchIndex = 0;
+    qualification = localUnevaluatedQualification("no_noise_only_trials_observed");
+    lookIndex = 0;
+    actualTrials = 0;
+    iTrial = 0;
+    while iTrial < maximumTrials
+        batchEnd = min(maximumTrials, iTrial + batchSize);
+        trialIndices = (iTrial + 1):batchEnd;
+        [batchRows, batchCandidates, batchOracles, batchFirstWave] = localRunStatisticalBatch( ...
+            cfg, occ, localFirstPreamble(cfg), snrs(iSNR), threshold, runId, scenarioName, ...
+            configHash, preparedTx, trialId, trialIndices, seedSet, ...
+            100000*iSNR, false, "false_alarm_sweep", useParallel, isempty(noiseWaveform));
+        nBatch = numel(trialIndices);
+        for j = 1:nBatch
+            row = batchRows(j);
+            row.StrictOk = false;
+            trialNumber = trialIndices(j);
+            falseAlarm(trialNumber) = logical(row.FalseAlarm);
+            writeIndex = writeIndex + 1;
+            trialRows(writeIndex, 1) = row;
+        end
+        pointBatchIndex = pointBatchIndex + 1;
+        pointCandidateTableParts{pointBatchIndex} = sixgr.util.structPartsToTable( ...
+            batchCandidates, localCandidateRowTemplate());
+        pointOracleTableParts{pointBatchIndex} = sixgr.util.structPartsToTable( ...
+            batchOracles, localOracleRowTemplate());
+        if isempty(noiseWaveform) && ~isempty(batchFirstWave)
+            noiseWaveform = batchFirstWave;
+        end
+        trialId = trialId + nBatch;
+        iTrial = batchEnd;
+        actualTrials = iTrial;
+        if iTrial >= round(double(design.MinimumTrials))
+            lookIndex = lookIndex + 1;
+            qualification = sixgr.stats.evaluateBinomialStopping( ...
+                sum(falseAlarm(1:iTrial)),iTrial,double(design.TargetProbability), ...
+                "ConfidenceLevel",double(design.ConfidenceLevel), ...
+                "MinimumTrials",round(double(design.MinimumTrials)), ...
+                "MaximumTrials",maximumTrials, ...
+                "MinimumEvents",round(double(design.MinimumFalseAlarmEvents)), ...
+                "CIWidthTarget",double(design.CIWidthTarget), ...
+                "LookIndex",lookIndex,"PlannedLooks",round(double(design.PlannedLooks)), ...
+                "FinalLook",iTrial == maximumTrials, ...
+                "MetricName","prach_false_alarm_probability");
+            localPrintStatisticalProgress("false_alarm", snrs(iSNR), ...
+                iTrial, maximumTrials, lookIndex, qualification, cfg, runId);
+            if ~qualification.ContinueSampling
+                break;
+            end
+        end
+    end
+    eventCount = sum(falseAlarm(1:actualTrials));
+    rows(iSNR) = struct("RunId", string(runId), "SweepId", double(iSNR), "ConfigHash", string(configHash), ...
+        "SNRdB", double(snrs(iSNR)), "NumTrials", double(actualTrials), "NumFalseAlarms", double(eventCount), ...
+        "FalseAlarmProbability", double(eventCount/max(actualTrials,1)), "Threshold", double(threshold), ...
+        "TargetFalseAlarmProbability", double(design.TargetProbability), ...
+        "CILower",qualification.CILower, "CIUpper",qualification.CIUpper, ...
+        "CIWidth",qualification.CIWidth, "CIWidthTarget",double(design.CIWidthTarget), ...
+        "ConfidenceLevel",double(design.ConfidenceLevel), ...
+        "EffectiveDirectionalConfidenceLevel",qualification.EffectiveDirectionalConfidenceLevel, ...
+        "AlphaSpentThisLook",qualification.AlphaSpentThisLook, ...
+        "IntervalMethod",qualification.IntervalMethod, "SequentialDesign",qualification.SequentialDesign, ...
+        "LookIndex",qualification.LookIndex, "PlannedLooks",double(design.PlannedLooks), ...
+        "MinimumTrials",double(design.MinimumTrials), "MaximumTrials",double(design.MaximumTrials), ...
+        "MinimumFalseAlarmEvents",double(design.MinimumFalseAlarmEvents), ...
+        "PointEstimatePass",qualification.PointEstimatePass, ...
+        "StatisticalQualification",qualification.Qualification, ...
+        "StatisticallyQualified",qualification.StatisticallyQualified, ...
+        "StoppingReason",qualification.StoppingReason, ...
+        "DeterministicSeedCount",double(numel(seedSet)), ...
+        "DeterministicSeedSet",strjoin(string(seedSet),"|"), ...
+        "SeedDerivation","configured_seed_plus_snr_and_trial_index", ...
+        "EvidenceUnit","no_signal_prach_occasion", "Status",qualification.Qualification);
+    candidateTableParts{iSNR} = sixgr.util.tablePartsToTable( ...
+        pointCandidateTableParts(1:pointBatchIndex), localCandidateRowTemplate());
+    oracleTableParts{iSNR} = sixgr.util.tablePartsToTable( ...
+        pointOracleTableParts(1:pointBatchIndex), localOracleRowTemplate());
+end
+trialRows = trialRows(1:writeIndex);
+sweepT = struct2table(rows, "AsArray", true);
+trialT = struct2table(trialRows, "AsArray", true);
+candT = sixgr.util.tablePartsToTable(candidateTableParts, localCandidateRowTemplate());
+oracleT = sixgr.util.tablePartsToTable(oracleTableParts, localOracleRowTemplate());
 end
 
 function [sweepT, trialT, candT, oracleT] = localTimingOffsetSweep(cfg, occ, preamble, runId, scenarioName, configHash, threshold, trialIdStart, highSNR)
@@ -826,6 +1118,24 @@ summary.PositiveTrialCount = sum(string(trialT.TrialType) == "positive_high_snr"
 summary.PositiveStrictOkCount = sum(logical(trialT.StrictOk) & string(trialT.TrialType) == "positive_high_snr");
 summary.MissedDetectionSweepRows = height(missedT);
 summary.FalseAlarmSweepRows = height(falseAlarmT);
+summary.FalseAlarmStatisticallyQualified = ~isempty(falseAlarmT) && ...
+    all(logical(falseAlarmT.StatisticallyQualified));
+requiredDetection = logical(missedT.QualificationRequired);
+summary.RequiredDetectionOperatingPointCount = sum(requiredDetection);
+summary.MissedDetectionStatisticallyQualified = any(requiredDetection) && ...
+    all(logical(missedT.StatisticallyQualified(requiredDetection))) && ...
+    all(string(missedT.StatisticalQualification(requiredDetection)) == "PASS");
+summary.StatisticallyQualified = summary.FalseAlarmStatisticallyQualified && ...
+    summary.MissedDetectionStatisticallyQualified;
+if summary.StatisticallyQualified
+    summary.StatisticalQualification = "PASS";
+elseif any(string(falseAlarmT.StatisticalQualification) == "FAIL") || ...
+        any(string(missedT.StatisticalQualification(requiredDetection)) == "FAIL")
+    summary.StatisticalQualification = "FAIL";
+else
+    summary.StatisticalQualification = "NOT_EVALUATED";
+end
+
 summary.TimingOffsetSweepRows = height(timingT);
 summary.FrequencyOffsetSweepRows = height(freqT);
 summary.CollisionRows = height(collisionT);
@@ -833,6 +1143,52 @@ summary.MultiOccasionRows = height(multiT);
 summary.NegativeRows = height(negT);
 summary.OracleGuardRows = height(oracleT);
 summary.OracleGuardViolationCount = sum(logical(oracleT.Violation));
+end
+
+function [pool, evidence] = localResolveParallelExecution(cfg)
+pool = [];
+requested = max(1, round(double(sixgr.util.structGet(cfg, ...
+    "ParallelRequestedWorkers", 1))));
+enabled = logical(sixgr.util.structGet(cfg, "UseParallel", false)) && requested > 1;
+evidence = struct("Requested", enabled, "RequestedWorkers", requested, ...
+    "Active", false, "EffectiveWorkers", 1, "PoolType", "serial", ...
+    "Status", "parallel_not_requested", "FailureReason", "", ...
+    "Authority", string(sixgr.util.structGet(cfg, ...
+    "ParallelExecutionAuthority", "resolved_scenario_run_control")));
+if ~enabled
+    return;
+end
+if ~(license("test", "Distrib_Computing_Toolbox") && exist("parpool", "file") == 2)
+    evidence.Status = "parallel_toolbox_or_license_unavailable_exact_serial_execution";
+    return;
+end
+try
+    pool = gcp("nocreate");
+    if isempty(pool)
+        pool = parpool("Processes", requested);
+    end
+    evidence.Active = true;
+    evidence.EffectiveWorkers = double(pool.NumWorkers);
+    evidence.PoolType = string(class(pool));
+    evidence.Status = "parallel_process_pool_active";
+catch cause
+    pool = [];
+    evidence.Status = "parallel_start_failed_exact_serial_execution";
+    evidence.FailureReason = string(cause.identifier) + " | " + string(cause.message);
+end
+fprintf(1, "PRACH_PARALLEL requested=%d requested_workers=%d active=%d effective_workers=%d status=%s\n", ...
+    evidence.Requested, evidence.RequestedWorkers, evidence.Active, ...
+    evidence.EffectiveWorkers, char(evidence.Status));
+end
+
+function q = localUnevaluatedQualification(reason)
+q = struct("CILower",NaN,"CIUpper",NaN,"CIWidth",NaN, ...
+    "EffectiveDirectionalConfidenceLevel",NaN,"AlphaSpentThisLook",0, ...
+    "IntervalMethod","CLOPPER_PEARSON_EXACT_ONE_SIDED_BOUNDS", ...
+    "SequentialDesign","planned_look_bonferroni_two_direction", ...
+    "LookIndex",0,"PointEstimatePass",false, ...
+    "Qualification","NOT_EVALUATED","StatisticallyQualified",false, ...
+    "ContinueSampling",false,"StoppingReason",string(reason));
 end
 
 function y = ternary(cond, a, b)

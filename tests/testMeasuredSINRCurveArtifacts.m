@@ -91,7 +91,11 @@ localAssertGateOk(tmp, "scheduler_kpi_reconciliation.csv", "SchedulerKpiReconcil
 localAssertGateOk(tmp, "latency_reconciliation.csv", "LatencyReconciliationOk");
 localAssertGateOk(tmp, "canonical_kpi_ledger.csv", "CanonicalKpiLedgerOk");
 
-plots = sixgr.analytics.generateMeasuredSINRPlots(tmp, "unit");
+% This fixture intentionally has two trials per generated bin. Select a
+% one-trial rendering threshold here so the section exercises all five PNG
+% producers; production keeps the stricter default of three trials/bin.
+plots = sixgr.analytics.generateMeasuredSINRPlots(tmp, "unit", ...
+    "MinimumTrialsPerBin", 1);
 if usejava("jvm")
     assert(logical(plots.Ok), "Measured SINR plot generation did not report Ok=true.");
     for p = string(plots.Plots(:)).'
@@ -107,7 +111,37 @@ if usejava("jvm")
 end
 localAssertRelabeledAnalytics(tmp);
 
+% A configured AWGN SNR campaign and receiver-measured SINR analytics are
+% two different axes over the same real trials. Generating the latter must
+% not erase the former or change its bytes.
+tmpSweep = tempname;
+mkdir(tmpSweep);
+cleanupSweep = onCleanup(@() rmdir(tmpSweep, "s")); %#ok<NASGU>
+sweepPath = fullfile(tmpSweep, "air_interface", "csv", "lls_snr_sweep.csv");
+sixgr.util.ensureDir(sweepPath);
+sweepT = table([-10;0;10], [0.9;0.4;0.05], [0.1;12;31], ...
+    'VariableNames', {'SNR_dB','DL_BLER','DL_Throughput_Mbps'});
+sixgr.util.csvWriteTable(sweepPath, sweepT);
+sweepHashBefore = localFileHash(sweepPath);
+sixgr.analytics.generateMeasuredSINRCurves(tmpSweep, "unit_sweep", ...
+    "TrialData", trialData, ...
+    "ScenarioConfig", struct( ...
+        "run", struct("noiseOperatingMode", "standalone_awgn_snr_argument"), ...
+        "global_radio_scope", struct("channel_bandwidth_hz", 100e6)), ...
+    "BinCount", 6, "WriteKPISummary", false, "UpdateAnchorKPIs", false);
+assert(exist(sweepPath, "file") == 2 && ...
+    localFileHash(sweepPath) == sweepHashBefore, ...
+    ["Measured-SINR analytics must preserve the exact configured-SNR " ...
+     "campaign CSV bytes in standalone AWGN sweep mode."]);
+
 ok = true;
+end
+
+function hash = localFileHash(pathValue)
+fid = fopen(pathValue, "rb");
+assert(fid >= 0, "Unable to read the configured-SNR fixture.");
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+hash = string(sixgr.util.sha256Hex(fread(fid, inf, "*uint8")));
 end
 
 function localAssertGateOk(tmp, fileName, flagName)

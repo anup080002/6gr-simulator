@@ -73,9 +73,16 @@ failurePaths = [ ...
     string(fullfile(layout.ReportDir, "failure_manifest.json"))];
 existingFailures = failurePaths(arrayfun(@(x)exist(char(x), "file") == 2, failurePaths));
 if ~isempty(existingFailures)
-    error("sixgr:truth:resume:RecordedRuntimeFailure", ...
-        "A runtime failure artifact exists and prevents completed-runtime recovery: %s", ...
-        strjoin(existingFailures, ", "));
+    stage = lower(strtrim(string(sixgr.util.structGet(status, "Stage", ""))));
+    postRuntimeStages = ["primary_sweep_ready","harq_ready","beam_ready", ...
+        "rf_ready","final_bundle_ready","bundle_complete", ...
+        "final_bundle_ready_resumed","bundle_complete_resumed"];
+    if ~ismember(stage, postRuntimeStages)
+        error("sixgr:truth:resume:RecordedRuntimeFailure", ...
+            ["A failure artifact exists before a verified post-runtime " + ...
+             "stage and prevents completed-runtime recovery: %s"], ...
+            strjoin(existingFailures, ", "));
+    end
 end
 
 dlPath = string(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
@@ -158,6 +165,13 @@ checkpoint.ControlTrialRows = controlRows;
 checkpoint.ControlCounterReconciliation = struct2table(reconciliationRows);
 checkpoint.FinalBundleReady = localScalar(status, "FinalBundleReady") == 1;
 checkpoint.RequiresFinalizationResume = ~checkpoint.FinalBundleReady;
+checkpoint.HistoricalFailureArtifacts = existingFailures(:);
+if isempty(existingFailures)
+    checkpoint.HistoricalFailureClassification = "none";
+else
+    checkpoint.HistoricalFailureClassification = ...
+        "post_waveform_finalization_failure_preserved_not_runtime_blocker";
+end
 end
 
 function tf = localCanReconcileFinalizedControlCounter(status)

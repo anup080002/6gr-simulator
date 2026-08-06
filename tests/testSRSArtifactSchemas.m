@@ -7,6 +7,8 @@ required = [
     "reference_signals/csv/srs_resource_sets.csv"
     "reference_signals/csv/srs_resources.csv"
     "reference_signals/csv/srs_resource_mapping.csv"
+    "reference_signals/csv/srs_resource_grid_power.csv"
+    "reference_signals/csv/srs_plot_lineage.csv"
     "reference_signals/csv/srs_tx_waveform.csv"
     "reference_signals/csv/srs_rx_extraction.csv"
     "reference_signals/csv/srs_detection_metrics.csv"
@@ -57,5 +59,8 @@ assert(height(prb) > 0 && all(ismember(["PRB","Port","EstimateI","EstimateQ","Es
     "SRS per-PRB estimator artifact must expose measured PRB/port channel estimates.");
 figs = dir(fullfile(root, "reports", "figures", "srs_*_unavailable.png"));
 assert(isempty(figs), "Strict SRS figures must not be unavailable cards.");
+lineage = readtable(fullfile(root, "reference_signals", "csv", "srs_plot_lineage.csv"), "TextType", "string");
+assert(height(lineage) == 8 && all(lineage.Status == "pass") && all(lineage.SourceExists), ...
+    "Every strict SRS PNG must have passing exact-source lineage.");
 ok = true;
 end

@@ -22,12 +22,39 @@ qVar = localCompositeADCQuantizationNoiseVariance(replay);
 preNVar = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
 if isfinite(preNVar) && preNVar >= 0
     replay.InjectedNoiseVariancePreCompositeFrontEnd = double(preNVar);
-    replay.InjectedNoiseVariance = double(preNVar .* gainLinear.^2 + max(0, qVar));
-    source = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
-    if strlength(strtrim(source)) == 0
-        source = "receiver_noise_variance";
+    replay.InjectedNoiseVariancePreCompositeFrontEndDomain = ...
+        "receiver_sample_waveform_pre_composite_front_end";
+    preSource = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
+    if strlength(strtrim(preSource)) == 0
+        preSource = "receiver_noise_variance";
     end
-    replay.NoiseVarianceSource = char(source + "_post_composite_front_end_agc_adc");
+    replay.InjectedNoiseVariancePreCompositeFrontEndSource = char(preSource);
+    postNVar = double(preNVar .* gainLinear.^2 + max(0, qVar));
+    replay.InjectedNoiseVariancePostCompositeFrontEnd = postNVar;
+    replay.InjectedNoiseVariancePostCompositeFrontEndDomain = ...
+        "receiver_sample_waveform_post_composite_front_end";
+    % Preserve InjectedNoiseVariance as a compatibility alias, but make the
+    % alias and its plane explicit.  Scientific reports must use one of the
+    % versioned pre/post fields above rather than inferring a domain.
+    replay.InjectedNoiseVariance = postNVar;
+    replay.InjectedNoiseVarianceAliasOf = ...
+        "InjectedNoiseVariancePostCompositeFrontEnd";
+    replay.InjectedNoiseVarianceDomain = ...
+        "receiver_sample_waveform_post_composite_front_end";
+    replay.NoiseVarianceSource = char(preSource + "_post_composite_front_end_agc_adc");
+    replay.InjectedNoiseVariancePostCompositeFrontEndSource = ...
+        replay.NoiseVarianceSource;
+end
+
+if isfinite(double(sixgr.util.structGet(replay, ...
+        "DesiredSignalPowerBeforeNoise", NaN)))
+    replay.DesiredSignalPowerBeforeNoiseDomain = ...
+        "receiver_sample_waveform_pre_noise_pre_composite_front_end";
+end
+if isfinite(double(sixgr.util.structGet(replay, ...
+        "CompositeSignalPowerBeforeNoise", NaN)))
+    replay.CompositeSignalPowerBeforeNoiseDomain = ...
+        "receiver_sample_waveform_pre_noise_pre_composite_front_end";
 end
 
 if isfield(replay, "InterferenceContributionTensor") && ~isempty(replay.InterferenceContributionTensor)

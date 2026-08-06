@@ -1,0 +1,31 @@
+[2026-08-06T01:47:21Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_repair_slice runTag=phase10_targeted_webgui_repair_11 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11
+Starting parallel pool (parpool) using the 'Processes' profile ...
+Connected to parallel pool with 4 workers.
+[2026-08-06T01:48:25Z] INFO MATLAB profiler enabled for this run.
+[2026-08-06T01:48:25Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-06T01:48:25Z] INFO Writing resolved snapshots.
+[2026-08-06T01:48:27Z] INFO Exporting live geometry artifacts.
+[2026-08-06T01:48:27Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-06T01:48:27Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-06T01:48:27Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=20 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-06T01:50:25Z] INFO Waveform bundle finished: ok=1
+[2026-08-06T01:50:25Z] INFO Running strict waveform-backed control evidence for waveform-bundle scenario target_cases.
+[2026-08-06T01:52:32Z] INFO Strict waveform-backed control evidence finished: ok=1
+[2026-08-06T01:52:32Z] INFO Running supplemental strict PRACH waveform validation for waveform-bundle scenario.
+PRACH_PARALLEL requested=1 requested_workers=24 active=1 effective_workers=4 status=parallel_process_pool_active
+[2026-08-06T01:52:34Z] INFO Strict PRACH progress: stage=strict_prach_config_validation supplemental_completion=0.020 note=Validating strict PRACH configuration and root-sequence evidence.
+[2026-08-06T01:52:34Z] INFO Strict PRACH progress: stage=strict_prach_positive_high_snr supplemental_completion=0.080 note=Running positive high-SNR PRACH receive validation.
+[2026-08-06T01:52:35Z] INFO Strict PRACH progress: stage=strict_prach_missed_detection_sweep supplemental_completion=0.180 note=Running PRACH missed-detection SNR sweep.
+PRACH_STAT metric=missed_detection snr_db=-12 trials=3/3 look=1 events_ci=[0,0.707598] width=0.707598 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=-6 trials=3/3 look=1 events_ci=[0,0.707598] width=0.707598 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=0 trials=3/3 look=1 events_ci=[0,0.707598] width=0.707598 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=6 trials=300/2000 look=1 events_ci=[0,0.0242926] width=0.0242926 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=6 trials=500/2000 look=5 events_ci=[0,0.0146472] width=0.0146472 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=6 trials=750/2000 look=10 events_ci=[0,0.00978879] width=0.00978879 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=missed_detection snr_db=12 trials=300/2000 look=1 events_ci=[0,0.0242926] width=0.0242926 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=12 trials=500/2000 look=5 events_ci=[0,0.0146472] width=0.0146472 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=12 trials=750/2000 look=10 events_ci=[0,0.00978879] width=0.00978879 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+[2026-08-06T01:56:10Z] INFO Strict PRACH progress: stage=strict_prach_false_alarm_sweep supplemental_completion=0.360 note=Running PRACH false-alarm noise-only sweep.
+PRACH_STAT metric=false_alarm snr_db=-12 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached

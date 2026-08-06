@@ -48,6 +48,9 @@ out.SSBBeamIndex = NaN;
 out.SSBReceivedPower_dB = NaN;
 out.PBCHDMRSMetric = NaN;
 out.PBCHNoiseVar = NaN;
+out.PreEqualizationNoiseVariance = NaN;
+out.PreEqualizationNoiseVarianceDomain = "";
+out.PreEqualizationNoiseVarianceSource = "";
 out.ChannelEstimateAvailable = false;
 out.ChannelEstimateSource = "";
 out.EqualizationAvailable = false;
@@ -63,10 +66,14 @@ out.MeasuredTrialSINRValueRole = "";
 out.MeasuredTrialSINRValueStatus = "";
 out.MeasuredTrialSINRNAReason = "";
 out.PostEqSINR_dB = NaN;
+out.PostEqSINRAvailable = false;
 out.PostEqSINRSource = "";
 out.PostEqSINRValueRole = "";
 out.PostEqSINRValueStatus = "";
 out.PostEqSINRNAReason = "";
+out.PostEqualizationNoiseVariance = NaN;
+out.PostEqualizationNoiseVarianceDomain = "";
+out.PostEqualizationNoiseVarianceSource = "";
 out.StrictReceiverEvidenceOk = false;
 out.SIB1PDSCHChannelEstimateAvailable = false;
 out.SIB1PDSCHEqualizationAvailable = false;
@@ -111,6 +118,7 @@ if wantSIB1
             "Seed", double(sixgr.util.structGet(cfg, "run.seed", 1501)));
         rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
             tx.Waveform, cfg);
+        rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
         out.ComputeLatency_ms = 1e3 * toc(tStart);
         out.ProcedureDelay_ms = NaN;
         out.AirInterfaceObservation_ms = localResolvePBCHObservationDurationMs(cfg);
@@ -150,10 +158,17 @@ if wantSIB1
             "MeasuredTrialSINRValueStatus", string(sixgr.util.structGet(rec, "MeasuredTrialSINRValueStatus", "")), ...
             "MeasuredTrialSINRNAReason", string(sixgr.util.structGet(rec, "MeasuredTrialSINRNAReason", "")), ...
             "PostEqSINR_dB", double(sixgr.util.structGet(rec, "PostEqSINR_dB", NaN)), ...
+            "PostEqSINRAvailable", logical(sixgr.util.structGet(rec, "PostEqSINRAvailable", false)), ...
             "PostEqSINRSource", string(sixgr.util.structGet(rec, "PostEqSINRSource", "")), ...
             "PostEqSINRValueRole", string(sixgr.util.structGet(rec, "PostEqSINRValueRole", "")), ...
             "PostEqSINRValueStatus", string(sixgr.util.structGet(rec, "PostEqSINRValueStatus", "")), ...
             "PostEqSINRNAReason", string(sixgr.util.structGet(rec, "PostEqSINRNAReason", "")), ...
+            "PreEqualizationNoiseVariance", double(sixgr.util.structGet(rec, "PreEqualizationNoiseVariance", NaN)), ...
+            "PreEqualizationNoiseVarianceDomain", string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceDomain", "")), ...
+            "PreEqualizationNoiseVarianceSource", string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceSource", "")), ...
+            "PostEqualizationNoiseVariance", double(sixgr.util.structGet(rec, "PostEqualizationNoiseVariance", NaN)), ...
+            "PostEqualizationNoiseVarianceDomain", string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceDomain", "")), ...
+            "PostEqualizationNoiseVarianceSource", string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceSource", "")), ...
             "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false)));
         out.SIB1 = rec;
         if logical(p.Results.WriteArtifacts) && strlength(string(p.Results.RunFolder)) > 0
@@ -166,6 +181,9 @@ if wantSIB1
         out.SSBReceivedPower_dB = double(sixgr.util.structGet(rec, "SSBReceivedPower_dB", NaN));
         out.PBCHDMRSMetric = double(sixgr.util.structGet(rec, "PBCHDMRSMetric", NaN));
         out.PBCHNoiseVar = double(sixgr.util.structGet(rec, "PBCHNoiseVar", NaN));
+        out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(rec, "PreEqualizationNoiseVariance", NaN));
+        out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceDomain", ""));
+        out.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceSource", ""));
         out.ChannelEstimateAvailable = logical(sixgr.util.structGet(rec, "ChannelEstimateAvailable", false));
         out.ChannelEstimateSource = string(sixgr.util.structGet(rec, "ChannelEstimateSource", ""));
         out.EqualizationAvailable = logical(sixgr.util.structGet(rec, "EqualizationAvailable", false));
@@ -181,10 +199,14 @@ if wantSIB1
         out.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(rec, "MeasuredTrialSINRValueStatus", ""));
         out.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(rec, "MeasuredTrialSINRNAReason", ""));
         out.PostEqSINR_dB = double(sixgr.util.structGet(rec, "PostEqSINR_dB", NaN));
+        out.PostEqSINRAvailable = logical(sixgr.util.structGet(rec, "PostEqSINRAvailable", false));
         out.PostEqSINRSource = string(sixgr.util.structGet(rec, "PostEqSINRSource", ""));
         out.PostEqSINRValueRole = string(sixgr.util.structGet(rec, "PostEqSINRValueRole", ""));
         out.PostEqSINRValueStatus = string(sixgr.util.structGet(rec, "PostEqSINRValueStatus", ""));
         out.PostEqSINRNAReason = string(sixgr.util.structGet(rec, "PostEqSINRNAReason", ""));
+        out.PostEqualizationNoiseVariance = double(sixgr.util.structGet(rec, "PostEqualizationNoiseVariance", NaN));
+        out.PostEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceDomain", ""));
+        out.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceSource", ""));
         out.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false));
         out.SIB1PDSCHChannelEstimateAvailable = logical(sixgr.util.structGet(rec, "SIB1PDSCHChannelEstimateAvailable", false));
         out.SIB1PDSCHEqualizationAvailable = logical(sixgr.util.structGet(rec, "SIB1PDSCHEqualizationAvailable", false));
@@ -244,6 +266,9 @@ try
     out.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     out.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
     out.PBCHNoiseVar = double(sixgr.util.structGet(pb, "NoiseVar", NaN));
+    out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(pb, "PreEqualizationNoiseVariance", NaN));
+    out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(pb, "PreEqualizationNoiseVarianceDomain", ""));
+    out.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet(pb, "PreEqualizationNoiseVarianceSource", ""));
     out.ChannelEstimateAvailable = logical(sixgr.util.structGet(pb, "ChannelEstimateAvailable", false));
     out.ChannelEstimateSource = string(sixgr.util.structGet(pb, "ChannelEstimateSource", ""));
     out.EqualizationAvailable = logical(sixgr.util.structGet(pb, "EqualizationAvailable", false));
@@ -259,10 +284,14 @@ try
     out.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(pb, "MeasuredTrialSINRValueStatus", ""));
     out.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(pb, "MeasuredTrialSINRNAReason", ""));
     out.PostEqSINR_dB = double(sixgr.util.structGet(pb, "PostEqSINR_dB", NaN));
+    out.PostEqSINRAvailable = logical(sixgr.util.structGet(pb, "PostEqSINRAvailable", false));
     out.PostEqSINRSource = string(sixgr.util.structGet(pb, "PostEqSINRSource", ""));
     out.PostEqSINRValueRole = string(sixgr.util.structGet(pb, "PostEqSINRValueRole", ""));
     out.PostEqSINRValueStatus = string(sixgr.util.structGet(pb, "PostEqSINRValueStatus", ""));
     out.PostEqSINRNAReason = string(sixgr.util.structGet(pb, "PostEqSINRNAReason", ""));
+    out.PostEqualizationNoiseVariance = double(sixgr.util.structGet(pb, "PostEqualizationNoiseVariance", NaN));
+    out.PostEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(pb, "PostEqualizationNoiseVarianceDomain", ""));
+    out.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet(pb, "PostEqualizationNoiseVarianceSource", ""));
     out.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(pb, "StrictReceiverEvidenceOk", false));
 
     out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0);

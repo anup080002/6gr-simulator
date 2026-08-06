@@ -1,0 +1,8 @@
+{Error using sixgr.truth.restoreStrictPRACHComponentAnchor>localValidateTrialSemantics (line 189)
+Persisted strict PRACH trial identity differs from its parent anchor.
+
+Error in sixgr.truth.restoreStrictPRACHComponentAnchor (line 124)
+localValidateTrialSemantics(trialTable, scenarioID, configHash);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+ERROR: MATLAB error Exit Status: 0x00000001

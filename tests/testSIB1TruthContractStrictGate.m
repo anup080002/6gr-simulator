@@ -5,6 +5,8 @@ setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
 cfg.run.strictMode = true;
 cfg.phy.sib1.enable = true;
+cfg.phy.pdcch.enable = true;
+cfg.phy.pdcch.dmrs.enable = true;
 cfg.channel.bandwidth_Hz = 20e6;
 cfg.phy.channelBandwidth_Hz = 20e6;
 cfg.phy.carrier.NSizeGrid = 51;

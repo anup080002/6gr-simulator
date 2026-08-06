@@ -1,0 +1,37 @@
+[2026-08-05T20:46:08Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_repair_slice runTag=phase10_targeted_webgui_repair_07 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_07
+Starting parallel pool (parpool) using the 'Processes' profile ...
+Connected to parallel pool with 4 workers.
+[2026-08-05T20:47:18Z] INFO MATLAB profiler enabled for this run.
+[2026-08-05T20:47:18Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-05T20:47:18Z] INFO Writing resolved snapshots.
+[2026-08-05T20:47:20Z] INFO Exporting live geometry artifacts.
+[2026-08-05T20:47:20Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-05T20:47:20Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-05T20:47:20Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=20 monteCarlo=1 slotDuration_s=0.000500
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=3500000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=0 ShadowEnabled=0 LOSEnabled=0
+[2026-08-05T20:47:36Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=1/20 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-05T20:47:36Z] INFO Starting coupled pre-scheduling control gating for slot 1/20 with 4 UEs.
+[2026-08-05T20:47:36Z] INFO Preparing coupled PBCH control gating trials in parfor: eligible_ues=4.
+Warning: Directory already exists.
+> In sixgr.util.ensureFolder (line 17)
+In sixgr.phy.broadcast.exportSIB1EvidenceArtifacts (line 17)
+In sixgr.link.runCellSearch_MIB_SIB1 (line 176)
+In sixgr.truth.runWaveformLinkBundle>localCollectPBCHTrials (line 10436)
+Warning: Directory already exists.
+> In sixgr.util.ensureFolder (line 17)
+In sixgr.phy.broadcast.exportSIB1EvidenceArtifacts (line 17)
+In sixgr.link.runCellSearch_MIB_SIB1 (line 176)
+In sixgr.truth.runWaveformLinkBundle>localCollectPBCHTrials (line 10436)
+Warning: Directory already exists.
+> In sixgr.util.ensureFolder (line 17)
+In sixgr.phy.broadcast.exportSIB1EvidenceArtifacts (line 17)
+In sixgr.link.runCellSearch_MIB_SIB1 (line 176)
+In sixgr.truth.runWaveformLinkBundle>localCollectPBCHTrials (line 10436)
+Warning: File not found or permission denied.
+> In matlab.graphics.internal.name (line 108)
+In print (line 41)
+In saveas (line 140)
+In sixgr.phy.broadcast.exportSIB1EvidenceArtifacts>localWriteGridFigure (line 486)
+In sixgr.phy.broadcast.exportSIB1EvidenceArtifacts (line 128)
+In sixgr.link.runCellSearch_MIB_SIB1 (line 176)
+In sixgr.truth.runWaveformLinkBundle>localCollectPBCHTrials (line 10436)

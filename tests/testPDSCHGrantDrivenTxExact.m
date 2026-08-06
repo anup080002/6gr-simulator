@@ -178,6 +178,7 @@ cfg.phy.pdsch.ptrs.frequencyDensity = 2;
 cfg.phy.pdsch.ptrs.reOffset = "00";
 cfg.phy.pdsch.ptrs.portSet = 0;
 cfg.phy.pdsch.precoding.matrix = localPrecoder(v.NumPorts, v.NumLayers);
+cfg.phy.pdsch.precoding.normalizationConvention = "semi_unitary";
 cfg.phy.pdsch.precodingMatrix = cfg.phy.pdsch.precoding.matrix;
 cfg.phy.pdsch.W = cfg.phy.pdsch.precoding.matrix;
 cfg.phy.csirs.enable = false;

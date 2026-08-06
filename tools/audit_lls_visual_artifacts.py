@@ -16,6 +16,7 @@ import argparse
 import csv
 import hashlib
 import math
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -23,7 +24,10 @@ from pathlib import Path
 from typing import Iterable
 
 
-VISUAL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".html", ".htm"}
+# HTML files are reports, not raster visual artifacts.  Auditing them as
+# unmanifested plots creates false visual-gate failures even though the
+# strict visual contract applies only to PNG/JPEG (and rejects legacy SVG).
+VISUAL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg"}
 SUPPRESSED_STATUSES = {
     "suppressed",
     "source_csv_missing",
@@ -199,11 +203,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--non-strict", action="store_true", help="Always exit zero after writing audit artifacts")
     args = parser.parse_args(argv)
 
-    run_folder = Path(args.run_folder).resolve()
+    run_folder = windows_extended_path(Path(args.run_folder).resolve())
     rows = audit_run_folder(run_folder)
     write_outputs(run_folder, rows)
     has_failures = any(not r.audit_ok for r in rows)
     return 0 if args.non_strict or not has_failures else 1
+
+
+def windows_extended_path(path: Path) -> Path:
+    """Use Win32 extended-length syntax for deeply nested result trees."""
+
+    if os.name != "nt":
+        return path
+    text = str(path)
+    if text.startswith("\\\\?\\"):
+        return path
+    if text.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + text.lstrip("\\"))
+    return Path("\\\\?\\" + text)
 
 
 def audit_run_folder(run_folder: Path) -> list[AuditRow]:
@@ -231,6 +248,12 @@ def audit_run_folder(run_folder: Path) -> list[AuditRow]:
             seen_visuals.add(normalize_rel_path(row.artifact_path))
         rows.extend(audit_stale_normal_siblings(run_folder, manifest_row))
 
+    component_rows, component_visuals = audit_component_plot_lineages(
+        run_folder, seen_visuals
+    )
+    rows.extend(component_rows)
+    seen_visuals.update(component_visuals)
+
     for visual_path in inventory_visual_files(run_folder):
         rel = relative_path(run_folder, visual_path)
         if normalize_rel_path(rel) in seen_visuals:
@@ -239,6 +262,204 @@ def audit_run_folder(run_folder: Path) -> list[AuditRow]:
 
     rows.extend(audit_contract_source_csvs(run_folder, manifest_rows))
     return rows
+
+
+def audit_component_plot_lineages(
+    run_folder: Path, already_seen: set[str]
+) -> tuple[list[AuditRow], set[str]]:
+    """Audit component-owned raster lineage without treating it as run-root relative."""
+
+    rows: list[AuditRow] = []
+    seen: set[str] = set()
+    for lineage_path in sorted(run_folder.rglob("*plot_lineage.csv")):
+        for lineage_row in read_csv_dicts(lineage_path):
+            image_spec = get_field(
+                lineage_row, "ImagePath", "PlotFile", "ArtifactPath"
+            )
+            if not image_spec:
+                continue
+            image_path = resolve_owned_lineage_path(
+                run_folder, lineage_path, image_spec
+            )
+            if image_path is None:
+                image_rel = normalize_rel_path(image_spec)
+            else:
+                image_rel = relative_path(run_folder, image_path)
+            normalized_image = normalize_rel_path(image_rel)
+            if normalized_image in already_seen or normalized_image in seen:
+                continue
+
+            plot_id = get_field(lineage_row, "PlotId", "plot_id") or lineage_path.stem
+            status = lower_token(
+                get_field(lineage_row, "Status", "LineageStatus")
+                or "not_evaluated"
+            )
+            explicitly_not_rendered = status in {
+                "incomplete",
+                "not_evaluated",
+                "not_rendered",
+                "suppressed",
+            }
+            file_info = inspect_file(run_folder, image_rel)
+            source_spec = get_field(lineage_row, "SourceCSV", "source_csv")
+            resolved_source_spec, source_exists, source_hash = (
+                resolve_component_source_spec(
+                    run_folder, lineage_path, source_spec
+                )
+            )
+            source_stats = (
+                inspect_source_csv(run_folder, resolved_source_spec, "", "")
+                if resolved_source_spec
+                else SourceStats()
+            )
+            failures: list[tuple[str, str]] = []
+
+            if explicitly_not_rendered:
+                if file_info.byte_count > 0:
+                    failures.append(
+                        (
+                            "stale_suppressed_normal_artifact",
+                            "component lineage says the plot was not rendered but image bytes exist",
+                        )
+                    )
+            else:
+                if not file_info.exists:
+                    failures.append(
+                        ("visual_file_missing", "component lineage image file is missing")
+                    )
+                elif not file_info.signature_ok:
+                    failures.append(
+                        (
+                            file_info.signature_status or "visual_signature_invalid",
+                            "component lineage image extension and byte signature do not match",
+                        )
+                    )
+                if file_info.extension == ".svg" or file_info.actual_mime_type == "image/svg+xml":
+                    failures.append(
+                        (
+                            "vector_visual_format_forbidden",
+                            "persisted component visuals must use PNG or JPEG",
+                        )
+                    )
+                if not source_spec:
+                    failures.append(
+                        (
+                            "manifest_source_csv_missing",
+                            "component plot lineage does not identify a source CSV",
+                        )
+                    )
+                elif not source_exists:
+                    failures.append(
+                        (
+                            "source_csv_missing",
+                            "one or more component plot source CSV files are missing",
+                        )
+                    )
+                expected_source_hash = lower_token(
+                    get_field(lineage_row, "SourceCSV_SHA256")
+                )
+                if (
+                    expected_source_hash
+                    and source_exists
+                    and source_hash.lower() != expected_source_hash
+                ):
+                    failures.append(
+                        (
+                            "component_plot_source_hash_mismatch",
+                            "component source CSV bytes do not match the lineage hash",
+                        )
+                    )
+                expected_image_hash = lower_token(
+                    get_field(lineage_row, "ImageSHA256", "PNG_SHA256")
+                )
+                if (
+                    expected_image_hash
+                    and file_info.sha256.lower() != expected_image_hash
+                ):
+                    failures.append(
+                        (
+                            "component_plot_hash_mismatch",
+                            "component image bytes do not match the lineage hash",
+                        )
+                    )
+                if status not in {"pass", "complete", "rendered", "rendered_component_plot"}:
+                    failures.append(
+                        (
+                            "component_plot_lineage_failed",
+                            f"component plot lineage status is not successful: {status}",
+                        )
+                    )
+
+            rows.append(
+                make_row(
+                    run_folder,
+                    plot_id=plot_id,
+                    artifact_path=image_rel,
+                    artifact_kind="component_lineage_plot",
+                    is_manifest_row=True,
+                    manifest_status=("not_rendered" if explicitly_not_rendered else status),
+                    visual_validity="component_runtime_evidence",
+                    source_csv=resolved_source_spec or source_spec,
+                    file_info=file_info,
+                    source_stats=source_stats,
+                    failures=failures,
+                )
+            )
+            seen.add(normalized_image)
+    return rows, seen
+
+
+def resolve_component_source_spec(
+    run_folder: Path, lineage_path: Path, source_spec: str
+) -> tuple[str, bool, str]:
+    members = [part.strip() for part in str(source_spec).split("|") if part.strip()]
+    if not members:
+        return "", False, ""
+    resolved_rel: list[str] = []
+    hashes: list[str] = []
+    all_exist = True
+    for member in members:
+        resolved = resolve_owned_lineage_path(run_folder, lineage_path, member)
+        if resolved is None or not resolved.is_file():
+            all_exist = False
+            resolved_rel.append(normalize_rel_path(member))
+            hashes.append("")
+            continue
+        resolved_rel.append(relative_path(run_folder, resolved))
+        hashes.append(hashlib.sha256(resolved.read_bytes()).hexdigest())
+    return "|".join(resolved_rel), all_exist, "|".join(hashes)
+
+
+def resolve_owned_lineage_path(
+    run_folder: Path, lineage_path: Path, path_spec: str
+) -> Path | None:
+    """Resolve a lineage path beneath its owning component, never outside the run."""
+
+    run_root = run_folder.resolve()
+    candidate_spec = Path(str(path_spec).replace("\\", "/"))
+    if any(part == ".." for part in candidate_spec.parts):
+        return None
+    if candidate_spec.is_absolute():
+        candidate = candidate_spec.resolve()
+        try:
+            candidate.relative_to(run_root)
+        except ValueError:
+            return None
+        return candidate if candidate.exists() else None
+
+    cursor = lineage_path.resolve().parent
+    while cursor == run_root or run_root in cursor.parents:
+        candidate = (cursor / candidate_spec).resolve()
+        try:
+            candidate.relative_to(run_root)
+        except ValueError:
+            return None
+        if candidate.exists():
+            return candidate
+        if cursor == run_root:
+            break
+        cursor = cursor.parent
+    return None
 
 
 def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditRow:
@@ -363,7 +584,7 @@ def audit_stale_normal_siblings(run_folder: Path, manifest_row: dict[str, str]) 
         stem = stem[: -len("_unavailable")]
     folder = run_folder / image_rel.parent
     rows: list[AuditRow] = []
-    for ext in (".png", ".svg", ".html"):
+    for ext in (".png", ".jpg", ".jpeg", ".svg"):
         sibling = folder / f"{stem}{ext}"
         if not sibling.exists():
             continue
@@ -389,6 +610,12 @@ def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
     source_csv = companion_contract_csv_path(rel_path)
     source_stats = inspect_source_csv(run_folder, source_csv, "", "") if source_csv else SourceStats()
     failures: list[tuple[str, str]] = []
+    failures.append(
+        (
+            "unmanifested_visual_artifact",
+            "every persisted PNG or JPEG must have a plot_manifest.csv row with source lineage",
+        )
+    )
     if info.extension == ".svg" or info.actual_mime_type == "image/svg+xml":
         failures.append(("vector_visual_format_forbidden", "persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input"))
     if not info.signature_ok:
@@ -399,7 +626,7 @@ def audit_unmanifested_visual(run_folder: Path, rel_path: str) -> AuditRow:
         failures.append(
             (
                 "low_information_visual_without_explanation",
-                "contract visual source has insufficient independent variation, but the SVG does not disclose that gate",
+                "contract visual source has insufficient independent variation, but the image does not disclose that gate",
             )
         )
     return make_row(

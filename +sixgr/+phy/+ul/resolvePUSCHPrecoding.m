@@ -131,8 +131,8 @@ if ~isCodebook
         prec.AuthoritativeSRSDecisionUsed = true;
         prec = localAttachSRSIdentity(prec,srsDecision);
         prec.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(Wmeasured);
-        prec.AppliedMatrixSHA256 = prec.SelectedMatrixSHA256;
         prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
+        prec.AppliedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixPorts);
         prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
         return;
     end
@@ -177,7 +177,8 @@ prec.PMIType = "pusch_codebook";
 prec.CodebookMode = string(localObjectValue(pusch, "CodebookType", ...
     sixgr.util.structGet(cfg, "phy.pusch.codebookType", "")));
 if strlength(strtrim(prec.CodebookMode)) == 0
-    prec.CodebookMode = "nr_pusch_codebook";
+    error("sixgr:phy:ul:PUSCHPrecoding:MissingCodebookType", ...
+        "Codebook PUSCH requires an explicit resolved nrPUSCHConfig.CodebookType.");
 end
 prec.BeamformingApplied = true;
 prec.NativeCodebookApplied = true;
@@ -213,10 +214,13 @@ if strictMIMO
     end
     prec.AuthoritativeSRSDecisionUsed = true;
     prec.SelectedMatrixSHA256 = actualDigest;
-    prec.AppliedMatrixSHA256 = actualDigest;
     prec = localAttachSRSIdentity(prec,srsDecision);
 end
 prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
+if strlength(string(prec.SelectedMatrixSHA256)) == 0
+    prec.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixLogicalPorts);
+end
+prec.AppliedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixPorts);
 prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
 end
 
@@ -382,12 +386,12 @@ end
 function W = localRectIdentity(nPorts, nLayers)
 W = zeros(max(1, round(double(nPorts))), max(1, round(double(nLayers))));
 activeStreams = min(size(W, 1), size(W, 2));
-% Non-codebook direct mapping is an equal-power layer mapper under the
-% immutable unit-total-power MatrixContract.  Unit coefficients per layer
-% would make rank-R PUSCH transmit R times the configured UE power and
-% would differ from the exact matrix frozen by the scheduler.
+% Non-codebook nrPUSCH emits one unit-gain port per layer. Preserve that
+% TS 38.211/Toolbox port mapping exactly; configured UE transmit power is
+% applied later by the power-control/amplitude stage, not by silently
+% renormalizing the immutable layer-to-port map.
 for i = 1:activeStreams
-    W(i, i) = 1 / sqrt(activeStreams);
+    W(i, i) = 1;
 end
 end
 

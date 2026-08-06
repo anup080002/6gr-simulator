@@ -1,0 +1,119 @@
+[2026-08-06T02:16:12Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_repair_slice runTag=phase10_targeted_webgui_repair_11 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11
+Starting parallel pool (parpool) using the 'Processes' profile ...
+Connected to parallel pool with 4 workers.
+[2026-08-06T02:17:13Z] INFO MATLAB profiler enabled for this run.
+[2026-08-06T02:17:14Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-06T02:17:14Z] INFO Writing resolved snapshots.
+[2026-08-06T02:17:15Z] INFO Exporting live geometry artifacts.
+[2026-08-06T02:17:15Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-06T02:17:15Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-06T02:17:16Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=20 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-06T02:19:03Z] INFO Waveform bundle finished: ok=1
+[2026-08-06T02:19:03Z] INFO Running strict waveform-backed control evidence for waveform-bundle scenario target_cases.
+[2026-08-06T02:21:25Z] INFO Strict waveform-backed control evidence finished: ok=1
+[2026-08-06T02:21:25Z] INFO Running supplemental strict PRACH waveform validation for waveform-bundle scenario.
+PRACH_PARALLEL requested=1 requested_workers=24 active=1 effective_workers=4 status=parallel_process_pool_active
+[2026-08-06T02:21:29Z] INFO Strict PRACH progress: stage=strict_prach_config_validation supplemental_completion=0.020 note=Validating strict PRACH configuration and root-sequence evidence.
+[2026-08-06T02:21:29Z] INFO Strict PRACH progress: stage=strict_prach_positive_high_snr supplemental_completion=0.080 note=Running positive high-SNR PRACH receive validation.
+[2026-08-06T02:21:31Z] INFO Strict PRACH progress: stage=strict_prach_missed_detection_sweep supplemental_completion=0.180 note=Running PRACH missed-detection SNR sweep.
+PRACH_STAT metric=missed_detection snr_db=-12 trials=3/3 look=1 events_ci=[0,0.707598] width=0.707598 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=-6 trials=3/3 look=1 events_ci=[0,0.707598] width=0.707598 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=0 trials=3/3 look=1 events_ci=[0,0.707598] width=0.707598 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=6 trials=300/2000 look=1 events_ci=[0,0.0242926] width=0.0242926 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=6 trials=500/2000 look=5 events_ci=[0,0.0146472] width=0.0146472 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=6 trials=750/2000 look=10 events_ci=[0,0.00978879] width=0.00978879 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=missed_detection snr_db=12 trials=300/2000 look=1 events_ci=[0,0.0242926] width=0.0242926 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=12 trials=500/2000 look=5 events_ci=[0,0.0146472] width=0.0146472 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=12 trials=750/2000 look=10 events_ci=[0,0.00978879] width=0.00978879 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+[2026-08-06T02:25:29Z] INFO Strict PRACH progress: stage=strict_prach_false_alarm_sweep supplemental_completion=0.360 note=Running PRACH false-alarm noise-only sweep.
+PRACH_STAT metric=false_alarm snr_db=-12 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=-6 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=0 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=6 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=12 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+[2026-08-06T03:38:39Z] INFO Strict PRACH progress: stage=strict_prach_timing_offset_sweep supplemental_completion=0.540 note=Running PRACH timing-offset sweep.
+[2026-08-06T03:38:45Z] INFO Strict PRACH progress: stage=strict_prach_frequency_offset_sweep supplemental_completion=0.660 note=Running PRACH frequency-offset and restricted-set sweep.
+[2026-08-06T03:38:51Z] INFO Strict PRACH progress: stage=strict_prach_collision_trials supplemental_completion=0.780 note=Running PRACH collision and multi-preamble trials.
+[2026-08-06T03:38:54Z] INFO Strict PRACH progress: stage=strict_prach_multi_occasion_trials supplemental_completion=0.860 note=Running PRACH multi-occasion RARNTI trials.
+[2026-08-06T03:38:57Z] INFO Strict PRACH progress: stage=strict_prach_negative_wrong_config supplemental_completion=0.920 note=Running PRACH negative wrong-root receiver guard.
+[2026-08-06T03:39:02Z] INFO Strict PRACH progress: stage=strict_prach_artifact_export supplemental_completion=0.970 note=Writing strict PRACH waveform evidence artifacts.
+[2026-08-06T03:40:51Z] INFO Strict PRACH progress: stage=strict_prach_validation_complete supplemental_completion=1.000 note=Strict PRACH waveform validation completed.
+[2026-08-06T03:40:53Z] INFO Running supplemental strict SRS waveform validation for waveform-bundle scenario.
+[2026-08-06T03:44:54Z] INFO Running supplemental strict TRS waveform validation for waveform-bundle scenario.
+[2026-08-06T03:45:13Z] INFO Running supplemental strict SIB1/PBCH waveform mini-anchor validation for waveform-bundle scenario.
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=3500000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=0 ShadowEnabled=0 LOSEnabled=0
+[2026-08-06T03:49:15Z] INFO Running supplemental strict Channel/RF validation for waveform-bundle scenario.
+[2026-08-06T03:49:37Z] INFO Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.
+[2026-08-06T03:49:39Z] INFO Running configured bidirectional L2 protocol component validation.
+[2026-08-06T03:49:55Z] INFO Control-plane trace export complete.
+[2026-08-06T03:49:55Z] INFO Runner profile completed. result.Ok=0
+[2026-08-06T03:49:55Z] INFO Exporting TX/RX chain time-profile and complexity coverage artifacts.
+[2026-08-06T03:49:56Z] INFO Scenario status aggregated: completion=completed_with_failures resultOk=0 requiredFailures=1 optionalPruned=0
+[2026-08-06T03:49:56Z] INFO Annotating CSV artifacts.
+[2026-08-06T03:51:10Z] INFO Writing scenario summary CSV.
+[2026-08-06T03:51:10Z] INFO Writing runtime and environment summaries.
+[2026-08-06T03:51:12Z] INFO Writing scenario manifest.
+[2026-08-06T03:51:12Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-08-06T03:58:38Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=9 strictFailures=10
+[2026-08-06T03:58:38Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-08-06T03:58:39Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-08-06T03:58:39Z] INFO Exporting MATLAB profiler artifacts before implementation validation.
+[2026-08-06T03:58:56Z] INFO Writing MATLAB profiler CSV artifacts: functions=250 edges=500
+[2026-08-06T03:58:57Z] INFO Exporting LLS reporting bundle.
+[2026-08-06T04:01:26Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-08-06T04:01:32Z] INFO Registering fresh in-memory waveform evidence with the contract publisher.
+[2026-08-06T04:01:33Z] INFO Registering fresh in-memory initial-access evidence with the contract publisher.
+[2026-08-06T04:01:33Z] INFO Finalizing YAML-selected runtime-only artifact contracts.
+[2026-08-06T04:01:42Z] INFO Artifact contract finalization: status=FAIL contracts=692 failures=692 requiredFailures=692.
+[2026-08-06T04:01:42Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+[2026-08-06T04:01:43Z] ERROR Run failed: sixgr:runtime:CSVSchemaMismatch | Refusing to append runtime CSV C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11\runtime\csv\stage_timing_events.csv. Existing schema has 18 fields (ScenarioID|ConfigHash|RunnerProfile|schema_name|schema_version|attempt_id|execution_id|run_id|event_id|global_event_sequence|timestamp_utc|monotonic_time_s|event_type|stage_name|status|message|process_memory_bytes|open_figure_count); required schema has 19 fields (schema_name|schema_version|attempt_id|execution_id|finalization_id|run_id|event_id|global_event_sequence|timestamp_utc|monotonic_time_s|event_type|stage_id|stage_name|status|reason_code|message|process_memory_bytes|open_figure_count|pending_future_count).
+[2026-08-06T04:01:43Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.
+[2026-08-06T04:10:40Z] WARN Failed-run artifact recovery did not complete: sixgr:runtime:CSVSchemaMismatch | Refusing to append runtime CSV C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11\runtime\csv\stage_timing_events.csv. Existing schema has 18 fields (ScenarioID|ConfigHash|RunnerProfile|schema_name|schema_version|attempt_id|execution_id|run_id|event_id|global_event_sequence|timestamp_utc|monotonic_time_s|event_type|stage_name|status|message|process_memory_bytes|open_figure_count); required schema has 19 fields (schema_name|schema_version|attempt_id|execution_id|finalization_id|run_id|event_id|global_event_sequence|timestamp_utc|monotonic_time_s|event_type|stage_id|stage_name|status|reason_code|message|process_memory_bytes|open_figure_count|pending_future_count).
+{Error using sixgr.runtime.RuntimeEvidenceBus>localValidateExistingCSVSchema (line 470)
+Refusing to append runtime CSV C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_repair_slice\phase10_targeted_webgui_repair_11\runtime\csv\stage_timing_events.csv. Existing schema
+has 18 fields
+(ScenarioID|ConfigHash|RunnerProfile|schema_name|schema_version|attempt_id|execution_id|run_id|event_id|global_event_sequence|timestamp_utc|monotonic_time_s|event_type|stage_name|status|message|process_memory_bytes|open_figure_count);
+required schema has 19 fields
+(schema_name|schema_version|attempt_id|execution_id|finalization_id|run_id|event_id|global_event_sequence|timestamp_utc|monotonic_time_s|event_type|stage_id|stage_name|status|reason_code|message|process_memory_bytes|open_figure_count|pending_future_count).
+
+Error in sixgr.runtime.RuntimeEvidenceBus>localPreflightDerivedCSV (line 372)
+    localValidateExistingCSVSchema(pathStr, headers);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.runtime.RuntimeEvidenceBus.appendStandaloneEvent (line 220)
+            localPreflightDerivedCSV(runFolder, event);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.exportLLSOutputCoverageArtifacts>localCoverageLog (line 5450)
+sixgr.runtime.RuntimeEvidenceBus.appendStandaloneEvent(runFolder, eventType, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.exportLLSOutputCoverageArtifacts (line 13)
+localCoverageLog("start", runFolder);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2306)
+    outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 66)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+ERROR: MATLAB error Exit Status: 0x00000001

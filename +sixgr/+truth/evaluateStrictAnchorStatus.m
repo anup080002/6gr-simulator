@@ -39,36 +39,55 @@ strictEligible = localStrictAnchorEligible(scfg, cfg, scenarioMode, meta);
 required = localRequiredDirections(scfg, cfg);
 runCompleted = localRunCompleted(layout);
 artifactsWritten = localArtifactsPhysicallyWritten(layout, required);
-artifactCompletenessOk = localArtifactCompletenessStatus(layout, verdict);
+artifactCompletenessOk = localArtifactCompletenessStatus(layout, verdict, scfg, cfg);
 truthContractOk = isempty(preRootFailures);
 runtimeTruthContractOk = truthContractOk;
 
 runClassProfile = localResolveRunClassProfile(scfg, cfg, scenarioMode);
 configuredGate = localConfiguredEffectiveGate(layout, meta, scfg, cfg, dlTrials, ulTrials, opSummary, required, scenarioMode, strictEligible, runClassProfile);
 mandatoryGate = localMandatorySubsystemGate(details, required);
+statisticalGate = localStatisticalQualificationGate(details, strictEligible);
 claimGate = localStandardsClaimGate(layout, meta, scfg, cfg, mandatoryGate, strictEligible);
 conformanceGate = localConformanceRuntimeAudit(layout, meta, details, mandatoryGate, strictEligible);
 runClassGate = localRunClassificationGate(layout, meta, required, configuredGate, runClassProfile);
-bindingGate = localPDCCHGrantBindingGate(layout, cfg, dlTrials, ulTrials);
+bindingGate = localPDCCHGrantBindingGate(layout, cfg, dlTrials, ulTrials, required);
 
 rootIssueRows = localRootIssueRows(meta, claimGate, configuredGate, mandatoryGate, conformanceGate, strictEligible);
 issueRegistry = localMergeRootIssues(layout, rootIssueRows);
 activeIssueGate = localActiveIssueGate(layout, meta, issueRegistry, rootIssueRows, strictEligible);
 
-scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct("ScenarioObjectiveOk", true));
-pdschObjective = sixgr.util.structGet(details, "PDSCHObjective", struct("ObjectivePass", true));
-scenarioObjectiveOk = logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", true)) && ...
-    logical(sixgr.util.structGet(pdschObjective, "ObjectivePass", true)) && ...
-    logical(configuredGate.ConfiguredEffectiveOk) && logical(runClassGate.ObjectiveGateOk) && ...
-    logical(bindingGate.BindingGateOk) && ...
-    ~(strictEligible && ~logical(claimGate.ClaimAllowed) && logical(claimGate.ObjectiveDependsOnClaim));
+scenarioObjectivePresent = isfield(details, "ScenarioObjective") && isstruct(details.ScenarioObjective) && ...
+    isfield(details.ScenarioObjective, "ScenarioObjectiveOk");
+pdschObjectivePresent = isfield(details, "PDSCHObjective") && isstruct(details.PDSCHObjective) && ...
+    isfield(details.PDSCHObjective, "ObjectivePass");
+scenarioObjective = sixgr.util.structGet(details, "ScenarioObjective", struct("ScenarioObjectiveOk", false));
+pdschObjective = sixgr.util.structGet(details, "PDSCHObjective", struct("ObjectivePass", false));
+objectiveEvidenceAvailable = (~strictEligible) || (scenarioObjectivePresent && pdschObjectivePresent);
+if strictEligible
+    scenarioObjectiveOk = logical(objectiveEvidenceAvailable) && ...
+        logical(sixgr.util.structGet(scenarioObjective, "ScenarioObjectiveOk", false)) && ...
+        logical(sixgr.util.structGet(pdschObjective, "ObjectivePass", false)) && ...
+        logical(configuredGate.ConfiguredEffectivePolicyOk) && logical(runClassGate.ObjectiveGateOk) && ...
+        logical(bindingGate.BindingGateOk) && ...
+        ~(~logical(claimGate.ClaimAllowed) && logical(claimGate.ObjectiveDependsOnClaim));
+else
+    % Component-only and diagnostic runners have their objective evaluated
+    % by their own production profile and the pre-root truth verdict.  They
+    % must not fail because full PDSCH objective rows do not apply.
+    scenarioObjectiveOk = logical(truthContractOk) && ...
+        logical(configuredGate.ConfiguredEffectivePolicyOk) && ...
+        logical(runClassGate.ObjectiveGateOk) && logical(bindingGate.BindingGateOk);
+end
 
 kpiGate = localKPIConsistencyGate(layout, meta, scfg, cfg, strictEligible);
 kpiConsistencyOk = logical(kpiGate.KpiConsistencyOk);
-visualArtifactGateOk = true;
-duplicateArtifactGateOk = true;
+browserGate = localBrowserPublicationGate(layout, meta, scfg, cfg);
+artifactIntegrityGate = localArtifactIntegrityGate(layout, scfg, cfg, strictEligible);
+visualArtifactGateOk = logical(artifactIntegrityGate.VisualArtifactGateOk);
+duplicateArtifactGateOk = logical(artifactIntegrityGate.DuplicateArtifactGateOk);
 standardsConformanceOk = logical(claimGate.ClaimAllowed) && logical(mandatoryGate.MandatorySubsystemsOk) && ...
     logical(conformanceGate.MandatoryMatrixOk) && logical(bindingGate.BindingGateOk) && ...
+    logical(statisticalGate.StatisticalQualificationOk) && ...
     ~logical(claimGate.ForbiddenBroadClaimRejected);
 
 proxyEvidenceCount = double(sixgr.util.structGet(verdict, "StrictProxyGuardFailureCount", 0)) + ...
@@ -78,14 +97,15 @@ fallbackEvidenceCount = localFailureTokenCount(preRootFailures, ["fallback"]);
 
 resultOk = logical(runCompleted) && logical(artifactsWritten) && logical(artifactCompletenessOk) && logical(truthContractOk) && ...
     logical(runtimeTruthContractOk) && logical(standardsConformanceOk) && logical(scenarioObjectiveOk) && ...
-    logical(configuredGate.ConfiguredEffectiveOk) && logical(mandatoryGate.MandatorySubsystemsOk) && ...
+    logical(configuredGate.ConfiguredEffectivePolicyOk) && logical(mandatoryGate.MandatorySubsystemsOk) && ...
     logical(activeIssueGate.ActiveIssueGateOk) && logical(kpiConsistencyOk) && ...
-    logical(visualArtifactGateOk) && logical(duplicateArtifactGateOk);
+    logical(visualArtifactGateOk) && logical(duplicateArtifactGateOk) && ...
+    (~logical(browserGate.Required) || logical(browserGate.BrowserPublished));
 
 strictAnchorPass = ~strictEligible || resultOk;
 failureReasons = localStatusFailureReasons(runCompleted, artifactsWritten, artifactCompletenessOk, truthContractOk, ...
     standardsConformanceOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, ...
-    kpiConsistencyOk, visualArtifactGateOk, duplicateArtifactGateOk);
+    kpiConsistencyOk, visualArtifactGateOk, duplicateArtifactGateOk, browserGate);
 resultReason = localResultReason(resultOk, failureReasons);
 
 status = struct();
@@ -99,14 +119,35 @@ status.ClaimStatus = claimGate.ClaimStatus;
 status.ClaimAllowed = logical(claimGate.ClaimAllowed);
 status.ClaimFailureReason = claimGate.ClaimFailureReason;
 status.RunCompleted = logical(runCompleted);
+status.ExecutionCompleted = logical(runCompleted);
+status.ExecutionStatus = localFourState(logical(runCompleted), true, false);
 status.RunCompletionReason = localRunCompletionReason(layout, runCompleted);
 status.ArtifactsWritten = logical(artifactsWritten);
 status.ArtifactCompletenessOk = logical(artifactCompletenessOk);
 status.TruthContractOk = logical(truthContractOk);
 status.RuntimeTruthContractOk = logical(runtimeTruthContractOk);
+status.RuntimeTruthContractPassed = logical(runtimeTruthContractOk);
+status.RuntimeTruthContractStatus = localFourState(logical(runtimeTruthContractOk), logical(runCompleted), false);
 status.StandardsConformanceOk = logical(standardsConformanceOk);
+status.StandardsConformancePassed = logical(standardsConformanceOk);
+if ~standardsConformanceOk && statisticalGate.Status == "NOT_EVALUATED" && ...
+        logical(runCompleted)
+    status.StandardsConformanceStatus = "NOT_EVALUATED";
+else
+    status.StandardsConformanceStatus = localFourState(logical(standardsConformanceOk), logical(runCompleted), ~logical(strictEligible));
+end
+status.StatisticalQualificationOk = logical(statisticalGate.StatisticalQualificationOk);
+status.StatisticalQualificationStatus = string(statisticalGate.Status);
 status.ScenarioObjectiveOk = logical(scenarioObjectiveOk);
+status.ScenarioObjectivePassed = logical(scenarioObjectiveOk);
+status.ScenarioObjectiveEvidenceAvailable = logical(objectiveEvidenceAvailable);
+if logical(strictEligible) && ~logical(objectiveEvidenceAvailable)
+    status.ScenarioObjectiveStatus = "NOT_EVALUATED";
+else
+    status.ScenarioObjectiveStatus = localFourState(logical(scenarioObjectiveOk), logical(runCompleted), false);
+end
 status.ConfiguredEffectiveOk = logical(configuredGate.ConfiguredEffectiveOk);
+status.ConfiguredEffectivePolicyOk = logical(configuredGate.ConfiguredEffectivePolicyOk);
 status.RunClassGateOk = logical(runClassGate.ObjectiveGateOk);
 status.PublicationLLSEligible = logical(runClassGate.PublicationLLSEligible);
 status.PDCCHGrantBindingOk = logical(bindingGate.BindingGateOk);
@@ -114,10 +155,26 @@ status.PDCCHGrantBindingRequiredGrantCount = double(bindingGate.RequiredGrantCou
 status.PDCCHGrantBindingFailingGrantCount = double(bindingGate.FailingGrantCount);
 status.MandatorySubsystemsOk = logical(mandatoryGate.MandatorySubsystemsOk);
 status.ActiveIssueGateOk = logical(activeIssueGate.ActiveIssueGateOk);
+status.IssueRegistryStatus = string(activeIssueGate.IssueRegistryStatus);
+status.IssueRegistryRowCount = double(activeIssueGate.IssueRegistryRowCount);
 status.KpiConsistencyOk = logical(kpiConsistencyOk);
 status.VisualArtifactGateOk = logical(visualArtifactGateOk);
+status.VisualArtifactGateRequired = logical(artifactIntegrityGate.Required);
 status.DuplicateArtifactGateOk = logical(duplicateArtifactGateOk);
+status.VisualArtifactGateStatus = string(artifactIntegrityGate.VisualArtifactGateStatus);
+status.VisualArtifactFailureCount = double(artifactIntegrityGate.VisualArtifactFailureCount);
+status.VisualArtifactFailureReason = string(artifactIntegrityGate.VisualArtifactFailureReason);
+status.DuplicateArtifactGateStatus = string(artifactIntegrityGate.DuplicateArtifactGateStatus);
+status.DuplicateArtifactFailureCount = double(artifactIntegrityGate.DuplicateArtifactFailureCount);
+status.DuplicateArtifactFailureReason = string(artifactIntegrityGate.DuplicateArtifactFailureReason);
 status.ResultOk = logical(resultOk);
+status.PublicationQualified = logical(resultOk) && logical(runClassGate.PublicationLLSEligible);
+status.PublicationQualificationStatus = localFourState(logical(status.PublicationQualified), ...
+    logical(runCompleted), ~logical(runClassGate.PublicationLLSEligible));
+status.BrowserPublicationRequired = logical(browserGate.Required);
+status.BrowserPublished = logical(browserGate.BrowserPublished);
+status.BrowserPublicationStatus = string(browserGate.Status);
+status.BrowserPublicationFailureReason = string(browserGate.FailureReason);
 status.ResultStatusReason = resultReason;
 status.ActiveCriticalIssueCount = double(activeIssueGate.ActiveCriticalIssueCount);
 status.ActiveHighIssueCount = double(activeIssueGate.ActiveHighIssueCount);
@@ -139,11 +196,12 @@ status.RunClassReason = string(runClassGate.Reason);
 status.StrictAnchorFailureReasons = string(strjoin(failureReasons, "; "));
 status.ProducerModule = "sixgr.truth.evaluateStrictAnchorStatus";
 status.GeneratedAt = string(datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'"));
-status.SchemaVersion = "strict_anchor_status_v1";
+status.SchemaVersion = "strict_anchor_status_v2";
 
 statusT = localResultStatusTable(status);
 sixgr.truth.validateResultStatusPayload(statusT);
-sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "result_status_summary.csv"), statusT);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
+    "result_status_summary.csv"), statusT, "PreserveSchema", true);
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "result_status_summary.json"), status);
 
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "configured_effective_operating_point.csv"), configuredGate.Rows);
@@ -165,6 +223,8 @@ sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "active_issue_gate_summar
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "active_issue_gate_summary.json"), activeIssueGate.Summary);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "conformance_matrix_runtime_audit.csv"), conformanceGate.Rows);
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "conformance_matrix_runtime_audit.json"), conformanceGate.Summary);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "statistical_qualification_gate.csv"), statisticalGate.Rows);
+sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "statistical_qualification_gate.json"), statisticalGate.Summary);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "strict_anchor_acceptance_report.csv"), ...
     localStrictAnchorAcceptanceTable(meta, status));
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "strict_anchor_acceptance_report.json"), ...
@@ -179,10 +239,154 @@ root.RunClassification = runClassGate;
 root.Claim = claimGate;
 root.PDCCHGrantBinding = bindingGate;
 root.MandatorySubsystems = mandatoryGate;
+root.StatisticalQualification = statisticalGate;
 root.ActiveIssueGate = activeIssueGate;
 root.ConformanceMatrix = conformanceGate;
 root.KPIConsistency = kpiGate;
-root.Failures = localRootFailures(status, claimGate, configuredGate, bindingGate, mandatoryGate, activeIssueGate, kpiGate);
+root.BrowserPublication = browserGate;
+root.ArtifactIntegrity = artifactIntegrityGate;
+root.Failures = localRootFailures(status, claimGate, configuredGate, bindingGate, mandatoryGate, statisticalGate, activeIssueGate, kpiGate);
+end
+
+function gate = localArtifactIntegrityGate(layout, scfg, cfg, strictEligible)
+% Publication evidence must never pass because an audit was not executed.
+engineEnabled = localScenarioGetBool(scfg, cfg, ...
+    "canonical_control.output.artifact_contract_engine.enabled", ...
+    localScenarioGetBool(scfg, cfg, "output.artifact_contract_engine.enabled", false));
+auditRequired = logical(strictEligible) && (...
+    localScenarioGetBool(scfg, cfg, "validation.required_artifact_audit", false) || ...
+    localScenarioGetBool(scfg, cfg, "validation.strict_after_run_artifact_audit", false) || ...
+    engineEnabled);
+
+gate = struct( ...
+    "Required", auditRequired, ...
+    "ArtifactEngineEnabled", engineEnabled, ...
+    "VisualArtifactGateOk", ~auditRequired, ...
+    "VisualArtifactGateStatus", localFourState(~auditRequired, true, ~auditRequired), ...
+    "VisualArtifactFailureCount", 0, ...
+    "VisualArtifactFailureReason", "", ...
+    "DuplicateArtifactGateOk", ~engineEnabled, ...
+    "DuplicateArtifactGateStatus", localFourState(~engineEnabled, true, ~engineEnabled), ...
+    "DuplicateArtifactFailureCount", 0, ...
+    "DuplicateArtifactFailureReason", "");
+
+if auditRequired
+    integrityPath = fullfile(layout.ReportCSVDir, "visual_artifact_integrity.csv");
+    semanticAuditPath = fullfile(layout.ReportCSVDir, "visual_artifact_audit.csv");
+    [integrityOk, integrityFailures, integrityReason] = ...
+        localRequiredBooleanAudit(integrityPath, ["IntegrityOk", "integrity_ok"]);
+    [semanticOk, semanticFailures, semanticReason] = ...
+        localRequiredBooleanAudit(semanticAuditPath, ["audit_ok", "AuditOk"]);
+    gate.VisualArtifactFailureCount = integrityFailures + semanticFailures;
+    reasons = [string(integrityReason); string(semanticReason)];
+    reasons = reasons(strlength(strtrim(reasons)) > 0);
+    gate.VisualArtifactFailureReason = strjoin(reasons, "; ");
+    gate.VisualArtifactGateOk = integrityOk && semanticOk;
+    if gate.VisualArtifactGateOk
+        gate.VisualArtifactGateStatus = "PASS";
+    elseif contains(gate.VisualArtifactFailureReason, "not_evaluated")
+        gate.VisualArtifactGateStatus = "NOT_EVALUATED";
+    else
+        gate.VisualArtifactGateStatus = "FAIL";
+    end
+end
+
+if engineEnabled
+    engineAuditPath = fullfile(layout.Root, "artifact_generation", ...
+        "artifact_generation_results.csv");
+    if exist(engineAuditPath, "file") ~= 2
+        gate.DuplicateArtifactGateOk = false;
+        gate.DuplicateArtifactGateStatus = "NOT_EVALUATED";
+        gate.DuplicateArtifactFailureCount = 1;
+        gate.DuplicateArtifactFailureReason = ...
+            "not_evaluated:artifact_generation_results_missing";
+    else
+        try
+            audit = readtable(engineAuditPath, "TextType", "string", ...
+                "VariableNamingRule", "preserve");
+            names = string(audit.Properties.VariableNames);
+            if height(audit) == 0 || ~all(ismember(["Required", "Status"], names))
+                gate.DuplicateArtifactGateOk = false;
+                gate.DuplicateArtifactGateStatus = "NOT_EVALUATED";
+                gate.DuplicateArtifactFailureCount = 1;
+                gate.DuplicateArtifactFailureReason = ...
+                    "not_evaluated:artifact_generation_results_empty_or_malformed";
+            else
+                requiredMask = localAuditLogicalColumn(audit.Required);
+                statusValues = upper(strtrim(string(audit.Status)));
+                failing = requiredMask & statusValues ~= "PASS";
+                duplicateFailure = contains(lower(string(localOptionalTableColumn(audit, ...
+                    "Message", repmat("", height(audit), 1)))), "duplicate");
+                gate.DuplicateArtifactFailureCount = nnz(failing | duplicateFailure);
+                gate.DuplicateArtifactGateOk = gate.DuplicateArtifactFailureCount == 0;
+                gate.DuplicateArtifactGateStatus = localFourState( ...
+                    gate.DuplicateArtifactGateOk, true, false);
+                if ~gate.DuplicateArtifactGateOk
+                    gate.DuplicateArtifactFailureReason = ...
+                        "required_artifact_generation_or_duplicate_gate_failed";
+                end
+            end
+        catch ME
+            gate.DuplicateArtifactGateOk = false;
+            gate.DuplicateArtifactGateStatus = "NOT_EVALUATED";
+            gate.DuplicateArtifactFailureCount = 1;
+            gate.DuplicateArtifactFailureReason = ...
+                "not_evaluated:artifact_generation_audit_unreadable:" + string(ME.identifier);
+        end
+    end
+end
+end
+
+function [ok, failureCount, reason] = localRequiredBooleanAudit(pathValue, candidates)
+ok = false;
+failureCount = 1;
+reason = "not_evaluated:" + string(pathValue) + ":missing";
+if exist(pathValue, "file") ~= 2
+    return;
+end
+try
+    T = readtable(pathValue, "TextType", "string", "VariableNamingRule", "preserve");
+catch ME
+    reason = "not_evaluated:" + string(pathValue) + ":unreadable:" + string(ME.identifier);
+    return;
+end
+if height(T) == 0
+    reason = "not_evaluated:" + string(pathValue) + ":empty";
+    return;
+end
+names = string(T.Properties.VariableNames);
+name = candidates(find(ismember(candidates, names), 1, "first"));
+if isempty(name)
+    reason = "not_evaluated:" + string(pathValue) + ":status_column_missing";
+    return;
+end
+passMask = localAuditLogicalColumn(T.(name));
+failureCount = nnz(~passMask);
+ok = failureCount == 0;
+if ok
+    reason = "";
+else
+    reason = "audit_failed:" + string(pathValue) + ":rows=" + string(failureCount);
+end
+end
+
+function values = localAuditLogicalColumn(raw)
+if islogical(raw)
+    values = raw;
+elseif isnumeric(raw)
+    values = isfinite(raw) & raw ~= 0;
+else
+    values = ismember(lower(strtrim(string(raw))), ["true", "1", "yes", "pass", "ok"]);
+end
+values = logical(values(:));
+end
+
+function values = localOptionalTableColumn(T, name, defaultValue)
+if ismember(string(name), string(T.Properties.VariableNames))
+    values = T.(name);
+else
+    values = defaultValue;
+end
 end
 
 function localEnsureRootDirs(layout)
@@ -233,6 +437,10 @@ meta = struct( ...
 end
 
 function required = localRequiredDirections(scfg, cfg)
+if localIsComponentOnlyProfile(scfg, cfg)
+    required = struct("DL", false, "UL", false);
+    return;
+end
 direction = lower(strtrim(string(localScenarioGet(scfg, cfg, "simulation.link_direction", "both"))));
 if strlength(direction) == 0 || direction == "all"
     direction = "both";
@@ -240,6 +448,16 @@ end
 required = struct();
 required.DL = any(direction == ["both", "dl", "downlink"]);
 required.UL = any(direction == ["both", "ul", "uplink"]);
+end
+
+function tf = localIsComponentOnlyProfile(scfg, cfg)
+profile = lower(strtrim(string(localScenarioGet(scfg, cfg, ...
+    "scenario.runner_profile", sixgr.util.structGet(cfg, "run.runnerProfile", "")))));
+componentOnlyProfiles = ["prach_detection","prach_strict_validation", ...
+    "pdcch_blind_decode_sweep","pdcch_strict_validation", ...
+    "srs_strict_validation","trs_strict_validation", ...
+    "channel_rf_strict_validation","random_access_four_step"];
+tf = any(profile == componentOnlyProfiles);
 end
 
 function mode = localScenarioMode(scfg, cfg)
@@ -650,7 +868,17 @@ if logical(required.UL)
 end
 end
 
-function tf = localArtifactCompletenessStatus(layout, verdict)
+function tf = localArtifactCompletenessStatus(layout, verdict, scfg, cfg)
+% Publication-readiness artifacts (BLER/throughput/distance/energy plots)
+% apply to complete LLS runners, not standalone component validators.  A
+% component runner is still fail-closed against its canonical artifact and
+% round-trip checks; the profile-specific exporter/verifier owns its exact
+% evidence contract.
+if localIsComponentOnlyProfile(scfg, cfg)
+    tf = double(sixgr.util.structGet(verdict, "CanonicalArtifactGapCount", 0)) == 0 && ...
+        double(sixgr.util.structGet(verdict, "RoundtripMismatchCount", 0)) == 0;
+    return;
+end
 summary = localReadTable(fullfile(layout.ReportCSVDir, ...
     "artifact_completeness_summary.csv"));
 if istable(summary) && height(summary) > 0 && ...
@@ -836,6 +1064,23 @@ end
 fixed = runClassProfile.RunClass == "fixed_lls_anchor";
 adaptive = any(runClassProfile.RunClass == ["adaptive_system_diagnostic", "hybrid_validation"]);
 fixedRank = localRunClassRankFixed(scfg, cfg);
+
+% Exact configured/effective equality is a measurement, not a policy
+% verdict.  Report it identically for fixed and adaptive runs.  Adaptive
+% policy may legitimately select another MCS/modulation, but that must not
+% be serialized as an exact configured/effective match.
+exactMissing = strings(0, 1);
+if required.DL && dlCount <= 0
+    exactMissing(end+1, 1) = "missing_dl_configured_effective_rows"; %#ok<AGROW>
+elseif required.DL && ~(isfinite(dlRate) && dlRate + eps >= threshold)
+    exactMissing(end+1, 1) = "dl_exact_match_rate_below_required:" + string(sprintf("%.6g", dlRate)); %#ok<AGROW>
+end
+if required.UL && ulCount <= 0
+    exactMissing(end+1, 1) = "missing_ul_configured_effective_rows"; %#ok<AGROW>
+elseif required.UL && ~(isfinite(ulRate) && ulRate + eps >= threshold)
+    exactMissing(end+1, 1) = "ul_exact_match_rate_below_required:" + string(sprintf("%.6g", ulRate)); %#ok<AGROW>
+end
+
 missing = strings(0, 1);
 if (fixed || (adaptive && fixedRank)) && required.DL && dlCount <= 0
     missing(end+1, 1) = "missing_dl_configured_effective_rows"; %#ok<AGROW>
@@ -876,26 +1121,46 @@ configuredEffectiveMissing = missing;
 mimoPath = fullfile(layout.BeamformingCSVDir, "mimo_configured_vs_effective.csv");
 mimoT = localReadTable(mimoPath);
 mimoSupplementalEvaluated = istable(mimoT) && height(mimoT) > 0;
-mimoSupplementalOk = true;
+mimoRequired = localStrictMIMOEvidenceRequired(cfg);
+mimoSupplementalOk = ~mimoRequired;
 if mimoSupplementalEvaluated
     requiredMIMOColumns = ["Direction","ScenarioObjectivePass", ...
         "SpatialContractMatch","FixedOperatingPointMatch", ...
-        "AdaptivePolicyConformance","MUExecutionMatch"];
+        "AdaptivePolicyConformance","MUExecutionMatch", ...
+        "StrictEligibleRowCount"];
     mimoSchemaOk = all(ismember(requiredMIMOColumns, string(mimoT.Properties.VariableNames)));
     mimoDirectionsOk = mimoSchemaOk && all(ismember(["DL","UL"], upper(string(mimoT.Direction))));
-    mimoRowsOk = mimoSchemaOk && all(localToLogical(mimoT.ScenarioObjectivePass));
+    strictMIMORowCounts = localFirstNumericColumn(mimoT, ...
+        ["StrictEligibleRowCount"]);
+    fixedMIMORequired = localMIMOPolicyRequirement(mimoT, ...
+        "FixedOperatingPointRequired", "AdaptiveMode", true);
+    adaptiveMIMORequired = localMIMOPolicyRequirement(mimoT, ...
+        "AdaptivePolicyRequired", "AdaptiveMode", false);
+    fixedMIMORowsOk = ~fixedMIMORequired | ...
+        localToLogical(mimoT.FixedOperatingPointMatch);
+    adaptiveMIMORowsOk = ~adaptiveMIMORequired | ...
+        localToLogical(mimoT.AdaptivePolicyConformance);
+    mimoRowsOk = mimoSchemaOk && ...
+        all(isfinite(strictMIMORowCounts) & strictMIMORowCounts > 0) && ...
+        all(localToLogical(mimoT.SpatialContractMatch)) && ...
+        all(fixedMIMORowsOk) && all(adaptiveMIMORowsOk) && ...
+        all(localToLogical(mimoT.MUExecutionMatch)) && ...
+        all(localToLogical(mimoT.ScenarioObjectivePass));
     mimoSupplementalOk = mimoSchemaOk && mimoDirectionsOk && mimoRowsOk;
     if ~mimoSupplementalOk
         missing(end+1, 1) = "mimo_four_gate_configured_effective_evidence_failed"; %#ok<AGROW>
     end
+elseif mimoRequired
+    missing(end+1, 1) = "mimo_four_gate_configured_effective_evidence_missing"; %#ok<AGROW>
 end
 
 mismatchCount = 0;
 if height(rows) > 0 && ismember("StrictEligible", string(rows.Properties.VariableNames))
     mismatchCount = sum(logical(rows.StrictEligible) & ~logical(rows.ExactOperatingPointMatch));
 end
-baseOk = (~fixed && ~(adaptive && fixedRank)) || isempty(configuredEffectiveMissing);
-ok = logical(baseOk) && logical(mimoSupplementalOk);
+basePolicyOk = (~fixed && ~(adaptive && fixedRank)) || isempty(configuredEffectiveMissing);
+policyOk = logical(basePolicyOk) && logical(mimoSupplementalOk);
+exactOk = isempty(exactMissing);
 
 summary = struct();
 summary.RunId = meta.RunId;
@@ -910,23 +1175,42 @@ summary.ULExactMatchRate = double(ulRate);
 summary.DLStrictEligibleRows = double(dlCount);
 summary.ULStrictEligibleRows = double(ulCount);
 summary.ConfiguredEffectiveMismatchCount = double(mismatchCount);
-summary.ConfiguredEffectiveOk = logical(ok);
+summary.ConfiguredEffectiveOk = logical(exactOk);
+summary.ConfiguredEffectivePolicyOk = logical(policyOk);
 summary.MIMOSupplementalEvaluated = logical(mimoSupplementalEvaluated);
 summary.MIMOSupplementalOk = logical(mimoSupplementalOk);
 summary.MIMOSupplementalArtifact = "antenna_beamforming/csv/mimo_configured_vs_effective.csv";
-summary.FailureReason = string(strjoin(missing, "; "));
+summary.FailureReason = string(strjoin(exactMissing, "; "));
+summary.PolicyFailureReason = string(strjoin(missing, "; "));
 summary.StrictAnchorEligible = logical(strictEligible);
 summary.Artifact = "reports/csv/configured_effective_operating_point.csv";
 
 gate = struct();
 gate.Rows = rows;
 gate.Summary = summary;
-gate.ConfiguredEffectiveOk = logical(ok);
+gate.ConfiguredEffectiveOk = logical(exactOk);
+gate.ConfiguredEffectivePolicyOk = logical(policyOk);
 gate.ConfiguredEffectiveMismatchCount = double(mismatchCount);
 gate.RequiredConfiguredMatchRate = double(threshold);
 gate.DLExactMatchRate = double(dlRate);
 gate.ULExactMatchRate = double(ulRate);
-gate.FailureReasons = missing;
+gate.FailureReasons = exactMissing;
+gate.PolicyFailureReasons = missing;
+end
+
+function required = localStrictMIMOEvidenceRequired(cfg)
+muRequested = logical(sixgr.util.structGet(cfg, ...
+    "mac.scheduler.muMimoEnabled", sixgr.util.structGet(cfg, ...
+    "phy.mimo.muMimoEnabled", false))) || ...
+    logical(sixgr.util.structGet(cfg, ...
+    "mac.scheduler.ulMuMimoEnabled", sixgr.util.structGet(cfg, ...
+    "phy.mimo.ulMuMimoEnabled", false)));
+rankRequested = max([double(sixgr.util.structGet(cfg, ...
+    "phy.pdsch.numLayers", 1)), double(sixgr.util.structGet(cfg, ...
+    "phy.pusch.numLayers", 1))]) > 1;
+required = logical(muRequested || rankRequested || ...
+    sixgr.util.structGet(cfg, ...
+    "phy.beamManagement.hybridBeamformingEnabled", false));
 end
 
 function rows = localConfiguredEffectiveRows(meta, direction, T, configured, scenarioMode, runClass)
@@ -1164,6 +1448,71 @@ end
 rows(end+1, :) = [string(name), status, result, reason, string(artifact), "runtime_gate"]; %#ok<AGROW>
 end
 
+function gate = localStatisticalQualificationGate(details, strictEligible)
+components = ["PRACH"; "PDCCH"];
+required = false(2,1);
+functionalOk = false(2,1);
+qualified = false(2,1);
+reported = strings(2,1);
+artifacts = ["control/csv/prach_false_alarm_sweep.csv|control/csv/prach_missed_detection_sweep.csv"; ...
+    "control/csv/pdcch_false_alarm_sweep.csv"];
+for ii = 1:numel(components)
+    component = components(ii);
+    prefix = component;
+    required(ii) = logical(strictEligible) && localNestedLogical(details, ...
+        [component, prefix + "Required"], false);
+    functionalOk(ii) = localNestedLogical(details, ...
+        [component, prefix + "StrictOk"], false);
+    qualified(ii) = localNestedLogical(details, ...
+        [component, prefix + "StatisticallyQualified"], false);
+    node = sixgr.util.structGet(details, char(component), struct());
+    reported(ii) = upper(strtrim(string(sixgr.util.structGet(node, ...
+        char(prefix + "StatisticalStatus"), "NOT_EVALUATED"))));
+end
+
+status = repmat("NOT_APPLICABLE",2,1);
+reason = repmat("component_not_required_for_strict_claim",2,1);
+for ii = 1:2
+    if ~required(ii)
+        continue;
+    end
+    if reported(ii) == "FAIL"
+        status(ii) = "FAIL";
+        reason(ii) = "confidence_bound_rejects_configured_target";
+    elseif qualified(ii) && reported(ii) == "PASS"
+        status(ii) = "PASS";
+        reason(ii) = "trial_event_interval_and_stopping_contract_satisfied";
+    elseif ~functionalOk(ii)
+        status(ii) = "NOT_EVALUATED";
+        reason(ii) = "functional_waveform_evidence_incomplete";
+    else
+        status(ii) = "NOT_EVALUATED";
+        reason(ii) = "statistical_trial_or_precision_budget_not_satisfied";
+    end
+end
+gate.StatisticalQualificationOk = all(~required | status == "PASS");
+if ~any(required)
+    gate.Status = "NOT_APPLICABLE";
+elseif any(status(required) == "FAIL")
+    gate.Status = "FAIL";
+elseif any(status(required) == "NOT_EVALUATED")
+    gate.Status = "NOT_EVALUATED";
+else
+    gate.Status = "PASS";
+end
+gate.Rows = table(components,required,functionalOk,qualified,reported,status,reason,artifacts, ...
+    'VariableNames',{'Component','RequiredForStandardsClaim','FunctionalWaveformOk', ...
+    'StatisticallyQualified','ReportedStatisticalStatus','Status','Reason','EvidenceArtifacts'});
+gate.Summary = struct( ...
+    "StatisticalQualificationOk",logical(gate.StatisticalQualificationOk), ...
+    "Status",string(gate.Status), ...
+    "RequiredComponentCount",sum(required), ...
+    "PassedComponentCount",sum(required & status == "PASS"), ...
+    "FailedComponentCount",sum(required & status == "FAIL"), ...
+    "NotEvaluatedComponentCount",sum(required & status == "NOT_EVALUATED"), ...
+    "ProducerModule","sixgr.truth.evaluateStrictAnchorStatus");
+end
+
 function gate = localStandardsClaimGate(layout, meta, scfg, cfg, mandatoryGate, strictEligible)
 claimSources = localClaimSourceRows(layout, meta, scfg, cfg);
 tokens = strings(0, 1);
@@ -1380,10 +1729,10 @@ if strictEligible && ~logical(claimGate.ClaimAllowed)
         "Strict anchor claim rejected because broad conformance wording lacks mandatory proof.", ...
         claimGate.ClaimStatus, claimGate.ClaimFailureReason)];
 end
-if strictEligible && ~logical(configuredGate.ConfiguredEffectiveOk)
+if strictEligible && ~logical(configuredGate.ConfiguredEffectivePolicyOk)
     rootRows = [rootRows; localIssueRow(meta, "AUD-002", "critical", "configured_effective_binding", "scenario_objective", ...
         "Fixed-anchor configured operating point does not match effective runtime operating point.", ...
-        "configured_effective_mismatch", strjoin(configuredGate.FailureReasons, "; "))];
+        "configured_effective_policy_mismatch", strjoin(configuredGate.PolicyFailureReasons, "; "))];
 end
 if strictEligible && ~logical(mandatoryGate.MandatorySubsystemsOk) && isempty(rootRows)
     rootRows = [rootRows; localIssueRow(meta, "AUD-001", "critical", "standards_claim", "mandatory_subsystems", ...
@@ -1430,6 +1779,9 @@ if nargin < 4 || ~istable(rootRows)
     rootRows = localEmptyIssueTable();
 end
 issueT = localIssueUnion(issueT, rootRows);
+registryPath = fullfile(layout.ReportCSVDir, "result_issue_registry.csv");
+registryAvailable = isfile(registryPath) && istable(issueT) && height(issueT) > 0;
+registryRequiredMissing = logical(strictEligible) && ~registryAvailable;
 severity = lower(strtrim(string(localColumnOrDefault(issueT, "Severity", ""))));
 runtime = lower(strtrim(string(localColumnOrDefault(issueT, "RuntimeStatus", localColumnOrDefault(issueT, "Status", "")))));
 fixStatus = lower(strtrim(string(localColumnOrDefault(issueT, "FixStatus", ""))));
@@ -1448,15 +1800,29 @@ blockMask = strictEligible & active & (blocking | mandatory) & (critical | high 
 blockMask = blockMask | (strictEligible & criticalWaiverAttempt);
 
 gate = struct();
-gate.ActiveCriticalIssueCount = sum(active & critical);
+gate.ActiveCriticalIssueCount = sum(active & critical) + double(registryRequiredMissing);
 gate.ActiveHighIssueCount = sum(active & high);
 gate.ActiveMediumIssueCount = sum(active & medium);
 gate.ActiveLowIssueCount = sum(active & low);
-gate.ActiveMandatoryIssueCount = sum(active & mandatory);
+gate.ActiveMandatoryIssueCount = sum(active & mandatory) + double(registryRequiredMissing);
 gate.ActiveWaivedNonBlockingIssueCount = sum(active & contains(waiver, "waived_non_blocking"));
-gate.ActiveIssueGateOk = ~any(blockMask);
+gate.ActiveIssueGateOk = ~any(blockMask) && ~registryRequiredMissing;
 gate.BlockingIssueIds = unique(issueId(blockMask), "stable");
-gate.Rows = localActiveIssueGateRows(meta, issueT, active, blockMask, criticalWaiverAttempt);
+if registryRequiredMissing
+    gate.BlockingIssueIds(end + 1, 1) = "ISSUE_REGISTRY_NOT_EVALUATED";
+    gate.Rows = localMissingIssueRegistryRows(meta);
+    gate.IssueRegistryStatus = "NOT_EVALUATED";
+elseif ~strictEligible && ~registryAvailable
+    gate.Rows = localActiveIssueGateRows(meta, issueT, active, blockMask, criticalWaiverAttempt);
+    gate.IssueRegistryStatus = "NOT_APPLICABLE";
+elseif any(blockMask)
+    gate.Rows = localActiveIssueGateRows(meta, issueT, active, blockMask, criticalWaiverAttempt);
+    gate.IssueRegistryStatus = "FAIL";
+else
+    gate.Rows = localActiveIssueGateRows(meta, issueT, active, blockMask, criticalWaiverAttempt);
+    gate.IssueRegistryStatus = "PASS";
+end
+gate.IssueRegistryRowCount = height(issueT);
 gate.Summary = struct( ...
     "RunId", meta.RunId, ...
     "ActiveIssueGateOk", logical(gate.ActiveIssueGateOk), ...
@@ -1464,6 +1830,8 @@ gate.Summary = struct( ...
     "ActiveHighIssueCount", double(gate.ActiveHighIssueCount), ...
     "ActiveMediumIssueCount", double(gate.ActiveMediumIssueCount), ...
     "ActiveMandatoryIssueCount", double(gate.ActiveMandatoryIssueCount), ...
+    "IssueRegistryStatus", string(gate.IssueRegistryStatus), ...
+    "IssueRegistryRowCount", double(gate.IssueRegistryRowCount), ...
     "BlockingIssueIds", strjoin(gate.BlockingIssueIds, "|"), ...
     "Artifact", "reports/csv/active_issue_gate_summary.csv");
 end
@@ -1512,7 +1880,7 @@ rows = table( ...
     'VariableNames', schemaNames);
 end
 
-function reasons = localStatusFailureReasons(runCompleted, artifactsWritten, artifactCompletenessOk, truthOk, standardsOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, kpiOk, visualOk, duplicateOk)
+function reasons = localStatusFailureReasons(runCompleted, artifactsWritten, artifactCompletenessOk, truthOk, standardsOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, kpiOk, visualOk, duplicateOk, browserGate)
 reasons = strings(0, 1);
 if ~runCompleted
     reasons(end+1, 1) = "run_not_completed"; %#ok<AGROW>
@@ -1520,6 +1888,7 @@ end
 if ~artifactsWritten
     reasons(end+1, 1) = "artifacts_not_written"; %#ok<AGROW>
 end
+
 if ~artifactCompletenessOk
     reasons(end+1, 1) = "required_artifacts_missing_or_incomplete"; %#ok<AGROW>
 end
@@ -1532,7 +1901,7 @@ end
 if ~scenarioObjectiveOk
     reasons(end+1, 1) = "scenario_objective_failed"; %#ok<AGROW>
 end
-if ~logical(configuredGate.ConfiguredEffectiveOk)
+if ~logical(configuredGate.ConfiguredEffectivePolicyOk)
     reasons(end+1, 1) = "configured_effective_operating_point_failed"; %#ok<AGROW>
 end
 if isstruct(runClassGate) && ~logical(sixgr.util.structGet(runClassGate, "ObjectiveGateOk", true))
@@ -1556,9 +1925,35 @@ end
 if ~duplicateOk
     reasons(end+1, 1) = "duplicate_artifact_gate_failed"; %#ok<AGROW>
 end
+if logical(browserGate.Required) && ~logical(browserGate.BrowserPublished)
+    reasons(end+1, 1) = "browser_publication_gate_" + lower(string(browserGate.Status)); %#ok<AGROW>
+end
 if isempty(reasons)
     reasons = "all_required_root_gates_passed";
 end
+end
+
+function rows = localMissingIssueRegistryRows(meta)
+rows = table( ...
+    meta.RunId, ...
+    "ISSUE_REGISTRY_NOT_EVALUATED", ...
+    "critical", ...
+    "publication", ...
+    "issue_registry", ...
+    "Required issue registry is missing or header-only.", ...
+    "not_evaluated", ...
+    "not_evaluated", ...
+    true, ...
+    "not_waivable", ...
+    "", ...
+    true, ...
+    "sixgr.truth.evaluateStrictAnchorStatus", ...
+    "testLLSActiveIssueGateMissingRegistry", ...
+    "reports/csv/result_issue_registry.csv", ...
+    "not_evaluated", ...
+    'VariableNames', {'RunId','IssueId','Severity','Area','Category','Summary','FixStatus','RuntimeStatus', ...
+    'MandatoryForScenario','WaiverStatus','WaiverJustification','BlocksStrictAnchor','IssueSource', ...
+    'RegressionTest','VerificationArtifact','Status'});
 end
 
 function reason = localResultReason(resultOk, failureReasons)
@@ -1569,12 +1964,95 @@ else
 end
 end
 
+function state = localFourState(passValue, evaluated, notApplicable)
+if logical(notApplicable)
+    state = "NOT_APPLICABLE";
+elseif ~logical(evaluated)
+    state = "NOT_EVALUATED";
+elseif logical(passValue)
+    state = "PASS";
+else
+    state = "FAIL";
+end
+end
+
+function gate = localBrowserPublicationGate(layout, meta, scfg, cfg)
+backend = lower(strtrim(string(localScenarioGet(scfg, cfg, "output.backend", "filesystem"))));
+required = backend == "mysql_web" || ...
+    localScenarioGetBool(scfg, cfg, "output.persist_to_database", false) || ...
+    localScenarioGetBool(scfg, cfg, "qualification.browser.required", false) || ...
+    localScenarioGetBool(scfg, cfg, "webgui.qualification.required", false);
+receiptPath = fullfile(layout.Root, "published", "browser_publication_receipt.json");
+gate = struct( ...
+    "Required", logical(required), ...
+    "BrowserPublished", false, ...
+    "Status", "NOT_APPLICABLE", ...
+    "FailureReason", "", ...
+    "ReceiptPath", string(receiptPath));
+if ~required
+    return;
+end
+if ~isfile(receiptPath)
+    gate.Status = "NOT_EVALUATED";
+    gate.FailureReason = "required_browser_publication_receipt_missing";
+    return;
+end
+try
+    receipt = jsondecode(fileread(receiptPath));
+catch ME
+    gate.Status = "FAIL";
+    gate.FailureReason = "browser_publication_receipt_unreadable:" + string(ME.identifier);
+    return;
+end
+requiredFields = ["SchemaName", "SchemaVersion", "RunID", "Status", ...
+    "DatabasePersisted", "BrowserMaterialized"];
+missing = setdiff(requiredFields, string(fieldnames(receipt)), "stable");
+if ~isempty(missing)
+    gate.Status = "FAIL";
+    gate.FailureReason = "browser_publication_receipt_missing_fields:" + strjoin(missing, "|");
+    return;
+end
+if string(receipt.SchemaName) ~= "sixgr.browser_publication_receipt" || ...
+        strlength(strtrim(string(receipt.SchemaVersion))) == 0
+    gate.Status = "FAIL";
+    gate.FailureReason = "browser_publication_receipt_schema_invalid";
+    return;
+end
+if strlength(strtrim(meta.RunId)) > 0 && string(receipt.RunID) ~= string(meta.RunId)
+    gate.Status = "FAIL";
+    gate.FailureReason = "browser_publication_receipt_run_id_mismatch";
+    return;
+end
+missingTables = double(sixgr.util.structGet(receipt, "MissingRequiredTableCount", 0));
+missingCharts = double(sixgr.util.structGet(receipt, "MissingRequiredChartCount", 0));
+passed = upper(strtrim(string(receipt.Status))) == "PASS" && ...
+    localToLogical(receipt.DatabasePersisted) && ...
+    localToLogical(receipt.BrowserMaterialized) && ...
+    isfinite(missingTables) && missingTables == 0 && ...
+    isfinite(missingCharts) && missingCharts == 0;
+if passed
+    gate.BrowserPublished = true;
+    gate.Status = "PASS";
+else
+    gate.Status = "FAIL";
+    gate.FailureReason = "browser_database_or_materialization_gate_failed";
+end
+end
+
 function T = localResultStatusTable(status)
 T = struct2table(status, "AsArray", true);
 required = ["RunId","ScenarioName","ScenarioClass","ScenarioMode","ClaimProfile","ClaimStatus","ClaimAllowed", ...
-    "RunCompleted","ArtifactsWritten","ArtifactCompletenessOk","TruthContractOk","RuntimeTruthContractOk","StandardsConformanceOk", ...
-    "ScenarioObjectiveOk","ConfiguredEffectiveOk","RunClass","RunClassGateOk","PublicationLLSEligible","MandatorySubsystemsOk","ActiveIssueGateOk","KpiConsistencyOk", ...
-    "VisualArtifactGateOk","DuplicateArtifactGateOk","ResultOk","ActiveCriticalIssueCount","ActiveHighIssueCount", ...
+    "RunCompleted","ExecutionCompleted","ExecutionStatus","ArtifactsWritten","ArtifactCompletenessOk","TruthContractOk", ...
+    "RuntimeTruthContractOk","RuntimeTruthContractPassed","RuntimeTruthContractStatus", ...
+    "StandardsConformanceOk","StandardsConformancePassed","StandardsConformanceStatus", ...
+    "StatisticalQualificationOk","StatisticalQualificationStatus", ...
+    "ScenarioObjectiveOk","ScenarioObjectivePassed","ScenarioObjectiveStatus", ...
+    "ConfiguredEffectiveOk","ConfiguredEffectivePolicyOk","RunClass","RunClassGateOk","PublicationLLSEligible","MandatorySubsystemsOk","ActiveIssueGateOk","KpiConsistencyOk", ...
+    "IssueRegistryStatus","IssueRegistryRowCount", ...
+    "VisualArtifactGateOk","DuplicateArtifactGateOk","VisualArtifactGateStatus","VisualArtifactFailureCount","VisualArtifactFailureReason", ...
+    "DuplicateArtifactGateStatus","DuplicateArtifactFailureCount","DuplicateArtifactFailureReason","ResultOk","PublicationQualified","PublicationQualificationStatus", ...
+    "BrowserPublicationRequired","BrowserPublished","BrowserPublicationStatus","BrowserPublicationFailureReason", ...
+    "ActiveCriticalIssueCount","ActiveHighIssueCount", ...
     "ActiveMediumIssueCount","ActiveMandatoryIssueCount","ProxyEvidenceCount","SkippedEvidenceCount","FallbackEvidenceCount", ...
     "UnavailableMandatoryCount","PartialMandatoryCount","ReviewRequiredMandatoryCount","ConfiguredEffectiveMismatchCount", ...
     "PDCCHGrantBindingOk","PDCCHGrantBindingRequiredGrantCount","PDCCHGrantBindingFailingGrantCount", ...
@@ -1588,24 +2066,28 @@ end
 
 function T = localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, mandatoryGate, activeIssueGate)
 names = {'RunId','ScenarioName','ObjectiveName','ObjectiveType','Mandatory','ScenarioMode','RequiredValue','ObservedValue','Threshold','Pass','IssueIdIfFailed','FailureReason','SourceCsv','SourceRowCount','SourceHash'};
+exactMandatory = string(status.RunClass) == "fixed_lls_anchor";
 T = table( ...
-    repmat(meta.RunId, 7, 1), repmat(meta.ScenarioName, 7, 1), ...
-    ["runtime_truth_contract"; "standards_claim"; "configured_effective_operating_point"; "run_classification"; "pdcch_grant_binding"; "mandatory_subsystems"; "active_issue_gate"], ...
-    ["truth"; "claim"; "operating_point"; "classification"; "control_binding"; "mandatory_evidence"; "issue_registry"], ...
-    true(7, 1), repmat(string(status.ScenarioMode), 7, 1), ...
-    ["true"; "claim_allowed_and_mandatory_proof"; "exact_match_threshold"; "run_class_specific_publication_gate"; "all_required_grants_bound_to_decoded_dci"; "all_required_pass"; "no_active_blockers"], ...
-    [string(status.RuntimeTruthContractOk); string(status.StandardsConformanceOk); string(configuredGate.ConfiguredEffectiveOk); string(status.RunClassGateOk); string(status.PDCCHGrantBindingOk); string(mandatoryGate.MandatorySubsystemsOk); string(activeIssueGate.ActiveIssueGateOk)], ...
-    [""; ""; string(configuredGate.RequiredConfiguredMatchRate); ""; string(bindingGate.RequiredGrantCount); ""; ""], ...
-    [status.RuntimeTruthContractOk; status.StandardsConformanceOk; configuredGate.ConfiguredEffectiveOk; status.RunClassGateOk; status.PDCCHGrantBindingOk; mandatoryGate.MandatorySubsystemsOk; activeIssueGate.ActiveIssueGateOk], ...
-    ["", ternary(status.StandardsConformanceOk, "", "AUD-001"), ternary(configuredGate.ConfiguredEffectiveOk, "", "AUD-002"), "", "", ternary(mandatoryGate.MandatorySubsystemsOk, "", "AUD-001"), ""].', ...
-    ["", claimGate.ClaimFailureReason, strjoin(configuredGate.FailureReasons, "; "), string(runClassGate.Reason), strjoin(bindingGate.FailureReasons, "; "), strjoin(mandatoryGate.FailureReasons, "; "), strjoin(activeIssueGate.BlockingIssueIds, "|")].', ...
-    ["reports/csv/truth_contract_summary.csv"; "reports/csv/standards_claim_audit.csv"; "reports/csv/configured_effective_operating_point.csv"; "reports/csv/run_classification.csv"; "reports/csv/pdcch_grant_binding_evidence.csv"; "reports/csv/conformance_matrix_runtime_audit.csv"; "reports/csv/active_issue_gate_summary.csv"], ...
-    [1; height(claimGate.ClaimAudit); height(configuredGate.Rows); height(runClassGate.Table); height(bindingGate.Rows); size(mandatoryGate.Rows, 1); height(activeIssueGate.Rows)], ...
-    repmat("", 7, 1), ...
+    repmat(meta.RunId, 8, 1), repmat(meta.ScenarioName, 8, 1), ...
+    ["runtime_truth_contract"; "standards_claim"; "configured_effective_exact_match"; "configured_effective_policy"; "run_classification"; "pdcch_grant_binding"; "mandatory_subsystems"; "active_issue_gate"], ...
+    ["truth"; "claim"; "operating_point_exact"; "operating_point_policy"; "classification"; "control_binding"; "mandatory_evidence"; "issue_registry"], ...
+    [true; true; exactMandatory; true; true; true; true; true], repmat(string(status.ScenarioMode), 8, 1), ...
+    ["true"; "claim_allowed_and_mandatory_proof"; "exact_match_threshold"; "run_class_policy_conformance"; "run_class_specific_publication_gate"; "all_required_grants_bound_to_decoded_dci"; "all_required_pass"; "no_active_blockers"], ...
+    [string(status.RuntimeTruthContractOk); string(status.StandardsConformanceOk); string(configuredGate.ConfiguredEffectiveOk); string(configuredGate.ConfiguredEffectivePolicyOk); string(status.RunClassGateOk); string(status.PDCCHGrantBindingOk); string(mandatoryGate.MandatorySubsystemsOk); string(activeIssueGate.ActiveIssueGateOk)], ...
+    [""; ""; string(configuredGate.RequiredConfiguredMatchRate); ""; ""; string(bindingGate.RequiredGrantCount); ""; ""], ...
+    [status.RuntimeTruthContractOk; status.StandardsConformanceOk; configuredGate.ConfiguredEffectiveOk; configuredGate.ConfiguredEffectivePolicyOk; status.RunClassGateOk; status.PDCCHGrantBindingOk; mandatoryGate.MandatorySubsystemsOk; activeIssueGate.ActiveIssueGateOk], ...
+    ["", ternary(status.StandardsConformanceOk, "", "AUD-001"), ternary(configuredGate.ConfiguredEffectiveOk, "", "AUD-002"), ternary(configuredGate.ConfiguredEffectivePolicyOk, "", "AUD-002"), "", "", ternary(mandatoryGate.MandatorySubsystemsOk, "", "AUD-001"), ""].', ...
+    ["", claimGate.ClaimFailureReason, strjoin(configuredGate.FailureReasons, "; "), strjoin(configuredGate.PolicyFailureReasons, "; "), string(runClassGate.Reason), strjoin(bindingGate.FailureReasons, "; "), strjoin(mandatoryGate.FailureReasons, "; "), strjoin(activeIssueGate.BlockingIssueIds, "|")].', ...
+    ["reports/csv/truth_contract_summary.csv"; "reports/csv/standards_claim_audit.csv"; "reports/csv/configured_effective_operating_point.csv"; "reports/csv/configured_effective_operating_point.csv"; "reports/csv/run_classification.csv"; "reports/csv/pdcch_grant_binding_evidence.csv"; "reports/csv/conformance_matrix_runtime_audit.csv"; "reports/csv/active_issue_gate_summary.csv"], ...
+    [1; height(claimGate.ClaimAudit); height(configuredGate.Rows); height(configuredGate.Rows); height(runClassGate.Table); height(bindingGate.Rows); size(mandatoryGate.Rows, 1); height(activeIssueGate.Rows)], ...
+    repmat("", 8, 1), ...
     'VariableNames', names);
 end
 
-function gate = localPDCCHGrantBindingGate(layout, cfg, dlTrials, ulTrials)
+function gate = localPDCCHGrantBindingGate(layout, cfg, dlTrials, ulTrials, requiredDataDirections)
+if nargin < 5 || ~isstruct(requiredDataDirections)
+    requiredDataDirections = struct("DL", true, "UL", true);
+end
 controlTrials = localReadTable(fullfile(layout.ControlCSVDir, "pdcch_trials.csv"));
 controlRows = localPDCCHGrantBindingRowsFromControlTrials(controlTrials, cfg);
 dataRows = localPDCCHGrantBindingRowsFromDataTrials(dlTrials, ulTrials, cfg);
@@ -1622,10 +2104,12 @@ end
 rows = localEnforcePDCCHGrantBindingEvidenceCompleteness(rows);
 
 requiredDirections = strings(0, 1);
-if sixgr.control.isPDCCHGrantBindingRequired(cfg, "DL")
+if logical(sixgr.util.structGet(requiredDataDirections, "DL", false)) && ...
+        sixgr.control.isPDCCHGrantBindingRequired(cfg, "DL")
     requiredDirections(end+1, 1) = "DL"; %#ok<AGROW>
 end
-if sixgr.control.isPDCCHGrantBindingRequired(cfg, "UL")
+if logical(sixgr.util.structGet(requiredDataDirections, "UL", false)) && ...
+        sixgr.control.isPDCCHGrantBindingRequired(cfg, "UL")
     requiredDirections(end+1, 1) = "UL"; %#ok<AGROW>
 end
 boundMask = lower(strtrim(string(localColumnOrDefault(rows, "BindingStatus", "")))) == "bound";
@@ -1901,29 +2385,42 @@ end
 
 function T = localStrictAnchorAcceptanceTable(meta, status)
 gateNames = ["RunCompleted"; "ArtifactsWritten"; "ArtifactCompletenessOk"; "RuntimeTruthContractOk"; "StandardsConformanceOk"; ...
-    "ScenarioObjectiveOk"; "ConfiguredEffectiveOk"; "RunClassGateOk"; "PDCCHGrantBindingOk"; "MandatorySubsystemsOk"; "ActiveIssueGateOk"; ...
+    "StatisticalQualificationOk"; "ScenarioObjectiveOk"; "ConfiguredEffectiveOk"; "ConfiguredEffectivePolicyOk"; "RunClassGateOk"; "PDCCHGrantBindingOk"; "MandatorySubsystemsOk"; "ActiveIssueGateOk"; ...
     "KpiConsistencyOk"; "VisualArtifactGateOk"; "DuplicateArtifactGateOk"; "ResultOk"];
 passes = [status.RunCompleted; status.ArtifactsWritten; status.ArtifactCompletenessOk; status.RuntimeTruthContractOk; status.StandardsConformanceOk; ...
-    status.ScenarioObjectiveOk; status.ConfiguredEffectiveOk; status.RunClassGateOk; status.PDCCHGrantBindingOk; status.MandatorySubsystemsOk; status.ActiveIssueGateOk; ...
+    status.StatisticalQualificationOk; status.ScenarioObjectiveOk; status.ConfiguredEffectiveOk; status.ConfiguredEffectivePolicyOk; status.RunClassGateOk; status.PDCCHGrantBindingOk; status.MandatorySubsystemsOk; status.ActiveIssueGateOk; ...
     status.KpiConsistencyOk; status.VisualArtifactGateOk; status.DuplicateArtifactGateOk; status.ResultOk];
 n = numel(gateNames);
+required = true(n, 1);
+required(gateNames == "ConfiguredEffectiveOk") = string(status.RunClass) == "fixed_lls_anchor";
 issueIds = repmat("", n, 1);
 issueIds(~passes & gateNames == "StandardsConformanceOk") = "AUD-001";
+issueIds(~passes & gateNames == "StatisticalQualificationOk") = "AUD-STAT-001";
 issueIds(~passes & gateNames == "ConfiguredEffectiveOk") = "AUD-002";
 T = table( ...
-    repmat(meta.RunId, n, 1), repmat(meta.ScenarioName, n, 1), gateNames, true(n, 1), passes, ~passes, issueIds, ...
+    repmat(meta.RunId, n, 1), repmat(meta.ScenarioName, n, 1), gateNames, required, passes, required & ~passes, issueIds, ...
     repmat("reports/csv/result_status_summary.csv", n, 1), ...
     repmat(string(status.ResultStatusReason), n, 1), ...
     'VariableNames', {'RunId','ScenarioName','GateName','Required','Pass','Blocking','IssueIds','EvidenceArtifacts','FailureReason'});
 end
 
-function failures = localRootFailures(status, claimGate, configuredGate, bindingGate, mandatoryGate, activeIssueGate, kpiGate)
+function failures = localRootFailures(status, claimGate, configuredGate, bindingGate, mandatoryGate, statisticalGate, activeIssueGate, kpiGate)
 failures = strings(0, 1);
 if ~logical(status.ResultOk) && ~logical(claimGate.ClaimAllowed)
     failures(end+1, 1) = "aud_001_standards_claim_gate_failed:" + string(claimGate.ClaimFailureReason); %#ok<AGROW>
 end
-if ~logical(configuredGate.ConfiguredEffectiveOk)
-    failures(end+1, 1) = "aud_002_configured_effective_gate_failed:" + strjoin(configuredGate.FailureReasons, "; "); %#ok<AGROW>
+if ~logical(configuredGate.ConfiguredEffectivePolicyOk)
+    failures(end+1, 1) = "aud_002_configured_effective_policy_gate_failed:" + strjoin(configuredGate.PolicyFailureReasons, "; "); %#ok<AGROW>
+end
+if isfield(status, "ScenarioObjectiveOk") && ~logical(status.ScenarioObjectiveOk)
+    if isfield(status, "ScenarioObjectiveEvidenceAvailable") && ~logical(status.ScenarioObjectiveEvidenceAvailable)
+        failures(end+1, 1) = "scenario_objective_gate_not_evaluated:required_objective_evidence_missing"; %#ok<AGROW>
+    else
+        failures(end+1, 1) = "scenario_objective_gate_failed"; %#ok<AGROW>
+    end
+end
+if ~logical(statisticalGate.StatisticalQualificationOk)
+    failures(end+1, 1) = "statistical_qualification_gate_" + lower(string(statisticalGate.Status)); %#ok<AGROW>
 end
 if isfield(status, "RunClassGateOk") && ~logical(status.RunClassGateOk)
     failures(end+1, 1) = "run_classification_gate_failed:" + string(sixgr.util.structGet(status, "RunClassReason", "")); %#ok<AGROW>
@@ -1941,6 +2438,16 @@ end
 if nargin >= 6 && isstruct(kpiGate) && ~logical(sixgr.util.structGet(kpiGate, "KpiConsistencyOk", false))
     failures(end+1, 1) = "kpi_consistency_gate_failed:" + ...
         strjoin(string(sixgr.util.structGet(kpiGate, "FailureReasons", strings(0, 1))), "; "); %#ok<AGROW>
+end
+if ~logical(status.VisualArtifactGateOk)
+    failures(end+1, 1) = "visual_artifact_gate_" + ...
+        lower(string(status.VisualArtifactGateStatus)) + ":" + ...
+        string(status.VisualArtifactFailureReason); %#ok<AGROW>
+end
+if ~logical(status.DuplicateArtifactGateOk)
+    failures(end+1, 1) = "duplicate_artifact_gate_" + ...
+        lower(string(status.DuplicateArtifactGateStatus)) + ":" + ...
+        string(status.DuplicateArtifactFailureReason); %#ok<AGROW>
 end
 failures = failures(strlength(strtrim(failures)) > 0);
 end
@@ -1960,6 +2467,7 @@ updates = {
     "StandardsConformanceOk", status.StandardsConformanceOk;
     "ScenarioObjectiveOk", status.ScenarioObjectiveOk;
     "ConfiguredEffectiveOk", status.ConfiguredEffectiveOk;
+    "ConfiguredEffectivePolicyOk", status.ConfiguredEffectivePolicyOk;
     "RunClass", status.RunClass;
     "RunClassGateOk", status.RunClassGateOk;
     "PublicationLLSEligible", status.PublicationLLSEligible;
@@ -1971,6 +2479,12 @@ updates = {
     "ClaimAllowed", status.ClaimAllowed;
     "PDCCHGrantBindingOk", status.PDCCHGrantBindingOk;
     "PDCCHGrantBindingEvidenceArtifact", "reports/csv/pdcch_grant_binding_evidence.csv";
+    "VisualArtifactGateOk", status.VisualArtifactGateOk;
+    "VisualArtifactGateStatus", status.VisualArtifactGateStatus;
+    "VisualArtifactFailureCount", status.VisualArtifactFailureCount;
+    "DuplicateArtifactGateOk", status.DuplicateArtifactGateOk;
+    "DuplicateArtifactGateStatus", status.DuplicateArtifactGateStatus;
+    "DuplicateArtifactFailureCount", status.DuplicateArtifactFailureCount;
     "ResultStatusReason", status.ResultStatusReason;
     "StrictAnchorEligible", status.StrictAnchorEligible;
     "StrictAnchorPass", status.StrictAnchorPass;
@@ -2212,6 +2726,24 @@ end
 
 function tf = localHasColumn(T, name)
 tf = istable(T) && ismember(string(name), string(T.Properties.VariableNames));
+end
+
+function required = localMIMOPolicyRequirement(T, explicitName, adaptiveName, fixedDefault)
+names = string(T.Properties.VariableNames);
+if ismember(explicitName, names)
+    required = localToLogical(T.(char(explicitName)));
+elseif ismember(adaptiveName, names)
+    adaptive = localToLogical(T.(char(adaptiveName)));
+    if fixedDefault
+        required = ~adaptive;
+    else
+        required = adaptive;
+    end
+else
+    % Legacy rows cannot prove which operating-point policy applies, so
+    % retain the historical fail-closed requirement.
+    required = true(height(T), 1);
+end
 end
 
 function values = localToLogical(raw)

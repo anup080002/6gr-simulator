@@ -25,7 +25,13 @@ sixgr.util.ensureFolder(layout.AirInterfaceImageDir);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.ReportImageDir);
 
-localDeleteLegacySweepArtifacts(layout);
+% Measured-SINR analytics coexist with a real configured-SNR campaign.  A
+% standalone AWGN sweep owns lls_snr_sweep.csv and its BLER/throughput
+% plots; deleting that primary artifact here silently discarded real
+% runtime evidence. Geometry/receiver-noise runs, which have no configured
+% injection-axis claim, still remove stale configured-SNR artifacts.
+retainConfiguredSweep = localRetainsConfiguredSNRSweep(opt.ScenarioConfig);
+localDeleteLegacySweepArtifacts(layout, retainConfiguredSweep);
 
 trialData = opt.TrialData;
 if isempty(trialData)
@@ -975,21 +981,38 @@ if any(mask)
 end
 end
 
-function localDeleteLegacySweepArtifacts(layout)
+function localDeleteLegacySweepArtifacts(layout, retainConfiguredSweep)
+if nargin < 2
+    retainConfiguredSweep = false;
+end
 paths = [
-    fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv")
     fullfile(layout.AirInterfaceCSVDir, "live_link_snr_sweep.csv")
     fullfile(layout.ReportCSVDir, "per_sweep_comparison_tables.csv")
-    fullfile(layout.ReportImageDir, "bler_vs_snr_unavailable.png")
-    fullfile(layout.ReportImageDir, "throughput_vs_snr_unavailable.png")
-    fullfile(layout.ReportImageDir, "bler_vs_snr.png")
-    fullfile(layout.ReportImageDir, "throughput_vs_snr.png")
     ];
+if ~logical(retainConfiguredSweep)
+    paths = [paths; ...
+        fullfile(layout.AirInterfaceCSVDir, "lls_snr_sweep.csv"); ...
+        fullfile(layout.ReportImageDir, "bler_vs_snr_unavailable.png"); ...
+        fullfile(layout.ReportImageDir, "throughput_vs_snr_unavailable.png"); ...
+        fullfile(layout.ReportImageDir, "bler_vs_snr.png"); ...
+        fullfile(layout.ReportImageDir, "throughput_vs_snr.png")];
+end
 for i = 1:numel(paths)
     if exist(paths(i), "file") == 2
         delete(paths(i));
     end
 end
+end
+
+function tf = localRetainsConfiguredSNRSweep(cfg)
+tf = false;
+if ~(isstruct(cfg) && isscalar(cfg))
+    return;
+end
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "run.noiseOperatingMode", sixgr.util.structGet(cfg, ...
+    "simulation.noise_operating_mode", "")))));
+tf = mode == "standalone_awgn_snr_argument";
 end
 
 function localRelabelAnalyticsCSVAndPNG(layout)

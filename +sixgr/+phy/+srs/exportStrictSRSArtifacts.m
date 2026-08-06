@@ -20,11 +20,13 @@ sixgr.util.ensureFolder(binaryDir);
 sixgr.util.ensureFolder(figDir);
 
 tables = result.ArtifactTables;
+tables.srs_resource_grid_power = localGridEvidence(result.PositiveGrid);
 csvMap = struct( ...
     "srs_config_strict", fullfile(refCsvDir, "srs_config_strict.csv"), ...
     "srs_resource_sets", fullfile(refCsvDir, "srs_resource_sets.csv"), ...
     "srs_resources", fullfile(refCsvDir, "srs_resources.csv"), ...
     "srs_resource_mapping", fullfile(refCsvDir, "srs_resource_mapping.csv"), ...
+    "srs_resource_grid_power", fullfile(refCsvDir, "srs_resource_grid_power.csv"), ...
     "srs_tx_waveform", fullfile(refCsvDir, "srs_tx_waveform.csv"), ...
     "srs_rx_extraction", fullfile(refCsvDir, "srs_rx_extraction.csv"), ...
     "srs_detection_metrics", fullfile(refCsvDir, "srs_detection_metrics.csv"), ...
@@ -92,6 +94,9 @@ for ii = 1:numel(compatNames)
     rows(numel(names) + 1 + ii) = localManifestRow(outPath, "text/csv", "csv", height(T), ...
         "sixgr.phy.srs.exportStrictSRSArtifacts");
 end
+sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, ...
+    "OnlyPaths", [string(struct2cell(csvMap)); string(airPath); ...
+    string(struct2cell(compatMap))]);
 
 jsonMap = struct( ...
     "srs_config_binding", fullfile(jsonDir, "srs_config_binding.json"), ...
@@ -111,14 +116,12 @@ end
 
 textRows = localWriteTextArtifacts(textDir, result);
 binaryRows = localWriteBinaryArtifacts(binaryDir, result);
-figureRows = localWriteFigures(figDir, result);
-manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:)];
-manifest = struct2table(manifestRows, "AsArray", true);
+[figureRows, plotLineagePath] = localWriteFigures(runFolder, refCsvDir, figDir, result, csvMap);
+lineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", height(readtable(plotLineagePath)), ...
+    "sixgr.phy.srs.exportStrictSRSArtifacts");
+manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:); lineageRow];
 manifestPath = fullfile(refCsvDir, "srs_strict_artifact_manifest.csv");
-sixgr.util.csvWriteTable(manifestPath, manifest);
-manifest(end + 1, :) = struct2table(localManifestRow(manifestPath, "text/csv", "csv", height(manifest), ...
-    "sixgr.phy.srs.exportStrictSRSArtifacts"), "AsArray", true);
-sixgr.util.csvWriteTable(manifestPath, manifest);
+manifest = sixgr.artifact.writeIntegrityManifest(manifestPath, manifestRows);
 end
 
 function T = localEnsureSRSLineageColumns(T)
@@ -313,7 +316,7 @@ data = single([real(x(:)).'; imag(x(:)).']);
 fwrite(fid, data(:), "single");
 end
 
-function rows = localWriteFigures(figDir, result)
+function [rows, lineagePath] = localWriteFigures(runFolder, refCsvDir, figDir, result, csvMap)
 paths = [
     string(fullfile(figDir, "srs_resource_grid.png"))
     string(fullfile(figDir, "srs_detection_metric_by_trial.png"))
@@ -348,6 +351,21 @@ rows(7) = localManifestRow(paths(7), "image/png", "figure", height(neg), "sixgr.
 sixgr.visual.writeFlowDiagramPNG(paths(8), "Strict SRS channel sounding flow", ...
     ["nrSRS generation","UL OFDM waveform","gNB resource extraction","LS/MMSE/DFT channel estimate","coverage gate"], result.StrictOk);
 rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.srs.exportStrictSRSArtifacts");
+lineagePath = fullfile(refCsvDir, "srs_plot_lineage.csv");
+sourceCSVs = [
+    string(csvMap.srs_resource_grid_power)
+    string(csvMap.srs_detection_metrics)
+    string(csvMap.srs_coverage)
+    string(csvMap.srs_channel_estimation)
+    string(csvMap.srs_low_snr_sweep)
+    string(csvMap.srs_timing_offset_sweep)
+    string(csvMap.srs_negative_trials)
+    string(csvMap.srs_config_strict) + "|" + string(csvMap.srs_trials)];
+sixgr.visual.writeComponentPlotLineage(runFolder, lineagePath, ...
+    ["srs_resource_grid","srs_detection_metric_by_trial","srs_coverage_summary", ...
+    "srs_channel_estimation_nmse","srs_low_snr_sweep","srs_timing_offset_sweep", ...
+    "srs_negative_trial_outcomes","srs_strict_flow"], ...
+    paths, sourceCSVs, "sixgr.phy.srs.exportStrictSRSArtifacts");
 end
 
 function localWriteLinePNG(path, titleText, x, y)
@@ -360,11 +378,11 @@ fig = localPlotFigure();
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
 if isempty(x)
-    axis(ax, "off"); text(ax, 0.5, 0.5, "No finite runtime samples", "HorizontalAlignment", "center");
-else
-    plot(ax, x, y, "-o", "LineWidth", 1.6, "MarkerSize", 5);
-    grid(ax, "on");
+    error("sixgr:phy:srs:MissingPlotEvidence", ...
+        "Cannot publish '%s': no finite runtime samples are available.", string(titleText));
 end
+plot(ax, x, y, "-o", "LineWidth", 1.6, "MarkerSize", 5);
+grid(ax, "on");
 title(ax, string(titleText), "Interpreter", "none");
 sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
@@ -376,10 +394,10 @@ fig = localPlotFigure();
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
 if isempty(y)
-    axis(ax, "off"); text(ax, 0.5, 0.5, "No finite runtime samples", "HorizontalAlignment", "center");
-else
-    bar(ax, y, "FaceColor", [0.19 0.49 0.49]); grid(ax, "on");
+    error("sixgr:phy:srs:MissingPlotEvidence", ...
+        "Cannot publish '%s': no finite runtime samples are available.", string(titleText));
 end
+bar(ax, y, "FaceColor", [0.19 0.49 0.49]); grid(ax, "on");
 title(ax, string(titleText), "Interpreter", "none");
 sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
 end
@@ -388,7 +406,8 @@ function localWriteHeatPNG(path, titleText, M)
 M = abs(double(M));
 M(~isfinite(M)) = 0;
 if isempty(M)
-    M = zeros(1, 1);
+    error("sixgr:phy:srs:MissingPlotEvidence", ...
+        "Cannot publish '%s': the measured resource grid is empty.", string(titleText));
 end
 rows = min(24, size(M, 1));
 cols = min(24, size(M, 2));
@@ -405,6 +424,21 @@ end
 
 function fig = localPlotFigure()
 fig = figure("Visible", "off", "Color", "w", "Position", [100 100 820 480]);
+end
+
+function T = localGridEvidence(grid)
+if isempty(grid)
+    error("sixgr:phy:srs:MissingGridEvidence", ...
+        "Strict SRS resource-grid evidence is empty.");
+end
+sz = size(grid);
+if numel(sz) < 3
+    sz(3) = 1;
+end
+[subcarrier, symbol, port] = ndgrid(0:(sz(1)-1), 0:(sz(2)-1), 0:(sz(3)-1));
+values = grid(:);
+T = table(subcarrier(:), symbol(:), port(:), real(values), imag(values), abs(values).^2, ...
+    'VariableNames', {'Subcarrier','Symbol','Port','ValueI','ValueQ','Power'});
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer)

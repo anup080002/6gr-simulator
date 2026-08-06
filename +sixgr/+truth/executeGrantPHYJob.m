@@ -47,6 +47,13 @@ end
 if direction == "UL"
     res = sixgr.link.runULPUSCHThroughput(cfg, args{:});
 else
+    executionProfile = strtrim(string(sixgr.util.structGet(job, ...
+        "ExecutionProfile", "")));
+    if strlength(executionProfile) == 0
+        error("sixgr:truth:MissingGrantPHYExecutionProfile", ...
+            "DL grant PHY jobs require an explicit derived execution profile.");
+    end
+    args = [args {"ExecutionProfile", char(executionProfile)}]; %#ok<AGROW>
     res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
 end
 

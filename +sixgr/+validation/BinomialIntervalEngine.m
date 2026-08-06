@@ -40,6 +40,17 @@ classdef BinomialIntervalEngine
                         upperBound = betaincinv(cl,k+1,n-k);
                     end
                     sidedness = "ONE_SIDED_UPPER";
+                case "CLOPPER_PEARSON_ONE_SIDED_LOWER"
+                    center = estimate;
+                    upperBound = 1;
+                    if k == 0
+                        lowerBound = 0;
+                    elseif k == n
+                        lowerBound = (1-cl)^(1/n);
+                    else
+                        lowerBound = betaincinv(1-cl,k,n-k+1);
+                    end
+                    sidedness = "ONE_SIDED_LOWER";
                 otherwise
                     error("sixgr:validation:UnknownIntervalMethod", ...
                         "Unknown binomial interval method '%s'.",method);
@@ -66,6 +77,10 @@ classdef BinomialIntervalEngine
         function result = exactUpper(k,n,confidenceLevel,varargin)
             result = sixgr.validation.BinomialIntervalEngine.compute( ...
                 k,n,confidenceLevel,"CLOPPER_PEARSON_ONE_SIDED_UPPER",varargin{:});
+        end
+        function result = exactLower(k,n,confidenceLevel,varargin)
+            result = sixgr.validation.BinomialIntervalEngine.compute( ...
+                k,n,confidenceLevel,"CLOPPER_PEARSON_ONE_SIDED_LOWER",varargin{:});
         end
     end
 end

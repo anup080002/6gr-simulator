@@ -19,7 +19,10 @@ assert(strcmp(fileread(finalPath), "hello runtime artifact"), "Committed artifac
 
 artifactCsv = fullfile(runFolder, "runtime", "csv", "artifact_transactions.csv");
 assert(exist(artifactCsv, "file") == 2, "Artifact transaction CSV must exist.");
-T = readtable(artifactCsv, "VariableNamingRule", "preserve");
+T = readtable(artifactCsv, "Delimiter", ",", "VariableNamingRule", "preserve");
+assert(ismember("event_type", string(T.Properties.VariableNames)), ...
+    "Artifact transaction schema was parsed as: %s", ...
+    strjoin(string(T.Properties.VariableNames), "|"));
 eventTypes = string(T.event_type);
 assert(any(eventTypes == "ARTIFACT_BEGIN"), "Artifact begin must be recorded.");
 assert(any(eventTypes == "ARTIFACT_COMMIT"), "Artifact commit must be recorded.");

@@ -1,0 +1,14 @@
+RUN testFRCMetricConfidenceContract
+FRCMetricConfidenceContract: TB-level BLER and clustered HARQ bounds passed.
+PASS testFRCMetricConfidenceContract
+RUN testLLSStatisticalQualificationGate
+PASS testLLSStatisticalQualificationGate
+RUN testPRACHStatisticalQualificationYAMLAuthority
+{Error using assert
+Changing only the runtime output root must not change the physical PRACH config hash.
+
+Error in testPRACHStatisticalQualificationYAMLAuthority (line 64)
+        assert(string(strict.ConfigHash) == string(strictAlternateRoot.ConfigHash), ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+ERROR: MATLAB error Exit Status: 0x00000001

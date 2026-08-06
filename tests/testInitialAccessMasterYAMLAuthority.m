@@ -20,6 +20,7 @@ mutated.canonical_control.initial_access.mib.pdcch_config_sib1 = 1;
 mutated.canonical_control.initial_access.sib1.pdsch.num_prb = 18;
 mutated.canonical_control.initial_access.rrc.transaction_id = 2;
 mutated.canonical_control.random_access.power_ramping_step_db = 4;
+mutated.canonical_control.random_access.enable_frequency_estimation_metric = false;
 path = fullfile(tmp, "mutated_initial_access_master.json");
 sixgr.util.jsonWrite(path, mutated);
 scfg = sixgr.lls6g.config.loadScenarioConfig(path);
@@ -30,6 +31,8 @@ assert(double(cfg.phy.mib.pdcchConfigSIB1) == 1);
 assert(double(cfg.initial_access.sib1.pdsch.num_prb) == 18);
 assert(double(cfg.initial_access.rrc.transaction_id) == 2);
 assert(double(cfg.random_access.power_ramping_step_db) == 4);
+assert(~logical(cfg.random_access.enable_frequency_estimation_metric), ...
+    "Canonical random-access CFO-estimator authority must override an inherited legacy value.");
 
 plan = sixgr.phy.ia.InitialAccessCapabilityRegistry.fromConfig(cfg);
 assert(logical(plan.Executable) && ~logical(plan.Profile.ProxyAllowed) && ...
@@ -58,6 +61,7 @@ required = [ ...
     "canonical_control.initial_access.rrc.require_setup_complete"
     "canonical_control.random_access.ra_response_window_slots"
     "canonical_control.random_access.ra_contention_resolution_timer_slots"
+    "canonical_control.random_access.enable_frequency_estimation_metric"
     "canonical_control.random_access.msg3_pusch.transform_precoding"
     "canonical_control.random_access.setup_complete_pusch.transform_precoding"];
 for ii = 1:numel(required)
@@ -82,6 +86,9 @@ assert(double(cfg.phy.mib.pdcchConfigSIB1) == ...
 assert(double(cfg.phy.mib.dmrsTypeAPosition) == ...
     double(ia.mib.dmrs_type_a_position));
 assert(logical(cfg.phy.sib1.enable) == logical(ia.sib1.enabled));
+assert(logical(cfg.random_access.enable_frequency_estimation_metric) == ...
+    logical(raw.canonical_control.random_access.enable_frequency_estimation_metric), ...
+    "PRACH receiver CFO-estimator enablement must remain YAML-authoritative.");
 assert(isequal(cfg.random_access.setup_complete_pusch, ...
     raw.canonical_control.random_access.setup_complete_pusch), ...
     "RRCSetupComplete PUSCH must reach the production RA configuration unchanged.");

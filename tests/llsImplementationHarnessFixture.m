@@ -209,6 +209,13 @@ T = table( ...
     'AppliedAWGNSNR_dB','MCS','Throughput_Mbps','Goodput_Mbps','Latency_ms','TruthStatus'});
 T.ChannelEstimateAvailable = true(height(T), 1);
 T.Status = repmat("PASS", height(T), 1);
+T.TBSInputModulation = repmat(modulation, height(T), 1);
+T.TBSInputNumLayers = repmat(layers, height(T), 1);
+T.TBSInputNPRB = repmat(prb, height(T), 1);
+T.TBSInputNREPerPRB = repmat(nRePerPrb, height(T), 1);
+T.TBSInputTargetCodeRate = repmat(targetCodeRate, height(T), 1);
+T.TBSInputXOverhead = zeros(height(T), 1);
+T.TBSInputSource = repmat("transmitter_resource_accounting", height(T), 1);
 end
 
 function T = localKPIRows(spec)

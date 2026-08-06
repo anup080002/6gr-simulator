@@ -1,0 +1,7 @@
+         Domain         ArtifactType              FileName              Registered    SourceRows         Status                                                                             Reason
+    ________________    ____________    ____________________________    __________    __________    ________________    ______________________________________________________________________________________________________________________________________________
+
+    "pdsch"                "CSV"        "pdsch_bler_curve.csv"            true            1         "REGISTERED"        ""
+    "pdsch"                "PNG"        "pdsch_bler_vs_snr.png"           true            1         "REGISTERED"        "renderer_bound_to_validated_pdsch_bler_curve"
+    "pusch"                "CSV"        "pusch_bler_curve.csv"            false           0         "NOT_REGISTERED"    "sixgr:artifact:PUSCHRawEvidenceMissingColumns | In-memory UL trials lack required BLER fields: FrequencyHoppingApplied, FrequencyHoppingMode"
+    "initial_access"       "CSV"        "prach_detection_trials.csv"      false           0         "NOT_REGISTERED"    "sixgr:artifact:PRACHRawEvidenceMissingColumns | In-memory PRACH trials lack required fields: PRACHFrequencyEstimate_Hz"

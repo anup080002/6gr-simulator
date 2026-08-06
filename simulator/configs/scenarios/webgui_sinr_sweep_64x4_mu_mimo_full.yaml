@@ -221,7 +221,13 @@ canonical_control:
     mu_mimo_phase_only_projection_max_iterations: 500
     mu_mimo_phase_only_projection_tolerance: 1.0e-6
     phase07_strict:
-      enabled: false
+      enabled: true
+      max_rank: 2
+      rank_domain: [1, 2]
+      ul_srs_authority:
+        enabled: true
+        max_age_slots: 20
+        configured_override_forbidden: true
       csi_report:
         report_config_id: csi-report-0
         epoch: 0
@@ -307,6 +313,7 @@ canonical_control:
     pbch_required: true
     prach_required: true
     pdcch_required: true
+    pucch_required: true
     srs_required: true
     trs_required: true
     srs_max_age_slots: 20
@@ -397,6 +404,7 @@ canonical_control:
     num_rx_antennas: 64
     num_tx_antennas: 4
     num_prach_occasions: 4
+    enable_frequency_estimation_metric: true
     # The requested connected-data PT-RS feature remains authoritative for
     # every waveform stage.  Common RA links use their explicit rank-one
     # DM-RS port association rather than inheriting rank-two data ports.
@@ -448,12 +456,24 @@ canonical_control:
     tx_power_dbm: 46
     pa_efficiency: 0.35
     rf_chain_count: 32
+    bs_static_power_w: 200
+    bs_per_rf_chain_power_w: 10
+    bs_sleep_power_w: 20
+    bs_pa_efficiency: 0.35
+    ue_idle_power_w: 1.0
+    ue_rx_power_w: 1.5
+    ue_sleep_power_w: 0.1
+    ue_tx_dc_per_watt_rf: 2.857142857142857
+    bs_tx_power_dbm: 46
+    ue_tx_power_dbm: 23
+    bs_rf_chain_count: 32
+    ue_rf_chain_count: 4
   output:
     backend: filesystem
     persistence_mode: results_folder
     persist_to_database: false
     persist_to_results_folder: true
-    profiler_enabled: false
+    profiler_enabled: true
     export_ssb_beam_sweep: true
     # Publish lightweight run state every slot, but rebuild the expensive
     # derived browser gallery only at campaign start and final completion.
@@ -693,10 +713,19 @@ pusch:
   layer_count: 2
   num_layers: 2
   num_antenna_ports: 2
+  transmission_scheme: codebook
+  codebook_based_transmission: true
+  codebook_type: codebook1_ng1n4n1
+  tpmi: 0
   modulation: 256QAM
   mcs_index: 20
   dmrs_port_set: [0, 1]
   ptrs_enabled: true
+  srs_authority:
+    required: true
+    max_age_slots: 20
+    configuration_epoch_required: true
+    configured_tpmi_fallback_allowed: false
 
 # Top-level runtime authority mirrors the detailed canonical-control surface.
 # buildInternalConfig consumes this resolved section after inheritance; keep
@@ -764,6 +793,7 @@ control_gating:
   pbch_required: true
   prach_required: true
   pdcch_required: true
+  pucch_required: true
   srs_required: true
   srs_max_age_slots: 20
   trs_required: true

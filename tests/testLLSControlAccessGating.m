@@ -34,7 +34,6 @@ cfg = sixgr.util.structSet(cfg, ...
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.SymbolAllocation", [2 10]);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.MappingType", "A");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mappingType", "A");
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.enablePTRS", false);
 carrierNRB = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
 assert(isfinite(carrierNRB) && carrierNRB >= 1, ...
     "Control-gating fixture requires an explicit carrier grid size.");
@@ -53,6 +52,13 @@ cfg = sixgr.util.structSet(cfg, "referenceSignals.operationOrientation", "");
 cfg = sixgr.util.structSet(cfg, "referenceSignals.csiAcquisitionMode", "");
 cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.operation_orientation", "tdd_reciprocity");
 cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.csi_acquisition_mode", "joint_dl_ul");
+% This assertion exercises exact same-realization TDD reciprocity.  The
+% inherited browser scenario is mobile (30 km/h), so make the fixture's
+% physical channel explicitly static instead of asking production code to
+% reuse a time-varying fading realization as if it were unchanged.
+cfg = sixgr.util.structSet(cfg, "channel.doppler_Hz", 0);
+cfg = sixgr.util.structSet(cfg, "channel.dopplerHz", 0);
+cfg = sixgr.util.structSet(cfg, "channel.fading.maxDoppler_Hz", 0);
 cfg = sixgr.util.structSet(cfg, "phy.waveform.sampleRate_Hz", 30.72e6);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.timingAdvanceUpdateMode", "measurement_only");
 cfg = sixgr.util.structSet(cfg, "run.controlGating.timingAdvanceUpdateThresholdSamples", 0.25);

@@ -1,0 +1,8 @@
+PASS testFourStepRAResultAdapterDependencies: RA adapter dependencies and failure provenance are explicit.
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=3500000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=0 ShadowEnabled=0 LOSEnabled=0
+
+ans =
+
+  logical
+
+   1

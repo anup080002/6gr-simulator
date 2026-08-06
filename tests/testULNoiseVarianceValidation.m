@@ -12,7 +12,7 @@ localTestResolverRejectsMissingNoiseVariance();
 localTestPUSCHRejectsInvalidNoiseVariance();
 localTestPUSCHAcceptsValidRuntimeNoiseVariance();
 localTestPUCCHRejectsInvalidNoiseVariance();
-localTestPUCCHRejectsChannelEstimationFailure();
+localTestPUCCHFormat0UsesNoncoherentFadingDetection();
 localTestSRSRejectsInvalidNoiseVariance();
 localTestExplicitControlNoiseVarianceScalesToGridDomain();
 localTestULRunnerExportsNoiseVarianceStatus();
@@ -122,17 +122,22 @@ localAssertThrows(@() sixgr.phy.ul.PUCCH_Rx( ...
     "sixgr:phy:pucch:InvalidNoiseVariance", ...
     "Typed PUCCH invalid-noise validation");
 end
-function localTestPUCCHRejectsChannelEstimationFailure()
+function localTestPUCCHFormat0UsesNoncoherentFadingDetection()
 fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected(0, int8(1));
 [tx, ~] = sixgr.phy.ul.PUCCH_Tx(fixture.Carrier, ...
     fixture.Assignment, fixture.Report, "Carrier", fixture.Carrier);
-localAssertThrows(@() sixgr.phy.ul.PUCCH_Rx( ...
+[rx, info] = sixgr.phy.ul.PUCCH_Rx( ...
     tx.Waveform, fixture.Carrier, fixture.Assignment, fixture.Context, ...
     "Carrier", fixture.Carrier, ...
     "NoiseVariance", 1e-6, ...
-    "ChannelProfile", "TDL-C"), ...
-    "sixgr:phy:pucch:DMRSGenerationFailed", ...
-    "Fading PUCCH without DM-RS");
+    "ChannelProfile", "TDL-C");
+assert(logical(rx.NoncoherentSequenceDetection) && ...
+    string(rx.ChannelEstimationMode) == "format0_noncoherent_sequence_detection", ...
+    "PUCCH Format 0 must use its noncoherent sequence detector on fading channels.");
+assert(~logical(rx.ChannelEstimateApplicable) && isempty(rx.ChannelEstimate), ...
+    "DM-RS-free PUCCH Format 0 must not fabricate a scalar or full-grid channel estimate.");
+assert(logical(rx.DetectionAttempted) && logical(info.DetectionAttempted), ...
+    "PUCCH Format 0 fading reception must execute the physical noncoherent detector.");
 end
 
 function localTestSRSRejectsInvalidNoiseVariance()
@@ -260,8 +265,7 @@ end
 
 function cfg = localBasicControlCfg(runFolder)
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
-    fullfile(pwd, "simulator", "configs", "scenarios", ...
-    "master_sinr_sweep.yaml"));
+    fullfile(pwd, "configs", "lls", "lls_srs_strict_mini_anchor.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
@@ -273,7 +277,6 @@ cfg.run.strictMode = false;
 cfg.run.noProxyTruthContract = false;
 cfg.run.strictNoiseVarianceRequired = false;
 cfg.run.interferenceExecutionMode = "none";
-cfg.phy.srs.enable = true;
 cfg.phy.rnti = 320;
 end
 

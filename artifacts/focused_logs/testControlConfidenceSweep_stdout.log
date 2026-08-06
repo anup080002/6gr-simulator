@@ -1,0 +1,23 @@
+RUN testPDCCHDetectionConfidenceSweep
+PASS testPDCCHDetectionConfidenceSweep
+RUN testPRACHDetectionConfidenceSweep
+[2026-08-06T08:21:47Z] INFO Strict PRACH progress: stage=strict_prach_config_validation supplemental_completion=0.020 note=Validating strict PRACH configuration and root-sequence evidence.
+[2026-08-06T08:21:47Z] INFO Strict PRACH progress: stage=strict_prach_positive_high_snr supplemental_completion=0.080 note=Running positive high-SNR PRACH receive validation.
+[2026-08-06T08:21:48Z] INFO Strict PRACH progress: stage=strict_prach_missed_detection_sweep supplemental_completion=0.180 note=Running PRACH missed-detection SNR sweep.
+PRACH_STAT metric=missed_detection snr_db=-24 trials=2/2 look=1 events_ci=[0.158114,1] width=0.841886 qualification=FAIL stopping=exact_lower_bound_above_target
+PRACH_STAT metric=missed_detection snr_db=-12 trials=2/2 look=1 events_ci=[0.158114,1] width=0.841886 qualification=FAIL stopping=exact_lower_bound_above_target
+PRACH_STAT metric=missed_detection snr_db=0 trials=2/2 look=1 events_ci=[0,0.841886] width=0.841886 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=35 trials=2/2 look=1 events_ci=[0,0.888197] width=0.888197 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+[2026-08-06T08:21:55Z] INFO Strict PRACH progress: stage=strict_prach_false_alarm_sweep supplemental_completion=0.360 note=Running PRACH false-alarm noise-only sweep.
+PRACH_STAT metric=false_alarm snr_db=-24 trials=2/2 look=1 events_ci=[0,0.888197] width=0.888197 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=false_alarm snr_db=-12 trials=2/2 look=1 events_ci=[0,0.888197] width=0.888197 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=false_alarm snr_db=0 trials=2/2 look=1 events_ci=[0,0.888197] width=0.888197 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=false_alarm snr_db=35 trials=2/2 look=1 events_ci=[0,0.888197] width=0.888197 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+[2026-08-06T08:22:00Z] INFO Strict PRACH progress: stage=strict_prach_timing_offset_sweep supplemental_completion=0.540 note=Running PRACH timing-offset sweep.
+[2026-08-06T08:22:01Z] INFO Strict PRACH progress: stage=strict_prach_frequency_offset_sweep supplemental_completion=0.660 note=Running PRACH frequency-offset and restricted-set sweep.
+[2026-08-06T08:22:04Z] INFO Strict PRACH progress: stage=strict_prach_collision_trials supplemental_completion=0.780 note=Running PRACH collision and multi-preamble trials.
+[2026-08-06T08:22:05Z] INFO Strict PRACH progress: stage=strict_prach_multi_occasion_trials supplemental_completion=0.860 note=Running PRACH multi-occasion RARNTI trials.
+[2026-08-06T08:22:06Z] INFO Strict PRACH progress: stage=strict_prach_negative_wrong_config supplemental_completion=0.920 note=Running PRACH negative wrong-root receiver guard.
+[2026-08-06T08:22:07Z] INFO Strict PRACH progress: stage=strict_prach_validation_complete supplemental_completion=1.000 note=Strict PRACH waveform validation completed.
+PASS testPRACHDetectionConfidenceSweep
+CONTROL_CONFIDENCE_SWEEP_PASS=2

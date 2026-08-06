@@ -705,9 +705,9 @@ rawTrials.DL = sixgr.truth.canonicalizeConfiguredPhysicalAntennaMetadata( ...
 rawTrials.UL = sixgr.truth.canonicalizeConfiguredPhysicalAntennaMetadata( ...
     rawTrials.UL, cfg, "UL");
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, ...
-    "dl_pdsch_trials.csv"), rawTrials.DL);
+    "dl_pdsch_trials.csv"), rawTrials.DL, "PreserveSchema", true);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, ...
-    "ul_pusch_trials.csv"), rawTrials.UL);
+    "ul_pusch_trials.csv"), rawTrials.UL, "PreserveSchema", true);
 rawTrials.DLConstellation = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "dl_constellation_samples.csv"));
 rawTrials.ULConstellation = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "ul_constellation_samples.csv"));
 rawTrials.PBCH = localReadPersistedCSV(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"));
@@ -1393,7 +1393,7 @@ else
         dlUserSummary = table();
     end
     dlTrials = localCanonicalizeLinkTrialExport(dlTrials, "DL", cfg);
-    sixgr.util.csvWriteTable(fDL, dlTrials);
+    sixgr.util.csvWriteTable(fDL, dlTrials, "PreserveSchema", true);
     if istable(csirsTrials) && ~isempty(csirsTrials)
         sixgr.util.csvWriteTable(fCSIRS, csirsTrials);
     end
@@ -1432,7 +1432,7 @@ else
         ulUserSummary = table();
     end
     ulTrials = localCanonicalizeLinkTrialExport(ulTrials, "UL", cfg);
-    sixgr.util.csvWriteTable(fUL, ulTrials);
+    sixgr.util.csvWriteTable(fUL, ulTrials, "PreserveSchema", true);
     if isLiveDBMode
         liveArtifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, struct( ...
             "DL", dlTrials, ...
@@ -1739,8 +1739,10 @@ out.DL = localForceLinkTrialSourceArtifact(out.DL, "DL");
 out.UL = localForceLinkTrialSourceArtifact(out.UL, "UL");
 out.SRS = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable("SRS", out.SRS);
 
-sixgr.util.csvWriteTable(fullfile(csvDir, "dl_pdsch_trials.csv"), out.DL);
-sixgr.util.csvWriteTable(fullfile(csvDir, "ul_pusch_trials.csv"), out.UL);
+sixgr.util.csvWriteTable(fullfile(csvDir, "dl_pdsch_trials.csv"), ...
+    out.DL, "PreserveSchema", true);
+sixgr.util.csvWriteTable(fullfile(csvDir, "ul_pusch_trials.csv"), ...
+    out.UL, "PreserveSchema", true);
 if istable(out.SRS) && ~isempty(out.SRS)
     sixgr.util.csvWriteTable(fullfile(csvDir, "srs_trials.csv"), out.SRS);
 end
@@ -3405,8 +3407,8 @@ dlSummaryT = sixgr.util.structGet(finalRawTrials, "MultiUserDL", table());
 ulSummaryT = sixgr.util.structGet(finalRawTrials, "MultiUserUL", table());
 dlTrials = localCanonicalizeLinkTrialExport(dlTrials, "DL", cfg);
 ulTrials = localCanonicalizeLinkTrialExport(ulTrials, "UL", cfg);
-sixgr.util.csvWriteTable(dlTablePath, dlTrials);
-sixgr.util.csvWriteTable(ulTablePath, ulTrials);
+sixgr.util.csvWriteTable(dlTablePath, dlTrials, "PreserveSchema", true);
+sixgr.util.csvWriteTable(ulTablePath, ulTrials, "PreserveSchema", true);
 if strlength(string(dlConstellationPath)) > 0 && istable(dlConstT) && ~isempty(dlConstT)
     sixgr.util.csvWriteTable(dlConstellationPath, localDownsampleConstellationTable(dlConstT, 2500));
 end
@@ -3727,7 +3729,7 @@ localAppendRuntimeLog("INFO", ...
     char(direction), round(double(sweepIdx)), round(double(sweepCount)), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
     numel(grants), max(1, round(double(sixgr.util.structGet(cfg, 'run.batchSizeLinks', numel(grants))))));
 chunkSize = max(1, round(double(sixgr.util.structGet(cfg, "run.batchSizeLinks", numel(grants)))));
-resolvedGrantCache = localBuildCoupledResolvedGrantCache(runtimeState, cfg, multiUser, userCfg, grants, direction);
+    [resolvedGrantCache, runtimeState] = localBuildCoupledResolvedGrantCache(runtimeState, cfg, multiUser, userCfg, grants, direction);
 interferenceCacheKey = "";
 interferenceCachePayload = struct();
 interferenceWorkerCache = [];
@@ -4310,7 +4312,7 @@ if ~isRetx
 end
 end
 
-function cache = localBuildCoupledResolvedGrantCache(runtimeState, cfg, multiUser, userCfg, grants, direction)
+function [cache, runtimeState] = localBuildCoupledResolvedGrantCache(runtimeState, cfg, multiUser, userCfg, grants, direction)
 cache = repmat(struct( ...
     "Valid", false, ...
     "GrantIndex", NaN, ...
@@ -4370,9 +4372,155 @@ else
         end
     end
 end
+if logical(sixgr.util.structGet(runtimeState, "ProtocolWaveformEnabled", false))
+    [cache, runtimeState] = localBindProtocolPayloadsToResolvedGrantCache( ...
+        cache, runtimeState, cfg, direction);
+end
 localAppendRuntimeLog("INFO", ...
     "Prepared coupled %s resolved grant cache complete: entries=%d elapsed_s=%.3f.", ...
     char(upper(string(direction))), numel(cache), toc(tStart));
+end
+
+function [cache, runtimeState] = localBindProtocolPayloadsToResolvedGrantCache(cache, runtimeState, cfg, direction)
+direction = upper(string(direction));
+bridge = sixgr.util.structGet(runtimeState, "ProtocolBridge", []);
+if isempty(bridge) || ~isa(bridge, "sixgr.protocol.WaveformProtocolBridge") || ~bridge.Enabled
+    error("sixgr:protocol:WaveformProtocolBridgeMissing", ...
+        "Strict protocol YAML is enabled, but the coordinator protocol bridge is unavailable.");
+end
+packetT = sixgr.util.structGet(runtimeState, "PacketDeliveryLedgerTable", table());
+if ~(istable(packetT) && ~isempty(packetT))
+    error("sixgr:protocol:MissingApplicationTraffic", ...
+        "Strict same-waveform protocol execution requires queued application packets before new-data grants.");
+end
+required = ["Direction","UEIndex","PacketId","ApplicationPacketId", ...
+    "OfferedBits","RemainingBits","SegmentCount"];
+if ~all(ismember(required, string(packetT.Properties.VariableNames)))
+    error("sixgr:protocol:ApplicationLedgerSchemaMismatch", ...
+        "Application packet ledger lacks the fields required for protocol-TB binding.");
+end
+plannedRemaining = double(packetT.RemainingBits);
+plannedSegments = double(packetT.SegmentCount);
+
+for i = 1:numel(cache)
+    if ~logical(sixgr.util.structGet(cache(i), "Valid", false))
+        continue;
+    end
+    signalType = upper(string(sixgr.util.structGet(cache(i), "SignalType", direction)));
+    if ~any(signalType == ["DL","UL","PDSCH","PUSCH"])
+        continue;
+    end
+    grant = sixgr.util.structGet(cache(i), "GrantSnapshot", struct());
+    isRetx = sixgr.util.logicalAny(sixgr.util.structGet( ...
+        sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", ...
+        sixgr.util.structGet(grant, "IsRetransmission", false)));
+    if isRetx
+        if ~logical(sixgr.util.structGet(grant, "ProtocolPayloadSameWaveformTruth", false))
+            error("sixgr:protocol:RetransmissionMissingProtocolBinding", ...
+                "HARQ retransmission grant %d does not retain its original protocol payload binding.", i);
+        end
+        continue;
+    end
+
+    ueIdx = double(sixgr.util.structGet(cache(i), "UEIndex", NaN));
+    packetMask = upper(string(packetT.Direction)) == direction & ...
+        double(packetT.UEIndex) == ueIdx & plannedRemaining > 0;
+    packetIdx = find(packetMask, 1, "first");
+    if isempty(packetIdx)
+        error("sixgr:protocol:NewDataGrantWithoutApplicationPayload", ...
+            "New-data %s grant %d for UE %d has no queued application payload.", ...
+            direction, i, ueIdx);
+    end
+    tbsBits = double(sixgr.util.structGet(grant, "TBSBits", ...
+        sixgr.util.structGet(grant, "TransportBlockSize", NaN)));
+    capacityBytes = bridge.maximumPayloadBytes(tbsBits);
+    remainingBits = plannedRemaining(packetIdx);
+    if mod(remainingBits, 8) ~= 0
+        error("sixgr:protocol:NonByteAlignedApplicationPayload", ...
+            "Application packet %s has %d remaining bits; strict protocol payloads are byte aligned.", ...
+            string(packetT.PacketId(packetIdx)), remainingBits);
+    end
+    payloadBytes = min(capacityBytes, remainingBits / 8);
+    if payloadBytes < 1
+        error("sixgr:protocol:MACPDUCapacityExceeded", ...
+            "The %d-bit transport block cannot carry one configured SDAP/PDCP/RLC/MAC payload byte.", tbsBits);
+    end
+
+    offsetBits = double(packetT.OfferedBits(packetIdx)) - plannedRemaining(packetIdx);
+    segmentIndex = plannedSegments(packetIdx) + 1;
+    packetId = string(packetT.PacketId(packetIdx));
+    fragmentId = "runtime-" + direction + "-UE-" + compose("%03d", ueIdx) + ...
+        "-" + packetId + "-fragment-" + string(segmentIndex);
+    tbId = localProtocolTransportBlockId(grant, direction, ueIdx, i);
+    payload = localProtocolPayloadBytes(cfg, packetId, direction, ueIdx, offsetBits / 8, payloadBytes);
+    slot = double(sixgr.util.structGet(grant, "Slot", sixgr.util.structGet(runtimeState, "CurrentSlot", 1)));
+    eventTime = max(0, (slot - 1) * double(sixgr.util.structGet(runtimeState, "SlotDuration_s", 0)));
+    [tbBits, evidence] = bridge.encodeFragment(ueIdx, direction, tbId, ...
+        fragmentId, payload, tbsBits, eventTime);
+
+    grant.TransportBlockId = char(tbId);
+    grant.ProtocolPayloadSameWaveformTruth = true;
+    grant.ProtocolPacketId = char(packetId);
+    grant.ProtocolApplicationPacketId = char(string(packetT.ApplicationPacketId(packetIdx)));
+    grant.ProtocolFragmentId = char(fragmentId);
+    grant.ProtocolSegmentIndex = double(segmentIndex);
+    grant.ProtocolPayloadOffsetBits = double(offsetBits);
+    grant.ProtocolPayloadBits = double(evidence.PayloadBits);
+    grant.ProtocolPayloadSHA256 = char(evidence.PayloadSHA256);
+    grant.ProtocolSDAPHeaderHex = char(evidence.SDAPHeaderHex);
+    grant.ProtocolPDCPHeaderHex = char(evidence.PDCPHeaderHex);
+    grant.ProtocolRLCHeaderHex = char(evidence.RLCHeaderHex);
+    grant.ProtocolEncodedRLC_SHA256 = char(evidence.EncodedRLC_SHA256);
+    grant.ProtocolMACSHA256 = char(evidence.MACSHA256);
+    grant.ProtocolMACPDUBytes = double(evidence.MACPDUBytes);
+    grant.ProtocolMACPaddingBytes = double(evidence.MACPaddingBytes);
+    grant.ProtocolEvidenceSource = char(evidence.EvidenceSource);
+    cache(i).GrantSnapshot = grant;
+    cache(i).TransportBlockBits = int8(tbBits(:));
+
+    if ~isempty(sixgr.util.structGet(cache(i), "PrecomputedTxWaveform", []))
+        context = struct("GrantSnapshot", grant, "TransportBlockBits", int8(tbBits(:)), ...
+            "RV", sixgr.util.structGet(cache(i), "RV", []));
+        [wave, rate] = localPrecomputeCoupledInterfererTxWaveform( ...
+            cache(i).Cfg, direction, signalType, grant, context);
+        cache(i).PrecomputedTxWaveform = wave;
+        cache(i).PrecomputedTxSampleRate_Hz = rate;
+    end
+    plannedRemaining(packetIdx) = plannedRemaining(packetIdx) - evidence.PayloadBits;
+    plannedSegments(packetIdx) = segmentIndex;
+end
+runtimeState.ProtocolBridge = bridge;
+end
+
+function tbId = localProtocolTransportBlockId(grant, direction, ueIdx, grantIndex)
+for name = ["TransportBlockId","TBId","GrantContextId","PHYGrantContextId"]
+    value = strtrim(string(sixgr.util.structGet(grant, char(name), "")));
+    if strlength(value) > 0 && lower(value) ~= "nan"
+        tbId = value;
+        return;
+    end
+end
+harq = sixgr.util.structGet(grant, "HARQ", struct());
+harqId = double(sixgr.util.structGet(harq, "HarqID", NaN));
+ndiEpoch = double(sixgr.util.structGet(harq, "NDIEpoch", NaN));
+slot = double(sixgr.util.structGet(grant, "Slot", NaN));
+if ~(isfinite(harqId) && isfinite(ndiEpoch) && isfinite(slot))
+    error("sixgr:protocol:MissingTransportBlockIdentity", ...
+        "Protocol grant %d lacks a stable grant or HARQ transport-block identity.", grantIndex);
+end
+tbId = direction + "_ue" + string(ueIdx) + "_harq" + string(harqId) + ...
+    "_epoch" + string(ndiEpoch) + "_slot" + string(slot);
+end
+
+function bytes = localProtocolPayloadBytes(cfg, packetId, direction, ueIdx, offsetBytes, count)
+seed = double(sixgr.util.structGet(cfg, "run.seed", NaN));
+if ~(isfinite(seed) && seed >= 0)
+    error("sixgr:protocol:MissingPayloadSeed", ...
+        "Deterministic same-waveform application payload generation requires run.seed.");
+end
+identityOffset = sum(double(char(packetId + "|" + direction))) + 257 * double(ueIdx);
+start = double(offsetBytes) + seed + identityOffset;
+bytes = uint8(mod(start + (0:(double(count)-1)), 256));
 end
 
 function tf = localCanParallelizeCoupledGrantCache(cfg, grants)
@@ -4415,6 +4563,9 @@ if isfield(stateOut, "MobilityModel")
 end
 if isfield(stateOut, "RuntimeChannelStates")
     stateOut.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
+end
+if isfield(stateOut, "ProtocolBridge")
+    stateOut.ProtocolBridge = [];
 end
 end
 
@@ -5893,6 +6044,18 @@ end
 if ismember("TransformPrecodingApplied", string(grantRow.Properties.VariableNames))
     grantRow.TransformPrecodingApplied(1) = logical(sixgr.util.structGet(grant, "TransformPrecodingApplied", false));
 end
+if ismember("FrequencyHoppingApplied", string(grantRow.Properties.VariableNames))
+    grantRow.FrequencyHoppingApplied(1) = logical(sixgr.util.structGet(grant, "FrequencyHoppingApplied", false));
+end
+if ismember("FrequencyHoppingMode", string(grantRow.Properties.VariableNames))
+    grantRow.FrequencyHoppingMode(1) = string(sixgr.util.structGet(grant, "FrequencyHoppingMode", ""));
+end
+if ismember("FrequencyHoppingToolboxMode", string(grantRow.Properties.VariableNames))
+    grantRow.FrequencyHoppingToolboxMode(1) = string(sixgr.util.structGet(grant, "FrequencyHoppingToolboxMode", ""));
+end
+if ismember("SecondHopStartPRB", string(grantRow.Properties.VariableNames))
+    grantRow.SecondHopStartPRB(1) = double(sixgr.util.structGet(grant, "SecondHopStartPRB", NaN));
+end
 if ismember("BeamformingApplied", string(grantRow.Properties.VariableNames))
     grantRow.BeamformingApplied(1) = logical(sixgr.util.structGet(grant, "BeamformingApplied", false));
 end
@@ -5951,14 +6114,15 @@ vars = string(T.Properties.VariableNames);
 stringFields = [ ...
     "ConfiguredBeamSelectionStrategy","PrecoderSource","PrecodingMode","PrecodingApplicationStage", ...
     "AppliedBeamIndexSet","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","RequestedVsAppliedPrecoderPMIMatchStatus", ...
+    "FrequencyHoppingMode","FrequencyHoppingToolboxMode", ...
     "UCIOnPUSCHSource","HARQACKDecodeStatus","HARQACKDecodeReason", ...
     "GrantContextId","GrantSharedStateCommitMode"];
 logicalFields = [ ...
-    "PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","BeamformingApplied", ...
+    "PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","FrequencyHoppingApplied","BeamformingApplied", ...
     "UCIOnPUSCHApplied","HARQACKContentMatch","GrantWorkerSafe"];
 numericFields = [ ...
     "PMI","CRI","AppliedPrecoderPMI","PrecodingNumPorts","PrecodingNumLayers", ...
-    "PrecodingMatrixRows","PrecodingMatrixCols","TBSBits","TBSBytes","HARQACKBitCount"];
+    "PrecodingMatrixRows","PrecodingMatrixCols","SecondHopStartPRB","TBSBits","TBSBytes","HARQACKBitCount"];
 
 for i = 1:numel(stringFields)
     fieldName = stringFields(i);
@@ -8690,8 +8854,12 @@ refreshHeavyArtifacts = localShouldRefreshHeavyLiveArtifacts(cfg, meta);
 writeRawTablesNow = logical(opt.WriteRawTables) && localShouldWriteLiveRawTables(cfg, meta, refreshHeavyArtifacts);
 if writeRawTablesNow
     rawTrials = localForceDirectionalRawTrialArtifacts(rawTrials);
-    sixgr.util.csvWriteTable(dlTablePath, sixgr.util.structGet(rawTrials, "DL", table()));
-    sixgr.util.csvWriteTable(ulTablePath, sixgr.util.structGet(rawTrials, "UL", table()));
+    sixgr.util.csvWriteTable(dlTablePath, ...
+        sixgr.util.structGet(rawTrials, "DL", table()), ...
+        "PreserveSchema", true);
+    sixgr.util.csvWriteTable(ulTablePath, ...
+        sixgr.util.structGet(rawTrials, "UL", table()), ...
+        "PreserveSchema", true);
     if strlength(string(dlConstellationPath)) > 0 && istable(dlConstT) && ~isempty(dlConstT)
         sixgr.util.csvWriteTable(dlConstellationPath, localDownsampleConstellationTable(dlConstT, 2500));
     end
@@ -8839,7 +9007,7 @@ function localMaybeWritePartialTable(pathOut, T)
 if strlength(string(pathOut)) == 0 || ~istable(T)
     return;
 end
-sixgr.util.csvWriteTable(pathOut, T);
+sixgr.util.csvWriteTable(pathOut, T, "PreserveSchema", true);
 end
 
 function interval = localResolveLiveFramePublishInterval(cfg, nTrials)
@@ -9302,7 +9470,8 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'HybridElementToPortMatrixSHA256','BaseHybridElementToPortMatrixSHA256','NumLogicalPorts','NumRFChains', ...
     'PMICodebookMode','CSIReportMode','CSIPayloadBitLength','CSIPayloadHex', ...
     'ConfiguredBeamSelectionStrategy','PrecoderSource','PrecodingMode','PrecodingApplicationStage', ...
-    'PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied','BeamformingApplied', ...
+    'PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied', ...
+    'FrequencyHoppingApplied','FrequencyHoppingMode','FrequencyHoppingToolboxMode','SecondHopStartPRB','BeamformingApplied', ...
     'AppliedBeamIndexSet','AppliedPrecoderPMI','AppliedPrecoderPMIType','AppliedPrecoderCodebookMode','RequestedVsAppliedPrecoderPMIMatchStatus', ...
     'BeamSelectionStrategy','BeamSelectionAuthority','BeamSelectionPolicyType','BeamSelectionPolicyFixed','RequestedBeamIndexSet', ...
     'RequestedPrecoderPMI','RequestedPrecoderSource','AppliedPrecoderSource', ...
@@ -9468,7 +9637,7 @@ for i = 1:numel(vars)
                             'InterferenceMode','InterferencePowerSource','DopplerSourceMode','DopplerValueRole', ...
                             'GrantControlState','PDCCHControlFailureReason','PDCCHControlEvidenceSource','ControlDecodeSource', ...
                             'CellAcquisitionState','AccessState','SRSValidityState','CSIValidityState','TRSValidityState','SRSBandwidthCoverageStatus', ...
-                            'ConfiguredBeamSelectionStrategy','PrecoderSource','PrecodingMode','PrecodingApplicationStage', ...
+                            'ConfiguredBeamSelectionStrategy','PrecoderSource','PrecodingMode','PrecodingApplicationStage','FrequencyHoppingMode','FrequencyHoppingToolboxMode', ...
                             'MUMIMOPairingStatus','MUMIMOPairingMetricSource','MUMIMOPairingEvidenceSource','MUMIMOPrecoderType', ...
                             'MUMIMOSpatialDesignStatus','MUMIMOSpatialDesignContractVersion','MUMIMOSpatialDesignEvidenceSource', ...
                             'MUMIMOSpatialFilterMatrixSHA256','MUMIMOReceiveCombiningMatrixSHA256','MUMIMOReceiverAlgorithm', ...
@@ -9520,7 +9689,7 @@ for i = 1:numel(vars)
                             'TrackingEligibility','TRSInfluencedDecision', ...
                             'IQImbalanceConfigured','IQImbalanceApplied', ...
                             'FallbackUsedForPathloss', ...
-                            'FullInterfererChannelTruthUsed','PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied','BeamformingApplied','ChannelFadingApplied', ...
+                            'FullInterfererChannelTruthUsed','PrecodingActive','ExplicitBeamWeightsApplied','TransformPrecodingApplied','FrequencyHoppingApplied','BeamformingApplied','ChannelFadingApplied', ...
                             'FormatAdapted','ControlResourceValidity','UCICRCApplicable','ReceiverHestSINRApplicable', ...
                             'DCICrcPass','PDCCHPayloadMatch','PDCCHCausalGrantDecodeOk','PDCCHMissedDetection','PDCCHFalseAlarm', ...
                             'GrantValid','NegativeExpectedOk','PDCCHBlindSearchEnabled','PDCCHREGMappingAvailable', ...
@@ -10104,6 +10273,8 @@ requestedPMI = double(localColumnOrDefault(T, "RequestedPrecoderPMI", NaN));
 appliedBeam = strtrim(string(localColumnOrDefault(T, "AppliedBeamIndexSet", "")));
 appliedPMI = double(localColumnOrDefault(T, "AppliedPrecoderPMI", NaN));
 appliedSource = strtrim(string(localColumnOrDefault(T, "AppliedPrecoderSource", localColumnOrDefault(T, "PrecoderSource", ""))));
+appliedMatrixDigest = lower(strtrim(string(localColumnOrDefault(T, ...
+    "AppliedPrecoderMatrixSHA256", ""))));
 precodingMode = lower(strtrim(string(localColumnOrDefault(T, "PrecodingMode", ""))));
 transformApplied = logical(localColumnOrDefault(T, "TransformPrecodingApplied", false)) | precodingMode == "transform_precoding";
 explicitBeamWeights = logical(localColumnOrDefault(T, "ExplicitBeamWeightsApplied", false));
@@ -10131,6 +10302,13 @@ T.RequestedBeamTruthClassification(requestedBeamMask) = "requested_reference";
 T.RequestedPrecoderPMITruthClassification(requestedPMIMask) = "requested_reference";
 T.AppliedBeamTruthClassification(appliedBeamMask) = "applied_runtime_value";
 T.AppliedPrecoderPMITruthClassification(appliedPMIMask) = "applied_runtime_value";
+matrixIdentifiedWithoutPMI = ~isUL & ~appliedPMIMask & ...
+    explicitBeamWeights & ~cellfun(@isempty, regexp(cellstr(appliedMatrixDigest), ...
+    '^[0-9a-f]{64}$', 'once'));
+T.AppliedPrecoderPMIApplicationSource(matrixIdentifiedWithoutPMI) = ...
+    "not_applicable_explicit_matrix_identified_by_sha256";
+T.AppliedPrecoderPMITruthClassification(matrixIdentifiedWithoutPMI) = ...
+    "not_applicable_explicit_matrix_without_scalar_pmi";
 matchStatus = strings(n, 1);
 for ii = 1:n
     matchStatus(ii) = localRequestedVsAppliedPMIStatusBundle(requestedPMI(ii), appliedPMI(ii));
@@ -10269,9 +10447,6 @@ nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
 cfgPoint = sixgr.truth.bindStandaloneSNRPoint(cfg, double(snr_dB));
 pbchObservationSubframes = localResolvePBCHObservationSubframes(cfg);
-rootRunFolder = string(sixgr.util.structGet(cfg, "run.rootRunFolder", ""));
-writeSIB1Artifacts = strlength(rootRunFolder) > 0 && ...
-    logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "DL", snr_dB, k);
     r.Status = "FAIL";
@@ -10279,11 +10454,14 @@ for k = 1:nTrials
         ssbIndex = localResolvePBCHSSBIndex(cfg, k);
         cfgTrial = sixgr.truth.bindStandalonePBCHTrial( ...
             cfgPoint, double(snr_dB), k, ssbIndex);
-        cellSearchArgs = {"NumSubframes", pbchObservationSubframes, "SSBIndex", ssbIndex};
-        if writeSIB1Artifacts && k == 1
-            cellSearchArgs = [cellSearchArgs, {"RunFolder", rootRunFolder, ...
-                "RunId", "sib1_runtime_waveform", "WriteArtifacts", true}]; %#ok<AGROW>
-        end
+        % Coupled PBCH trials can execute concurrently for multiple UEs.
+        % They must remain in-memory producers: writing the shared SIB1
+        % filenames here creates a cross-worker overwrite race and breaks
+        % the one-row/one-execution evidence identity.  The normalized
+        % bundle anchor below is deliberately serial and is the sole owner
+        % of component SIB1 figure/table publication.
+        cellSearchArgs = {"NumSubframes", pbchObservationSubframes, ...
+            "SSBIndex", ssbIndex, "WriteArtifacts", false};
         out = sixgr.link.runCellSearch_MIB_SIB1(cfgTrial, cellSearchArgs{:});
         skipped = logical(sixgr.util.structGet(out, "Skipped", false));
         pbch = sixgr.util.structGet(out, "PBCH", struct());
@@ -10458,7 +10636,9 @@ for k = 1:nTrials
         r.Crash = true;
         r.CRCPass = 0;
         r.Status = "CRASH";
-        r.Notes = string(ME.message);
+        failure = string(ME.identifier) + ":" + string(ME.message);
+        r.FailureReason = failure;
+        r.Notes = failure;
     end
     rows(k) = r;
 end
@@ -10699,7 +10879,10 @@ for k = 1:nTrials
         r.Crash = true;
         r.CRCPass = 0;
         r.Status = "CRASH";
-        r.Notes = string(ME.message);
+        failure = string(ME.identifier) + ":" + string(ME.message);
+        r.FailureReason = failure;
+        r.RAFailureReason = failure;
+        r.Notes = failure;
     end
     rows(k) = r;
 end
@@ -10765,9 +10948,16 @@ r.RACellId = double(sixgr.util.structGet(ra, "CellId", NaN));
 r.RAUEId = double(sixgr.util.structGet(ra, "UEId", NaN));
 r.RAAttemptId = double(sixgr.util.structGet(ra, "AttemptId", trialIdx));
 fields = ["RAProcedureType","RABindingSource","RACHConfigHash", ...
+    "PRACHOccasionFrame","PRACHOccasionSlot","PRACHOccasionSymbol", ...
+    "PRACHFrequencyIndex","PRACHOccasionID", ...
     "PreambleIndexTx","PreambleIndexDetected","PreambleDetectionMetric", ...
     "PreambleDetectionThreshold","PreambleDetected","CollisionDetected", ...
-    "PreambleAmbiguityDetected","TimingAdvanceCommand","PreambleReceivedTargetPower_dBm", ...
+    "PreambleAmbiguityDetected","PRACHRawTimingEstimate_samples", ...
+    "PRACHPropagationTimingEstimate_samples","PRACHTrueTimingOffset_samples", ...
+    "PRACHTimingError_samples","PRACHTimingEstimateValid","PRACHTimingEstimateSource", ...
+    "PRACHFrequencyEstimationEnabled","PRACHFrequencyEstimate_Hz", ...
+    "PRACHFrequencyEstimateValid","PRACHFrequencyEstimator", ...
+    "TimingAdvanceCommand","PreambleReceivedTargetPower_dBm", ...
     "PowerRampingStep_dB","PreambleTransMax","PreambleAttemptNumber", ...
     "PowerPathloss_dB","PowerBasePathloss_dB","PowerPathlossSource","ReferenceTxPower_dBm", ...
     "PreambleDelta_dB","PreambleTargetReceivedPower_dBm","PreambleRequestedTxPower_dBm", ...
@@ -10836,8 +11026,35 @@ r.ThresholdGlobalPeakComponent = double(sixgr.util.structGet(ra, "Msg1ThresholdG
 r.PeakGuardFactor = double(sixgr.util.structGet(ra, "Msg1PeakGuardFactor", r.PeakGuardFactor));
 r.DetectorPeakLagSamples = double(sixgr.util.structGet(ra, "Msg1DetectorPeakLagSamples", r.DetectorPeakLagSamples));
 r.TimingAdvance_samples = double(sixgr.util.structGet(ra, "TimingAdvanceSamples", r.TimingAdvance_samples));
-r.TimingOffset_samples = r.TimingAdvance_samples;
-r.TimingError_samples = r.TimingAdvance_samples;
+r.TimingOffset_samples = double(sixgr.util.structGet(ra, ...
+    "PRACHPropagationTimingEstimate_samples", NaN));
+r.TimingEstimate_samples = r.TimingOffset_samples;
+r.EstimatedTimingOffset_PreCorrection_samples = r.TimingOffset_samples;
+r.EstimatedTimingOffset_samples = r.TimingOffset_samples;
+r.TrueTimingOffset_samples = double(sixgr.util.structGet(ra, ...
+    "PRACHTrueTimingOffset_samples", NaN));
+r.TimingError_samples = double(sixgr.util.structGet(ra, ...
+    "PRACHTimingError_samples", NaN));
+timingEstimateValid = logical(sixgr.util.structGet(ra, ...
+    "PRACHTimingEstimateValid", false));
+if timingEstimateValid
+    r.TimingEstimateStatus = "measured";
+else
+    r.TimingEstimateStatus = "not_available";
+end
+r.TimingEstimateApplicationPolicy = string(sixgr.util.structGet(ra, ...
+    "PRACHTimingEstimateSource", ""));
+r.EstimatedCFO_Hz = double(sixgr.util.structGet(ra, "PRACHFrequencyEstimate_Hz", NaN));
+r.EstimatedCFO_PreCorrection_Hz = r.EstimatedCFO_Hz;
+frequencyEstimateValid = logical(sixgr.util.structGet(ra, ...
+    "PRACHFrequencyEstimateValid", false));
+if frequencyEstimateValid
+    r.CFOEstimateAvailability = "available";
+    r.CFOValueStatus = "MEASURED";
+else
+    r.CFOEstimateAvailability = "missing";
+    r.CFOValueStatus = "NOT_AVAILABLE";
+end
 r.CollisionFlag = double(logical(sixgr.util.structGet(ra, "CollisionDetected", false)));
 r.FalseAlarm = preambleDetected && isfinite(r.DetectedPreambleIndex) && isfinite(r.PreambleIndex) && ...
     round(double(r.DetectedPreambleIndex)) ~= round(double(r.PreambleIndex));
@@ -12823,6 +13040,11 @@ row.PRACHCarrierSlot = NaN;
 row.RAProcedureType = "";
 row.RABindingSource = "";
 row.RACHConfigHash = "";
+row.PRACHOccasionFrame = NaN;
+row.PRACHOccasionSlot = NaN;
+row.PRACHOccasionSymbol = NaN;
+row.PRACHFrequencyIndex = NaN;
+row.PRACHOccasionID = "";
 row.RARunId = "";
 row.RAScenarioName = "";
 row.RACellId = NaN;
@@ -12836,6 +13058,16 @@ row.PreambleDetected = false;
 row.CollisionDetected = false;
 row.CollisionFlag = NaN;
 row.PreambleAmbiguityDetected = false;
+row.PRACHRawTimingEstimate_samples = NaN;
+row.PRACHPropagationTimingEstimate_samples = NaN;
+row.PRACHTrueTimingOffset_samples = NaN;
+row.PRACHTimingError_samples = NaN;
+row.PRACHTimingEstimateValid = false;
+row.PRACHTimingEstimateSource = "";
+row.PRACHFrequencyEstimationEnabled = false;
+row.PRACHFrequencyEstimate_Hz = NaN;
+row.PRACHFrequencyEstimateValid = false;
+row.PRACHFrequencyEstimator = "";
 row.PreambleReceivedTargetPower_dBm = NaN;
 row.PowerRampingStep_dB = NaN;
 row.PreambleTransMax = NaN;
@@ -13065,11 +13297,16 @@ row.PrecodingApplicationStage = "";
 row.PrecodingActive = false;
 row.ExplicitBeamWeightsApplied = false;
 row.TransformPrecodingApplied = false;
+row.FrequencyHoppingApplied = false;
+row.FrequencyHoppingMode = "";
+row.FrequencyHoppingToolboxMode = "";
+row.SecondHopStartPRB = NaN;
 row.BeamformingApplied = false;
 row.AppliedBeamIndexSet = "";
 row.AppliedPrecoderPMI = NaN;
 row.AppliedPrecoderPMIType = "";
 row.AppliedPrecoderCodebookMode = "";
+row.AppliedPrecoderMatrixSHA256 = "";
 row.RequestedVsAppliedPrecoderPMIMatchStatus = "";
 row.PrecodingNumPorts = NaN;
 row.PrecodingNumLayers = NaN;
@@ -13548,7 +13785,8 @@ row = struct( ...
     "Density", "", "Periodicity", "", "SymbolLocations", "", "SubcarrierLocations", "", "RBOffset", NaN, "NumRB", NaN, "NRE", NaN, ...
     "Scheduled", false, "Transmitted", false, "Observed", false, "Consumed", false, "Consumer", "", ...
     "MeasurementRSRP_dB", NaN, "MeasurementSource", "", "UpdateOutcome", "", ...
-    "RuntimeMaterializationStatus", "", "RuntimeBlocker", "", "RuntimeEvidenceSource", "", ...
+    "RuntimeMaterializationStatus", "", "TxRuntimeMaterializationStatus", "", ...
+    "RxRuntimeObservationStatus", "", "RuntimeBlocker", "", "RuntimeEvidenceSource", "", ...
     "RuntimeEventObserved", false, "SourceArtifact", "air_interface/csv/csi_rs_trials.csv", "SourceTable", "air_interface/csv/csi_rs_trials.csv");
 end
 
@@ -14774,12 +15012,12 @@ layout = sixgr.report.resultLayout(rootRunFolder);
 if istable(rawTrials.DL) && ~isempty(rawTrials.DL)
     sixgr.util.csvWriteTable( ...
         fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), ...
-        rawTrials.DL);
+        rawTrials.DL, "PreserveSchema", true);
 end
 if istable(rawTrials.UL) && ~isempty(rawTrials.UL)
     sixgr.util.csvWriteTable( ...
         fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ...
-        rawTrials.UL);
+        rawTrials.UL, "PreserveSchema", true);
 end
 
 localPublishRuntimeReferenceArtifacts( ...
@@ -16405,6 +16643,16 @@ localWriteGroupedMetricPlot(T, "BeamGainGap_dB", img3, "Beam Gain Gap by Trial",
 if exist(img3, "file") == 2
     artifacts.Images{end+1} = img3;
 end
+beamImages = [string(img1); string(img2); string(img3)];
+beamIds = ["beam_channel_sinr"; "beam_condition_number"; "beam_gain_gap"];
+beamSources = repmat(string(csvPath), 3, 1);
+existsMask = arrayfun(@(x) exist(char(x), "file") == 2, beamImages);
+if any(existsMask)
+    lineagePath = fullfile(layout.BeamformingCSVDir, "beamforming_plot_lineage.csv");
+    sixgr.visual.writeComponentPlotLineage(rootRunFolder, lineagePath, ...
+        beamIds(existsMask), beamImages(existsMask), beamSources(existsMask), ...
+        "sixgr.truth.runWaveformLinkBundle.localExportBeamformingDiagnostics");
+end
 end
 
 function T = localBuildBeamformingTable(cfg, rawTrials)
@@ -17083,6 +17331,26 @@ if istable(TulConst) && ~isempty(TulConst)
     if exist(img, "file") == 2
         images{end+1} = img; %#ok<AGROW>
     end
+end
+
+rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
+layout = sixgr.report.resultLayout(rootRunFolder);
+plotIds = ["dl_posteq_sinr_by_trial_scatter"; "dl_channel_gain_distribution"; ...
+    "dl_constellation_scatter"; "ul_posteq_sinr_by_trial_scatter"; ...
+    "ul_channel_gain_distribution"; "ul_constellation_scatter"];
+plotPaths = string(fullfile(imgDir, ["dl_posteq_sinr_by_trial_scatter.png"; ...
+    "dl_channel_gain_distribution.png"; "dl_constellation_scatter.png"; ...
+    "ul_posteq_sinr_by_trial_scatter.png"; "ul_channel_gain_distribution.png"; ...
+    "ul_constellation_scatter.png"]));
+sourcePaths = string(fullfile(airInterfaceRunFolder, "csv", ["dl_pdsch_trials.csv"; ...
+    "dl_pdsch_trials.csv"; "dl_constellation_samples.csv"; "ul_pusch_trials.csv"; ...
+    "ul_pusch_trials.csv"; "ul_constellation_samples.csv"]));
+existsMask = arrayfun(@(x) exist(char(x), "file") == 2, plotPaths);
+if any(existsMask)
+    lineagePath = fullfile(layout.AirInterfaceCSVDir, "runtime_trial_plot_lineage.csv");
+    sixgr.visual.writeComponentPlotLineage(rootRunFolder, lineagePath, ...
+        plotIds(existsMask), plotPaths(existsMask), sourcePaths(existsMask), ...
+        "sixgr.truth.runWaveformLinkBundle.localExportTrialDiagnosticPlots");
 end
 end
 

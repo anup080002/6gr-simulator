@@ -1,0 +1,123 @@
+function receipt = writeBrowserPublicationReceipt(runFolder, materialization)
+%WRITEBROWSERPUBLICATIONRECEIPT Persist the actual DB/materializer verdict.
+%
+% This is a receipt, not substitute evidence.  PASS is possible only when
+% the active database run was persisted and the strict materializer reports
+% zero missing required tables and charts.
+
+if ~(isstruct(materialization) && isscalar(materialization))
+    error("sixgr:artifact:BrowserMaterializationResultRequired", ...
+        "Browser publication receipt requires one materialization result struct.");
+end
+runFolder = char(string(runFolder));
+runID = strtrim(string(sixgr.util.structGet(materialization, "RunID", "")));
+databasePersisted = logical(sixgr.util.structGet(materialization, ...
+    "DatabasePersisted", false));
+materialized = logical(sixgr.util.structGet(materialization, ...
+    "BrowserMaterialized", sixgr.util.structGet(materialization, "Ok", false)));
+missingTables = double(sixgr.util.structGet(materialization, ...
+    "MissingTableCount", NaN));
+missingCharts = double(sixgr.util.structGet(materialization, ...
+    "MissingChartCount", NaN));
+generatedAtUTC = strtrim(string(sixgr.util.structGet(materialization, ...
+    "GeneratedAtUTC", "")));
+if ~isscalar(generatedAtUTC) || strlength(generatedAtUTC) == 0
+    error("sixgr:artifact:BrowserReceiptTimestampRequired", ...
+        ["Browser publication receipt requires the immutable execution " ...
+         "completion timestamp; finalization wall-clock time is forbidden."]);
+end
+passed = databasePersisted && materialized && strlength(runID) > 0 && ...
+    isfinite(missingTables) && missingTables == 0 && ...
+    isfinite(missingCharts) && missingCharts == 0;
+
+receipt = struct( ...
+    "SchemaName", "sixgr.browser_publication_receipt", ...
+    "SchemaVersion", "1.0.0", ...
+    "RunID", runID, ...
+    "DatabaseRunID", double(sixgr.util.structGet(materialization, ...
+        "DatabaseRunID", NaN)), ...
+    "Status", string(localFourState(passed, true)), ...
+    "DatabasePersisted", databasePersisted, ...
+    "BrowserMaterialized", materialized, ...
+    "MissingRequiredTableCount", missingTables, ...
+    "MissingRequiredChartCount", missingCharts, ...
+    "MaterializerExitCode", double(sixgr.util.structGet( ...
+        materialization, "Status", NaN)), ...
+    "MaterializerIdentifier", string(sixgr.util.structGet( ...
+        materialization, "Identifier", "")), ...
+    "MaterializerMessage", string(sixgr.util.structGet( ...
+        materialization, "Message", "")), ...
+    "GeneratedAtUTC", generatedAtUTC);
+
+target = fullfile(runFolder, "published", "browser_publication_receipt.json");
+if sixgr.db.isArtifactStoreActive()
+    encoded = jsonencode(receipt, "PrettyPrint", true);
+    handled = sixgr.db.storeTextArtifact(target, [char(encoded), newline], ...
+        "application/json; charset=UTF-8", "json", struct( ...
+        "schema_name", receipt.SchemaName, ...
+        "schema_version", receipt.SchemaVersion, ...
+        "publication_status", receipt.Status));
+    if ~handled
+        error("sixgr:artifact:BrowserReceiptDatabaseWriteFailed", ...
+            "The active artifact store did not persist browser publication receipt %s.", target);
+    end
+end
+% Publish the filesystem receipt only after the active database accepts the
+% same payload.  A database failure must not leave a stale PASS receipt on
+% disk for the WebGUI or recovery reducer to consume.
+localAtomicJSONWrite(target, receipt);
+receipt.Path = string(target);
+end
+
+function value = localFourState(passed, evaluated)
+if ~evaluated
+    value = "NOT_EVALUATED";
+elseif passed
+    value = "PASS";
+else
+    value = "FAIL";
+end
+end
+
+function localAtomicJSONWrite(pathValue, value)
+folder = fileparts(char(string(pathValue)));
+if ~isfolder(folder)
+    mkdir(folder);
+end
+temporary = string(pathValue) + ".tmp." + ...
+    lower(string(char(java.util.UUID.randomUUID())));
+cleanup = onCleanup(@() localDelete(temporary)); %#ok<NASGU>
+textValue = jsonencode(value, "PrettyPrint", true);
+fid = fopen(temporary, "w", "n", "UTF-8");
+if fid < 0
+    error("sixgr:artifact:BrowserReceiptWriteFailed", ...
+        "Unable to open browser receipt temporary file %s.", temporary);
+end
+fileCleanup = onCleanup(@() localClose(fid)); %#ok<NASGU>
+fwrite(fid, char(textValue), "char");
+fwrite(fid, newline, "char");
+if fclose(fid) ~= 0
+    error("sixgr:artifact:BrowserReceiptWriteFailed", ...
+        "Unable to close browser receipt temporary file %s.", temporary);
+end
+clear fileCleanup;
+[ok, message] = movefile(temporary, pathValue, "f");
+if ~ok
+    error("sixgr:artifact:BrowserReceiptPublishFailed", ...
+        "Unable to atomically publish browser receipt %s: %s", ...
+        pathValue, message);
+end
+end
+
+function localClose(fid)
+try
+    fclose(fid);
+catch
+end
+end
+
+function localDelete(pathValue)
+if isfile(pathValue)
+    delete(pathValue);
+end
+end

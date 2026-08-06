@@ -1,0 +1,13 @@
+RUN testLLSAdaptiveMIMOPolicyGate
+PASS testLLSAdaptiveMIMOPolicyGate
+RUN testMIMOConfiguredVsEffectiveSummary
+PASS testMIMOConfiguredVsEffectiveSummary
+RUN testMIMONominalVsEffectiveRankEvidence
+PASS testMIMONominalVsEffectiveRankEvidence
+RUN testMIMOFixedRank2AnchorNoCollapse
+PASS testMIMOFixedRank2AnchorNoCollapse
+RUN testMIMOPrecoderEvidence
+PASS testMIMOPrecoderEvidence
+RUN testMIMOExecutionContracts
+PASS testMIMOExecutionContracts
+MIMO_SEMANTIC_SLICE_PASS=6

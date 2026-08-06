@@ -1,0 +1,17 @@
+RUN testCausalKPIEventAccounting
+PASS testCausalKPIEventAccounting
+RUN testKPIHARQAndPRBObjectiveBindings
+PASS testKPIHARQAndPRBObjectiveBindings
+RUN testKPIDirectionIsolation
+PASS testKPIDirectionIsolation
+RUN testKPIFailedTBNotGoodput
+PASS testKPIFailedTBNotGoodput
+RUN testKPIULGoodputNotCopiedFromDL
+PASS testKPIULGoodputNotCopiedFromDL
+RUN testKPIWeightedBER
+PASS testKPIWeightedBER
+RUN testKPIScenarioTotalBindings
+PASS testKPIScenarioTotalBindings
+RUN testLLSRootKPIConsistencyGate
+PASS testLLSRootKPIConsistencyGate
+KPI_CAUSAL_BINDING_SLICE_PASS=8

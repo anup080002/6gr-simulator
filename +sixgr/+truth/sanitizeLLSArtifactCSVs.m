@@ -1,10 +1,37 @@
-function out = sanitizeLLSArtifactCSVs(runFolder)
+function out = sanitizeLLSArtifactCSVs(runFolder, varargin)
 %SANITIZELLSARTIFACTCSVS Remove structurally blank columns from browser-facing CSVs.
 %
 % This post-pass is intentionally conservative: it never fabricates values,
 % but it removes columns that are entirely blank or entirely inactive for the
 % current run. Live signal-chain tables are first canonicalized so truthfully
-% emitted semantic metadata is preserved before pruning.
+% emitted semantic metadata is preserved before pruning.  OnlyPaths lets a
+% plot producer stabilize its exact declared source CSVs before recording
+% lineage hashes; the same transformation is then byte-idempotent when the
+% whole run is finalized.
+
+p = inputParser;
+p.addParameter("OnlyPaths", strings(0, 1), ...
+    @(x) ischar(x) || isstring(x) || iscellstr(x));
+p.parse(varargin{:});
+onlyPaths = string(p.Results.OnlyPaths(:));
+onlyPaths = onlyPaths(strlength(strtrim(onlyPaths)) > 0);
+
+runFolder = char(localCanonicalPath(runFolder));
+
+if ~isempty(onlyPaths)
+    files = localValidatedOwnedPaths(runFolder, onlyPaths);
+    rows = repmat(struct("LogicalPath","", "Changed", false, "RemovedColumnCount", 0), 0, 1);
+    for i = 1:numel(files)
+        filePath = char(files(i));
+        [changed, removedCount] = localSanitizeOneCSV(filePath);
+        rows(end+1, 1) = struct( ... %#ok<AGROW>
+            "LogicalPath", string(localPortablePath(localRelativeToRunFolder(runFolder, filePath))), ...
+            "Changed", logical(changed), ...
+            "RemovedColumnCount", double(removedCount));
+    end
+    out = struct("Files", struct2table(rows));
+    return;
+end
 
 layout = sixgr.report.resultLayout(runFolder);
 dirs = unique([
@@ -37,6 +64,45 @@ out = struct();
 out.Files = struct2table(rows);
 end
 
+function files = localValidatedOwnedPaths(runFolder, pathValues)
+root = localCanonicalPath(runFolder);
+files = strings(0, 1);
+for i = 1:numel(pathValues)
+    candidate = string(pathValues(i));
+    if ~localLooksAbsolute(candidate)
+        candidate = fullfile(root, strrep(char(candidate), "/", filesep));
+    end
+    candidate = localCanonicalPath(candidate);
+    if candidate ~= root && ~startsWith(candidate, root + string(filesep), ...
+            "IgnoreCase", ispc)
+        error("sixgr:truth:ArtifactCSVOutsideRun", ...
+            "CSV sanitization path must remain inside the run root: %s", ...
+            char(candidate));
+    end
+    if exist(candidate, "file") ~= 2
+        continue;
+    end
+    [~, ~, ext] = fileparts(char(candidate));
+    if lower(string(ext)) ~= ".csv"
+        error("sixgr:truth:ArtifactCSVExpected", ...
+            "Targeted artifact sanitization accepts CSV files only: %s", ...
+            char(candidate));
+    end
+    files(end+1, 1) = candidate; %#ok<AGROW>
+end
+files = unique(files, "stable");
+end
+
+function tf = localLooksAbsolute(pathValue)
+pathValue = char(string(pathValue));
+tf = ~isempty(regexp(pathValue, '^[A-Za-z]:[\\/]', 'once')) || ...
+    startsWith(string(pathValue), "\\\\") || startsWith(string(pathValue), "/");
+end
+
+function value = localCanonicalPath(pathValue)
+value = string(char(java.io.File(char(string(pathValue))).getCanonicalPath()));
+end
+
 function [changed, removedCount] = localSanitizeOneCSV(filePath)
 changed = false;
 removedCount = 0;
@@ -57,6 +123,16 @@ if strlength(scope) > 0
     canonicalized = true;
 end
 originalWidth = width(T);
+if localPreserveDeclaredSchemaScope(scope)
+    % Canonical waveform/control trial schemas are versioned interfaces.
+    % A column that is not applicable in this run (for example the second
+    % hop PRB while hopping is disabled) must stay present as missing data;
+    % removing it changes the interface and also changes the DB mirror.
+    removedCount = max(0, inputWidth - originalWidth);
+    sixgr.util.csvWriteTable(filePath, T, "PreserveSchema", true);
+    changed = canonicalized;
+    return;
+end
 T = sixgr.util.pruneStructurallyBlankTableColumns(T);
 removedCount = max(0, inputWidth - originalWidth) + max(0, originalWidth - width(T));
 if removedCount <= 0 && ~canonicalized
@@ -79,6 +155,14 @@ function scope = localScopeTokenFromFile(filePath)
 scope = "";
 name = string(name);
 scopeMap = struct( ...
+    'dl_pdsch_trials', "dl_pdsch_trials", ...
+    'ul_pusch_trials', "ul_pusch_trials", ...
+    'pdcch_trials', "pdcch_trials", ...
+    'pucch_trials', "pucch_trials", ...
+    'prach_trials', "prach_trials", ...
+    'pbch_trials', "pbch_trials", ...
+    'srs_trials', "srs_trials", ...
+    'trs_trials', "trs_trials", ...
     'live_modulation_demodulation_trace', "modulation_demodulation", ...
     'live_channel_estimation_tti', "channel_estimation", ...
     'live_channel_state_tti', "channel_state", ...
@@ -94,6 +178,13 @@ elseif startsWith(name, "live_")
     scope = erase(name, "live_");
 end
 scope = regexprep(lower(scope), "[^a-z0-9]+", "_");
+end
+
+function tf = localPreserveDeclaredSchemaScope(scope)
+scope = lower(strtrim(string(scope)));
+tf = any(scope == ["dl_pdsch_trials", "ul_pusch_trials", ...
+    "pdcch_trials", "pucch_trials", "prach_trials", "pbch_trials", ...
+    "srs_trials", "trs_trials"]);
 end
 
 function rel = localRelativeToRunFolder(runFolder, pathStr)

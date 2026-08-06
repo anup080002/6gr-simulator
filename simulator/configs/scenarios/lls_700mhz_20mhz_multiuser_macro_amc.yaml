@@ -21,7 +21,14 @@
     "n_subframes": 12,
     "monte_carlo_iterations": 6,
     "snr_db": 10,
+    "noise_operating_mode": "receiver_noise_figure_thermal_noise",
     "snr_sweep_offsets_db": [-20, -10, -5, 0, 5, 10]
+  },
+  "channels": {
+    "pathloss_enabled": true,
+    "shadow_fading_enabled": true,
+    "pathloss_model": "nrPathLoss",
+    "shadow_fading_std_db": 6
   },
   "sweeps_and_matrix": {
     "snr_sweep": {
@@ -34,6 +41,12 @@
     "n_users": 24,
     "execution_model": "slot_coupled_truth",
     "save_user_tables": true
+  },
+  "pdsch": {
+    "execution_profile": "scheduler_truth"
+  },
+  "pusch": {
+    "execution_profile": "scheduler_truth"
   },
   "deployment_topology": {
     "cell_type": "UMa",

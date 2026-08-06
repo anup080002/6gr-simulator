@@ -130,6 +130,9 @@ row.DetectionOutcome = "";
 row.SSBReceivedPower_dB = NaN;
 row.PBCHDMRSMetric = NaN;
 row.PBCHNoiseVar = NaN;
+row.PreEqualizationNoiseVariance = NaN;
+row.PreEqualizationNoiseVarianceDomain = "";
+row.PreEqualizationNoiseVarianceSource = "";
 row.ChannelEstimateAvailable = false;
 row.ChannelEstimateSource = "";
 row.EqualizationAvailable = false;
@@ -145,10 +148,14 @@ row.MeasuredTrialSINRValueRole = "";
 row.MeasuredTrialSINRValueStatus = "";
 row.MeasuredTrialSINRNAReason = "";
 row.PostEqSINR_dB = NaN;
+row.PostEqSINRAvailable = false;
 row.PostEqSINRSource = "";
 row.PostEqSINRValueRole = "";
 row.PostEqSINRValueStatus = "";
 row.PostEqSINRNAReason = "";
+row.PostEqualizationNoiseVariance = NaN;
+row.PostEqualizationNoiseVarianceDomain = "";
+row.PostEqualizationNoiseVarianceSource = "";
 row.StrictReceiverEvidenceOk = false;
 row.SIB1PDSCHChannelEstimateAvailable = false;
 row.SIB1PDSCHEqualizationAvailable = false;
@@ -186,8 +193,10 @@ sib1 = sixgr.util.structGet(acq, "SIB1", struct());
 row.Ok = logical(sixgr.util.structGet(acq, "Ok", false));
 row.Skipped = logical(sixgr.util.structGet(acq, "Skipped", false));
 row.NCellID = double(sixgr.util.structGet(pbch, "NCellID", sixgr.util.structGet(acq, "Sync.NCellID", row.NCellID)));
-row.SSBIndex = double(sixgr.util.structGet(acq, "SSBIndex", row.SSBIndex));
-row.BeamIndex = double(sixgr.util.structGet(acq, "SSBBeamIndex", row.SSBIndex + 1));
+row.SSBIndex = localFiniteOrDefault( ...
+    sixgr.util.structGet(acq, "SSBIndex", NaN), row.SSBIndex);
+row.BeamIndex = localFiniteOrDefault( ...
+    sixgr.util.structGet(acq, "SSBBeamIndex", NaN), row.BeamIndex);
 row.BCHCrcPass = localStructLogical(sib1, "BCHCrcPass", localStructLogical(pbch, "Ok", false));
 row.MIBDecoded = localStructLogical(sib1, "MIBDecoded", row.BCHCrcPass);
 row.SIB1StrictOk = localStructLogical(sib1, "StrictOk", row.Ok);
@@ -207,6 +216,9 @@ row.TimingOffset_samples = double(sixgr.util.structGet(acq, "TimingOffset_sample
 row.SSBReceivedPower_dB = double(sixgr.util.structGet(acq, "SSBReceivedPower_dB", NaN));
 row.PBCHDMRSMetric = double(sixgr.util.structGet(acq, "PBCHDMRSMetric", NaN));
 row.PBCHNoiseVar = double(sixgr.util.structGet(acq, "PBCHNoiseVar", NaN));
+row.PreEqualizationNoiseVariance = double(sixgr.util.structGet(acq, "PreEqualizationNoiseVariance", NaN));
+row.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(acq, "PreEqualizationNoiseVarianceDomain", ""));
+row.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet(acq, "PreEqualizationNoiseVarianceSource", ""));
 row.ChannelEstimateAvailable = logical(sixgr.util.structGet(acq, "ChannelEstimateAvailable", false));
 row.ChannelEstimateSource = string(sixgr.util.structGet(acq, "ChannelEstimateSource", ""));
 row.EqualizationAvailable = logical(sixgr.util.structGet(acq, "EqualizationAvailable", false));
@@ -222,12 +234,18 @@ row.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(acq, "MeasuredTrial
 row.MeasuredTrialSINRValueStatus = string(sixgr.util.structGet(acq, "MeasuredTrialSINRValueStatus", ""));
 row.MeasuredTrialSINRNAReason = string(sixgr.util.structGet(acq, "MeasuredTrialSINRNAReason", ""));
 row.PostEqSINR_dB = double(sixgr.util.structGet(acq, "PostEqSINR_dB", NaN));
+row.PostEqSINRAvailable = logical(sixgr.util.structGet(acq, "PostEqSINRAvailable", false));
 row.PostEqSINRSource = string(sixgr.util.structGet(acq, "PostEqSINRSource", ""));
 row.PostEqSINRValueRole = string(sixgr.util.structGet(acq, "PostEqSINRValueRole", ""));
 row.PostEqSINRValueStatus = string(sixgr.util.structGet(acq, "PostEqSINRValueStatus", ""));
 row.PostEqSINRNAReason = string(sixgr.util.structGet(acq, "PostEqSINRNAReason", ""));
+row.PostEqualizationNoiseVariance = double(sixgr.util.structGet(acq, "PostEqualizationNoiseVariance", NaN));
+row.PostEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(acq, "PostEqualizationNoiseVarianceDomain", ""));
+row.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet(acq, "PostEqualizationNoiseVarianceSource", ""));
 row.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(acq, "StrictReceiverEvidenceOk", false)) && ...
-    row.ChannelEstimateAvailable && row.EqualizationAvailable && isfinite(row.ReceiverHestSINR_dB);
+    row.ChannelEstimateAvailable && row.EqualizationAvailable && ...
+    isfinite(row.ReceiverHestSINR_dB) && row.PostEqSINRAvailable && ...
+    isfinite(row.PostEqSINR_dB);
 row.SIB1PDSCHChannelEstimateAvailable = logical(sixgr.util.structGet(acq, "SIB1PDSCHChannelEstimateAvailable", false));
 row.SIB1PDSCHEqualizationAvailable = logical(sixgr.util.structGet(acq, "SIB1PDSCHEqualizationAvailable", false));
 row.SIB1PDSCHReceiverHestSINR_dB = double(sixgr.util.structGet(acq, "SIB1PDSCHReceiverHestSINR_dB", NaN));
@@ -304,6 +322,14 @@ elseif ischar(raw) || isstring(raw)
     tf = any(token == ["1", "true", "yes", "pass", "ok"]);
 else
     tf = logical(defaultValue);
+end
+end
+
+function value = localFiniteOrDefault(candidate, defaultValue)
+value = double(defaultValue);
+candidate = double(candidate);
+if isscalar(candidate) && isfinite(candidate)
+    value = candidate;
 end
 end
 

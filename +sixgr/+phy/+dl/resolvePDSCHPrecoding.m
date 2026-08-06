@@ -16,6 +16,7 @@ strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
 frozenGrantStrict = logical(sixgr.util.structGet(cfg, ...
     "phy.canonicalGrant.enabled", false));
 strictPrecoder = strictMIMO || frozenGrantStrict;
+normalizationConvention = localResolvePDSCHNormalizationConvention(cfg);
 
 nLayers = double(pdsch.NumLayers);
 nCodewords = localNumCodewords(pdsch, nLayers);
@@ -63,7 +64,8 @@ prec.MatrixRegenerated = false;
 prec.Orientation = "Nport_by_Nlayer";
 prec.ActiveTCIStateID = NaN;
 prec = localAttachArchitecture(prec, arch);
-prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+prec.NormalizationConvention = normalizationConvention;
+prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers, normalizationConvention);
 
 localAssertPDSCHCodewordLayerScope(nLayers, nCodewords);
 
@@ -244,13 +246,15 @@ prec.HybridDigitalPortToRFChainMatrix = sixgr.util.structGet(hybridMeta, "Digita
 prec.HybridElementToPortMatrix = sixgr.util.structGet(hybridMeta, "ElementToPortMatrix", []);
 prec.HybridEquation = string(sixgr.util.structGet(hybridMeta, "Equation", ""));
 prec = localAttachArchitecture(prec, arch);
-prec = localAttachPowerInfo(prec, Wports, nLayers);
-prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers);
+prec.NormalizationConvention = normalizationConvention;
+prec = localAttachPowerInfo(prec, Wports, nLayers, normalizationConvention);
+prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers, normalizationConvention);
 if strictPrecoder
     for prg = 1:size(WportsPerPRG,3)
         try
             sixgr.phy.mimo.MatrixContract.validate( ...
-                WportsPerPRG(:,:,prg),size(WportsPerPRG,1),nLayers);
+                WportsPerPRG(:,:,prg),size(WportsPerPRG,1),nLayers, ...
+                "NormalizationConvention", normalizationConvention);
         catch ME
             if string(ME.identifier) ~= "sixgr:mimo:PrecoderNormalizationMismatch"
                 rethrow(ME);
@@ -299,9 +303,6 @@ if strictPrecoder
         end
     end
     prec.ActiveTCIStateID = tciState;
-    prec.PrecoderTraceTarget = 1;
-    prec.PrecoderTraceError = abs(real(trace(Wports*Wports'))-1);
-    prec.TotalPowerPreservingTrace = prec.PrecoderTraceError <= 1e-10;
     prec.NormativeNormalizationPreserved = true;
 end
 
@@ -431,10 +432,10 @@ meta.ElementToPortMatrix = elementToPort;
 meta.Equation = "X_elem=S*(F_RF*F_BB*W_logical)'', F_RF columns unit-norm";
 end
 
-function prec = localAttachPowerInfo(prec, Wports, nLayers)
+function prec = localAttachPowerInfo(prec, Wports, nLayers, normalizationConvention)
 Wports = double(Wports);
 traceWWH = real(trace(Wports * Wports'));
-traceTarget = double(nLayers);
+traceTarget = localNormalizationTraceTarget(normalizationConvention, nLayers, traceWWH);
 if isempty(Wports)
     gramError = NaN;
 else
@@ -458,12 +459,12 @@ prec.PrecoderPowerScale = double(powerScale);
 prec.PowerNormalizedMatrixPorts = Wpower;
 prec.PrecoderNormalizedTraceWWH = double(normalizedTrace);
 prec.PrecoderNormalizedTraceError = double(abs(normalizedTrace - traceTarget));
-prec.TotalPowerPreservationEquation = "trace((alpha*W)*(alpha*W)'')=NumLayers, alpha=sqrt(NumLayers/trace(W*W''))";
+prec.TotalPowerPreservationEquation = "trace((alpha*W)*(alpha*W)'')=normalization_target";
 prec.TotalPowerPreservingTrace = logical(isfinite(traceWWH) && abs(traceWWH - traceTarget) <= 1e-12 * max(1, traceTarget));
 prec.TotalPowerPreservingNormalizedTrace = logical(isfinite(normalizedTrace) && abs(normalizedTrace - traceTarget) <= 1e-12 * max(1, traceTarget));
 end
 
-function prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers)
+function prec = localAttachPRGPowerInfo(prec, WportsPerPRG, nLayers, normalizationConvention)
 nPRG = size(WportsPerPRG, 3);
 traceValues = zeros(1, nPRG);
 gramErrors = zeros(1, nPRG);
@@ -472,7 +473,7 @@ for prg = 1:nPRG
     traceValues(prg) = real(trace(W * W'));
     gramErrors(prg) = norm(W' * W - eye(size(W, 2)), "fro");
 end
-target = double(nLayers);
+target = localNormalizationTraceTarget(normalizationConvention, nLayers, mean(traceValues, "omitnan"));
 tolerance = 1e-12 * max(1, target);
 prec.PRGPrecoderTraceWWH = double(traceValues);
 prec.PRGPrecoderLayerGramFroError = double(gramErrors);
@@ -480,6 +481,37 @@ prec.PRGPrecoderTraceTarget = target;
 prec.PRGPrecoderTraceMaxError = double(max(abs(traceValues - target), [], "all"));
 prec.AllPRGTotalPowerPreserving = logical(all(abs(traceValues - target) <= tolerance));
 prec.PRGBundleContractVersion = "PDSCHPRGPrecoding/v1";
+end
+
+function convention = localResolvePDSCHNormalizationConvention(cfg)
+convention = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.pdsch.precoding.normalizationConvention", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.precoderNormalizationConvention", ...
+    sixgr.util.structGet(cfg, "pdsch.precoder_normalization_convention", ...
+    "semi_unitary"))))));
+aliases = struct( ...
+    "unit_total_power", "unit_frobenius", ...
+    "equal_per_layer_unit_total_power", "unit_frobenius", ...
+    "per_layer_unit_power", "semi_unitary");
+field = matlab.lang.makeValidName(char(convention));
+if isfield(aliases, field)
+    convention = string(aliases.(field));
+end
+if ~any(convention == ["unit_frobenius","semi_unitary","explicit_no_normalization"])
+    error("sixgr:mimo:PrecoderNormalizationConventionUnsupported", ...
+        "Unsupported PDSCH precoder normalization convention '%s'.", convention);
+end
+end
+
+function target = localNormalizationTraceTarget(convention, nLayers, observed)
+switch lower(strtrim(string(convention)))
+    case "unit_frobenius"
+        target = 1;
+    case "semi_unitary"
+        target = double(nLayers);
+    otherwise
+        target = double(observed);
+end
 end
 
 function nCodewords = localNumCodewords(pdsch, nLayers)

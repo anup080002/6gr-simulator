@@ -1244,6 +1244,47 @@ classdef (Abstract) SchedulerBase < handle
                 phyGrant.CodingLayout.PTRSPortSetSource));
         end
 
+        function grantOut = attachULSRSAuthorityToGrant(obj, grantIn, ueState)
+            % Bind the causal measured-SRS identity before a strict UL grant
+            % is frozen.  This method copies runtime evidence only; it never
+            % manufactures a measurement identity or upgrades unusable SRS.
+            grantOut = grantIn;
+            if upper(string(obj.Direction)) ~= "UL"
+                return;
+            end
+            if nargin < 3 || ~(isstruct(ueState) && isscalar(ueState))
+                error("sixgr:l2:mac:MissingULSchedulerUEState", ...
+                    "UL grant freezing requires the scheduler UE state that owns the causal SRS evidence.");
+            end
+            grantOut.SRSValid = logical(sixgr.util.structGet( ...
+                ueState, "SRSValid", false));
+            grantOut.SRSCausalUsable = logical(sixgr.util.structGet( ...
+                ueState, "SRSCausalUsable", false));
+            grantOut.SRSCausalMeasurementId = char(string(sixgr.util.structGet( ...
+                ueState, "SRSCausalMeasurementId", "")));
+            grantOut.LastSuccessfulSRSSlot = double(sixgr.util.structGet( ...
+                ueState, "LastSuccessfulSRSSlot", NaN));
+            grantOut.SRSAgeSlots = double(sixgr.util.structGet( ...
+                ueState, "SRSAgeSlots", NaN));
+            grantOut.SRSCausalAgeSlots = double(sixgr.util.structGet( ...
+                ueState, "SRSCausalAgeSlots", NaN));
+            grantOut.SRSCausalStatus = char(string(sixgr.util.structGet( ...
+                ueState, "SRSCausalStatus", "")));
+            grantOut.SRSMeasurementAuthoritySource = ...
+                "scheduler_ue_state_causal_srs";
+            tpmi = double(sixgr.util.structGet(ueState, "TPMI", ...
+                sixgr.util.structGet(ueState, "PMI", NaN)));
+            if isscalar(tpmi) && isfinite(tpmi)
+                grantOut.TPMI = double(round(tpmi));
+                grantOut.PMI = double(round(tpmi));
+            end
+            sri = double(sixgr.util.structGet(ueState, "SRI", NaN));
+            if isscalar(sri) && isfinite(sri)
+                grantOut.SRI = double(round(sri));
+                grantOut.SRSResourceIndicator = double(round(sri));
+            end
+        end
+
         function grantOut = attachCanonicalTimingDecision(obj, grantIn)
             % Attach the authoritative CC/BWP-aware K0/K1/K2 decision.
             grantOut = grantIn;

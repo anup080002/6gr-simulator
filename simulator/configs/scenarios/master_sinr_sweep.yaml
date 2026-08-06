@@ -116,7 +116,7 @@ canonical_control:
     run_profile: exhaustive
     num_workers: 24
     batch_size_links: 24
-    auto_start_parallel_pool: false
+    auto_start_parallel_pool: true
     trace_capture_level: full
     save_intermediate: true
     total_time_ms: 100
@@ -663,6 +663,18 @@ canonical_control:
       known_location_fallback: false
       oracle_candidate_timing: false
       synchronized_calibration_separate: true
+      statistical_qualification:
+        enabled: true
+        target_false_alarm_probability: 0.01
+        confidence_level: 0.95
+        minimum_waveform_trials: 25
+        maximum_waveform_trials: 1000
+        batch_size_waveform_trials: 25
+        minimum_candidate_decisions: 500
+        minimum_false_alarm_events: 0
+        ci_width_target: 0.01
+        planned_looks: 40
+        deterministic_seeds: [240617, 240629, 240643, 240647]
       validation_campaign:
         trials_per_operating_point: 25
         no_signal_period: 5
@@ -916,8 +928,29 @@ canonical_control:
     zero_correlation_zone: 8
     detection_threshold: 0.35
     detection_threshold_mode: fixed
+    enable_frequency_estimation_metric: false
     msg3_enabled: false
     min_detection_trials: 8
+    target_false_alarm_probability: 0.001
+    statistical_qualification:
+      enabled: true
+      target_false_alarm_probability: 0.001
+      confidence_level: 0.95
+      minimum_trials: 3000
+      maximum_trials: 12000
+      batch_size_trials: 250
+      minimum_false_alarm_events: 0
+      ci_width_target: 0.001
+      planned_looks: 48
+      target_missed_detection_probability: 0.01
+      required_detection_snr_db: [6, 12]
+      minimum_detection_trials: 300
+      maximum_detection_trials: 2000
+      batch_size_detection_trials: 50
+      minimum_missed_detection_events: 0
+      detection_ci_width_target: 0.01
+      detection_planned_looks: 40
+      deterministic_seeds: [240616, 240631, 240641, 240659]
     configuration_index: 157
     subcarrier_spacing_khz: 30
     n_cell_id: 1
@@ -1110,6 +1143,18 @@ canonical_control:
     tx_power_dbm: 46
     pa_efficiency: 0.35
     rf_chain_count: 1
+    bs_static_power_w: 200
+    bs_per_rf_chain_power_w: 10
+    bs_sleep_power_w: 20
+    bs_pa_efficiency: 0.35
+    ue_idle_power_w: 1.0
+    ue_rx_power_w: 1.5
+    ue_sleep_power_w: 0.1
+    ue_tx_dc_per_watt_rf: 2.857142857142857
+    bs_tx_power_dbm: 46
+    ue_tx_power_dbm: 23
+    bs_rf_chain_count: 1
+    ue_rf_chain_count: 1
   kpis:
     enabled:
     - bler
@@ -1158,8 +1203,8 @@ canonical_control:
     live_heavy_refresh_each_sweep_point: true
     emit_placeholder_artifacts: false
     component_artifact_views:
-      enabled: true
-      required: true
+      enabled: false
+      required: false
       mirror_mode: byte_identical_hash_verified
       image_formats: [png, jpg, jpeg]
       canonical_files_move: false
@@ -1182,6 +1227,24 @@ canonical_control:
       - l2
       - traffic
       - validation
+    artifact_contract_engine:
+      enabled: true
+      contract_root: tests/vectors
+      legacy_reference_root: artifacts
+      legacy_reference_usage: coverage_inventory_only
+      profiles: [base]
+      domains: [frame_grid, initial_access, pdcch, pdsch, pucch, pusch, rsla, mimo, mac, channel, rf, protocol, waveform, validation, integration]
+      publish_root: components
+      source_policy: runtime_memory_only
+      truth_only: true
+      fail_on_missing_required: true
+      evidence_scope: in_path
+      require_identity_columns: true
+      require_radio_identity_columns: true
+      atomic_replace: true
+      image_format: png
+      allow_svg: false
+      allow_placeholder_evidence: false
   logging:
     level: info
     save_logs: true
@@ -1296,6 +1359,8 @@ canonical_control:
     value: false
   - path: interference.intra_cell_interference_flag
     value: false
+  - path: interference.intra_cell_execution_mode
+    value: none
   - path: sweeps_and_matrix.snr_sweep.enabled
     value: true
   - path: sweeps_and_matrix.snr_sweep.values_db
@@ -1587,6 +1652,7 @@ pdsch:
   mimo_mode: su_mimo
   rank: 1
   precoder_family: wideband_identity
+  precoder_normalization_convention: unit_frobenius
   prg_policy: wideband
   link_adaptation_mode: fixed
   mcs_table: qam256_table2
@@ -1628,6 +1694,7 @@ pusch:
   ptrs_policy: disabled
   codeword_count: 1
   layer_count: 1
+  precoder_normalization_convention: unit_frobenius
   modulation_table: qam256_table2
   shaping_policy: none
   scrambling_policy: nr_38211

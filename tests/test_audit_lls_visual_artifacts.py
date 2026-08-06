@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +11,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_TOOL = REPO_ROOT / "tools" / "audit_lls_visual_artifacts.py"
 PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+
+def windows_extended_path(path: Path) -> Path:
+    if os.name != "nt":
+        return path
+    text = str(path.resolve())
+    if text.startswith("\\\\?\\"):
+        return Path(text)
+    return Path("\\\\?\\" + text)
 
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> None:
@@ -30,6 +41,111 @@ def read_audit_codes(path: Path) -> set[str]:
             if code:
                 codes.add(code)
     return codes
+
+
+def test_visual_artifact_audit_accepts_component_owned_lineage(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    report_csv = run / "reports" / "csv"
+    component_root = run / "component_anchors" / "prach"
+    lineage_dir = component_root / "control" / "csv"
+    figure_dir = component_root / "reports" / "figures"
+    report_csv.mkdir(parents=True)
+    lineage_dir.mkdir(parents=True)
+    figure_dir.mkdir(parents=True)
+
+    # An existing (possibly empty) canonical manifest is required, while
+    # component lineage owns component-specific visuals.
+    write_csv(report_csv / "plot_manifest.csv", ["PlotId", "ImagePath"], [])
+    source_path = lineage_dir / "correlation.csv"
+    write_csv(
+        source_path,
+        ["LagSamples", "CorrelationAbs", "TruthStatus"],
+        [
+            {"LagSamples": index, "CorrelationAbs": index / 8, "TruthStatus": "real_lls_evidence"}
+            for index in range(8)
+        ],
+    )
+    image_path = figure_dir / "correlation.png"
+    image_path.write_bytes(PNG_BYTES)
+    source_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    image_hash = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    write_csv(
+        lineage_dir / "prach_plot_lineage.csv",
+        ["PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256", "ImageSHA256", "Status"],
+        [
+            {
+                "PlotId": "prach_correlation",
+                "ImagePath": "reports/figures/correlation.png",
+                "SourceCSV": "control/csv/correlation.csv",
+                "SourceCSV_SHA256": source_hash,
+                "ImageSHA256": image_hash,
+                "Status": "PASS",
+            }
+        ],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    with (report_csv / "visual_artifact_audit.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+    component_rows = [
+        row for row in rows if row.get("artifact_kind") == "component_lineage_plot"
+    ]
+    assert len(component_rows) == 1
+    assert component_rows[0]["audit_ok"] == "True"
+    assert not any(
+        row.get("failure_code") == "unmanifested_visual_artifact" for row in rows
+    )
+
+
+def test_visual_artifact_audit_supports_windows_extended_run_paths(tmp_path: Path) -> None:
+    if os.name != "nt":
+        return
+    normal_run = tmp_path
+    while len(str(normal_run.resolve())) < 245:
+        normal_run = normal_run / "deep_result_component_1234567890"
+    run = windows_extended_path(normal_run)
+    report_csv = run / "reports" / "csv"
+    report_image = run / "reports" / "image"
+    report_csv.mkdir(parents=True)
+    report_image.mkdir(parents=True)
+    write_csv(
+        report_csv / "metric.csv",
+        ["x", "y"],
+        [{"x": 1, "y": 2}, {"x": 2, "y": 3}],
+    )
+    (report_image / "metric.png").write_bytes(PNG_BYTES)
+    write_csv(
+        report_csv / "plot_manifest.csv",
+        ["PlotId", "ImagePath", "SourceCSV", "XVariable", "YVariables", "PlotType", "PlotRenderStatus", "VisualValidity"],
+        [{
+            "PlotId": "metric",
+            "ImagePath": "reports/image/metric.png",
+            "SourceCSV": "reports/csv/metric.csv",
+            "XVariable": "x",
+            "YVariables": "y",
+            "PlotType": "scatter",
+            "PlotRenderStatus": "rendered_real_plot",
+            "VisualValidity": "real_lls_evidence",
+        }],
+    )
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(normal_run.resolve())],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert not read_audit_codes(report_csv / "visual_artifact_audit.csv")
 
 
 def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics(tmp_path: Path) -> None:
@@ -512,3 +628,66 @@ def test_visual_artifact_audit_requires_low_information_explanation_for_contract
     assert proc.returncode == 0, proc.stderr + proc.stdout
     codes = read_audit_codes(report_csv_dir / "visual_artifact_audit.csv")
     assert "low_information_visual_without_explanation" not in codes
+
+
+def test_visual_artifact_audit_rejects_valid_but_unmanifested_png(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    image_dir = run / "reports" / "image"
+    csv_dir = run / "reports" / "csv"
+    image_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+    (image_dir / "orphan.png").write_bytes(PNG_BYTES)
+    write_csv(
+        csv_dir / "plot_manifest.csv",
+        ["PlotId", "ImagePath", "SourceCSV", "XVariable", "YVariables", "PlotType", "PlotRenderStatus", "VisualValidity", "IsUnavailableCard"],
+        [],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode != 0
+    codes = read_audit_codes(csv_dir / "visual_artifact_audit.csv")
+    assert "unmanifested_visual_artifact" in codes
+
+
+def test_visual_artifact_audit_does_not_classify_html_reports_as_images(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    csv_dir = run / "reports" / "csv"
+    html_dir = run / "reports" / "html"
+    final_dir = run / "reports" / "final"
+    csv_dir.mkdir(parents=True)
+    html_dir.mkdir(parents=True)
+    final_dir.mkdir(parents=True)
+    (html_dir / "actual_lls_implementation_validation_report.html").write_text(
+        "<html><body>validation report</body></html>", encoding="utf-8"
+    )
+    (final_dir / "final_scientific_audit.html").write_text(
+        "<html><body>scientific audit report</body></html>", encoding="utf-8"
+    )
+    write_csv(
+        csv_dir / "plot_manifest.csv",
+        ["PlotId", "ImagePath", "SourceCSV", "XVariable", "YVariables", "PlotType", "PlotRenderStatus", "VisualValidity", "IsUnavailableCard"],
+        [],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    with (csv_dir / "visual_artifact_audit.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        audited_paths = {row["artifact_path"] for row in csv.DictReader(handle)}
+    assert "reports/html/actual_lls_implementation_validation_report.html" not in audited_paths
+    assert "reports/final/final_scientific_audit.html" not in audited_paths

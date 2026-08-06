@@ -1,0 +1,5 @@
+PASS testRuntimeEvidenceSchemaIsolation: mixed CSV/JSONL schemas fail before append.
+[Warning: Directory already exists.]
+[> In testScenarioCSVAnnotationRuntimeIsolation (line 20)]
+PASS testScenarioCSVAnnotationRuntimeIsolation: runtime journals remain immutable.
+PASS testRuntimeEvidenceCSVRebuild: JSONL truth rebuilt derived CSV views.

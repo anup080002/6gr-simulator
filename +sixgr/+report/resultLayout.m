@@ -20,6 +20,12 @@ function layout = resultLayout(runFolder)
 %     ntn/csv/
 %     packet_flow/{csv,mat,image,logs}/
 %     calibration/
+%     components/<component>/{csv,png}/
+%
+% components/ is the contract-owned publication tree.  It is generated
+% atomically from in-memory runtime evidence by
+% sixgr.artifact.ContractArtifactGenerator.  Legacy reports/ and phase
+% folders are never used as an input to that publisher.
 
 runFolder = char(string(runFolder));
 
@@ -28,6 +34,22 @@ layout.Root = runFolder;
 
 layout.MetaDir = fullfile(runFolder, "meta");
 layout.LogDir = fullfile(runFolder, "logs");
+
+layout.ComponentsDir = fullfile(runFolder, "components");
+componentNames = ["frame_grid", "initial_access", "prach", "pdcch", ...
+    "pdsch", "pucch", "pusch", "rsla", "mimo", "mac", "channel", ...
+    "rf", "protocol", "waveform", "validation", "integration"];
+layout.ComponentNames = componentNames;
+layout.ComponentDirs = struct();
+layout.ComponentCSVDirs = struct();
+layout.ComponentPNGDirs = struct();
+for componentIndex = 1:numel(componentNames)
+    fieldName = char(componentNames(componentIndex));
+    componentDir = fullfile(layout.ComponentsDir, fieldName);
+    layout.ComponentDirs.(fieldName) = componentDir;
+    layout.ComponentCSVDirs.(fieldName) = fullfile(componentDir, "csv");
+    layout.ComponentPNGDirs.(fieldName) = fullfile(componentDir, "png");
+end
 
 layout.ManifestsDir = fullfile(runFolder, "manifests");
 layout.SummariesDir = fullfile(runFolder, "summaries");

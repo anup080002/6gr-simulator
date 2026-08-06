@@ -1,0 +1,4 @@
+               MeasurementSource                    RuntimeMaterializationStatus                        RuntimeEvidenceSource                  Transmitted    Observed    Consumed
+    _______________________________________    _______________________________________    _________________________________________________    ___________    ________    ________
+
+    "received_csirs_reference_signal_power"    "post_canonical_auxiliary_grid_mapping"    "sixgr.phy.dl.PDSCH_Rx:csirs_runtime_observation"       true         true        true

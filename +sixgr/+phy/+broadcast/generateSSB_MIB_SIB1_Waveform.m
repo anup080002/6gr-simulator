@@ -71,7 +71,8 @@ sib1StartSample = localAbsoluteSlotStartSample( ...
     sib1AbsoluteSlot, carrierSI, sampleRate);
 waveform = localComposeAbsoluteTimeline( ...
     ssbWaveform, siWaveform, sib1StartSample);
-waveform = localApplyAWGN(waveform, p.Results.SNRdB);
+[waveform, referenceNoise] = localApplyAWGN( ...
+    waveform, carrier, p.Results.SNRdB);
 
 [~, treeHash] = sixgr.rrc.asn1.compareSIB1Trees(tree, tree);
 tx = struct();
@@ -83,6 +84,7 @@ tx.SIB1AbsoluteSlot = sib1AbsoluteSlot;
 tx.Type0MonitoringOccasion = type0.MonitoringOccasions( ...
     localMonitoringOccasionOrdinal(cfg), :);
 tx.SampleRateHz = sampleRate;
+tx.ReferenceNoise = referenceNoise;
 tx.Carrier = carrierSI;
 tx.PDCCH = pdcch;
 tx.PDSCH = pdsch;
@@ -536,17 +538,27 @@ n = double(sixgr.util.structGet(cfg, "phy.sib1.ssbObservationSubframes", ...
 n = max(1, round(n));
 end
 
-function y = localApplyAWGN(x, snrDB)
+function [y, provenance] = localApplyAWGN(x, carrier, snrDB)
 y = x;
 snrDB = double(snrDB);
+provenance = struct( ...
+    "Applied", false, ...
+    "RequestedEsN0_dB", snrDB, ...
+    "SNRDefinition", ...
+        "Es/N0 for a unit-energy occupied resource-grid RE", ...
+    "SignalEnergyPerOccupiedRE", 1, ...
+    "GridNoiseVariance", NaN, ...
+    "SampleNoiseVariance", NaN, ...
+    "WaveformPowerUsed", false, ...
+    "Status", "disabled_infinite_snr");
 if ~isfinite(snrDB)
     return;
 end
-sigPower = mean(abs(x(:)).^2, "omitnan");
-if ~(isfinite(sigPower) && sigPower > 0)
-    return;
-end
-noiseVar = sigPower / 10^(snrDB / 10);
-n = sqrt(noiseVar/2) * (randn(size(x), "like", real(x)) + 1j * randn(size(x), "like", real(x)));
-y = x + n;
+[y, exact] = sixgr.conformance.addReferenceNoise( ...
+    x, carrier, snrDB, "SignalEnergyPerOccupiedRE", 1);
+provenance = exact;
+provenance.Applied = true;
+provenance.Status = "applied_occupied_re_esn0";
+provenance.BroadcastReferencePlane = ...
+    "unit_energy_occupied_resource_grid_RE_before_receiver_equalization";
 end

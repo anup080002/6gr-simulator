@@ -246,7 +246,7 @@ if isCodebook && isfinite(appliedPMI)
     end
     metrics.PMIType = char(string(sixgr.util.structGet(precInfo, "AppliedPrecoderPMIType", "pusch_codebook")));
     metrics.PMICodebookMode = char(string(sixgr.util.structGet(precInfo, "AppliedPrecoderCodebookMode", ...
-        sixgr.util.structGet(cfg, "phy.pusch.codebookType", "nr_pusch_codebook"))));
+        sixgr.util.structGet(cfg, "phy.pusch.codebookType", ""))));
     metrics.CSIReportMode = "ul_srs_based_ri_tpmi_estimator_lab_default";
     metrics.SelectedBeamIndices = localParseIndexSet(sixgr.util.structGet(precInfo, "AppliedBeamIndexSet", []));
     if isempty(metrics.SelectedBeamIndices) && ~isempty(estimatedBeamIndices)

@@ -1,0 +1,76 @@
+function ok = testPRACHStatisticalQualificationYAMLAuthority()
+%TESTPRACHSTATISTICALQUALIFICATIONYAMLAUTHORITY Guard PRACH campaign wiring.
+%
+% The canonical operator YAML owns the sequential statistical design.  The
+% canonical-to-runtime projection must carry that complete nested structure
+% into random_access; a strict PRACH runner must never fall back to an
+% implicit trial count or threshold.
+
+setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
+scenarioRoot = fullfile(pwd, "simulator", "configs", "scenarios");
+scenarioNames = [ ...
+    "master_sinr_sweep.yaml"
+    "master_geometry_based.yaml"
+    "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml"];
+
+tmp = string(tempname);
+mkdir(tmp);
+cleanup = onCleanup(@() localCleanup(tmp)); %#ok<NASGU>
+
+for ii = 1:numel(scenarioNames)
+    scenarioPath = fullfile(scenarioRoot, scenarioNames(ii));
+    scenario = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+    resolved = scenario.toStruct();
+    expected = sixgr.util.structGet(resolved, ...
+        "canonical_control.random_access.statistical_qualification", []);
+    projected = sixgr.util.structGet(resolved, ...
+        "random_access.statistical_qualification", []);
+    assert(isstruct(expected) && isscalar(expected) && ...
+        ~isempty(fieldnames(expected)), ...
+        "Canonical YAML %s must define the complete PRACH statistical design.", ...
+        scenarioNames(ii));
+    assert(isequaln(projected, expected), ...
+        "Canonical PRACH statistical design was not projected for %s.", ...
+        scenarioNames(ii));
+
+    internal = sixgr.lls6g.buildInternalConfig(scenario, ...
+        fullfile(tmp, erase(scenarioNames(ii), ".yaml")));
+    internalDesign = sixgr.util.structGet(internal, ...
+        "random_access.statistical_qualification", []);
+    assert(isequaln(internalDesign, expected), ...
+        "buildInternalConfig changed the YAML-owned PRACH statistical design for %s.", ...
+        scenarioNames(ii));
+
+    if scenarioNames(ii) == ...
+            "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml"
+        strict = sixgr.phy.prach.buildPRACHConfigFromScenario(internal, ...
+            "RunFolder", tmp, "ScenarioName", "prach_yaml_authority_regression");
+        alternateRunFolder = fullfile(tmp, "alternate_runtime_root");
+        strictAlternateRoot = sixgr.phy.prach.buildPRACHConfigFromScenario(internal, ...
+            "RunFolder", alternateRunFolder, ...
+            "ScenarioName", "prach_yaml_authority_regression");
+        assert(logical(strict.StatisticalQualification.Enabled));
+        assert(isequal(double(strict.StatisticalQualification.DeterministicSeeds(:)), ...
+            double(expected.deterministic_seeds(:))));
+        assert(double(strict.StatisticalQualification.MinimumTrials) == ...
+            double(expected.minimum_trials));
+        assert(double(strict.StatisticalQualification.MaximumTrials) == ...
+            double(expected.maximum_trials));
+        assert(string(strict.StrictConfigSource) == ...
+            "resolved_scenario_random_access");
+        assert(string(strict.RunFolder) == string(tmp) && ...
+            string(strictAlternateRoot.RunFolder) == string(alternateRunFolder), ...
+            "Strict PRACH runtime progress must retain the current run root.");
+        assert(string(strict.ConfigHash) == string(strictAlternateRoot.ConfigHash), ...
+            "Changing only the runtime output root must not change the physical PRACH config hash.");
+    end
+end
+
+ok = true;
+end
+
+function localCleanup(path)
+if isfolder(path)
+    rmdir(path, "s");
+end
+end

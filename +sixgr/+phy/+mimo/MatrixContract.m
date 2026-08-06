@@ -9,6 +9,7 @@ classdef MatrixContract
                 nLayers (1,1) double {mustBeInteger,mustBePositive}
                 options.PowerTolerance (1,1) double {mustBeNonnegative} = 1e-10
                 options.ExpectedDigest (1,1) string = ""
+                options.NormalizationConvention (1,1) string = "unit_frobenius"
             end
             if ~isnumeric(W) || ~isequal(size(W), [nPorts nLayers])
                 error("sixgr:mimo:PrecoderDimensionMismatch", ...
@@ -20,9 +21,24 @@ classdef MatrixContract
                     "Precoder contains nonfinite coefficients.");
             end
             froPower = sum(abs(W(:)).^2);
-            if abs(froPower - 1) > options.PowerTolerance
+            convention = lower(strtrim(options.NormalizationConvention));
+            supported = ["unit_frobenius","semi_unitary","explicit_no_normalization"];
+            if ~any(convention == supported)
+                error("sixgr:mimo:PrecoderNormalizationConventionUnsupported", ...
+                    "Unsupported precoder normalization convention '%s'.", convention);
+            end
+            gram = W' * W;
+            if convention == "unit_frobenius" && ...
+                    abs(froPower - 1) > options.PowerTolerance
                 error("sixgr:mimo:PrecoderNormalizationMismatch", ...
                     "Precoder Frobenius power %.16g differs from one.", froPower);
+            elseif convention == "semi_unitary"
+                gramError = norm(gram - eye(nLayers), "fro");
+                if gramError > options.PowerTolerance
+                    error("sixgr:mimo:PrecoderNormalizationMismatch", ...
+                        "Precoder semi-unitary Gram error %.16g exceeds %.16g.", ...
+                        gramError, options.PowerTolerance);
+                end
             end
             digest = sixgr.phy.mimo.MatrixContract.digest(W);
             if strlength(options.ExpectedDigest) > 0 && digest ~= options.ExpectedDigest
@@ -30,12 +46,12 @@ classdef MatrixContract
                     "Selected precoder digest %s differs from applied digest %s.", ...
                     options.ExpectedDigest, digest);
             end
-            gram = W' * W;
             info = struct( ...
                 "Orientation", "Nport_by_Nlayer", ...
                 "Rows", nPorts, ...
                 "Columns", nLayers, ...
                 "FrobeniusPower", double(froPower), ...
+                "NormalizationConvention", convention, ...
                 "OrthogonalityError", double(norm(gram - trace(gram)/nLayers*eye(nLayers), "fro")), ...
                 "MatrixSHA256", digest);
         end

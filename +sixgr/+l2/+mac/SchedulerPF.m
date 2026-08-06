@@ -219,6 +219,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                                     obj.Cfg, obj.Direction, memberGrant.NumLayers, memberIndex, 2);
                                 memberGrant = localApplyMUMIMOSpatialDesign( ...
                                     memberGrant, muSpatialDesign, memberIndex, obj.Direction);
+                                memberGrant = obj.attachULSRSAuthorityToGrant( ...
+                                    memberGrant, ueStates(stateIndex));
                                 [memberGrant.DMRSPortSet, memberGrant.DMRSPortSetSource] = ...
                                     sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
                                     obj.Cfg, obj.Direction, memberGrant.NumLayers, memberGrant);
@@ -245,6 +247,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                             obj.resolveMCSTable());
                         g.GrantReason = "harq_retx";
                         g = localMarkUnpairedRetransmission(g);
+                        g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
                         g = obj.freezePHYGrantForGrant(g);
                         g.DCI = obj.buildDCIBitfield(g);
                         grants = localAppendGrant(grants, g);
@@ -650,6 +653,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.MUMIMOPairingMetricSource = "not_applicable_single_user";
                         g.MUMIMOPairingEvidenceSource = "no_mu_pair_transmitted";
                     end
+                    stateIndex = ueIdx(groupOrd(gg));
+                    g = obj.attachULSRSAuthorityToGrant(g, ueStates(stateIndex));
                     [g.DMRSPortSet, g.DMRSPortSetSource] = ...
                         sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
                         obj.Cfg, obj.Direction, g.NumLayers, g);
@@ -852,9 +857,16 @@ grant.SearchSpaceID = searchSpaceID;
 grant.CORESETID = coresetID;
 grant.HeadOfLineDelay_ms = localUEHoLDelay(ue);
 grant.BufferBytesBefore = double(bufferBytes);
-grant.TBSBits = double(sixgr.util.structGet(grant, "TBSBits", ...
-    sixgr.util.structGet(grant, "TransportBlockSize", 0)));
-grant.TBSBytes = floor(max(grant.TBSBits, 0) / 8);
+[grant.TBSBits, ~] = sixgr.util.resolveGrantTBSBits(grant, ...
+    sprintf("%s HARQ retransmission RNTI=%d process=%d", ...
+    "sixgr.l2.mac.SchedulerPF", round(double(grant.RNTI)), ...
+    round(double(sixgr.util.structGet(grant, "HARQ.HarqID", -1)))));
+if grant.TBSBits <= 0
+    error("sixgr:SchedulerPF:MissingRetransmissionTBS", ...
+        "HARQ retransmission RNTI=%d has no positive frozen TBS.", ...
+        round(double(grant.RNTI)));
+end
+grant.TBSBytes = grant.TBSBits / 8;
 grant.BufferBytesAfter = max(double(bufferBytes) - double(grant.TBSBytes), 0);
 end
 
@@ -1135,6 +1147,8 @@ if direction == "DL"
     grant.PrecodingMatrixLogicalPorts = double(logicalMatrix);
     grant.LogicalPrecodingMatrix = double(logicalMatrix);
     grant.PrecodingMatrix = double(physicalMatrix);
+    grant.PrecoderNormalizationConvention = char(string( ...
+        design.PrecoderNormalizationConvention));
     grant.HybridElementToPortMatrix = double(design.HybridElementToPortMatrix);
     grant.HybridElementToPortMatrixSHA256 = char(string( ...
         design.HybridElementToPortMatrixSHA256));
@@ -1150,6 +1164,8 @@ if direction == "DL"
 else
     receiveCombiner = design.("Member" + string(memberIndex) + "ReceiveCombiner");
     grant.MUMIMOReceiveCombiningMatrix = double(receiveCombiner);
+    grant.ReceiveCombinerNormalizationConvention = char(string( ...
+        design.ReceiveCombinerNormalizationConvention));
     grant.MUMIMOReceiveCombiningMatrixSHA256 = char( ...
         sixgr.phy.mimo.MatrixContract.digest(double(receiveCombiner)));
     grant.MUMIMOReceiverAlgorithm = "IRC";

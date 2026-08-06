@@ -17,6 +17,7 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     "XOverhead"          : xOverhead for nrTBS (default 0)
 %     "NumTxAnt"           : number of TX antennas for resource grid pages
 %     "PHYGrant"           : frozen canonical grant dimensional contract
+%     "SRSDecision"        : authoritative measured-SRS RI/SRI/TPMI decision
 %
 %   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -58,6 +59,7 @@ ip.addParameter('UCIPayload', [], @(x) isempty(x) || ...
     isa(x, "sixgr.phy.ul.pusch.PUSCHUCIPayload"));
 ip.addParameter('InitialIMCSPerCodeword', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('SRSDecision', [], @(x) isempty(x) || (isstruct(x) && isscalar(x)));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
@@ -102,6 +104,8 @@ sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs", ...
 sixgr.config.assertRuntimeFeatureUse(cfg, "transform_precoding", ...
     logical(localObjectValue(pusch, "TransformPrecoding", false)), ...
     "PUSCH_Tx.nrPUSCHConfig.TransformPrecoding");
+[frequencyHoppingMode, frequencyHoppingToolboxMode, secondHopStartPRB] = ...
+    localActualPUSCHFrequencyHopping(pusch);
 
 % PUSCH parameters
 nCodewords = double(pusch.NumCodewords);
@@ -110,7 +114,12 @@ targetCodeRate = localResolvePUSCHTargetCodeRate( ...
     cfg, opt.TargetCodeRate, phyGrant, hasPHYGrant, nCodewords);
 xOverhead = localResolvePUSCHXOverhead(cfg, opt.XOverhead, phyGrant, hasPHYGrant);
 
-prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg, "FixedReferenceMode", hasPHYGrant);
+srsDecision = opt.SRSDecision;
+if isempty(srsDecision) && hasPHYGrant
+    srsDecision = localSRSDecisionFromFrozenGrant(phyGrant);
+end
+prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg, ...
+    "FixedReferenceMode", hasPHYGrant, "SRSDecision", srsDecision);
 
 uePhysicalTxAnt = double(sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "tx", ...
     sixgr.util.structGet(prec, "NumPorts", 1)));
@@ -427,6 +436,10 @@ tx.UCIOnPUSCHSource = char(string(uciInfo.Source));
 tx.OFDMWindowingSamples = double(windowingSamples);
 tx.OFDMWindowingSource = char(string(windowingInfo.OFDMWindowingSource));
 tx.OFDMWindowingEnabled = logical(windowingInfo.OFDMWindowingEnabled);
+tx.FrequencyHoppingApplied = logical(frequencyHoppingMode ~= "none");
+tx.FrequencyHoppingMode = char(frequencyHoppingMode);
+tx.FrequencyHoppingToolboxMode = char(frequencyHoppingToolboxMode);
+tx.SecondHopStartPRB = double(secondHopStartPRB);
 if ~logical(opt.CompactOutput)
     tx.Grid = txGrid;
     tx.TransportBlockCRC = tbCrc;
@@ -475,6 +488,10 @@ info.NumWaveformColumns = double(size(txWaveform, 2));
 info.UEPhysicalTxAntennas = double(uePhysicalTxAnt);
 info.UCIOnPUSCH = uciInfo;
 info.TransformPrecodingAppliedBy = localTransformPrecodingSource(pusch, cfg);
+info.FrequencyHoppingApplied = tx.FrequencyHoppingApplied;
+info.FrequencyHoppingMode = tx.FrequencyHoppingMode;
+info.FrequencyHoppingToolboxMode = tx.FrequencyHoppingToolboxMode;
+info.SecondHopStartPRB = tx.SecondHopStartPRB;
 info.XOverhead = double(xOverhead);
 info.ResourceAccounting = resourceAccounting;
 info.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, ...
@@ -508,6 +525,32 @@ args = { ...
     "FixedReferenceMode", true};
 [puschInd, puschInfo, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg, args{:});
 localAssertExplicitPUSCHMatchesGrant(pusch, phyGrant);
+end
+
+function decision = localSRSDecisionFromFrozenGrant(phyGrant)
+decision = [];
+if ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)))
+    return;
+end
+prec = sixgr.util.structGet(phyGrant, "PrecodingState", struct());
+if ~logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+    return;
+end
+grant = sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot", struct());
+decision = struct( ...
+    "Authoritative", logical(sixgr.util.structGet(grant, "SRSCausalUsable", false)) && ...
+        logical(sixgr.util.structGet(grant, "SRSValid", false)), ...
+    "MeasurementID", string(sixgr.util.structGet(grant, ...
+        "SRSCausalMeasurementId", sixgr.util.structGet(prec, "SRSMeasurementID", ""))), ...
+    "MeasurementSlot", double(sixgr.util.structGet(grant, ...
+        "LastSuccessfulSRSSlot", sixgr.util.structGet(prec, "SRSMeasurementSlot", NaN))), ...
+    "RI", double(sixgr.util.structGet(prec, "NumLayers", NaN)), ...
+    "SRI", double(sixgr.util.structGet(grant, "SRI", NaN)), ...
+    "TPMI", double(sixgr.util.structGet(prec, "TPMI", ...
+        sixgr.util.structGet(prec, "PMI", NaN))), ...
+    "NumPorts", double(sixgr.util.structGet(prec, "NumLogicalPorts", NaN)), ...
+    "SelectionMatrixSHA256", string(sixgr.util.structGet(prec, ...
+        "SelectedMatrixSHA256", "")));
 end
 
 function rnti = localResolveGrantRNTI(cfg, phyGrant)
@@ -589,6 +632,22 @@ localAssertSameVector(localObjectValue(pusch, "PRBSet", []), sixgr.util.structGe
     "sixgr:phy:ul:PUSCHGrantPRBMismatch", "PUSCH PRBSet does not match frozen PHYGrant.");
 localAssertSameVector(localObjectValue(pusch, "SymbolAllocation", []), sixgr.util.structGet(ra, "SymbolAllocation", []), ...
     "sixgr:phy:ul:PUSCHGrantSymbolMismatch", "PUSCH SymbolAllocation does not match frozen PHYGrant.");
+[actualHopMode, actualToolboxMode, actualSecondHop] = ...
+    localActualPUSCHFrequencyHopping(pusch);
+frozenHopMode = lower(strtrim(string(sixgr.util.structGet(ra, ...
+    "FrequencyHoppingMode", "none"))));
+if actualHopMode ~= frozenHopMode
+    error("sixgr:phy:ul:PUSCHGrantFrequencyHoppingMismatch", ...
+        "PUSCH applied hopping mode '%s' does not match frozen PHYGrant '%s'.", ...
+        char(actualToolboxMode), char(frozenHopMode));
+end
+if actualHopMode ~= "none"
+    frozenSecondHop = double(sixgr.util.structGet(ra, ...
+        "SecondHopStartPRB", NaN));
+    localAssertSameScalar(actualSecondHop, frozenSecondHop, ...
+        "sixgr:phy:ul:PUSCHGrantSecondHopMismatch", ...
+        "PUSCH SecondHopStartPRB does not match frozen PHYGrant.");
+end
 localAssertSameScalar(localObjectValue(pusch, "NumLayers", NaN), sixgr.util.structGet(cl, "NumLayers", NaN), ...
     "sixgr:phy:ul:PUSCHGrantLayerMismatch", "PUSCH NumLayers does not match frozen PHYGrant.");
 grantMod = char(string(sixgr.util.structGet(cl, "Modulation", "")));
@@ -601,6 +660,34 @@ grantPorts = double(sixgr.util.structGet(ant, "NumLogicalPorts", NaN));
 if isfinite(grantPorts) && isprop(pusch, "NumAntennaPorts")
     localAssertSameScalar(localObjectValue(pusch, "NumAntennaPorts", NaN), grantPorts, ...
         "sixgr:phy:ul:PUSCHGrantPortMismatch", "PUSCH NumAntennaPorts does not match frozen PHYGrant.");
+end
+end
+
+function [mode, toolboxMode, secondHop] = localActualPUSCHFrequencyHopping(pusch)
+toolboxMode = string(localObjectValue(pusch, "FrequencyHopping", "neither"));
+token = lower(regexprep(strtrim(toolboxMode), "[-_ ]", ""));
+switch token
+    case {"", "none", "neither", "disabled", "off", "false"}
+        mode = "none";
+        toolboxMode = "neither";
+        secondHop = NaN;
+    case {"intraslot", "intra"}
+        mode = "intra_slot";
+        toolboxMode = "intraSlot";
+        secondHop = double(localObjectValue(pusch, "SecondHopStartPRB", NaN));
+    case {"interslot", "inter"}
+        mode = "inter_slot";
+        toolboxMode = "interSlot";
+        secondHop = double(localObjectValue(pusch, "SecondHopStartPRB", NaN));
+    otherwise
+        error("sixgr:phy:ul:InvalidAppliedPUSCHFrequencyHopping", ...
+            "nrPUSCHConfig returned unsupported applied FrequencyHopping '%s'.", ...
+            char(toolboxMode));
+end
+if mode ~= "none" && ~(isscalar(secondHop) && isfinite(secondHop) && ...
+        secondHop == fix(secondHop) && secondHop >= 0)
+    error("sixgr:phy:ul:MissingAppliedPUSCHSecondHop", ...
+        "Applied PUSCH frequency hopping lacks a valid SecondHopStartPRB.");
 end
 end
 
@@ -1045,6 +1132,17 @@ info = struct( ...
     "Equation", "X_logical=X_native");
 if isempty(nativePortSym) || isempty(nativePortInd) || ...
         logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+    return;
+end
+requiresExplicitProjection = logical(sixgr.util.structGet(prec, ...
+    "ExplicitBeamWeightsApplied", false)) || ...
+    logical(sixgr.util.structGet(prec, "HybridElementDomainApplied", false));
+if ~requiresExplicitProjection
+    % A non-codebook PUSCH without an authoritative SRS/hybrid precoder is
+    % already in its normative nrPUSCH port domain (one native port per
+    % layer).  A wider UE antenna inventory alone does not authorize an
+    % identity-column expansion; that would invent an unfrozen precoder.
+    info.Source = "native_nrPUSCH_noncodebook_port_domain_no_authoritative_projection";
     return;
 end
 nativePortSym = localEnsure2D(nativePortSym);

@@ -51,6 +51,13 @@ end
 job = struct();
 job.Cfg = cfg;
 job.Direction = upper(string(direction));
+job.ExecutionProfile = "";
+if job.Direction == "DL" && isstruct(grant) && ~isempty(fieldnames(grant))
+    % This profile is derived from scheduler ownership, not configured as a
+    % calibration shortcut. runDLPDSCHThroughput independently verifies
+    % exact feasibility, bit-exact DCI and decoded PDCCH/grant binding.
+    job.ExecutionProfile = "scheduler_truth";
+end
 job.NumFrames = 1;
 job.SNR_dB = double(snr_dB);
 job.StartFrameIndex = double(frameIdx);

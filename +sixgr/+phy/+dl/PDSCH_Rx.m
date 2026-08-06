@@ -445,14 +445,24 @@ rx.NoiseVarStrictFailure = false;
 rx.NoiseVarDomain = ...
     "post_equalization_decoder_symbol_domain";
 rx.PreEqualizationNoiseVar = estimatedNoise;
+rx.PreEqualizationNoiseVariance = estimatedNoise;
 rx.PreEqualizationNoiseVarDomain = ...
     "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarianceDomain = ...
+    "resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarianceSource = ...
+    "canonical_pdsch_dmrs_channel_estimator";
 rx.PreEqualizationNoiseVarTransformSource = ...
     "calibration_adapter_explicit_domain_conversion";
 rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
     canonical.OFDMInfo, "SampleToGridNoiseVarianceGain", NaN));
 rx.DecoderNoiseVar = decoderNoise;
 rx.PostEqualizationNoiseVar = decoderNoise;
+rx.PostEqualizationNoiseVariance = decoderNoise;
+rx.PostEqualizationNoiseVarianceDomain = ...
+    "unit_constellation_layer_symbol_post_equalization";
+rx.PostEqualizationNoiseVarianceSource = ...
+    "canonical_pdsch_equalizer_decoder_variance";
 rx.DecoderNoiseVarStatus = "OK";
 rx.DecoderNoiseVarSource = ...
     "canonical_pdsch_receiver";
@@ -682,6 +692,12 @@ rx.LLRCSIWeightRawMedian = NaN;
 rx.LLRCSIWeightMedianBeforeNormalization = NaN;
 rx.LLRCSIWeightNormalizationScale = 1;
 rx.LLRNoiseVariance = decoderNoise;
+rx.LLRNoiseVarianceDomain = ...
+    "unit_constellation_soft_demapper_input";
+rx.LLRNoiseVarianceSource = "canonical_pdsch_soft_demapper";
+rx.NoiseVarianceUnit = "normalized_complex_power";
+rx.NoiseVarianceNormalization = ...
+    "native_ofdm_grid_then_unit_constellation_equalizer_domains";
 rx.SINRComputationMethod = "mmse";
 rx.CodewordLLR = llr;
 rx.DLSCHCodewordLLR = llr;

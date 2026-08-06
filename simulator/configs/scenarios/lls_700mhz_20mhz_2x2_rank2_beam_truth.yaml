@@ -29,7 +29,7 @@
   "scenario": {
     "runner_profile": "waveform_bundle",
     "target_cases": ["bundle", "dl", "ul", "pdsch", "pusch", "pdcch", "pucch", "pbch", "ssb", "prach", "csi_rs", "srs", "dmrs", "harq"],
-    "notes": "Actual link-level only. 700 MHz FDD 20 MHz truth run with a sustained nominal rank-2 MIMO operating point, explicit no-proxy semantics, exercised HARQ retransmissions, enabled PDCCH repetition/detection-feedback/clustering/energy-saving controls, and profiling-oriented runtime size. Unsupported waveform-bundle families such as AI benchmark metadata, true initial-access procedure delay, and multi-TRP beamforming remain excluded rather than silently approximated."
+    "notes": "Actual fixed-SNR link-level only. 700 MHz FDD 20 MHz truth run with normalized TDL-A small-scale fading, no geometry/pathloss attenuation, a sustained nominal rank-2 MIMO operating point, explicit no-proxy semantics, exercised HARQ retransmissions, enabled PDCCH repetition/detection-feedback/clustering/energy-saving controls, and profiling-oriented runtime size. Geometry-derived descendants must explicitly select receiver thermal-noise mode and enable pathloss. Unsupported waveform-bundle families such as AI benchmark metadata, true initial-access procedure delay, and multi-TRP beamforming remain excluded rather than silently approximated."
   },
   "simulation": {
     "link_direction": "both",
@@ -40,6 +40,7 @@
     "random_seed": 37,
     "deterministic_mode": true,
     "snr_db": 24,
+    "noise_operating_mode": "standalone_awgn_snr_argument",
     "min_duration_s": 0.02,
     "snr_sweep_offsets_db": [-20, -15, -10, -5, 0, 5]
   },
@@ -67,8 +68,8 @@
     "mobility_kmph": 3,
     "los_enabled": true,
     "spatial_consistency_enabled": false,
-    "pathloss_enabled": true,
-    "shadow_fading_enabled": true,
+    "pathloss_enabled": false,
+    "shadow_fading_enabled": false,
     "pathloss_model": "nrPathLoss",
     "shadow_fading_std_db": 6
   },
@@ -86,6 +87,10 @@
     "trs_enabled": true,
     "tracking_rs_enabled": true,
     "ptrs_enabled": true,
+    "ptrs_port_association_policy": "first_scheduled_dmrs_port",
+    "ptrs_time_density": 2,
+    "ptrs_frequency_density": 2,
+    "ptrs_re_offset": "00",
     "csi_reporting_enabled": true,
     "csi_feedback_mode": "PMI+CQI+RI+CRI",
     "cqi_reporting_enabled": true,
@@ -115,15 +120,61 @@
     "trp_count": 1,
     "precoding_granularity": "prg_wideband"
   },
+  "bwp": {
+    "dl": {
+      "bwp_id": 0,
+      "direction": "DL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 106,
+      "scs_khz": 15,
+      "cp_type": "normal",
+      "active": true
+    },
+    "ul": {
+      "bwp_id": 0,
+      "direction": "UL",
+      "n_start_bwp": 0,
+      "n_size_bwp": 106,
+      "scs_khz": 15,
+      "cp_type": "normal",
+      "active": true
+    }
+  },
   "pdsch": {
+    "execution_profile": "phy_calibration",
+    "mapping_type": "A",
+    "prb_start": 0,
+    "num_prb": 106,
+    "start_symbol": 2,
+    "num_symbols": 12,
     "layer_count": 2,
     "modulation": "16QAM"
   },
   "pusch": {
+    "execution_profile": "phy_calibration",
+    "transmission_scheme": "codebook",
+    "codebook_type": "codebook1_ng1n2n2",
+    "num_antenna_ports": 2,
+    "mapping_type": "A",
+    "prb_start": 0,
+    "num_prb": 106,
+    "start_symbol": 0,
+    "num_symbols": 14,
     "layer_count": 2,
     "num_layers": 2,
     "modulation": "16QAM",
     "mcs_index": 10
+  },
+  "pdsch6gr": {
+    "mcs_ue_capability_1024qam": false,
+    "mcs_rrc_enabled_1024qam": false,
+    "mcs_dci_enabled_1024qam": false,
+    "mcs_deployment_allows_1024qam": false,
+    "mcs_frequency_range": "FR1",
+    "mcs_operating_band": "700mhz",
+    "mcs_deployment_class": "fixed_link_phy_calibration",
+    "mcs_frequency_range_allows_1024qam": false,
+    "mcs_band_allows_1024qam": false
   },
   "control": {
     "pdcch_enabled": true,
@@ -180,6 +231,20 @@
     "adc_quantization_bits": 12,
     "dac_quantization_bits": 12,
     "timing_offset_samples": 0
+  },
+  "rf_hardware": {
+    "adc_resolution_bits": 12,
+    "dac_resolution_bits": 12,
+    "adc_dynamic_range_db": 72,
+    "adc_full_scale_power_dBm": 0,
+    "adc_full_scale": 1.0,
+    "agc_enable": true,
+    "agc_target_level_dBm": -6.020599913279624,
+    "agc_target_rms": 0.5,
+    "agc_max_gain_db": 120,
+    "agc_min_gain_db": -60,
+    "agc_attack_time_us": 10,
+    "agc_release_time_us": 100
   },
   "ai_ml": {
     "enabled": false,

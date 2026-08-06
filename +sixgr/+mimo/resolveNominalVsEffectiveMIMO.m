@@ -39,6 +39,7 @@ cfgT = sixgr.mimo.buildMIMOConfigFromScenario(cfg, "RunId", runId, "ScenarioName
 cfgT = localAttachRuntimeEvidenceSummary(cfgT, rankTrials);
 configAudit = sixgr.mimo.validateMIMOConfigStrict(cfgT);
 configuredEffective = localConfiguredVsEffective(cfgT, rankTrials, runId, scenarioName, strictMode);
+cfgT = localAttachRuntimeValidationStatus(cfgT, configuredEffective, configAudit);
 rankUtil = localRankUtilization(rankTrials, runId, scenarioName);
 antennaArray = localAntennaArrayConfig(cfgT, rankTrials);
 portMapping = localAntennaPortMapping(cfgT, rankTrials);
@@ -489,6 +490,33 @@ for i = 1:n
 end
 end
 
+function cfgT = localAttachRuntimeValidationStatus(cfgT, configuredEffective, configAudit)
+cfgT.RuntimeValidationFailureReason = repmat("", height(cfgT), 1);
+for i = 1:height(cfgT)
+    if ~logical(cfgT.RuntimePopulated(i))
+        cfgT.Status(i) = "not_validated";
+        cfgT.RuntimeValidationFailureReason(i) = "no_strict_eligible_runtime_trials";
+        continue;
+    end
+    direction = upper(strtrim(string(cfgT.Direction(i))));
+    summaryMask = upper(strtrim(string(configuredEffective.Direction))) == direction;
+    auditMask = upper(strtrim(string(configAudit.Direction))) == direction;
+    summaryOk = any(summaryMask) && ...
+        all(logical(configuredEffective.ScenarioObjectivePass(summaryMask)));
+    auditOk = any(auditMask) && all(logical(configAudit.Pass(auditMask)));
+    if summaryOk && auditOk
+        cfgT.Status(i) = "pass";
+    elseif ~auditOk
+        cfgT.Status(i) = "fail";
+        cfgT.RuntimeValidationFailureReason(i) = "mimo_configuration_validation_failed";
+    else
+        cfgT.Status(i) = "fail";
+        cfgT.RuntimeValidationFailureReason(i) = ...
+            "runtime_mimo_execution_policy_or_objective_failed";
+    end
+end
+end
+
 function T = localRankUtilization(rankT, runId, scenarioName)
 rows = repmat(struct("RunId","", "ScenarioName","", "Direction","", "Rank",NaN, "LayerCount",NaN, ...
     "EligibleRows",0, "DecodeSuccessRows",0, "UsagePercent",NaN, "SuccessPercent",NaN, ...
@@ -661,16 +689,37 @@ end
 
 function T = localPrecoderEvidence(rankT)
 rows = repmat(struct("RunId","", "TrialId",NaN, "Direction","", "PrecoderId","", ...
-    "PMI","", "PrecoderSource","", "PrecodingActive",false, "SourceRowsHash","", ...
+    "PMI","", "AppliedPrecoderMatrixSHA256","", "EvidenceType","", ...
+    "PrecoderSource","", "PrecodingActive",false, "SourceRowsHash","", ...
     "Status","", "FailureReason",""), height(rankT), 1);
 for i = 1:height(rankT)
     rows(i).RunId = string(rankT.RunId(i));
     rows(i).TrialId = double(rankT.TrialId(i));
     rows(i).Direction = string(rankT.Direction(i));
-    rows(i).PrecoderId = string(rankT.PrecoderId(i));
-    rows(i).PMI = string(rankT.PrecoderId(i));
-    rows(i).PrecoderSource = "air_interface_trial_precoder_fields";
-    rows(i).PrecodingActive = strlength(strtrim(string(rankT.PrecoderId(i)))) > 0;
+    pmi = strtrim(string(rankT.PrecoderId(i)));
+    matrixHash = lower(strtrim(string(rankT.AppliedPrecoderMatrixSHA256(i))));
+    pmiAvailable = localUsableText(pmi);
+    matrixAvailable = ~ismissing(matrixHash) && ...
+        ~isempty(regexp(char(matrixHash), '^[0-9a-f]{64}$', 'once')); %#ok<RGXP1>
+    rows(i).PMI = string(localTernary(pmiAvailable, pmi, ""));
+    rows(i).AppliedPrecoderMatrixSHA256 = ...
+        string(localTernary(matrixAvailable, matrixHash, ""));
+    if matrixAvailable
+        rows(i).PrecoderId = "matrix_sha256:" + matrixHash;
+        rows(i).EvidenceType = string(localTernary(pmiAvailable, ...
+            "pmi_and_applied_matrix", "applied_matrix"));
+        rows(i).PrecoderSource = ...
+            "air_interface_trial_applied_precoder_matrix_sha256";
+    elseif pmiAvailable
+        rows(i).PrecoderId = "pmi:" + pmi;
+        rows(i).EvidenceType = "pmi";
+        rows(i).PrecoderSource = "air_interface_trial_applied_pmi";
+    else
+        rows(i).PrecoderId = "";
+        rows(i).EvidenceType = "missing";
+        rows(i).PrecoderSource = "air_interface_trial_precoder_fields";
+    end
+    rows(i).PrecodingActive = pmiAvailable || matrixAvailable;
     rows(i).SourceRowsHash = string(rankT.SourceRowsHash(i));
     rows(i).Status = string(localTernary(rows(i).PrecodingActive || double(rankT.ConfiguredLayers(i)) <= 1, "pass", "fail"));
     rows(i).FailureReason = string(localTernary(rows(i).Status == "pass", "", "multi_layer_precoder_evidence_missing"));
@@ -734,13 +783,6 @@ for i = 1:height(configuredEffective)
         "NegativeExpectedOk",true, "FailureReason",string(configuredEffective.FailureReason(i)));
     rows(end+1, 1) = row; %#ok<AGROW>
 end
-if isempty(rows)
-    row = struct("RunId",string(runId), "NegativeTrialType","no_negative_runtime_case_observed", ...
-        "InjectedFault","none", "ExpectedFailureStage","not_applicable", ...
-        "ObservedFailureStage","not_applicable", "ExactConfiguredMatch",true, ...
-        "DecodeCrcPass",true, "StrictOk",false, "NegativeExpectedOk",true, "FailureReason","");
-    rows(end+1, 1) = row;
-end
 T = struct2table(rows);
 end
 
@@ -751,7 +793,8 @@ for i = 1:height(rankT)
         double(rankT.EffectiveDecodedRank(i)) == double(rankT.ConfiguredRank(i)) && ...
         strlength(strtrim(string(rankT.LayerSINRdB(i)))) == 0 && logical(rankT.DecodeCrcPass(i));
 end
-rows = repmat(struct("RunId","", "TrialId",NaN, "Stage","effective_rank_derivation", ...
+rows = repmat(struct("RunId","", "Direction","", "TrialId",NaN, ...
+    "CellId",NaN, "UEId",NaN, "Stage","effective_rank_derivation", ...
     "OracleFieldName","ConfiguredRank", "WasAccessed",false, "Allowed",false, ...
     "Violation",false, "Status","", "FailureReason",""), max(height(rankT),1), 1);
 if height(rankT) == 0
@@ -762,7 +805,10 @@ if height(rankT) == 0
 else
     for i = 1:height(rankT)
         rows(i).RunId = string(runId);
+        rows(i).Direction = string(rankT.Direction(i));
         rows(i).TrialId = double(rankT.TrialId(i));
+        rows(i).CellId = double(rankT.CellId(i));
+        rows(i).UEId = double(rankT.UEId(i));
         rows(i).Violation = violation(i);
         rows(i).Status = string(localTernary(~violation(i), "pass", "fail"));
         rows(i).FailureReason = string(localTernary(~violation(i), "", "effective_rank_matches_config_without_receiver_layer_metric"));

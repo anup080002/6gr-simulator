@@ -171,6 +171,7 @@ trialUEIndex = NaN(numFrames,1);
 trialRNTI = NaN(numFrames,1);
 trialBaseStationID = NaN(numFrames,1);
 trialMCS = NaN(numFrames,1);
+trialMCSValueStatus = strings(numFrames,1);
 trialRV = NaN(numFrames,1);
 trialHARQProcess = NaN(numFrames,1);
 trialHARQRound = NaN(numFrames,1);
@@ -279,11 +280,33 @@ trialMCSTable = strings(numFrames,1);
 trialCQIDerivedModulation = strings(numFrames,1);
 trialPMIType = strings(numFrames,1);
 trialPMICodebookMode = strings(numFrames,1);
+trialPMISource = strings(numFrames,1);
 trialCSIReportMode = strings(numFrames,1);
 trialCSIPayloadBits = NaN(numFrames,1);
 trialCSIPayloadHex = strings(numFrames,1);
 trialGain = NaN(numFrames,1);
 trialNoise = NaN(numFrames,1);
+trialReplaySampleNoiseVariance = NaN(numFrames,1);
+trialReplayGridNoiseVariance = NaN(numFrames,1);
+trialReceiverInputSampleNoiseVariance = NaN(numFrames,1);
+trialPreEqualizationNoiseVariance = NaN(numFrames,1);
+trialPostEqualizationNoiseVariance = NaN(numFrames,1);
+trialSampleToGridNoiseVarianceGain = NaN(numFrames,1);
+trialReplaySampleNoiseVarianceDomain = strings(numFrames,1);
+trialReplayGridNoiseVarianceDomain = strings(numFrames,1);
+trialReceiverInputSampleNoiseVarianceDomain = strings(numFrames,1);
+trialDesiredSignalPowerDomain = strings(numFrames,1);
+trialCompositeSignalPowerDomain = strings(numFrames,1);
+trialSNRReferencePlane = strings(numFrames,1);
+trialAppliedNoiseSNRSource = strings(numFrames,1);
+trialRequestedAWGNReferenceSNR = NaN(numFrames,1);
+trialSignalEnergyPerOccupiedRE = NaN(numFrames,1);
+trialReplaySampleNoiseVarianceSource = strings(numFrames,1);
+trialReplayGridNoiseVarianceSource = strings(numFrames,1);
+trialReceiverInputSampleNoiseVarianceSource = strings(numFrames,1);
+trialPreEqualizationNoiseVarianceSource = strings(numFrames,1);
+trialPostEqualizationNoiseVarianceSource = strings(numFrames,1);
+trialLLRNoiseVarianceSource = strings(numFrames,1);
 trialNoiseVarStatus = strings(numFrames,1);
 trialNoiseVarSource = strings(numFrames,1);
 trialNoiseVarReason = strings(numFrames,1);
@@ -421,11 +444,16 @@ trialPrecodingApplicationStage = strings(numFrames,1);
 trialPrecodingActive = false(numFrames,1);
 trialExplicitBeamWeightsApplied = false(numFrames,1);
 trialTransformPrecodingApplied = false(numFrames,1);
+trialFrequencyHoppingApplied = false(numFrames,1);
+trialFrequencyHoppingMode = strings(numFrames,1);
+trialFrequencyHoppingToolboxMode = strings(numFrames,1);
+trialSecondHopStartPRB = NaN(numFrames,1);
 trialBeamformingApplied = false(numFrames,1);
 trialAppliedBeamIndexSet = strings(numFrames,1);
 trialAppliedPrecoderPMI = NaN(numFrames,1);
 trialAppliedPrecoderPMIType = strings(numFrames,1);
 trialAppliedPrecoderCodebookMode = strings(numFrames,1);
+trialAppliedPrecoderMatrixSHA256 = strings(numFrames,1);
 trialRequestedVsAppliedPrecoderPMIMatchStatus = strings(numFrames,1);
 trialPrecodingNumPorts = NaN(numFrames,1);
 trialPrecodingNumLayers = NaN(numFrames,1);
@@ -483,6 +511,9 @@ trialDetectorComplexity = NaN(numFrames,1);
 trialDataRECount = NaN(numFrames,1);
 trialDataRECountPerLayer = NaN(numFrames,1);
 trialTotalDataRECount = NaN(numFrames,1);
+trialTBSInputNREPerPRB = NaN(numFrames,1);
+trialTBSInputXOverhead = NaN(numFrames,1);
+trialTBSInputSource = strings(numFrames,1);
 trialModulationOrderQm = NaN(numFrames,1);
 trialComputedE_TS38212 = NaN(numFrames,1);
 trialDMRSRECount = NaN(numFrames,1);
@@ -601,6 +632,7 @@ for n = 1:numFrames
         trialLinkAdaptationMode(n) = string(localResolveLinkAdaptationMode(cfgFrame, "UL"));
         trialActualMCSSelectionMode(n) = string(localResolveActualMCSSelectionMode(cfgFrame, "UL"));
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
+        trialMCSValueStatus(n) = string(sixgr.util.structGet(grantSnapshotOverride, "MCSValueStatus", ""));
         grantCQIUsed = double(sixgr.util.structGet(grantSnapshotOverride, "CQIUsed", NaN));
         grantRawCQIDerivedMCS = localFirstFiniteScalar( ...
             sixgr.util.structGet(grantSnapshotOverride, "RawCQIDerivedMCS", NaN));
@@ -781,11 +813,20 @@ for n = 1:numFrames
         trialPrecodingActive(n) = logical(ulPrecoding.PrecodingActive);
         trialExplicitBeamWeightsApplied(n) = logical(ulPrecoding.ExplicitBeamWeightsApplied);
         trialTransformPrecodingApplied(n) = logical(ulPrecoding.TransformPrecodingApplied);
+        trialFrequencyHoppingApplied(n) = logical(sixgr.util.structGet( ...
+            tx, "FrequencyHoppingApplied", false));
+        trialFrequencyHoppingMode(n) = string(sixgr.util.structGet( ...
+            tx, "FrequencyHoppingMode", ""));
+        trialFrequencyHoppingToolboxMode(n) = string(sixgr.util.structGet( ...
+            tx, "FrequencyHoppingToolboxMode", ""));
+        trialSecondHopStartPRB(n) = double(sixgr.util.structGet( ...
+            tx, "SecondHopStartPRB", NaN));
         trialBeamformingApplied(n) = logical(ulPrecoding.BeamformingApplied);
         trialAppliedBeamIndexSet(n) = string(ulPrecoding.AppliedBeamIndexSet);
         trialAppliedPrecoderPMI(n) = double(ulPrecoding.AppliedPrecoderPMI);
         trialAppliedPrecoderPMIType(n) = string(ulPrecoding.AppliedPrecoderPMIType);
         trialAppliedPrecoderCodebookMode(n) = string(ulPrecoding.AppliedPrecoderCodebookMode);
+        trialAppliedPrecoderMatrixSHA256(n) = string(ulPrecoding.AppliedPrecoderMatrixSHA256);
         trialRequestedVsAppliedPrecoderPMIMatchStatus(n) = string(ulPrecoding.RequestedVsAppliedPrecoderPMIMatchStatus);
         trialPrecodingNumPorts(n) = double(ulPrecoding.PrecodingNumPorts);
         trialPrecodingNumLayers(n) = double(ulPrecoding.PrecodingNumLayers);
@@ -914,6 +955,17 @@ for n = 1:numFrames
         trialTimingEstimateWasClipped(n) = logical(sixgr.util.structGet(replay, "TimingEstimateWasClipped", ...
             sixgr.util.structGet(rx, "TimingEstimateWasClipped", false)));
         trialNoise(n) = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+        trialPreEqualizationNoiseVariance(n) = double(sixgr.util.structGet(rx, ...
+            "PreEqualizationNoiseVariance", sixgr.util.structGet(rx, "PreEqualizationNoiseVar", NaN)));
+        trialPostEqualizationNoiseVariance(n) = double(sixgr.util.structGet(rx, ...
+            "PostEqualizationNoiseVariance", sixgr.util.structGet(rx, "PostEqualizationNoiseVar", NaN)));
+        trialSampleToGridNoiseVarianceGain(n) = double(sixgr.util.structGet(rx, ...
+            "SampleToGridNoiseVarianceGain", sixgr.util.structGet(tx, ...
+            "OFDMInfo.SampleToGridNoiseVarianceGain", NaN)));
+        trialPreEqualizationNoiseVarianceSource(n) = string(sixgr.util.structGet(rx, ...
+            "PreEqualizationNoiseVarianceSource", ""));
+        trialPostEqualizationNoiseVarianceSource(n) = string(sixgr.util.structGet(rx, ...
+            "PostEqualizationNoiseVarianceSource", ""));
         trialNoiseVarStatus(n) = string(sixgr.util.structGet(rx, "NoiseVarStatus", ""));
         trialNoiseVarSource(n) = string(sixgr.util.structGet(rx, "NoiseVarSource", ""));
         trialNoiseVarReason(n) = string(sixgr.util.structGet(rx, "NoiseVarReason", ""));
@@ -959,6 +1011,8 @@ for n = 1:numFrames
         trialLLRFinite(n) = logical(sixgr.util.structGet(rx, "LLRFinite", false));
         trialLLRScaleSource(n) = string(sixgr.util.structGet(rx, "LLRScaleSource", ""));
         trialLLRNoiseVariance(n) = double(sixgr.util.structGet(rx, "LLRNoiseVariance", NaN));
+        trialLLRNoiseVarianceSource(n) = string(sixgr.util.structGet(rx, ...
+            "LLRNoiseVarianceSource", ""));
         trialPostEqSINRAvailable(n) = logical(sixgr.util.structGet(rx, "PostEqSINRAvailable", false));
         trialPostEqSINRReceiverDerived(n) = logical(sixgr.util.structGet(rx, "PostEqSINRReceiverDerived", false));
         trialSINRValidationStatus(n) = string(sixgr.util.structGet(rx, "SINRValidationStatus", ""));
@@ -989,7 +1043,52 @@ for n = 1:numFrames
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
         trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
         trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
-        trialNoiseVarianceSource(n) = trialNoiseVarSource(n);
+        trialNoiseVarianceSource(n) = string(sixgr.util.structGet(replay, ...
+            "NoiseVarianceSource", trialNoiseVarSource(n)));
+        trialReplaySampleNoiseVariance(n) = double(sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariancePreCompositeFrontEnd", sixgr.util.structGet(replay, ...
+            "SampleNoiseVariance", NaN)));
+        trialReceiverInputSampleNoiseVariance(n) = double(sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariancePostCompositeFrontEnd", sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariance", NaN)));
+        trialReplayGridNoiseVariance(n) = double(sixgr.util.structGet(replay, ...
+            "GridNoiseVariance", NaN));
+        if ~isfinite(trialReplayGridNoiseVariance(n)) && ...
+                isfinite(trialReplaySampleNoiseVariance(n)) && ...
+                isfinite(trialSampleToGridNoiseVarianceGain(n))
+            trialReplayGridNoiseVariance(n) = trialReplaySampleNoiseVariance(n) .* ...
+                trialSampleToGridNoiseVarianceGain(n);
+        end
+        trialReplaySampleNoiseVarianceDomain(n) = string(sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariancePreCompositeFrontEndDomain", ...
+            "receiver_sample_waveform_pre_composite_front_end"));
+        trialReplayGridNoiseVarianceDomain(n) = string(sixgr.util.structGet(replay, ...
+            "GridNoiseVarianceDomain", "resource_grid_pre_equalization"));
+        trialReceiverInputSampleNoiseVarianceDomain(n) = string(sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariancePostCompositeFrontEndDomain", ...
+            "receiver_sample_waveform_post_composite_front_end"));
+        trialDesiredSignalPowerDomain(n) = string(sixgr.util.structGet(replay, ...
+            "DesiredSignalPowerBeforeNoiseDomain", ...
+            "receiver_sample_waveform_pre_noise_pre_composite_front_end"));
+        trialCompositeSignalPowerDomain(n) = string(sixgr.util.structGet(replay, ...
+            "CompositeSignalPowerBeforeNoiseDomain", ...
+            "receiver_sample_waveform_pre_noise_pre_composite_front_end"));
+        trialSNRReferencePlane(n) = string(sixgr.util.structGet(replay, ...
+            "SNRReferencePlane", ""));
+        trialAppliedNoiseSNRSource(n) = string(sixgr.util.structGet(replay, ...
+            "AppliedNoiseSNRSource", ""));
+        trialRequestedAWGNReferenceSNR(n) = double(sixgr.util.structGet(replay, ...
+            "RequestedAWGNReferenceSNR_dB", NaN));
+        trialSignalEnergyPerOccupiedRE(n) = double(sixgr.util.structGet(replay, ...
+            "SignalEnergyPerOccupiedRE", NaN));
+        trialReplaySampleNoiseVarianceSource(n) = string(sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariancePreCompositeFrontEndSource", ...
+            sixgr.util.structGet(replay, "NoiseVarianceSource", "")));
+        trialReplayGridNoiseVarianceSource(n) = string(sixgr.util.structGet(replay, ...
+            "NoiseVarianceSource", "")) + "_ofdm_sample_to_grid_transform";
+        trialReceiverInputSampleNoiseVarianceSource(n) = string(sixgr.util.structGet(replay, ...
+            "InjectedNoiseVariancePostCompositeFrontEndSource", ...
+            sixgr.util.structGet(replay, "NoiseVarianceSource", "")));
         trialAppliedLargeScaleGain(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
         trialAppliedLargeScaleLoss(n) = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
         trialAppliedBasePathloss(n) = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -1150,6 +1249,7 @@ for n = 1:numFrames
         trialCRI(n) = metrics.CRI;
         trialPMIType(n) = string(metrics.PMIType);
         trialPMICodebookMode(n) = string(metrics.PMICodebookMode);
+        trialPMISource(n) = string(metrics.PMISource);
         trialCSIReportMode(n) = string(metrics.CSIReportMode);
         trialCSIPayloadBits(n) = metrics.CSIPayloadBitLength;
         trialCSIPayloadHex(n) = string(metrics.CSIPayloadHex);
@@ -1255,6 +1355,13 @@ for n = 1:numFrames
         trialDataRECount(n) = double(sixgr.util.structGet(modTrack, "DataRECount", NaN));
         trialDataRECountPerLayer(n) = double(sixgr.util.structGet(modTrack, "DataRECountPerLayer", trialDataRECount(n)));
         trialTotalDataRECount(n) = double(sixgr.util.structGet(modTrack, "TotalDataRECount", NaN));
+        tbsAccounting = sixgr.util.structGet(tx, "ResourceAccounting", struct());
+        trialTBSInputNREPerPRB(n) = double(sixgr.util.structGet( ...
+            tbsAccounting, "NREPerPRBForTBS", sixgr.util.structGet(tx, "NREPerPRB", NaN)));
+        trialTBSInputXOverhead(n) = double(sixgr.util.structGet(tx, ...
+            "XOverhead", sixgr.util.structGet(cfgFrame, "phy.pusch.xOverhead", NaN)));
+        trialTBSInputSource(n) = string(sixgr.util.structGet( ...
+            tbsAccounting, "Source", ""));
         trialModulationOrderQm(n) = double(sixgr.util.structGet(modTrack, "ModulationOrderQm", NaN));
         trialComputedE_TS38212(n) = double(sixgr.util.structGet(modTrack, "ComputedE_TS38212", NaN));
         trialDMRSRECount(n) = double(sixgr.util.structGet(modTrack, "DMRSRECount", NaN));
@@ -1574,6 +1681,10 @@ if frameCrash == numFrames
 end
 
 out.TrialTable = localBuildTrialSlice(numFrames);
+strictTruthRequired = logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
+    logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false));
+out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
+    out.TrialTable, "ThrowOnFailure", strictTruthRequired, "RequireRows", true);
 
     function localMaybeEmitLiveSnapshot(stopIdx)
         if isempty(liveTrialCallback)
@@ -1641,7 +1752,7 @@ out.TrialTable = localBuildTrialSlice(numFrames);
             repmat("UL", stopIdx, 1), snr_dB * ones(stopIdx,1), trialSFN(idx), trialUEIndex(idx), trialRNTI(idx), trialBaseStationID(idx), trialSeed(idx), trialFrame(idx), trialSlot(idx), ...
             trialMCS(idx), trialPRB(idx), trialLayers(idx), trialModulation(idx), trialCodeRate(idx), trialTB(idx), trialChan(idx), trialDopp(idx), trialCRC(idx), trialDecIt(idx), ...
             trialEVM(idx), trialNMSE(idx), trialDet(idx), trialSINR(idx), trialCQI(idx), trialCQIDerivedMCS(idx), trialCQIDerivedModulation(idx), trialCQIDerivedCodeRate(idx), ...
-            trialLinkAdaptationMode(idx), trialActualMCSSelectionMode(idx), trialSchedulerGrantMCSSelectionMode(idx), trialCQITable(idx), trialMCSTable(idx), ...
+            trialLinkAdaptationMode(idx), trialActualMCSSelectionMode(idx), trialSchedulerGrantMCSSelectionMode(idx), trialMCSValueStatus(idx), trialCQITable(idx), trialMCSTable(idx), ...
             trialRI(idx), trialPMI(idx), trialCRI(idx), ...
             trialPMIType(idx), trialPMICodebookMode(idx), trialCSIReportMode(idx), trialCSIPayloadBits(idx), trialCSIPayloadHex(idx), ...
             trialGain(idx), trialNoise(idx), trialDesiredSignalPowerBeforeNoise(idx), trialCompositeSignalPowerBeforeNoise(idx), trialAppliedNoiseSNR(idx), trialNoiseVarianceSource(idx), ...
@@ -1676,7 +1787,7 @@ out.TrialTable = localBuildTrialSlice(numFrames);
             'VariableNames', {'Direction','SNR_dB','SFN','UEIndex','RNTI','BaseStationID','Seed','Frame','Slot','MCS','PRBs','Layers','Modulation','TargetCodeRate','TBSize_bits', ...
             'ChannelModel','DopplerHz','CRCPass','DecoderIterations','EVM_rms','NMSE_dB','DetectionMetric', ...
             'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
-            'LinkAdaptationMode','ActualMCSSelectionMode','SchedulerGrantMCSSelectionMode','CQITable','MCSTable','RankIndicator','PMI','CRI','PMIType','PMICodebookMode', ...
+            'LinkAdaptationMode','ActualMCSSelectionMode','SchedulerGrantMCSSelectionMode','MCSValueStatus','CQITable','MCSTable','RankIndicator','PMI','CRI','PMIType','PMICodebookMode', ...
             'CSIReportMode','CSIPayloadBitLength','CSIPayloadHex','ChannelGain_dB','NoiseVariance', ...
             'DesiredSignalPowerBeforeNoise','CompositeSignalPowerBeforeNoise','AppliedNoiseSNR_dB','NoiseVarianceSource', ...
             'TimingOffset_samples','RankEstimate','ConditionNumber_dB','NumRxAntennas','NumTxPorts', ...
@@ -1709,6 +1820,40 @@ out.TrialTable = localBuildTrialSlice(numFrames);
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.DataRECountPerLayer = trialDataRECountPerLayer(idx);
         T.TotalDataRECount = trialTotalDataRECount(idx);
+        T.TBSInputModulation = trialModulation(idx);
+        T.TBSInputNumLayers = trialLayers(idx);
+        T.TBSInputNPRB = trialPRB(idx);
+        T.TBSInputNREPerPRB = trialTBSInputNREPerPRB(idx);
+        T.TBSInputTargetCodeRate = trialCodeRate(idx);
+        T.TBSInputXOverhead = trialTBSInputXOverhead(idx);
+        T.TBSInputSource = trialTBSInputSource(idx);
+        T.ReplaySampleNoiseVariance = trialReplaySampleNoiseVariance(idx);
+        T.ReplayGridNoiseVariance = trialReplayGridNoiseVariance(idx);
+        T.ReceiverInputSampleNoiseVariance = trialReceiverInputSampleNoiseVariance(idx);
+        T.PreEqualizationNoiseVariance = trialPreEqualizationNoiseVariance(idx);
+        T.PostEqualizationNoiseVariance = trialPostEqualizationNoiseVariance(idx);
+        T.SampleToGridNoiseVarianceGain = trialSampleToGridNoiseVarianceGain(idx);
+        T.ReplaySampleNoiseVarianceDomain = trialReplaySampleNoiseVarianceDomain(idx);
+        T.ReplayGridNoiseVarianceDomain = trialReplayGridNoiseVarianceDomain(idx);
+        T.ReceiverInputSampleNoiseVarianceDomain = trialReceiverInputSampleNoiseVarianceDomain(idx);
+        T.DesiredSignalPowerBeforeNoiseDomain = trialDesiredSignalPowerDomain(idx);
+        T.CompositeSignalPowerBeforeNoiseDomain = trialCompositeSignalPowerDomain(idx);
+        T.SNRReferencePlane = trialSNRReferencePlane(idx);
+        T.AppliedNoiseSNRSource = trialAppliedNoiseSNRSource(idx);
+        T.RequestedAWGNReferenceSNR_dB = trialRequestedAWGNReferenceSNR(idx);
+        T.SignalEnergyPerOccupiedRE = trialSignalEnergyPerOccupiedRE(idx);
+        T.PreEqualizationNoiseVarianceDomain = repmat("resource_grid_pre_equalization", stopIdx, 1);
+        T.PostEqualizationNoiseVarianceDomain = repmat("unit_constellation_layer_symbol_post_equalization", stopIdx, 1);
+        T.LLRNoiseVarianceDomain = repmat("unit_constellation_soft_demapper_input", stopIdx, 1);
+        T.NoiseVarianceUnit = repmat("normalized_complex_power", stopIdx, 1);
+        T.NoiseVarianceNormalization = repmat("native_domain_power_per_complex_value", stopIdx, 1);
+        T.NoiseVarianceAliasOf = repmat("PreEqualizationNoiseVariance", stopIdx, 1);
+        T.ReplaySampleNoiseVarianceSource = trialReplaySampleNoiseVarianceSource(idx);
+        T.ReplayGridNoiseVarianceSource = trialReplayGridNoiseVarianceSource(idx);
+        T.ReceiverInputSampleNoiseVarianceSource = trialReceiverInputSampleNoiseVarianceSource(idx);
+        T.PreEqualizationNoiseVarianceSource = trialPreEqualizationNoiseVarianceSource(idx);
+        T.PostEqualizationNoiseVarianceSource = trialPostEqualizationNoiseVarianceSource(idx);
+        T.LLRNoiseVarianceSource = trialLLRNoiseVarianceSource(idx);
         T.ModulationOrderQm = trialModulationOrderQm(idx);
         T.ComputedE_TS38212 = trialComputedE_TS38212(idx);
         T.RateMatchedBitsDelta_TS38212 = trialRateMatchedBits(idx) - trialComputedE_TS38212(idx);
@@ -1891,6 +2036,7 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.TopBeamIndexSet = trialTopBeamIndexSet(idx);
         T.TopBeamGainSet_dB = trialTopBeamGainSet(idx);
         T.BeamScoreSource = trialBeamScoreSource(idx);
+        T.PMISource = trialPMISource(idx);
         T.AppliedLargeScaleGain_dB = trialAppliedLargeScaleGain(idx);
         T.AppliedLargeScaleLoss_dB = trialAppliedLargeScaleLoss(idx);
         T.AppliedBasePathloss_dB = trialAppliedBasePathloss(idx);
@@ -1985,11 +2131,16 @@ out.TrialTable = localBuildTrialSlice(numFrames);
         T.PrecodingActive = trialPrecodingActive(idx);
         T.ExplicitBeamWeightsApplied = trialExplicitBeamWeightsApplied(idx);
         T.TransformPrecodingApplied = trialTransformPrecodingApplied(idx);
+        T.FrequencyHoppingApplied = trialFrequencyHoppingApplied(idx);
+        T.FrequencyHoppingMode = trialFrequencyHoppingMode(idx);
+        T.FrequencyHoppingToolboxMode = trialFrequencyHoppingToolboxMode(idx);
+        T.SecondHopStartPRB = trialSecondHopStartPRB(idx);
         T.BeamformingApplied = trialBeamformingApplied(idx);
         T.AppliedBeamIndexSet = trialAppliedBeamIndexSet(idx);
         T.AppliedPrecoderPMI = trialAppliedPrecoderPMI(idx);
         T.AppliedPrecoderPMIType = trialAppliedPrecoderPMIType(idx);
         T.AppliedPrecoderCodebookMode = trialAppliedPrecoderCodebookMode(idx);
+        T.AppliedPrecoderMatrixSHA256 = trialAppliedPrecoderMatrixSHA256(idx);
         T.RequestedVsAppliedPrecoderPMIMatchStatus = trialRequestedVsAppliedPrecoderPMIMatchStatus(idx);
         T.PrecodingNumPorts = trialPrecodingNumPorts(idx);
         T.PrecodingNumLayers = trialPrecodingNumLayers(idx);
@@ -2035,11 +2186,26 @@ signalEnergyPerOccupiedRE = localOccupiedRESignalEnergy(txInfo);
     referenceNoise.SampleNoiseVariance, replay, ...
     "standalone_awgn_occupied_grid_esn0_reference");
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, nVar, source, txInfo);
-noiseInfo.AppliedNoiseSNR_dB = double(referenceNoise.RequestedEsN0_dB);
+effectiveGridNoiseVariance = double(nVar) .* ...
+    double(referenceNoise.SampleToGridNoiseVarianceGain);
+noiseInfo.RequestedAWGNReferenceSNR_dB = ...
+    double(referenceNoise.RequestedEsN0_dB);
+noiseInfo.AppliedNoiseSNR_dB = 10 .* log10(max( ...
+    double(referenceNoise.SignalEnergyPerOccupiedRE) ./ ...
+    max(effectiveGridNoiseVariance, realmin), realmin));
+noiseInfo.AppliedNoiseSNRSource = ...
+    "occupied_re_signal_energy_over_effective_grid_noise_variance";
 noiseInfo.SNRReferencePlane = ...
     "occupied_resource_grid_re_after_ofdm_demodulation";
-noiseInfo.GridNoiseVariance = double(referenceNoise.GridNoiseVariance);
-noiseInfo.SampleNoiseVariance = double(referenceNoise.SampleNoiseVariance);
+noiseInfo.ReferenceAWGNGridNoiseVariance = ...
+    double(referenceNoise.GridNoiseVariance);
+noiseInfo.ReferenceAWGNSampleNoiseVariance = ...
+    double(referenceNoise.SampleNoiseVariance);
+noiseInfo.GridNoiseVariance = effectiveGridNoiseVariance;
+noiseInfo.SampleNoiseVariance = double(nVar);
+noiseInfo.GridNoiseVarianceDomain = "resource_grid_pre_equalization";
+noiseInfo.SampleNoiseVarianceDomain = ...
+    "receiver_sample_waveform_pre_composite_front_end";
 noiseInfo.SampleToGridNoiseVarianceGain = ...
     double(referenceNoise.SampleToGridNoiseVarianceGain);
 noiseInfo.NoiseCalibrationVersion = char(string(referenceNoise.Version));
@@ -2100,6 +2266,14 @@ info = struct( ...
     "DesiredSignalPowerBeforeNoise", double(desiredPower), ...
     "CompositeSignalPowerBeforeNoise", double(compositePower), ...
     "AppliedNoiseSNR_dB", double(appliedSNR), ...
+    "AppliedNoiseSNRSource", "desired_signal_power_over_effective_sample_noise_variance", ...
+    "SNRReferencePlane", "receiver_sample_waveform_pre_composite_front_end", ...
+    "SampleNoiseVariance", double(nVar), ...
+    "SampleNoiseVarianceDomain", "receiver_sample_waveform_pre_composite_front_end", ...
+    "GridNoiseVariance", NaN, ...
+    "GridNoiseVarianceDomain", "not_available", ...
+    "DesiredSignalPowerBeforeNoiseDomain", "receiver_sample_waveform_pre_noise_pre_composite_front_end", ...
+    "CompositeSignalPowerBeforeNoiseDomain", "receiver_sample_waveform_pre_noise_pre_composite_front_end", ...
     "NoiseVarianceSource", char(string(source)));
 end
 
@@ -3748,6 +3922,40 @@ T.NoiseVarReason = strings(0,1);
 T.NoiseVarStrictFailure = false(0,1);
 T.DataRECountPerLayer = zeros(0,1);
 T.TotalDataRECount = zeros(0,1);
+T.TBSInputModulation = strings(0,1);
+T.TBSInputNumLayers = zeros(0,1);
+T.TBSInputNPRB = zeros(0,1);
+T.TBSInputNREPerPRB = zeros(0,1);
+T.TBSInputTargetCodeRate = zeros(0,1);
+T.TBSInputXOverhead = zeros(0,1);
+T.TBSInputSource = strings(0,1);
+T.ReplaySampleNoiseVariance = zeros(0,1);
+T.ReplayGridNoiseVariance = zeros(0,1);
+T.ReceiverInputSampleNoiseVariance = zeros(0,1);
+T.PreEqualizationNoiseVariance = zeros(0,1);
+T.PostEqualizationNoiseVariance = zeros(0,1);
+T.SampleToGridNoiseVarianceGain = zeros(0,1);
+T.ReplaySampleNoiseVarianceDomain = strings(0,1);
+T.ReplayGridNoiseVarianceDomain = strings(0,1);
+T.ReceiverInputSampleNoiseVarianceDomain = strings(0,1);
+T.DesiredSignalPowerBeforeNoiseDomain = strings(0,1);
+T.CompositeSignalPowerBeforeNoiseDomain = strings(0,1);
+T.SNRReferencePlane = strings(0,1);
+T.AppliedNoiseSNRSource = strings(0,1);
+T.RequestedAWGNReferenceSNR_dB = zeros(0,1);
+T.SignalEnergyPerOccupiedRE = zeros(0,1);
+T.PreEqualizationNoiseVarianceDomain = strings(0,1);
+T.PostEqualizationNoiseVarianceDomain = strings(0,1);
+T.LLRNoiseVarianceDomain = strings(0,1);
+T.NoiseVarianceUnit = strings(0,1);
+T.NoiseVarianceNormalization = strings(0,1);
+T.NoiseVarianceAliasOf = strings(0,1);
+T.ReplaySampleNoiseVarianceSource = strings(0,1);
+T.ReplayGridNoiseVarianceSource = strings(0,1);
+T.ReceiverInputSampleNoiseVarianceSource = strings(0,1);
+T.PreEqualizationNoiseVarianceSource = strings(0,1);
+T.PostEqualizationNoiseVarianceSource = strings(0,1);
+T.LLRNoiseVarianceSource = strings(0,1);
 T.ModulationOrderQm = zeros(0,1);
 T.ComputedE_TS38212 = zeros(0,1);
 T.RateMatchedBitsDelta_TS38212 = zeros(0,1);
@@ -3964,11 +4172,16 @@ T.PrecodingApplicationStage = strings(0,1);
 T.PrecodingActive = false(0,1);
 T.ExplicitBeamWeightsApplied = false(0,1);
 T.TransformPrecodingApplied = false(0,1);
+T.FrequencyHoppingApplied = false(0,1);
+T.FrequencyHoppingMode = strings(0,1);
+T.FrequencyHoppingToolboxMode = strings(0,1);
+T.SecondHopStartPRB = zeros(0,1);
 T.BeamformingApplied = false(0,1);
 T.AppliedBeamIndexSet = strings(0,1);
 T.AppliedPrecoderPMI = zeros(0,1);
 T.AppliedPrecoderPMIType = strings(0,1);
 T.AppliedPrecoderCodebookMode = strings(0,1);
+T.AppliedPrecoderMatrixSHA256 = strings(0,1);
 T.RequestedVsAppliedPrecoderPMIMatchStatus = strings(0,1);
 T.RequestedBeamTruthClassification = strings(0,1);
 T.RequestedPrecoderPMITruthClassification = strings(0,1);
@@ -3976,6 +4189,7 @@ T.AppliedBeamApplicationSource = strings(0,1);
 T.AppliedBeamTruthClassification = strings(0,1);
 T.AppliedPrecoderPMIApplicationSource = strings(0,1);
 T.AppliedPrecoderPMITruthClassification = strings(0,1);
+T.PMISource = strings(0,1);
 T.PrecodingNumPorts = zeros(0,1);
 T.PrecodingNumLayers = zeros(0,1);
 T.PrecodingMatrixRows = zeros(0,1);
@@ -4277,6 +4491,7 @@ appliedPMI = double(sixgr.util.structGet(prec, "PMI", sixgr.util.structGet(grant
 requestedPMI = double(sixgr.util.structGet(grant, "PMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.TPMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN))));
+appliedPrecoderMatrixSHA256 = localResolveAppliedPrecoderMatrixSHA256(prec);
 trace = struct( ...
     "ConfiguredBeamSelectionStrategy", string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamSelectionStrategy", "")), ...
     "PrecoderSource", string(sixgr.util.structGet(prec, "Source", sixgr.util.structGet(grant, "PrecoderSource", localResolveULPrecoderSource(transformPrecoding)))), ...
@@ -4290,11 +4505,27 @@ trace = struct( ...
     "AppliedPrecoderPMI", double(appliedPMI), ...
     "AppliedPrecoderPMIType", string(sixgr.util.structGet(prec, "PMIType", sixgr.util.structGet(grant, "AppliedPrecoderPMIType", ""))), ...
     "AppliedPrecoderCodebookMode", string(sixgr.util.structGet(prec, "CodebookMode", sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""))), ...
+    "AppliedPrecoderMatrixSHA256", appliedPrecoderMatrixSHA256, ...
     "RequestedVsAppliedPrecoderPMIMatchStatus", localRequestedVsAppliedPMIStatus(requestedPMI, appliedPMI), ...
     "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", size(sixgr.util.structGet(tx, "Grid", zeros(0,0,0)), 3))), ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", localObjectValue(pusch, "NumLayers", sixgr.util.structGet(grant, "PrecodingNumLayers", NaN)))), ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", NaN)), ...
     "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)));
+end
+
+function digest = localResolveAppliedPrecoderMatrixSHA256(prec)
+digest = lower(strtrim(string(sixgr.util.structGet(prec, ...
+    "AppliedMatrixSHA256", ""))));
+if strlength(digest) == 0
+    matrix = sixgr.util.structGet(prec, "MatrixPorts", []);
+    if ~isempty(matrix)
+        digest = lower(string(sixgr.phy.mimo.MatrixContract.digest(double(matrix))));
+    end
+end
+if strlength(digest) > 0 && isempty(regexp(char(digest), '^[0-9a-f]{64}$', 'once'))
+    error("sixgr:link:runULPUSCHThroughput:InvalidAppliedPrecoderDigest", ...
+        "Runtime PUSCH precoder emitted an invalid applied-matrix SHA-256 identity.");
+end
 end
 
 function trace = localResolveInterferencePrecodingTrace(replay)
@@ -4393,6 +4624,22 @@ metrics = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
     "ReferenceIndices", sixgr.util.structGet(rx, "DMRSIndices", []), ...
     "ReferenceSymbols", sixgr.util.structGet(rx, "DMRSSymbols", []), ...
     "PrecoderInfo", precoderTrace);
+% A PUSCH DM-RS estimate observes the already-precoded effective layer
+% channel.  It cannot be reused as an unprecoded SRS port-domain estimate
+% to rescore alternative TPMIs.  Preserve the waveform-applied TPMI as
+% runtime truth and make the unavailable recommendation/beam comparison
+% explicit instead of manufacturing a best-beam hit from the wrong
+% codebook/domain.
+metrics.BeamObservationDomain = "pusch_dmrs_effective_layer_channel";
+if strcmpi(string(sixgr.util.structGet(precoderTrace, "PrecodingMode", "")), "ul_codebook_tpmi")
+    runtimeAppliedPMI = double(sixgr.util.structGet(precoderTrace, "AppliedPrecoderPMI", NaN));
+    metrics.PMI = runtimeAppliedPMI;
+    metrics.PMISource = "ul_runtime_applied_codebook_tpmi_from_pusch_waveform";
+    metrics.CSIReportMode = "ul_pusch_dmrs_effective_channel_no_tpmi_recommendation";
+    metrics.SRSRITPMIValid = false;
+    metrics.TPMICandidateCount = NaN;
+    metrics.TPMIMutualInformation = NaN;
+end
 metrics.PilotSINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
 metrics.PilotSINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
 referenceSINR = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
@@ -4618,6 +4865,18 @@ beam = struct( ...
     "BeamScoreSource", "");
 
 if isempty(Hwb) || ~ismatrix(Hwb)
+    return;
+end
+observationDomain = lower(strtrim(string(sixgr.util.structGet(metrics, ...
+    "BeamObservationDomain", ""))));
+if observationDomain == "pusch_dmrs_effective_layer_channel"
+    % PUSCH DM-RS is precoded with the scheduled TPMI.  Its channel
+    % estimate is therefore an effective layer-domain observation and
+    % contains no independent port-domain evidence for counterfactual
+    % TPMI/beam scoring.  Applied beam/TPMI truth remains available in the
+    % dedicated Applied* columns; BestBeam/BeamHit must stay N/A.
+    beam.BeamScoreSource = ...
+        "not_evaluated_pusch_dmrs_effective_layer_channel_cannot_rescore_tpmi";
     return;
 end
 nTx = size(Hwb, 2);
@@ -5451,6 +5710,7 @@ grant = struct( ...
     "AppliedPrecoderPMI", double(appliedPMI), ...
     "AppliedPrecoderPMIType", localSafeCharToken(sixgr.util.structGet(prec, "PMIType", "")), ...
     "AppliedPrecoderCodebookMode", localSafeCharToken(sixgr.util.structGet(prec, "CodebookMode", "")), ...
+    "AppliedPrecoderMatrixSHA256", localSafeCharToken(localResolveAppliedPrecoderMatrixSHA256(prec)), ...
     "RequestedVsAppliedPrecoderPMIMatchStatus", localSafeCharToken(localRequestedVsAppliedPMIStatus(requestedPMI, appliedPMI)), ...
     "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", numTxAnt)), ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", puschLayers)), ...

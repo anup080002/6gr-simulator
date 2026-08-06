@@ -136,8 +136,9 @@ if ~madeAny
     end
 end
 
-% Attach names for debugging
-figs.DebugTables = names; %#ok<STRNU>
+% Attach collection metadata explicitly. Exporters validate the value type
+% and therefore never interpret this cell array as a figure handle.
+figs.MetadataDebugTables = names; %#ok<STRNU>
 
 end
 

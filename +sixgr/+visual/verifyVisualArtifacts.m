@@ -36,6 +36,12 @@ if istable(plotManifest) && ~isempty(plotManifest)
     end
 end
 
+[componentRows, componentSeen] = localComponentLineageRows(runFolder, seen);
+if ~isempty(componentRows)
+    rows = [rows; componentRows(:)]; %#ok<AGROW>
+    seen = [seen; componentSeen(:)]; %#ok<AGROW>
+end
+
 files = localVisualFiles(runFolder);
 for i = 1:numel(files)
     absPath = string(files(i));
@@ -45,6 +51,10 @@ for i = 1:numel(files)
     relPath = localRelativePath(runFolder, absPath);
     row = localBuildRow(absPath, relPath, false);
     row = localApplyFileRules(row);
+    if row.IntegrityOk
+        row = localFail(row, "unmanifested_visual_artifact", ...
+            "Every persisted PNG or JPEG must have canonical or component plot lineage with exact source CSV evidence.");
+    end
     rows(end + 1, 1) = row; %#ok<AGROW>
 end
 
@@ -54,6 +64,236 @@ if isempty(rows)
 else
     T = struct2table(rows);
 end
+end
+
+
+function [rows, seen] = localComponentLineageRows(runFolder, alreadySeen)
+rows = repmat(localEmptyRow(), 0, 1);
+seen = strings(0, 1);
+files = dir(fullfile(runFolder, "**", "*plot_lineage.csv"));
+for f = 1:numel(files)
+    lineagePath = fullfile(files(f).folder, files(f).name);
+    try
+        T = readtable(lineagePath, "VariableNamingRule", "preserve", "TextType", "string");
+    catch
+        continue;
+    end
+    imageColumn = localFirstColumn(T, ["ImagePath","PlotFile","ArtifactPath"]);
+    sourceColumn = localFirstColumn(T, ["SourceCSV","source_csv"]);
+    if strlength(imageColumn) == 0
+        continue;
+    end
+    for i = 1:height(T)
+        relPath = localNormalizeLineageArtifactPath( ...
+            T.(imageColumn)(i), runFolder, lineagePath);
+        if strlength(relPath) == 0
+            continue;
+        end
+        absPath = fullfile(runFolder, strrep(char(relPath), "/", filesep));
+        if any(strcmp(alreadySeen, string(absPath))) || any(strcmp(seen, string(absPath)))
+            continue;
+        end
+        row = localBuildRow(absPath, relPath, true);
+        row.PlotId = localTableString(T, "PlotId", i, erase(files(f).name, ".csv"));
+        lineageStatus = lower(strtrim(localTableString(T, "Status", i, ...
+            localTableString(T, "LineageStatus", i, "not_evaluated"))));
+        explicitlyNotRendered = any(lineageStatus == ...
+            ["incomplete","not_evaluated","not_rendered","suppressed"]);
+        if explicitlyNotRendered
+            row.PlotRenderStatus = "not_rendered";
+        else
+            row.PlotRenderStatus = localTableString(T, "Status", i, ...
+                localTableString(T, "LineageStatus", i, "rendered_component_plot"));
+        end
+        row.VisualValidity = "component_runtime_evidence";
+        if explicitlyNotRendered
+            if row.ByteCount > 0
+                row = localFail(row, "stale_suppressed_normal_artifact", ...
+                    "Component lineage says the plot was not rendered, but image bytes still exist.");
+            else
+                row.IntegrityOk = true;
+                row.FailureCode = "";
+                row.FailureReason = "";
+            end
+            rows(end + 1, 1) = row; %#ok<AGROW>
+            seen(end + 1, 1) = string(absPath); %#ok<AGROW>
+            continue;
+        end
+        row = localApplyFileRules(row);
+        if strlength(sourceColumn) == 0
+            row = localFail(row, "manifest_source_csv_missing", ...
+                "Component plot lineage does not identify a source CSV.");
+        else
+            sourceSpec = string(T.(sourceColumn)(i));
+            [sourceExists, actualSourceHashes] = localSourceSpecEvidence( ...
+                runFolder, sourceSpec, lineagePath);
+            if ~sourceExists
+                row = localFail(row, "source_csv_missing", ...
+                    "One or more component plot source CSV files are missing.");
+            else
+                expectedSourceHashes = lower(strtrim(localTableString(T, ...
+                    "SourceCSV_SHA256", i, "")));
+                if strlength(expectedSourceHashes) > 0 && ...
+                        lower(actualSourceHashes) ~= expectedSourceHashes
+                    row = localFail(row, "component_plot_source_hash_mismatch", ...
+                        "Component plot source CSV bytes do not match the lineage hash.");
+                end
+            end
+        end
+        if ~any(lineageStatus == ["pass","complete","rendered","rendered_component_plot"])
+            row = localFail(row, "component_plot_lineage_failed", ...
+                "Component plot lineage status is not successful: " + lineageStatus);
+        end
+        expectedHash = lower(strtrim(localTableString(T, "ImageSHA256", i, ...
+            localTableString(T, "PNG_SHA256", i, ""))));
+        if strlength(expectedHash) > 0 && lower(string(row.SHA256)) ~= expectedHash
+            row = localFail(row, "component_plot_hash_mismatch", ...
+                "Component plot bytes do not match the lineage hash.");
+        end
+        rows(end + 1, 1) = row; %#ok<AGROW>
+        seen(end + 1, 1) = string(absPath); %#ok<AGROW>
+    end
+end
+end
+
+function name = localFirstColumn(T, candidates)
+name = "";
+names = string(T.Properties.VariableNames);
+for candidate = string(candidates(:)).'
+    idx = find(strcmpi(names, candidate), 1, "first");
+    if ~isempty(idx)
+        name = names(idx);
+        return;
+    end
+end
+end
+
+function value = localTableString(T, name, row, fallback)
+value = string(fallback);
+idx = find(strcmpi(string(T.Properties.VariableNames), string(name)), 1, "first");
+if isempty(idx)
+    return;
+end
+candidate = string(T.(T.Properties.VariableNames{idx})(row));
+if strlength(strtrim(candidate)) > 0
+    value = candidate;
+end
+end
+
+function rel = localNormalizeLineageArtifactPath(pathValue, runFolder, lineagePath)
+pathValue = strtrim(string(pathValue));
+if localLooksAbsolute(pathValue)
+    canonicalPath = localCanonicalPath(pathValue);
+    canonicalRoot = localCanonicalPath(runFolder);
+    if canonicalPath == canonicalRoot || ...
+            startsWith(canonicalPath, canonicalRoot + string(filesep), "IgnoreCase", ispc)
+        rel = localRelativePath(canonicalRoot, canonicalPath);
+    else
+        rel = "";
+    end
+else
+    resolved = localResolveOwnedRelativePath(runFolder, lineagePath, pathValue);
+    if strlength(resolved) == 0
+        rel = replace(pathValue, "\", "/");
+        while startsWith(rel, "./")
+            rel = extractAfter(rel, 2);
+        end
+    else
+        rel = localRelativePath(runFolder, resolved);
+    end
+end
+end
+
+function [tf, hashes] = localSourceSpecEvidence(runFolder, sourceSpec, lineagePath)
+parts = split(strtrim(string(sourceSpec)), "|");
+parts = strtrim(parts(:));
+parts = parts(strlength(parts) > 0);
+tf = ~isempty(parts);
+hashValues = strings(numel(parts), 1);
+for i = 1:numel(parts)
+    part = parts(i);
+    if localLooksAbsolute(part)
+        canonicalPart = localCanonicalPath(part);
+        canonicalRoot = localCanonicalPath(runFolder);
+        if canonicalPart ~= canonicalRoot && ...
+                ~startsWith(canonicalPart, canonicalRoot + string(filesep), ...
+                    "IgnoreCase", ispc)
+            tf = false;
+            continue;
+        end
+        pathValue = char(canonicalPart);
+    else
+        pathValue = localResolveOwnedRelativePath(runFolder, lineagePath, part);
+    end
+    existsOne = exist(pathValue, "file") == 2;
+    tf = tf && existsOne;
+    if existsOne
+        hashValues(i) = localFileSHA256(pathValue);
+    end
+end
+hashes = strjoin(hashValues, "|");
+end
+
+function resolved = localResolveOwnedRelativePath(runFolder, lineagePath, relativePath)
+% Resolve a component lineage path against the component that owns the
+% lineage file.  Component exporters intentionally use paths relative to
+% their own output root (for example reports/figures/foo.png).  Treating
+% every such value as run-root-relative aliases unrelated component files
+% or reports valid evidence as missing.
+resolved = "";
+portable = replace(strtrim(string(relativePath)), "\", "/");
+while startsWith(portable, "./")
+    portable = extractAfter(portable, 2);
+end
+segments = split(portable, "/");
+if strlength(portable) == 0 || any(segments == "..")
+    return;
+end
+canonicalRoot = localCanonicalPath(runFolder);
+cursor = localCanonicalPath(fileparts(char(string(lineagePath))));
+while cursor == canonicalRoot || startsWith(cursor, ...
+        canonicalRoot + string(filesep), "IgnoreCase", ispc)
+    candidate = localCanonicalPath(fullfile(cursor, ...
+        strrep(char(portable), "/", filesep)));
+    if (candidate == canonicalRoot || startsWith(candidate, ...
+            canonicalRoot + string(filesep), "IgnoreCase", ispc)) && ...
+            exist(candidate, "file") == 2
+        resolved = candidate;
+        return;
+    end
+    if cursor == canonicalRoot
+        break;
+    end
+    parent = localCanonicalPath(fileparts(char(cursor)));
+    if parent == cursor
+        break;
+    end
+    cursor = parent;
+end
+end
+
+function tf = localLooksAbsolute(pathValue)
+pathValue = char(string(pathValue));
+tf = ~isempty(regexp(pathValue, '^[A-Za-z]:[\\/]', 'once')) || ...
+    startsWith(string(pathValue), "\\\\") || startsWith(string(pathValue), "/");
+end
+
+function value = localCanonicalPath(pathValue)
+value = string(char(java.io.File(char(string(pathValue))).getCanonicalPath()));
+end
+
+function hash = localFileSHA256(pathValue)
+hash = "";
+if exist(pathValue, "file") ~= 2
+    return;
+end
+fid = fopen(pathValue, "r");
+if fid < 0
+    return;
+end
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+bytes = fread(fid, inf, "*uint8");
+hash = string(sixgr.util.sha256Hex(uint8(bytes(:))));
 end
 
 function row = localEmptyRow()
@@ -150,29 +390,15 @@ end
 end
 
 function files = localVisualFiles(runFolder)
-layout = sixgr.report.resultLayout(runFolder);
-dirs = strings(0, 1);
-names = fieldnames(layout);
-for i = 1:numel(names)
-    if endsWith(string(names{i}), "ImageDir")
-        dirs(end + 1, 1) = string(layout.(names{i})); %#ok<AGROW>
-    end
-end
-dirs(end + 1, 1) = string(layout.PlotsDir);
 files = strings(0, 1);
-for i = 1:numel(dirs)
-    if exist(dirs(i), "dir") ~= 7
+listing = dir(fullfile(string(runFolder), "**", "*.*"));
+for j = 1:numel(listing)
+    if listing(j).isdir
         continue;
     end
-    listing = dir(fullfile(dirs(i), "**", "*.*"));
-    for j = 1:numel(listing)
-        if listing(j).isdir
-            continue;
-        end
-        [~, ~, ext] = fileparts(listing(j).name);
-        if any(lower(string(ext)) == [".png",".svg",".jpg",".jpeg"])
-            files(end + 1, 1) = string(fullfile(listing(j).folder, listing(j).name)); %#ok<AGROW>
-        end
+    [~, ~, ext] = fileparts(listing(j).name);
+    if any(lower(string(ext)) == [".png",".svg",".jpg",".jpeg"])
+        files(end + 1, 1) = string(fullfile(listing(j).folder, listing(j).name)); %#ok<AGROW>
     end
 end
 files = unique(files, "stable");

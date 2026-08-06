@@ -233,6 +233,8 @@ ctx.Tables.LiveBeamSelectionStats = localReadOptionalTable(fullfile(layout.Repor
 ctx.Tables.HARQPackets = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"));
 ctx.Tables.HARQSummary = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
 ctx.Tables.HARQTimeline = localReadOptionalTable(fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"));
+ctx.Tables.ApplicationPackets = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_application_packet_delivery_ledger.csv"));
+ctx.Tables.KPIReconstruction = localReadOptionalTable(fullfile(layout.ReportCSVDir, "kpi_reconstruction_summary.csv"));
 ctx.Tables.RFEnergy = localReadOptionalTable(fullfile(layout.RFCSVDir, "probe_rf_energy.csv"));
 ctx.Tables.EnergyTimeline = localReadOptionalTable(fullfile(layout.RFCSVDir, "energy_timeline_trace.csv"));
 ctx.Tables.MultiUser = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "multiuser_user_summary.csv"));
@@ -533,9 +535,7 @@ switch key
     case "spectral_efficiency"
         T = localMeasuredSummaryMetricRows(cat, metric, ctx, "SpectralEfficiency_mean_bps_Hz", "bit/s/Hz", "mean");
     case "user_perceived_throughput"
-        T = [T; ...
-            localTrialThroughputRows(cat, metric, ctx.Tables.DL, "DL", "Mbps", "LLS has no application-layer perception model; emitted as PHY goodput equivalent."); ...
-            localTrialThroughputRows(cat, metric, ctx.Tables.UL, "UL", "Mbps", "LLS has no application-layer perception model; emitted as PHY goodput equivalent.")];
+        T = localApplicationGoodputRows(cat, metric, ctx);
     case "required_snr_target_bler"
         T = localOracleFreeUnsupportedSNRRows(cat, metric, ["DL","UL"], ...
             "Geometry-driven oracle-free LLS derives receiver SINR from pathloss, shadow fading, fading channel, and equalisation. Required injected-SNR targets are intentionally not estimated.");
@@ -1484,6 +1484,58 @@ T = [T; ...
     localMetricTableRow(cat, metric, entity, "max", "available", max(samples), "", unit, sourcePath, "")];
 if ~isempty(T)
     T.Notes(:) = string(notes);
+end
+end
+
+function T = localApplicationGoodputRows(cat, metric, ctx)
+% Report application goodput only when the strict KPI reconstruction is
+% backed by application packets that completed SDAP/PDCP/RLC/MAC and the
+% same PDSCH/PUSCH waveform.  PHY/TB goodput is deliberately not accepted
+% as a substitute for application-layer delivery.
+T = localEmptyMetricTable();
+ledger = ctx.Tables.ApplicationPackets;
+recon = ctx.Tables.KPIReconstruction;
+requiredLedger = ["Direction","DeliverySuccess","SameWaveformProtocolComplete"];
+requiredRecon = ["KPIName","Value","StrictOk","SchemaValid","FormulaExecuted", ...
+    "ReconciliationPass","SourceRowCount"];
+if ~(istable(ledger) && ~isempty(ledger) && all(ismember(requiredLedger, string(ledger.Properties.VariableNames))))
+    return;
+end
+if ~(istable(recon) && ~isempty(recon) && all(ismember(requiredRecon, string(recon.Properties.VariableNames))))
+    return;
+end
+
+ledgerDirection = upper(strtrim(string(ledger.Direction)));
+for direction = ["DL","UL"]
+    kpiName = direction + "_Application_Goodput_Mbps";
+    ridx = find(string(recon.KPIName) == kpiName);
+    if numel(ridx) ~= 1
+        continue;
+    end
+    ridx = ridx(1);
+    strictOk = localTableLogicalAtRow(recon, ridx, "StrictOk") && ...
+        localTableLogicalAtRow(recon, ridx, "SchemaValid") && ...
+        localTableLogicalAtRow(recon, ridx, "FormulaExecuted") && ...
+        localTableLogicalAtRow(recon, ridx, "ReconciliationPass");
+    value = localTableNumericAtRow(recon, ridx, "Value");
+    sourceRows = localTableNumericAtRow(recon, ridx, "SourceRowCount");
+    lidx = find(ledgerDirection == direction);
+    if ~strictOk || ~isfinite(value) || value < 0 || ~isfinite(sourceRows) || ...
+            sourceRows <= 0 || isempty(lidx)
+        continue;
+    end
+    delivered = false(numel(lidx), 1);
+    protocolComplete = false(numel(lidx), 1);
+    for i = 1:numel(lidx)
+        delivered(i) = localTableLogicalAtRow(ledger, lidx(i), "DeliverySuccess");
+        protocolComplete(i) = localTableLogicalAtRow(ledger, lidx(i), "SameWaveformProtocolComplete");
+    end
+    if any(delivered & ~protocolComplete) || ~any(delivered & protocolComplete)
+        continue;
+    end
+    note = "Strict application goodput reconstructed from unique delivered application packets whose SDAP/PDCP/RLC/MAC payload completed on the same decoded PDSCH/PUSCH waveform; no PHY-goodput proxy is used. Source packet ledger: packet_flow/csv/live_application_packet_delivery_ledger.csv.";
+    T = [T; localMetricTableRow(cat, metric, direction, "measurement_window", ...
+        "derived", value, "", "Mbps", "reports/csv/kpi_reconstruction_summary.csv", note)]; %#ok<AGROW>
 end
 end
 
@@ -3563,22 +3615,29 @@ for si = 1:numel(specs)
         if strlength(strtrim(sourceFamily)) > 0
             note = note + " SignalSourceFamily=" + sourceFamily + ".";
         end
-        T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_mean", ...
+        direction = localBeamTableString(statsT, "Direction", k, "");
+        snrDb = localBeamTableNumeric(statsT, "SNR_dB", k, NaN);
+        [scopedStatistic, scopeNote] = sixgr.truth.beamMetricStatisticIdentity( ...
+            string(spec.Statistic), direction, snrDb);
+        if strlength(scopeNote) > 0
+            note = note + " AggregationScope=" + scopeNote + ".";
+        end
+        T = [T; localMetricTableRow(cat, metric, string(spec.Entity), scopedStatistic + "_mean", ...
             "available", value, "", string(spec.Unit), source, note)]; %#ok<AGROW>
 
         p05 = localBeamTableNumeric(statsT, "P05Value", k, NaN);
         if isfinite(p05)
-            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_p05", ...
+            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), scopedStatistic + "_p05", ...
                 "available", p05, "", string(spec.Unit), source, note)]; %#ok<AGROW>
         end
         p95 = localBeamTableNumeric(statsT, "P95Value", k, NaN);
         if isfinite(p95)
-            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_p95", ...
+            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), scopedStatistic + "_p95", ...
                 "available", p95, "", string(spec.Unit), source, note)]; %#ok<AGROW>
         end
         n = localBeamTableNumeric(statsT, "SampleCount", k, NaN);
         if isfinite(n)
-            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), string(spec.Statistic) + "_sample_count", ...
+            T = [T; localMetricTableRow(cat, metric, string(spec.Entity), scopedStatistic + "_sample_count", ...
                 "available", n, "", "count", source, note)]; %#ok<AGROW>
         end
     end
@@ -4969,10 +5028,24 @@ end
 
 function pathOut = localPlotTrialMetricRelationship(ctx, imgDir, dlT, ulT, xVar, yVar, fileName, plotTitle, xLabel, yLabel, logX, logY)
 pathOut = "";
-chartRows = repmat(struct("Direction", "", "XValue", NaN, "YValue", NaN), 0, 1);
-chartRows = localAppendRelationshipRows(chartRows, dlT, xVar, yVar, "DL");
-chartRows = localAppendRelationshipRows(chartRows, ulT, xVar, yVar, "UL");
-chartT = struct2table(chartRows);
+[dlX, dlXAvailable] = localResolvedTrialMetric(dlT, xVar);
+[dlY, dlYAvailable] = localResolvedTrialMetric(dlT, yVar);
+[ulX, ulXAvailable] = localResolvedTrialMetric(ulT, xVar);
+[ulY, ulYAvailable] = localResolvedTrialMetric(ulT, yVar);
+chartT = table();
+if dlXAvailable && dlYAvailable
+    chartT = sixgr.visual.buildTrialRelationshipRows(dlT, dlX, dlY, ...
+        "DL", "air_interface/csv/dl_pdsch_trials.csv");
+end
+if ulXAvailable && ulYAvailable
+    ulChartT = sixgr.visual.buildTrialRelationshipRows(ulT, ulX, ulY, ...
+        "UL", "air_interface/csv/ul_pusch_trials.csv");
+    if isempty(chartT)
+        chartT = ulChartT;
+    else
+        chartT = [chartT; ulChartT]; %#ok<AGROW>
+    end
+end
 status = sixgr.visual.validatePlotData("relation", localColumnOrEmpty(chartT, "XValue"), localColumnOrEmpty(chartT, "YValue"));
 csvLogicalPath = localReportChartCSVLogicalPath(fileName);
 if istable(chartT)
@@ -5009,21 +5082,6 @@ title(ax, plotTitle);
 legend(ax, "Location", "best");
 pathOut = string(fullfile(imgDir, fileName));
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
-end
-
-function rows = localAppendRelationshipRows(rows, T, xVar, yVar, label)
-if ~(istable(T) && ~isempty(T))
-    return;
-end
-[x, xAvailable] = localResolvedTrialMetric(T, xVar);
-[y, yAvailable] = localResolvedTrialMetric(T, yVar);
-if ~(xAvailable && yAvailable)
-    return;
-end
-mask = isfinite(x) & isfinite(y);
-for i = find(mask(:)).'
-    rows(end+1, 1) = struct("Direction", string(label), "XValue", double(x(i)), "YValue", double(y(i))); %#ok<AGROW>
-end
 end
 
 function made = localScatterTrialMetric(ax, T, xVar, yVar, label, color)
@@ -5701,10 +5759,13 @@ sixgr.util.csvWriteTable(artifacts.ChannelSnapshotsCSV, localBuildChannelSnapsho
 sixgr.util.csvWriteTable(artifacts.ChannelImpulseResponseCSV, localBuildChannelImpulseResponseTable(ctx));
 sixgr.util.csvWriteTable(artifacts.EqualizedConstellationsCSV, localBuildEqualizedConstellationTable(ctx));
 sixgr.util.csvWriteTable(artifacts.LLRHistogramsCSV, localBuildLLRHistogramTable(ctx));
-sixgr.util.csvWriteTable(artifacts.CFOToTrackingCSV, localBuildTrackingTraceTable(ctx));
+sixgr.util.csvWriteTable(artifacts.CFOToTrackingCSV, localBuildTrackingTraceTable(ctx), ...
+    "PreserveSchema", true);
 prachCorrelationTraceT = localBuildPRACHCorrelationTraceTable(ctx);
-sixgr.util.csvWriteTable(artifacts.PRACHCorrelationCSV, prachCorrelationTraceT);
-sixgr.util.csvWriteTable(artifacts.PRACHCorrelationLegacyCSV, prachCorrelationTraceT);
+sixgr.util.csvWriteTable(artifacts.PRACHCorrelationCSV, prachCorrelationTraceT, ...
+    "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.PRACHCorrelationLegacyCSV, prachCorrelationTraceT, ...
+    "PreserveSchema", true);
 if localShouldEmitAIAuditArtifacts(ctx)
     artifacts.AIConfidenceCSV = fullfile(ctx.Layout.ReportCSVDir, "ai_confidence_trace.csv");
     artifacts.AIConfidenceImage = fullfile(ctx.Layout.ReportImageDir, "ai_confidence_trace.png");
@@ -6090,11 +6151,12 @@ if ~isempty(T)
     return;
 end
 T = table( ...
-    "not_available", "", NaN, NaN, NaN, ...
+    "not_available", "", NaN, NaN, NaN, NaN, NaN, "", ...
     NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, ...
     NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, ...
     "none", "not_available", ...
-    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB', ...
+    'VariableNames', {'TraceSource','Direction','SourceRow','UEID','RNTI','Frame','Slot','TransportBlockId', ...
+    'SNR_dB', ...
     'InjectedCFO_Hz','EstimatedCFO_PreCorrection_Hz','ResidualCFO_PostCorrection_Hz','EstimatedCFO_Hz','TrueCFO_Hz','CFOError_Hz', ...
     'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples','TrueTimingOffset_samples','TimingError_samples', ...
     'InjectedDoppler_Hz','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','ComputeLatency_ms','AirInterfaceObservation_ms','AcquisitionTime_ms','TrackingFailureProbability','SourceArtifact','Status'});
@@ -6109,8 +6171,12 @@ n = height(sourceT);
 T = table( ...
     repmat(string(traceSource), n, 1), ...
     localDebugStringColumn(sourceT, "Direction", n), ...
+    (1:n).', ...
+    localDebugFirstNumericColumn(sourceT, ["UEID","UEIndex","UE"], n), ...
+    localDebugFirstNumericColumn(sourceT, ["RNTI","UEID","UEIndex"], n), ...
     localDebugNumericColumn(sourceT, "Frame", n), ...
     localDebugNumericColumn(sourceT, "Slot", n), ...
+    localDebugFirstStringColumn(sourceT, ["TransportBlockId","TransportBlockID","TBID"], n), ...
     localDebugNumericColumn(sourceT, "SNR_dB", n), ...
     localDebugNumericColumn(sourceT, "InjectedCFO_Hz", n), ...
     localDebugNumericColumn(sourceT, "EstimatedCFO_PreCorrection_Hz", n), ...
@@ -6133,7 +6199,7 @@ T = table( ...
     localDebugNumericColumn(sourceT, "TrackingFailureProbability", n), ...
     repmat(string(sourceArtifact), n, 1), ...
     localDebugStringColumn(sourceT, "Status", n), ...
-    'VariableNames', {'TraceSource','Direction','Frame','Slot','SNR_dB', ...
+    'VariableNames', {'TraceSource','Direction','SourceRow','UEID','RNTI','Frame','Slot','TransportBlockId','SNR_dB', ...
     'InjectedCFO_Hz','EstimatedCFO_PreCorrection_Hz','ResidualCFO_PostCorrection_Hz','EstimatedCFO_Hz','TrueCFO_Hz','CFOError_Hz', ...
     'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples','TrueTimingOffset_samples','TimingError_samples', ...
     'InjectedDoppler_Hz','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','ComputeLatency_ms','AirInterfaceObservation_ms','AcquisitionTime_ms','TrackingFailureProbability','SourceArtifact','Status'});
@@ -6145,10 +6211,15 @@ if localTruthCasePruned(ctx, "PRACH_Detection")
         "PRACH_Detection was pruned from the active truth profile.", "air_interface/csv/prach_trials.csv");
     return;
 end
-if istable(ctx.Tables.PRACHCorrelationTrace) && ~isempty(ctx.Tables.PRACHCorrelationTrace) && ...
-        all(ismember(localPRACHCorrelationTraceVariableNames(), string(ctx.Tables.PRACHCorrelationTrace.Properties.VariableNames)))
-    T = ctx.Tables.PRACHCorrelationTrace(:, localPRACHCorrelationTraceVariableNames());
-    return;
+if istable(ctx.Tables.PRACHCorrelationTrace) && ~isempty(ctx.Tables.PRACHCorrelationTrace)
+    adapted = sixgr.visual.normalizePRACHCorrelationTrace(ctx.Tables.PRACHCorrelationTrace);
+    usable = ~isempty(adapted) && any(isfinite(double(adapted.lag_samples)) & ...
+        isfinite(double(adapted.correlation_abs))) && ...
+        any(adapted.truth_status == "real_lls_evidence");
+    if usable
+        T = adapted(:, localPRACHCorrelationTraceVariableNames());
+        return;
+    end
 end
 T = localUnavailablePRACHCorrelationTraceRow("not_available", ...
     "No lag-domain PRACH correlation trace table was emitted by this run.", "none");
@@ -6971,29 +7042,32 @@ powerT = localReadOptionalTable(fullfile(ctx.Layout.RFCSVDir, "power_energy_tabl
 if ~(istable(powerT) && ~isempty(powerT))
     return;
 end
-bits = localFiniteColumn(powerT, "useful_bits");
-if isempty(bits)
-    bits = localFiniteColumn(powerT, "successful_bits");
-end
-energy = localFiniteColumn(powerT, "cumulative_energy_J");
-if isempty(energy)
-    energy = localFiniteColumn(powerT, "energy_j");
-end
-if isempty(bits) || isempty(energy)
+chartT = sixgr.visual.buildEnergyThroughputChartTable(powerT, ...
+    "rf/csv/power_energy_table.csv");
+if height(chartT) < 2
+    chartT = table();
     return;
 end
-n = min(numel(bits), numel(energy));
-bits = double(bits(1:n));
-energy = double(energy(1:n));
-mask = isfinite(bits) & bits > 0 & isfinite(energy) & energy >= 0;
-if nnz(mask) < 2
-    return;
 end
-chartT = table(bits(mask), energy(mask), ...
-    repmat("rf/csv/power_energy_table.csv", nnz(mask), 1), ...
-    repmat("runtime_pairs", nnz(mask), 1), ...
-    repmat("real_lls_evidence", nnz(mask), 1), ...
-    'VariableNames', ["successful_bits","energy_j","source_artifact_ref","curve_construction","truth_status"]);
+
+function out = localDebugFirstNumericColumn(T, varNames, n)
+out = nan(n, 1);
+for varName = string(varNames)
+    if ismember(varName, string(T.Properties.VariableNames))
+        out = localDebugNumericColumn(T, varName, n);
+        return;
+    end
+end
+end
+
+function out = localDebugFirstStringColumn(T, varNames, n)
+out = repmat("", n, 1);
+for varName = string(varNames)
+    if ismember(varName, string(T.Properties.VariableNames))
+        out = localDebugStringColumn(T, varName, n);
+        return;
+    end
+end
 end
 
 function localPlotComplexityVsGainOrPlaceholder(pathOut, ctx)

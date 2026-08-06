@@ -90,6 +90,10 @@ cfg.outputs.saveFigures = false;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 30;
+% This is an isolated SNR-controlled calibration fixture.  Select the
+% corresponding noise model explicitly so the test does not inherit the
+% geometry/link-budget thermal-noise default.
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 cfg.phy.carrier.NSizeGrid = 12;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.pdsch.enable = true;
@@ -103,6 +107,9 @@ cfg.phy.pdsch.codeRate = 602 / 1024;
 cfg.phy.pdsch.mcsIndex = 4;
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.numPorts = 1;
+cfg.phy.pdsch.dmrs.nPorts = 1;
+cfg.phy.pdsch.dmrs.portSet = 0;
 cfg.phy.pdsch.mcsContext = struct( ...
     "UECapability1024QAM", false, ...
     "RRCEnabled1024QAM", false, ...

@@ -4,6 +4,9 @@ classdef RuntimeEvidenceBus < handle
     properties
         RunFolder (1,1) string
         RunId (1,1) string
+        ExecutionId (1,1) string
+        FinalizationId (1,1) string
+        AttemptId (1,1) string
         DefaultContext struct = struct()
     end
 
@@ -12,6 +15,9 @@ classdef RuntimeEvidenceBus < handle
             p = inputParser;
             p.addRequired("runFolder", @(x)ischar(x) || isstring(x));
             p.addParameter("RunId", "", @(x)ischar(x) || isstring(x));
+            p.addParameter("ExecutionId", "", @(x)ischar(x) || isstring(x));
+            p.addParameter("FinalizationId", "", @(x)ischar(x) || isstring(x));
+            p.addParameter("AttemptId", "attempt_001", @(x)ischar(x) || isstring(x));
             p.addParameter("Context", struct(), @(x)isstruct(x));
             p.parse(runFolder, varargin{:});
 
@@ -19,6 +25,16 @@ classdef RuntimeEvidenceBus < handle
             obj.RunId = string(p.Results.RunId);
             if strlength(obj.RunId) == 0
                 obj.RunId = sixgr.runtime.RuntimeEvidenceBus.deriveRunId(obj.RunFolder);
+            end
+            obj.ExecutionId = string(p.Results.ExecutionId);
+            if strlength(obj.ExecutionId) == 0
+                obj.ExecutionId = obj.RunId;
+            end
+            obj.FinalizationId = string(p.Results.FinalizationId);
+            obj.AttemptId = string(p.Results.AttemptId);
+            if strlength(obj.AttemptId) == 0
+                error("sixgr:runtime:AttemptIdentityRequired", ...
+                    "Runtime evidence requires a non-empty AttemptId.");
             end
             obj.DefaultContext = p.Results.Context;
             sixgr.runtime.RuntimeEvidenceBus.prepareRunFolder(obj.RunFolder);
@@ -30,6 +46,9 @@ classdef RuntimeEvidenceBus < handle
         function event = emit(obj, eventType, varargin)
             event = sixgr.runtime.RuntimeEvidenceBus.appendStandaloneEvent( ...
                 obj.RunFolder, eventType, "RunId", obj.RunId, ...
+                "ExecutionId", obj.ExecutionId, ...
+                "FinalizationId", obj.FinalizationId, ...
+                "AttemptId", obj.AttemptId, ...
                 "Context", obj.DefaultContext, varargin{:});
         end
 
@@ -101,6 +120,9 @@ classdef RuntimeEvidenceBus < handle
             p.addRequired("runFolder", @(x)ischar(x) || isstring(x));
             p.addRequired("eventType", @(x)ischar(x) || isstring(x));
             p.addParameter("RunId", "", @(x)ischar(x) || isstring(x));
+            p.addParameter("ExecutionId", "", @(x)ischar(x) || isstring(x));
+            p.addParameter("FinalizationId", "", @(x)ischar(x) || isstring(x));
+            p.addParameter("AttemptId", "attempt_001", @(x)ischar(x) || isstring(x));
             p.addParameter("Context", struct(), @(x)isstruct(x));
             p.addParameter("StageId", "", @(x)ischar(x) || isstring(x) || isnumeric(x));
             p.addParameter("StageName", "", @(x)ischar(x) || isstring(x));
@@ -131,10 +153,25 @@ classdef RuntimeEvidenceBus < handle
             if strlength(runId) == 0
                 runId = sixgr.runtime.RuntimeEvidenceBus.deriveRunId(runFolder);
             end
+            executionId = string(p.Results.ExecutionId);
+            if strlength(executionId) == 0
+                executionId = runId;
+            end
+            finalizationId = string(p.Results.FinalizationId);
+            attemptId = string(p.Results.AttemptId);
+            if strlength(attemptId) == 0
+                error("sixgr:runtime:AttemptIdentityRequired", ...
+                    "Runtime evidence requires a non-empty AttemptId.");
+            end
 
             context = localMergeContext(localDefaultContext(), p.Results.Context);
             [globalSeq, workerSeq, monotonicSeconds] = localNextSequence(runFolder, context.worker_id);
             event = struct( ...
+                "schema_name", "sixgr.runtime.event", ...
+                "schema_version", "2.0.0", ...
+                "attempt_id", attemptId, ...
+                "execution_id", executionId, ...
+                "finalization_id", finalizationId, ...
                 "run_id", runId, ...
                 "event_id", localUUID(), ...
                 "global_event_sequence", double(globalSeq), ...
@@ -180,8 +217,114 @@ classdef RuntimeEvidenceBus < handle
                 "failure_reason", string(p.Results.FailureReason), ...
                 "dropped_event_count", double(p.Results.DroppedEventCount));
 
+            localPreflightDerivedCSV(runFolder, event);
             localAppendJSONL(localJournalPath(runFolder, event.event_type), event);
             localAppendDerivedCSV(runFolder, event);
+        end
+
+        function summary = rebuildDerivedCSVViews(runFolder)
+            %REBUILDDERIVEDCSVVIEWS Recreate versioned CSV views from JSONL truth.
+            % Runtime CSVs are derived projections. Rebuild them from the
+            % authoritative journal and quarantine any previous bytes.
+            runFolder = string(runFolder);
+            journalRoot = fullfile(runFolder, "runtime", "journal");
+            if ~isfolder(journalRoot)
+                error("sixgr:runtime:JournalRootMissing", ...
+                    "Runtime journal folder is missing: %s", char(journalRoot));
+            end
+
+            journalFiles = dir(fullfile(journalRoot, "*.jsonl"));
+            events = cell(0, 1);
+            for fileIndex = 1:numel(journalFiles)
+                pathValue = fullfile(journalFiles(fileIndex).folder, journalFiles(fileIndex).name);
+                lines = splitlines(string(fileread(pathValue)));
+                lines = lines(strlength(strtrim(lines)) > 0);
+                for lineIndex = 1:numel(lines)
+                    try
+                        event = jsondecode(char(lines(lineIndex)));
+                    catch ME
+                        error("sixgr:runtime:JournalSchemaInvalid", ...
+                            "Runtime journal %s contains invalid JSON at line %d: %s", ...
+                            pathValue, lineIndex, ME.message);
+                    end
+                    if ~isfield(event, "schema_name") || ...
+                            ~isfield(event, "schema_version") || ...
+                            string(event.schema_name) ~= "sixgr.runtime.event" || ...
+                            string(event.schema_version) ~= "2.0.0"
+                        error("sixgr:runtime:JournalSchemaMismatch", ...
+                            "Cannot rebuild runtime CSVs from noncanonical event at %s line %d.", ...
+                            pathValue, lineIndex);
+                    end
+                    events{end + 1, 1} = event; %#ok<AGROW>
+                end
+            end
+            if isempty(events)
+                error("sixgr:runtime:JournalEvidenceMissing", ...
+                    "No runtime JSONL events are available under %s.", char(journalRoot));
+            end
+
+            sequence = cellfun(@(event) double(localEventValue(event, ...
+                "global_event_sequence")), events);
+            if any(~isfinite(sequence)) || numel(unique(sequence)) ~= numel(sequence)
+                error("sixgr:runtime:JournalSequenceInvalid", ...
+                    "Runtime journal event sequences must be finite and unique before rebuild.");
+            end
+            [~, order] = sort(sequence);
+            events = events(order);
+
+            workspaceRoot = fullfile(runFolder, "runtime", ...
+                ".csv_rebuild_" + localUUID());
+            localEnsureFolder(workspaceRoot);
+            cleanupWorkspace = onCleanup(@() localRemoveFolder(workspaceRoot)); %#ok<NASGU>
+            for eventIndex = 1:numel(events)
+                localAppendDerivedCSV(workspaceRoot, events{eventIndex});
+            end
+
+            viewNames = ["artifact_transactions.csv", "block_call_trace.csv", ...
+                "progress_heartbeat.csv", "stage_timing_events.csv", ...
+                "warning_exception_trace.csv", "message_flow.csv"];
+            targetRoot = fullfile(runFolder, "runtime", "csv");
+            quarantineRoot = fullfile(runFolder, "runtime", "quarantine", ...
+                "csv_schema_rebuild_" + replace(replace(replace( ...
+                sixgr.util.utcNowISO8601(), ":", ""), "-", ""), ".", ""));
+            rebuilt = strings(0, 1);
+            quarantined = strings(0, 1);
+            for name = viewNames
+                sourcePath = fullfile(workspaceRoot, "runtime", "csv", name);
+                if exist(sourcePath, "file") ~= 2
+                    continue;
+                end
+                targetPath = fullfile(targetRoot, name);
+                backupPath = "";
+                if exist(targetPath, "file") == 2
+                    localEnsureFolder(quarantineRoot);
+                    backupPath = fullfile(quarantineRoot, name);
+                    [moved, message] = movefile(char(targetPath), char(backupPath), "f");
+                    if ~moved
+                        error("sixgr:runtime:CSVQuarantineFailed", ...
+                            "Unable to quarantine %s: %s", char(targetPath), message);
+                    end
+                    quarantined(end + 1, 1) = string(backupPath); %#ok<AGROW>
+                end
+                [moved, message] = movefile(char(sourcePath), char(targetPath), "f");
+                if ~moved
+                    if strlength(backupPath) > 0 && exist(backupPath, "file") == 2
+                        movefile(char(backupPath), char(targetPath), "f");
+                    end
+                    error("sixgr:runtime:CSVRebuildPublishFailed", ...
+                        "Unable to publish rebuilt runtime CSV %s: %s", ...
+                        char(targetPath), message);
+                end
+                rebuilt(end + 1, 1) = string(targetPath); %#ok<AGROW>
+            end
+
+            summary = struct( ...
+                "EventCount", numel(events), ...
+                "RebuiltCount", numel(rebuilt), ...
+                "RebuiltPaths", rebuilt, ...
+                "QuarantinedCount", numel(quarantined), ...
+                "QuarantinedPaths", quarantined, ...
+                "QuarantineRoot", string(quarantineRoot));
         end
 
         function meta = valueMetadata(valueName, value, varargin)
@@ -322,40 +465,62 @@ pathStr = fullfile(runFolder, "runtime", "journal", name);
 end
 
 function localAppendDerivedCSV(runFolder, event)
-eventType = upper(string(event.event_type));
-if startsWith(eventType, "ARTIFACT")
-    localAppendCSV(fullfile(runFolder, "runtime", "csv", "artifact_transactions.csv"), ...
-        ["run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
-        "artifact_id","relative_path","temporary_path","byte_count","sha256", ...
-        "validation_status","commit_status","failure_reason","stage_name","block_id"], event);
-elseif startsWith(eventType, "BLOCK")
-    localAppendCSV(fullfile(runFolder, "runtime", "csv", "block_call_trace.csv"), ...
-        ["run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
-        "block_id","call_id","parent_call_id","function_name","source_file","source_line", ...
-        "status","reason_code","message","evidence_class"], event);
-elseif eventType == "HEARTBEAT"
-    localAppendCSV(fullfile(runFolder, "runtime", "csv", "progress_heartbeat.csv"), ...
-        ["run_id","event_id","global_event_sequence","timestamp_utc","monotonic_time_s", ...
-        "event_type","stage_name","status","message","process_memory_bytes","open_figure_count", ...
-        "pending_future_count","queued_event_count","last_completed_artifact"], event);
-elseif startsWith(eventType, "STAGE")
-    localAppendCSV(fullfile(runFolder, "runtime", "csv", "stage_timing_events.csv"), ...
-        ["run_id","event_id","global_event_sequence","timestamp_utc","monotonic_time_s", ...
-        "event_type","stage_id","stage_name","status","reason_code","message", ...
-        "process_memory_bytes","open_figure_count","pending_future_count"], event);
-elseif eventType == "WARNING" || eventType == "EXCEPTION"
-    localAppendCSV(fullfile(runFolder, "runtime", "csv", "warning_exception_trace.csv"), ...
-        ["run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
-        "block_id","function_name","source_file","source_line","reason_code","message"], event);
-elseif startsWith(eventType, "MESSAGE") || startsWith(eventType, "STATE_")
-    localAppendCSV(fullfile(runFolder, "runtime", "csv", "message_flow.csv"), ...
-        ["run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
-        "block_id","call_id","parent_call_id","status","reason_code","message"], event);
+[pathStr, headers] = localDerivedCSVSpec(runFolder, event);
+if strlength(pathStr) > 0
+    localAppendCSV(pathStr, headers, event);
 end
+end
+
+function localPreflightDerivedCSV(runFolder, event)
+[pathStr, headers] = localDerivedCSVSpec(runFolder, event);
+if strlength(pathStr) > 0
+    localValidateExistingCSVSchema(pathStr, headers);
+end
+end
+
+function [pathStr, headers] = localDerivedCSVSpec(runFolder, event)
+eventType = upper(string(event.event_type));
+pathStr = "";
+headers = strings(1, 0);
+if startsWith(eventType, "ARTIFACT")
+    pathStr = string(fullfile(runFolder, "runtime", "csv", "artifact_transactions.csv"));
+    headers = [localIdentityHeaders(), "run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
+        "artifact_id","relative_path","temporary_path","byte_count","sha256", ...
+        "validation_status","commit_status","failure_reason","stage_name","block_id"];
+elseif startsWith(eventType, "BLOCK")
+    pathStr = string(fullfile(runFolder, "runtime", "csv", "block_call_trace.csv"));
+    headers = [localIdentityHeaders(), "run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
+        "block_id","call_id","parent_call_id","function_name","source_file","source_line", ...
+        "status","reason_code","message","evidence_class"];
+elseif eventType == "HEARTBEAT"
+    pathStr = string(fullfile(runFolder, "runtime", "csv", "progress_heartbeat.csv"));
+    headers = [localIdentityHeaders(), "run_id","event_id","global_event_sequence","timestamp_utc","monotonic_time_s", ...
+        "event_type","stage_name","status","message","process_memory_bytes","open_figure_count", ...
+        "pending_future_count","queued_event_count","last_completed_artifact"];
+elseif startsWith(eventType, "STAGE")
+    pathStr = string(fullfile(runFolder, "runtime", "csv", "stage_timing_events.csv"));
+    headers = [localIdentityHeaders(), "run_id","event_id","global_event_sequence","timestamp_utc","monotonic_time_s", ...
+        "event_type","stage_id","stage_name","status","reason_code","message", ...
+        "process_memory_bytes","open_figure_count","pending_future_count"];
+elseif eventType == "WARNING" || eventType == "EXCEPTION"
+    pathStr = string(fullfile(runFolder, "runtime", "csv", "warning_exception_trace.csv"));
+    headers = [localIdentityHeaders(), "run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
+        "block_id","function_name","source_file","source_line","reason_code","message"];
+elseif startsWith(eventType, "MESSAGE") || startsWith(eventType, "STATE_")
+    pathStr = string(fullfile(runFolder, "runtime", "csv", "message_flow.csv"));
+    headers = [localIdentityHeaders(), "run_id","event_id","global_event_sequence","timestamp_utc","event_type", ...
+        "block_id","call_id","parent_call_id","status","reason_code","message"];
+end
+end
+
+function headers = localIdentityHeaders()
+headers = ["schema_name", "schema_version", "attempt_id", ...
+    "execution_id", "finalization_id"];
 end
 
 function localAppendJSONL(pathStr, event)
 localEnsureFolder(fileparts(char(pathStr)));
+localValidateExistingJSONLSchema(pathStr, event.schema_name, event.schema_version);
 fid = fopen(char(pathStr), "a");
 if fid < 0
     error("sixgr:runtime:JournalOpenFailed", "Unable to open runtime journal: %s", char(pathStr));
@@ -367,7 +532,7 @@ end
 function localAppendCSV(pathStr, headers, event)
 headers = string(headers(:)).';
 localEnsureFolder(fileparts(char(pathStr)));
-newFile = exist(pathStr, "file") ~= 2;
+newFile = localValidateExistingCSVSchema(pathStr, headers);
 fid = fopen(char(pathStr), "a");
 if fid < 0
     error("sixgr:runtime:CSVOpenFailed", "Unable to open runtime CSV: %s", char(pathStr));
@@ -383,6 +548,80 @@ end
 fprintf(fid, "%s\n", char(strjoin(cells, ",")));
 end
 
+function newFile = localValidateExistingCSVSchema(pathStr, expectedHeaders)
+newFile = exist(pathStr, "file") ~= 2;
+if newFile
+    return;
+end
+info = dir(pathStr);
+if isempty(info) || info.bytes == 0
+    newFile = true;
+    return;
+end
+fid = fopen(char(pathStr), "r");
+if fid < 0
+    error("sixgr:runtime:CSVSchemaReadFailed", ...
+        "Unable to inspect existing runtime CSV schema: %s", char(pathStr));
+end
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+headerLine = fgetl(fid);
+if ~ischar(headerLine)
+    error("sixgr:runtime:CSVSchemaMissing", ...
+        "Existing runtime CSV has no readable header: %s", char(pathStr));
+end
+actualHeaders = string(strsplit(headerLine, ","));
+actualHeaders = arrayfun(@localNormalizeHeaderCell, actualHeaders);
+if ~isequal(actualHeaders(:).', expectedHeaders(:).')
+    error("sixgr:runtime:CSVSchemaMismatch", ...
+        ['Refusing to append runtime CSV %s. Existing schema has %d fields ' ...
+         '(%s); required schema has %d fields (%s).'], ...
+        char(pathStr), numel(actualHeaders), strjoin(actualHeaders, "|"), ...
+        numel(expectedHeaders), strjoin(expectedHeaders, "|"));
+end
+newFile = false;
+end
+
+function value = localNormalizeHeaderCell(value)
+value = strtrim(string(value));
+if startsWith(value, '"') && endsWith(value, '"') && strlength(value) >= 2
+    value = extractBetween(value, 2, strlength(value) - 1);
+    value = replace(value, '""', '"');
+end
+end
+
+function localValidateExistingJSONLSchema(pathStr, expectedName, expectedVersion)
+if exist(pathStr, "file") ~= 2
+    return;
+end
+info = dir(pathStr);
+if isempty(info) || info.bytes == 0
+    return;
+end
+fid = fopen(char(pathStr), "r");
+if fid < 0
+    error("sixgr:runtime:JournalSchemaReadFailed", ...
+        "Unable to inspect existing runtime journal schema: %s", char(pathStr));
+end
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+firstLine = fgetl(fid);
+try
+    firstEvent = jsondecode(firstLine);
+catch ME
+    error("sixgr:runtime:JournalSchemaInvalid", ...
+        "Existing runtime journal %s does not start with valid JSON: %s", ...
+        char(pathStr), ME.message);
+end
+if ~isfield(firstEvent, "schema_name") || ~isfield(firstEvent, "schema_version") || ...
+        string(firstEvent.schema_name) ~= string(expectedName) || ...
+        string(firstEvent.schema_version) ~= string(expectedVersion)
+    actualName = string(localEventValue(firstEvent, "schema_name"));
+    actualVersion = string(localEventValue(firstEvent, "schema_version"));
+    error("sixgr:runtime:JournalSchemaMismatch", ...
+        "Refusing to mix journal schema %s/%s with required %s/%s in %s.", ...
+        actualName, actualVersion, expectedName, expectedVersion, char(pathStr));
+end
+end
+
 function value = localEventValue(event, fieldName)
 fieldName = char(string(fieldName));
 if isfield(event, fieldName)
@@ -394,8 +633,11 @@ end
 
 function text = localCSVCell(value)
 text = localString(value);
-text = replace(text, """", """""");
-text = """" + text + """";
+needsQuotes = any(contains(text, [",", """", string(newline), string(char(13))]));
+if needsQuotes
+    text = replace(text, """", """""");
+    text = """" + text + """";
+end
 end
 
 function text = localString(value)
@@ -480,6 +722,12 @@ function localEnsureFolder(folder)
 folder = char(string(folder));
 if ~isempty(folder) && ~isfolder(folder)
     mkdir(folder);
+end
+end
+
+function localRemoveFolder(pathValue)
+if isfolder(pathValue)
+    rmdir(pathValue, "s");
 end
 end
 
