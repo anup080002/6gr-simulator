@@ -1,0 +1,75 @@
+{
+  "SchemaVersion": "sixgr.lls.run_provenance/v1",
+  "ScenarioId": "pdsch_awgn_qpsk_reference_smoke",
+  "ExecutionBackend": "waveform_truth",
+  "ApproximationMode": "none",
+  "Source": "sixgr.lls.runLLS",
+  "ConfigPath": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\configs\\lls\\pdsch_reference_smoke.yaml",
+  "ConfigSourceFiles": [
+    "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\configs\\lls\\pdsch_reference.yaml",
+    "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\configs\\lls\\pdsch_reference_smoke.yaml"
+  ],
+  "ConfigSHA256": "949f292fdb276f467b9322fb40c0b074904adadae7a4a93a3a8e49fac094699d",
+  "MasterSeed": 2.0260809E+7,
+  "StatisticalClass": "diagnostic_only",
+  "MATLABVersion": "26.1.0.3312084 (R2026a) Update 4",
+  "MATLABRelease": "2026a",
+  "CreatedUTC": "2026-08-09T15:28:31Z",
+  "RuntimeSeconds": 80.734077,
+  "GitCommit": "723c58687482f2600ad573ae81870b7fdb800825",
+  "GitWorktreeDirty": true,
+  "Toolboxes": [
+    {
+      "Name": "5G Toolbox",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "6G Exploration Library for 5G Toolbox",
+      "Version": "26.1.5",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "Communications Toolbox",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "MATLAB",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "MATLAB Coder",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "MATLAB Compiler",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "MATLAB Compiler SDK",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "MATLAB Report Generator",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "MATLAB Test",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    },
+    {
+      "Name": "Satellite Communications Toolbox",
+      "Version": "26.1",
+      "Release": "(R2026a)"
+    }
+  ],
+  "ResultValidity": "complete_valid",
+  "ScientificSemanticSHA256": "ed1d91768b747ad529b3a2d6b6f9bfcd8dc73cf753efc8364ffe8ff03ddb492c"
+}

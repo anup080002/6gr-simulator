@@ -7809,9 +7809,12 @@ try
             tempState = stateWorker;
             [cfgU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, "DL"); %#ok<ASGLU>
             cfgU = localApplyPBCHSSBBeamContext(cfgU, slotIdx, ueIdx);
-            trialCache{ueIdx} = localAnnotateCoupledControlTrial( ...
-                localCollectPBCHTrials(cfgU, double(snr_dB), 1), ...
-                slotIdx, frameIdx, ueIdx, rnti, "DL");
+            [pbchTrial, ~, decodedSIB1] = localCollectPBCHTrials( ...
+                cfgU, double(snr_dB), 1);
+            trialCache{ueIdx} = struct( ...
+                "Trial", localAnnotateCoupledControlTrial(pbchTrial, ...
+                slotIdx, frameIdx, ueIdx, rnti, "DL"), ...
+                "DecodedSIB1", decodedSIB1);
         end
     end
 catch ME
@@ -7956,13 +7959,19 @@ for ueIdx = 1:numUsers
         shouldAttemptPBCH = ueIdx <= numel(sharedPBCHEligible) && sharedPBCHEligible(ueIdx);
         if shouldAttemptPBCH
             pbchT = table();
-            if ueIdx <= numel(pbchTrialCache) && istable(pbchTrialCache{ueIdx}) && ~isempty(pbchTrialCache{ueIdx})
-                pbchT = pbchTrialCache{ueIdx};
+            decodedSIB1 = struct();
+            if ueIdx <= numel(pbchTrialCache) && isstruct(pbchTrialCache{ueIdx}) && ...
+                    isfield(pbchTrialCache{ueIdx}, "Trial") && ...
+                    istable(pbchTrialCache{ueIdx}.Trial) && ...
+                    ~isempty(pbchTrialCache{ueIdx}.Trial)
+                pbchT = pbchTrialCache{ueIdx}.Trial;
+                decodedSIB1 = sixgr.util.structGet( ...
+                    pbchTrialCache{ueIdx}, "DecodedSIB1", struct());
             end
             if isempty(pbchT)
                 pbchSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "DL", snr_dB);
                 cfgU = localApplyPBCHSSBBeamContext(cfgU, slotIdx, ueIdx);
-                [state, pbchRawT] = localCollectCoupledPBCHTrials( ...
+                [state, pbchRawT, decodedSIB1] = localCollectCoupledPBCHTrials( ...
                     state, cfgU, ueIdx, pbchSNR_dB, slotIdx);
                 pbchT = localAnnotateCoupledControlTrial( ...
                     pbchRawT, slotIdx, frameIdx, ueIdx, rnti, "DL");
@@ -7970,6 +7979,7 @@ for ueIdx = 1:numUsers
             pbchAttemptCount = pbchAttemptCount + 1;
             state.ControlTrials.PBCH = localAppendCompatTable(state.ControlTrials.PBCH, pbchT);
             state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, ueIdx, pbchT);
+            state = localStoreDecodedSIB1Recovery(state, ueIdx, decodedSIB1, slotIdx);
         end
     end
 
@@ -8470,10 +8480,15 @@ if direction == "DL"
     lastPBCHSlot = double(sixgr.util.structGet(state, "LastPBCHSlot", 0));
     if lastPBCHSlot <= 0 || slotIdx == 1 || (isfinite(slotIdx) && (slotIdx - lastPBCHSlot) >= pbchPeriod)
         cfgU = localApplyPBCHSSBBeamContext(cfgU, slotIdx, ueIdx);
-        [state, pbchRawT] = localCollectCoupledPBCHTrials( ...
+        [state, pbchRawT, decodedSIB1] = localCollectCoupledPBCHTrials( ...
             state, cfgU, ueIdx, snr_dB, slotIdx);
-        state.ControlTrials.PBCH = localAppendCompatTable(state.ControlTrials.PBCH, ...
-            localAnnotateCoupledControlTrial(pbchRawT, slotIdx, frameIdx, ueIdx, rnti, direction));
+        pbchT = localAnnotateCoupledControlTrial( ...
+            pbchRawT, slotIdx, frameIdx, ueIdx, rnti, direction);
+        state.ControlTrials.PBCH = localAppendCompatTable( ...
+            state.ControlTrials.PBCH, pbchT);
+        state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, ueIdx, pbchT);
+        state = localStoreDecodedSIB1Recovery( ...
+            state, ueIdx, decodedSIB1, slotIdx);
         state.LastPBCHSlot = slotIdx;
     end
     trsPeriod = max(1, round(double(sixgr.util.structGet(state, "TRSSlotPeriod", 4))));
@@ -10816,22 +10831,24 @@ function model = localResolveRequestedLinkChannelModel(cfg)
 model = sixgr.channel.resolveConcreteProfile(cfg);
 end
 
-function [state, T] = localCollectCoupledPBCHTrials( ...
+function [state, T, decodedSIB1] = localCollectCoupledPBCHTrials( ...
         state, cfg, ueIdx, snr_dB, slotIdx)
+decodedSIB1 = struct();
 if sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
     [state, chState] = ...
         sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
         state, cfg, ueIdx, "DL");
-    [T, chState] = localCollectPBCHTrials( ...
+    [T, chState, decodedSIB1] = localCollectPBCHTrials( ...
         cfg, snr_dB, 1, chState, slotIdx);
     state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
         state, chState);
 else
-    T = localCollectPBCHTrials(cfg, snr_dB, 1, struct(), slotIdx);
+    [T, ~, decodedSIB1] = localCollectPBCHTrials( ...
+        cfg, snr_dB, 1, struct(), slotIdx);
 end
 end
 
-function [T, advancedDLState] = localCollectPBCHTrials( ...
+function [T, advancedDLState, decodedSIB1] = localCollectPBCHTrials( ...
         cfg, snr_dB, nTrials, initialDLState, runtimeSlot)
 if nargin < 4 || isempty(initialDLState)
     initialDLState = struct();
@@ -10840,6 +10857,7 @@ if nargin < 5
     runtimeSlot = NaN;
 end
 advancedDLState = initialDLState;
+decodedSIB1 = struct();
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
 cfgPoint = sixgr.truth.bindStandaloneSNRPoint(cfg, double(snr_dB));
@@ -11013,6 +11031,10 @@ for k = 1:nTrials
         r.ReceiverUsable = logical(r.StrictReceiverEvidenceOk);
         r.MeasurementAttempted = true;
         r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) || isfinite(r.MeasuredTrialSINR_dB);
+        if r.StrictOk && sib1TreeEqual && sib1DciCrcPass && ...
+                sib1DlschCrcPass && sib1Asn1DecodeOk
+            decodedSIB1 = localCompactDecodedSIB1Recovery(sib1);
+        end
         r.TrackingFailureProbability = double(~pbchAcquired);
         if pbchAcquired
             r.DetectionMetric = 1;
@@ -11070,6 +11092,95 @@ elseif ischar(raw) || isstring(raw)
     tf = any(token == ["1", "true", "yes", "pass", "ok"]);
 else
     tf = logical(defaultValue);
+end
+end
+
+function recovery = localCompactDecodedSIB1Recovery(sib1)
+% Preserve only receiver-owned fields needed by the subsequent RA stage.
+% Every value below is copied from recoverSIB1FromWaveform output; no YAML
+% value or configured tree is substituted into this causal capsule.
+recovery = struct();
+if ~(isstruct(sib1) && ~isempty(fieldnames(sib1)))
+    return;
+end
+fields = ["StrictOk","SIB1TreeEqual","DCICrcPass","DLSCHCrcPass", ...
+    "SIB1ASN1DecodeOk","SIB1SemanticValid","SIB1PayloadHashRx", ...
+    "SIB1RxTreeHash","SIB1TxTreeHash","SIB1RxTree"];
+for i = 1:numel(fields)
+    name = char(fields(i));
+    if isfield(sib1, name)
+        recovery.(name) = sib1.(name);
+    end
+end
+end
+
+function state = localStoreDecodedSIB1Recovery(state, ueIdx, recovery, slotIdx)
+if ~(isstruct(recovery) && ~isempty(fieldnames(recovery)))
+    return;
+end
+strictFields = ["StrictOk","SIB1TreeEqual","DCICrcPass", ...
+    "DLSCHCrcPass","SIB1ASN1DecodeOk"];
+for i = 1:numel(strictFields)
+    if ~localStructLogical(recovery, char(strictFields(i)), false)
+        return;
+    end
+end
+tree = sixgr.util.structGet(recovery, "SIB1RxTree", struct());
+if ~(isstruct(tree) && ~isempty(fieldnames(tree)))
+    return;
+end
+ueIdx = round(double(ueIdx));
+nUsers = max(0, round(double(sixgr.util.structGet(state, "NumUsers", 0))));
+if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= nUsers)
+    return;
+end
+if ~isfield(state, "DecodedSIB1RecoveryByUE") || ...
+        ~iscell(state.DecodedSIB1RecoveryByUE)
+    state.DecodedSIB1RecoveryByUE = repmat({struct()}, nUsers, 1);
+elseif numel(state.DecodedSIB1RecoveryByUE) < nUsers
+    state.DecodedSIB1RecoveryByUE(end + 1:nUsers, 1) = {struct()};
+end
+if ~isfield(state, "DecodedSIB1RecoverySlotByUE") || ...
+        numel(state.DecodedSIB1RecoverySlotByUE) < nUsers
+    state.DecodedSIB1RecoverySlotByUE(end + 1:nUsers, 1) = NaN;
+end
+state.DecodedSIB1RecoveryByUE{ueIdx} = recovery;
+state.DecodedSIB1RecoverySlotByUE(ueIdx) = double(slotIdx);
+end
+
+function recovery = localDecodedSIB1RecoveryForUE(state, ueIdx)
+recovery = struct();
+ueIdx = round(double(ueIdx));
+items = sixgr.util.structGet(state, "DecodedSIB1RecoveryByUE", {});
+if iscell(items) && isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= numel(items) && ...
+        isstruct(items{ueIdx})
+    recovery = items{ueIdx};
+end
+end
+
+function tf = localRequireDecodedSIB1ForRA(cfg)
+sib1WaveformRequired = localConfigBool(cfg, ...
+    ["validation.sib1_and_initial_access.sib1_decode_from_waveform_required", ...
+     "lls6g.sib1_and_initial_access.sib1_decode_from_waveform_required", ...
+     "initial_access.sib1.decode_from_waveform_required"], false);
+tf = localShouldRunFourStepRAForPRACH(cfg) && sib1WaveformRequired;
+end
+
+function tf = localConfigBool(cfg, paths, defaultValue)
+tf = logical(defaultValue);
+paths = string(paths(:));
+for i = 1:numel(paths)
+    raw = sixgr.util.structGet(cfg, paths(i), []);
+    if isempty(raw)
+        continue;
+    end
+    if islogical(raw) || isnumeric(raw)
+        tf = logical(raw(1));
+    else
+        token = lower(strtrim(string(raw(1))));
+        tf = any(token == ["1","true","yes","on","enabled"]);
+    end
+    return;
 end
 end
 
@@ -11155,9 +11266,10 @@ function [state, T, correlationTraceT, raEvidenceTables] = ...
 [state, ulState] = ...
     sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
     state, cfg, ueIdx, "UL");
+decodedSIB1 = localDecodedSIB1RecoveryForUE(state, ueIdx);
 [T, correlationTraceT, raEvidenceTables, dlState, ulState] = ...
     localCollectPRACHTrials( ...
-    cfg, snr_dB, 1, slotIdx, dlState, ulState);
+    cfg, snr_dB, 1, slotIdx, dlState, ulState, decodedSIB1);
 state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
     state, dlState);
 state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
@@ -11166,7 +11278,7 @@ end
 
 function [T, correlationTraceT, raEvidenceTables, ...
         advancedDLState, advancedULState] = localCollectPRACHTrials( ...
-        cfg, snr_dB, nTrials, slotIdx, initialDLState, initialULState)
+        cfg, snr_dB, nTrials, slotIdx, initialDLState, initialULState, decodedSIB1)
 nTrials = max(1, round(double(nTrials)));
 if nargin < 4
     slotIdx = NaN;
@@ -11176,6 +11288,9 @@ if nargin < 5
 end
 if nargin < 6
     initialULState = struct();
+end
+if nargin < 7
+    decodedSIB1 = struct();
 end
 advancedDLState = initialDLState;
 advancedULState = initialULState;
@@ -11191,7 +11306,7 @@ for k = 1:nTrials
             [ra, raRunOk, raRunFailure] = ...
                 localRunFourStepRAForPRACHTrial( ...
                 cfg, k, slotIdx, snr_dB, ...
-                advancedDLState, advancedULState);
+                advancedDLState, advancedULState, decodedSIB1);
             if raRunOk
                 advancedDLState = sixgr.util.structGet( ...
                     ra, "RuntimeDLChannelState", advancedDLState);
@@ -11346,7 +11461,7 @@ tf = prachEnabled && ( ...
 end
 
 function [ra, ok, failure] = localRunFourStepRAForPRACHTrial( ...
-        cfg, trialIdx, slotIdx, snr_dB, initialDLState, initialULState)
+        cfg, trialIdx, slotIdx, snr_dB, initialDLState, initialULState, decodedSIB1)
 ra = struct();
 ok = false;
 failure = "";
@@ -11370,6 +11485,15 @@ try
         "_trial" + string(round(double(trialIdx))) + "_" + slotToken + "_" + snrToken;
     raRunFolder = string(sixgr.util.structGet(cfg, "ctrl6gr.OutputDir", ...
         sixgr.util.structGet(cfg, "run.outputDir", "")));
+    requireDecodedSIB1 = localRequireDecodedSIB1ForRA(cfg);
+    requireRuntimeStages = localConfigBool(cfg, ...
+        ["validation.random_access_evidence.require_runtime_stage_waveforms", ...
+         "lls6g.random_access_evidence.require_runtime_stage_waveforms", ...
+         "random_access.require_runtime_stage_waveforms"], false);
+    allowRuntimeComposition = localConfigBool(cfg, ...
+        ["validation.random_access_evidence.allow_runtime_stage_waveform_composition", ...
+         "lls6g.random_access_evidence.allow_runtime_stage_waveform_composition", ...
+         "random_access.allow_runtime_stage_waveform_composition"], false);
     ra = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfg, ...
         "RunFolder", char(raRunFolder), ...
         "RunId", runId, ...
@@ -11379,6 +11503,10 @@ try
         "AttemptId", double(trialIdx), ...
         "RuntimeSlot", double(slotIdx), ...
         "RuntimeNoiseSNR_dB", double(snr_dB), ...
+        "SIB1Recovery", decodedSIB1, ...
+        "RequireDecodedSIB1", requireDecodedSIB1, ...
+        "RequireRuntimeStageWaveforms", requireRuntimeStages, ...
+        "AllowRuntimeStageWaveformComposition", allowRuntimeComposition, ...
         "InitialDLChannelState", initialDLState, ...
         "InitialULChannelState", initialULState, ...
         "WriteArtifacts", false);
@@ -11394,7 +11522,9 @@ r.RAScenarioName = string(sixgr.util.structGet(ra, "ScenarioName", ""));
 r.RACellId = double(sixgr.util.structGet(ra, "CellId", NaN));
 r.RAUEId = double(sixgr.util.structGet(ra, "UEId", NaN));
 r.RAAttemptId = double(sixgr.util.structGet(ra, "AttemptId", trialIdx));
-fields = ["RAProcedureType","RABindingSource","RACHConfigHash", ...
+    fields = ["RAProcedureType","RABindingSource", ...
+    "SIB1RACHBindingApplied","SIB1RACHBindingSource", ...
+    "SIB1RACHPayloadHash","SIB1RACHTreeHash","RACHConfigHash", ...
     "PRACHOccasionFrame","PRACHOccasionSlot","PRACHOccasionSymbol", ...
     "PRACHFrequencyIndex","PRACHOccasionID", ...
     "PreambleIndexTx","PreambleIndexDetected","PreambleDetectionMetric", ...
@@ -13679,6 +13809,10 @@ row.PRACHOccasionIndex = NaN;
 row.PRACHCarrierSlot = NaN;
 row.RAProcedureType = "";
 row.RABindingSource = "";
+row.SIB1RACHBindingApplied = false;
+row.SIB1RACHBindingSource = "";
+row.SIB1RACHPayloadHash = "";
+row.SIB1RACHTreeHash = "";
 row.RACHConfigHash = "";
 row.PRACHOccasionFrame = NaN;
 row.PRACHOccasionSlot = NaN;

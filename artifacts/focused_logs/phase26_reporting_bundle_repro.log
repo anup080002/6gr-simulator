@@ -1,0 +1,26 @@
+Error using table (line 173)
+The VariableNames property must contain one name for each variable in the table.
+
+Error in sixgr.truth.exportLLSReportingBundle>localBuildTrackingTraceTable (line 6153)
+T = table( ...
+    ^^^^^^^^^^
+Error in sixgr.truth.exportLLSReportingBundle>localWriteDebugTraceArtifacts (line 5762)
+sixgr.util.csvWriteTable(artifacts.CFOToTrackingCSV, localBuildTrackingTraceTable(ctx), ...
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.exportLLSReportingBundle (line 18)
+ctx.DebugArtifacts = localWriteDebugTraceArtifacts(ctx);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using table (line 173)
+The VariableNames property must contain one name for each variable in the table.
+
+Error in sixgr.truth.exportLLSReportingBundle>localBuildTrackingTraceTable (line 6153)
+T = table( ...
+    ^^^^^^^^^^
+Error in sixgr.truth.exportLLSReportingBundle>localWriteDebugTraceArtifacts (line 5762)
+sixgr.util.csvWriteTable(artifacts.CFOToTrackingCSV, localBuildTrackingTraceTable(ctx), ...
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.exportLLSReportingBundle (line 18)
+ctx.DebugArtifacts = localWriteDebugTraceArtifacts(ctx);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

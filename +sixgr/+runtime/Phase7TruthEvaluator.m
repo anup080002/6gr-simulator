@@ -108,7 +108,18 @@ classdef Phase7TruthEvaluator
         end
 
         function T = table(status)
-            T = struct2table(status, "AsArray", true);
+            % A status has scalar gate fields but FailureCodes is a
+            % variable-length diagnostic vector.  Writing that vector
+            % directly through struct2table expands a nominally one-row
+            % record and produces a non-rectangular CSV.  Keep the JSON
+            % representation lossless and serialize only the tabular view.
+            tabular = status;
+            failureCodes = string(sixgr.util.structGet(tabular, ...
+                "FailureCodes", strings(0, 1)));
+            failureCodes = strtrim(failureCodes(:));
+            failureCodes = failureCodes(strlength(failureCodes) > 0);
+            tabular.FailureCodes = string(strjoin(failureCodes, ";"));
+            T = struct2table(tabular, "AsArray", true);
         end
     end
 end

@@ -414,6 +414,8 @@
       "rar_mac_ce_decode_required": {"required": false, "type": "boolean"},
       "timing_advance_required": {"required": false, "type": "boolean"},
       "contention_resolution_identity_required": {"required": false, "type": "boolean"},
+      "require_runtime_stage_waveforms": {"required": false, "type": "boolean"},
+      "allow_runtime_stage_waveform_composition": {"required": false, "type": "boolean"},
       "preamble_collision_test_enabled": {"required": false, "type": "boolean"},
       "false_alarm_test_enabled": {"required": false, "type": "boolean"},
       "missed_detection_test_enabled": {"required": false, "type": "boolean"}

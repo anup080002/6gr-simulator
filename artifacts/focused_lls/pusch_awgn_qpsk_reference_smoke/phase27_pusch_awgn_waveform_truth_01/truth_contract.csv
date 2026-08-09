@@ -1,0 +1,2 @@
+ScenarioId,WaveformGenerated,ActualLDPC,ActualRateMatching,ActualDMRS,ActualChannel,ActualNoise,ActualEqualization,ActualLLR,ActualCRC,UsesBLERLookupTable,UsesSyntheticBLER,UsesRandomPassFailModel,UsesGeometryAsLLS,Status
+pusch_awgn_qpsk_reference_smoke,1,1,1,1,1,1,1,1,1,0,0,0,0,valid_waveform_truth

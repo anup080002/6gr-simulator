@@ -818,6 +818,8 @@ mappings = {
     "random_access_evidence.rar_mac_ce_decode_required", "random_access_evidence.rar_mac_ce_decode_required", "identity"
     "random_access_evidence.timing_advance_required", "random_access_evidence.timing_advance_required", "identity"
     "random_access_evidence.contention_resolution_identity_required", "random_access_evidence.contention_resolution_identity_required", "identity"
+    "random_access_evidence.require_runtime_stage_waveforms", "random_access_evidence.require_runtime_stage_waveforms", "identity"
+    "random_access_evidence.allow_runtime_stage_waveform_composition", "random_access_evidence.allow_runtime_stage_waveform_composition", "identity"
     "random_access_evidence.preamble_collision_test_enabled", "random_access_evidence.preamble_collision_test_enabled", "identity"
     "random_access_evidence.false_alarm_test_enabled", "random_access_evidence.false_alarm_test_enabled", "identity"
     "random_access_evidence.missed_detection_test_enabled", "random_access_evidence.missed_detection_test_enabled", "identity"

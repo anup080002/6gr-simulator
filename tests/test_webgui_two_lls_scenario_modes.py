@@ -14,7 +14,6 @@ import lls_web_dashboard as dash  # noqa: E402
 
 SNR_SWEEP_SCENARIO = "master_sinr_sweep.yaml"
 GEOMETRY_SCENARIO = "master_geometry_based.yaml"
-FULL_STACK_SCENARIO = "lls_webgui_full_stack_sinr_geometry_qualification.yaml"
 
 
 def _merge_dicts(base: dict, overlay: dict) -> dict:
@@ -53,7 +52,11 @@ def test_webgui_lists_new_lls_scenario_modes() -> None:
     assert dash.OPERATOR_MASTER_SCENARIOS == (
         SNR_SWEEP_SCENARIO,
         GEOMETRY_SCENARIO,
-        FULL_STACK_SCENARIO,
+    )
+    assert dash.DEFAULT_SCENARIO == SNR_SWEEP_SCENARIO
+    assert tuple(item["id"] for item in dash.PRODUCT_SCENARIO_MODES) == (
+        "sinr_sweep",
+        "geometry_based",
     )
     assert not any(name.endswith("_smoke.yaml") for name in scenarios)
 
@@ -123,6 +126,15 @@ def test_webgui_snr_sweep_metadata_and_label() -> None:
     assert "SNR" in label or "SINR" in label
     assert "AWGN" in label
     assert "1 UE" in label
+
+
+def test_webgui_blocks_geometry_flags_in_sinr_master_payload() -> None:
+    payload, _ = dash.load_resolved_config_payload(SNR_SWEEP_SCENARIO)
+    dash.path_set(payload, "canonical_control.launch.geometry_enabled", True)
+    contract = dash.scenario_launch_contract(payload, SNR_SWEEP_SCENARIO)
+
+    assert contract["launch_allowed"] is False
+    assert contract["launch_contract"] == "blocked_mixed_sinr_geometry_mode"
 
 
 def test_webgui_geometry_metadata_and_label() -> None:

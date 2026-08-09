@@ -1,0 +1,20 @@
+{
+  "SchemaVersion": "sixgr.lls.run_provenance/v1",
+  "ScenarioId": "pusch_awgn_qpsk_reference_smoke",
+  "ExecutionBackend": "waveform_truth",
+  "ApproximationMode": "none",
+  "Source": "sixgr.lls.runLLS",
+  "ConfigPath": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\configs\\lls\\pusch_reference_smoke.yaml",
+  "ConfigSourceFiles": [
+    "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\configs\\lls\\pusch_reference.yaml",
+    "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\configs\\lls\\pusch_reference_smoke.yaml"
+  ],
+  "ConfigSHA256": "42277a25205f79b4dada86a257c91eb1d8bbfa1ae6fb7aa2a1a9038874459a72",
+  "MasterSeed": 2.0260809E+7,
+  "StatisticalClass": "diagnostic_only",
+  "MATLABVersion": "26.1.0.3312084 (R2026a) Update 4",
+  "MATLABRelease": "2026a",
+  "CreatedUTC": "2026-08-09T14:49:21Z",
+  "RuntimeSeconds": 38.364923,
+  "ScientificSemanticSHA256": "26b7da4b006ac917a7fcd8626bb3c706c9ea953e68e2e0cad5f7043e1c236c0b"
+}

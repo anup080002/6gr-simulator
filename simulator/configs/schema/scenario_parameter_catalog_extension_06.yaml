@@ -116,6 +116,7 @@
       "o2i_model": {"required": false, "type": "string"},
       "o2i_loss_model": {"required": false, "type": "string"},
       "o2i_loss_db": {"required": false},
+      "o2i_indoor_distance_m": {"required": false, "type": "number", "min": 0},
       "carrier_frequency_hz": {"required": false, "type": "number", "min_exclusive": 0},
       "max_doppler_hz": {"required": false, "type": "number", "min": 0},
       "num_clusters": {"required": false, "type": "integer", "min": 1},

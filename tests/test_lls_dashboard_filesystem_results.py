@@ -11,6 +11,16 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
+def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
+    packed_vector = "|".join("0" for _ in range(70000))
+    raw = ("TrialID,MeasuredLDPCParityCheckVector,CRCPass\n"
+           f"1,\"{packed_vector}\",1\n").encode("utf-8")
+    header, rows = dash.parse_csv_bytes(raw)
+    assert header == ["TrialID", "MeasuredLDPCParityCheckVector", "CRCPass"]
+    assert len(rows) == 1
+    assert rows[0][1] == packed_vector
+
+
 def test_dashboard_discovers_active_filesystem_run_before_terminal_manifest(
     tmp_path, monkeypatch
 ) -> None:

@@ -1,0 +1,2 @@
+ScenarioId,WaveformGenerated,ActualLDPC,ActualRateMatching,ActualScrambling,ActualModulation,ActualLayerMapping,ActualPrecoding,ActualResourceGrid,ActualOFDM,ActualDMRS,ActualChannel,ActualNoise,ActualEqualization,ActualSoftDemapping,ActualLDPCDecode,ActualCRC,UsesBLERLookupTable,UsesSyntheticBLER,UsesRandomPassFailModel,UsesGeometryAsLLS,StatisticalClass,PublicationEligible,Status
+pdsch_awgn_qpsk_reference_smoke,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,diagnostic_only,0,valid_waveform_truth

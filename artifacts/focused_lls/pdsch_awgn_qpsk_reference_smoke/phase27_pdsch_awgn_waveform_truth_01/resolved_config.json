@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "sixgr.lls.config/v1",
+  "scenario": {
+    "id": "pdsch_awgn_qpsk_reference_smoke",
+    "description": "Dedicated short PDSCH waveform diagnostic; not publication statistics"
+  },
+  "simulation": {
+    "mode": "LLS",
+    "link": "PDSCH",
+    "executionBackend": "waveform_truth",
+    "masterSeed": 2.0260809E+7,
+    "commonRandomKey": "pdsch_reference_common_random_numbers_v1",
+    "snrDb": [
+      -10,
+      0,
+      20
+    ],
+    "minTransportBlocks": 3,
+    "minBlockErrors": 2,
+    "maxTransportBlocks": 6,
+    "confidenceLevel": 0.95,
+    "statisticalClass": "diagnostic_only"
+  },
+  "carrier": {
+    "frequencyHz": 4.0E+9,
+    "bandwidthMHz": 20,
+    "subcarrierSpacingKHz": 30,
+    "nSizeGrid": 51,
+    "nCellId": 1,
+    "cyclicPrefix": "normal"
+  },
+  "allocation": {
+    "startPRB": 0,
+    "numberPRB": 24,
+    "symbols": [
+      0,
+      14
+    ],
+    "mappingType": "A"
+  },
+  "pdsch": {
+    "modulation": "QPSK",
+    "tbsMode": "derived_from_exact_allocation",
+    "mcsTable": "calibration_explicit",
+    "mcsIndex": 0,
+    "targetCodeRate": 0.3,
+    "numberLayers": 1,
+    "numberAntennaPorts": 1,
+    "transmissionScheme": "identity",
+    "rnti": 1,
+    "nid": 1,
+    "rv": 0,
+    "xOverhead": 0,
+    "mcsContext": {
+      "ueCapability1024QAM": false,
+      "rrcEnabled1024QAM": false,
+      "dciEnabled1024QAM": false,
+      "deploymentAllows1024QAM": false,
+      "frequencyRangeAllows1024QAM": false,
+      "bandAllows1024QAM": false,
+      "frequencyRange": "FR1",
+      "operatingBand": "n77",
+      "deploymentClass": "controlled_test"
+    },
+    "dmrs": {
+      "typeAPosition": 2,
+      "configurationType": 1,
+      "additionalPositions": 0,
+      "length": 1,
+      "numCDMGroupsWithoutData": 1,
+      "portSet": 0
+    },
+    "ptrs": {
+      "enabled": false
+    }
+  },
+  "channel": {
+    "model": "AWGN",
+    "delaySpreadSeconds": 0,
+    "velocityKmph": 0,
+    "txAntennas": 1,
+    "rxAntennas": 1,
+    "seed": 2.0260811E+7,
+    "normalization": "occupied_re_esn0"
+  },
+  "receiver": {
+    "channelEstimation": "practical",
+    "equalizer": "MMSE",
+    "ldpcMaxIterations": 50,
+    "ldpcAlgorithm": "Normalized min-sum"
+  },
+  "harq": {
+    "enabled": false
+  },
+  "linkAdaptation": {
+    "enabled": false
+  },
+  "comparison": {
+    "targetBLER": [
+      0.1,
+      0.01,
+      0.001
+    ]
+  },
+  "results": {
+    "outputRoot": "artifacts/focused_lls",
+    "savePerSnr": true,
+    "saveDiagnostics": true,
+    "generatePlots": true,
+    "imageFormat": "png",
+    "snrCalibrationToleranceDb": 0.5
+  }
+}

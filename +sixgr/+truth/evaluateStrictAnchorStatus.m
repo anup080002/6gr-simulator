@@ -1474,6 +1474,10 @@ for ii = 1:numel(components)
         node = sixgr.util.structGet(details, char(component), struct());
         componentRequired = logical(sixgr.util.structGet(node, ...
             "PRACHStatisticalRequired", componentRequired));
+    elseif component == "PDCCH"
+        node = sixgr.util.structGet(details, char(component), struct());
+        componentRequired = logical(sixgr.util.structGet(node, ...
+            "PDCCHStatisticalRequired", componentRequired));
     end
     required(ii) = logical(strictEligible) && componentRequired;
     functionalOk(ii) = localNestedLogical(details, ...

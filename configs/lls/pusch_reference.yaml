@@ -1,0 +1,88 @@
+schemaVersion: sixgr.lls.config/v1
+scenario:
+  id: pusch_awgn_qpsk_reference
+  description: Fixed-MCS waveform-truth PUSCH reference curve without geometry or link abstraction
+
+simulation:
+  mode: LLS
+  link: PUSCH
+  executionBackend: waveform_truth
+  masterSeed: 20260809
+  commonRandomKey: pusch_reference_common_random_numbers_v1
+  snrDb: [-10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  minTransportBlocks: 1000
+  minBlockErrors: 100
+  maxTransportBlocks: 100000
+  confidenceLevel: 0.95
+  statisticalClass: publication_candidate
+
+carrier:
+  frequencyHz: 4000000000
+  bandwidthMHz: 20
+  subcarrierSpacingKHz: 30
+  nSizeGrid: 51
+  nCellId: 1
+  cyclicPrefix: normal
+
+allocation:
+  startPRB: 0
+  numberPRB: 24
+  symbols: [0, 14]
+  mappingType: A
+
+pusch:
+  modulation: QPSK
+  tbsMode: derived_from_exact_allocation
+  mcsIndex: 4
+  targetCodeRate: 0.30
+  numberLayers: 1
+  numberAntennaPorts: 1
+  transmissionScheme: nonCodebook
+  transformPrecoding: false
+  rnti: 1
+  nid: 1
+  rv: 0
+  xOverhead: 0
+  dmrs:
+    typeAPosition: 2
+    configurationType: 1
+    additionalPositions: 0
+    length: 1
+    numCDMGroupsWithoutData: 1
+    portSet: [0]
+    groupHopping: false
+    sequenceHopping: false
+  ptrs:
+    enabled: false
+
+channel:
+  model: AWGN
+  delaySpreadSeconds: 0.0
+  velocityKmph: 0.0
+  txAntennas: 1
+  rxAntennas: 1
+  seed: 20260810
+  normalization: occupied_re_esn0
+
+receiver:
+  channelEstimation: perfect
+  equalizer: MMSE
+  ldpcMaxIterations: 50
+  ldpcAlgorithm: Normalized min-sum
+
+harq:
+  enabled: false
+
+linkAdaptation:
+  enabled: false
+
+comparison:
+  targetBLER: [0.1, 0.01, 0.001]
+
+results:
+  outputRoot: results/lls/ran1_waveform
+  savePerSnr: true
+  saveDiagnostics: true
+  generatePlots: true
+  imageFormat: png
+  snrCalibrationToleranceDb: 0.5

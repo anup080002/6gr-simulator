@@ -1,0 +1,26 @@
+inherits:
+  - pusch_reference.yaml
+
+scenario:
+  id: pusch_cdlc_qpsk_perfect_csi_smoke
+  description: Dedicated exact per-RE CDL-C perfect-CSI validation; not publication statistics
+
+simulation:
+  snrDb: [20]
+  minTransportBlocks: 2
+  minBlockErrors: 1
+  maxTransportBlocks: 3
+
+channel:
+  model: CDL-C
+  delaySpreadSeconds: 0.0000001
+  velocityKmph: 3.0
+  txAntennas: 1
+  rxAntennas: 1
+
+receiver:
+  channelEstimation: perfect
+
+results:
+  outputRoot: artifacts/focused_lls
+  generatePlots: false

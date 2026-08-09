@@ -1,0 +1,12 @@
+Check,Pass,Status,Evidence
+bler_range,1,PASS,0 <= BLER <= 1
+bler_monotonic,1,PASS,BLER is non-increasing on ordered SNR points
+error_counts,1,PASS,block errors do not exceed transmitted TBs
+confidence_intervals,1,PASS,Wilson confidence intervals contain empirical BLER
+decoder_crc_authority,1,PASS,every ACK/NACK comes from decoded TB CRC
+soft_llr_authority,1,PASS,LDPC receives waveform-derived soft LLRs
+snr_calibration,1,PASS,every measured injected Es/N0 is within 0.5 dB
+configuration_hash,1,PASS,every trial contains a SHA-256 configuration hash
+fixed_mcs_tbs,1,PASS,TBS/G/code-rate/modulation remain fixed across SNR
+truth_contract,1,PASS,required waveform truth blocks executed
+no_link_abstraction,1,PASS,no lookup/synthetic/random-pass/geometry LLS source was active

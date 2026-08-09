@@ -121,6 +121,12 @@ methods(Static)
         state.CoverageEligibility = true(nUsers, 1);
         state.CoverageOutageState = repmat("not_evaluated", nUsers, 1);
         state.LastSuccessfulPBCHSlotByUE = nan(nUsers, 1);
+        % Receiver-owned SIB1 evidence is retained per UE so that a later
+        % PRACH occasion consumes the exact decoded rach-ConfigCommon from
+        % the preceding PBCH/SIB1 waveform trial.  This is deliberately an
+        % in-memory causal handoff, not a reconstruction from YAML or CSV.
+        state.DecodedSIB1RecoveryByUE = repmat({struct()}, nUsers, 1);
+        state.DecodedSIB1RecoverySlotByUE = nan(nUsers, 1);
         state.LastSuccessfulPRACHSlotByUE = nan(nUsers, 1);
         state.LastTimingAdvanceSamplesByUE = nan(nUsers, 1);
         state.LastTimingAdvanceUsByUE = nan(nUsers, 1);
@@ -2529,6 +2535,11 @@ methods(Static, Access=private)
             latest.SmoothedCQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SmoothedCQI", NaN));
             latest.InstantaneousCQIMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "InstantaneousCQIMCS", NaN));
             latest.DeltaMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "DeltaMCS", NaN));
+            latest.StaticDeltaMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "StaticDeltaMCS", NaN));
+            latest.OLLAAdjustedMCSBeforeCQICeiling = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "OLLAAdjustedMCSBeforeCQICeiling", NaN));
+            latest.OLLABaseRequiredSINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "OLLABaseRequiredSINR_dB", NaN));
+            latest.OLLATargetRequiredSINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "OLLATargetRequiredSINR_dB", NaN));
+            latest.OLLAThresholdSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "OLLAThresholdSource", "")));
             latest.EffectiveCQISmoothingAlpha = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "EffectiveCQISmoothingAlpha", NaN));
             latest.CSITemporalCorrelationWeight = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSITemporalCorrelationWeight", NaN));
             latest.CSIAgeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSIAgeSeconds", NaN));
@@ -4310,6 +4321,9 @@ methods(Static, Access=private)
         p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
         p.addParameter("RuntimeStageWaveforms", struct(), @(x) isempty(x) || isstruct(x));
         p.addParameter("RequireRuntimeStageWaveforms", false, @(x)islogical(x) || isnumeric(x));
+        p.addParameter("AllowRuntimeStageWaveformComposition", false, @(x)islogical(x) || isnumeric(x));
+        p.addParameter("SIB1Recovery", struct(), @(x) isempty(x) || isstruct(x));
+        p.addParameter("RequireDecodedSIB1", false, @(x)islogical(x) || isnumeric(x));
         p.addParameter("InitialDLChannelState", struct(), @(x)isempty(x) || isstruct(x));
         p.addParameter("InitialULChannelState", struct(), @(x)isempty(x) || isstruct(x));
         p.addParameter("WriteArtifacts", false, @(x)islogical(x) || isnumeric(x));
@@ -4337,9 +4351,11 @@ methods(Static, Access=private)
             "RuntimeSlot", double(opt.RuntimeSlot), ...
             "RuntimeStageWaveforms", opt.RuntimeStageWaveforms, ...
             "RequireRuntimeStageWaveforms", logical(opt.RequireRuntimeStageWaveforms), ...
+            "SIB1Recovery", opt.SIB1Recovery, ...
+            "RequireDecodedSIB1", logical(opt.RequireDecodedSIB1), ...
             "InitialDLChannelState", opt.InitialDLChannelState, ...
             "InitialULChannelState", opt.InitialULChannelState, ...
-            "AllowRuntimeStageWaveformComposition", true, ...
+            "AllowRuntimeStageWaveformComposition", logical(opt.AllowRuntimeStageWaveformComposition), ...
             "WriteArtifacts", logical(opt.WriteArtifacts));
     end
 
@@ -6890,6 +6906,18 @@ methods(Static, Access=private)
                 sixgr.util.structGet(feedback, "DeltaMCS", 0)));
             ollaCount = double(sixgr.util.structGet(feedback, "LinkAdaptationStateUpdateCount", 0));
             ollaEnabled = logical(sixgr.util.structGet(feedback, "OuterLoopEnabled", false));
+            % This receiver-owned report already contains the causal link-
+            % adaptation decision. Preserve the exact dB-domain OLLA
+            % conversion and calibrated required-SINR lineage for the later
+            % grant instead of retaining only its scalar delta.
+            ollaAdjustedMCSBeforeCQICeiling = double(sixgr.util.structGet( ...
+                feedback, "OLLAAdjustedMCSBeforeCQICeiling", NaN));
+            ollaDetail.BaseRequiredSINR_dB = double(sixgr.util.structGet( ...
+                feedback, "OLLABaseRequiredSINR_dB", NaN));
+            ollaDetail.TargetRequiredSINR_dB = double(sixgr.util.structGet( ...
+                feedback, "OLLATargetRequiredSINR_dB", NaN));
+            ollaDetail.ThresholdSource = char(string(sixgr.util.structGet( ...
+                feedback, "OLLAThresholdSource", "")));
         elseif ~isempty(scheduler) && ismethod(scheduler, "getOLLAMCSDelta")
             try
                 [ollaDelta, ollaCount, ollaEnabled] = scheduler.getOLLAMCSDelta(double(sixgr.util.structGet(grant, "RNTI", NaN)));
@@ -7312,6 +7340,11 @@ methods(Static, Access=private)
             latest.SmoothedCQI = report.SmoothedCQI;
             latest.InstantaneousCQIMCS = report.InstantaneousCQIMCS;
             latest.DeltaMCS = report.DeltaMCS;
+            latest.StaticDeltaMCS = report.StaticDeltaMCS;
+            latest.OLLAAdjustedMCSBeforeCQICeiling = report.OLLAAdjustedMCSBeforeCQICeiling;
+            latest.OLLABaseRequiredSINR_dB = report.OLLABaseRequiredSINR_dB;
+            latest.OLLATargetRequiredSINR_dB = report.OLLATargetRequiredSINR_dB;
+            latest.OLLAThresholdSource = report.OLLAThresholdSource;
             latest.EffectiveCQISmoothingAlpha = report.EffectiveCQISmoothingAlpha;
             latest.CSITemporalCorrelationWeight = report.CSITemporalCorrelationWeight;
             latest.CSIAgeSeconds = report.CSIAgeSeconds;
@@ -7361,6 +7394,11 @@ methods(Static, Access=private)
         report.SmoothedCQI = NaN;
         report.InstantaneousCQIMCS = NaN;
         report.DeltaMCS = NaN;
+        report.StaticDeltaMCS = NaN;
+        report.OLLAAdjustedMCSBeforeCQICeiling = NaN;
+        report.OLLABaseRequiredSINR_dB = NaN;
+        report.OLLATargetRequiredSINR_dB = NaN;
+        report.OLLAThresholdSource = "";
         report.EffectiveCQISmoothingAlpha = NaN;
         report.CSITemporalCorrelationWeight = NaN;
         report.CSIAgeSeconds = NaN;
@@ -7432,6 +7470,15 @@ methods(Static, Access=private)
         report.SmoothedCQI = double(sixgr.util.structGet(decision, "SmoothedCQI", NaN));
         report.InstantaneousCQIMCS = double(sixgr.util.structGet(decision, "InstantaneousCQIMCS", NaN));
         report.DeltaMCS = double(sixgr.util.structGet(decision, "DeltaMCS", NaN));
+        report.StaticDeltaMCS = double(sixgr.util.structGet(decision, "StaticDeltaMCS", NaN));
+        report.OLLAAdjustedMCSBeforeCQICeiling = double(sixgr.util.structGet( ...
+            decision, "OLLAAdjustedMCSBeforeCQICeiling", NaN));
+        report.OLLABaseRequiredSINR_dB = double(sixgr.util.structGet( ...
+            decision, "OLLABaseRequiredSINR_dB", NaN));
+        report.OLLATargetRequiredSINR_dB = double(sixgr.util.structGet( ...
+            decision, "OLLATargetRequiredSINR_dB", NaN));
+        report.OLLAThresholdSource = char(string(sixgr.util.structGet( ...
+            decision, "OLLAThresholdSource", "")));
         report.EffectiveCQISmoothingAlpha = double(sixgr.util.structGet(decision, "EffectiveCQISmoothingAlpha", NaN));
         report.CSITemporalCorrelationWeight = double(sixgr.util.structGet(decision, "CSITemporalCorrelationWeight", NaN));
         report.CSIAgeSeconds = double(sixgr.util.structGet(decision, "CSIAgeSeconds", NaN));
@@ -11253,7 +11300,10 @@ methods(Static, Access=private)
             "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
             "MCSSelectionSource", "", "MCSValueStatus", "", ...
             "CQIBasedMCS", NaN, "SmoothedCQI", NaN, ...
-            "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, ...
+            "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, "StaticDeltaMCS", NaN, ...
+            "OLLAAdjustedMCSBeforeCQICeiling", NaN, ...
+            "OLLABaseRequiredSINR_dB", NaN, "OLLATargetRequiredSINR_dB", NaN, ...
+            "OLLAThresholdSource", "", ...
             "EffectiveCQISmoothingAlpha", NaN, "CSITemporalCorrelationWeight", NaN, ...
             "CSIAgeSeconds", NaN, "CSICoherenceTimeSeconds", NaN, ...
             "CSIAgingModel", "", ...
@@ -11370,7 +11420,10 @@ methods(Static, Access=private)
             "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
             "MCSSelectionSource", "", "MCSValueStatus", "", ...
             "CQIBasedMCS", NaN, "SmoothedCQI", NaN, ...
-            "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, ...
+            "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, "StaticDeltaMCS", NaN, ...
+            "OLLAAdjustedMCSBeforeCQICeiling", NaN, ...
+            "OLLABaseRequiredSINR_dB", NaN, "OLLATargetRequiredSINR_dB", NaN, ...
+            "OLLAThresholdSource", "", ...
             "EffectiveCQISmoothingAlpha", NaN, "CSITemporalCorrelationWeight", NaN, ...
             "CSIAgeSeconds", NaN, "CSICoherenceTimeSeconds", NaN, ...
             "CSIAgingModel", "", ...

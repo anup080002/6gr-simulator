@@ -52,6 +52,10 @@ classdef CodebookEngine
                 candidates = reshape(candidates, size(candidates,1), ...
                     size(candidates,2), 1);
             end
+            if ndims(H) > 3 || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
+                error("sixgr:mimo:MissingMeasurementState", ...
+                    "Measured channel must be a finite Nrx-by-Nport matrix or snapshot stack.");
+            end
             if size(H,2) ~= size(candidates,1)
                 error("sixgr:mimo:PrecoderDimensionMismatch", ...
                     "Measured channel ports do not match codebook ports.");
@@ -82,12 +86,24 @@ classdef CodebookEngine
                 end
                 R = R + options.NoiseVariance*eye(nRx);
             end
+            if ismatrix(H)
+                H = reshape(H,size(H,1),size(H,2),1);
+            end
+            snapshotCount = size(H,3);
             metric = zeros(size(candidates,3),1);
             for index = 1:size(candidates,3)
                 Wi = candidates(:,:,index);
-                G = double(H) * double(Wi);
-                gram = G' * (R \ G);
-                metric(index) = real(log2(det(eye(size(gram)) + gram)));
+                snapshotMetric = zeros(snapshotCount,1);
+                for snapshot = 1:snapshotCount
+                    G = double(H(:,:,snapshot)) * double(Wi);
+                    gram = G' * (R \ G);
+                    snapshotMetric(snapshot) = real(log2(det(eye(size(gram)) + gram)));
+                end
+                % Wideband PMI/rank selection uses the arithmetic mean of
+                % per-snapshot mutual information.  Averaging complex H
+                % first is invalid on frequency-selective channels because
+                % channel phase can cancel despite finite received energy.
+                metric(index) = mean(snapshotMetric,"omitnan");
             end
             [bestMetric, bestIndex] = max(metric);
             W = candidates(:,:,bestIndex);
@@ -97,6 +113,8 @@ classdef CodebookEngine
                 "SelectedMetric", bestMetric, ...
                 "Objective", options.Objective, ...
                 "Receiver", options.Receiver, ...
+                "ChannelSnapshotCount", double(snapshotCount), ...
+                "FrequencyAggregation", "mean_per_snapshot_mutual_information", ...
                 "ConfiguredSNRUsed", false, ...
                 "SVDThresholdUsed", false, ...
                 "MatrixSHA256", sixgr.phy.mimo.MatrixContract.digest(W));

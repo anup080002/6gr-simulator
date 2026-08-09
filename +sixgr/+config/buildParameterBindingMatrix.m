@@ -35,6 +35,13 @@ parameterIds = [parameterIds; string({scenarioLeaves.Path}).']; %#ok<AGROW>
 parameterIds = [parameterIds; string({overlayLeaves.Path}).']; %#ok<AGROW>
 parameterIds = unique(parameterIds(strlength(strtrim(parameterIds)) > 0), "stable");
 
+% Several parameters intentionally bind to the same large runtime table.
+% Cache each table for this matrix build so the audit remains proportional
+% to the number of distinct artifacts rather than reparsing a multi-megabyte
+% CSV once per parameter. containers.Map is a handle object, so the local
+% resolver can populate the invocation-scoped cache without global state.
+measuredArtifactCache = containers.Map("KeyType", "char", "ValueType", "any");
+
 rows = repmat(localEmptyBindingRow(), numel(parameterIds), 1);
 for i = 1:numel(parameterIds)
     parameterId = string(parameterIds(i));
@@ -101,7 +108,8 @@ for i = 1:numel(parameterIds)
         runtimeAppliedValue = string(evidenceRow.AppliedValue);
     end
 
-    [runtimeMeasuredValue, runtimeMeasuredStatus] = localResolveMeasuredValue(runFolder, measuredArtifact, measuredField);
+    [runtimeMeasuredValue, runtimeMeasuredStatus] = localResolveMeasuredValue( ...
+        runFolder, measuredArtifact, measuredField, measuredArtifactCache);
     featureDisabledReason = localFeatureDisabledReason(featureFamily, scenarioStruct);
     notApplicableReason = localCoalesceString(featureDisabledReason, localGetField(contract, "UnavailableReason", ""));
     unsupportedReason = "";
@@ -636,7 +644,7 @@ else
 end
 end
 
-function [value, status] = localResolveMeasuredValue(runFolder, artifactPath, fieldName)
+function [value, status] = localResolveMeasuredValue(runFolder, artifactPath, fieldName, artifactCache)
 value = "";
 status = "";
 if strlength(string(artifactPath)) == 0 || strlength(string(fieldName)) == 0
@@ -652,12 +660,24 @@ if exist(fullPath, "file") ~= 2
     status = "evidence_artifact_missing";
     return;
 end
-try
-    T = readtable(fullPath, "VariableNamingRule", "preserve");
-catch
+cacheKey = char(string(fullPath));
+if isKey(artifactCache, cacheKey)
+    cached = artifactCache(cacheKey);
+else
+    cached = struct("ReadOk", false, "Table", table());
+    try
+        cached.Table = readtable(fullPath, "VariableNamingRule", "preserve");
+        cached.ReadOk = true;
+    catch
+        cached.ReadOk = false;
+    end
+    artifactCache(cacheKey) = cached;
+end
+if ~cached.ReadOk
     status = "evidence_artifact_missing";
     return;
 end
+T = cached.Table;
 if ~any(strcmp(string(T.Properties.VariableNames), string(fieldName)))
     status = "evidence_field_missing";
     return;

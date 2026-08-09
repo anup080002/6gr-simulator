@@ -1,0 +1,17 @@
+inherits:
+  - pusch_reference.yaml
+
+scenario:
+  id: pusch_awgn_qpsk_reference_smoke
+  description: Dedicated short diagnostic of the same waveform chain; not publication statistics
+
+simulation:
+  snrDb: [-10, 0, 20]
+  minTransportBlocks: 3
+  minBlockErrors: 2
+  maxTransportBlocks: 6
+  statisticalClass: diagnostic_only
+
+results:
+  outputRoot: artifacts/focused_lls
+  generatePlots: true

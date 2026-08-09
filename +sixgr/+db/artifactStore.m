@@ -372,7 +372,6 @@ end
 if ~localIsActive(state) || exist(filePath, "file") ~= 2
     return;
 end
-bytes = localReadFileBytes(filePath);
 metadata = struct("captured_from_file", true);
 sourceRefs = localInferImageSourceArtifacts(logicalPath);
 if strlength(sourceRefs) > 0
@@ -380,9 +379,99 @@ if strlength(sourceRefs) > 0
     metadata.source_logical_path = sourceRefs;
     metadata.provenance_rule = "captured_image_companion_source_artifact";
 end
-handled = localStoreBinary(state, logicalPath, bytes, artifactKind, mimeType, metadata);
+handled = localStoreFile(state, filePath, logicalPath, artifactKind, mimeType, metadata);
 if handled && logical(deleteAfter)
     localDeleteIfExists(filePath);
+end
+end
+
+function handled = localStoreFile(state, sourcePath, logicalFilePath, artifactKind, mimeType, metadata)
+% Stream a filesystem artifact into MySQL chunks. Large MAT files must not
+% be materialized as one MATLAB uint8 vector: doing so duplicates the full
+% simulation state in memory and fails well below the database chunk limit.
+handled = false;
+if ~localIsActive(state) || exist(sourcePath, "file") ~= 2
+    return;
+end
+if nargin < 6 || ~isstruct(metadata)
+    metadata = struct();
+end
+
+info = dir(sourcePath);
+byteSize = double(info.bytes);
+conn = state.Connection;
+logicalPath = localLogicalPath(logicalFilePath, state.RunFolder);
+metadata.source_path = string(sourcePath);
+metadata.logical_path = string(logicalPath);
+metadata.streamed_from_file = true;
+metadata_json = localJSON(metadata);
+
+oldId = localFindArtifactID(conn, state.RunID, logicalPath);
+prevAutoCommit = [];
+try
+    prevAutoCommit = conn.getAutoCommit();
+catch
+end
+cleanupAuto = onCleanup(@() localRestoreAutoCommit(conn, prevAutoCommit)); %#ok<NASGU>
+fid = fopen(sourcePath, "rb");
+if fid < 0
+    error("sixgr:db:artifactStore:ReadFailed", ...
+        "Unable to stream artifact '%s'.", string(sourcePath));
+end
+cleanupFID = onCleanup(@() fclose(fid)); %#ok<NASGU>
+try
+    if isempty(prevAutoCommit) || logical(prevAutoCommit)
+        conn.setAutoCommit(false);
+    end
+    if isfinite(oldId)
+        localDeleteArtifact(conn, oldId);
+    end
+
+    ps = conn.prepareStatement([ ...
+        "INSERT INTO sim_artifacts " + ...
+        "(run_id, logical_path, artifact_kind, mime_type, byte_size, metadata_json, created_utc) " + ...
+        "VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())"]);
+    cleanupInsert = onCleanup(@() ps.close()); %#ok<NASGU>
+    ps.setLong(1, int64(state.RunID));
+    ps.setString(2, char(logicalPath));
+    ps.setString(3, char(string(artifactKind)));
+    ps.setString(4, char(string(mimeType)));
+    ps.setLong(5, int64(byteSize));
+    ps.setString(6, char(metadata_json));
+    ps.executeUpdate();
+    artifactID = localLastInsertID(conn);
+    clear cleanupInsert
+
+    [chunkSize, ~] = localResolveChunkPlan(state, uint8.empty(1, 0), ...
+        artifactKind, mimeType);
+    if byteSize > 0
+        psChunk = conn.prepareStatement([ ...
+            "INSERT INTO sim_artifact_chunks (artifact_id, chunk_index, chunk_data) " + ...
+            "VALUES (?, ?, ?)"]);
+        cleanupChunk = onCleanup(@() psChunk.close()); %#ok<NASGU>
+        chunkIndex = 1;
+        while true
+            chunk = fread(fid, chunkSize, "*uint8").';
+            if isempty(chunk)
+                break;
+            end
+            psChunk.setLong(1, int64(artifactID));
+            psChunk.setInt(2, int32(chunkIndex));
+            psChunk.setBytes(3, localJavaBytes(chunk));
+            psChunk.executeUpdate();
+            chunkIndex = chunkIndex + 1;
+        end
+    end
+
+    localTouchRun(conn, state.RunID);
+    conn.commit();
+    handled = true;
+catch ME
+    try
+        conn.rollback();
+    catch
+    end
+    rethrow(ME);
 end
 end
 

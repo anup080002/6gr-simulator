@@ -1,0 +1,34 @@
+Error using sixgr.config.installRuntimeOperatingAuthority>localAssertNumericAliases (line 480)
+DL layer count aliases disagree before execution: canonical_control.mimo.n_layers=1, canonical_control.mimo.max_dl_layers=1, canonical_control.pdsch.layer_count=2,
+canonical_control.pdsch.rank=2, mimo.n_layers=1, mimo.max_dl_layers=1, pdsch.layer_count=1, pdsch.rank=1, pdsch6gr.num_layers=1.
+
+Error in sixgr.config.installRuntimeOperatingAuthority>localAssertSourceAliasesAgree (line 154)
+localAssertNumericAliases(s, "DL layer count", [ ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.config.installRuntimeOperatingAuthority (line 14)
+localAssertSourceAliasesAgree(sourceScenario);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2085)
+cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.recoverLLSRunArtifacts (line 47)
+cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using sixgr.config.installRuntimeOperatingAuthority>localAssertNumericAliases (line 480)
+DL layer count aliases disagree before execution: canonical_control.mimo.n_layers=1, canonical_control.mimo.max_dl_layers=1, canonical_control.pdsch.layer_count=2,
+canonical_control.pdsch.rank=2, mimo.n_layers=1, mimo.max_dl_layers=1, pdsch.layer_count=1, pdsch.rank=1, pdsch6gr.num_layers=1.
+
+Error in sixgr.config.installRuntimeOperatingAuthority>localAssertSourceAliasesAgree (line 154)
+localAssertNumericAliases(s, "DL layer count", [ ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.config.installRuntimeOperatingAuthority (line 14)
+localAssertSourceAliasesAgree(sourceScenario);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2085)
+cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.recoverLLSRunArtifacts (line 47)
+cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

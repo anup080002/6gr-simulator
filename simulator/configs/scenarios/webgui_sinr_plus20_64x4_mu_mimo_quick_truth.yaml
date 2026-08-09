@@ -1,0 +1,124 @@
+# Bounded functional truth gate for fast repair iterations.
+#
+# This file inherits the complete production 64x4 MU-MIMO scenario. It does
+# not disable any in-path PHY, control, MAC, L2/L3, traffic, reference-signal,
+# or initial-access feature. Only campaign scale and optional diagnostics are
+# reduced. Separate false-alarm/missed-detection statistical campaigns are
+# explicitly NOT EVALUATED here; the full parent remains their authority.
+inherits: webgui_sinr_sweep_64x4_mu_mimo_full.yaml
+
+canonical_control:
+  identity:
+    scenario_id: webgui_sinr_plus20_64x4_mu_mimo_quick_truth
+    scenario_name: Quick +20 dB same-chain truth gate — 64x4 coupled MU-MIMO
+    description: Bounded single-seed functional gate using the complete production Tx/channel/Rx chain and all enabled runtime features; not a statistical qualification campaign.
+    version: 1.0.0
+    purpose: Fast fail-closed verification before the three-point SINR sweep.
+    comparison_group_name: coupled_mu_mimo_64x4_plus20_quick_truth
+    tags: [lls, webgui, quick_truth, plus20db, cdl_c, n78, mu_mimo, same_chain]
+  launch:
+    sweep_enabled: false
+    run_class: adaptive_system_diagnostic
+    scenario_mode: single_point_coupled_mu_mimo_quick_truth
+    notes: Every normal in-path feature remains enabled. PRACH/PDCCH statistical confidence campaigns, profiler capture, and monolithic MAT capture are deliberately not evaluated by this functional gate.
+  run:
+    n_frames: 2
+    total_slots: 32
+    total_time_ms: 16
+    measurement_slots: 32
+    n_subframes: 16
+    monte_carlo_iterations: 1
+    num_seeds: 1
+    seed_list: [104729]
+    campaign_mode: single_seed_coupled_truth_quick_gate
+    fixed_link_snr_grid_db: [20]
+    min_campaign_snr_points: 1
+    min_trials_per_sinr_bin: 1
+    snr_db: 20
+    reference_sweep_enabled: false
+    adaptive_sweep_enabled: false
+    num_workers: 1
+    batch_size_links: 2
+    auto_start_parallel_pool: false
+    run_profile: quick
+    save_intermediate: false
+  random_access_evidence:
+    # Four-step RA remains mandatory and executes in the coupled slot chain.
+    # Only the separate many-trial probability estimators are excluded.
+    four_step_ra_required: true
+    msg1_prach_required: true
+    msg2_rar_pdcch_pdsch_required: true
+    msg3_pusch_required: true
+    msg4_contention_resolution_required: true
+    ra_rnti_decode_required: true
+    rar_mac_ce_decode_required: true
+    timing_advance_required: true
+    contention_resolution_identity_required: true
+    require_runtime_stage_waveforms: true
+    allow_runtime_stage_waveform_composition: true
+    preamble_collision_test_enabled: false
+    false_alarm_test_enabled: false
+    missed_detection_test_enabled: false
+  random_access:
+    statistical_qualification:
+      enabled: false
+  control:
+    pdcch_strict:
+      statistical_qualification:
+        enabled: false
+  output:
+    save_mat: false
+    profiler_enabled: false
+    component_artifact_views:
+      enabled: true
+      required: true
+      mirror_mode: byte_identical_hash_verified
+      image_formats: [png, jpg, jpeg]
+      canonical_files_move: false
+      required_components: [prach, initial_access, ssb, pdcch, pdsch, pusch, pucch, reference_signals, mimo, frame_grid, waveform, l3, channel, rf, mac_harq_scheduler, l2, traffic, validation]
+
+# Keep the normalized public aliases identical to canonical authority.
+random_access_evidence:
+  four_step_ra_required: true
+  msg1_prach_required: true
+  msg2_rar_pdcch_pdsch_required: true
+  msg3_pusch_required: true
+  msg4_contention_resolution_required: true
+  ra_rnti_decode_required: true
+  rar_mac_ce_decode_required: true
+  timing_advance_required: true
+  contention_resolution_identity_required: true
+  require_runtime_stage_waveforms: true
+  allow_runtime_stage_waveform_composition: true
+  preamble_collision_test_enabled: false
+  false_alarm_test_enabled: false
+  missed_detection_test_enabled: false
+
+random_access:
+  statistical_qualification:
+    enabled: false
+
+output:
+  save_mat: false
+  profiler_enabled: false
+  component_artifact_views:
+    enabled: true
+    required: true
+    mirror_mode: byte_identical_hash_verified
+    image_formats: [png, jpg, jpeg]
+    canonical_files_move: false
+    required_components: [prach, initial_access, ssb, pdcch, pdsch, pusch, pucch, reference_signals, mimo, frame_grid, waveform, l3, channel, rf, mac_harq_scheduler, l2, traffic, validation]
+
+validation:
+  run_class: adaptive_system_diagnostic
+  fixed_snr_sweep_required: false
+  geometry_evidence_required: false
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    values_db: [20]
+  fixed_link_calibration:
+    enabled: false
+    only: false
+    snr_db: [20]

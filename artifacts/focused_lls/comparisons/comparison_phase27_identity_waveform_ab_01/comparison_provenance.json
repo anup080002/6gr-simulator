@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": "sixgr.lls.comparison/v1",
+  "ExecutionBackend": "waveform_truth",
+  "ApproximationMode": "none",
+  "ConfigA": "configs/lls/pusch_reference_smoke.yaml",
+  "ConfigB": "configs/lls/pusch_reference_smoke.yaml",
+  "ConfigSHA256A": "5e5c6a394d07069df938b12a06d4ff671645e5903e07b40e79e64ce740e2585b",
+  "ConfigSHA256B": "5e5c6a394d07069df938b12a06d4ff671645e5903e07b40e79e64ce740e2585b",
+  "ScientificSemanticSHA256A": "2ad6dfb39fb22a74d8543ff1d08281ac9b22eded2c79c8a2eb43521f0b89fe17",
+  "ScientificSemanticSHA256B": "2ad6dfb39fb22a74d8543ff1d08281ac9b22eded2c79c8a2eb43521f0b89fe17",
+  "CommonRandomKey": "pusch_reference_common_random_numbers_v1",
+  "MasterSeed": 2.0260809E+7,
+  "PairingValid": true,
+  "InterpolationPolicy": "interpolation_only_no_extrapolation",
+  "CreatedUTC": "2026-08-09T15:20:57Z"
+}

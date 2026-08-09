@@ -193,6 +193,7 @@ cfg.phy.pdsch.numPorts = 1;
 cfg.phy.pdsch.nPorts = 1;
 cfg.phy.pdsch.dmrs.nPorts = 1;
 cfg.phy.csirs.enabled = false;
+cfg.phy.csirs.enable = false;
 cfg.phy.csirs.nPorts = 1;
 cfg.phy.pusch.modulation = "QPSK";
 cfg.phy.pusch.codeRate = 0.30;

@@ -27,6 +27,8 @@ normalized = lower(strtrim(string(name)));
 if nargin < 2
     allNames = strings(0, 1);
 end
+persistent cachedExactKeep
+if isempty(cachedExactKeep)
 exactKeep = lower([ ...
     "site_id", ...
     "sector_id", ...
@@ -477,6 +479,9 @@ srsStrictKeep = lower([ ...
     "TPMIMutualInformation", ...
     "RIConditionNumber_dB"]);
 exactKeep = [exactKeep, visualAuditKeep, prachStrictKeep, srsStrictKeep];
+cachedExactKeep = exactKeep;
+end
+exactKeep = cachedExactKeep;
 if any(normalized == exactKeep)
     tf = true;
     return;

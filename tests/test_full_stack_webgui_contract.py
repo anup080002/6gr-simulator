@@ -15,16 +15,15 @@ import lls_web_dashboard as dash  # noqa: E402
 SCENARIO = Path(dash.FULL_STACK_QUALIFICATION_SCENARIO).stem
 
 
-def test_full_stack_scenario_is_a_canonical_webgui_mode() -> None:
+def test_full_stack_scenario_is_a_non_master_audit_scenario() -> None:
     scenario = dash.FULL_STACK_QUALIFICATION_SCENARIO
-    assert scenario in dash.OPERATOR_MASTER_SCENARIOS
+    assert scenario not in dash.OPERATOR_MASTER_SCENARIOS
     assert scenario in dash.list_scenarios()
-    mode = next(
-        item
+    assert not any(
+        item["id"] == "full_stack_qualification"
         for item in dash.PRODUCT_SCENARIO_MODES
-        if item["id"] == "full_stack_qualification"
     )
-    assert mode["scenario"] == scenario
+    assert dash.DEFAULT_SCENARIO == dash.SINR_SWEEP_MASTER_SCENARIO
     assert dash.DEFAULT_DASHBOARD_PORT == 62906
 
 

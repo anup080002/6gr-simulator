@@ -2662,6 +2662,7 @@ try
         estInfo.PilotRECount = double(sixgr.util.structGet(chInfo, "PilotRECount", NaN));
         estInfo.PilotResidualPower = double(sixgr.util.structGet(chInfo, "PilotResidualPower", NaN));
         estInfo.PilotResidualNMSE_dB = double(sixgr.util.structGet(chInfo, "PilotResidualNMSE_dB", NaN));
+        estInfo.PilotMask = sixgr.util.structGet(chInfo, "PilotMask", []);
     else
         estInfo.Status = "NOT_AVAILABLE";
         estInfo.Reason = "empty_csirs_channel_estimate";
@@ -2694,7 +2695,7 @@ for ordinal = 1:nResources
     measurements(ordinal).EstimationInfo = info;
     measurements(ordinal).Available = logical(sixgr.util.structGet(info, "Available", false));
     if measurements(ordinal).Available
-        Hwb = localCSIRSWidebandChannelMatrix(Hest);
+        Hwb = localCSIRSWidebandChannelMatrix(Hest, info);
         objectives(ordinal) = localMeasuredCSIRSReceiverObjective(Hwb, nVar);
         measurements(ordinal).WidebandChannel = Hwb;
         measurements(ordinal).ReceiverObjective = objectives(ordinal);
@@ -2736,7 +2737,7 @@ end
 
 function objective = localMeasuredCSIRSReceiverObjective(H, nVar)
 objective = -inf;
-if isempty(H) || ~ismatrix(H) || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
+if isempty(H) || ndims(H) > 3 || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
     return;
 end
 nVar = double(nVar);
@@ -2744,12 +2745,21 @@ if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
     return;
 end
 nStreams = max(1, size(H,2));
-R = eye(size(H,1)) + (H * H') ./ max(nStreams * nVar, realmin);
-eigenvalues = real(eig((R + R') ./ 2));
-if any(~isfinite(eigenvalues)) || any(eigenvalues <= 0)
-    return;
+if ismatrix(H)
+    H = reshape(H,size(H,1),size(H,2),1);
 end
-objective = sum(log2(eigenvalues));
+snapshotObjective = nan(size(H,3),1);
+for snapshot = 1:size(H,3)
+    Hs = H(:,:,snapshot);
+    R = eye(size(Hs,1)) + (Hs * Hs') ./ max(nStreams * nVar, realmin);
+    eigenvalues = real(eig((R + R') ./ 2));
+    if all(isfinite(eigenvalues)) && all(eigenvalues > 0)
+        snapshotObjective(snapshot) = sum(log2(eigenvalues));
+    end
+end
+if any(isfinite(snapshotObjective))
+    objective = mean(snapshotObjective,"omitnan");
+end
 end
 
 function value = localEmptyCSIRSResourceMeasurement()
@@ -2845,11 +2855,14 @@ if ~logical(sixgr.util.structGet(estInfo, "Available", false)) || isempty(Hest)
     info.Status = "missing_runtime_csirs_channel_estimate";
     return;
 end
-Hwb = localCSIRSWidebandChannelMatrix(Hest);
-if isempty(Hwb) || ~ismatrix(Hwb) || ...
+Hwb = localCSIRSWidebandChannelMatrix(Hest, estInfo);
+validShape = isnumeric(Hwb) && ~isempty(Hwb) && ndims(Hwb) <= 3 && ...
+    size(Hwb,1) >= 1 && size(Hwb,2) >= 1 && size(Hwb,3) >= 1;
+if ~validShape || ...
         any(~isfinite(real(Hwb(:))) | ~isfinite(imag(Hwb(:))))
     error("sixgr:mimo:MissingMeasurementState", ...
-        "Strict DL CSI requires a finite measured Nrx-by-Nport CSI-RS channel matrix.");
+        ["Strict DL CSI requires a finite measured Nrx-by-Nport " ...
+         "CSI-RS channel matrix or Nrx-by-Nport-by-Nsnapshot stack."]);
 end
 nVar = double(nVar);
 if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
@@ -2918,24 +2931,72 @@ info.Provenance = state.Provenance;
 info.Slot = state.Slot;
 info.NoiseVariance = double(state.NoiseVariance);
 info.InterferenceCovarianceIncluded = ~isempty(Rint);
+info.ChannelSnapshotCount = double(size(Hwb,3));
 end
 
-function Hwb = localCSIRSWidebandChannelMatrix(Hest)
+function Hwb = localCSIRSWidebandChannelMatrix(Hest, estInfo)
 Hwb = [];
 if isempty(Hest)
     return;
 end
+if nargin < 2 || ~isstruct(estInfo)
+    estInfo = struct();
+end
 if ndims(Hest) >= 4
-    Hwb = squeeze(mean(mean(double(Hest), 1, "omitnan"), 2, "omitnan"));
+    H = double(Hest);
+    K = size(H,1);
+    L = size(H,2);
+    R = size(H,3);
+    P = size(H,4);
+    pilotMask = sixgr.util.structGet(estInfo,"PilotMask",[]);
+    if islogical(pilotMask) && isequal(size(pilotMask),[K L]) && any(pilotMask(:))
+        symbolSet = find(any(pilotMask,1));
+    else
+        symbolSet = 1:L;
+    end
+    % One receiver channel snapshot per PRB and CSI-RS-bearing OFDM
+    % symbol preserves frequency-selective energy without retaining the
+    % full interpolated grid in every immutable measurement object.
+    prbCount = floor(K/12);
+    Hwb = complex(zeros(R,P,max(1,prbCount*numel(symbolSet))));
+    writeIndex = 0;
+    for symbolIndex = symbolSet
+        for prb = 1:prbCount
+            subcarrier = (prb-1)*12 + 7;
+            snapshot = reshape(H(subcarrier,symbolIndex,:,:),R,P);
+            if all(isfinite(real(snapshot(:))) & isfinite(imag(snapshot(:))))
+                writeIndex = writeIndex + 1;
+                Hwb(:,:,writeIndex) = snapshot;
+            end
+        end
+    end
+    Hwb = Hwb(:,:,1:writeIndex);
 elseif ndims(Hest) == 3
-    Hwb = reshape(squeeze(mean(mean(double(Hest), 1, "omitnan"), 2, "omitnan")), [], 1);
+    H = double(Hest);
+    K = size(H,1);
+    L = size(H,2);
+    R = size(H,3);
+    prbCount = floor(K/12);
+    Hwb = complex(zeros(R,1,max(1,prbCount*L)));
+    writeIndex = 0;
+    for symbolIndex = 1:L
+        for prb = 1:prbCount
+            subcarrier = (prb-1)*12 + 7;
+            snapshot = reshape(H(subcarrier,symbolIndex,:),R,1);
+            if all(isfinite(real(snapshot(:))) & isfinite(imag(snapshot(:))))
+                writeIndex = writeIndex + 1;
+                Hwb(:,:,writeIndex) = snapshot;
+            end
+        end
+    end
+    Hwb = Hwb(:,:,1:writeIndex);
 elseif ismatrix(Hest)
     Hwb = double(Hest);
 end
-if isvector(Hwb)
+if isvector(Hwb) && ismatrix(Hwb)
     Hwb = reshape(Hwb, numel(Hwb), 1);
 end
-if ~ismatrix(Hwb)
+if ndims(Hwb) > 3 || isempty(Hwb)
     Hwb = [];
 end
 end

@@ -123,6 +123,30 @@ info = imfinfo(pngPath);
 assert(info.Width >= 640 && info.Height >= 480);
 assert(all(strlength(result.Audit.SourceSHA256) == 64));
 
+% A quick diagnostic is allowed to contain a single measured operating
+% point, including BLER=0 with a non-zero exact confidence interval.  The
+% production BLER renderer uses an ErrorBar object for this case.  Count
+% that object as the required data series instead of rejecting a valid
+% measured chart merely because no Line object is present.
+onePointRoot = tempname();
+mkdir(onePointRoot);
+onePointCleanup = onCleanup(@() localRemove(onePointRoot)); %#ok<NASGU>
+onePointCatalog = localOnePointErrorbarCatalog();
+onePointEvidence = sixgr.artifact.EvidenceRegistry();
+onePointT = table(20, 0, 0, 0.1089, "waveform_truth", ...
+    'VariableNames', {'SNRdB','BLER','CILower','CIUpper','Source'});
+onePointEvidence.registerTable("pdsch", "base", ...
+    "one_point_bler.csv", onePointT, "waveform_truth unit evidence");
+onePointEvidence.registerRenderer("pdsch", "base", ...
+    "one_point_bler.png", @localRenderOnePointErrorbar, ...
+    "tests.localRenderOnePointErrorbar");
+onePointResult = sixgr.artifact.ContractArtifactGenerator.generate( ...
+    onePointRoot, onePointEvidence, "Catalog", onePointCatalog);
+assert(onePointResult.Ok && onePointResult.PNGCount == 1, ...
+    "A finite one-point ErrorBar BLER chart must satisfy the figure contract.");
+assert(isfile(fullfile(onePointRoot, "components", "pdsch", "png", ...
+    "one_point_bler.png")));
+
 % Re-running publication from the same immutable runtime evidence must
 % atomically replace the component tree with identical CSV/PNG bytes.
 firstCSVHash = localFileHash(csvPath);
@@ -333,12 +357,48 @@ for index = 1:numel(modes)
 end
 end
 
+function catalog = localOnePointErrorbarCatalog()
+catalog = localCatalog();
+catalog.MinimumRows(:) = 1;
+catalog.MinimumFinitePoints(:) = 1;
+catalog.RequiredColumns(1) = "SNRdB|BLER|CILower|CIUpper|Source";
+catalog.PrimaryKey(1) = "SNRdB";
+catalog.FileName(1) = "one_point_bler.csv";
+catalog.ContractArtifactPath(1) = catalog.FileName(1);
+catalog.OutputRelativePath(1) = string(fullfile( ...
+    "pdsch", "csv", catalog.FileName(1)));
+catalog.ContractID(1) = "pdsch|base|csv|one_point_bler.csv|all";
+catalog.FileName(2) = "one_point_bler.png";
+catalog.ContractArtifactPath(2) = catalog.FileName(2);
+catalog.OutputRelativePath(2) = string(fullfile( ...
+    "pdsch", "png", catalog.FileName(2)));
+catalog.SourceCSV(2) = catalog.FileName(1);
+catalog.MinimumFinitePoints(2) = 1;
+catalog.ExpectedTitle(2) = "One-point BLER";
+catalog.ExpectedXLabel(2) = "SNR";
+catalog.ExpectedYLabel(2) = "BLER";
+catalog.ContractID(2) = "pdsch|base|png|one_point_bler.png|all";
+end
+
 function fig = localRenderBLER(bundle, ~)
 T = bundle.Tables{1};
 fig = figure("Visible", "off", "Color", "white");
 plot(T.SNRdB, T.BLER, "-o", "LineWidth", 1.5);
 grid on;
 title("Runtime BLER");
+xlabel("SNR (dB)");
+ylabel("BLER");
+end
+
+function fig = localRenderOnePointErrorbar(bundle, ~)
+T = bundle.Tables{1};
+fig = figure("Visible", "off", "Color", "white");
+lowerError = T.BLER - T.CILower;
+upperError = T.CIUpper - T.BLER;
+errorbar(T.SNRdB, T.BLER, lowerError, upperError, "o", ...
+    "LineWidth", 1.5);
+grid on;
+title("One-point BLER");
 xlabel("SNR (dB)");
 ylabel("BLER");
 end

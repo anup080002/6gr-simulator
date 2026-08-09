@@ -32,14 +32,35 @@ end
 if isvector(H)
     H = reshape(H, numel(H), 1);
 end
-if ~ismatrix(H) || isempty(H) || ~all(isfinite(real(H(:)))) || ~all(isfinite(imag(H(:))))
+if ndims(H) > 3 || isempty(H) || ~all(isfinite(real(H(:)))) || ~all(isfinite(imag(H(:))))
     status = "invalid_channel_matrix";
     return;
 end
 
-matrixRankLimit = min(size(H, 1), size(H, 2));
+if ~ismatrix(H)
+    snapshotCount = size(H,3);
+    covariance = complex(zeros(size(H,2)));
+    for snapshot = 1:snapshotCount
+        Hs = H(:,:,snapshot);
+        covariance = covariance + Hs' * Hs;
+    end
+    covariance = covariance ./ max(snapshotCount,1);
+    [V,D] = eig((covariance + covariance') ./ 2); %#ok<ASGLU>
+    singularValues = sqrt(max(sort(real(diag(D)),"descend"),0));
+    H = [];
+else
+    singularValues = [];
+end
+
+if isempty(H)
+    matrixRankLimit = numel(singularValues);
+else
+    matrixRankLimit = min(size(H, 1), size(H, 2));
+end
 if matrixRankLimit < 2
-    singularValues = svd(H);
+    if isempty(singularValues)
+        singularValues = svd(H);
+    end
     singularValues = singularValues(isfinite(singularValues) & singularValues >= 0);
     if ~isempty(singularValues)
         rankEstimate = double(sum(singularValues >= max(singularValues(1) * rankTol, eps)));
@@ -48,11 +69,13 @@ if matrixRankLimit < 2
     return;
 end
 
-try
-    singularValues = svd(H);
-catch
-    status = "svd_failed";
-    return;
+if isempty(singularValues)
+    try
+        singularValues = svd(H);
+    catch
+        status = "svd_failed";
+        return;
+    end
 end
 singularValues = singularValues(isfinite(singularValues) & singularValues >= 0);
 if isempty(singularValues)

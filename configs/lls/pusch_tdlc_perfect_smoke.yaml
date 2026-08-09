@@ -1,0 +1,9 @@
+inherits:
+  - pusch_cdlc_perfect_smoke.yaml
+
+scenario:
+  id: pusch_tdlc_qpsk_perfect_csi_smoke
+  description: Dedicated exact per-RE TDL-C perfect-CSI validation; not publication statistics
+
+channel:
+  model: TDL-C

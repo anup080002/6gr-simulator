@@ -1,0 +1,36 @@
+FOCUSED_START testQuickPlus20SameChainYAMLAuthority
+FOCUSED_PASS testQuickPlus20SameChainYAMLAuthority 23.481s
+FOCUSED_START testQuickPlus20WiringGateYAMLAuthority
+FOCUSED_PASS testQuickPlus20WiringGateYAMLAuthority 6.304s
+FOCUSED_START testLLSMeasurementSidecarIntegrity
+FOCUSED_START testSchedulerOLLADbMarginMapping
+FOCUSED_FAIL testLLSMeasurementSidecarIntegrity  | The exact decoder vector must remain one provenance-sidecar cell.
+FOCUSED_PASS testSchedulerOLLADbMarginMapping 3.728s
+FOCUSED_START testLLSStatisticalQualificationGate
+FOCUSED_PASS testLLSStatisticalQualificationGate 5.731s
+FOCUSED_START testArtifactContractEngine
+PASS testArtifactContractEngine: 659 CSV + 691 PNG contracts normalized; runtime-only publication verified.
+FOCUSED_PASS testArtifactContractEngine 43.169s
+FOCUSED_START testMIMOFrequencySelectiveSpatialSignature
+FOCUSED_PASS testMIMOFrequencySelectiveSpatialSignature 0.423s
+FOCUSED_START testCSIRuntimeExecution
+FOCUSED_PASS testCSIRuntimeExecution 109.821s
+FOCUSED_START testPhase7CampaignEvidenceGates
+FOCUSED_PASS testPhase7CampaignEvidenceGates 6.939s
+FOCUSED_START testScenarioCSVAnnotationRuntimeIsolation
+PASS testScenarioCSVAnnotationRuntimeIsolation: runtime journals remain immutable.
+FOCUSED_PASS testScenarioCSVAnnotationRuntimeIsolation 2.782s
+FOCUSED_START testMatSaveFilesystemAtomic
+FOCUSED_PASS testMatSaveFilesystemAtomic 0.071s
+FOCUSED_START testSIB1ToFourStepRAIntegration
+FOCUSED_PASS testSIB1ToFourStepRAIntegration 138.739s
+FOCUSED_SUMMARY pass=11 fail=1 total=12
+                    Test                    Passed    Elapsed_s    Identifier                                  Message                              
+    ____________________________________    ______    _________    __________    ___________________________________________________________________
+
+    "testLLSMeasurementSidecarIntegrity"    false      2.1088          ""        "The exact decoder vector must remain one provenance-sidecar cell."
+
+{Error using runPhase26FocusedTests (line 45)
+1 focused test(s) failed.
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

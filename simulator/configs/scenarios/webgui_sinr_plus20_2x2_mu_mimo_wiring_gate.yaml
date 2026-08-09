@@ -1,0 +1,188 @@
+# Minimal same-chain wiring gate.
+#
+# MU-MIMO requires at least two UEs.  With two gNB transmit dimensions, two
+# UEs are therefore scheduled at one layer each; a one-UE 2x2 case would be
+# SU-MIMO and cannot validate multi-user spatial scheduling.  This scenario
+# keeps the complete enabled PHY/control/L2/L3/traffic feature surface from
+# the production parent while reducing only antennas, users, slots, seeds,
+# and non-functional statistical campaigns.
+inherits: webgui_sinr_plus20_64x4_mu_mimo_quick_truth.yaml
+
+antenna_and_array:
+  bs_array_geometry: ULA
+  ue_array_geometry: ULA
+  bs_num_antenna_elements: 2
+  ue_num_antenna_elements: 2
+  bs_num_txrus: 2
+  bs_num_rxrus: 2
+  ue_num_txrus: 2
+  ue_num_rxrus: 2
+  bs_panel_count: 1
+  ue_panel_count: 1
+  polarization: single
+  element_spacing_h: 0.5
+  element_spacing_v: 0.5
+  reciprocity_assumption: tdd_reciprocity
+
+canonical_control:
+  identity:
+    scenario_id: webgui_sinr_plus20_2x2_mu_mimo_wiring_gate
+    scenario_name: Quick +20 dB complete-graph wiring gate — 2x2 two-UE MU-MIMO
+    description: Minimal one-cell/two-UE one-seed diagnostic using the production Tx/channel/Rx chain; two simultaneous rank-one users exercise true 2x2 MU-MIMO without claiming statistical qualification.
+    version: 1.0.0
+    purpose: Fast fail-closed wiring and runtime-artifact validation before larger array or SINR-sweep execution.
+    comparison_group_name: coupled_mu_mimo_2x2_plus20_wiring_gate
+    tags: [lls, webgui, wiring_gate, plus20db, cdl_c, two_ue, two_by_two, mu_mimo, same_chain]
+  launch:
+    run_class: adaptive_system_diagnostic
+    scenario_mode: single_point_coupled_2x2_mu_mimo_wiring_gate
+    notes: Functional wiring gate only; probability estimates and publication claims remain not evaluated.
+  run:
+    n_frames: 2
+    total_slots: 21
+    total_time_ms: 10.5
+    measurement_slots: 21
+    n_subframes: 11
+    monte_carlo_iterations: 1
+    num_seeds: 1
+    seed_list: [104729]
+    fixed_link_snr_grid_db: [20]
+    snr_db: 20
+    num_workers: 1
+    auto_start_parallel_pool: false
+    save_intermediate: false
+  topology:
+    num_sites: 1
+    num_sectors_per_site: 1
+    num_cells: 1
+    num_trps: 1
+    num_ues: 2
+    execution_model: slot_coupled_truth
+  antenna:
+    bs_array_geometry: ULA
+    ue_array_geometry: ULA
+    bs_num_antenna_elements: 2
+    ue_num_antenna_elements: 2
+    bs_panel_count: 1
+    ue_panel_count: 1
+    polarization: single
+  mimo:
+    mode: mu_mimo
+    n_tx_ant: 2
+    n_rx_ant: 2
+    n_layers: 1
+    max_dl_layers: 1
+    max_ul_layers: 1
+    max_simultaneous_ue_dl: 2
+    max_simultaneous_ue_ul: 2
+    mu_mimo_enable: true
+    ul_mu_mimo_enable: true
+    mu_mimo_max_users_per_prb: 2
+    # A two-element transmitter has one nulling dimension per rank-one UE.
+    # Retaining each UE's complete rank-two SRS subspace would consume the
+    # full transmit space and correctly make a two-user MU pair infeasible.
+    # The wiring gate therefore uses the causal measured dominant rank-one
+    # signature that its one-layer-per-user scheduler actually transmits.
+    mu_mimo_spatial_signature_mode: dominant_scheduled_rank
+    panel_count: 1
+    phase07_strict:
+      enabled: true
+      max_rank: 1
+      rank_domain: [1]
+      csi_report:
+        num_csi_resources: 2
+        number_of_beams: 2
+  pdsch:
+    execution_profile: scheduler_truth
+    prb_start: 0
+    num_prb: 273
+    layer_count: 1
+    rank: 1
+    modulation: 256QAM
+    xoh_pdsch: 18
+  scheduler:
+    max_active_ues_per_slot: 2
+    max_active_ues_per_cell_per_slot: 2
+    max_active_ues_per_cell_per_slot_dl: 2
+    max_active_ues_per_cell_per_slot_ul: 2
+  reference_signals:
+    ssb_beam_count: 2
+    pdsch_dmrs_ports: 1
+    pusch_dmrs_ports: 1
+    csi_rs_ports: 2
+    csi_rs_num_resources: 2
+    csi_rs_resource_ids: [0, 1]
+    csi_rs_resource_row_numbers: [3, 3]
+    csi_rs_resource_symbol_locations: [10, 11]
+    csi_rs_resource_subcarrier_locations: [0, 6]
+    csi_rs_resource_rb_offsets: [0, 0]
+    csi_rs_resource_num_rbs: [273, 273]
+    csi_rs_precoder_codebook:
+      enabled: true
+      # The production codebook contract names the separable transform
+      # dft_ura; a 1x2 physical shape is its exact ULA specialization.
+      type: dft_ura
+      physical_element_count: 2
+      beam_indices_port_0: [0, 1]
+      beam_indices_port_1: [1, 0]
+    srs_ports: 2
+    srs_max_ues_per_slot: 2
+  initial_access:
+    ssb:
+      beam_count: 2
+      positions_in_burst: '11000000'
+      # Case-B FR1 keeps the standards Lmax=8 candidate space while this
+      # gate activates only the first two SSBs. An oversampled 1x8 DFT grid
+      # provides eight physical steering vectors for the 1x2 array.
+      precoder_ids: [dft_ura_beam_0, dft_ura_beam_1, dft_ura_beam_2, dft_ura_beam_3, dft_ura_beam_4, dft_ura_beam_5, dft_ura_beam_6, dft_ura_beam_7]
+      precoder_codebook:
+        enabled: true
+        type: dft_ura
+        physical_element_count: 2
+        beam_grid_rows: 1
+        beam_grid_columns: 8
+        beam_indices: [0, 1, 2, 3, 4, 5, 6, 7]
+  random_access:
+    num_rx_antennas: 2
+    num_tx_antennas: 1
+    num_prach_occasions: 2
+  energy:
+    rf_chain_count: 2
+
+validation:
+  run_class: adaptive_system_diagnostic
+  fixed_snr_sweep_required: false
+  geometry_evidence_required: false
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    values_db: [20]
+  fixed_link_calibration:
+    enabled: false
+    only: false
+    snr_db: [20]
+
+# Keep every authored compatibility input identical to the canonical
+# one-layer-per-user, two-element operating point. The authority installer
+# rejects contradictory aliases before any waveform is allowed to run.
+pdsch6gr:
+  n_tx: 2
+  n_rx: 2
+  num_layers: 1
+  dmrs_num_ports: 1
+  dmrs_port_set: [0]
+
+pdsch:
+  layer_count: 1
+  rank: 1
+  xoh_pdsch: 18
+
+pusch:
+  layer_count: 1
+  num_layers: 1
+  num_antenna_ports: 2
+  codebook_type: codebook1_ng1n2n2
+  tpmi: 0
+  dmrs_port_set: [0]
+  xoh_pusch: 18

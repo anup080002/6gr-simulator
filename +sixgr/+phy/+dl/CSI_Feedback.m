@@ -1146,7 +1146,7 @@ if sixgr.phy.mimo.MatrixContract.digest(hEst) ~= measurement.Digest
     error("sixgr:mimo:MeasurementIdentityMismatch", ...
         "CSI facade input differs from the immutable measured state.");
 end
-if ismatrix(hEst)
+if isnumeric(hEst) && ndims(hEst) <= 3
     Hwb = double(hEst);
 else
     Hwb = localWidebandChannelMatrix(hEst,cfg);
@@ -1252,7 +1252,7 @@ end
 runtime.MaxRank = opt.MaxRank;
 if isempty(runtime.MaxRank)
     runtime.MaxRank = double(sixgr.util.structGet(cfg,"phy.csi.maxRank", ...
-        min(size(measurement.ChannelEstimate))));
+        min(size(measurement.ChannelEstimate,1),size(measurement.ChannelEstimate,2))));
 end
 runtime.RankDomain = double(sixgr.util.structGet(cfg,"phy.csi.rankDomain", ...
     1:runtime.MaxRank));

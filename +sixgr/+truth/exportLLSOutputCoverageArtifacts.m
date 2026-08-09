@@ -710,6 +710,8 @@ expectedDeploymentScenario = string(localScenarioGet(scfg, "deployment_topology.
 expectedTDDPattern = string(localTableValue(scenarioSummaryRow, "ConfiguredTDDPattern", ...
     localScenarioGet(scfg, "frame.tdd_pattern", ...
     localScenarioGet(scfg, "frame_timing.tdd_pattern", localTableValue(topology, "tdd_pattern", "")))));
+expectedInterCellEnabled = double(logical(localScenarioGet(scfg, ...
+    "interference.inter_cell_interference_flag", false)));
 checks = {
     "num_sites_exact", expectedNumSites, localTableValue(topology, "num_sites", NaN), "resolved_config";
     "sectors_per_site_exact", expectedSectorsPerSite, localTableValue(topology, "sectors_per_site", NaN), "resolved_config";
@@ -719,7 +721,7 @@ checks = {
     "bandwidth_hz_exact", expectedBandwidthHz, localTableValue(topology, "bandwidth_hz", NaN), "resolved_config";
     "scs_hz_exact", expectedSCSHz, localTableValue(topology, "scs_hz", NaN), "resolved_config";
     "wraparound_enabled", expectedWraparound, double(localTableValue(topology, "wraparound_enable", false)), "resolved_config";
-    "inter_cell_interference_enabled", 1, double(logical(localScenarioGet(scfg, "interference.inter_cell_interference_flag", true))), "resolved_config";
+    "inter_cell_interference_enabled", expectedInterCellEnabled, double(logical(localScenarioGet(scfg, "interference.inter_cell_interference_flag", false))), "resolved_config";
     "deployment_scenario_uma", expectedDeploymentScenario, localTableValue(topology, "deployment_scenario", ""), "resolved_config";
     "tdd_pattern_baseline", expectedTDDPattern, localTableValue(topology, "tdd_pattern", ""), "resolved_config";
 };
@@ -5205,6 +5207,14 @@ for i = 1:numel(missingInFailures)
     end
 end
 failureRows = failureRows(:, string(T.Properties.VariableNames));
+% The Python semantic audit and the MATLAB byte-integrity pass may report
+% the same physical failure.  Preserve one canonical row per artifact and
+% failure code so counts describe defects rather than evaluator fan-out.
+existingKeys = lower(strtrim(string(T.ArtifactPath))) + "|" + ...
+    lower(strtrim(string(T.FailureCode)));
+failureKeys = lower(strtrim(string(failureRows.ArtifactPath))) + "|" + ...
+    lower(strtrim(string(failureRows.FailureCode)));
+failureRows = failureRows(~ismember(failureKeys, existingKeys), :);
 T = [T; failureRows];
 end
 

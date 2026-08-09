@@ -23,6 +23,22 @@ end
 reportPath = fullfile(reportDir, "ordinary_report.csv");
 sixgr.util.csvWriteTable(reportPath, table((1:2).', 'VariableNames', {'Value'}));
 
+% Statistical component exporters run before the global identity pass.
+% Their source hashes must be refreshed after the source is annotated.
+statRoot = fullfile(runFolder, "statistical_campaigns", "prach");
+statCSV = fullfile(statRoot, "control", "csv");
+statFigures = fullfile(statRoot, "reports", "figures");
+mkdir(statCSV);
+mkdir(statFigures);
+statSource = fullfile(statCSV, "prach_trials.csv");
+statImage = fullfile(statFigures, "prach_plot.png");
+sixgr.util.csvWriteTable(statSource, table(4, 'VariableNames', {'Value'}));
+imwrite(uint8(zeros(8, 8, 3)), statImage);
+statLineage = fullfile(statCSV, "prach_plot_lineage.csv");
+sixgr.visual.writeComponentPlotLineage(statRoot, statLineage, ...
+    "prach_plot", statImage, statSource, "unit_test");
+lineageBefore = readtable(statLineage, "VariableNamingRule", "preserve", "TextType", "string");
+
 mirrorDir = fullfile(runFolder, "prach", "csv");
 if ~isfolder(mirrorDir)
     mkdir(mirrorDir);
@@ -61,7 +77,18 @@ assert(isequal(string(report.Properties.VariableNames(1:3)), ...
 assert(all(string(report.ScenarioID) == "scenario_unit"));
 assert(all(string(report.ConfigHash) == "hash_unit"));
 assert(all(string(report.RunnerProfile) == "waveform_bundle"));
-assert(summary.AnnotatedCount == 1 && summary.SkippedImmutableCount >= 4);
+assert(summary.AnnotatedCount >= 3 && summary.SkippedImmutableCount >= 4);
+statAnnotated = readtable(statSource, "VariableNamingRule", "preserve", "TextType", "string");
+lineageAfter = readtable(statLineage, "VariableNamingRule", "preserve", "TextType", "string");
+assert(ismember("ScenarioID", string(statAnnotated.Properties.VariableNames)), ...
+    "Mutable statistical component evidence must receive scenario identity.");
+assert(lineageAfter.SourceCSV_SHA256(1) ~= lineageBefore.SourceCSV_SHA256(1), ...
+    "Lineage hash must change when final identity annotation changes source bytes.");
+visual = sixgr.visual.verifyVisualArtifacts(runFolder, table());
+plotRow = visual.PlotId == "prach_plot";
+assert(nnz(plotRow) == 1 && visual.IntegrityOk(plotRow), ...
+    "Final statistical component lineage must verify against annotated source bytes.");
+assert(summary.RefreshedLineageCount == 1);
 
 % Prove the unchanged runtime file still accepts the next versioned event.
 bus.stageEnd("annotation_guard");

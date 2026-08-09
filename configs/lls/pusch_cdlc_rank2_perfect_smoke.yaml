@@ -1,0 +1,19 @@
+inherits:
+  - pusch_cdlc_perfect_smoke.yaml
+
+scenario:
+  id: pusch_cdlc_qpsk_rank2_perfect_csi_smoke
+  description: Dedicated 2x2 rank-2 CDL-C perfect-CSI waveform validation; not publication statistics
+
+simulation:
+  snrDb: [25]
+
+pusch:
+  numberLayers: 2
+  numberAntennaPorts: 2
+  dmrs:
+    portSet: [0, 1]
+
+channel:
+  txAntennas: 2
+  rxAntennas: 2

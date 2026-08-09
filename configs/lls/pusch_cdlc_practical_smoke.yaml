@@ -1,0 +1,9 @@
+inherits:
+  - pusch_cdlc_perfect_smoke.yaml
+
+scenario:
+  id: pusch_cdlc_qpsk_practical_dmrs_smoke
+  description: Dedicated CDL-C DM-RS LS channel-estimation validation; not publication statistics
+
+receiver:
+  channelEstimation: practical

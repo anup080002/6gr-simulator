@@ -68,10 +68,7 @@ if isempty(Hin) || ~isnumeric(Hin)
         "PMI selection requires a measured channel matrix.");
 end
 H = Hin;
-if ndims(H) == 3
-    H = mean(H,3,"omitnan");
-end
-if ~ismatrix(H) || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
+if ndims(H) > 3 || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
     error("sixgr:mimo:MissingMeasurementState", ...
         "Measured channel must be a finite matrix or frequency stack.");
 end

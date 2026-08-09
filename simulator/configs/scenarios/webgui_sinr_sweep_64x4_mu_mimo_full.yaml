@@ -468,6 +468,8 @@ canonical_control:
     rar_mac_ce_decode_required: true
     timing_advance_required: true
     contention_resolution_identity_required: true
+    require_runtime_stage_waveforms: true
+    allow_runtime_stage_waveform_composition: true
     preamble_collision_test_enabled: true
     false_alarm_test_enabled: true
     missed_detection_test_enabled: true
@@ -564,6 +566,10 @@ canonical_control:
     execution_profile: scheduler_truth
     prb_start: 0
     num_prb: 273
+    # TS 38.214 configured xOverhead for the dense connected-data pattern.
+    # The all-feature waveform also maps PT-RS and CSI-RS/reserved REs; zero
+    # overhead can make the scheduled TB larger than the exact rate-match G.
+    xoh_pdsch: 18
     # Keep inherited legacy aliases identical to the canonical MIMO/data
     # operating point.  These remain configuration inputs; the runtime
     # authority builder rejects contradictory duplicates before execution.
@@ -738,6 +744,7 @@ pdsch:
   layer_count: 2
   rank: 2
   modulation: 256QAM
+  xoh_pdsch: 18
 
 pusch:
   execution_profile: scheduler_truth
@@ -752,6 +759,7 @@ pusch:
   tpmi: 0
   modulation: 256QAM
   mcs_index: 20
+  xoh_pusch: 18
   dmrs_port_set: [0, 1]
   ptrs_enabled: true
   srs_authority:

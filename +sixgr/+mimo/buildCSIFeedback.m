@@ -93,7 +93,7 @@ pmi = rankPMI(selectedIndex);
 selection = rankInfo{selectedIndex};
 sinrDB = 10*log10(max(2^(selectedScore/selectedRank)-1,realmin));
 cqi = localCQI(sinrDB,cfg,strict);
-singularValues = svd(double(H));
+[singularValues,singularValueSource] = localSpatialSingularValues(H);
 if numel(singularValues) >= selectedRank && singularValues(selectedRank) > 0
     conditionNumberDB = 20*log10(singularValues(1)/singularValues(selectedRank));
 else
@@ -161,7 +161,30 @@ csi = struct( ...
     "CustomContainerUsed",false, ...
     "ConfiguredSNRUsed",false, ...
     "SVDThresholdUsed",false, ...
+    "SingularValueSource",singularValueSource, ...
     "SelectionInfo",selection);
+end
+
+function [singularValues,source] = localSpatialSingularValues(H)
+H = double(H);
+if ismatrix(H)
+    singularValues = svd(H);
+    source = "measured_channel_matrix_svd";
+    return;
+end
+% Preserve frequency-selective energy and spatial modes through the
+% average transmit-side covariance.  This is invariant to arbitrary phase
+% rotation between resource snapshots, unlike mean(H,3).
+snapshotCount = size(H,3);
+covariance = complex(zeros(size(H,2)));
+for snapshot = 1:snapshotCount
+    Hs = H(:,:,snapshot);
+    covariance = covariance + Hs' * Hs;
+end
+covariance = covariance ./ max(snapshotCount,1);
+eigenvalues = sort(real(eig((covariance + covariance') ./ 2)),"descend");
+singularValues = sqrt(max(eigenvalues,0));
+source = "frequency_snapshot_average_transmit_covariance";
 end
 
 function cri = localMeasuredCRI(measurement, numResources, strict)

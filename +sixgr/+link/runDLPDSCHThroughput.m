@@ -5159,7 +5159,7 @@ beam = struct( ...
     "TopBeamGainSet_dB", "", ...
     "BeamScoreSource", "");
 
-if isempty(Hwb) || ~ismatrix(Hwb)
+if isempty(Hwb) || ndims(Hwb) > 3
     return;
 end
 nTx = size(Hwb, 2);
@@ -5199,7 +5199,7 @@ if isempty(W)
     return;
 end
 
-metric = sum(abs(double(Hwb) * double(W)).^2, 1);
+metric = localFrequencySelectiveBeamPower(Hwb,W);
 if isempty(metric) || ~any(isfinite(metric))
     return;
 end
@@ -5247,7 +5247,7 @@ end
 
 function beam = localComputePMICodebookCandidateMetrics(Hwb, cfg, metrics)
 beam = struct();
-if isempty(Hwb) || ~ismatrix(Hwb) || size(Hwb, 2) <= 1
+if isempty(Hwb) || ndims(Hwb) > 3 || size(Hwb, 2) <= 1
     return;
 end
 nTx = size(Hwb, 2);
@@ -5267,8 +5267,7 @@ for ii = 1:numel(candidates)
     if isempty(W) || size(W, 1) ~= nTx
         continue;
     end
-    Heff = double(Hwb) * double(W);
-    metric(ii) = real(trace(Heff * Heff')) / max(1, size(W, 2));
+    metric(ii) = localFrequencySelectiveBeamPower(Hwb,W) / max(1, size(W, 2));
 end
 if ~any(isfinite(metric))
     return;
@@ -5471,6 +5470,7 @@ try
 catch
     return;
 end
+
 nmseLin = double(referenceMetrics.NMSELinear);
 if isfinite(nmseLin) && nmseLin >= 0
     detectionMetric = 1 / (1 + nmseLin);
@@ -5478,6 +5478,19 @@ else
     nmseLin = NaN;
 end
 end
+
+function metric = localFrequencySelectiveBeamPower(H,W)
+if ismatrix(H)
+    H = reshape(H,size(H,1),size(H,2),1);
+end
+metric = zeros(1,size(W,2));
+for snapshot = 1:size(H,3)
+    projected = double(H(:,:,snapshot)) * double(W);
+    metric = metric + sum(abs(projected).^2,1);
+end
+metric = metric ./ max(size(H,3),1);
+end
+
 function metrics = localPilotTrackingMetrics(rx)
 metrics = struct( ...
     "NMSE_dB", NaN, ...

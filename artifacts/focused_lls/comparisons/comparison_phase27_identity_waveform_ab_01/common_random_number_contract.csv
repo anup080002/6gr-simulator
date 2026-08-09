@@ -1,0 +1,4 @@
+SNRdB,PairedTrials,CommonRandomNumbersMatch,Evidence
+-10,3,1,bit_noise_channel_seeds_match_for_every_paired_trial
+0,6,1,bit_noise_channel_seeds_match_for_every_paired_trial
+20,6,1,bit_noise_channel_seeds_match_for_every_paired_trial

@@ -404,7 +404,8 @@ def _decode_csv(data: bytes) -> tuple[list[str], list[list[str]]]:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         text = data.decode("utf-8", "ignore")
-    rows = list(csv.reader(io.StringIO(text)))
+    with _csv_field_limit_for_payload(data):
+        rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return [], []
     return [str(item) for item in rows[0]], [[str(cell) for cell in row] for row in rows[1:]]
@@ -1119,9 +1120,30 @@ def _decode_csv_dicts(data: bytes) -> tuple[list[str], list[dict[str, str]]]:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         text = data.decode("utf-8", "ignore")
-    reader = csv.DictReader(io.StringIO(text))
-    rows = [{str(k): str(v) for k, v in row.items()} for row in reader]
-    return list(reader.fieldnames or []), rows
+    with _csv_field_limit_for_payload(data):
+        reader = csv.DictReader(io.StringIO(text))
+        rows = [{str(k): str(v) for k, v in row.items()} for row in reader]
+        return list(reader.fieldnames or []), rows
+
+
+@contextmanager
+def _csv_field_limit_for_payload(data: bytes):
+    """Temporarily admit legitimate long scalar fields in one loaded CSV.
+
+    Receiver truth tables can contain quoted LDPC/vector fields larger than
+    Python's 128-KiB implementation default.  The payload is already bounded
+    by the artifact file read, so its byte length is a safe per-decode upper
+    bound.  Restore the process-wide parser setting after either decoder.
+    """
+    prior_limit = csv.field_size_limit()
+    required_limit = max(prior_limit, len(data) + 1)
+    if required_limit != prior_limit:
+        csv.field_size_limit(required_limit)
+    try:
+        yield
+    finally:
+        if required_limit != prior_limit:
+            csv.field_size_limit(prior_limit)
 
 
 def _scope_token_for_logical_path(logical_path: str) -> str:

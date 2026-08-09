@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "sixgr.lls.config/v1",
+  "scenario": {
+    "id": "pusch_awgn_qpsk_reference_smoke",
+    "description": "Dedicated short diagnostic of the same waveform chain; not publication statistics"
+  },
+  "simulation": {
+    "mode": "LLS",
+    "link": "PUSCH",
+    "executionBackend": "waveform_truth",
+    "masterSeed": 2.0260809E+7,
+    "commonRandomKey": "pusch_reference_common_random_numbers_v1",
+    "snrDb": [
+      -10,
+      0,
+      20
+    ],
+    "minTransportBlocks": 3,
+    "minBlockErrors": 2,
+    "maxTransportBlocks": 6,
+    "confidenceLevel": 0.95,
+    "statisticalClass": "diagnostic_only"
+  },
+  "carrier": {
+    "frequencyHz": 4.0E+9,
+    "bandwidthMHz": 20,
+    "subcarrierSpacingKHz": 30,
+    "nSizeGrid": 51,
+    "nCellId": 1,
+    "cyclicPrefix": "normal"
+  },
+  "allocation": {
+    "startPRB": 0,
+    "numberPRB": 24,
+    "symbols": [
+      0,
+      14
+    ],
+    "mappingType": "A"
+  },
+  "pusch": {
+    "modulation": "QPSK",
+    "tbsMode": "derived_from_exact_allocation",
+    "mcsIndex": 4,
+    "targetCodeRate": 0.3,
+    "numberLayers": 1,
+    "numberAntennaPorts": 1,
+    "transmissionScheme": "nonCodebook",
+    "transformPrecoding": false,
+    "rnti": 1,
+    "nid": 1,
+    "rv": 0,
+    "xOverhead": 0,
+    "dmrs": {
+      "typeAPosition": 2,
+      "configurationType": 1,
+      "additionalPositions": 0,
+      "length": 1,
+      "numCDMGroupsWithoutData": 1,
+      "portSet": 0,
+      "groupHopping": false,
+      "sequenceHopping": false
+    },
+    "ptrs": {
+      "enabled": false
+    }
+  },
+  "channel": {
+    "model": "AWGN",
+    "delaySpreadSeconds": 0,
+    "velocityKmph": 0,
+    "txAntennas": 1,
+    "rxAntennas": 1,
+    "seed": 2.026081E+7,
+    "normalization": "occupied_re_esn0"
+  },
+  "receiver": {
+    "channelEstimation": "perfect",
+    "equalizer": "MMSE",
+    "ldpcMaxIterations": 50,
+    "ldpcAlgorithm": "Normalized min-sum"
+  },
+  "harq": {
+    "enabled": false
+  },
+  "linkAdaptation": {
+    "enabled": false
+  },
+  "comparison": {
+    "targetBLER": [
+      0.1,
+      0.01,
+      0.001
+    ]
+  },
+  "results": {
+    "outputRoot": "artifacts/focused_lls",
+    "savePerSnr": true,
+    "saveDiagnostics": true,
+    "generatePlots": true,
+    "imageFormat": "png"
+  }
+}

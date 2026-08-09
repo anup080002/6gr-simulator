@@ -45,6 +45,19 @@ metaShortIR = localMeta(grantRetx, layout0, ctx0, true, 512, 2, 0, false);
 localAssertThrows(@() sixgr.harq.validateTBContextForTransmission(metaShortIR), ...
     "sixgr:harq:ShortIRRequiresSoftCombiningEvidence");
 
+% Exercise the initial-code-rate failure itself.  This protects the scalar
+% diagnostic contract so a malformed error message cannot mask the actual
+% TBS/rate-matching tuple during a production waveform run.
+badRateLayout = localLayout(1024, 0.50, 0);
+badRateGrant = localGrant(1024, 0.50, true, 0, "tb_ctx_bad_rate");
+badRateGrant.CodedBitCountG = 960;
+metaBadRate = localMeta(badRateGrant, badRateLayout, struct(), false, 960, 0, NaN, false);
+localAssertThrowsWithMessage( ...
+    @() sixgr.harq.validateTBContextForTransmission(metaBadRate), ...
+    "sixgr:harq:BadInitialCodeRate", ...
+    ["TBSBits=1024", "rateMatchedBits=960", "MCS=10", ...
+     "modulation=QPSK", "layers=1", "targetCodeRate=0.500000"]);
+
 ok = true;
 end
 
@@ -126,6 +139,24 @@ try
 catch ME
     assert(strcmp(string(ME.identifier), string(expectedId)), ...
         "Expected error %s, got %s.", string(expectedId), string(ME.identifier));
+    return;
+end
+error("testHARQTBContextInvariants:ExpectedErrorMissing", ...
+    "Expected error %s was not thrown.", string(expectedId));
+end
+
+function localAssertThrowsWithMessage(fn, expectedId, expectedTokens)
+try
+    fn();
+catch ME
+    assert(strcmp(string(ME.identifier), string(expectedId)), ...
+        "Expected error %s, got %s.", string(expectedId), string(ME.identifier));
+    message = string(ME.message);
+    for i = 1:numel(expectedTokens)
+        assert(contains(message, string(expectedTokens(i))), ...
+            "Expected error message to contain '%s', got: %s", ...
+            string(expectedTokens(i)), message);
+    end
     return;
 end
 error("testHARQTBContextInvariants:ExpectedErrorMissing", ...

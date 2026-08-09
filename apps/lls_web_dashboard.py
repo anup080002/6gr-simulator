@@ -21,6 +21,7 @@ import textwrap
 import threading
 import urllib.parse
 import webbrowser
+from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -57,6 +58,29 @@ from lls_contract_aliases import (
 # Preserve the active checkout path instead of collapsing through resolve(),
 # which can jump to a sibling canonical path on Windows.
 REPO_ROOT = Path(__file__).absolute().parent.parent
+CSV_FIELD_LIMIT_LOCK = threading.RLock()
+
+
+@contextmanager
+def csv_field_limit_for_payload(byte_size: int):
+    """Permit one legitimate field as large as its bounded CSV payload.
+
+    PHY truth tables can carry exact LDPC vectors in one quoted cell. Python's
+    128-KiB CSV default rejects those valid runtime artifacts. The limit is
+    raised only while parsing, is bounded by the payload size, and is guarded
+    because the csv module limit is process-global while this server is
+    multi-threaded.
+    """
+    with CSV_FIELD_LIMIT_LOCK:
+        prior_limit = csv.field_size_limit()
+        required_limit = max(prior_limit, min(sys.maxsize, max(1, int(byte_size)) + 1))
+        try:
+            if required_limit != prior_limit:
+                csv.field_size_limit(required_limit)
+            yield
+        finally:
+            if required_limit != prior_limit:
+                csv.field_size_limit(prior_limit)
 
 
 def load_local_dashboard_env(path: Path) -> None:
@@ -218,7 +242,6 @@ FULL_STACK_QUALIFICATION_SCENARIO = (
 OPERATOR_MASTER_SCENARIOS = (
     SINR_SWEEP_MASTER_SCENARIO,
     GEOMETRY_MASTER_SCENARIO,
-    FULL_STACK_QUALIFICATION_SCENARIO,
 )
 PRODUCT_SCENARIO_MODES = (
     {
@@ -235,15 +258,8 @@ PRODUCT_SCENARIO_MODES = (
         "summary": "Place UEs, apply mobility and geometry, then run the configured waveform chain.",
         "badge": "UE placement",
     },
-    {
-        "id": "full_stack_qualification",
-        "label": "Full-Stack Qualification",
-        "scenario": FULL_STACK_QUALIFICATION_SCENARIO,
-        "summary": "One WebGUI RunID executes the bounded SINR, geometry, PHY, RF, MAC, protocol and evidence suite.",
-        "badge": "31 subcases",
-    },
 )
-DEFAULT_SCENARIO = GEOMETRY_MASTER_SCENARIO
+DEFAULT_SCENARIO = SINR_SWEEP_MASTER_SCENARIO
 WAVEFORM_TRUTH_IDENTITY_TOKENS = ("waveform_honest", "waveform_truth")
 SCENARIO_RUN_CLASS_LABELS = {
     "fixed_snr_sweep_lls": "Fixed SNR/SINR Sweep",
@@ -2485,10 +2501,11 @@ def load_full_stack_webgui_page_contract() -> list[dict[str, Any]]:
     """Load the checked-in Phase-18 page registry without inventing pages."""
     if not FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH.is_file():
         return []
-    with FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH.open(
-        "r", encoding="utf-8-sig", newline=""
-    ) as handle:
-        rows = list(csv.DictReader(handle))
+    with csv_field_limit_for_payload(FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH.stat().st_size):
+        with FULL_STACK_WEBGUI_PAGE_CONTRACT_PATH.open(
+            "r", encoding="utf-8-sig", newline=""
+        ) as handle:
+            rows = list(csv.DictReader(handle))
     return [
         {
             "page": str(row.get("Page") or "").strip(),
@@ -4243,6 +4260,31 @@ def scenario_launch_contract(config_payload: dict[str, Any], scenario_name: str)
     execution_model = str(path_get(config_payload, "users.execution_model", "") or "").strip()
     user_count = scenario_user_count(config_payload)
     total_slots = scenario_requested_total_slots(config_payload)
+    run_class = _normalize_scenario_run_class(
+        _first_non_empty_scenario_value(
+            config_payload,
+            [
+                "validation.run_class",
+                "validation.RunClass",
+                "canonical_control.launch.run_class",
+            ],
+        )
+    )
+    geometry_enabled = _scenario_launch_bool(
+        config_payload, "canonical_control.launch.geometry_enabled"
+    ) or _scenario_launch_bool(config_payload, "validation.geometry_evidence_required")
+    fixed_sweep_enabled = any(
+        (
+            _scenario_launch_bool(config_payload, "canonical_control.launch.sweep_enabled"),
+            _scenario_launch_bool(
+                config_payload, "canonical_control.launch.fixed_link_campaign_enabled"
+            ),
+            _scenario_launch_bool(config_payload, "sweeps_and_matrix.snr_sweep.enabled"),
+            _scenario_launch_bool(
+                config_payload, "sweeps_and_matrix.fixed_link_calibration.enabled"
+            ),
+        )
+    )
 
     if runner_profile_token == "waveform_bundle" and not runtime_truth_ready:
         presentation_label = "Waveform bundle truth blocked"
@@ -4290,6 +4332,23 @@ def scenario_launch_contract(config_payload: dict[str, Any], scenario_name: str)
             "Browser /run will follow the configured scenario.runner_profile honestly."
             if runner_profile
             else "Scenario runner profile is not configured; browser /run will forward the current config as-is."
+        )
+
+    if run_class == "fixed_snr_sweep_lls" and geometry_enabled:
+        presentation_label = "Invalid mixed SINR/geometry authority"
+        launch_contract_name = "blocked_mixed_sinr_geometry_mode"
+        launch_allowed = False
+        launch_reason = (
+            "The fixed SINR/SNR sweep master cannot enable geometry execution or "
+            "geometry-evidence requirements. Select the geometry master as a separate run."
+        )
+    elif run_class == "ue_placement_geometry_lls" and fixed_sweep_enabled:
+        presentation_label = "Invalid mixed geometry/SINR authority"
+        launch_contract_name = "blocked_mixed_geometry_sinr_mode"
+        launch_allowed = False
+        launch_reason = (
+            "The geometry-based master cannot enable the fixed-SNR sweep or fixed-link "
+            "calibration campaign. Select the SINR sweep master as a separate run."
         )
 
     catalog_label = scenario_name
@@ -4610,9 +4669,10 @@ def _read_first_csv_record(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            row = next(reader, None)
+        with csv_field_limit_for_payload(path.stat().st_size):
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                row = next(reader, None)
     except Exception:
         return {}
     return dict(row or {})
@@ -4622,8 +4682,9 @@ def _read_csv_records(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     try:
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            return [dict(row) for row in csv.DictReader(handle)]
+        with csv_field_limit_for_payload(path.stat().st_size):
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                return [dict(row) for row in csv.DictReader(handle)]
     except Exception:
         return []
 
@@ -5536,7 +5597,8 @@ def contract_materialization_is_current(
     if contract_materializer.MATERIALIZER_VERSION not in payload:
         return False
     try:
-        rows = list(csv.DictReader(io.StringIO(payload)))
+        with csv_field_limit_for_payload(len(payload.encode("utf-8"))):
+            rows = list(csv.DictReader(io.StringIO(payload)))
     except Exception:
         return False
     if not rows:
@@ -6342,7 +6404,8 @@ def parse_optional_int(raw: str | None) -> int | None:
 
 def parse_csv_bytes(raw: bytes, max_rows: int | None = None) -> tuple[list[str], list[list[str]]]:
     text = raw.decode("utf-8", errors="replace")
-    rows = list(csv.reader(io.StringIO(text)))
+    with csv_field_limit_for_payload(len(raw)):
+        rows = list(csv.reader(io.StringIO(text)))
     header = normalize_csv_header_row(rows[0] if rows else [])
     body = rows[1:] if len(rows) > 1 else []
     if max_rows is not None:
@@ -6400,8 +6463,10 @@ def load_cached_csv_preview(artifact_id: int, max_rows: int) -> tuple[list[str],
 
 @lru_cache(maxsize=512)
 def count_cached_csv_data_rows(artifact_id: int) -> int:
-    text = fetch_artifact_bytes(int(artifact_id)).decode("utf-8", errors="replace")
-    total = sum(1 for _ in csv.reader(io.StringIO(text)))
+    raw = fetch_artifact_bytes(int(artifact_id))
+    text = raw.decode("utf-8", errors="replace")
+    with csv_field_limit_for_payload(len(raw)):
+        total = sum(1 for _ in csv.reader(io.StringIO(text)))
     return max(0, total - 1)
 
 

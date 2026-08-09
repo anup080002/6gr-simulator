@@ -13,6 +13,21 @@ REPO_ROOT = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_contract_materializer as materializer  # noqa: E402
+
+
+def test_csv_decoder_accepts_runtime_ldpc_vector_larger_than_python_default() -> None:
+    parity_vector = "|".join("1" if index % 2 else "0" for index in range(80000))
+    payload = materializer._encode_csv(  # noqa: SLF001
+        ["run_id", "MeasuredLDPCParityCheckVector"],
+        [["runtime-1", parity_vector]],
+    )
+    assert len(parity_vector.encode("utf-8")) > 131072
+    positional_header, positional_rows = materializer._decode_csv(payload)  # noqa: SLF001
+    assert positional_header == ["run_id", "MeasuredLDPCParityCheckVector"]
+    assert positional_rows == [["runtime-1", parity_vector]]
+    header, rows = materializer._decode_csv_dicts(payload)  # noqa: SLF001
+    assert header == ["run_id", "MeasuredLDPCParityCheckVector"]
+    assert rows == [{"run_id": "runtime-1", "MeasuredLDPCParityCheckVector": parity_vector}]
 import lls_output_contract as output_contract  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
 
