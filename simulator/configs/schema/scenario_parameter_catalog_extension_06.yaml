@@ -167,6 +167,15 @@
       "pusch_dmrs_additional_positions": {"required": false, "type": "integer", "min": 0},
       "csi_rs_port_count": {"required": false, "type": "integer", "min": 1},
       "csi_rs_ports": {"required": false, "type": "integer", "min": 1},
+      "csi_rs_num_resources": {"required": false, "type": "integer", "min": 1},
+      "csi_rs_resource_set_id": {"required": false, "type": "integer", "min": 0},
+      "csi_rs_resource_ids": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "csi_rs_resource_row_numbers": {"required": false, "type": "number_list", "min_items": 1, "min": 1, "integer": true},
+      "csi_rs_resource_symbol_locations": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "csi_rs_resource_subcarrier_locations": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "csi_rs_resource_rb_offsets": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "csi_rs_resource_num_rbs": {"required": false, "type": "number_list", "min_items": 1, "min": 1, "integer": true},
+      "csi_rs_precoder_codebook": {"required": false, "type": "struct", "nested_rule": "csirs_precoder_codebook"},
       "csi_rs_cdm_type": {"required": false, "type": "string"},
       "csi_rs_density": {"required": false},
       "csi_rs_periodicity_ms": {"required": false, "type": "number", "min": 0},
@@ -200,6 +209,7 @@
       "expected_bandwidth_coverage_percent": {"required": false, "type": "number", "min": 0},
       "coverage_requirement": {"required": false, "type": "string"},
       "full_carrier_sounding_required": {"required": false, "type": "boolean"},
+      "full_carrier_coverage_tolerance_rb": {"required": false, "type": "integer", "min": 0},
       "detection_threshold": {"required": false, "type": "number", "min": 0},
       "channel_nmse_threshold_db": {"required": false, "type": "number"},
       "timing_tolerance_samples": {"required": false, "type": "integer", "min": 0},
@@ -240,7 +250,10 @@
       "cqi_aging_step_db": {"required": false, "type": "number", "min_exclusive": 0},
       "max_csi_age_slots": {"required": false, "type": "number", "min": 0},
       "dl_max_csi_age_slots": {"required": false, "type": "number", "min": 0},
-      "ul_max_csi_age_slots": {"required": false, "type": "number", "min": 0}
+      "ul_max_csi_age_slots": {"required": false, "type": "number", "min": 0},
+      "reset_on_ri_change": {"required": false, "type": "boolean"},
+      "cqi_jump_reset_threshold": {"required": false, "type": "number", "min": 0},
+      "srs_rank_eigen_threshold_db": {"required": false, "type": "number"}
     }},
     "harq": {"parameters": {
       "enable": {"required": false, "type": "boolean"},
@@ -259,6 +272,7 @@
     "random_access": {"parameters": {
       "four_step_ra_required": {"required": false, "type": "boolean"},
       "msg4_contention_resolution_required": {"required": false, "type": "boolean"},
+      "common_downlink_beam_source": {"required": false, "type": "string", "allowed_values": ["selected_ssb_beam", "runtime_antenna_mapping"]},
       "false_alarm_candidate_scope": {"required": false, "type": "string", "allowed_values": ["requested_preamble", "all_preambles"]}
     }},
     "prach": {"parameters": {
@@ -391,10 +405,15 @@
       "pmilayour": {"required": false, "type": "string"},
       "max_feedback_overhead_pct": {"required": false, "type": "number", "min": 0},
       "cqi_table": {"required": false, "type": "string"},
+      "sinr_to_cqi_mode": {"required": false, "type": "string"},
       "effective_sinr_method": {"required": false, "type": "string"},
       "eesm_beta_db": {"required": false, "type": "number", "min": 0},
       "eesm_beta_by_mcs_db": {"required": false, "type": "array"},
-      "eesm_beta_mcs_index": {"required": false, "type": "array"}
+      "eesm_beta_mcs_index": {"required": false, "type": "array"},
+      "target_bler": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+      "target_bler_dl": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+      "target_bler_ul": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
+      "bler_curve_slope_db": {"required": false, "type": "number", "min_exclusive": 0}
     }},
     "energy_efficiency": {"parameters": {
       "enable": {"required": false, "type": "boolean"},
@@ -456,6 +475,19 @@
       "low_snr_sweep_db": {"required": false, "type": "number_list"},
       "timing_offset_sweep_samples": {"required": false, "type": "number_list"},
       "frequency_offset_sweep_hz": {"required": false, "type": "number_list"}
+    }},
+    "csirs_precoder_codebook": {"parameters": {
+      "enabled": {"required": true, "type": "boolean"},
+      "type": {"required": true, "type": "string", "allowed_values": ["dft_ura"]},
+      "physical_element_count": {"required": true, "type": "integer", "min": 1},
+      "beam_indices_port_0": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_1": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_2": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_3": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_4": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_5": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_6": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true},
+      "beam_indices_port_7": {"required": false, "type": "number_list", "min_items": 1, "min": 0, "integer": true}
     }},
     "system_beam_object": {"parameters": {
       "updatePeriod_ms": {"required": false, "type": "number", "min": 0}

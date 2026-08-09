@@ -91,21 +91,22 @@ if ~(isfinite(normOutTotal) && normOutTotal > 0)
     info.PAExecutionStatus = "configured_but_output_power_unavailable";
     return;
 end
-% Configured Tx power is the radiated PA-output convention. Preserve the
-% nonlinear waveform shape while restoring its mean output to that explicit
-% physical power. The unscaled PA compression remains available as evidence.
+% The configured transmit power defines the PA input reference plane for
+% this operation.  Do not renormalize after the nonlinear device: doing so
+% erases compression and makes the emitted waveform inconsistent with its
+% AM/AM response.  PA output power is measured from the actual samples and
+% remains distinct from the configured pre-PA target.
 rawY = yn .* cast(normScale, "like", x);
 [rawOutputTotal_mW, ~] = localTotalActivePower_mW(rawY, txInfo);
-restorationScale = sqrt(double(inputTotal_mW) ./ max(double(rawOutputTotal_mW), realmin));
-y = rawY .* cast(restorationScale, "like", x);
+y = rawY;
 [outputTotal_mW, ~] = localTotalActivePower_mW(y, txInfo);
 info.PAApplied = true;
 info.PAModel = paModel;
 info.PAOutputBeforeRestoration_mW = double(rawOutputTotal_mW);
 info.PAOutputTotalPower_mW = double(outputTotal_mW);
 info.PACompression_dB = 10 * log10(max(double(rawOutputTotal_mW), realmin) ./ max(double(inputTotal_mW), realmin));
-info.PAPowerRestorationScale = double(restorationScale);
-info.PAPowerRestorationApplied = true;
+info.PAPowerRestorationScale = 1;
+info.PAPowerRestorationApplied = false;
 info.PAExecutionStatus = localPAExecutionStatus(paModel);
 if isfield(ctx, "WaveformAmplitudeUnit")
     info.PAAmplitudeUnit = string(ctx.WaveformAmplitudeUnit);

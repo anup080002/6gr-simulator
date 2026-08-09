@@ -1187,7 +1187,7 @@ sixgr.config.assertRuntimeFeatureUse(cfg, "cri_reporting", csi.ReportCRI, ...
 csi.PMICodebookMode = string(core.CSIReportConfiguration.CodebookType);
 csi.CSIPayloadBits = payload.Bits;
 csi.CSIPayloadBitLength = payload.BitLength;
-csi.CSIPayloadHex = "";
+csi.CSIPayloadHex = char(string(payload.Hex));
 csi.CSIPayloadMode = payload.Mode;
 csi.CSIPayloadStandardProfile = payload.StandardProfile;
 csi.CSIPayloadCRCEnabled = payload.CRCEnabled;

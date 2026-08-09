@@ -22,31 +22,63 @@ end
 
 function s = localValueToString(v)
 if iscell(v)
-    v = v{1};
-end
-if isstring(v) || ischar(v)
-    s = string(v);
+    encoded = strings(numel(v), 1);
+    for i = 1:numel(v)
+        encoded(i) = localValueToString(v{i});
+    end
+    s = "cell[" + strjoin(encoded, ",") + "]";
+elseif isstring(v) || ischar(v) || iscategorical(v)
+    values = string(v(:));
+    encoded = strings(numel(values), 1);
+    for i = 1:numel(values)
+        encoded(i) = localFrameText(values(i));
+    end
+    s = string(class(v)) + "[" + strjoin(encoded, ",") + "]";
 elseif islogical(v)
-    s = string(double(v));
+    s = "logical[" + strjoin(string(double(v(:).')), ",") + "]";
 elseif isnumeric(v)
     nums = double(v(:)).';
-    s = strjoin(compose("%.17g", nums), ",");
-elseif isdatetime(v)
-    s = string(v);
+    if isreal(nums)
+        s = string(class(v)) + "[" + strjoin(compose("%.17g", nums), ",") + "]";
+    else
+        complexParts = compose("%.17g%+.17gi", real(nums), imag(nums));
+        s = string(class(v)) + "[" + strjoin(complexParts, ",") + "]";
+    end
+elseif isdatetime(v) || isduration(v)
+    values = string(v(:));
+    encoded = strings(numel(values), 1);
+    for i = 1:numel(values)
+        encoded(i) = localFrameText(values(i));
+    end
+    s = string(class(v)) + "[" + strjoin(encoded, ",") + "]";
 else
     try
-        s = jsonencode(v);
+        s = string(class(v)) + "[" + localFrameText(string(jsonencode(v))) + "]";
     catch
-        s = string(v);
+        s = string(class(v)) + "[" + localFrameText(string(v)) + "]";
     end
 end
+end
+
+function framed = localFrameText(value)
+value = string(value);
+if ismissing(value)
+    value = "<missing>";
+end
+if ~isscalar(value)
+    error("sixgr:kpi:NonScalarTextHashToken", ...
+        "KPI source-row hash serialization requires scalar text tokens.");
+end
+framed = string(strlength(value)) + ":" + value;
 end
 
 function h = localSHA256(text)
 try
     h = sixgr.util.sha256Hex(uint8(unicode2native(char(string(text)), "UTF-8")));
-catch
-    error("sixgr:kpi:SourceHashUnavailable", ...
-        "Strict KPI source-row hashing requires SHA-256 support.");
+catch cause
+    failure = MException("sixgr:kpi:SourceHashUnavailable", ...
+        "Strict KPI source-row hashing failed: %s", cause.message);
+    failure = addCause(failure, cause);
+    throwAsCaller(failure);
 end
 end

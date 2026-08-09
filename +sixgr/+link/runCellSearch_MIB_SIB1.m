@@ -8,6 +8,9 @@ p.addParameter("SSBIndex", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) &
 p.addParameter("RunFolder", "", @(x) ischar(x) || isstring(x));
 p.addParameter("RunId", "sib1_runtime", @(x) ischar(x) || isstring(x));
 p.addParameter("WriteArtifacts", false, @(x) islogical(x) || isnumeric(x));
+p.addParameter("UseRuntimeChannel", false, @(x) islogical(x) || isnumeric(x));
+p.addParameter("InitialDLChannelState", struct(), @(x) isempty(x) || isstruct(x));
+p.addParameter("RuntimeSlot", NaN, @(x) isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numSF = round(double(p.Results.NumSubframes));
@@ -80,6 +83,9 @@ out.SIB1PDSCHEqualizationAvailable = false;
 out.SIB1PDSCHReceiverHestSINR_dB = NaN;
 out.SIB1PDSCHReceiverHestSINRSource = "";
 out.SIB1PDSCHStrictReceiverEvidenceOk = false;
+out.RuntimeDLChannelState = sixgr.channel.ChannelFactory.emptyRuntimeChannelState();
+out.RuntimeChannelReplay = struct();
+out.RuntimeChannelStateUsed = false;
 
 configuredSSB = logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "ssb", configuredSSB, ...
@@ -113,11 +119,40 @@ if wantSIB1
     try
         cfg = localSanitizeSIB1PrecodingConfig(cfg);
         tStart = tic;
+        requestedSNR_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf));
+        generatorSNR_dB = requestedSNR_dB;
+        if logical(p.Results.UseRuntimeChannel)
+            generatorSNR_dB = Inf;
+        end
         tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, ...
-            "SNRdB", double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf)), ...
+            "SNRdB", generatorSNR_dB, ...
             "Seed", double(sixgr.util.structGet(cfg, "run.seed", 1501)));
+        rxWaveform = tx.Waveform;
+        if logical(p.Results.UseRuntimeChannel)
+            txInfo = struct("OFDM", struct("SampleRate", double(tx.SampleRateHz)));
+            truthState = sixgr.link.initWaveformTruthChannelState( ...
+                cfg, tx, txInfo, ...
+                "InitialRuntimeChannelState", p.Results.InitialDLChannelState);
+            runtimeSlot = double(p.Results.RuntimeSlot);
+            if isfinite(runtimeSlot) && runtimeSlot >= 0 && ...
+                    logical(sixgr.util.structGet( ...
+                    truthState, "RuntimeChannelState.Initialized", false))
+                slotStart_s = runtimeSlot * sixgr.time.slotDurationSec(cfg);
+                truthState.RuntimeChannelState = ...
+                    sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime( ...
+                    truthState.RuntimeChannelState, slotStart_s, ...
+                    size(tx.Waveform, 2), tx.Waveform);
+            end
+            [rxWaveform, channelReplay, truthState] = ...
+                sixgr.link.applyWaveformTruthImpairments( ...
+                tx.Waveform, requestedSNR_dB, truthState, cfg, tx, txInfo);
+            out.RuntimeDLChannelState = truthState.RuntimeChannelState;
+            out.RuntimeChannelReplay = channelReplay;
+            out.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
+                channelReplay, "RuntimeChannelStateUsed", false));
+        end
         rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
-            tx.Waveform, cfg);
+            rxWaveform, cfg);
         rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
         out.ComputeLatency_ms = 1e3 * toc(tStart);
         out.ProcedureDelay_ms = NaN;

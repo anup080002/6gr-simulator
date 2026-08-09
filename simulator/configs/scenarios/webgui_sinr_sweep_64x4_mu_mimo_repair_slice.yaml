@@ -32,6 +32,12 @@ canonical_control:
     min_trials_per_sinr_bin: 1
     snr_db: 20
     snr_sweep_offsets_db: []
+  # This bounded vertical slice validates causal per-UE access and the
+  # shared DL/UL waveform chain. The full inherited scenario remains
+  # authoritative for the high-trial false-alarm/missed-detection campaign.
+  random_access_evidence:
+    false_alarm_test_enabled: false
+    missed_detection_test_enabled: false
 
 sweeps_and_matrix:
   snr_sweep:

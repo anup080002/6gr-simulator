@@ -33,6 +33,11 @@ cfg.phy.pdsch.mcsContext = struct( ...
 cfg.phy.pdcch.coreset.duration = 2;
 cfg.phy.pdcch.coreset.id = 0;
 cfg.phy.pdcch.searchSpace.id = 1;
+% Unit fixtures must declare the same explicit feature authority required
+% from YAML-backed production scenarios; object construction is not an
+% implicit enable switch.
+cfg.phy.pdcch.enable = true;
+cfg.phy.pdcch.dmrs.enable = true;
 cfg = sixgr.config.normalizeConfig(cfg);
 cfg = withCanonicalSchedulerTiming(cfg);
 

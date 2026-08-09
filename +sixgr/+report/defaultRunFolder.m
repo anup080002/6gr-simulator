@@ -39,6 +39,12 @@ if localEndsWithSegments(root, [bucket profile])
     runFolder = fullfile(root, leaf);
 elseif localEndsWithSegments(root, bucket)
     runFolder = fullfile(root, profile, leaf);
+elseif localEndsWithSegments(root, profile)
+    % A caller may pass the complete scenario/profile result root without
+    % its conventional bucket parent.  Treat that root as authoritative;
+    % appending <bucket>/<profile> again creates a misleading nested run
+    % tree (for example profile/lls/profile/run-tag).
+    runFolder = fullfile(root, leaf);
 else
     runFolder = fullfile(root, bucket, profile, leaf);
 end

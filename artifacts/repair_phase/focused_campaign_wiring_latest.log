@@ -1,0 +1,9 @@
+PASS testInPathArtifactIdentityBinding
+PASS testStrictComponentExecutionPolicy
+
+ans =
+
+  logical
+
+   1
+

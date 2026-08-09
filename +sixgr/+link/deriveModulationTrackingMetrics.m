@@ -456,7 +456,13 @@ if isstruct(acct) && ~isempty(fieldnames(acct))
     dmrsRE = double(sixgr.util.structGet(acct, "DMRSRE", NaN));
     ptrsRE = double(sixgr.util.structGet(acct, "PTRSRE", NaN));
     computedE = double(sixgr.util.structGet(acct, "CodedBitCountG", NaN));
-    totalRE = totalDataRE + dmrsRE + ptrsRE;
+    % RS overhead is a physical time-frequency occupancy ratio.  The
+    % ResourceAccounting.ModulationSymbolCount value is layer-domain
+    % (LayerDataRE * NumLayers), whereas DMRSRE and PTRSRE are unique base
+    % grid RE counts.  Mixing those domains understates overhead whenever
+    % rank > 1.  LayerDataRE is the unique scheduled data-RE count for one
+    % physical resource grid and is therefore the compatible denominator.
+    totalRE = dataRE + dmrsRE + ptrsRE;
     if totalRE > 0
         rsFrac = (dmrsRE + ptrsRE) / totalRE;
     end
@@ -480,7 +486,10 @@ dataREPerLayer = totalDataRE / double(numLayers);
 dataRE = dataREPerLayer;
 dmrsRE = double(numel(dmrsIdx));
 ptrsRE = double(numel(ptrsIdx));
-totalRE = totalDataRE + dmrsRE + ptrsRE;
+    % dataREPerLayer and the unique reference-signal indices share the
+    % physical base-grid domain; totalDataRE is layer-domain and must not be
+    % used in this ratio.
+    totalRE = dataREPerLayer + dmrsRE + ptrsRE;
 if totalRE > 0
     rsFrac = (dmrsRE + ptrsRE) / totalRE;
 end

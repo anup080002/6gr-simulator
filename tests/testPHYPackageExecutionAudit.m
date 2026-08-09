@@ -1,0 +1,56 @@
+function ok = testPHYPackageExecutionAudit()
+%TESTPHYPACKAGEEXECUTIONAUDIT Exact profiler-backed source use classification.
+
+tmp = tempname;
+mkdir(tmp);
+cleanup = onCleanup(@()rmdir(tmp, "s")); %#ok<NASGU>
+layout = sixgr.report.resultLayout(tmp);
+sixgr.util.ensureFolder(layout.ReportCSVDir);
+
+txFile = fullfile(pwd, "+sixgr", "+pdsch", "PDSCHTransmitter.m");
+profileT = table(1, 1, "PDSCHTransmitter", string(txFile), string(txFile), ...
+    "M-function", 7, 2.5, 1.1, 1.4, 0, 1, false, ...
+    'VariableNames', {'ProfileRank','FunctionIndex','FunctionName','CompleteName', ...
+    'FileName','FunctionType','NumCalls','TotalTime_s','SelfTimeApprox_s', ...
+    'ChildTime_s','TotalRecursiveTime_s','ParentCount','IsRecursive'});
+summaryT = table("MATLAB", 1e-7, 1, 0, 1, 1, 0, 0, "now", "fixture", ...
+    'VariableNames', {'ProfilerName','ClockPrecision_s','ClockSpeed_Hz','Overhead_s', ...
+    'FunctionCount','ExportedFunctionCount','EdgeCount','ExportedEdgeCount','CapturedUTC','Notes'});
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_function_profile.csv"), profileT);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_profiler_summary.csv"), summaryT);
+
+out = sixgr.analytics.buildPHYPackageExecutionAudit(tmp, pwd);
+T = out.DetailTable;
+tx = T(T.QualifiedName == "sixgr.pdsch.PDSCHTransmitter", :);
+assert(height(tx) == 1 && tx.ActuallyCalled && tx.CallCount == 7, ...
+    "PDSCHTransmitter must bind to its exact profiler source row.");
+rx = T(T.QualifiedName == "sixgr.pdsch.PDSCHReceiver", :);
+assert(height(rx) == 1 && ~rx.ActuallyCalled && ...
+    rx.UsageAssessment == "runtime_library_not_exercised_in_this_scenario", ...
+    "A complete profile must report an absent runtime library without claiming it ran.");
+for facade = [ ...
+        "sixgr.phy.dl.PDSCH_Tx", "sixgr.phy.dl.PDSCH_Rx", ...
+        "sixgr.phy.dl.PDCCH_Tx", "sixgr.phy.dl.PDCCH_Rx", ...
+        "sixgr.phy.ul.PUSCH_Tx", "sixgr.phy.ul.PUSCH_Rx"]
+    facadeRow = T(T.QualifiedName == facade, :);
+    assert(height(facadeRow) == 1 && facadeRow.RuntimeLibraryCandidate, ...
+        "Critical PHY facade %s is missing from the exact-path audit.", facade);
+end
+oracle = T(contains(T.FilePath, "/+oracle/"), :);
+assert(height(oracle) > 0 && all(oracle.SourceRole == "validation_oracle"), ...
+    "Oracle sources must remain separate from the runtime chain.");
+assert(out.ProfilerComplete && all(out.GateTable.Pass), ...
+    "A complete exact-path fixture must pass the execution-evidence gate.");
+
+summaryT.ExportedFunctionCount(:) = 1;
+summaryT.FunctionCount(:) = 2;
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_profiler_summary.csv"), summaryT);
+out = sixgr.analytics.buildPHYPackageExecutionAudit(tmp, pwd);
+rx = out.DetailTable(out.DetailTable.QualifiedName == "sixgr.pdsch.PDSCHReceiver", :);
+assert(~out.ProfilerComplete && rx.UsageAssessment == "unknown_profiler_export_truncated", ...
+    "A truncated profile must never relabel an absent source as unused.");
+assert(~out.GateTable.Pass(out.GateTable.Gate == "runtime_profiler_export_complete"), ...
+    "The evidence gate must fail loudly when profiler export is truncated.");
+
+ok = true;
+end

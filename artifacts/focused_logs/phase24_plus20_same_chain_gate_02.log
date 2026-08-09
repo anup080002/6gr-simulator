@@ -1,0 +1,17 @@
+{Error using sixgr.lls6g.config.loadScenarioConfig>localResolveRelativeConfig (line 72)
+Unable to resolve inherited config 'master_sinr_sweep.yaml' from 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+Simulator_v2_clean_main\results\.runtime_scenarios\phase24_plus20_same_chain_gate_02_executed.yaml'.
+
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 30)
+    parentPath = localResolveRelativeConfig(configPath, inherits(i));
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep>localRuntimeYAML (line 61)
+executed = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 22)
+scenarioPath = localRuntimeYAML( ...
+               ^^^^^^^^^^^^^^^^^^^^^
+} 

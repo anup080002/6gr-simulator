@@ -1,0 +1,14 @@
+[2026-08-09T03:53:08Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase24_plus20_same_chain_gate_07 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+{Error using sixgr.runtime.resolveExecutionIdentity (line 67)
+Finalization resume requires an ExecutionID persisted by the original waveform execution; a replacement identity is forbidden.
+
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2244)
+executionIdentity = sixgr.runtime.resolveExecutionIdentity( ...
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 66)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 32)
+out = sixgr.lls6g.runners.runSingle( ...
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

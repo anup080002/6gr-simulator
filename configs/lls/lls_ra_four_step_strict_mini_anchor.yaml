@@ -26,7 +26,10 @@ scenario:
   name: lls_ra_four_step_strict_mini_anchor
   description: Strict MSG1-MSG4 random-access validation using explicit scenario RACH config.
   runner_profile: random_access_four_step
-  target_cases: [prach, pdcch, pusch]
+  # SIB1, Msg2 and Msg4 all traverse the production PDSCH/DL-SCH chain;
+  # keep that execution authority explicit instead of relying on a receiver
+  # fallback or an initial-access-specific hardcoded override.
+  target_cases: [prach, pdcch, pdsch, pusch]
   bundle_anchor_cases: [random_access_four_step]
   honesty_mode: strict
   notes: "Strict Release-18 initial-access validation: SSB/MIB/Type0/SIB1 are waveform-decoded before decoded SIB1 owns the four-step RA configuration."

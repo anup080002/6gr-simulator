@@ -7,6 +7,8 @@ addRequired(p, "baseCfg", @(x) isstruct(x) || isobject(x));
 addParameter(p, "RunFolder", "", @(x) ischar(x) || isstring(x));
 addParameter(p, "RunId", "srs_strict_validation", @(x) ischar(x) || isstring(x));
 addParameter(p, "ScenarioName", "srs_strict_validation", @(x) ischar(x) || isstring(x));
+addParameter(p, "ExecutionID", "", @(x) ischar(x) || isstring(x));
+addParameter(p, "ScenarioConfigHash", "", @(x) ischar(x) || isstring(x));
 addParameter(p, "WriteArtifacts", true, @(x) islogical(x) || isnumeric(x));
 parse(p, baseCfg, varargin{:});
 opt = p.Results;
@@ -168,6 +170,17 @@ result.ArtifactTables = struct( ...
     "srs_timing_offset_sweep", timingSweepT, ...
     "srs_multi_ue_trials", multiUET, ...
     "srs_oracle_guard", oracleT);
+if strlength(strtrim(string(opt.ExecutionID))) > 0
+    identity = struct("RunID", string(opt.RunId), ...
+        "ExecutionID", string(opt.ExecutionID), ...
+        "ScenarioID", string(opt.ScenarioName), ...
+        "ConfigHash", string(opt.ScenarioConfigHash));
+    result.ArtifactTables = ...
+        sixgr.runtime.bindInPathArtifactIdentity( ...
+        result.ArtifactTables, identity);
+    result.ExecutionID = identity.ExecutionID;
+    result.ScenarioConfigHash = identity.ConfigHash;
+end
 
 if logical(opt.WriteArtifacts)
     result.ArtifactManifest = sixgr.phy.srs.exportStrictSRSArtifacts(char(string(opt.RunFolder)), result);

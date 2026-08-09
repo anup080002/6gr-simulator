@@ -112,10 +112,16 @@ if strictAssignmentProfile && isempty(opt.Assignment)
         "%s PDSCH reception requires a decoded immutable scheduling assignment.", ...
         executionProfile);
 end
+if executionProfile == "ra_si_strict" && ...
+        string(opt.Assignment.get("ControlAuthority")) ~= ...
+        "receiver_crc_valid_decode"
+    error("sixgr:pdsch:InvalidRASIReceiveAuthority", ...
+        "RA/SI PDSCH reception requires receiver CRC-valid decoded-DCI ownership.");
+end
 
 if ~isempty(opt.Assignment)
     [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
-        rxWaveform, opt, executionProfile, hasPHYGrant);
+        rxWaveform, cfg, opt, executionProfile, hasPHYGrant);
     return;
 end
 if any(executionProfile == ["phy_calibration","scheduler_truth"])
@@ -303,7 +309,9 @@ canonical = sixgr.pdsch.PDSCHReceiver( ...
     "HARQManager", opt.HARQManager, ...
     "InterferenceCovariance", Rint, ...
     "InterferenceCovarianceInfo", rintInfo, ...
-    "InterferenceCovarianceIncludesNoise", logical(RintIncludesNoise));
+    "InterferenceCovarianceIncludesNoise", logical(RintIncludesNoise), ...
+    "EnablePTRSCPECorrection", logical(sixgr.util.structGet( ...
+        cfg, "phy.pdsch.ptrs.enableCPECorrection", false)));
 [rx, info] = localAdaptCanonicalCalibrationRX( ...
     canonical, bundle, pdschInfo, carrierInfo, ...
     dmrsPowerInfo, cfg, opt, phyGrant, hasPHYGrant);
@@ -340,8 +348,9 @@ nPorts = double(bundle.ReferenceConfig.get("NPhysicalTxAntennas"));
 plane = double(carrier.NSizeGrid) * 12 ...
     * double(carrier.SymbolsPerSlot);
 [pdschInd, kernelInfo] = nrPDSCHIndices(carrier,pdsch);
-dmrsInd = nrPDSCHDMRSIndices(carrier,pdsch);
-dmrsSym = complex(nrPDSCHDMRS(carrier,pdsch)) ...
+[dmrsInd, dmrsSymBase, dmrsInfo] = ...
+    sixgr.phy.refsig.dmrsPDSCH(carrier, pdsch);
+dmrsSym = complex(dmrsSymBase) ...
     .* double(dmrsPowerInfo.DMRSAmplitudeScale);
 ptrsInd = [];
 ptrsSym = complex(zeros(0,1));
@@ -534,16 +543,26 @@ rx.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet( ...
     syncState, "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
 rx.ResidualTimingError_PostCorrection_samples = double(sixgr.util.structGet( ...
     syncState, "ResidualTimingError_PostCorrection_samples", NaN));
+rx.PTRSConfiguredEnabled = logical(pdsch.EnablePTRS);
+rx.PTRSCPECorrectionConfigured = logical(sixgr.util.structGet( ...
+    cfg, "phy.pdsch.ptrs.enableCPECorrection", false));
 rx.CPECorrectionApplied = logical(sixgr.util.structGet( ...
     canonical.PTRSCorrection,"Applied",false));
 rx.CPECorrectedSymbols = double(sixgr.util.structGet( ...
     canonical.PTRSCorrection,"CorrectedSymbolCount",0));
-rx.CPEMeanCorrection_deg = NaN;
-rx.CPECorrectionNAReason = "";
-rx.PTRSCPECorrectionEnabled = rx.CPECorrectionApplied;
+rx.CPEMeanCorrection_deg = double(sixgr.util.structGet( ...
+    canonical.PTRSCorrection,"MeanCPE_deg",NaN));
+rx.CPECorrectionNAReason = char(string(sixgr.util.structGet( ...
+    canonical.PTRSCorrection,"NAReason","")));
+rx.PTRSCPECorrectionEnabled = rx.PTRSCPECorrectionConfigured;
+rx.PTRSCPECorrectionApplied = rx.CPECorrectionApplied;
 rx.PTRSCPECorrectionSymbols = rx.CPECorrectedSymbols;
-rx.PTRSMeanCPE_deg = NaN;
-rx.PTRSCPECorrectionReason = "";
+rx.PTRSMeanCPE_deg = rx.CPEMeanCorrection_deg;
+rx.PTRSCPECorrectionReason = rx.CPECorrectionNAReason;
+rx.PTRSCPECorrectionStatus = char(string(sixgr.util.structGet( ...
+    canonical.PTRSCorrection,"Status","")));
+rx.PTRSReceiverEvidenceSource = ...
+    "sixgr.pdsch.PDSCHReceiver.PTRSCorrection";
 rx.ReceiverTrackingCorrectionSource = char(string(sixgr.util.structGet( ...
     trackingCorrection, "Source", "unavailable_receiver_tracking_state")));
 rx.ReceiverTrackingCorrectionStatus = char(string(sixgr.util.structGet( ...
@@ -573,9 +592,13 @@ rx.EqualizerResultContract = "";
 rx.EqualizerEquation = "";
 rx.EqualizerCovarianceIncludesNoise = false;
 rx.EqualizerNoiseAddedExactlyOnce = true;
-rx.EqualizerUniqueSolveCount = NaN;
-rx.EqualizerSolveCount = ...
-    double(bundle.ResourcePlan.ExactDataRECount);
+rx.EqualizerUniqueSolveCount = double(sixgr.util.structGet( ...
+    canonical.EqualizationInfo, "UniqueSolveCount", NaN));
+rx.EqualizerSolveCount = double(sixgr.util.structGet( ...
+    canonical.EqualizationInfo, "SolveCount", ...
+    double(bundle.ResourcePlan.ExactDataRECount)));
+rx.EqualizerCovarianceFactorizationCount = double(sixgr.util.structGet( ...
+    canonical.EqualizationInfo, "CovarianceFactorizationCount", NaN));
 rintInfo = sixgr.util.structGet(canonical, ...
     "InterferenceCovarianceInfo", struct());
 rx.InterferenceCovarianceAvailable = logical(sixgr.util.structGet( ...
@@ -588,18 +611,12 @@ rx.InterferenceCovarianceIncludesNoise = logical(sixgr.util.structGet( ...
     canonical, "InterferenceCovarianceIncludesNoise", false));
 rx.InterferenceCovarianceDomain = string(sixgr.util.structGet( ...
     rintInfo, "Domain", "not_applicable"));
-rx.MeasuredPDSCHRxResourcePower = mean( ...
-    abs(canonical.DataPortSymbols(:)).^2,"omitnan");
-rx.MeasuredPDSCHHestResourcePower = mean( ...
-    abs(channelEstimate(:)).^2,"omitnan");
-rx.MeasuredPDSCHHestFiniteFraction = mean( ...
-    isfinite(channelEstimate(:)));
-rx.MeasuredDMRSRxResourcePower = NaN;
-rx.MeasuredDMRSHestResourcePower = ...
-    rx.MeasuredPDSCHHestResourcePower;
-rx.MeasuredInterferenceCovarianceTrace = localCovarianceTraceMean( ...
-    sixgr.util.structGet(canonical, "InterferenceCovariance", []));
-rx.MeasuredPreEqualizationNoiseVariance = estimatedNoise;
+resourceDiagnostics = localBuildPDSCHRxResourceDiagnostics( ...
+    canonical.DataPortSymbols, channelEstimate, canonical.OFDMGrid, ...
+    channelEstimate, dmrsInd, ...
+    sixgr.util.structGet(canonical, "InterferenceCovariance", []), ...
+    estimatedNoise);
+rx = localRXMergeStructs(rx, resourceDiagnostics);
 rx.EqualizedSymbolsForEvidence = canonical.LayerSymbols;
 rx.LayerEqualizedSymbolsForEvidence = canonical.LayerSymbols;
 rx.LayerEqualizedSymbols = canonical.LayerSymbols;
@@ -617,6 +634,10 @@ rx.RateRecoveredLLR = recLLR{1};
 rx.RecLLRCell = recLLR;
 rx.RateRecoveredLLRCell = recLLR;
 rx.RateRecoverInfoCell = recInfo;
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, ...
+    dmrsAntInd, dmrsSym, dmrsInfo, llrCell, recLLR, recLLR, recInfo, ...
+    activeIterations, parityChecks, cbCRCError, ...
+    bundle.ReceiverConfig.Algorithm, false, ~logical(canonical.CRCPass));
 rx.HARQSoftCombiningInfoPerCodeword = harqInfo;
 rx.HARQSoftBuffer = harqSummary.SoftBuffer;
 rx.HARQSoftBufferCell = harqSummary.SoftBufferCell;
@@ -735,7 +756,6 @@ rx.PDSCHIndices = pdschInd;
 rx.CSIRSIndices = csirsInd;
 rx.CSIRSSymbols = csirsSym;
 rx.CSIRSInfo = csirsInfo;
-rx.CSIRSObservation = csirsObservation;
 rx.PTRSIndices = ptrsInd;
 rx.PTRSSymbols = ptrsSym;
 rx.PTRSAntennaIndices = ptrsAntInd;
@@ -757,6 +777,70 @@ rx.CSIChannelEstimateSource = string(sixgr.util.structGet( ...
 if strlength(rx.CSIChannelEstimateSource) == 0
     rx.CSIChannelEstimateSource = "not_observed";
 end
+[csiMeasurementState, csiMeasurementInfo] = ...
+    localBuildCSIMeasurementState(cfg, carrier, csirsHest, ...
+    csirsNoiseVar, csirsEstimateInfo, canonical);
+rx.CSIMeasurementState = csiMeasurementState;
+rx.CSIMeasurementStateInfo = csiMeasurementInfo;
+if ~isempty(csiMeasurementState)
+    % The strict CSI facade verifies an immutable digest twice.  Pass the
+    % exact same measured wideband matrix at both boundaries; never
+    % reconstruct, resize, or substitute a configured channel oracle.
+    rx.CSIChannelEstimateForPMI = csiMeasurementState.ChannelEstimate;
+    rx.CSIChannelNoiseVarForPMI = csiMeasurementState.NoiseVariance;
+end
+csirsObservation.ChannelEstimationAttempted = logical(csirsObservation.Observed);
+csirsObservation.ChannelEstimateAvailable = logical(sixgr.util.structGet( ...
+    csirsEstimateInfo, "Available", false));
+csirsObservation.ChannelEstimateSource = string(sixgr.util.structGet( ...
+    csirsEstimateInfo, "Source", ""));
+csirsObservation.ChannelEstimator = string(sixgr.util.structGet( ...
+    csirsEstimateInfo, "ChannelEstimator", ""));
+csirsObservation.ChannelInterpolationMethod = string(sixgr.util.structGet( ...
+    csirsEstimateInfo, "InterpolationMethod", ""));
+csirsObservation.ChannelEstimateConvention = string(sixgr.util.structGet( ...
+    csirsEstimateInfo, "EffectiveChannelConvention", ""));
+csirsObservation.ChannelEstimateNoiseVariance = double(csirsNoiseVar);
+csirsObservation.PilotRECount = double(sixgr.util.structGet( ...
+    csirsEstimateInfo, "PilotRECount", NaN));
+csirsObservation.PilotResidualPower = double(sixgr.util.structGet( ...
+    csirsEstimateInfo, "PilotResidualPower", NaN));
+csirsObservation.PilotResidualNMSE_dB = double(sixgr.util.structGet( ...
+    csirsEstimateInfo, "PilotResidualNMSE_dB", NaN));
+csirsObservation.HestDimensions = localSizeToken(csirsHest);
+csirsObservation.HestRxPorts = localArrayDimension(csirsHest, 3);
+csirsObservation.HestTxPorts = localArrayDimension(csirsHest, 4);
+csirsObservation.SINRMeasurementDomain = "csi_rs_resource_selective_channel_estimate";
+csirsObservation.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_synchronization";
+csirsObservation.CSIMeasurementStateAvailable = ~isempty(csiMeasurementState);
+csirsObservation.CSIMeasurementStatus = string(sixgr.util.structGet( ...
+    csiMeasurementInfo, "Status", "not_required"));
+csirsObservation.CSIMeasurementID = string(sixgr.util.structGet( ...
+    csiMeasurementInfo, "MeasurementID", ""));
+csirsObservation.CSIMeasurementDigest = string(sixgr.util.structGet( ...
+    csiMeasurementInfo, "Digest", ""));
+csirsObservation.CSIMeasurementProvenance = string(sixgr.util.structGet( ...
+    csiMeasurementInfo, "Provenance", ""));
+csirsObservation.CSIMeasurementSlot = double(sixgr.util.structGet( ...
+    csiMeasurementInfo, "Slot", NaN));
+csirsObservation.CSIMeasurementNoiseVariance = double(sixgr.util.structGet( ...
+    csiMeasurementInfo, "NoiseVariance", NaN));
+csirsObservation.ResourceID = double(sixgr.util.structGet( ...
+    csirsEstimateInfo, "SelectedResourceID", csirsObservation.ResourceID));
+csirsObservation.NumConfiguredResources = double(sixgr.util.structGet( ...
+    csirsEstimateInfo, "NumConfiguredResources", 1));
+csirsObservation.NumMeasuredResources = double(sixgr.util.structGet( ...
+    csirsEstimateInfo, "NumMeasuredResources", ...
+    double(logical(csirsObservation.ChannelEstimateAvailable))));
+csirsObservation.ResourceObjectiveValues = string(sixgr.util.structGet( ...
+    csirsEstimateInfo, "ResourceObjectiveToken", ""));
+csirsObservation.CRISelectionSource = string(sixgr.util.structGet( ...
+    csirsEstimateInfo, "SelectionSource", ""));
+if csirsObservation.ChannelEstimateAvailable
+    csirsObservation.Consumed = true;
+    csirsObservation.Consumer = "dl_csi_ri_pmi_cri_measurement";
+end
+rx.CSIRSObservation = csirsObservation;
 rx.CSI = localCalibrationCSI(canonical);
 rx.EqualizerInfo = canonical.EqualizationInfo;
 rx.InterferenceCovariance = sixgr.util.structGet( ...
@@ -841,6 +925,7 @@ info = struct( ...
     "DecodedBitLineagePerCodeword",{lineage}, ...
     "RateRecoverPerCodeword",{recInfo}, ...
     "DecodePerCodeword",{decoded}, ...
+    "StrictReceiverEvidence",strictEvidence, ...
     "ResourcePlan",bundle.ResourcePlan, ...
     "StageTrace",canonical.StageTrace, ...
     "Source",char(ternaryPDSCHRXProfile(isSchedulerTruth, ...
@@ -1063,7 +1148,7 @@ info = struct( ...
 end
 
 function [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
-        rxWaveform, opt, executionProfile, hasPHYGrant)
+        rxWaveform, cfg, opt, executionProfile, hasPHYGrant)
 assignment = opt.Assignment;
 if isempty(opt.ResourcePlan)
     error("sixgr:pdsch:MissingResourcePlan", ...
@@ -1123,7 +1208,9 @@ canonical = sixgr.pdsch.PDSCHReceiver( ...
     "CodingPlans", opt.CodingPlan, ...
     "PrecoderBundle", opt.PrecoderBundle, ...
     "IntegrationContext", opt.IntegrationContext, ...
-    "HARQManager", opt.HARQManager);
+    "HARQManager", opt.HARQManager, ...
+    "EnablePTRSCPECorrection", logical(sixgr.util.structGet( ...
+        cfg, "phy.pdsch.ptrs.enableCPECorrection", false)));
 rx = canonical;
 rx.FacadeContractVersion = "PDSCH_RxCompatibilityFacade/v2";
 rx.CanonicalDelegation = true;
@@ -1136,6 +1223,22 @@ rx.AssignmentValidationDigest = assignmentDigest;
 rx.IntegrationBinding = canonical.IntegrationBinding;
 rx.Ok = logical(canonical.CRCPass);
 rx.TBCRCPass = logical(canonical.CRCPass);
+rx.PTRSConfiguredEnabled = logical(opt.ReferenceSignalConfig.get("EnablePTRS"));
+rx.PTRSCPECorrectionConfigured = logical(sixgr.util.structGet( ...
+    cfg, "phy.pdsch.ptrs.enableCPECorrection", false));
+rx.PTRSCPECorrectionApplied = logical(sixgr.util.structGet( ...
+    canonical.PTRSCorrection, "Applied", false));
+rx.PTRSCPECorrectionEnabled = rx.PTRSCPECorrectionConfigured;
+rx.PTRSCPECorrectionSymbols = double(sixgr.util.structGet( ...
+    canonical.PTRSCorrection, "CorrectedSymbolCount", 0));
+rx.PTRSMeanCPE_deg = double(sixgr.util.structGet( ...
+    canonical.PTRSCorrection, "MeanCPE_deg", NaN));
+rx.PTRSCPECorrectionReason = char(string(sixgr.util.structGet( ...
+    canonical.PTRSCorrection, "NAReason", "")));
+rx.PTRSCPECorrectionStatus = char(string(sixgr.util.structGet( ...
+    canonical.PTRSCorrection, "Status", "")));
+rx.PTRSReceiverEvidenceSource = ...
+    "sixgr.pdsch.PDSCHReceiver.PTRSCorrection";
 
 info = struct( ...
     "FacadeContractVersion", "PDSCH_RxCompatibilityFacade/v2", ...
@@ -2485,6 +2588,7 @@ obs.Scheduled = true;
 obs.NRE = double(numel(csirsSym));
 obs.NumPorts = double(sixgr.util.structGet(csirsInfo, "NumCSIRSPorts", NaN));
 obs.RowNumber = double(sixgr.util.structGet(csirsInfo, "RowNumber", NaN));
+obs.ResourceExtractionAttempted = true;
 try
     rxRef = nrExtractResources(csirsInd, rxGrid);
 catch
@@ -2500,6 +2604,7 @@ if isempty(rxRef)
     obs.UpdateOutcome = "not_observed";
     return;
 end
+obs.ResourceExtractionAvailable = true;
 powerLin = mean(abs(rxRef(:)).^2, "omitnan");
 obs.Observed = isfinite(powerLin) && powerLin > 0;
 obs.MeasurementRSRP_dB = 10 * log10(max(double(powerLin), eps));
@@ -2512,8 +2617,14 @@ end
 function [Hest, nVar, estInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, strictMode, channelModelToken, numTxPorts)
 Hest = [];
 nVar = NaN;
+resources = sixgr.util.structGet(csirsInfo, "Resources", []);
+if numel(resources) > 1
+    [Hest, nVar, estInfo] = localEstimateCSIRSResourceSetForPMI( ...
+        carrier, rxGrid, resources, cfg, strictMode, channelModelToken);
+    return;
+end
 numCSIRSPorts = double(sixgr.util.structGet(csirsInfo, "NumCSIRSPorts", NaN));
-expectedTxPorts = max([double(numTxPorts), numCSIRSPorts(isfinite(numCSIRSPorts)), 1]);
+expectedTxPorts = max([numCSIRSPorts(isfinite(numCSIRSPorts)), 1]);
 estInfo = struct( ...
     "Available", false, ...
     "Status", "unavailable", ...
@@ -2564,6 +2675,104 @@ catch ME
 end
 end
 
+function [selectedHest, selectedNVar, setInfo] = ...
+        localEstimateCSIRSResourceSetForPMI(carrier, rxGrid, resources, cfg, strictMode, channelModelToken)
+nResources = numel(resources);
+measurements = repmat(localEmptyCSIRSResourceMeasurement(), nResources, 1);
+objectives = -inf(nResources, 1);
+for ordinal = 1:nResources
+    resource = resources(ordinal);
+    resourceInfo = struct( ...
+        "NumCSIRSPorts", double(resource.NumPorts), ...
+        "ResourceID", double(resource.ResourceID));
+    [Hest, nVar, info] = localEstimateCSIRSChannelForPMI( ...
+        carrier, rxGrid, resource.Indices, resource.Symbols, resourceInfo, ...
+        cfg, strictMode, channelModelToken, double(resource.NumPorts));
+    measurements(ordinal).ResourceID = double(resource.ResourceID);
+    measurements(ordinal).Hest = Hest;
+    measurements(ordinal).NoiseVariance = double(nVar);
+    measurements(ordinal).EstimationInfo = info;
+    measurements(ordinal).Available = logical(sixgr.util.structGet(info, "Available", false));
+    if measurements(ordinal).Available
+        Hwb = localCSIRSWidebandChannelMatrix(Hest);
+        objectives(ordinal) = localMeasuredCSIRSReceiverObjective(Hwb, nVar);
+        measurements(ordinal).WidebandChannel = Hwb;
+        measurements(ordinal).ReceiverObjective = objectives(ordinal);
+    end
+end
+available = [measurements.Available].';
+if ~any(available)
+    selectedHest = [];
+    selectedNVar = NaN;
+    setInfo = struct("Available",false,"Status","NOT_AVAILABLE", ...
+        "Source","csirs_resource_set_receiver_measurements", ...
+        "Reason","no_csirs_resource_channel_estimate_available", ...
+        "NumConfiguredResources",nResources,"NumMeasuredResources",0, ...
+        "SelectedResourceID",NaN,"SelectionSource","not_available", ...
+        "ResourceObjectiveToken",localNumericVectorToken(objectives), ...
+        "ResourceMeasurements",measurements);
+    return;
+end
+objectives(~available) = -inf;
+[~, selectedOrdinal] = max(objectives);
+selected = measurements(selectedOrdinal);
+selectedHest = selected.Hest;
+selectedNVar = selected.NoiseVariance;
+setInfo = selected.EstimationInfo;
+setInfo.Available = true;
+setInfo.Status = "OK";
+setInfo.Source = "csirs_resource_set_receiver_measurements";
+setInfo.Reason = "";
+setInfo.NumConfiguredResources = nResources;
+setInfo.NumMeasuredResources = sum(available);
+setInfo.SelectedResourceID = selected.ResourceID;
+setInfo.SelectedResourceOrdinal = selectedOrdinal;
+setInfo.SelectedCRI = selectedOrdinal - 1;
+setInfo.SelectedReceiverObjective = objectives(selectedOrdinal);
+setInfo.SelectionSource = "measured_csirs_resource_receiver_capacity_objective";
+setInfo.ResourceObjectiveToken = localNumericVectorToken(objectives);
+setInfo.ResourceMeasurements = measurements;
+end
+
+function objective = localMeasuredCSIRSReceiverObjective(H, nVar)
+objective = -inf;
+if isempty(H) || ~ismatrix(H) || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
+    return;
+end
+nVar = double(nVar);
+if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
+    return;
+end
+nStreams = max(1, size(H,2));
+R = eye(size(H,1)) + (H * H') ./ max(nStreams * nVar, realmin);
+eigenvalues = real(eig((R + R') ./ 2));
+if any(~isfinite(eigenvalues)) || any(eigenvalues <= 0)
+    return;
+end
+objective = sum(log2(eigenvalues));
+end
+
+function value = localEmptyCSIRSResourceMeasurement()
+value = struct("ResourceID",NaN,"Available",false,"Hest",[], ...
+    "WidebandChannel",[],"NoiseVariance",NaN,"ReceiverObjective",-inf, ...
+    "EstimationInfo",struct());
+end
+
+function token = localNumericVectorToken(values)
+values = double(values(:).');
+pieces = strings(size(values));
+for ordinal = 1:numel(values)
+    if isfinite(values(ordinal))
+        pieces(ordinal) = compose("%.12g", values(ordinal));
+    elseif values(ordinal) > 0
+        pieces(ordinal) = "Inf";
+    else
+        pieces(ordinal) = "-Inf";
+    end
+end
+token = "[" + strjoin(pieces, ",") + "]";
+end
+
 function obs = localEmptyCSIRSObservation(cfg)
 obs = struct();
 obs.SignalFamily = "CSI-RS";
@@ -2580,9 +2789,194 @@ obs.UpdateOutcome = "";
 obs.RuntimeEvidenceSource = "";
 obs.MeasurementRSRP_dB = NaN;
 obs.MeasurementSource = "";
+obs.ResourceExtractionAttempted = false;
+obs.ResourceExtractionAvailable = false;
+obs.ChannelEstimationAttempted = false;
+obs.ChannelEstimateAvailable = false;
+obs.ChannelEstimateSource = "";
+obs.ChannelEstimator = "";
+obs.ChannelInterpolationMethod = "";
+obs.ChannelEstimateConvention = "";
+obs.ChannelEstimateNoiseVariance = NaN;
+obs.PilotRECount = NaN;
+obs.PilotResidualPower = NaN;
+obs.PilotResidualNMSE_dB = NaN;
+obs.HestDimensions = "";
+obs.HestRxPorts = NaN;
+obs.HestTxPorts = NaN;
+obs.SINRMeasurementDomain = "";
+obs.PowerReferencePlane = "";
+obs.CSIMeasurementStateAvailable = false;
+obs.CSIMeasurementStatus = "not_required";
+obs.CSIMeasurementID = "";
+obs.CSIMeasurementDigest = "";
+obs.CSIMeasurementProvenance = "";
+obs.CSIMeasurementSlot = NaN;
+obs.CSIMeasurementNoiseVariance = NaN;
+obs.NumConfiguredResources = NaN;
+obs.NumMeasuredResources = NaN;
+obs.ResourceObjectiveValues = "";
+obs.CRISelectionSource = "";
 obs.NRE = NaN;
 obs.NumPorts = NaN;
 obs.RowNumber = NaN;
+end
+
+function [state, info] = localBuildCSIMeasurementState(cfg, carrier, Hest, nVar, estInfo, canonical)
+state = [];
+strictCSI = logical(sixgr.util.structGet(cfg, "phy.mimo.strict", false));
+info = struct( ...
+    "Required", strictCSI, ...
+    "Status", "not_required", ...
+    "MeasurementID", "", ...
+    "Digest", "", ...
+    "Provenance", "", ...
+    "Slot", NaN, ...
+    "NoiseVariance", NaN, ...
+    "InterferenceCovarianceIncluded", false);
+if ~strictCSI
+    return;
+end
+if ~logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false))
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict DL CSI is enabled but CSI-RS transmission is disabled by YAML.");
+end
+if ~logical(sixgr.util.structGet(estInfo, "Available", false)) || isempty(Hest)
+    info.Status = "missing_runtime_csirs_channel_estimate";
+    return;
+end
+Hwb = localCSIRSWidebandChannelMatrix(Hest);
+if isempty(Hwb) || ~ismatrix(Hwb) || ...
+        any(~isfinite(real(Hwb(:))) | ~isfinite(imag(Hwb(:))))
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict DL CSI requires a finite measured Nrx-by-Nport CSI-RS channel matrix.");
+end
+nVar = double(nVar);
+if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Strict DL CSI requires measured finite CSI-RS noise variance.");
+end
+report = sixgr.util.structGet(cfg, "phy.csi.reportConfiguration", struct());
+reportPorts = double(sixgr.util.structGet(report, "Ports", NaN));
+if ~(isscalar(reportPorts) && isfinite(reportPorts) && ...
+        reportPorts == size(Hwb, 2))
+    error("sixgr:mimo:CSIReportPortMismatch", ...
+        "Strict CSI report declares %g ports, but the runtime CSI-RS receiver measured %d ports.", ...
+        reportPorts, size(Hwb, 2));
+end
+slotValue = double(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.RuntimeCurrentSlot", localCarrierSlot(carrier)));
+if ~(isscalar(slotValue) && isfinite(slotValue) && slotValue >= 0)
+    slotValue = 0;
+end
+slotValue = floor(slotValue);
+maxAgeSlots = double(sixgr.util.structGet(cfg, ...
+    "phy.mimo.measurementMaxAgeSlots", 8));
+if ~(isscalar(maxAgeSlots) && isfinite(maxAgeSlots) && ...
+        maxAgeSlots >= 0 && maxAgeSlots == floor(maxAgeSlots))
+    error("sixgr:mimo:InvalidMeasurementAge", ...
+        "phy.mimo.measurementMaxAgeSlots must be a nonnegative integer.");
+end
+ueIndex = double(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.RuntimeUEIndex", 0));
+if ~(isscalar(ueIndex) && isfinite(ueIndex) && ueIndex >= 0)
+    ueIndex = 0;
+end
+resourceID = double(sixgr.util.structGet(estInfo, "SelectedResourceID", ...
+    sixgr.util.structGet(cfg, "phy.csirs.resourceID", 0)));
+resourceOrdinal = double(sixgr.util.structGet(estInfo, "SelectedCRI", resourceID));
+if ~(isscalar(resourceID) && isfinite(resourceID) && resourceID >= 0)
+    resourceID = 0;
+end
+digest = sixgr.phy.mimo.MatrixContract.digest(Hwb);
+measurementID = "csirs-ue" + string(floor(ueIndex)) + ...
+    "-resource" + string(floor(resourceID)) + "-slot" + string(slotValue) + ...
+    "-" + localShortDigest(digest);
+Rint = sixgr.util.structGet(canonical, "InterferenceCovariance", []);
+if ~(isnumeric(Rint) && ismatrix(Rint) && ...
+        all(size(Rint) == [size(Hwb, 1), size(Hwb, 1)]) && ...
+        all(isfinite(real(Rint(:))) & isfinite(imag(Rint(:)))))
+    Rint = [];
+end
+provenance = "measured_runtime_csirs_receiver_channel_and_noise";
+state = sixgr.phy.mimo.CSIMeasurementState( ...
+    MeasurementID=measurementID, ...
+    UEID="UE-" + string(floor(ueIndex)), ...
+    ResourceType="NZP-CSI-RS", ...
+    ResourceID="CSI-RS-" + string(floor(resourceID)), ...
+    ResourceOrdinal=resourceOrdinal, ...
+    Slot=slotValue, ...
+    MaxAgeSlots=maxAgeSlots, ...
+    ChannelEstimate=Hwb, ...
+    NoiseVariance=nVar, ...
+    InterferenceCovariance=Rint, ...
+    Provenance=provenance);
+info.Status = "runtime_measured_state_ready";
+info.MeasurementID = state.MeasurementID;
+info.Digest = state.Digest;
+info.Provenance = state.Provenance;
+info.Slot = state.Slot;
+info.NoiseVariance = double(state.NoiseVariance);
+info.InterferenceCovarianceIncluded = ~isempty(Rint);
+end
+
+function Hwb = localCSIRSWidebandChannelMatrix(Hest)
+Hwb = [];
+if isempty(Hest)
+    return;
+end
+if ndims(Hest) >= 4
+    Hwb = squeeze(mean(mean(double(Hest), 1, "omitnan"), 2, "omitnan"));
+elseif ndims(Hest) == 3
+    Hwb = reshape(squeeze(mean(mean(double(Hest), 1, "omitnan"), 2, "omitnan")), [], 1);
+elseif ismatrix(Hest)
+    Hwb = double(Hest);
+end
+if isvector(Hwb)
+    Hwb = reshape(Hwb, numel(Hwb), 1);
+end
+if ~ismatrix(Hwb)
+    Hwb = [];
+end
+end
+
+function slotValue = localCarrierSlot(carrier)
+slotValue = 0;
+if isempty(carrier)
+    return;
+end
+try
+    slotValue = double(carrier.NSlot);
+catch
+end
+end
+
+function token = localShortDigest(digest)
+chars = char(string(digest));
+token = string(chars(1:min(12, numel(chars))));
+end
+
+function token = localSizeToken(value)
+if isempty(value)
+    token = "";
+    return;
+end
+token = strjoin(string(size(value)), "x");
+end
+
+function value = localArrayDimension(A, dim)
+if isempty(A)
+    value = NaN;
+    return;
+end
+sz = size(A);
+if dim <= numel(sz)
+    value = double(sz(dim));
+elseif dim == 4
+    value = 1;
+else
+    value = NaN;
+end
 end
 
 function mapping = localBuildPDSCHRxCodewordLayerContract(pdsch, rateMatchedBits, codingLayouts)

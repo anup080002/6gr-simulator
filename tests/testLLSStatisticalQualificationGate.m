@@ -35,5 +35,16 @@ assert(~root.Status.PublicationQualified && ~root.Status.ResultOk, ...
     "Publication must fail closed while a mandatory statistical gate is unresolved.");
 assert(isfile(fullfile(ctx.Layout.ReportCSVDir,"statistical_qualification_gate.csv")), ...
     "The statistical gate must publish a first-class audit artifact.");
+
+% A functional PRACH scenario that explicitly does not request the
+% false-alarm/missed-detection campaign must not claim statistical proof,
+% but that unrequested campaign is not a publication blocker.
+prach.PRACHStatisticalRequired = false;
+verdict.CheckDetails.PRACH = prach;
+rootOptional = sixgr.truth.evaluateStrictAnchorStatus( ...
+    ctx.RunFolder,ctx.ScenarioConfig,ctx.InternalConfig,verdict,dlT,ulT,struct());
+assert(rootOptional.Status.StatisticalQualificationStatus == ...
+    "NOT_APPLICABLE" && rootOptional.Status.StatisticalQualificationOk, ...
+    "An explicitly unrequested PRACH statistical campaign must be N/A.");
 ok = true;
 end

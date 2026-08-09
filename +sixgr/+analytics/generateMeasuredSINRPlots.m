@@ -72,10 +72,10 @@ T = T(localToDouble(T.TrialCount) >= minTrials, :);
 if isempty(T)
     return;
 end
-ues = unique(localToDouble(T.UEIndex));
+ues = localUniqueUELabels(T.UEIndex);
 for i = 1:numel(ues)
     ue = ues(i);
-    mask = localToDouble(T.UEIndex) == ue | (isnan(ue) & isnan(localToDouble(T.UEIndex)));
+    mask = localUEMask(T.UEIndex, ue);
     sub = T(mask, :);
     if isempty(sub)
         continue;
@@ -144,10 +144,10 @@ T = T(localToDouble(T.TrialCount) >= minTrials, :);
 if isempty(T)
     return;
 end
-ues = unique(localToDouble(T.UEIndex));
+ues = localUniqueUELabels(T.UEIndex);
 for i = 1:numel(ues)
     ue = ues(i);
-    mask = localToDouble(T.UEIndex) == ue | (isnan(ue) & isnan(localToDouble(T.UEIndex)));
+    mask = localUEMask(T.UEIndex, ue);
     sub = T(mask, :);
     [x, order] = sort(localToDouble(sub.PostEqSINR_dB_BinCenter));
     y = localToDouble(sub.Goodput_Mbps_mean);
@@ -164,10 +164,10 @@ T = T(localToDouble(T.TrialCount) >= minTrials, :);
 if isempty(T)
     return;
 end
-ues = unique(localToDouble(T.UEIndex));
+ues = localUniqueUELabels(T.UEIndex);
 for i = 1:numel(ues)
     ue = ues(i);
-    mask = localToDouble(T.UEIndex) == ue | (isnan(ue) & isnan(localToDouble(T.UEIndex)));
+    mask = localUEMask(T.UEIndex, ue);
     sub = T(mask, :);
     [x, order] = sort(localToDouble(sub.PostEqSINR_dB_BinCenter));
     y = max(localToDouble(sub.(char(yColumn))), 1e-5);
@@ -187,14 +187,14 @@ if ~(istable(T) && height(T) > 0 && ...
 end
 fig = localNewFigure();
 dirs = unique(string(T.Direction), "stable");
-ues = unique(localToDouble(T.UEIndex));
+ues = localUniqueUELabels(T.UEIndex);
 nSeries = max(1, numel(dirs) * numel(ues));
 seriesIdx = 0;
 hold on;
 for d = 1:numel(dirs)
     for i = 1:numel(ues)
         ue = ues(i);
-        sub = T(strcmpi(string(T.Direction), dirs(d)) & localToDouble(T.UEIndex) == ue, :);
+        sub = T(strcmpi(string(T.Direction), dirs(d)) & localUEMask(T.UEIndex, ue), :);
         if isempty(sub)
             continue;
         end
@@ -226,10 +226,10 @@ if ~(istable(T) && height(T) > 0 && ...
 end
 fig = localNewFigure();
 hold on;
-ues = unique(localToDouble(T.UEIndex));
+ues = localUniqueUELabels(T.UEIndex);
 for i = 1:numel(ues)
     ue = ues(i);
-    sub = T(localToDouble(T.UEIndex) == ue, :);
+    sub = T(localUEMask(T.UEIndex, ue), :);
     scatter(localToDouble(sub.PropagationDistance_m), localToDouble(sub.PostEqSINR_dB), 28, "filled", "DisplayName", localUELabel(ue));
     if localHasColumn(sub, "LargeScaleSINR_dB")
         scatter(localToDouble(sub.PropagationDistance_m), localToDouble(sub.LargeScaleSINR_dB), 28, "o", "DisplayName", localUELabel(ue) + " large-scale");
@@ -429,6 +429,26 @@ else
     x = str2double(string(v));
 end
 x = x(:);
+end
+
+function labels = localUniqueUELabels(v)
+values = localToDouble(v);
+labels = unique(values(isfinite(values)), "stable");
+% MATLAB intentionally treats NaN values as distinct in some unique()
+% modes.  Aggregate curve rows therefore used to create one identical
+% "All" legend series per row.  Preserve exactly one aggregate series.
+if any(isnan(values))
+    labels(end + 1, 1) = NaN;
+end
+end
+
+function mask = localUEMask(v, label)
+values = localToDouble(v);
+if isnan(label)
+    mask = isnan(values);
+else
+    mask = values == label;
+end
 end
 
 function tf = localHasColumn(T, name)

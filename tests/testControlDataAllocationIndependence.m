@@ -181,6 +181,7 @@ cfg.phy.pdsch.mcsContext = struct( ...
     "OperatingBand", "n78", ...
     "DeploymentClass", "controlled_test");
 cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.dmrs = struct("portSet", 0, "nPorts", 1);
 cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.phy.csirs.enable = false;

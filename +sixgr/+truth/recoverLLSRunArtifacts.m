@@ -36,9 +36,15 @@ if ~ismember(finalizationMode, ["failed_recovery", "completed_run_refinalization
 end
 
 inputCfg = p.Results.scenarioCfg;
-scfg = localResolveScenarioConfig(inputCfg, ...
-    string(p.Results.SourceFiles), string(p.Results.ConfigPath), string(p.Results.ConfigHash), layout);
-cfg = localResolveInternalConfig(inputCfg, scfg, runFolder);
+[scfg, recoveryConfigAuthority] = sixgr.truth.resolveRecoveryScenarioConfig( ...
+    runFolder, inputCfg, ...
+    "SourceFiles", string(p.Results.SourceFiles), ...
+    "ConfigPath", string(p.Results.ConfigPath), ...
+    "ConfigHash", string(p.Results.ConfigHash));
+% Rebuild the internal runtime structure from the verified immutable
+% resolved scenario. A caller-provided internal structure may have been
+% built from a later YAML revision and is therefore not recovery authority.
+cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 recoveryRunTag = localFirstNonEmptyString( ...
     string(p.Results.RunTag), ...
     string(sixgr.util.structGet(cfg, "run.runTag", "")), ...
@@ -55,7 +61,7 @@ cfg.meta.configHash = char(localFirstNonEmptyString( ...
 recoveryStore = localActivateRecoveryArtifactStore(runFolder, publicRunFolder, cfg, scfg, recoveryRunTag, double(p.Results.RunID));
 cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
 
-localWriteResolvedSnapshots(layout, scfg);
+localEnsureResolvedSnapshots(layout, scfg);
 localExportLiveGeometryArtifacts(layout, scfg, cfg);
 localRepairRuntimeOperatingMode(layout, cfg);
 
@@ -110,9 +116,7 @@ reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
 outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
 componentViewsRequiredComponents = string(scfg.get( ...
-    "output.component_artifact_views.required_components", scfg.get( ...
-    "canonical_control.output.component_artifact_views.required_components", ...
-    strings(0, 1))));
+    "output.component_artifact_views.required_components", strings(0, 1)));
 configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
 reportBundle.ConfigOwnershipArtifacts = configOwnership;
 scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
@@ -126,11 +130,9 @@ localWriteScenarioManifest(layout, manifest);
 sanitizedCSVs = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
 componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
     "Enabled", logical(scfg.get( ...
-        "output.component_artifact_views.enabled", scfg.get( ...
-        "canonical_control.output.component_artifact_views.enabled", false))), ...
+        "output.component_artifact_views.enabled", false)), ...
     "Required", logical(scfg.get( ...
-        "output.component_artifact_views.required", scfg.get( ...
-        "canonical_control.output.component_artifact_views.required", false))), ...
+        "output.component_artifact_views.required", false)), ...
     "RequiredComponents", componentViewsRequiredComponents(:));
 % Sanitization and component publication are mutating finalization stages.
 % Re-evaluate the exact persisted tree after both so the root verdict never
@@ -170,80 +172,7 @@ out.SanitizedCSVs = sanitizedCSVs;
 out.RestoredTruthArtifacts = restoredTruthArtifacts;
 out.RecoveryArtifactStore = recoveryStore;
 out.FinalizationMode = finalizationMode;
-end
-
-function scfg = localResolveScenarioConfig(inputCfg, sourceFiles, configPath, configHash, layout)
-if isa(inputCfg, "sixgr.lls6g.config.ScenarioConfig")
-    if strlength(strtrim(string(inputCfg.ConfigHash))) == 0
-        data = inputCfg.toStruct();
-        configHash = localComputeScenarioConfigHash(data);
-        scfg = sixgr.lls6g.config.ScenarioConfig(data, ...
-            "SourceFiles", inputCfg.SourceFiles, ...
-            "ConfigPath", inputCfg.ConfigPath, ...
-            "ConfigHash", configHash, ...
-            "Kind", inputCfg.Kind);
-        return;
-    end
-    scfg = inputCfg;
-    return;
-end
-if ischar(inputCfg) || isstring(inputCfg)
-    candidate = string(inputCfg);
-    if exist(char(candidate), "file") == 2
-        scfg = sixgr.lls6g.config.loadScenarioConfig(char(candidate));
-        return;
-    end
-    error("sixgr:truth:recover:ScenarioConfigNotFound", ...
-        "Scenario configuration '%s' could not be resolved for artifact recovery.", char(candidate));
-end
-data = inputCfg;
-if isstruct(data) && isfield(data, "lls6g") && isstruct(data.lls6g) && isfield(data.lls6g, "resolvedConfig")
-    data = data.lls6g.resolvedConfig;
-    if strlength(configPath) == 0
-        configPath = string(sixgr.util.structGet(inputCfg, ...
-            "lls6g.resolvedConfig.config_inheritance.provenance.config_path", ""));
-    end
-    if isempty(sourceFiles) || all(strlength(strtrim(sourceFiles(:))) == 0)
-        sourceFiles = string(sixgr.util.structGet(inputCfg, ...
-            "lls6g.resolvedConfig.config_inheritance.provenance.source_files", strings(0,1)));
-    end
-    if strlength(configHash) == 0
-        configHash = string(sixgr.util.structGet(inputCfg, "meta.configHash", ""));
-    end
-end
-sixgr.lls6g.config.validateScenarioConfig(data, ...
-    "Kind", "scenario", "AllowPartial", false, "Context", "recoverLLSRunArtifacts");
-if (isempty(sourceFiles) || all(strlength(strtrim(sourceFiles(:))) == 0)) && exist(fullfile(layout.MetaDir, "scenario_source_chain.csv"), "file") == 2
-    try
-        chainT = readtable(fullfile(layout.MetaDir, "scenario_source_chain.csv"), "VariableNamingRule", "preserve");
-        if istable(chainT) && ismember("SourceConfigFile", string(chainT.Properties.VariableNames))
-            sourceFiles = string(chainT.SourceConfigFile(:));
-        end
-    catch
-    end
-end
-if strlength(configPath) == 0
-    configPath = string(sixgr.util.structGet(data, "meta.loadedFrom", ""));
-end
-if strlength(configHash) == 0
-    configHash = string(sixgr.util.structGet(data, "meta.configHash", ""));
-end
-if strlength(strtrim(configHash)) == 0
-    configHash = localComputeScenarioConfigHash(data);
-end
-scfg = sixgr.lls6g.config.ScenarioConfig(data, ...
-    "SourceFiles", sourceFiles(:), ...
-    "ConfigPath", configPath, ...
-    "ConfigHash", configHash, ...
-    "Kind", "scenario");
-end
-
-function cfg = localResolveInternalConfig(inputCfg, scfg, runFolder)
-if isstruct(inputCfg) && isfield(inputCfg, "lls6g") && isstruct(inputCfg.lls6g) && isfield(inputCfg.lls6g, "resolvedConfig")
-    cfg = inputCfg;
-    return;
-end
-cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+out.RecoveryConfigAuthority = recoveryConfigAuthority;
 end
 
 function localEnsureDirs(layout)
@@ -253,16 +182,46 @@ sixgr.util.ensureFolder(layout.ReportImageDir);
 sixgr.util.ensureFolder(layout.MetaDir);
 end
 
-function localWriteResolvedSnapshots(layout, scfg)
+function localEnsureResolvedSnapshots(layout, scfg)
 resolvedStruct = scfg.toStruct();
-sixgr.util.jsonWrite(fullfile(layout.MetaDir, "scenario_config_resolved.json"), resolvedStruct);
-try
-    sixgr.lls6g.config.writeYAML(fullfile(layout.MetaDir, "scenario_config_resolved.yaml"), resolvedStruct);
-catch
+jsonPath = fullfile(layout.MetaDir, "scenario_config_resolved.json");
+jsonCreated = false;
+if exist(jsonPath, "file") ~= 2
+    sixgr.util.jsonWrite(jsonPath, resolvedStruct);
+    jsonCreated = true;
+end
+yamlPath = fullfile(layout.MetaDir, "scenario_config_resolved.yaml");
+if exist(yamlPath, "file") ~= 2
+    try
+        sixgr.lls6g.config.writeYAML(yamlPath, resolvedStruct);
+    catch
+    end
 end
 srcFiles = localPortablePath(string(scfg.SourceFiles(:)));
-srcT = table(srcFiles, 'VariableNames', {'SourceConfigFile'});
-sixgr.util.csvWriteTable(fullfile(layout.MetaDir, "scenario_source_chain.csv"), srcT);
+sourcePath = fullfile(layout.MetaDir, "scenario_source_chain.csv");
+if exist(sourcePath, "file") ~= 2
+    srcT = table(srcFiles, 'VariableNames', {'SourceConfigFile'});
+    sixgr.util.csvWriteTable(sourcePath, srcT);
+end
+identityPath = fullfile(layout.MetaDir, "scenario_config_identity.json");
+if jsonCreated && exist(identityPath, "file") ~= 2
+    fid = fopen(jsonPath, "r");
+    if fid < 0
+        error("sixgr:truth:recover:ResolvedConfigSnapshotUnreadable", ...
+            "Cannot read resolved configuration snapshot %s.", jsonPath);
+    end
+    cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+    digest = string(sixgr.util.sha256Hex(fread(fid, Inf, "*uint8")));
+    clear cleanup;
+    identity = struct( ...
+        "SchemaVersion", "sixgr_resolved_config_identity/v1", ...
+        "ScenarioID", string(scfg.ScenarioID), ...
+        "ConfigHash", string(scfg.ConfigHash), ...
+        "ResolvedJSONSHA256", digest, ...
+        "ResolvedYAMLSHA256", "", ...
+        "GeneratedUTC", string(sixgr.util.utcNowISO8601()));
+    sixgr.util.jsonWrite(identityPath, identity);
+end
 end
 
 function localExportLiveGeometryArtifacts(layout, scfg, cfg)

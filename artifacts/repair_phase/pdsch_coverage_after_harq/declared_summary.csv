@@ -1,0 +1,4 @@
+TestSuite,Total,Passed,Failed,Skipped,Blocked,Status
+testPDSCHDeclaredCoverageMatrix,112,112,0,0,0,PASS
+PDSCHMandatoryNegativeEvidence,85,85,0,0,0,PASS
+PDSCHFadingTruthAnchors,30,30,0,0,0,PASS

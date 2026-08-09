@@ -107,6 +107,7 @@ cfg = withCanonicalSchedulerTiming(cfg);
 
 initialDLGrant = localBindSchedulerTruthGrant( ...
     sixgr.link.resolveWaveformGrant(cfg, "DL", 0), "DL");
+initialDLGrant = localBindSameWaveformProtocolFixture(initialDLGrant, "DL");
 baseDL = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 1, "SNR_dB", 18, ...
     "GrantSnapshot", initialDLGrant);
 localAssertAllocationEvidence(baseDL.TrialTable, initialDLGrant, "DL base");
@@ -117,6 +118,11 @@ assert(isfield(baseDL.HARQ, "HARQTBContext") || isfield(baseDL.HARQ, "TransportB
     "DL base run must return a HARQ TB context.");
 dlBits = int8(baseDL.HARQ.TransportBlockBits(:));
 dlGrant = baseDL.HARQ.GrantSnapshot;
+assert(double(dlGrant.NumLogicalPorts) == 1 && ...
+    double(dlGrant.NumRFChains) == 1, ...
+    "DL HARQ snapshot must publish the logical-port and RF-chain architecture actually used by PDSCH_Tx.");
+localAssertSameWaveformProtocolBindingPreserved( ...
+    dlGrant, initialDLGrant, "DL first transmission");
 assert(~isempty(dlBits), "DL base run must emit a non-empty TB.");
 dlGrant = localRemoveLegacySymbolAllocation(dlGrant);
 
@@ -139,9 +145,12 @@ assert(all(contains(lower(string(dlReplay.TrialTable.HARQContextStatus)), "valid
     "DL HARQ replay must record a validated HARQ context status.");
 assert(all(string(dlReplay.TrialTable.Modulation) == string(sixgr.util.structGet(dlGrant, "Modulation", ""))), ...
     "DL HARQ replay must report the original modulation, not drifted config.");
+localAssertSameWaveformProtocolBindingPreserved( ...
+    dlReplay.HARQ.GrantSnapshot, dlGrant, "DL retransmission");
 
 initialULGrant = localBindSchedulerTruthGrant( ...
     sixgr.link.resolveWaveformGrant(cfg, "UL", 0), "UL");
+initialULGrant = localBindSameWaveformProtocolFixture(initialULGrant, "UL");
 baseUL = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 1, "SNR_dB", 18, ...
     "GrantSnapshot", initialULGrant);
 localAssertAllocationEvidence(baseUL.TrialTable, initialULGrant, "UL base");
@@ -153,6 +162,11 @@ assert(isfield(baseUL.HARQ, "HARQTBContext") || isfield(baseUL.HARQ, "TransportB
     "UL base run must return a HARQ TB context.");
 ulBits = int8(baseUL.HARQ.TransportBlockBits(:));
 ulGrant = baseUL.HARQ.GrantSnapshot;
+assert(double(ulGrant.NumLogicalPorts) == 1 && ...
+    double(ulGrant.NumRFChains) == 1, ...
+    "UL HARQ snapshot must publish the logical-port and RF-chain architecture actually used by PUSCH_Tx.");
+localAssertSameWaveformProtocolBindingPreserved( ...
+    ulGrant, initialULGrant, "UL first transmission");
 assert(~isempty(ulBits), "UL base run must emit a non-empty TB.");
 ulGrant = localRemoveLegacySymbolAllocation(ulGrant);
 
@@ -175,6 +189,8 @@ assert(all(contains(lower(string(ulReplay.TrialTable.HARQContextStatus)), "valid
     "UL HARQ replay must record a validated HARQ context status.");
 assert(all(string(ulReplay.TrialTable.Modulation) == string(sixgr.util.structGet(ulGrant, "Modulation", ""))), ...
     "UL HARQ replay must report the original modulation, not drifted config.");
+localAssertSameWaveformProtocolBindingPreserved( ...
+    ulReplay.HARQ.GrantSnapshot, ulGrant, "UL retransmission");
 
 ok = true;
 end
@@ -243,6 +259,49 @@ grant.PDCCHREGMappingAvailable = true;
 grant.PDCCHControlFailureReason = "pdcch_dci_crc_and_payload_match";
 grant.PDCCHControlEvidenceSource = "pdcch_waveform_dci_crc_and_payload_match";
 grant.ControlDecodeSource = "pdcch_waveform_dci_crc_and_payload_match";
+end
+
+function grant = localBindSameWaveformProtocolFixture(grant, direction)
+% Model the exact immutable binding installed by the production protocol
+% bridge before the waveform is dispatched. HARQ snapshot construction
+% must retain every byte-lineage field; regenerating it on retransmission
+% is forbidden.
+direction = upper(string(direction));
+token = lower(direction);
+grant.TransportBlockId = char("protocol-harq-" + token + "-tb-1");
+grant.ProtocolPayloadSameWaveformTruth = true;
+grant.ProtocolPacketId = char("protocol-harq-" + token + "-packet-1");
+grant.ProtocolApplicationPacketId = char("protocol-harq-" + token + "-application-1");
+grant.ProtocolFragmentId = char("protocol-harq-" + token + "-fragment-1");
+grant.ProtocolSegmentIndex = 1;
+grant.ProtocolPayloadOffsetBits = 0;
+grant.ProtocolPayloadBits = 8;
+grant.ProtocolPayloadSHA256 = repmat('1', 1, 64);
+grant.ProtocolSDAPHeaderHex = '09';
+grant.ProtocolPDCPHeaderHex = '800000';
+grant.ProtocolRLCHeaderHex = '800000';
+grant.ProtocolEncodedRLC_SHA256 = repmat('2', 1, 64);
+grant.ProtocolMACSHA256 = repmat('3', 1, 64);
+grant.ProtocolMACPDUBytes = floor(double(sixgr.util.structGet( ...
+    grant, "TBSBits", sixgr.util.structGet(grant, "TransportBlockSize", 0))) / 8);
+grant.ProtocolMACPaddingBytes = max(0, grant.ProtocolMACPDUBytes - 8);
+grant.ProtocolEvidenceSource = 'same_waveform_protocol_bridge';
+end
+
+function localAssertSameWaveformProtocolBindingPreserved(actual, expected, label)
+fields = ["TransportBlockId","ProtocolPayloadSameWaveformTruth", ...
+    "ProtocolPacketId","ProtocolApplicationPacketId","ProtocolFragmentId", ...
+    "ProtocolSegmentIndex","ProtocolPayloadOffsetBits","ProtocolPayloadBits", ...
+    "ProtocolPayloadSHA256","ProtocolSDAPHeaderHex","ProtocolPDCPHeaderHex", ...
+    "ProtocolRLCHeaderHex","ProtocolEncodedRLC_SHA256","ProtocolMACSHA256", ...
+    "ProtocolMACPDUBytes","ProtocolMACPaddingBytes","ProtocolEvidenceSource"];
+for field = fields
+    name = char(field);
+    assert(isfield(actual, name), ...
+        "%s must retain protocol field %s in its HARQ snapshot.", label, name);
+    assert(isequaln(actual.(name), expected.(name)), ...
+        "%s changed immutable protocol field %s.", label, name);
+end
 end
 
 function localAssertULDecodedPDCCHAuthority(T)

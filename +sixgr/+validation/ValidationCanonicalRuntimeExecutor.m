@@ -280,6 +280,11 @@ cfg.phy.pdsch.codeRate = 0.30;
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
+% This bounded fixed-link calibration does not schedule CSI-RS. Make that
+% authority explicit because repository defaults may enable a multi-resource
+% CSI-RS campaign whose physical precoders must come from scenario YAML.
+cfg.phy.csirs.enable = false;
+cfg.phy.csirs.enabled = false;
 cfg.phy.pusch.executionProfile = "phy_calibration";
 cfg.phy.pusch.mcsTable = "calibration_explicit";
 cfg.phy.pusch.mcsIndex = 0;

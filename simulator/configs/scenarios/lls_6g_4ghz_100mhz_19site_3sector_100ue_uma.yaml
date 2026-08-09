@@ -272,7 +272,7 @@ reference_signals:
 mimo:
   n_tx_ant: 64
   n_rx_ant: 4
-  n_layers: 1
+  n_layers: 2
   precoder_type: wideband
   codebook_type: type1
   reciprocity_mode: FDD
@@ -308,12 +308,12 @@ random_access:
   enabled: true
   ssb_periodicity_ms: 20
   ssb_beam_count: 8
-  prach_format: A2
+  prach_format: B4
   preamble_length_mode: short
   preamble_count: 64
   msg3_enabled: true
-  configuration_index: 87
-  subcarrier_spacing_khz: 15
+  configuration_index: 157
+  subcarrier_spacing_khz: 30
   root_sequence_index: 1
   preamble_index: 0
 
@@ -495,6 +495,50 @@ traffic:
 
 energy_efficiency:
   tx_power_dbm: 46
+
+# The inherited 700 MHz seed uses a 15 kHz / 106-PRB BWP.  This family is
+# a 4 GHz, 100 MHz, 30 kHz carrier, so both active BWPs and their carrier
+# grids must be replaced together; leaving only the global numerology
+# overridden creates an invalid mixed-SCS runtime state.
+bwp:
+  dl:
+    bwp_id: 0
+    direction: DL
+    n_start_bwp: 0
+    n_size_bwp: 273
+    scs_khz: 30
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 30
+  ul:
+    bwp_id: 0
+    direction: UL
+    n_start_bwp: 0
+    n_size_bwp: 273
+    scs_khz: 30
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 30
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 4000000000
+      band: n77
+      frequency_range: FR1
+      channel_bandwidth_mhz: 100
+      duplex_mode: TDD
+      dl_carrier_grid:
+        n_start_grid: 0
+        n_size_grid: 273
+        scs_khz: 30
+      ul_carrier_grid:
+        n_start_grid: 0
+        n_size_grid: 273
+        scs_khz: 30
+      carrier_indicator_map:
+        - indicator: 0
+          scheduled_cc_id: 0
 
 output:
   backend: mysql_web

@@ -95,20 +95,23 @@ evidence = struct( ...
     "MeasuredRateRecoveredCodeBlockLength_bits", NaN, ...
     "MeasuredRateRecoverNrefBits", NaN);
 
-if ~isempty(rateMatchedLLR)
-    evidence.MeasuredRateMatchedCodewordLLRBits = double(numel(rateMatchedLLR));
+rateMatchedValues = localNumericValues(rateMatchedLLR);
+if ~isempty(rateMatchedValues)
+    evidence.MeasuredRateMatchedCodewordLLRBits = double(numel(rateMatchedValues));
 end
-if ~isempty(rateRecoveredLLR)
-    llr = double(rateRecoveredLLR(:));
+rateRecoveredValues = localNumericValues(rateRecoveredLLR);
+if ~isempty(rateRecoveredValues)
+    llr = double(rateRecoveredValues(:));
     evidence.MeasuredRateRecoveredLLRBits = double(numel(llr));
     evidence.MeasuredRateRecoveredFiniteLLRCount = double(sum(isfinite(llr)));
     evidence.MeasuredRateRecoverFillerBits = double(sum(isinf(llr)));
 end
-if ~isempty(rateRecoveredBatch)
-    evidence.MeasuredRateRecoveredCodeBlockLength_bits = double(size(rateRecoveredBatch, 1));
-    evidence.MeasuredRateRecoveredCodeBlockCount = double(size(rateRecoveredBatch, 2));
+[codeBlockLength, codeBlockCount] = localRateRecoveredBatchShape(rateRecoveredBatch);
+if isfinite(codeBlockCount)
+    evidence.MeasuredRateRecoveredCodeBlockLength_bits = codeBlockLength;
+    evidence.MeasuredRateRecoveredCodeBlockCount = codeBlockCount;
 end
-nref = double(sixgr.util.structGet(rateRecoverInfo, "NrefUsed", NaN));
+nref = localNrefUsed(rateRecoverInfo);
 if isscalar(nref) && isfinite(nref)
     evidence.MeasuredRateRecoverNrefBits = nref;
 end
@@ -235,17 +238,80 @@ portCount = double(numel(unique(portSub)));
 end
 
 function values = localFiniteVector(raw)
+values = localNumericValues(raw);
+values = values(isfinite(values));
+end
+
+function values = localNumericValues(raw)
+values = double([]);
 if isempty(raw)
-    values = double([]);
+    return;
+end
+if iscell(raw)
+    parts = cell(numel(raw), 1);
+    for index = 1:numel(raw)
+        parts{index} = localNumericValues(raw{index});
+    end
+    if ~isempty(parts)
+        values = vertcat(parts{:});
+    end
     return;
 end
 try
     values = double(raw(:));
 catch
     values = double([]);
+end
+end
+
+function [lengthBits, count] = localRateRecoveredBatchShape(raw)
+lengthBits = NaN;
+count = NaN;
+if isempty(raw)
     return;
 end
-values = values(isfinite(values));
+if ~iscell(raw)
+    raw = {raw};
+end
+lengths = zeros(0, 1);
+count = 0;
+for index = 1:numel(raw)
+    item = raw{index};
+    if isempty(item) || ~(isnumeric(item) || islogical(item))
+        continue;
+    end
+    lengths(end + 1, 1) = size(item, 1); %#ok<AGROW>
+    count = count + size(item, 2);
+end
+if isempty(lengths)
+    count = NaN;
+elseif numel(unique(lengths)) == 1
+    lengthBits = double(lengths(1));
+end
+count = double(count);
+end
+
+function value = localNrefUsed(raw)
+value = NaN;
+if isempty(raw)
+    return;
+end
+if ~iscell(raw)
+    raw = {raw};
+end
+values = zeros(0, 1);
+for index = 1:numel(raw)
+    if ~isstruct(raw{index})
+        continue;
+    end
+    candidate = double(sixgr.util.structGet(raw{index}, "NrefUsed", NaN));
+    if isscalar(candidate) && isfinite(candidate)
+        values(end + 1, 1) = candidate; %#ok<AGROW>
+    end
+end
+if ~isempty(values) && numel(unique(values)) == 1
+    value = double(values(1));
+end
 end
 
 function txt = localFormatVector(raw)

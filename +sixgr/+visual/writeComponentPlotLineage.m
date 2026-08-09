@@ -1,5 +1,10 @@
-function T = writeComponentPlotLineage(runFolder, lineagePath, plotIds, imagePaths, sourceCSVs, producerModule)
+function T = writeComponentPlotLineage(runFolder, lineagePath, plotIds, imagePaths, sourceCSVs, producerModule, varargin)
 %WRITECOMPONENTPLOTLINEAGE Persist exact image-to-source lineage for component plots.
+
+p = inputParser;
+p.addParameter("SourcesAlreadyFinalized", false, ...
+    @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
 
 runFolder = char(string(runFolder));
 lineagePath = char(string(lineagePath));
@@ -28,7 +33,7 @@ for i = 1:n
     sourceSpecs(i) = localNormalizeSourceSpec(sourceCSVs(i), runFolder);
     sourcePaths = [sourcePaths; localAbsoluteSourcePaths(sourceSpecs(i), runFolder)]; %#ok<AGROW>
 end
-if ~isempty(sourcePaths)
+if ~isempty(sourcePaths) && ~logical(p.Results.SourcesAlreadyFinalized)
     sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, ...
         "OnlyPaths", unique(sourcePaths, "stable"));
 end

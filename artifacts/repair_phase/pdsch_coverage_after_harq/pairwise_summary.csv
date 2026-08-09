@@ -1,0 +1,3 @@
+TestSuite,Total,Passed,Failed,Skipped,Blocked,Status
+PDSCHDeterministicPairwise,48,48,0,0,0,PASS
+PDSCHFadingTruthAnchors,33,33,0,0,0,PASS

@@ -22,7 +22,12 @@ cfg = localPDSCHCfg();
 [tx, ~] = sixgr.phy.dl.PDSCH_Tx(cfg);
 
 declaredGridNoiseVar = 0.25;
-rx = sixgr.phy.dl.PDSCH_Rx(tx.Waveform, cfg, ...
+waveformPower = mean(abs(tx.Waveform(:)).^2, "omitnan");
+waveformNoiseVar = 0.1 * waveformPower;
+noise = sqrt(waveformNoiseVar/2) .* ( ...
+    randn(size(tx.Waveform)) + 1i*randn(size(tx.Waveform)));
+rxWaveform = tx.Waveform + noise;
+rx = sixgr.phy.dl.PDSCH_Rx(rxWaveform, cfg, ...
     "Carrier", tx.Carrier, ...
     "PDSCH", tx.PDSCH, ...
     "PDSCHIndices", tx.PDSCHIndices, ...
@@ -163,6 +168,7 @@ cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.equalizer = "MMSE";
 cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.csirs.enable = false;
 cfg.phy.channelEstimation.method = "LS";
 cfg.phy.ldpc.maxIterations = 12;
 end

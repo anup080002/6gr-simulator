@@ -3,6 +3,7 @@ function artifacts = exportSIB1EvidenceArtifacts(runFolder, tx, result, varargin
 
 p = inputParser;
 p.addParameter("NegativeResults", struct([]), @(x) isempty(x) || isstruct(x));
+p.addParameter("Identity", struct(), @(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 
 layout = sixgr.report.resultLayout(runFolder);
@@ -19,6 +20,11 @@ end
 
 runId = string(sixgr.util.structGet(tx, "RunId", "sib1_strict_mini_anchor"));
 scenarioName = "lls_sib1_strict_mini_anchor";
+if ~isempty(fieldnames(p.Results.Identity))
+    runId = string(sixgr.util.structGet(p.Results.Identity, "RunID", runId));
+    scenarioName = string(sixgr.util.structGet( ...
+        p.Results.Identity, "ScenarioID", scenarioName));
+end
 trialT = table( ...
     runId, scenarioName, double(result.NCellID), 0, 0, double(result.SampleRateHz), ...
     double(sixgr.util.structGet(tx, "CarrierFrequencyHz", 4e9)), ...
@@ -65,6 +71,26 @@ summaryT = table(runId, scenarioName, "AUD-015", logical(result.StrictOk), ...
     logical(result.SIB1TreeEqual), "sixgr_sib1_anchor_profile_v1", ...
     'VariableNames', {'RunId','ScenarioName','IssueId','StrictOk','Status','FailureReason', ...
     'TxPayloadHash','RxPayloadHash','TxTreeHash','RxTreeHash','TreeEqual','SupportedProfile'});
+if ~isempty(fieldnames(p.Results.Identity))
+    bound = sixgr.runtime.bindInPathArtifactIdentity(struct( ...
+        "trialT", trialT, "candidateT", candidateT, ...
+        "negativeT", negativeT, "roundtripT", roundtripT, ...
+        "traceT", traceT, "pbchRecoveryT", pbchRecoveryT, ...
+        "mibFieldT", mibFieldT, "mibPdcchT", mibPdcchT, ...
+        "coresetT", coresetT, "searchSpaceT", searchSpaceT, ...
+        "summaryT", summaryT), p.Results.Identity);
+    trialT = bound.trialT;
+    candidateT = bound.candidateT;
+    negativeT = bound.negativeT;
+    roundtripT = bound.roundtripT;
+    traceT = bound.traceT;
+    pbchRecoveryT = bound.pbchRecoveryT;
+    mibFieldT = bound.mibFieldT;
+    mibPdcchT = bound.mibPdcchT;
+    coresetT = bound.coresetT;
+    searchSpaceT = bound.searchSpaceT;
+    summaryT = bound.summaryT;
+end
 
 paths = struct();
 paths.RecoveryTrialsCSV = fullfile(layout.ControlCSVDir, "sib1_recovery_trials.csv");
@@ -97,6 +123,13 @@ sixgr.util.csvWriteTable(paths.AirInterfaceCSV, trialT);
 sixgr.util.csvWriteTable(paths.ConformanceSummaryCSV, summaryT);
 resourceGridT = localResourceGridTable(runId, tx.SIB1Grid);
 equalizedSymbolT = localEqualizedSymbolTable(runId, result);
+if ~isempty(fieldnames(p.Results.Identity))
+    bound = sixgr.runtime.bindInPathArtifactIdentity(struct( ...
+        "resourceGridT", resourceGridT, ...
+        "equalizedSymbolT", equalizedSymbolT), p.Results.Identity);
+    resourceGridT = bound.resourceGridT;
+    equalizedSymbolT = bound.equalizedSymbolT;
+end
 sixgr.util.csvWriteTable(paths.ResourceGridCSV, resourceGridT);
 sixgr.util.csvWriteTable(paths.PDSCHEqualizedSymbolsCSV, equalizedSymbolT);
 

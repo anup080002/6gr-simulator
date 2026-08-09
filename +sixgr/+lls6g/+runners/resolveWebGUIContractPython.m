@@ -1,11 +1,13 @@
 function result = resolveWebGUIContractPython()
-%RESOLVEWEBGUICONTRACTPYTHON Locate a Python runtime with the DB modules.
+%RESOLVEWEBGUICONTRACTPYTHON Locate the complete WebGUI contract runtime.
 %
 % YAML parsing only needs PyYAML, whereas the browser-contract materializer
-% also imports the WebGUI database layer.  Selecting the generic YAML
-% runtime can therefore silently choose a Python installation without
-% mysql.connector.  Probe the WebGUI runtime first and return only a
-% candidate that can import both required modules.
+% also imports the WebGUI database layer and rasterizes every persisted
+% chart to a validated PNG. Selecting the generic YAML runtime (or a
+% partially provisioned WebGUI venv) can therefore fail only after a long
+% MATLAB execution has completed. Probe the entire production dependency
+% surface up front and return only an interpreter that can materialize the
+% browser contract.
 
 repoRoot = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
 result = struct( ...
@@ -13,7 +15,8 @@ result = struct( ...
     "Executable", "", ...
     "Source", "", ...
     "Attempted", strings(0, 1), ...
-    "Message", "No Python runtime with mysql.connector and yaml was found.");
+    "Message", ["No Python runtime with mysql.connector, yaml, Pillow, " + ...
+        "and resvg_py was found."]);
 
 candidates = repmat(struct("Executable", "", "Source", ""), 0, 1);
 candidates = localAddCandidate(candidates, getenv("SIXGR_WEBGUI_PYTHON"), ...
@@ -55,7 +58,8 @@ for i = 1:numel(candidates)
         diagnostics(end + 1, 1) = executable + ":not_found"; %#ok<AGROW>
         continue;
     end
-    command = sprintf('"%s" -c "import mysql.connector, yaml"', ...
+    command = sprintf(['"%s" -c "import mysql.connector, yaml, resvg_py; ' ...
+        'from PIL import Image"'], ...
         localEscapeDoubleQuotedArgument(executable));
     [status, output] = system(command);
     if status == 0

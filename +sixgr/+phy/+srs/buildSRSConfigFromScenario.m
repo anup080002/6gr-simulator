@@ -45,9 +45,6 @@ coverageRequirement = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.co
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.coverage_requirement", "configured_band")))));
 fullRequired = logical(sixgr.util.structGet(cfg, "phy.srs.fullCarrierSoundingRequired", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.full_carrier_sounding_required", coverageRequirement == "full_carrier")));
-expectedNumRBExplicit = localHasPath(cfg, "lls6g.reference_signals.srs.expected_num_rb");
-expectedPctExplicit = localHasPath(cfg, "lls6g.reference_signals.srs.expected_bandwidth_coverage_percent");
-
 strictCfg = struct();
 strictCfg.RunId = string(opt.RunId);
 strictCfg.ScenarioName = string(opt.ScenarioName);
@@ -121,10 +118,17 @@ strictCfg.B_SRS = double(sixgr.util.structGet(cfg, "phy.srs.BSRS", ...
 strictCfg.BWPRelativeRBStart = double(sixgr.util.structGet(cfg, "phy.srs.bwpRelativeRBStart", 0));
 strictCfg.NumRB = double(sixgr.util.structGet(cfg, "phy.srs.bandwidthRB", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.num_rb", nSizeGrid)));
-strictCfg.ExpectedRBStart = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.expected_rb_start", strictCfg.BWPRelativeRBStart));
-strictCfg.ExpectedNumRB = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.expected_num_rb", strictCfg.NumRB));
-strictCfg.ExpectedBandwidthCoveragePercent = double(sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.expected_bandwidth_coverage_percent", ...
-    100 * min(strictCfg.ExpectedNumRB, nSizeGrid) / nSizeGrid));
+strictCfg.ExpectedRBStart = double(sixgr.util.structGet(cfg, "phy.srs.expectedRBStart", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.expected_rb_start", strictCfg.BWPRelativeRBStart)));
+strictCfg.ExpectedNumRB = double(sixgr.util.structGet(cfg, "phy.srs.expectedNumRB", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.expected_num_rb", strictCfg.NumRB)));
+strictCfg.ExpectedBandwidthCoveragePercent = double(sixgr.util.structGet(cfg, ...
+    "phy.srs.expectedBandwidthCoveragePercent", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.expected_bandwidth_coverage_percent", ...
+    100 * min(strictCfg.ExpectedNumRB, nSizeGrid) / nSizeGrid)));
+strictCfg.FullCarrierCoverageToleranceRB = double(sixgr.util.structGet(cfg, ...
+    "phy.srs.fullCarrierCoverageToleranceRB", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.full_carrier_coverage_tolerance_rb", 1)));
 strictCfg.ExpectedSlotSet = double(slotNumbers);
 strictCfg.ExpectedSymbolSet = double(strictCfg.SymbolStart + (0:strictCfg.NumSRSSymbols-1));
 strictCfg.ExpectedRECount = NaN;
@@ -173,12 +177,11 @@ strictCfg.ToolboxSRS = resourceSet.SRS;
 strictCfg.C_SRS = double(resourceSet.SRS.CSRS);
 strictCfg.B_SRS = double(resourceSet.SRS.BSRS);
 strictCfg.NumRB = double(resourceSet.SRS.NRBPerTransmission);
-if ~expectedNumRBExplicit
-    strictCfg.ExpectedNumRB = double(strictCfg.NumRB);
-end
-if ~expectedPctExplicit
-    strictCfg.ExpectedBandwidthCoveragePercent = 100 * min(double(strictCfg.ExpectedNumRB), nSizeGrid) / nSizeGrid;
-end
+% ExpectedNumRB describes the requested sounding span.  It must not be
+% overwritten with the closest Toolbox-realizable NRBPerTransmission.  For
+% example, a configured 273-RB FR1 BWP resolves to the standardized 272-RB
+% SRS allocation and is then assessed against the explicit one-edge-RB
+% tolerance rather than being mislabeled as an intentional partial band.
 strictCfg.ExpectedRECount = localExpectedSRSRECount(strictCfg);
 strictCfg.ConfigHash = sixgr.phy.srs.hashSRSConfig(strictCfg);
 strictCfg.StrictValidation = sixgr.phy.srs.validateSRSConfigStrict(strictCfg);

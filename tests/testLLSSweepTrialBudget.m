@@ -29,18 +29,78 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", 24);
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pusch.nLayers = 1;
 cfg.phy.pusch.numLayers = 1;
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.pdsch.executionProfile", "phy_calibration");
+cfg = sixgr.util.structSet(cfg, ...
+    "run.pdschExecutionProfile", "phy_calibration");
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.pusch.executionProfile", "phy_calibration");
+cfg = sixgr.util.structSet(cfg, ...
+    "run.puschExecutionProfile", "phy_calibration");
 cfg.phy.pbch.enable = false;
 cfg.phy.mib.enable = false;
 cfg.phy.sib1.enable = false;
 cfg.phy.pdcch.enable = false;
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindSearch", false);
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.dmrs.enable", false);
 cfg.phy.pucch.enable = false;
 cfg.phy.srs.enable = false;
 cfg = sixgr.util.structSet(cfg, "phy.trs.enable", false);
 cfg = sixgr.util.structSet(cfg, "phy.ptrs.enable", false);
+cfg = sixgr.util.structSet(cfg, "phy.ptrs.enableCPECorrection", false);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.enablePTRS", false);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.ptrs.enableCPECorrection", false);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.enablePTRS", false);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.ptrs.enableCPECorrection", false);
+cfg = sixgr.util.structSet(cfg, "pdsch6gr.EnablePTRS", false);
+cfg = sixgr.util.structSet(cfg, "phy.trackingRS.enable", false);
 cfg.phy.csirs.enable = false;
 cfg.phy.prach.enable = false;
+cfg = sixgr.util.structSet(cfg, "random_access.enabled", false);
 cfg.phy.harq.enable = false;
 cfg.mac.harq.enable = false;
+cfg = sixgr.util.structSet(cfg, "run.harqDiagnosticsEnabled", false);
+
+% This is a deliberately reduced unit-test scenario, not a post-load
+% bypass of the resolved YAML. Reinstall a matching feature authority so
+% the waveform runner still exercises the production fail-closed contract.
+probeScenario = scfg.toStruct();
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.pbch_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "initial_access.mib.enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "initial_access.sib1.enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "control.pdcch_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "control.blind_search_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.pdcch_dmrs_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "control.pucch_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.srs_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.trs_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.tracking_rs_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.ptrs_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.ptrs_cpe_correction_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "pdsch6gr.enable_ptrs", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "reference_signals.csi_rs_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "random_access.enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, "harq.enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "pdsch6gr.harq_enabled", false);
+probeScenario = sixgr.util.structSet(probeScenario, ...
+    "simulation.harq_diagnostics_enabled", false);
+cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, probeScenario);
 
 tmp = tempname;
 mkdir(tmp);

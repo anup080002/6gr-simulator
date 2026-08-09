@@ -7,6 +7,9 @@ addRequired(p, "baseCfg", @(x) isstruct(x) || isobject(x));
 addParameter(p, "RunFolder", "", @(x) ischar(x) || isstring(x));
 addParameter(p, "RunId", "prach_strict_validation", @(x) ischar(x) || isstring(x));
 addParameter(p, "ScenarioName", "prach_strict_validation", @(x) ischar(x) || isstring(x));
+addParameter(p, "ExecutionID", "", @(x) ischar(x) || isstring(x));
+addParameter(p, "ScenarioConfigHash", "", @(x) ischar(x) || isstring(x));
+addParameter(p, "EvidenceScope", "in_path", @(x) ischar(x) || isstring(x));
 addParameter(p, "WriteArtifacts", true, @(x) islogical(x) || isnumeric(x));
 parse(p, baseCfg, varargin{:});
 opt = p.Results;
@@ -161,6 +164,17 @@ result.ArtifactTables = struct( ...
     "prach_multi_occasion_trials", multiOccasionT, ...
     "prach_negative_trials", negativeTrialT, ...
     "prach_oracle_guard", oracleT);
+if strlength(strtrim(string(opt.ExecutionID))) > 0
+    identity = struct("RunID", runId, ...
+        "ExecutionID", string(opt.ExecutionID), ...
+        "ScenarioID", scenarioName, ...
+        "ConfigHash", string(opt.ScenarioConfigHash));
+    result.ArtifactTables = ...
+        sixgr.runtime.bindInPathArtifactIdentity( ...
+        result.ArtifactTables, identity, string(opt.EvidenceScope));
+    result.ExecutionID = identity.ExecutionID;
+    result.ScenarioConfigHash = identity.ConfigHash;
+end
 
 if logical(opt.WriteArtifacts)
     localMarkStrictProgress(runId, "strict_prach_artifact_export", 0.97, ...
@@ -534,7 +548,7 @@ rows = repmat(struct("RunId","", "SweepId",NaN, "ConfigHash","", "SNRdB",NaN, ..
     "DeterministicSeedCount",NaN, "DeterministicSeedSet","", "SeedDerivation","", ...
     "EvidenceUnit","preamble_present_prach_occasion", "Status","NOT_EVALUATED"), numel(snrs), 1);
 maxRowBudget = numel(snrs) * max(round(double(design.DetectionMaximumTrials)), ...
-    max(1, min(3, round(double(cfg.NumTrials)))));
+    max(1, round(double(cfg.NumTrials))));
 trialRows = repmat(localTrialRowTemplate(), maxRowBudget, 1);
 candidateTableParts = cell(numel(snrs), 1);
 oracleTableParts = cell(numel(snrs), 1);
@@ -552,7 +566,11 @@ for iSNR = 1:numel(snrs)
         widthTarget = double(design.DetectionCIWidthTarget);
         minimumEvents = round(double(design.MinimumMissedDetectionEvents));
     else
-        maximumTrials = max(1,min(3,round(double(cfg.NumTrials))));
+        % Informational sweep points still publish measured probabilities and
+        % confidence intervals.  They must therefore honor the scenario's
+        % YAML-authoritative trial count rather than using a hidden three-run
+        % plotting shortcut.
+        maximumTrials = max(1, round(double(cfg.NumTrials)));
         minimumTrials = maximumTrials;
         batchSize = maximumTrials;
         plannedLooks = 1;

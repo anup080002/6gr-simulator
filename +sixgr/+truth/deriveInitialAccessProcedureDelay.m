@@ -1,15 +1,19 @@
 function T = deriveInitialAccessProcedureDelay(T, varargin)
 %DERIVEINITIALACCESSPROCEDUREDELAY Bind access delay to runtime event times.
 %
-% The function marks the terminal Msg4 lifecycle row for each UE and adds
-% a procedure-delay sample only when all four-step RA events are present.
+% The function marks the terminal Msg4 lifecycle row for each UE and SNR
+% sweep point, and adds a procedure-delay sample only when all four-step RA
+% events from that same operating point are present.
 % It never substitutes configured latency or MATLAB compute time.
 
 p = inputParser;
 p.addParameter("SlotDuration_s", NaN, ...
     @(x)isnumeric(x) && isscalar(x));
+p.addParameter("RequireRRCSetupComplete", false, ...
+    @(x)islogical(x) && isscalar(x));
 p.parse(varargin{:});
 fallbackSlotDuration_s = double(p.Results.SlotDuration_s);
+requireRRCSetupComplete = logical(p.Results.RequireRRCSetupComplete);
 
 if ~(istable(T) && ~isempty(T))
     return;
@@ -29,11 +33,23 @@ T = localEnsureNumericColumn(T, "AccessDelay_ms", n);
 T = localEnsureLogicalColumn(T, "CompleteFlag", n);
 
 ueValues = double(T.UEIndex);
+if ismember("SweepPointIndex", string(T.Properties.VariableNames))
+    sweepValues = double(T.SweepPointIndex);
+else
+    sweepValues = ones(n, 1);
+end
 eventNames = upper(strtrim(string(T.EventName)));
 slots = double(T.Slot);
 times_s = double(T.Time_s);
-for ue = unique(ueValues(isfinite(ueValues))).'
-    ueMask = ueValues == ue;
+groupRows = find(isfinite(ueValues) & isfinite(sweepValues));
+if isempty(groupRows)
+    return;
+end
+groups = unique([ueValues(groupRows), sweepValues(groupRows)], "rows", "stable");
+for groupIdx = 1:size(groups, 1)
+    ue = groups(groupIdx, 1);
+    sweepPoint = groups(groupIdx, 2);
+    ueMask = ueValues == ue & sweepValues == sweepPoint;
     if any(ueMask & logical(T.CompleteFlag) & ...
             isfinite(double(T.ProcedureDelay_ms)))
         continue;
@@ -44,8 +60,14 @@ for ue = unique(ueValues(isfinite(ueValues))).'
     if any(arrayfun(@(name)~any(ueMask & eventNames == name), requiredEvents))
         continue;
     end
-    terminalMask = ueMask & ismember(eventNames, ...
-        ["MSG4_CONTENTION_RESOLUTION_COMPLETED","MSG4_PDSCH_COMPLETED"]);
+    if requireRRCSetupComplete
+        terminalNames = ["RRC_SETUP_COMPLETE_ACCEPTED", ...
+            "RRC_SETUP_COMPLETE_DECODED","RRC_SETUP_COMPLETE_OK"];
+    else
+        terminalNames = ["MSG4_CONTENTION_RESOLUTION_COMPLETED", ...
+            "MSG4_PDSCH_COMPLETED"];
+    end
+    terminalMask = ueMask & ismember(eventNames, terminalNames);
     if ~any(terminalMask)
         continue;
     end
@@ -83,8 +105,12 @@ for ue = unique(ueValues(isfinite(ueValues))).'
         "measured_runtime_procedure_delay");
     T = localAssignText(T, "ValueStatus", endRow, ...
         "available_runtime_procedure_sample");
-    T = localAssignText(T, "ValueDefinition", endRow, ...
-        "SSB/PBCH through PRACH/Msg2/Msg3/Msg4 delay from runtime event timestamps");
+    if requireRRCSetupComplete
+        definition = "SSB/PBCH through PRACH/Msg2/Msg3/Msg4 and waveform-decoded SRB1 RRCSetupComplete delay from runtime event timestamps";
+    else
+        definition = "SSB/PBCH through PRACH/Msg2/Msg3/Msg4 delay from runtime event timestamps";
+    end
+    T = localAssignText(T, "ValueDefinition", endRow, definition);
     T = localAssignText(T, "Notes", endRow, ...
         "Delay uses slot-coupled runtime timestamps only; configured values and compute runtime are not substituted.");
 end

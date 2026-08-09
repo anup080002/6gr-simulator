@@ -7,11 +7,19 @@ classdef ContractCatalog
     % or from a previous results/ run.
 
     methods (Static)
-        function catalog = load(repositoryRoot)
+        function catalog = load(repositoryRoot, catalogScope)
             if nargin < 1 || strlength(string(repositoryRoot)) == 0
                 repositoryRoot = sixgr.artifact.ContractCatalog.repositoryRoot();
             end
+            if nargin < 2 || strlength(strtrim(string(catalogScope))) == 0
+                catalogScope = "phase_pack";
+            end
             repositoryRoot = char(string(repositoryRoot));
+            catalogScope = lower(strtrim(string(catalogScope)));
+            if ~ismember(catalogScope, ["phase_pack", "runtime_in_path"])
+                error("sixgr:artifact:UnsupportedCatalogScope", ...
+                    "Unsupported artifact catalog scope '%s'.", catalogScope);
+            end
             vectorRoot = fullfile(repositoryRoot, "tests", "vectors");
             if ~isfolder(vectorRoot)
                 error("sixgr:artifact:ContractRootMissing", ...
@@ -47,6 +55,9 @@ classdef ContractCatalog
             end
             catalog = struct2table(rows, 'AsArray', true);
             localValidateCatalog(catalog);
+            if catalogScope == "runtime_in_path"
+                catalog = localRuntimeInPathCatalog(catalog);
+            end
             catalog = sortrows(catalog, ...
                 ["Domain", "Profile", "ArtifactType", "FileName", "Mode"]);
         end
@@ -73,6 +84,54 @@ classdef ContractCatalog
             root = fileparts(fileparts(here));
         end
     end
+end
+
+function catalog = localRuntimeInPathCatalog(fullCatalog)
+% A scenario execution may publish only evidence registered by that exact
+% execution.  Phase-pack campaigns remain available through phase_pack and
+% ComponentQualificationPublisher, but are never implied by a single run.
+required = table( ...
+    ["initial_access";"initial_access";"pdsch";"pdsch";"pusch";"pusch"], ...
+    ["CSV";"PNG";"CSV";"PNG";"CSV";"PNG"], ...
+    ["prach_detection_trials.csv";"prach_preamble_correlation.png"; ...
+     "pdsch_bler_curve.csv";"pdsch_bler_vs_snr.png"; ...
+     "pusch_bler_curve.csv";"pusch_bler_vs_snr.png"], ...
+    'VariableNames', {'Domain','ArtifactType','FileName'});
+mask = false(height(fullCatalog), 1);
+for index = 1:height(required)
+    match = fullCatalog.Domain == required.Domain(index) & ...
+        fullCatalog.Profile == "base" & ...
+        fullCatalog.ArtifactType == required.ArtifactType(index) & ...
+        fullCatalog.FileName == required.FileName(index);
+    if nnz(match) ~= 1
+        error("sixgr:artifact:RuntimeContractMissing", ...
+            "Expected exactly one runtime contract for %s/%s/%s; observed %d.", ...
+            required.Domain(index), required.ArtifactType(index), ...
+            required.FileName(index), nnz(match));
+    end
+    mask = mask | match;
+end
+catalog = fullCatalog(mask, :);
+if height(catalog) ~= height(required) || ...
+        nnz(catalog.ArtifactType == "CSV") ~= 3 || ...
+        nnz(catalog.ArtifactType == "PNG") ~= 3
+    error("sixgr:artifact:RuntimeContractCountMismatch", ...
+        "Runtime in-path catalog must contain exactly three CSV and three PNG contracts.");
+end
+
+% Phase-pack minima describe dedicated statistical campaigns (for example
+% 100 PRACH trials and four BLER operating points). A scheduled scenario is
+% a separate evidence scope: it may publish only observations produced by
+% that exact execution, and the adapters label those rows in_path/MEASURED.
+% Keep the source phase-pack rows unchanged and derive a separately named
+% runtime contract that requires at least one real observation.
+catalog.ContractID = catalog.ContractID + "|runtime_in_path";
+catalog.ContractSection = catalog.ContractSection + "_runtime_in_path";
+catalog.Description = catalog.Description + ...
+    " Runtime scope contains measured rows from this exact execution; " + ...
+    "phase-pack statistical minima remain authoritative in phase_pack.";
+catalog.MinimumRows(catalog.ArtifactType == "CSV") = 1;
+catalog.MinimumFinitePoints(catalog.ArtifactType == "PNG") = 1;
 end
 
 function definitions = localContractDefinitions(domain, packDir)

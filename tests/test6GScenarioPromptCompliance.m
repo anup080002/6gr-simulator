@@ -427,18 +427,20 @@ assert(~webguiULSlotOneDecision.Valid && ...
 assert(~sixgr.truth.isDeferrableCoupledULTimingDecision(struct( ...
     "Valid", false, "ReasonCode", "invalid_or_missing_control_symbol_allocation")), ...
     "Malformed coupled timing configuration must remain a hard failure.");
-webguiULGrantValid = false;
-for slot = 0:39
-    try
-        webguiULGrant = sixgr.link.resolveWaveformGrant(webguiUECfg, "UL", 0, "Slot", slot); %#ok<NASGU>
-        webguiULGrantValid = true;
-        break;
-    catch cause
-        assert(string(cause.identifier) == "sixgr:SchedulerBase:TimingDecisionRejected", ...
-            "Unexpected failure while locating a configured UL TDD scheduling occasion.");
-    end
+% Do not fabricate or jump over the configured causal SRS authority merely
+% to probe grant timing. The production scheduler must reject a direct UL
+% grant until the same run has produced usable SRS state; TDD feasibility
+% is independently proven by the timing engine above.
+try
+    sixgr.link.resolveWaveformGrant(webguiUECfg, "UL", 0, "Slot", 0);
+    error("test6GScenarioPromptCompliance:ExpectedCausalSRSRejection", ...
+        "Strict UL grant unexpectedly bypassed causal SRS acquisition.");
+catch cause
+    assert(string(cause.identifier) == "sixgr:mimo:MissingSRSState", ...
+        "Unexpected pre-SRS UL grant result: %s | %s", ...
+        cause.identifier, cause.message);
 end
-assert(webguiDLGrant.TimingDecision.Valid && webguiULGrantValid, ...
+assert(webguiDLGrant.TimingDecision.Valid && webguiULSlotZeroDecision.Valid, ...
     "The 64x4 WebGUI MU-MIMO scenario must produce valid canonical DL and UL timing decisions.");
 
 ok = true;

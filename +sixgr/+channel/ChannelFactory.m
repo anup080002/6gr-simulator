@@ -405,6 +405,12 @@ classdef ChannelFactory
                 "SampleRate_Hz", NaN, ...
                 "NumTxAnt", NaN, ...
                 "NumRxAnt", NaN, ...
+                "ExternalLogicalTxPorts", NaN, ...
+                "PhysicalChannelTxElements", NaN, ...
+                "PortToElementMatrix", [], ...
+                "ElementExpansionApplied", false, ...
+                "ElementExpansionMatrixSHA256", "", ...
+                "ElementExpansionChunkSamples", 4096, ...
                 "ChannelPadSamples", 0, ...
                 "ChannelTrimSamples", 0, ...
                 "WarmupSamples", 0, ...
@@ -514,16 +520,41 @@ classdef ChannelFactory
             opt = ip.Results;
 
             if logical(sixgr.util.structGet(state, "Materialized", false))
-                expectedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
-                requestedTx = double(opt.NumTxAnt);
+                expectedPhysicalTx = double(sixgr.util.structGet( ...
+                    state, "NumTxAnt", NaN));
                 observedTx = size(waveform, 2);
+                [nextMap, nextExpansion] = ...
+                    sixgr.channel.ChannelFactory.localResolvePortToElementExpansion( ...
+                    opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta, ...
+                    max(1, observedTx));
+                if nextExpansion && size(nextMap, 1) == round(expectedPhysicalTx)
+                    state.ExternalLogicalTxPorts = double(observedTx);
+                    state.PhysicalChannelTxElements = double(expectedPhysicalTx);
+                    state.PortToElementMatrix = nextMap;
+                    state.ElementExpansionApplied = true;
+                    state.ElementExpansionMatrixSHA256 = char( ...
+                        sixgr.phy.mimo.MatrixContract.digest(nextMap));
+                    return;
+                elseif isfinite(expectedPhysicalTx) && ...
+                        observedTx == round(expectedPhysicalTx)
+                    state.ExternalLogicalTxPorts = double(observedTx);
+                    state.PhysicalChannelTxElements = double(expectedPhysicalTx);
+                    state.PortToElementMatrix = [];
+                    state.ElementExpansionApplied = false;
+                    state.ElementExpansionMatrixSHA256 = "";
+                    return;
+                end
+                expectedExternalTx = double(sixgr.util.structGet(state, ...
+                    "ExternalLogicalTxPorts", expectedPhysicalTx));
+                requestedTx = double(opt.NumTxAnt);
                 if isfinite(requestedTx) && requestedTx >= 1
                     observedTx = max(observedTx, round(requestedTx));
                 end
-                if isfinite(expectedTx) && expectedTx >= 1 && observedTx > round(expectedTx)
+                if isfinite(expectedExternalTx) && expectedExternalTx >= 1 ...
+                        && observedTx > round(expectedExternalTx)
                     error("ChannelFactory:RuntimeChannelDimensionChange", ...
                         "Runtime channel '%s' was materialized for %d Tx port(s), but this grant has %d waveform column(s).", ...
-                        char(string(sixgr.util.structGet(state, "LinkKey", ""))), round(expectedTx), round(observedTx));
+                        char(string(sixgr.util.structGet(state, "LinkKey", ""))), round(expectedExternalTx), round(observedTx));
                 end
                 return;
             end
@@ -564,6 +595,37 @@ classdef ChannelFactory
             if ~(isfinite(numRx) && numRx >= 1)
                 numRx = max(1, double(sixgr.util.structGet(cfg, "phy.nRxAnt", numTx)));
             end
+            externalTx = max(1, size(waveform, 2));
+            [portToElement, expandToElements] = ...
+                sixgr.channel.ChannelFactory.localResolvePortToElementExpansion( ...
+                opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta, externalTx);
+            txRuntimeForChannel = opt.TransmitAntennaRuntime;
+            txMetaForChannel = opt.TransmitAntennaMeta;
+            if expandToElements
+                numTx = size(portToElement, 1);
+                [txRuntimeForChannel, txMetaForChannel] = ...
+                    sixgr.channel.ChannelFactory.localElementDomainRuntimeAntenna( ...
+                    txRuntimeForChannel, txMetaForChannel, externalTx, numTx);
+                state.ExternalLogicalTxPorts = double(externalTx);
+                state.PhysicalChannelTxElements = double(numTx);
+                state.PortToElementMatrix = portToElement;
+                state.ElementExpansionApplied = true;
+                state.ElementExpansionMatrixSHA256 = char( ...
+                    sixgr.phy.mimo.MatrixContract.digest(portToElement));
+                chunkSamples = double(sixgr.util.structGet(cfg, ...
+                    "channel.runtimeElementExpansionChunkSamples", 4096));
+                if ~(isscalar(chunkSamples) && isfinite(chunkSamples) ...
+                        && chunkSamples >= 1 && chunkSamples == fix(chunkSamples))
+                    error("ChannelFactory:InvalidElementExpansionChunkSamples", ...
+                        "channel.runtimeElementExpansionChunkSamples must be a positive integer.");
+                end
+                state.ElementExpansionChunkSamples = double(chunkSamples);
+            else
+                state.ExternalLogicalTxPorts = double(numTx);
+                state.PhysicalChannelTxElements = double(numTx);
+            end
+            opt.TransmitAntennaRuntime = txRuntimeForChannel;
+            opt.TransmitAntennaMeta = txMetaForChannel;
 
             if sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfgCh)
                 ch = sixgr.channel.ChannelFactory.localCreateStaticTDDReciprocalChannel( ...
@@ -581,6 +643,11 @@ classdef ChannelFactory
                     "ReceiveAntennaMeta", opt.ReceiveAntennaMeta);
             end
             state.Meta = sixgr.util.structGet(ch, "Meta", struct());
+            state.Meta.ElementExpansionApplied = logical(expandToElements);
+            state.Meta.ExternalLogicalTxPorts = double(state.ExternalLogicalTxPorts);
+            state.Meta.PhysicalChannelTxElements = double(state.PhysicalChannelTxElements);
+            state.Meta.ElementExpansionMatrixSHA256 = ...
+                string(state.ElementExpansionMatrixSHA256);
             state.Meta = sixgr.channel.ChannelFactory.localAttachRuntimeGeometryMeta(state.Meta, cfgCh);
             state.SampleRate_Hz = double(fs);
             state.NumTxAnt = max(1, round(numTx));
@@ -695,7 +762,12 @@ classdef ChannelFactory
                 "RuntimeChannelMaterializedTxPorts", NaN, ...
                 "RuntimeChannelActiveTxPorts", NaN, ...
                 "RuntimeChannelInputPaddedToMaterializedPorts", false, ...
-                "RuntimeChannelInputPaddingColumns", 0);
+                "RuntimeChannelInputPaddingColumns", 0, ...
+                "RuntimeChannelElementExpansionApplied", false, ...
+                "RuntimeChannelExternalLogicalTxPorts", NaN, ...
+                "RuntimeChannelPhysicalTxElements", NaN, ...
+                "RuntimeChannelElementExpansionMatrixSHA256", "", ...
+                "RuntimeChannelElementExpansionChunkSamples", NaN);
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 return;
             end
@@ -707,8 +779,20 @@ classdef ChannelFactory
             replay.RuntimeChannelIdleAdvancedSamples = double(sixgr.util.structGet(state, "LastIdleAdvancedSamples", 0));
             materializedTx = max(1, round(double(sixgr.util.structGet(state, "NumTxAnt", max(1, size(x, 2))))));
             activeTx = max(1, size(x, 2));
+            externalTx = max(1, round(double(sixgr.util.structGet( ...
+                state, "ExternalLogicalTxPorts", materializedTx))));
+            elementExpansion = logical(sixgr.util.structGet( ...
+                state, "ElementExpansionApplied", false));
             replay.RuntimeChannelMaterializedTxPorts = double(materializedTx);
             replay.RuntimeChannelActiveTxPorts = double(activeTx);
+            replay.RuntimeChannelElementExpansionApplied = elementExpansion;
+            replay.RuntimeChannelExternalLogicalTxPorts = double(externalTx);
+            replay.RuntimeChannelPhysicalTxElements = double(sixgr.util.structGet( ...
+                state, "PhysicalChannelTxElements", materializedTx));
+            replay.RuntimeChannelElementExpansionMatrixSHA256 = char(string( ...
+                sixgr.util.structGet(state, "ElementExpansionMatrixSHA256", "")));
+            replay.RuntimeChannelElementExpansionChunkSamples = double( ...
+                sixgr.util.structGet(state, "ElementExpansionChunkSamples", NaN));
             if ~(logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
                 replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
@@ -717,16 +801,20 @@ classdef ChannelFactory
             end
             replay.ChannelFadingExecutionStatus = "attempted";
             replay.ChannelFadingObjectClass = class(state.Obj);
-            if activeTx > materializedTx
+            expectedActiveTx = materializedTx;
+            if elementExpansion
+                expectedActiveTx = externalTx;
+            end
+            if activeTx > expectedActiveTx
                 error("ChannelFactory:RuntimeChannelDimensionChange", ...
-                    "Runtime channel '%s' was materialized for %d Tx port(s), but this grant has %d waveform column(s).", ...
-                    char(string(sixgr.util.structGet(state, "LinkKey", ""))), materializedTx, activeTx);
+                    "Runtime channel '%s' was materialized for %d external Tx port(s), but this grant has %d waveform column(s).", ...
+                    char(string(sixgr.util.structGet(state, "LinkKey", ""))), expectedActiveTx, activeTx);
             end
             xChannel = x;
-            if activeTx < materializedTx
-                xChannel = [x zeros(size(x, 1), materializedTx - activeTx, 'like', x)];
+            if activeTx < expectedActiveTx
+                xChannel = [x zeros(size(x, 1), expectedActiveTx - activeTx, 'like', x)];
                 replay.RuntimeChannelInputPaddedToMaterializedPorts = true;
-                replay.RuntimeChannelInputPaddingColumns = double(materializedTx - activeTx);
+                replay.RuntimeChannelInputPaddingColumns = double(expectedActiveTx - activeTx);
             end
             xIn = xChannel;
             padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
@@ -734,11 +822,17 @@ classdef ChannelFactory
             if padSamples > 0
                 xIn = [xChannel; zeros(padSamples, size(xChannel, 2), 'like', xChannel)];
             end
-            try
-                [yRaw, pathGains] = state.Obj(xIn);
-            catch
-                yRaw = state.Obj(xIn);
-                pathGains = [];
+            if elementExpansion
+                [yRaw, pathGains] = ...
+                    sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
+                    state, xIn);
+            else
+                try
+                    [yRaw, pathGains] = state.Obj(xIn);
+                catch
+                    yRaw = state.Obj(xIn);
+                    pathGains = [];
+                end
             end
             if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
                 y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
@@ -821,6 +915,89 @@ classdef ChannelFactory
     end
 
     methods(Static, Access=private)
+        function [matrix, enabled] = ...
+                localResolvePortToElementExpansion( ...
+                runtimeAntenna, runtimeMeta, waveformColumns)
+            matrix = sixgr.util.structGet( ...
+                runtimeAntenna, "PortToElementMatrix", []);
+            enabled = false;
+            hybridEnabled = logical(sixgr.util.structGet( ...
+                runtimeAntenna, "HybridBeamformingEnabled", false)) || ...
+                logical(sixgr.util.structGet( ...
+                runtimeMeta, "HybridBeamformingEnabled", false));
+            if ~hybridEnabled
+                return;
+            end
+            if isempty(matrix)
+                return;
+            end
+            if ~(isnumeric(matrix) && ismatrix(matrix) ...
+                    && all(isfinite(real(matrix(:)))) ...
+                    && all(isfinite(imag(matrix(:)))))
+                error("ChannelFactory:InvalidPortToElementMatrix", ...
+                    "Runtime PortToElementMatrix must be a finite numeric matrix.");
+            end
+            if size(matrix, 2) ~= waveformColumns
+                return;
+            end
+            if size(matrix, 1) <= size(matrix, 2)
+                return;
+            end
+            gram = matrix' * matrix;
+            residual = norm(gram - eye(size(gram), "like", gram), "fro");
+            if residual > 1e-9 * max(1, size(matrix, 2))
+                error("ChannelFactory:NonPowerPreservingPortToElementMatrix", ...
+                    "PortToElementMatrix must have orthonormal logical-port columns (residual %.3g).", ...
+                    residual);
+            end
+            enabled = true;
+        end
+
+        function [runtimeAntenna, runtimeMeta] = ...
+                localElementDomainRuntimeAntenna( ...
+                runtimeAntenna, runtimeMeta, logicalPorts, physicalElements)
+            if ~isstruct(runtimeAntenna)
+                runtimeAntenna = struct();
+            end
+            if ~isstruct(runtimeMeta)
+                runtimeMeta = struct();
+            end
+            runtimeAntenna.SourceLogicalWaveformColumns = double(logicalPorts);
+            runtimeAntenna.NumWaveformColumns = double(physicalElements);
+            runtimeAntenna.WaveformDomain = "element";
+            runtimeAntenna.HybridBeamformingEnabled = true;
+            runtimeMeta.SourceLogicalWaveformColumns = double(logicalPorts);
+            runtimeMeta.NumWaveformColumns = double(physicalElements);
+            runtimeMeta.WaveformDomain = "element";
+            runtimeMeta.HybridBeamformingEnabled = true;
+        end
+
+        function [yRaw, pathGains] = ...
+                localApplyElementExpandedChannel(state, xLogical)
+            matrix = sixgr.util.structGet(state, "PortToElementMatrix", []);
+            if isempty(matrix) || size(matrix, 2) ~= size(xLogical, 2)
+                error("ChannelFactory:ElementExpansionDimensionMismatch", ...
+                    "Runtime element expansion matrix does not match logical waveform columns.");
+            end
+            chunkSamples = max(1, round(double(sixgr.util.structGet( ...
+                state, "ElementExpansionChunkSamples", 4096))));
+            nRows = size(xLogical, 1);
+            nChunks = ceil(nRows / chunkSamples);
+            parts = cell(nChunks, 1);
+            matrixLike = cast(matrix, "like", xLogical);
+            for chunkIndex = 1:nChunks
+                firstRow = (chunkIndex - 1) * chunkSamples + 1;
+                lastRow = min(nRows, chunkIndex * chunkSamples);
+                xPhysical = xLogical(firstRow:lastRow, :) * matrixLike.';
+                parts{chunkIndex} = state.Obj(xPhysical);
+            end
+            yRaw = vertcat(parts{:});
+            % Path-gain tensors are deliberately not requested here: they
+            % scale with physical elements and samples and are not receiver
+            % inputs.  All receiver samples still traverse the exact object.
+            pathGains = [];
+        end
+
         function key = localRuntimeSeedKey(cfg, linkKey)
             key = char(string(linkKey));
             if ~sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg)

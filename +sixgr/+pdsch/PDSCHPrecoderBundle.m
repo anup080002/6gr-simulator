@@ -215,16 +215,24 @@ classdef PDSCHPrecoderBundle
                     end
                     gramError = norm(page' * page - eye(nLayers), "fro") ...
                         / max(1, sqrt(nLayers));
-                    powerErrors(prg, symbolGroup) = gramError;
-                    if normalization == "semi_unitary" && gramError > tolerance
+                    totalPowerError = abs(sum(abs(page(:)).^2) - 1);
+                    if normalization == "semi_unitary"
+                        contractError = gramError;
+                    elseif normalization == "unit_frobenius"
+                        contractError = totalPowerError;
+                    else
+                        contractError = 0;
+                    end
+                    powerErrors(prg, symbolGroup) = contractError;
+                    if normalization == "semi_unitary" && contractError > tolerance
                         error("sixgr:pdsch:PDSCHPrecoderBundle:PrecoderNormalizationMismatch", ...
                             "Precoder slice PRG=%d symbol-group=%d violates semi-unitary normalization by %.6g (tolerance %.6g).", ...
-                            prg - 1, symbolGroup - 1, gramError, tolerance);
+                            prg - 1, symbolGroup - 1, contractError, tolerance);
                     elseif normalization == "unit_frobenius" ...
-                            && abs(norm(page, "fro") - 1) > tolerance
+                            && contractError > tolerance
                         error("sixgr:pdsch:PDSCHPrecoderBundle:PrecoderNormalizationMismatch", ...
-                            "Precoder slice PRG=%d symbol-group=%d violates unit-Frobenius normalization.", ...
-                            prg - 1, symbolGroup - 1);
+                            "Precoder slice PRG=%d symbol-group=%d violates unit-total-power normalization by %.6g (tolerance %.6g).", ...
+                            prg - 1, symbolGroup - 1, contractError, tolerance);
                     end
                     digests(prg, symbolGroup) = localMatrixDigest(page);
                 end
@@ -371,7 +379,7 @@ for idx = 1:2:numel(options)
     end
     domain = lower(strtrim(string(options{idx + 1})));
 end
-if ~any(domain == ["data","dmrs","ptrs","effective_channel"])
+if ~any(domain == ["data","dmrs","ptrs","csirs","effective_channel"])
     error("sixgr:pdsch:PDSCHPrecoderBundle:UnsupportedDomain", ...
         "Precoder application domain '%s' is unsupported.", domain);
 end

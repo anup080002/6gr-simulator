@@ -1,0 +1,26 @@
+{Error using base64encode
+Expected input to be a vector.
+
+Error in matlab.net.base64encode (line 28)
+        validateattributes(str, {'numeric', 'string'}, {'integer','vector'}, mfilename);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localCaptureGitPatchBundle (line 3540)
+    encoded = string(matlab.net.base64encode(bytes));
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localDetectGitProvenance (line 3497)
+        gitInfo.PatchBundleContent = localCaptureGitPatchBundle( ...
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localBuildManifest (line 3344)
+gitInfo = localDetectGitProvenance(includeGitHash);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2369)
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 66)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 16)
+out = sixgr.lls6g.runners.runSingle(scenarioPath, outputRoot, runTag);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

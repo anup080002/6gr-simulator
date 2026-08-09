@@ -7,6 +7,9 @@ addRequired(p, "baseCfg", @(x) isstruct(x) || isobject(x));
 addParameter(p, "RunFolder", "", @(x) ischar(x) || isstring(x));
 addParameter(p, "RunId", "pdcch_strict_validation", @(x) ischar(x) || isstring(x));
 addParameter(p, "ScenarioName", "pdcch_strict_validation", @(x) ischar(x) || isstring(x));
+addParameter(p, "ExecutionID", "", @(x) ischar(x) || isstring(x));
+addParameter(p, "ScenarioConfigHash", "", @(x) ischar(x) || isstring(x));
+addParameter(p, "EvidenceScope", "component_anchor", @(x) ischar(x) || isstring(x));
 addParameter(p, "WriteArtifacts", true, @(x) islogical(x) || isnumeric(x));
 parse(p, baseCfg, varargin{:});
 opt = p.Results;
@@ -140,6 +143,18 @@ result.ArtifactTables = struct( ...
     "pdcch_false_alarm_sweep", falseAlarmT, ...
     "pdcch_low_snr_sweep", lowSNRT, ...
     "pdcch_oracle_guard", oracleT);
+
+if strlength(strtrim(string(opt.ExecutionID))) > 0
+    identity = struct("RunID", runId, ...
+        "ExecutionID", string(opt.ExecutionID), ...
+        "ScenarioID", scenarioName, ...
+        "ConfigHash", string(opt.ScenarioConfigHash));
+    result.ArtifactTables = sixgr.runtime.bindInPathArtifactIdentity( ...
+        result.ArtifactTables, identity, string(opt.EvidenceScope));
+    result.ExecutionID = identity.ExecutionID;
+    result.ScenarioConfigHash = identity.ConfigHash;
+    result.EvidenceScope = string(opt.EvidenceScope);
+end
 
 if logical(opt.WriteArtifacts)
     result.ArtifactManifest = sixgr.phy.pdcch.exportStrictPDCCHArtifacts(runFolder, result);

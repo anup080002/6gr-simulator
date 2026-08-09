@@ -51,6 +51,40 @@ def test_component_dashboard_separates_raster_from_legacy_svg() -> None:
     )
 
 
+def test_canonical_component_dashboard_uses_exact_folder_ownership() -> None:
+    rows = dashboard.build_realtime_component_dashboard(
+        [
+            artifact(
+                "components/initial_access/qualification/csv/type0_coreset_resolution.csv",
+                artifact_id=1,
+            ),
+            artifact(
+                "components/pdcch/qualification/csv/pdcch_detection_trials.csv",
+                artifact_id=2,
+            ),
+            artifact(
+                "components/frame_grid/qualification/png/channel_grid.png",
+                "image/png",
+                3,
+            ),
+            artifact(
+                "artifact_generation/component_qualification_manifest.csv",
+                artifact_id=4,
+            ),
+        ],
+        "completed_with_failures",
+    )
+    by_id = {row["component_id"]: row for row in rows}
+    assert by_id["pdcch"]["artifact_count"] == 1
+    assert by_id["pdcch"]["latest_artifacts"][0]["logical_path"].startswith(
+        "components/pdcch/"
+    )
+    assert by_id["channel"]["artifact_count"] == 0
+    assert by_id["channel"]["status"] == "not_published"
+    assert by_id["mimo"]["artifact_count"] == 0
+    assert by_id["frame_grid"]["artifact_count"] == 1
+
+
 def test_ue_status_merges_control_and_performance_without_upgrading_fidelity() -> None:
     metric_explorer = {
         "ue_summaries": {
@@ -106,6 +140,31 @@ def test_component_view_detection_does_not_hide_canonical_roots() -> None:
     assert dashboard.is_component_view_artifact_path(
         "pdsch/image/dl_bler_vs_snr.png"
     )
+    assert dashboard.is_component_view_artifact_path(
+        "components/pdsch/png/pdsch_bler_vs_snr.png"
+    )
+    assert dashboard.is_contract_component_artifact_path(
+        "components/pdsch/png/pdsch_bler_vs_snr.png"
+    )
+    assert dashboard.is_contract_component_artifact_path(
+        "components/frame_grid/qualification/png/resource_grid.png"
+    )
+    assert dashboard.is_runtime_contract_component_artifact_path(
+        "components/pdsch/png/pdsch_bler_vs_snr.png"
+    )
+    assert not dashboard.is_runtime_contract_component_artifact_path(
+        "components/frame_grid/qualification/png/resource_grid.png"
+    )
+    assert dashboard.is_component_qualification_artifact_path(
+        "components/frame_grid/qualification/png/resource_grid.png"
+    )
+    for phase_component in ("mac", "protocol", "rsla", "integration"):
+        assert dashboard.is_component_qualification_artifact_path(
+            f"components/{phase_component}/qualification/csv/evidence.csv"
+        )
+    assert not dashboard.is_contract_component_artifact_path(
+        "pdsch/image/dl_bler_vs_snr.png"
+    )
 
 
 def test_manifest_hides_mirrors_from_primary_gallery_only() -> None:
@@ -118,3 +177,73 @@ def test_manifest_hides_mirrors_from_primary_gallery_only() -> None:
         rows, artifact("reports/csv/component_artifact_publication_manifest.csv", artifact_id=3)
     )
     assert [row["artifact_id"] for row in filtered] == [1]
+
+
+def test_completed_contract_tree_replaces_legacy_results_authority() -> None:
+    rows = [
+        artifact("air_interface/csv/dl_pdsch_trials.csv", artifact_id=1),
+        artifact("reports/image/dl_bler_old.png", "image/png", 2),
+        artifact("components/pdsch/csv/pdsch_bler_curve.csv", artifact_id=3),
+        artifact(
+            "components/pdsch/png/pdsch_bler_vs_snr.png", "image/png", 4
+        ),
+        artifact(
+            "artifact_generation/canonical_component_manifest.csv", artifact_id=5
+        ),
+    ]
+    selected, authority = dashboard.select_primary_result_artifacts(rows)
+    selected_paths = {row["logical_path"] for row in selected}
+    assert authority["status"] == "contract_components_authoritative"
+    assert authority["evidence_scope"] == "in_path_runtime"
+    assert authority["canonical_count"] == 2
+    assert authority["legacy_diagnostic_count"] == 2
+    assert "components/pdsch/csv/pdsch_bler_curve.csv" in selected_paths
+    assert "components/pdsch/png/pdsch_bler_vs_snr.png" in selected_paths
+    assert "air_interface/csv/dl_pdsch_trials.csv" not in selected_paths
+    assert "reports/image/dl_bler_old.png" not in selected_paths
+
+
+def test_generation_audit_without_atomic_component_payload_is_not_authority() -> None:
+    rows = [
+        artifact("reports/csv/scenario_summary.csv", artifact_id=1),
+        artifact(
+            "artifact_generation/artifact_generation_results.csv", artifact_id=2
+        ),
+        artifact("components/pdsch/csv/partial.csv", artifact_id=3),
+    ]
+    selected, authority = dashboard.select_primary_result_artifacts(rows)
+    assert selected == []
+    assert authority["status"] == "no_atomic_result_authority"
+    assert authority["evidence_scope"] == "unaccepted_diagnostics"
+    assert authority["canonical_count"] == 0
+    assert authority["legacy_diagnostic_count"] == len(rows)
+
+
+def test_atomic_qualification_manifest_selects_only_scoped_qualification() -> None:
+    rows = [
+        artifact("reports/csv/scenario_summary.csv", artifact_id=1),
+        artifact(
+            "components/frame_grid/qualification/csv/allocation_legality.csv",
+            artifact_id=2,
+        ),
+        artifact(
+            "components/frame_grid/qualification/png/resource_grid.png",
+            "image/png",
+            3,
+        ),
+        artifact(
+            "artifact_generation/component_qualification_manifest.csv",
+            artifact_id=4,
+        ),
+        artifact(
+            "artifact_generation/component_qualification_summary.csv",
+            artifact_id=5,
+        ),
+    ]
+    selected, authority = dashboard.select_primary_result_artifacts(rows)
+    selected_paths = {row["logical_path"] for row in selected}
+    assert authority["status"] == "component_qualification_evidence_only"
+    assert authority["evidence_scope"] == "component_validation_campaign"
+    assert authority["canonical_count"] == 2
+    assert "reports/csv/scenario_summary.csv" not in selected_paths
+    assert len(selected) == 4

@@ -24,6 +24,20 @@ classdef OFDMSamplingResolver
             numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
                 scsKHz, cp, "generic_waveform_test", "");
 
+            % An explicit pair is configuration authority, not a hint to
+            % nrOFDMInfo. Reject an internally inconsistent pair before the
+            % toolbox can normalize or ignore either value.
+            if opts.NfftSpecified && opts.SampleRateSpecified
+                configuredSampleRate = opts.Nfft * scsKHz * 1e3;
+                tolerance = max(1e-9 * configuredSampleRate, 1e-6);
+                if abs(opts.SampleRate - configuredSampleRate) > tolerance
+                    error("sixgr:phy:frame:InconsistentOFDMSampleRate", ...
+                        "Configured sample rate %.15g Hz does not equal " + ...
+                        "configured Nfft*SCS %.15g Hz.", ...
+                        opts.SampleRate, configuredSampleRate);
+                end
+            end
+
             infoArgs = localInfoArguments(opts);
             try
                 toolboxInfo = nrOFDMInfo(carrier, infoArgs{:});
@@ -38,6 +52,17 @@ classdef OFDMSamplingResolver
 
             nfft = localPositiveIntegerField(toolboxInfo, "Nfft");
             sampleRate = localPositiveScalarField(toolboxInfo, "SampleRate");
+            if opts.NfftSpecified && nfft ~= opts.Nfft
+                error("sixgr:phy:frame:ExplicitNfftNotApplied", ...
+                    "nrOFDMInfo resolved Nfft=%d after Nfft=%d was explicitly configured.", ...
+                    nfft, opts.Nfft);
+            end
+            if opts.SampleRateSpecified && abs(sampleRate-opts.SampleRate) > ...
+                    max(1e-9*opts.SampleRate,1e-6)
+                error("sixgr:phy:frame:ExplicitSampleRateNotApplied", ...
+                    "nrOFDMInfo resolved sample rate %.15g Hz after %.15g Hz was explicitly configured.", ...
+                    sampleRate, opts.SampleRate);
+            end
             if nfft < occupiedSubcarriers
                 error("sixgr:phy:frame:OFDMAliasing", ...
                     "Resolved Nfft=%d is smaller than %d occupied subcarriers.", ...

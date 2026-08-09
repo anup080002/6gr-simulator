@@ -45,6 +45,35 @@ end
 assert(max(bundle.PowerRelativeErrorPerSlice(:)) < 2e-12, ...
     "Stored slice normalization evidence exceeds tolerance.");
 
+% A conducted multi-layer FRC uses one unit of total port power rather
+% than one unit per layer. This is a different, explicit contract from a
+% semi-unitary data precoder and must retain zero contract error.
+unitTotalW = F(:,1:nLayers) ./ sqrt(nLayers);
+unitTotalSpec = spec;
+unitTotalSpec.NPRG = 1;
+unitTotalSpec.NSymbolGroups = 1;
+unitTotalSpec.PRGSize = numel(spec.PRBSet);
+unitTotalSpec.SymbolGroupMap = zeros(size(spec.ScheduledSymbols));
+unitTotalSpec.W = reshape(unitTotalW, nPorts, nLayers, 1, 1);
+unitTotalSpec.MatrixSource = "conducted_frc_unit_total_power_test";
+unitTotalSpec.NormalizationConvention = "unit_frobenius";
+unitTotalBundle = sixgr.pdsch.PDSCHPrecoderBundle(unitTotalSpec);
+assert(abs(real(trace(unitTotalW * unitTotalW')) - 1) < 2e-12);
+assert(unitTotalBundle.PowerRelativeErrorPerSlice(1) < 2e-12, ...
+    "Unit-total-power precoder must report error against trace(W*W')=1.");
+
+invalidTotalSpec = unitTotalSpec;
+invalidTotalSpec.W = 1.1 .* unitTotalSpec.W;
+try
+    sixgr.pdsch.PDSCHPrecoderBundle(invalidTotalSpec);
+    error("testPDSCHPrecoderPowerConservation:MissingNegative", ...
+        "Invalid unit-total-power precoder was accepted.");
+catch cause
+    assert(string(cause.identifier) == ...
+        "sixgr:pdsch:PDSCHPrecoderBundle:PrecoderNormalizationMismatch", ...
+        "Unexpected unit-total-power negative identifier: %s", cause.identifier);
+end
+
 fprintf("PDSCH precoder power: %d/%d slices pass; max relative error %.3g\n", ...
     sliceCount, sliceCount, maxRelativeError);
 ok = true;

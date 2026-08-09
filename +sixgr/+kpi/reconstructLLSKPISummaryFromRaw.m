@@ -265,48 +265,44 @@ if istable(appLedger) && ~isempty(appLedger)
         metrics.Application.FailureReason = "missing_required_columns:" + missing;
     else
         success = localOptionalLogical(appLedger, "DeliverySuccess", false(height(appLedger), 1));
+        applicationEvidenceRejected = false;
         if strictMode
             if ~ismember("SameWaveformProtocolComplete", string(appLedger.Properties.VariableNames))
                 metrics.Application.Status = "schema_invalid";
                 metrics.Application.FailureReason = "same_waveform_protocol_completion_evidence_missing";
                 metrics.Application.SchemaValid = false;
-                metrics.Status = "schema_invalid";
-                metrics.FailureReason = metrics.Application.FailureReason;
-                metrics.SchemaValid = false;
-                return;
+                applicationEvidenceRejected = true;
+            else
+                protocolComplete = logical(appLedger.SameWaveformProtocolComplete);
+                if any(success & ~protocolComplete)
+                    metrics.Application.Status = "schema_invalid";
+                    metrics.Application.FailureReason = "application_delivery_claim_not_backed_by_same_waveform_protocol_completion";
+                    metrics.Application.SchemaValid = false;
+                    applicationEvidenceRejected = true;
+                end
             end
-            protocolComplete = logical(appLedger.SameWaveformProtocolComplete);
-            if any(success & ~protocolComplete)
+        end
+        if ~applicationEvidenceRejected
+            bits = localFirstNumeric(appLedger, ["DeliveredBits","ApplicationPayloadBits","OfferedBits","PayloadBits"], NaN(height(appLedger), 1));
+            ids = string(appLedger.PacketId);
+            if ismember("ApplicationPacketId", string(appLedger.Properties.VariableNames))
+                appIds = string(appLedger.ApplicationPacketId);
+                ids(strlength(strtrim(appIds)) > 0) = appIds(strlength(strtrim(appIds)) > 0);
+            end
+            [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
+            durationSec = localPacketMeasurementWindowSec(appLedger, metrics, measurementWindowSec, warmupDurationSec);
+            metrics.Application = localFinalizeLayerMetrics(metrics.Application, appLedger, deliveredBits, duplicateCount, firstCount, durationSec);
+            [lat, latencyOk, latencyReason] = localPacketLatencyMs(appLedger, success);
+            if ~latencyOk
                 metrics.Application.Status = "schema_invalid";
-                metrics.Application.FailureReason = "application_delivery_claim_not_backed_by_same_waveform_protocol_completion";
+                metrics.Application.FailureReason = latencyReason;
                 metrics.Application.SchemaValid = false;
-                metrics.Status = "schema_invalid";
-                metrics.FailureReason = metrics.Application.FailureReason;
-                metrics.SchemaValid = false;
-                return;
+            elseif ~isempty(lat)
+                metrics.Application.MeanDeliveryLatency_ms = mean(lat, "omitnan");
+                metrics.Application.P95DeliveryLatency_ms = localPercentile(lat, 95);
+                metrics.MeanDeliveryLatency_ms = metrics.Application.MeanDeliveryLatency_ms;
+                metrics.P95DeliveryLatency_ms = metrics.Application.P95DeliveryLatency_ms;
             end
-        end
-        bits = localFirstNumeric(appLedger, ["DeliveredBits","ApplicationPayloadBits","OfferedBits","PayloadBits"], NaN(height(appLedger), 1));
-        ids = string(appLedger.PacketId);
-        if ismember("ApplicationPacketId", string(appLedger.Properties.VariableNames))
-            appIds = string(appLedger.ApplicationPacketId);
-            ids(strlength(strtrim(appIds)) > 0) = appIds(strlength(strtrim(appIds)) > 0);
-        end
-        [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
-        durationSec = localPacketMeasurementWindowSec(appLedger, metrics, measurementWindowSec, warmupDurationSec);
-        metrics.Application = localFinalizeLayerMetrics(metrics.Application, appLedger, deliveredBits, duplicateCount, firstCount, durationSec);
-        [lat, latencyOk, latencyReason] = localPacketLatencyMs(appLedger, success);
-        if ~latencyOk
-            metrics.Application.Status = "schema_invalid";
-            metrics.Application.FailureReason = latencyReason;
-            metrics.Application.SchemaValid = false;
-            metrics.Status = "schema_invalid";
-            metrics.FailureReason = latencyReason;
-        elseif ~isempty(lat)
-            metrics.Application.MeanDeliveryLatency_ms = mean(lat, "omitnan");
-            metrics.Application.P95DeliveryLatency_ms = localPercentile(lat, 95);
-            metrics.MeanDeliveryLatency_ms = metrics.Application.MeanDeliveryLatency_ms;
-            metrics.P95DeliveryLatency_ms = metrics.Application.P95DeliveryLatency_ms;
         end
     end
 end

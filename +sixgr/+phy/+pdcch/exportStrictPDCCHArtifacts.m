@@ -215,19 +215,25 @@ end
 committed = false;
 cleanupPartial = onCleanup(@localCleanupUncommittedFigures); %#ok<NASGU>
 
-localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid(:,:,1))));
+localExportHeatmap(paths(1), abs(result.PositiveGrid(:,:,1)), ...
+    "PDCCH CORESET resource-grid magnitude", "OFDM symbol index", "subcarrier index");
 rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_config_strict);
 cand = result.ArtifactTables.pdcch_candidates;
-localWritePNG(paths(2), localBarImage(double(cand.Metric)));
+localExportCandidateMetrics(paths(2), cand);
 rows(2) = localManifestRow(paths(2), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_candidates);
 wr = result.ArtifactTables.pdcch_wrong_rnti_trials;
-localWritePNG(paths(3), localBarImage(double(wr.WrongRNTIRejectCount)));
+localExportBars(paths(3), double(wr.WrongRNTIRejectCount), ...
+    "Wrong-RNTI candidate rejections", "negative trial", "rejected candidates");
 rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_wrong_rnti_trials);
 fa = result.ArtifactTables.pdcch_false_alarm_sweep;
-localWritePNG(paths(4), localLineImage(double(fa.SNRdB), double(fa.FalseAlarmProbability)));
+localExportProbabilitySweep(paths(4), fa, "FalseAlarmProbability", ...
+    "CILower", "CIUpper", "TargetFalseAlarmProbability", ...
+    "PDCCH false-alarm probability", "SNR (dB)", "false-alarm probability");
 rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_false_alarm_sweep);
 ls = result.ArtifactTables.pdcch_low_snr_sweep;
-localWritePNG(paths(5), localLineImage(double(ls.SNRdB), double(ls.DetectionProbability)));
+localExportProbabilitySweep(paths(5), ls, "DetectionProbability", ...
+    "DetectionCILower", "DetectionCIUpper", "", ...
+    "PDCCH low-SNR detection probability", "SNR (dB)", "detection probability");
 rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_low_snr_sweep);
 sixgr.visual.writeFlowDiagramPNG(paths(6), "Strict PDCCH blind decode", ["PDCCH waveform","CORESET/search-space candidates","RNTI CRC + DCI decode","Score after decode"], result.StrictOk);
 rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", csvMap.pdcch_trials);
@@ -249,124 +255,140 @@ clear cleanupPartial;
     end
 end
 
-function localWritePNG(path, img)
-sixgr.util.ensureDir(path);
-img = uint8(img);
-[height, width, channels] = size(img);
-if channels ~= 3
-    error("sixgr:phy:pdcch:BadPNGImage", "Strict PDCCH PNG writer expects RGB image data.");
+function localExportHeatmap(path, values, plotTitle, xLabel, yLabel)
+values = double(values);
+if isempty(values) || ~any(isfinite(values(:)))
+    error("sixgr:phy:pdcch:MissingPlotEvidence", ...
+        "Cannot publish a PDCCH heat map without finite measured values.");
 end
-rawPath = char(string(tempname) + ".rgb");
-fid = fopen(rawPath, "w");
-if fid < 0
-    error("sixgr:phy:pdcch:PNGRawOpenFailed", "Cannot open temporary PNG raw buffer.");
-end
-cleanupClose = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fwrite(fid, permute(img, [3 2 1]), "uint8");
-clear cleanupClose;
-scriptPath = fullfile(localRepoRoot(), "tools", "write_png_from_raw_rgb.py");
-cmd = sprintf('python "%s" "%s" "%s" %d %d', localShellEscape(scriptPath), ...
-    localShellEscape(rawPath), localShellEscape(char(string(path))), width, height);
-[status, out] = system(cmd);
-try
-    if exist(rawPath, "file") == 2
-        delete(rawPath);
+localExportMeasuredFigure(path, @render);
+    function render()
+        imagesc(0:size(values,2)-1, 0:size(values,1)-1, values);
+        axis xy tight;
+        colormap(parula(256));
+        colorbar;
+        title(plotTitle);
+        xlabel(xLabel);
+        ylabel(yLabel);
     end
-catch
-end
-if status ~= 0 || exist(char(string(path)), "file") ~= 2
-    error("sixgr:phy:pdcch:PNGWriteFailed", "Strict PDCCH PNG writer failed: %s", string(out));
-end
 end
 
-function img = localBaseImage()
-img = uint8(255 * ones(480, 720, 3));
-img(430:433, 70:660, :) = 190;
-img(70:430, 67:70, :) = 190;
+function localExportCandidateMetrics(path, T)
+if isempty(T) || ~ismember("Metric", string(T.Properties.VariableNames))
+    error("sixgr:phy:pdcch:MissingPlotEvidence", ...
+        "Cannot publish PDCCH candidate metrics without measured candidate rows.");
+end
+y = double(T.Metric);
+x = (1:height(T)).';
+valid = isfinite(y);
+x = x(valid); y = y(valid);
+if isempty(y)
+    error("sixgr:phy:pdcch:MissingPlotEvidence", ...
+        "PDCCH candidate metrics contain no finite measurements.");
+end
+selected = false(height(T),1);
+if ismember("SelectedCandidate", string(T.Properties.VariableNames))
+    selected = logical(T.SelectedCandidate);
+end
+selected = selected(valid);
+localExportMeasuredFigure(path, @render);
+    function render()
+        scatter(x, y, 12, [0.10 0.45 0.75], "filled", ...
+            "DisplayName", "blind-search candidate");
+        hold on;
+        if any(selected)
+            scatter(x(selected), y(selected), 38, [0.85 0.20 0.15], "filled", ...
+                "DisplayName", "selected candidate");
+            legend("Location", "best");
+        end
+        title("PDCCH blind-search candidate metrics");
+        xlabel("candidate evidence row");
+        ylabel("decoder metric");
+        grid on;
+    end
 end
 
-function img = localHeatImage(M)
-M = abs(double(M));
-if isempty(M), M = zeros(16, 16); end
-M = localNormalizeMatrix(M);
-rowIdx = max(1, min(size(M, 1), round(linspace(1, size(M, 1), 420))));
-colIdx = max(1, min(size(M, 2), round(linspace(1, size(M, 2), 620))));
-M = M(rowIdx, colIdx);
-img = localBaseImage();
-heat = uint8(cat(3, 255 .* M, 90 .* (1 - M), 255 .* (1 - M)));
-img(40:459, 80:699, :) = heat;
-end
-
-function img = localBarImage(y)
-img = localBaseImage();
+function localExportBars(path, y, plotTitle, xLabel, yLabel)
 y = double(y(:));
 y = y(isfinite(y));
-if isempty(y), return; end
-y = y(1:min(numel(y), 40));
-py = localScaleToPixels(y, 420, 80);
-x = round(linspace(90, 650, numel(y)));
-for ii = 1:numel(y)
-    img(max(80, py(ii)):420, max(1, x(ii)-4):min(720, x(ii)+4), 1) = 40;
-    img(max(80, py(ii)):420, max(1, x(ii)-4):min(720, x(ii)+4), 2) = 120;
-    img(max(80, py(ii)):420, max(1, x(ii)-4):min(720, x(ii)+4), 3) = 220;
+if isempty(y)
+    error("sixgr:phy:pdcch:MissingPlotEvidence", ...
+        "Cannot publish a PDCCH bar chart without finite measured values.");
 end
+localExportMeasuredFigure(path, @render);
+    function render()
+        bar((1:numel(y)).', y, 0.72, "FaceColor", [0.10 0.45 0.75]);
+        title(plotTitle);
+        xlabel(xLabel);
+        ylabel(yLabel);
+        grid on;
+    end
 end
 
-function img = localLineImage(x, y)
-img = localBaseImage();
-x = double(x(:)); y = double(y(:));
+function localExportProbabilitySweep(path, T, valueField, lowerField, upperField, ...
+        targetField, plotTitle, xLabel, yLabel)
+required = ["SNRdB", string(valueField)];
+if isempty(T) || ~all(ismember(required, string(T.Properties.VariableNames)))
+    error("sixgr:phy:pdcch:MissingPlotEvidence", ...
+        "Cannot publish %s without measured sweep values.", plotTitle);
+end
+x = double(T.SNRdB);
+y = double(T.(char(valueField)));
 valid = isfinite(x) & isfinite(y);
 x = x(valid); y = y(valid);
-if isempty(x), return; end
-px = localScaleToPixels(x, 80, 660);
-py = localScaleToPixels(y, 420, 80);
-for ii = 1:(numel(px)-1)
-    img = localDrawLine(img, px(ii), py(ii), px(ii+1), py(ii+1), [30 90 180]);
+[x, order] = sort(x); y = y(order);
+if isempty(x)
+    error("sixgr:phy:pdcch:MissingPlotEvidence", ...
+        "Cannot publish %s without finite sweep values.", plotTitle);
 end
-for ii = 1:numel(px)
-    img = localDrawDisk(img, px(ii), py(ii), 5, [30 90 180]);
+lower = nan(size(y)); upper = nan(size(y));
+if ismember(string(lowerField), string(T.Properties.VariableNames))
+    raw = double(T.(char(lowerField))); lower = raw(valid); lower = lower(order);
 end
+if ismember(string(upperField), string(T.Properties.VariableNames))
+    raw = double(T.(char(upperField))); upper = raw(valid); upper = upper(order);
+end
+target = NaN;
+if strlength(string(targetField)) > 0 && ...
+        ismember(string(targetField), string(T.Properties.VariableNames))
+    raw = double(T.(char(targetField)));
+    raw = raw(isfinite(raw));
+    if ~isempty(raw), target = raw(1); end
+end
+localExportMeasuredFigure(path, @render);
+    function render()
+        if all(isfinite(lower) & isfinite(upper))
+            errorbar(x, y, max(0, y-lower), max(0, upper-y), "o-", ...
+                "LineWidth", 1.5, "MarkerFaceColor", [0.10 0.45 0.75], ...
+                "DisplayName", "measured (confidence interval)");
+        else
+            plot(x, y, "o-", "LineWidth", 1.5, ...
+                "MarkerFaceColor", [0.10 0.45 0.75], "DisplayName", "measured");
+        end
+        hold on;
+        if isfinite(target)
+            yline(target, "--", "target", "LineWidth", 1.2, ...
+                "DisplayName", "configured target");
+        end
+        ylim([0 1]);
+        title(plotTitle);
+        xlabel(xLabel);
+        ylabel(yLabel);
+        grid on;
+        legend("Location", "best");
+    end
 end
 
-function vals = localScaleToPixels(v, lo, hi)
-v = double(v(:));
-mn = min(v); mx = max(v);
-if ~(isfinite(mn) && isfinite(mx)) || mx == mn
-    vals = round((lo + hi) / 2) * ones(size(v));
-else
-    vals = round(lo + (v - mn) ./ (mx - mn) .* (hi - lo));
-end
-end
-
-function M = localNormalizeMatrix(M)
-M = double(M);
-M(~isfinite(M)) = 0;
-mn = min(M(:)); mx = max(M(:));
-if mx > mn
-    M = (M - mn) ./ (mx - mn);
-else
-    M = zeros(size(M));
-end
-end
-
-function img = localDrawLine(img, x1, y1, x2, y2, color)
-n = max(2, round(hypot(double(x2-x1), double(y2-y1))));
-xs = round(linspace(x1, x2, n));
-ys = round(linspace(y1, y2, n));
-for ii = 1:n
-    img = localDrawDisk(img, xs(ii), ys(ii), 2, color);
-end
-end
-
-function img = localDrawDisk(img, x, y, r, color)
-[xx, yy] = meshgrid(max(1,x-r):min(size(img,2),x+r), max(1,y-r):min(size(img,1),y+r));
-mask = (xx - x).^2 + (yy - y).^2 <= r.^2;
-rows = yy(mask); cols = xx(mask);
-for c = 1:3
-    plane = img(:,:,c);
-    plane(sub2ind(size(plane), rows, cols)) = uint8(color(c));
-    img(:,:,c) = plane;
-end
+function localExportMeasuredFigure(path, plotter)
+sixgr.util.ensureDir(path);
+fig = figure("Visible", "off", "Color", "w", "Position", [100 100 960 600]);
+cleanupFigure = onCleanup(@() close(fig)); %#ok<NASGU>
+plotter();
+axesHandles = findall(fig, "Type", "axes");
+set(axesHandles, "Color", "w", "XColor", [0.12 0.16 0.20], ...
+    "YColor", [0.12 0.16 0.20], "FontSize", 10, "LineWidth", 0.8);
+set(findall(fig, "Type", "text"), "Color", [0.08 0.12 0.16]);
+sixgr.util.exportFigureArtifact(fig, char(string(path)), "Resolution", 150);
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer, sourceCSV)
@@ -411,12 +433,4 @@ end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
 data = fread(fid, Inf, "*uint8");
 hash = sixgr.rrc.asn1.sha256Hex(data);
-end
-
-function root = localRepoRoot()
-root = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
-end
-
-function out = localShellEscape(value)
-out = strrep(char(string(value)), '"', '""');
 end

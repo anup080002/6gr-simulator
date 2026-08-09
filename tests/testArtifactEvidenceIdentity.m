@@ -27,6 +27,20 @@ T = table( ...
 audit = sixgr.artifact.validateEvidenceIdentity(T, expected, "identity.csv");
 assert(height(audit) == 8 && all(audit.Pass));
 
+% ScenarioConfigHash has higher semantic priority than a producer-local
+% ConfigHash, regardless of physical table-column order. Control/reference
+% trial tables can retain a blank or component-specific ConfigHash while
+% the in-path binder adds the authoritative scenario execution hash.
+componentFirst = T;
+componentFirst.ConfigHash(:) = "";
+componentFirst.ScenarioConfigHash = repmat(configHash, height(componentFirst), 1);
+componentAudit = sixgr.artifact.validateEvidenceIdentity( ...
+    componentFirst, expected, "component_hash_precedes_scenario_hash.csv");
+hashAudit = componentAudit(componentAudit.Field == "ConfigHash", :);
+assert(height(hashAudit) == 1 && hashAudit.Column == "ScenarioConfigHash" && ...
+    hashAudit.Pass, ...
+    "Identity validation must select ScenarioConfigHash before producer-local ConfigHash.");
+
 anchor = T;
 anchor.EvidenceScope(:) = "component_anchor";
 localExpect(@() sixgr.artifact.validateEvidenceIdentity( ...

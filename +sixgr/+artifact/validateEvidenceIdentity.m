@@ -17,7 +17,10 @@ checks = repmat(struct("Field","", "Column","", "Expected","", ...
     "Observed","", "Pass",false), 0, 1);
 identitySpecs = {
     "ScenarioID", ["ScenarioID","ScenarioId","scenario_id"]
-    "ConfigHash", ["ConfigHash","config_hash"]
+    % ScenarioConfigHash is authoritative when a same-execution table also
+    % retains a component-local ConfigHash for diagnostic reproducibility.
+    "ConfigHash", ["ScenarioConfigHash","scenario_config_hash", ...
+        "ConfigHash","config_hash"]
     "EvidenceScope", ["EvidenceScope","evidence_scope"]
     "RunID", ["RunID","RunId","run_id"]
     "ExecutionID", ["ExecutionID","ExecutionId","execution_id"]
@@ -46,7 +49,8 @@ for index = 1:size(identitySpecs, 1)
             "Artifact %s contains blank %s values.", artifactName, field);
     end
     if field == "EvidenceScope"
-        allowed = ["in_path","component_anchor","diagnostic","proxy"];
+        allowed = ["in_path","same_execution_campaign", ...
+            "component_anchor","diagnostic","proxy"];
         if any(~ismember(lower(observed), allowed))
             error("sixgr:artifact:InvalidEvidenceScope", ...
                 "Artifact %s contains unsupported EvidenceScope values.", artifactName);
@@ -150,13 +154,23 @@ end
 
 function [present, column] = localFindColumn(T, aliases)
 names = string(T.Properties.VariableNames);
-index = find(ismember(lower(names), lower(string(aliases))), 1, "first");
-present = ~isempty(index);
-if present
-    column = char(names(index));
-else
-    column = '';
+aliases = string(aliases);
+% Alias order is semantic priority, not merely a set of acceptable names.
+% In particular, ScenarioConfigHash identifies the active execution while
+% ConfigHash may intentionally retain a component-local digest. Selecting
+% whichever matching column happens to appear first in table order can
+% therefore reject valid same-execution evidence (or validate against the
+% wrong identity). Walk the declared aliases in priority order.
+for alias = aliases(:).'
+    index = find(strcmpi(names, alias), 1, "first");
+    if ~isempty(index)
+        present = true;
+        column = char(names(index));
+        return;
+    end
 end
+present = false;
+column = '';
 end
 
 function values = localNumeric(raw)

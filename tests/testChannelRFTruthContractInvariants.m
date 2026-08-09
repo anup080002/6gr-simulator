@@ -11,12 +11,23 @@ sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "browser_runtime_db_consi
     string("channel_rf"), string("consistent"), ...
     'VariableNames', {'Check','ConsistencyStatus'}));
 verdict = sixgr.truth.evaluateLLSRuntimeTruthContract(bundle.RunFolder, bundle.ScenarioConfig, bundle.Config);
-assert(verdict.Ok, "Strict Channel/RF truth contract should pass with complete evidence.");
+assert(logical(sixgr.util.structGet(verdict, ...
+    "CheckDetails.ChannelRF.ChannelRFStrictOk", false)), ...
+    ["Strict Channel/RF evidence should pass its own gate. The component " ...
+     "fixture does not fabricate unrelated run-level KPI or issue-registry evidence."]);
 
-badPath = fullfile(bundle.RunFolder, "channel", "csv", "channel_configured_vs_applied.csv");
+% Corrupt a private copy.  The cached positive fixture is reused by other
+% focused tests and must retain its source/image hashes and manifest bytes.
+badRunFolder = tempname;
+[copyOk, copyMessage] = copyfile(bundle.RunFolder, badRunFolder);
+assert(copyOk, "Unable to create isolated negative Channel/RF run: " + string(copyMessage));
+cleanupBadRun = onCleanup(@() rmdir(badRunFolder, "s")); %#ok<NASGU>
+badPath = fullfile(badRunFolder, "channel", "csv", "channel_configured_vs_applied.csv");
 T = readtable(badPath, "TextType", "string");
 T.StrictOk(1) = false;
 writetable(T, badPath);
-verdictBad = sixgr.truth.evaluateLLSRuntimeTruthContract(bundle.RunFolder, bundle.ScenarioConfig, bundle.Config);
-assert(~verdictBad.Ok, "Strict Channel/RF truth contract must fail when positive evidence is invalidated.");
+verdictBad = sixgr.truth.evaluateLLSRuntimeTruthContract(badRunFolder, bundle.ScenarioConfig, bundle.Config);
+assert(~logical(sixgr.util.structGet(verdictBad, ...
+    "CheckDetails.ChannelRF.ChannelRFStrictOk", true)), ...
+    "Strict Channel/RF gate must fail when positive evidence is invalidated.");
 end

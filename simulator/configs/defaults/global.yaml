@@ -119,7 +119,8 @@
     "pathloss_enabled": false,
     "shadow_fading_enabled": false,
     "pathloss_model": "nrPathLoss",
-    "shadow_fading_std_db": 6
+    "shadow_fading_std_db": 6,
+    "runtime_element_expansion_chunk_samples": 4096
   },
   "reference_signals": {
     "ssb_enabled": true,
@@ -496,6 +497,7 @@
     "emit_disabled_audit_artifacts": true,
     "artifact_contract_engine": {
       "enabled": false,
+      "catalog_scope": "phase_pack",
       "contract_root": "tests/vectors",
       "legacy_reference_root": "artifacts",
       "legacy_reference_usage": "coverage_inventory_only",

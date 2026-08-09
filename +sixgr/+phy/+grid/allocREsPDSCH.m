@@ -657,23 +657,32 @@ if isempty(csirsSym) || ~isstruct(csirsInfo) || ~logical(sixgr.util.structGet(cs
     return;
 end
 try
-    res = nrPDSCHReservedConfig;
-    rbOffset = double(csirs.RBOffset);
-    numRB = double(csirs.NumRB);
-    res.PRBSet = rbOffset:(rbOffset + max(0, numRB - 1));
-    res.SymbolSet = double(csirs.SymbolLocations(:).');
-    period = sixgr.util.structGet(cfg, "phy.csirs.pdschReservationPeriod", []);
-    if ~isempty(period)
-        res.Period = double(period);
+    resources = sixgr.util.structGet(csirsInfo, "Resources", []);
+    if isempty(resources)
+        resources = struct("Configuration", csirs);
+    end
+    reservations = cell(1, numel(resources));
+    for ordinal = 1:numel(resources)
+        resourceConfig = resources(ordinal).Configuration;
+        res = nrPDSCHReservedConfig;
+        rbOffset = double(resourceConfig.RBOffset);
+        numRB = double(resourceConfig.NumRB);
+        res.PRBSet = rbOffset:(rbOffset + max(0, numRB - 1));
+        res.SymbolSet = double(resourceConfig.SymbolLocations(:).');
+        period = sixgr.util.structGet(cfg, "phy.csirs.pdschReservationPeriod", []);
+        if ~isempty(period)
+            res.Period = double(period);
+        end
+        reservations{ordinal} = res;
     end
 
     existing = pdsch.ReservedPRB;
     if isempty(existing)
-        pdsch.ReservedPRB = {res};
+        pdsch.ReservedPRB = reservations;
     elseif iscell(existing)
-        pdsch.ReservedPRB = [existing(:).' {res}];
+        pdsch.ReservedPRB = [existing(:).' reservations];
     else
-        pdsch.ReservedPRB = {existing, res};
+        pdsch.ReservedPRB = [{existing} reservations];
     end
 catch ME
     error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationApplyFailed", ...

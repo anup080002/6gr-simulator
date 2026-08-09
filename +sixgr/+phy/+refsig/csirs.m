@@ -40,6 +40,17 @@ elseif isstruct(cfgOrCsirs)
         info = struct('Channel','CSI-RS','Enabled',false);
         return;
     end
+    numResources = double(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.numResources', 1));
+    if ~(isscalar(numResources) && isfinite(numResources) && ...
+            numResources >= 1 && numResources == round(numResources))
+        error('sixgr:phy:csirs:InvalidResourceCount', ...
+            'phy.csirs.numResources must be a positive integer.');
+    end
+    if numResources > 1
+        [csirsInd, csirsSym, info, csirs] = ...
+            localGenerateConfiguredResourceSet(carrier, cfgOrCsirs, opts.IndexBase, numResources);
+        return;
+    end
     csirs = localBuildFromCfg(carrier, cfgOrCsirs);
 else
     error('csirs:InvalidInput', 'Second input must be a config struct or nrCSIRSConfig.');
@@ -74,10 +85,139 @@ try
 catch
     info.CDMType = "";
 end
-info.ResourceMappingTable = localCSIRSResourceMappingTable(carrier, csirs, csirsInd, csirsSym, opts.IndexBase);
+resourceID = 0;
+if isstruct(cfgOrCsirs)
+    resourceID = double(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.resourceID', 0));
+end
+info.ResourceID = resourceID;
+info.ResourceSetID = double(0);
+if isstruct(cfgOrCsirs)
+    info.ResourceSetID = double(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.resourceSetID', 0));
+end
+info.NumResources = 1;
+info.ResourceMappingTable = localCSIRSResourceMappingTable(carrier, csirs, csirsInd, csirsSym, opts.IndexBase, resourceID);
 info.CausalMeasurementRole = "CSI-RS -> DL CSI/RI/PMI/CQI measurement producer";
 info.MeasurementStateContract = "ProducerSlot/AvailableSlot must be <= consuming grant slot; runtime estimator remains pilot-based";
 
+end
+
+function [combinedInd, combinedSym, info, primaryConfig] = ...
+        localGenerateConfiguredResourceSet(carrier, cfg, indexBase, numResources)
+resourceIDs = localRequiredResourceVector(cfg, 'phy.csirs.resourceIDs', numResources, ...
+    'sixgr:phy:csirs:MissingResourceIDs');
+rowNumbers = localRequiredResourceVector(cfg, 'phy.csirs.rowNumbers', numResources, ...
+    'sixgr:phy:csirs:MissingRowNumbers');
+symbolLocations = localRequiredResourceVector(cfg, ...
+    'phy.csirs.symbolLocationsByResource', numResources, ...
+    'sixgr:phy:csirs:MissingSymbolLocations');
+subcarrierLocations = localRequiredResourceVector(cfg, ...
+    'phy.csirs.subcarrierLocationsByResource', numResources, ...
+    'sixgr:phy:csirs:MissingSubcarrierLocations');
+rbOffsets = localRequiredResourceVector(cfg, 'phy.csirs.rbOffsetsByResource', ...
+    numResources, 'sixgr:phy:csirs:MissingRBOffsets');
+numRBs = localRequiredResourceVector(cfg, 'phy.csirs.numRBsByResource', ...
+    numResources, 'sixgr:phy:csirs:MissingNumRBs');
+if numel(unique(resourceIDs)) ~= numResources || any(resourceIDs < 0) || ...
+        any(resourceIDs ~= round(resourceIDs))
+    error('sixgr:phy:csirs:InvalidResourceIDs', ...
+        'CSI-RS resource IDs must be unique nonnegative integers.');
+end
+
+resources = repmat(localEmptyResourceEvidence(), numResources, 1);
+indexParts = cell(numResources, 1);
+symbolParts = cell(numResources, 1);
+mappingParts = cell(numResources, 1);
+occupied = cell(numResources, 1);
+primaryConfig = [];
+K = double(carrier.NSizeGrid) * 12;
+L = double(carrier.SymbolsPerSlot);
+plane = K * L;
+for ordinal = 1:numResources
+    cfgResource = cfg;
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.resourceID', resourceIDs(ordinal));
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.rowNumber', rowNumbers(ordinal));
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.symbolLocations', symbolLocations(ordinal));
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.subcarrierLocations', subcarrierLocations(ordinal));
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.rbOffset', rbOffsets(ordinal));
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.numRB', numRBs(ordinal));
+    resourceConfig = localBuildFromCfg(carrier, cfgResource);
+    [indices, indexInfo] = localCSIRSIndices(carrier, resourceConfig, indexBase);
+    symbols = nrCSIRS(carrier, resourceConfig);
+    if isempty(indices) || isempty(symbols)
+        error('sixgr:phy:csirs:EmptyResource', ...
+            'Configured CSI-RS resource %g resolved to no REs.', resourceIDs(ordinal));
+    end
+    baseOne = unique(mod(double(indices(:)) - 1, plane) + 1);
+    for prior = 1:(ordinal - 1)
+        if ~isempty(intersect(baseOne, occupied{prior}))
+            error('sixgr:phy:csirs:ResourceCollision', ...
+                'CSI-RS resources %g and %g overlap on physical REs.', ...
+                resourceIDs(prior), resourceIDs(ordinal));
+        end
+    end
+    occupied{ordinal} = baseOne;
+    mapping = localCSIRSResourceMappingTable(carrier, resourceConfig, ...
+        indices, symbols, indexBase, resourceIDs(ordinal));
+    resources(ordinal).ResourceID = resourceIDs(ordinal);
+    resources(ordinal).ResourceSetID = double(sixgr.util.structGet(cfg, ...
+        'phy.csirs.resourceSetID', 0));
+    resources(ordinal).Configuration = resourceConfig;
+    resources(ordinal).Indices = indices;
+    resources(ordinal).Symbols = symbols;
+    resources(ordinal).IndicesInfo = indexInfo;
+    resources(ordinal).ResourceMappingTable = mapping;
+    resources(ordinal).NRE = numel(symbols);
+    resources(ordinal).RowNumber = double(resourceConfig.RowNumber);
+    resources(ordinal).SymbolLocations = double(resourceConfig.SymbolLocations(:).');
+    resources(ordinal).SubcarrierLocations = double(resourceConfig.SubcarrierLocations(:).');
+    resources(ordinal).RBOffset = double(resourceConfig.RBOffset);
+    resources(ordinal).NumRB = double(resourceConfig.NumRB);
+    resources(ordinal).NumPorts = double(resourceConfig.NumCSIRSPorts);
+    indexParts{ordinal} = indices;
+    symbolParts{ordinal} = symbols;
+    mappingParts{ordinal} = mapping;
+    if ordinal == 1
+        primaryConfig = resourceConfig;
+    end
+end
+combinedInd = vertcat(indexParts{:});
+combinedSym = vertcat(symbolParts{:});
+info = struct();
+info.Channel = 'CSI-RS';
+info.Enabled = true;
+info.NumResources = numResources;
+info.ResourceIDs = resourceIDs(:).';
+info.ResourceSetID = double(sixgr.util.structGet(cfg, 'phy.csirs.resourceSetID', 0));
+info.Resources = resources;
+info.NRE = numel(combinedSym);
+info.RowNumber = rowNumbers(:).';
+info.NumCSIRSPorts = resources(1).NumPorts;
+info.RBOffset = rbOffsets(:).';
+info.NumRB = numRBs(:).';
+info.SymbolLocations = symbolLocations(:).';
+info.SubcarrierLocations = subcarrierLocations(:).';
+info.Density = "one";
+info.CDMType = "FD-CDM2";
+info.ResourceMappingTable = vertcat(mappingParts{:});
+info.CausalMeasurementRole = "CSI-RS resource set -> measured CRI/RI/PMI/CQI";
+info.MeasurementStateContract = ...
+    "Every CRI candidate is a disjoint transmitted NZP CSI-RS resource measured at the receiver";
+end
+
+function values = localRequiredResourceVector(cfg, path, count, identifier)
+values = double(sixgr.util.structGet(cfg, path, []));
+if ~(isvector(values) && numel(values) == count && all(isfinite(values)))
+    error(identifier, '%s must contain one finite value per CSI-RS resource.', path);
+end
+values = values(:).';
+end
+
+function resource = localEmptyResourceEvidence()
+resource = struct('ResourceID',NaN,'ResourceSetID',NaN,'Configuration',[], ...
+    'Indices',[],'Symbols',[],'IndicesInfo',struct(), ...
+    'ResourceMappingTable',table(),'NRE',NaN,'RowNumber',NaN, ...
+    'SymbolLocations',[],'SubcarrierLocations',[],'RBOffset',NaN, ...
+    'NumRB',NaN,'NumPorts',NaN);
 end
 
 function csirs = localBuildFromCfg(carrier, cfg)
@@ -273,7 +413,10 @@ catch
 end
 end
 
-function T = localCSIRSResourceMappingTable(carrier, csirs, ind, sym, indexBase)
+function T = localCSIRSResourceMappingTable(carrier, csirs, ind, sym, indexBase, resourceID)
+if nargin < 6
+    resourceID = 0;
+end
 idx = localFlattenIndex(ind);
 sym = localFlattenSymbols(sym);
 if strcmpi(string(indexBase), "0based")
@@ -299,6 +442,7 @@ end
 for ii = 1:N
     rows(ii) = localCSIRSResourceRow();
     rows(ii).Slot = double(carrier.NSlot);
+    rows(ii).ResourceID = double(resourceID);
     rows(ii).Symbol = double(symbol(ii) - 1);
     rows(ii).Subcarrier = double(subcarrier(ii) - 1);
     rows(ii).PRB = double(floor((subcarrier(ii) - 1) / 12));
@@ -335,7 +479,7 @@ end
 
 function row = localCSIRSResourceRow()
 row = struct("Slot", NaN, "Symbol", NaN, "Subcarrier", NaN, "PRB", NaN, ...
-    "Port", NaN, "RowNumber", NaN, "RBOffset", NaN, "NumRB", NaN, ...
+    "Port", NaN, "ResourceID", NaN, "RowNumber", NaN, "RBOffset", NaN, "NumRB", NaN, ...
     "LinearIndex", NaN, "SymbolI", NaN, "SymbolQ", NaN, ...
     "SourceSignal", "", "TruthStatus", "");
 end

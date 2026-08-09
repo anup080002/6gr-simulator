@@ -2,8 +2,10 @@ function out = runPhase19RepairVerticalSlice(outputRoot, runTag)
 %RUNPHASE19REPAIRVERTICALSLICE Execute the bounded coupled-truth repair gate.
 
 if nargin < 1 || strlength(string(outputRoot)) == 0
-    outputRoot = fullfile(pwd, "artifacts", ...
-        "phase19_repair_vertical_slice_20260801_01");
+    % runSingle owns the canonical <results>/lls/<scenario>/<run> layout.
+    % Do not advertise an artifacts/ root that resolveResultsRoot must
+    % reject and silently redirect.
+    outputRoot = fullfile(pwd, "results");
 end
 outputRoot = char(string(outputRoot));
 if nargin < 2 || strlength(string(runTag)) == 0

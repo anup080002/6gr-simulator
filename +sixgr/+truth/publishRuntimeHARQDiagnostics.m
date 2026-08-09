@@ -41,9 +41,25 @@ directions = upper(localTextColumn(source, "Direction", ""));
 ue = localNumberColumn(source, "UEIndex", NaN);
 harqId = localNumberColumn(source, "HarqID", NaN);
 ndiEpoch = localNumberColumn(source, "NDIEpoch", NaN);
+configuredSNR = localNumberColumn(source, "ConfiguredSNR_dB", NaN);
+sweepPoint = localNumberColumn(source, "SweepPointIndex", NaN);
+tbId = localTextColumn(source, "TBId", "");
 slot = localNumberColumn(source, "Slot", NaN);
-keys = directions + "|ue=" + string(ue) + "|harq=" + string(harqId) + ...
-    "|epoch=" + string(ndiEpoch);
+% TBId is the canonical transport-block identity and remains unchanged over
+% retransmissions.  HARQ process and NDI epoch are intentionally reusable,
+% particularly after an independent SNR-point reset, so they cannot by
+% themselves identify a packet across a sweep.  Preserve a deterministic
+% legacy fallback for older timelines that do not yet expose TBId.
+keys = directions + "|tb=" + tbId;
+missingTBId = strlength(strtrim(tbId)) == 0;
+fallbackSweepToken = "sweep=" + string(sweepPoint);
+missingSweepPoint = ~isfinite(sweepPoint);
+fallbackSweepToken(missingSweepPoint) = ...
+    "configured_snr=" + string(compose("%.17g", configuredSNR(missingSweepPoint)));
+keys(missingTBId) = directions(missingTBId) + "|" + ...
+    fallbackSweepToken(missingTBId) + "|ue=" + string(ue(missingTBId)) + ...
+    "|harq=" + string(harqId(missingTBId)) + ...
+    "|epoch=" + string(ndiEpoch(missingTBId));
 uniqueKeys = unique(keys, "stable");
 slotDuration_s = sixgr.time.slotDurationSec(cfg);
 packetId = 0;
@@ -57,6 +73,7 @@ for keyNumber = 1:numel(uniqueKeys)
         tr = source(sourceIndex, :);
         row = localPacketRow();
         row.Direction = directions(sourceIndex);
+        row.SweepPointIndex = localNumber(tr, "SweepPointIndex", NaN);
         row.ConfiguredSNR_dB = localNumber(tr, "ConfiguredSNR_dB", NaN);
         measuredSINR_dB = localNumber(tr, "MeasuredSINR_dB", NaN);
         if isfinite(measuredSINR_dB)
@@ -69,6 +86,11 @@ for keyNumber = 1:numel(uniqueKeys)
             row.SNRValueRole = "configured_operating_point";
         end
         row.PacketID = double(packetId);
+        row.UEIndex = localNumber(tr, "UEIndex", NaN);
+        row.RNTI = localNumber(tr, "RNTI", NaN);
+        row.NDIEpoch = localNumber(tr, "NDIEpoch", NaN);
+        row.TBId = localText(tr, "TBId", "");
+        row.HARQContextHash = localText(tr, "HARQContextHash", "");
         row.Attempt = double(attempt);
         row.Frame = localNumber(tr, "Frame", NaN);
         row.Slot = localNumber(tr, "Slot", NaN);
@@ -206,7 +228,9 @@ function row = localPacketRow()
 row = struct( ...
     "Direction", "", "SNR_dB", NaN, "ConfiguredSNR_dB", NaN, ...
     "SNRSource", "", "SNRValueRole", "", ...
-    "PacketID", NaN, "Attempt", NaN, ...
+    "SweepPointIndex", NaN, "PacketID", NaN, "UEIndex", NaN, ...
+    "RNTI", NaN, "NDIEpoch", NaN, "TBId", "", ...
+    "HARQContextHash", "", "Attempt", NaN, ...
     "Frame", NaN, "Slot", NaN, "HARQProcess", NaN, "RV", NaN, ...
     "IsRetransmission", false, "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
     "ACK", false, "NACK", false, "DTX", false, "StopCondition", "", ...
@@ -250,4 +274,12 @@ if ismember(name, string(row.Properties.VariableNames))
     if ~isempty(raw), value = logical(raw(1)); return; end
 end
 value = logical(fallback);
+end
+
+function value = localText(row, name, fallback)
+if ismember(name, string(row.Properties.VariableNames))
+    raw = string(row.(name));
+    if isscalar(raw) && ~ismissing(raw), value = raw; return; end
+end
+value = string(fallback);
 end

@@ -117,13 +117,11 @@ assert(isfinite(double(T.BSAntennaAzimuth_deg(1))) && isfinite(double(T.UEAntenn
 assert(double(T.TxWaveformColumns(1)) == double(T.ConfiguredTxAntennas(1)) && ...
     double(T.PhysicalTxAntennas(1)) == double(T.ConfiguredTxAntennas(1)), ...
     "Raw %s trial row must preserve the actual physical transmit waveform dimension.", direction);
-if strcmpi(direction, "UL")
-    assert(ismember('RxWaveformBranches', T.Properties.VariableNames) && ...
-        ismember('PhysicalRxAntennas', T.Properties.VariableNames) && ...
-        double(T.RxWaveformBranches(1)) == double(T.ConfiguredRxAntennas(1)) && ...
-        double(T.PhysicalRxAntennas(1)) == double(T.ConfiguredRxAntennas(1)), ...
-        "Raw UL trial row must preserve the actual physical receive waveform dimension.");
-end
+assert(ismember('RxWaveformBranches', T.Properties.VariableNames) && ...
+    ismember('PhysicalRxAntennas', T.Properties.VariableNames) && ...
+    double(T.RxWaveformBranches(1)) == double(T.ConfiguredRxAntennas(1)) && ...
+    double(T.PhysicalRxAntennas(1)) == double(T.ConfiguredRxAntennas(1)), ...
+    "Raw %s trial row must preserve the actual physical receive waveform dimension.", direction);
 assert(strcmpi(char(string(T.ChannelArrayModel(1))), "nrtdl_runtime_geometry_correlation_channel") && ~logical(T.ChannelUsesCountOnlyAntennaModel(1)), ...
     "Raw %s trial row must honestly disclose the active reduced geometry-correlation TDL channel model.", direction);
 assert(strcmpi(char(string(T.ChannelObjectSource(1))), "sixgr.channel.channelfactory.localcreatetdl") && ...
@@ -150,6 +148,21 @@ function cfg = localApplyStrictPDSCHFixture(cfg)
 % connected PDCCH-owned scheduling campaign. Label that boundary explicitly.
 cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.phy.pusch.executionProfile = "phy_calibration";
+cfg.run.pdschExecutionProfile = "phy_calibration";
+cfg.run.puschExecutionProfile = "phy_calibration";
+% This isolated conducted calibration keeps one unit of total transmit
+% power across layers.  State the convention explicitly instead of relying
+% on the legacy semi-unitary default from the unrelated 700-MHz fixture.
+cfg.phy.pdsch.precoding.normalizationConvention = "unit_frobenius";
+cfg.phy.pdsch.precoderNormalizationConvention = "unit_frobenius";
+cfg.phy.pusch.precoding.normalizationConvention = "unit_frobenius";
+cfg.phy.pusch.precoderNormalizationConvention = "unit_frobenius";
+% Bind the calibration matrix to that convention as well.  The inherited
+% rank-2 PMI codebook is semi-unitary (total power two), so changing only
+% the convention would be a contradictory fixture and must fail closed.
+nLayers = max(1, round(double(cfg.phy.pdsch.numLayers)));
+cfg.phy.pdsch.precoding.matrix = eye(nLayers) ./ sqrt(nLayers);
+cfg.phy.pdsch.normalizePrecodingMatrix = false;
 cfg.phy.pdsch.symbolAllocation = [0 14];
 cfg.phy.pdsch.mappingType = "A";
 cfg.phy.pusch.symbolAllocation = [0 14];

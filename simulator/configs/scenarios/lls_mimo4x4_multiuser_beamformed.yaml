@@ -147,6 +147,11 @@
   },
   "pusch": {
     "layer_count": 2,
+    "num_layers": 2,
+    "num_antenna_ports": 4,
+    "transmission_scheme": "codebook",
+    "codebook_type": "codebook1_ng1n4n1",
+    "tpmi": 0,
     "prb_start": 0,
     "num_prb": 106,
     "mapping_type": "typeA",

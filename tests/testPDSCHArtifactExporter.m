@@ -63,6 +63,16 @@ for name = [summary.CSVFiles; summary.ContractedPNGFiles; ...
     assert(isfile(fullfile(outputDir, name)), ...
         "PDSCH artifact exporter did not publish %s.", name);
 end
+blerImage = imread(fullfile(outputDir, "pdsch_bler_vs_snr.png"));
+if isinteger(blerImage)
+    normalizedBrightness = mean(double(blerImage(:))) ...
+        / double(intmax(class(blerImage)));
+else
+    normalizedBrightness = mean(double(blerImage(:)));
+end
+assert(normalizedBrightness > 0.75, ...
+    ["PDSCH PNG must use the canonical light raster theme; " ...
+    "dark desktop graphics defaults leaked into the artifact."]);
 
 bad = tables;
 bad.pdsch_bler_curve.StopReason = [];
@@ -451,7 +461,7 @@ end
 
 function value = localBLER(vectorRoot)
 value = localBlank(vectorRoot, "pdsch_bler_curve.csv", 4);
-errors = [80 50 20 5];
+errors = [80 50 20 0];
 for i = 1:4
     bler = errors(i) / 100;
     value.CampaignID(i) = "AWGN-QPSK";
@@ -466,10 +476,16 @@ for i = 1:4
     value.BLER(i) = string(bler);
     value.ConfidenceLevel(i) = "0.95";
     value.CILower(i) = string(max(0, bler - 0.05));
-    value.CIUpper(i) = string(min(1, bler + 0.05));
-    value.CIHalfWidth(i) = "0.05";
+    if errors(i) == 0
+        value.CIUpper(i) = string(1 - 0.05^(1/100));
+        value.CIHalfWidth(i) = string(str2double(value.CIUpper(i))/2);
+        value.StopReason(i) = "MAX_TB_CENSORED_BOUND_MET";
+    else
+        value.CIUpper(i) = string(min(1, bler + 0.05));
+        value.CIHalfWidth(i) = "0.05";
+        value.StopReason(i) = "FIXED_TRIAL_BUDGET_COMPLETE";
+    end
     value.MinErrorsRequired(i) = "5";
-    value.StopReason(i) = "FIXED_TRIAL_BUDGET_COMPLETE";
 end
 end
 

@@ -10,7 +10,7 @@ import math
 import os
 import re
 from collections import Counter, defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Callable
 
@@ -7968,16 +7968,30 @@ def _specialized_chart_materialization(
     return None
 
 
+def _windows_long_path(path: Path) -> Path:
+    """Return an extended-length absolute path for Windows file I/O."""
+    absolute = str(path.absolute())
+    if os.name != "nt" or absolute.startswith("\\\\?\\"):
+        return Path(absolute)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
 def _write_file_if_possible(run_folder: str | None, logical_path: str, data: bytes) -> None:
     root = str(run_folder or "").strip()
     if not root:
         return
+    target = Path(root) / Path(*str(logical_path).split("/"))
+    io_target = _windows_long_path(target)
     try:
-        target = Path(root) / Path(*str(logical_path).split("/"))
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-    except OSError:
-        return
+        io_target.parent.mkdir(parents=True, exist_ok=True)
+        io_target.write_bytes(data)
+    except OSError as exc:
+        raise OSError(
+            f"Cannot persist browser contract artifact {logical_path!r} "
+            f"under {root!r}: {exc}"
+        ) from exc
 
 
 def _store_artifact(
@@ -8198,10 +8212,11 @@ def materialize_run_contract_artifacts(
     artifacts: list[dict[str, Any]],
     *,
     fetch_artifact_bytes: Callable[[int], bytes],
-    db_connection_factory: Callable[[], Any],
+    db_connection_factory: Callable[[], Any] | None,
     feature_policy: dict[str, bool] | None = None,
     force: bool = False,
     lock_timeout_seconds: int = 0,
+    filesystem_only: bool = False,
 ) -> dict[str, Any]:
     run_id = int(run_row.get("run_id") or 0)
     run_folder = str(run_row.get("run_folder") or "")
@@ -8209,7 +8224,57 @@ def materialize_run_contract_artifacts(
     manifest_rows: list[list[Any]] = []
     feature_policy = dict(feature_policy or {})
     allow_placeholder_artifacts = _run_allows_placeholder_artifacts(run_row)
-    with _materialization_lock(run_id, db_connection_factory, int(lock_timeout_seconds)) as lock_acquired:
+    filesystem_payloads: dict[int, bytes] = {}
+    next_filesystem_artifact_id = max(
+        (int(artifact.get("artifact_id") or 0) for artifact in artifacts),
+        default=0,
+    ) + 1
+    source_fetch_artifact_bytes = fetch_artifact_bytes
+
+    def effective_fetch_artifact_bytes(artifact_id: int) -> bytes:
+        artifact_id = int(artifact_id)
+        if artifact_id in filesystem_payloads:
+            return filesystem_payloads[artifact_id]
+        return bytes(source_fetch_artifact_bytes(artifact_id))
+
+    def persist_artifact(
+        logical_path: str,
+        artifact_kind: str,
+        mime_type: str,
+        data: bytes,
+        metadata: dict[str, Any],
+    ) -> int:
+        nonlocal next_filesystem_artifact_id
+        if not filesystem_only:
+            if db_connection_factory is None:
+                raise RuntimeError("A database connection factory is required for database materialization.")
+            return _store_artifact(
+                db_connection_factory,
+                run_id,
+                logical_path,
+                artifact_kind,
+                mime_type,
+                data,
+                metadata,
+            )
+        artifact_id = next_filesystem_artifact_id
+        next_filesystem_artifact_id += 1
+        filesystem_payloads[artifact_id] = bytes(data)
+        return artifact_id
+
+    # Rebind locally so every downstream source-table/chart helper can read
+    # artifacts created earlier in this same filesystem transaction.
+    fetch_artifact_bytes = effective_fetch_artifact_bytes
+    lock_context = (
+        nullcontext(True)
+        if filesystem_only
+        else _materialization_lock(
+            run_id,
+            db_connection_factory,
+            int(lock_timeout_seconds),
+        )
+    )
+    with lock_context as lock_acquired:
         if not lock_acquired:
             return {
                 "created": created,
@@ -8219,7 +8284,12 @@ def materialize_run_contract_artifacts(
                 "skipped": True,
                 "lock_busy": True,
             }
-        artifacts = _fetch_run_artifacts(run_id, db_connection_factory)
+        if filesystem_only:
+            artifacts = [dict(artifact or {}) for artifact in artifacts]
+        else:
+            if db_connection_factory is None:
+                raise RuntimeError("A database connection factory is required for database materialization.")
+            artifacts = _fetch_run_artifacts(run_id, db_connection_factory)
         existing = {str(art.get("logical_path") or ""): art for art in artifacts}
         source_lookup = dict(existing)
         contract_owned_paths = _contract_owned_paths(artifacts, db_connection_factory)
@@ -8329,9 +8399,7 @@ def materialize_run_contract_artifacts(
                 manifest_rows.append([target_path, "table_csv", "suppressed_placeholder_artifact", source_logical_path, note])
                 continue
             _write_file_if_possible(run_folder, target_path, data)
-            artifact_id = _store_artifact(
-                db_connection_factory,
-                run_id,
+            artifact_id = persist_artifact(
                 target_path,
                 "table_csv",
                 "text/csv; charset=UTF-8",
@@ -8409,9 +8477,7 @@ def materialize_run_contract_artifacts(
                     manifest_rows.append([target_img, image_kind, "suppressed_placeholder_artifact", source_table_path, chart_name])
                     continue
                 _write_file_if_possible(run_folder, target_csv, chart_csv_bytes)
-                csv_artifact_id = _store_artifact(
-                    db_connection_factory,
-                    run_id,
+                csv_artifact_id = persist_artifact(
                     target_csv,
                     "table_csv",
                     "text/csv; charset=UTF-8",
@@ -8419,9 +8485,7 @@ def materialize_run_contract_artifacts(
                     csv_meta,
                 )
                 _write_file_if_possible(run_folder, target_img, image_bytes)
-                img_artifact_id = _store_artifact(
-                    db_connection_factory,
-                    run_id,
+                img_artifact_id = persist_artifact(
                     target_img,
                     image_kind,
                     image_mime,
@@ -8600,9 +8664,7 @@ def materialize_run_contract_artifacts(
                 manifest_rows.append([target_img, image_kind, "suppressed_placeholder_artifact", source_table_path, chart_name])
                 continue
             _write_file_if_possible(run_folder, target_csv, chart_csv_bytes)
-            csv_artifact_id = _store_artifact(
-                db_connection_factory,
-                run_id,
+            csv_artifact_id = persist_artifact(
                 target_csv,
                 "table_csv",
                 "text/csv; charset=UTF-8",
@@ -8610,9 +8672,7 @@ def materialize_run_contract_artifacts(
                 csv_meta,
             )
             _write_file_if_possible(run_folder, target_img, image_bytes)
-            img_artifact_id = _store_artifact(
-                db_connection_factory,
-                run_id,
+            img_artifact_id = persist_artifact(
                 target_img,
                 image_kind,
                 image_mime,
@@ -8648,9 +8708,7 @@ def materialize_run_contract_artifacts(
         "source_artifact_high_watermark": current_source_watermark,
     }
     _write_file_if_possible(run_folder, manifest_logical_path(), manifest_bytes)
-    _store_artifact(
-        db_connection_factory,
-        run_id,
+    persist_artifact(
         manifest_logical_path(),
         "table_csv",
         "text/csv; charset=UTF-8",
@@ -8695,9 +8753,7 @@ def materialize_run_contract_artifacts(
         "charts_missing_count": len(coverage["missing_chart_names"]),
     }
     _write_file_if_possible(run_folder, coverage_logical_path(), coverage_bytes)
-    _store_artifact(
-        db_connection_factory,
-        run_id,
+    persist_artifact(
         coverage_logical_path(),
         "table_csv",
         "text/csv; charset=UTF-8",
@@ -8711,3 +8767,46 @@ def materialize_run_contract_artifacts(
         "coverage": coverage,
         "skipped": False,
     }
+
+
+def materialize_filesystem_run_contract_artifacts(
+    run_row: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+    *,
+    feature_policy: dict[str, bool] | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Materialize the browser contract directly into a results-folder run.
+
+    The source bytes are the exact persisted files indexed by the dashboard.
+    The normal materializer owns source selection, placeholder suppression,
+    lineage, raster PNG validation, and coverage.  No database or configured-
+    value substitution is involved.
+    """
+    artifact_paths = {
+        int(artifact.get("artifact_id") or 0): Path(
+            str(artifact.get("filesystem_path") or "")
+        )
+        for artifact in artifacts
+        if int(artifact.get("artifact_id") or 0) > 0
+        and str(artifact.get("filesystem_path") or "").strip()
+    }
+
+    def fetch_artifact_bytes(artifact_id: int) -> bytes:
+        path = artifact_paths.get(int(artifact_id))
+        if path is None:
+            raise FileNotFoundError(
+                f"Filesystem artifact {int(artifact_id)} has no indexed path."
+            )
+        return _windows_long_path(path).read_bytes()
+
+    return materialize_run_contract_artifacts(
+        run_row,
+        artifacts,
+        fetch_artifact_bytes=fetch_artifact_bytes,
+        db_connection_factory=None,
+        feature_policy=feature_policy,
+        force=force,
+        lock_timeout_seconds=0,
+        filesystem_only=True,
+    )

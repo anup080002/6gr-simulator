@@ -60,6 +60,20 @@ out.ServingRxPower_dBm = NaN;
 out.ServingRxPowerSource = "";
 out.PowerContextDirection = "";
 out.PowerContextTotalTxPower_dBm = NaN;
+out.SRSPowerControlAppliedPower_dBm = NaN;
+out.SRSPowerControlRequestedPower_dBm = NaN;
+out.SRSPowerControlPathlossSource = "";
+out.SRSPowerControlClipped = false;
+out.TxRFExecutionStatus = "";
+out.TxRFStageOrder = "";
+out.TxRFAppliedStageCount = NaN;
+out.CompositeReceiverFrontEndApplied = false;
+out.CompositeReceiverFrontEndStatus = "";
+out.RuntimeChannelStateUsed = false;
+out.RuntimeChannelLinkKeys = "";
+out.RuntimeNoiseApplied = false;
+out.RuntimeNoiseVarianceMean = NaN;
+out.RuntimeStageCount = 5;
 out.AppliedLargeScaleGain_dB = NaN;
 out.AppliedLargeScaleLoss_dB = NaN;
 out.AppliedBasePathloss_dB = NaN;
@@ -86,6 +100,8 @@ out.TPMIEstimate = NaN;
 out.SINR_dB = NaN;
 out.SINRSource = "";
 out.SINRValueStatus = "";
+out.SINRMeasurementDomain = "";
+out.PowerReferencePlane = "";
 out.CQI = NaN;
 out.CQISource = "";
 out.CQIValueStatus = "";
@@ -169,6 +185,28 @@ try
     out.ServingRxPowerSource = char(string(sixgr.util.structGet(replay, "ServingRxPowerSource", "")));
     out.PowerContextDirection = char(string(sixgr.util.structGet(replay, "PowerContextDirection", "")));
     out.PowerContextTotalTxPower_dBm = double(sixgr.util.structGet(replay, "PowerContextTotalTxPower_dBm", NaN));
+    out.SRSPowerControlAppliedPower_dBm = double(sixgr.util.structGet( ...
+        replay,"SRSPowerControl.AppliedPower_dBm",NaN));
+    out.SRSPowerControlRequestedPower_dBm = double(sixgr.util.structGet( ...
+        replay,"SRSPowerControl.RequestedPower_dBm",NaN));
+    out.SRSPowerControlPathlossSource = char(string(sixgr.util.structGet( ...
+        replay,"SRSPowerControl.PathlossSource","")));
+    out.SRSPowerControlClipped = logical(sixgr.util.structGet( ...
+        replay,"SRSPowerControl.Clipped",false));
+    out.TxRFExecutionStatus = char(string(sixgr.util.structGet( ...
+        replay,"TxRFExecutionStatus","")));
+    out.TxRFStageOrder = char(string(sixgr.util.structGet( ...
+        replay,"TxRFStageOrder","")));
+    out.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
+        replay,"TxRFAppliedStageCount",NaN));
+    out.CompositeReceiverFrontEndApplied = logical(sixgr.util.structGet( ...
+        replay,"CompositeReceiverFrontEndApplied",false));
+    out.CompositeReceiverFrontEndStatus = char(string(sixgr.util.structGet( ...
+        replay,"CompositeReceiverFrontEndStatus","")));
+    out.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
+        replay,"RuntimeChannelStateUsed",false));
+    out.RuntimeChannelLinkKeys = char(string(sixgr.util.structGet( ...
+        replay,"RuntimeChannelLinkKey","")));
     out.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
     out.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
     out.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
@@ -192,6 +230,8 @@ try
         noiseVarArgs{:}, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+    out.RuntimeNoiseApplied = isfinite(out.NoiseVariance) && out.NoiseVariance > 0;
+    out.RuntimeNoiseVarianceMean = out.NoiseVariance;
     out.NoiseVarStatus = char(string(sixgr.util.structGet(rx, "NoiseVarStatus", "")));
     out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
     out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
@@ -325,14 +365,19 @@ try
     linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
         "ReceivedGrid", rx.RxGrid, ...
         "ReferenceIndices", tx.SRSIndices, ...
-        "ReferenceSymbols", tx.SRSSymbols);
+        "ReferenceSymbols", tx.SRSSymbols, ...
+        "ChannelEstimateDomain", "srs_port_domain");
     out.SINR_dB = double(sixgr.util.structGet(linkState, "SINR_dB", NaN));
     out.SINRSource = char(string(sixgr.util.structGet(linkState, "SINRSource", "")));
     out.SINRValueStatus = char(string(sixgr.util.structGet(linkState, "SINRValueStatus", "")));
+    out.SINRMeasurementDomain = char(string(sixgr.util.structGet(linkState, "SINRMeasurementDomain", "")));
+    out.PowerReferencePlane = char(string(sixgr.util.structGet(linkState, "PowerReferencePlane", "")));
     if localThermalNoiseSINRUnavailable(replay)
         out.SINR_dB = NaN;
         out.SINRSource = "ul_srs_sinr_unavailable_without_runtime_rx_power_or_pathloss";
         out.SINRValueStatus = "unavailable";
+        out.SINRMeasurementDomain = "";
+        out.PowerReferencePlane = "";
         out.CQI = NaN;
         out.CQISource = "";
         out.CQIValueStatus = "unavailable";
@@ -472,6 +517,8 @@ if nargin < 9
     trialIdx = 1;
 end
 txInfo = struct("OFDM", sixgr.util.structGet(info, "OFDMInfo", struct()));
+[x,cfg,srsPower,txRfReplay] = localPrepareSRSTransmitter( ...
+    x,cfg,txInfo,tx);
 if isstruct(state) && isfield(state, "ContractVersion")
     state = localPrepareFactorySRSChannelState(state, cfg, tx, txInfo);
     [y, channelReplay, state] = ...
@@ -491,20 +538,123 @@ end
 referenceWaveform = y;
 
 cfgReplay = localPrepareSRSReplayCfg(cfg, snr_dB);
-% Thermal noise is injected below from the replay link budget. Keep this
-% SRS observation at the pre-ADC analog sample point so pathloss attenuation
-% is not quantized to exact zero before the receiver noise is added.
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz, "ApplyADC", false);
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments( ...
+    y,cfgReplay,sampleRateHz,"ApplyRFChain",false);
 replay = localMergeReplayEvidence(impairmentReplay, channelReplay);
+replay.SRSPowerControl = srsPower;
+replay.TxRFExecutionStatus = char(string(sixgr.util.structGet( ...
+    txRfReplay,"RFExecutionStatus","applied_or_identity")));
+replay.TxRFStageOrder = char(string(sixgr.util.structGet( ...
+    txRfReplay,"RFStageOrder","")));
+replay.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
+    txRfReplay,"RFAppliedStageCount",0));
 replay.ChannelModelApplied = char(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 replay.ChannelFadingApplied = logical(useFading);
 desiredWaveform = y;
 referenceWaveform = desiredWaveform;
-[y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform);
-replay.InjectedNoiseVariance = double(nVar);
-if isfinite(nVar) && nVar > 0
+[preFrontEndWaveform, preFrontEndNVar] = ...
+    localAddAwgnFromReplay(y,replay,desiredWaveform);
+replay.InjectedNoiseVariance = double(preFrontEndNVar);
+if isfinite(preFrontEndNVar) && preFrontEndNVar > 0
     replay.NoiseVarianceSource = "srs_replay_reference_waveform_awgn";
 end
+[y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
+    preFrontEndWaveform,cfgReplay,sampleRateHz,replay,"Direction","UL");
+replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
+nVar = double(sixgr.util.structGet(replay, ...
+    "InjectedNoiseVariancePostCompositeFrontEnd",preFrontEndNVar));
+end
+
+function [waveform,cfgOut,powerEvidence,txRfReplay] = ...
+        localPrepareSRSTransmitter(waveform,cfg,txInfo,tx)
+cfgOut = cfg;
+pathloss_dB = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingPathloss_dB",[]), ...
+    sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingBasePathloss_dB",[]));
+p0_dBm = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg,"rf_frontend.ul_power_control.srs.p0_dbm",[]), ...
+    sixgr.util.structGet(cfg,"rf.ul_power_control.srs.p0_dbm",[]), ...
+    sixgr.util.structGet(cfg,"lls6g.reference_signals.srs.p0",[]), ...
+    sixgr.util.structGet(cfg,"phy.srs.p0",[]));
+alpha = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg,"rf_frontend.ul_power_control.srs.alpha",[]), ...
+    sixgr.util.structGet(cfg,"rf.ul_power_control.srs.alpha",[]), ...
+    sixgr.util.structGet(cfg,"lls6g.reference_signals.srs.power_control_alpha",[]), ...
+    sixgr.util.structGet(cfg,"phy.srs.powerControlAlpha",[]));
+deltaTF_dB = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg,"rf_frontend.ul_power_control.srs.delta_tf_db",[]), ...
+    sixgr.util.structGet(cfg,"rf.ul_power_control.srs.delta_tf_db",[]), ...
+    sixgr.util.structGet(cfg,"lls6g.reference_signals.srs.delta_tf_db",[]), ...
+    sixgr.util.structGet(cfg,"phy.srs.deltaTF_dB",[]));
+pcmax_dBm = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg,"rf_frontend.ul_power_control.srs.pcmax_dbm",[]), ...
+    sixgr.util.structGet(cfg,"rf.ul_power_control.srs.pcmax_dbm",[]), ...
+    sixgr.util.structGet(cfg,"phy.pusch.powerControl.pcmax_dBm",[]), ...
+    sixgr.util.structGet(cfg,"powerAndRF.ueTxPower_dBm",[]));
+occupiedRB = double(sixgr.util.structGet(tx,"SRSOccupiedPRBCount",NaN));
+scsKHz = double(sixgr.util.structGet(cfg,"phy.numerology.scs_kHz",NaN));
+mu = log2(scsKHz/15);
+required = [pathloss_dB p0_dBm alpha deltaTF_dB pcmax_dBm occupiedRB mu];
+standaloneAWGN = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg,"run.noiseOperatingMode","")))) == ...
+    "standalone_awgn_snr_argument";
+strictPowerAvailable = ~any(~isfinite(required)) && occupiedRB >= 1 && ...
+    mu >= 0 && mu == round(mu);
+if ~strictPowerAvailable && ~standaloneAWGN
+    error("sixgr:link:SRS:MissingPowerControlAuthority", ...
+        "SRS waveform execution requires YAML/runtime pathloss, P0, alpha, " + ...
+        "delta-TF, PCMAX, occupied RB count and numerology for TS 38.213 power control.");
+end
+powerContext = sixgr.rf.PowerContext(cfg,"UL", ...
+    "NumPorts",size(waveform,2));
+if strictPowerAvailable
+    epoch = localFirstFiniteScalar( ...
+        sixgr.util.structGet(cfg,"rf_frontend.configuration_epoch",[]), ...
+        sixgr.util.structGet(cfg,"rf.configuration_epoch",[]));
+    if ~(isfinite(epoch) && epoch >= 1 && epoch == round(epoch))
+        error("sixgr:link:SRS:MissingPowerControlEpoch", ...
+            "SRS power-control execution requires a YAML-owned RF configuration epoch.");
+    end
+    powerState = sixgr.rf.runtime.UplinkPowerControlState(epoch);
+    request = struct("Channel","SRS","Mu",mu,"MRB",occupiedRB, ...
+        "MeasuredPathloss_dB",pathloss_dB, ...
+        "PathlossSource","runtime_geometry_or_reference_rs_measurement", ...
+        "P0_dBm",p0_dBm,"Alpha",alpha,"DeltaTF_dB",deltaTF_dB, ...
+        "PCMAX_dBm",pcmax_dBm);
+    powerEvidence = sixgr.rf.runtime.SRSPowerController.resolve( ...
+        powerState,request);
+    powerContext.TotalTxPower_dBm = double(powerEvidence.AppliedPower_dBm);
+    powerContext.TotalTxPowerSource = "ts_38_213_srs_power_control";
+    powerContext.SignalSpecificPowerControl = true;
+else
+    powerEvidence = struct( ...
+        "Channel","SRS", ...
+        "RequestedPower_dBm",double(powerContext.TotalTxPower_dBm), ...
+        "AppliedPower_dBm",double(powerContext.TotalTxPower_dBm), ...
+        "PowerHeadroom_dB",NaN,"Clipped",false, ...
+        "PathlossSource","not_applicable_standalone_awgn_reference", ...
+        "EvidenceClass","standalone_awgn_reference_not_production_power_control");
+    powerContext.TotalTxPowerSource = ...
+        "standalone_awgn_reference_power_context";
+    powerContext.SignalSpecificPowerControl = false;
+end
+powerContext.TotalTxPower_mW = 10.^(powerContext.TotalTxPower_dBm/10);
+powerContext.TotalTxPower_W = powerContext.TotalTxPower_mW*1e-3;
+powerContext.SignalFamily = "SRS";
+[waveform,powerContext] = sixgr.rf.applyPowerContext( ...
+    waveform,cfg,"UL",txInfo,"PowerContext",powerContext);
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "lls6g.runtimePowerContext",powerContext);
+sampleRateHz = double(sixgr.util.structGet(txInfo,"OFDM.SampleRate",NaN));
+txRfOut = sixgr.rf.applyRFImpairmentChain(waveform,cfgOut, ...
+    "SampleRateHz",sampleRateHz,"Direction","UL", ...
+    "MeasurementPoint","tx_output","Endpoint","tx", ...
+    "StrictMutationRequired",false,"UseLegacyGlobalConfig",false, ...
+    "ApplyPA",false,"ApplyADC",false);
+waveform = cast(txRfOut.Waveform,"like",waveform);
+txRfReplay = txRfOut.Replay;
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "lls6g.txRFImpairmentReplay",txRfReplay);
 end
 
 function state = localPrepareFactorySRSChannelState(state, cfg, tx, txInfo)
@@ -607,8 +757,12 @@ if ~(awgnOnly || model == "AWGN" || model == "NONE" || model == "OFF")
     tf = false;
     return;
 end
-noiseMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ""))));
-tf = strlength(noiseMode) == 0 || noiseMode == "receiver_noise_figure_thermal_noise";
+noiseMode = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg,"run.noiseOperatingMode",""))));
+% A configured operating-point SNR is metadata in production.  It becomes
+% an AWGN injection target only when the caller explicitly selects the
+% standalone reference mode; never convert a thermal-noise run implicitly.
+tf = noiseMode == "standalone_awgn_snr_argument";
 end
 
 function seed = localTrialSeed(cfg, trialIdx)

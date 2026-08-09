@@ -13,15 +13,10 @@ if ~isa(evidence, "sixgr.artifact.EvidenceRegistry")
     error("sixgr:artifact:EvidenceRegistryRequired", ...
         "Configured artifact finalization requires an in-memory EvidenceRegistry.");
 end
-% canonical_control is the leaf/master YAML authority.  The ordinary
-% output tree may still contain the disabled global default after config
-% inheritance, so reading that default first would silently bypass an
-% explicitly enabled contract engine in the master scenario.
-engine = localGet(scenarioConfig, ...
-    "canonical_control.output.artifact_contract_engine", struct());
-if ~isstruct(engine) || isempty(fieldnames(engine))
-    engine = localGet(scenarioConfig, "output.artifact_contract_engine", struct());
-end
+% normalizeScenarioAliases projects the authoring-only canonical_control
+% section into one runtime output authority and rejects contradictions.
+% Finalization must never implement a second precedence rule.
+engine = localGet(scenarioConfig, "output.artifact_contract_engine", struct());
 if ~isstruct(engine) || isempty(fieldnames(engine))
     error("sixgr:artifact:ArtifactEngineConfigurationMissing", ...
         "Scenario YAML does not define output.artifact_contract_engine.");
@@ -49,6 +44,12 @@ if ~logical(sixgr.util.structGet(engine, "atomic_replace", false))
 end
 
 repositoryRoot = sixgr.artifact.ContractCatalog.repositoryRoot();
+catalogScope = lower(strtrim(string(sixgr.util.structGet( ...
+    engine, "catalog_scope", "phase_pack"))));
+if ~ismember(catalogScope, ["phase_pack", "runtime_in_path"])
+    error("sixgr:artifact:UnsupportedCatalogScope", ...
+        "Unsupported artifact catalog_scope '%s'.", catalogScope);
+end
 contractRoot = string(sixgr.util.structGet(engine, "contract_root", ""));
 expectedContractRoot = "tests/vectors";
 if replace(contractRoot, "\\", "/") ~= expectedContractRoot
@@ -61,7 +62,7 @@ if ~isfolder(fullfile(repositoryRoot, contractRoot))
         "Configured artifact contract root is missing: %s", ...
         fullfile(repositoryRoot, contractRoot));
 end
-catalog = sixgr.artifact.ContractCatalog.load(repositoryRoot);
+catalog = sixgr.artifact.ContractCatalog.load(repositoryRoot, catalogScope);
 profiles = string(sixgr.util.structGet(engine, "profiles", "base"));
 domains = string(sixgr.util.structGet(engine, "domains", "all"));
 mode = localRuntimeMode(scenarioConfig);
@@ -83,6 +84,7 @@ result = sixgr.artifact.ContractArtifactGenerator.generate( ...
         engine, "require_radio_identity_columns", true)));
 result.Enabled = true;
 result.Status = "FINALIZED_FROM_RUNTIME_EVIDENCE";
+result.CatalogScope = catalogScope;
 end
 
 function mode = localRuntimeMode(config)
@@ -111,9 +113,9 @@ switch raw
         mode = "GEOMETRY_NETWORK";
     case ""
         error("sixgr:artifact:ArtifactRunModeMissing", ...
-            ["Enabled artifact finalization requires the master YAML to " ...
-             "define canonical_control.integration.run_mode as " ...
-             "FIXED_SNR_SWEEP or GEOMETRY_NETWORK."]);
+            "Enabled artifact finalization requires the master YAML to " + ...
+            "define canonical_control.integration.run_mode as " + ...
+            "FIXED_SNR_SWEEP or GEOMETRY_NETWORK.");
     otherwise
         error("sixgr:artifact:UnsupportedArtifactRunMode", ...
             "Unsupported artifact finalization run mode '%s'.", raw);

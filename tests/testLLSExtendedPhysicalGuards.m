@@ -13,7 +13,7 @@ testPDCCHHighSCSFailsClosed();
 testTimingCorrectionBoundedByCP();
 testIQImageRejectionMeasurementFloor();
 testReferenceSINRDynamicRangeLimit();
-testSchedulerDefaultDLAvoidsCORESET();
+testSchedulerConfiguredDLAvoidsCORESET();
 
 ok = true;
 end
@@ -88,7 +88,25 @@ cfg = sixgr.util.structSet(cfg, "phy.ofdm.windowingPercent", 0.025);
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", 24);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.executionProfile", "phy_calibration");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.prbSet", 0:11);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.symbolAllocation", [2 12]);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mappingType", "A");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", 4);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.modulation", "QPSK");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.targetCodeRate", 602 / 1024);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.codeRate", 602 / 1024);
+cfg.phy.pdsch.mcsContext = struct( ...
+    "UECapability1024QAM", false, ...
+    "RRCEnabled1024QAM", false, ...
+    "DCIEnabled1024QAM", false, ...
+    "DeploymentAllows1024QAM", false, ...
+    "FrequencyRangeAllows1024QAM", false, ...
+    "BandAllows1024QAM", false, ...
+    "FrequencyRange", "FR1", ...
+    "OperatingBand", "n78", ...
+    "DeploymentClass", "ofdm_windowing_calibration");
 cfg = sixgr.util.structSet(cfg, "phy.pusch.prbSet", 0:11);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.symbolAllocation", [0 14]);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.mappingType", "A");
 
 [txDL, infoDL] = sixgr.phy.dl.PDSCH_Tx(cfg, "CompactOutput", true);
 assert(logical(txDL.OFDMWindowingEnabled) && double(txDL.OFDMWindowingSamples) > 0 && ...
@@ -106,9 +124,14 @@ cfg = sixgr.config.defaultConfig();
 cfg = sixgr.config.normalizeConfig(cfg);
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", 24);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.prbSet", 0:5);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.symbolAllocation", [0 14]);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.mappingType", "A");
 cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", "pi/2-BPSK");
 cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", false);
+localAssertError(@() sixgr.phy.ul.PUSCH_Tx(cfg, "CompactOutput", true), ...
+    "sixgr:pusch:TransformPrecodingRequired");
 
+cfg = sixgr.util.structSet(cfg, "phy.pusch.transformPrecoding", true);
 [txUL, infoUL] = sixgr.phy.ul.PUSCH_Tx(cfg, "CompactOutput", true);
 assert(strcmpi(char(string(txUL.PUSCH.Modulation)), "pi/2-BPSK"), ...
     "PUSCH_Tx must preserve configured pi/2-BPSK modulation semantics.");
@@ -179,21 +202,28 @@ assert(abs(double(csi.SINR_dB) - 42) < 1e-9 && ...
 ul = sixgr.phy.ul.measureULLinkState(Hest, 1e-20, cfg, ...
     "ReceivedGrid", rxGrid, ...
     "ReferenceIndices", refInd, ...
-    "ReferenceSymbols", refSym);
+    "ReferenceSymbols", refSym, ...
+    "ChannelEstimateDomain", "srs_port_domain");
 assert(abs(double(ul.SINR_dB) - 42) < 1e-9 && ...
     strcmpi(char(string(ul.SINRValueStatus)), "OK_dynamic_range_limited"), ...
     "UL link-state feedback must use the same configured trusted dynamic range for measured SINR.");
 end
 
-function testSchedulerDefaultDLAvoidsCORESET()
+function testSchedulerConfiguredDLAvoidsCORESET()
 cfg = sixgr.config.defaultConfig();
 cfg = sixgr.config.normalizeConfig(cfg);
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", 2);
+cfg = sixgr.util.structSet(cfg, "phy.channelBandwidth_MHz", 10);
+cfg = sixgr.util.structSet(cfg, "channel.bandwidth_Hz", 10e6);
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", 24);
+cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", 24);
+cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", 24);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.symbolAllocation", [2 12]);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mappingType", "A");
 scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL");
 [~, symAlloc] = scheduler.defaultBudget(struct());
 assert(isequal(double(symAlloc), [2 12]), ...
-    "DL default scheduler budget must start after the configured CORESET duration.");
+    "DL scheduler budget must preserve the configured allocation after the CORESET duration.");
 end
 
 function cfg = localBasePDCCHCfg()

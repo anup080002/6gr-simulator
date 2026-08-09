@@ -523,6 +523,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.TBSInputNREPerPRB = double(sixgr.util.structGet(plan, "TBSInputNREPerPRB", plan.NREPerPRB));
                     g.TBSInputTargetCodeRate = double(sixgr.util.structGet(plan, "TBSInputTargetCodeRate", plan.TargetCodeRate));
                     g.TBSInputXOverhead = double(sixgr.util.structGet(plan, "TBSInputXOverhead", g.XOverhead));
+                    g.TBSInputSource = char(string(sixgr.util.structGet(plan, "TBSInputSource", ...
+                        "scheduler_exact_allocation_resource_accounting")));
                     g.MCSTable = char(string(plan.MCSTable));
                     g.CQITable = char(string(plan.CQITable));
                     g.AMCMode = char(string(plan.AMCMode));
@@ -802,31 +804,54 @@ arrayFields = fieldnames(grants);
 missingInGrant = setdiff(arrayFields, grantFields);
 for i = 1:numel(missingInGrant)
     f = missingInGrant{i};
-    grant.(f) = localDefaultFieldLike(grants(1).(f));
+    grant.(f) = localDefaultFieldLike(f, grants(1).(f));
 end
 missingInArray = setdiff(grantFields, arrayFields);
 for i = 1:numel(missingInArray)
     f = missingInArray{i};
-    v = localDefaultFieldLike(grant.(f));
+    v = localDefaultFieldLike(f, grant.(f));
     for k = 1:numel(grants)
         grants(k).(f) = v;
     end
 end
 end
 
-function value = localDefaultFieldLike(example)
+function value = localDefaultFieldLike(fieldName, example)
 if isstruct(example)
-    value = example;
+    % Struct-valued grant fields carry per-UE authority (for example the
+    % frozen PHY grant, DCI, and HARQ TB context). Schema alignment may add
+    % the field to another grant, but it must never copy another UE's value.
+    value = struct();
 elseif isstring(example)
     value = strings(size(example));
 elseif ischar(example)
     value = '';
 elseif islogical(example)
-    value = false(size(example));
+    if isscalar(example)
+        value = false;
+    else
+        value = false(0, 0);
+    end
 elseif isa(example, 'uint8')
-    value = uint8(zeros(size(example)));
+    % A missing coded-bit or payload authority is absent, not the bit zero.
+    value = uint8([]);
 elseif isnumeric(example)
-    value = zeros(size(example));
+    if isscalar(example)
+        % Numeric zero is often a valid grant value (PMI, BWP, HARQ ID,
+        % port/RF-chain count metadata, and so on). Manufacturing zero
+        % while aligning heterogeneous grants therefore corrupts evidence.
+        if isfloat(example)
+            value = NaN(1, 1, "like", example);
+        else
+            value = zeros(0, 0, "like", example);
+        end
+    else
+        % A non-scalar grant field is allocation or matrix authority.  A
+        % same-shaped zero value is not neutral: it can masquerade as a
+        % frozen precoder/combiner (or a real allocation) owned by another
+        % UE.  Preserve only the schema and leave the semantic value absent.
+        value = zeros(0, 0, "like", example);
+    end
 else
     value = [];
 end
@@ -897,6 +922,7 @@ g.TBSInputNPRB = 0;
 g.TBSInputNREPerPRB = 0;
 g.TBSInputTargetCodeRate = 0.5;
 g.TBSInputXOverhead = 0;
+g.TBSInputSource = '';
 g.MCSTable = 'qam64_table1';
 g.CQITable = 'table1';
 g.AMCMode = 'fixed_modulation';

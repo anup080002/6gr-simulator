@@ -31,6 +31,20 @@ mirrorPath = fullfile(mirrorDir, "mirror.csv");
 sixgr.util.csvWriteTable(mirrorPath, table(1, 'VariableNames', {'Value'}));
 mirrorBefore = fileread(mirrorPath);
 
+% Air-interface and beamforming tables are direct plot sources.  Their byte
+% hashes are sealed into component plot-lineage rows when the waveform
+% runner renders the PNGs, so late report annotation must not mutate them.
+airDir = fullfile(runFolder, "air_interface", "csv");
+beamDir = fullfile(runFolder, "beamforming", "csv");
+mkdir(airDir);
+mkdir(beamDir);
+airPath = fullfile(airDir, "dl_pdsch_trials.csv");
+beamPath = fullfile(beamDir, "probe_beam_mimo.csv");
+sixgr.util.csvWriteTable(airPath, table(2, 'VariableNames', {'Value'}));
+sixgr.util.csvWriteTable(beamPath, table(3, 'VariableNames', {'Value'}));
+airBefore = fileread(airPath);
+beamBefore = fileread(beamPath);
+
 summary = sixgr.report.annotateScenarioCSVArtifacts(runFolder, ...
     "scenario_unit", "hash_unit", "waveform_bundle");
 
@@ -38,13 +52,16 @@ assert(strcmp(fileread(runtimePath), runtimeBefore), ...
     "Runtime journal projections must remain byte-for-byte unchanged.");
 assert(strcmp(fileread(mirrorPath), mirrorBefore), ...
     "Component mirrors must remain byte-for-byte unchanged.");
+assert(strcmp(fileread(airPath), airBefore) && ...
+    strcmp(fileread(beamPath), beamBefore), ...
+    "Waveform plot-source tables must remain byte-for-byte unchanged after their lineage hashes are sealed.");
 report = readtable(reportPath, 'VariableNamingRule', 'preserve');
 assert(isequal(string(report.Properties.VariableNames(1:3)), ...
     ["ScenarioID", "ConfigHash", "RunnerProfile"]));
 assert(all(string(report.ScenarioID) == "scenario_unit"));
 assert(all(string(report.ConfigHash) == "hash_unit"));
 assert(all(string(report.RunnerProfile) == "waveform_bundle"));
-assert(summary.AnnotatedCount == 1 && summary.SkippedImmutableCount >= 2);
+assert(summary.AnnotatedCount == 1 && summary.SkippedImmutableCount >= 4);
 
 % Prove the unchanged runtime file still accepts the next versioned event.
 bus.stageEnd("annotation_guard");

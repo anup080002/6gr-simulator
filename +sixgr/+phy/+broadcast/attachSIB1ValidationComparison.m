@@ -16,6 +16,7 @@ rxPayloadHash = string(sixgr.util.structGet(result, "SIB1PayloadHashRx", ""));
 result.SIB1PayloadHashTx = txPayloadHash;
 result.SIB1TxTreeHash = "";
 result.SIB1TreeEqual = false;
+result.SemanticComparisonFailureReason = "";
 
 if ~decoded
     result = localFail(result, "sib1_asn1_decode_not_available_for_semantic_comparison");
@@ -55,7 +56,20 @@ end
 end
 
 function result = localFail(result, reason)
+priorStatus = upper(strtrim(string(sixgr.util.structGet( ...
+    result, "Status", ""))));
+priorReason = strtrim(string(sixgr.util.structGet( ...
+    result, "FailureReason", "")));
 result.StrictOk = false;
-result.Status = "FAIL";
-result.FailureReason = string(reason);
+result.SemanticComparisonFailureReason = string(reason);
+% Semantic comparison is downstream of waveform recovery.  Never erase a
+% concrete receiver/coding exception with the less specific fact that an
+% ASN.1 tree was consequently unavailable.
+if priorStatus == "ERROR" || strlength(priorReason) > 0
+    result.Status = priorStatus;
+    result.FailureReason = priorReason;
+else
+    result.Status = "FAIL";
+    result.FailureReason = string(reason);
+end
 end

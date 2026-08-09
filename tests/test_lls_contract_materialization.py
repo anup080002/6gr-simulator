@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from PIL import Image
@@ -48,6 +50,19 @@ def main() -> None:
 
     coverage = materializer.coverage_logical_path()
     assert coverage == "reports/csv/contract_materialization_coverage.csv"
+
+    with tempfile.TemporaryDirectory() as temporary_root:
+        long_root = Path(temporary_root) / ("materializer-long-root-" + "x" * 100)
+        long_logical = (
+            "reports/image/contract__" + "long-chart-name-" * 8 + ".png"
+        )
+        long_payload = b"filesystem-long-path-regression"
+        materializer._write_file_if_possible(  # noqa: SLF001
+            str(long_root), long_logical, long_payload
+        )
+        long_target = long_root / Path(*long_logical.split("/"))
+        assert materializer._windows_long_path(long_target).read_bytes() == long_payload  # noqa: SLF001
+        shutil.rmtree(materializer._windows_long_path(long_root))  # noqa: SLF001
 
     chart_csv = materializer._chart_dataset_csv(  # noqa: SLF001
         36,

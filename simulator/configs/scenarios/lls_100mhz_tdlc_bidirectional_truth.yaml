@@ -124,10 +124,12 @@
     "srs_enabled": true,
     "trs_enabled": false,
     "ptrs_enabled": false,
-    "csi_feedback_mode": "PMI+CQI+RI",
+    "csi_feedback_mode": "PMI+CQI+RI+CRI",
+    "csi_reporting_enabled": true,
     "cqi_reporting_enabled": true,
     "pmi_reporting_enabled": true,
     "ri_reporting_enabled": true,
+    "cri_reporting_enabled": true,
     "pdsch_dmrs_config_type": 1,
     "pdsch_dmrs_type_a_position": 2,
     "pdsch_dmrs_num_cdm_groups_without_data": 2
@@ -356,6 +358,8 @@
     "phase_noise_enabled": false,
     "iq_imbalance_enabled": false,
     "pa_nonlinearity_enabled": false,
+    "adc_quantization_enabled": false,
+    "dac_quantization_enabled": false,
     "adc_quantization_bits": 12,
     "dac_quantization_bits": 12,
     "timing_offset_samples": 0

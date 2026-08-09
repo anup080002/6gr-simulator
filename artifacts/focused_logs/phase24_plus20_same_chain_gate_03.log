@@ -1,0 +1,21 @@
+{Error using sixgr.lls6g.config.validateScenarioConfig>localValidateSNRSweepRequirements (line 1243)
+sweeps_and_matrix.snr_sweep.enabled=true in C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+Simulator_v2_clean_main\results\.runtime_scenarios\phase24_plus20_same_chain_gate_03_executed.yaml requires at least two finite SNR points from
+sweeps_and_matrix.snr_sweep.values_db or simulation.snr_db + simulation.snr_sweep_offsets_db.
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateScenarioCompatibility (line 428)
+localValidateSNRSweepRequirements(cfg, snrSweepEnabled, ctx);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.validateScenarioConfig (line 23)
+            localValidateScenarioCompatibility(cfg, catalog, ctx);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 8)
+sixgr.lls6g.config.validateScenarioConfig(resolved, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep>localRuntimeYAML (line 81)
+executed = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 22)
+scenarioPath = localRuntimeYAML( ...
+               ^^^^^^^^^^^^^^^^^^^^^
+} 

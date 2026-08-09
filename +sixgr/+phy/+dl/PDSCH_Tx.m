@@ -121,6 +121,12 @@ if strictAssignmentProfile
             "Assignment profile '%s' does not match requested '%s'.", ...
             opt.Assignment.Profile, executionProfile);
     end
+    if executionProfile == "ra_si_strict" && ...
+            string(opt.Assignment.get("ControlAuthority")) ~= ...
+            "transmitter_scheduled_dci"
+        error("sixgr:pdsch:InvalidRASITransmitAuthority", ...
+            "RA/SI PDSCH transmission requires transmitter-scheduled DCI ownership.");
+    end
 end
 if ~isempty(opt.Assignment)
     [tx, info] = localDelegateCanonicalPDSCHTransmitter( ...
@@ -1168,7 +1174,8 @@ canonical = sixgr.pdsch.PDSCHTransmitter( ...
         csirsEvent, "Scheduled", false)) && ~isempty(csirsInd) && ...
             cellCommonSignalOwnershipMode == "emit"
         [canonical, csirsEvent] = localMapCalibrationCSIRS( ...
-            canonical, csirsInd, csirsSym, csirsEvent);
+            canonical, csirsInd, csirsSym, csirsInfo, csirsEvent, cfg, ...
+            bundle.PrecoderBundle);
     elseif logical(sixgr.util.structGet( ...
             csirsEvent, "Scheduled", false)) && ~isempty(csirsInd)
         % CSI-RS remains reserved while materializing a user-dedicated
@@ -1292,15 +1299,88 @@ indices = intersect(indices,allocation(:).',"stable");
 end
 
 function [canonical, event] = localMapCalibrationCSIRS( ...
-        canonical, indices, symbols, event)
+        canonical, indices, symbols, info, event, cfg, dataPrecoderBundle)
 grid = canonical.Grid;
 plane = size(grid,1) * size(grid,2);
-indexPortCount = ceil(max(double(indices(:))) / plane);
-nPorts = max([size(grid,3), size(indices,2), indexPortCount]);
-if size(grid,3) < nPorts
-    grid(:,:,end+1:nPorts) = 0;
+resources = sixgr.util.structGet(info, "Resources", []);
+if isempty(resources)
+    resources = struct("ResourceID", double(sixgr.util.structGet(event, "ResourceID", 0)), ...
+        "Indices", indices, "Symbols", symbols);
 end
-grid = localMapToGrid(grid, indices, symbols);
+precoders = sixgr.util.structGet(cfg, "phy.csirs.precoderMatrices", []);
+strictCSI = logical(sixgr.util.structGet(cfg, "phy.mimo.strict", false));
+if isempty(precoders)
+    if strictCSI || numel(resources) > 1 || isempty(dataPrecoderBundle)
+        error("sixgr:pdsch:MissingCSIRSPhysicalPrecoder", ...
+            "Strict or multi-resource CSI-RS requires a YAML-materialized physical precoder matrix per resource.");
+    end
+    resource = resources(1);
+    [logicalSymbols, baseIndices, prb, symbolNumber] = ...
+        localCSIRSLogicalResourceMatrix(double(resource.Indices), ...
+        complex(resource.Symbols), size(grid,1), size(grid,2), ...
+        dataPrecoderBundle.NLayerPorts);
+    if dataPrecoderBundle.NPhysicalTxAntennas ~= size(grid,3)
+        error("sixgr:pdsch:CSIRSPrecoderDimensionMismatch", ...
+            "The PDSCH precoder physical-port count does not match the waveform grid.");
+    end
+    [physicalSymbols, trace] = dataPrecoderBundle.apply( ...
+        logicalSymbols, prb, symbolNumber, "Domain", "csirs");
+    grid = localMapCSIRSPhysicalPortSymbols(grid, baseIndices, physicalSymbols);
+    resourceEvents = repmat(localEmptyMappedCSIRSResourceEvent(), 1, 1);
+    resourceEvents(1).ResourceID = resources(1).ResourceID;
+    resourceEvents(1).MappedRE = nnz(logicalSymbols);
+    resourceEvents(1).PhysicalRE = numel(physicalSymbols);
+    resourceEvents(1).PhysicalPortCount = size(grid,3);
+    resourceEvents(1).LogicalPortCount = dataPrecoderBundle.NLayerPorts;
+    resourceEvents(1).PrecoderSource = "canonical_pdsch_precoder_bundle_shared_physical_chain";
+    resourceEvents(1).PrecoderDigest = strjoin(unique(string(trace.AppliedMatrixDigest)), "|");
+    resourceEvents(1).PRBSpan = [min(prb) max(prb)];
+    resourceEvents(1).SymbolSet = unique(symbolNumber(:)).';
+    resourceEvents(1).MappingStatus = "physical_element_grid_mapped";
+else
+    % MATLAB removes trailing singleton dimensions, so a one-resource
+    % [Nphysical x Nlogical x 1] codebook is reported as a 2-D matrix.
+    % Validate each semantic axis explicitly instead of using ndims().
+    if size(precoders,3) ~= numel(resources) || ...
+            size(precoders,1) ~= size(grid,3)
+        error("sixgr:pdsch:CSIRSPrecoderDimensionMismatch", ...
+            "CSI-RS physical precoder shape %s does not match grid ports/resources [%d * %d].", ...
+            mat2str(size(precoders)), size(grid,3), numel(resources));
+    end
+    resourceEvents = repmat(localEmptyMappedCSIRSResourceEvent(), numel(resources), 1);
+    occupied = zeros(0,1);
+    for ordinal = 1:numel(resources)
+        resource = resources(ordinal);
+        resourceIndices = double(resource.Indices);
+        resourceSymbols = complex(resource.Symbols);
+        W = complex(precoders(:,:,ordinal));
+        [logicalSymbols, baseIndices, prb, symbolNumber] = ...
+            localCSIRSLogicalResourceMatrix(resourceIndices, resourceSymbols, ...
+            size(grid,1), size(grid,2), size(W,2));
+        if ~isempty(intersect(baseIndices(:), occupied))
+            error("sixgr:pdsch:CSIRSResourceCollision", ...
+                "CSI-RS resource %g overlaps another CSI-RS resource on the physical grid.", ...
+                double(resource.ResourceID));
+        end
+        occupied = [occupied; baseIndices(:)]; %#ok<AGROW>
+        physicalSymbols = W * logicalSymbols;
+        localAssertFiniteCSIRSPrecoder(W, physicalSymbols, resource.ResourceID);
+        grid = localMapCSIRSPhysicalPortSymbols(grid, baseIndices, physicalSymbols);
+        resourceEvents(ordinal).ResourceID = double(resource.ResourceID);
+        resourceEvents(ordinal).MappedRE = double(nnz(logicalSymbols));
+        resourceEvents(ordinal).PhysicalRE = double(numel(physicalSymbols));
+        resourceEvents(ordinal).PhysicalPortCount = size(W,1);
+        resourceEvents(ordinal).LogicalPortCount = size(W,2);
+        resourceEvents(ordinal).PrecoderSource = "yaml_dft_ura_physical_csirs_resource_filter";
+        resourceEvents(ordinal).PrecoderDigest = sixgr.phy.mimo.MatrixContract.digest(W);
+        resourceEvents(ordinal).BeamIndices = double(sixgr.util.structGet(cfg, ...
+            "phy.csirs.precoderBeamIndices", nan(numel(resources),size(W,2))));
+        resourceEvents(ordinal).BeamIndices = resourceEvents(ordinal).BeamIndices(ordinal,:);
+        resourceEvents(ordinal).PRBSpan = [min(prb) max(prb)];
+        resourceEvents(ordinal).SymbolSet = unique(symbolNumber(:)).';
+        resourceEvents(ordinal).MappingStatus = "physical_element_grid_mapped";
+    end
+end
 ofdmOptions = canonical.ReferenceConfig.get("OFDMOptions");
 [waveform, ofdmInfo] = sixgr.phy.waveform.ofdmModulate( ...
     canonical.Carrier, grid, ofdmOptions{:});
@@ -1309,12 +1389,90 @@ canonical.Waveform = waveform;
 canonical.OFDMInfo = ofdmInfo;
 event.Transmitted = true;
 event.RuntimeMaterializationStatus = ...
-    "post_canonical_auxiliary_grid_mapping";
+    "physical_element_domain_csirs_resource_set_mapping";
 event.UpdateOutcome = ...
-    "transmitted_after_pre_coding_resource_reservation";
+    "all_configured_resources_precoded_and_transmitted_on_reserved_re";
+event.ResourceEvents = resourceEvents;
+event.NumResources = numel(resourceEvents);
+event.PhysicalPortCount = size(grid,3);
+event.PrecoderSource = strjoin(unique(string({resourceEvents.PrecoderSource}), ...
+    "stable"), "|");
+event.PrecoderDigests = string({resourceEvents.PrecoderDigest});
 canonical.StageTrace = [canonical.StageTrace; table( ...
-    "auxiliary_csirs_mapping", "PASS", numel(symbols), ...
+    "physical_csirs_resource_set_mapping", "PASS", numel(symbols), ...
     'VariableNames', canonical.StageTrace.Properties.VariableNames)];
+end
+
+function [logicalSymbols, baseIndices, prb, symbolNumber] = ...
+        localCSIRSLogicalResourceMatrix(indices, symbols, K, L, logicalPorts)
+plane = double(K) * double(L);
+if isempty(indices) || isempty(symbols)
+    error("sixgr:pdsch:EmptyCSIRSResource", ...
+        "A scheduled CSI-RS resource cannot be empty.");
+end
+if any(~isfinite(indices(:)) | indices(:) < 1 | indices(:) ~= round(indices(:)))
+    error("sixgr:pdsch:InvalidCSIRSIndex", ...
+        "CSI-RS indices must be finite positive one-based integers.");
+end
+portOfIndex = floor((indices(:) - 1) ./ plane) + 1;
+if any(portOfIndex > logicalPorts)
+    error("sixgr:pdsch:CSIRSPrecoderDimensionMismatch", ...
+        "CSI-RS reference port exceeds the physical precoder logical-port dimension.");
+end
+baseRaw = mod(indices(:) - 1, plane) + 1;
+baseIndices = unique(baseRaw, "sorted");
+logicalSymbols = complex(zeros(logicalPorts, numel(baseIndices)));
+symbolVector = symbols(:);
+if numel(symbolVector) ~= numel(baseRaw)
+    error("sixgr:pdsch:CSIRSResourceSymbolCountMismatch", ...
+        "CSI-RS resource has %d indices but %d symbols.", numel(baseRaw), numel(symbolVector));
+end
+[present, positions] = ismember(baseRaw, baseIndices);
+if any(~present)
+    error("sixgr:pdsch:CSIRSResourceIndexMismatch", ...
+        "CSI-RS logical indices could not be resolved on the base grid.");
+end
+for item = 1:numel(symbolVector)
+    logicalSymbols(portOfIndex(item), positions(item)) = symbolVector(item);
+end
+[subcarrierOne, symbolOne] = ind2sub([K L], baseIndices);
+prb = floor((double(subcarrierOne) - 1) ./ 12);
+symbolNumber = double(symbolOne) - 1;
+end
+
+function grid = localMapCSIRSPhysicalPortSymbols(grid, baseIndices, values)
+if size(values,1) ~= size(grid,3) || size(values,2) ~= numel(baseIndices)
+    error("sixgr:pdsch:CSIRSPhysicalMappingShapeMismatch", ...
+        "Physical CSI-RS symbols do not match the grid port/resource shape.");
+end
+for port = 1:size(grid,3)
+    plane = grid(:,:,port);
+    if any(plane(baseIndices) ~= 0)
+        error("sixgr:pdsch:CSIRSResourceCollision", ...
+            "CSI-RS mapping collided with another physical signal on port %d.", port - 1);
+    end
+    plane(baseIndices) = values(port,:).';
+    grid(:,:,port) = plane;
+end
+end
+
+function localAssertFiniteCSIRSPrecoder(W, values, resourceID)
+if any(~isfinite(real(W(:))) | ~isfinite(imag(W(:)))) || ...
+        any(~isfinite(real(values(:))) | ~isfinite(imag(values(:))))
+    error("sixgr:pdsch:InvalidCSIRSPhysicalPrecoder", ...
+        "CSI-RS resource %g produced nonfinite physical symbols.", double(resourceID));
+end
+if any(abs(sum(abs(W).^2,1) - 1) > 1e-10)
+    error("sixgr:pdsch:InvalidCSIRSPhysicalPrecoder", ...
+        "CSI-RS resource %g physical precoder columns must have unit norm.", double(resourceID));
+end
+end
+
+function event = localEmptyMappedCSIRSResourceEvent()
+event = struct("ResourceID",NaN,"MappedRE",NaN,"PhysicalRE",NaN, ...
+    "PhysicalPortCount",NaN,"LogicalPortCount",NaN, ...
+    "PrecoderSource","","PrecoderDigest","","BeamIndices",[], ...
+    "PRBSpan",[],"SymbolSet",[],"MappingStatus","");
 end
 
 function [tx, info] = localAdaptCanonicalCalibrationTX( ...
@@ -1892,10 +2050,17 @@ catch ME
 end
 event.RuntimeEvidenceSource = "sixgr.phy.dl.PDSCH_Tx:csirs_runtime_grid_mapping";
 event.NRE = double(numel(csirsSym));
-event.SymbolLocations = localFormatNumericVector(localObjectValue(csirsCfg, "SymbolLocations", []));
-event.SubcarrierLocations = localFormatNumericVector(localObjectValue(csirsCfg, "SubcarrierLocations", []));
-event.RBOffset = double(localObjectValue(csirsCfg, "RBOffset", NaN));
-event.NumRB = double(localObjectValue(csirsCfg, "NumRB", NaN));
+event.NumResources = double(sixgr.util.structGet(csirsInfo, "NumResources", 1));
+event.ResourceIDs = localFormatNumericVector(sixgr.util.structGet(csirsInfo, "ResourceIDs", ...
+    sixgr.util.structGet(cfg, "phy.csirs.resourceID", 0)));
+event.SymbolLocations = localFormatNumericVector(sixgr.util.structGet(csirsInfo, ...
+    "SymbolLocations", localObjectValue(csirsCfg, "SymbolLocations", [])));
+event.SubcarrierLocations = localFormatNumericVector(sixgr.util.structGet(csirsInfo, ...
+    "SubcarrierLocations", localObjectValue(csirsCfg, "SubcarrierLocations", [])));
+event.RBOffset = localFirstFiniteScalarValue(sixgr.util.structGet(csirsInfo, "RBOffset", NaN), ...
+    localObjectValue(csirsCfg, "RBOffset", NaN));
+event.NumRB = localFirstFiniteScalarValue(sixgr.util.structGet(csirsInfo, "NumRB", NaN), ...
+    localObjectValue(csirsCfg, "NumRB", NaN));
 event.NumPorts = double(sixgr.util.structGet(csirsInfo, "NumCSIRSPorts", NaN));
 event.RowNumber = double(sixgr.util.structGet(csirsInfo, "RowNumber", NaN));
 event.CSIRSType = string(localObjectValue(csirsCfg, "CSIRSType", "nzp"));
@@ -1935,6 +2100,12 @@ event.SymbolLocations = "";
 event.SubcarrierLocations = "";
 event.RBOffset = NaN;
 event.NumRB = NaN;
+event.NumResources = NaN;
+event.ResourceIDs = "";
+event.ResourceEvents = repmat(localEmptyMappedCSIRSResourceEvent(), 0, 1);
+event.PhysicalPortCount = NaN;
+event.PrecoderSource = "";
+event.PrecoderDigests = strings(0,1);
 end
 
 function localAssertAuxiliaryResourceDisjoint(csirsInd, pdschInd, dmrsInd, ptrsInd)

@@ -34,6 +34,7 @@ cfg.phy.pdsch.mcsContext = struct( ...
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.csirs.enable = false;
 
 [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg);
 portContract = txInfo.ResourceGridPortContract;

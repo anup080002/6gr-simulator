@@ -195,6 +195,7 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.executionProfile", "phy_calibration")
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", "calibration_explicit");
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", 0);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", localCalibrationMCSContext());
+cfg = sixgr.util.structSet(cfg, "phy.csirs.enable", false);
 [txDL, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, "CompactOutput", false);
 assert(numel(txDL.Codeword) == double(txDL.ResourceAccounting.CodedBitCountG), ...
     "PDSCH_Tx codeword length must equal ResourceAccounting G.");

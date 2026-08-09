@@ -110,9 +110,22 @@ for index = 1:height(input)
         actualReject = true;
         actualError = string(cause.identifier);
     end
-    mismatch = expectedReject~=actualReject;
-    if expectedReject, mismatch = mismatch || actualError~= ...
-            string(input.ExpectedError(index)); end
+    specLookup = upper(string(input.ExpectedDisposition(index))) == ...
+        "SPEC_LOOKUP_REQUIRED";
+    if expectedReject
+        mismatch = ~actualReject || actualError ~= ...
+            string(input.ExpectedError(index));
+    elseif specLookup && actualReject
+        % The pack deliberately leaves broad tuples for a release-pinned
+        % standards lookup.  A typed rejection is a valid resolved outcome;
+        % an empty toolbox allocation must never be recorded as an executed
+        % DM-RS waveform.
+        mismatch = ~ismember(actualError, ...
+            ["RSLA:InvalidDMRSConfiguration", ...
+             "RSLA:UnsupportedCapabilityTuple"]);
+    else
+        mismatch = actualReject;
+    end
     mismatches = mismatches+double(mismatch);
     row = struct("CaseID",input.CaseID(index), ...
         "Direction",input.Direction(index), ...
@@ -225,7 +238,11 @@ for groupIndex = 1:numel(varargin)
     plans = varargin{groupIndex};
     for planIndex = 1:numel(plans)
         item = plans{planIndex};
-        indices = double(item.Plan.IndicesZeroBased(:));
+        % A resource-owner row identifies one physical RE for one logical
+        % resource and port.  Some toolbox index layouts repeat an RE while
+        % expanding CDM/OCC metadata; those repetitions are not separate
+        % ownership events and must not become duplicate primary evidence.
+        indices = unique(double(item.Plan.IndicesZeroBased(:)), "stable");
         for index = 1:min(numel(indices),128)
             linear = indices(index);
             subcarrierAbsolute = mod(linear,52*12);
@@ -974,7 +991,8 @@ caseIDs = [
     tables.rsla_effective_sinr_trials.CaseID(1:120)
     tables.rsla_evm_measurements.CaseID(1:100)
     tables.rsla_collision_resolution.CaseID(1:120)
-    tables.rsla_measurement_filter_trace.CaseID(1:40)
+    string(tables.rsla_measurement_filter_trace.CaseID(1:40)) + ...
+        "-S" + string(tables.rsla_measurement_filter_trace.SampleIndex(1:40))
 ];
 sourceFiles = [
     repmat("expected_rsla_measurement_analytical_vectors.csv",120,1)

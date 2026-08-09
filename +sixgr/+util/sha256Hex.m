@@ -6,9 +6,14 @@ digest = [];
 
 if usejava("jvm")
     try
-        md = java.security.MessageDigest.getInstance("SHA-256");
-        md.update(bytes(:));
-        digest = typecast(md.digest(), "uint8");
+        md = javaMethod("getInstance", "java.security.MessageDigest", "SHA-256");
+        % Java byte[] is signed.  A direct MATLAB uint8 conversion fails
+        % for source evidence containing octets above 127 on newer MATLAB
+        % releases.  Preserve all bits and pass the corresponding int8
+        % representation to MessageDigest.
+        javaBytes = typecast(uint8(bytes(:)), "int8");
+        md.update(javaBytes);
+        digest = typecast(int8(md.digest()), "uint8");
     catch
         digest = [];
     end

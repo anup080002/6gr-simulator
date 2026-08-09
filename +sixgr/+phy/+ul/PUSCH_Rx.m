@@ -535,7 +535,12 @@ if decisionDirectedBoundEnabled
     [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = localApplyPUSCHDMRSPostEqSINRBound( ...
         postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, decisionPostEqInfo);
 end
-receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, dmrsInd, dmrsSym);
+% Hest was estimated in the effective receive-layer domain.  Use the same
+% receiver-only DM-RS reference that produced Hest; the physical-port
+% DM-RS matrices are dimensionally incompatible for codebook PUSCH when
+% NumAntennaPorts exceeds NumLayers and would double-count pilot ports.
+receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, ...
+    chEstDMRSInd, chEstDMRSSym);
 [nVarPostEqDiagnostic, nVarPostEqInfo] = sixgr.phy.rx.postEqualizationNoiseVariance(nVar, ...
     "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
     "PostEqSINR_dB", postEqSINR_dB, ...
@@ -625,7 +630,8 @@ if nCodewords == 2
         noiseStatus, noiseTransformInfo, postEqSINR_dB, postEqSINRInfo, ...
         receiverSINR, timingResolution, rawTimingEstimate, ...
         knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
-        decodeLatency_s, maxIter, alg, llrCSIInfo, uciOnPUSCH, opt.CompactOutput);
+        decodeLatency_s, maxIter, alg, llrCSIInfo, uciOnPUSCH, ...
+        enablePTRSCPECorrection, opt.CompactOutput);
     if hasPHYGrant
         rx.PHYGrant = phyGrant;
         rx.PHYGrantDimensionContract = phyGrantContract;
@@ -877,6 +883,8 @@ rx.EqualizerCovarianceIncludesNoise = logical(sixgr.util.structGet(equalizerInfo
 rx.EqualizerNoiseAddedExactlyOnce = logical(sixgr.util.structGet(equalizerInfo, "EqualizerResult.NoiseAddedExactlyOnce", false));
 rx.EqualizerUniqueSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerResult.UniqueSolveCount", NaN));
 rx.EqualizerSolveCount = double(sixgr.util.structGet(equalizerInfo, "EqualizerResult.SolveCount", NaN));
+rx.EqualizerCovarianceFactorizationCount = double(sixgr.util.structGet( ...
+    equalizerInfo, "EqualizerResult.CovarianceFactorizationCount", NaN));
 rx.InterferenceCovarianceAvailable = logical(rintInfo.Available);
 rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
@@ -942,9 +950,14 @@ rx.ULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
 rx.RateRecoveredLLRCount = double(numel(recLLR));
 rx.PUSCHRxSymbolsForEvidence = puschRxSym;
 rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
+rx.PTRSConfiguredEnabled = logical(localObjectValue(pusch, "EnablePTRS", false));
+rx.PTRSCPECorrectionConfigured = logical(enablePTRSCPECorrection);
+rx.PTRSCPECorrectionApplied = logical(cpeCorrInfo.Enabled);
 rx.PTRSCPECorrectionSymbols = double(cpeCorrInfo.NumSymbolsCorrected);
 rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
 rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
+rx.PTRSCPECorrectionStatus = char(localPTRSCorrectionStatus(cpeCorrInfo));
+rx.PTRSReceiverEvidenceSource = "sixgr.phy.ul.PUSCH_Rx.ptrs_cpe";
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx.RateRecoverInfo = rateRecoverInfo;
@@ -1829,7 +1842,8 @@ try
     ulMetric = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
         "ReceivedGrid", rxGrid, ...
         "ReferenceIndices", refInd, ...
-        "ReferenceSymbols", refSym);
+        "ReferenceSymbols", refSym, ...
+        "ChannelEstimateDomain", "pusch_dmrs_effective_layer_domain");
     sinr = double(sixgr.util.structGet(ulMetric, "PilotSINR_dB", ...
         sixgr.util.structGet(ulMetric, "SINR_dB", NaN)));
     if isfinite(sinr)
@@ -2880,7 +2894,8 @@ function rx = localBuildHighRankPUSCHRx( ...
         noiseStatus, noiseTransformInfo, postEqSINR_dB, postEqSINRInfo, ...
         receiverSINR, timingResolution, rawTimingEstimate, ...
         knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
-        decodeLatency_s, maxIter, alg, llrCSIInfo, uci, compactOutput)
+        decodeLatency_s, maxIter, alg, llrCSIInfo, uci, ...
+        enablePTRSCPECorrection, compactOutput)
 tbBitsCell = reshape(tbBitsCell, 1, []);
 ulschLLRCell = reshape(ulschLLRCell, 1, []);
 rx = struct();
@@ -2975,8 +2990,14 @@ rx.DMRSEPREDifference = dmrsPowerInfo;
 rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
 rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
 rx.PTRSCPECorrectionEnabled = logical(cpeCorrInfo.Enabled);
+rx.PTRSConfiguredEnabled = logical(localObjectValue(pusch, "EnablePTRS", false));
+rx.PTRSCPECorrectionConfigured = logical(enablePTRSCPECorrection);
+rx.PTRSCPECorrectionApplied = logical(cpeCorrInfo.Enabled);
 rx.PTRSCPECorrectionSymbols = double(cpeCorrInfo.NumSymbolsCorrected);
 rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
+rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
+rx.PTRSCPECorrectionStatus = char(localPTRSCorrectionStatus(cpeCorrInfo));
+rx.PTRSReceiverEvidenceSource = "sixgr.phy.ul.PUSCH_Rx.ptrs_cpe";
 rx.UCIOnPUSCHApplied = logical(uci.Applied);
 rx.UCIOnPUSCHSource = char(string(uci.Source));
 rx.HARQACKBitCount = double(uci.HARQACKBitCount);
@@ -3073,6 +3094,14 @@ if ~(localIsExplicitFlatChannel(channelToken) && numTxPorts <= 1 && numRxAnt <= 
     error("sixgr:phy:rx:InvalidFastScalarShortcut", ...
         "%s requires an explicit AWGN/flat SISO validation mode. Channel='%s', TxPorts=%d, RxAnt=%d.", ...
         contextLabel, localDisplayChannelToken(channelToken), numTxPorts, numRxAnt);
+end
+end
+
+function status = localPTRSCorrectionStatus(info)
+if logical(sixgr.util.structGet(info, "Enabled", false))
+    status = "explicit_ptrs_cpe_corrected_after_mimo_equalization";
+else
+    status = string(sixgr.util.structGet(info, "NAReason", "unavailable"));
 end
 end
 

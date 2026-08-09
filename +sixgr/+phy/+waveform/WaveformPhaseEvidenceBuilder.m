@@ -177,6 +177,7 @@ rows=repmat(struct("VectorID","","OutputIndex",NaN, ...
     "ExpectedReal",NaN,"ExpectedImag",NaN,"ActualReal",NaN, ...
     "ActualImag",NaN,"Error",NaN,"Status",""),0,1);
 cursor=0;
+seenVectorIDs=strings(0,1);
 for index=1:height(vectors)
     input=complex(localPipe(vectors.InputReal(index)), ...
         localPipe(vectors.InputImag(index)));
@@ -186,12 +187,22 @@ for index=1:height(vectors)
         cursor=cursor+1;
         want=complex(str2double(expected.ExpectedReal(cursor)), ...
             str2double(expected.ExpectedImag(cursor)));
-        row=localRow(rows);row.VectorID=vectors.VectorID(index);
-        row.OutputIndex=sample-1;row.ExpectedReal=real(want);
-        row.ExpectedImag=imag(want);row.ActualReal=real(actual(sample));
-        row.ActualImag=imag(actual(sample));row.Error=abs(actual(sample)-want);
-        row.Status=localStatus(row.Error<=1e-12);
-        rows(end+1)=row; %#ok<AGROW>
+        errorMagnitude=abs(actual(sample)-want);
+        if ~any(seenVectorIDs==vectors.VectorID(index))
+            row=localRow(rows);row.VectorID=vectors.VectorID(index);
+            row.OutputIndex=sample-1;row.ExpectedReal=real(want);
+            row.ExpectedImag=imag(want);row.ActualReal=real(actual(sample));
+            row.ActualImag=imag(actual(sample));row.Error=errorMagnitude;
+            row.Status=localStatus(errorMagnitude<=1e-12);
+            rows(end+1)=row; %#ok<AGROW>
+        elseif errorMagnitude>1e-12
+            error("WAVEFORM:IndependentVectorMismatch", ...
+                "Repeated CP oracle %s produced inconsistent samples.", ...
+                vectors.VectorID(index));
+        end
+    end
+    if ~any(seenVectorIDs==vectors.VectorID(index))
+        seenVectorIDs(end+1)=vectors.VectorID(index); %#ok<AGROW>
     end
 end
 output=struct2table(rows,"AsArray",true);

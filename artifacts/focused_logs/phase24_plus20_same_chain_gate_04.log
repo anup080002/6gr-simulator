@@ -1,0 +1,10 @@
+{Error using assert
+Runtime YAML SNR authority mismatch at scenario.run.fixed_link_snr_grid_db.
+
+Error in runFullSINRSameChainSweep>localRuntimeYAML (line 93)
+    assert(isequal(value(:).', configuredSNR), ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 22)
+scenarioPath = localRuntimeYAML( ...
+               ^^^^^^^^^^^^^^^^^^^^^
+} 

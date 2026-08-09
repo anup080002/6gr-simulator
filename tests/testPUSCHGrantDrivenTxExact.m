@@ -168,6 +168,14 @@ cfg.phy.pusch.codeRate = v.TargetCodeRate;
 cfg.phy.pusch.xOverhead = v.XOverhead;
 cfg.phy.pusch.rv = v.RV;
 cfg.phy.pusch.transmissionScheme = char(v.TransmissionScheme);
+if string(v.TransmissionScheme) == "codebook"
+    if v.NumPorts <= 2
+        cfg.phy.pusch.codebookType = "codebook1_ng1n2n2";
+    else
+        cfg.phy.pusch.codebookType = "codebook1_ng1n4n1";
+    end
+    cfg.phy.pusch.CodebookType = cfg.phy.pusch.codebookType;
+end
 cfg.phy.pusch.transformPrecoding = logical(v.TransformPrecoding);
 cfg.phy.pusch.enablePTRS = logical(v.EnablePTRS);
 cfg.phy.pusch.ptrs.timeDensity = 2;

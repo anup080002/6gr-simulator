@@ -154,14 +154,72 @@ canonical_control:
     trs_enabled: true
     ptrs_enabled: true
     csi_feedback_mode: PMI+CQI+RI+CRI
+    csi_reporting_enabled: true
     cqi_reporting_enabled: true
     pmi_reporting_enabled: true
     ri_reporting_enabled: true
     pdsch_dmrs_ports: 1
     pusch_dmrs_ports: 1
     csi_rs_ports: 4
+    # One four-port NZP CSI-RS resource is carried through the same 2x2
+    # physical gNB array as PDSCH.  Strict execution must not infer or
+    # silently share a precoder, so the complete resource and DFT-URA
+    # physical filter are YAML-owned.
+    csi_rs_num_resources: 1
+    csi_rs_resource_set_id: 0
+    csi_rs_resource_ids: [0]
+    csi_rs_resource_row_numbers: [4]
+    csi_rs_resource_symbol_locations: [10]
+    csi_rs_resource_subcarrier_locations: [0]
+    csi_rs_resource_rb_offsets: [0]
+    csi_rs_resource_num_rbs: [51]
+    csi_rs_precoder_codebook:
+      enabled: true
+      type: dft_ura
+      physical_element_count: 4
+      beam_indices_port_0: [0]
+      beam_indices_port_1: [1]
+      beam_indices_port_2: [2]
+      beam_indices_port_3: [3]
     srs_ports: 4
     trs_ports: 1
+  control:
+    pdcch_enabled: true
+    blind_search_enabled: true
+    pucch_enabled: true
+    pbch_required: true
+    prach_required: true
+    pdcch_required: true
+    pucch_required: true
+    srs_required: true
+    trs_required: true
+  initial_access:
+    enabled: true
+    ssb:
+      enabled: true
+      beam_count: 4
+      positions_in_burst: '11110000'
+      precoder_ids: [dft_ura_beam_0, dft_ura_beam_1, dft_ura_beam_2, dft_ura_beam_3, dft_ura_beam_4, dft_ura_beam_5, dft_ura_beam_6, dft_ura_beam_7]
+      precoder_codebook:
+        enabled: true
+        type: dft_ura
+        physical_element_count: 4
+        beam_grid_rows: 2
+        beam_grid_columns: 4
+        beam_indices: [0, 1, 2, 3, 4, 5, 6, 7]
+      waveform_domain: physical_element_domain
+    mib:
+      enabled: true
+    sib1:
+      enabled: true
+      decode_from_waveform_required: true
+    rrc:
+      require_setup_complete: true
+  random_access:
+    enabled: true
+    four_step_ra_required: true
+    msg4_contention_resolution_required: true
+    msg3_enabled: true
   output:
     backend: filesystem
     persistence_mode: results_folder
@@ -465,6 +523,7 @@ pdsch6gr:
   modulation_per_codeword: [16QAM]
   target_code_rate_per_codeword: [0.33203125]
   fixed_mcs: 10
+  enable_ptrs: true
   num_rb: 24
   rb_start: 0
   study_ranks: [1, 2, 4]

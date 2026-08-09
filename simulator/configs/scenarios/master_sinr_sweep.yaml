@@ -229,6 +229,7 @@ canonical_control:
     shadow_fading_enabled: false
     pathloss_model: nrPathLoss
     shadow_fading_std_db: 6
+    runtime_element_expansion_chunk_samples: 4096
     inter_cell_execution_mode: none
     phase10_strict:
       enabled: false
@@ -499,6 +500,13 @@ canonical_control:
     - 20
     srs_max_ues_per_slot: 2
     srs_scheduling_policy: multiplex_due_users
+    num_rb: 273
+    expected_rb_start: 0
+    expected_num_rb: 273
+    expected_bandwidth_coverage_percent: 100
+    coverage_requirement: full_carrier
+    full_carrier_sounding_required: true
+    full_carrier_coverage_tolerance_rb: 1
     trs_periodicity_ms: 10
     rsla_strict:
       enabled: true
@@ -831,6 +839,7 @@ canonical_control:
     pbch_required: false
     prach_required: false
     pdcch_required: false
+    pucch_required: false
     srs_required: false
     trs_required: false
     srs_max_age_slots: 20
@@ -922,6 +931,7 @@ canonical_control:
       eredcap_access: false
   random_access:
     enabled: false
+    common_downlink_beam_source: runtime_antenna_mapping
     four_step_ra_required: false
     msg4_contention_resolution_required: false
     preamble_count: 64
@@ -1196,8 +1206,10 @@ canonical_control:
     save_plots: true
     save_report: true
     profiler_enabled: true
-    profiler_top_functions: 250
-    profiler_top_edges: 500
+    # Full exact-path execution audit. These ceilings exceed the current
+    # production call graph so no runtime function/edge is silently dropped.
+    profiler_top_functions: 20000
+    profiler_top_edges: 50000
     live_publish_frame_interval: 1
     live_heavy_refresh_interval_frames: 1
     live_heavy_refresh_each_sweep_point: true
@@ -1229,11 +1241,15 @@ canonical_control:
       - validation
     artifact_contract_engine:
       enabled: true
+      # A single scenario can publish only evidence created by that exact
+      # execution. Multi-scenario phase-pack qualification is launched and
+      # displayed separately by ComponentQualificationPublisher.
+      catalog_scope: runtime_in_path
       contract_root: tests/vectors
       legacy_reference_root: artifacts
       legacy_reference_usage: coverage_inventory_only
       profiles: [base]
-      domains: [frame_grid, initial_access, pdcch, pdsch, pucch, pusch, rsla, mimo, mac, channel, rf, protocol, waveform, validation, integration]
+      domains: [initial_access, pdsch, pusch]
       publish_root: components
       source_policy: runtime_memory_only
       truth_only: true
@@ -1411,6 +1427,8 @@ canonical_control:
     value: 72
   - path: link_adaptation.fixed_or_amc
     value: fixed
+  - path: link_adaptation.operating_point_mode
+    value: fixed
   - path: link_adaptation.rank_adaptation_policy
     value: fixed
   - path: link_adaptation.al_adaptation_policy
@@ -1433,6 +1451,10 @@ validation:
   fixed_snr_sweep_required: true
   geometry_evidence_required: false
   strict_after_run_artifact_audit: true
+  strict_component_evidence:
+    enabled: true
+    execution_scope: in_path
+    required_components: [prach, pdcch, srs, trs, sib1, channel_rf]
   fixed_link_campaign:
     enabled: true
     fixed_reference_mode: true
@@ -1686,6 +1708,7 @@ pdsch:
   cbg_transmission: false
 pusch:
   enabled: true
+  execution_profile: phy_calibration
   waveform: CP-OFDM
   tbs_policy: allocation_based_exact_38214
   ulsch_enabled: true
@@ -2210,6 +2233,7 @@ tdd_timing:
   - 6
   - 7
   - 8
+  k1_selection_policy: first_valid_configured
   ul_grant_k2: 1
   harq_roundtrip_slots: 8
   dl_to_ul_guard_time_us: 16.276
@@ -2222,6 +2246,7 @@ sweeps_and_matrix:
   snr_sweep:
     enabled: true
     state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
     values_db:
     - 10
     - 14

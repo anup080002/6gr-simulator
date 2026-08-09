@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -130,3 +131,58 @@ def test_incomplete_full_stack_run_remains_filesystem_indexable(
     assert row["scenario_id"] == SCENARIO
     assert row["status_text"] == "failed"
     assert row["profile_name"] == "full_stack_qualification"
+
+
+def test_contract_cli_materializes_filesystem_runs_without_db_or_synthesis(
+    tmp_path: Path,
+) -> None:
+    run_folder = tmp_path / "results" / "lls" / SCENARIO / "filesystem-run"
+    csv_dir = run_folder / "reports" / "csv"
+    csv_dir.mkdir(parents=True)
+    (csv_dir / "full_stack_run_manifest.csv").write_text(
+        "RunID,SuitePreset,ScenarioID,StartUTC,ExitCode,FinalStatus,Status\n"
+        "filesystem-run,comprehensive_smoke,"
+        f"{SCENARIO},2026-07-28T00:00:00Z,2,FAIL,FAIL\n",
+        encoding="utf-8",
+    )
+    command = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "materialize_lls_contract_artifacts.py"),
+        "--run-folder",
+        str(run_folder),
+    ]
+    verified = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert verified.returncode == 0, verified.stderr
+    payload = json.loads(verified.stdout)
+    assert payload["storage_backend"] == "results_folder"
+    assert payload["verification_only"] is False
+    assert payload["created_count"] > 0
+    assert payload["tables_available"] > 0
+    assert payload["manifest_path"] == (
+        "reports/csv/contract_materialization_manifest.csv"
+    )
+    assert payload["coverage_path"] == (
+        "reports/csv/contract_materialization_coverage.csv"
+    )
+    assert (csv_dir / "contract_materialization_manifest.csv").is_file()
+    assert (csv_dir / "contract_materialization_coverage.csv").is_file()
+    assert payload["tables_missing"] > 0
+    assert payload["charts_missing"] > 0
+
+    strict = subprocess.run(
+        [*command, "--strict"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert strict.returncode != 0
+    assert "Filesystem contract verification incomplete" in (
+        strict.stdout + strict.stderr
+    )

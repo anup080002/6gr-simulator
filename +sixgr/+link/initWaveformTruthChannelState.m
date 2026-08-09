@@ -1,5 +1,11 @@
-function state = initWaveformTruthChannelState(cfg, tx, txInfo)
+function state = initWaveformTruthChannelState(cfg, tx, txInfo, varargin)
 %INITWAVEFORMTRUTHCHANNELSTATE Prepare the authoritative waveform impairment state.
+
+ip = inputParser;
+ip.addParameter("InitialRuntimeChannelState", struct(), ...
+    @(x) isempty(x) || isstruct(x));
+ip.parse(varargin{:});
+initialRuntimeState = ip.Results.InitialRuntimeChannelState;
 
 fs = localResolveSampleRate(tx, txInfo);
 numTx = max(1, size(sixgr.util.structGet(tx, "Waveform", zeros(1, 1)), 2));
@@ -36,10 +42,25 @@ if ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
     linkKey = sixgr.channel.ChannelFactory.runtimeChannelKey(cfg, direction, ...
         "UEIndex", ueIdx, "ServingCell", servingCell);
     channelSeed = sixgr.channel.ChannelFactory.runtimeChannelSeed(cfg, linkKey);
-    runtimeState = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
-        "LinkKey", linkKey, "UEIndex", ueIdx, "ServingCell", servingCell, ...
-        "Seed", channelSeed);
-    [txRuntimeAntenna, txRuntimeMeta] = localRuntimeAntennaPair(cfg, direction, "tx", runtimeNumTx);
+    if isempty(initialRuntimeState) || ...
+            (isstruct(initialRuntimeState) && isempty(fieldnames(initialRuntimeState)))
+        runtimeState = sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg, direction, ...
+            "LinkKey", linkKey, "UEIndex", ueIdx, "ServingCell", servingCell, ...
+            "Seed", channelSeed);
+    else
+        if ~(isscalar(initialRuntimeState) && ...
+                isfield(initialRuntimeState, "ContractVersion") && ...
+                logical(sixgr.util.structGet(initialRuntimeState, "Initialized", false)))
+            error("sixgr:link:InvalidInitialRuntimeChannelState", ...
+                "InitialRuntimeChannelState must be an initialized ChannelFactory state.");
+        end
+        runtimeState = initialRuntimeState;
+    end
+    % Build the antenna view from the signal's actual logical-port count,
+    % while retaining runtimeNumTx as the physical channel capacity.  This
+    % lets one-port PUCCH/PRACH/PDCCH waveforms use the configured
+    % port-to-element projection instead of padding silent physical ports.
+    [txRuntimeAntenna, txRuntimeMeta] = localRuntimeAntennaPair(cfg, direction, "tx", numTx);
     [rxRuntimeAntenna, rxRuntimeMeta] = localRuntimeAntennaPair(cfg, direction, "rx", numRx);
     runtimeState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
         runtimeState, cfg, sixgr.util.structGet(tx, "Waveform", []), txInfo, ...
@@ -199,7 +220,62 @@ end
 if needsPortView
     [ant, meta] = sixgr.rf.AntennaArrayFactory.logicalPortView( ...
         ant, meta, signalPortCount, portViewSource);
+    [ant, meta] = localApplyConfiguredSignalProjection( ...
+        cfg, ant, meta, direction, endpoint, signalPortCount);
 end
+end
+
+function [ant, meta] = localApplyConfiguredSignalProjection( ...
+        cfg, ant, meta, direction, endpoint, signalPortCount)
+signalFamily = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.RuntimeSignalFamily", ...
+    sixgr.util.structGet(cfg, "phy.runtimeSignalFamily", "")))));
+if ~(upper(strtrim(string(direction))) == "DL" && ...
+        lower(strtrim(string(endpoint))) == "tx" && ...
+        ismember(signalFamily, ["PBCH","SSB"]))
+    return;
+end
+if signalPortCount ~= 1
+    error("sixgr:link:SSBBeamRequiresSingleLogicalPort", ...
+        "SSB/PBCH runtime propagation requires one logical common-channel port.");
+end
+matrices = sixgr.util.structGet(cfg, "phy.ssb.precoderMatrices", []);
+selectedIndex = double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.runtimeSSBIndex", NaN));
+numElements = round(localFirstFiniteScalar( ...
+    sixgr.util.structGet(meta, "NumElements", []), ...
+    sixgr.util.structGet(ant, "NumElements", []), ...
+    sixgr.util.structGet(ant, "Nant", []), NaN));
+if ~(isnumeric(matrices) && ismatrix(matrices) && ...
+        isfinite(numElements) && size(matrices, 2) == numElements && ...
+        isfinite(selectedIndex) && selectedIndex == fix(selectedIndex) && ...
+        selectedIndex >= 0 && selectedIndex < size(matrices, 1))
+    error("sixgr:link:ConfiguredSSBBeamUnavailable", ...
+        ["Physical SSB/PBCH propagation requires the YAML-resolved SSB " ...
+         "precoder matrix and a valid zero-based selected SSB index."]);
+end
+projection = matrices(selectedIndex + 1, :).';
+residual = norm(projection' * projection - 1, "fro");
+if residual > 1e-9
+    error("sixgr:link:ConfiguredSSBBeamNotPowerPreserving", ...
+        "The selected SSB beam is not unit norm (residual %.3g).", residual);
+end
+ids = string(sixgr.util.structGet(cfg, ...
+    "phy.ssb.precoderIDs", strings(0, 1)));
+beamId = "ssb_index_" + string(selectedIndex);
+if numel(ids) >= selectedIndex + 1
+    beamId = ids(selectedIndex + 1);
+end
+ant.PortToElementMatrix = projection;
+ant.ElementToPortMatrix = projection';
+ant.HybridElementToPortMatrix = projection;
+ant.HybridBeamformingEnabled = true;
+ant.PortToElementMappingSource = "yaml_selected_ssb_precoder";
+ant.SelectedBeamId = char(beamId);
+meta.PortToElementMatrix = projection;
+meta.HybridBeamformingEnabled = true;
+meta.PortToElementMappingSource = "yaml_selected_ssb_precoder";
+meta.SelectedBeamId = char(beamId);
 end
 
 function role = localRuntimeRole(direction, endpoint)

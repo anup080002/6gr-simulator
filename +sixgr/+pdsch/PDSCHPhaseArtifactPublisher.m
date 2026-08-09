@@ -18,6 +18,17 @@ classdef PDSCHPhaseArtifactPublisher
                 mandatoryTestSuiteNames();
         end
 
+        function assertBLERScientificValidity(value)
+            %ASSERTBLERSCIENTIFICVALIDITY Public fail-closed evidence gate.
+            %
+            % Schema-valid count rows are not sufficient evidence of a
+            % receiver waterfall.  This entry point is intentionally public
+            % so focused regressions and recovery/audit tools can apply the
+            % exact same scientific gate used before phase publication.
+            sixgr.pdsch.PDSCHPhaseArtifactPublisher. ...
+                validateBLEREvidence(value);
+        end
+
         function assembly = prepare(builder, coverage, testSummary, ...
                 preExecution, stageDir, vectorRoot)
             stageDir = char(string(stageDir));
@@ -739,6 +750,41 @@ classdef PDSCHPhaseArtifactPublisher
                     "estimates, confidence bounds, and canonical " + ...
                     "stop-policy fields. Invalid rows: %s.", ...
                     strjoin(cellstr(details),"; "));
+            end
+
+            % A campaign containing only successes (or only failures) may
+            % be internally consistent, but it does not locate or even
+            % demonstrate a BLER transition.  The old fixed-40-bit TBS bug
+            % produced exactly that failure mode: all 28 rows were zero
+            % BLER while the artifact contract still passed.  Require each
+            % mandatory campaign to bracket its waterfall with measured
+            % error and success events and to improve from its lowest to
+            % highest configured SNR.  These are event-count requirements;
+            % no configured or synthetic BLER values are substituted.
+            scientificFailures = strings(0,1);
+            snr = sixgr.pdsch.PDSCHPhaseArtifactPublisher. ...
+                numericColumn(value.SNRdB);
+            for i = 1:numel(campaignIDs)
+                selected = find(observedIDs == campaignIDs(i));
+                [~, order] = sort(snr(selected));
+                selected = selected(order);
+                campaignErrors = sum(errors(selected));
+                campaignSuccesses = sum(trials(selected) - errors(selected));
+                improvesAcrossSweep = bler(selected(1)) > bler(selected(end));
+                if campaignErrors < 1 || campaignSuccesses < 1 ...
+                        || ~improvesAcrossSweep
+                    scientificFailures(end+1,1) = compose( ... %#ok<AGROW>
+                        "%s[errors=%d successes=%d low_snr_bler=%.6g high_snr_bler=%.6g]", ...
+                        campaignIDs(i), campaignErrors, campaignSuccesses, ...
+                        bler(selected(1)), bler(selected(end)));
+                end
+            end
+            if ~isempty(scientificFailures)
+                error("sixgr:pdsch:PDSCHPhasePublisher:BLERWaterfallNotObserved", ...
+                    "Every mandatory PDSCH campaign must contain measured " + ...
+                    "TB error and success events and lower BLER at the " + ...
+                    "highest SNR than at the lowest SNR. Invalid campaigns: %s.", ...
+                    strjoin(cellstr(scientificFailures), "; "));
             end
         end
 

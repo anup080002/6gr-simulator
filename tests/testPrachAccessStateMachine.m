@@ -1,7 +1,7 @@
 function testPrachAccessStateMachine
 %TESTPRACHACCESSSTATEMACHINE PRACH transitions update runtime state and ledger.
 
-state = localMinimalAccessState(2);
+state = localMinimalAccessState(3);
 
 pbch = struct2table(struct( ...
     "Status", "PASS", "CRCPass", 1, "Slot", 1, "RNTI", 4601, ...
@@ -23,6 +23,36 @@ state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, 2, prachFail);
 assert(state.AccessState(2) == "failed", "PRACH failure must not be promoted to success.");
 assert(any(string(state.AccessTransitionLedgerTable.new_state) == "ACCESS_FAILED"), ...
     "PRACH failure must be recorded in access_transition_ledger.");
+
+state.CfgMobility.initial_access.rrc.require_setup_complete = true;
+pbch.Slot(1) = 1;
+pbch.RNTI(1) = 4603;
+state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, 3, pbch);
+rrcPrach = localPrachRow("PASS", 1, true, 0.91, "");
+rrcPrach.RACompleted = true;
+rrcPrach.FullRAEvidenceSource = "sixgr.phy.ra.runFourStepRA";
+rrcPrach.RequireRRCSetupComplete = true;
+rrcPrach.Msg2ScheduledSlot = 6;
+rrcPrach.Msg3ScheduledSlot = 7;
+rrcPrach.Msg4ScheduledSlot = 8;
+rrcPrach.SetupCompleteScheduledSlot = 9;
+rrcPrach.RRCSetupRequestDecoded = true;
+rrcPrach.RRCSetupDecoded = true;
+rrcPrach.SRB1Installed = true;
+rrcPrach.RRCSetupCompleteCRC = true;
+rrcPrach.RRCSetupCompleteDecoded = true;
+rrcPrach.RRCConnected = true;
+rrcPrach.RRCSetupCompletePayloadSHA256 = ...
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, 3, rrcPrach);
+trace = state.InitialAccessLifecycleTraceTable;
+ue3 = double(trace.UEIndex) == 3;
+terminal = ue3 & string(trace.EventName) == "RRC_SETUP_COMPLETE_ACCEPTED";
+assert(nnz(terminal) == 1 && logical(trace.CompleteFlag(terminal)) && ...
+    double(trace.Slot(terminal)) == 9, ...
+    "Required RRCSetupComplete must be the terminal coupled-runtime event at its actual scheduled slot.");
+assert(string(trace.SourceArtifact(terminal)) == "control/csv/rrc_setup_complete.csv", ...
+    "The terminal lifecycle event must bind to canonical RRCSetupComplete waveform evidence.");
 end
 
 function T = localPrachRow(status, crcPass, detected, metric, failureReason)

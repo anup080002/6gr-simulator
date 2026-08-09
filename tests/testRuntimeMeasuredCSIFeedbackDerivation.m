@@ -60,6 +60,21 @@ assert(contains(string(conservativeCSI.SINRSource), "conservative_min_channel_es
     strcmpi(char(string(conservativeCSI.SINRValueRole)), "measured_post_equalization_scheduling_input"), ...
     "Conservative scheduler CSI must carry explicit measured-source provenance.");
 
+rowGuarded = row;
+rowGuarded.ReceiverHestSINR_dB = 18.5;
+rowGuarded.NMSE_dB = -20;
+rowGuarded.ChannelAgingLoss_dB = 1.25;
+rowGuarded.MismatchSensitivity_dB = 166;
+guardedCSI = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRowRuntime(rowGuarded, cfg, "DL");
+expectedGuardedSINR = 18.5 - 10 * log10(1 + 10^(18.5 / 10) * 10^(-20 / 10)) - 1.25;
+assert(abs(double(guardedCSI.SINR_dB) - expectedGuardedSINR) < 1e-9, ...
+    "AMC SINR guard must use measured NMSE and channel-aging loss only.");
+assert(double(guardedCSI.SINR_dB) > 10, ...
+    "Channel-magnitude dispersion around MIMO nulls must not be treated as a direct 166 dB SINR loss.");
+assert(contains(string(guardedCSI.SINRSource), "channel_aging_penalty_db=1.250") && ...
+        ~contains(string(guardedCSI.SINRSource), "mismatch_penalty"), ...
+    "Guard provenance must describe the physical aging penalty rather than the dispersion diagnostic.");
+
 cfgAged = cfg;
 cfgAged = sixgr.util.structSet(cfgAged, "phy.linkAdaptation.mode", "amc");
 cfgAged = sixgr.util.structSet(cfgAged, "phy.linkAdaptation.dlPolicy", "baseline");

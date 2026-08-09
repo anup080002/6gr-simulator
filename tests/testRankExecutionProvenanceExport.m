@@ -148,6 +148,8 @@ else
     cfg.phy.pusch.modulation = "QPSK";
     cfg.phy.pusch.dmrs.portSet = 0;
     cfg.phy.pusch.transmissionScheme = "codebook";
+    cfg.phy.pusch.codebookType = "codebook1_ng1n4n1";
+    cfg.phy.pusch.CodebookType = cfg.phy.pusch.codebookType;
     cfg.scenario.ue.nTxAnt = 1;
     cfg.scenario.bs.nRxAnt = 1;
     cfg.phy.nTxAnt = 1;
@@ -184,6 +186,8 @@ else
     cfg.phy.pusch.modulation = "QPSK";
     cfg.phy.pusch.mcsTable = "qam64_table1";
     cfg.phy.pusch.transmissionScheme = "codebook";
+    cfg.phy.pusch.codebookType = "codebook1_ng1n4n1";
+    cfg.phy.pusch.CodebookType = cfg.phy.pusch.codebookType;
     cfg.phy.pusch.executionProfile = "phy_calibration";
     cfg.phy.pusch.symbolAllocation = [2 12];
     cfg.phy.pusch.mappingType = "A";

@@ -1,0 +1,2 @@
+PASS testRunExecutionIdentityAuthority: resume preserves execution identity.
+PHASE24_EXECUTION_IDENTITY_RESUME_PASS 1/1

@@ -44,16 +44,17 @@ if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
     args = [args {"PHYGrant", phyGrant}]; %#ok<AGROW>
 end
 
+executionProfile = strtrim(string(sixgr.util.structGet(job, ...
+    "ExecutionProfile", "")));
+if strlength(executionProfile) == 0
+    error("sixgr:truth:MissingGrantPHYExecutionProfile", ...
+        "%s grant PHY jobs require an explicit derived execution profile.", ...
+        direction);
+end
+args = [args {"ExecutionProfile", char(executionProfile)}]; %#ok<AGROW>
 if direction == "UL"
     res = sixgr.link.runULPUSCHThroughput(cfg, args{:});
 else
-    executionProfile = strtrim(string(sixgr.util.structGet(job, ...
-        "ExecutionProfile", "")));
-    if strlength(executionProfile) == 0
-        error("sixgr:truth:MissingGrantPHYExecutionProfile", ...
-            "DL grant PHY jobs require an explicit derived execution profile.");
-    end
-    args = [args {"ExecutionProfile", char(executionProfile)}]; %#ok<AGROW>
     res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
 end
 

@@ -26,6 +26,7 @@ cfg.phy.pdsch.mcsContext = localCalibrationMCSContext();
 cfg.phy.pdsch.nLayers = 2;
 cfg.phy.pdsch.numLayers = 2;
 cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.csirs.enable = false;
 cfg.phy.nTxAnt = 4;
 cfg.channel.nTxAnt = 4;
 

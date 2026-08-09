@@ -15,8 +15,21 @@ ip.addParameter("ReceivedGrid", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("ReferenceIndices", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("ReferenceSymbols", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("PrecoderInfo", struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter("ChannelEstimateDomain", "", @(x) ischar(x) || isstring(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+channelEstimateDomain = lower(strtrim(string(opt.ChannelEstimateDomain)));
+validEstimateDomains = ["srs_port_domain", "pusch_dmrs_effective_layer_domain"];
+if strlength(channelEstimateDomain) == 0
+    error("sixgr:phy:ul:MissingChannelEstimateDomain", ...
+        "UL link-state measurement requires an explicit channel-estimate domain. " + ...
+        "Use 'srs_port_domain' for unprecoded SRS port observations or " + ...
+        "'pusch_dmrs_effective_layer_domain' for the already-precoded PUSCH receiver estimate.");
+end
+if ~any(channelEstimateDomain == validEstimateDomains)
+    error("sixgr:phy:ul:InvalidChannelEstimateDomain", ...
+        "Unsupported UL channel-estimate domain '%s'.", char(channelEstimateDomain));
+end
 reportCQI = logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "cqi_reporting", reportCQI, ...
     "measureULLinkState.CQI");
@@ -29,6 +42,8 @@ metrics = struct( ...
     "SINRValueRole", "", ...
     "SINRValueStatus", "", ...
     "SINRNAReason", "", ...
+    "SINRMeasurementDomain", "", ...
+    "PowerReferencePlane", "", ...
     "PilotSINR_dB", NaN, ...
     "PilotSINRSource", "", ...
     "PilotSINRValueRole", "diagnostic_reference_signal_quality_not_for_scheduling", ...
@@ -77,7 +92,9 @@ metrics = struct( ...
     "TPMICandidateCount", NaN, ...
     "TPMIMutualInformation", NaN, ...
     "SRSConditionNumber_dB", NaN, ...
-    "SRSRITPMIValid", false);
+    "SRSRITPMIValid", false, ...
+    "SRSRITPMIStatus", "", ...
+    "ChannelEstimateDomain", char(channelEstimateDomain));
 
 if isempty(Hest)
     metrics.SINRSource = "ul_receiver_hest_missing";
@@ -97,16 +114,30 @@ end
 [metrics.NumRxAnt, metrics.NumTxPorts] = size(Hwb);
 [metrics.ChannelGain_dB, metrics.RankEstimate, metrics.ConditionNumber_dB] = localWidebandChannelDescriptors(Hwb);
 metrics.RI = localResolveULRankIndicator(metrics.RankEstimate, cfg);
-metrics.RISource = "ul_wideband_rank_indicator_lab_default";
-
-srsEstimate = sixgr.phy.ul.estimateSRSRITPMI(Hest, nVar, cfg);
-metrics.SRSRITPMIValid = logical(sixgr.util.structGet(srsEstimate, "Valid", false));
-metrics.SRSConditionNumber_dB = double(sixgr.util.structGet(srsEstimate, "ConditionNumber_dB", NaN));
-metrics.TPMICandidateCount = double(sixgr.util.structGet(srsEstimate, "TPMICandidateCount", NaN));
-metrics.TPMIMutualInformation = double(sixgr.util.structGet(srsEstimate, "TPMIMutualInformation", NaN));
-if isfinite(double(sixgr.util.structGet(srsEstimate, "RI", NaN)))
-    metrics.RI = double(sixgr.util.structGet(srsEstimate, "RI", metrics.RI));
-    metrics.RISource = char(string(sixgr.util.structGet(srsEstimate, "RISource", "ul_srs_covariance_rank_estimator_lab_default")));
+if channelEstimateDomain == "srs_port_domain"
+    metrics.RISource = "ul_srs_port_domain_wideband_rank_descriptor";
+    srsEstimate = sixgr.phy.ul.estimateSRSRITPMI(Hest, nVar, cfg);
+    metrics.SRSRITPMIValid = logical(sixgr.util.structGet(srsEstimate, "Valid", false));
+    metrics.SRSRITPMIStatus = localSRSRITPMIStatus(srsEstimate);
+    metrics.SRSConditionNumber_dB = double(sixgr.util.structGet(srsEstimate, "ConditionNumber_dB", NaN));
+    metrics.TPMICandidateCount = double(sixgr.util.structGet(srsEstimate, "TPMICandidateCount", NaN));
+    metrics.TPMIMutualInformation = double(sixgr.util.structGet(srsEstimate, "TPMIMutualInformation", NaN));
+    if isfinite(double(sixgr.util.structGet(srsEstimate, "RI", NaN)))
+        metrics.RI = double(sixgr.util.structGet(srsEstimate, "RI", metrics.RI));
+        metrics.RISource = char(string(sixgr.util.structGet(srsEstimate, "RISource", "ul_srs_covariance_rank_estimator_lab_default")));
+    end
+else
+    % PUSCH DM-RS estimates observe the effective channel after the active
+    % codebook/hybrid precoder. Their final dimension is a layer dimension,
+    % not an antenna-port dimension. Running the SRS RI/TPMI search here can
+    % either invent missing ports or reject a valid rank-L waveform. Keep
+    % the effective-channel descriptor and the actually applied TPMI, while
+    % leaving SRS recommendation fields explicitly not applicable.
+    metrics.RISource = "ul_pusch_dmrs_effective_layer_rank_descriptor_not_srs_ri";
+    metrics.SRSRITPMIStatus = "not_applicable_pusch_dmrs_effective_layer_domain";
+    srsEstimate = struct("Valid", false, "RI", NaN, "TPMI", NaN, ...
+        "SelectedBeamIndices", [], "TPMISource", ...
+        "not_applicable_pusch_dmrs_effective_layer_domain");
 end
 
 [sinr_dB, sinrSource, sinrStatus, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, ...
@@ -122,6 +153,13 @@ if isfinite(sinr_dB)
     metrics.SINRValueRole = "measured_ul_rs_cqi_input";
     metrics.SINRValueStatus = char(string(sinrStatus));
     metrics.SINRNAReason = "";
+    if channelEstimateDomain == "srs_port_domain"
+        metrics.SINRMeasurementDomain = "srs_pilot_resource_elements_channel_reconstruction_residual";
+        metrics.PowerReferencePlane = "receiver_srs_resource_elements_after_ofdm_demodulation";
+    else
+        metrics.SINRMeasurementDomain = "pusch_dmrs_resource_elements_effective_layer_channel_reconstruction_residual";
+        metrics.PowerReferencePlane = "receiver_pusch_dmrs_resource_elements_after_ofdm_demodulation";
+    end
 else
     metrics.SINRSource = char(string(sinrSource));
     if strlength(strtrim(string(metrics.SINRSource))) == 0
@@ -180,6 +218,14 @@ if measuredSINRAvailable && reportCQI
 end
 
 metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, opt.PrecoderInfo, srsEstimate);
+end
+
+function status = localSRSRITPMIStatus(srsEstimate)
+if logical(sixgr.util.structGet(srsEstimate, "Valid", false))
+    status = "valid_measured_srs_port_domain_estimate";
+else
+    status = "unavailable_measured_srs_port_domain_estimate";
+end
 end
 
 function [gain_dB, rankEstimate, cond_dB] = localWidebandChannelDescriptors(Hwb)

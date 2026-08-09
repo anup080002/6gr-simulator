@@ -161,7 +161,12 @@ cfg.phy.pdsch.mcsContext = struct( ...
     "FrequencyRange", "FR1", ...
     "OperatingBand", "n78", ...
     "DeploymentClass", "controlled_test");
-cfg.phy.csirs.enabled = false;
+% PDSCH_Tx consumes the canonical runtime flag `phy.csirs.enable`.
+% Writing the unused `enabled` alias left the default CSI-RS path active and
+% caused the supposedly signal-neutral cross-mode reduction to request a
+% physical CSI-RS precoder.  Keep this reduction explicitly auxiliary-free;
+% full CSI-RS execution is qualified by the in-path scenario campaigns.
+cfg.phy.csirs.enable = false;
 cfg.phy.csirs.nPorts = 1;
 cfg.phy.pusch.modulation = "QPSK";
 cfg.phy.pusch.codeRate = targetCodeRate;

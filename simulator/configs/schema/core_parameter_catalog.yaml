@@ -116,6 +116,7 @@
     },
     "random_access": {
       "enabled": {"value_type": "boolean", "default": true},
+      "common_downlink_beam_source": {"value_type": "string", "default": "runtime_antenna_mapping", "allowed_values": ["selected_ssb_beam", "runtime_antenna_mapping"]},
       "binding_source": {"value_type": "string", "default": "scenario_config_pending_sib1", "allowed_values": ["decoded_sib1_rach_config_common", "scenario_config_pending_sib1"]},
       "prach_format": {"value_type": "string", "default": "A2"},
       "configuration_index": {"value_type": "integer", "default": 87, "min": 0},
@@ -251,6 +252,9 @@
             "NumUplinkSymbols": {"value_type": "integer", "default": 2, "min": 0}
           }
         }
+      },
+      "tddTiming": {
+        "k1SelectionPolicy": {"value_type": "string", "default": "first_valid_configured", "allowed_values": ["first_valid_configured", "fixed_configured_default"]}
       },
       "waveform": {
         "dl": {"value_type": "string", "default": "CP-OFDM", "allowed_values": ["CP-OFDM"]},

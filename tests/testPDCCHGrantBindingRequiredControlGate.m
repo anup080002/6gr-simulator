@@ -21,6 +21,12 @@ cfgSchedulerTruth.phy.pdsch.executionProfile = "scheduler_truth";
 cfgSchedulerTruth.run.pdschExecutionProfile = "scheduler_truth";
 assert(sixgr.control.isPDCCHGrantBindingRequired(cfgSchedulerTruth, "DL"), ...
     "scheduler_truth PDSCH must require decoded DCI binding even when access gating is disabled.");
+cfgSchedulerTruthUL = cfg;
+cfgSchedulerTruthUL.control_gating.pdcch_required = false;
+cfgSchedulerTruthUL.phy.pusch.executionProfile = "scheduler_truth";
+cfgSchedulerTruthUL.run.puschExecutionProfile = "scheduler_truth";
+assert(sixgr.control.isPDCCHGrantBindingRequired(cfgSchedulerTruthUL, "UL"), ...
+    "scheduler_truth PUSCH must require decoded DCI binding even when access gating is disabled.");
 
 T = localMinimalBoundlessDLTrialTable();
 res = sixgr.truth.evaluatePDSCHObjectiveStrict(T, cfg, ...

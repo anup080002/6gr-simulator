@@ -199,7 +199,11 @@ if size(WlogicalPortsPerPRG, 3) == 1
     WportsPerPRG = reshape(Wports, [size(Wports, 1), size(Wports, 2), 1]);
 end
 if logical(sixgr.util.structGet(hybridMeta, "Applied", false))
-    source = string(source) + "+hybrid-rf-element-domain";
+    hybridToken = "hybrid-rf-element-domain";
+    sourceParts = split(string(source), "+");
+    if ~any(strcmpi(strtrim(sourceParts), hybridToken))
+        source = string(source) + "+" + hybridToken;
+    end
 end
 
 dmrsPorts = localDMRSPortSet(pdsch, nLayers);

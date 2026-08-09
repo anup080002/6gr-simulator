@@ -233,11 +233,11 @@ input=localRead(fullfile(root,"rf_phase_noise_test_vectors.csv"));
 psdRows=repmat(struct("CaseID","","ProfileID","","Offset_Hz",0, ...
     "ExpectedPSD_dBcHz",0,"MeasuredPSD_dBcHz",0,"Error_dB",0, ...
     "ChainID",0,"MeasurementMethod","","Status",""),height(input)*20,1);
-trackRows=repmat(struct("CaseID","","ChainID",0,"CPEBefore_rad",0, ...
+trackTemplate=struct("CaseID","","ChainID",0,"CPEBefore_rad",0, ...
     "CPEAfter_rad",0,"ICIPowerBefore_dB",0,"ICIPowerAfter_dB",0, ...
-    "CorrelationExpected",0,"CorrelationMeasured",0,"Status",""), ...
-    height(input)*double(max(input.ChainCount)),1);
-pi=0; ti=0;
+    "CorrelationExpected",0,"CorrelationMeasured",0,"Status","");
+trackRows=repmat(trackTemplate,100,1);
+pi=0;
 for k=1:height(input)
     offsets=localNumericList(input.MaskOffsets_Hz(k));
     levels=localNumericList(input.MaskLevels_dBcHz(k));
@@ -264,6 +264,34 @@ for k=1:height(input)
                 "MeasurementMethod","runtime_filter_transfer_psd", ...
                 "Status",localPass(abs(error_dB)<=1));
         end
+    end
+end
+psdT=struct2table(psdRows(1:pi));
+
+% The tracking contract requires 100 independently executed chain records.
+% Do not pad the table by repeating prior rows: every row below comes from a
+% fresh phase-noise process state with its own deterministic trial seed.
+ti=0;
+trial=0;
+while ti<100
+    trial=trial+1;
+    k=mod(trial-1,height(input))+1;
+    offsets=localNumericList(input.MaskOffsets_Hz(k));
+    levels=localNumericList(input.MaskLevels_dBcHz(k));
+    profile=struct("ProfileID",input.ProfileID(k),"Version","1.0.0", ...
+        "SampleRate_Hz",input.SampleRate_Hz(k), ...
+        "CarrierFrequency_Hz",localCarrierForProfile(input.ProfileID(k)), ...
+        "MaskOffsets_Hz",offsets,"MaskLevels_dBcHz",levels, ...
+        "LOCorrelation",input.LOCorrelation(k),"Seed",100000+trial);
+    profile=sixgr.rf.runtime.PhaseNoiseProfile.validate(profile);
+    process=sixgr.rf.runtime.PhaseNoiseProcess( ...
+        profile,input.ChainCount(k),trial);
+    [~,trace]=process.apply( ...
+        ones(input.ChunkSamples(k),input.ChainCount(k)),trial);
+    for chain=1:input.ChainCount(k)
+        if ti>=100
+            break;
+        end
         ti=ti+1;
         phase=trace.Phase_rad(:,chain);
         cpe=mean(phase);
@@ -272,7 +300,8 @@ for k=1:height(input)
         corrected=angle(exp(1j*(phase-cpeEstimate)));
         correctedCPE=mean(corrected);
         correctedICI=corrected-correctedCPE;
-        trackRows(ti)=struct("CaseID",string(input.CaseID(k)), ...
+        trackRows(ti)=struct( ...
+            "CaseID",string(input.CaseID(k))+"-TR"+compose("%04d",trial), ...
             "ChainID",chain,"CPEBefore_rad",cpe, ...
             "CPEAfter_rad",correctedCPE, ...
             "ICIPowerBefore_dB",10*log10(max(mean(ici.^2),realmin)), ...
@@ -283,12 +312,7 @@ for k=1:height(input)
             abs(correctedCPE)<=abs(cpe)+1e-12));
     end
 end
-psdT=struct2table(psdRows(1:pi));
-trackingT=struct2table(trackRows(1:ti));
-if height(trackingT)<100
-    trackingT=repmat(trackingT,ceil(100/height(trackingT)),1);
-    trackingT=trackingT(1:100,:);
-end
+trackingT=struct2table(trackRows);
 end
 
 function [imbalanceT,compT]=localIQ(root)

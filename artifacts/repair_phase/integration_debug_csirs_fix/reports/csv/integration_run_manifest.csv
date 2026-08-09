@@ -1,0 +1,3 @@
+RunID,Mode,RadioProfile,ScenarioID,ResolvedConfigSHA256,SourceCommit,MatlabVersion,ToolboxVersion,Status
+master_sinr_sweep-99f4d8f859ea,FIXED_SNR_SWEEP,nr_rel18_system_lls_strict,master_sinr_sweep,99f4d8f859ea5398b7e10dee06ad36f6b912fca1d3601e1faff52d86bdc94e57,f9ed6f1e6e9696dbba9a6760a958ba73022f5e88,26.1.0.3312084 (R2026a) Update 4,26.1,PASS
+master_geometry_based-c48470a04d4d,GEOMETRY_NETWORK,nr_rel18_system_lls_strict,master_geometry_based,c48470a04d4d074ad7f3643141f98cdf6abc27a68f64de8029c7d497d22295f7,f9ed6f1e6e9696dbba9a6760a958ba73022f5e88,26.1.0.3312084 (R2026a) Update 4,26.1,PASS

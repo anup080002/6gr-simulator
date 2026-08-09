@@ -280,6 +280,7 @@ sections:
       pdcch_to_pdsch_k0: {required: false, type: integer, min: 0}
       pdcch_to_pusch_k2: {required: false, type: integer, min: 0}
       dl_harq_feedback_k1: {required: false, type: number_list}
+      k1_selection_policy: {required: false, type: string, allowed_values: [first_valid_configured, fixed_configured_default]}
       ul_grant_k2: {required: false, type: integer, min: 0}
       harq_roundtrip_slots: {required: false, type: integer, min: 0}
       dl_to_ul_guard_time_us: {required: false, type: number, min: 0}
@@ -399,7 +400,16 @@ sections:
       geometry_evidence_required: {required: false, type: boolean}
       strict_after_run_artifact_audit: {required: false, type: boolean}
       fixed_link_campaign: {required: false, type: struct, nested_rule: validation_fixed_link_campaign}
+      strict_component_evidence: {required: false, type: struct, nested_rule: validation_strict_component_evidence}
 nested_sections:
+  validation_strict_component_evidence:
+    parameters:
+      enabled: {required: true, type: boolean}
+      execution_scope:
+        required: true
+        type: string
+        allowed_values: [component_anchor, in_path]
+      required_components: {required: true, type: string_list}
   validation_fixed_link_campaign:
     parameters:
       enabled: {required: false, type: boolean}

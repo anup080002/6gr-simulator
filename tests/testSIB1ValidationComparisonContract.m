@@ -25,6 +25,19 @@ assert(~logical(mismatched.StrictOk) && ...
     ~logical(mismatched.SIB1TreeEqual));
 assert(string(mismatched.FailureReason) == "sib1_decoded_tree_mismatch");
 
+receiverFailure = rx;
+receiverFailure.StrictOk = false;
+receiverFailure.Status = "ERROR";
+receiverFailure.FailureReason = "sixgr:phy:dl:ReceiverFailure:exact receiver detail";
+receiverFailure.SIB1ASN1DecodeOk = false;
+receiverFailure.SIB1RxTree = struct();
+preserved = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, receiverFailure);
+assert(string(preserved.Status) == "ERROR" && ...
+    string(preserved.FailureReason) == receiverFailure.FailureReason && ...
+    string(preserved.SemanticComparisonFailureReason) == ...
+        "sib1_asn1_decode_not_available_for_semantic_comparison", ...
+    "Semantic comparison must preserve the upstream waveform failure.");
+
 missing = rmfield(tx, "TxTree");
 missingResult = sixgr.phy.broadcast.attachSIB1ValidationComparison(missing, rx);
 assert(~logical(missingResult.StrictOk));

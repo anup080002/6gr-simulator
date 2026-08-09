@@ -284,13 +284,14 @@ setupRows = repmat(localEmptySetupRow(), numel(setupSlots), 1);
 setupTxEvidence = cell(numel(setupSlots), 1);
 for setupIndex = 1:numel(setupSlots)
     carrier = localCloneCarrier(carrierTemplate);
-    carrier.NSlot = double(setupSlots(setupIndex));
-    trackingSlot = localIsDLTrackingSlot(entry, carrier.NSlot);
+    absoluteSlot = double(setupSlots(setupIndex));
+    carrier = localSetCarrierAbsoluteSlot(carrier, absoluteSlot);
+    trackingSlot = localIsDLTrackingSlot(entry, absoluteSlot);
     if string(entry.direction) == "downlink"
         setupPDSCH = localConfigurePDSCHForSlot( ...
             entry, carrier, execution.PhysicalChannel);
         setupPrecoder = localPDSCHPrecoderForSlot( ...
-            entry, carrier, cfg, double(opt.Seed) + carrier.NSlot + 1);
+            entry, carrier, cfg, double(opt.Seed) + absoluteSlot + 1);
         [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, ...
             "Carrier", carrier, ...
             "PDSCH", setupPDSCH, ...
@@ -328,7 +329,7 @@ for setupIndex = 1:numel(setupSlots)
     setupRows(setupIndex) = struct( ...
         "FRC", string(entry.frc_id), ...
         "condition", string(entry.condition.id), ...
-        "slot", double(carrier.NSlot), ...
+        "slot", absoluteSlot, ...
         "slot_type", localSetupSlotType(trackingSlot), ...
         "modulation", string(entry.coding.modulation), ...
         "layers", double(entry.mimo.layers), ...
@@ -618,7 +619,8 @@ rvSequence = double(entry.harq.rv_sequence(:).');
 for rvIndex = 1:numel(rvSequence)
     attempts = attempts + 1;
     transmissionIndex = transmissionsBeforeTB + attempts;
-    carrier.NSlot = localSlotNumber(entry, transmissionIndex);
+    absoluteSlot = localSlotNumber(entry, transmissionIndex);
+    carrier = localSetCarrierAbsoluteSlot(carrier, absoluteSlot);
     rv = rvSequence(rvIndex);
 
     if string(entry.direction) == "downlink"
@@ -626,7 +628,7 @@ for rvIndex = 1:numel(rvSequence)
             entry, carrier, propagation.PhysicalChannel);
         txPrecoder = localPDSCHPrecoderForSlot( ...
             entry, carrier, cfg, double(opt.Seed) + transmissionIndex);
-        trackingSlot = localIsDLTrackingSlot(entry, carrier.NSlot);
+        trackingSlot = localIsDLTrackingSlot(entry, absoluteSlot);
         [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, ...
             "Carrier", carrier, ...
             "PDSCH", txPDSCH, ...
@@ -869,6 +871,10 @@ cfg.phy.pdsch.enablePTRS = logical(entry.ptrs.enabled);
 % SNR reference. The conformance runner supplies Type-I pages with unit
 % total power, so the general PHY column-normalization default must not
 % silently expand their trace back to NumLayers.
+normalizationConvention = string( ...
+    entry.runtime_feature_authority.pdsch_precoder_normalization_convention);
+cfg.phy.pdsch.precoderNormalizationConvention = normalizationConvention;
+cfg.phy.pdsch.precoding.normalizationConvention = normalizationConvention;
 cfg.phy.pdsch.normalizePrecodingMatrix = false;
 cfg.phy.pdsch.dmrs.nPorts = nLayers;
 cfg.phy.pdsch.dmrs.dataToDMRSEPREDifference_dB = ...
@@ -961,7 +967,7 @@ if ~isprop(pdsch, "ReservedRE")
         "Exact DL FRC execution requires nrPDSCHConfig.ReservedRE support.");
 end
 pdsch.ReservedRE = [];
-if ~localIsDLTrackingSlot(entry, carrier.NSlot)
+if ~localIsDLTrackingSlot(entry, localCarrierAbsoluteSlot(carrier))
     return;
 end
 [indices, ~, ~] = localTrackingCSIRSResources(entry, carrier);
@@ -1024,7 +1030,7 @@ end
 end
 
 function tx = localMaterializeTrackingCSIRS(entry, carrier, tx)
-if ~localIsDLTrackingSlot(entry, carrier.NSlot)
+if ~localIsDLTrackingSlot(entry, localCarrierAbsoluteSlot(carrier))
     return;
 end
 if ~isfield(tx, "Grid") || isempty(tx.Grid)
@@ -1051,7 +1057,9 @@ tx.OFDM = ofdmInfo;
 tx.TrackingCSIRS = struct( ...
     "ContractVersion", "TS38101_4_Table5_2_1_tracking_csirs/v1", ...
     "Materialized", true, ...
-    "Slot", double(carrier.NSlot), ...
+    "Slot", double(localCarrierAbsoluteSlot(carrier)), ...
+    "Frame", double(carrier.NFrame), ...
+    "SlotWithinFrame", double(carrier.NSlot), ...
     "ResourceCount", numel(resources), ...
     "NRE", double(numel(actual)), ...
     "Indices", actual, ...
@@ -1062,13 +1070,14 @@ tx.TrackingCSIRS = struct( ...
 end
 
 function [indices, symbols, resources] = localTrackingCSIRSResources(entry, carrier)
-if ~localIsDLTrackingSlot(entry, carrier.NSlot)
+absoluteSlot = localCarrierAbsoluteSlot(carrier);
+if ~localIsDLTrackingSlot(entry, absoluteSlot)
     indices = zeros(0, 1);
     symbols = complex(zeros(0, 1));
     resources = {};
     return;
 end
-slotOffset = mod(double(carrier.NSlot), 20);
+slotOffset = mod(double(absoluteSlot), 20);
 symbolLocations = [6, 10];
 resources = cell(1, numel(symbolLocations));
 indexCell = cell(1, numel(symbolLocations));
@@ -1240,7 +1249,7 @@ if ~(isscalar(actualTBS) && actualTBS == expectedTBS)
 end
 scheduledTBS = double(tx.ScheduledTransportBlockSize);
 isTrackingSlot = string(entry.direction) == "downlink" && ...
-    localIsDLTrackingSlot(entry, tx.Carrier.NSlot);
+    localIsDLTrackingSlot(entry, localCarrierAbsoluteSlot(tx.Carrier));
 if ~isTrackingSlot && ~(isscalar(scheduledTBS) && scheduledTBS == expectedTBS)
     error("sixgr:conformance:ScheduledTransportBlockSizeMismatch", ...
         ("FRC %s requires allocation-derived TBS=%d bits, but the truth Tx " + ...
@@ -1299,7 +1308,7 @@ end
 
 expectedG = double(entry.coding.g_bits_per_slot);
 if string(entry.direction) == "downlink" && ...
-        any(mod(double(tx.Carrier.NSlot), 20) == ...
+        any(mod(double(localCarrierAbsoluteSlot(tx.Carrier)), 20) == ...
         double(entry.coding.tracking_slot_indices))
     expectedG = double(entry.coding.g_bits_tracking_slots);
 end
@@ -1953,10 +1962,38 @@ end
 
 function carrier = localCloneCarrier(source)
 carrier = nrCarrierConfig;
-for name = ["NCellID", "NSizeGrid", "NStartGrid", "NSlot", ...
+for name = ["NCellID", "NSizeGrid", "NStartGrid", "NFrame", "NSlot", ...
         "SubcarrierSpacing", "CyclicPrefix"]
     carrier.(name) = source.(name);
 end
+end
+
+function carrier = localSetCarrierAbsoluteSlot(carrier, absoluteSlot)
+absoluteSlot = double(absoluteSlot);
+if ~(isscalar(absoluteSlot) && isfinite(absoluteSlot) && ...
+        absoluteSlot >= 0 && absoluteSlot == fix(absoluteSlot))
+    error("sixgr:conformance:InvalidAbsoluteSlot", ...
+        "FRC absolute slot must be a nonnegative integer.");
+end
+slotsPerFrame = localCarrierSlotsPerFrame(carrier);
+carrier.NFrame = floor(absoluteSlot / slotsPerFrame);
+carrier.NSlot = mod(absoluteSlot, slotsPerFrame);
+end
+
+function absoluteSlot = localCarrierAbsoluteSlot(carrier)
+slotsPerFrame = localCarrierSlotsPerFrame(carrier);
+absoluteSlot = double(carrier.NFrame) * slotsPerFrame + ...
+    double(carrier.NSlot);
+end
+
+function slotsPerFrame = localCarrierSlotsPerFrame(carrier)
+scs = double(carrier.SubcarrierSpacing);
+mu = log2(scs / 15);
+if ~(isscalar(mu) && isfinite(mu) && abs(mu - round(mu)) <= 1e-12)
+    error("sixgr:conformance:UnsupportedSlotNumerology", ...
+        "FRC carrier SCS %.15g kHz does not define an NR slot numerology.", scs);
+end
+slotsPerFrame = 10 * 2^round(mu);
 end
 
 function count = localChannelPadSamples(infoStruct, sampleRate, delaySpread)
@@ -2097,6 +2134,8 @@ evidence = struct( ...
 end
 
 function evidence = localCompactRxEvidence(rx, info)
+strictReceiverInfo = sixgr.util.structGet(info, ...
+    "StrictReceiverEvidence", struct());
 evidence = struct( ...
     "CRCError", logical(rx.CRCError), ...
     "Ok", logical(rx.Ok), ...
@@ -2130,7 +2169,7 @@ evidence = struct( ...
     "ResidualCFO_Hz", double(sixgr.util.structGet( ...
         rx, "ResidualCFO_EstimatedPostCorrection_Hz", NaN)), ...
     "ReceiverInfoContract", string(sixgr.util.structGet( ...
-        info.StrictReceiverEvidence, "ContractVersion", "")));
+        strictReceiverInfo, "ContractVersion", "")));
 end
 
 function value = localFiniteMeanAbs(raw)

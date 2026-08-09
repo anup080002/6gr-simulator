@@ -612,14 +612,35 @@ policy = struct( ...
 if found
     policy.SelectedK0 = localNonnegativeInteger(value, "SelectedK0");
 end
+% K1 is encoded in DCI and must be selected for the actual PDSCH slot from
+% the attached configured candidate list.  A scenario-level
+% harq.feedback_timing_slots value is a default/preference for consumers
+% that need one scalar; it is not an instruction to reject every PDSCH
+% whose TDD feedback occasion requires another configured K1.
 [value, found] = localFind(cfg, [ ...
-    "phy.tddTiming.dlHARQFeedbackK1", ...
-    "phy.tddTiming.dlHARQFeedbackK1Candidates"]);
+    "phy.tddTiming.dlHARQFeedbackK1"]);
 if found
-    values = localIntegerVector(value, "SelectedK1");
+    values = localIntegerVector(value, "ConfiguredDefaultK1");
     if isscalar(values)
-        policy.SelectedK1 = values;
+        policy.ConfiguredDefaultK1 = values;
     end
+end
+k1SelectionPolicy = lower(strtrim(string(localFirst(cfg, [ ...
+    "phy.tddTiming.k1SelectionPolicy"], ""))));
+if ~any(k1SelectionPolicy == ["first_valid_configured", ...
+        "fixed_configured_default"])
+    error("sixgr:phy:frame:MissingK1SelectionPolicy", ...
+        ["Production timing requires YAML-owned " ...
+         "tdd_timing.k1_selection_policy to be first_valid_configured " ...
+         "or fixed_configured_default."]);
+end
+policy.K1SelectionPolicy = char(k1SelectionPolicy);
+if k1SelectionPolicy == "fixed_configured_default"
+    if ~isfield(policy, "ConfiguredDefaultK1")
+        error("sixgr:phy:frame:MissingConfiguredDefaultK1", ...
+            "fixed_configured_default requires harq.feedback_timing_slots.");
+    end
+    policy.SelectedK1 = policy.ConfiguredDefaultK1;
 end
 [value, found] = localFind(cfg, [ ...
     "phy.tddTiming.pdcchToPUSCHK2", ...

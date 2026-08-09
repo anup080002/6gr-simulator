@@ -52,10 +52,11 @@ job = struct();
 job.Cfg = cfg;
 job.Direction = upper(string(direction));
 job.ExecutionProfile = "";
-if job.Direction == "DL" && isstruct(grant) && ~isempty(fieldnames(grant))
+if any(job.Direction == ["DL","UL"]) && isstruct(grant) && ~isempty(fieldnames(grant))
     % This profile is derived from scheduler ownership, not configured as a
-    % calibration shortcut. runDLPDSCHThroughput independently verifies
-    % exact feasibility, bit-exact DCI and decoded PDCCH/grant binding.
+    % calibration shortcut.  The direction-specific throughput entry point
+    % independently verifies that YAML selects the same ownership profile
+    % and that the frozen grant carries the required decoded-control proof.
     job.ExecutionProfile = "scheduler_truth";
 end
 job.NumFrames = 1;

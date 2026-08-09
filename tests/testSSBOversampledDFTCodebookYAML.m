@@ -1,0 +1,29 @@
+function ok = testSSBOversampledDFTCodebookYAML()
+%TESTSSBOVERSAMPLEDFTCODEBOOKYAML Preserve Lmax beams on a smaller URA.
+
+scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
+    "lls_webgui_full_stack_sinr_geometry_qualification.yaml");
+scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+tmp = string(tempname);
+mkdir(tmp);
+cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+
+matrices = sixgr.util.structGet(cfg, "phy.ssb.precoderMatrices", []);
+assert(isequal(size(matrices), [8 4]), ...
+    "Eight SSB candidates must resolve to eight physical four-element beams.");
+assert(isequal(double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.precoderBeamGrid", [])), [2 4]), ...
+    "The YAML-owned oversampled beam-grid dimensions were not preserved.");
+beamIndices = double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.precoderBeamIndices", []));
+assert(isequal(beamIndices(:).', 0:7), ...
+    "The YAML-owned SSB beam indices were not preserved.");
+assert(all(abs(sum(abs(matrices).^2, 2) - 1) < 1e-12), ...
+    "Every physical SSB beam must preserve unit transmit power.");
+assert(numel(unique(string(sixgr.util.structGet(cfg, ...
+    "phy.ssb.precoderIDs", strings(0, 1))))) == 8, ...
+    "Every SSB candidate must retain a distinct physical-beam identity.");
+
+ok = true;
+end

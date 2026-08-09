@@ -63,6 +63,7 @@
     "authority": "frc_catalog_yaml",
     "ssb_enabled": false,
     "csi_rs_enabled": false,
+    "pdsch_precoder_normalization_convention": "unit_total_power",
     "ptrs": {
       "enabled": false,
       "frequency_density": "disabled",

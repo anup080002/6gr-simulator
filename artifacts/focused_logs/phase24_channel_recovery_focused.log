@@ -1,0 +1,7 @@
+{Error using sixgr.phy.dl.resolvePDSCHPrecoding (line 292)
+Strict or immutable-grant PDSCH requires the selected matrix SHA-256 identity.
+
+Error in testAntennaPortArchitectureContracts (line 178)
+    precHybridReplay = sixgr.phy.dl.resolvePDSCHPrecoding( ...
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

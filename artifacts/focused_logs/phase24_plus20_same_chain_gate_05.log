@@ -1,0 +1,17 @@
+[2026-08-09T01:03:39Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase24_plus20_same_chain_gate_05 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_05
+{Error using sixgr.lls6g.buildInternalConfig>localApplyScenarioAuditExtensions (line 2141)
+No configured PUCCH resource matches control.pucch_format=2.
+
+Error in sixgr.lls6g.buildInternalConfig (line 2016)
+cfg = localApplyScenarioAuditExtensions(cfg, s);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2238)
+cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 66)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 24)
+out = sixgr.lls6g.runners.runSingle(scenarioPath, outputRoot, runTag);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

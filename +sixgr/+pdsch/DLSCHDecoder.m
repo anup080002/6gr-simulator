@@ -87,8 +87,8 @@ else
     if isempty(priorLayout) && ~(isstruct(prior) && ...
             (isfield(prior, "CodingLayout") || isfield(prior, "SoftBuffer")))
         error("sixgr:pdsch:DLSCHDecoder:MissingPriorCodingPlan", ...
-            ["PriorRecoveredLLR requires PriorCodingPlan unless the prior " ...
-            "decoder result carries its CodingLayout or SoftBuffer."]);
+            "PriorRecoveredLLR requires PriorCodingPlan unless the prior " + ...
+            "decoder result carries its CodingLayout or SoftBuffer.");
     end
     [combined, harqInfo] = sixgr.phy.harq.combineSoftLLR( ...
         recovered, prior, "CurrentLayout", layout, ...
@@ -229,6 +229,17 @@ function value = localSelectCodeword(value, cw)
 if iscell(value)
     if numel(value) >= cw
         value = value{cw};
+    else
+        value = [];
+    end
+elseif isstruct(value) && isscalar(value) && isfield(value,"Codewords")
+    % A two-codeword decoder result is a scalar aggregate whose actual
+    % per-codeword soft buffers live in Codewords{cw}.  Passing the
+    % aggregate unchanged made localResolvePriorBuffer see no SoftBuffer
+    % and silently reset HARQ combining for ranks 5--8.
+    codewords = value.Codewords;
+    if iscell(codewords) && numel(codewords) >= cw
+        value = codewords{cw};
     else
         value = [];
     end

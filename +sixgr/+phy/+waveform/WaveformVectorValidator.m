@@ -51,8 +51,9 @@ end
 function rows = localCP(root)
 vectors = localRead(fullfile(root,"waveform_cp_test_vectors.csv"));
 expected = localRead(fullfile(root,"expected_waveform_cp_samples.csv"));
-rows = repmat(localTemplate(),height(vectors),1);
+rows = repmat(localTemplate(),0,1);
 cursor = 0;
+seenVectorIDs = strings(0,1);
 for ii = 1:height(vectors)
     vectorID = vectors.VectorID(ii);
     count = str2double(vectors.UsefulLength(ii)) + ...
@@ -69,9 +70,20 @@ for ii = 1:height(vectors)
         localPipe(vectors.InputImag(ii)));
     got = sixgr.phy.waveform.CPInsertionRemoval.insert( ...
         input,str2double(vectors.CPLength(ii)));
-    rows(ii) = localResult("cyclic_prefix",vectorID,want,got,1e-12, ...
+    result = localResult("cyclic_prefix",vectorID,want,got,1e-12, ...
         "independent_sample_copy");
+    if any(seenVectorIDs == vectorID)
+        if result.MismatchCount ~= 0
+            error("WAVEFORM:IndependentVectorMismatch", ...
+                "Repeated CP oracle %s produced inconsistent samples.", ...
+                vectorID);
+        end
+        continue;
+    end
+    seenVectorIDs(end+1) = vectorID; %#ok<AGROW>
+    rows(end+1) = result; %#ok<AGROW>
 end
+rows = rows(:);
 end
 
 function rows = localDFT(root)

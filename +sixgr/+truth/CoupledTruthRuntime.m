@@ -104,6 +104,7 @@ methods(Static)
             "PDCCH", sixgr.util.structGet(controlTrials, "PDCCH", table()), ...
             "PUCCH", sixgr.util.structGet(controlTrials, "PUCCH", table()), ...
             "SRS", sixgr.util.structGet(controlTrials, "SRS", table()), ...
+            "CSIRS", sixgr.util.structGet(controlTrials, "CSIRS", table()), ...
             "TRS", sixgr.util.structGet(controlTrials, "TRS", table()));
         state.InitialAccessLifecycleTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyInitialAccessLifecycleRow(), 0, 1));
         state.AccessTransitionLedgerTable = sixgr.monitor.AccessFlowRecorder.emptyLedger();
@@ -184,6 +185,7 @@ methods(Static)
         state.ULHarq = harqUL;
         state.PendingFeedbackTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyFeedbackRow(), 0, 1));
         state.PUCCHGrantTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPUCCHGrantRow(), 0, 1));
+        state.PUCCHCurrentSlotGrantSnapshot = table();
         state.DLCombinedLLR = cell(nUsers, numHarqProc);
         state.ULCombinedLLR = cell(nUsers, numHarqProc);
         state.HARQFeedbackSlots = max(1, round(double(sixgr.util.structGet(cfg, "phy.harq.feedbackTimingSlots", 4))));
@@ -222,6 +224,7 @@ methods(Static)
         state.SweepPointIndex = 1;
         state.SweepPointStartSlot = 1;
         state.SweepPointLinkStateResetCount = 0;
+        state.SweepPointInitialAccessResetCount = 0;
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
     end
 
@@ -231,9 +234,10 @@ methods(Static)
 
     function state = resetIndependentSweepPointLinkState(state, cfg, sweepPointIndex, startSlot)
         % Reset state that can causally carry decoding or adaptation gain
-        % between fixed-SNR operating points. Geometry, initial access,
-        % accumulated truth tables and application-delivery ledgers remain
-        % intact so the run is still one auditable scenario execution.
+        % between fixed-SNR operating points. Geometry, accumulated truth
+        % tables and application-delivery ledgers remain intact. Initial
+        % access is reset only when the YAML explicitly requests an
+        % independent access trial at every SNR point.
         if nargin < 3 || ~(isnumeric(sweepPointIndex) && isscalar(sweepPointIndex) && ...
                 isfinite(sweepPointIndex) && sweepPointIndex >= 1)
             error("sixgr:truth:InvalidSweepPointIndex", ...
@@ -266,6 +270,41 @@ methods(Static)
             sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow(), nUsers, 1);
         state.DLLinkAdaptationState = cell(nUsers, 1);
         state.ULLinkAdaptationState = cell(nUsers, 1);
+
+        accessPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+            "run.snrSweepInitialAccessStatePolicy", "continuous_runtime"))));
+        if accessPolicy == "independent_per_point"
+            state.CellAcquisitionState = repmat( ...
+                string(state.ControlGating.PBCHInitialState), nUsers, 1);
+            state.AccessState = repmat( ...
+                string(state.ControlGating.PRACHInitialState), nUsers, 1);
+            state.LastPDCCHStatus = repmat("not_attempted", nUsers, 1);
+            state.ControlEligibility = false(nUsers, 1);
+            state.SchedulingEligibility = false(nUsers, 1);
+            state.LastSuccessfulPBCHSlotByUE = nan(nUsers, 1);
+            state.LastSuccessfulPRACHSlotByUE = nan(nUsers, 1);
+            state.LastSuccessfulPDCCHSlotByUE = nan(nUsers, 1);
+            state.LastSuccessfulPUCCHSlotByUE = nan(nUsers, 1);
+            state.LastPRACHSlotByUE = zeros(nUsers, 1);
+            state.LastPBCHSlot = 0;
+            state.LastTimingAdvanceSamplesByUE = nan(nUsers, 1);
+            state.LastTimingAdvanceUsByUE = nan(nUsers, 1);
+            state.TimeAlignmentState = repmat("not_time_aligned", nUsers, 1);
+            state.LastTimingAdvanceSourceByUE = repmat("", nUsers, 1);
+            state.LastTimingAdvanceUpdateSlotByUE = nan(nUsers, 1);
+            state.LastTimingAdvanceServingCellByUE = nan(nUsers, 1);
+            state.LastTimingAdvanceServingDistanceMByUE = nan(nUsers, 1);
+            state.TimingAdvanceDriftSamplesByUE = nan(nUsers, 1);
+            state.TimingAdvanceDriftUsByUE = nan(nUsers, 1);
+            state.TimingAdvanceUpdateRequiredByUE = false(nUsers, 1);
+            state.TimingAdvanceUpdateStatusByUE = repmat("not_evaluated", nUsers, 1);
+            state.SweepPointInitialAccessResetCount = double(sixgr.util.structGet( ...
+                state, "SweepPointInitialAccessResetCount", 0)) + 1;
+        elseif accessPolicy ~= "continuous_runtime"
+            error("sixgr:truth:InvalidSNRSweepInitialAccessStatePolicy", ...
+                "Unsupported SNR-sweep initial-access state policy '%s'.", ...
+                char(accessPolicy));
+        end
 
         % A new operating point must obtain fresh causal CSI/SRS/TRS. The
         % measurement table is retained as evidence; its consumer filters
@@ -1443,8 +1482,8 @@ methods(Static, Access=private)
     function [state, context, grantRow] = buildTrialContextFromGrantImpl(state, cfg, ueIdx, direction, grant)
         direction = upper(string(direction));
         grant = sixgr.truth.CoupledTruthRuntime.normalizeGrantSnapshot(grant, direction, state, ueIdx);
-        isRetx = sixgr.util.logicalAny(sixgr.util.structGet( ...
-            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
+        isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+            grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         if isRetx
             context = sixgr.truth.CoupledTruthRuntime.resolveHARQTrialContextImpl(state, ueIdx, direction);
             replayGrant = sixgr.util.structGet(context, "GrantSnapshot", struct());
@@ -1645,6 +1684,16 @@ methods(Static, Access=private)
             "PrecodingApplicationStage", ...
             "PriorMUMIMOGroupId", "PriorMUMIMOGroupSize", ...
             "PriorMUMIMOPairingEvidenceSource", ...
+            ... % Current-slot causal UL sounding authority. A HARQ
+            ... % retransmission reuses the original TB/soft buffer, but
+            ... % its executable codebook/TPMI decision must be bound to
+            ... % the fresh SRS state owned by the current scheduler grant.
+            "SRSValid", "SRSCausalUsable", ...
+            "SRSCausalMeasurementId", "LastSuccessfulSRSSlot", ...
+            "SRSAgeSlots", "SRSCausalAgeSlots", "SRSCausalStatus", ...
+            "SRSMeasurementAuthoritySource", ...
+            "SRI", "SRSResourceIndicator", ...
+            "SRSValidityState", "CSIValidityState", ...
             ... % Current decoded-control and exact-feasibility authority.
             "DCI", "Valid", "GrantBlocker", ...
             "ExactPHYFeasibilityChecked", "ExactPHYFeasible", ...
@@ -1831,6 +1880,13 @@ methods(Static, Access=private)
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "pucch_trials.csv", sixgr.util.structGet(state.ControlTrials, "PUCCH", table()));
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "srs_trials.csv", sixgr.util.structGet(state.ControlTrials, "SRS", table()));
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "trs_trials.csv", sixgr.util.structGet(state.ControlTrials, "TRS", table()));
+        sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "csi_rs_trials.csv", sixgr.util.structGet(state.ControlTrials, "CSIRS", table()));
+        csiReportT = sixgr.util.structGet(state, "PendingCSITable", table());
+        referenceMeasurementT = sixgr.util.structGet(state, "ReferenceSignalMeasurementTable", table());
+        sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "csi_feedback_reports.csv"), csiReportT);
+        sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "csi_feedback_reports.csv"), csiReportT);
+        sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "reference_signal_measurements.csv"), referenceMeasurementT);
+        sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "reference_signal_measurements.csv"), referenceMeasurementT);
         prachCorrelationTrace = sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table());
         if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
             sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "prach_correlation_trace.csv"), prachCorrelationTrace);
@@ -1906,8 +1962,8 @@ methods(Static, Access=private)
         if ~(isfinite(tbsBits) && tbsBits > 0)
             tbsBits = 0;
         end
-        isRetx = sixgr.util.logicalAny(sixgr.util.structGet( ...
-            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
+        isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+            grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         if ~isRetx && tbsBits > 0
             state = sixgr.truth.CoupledTruthRuntime.reserveGrantBits(state, ueIdx, direction, tbsBits, grant);
         end
@@ -1973,6 +2029,20 @@ methods(Static, Access=private)
         end
         if ismember("TargetCodeRate", string(traceT.Properties.VariableNames))
             traceT.TargetCodeRate(idx) = double(sixgr.util.structGet(grant, "TargetCodeRate", NaN));
+        end
+        exactTextFields = ["TBSInputModulation","TBSInputSource"];
+        for fieldName = exactTextFields
+            if ismember(fieldName, string(traceT.Properties.VariableNames))
+                traceT = sixgr.truth.CoupledTruthRuntime.localAssignTraceTextValue( ...
+                    traceT, char(fieldName), idx, sixgr.util.structGet(grant, fieldName, ""));
+            end
+        end
+        exactNumericFields = ["TBSInputNumLayers","TBSInputNPRB", ...
+            "TBSInputNREPerPRB","TBSInputTargetCodeRate","TBSInputXOverhead"];
+        for fieldName = exactNumericFields
+            if ismember(fieldName, string(traceT.Properties.VariableNames))
+                traceT.(char(fieldName))(idx) = double(sixgr.util.structGet(grant, fieldName, NaN));
+            end
         end
         if ismember("NumLayers", string(traceT.Properties.VariableNames))
             executedLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
@@ -2289,8 +2359,28 @@ methods(Static, Access=private)
         row = trialT(end, :);
         [state, harqFields] = sixgr.truth.CoupledTruthRuntime.updateHARQState(state, ueIdx, direction, cfgU, row, res);
         trialT = sixgr.truth.CoupledTruthRuntime.annotateHARQTrialTable(trialT, harqFields);
+        csiMeasurementRow = table();
+        if upper(string(direction)) == "DL"
+            csiT = sixgr.util.structGet(res, "CSIRSTrialTable", table());
+            if istable(csiT) && ~isempty(csiT)
+                sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
+                mask = true(height(csiT), 1);
+                if ismember("Slot", string(csiT.Properties.VariableNames))
+                    mask = mask & isfinite(double(csiT.Slot)) & ...
+                        round(double(csiT.Slot)) == round(sourceSlot);
+                end
+                if ismember("UEIndex", string(csiT.Properties.VariableNames))
+                    mask = mask & isfinite(double(csiT.UEIndex)) & ...
+                        round(double(csiT.UEIndex)) == round(double(ueIdx));
+                end
+                hit = find(mask, 1, "last");
+                if ~isempty(hit)
+                    csiMeasurementRow = csiT(hit, :);
+                end
+            end
+        end
         state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
-            state, ueIdx, direction, trialT(end, :), cfgU);
+            state, ueIdx, direction, trialT(end, :), cfgU, csiMeasurementRow);
         state = sixgr.truth.CoupledTruthRuntime.appendTelemetry(state, ueIdx, trialT(end, :));
         state = sixgr.truth.CoupledTruthRuntime.updateUserStats(state, ueIdx, direction, trialT(end, :));
         state = sixgr.truth.CoupledTruthRuntime.updateDecodeSuccessCount(state, ueIdx, direction, trialT(end, :));
@@ -2344,6 +2434,10 @@ methods(Static, Access=private)
         end
         if any(dueGrantMask)
             dueGrantRows = grantTrace(dueGrantMask, :);
+            % Freeze the simultaneous emission set before any receiver
+            % consumes feedback.  Reciprocal same-slot interference must
+            % not depend on the serial loop order used for state updates.
+            state.PUCCHCurrentSlotGrantSnapshot = dueGrantRows;
             for i = 1:height(dueGrantRows)
                 row = dueGrantRows(i, :);
                 direction = upper(string(row.FeedbackForDirection));
@@ -2386,6 +2480,7 @@ methods(Static, Access=private)
                     state.DLCombinedLLR = buffers;
                 end
             end
+            state.PUCCHCurrentSlotGrantSnapshot = table();
         end
 
         if ~(istable(state.PendingCSITable) && ~isempty(state.PendingCSITable))
@@ -2410,7 +2505,7 @@ methods(Static, Access=private)
             end
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
             latest.Valid = true;
-            latest.CQI = double(row.CQI);
+            latest.CQI = sixgr.truth.CoupledTruthRuntime.schedulerResolvedCQI(row);
             latest.RI = double(row.RI);
             latest.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
                 row.PMI, state.CfgMobility, rowDirection, latest.RI));
@@ -2469,13 +2564,16 @@ methods(Static, Access=private)
             end
         end
         state.PendingCSITable.Processed(dueCSIMask) = true;
+        state.PendingCSITable.DeliveredSlot(dueCSIMask) = double(state.CurrentSlot);
+        state.PendingCSITable.DeliveryStatus(dueCSIMask) = repmat("delivered_to_runtime_scheduler", nnz(dueCSIMask), 1);
     end
 
     function state = cancelUnexecutedHARQGrantImpl(state, grant, direction)
         direction = upper(string(direction));
         harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
         harqId0 = double(sixgr.util.structGet(harqStruct, "HarqID", NaN));
-        isRetx = sixgr.util.logicalAny(sixgr.util.structGet(harqStruct, "IsRetransmission", false));
+        isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+            grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));
         if ~(isfinite(rnti) && isfinite(harqId0)) || isRetx
             return;
@@ -2962,6 +3060,21 @@ methods(Static, Access=private)
             end
         end
         stats(ueIdx).GoodBitsSum = stats(ueIdx).GoodBitsSum + double(goodBits);
+        scheduledBits = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row, "TBSize_bits", sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row, "CurrentTBSBits", NaN)));
+        if ~(isfinite(scheduledBits) && scheduledBits >= 0)
+            scheduledBits = 0;
+        end
+        offeredBits = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row, "OfferedBits", NaN));
+        if ~(isfinite(offeredBits) && offeredBits >= 0)
+            offeredBits = 0;
+        end
+        stats(ueIdx).ScheduledBitsSum = ...
+            stats(ueIdx).ScheduledBitsSum + scheduledBits;
+        stats(ueIdx).OfferedBitsSum = ...
+            stats(ueIdx).OfferedBitsSum + offeredBits;
         sinrVal = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "MeasuredSINR_dB", NaN));
         if isfinite(sinrVal)
             stats(ueIdx).SINRSum = stats(ueIdx).SINRSum + double(sinrVal);
@@ -2993,13 +3106,19 @@ methods(Static, Access=private)
             r.UL_FrameCount = double(ul.Frames);
             r.DL_CoverageStatus = sixgr.truth.CoupledTruthRuntime.directionExecutionStatus(dl.Frames);
             r.UL_CoverageStatus = sixgr.truth.CoupledTruthRuntime.directionExecutionStatus(ul.Frames);
-            r.DL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(dl.GoodBitsSum, duration_s, dl.Frames);
-            r.UL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(ul.GoodBitsSum, duration_s, ul.Frames);
+            r.DL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(dl.ScheduledBitsSum, duration_s, dl.Frames);
+            r.UL_Throughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(ul.ScheduledBitsSum, duration_s, ul.Frames);
+            r.DL_OfferedThroughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(dl.OfferedBitsSum, duration_s, dl.Frames);
+            r.UL_OfferedThroughput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(ul.OfferedBitsSum, duration_s, ul.Frames);
+            r.DL_Goodput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(dl.GoodBitsSum, duration_s, dl.Frames);
+            r.UL_Goodput_Mbps = sixgr.truth.CoupledTruthRuntime.directionThroughputMbps(ul.GoodBitsSum, duration_s, ul.Frames);
             r.DL_BLER = sixgr.truth.CoupledTruthRuntime.directionBLER(dl.CRCSum, dl.Frames);
             r.UL_BLER = sixgr.truth.CoupledTruthRuntime.directionBLER(ul.CRCSum, ul.Frames);
             r.DL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(dl.SINRSum, dl.SINRCount);
             r.UL_MeanMeasuredSINR_dB = sixgr.truth.CoupledTruthRuntime.safeDivide(ul.SINRSum, ul.SINRCount);
             r.UserThroughput_Mbps = sum([r.DL_Throughput_Mbps r.UL_Throughput_Mbps], "omitnan");
+            r.UserOfferedThroughput_Mbps = sum([r.DL_OfferedThroughput_Mbps r.UL_OfferedThroughput_Mbps], "omitnan");
+            r.UserGoodput_Mbps = sum([r.DL_Goodput_Mbps r.UL_Goodput_Mbps], "omitnan");
             [r.DL_HARQFailureRate, r.DL_HARQObservationCount] = ...
                 sixgr.truth.CoupledTruthRuntime.userHARQFailureMetrics(harqTimelineT, ueIdx, "DL");
             [r.UL_HARQFailureRate, r.UL_HARQObservationCount] = ...
@@ -4071,25 +4190,59 @@ methods(Static, Access=private)
             end
             fullRA = logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RACompleted", false)) || ...
                 strlength(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "FullRAEvidenceSource", "")))) > 0;
+            rrcSetupCompleteRequired = logical(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+                row, "RequireRRCSetupComplete", false));
             eventSource = "slot_coupled_prach_detection_observation";
             eventNote = "Msg1 PRACH detection observed in the coupled PRACH runtime gate.";
             if fullRA
                 eventSource = "slot_coupled_four_step_ra_waveform_chain";
                 eventNote = "Four-step RA completed through Msg1 PRACH, Msg2 RAR, Msg3 PUSCH, and Msg4 contention-resolution waveform evidence.";
+                if rrcSetupCompleteRequired
+                    eventSource = "slot_coupled_initial_access_rrc_waveform_chain";
+                    eventNote = eventNote + " Waveform-backed SRB1 RRCSetupComplete is required for terminal access.";
+                end
             end
             state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "PRACH_MSG1_DETECTED", "UL", ...
                 "control/csv/prach_trials.csv", "PRACH", slotIdx, ...
                 eventSource, eventNote);
             if fullRA
+                msg2Slot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                    ["Msg2ScheduledSlot","RAResponseWindowStartSlot"], slotIdx);
+                msg3Slot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                    ["Msg3ScheduledSlot"], slotIdx);
+                msg4Slot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                    ["Msg4ScheduledSlot"], slotIdx);
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG2_RAR_DECODED", "DL", ...
-                    "control/csv/msg2_rar_trials.csv", "RAR", slotIdx, ...
+                    "control/csv/msg2_rar_trials.csv", "RAR", msg2Slot, ...
                     eventSource, "Msg2 RAR PDCCH/PDSCH decode observed inside the four-step RA chain.");
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG3_PUSCH_COMPLETED", "UL", ...
-                    "control/csv/msg3_pusch_trials.csv", "PUSCH", slotIdx, ...
+                    "control/csv/msg3_pusch_trials.csv", "PUSCH", msg3Slot, ...
                     eventSource, "Msg3 PUSCH decoded from the RAR UL grant inside the four-step RA chain.");
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG4_CONTENTION_RESOLUTION_COMPLETED", "DL", ...
-                    "control/csv/msg4_contention_resolution.csv", "PDSCH", slotIdx, ...
+                    "control/csv/msg4_contention_resolution.csv", "PDSCH", msg4Slot, ...
                     eventSource, "Msg4 contention-resolution identity matched and final C-RNTI assigned inside the four-step RA chain.");
+                if rrcSetupCompleteRequired
+                    rrcOk = logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCSetupRequestDecoded", false)) && ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCSetupDecoded", false)) && ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SRB1Installed", false)) && ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCSetupCompleteCRC", false)) && ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCSetupCompleteDecoded", false)) && ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCConnected", false));
+                    payloadHash = strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+                        row, "RRCSetupCompletePayloadSHA256", "")));
+                    if ~rrcOk || strlength(payloadHash) ~= 64
+                        error("sixgr:truth:MissingRRCSetupCompleteEvidence", ...
+                            ["A strict in-path PRACH row requiring RRCSetupComplete passed without " ...
+                            "complete waveform receiver, SRB1, state-machine, and payload-hash evidence."]);
+                    end
+                    setupCompleteSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+                        ["SetupCompleteScheduledSlot"], msg4Slot);
+                    state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, ...
+                        "RRC_SETUP_COMPLETE_ACCEPTED", "UL", ...
+                        "control/csv/rrc_setup_complete.csv", "RRCSetupComplete", ...
+                        setupCompleteSlot, eventSource, ...
+                        "SRB1 UL-DCCH RRCSetupComplete was recovered from PUSCH/UL-SCH, identity and transaction matched, and both endpoints entered RRC_CONNECTED.");
+                end
             end
         else
             state.AccessState(ueIdx) = "failed";
@@ -4157,6 +4310,8 @@ methods(Static, Access=private)
         p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
         p.addParameter("RuntimeStageWaveforms", struct(), @(x) isempty(x) || isstruct(x));
         p.addParameter("RequireRuntimeStageWaveforms", false, @(x)islogical(x) || isnumeric(x));
+        p.addParameter("InitialDLChannelState", struct(), @(x)isempty(x) || isstruct(x));
+        p.addParameter("InitialULChannelState", struct(), @(x)isempty(x) || isstruct(x));
         p.addParameter("WriteArtifacts", false, @(x)islogical(x) || isnumeric(x));
         p.parse(varargin{:});
         opt = p.Results;
@@ -4182,6 +4337,8 @@ methods(Static, Access=private)
             "RuntimeSlot", double(opt.RuntimeSlot), ...
             "RuntimeStageWaveforms", opt.RuntimeStageWaveforms, ...
             "RequireRuntimeStageWaveforms", logical(opt.RequireRuntimeStageWaveforms), ...
+            "InitialDLChannelState", opt.InitialDLChannelState, ...
+            "InitialULChannelState", opt.InitialULChannelState, ...
             "AllowRuntimeStageWaveformComposition", true, ...
             "WriteArtifacts", logical(opt.WriteArtifacts));
     end
@@ -5187,10 +5344,10 @@ methods(Static, Access=private)
             allowExecution = true;
             return;
         end
-        gatingActive = logical(sixgr.util.structGet( ...
-            state.ControlGating, "PDCCHRequired", false)) || ...
-            sixgr.control.isPDCCHGrantBindingRequired( ...
-                state.CfgMobility, direction);
+        % This method only receives scheduler-owned data grants. Their
+        % decoded DCI is intrinsic authority for PHY execution regardless
+        % of whether PDCCH was also selected as an initial-access gate.
+        gatingActive = true;
         [pdcchOk, pdcchReason] = sixgr.truth.CoupledTruthRuntime.pdcchCausalGrantDecodePassed(trialT);
         pdcchRow = table();
         if istable(trialT) && ~isempty(trialT)
@@ -5311,6 +5468,8 @@ methods(Static, Access=private)
         end
         row = sixgr.truth.CoupledTruthRuntime.emptyInitialAccessLifecycleRow();
         row.Step = double(height(state.InitialAccessLifecycleTraceTable) + 1);
+        row.SweepPointIndex = double(sixgr.util.structGet(state, ...
+            "SweepPointIndex", 1));
         row.UEIndex = double(ueIdx);
         row.RNTI = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
         row.ServingCell = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "CurrentServingIdx", ueIdx, NaN));
@@ -5345,9 +5504,13 @@ methods(Static, Access=private)
 
     function state = finalizeInitialAccessLifecycleIfReady(state, ueIdx)
         T = state.InitialAccessLifecycleTraceTable;
+        cfg = sixgr.util.structGet(state, "CfgMobility", struct());
+        requireRRCSetupComplete = logical(sixgr.util.structGet( ...
+            cfg, "initial_access.rrc.require_setup_complete", false));
         state.InitialAccessLifecycleTraceTable = ...
             sixgr.truth.deriveInitialAccessProcedureDelay(T, ...
-            "SlotDuration_s", double(sixgr.util.structGet(state, "SlotDuration_s", NaN)));
+            "SlotDuration_s", double(sixgr.util.structGet(state, "SlotDuration_s", NaN)), ...
+            "RequireRRCSetupComplete", requireRRCSetupComplete);
     end
 
     function tf = hasInitialAccessEvent(state, ueIdx, eventName)
@@ -5359,7 +5522,13 @@ methods(Static, Access=private)
         if ~(ismember("UEIndex", string(T.Properties.VariableNames)) && ismember("EventName", string(T.Properties.VariableNames)))
             return;
         end
-        tf = any(double(T.UEIndex) == double(ueIdx) & upper(strtrim(string(T.EventName))) == upper(strtrim(string(eventName))));
+        mask = double(T.UEIndex) == double(ueIdx) & ...
+            upper(strtrim(string(T.EventName))) == upper(strtrim(string(eventName)));
+        if ismember("SweepPointIndex", string(T.Properties.VariableNames))
+            mask = mask & double(T.SweepPointIndex) == double(sixgr.util.structGet( ...
+                state, "SweepPointIndex", 1));
+        end
+        tf = any(mask);
     end
 
     function feedback = latestFeedbackForDirection(state, ueIdx, direction)
@@ -6359,8 +6528,8 @@ methods(Static, Access=private)
         row.ServingCell = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "ServingCell", NaN), NaN);
         row.BaseStationID = row.ServingCell;
         row.GrantReason = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "GrantReason", ""), "");
-        row.IsRetransmission = sixgr.util.logicalAny(sixgr.util.structGet( ...
-            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", false));
+        row.IsRetransmission = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+            grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         row.HarqID = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "HarqID", NaN), NaN);
         row.NDI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "NDI", NaN), NaN);
         row.RV = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(sixgr.util.structGet(grant, "HARQ", struct()), "RV", NaN), NaN);
@@ -6376,6 +6545,21 @@ methods(Static, Access=private)
         row.CQITable = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "CQITable", ""), "");
         row.Modulation = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "Modulation", ""), "");
         row.TargetCodeRate = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "TargetCodeRate", NaN), NaN);
+        row.TBSInputModulation = sixgr.truth.CoupledTruthRuntime.firstString( ...
+            sixgr.util.structGet(grant, "TBSInputModulation", row.Modulation), row.Modulation);
+        row.TBSInputNumLayers = sixgr.truth.CoupledTruthRuntime.firstNumeric( ...
+            sixgr.util.structGet(grant, "TBSInputNumLayers", sixgr.util.structGet(grant, "NumLayers", NaN)), NaN);
+        row.TBSInputNPRB = sixgr.truth.CoupledTruthRuntime.firstNumeric( ...
+            sixgr.util.structGet(grant, "TBSInputNPRB", row.PRBCount), NaN);
+        row.TBSInputNREPerPRB = sixgr.truth.CoupledTruthRuntime.firstNumeric( ...
+            sixgr.util.structGet(grant, "TBSInputNREPerPRB", sixgr.util.structGet(grant, "NREPerPRB", NaN)), NaN);
+        row.TBSInputTargetCodeRate = sixgr.truth.CoupledTruthRuntime.firstNumeric( ...
+            sixgr.util.structGet(grant, "TBSInputTargetCodeRate", row.TargetCodeRate), NaN);
+        row.TBSInputXOverhead = sixgr.truth.CoupledTruthRuntime.firstNumeric( ...
+            sixgr.util.structGet(grant, "TBSInputXOverhead", sixgr.util.structGet(grant, "XOverhead", NaN)), NaN);
+        row.TBSInputSource = sixgr.truth.CoupledTruthRuntime.firstString( ...
+            sixgr.util.structGet(grant, "TBSInputSource", ...
+            sixgr.util.structGet(grant, "ResourceAccountingSource", "")), "");
         row.RawCQIDerivedMCS = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "RawCQIDerivedMCS", NaN), NaN);
         row.LinkAdaptationMCSIndex = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "LinkAdaptationMCSIndex", NaN), NaN);
         row.LinkAdaptationDecisionReason = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "LinkAdaptationDecisionReason", ""), "");
@@ -6656,9 +6840,8 @@ methods(Static, Access=private)
     end
 
     function grant = applyMeasuredFeedbackAMCToGrant(grant, feedback, scheduler, cfg, direction)
-        isRetransmission = sixgr.util.logicalAny(sixgr.util.structGet( ...
-            sixgr.util.structGet(grant, "HARQ", struct()), "IsRetransmission", ...
-            sixgr.util.structGet(grant, "IsRetransmission", false)));
+        isRetransmission = sixgr.phy.grant.isExplicitHARQRetransmission( ...
+            grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         if isRetransmission
             % HARQ feedback may inform a later new-data grant, but it must
             % never rewrite the modulation, code rate, TBS or spatial rank
@@ -6996,9 +7179,12 @@ methods(Static, Access=private)
         end
     end
 
-    function state = enqueueCSIReport(state, ueIdx, direction, row, cfgExecuted)
+    function state = enqueueCSIReport(state, ueIdx, direction, row, cfgExecuted, csiMeasurementRow)
         if nargin < 5 || ~isstruct(cfgExecuted)
             cfgExecuted = struct();
+        end
+        if nargin < 6 || ~istable(csiMeasurementRow)
+            csiMeasurementRow = table();
         end
         report = sixgr.truth.CoupledTruthRuntime.emptyCSIReportRow();
         report.Direction = char(upper(string(direction)));
@@ -7007,6 +7193,15 @@ methods(Static, Access=private)
         sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         report.SourceSlot = double(sourceSlot);
         report.DueSlot = double(sourceSlot + state.CSIFeedbackSlots);
+        report.EnqueuedSlot = double(state.CurrentSlot);
+        report.SourceSignal = "CSI-RS";
+        if upper(string(direction)) == "UL"
+            report.SourceSignal = "PUSCH";
+        end
+        report.MeasurementSource = "receiver_channel_estimate_and_post_equalization_measurement";
+        report.ReportIdentity = char(upper(string(direction)) + "_UE" + string(ueIdx) + ...
+            "_SRC" + string(sourceSlot) + "_DUE" + string(report.DueSlot));
+        report.DeliveryStatus = "pending_causal_feedback_delay";
         csi = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRow(row, state.CfgMobility, direction);
         report.CQI = double(csi.CQI);
         report.RI = double(csi.RI);
@@ -7021,6 +7216,28 @@ methods(Static, Access=private)
         report.MCSIndex = double(csi.MCSIndex);
         report.TargetCodeRate = double(csi.TargetCodeRate);
         report.Modulation = char(string(csi.Modulation));
+        if upper(string(direction)) == "DL" && ~isempty(csiMeasurementRow)
+            % Preserve the receiver-observed CSI-RS report verbatim.  Link
+            % adaptation may derive a different scheduler CQI/MCS later,
+            % but it must never overwrite the primary measured report.
+            report.CQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "CQI", NaN));
+            report.RI = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "RI", NaN));
+            report.PMI = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "PMI", NaN));
+            report.CRI = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "CRI", NaN));
+            report.SINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINR_dB", NaN));
+            report.SINRSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINRSource", "")));
+            report.SINRValueRole = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINRValueRole", "")));
+            report.SINRValueStatus = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINRValueStatus", "")));
+            report.MeasurementSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+                csiMeasurementRow, "MeasurementSource", "received_csirs_reference_signal_power")));
+            if isfinite(report.CQI) && report.CQI > 0
+                [modulation, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI( ...
+                    report.CQI, "", NaN, state.CfgMobility, direction);
+                report.MCSIndex = double(mcsIndex);
+                report.TargetCodeRate = double(targetCodeRate);
+                report.Modulation = char(string(modulation));
+            end
+        end
         report.CRCPass = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRCPass", NaN));
         report.RawCQIDerivedMCS = double(report.MCSIndex);
         report.RawCQIDerivedTargetCodeRate = double(report.TargetCodeRate);
@@ -7068,7 +7285,7 @@ methods(Static, Access=private)
             end
             latest = sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow();
             latest.Valid = true;
-            latest.CQI = report.CQI;
+            latest.CQI = sixgr.truth.CoupledTruthRuntime.schedulerResolvedCQI(report);
             latest.RI = report.RI;
             latest.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
                 report.PMI, state.CfgMobility, direction, latest.RI));
@@ -7129,6 +7346,8 @@ methods(Static, Access=private)
                 state.LatestDLFeedback(ueIdx) = latest;
             end
             state.PendingCSITable.Processed(end) = true;
+            state.PendingCSITable.DeliveredSlot(end) = double(state.CurrentSlot);
+            state.PendingCSITable.DeliveryStatus(end) = "delivered_to_runtime_scheduler";
         end
     end
 
@@ -7155,6 +7374,7 @@ methods(Static, Access=private)
         report.InnerLoopEnabled = false;
         report.LinkAdaptationStateUpdateCount = NaN;
         report.SchedulerCQIRawCQI = double(report.CQI);
+        report.SchedulerResolvedCQI = NaN;
         report.SchedulerAdjustedSINR_dB = NaN;
         report.SchedulerSINRBackoff_dB = NaN;
         report.SchedulerCQISource = "";
@@ -7232,9 +7452,9 @@ methods(Static, Access=private)
         decisionValid = logical(sixgr.util.structGet(decision, "Valid", false));
         decisionCQI = double(sixgr.util.structGet(decision, "ResolvedCQI", NaN));
         if decisionValid && isfinite(decisionCQI) && decisionCQI > 0
-            report.CQI = double(decisionCQI);
+            report.SchedulerResolvedCQI = double(decisionCQI);
         elseif ~decisionValid
-            report.CQI = NaN;
+            report.SchedulerResolvedCQI = NaN;
             report.MCSIndex = NaN;
             report.TargetCodeRate = NaN;
             report.Modulation = "";
@@ -7462,9 +7682,16 @@ methods(Static, Access=private)
 
         nmse_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["NMSE_dB","PilotResidualNMSE_dB","ChannelEstimatePilotResidualNMSE_dB","TrueChannelNMSE_dB"], NaN);
-        mismatch_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
-            ["MismatchSensitivity_dB","ChannelAgingLoss_dB"], NaN);
-        if ~(isfinite(nmse_dB) || (isfinite(mismatch_dB) && mismatch_dB > 0))
+        % MismatchSensitivity_dB is the standard deviation of channel-
+        % magnitude samples in dB.  It is a dispersion diagnostic, not a
+        % measured loss, and can become very large around legitimate MIMO
+        % spatial nulls.  Treating it as an additive SINR penalty clamps AMC
+        % by the configured maximum guard even when the receiver has valid
+        % post-equalization evidence.  Only an actual measured aging loss is
+        % dimensionally valid as an additive penalty here.
+        agingLoss_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
+            ["ChannelAgingLoss_dB"], NaN);
+        if ~(isfinite(nmse_dB) || (isfinite(agingLoss_dB) && agingLoss_dB > 0))
             return;
         end
 
@@ -7476,16 +7703,16 @@ methods(Static, Access=private)
                 nmsePenalty_dB = 10 * log10(1 + gamma * nmseLin);
             end
         end
-        mismatchPenalty_dB = max(0, double(mismatch_dB));
-        if ~isfinite(mismatchPenalty_dB)
-            mismatchPenalty_dB = 0;
+        agingPenalty_dB = max(0, double(agingLoss_dB));
+        if ~isfinite(agingPenalty_dB)
+            agingPenalty_dB = 0;
         end
         maxPenalty_dB = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.maxDecoderQualityGuardPenalty_dB", ...
             sixgr.util.structGet(cfg, "phy.linkAdaptation.maxChannelEstimationGuardPenalty_dB", 18)));
         if ~(isfinite(maxPenalty_dB) && maxPenalty_dB >= 0)
             maxPenalty_dB = 18;
         end
-        totalPenalty_dB = min(maxPenalty_dB, max(0, nmsePenalty_dB + mismatchPenalty_dB));
+        totalPenalty_dB = min(maxPenalty_dB, max(0, nmsePenalty_dB + agingPenalty_dB));
         if ~(isfinite(totalPenalty_dB) && totalPenalty_dB > 0)
             return;
         end
@@ -7494,7 +7721,7 @@ methods(Static, Access=private)
             ";base_sinr_db=" + string(sprintf('%.3f', baseSINR_dB)) + ...
             ";nmse_db=" + string(sprintf('%.3f', nmse_dB)) + ...
             ";nmse_penalty_db=" + string(sprintf('%.3f', nmsePenalty_dB)) + ...
-            ";mismatch_penalty_db=" + string(sprintf('%.3f', mismatchPenalty_dB)) + ...
+            ";channel_aging_penalty_db=" + string(sprintf('%.3f', agingPenalty_dB)) + ...
             ";total_penalty_db=" + string(sprintf('%.3f', totalPenalty_dB));
     end
 
@@ -10014,7 +10241,9 @@ methods(Static, Access=private)
     end
 
     function row = emptyDirectionStatRow()
-        row = struct("RNTI", NaN, "Frames", 0, "CRCSum", 0, "GoodBitsSum", 0, "SINRSum", 0, "SINRCount", 0);
+        row = struct("RNTI", NaN, "Frames", 0, "CRCSum", 0, ...
+            "ScheduledBitsSum", 0, "OfferedBitsSum", 0, ...
+            "GoodBitsSum", 0, "SINRSum", 0, "SINRCount", 0);
     end
 
     function row = emptyServingRow()
@@ -10350,8 +10579,18 @@ methods(Static, Access=private)
         hasMsgEvidence = isfinite(preambleTx) | isfinite(rarnti) | isfinite(timingAdvance) | ...
             preambleDetected | msg2Ok | msg3Ok | msg4Ok;
         hasExplicitFullRA = raProcedure == "contention_based_four_step" | strlength(fullSource) > 0;
-        fullMask = (raCompleted | hasExplicitFullRA) & hasMsgEvidence;
-        if ~any(fullMask)
+        fullAttemptMask = hasExplicitFullRA & hasMsgEvidence;
+        rrcRequired = sixgr.truth.CoupledTruthRuntime.logicalVectorOrDefault( ...
+            sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, ...
+            "RequireRRCSetupComplete", false(n, 1)), n, false);
+        rrcOk = sixgr.truth.CoupledTruthRuntime.logicalVectorOrDefault( ...
+            sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, ...
+            "RRCSetupCompleteDecoded", false(n, 1)), n, false) & ...
+            sixgr.truth.CoupledTruthRuntime.logicalVectorOrDefault( ...
+            sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, ...
+            "RRCConnected", false(n, 1)), n, false);
+        completedMask = fullAttemptMask & raCompleted & (~rrcRequired | rrcOk);
+        if ~any(fullAttemptMask)
             return;
         end
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "SourceClassification", "", false);
@@ -10361,13 +10600,32 @@ methods(Static, Access=private)
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeConsumer", "", false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeEvidenceSource", "", false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueDefinition", "", false);
-        T.SourceClassification(fullMask) = "active_integrated";
-        T.RuntimeMaterializationStatus(fullMask) = "active_integrated_four_step_ra_waveform_msg1_msg2_msg3_msg4";
-        T.ControlGatingEffect(fullMask) = "random_access_gate_full_four_step_ra";
-        T.RuntimeStateConsumer(fullMask) = "CoupledTruthRuntime.applyPRACHTrial";
-        T.RuntimeConsumer(fullMask) = "CoupledTruthRuntime.applyPRACHTrial";
-        T.RuntimeEvidenceSource(fullMask) = "sixgr.phy.ra.runFourStepRA";
-        T.ValueDefinition(fullMask) = "canonical PRACH row backed by Msg1 PRACH, Msg2 RAR, Msg3 PUSCH, and Msg4 contention-resolution waveform evidence";
+        % Classification describes execution provenance, not decoder
+        % outcome. A waveform-backed attempt that terminates after a missed
+        % Msg1 detection is still integrated truth; its status records the
+        % causal termination without claiming completion.
+        T.SourceClassification(fullAttemptMask) = "active_integrated";
+        T.RuntimeMaterializationStatus(fullAttemptMask) = ...
+            "active_integrated_four_step_ra_waveform_attempt";
+        T.RuntimeMaterializationStatus(fullAttemptMask & ~preambleDetected) = ...
+            "active_integrated_four_step_ra_waveform_terminated_at_msg1_detection";
+        T.RuntimeMaterializationStatus(fullAttemptMask & preambleDetected & ~raCompleted) = ...
+            "active_integrated_four_step_ra_waveform_terminated_before_msg4_completion";
+        T.RuntimeMaterializationStatus(fullAttemptMask & raCompleted & rrcRequired & ~rrcOk) = ...
+            "active_integrated_initial_access_waveform_terminated_before_rrc_setup_complete";
+        T.RuntimeMaterializationStatus(completedMask) = "active_integrated_four_step_ra_waveform_msg1_msg2_msg3_msg4";
+        T.RuntimeMaterializationStatus(completedMask & rrcRequired) = ...
+            "active_integrated_initial_access_waveform_msg1_msg2_msg3_msg4_rrc_setup_complete";
+        T.ControlGatingEffect(fullAttemptMask) = "random_access_gate_full_four_step_ra_attempt";
+        T.ControlGatingEffect(completedMask) = "random_access_gate_full_four_step_ra";
+        T.RuntimeStateConsumer(fullAttemptMask) = "CoupledTruthRuntime.applyPRACHTrial";
+        T.RuntimeConsumer(fullAttemptMask) = "CoupledTruthRuntime.applyPRACHTrial";
+        T.RuntimeEvidenceSource(fullAttemptMask) = "sixgr.phy.ra.runFourStepRA";
+        T.ValueDefinition(fullAttemptMask) = ...
+            "canonical four-step random-access waveform attempt; receiver outcomes and causal termination stage are preserved";
+        T.ValueDefinition(completedMask) = "canonical PRACH row backed by Msg1 PRACH, Msg2 RAR, Msg3 PUSCH, and Msg4 contention-resolution waveform evidence";
+        T.ValueDefinition(completedMask & rrcRequired) = ...
+            "canonical initial-access row backed by Msg1 through Msg4 plus decoded SRB1 RRCSetupComplete PUSCH/UL-SCH waveform evidence";
     end
 
     function writeRAEvidenceTables(layout, tables)
@@ -10376,7 +10634,8 @@ methods(Static, Access=private)
         end
         names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
             "msg2_rar_trials","msg2_pdcch_candidates","msg3_pusch_trials", ...
-            "msg4_contention_resolution","ra_timer_events","ra_negative_trials", ...
+            "msg4_contention_resolution","rrc_connection_events","rrc_setup_complete", ...
+            "ra_timer_events","ra_negative_trials", ...
             "ra_collision_trials","ra_oracle_guard","ra_runtime_stage_waveforms"];
         for i = 1:numel(names)
             f = char(names(i));
@@ -10571,16 +10830,17 @@ methods(Static, Access=private)
         end
         controlPath = fullfile(layout.ControlCSVDir, fileName);
         airPath = fullfile(layout.AirInterfaceCSVDir, fileName);
+        preserveSchema = strcmpi(string(fileName), "csi_rs_trials.csv");
         if istable(T) && ~isempty(T)
-            sixgr.util.csvWriteTable(controlPath, T);
-            sixgr.util.csvWriteTable(airPath, T);
+            sixgr.util.csvWriteTable(controlPath, T, "PreserveSchema", preserveSchema);
+            sixgr.util.csvWriteTable(airPath, T, "PreserveSchema", preserveSchema);
             return;
         end
         if exist(controlPath, "file") ~= 2
-            sixgr.util.csvWriteTable(controlPath, T);
+            sixgr.util.csvWriteTable(controlPath, T, "PreserveSchema", preserveSchema);
         end
         if exist(airPath, "file") ~= 2
-            sixgr.util.csvWriteTable(airPath, T);
+            sixgr.util.csvWriteTable(airPath, T, "PreserveSchema", preserveSchema);
         end
     end
 
@@ -10590,9 +10850,12 @@ methods(Static, Access=private)
             "DL_FrameCount", NaN, "UL_FrameCount", NaN, ...
             "DL_CoverageStatus", "", "UL_CoverageStatus", "", ...
             "DL_Throughput_Mbps", NaN, "UL_Throughput_Mbps", NaN, ...
+            "DL_OfferedThroughput_Mbps", NaN, "UL_OfferedThroughput_Mbps", NaN, ...
+            "DL_Goodput_Mbps", NaN, "UL_Goodput_Mbps", NaN, ...
             "DL_BLER", NaN, "UL_BLER", NaN, ...
             "DL_MeanMeasuredSINR_dB", NaN, "UL_MeanMeasuredSINR_dB", NaN, ...
             "UserThroughput_Mbps", NaN, ...
+            "UserOfferedThroughput_Mbps", NaN, "UserGoodput_Mbps", NaN, ...
             "DL_HARQFailureRate", NaN, "UL_HARQFailureRate", NaN, ...
             "DL_HARQObservationCount", NaN, "UL_HARQObservationCount", NaN, ...
             "HARQFailureRate", NaN, "HARQObservationCount", NaN);
@@ -10955,10 +11218,33 @@ methods(Static, Access=private)
             "Notes", "");
     end
 
+    function cqi = schedulerResolvedCQI(row)
+        cqi = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row, "SchedulerResolvedCQI", NaN));
+        if isfinite(cqi) && cqi > 0
+            return;
+        end
+        status = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row, "MCSValueStatus", ""))));
+        if contains(status, "unavailable") || contains(status, "rejected") || ...
+                contains(status, "failed")
+            cqi = NaN;
+            return;
+        end
+        rawCQI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CQI", NaN));
+        if isfinite(rawCQI) && rawCQI > 0
+            cqi = rawCQI;
+        else
+            cqi = NaN;
+        end
+    end
+
     function row = emptyCSIReportRow()
         row = struct( ...
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
-            "SourceSlot", NaN, "DueSlot", NaN, ...
+            "SourceSlot", NaN, "DueSlot", NaN, "EnqueuedSlot", NaN, "DeliveredSlot", NaN, ...
+            "SourceSignal", "", "MeasurementSource", "", "ReportIdentity", "", ...
+            "DeliveryStatus", "not_enqueued", ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", "SINRValueStatus", "", ...
             "MCSIndex", NaN, "TargetCodeRate", NaN, ...
@@ -10982,7 +11268,8 @@ methods(Static, Access=private)
             "SpatialSignatureReciprocityMode", "", ...
             "OuterLoopEnabled", false, "InnerLoopEnabled", false, ...
             "LinkAdaptationStateUpdateCount", NaN, ...
-            "SchedulerCQIRawCQI", NaN, "SchedulerAdjustedSINR_dB", NaN, ...
+            "SchedulerCQIRawCQI", NaN, "SchedulerResolvedCQI", NaN, ...
+            "SchedulerAdjustedSINR_dB", NaN, ...
             "SchedulerSINRBackoff_dB", NaN, "SchedulerCQISource", "", ...
             "CRCPass", NaN, "ServingCell", NaN, "Processed", false);
     end
@@ -11148,7 +11435,8 @@ methods(Static, Access=private)
 
     function row = emptyInitialAccessLifecycleRow()
         row = struct( ...
-            "Step", NaN, "UEIndex", NaN, "RNTI", NaN, "ServingCell", NaN, ...
+            "Step", NaN, "SweepPointIndex", NaN, ...
+            "UEIndex", NaN, "RNTI", NaN, "ServingCell", NaN, ...
             "Frame", NaN, "Slot", NaN, "Time_s", NaN, ...
             "Direction", "", "StageName", "", "EventName", "", "LifecycleState", "", "StageStatus", "", ...
             "SourceArtifact", "", "SourceRow", NaN, ...
@@ -11170,6 +11458,9 @@ methods(Static, Access=private)
             "SymbolStart", NaN, "NumSymbols", NaN, ...
             "TBSBits", NaN, "TBSBytes", NaN, ...
             "MCSIndex", NaN, "MCSTable", "", "CQITable", "", "Modulation", "", "TargetCodeRate", NaN, ...
+            "TBSInputModulation", "", "TBSInputNumLayers", NaN, "TBSInputNPRB", NaN, ...
+            "TBSInputNREPerPRB", NaN, "TBSInputTargetCodeRate", NaN, ...
+            "TBSInputXOverhead", NaN, "TBSInputSource", "", ...
             "RawCQIDerivedMCS", NaN, "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
             "CQIBasedMCS", NaN, "SmoothedCQI", NaN, "InstantaneousCQIMCS", NaN, "DeltaMCS", NaN, "StaticDeltaMCS", NaN, ...
             "AMCMode", "", "OuterLoopEnabled", false, "OuterLoopApplied", false, ...
@@ -11318,14 +11609,27 @@ methods(Static, Access=private)
             row,"PUCCHGrantId","runtime_harq"));
         connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
             cfgU,ueState,expectedAck,frameState);
+        sixgr.truth.CoupledTruthRuntime.assertPUCCHAssignmentMatchesGrant( ...
+            connected.Assignment,row,"desired");
         carrier=sixgr.phy.grid.makeCarrier(cfgU);
         channelProfile = sixgr.channel.resolveConcreteProfile(cfgU);
+        [state,pucchInterferenceBundle] = ...
+            sixgr.truth.CoupledTruthRuntime.buildPUCCHInterferenceBundle( ...
+            state,feedbackRow);
+        [state,pucchChannelState] = ...
+            sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
+            state,cfgU,ueIdx,"UL");
         trial = sixgr.link.runPUCCHWaveformTrial(cfgU, ...
             "Carrier",carrier,"Assignment",connected.Assignment, ...
             "Report",connected.Report, ...
             "ReceiverContext",connected.ReceiverContext, ...
             "SNR_dB",double(pucchSNR_dB), ...
-            "ChannelProfile",channelProfile,"Seed",trialIdx);
+            "ChannelProfile",channelProfile,"Seed",trialIdx, ...
+            "InitialRuntimeChannelState",pucchChannelState, ...
+            "InterferenceBundle",pucchInterferenceBundle);
+        state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
+            state,sixgr.util.structGet(trial, ...
+            "UpdatedRuntimeChannelState",struct()));
         observed.DecodeOk = logical(sixgr.util.structGet(trial, "Ok", false));
         observed.DTXFlag = logical(sixgr.util.structGet(trial, "DTXFlag", ...
             sixgr.util.structGet(trial,"ReceiverDTX",false))) || ...
@@ -11502,7 +11806,31 @@ methods(Static, Access=private)
             "PUCCHReceiverEvidenceSource", char(string(sixgr.util.structGet(trial, "PUCCHReceiverEvidenceSource", ""))), ...
             "PUCCHGridHash", char(string(sixgr.util.structGet(trial, "PUCCHGridHash", ""))), ...
             "PUCCHWaveformHash", char(string(sixgr.util.structGet(trial, "PUCCHWaveformHash", ""))), ...
+            "PUCCHTxOutputWaveformHash", char(string(sixgr.util.structGet(trial, "PUCCHTxOutputWaveformHash", ""))), ...
+            "PUCCHAppliedTxPower_dBm", double(sixgr.util.structGet(trial, "PUCCHAppliedTxPower_dBm", NaN)), ...
+            "PUCCHMeasuredTxOutputPower_dBm", double(sixgr.util.structGet(trial, "PUCCHMeasuredTxOutputPower_dBm", NaN)), ...
+            "PUCCHTxPowerClosureError_dB", double(sixgr.util.structGet(trial, "PUCCHTxPowerClosureError_dB", NaN)), ...
+            "PUCCHWaveformAmplitudeUnit", char(string(sixgr.util.structGet(trial, "PUCCHWaveformAmplitudeUnit", ""))), ...
+            "TxRFExecutionStatus", char(string(sixgr.util.structGet(trial, "TxRFExecutionStatus", ""))), ...
+            "TxRFStageOrder", char(string(sixgr.util.structGet(trial, "TxRFStageOrder", ""))), ...
+            "TxRFAppliedStageCount", double(sixgr.util.structGet(trial, "TxRFAppliedStageCount", 0)), ...
             "ChannelModel", char(string(sixgr.util.structGet(trial, "ChannelModel", ""))), ...
+            "RuntimeIntegrationMode", char(string(sixgr.util.structGet(trial, "RuntimeIntegrationMode", ""))), ...
+            "RuntimeTransportMode", char(string(sixgr.util.structGet(trial, "RuntimeTransportMode", ""))), ...
+            "RuntimeStageWaveformsRequired", logical(sixgr.util.structGet(trial, "RuntimeStageWaveformsRequired", true)), ...
+            "RuntimeStageWaveformsUsed", logical(sixgr.util.structGet(trial, "RuntimeStageWaveformsUsed", false)), ...
+            "RuntimeSelfLoopWaveformsUsed", logical(sixgr.util.structGet(trial, "RuntimeSelfLoopWaveformsUsed", false)), ...
+            "RuntimeChannelStateUsed", logical(sixgr.util.structGet(trial, "RuntimeChannelStateUsed", false)), ...
+            "RuntimeChannelLinkKeys", char(string(sixgr.util.structGet(trial, "RuntimeChannelLinkKeys", ""))), ...
+            "RuntimeNoiseApplied", logical(sixgr.util.structGet(trial, "RuntimeNoiseApplied", false)), ...
+            "RuntimeNoiseVarianceMean", double(sixgr.util.structGet(trial, "RuntimeNoiseVarianceMean", NaN)), ...
+            "RuntimeStageCount", double(sixgr.util.structGet(trial, "RuntimeStageCount", NaN)), ...
+            "RuntimeChannelPhysicalTxElements", double(sixgr.util.structGet(trial, "Channel.RuntimeChannelPhysicalTxElements", NaN)), ...
+            "RuntimeChannelNumRxAntennas", double(sixgr.util.structGet(trial, "Channel.RuntimeChannelNumRxAntennas", NaN)), ...
+            "ChannelUsesSameRuntimeAntennaAssumptions", logical(sixgr.util.structGet(trial, "Channel.ChannelUsesSameRuntimeAntennaAssumptions", false)), ...
+            "ChannelUsesCountOnlyAntennaModel", logical(sixgr.util.structGet(trial, "Channel.ChannelUsesCountOnlyAntennaModel", false)), ...
+            "ChannelArrayHandlingStatus", char(string(sixgr.util.structGet(trial, "Channel.ChannelArrayHandlingStatus", ""))), ...
+            "ChannelArrayHandlingBlocker", char(string(sixgr.util.structGet(trial, "Channel.ChannelArrayHandlingBlocker", ""))), ...
             "DopplerHz", double(sixgr.util.structGet(trial, "DopplerHz", NaN)), ...
             "TimingEstimateUsed", logical(sixgr.util.structGet(trial, "TimingEstimateUsed", false)), ...
             "UseIdealTimingSync", logical(sixgr.util.structGet(trial, "UseIdealTimingSync", false)), ...
@@ -12114,13 +12442,18 @@ methods(Static, Access=private)
             "ControlResourceSource","typed_rrc_resource_set_and_decoded_pri");
     end
 
-    function bundle = buildPUCCHInterferenceBundle(state, feedbackRow)
+    function [state,bundle] = buildPUCCHInterferenceBundle(state, feedbackRow)
         bundle = struct([]);
         mode = lower(strtrim(string(sixgr.util.structGet(state.CfgMobility, "run.interferenceExecutionMode", "none"))));
         if mode ~= "full_per_link_channel_waveform_sum"
             return;
         end
-        grants = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
+        grants = sixgr.util.structGet(state, ...
+            "PUCCHCurrentSlotGrantSnapshot",table());
+        frozenSlotSet = istable(grants) && ~isempty(grants);
+        if ~frozenSlotSet
+            grants = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
+        end
         if ~(istable(grants) && ~isempty(grants) && istable(feedbackRow) && height(feedbackRow) >= 1)
             return;
         end
@@ -12134,9 +12467,17 @@ methods(Static, Access=private)
         end
         canceled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
             grants, "CanceledAtSweepBoundary", false(height(grants), 1)));
-        mask = ~logical(grants.GrantExecutedFlag) & ~canceled & ...
+        mask = ~canceled & ...
             abs(double(grants.ScheduledAbsoluteSlot) - dueSlot) < 1e-9;
-        if ismember("UEIndex", string(grants.Properties.VariableNames)) && isfinite(currentUE)
+        if ~frozenSlotSet
+            mask = mask & ~logical(grants.GrantExecutedFlag);
+        end
+        currentGrantId = string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            currentRow,"PUCCHGrantId",""));
+        if strlength(strtrim(currentGrantId)) > 0 && ...
+                ismember("PUCCHGrantId",string(grants.Properties.VariableNames))
+            mask = mask & string(grants.PUCCHGrantId) ~= currentGrantId;
+        elseif ismember("UEIndex", string(grants.Properties.VariableNames)) && isfinite(currentUE)
             mask = mask & abs(double(grants.UEIndex) - currentUE) > 1e-9;
         end
         peers = grants(mask, :);
@@ -12146,6 +12487,8 @@ methods(Static, Access=private)
         count = 0;
         for i = 1:height(peers)
             peer = peers(i, :);
+            resourceOverlap = sixgr.truth.CoupledTruthRuntime.pucchResourcesOverlap( ...
+                currentRow,peer);
             ueIdx = round(double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "UEIndex", NaN)));
             if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(sixgr.util.structGet(state, "NumUsers", 0)))
                 continue;
@@ -12157,8 +12500,8 @@ methods(Static, Access=private)
             if ~(ueIdx <= size(state.LargeScaleState.Pathloss_dB, 1))
                 continue;
             end
-            [victimBsEntry, victimUeEntry] = sixgr.truth.CoupledTruthRuntime.runtimeAntennaEntriesForLink( ...
-                state, max(1, round(double(currentUE))), currentServingCell);
+            [victimBsEntry, interfererUeEntry] = sixgr.truth.CoupledTruthRuntime.runtimeAntennaEntriesForLink( ...
+                state, ueIdx, currentServingCell);
             cfgI = state.CfgMobility;
             [cfgI, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgI, state, ueIdx, "UL");
             cfgI = sixgr.util.structSet(cfgI, "phy.rnti", double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RNTI", NaN)));
@@ -12185,8 +12528,8 @@ methods(Static, Access=private)
             bundle(count).BeamGain_dB = double(state.LargeScaleState.BeamGain_dB(ueIdx, currentServingCell)); %#ok<AGROW>
             bundle(count).VictimServingBSAntenna = sixgr.util.structGet(victimBsEntry, "Antenna", struct()); %#ok<AGROW>
             bundle(count).VictimServingBSAntennaMeta = sixgr.util.structGet(victimBsEntry, "Metadata", struct()); %#ok<AGROW>
-            bundle(count).VictimUEAntenna = sixgr.util.structGet(victimUeEntry, "Antenna", struct()); %#ok<AGROW>
-            bundle(count).VictimUEAntennaMeta = sixgr.util.structGet(victimUeEntry, "Metadata", struct()); %#ok<AGROW>
+            bundle(count).InterfererUEAntenna = sixgr.util.structGet(interfererUeEntry, "Antenna", struct()); %#ok<AGROW>
+            bundle(count).InterfererUEAntennaMeta = sixgr.util.structGet(interfererUeEntry, "Metadata", struct()); %#ok<AGROW>
             bundle(count).InterferenceMode = char(string(sixgr.truth.CoupledTruthRuntime.resolveInterferenceExecutionMode(cfgI, state.MultiUser))); %#ok<AGROW>
             if sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(peer)
                 bundle(count).HARQACKState = "ACK"; %#ok<AGROW>
@@ -12201,7 +12544,12 @@ methods(Static, Access=private)
             bundle(count).RNTI = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "RNTI", NaN)); %#ok<AGROW>
             bundle(count).ControlResourceSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))); %#ok<AGROW>
             bundle(count).PUCCHResourceId = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(peer, "PUCCHResourceId", ""))); %#ok<AGROW>
-            [contributionWaveform, contributionMeta] = sixgr.truth.CoupledTruthRuntime.buildPUCCHSharedSlotContribution( ...
+            bundle(count).PUCCHPRBStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer,"PUCCHPRBStart",NaN)); %#ok<AGROW>
+            bundle(count).PUCCHPRBCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer,"PUCCHPRBCount",NaN)); %#ok<AGROW>
+            bundle(count).PUCCHSymbolStart = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer,"PUCCHSymbolStart",NaN)); %#ok<AGROW>
+            bundle(count).PUCCHNumSymbols = double(sixgr.truth.CoupledTruthRuntime.rowValue(peer,"PUCCHNumSymbols",NaN)); %#ok<AGROW>
+            bundle(count).ResourceOverlapsVictim = logical(resourceOverlap); %#ok<AGROW>
+            [state,contributionWaveform,contributionMeta] = sixgr.truth.CoupledTruthRuntime.buildPUCCHSharedSlotContribution( ...
                 state, cfgI, bundle(count), ueIdx, currentServingCell);
             bundle(count).SharedSlotContributionWaveform = contributionWaveform; %#ok<AGROW>
             bundle(count).ContributionSampleRate_Hz = double(contributionMeta.SampleRate_Hz); %#ok<AGROW>
@@ -12220,7 +12568,61 @@ methods(Static, Access=private)
         end
     end
 
-    function [contributionWaveform, meta] = buildPUCCHSharedSlotContribution(state, cfgIn, bundleEntry, ueIdx, victimCell)
+    function tf = pucchResourcesOverlap(a,b)
+        aPrb = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            a,"PUCCHPRBStart",NaN));
+        aNPrb = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            a,"PUCCHPRBCount",NaN));
+        aSym = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            a,"PUCCHSymbolStart",NaN));
+        aNSym = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            a,"PUCCHNumSymbols",NaN));
+        bPrb = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            b,"PUCCHPRBStart",NaN));
+        bNPrb = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            b,"PUCCHPRBCount",NaN));
+        bSym = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            b,"PUCCHSymbolStart",NaN));
+        bNSym = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            b,"PUCCHNumSymbols",NaN));
+        values = [aPrb aNPrb aSym aNSym bPrb bNPrb bSym bNSym];
+        if any(~isfinite(values)) || any([aNPrb aNSym bNPrb bNSym] < 1)
+            error("sixgr:truth:InvalidPUCCHInterferenceResource", ...
+                ["Shared-slot PUCCH interference requires exact finite " ...
+                 "PRB and symbol intervals for victim and peer grants."]);
+        end
+        prbOverlap = aPrb < bPrb+bNPrb && bPrb < aPrb+aNPrb;
+        symbolOverlap = aSym < bSym+bNSym && bSym < aSym+aNSym;
+        tf = logical(prbOverlap && symbolOverlap);
+    end
+
+    function assertPUCCHAssignmentMatchesGrant(assignment,grantRow,role)
+        if ~isa(assignment,"sixgr.phy.pucch.PUCCHTransmissionAssignment")
+            error("sixgr:truth:PUCCHAssignmentTypeMismatch", ...
+                "The %s PUCCH execution does not carry a typed assignment.",char(role));
+        end
+        d = assignment.Resource.Data;
+        expected = [ ...
+            double(sixgr.truth.CoupledTruthRuntime.rowValue(grantRow,"ResolvedFormat",NaN)), ...
+            double(sixgr.truth.CoupledTruthRuntime.rowValue(grantRow,"PUCCHPRBStart",NaN)), ...
+            double(sixgr.truth.CoupledTruthRuntime.rowValue(grantRow,"PUCCHPRBCount",NaN)), ...
+            double(sixgr.truth.CoupledTruthRuntime.rowValue(grantRow,"PUCCHSymbolStart",NaN)), ...
+            double(sixgr.truth.CoupledTruthRuntime.rowValue(grantRow,"PUCCHNumSymbols",NaN))];
+        actual = [double(d.Format) double(d.StartPRB) double(d.NumPRBs) ...
+            double(d.StartSymbol) double(d.NumSymbols)];
+        expectedId = string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            grantRow,"PUCCHResourceId",""));
+        if any(~isfinite(expected)) || any(actual ~= expected) || ...
+                strlength(strtrim(expectedId)) == 0 || string(d.ID) ~= expectedId
+            error("sixgr:truth:PUCCHFrozenResourceMismatch", ...
+                ["The %s PUCCH typed assignment differs from its frozen grant: " ...
+                 "resource expected=%s actual=%s, format/PRB/symbol expected=%s actual=%s."], ...
+                char(role),char(expectedId),char(string(d.ID)), ...
+                char(mat2str(expected)),char(mat2str(actual)));
+        end
+    end
+
+    function [state,contributionWaveform,meta] = buildPUCCHSharedSlotContribution(state, cfgIn, bundleEntry, ueIdx, victimCell)
         ackState = upper(string(sixgr.util.structGet( ...
             bundleEntry, "HARQACKState", "")));
         if ~ismember(ackState,["ACK","NACK"])
@@ -12267,32 +12669,102 @@ methods(Static, Access=private)
             "TriggeringEventID","runtime_interfering_harq");
         connected = sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
             cfgIn,ueState,ack,frameState);
+        sixgr.truth.CoupledTruthRuntime.assertPUCCHAssignmentMatchesGrant( ...
+            connected.Assignment,bundleEntry,"interfering");
         carrier = sixgr.phy.grid.makeCarrier(cfgIn);
         tx = sixgr.phy.pucch.PUCCHTransmitter.transmit( ...
             carrier,connected.Assignment,connected.Report);
-        txInfo = struct("OFDMInfo",tx.OFDMInfo);
+        txInfo = struct("OFDM",tx.OFDMInfo);
         sampleRateHz = sixgr.truth.CoupledTruthRuntime.resolvePUCCHContributionSampleRate(tx, txInfo);
         cfgContribution = sixgr.truth.CoupledTruthRuntime.configurePUCCHContributionLinkBudget( ...
             cfgIn, state, ueIdx, victimCell, bundleEntry);
-        [contributionWaveform, replay] = sixgr.link.applyWaveformImpairments(tx.Waveform, cfgContribution, sampleRateHz, ...
-            "Endpoint", "rx", ...
-            "UseLegacyGlobalConfig", true, ...
-            "ApplyPA", false, ...
-            "ApplyADC", true);
+        cfgContribution = sixgr.util.structSet(cfgContribution, ...
+            "lls6g.userContext.RuntimeSignalFamily","PUCCH");
+        [txWaveform,cfgContribution,txBoundary] = ...
+            sixgr.link.preparePUCCHTransmitWaveform(tx,cfgContribution);
+        [state,initialChannelState] = ...
+            sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControlImpl( ...
+            state,cfgContribution,ueIdx,"UL",victimCell);
+        % Same-slot interferers are concurrent.  Materialize a new
+        % canonical link once, deep-fork its mutable channel object at the
+        % slot origin, and execute only the fork.  This prevents the
+        % interference observation from advancing the state subsequently
+        % used by the peer's desired waveform.
+        if sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfgContribution)
+            if ~logical(sixgr.util.structGet(initialChannelState,"Materialized",false))
+                canonicalTruthState = sixgr.link.initWaveformTruthChannelState( ...
+                    cfgContribution,tx,txInfo, ...
+                    "InitialRuntimeChannelState",initialChannelState);
+                initialChannelState = sixgr.util.structGet( ...
+                    canonicalTruthState,"RuntimeChannelState",initialChannelState);
+                state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelStateImpl( ...
+                    state,initialChannelState);
+            end
+            forkedChannelState = sixgr.channel.ChannelFactory.forkRuntimeChannelState( ...
+                initialChannelState);
+            truthState = sixgr.link.initWaveformTruthChannelState( ...
+                cfgContribution,tx,txInfo, ...
+                "InitialRuntimeChannelState",forkedChannelState);
+        else
+            truthState = sixgr.link.initWaveformTruthChannelState( ...
+                cfgContribution,tx,txInfo);
+        end
+        [channelWaveform,channelReplay,truthState] = ...
+            sixgr.link.applyRuntimeFadingChannel(txWaveform,truthState);
+        [contributionWaveform,rfReplay] = ...
+            sixgr.link.applyWaveformImpairments( ...
+            channelWaveform,cfgContribution,sampleRateHz, ...
+            "ApplyRFChain",false);
+        replay = channelReplay;
+        rfFields = fieldnames(rfReplay);
+        for rfIdx = 1:numel(rfFields)
+            replay.(rfFields{rfIdx}) = rfReplay.(rfFields{rfIdx});
+        end
+        replay.PUCCHTransmitBoundary = txBoundary;
+        replay.PUCCHAppliedTxPower_dBm = double(txBoundary.AppliedPower_dBm);
+        replay.PUCCHMeasuredTxOutputPower_dBm = double( ...
+            txBoundary.MeasuredTxOutputPower_dBm);
+        replay.PUCCHTxPowerClosureError_dB = double( ...
+            txBoundary.PowerClosureError_dB);
+        replay.TxRFExecutionStatus = char(string(txBoundary.TXRFExecutionStatus));
+        replay.TxRFStageOrder = char(string(txBoundary.TXRFStageOrder));
+        replay.TxRFAppliedStageCount = double(txBoundary.TXRFAppliedStageCount);
+        runtimeState = sixgr.util.structGet(truthState, ...
+            "RuntimeChannelState",struct());
+        runtimeMeta = sixgr.util.structGet(runtimeState,"Meta",struct());
         meta = struct( ...
             "SampleRate_Hz", double(sampleRateHz), ...
             "RxPower_dBm", double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN)), ...
-            "Source", "runtime_prepropagated_pucch_shared_slot_receiver_contribution", ...
-            "ChannelObjectSource", "runtime_large_scale_link_budget_and_rf_chain", ...
-            "ChannelObjectClass", "sample_domain_large_scale_pucch_contribution", ...
-            "ChannelArrayHandlingStatus", "shared_slot_receiver_contribution_precomputed", ...
-            "ChannelArrayHandlingBlocker", "", ...
-            "ChannelGeometryCouplingLevel", "runtime_geometry_large_scale_state", ...
-            "GeometryAdapterType", "runtime_state", ...
-            "GeometryAdapterSource", "CoupledTruthRuntime.buildPUCCHSharedSlotContribution", ...
-            "GeometryAdapterLimitation", "large_scale_sample_domain_contribution;small_scale_pucch_peer_channel_reuse_not_modeled_here", ...
-            "GeometryAdapterPortMapping", "contribution_waveform_columns_preserved", ...
-            "ChannelUsesSameRuntimeAntennaAssumptions", true, ...
+            "AppliedTxPower_dBm",double(txBoundary.AppliedPower_dBm), ...
+            "MeasuredTxOutputPower_dBm",double(txBoundary.MeasuredTxOutputPower_dBm), ...
+            "TxPowerClosureError_dB",double(txBoundary.PowerClosureError_dB), ...
+            "TxRFExecutionStatus",char(string(txBoundary.TXRFExecutionStatus)), ...
+            "TxRFStageOrder",char(string(txBoundary.TXRFStageOrder)), ...
+            "TxRFAppliedStageCount",double(txBoundary.TXRFAppliedStageCount), ...
+            "Source", "runtime_pucch_tx_persistent_channel_rf_receiver_contribution", ...
+            "ChannelObjectSource", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"ChannelObjectSource", ...
+                "sixgr.channel.ChannelFactory.runtime_state"))), ...
+            "ChannelObjectClass", char(string(sixgr.util.structGet( ...
+                replay,"ChannelFadingObjectClass",""))), ...
+            "ChannelArrayHandlingStatus", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"ChannelArrayHandlingStatus",""))), ...
+            "ChannelArrayHandlingBlocker", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"ChannelArrayHandlingBlocker",""))), ...
+            "ChannelGeometryCouplingLevel", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"ChannelGeometryCouplingLevel",""))), ...
+            "GeometryAdapterType", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"GeometryAdapterType",""))), ...
+            "GeometryAdapterSource", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"GeometryAdapterSource", ...
+                "sixgr.channel.ChannelFactory"))), ...
+            "GeometryAdapterLimitation", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"GeometryAdapterLimitation",""))), ...
+            "GeometryAdapterPortMapping", char(string(sixgr.util.structGet( ...
+                runtimeMeta,"GeometryAdapterPortMapping",""))), ...
+            "ChannelUsesSameRuntimeAntennaAssumptions", logical( ...
+                sixgr.util.structGet(runtimeMeta, ...
+                "ChannelUsesSameRuntimeAntennaAssumptions",false)), ...
             "AssignmentDigest",char(connected.Assignment.Digest), ...
             "ReportDigest",char(connected.Report.Digest), ...
             "ResourceOwnershipDigest",char(tx.ResourceOwnershipDigest), ...
@@ -12342,8 +12814,15 @@ methods(Static, Access=private)
         if isfield(bundleEntry, "VictimServingBSAntenna")
             userMeta.RuntimeServingBSAntenna = bundleEntry.VictimServingBSAntenna;
         end
-        if isfield(bundleEntry, "VictimUEAntenna")
-            userMeta.RuntimeUEAntenna = bundleEntry.VictimUEAntenna;
+        if isfield(bundleEntry, "VictimServingBSAntennaMeta")
+            userMeta.RuntimeServingBSAntennaMeta = ...
+                bundleEntry.VictimServingBSAntennaMeta;
+        end
+        if isfield(bundleEntry, "InterfererUEAntenna")
+            userMeta.RuntimeUEAntenna = bundleEntry.InterfererUEAntenna;
+        end
+        if isfield(bundleEntry, "InterfererUEAntennaMeta")
+            userMeta.RuntimeUEAntennaMeta = bundleEntry.InterfererUEAntennaMeta;
         end
         cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
         cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "receiver_noise_figure_thermal_noise");

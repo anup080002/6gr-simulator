@@ -1,0 +1,77 @@
+function ok = testOperatingPointModeAuthority()
+%TESTOPERATINGPOINTMODEAUTHORITY Production masters own explicit MCS policy.
+
+setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
+root = fullfile(pwd, "simulator", "configs", "scenarios");
+scratch = fullfile(tempdir, "sixgr_operating_point_mode_authority");
+
+fixedScenario = sixgr.lls6g.config.loadScenarioConfig( ...
+    fullfile(root, "master_sinr_sweep.yaml"));
+fixedSource = fixedScenario.toStruct();
+assert(string(fixedSource.link_adaptation.operating_point_mode) == "fixed");
+fixedCfg = sixgr.lls6g.buildInternalConfig(fixedScenario, ...
+    fullfile(scratch, "fixed"));
+assert(string(fixedCfg.phy.linkAdaptation.operatingPointMode) == "fixed");
+assert(string(fixedCfg.runtime.link_adaptation.OperatingPointMode) == "fixed");
+
+adaptiveScenario = sixgr.lls6g.config.loadScenarioConfig( ...
+    fullfile(root, "master_geometry_based.yaml"));
+adaptiveSource = adaptiveScenario.toStruct();
+assert(string(adaptiveSource.link_adaptation.operating_point_mode) == ...
+    "bounded_adaptive");
+adaptiveCfg = sixgr.lls6g.buildInternalConfig(adaptiveScenario, ...
+    fullfile(scratch, "adaptive"));
+assert(string(adaptiveCfg.phy.linkAdaptation.operatingPointMode) == ...
+    "bounded_adaptive");
+assert(string(adaptiveCfg.runtime.link_adaptation.OperatingPointMode) == ...
+    "bounded_adaptive");
+assert(adaptiveCfg.runtime.link_adaptation.InitialMCSIndex <= ...
+    adaptiveCfg.runtime.link_adaptation.MaximumMCSIndex);
+
+webScenario = sixgr.lls6g.config.loadScenarioConfig( ...
+    fullfile(root, "webgui_sinr_sweep_64x4_mu_mimo_full.yaml"));
+webSource = webScenario.toStruct();
+assert(string(webSource.link_adaptation.operating_point_mode) == ...
+    "bounded_adaptive");
+assert(string(webSource.sweeps_and_matrix.snr_sweep.initial_access_state_policy) == ...
+    "independent_per_point");
+webCfg = sixgr.lls6g.buildInternalConfig(webScenario, ...
+    fullfile(scratch, "web"));
+assert(string(webCfg.run.snrSweepInitialAccessStatePolicy) == ...
+    "independent_per_point", ...
+    "The initial-access sweep reset policy must remain YAML-authoritative.");
+
+badAccessPolicy = webSource;
+badAccessPolicy.sweeps_and_matrix.snr_sweep.initial_access_state_policy = ...
+    "implicit_reset";
+localAssertError(@() sixgr.lls6g.config.validateScenarioConfig( ...
+    badAccessPolicy, "Context", "initial-access-state-policy"), ...
+    "sixgr:lls6g:config:BadSNRSweepInitialAccessStatePolicy");
+
+conflict = adaptiveSource;
+conflict.link_adaptation.operating_point_mode = "fixed";
+localAssertError(@() sixgr.lls6g.config.validateScenarioConfig( ...
+    conflict, "Context", "operating-point-conflict"), ...
+    "sixgr:lls6g:config:OperatingPointModeConflict");
+
+badEnvelope = adaptiveSource;
+badEnvelope.link_adaptation.initial_mcs = 21;
+badEnvelope.link_adaptation.maximum_mcs = 20;
+localAssertError(@() sixgr.lls6g.config.validateScenarioConfig( ...
+    badEnvelope, "Context", "operating-point-envelope"), ...
+    "sixgr:lls6g:config:InvalidBoundedAdaptiveEnvelope");
+
+ok = true;
+end
+
+function localAssertError(fn, identifier)
+threw = false;
+try
+    fn();
+catch cause
+    threw = true;
+    assert(string(cause.identifier) == string(identifier), ...
+        "Expected %s, received %s.", identifier, cause.identifier);
+end
+assert(threw, "Expected %s.", identifier);
+end

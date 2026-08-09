@@ -80,6 +80,26 @@ ulCleanup = onCleanup(@() close(ulFig)); %#ok<NASGU>
 ulAx = findall(ulFig, "Type", "axes");
 assert(~isempty(ulAx) && contains(string(ulAx(1).Title.String), "PUSCH BLER"));
 
+% A bounded scenario observation is still valid in-path truth when it does
+% not claim statistical qualification.  Its Status must say MEASURED and
+% its stop reason must preserve the explicit non-qualification scope.
+cfg.validation.fixed_link_campaign.enabled = false;
+measuredRegistry = sixgr.artifact.EvidenceRegistry();
+measuredCoverage = sixgr.artifact.registerWaveformLinkEvidence( ...
+    measuredRegistry, result, scfg, cfg, struct("RunID", "unit_run"));
+assert(all(measuredCoverage.Registered));
+[measuredFound, measuredDL] = measuredRegistry.resolveTable( ...
+    "pdsch", "base", "pdsch_bler_curve.csv");
+[measuredULFound, measuredUL] = measuredRegistry.resolveTable( ...
+    "pusch", "base", "pusch_bler_curve.csv");
+assert(measuredFound && measuredULFound);
+assert(all(measuredDL.Status == "MEASURED") && ...
+    ~any(measuredDL.Incomplete) && ...
+    all(measuredDL.StopReason == ...
+        "fixed_sample_runtime_observation_not_qualification_campaign"));
+assert(all(measuredUL.Status == "MEASURED") && ...
+    ~any(measuredUL.Incomplete));
+
 ok = true;
 fprintf("PASS testWaveformLinkArtifactEvidence: exact in-memory BLER evidence registered.\n");
 end

@@ -164,6 +164,7 @@ mimo:
   panel_count: 1
 
 impairments:
+  cfo_enabled: true
   cfo_hz: 150
   phase_noise_enabled: false
   iq_imbalance_enabled: true
@@ -173,6 +174,7 @@ impairments:
   pa_output_backoff_dB: 3
   adc_quantization_bits: 10
   dac_quantization_bits: 10
+  timing_offset_enabled: true
   timing_offset_samples: 2
   cfo_acquisition_mode: initial_acquisition
   cfo_drift_hz_per_s: 0

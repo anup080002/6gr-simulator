@@ -261,9 +261,41 @@ cfg = localApplyDeclaredRadioAliases(cfg, newBase);
 % legacy compatibility aliases so an inherited legacy field cannot silently
 % override an explicit feature enable/disable decision from the YAML file.
 cfg = localExpandCanonicalControl(cfg, newBase);
+cfg = localEnsureOperatingPointMode(cfg);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
 end
+end
+
+function cfg = localEnsureOperatingPointMode(cfg)
+% Materialize one explicit operating-point contract for legacy scenarios.
+% The two production masters author this field directly; this conversion is
+% retained only as a traceable compatibility adapter for older scenario YAML.
+configured = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "link_adaptation.operating_point_mode", ""))));
+if strlength(configured) > 0
+    return;
+end
+
+legacyMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "link_adaptation.fixed_or_amc", ""))));
+if any(legacyMode == ["fixed", "fixed_mcs", "configured_fixed", ...
+        "disabled", "off", "none", "false"])
+    resolved = "fixed";
+else
+    initialMCS = sixgr.util.structGet(cfg, "link_adaptation.initial_mcs", []);
+    maximumMCS = sixgr.util.structGet(cfg, "link_adaptation.maximum_mcs", []);
+    bounded = isnumeric(initialMCS) && isscalar(initialMCS) && isfinite(initialMCS) && ...
+        isnumeric(maximumMCS) && isscalar(maximumMCS) && isfinite(maximumMCS);
+    if bounded
+        resolved = "bounded_adaptive";
+    else
+        resolved = "adaptive";
+    end
+end
+cfg = sixgr.util.structSet(cfg, "link_adaptation.operating_point_mode", char(resolved));
+cfg = localRecordNormalizationAudit(cfg, "link_adaptation.operating_point_mode", ...
+    "Derived from legacy link_adaptation.fixed_or_amc; production masters author this field explicitly.");
 end
 
 function cfg = localApplyDerivedRandomAccessCarrierAliases(cfg, oldBase, authority)
@@ -388,6 +420,7 @@ if ~isfield(cfg, "canonical_control") || ~isstruct(cfg.canonical_control) || ~is
     return;
 end
 
+authoredCfg = cfg;
 cfg = sixgr.util.mergeStruct(newBase, cfg);
 control = cfg.canonical_control;
 if isfield(control,"waveform_phase13")
@@ -648,6 +681,15 @@ mappings = {
     "reference_signals.pdsch_dmrs_ports", "reference_signals.pdsch_dmrs_ports", "identity"
     "reference_signals.pusch_dmrs_ports", "reference_signals.pusch_dmrs_ports", "identity"
     "reference_signals.csi_rs_ports", "reference_signals.csi_rs_ports", "identity"
+    "reference_signals.csi_rs_num_resources", "reference_signals.csi_rs_num_resources", "identity"
+    "reference_signals.csi_rs_resource_set_id", "reference_signals.csi_rs_resource_set_id", "identity"
+    "reference_signals.csi_rs_resource_ids", "reference_signals.csi_rs_resource_ids", "identity"
+    "reference_signals.csi_rs_resource_row_numbers", "reference_signals.csi_rs_resource_row_numbers", "identity"
+    "reference_signals.csi_rs_resource_symbol_locations", "reference_signals.csi_rs_resource_symbol_locations", "identity"
+    "reference_signals.csi_rs_resource_subcarrier_locations", "reference_signals.csi_rs_resource_subcarrier_locations", "identity"
+    "reference_signals.csi_rs_resource_rb_offsets", "reference_signals.csi_rs_resource_rb_offsets", "identity"
+    "reference_signals.csi_rs_resource_num_rbs", "reference_signals.csi_rs_resource_num_rbs", "identity"
+    "reference_signals.csi_rs_precoder_codebook", "reference_signals.csi_rs_precoder_codebook", "identity"
     "reference_signals.srs_ports", "reference_signals.srs_ports", "identity"
     "reference_signals.trs_ports", "reference_signals.trs.num_ports", "identity"
     "reference_signals.trs_scrambling_id", "reference_signals.trs.scrambling_id", "identity"
@@ -655,6 +697,13 @@ mappings = {
     "reference_signals.srs_slot_within_period", "reference_signals.srs_slot_within_period", "identity"
     "reference_signals.srs_max_ues_per_slot", "reference_signals.srs_max_ues_per_slot", "identity"
     "reference_signals.srs_scheduling_policy", "reference_signals.srs_scheduling_policy", "identity"
+    "reference_signals.num_rb", "reference_signals.num_rb", "identity"
+    "reference_signals.expected_rb_start", "reference_signals.expected_rb_start", "identity"
+    "reference_signals.expected_num_rb", "reference_signals.expected_num_rb", "identity"
+    "reference_signals.expected_bandwidth_coverage_percent", "reference_signals.expected_bandwidth_coverage_percent", "identity"
+    "reference_signals.coverage_requirement", "reference_signals.coverage_requirement", "identity"
+    "reference_signals.full_carrier_sounding_required", "reference_signals.full_carrier_sounding_required", "identity"
+    "reference_signals.full_carrier_coverage_tolerance_rb", "reference_signals.full_carrier_coverage_tolerance_rb", "identity"
     "reference_signals.trs_periodicity_ms", "reference_signals.trs_periodicity_ms", "identity"
     "reference_signals.rsla_strict", "reference_signals.rsla_strict", "identity"
     "reference_signals.ptrs_enabled", "reference_signals.ptrs.enabled", "identity"
@@ -862,6 +911,12 @@ mappings = {
     "output.live_heavy_refresh_interval_frames", "output.live_heavy_refresh_interval_frames", "identity"
     "output.live_heavy_refresh_each_sweep_point", "output.live_heavy_refresh_each_sweep_point", "identity"
     "output.emit_placeholder_artifacts", "output.emit_placeholder_artifacts", "identity"
+    "output.emit_disabled_audit_artifacts", "output.emit_disabled_audit_artifacts", "identity"
+    "output.component_artifact_views", "output.component_artifact_views", "identity"
+    "output.artifact_contract_engine", "output.artifact_contract_engine", "identity"
+    "output.persist_to_database", "output.persist_to_database", "identity"
+    "output.persist_to_results_folder", "output.persist_to_results_folder", "identity"
+    "output.export_ssb_beam_sweep", "output.export_ssb_beam_sweep", "identity"
     "logging.level", "logging.level", "identity"
     "logging.save_logs", "logging.save_logs", "identity"
     "logging.save_intermediate", "logging.save_intermediate", "identity"
@@ -871,19 +926,51 @@ mappings = {
     };
 
 for i = 1:size(mappings, 1)
-    cfg = localSetCanonicalValue(cfg, control, mappings{i,1}, mappings{i,2}, mappings{i,3});
+    cfg = localSetCanonicalValue(cfg, control, mappings{i,1}, mappings{i,2}, mappings{i,3}, authoredCfg);
 end
 
 cfg = localApplyCanonicalTopology(cfg, control);
 cfg = localApplyCanonicalRuntimeOverrides(cfg, control);
+% canonical_control is an authoring surface.  Once its output section has
+% been validated and projected, retaining a second runtime copy creates
+% two apparent authorities and lets downstream code choose precedence.
+% Runtime consumers use only cfg.output.
+if isfield(cfg.canonical_control, "output")
+    cfg.canonical_control = rmfield(cfg.canonical_control, "output");
+end
 end
 
-function cfg = localSetCanonicalValue(cfg, control, sourcePath, targetPath, mode)
+function cfg = localSetCanonicalValue(cfg, control, sourcePath, targetPath, mode, authoredCfg)
 [value, found] = localTryGetNestedValue(control, sourcePath);
 if ~found
     return;
 end
-cfg = sixgr.util.structSet(cfg, targetPath, localCanonicalConvert(value, mode));
+resolvedValue = localCanonicalConvert(value, mode);
+if nargin >= 6 && startsWith(string(targetPath), "output.")
+    [authoredValue, authored] = localTryGetNestedValue(authoredCfg, targetPath);
+    if authored && ~localCanonicalValuesEqual(authoredValue, resolvedValue)
+        error("sixgr:lls6g:config:ConflictingCanonicalOutputAuthority", ...
+            ['Conflicting YAML output authorities: canonical_control.%s ' ...
+            'does not match %s. Remove one authority or make the values identical.'], ...
+            sourcePath, targetPath);
+    end
+end
+cfg = sixgr.util.structSet(cfg, targetPath, resolvedValue);
+end
+
+function tf = localCanonicalValuesEqual(left, right)
+tf = isequaln(left, right);
+if tf
+    return;
+end
+if (ischar(left) || isstring(left)) && ...
+        (ischar(right) || isstring(right))
+    tf = isequaln(string(left), string(right));
+elseif (islogical(left) || isnumeric(left)) && ...
+        (islogical(right) || isnumeric(right)) && ...
+        isequal(size(left), size(right))
+    tf = isequaln(double(left), double(right));
+end
 end
 
 function out = localCanonicalConvert(value, mode)

@@ -215,6 +215,9 @@ cfg.run.snrSweepEnabled = logical(localGetNested(s, "sweeps_and_matrix.snr_sweep
     ~isempty(cfg.run.snrSweepOffsets_dB)));
 cfg.run.snrSweepStatePolicy = char(lower(strtrim(string(localGetNested(s, ...
     "sweeps_and_matrix.snr_sweep.state_policy", "")))));
+cfg.run.snrSweepInitialAccessStatePolicy = char(lower(strtrim(string(localGetNested(s, ...
+    "sweeps_and_matrix.snr_sweep.initial_access_state_policy", ...
+    "continuous_runtime")))));
 cfg.run.referenceSweepEnabled = logical(localRequireNested(s, ...
     "simulation.reference_sweep_enabled", "simulation.reference_sweep_enabled"));
 cfg.run.referenceTrialsPerSNR = double(localRequireNested(s, ...
@@ -477,6 +480,8 @@ cfg.channel.doppler_Hz = double(resolvedDopplerHz);
 cfg.channel.dopplerHz = double(resolvedDopplerHz);
 cfg.channel.maxDoppler_Hz = double(resolvedDopplerHz);
 cfg.channel.maxDopplerHz = double(resolvedDopplerHz);
+cfg.channel.runtimeElementExpansionChunkSamples = double(localGetNested( ...
+    s, "channels.runtime_element_expansion_chunk_samples", 4096));
 cfg.channel.awgnOnly = upper(string(s.channels.model_type)) == "AWGN";
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
@@ -1035,6 +1040,9 @@ cfg.pdsch6gr.StudyNumTrials = double(localGetNested(s, "pdsch6gr.study_num_trial
 
 targetCases = lower(string(s.scenario.target_cases));
 linkAdaptationMode = lower(string(localRequireNested(s, "link_adaptation.fixed_or_amc", "link_adaptation.fixed_or_amc")));
+operatingPointMode = lower(string(localRequireNested(s, ...
+    "link_adaptation.operating_point_mode", ...
+    "link_adaptation.operating_point_mode")));
 linkAdaptationUsesFixedMCS = ismember(linkAdaptationMode, ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false"]);
 explicitPDSCHMCSMode = lower(strtrim(string(localGetNested(s, "pdsch6gr.mcs_mode", ""))));
 if ~linkAdaptationUsesFixedMCS && (strlength(explicitPDSCHMCSMode) == 0 || ismember(explicitPDSCHMCSMode, ["fixed","fixed_mcs","configured_fixed"]))
@@ -1146,8 +1154,30 @@ cfg.phy.csirs.numPorts = csiRSPorts;
 cfg.phy.csirs.scramblingID = double(localGetNested(s, "reference_signals.csirs_scrambling_id", ...
     localGetNested(s, "reference_signals.csi_rs_scrambling_id", cfg.phy.carrier.NCellID)));
 cfg = sixgr.util.structSet(cfg, "phy.csirs.numResources", ...
-    double(localRequireFirstNested(s, ["deployment_topology.num_trps","mimo.trp_count"], ...
-    "deployment_topology.num_trps or mimo.trp_count")));
+    double(localGetNested(s, "mimo.phase07_strict.csi_report.num_csi_resources", ...
+    localGetNested(s, "reference_signals.csi_rs_num_resources", 1))));
+cfg = sixgr.util.structSet(cfg, "phy.csirs.resourceSetID", double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_set_id", 0)));
+resourceIDs = double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_ids", []));
+rowNumbers = double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_row_numbers", []));
+symbolLocations = double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_symbol_locations", []));
+subcarrierLocations = double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_subcarrier_locations", []));
+rbOffsets = double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_rb_offsets", []));
+numRBs = double(localGetNested( ...
+    s, "reference_signals.csi_rs_resource_num_rbs", []));
+cfg = sixgr.util.structSet(cfg, "phy.csirs.resourceIDs", resourceIDs(:).');
+cfg = sixgr.util.structSet(cfg, "phy.csirs.rowNumbers", rowNumbers(:).');
+cfg = sixgr.util.structSet(cfg, "phy.csirs.symbolLocationsByResource", ...
+    symbolLocations(:).');
+cfg = sixgr.util.structSet(cfg, "phy.csirs.subcarrierLocationsByResource", ...
+    subcarrierLocations(:).');
+cfg = sixgr.util.structSet(cfg, "phy.csirs.rbOffsetsByResource", rbOffsets(:).');
+cfg = sixgr.util.structSet(cfg, "phy.csirs.numRBsByResource", numRBs(:).');
 csiMode = string(localRequireFirstNested(s, ...
     ["csi_acquisition_and_reporting.channel_state_information_mode", ...
     "reference_signals.channel_state_information_mode", ...
@@ -1417,35 +1447,39 @@ cfg = sixgr.util.structSet(cfg, "phy.srs.maxUEsPerSlot", max(1, round(double(loc
 cfg = sixgr.util.structSet(cfg, "phy.srs.schedulingPolicy", char(string(localGetNested(s, ...
     "reference_signals.srs_scheduling_policy", localGetNested(s, "control_gating.srs_scheduling_policy", "round_robin_phase")))));
 cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals.srs", localGetNested(s, "reference_signals.srs", struct()));
-cfg = localStructSetIfPresent(cfg, "phy.srs.resourceType", localGetNested(s, "reference_signals.srs.resource_type", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.resourceSetUsage", localGetNested(s, "reference_signals.srs.resource_set_usage", []));
-srsSlotNumbers = localGetNested(s, "reference_signals.srs.slot_numbers", []);
+cfg = localStructSetIfPresent(cfg, "phy.srs.resourceType", localGetSRSParameter(s, "resource_type", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.resourceSetUsage", localGetSRSParameter(s, "resource_set_usage", []));
+srsSlotNumbers = localGetSRSParameter(s, "slot_numbers", []);
 srsSlotWithinPeriod = localGetNested(s, "reference_signals.srs_slot_within_period", []);
 cfg = localStructSetIfPresent(cfg, "phy.srs.slotNumbers", srsSlotNumbers);
 cfg = localStructSetIfPresent(cfg, "phy.srs.slotWithinPeriod1Based", srsSlotWithinPeriod);
-cfg = localStructSetIfPresent(cfg, "phy.srs.period_offset", localGetNested(s, "reference_signals.srs.period_offset", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.SymbolStart", localGetNested(s, "reference_signals.srs.symbol_start", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.NumSRSSymbols", localGetNested(s, "reference_signals.srs.num_srs_symbols", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.Repetition", localGetNested(s, "reference_signals.srs.repetition_factor", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.KTC", localGetNested(s, "reference_signals.srs.comb_number", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.KBarTC", localGetNested(s, "reference_signals.srs.comb_offset", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.CyclicShift", localGetNested(s, "reference_signals.srs.cyclic_shift", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.NSRSID", localGetNested(s, "reference_signals.srs.sequence_id", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.GroupSeqHopping", localGetNested(s, "reference_signals.srs.group_or_sequence_hopping", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyStart", localGetNested(s, "reference_signals.srs.frequency_position", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyShift", localGetNested(s, "reference_signals.srs.frequency_shift", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyHopping", localGetNested(s, "reference_signals.srs.frequency_hopping", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.BHop", localGetNested(s, "reference_signals.srs.b_hop", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.CSRS", localGetNested(s, "reference_signals.srs.c_srs", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.BSRS", localGetNested(s, "reference_signals.srs.b_srs", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.bandwidthRB", localGetNested(s, "reference_signals.srs.num_rb", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.coverageRequirement", localGetNested(s, "reference_signals.srs.coverage_requirement", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.fullCarrierSoundingRequired", localGetNested(s, "reference_signals.srs.full_carrier_sounding_required", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.detectionThreshold", localGetNested(s, "reference_signals.srs.detection_threshold", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.channelNMSEThresholddB", localGetNested(s, "reference_signals.srs.channel_nmse_threshold_db", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.timingToleranceSamples", localGetNested(s, "reference_signals.srs.timing_tolerance_samples", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.dciTriggerReferenceId", localGetNested(s, "reference_signals.srs.dci_trigger_reference_id", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.activationMACCEReferenceId", localGetNested(s, "reference_signals.srs.activation_mac_ce_reference_id", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.period_offset", localGetSRSParameter(s, "period_offset", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.SymbolStart", localGetSRSParameter(s, "symbol_start", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.NumSRSSymbols", localGetSRSParameter(s, "num_srs_symbols", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.Repetition", localGetSRSParameter(s, "repetition_factor", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.KTC", localGetSRSParameter(s, "comb_number", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.KBarTC", localGetSRSParameter(s, "comb_offset", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.CyclicShift", localGetSRSParameter(s, "cyclic_shift", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.NSRSID", localGetSRSParameter(s, "sequence_id", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.GroupSeqHopping", localGetSRSParameter(s, "group_or_sequence_hopping", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyStart", localGetSRSParameter(s, "frequency_position", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyShift", localGetSRSParameter(s, "frequency_shift", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyHopping", localGetSRSParameter(s, "frequency_hopping", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.BHop", localGetSRSParameter(s, "b_hop", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.CSRS", localGetSRSParameter(s, "c_srs", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.BSRS", localGetSRSParameter(s, "b_srs", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.bandwidthRB", localGetSRSParameter(s, "num_rb", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.expectedRBStart", localGetSRSParameter(s, "expected_rb_start", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.expectedNumRB", localGetSRSParameter(s, "expected_num_rb", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.expectedBandwidthCoveragePercent", localGetSRSParameter(s, "expected_bandwidth_coverage_percent", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.coverageRequirement", localGetSRSParameter(s, "coverage_requirement", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.fullCarrierSoundingRequired", localGetSRSParameter(s, "full_carrier_sounding_required", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.fullCarrierCoverageToleranceRB", localGetSRSParameter(s, "full_carrier_coverage_tolerance_rb", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.detectionThreshold", localGetSRSParameter(s, "detection_threshold", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.channelNMSEThresholddB", localGetSRSParameter(s, "channel_nmse_threshold_db", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.timingToleranceSamples", localGetSRSParameter(s, "timing_tolerance_samples", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.dciTriggerReferenceId", localGetSRSParameter(s, "dci_trigger_reference_id", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.activationMACCEReferenceId", localGetSRSParameter(s, "activation_mac_ce_reference_id", []));
 cfg = sixgr.util.structSet(cfg, "phy.srs.strictEvidenceRequired", runnerProfile == "srs_strict_validation" || any(targetCases == "srs"));
 cfg = sixgr.util.structSet(cfg, "phy.trs.enable", logical(s.reference_signals.trs_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.trs.nPorts", double(localRequireNested(s, "reference_signals.trs.num_ports", "reference_signals.trs.num_ports")));
@@ -1703,12 +1737,18 @@ cfg = sixgr.util.structSet(cfg, "rf.pa.enable", logical(s.impairments.pa_nonline
 cfg = sixgr.util.structSet(cfg, "rf.pa.backoff_dB", double(localGetNested(s, "impairments.pa_output_backoff_dB", 3)));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.adcQuantizationBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.dacQuantizationBits", double(s.impairments.dac_quantization_bits));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.adcQuantizationEnabled", ...
+    logical(localGetNested(s, "impairments.adc_quantization_enabled", false)));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.dacQuantizationEnabled", ...
+    logical(localGetNested(s, "impairments.dac_quantization_enabled", false)));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetSamples", double(timingOffsetSamples));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.timingOffsetEnabled", ...
     logical(localRequireNested(s, "impairments.timing_offset_enabled", ...
     "impairments.timing_offset_enabled")));
 cfg = sixgr.util.structSet(cfg, "rf.adcBits", double(s.impairments.adc_quantization_bits));
 cfg = sixgr.util.structSet(cfg, "rf.dacBits", double(s.impairments.dac_quantization_bits));
+cfg = sixgr.util.structSet(cfg, "rf.adc.enable", ...
+    logical(localGetNested(s, "impairments.adc_quantization_enabled", false)));
 cfg = sixgr.util.structSet(cfg, "rf.timingOffsetSamples", double(timingOffsetSamples));
 interferenceExecutionMode = localResolveInterferenceExecutionMode(s);
 if any(interferenceExecutionMode == ["abstract_large_scale_scheduler_context","explicit_activity_power_sum","waveform_overlap_large_scale"])
@@ -1830,6 +1870,8 @@ cfg = sixgr.util.structSet(cfg, "outputs.exportSSBBeamSweep", exportSSBBeamSweep
 cfg = sixgr.util.structSet(cfg, "analytics.export_ssb_beam_sweep", exportSSBBeamSweep);
 
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mode", char(linkAdaptationMode));
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.operatingPointMode", ...
+    char(operatingPointMode));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.configuredDLMCSIndex", dlConfiguredMCSIndex);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.configuredULMCSIndex", ulConfiguredMCSIndex);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.outerLoopFlag", logical(localRequireNested(s, "link_adaptation.outer_loop_flag", "link_adaptation.outer_loop_flag")));
@@ -2197,6 +2239,13 @@ fixedLinkCampaignSection = localGetNested(s, "validation.fixed_link_campaign", s
 if builtin("isstruct", fixedLinkCampaignSection) && ~isempty(fieldnames(fixedLinkCampaignSection))
     cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign", ...
         localNormalizeFixedLinkCampaignSection(fixedLinkCampaignSection));
+end
+strictComponentSection = localGetNested(s, ...
+    "validation.strict_component_evidence", struct());
+if builtin("isstruct", strictComponentSection) && ...
+        ~isempty(fieldnames(strictComponentSection))
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.strict_component_evidence", strictComponentSection);
 end
 cfg = localApplyValidationRunClass(cfg, s);
 
@@ -3106,6 +3155,7 @@ tddPairs = {
     "pdcch_to_pdsch_k0", "pdcchToPDSCHK0"
     "pdcch_to_pusch_k2", "pdcchToPUSCHK2"
     "dl_harq_feedback_k1", "dlHARQFeedbackK1Candidates"
+    "k1_selection_policy", "k1SelectionPolicy"
     "ul_grant_k2", "ulGrantK2"
     "harq_roundtrip_slots", "harqRoundtripSlots"
     "dl_to_ul_guard_time_us", "dlToULGuardTime_us"
@@ -3117,6 +3167,25 @@ tddPairs = {
     };
 for i = 1:size(tddPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, "tdd_timing." + tddPairs{i,1}, "phy.tddTiming." + tddPairs{i,2});
+end
+% Keep the configured K1 candidate set and the scalar default HARQ feedback
+% timing as separate runtime authorities.  The candidate set describes the
+% decoded-DCI choices. The scalar is retained for compatibility and audit,
+% but the production timing engine selects the first candidate that is legal
+% for the actual PDSCH slot and writes that selected K1 into the grant/DCI.
+harqK1 = localNumericScalarOrNaN(localGetNested(s, ...
+    "harq.feedback_timing_slots", NaN));
+if isfinite(harqK1) && harqK1 >= 0
+    harqK1 = max(0, round(double(harqK1)));
+    configuredK1 = double(localGetNested(s, ...
+        "tdd_timing.dl_harq_feedback_k1", []));
+    if ~isempty(configuredK1) && ~any(configuredK1(:) == harqK1)
+        error("sixgr:lls6g:config:SelectedK1OutsideCandidateSet", ...
+            "harq.feedback_timing_slots=%g is not present in " + ...
+            "tdd_timing.dl_harq_feedback_k1.", harqK1);
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.tddTiming.dlHARQFeedbackK1", harqK1);
 end
 % harq.k2 is the canonical scheduler/UL-grant timing authority. Do not
 % overwrite it later with a stale inherited tdd_timing alias.
@@ -3223,14 +3292,31 @@ if any(rankDomain < 1 | rankDomain > maxRank | rankDomain ~= round(rankDomain))
     error("sixgr:mimo:InvalidRI", ...
         "mimo.phase07_strict.rank_domain is outside max_rank.");
 end
+request = struct("ProfileID",profileID,"Direction",direction, ...
+    "CodebookType",codebookType,"Ports",ports,"Panels",panels, ...
+    "N1",n1,"N2",n2,"O1",o1,"O2",o2,"Rank",maxRank);
+% Validate the requested antenna/codebook tuple before checking its
+% cross-section CSI-RS binding.  This preserves the typed root cause for
+% unsupported antenna profiles instead of masking it as a resource-count
+% mismatch.
+sixgr.phy.mimo.MIMOCapabilityProfile().resolve(request);
+configuredCSIRSPorts = double(sixgr.util.structGet(cfg, "phy.csirs.nPorts", NaN));
+configuredCSIResources = double(sixgr.util.structGet(cfg, "phy.csirs.numResources", NaN));
+if logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false)) && ...
+        (~isequal(configuredCSIRSPorts, ports) || ...
+         ~isequal(configuredCSIResources, reportRequest.NumCSIResources) || ...
+         ~isequal(reportRequest.NumberOfBeams, reportRequest.NumCSIResources))
+    error("sixgr:mimo:CSIReportResourceMismatch", ...
+        "Strict CSI requires identical logical-port/resource authority across " + ...
+        "reference_signals and mimo.phase07_strict.csi_report. " + ...
+        "Observed ports=%g/%g resources=%g/%g beams=%g.", ...
+        configuredCSIRSPorts, ports, configuredCSIResources, ...
+        reportRequest.NumCSIResources, reportRequest.NumberOfBeams);
+end
 if ~ismember(receiver,["MMSE","IRC","ZF"])
     error("sixgr:mimo:InvalidReceiver", ...
         "Phase-07 receiver must be MMSE, IRC or ZF.");
 end
-request = struct("ProfileID",profileID,"Direction",direction, ...
-    "CodebookType",codebookType,"Ports",ports,"Panels",panels, ...
-    "N1",n1,"N2",n2,"O1",o1,"O2",o2,"Rank",maxRank);
-sixgr.phy.mimo.MIMOCapabilityProfile().resolve(request);
 sixgr.phy.mimo.CSIReportConfiguration(reportRequest,reportRequest.Epoch);
 if direction == "DL"
     cfg = sixgr.util.structSet(cfg,"phy.pdsch.numPorts",ports);
@@ -4282,6 +4368,117 @@ cfg = sixgr.util.structSet(cfg, "scenario.ue.numRxRFChains", double(ueRxRUs));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.panelCount", double(uePanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.source", "browser_yaml_antenna_and_array");
 cfg = localApplySSBPrecoderCodebook(cfg, s);
+cfg = localApplyCSIRSPrecoderCodebook(cfg, s);
+end
+
+function cfg = localApplyCSIRSPrecoderCodebook(cfg, s)
+% Materialize the YAML-owned physical spatial filters for every NZP CSI-RS
+% resource.  Each resource carries the configured logical CSI ports through
+% the same physical element-domain grid and channel used by PDSCH.
+if ~logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false))
+    return;
+end
+nResourcesConfigured = double(sixgr.util.structGet(cfg, "phy.csirs.numResources", 1));
+strictCSI = logical(sixgr.util.structGet(cfg, "phy.mimo.strict", false));
+spec = localGetNested(s, "reference_signals.csi_rs_precoder_codebook", struct());
+if ~(isstruct(spec) && isscalar(spec) && ~isempty(fieldnames(spec)))
+    if strictCSI && nResourcesConfigured > 1
+        error("sixgr:lls6g:config:MissingCSIRSPrecoderCodebook", ...
+            "Enabled strict multi-resource CSI-RS requires reference_signals.csi_rs_precoder_codebook.");
+    end
+    return;
+end
+enabled = localGetNested(spec, "enabled", []);
+if ~((islogical(enabled) || isnumeric(enabled)) && isscalar(enabled) && ...
+        isfinite(double(enabled)) && any(double(enabled) == [0 1]))
+    error("sixgr:lls6g:config:InvalidCSIRSPrecoderCodebook", ...
+        "reference_signals.csi_rs_precoder_codebook.enabled must be boolean.");
+end
+if ~logical(enabled)
+    if strictCSI && nResourcesConfigured > 1
+        error("sixgr:lls6g:config:DisabledCSIRSPrecoderCodebook", ...
+            "Enabled strict CSI-RS cannot advertise multiple beam resources while its physical precoder codebook is disabled.");
+    end
+    return;
+end
+codebookType = lower(strtrim(string(localGetNested(spec, "type", ""))));
+if codebookType ~= "dft_ura"
+    error("sixgr:lls6g:config:InvalidCSIRSPrecoderCodebook", ...
+        "Enabled CSI-RS precoder codebook type must be dft_ura, not '%s'.", char(codebookType));
+end
+shape = double(sixgr.util.structGet(cfg, "phy.bsArray", []));
+if numel(shape) < 2 || any(~isfinite(shape)) || any(shape < 1) || any(shape ~= round(shape))
+    error("sixgr:lls6g:config:InvalidCSIRSPrecoderCodebook", ...
+        "The configured gNB physical-array shape is invalid.");
+end
+nRows = shape(1);
+nColumns = shape(2);
+spatialElements = nRows * nColumns;
+physicalElements = prod(shape);
+configuredElements = double(localGetNested(spec, "physical_element_count", NaN));
+if ~(isscalar(configuredElements) && isfinite(configuredElements) && configuredElements == physicalElements)
+    error("sixgr:lls6g:config:CSIRSPrecoderElementCountMismatch", ...
+        "CSI-RS physical_element_count=%g does not match the configured gNB array product %g.", ...
+        configuredElements, physicalElements);
+end
+nResources = double(sixgr.util.structGet(cfg, "phy.csirs.numResources", NaN));
+nPorts = double(sixgr.util.structGet(cfg, "phy.csirs.nPorts", NaN));
+resourceIDs = double(sixgr.util.structGet(cfg, "phy.csirs.resourceIDs", []));
+beamIndices = zeros(nResources, nPorts);
+for portOrdinal = 1:nPorts
+    portPath = "beam_indices_port_" + string(portOrdinal - 1);
+    portIndices = double(localGetNested(spec, portPath, []));
+    if ~(isvector(portIndices) && numel(portIndices) == nResources)
+        error("sixgr:lls6g:config:InvalidCSIRSBeamIndices", ...
+            "%s must contain one DFT-URA beam index per CSI-RS resource.", char(portPath));
+    end
+    beamIndices(:, portOrdinal) = portIndices(:);
+end
+if ~(isscalar(nResources) && isfinite(nResources) && nResources >= 1 && ...
+        nResources == round(nResources) && isscalar(nPorts) && isfinite(nPorts) && ...
+        nPorts >= 1 && nPorts == round(nPorts))
+    error("sixgr:lls6g:config:InvalidCSIRSResourceCount", ...
+        "CSI-RS resource and logical-port counts must be positive integers.");
+end
+if ~(isvector(resourceIDs) && numel(resourceIDs) == nResources && ...
+        all(isfinite(resourceIDs)) && all(resourceIDs >= 0) && ...
+        all(resourceIDs == round(resourceIDs)) && numel(unique(resourceIDs)) == nResources)
+    error("sixgr:lls6g:config:InvalidCSIRSResourceIDs", ...
+        "csi_rs_resource_ids must contain one unique nonnegative ID per CSI-RS resource.");
+end
+if ~isequal(size(beamIndices), [nResources nPorts]) || ...
+        any(~isfinite(beamIndices(:))) || any(beamIndices(:) < 0) || ...
+        any(beamIndices(:) >= spatialElements) || any(beamIndices(:) ~= round(beamIndices(:)))
+    error("sixgr:lls6g:config:InvalidCSIRSBeamIndices", ...
+        "CSI-RS beam-index vectors must form NumResources-by-NumPorts zero-based DFT-URA indices in [0,%d].", ...
+        spatialElements - 1);
+end
+spatialCodebook = sixgr.rf.AntennaArrayFactory.dftCodebookURA( ...
+    nRows, nColumns, nRows, nColumns);
+replicaCount = physicalElements / spatialElements;
+matrices = complex(zeros(physicalElements, nPorts, nResources));
+digests = strings(nResources, 1);
+for resourceOrdinal = 1:nResources
+    W = complex(zeros(physicalElements, nPorts));
+    for portOrdinal = 1:nPorts
+        spatialBeam = spatialCodebook(:, beamIndices(resourceOrdinal, portOrdinal) + 1);
+        fullBeam = repmat(spatialBeam, replicaCount, 1) / sqrt(replicaCount);
+        W(:, portOrdinal) = fullBeam / norm(fullBeam);
+    end
+    gram = W' * W;
+    if norm(gram - eye(nPorts), "fro") > 1e-10
+        error("sixgr:lls6g:config:NonOrthogonalCSIRSPrecoder", ...
+            "CSI-RS resource %g does not resolve to orthonormal logical-port spatial filters.", ...
+            resourceIDs(resourceOrdinal));
+    end
+    matrices(:,:,resourceOrdinal) = W;
+    digests(resourceOrdinal) = sixgr.phy.mimo.MatrixContract.digest(W);
+end
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderMatrices", matrices);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderDigests", digests);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderBeamIndices", beamIndices);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderCodebookType", codebookType);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderPhysicalElementCount", physicalElements);
 end
 
 function cfg = localApplySSBPrecoderCodebook(cfg, s)
@@ -4328,16 +4525,29 @@ if ~(isscalar(configuredElements) && isfinite(configuredElements) && ...
 end
 beamIndices = double(localGetNested(spec, "beam_indices", []));
 lmax = double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", NaN));
+beamGridRows = double(localGetNested(spec, "beam_grid_rows", nRows));
+beamGridColumns = double(localGetNested(spec, "beam_grid_columns", nColumns));
+if ~(isscalar(beamGridRows) && isfinite(beamGridRows) && ...
+        beamGridRows >= nRows && beamGridRows == round(beamGridRows) && ...
+        isscalar(beamGridColumns) && isfinite(beamGridColumns) && ...
+        beamGridColumns >= nColumns && beamGridColumns == round(beamGridColumns))
+    error("sixgr:lls6g:config:InvalidSSBPrecoderBeamGrid", ...
+        ['SSB DFT-URA beam_grid_rows and beam_grid_columns must be integer ' ...
+         'grid sizes no smaller than the physical %dx%d URA.'], ...
+        nRows, nColumns);
+end
+numCodebookBeams = beamGridRows * beamGridColumns;
 if ~(isvector(beamIndices) && numel(beamIndices) == lmax && ...
         all(isfinite(beamIndices)) && all(beamIndices == round(beamIndices)) && ...
-        all(beamIndices >= 0) && all(beamIndices < spatialElements) && ...
+        all(beamIndices >= 0) && all(beamIndices < numCodebookBeams) && ...
         numel(unique(beamIndices)) == numel(beamIndices))
     error("sixgr:lls6g:config:InvalidSSBPrecoderBeamIndices", ...
         ['SSB DFT-URA beam_indices must contain exactly Lmax=%d unique ' ...
-         'zero-based indices in [0,%d].'], lmax, spatialElements - 1);
+         'zero-based indices in the configured %dx%d beam grid [0,%d].'], ...
+         lmax, beamGridRows, beamGridColumns, numCodebookBeams - 1);
 end
 spatialCodebook = sixgr.rf.AntennaArrayFactory.dftCodebookURA( ...
-    nRows, nColumns, nRows, nColumns);
+    nRows, nColumns, beamGridRows, beamGridColumns);
 replicaCount = physicalElements / spatialElements;
 matrices = complex(zeros(lmax, physicalElements));
 ids = strings(1, lmax);
@@ -4351,6 +4561,8 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderMatrices", matrices);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderIDs", ids);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderCodebookType", codebookType);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamIndices", beamIndices);
+cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamGrid", ...
+    [beamGridRows beamGridColumns]);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderPhysicalElementCount", physicalElements);
 end
 
@@ -4802,6 +5014,19 @@ end
 
 function value = localGetNested(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
+end
+
+function value = localGetSRSParameter(s, name, defaultValue)
+% The public scenario catalog exposes SRS controls directly below
+% reference_signals.  Retain the former reference_signals.srs.* spelling
+% only as a backward-compatible input alias; the catalog-defined flat field
+% is the canonical authority used by the WebGUI and master YAML files.
+nestedPath = "reference_signals.srs." + string(name);
+flatPath = "reference_signals." + string(name);
+value = sixgr.util.structGet(s, nestedPath, []);
+if isempty(value)
+    value = sixgr.util.structGet(s, flatPath, defaultValue);
+end
 end
 
 function [value, found] = localTryGetNestedStrict(s, path)

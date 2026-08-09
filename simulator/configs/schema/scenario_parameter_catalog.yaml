@@ -249,6 +249,7 @@ sections:
         type: string
         allowed_values: [nrPathLoss, freeSpace, none]
       shadow_fading_std_db: {required: true, type: number, min: 0}
+      runtime_element_expansion_chunk_samples: {required: false, type: integer, min: 1}
       phase10_strict: {required: false, type: struct}
   reference_signals:
     required: true
@@ -959,6 +960,8 @@ sections:
       phase_noise_enabled: {required: true, type: boolean}
       iq_imbalance_enabled: {required: true, type: boolean}
       pa_nonlinearity_enabled: {required: true, type: boolean}
+      adc_quantization_enabled: {required: false, type: boolean}
+      dac_quantization_enabled: {required: false, type: boolean}
       adc_quantization_bits: {required: true, type: integer, min: 1}
       dac_quantization_bits: {required: true, type: integer, min: 1}
       timing_offset_samples: {required: true, type: number}
@@ -1151,12 +1154,30 @@ sections:
       live_heavy_refresh_each_sweep_point: {required: false, type: boolean}
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}
+      export_ssb_beam_sweep: {required: false, type: boolean}
+      component_artifact_views: {required: false, type: struct}
       artifact_contract_engine: {required: false, type: struct}
 nested_sections:
+  component_artifact_views:
+    path: output.component_artifact_views
+    parameters:
+      enabled: {required: true, type: boolean}
+      required: {required: true, type: boolean}
+      mirror_mode:
+        required: true
+        type: string
+        allowed_values: [byte_identical_hash_verified]
+      image_formats: {required: true, type: string_list}
+      canonical_files_move: {required: true, type: boolean}
+      required_components: {required: true, type: string_list}
   artifact_contract_engine:
     path: output.artifact_contract_engine
     parameters:
       enabled: {required: true, type: boolean}
+      catalog_scope:
+        required: true
+        type: string
+        allowed_values: [phase_pack, runtime_in_path]
       contract_root: {required: true, type: string, nonempty: true}
       legacy_reference_root: {required: true, type: string, nonempty: true}
       legacy_reference_usage:

@@ -71,6 +71,7 @@ info.NVar = double(nVarSafe);
 info.EqualizerResult = result;
 info.SolveCount = double(result.SolveCount);
 info.UniqueSolveCount = double(result.UniqueSolveCount);
+info.CovarianceFactorizationCount = double(result.CovarianceFactorizationCount);
 info.StaticChannelBatchApplied = logical(result.StaticChannelBatchApplied);
 info.CovarianceIncludesNoise = logical(result.CovarianceIncludesNoise);
 info.CovarianceSource = char(string(result.CovarianceSource));
@@ -124,6 +125,7 @@ regularized = false(nRE, 1);
 [Rmode, Rstatic, RperRE, covarianceSource] = localNormalizeCovariance(Rint, nRE, nRx, nVar, RIncludesNoise);
 solveCount = 0;
 uniqueSolveCount = 0;
+covarianceFactorizationCount = 0;
 staticChannelBatch = localIsStaticChannel(hSym) && Rmode ~= "per_re";
 
 if nRx == 1 && nTx == 1 && alg ~= "ZF"
@@ -144,6 +146,7 @@ if nRx == 1 && nTx == 1 && alg ~= "ZF"
     outputCov(:, 1, 1) = noiseOut;
     solveCount = nRE;
     uniqueSolveCount = 0;
+    covarianceFactorizationCount = 0;
     engine = "vectorizedSISO";
 elseif staticChannelBatch
     H0 = localHAt(hSym, 1, nRx, nTx);
@@ -154,7 +157,22 @@ elseif staticChannelBatch
     regularized(:) = reg;
     solveCount = nRE;
     uniqueSolveCount = 1;
+    covarianceFactorizationCount = double(alg ~= "ZF");
     engine = "batchedStaticChannel";
+elseif Rmode ~= "per_re" && alg ~= "ZF"
+    % H varies per RE, but white/static disturbance covariance does not.
+    % Factor the NRx-by-NRx covariance once for all channel right-hand
+    % sides, then retain the exact per-RE small layer-domain solve.  This
+    % is algebraically identical to the former per-RE path and avoids
+    % thousands of repeated 64-by-64 Cholesky factorizations in 4x64 UL.
+    R0 = localCovarianceAt(Rmode, Rstatic, RperRE, 1, nRx, nVar, RIncludesNoise);
+    [eqSym, reliability, sinrLin, Wout, WHout, residualLayerPower, ...
+        outputCov, regularized] = localApplyStaticCovariance( ...
+        rxSym, hSym, R0, nRE, nTx, nRx);
+    solveCount = nRE;
+    uniqueSolveCount = nRE;
+    covarianceFactorizationCount = 1;
+    engine = "batchedStaticCovarianceVariableChannel";
 else
     engine = "perREStableSolve";
     for kk = 1:nRE
@@ -174,6 +192,7 @@ else
         solveCount = solveCount + 1;
         uniqueSolveCount = uniqueSolveCount + 1;
     end
+    covarianceFactorizationCount = double(alg ~= "ZF") * nRE;
 end
 
 result = struct();
@@ -201,9 +220,52 @@ result.NumRxAnt = double(nRx);
 result.NumTxPorts = double(nTx);
 result.SolveCount = double(solveCount);
 result.UniqueSolveCount = double(uniqueSolveCount);
+result.CovarianceFactorizationCount = double(covarianceFactorizationCount);
 result.StaticChannelBatchApplied = logical(staticChannelBatch);
 result.RegularizationApplied = any(regularized);
 result.RegularizedRECount = double(nnz(regularized));
+end
+
+function [eqSym, reliability, sinrLin, Wout, WHout, ...
+        residualLayerPower, outputCov, regularized] = ...
+        localApplyStaticCovariance(rxSym, hSym, R, nRE, nTx, nRx)
+% Apply one exact static disturbance-covariance factorization to all REs.
+R = localHermitianPositiveDefinite(R);
+allH = reshape(permute(hSym, [2 3 1]), nRx, nTx*nRE);
+[allRinvH, covarianceRegularized] = localStableLeftSolve(R, allH);
+
+eqSym = complex(zeros(nRE, nTx));
+reliability = zeros(nRE, nTx);
+sinrLin = NaN(nRE, nTx);
+Wout = complex(NaN(nRE, nTx, nRx));
+WHout = complex(NaN(nRE, nTx, nTx));
+residualLayerPower = NaN(nRE, nTx);
+outputCov = complex(NaN(nRE, nTx, nTx));
+regularized = false(nRE, 1);
+for kk = 1:nRE
+    columns = (kk-1)*nTx + (1:nTx);
+    Hk = localHAt(hSym, kk, nRx, nTx);
+    RinvH = reshape(allRinvH(:, columns), nRx, nTx);
+    [core, layerRegularized] = localEqualizerCoreFromRinvH(Hk, R, RinvH);
+    rk = rxSym(kk, :).';
+    sk = core.W * rk;
+    eqSym(kk, :) = sk.';
+    reliability(kk, :) = core.Reliability.';
+    sinrLin(kk, :) = core.SINRLinear.';
+    Wout(kk, :, :) = core.W;
+    WHout(kk, :, :) = core.WH;
+    residualLayerPower(kk, :) = core.ResidualInterLayerPower.';
+    outputCov(kk, :, :) = core.OutputCovariance;
+    regularized(kk) = covarianceRegularized || layerRegularized;
+end
+end
+
+function [core, regularized] = localEqualizerCoreFromRinvH(H, R, RinvH)
+% Complete the exact MMSE/IRC layer solve after a shared R\H operation.
+A = H' * RinvH + eye(size(H, 2));
+B = RinvH';
+[W, regularized] = localStableLeftSolve(A, B);
+core = localEqualizerOutputs(H, R, W);
 end
 
 function alg = localResolveAlgorithm(alg, Rint)
@@ -320,6 +382,11 @@ else
     [W, regA] = localStableLeftSolve(A, B);
     regularized = regR || regA;
 end
+core = localEqualizerOutputs(H, R, W);
+end
+
+function core = localEqualizerOutputs(H, R, W)
+% Derive all receiver outputs from the already-resolved exact filter W.
 WH = W * H;
 outCov = W * R * W';
 nLayers = size(H, 2);

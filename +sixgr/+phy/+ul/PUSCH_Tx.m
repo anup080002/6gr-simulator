@@ -1203,8 +1203,7 @@ function [logicalSym, logicalInd, info] = localApplyResolvedPTRSPortPrecode( ...
 % layer.  nrPUSCH therefore emits one PT-RS column even for a rank-2
 % non-codebook transmission.  Project that reference through exactly the
 % corresponding frozen logical-precoder column before hybrid RF expansion.
-if isempty(ptrsSym) || isempty(ptrsInd) || ...
-        logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+if isempty(ptrsSym) || isempty(ptrsInd)
     [logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
         carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS");
     info.AssociatedDMRSPortSet = [];
@@ -1230,8 +1229,11 @@ if isempty(ptrsPortSet)
 end
 dmrsPortSet = double(dmrsPortSet(:).');
 ptrsPortSet = double(ptrsPortSet(:).');
-if isempty(dmrsPortSet) || isempty(ptrsPortSet) || ...
-        numel(ptrsPortSet) ~= size(localEnsure2D(ptrsSym), 2)
+nativeCodebookApplied = logical(sixgr.util.structGet( ...
+    prec, "NativeCodebookApplied", false));
+associationCountOk = nativeCodebookApplied || ...
+    numel(ptrsPortSet) == size(localEnsure2D(ptrsSym), 2);
+if isempty(dmrsPortSet) || isempty(ptrsPortSet) || ~associationCountOk
     error("sixgr:phy:ul:PUSCHPTRSPrecode:MissingPortAssociation", ...
         "Enabled PUSCH PT-RS requires one explicit scheduled DM-RS port " + ...
         "association per native PT-RS column.");
@@ -1246,6 +1248,17 @@ for portIndex = 1:numel(ptrsPortSet)
             mat2str(dmrsPortSet));
     end
     selectedLayerColumns(portIndex) = match;
+end
+if nativeCodebookApplied
+    % nrPUSCH has already applied the selected TPMI codebook in its native
+    % port domain. Preserve the scheduled PT-RS/DM-RS association as
+    % evidence, but never apply a second logical-port precoder here.
+    [logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
+        carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS");
+    info.Source = "native_nrPUSCH_codebook_port_domain_with_scheduled_ptrs_dmrs_association";
+    info.AssociatedDMRSPortSet = ptrsPortSet;
+    info.AssociatedLayerColumns = selectedLayerColumns;
+    return;
 end
 [logicalSym, logicalInd, info] = localApplyResolvedLogicalPortPrecode( ...
     carrier, ptrsSym, ptrsInd, prec, "PUSCH PTRS", selectedLayerColumns);

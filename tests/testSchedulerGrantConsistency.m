@@ -20,7 +20,9 @@ sch = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL");
 assert(~isempty(grants), "Scheduler returned no grants for non-empty buffers");
 
 reqFields = ["MCSIndex","CQIUsed","DAI","K1","K2","SearchSpaceID","CORESETID", ...
-    "BWPId","HeadOfLineDelay_ms","BufferBytesBefore","BufferBytesAfter","GrantReason","DCI"];
+    "BWPId","HeadOfLineDelay_ms","BufferBytesBefore","BufferBytesAfter","GrantReason","DCI", ...
+    "TBSInputModulation","TBSInputNumLayers","TBSInputNPRB", ...
+    "TBSInputNREPerPRB","TBSInputTargetCodeRate","TBSInputXOverhead","TBSInputSource"];
 for i = 1:numel(grants)
     g = grants(i);
     for f = 1:numel(reqFields)
@@ -42,6 +44,7 @@ for i = 1:numel(grants)
     [tbsBits, upperBoundBits] = sixgr.util.resolveGrantTBSBits(g, sprintf("test grant %d", i));
     assert(double(tbsBits) == double(g.TBSBits), "Resolved TBSBits does not match grant field.");
     assert(double(tbsBits) <= double(upperBoundBits), "Grant TBS exceeds loose allocation upper bound.");
+    localAssertExactTBSInputs(g, sprintf("DL grant %d", i));
     assert(isstruct(g.DCI) && isfield(g.DCI, "Bits") && isfield(g.DCI, "Hex"), "Missing DCI bitfield payload.");
     if ~isempty(g.PRBSet)
         assert(numel(g.DCI.Bits) > 0, "DCI bits must be populated for allocated grants.");
@@ -86,6 +89,7 @@ assert(strcmp(string(lateULGrant.MappingType), "B") && ...
     "Implicit MappingType A must be finalized as MappingType B before exact PUSCH accounting in late UL symbols.");
 assert(double(lateULGrant.TBSBits) > 0 && double(lateULGrant.ExactNREPerPRB) > 0, ...
     "Special-slot MappingType B UL grant must carry exact positive TBS/NRE.");
+localAssertExactTBSInputs(lateULGrant, "late-symbol UL grant");
 
 cfgGuard = cfgUL;
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.carrier.NSizeGrid", 106);
@@ -121,6 +125,27 @@ assert(~isTinyHighRank, ...
     "Runtime wideband CQI without subband evidence must not produce a tiny high-rank/high-MCS UL grant.");
 assert(logical(sixgr.util.structGet(gGuard, "QueueAwareReductionApplied", false)), ...
     "The small-PRB wideband-CQI guard must disclose the queue-aware rank/MCS reduction.");
+localAssertExactTBSInputs(gGuard, "wideband-CQI guard UL grant");
 
 ok = true;
+end
+
+function localAssertExactTBSInputs(grant, label)
+required = ["TBSInputModulation","TBSInputNumLayers","TBSInputNPRB", ...
+    "TBSInputNREPerPRB","TBSInputTargetCodeRate","TBSInputXOverhead", ...
+    "TBSInputSource","TBSBits"];
+for field = required
+    assert(isfield(grant, field), "%s lacks %s.", label, field);
+end
+source = lower(strtrim(string(grant.TBSInputSource)));
+assert(strlength(source) > 0 && ...
+    ~contains(source, ["proxy","fallback","synthetic","aggregate"]), ...
+    "%s has non-truth TBS provenance '%s'.", label, source);
+expected = double(nrTBS(char(string(grant.TBSInputModulation)), ...
+    double(grant.TBSInputNumLayers), double(grant.TBSInputNPRB), ...
+    double(grant.TBSInputNREPerPRB), ...
+    double(grant.TBSInputTargetCodeRate), double(grant.TBSInputXOverhead)));
+assert(expected == double(grant.TBSBits), ...
+    "%s exact nrTBS recomputation mismatch: expected %g, recorded %g.", ...
+    label, expected, double(grant.TBSBits));
 end

@@ -178,6 +178,18 @@ classdef AntennaArrayFactory
                 sourceToken = "signal_specific_logical_port_view";
             end
 
+            % Retain the architecture selected from configuration.  A
+            % logical-port view changes the external waveform interface; it
+            % must not silently turn a configured hybrid array into a
+            % logical-port-only channel.  ChannelFactory consumes this flag
+            % together with PortToElementMatrix to propagate common/control
+            % and reference-signal ports through the same physical array as
+            % the later element-domain data waveform.
+            hybridBeamformingEnabled = logical(sixgr.util.structGet( ...
+                arr, "HybridBeamformingEnabled", false)) || ...
+                logical(sixgr.util.structGet( ...
+                meta, "HybridBeamformingEnabled", false));
+
             numPorts = max(1, round(double(numPorts)));
             numElements = sixgr.rf.AntennaArrayFactory.localPositiveIntegerOrNaN( ...
                 sixgr.util.structGet(arr, "NumElements", NaN));
@@ -228,7 +240,7 @@ classdef AntennaArrayFactory
             arr.RFChainToPortMatrix = portToRF.';
             arr.DigitalPortToRFChainMatrix = portToRF;
             arr.HybridElementToPortMatrix = portToElement;
-            arr.HybridBeamformingEnabled = false;
+            arr.HybridBeamformingEnabled = hybridBeamformingEnabled;
             arr.ElementsPerPort = double(elementsPerPort(:).');
 
             meta.NumElements = double(numElements);
@@ -239,6 +251,8 @@ classdef AntennaArrayFactory
             meta.WaveformDomain = "logical_port";
             meta.PortCountSource = char(string(sourceToken));
             meta.RuntimeObjectSource = "AntennaArrayFactory.logicalPortView";
+            meta.PortToElementMatrix = portToElement;
+            meta.HybridBeamformingEnabled = hybridBeamformingEnabled;
         end
 
 

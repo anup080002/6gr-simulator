@@ -11,9 +11,8 @@ cfg.scenario_id = "artifact_fail_closed_unit";
 cfg.frequency = struct("center_frequency_hz", 3.5e9, ...
     "channel_bandwidth_mhz", 100);
 cfg.numerology = struct("scs_khz", 30);
-cfg.canonical_control = struct( ...
-    "integration", struct("run_mode", "FIXED_SNR_SWEEP"), ...
-    "output", struct("artifact_contract_engine", localPolicy(true)));
+cfg.integration = struct("run_mode", "FIXED_SNR_SWEEP");
+cfg.output = struct("artifact_contract_engine", localPolicy(true));
 
 result = sixgr.artifact.finalizeRunFailClosed(runFolder, ...
     sixgr.artifact.EvidenceRegistry(), cfg, struct());
@@ -30,7 +29,7 @@ assert(string(status.Status) == "FAIL" && ~logical(status.Ok));
 disabledRoot = tempname();
 mkdir(disabledRoot);
 disabledCleanup = onCleanup(@() localRemove(disabledRoot)); %#ok<NASGU>
-cfg.canonical_control.output.artifact_contract_engine = localPolicy(false);
+cfg.output.artifact_contract_engine = localPolicy(false);
 disabled = sixgr.artifact.finalizeRunFailClosed(disabledRoot, ...
     sixgr.artifact.EvidenceRegistry(), cfg, struct());
 assert(~disabled.Executed && disabled.Ok && disabled.Status == "DISABLED_BY_YAML");

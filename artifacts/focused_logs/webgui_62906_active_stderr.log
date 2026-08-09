@@ -1,0 +1,36 @@
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 59618)
+Traceback (most recent call last):
+  File "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\apps\lls_web_dashboard.py", line 22566, in do_GET
+    self.respond_json(build_live_payload(run_id, lite=lite))
+  File "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\apps\lls_web_dashboard.py", line 22846, in respond_json
+    self.wfile.write(raw)
+  File "C:\ProgramData\anaconda3\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\ProgramData\anaconda3\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\ProgramData\anaconda3\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\ProgramData\anaconda3\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\ProgramData\anaconda3\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\ProgramData\anaconda3\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\apps\lls_web_dashboard.py", line 22633, in do_GET
+    self.respond_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+  File "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\apps\lls_web_dashboard.py", line 22888, in respond_error
+    self.end_headers()
+  File "C:\ProgramData\anaconda3\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\ProgramData\anaconda3\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\ProgramData\anaconda3\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------

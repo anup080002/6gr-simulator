@@ -4,6 +4,7 @@ function out = runTRSTracking(cfg, varargin)
 p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x, "sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) isnumeric(x) && isscalar(x));
+p.addParameter("ChannelState",struct(),@(x) isempty(x) || isstruct(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 snr_dB = double(p.Results.SNR_dB);
@@ -55,11 +56,39 @@ out.TRSCFOEstimateUsable = false;
 out.FrequencyError_Hz = NaN;
 out.ChannelEstimationAttempted = false;
 out.TRSChannelEstimateAvailable = false;
+out.ResourceExtractionAttempted = false;
+out.ResourceExtractionAvailable = false;
+out.ChannelEstimateAttempted = false;
+out.ChannelEstimateAvailable = false;
+out.ChannelEstimator = "";
+out.HestDimensions = "";
+out.HestRxPorts = NaN;
+out.HestTxPorts = NaN;
+out.MeasuredTrialSINR_dB = NaN;
+out.MeasuredTrialSINRSource = "";
+out.MeasuredTrialSINRValueRole = "";
+out.MeasuredTrialSINRValueStatus = "";
+out.MeasuredTrialSINRNAReason = "";
+out.SINRMeasurementDomain = "";
+out.PowerReferencePlane = "";
+out.DesiredPilotPower = NaN;
+out.ResidualPilotPower = NaN;
 out.TRSRuntimeEvidenceUsable = false;
 out.NoiseVariance = NaN;
 out.StrictOk = false;
 out.FailureReason = "";
 out.Notes = "";
+out.ChannelState = p.Results.ChannelState;
+out.RuntimeChannelStateUsed = false;
+out.RuntimeChannelLinkKeys = "";
+out.RuntimeNoiseApplied = false;
+out.RuntimeNoiseVarianceMean = NaN;
+out.RuntimeStageCount = 5;
+out.TxRFExecutionStatus = "";
+out.TxRFStageOrder = "";
+out.TxRFAppliedStageCount = NaN;
+out.CompositeReceiverFrontEndApplied = false;
+out.CompositeReceiverFrontEndStatus = "";
 
 configuredTRS = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
 configuredTracking = logical(sixgr.util.structGet(cfg, ...
@@ -77,8 +106,9 @@ end
 
 try
     tStart = tic;
-    [strictCfg, tx, rx, replay, timing, det, freq, ch, tracking, score] = ...
-        localRunStrictRuntimeTRSEvidence(cfg, snr_dB);
+    [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
+        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,p.Results.ChannelState);
+    out.ChannelState = channelState;
     trial = score.TrialRow;
     runtimeEvidenceOk = localRuntimeTRSEvidenceComplete(trial, strictCfg);
 
@@ -101,6 +131,25 @@ try
     out.ChannelModelApplied = string(sixgr.util.structGet(replay, "ChannelModelApplied", ...
         localResolveTrialChannelModel(cfg)));
     out.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
+    out.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
+        replay,"RuntimeChannelStateUsed",false));
+    out.RuntimeChannelLinkKeys = char(string(sixgr.util.structGet( ...
+        replay,"RuntimeChannelLinkKey","")));
+    out.RuntimeNoiseApplied = isfinite(double(sixgr.util.structGet( ...
+        replay,"InjectedNoiseVariance",NaN))) && ...
+        double(sixgr.util.structGet(replay,"InjectedNoiseVariance",NaN)) > 0;
+    out.RuntimeNoiseVarianceMean = double(sixgr.util.structGet( ...
+        replay,"InjectedNoiseVariance",NaN));
+    out.TxRFExecutionStatus = char(string(sixgr.util.structGet( ...
+        replay,"TxRFExecutionStatus","")));
+    out.TxRFStageOrder = char(string(sixgr.util.structGet( ...
+        replay,"TxRFStageOrder","")));
+    out.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
+        replay,"TxRFAppliedStageCount",NaN));
+    out.CompositeReceiverFrontEndApplied = logical(sixgr.util.structGet( ...
+        replay,"CompositeReceiverFrontEndApplied",false));
+    out.CompositeReceiverFrontEndStatus = char(string(sixgr.util.structGet( ...
+        replay,"CompositeReceiverFrontEndStatus","")));
     out.QCLAccuracy = double(trial.QCLAccuracy);
     out.DetectionMetric = double(trial.DetectionMetric);
     out.AppliedAWGNSNR_dB = double(trial.AppliedAWGNSNR_dB);
@@ -123,6 +172,27 @@ try
     out.FrequencyError_Hz = double(trial.FrequencyError_Hz);
     out.ChannelEstimationAttempted = logical(trial.ChannelEstimationAttempted);
     out.TRSChannelEstimateAvailable = logical(trial.TRSChannelEstimateAvailable);
+    detT = sixgr.util.structGet(det, "Table", table());
+    out.ResourceExtractionAttempted = localTRSResourceExtractionAttempted(detT);
+    out.ResourceExtractionAvailable = localTRSResourceExtractionAvailable(detT);
+    out.ChannelEstimateAttempted = logical(out.ChannelEstimationAttempted);
+    out.ChannelEstimateAvailable = logical(out.TRSChannelEstimateAvailable);
+    chT = sixgr.util.structGet(ch, "Table", table());
+    out.ChannelEstimator = localFirstTableString(chT, "ChannelEstimator", "");
+    out.HestDimensions = string(sixgr.util.structGet(ch, "HestDimensions", ""));
+    out.HestRxPorts = double(sixgr.util.structGet(ch, "HestRxPorts", NaN));
+    out.HestTxPorts = double(sixgr.util.structGet(ch, "HestTxPorts", NaN));
+    out.MeasuredTrialSINR_dB = double(sixgr.util.structGet(ch, "MeanPilotSINR_dB", NaN));
+    out.MeasuredTrialSINRSource = "trs_pilot_re_channel_reconstruction";
+    out.MeasuredTrialSINRValueRole = "measured_receiver_sinr";
+    out.MeasuredTrialSINRValueStatus = localAvailableStatus(out.MeasuredTrialSINR_dB);
+    out.SINRMeasurementDomain = "trs_pilot_re_channel_reconstruction_residual";
+    out.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_timing_correction";
+    out.DesiredPilotPower = double(sixgr.util.structGet(ch, "DesiredPilotPower", NaN));
+    out.ResidualPilotPower = double(sixgr.util.structGet(ch, "ResidualPilotPower", NaN));
+    if ~isfinite(out.MeasuredTrialSINR_dB)
+        out.MeasuredTrialSINRNAReason = "trs_channel_reconstruction_power_unavailable";
+    end
     out.TRSRuntimeEvidenceUsable = logical(runtimeEvidenceOk);
     out.StrictOk = logical(score.StrictOk);
     out.FailureReason = string(score.FailureReason);
@@ -162,7 +232,43 @@ catch ME
 end
 end
 
-function [strictCfg, tx, rx, replay, timing, det, freq, ch, tracking, score] = localRunStrictRuntimeTRSEvidence(cfg, snr_dB)
+function tf = localTRSResourceExtractionAttempted(detT)
+tf = istable(detT) && ~isempty(detT) && ...
+    ismember("DetectionAttempted", string(detT.Properties.VariableNames)) && ...
+    all(logical(detT.DetectionAttempted));
+end
+
+function tf = localTRSResourceExtractionAvailable(detT)
+tf = localTRSResourceExtractionAttempted(detT) && ...
+    all(ismember(["ExpectedRECount","ObservedRECount"], string(detT.Properties.VariableNames))) && ...
+    all(double(detT.ExpectedRECount) > 0) && ...
+    all(double(detT.ObservedRECount) > 0);
+end
+
+function value = localFirstTableString(T, name, fallback)
+value = string(fallback);
+if istable(T) && ~isempty(T) && ismember(string(name), string(T.Properties.VariableNames))
+    candidates = strtrim(string(T.(char(name))));
+    hit = find(strlength(candidates) > 0, 1, "first");
+    if ~isempty(hit)
+        value = candidates(hit);
+    end
+end
+end
+
+function status = localAvailableStatus(value)
+if isfinite(double(value))
+    status = "available_measured";
+else
+    status = "unavailable";
+end
+end
+
+function [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
+        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState)
+if nargin < 3 || ~isstruct(initialChannelState)
+    initialChannelState = struct();
+end
 runId = string(sixgr.util.structGet(cfg, "run.id", ...
     sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
 scenarioName = string(sixgr.util.structGet(cfg, "scenario.name", ...
@@ -179,9 +285,10 @@ if isfield(strictCfg, "StrictValidation") && ...
 end
 
 tx = sixgr.phy.trs.generateTRSWaveform(strictCfg);
-[rxWave, replay] = localApplyTrackingChannelAndNoise(tx.Waveform, ...
+[rxWave,replay,channelState] = localApplyTrackingChannelAndNoise(tx, ...
     localPrepareTRSReceiverObservationConfig(cfg, snr_dB), ...
-    double(tx.SampleRateHz), snr_dB, double(strictCfg.NumCSIRSPorts));
+    double(tx.SampleRateHz),snr_dB,double(strictCfg.NumCSIRSPorts), ...
+    initialChannelState,strictCfg);
 rx = struct();
 rx.Waveform = rxWave;
 rx.NoiseOnlyWaveform = [];
@@ -360,94 +467,104 @@ function [y, nVar] = localAddAwgn(x, snr_dB)
 [y, nVar] = sixgr.util.addAwgnComplex(x, snr_dB);
 end
 
-function [y, replay] = localApplyTrackingChannelAndNoise(txWave, cfg, sampleRateHz, snr_dB, nPorts)
-replay = struct("AppliedAWGNSNR_dB", NaN, "ConfiguredSNR_dB", double(snr_dB), "InjectedNoiseVariance", NaN);
-y = txWave;
-modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
-awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
-fadingApplied = false;
-if ~(awgnOnly || any(modelRaw == ["AWGN", "NONE", "OFF", ""]))
-    cfgCh = cfg;
-    if startsWith(modelRaw, "TDL")
-        cfgCh.channel.model = "TDL";
-        if modelRaw ~= "TDL"
-            cfgCh.channel.tdlProfile = char(modelRaw);
-        end
-    elseif startsWith(modelRaw, "CDL")
-        cfgCh.channel.model = "CDL";
-        if modelRaw ~= "CDL"
-            cfgCh.channel.cdlProfile = char(modelRaw);
-        end
-    end
-    ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
-        "Model", cfgCh.channel.model, ...
-        "SampleRate", sampleRateHz, ...
-        "NumTxAnt", max(1, size(txWave, 2)), ...
-        "NumRxAnt", localResolveTrackingNumRxAnt(cfg, nPorts), ...
-        "Seed", sixgr.util.structGet(cfg, "run.seed", 1));
-    if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
-        chObj = ch.Object;
-        try
-            reset(chObj);
-        catch
-        end
-        [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, sampleRateHz);
-        xIn = txWave;
-        if padSamples > 0
-            xIn = [txWave; zeros(padSamples, size(txWave, 2), "like", txWave)];
-        end
-        try
-            yRaw = chObj(xIn);
-        catch
-            [yRaw, ~] = chObj(xIn);
-        end
-        y = localTrimWaveform(yRaw, size(txWave, 1), trimSamples);
-        fadingApplied = true;
-    end
-end
-[y, replay] = sixgr.link.applyWaveformImpairments(y, cfg, sampleRateHz);
+function [y,replay,updatedChannelState] = localApplyTrackingChannelAndNoise( ...
+        tx,cfg,sampleRateHz,snr_dB,nPorts,initialChannelState,strictCfg) %#ok<INUSD>
+txWave = tx.Waveform;
+txInfo = localTRSTxInfo(tx,strictCfg);
+[txWave,powerContext] = sixgr.rf.applyPowerContext( ...
+    txWave,cfg,"DL",txInfo);
+cfg = sixgr.util.structSet(cfg,"lls6g.runtimePowerContext",powerContext);
+txRfOut = sixgr.rf.applyRFImpairmentChain(txWave,cfg, ...
+    "SampleRateHz",sampleRateHz,"Direction","DL", ...
+    "MeasurementPoint","tx_output","Endpoint","tx", ...
+    "StrictMutationRequired",false,"UseLegacyGlobalConfig",false, ...
+    "ApplyPA",false,"ApplyADC",false);
+txWave = cast(txRfOut.Waveform,"like",txWave);
+cfg = sixgr.util.structSet(cfg,"lls6g.txRFImpairmentReplay",txRfOut.Replay);
+txRuntime = tx;
+txRuntime.Waveform = txWave;
+truthState = sixgr.link.initWaveformTruthChannelState( ...
+    cfg,txRuntime,txInfo,"InitialRuntimeChannelState",initialChannelState);
+[y,channelReplay,truthState] = sixgr.link.applyRuntimeFadingChannel( ...
+    txWave,truthState);
+fadingApplied = logical(sixgr.util.structGet( ...
+    channelReplay,"ChannelFadingApplied",false));
 if ~fadingApplied
     scalarDopplerHz = localResolveConfiguredMaxDopplerHz(cfg);
     y = localApplyTrackingDoppler(y, sampleRateHz, scalarDopplerHz);
 else
     scalarDopplerHz = NaN;
 end
-[y, replay.InjectedNoiseVariance] = localAddTrackingNoise(y, replay, snr_dB);
+[y,impairmentReplay] = sixgr.link.applyWaveformImpairments( ...
+    y,cfg,sampleRateHz,"ApplyRFChain",false);
+replay = localMergeTRSReplay(channelReplay,impairmentReplay);
+replay.PowerContext = powerContext;
+replay.TxRFExecutionStatus = char(string(sixgr.util.structGet( ...
+    txRfOut.Replay,"RFExecutionStatus","applied_or_identity")));
+replay.TxRFStageOrder = char(string(sixgr.util.structGet( ...
+    txRfOut.Replay,"RFStageOrder","")));
+replay.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
+    txRfOut.Replay,"RFAppliedStageCount",0));
+[preFrontEndWaveform,preFrontEndNVar] = ...
+    localAddTrackingNoise(y,replay,snr_dB);
+replay.InjectedNoiseVariance = double(preFrontEndNVar);
+[y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
+    preFrontEndWaveform,cfg,sampleRateHz,replay,"Direction","DL");
+replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
 replay.ChannelFadingApplied = logical(fadingApplied);
 replay.ChannelModelApplied = char(localResolveTrialChannelModel(cfg));
 replay.ConfiguredMaxDoppler_Hz = double(localResolveConfiguredMaxDopplerHz(cfg));
 replay.ScalarDopplerInjected = isfinite(scalarDopplerHz);
 replay.InjectedScalarDoppler_Hz = double(scalarDopplerHz);
 replay.PhysicalDoppler_Hz = double(localResolvePhysicalDopplerHz(cfg, replay));
+updatedChannelState = sixgr.util.structGet( ...
+    truthState,"RuntimeChannelState",struct());
 end
 
 function cfgOut = localPrepareTRSReceiverObservationConfig(cfg, snr_dB)
 cfgOut = cfg;
-cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
+resolved = sixgr.util.structGet(cfgOut,"lls6g.resolvedConfig",struct());
+hasYAMLAuthority = isstruct(resolved) && ~isempty(fieldnames(resolved));
+noiseMode = strtrim(string(sixgr.util.structGet( ...
+    cfgOut,"run.noiseOperatingMode","")));
+if ~hasYAMLAuthority && strlength(noiseMode) == 0
+    cfgOut = sixgr.util.structSet(cfgOut,"run.noiseOperatingMode", ...
+        "standalone_awgn_snr_argument");
+end
 cfgOut = sixgr.util.structSet(cfgOut, "channel.snr_dB", double(snr_dB));
 cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeSignalFamily", "TRS");
 cfgOut = sixgr.util.structSet(cfgOut, "phy.runtimeSignalFamily", "TRS");
-userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
-if isstruct(userMeta)
-    stripFields = { ...
-        "RuntimeServingBSAntenna", ...
-        "RuntimeServingBSAntennaMeta", ...
-        "RuntimeUEAntenna", ...
-        "RuntimeUEAntennaMeta", ...
-        "RuntimeServingBasePathloss_dB", ...
-        "RuntimeServingPathloss_dB", ...
-        "RuntimeServingShadowFading_dB", ...
-        "RuntimeServingO2I_dB", ...
-        "RuntimeServingRxPower_dBm", ...
-        "RuntimeServingRSRP_dBm", ...
-        "RuntimeServingLargeScaleSINR_dB"};
-    for idx = 1:numel(stripFields)
-        if isfield(userMeta, stripFields{idx})
-            userMeta = rmfield(userMeta, stripFields{idx});
-        end
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "lls6g.userContext.RuntimeCurrentDirection","DL");
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "lls6g.userContext.Direction","DL");
+cfgOut = sixgr.util.structSet(cfgOut,"channel.linkDirection","DL");
+end
+
+function txInfo = localTRSTxInfo(tx,strictCfg)
+ofdm = struct("SampleRate",double(sixgr.util.structGet( ...
+    tx,"SampleRateHz",NaN)));
+carrier = sixgr.util.structGet(strictCfg,"ToolboxCarrier",[]);
+if ~isempty(carrier)
+    try
+        ofdm = nrOFDMInfo(carrier);
+    catch
     end
-    userMeta.RuntimeTRSReceiverObservationMode = "receiver_snr_calibrated_strict_trs_control_measurement";
-    cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
+end
+txInfo = struct("OFDM",ofdm);
+end
+
+function replay = localMergeTRSReplay(varargin)
+replay = struct();
+for argIdx = 1:nargin
+    value = varargin{argIdx};
+    if ~isstruct(value)
+        continue;
+    end
+    names = fieldnames(value);
+    for fieldIdx = 1:numel(names)
+        replay.(names{fieldIdx}) = value.(names{fieldIdx});
+    end
 end
 end
 

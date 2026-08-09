@@ -1,0 +1,9 @@
+Fixed-link master authority: carrier/BWP/PRB/MCS/rank/DMRS/PTRS/HARQ/channel/SNR/stopping/seeds verified; 1 DL + 1 UL production trial executed.
+{Error using assert
+Configured K1 did not reach the canonical timing policy.
+
+Error in testGeometryMasterRuntimeAuthority (line 41)
+assert(isequal(double(policy.AllowedK1), 4), ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

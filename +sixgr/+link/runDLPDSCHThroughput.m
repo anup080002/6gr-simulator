@@ -291,6 +291,12 @@ trialPMICodebookMode = strings(numFrames,1);
 trialCSIReportMode = strings(numFrames,1);
 trialCSIPayloadBits = NaN(numFrames,1);
 trialCSIPayloadHex = strings(numFrames,1);
+trialCSIComputationStatus = strings(numFrames,1);
+trialCSIComputationErrorIdentifier = strings(numFrames,1);
+trialCSIMeasurementID = strings(numFrames,1);
+trialCSIMeasurementDigest = strings(numFrames,1);
+trialCSIMeasurementProvenance = strings(numFrames,1);
+trialCSIMeasurementSlot = NaN(numFrames,1);
 trialSubbandCQI = strings(numFrames,1);
 trialSubbandSINR = strings(numFrames,1);
 trialSubbandSizePRB = NaN(numFrames,1);
@@ -354,6 +360,7 @@ trialConfiguredSNRLikeSourceRejected = false(numFrames,1);
 trialEqualizerType = strings(numFrames,1);
 trialEqualizerRequestedType = strings(numFrames,1);
 trialEqualizerEngine = strings(numFrames,1);
+trialEqualizerCovarianceFactorizationCount = NaN(numFrames,1);
 trialInterferenceCovarianceAvailable = false(numFrames,1);
 trialInterferenceCovarianceSource = strings(numFrames,1);
 trialInterferenceCovarianceStatus = strings(numFrames,1);
@@ -415,6 +422,8 @@ trialRxAnt = NaN(numFrames,1);
 trialTxPorts = NaN(numFrames,1);
 trialTxWaveformColumns = NaN(numFrames,1);
 trialPhysicalTxAntennas = NaN(numFrames,1);
+trialRxWaveformBranches = NaN(numFrames,1);
+trialPhysicalRxAntennas = NaN(numFrames,1);
 trialTxWaveformDomain = strings(numFrames,1);
 trialHybridElementDomainApplied = false(numFrames,1);
 trialSelectedBeam = NaN(numFrames,1);
@@ -452,6 +461,7 @@ trialBitErr = NaN(numFrames,1);
 trialBitTot = NaN(numFrames,1);
 trialOfferedBits = NaN(numFrames,1);
 trialGoodBits = NaN(numFrames,1);
+trialThroughput = NaN(numFrames,1);
 trialOfferedThr = NaN(numFrames,1);
 trialGoodput = NaN(numFrames,1);
 trialComputeLatency = NaN(numFrames,1);
@@ -878,6 +888,8 @@ for n = 1:numFrames
             frameIdx, trialSlot(n), double(numel(interferenceBundle)));
         stageTic = tic;
         [rxWave, replay, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, cfgFrame, tx, txInfo, interferenceBundle);
+        trialRxWaveformBranches(n) = double(size(rxWave, 2));
+        trialPhysicalRxAntennas(n) = double(size(rxWave, 2));
         localDLStageProgressLog(cfgFrame, ...
             "frame=%g slot=%g stage=channel_done elapsed_s=%.3f rx_samples=%g", ...
             frameIdx, trialSlot(n), toc(stageTic), double(size(rxWave, 1)));
@@ -964,6 +976,8 @@ for n = 1:numFrames
         trialEqualizerType(n) = string(sixgr.util.structGet(rx, "EqualizerType", ""));
         trialEqualizerRequestedType(n) = string(sixgr.util.structGet(rx, "EqualizerRequestedType", ""));
         trialEqualizerEngine(n) = string(sixgr.util.structGet(rx, "EqualizerEngine", ""));
+        trialEqualizerCovarianceFactorizationCount(n) = double(sixgr.util.structGet( ...
+            rx, "EqualizerCovarianceFactorizationCount", NaN));
         trialInterferenceCovarianceAvailable(n) = logical(sixgr.util.structGet(rx, "InterferenceCovarianceAvailable", false));
         trialInterferenceCovarianceSource(n) = string(sixgr.util.structGet(rx, "InterferenceCovarianceSource", ""));
         trialInterferenceCovarianceStatus(n) = string(sixgr.util.structGet(rx, "InterferenceCovarianceStatus", ""));
@@ -1252,6 +1266,12 @@ for n = 1:numFrames
         trialCSIReportMode(n) = string(metrics.CSIReportMode);
         trialCSIPayloadBits(n) = metrics.CSIPayloadBitLength;
         trialCSIPayloadHex(n) = string(metrics.CSIPayloadHex);
+        trialCSIComputationStatus(n) = string(metrics.CSIComputationStatus);
+        trialCSIComputationErrorIdentifier(n) = string(metrics.CSIComputationErrorIdentifier);
+        trialCSIMeasurementID(n) = string(metrics.CSIMeasurementID);
+        trialCSIMeasurementDigest(n) = string(metrics.CSIMeasurementDigest);
+        trialCSIMeasurementProvenance(n) = string(metrics.CSIMeasurementProvenance);
+        trialCSIMeasurementSlot(n) = double(metrics.CSIMeasurementSlot);
         trialSubbandCQI(n) = string(metrics.SubbandCQIVector);
         trialSubbandSINR(n) = string(metrics.SubbandSINRVector_dB);
         trialSubbandSizePRB(n) = metrics.SubbandSizePRB;
@@ -1313,6 +1333,9 @@ for n = 1:numFrames
         trialCBGBLER(n) = double(sixgr.util.structGet(coding, "CBGBLER", NaN));
         if isfinite(trialOfferedBits(n))
             trialOfferedThr(n) = trialOfferedBits(n) / max(slotDur_s, eps) / 1e6;
+        end
+        if isfinite(trialTB(n))
+            trialThroughput(n) = trialTB(n) / max(slotDur_s, eps) / 1e6;
         end
         [modTrack, constT] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfgFrame, "DL");
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
@@ -1608,8 +1631,12 @@ simDur_s = numFrames * slotDur_s;
 
 out.BER = bitErr / max(bitTot, 1);
 out.BLER = blockErr / max(numFrames, 1);
-out.Throughput_Mbps = (bitGood / max(simDur_s, eps)) / 1e6;
-out.Goodput_Mbps = out.Throughput_Mbps;
+% Scheduled PHY throughput counts every transmitted transport block,
+% including HARQ retransmissions. Goodput counts only CRC-clean delivery;
+% offered throughput counts newly offered traffic and excludes retransmitted
+% copies. These three quantities must never be aliases.
+out.Throughput_Mbps = (bitTot / max(simDur_s, eps)) / 1e6;
+out.Goodput_Mbps = (bitGood / max(simDur_s, eps)) / 1e6;
 offeredBits = sum(trialOfferedBits(isfinite(trialOfferedBits)), "omitnan");
 out.OfferedThroughput_Mbps = (offeredBits / max(simDur_s, eps)) / 1e6;
 out.TotalTTIs = double(numFrames);
@@ -1634,7 +1661,7 @@ out.EarlyStopRate = mean(trialEarlyStop, "omitnan");
 out.DecoderComplexityUnits = mean(trialDecoderComplexity, "omitnan");
 out.NormalizedDecoderComplexity = mean(trialNormDecoderComplexity, "omitnan");
 out.AreaEfficiencyProxy = mean(trialAreaEfficiency, "omitnan");
-out.Ok = out.BLER < 1;
+out.Ok = frameCrash == 0 && out.BLER < 1;
 out.Notes = "Frames=" + string(numFrames) + ", SNR=" + string(snr_dB) + " dB";
 out.ConstellationSamples = localBuildConstellationSlice(numFrames);
 out.WaveformPreviewTable = localBuildWaveformPreviewSlice(numFrames);
@@ -1650,12 +1677,12 @@ out.ChannelState = chState;
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
         "Strict mode forbids skipping PDSCH coverage because every frame crashed: " + firstCrashMsg);
-    out.Skipped = true;
-    out.Ok = true;
+    out.Skipped = false;
+    out.Ok = false;
     out.BER = NaN;
     out.BLER = NaN;
     out.Throughput_Mbps = NaN;
-    out.Notes = "Skipped: DL chain unsupported in this release (" + firstCrashMsg + ")";
+    out.Notes = "Failed: every DL waveform trial crashed (" + firstCrashMsg + ")";
 end
 
 out.TrialTable = localBuildTrialSlice(numFrames);
@@ -1755,7 +1782,7 @@ end
             trialSelectedBeam(idx), trialBestBeam(idx), trialBeamHit(idx), trialTopKBeamHit(idx), trialBeamCount(idx), ...
             trialSelectedBeamGain(idx), trialBestBeamGain(idx), trialBeamGap(idx), ...
             trialCfgPMI(idx), trialCfgCRI(idx), trialBitErr(idx), trialBitTot(idx), ...
-            trialOfferedBits(idx), trialGoodBits(idx), trialOfferedThr(idx), trialGoodput(idx), ...
+            trialOfferedBits(idx), trialGoodBits(idx), trialThroughput(idx), trialOfferedThr(idx), trialGoodput(idx), ...
             trialComputeLatency(idx), trialProcedureDelay(idx), trialAirInterfaceTTI(idx), ...
             trialLatency(idx), trialDecodeLatency(idx), trialEarlyStop(idx), trialDecoderComplexity(idx), trialNormDecoderComplexity(idx), trialAreaEfficiency(idx), ...
             trialNumCB(idx), trialCBLen(idx), trialSegOccurred(idx), trialSegPadding(idx), trialTBCRC(idx), trialTBWithCRC(idx), trialBaseGraph(idx), ...
@@ -1789,7 +1816,7 @@ end
             'SelectedBeamIndex','BestBeamIndex','BeamHit','TopKBeamHit','BeamCandidateCount', ...
             'SelectedBeamGain_dB','BestBeamGain_dB','BeamGainGap_dB', ...
             'ConfiguredPMI','ConfiguredCRI','BitErrors','BitsCompared', ...
-            'OfferedBits','GoodBits','OfferedThroughput_Mbps','Goodput_Mbps', ...
+            'OfferedBits','GoodBits','Throughput_Mbps','OfferedThroughput_Mbps','Goodput_Mbps', ...
             'ComputeLatency_ms','ProcedureDelay_ms','AirInterfaceTTI_ms', ...
             'Latency_ms','DecodeLatency_ms','EarlyStopRate','DecoderComplexityUnits','NormalizedDecoderComplexity','AreaEfficiencyProxy', ...
             'NumCodeBlocks','CodeBlockLength_bits','SegmentationOccurred','SegmentationPaddingBits','TBCRCLength_bits','TBLengthWithCRC_bits','BaseGraph', ...
@@ -1860,6 +1887,8 @@ end
             trialDLSCHDecodeAvailable(idx) & isfinite(trialCRC(idx)));
         T.TxWaveformColumns = trialTxWaveformColumns(idx);
         T.PhysicalTxAntennas = trialPhysicalTxAntennas(idx);
+        T.RxWaveformBranches = trialRxWaveformBranches(idx);
+        T.PhysicalRxAntennas = trialPhysicalRxAntennas(idx);
         T.TxWaveformDomain = trialTxWaveformDomain(idx);
         T.HybridElementDomainApplied = trialHybridElementDomainApplied(idx);
         configuredLayers = localFirstFiniteScalar( ...
@@ -1899,6 +1928,12 @@ end
         T.EffectiveModulation = T.Modulation;
         T.EffectiveLayers = T.Layers;
         T.EffectiveRank = T.Layers;
+        T.CSIComputationStatus = trialCSIComputationStatus(idx);
+        T.CSIComputationErrorIdentifier = trialCSIComputationErrorIdentifier(idx);
+        T.CSIMeasurementID = trialCSIMeasurementID(idx);
+        T.CSIMeasurementDigest = trialCSIMeasurementDigest(idx);
+        T.CSIMeasurementProvenance = trialCSIMeasurementProvenance(idx);
+        T.CSIMeasurementSlot = trialCSIMeasurementSlot(idx);
         T.RankSelectionPolicy = trialRankSelectionPolicy(idx);
         T.RankSelectionSource = trialRankSelectionSource(idx);
         T.RankDecisionReason = trialRankDecisionReason(idx);
@@ -1998,6 +2033,8 @@ end
         T.EqualizerType = trialEqualizerType(idx);
         T.EqualizerRequestedType = trialEqualizerRequestedType(idx);
         T.EqualizerEngine = trialEqualizerEngine(idx);
+        T.EqualizerCovarianceFactorizationCount = ...
+            trialEqualizerCovarianceFactorizationCount(idx);
         T.InterferenceCovarianceAvailable = trialInterferenceCovarianceAvailable(idx);
         T.InterferenceCovarianceSource = trialInterferenceCovarianceSource(idx);
         T.InterferenceCovarianceStatus = trialInterferenceCovarianceStatus(idx);
@@ -2500,7 +2537,8 @@ row.CellID = double(sixgr.util.structGet(grantSnapshot, "BaseStationID", ...
 row.BWPID = double(sixgr.util.structGet(cfg, "phy.csirs.bwpID", 0));
 row.UEIndex = double(sixgr.util.structGet(grantSnapshot, "UEIndex", NaN));
 row.RNTI = double(sixgr.util.structGet(grantSnapshot, "RNTI", sixgr.util.structGet(cfg, "phy.rnti", NaN)));
-row.ResourceID = double(sixgr.util.structGet(txEvent, "ResourceID", sixgr.util.structGet(rxObs, "ResourceID", 0)));
+row.ResourceID = double(sixgr.util.structGet(rxObs, "ResourceID", ...
+    sixgr.util.structGet(txEvent, "ResourceID", 0)));
 row.ResourceSetID = double(sixgr.util.structGet(txEvent, "ResourceSetID", sixgr.util.structGet(rxObs, "ResourceSetID", 0)));
 row.CSIRSType = string(sixgr.util.structGet(txEvent, "CSIRSType", "nzp"));
 row.NumPorts = double(sixgr.util.structGet(txEvent, "NumPorts", sixgr.util.structGet(rxObs, "NumPorts", NaN)));
@@ -2517,15 +2555,91 @@ row.Transmitted = logical(sixgr.util.structGet(txEvent, "Transmitted", false));
 row.Observed = logical(sixgr.util.structGet(rxObs, "Observed", false));
 row.Consumer = "";
 row.Consumed = false;
-if row.Observed && strcmpi(string(sixgr.util.structGet(metrics, "CSI_RSRPSource", "")), "received_reference_signal_power")
-    row.Consumed = true;
-    row.Consumer = "csi_feedback_reference_power_measurement";
+row.ResourceExtractionAttempted = logical(sixgr.util.structGet(rxObs, "ResourceExtractionAttempted", false));
+row.ResourceExtractionAvailable = logical(sixgr.util.structGet(rxObs, "ResourceExtractionAvailable", false));
+row.ChannelEstimationAttempted = logical(sixgr.util.structGet(rxObs, "ChannelEstimationAttempted", false));
+row.ChannelEstimateAvailable = logical(sixgr.util.structGet(rxObs, "ChannelEstimateAvailable", false));
+row.ChannelEstimateSource = string(sixgr.util.structGet(rxObs, "ChannelEstimateSource", ""));
+row.ChannelEstimator = string(sixgr.util.structGet(rxObs, "ChannelEstimator", ""));
+row.ChannelInterpolationMethod = string(sixgr.util.structGet(rxObs, "ChannelInterpolationMethod", ""));
+row.ChannelEstimateConvention = string(sixgr.util.structGet(rxObs, "ChannelEstimateConvention", ""));
+row.ChannelEstimateNoiseVariance = double(sixgr.util.structGet(rxObs, "ChannelEstimateNoiseVariance", NaN));
+row.PilotRECount = double(sixgr.util.structGet(rxObs, "PilotRECount", NaN));
+row.PilotResidualPower = double(sixgr.util.structGet(rxObs, "PilotResidualPower", NaN));
+row.PilotResidualNMSE_dB = double(sixgr.util.structGet(rxObs, "PilotResidualNMSE_dB", NaN));
+row.HestDimensions = string(sixgr.util.structGet(rxObs, "HestDimensions", ""));
+row.HestRxPorts = double(sixgr.util.structGet(rxObs, "HestRxPorts", NaN));
+row.HestTxPorts = double(sixgr.util.structGet(rxObs, "HestTxPorts", NaN));
+row.SINRMeasurementDomain = string(sixgr.util.structGet(rxObs, "SINRMeasurementDomain", ...
+    "csi_rs_resource_selective_channel_estimate"));
+row.PowerReferencePlane = string(sixgr.util.structGet(rxObs, "PowerReferencePlane", ...
+    "normalized_ofdm_resource_grid_after_receiver_synchronization"));
+row.CQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
+row.RI = double(sixgr.util.structGet(metrics, "RI", NaN));
+row.PMI = double(sixgr.util.structGet(metrics, "PMI", NaN));
+row.CRI = double(sixgr.util.structGet(metrics, "CRI", NaN));
+row.CQISource = string(sixgr.util.structGet(metrics, "CQISource", ""));
+row.CSIReportMode = string(sixgr.util.structGet(metrics, "CSIReportMode", ""));
+row.CSIPayloadBitLength = double(sixgr.util.structGet(metrics, "CSIPayloadBitLength", NaN));
+row.CSIPayloadHex = string(sixgr.util.structGet(metrics, "CSIPayloadHex", ""));
+row.CSIComputationStatus = string(sixgr.util.structGet(metrics, "CSIComputationStatus", "not_attempted"));
+row.CSIComputationErrorIdentifier = string(sixgr.util.structGet(metrics, "CSIComputationErrorIdentifier", ""));
+row.CSIMeasurementID = string(sixgr.util.structGet(metrics, "CSIMeasurementID", ...
+    sixgr.util.structGet(rxObs, "CSIMeasurementID", "")));
+row.CSIMeasurementDigest = string(sixgr.util.structGet(metrics, "CSIMeasurementDigest", ...
+    sixgr.util.structGet(rxObs, "CSIMeasurementDigest", "")));
+row.CSIMeasurementProvenance = string(sixgr.util.structGet(metrics, "CSIMeasurementProvenance", ...
+    sixgr.util.structGet(rxObs, "CSIMeasurementProvenance", "")));
+row.CSIMeasurementSlot = double(sixgr.util.structGet(metrics, "CSIMeasurementSlot", ...
+    sixgr.util.structGet(rxObs, "CSIMeasurementSlot", NaN)));
+row.CSIMeasurementNoiseVariance = double(sixgr.util.structGet(rxObs, ...
+    "CSIMeasurementNoiseVariance", NaN));
+row.NumConfiguredResources = double(sixgr.util.structGet(rxObs, ...
+    "NumConfiguredResources", sixgr.util.structGet(txEvent, "NumResources", NaN)));
+row.NumMeasuredResources = double(sixgr.util.structGet(rxObs, ...
+    "NumMeasuredResources", NaN));
+row.ResourceObjectiveValues = string(sixgr.util.structGet(rxObs, ...
+    "ResourceObjectiveValues", ""));
+row.CRISelectionSource = string(sixgr.util.structGet(rxObs, ...
+    "CRISelectionSource", ""));
+row.ConfiguredResourceIDs = string(sixgr.util.structGet(txEvent, ...
+    "ResourceIDs", ""));
+row.CSIRSPhysicalPortCount = double(sixgr.util.structGet(txEvent, ...
+    "PhysicalPortCount", NaN));
+row.CSIRSPrecoderSource = string(sixgr.util.structGet(txEvent, ...
+    "PrecoderSource", ""));
+row.CSIRSPrecoderDigests = strjoin(string(sixgr.util.structGet(txEvent, ...
+    "PrecoderDigests", strings(0,1))), "|");
+row.PMIType = string(sixgr.util.structGet(metrics, "PMIType", ""));
+row.PMICodebookMode = string(sixgr.util.structGet(metrics, "PMICodebookMode", ""));
+row.SINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
+row.SINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
+row.SINRValueRole = string(sixgr.util.structGet(metrics, "SINRValueRole", ""));
+row.SINRValueStatus = string(sixgr.util.structGet(metrics, "SINRValueStatus", ""));
+if contains(lower(row.SINRSource), "post_equal") || contains(lower(row.SINRSource), "equalized")
+    row.SINRMeasurementDomain = "pdsch_post_equalization_data_re";
+elseif contains(lower(row.SINRSource), "csi") || contains(lower(row.SINRSource), "hest")
+    row.SINRMeasurementDomain = "csi_rs_resource_selective_channel_estimate";
 end
 row.MeasurementRSRP_dB = double(sixgr.util.structGet(rxObs, "MeasurementRSRP_dB", NaN));
 if ~isfinite(row.MeasurementRSRP_dB)
     row.MeasurementRSRP_dB = double(sixgr.util.structGet(metrics, "CSI_RSRP_dB", NaN));
 end
+strictCSI = logical(sixgr.util.structGet(cfg, "phy.mimo.strict", false));
+identityOk = ~strictCSI || ( ...
+    strlength(strtrim(row.CSIMeasurementID)) > 0 && ...
+    strlength(strtrim(row.CSIMeasurementDigest)) > 0 && ...
+    startsWith(row.CSIMeasurementProvenance, "measured_"));
+row.CSIMeasurementAvailable = row.ChannelEstimateAvailable && ...
+    all(isfinite([row.CQI, row.RI, row.PMI, row.CRI])) && ...
+    row.CSIComputationStatus == "runtime_measured_csi_complete" && identityOk;
+if row.Observed && row.ChannelEstimateAvailable && ...
+        (row.CSIMeasurementAvailable || isfinite(row.MeasurementRSRP_dB))
+    row.Consumed = true;
+    row.Consumer = "dl_csi_cri_ri_pmi_cqi_measurement";
+end
 row.MeasurementSource = string(sixgr.util.structGet(rxObs, "MeasurementSource", ""));
+row.ReportSourceSlot = double(slotIdx);
 row.UpdateOutcome = string(sixgr.util.structGet(rxObs, "UpdateOutcome", sixgr.util.structGet(txEvent, "UpdateOutcome", "")));
 row.TxRuntimeMaterializationStatus = string(sixgr.util.structGet( ...
     txEvent, "RuntimeMaterializationStatus", ""));
@@ -2561,6 +2675,27 @@ row = struct( ...
     "ResourceID", NaN, "ResourceSetID", NaN, "CSIRSType", "", "NumPorts", NaN, "RowNumber", NaN, ...
     "Density", "", "Periodicity", "", "SymbolLocations", "", "SubcarrierLocations", "", "RBOffset", NaN, "NumRB", NaN, "NRE", NaN, ...
     "Scheduled", false, "Transmitted", false, "Observed", false, "Consumed", false, "Consumer", "", ...
+    "ResourceExtractionAttempted", false, "ResourceExtractionAvailable", false, ...
+    "ChannelEstimationAttempted", false, "ChannelEstimateAvailable", false, ...
+    "ChannelEstimateSource", "", "ChannelEstimator", "", "ChannelInterpolationMethod", "", ...
+    "ChannelEstimateConvention", "", "ChannelEstimateNoiseVariance", NaN, ...
+    "PilotRECount", NaN, "PilotResidualPower", NaN, "PilotResidualNMSE_dB", NaN, ...
+    "HestDimensions", "", "HestRxPorts", NaN, "HestTxPorts", NaN, ...
+    "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, "CQISource", "", ...
+    "CSIReportMode", "", "CSIPayloadBitLength", NaN, "CSIPayloadHex", "", ...
+    "CSIComputationStatus", "not_attempted", "CSIComputationErrorIdentifier", "", ...
+    "CSIMeasurementID", "", "CSIMeasurementDigest", "", ...
+    "CSIMeasurementProvenance", "", "CSIMeasurementSlot", NaN, ...
+    "CSIMeasurementNoiseVariance", NaN, ...
+    "NumConfiguredResources", NaN, "NumMeasuredResources", NaN, ...
+    "ResourceObjectiveValues", "", "CRISelectionSource", "", ...
+    "ConfiguredResourceIDs", "", "CSIRSPhysicalPortCount", NaN, ...
+    "CSIRSPrecoderSource", "", "CSIRSPrecoderDigests", "", ...
+    "PMIType", "", "PMICodebookMode", "", "SINR_dB", NaN, "SINRSource", "", ...
+    "SINRValueRole", "", "SINRValueStatus", "", "SINRMeasurementDomain", "", ...
+    "PowerReferencePlane", "", "CSIMeasurementAvailable", false, ...
+    "ReportSourceSlot", NaN, "ReportDueSlot", NaN, "ReportDeliveredSlot", NaN, ...
+    "ReportProcessed", false, "ReportStatus", "not_enqueued", "ReportIdentity", "", ...
     "MeasurementRSRP_dB", NaN, "MeasurementSource", "", "UpdateOutcome", "", ...
     "RuntimeMaterializationStatus", "", "TxRuntimeMaterializationStatus", "", ...
     "RxRuntimeObservationStatus", "", "RuntimeBlocker", "", "RuntimeEvidenceSource", "", ...
@@ -2797,6 +2932,21 @@ row.AntennaGeometrySource = "CoupledTruthRuntime.applyUserContextImpl";
 row.RuntimeTraceSource = "runDLPDSCHThroughput_active_trial";
 row.AntennaEvidenceSource = "active_runtime_user_context";
 row.SameFlowEvidenceSource = "CoupledTruthRuntime.applyUserContextImpl->runDLPDSCHThroughput";
+row.ReferenceTxPower_dBm = double(sixgr.util.structGet(replay, "ReferenceTxPower_dBm", NaN));
+row.ReferenceTxPowerSource = string(sixgr.util.structGet(replay, "ReferenceTxPowerSource", ""));
+row.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
+row.ServingRxPowerSource = string(sixgr.util.structGet(replay, "ServingRxPowerSource", ""));
+row.ThermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
+row.NoisePowerSource = string(sixgr.util.structGet(replay, "NoisePowerSource", ""));
+row.NoiseFigure_dB = double(sixgr.util.structGet(replay, "NoiseFigure_dB", NaN));
+row.NoiseBandwidth_Hz = double(sixgr.util.structGet(replay, "NoiseBandwidth_Hz", NaN));
+row.PowerContextTotalTxPower_dBm = double(sixgr.util.structGet(replay, "PowerContextTotalTxPower_dBm", NaN));
+row.PowerContextTxGain_dB = double(sixgr.util.structGet(replay, "PowerContextTxGain_dB", NaN));
+row.PowerContextRxGain_dB = double(sixgr.util.structGet(replay, "PowerContextRxGain_dB", NaN));
+row.PowerContextAdditionalLoss_dB = double(sixgr.util.structGet(replay, "PowerContextAdditionalLoss_dB", NaN));
+row.AbsolutePowerReferencePlane = string(sixgr.util.structGet(replay, "AbsolutePowerReferencePlane", ""));
+row.SamplePowerReferencePlane = string(sixgr.util.structGet(replay, "SamplePowerReferencePlane", ""));
+row.InterferencePowerReferencePlane = string(sixgr.util.structGet(replay, "InterferencePowerReferencePlane", ""));
 end
 
 function meta = localResolveRuntimeAntennaMeta(userMeta, metaField, antennaField)
@@ -3072,7 +3222,15 @@ row = struct( ...
     "AntennaGeometrySource", "", ...
     "RuntimeTraceSource", "", ...
     "AntennaEvidenceSource", "", ...
-    "SameFlowEvidenceSource", "");
+    "SameFlowEvidenceSource", "", ...
+    "ReferenceTxPower_dBm", NaN, "ReferenceTxPowerSource", "", ...
+    "ServingRxPower_dBm", NaN, "ServingRxPowerSource", "", ...
+    "ThermalNoisePower_dBm", NaN, "NoisePowerSource", "", ...
+    "NoiseFigure_dB", NaN, "NoiseBandwidth_Hz", NaN, ...
+    "PowerContextTotalTxPower_dBm", NaN, "PowerContextTxGain_dB", NaN, ...
+    "PowerContextRxGain_dB", NaN, "PowerContextAdditionalLoss_dB", NaN, ...
+    "AbsolutePowerReferencePlane", "", "SamplePowerReferencePlane", "", ...
+    "InterferencePowerReferencePlane", "");
 end
 
 function T = localEnsureRuntimeEvidenceColumns(T, nRows)
@@ -3396,6 +3554,7 @@ replay.InterferenceMode = localSafeCharToken(sixgr.util.structGet(interferenceMe
 replay.InterferenceContributorCount = double(sixgr.util.structGet(interferenceMeta, "Contributors", 0));
 replay.InterferenceAggregatedRxPower_dBm = double(sixgr.util.structGet(interferenceMeta, "AggregatedRxPower_dBm", NaN));
 replay.InterferencePowerSource = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "PowerSource", ""));
+replay.InterferencePowerReferencePlane = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "InterferencePowerReferencePlane", ""));
 replay.FullInterfererChannelTruthUsed = logical(sixgr.util.structGet(interferenceMeta, "FullPerLinkChannelTruthUsed", false));
 replay.InterferenceChannelObjectSource = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "ChannelObjectSource", ""));
 replay.InterferenceChannelObjectClass = localSafeCharToken(sixgr.util.structGet(interferenceMeta, "ChannelObjectClass", ""));
@@ -3497,7 +3656,19 @@ try
     diag.PDSCHDataResourcePower = localMeanExtractedResourcePower(grid, dataInd);
     diag.PDSCHDMRSResourcePower = localMeanExtractedResourcePower(grid, dmrsInd);
     diag.PDSCHDMRSFiniteFraction = localFiniteExtractedResourceFraction(grid, dmrsInd);
-catch
+catch ME
+    csiReportingRequired = logical(sixgr.util.structGet(cfg, "phy.csi.reportCSI", false)) || ...
+        logical(sixgr.util.structGet(cfg, "phy.csi.reportCQI", false)) || ...
+        logical(sixgr.util.structGet(cfg, "phy.csi.reportPMI", false)) || ...
+        logical(sixgr.util.structGet(cfg, "phy.csi.reportRI", false)) || ...
+        logical(sixgr.util.structGet(cfg, "phy.csi.reportCRI", false));
+    if csiReportingRequired && csiChannelSource == "csirs_resource_selective_channel_estimate"
+        failure = MException("sixgr:link:CSIRuntimeMeasurementFailed", ...
+            "Runtime CSI feedback failed after CSI-RS channel estimation: %s | %s", ...
+            string(ME.identifier), string(ME.message));
+        failure = addCause(failure, ME);
+        throwAsCaller(failure);
+    end
 end
 end
 
@@ -3905,7 +4076,7 @@ varNames = {'Direction','SNR_dB','SFN','UEIndex','RNTI','BaseStationID','Seed','
     'SelectedBeamGain_dB','BestBeamGain_dB','BeamGainGap_dB', ...
     'BeamScoreVector_dB','TopBeamIndexSet','TopBeamGainSet_dB','BeamScoreSource', ...
     'ConfiguredPMI','ConfiguredCRI','BitErrors','BitsCompared', ...
-    'OfferedBits','GoodBits','OfferedThroughput_Mbps','Goodput_Mbps', ...
+    'OfferedBits','GoodBits','Throughput_Mbps','OfferedThroughput_Mbps','Goodput_Mbps', ...
     'ComputeLatency_ms','ProcedureDelay_ms','AirInterfaceTTI_ms', ...
     'Latency_ms','DecodeLatency_ms','EarlyStopRate','DecoderComplexityUnits','NormalizedDecoderComplexity','AreaEfficiencyProxy', ...
     'NumCodeBlocks','CodeBlockLength_bits','SegmentationOccurred','SegmentationPaddingBits','TBCRCLength_bits','TBLengthWithCRC_bits','BaseGraph', ...
@@ -3962,6 +4133,15 @@ varTypes = {'string','double','double','double','double','double','double','doub
     'double','double','double','double', ...
     'double','double','double','double', ...
     'string','logical','logical','logical','string'};
+% Throughput_Mbps is the scheduled-TB bitrate and is deliberately distinct
+% from offered traffic and CRC-delivered goodput.  Keep the legacy explicit
+% type vector aligned with the additive canonical column.
+throughputIdx = find(strcmp(varNames, 'Throughput_Mbps'), 1);
+if numel(varTypes) + 1 == numel(varNames)
+    varTypes = [varTypes(1:throughputIdx-1), {'double'}, varTypes(throughputIdx:end)];
+end
+assert(numel(varTypes) == numel(varNames), ...
+    'sixgr:link:DLTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConfiguredSNR_dB = zeros(0,1);
 T.CRCApplicable = false(0,1);
@@ -4084,9 +4264,16 @@ T.CSI_RSSI_dB = zeros(0,1);
 T.CSI_RSSISource = strings(0,1);
 T.CSI_RSRQ_dB = zeros(0,1);
 T.CSI_RSRQSource = strings(0,1);
+T.CSIComputationStatus = strings(0,1);
+T.CSIComputationErrorIdentifier = strings(0,1);
+T.CSIMeasurementID = strings(0,1);
+T.CSIMeasurementDigest = strings(0,1);
+T.CSIMeasurementProvenance = strings(0,1);
+T.CSIMeasurementSlot = zeros(0,1);
 T.EqualizerType = strings(0,1);
 T.EqualizerRequestedType = strings(0,1);
 T.EqualizerEngine = strings(0,1);
+T.EqualizerCovarianceFactorizationCount = zeros(0,1);
 T.InterferenceCovarianceAvailable = false(0,1);
 T.InterferenceCovarianceSource = strings(0,1);
 T.InterferenceCovarianceStatus = strings(0,1);
@@ -4627,6 +4814,13 @@ metrics = struct( ...
     "CSIReportMode", "", ...
     "CSIPayloadBitLength", NaN, ...
     "CSIPayloadHex", "", ...
+    "CSIComputationStatus", "not_attempted", ...
+    "CSIComputationErrorIdentifier", "", ...
+    "CSIComputationErrorMessage", "", ...
+    "CSIMeasurementID", "", ...
+    "CSIMeasurementDigest", "", ...
+    "CSIMeasurementProvenance", "", ...
+    "CSIMeasurementSlot", NaN, ...
     "ChannelGain_dB", NaN, ...
     "RankEstimate", NaN, ...
     "ConditionNumber_dB", NaN, ...
@@ -4665,9 +4859,31 @@ if isempty(Hest)
     return;
 end
 [Hcsi, nVarCSI, csiChannelSource] = localSelectDLCSIChannelEstimate(rx, Hest, nVar);
+strictCSI = logical(sixgr.util.structGet(cfg, "phy.mimo.strict", false));
+measurement = [];
+if strictCSI
+    measurement = sixgr.util.structGet(rx, "CSIMeasurementState", []);
+    if ~isa(measurement, "sixgr.phy.mimo.CSIMeasurementState")
+        error("sixgr:mimo:MissingMeasurementState", ...
+            "Strict DL CSI requires the measured CSI-RS state produced by PDSCH_Rx.");
+    end
+    Hcsi = measurement.ChannelEstimate;
+    nVarCSI = double(measurement.NoiseVariance);
+    csiChannelSource = "immutable_measured_csirs_state";
+    metrics.CSIMeasurementID = measurement.MeasurementID;
+    metrics.CSIMeasurementDigest = measurement.Digest;
+    metrics.CSIMeasurementProvenance = measurement.Provenance;
+    metrics.CSIMeasurementSlot = measurement.Slot;
+end
 
 try
-    if csiChannelSource == "csirs_resource_selective_channel_estimate"
+    if strictCSI
+        reportConfiguration = sixgr.util.structGet(cfg, ...
+            "phy.csi.reportConfiguration", []);
+        csiArgs = {"Direction", "DL", ...
+            "MeasurementState", measurement, ...
+            "ReportConfiguration", reportConfiguration};
+    elseif csiChannelSource == "csirs_resource_selective_channel_estimate"
         csiArgs = localBuildDLCSIRSRPArgs(rx);
         postEqArgs = localBuildPostEqSINRFeedbackArgs(rx);
         if ~isempty(csiArgs)
@@ -4680,8 +4896,11 @@ try
     else
         csiArgs = localBuildDLSINRFeedbackArgs(rx);
     end
-    csiArgs = [{"Direction", "DL"}, csiArgs];
+    if ~strictCSI
+        csiArgs = [{"Direction", "DL"}, csiArgs];
+    end
     csi = sixgr.phy.dl.CSI_Feedback(Hcsi, nVarCSI, cfg, csiArgs{:});
+    metrics.CSIComputationStatus = "runtime_measured_csi_complete";
     metrics.SINR_dB = double(sixgr.util.structGet(csi, "SINR_dB", NaN));
     metrics.SINRSource = string(sixgr.util.structGet(csi, "SINRSource", ""));
     metrics.SINRValueRole = string(sixgr.util.structGet(csi, "SINRValueRole", ""));
@@ -4715,7 +4934,7 @@ try
     metrics.SubbandCQIValueStatus = string(sixgr.util.structGet(csi, "SubbandCQIValueStatus", "NOT_AVAILABLE"));
     metrics.SelectedBeamIndices = double(sixgr.util.structGet(csi, "SelectedBeamIndices", []));
     rsrpArgs = localBuildDLCSIRSRPArgs(rx);
-    if ~isempty(rsrpArgs)
+    if ~strictCSI && ~isempty(rsrpArgs)
         rsrpArgs = [{"Direction", "DL"}, rsrpArgs];
         csiRSRP = sixgr.phy.dl.CSI_Feedback(Hcsi, nVarCSI, cfg, rsrpArgs{:});
         rsrpVal = double(sixgr.util.structGet(csiRSRP, "RSRP_dB", NaN));
@@ -4728,8 +4947,22 @@ try
             metrics.CSI_RSRQ_dB = double(sixgr.util.structGet(csiRSRP, "RSRQ_dB", metrics.CSI_RSRQ_dB));
             metrics.CSI_RSRQSource = string(sixgr.util.structGet(csiRSRP, "RSRQSource", metrics.CSI_RSRQSource));
         end
+    elseif strictCSI
+        rxObs = sixgr.util.structGet(rx, "CSIRSObservation", struct());
+        measuredRSRP = double(sixgr.util.structGet(rxObs, "MeasurementRSRP_dB", NaN));
+        if isfinite(measuredRSRP)
+            metrics.CSI_RSRP_dB = measuredRSRP;
+            metrics.CSI_RSRPSource = string(sixgr.util.structGet( ...
+                rxObs, "MeasurementSource", "received_csirs_reference_signal_power"));
+        end
     end
-catch
+catch ME
+    metrics.CSIComputationStatus = "failed";
+    metrics.CSIComputationErrorIdentifier = string(ME.identifier);
+    metrics.CSIComputationErrorMessage = string(ME.message);
+    if strictCSI
+        rethrow(ME);
+    end
 end
 
 if ~isfinite(double(metrics.CQI)) && localCQIReportingEnabled(cfg, "DL")
@@ -4772,7 +5005,11 @@ if isfinite(gain) && gain > 0
     end
 end
 
-Hwb = localWidebandChannelMatrix(Hcsi);
+if strictCSI
+    Hwb = double(measurement.ChannelEstimate);
+else
+    Hwb = localWidebandChannelMatrix(Hcsi);
+end
 if isempty(Hwb)
     return;
 end
@@ -5786,7 +6023,9 @@ grant = struct( ...
     "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", NaN)), ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", NaN)), ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", NaN)), ...
-    "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)));
+    "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)), ...
+    "NumLogicalPorts", double(sixgr.util.structGet(prec, "NumLogicalPorts", NaN)), ...
+    "NumRFChains", double(sixgr.util.structGet(prec, "NumRFChains", NaN)));
 preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode", ...
     "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
     "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
@@ -5830,12 +6069,30 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "ExactAllocationCapacityBits","ExactAllocationCapacityBytes","ExactTBSBits","ExactTBSBytes", ...
     "ExactNREPerPRB","ExactTBSUsedFastNREApprox","ExactTBSInfo","PlanningOnlyApproximation", ...
     "HARQTBContext","OriginalTBSBits","CurrentTBSBits","OriginalRateMatchedBits","CurrentRateMatchedBits", ...
-    "EffectiveInitialCodeRate","EffectiveCurrentTxCodeRate","ShortIRRetx","CodeBlockLayoutHash","HARQContextHash","HARQContextStatus"];
+    "EffectiveInitialCodeRate","EffectiveCurrentTxCodeRate","ShortIRRetx","CodeBlockLayoutHash","HARQContextHash","HARQContextStatus", ...
+    "TransportBlockId","ProtocolPayloadSameWaveformTruth","ProtocolPacketId", ...
+    "ProtocolApplicationPacketId","ProtocolFragmentId","ProtocolSegmentIndex", ...
+    "ProtocolPayloadOffsetBits","ProtocolPayloadBits","ProtocolPayloadSHA256", ...
+    "ProtocolSDAPHeaderHex","ProtocolPDCPHeaderHex","ProtocolRLCHeaderHex", ...
+    "ProtocolEncodedRLC_SHA256","ProtocolMACSHA256","ProtocolMACPDUBytes", ...
+    "ProtocolMACPaddingBytes","ProtocolEvidenceSource"];
 for i = 1:numel(preserveFields)
     fieldName = char(preserveFields(i));
     if isfield(seedGrant, fieldName)
         grant.(fieldName) = seedGrant.(fieldName);
     end
+end
+% The HARQ snapshot must describe the architecture actually exercised by
+% this PDSCH waveform.  Scheduler metadata is preserved above for all
+% policy/control fields, but a missing or stale architecture value must not
+% overwrite the applied precoder evidence.
+appliedLogicalPorts = double(sixgr.util.structGet(prec, "NumLogicalPorts", NaN));
+appliedRFChains = double(sixgr.util.structGet(prec, "NumRFChains", NaN));
+if isscalar(appliedLogicalPorts) && isfinite(appliedLogicalPorts) && appliedLogicalPorts >= 1
+    grant.NumLogicalPorts = appliedLogicalPorts;
+end
+if isscalar(appliedRFChains) && isfinite(appliedRFChains) && appliedRFChains >= 1
+    grant.NumRFChains = appliedRFChains;
 end
 txPHYGrant = sixgr.util.structGet(tx, "PHYGrant", struct());
 if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
@@ -7075,7 +7332,8 @@ T.ExecutionProfile = repmat(string(contract.Profile), n, 1);
 T.ExecutionTaxonomy = repmat(string(contract.Taxonomy), n, 1);
 T.ExecutionBackend = repmat(string(contract.Backend), n, 1);
 T.ApproximationMode = repmat("none", n, 1);
-T.StrictSchedulingOwnership = repmat(logical(contract.IsStrict), n, 1);
+T.StrictSchedulingOwnership = repmat(logical(contract.IsStrict || ...
+    string(contract.Profile) == "scheduler_truth"), n, 1);
 T.ConnectedStrictCertified = false(n, 1);
 T.CalibrationProvenance = repmat( ...
     string(contract.CalibrationProvenance), n, 1);
@@ -7131,6 +7389,7 @@ bler = double(~logical(rx.CRCPass));
 offeredBits = double(bitsCompared);
 goodBits = offeredBits * double(logical(rx.CRCPass));
 slotDurationSeconds = localSlotDuration(cfg);
+throughputMbps = double(bitsCompared) / max(slotDurationSeconds, eps) / 1e6;
 offeredMbps = offeredBits / max(slotDurationSeconds, eps) / 1e6;
 goodputMbps = goodBits / max(slotDurationSeconds, eps) / 1e6;
 postEqSINR = mean(double( ...
@@ -7164,7 +7423,7 @@ T = table( ...
     double(seed), double(gridNoiseVariance), ...
     logical(rx.CRCPass), logical(~rx.CRCPass), ...
     double(bitErrors), double(bitsCompared), ber, bler, ...
-    offeredBits, goodBits, offeredMbps, goodputMbps, ...
+    offeredBits, goodBits, throughputMbps, offeredMbps, goodputMbps, ...
     postEqSINR, evm, double(rx.Metrics.ChannelEstimateNMSE), ...
     string(rx.ChannelEstimationInfo.EngineUsed), ...
     strictEvidenceOK, strictEvidenceOK, ...
@@ -7180,7 +7439,7 @@ T = table( ...
     'ChannelModel','ChannelFadingApplied','Seed', ...
     'GridNoiseVariance','CRCPass','CRCError','BitErrors', ...
     'BitsCompared','BER','BLER','OfferedBits','GoodBits', ...
-    'OfferedThroughput_Mbps','Goodput_Mbps', ...
+    'Throughput_Mbps','OfferedThroughput_Mbps','Goodput_Mbps', ...
     'PostEqSINRWidebanddB','EVM_rms','ChannelEstimateNMSE', ...
     'ChannelEstimateSource','StrictReceiverEvidenceOk', ...
     'StrictOk','TruthStatus','Source','Status'});
@@ -7190,7 +7449,7 @@ out.Ok = true;
 out.Skipped = false;
 out.BER = ber;
 out.BLER = bler;
-out.Throughput_Mbps = offeredMbps;
+out.Throughput_Mbps = throughputMbps;
 out.Goodput_Mbps = goodputMbps;
 out.OfferedThroughput_Mbps = offeredMbps;
 out.EVM_rms = evm;

@@ -380,20 +380,45 @@ classdef PDSCHArtifactExporter
                     legend(ax, "Location", "best");
 
                 case "pdsch_bler_vs_snr.png"
+                    % hold(ax,"on") is established before this switch and
+                    % prevents semilogy from changing an existing linear
+                    % axes in R2026a. Make the scientific scale explicit.
+                    set(ax, "YScale", "log");
                     value = tables.pdsch_bler_curve;
                     x = sixgr.pdsch.PDSCHArtifactExporter. ...
                         numericColumn(value, "SNRdB");
                     y = sixgr.pdsch.PDSCHArtifactExporter. ...
                         numericColumn(value, "BLER");
+                    upper = sixgr.pdsch.PDSCHArtifactExporter. ...
+                        numericColumn(value, "CIUpper");
                     campaign = sixgr.pdsch.PDSCHArtifactExporter. ...
                         textColumn(value, "CampaignID");
                     for name = unique(campaign(:), "stable").'
                         mask = campaign == name;
                         [sortedX, order] = sort(x(mask));
                         selectedY = y(mask);
-                        semilogy(ax, sortedX, max(selectedY(order), eps), ...
-                            "-o", "LineWidth", 1.8, ...
-                            "DisplayName", name);
+                        selectedY = selectedY(order);
+                        selectedUpper = upper(mask);
+                        selectedUpper = selectedUpper(order);
+                        observed = selectedY > 0;
+                        censored = ~observed;
+                        if any(observed)
+                            semilogy(ax, sortedX(observed), ...
+                                selectedY(observed), "-o", ...
+                                "LineWidth", 1.8, ...
+                                "DisplayName", name + " measured");
+                        end
+                        if any(censored)
+                            % A zero-error finite campaign does not measure
+                            % BLER=0. Plot its exact confidence upper bound
+                            % as a downward limit, never machine epsilon.
+                            semilogy(ax, sortedX(censored), ...
+                                selectedUpper(censored), "v", ...
+                                "LineStyle", "none", ...
+                                "MarkerSize", 7, "LineWidth", 1.5, ...
+                                "DisplayName", name + ...
+                                " zero-error upper bound");
+                        end
                     end
                     legend(ax, "Location", "best");
 
@@ -481,6 +506,7 @@ classdef PDSCHArtifactExporter
         function row = saveAndInspectFigure(fig, ax, imagePath, ...
                 contract, stageDir)
             cleanup = onCleanup(@() close(fig));
+            sixgr.visual.RasterFigureStyle.apply(fig);
             drawnow;
             axesCount = numel(findall(fig, "Type", "axes"));
             [seriesCount, finitePoints] = ...

@@ -212,24 +212,31 @@ paths = [
     string(fullfile(figDir, "trs_negative_trial_outcomes.png"))
     string(fullfile(figDir, "trs_tracking_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
-localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid(:,:,1))));
+localExportHeatmap(paths(1), abs(result.PositiveGrid(:,:,1)), ...
+    "TRS resource-grid magnitude", "OFDM symbol index", "subcarrier index");
 rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.trs.exportStrictTRSArtifacts");
 det = result.ArtifactTables.trs_detection_metrics;
-localWritePNG(paths(2), localLineImage(double(det.Slot), double(det.DetectionMetric)));
+localExportLine(paths(2), double(det.Slot), double(det.DetectionMetric), ...
+    "TRS detection metric by slot", "slot", "detection metric");
 rows(2) = localManifestRow(paths(2), "image/png", "figure", height(det), "sixgr.phy.trs.exportStrictTRSArtifacts");
-localWritePNG(paths(3), localHeatImage(reshape(double(det.ResourceCoverageRatio), [], 1)));
+localExportHeatmap(paths(3), reshape(double(det.ResourceCoverageRatio), [], 1), ...
+    "TRS resource coverage by measured row", "coverage field", "measurement row");
 rows(3) = localManifestRow(paths(3), "image/png", "figure", height(det), "sixgr.phy.trs.exportStrictTRSArtifacts");
 tim = result.ArtifactTables.trs_timing_offset_sweep;
-localWritePNG(paths(4), localLineImage(double(tim.InjectedTimingOffset_samples), abs(double(tim.TimingError_samples))));
+localExportLine(paths(4), double(tim.InjectedTimingOffset_samples), abs(double(tim.TimingError_samples)), ...
+    "TRS timing-estimation error", "injected timing offset (samples)", "absolute timing error (samples)");
 rows(4) = localManifestRow(paths(4), "image/png", "figure", height(tim), "sixgr.phy.trs.exportStrictTRSArtifacts");
 fr = result.ArtifactTables.trs_frequency_offset_sweep;
-localWritePNG(paths(5), localLineImage(double(fr.InjectedCFO_Hz), abs(double(fr.FrequencyError_Hz))));
+localExportLine(paths(5), double(fr.InjectedCFO_Hz), abs(double(fr.FrequencyError_Hz)), ...
+    "TRS frequency-offset estimation error", "injected CFO (Hz)", "absolute CFO error (Hz)");
 rows(5) = localManifestRow(paths(5), "image/png", "figure", height(fr), "sixgr.phy.trs.exportStrictTRSArtifacts");
 ch = result.ArtifactTables.trs_channel_estimation;
-localWritePNG(paths(6), localLineImage(double(ch.Slot), double(ch.NMSE_dB)));
+localExportLine(paths(6), double(ch.Slot), double(ch.NMSE_dB), ...
+    "TRS channel-estimation NMSE", "slot", "NMSE (dB)");
 rows(6) = localManifestRow(paths(6), "image/png", "figure", height(ch), "sixgr.phy.trs.exportStrictTRSArtifacts");
 neg = result.ArtifactTables.trs_negative_trials;
-localWritePNG(paths(7), localBarImage(double(neg.NegativeExpectedOk)));
+localExportBars(paths(7), double(neg.NegativeExpectedOk), ...
+    "TRS negative-trial outcomes", "negative trial", "expected rejection (1=yes)");
 rows(7) = localManifestRow(paths(7), "image/png", "figure", height(neg), "sixgr.phy.trs.exportStrictTRSArtifacts");
 sixgr.visual.writeFlowDiagramPNG(paths(8), "Strict TRS tracking flow", ...
     ["NZP-CSI-RS/TRS grid","Timing estimate","CFO phase slope","nrChannelEstimate","Strict gate"], result.StrictOk);
@@ -251,133 +258,73 @@ sixgr.visual.writeComponentPlotLineage(runFolder, lineagePath, ...
     paths, sourceCSVs, "sixgr.phy.trs.exportStrictTRSArtifacts");
 end
 
-function localWritePNG(path, img)
-sixgr.util.ensureDir(path);
-img = uint8(img);
-[heightPx, widthPx, channels] = size(img);
-if channels ~= 3
-    error("sixgr:phy:trs:BadPNGImage", "Strict TRS PNG writer expects RGB image data.");
-end
-rawPath = char(string(tempname) + ".rgb");
-fid = fopen(rawPath, "w");
-if fid < 0
-    error("sixgr:phy:trs:PNGRawOpenFailed", "Cannot open temporary PNG raw buffer.");
-end
-cleanupClose = onCleanup(@() fclose(fid)); %#ok<NASGU>
-fwrite(fid, permute(img, [3 2 1]), "uint8");
-clear cleanupClose;
-scriptPath = fullfile(localRepoRoot(), "tools", "write_png_from_raw_rgb.py");
-cmd = sprintf('python "%s" "%s" "%s" %d %d', localShellEscape(scriptPath), ...
-    localShellEscape(rawPath), localShellEscape(char(string(path))), widthPx, heightPx);
-[status, out] = system(cmd);
-try
-    if exist(rawPath, "file") == 2
-        delete(rawPath);
-    end
-catch
-end
-if status ~= 0 || exist(char(string(path)), "file") ~= 2
-    error("sixgr:phy:trs:PNGWriteFailed", "Strict TRS PNG writer failed: %s", string(out));
-end
-end
-
-function img = localBaseImage()
-img = uint8(255 * ones(480, 720, 3));
-img(430:433, 70:660, :) = 190;
-img(70:430, 67:70, :) = 190;
-end
-
-function img = localHeatImage(M)
-M = abs(double(M));
-if isempty(M)
+function localExportHeatmap(path, values, plotTitle, xLabel, yLabel)
+values = double(values);
+if isempty(values) || ~any(isfinite(values(:)))
     error("sixgr:phy:trs:MissingPlotEvidence", ...
-        "Cannot publish a TRS heat map without measured source samples.");
+        "Cannot publish a TRS heat map without finite measured source samples.");
 end
-M = localNormalizeMatrix(M);
-rowIdx = max(1, min(size(M, 1), round(linspace(1, size(M, 1), 420))));
-colIdx = max(1, min(size(M, 2), round(linspace(1, size(M, 2), 620))));
-M = M(rowIdx, colIdx);
-img = localBaseImage();
-heat = uint8(cat(3, 255 .* M, 80 .* (1 - M), 220 .* (1 - M)));
-img(40:459, 80:699, :) = heat;
+localExportMeasuredFigure(path, @render);
+    function render()
+        imagesc(0:size(values,2)-1, 0:size(values,1)-1, values);
+        axis xy tight;
+        colormap(parula(256));
+        colorbar;
+        title(plotTitle);
+        xlabel(xLabel);
+        ylabel(yLabel);
+    end
 end
 
-function img = localLineImage(x, y)
-img = localBaseImage();
+function localExportLine(path, x, y, plotTitle, xLabel, yLabel)
 x = double(x(:)); y = double(y(:));
 valid = isfinite(x) & isfinite(y);
 x = x(valid); y = y(valid);
 if isempty(x)
     error("sixgr:phy:trs:MissingPlotEvidence", ...
-        "Cannot publish a TRS line plot without finite measured samples.");
+        "Cannot publish %s without finite measured source samples.", plotTitle);
 end
-px = localScaleToPixels(x, 80, 660);
-py = localScaleToPixels(y, 420, 80);
-for ii = 1:(numel(px)-1)
-    img = localDrawLine(img, px(ii), py(ii), px(ii+1), py(ii+1), [30 90 180]);
-end
-for ii = 1:numel(px)
-    img = localPaintPatch(img, px(ii), py(ii), 3, [220 60 40]);
-end
+[x, order] = sort(x); y = y(order);
+localExportMeasuredFigure(path, @render);
+    function render()
+        plot(x, y, "o-", "LineWidth", 1.5, ...
+            "MarkerFaceColor", [0.10 0.45 0.75], "DisplayName", "measured");
+        title(plotTitle);
+        xlabel(xLabel);
+        ylabel(yLabel);
+        grid on;
+        legend("Location", "best");
+    end
 end
 
-function img = localBarImage(y)
-img = localBaseImage();
-y = double(y(:)); y = y(isfinite(y));
+function localExportBars(path, y, plotTitle, xLabel, yLabel)
+y = double(y(:));
+y = y(isfinite(y));
 if isempty(y)
     error("sixgr:phy:trs:MissingPlotEvidence", ...
-        "Cannot publish a TRS bar plot without finite measured samples.");
+        "Cannot publish %s without finite measured source samples.", plotTitle);
 end
-py = localScaleToPixels(y, 420, 80);
-x = round(linspace(90, 650, numel(y)));
-for ii = 1:numel(y)
-    img(max(80, py(ii)):420, max(1, x(ii)-8):min(720, x(ii)+8), 1) = 45;
-    img(max(80, py(ii)):420, max(1, x(ii)-8):min(720, x(ii)+8), 2) = 135;
-    img(max(80, py(ii)):420, max(1, x(ii)-8):min(720, x(ii)+8), 3) = 190;
-end
-end
-
-function M = localNormalizeMatrix(M)
-M(~isfinite(M)) = 0;
-lo = min(M(:)); hi = max(M(:));
-if hi <= lo
-    M = zeros(size(M));
-else
-    M = (M - lo) ./ (hi - lo);
-end
+localExportMeasuredFigure(path, @render);
+    function render()
+        bar((1:numel(y)).', y, 0.72, "FaceColor", [0.10 0.45 0.75]);
+        title(plotTitle);
+        xlabel(xLabel);
+        ylabel(yLabel);
+        ylim([0 1.1]);
+        grid on;
+    end
 end
 
-function pix = localScaleToPixels(v, pMin, pMax)
-v = double(v(:));
-if max(v) <= min(v)
-    pix = round((pMin + pMax) / 2) * ones(size(v));
-else
-    pix = round(pMin + (v - min(v)) ./ (max(v) - min(v)) .* (pMax - pMin));
-end
-pix = max(1, min(720, pix));
-end
-
-function img = localDrawLine(img, x1, y1, x2, y2, color)
-n = max(2, round(hypot(double(x2 - x1), double(y2 - y1))));
-xs = round(linspace(x1, x2, n)); ys = round(linspace(y1, y2, n));
-for kk = 1:n
-    x = max(1, min(size(img, 2), xs(kk)));
-    y = max(1, min(size(img, 1), ys(kk)));
-    img = localPaintPatch(img, x, y, 1, color);
-end
-end
-
-function img = localPaintPatch(img, x, y, radius, color)
-r = max(0, round(double(radius)));
-x1 = max(1, round(double(x)) - r);
-x2 = min(size(img, 2), round(double(x)) + r);
-y1 = max(1, round(double(y)) - r);
-y2 = min(size(img, 1), round(double(y)) + r);
-if x2 < x1 || y2 < y1
-    return;
-end
-rgb = uint8(reshape(color, 1, 1, 3));
-img(y1:y2, x1:x2, :) = repmat(rgb, y2 - y1 + 1, x2 - x1 + 1, 1);
+function localExportMeasuredFigure(path, plotter)
+sixgr.util.ensureDir(path);
+fig = figure("Visible", "off", "Color", "w", "Position", [100 100 960 600]);
+cleanupFigure = onCleanup(@() close(fig)); %#ok<NASGU>
+plotter();
+axesHandles = findall(fig, "Type", "axes");
+set(axesHandles, "Color", "w", "XColor", [0.12 0.16 0.20], ...
+    "YColor", [0.12 0.16 0.20], "FontSize", 10, "LineWidth", 0.8);
+set(findall(fig, "Type", "text"), "Color", [0.08 0.12 0.16]);
+sixgr.util.exportFigureArtifact(fig, char(string(path)), "Resolution", 150);
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer)
@@ -419,14 +366,6 @@ end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
 data = fread(fid, Inf, "*uint8");
 hash = sixgr.rrc.asn1.sha256Hex(data);
-end
-
-function root = localRepoRoot()
-root = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
-end
-
-function out = localShellEscape(value)
-out = strrep(char(string(value)), '"', '""');
 end
 
 function T = localGridEvidence(grid)

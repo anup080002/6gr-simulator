@@ -258,6 +258,7 @@ classdef HARQEntity < handle
 
             % Prepare output
             p = procs(pid);
+            obj.assertStoredTBContract(double(rnti), pid - 1, p);
             harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
                 'RV', p.RV, 'IsRetransmission', isRetx);
             txp = struct('HARQ',harq,'ProcessIndex',pid,'ExpectTBSizeBytes',p.TBSBytes,'NoFreeProcess',false);
@@ -279,6 +280,28 @@ classdef HARQEntity < handle
                 error('sixgr:HARQEntity:BadHarqId','Bad HarqID=%d for UE RNTI=%d.', harqId0, rnti);
             end
 
+            priorTxCount = double(procs(pid).TxCount);
+            priorTB = procs(pid).TB;
+            if ~isa(tbBytes,'uint8')
+                tbBytes = uint8(tbBytes(:));
+            else
+                tbBytes = tbBytes(:);
+            end
+            actualPayloadBits = double(numel(tbBytes));
+            if actualPayloadBits > 0 && mod(actualPayloadBits, 8) ~= 0
+                error('sixgr:HARQEntity:NonByteAlignedTB', ...
+                    ['HARQ TB for RNTI=%d process=%d contains %d bits; ' ...
+                    'a transport block must be byte aligned.'], ...
+                    round(rnti), round(harqId0), round(actualPayloadBits));
+            end
+            if obj.StoreTB && priorTxCount > 0 && ~isempty(priorTB) && ...
+                    ~isequal(uint8(priorTB(:)), tbBytes)
+                error('sixgr:HARQEntity:RetransmissionPayloadChanged', ...
+                    ['HARQ retransmission for RNTI=%d process=%d changed the ' ...
+                    'stored transport block instead of replaying the first transmission.'], ...
+                    round(rnti), round(harqId0));
+            end
+
             % Update process state
             procs(pid).Active = true;
             procs(pid).AwaitingFeedback = true;
@@ -295,11 +318,6 @@ classdef HARQEntity < handle
 
             % Store TB if requested
             if obj.StoreTB
-                if ~isa(tbBytes,'uint8')
-                    tbBytes = uint8(tbBytes(:));
-                else
-                    tbBytes = tbBytes(:);
-                end
                 procs(pid).TB = tbBytes;
             end
 
@@ -310,15 +328,28 @@ classdef HARQEntity < handle
             if ~isstruct(grant)
                 grant = struct();
             end
-            actualTBSBits = double(numel(tbBytes));
+            actualTBSBits = actualPayloadBits;
             if ~(isfinite(actualTBSBits) && actualTBSBits > 0)
                 actualTBSBits = double(sixgr.util.structGet(grant, 'TBSBits', ...
                     sixgr.util.structGet(grant, 'TransportBlockSize', NaN)));
             end
             if isfinite(actualTBSBits) && actualTBSBits > 0
+                actualTBSBytes = actualTBSBits / 8;
+                if priorTxCount == 0
+                    % allocate() reserves a tentative scheduler size. The
+                    % first executed PHY transmission is authoritative and
+                    % is frozen for every later redundancy version.
+                    procs(pid).TBSBytes = actualTBSBytes;
+                elseif abs(double(procs(pid).TBSBytes) - actualTBSBytes) > 1e-9
+                    error('sixgr:HARQEntity:RetransmissionTBSChanged', ...
+                        ['HARQ retransmission for RNTI=%d process=%d has %d bits, ' ...
+                        'but the first transmitted TB has %d bits.'], ...
+                        round(rnti), round(harqId0), round(actualTBSBits), ...
+                        round(double(procs(pid).TBSBytes) * 8));
+                end
                 grant.TransportBlockSize = actualTBSBits;
                 grant.TBSBits = actualTBSBits;
-                grant.TBSBytes = floor(actualTBSBits / 8);
+                grant.TBSBytes = actualTBSBytes;
                 if ~isfield(grant, 'ScheduledTransportBlockSize') || ...
                         ~(isfinite(double(grant.ScheduledTransportBlockSize)) && double(grant.ScheduledTransportBlockSize) > 0)
                     grant.ScheduledTransportBlockSize = actualTBSBits;
@@ -542,6 +573,28 @@ classdef HARQEntity < handle
     end
 
     methods(Access=private)
+        function assertStoredTBContract(obj, rnti, harqId0, p)
+            if ~obj.StoreTB || isempty(p.TB)
+                return;
+            end
+            storedBits = double(numel(p.TB));
+            reservedBits = double(p.TBSBytes) * 8;
+            if ~(isfinite(reservedBits) && reservedBits > 0 && ...
+                    abs(storedBits - reservedBits) < 1e-9)
+                error('sixgr:HARQEntity:StoredTBContractMismatch', ...
+                    ['Stored HARQ TB for RNTI=%d process=%d has %d bits, ' ...
+                    'while the HARQ process is bound to %d bits.'], ...
+                    round(rnti), round(harqId0), round(storedBits), round(reservedBits));
+            end
+            ctxBits = double(sixgr.util.structGet(p.TBContext, 'TBSBits', NaN));
+            if isfinite(ctxBits) && ctxBits > 0 && round(ctxBits) ~= round(storedBits)
+                error('sixgr:HARQEntity:StoredTBContextMismatch', ...
+                    ['Stored HARQ TB for RNTI=%d process=%d has %d bits, ' ...
+                    'while its frozen TB context declares %d bits.'], ...
+                    round(rnti), round(harqId0), round(storedBits), round(ctxBits));
+            end
+        end
+
         function [ui, procs] = getUE(obj, rnti, createIfMissing)
             ui = find(obj.UEList == double(rnti), 1, 'first');
             if isempty(ui)

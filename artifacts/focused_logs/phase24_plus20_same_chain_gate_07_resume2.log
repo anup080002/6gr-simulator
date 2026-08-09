@@ -1,0 +1,200 @@
+[2026-08-09T03:57:31Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase24_plus20_same_chain_gate_07 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+Starting parallel pool (parpool) using the 'Processes' profile ...
+Connected to parallel pool with 4 workers.
+[2026-08-09T03:58:33Z] INFO MATLAB profiler enabled for this run.
+[2026-08-09T03:58:33Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-09T03:58:33Z] INFO Writing resolved snapshots.
+[2026-08-09T03:58:36Z] INFO Exporting live geometry artifacts.
+[2026-08-09T03:58:36Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-09T03:58:36Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-09T03:58:36Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=40 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-09T04:01:22Z] INFO Waveform bundle finished: ok=1
+[2026-08-09T04:01:22Z] INFO Evaluating strict control evidence from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-09T04:01:26Z] INFO Strict waveform-backed control evidence finished: ok=1
+[2026-08-09T04:01:27Z] INFO Evaluating strict PRACH from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-09T04:01:27Z] INFO Running the configured same-execution PRACH false-alarm/           missed-detection campaign through the production PRACH TX/RX chain.
+PRACH_PARALLEL requested=1 requested_workers=24 active=1 effective_workers=4 status=parallel_process_pool_active
+[2026-08-09T04:01:29Z] INFO Strict PRACH progress: stage=strict_prach_config_validation supplemental_completion=0.020 note=Validating strict PRACH configuration and root-sequence evidence.
+[2026-08-09T04:01:30Z] INFO Strict PRACH progress: stage=strict_prach_positive_high_snr supplemental_completion=0.080 note=Running positive high-SNR PRACH receive validation.
+[2026-08-09T04:01:32Z] INFO Strict PRACH progress: stage=strict_prach_missed_detection_sweep supplemental_completion=0.180 note=Running PRACH missed-detection SNR sweep.
+PRACH_STAT metric=missed_detection snr_db=-12 trials=100/100 look=1 events_ci=[0,0.0362167] width=0.0362167 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=-6 trials=100/100 look=1 events_ci=[0,0.0362167] width=0.0362167 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=0 trials=100/100 look=1 events_ci=[0,0.0362167] width=0.0362167 qualification=NOT_EVALUATED stopping=maximum_trial_count_reached_without_qualification
+PRACH_STAT metric=missed_detection snr_db=6 trials=300/2000 look=1 events_ci=[0,0.0242926] width=0.0242926 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=6 trials=500/2000 look=5 events_ci=[0,0.0146472] width=0.0146472 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=6 trials=750/2000 look=10 events_ci=[0,0.00978879] width=0.00978879 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=missed_detection snr_db=12 trials=300/2000 look=1 events_ci=[0,0.0242926] width=0.0242926 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=12 trials=500/2000 look=5 events_ci=[0,0.0146472] width=0.0146472 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=missed_detection snr_db=12 trials=750/2000 look=10 events_ci=[0,0.00978879] width=0.00978879 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+[2026-08-09T04:07:01Z] INFO Strict PRACH progress: stage=strict_prach_false_alarm_sweep supplemental_completion=0.360 note=Running PRACH false-alarm noise-only sweep.
+PRACH_STAT metric=false_alarm snr_db=-12 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-12 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=-6 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=-6 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=0 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=0 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=6 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=6 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+PRACH_STAT metric=false_alarm snr_db=12 trials=3000/12000 look=1 events_ci=[0,0.00251685] width=0.00251685 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=4000/12000 look=5 events_ci=[0,0.00188824] width=0.00188824 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=5250/12000 look=10 events_ci=[0,0.00143898] width=0.00143898 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=6500/12000 look=15 events_ci=[0,0.00116241] width=0.00116241 qualification=NOT_EVALUATED stopping=confidence_interval_width_not_reached
+PRACH_STAT metric=false_alarm snr_db=12 trials=7750/12000 look=20 events_ci=[0,0.000975019] width=0.000975019 qualification=PASS stopping=exact_upper_bound_at_or_below_target
+[2026-08-09T05:29:41Z] INFO Strict PRACH progress: stage=strict_prach_timing_offset_sweep supplemental_completion=0.540 note=Running PRACH timing-offset sweep.
+[2026-08-09T05:29:47Z] INFO Strict PRACH progress: stage=strict_prach_frequency_offset_sweep supplemental_completion=0.660 note=Running PRACH frequency-offset and restricted-set sweep.
+[2026-08-09T05:29:52Z] INFO Strict PRACH progress: stage=strict_prach_collision_trials supplemental_completion=0.780 note=Running PRACH collision and multi-preamble trials.
+[2026-08-09T05:29:54Z] INFO Strict PRACH progress: stage=strict_prach_multi_occasion_trials supplemental_completion=0.860 note=Running PRACH multi-occasion RARNTI trials.
+[2026-08-09T05:29:58Z] INFO Strict PRACH progress: stage=strict_prach_negative_wrong_config supplemental_completion=0.920 note=Running PRACH negative wrong-root receiver guard.
+[2026-08-09T05:30:01Z] INFO Strict PRACH progress: stage=strict_prach_artifact_export supplemental_completion=0.970 note=Writing strict PRACH waveform evidence artifacts.
+[2026-08-09T05:34:48Z] INFO Strict PRACH progress: stage=strict_prach_validation_complete supplemental_completion=1.000 note=Strict PRACH waveform validation completed.
+[2026-08-09T05:34:49Z] INFO Running the configured same-execution PDCCH false-alarm campaign through the production PDCCH TX/channel/RX chain.                
+[2026-08-09T05:38:17Z] INFO Evaluating strict SRS from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-09T05:38:20Z] INFO Evaluating strict TRS from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-09T05:38:20Z] INFO Evaluating strict PBCH/MIB/SIB1 from active slot-runtime rows; no mini-anchor launched.
+[2026-08-09T05:38:21Z] INFO Running strict Channel/RF validation with evidence_scope=in_path.
+[2026-08-09T05:38:42Z] INFO Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.
+[2026-08-09T05:39:08Z] INFO Running configured bidirectional L2 protocol component validation.
+[2026-08-09T05:39:26Z] INFO Control-plane trace export complete.
+[2026-08-09T05:39:26Z] INFO Runner profile completed. result.Ok=0
+[2026-08-09T05:39:26Z] INFO Exporting TX/RX chain time-profile and complexity coverage artifacts.
+[2026-08-09T05:39:27Z] INFO Scenario status aggregated: completion=completed_with_failures resultOk=0 requiredFailures=1 optionalPruned=0
+[2026-08-09T05:39:27Z] INFO Annotating CSV artifacts.
+[2026-08-09T05:44:02Z] INFO Writing scenario summary CSV.
+[2026-08-09T05:44:02Z] INFO Writing runtime and environment summaries.
+[2026-08-09T05:44:24Z] INFO Writing scenario manifest.
+[2026-08-09T05:44:24Z] INFO Sealing immutable raw execution identity before report finalization.
+[2026-08-09T05:44:50Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-08-09T05:57:11Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=5 strictFailures=6
+[2026-08-09T05:57:11Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-08-09T05:57:31Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-08-09T05:57:31Z] INFO Exporting MATLAB profiler artifacts before implementation validation.
+[2026-08-09T05:57:43Z] INFO Writing MATLAB profiler CSV artifacts: functions=4995 edges=11266
+[2026-08-09T05:57:46Z] INFO Exporting LLS reporting bundle.
+[2026-08-09T06:00:56Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-08-09T06:01:18Z] INFO Registering fresh in-memory waveform evidence with the contract publisher.
+[2026-08-09T06:01:19Z] INFO Registering fresh in-memory initial-access evidence with the contract publisher.
+[2026-08-09T06:01:19Z] INFO Finalizing YAML-selected runtime-only artifact contracts.
+[2026-08-09T06:01:42Z] INFO Artifact contract finalization: status=FAIL contracts=6 failures=2 requiredFailures=2.
+[2026-08-09T06:01:42Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+[TR38901Plus] Resolved config: Scenario=webgui_sinr_sweep_64x4_mu_mimo_full Fc_Hz=Error writing to output stream.
+iostream stream error
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:packet_flow/csv/table_scheduler_decision.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:packet_flow/csv/live_prb_allocation.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_re_allocation_snapshot.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/prb_allocation_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/dl_resource_grid_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/ul_resource_grid_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/table_mcs_tbs_evolution.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_power_runtime_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_rf_power_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:control/csv/timing_synchronization_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:writing_prb_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:writing_power_energy_figure runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:publication_readiness_refreshed runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_07
+[2026-08-09T06:08:24Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-08-09T06:20:04Z] INFO Materializing strict browser contract artifacts before terminal status reduction.
+[2026-08-09T06:30:56Z] WARN Browser contract artifact materialization did not complete: browser_contract_materialization_failed | {
+  "run_id": 9573525869,
+  "run_folder": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\results\\lls\\webgui_sinr_sweep_64x4_mu_mimo_full\\phase24_plus20_same_chain_gate_07",
+  "storage_backend": "results_folder",
+  "verification_only": false,
+  "materializer_version": "2026-08-02-contract-v30-raster-png",
+  "created_count": 622,
+  "manifest_path": "reports/csv/contract_materialization_manifest.csv",
+  "coverage_path": "reports/csv/contract_materialization_coverage.csv",
+  "tables_total": 193,
+  "tables_available": 171,
+  "tables_policy_disabled": 18,
+  "tables_missing": 4,
+  "charts_total": 368,
+  "charts_available": 231,
+  "charts_policy_disabled": 55,
+  "charts_missing": 82
+}
+Filesystem contract verification incomplete. Missing tables: [reports/csv/live_site_table.csv, reports/csv/live_sector_table.csv, reports/csv/live_trp_table.csv, reports/csv/live_ue_table.csv] Missing charts: [PRACH occasion timeline, power control command timeline, PHR distribution, RV usage distribution, combining gain histogram, PDCCH stage latency waterfall, PBCH stage latency, CSI-RS latency trend, LDPC stage latency waterfall, DMRS/PTRS occupancy plot, channel estimation latency, equalizer latency, TA estimate timeline, per-format latency histograms, PRACH peak search timeline, noise floor trend, peak value histogram, preamble usage chart, TA estimate trend, access attempt/success timeline, timing offset true vs estimated vs residual, impairment contribution bar chart, channel heatmap artifact links, UE power headroom timeline, API message rate, orchestration latency chart, per-worker workload chart, CPU cycles and memory usage time series, latency breakdown stacked chart, DB write latency over time, export lag over time, artifact creation rate, pre-channel waveform, post-channel waveform, post-impairment waveform, stage overlay plots, UE-wise / link-wise waveform comparison, PRACH opportunity map, DMRS/PTRS occupancy map, true H(tau) if available, estimated Hhat(tau), true H(f) if available, estimated Hhat(f), channel magnitude heatmap, channel phase heatmap, PRACH correlation peak distributions, PRACH noise floor distributions, PRACH peak search results, residual BLER after HARQ, goodput vs retransmissions, HARQ RTT distribution, HARQ combining gain distribution, combiner summary, access latency, retry count distribution, timing advance distribution, preamble/root/cyclic-shift usage summary, timing offset true vs estimated vs residual, phase noise summary, PA nonlinearity summary, clipping summary, quantization summary, impairment order trace, contribution decomposition if measurable, UL Tx power per UE, power control behavior, PA backoff distribution, RF chain power, CPU power if available, thermal/throttling analytics if available, block execution time, stage latency, end-to-end latency, compute latency, decode latency, CPU cycles, memory usage, worker timelines, lock/contention observations, DB write latency, export lag, single-thread vs multi-thread determinism]
+
+[2026-08-09T06:31:08Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=0 roundtripMismatch=0 evidenceMissing=4 strictFailures=5
+[2026-08-09T06:31:08Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-08-09T06:31:28Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-08-09T06:31:28Z] INFO Writing artifact manifest.
+[2026-08-09T06:31:29Z] INFO Writing scenario markdown report.
+[2026-08-09T06:31:29Z] INFO Publishing component artifact views: enabled=0 required=0.
+[2026-08-09T06:31:30Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-08-09T06:31:30Z] INFO Writing MAT result bundle.
+Error writing to output stream.
+iostream stream error
+Warning: Variable "Result" was not saved. For variables larger than 2GB use MAT-file version 7.3 or later.] 
+[> In sixgr.util.matSave (line 16)
+In sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2668)
+In sixgr.lls6g.runners.runSingle (line 66)
+In runFullSINRSameChainSweep (line 32)] 
+Error writing to output stream.
+iostream stream error
+[2026-08-09T06:31:34Z] WARN Optional MAT result bundle did not complete: iolib:badbit | Error writing to output stream.
+iostream stream error
+
+[2026-08-09T06:31:34Z] INFO Pruning empty result directories.
+[2026-08-09T06:31:35Z] WARN Run completed with truth/status failures in 9244.732 seconds: requiredFailures=42 strictTruthFailures=5
+{Error using assert
+The sweep requires the canonical coupled slot trace.
+
+Error in runFullSINRSameChainSweep>localVerify (line 175)
+assert(istable(slotTrace) && ~isempty(slotTrace), ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 34)
+localVerify(out, configuredSNR);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

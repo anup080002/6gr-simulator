@@ -39,7 +39,10 @@ classdef PUCCHTransmitter
             power = sixgr.phy.pucch.PUCCHPowerController.resolve( ...
                 assignment.PowerControlState);
             waveform = localApplyPower(waveform,power.AppliedPowerdBm);
-            measured = 10*log10(max(mean(abs(waveform(:)).^2),realmin)*1000);
+            % Canonical simulator samples use sqrt(mW), so mean |x|^2 is
+            % directly expressed in mW and converts to dBm without a
+            % watts-to-milliwatts factor.
+            measured = 10*log10(max(mean(abs(waveform(:)).^2),realmin));
             power.MeasuredWaveformPowerdBm = measured;
             power.PowerError_dB = measured-power.AppliedPowerdBm;
             tx = struct( ...
@@ -75,7 +78,7 @@ end
 
 function waveform = localApplyPower(waveform,powerdBm)
 current = mean(abs(waveform(:)).^2);
-target = 10^((double(powerdBm)-30)/10);
+target = 10^(double(powerdBm)/10);
 if current <= 0 || ~isfinite(current)
     error("sixgr:phy:pucch:InvalidPowerControlState", ...
         "Cannot apply PUCCH power to an empty waveform.");

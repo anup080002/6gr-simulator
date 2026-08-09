@@ -1,0 +1,277 @@
+[2026-08-09T01:08:51Z] INFO Preparing LLS run: scenario=webgui_sinr_sweep_64x4_mu_mimo_full runTag=phase24_plus20_same_chain_gate_06 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_sweep_64x4_mu_mimo_full\phase24_plus20_same_chain_gate_06
+Starting parallel pool (parpool) using the 'Processes' profile ...
+09-Aug-2026 06:40:22: Connected to 1 of 4 parallel pool workers.
+Connected to parallel pool with 4 workers.
+[2026-08-09T01:10:53Z] INFO MATLAB profiler enabled for this run.
+[2026-08-09T01:10:53Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-09T01:10:53Z] INFO Writing resolved snapshots.
+[2026-08-09T01:10:59Z] INFO Exporting live geometry artifacts.
+[2026-08-09T01:10:59Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-09T01:10:59Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-09T01:10:59Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=40 monteCarlo=1 slotDuration_s=0.000500
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=Error writing to output stream.
+iostream stream error
+[2026-08-09T01:11:25Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=1/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:11:26Z] INFO Starting coupled pre-scheduling control gating for slot 1/40 with 4 UEs.
+[2026-08-09T01:13:56Z] INFO Coupled control gating progress for slot 1/40: UE 1/4, PBCH=1 PRACH=0 SRS=0 TRS=1.
+[2026-08-09T01:16:10Z] INFO Coupled control gating progress for slot 1/40: UE 2/4, PBCH=2 PRACH=0 SRS=0 TRS=1.
+[2026-08-09T01:18:21Z] INFO Coupled control gating progress for slot 1/40: UE 3/4, PBCH=3 PRACH=0 SRS=0 TRS=1.
+[2026-08-09T01:20:31Z] INFO Coupled control gating progress for slot 1/40: UE 4/4, PBCH=4 PRACH=0 SRS=0 TRS=1.
+[2026-08-09T01:20:32Z] INFO Coupled control gating complete: slot=1 frame=1 pbch_attempts=4 prach_attempts=0 srs_attempts=0 trs_attempts=1 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:32Z] INFO Coupled control gating complete for slot 1/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:33Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:20:34Z] INFO Coupled DL schedule complete: sweep=1/1 slot=1/40 active=0 granted=0 grants=0.
+[2026-08-09T01:20:34Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=1/40 executable_grants=0.
+[2026-08-09T01:20:34Z] INFO Preparing coupled DL batches: sweep=1/1 slot=1/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:20:38Z] INFO Coupled UL K2 preschedule complete: control_slot=1 due_slot=5 k2=4 active=0 granted=0 grants=0.
+[2026-08-09T01:20:39Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=2/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:20:39Z] INFO Starting coupled pre-scheduling control gating for slot 2/40 with 4 UEs.
+[2026-08-09T01:20:39Z] INFO Coupled control gating progress for slot 2/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:40Z] INFO Coupled control gating progress for slot 2/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:40Z] INFO Coupled control gating progress for slot 2/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:40Z] INFO Coupled control gating progress for slot 2/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:41Z] INFO Coupled control gating complete: slot=2 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:41Z] INFO Coupled control gating complete for slot 2/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:41Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:20:42Z] INFO Coupled DL schedule complete: sweep=1/1 slot=2/40 active=0 granted=0 grants=0.
+[2026-08-09T01:20:42Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=2/40 executable_grants=0.
+[2026-08-09T01:20:42Z] INFO Preparing coupled DL batches: sweep=1/1 slot=2/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:20:42Z] INFO Coupled UL K2 preschedule deferred: control_slot=2 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:20:42Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=3/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:20:43Z] INFO Starting coupled pre-scheduling control gating for slot 3/40 with 4 UEs.
+[2026-08-09T01:20:43Z] INFO Coupled control gating progress for slot 3/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:44Z] INFO Coupled control gating progress for slot 3/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:44Z] INFO Coupled control gating progress for slot 3/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:45Z] INFO Coupled control gating progress for slot 3/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:45Z] INFO Coupled control gating complete: slot=3 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:45Z] INFO Coupled control gating complete for slot 3/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:46Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:20:46Z] INFO Coupled DL schedule complete: sweep=1/1 slot=3/40 active=0 granted=0 grants=0.
+[2026-08-09T01:20:46Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=3/40 executable_grants=0.
+[2026-08-09T01:20:46Z] INFO Preparing coupled DL batches: sweep=1/1 slot=3/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:20:46Z] INFO Coupled UL K2 preschedule deferred: control_slot=3 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:20:46Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=4/40 duplex=FLEXIBLE_OR_MIXED allow_dl=1 allow_ul=1.
+[2026-08-09T01:20:47Z] INFO Starting coupled pre-scheduling control gating for slot 4/40 with 4 UEs.
+[2026-08-09T01:20:47Z] INFO Coupled control gating progress for slot 4/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:47Z] INFO Coupled control gating progress for slot 4/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:48Z] INFO Coupled control gating progress for slot 4/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:48Z] INFO Coupled control gating progress for slot 4/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:49Z] INFO Coupled control gating complete: slot=4 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:49Z] INFO Coupled control gating complete for slot 4/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:50Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:20:50Z] INFO Coupled DL scheduling deferred: sweep=1/1 slot=4/40 reason=configured_dl_symbol_allocation_not_available_in_tdd_slot policy=no_valid_harq_ack_occasion_from_current_dl_slot.
+[2026-08-09T01:20:50Z] INFO Coupled DL schedule complete: sweep=1/1 slot=4/40 active=0 granted=0 grants=0.
+[2026-08-09T01:20:50Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=4/40 executable_grants=0.
+[2026-08-09T01:20:50Z] INFO Preparing coupled DL batches: sweep=1/1 slot=4/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:20:50Z] INFO Coupled UL K2 preschedule deferred: control_slot=4 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:20:50Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=4/40 due_grants=0 pending_grants=0.
+[2026-08-09T01:20:51Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=5/40 duplex=UL allow_dl=0 allow_ul=1.
+[2026-08-09T01:20:51Z] INFO Starting coupled pre-scheduling control gating for slot 5/40 with 4 UEs.
+[2026-08-09T01:20:51Z] INFO Coupled control gating progress for slot 5/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:52Z] INFO Coupled control gating progress for slot 5/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:52Z] INFO Coupled control gating progress for slot 5/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:53Z] INFO Coupled control gating progress for slot 5/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:53Z] INFO Coupled control gating complete: slot=5 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:53Z] INFO Coupled control gating complete for slot 5/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:54Z] INFO UL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:20:54Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=5/40 due_grants=0 pending_grants=0.
+[2026-08-09T01:20:54Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=6/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:20:54Z] INFO Starting coupled pre-scheduling control gating for slot 6/40 with 4 UEs.
+[2026-08-09T01:20:55Z] INFO Coupled control gating progress for slot 6/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:55Z] INFO Coupled control gating progress for slot 6/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:55Z] INFO Coupled control gating progress for slot 6/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:56Z] INFO Coupled control gating progress for slot 6/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:56Z] INFO Coupled control gating complete: slot=6 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:56Z] INFO Coupled control gating complete for slot 6/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:20:57Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:20:57Z] INFO Coupled DL schedule complete: sweep=1/1 slot=6/40 active=0 granted=0 grants=0.
+[2026-08-09T01:20:57Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=6/40 executable_grants=0.
+[2026-08-09T01:20:57Z] INFO Preparing coupled DL batches: sweep=1/1 slot=6/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:20:58Z] INFO Coupled UL K2 preschedule complete: control_slot=6 due_slot=10 k2=4 active=0 granted=0 grants=0.
+[2026-08-09T01:20:58Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=7/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:20:58Z] INFO Starting coupled pre-scheduling control gating for slot 7/40 with 4 UEs.
+[2026-08-09T01:20:59Z] INFO Coupled control gating progress for slot 7/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:59Z] INFO Coupled control gating progress for slot 7/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:20:59Z] INFO Coupled control gating progress for slot 7/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:00Z] INFO Coupled control gating progress for slot 7/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:00Z] INFO Coupled control gating complete: slot=7 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:21:00Z] INFO Coupled control gating complete for slot 7/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:21:01Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:21:01Z] INFO Coupled DL schedule complete: sweep=1/1 slot=7/40 active=0 granted=0 grants=0.
+[2026-08-09T01:21:01Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=7/40 executable_grants=0.
+[2026-08-09T01:21:01Z] INFO Preparing coupled DL batches: sweep=1/1 slot=7/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:21:01Z] INFO Coupled UL K2 preschedule deferred: control_slot=7 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:21:01Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=8/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:21:01Z] INFO Starting coupled pre-scheduling control gating for slot 8/40 with 4 UEs.
+[2026-08-09T01:21:01Z] INFO Coupled control gating progress for slot 8/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:02Z] INFO Coupled control gating progress for slot 8/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:02Z] INFO Coupled control gating progress for slot 8/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:02Z] INFO Coupled control gating progress for slot 8/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:03Z] INFO Coupled control gating complete: slot=8 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:21:03Z] INFO Coupled control gating complete for slot 8/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:21:03Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:21:03Z] INFO Coupled DL schedule complete: sweep=1/1 slot=8/40 active=0 granted=0 grants=0.
+[2026-08-09T01:21:03Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=8/40 executable_grants=0.
+[2026-08-09T01:21:03Z] INFO Preparing coupled DL batches: sweep=1/1 slot=8/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:21:04Z] INFO Coupled UL K2 preschedule deferred: control_slot=8 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:21:04Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=9/40 duplex=FLEXIBLE_OR_MIXED allow_dl=1 allow_ul=1.
+[2026-08-09T01:21:04Z] INFO Starting coupled pre-scheduling control gating for slot 9/40 with 4 UEs.
+[2026-08-09T01:21:04Z] INFO Coupled control gating progress for slot 9/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:04Z] INFO Coupled control gating progress for slot 9/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:05Z] INFO Coupled control gating progress for slot 9/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:05Z] INFO Coupled control gating progress for slot 9/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:21:05Z] INFO Coupled control gating complete: slot=9 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:21:05Z] INFO Coupled control gating complete for slot 9/40: acquired=4/4 access=0/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:21:06Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:21:06Z] INFO Coupled DL scheduling deferred: sweep=1/1 slot=9/40 reason=configured_dl_symbol_allocation_not_available_in_tdd_slot policy=no_valid_harq_ack_occasion_from_current_dl_slot.
+[2026-08-09T01:21:06Z] INFO Coupled DL schedule complete: sweep=1/1 slot=9/40 active=0 granted=0 grants=0.
+[2026-08-09T01:21:06Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=9/40 executable_grants=0.
+[2026-08-09T01:21:06Z] INFO Preparing coupled DL batches: sweep=1/1 slot=9/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:21:06Z] INFO Coupled UL K2 preschedule deferred: control_slot=9 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:21:06Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=9/40 due_grants=0 pending_grants=0.
+[2026-08-09T01:21:06Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=10/40 duplex=UL allow_dl=0 allow_ul=1.
+[2026-08-09T01:21:06Z] INFO Starting coupled pre-scheduling control gating for slot 10/40 with 4 UEs.
+[2026-08-09T01:24:58Z] INFO Coupled PRACH result: slot=10 ue=1 status=PASS crc=1 ra_completed=true strict_ok=true tx_preamble=0 detected_preamble=0 failure=.
+[2026-08-09T01:24:58Z] INFO Coupled PRACH RA PDSCH evidence: slot=10 ue=1 msg2_crc=1 msg2_layers=1 msg2_cfg_ports=1 msg2_resolved_ports=1 msg2_explicit_matrix=false msg2_precoding=siso_identity/ra_si_common_procedure_identity msg2_tx_power_dBm=46 msg2_amp_scale=49722 msg2_timing_used=false msg2_timing=0 msg2_posteq_sinr_dB=38 msg2_hest_sinr_dB=38 msg2_llr_finite=true msg4_crc=1 msg4_layers=1 msg4_cfg_ports=1 msg4_resolved_ports=1 msg4_tx_power_dBm=46 msg4_amp_scale=50099.
+[2026-08-09T01:24:59Z] INFO Coupled control gating progress for slot 10/40: UE 1/4, PBCH=0 PRACH=1 SRS=0 TRS=0.
+[2026-08-09T01:26:47Z] INFO Coupled PRACH result: slot=10 ue=2 status=PASS crc=1 ra_completed=true strict_ok=true tx_preamble=1 detected_preamble=1 failure=.
+[2026-08-09T01:26:47Z] INFO Coupled PRACH RA PDSCH evidence: slot=10 ue=2 msg2_crc=1 msg2_layers=1 msg2_cfg_ports=1 msg2_resolved_ports=1 msg2_explicit_matrix=false msg2_precoding=siso_identity/ra_si_common_procedure_identity msg2_tx_power_dBm=46 msg2_amp_scale=49878 msg2_timing_used=false msg2_timing=0 msg2_posteq_sinr_dB=38 msg2_hest_sinr_dB=38 msg2_llr_finite=true msg4_crc=1 msg4_layers=1 msg4_cfg_ports=1 msg4_resolved_ports=1 msg4_tx_power_dBm=46 msg4_amp_scale=50099.
+[2026-08-09T01:26:48Z] INFO Coupled control gating progress for slot 10/40: UE 2/4, PBCH=0 PRACH=2 SRS=0 TRS=0.
+[2026-08-09T01:28:44Z] INFO Coupled PRACH result: slot=10 ue=3 status=PASS crc=1 ra_completed=true strict_ok=true tx_preamble=2 detected_preamble=2 failure=.
+[2026-08-09T01:28:44Z] INFO Coupled PRACH RA PDSCH evidence: slot=10 ue=3 msg2_crc=1 msg2_layers=1 msg2_cfg_ports=1 msg2_resolved_ports=1 msg2_explicit_matrix=false msg2_precoding=siso_identity/ra_si_common_procedure_identity msg2_tx_power_dBm=46 msg2_amp_scale=49894 msg2_timing_used=false msg2_timing=0 msg2_posteq_sinr_dB=38 msg2_hest_sinr_dB=38 msg2_llr_finite=true msg4_crc=1 msg4_layers=1 msg4_cfg_ports=1 msg4_resolved_ports=1 msg4_tx_power_dBm=46 msg4_amp_scale=50099.
+[2026-08-09T01:28:45Z] INFO Coupled control gating progress for slot 10/40: UE 3/4, PBCH=0 PRACH=3 SRS=0 TRS=0.
+[2026-08-09T01:30:35Z] INFO Coupled PRACH result: slot=10 ue=4 status=PASS crc=1 ra_completed=true strict_ok=true tx_preamble=3 detected_preamble=3 failure=.
+[2026-08-09T01:30:35Z] INFO Coupled PRACH RA PDSCH evidence: slot=10 ue=4 msg2_crc=1 msg2_layers=1 msg2_cfg_ports=1 msg2_resolved_ports=1 msg2_explicit_matrix=false msg2_precoding=siso_identity/ra_si_common_procedure_identity msg2_tx_power_dBm=46 msg2_amp_scale=49779 msg2_timing_used=false msg2_timing=0 msg2_posteq_sinr_dB=37 msg2_hest_sinr_dB=37 msg2_llr_finite=true msg4_crc=1 msg4_layers=1 msg4_cfg_ports=1 msg4_resolved_ports=1 msg4_tx_power_dBm=46 msg4_amp_scale=50099.
+[2026-08-09T01:30:36Z] INFO Coupled control gating progress for slot 10/40: UE 4/4, PBCH=0 PRACH=4 SRS=0 TRS=0.
+[2026-08-09T01:30:36Z] INFO Coupled control gating complete: slot=10 frame=1 pbch_attempts=0 prach_attempts=4 srs_attempts=0 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:36Z] INFO Coupled control gating complete for slot 10/40: acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:37Z] INFO UL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:30:37Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=10/40 due_grants=0 pending_grants=0.
+[2026-08-09T01:30:37Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=11/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:30:37Z] INFO Starting coupled pre-scheduling control gating for slot 11/40 with 4 UEs.
+[2026-08-09T01:30:37Z] INFO Coupled control gating progress for slot 11/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:37Z] INFO Coupled control gating progress for slot 11/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:37Z] INFO Coupled control gating progress for slot 11/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:37Z] INFO Coupled control gating progress for slot 11/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:38Z] INFO Coupled control gating complete: slot=11 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:38Z] INFO Coupled control gating complete for slot 11/40: acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:38Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:30:38Z] INFO Coupled DL schedule complete: sweep=1/1 slot=11/40 active=0 granted=0 grants=0.
+[2026-08-09T01:30:38Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=11/40 executable_grants=0.
+[2026-08-09T01:30:38Z] INFO Preparing coupled DL batches: sweep=1/1 slot=11/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:30:38Z] INFO Coupled UL K2 preschedule complete: control_slot=11 due_slot=15 k2=4 active=0 granted=0 grants=0.
+[2026-08-09T01:30:38Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=12/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:30:38Z] INFO Starting coupled pre-scheduling control gating for slot 12/40 with 4 UEs.
+[2026-08-09T01:30:39Z] INFO Coupled control gating progress for slot 12/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:39Z] INFO Coupled control gating progress for slot 12/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:39Z] INFO Coupled control gating progress for slot 12/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:39Z] INFO Coupled control gating progress for slot 12/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:39Z] INFO Coupled control gating complete: slot=12 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:39Z] INFO Coupled control gating complete for slot 12/40: acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:39Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:30:40Z] INFO Coupled DL schedule complete: sweep=1/1 slot=12/40 active=0 granted=0 grants=0.
+[2026-08-09T01:30:40Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=12/40 executable_grants=0.
+[2026-08-09T01:30:40Z] INFO Preparing coupled DL batches: sweep=1/1 slot=12/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:30:40Z] INFO Coupled UL K2 preschedule deferred: control_slot=12 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:30:40Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=13/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:30:40Z] INFO Starting coupled pre-scheduling control gating for slot 13/40 with 4 UEs.
+[2026-08-09T01:30:40Z] INFO Coupled control gating progress for slot 13/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:40Z] INFO Coupled control gating progress for slot 13/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:40Z] INFO Coupled control gating progress for slot 13/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:41Z] INFO Coupled control gating progress for slot 13/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:41Z] INFO Coupled control gating complete: slot=13 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:41Z] INFO Coupled control gating complete for slot 13/40: acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:41Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:30:41Z] INFO Coupled DL schedule complete: sweep=1/1 slot=13/40 active=0 granted=0 grants=0.
+[2026-08-09T01:30:41Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=13/40 executable_grants=0.
+[2026-08-09T01:30:41Z] INFO Preparing coupled DL batches: sweep=1/1 slot=13/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:30:41Z] INFO Coupled UL K2 preschedule deferred: control_slot=13 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:30:41Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=14/40 duplex=FLEXIBLE_OR_MIXED allow_dl=1 allow_ul=1.
+[2026-08-09T01:30:41Z] INFO Starting coupled pre-scheduling control gating for slot 14/40 with 4 UEs.
+[2026-08-09T01:30:41Z] INFO Coupled control gating progress for slot 14/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:42Z] INFO Coupled control gating progress for slot 14/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:42Z] INFO Coupled control gating progress for slot 14/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:42Z] INFO Coupled control gating progress for slot 14/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:30:42Z] INFO Coupled control gating complete: slot=14 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:42Z] INFO Coupled control gating complete for slot 14/40: acquired=4/4 access=4/4 valid_srs=0/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=0/4.
+[2026-08-09T01:30:42Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:30:42Z] INFO Coupled DL scheduling deferred: sweep=1/1 slot=14/40 reason=configured_dl_symbol_allocation_not_available_in_tdd_slot policy=no_valid_harq_ack_occasion_from_current_dl_slot.
+[2026-08-09T01:30:42Z] INFO Coupled DL schedule complete: sweep=1/1 slot=14/40 active=0 granted=0 grants=0.
+[2026-08-09T01:30:42Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=14/40 executable_grants=0.
+[2026-08-09T01:30:42Z] INFO Preparing coupled DL batches: sweep=1/1 slot=14/40 candidate_grants=0 batch_size=24.
+[2026-08-09T01:30:43Z] INFO Coupled UL K2 preschedule deferred: control_slot=14 reason=data_timing_rejected:target_hits_fixed_opposite_direction policy=no_valid_ul_occasion_from_current_dl_control_slot.
+[2026-08-09T01:30:43Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=14/40 due_grants=0 pending_grants=0.
+[2026-08-09T01:30:43Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=15/40 duplex=UL allow_dl=0 allow_ul=1.
+[2026-08-09T01:30:43Z] INFO Starting coupled pre-scheduling control gating for slot 15/40 with 4 UEs.
+[2026-08-09T01:31:02Z] INFO Coupled control gating progress for slot 15/40: UE 1/4, PBCH=0 PRACH=0 SRS=1 TRS=0.
+[2026-08-09T01:31:21Z] INFO Coupled control gating progress for slot 15/40: UE 2/4, PBCH=0 PRACH=0 SRS=2 TRS=0.
+[2026-08-09T01:31:38Z] INFO Coupled control gating progress for slot 15/40: UE 3/4, PBCH=0 PRACH=0 SRS=3 TRS=0.
+[2026-08-09T01:32:03Z] INFO Coupled control gating progress for slot 15/40: UE 4/4, PBCH=0 PRACH=0 SRS=4 TRS=0.
+[2026-08-09T01:32:03Z] INFO Coupled control gating complete: slot=15 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=4 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=4/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=4/4.
+[2026-08-09T01:32:03Z] INFO Coupled control gating complete for slot 15/40: acquired=4/4 access=4/4 valid_srs=4/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=4/4.
+[2026-08-09T01:32:03Z] INFO UL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:32:03Z] INFO Coupled UL queued grant lookup complete: sweep=1/1 slot=15/40 due_grants=0 pending_grants=0.
+[2026-08-09T01:32:04Z] INFO Coupled canonical slot prepared: sweep=1/1 slot=16/40 duplex=DL allow_dl=1 allow_ul=0.
+[2026-08-09T01:32:04Z] INFO Starting coupled pre-scheduling control gating for slot 16/40 with 4 UEs.
+[2026-08-09T01:32:04Z] INFO Coupled control gating progress for slot 16/40: UE 1/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:32:04Z] INFO Coupled control gating progress for slot 16/40: UE 2/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:32:04Z] INFO Coupled control gating progress for slot 16/40: UE 3/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:32:05Z] INFO Coupled control gating progress for slot 16/40: UE 4/4, PBCH=0 PRACH=0 SRS=0 TRS=0.
+[2026-08-09T01:32:05Z] INFO Coupled control gating complete: slot=16 frame=1 pbch_attempts=0 prach_attempts=0 srs_attempts=0 trs_attempts=0 acquired=4/4 access=4/4 valid_srs=4/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=4/4.
+[2026-08-09T01:32:05Z] INFO Coupled control gating complete for slot 16/40: acquired=4/4 access=4/4 valid_srs=4/4 valid_trs_cells=1/1 tracked_serving_users=4/4 eligible=4/4.
+[2026-08-09T01:32:05Z] INFO DL coupled publish: operating_point 1/1 configured_label_snr_dB=20.000 ue=0/4 dlDirectionalFrames=0/40 ulDirectionalFrames=0/40 dlRows=0 ulRows=0.
+[2026-08-09T01:32:13Z] INFO Coupled DL schedule complete: sweep=1/1 slot=16/40 active=4 granted=2 grants=2.
+[2026-08-09T01:32:17Z] INFO Coupled DL PDCCH grant binding: ue=1 required=1 ok=1 status=bound failure= dci=f5f5689b6bbcd77c8e6a12ea6ce7983e2c4000217ed157a128cc71cec1dbbd6f grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-09T01:32:21Z] INFO Coupled DL PDCCH grant binding: ue=2 required=1 ok=1 status=bound failure= dci=f5f5689b6bbcd77c8e6a12ea6ce7983e2c4000217ed157a128cc71cec1dbbd6f grant_ss=1 observed_ss=1 bound_ss=1 grant_coreset=0 observed_coreset=0 bound_coreset=0.
+[2026-08-09T01:32:21Z] INFO Coupled DL PDCCH qualification complete: sweep=1/1 slot=16/40 executable_grants=2.
+[2026-08-09T01:32:21Z] INFO Preparing coupled DL batches: sweep=1/1 slot=16/40 candidate_grants=2 batch_size=24.
+[2026-08-09T01:32:21Z] INFO Preparing coupled DL resolved grant cache: candidate_grants=2.
+[2026-08-09T01:33:34Z] INFO Prepared coupled DL resolved grant cache entries: 2/2.
+[2026-08-09T01:34:35Z] INFO Prepared coupled DL resolved grant cache complete: entries=2 elapsed_s=133.410.
+[2026-08-09T01:34:38Z] INFO Prepared coupled DL chunk: sweep=1/1 slot=16/40 executable_plans=2 chunk=1-2 of 2.
+[2026-08-09T01:34:38Z] INFO Executing coupled DL chunk: sweep=1/1 slot=16/40 chunk=1-2 of 2.
+[2026-08-09T01:34:38Z] INFO Executing coupled DL grant chunk serially: plans=2 reason=parallel_safety_or_pool_unavailable.
+[2026-08-09T01:34:38Z] ERROR Run failed: ChannelFactory:RuntimeChannelDimensionChange | Runtime channel 'dir=DL;tx=gNB1;rx=UE1;carrier=nrb=273:scs=30:fc=3500000000' was materialized for 1 Tx port(s), but this grant has 64 waveform column(s).
+[2026-08-09T01:34:47Z] INFO Writing MATLAB profiler CSV artifacts: functions=4542 edges=9662
+[2026-08-09T01:34:53Z] INFO Recovering truthful report artifacts from persisted raw evidence after failure.
+[2026-08-09T01:34:53Z] WARN Failed-run artifact recovery did not complete: sixgr:lls6g:config:UnknownTopLevelKey | Unknown top-level keys in recoverLLSRunArtifacts persisted snapshot: reporting_semantics, resolved_runtime_view
+{Error using sixgr.channel.ChannelFactory.materializeRuntimeChannelState (line 555)
+Runtime channel 'dir=DL;tx=gNB1;rx=UE1;carrier=nrb=273:scs=30:fc=3500000000' was materialized for 1 Tx port(s), but this grant has 64 waveform column(s).
+
+Error in sixgr.truth.runWaveformLinkBundle>localBuildSharedSlotReceiverContribution (line 5355)
+    canonicalChannelState = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localBuildCoupledInterferenceBundle (line 5278)
+    [contributionWaveform, contributionMeta, runtimeState] = localBuildSharedSlotReceiverContribution( ...
+                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localExecuteCoupledGrantBatchPlan (line 4223)
+    [trialContext.InterferenceBundle, runtimeState] = localBuildCoupledInterferenceBundle( ...
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localRunCoupledGrantBatch (line 4099)
+        [resultPlan, runtimeState] = localExecuteCoupledGrantBatchPlan(batch(bi), runtimeState, resolvedGrantCache, multiUser, direction, snr_dB, absoluteFrame, interferenceCacheKey);
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localExecuteCoupledDirectionBatch (line 3861)
+    [chunk, runtimeState] = localRunCoupledGrantBatch(chunk, runtimeState, resolvedGrantCache, multiUser, direction, snr_dB, absoluteFrame, interferenceCacheKey, interferenceWorkerCache, progressContext);
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep (line 3435)
+            [runtimeState, dlTrials, dlConstT, dlStates] = localExecuteCoupledDirectionBatch( ...
+                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localExportLinkRawTrialTables (line 1362)
+        localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle (line 242)
+rawTrials = localExportLinkRawTrialTables(trialExecutionCfg, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser, saveFigures, liveMobilityArtifacts);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 214)
+link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2315)
+            result = localRunWaveformBundleScenario(cfg, scfg, runFolder, executionOptions);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 66)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 24)
+out = sixgr.lls6g.runners.runSingle(scenarioPath, outputRoot, runTag);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

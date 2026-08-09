@@ -6,6 +6,7 @@ classdef CSIMeasurementState
         UEID (1,1) string
         ResourceType (1,1) string
         ResourceID (1,1) string
+        ResourceOrdinal (1,1) double
         Slot (1,1) double
         MaxAgeSlots (1,1) double
         ChannelEstimate
@@ -22,6 +23,7 @@ classdef CSIMeasurementState
                 options.UEID (1,1) string
                 options.ResourceType (1,1) string
                 options.ResourceID (1,1) string
+                options.ResourceOrdinal (1,1) double = NaN
                 options.Slot (1,1) double {mustBeInteger,mustBeNonnegative}
                 options.MaxAgeSlots (1,1) double {mustBeInteger,mustBeNonnegative}
                 options.ChannelEstimate
@@ -41,6 +43,12 @@ classdef CSIMeasurementState
             obj.UEID = options.UEID;
             obj.ResourceType = options.ResourceType;
             obj.ResourceID = options.ResourceID;
+            ordinal = double(options.ResourceOrdinal);
+            if ~(isnan(ordinal) || (isfinite(ordinal) && ordinal >= 0 && ordinal == round(ordinal)))
+                error("sixgr:mimo:BeamReportMismatch", ...
+                    "ResourceOrdinal must be a nonnegative integer or NaN when no configured resource set exists.");
+            end
+            obj.ResourceOrdinal = ordinal;
             obj.Slot = options.Slot;
             obj.MaxAgeSlots = options.MaxAgeSlots;
             obj.ChannelEstimate = options.ChannelEstimate;

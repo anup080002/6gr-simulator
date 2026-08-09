@@ -128,22 +128,36 @@ end
 
 function T = localBuildCFOTable(dlT, ulT, cfg)
 configured = localNumber(cfg, ["impairments.cfo.value_hz","rf.cfo_hz","power_and_rf_frontend.cfo_hz"], 0);
-rows = [localCFOTrialRow("DL", dlT, configured); localCFOTrialRow("UL", ulT, configured)];
+configuredEnabled = localBool(cfg, ["impairments.cfo.enabled","impairments.cfo_enabled", ...
+    "rf.cfo_enabled","power_and_rf_frontend.cfo_enabled"], abs(configured) > 0);
+rows = [localCFOTrialRow("DL", dlT, configured, configuredEnabled); ...
+    localCFOTrialRow("UL", ulT, configured, configuredEnabled)];
 T = struct2table(rows, "AsArray", true);
 end
 
-function row = localCFOTrialRow(direction, T, configured)
+function row = localCFOTrialRow(direction, T, configured, configuredEnabled)
 observed = istable(T) && height(T) > 0 && localHasColumn(T, "InjectedCFO_Hz");
 inj = localFiniteColumn(T, "InjectedCFO_Hz");
 est = localFiniteColumn(T, "EstimatedCFO_PreCorrection_Hz");
 res = localFiniteColumn(T, "ResidualCFO_PostCorrection_Hz");
 mismatch = localMaxAbs(inj - configured);
 residual = localMaxAbs(res);
-ok = observed && isfinite(mismatch) && mismatch <= 1 && (~isempty(res) && isfinite(residual) && residual <= 1);
+estimationRequired = logical(configuredEnabled) || abs(double(configured)) > 1e-12;
+if estimationRequired
+    estimatorOk = ~isempty(est) && ~isempty(res) && isfinite(residual) && residual <= 1;
+    estimatorStatus = "required_and_observed";
+else
+    % A disabled zero-CFO stage is an identity transform.  Requiring an
+    % estimator output in this case turns an honest N/A into a false fail.
+    estimatorOk = true;
+    estimatorStatus = "not_applicable_disabled_zero_cfo_identity";
+end
+ok = observed && isfinite(mismatch) && mismatch <= 1 && estimatorOk;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "ConfiguredCFO_Hz", double(configured), "MeanInjectedCFO_Hz", localMean(inj), ...
     "MeanEstimatedCFO_PreCorrection_Hz", localMean(est), "MeanResidualCFO_PostCorrection_Hz", localMean(res), ...
     "MaxConfiguredAppliedMismatch_Hz", double(mismatch), "MaxResidualCFO_Hz", double(residual), ...
+    "CFOEstimationRequired", logical(estimationRequired), "CFOEstimationStatus", char(estimatorStatus), ...
     "CfoConfiguredAppliedOk", logical(ok), "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_cfo_columns")));
 end
 
@@ -236,7 +250,7 @@ T = table(logical(configuredEnabled), logical(applied), string(model), iip3, p1d
 end
 
 function T = localBuildEVMTable(dlT, ulT, cfg)
-threshold = localNumber(cfg, ["analysis.evm_max_ok_rms","rf.evm_max_ok_rms"], 0.15);
+threshold = localNumber(cfg, ["analysis.evm_max_ok_rms","rf.evm_max_ok_rms"], NaN);
 rows = [localEVMRow("DL", dlT, threshold); localEVMRow("UL", ulT, threshold)];
 T = struct2table(rows, "AsArray", true);
 end
@@ -244,26 +258,61 @@ end
 function row = localEVMRow(direction, T, threshold)
 evm = localFiniteColumn(T, "EVM_rms");
 sinr = localFiniteColumn(T, "PostEqSINR_dB");
-ok = ~isempty(evm) && isfinite(localMean(evm)) && localMean(evm) <= threshold;
+evmProxy = localNumericColumn(T, "EVMProxySINR_dB");
+evmRaw = localNumericColumn(T, "EVM_rms");
+identityMask = isfinite(evmProxy) & isfinite(evmRaw) & evmRaw >= 0;
+identityError = NaN;
+identityRequired = localHasColumn(T, "EVMProxySINR_dB");
+finiteEVM = isfinite(evmRaw) & evmRaw >= 0;
+if any(identityMask)
+    expectedProxy = -20 * log10(max(evmRaw(identityMask), eps));
+    identityError = max(abs(evmProxy(identityMask) - expectedProxy), [], "omitnan");
+end
+identityOk = ~identityRequired || (nnz(identityMask) == nnz(finiteEVM) && ...
+    nnz(finiteEVM) > 0 && isfinite(identityError) && identityError <= 1e-8);
+thresholdRequired = isfinite(threshold) && threshold > 0;
+if thresholdRequired
+    thresholdOk = ~isempty(evm) && localMean(evm) <= threshold;
+    thresholdStatus = "configured_campaign_limit_evaluated";
+else
+    % EVM limits are modulation and test-condition specific.  A hidden
+    % 15%% default is not a valid gate over a multi-SNR BLER campaign.
+    thresholdOk = true;
+    thresholdStatus = "not_applicable_no_yaml_campaign_limit";
+end
+ok = ~isempty(evm) && all(evm >= 0) && isfinite(localMean(evm)) && identityOk && thresholdOk;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "MeasuredEVMMean_rms", localMean(evm), "MeasuredEVMMax_rms", localMax(evm), ...
     "MeanPostEqSINR_dB", localMean(sinr), "EVMThreshold_rms", double(threshold), ...
+    "EVMThresholdEvaluationStatus", char(thresholdStatus), ...
+    "EVMProxySINRMaxIdentityError_dB", double(identityError), ...
     "EvmReconciliationOk", logical(ok), ...
     "EvidenceSource", char(localEvidenceSource(~isempty(evm), "trial_modulation_tracking_evm")));
 end
 
 function T = localBuildPAPRTable(dlT, ulT, cfg)
-threshold = localNumber(cfg, ["analysis.papr_max_ok_db","rf.papr_max_ok_db"], 13.5);
+threshold = localNumber(cfg, ["analysis.papr_max_ok_db","rf.papr_max_ok_db"], NaN);
 rows = [localPAPRRow("DL", dlT, threshold); localPAPRRow("UL", ulT, threshold)];
 T = struct2table(rows, "AsArray", true);
 end
 
 function row = localPAPRRow(direction, T, threshold)
 papr = localFiniteColumn(T, "PAPR_dB");
-ok = ~isempty(papr) && localMedian(papr) <= threshold && localMax(papr) <= max(threshold + 3, threshold);
+thresholdRequired = isfinite(threshold) && threshold >= 0;
+if thresholdRequired
+    thresholdOk = localMedian(papr) <= threshold && localMax(papr) <= threshold + 3;
+    thresholdStatus = "configured_campaign_limit_evaluated";
+else
+    % PAPR limits depend on waveform, allocation, CFR and PA objectives.
+    % Preserve measured PAPR, but never invent a universal hidden limit.
+    thresholdOk = true;
+    thresholdStatus = "not_applicable_no_yaml_campaign_limit";
+end
+ok = ~isempty(papr) && all(isfinite(papr)) && all(papr >= 0) && thresholdOk;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "PAPRMean_dB", localMean(papr), "PAPRMedian_dB", localMedian(papr), "PAPRMax_dB", localMax(papr), ...
     "PAPRThreshold_dB", double(threshold), "PAPRWindow", "active_samples_excluding_cp_when_ofdm_metadata_available", ...
+    "PAPRThresholdEvaluationStatus", char(thresholdStatus), ...
     "PaprReconciliationOk", logical(ok), ...
     "EvidenceSource", char(localEvidenceSource(~isempty(papr), "trial_waveform_papr")));
 end
@@ -301,29 +350,132 @@ end
 function T = localBuildMIMOTable(dlT, ulT, cfg)
 cfgDLLayers = localNumber(cfg, ["mimo.max_dl_layers","phy.pdsch.nLayers","phy.pdsch.NumLayers"], NaN);
 cfgULLayers = localNumber(cfg, ["mimo.max_ul_layers","phy.pusch.nLayers","phy.pusch.NumLayers"], NaN);
-dlRI = localFiniteColumn(dlT, "Rank");
-if isempty(dlRI)
-    dlRI = localFiniteColumn(dlT, "Layers");
-end
-ulRI = localFiniteColumn(ulT, "Rank");
-if isempty(ulRI)
-    ulRI = localFiniteColumn(ulT, "Layers");
-end
-dlMax = localMax(dlRI);
-ulMax = localMax(ulRI);
-dlRank2Frac = localFraction(dlRI >= 2);
-ulRank2Frac = localFraction(ulRI >= 2);
-dlRequired = isfinite(cfgDLLayers) && cfgDLLayers >= 2;
-ulRequired = isfinite(cfgULLayers) && cfgULLayers >= 2;
-dlOk = ~dlRequired || (isfinite(dlMax) && dlMax >= 2);
-ulOk = ~ulRequired || (isfinite(ulMax) && ulMax >= 2);
-observed = ~isempty(dlRI) || ~isempty(ulRI);
-ok = observed && dlOk && ulOk;
-T = table(cfgDLLayers, cfgULLayers, localMean(dlRI), dlMax, dlRank2Frac, ...
-    localMean(ulRI), ulMax, ulRank2Frac, ok, "trial_executed_rank_then_layers_runtime_columns", ...
-    'VariableNames', {'ConfiguredDLLayers','ConfiguredULLayers','AchievedDL_RI_mean','AchievedDL_RI_max', ...
-    'DL_Rank2_Fraction','AchievedUL_RI_mean','AchievedUL_RI_max','UL_Rank2_Fraction', ...
+cfgBSTx = localNumber(cfg, ["scenario.bs.nTxAnt","mimo.n_tx_ant","mimo.nTxAnt"], NaN);
+cfgUERx = localNumber(cfg, ["scenario.ue.nRxAnt","mimo.n_rx_ant","mimo.nRxAnt"], NaN);
+cfgUETx = localNumber(cfg, ["scenario.ue.nTxAnt","mimo.ue_n_tx_ant"], cfgUERx);
+cfgBSRx = localNumber(cfg, ["scenario.bs.nRxAnt","mimo.bs_num_rx_ant"], cfgBSTx);
+maximumMCS = localNumber(cfg, ["phy.linkAdaptation.maximumMCSIndex","link_adaptation.maximum_mcs"], 31);
+bootstrapMCS = localNumber(cfg, ["phy.linkAdaptation.initialMCSIndex","link_adaptation.initial_mcs"], NaN);
+muRequested = localBool(cfg, ["mimo.mu_mimo_enable","mimo.mu_mimo_enabled"], false);
+
+dl = localMIMODirectionContract(dlT, "DL", cfgDLLayers, cfgBSTx, cfgUERx, maximumMCS, cfg);
+ul = localMIMODirectionContract(ulT, "UL", cfgULLayers, cfgUETx, cfgBSRx, maximumMCS, cfg);
+muPairRows = dl.MUPairedRows + ul.MUPairedRows;
+muExecutionOk = ~muRequested || muPairRows > 0;
+observed = dl.ObservedRows > 0 && ul.ObservedRows > 0;
+ok = observed && dl.ExactOk && ul.ExactOk && muExecutionOk;
+
+T = table(cfgDLLayers, cfgULLayers, bootstrapMCS, maximumMCS, ...
+    cfgBSTx, cfgUERx, cfgUETx, cfgBSRx, ...
+    dl.ObservedRows, ul.ObservedRows, ...
+    dl.RankMean, dl.RankMax, dl.RankExactFraction, ...
+    ul.RankMean, ul.RankMax, ul.RankExactFraction, ...
+    dl.PhysicalAntennaExactFraction, ul.PhysicalAntennaExactFraction, ...
+    dl.MCSMin, dl.MCSMax, ul.MCSMin, ul.MCSMax, ...
+    dl.ModulationSet, ul.ModulationSet, dl.MCSTableSet, ul.MCSTableSet, ...
+    dl.MCSRangeOk, ul.MCSRangeOk, dl.MCSProfileExactOk, ul.MCSProfileExactOk, ...
+    dl.RuntimeArrayModelOk, ul.RuntimeArrayModelOk, ...
+    muRequested, dl.MUPairedRows, ul.MUPairedRows, muExecutionOk, ...
+    dl.ExactOk, ul.ExactOk, ok, ...
+    "raw_waveform_trials_rank_layers_physical_arrays_and_ts38214_mcs_profile", ...
+    'VariableNames', {'ConfiguredDLLayers','ConfiguredULLayers','ConfiguredBootstrapMCS','ConfiguredMaximumMCS', ...
+    'ConfiguredDLTxAntennas','ConfiguredDLRxAntennas','ConfiguredULTxAntennas','ConfiguredULRxAntennas', ...
+    'ObservedDLRows','ObservedULRows', ...
+    'AchievedDL_RI_mean','AchievedDL_RI_max','DL_RankExactFraction', ...
+    'AchievedUL_RI_mean','AchievedUL_RI_max','UL_RankExactFraction', ...
+    'DL_PhysicalAntennaExactFraction','UL_PhysicalAntennaExactFraction', ...
+    'ObservedDL_MCS_min','ObservedDL_MCS_max','ObservedUL_MCS_min','ObservedUL_MCS_max', ...
+    'ObservedDL_ModulationSet','ObservedUL_ModulationSet','ObservedDL_MCSTableSet','ObservedUL_MCSTableSet', ...
+    'DL_MCSRangeOk','UL_MCSRangeOk','DL_MCSProfileExactOk','UL_MCSProfileExactOk', ...
+    'DL_RuntimeArrayModelOk','UL_RuntimeArrayModelOk', ...
+    'MUMIMOConfigured','DLMUPairedRows','ULMUPairedRows','MUMIMOExecutionOk', ...
+    'DLConfiguredEffectiveExactOk','ULConfiguredEffectiveExactOk', ...
     'MimoKpiReconciliationOk','EvidenceSource'});
+end
+
+function out = localMIMODirectionContract(T, direction, configuredLayers, configuredTx, configuredRx, maximumMCS, cfg)
+out = struct( ...
+    "ObservedRows", double(localHeight(T)), "RankMean", NaN, "RankMax", NaN, ...
+    "RankExactFraction", NaN, "PhysicalAntennaExactFraction", NaN, ...
+    "MCSMin", NaN, "MCSMax", NaN, "ModulationSet", "", "MCSTableSet", "", ...
+    "MCSRangeOk", false, "MCSProfileExactOk", false, ...
+    "RuntimeArrayModelOk", false, "MUPairedRows", 0, "ExactOk", false);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+
+layers = localNumericColumn(T, "Layers");
+if all(~isfinite(layers))
+    layers = localNumericColumn(T, "Rank");
+end
+finiteLayers = layers(isfinite(layers));
+out.RankMean = localMean(finiteLayers);
+out.RankMax = localMax(finiteLayers);
+rankExact = isfinite(configuredLayers) && ~isempty(finiteLayers) && ...
+    numel(finiteLayers) == height(T) && all(abs(finiteLayers - configuredLayers) < 1e-9);
+if isfinite(configuredLayers) && ~isempty(finiteLayers)
+    out.RankExactFraction = mean(abs(finiteLayers - configuredLayers) < 1e-9);
+end
+
+physicalTx = localNumericColumn(T, "PhysicalTxAntennas");
+physicalRx = localNumericColumn(T, "PhysicalRxAntennas");
+antennaRowOk = isfinite(physicalTx) & isfinite(physicalRx) & ...
+    abs(physicalTx - configuredTx) < 1e-9 & abs(physicalRx - configuredRx) < 1e-9;
+if ~isempty(antennaRowOk)
+    out.PhysicalAntennaExactFraction = mean(antennaRowOk);
+end
+sameAssumptions = localLogicalColumn(T, "ChannelUsesSameRuntimeAntennaAssumptions");
+countOnly = localLogicalColumn(T, "ChannelUsesCountOnlyAntennaModel");
+if isempty(sameAssumptions)
+    sameAssumptions = false(height(T), 1);
+end
+if isempty(countOnly)
+    countOnly = true(height(T), 1);
+end
+out.RuntimeArrayModelOk = all(antennaRowOk) && all(sameAssumptions) && ~any(countOnly);
+
+mcs = localNumericColumn(T, "MCSIndex");
+fallbackMCS = localNumericColumn(T, "MCS");
+mcs(~isfinite(mcs) & isfinite(fallbackMCS)) = fallbackMCS(~isfinite(mcs) & isfinite(fallbackMCS));
+finiteMCS = mcs(isfinite(mcs));
+out.MCSMin = localMin(finiteMCS);
+out.MCSMax = localMax(finiteMCS);
+out.MCSRangeOk = numel(finiteMCS) == height(T) && all(finiteMCS >= 0 & finiteMCS <= maximumMCS);
+
+mods = upper(strtrim(localStringColumn(T, "Modulation")));
+tables = lower(strtrim(localStringColumn(T, "MCSTable")));
+rates = localNumericColumn(T, "TargetCodeRate");
+out.ModulationSet = strjoin(unique(mods(strlength(mods) > 0), "stable"), "|");
+out.MCSTableSet = strjoin(unique(tables(strlength(tables) > 0), "stable"), "|");
+profileOk = numel(mods) == height(T) && numel(tables) == height(T) && numel(rates) == height(T);
+if profileOk
+    for i = 1:height(T)
+        tableToken = tables(i);
+        if strlength(tableToken) == 0
+            try
+                tableToken = string(sixgr.link.resolveConfiguredMCSTable(cfg, direction));
+            catch
+                profileOk = false;
+                break;
+            end
+        end
+        profile = sixgr.link.resolveMCSProfile(tableToken, mcs(i));
+        if ~logical(profile.Valid) || upper(string(profile.Modulation)) ~= mods(i) || ...
+                ~(isfinite(rates(i)) && abs(double(profile.TargetCodeRate) - rates(i)) < 1e-12)
+            profileOk = false;
+            break;
+        end
+    end
+end
+out.MCSProfileExactOk = logical(profileOk);
+
+groupSize = localNumericColumn(T, "MUMIMOGroupSize");
+muEnabled = localLogicalColumn(T, "MUMIMOEnabled");
+if isempty(muEnabled)
+    muEnabled = false(height(T), 1);
+end
+out.MUPairedRows = double(nnz(isfinite(groupSize) & groupSize >= 2 & muEnabled));
+out.ExactOk = rankExact && out.RuntimeArrayModelOk && out.MCSRangeOk && out.MCSProfileExactOk;
 end
 
 function T = localBuildSchedulerTable(dlT, ulT, cfg)
@@ -446,6 +598,19 @@ end
 vals = vals(isfinite(vals));
 end
 
+function vals = localNumericColumn(T, name)
+vals = nan(localHeight(T), 1);
+if ~(istable(T) && height(T) > 0 && localHasColumn(T, name))
+    return;
+end
+raw = T.(char(string(name)));
+if isnumeric(raw) || islogical(raw)
+    vals = double(raw(:));
+else
+    vals = str2double(string(raw(:)));
+end
+end
+
 function vals = localStringColumn(T, name)
 vals = strings(0, 1);
 if istable(T) && height(T) > 0 && localHasColumn(T, name)
@@ -501,6 +666,16 @@ if isempty(vals)
     value = NaN;
 else
     value = max(vals, [], "omitnan");
+end
+end
+
+function value = localMin(vals)
+vals = double(vals(:));
+vals = vals(isfinite(vals));
+if isempty(vals)
+    value = NaN;
+else
+    value = min(vals, [], "omitnan");
 end
 end
 

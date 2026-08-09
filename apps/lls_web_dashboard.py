@@ -505,6 +505,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
         build_chart_payload_for_artifact.cache_clear()
         fetch_artifact_bytes.cache_clear()
         load_cached_csv_preview.cache_clear()
+        count_cached_csv_data_rows.cache_clear()
         load_cached_csv_rows.cache_clear()
         return
     LIVE_PAYLOAD_CACHE.pop(int(run_id), None)
@@ -526,6 +527,7 @@ def clear_dashboard_caches(run_id: int | None = None) -> None:
     build_chart_payload_for_artifact.cache_clear()
     fetch_artifact_bytes.cache_clear()
     load_cached_csv_preview.cache_clear()
+    count_cached_csv_data_rows.cache_clear()
     load_cached_csv_rows.cache_clear()
 
 
@@ -4616,6 +4618,16 @@ def _read_first_csv_record(path: Path) -> dict[str, Any]:
     return dict(row or {})
 
 
+def _read_csv_records(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            return [dict(row) for row in csv.DictReader(handle)]
+    except Exception:
+        return []
+
+
 def _truthy_value(value: Any) -> bool | None:
     text = str(value if value is not None else "").strip().lower()
     if text in {"1", "true", "yes", "y", "pass", "passed"}:
@@ -4665,6 +4677,16 @@ def _filesystem_artifact_id_for_path(run_folder: Path, logical_path: str) -> int
     )
 
 
+def _windows_extended_path(path: Path | str) -> Path:
+    """Use Win32 extended-length paths for deep results-folder artifacts."""
+    absolute = str(Path(path).absolute())
+    if os.name != "nt" or absolute.startswith("\\\\?\\"):
+        return Path(absolute)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
 def _filesystem_artifact_kind_and_mime(path: Path) -> tuple[str, str] | None:
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -4701,6 +4723,11 @@ def _filesystem_run_folders() -> list[Path]:
                     or (run_dir / "reports" / "csv" / "scenario_summary.csv").is_file()
                     or (
                         run_dir
+                        / "artifact_generation"
+                        / "component_qualification_manifest.csv"
+                    ).is_file()
+                    or (
+                        run_dir
                         / "reports"
                         / "csv"
                         / "full_stack_run_manifest.csv"
@@ -4712,6 +4739,19 @@ def _filesystem_run_folders() -> list[Path]:
                         / "phase18_reanalysis_manifest.json"
                     ).is_file()
                     or (run_dir / "meta" / "recovery_manifest.json").is_file()
+                    or (
+                        (
+                            run_dir
+                            / "air_interface"
+                            / "reports"
+                            / "csv"
+                            / "live_stage_status.csv"
+                        ).is_file()
+                        and (
+                            (run_dir / "meta" / "scenario_config_identity.json").is_file()
+                            or (run_dir / "meta" / "scenario_config_resolved.json").is_file()
+                        )
+                    )
                 ):
                     folders.append(run_dir)
     return folders
@@ -4732,17 +4772,47 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         / "phase18_reanalysis_manifest.json"
     )
     recovery_path = run_folder / "meta" / "recovery_manifest.json"
+    component_qualification_manifest_path = (
+        run_folder
+        / "artifact_generation"
+        / "component_qualification_manifest.csv"
+    )
+    component_qualification_summary_path = (
+        run_folder
+        / "artifact_generation"
+        / "component_qualification_summary.csv"
+    )
+    live_stage_path = (
+        run_folder
+        / "air_interface"
+        / "reports"
+        / "csv"
+        / "live_stage_status.csv"
+    )
+    config_identity_path = run_folder / "meta" / "scenario_config_identity.json"
+    config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
     manifest = _read_json_file(manifest_path)
     summary = _read_first_csv_record(summary_path)
     qualification = _read_first_csv_record(qualification_path)
     reanalysis = _read_json_file(reanalysis_path)
     recovery = _read_json_file(recovery_path)
+    component_qualification_rows = _read_csv_records(
+        component_qualification_summary_path
+    )
+    component_qualification_manifest = _read_first_csv_record(
+        component_qualification_manifest_path
+    )
+    live_stage = _read_first_csv_record(live_stage_path)
+    config_identity = _read_json_file(config_identity_path)
+    resolved_config = _read_json_file(config_json_path)
     if (
         not manifest
         and not summary
         and not qualification
         and not reanalysis
         and not recovery
+        and not component_qualification_manifest
+        and not (live_stage and (config_identity or resolved_config))
     ):
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
@@ -4756,6 +4826,8 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         )
         or manifest.get("ScenarioID")
         or manifest.get("ScenarioId")
+        or config_identity.get("ScenarioID")
+        or path_get(resolved_config, "meta.scenario_id", "")
         or run_folder.parent.name
     ).strip()
     run_completion = str(summary.get("RunCompletion") or manifest.get("RunCompletion") or "").strip()
@@ -4786,6 +4858,23 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             "INTERRUPTED": "interrupted",
             "FAILED": "failed",
         }.get(recovery_status, "recovered")
+    if not run_completion and component_qualification_manifest:
+        statuses = {
+            str(row.get("Status") or "").strip().upper()
+            for row in component_qualification_rows
+            if str(row.get("Domain") or "").strip()
+        }
+        run_completion = (
+            "completed"
+            if statuses and statuses == {"PASS"}
+            else "completed_with_failures"
+        )
+    if not run_completion and live_stage:
+        # A filesystem-only waveform run has no terminal manifest while it
+        # is executing.  Its atomically refreshed live-stage row is the
+        # canonical interim authority, so expose it as active instead of
+        # hiding the run from /runs and /realtime until finalization.
+        run_completion = "running"
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
@@ -4797,7 +4886,22 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         or reanalysis.get("FinalStatus")
         or recovery.get("QualificationStatus")
     )
+    if result_ok is None and component_qualification_manifest:
+        qualification_statuses = [
+            str(row.get("Status") or "").strip().upper()
+            for row in component_qualification_rows
+            if str(row.get("Domain") or "").strip()
+        ]
+        result_ok = bool(qualification_statuses) and all(
+            status == "PASS" for status in qualification_statuses
+        )
     required_failures = _int_value(summary.get("RequiredFailureCount") or manifest.get("RequiredFailureCount"))
+    if required_failures is None and component_qualification_manifest:
+        required_failures = sum(
+            1
+            for row in component_qualification_rows
+            if str(row.get("Status") or "").strip().upper() != "PASS"
+        )
     truth_ok = _truthy_value(summary.get("RuntimeTruthContractOk") or manifest.get("RuntimeTruthContractOk"))
     updated_utc = _max_mtime_utc(
         [
@@ -4806,6 +4910,11 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             qualification_path,
             reanalysis_path,
             recovery_path,
+            component_qualification_manifest_path,
+            component_qualification_summary_path,
+            live_stage_path,
+            config_identity_path,
+            config_json_path,
             run_folder,
         ]
     )
@@ -4813,9 +4922,9 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         manifest.get("GeneratedUTC")
         or qualification.get("StartUTC")
         or reanalysis.get("GeneratedUTC")
+        or config_identity.get("GeneratedUTC")
         or ""
     ).strip()
-    config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
     config_json = ""
     if config_json_path.is_file():
         try:
@@ -4825,8 +4934,16 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     status_payload: dict[str, Any] = {
         "status": run_completion,
         "run_completion": run_completion,
-        "stage": "filesystem_result_folder",
-        "status_authority": summary.get("StatusAuthority") or manifest.get("StatusAuthority") or "filesystem_scenario_summary",
+        "stage": str(live_stage.get("Stage") or "filesystem_result_folder"),
+        "status_authority": (
+            "component_qualification_summary"
+            if component_qualification_manifest
+            else (
+                summary.get("StatusAuthority")
+                or manifest.get("StatusAuthority")
+                or ("live_stage_status" if live_stage else "filesystem_scenario_summary")
+            )
+        ),
         "result_ok": result_ok,
         "required_failure_count": required_failures,
         "runtime_truth_contract_ok": truth_ok,
@@ -4834,17 +4951,35 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "summary_artifact": "reports/csv/scenario_summary.csv" if summary else "",
         "manifest_artifact": "meta/scenario_manifest.json" if manifest else "",
         "qualification_manifest_artifact": (
-            "reports/csv/full_stack_run_manifest.csv"
-            if qualification
+            "artifact_generation/component_qualification_manifest.csv"
+            if component_qualification_manifest
             else (
-                "reports/json/phase18_reanalysis_manifest.json"
-                if reanalysis
+                "reports/csv/full_stack_run_manifest.csv"
+                if qualification
                 else (
-                    "meta/recovery_manifest.json"
-                    if recovery
-                    else ""
+                    "reports/json/phase18_reanalysis_manifest.json"
+                    if reanalysis
+                    else (
+                        "meta/recovery_manifest.json"
+                        if recovery
+                        else ""
+                    )
                 )
             )
+        ),
+        "component_qualification": bool(component_qualification_manifest),
+        "component_qualification_domain_count": len(
+            component_qualification_rows
+        ),
+        "component_qualification_passed_domain_count": sum(
+            1
+            for row in component_qualification_rows
+            if str(row.get("Status") or "").strip().upper() == "PASS"
+        ),
+        "component_qualification_failed_domain_count": sum(
+            1
+            for row in component_qualification_rows
+            if str(row.get("Status") or "").strip().upper() == "FAIL"
         ),
         "qualification_reanalysis": bool(reanalysis),
         "qualification_recovery": bool(recovery),
@@ -4863,6 +4998,10 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             or recovery.get("SourceInventorySHA256")
             or ""
         ),
+        "current_stage": str(live_stage.get("Stage") or ""),
+        "current_snr_db": _int_value(live_stage.get("CurrentSNR_dB")),
+        "current_slot": _int_value(live_stage.get("CurrentSlot")),
+        "total_slots": _int_value(live_stage.get("TotalSlots")),
     }
     return {
         "run_id": run_id,
@@ -4873,12 +5012,20 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "bucket": str(manifest.get("OutputBucket") or "filesystem"),
         "profile_name": str(
             (
+                "component_qualification"
+                if component_qualification_manifest
+                else ""
+            )
+            or (
                 "full_stack_qualification_recovery"
                 if recovery
                 else ""
             )
             or summary.get("RunnerProfile")
             or manifest.get("RunnerProfile")
+            or path_get(resolved_config, "scenario.runner_profile", "")
+            or path_get(resolved_config, "scenario.run_control.runner_profile", "")
+            or path_get(resolved_config, "simulation.runner_profile", "")
             or (
                 "full_stack_qualification"
                 if qualification
@@ -5144,6 +5291,7 @@ def filesystem_log_rows(run_row: dict[str, Any] | None, limit: int = MAX_LIVE_LO
     if not folder.is_dir():
         return []
     candidates = [
+        folder / "air_interface" / "logs" / "run.log",
         folder / "logs" / "matlab_diary.log",
         folder / "logs" / "run.log",
         folder / "matlab_diary.log",
@@ -5321,7 +5469,9 @@ def fetch_artifact_meta(artifact_id: int) -> dict[str, Any] | None:
 def fetch_artifact_bytes(artifact_id: int) -> bytes:
     filesystem_meta = filesystem_artifact_by_id(int(artifact_id)) if is_filesystem_virtual_artifact_id(artifact_id) else None
     if filesystem_meta is not None:
-        return Path(str(filesystem_meta.get("filesystem_path") or "")).read_bytes()
+        return _windows_extended_path(
+            str(filesystem_meta.get("filesystem_path") or "")
+        ).read_bytes()
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
@@ -5338,7 +5488,9 @@ def fetch_artifact_bytes(artifact_id: int) -> bytes:
     except MYSQL_CONNECTOR_ERRORS:
         filesystem_meta = filesystem_artifact_by_id(int(artifact_id))
         if filesystem_meta is not None:
-            return Path(str(filesystem_meta.get("filesystem_path") or "")).read_bytes()
+            return _windows_extended_path(
+                str(filesystem_meta.get("filesystem_path") or "")
+            ).read_bytes()
         raise
 
 
@@ -6054,9 +6206,15 @@ def now_utc_stamp() -> str:
 
 def classify_log_level(line: str) -> str:
     text = re.sub(r"[\x00-\x1f]+", " ", line).strip().lower()
-    if "[fail]" in text or text.startswith("error:") or " exception" in text or " access is denied" in text:
+    if (
+        "[fail]" in text
+        or text.startswith("error:")
+        or re.search(r"(?:^|\])\s*error\b", text)
+        or " exception" in text
+        or " access is denied" in text
+    ):
         return "ERROR"
-    if "warning" in text:
+    if re.search(r"\bwarn(?:ing)?\b", text):
         return "WARN"
     if "[pass]" in text:
         return "PASS"
@@ -7477,12 +7635,7 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
         db_artifacts = fetch_artifacts(run_id)
         artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
-    component_manifest_artifact = find_artifact_by_logical_path(
-        artifacts, "reports/csv/component_artifact_publication_manifest.csv"
-    )
-    public_artifacts = prefer_canonical_artifacts_over_component_views(
-        public_artifacts, component_manifest_artifact
-    )
+    public_artifacts, _ = select_primary_result_artifacts(public_artifacts)
     sorted_artifacts = sorted(public_artifacts, key=artifact_sort_key)
     table_artifacts = dedupe_table_descriptors_for_ui(
         [
@@ -8549,14 +8702,51 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
         root = (REPO_ROOT / root).absolute()
     if not root.is_dir():
         return []
-    cache_key = str(root.absolute()).replace("\\", "/").lower()
+    cache_root = str(root.absolute()).replace("\\", "/").lower()
+    # Terminal filesystem runs are mutable during recovery and component
+    # replacement.  Keying the cache by path alone retained deleted or
+    # superseded CSV/PNG rows until the dashboard process restarted.  The
+    # atomic authority files are updated at every publication/finalization,
+    # so include their size and nanosecond mtime in the cache key.
+    authority_paths = [
+        root / "meta" / "scenario_manifest.json",
+        root / "reports" / "csv" / "scenario_summary.csv",
+        root / "reports" / "csv" / "full_stack_run_manifest.csv",
+        root / "reports" / "json" / "phase18_reanalysis_manifest.json",
+        root / "meta" / "recovery_manifest.json",
+        root / "artifact_generation" / "canonical_component_manifest.csv",
+        root / "artifact_generation" / "artifact_generation_results.csv",
+        root / "artifact_generation" / "artifact_contract_finalization_status.json",
+        root / "artifact_generation" / "component_qualification_manifest.csv",
+        root / "artifact_generation" / "component_qualification_summary.csv",
+    ]
+    authority_fingerprint: list[tuple[str, int, int]] = []
+    for authority_path in authority_paths:
+        try:
+            stat = _windows_extended_path(authority_path).stat()
+        except OSError:
+            continue
+        authority_fingerprint.append(
+            (
+                authority_path.relative_to(root).as_posix().lower(),
+                int(stat.st_size),
+                int(stat.st_mtime_ns),
+            )
+        )
+    fingerprint_text = json.dumps(
+        authority_fingerprint, separators=(",", ":"), ensure_ascii=True
+    )
+    cache_key = cache_root + "|" + hashlib.sha256(
+        fingerprint_text.encode("utf-8")
+    ).hexdigest()
     status_text = str((run_row or {}).get("status_text") or "").strip()
     terminal = is_terminal_status(status_text)
     if terminal and cache_key in FILESYSTEM_ARTIFACT_CACHE:
         return [dict(row) for row in FILESYSTEM_ARTIFACT_CACHE[cache_key]]
     artifacts: list[dict[str, Any]] = []
     for path in root.rglob("*"):
-        if not path.is_file():
+        io_path = _windows_extended_path(path)
+        if not io_path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
         kind_mime = _filesystem_artifact_kind_and_mime(path)
@@ -8564,7 +8754,7 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
             continue
         artifact_kind, mime_type = kind_mime
         try:
-            stat = path.stat()
+            stat = io_path.stat()
         except OSError:
             continue
         artifact_id = _filesystem_artifact_id_for_path(root, rel)
@@ -8589,6 +8779,21 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
             }
         )
     if terminal:
+        stale_keys = [
+            stale_key
+            for stale_key in FILESYSTEM_ARTIFACT_CACHE
+            if stale_key.startswith(cache_root + "|") and stale_key != cache_key
+        ]
+        if stale_keys:
+            # The path-derived virtual artifact id remains stable when an
+            # atomic publisher replaces a CSV/PNG in place.  The authority
+            # fingerprint correctly invalidates the filesystem index, but
+            # byte/CSV/live caches keyed only by that stable id would still
+            # mix the previous file contents with the refreshed inventory.
+            # Clear every content-derived cache before exposing the new
+            # authority version.  This is intentionally fail-safe and does
+            # not change or synthesize any artifact rows.
+            clear_dashboard_caches(int((run_row or {}).get("run_id") or 0))
         FILESYSTEM_ARTIFACT_CACHE[cache_key] = [
             dict(row) for row in artifacts
         ]
@@ -8630,7 +8835,10 @@ def load_small_csv_rows(artifacts: list[dict[str, Any]], logical_path: str, *, m
     filesystem_path = str(art.get("filesystem_path") or "").strip()
     if filesystem_path:
         try:
-            header, rows_raw = parse_csv_bytes(Path(filesystem_path).read_bytes(), max_rows=max_rows)
+            header, rows_raw = parse_csv_bytes(
+                _windows_extended_path(filesystem_path).read_bytes(),
+                max_rows=max_rows,
+            )
         except OSError:
             return []
         rows = []
@@ -9464,7 +9672,15 @@ def count_csv_data_rows(artifacts: list[dict[str, Any]], logical_path: str) -> i
     filesystem_path = str(art.get("filesystem_path") or "").strip()
     if filesystem_path:
         try:
-            return max(0, len(parse_csv_bytes(Path(filesystem_path).read_bytes(), max_rows=None)[1]))
+            return max(
+                0,
+                len(
+                    parse_csv_bytes(
+                        _windows_extended_path(filesystem_path).read_bytes(),
+                        max_rows=None,
+                    )[1]
+                ),
+            )
         except OSError:
             return 0
     artifact_id = int(art.get("artifact_id") or 0)
@@ -10199,6 +10415,10 @@ def _config_get_nested(config: dict[str, Any], path: str, default: Any = None) -
 
 def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     config = parse_config_json(run_row)
+    cross_feature_qualification = (
+        str(run_row.get("profile_name") or "").strip().lower()
+        == "component_qualification"
+    )
 
     def config_bool(*paths: str, default: bool = False) -> bool:
         for path in paths:
@@ -10449,6 +10669,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     ).strip().upper()
     fading_enabled = channel_model not in {"", "AWGN", "NONE", "OFF"}
     return {
+        "cross_feature_qualification": cross_feature_qualification,
         "ai_enabled": ai_enabled,
         "ntn_enabled": ntn_enabled,
         "sensing_enabled": sensing_enabled,
@@ -10491,6 +10712,12 @@ def artifact_is_policy_filtered(logical_path: str, feature_policy: dict[str, Any
     path = str(logical_path or "").strip().lower()
     policy = feature_policy or {}
     if not path:
+        return False
+    # A component-qualification run is itself the evidence that optional
+    # feature families were intentionally exercised across multiple
+    # dedicated campaigns.  It has no single scenario YAML whose feature
+    # switches can be used to hide those campaign artifacts.
+    if policy.get("cross_feature_qualification", False):
         return False
 
     def has_feature_token(*tokens: str) -> bool:
@@ -11449,7 +11676,17 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
     stage = merge_live_status_into_stage(stage, status_json)
     stage = infer_effective_live_stage(stage, artifacts)
     config = parse_config_json(run_row)
-    truth_modes = infer_runtime_truth_modes(config, operating_mode)
+    component_qualification_scope = (
+        str(run_row.get("profile_name") or "").strip().lower()
+        == "component_qualification"
+    )
+    if component_qualification_scope:
+        truth_modes = {
+            "evidence_scope": "component_qualification",
+            "scenario_runtime_applicable": False,
+        }
+    else:
+        truth_modes = infer_runtime_truth_modes(config, operating_mode)
     config_snapshot = build_config_snapshot_context(run_row, artifacts, config)
     raw_trial_lifecycle = build_raw_trial_lifecycle_context(artifacts)
     browser_cfg = config
@@ -11530,6 +11767,12 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         },
     }
     notes: list[str] = []
+    if component_qualification_scope:
+        notes.append(
+            "This view contains fresh, contract-validated component qualification campaigns. "
+            "It is not a single scenario runtime, so scenario noise, control-gating, SINR, "
+            "and deployment modes are not applicable here."
+        )
     if operating_mode:
         receiver_hest_unavailable = any(
             str(row.get("ReceiverHestSINRValueStatus") or "").strip().lower() == "unavailable"
@@ -11753,15 +11996,16 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         notes.append(
             f"Configured grant batch size: {int(truth_modes.get('configured_batch_size_links') or 0)} link(s) per coordinator chunk."
         )
-    notes.append(
-        "ConfiguredSNR_dB is retained as resolved scenario operating-point metadata for grouping/progress only; it is not a measured SINR. "
-        "The browser keeps PostEqSINR_dB and MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured labels and receiver estimates do not masquerade as scheduler-quality SINR."
-    )
-    notes.append(
-        "ReceiverHestSINR_dB is a receiver-side diagnostic from Hest/reference-signal residual measurement and is not a scheduler-quality post-equalization SINR. "
-        "DecoderTruthProxySINR_dB is only populated when the runtime emits a real decoder-truth proxy. "
-        "SystemLevelSINR_dB is a desired/interference/noise budget estimate for coupled system-level views, and LargeScaleSINR_dB remains a large-scale preview."
-    )
+    if not component_qualification_scope:
+        notes.append(
+            "ConfiguredSNR_dB is retained as resolved scenario operating-point metadata for grouping/progress only; it is not a measured SINR. "
+            "The browser keeps PostEqSINR_dB and MeasuredTrialSINR_dB separate from ReceiverHestSINR_dB so configured labels and receiver estimates do not masquerade as scheduler-quality SINR."
+        )
+        notes.append(
+            "ReceiverHestSINR_dB is a receiver-side diagnostic from Hest/reference-signal residual measurement and is not a scheduler-quality post-equalization SINR. "
+            "DecoderTruthProxySINR_dB is only populated when the runtime emits a real decoder-truth proxy. "
+            "SystemLevelSINR_dB is a desired/interference/noise budget estimate for coupled system-level views, and LargeScaleSINR_dB remains a large-scale preview."
+        )
     if config_snapshot.get("submitted_present"):
         notes.append(
             "Config snapshots are DB-backed: the submitted scenario payload is stored in sim_runs.config_json and the resolved JSON/YAML snapshots are stored as MySQL artifacts."
@@ -12077,6 +12321,53 @@ def extract_metric_cards(run_row: dict[str, Any], artifacts: list[dict[str, Any]
                 continue
             metrics.append({"label": label, "value": str(value), "source": "runtime_context"})
             seen.add(label)
+    if isinstance(truth_modes, dict) and truth_modes.get("evidence_scope") == "component_qualification":
+        qualification_summary = find_artifact_by_logical_path(
+            artifacts, "artifact_generation/component_qualification_summary.csv"
+        )
+        if qualification_summary:
+            header, rows = load_cached_csv_preview(
+                int(qualification_summary["artifact_id"]), 256
+            )
+            index = {str(name).strip().lower(): position for position, name in enumerate(header)}
+
+            def qualification_value(row: list[str], column: str) -> Any:
+                position = index.get(column.lower())
+                return row[position] if position is not None and position < len(row) else ""
+
+            def qualification_sum(column: str) -> int:
+                total = 0.0
+                for row in rows:
+                    numeric = coerce_numeric(qualification_value(row, column))
+                    if numeric is not None:
+                        total += numeric
+                return int(total)
+
+            passed = sum(
+                1
+                for row in rows
+                if str(qualification_value(row, "Status")).strip().upper() == "PASS"
+            )
+            failed = len(rows) - passed
+            qualification_cards = [
+                ("Qualified Components", passed),
+                ("Failed Components", failed),
+                ("Component Contracts", qualification_sum("ContractCount")),
+                ("Published Component Artifacts", qualification_sum("PublishedCount")),
+                ("Component CSVs", qualification_sum("CSVCount")),
+                ("Component PNGs", qualification_sum("PNGCount")),
+            ]
+            for label, value in qualification_cards:
+                if label in seen:
+                    continue
+                metrics.append(
+                    {
+                        "label": label,
+                        "value": str(value),
+                        "source": "artifact_generation/component_qualification_summary.csv",
+                    }
+                )
+                seen.add(label)
     if isinstance(deployment, dict) and deployment:
         deployment_cards = [
             ("Sites", deployment.get("NumSites")),
@@ -12144,6 +12435,9 @@ def extract_metric_cards(run_row: dict[str, Any], artifacts: list[dict[str, Any]
         art
         for art in artifacts
         if art["byte_size"] <= 250_000
+        and not art["logical_path"].lower().endswith(
+            "component_qualification_summary.csv"
+        )
         and (
             art["logical_path"].lower().endswith("summary.csv")
             or art["logical_path"].lower().endswith("runtime_summary.json")
@@ -12546,39 +12840,61 @@ def build_debug_payload(run_row: dict[str, Any], artifacts: list[dict[str, Any]]
 
 
 REALTIME_COMPONENT_SPECS: tuple[dict[str, Any], ...] = (
-    {"id": "frame_grid", "label": "Frame / Grid / Numerology", "group": "PHY", "tokens": ("frame_grid", "resource_grid", "numerology", "slot_symbol", "carrier_grid", "component_carrier", "guardband", "bwp_", "tdd_", "fdd_")},
-    {"id": "waveform", "label": "Waveform", "group": "PHY", "tokens": ("waveform", "ofdm", "constellation", "spectrum", "spectral")},
-    {"id": "ssb_pbch", "folder": "ssb", "label": "SSB / PBCH", "group": "Access", "tokens": ("ssb", "pbch", "pss", "sss")},
-    {"id": "prach_rach", "folder": "prach", "label": "PRACH / RACH", "group": "Access", "tokens": ("prach", "random_access", "four_step_ra", "contention")},
-    {"id": "initial_access", "label": "Initial Access", "group": "Access", "tokens": ("initial_access", "sib1", "attach_state", "cell_acquisition")},
-    {"id": "pdcch", "label": "PDCCH / DCI", "group": "Control", "tokens": ("pdcch", "dci", "coreset", "search_space")},
-    {"id": "pdsch", "label": "PDSCH / DL-SCH", "group": "Data PHY", "tokens": ("pdsch", "dlsch", "dl_pdsch", "dl_scheduler_grant")},
-    {"id": "pusch", "label": "PUSCH / UL-SCH", "group": "Data PHY", "tokens": ("pusch", "ulsch", "ul_pusch", "ul_scheduler_grant")},
-    {"id": "pucch", "label": "PUCCH / UCI", "group": "Control", "tokens": ("pucch", "uci_")},
+    {"id": "frame_grid", "contract_folders": ("frame_grid",), "label": "Frame / Grid / Numerology", "group": "PHY", "tokens": ("frame_grid", "resource_grid", "numerology", "slot_symbol", "carrier_grid", "component_carrier", "guardband", "bwp_", "tdd_", "fdd_")},
+    {"id": "waveform", "contract_folders": ("waveform",), "label": "Waveform", "group": "PHY", "tokens": ("waveform", "ofdm", "constellation", "spectrum", "spectral")},
+    {"id": "ssb_pbch", "folder": "ssb", "contract_folders": ("initial_access",), "contract_filter_required": True, "label": "SSB / PBCH", "group": "Access", "tokens": ("ssb", "pbch", "pss", "sss")},
+    {"id": "prach_rach", "folder": "prach", "contract_folders": ("prach",), "label": "PRACH / RACH", "group": "Access", "tokens": ("prach", "random_access", "four_step_ra", "contention", "msg3")},
+    {"id": "initial_access", "contract_folders": ("initial_access",), "label": "Initial Access", "group": "Access", "tokens": ("initial_access", "sib1", "attach_state", "cell_acquisition", "rrc_connection")},
+    {"id": "pdcch", "contract_folders": ("pdcch",), "label": "PDCCH / DCI", "group": "Control", "tokens": ("pdcch", "dci", "coreset", "search_space")},
+    {"id": "pdsch", "contract_folders": ("pdsch",), "label": "PDSCH / DL-SCH", "group": "Data PHY", "tokens": ("pdsch", "dlsch", "dl_pdsch", "dl_scheduler_grant")},
+    {"id": "pusch", "contract_folders": ("pusch",), "label": "PUSCH / UL-SCH", "group": "Data PHY", "tokens": ("pusch", "ulsch", "ul_pusch", "ul_scheduler_grant")},
+    {"id": "pucch", "contract_folders": ("pucch",), "label": "PUCCH / UCI", "group": "Control", "tokens": ("pucch", "uci_")},
     {"id": "air_interface", "label": "Air Interface", "group": "PHY", "tokens": ("air_interface/", "tx_rx_stage", "resource_grid")},
-    {"id": "mimo", "label": "MIMO / Beamforming", "group": "Spatial", "tokens": ("mimo", "beamforming", "beam_", "precoder", "rank_layer")},
-    {"id": "reference_signals", "label": "Reference Signals / Link Adaptation", "group": "PHY", "tokens": ("csi_rs", "csirs", "srs", "trs", "dmrs", "ptrs", "reference_signal", "rsla", "link_adaptation", "cqi")},
-    {"id": "channel", "label": "Channel / Geometry / Mobility", "group": "Propagation", "tokens": ("channel_", "geometry", "mobility", "interference", "pathloss", "fading", "doppler", "blockage", "delay_spread", "angle_spread")},
-    {"id": "rf", "label": "RF / Frontend / Power", "group": "RF", "tokens": ("rf_", "frontend", "agc", "cfo", "phase_noise", "iq_imbalance", "adc_", "dac_", "aclr", "power_control")},
-    {"id": "mac_harq_scheduler", "label": "MAC / HARQ / Scheduler", "group": "Protocol", "tokens": ("mac_", "harq", "scheduler", "bsr", "phr", "logical_channel", "lcp_")},
-    {"id": "l2", "label": "Layer 2 / Bearers", "group": "Protocol", "tokens": ("protocol_stack", "protocol_", "rlc", "pdcp", "sdap", "bearer")},
-    {"id": "l3", "label": "Layer 3", "group": "Protocol", "tokens": ("rrc", "handover", "mobility_event", "sib1")},
-    {"id": "traffic", "label": "Traffic / QoS", "group": "Traffic", "tokens": ("traffic", "packet_flow", "flow_", "goodput", "latency", "qos")},
+    {"id": "mimo", "contract_folders": ("mimo",), "label": "MIMO / Beamforming", "group": "Spatial", "tokens": ("mimo", "beamforming", "beam_", "precoder", "rank_layer")},
+    {"id": "reference_signals", "contract_folders": ("rsla",), "label": "Reference Signals / Link Adaptation", "group": "PHY", "tokens": ("csi_rs", "csirs", "srs", "trs", "dmrs", "ptrs", "reference_signal", "rsla", "link_adaptation", "cqi")},
+    {"id": "channel", "contract_folders": ("channel",), "label": "Channel / Geometry / Mobility", "group": "Propagation", "tokens": ("channel_", "geometry", "mobility", "interference", "pathloss", "fading", "doppler", "blockage", "delay_spread", "angle_spread")},
+    {"id": "rf", "contract_folders": ("rf",), "label": "RF / Frontend / Power", "group": "RF", "tokens": ("rf_", "frontend", "agc", "cfo", "phase_noise", "iq_imbalance", "adc_", "dac_", "aclr", "power_control")},
+    {"id": "mac_harq_scheduler", "contract_folders": ("mac",), "label": "MAC / HARQ / Scheduler", "group": "Protocol", "tokens": ("mac_", "harq", "scheduler", "bsr", "phr", "logical_channel", "lcp_")},
+    {"id": "l2", "contract_folders": ("protocol",), "contract_filter_required": True, "label": "Layer 2 / Bearers", "group": "Protocol", "tokens": ("protocol_stack", "protocol_", "rlc", "pdcp", "sdap", "bearer")},
+    {"id": "l3", "contract_folders": ("protocol",), "contract_filter_required": True, "label": "Layer 3", "group": "Protocol", "tokens": ("rrc", "handover", "mobility_event", "sib1")},
+    {"id": "traffic", "contract_folders": ("protocol",), "contract_filter_required": True, "label": "Traffic / QoS", "group": "Traffic", "tokens": ("traffic", "packet_flow", "flow_", "goodput", "latency", "qos")},
     {"id": "system", "label": "System / Multi-UE", "group": "System", "tokens": ("system_", "mmtc", "cell_load", "system_level")},
-    {"id": "validation", "label": "Validation / Publication", "group": "Evidence", "tokens": ("validation", "audit", "coverage", "manifest", "contract", "acceptance", "negative_test", "verifier", "schema", "truth_", "configured_effective", "scenario_summary", "integration")},
+    {"id": "validation", "contract_folders": ("validation", "integration"), "label": "Validation / Publication", "group": "Evidence", "tokens": ("validation", "audit", "coverage", "manifest", "contract", "acceptance", "negative_test", "verifier", "schema", "truth_", "configured_effective", "scenario_summary", "integration")},
 )
 
 
+PHASE_PACK_COMPONENT_ROOTS = frozenset(
+    {
+        "channel",
+        "frame_grid",
+        "initial_access",
+        "integration",
+        "mac",
+        "mimo",
+        "pdcch",
+        "pdsch",
+        "prach",
+        "protocol",
+        "pucch",
+        "pusch",
+        "rf",
+        "rsla",
+        "validation",
+        "waveform",
+    }
+)
 COMPONENT_VIEW_ROOTS = frozenset(
     str(spec.get("folder") or spec["id"])
     for spec in REALTIME_COMPONENT_SPECS
     if str(spec["id"]) not in {"air_interface", "system"}
-)
-COMPONENT_VIEW_KINDS = frozenset({"csv", "image", "json", "mat"})
+) | PHASE_PACK_COMPONENT_ROOTS
+COMPONENT_VIEW_KINDS = frozenset({"csv", "png", "image", "json", "mat"})
 
 
 def is_component_view_artifact_path(value: Any) -> bool:
     parts = str(value or "").strip().lower().replace("\\", "/").split("/")
+    if parts and parts[0] == "components":
+        parts = parts[1:]
     return (
         len(parts) >= 3
         and parts[0] in COMPONENT_VIEW_ROOTS
@@ -12586,9 +12902,146 @@ def is_component_view_artifact_path(value: Any) -> bool:
     )
 
 
+def is_contract_component_artifact_path(value: Any) -> bool:
+    parts = str(value or "").strip().lower().replace("\\", "/").split("/")
+    if len(parts) < 4 or parts[0] != "components" or parts[1] not in COMPONENT_VIEW_ROOTS:
+        return False
+    # Runtime artifacts have components/<component>/<kind>/<file>.  A
+    # dedicated validation campaign is deliberately scoped one level deeper:
+    # components/<component>/qualification/<kind>/<file>.
+    return parts[2] in COMPONENT_VIEW_KINDS or (
+        len(parts) >= 5 and parts[3] in COMPONENT_VIEW_KINDS
+    )
+
+
+def is_runtime_contract_component_artifact_path(value: Any) -> bool:
+    parts = str(value or "").strip().lower().replace("\\", "/").split("/")
+    return (
+        len(parts) >= 4
+        and parts[0] == "components"
+        and parts[1] in COMPONENT_VIEW_ROOTS
+        and parts[2] in COMPONENT_VIEW_KINDS
+    )
+
+
+def is_component_qualification_artifact_path(value: Any) -> bool:
+    parts = str(value or "").strip().lower().replace("\\", "/").split("/")
+    return (
+        len(parts) >= 5
+        and parts[0] == "components"
+        and parts[1] in COMPONENT_VIEW_ROOTS
+        and parts[2] == "qualification"
+        and parts[3] in COMPONENT_VIEW_KINDS
+    )
+
+
+def select_primary_result_artifacts(
+    artifacts: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Select exactly one public result authority.
+
+    The runtime-only and component-qualification publishers are atomic and
+    emit their respective manifests only after validation and publication.
+    A generation audit alone is never authority.  Runtime evidence and
+    dedicated qualification evidence remain separate scopes; neither may
+    silently upgrade the other.  Historical component mirrors remain
+    non-authoritative and are removed only when their legacy mirror manifest
+    exists.
+    """
+    rows = list(artifacts)
+    runtime_manifest = find_artifact_by_logical_path(
+        rows, "artifact_generation/canonical_component_manifest.csv"
+    )
+    runtime_rows = [
+        artifact
+        for artifact in rows
+        if is_runtime_contract_component_artifact_path(artifact.get("logical_path"))
+    ]
+    if runtime_manifest and runtime_rows:
+        control_paths = {
+            "artifact_generation/contract_catalog_snapshot.csv",
+            "artifact_generation/artifact_generation_results.csv",
+            "artifact_generation/artifact_generation_failures.csv",
+            "artifact_generation/artifact_generation_summary.csv",
+            "artifact_generation/canonical_component_manifest.csv",
+            "artifact_generation/artifact_contract_finalization_status.json",
+        }
+        selected = runtime_rows + [
+            artifact
+            for artifact in rows
+            if str(artifact.get("logical_path") or "").strip().lower().replace("\\", "/")
+            in control_paths
+        ]
+        return selected, {
+            "status": "contract_components_authoritative",
+            "evidence_scope": "in_path_runtime",
+            "authority_artifact": runtime_manifest,
+            "canonical_count": len(runtime_rows),
+            "legacy_diagnostic_count": max(0, len(rows) - len(selected)),
+        }
+
+    qualification_manifest = find_artifact_by_logical_path(
+        rows, "artifact_generation/component_qualification_manifest.csv"
+    )
+    qualification_rows = [
+        artifact
+        for artifact in rows
+        if is_component_qualification_artifact_path(artifact.get("logical_path"))
+    ]
+    if qualification_manifest and qualification_rows:
+        qualification_control_paths = {
+            "artifact_generation/component_qualification_manifest.csv",
+            "artifact_generation/component_qualification_summary.csv",
+        }
+        selected = qualification_rows + [
+            artifact
+            for artifact in rows
+            if str(artifact.get("logical_path") or "").strip().lower().replace("\\", "/")
+            in qualification_control_paths
+        ]
+        return selected, {
+            "status": "component_qualification_evidence_only",
+            "evidence_scope": "component_validation_campaign",
+            "authority_artifact": qualification_manifest,
+            "canonical_count": len(qualification_rows),
+            "legacy_diagnostic_count": max(0, len(rows) - len(selected)),
+        }
+
+    legacy_manifest = find_artifact_by_logical_path(
+        rows, "reports/csv/component_artifact_publication_manifest.csv"
+    )
+    if legacy_manifest:
+        selected = [
+            artifact
+            for artifact in rows
+            if not is_component_view_artifact_path(artifact.get("logical_path"))
+        ]
+        return selected, {
+            "status": "legacy_canonical_with_mirrors_hidden",
+            "evidence_scope": "legacy_runtime",
+            "authority_artifact": legacy_manifest,
+            "canonical_count": len(selected),
+            "legacy_diagnostic_count": len(rows) - len(selected),
+        }
+    # A directory scan is not a result contract.  In particular, a running
+    # or failed modern simulation may already contain hundreds of streaming
+    # CSVs and a few legacy plots before the atomic publisher succeeds.  Do
+    # not present those diagnostics as the public result count/gallery.  The
+    # realtime/status builders still consume the unfiltered rows for logs and
+    # progress; only a recognized atomic manifest may expose result files.
+    return [], {
+        "status": "no_atomic_result_authority",
+        "evidence_scope": "unaccepted_diagnostics",
+        "authority_artifact": None,
+        "canonical_count": 0,
+        "legacy_diagnostic_count": len(rows),
+    }
+
+
 def prefer_canonical_artifacts_over_component_views(
     artifacts: list[dict[str, Any]], manifest_artifact: dict[str, Any] | None
 ) -> list[dict[str, Any]]:
+    """Backward-compatible adapter for retired mirror-only callers."""
     if not manifest_artifact:
         return list(artifacts)
     return [
@@ -12614,6 +13067,10 @@ def build_realtime_component_dashboard(
     """Build evidence-presence status without converting presence into a pass claim."""
     rows: list[dict[str, Any]] = []
     running = str(run_status or "").strip().lower() == "running"
+    contract_authority = any(
+        is_contract_component_artifact_path(artifact.get("logical_path"))
+        for artifact in artifacts
+    )
     for spec in REALTIME_COMPONENT_SPECS:
         all_matches = []
         for artifact in artifacts:
@@ -12621,12 +13078,60 @@ def build_realtime_component_dashboard(
             lowered = logical_path.lower()
             if any(token in lowered for token in spec["tokens"]):
                 all_matches.append(artifact)
-        canonical_matches = [
+        contract_folders = {
+            str(value).strip().lower()
+            for value in spec.get("contract_folders", ())
+            if str(value).strip()
+        }
+        exact_contract_rows = []
+        if contract_folders:
+            for artifact in artifacts:
+                parts = (
+                    str(artifact.get("logical_path") or "")
+                    .strip()
+                    .lower()
+                    .replace("\\", "/")
+                    .split("/")
+                )
+                if (
+                    len(parts) >= 4
+                    and parts[0] == "components"
+                    and parts[1] in contract_folders
+                    and is_contract_component_artifact_path(
+                        artifact.get("logical_path")
+                    )
+                ):
+                    exact_contract_rows.append(artifact)
+        # Physical component-folder ownership is authoritative whenever an
+        # atomic runtime/qualification tree is selected.  Token matching is
+        # retained only to split a deliberately shared domain (for example
+        # SSB vs SIB1 inside initial_access, or L2/L3/traffic in protocol).
+        contract_matches = [
+            artifact
+            for artifact in exact_contract_rows
+            if any(
+                token
+                in str(artifact.get("logical_path") or "")
+                .replace("\\", "/")
+                .lower()
+                for token in spec["tokens"]
+            )
+        ]
+        if (
+            exact_contract_rows
+            and not contract_matches
+            and not bool(spec.get("contract_filter_required"))
+        ):
+            contract_matches = exact_contract_rows
+        legacy_canonical_matches = [
             artifact
             for artifact in all_matches
             if not is_component_view_artifact_path(artifact.get("logical_path"))
         ]
-        matches = canonical_matches if canonical_matches else all_matches
+        if contract_authority:
+            matches = contract_matches
+        else:
+            matches = legacy_canonical_matches if legacy_canonical_matches else all_matches
         csv_count = sum(
             1
             for artifact in matches
@@ -14414,8 +14919,15 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
         recent_all_artifacts = merge_db_and_filesystem_artifacts(
             recent_all_artifacts, run_row
         )
-    rollup = artifact_rollup_from_artifacts(recent_all_artifacts)
-    artifact_version = f"{rollup['artifacts_total']}|{rollup['latest_artifact_id']}"
+    diagnostic_rollup = artifact_rollup_from_artifacts(recent_all_artifacts)
+    accepted_artifacts, _ = select_primary_result_artifacts(
+        recent_all_artifacts
+    )
+    rollup = artifact_rollup_from_artifacts(accepted_artifacts)
+    artifact_version = (
+        f"{diagnostic_rollup['artifacts_total']}|"
+        f"{diagnostic_rollup['latest_artifact_id']}"
+    )
     full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == full_cache_version and run_id in LIVE_PAYLOAD_CACHE:
         return condense_live_payload(LIVE_PAYLOAD_CACHE[run_id])
@@ -14432,6 +14944,10 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
         "markdown_total": rollup["markdown_total"],
         "bytes_total": rollup["bytes_total"],
         "logs_total": count_logs(run_id),
+        "diagnostic_artifacts_total": diagnostic_rollup["artifacts_total"],
+        "diagnostic_tables_total": diagnostic_rollup["tables_total"],
+        "diagnostic_images_total": diagnostic_rollup["images_total"],
+        "diagnostic_bytes_total": diagnostic_rollup["bytes_total"],
     }
 
     status_json = parse_status_json(run_row)
@@ -14476,7 +14992,7 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
             run_compact[run_key] = value
 
     section_counts: dict[str, int] = {}
-    for art in recent_artifacts:
+    for art in accepted_artifacts:
         if art.get("artifact_kind") == "table_csv":
             section = classify_result_section(str(art.get("logical_path") or ""))
             section_counts[section] = section_counts.get(section, 0) + 1
@@ -14556,12 +15072,18 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     runtime_context = extract_runtime_context(run_row, artifacts)
     output_coverage = build_output_coverage_context(artifacts)
     public_artifacts = filter_public_artifacts_for_policy(artifacts, feature_policy)
-    component_manifest_artifact = find_artifact_by_logical_path(
-        artifacts, "reports/csv/component_artifact_publication_manifest.csv"
+    public_artifacts, component_authority = select_primary_result_artifacts(
+        public_artifacts
     )
-    public_artifacts = prefer_canonical_artifacts_over_component_views(
-        public_artifacts, component_manifest_artifact
-    )
+    diagnostic_counts = dict(counts)
+    public_counts = summarize_artifacts(public_artifacts)
+    public_counts["logs_total"] = counts["logs_total"]
+    public_counts["diagnostic_artifacts_total"] = diagnostic_counts["artifacts_total"]
+    public_counts["diagnostic_tables_total"] = diagnostic_counts["tables_total"]
+    public_counts["diagnostic_images_total"] = diagnostic_counts["images_total"]
+    public_counts["diagnostic_bytes_total"] = diagnostic_counts["bytes_total"]
+    counts = public_counts
+    component_manifest_artifact = component_authority.get("authority_artifact")
     if not output_coverage.get("issue_registry"):
         status_issue_rows = build_status_issue_registry_rows(run_row, runtime_context)
         if status_issue_rows:
@@ -14605,23 +15127,35 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         ),
         "logs": annotate_realtime_logs(logs_recent[-200:]),
         "folder_policy": {
-            "status": (
-                "published_hash_verified_component_views"
-                if component_manifest_artifact
-                else "configured_for_new_runs_not_present_in_selected_legacy_run"
-            ),
+            "status": component_authority.get("status", "legacy_diagnostic_only"),
             "manifest": (
                 build_artifact_descriptor(component_manifest_artifact)
                 if component_manifest_artifact
                 else None
             ),
-            "canonical_files_move": False,
-            "mirror_truth_required": True,
+            "canonical_artifact_count": int(
+                component_authority.get("canonical_count") or 0
+            ),
+            "legacy_diagnostic_count": int(
+                component_authority.get("legacy_diagnostic_count") or 0
+            ),
+            "canonical_files_move": True,
+            "mirror_truth_required": False,
             "hash_verification_required": True,
-            "root_layout": "<run_folder>/<component>/{csv,image,json,mat}",
+            "root_layout": (
+                "<run_folder>/components/<component>/qualification/{csv,png}"
+                if component_authority.get("evidence_scope")
+                == "component_validation_campaign"
+                else "<run_folder>/components/<component>/{csv,png}"
+            ),
             "note": (
-                "Existing canonical artifacts remain authoritative. Component folders may only "
-                "publish byte-identical, hash-verified mirrors with an explicit source manifest."
+                "This is dedicated component-qualification evidence and is not relabeled as the "
+                "selected WebGUI scenario's in-path runtime truth. Legacy files are excluded from "
+                "the canonical CSV/PNG counts."
+                if component_authority.get("evidence_scope")
+                == "component_validation_campaign"
+                else "A completed runtime-only contract tree is the sole primary results authority. "
+                "Legacy reports remain diagnostic and are excluded from canonical CSV/PNG counts."
             ),
         },
     }

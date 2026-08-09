@@ -241,7 +241,7 @@ function testStrictCSIProductionFacade(testCase)
 H = [1 .2;.1 .85];
 measurement = sixgr.phy.mimo.CSIMeasurementState( ...
     MeasurementID="facade-meas",UEID="UE1",ResourceType="NZP-CSI-RS", ...
-    ResourceID="CSI-RS-7",Slot=20,MaxAgeSlots=3, ...
+    ResourceID="CSI-RS-0",Slot=20,MaxAgeSlots=3, ...
     ChannelEstimate=H,NoiseVariance=.02);
 request = localReportRequest("PUCCH");
 cfg = struct();
@@ -250,6 +250,12 @@ cfg.phy.mimo.N1 = 1; cfg.phy.mimo.N2 = 1;
 cfg.phy.mimo.O1 = 1; cfg.phy.mimo.O2 = 1;
 cfg.phy.csi.maxRank = 2;
 cfg.phy.csi.rankDomain = [1 2];
+cfg.phy.csi.enable = true;
+cfg.phy.csi.reportCSI = true;
+cfg.phy.csi.reportCQI = true;
+cfg.phy.csi.reportPMI = true;
+cfg.phy.csi.reportRI = true;
+cfg.phy.csi.reportCRI = true;
 cfg.phy.csi.reportConfiguration = request;
 cfg.phy.csi.reportConfigurationEpoch = 3;
 cfg.runtime.currentSlot = 20;
@@ -260,6 +266,9 @@ verifyTrue(testCase,csi.SeparateEncoding);
 verifyEqual(testCase,csi.MeasurementID,"facade-meas");
 verifyEqual(testCase,info.EngineUsed,"sixgr.mimo.buildCSIFeedback");
 verifyFalse(testCase,info.ConfiguredSNRUsed);
+verifyGreaterThan(testCase,strlength(string(csi.CSIPayloadHex)),0);
+verifyEqual(testCase,string(csi.CSIPayloadHex), ...
+    string(sixgr.l2.mac.SchedulerBase.bitsToHex(csi.CSIPayloadBits)));
 end
 
 function testStrictPDSCHPrecoderIdentity(testCase)
@@ -272,6 +281,7 @@ cfg.phy.mimo.strict = true;
 cfg.phy.pdsch.numPorts = 2;
 cfg.phy.pdsch.precoding.matrix = W;
 cfg.phy.pdsch.normalizePrecodingMatrix = false;
+cfg.phy.pdsch.precoding.normalizationConvention = "unit_frobenius";
 cfg.phy.pdsch.selectedPrecoderSHA256 = ...
     sixgr.phy.mimo.MatrixContract.digest(W);
 prec = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch,cfg);

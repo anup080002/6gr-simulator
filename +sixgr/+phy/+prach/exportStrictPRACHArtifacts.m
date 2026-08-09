@@ -44,10 +44,11 @@ sixgr.util.csvWriteTable(resourceGridPath, resourceGrid);
 resourceGridRow = localManifestRow(resourceGridPath, "text/csv", "csv", ...
     height(resourceGrid), "sixgr.phy.prach.exportStrictPRACHArtifacts");
 
-% JSON bindings and plot lineage contain hashes of these primary CSVs. Make
-% their browser-facing bytes final before any dependent hash is recorded.
-sourceCSVPaths = [string(struct2cell(csvMap)); string(resourceGridPath)];
-sixgr.truth.sanitizeLLSArtifactCSVs(runFolder, "OnlyPaths", sourceCSVPaths);
+% csvWriteTable already applies the canonical structural-column pruning to
+% these in-memory producer tables before atomic publication.  Re-reading
+% the PRACH candidate/trial CSVs here used tens of gigabytes of memory for
+% large statistical campaigns without changing a byte.  Treat the bytes
+% just published above as final and hash those exact files below.
 
 jsonPayloads = localJsonPayloads(result, csvMap);
 jsonMap = struct( ...
@@ -82,7 +83,8 @@ sixgr.visual.writeComponentPlotLineage(runFolder, plotLineagePath, [ ...
     string(csvMap.prach_missed_detection_sweep); string(csvMap.prach_timing_offset_sweep); ...
     string(csvMap.prach_restricted_set_mapping); string(csvMap.prach_collision_trials); ...
     string(csvMap.prach_multi_occasion_trials); string(csvMap.prach_trials)], ...
-    "sixgr.phy.prach.exportStrictPRACHArtifacts");
+    "sixgr.phy.prach.exportStrictPRACHArtifacts", ...
+    "SourcesAlreadyFinalized", true);
 plotLineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", 10, ...
     "sixgr.phy.prach.exportStrictPRACHArtifacts");
 manifestRows = [rows(:); resourceGridRow; jsonRows(:); textRows(:); ...
@@ -183,7 +185,7 @@ paths = [
     string(fullfile(figDir, "prach_detection_flow.png"))];
 rows = repmat(localManifestRow(), numel(paths), 1);
 
-localWritePNG(paths(1), localHeatImage(abs(result.PositiveGrid)));
+localExportPRACHFigure(paths(1), @() localPlotResourceGrid(result.PositiveGrid));
 rows(1) = localManifestRow(paths(1), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", resourceGridPath);
 
 cand = result.ArtifactTables.prach_detection_candidates;
@@ -191,44 +193,257 @@ trialT = result.ArtifactTables.prach_trials;
 posTrial = trialT.TrialId(string(trialT.TrialType) == "positive_high_snr");
 if isempty(posTrial), posTrial = trialT.TrialId(1); end
 mask = cand.TrialId == posTrial(1);
-localWritePNG(paths(2), localBarImage(double(cand.Metric(mask))));
+localExportPRACHFigure(paths(2), @() localPlotCandidateMetrics(cand(mask, :), ...
+    "PRACH correlation: preamble present"));
 rows(2) = localManifestRow(paths(2), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_detection_candidates);
 
 noiseTrial = trialT.TrialId(string(trialT.TrialType) == "false_alarm_sweep");
 if isempty(noiseTrial), noiseTrial = trialT.TrialId(end); end
 mask = cand.TrialId == noiseTrial(1);
-localWritePNG(paths(3), localBarImage(double(cand.Metric(mask))));
+localExportPRACHFigure(paths(3), @() localPlotCandidateMetrics(cand(mask, :), ...
+    "PRACH correlation: noise-only occasion"));
 rows(3) = localManifestRow(paths(3), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_detection_candidates);
 
 fa = result.ArtifactTables.prach_false_alarm_sweep;
-localWritePNG(paths(4), localLineImage(double(fa.SNRdB), double(fa.FalseAlarmProbability)));
+localExportPRACHFigure(paths(4), @() localPlotFalseAlarmSweep(fa));
 rows(4) = localManifestRow(paths(4), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_false_alarm_sweep);
 
 md = result.ArtifactTables.prach_missed_detection_sweep;
-localWritePNG(paths(5), localLineImage(double(md.SNRdB), double(md.MissedDetectionProbability)));
+localExportPRACHFigure(paths(5), @() localPlotMissedDetectionSweep(md));
 rows(5) = localManifestRow(paths(5), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_missed_detection_sweep);
 
 tt = result.ArtifactTables.prach_timing_offset_sweep;
-localWritePNG(paths(6), localHistImage(double(tt.MeanTimingErrorSamples)));
+localExportPRACHFigure(paths(6), @() localPlotTimingSweep(tt));
 rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_timing_offset_sweep);
 
 map = result.ArtifactTables.prach_restricted_set_mapping;
-[~, ~, grp] = unique(string(map.RestrictedSet));
-ncs = splitapply(@(x) x(1), double(map.NCS), grp);
-localWritePNG(paths(7), localBarImage(ncs));
+localExportPRACHFigure(paths(7), @() localPlotRestrictedSetMapping(map));
 rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_restricted_set_mapping);
 
 coll = result.ArtifactTables.prach_collision_trials;
-localWritePNG(paths(8), localBarImage(double(coll.DetectedCandidateCount)));
+localExportPRACHFigure(paths(8), @() localPlotCollisionTrials(coll));
 rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_collision_trials);
 
 mo = result.ArtifactTables.prach_multi_occasion_trials;
-localWritePNG(paths(9), localScatterImage(double(mo.OccasionSlot), double(mo.RARNTI)));
+localExportPRACHFigure(paths(9), @() localPlotMultiOccasionTrials(mo));
 rows(9) = localManifestRow(paths(9), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_multi_occasion_trials);
 
 sixgr.visual.writeFlowDiagramPNG(paths(10), "Strict PRACH detection flow", ...
     ["nrPRACH waveform","AWGN / offsets","Rx correlation search","Score after detect"], result.StrictOk);
 rows(10) = localManifestRow(paths(10), "image/png", "figure", NaN, "sixgr.phy.prach.exportStrictPRACHArtifacts", csvMap.prach_trials);
+end
+
+function localExportPRACHFigure(path, plotter)
+fig = figure("Visible", "off", "Color", "w", "Position", [100 100 960 600]);
+cleanupFigure = onCleanup(@() close(fig)); %#ok<NASGU>
+plotter();
+set(findall(fig, "Type", "axes"), "Color", "w", ...
+    "XColor", [0.12 0.16 0.20], "YColor", [0.12 0.16 0.20], ...
+    "FontSize", 10, "LineWidth", 0.8);
+set(findall(fig, "Type", "text"), "Color", [0.08 0.12 0.16]);
+sixgr.util.exportFigureArtifact(fig, char(string(path)), "Resolution", 150);
+end
+
+function localPlotResourceGrid(grid)
+magnitude = squeeze(max(abs(grid), [], 3));
+if isempty(magnitude) || ~ismatrix(magnitude)
+    error("sixgr:phy:prach:MissingResourceGridEvidence", ...
+        "The strict PRACH resource-grid image requires a measured two-dimensional grid.");
+end
+imagesc(0:size(magnitude, 2)-1, 0:size(magnitude, 1)-1, magnitude);
+axis xy tight;
+colormap(parula(256));
+colorbar;
+xlabel("OFDM symbol index");
+ylabel("subcarrier index");
+title("PRACH transmit resource-grid magnitude");
+end
+
+function localPlotCandidateMetrics(T, plotTitle)
+if isempty(T)
+    error("sixgr:phy:prach:MissingCandidateEvidence", ...
+        "The strict PRACH correlation image requires measured candidate rows.");
+end
+x = double(T.PreambleIndexCandidate);
+y = double(T.Metric);
+[x, order] = sort(x);
+y = y(order);
+stem(x, y, "filled", "DisplayName", "measured correlation");
+hold on;
+thresholdIndex = find(isfinite(double(T.Threshold)), 1, "first");
+if ~isempty(thresholdIndex)
+    threshold = double(T.Threshold(thresholdIndex));
+    yline(threshold, "--r", "detection threshold", "LineWidth", 1.2, ...
+        "DisplayName", "detection threshold");
+end
+selected = logical(T.SelectedCandidate(order));
+if any(selected)
+    scatter(x(selected), y(selected), 55, "o", "filled", ...
+        "DisplayName", "selected candidate");
+end
+grid on;
+xlabel("preamble candidate index");
+ylabel("normalized correlation metric");
+title(plotTitle);
+legend("Location", "best");
+hold off;
+end
+
+function localPlotFalseAlarmSweep(T)
+localRequirePlotColumns(T, ["SNRdB","FalseAlarmProbability","CILower", ...
+    "CIUpper","TargetFalseAlarmProbability"], "false-alarm sweep");
+[x, order] = sort(double(T.SNRdB));
+y = double(T.FalseAlarmProbability(order));
+lo = max(0, y - double(T.CILower(order)));
+hi = max(0, double(T.CIUpper(order)) - y);
+target = double(T.TargetFalseAlarmProbability(order));
+errorbar(x, y, lo, hi, "o-", "LineWidth", 1.4, ...
+    "MarkerFaceColor", [0.1 0.45 0.8], "DisplayName", "measured P_{FA} (exact CI)");
+hold on;
+plot(x, target, "--r", "LineWidth", 1.3, "DisplayName", "required maximum");
+upper = max([hi + y; target; eps], [], "all");
+ylim([0, max(1.2 * upper, 1.2e-3)]);
+grid on;
+xlabel("configured noise-only SNR label (dB)");
+ylabel("false-alarm probability");
+title("PRACH false-alarm probability with exact confidence bounds");
+legend("Location", "best");
+hold off;
+end
+
+function localPlotMissedDetectionSweep(T)
+localRequirePlotColumns(T, ["SNRdB","MissedDetectionProbability", ...
+    "MissedDetectionCILower","MissedDetectionCIUpper", ...
+    "TargetMissedDetectionProbability","QualificationRequired"], ...
+    "missed-detection sweep");
+[x, order] = sort(double(T.SNRdB));
+y = double(T.MissedDetectionProbability(order));
+lo = max(0, y - double(T.MissedDetectionCILower(order)));
+hi = max(0, double(T.MissedDetectionCIUpper(order)) - y);
+required = logical(T.QualificationRequired(order));
+errorbar(x, y, lo, hi, "o-", "LineWidth", 1.2, ...
+    "Color", [0.4 0.4 0.4], "DisplayName", "measured P_{MD} (exact CI)");
+hold on;
+if any(required)
+    scatter(x(required), y(required), 65, [0.05 0.55 0.25], "filled", ...
+        "DisplayName", "qualification point");
+end
+target = double(T.TargetMissedDetectionProbability(order));
+plot(x, target, "--r", "LineWidth", 1.3, "DisplayName", "required maximum");
+ylim([0 1]);
+grid on;
+xlabel("SNR (dB)");
+ylabel("missed-detection probability");
+title("PRACH missed-detection probability with exact confidence bounds");
+legend("Location", "best");
+hold off;
+end
+
+function localPlotTimingSweep(T)
+localRequirePlotColumns(T, ["InjectedTimingOffsetSamples", ...
+    "MeanEstimatedTimingOffsetSamples","MeanTimingErrorSamples", ...
+    "MaxAbsTimingErrorSamples"], "timing-offset sweep");
+[x, order] = sort(double(T.InjectedTimingOffsetSamples));
+estimated = double(T.MeanEstimatedTimingOffsetSamples(order));
+meanError = double(T.MeanTimingErrorSamples(order));
+maxError = double(T.MaxAbsTimingErrorSamples(order));
+tiledlayout(2, 1, "TileSpacing", "compact", "Padding", "compact");
+nexttile;
+plot(x, x, "--k", "DisplayName", "ideal", "LineWidth", 1.1);
+hold on;
+plot(x, estimated, "o-", "DisplayName", "measured estimate", "LineWidth", 1.4);
+grid on;
+ylabel("estimated offset (samples)");
+title("PRACH timing-offset recovery");
+legend("Location", "best");
+hold off;
+nexttile;
+plot(x, meanError, "o-", "DisplayName", "mean error", "LineWidth", 1.3);
+hold on;
+plot(x, maxError, "s--", "DisplayName", "maximum absolute error", "LineWidth", 1.3);
+yline(0, ":k");
+grid on;
+xlabel("injected timing offset (samples)");
+ylabel("timing error (samples)");
+legend("Location", "best");
+hold off;
+end
+
+function localPlotRestrictedSetMapping(T)
+localRequirePlotColumns(T, ["RestrictedSet","NCS","Valid"], ...
+    "restricted-set mapping");
+[sets, ~, group] = unique(string(T.RestrictedSet), "stable");
+ncs = splitapply(@(x) x(1), double(T.NCS), group);
+validFraction = splitapply(@(x) mean(double(x)), logical(T.Valid), group);
+yyaxis left;
+bar(1:numel(sets), ncs, 0.55, "DisplayName", "N_{CS}");
+ylabel("cyclic-shift spacing N_{CS}");
+yyaxis right;
+plot(1:numel(sets), validFraction, "o-", "LineWidth", 1.4, ...
+    "DisplayName", "valid mapping fraction");
+ylim([0 1.05]);
+ylabel("valid mapping fraction");
+xticks(1:numel(sets));
+xticklabels(sets);
+xlabel("restricted-set configuration");
+title("PRACH restricted-set cyclic-shift mapping");
+grid on;
+legend("Location", "best");
+end
+
+function localPlotCollisionTrials(T)
+localRequirePlotColumns(T, ["CollisionGroupId","UEId", ...
+    "DetectedCandidateCount","CollisionDetected"], "collision trials");
+x = 1:height(T);
+bar(x, double(T.DetectedCandidateCount), 0.65, ...
+    "DisplayName", "detected candidates");
+hold on;
+detected = logical(T.CollisionDetected);
+scatter(x(detected), double(T.DetectedCandidateCount(detected)), 55, ...
+    [0.8 0.2 0.1], "filled", "DisplayName", "collision detected");
+labels = "G" + string(T.CollisionGroupId) + "/UE" + string(T.UEId);
+xticks(x);
+xticklabels(labels);
+xtickangle(35);
+xlabel("collision group / UE");
+ylabel("detected preamble-candidate count");
+title("PRACH collision and multi-preamble resolution");
+grid on;
+legend("Location", "best");
+hold off;
+end
+
+function localPlotMultiOccasionTrials(T)
+localRequirePlotColumns(T, ["OccasionSlot","RARNTI", ...
+    "OccasionFrequencyIndex","DetectedOnCorrectOccasion","TrialId"], ...
+    "multi-occasion trials");
+slot = double(T.OccasionSlot);
+rarnti = double(T.RARNTI);
+freq = double(T.OccasionFrequencyIndex);
+correct = logical(T.DetectedOnCorrectOccasion);
+scatter(slot, rarnti, 65, freq, "filled", "DisplayName", "measured occasion");
+hold on;
+if any(~correct)
+    scatter(slot(~correct), rarnti(~correct), 90, "rx", "LineWidth", 1.6, ...
+        "DisplayName", "wrong occasion");
+end
+text(slot, rarnti, "  trial " + string(T.TrialId), "FontSize", 8);
+colorbar;
+grid on;
+xlabel("PRACH occasion slot");
+ylabel("RA-RNTI");
+title("PRACH multi-occasion RA-RNTI mapping (color = frequency index)");
+legend("Location", "best");
+hold off;
+end
+
+function localRequirePlotColumns(T, names, context)
+if ~istable(T) || isempty(T) || ~all(ismember(string(names), ...
+        string(T.Properties.VariableNames)))
+    error("sixgr:phy:prach:MissingPlotEvidence", ...
+        "The strict PRACH %s image requires measured columns: %s.", ...
+        char(string(context)), char(strjoin(string(names), ", ")));
+end
 end
 
 function T = localResourceGridTable(result)
@@ -240,234 +455,6 @@ T = table(subcarrier(:), symbol(:), port(:), real(samples), imag(samples), ...
     abs(samples), abs(samples) > 0, repmat("runtime_nr_prach_grid", numel(samples), 1), ...
     'VariableNames', {'SubcarrierIndex','OFDMSymbolIndex','PortIndex', ...
     'GridReal','GridImag','GridMagnitude','Occupied','truth_status'});
-end
-
-function localWritePNG(path, img)
-targetPath = char(string(path));
-sixgr.util.ensureDir(targetPath);
-img = uint8(img);
-[~, ~, channels] = size(img);
-if channels ~= 3
-    error("sixgr:phy:prach:BadPNGImage", "Strict PRACH PNG writer expects RGB image data.");
-end
-
-targetDir = fileparts(targetPath);
-if isempty(targetDir)
-    targetDir = pwd;
-end
-tempPath = char(string(tempname(targetDir)) + ".png");
-cleanupTemp = onCleanup(@() localDeleteFile(tempPath)); %#ok<NASGU>
-try
-    imwrite(img, tempPath, "png");
-catch ME
-    throwAsCaller(MException("sixgr:phy:prach:PNGWriteFailed", ...
-        "Strict PRACH PNG encoding failed for %s: %s", targetPath, ME.message));
-end
-
-info = dir(tempPath);
-if isempty(info) || info(1).bytes <= 0
-    error("sixgr:phy:prach:PNGWriteFailed", ...
-        "Strict PRACH PNG encoder produced no data for %s.", targetPath);
-end
-
-lastMessage = "";
-for attempt = 1:12
-    [moved, message] = movefile(tempPath, targetPath, "f");
-    if moved
-        if exist(targetPath, "file") == 2
-            finalInfo = dir(targetPath);
-            if ~isempty(finalInfo) && finalInfo(1).bytes > 0
-                return;
-            end
-        end
-        lastMessage = "destination exists but is empty";
-    else
-        lastMessage = string(message);
-    end
-    pause(min(0.05 * 2^(attempt - 1), 1.0));
-end
-error("sixgr:phy:prach:PNGWriteFailed", ...
-    "Strict PRACH PNG publication failed for %s after 12 attempts: %s", ...
-    targetPath, lastMessage);
-end
-
-function localDeleteFile(path)
-if exist(path, "file") ~= 2
-    return;
-end
-try
-    delete(path);
-catch
-    % Best-effort cleanup only; the primary write or move error is authoritative.
-end
-end
-
-function img = localBaseImage()
-img = uint8(255 * ones(480, 720, 3));
-img(430:433, 70:660, :) = 190;
-img(70:430, 67:70, :) = 190;
-end
-
-function img = localHeatImage(M)
-M = double(M);
-M = M(isfinite(M));
-if isempty(M)
-    M = zeros(16, 16);
-else
-    M = abs(double(M));
-end
-if isvector(M)
-    M = reshape(M(:), [], 1);
-end
-M = localNormalizeMatrix(M);
-rowIdx = max(1, min(size(M, 1), round(linspace(1, size(M, 1), 420))));
-colIdx = max(1, min(size(M, 2), round(linspace(1, size(M, 2), 620))));
-M = M(rowIdx, colIdx);
-img = localBaseImage();
-heat = uint8(cat(3, 255 .* M, 80 .* (1 - M), 255 .* (1 - M)));
-img(40:459, 80:699, :) = heat;
-end
-
-function img = localLineImage(x, y)
-img = localBaseImage();
-x = double(x(:)); y = double(y(:));
-valid = isfinite(x) & isfinite(y);
-x = x(valid); y = y(valid);
-if isempty(x)
-    return;
-end
-px = localScaleToPixels(x, 80, 660);
-py = localScaleToPixels(y, 420, 80);
-for ii = 1:(numel(px)-1)
-    img = localDrawLine(img, px(ii), py(ii), px(ii+1), py(ii+1), [30 90 180]);
-end
-for ii = 1:numel(px)
-    img = localDrawDisk(img, px(ii), py(ii), 5, [30 90 180]);
-end
-end
-
-function img = localBarImage(values)
-img = localBaseImage();
-values = double(values(:));
-values = values(isfinite(values));
-if isempty(values)
-    return;
-end
-values = localNormalizeVector(values);
-n = numel(values);
-barW = max(2, floor(560 / max(n, 1)));
-for ii = 1:n
-    x0 = 80 + (ii - 1) * barW;
-    x1 = min(660, x0 + max(1, barW - 2));
-    y1 = 430;
-    y0 = max(80, round(430 - values(ii) * 330));
-    img(y0:y1, x0:x1, 1) = 35;
-    img(y0:y1, x0:x1, 2) = 120;
-    img(y0:y1, x0:x1, 3) = 200;
-end
-end
-
-function img = localHistImage(values)
-values = double(values(:));
-values = values(isfinite(values));
-if isempty(values)
-    img = localBaseImage();
-    return;
-end
-edges = linspace(min(values), max(values) + eps, min(12, max(3, numel(values) + 1)));
-counts = histcounts(values, edges);
-img = localBarImage(counts(:));
-end
-
-function img = localScatterImage(x, y)
-img = localBaseImage();
-x = double(x(:)); y = double(y(:));
-valid = isfinite(x) & isfinite(y);
-x = x(valid); y = y(valid);
-if isempty(x)
-    return;
-end
-px = localScaleToPixels(x, 80, 660);
-py = localScaleToPixels(y, 420, 80);
-for ii = 1:numel(px)
-    img = localDrawDisk(img, px(ii), py(ii), 6, [180 70 30]);
-end
-end
-
-function M = localNormalizeMatrix(M)
-M = double(M);
-mn = min(M(:), [], "omitnan");
-mx = max(M(:), [], "omitnan");
-if ~isfinite(mn) || ~isfinite(mx) || abs(mx - mn) < eps
-    M = zeros(size(M));
-else
-    M = (M - mn) ./ (mx - mn);
-end
-end
-
-function v = localNormalizeVector(v)
-mn = min(v, [], "omitnan");
-mx = max(v, [], "omitnan");
-if ~isfinite(mn) || ~isfinite(mx) || abs(mx - mn) < eps
-    v = ones(size(v));
-else
-    v = (v - mn) ./ (mx - mn);
-end
-end
-
-function p = localScaleToPixels(v, lo, hi)
-v = double(v(:));
-mn = min(v, [], "omitnan");
-mx = max(v, [], "omitnan");
-if ~isfinite(mn) || ~isfinite(mx) || abs(mx - mn) < eps
-    p = round((lo + hi) / 2) * ones(size(v));
-else
-    p = round(lo + (v - mn) ./ (mx - mn) .* (hi - lo));
-end
-p = max(min(p, max(lo, hi)), min(lo, hi));
-end
-
-function img = localDrawLine(img, x0, y0, x1, y1, color)
-n = max(abs(x1 - x0), abs(y1 - y0)) + 1;
-xs = round(linspace(x0, x1, n));
-ys = round(linspace(y0, y1, n));
-for ii = 1:numel(xs)
-    img = localDrawDisk(img, xs(ii), ys(ii), 2, color);
-end
-end
-
-function img = localDrawDisk(img, x, y, r, color)
-[h, w, ~] = size(img);
-x = round(x); y = round(y); r = round(r);
-xr = max(1, x-r):min(w, x+r);
-yr = max(1, y-r):min(h, y+r);
-[X, Y] = meshgrid(xr, yr);
-mask = (X - x).^2 + (Y - y).^2 <= r.^2;
-for cc = 1:3
-    plane = img(yr, xr, cc);
-    plane(mask) = uint8(color(cc));
-    img(yr, xr, cc) = plane;
-end
-end
-
-function localPlotCorrelation(~, candT, trialType, trialT, selectedOnly)
-trialIds = trialT.TrialId(string(trialT.TrialType) == string(trialType));
-if isempty(trialIds)
-    trialIds = trialT.TrialId(1);
-end
-mask = candT.TrialId == trialIds(1);
-if selectedOnly
-    mask = mask & candT.SelectedCandidate;
-end
-if ~any(mask)
-    mask = candT.TrialId == trialIds(1);
-end
-stem(double(candT.PreambleIndexCandidate(mask)), double(candT.Metric(mask)), "filled");
-hold on;
-yline(double(candT.Threshold(find(mask, 1, "first"))), "--r", "threshold");
-grid on; xlabel("preamble candidate"); ylabel("correlation metric");
-title("PRACH measured candidate correlation");
-hold off;
 end
 
 function row = localManifestRow(path, mime, kind, rowCount, producer, sourceCSV)

@@ -10,7 +10,11 @@ end
 
 function txt = localSerializeValue(v, indentLevel, inline)
 if builtin("isstruct", v)
-    txt = localSerializeStruct(v, indentLevel);
+    if isscalar(v)
+        txt = localSerializeStruct(v, indentLevel);
+    else
+        txt = localSerializeStructSequence(v, indentLevel);
+    end
     return;
 end
 if iscell(v)
@@ -70,8 +74,12 @@ for i = 1:numel(f)
     value = s.(f{i});
     indent = string(repmat(' ', 1, 2*indentLevel));
     if builtin("isstruct", value)
-        if isempty(value)
+        if isempty(value) || (isscalar(value) && isempty(fieldnames(value)))
             lines(end+1,1) = indent + key + ": {}"; %#ok<AGROW>
+        elseif ~isscalar(value)
+            lines(end+1,1) = indent + key + ":"; %#ok<AGROW>
+            lines = [lines; splitlines(string(localSerializeStructSequence( ...
+                value, indentLevel+1)))]; %#ok<AGROW>
         else
             lines(end+1,1) = indent + key + ":"; %#ok<AGROW>
             lines = [lines; splitlines(string(localSerializeStruct(value, indentLevel+1)))]; %#ok<AGROW>
@@ -101,13 +109,28 @@ for i = 1:numel(c)
     value = c{i};
     indent = string(repmat(' ', 1, 2*indentLevel));
     if builtin("isstruct", value)
-        lines(end+1,1) = indent + "-"; %#ok<AGROW>
-        lines = [lines; splitlines(string(localSerializeStruct(value, indentLevel+1)))]; %#ok<AGROW>
+        if isempty(value) || (isscalar(value) && isempty(fieldnames(value)))
+            lines(end+1,1) = indent + "- {}"; %#ok<AGROW>
+        elseif ~isscalar(value)
+            lines = [lines; splitlines(string(localSerializeStructSequence( ...
+                value, indentLevel)))]; %#ok<AGROW>
+        else
+            lines(end+1,1) = indent + "-"; %#ok<AGROW>
+            lines = [lines; splitlines(string(localSerializeStruct(value, indentLevel+1)))]; %#ok<AGROW>
+        end
     else
         lines(end+1,1) = indent + "- " + localEnsureScalarYAMLText(localSerializeValue(value, indentLevel+1, true)); %#ok<AGROW>
     end
 end
 txt = strjoin(lines, newline);
+end
+
+function txt = localSerializeStructSequence(s, indentLevel)
+items = cell(numel(s), 1);
+for i = 1:numel(s)
+    items{i} = s(i);
+end
+txt = localSerializeCell(items, indentLevel);
 end
 
 function txt = localEnsureScalarYAMLText(txt)

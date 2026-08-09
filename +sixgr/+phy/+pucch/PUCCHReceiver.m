@@ -9,6 +9,10 @@ classdef PUCCHReceiver
                 @(x) ischar(x)||isstring(x));
             addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
             addParameter(p,"DetectionThreshold",0.2,@(x) isnumeric(x)&&isscalar(x));
+            addParameter(p,"InterferenceCovariance",[], ...
+                @(x) isempty(x)||isnumeric(x));
+            addParameter(p,"InterferenceCovarianceSource","", ...
+                @(x) ischar(x)||isstring(x));
             parse(p,varargin{:});
             opt = p.Results;
             if ~isfinite(opt.NoiseVariance) || opt.NoiseVariance < 0
@@ -42,6 +46,12 @@ classdef PUCCHReceiver
                 sampleNoiseVariance,ofdmInfo, ...
                 "InputDomain",opt.NoiseVarianceDomain, ...
                 "Source","pucch_receiver_argument");
+            [rintGrid,effectiveScalarNVar,covarianceInfo] = ...
+                localInterferenceCovariance(opt.InterferenceCovariance, ...
+                opt.InterferenceCovarianceSource,noiseTransform,nVar, ...
+                max(1,size(grid,3)));
+            gridDisturbanceVariance = effectiveScalarNVar;
+            equalizerInfo = struct();
             format0Noncoherent = assignment.Format == 0 && isempty(dmrs.Indices);
             if channel == "AWGN"
                 eq = nrExtractResources(indices,grid);
@@ -71,15 +81,26 @@ classdef PUCCHReceiver
                 if isfinite(estimatedNoise) && estimatedNoise > 0
                     nVar = estimatedNoise;
                 end
-                [eq,~,~] = sixgr.phy.rx.equalizeMMSE( ...
-                    grid,hest,nVar,"Indices",indices);
+                effectiveScalarNVar = localEffectiveScalarVariance( ...
+                    nVar,rintGrid,max(1,size(grid,3)));
+                eqArgs = {"Indices",indices};
+                if ~isempty(rintGrid)
+                    eqArgs = [eqArgs {"Rint",rintGrid+nVar*eye(size(rintGrid,1)), ...
+                        "RIncludesNoise",true}]; %#ok<AGROW>
+                end
+                [eq,~,equalizerInfo] = sixgr.phy.rx.equalizeMMSE( ...
+                    grid,hest,nVar,eqArgs{:});
                 channelEstimationMode = "dmrs_per_resource_mmse_equalization";
             end
             totalA = reportContext.Sequence1Length + ...
                 reportContext.Sequence2Length;
+            gridDisturbanceVariance = localEffectiveScalarVariance( ...
+                nVar,rintGrid,max(1,size(grid,3)));
+            decodeNoiseVariance = localEqualizedNoiseVariance( ...
+                equalizerInfo,gridDisturbanceVariance);
             try
                 [soft,constellation,metric] = nrPUCCHDecode( ...
-                    carrier,pucch,totalA,eq,nVar, ...
+                    carrier,pucch,totalA,eq,decodeNoiseVariance, ...
                     "DetectionThreshold",opt.DetectionThreshold);
             catch ME
                 error("sixgr:phy:pucch:UCIDecodeFailed", ...
@@ -93,7 +114,7 @@ classdef PUCCHReceiver
                 decoded = decodedResult.Bits;
                 crcPassed = decodedResult.CRCPassed;
             end
-            energyRatio = mean(abs(eq(:)).^2)/max(nVar,eps);
+            energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
             energyMetric = max(0,(energyRatio-1)/(energyRatio+1));
             if assignment.Format <= 1 && isscalar(metric) && isfinite(metric)
                 detectionMetric = min(double(metric),double(energyMetric));
@@ -108,6 +129,10 @@ classdef PUCCHReceiver
             end
             [sequence1,sequence2] = localSplit(decoded, ...
                 reportContext.Sequence1Length,reportContext.Sequence2Length);
+            measuredSINR_dB = localMeasuredSINR( ...
+                eq,equalizerInfo,gridDisturbanceVariance,channel, ...
+                format0Noncoherent);
+            evmApplicable = assignment.Format >= 2;
             rx = struct( ...
                 "ReceiverUsable",~decision.DTX, ...
                 "DetectionAttempted",true,"DTX",decision.DTX, ...
@@ -118,21 +143,144 @@ classdef PUCCHReceiver
                 "DecodedFields",localFields(sequence1,sequence2,reportContext), ...
                 "CRCPassed",crcPassed,"WrongRNTI",false, ...
                 "WrongResource",false,"WrongSequence",false, ...
-                "MeasuredSINR_dB",localSINR(eq,nVar), ...
-                "EVMPercent",localEVM(constellation), ...
+                "MeasuredSINR_dB",measuredSINR_dB, ...
+                "MeasuredSINRApplicable",isfinite(measuredSINR_dB), ...
+                "MeasuredSINRSource",localMeasuredSINRSource( ...
+                    equalizerInfo,channel,format0Noncoherent), ...
+                "EVMPercent",localEVM(constellation,evmApplicable), ...
+                "EVMApplicable",logical(evmApplicable), ...
                 "FailureReason",localFailure(decision.DTX), ...
                 "ErrorID","","OraclePayloadBitsUsed",false, ...
                 "AssignmentDigest",assignment.Digest, ...
                 "ReportContextDigest",reportContext.Digest, ...
                 "SampleNoiseVariance",sampleNoiseVariance, ...
                 "GridNoiseVariance",nVar, ...
+                "DecodeNoiseInterferenceVariance",decodeNoiseVariance, ...
                 "NoiseVarianceTransform",noiseTransform, ...
+                "InterferenceCovariance",rintGrid, ...
+                "InterferenceCovarianceAvailable",~isempty(rintGrid), ...
+                "InterferenceCovarianceSource",char(string(covarianceInfo.Source)), ...
+                "InterferenceCovarianceDomain",char(string(covarianceInfo.Domain)), ...
+                "EffectiveGridNoiseInterferenceVariance",double(gridDisturbanceVariance), ...
+                "EqualizedDecodeNoiseInterferenceVariance",double(decodeNoiseVariance), ...
+                "EqualizerInfo",equalizerInfo, ...
                 "ChannelEstimate",hest,"OFDMInfo",ofdmInfo, ...
                 "ChannelEstimateApplicable",logical(~format0Noncoherent && channel ~= "AWGN"), ...
                 "NoncoherentSequenceDetection",logical(format0Noncoherent), ...
                 "ChannelEstimationMode",char(channelEstimationMode));
         end
     end
+end
+
+function value = localEffectiveScalarVariance(nVar,Rgrid,nRx)
+value = double(nVar);
+if isempty(Rgrid)
+    return;
+end
+value = value+max(0,real(trace(Rgrid))/max(1,double(nRx)));
+if ~(isfinite(value) && value >= 0)
+    error("sixgr:phy:pucch:InvalidEffectiveNoiseInterferenceVariance", ...
+        ["PUCCH receiver noise-plus-interference variance must be a " ...
+         "finite nonnegative scalar in the resource-grid domain."]);
+end
+end
+
+function value = localEqualizedNoiseVariance(equalizerInfo,fallback)
+value = double(fallback);
+result = sixgr.util.structGet(equalizerInfo,"EqualizerResult",struct());
+covariance = sixgr.util.structGet(result, ...
+    "OutputNoiseInterferenceCovariance",[]);
+if isempty(covariance)
+    return;
+end
+if ndims(covariance) == 3
+    count = min(size(covariance,2),size(covariance,3));
+    samples = NaN(size(covariance,1)*count,1);
+    cursor = 0;
+    for layer = 1:count
+        layerValues = real(reshape(covariance(:,layer,layer),[],1));
+        samples(cursor+(1:numel(layerValues))) = layerValues;
+        cursor = cursor+numel(layerValues);
+    end
+    samples = samples(1:cursor);
+elseif ismatrix(covariance) && size(covariance,2) == 1
+    samples = real(covariance(:,1));
+elseif ismatrix(covariance) && size(covariance,1) == size(covariance,2)
+    samples = real(diag(covariance));
+else
+    samples = [];
+end
+samples = samples(isfinite(samples) & samples >= 0);
+if ~isempty(samples)
+    value = double(mean(samples));
+end
+if ~(isfinite(value) && value >= 0)
+    error("sixgr:phy:pucch:InvalidEqualizedNoiseVariance", ...
+        "PUCCH equalized decode variance must be finite and nonnegative.");
+end
+end
+
+function value = localMeasuredSINR(symbols,equalizerInfo,gridVariance,channel,format0)
+value = NaN;
+result = sixgr.util.structGet(equalizerInfo,"EqualizerResult",struct());
+linear = double(sixgr.util.structGet(result,"PostEqSINRLinear",[]));
+linear = linear(isfinite(linear) & linear >= 0);
+if ~isempty(linear)
+    value = 10*log10(max(mean(linear),eps));
+    return;
+end
+if logical(format0) && upper(strtrim(string(channel))) ~= "AWGN"
+    % Format 0 carries no DM-RS.  A fading-channel post-equalization SINR
+    % is not observable without manufacturing a channel estimate.
+    return;
+end
+power = mean(abs(symbols(:)).^2,"omitnan");
+if isfinite(power) && isfinite(gridVariance) && gridVariance > 0
+    signal = max(power-gridVariance,0);
+    value = 10*log10(max(signal,eps)/gridVariance);
+end
+end
+
+function source = localMeasuredSINRSource(equalizerInfo,channel,format0)
+if isstruct(sixgr.util.structGet(equalizerInfo,"EqualizerResult",[])) && ...
+        ~isempty(fieldnames(sixgr.util.structGet(equalizerInfo, ...
+        "EqualizerResult",struct())))
+    source = "pucch_equalizer_effective_response_and_output_covariance";
+elseif logical(format0) && upper(strtrim(string(channel))) ~= "AWGN"
+    source = "unavailable_format0_fading_without_dmrs";
+else
+    source = "awgn_resource_power_minus_calibrated_grid_noise";
+end
+end
+
+function [Rgrid,effectiveNVar,info] = localInterferenceCovariance( ...
+        Rsample,source,noiseTransform,nVar,nRx)
+Rgrid = [];
+effectiveNVar = double(nVar);
+info = struct("Source","","Domain","not_available");
+if isempty(Rsample)
+    return;
+end
+Rsample = double(Rsample);
+if ~(ismatrix(Rsample) && size(Rsample,1) == nRx && ...
+        size(Rsample,2) == nRx && all(isfinite(Rsample),"all"))
+    error("sixgr:phy:pucch:InterferenceCovarianceShapeMismatch", ...
+        "PUCCH interference covariance must be a finite %d-by-%d receiver-sample matrix.", ...
+        nRx,nRx);
+end
+gain = double(sixgr.util.structGet(noiseTransform, ...
+    "SampleToGridNoiseVarianceGain",NaN));
+if ~(isfinite(gain) && gain > 0)
+    error("sixgr:phy:pucch:MissingInterferenceCovarianceTransform", ...
+        "PUCCH interference covariance requires the calibrated sample-to-grid noise transform.");
+end
+Rgrid = (Rsample+Rsample')/2*gain;
+effectiveNVar = localEffectiveScalarVariance(nVar,Rgrid,nRx);
+info.Source = string(source);
+if strlength(strtrim(info.Source)) == 0
+    info.Source = "shared_slot_pucch_receiver_sample_contribution_covariance";
+end
+info.Domain = "resource_grid_pre_equalization";
 end
 
 function bits = localCellBits(input)
@@ -164,12 +312,11 @@ value.CSIPart1 = one(i+(1:d.CSIPart1Bits));
 value.CSIPart2 = two(1:min(d.CSIPart2Bits,numel(two)));
 end
 
-function value = localSINR(symbols,nVar)
-value = 10*log10(max(mean(abs(symbols(:)).^2),eps)/max(nVar,eps));
+function value = localEVM(symbols,applicable)
+if ~logical(applicable) || isempty(symbols)
+    value = NaN;
+    return;
 end
-
-function value = localEVM(symbols)
-if isempty(symbols), value = 100; return; end
 ideal = sign(real(symbols))+1i*sign(imag(symbols));
 ideal = ideal/sqrt(2);
 value = 100*sqrt(mean(abs(symbols(:)-ideal(:)).^2)/ ...

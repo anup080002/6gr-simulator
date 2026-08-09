@@ -167,7 +167,7 @@ try
         carrier, pdsch, controlEvent, ...
         localProcedureContext(cfgSI, carrier, dci, pdsch), ...
         "NPhysicalRxAntennas", size(siWave, 2), ...
-        "ChannelModel", "AWGN", ...
+        "ChannelModel", sixgr.channel.resolveConcreteProfile(cfgSI), ...
         "MaxIterations", sixgr.phy.phycode.resolveLDPCMaxIterations( ...
             cfgSI, "Direction", "DL"));
     result.DCIRNTI = 65535;
@@ -255,7 +255,11 @@ catch ME
     result.StrictOk = false;
     result.Status = "ERROR";
     result.FailureReason = string(ME.identifier) + ":" + string(ME.message);
-    result.Errors = string(ME.message);
+    % Preserve the complete receiver call stack in diagnostic evidence.  A
+    % caught waveform failure otherwise collapses to a message with no
+    % actionable production location, which made qualification triage
+    % ambiguous while correctly keeping StrictOk=false.
+    result.Errors = string(getReport(ME, "extended", "hyperlinks", "off"));
 end
 end
 
