@@ -12,10 +12,11 @@ bad = cfg;
 bad.scheduler = struct("policy", "round_robin");
 localAssertError(@() sixgr.lls.validateConfig(bad), ...
     "sixgr:lls:ForbiddenSystemLevelInput");
-bad = cfg;
-bad.receiver.channelEstimation = "perfect";
-localAssertError(@() sixgr.lls.validateConfig(bad), ...
-    "sixgr:lls:PDSCHPerfectCSIUnavailable");
+perfect = cfg;
+perfect.receiver.channelEstimation = "perfect";
+perfect = sixgr.lls.validateConfig(perfect);
+assert(string(perfect.receiver.channelEstimation) == "perfect", ...
+    "PDSCH perfect CSI must be an executable explicit receiver mode.");
 
 tmp = string(tempname);
 mkdir(tmp);

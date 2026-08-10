@@ -1,0 +1,182 @@
+function [summaryRow,trialTable,diagnostic] = runLinkAdaptationSNRPoint(llsCfg,configHash,snrIndex)
+%RUNLINKADAPTATIONSNRPOINT Execute causal AMC through the actual PHY chain.
+% A decision for trial N>1 consumes only the receiver-derived post-equalizer
+% SINR and ACK/NACK from trial N-1. The CQI thresholds are a declared link
+% adaptation policy; BLER, bits, throughput, and every ACK remain decoded
+% waveform results rather than threshold/LUT predictions.
+
+snrDb = double(llsCfg.simulation.snrDb(snrIndex));
+minTB = double(llsCfg.simulation.minTransportBlocks);
+minErrors = double(llsCfg.simulation.minBlockErrors);
+maxTB = double(llsCfg.simulation.maxTransportBlocks);
+rows = cell(maxTB,1);
+errors = 0;
+diagnostic = struct();
+pointClock = tic;
+policy = llsCfg.linkAdaptation;
+offsetDb = double(policy.olla.initialOffsetDb);
+decision = localBootstrapDecision(policy,offsetDb);
+
+trialIndex = 0;
+while trialIndex < maxTB && ~(trialIndex >= minTB && errors >= minErrors)
+    trialIndex = trialIndex + 1;
+    trialCfg = localApplyProfile(llsCfg,decision.Profile);
+    phyCfg = sixgr.lls.buildPHYConfig(trialCfg,snrDb);
+    [row,trialDiagnostic] = sixgr.lls.runTransportBlock( ...
+        trialCfg,phyCfg,configHash,snrIndex,trialIndex, ...
+        "CaptureDiagnostic",trialIndex == 1);
+    row.LinkAdaptationEnabled = true;
+    row.LinkAdaptationDecisionSource = string(decision.Source);
+    row.LinkAdaptationFeedbackTrialIndex = double(decision.FeedbackTrialIndex);
+    row.LinkAdaptationFeedbackSINRdB = double(decision.FeedbackSINRdB);
+    row.LinkAdaptationEffectiveSINRdB = double(decision.EffectiveSINRdB);
+    row.LinkAdaptationSelectedCQI = double(decision.CQI);
+    row.LinkAdaptationSelectedMCSIndex = double(decision.Profile.MCSIndex);
+    row.LinkAdaptationThresholdSource = string(policy.thresholdSource);
+    row.LinkAdaptationThresholdValueRole = string(policy.thresholdValueRole);
+    row.LinkAdaptationThresholdCalibrationId = string(policy.thresholdCalibrationId);
+    row.OLLAEnabled = logical(policy.olla.enabled);
+    row.OLLAOffsetDbApplied = double(decision.OLLAOffsetDb);
+    rows{trialIndex} = row;
+    errors = errors + double(row.CRCError);
+    if trialIndex == 1
+        diagnostic = trialDiagnostic;
+    end
+    offsetDb = localUpdateOLLA(offsetDb,~row.CRCError,policy.olla);
+    decision = localFeedbackDecision(policy,row,trialIndex,offsetDb);
+end
+
+trialTable = struct2table(vertcat(rows{1:trialIndex}));
+numTB = height(trialTable);
+numBits = sum(trialTable.TransportBlockSizeBits);
+bitErrors = sum(trialTable.BitErrors);
+bler = errors/numTB;
+ber = bitErrors/numBits;
+[lowerCI,upperCI] = sixgr.lls.stats.wilsonInterval( ...
+    errors,numTB,double(llsCfg.simulation.confidenceLevel));
+slotDurationSeconds = 1e-3/(double(llsCfg.carrier.subcarrierSpacingKHz)/15);
+simulatedDurationSeconds = numTB*slotDurationSeconds;
+successfulBits = sum(trialTable.TransportBlockSizeBits(~trialTable.CRCError));
+summaryRow = struct( ...
+    "ScenarioId",string(llsCfg.scenario.id), ...
+    "ConfigSHA256",configHash, ...
+    "SNRIndex",double(snrIndex), ...
+    "SNRdB",snrDb, ...
+    "NumTB",double(numTB), ...
+    "NumBlockErrors",double(errors), ...
+    "BLER",double(bler), ...
+    "BLERDisplay",localBoundDisplay(errors,bler,upperCI,llsCfg), ...
+    "BLERLowerCI",double(lowerCI), ...
+    "BLERUpperCI",double(upperCI), ...
+    "ConfidenceLevel",double(llsCfg.simulation.confidenceLevel), ...
+    "NumBits",double(numBits), ...
+    "NumBitErrors",double(bitErrors), ...
+    "BER",double(ber), ...
+    "SuccessfulInformationBits",double(successfulBits), ...
+    "SimulatedDurationSeconds",double(simulatedDurationSeconds), ...
+    "ThroughputBps",double(successfulBits/simulatedDurationSeconds), ...
+    "MeanMeasuredSNRdB",mean(trialTable.MeasuredSNRdB), ...
+    "MeasuredSNRStdDevdB",std(trialTable.MeasuredSNRdB), ...
+    "StoppingReason",localStoppingReason(numTB,errors,minTB,minErrors,maxTB), ...
+    "RuntimeSeconds",toc(pointClock), ...
+    "ExecutionBackend","waveform_truth", ...
+    "ApproximationMode","none", ...
+    "StatisticalClass",string(llsCfg.simulation.statisticalClass), ...
+    "StudyType","link_adaptation_throughput", ...
+    "MinimumMCSIndex",min(trialTable.MCSIndex), ...
+    "MaximumMCSIndex",max(trialTable.MCSIndex), ...
+    "MeanMCSIndex",mean(trialTable.MCSIndex), ...
+    "MCSChangeCount",sum(diff(trialTable.MCSIndex) ~= 0), ...
+    "FeedbackSource","previous_trial_receiver_post_equalization_sinr", ...
+    "FeedbackDelaySlots",double(policy.feedbackDelaySlots));
+end
+
+function decision = localBootstrapDecision(policy,offsetDb)
+profile = sixgr.link.resolveMCSProfile(policy.mcsTable,policy.initialMCSIndex);
+if ~profile.Valid
+    error("sixgr:lls:InvalidLinkAdaptationBootstrap", ...
+        "Configured bootstrap MCS is not valid for the configured MCS table.");
+end
+decision = struct("Profile",profile,"CQI",NaN,"FeedbackSINRdB",NaN, ...
+    "EffectiveSINRdB",NaN,"FeedbackTrialIndex",0, ...
+    "Source","configured_bootstrap_mcs","OLLAOffsetDb",double(offsetDb));
+end
+
+function decision = localFeedbackDecision(policy,row,trialIndex,offsetDb)
+measured = double(row.PostEqSINRdB);
+if ~(isscalar(measured) && isfinite(measured) && ...
+        startsWith(string(row.PostEqSINRValueStatus),"OK") && ...
+        string(row.PostEqSINRValueRole) == ...
+        "measured_post_equalization_scheduling_input")
+    error("sixgr:lls:LinkAdaptationMeasurementUnavailable", ...
+        "Trial %d did not provide a trusted receiver post-equalization SINR.",trialIndex);
+end
+effective = measured + offsetDb;
+thresholds = double(policy.sinrThresholdsDb(:).');
+cqi = sum(effective >= thresholds);
+if cqi < 1
+    selected = double(policy.minimumMCSIndex);
+else
+    amc = sixgr.link.resolveMCSFromCQI(cqi,policy.mcsTable,policy.cqiTable);
+    if ~amc.Valid
+        error("sixgr:lls:InvalidLinkAdaptationDecision", ...
+            "CQI %d did not resolve to a valid MCS profile.",cqi);
+    end
+    selected = double(amc.MCSIndex);
+end
+selected = max(double(policy.minimumMCSIndex), ...
+    min(double(policy.maximumMCSIndex),selected));
+profile = sixgr.link.resolveMCSProfile(policy.mcsTable,selected);
+if ~profile.Valid
+    error("sixgr:lls:InvalidLinkAdaptationDecision", ...
+        "Selected MCS %d is invalid for %s.",selected,string(policy.mcsTable));
+end
+decision = struct("Profile",profile,"CQI",double(cqi), ...
+    "FeedbackSINRdB",measured,"EffectiveSINRdB",effective, ...
+    "FeedbackTrialIndex",double(trialIndex), ...
+    "Source","previous_trial_receiver_post_equalization_sinr", ...
+    "OLLAOffsetDb",double(offsetDb));
+end
+
+function cfg = localApplyProfile(cfg,profile)
+linkPath = lower(char(string(cfg.simulation.link)));
+cfg.(linkPath).mcsIndex = double(profile.MCSIndex);
+cfg.(linkPath).modulation = char(string(profile.Modulation));
+cfg.(linkPath).targetCodeRate = double(profile.TargetCodeRate);
+if isfield(cfg.(linkPath),"mcsTable")
+    cfg.(linkPath).mcsTable = char(string(profile.Table));
+end
+end
+
+function next = localUpdateOLLA(current,ack,olla)
+next = double(current);
+if ~logical(olla.enabled)
+    return;
+end
+if ack
+    next = next + double(olla.ackStepDb);
+else
+    next = next - double(olla.nackStepDb);
+end
+next = max(double(olla.minimumOffsetDb),min(double(olla.maximumOffsetDb),next));
+end
+
+function reason = localStoppingReason(n,errors,minN,minE,maxN)
+if n >= minN && errors >= minE
+    reason = "minimum_trials_and_errors_reached";
+elseif n >= maxN
+    reason = "maximum_trials_reached";
+else
+    reason = "invalid_unexpected_termination";
+end
+end
+
+function text = localBoundDisplay(errors,bler,upper,cfg)
+if errors == 0
+    text = "< " + compose("%.6g",upper) + " (" + ...
+        compose("%.3g",100*double(cfg.simulation.confidenceLevel)) + ...
+        "% Wilson upper bound)";
+else
+    text = compose("%.6g",bler);
+end
+end

@@ -1,0 +1,30 @@
+inherits: pusch_reference.yaml
+
+scenario:
+  id: pusch_awgn_qpsk_explicit_interference_regression
+  description: Focused waveform regression with an independently encoded and channelized cochannel PUSCH
+
+simulation:
+  studyType: interference_bler
+  snrDb: [30]
+  minTransportBlocks: 2
+  minBlockErrors: 1
+  maxTransportBlocks: 2
+  statisticalClass: diagnostic_only
+
+interference:
+  enabled: true
+  desiredToInterferenceRatioDb: -10.0
+  rnti: 101
+  nid: 101
+  channel:
+    model: AWGN
+    delaySpreadSeconds: 0.0
+    velocityKmph: 0.0
+    txAntennas: 1
+    rxAntennas: 1
+    seed: 20261812
+    normalization: occupied_re_esn0
+
+results:
+  generatePlots: false

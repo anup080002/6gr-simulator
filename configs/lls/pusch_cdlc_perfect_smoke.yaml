@@ -17,6 +17,21 @@ channel:
   velocityKmph: 3.0
   txAntennas: 1
   rxAntennas: 1
+  cdl:
+    transmitArray:
+      size: [1, 1, 1, 1, 1]
+      elementSpacingWavelength: [0.5, 0.5, 1.0, 1.0]
+      polarizationAnglesDeg: [0.0]
+      orientationDeg: [0.0, 0.0, 0.0]
+      element: isotropic
+      polarizationModel: Model-2
+    receiveArray:
+      size: [1, 1, 1, 1, 1]
+      elementSpacingWavelength: [0.5, 0.5, 0.5, 0.5]
+      polarizationAnglesDeg: [0.0]
+      orientationDeg: [0.0, 0.0, 0.0]
+      element: isotropic
+      polarizationModel: Model-2
 
 receiver:
   channelEstimation: perfect

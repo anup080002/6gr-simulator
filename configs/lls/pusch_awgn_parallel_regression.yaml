@@ -1,0 +1,6 @@
+inherits: pusch_reference_smoke.yaml
+
+execution:
+  parallelEnabled: true
+  maximumWorkers: 2
+  batchTransportBlocks: 4

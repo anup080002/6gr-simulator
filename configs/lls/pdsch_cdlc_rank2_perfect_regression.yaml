@@ -1,22 +1,30 @@
-inherits:
-  - pusch_cdlc_perfect_smoke.yaml
+inherits: pdsch_reference.yaml
 
 scenario:
-  id: pusch_cdlc_qpsk_rank2_perfect_csi_smoke
-  description: Dedicated 2x2 rank-2 CDL-C perfect-CSI waveform validation; not publication statistics
+  id: pdsch_cdlc_rank2_perfect_regression
+  description: Focused exact-channel trust-boundary regression for the production PDSCH waveform chain
 
 simulation:
-  snrDb: [25]
+  snrDb: [35]
+  minTransportBlocks: 2
+  minBlockErrors: 1
+  maxTransportBlocks: 2
+  statisticalClass: diagnostic_only
 
-pusch:
+pdsch:
   numberLayers: 2
   numberAntennaPorts: 2
   dmrs:
+    numCDMGroupsWithoutData: 2
     portSet: [0, 1]
 
 channel:
+  model: CDL-C
+  delaySpreadSeconds: 0.0000003
+  velocityKmph: 3.0
   txAntennas: 2
   rxAntennas: 2
+  seed: 20260821
   cdl:
     transmitArray:
       size: [1, 1, 2, 1, 1]
@@ -32,3 +40,9 @@ channel:
       orientationDeg: [0.0, 0.0, 0.0]
       element: isotropic
       polarizationModel: Model-2
+
+receiver:
+  channelEstimation: perfect
+
+results:
+  generatePlots: false

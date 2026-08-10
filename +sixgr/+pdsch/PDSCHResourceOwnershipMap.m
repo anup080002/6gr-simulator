@@ -434,65 +434,87 @@ classdef PDSCHResourceOwnershipMap
                 "RateMatchPattern", "reserved_rate_match_pattern", ...
                 "Other", "reserved_other");
 
-            for i = 1:count
-                index = indices(i);
-                present = strings(0,1);
-                for j = 1:numel(names)
-                    if ismember(index, ...
-                            diagnostic.ReservationSources.(names(j)))
-                        present(end+1,1) = names(j); %#ok<AGROW>
-                    end
-                end
-                sourceCount(i) = numel(present);
-                sourceList(i) = strjoin(present,"|");
-                dmask = cellfun(@(x) ismember(index,x), ...
-                    diagnostic.DMRSIndicesPerPort);
-                pmask = cellfun(@(x) ismember(index,x), ...
-                    diagnostic.PTRSIndicesPerPort);
-                dports = diagnostic.DMRSLogicalPortSet(dmask);
-                pports = diagnostic.PTRSLogicalPortSet(pmask);
-                dmrsPorts(i) = strjoin(string(dports),"|");
-                ptrsPorts(i) = strjoin(string(pports),"|");
-                logicalPortCount(i) = numel(dports) + numel(pports);
-
-                collisions = strings(0,1);
-                if ~available(i) && (~isempty(dports) || ~isempty(pports))
-                    collisions(end+1,1) = "reference_unavailable"; %#ok<AGROW>
-                end
-                if ~isempty(dports) && ~isempty(pports)
-                    collisions(end+1,1) = "dmrs_ptrs"; %#ok<AGROW>
-                end
-                if ~isempty(dports) && ~isempty(present)
-                    collisions(end+1,1) = "dmrs_reserved"; %#ok<AGROW>
-                end
-                if ~isempty(pports) && ~isempty(present)
-                    collisions(end+1,1) = "ptrs_reserved"; %#ok<AGROW>
-                end
-                collisionTypes(i) = strjoin(collisions,"|");
-                collisionCount(i) = numel(collisions);
-
-                if ~inside(i)
-                    owner(i) = "outside_pdsch_allocation";
-                    if ~isempty(present) || ~isempty(dports) || ~isempty(pports)
-                        errorStatus(i) = "resource_outside_allocation";
-                    end
-                elseif ~available(i)
-                    owner(i) = "unavailable_by_frame_direction";
-                elseif collisionCount(i) > 0
-                    owner(i) = "collision_error";
-                    errorStatus(i) = "illegal_overlap";
-                elseif numel(present) > 1
-                    owner(i) = "reserved_multi_source";
-                elseif numel(present) == 1
-                    owner(i) = string(ownerBySource.(present(1)));
-                elseif ~isempty(dports)
-                    owner(i) = "pdsch_dmrs";
-                elseif ~isempty(pports)
-                    owner(i) = "pdsch_ptrs";
-                else
-                    owner(i) = "pdsch_data";
-                end
+            % Build membership once per ownership set.  The previous
+            % scalar-in-loop implementation repeated a binary search for
+            % every RE/source/port tuple (hundreds of thousands of calls
+            % for a 100 MHz carrier).  These logical matrices encode the
+            % identical zero-based set membership while keeping runtime
+            % proportional to the number of ownership sets.
+            sourceMembership = false(count,numel(names));
+            for j = 1:numel(names)
+                sourceMembership(:,j) = ismember(indices, ...
+                    diagnostic.ReservationSources.(names(j)));
             end
+            dmrsMembership = false(count,numel( ...
+                diagnostic.DMRSIndicesPerPort));
+            for j = 1:size(dmrsMembership,2)
+                dmrsMembership(:,j) = ismember(indices, ...
+                    diagnostic.DMRSIndicesPerPort{j});
+            end
+            ptrsMembership = false(count,numel( ...
+                diagnostic.PTRSIndicesPerPort));
+            for j = 1:size(ptrsMembership,2)
+                ptrsMembership(:,j) = ismember(indices, ...
+                    diagnostic.PTRSIndicesPerPort{j});
+            end
+
+            sourceCount = sum(sourceMembership,2);
+            for j = 1:numel(names)
+                sourceList = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                    appendToken(sourceList,sourceMembership(:,j),names(j));
+            end
+            dmrsCount = sum(dmrsMembership,2);
+            for j = 1:size(dmrsMembership,2)
+                dmrsPorts = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                    appendToken(dmrsPorts,dmrsMembership(:,j), ...
+                    string(diagnostic.DMRSLogicalPortSet(j)));
+            end
+            ptrsCount = sum(ptrsMembership,2);
+            for j = 1:size(ptrsMembership,2)
+                ptrsPorts = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                    appendToken(ptrsPorts,ptrsMembership(:,j), ...
+                    string(diagnostic.PTRSLogicalPortSet(j)));
+            end
+            logicalPortCount = dmrsCount + ptrsCount;
+
+            referenceUnavailable = ~available & logicalPortCount > 0;
+            dmrsPTRS = dmrsCount > 0 & ptrsCount > 0;
+            dmrsReserved = dmrsCount > 0 & sourceCount > 0;
+            ptrsReserved = ptrsCount > 0 & sourceCount > 0;
+            collisionTypes = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                appendToken(collisionTypes,referenceUnavailable, ...
+                "reference_unavailable");
+            collisionTypes = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                appendToken(collisionTypes,dmrsPTRS,"dmrs_ptrs");
+            collisionTypes = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                appendToken(collisionTypes,dmrsReserved,"dmrs_reserved");
+            collisionTypes = sixgr.pdsch.PDSCHResourceOwnershipMap. ...
+                appendToken(collisionTypes,ptrsReserved,"ptrs_reserved");
+            collisionCount = double(referenceUnavailable) + ...
+                double(dmrsPTRS) + double(dmrsReserved) + ...
+                double(ptrsReserved);
+
+            outsideWithEvidence = ~inside & ...
+                (sourceCount > 0 | logicalPortCount > 0);
+            errorStatus(outsideWithEvidence) = "resource_outside_allocation";
+            unavailableInside = inside & ~available;
+            owner(unavailableInside) = "unavailable_by_frame_direction";
+            collisionInside = inside & available & collisionCount > 0;
+            owner(collisionInside) = "collision_error";
+            errorStatus(collisionInside) = "illegal_overlap";
+            eligible = inside & available & collisionCount == 0;
+            owner(eligible & sourceCount > 1) = "reserved_multi_source";
+            for j = 1:numel(names)
+                oneSource = eligible & sourceCount == 1 & ...
+                    sourceMembership(:,j);
+                owner(oneSource) = string(ownerBySource.(names(j)));
+            end
+            noSource = eligible & sourceCount == 0;
+            owner(noSource & dmrsCount > 0) = "pdsch_dmrs";
+            owner(noSource & dmrsCount == 0 & ptrsCount > 0) = ...
+                "pdsch_ptrs";
+            owner(noSource & dmrsCount == 0 & ptrsCount == 0) = ...
+                "pdsch_data";
 
             if isfinite(diagnostic.GridNumPRB)
                 K = 12 * diagnostic.GridNumPRB;
@@ -524,6 +546,17 @@ classdef PDSCHResourceOwnershipMap
                 'DMRSLogicalPorts','PTRSLogicalPorts', ...
                 'LogicalPortCount','CollisionTypes','CollisionCount', ...
                 'ErrorStatus'});
+        end
+
+        function values = appendToken(values, mask, token)
+            mask = logical(mask(:));
+            if ~any(mask)
+                return;
+            end
+            empty = mask & strlength(values) == 0;
+            values(empty) = string(token);
+            populated = mask & ~empty;
+            values(populated) = values(populated) + "|" + string(token);
         end
     end
 end

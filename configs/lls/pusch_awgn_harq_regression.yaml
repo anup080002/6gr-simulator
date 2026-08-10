@@ -1,0 +1,22 @@
+inherits: pusch_reference.yaml
+
+scenario:
+  id: pusch_awgn_qpsk_harq_regression
+  description: Focused waveform HARQ regression with repeated TB identity, RV progression, and position-aware soft combining
+
+simulation:
+  studyType: harq_throughput
+  snrDb: [-4]
+  minTransportBlocks: 3
+  minBlockErrors: 1
+  maxTransportBlocks: 3
+  statisticalClass: diagnostic_only
+
+harq:
+  enabled: true
+  rvSequence: [0, 2, 3, 1]
+  maxTransmissions: 4
+  stoppingMetric: first_transmission_bler
+
+results:
+  generatePlots: false

@@ -1,0 +1,8 @@
+inherits: pusch_cdlc_low_doppler_regression.yaml
+
+scenario:
+  id: pusch_cdlc_qpsk_high_doppler_regression
+  description: Paired practical-estimation CDL-C waveform regression at vehicular velocity
+
+channel:
+  velocityKmph: 120.0

@@ -11,15 +11,52 @@ errors = 0;
 diagnostic = struct();
 pointClock = tic;
 trialIndex = 0;
+parallelEnabled = logical(llsCfg.execution.parallelEnabled);
+batchSize = double(llsCfg.execution.batchTransportBlocks);
+if parallelEnabled
+    localEnsurePool(double(llsCfg.execution.maximumWorkers));
+end
 while trialIndex < maxTB && ~(trialIndex >= minTB && errors >= minErrors)
-    trialIndex = trialIndex + 1;
-    [row, trialDiagnostic] = sixgr.lls.runTransportBlock( ...
-        llsCfg, phyCfg, configHash, snrIndex, trialIndex);
-    rows{trialIndex,1} = row;
-    errors = errors + double(row.CRCError);
-    if trialIndex == 1
-        diagnostic = trialDiagnostic;
+    batchStart = trialIndex + 1;
+    if parallelEnabled
+        requested = min(batchSize,maxTB-trialIndex);
+    else
+        requested = 1;
     end
+    batchRows = cell(requested,1);
+    batchDiagnostics = cell(requested,1);
+    if parallelEnabled
+        parfor localIndex = 1:requested
+            globalIndex = batchStart + localIndex - 1;
+            [batchRows{localIndex},batchDiagnostics{localIndex}] = ...
+                sixgr.lls.runTransportBlock(llsCfg,phyCfg,configHash, ...
+                snrIndex,globalIndex,"CaptureDiagnostic",globalIndex == 1);
+        end
+    else
+        [batchRows{1},batchDiagnostics{1}] = sixgr.lls.runTransportBlock( ...
+            llsCfg,phyCfg,configHash,snrIndex,batchStart, ...
+            "CaptureDiagnostic",batchStart == 1);
+    end
+    priorErrors = errors;
+    batchErrors = cellfun(@(r) double(r.CRCError),batchRows);
+    keep = requested;
+    for localIndex = 1:requested
+        globalIndex = batchStart + localIndex - 1;
+        cumulativeErrors = priorErrors + sum(batchErrors(1:localIndex));
+        if globalIndex >= minTB && cumulativeErrors >= minErrors
+            keep = localIndex;
+            break;
+        end
+    end
+    for localIndex = 1:keep
+        globalIndex = batchStart + localIndex - 1;
+        rows{globalIndex,1} = batchRows{localIndex};
+    end
+    if batchStart == 1
+        diagnostic = batchDiagnostics{1};
+    end
+    trialIndex = batchStart + keep - 1;
+    errors = priorErrors + sum(batchErrors(1:keep));
 end
 trialTable = struct2table(vertcat(rows{1:trialIndex}));
 numTB = height(trialTable);
@@ -40,6 +77,7 @@ if errors == 0
 else
     blerDisplay = compose("%.6g", bler);
 end
+
 summaryRow = struct( ...
     "ScenarioId", string(llsCfg.scenario.id), ...
     "ConfigSHA256", configHash, ...
@@ -65,6 +103,17 @@ summaryRow = struct( ...
     "ExecutionBackend", "waveform_truth", ...
     "ApproximationMode", "none");
 summaryRow.StatisticalClass = string(llsCfg.simulation.statisticalClass);
+end
+
+function pool = localEnsurePool(maximumWorkers)
+pool = gcp("nocreate");
+if isempty(pool)
+    pool = parpool("Processes",maximumWorkers);
+elseif pool.NumWorkers > maximumWorkers
+    error("sixgr:lls:ParallelPoolTooLarge", ...
+        "Existing parallel pool has %d workers; YAML permits at most %d.", ...
+        pool.NumWorkers,maximumWorkers);
+end
 end
 
 function reason = localStoppingReason(numTB, errors, minTB, minErrors, maxTB)

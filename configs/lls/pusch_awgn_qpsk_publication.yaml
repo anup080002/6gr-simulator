@@ -1,0 +1,26 @@
+inherits: pusch_reference.yaml
+
+scenario:
+  id: pusch_awgn_qpsk_publication
+  description: Publication-candidate fixed-MCS PUSCH waterfall using only decoded waveform transport blocks
+
+simulation:
+  snrDb: [-4, -3, -2, -1, 0]
+  minTransportBlocks: 1000
+  minBlockErrors: 100
+  maxTransportBlocks: 100000
+  statisticalClass: publication_candidate
+  studyType: fixed_mcs_bler
+
+execution:
+  parallelEnabled: true
+  maximumWorkers: 4
+  batchTransportBlocks: 32
+
+comparison:
+  targetBLER: [0.1, 0.01, 0.001]
+
+results:
+  outputRoot: results/lls/ran1_waveform_publication
+  generatePlots: true
+  imageFormat: png

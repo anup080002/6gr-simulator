@@ -7,6 +7,15 @@ function [rxWaveform, trueChannelGrid, channelInfo] = applyChannel(txWaveform, c
 % expanded across a fading resource grid.
 
 model = upper(string(llsCfg.channel.model));
+linkDirection = upper(string(llsCfg.simulation.link));
+if linkDirection == "PDSCH"
+    transmissionDirection = "Downlink";
+elseif linkDirection == "PUSCH"
+    transmissionDirection = "Uplink";
+else
+    error("sixgr:lls:InvalidLinkDirection", ...
+        "Waveform channel direction requires simulation.link=PDSCH or PUSCH.");
+end
 if model == "AWGN"
     rxWaveform = txWaveform;
     trueChannelGrid = complex(ones(carrier.NSizeGrid*12, carrier.SymbolsPerSlot, 1, 1, "like", txWaveform));
@@ -17,6 +26,7 @@ if model == "AWGN"
         "TrueChannelGridAvailable", true, ...
         "TimingOffsetSamples", 0, ...
         "MaximumDopplerHz", 0, ...
+        "TransmissionDirection", transmissionDirection, ...
         "ChannelSeed", double(channelSeed));
     return;
 end
@@ -30,7 +40,7 @@ if startsWith(model, "TDL-")
     channel.NumTransmitAntennas = double(llsCfg.channel.txAntennas);
     channel.NumReceiveAntennas = double(llsCfg.channel.rxAntennas);
     try
-        channel.TransmissionDirection = "Uplink";
+        channel.TransmissionDirection = char(transmissionDirection);
     catch
     end
 elseif startsWith(model, "CDL-")
@@ -40,12 +50,12 @@ elseif startsWith(model, "CDL-")
     channel = nrCDLChannel;
     channel.DelayProfile = char(model);
     channel.CarrierFrequency = double(llsCfg.carrier.frequencyHz);
-    txArray = channel.TransmitAntennaArray;
-    txArray.Size = [double(llsCfg.channel.txAntennas) 1 1 1 1];
-    channel.TransmitAntennaArray = txArray;
-    rxArray = channel.ReceiveAntennaArray;
-    rxArray.Size = [double(llsCfg.channel.rxAntennas) 1 1 1 1];
-    channel.ReceiveAntennaArray = rxArray;
+    channel.TransmitAntennaArray = localCDLArray( ...
+        channel.TransmitAntennaArray,llsCfg.channel.cdl.transmitArray, ...
+        "channel.cdl.transmitArray");
+    channel.ReceiveAntennaArray = localCDLArray( ...
+        channel.ReceiveAntennaArray,llsCfg.channel.cdl.receiveArray, ...
+        "channel.cdl.receiveArray");
 else
     error("sixgr:lls:UnsupportedChannel", "Unsupported waveform channel model %s.", model);
 end
@@ -106,8 +116,29 @@ channelInfo = struct( ...
     "TimingMagnitude", double(timingMagnitude), ...
     "MaximumChannelDelaySamples", maximumDelay, ...
     "MaximumDopplerHz", maximumDopplerHz, ...
+    "TransmissionDirection", transmissionDirection, ...
     "SampleRateHz", double(ofdm.SampleRate), ...
     "ChannelSeed", double(channelSeed), ...
     "NormalizePathGains", true, ...
     "NormalizeChannelOutputs", true);
+end
+
+function array = localCDLArray(array,configured,path)
+% Bind every 38.901 array degree of freedom from the immutable LLS YAML.
+% In particular, do not collapse multi-port CDL links into an artificial
+% single-polarized column merely because the requested port count is N.
+required = ["size","elementSpacingWavelength","polarizationAnglesDeg", ...
+    "orientationDeg","element","polarizationModel"];
+for index = 1:numel(required)
+    if ~isfield(configured,required(index))
+        error("sixgr:lls:MissingCDLArrayConfiguration", ...
+            "%s.%s is required for an executable CDL array.",path,required(index));
+    end
+end
+array.Size = double(configured.size(:).');
+array.ElementSpacing = double(configured.elementSpacingWavelength(:).');
+array.PolarizationAngles = double(configured.polarizationAnglesDeg(:).');
+array.Orientation = double(configured.orientationDeg(:));
+array.Element = char(string(configured.element));
+array.PolarizationModel = char(string(configured.polarizationModel));
 end

@@ -479,7 +479,8 @@ end
 enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pusch.ptrs.enableCPECorrection", ...
     sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", false)));
 [eqSym, cpeCorrInfo] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, rxPUSCHInd, rxGrid, Hest, ...
-    ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enablePTRSCPECorrection);
+    ptrsInd, ptrsSym, carrier, rxPUSCH, nVar, equalizerAlg, Rint, RIncludesNoise, ...
+    enablePTRSCPECorrection);
 try
     numLayersForSINR = double(pusch.NumLayers);
 catch
@@ -817,6 +818,16 @@ rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPol
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.SynchronizationState = syncState;
 rx.DecodeLatency_s = double(decodeLatency_s);
+rx.UseMexLDPC = logical(useMexLDPC);
+if useMexLDPC
+    if exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3
+        rx.LDPCDecoderEngine = "sixgr_ldpc_decode_batch_kernel_mex";
+    else
+        rx.LDPCDecoderEngine = "sixgr_ldpc_decode_batch_kernel";
+    end
+else
+    rx.LDPCDecoderEngine = "sixgr.phy.phycode.ldpcDecode";
+end
 rx.MaxDecoderIterations = double(maxIter);
 rx.DecoderIterations = mean(double(actIter(:)), "omitnan");
 rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
@@ -948,7 +959,9 @@ rx.PUSCHDFTInputSymbolsForEvidence = qamEqSym;
 rx.QAMEqualizedSymbolDomain = "layer";
 rx.QAMEqualizedSymbolSource = char(string(qamEqInfo.Status));
 rx.QAMSymbolOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, ...
-    localLayerIndicesFromPUSCHIndices(puschInd, qamEqSym), "layer");
+    localLayerIndicesFromPUSCHIndices( ...
+    localPUSCHQAMIndicesFromAllocatedIndices( ...
+    puschInd,ptrsInd,carrier,qamEqSym),qamEqSym), "layer");
 rx.DemapperLLRCount = double(codewordLayerMapping.TotalDemapperLLRCount);
 rx.ULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
 rx.RateRecoveredLLRCount = double(numel(recLLR));
@@ -1232,9 +1245,11 @@ end
 end
 
 function [eqSymOut, info] = localCorrectEqualizedPUSCHCPEFromPTRS(eqSym, puschInd, rxGrid, hEst, ...
-        ptrsInd, ptrsSym, carrier, nVar, equalizerAlg, Rint, RIncludesNoise, enabled)
+        ptrsInd, ptrsSym, carrier, pusch, nVar, equalizerAlg, Rint, RIncludesNoise, enabled)
 info = struct('Enabled', false, 'NumSymbolsCorrected', 0, ...
-    'MeanCPE_deg', NaN, 'NAReason', "");
+    'MeanCPE_deg', NaN, 'NAReason', "", ...
+    'EstimatorDomain', "not_applicable", ...
+    'TransformDeprecodingApplied', false);
 eqSymOut = eqSym;
 if ~logical(enabled)
     info.NAReason = "ptrs_cpe_correction_disabled_by_config";
@@ -1249,27 +1264,55 @@ if isempty(ptrsInd) || isempty(ptrsSym)
     return;
 end
 
-try
-    [rxPTRS, hPTRS] = nrExtractResources(ptrsInd, rxGrid, hEst);
-catch ME
-    info.NAReason = "ptrs_resource_extraction_failed:" + string(ME.identifier);
-    return;
-end
-if isempty(rxPTRS) || isempty(hPTRS)
-    info.NAReason = "ptrs_resource_extraction_empty";
-    return;
-end
-
-try
-    [eqPTRS, ~, ~] = sixgr.phy.rx.mimoDetect(rxPTRS, hPTRS, nVar, ...
-        "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);
-catch ME
-    info.NAReason = "ptrs_equalization_failed:" + string(ME.identifier);
-    return;
-end
-
 refPTRS = ptrsSym(:);
-eqPTRS = localSelectPTRSObservation(eqPTRS, refPTRS);
+transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
+if transformPrecoding
+    % TS 38.211 6.3.1.4 multiplexes PUSCH data and PT-RS before the
+    % transform.  Consequently nrPUSCHPTRSIndices is allocation-relative
+    % in this mode and must never index rxGrid/Hest.  Recover the exact
+    % pre-transform sequence from the already equalized allocation, then
+    % select the PT-RS samples with those allocation-relative indices.
+    mrb = double(numel(pusch.PRBSet));
+    msc = 12*mrb;
+    if mrb < 1 || mod(size(eqSym,1),msc) ~= 0
+        info.NAReason = "transform_precoded_pusch_allocation_shape_mismatch";
+        return;
+    end
+    try
+        deprecoded = nrTransformDeprecode(eqSym,mrb);
+        relativePTRSInd = nrPUSCHPTRSIndices(carrier,pusch);
+    catch ME
+        info.NAReason = "ptrs_transform_deprecoding_failed:" + string(ME.identifier);
+        return;
+    end
+    if isempty(relativePTRSInd) || any(double(relativePTRSInd(:)) > numel(deprecoded))
+        info.NAReason = "ptrs_allocation_relative_index_mismatch";
+        return;
+    end
+    eqPTRS = deprecoded(relativePTRSInd);
+    info.EstimatorDomain = "transform_deprecoded_allocation";
+    info.TransformDeprecodingApplied = true;
+else
+    try
+        [rxPTRS, hPTRS] = nrExtractResources(ptrsInd, rxGrid, hEst);
+    catch ME
+        info.NAReason = "ptrs_resource_extraction_failed:" + string(ME.identifier);
+        return;
+    end
+    if isempty(rxPTRS) || isempty(hPTRS)
+        info.NAReason = "ptrs_resource_extraction_empty";
+        return;
+    end
+    try
+        [eqPTRS, ~, ~] = sixgr.phy.rx.mimoDetect(rxPTRS, hPTRS, nVar, ...
+            "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);
+    catch ME
+        info.NAReason = "ptrs_equalization_failed:" + string(ME.identifier);
+        return;
+    end
+    eqPTRS = localSelectPTRSObservation(eqPTRS, refPTRS);
+    info.EstimatorDomain = "frequency_domain_grid_ptrs";
+end
 n = min(numel(eqPTRS), numel(refPTRS));
 if n <= 0
     info.NAReason = "ptrs_equalized_symbol_count_mismatch";
@@ -1288,7 +1331,11 @@ L = dims(2);
 P = max(1, size(rxGrid, 3));
 try
     [~, ptrsL, ~] = ind2sub([K L P], double(ptrsInd(:)));
-    [~, dataL, ~] = ind2sub([K L P], double(puschInd(:)));
+    if size(puschInd,1) ~= size(eqSymOut,1)
+        info.NAReason = "pusch_index_equalized_row_mismatch";
+        return;
+    end
+    [~, dataL, ~] = ind2sub([K L P], double(puschInd(:,1)));
 catch ME
     info.NAReason = "ptrs_or_pusch_symbol_index_decode_failed:" + string(ME.identifier);
     return;
@@ -1334,8 +1381,7 @@ else
     cpeInterp(:) = interp1(double(finiteIdx), unwrapped, (1:L).', "linear", "extrap");
 end
 
-dataL = dataL(1:min(numel(dataL), size(eqSymOut, 1)));
-for row = 1:numel(dataL)
+for row = 1:size(eqSymOut,1)
     lSym = dataL(row);
     if lSym >= 1 && lSym <= L && isfinite(cpeInterp(lSym))
         eqSymOut(row, :) = eqSymOut(row, :) .* cast(exp(-1j * cpeInterp(lSym)), "like", eqSymOut);
@@ -1944,6 +1990,34 @@ end
 error("sixgr:phy:ul:PUSCHLayerIndexDomainMismatch", ...
     "Cannot attach PUSCH layer ordering: index shape %s does not match layer-symbol shape %s.", ...
     mat2str(size(portInd)), mat2str(size(layerSym)));
+end
+
+function qamInd = localPUSCHQAMIndicesFromAllocatedIndices( ...
+        allocatedInd,ptrsInd,carrier,qamSym)
+% nrPUSCHIndices describes frequency-domain allocated PUSCH resources.
+% With PT-RS enabled, nrPUSCHDecode returns the QAM-domain data symbols
+% after removing PT-RS-reserved coordinates (and after transform
+% deprecoding when requested).  Preserve an exact ordering map by removing
+% those same runtime PT-RS coordinates from every layer column.
+qamInd = allocatedInd;
+if isempty(ptrsInd) || isempty(allocatedInd)
+    return;
+end
+K = double(carrier.NSizeGrid)*12;
+L = double(carrier.SymbolsPerSlot);
+plane = K*L;
+allocatedBase = mod(double(allocatedInd)-1,plane)+1;
+ptrsBase = unique(mod(double(ptrsInd(:))-1,plane)+1);
+keepRows = ~any(ismember(allocatedBase,ptrsBase),2);
+candidate = allocatedInd(keepRows,:);
+expected = numel(qamSym);
+if numel(candidate) ~= expected
+    error("sixgr:phy:ul:PUSCHQAMIndexDomainMismatch", ...
+        ["Removing the exact PT-RS coordinates from PUSCH indices produced " ...
+         "%d layer indices, but the decoded QAM domain contains %d symbols."], ...
+        numel(candidate),expected);
+end
+qamInd = candidate;
 end
 
 function [layerSym, info] = localResolvePUSCHLayerEqualizedSymbols(eqSym, puschRxSym, pusch)

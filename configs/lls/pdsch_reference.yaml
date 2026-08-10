@@ -15,6 +15,12 @@ simulation:
   maxTransportBlocks: 100000
   confidenceLevel: 0.95
   statisticalClass: publication_candidate
+  studyType: fixed_mcs_bler
+
+execution:
+  parallelEnabled: false
+  maximumWorkers: 4
+  batchTransportBlocks: 32
 
 carrier:
   frequencyHz: 4000000000
@@ -64,6 +70,12 @@ pdsch:
     portSet: [0]
   ptrs:
     enabled: false
+    timeDensity: 2
+    frequencyDensity: 2
+    reOffset: '00'
+    portAssociationPolicy: first_scheduled_dmrs_port
+    portSet: [0]
+    cpeCorrection: false
 
 channel:
   model: AWGN
@@ -74,17 +86,55 @@ channel:
   seed: 20260811
   normalization: occupied_re_esn0
 
+# Optional cochannel interferer. When enabled, this is a second independently
+# encoded/modulated waveform passed through its own configured channel. The
+# desired-to-interference ratio is calibrated only at the common receiver.
+interference:
+  enabled: false
+  desiredToInterferenceRatioDb: 0.0
+  rnti: 101
+  nid: 101
+  channel:
+    model: AWGN
+    delaySpreadSeconds: 0.0
+    velocityKmph: 0.0
+    txAntennas: 1
+    rxAntennas: 1
+    seed: 20261811
+    normalization: occupied_re_esn0
+
 receiver:
   channelEstimation: practical
   equalizer: MMSE
   ldpcMaxIterations: 50
   ldpcAlgorithm: Normalized min-sum
+  useMexLDPC: true
 
 harq:
   enabled: false
+  rvSequence: [0, 2, 3, 1]
+  maxTransmissions: 4
+  stoppingMetric: first_transmission_bler
 
 linkAdaptation:
   enabled: false
+  mcsTable: qam64_table1
+  cqiTable: table1
+  sinrThresholdsDb: [-5.90, -4.78, -2.87, -1.02, 1.00, 3.05, 5.08, 7.25, 9.46, 11.81, 14.34, 16.52, 18.88, 21.47, 23.84]
+  thresholdSource: configured_ran1_link_adaptation_policy
+  thresholdValueRole: implementation_policy_not_phy_result
+  thresholdCalibrationId: sixgr_qpsk_reference_policy_v1
+  initialMCSIndex: 0
+  minimumMCSIndex: 0
+  maximumMCSIndex: 28
+  feedbackDelaySlots: 1
+  olla:
+    enabled: false
+    initialOffsetDb: 0.0
+    ackStepDb: 0.1
+    nackStepDb: 0.9
+    minimumOffsetDb: -6.0
+    maximumOffsetDb: 6.0
 
 comparison:
   targetBLER: [0.1, 0.01, 0.001]

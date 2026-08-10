@@ -2,14 +2,42 @@ function tableOut = requiredSNRTable(cfg, summaryTable)
 %REQUIREDSNRTABLE Interpolate target BLER only inside simulated crossings.
 
 targets = double(sixgr.util.structGet(cfg, "comparison.targetBLER", [0.1 0.01 0.001]));
-rows = repmat(struct("TargetBLER",0,"RequiredSNRdB",NaN,"Valid",false,"Status",""), numel(targets), 1);
+rows = repmat(localEmptyRow(),numel(targets),1);
+studyType = lower(string(sixgr.util.structGet(cfg,"simulation.studyType","fixed_mcs_bler")));
+if studyType == "harq_throughput" || studyType == "link_adaptation_throughput"
+    if studyType == "harq_throughput"
+        status = "not_applicable_harq_metrics_reported_separately";
+    else
+        status = "not_applicable_link_adaptation_throughput_reported_separately";
+    end
+    for idx = 1:numel(targets)
+        rows(idx) = localEmptyRow();
+        rows(idx).TargetBLER = targets(idx);
+        rows(idx).Status = status;
+    end
+    tableOut = struct2table(rows);
+    return;
+end
 for idx = 1:numel(targets)
     value = sixgr.lls.stats.interpolateRequiredSNR( ...
-        summaryTable.SNRdB, summaryTable.BLER, targets(idx));
+        summaryTable.SNRdB,summaryTable.BLER,targets(idx), ...
+        "LowerCI",summaryTable.BLERLowerCI, ...
+        "UpperCI",summaryTable.BLERUpperCI, ...
+        "ConfidenceLevel",double(cfg.simulation.confidenceLevel));
     rows(idx) = struct("TargetBLER",targets(idx), ...
         "RequiredSNRdB",value.RequiredSNR_dB, ...
-        "Valid",logical(value.Valid), ...
-        "Status",string(value.Status));
+        "LowerBracketSNRdB",value.LowerBracketSNR_dB, ...
+        "UpperBracketSNRdB",value.UpperBracketSNR_dB, ...
+        "ConfidenceLevel",value.ConfidenceLevel, ...
+        "EstimationBasis",string(value.EstimationBasis), ...
+        "Valid",logical(value.Valid),"Status",string(value.Status));
 end
 tableOut = struct2table(rows);
+end
+
+function row = localEmptyRow()
+row = struct("TargetBLER",0,"RequiredSNRdB",NaN, ...
+    "LowerBracketSNRdB",NaN,"UpperBracketSNRdB",NaN, ...
+    "ConfidenceLevel",NaN,"EstimationBasis","not_applicable", ...
+    "Valid",false,"Status","");
 end

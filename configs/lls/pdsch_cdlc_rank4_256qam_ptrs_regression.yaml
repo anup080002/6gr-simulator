@@ -1,0 +1,56 @@
+inherits: pdsch_reference.yaml
+
+scenario:
+  id: pdsch_cdlc_rank4_256qam_ptrs_regression
+  description: Focused production-chain regression for rank-4 256QAM CDL-C PDSCH with PT-RS and perfect CSI
+
+simulation:
+  snrDb: [50]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+pdsch:
+  modulation: 256QAM
+  targetCodeRate: 0.45
+  numberLayers: 4
+  numberAntennaPorts: 4
+  dmrs:
+    configurationType: 2
+    additionalPositions: 2
+    numCDMGroupsWithoutData: 2
+    portSet: [0, 1, 2, 3]
+  ptrs:
+    enabled: true
+    timeDensity: 1
+    cpeCorrection: true
+
+channel:
+  model: CDL-C
+  delaySpreadSeconds: 0.0000003
+  velocityKmph: 3.0
+  txAntennas: 4
+  rxAntennas: 4
+  seed: 20260831
+  cdl:
+    transmitArray:
+      size: [1, 2, 2, 1, 1]
+      elementSpacingWavelength: [0.5, 0.5, 1.0, 1.0]
+      polarizationAnglesDeg: [45.0, -45.0]
+      orientationDeg: [0.0, 0.0, 0.0]
+      element: '38.901'
+      polarizationModel: Model-2
+    receiveArray:
+      size: [1, 2, 2, 1, 1]
+      elementSpacingWavelength: [0.5, 0.5, 0.5, 0.5]
+      polarizationAnglesDeg: [0.0, 90.0]
+      orientationDeg: [0.0, 0.0, 0.0]
+      element: isotropic
+      polarizationModel: Model-2
+
+receiver:
+  channelEstimation: perfect
+
+results:
+  generatePlots: false

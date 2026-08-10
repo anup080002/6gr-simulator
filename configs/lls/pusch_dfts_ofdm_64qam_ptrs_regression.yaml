@@ -1,0 +1,29 @@
+inherits: pusch_reference.yaml
+
+scenario:
+  id: pusch_dfts_ofdm_64qam_ptrs_regression
+  description: Focused production-chain regression for transform-precoded 64QAM PUSCH with PT-RS
+
+simulation:
+  snrDb: [35]
+  minTransportBlocks: 2
+  minBlockErrors: 1
+  maxTransportBlocks: 2
+  statisticalClass: diagnostic_only
+
+pusch:
+  modulation: 64QAM
+  mcsIndex: 18
+  targetCodeRate: 0.45
+  transformPrecoding: true
+  dmrs:
+    numCDMGroupsWithoutData: 2
+  ptrs:
+    enabled: true
+    cpeCorrection: true
+
+receiver:
+  channelEstimation: practical
+
+results:
+  generatePlots: false
