@@ -878,7 +878,11 @@ function tf = localArtifactCompletenessStatus(layout, verdict, scfg, cfg)
 % component runner is still fail-closed against its canonical artifact and
 % round-trip checks; the profile-specific exporter/verifier owns its exact
 % evidence contract.
-if localIsComponentOnlyProfile(scfg, cfg)
+scenarioMode = localScenarioMode(scfg, cfg);
+runClassProfile = localResolveRunClassProfile(scfg, cfg, scenarioMode);
+publicationArtifactScope = any(string(runClassProfile.RunClass) == ...
+    ["fixed_lls_anchor", "hybrid_validation"]);
+if localIsComponentOnlyProfile(scfg, cfg) || ~publicationArtifactScope
     tf = double(sixgr.util.structGet(verdict, "CanonicalArtifactGapCount", 0)) == 0 && ...
         double(sixgr.util.structGet(verdict, "RoundtripMismatchCount", 0)) == 0;
     return;
