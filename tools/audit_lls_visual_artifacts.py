@@ -254,6 +254,12 @@ def audit_run_folder(run_folder: Path) -> list[AuditRow]:
     rows.extend(component_rows)
     seen_visuals.update(component_visuals)
 
+    mirror_rows, mirror_visuals = audit_component_image_mirrors(
+        run_folder, seen_visuals
+    )
+    rows.extend(mirror_rows)
+    seen_visuals.update(mirror_visuals)
+
     for visual_path in inventory_visual_files(run_folder):
         rel = relative_path(run_folder, visual_path)
         if normalize_rel_path(rel) in seen_visuals:
@@ -262,6 +268,128 @@ def audit_run_folder(run_folder: Path) -> list[AuditRow]:
 
     rows.extend(audit_contract_source_csvs(run_folder, manifest_rows))
     return rows
+
+
+def audit_component_image_mirrors(
+    run_folder: Path, lineaged_visuals: set[str]
+) -> tuple[list[AuditRow], set[str]]:
+    """Admit only byte-identical mirrors of an already-lineaged image.
+
+    Component publication is a filesystem convenience view.  It does not
+    create a second scientific plot and therefore must inherit the source
+    CSV semantics of its canonical image.  The inheritance is valid only
+    when the canonical image is already accepted by plot lineage and the
+    publication manifest, canonical bytes, and mirror bytes all agree.
+    """
+
+    manifest_path = (
+        run_folder
+        / "reports"
+        / "csv"
+        / "component_artifact_publication_manifest.csv"
+    )
+    publication_rows = read_csv_dicts(manifest_path)
+    rows: list[AuditRow] = []
+    seen: set[str] = set()
+    for index, publication in enumerate(publication_rows, start=1):
+        if lower_token(get_field(publication, "ArtifactType")) != "image":
+            continue
+        canonical_rel = normalize_rel_path(
+            get_field(publication, "CanonicalRelativePath")
+        )
+        published_rel = normalize_rel_path(
+            get_field(publication, "PublishedRelativePath")
+        )
+        if not published_rel or published_rel in lineaged_visuals or published_rel in seen:
+            continue
+
+        failures: list[tuple[str, str]] = []
+        if not safe_run_relative_path(canonical_rel) or not safe_run_relative_path(
+            published_rel
+        ):
+            failures.append(
+                (
+                    "component_mirror_path_invalid",
+                    "component publication paths must remain relative to the run folder",
+                )
+            )
+
+        canonical_info = inspect_file(run_folder, canonical_rel)
+        published_info = inspect_file(run_folder, published_rel)
+        expected_canonical = lower_token(
+            get_field(publication, "CanonicalSHA256")
+        )
+        expected_published = lower_token(
+            get_field(publication, "PublishedSHA256")
+        )
+        publish_status = get_field(publication, "PublishStatus")
+
+        if canonical_rel not in lineaged_visuals:
+            failures.append(
+                (
+                    "component_mirror_source_not_lineaged",
+                    "canonical image behind the component mirror has no accepted plot lineage",
+                )
+            )
+        if not canonical_info.exists:
+            failures.append(
+                (
+                    "component_mirror_source_missing",
+                    "canonical image behind the component mirror is missing",
+                )
+            )
+        if not published_info.exists:
+            failures.append(
+                ("visual_file_missing", "component mirror image file is missing")
+            )
+        elif not published_info.signature_ok:
+            failures.append(
+                (
+                    published_info.signature_status or "visual_signature_invalid",
+                    "component mirror extension and byte signature do not match",
+                )
+            )
+        if published_info.extension == ".svg" or published_info.actual_mime_type == "image/svg+xml":
+            failures.append(
+                (
+                    "vector_visual_format_forbidden",
+                    "persisted component visuals must use PNG or JPEG",
+                )
+            )
+        hashes_are_exact = (
+            len(expected_canonical) == 64
+            and len(expected_published) == 64
+            and canonical_info.sha256.lower() == expected_canonical
+            and published_info.sha256.lower() == expected_published
+            and canonical_info.sha256.lower() == published_info.sha256.lower()
+        )
+        if (
+            publish_status != "PUBLISHED_HASH_VERIFIED"
+            or not parse_bool(get_field(publication, "MirrorOnly"))
+            or not hashes_are_exact
+        ):
+            failures.append(
+                (
+                    "component_mirror_hash_mismatch",
+                    "component mirror bytes do not exactly match the lineaged canonical image and publisher hashes",
+                )
+            )
+
+        rows.append(
+            make_row(
+                run_folder,
+                plot_id=f"component_mirror__{index}",
+                artifact_path=published_rel,
+                artifact_kind="component_mirror_plot",
+                is_manifest_row=True,
+                manifest_status=publish_status,
+                visual_validity="byte_identical_lineaged_component_mirror",
+                file_info=published_info,
+                failures=failures,
+            )
+        )
+        seen.add(published_rel)
+    return rows, seen
 
 
 def audit_component_plot_lineages(
@@ -1057,6 +1185,18 @@ def lower_token(value: object) -> str:
 
 def normalize_rel_path(path: str) -> str:
     return str(path or "").replace("\\", "/").lstrip("/")
+
+
+def safe_run_relative_path(path: str) -> bool:
+    text = str(path or "").replace("\\", "/")
+    candidate = Path(text)
+    return bool(
+        text
+        and not text.startswith("/")
+        and not candidate.is_absolute()
+        and ":" not in text
+        and ".." not in candidate.parts
+    )
 
 
 def relative_path(root: Path, path: Path) -> str:

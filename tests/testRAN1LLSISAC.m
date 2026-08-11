@@ -47,7 +47,7 @@ assert(numel(dir(fullfile(folder,"isac_*.png"))) == 4);
 assert(isempty(dir(fullfile(folder,"*.svg"))));
 lineage = readtable(fullfile(folder,"isac_plot_lineage.csv"), ...
     "TextType","string","VariableNamingRule","preserve");
-assert(height(lineage) == 4 && all(lineage.Status == "PASS"));
+assert(height(lineage) == 4 && all(strcmpi(lineage.Status,"pass")));
 assert(all(strlength(lineage.SourceCSV_SHA256) >= 64) && ...
     all(strlength(lineage.ImageSHA256) == 64));
 
@@ -72,6 +72,22 @@ for csvFile = dir(fullfile(folder,"isac","csv","*.csv")).'
     assert(numel(unique(lower(header))) == numel(header), ...
         "ISAC CSV %s contains case-insensitive duplicate columns.",csvFile.name);
 end
+
+% Reproduce the production ordering hazard: scenario-wide provenance
+% annotation changes source CSV bytes after the sensing images were
+% rendered.  Refresh must rebind all four images to those finalized bytes.
+targetPath = fullfile(folder,"isac","csv","isac_target_truth.csv");
+annotatedTarget = readtable(targetPath,"TextType","string", ...
+    "VariableNamingRule","preserve");
+annotatedTarget.RuntimeAnnotation = repmat("finalized",height(annotatedTarget),1);
+writetable(annotatedTarget,targetPath);
+auditBeforeRefresh = sixgr.visual.verifyVisualArtifacts(folder,table());
+assert(any(~auditBeforeRefresh.IntegrityOk & ...
+    auditBeforeRefresh.FailureCode == "component_plot_source_hash_mismatch"));
+refreshedLineage = sixgr.lls.refreshISACPlotLineage(folder,structuredCfg);
+assert(height(refreshedLineage) == 4 && all(refreshedLineage.Status == "pass"));
+auditAfterRefresh = sixgr.visual.verifyVisualArtifacts(folder,table());
+assert(~isempty(auditAfterRefresh) && all(auditAfterRefresh.IntegrityOk));
 
 invalid = cfg;
 [puschCfg,~] = sixgr.lls.loadConfig("configs/lls/pusch_reference.yaml");

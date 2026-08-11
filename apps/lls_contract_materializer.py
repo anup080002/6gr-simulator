@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-02-contract-v30-raster-png"
+MATERIALIZER_VERSION = "2026-08-11-contract-v31-raster-lineage"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -418,6 +418,39 @@ def manifest_logical_path() -> str:
 
 def coverage_logical_path() -> str:
     return "reports/csv/contract_materialization_coverage.csv"
+
+
+def plot_lineage_logical_path() -> str:
+    return "reports/csv/contract_plot_lineage.csv"
+
+
+def _contract_plot_lineage_row(
+    plot_id: str,
+    image_path: str,
+    source_csv_path: str,
+    image_bytes: bytes,
+    source_csv_bytes: bytes,
+) -> list[Any]:
+    """Build exact raster-to-dataset lineage for one browser contract chart."""
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        image.load()
+        width, height = image.size
+        mime_type = Image.MIME.get(image.format or "", "image/png")
+    return [
+        str(plot_id),
+        str(image_path),
+        str(source_csv_path),
+        hashlib.sha256(source_csv_bytes).hexdigest(),
+        hashlib.sha256(image_bytes).hexdigest(),
+        int(width),
+        int(height),
+        str(mime_type or "image/png"),
+        1,
+        1,
+        "apps.lls_contract_materializer",
+        "pass",
+        "",
+    ]
 
 
 def _decode_csv(data: bytes) -> tuple[list[str], list[list[str]]]:
@@ -1971,7 +2004,11 @@ def _summary_csv_rows(
 
 
 def _contract_artifact_paths() -> set[str]:
-    paths = {manifest_logical_path(), coverage_logical_path()}
+    paths = {
+        manifest_logical_path(),
+        coverage_logical_path(),
+        plot_lineage_logical_path(),
+    }
     for table_spec in _table_specs():
         target = table_contract_path(table_spec)
         if target:
@@ -1991,7 +2028,11 @@ def _artifact_is_contract_owned(
     logical_path = str(artifact.get("logical_path") or "").strip()
     if not logical_path:
         return False
-    if logical_path in {manifest_logical_path(), coverage_logical_path()}:
+    if logical_path in {
+        manifest_logical_path(),
+        coverage_logical_path(),
+        plot_lineage_logical_path(),
+    }:
         return True
     # All chart contract artifacts live in a dedicated contract__ namespace and
     # can be safely treated as materializer-owned even if their metadata is old.
@@ -5578,6 +5619,7 @@ def _runtime_resource_occupancy_chart(
     run_id: int,
 ) -> dict[str, Any] | None:
     supported = {
+        "PRB heatmap",
         "RE occupancy heatmap",
         "SSB/PBCH occupancy map",
         "DMRS/PTRS occupancy plot",
@@ -5586,7 +5628,10 @@ def _runtime_resource_occupancy_chart(
     }
     if chart_name not in supported:
         return None
-    source_path = "reports/csv/live_re_allocation_snapshot.csv"
+    if chart_name == "PRB heatmap":
+        source_path = "reports/csv/prb_allocation_heatmap.csv"
+    else:
+        source_path = "reports/csv/live_re_allocation_snapshot.csv"
     _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
     if not records:
         return None
@@ -5610,7 +5655,7 @@ def _runtime_resource_occupancy_chart(
             continue
         slot = _row_float(row, "slot", "Slot", "sfn")
         rb = _row_float(row, "rb_index", "PRBStart")
-        occupancy = _row_float(row, "occupancy_value", "count")
+        occupancy = _row_float(row, "occupancy_value", "occupancy_count", "count")
         if slot is None or rb is None or occupancy is None:
             continue
         key = (int(round(slot)), int(round(rb)))
@@ -5653,7 +5698,105 @@ def _runtime_resource_occupancy_chart(
         "image_status": "generated_specialized_runtime_heatmap_svg",
         "source_table_path": source_path,
         "source_row_count": len(grid_rows),
+        "source_mapping_status": "exact",
         "note": "No inferred allocations are added; every occupied slot/RB pair has a persisted runtime allocation row.",
+    }
+
+
+def _runtime_dl_tx_power_per_entity_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if chart_name != "DL Tx power per cell / beam / UE":
+        return None
+    power_path = "reports/csv/live_power_runtime_table.csv"
+    grant_path = "packet_flow/csv/live_dl_scheduler_grants.csv"
+    _, power_rows = _artifact_rows_by_path(
+        existing, fetch_artifact_bytes, power_path
+    )
+    _, grant_rows = _artifact_rows_by_path(
+        existing, fetch_artifact_bytes, grant_path
+    )
+    beam_by_key: dict[tuple[int, int, str], str] = {}
+    for row in grant_rows:
+        frame = _row_float(row, "Frame", "SFN")
+        slot = _row_float(row, "Slot")
+        ue_id = _row_text(row, "UEID", "UEIndex", "ue_id")
+        if frame is None or slot is None or not ue_id:
+            continue
+        beam_by_key[(int(round(frame)), int(round(slot)), ue_id)] = _row_text(
+            row, "AppliedBeamIndexSet", "BeamIndex", "SelectedBeamIndex"
+        )
+    grouped: dict[tuple[str, str, str], list[float]] = defaultdict(list)
+    for row in power_rows:
+        if _row_text(row, "direction", "Direction").upper() != "DL":
+            continue
+        if "active_tx" not in _row_text(row, "state", "State").lower():
+            continue
+        power_dbm = _row_float(row, "dl_tx_power_dbm", "DLTxPower_dBm")
+        if power_dbm is None:
+            continue
+        cell_id = _row_text(row, "cell_id", "CellID", "bs_id", "BaseStationID")
+        ue_id = _row_text(row, "ue_id", "UEID", "UEIndex")
+        frame = _row_float(row, "frame", "Frame", "sfn", "SFN")
+        slot = _row_float(row, "slot", "Slot")
+        beam = ""
+        if frame is not None and slot is not None and ue_id:
+            beam = beam_by_key.get(
+                (int(round(frame)), int(round(slot)), ue_id), ""
+            )
+        grouped[(cell_id or "unknown", beam or "not_exported", ue_id or "unknown")].append(
+            float(power_dbm)
+        )
+    if not grouped:
+        return None
+    rows_out: list[dict[str, Any]] = []
+    named_values: list[tuple[str, float]] = []
+    for index, ((cell_id, beam_id, ue_id), values) in enumerate(
+        sorted(grouped.items()), start=1
+    ):
+        mean_power_dbm = sum(values) / len(values)
+        label = f"cell={cell_id};beam={beam_id};ue={ue_id}"
+        named_values.append((label, mean_power_dbm))
+        rows_out.append({
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "x_value": index,
+            "y_value": mean_power_dbm,
+            "cell_id": cell_id,
+            "beam_id": beam_id,
+            "ue_id": ue_id,
+            "sample_count": len(values),
+            "aggregation": "arithmetic_mean_of_runtime_dl_active_tx_power_dbm",
+            "source_table_logical_path": f"{power_path}|{grant_path}",
+        })
+    dataset, summary = _bar_dataset_from_named_values(
+        "Cell / beam / UE", "Mean DL TX power (dBm)", named_values
+    )
+    dataset["tick_labels"] = [label for label, _value in named_values]
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "x_value", "y_value", "cell_id",
+                "beam_id", "ue_id", "sample_count", "aggregation",
+                "source_table_logical_path",
+            ],
+            rows_out,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "Runtime DL active-transmit power grouped by the exact cell, beam, and UE identities exported by the coupled PHY/scheduler chain.",
+            dataset,
+            summary + [f"power_source={power_path}", f"beam_source={grant_path}"],
+        ),
+        "csv_status": "specialized_runtime_dl_tx_power_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": f"{power_path}|{grant_path}",
+        "source_row_count": sum(len(values) for values in grouped.values()),
+        "source_mapping_status": "exact",
+        "note": "No configured power or beam value is substituted; absent runtime beam identity remains not_exported.",
     }
 
 
@@ -6488,6 +6631,7 @@ def _specialized_chart_materialization(
         _runtime_reference_signal_occupancy_chart,
         _runtime_papr_distribution_chart,
         _runtime_prach_operational_chart,
+        _runtime_dl_tx_power_per_entity_chart,
     ):
         runtime_chart = runtime_chart_builder(
             chart_name, existing, fetch_artifact_bytes, run_id
@@ -8808,6 +8952,7 @@ def materialize_run_contract_artifacts(
     run_folder = str(run_row.get("run_folder") or "")
     created: list[dict[str, Any]] = []
     manifest_rows: list[list[Any]] = []
+    plot_lineage_rows: list[list[Any]] = []
     feature_policy = dict(feature_policy or {})
     allow_placeholder_artifacts = _run_allows_placeholder_artifacts(run_row)
     filesystem_payloads: dict[int, bytes] = {}
@@ -9012,6 +9157,15 @@ def materialize_run_contract_artifacts(
                 continue
             target_img = chart_contract_image_path(chart_spec)
             if target_csv in existing and target_img in existing:
+                plot_lineage_rows.append(
+                    _contract_plot_lineage_row(
+                        f"contract__{chart_spec.get('section_slug') or 'section'}__{slugify(chart_name)}",
+                        target_img,
+                        target_csv,
+                        fetch_artifact_bytes(int(existing[target_img]["artifact_id"])),
+                        fetch_artifact_bytes(int(existing[target_csv]["artifact_id"])),
+                    )
+                )
                 continue
             special = _finalize_chart_materialization_result(
                 _specialized_chart_materialization(chart_name, source_lookup, fetch_artifact_bytes, run_id)
@@ -9082,6 +9236,15 @@ def materialize_run_contract_artifacts(
                 created.append({"logical_path": target_img, "artifact_id": img_artifact_id, "status": image_status})
                 manifest_rows.append([target_csv, "table_csv", csv_status, source_table_path, chart_name])
                 manifest_rows.append([target_img, image_kind, image_status, source_table_path, chart_name])
+                plot_lineage_rows.append(
+                    _contract_plot_lineage_row(
+                        f"contract__{chart_spec.get('section_slug') or 'section'}__{slugify(chart_name)}",
+                        target_img,
+                        target_csv,
+                        image_bytes,
+                        chart_csv_bytes,
+                    )
+                )
                 csv_artifact = {
                     "artifact_id": csv_artifact_id,
                     "logical_path": target_csv,
@@ -9269,6 +9432,15 @@ def materialize_run_contract_artifacts(
             created.append({"logical_path": target_img, "artifact_id": img_artifact_id, "status": image_status})
             manifest_rows.append([target_csv, "table_csv", csv_status, csv_meta.get("source_table_logical_path", ""), chart_name])
             manifest_rows.append([target_img, image_kind, image_status, img_meta.get("source_image_logical_path", "") or img_meta.get("source_table_logical_path", ""), chart_name])
+            plot_lineage_rows.append(
+                _contract_plot_lineage_row(
+                    f"contract__{chart_spec.get('section_slug') or 'section'}__{slugify(chart_name)}",
+                    target_img,
+                    target_csv,
+                    image_bytes,
+                    chart_csv_bytes,
+                )
+            )
             csv_artifact = {
                 "artifact_id": csv_artifact_id,
                 "logical_path": target_csv,
@@ -9285,6 +9457,45 @@ def materialize_run_contract_artifacts(
             existing[target_img] = img_artifact
             source_lookup[target_csv] = csv_artifact
             source_lookup[target_img] = img_artifact
+
+    lineage_header = [
+        "PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256",
+        "ImageSHA256", "Width", "Height", "MimeType", "ImageExists",
+        "SourceExists", "ProducerModule", "Status", "FailureReason",
+    ]
+    lineage_bytes = _encode_csv(lineage_header, plot_lineage_rows)
+    lineage_path = plot_lineage_logical_path()
+    lineage_meta = {
+        "materializer_version": MATERIALIZER_VERSION,
+        "materialization_status": "exact_contract_plot_lineage",
+        "plot_count": len(plot_lineage_rows),
+    }
+    _write_file_if_possible(run_folder, lineage_path, lineage_bytes)
+    lineage_artifact_id = persist_artifact(
+        lineage_path,
+        "table_csv",
+        "text/csv; charset=UTF-8",
+        lineage_bytes,
+        lineage_meta,
+    )
+    created.append({
+        "logical_path": lineage_path,
+        "artifact_id": lineage_artifact_id,
+        "status": "exact_contract_plot_lineage",
+    })
+    existing[lineage_path] = {
+        "artifact_id": lineage_artifact_id,
+        "logical_path": lineage_path,
+        "artifact_kind": "table_csv",
+        "mime_type": "text/csv; charset=UTF-8",
+    }
+    manifest_rows.append([
+        lineage_path,
+        "table_csv",
+        "exact_contract_plot_lineage",
+        "paired contract__ chart CSV datasets",
+        f"Exact source and image hashes for {len(plot_lineage_rows)} raster charts.",
+    ])
 
     manifest_header = ["logical_path", "artifact_kind", "materialization_status", "source_logical_path", "note"]
     manifest_bytes = _encode_csv(manifest_header, manifest_rows or [[manifest_logical_path(), "table_csv", "no_changes", "", "All canonical contract artifacts already existed for this run."]])

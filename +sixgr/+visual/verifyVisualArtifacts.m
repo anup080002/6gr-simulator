@@ -41,6 +41,11 @@ if ~isempty(componentRows)
     rows = [rows; componentRows(:)]; %#ok<AGROW>
     seen = [seen; componentSeen(:)]; %#ok<AGROW>
 end
+[mirrorRows, mirrorSeen] = localComponentMirrorRows(runFolder, seen);
+if ~isempty(mirrorRows)
+    rows = [rows; mirrorRows(:)]; %#ok<AGROW>
+    seen = [seen; mirrorSeen(:)]; %#ok<AGROW>
+end
 
 files = localVisualFiles(runFolder);
 for i = 1:numel(files)
@@ -153,6 +158,78 @@ for f = 1:numel(files)
         rows(end + 1, 1) = row; %#ok<AGROW>
         seen(end + 1, 1) = string(absPath); %#ok<AGROW>
     end
+end
+end
+
+function [rows, seen] = localComponentMirrorRows(runFolder, lineagedPaths)
+% Component views are byte-identical mirrors, not independently rendered
+% plots. Accept one only when its canonical image was already admitted by
+% canonical/component plot lineage and both sides match the publisher's
+% recorded hashes.
+rows = repmat(localEmptyRow(), 0, 1);
+seen = strings(0, 1);
+manifestPath = fullfile(runFolder, "reports", "csv", ...
+    "component_artifact_publication_manifest.csv");
+if exist(manifestPath, "file") ~= 2
+    return;
+end
+try
+    T = readtable(manifestPath, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+catch
+    return;
+end
+required = ["ArtifactType", "CanonicalRelativePath", ...
+    "PublishedRelativePath", "CanonicalSHA256", "PublishedSHA256", ...
+    "PublishStatus"];
+if ~all(ismember(required, string(T.Properties.VariableNames)))
+    return;
+end
+lineagedCanonical = strings(numel(lineagedPaths), 1);
+for i = 1:numel(lineagedPaths)
+    lineagedCanonical(i) = localCanonicalPath(lineagedPaths(i));
+end
+for i = 1:height(T)
+    if lower(strtrim(string(T.ArtifactType(i)))) ~= "image"
+        continue;
+    end
+    canonicalRel = replace(strtrim(string(T.CanonicalRelativePath(i))), "\", "/");
+    publishedRel = replace(strtrim(string(T.PublishedRelativePath(i))), "\", "/");
+    canonicalAbs = localCanonicalPath(fullfile(runFolder, ...
+        strrep(char(canonicalRel), "/", filesep)));
+    publishedAbs = localCanonicalPath(fullfile(runFolder, ...
+        strrep(char(publishedRel), "/", filesep)));
+    if any(strcmpi(seen, publishedAbs))
+        continue;
+    end
+    row = localBuildRow(publishedAbs, publishedRel, true);
+    row.PlotId = "component_mirror__" + string(i);
+    row.PlotRenderStatus = "published_hash_verified_mirror";
+    row.VisualValidity = "byte_identical_lineaged_component_mirror";
+    row = localApplyFileRules(row);
+    if ~any(strcmpi(lineagedCanonical, canonicalAbs))
+        row = localFail(row, "component_mirror_source_not_lineaged", ...
+            "The canonical image behind this component mirror has no accepted plot lineage.");
+    elseif exist(canonicalAbs, "file") ~= 2
+        row = localFail(row, "component_mirror_source_missing", ...
+            "The canonical image behind this component mirror is missing.");
+    else
+        canonicalHash = lower(localFileSHA256(canonicalAbs));
+        publishedHash = lower(localFileSHA256(publishedAbs));
+        expectedCanonical = lower(strtrim(string(T.CanonicalSHA256(i))));
+        expectedPublished = lower(strtrim(string(T.PublishedSHA256(i))));
+        if string(T.PublishStatus(i)) ~= "PUBLISHED_HASH_VERIFIED" || ...
+                strlength(expectedCanonical) ~= 64 || ...
+                strlength(expectedPublished) ~= 64 || ...
+                canonicalHash ~= expectedCanonical || ...
+                publishedHash ~= expectedPublished || ...
+                canonicalHash ~= publishedHash
+            row = localFail(row, "component_mirror_hash_mismatch", ...
+                "Component mirror bytes do not exactly match the lineaged canonical image and publisher hashes.");
+        end
+    end
+    rows(end + 1, 1) = row; %#ok<AGROW>
+    seen(end + 1, 1) = publishedAbs; %#ok<AGROW>
 end
 end
 

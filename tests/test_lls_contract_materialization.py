@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -13,6 +14,78 @@ REPO_ROOT = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_contract_materializer as materializer  # noqa: E402
+
+
+def test_contract_plot_lineage_binds_exact_raster_and_dataset_bytes() -> None:
+    image_buffer = io.BytesIO()
+    Image.new("RGB", (37, 23), color=(12, 34, 56)).save(
+        image_buffer, format="PNG"
+    )
+    image_bytes = image_buffer.getvalue()
+    source_bytes = b"x_value,y_value\n0,1\n1,2\n"
+    row = materializer._contract_plot_lineage_row(  # noqa: SLF001
+        "contract__test__curve",
+        "analytics/image/contract__test__curve.png",
+        "analytics/csv/contract__test__curve.csv",
+        image_bytes,
+        source_bytes,
+    )
+    assert materializer.plot_lineage_logical_path() == (
+        "reports/csv/contract_plot_lineage.csv"
+    )
+    assert row[3] == hashlib.sha256(source_bytes).hexdigest()
+    assert row[4] == hashlib.sha256(image_bytes).hexdigest()
+    assert row[5:8] == [37, 23, "image/png"]
+    assert row[8:12] == [1, 1, "apps.lls_contract_materializer", "pass"]
+
+
+def test_prb_heatmap_and_dl_power_use_explicit_runtime_mappings() -> None:
+    payloads = {
+        1: materializer._encode_csv(  # noqa: SLF001
+            ["cell_id", "slot", "rb_index", "occupancy_count"],
+            [[1, 4, 0, 2], [1, 4, 1, 2], [1, 5, 0, 1], [1, 5, 1, 1]],
+        ),
+        2: materializer._encode_csv(  # noqa: SLF001
+            ["direction", "state", "dl_tx_power_dbm", "cell_id", "ue_id", "frame", "slot"],
+            [["DL", "active_tx", 46.0, 1, 7, 0, 4]],
+        ),
+        3: materializer._encode_csv(  # noqa: SLF001
+            ["Frame", "Slot", "UEID", "AppliedBeamIndexSet"],
+            [[0, 4, 7, 3]],
+        ),
+    }
+    existing = {
+        "reports/csv/prb_allocation_heatmap.csv": {
+            "artifact_id": 1,
+            "logical_path": "reports/csv/prb_allocation_heatmap.csv",
+            "artifact_kind": "table_csv",
+        },
+        "reports/csv/live_power_runtime_table.csv": {
+            "artifact_id": 2,
+            "logical_path": "reports/csv/live_power_runtime_table.csv",
+            "artifact_kind": "table_csv",
+        },
+        "packet_flow/csv/live_dl_scheduler_grants.csv": {
+            "artifact_id": 3,
+            "logical_path": "packet_flow/csv/live_dl_scheduler_grants.csv",
+            "artifact_kind": "table_csv",
+        },
+    }
+    fetch = lambda artifact_id: payloads[int(artifact_id)]
+    heatmap = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "PRB heatmap", existing, fetch, 91
+    )
+    assert heatmap is not None
+    assert heatmap["source_mapping_status"] == "exact"
+    assert "slot,rb_index,occupancy_value" in heatmap["csv_bytes"].decode("utf-8")
+    power = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "DL Tx power per cell / beam / UE", existing, fetch, 91
+    )
+    assert power is not None
+    assert power["source_mapping_status"] == "exact"
+    power_csv = power["csv_bytes"].decode("utf-8")
+    assert "46.0,1,3,7" in power_csv
+    assert "no configured power or beam value is substituted" in power["note"].lower()
 
 
 def test_csv_decoder_accepts_runtime_ldpc_vector_larger_than_python_default() -> None:

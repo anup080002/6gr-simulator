@@ -2538,6 +2538,11 @@ try
             double(sixgr.util.structGet(artifactContractResult, "FailureCount", 0)), ...
             double(sixgr.util.structGet(artifactContractResult, "RequiredFailureCount", 0)));
     end
+    % ISAC images are rendered during the coupled PHY execution, before the
+    % global CSV provenance annotator runs.  Rebind their lineage only after
+    % all source-table annotations and artifact-contract sanitization are
+    % complete so the strict visual audit compares stable final bytes.
+    sixgr.lls.refreshISACPlotLineage(runFolder, cfg);
     localDBLog("INFO", "Exporting output-coverage and honest-unavailable artifacts.");
     outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
     reportBundle.OutputCoverageArtifacts = outputCoverage;
@@ -2555,7 +2560,9 @@ try
             double(sixgr.util.structGet(geometryScenarioAudit, "FailureCount", 0)), ...
             double(sixgr.util.structGet(geometryScenarioAudit, "WarningCount", 0)));
     end
-    localDBLog("INFO", "Materializing strict browser contract artifacts before terminal status reduction.");
+    % Browser chart production consumes the canonical coverage tables above.
+    % Every raster is paired with its exact generated chart-dataset CSV.
+    localDBLog("INFO", "Materializing strict browser contract artifacts before final visual and terminal status reduction.");
     contractMaterialization = localMaterializeBrowserContractArtifacts(runFolder);
     % Root status uses the logical run tag as RunId; retain the database
     % primary key separately so the receipt cannot conflate the two IDs.
@@ -2578,6 +2585,11 @@ try
             char(string(sixgr.util.structGet(contractMaterialization, "Identifier", "failed"))), ...
             char(string(sixgr.util.structGet(contractMaterialization, "Message", ""))));
     end
+    localDBLog("INFO", "Auditing the exact post-materialization raster tree.");
+    finalVisualAudit = sixgr.visual.finalizeRunVisualAudit(runFolder);
+    outputCoverage.VisualArtifactIntegrity = finalVisualAudit.Integrity;
+    outputCoverage.VisualArtifactAudit = finalVisualAudit.Audit;
+    reportBundle.OutputCoverageArtifacts = outputCoverage;
     scenarioStatus = localApplyRuntimeTruthContract(preTruthScenarioStatus, result, scfg, cfg, runFolder);
     scenarioStatus = localApplyVisualArtifactIntegrityStatus(scenarioStatus, ...
         sixgr.util.structGet(outputCoverage, "VisualArtifactIntegrity", table()));
@@ -2632,6 +2644,23 @@ try
             runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
         localWriteScenarioManifest(layout, manifest);
     end
+    % Component images are byte-identical mirrors. Audit them transitively
+    % through their hash-verified canonical lineage before publishing the
+    % required terminal status.
+    finalVisualAudit = sixgr.visual.finalizeRunVisualAudit(runFolder);
+    outputCoverage.VisualArtifactIntegrity = finalVisualAudit.Integrity;
+    outputCoverage.VisualArtifactAudit = finalVisualAudit.Audit;
+    reportBundle.OutputCoverageArtifacts = outputCoverage;
+    scenarioStatus = localApplyRuntimeTruthContract( ...
+        preTruthScenarioStatus, result, scfg, cfg, runFolder);
+    scenarioStatus = localApplyVisualArtifactIntegrityStatus( ...
+        scenarioStatus, finalVisualAudit.Integrity);
+    scenarioStatus = localApplyFixedSNRSweepAuditStatus( ...
+        scenarioStatus, fixedSNRSweepAudit);
+    scenarioStatus = localApplyGeometryScenarioAuditStatus( ...
+        scenarioStatus, geometryScenarioAudit);
+    scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
+        scenarioStatus, artifactContractResult);
     artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
     reportBundle.ArtifactAudit = artifactAudit;
     scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);

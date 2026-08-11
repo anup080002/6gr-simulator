@@ -114,6 +114,10 @@ localWriteScenarioManifest(layout, manifest);
 
 reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
+% The ISAC source tables have already passed through the global provenance
+% annotator in the original run.  Rebind plot lineage to those stable bytes
+% before output coverage performs its strict visual-integrity audit.
+sixgr.lls.refreshISACPlotLineage(runFolder, cfg);
 outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
 componentViewsRequiredComponents = string(scfg.get( ...
     "output.component_artifact_views.required_components", strings(0, 1)));
@@ -134,6 +138,9 @@ componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
     "Required", logical(scfg.get( ...
         "output.component_artifact_views.required", false)), ...
     "RequiredComponents", componentViewsRequiredComponents(:));
+% Keep the final verdict tied to the exact post-sanitization source bytes.
+% This is idempotent and never regenerates or substitutes a plot.
+sixgr.lls.refreshISACPlotLineage(runFolder, cfg);
 % Sanitization and component publication are mutating finalization stages.
 % Re-evaluate the exact persisted tree after both so the root verdict never
 % describes an earlier intermediate filesystem state.

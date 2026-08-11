@@ -106,6 +106,108 @@ def test_visual_artifact_audit_accepts_component_owned_lineage(tmp_path: Path) -
     )
 
 
+def test_visual_artifact_audit_accepts_only_exact_component_image_mirror(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    report_csv = run / "reports" / "csv"
+    report_image = run / "reports" / "image"
+    mirror_image = run / "channel" / "image"
+    report_csv.mkdir(parents=True)
+    report_image.mkdir(parents=True)
+    mirror_image.mkdir(parents=True)
+
+    source_path = report_csv / "metric.csv"
+    write_csv(
+        source_path,
+        ["x", "y"],
+        [{"x": 1, "y": 2}, {"x": 2, "y": 3}, {"x": 3, "y": 5}],
+    )
+    canonical_path = report_image / "metric.png"
+    canonical_path.write_bytes(PNG_BYTES)
+    mirror_path = mirror_image / "metric.png"
+    mirror_path.write_bytes(canonical_path.read_bytes())
+    image_hash = hashlib.sha256(canonical_path.read_bytes()).hexdigest()
+    write_csv(
+        report_csv / "plot_manifest.csv",
+        [
+            "PlotId",
+            "ImagePath",
+            "SourceCSV",
+            "XVariable",
+            "YVariables",
+            "PlotType",
+            "PlotRenderStatus",
+            "VisualValidity",
+        ],
+        [
+            {
+                "PlotId": "metric",
+                "ImagePath": "reports/image/metric.png",
+                "SourceCSV": "reports/csv/metric.csv",
+                "XVariable": "x",
+                "YVariables": "y",
+                "PlotType": "line",
+                "PlotRenderStatus": "rendered_real_plot",
+                "VisualValidity": "real_lls_evidence",
+            }
+        ],
+    )
+    write_csv(
+        report_csv / "component_artifact_publication_manifest.csv",
+        [
+            "Component",
+            "ArtifactType",
+            "CanonicalRelativePath",
+            "PublishedRelativePath",
+            "CanonicalSHA256",
+            "PublishedSHA256",
+            "MirrorOnly",
+            "PublishStatus",
+        ],
+        [
+            {
+                "Component": "channel",
+                "ArtifactType": "image",
+                "CanonicalRelativePath": "reports/image/metric.png",
+                "PublishedRelativePath": "channel/image/metric.png",
+                "CanonicalSHA256": image_hash,
+                "PublishedSHA256": image_hash,
+                "MirrorOnly": True,
+                "PublishStatus": "PUBLISHED_HASH_VERIFIED",
+            }
+        ],
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    with (report_csv / "visual_artifact_audit.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+    mirrors = [row for row in rows if row["artifact_kind"] == "component_mirror_plot"]
+    assert len(mirrors) == 1
+    assert mirrors[0]["audit_ok"] == "True"
+
+    mirror_path.write_bytes(PNG_BYTES + b"mutated")
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run), "--non-strict"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    codes = read_audit_codes(report_csv / "visual_artifact_audit.csv")
+    assert "component_mirror_hash_mismatch" in codes
+
+
 def test_visual_artifact_audit_supports_windows_extended_run_paths(tmp_path: Path) -> None:
     if os.name != "nt":
         return

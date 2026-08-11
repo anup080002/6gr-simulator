@@ -1400,7 +1400,10 @@ rbLen = double(selected.rb_len(:));
 frameVals = double(selected.frame(:));
 slotVals = double(selected.slot(:));
 symLen = double(selected.symbol_len(:));
-valid = isfinite(rbStart) & isfinite(rbLen) & rbLen > 0 & isfinite(frameVals) & isfinite(slotVals);
+symStart = double(selected.symbol_start(:));
+valid = isfinite(rbStart) & isfinite(rbLen) & rbLen > 0 & ...
+    isfinite(frameVals) & isfinite(slotVals) & isfinite(symStart) & ...
+    isfinite(symLen) & symLen > 0;
 if ~any(valid)
     T = table();
     return;
@@ -1410,6 +1413,7 @@ rbLen = max(1, floor(rbLen(valid)));
 frameVals = frameVals(valid);
 slotVals = slotVals(valid);
 symLen = symLen(valid);
+symStart = symStart(valid);
 rowIdx = repelem((1:numel(rbLen)).', rbLen);
 if isempty(rowIdx)
     T = table();
@@ -1426,19 +1430,17 @@ T = table( ...
     reshape(frameVals(rowIdx), [], 1), ...
     reshape(slotVals(rowIdx), [], 1), ...
     reshape(rbStart(rowIdx) + offsets, [], 1), ...
+    reshape(symStart(rowIdx), [], 1), ...
     reshape(symLen(rowIdx), [], 1), ...
     reshape(symLen(rowIdx) / max(meta.symbols_per_slot, 1), [], 1), ...
     true(nRows, 1), ...
     localStringColumn("packet_flow/csv/live_prb_allocation.csv", nRows), ...
-    'VariableNames', {'cell_id','direction','frame','slot','rb_index','occupancy_count','occupancy_fraction','selected_heatmap_flag','source_artifact_ref'});
+    'VariableNames', {'cell_id','direction','frame','slot','rb_index','symbol_start','occupancy_count','occupancy_fraction','selected_heatmap_flag','source_artifact_ref'});
 key = string(T.cell_id) + "|" + string(T.direction) + "|" + string(T.frame) + "|" + ...
     string(T.slot) + "|" + string(T.rb_index) + "|" + string(T.selected_heatmap_flag) + "|" + ...
     string(T.source_artifact_ref);
 [~, firstIdx, keyIdx] = unique(key);
-base = T(firstIdx, :);
-base.occupancy_count = accumarray(keyIdx, double(T.occupancy_count), [], @sum);
-base.occupancy_fraction = accumarray(keyIdx, double(T.occupancy_fraction), [], @sum);
-T = base;
+T = localAggregatePRBHeatmapRows(T, firstIdx, keyIdx, meta.symbols_per_slot);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildPRBAllocationHeatmapTable", ...
     "packet_flow/csv/live_prb_allocation.csv", "implemented", "derived_from_prb_rows", true, true);
 end
@@ -1528,7 +1530,10 @@ frameVals = double(selected.frame(:));
 slotVals = double(selected.slot(:));
 cellIds = double(selected.cell_id(:));
 symLen = double(selected.symbol_len(:));
-valid = isfinite(rbStart) & isfinite(rbLen) & rbLen > 0 & isfinite(frameVals) & isfinite(slotVals) & isfinite(cellIds);
+symStart = double(selected.symbol_start(:));
+valid = isfinite(rbStart) & isfinite(rbLen) & rbLen > 0 & ...
+    isfinite(frameVals) & isfinite(slotVals) & isfinite(cellIds) & ...
+    isfinite(symStart) & isfinite(symLen) & symLen > 0;
 if ~any(valid)
     T = table();
     return;
@@ -1539,6 +1544,7 @@ frameVals = frameVals(valid);
 slotVals = slotVals(valid);
 cellIds = cellIds(valid);
 symLen = symLen(valid);
+symStart = symStart(valid);
 rowIdx = repelem((1:numel(rbLen)).', rbLen);
 if isempty(rowIdx)
     T = table();
@@ -1555,18 +1561,50 @@ T = table( ...
     reshape(frameVals(rowIdx), [], 1), ...
     reshape(slotVals(rowIdx), [], 1), ...
     reshape(rbStart(rowIdx) + offsets, [], 1), ...
+    reshape(symStart(rowIdx), [], 1), ...
     reshape(symLen(rowIdx), [], 1), ...
     reshape(symLen(rowIdx) / max(meta.symbols_per_slot, 1), [], 1), ...
     localStringColumn("packet_flow/csv/live_prb_allocation.csv", nRows), ...
-    'VariableNames', {'cell_id','direction','frame','slot','rb_index','occupancy_count','occupancy_fraction','source_artifact_ref'});
+    'VariableNames', {'cell_id','direction','frame','slot','rb_index','symbol_start','occupancy_count','occupancy_fraction','source_artifact_ref'});
 key = string(T.cell_id) + "|" + string(T.direction) + "|" + string(T.frame) + "|" + string(T.slot) + "|" + string(T.rb_index);
 [~, firstIdx, keyIdx] = unique(key);
-base = T(firstIdx, :);
-base.occupancy_count = accumarray(keyIdx, double(T.occupancy_count), [], @sum);
-base.occupancy_fraction = accumarray(keyIdx, double(T.occupancy_fraction), [], @sum);
-T = base;
+T = localAggregatePRBHeatmapRows(T, firstIdx, keyIdx, meta.symbols_per_slot);
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildDirectionalGridHeatmapTable", ...
     "packet_flow/csv/live_prb_allocation.csv", "implemented", "derived_from_prb_rows", true, true);
+end
+
+function T = localAggregatePRBHeatmapRows(T, firstIdx, keyIdx, symbolsPerSlot)
+% Occupancy is a union in the time-frequency plane. Multiple MU-MIMO users
+% sharing the same PRB/symbol must increase spatial reuse, not make a
+% time-frequency occupancy fraction exceed one.
+symbolsPerSlot = max(1, round(double(symbolsPerSlot)));
+base = T(firstIdx, :);
+nGroups = height(base);
+occupiedSymbolCount = zeros(nGroups, 1);
+spatialReusePeak = zeros(nGroups, 1);
+allocationCount = zeros(nGroups, 1);
+for groupIndex = 1:nGroups
+    indices = find(keyIdx == groupIndex);
+    useCount = zeros(symbolsPerSlot, 1);
+    for rowIndex = reshape(indices, 1, [])
+        startSymbol = max(0, floor(double(T.symbol_start(rowIndex))));
+        symbolCount = max(1, floor(double(T.occupancy_count(rowIndex))));
+        firstSymbol = min(symbolsPerSlot, startSymbol + 1);
+        lastSymbol = min(symbolsPerSlot, startSymbol + symbolCount);
+        if lastSymbol >= firstSymbol
+            useCount(firstSymbol:lastSymbol) = useCount(firstSymbol:lastSymbol) + 1;
+        end
+    end
+    occupiedSymbolCount(groupIndex) = sum(useCount > 0);
+    spatialReusePeak(groupIndex) = max(useCount, [], "omitmissing");
+    allocationCount(groupIndex) = numel(indices);
+end
+base.occupancy_count = occupiedSymbolCount;
+base.occupancy_fraction = occupiedSymbolCount / symbolsPerSlot;
+base.spatial_reuse_peak = spatialReusePeak;
+base.allocation_count = allocationCount;
+base.symbol_start = [];
+T = base;
 end
 
 function T = localBuildREAllocationSnapshotTable(src, prbTable, meta, cfg)
