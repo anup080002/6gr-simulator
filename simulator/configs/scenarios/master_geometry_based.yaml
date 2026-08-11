@@ -2341,6 +2341,7 @@ sweeps_and_matrix:
   snr_sweep:
     enabled: false
     state_policy: continuous_runtime
+    initial_access_state_policy: continuous_runtime
     values_db: []
   # Geometry and mobility are sampled from the configured topology/drop
   # model. Optional Cartesian-product campaign axes are explicit but off.

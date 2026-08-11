@@ -22,9 +22,10 @@ payload = uint8(mod(0:(payloadBytes - 1), 256));
 slot16Start = sixgr.time.slotStartTimeSec(16, state.SlotDuration_s);
 slot18Start = sixgr.time.slotStartTimeSec(18, state.SlotDuration_s);
 
-bridge.encodeFragment(1, "DL", "tb-slot16", ...
+[slot16Bits, ~] = bridge.encodeFragment(1, "DL", "tb-slot16", ...
     "runtime-DL-UE-001-packet-1", payload, tbsBits, slot16Start);
-[delivered, evidence] = bridge.deliver("tb-slot16", timing.DeliveryTime_s);
+[delivered, evidence] = bridge.deliverDecoded( ...
+    "tb-slot16", slot16Bits, timing.DeliveryTime_s);
 assert(delivered && evidence.Status == "delivered_after_exact_phy_decode");
 
 % This is the production sequence that previously threw LineageViolation:

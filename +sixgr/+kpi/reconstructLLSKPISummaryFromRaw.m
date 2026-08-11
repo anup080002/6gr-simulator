@@ -247,11 +247,51 @@ if istable(macLedger) && ~isempty(macLedger)
         metrics.MAC.FailureReason = "missing_required_columns:" + missing;
     else
         success = localOptionalLogical(macLedger, "DeliverySuccess", false(height(macLedger), 1));
-        bits = localFirstNumeric(macLedger, ["PayloadBits","DeliveredBits","ApplicationPayloadBits"], NaN(height(macLedger), 1));
-        ids = string(macLedger.MACSDUId);
-        [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
-        durationSec = localPacketMeasurementWindowSec(macLedger, metrics, measurementWindowSec, warmupDurationSec);
-        metrics.MAC = localFinalizeLayerMetrics(metrics.MAC, macLedger, deliveredBits, duplicateCount, firstCount, durationSec);
+        protocolEvidenceRejected = false;
+        if strictMode && ismember("ProtocolPayloadSameWaveformTruth", ...
+                string(macLedger.Properties.VariableNames)) && ...
+                any(logical(macLedger.ProtocolPayloadSameWaveformTruth))
+            protocolRequired = ["ProtocolDecodedBitCount", ...
+                "ProtocolDecodedBitExact", "ProtocolDecodedMACSHA256", ...
+                "ProtocolDecodedRLC_SHA256", "ProtocolMACSHA256", ...
+                "ProtocolEncodedRLC_SHA256", "ProtocolMACPDUBytes"];
+            protocolMissing = localMissingPacketColumns(macLedger, protocolRequired);
+            if strlength(protocolMissing) > 0
+                metrics.MAC.Status = "schema_invalid";
+                metrics.MAC.FailureReason = ...
+                    "missing_same_waveform_decoder_columns:" + protocolMissing;
+                metrics.MAC.SchemaValid = false;
+                protocolEvidenceRejected = true;
+            else
+                bound = logical(macLedger.ProtocolPayloadSameWaveformTruth);
+                decodedExact = logical(macLedger.ProtocolDecodedBitExact);
+                decodedCount = double(macLedger.ProtocolDecodedBitCount);
+                expectedCount = 8 .* double(macLedger.ProtocolMACPDUBytes);
+                macHashExact = lower(strtrim(string( ...
+                    macLedger.ProtocolDecodedMACSHA256))) == lower(strtrim(string( ...
+                    macLedger.ProtocolMACSHA256)));
+                rlcHashExact = lower(strtrim(string( ...
+                    macLedger.ProtocolDecodedRLC_SHA256))) == lower(strtrim(string( ...
+                    macLedger.ProtocolEncodedRLC_SHA256)));
+                invalidDelivered = success & (~bound | ~decodedExact | ...
+                    ~isfinite(decodedCount) | decodedCount ~= expectedCount | ...
+                    ~macHashExact | ~rlcHashExact);
+                if any(invalidDelivered)
+                    metrics.MAC.Status = "schema_invalid";
+                    metrics.MAC.FailureReason = ...
+                        "delivered_mac_sdu_not_backed_by_exact_phy_decoder_bytes";
+                    metrics.MAC.SchemaValid = false;
+                    protocolEvidenceRejected = true;
+                end
+            end
+        end
+        if ~protocolEvidenceRejected
+            bits = localFirstNumeric(macLedger, ["PayloadBits","DeliveredBits","ApplicationPayloadBits"], NaN(height(macLedger), 1));
+            ids = string(macLedger.MACSDUId);
+            [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
+            durationSec = localPacketMeasurementWindowSec(macLedger, metrics, measurementWindowSec, warmupDurationSec);
+            metrics.MAC = localFinalizeLayerMetrics(metrics.MAC, macLedger, deliveredBits, duplicateCount, firstCount, durationSec);
+        end
     end
 end
 

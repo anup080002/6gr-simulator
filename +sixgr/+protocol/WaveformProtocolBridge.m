@@ -83,10 +83,12 @@ classdef WaveformProtocolBridge < handle
             evidence = localEvidence(pdu, payload, mac.PaddingBytes);
         end
 
-        function [delivered, evidence] = deliver(obj, transportBlockId, eventTime)
+        function [delivered, evidence] = deliverDecoded(obj, transportBlockId, ...
+                decodedTransportBlockBits, eventTime)
             arguments
                 obj
                 transportBlockId (1,1) string
+                decodedTransportBlockBits
                 eventTime (1,1) double {mustBeNonnegative}
             end
             obj.requireEnabled();
@@ -102,11 +104,38 @@ classdef WaveformProtocolBridge < handle
                     "Decoded transport block %s has no protocol-PDU binding.", transportBlockId);
             end
             pdu = obj.Pending(key);
+            decodedMACBytes = localBitsToBytes(decodedTransportBlockBits, ...
+                double(pdu.TransportBlockBits));
+            decodedMACSHA256 = sixgr.l2.mac.MACHash.of(decodedMACBytes);
+            if decodedMACSHA256 ~= string(pdu.MACSHA256)
+                error("sixgr:protocol:DecodedTransportBlockMismatch", ...
+                    ["The decoder output for transport block %s does not match " + ...
+                     "the MAC PDU that entered the waveform chain."], transportBlockId);
+            end
+            demux = sixgr.l2.mac.MACPDUDemultiplexer.decode( ...
+                string(pdu.Direction), decodedMACBytes);
+            if numel(demux.SubPDUs) ~= 1 || demux.SubPDUs(1).LCID ~= pdu.LCID
+                error("sixgr:protocol:DecodedTransportBlockMismatch", ...
+                    "Decoded transport block %s does not contain the expected MAC SDU.", ...
+                    transportBlockId);
+            end
+            decodedRLCBytes = uint8(demux.SubPDUs(1).Payload);
+            decodedRLC_SHA256 = sixgr.protocol.ProtocolHash.bytes(decodedRLCBytes);
+            if decodedRLC_SHA256 ~= string(pdu.EncodedSHA256)
+                error("sixgr:protocol:DecodedTransportBlockMismatch", ...
+                    "Decoded RLC PDU for transport block %s differs from the transmitted PDU.", ...
+                    transportBlockId);
+            end
+            recoveredPDU = pdu;
+            recoveredPDU.MACBytes = decodedMACBytes;
+            recoveredPDU.Bytes = decodedRLCBytes;
             % ProtocolRuntime owns both Tx and Rx state for one bearer.  The
             % same bearer instance is required so delivery closes the exact
-            % lineage node created during transmit.
+            % lineage node created during transmit.  Crucially, the bytes
+            % passed to its receive side are reconstructed from the actual
+            % PHY decoder output above, never from the pending Tx copy.
             rx = obj.runtime(localUEIndex(pdu), string(pdu.Direction), "TX");
-            delivered = rx.receive(pdu, eventTime);
+            delivered = rx.receive(recoveredPDU, eventTime);
             if delivered
                 obj.Delivered(key) = true;
             end
@@ -115,8 +144,13 @@ classdef WaveformProtocolBridge < handle
                 "ProtocolFragmentId", string(pdu.ProtocolFragmentId), ...
                 "PacketId", string(pdu.PacketID), ...
                 "MACSHA256", string(pdu.MACSHA256), ...
+                "DecodedMACSHA256", string(decodedMACSHA256), ...
                 "EncodedRLC_SHA256", string(pdu.EncodedSHA256), ...
-                "PayloadSHA256", string(pdu.PacketSHA256));
+                "DecodedRLC_SHA256", string(decodedRLC_SHA256), ...
+                "PayloadSHA256", string(pdu.PacketSHA256), ...
+                "DecodedBitCount", double(numel(decodedTransportBlockBits)), ...
+                "DecodedBitExact", true, ...
+                "EvidenceSource", "actual_phy_decoder_bits_demuxed_through_strict_mac_rlc_pdcp_sdap");
         end
 
         function bytes = maximumPayloadBytes(obj, tbsBits)
@@ -259,6 +293,23 @@ for bitIndex = 1:8
     matrix(:,bitIndex) = logical(bitget(bytes, 9 - bitIndex));
 end
 bits = int8(reshape(matrix.', [], 1));
+end
+
+function bytes = localBitsToBytes(bits, expectedBitCount)
+bits = double(bits(:));
+if numel(bits) ~= expectedBitCount
+    error("sixgr:protocol:DecodedTransportBlockLengthMismatch", ...
+        "PHY decoder returned %d bits for a %d-bit protocol transport block.", ...
+        numel(bits), expectedBitCount);
+end
+if mod(numel(bits), 8) ~= 0 || any(~isfinite(bits)) || ...
+        any(bits ~= 0 & bits ~= 1)
+    error("sixgr:protocol:InvalidDecodedTransportBlockBits", ...
+        "Decoded protocol transport-block data must be a byte-aligned binary vector.");
+end
+weights = 2.^(7:-1:0);
+bytes = uint8(reshape(bits, 8, []).' * weights.');
+bytes = bytes(:).';
 end
 
 function evidence = localEvidence(pdu, payload, paddingBytes)

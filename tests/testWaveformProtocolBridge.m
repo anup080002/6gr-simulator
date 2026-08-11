@@ -15,15 +15,31 @@ assert(evidence.PayloadBits == payloadBytes * 8);
 assert(evidence.MACPDUBytes == tbsBits / 8);
 assert(evidence.SameWaveformPayloadTruth);
 assert(strlength(evidence.PayloadSHA256) == 64 && strlength(evidence.MACSHA256) == 64);
-[delivered, deliveryEvidence] = bridge.deliver("tb-dl-1", 0.002);
+[delivered, deliveryEvidence] = bridge.deliverDecoded("tb-dl-1", bits, 0.002);
 assert(delivered && deliveryEvidence.Status == "delivered_after_exact_phy_decode");
-[duplicate, duplicateEvidence] = bridge.deliver("tb-dl-1", 0.003);
+assert(deliveryEvidence.DecodedBitExact && ...
+    deliveryEvidence.DecodedMACSHA256 == evidence.MACSHA256 && ...
+    deliveryEvidence.DecodedRLC_SHA256 == evidence.EncodedRLC_SHA256);
+[duplicate, duplicateEvidence] = bridge.deliverDecoded("tb-dl-1", bits, 0.003);
 assert(~duplicate && duplicateEvidence.Status == "duplicate_harq_delivery_rejected");
+
+[corruptBits, ~] = bridge.encodeFragment(1, "DL", "tb-dl-corrupt", ...
+    "flow-DL-UE-001-fragment-corrupt", payload, tbsBits, 0.004);
+corruptBits(1) = 1 - corruptBits(1);
+didThrow = false;
+try
+    bridge.deliverDecoded("tb-dl-corrupt", corruptBits, 0.005);
+catch ME
+    didThrow = strcmp(ME.identifier, ...
+        "sixgr:protocol:DecodedTransportBlockMismatch");
+end
+assert(didThrow, ...
+    "A CRC-pass claim with altered decoder bytes must fail closed.");
 
 didThrow = false;
 try
     bridge.encodeFragment(1, "UL", "tb-bad", ...
-        "flow-UL-UE-001-fragment-1", uint8(1), 1001, 0.004);
+        "flow-UL-UE-001-fragment-1", uint8(1), 1001, 0.006);
 catch ME
     didThrow = strcmp(ME.identifier, "sixgr:protocol:NonByteAlignedTransportBlock");
 end
