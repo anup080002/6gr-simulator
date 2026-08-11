@@ -206,6 +206,10 @@ if ~(isscalar(publicationPFA) && isfinite(publicationPFA) && ...
     error("sixgr:isac:InvalidPublicationPFA", ...
         "metrics.publicationPFA must lie strictly in (0,1).");
 end
+if abs(pfa-publicationPFA)>eps(max(abs([pfa publicationPFA])))
+    error("sixgr:isac:DetectionPublicationPFAMismatch", ...
+        "detection.probabilityFalseAlarm must equal metrics.publicationPFA for a publication-targeted campaign.");
+end
 localInteger(cfg.metrics,"minimumExpectedFalseAlarmsForQualification",1,1000);
 localInteger(cfg.assistance,"searchFFTLength",16,1048576);
 localInteger(cfg.beamManagement,"arrayElements",2,4096);

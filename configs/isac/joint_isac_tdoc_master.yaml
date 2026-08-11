@@ -395,7 +395,7 @@ metrics:
   requested: [papr, cubic_metric, ambiguity, pslr, islr, main_lobe_width, cross_ambiguity, psd, aclr, oobe, range_rmse, doppler_rmse, angle_rmse, pd, pfa, wrong_peak, isi, ici, self_interference, intercell_interference, evm, bler, throughput, complexity, overhead1, overhead2]
 
 detection:
-  probabilityFalseAlarm: 0.01
+  probabilityFalseAlarm: 0.001
   delayToleranceBins: 2
 
 output:
