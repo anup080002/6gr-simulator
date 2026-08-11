@@ -79,6 +79,15 @@ classdef ContractArtifactGenerator
                     fullfile(auditDir, "artifact_generation_failures.csv"));
             end
 
+            % Visual integrity is evaluated recursively across the run.  The
+            % component tree therefore owns an exact source/image lineage
+            % table for every generated raster; hashes bind the renderer
+            % output to the validated CSV bytes used in this same attempt.
+            plotLineage = localBuildContractPlotLineage( ...
+                catalog, audit, options.PublishRoot);
+            localAtomicWriteTable(fullfile(stageComponents, ...
+                "contract_plot_lineage.csv"), plotLineage);
+
             publishedRoot = fullfile(runFolder, options.PublishRoot);
             localPublishComponents(stageComponents, publishedRoot, runFolder);
             manifest = localBuildCanonicalManifest(audit, options.PublishRoot);
@@ -100,6 +109,85 @@ classdef ContractArtifactGenerator
             result.Summary = summary;
         end
     end
+end
+
+function T = localBuildContractPlotLineage(catalog, audit, publishRoot)
+pngAudit = audit(audit.ArtifactType == "PNG" & audit.Status == "PASS", :);
+rows = repmat(localEmptyPlotLineageRow(), height(pngAudit), 1);
+for index = 1:height(pngAudit)
+    contractIndex = find(catalog.ContractID == pngAudit.ContractID(index), 1, "first");
+    if isempty(contractIndex)
+        error("sixgr:artifact:PlotLineageContractMissing", ...
+            "Cannot resolve the PNG contract for %s.", pngAudit.ContractID(index));
+    end
+    contract = catalog(contractIndex, :);
+    sourceNames = localSplitList(contract.SourceCSV);
+    sourcePaths = strings(numel(sourceNames), 1);
+    sourceHashes = strings(numel(sourceNames), 1);
+    for sourceIndex = 1:numel(sourceNames)
+        [~, leaf, extension] = fileparts(char(sourceNames(sourceIndex)));
+        fileName = string(leaf) + string(extension);
+        csvMatch = catalog.Domain == contract.Domain & ...
+            catalog.Profile == contract.Profile & ...
+            catalog.ArtifactType == "CSV" & ...
+            catalog.FileName == fileName;
+        if nnz(csvMatch) ~= 1
+            error("sixgr:artifact:PlotLineageSourceContractMissing", ...
+                "PNG %s requires exactly one CSV contract for %s.", ...
+                contract.FileName, fileName);
+        end
+        csvContract = catalog(find(csvMatch, 1, "first"), :);
+        csvAuditMatch = audit.ContractID == csvContract.ContractID & ...
+            audit.Status == "PASS";
+        if nnz(csvAuditMatch) ~= 1
+            error("sixgr:artifact:PlotLineageSourceAuditMissing", ...
+                "PNG %s has no successful CSV audit for %s.", ...
+                contract.FileName, fileName);
+        end
+        csvAudit = audit(find(csvAuditMatch, 1, "first"), :);
+        sourcePaths(sourceIndex) = localPortableRelativePath(fullfile( ...
+            publishRoot, csvContract.OutputRelativePath));
+        sourceHashes(sourceIndex) = lower(string(csvAudit.SHA256));
+    end
+    rows(index) = struct( ...
+        "PlotId", "artifact_contract__" + localSafePlotId(contract.ContractID), ...
+        "ImagePath", localPortableRelativePath(fullfile( ...
+        publishRoot, pngAudit.OutputRelativePath(index))), ...
+        "SourceCSV", strjoin(sourcePaths, "|"), ...
+        "SourceCSV_SHA256", strjoin(sourceHashes, "|"), ...
+        "ImageSHA256", lower(string(pngAudit.SHA256(index))), ...
+        "Status", "PASS", ...
+        "Producer", string(pngAudit.Producer(index)), ...
+        "SourceRows", double(pngAudit.SourceRows(index)));
+end
+if isempty(rows)
+    T = struct2table(localEmptyPlotLineageRow());
+    T(1, :) = [];
+else
+    T = struct2table(rows, "AsArray", true);
+    T = sortrows(T, "ImagePath");
+end
+end
+
+function value = localSafePlotId(value)
+value = lower(regexprep(string(value), '[^a-zA-Z0-9]+', '_'));
+value = regexprep(value, '^_+|_+$', '');
+end
+
+function value = localPortableRelativePath(value)
+value = replace(string(value), "\", "/");
+end
+
+function row = localEmptyPlotLineageRow()
+row = struct( ...
+    "PlotId", "", ...
+    "ImagePath", "", ...
+    "SourceCSV", "", ...
+    "SourceCSV_SHA256", "", ...
+    "ImageSHA256", "", ...
+    "Status", "", ...
+    "Producer", "", ...
+    "SourceRows", 0);
 end
 
 function options = localParseOptions(varargin)

@@ -188,6 +188,12 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "regression_candidate_view": ["reports/csv/per_scenario_summary_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
     "regression_delta_view": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
     "change_impact_analytics": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/per_measured_sinr_comparison_tables.csv"],
+    "sensing_analytics": [
+        "isac/csv/isac_runtime_evidence.csv",
+        "isac/csv/isac_detections.csv",
+        "isac/csv/isac_target_truth.csv",
+        "isac/csv/isac_cfar_thresholds.csv",
+    ],
 }
 
 
@@ -317,6 +323,12 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
     "block execution time": ["system/csv/system_algo_processing.csv", "reports/csv/complexity_implementation_outputs.csv"],
     "CSV vs DB consistency": ["reports/csv/browser_runtime_db_consistency.csv", "reports/csv/persistence_audit_table.csv"],
     "KPI delta tables": ["reports/csv/baseline_candidate_delta_tables.csv", "reports/csv/compare_run_prerequisites.csv"],
+    "sensing P_D / P_FA": [
+        "isac/csv/isac_runtime_evidence.csv",
+        "isac/csv/isac_detections.csv",
+        "isac/csv/isac_target_truth.csv",
+        "isac/csv/isac_cfar_thresholds.csv",
+    ],
 }
 
 

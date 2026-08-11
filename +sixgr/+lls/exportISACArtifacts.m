@@ -58,6 +58,10 @@ end
 if ~generatePlots || ~saveRaster
     return;
 end
+if ~saveCSV
+    error("sixgr:isac:RasterRequiresCSVLineage", ...
+        "ISAC raster publication requires saveCSV=true so every image has exact runtime source lineage.");
+end
 sixgr.util.ensureFolder(char(imageDir));
 
 scenarioPath = localRasterPath(imageDir,"isac_scenario_geometry",imageFormat);
@@ -143,6 +147,82 @@ title('Measured ISAC range-Doppler response'); legend('Location','best');
 localStyle(gca);
 exportgraphics(fig,dopplerPath,"Resolution",resolutionDPI);
 plotPaths(end+1,1) = string(dopplerPath);
+close(fig); clear cleanup;
+
+localWriteISACPlotLineage(runFolder,csvDir, ...
+    [string(scenarioPath);string(profilePath);string(anglePath);string(dopplerPath)]);
+end
+
+function localWriteISACPlotLineage(runFolder,csvDir,imagePaths)
+plotIds = ["isac_scenario_geometry";"isac_range_profile"; ...
+    "isac_range_angle_map";"isac_range_doppler_map"];
+sourceNames = { ...
+    ["isac_config_resolved.csv";"isac_target_truth.csv";"isac_runtime_evidence.csv"], ...
+    ["isac_range_profile.csv";"isac_target_truth.csv"], ...
+    ["isac_range_angle_map.csv";"isac_detections.csv";"isac_target_truth.csv"], ...
+    ["isac_range_doppler_map.csv";"isac_target_truth.csv"]};
+rows = repmat(localEmptyLineageRow(),numel(plotIds),1);
+for index = 1:numel(plotIds)
+    names = sourceNames{index};
+    paths = strings(numel(names),1);
+    hashes = strings(numel(names),1);
+    for sourceIndex = 1:numel(names)
+        sourcePath = fullfile(csvDir,char(names(sourceIndex)));
+        if ~isfile(sourcePath)
+            error("sixgr:isac:PlotLineageSourceMissing", ...
+                "ISAC image %s is missing runtime source CSV %s.", ...
+                plotIds(index),sourcePath);
+        end
+        paths(sourceIndex) = localRelativePath(runFolder,sourcePath);
+        hashes(sourceIndex) = localFileSHA256(sourcePath);
+    end
+    rows(index) = struct( ...
+        "PlotId",plotIds(index), ...
+        "ImagePath",localRelativePath(runFolder,imagePaths(index)), ...
+        "SourceCSV",strjoin(paths,"|"), ...
+        "SourceCSV_SHA256",strjoin(hashes,"|"), ...
+        "ImageSHA256",localFileSHA256(imagePaths(index)), ...
+        "Status","PASS", ...
+        "LineageStatus","rendered_component_plot");
+end
+sixgr.util.csvWriteTable(fullfile(csvDir,"isac_plot_lineage.csv"), ...
+    struct2table(rows,"AsArray",true));
+end
+
+function row = localEmptyLineageRow()
+row = struct( ...
+    "PlotId","", ...
+    "ImagePath","", ...
+    "SourceCSV","", ...
+    "SourceCSV_SHA256","", ...
+    "ImageSHA256","", ...
+    "Status","", ...
+    "LineageStatus","");
+end
+
+function pathValue = localRelativePath(root,pathValue)
+root = string(java.io.File(char(string(root))).getCanonicalPath());
+pathValue = string(java.io.File(char(string(pathValue))).getCanonicalPath());
+prefix = root + string(filesep);
+if pathValue == root
+    pathValue = ".";
+elseif startsWith(pathValue,prefix,"IgnoreCase",ispc)
+    pathValue = extractAfter(pathValue,strlength(prefix));
+else
+    error("sixgr:isac:PlotLineagePathEscape", ...
+        "ISAC plot lineage path escapes the run folder: %s",pathValue);
+end
+pathValue = replace(pathValue,"\","/");
+end
+
+function hash = localFileSHA256(pathValue)
+fid = fopen(pathValue,"rb");
+if fid < 0
+    error("sixgr:isac:PlotLineageFileUnreadable", ...
+        "Cannot read ISAC plot-lineage artifact: %s",pathValue);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+hash = string(sixgr.util.sha256Hex(fread(fid,Inf,"*uint8")));
 end
 
 function localStyle(axisHandle)

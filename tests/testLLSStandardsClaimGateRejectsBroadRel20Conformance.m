@@ -25,5 +25,23 @@ studyStatus = readtable(fullfile(studyCtx.Layout.ReportCSVDir, "result_status_su
 assert(logical(studyStatus.ClaimAllowed(1)), "Honest rel20_study_context label must not be rejected as broad conformance.");
 assert(string(studyStatus.ClaimProfile(1)) == "rel20_study_context", "Honest study fixture must keep the explicit claim profile.");
 
+disclaimerCtx = llsRootGateFixture("explicit_nonconformance_disclaimer");
+sixgr.truth.evaluateLLSRuntimeTruthContract(disclaimerCtx.RunFolder, ...
+    disclaimerCtx.ScenarioConfig, disclaimerCtx.InternalConfig);
+disclaimerStatus = readtable(fullfile(disclaimerCtx.Layout.ReportCSVDir, ...
+    "result_status_summary.csv"), "VariableNamingRule", "preserve");
+assert(logical(disclaimerStatus.ClaimAllowed(1)), ...
+    "An explicit non-conformance disclaimer must not be inverted into a broad standards claim.");
+assert(string(disclaimerStatus.ClaimProfile(1)) == "experimental_6g_study", ...
+    "A disclaimed 6G study must retain the experimental study profile.");
+
+mixedCtx = llsRootGateFixture("disclaimer_with_separate_broad_claim");
+sixgr.truth.evaluateLLSRuntimeTruthContract(mixedCtx.RunFolder, ...
+    mixedCtx.ScenarioConfig, mixedCtx.InternalConfig);
+mixedStatus = readtable(fullfile(mixedCtx.Layout.ReportCSVDir, ...
+    "result_status_summary.csv"), "VariableNamingRule", "preserve");
+assert(~logical(mixedStatus.ClaimAllowed(1)), ...
+    "A disclaimer must not hide a separate affirmative full-conformance claim.");
+
 ok = true;
 end

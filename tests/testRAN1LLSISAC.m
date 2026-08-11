@@ -42,9 +42,14 @@ cleanup = onCleanup(@() localRemoveTree(folder)); %#ok<NASGU>
 paths = sixgr.lls.exportISACArtifacts(folder,testCfg, ...
     struct("ISAC",sensing),true);
 assert(numel(paths) == 4);
-assert(numel(dir(fullfile(folder,"isac_*.csv"))) == 8);
+assert(numel(dir(fullfile(folder,"isac_*.csv"))) == 9);
 assert(numel(dir(fullfile(folder,"isac_*.png"))) == 4);
 assert(isempty(dir(fullfile(folder,"*.svg"))));
+lineage = readtable(fullfile(folder,"isac_plot_lineage.csv"), ...
+    "TextType","string","VariableNamingRule","preserve");
+assert(height(lineage) == 4 && all(lineage.Status == "PASS"));
+assert(all(strlength(lineage.SourceCSV_SHA256) >= 64) && ...
+    all(strlength(lineage.ImageSHA256) == 64));
 
 % Full-stack scenarios own node positions through runtime topology rather
 % than duplicating them under isac.scene.  Artifact publication must use
@@ -56,7 +61,7 @@ structuredCfg.isac.output.structuredComponentFolders = true;
 structuredPaths = sixgr.lls.exportISACArtifacts(folder,structuredCfg, ...
     struct("ISAC",sensing),true,struct("StructuredComponentFolders",true));
 assert(numel(structuredPaths) == 4);
-assert(numel(dir(fullfile(folder,"isac","csv","*.csv"))) == 8);
+assert(numel(dir(fullfile(folder,"isac","csv","*.csv"))) == 9);
 assert(numel(dir(fullfile(folder,"isac","image","*.png"))) == 4);
 for csvFile = dir(fullfile(folder,"isac","csv","*.csv")).'
     fid = fopen(fullfile(csvFile.folder,csvFile.name),'r');

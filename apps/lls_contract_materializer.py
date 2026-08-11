@@ -40,6 +40,24 @@ OPTIONAL_6G_POLICY_KEYS = (
     "cell_free_enabled",
     "sub_thz_enabled",
 )
+OPTIONAL_6G_TABLE_POLICY = {
+    "ai_inference_analytics": "ai_enabled",
+    "sensing_analytics": "sensing_enabled",
+    "localization_analytics": "localization_enabled",
+    "ntn_haps_uav_analytics": "ntn_enabled",
+    "ris_analytics": "ris_enabled",
+    "cell_free_mimo_analytics": "cell_free_enabled",
+    "sub_thz_impairment_analytics": "sub_thz_enabled",
+}
+OPTIONAL_6G_CHART_POLICY = {
+    "ai inference confidence / latency": "ai_enabled",
+    "sensing p_d / p_fa": "sensing_enabled",
+    "localization rmse": "localization_enabled",
+    "ntn/haps/uav delay and doppler": "ntn_enabled",
+    "ris state summaries": "ris_enabled",
+    "cell-free / distributed mimo combining gains": "cell_free_enabled",
+    "sub-thz impairment studies": "sub_thz_enabled",
+}
 EXACT_CHART_FAMILY_CONTRACTS: dict[str, dict[str, Any]] = {
     "heatmap": {
         "source_table": "explicit_direct_alias_only",
@@ -119,8 +137,11 @@ def contract_artifact_is_policy_filtered(
     name = str(contract_name or "").strip().lower()
     identity = f"{path}|{name}"
 
-    if name in {item.lower() for item in OPTIONAL_6G_TABLES | OPTIONAL_6G_CHARTS}:
-        return not optional_6g_features_enabled(policy)
+    feature_key = OPTIONAL_6G_TABLE_POLICY.get(name)
+    if feature_key is None:
+        feature_key = OPTIONAL_6G_CHART_POLICY.get(name)
+    if feature_key is not None:
+        return not bool(policy.get(feature_key, False))
 
     if not bool(policy.get("fixed_link_campaign_enabled", False)) and name in {
         "fixed_snr_sweep_audit",
@@ -2284,6 +2305,9 @@ def _is_absence_placeholder_rows(rows: list[dict[str, str]]) -> bool:
     source_artifact = _row_text(rows[0], "source_artifact").lower()
     if source_artifact == "not_published_by_runtime":
         return True
+    truth_status = _row_text(rows[0], "truth_status", "value_status").lower()
+    if truth_status in {"not_available", "unavailable", "not_emitted"}:
+        return True
     return False
 
 
@@ -3724,7 +3748,10 @@ def _prach_peak_chart_materialization(
         if slot is None:
             slot = float(idx)
         peak_value = _row_float(row, "correlation_abs", "PeakValue", "peak_value", "DetectionMetric", "detection_metric")
-        noise_floor = _row_float(row, "noise_floor", "NoiseFloor", "NoiseVariance", "noise_variance")
+        noise_floor = _row_float(
+            row, "noise_floor", "NoiseFloor", "PDPAverageNoiseFloor",
+            "DetectorNoiseFloor", "NoiseVariance", "noise_variance",
+        )
         metric = noise_floor if "noise floor" in chart_key else peak_value
         if metric is None or not math.isfinite(float(metric)):
             continue
@@ -6024,6 +6051,427 @@ def _runtime_cfo_tracking_chart(
     }
 
 
+def _runtime_reference_signal_occupancy_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if str(chart_name or "").lower() not in {
+        "dmrs/ptrs occupancy plot", "dmrs/ptrs occupancy map"
+    }:
+        return None
+    sources = _all_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"],
+    )
+    csv_rows: list[dict[str, Any]] = []
+    totals: Counter[str] = Counter()
+    for source_path, rows in sources:
+        direction_default = "DL" if "dl_pdsch" in source_path else "UL"
+        for index, row in enumerate(rows, start=1):
+            dmrs = _row_float(row, "DMRSRECount", "MeasuredDMRSRECount")
+            ptrs = _row_float(row, "PTRSRECount")
+            data = _row_float(row, "DataRECount", "TotalDataRECount")
+            if dmrs is None and ptrs is None:
+                continue
+            direction = _row_text(row, "Direction").upper() or direction_default
+            dmrs_value = float(dmrs or 0.0)
+            ptrs_value = float(ptrs or 0.0)
+            totals[f"{direction} DM-RS"] += dmrs_value
+            totals[f"{direction} PT-RS"] += ptrs_value
+            csv_rows.append({
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "direction": direction,
+                "trial_index": index,
+                "frame": _row_text(row, "Frame"),
+                "slot": _row_text(row, "Slot"),
+                "dmrs_re_count": dmrs_value,
+                "ptrs_re_count": ptrs_value,
+                "data_re_count": "" if data is None else float(data),
+                "ptrs_configured_enabled": _row_text(row, "PTRSConfiguredEnabled"),
+                "source_table_logical_path": source_path,
+            })
+    if not csv_rows:
+        return None
+    named_values = [(name, float(value)) for name, value in sorted(totals.items())]
+    dataset, labels = _bar_dataset_from_named_values(
+        "Direction/reference-signal bucket", "Occupied RE count", named_values
+    )
+    dataset["tick_labels"] = [name for name, _value in named_values]
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "direction", "trial_index", "frame",
+                "slot", "dmrs_re_count", "ptrs_re_count", "data_re_count",
+                "ptrs_configured_enabled", "source_table_logical_path",
+            ],
+            csv_rows,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "Measured DM-RS/PT-RS resource occupancy from executed PDSCH/PUSCH trials.",
+            dataset,
+            labels + [f"runtime_trials={len(csv_rows)}"],
+        ),
+        "csv_status": "specialized_runtime_rs_occupancy_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": "|".join(path for path, _rows in sources),
+        "source_row_count": len(csv_rows),
+        "source_mapping_status": "exact",
+        "note": "Occupancy uses measured DMRSRECount/PTRSRECount fields from the executed waveform chain.",
+    }
+
+
+def _runtime_papr_distribution_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    if str(chart_name or "").lower() != "papr histogram / cdf":
+        return None
+    sources = _all_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"],
+    )
+    values: list[float] = []
+    rows_out: list[dict[str, Any]] = []
+    for source_path, rows in sources:
+        for index, row in enumerate(rows, start=1):
+            value = _row_float(row, "PAPR_dB")
+            if value is None or not math.isfinite(float(value)):
+                continue
+            values.append(float(value))
+            rows_out.append({
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "trial_index": index,
+                "direction": _row_text(row, "Direction"),
+                "frame": _row_text(row, "Frame"),
+                "slot": _row_text(row, "Slot"),
+                "papr_db": float(value),
+                "source_table_logical_path": source_path,
+            })
+    if not values:
+        return None
+    points = _histogram_points(values, min(18, max(2, len(values))))
+    dataset = {"mode": "bar", "x_label": "PAPR (dB)", "y_label": "Trial count", "points": points}
+    summary = [
+        f"runtime_trials={len(values)}",
+        f"min_papr_db={min(values):.6g}",
+        f"mean_papr_db={sum(values)/len(values):.6g}",
+        f"max_papr_db={max(values):.6g}",
+    ]
+    return {
+        "csv_bytes": _encode_dict_rows(
+            ["run_id", "chart_name", "trial_index", "direction", "frame", "slot", "papr_db", "source_table_logical_path"],
+            rows_out,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "PAPR distribution from the actual executed PDSCH/PUSCH waveform trials.",
+            dataset,
+            summary,
+        ),
+        "csv_status": "specialized_runtime_papr_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": "|".join(path for path, _rows in sources),
+        "source_row_count": len(values),
+        "source_mapping_status": "exact",
+        "note": "PAPR distribution uses only finite PAPR_dB fields from executed waveform trials.",
+    }
+
+
+def _runtime_prach_operational_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    chart_key = str(chart_name or "").strip().lower()
+    handled = {
+        "prach occasion timeline", "ta estimate timeline", "preamble usage chart",
+        "ta estimate trend", "access attempt/success timeline",
+        "timing offset true vs estimated vs residual", "prach opportunity map",
+        "access latency", "retry count distribution", "timing advance distribution",
+        "preamble/root/cyclic-shift usage summary",
+    }
+    if chart_key not in handled:
+        return None
+    source_path, records = _first_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        [
+            "air_interface/csv/prach_trials.csv",
+            "control/csv/prach_trials.csv",
+            "components/prach/csv/prach_detection_trials.csv",
+        ],
+    )
+    if not records:
+        return None
+    out_rows: list[dict[str, Any]] = []
+    for index, row in enumerate(records, start=1):
+        occasion_frame = _row_float(row, "PRACHOccasionFrame", "SFN")
+        occasion_slot = _row_float(row, "PRACHOccasionSlot", "Slot")
+        occasion_symbol = _row_float(row, "PRACHOccasionSymbol")
+        occasion_frequency = _row_float(row, "PRACHFrequencyIndex")
+        attempt = _row_float(row, "PreambleAttemptNumber", "RAAttemptId")
+        success_flag = _row_flag(row, "RACompleted", "PreambleDetected", "Detected", "DecodeSuccess")
+        true_timing = _row_float(row, "PRACHTrueTimingOffset_samples", "TrueTimingOffset_samples")
+        estimate = _row_float(row, "PRACHRawTimingEstimate_samples", "TimingEstimate_samples", "TimingEstimate_samples")
+        timing_error = _row_float(row, "PRACHTimingError_samples", "TimingError_samples")
+        setup_slot = _row_float(row, "SetupCompleteScheduledSlot")
+        latency_slots = None
+        if setup_slot is not None and occasion_slot is not None:
+            latency_slots = float(setup_slot) - float(occasion_slot)
+        out_rows.append({
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "observation_index": index,
+            "ue_id": _row_text(row, "RAUEId", "UEIndex", "UEId"),
+            "occasion_id": _row_text(row, "PRACHOccasionID", "OccasionID"),
+            "occasion_frame": "" if occasion_frame is None else float(occasion_frame),
+            "occasion_slot": "" if occasion_slot is None else float(occasion_slot),
+            "occasion_symbol": "" if occasion_symbol is None else float(occasion_symbol),
+            "occasion_frequency_index": "" if occasion_frequency is None else float(occasion_frequency),
+            "preamble_index_tx": _row_text(row, "PreambleIndexTx", "PreambleIndex"),
+            "preamble_index_detected": _row_text(row, "PreambleIndexDetected", "DetectedPreambleIndex"),
+            "root_sequence_index": _row_text(row, "RootSequenceIndex", "PRACHRootSequenceIndex"),
+            "cyclic_shift_ncs": _row_text(row, "CyclicShift", "NCS", "n_cs"),
+            "attempt_number": "" if attempt is None else float(attempt),
+            "success_flag": "" if success_flag is None else int(bool(success_flag)),
+            "true_timing_offset_samples": "" if true_timing is None else float(true_timing),
+            "estimated_timing_offset_samples": "" if estimate is None else float(estimate),
+            "timing_error_samples": "" if timing_error is None else float(timing_error),
+            "timing_advance_command": _row_text(row, "TimingAdvanceCommand"),
+            "access_latency_slots": "" if latency_slots is None else latency_slots,
+            "source_table_logical_path": source_path,
+        })
+
+    dataset: dict[str, Any] | None = None
+    summary: list[str] = [f"source={source_path}", f"runtime_rows={len(out_rows)}"]
+    card_metrics: list[tuple[str, float | int, str]] | None = None
+    if chart_key in {"prach occasion timeline", "prach opportunity map"}:
+        counts = Counter(str(row["occasion_id"] or f"frame={row['occasion_frame']}|slot={row['occasion_slot']}|symbol={row['occasion_symbol']}") for row in out_rows)
+        named = list(counts.items())
+        dataset, labels = _bar_dataset_from_named_values("PRACH occasion", "Attempts", [(key, float(value)) for key, value in named])
+        dataset["tick_labels"] = [key for key, _value in named]
+        summary.extend(labels)
+        if len(named) == 1:
+            card_metrics = [("Observed attempts", len(out_rows), ""), ("Distinct occasions", 1, ""), ("Occasion slot", out_rows[0]["occasion_slot"], "")]
+    elif chart_key in {"ta estimate timeline", "ta estimate trend"}:
+        points = [[float(row["observation_index"]), float(row["estimated_timing_offset_samples"])] for row in out_rows if row["estimated_timing_offset_samples"] != ""]
+        dataset = {"mode": "bar", "x_label": "PRACH observation", "y_label": "Timing estimate (samples)", "points": points}
+    elif chart_key == "preamble usage chart":
+        counts = Counter(str(row["preamble_index_tx"]) for row in out_rows if str(row["preamble_index_tx"]))
+        named = list(sorted(counts.items()))
+        dataset, labels = _bar_dataset_from_named_values("Preamble index", "Uses", [(key, float(value)) for key, value in named])
+        dataset["tick_labels"] = [key for key, _value in named]
+        summary.extend(labels)
+    elif chart_key == "access attempt/success timeline":
+        successes = sum(int(row["success_flag"]) for row in out_rows if row["success_flag"] != "")
+        dataset, labels = _bar_dataset_from_named_values("Access outcome", "Count", [("Attempts", len(out_rows)), ("Successful", successes)])
+        dataset["tick_labels"] = ["Attempts", "Successful"]
+        summary.extend(labels)
+    elif chart_key == "timing offset true vs estimated vs residual":
+        true_values = [float(row["true_timing_offset_samples"]) for row in out_rows if row["true_timing_offset_samples"] != ""]
+        estimated_values = [float(row["estimated_timing_offset_samples"]) for row in out_rows if row["estimated_timing_offset_samples"] != ""]
+        residual_values = [float(row["timing_error_samples"]) for row in out_rows if row["timing_error_samples"] != ""]
+        named = [
+            ("True", sum(true_values) / len(true_values) if true_values else 0.0),
+            ("Estimated", sum(estimated_values) / len(estimated_values) if estimated_values else 0.0),
+            ("Residual", sum(residual_values) / len(residual_values) if residual_values else 0.0),
+        ]
+        dataset, labels = _bar_dataset_from_named_values("Timing quantity", "Mean samples", named)
+        dataset["tick_labels"] = [name for name, _value in named]
+        summary.extend(labels)
+    elif chart_key == "access latency":
+        points = [[float(row["observation_index"]), float(row["access_latency_slots"])] for row in out_rows if row["access_latency_slots"] != ""]
+        dataset = {"mode": "bar", "x_label": "UE access observation", "y_label": "Msg1-to-SetupComplete slots", "points": points}
+    elif chart_key == "retry count distribution":
+        retries = [max(int(round(float(row["attempt_number"]))) - 1, 0) for row in out_rows if row["attempt_number"] != ""]
+        counts = Counter(retries)
+        dataset, labels = _bar_dataset_from_named_values("Retry count", "UE count", [(str(key), float(value)) for key, value in sorted(counts.items())])
+        dataset["tick_labels"] = [str(key) for key in sorted(counts)]
+        summary.extend(labels)
+        if retries and all(value == 0 for value in retries):
+            card_metrics = [("Access observations", len(retries), ""), ("Observed retries", 0, ""), ("Successful access", sum(int(row["success_flag"]) for row in out_rows if row["success_flag"] != ""), "")]
+    elif chart_key == "timing advance distribution":
+        values = [float(row["timing_advance_command"]) for row in out_rows if _coerce_float(row["timing_advance_command"]) is not None]
+        counts = Counter(values)
+        dataset, labels = _bar_dataset_from_named_values("Timing-advance command", "UE count", [(str(key), float(value)) for key, value in sorted(counts.items())])
+        dataset["tick_labels"] = [str(key) for key in sorted(counts)]
+        summary.extend(labels)
+    elif chart_key == "preamble/root/cyclic-shift usage summary":
+        preambles = {str(row["preamble_index_tx"]) for row in out_rows if str(row["preamble_index_tx"])}
+        roots = {str(row["root_sequence_index"]) for row in out_rows if str(row["root_sequence_index"])}
+        shifts = {str(row["cyclic_shift_ncs"]) for row in out_rows if str(row["cyclic_shift_ncs"])}
+        card_metrics = [("Preambles observed", len(preambles), ""), ("Roots exported", len(roots), ""), ("Cyclic shifts exported", len(shifts), "")]
+        summary.extend(["missing root/shift values remain unavailable", "configured values are not substituted"])
+
+    if card_metrics is not None:
+        img_bytes = _render_kpi_card_svg(
+            chart_name,
+            "Exact bounded-run PRACH observations; sparse evidence is shown as a factual card, not a statistical trend.",
+            card_metrics,
+            summary,
+            visual_gate="bounded_runtime_prach_observation",
+        )
+    elif dataset and dataset.get("points"):
+        img_bytes = _render_svg_plot(
+            chart_name,
+            "PRACH/initial-access values from the executed four-step waveform chain.",
+            dataset,
+            summary,
+        )
+    else:
+        return None
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "observation_index", "ue_id", "occasion_id",
+                "occasion_frame", "occasion_slot", "occasion_symbol", "occasion_frequency_index",
+                "preamble_index_tx", "preamble_index_detected", "root_sequence_index",
+                "cyclic_shift_ncs", "attempt_number", "success_flag",
+                "true_timing_offset_samples", "estimated_timing_offset_samples",
+                "timing_error_samples", "timing_advance_command", "access_latency_slots",
+                "source_table_logical_path",
+            ],
+            out_rows,
+        ),
+        "img_bytes": img_bytes,
+        "csv_status": "specialized_runtime_prach_operational_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(records),
+        "source_mapping_status": "exact",
+        "note": "PRACH operational view uses only executed four-step random-access runtime rows.",
+    }
+
+
+def _runtime_sensing_probability_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Materialize operational ISAC detection rates from persisted runtime rows.
+
+    The false-alarm value is intentionally a per-evaluated-CFAR-cell fraction,
+    not a Monte-Carlo P_FA claim.  This keeps a single-scene diagnostic honest
+    while exposing the exact numerator and denominator needed for audit.
+    """
+    if str(chart_name or "") != "sensing P_D / P_FA":
+        return None
+
+    runtime_path, runtime_rows = _first_available_rows(
+        existing, fetch_artifact_bytes, ["isac/csv/isac_runtime_evidence.csv"]
+    )
+    target_path, target_rows = _first_available_rows(
+        existing, fetch_artifact_bytes, ["isac/csv/isac_target_truth.csv"]
+    )
+    detection_path, detection_rows = _first_available_rows(
+        existing, fetch_artifact_bytes, ["isac/csv/isac_detections.csv"]
+    )
+    cfar_path, cfar_rows = _first_available_rows(
+        existing, fetch_artifact_bytes, ["isac/csv/isac_cfar_thresholds.csv"]
+    )
+    if not runtime_rows or not target_rows or not cfar_rows:
+        return None
+
+    target_ids = {
+        _row_text(row, "TargetId") for row in target_rows if _row_text(row, "TargetId")
+    }
+    matched_target_ids = {
+        _row_text(row, "MatchedTargetId")
+        for row in detection_rows
+        if (_row_float(row, "AcceptanceMatch") or 0.0) > 0.0
+        and _row_text(row, "MatchedTargetId")
+    }
+    target_count = len(target_ids)
+    matched_target_count = len(matched_target_ids.intersection(target_ids))
+    raw_detection_count = sum(
+        1 for row in cfar_rows if (_row_float(row, "RawDetection") or 0.0) > 0.0
+    )
+    accepted_detection_count = sum(
+        1 for row in detection_rows if (_row_float(row, "AcceptanceMatch") or 0.0) > 0.0
+    )
+    false_alarm_count = max(raw_detection_count - accepted_detection_count, 0)
+    false_alarm_opportunities = max(len(cfar_rows) - target_count, 1)
+    detection_fraction = matched_target_count / target_count if target_count else 0.0
+    false_alarm_cell_fraction = false_alarm_count / false_alarm_opportunities
+
+    source_paths = ";".join(
+        [runtime_path, target_path, detection_path, cfar_path]
+    )
+    csv_rows = [
+        {
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "metric": "observed_target_detection_fraction",
+            "value": detection_fraction,
+            "numerator": matched_target_count,
+            "denominator": target_count,
+            "statistical_scope": "single_runtime_scene_not_monte_carlo_probability",
+            "source_table_logical_paths": source_paths,
+        },
+        {
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "metric": "observed_false_alarm_cell_fraction",
+            "value": false_alarm_cell_fraction,
+            "numerator": false_alarm_count,
+            "denominator": false_alarm_opportunities,
+            "statistical_scope": "evaluated_range_angle_cfar_cells_not_campaign_pfa",
+            "source_table_logical_paths": source_paths,
+        },
+    ]
+    dataset = {
+        "mode": "bar",
+        "x_label": "Operational metric",
+        "y_label": "Observed fraction",
+        "points": [[1.0, detection_fraction], [2.0, false_alarm_cell_fraction]],
+        "tick_labels": ["target detect", "false-alarm cells"],
+    }
+    summary = [
+        f"targets={target_count}",
+        f"matched_targets={matched_target_count}",
+        f"cfar_cells={len(cfar_rows)}",
+        f"raw_detections={raw_detection_count}",
+        f"accepted_detections={accepted_detection_count}",
+        "scope=single runtime scene",
+        "P_FA campaign claim=not made",
+    ]
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "metric", "value", "numerator",
+                "denominator", "statistical_scope", "source_table_logical_paths",
+            ],
+            csv_rows,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "Actual ISAC target detection and evaluated-CFAR-cell false alarms",
+            dataset,
+            summary,
+        ),
+        "csv_status": "explicit_runtime_isac_detection_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": runtime_path,
+        "source_row_count": len(runtime_rows) + len(target_rows) + len(detection_rows) + len(cfar_rows),
+        "source_mapping_status": "exact",
+        "note": (
+            "Detection fraction and false-alarm cell fraction use only persisted ISAC runtime rows; "
+            "the single-scene result is not labeled as a Monte-Carlo P_D/P_FA qualification."
+        ),
+    }
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -6031,6 +6479,21 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    sensing = _runtime_sensing_probability_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if sensing is not None:
+        return sensing
+    for runtime_chart_builder in (
+        _runtime_reference_signal_occupancy_chart,
+        _runtime_papr_distribution_chart,
+        _runtime_prach_operational_chart,
+    ):
+        runtime_chart = runtime_chart_builder(
+            chart_name, existing, fetch_artifact_bytes, run_id
+        )
+        if runtime_chart is not None:
+            return runtime_chart
     cfo_tracking = _runtime_cfo_tracking_chart(
         chart_name, existing, fetch_artifact_bytes, run_id
     )
@@ -6122,6 +6585,9 @@ def _specialized_chart_materialization(
         "HARQ RTT distribution",
         "newTx vs retx comparison",
         "residual failure patterns",
+        "residual BLER after HARQ",
+        "goodput vs retransmissions",
+        "combiner summary",
     }
     if chart_name in scheduler_chart_names:
         scheduler_sources = {
@@ -6281,7 +6747,12 @@ def _specialized_chart_materialization(
                     points.append([float(slot) if slot is not None else float(index), float(process_id)])
                 dataset = {"mode": "scatter", "x_label": "Slot / transmission index", "y_label": "HARQ process", "points": points}
             elif chart_name == "RV usage distribution":
-                counts = Counter(int(round(_row_float(row, "RV") or -1)) for row in records if _row_float(row, "RV") is not None)
+                counts = Counter(
+                    int(round(float(rv_value)))
+                    for row in records
+                    for rv_value in [_row_float(row, "RV")]
+                    if rv_value is not None
+                )
                 points = [[float(rv), float(count)] for rv, count in sorted((rv, count) for rv, count in counts.items() if rv >= 0)]
                 dataset = {"mode": "bar", "x_label": "RV", "y_label": "Count", "points": points}
             elif chart_name == "retransmission count histogram":
@@ -6317,6 +6788,11 @@ def _specialized_chart_materialization(
                 for row in records:
                     rtt = _row_float(row, "HARQRTT_ms", "harq_rtt_ms", "RTT_ms")
                     if rtt is None:
+                        tx_slot = _row_float(row, "Slot")
+                        feedback_slot = _row_float(row, "FeedbackDueSlot")
+                        if tx_slot is not None and feedback_slot is not None:
+                            rtt = max(0.0, float(feedback_slot) - float(tx_slot))
+                    if rtt is None:
                         first_tx = _row_float(row, "first_tx_time", "FirstTxTime")
                         last_tx = _row_float(row, "last_tx_time", "LastTxTime")
                         if first_tx is not None and last_tx is not None:
@@ -6334,6 +6810,26 @@ def _specialized_chart_materialization(
                         is_retx = float(tx_count) > 1.0
                     counts["retx" if is_retx else "newTx"] += 1
                 dataset, _summary = _bar_dataset_from_named_values("HARQ transmission type", "Count", [(key, float(value)) for key, value in counts.items()])
+            elif chart_name == "goodput vs retransmissions":
+                goodput_by_type: dict[str, list[float]] = defaultdict(list)
+                for row in records:
+                    goodput = _row_float(row, "Goodput_Mbps", "goodput_mbps")
+                    if goodput is None or not math.isfinite(float(goodput)):
+                        continue
+                    tx_count = _row_float(row, "TxCount", "tx_count")
+                    is_retx = _row_text(
+                        row, "IsRetransmission", "new_tx_or_retx"
+                    ).lower() in {"1", "true", "retx", "retransmission"}
+                    if tx_count is not None:
+                        is_retx = float(tx_count) > 1.0
+                    goodput_by_type["retx" if is_retx else "newTx"].append(float(goodput))
+                named_values = [
+                    (key, sum(values) / len(values))
+                    for key, values in sorted(goodput_by_type.items()) if values
+                ]
+                dataset, _summary = _bar_dataset_from_named_values(
+                    "HARQ transmission type", "Mean goodput (Mbps)", named_values
+                )
             elif chart_name == "residual failure patterns":
                 counts = Counter(_row_text(row, "final_state", "FinalState", "ack_nack_state", "ACKNACKState") or "unknown" for row in records)
                 dataset, _summary = _bar_dataset_from_named_values("Final HARQ state", "Count", [(key, float(value)) for key, value in counts.items()])
@@ -6366,10 +6862,33 @@ def _specialized_chart_materialization(
                     grouped[int(round(harq_id))].append(0.0 if decode_ok.lower() in {"1", "true", "ack", "ok", "pass"} else 1.0)
                 points = [[float(harq_id), sum(vals) / len(vals)] for harq_id, vals in sorted(grouped.items())]
                 dataset = {"mode": "bar", "x_label": "HARQ process", "y_label": "Residual BLER", "points": points}
+            elif chart_name == "residual BLER after HARQ":
+                grouped: dict[str, list[float]] = defaultdict(list)
+                for row in records:
+                    direction = _row_text(row, "Direction").upper() or "UNSPECIFIED"
+                    decode_ok = _row_text(
+                        row, "CombinedDecodeOK", "CurrentDecodeOK", "crc_result"
+                    )
+                    if not decode_ok:
+                        continue
+                    grouped[direction].append(
+                        0.0 if decode_ok.lower() in {"1", "true", "ack", "ok", "pass"} else 1.0
+                    )
+                named_values = [
+                    (direction, sum(values) / len(values))
+                    for direction, values in sorted(grouped.items()) if values
+                ]
+                dataset, _summary = _bar_dataset_from_named_values(
+                    "Direction", "Residual BLER after HARQ", named_values
+                )
             elif chart_name in {"combining gain histogram", "HARQ combining gain distribution"}:
                 gains_db: list[float] = []
                 for row in records:
-                    gain = _row_float(row, "CombiningGain_dB", "combining_gain_db", "HARQCombiningGain_dB", "harq_combining_gain_db")
+                    gain = _row_float(
+                        row, "CombiningGain_dB", "combining_gain_db",
+                        "HARQCombiningGain_dB", "harq_combining_gain_db",
+                        "LLRCombiningGain_dB",
+                    )
                     if gain is not None and math.isfinite(float(gain)):
                         gains_db.append(float(gain))
                 if gains_db:
@@ -6386,6 +6905,50 @@ def _specialized_chart_materialization(
                         "source_row_count": len(records),
                         "note": reason,
                     }
+            elif chart_name == "combiner summary":
+                gain_values = [
+                    float(value)
+                    for value in (
+                        _row_float(row, "LLRCombiningGain_dB", "HARQCombiningGain_dB")
+                        for row in records
+                    )
+                    if value is not None and math.isfinite(float(value))
+                ]
+                combining_rows = sum(
+                    1 for row in records
+                    if bool(_row_flag(row, "HARQCombiningApplied"))
+                )
+                previous_llrs = sum(
+                    float(_row_float(row, "PreviousLLRCount") or 0.0)
+                    for row in records
+                )
+                current_llrs = sum(
+                    float(_row_float(row, "CurrentLLRCount") or 0.0)
+                    for row in records
+                )
+                combined_llrs = sum(
+                    float(_row_float(row, "CombinedLLRCount") or 0.0)
+                    for row in records
+                )
+                metrics = [
+                    ("HARQ observations", len(records), ""),
+                    ("Combining applied", combining_rows, "rows"),
+                    ("Mean measured gain", sum(gain_values) / len(gain_values) if gain_values else 0.0, "dB"),
+                    ("Previous LLR", previous_llrs, "values"),
+                    ("Current LLR", current_llrs, "values"),
+                    ("Combined LLR", combined_llrs, "values"),
+                ]
+                img_bytes_override = _render_kpi_card_svg(
+                    chart_name,
+                    "HARQ soft-combiner accounting from the executed waveform lifecycle.",
+                    metrics,
+                    [f"source_rows={len(records)}", "configured values are not substituted"],
+                    visual_gate="runtime_harq_combiner_accounting",
+                )
+                dataset, _summary = _bar_dataset_from_named_values(
+                    "LLR accounting", "Count",
+                    [("previous", previous_llrs), ("current", current_llrs), ("combined", combined_llrs)],
+                )
             if dataset and dataset.get("points"):
                 summary = [f"source_table={source_path}", f"source_rows={len(records)}", f"chart={chart_name}"]
                 csv_bytes = _chart_dataset_csv(run_id, chart_name, dataset, source_path, len(records), "derived_chart_dataset", note)
@@ -6397,6 +6960,7 @@ def _specialized_chart_materialization(
                     "image_status": "generated_specialized_runtime_summary_svg",
                     "source_table_path": source_path,
                     "source_row_count": len(records),
+                    "source_mapping_status": "exact",
                     "note": note,
                 }
     if chart_name in {"scheduler fairness over time", "fairness index trend"}:

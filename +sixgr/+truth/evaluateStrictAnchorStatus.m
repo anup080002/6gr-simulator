@@ -1618,11 +1618,34 @@ end
 end
 
 function tf = localHasForbiddenBroadClaim(tokens, texts, profile)
-joined = lower(strjoin(string(texts(:)), " "));
 tf = any(ismember(tokens, ["normative", "full_3gpp_conformance", "normative_6g_conformance", ...
     "rel20_6g_conformance", "6g_ran_conformance", "3gpp_rel20_anchor_ok", "conformance_ok", "standards_ok"]));
-tf = tf || (contains(joined, "conformance") && (any(ismember(tokens, ["3gpp", "6g", "rel20", "anchor"])) || profile == "forbidden_broad_conformance_claim"));
-tf = tf || contains(joined, "full 3gpp") || contains(joined, "normative 6g") || contains(joined, "standards conformance");
+% An explicit non-conformance disclaimer is an honesty boundary, not a
+% standards claim.  Remove only narrowly defined negated claim phrases
+% before evaluating broad co-occurrence.  Raw forbidden machine tokens
+% above remain authoritative, and any separate affirmative wording that
+% remains in the text is still rejected.
+for sourceText = string(texts(:)).'
+    assertiveText = localRemoveExplicitConformanceDisclaimers(sourceText);
+    assertiveTokens = localClaimTokens(assertiveText);
+    tf = tf || (contains(assertiveText, "conformance") && ...
+        (any(ismember(assertiveTokens, ["3gpp", "6g", "rel20", "anchor"])) || ...
+        profile == "forbidden_broad_conformance_claim"));
+    tf = tf || contains(assertiveText, "full 3gpp") || ...
+        contains(assertiveText, "normative 6g") || ...
+        contains(assertiveText, "standards conformance");
+end
+end
+
+function text = localRemoveExplicitConformanceDisclaimers(text)
+text = lower(string(text));
+patterns = [ ...
+    "not\s+(an?\s+)?(nr|3gpp|6g|rel-?20|release\s+20)?\s*conformance\s+claim", ...
+    "does\s+not\s+claim\s+[^.;|]*conformance", ...
+    "no\s+(nr|3gpp|6g|rel-?20|release\s+20)?\s*conformance\s+claim"];
+for pattern = patterns
+    text = regexprep(text, pattern, " ", "ignorecase");
+end
 end
 
 function tokens = localClaimTokens(text)

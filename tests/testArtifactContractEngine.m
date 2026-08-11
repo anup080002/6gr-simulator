@@ -122,6 +122,15 @@ assert(isequal(publishedT.CaseID, runtimeT.CaseID));
 info = imfinfo(pngPath);
 assert(info.Width >= 640 && info.Height >= 480);
 assert(all(strlength(result.Audit.SourceSHA256) == 64));
+lineagePath = fullfile(runRoot, "components", "contract_plot_lineage.csv");
+assert(isfile(lineagePath), ...
+    "Contract publication must emit exact source/image lineage for every PNG.");
+lineageT = readtable(lineagePath, "TextType", "string", ...
+    "VariableNamingRule", "preserve");
+assert(height(lineageT) == 1 && lineageT.Status(1) == "PASS");
+visualIntegrity = sixgr.visual.verifyVisualArtifacts(runRoot, table());
+assert(~isempty(visualIntegrity) && all(visualIntegrity.IntegrityOk), ...
+    "Contract PNGs with exact CSV and image hashes must pass visual integrity.");
 
 % A quick diagnostic is allowed to contain a single measured operating
 % point, including BLER=0 with a non-zero exact confidence interval.  The

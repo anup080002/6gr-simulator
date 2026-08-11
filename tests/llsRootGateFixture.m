@@ -38,6 +38,10 @@ switch caseName
     case "honest_study"
         scenarioName = "Rel20 study context NR-inspired research fixture";
         claimProfile = "rel20_study_context";
+    case "explicit_nonconformance_disclaimer"
+        scenarioName = "6G study item and not an NR conformance claim";
+    case "disclaimer_with_separate_broad_claim"
+        scenarioName = "6G study item and not an NR conformance claim; full 3GPP conformance";
     case {"fixed_collapse", "configured_effective_mismatch"}
         target = struct("Rank", 2, "Layers", 2, "Modulation", "256QAM", "MCS", 20);
         effective = struct("Rank", 1, "Layers", 1, "Modulation", "QPSK", "MCS", 1);

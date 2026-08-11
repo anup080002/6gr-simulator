@@ -167,6 +167,102 @@ def test_disabled_runtime_capabilities_filter_only_their_own_contracts() -> None
         )
 
 
+def test_resolved_master_yaml_switches_override_dashboard_profile_defaults() -> None:
+    run_row = {
+        "profile_name": "waveform_bundle",
+        "config_json": json.dumps(
+            {
+                "rf_frontend": {"enabled": False},
+                "pusch": {"power_control": {"enabled": False}},
+                "output_control": {
+                    "save_raw_waveforms": False,
+                    "save_channel_snapshots": False,
+                },
+            }
+        ),
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["rf_impairments_enabled"] is False
+    assert policy["power_control_enabled"] is False
+    assert policy["raw_iq_capture_enabled"] is False
+    assert policy["channel_snapshot_capture_enabled"] is False
+
+
+def test_optional_6g_contracts_are_filtered_per_feature() -> None:
+    policy = {
+        "sensing_enabled": True,
+        "ntn_enabled": False,
+        "ai_enabled": False,
+        "localization_enabled": False,
+        "ris_enabled": False,
+        "cell_free_enabled": False,
+        "sub_thz_enabled": False,
+    }
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/sensing_analytics.csv",
+        policy,
+        contract_name="sensing_analytics",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__optional-6g-extension-analytics__sensing-p-d-p-fa.csv",
+        policy,
+        contract_name="sensing P_D / P_FA",
+    )
+    for contract_name in (
+        "ai_inference_analytics",
+        "localization_analytics",
+        "ntn_haps_uav_analytics",
+        "ris_analytics",
+        "cell_free_mimo_analytics",
+        "sub_thz_impairment_analytics",
+        "AI inference confidence / latency",
+        "localization RMSE",
+        "NTN/HAPS/UAV delay and Doppler",
+        "RIS state summaries",
+        "cell-free / distributed MIMO combining gains",
+        "sub-THz impairment studies",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__optional__{materializer.slugify(contract_name)}.csv",
+            policy,
+            contract_name=contract_name,
+        )
+
+
+def test_sensing_chart_uses_runtime_target_detection_and_cfar_cells() -> None:
+    sources = {
+        1: materializer._encode_csv(  # noqa: SLF001
+            ["Executed", "EvidenceValid", "DetectionCount", "MatchedTargetCount"],
+            [[1, 1, 1, 1]],
+        ),
+        2: materializer._encode_csv(  # noqa: SLF001
+            ["TargetId", "ExpectedRangeM"], [[1, 41.25]],
+        ),
+        3: materializer._encode_csv(  # noqa: SLF001
+            ["MatchedTargetId", "AcceptanceMatch"], [[1, 1]],
+        ),
+        4: materializer._encode_csv(  # noqa: SLF001
+            ["RangeM", "RawDetection"], [[40, 0], [41, 1], [42, 0]],
+        ),
+    }
+    existing = {
+        "isac/csv/isac_runtime_evidence.csv": {"artifact_id": 1},
+        "isac/csv/isac_target_truth.csv": {"artifact_id": 2},
+        "isac/csv/isac_detections.csv": {"artifact_id": 3},
+        "isac/csv/isac_cfar_thresholds.csv": {"artifact_id": 4},
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "sensing P_D / P_FA", existing, lambda artifact_id: sources[artifact_id], 19
+    )
+    assert result is not None
+    assert result["source_mapping_status"] == "exact"
+    header, rows = materializer._decode_csv(result["csv_bytes"])  # noqa: SLF001
+    values = {row[header.index("metric")]: float(row[header.index("value")]) for row in rows}
+    assert values["observed_target_detection_fraction"] == 1.0
+    assert values["observed_false_alarm_cell_fraction"] == 0.0
+    assert b"P_FA campaign claim=not made" in result["img_bytes"]
+
+
 def test_configured_sweep_charts_use_real_directional_trials() -> None:
     header = [
         "Direction",
@@ -452,3 +548,86 @@ def test_cfo_chart_uses_persisted_true_estimated_and_residual_series() -> None:
     assert "true_cfo_hz,estimated_cfo_hz,residual_cfo_hz" in csv_text
     assert "120.0,118.5,1.5" in csv_text
     assert "True CFO" in svg_text and "Estimated CFO" in svg_text and "Residual CFO" in svg_text
+
+
+def test_runtime_source_selection_skips_unavailable_mirror_row() -> None:
+    unavailable = materializer._encode_csv(  # noqa: SLF001
+        ["truth_status", "reason"], [["not_available", "runtime mirror was not published"]]
+    )
+    actual = materializer._encode_csv(  # noqa: SLF001
+        ["PreambleDetectionMetric", "PreambleDetectionThreshold", "PDPAverageNoiseFloor"],
+        [[0.91, 0.35, 0.02]],
+    )
+    existing = {
+        "reports/csv/prach_correlation_trace.csv": {"artifact_id": 81},
+        "air_interface/csv/prach_trials.csv": {"artifact_id": 82},
+    }
+    payloads = {81: unavailable, 82: actual}
+    source, rows = materializer._first_available_rows(  # noqa: SLF001
+        existing,
+        lambda artifact_id: payloads[artifact_id],
+        ["reports/csv/prach_correlation_trace.csv", "air_interface/csv/prach_trials.csv"],
+    )
+    assert source == "air_interface/csv/prach_trials.csv"
+    assert len(rows) == 1
+
+
+def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
+    prach = materializer._encode_csv(  # noqa: SLF001
+        [
+            "RAUEId", "PRACHOccasionID", "PRACHOccasionFrame", "PRACHOccasionSlot",
+            "PRACHOccasionSymbol", "PreambleIndexTx", "PreambleIndexDetected",
+            "PreambleAttemptNumber", "PreambleDetected", "PRACHTrueTimingOffset_samples",
+            "PRACHRawTimingEstimate_samples", "PRACHTimingError_samples", "TimingAdvanceCommand",
+            "SetupCompleteScheduledSlot", "PDPAverageNoiseFloor",
+        ],
+        [[1, "frame=0|slot=0|symbol=0|frequency=0", 0, 0, 0, 3, 3, 1, 1, 0, 5, 5, 0, 4, 0.02]],
+    )
+    dl = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "Frame", "Slot", "MeasuredDMRSRECount", "PTRSRECount", "DataRECount", "PAPR_dB"],
+        [["DL", 1, 16, 1632, 408, 14416, 9.5]],
+    )
+    ul = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "Frame", "Slot", "MeasuredDMRSRECount", "PTRSRECount", "DataRECount", "PAPR_dB"],
+        [["UL", 1, 20, 1632, 408, 19176, 10.5]],
+    )
+    harq = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Direction", "Slot", "FeedbackDueSlot", "HarqID", "RV", "IsRetransmission",
+            "CombinedDecodeOK", "HARQCombiningApplied", "PreviousLLRCount", "CurrentLLRCount",
+            "CombinedLLRCount", "LLRCombiningGain_dB", "Goodput_Mbps",
+        ],
+        [["DL", 16, 19, 0, 0, 0, 1, 0, 0, 32000, 32000, 0, 11.536]],
+    )
+    existing = {
+        "air_interface/csv/prach_trials.csv": {"artifact_id": 91},
+        "air_interface/csv/dl_pdsch_trials.csv": {"artifact_id": 92},
+        "air_interface/csv/ul_pusch_trials.csv": {"artifact_id": 93},
+        "harq/csv/live_harq_observation_timeline.csv": {"artifact_id": 94},
+    }
+    payloads = {91: prach, 92: dl, 93: ul, 94: harq}
+    fetch = lambda artifact_id: payloads[artifact_id]
+
+    for chart_name in (
+        "PRACH occasion timeline",
+        "DMRS/PTRS occupancy map",
+        "PAPR histogram / CDF",
+        "RV usage distribution",
+        "HARQ RTT distribution",
+        "residual BLER after HARQ",
+        "goodput vs retransmissions",
+        "combiner summary",
+    ):
+        chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+            chart_name, existing, fetch, 98
+        )
+        assert chart is not None, chart_name
+        assert chart.get("source_mapping_status") == "exact", chart_name
+        assert chart["csv_bytes"], chart_name
+        assert chart["img_bytes"].startswith(b"<svg"), chart_name
+
+    rv_chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "RV usage distribution", existing, fetch, 98
+    )
+    assert rv_chart is not None
+    assert ",0.0,1.0," in rv_chart["csv_bytes"].decode("utf-8")

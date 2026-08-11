@@ -10789,6 +10789,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         default=system_default,
     )
     rf_impairments_enabled = config_bool(
+        "rf_frontend.enabled",
         "canonical_control.rf_frontend.enabled",
         "rf.frontend.enabled",
         "rf.enable",
@@ -10796,6 +10797,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         default=system_default,
     )
     power_control_enabled = config_bool(
+        "pusch.power_control.enabled",
         "canonical_control.power_control.enabled",
         "phy.pusch.power_control.enabled",
         "phy.pusch.powerControl.enabled",
@@ -10803,6 +10805,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         default=system_default,
     )
     raw_iq_capture_enabled = config_bool(
+        "output_control.save_raw_waveforms",
         "run.rawIQCaptureEnabled",
         "outputs.rawIQCaptureEnabled",
         "lls6g.resolvedConfig.run_control.raw_iq_capture_enable",
@@ -10815,6 +10818,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         default=system_default,
     )
     channel_snapshot_capture_enabled = config_bool(
+        "output_control.save_channel_snapshots",
         "outputs.saveChannelSnapshots",
         "lls6g.resolvedConfig.run_control.save_channel_tensors",
         default=system_default,
