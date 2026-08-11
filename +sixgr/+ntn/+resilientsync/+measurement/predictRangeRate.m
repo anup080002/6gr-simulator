@@ -1,0 +1,9 @@
+function prediction = predictRangeRate(satellitePositionM, satelliteVelocityMps, assumedUEPositionM, assumedUEVelocityMps, carrierHz, speedOfLightMps)
+%PREDICTRANGERATE Predict geometry range rate and fractional Doppler.
+
+geometry = sixgr.ntn.resilientsync.geometry.slantRangeAndRate( ...
+    satellitePositionM, satelliteVelocityMps, assumedUEPositionM, assumedUEVelocityMps);
+prediction = struct("RangeRate_m_s", geometry.RangeRate_m_s, ...
+    "FractionalDoppler", -geometry.RangeRate_m_s ./ speedOfLightMps, ...
+    "Doppler_Hz", -(carrierHz ./ speedOfLightMps) .* geometry.RangeRate_m_s);
+end

@@ -192,6 +192,27 @@ if model ~= "AWGN" && (txAnt < ports || rxAnt < layers)
 end
 localRequiredInteger(cfg, "channel.seed", 0, 2^32-1);
 localAllowedText(cfg, "channel.normalization", "occupied_re_esn0");
+residualEnabled = localRequiredLogical(cfg,"synchronizationResidual.enabled");
+residualTiming = double(sixgr.util.structGet(cfg, ...
+    "synchronizationResidual.timingErrorSeconds",NaN));
+residualFrequency = double(sixgr.util.structGet(cfg, ...
+    "synchronizationResidual.frequencyErrorHz",NaN));
+if ~(isscalar(residualTiming) && isfinite(residualTiming)) || ...
+        ~(isscalar(residualFrequency) && isfinite(residualFrequency))
+    error("sixgr:lls:InvalidSynchronizationResidual", ...
+        "Synchronization residual timing and frequency must be finite scalars.");
+end
+localRequiredText(cfg,"synchronizationResidual.source");
+receiverUsesResidualOracle = localRequiredLogical(cfg, ...
+    "synchronizationResidual.receiverUsesOracle");
+if receiverUsesResidualOracle
+    error("sixgr:lls:SynchronizationResidualOracleForbidden", ...
+        "The production receiver may not consume injected timing/CFO truth.");
+end
+if ~residualEnabled && (abs(residualTiming) > 0 || abs(residualFrequency) > 0)
+    error("sixgr:lls:DisabledSynchronizationResidualNonzero", ...
+        "Disabled synchronization residuals must have zero timing and frequency values.");
+end
 delaySpread = double(sixgr.util.structGet(cfg, "channel.delaySpreadSeconds", NaN));
 velocity = double(sixgr.util.structGet(cfg, "channel.velocityKmph", NaN));
 if ~(isscalar(delaySpread) && isfinite(delaySpread) && delaySpread >= 0) || ...

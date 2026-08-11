@@ -86,6 +86,13 @@ channel:
   seed: 20260811
   normalization: occupied_re_esn0
 
+synchronizationResidual:
+  enabled: false
+  timingErrorSeconds: 0
+  frequencyErrorHz: 0
+  source: disabled_by_yaml
+  receiverUsesOracle: false
+
 # Canonical BS/UE physical-array authority. When enabled, the logical PHY
 # ports are projected onto these physical elements before nrCDLChannel. The
 # exact same descriptor and steering matrix generate the antenna CSV/PNG

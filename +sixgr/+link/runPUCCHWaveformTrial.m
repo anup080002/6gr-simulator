@@ -396,9 +396,10 @@ end
 
 requestedProfile = upper(strtrim(string(opt.ChannelProfile)));
 if ~ismember(requestedProfile,["AWGN","TDL-A","TDL-B","TDL-C", ...
-        "TDL-D","TDL-E","CDL-A","CDL-B","CDL-C","CDL-D","CDL-E"])
+        "TDL-D","TDL-E","CDL-A","CDL-B","CDL-C","CDL-D","CDL-E", ...
+        "NTN-TDL-A","NTN-TDL-B","NTN-TDL-C","NTN-TDL-D"])
     error("sixgr:config:BadChannelProfile", ...
-        "PUCCH trial requires AWGN or a concrete TDL-*/CDL-* profile.");
+        "PUCCH trial requires AWGN or a concrete TDL-*/CDL-*/NTN-TDL-* profile.");
 end
 if yamlAuthority
     configuredProfile = upper(strtrim(string( ...
@@ -410,7 +411,15 @@ if yamlAuthority
              char(configuredProfile));
     end
 else
-    cfgRuntime = localSetConcreteChannelProfile(cfgRuntime,requestedProfile);
+    if startsWith(requestedProfile,"NTN-TDL-")
+        % The normal runtime channel factory is terrestrial. Keep its state
+        % disabled; localRuntimeWaveformPath applies the exact NTN-TDL object.
+        cfgRuntime = localSetConcreteChannelProfile(cfgRuntime,"AWGN");
+        cfgRuntime = sixgr.util.structSet(cfgRuntime, ...
+            "ntn.runtimePUCCHProfile",char(requestedProfile));
+    else
+        cfgRuntime = localSetConcreteChannelProfile(cfgRuntime,requestedProfile);
+    end
     cfgRuntime = sixgr.util.structSet(cfgRuntime,"channel.doppler_Hz", ...
         double(opt.DopplerHz));
     cfgRuntime = sixgr.util.structSet(cfgRuntime,"channel.delaySpread_s", ...
@@ -455,8 +464,14 @@ if opt.SignalPresent
 else
     channelInput = complex(zeros(size(txWaveform),"like",txWaveform));
 end
-[channelWaveform,replay,state] = sixgr.link.applyRuntimeFadingChannel( ...
-    channelInput,state);
+replay = struct();
+if startsWith(upper(string(opt.ChannelProfile)),"NTN-TDL-")
+    [channelWaveform,ntnReplay] = localApplyNTNTDLChannel(channelInput,tx,opt);
+    replay = localMergeStruct(replay,ntnReplay);
+else
+    [channelWaveform,replay,state] = sixgr.link.applyRuntimeFadingChannel( ...
+        channelInput,state);
+end
 
 sampleRateHz = double(tx.OFDMInfo.SampleRate);
 [desiredWaveform,impairmentReplay] = sixgr.link.applyWaveformImpairments( ...
@@ -493,6 +508,51 @@ if ~(isfinite(noiseVariance) && noiseVariance >= 0)
         "PUCCH runtime chain did not produce a finite nonnegative receiver noise variance.");
 end
 
+function [waveform,replay] = localApplyNTNTDLChannel(input,tx,opt)
+profile=upper(string(opt.ChannelProfile));
+if exist("nrTDLChannel","class")~=8 && exist("nrTDLChannel","file")~=2
+    error("sixgr:phy:pucch:MissingNTNTDLChannel", ...
+        "nrTDLChannel is required for PUCCH profile %s.",char(profile));
+end
+channel=nrTDLChannel;
+channel.DelayProfile=char(profile);
+channel.DelaySpread=double(opt.DelaySpreadSeconds);
+channel.MaximumDopplerShift=max(0,double(opt.DopplerHz));
+channel.SatelliteDopplerShift=0;
+channel.NumTransmitAntennas=size(input,2);
+channel.NumReceiveAntennas=1;
+channel.SampleRate=double(tx.OFDMInfo.SampleRate);
+channel.TransmissionDirection='Uplink';
+channel.MIMOCorrelation='Low';
+channel.Polarization='Co-Polar';
+if isprop(channel,'RandomStream'),channel.RandomStream='mt19937ar with seed';end
+if isprop(channel,'Seed'),channel.Seed=double(opt.Seed);end
+if isprop(channel,'NormalizePathGains'),channel.NormalizePathGains=true;end
+if isprop(channel,'NormalizeChannelOutputs'),channel.NormalizeChannelOutputs=true;end
+reset(channel);cleanup=onCleanup(@() release(channel)); %#ok<NASGU>
+objectInfo=info(channel);
+pad=max(0,round(double(sixgr.util.structGet(objectInfo,'MaximumChannelDelay',0))));
+padded=[input;complex(zeros(pad,size(input,2),'like',input))];
+[raw,pathGains]=channel(padded);
+filters=getPathFilters(channel);
+timing=max(0,round(double(nrPerfectTimingEstimate(pathGains,filters))));
+first=timing+1;last=first+size(input,1)-1;
+if last>size(raw,1),raw(end+1:last,:)=complex(0);end %#ok<AGROW>
+waveform=raw(first:last,:);
+replay=struct('ChannelFadingApplied',true, ...
+    'ChannelFadingExecutionStatus','applied_ntn_tdl_waveform_truth', ...
+    'ChannelFadingObjectClass','nrTDLChannel', ...
+    'ChannelPathGainsAvailable',~isempty(pathGains), ...
+    'RuntimeChannelStateUsed',false,'RuntimeChannelLinkKey','pucch_ntn_tdl', ...
+    'RuntimeChannelSeed',double(opt.Seed),'RuntimeChannelResetCount',1, ...
+    'RuntimeChannelStartSample',1,'RuntimeChannelEndSample',size(input,1), ...
+    'RuntimeChannelIdleAdvancedSamples',0,'NTNEnabled',true, ...
+    'NTNProfile',profile,'NTNTransmissionDirection','Uplink', ...
+    'NTNSatelliteDopplerShift_Hz',0, ...
+    'NTNResidualCFOAppliedByImpairmentStage_Hz',double(opt.CFOHz), ...
+    'ChannelTimingAlignmentSamples',timing,'ProxyUsed',false,'FallbackUsed',false);
+end
+
 runtimeState = sixgr.util.structGet(state,"RuntimeChannelState",struct());
 if isstruct(runtimeState) && isfield(runtimeState,"ContractVersion")
     updatedRuntimeState = runtimeState;
@@ -500,7 +560,11 @@ else
     updatedRuntimeState = struct();
 end
 runtimeMeta = sixgr.util.structGet(runtimeState,"Meta",struct());
-profile = upper(strtrim(string(sixgr.channel.resolveConcreteProfile(cfg))));
+if startsWith(upper(string(opt.ChannelProfile)),"NTN-TDL-")
+    profile = upper(strtrim(string(opt.ChannelProfile)));
+else
+    profile = upper(strtrim(string(sixgr.channel.resolveConcreteProfile(cfg))));
+end
 channelMeta = struct( ...
     "Profile",profile, ...
     "Source",string(sixgr.util.structGet(runtimeMeta, ...

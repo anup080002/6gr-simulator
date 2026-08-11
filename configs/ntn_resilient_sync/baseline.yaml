@@ -1,0 +1,235 @@
+schema_version: "1.0"
+campaign_name: "ntn_resilient_sync"
+run_mode: "quick"
+seed: 20260808
+
+provenance:
+  require_truth_contract: true
+  require_audits: true
+  public_output: true
+  confidential_output: true
+  allowed_evidence_classes:
+    - "ANALYTICAL"
+    - "MONTE_CARLO_GEOMETRY"
+    - "CALIBRATED_LLS"
+    - "SCHEDULER_SYSTEM"
+    - "EVENT_PROCEDURE"
+    - "ARCHITECTURE_DIAGRAM"
+
+geometry:
+  earth_radius_km: 6371
+  earth_rotation_rate_rad_s: 0.00007292115
+  gravitational_parameter_m3_s2: 398600441800000
+  speed_of_light_m_s: 299792458
+  orbit:
+    type: "circular_leo"
+    altitude_km: 600
+  timing_mapping:
+    kappa_t: 2
+    sign_convention: "eT=-kappaT*deltaTauSL+common+corr"
+
+carriers:
+  - id: "S_band"
+    f_dl_hz: 2000000000
+    f_ul_hz: 2000000000
+    research_taxonomy: "agreed_starting_point"
+  - id: "Ka_generic"
+    f_dl_hz: 30000000000
+    f_ul_hz: 30000000000
+    research_taxonomy: "study"
+  - id: "Ka_FDD_stress"
+    f_dl_hz: 20000000000
+    f_ul_hz: 30000000000
+    label: "company_assumption_for_rule_validation"
+    research_taxonomy: "experiment"
+
+gnss_degraded:
+  service_link_elevation_deg: 30
+  initial_ue_position_error_los_m: 10
+  satellite_position_error_los_m: 50
+  satellite_radial_velocity_error_mps: 0.05
+  holdover_model: "position_only"
+  inertial_aid: false
+  ue_velocity_estimate: false
+  motion_projection: "conservative_cos_elevation"
+  speeds_kmh: [3, 30, 120, 250]
+  ages_s: [0, 1, 2, 5, 10, 20, 30, 60, 120]
+  oscillator_ppm: [0.05, 0.10, 0.50]
+  acceleration_uncertainty_m_s2: 0
+
+gnss_free:
+  reference_area_radii_km: [5, 12.5, 25, 50]
+  elevations_deg: [10, 20, 30, 45, 60, 75, 90]
+  drops_per_point: 300000
+  distribution: "uniform_in_area"
+  geometry: "exact_spherical_earth"
+
+feeder_link:
+  gateway_fixed: true
+  elevations_deg: [10, 30, 60]
+  validity_s: [10, 30, 60]
+  derivative_orders: [0, 1, 2]
+  evaluation_samples: 301
+
+k_offset:
+  beam_center_elevations_deg: [10, 15, 20, 30, 45, 60, 75, 90]
+  beam_diameter_km: 50
+  ue_drops_per_beam: 100000
+  ue_distribution: "uniform_in_area"
+  beam_weighting: "equal"
+  scs_khz: [30, 60, 120]
+  processing_delay_ms: 1.0
+  configured_wait_ms: 0
+  exclude_common_feeder_from_relative_comparison: true
+
+ta_report:
+  report_steps_ms: [1.0, 0.5, 0.1]
+  duplex_modes: ["FD_FDD", "HD_FDD"]
+  hd_fdd_guard_ms: 0.25
+  triggers:
+    - "raw_ta_threshold"
+    - "scheduling_unit_change"
+    - "predicted_hd_fdd_overlap"
+    - "beam_switch"
+    - "satellite_switch"
+    - "feeder_switch"
+    - "degraded_transition"
+    - "network_request"
+
+measurement:
+  timing_sigma_us_reference: [0.2, 0.5]
+  observation_intervals_s: [1, 2, 5, 10, 20, 30]
+  dl_cfo_sigma_ppm_reference: 0.03
+  covariance_model: "diagonal_reference"
+
+residual_grid:
+  timing_error_us: [0, -10, 10, -25, 25, -50, 50, -100, 100, -250, 250, -500, 500]
+  frequency_error_khz: [0, -0.5, 0.5, -1, 1, -2, 2, -5, 5, -10, 10, -20, 20, -50, 50]
+  include_geometry_quantiles: true
+  report_normalized_values: true
+
+correction:
+  timing_range_us: [250, 500]
+  frequency_range_khz: [20, 50]
+  timing_step_us: [1.0, 0.5]
+  frequency_step_hz: [100, 50]
+  activation_modes: ["immediate", "next_slot", "configured_slot"]
+
+physical_layer:
+  discover_existing_sixgr_configs: true
+  require_calibrated_ntn_channel_for_measured_claim: true
+  pfa_total: 0.01
+  prach_trials_min: 10000
+  bler_blocks_min: 2000
+  block_errors_target: 200
+  blocks_max: 100000
+  confidence_level: 0.95
+  pdsch_config: "configs/lls/pdsch_ntn_leo_tdl_d_example.yaml"
+  pusch_config: "configs/lls/pusch_ntn_leo_tdl_d_example.yaml"
+  prach_backend: "sixgr.phy.prach.runStrictPRACHValidation"
+  pusch_backend: "sixgr.lls.runLLS"
+  pucch_backend: "sixgr.link.runPUCCHWaveformTrial"
+  prach_scenario_config: "configs/lls/lls_prach_strict_mini_anchor.yaml"
+  trs_scenario_config: "configs/lls/lls_trs_strict_mini_anchor.yaml"
+  residual_snr_db: [0, 10, 20]
+  residual_scs_khz: 30
+  pucch_format: 2
+  pucch_payload_bits: 20
+  permit_proxy: false
+  topology_proof_pdsch_config: "configs/ntn_resilient_sync/phy/pdsch_topology_short_proof.yaml"
+
+# Satellite, gateway and service-terminal authority.  Geometry, access,
+# latency, Doppler and link-budget artifacts are derived from these values;
+# the antenna bindings point at the exact physical arrays used by the LLS
+# PDSCH waveform chain rather than a second plotting-only descriptor.
+ntn_topology:
+  enabled: true
+  geometry_model: "exact_spherical_earth_circular_two_body"
+  epoch_utc: "2026-08-11T00:00:00Z"
+  duration_s: 1200
+  sample_time_s: 1
+  closest_approach_time_s: 600
+  closest_approach_elevation_deg: 50
+  access:
+    minimum_elevation_deg: 10
+  satellite:
+    id: "LEO-SAT-001"
+    orbit_type: "circular_leo"
+    altitude_m: 600000
+    inclination_deg: 53
+    eccentricity: 0
+    payload_architecture: "regenerative_service_link"
+    antenna_binding: "gnb"
+    transmit_power_dbw: 10
+    transmit_cable_loss_db: 1
+    receive_noise_figure_db: 3
+    receive_antenna_temperature_k: 500
+    receive_ambient_temperature_k: 290
+  gateway:
+    id: "GW-001"
+    latitude_deg: 12.9716
+    longitude_deg: 77.5946
+    altitude_m: 920
+    minimum_elevation_deg: 10
+    feeder_antenna_model: "parabolic_aperture"
+    feeder_diameter_m: 2.4
+    feeder_efficiency: 0.65
+  service_ue:
+    id: "UE-NTN-001"
+    latitude_deg: 12.9716
+    longitude_deg: 77.5946
+    altitude_m: 920
+    antenna_binding: "ue"
+    transmit_power_dbm: 23
+    transmit_cable_loss_db: 0
+    receive_noise_figure_db: 7
+    receive_antenna_temperature_k: 290
+    receive_ambient_temperature_k: 290
+  link_budget:
+    carrier_frequency_hz: 2000000000
+    bandwidth_hz: 5000000
+    boltzmann_dbw_k_hz: -228.6
+    atmospheric_loss_db: 0.2
+    scintillation_loss_db: 2.2
+    polarization_loss_db: 1.0
+    shadow_margin_db: 1.0
+    additional_loss_db: 0.0
+    implementation_margin_db: 0.5
+    propagation_loss_model: "configured_clear_sky_loss_terms"
+    require_downlink_closure_at_phy_esn0: true
+  waveform_binding:
+    link: "PDSCH"
+    channel_profile: "NTN-CDL-D"
+    satellite_array_role: "gnb"
+    service_ue_array_role: "ue"
+    require_physical_element_channel: true
+
+state_profiles:
+  file: "configs/ntn_resilient_sync/state_profiles.yaml"
+  enabled:
+    - "REG_SAT_ULRP"
+    - "TRANS_NET_FEEDER_COMP"
+    - "TRANS_UE_GATEWAY_ULRP"
+    - "DL_FREQ_BEAMREF_DL_TIMING_ULRP"
+    - "STEPWISE_COMMON_COMP"
+
+mixed_population:
+  mixes:
+    - [0.8, 0.15, 0.05]
+    - [0.5, 0.3, 0.2]
+    - [0.2, 0.3, 0.5]
+  population_labels: ["gnss_valid", "gnss_degraded", "gnss_free"]
+  samples_per_mix: 100000
+
+outputs:
+  output_root: "results/ntn_resilient_sync"
+  save_mat: true
+  save_csv: true
+  save_json_metadata: true
+  save_fig: false
+  save_pdf_vector: false
+  save_png_dpi: 300
+  public_dir: "figures/tdoc_public"
+  confidential_dir: "figures/confidential_validation"
+  explanatory_dir: "figures/explanatory"
+  figure_traceability_file: "configs/ntn_resilient_sync/Figure_Traceability_SixGR_NTN.csv"

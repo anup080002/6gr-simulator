@@ -1,0 +1,6 @@
+inherits: tdoc.yaml
+campaign_name: "ntn_resilient_sync_filing"
+run_mode: "filing"
+
+physical_layer:
+  independent_seeds: [20260808, 20260809, 20260810]

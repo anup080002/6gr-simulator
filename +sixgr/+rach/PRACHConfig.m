@@ -362,7 +362,11 @@ end
 topLevelNames = unique(topLevelNames);
 for iName = 1:numel(topLevelNames)
     name = char(topLevelNames(iName));
-    if isfield(cfg, name) && ~isempty(cfg.(name))
+    % A normalized scenario can contain a top-level section whose name is
+    % identical to a requested leaf (for example channel_model).  Such a
+    % section is not a flat scalar alias and must not shadow the explicit
+    % nested path random_access.channel_model.
+    if isfield(cfg, name) && ~isempty(cfg.(name)) && ~isstruct(cfg.(name))
         value = cfg.(name);
         return;
     end

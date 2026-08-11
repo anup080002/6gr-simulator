@@ -1,0 +1,24 @@
+inherits: ../../lls/pdsch_ntn_leo_cdl_d_64x4_antenna_example.yaml
+
+scenario:
+  id: ntn_topology_64x4_pdsch_short_proof
+  description: Short waveform-truth PDSCH proof using the topology-bound satellite and UE arrays
+
+simulation:
+  masterSeed: 20260821
+  commonRandomKey: ntn_topology_64x4_pdsch_short_proof_v1
+  snrDb: [10]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 2
+  statisticalClass: diagnostic_only
+
+receiver:
+  channelEstimation: practical
+
+results:
+  outputRoot: results/ntn_resilient_sync/short_phy
+  generatePlots: true
+  imageFormat: png
+  imageResolutionDPI: 180
+  prohibitSVG: true

@@ -58,12 +58,15 @@ end
 
 function path = localResolvePath(raw)
 raw = char(string(raw));
-if exist(raw, "file") == 2
-    path = localCanonical(raw);
-    return;
-end
 root = fileparts(fileparts(fileparts(mfilename("fullpath"))));
-candidate = fullfile(root, raw);
+if java.io.File(raw).isAbsolute()
+    candidate = raw;
+else
+    % Anchor repository-relative configuration paths before calling exist.
+    % exist(relative,'file') searches the MATLAB path and can otherwise be
+    % canonicalized against matlab.unittest's temporary working directory.
+    candidate = fullfile(root, raw);
+end
 if exist(candidate, "file") == 2
     path = localCanonical(candidate);
     return;

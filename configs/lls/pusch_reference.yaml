@@ -80,6 +80,16 @@ channel:
   seed: 20260810
   normalization: occupied_re_esn0
 
+# Explicit residual synchronization impairment authority. Campaign runners
+# may select values only from their resolved YAML residual grid. The receiver
+# never receives the injected truth as an estimator input.
+synchronizationResidual:
+  enabled: false
+  timingErrorSeconds: 0
+  frequencyErrorHz: 0
+  source: disabled_by_yaml
+  receiverUsesOracle: false
+
 # Canonical BS/UE physical-array authority. When enabled, the logical PHY
 # ports are projected onto these physical elements before nrCDLChannel. The
 # exact same descriptor and steering matrix generate the antenna CSV/PNG

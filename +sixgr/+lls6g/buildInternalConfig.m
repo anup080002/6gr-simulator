@@ -854,15 +854,18 @@ cfg.pdsch6gr.ModulationPerCodeword = cellstr(string(localGetNested(s, "pdsch6gr.
 cfg.pdsch6gr.TargetCodeRatePerCodeword = double(localGetNested(s, "pdsch6gr.target_code_rate_per_codeword", sixgr.util.structGet(cfg, "phy.pdsch.codeRate", 0.4785)));
 cfg.pdsch6gr.MCSMode = char(string(localGetNested(s, "pdsch6gr.mcs_mode", "fixed")));
 cfg.pdsch6gr.FixedMCS = double(localGetNested(s, "pdsch6gr.fixed_mcs", sixgr.util.structGet(cfg, "phy.pdsch.configuredMCSIndex", 10)));
-cfg.pdsch6gr.MCSUECapability1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_ue_capability_1024qam", []));
-cfg.pdsch6gr.MCSRRCEnabled1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_rrc_enabled_1024qam", []));
-cfg.pdsch6gr.MCSDCIEnabled1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_dci_enabled_1024qam", []));
-cfg.pdsch6gr.MCSDeploymentAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_deployment_allows_1024qam", []));
+% Optional 1024-QAM inputs default to the explicit disabled state.  Empty
+% arrays are not a valid canonical mcsContext and previously broke focused
+% TRS/PRACH scenarios that do not configure high-order PDSCH modulation.
+cfg.pdsch6gr.MCSUECapability1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_ue_capability_1024qam", false));
+cfg.pdsch6gr.MCSRRCEnabled1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_rrc_enabled_1024qam", false));
+cfg.pdsch6gr.MCSDCIEnabled1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_dci_enabled_1024qam", false));
+cfg.pdsch6gr.MCSDeploymentAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_deployment_allows_1024qam", false));
 cfg.pdsch6gr.MCSFrequencyRange = char(string(localGetNested(s, "pdsch6gr.mcs_frequency_range", "")));
 cfg.pdsch6gr.MCSOperatingBand = char(string(localGetNested(s, "pdsch6gr.mcs_operating_band", "")));
 cfg.pdsch6gr.MCSDeploymentClass = char(string(localGetNested(s, "pdsch6gr.mcs_deployment_class", "")));
-cfg.pdsch6gr.MCSFrequencyRangeAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_frequency_range_allows_1024qam", []));
-cfg.pdsch6gr.MCSBandAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_band_allows_1024qam", []));
+cfg.pdsch6gr.MCSFrequencyRangeAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_frequency_range_allows_1024qam", false));
+cfg.pdsch6gr.MCSBandAllows1024QAM = logical(localGetNested(s, "pdsch6gr.mcs_band_allows_1024qam", false));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", struct( ...
     "UECapability1024QAM", cfg.pdsch6gr.MCSUECapability1024QAM, ...
     "RRCEnabled1024QAM", cfg.pdsch6gr.MCSRRCEnabled1024QAM, ...

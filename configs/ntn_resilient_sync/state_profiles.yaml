@@ -1,0 +1,106 @@
+schema_version: "1.0"
+profiles:
+  - id: "REG_SAT_ULRP"
+    research_taxonomy: "agreed_starting_point"
+    payload_architecture: "regenerative"
+    scope: "service_link"
+    state_version: 1
+    activation_time_s: 0
+    validity_s: 60
+    coefficient_rule_id: "same_carrier_service_link"
+    H: [[-1, -1], [1, -1]]
+    g_model: "zero"
+    k_rho: 1
+    k_epsilon: 1
+    fdd_scaling: 1
+    step_handling_rule: "reject_straddling_window"
+    external_input: "none"
+    dl_timing: {status: "uncompensated_service", responsible_entity: "ue", reference_point: "satellite_ulrp", component: "service", update_mode: "continuous", derivative_order: 1}
+    dl_frequency: {status: "uncompensated_service", responsible_entity: "ue", reference_point: "satellite_ulrp", component: "service_plus_oscillator", update_mode: "continuous", derivative_order: 1}
+    ul_timing: {status: "ue_compensated", responsible_entity: "ue", reference_point: "satellite_ulrp", component: "service", update_mode: "per_transmission", derivative_order: 1}
+    ul_frequency: {status: "ue_compensated", responsible_entity: "ue", reference_point: "satellite_ulrp", component: "service_plus_oscillator", update_mode: "per_transmission", derivative_order: 1}
+
+  - id: "TRANS_NET_FEEDER_COMP"
+    research_taxonomy: "agreed_starting_point"
+    payload_architecture: "transparent"
+    scope: "service_link_with_network_feeder_compensation"
+    state_version: 1
+    activation_time_s: 0
+    validity_s: 60
+    coefficient_rule_id: "ue_service_network_feeder"
+    H: [[-1, -1], [1, -1]]
+    g_model: "network_feeder_removed"
+    k_rho: 1
+    k_epsilon: 1
+    fdd_scaling: 1
+    step_handling_rule: "split_at_state_activation"
+    external_input: "network_feeder_state"
+    dl_timing: {status: "network_feeder_compensated", responsible_entity: "network", reference_point: "gateway_ulrp", component: "feeder", update_mode: "polynomial", derivative_order: 2}
+    dl_frequency: {status: "network_feeder_compensated", responsible_entity: "network", reference_point: "gateway_ulrp", component: "feeder", update_mode: "polynomial", derivative_order: 2}
+    ul_timing: {status: "ue_service_compensated", responsible_entity: "ue", reference_point: "satellite_service_reference", component: "service", update_mode: "per_transmission", derivative_order: 1}
+    ul_frequency: {status: "ue_service_compensated", responsible_entity: "ue", reference_point: "satellite_service_reference", component: "service", update_mode: "per_transmission", derivative_order: 1}
+
+  - id: "TRANS_UE_GATEWAY_ULRP"
+    research_taxonomy: "study"
+    payload_architecture: "transparent"
+    scope: "service_and_common_feeder"
+    state_version: 1
+    activation_time_s: 0
+    validity_s: 30
+    association_id: "gateway_default"
+    common_epoch_s: 0
+    coefficient_rule_id: "ue_gateway_ulrp_fdd_scaled"
+    H: [[-1, -1], [1, -1]]
+    g_model: "broadcast_feeder_polynomial"
+    k_rho: 1
+    k_epsilon: 1
+    fdd_scaling: 1.5
+    step_handling_rule: "split_at_state_activation"
+    external_input: "broadcast_feeder_polynomial"
+    dl_timing: {status: "observable_service_plus_feeder", responsible_entity: "ue", reference_point: "gateway_ulrp", component: "service_plus_feeder", update_mode: "broadcast_polynomial", derivative_order: 2}
+    dl_frequency: {status: "observable_service_plus_feeder", responsible_entity: "ue", reference_point: "gateway_ulrp", component: "service_plus_feeder_plus_oscillator", update_mode: "broadcast_polynomial", derivative_order: 2}
+    ul_timing: {status: "ue_compensated_service_plus_feeder", responsible_entity: "ue", reference_point: "gateway_ulrp", component: "service_plus_feeder", update_mode: "per_transmission", derivative_order: 2}
+    ul_frequency: {status: "ue_compensated_service_plus_feeder", responsible_entity: "ue", reference_point: "gateway_ulrp", component: "service_plus_feeder_plus_oscillator", update_mode: "per_transmission", derivative_order: 2}
+
+  - id: "DL_FREQ_BEAMREF_DL_TIMING_ULRP"
+    research_taxonomy: "study"
+    payload_architecture: "regenerative"
+    scope: "asymmetric_downlink_references"
+    state_version: 1
+    activation_time_s: 0
+    validity_s: 30
+    coefficient_rule_id: "profile_specific_asymmetric_reference"
+    H: [[-1, -1], [1, -1]]
+    g_model: "beam_frequency_and_ulrp_timing_offsets"
+    k_rho: 1
+    k_epsilon: 1
+    fdd_scaling: 1
+    step_handling_rule: "profile_specific_g_subtraction"
+    external_input: "broadcast_beam_reference_state"
+    dl_timing: {status: "aligned", responsible_entity: "network", reference_point: "satellite_ulrp", component: "common_timing", update_mode: "broadcast_state", derivative_order: 1}
+    dl_frequency: {status: "precompensated", responsible_entity: "network", reference_point: "beam_reference", component: "beam_common_frequency", update_mode: "broadcast_state", derivative_order: 1}
+    ul_timing: {status: "ue_residual_compensated", responsible_entity: "ue", reference_point: "satellite_ulrp", component: "service_residual", update_mode: "per_transmission", derivative_order: 1}
+    ul_frequency: {status: "ue_residual_compensated", responsible_entity: "ue", reference_point: "satellite_ulrp", component: "service_residual_plus_oscillator", update_mode: "per_transmission", derivative_order: 1}
+
+  - id: "STEPWISE_COMMON_COMP"
+    research_taxonomy: "experiment"
+    payload_architecture: "transparent"
+    scope: "piecewise_common_compensation"
+    state_version: 2
+    activation_time_s: 10
+    activation_slot: 20000
+    validity_s: 20
+    update_period_s: 10
+    known_step_magnitude: true
+    coefficient_rule_id: "piecewise_common_state"
+    H: [[-1, -1], [1, -1]]
+    g_model: "piecewise_common_offset"
+    k_rho: 1
+    k_epsilon: 1
+    fdd_scaling: 1
+    step_handling_rule: "split_at_state_activation"
+    external_input: "state_versioned_common_offset"
+    dl_timing: {status: "piecewise_compensated", responsible_entity: "network", reference_point: "gateway_ulrp", component: "common_timing", update_mode: "stepwise", derivative_order: 0}
+    dl_frequency: {status: "piecewise_compensated", responsible_entity: "network", reference_point: "gateway_ulrp", component: "common_frequency", update_mode: "stepwise", derivative_order: 0}
+    ul_timing: {status: "state_selected", responsible_entity: "ue", reference_point: "gateway_ulrp", component: "service_plus_common_residual", update_mode: "state_versioned", derivative_order: 1}
+    ul_frequency: {status: "state_selected", responsible_entity: "ue", reference_point: "gateway_ulrp", component: "service_plus_common_residual", update_mode: "state_versioned", derivative_order: 1}

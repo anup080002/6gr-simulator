@@ -1,0 +1,30 @@
+Pack,Figure,Title,Evidence_Class,Campaign_or_Source,Output_Basename
+TDoc,2-1,Common evaluation and resilient UL framework,ARCHITECTURE_DIAGRAM,Config/state machine,fig_2_01_resilient_ul_framework
+TDoc,2-2,One-way delay vs ULRP arrival error,ANALYTICAL,Geometry/error mapping,fig_2_02_delay_reference_convention
+TDoc,2-3,ULRP timing error vs position age,ANALYTICAL + MONTE_CARLO_GEOMETRY,Campaign A1,fig_2_03_timing_bound_vs_age
+TDoc,2-4,Geometric frequency error vs speed,ANALYTICAL,Campaign A1,fig_2_04_frequency_bound_vs_speed
+TDoc,2-5,Reference-area timing CDF,MONTE_CARLO_GEOMETRY,Campaign A2,fig_2_05_reference_area_timing_cdf
+TDoc,2-6,Reference-area differential CFO CDF,MONTE_CARLO_GEOMETRY,Campaign A2,fig_2_06_reference_area_cfo_cdf
+TDoc,2-7,Timing uncertainty vs elevation,MONTE_CARLO_GEOMETRY,Campaign A2,fig_2_07_timing_vs_elevation
+TDoc,2-8,Differential CFO vs elevation,MONTE_CARLO_GEOMETRY,Campaign A2,fig_2_08_cfo_vs_elevation
+TDoc,2-9,Acquisition vs ordinary UL regions,ARCHITECTURE_DIAGRAM + CALIBRATED_LLS,Campaign C/D,fig_2_09_acquisition_vs_ordinary_regions
+TDoc,2-10,Architecture-dependent responsibility,ARCHITECTURE_DIAGRAM,State profiles,fig_2_10_compensation_responsibility
+TDoc,2-11,Intentional numbering gap,N/A,Do not generate,
+TDoc,2-12,k_offset/TA/report timeline,EVENT_PROCEDURE,Campaign E/F,fig_2_12_koffset_ta_timeline
+TDoc,2-13,Differential RTT inside beam,MONTE_CARLO_GEOMETRY,Campaign E1,fig_2_13_beam_rtt_spread
+TDoc,2-14,k_offset excess-delay CDF,SCHEDULER_SYSTEM,Campaign E1,fig_2_14_koffset_excess_delay_cdf
+TDoc,2-15,RTT update time scale,ANALYTICAL + EVENT_PROCEDURE,Campaign A4/E3,fig_2_15_koffset_update_timescale
+TDoc,2-16,Four-domain compensation state,ARCHITECTURE_DIAGRAM,State profiles,fig_2_16_compensation_state_matrix
+TDoc,2-17,State-aware chain,ARCHITECTURE_DIAGRAM + EVENT_PROCEDURE,Campaign B,fig_2_17_state_aware_chain
+TDoc,2-18,Estimator residual vs observation interval,ANALYTICAL + CALIBRATED_LLS,Campaign B3,fig_2_18_estimator_observation_interval
+TDoc,2-19,Search threshold vs hypotheses,ANALYTICAL + CALIBRATED_LLS,Campaign C2/C3,fig_2_19_search_threshold_scaling
+TDoc,2-20,Timing pipeline depth CDF,SCHEDULER_SYSTEM,Campaign E2,fig_2_20_timing_pipeline_cdf
+TDoc,2-21,TA guard/collision,ANALYTICAL + EVENT_PROCEDURE,Campaign F,fig_2_21_ta_guard_and_collision
+TDoc,2-22,Residual CFO impact,ANALYTICAL + CALIBRATED_LLS,Campaign D,fig_2_22_residual_cfo_impact
+Confidential,1,Unknown-state ambiguity,ARCHITECTURE_DIAGRAM + CALIBRATED_LLS,Campaign B4,pat_fig_01_ambiguity
+Confidential,2,PreCompensationStateMatrix,ARCHITECTURE_DIAGRAM,State profiles,pat_fig_02_state_matrix
+Confidential,3,State-aware estimator and UL rule,EVENT_PROCEDURE + CALIBRATED_LLS,Campaign B,pat_fig_03_state_aware_estimator
+Confidential,4,Mismatch and network adaptation,EVENT_PROCEDURE,Campaign B6/G,pat_fig_04_mismatch_adaptation
+Confidential,5,UE operational flow,ARCHITECTURE_DIAGRAM + EVENT_PROCEDURE,Finite-state machine,pat_fig_05_ue_flow
+Confidential,6,Message sequence,EVENT_PROCEDURE,Event log,pat_fig_06_sequence
+Confidential,7,System architecture,ARCHITECTURE_DIAGRAM,Actual module graph,pat_fig_07_architecture

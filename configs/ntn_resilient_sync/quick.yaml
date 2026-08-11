@@ -1,0 +1,29 @@
+inherits: baseline.yaml
+campaign_name: "ntn_resilient_sync_quick"
+run_mode: "quick"
+
+gnss_free:
+  drops_per_point: 10000
+
+k_offset:
+  ue_drops_per_beam: 10000
+
+mixed_population:
+  samples_per_mix: 10000
+
+residual_grid:
+  timing_error_us: [0, -25, 25, -100, 100]
+  frequency_error_khz: [0, -2, 2, -10, 10]
+
+physical_layer:
+  prach_trials_min: 100
+  # Wiring/output proof only. Confidence intervals remain diagnostic; the
+  # tdoc.yaml and filing.yaml budgets are unchanged publication campaigns.
+  bler_blocks_min: 2
+  block_errors_target: 1
+  blocks_max: 4
+
+ntn_topology:
+  duration_s: 40
+  sample_time_s: 2
+  closest_approach_time_s: 20
