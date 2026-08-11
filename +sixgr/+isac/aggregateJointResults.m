@@ -1,0 +1,93 @@
+function aggregate = aggregateJointResults(cfg,trialRows)
+%AGGREGATEJOINTRESULTS Aggregate paired waveform truth with honest intervals.
+
+targetRows = trialRows(trialRows.TargetPresent,:);
+[group,waveform,delay,doppler,mode,collision,response,portProfile] = findgroups( ...
+    targetRows.WaveformProfile,targetRows.DelayOverCP, ...
+    targetRows.NormalizedDoppler,targetRows.SensingMode, ...
+    targetRows.CollisionRatioPercent,targetRows.CollisionResponse,targetRows.PortProfile);
+n = splitapply(@numel,targetRows.Detected,group);
+pd = splitapply(@mean,double(targetRows.Detected),group);
+wrongPeak = splitapply(@mean,double(targetRows.WrongPeak),group);
+rangeRMSE = splitapply(@(x) sqrt(mean(x.^2,"omitnan")),targetRows.RangeErrorM,group);
+dopplerRMSE = splitapply(@(x) sqrt(mean(x.^2,"omitnan")),targetRows.DopplerErrorHz,group);
+angleRMSE = splitapply(@(x) sqrt(mean(x.^2,"omitnan")),targetRows.AzimuthErrorDeg,group);
+evm = splitapply(@mean,targetRows.CommunicationEVMRMS,group);
+ser = splitapply(@mean,targetRows.UncodedSymbolErrorRate,group);
+goodput = splitapply(@mean,targetRows.UncodedGoodputBps,group);
+papr = splitapply(@mean,targetRows.PAPRDb,group);
+pslr = splitapply(@mean,targetRows.PSLRDb,group);
+islr = splitapply(@mean,targetRows.ISLRDb,group);
+aclr = splitapply(@mean,targetRows.ACLRDb,group);
+[pdLow,pdHigh] = localWilson(pd,n,double(cfg.metrics.confidenceLevel));
+[wrongLow,wrongHigh] = localWilson(wrongPeak,n,double(cfg.metrics.confidenceLevel));
+aggregate.ProfileMetrics = table(waveform,delay,doppler,mode,collision,response,portProfile,n,pd, ...
+    pdLow,pdHigh,wrongPeak,wrongLow,wrongHigh,rangeRMSE,dopplerRMSE,angleRMSE,evm,ser, ...
+    goodput,papr,pslr,islr,aclr, ...
+    'VariableNames',{'WaveformProfile','DelayOverCP','NormalizedDoppler', ...
+    'SensingMode','CollisionRatioPercent','CollisionResponse','PortProfile','Trials', ...
+    'DetectionProbability','DetectionProbabilityCILow','DetectionProbabilityCIHigh', ...
+    'WrongPeakProbability','WrongPeakProbabilityCILow','WrongPeakProbabilityCIHigh', ...
+    'RangeRMSEM','DopplerRMSEHz','AngleRMSEDeg','MeanCommunicationEVMRMS', ...
+    'MeanUncodedSymbolErrorRate','MeanUncodedGoodputBps','MeanPAPRDb', ...
+    'MeanPSLRDb','MeanISLRDb','MeanACLRDb'});
+
+noTarget = trialRows(~trialRows.TargetPresent,:);
+if isempty(noTarget)
+    pfa = NaN; pfaLow = NaN; pfaHigh = NaN; noTargetCount = 0;
+else
+    noTargetCount = height(noTarget);
+    pfa = mean(noTarget.Detected);
+    [pfaLow,pfaHigh] = localWilson(pfa,noTargetCount,double(cfg.metrics.confidenceLevel));
+end
+requestedPFA = double(cfg.metrics.publicationPFA);
+qualified = noTargetCount >= ceil(double( ...
+    cfg.metrics.minimumExpectedFalseAlarmsForQualification)/requestedPFA);
+aggregate.ProbabilityQualification = table(noTargetCount,pfa,pfaLow,pfaHigh, ...
+    requestedPFA,qualified,string(localQualification(qualified)), ...
+    'VariableNames',{'NoTargetTrials','EmpiricalPFA','PFACILow','PFACIHigh', ...
+    'RequestedPublicationPFA','PublicationQualified','QualificationStatus'});
+
+[communicationGroup,communicationProfile] = findgroups(targetRows.WaveformProfile);
+meanEVM = splitapply(@mean,targetRows.CommunicationEVMRMS,communicationGroup);
+maxEVM = splitapply(@max,targetRows.CommunicationEVMRMS,communicationGroup);
+meanSER = splitapply(@mean,targetRows.UncodedSymbolErrorRate,communicationGroup);
+maxSER = splitapply(@max,targetRows.UncodedSymbolErrorRate,communicationGroup);
+meanGoodput = splitapply(@mean,targetRows.UncodedGoodputBps,communicationGroup);
+maxGoodput = splitapply(@max,targetRows.UncodedGoodputBps,communicationGroup);
+aggregate.Communication = table(communicationProfile,meanEVM,maxEVM,meanSER, ...
+    maxSER,meanGoodput,maxGoodput, ...
+    'VariableNames',{'WaveformProfile','MeanCommunicationEVMRMS', ...
+    'MaximumCommunicationEVMRMS','MeanUncodedSymbolErrorRate', ...
+    'MaximumUncodedSymbolErrorRate','MeanUncodedGoodputBps', ...
+    'MaximumUncodedGoodputBps'});
+complexityOperations = double(targetRows.ConfiguredObservations).* ...
+    log2(double(targetRows.CPSamples)+1) + double(targetRows.RetainedObservations);
+aggregate.Complexity = table(targetRows.TrialId,targetRows.WaveformProfile, ...
+    targetRows.ConfiguredObservations,targetRows.RetainedObservations, ...
+    repmat(2,height(targetRows),1),complexityOperations, ...
+    repmat(16*max(targetRows.CPSamples),height(targetRows),1), ...
+    'VariableNames',{'TrialId','WaveformProfile','ConfiguredObservations', ...
+    'RetainedObservations','FFTCountLowerBound','ReceiverOperationEstimate', ...
+    'BufferBytesLowerBound'});
+end
+
+function [low,high] = localWilson(probability,n,confidence)
+probability = double(probability(:));
+n = double(n(:));
+alpha = 1-confidence;
+z = norminv(1-alpha/2);
+denominator = 1+z^2./n;
+center = (probability+z^2./(2*n))./denominator;
+radius = z*sqrt(probability.*(1-probability)./n+z^2./(4*n.^2))./denominator;
+low = max(0,center-radius);
+high = min(1,center+radius);
+end
+
+function status = localQualification(flag)
+if flag
+    status = "trial_count_supports_requested_pfa";
+else
+    status = "insufficient_no_target_trials_for_publication_pfa";
+end
+end

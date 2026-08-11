@@ -1,0 +1,375 @@
+schemaVersion: sixgr.isac.joint.v1
+
+study:
+  id: ran1_ai_10_8_2_10_8_3_joint_isac
+  title: SixGR joint ISAC waveform and integration campaign
+  evidenceClass: waveform_truth
+  standardsContext: [3GPP_TR_38.901_R18, 3GPP_TR_38.765, RAN1_AI_10_8_2, RAN1_AI_10_8_3]
+  masterPrompt: SixGR_Codex_Master_Prompt_10_8_2_10_8_3.md
+  sourceDocumentPolicy: fail_closed_and_report_missing
+
+run:
+  activeMode: quick
+  masterSeed: 2026081201
+  pairedSeeds: true
+  parallelEnabled: false
+  modes:
+    quick:
+      evidenceClass: engineering_regression
+      trialSeeds: [1101]
+      waveformProfiles: [W0, W1, W2, W3]
+      delayOverCP: [0.5, 1.0, 1.25]
+      normalizedDoppler: [0.0, 0.05]
+      coherentSymbols: [4]
+      collisionRatiosPercent: [0, 10]
+      tddPatterns: [all_dl, DSUUU]
+      sensingModes: [trp_monostatic, trp_trp_bistatic]
+      noTargetTrials: 16
+      targetTrials: 8
+    tdoc:
+      evidenceClass: tdoc_reduced_waveform_campaign
+      trialSeeds: [2101, 2102, 2103, 2104]
+      waveformProfiles: [W0, W1, W2, W3]
+      delayOverCP: [0.25, 0.5, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0]
+      normalizedDoppler: [0.0, 0.01, 0.05, 0.1]
+      coherentSymbols: [1, 2, 4, 8, 14]
+      collisionRatiosPercent: [0, 5, 10, 20]
+      tddPatterns: [all_dl, DDDSU, DDDSUDDSUU, DDDDDDDSUU, DSUUU]
+      sensingModes: [trp_monostatic, trp_trp_bistatic]
+      noTargetTrials: 128
+      targetTrials: 64
+    full:
+      evidenceClass: publication_candidate_requires_statistical_gate
+      trialSeeds: [3101, 3102, 3103, 3104, 3105, 3106, 3107, 3108]
+      waveformProfiles: [W0, W1, W2, W3]
+      delayOverCP: [0.25, 0.5, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0]
+      normalizedDoppler: [0.0, 0.01, 0.05, 0.1]
+      coherentSymbols: [1, 2, 4, 8, 14]
+      collisionRatiosPercent: [0, 5, 10, 20]
+      tddPatterns: [all_dl, DDDSU, DDDSUDDSUU, DDDDDDDSUU, DSUUU]
+      sensingModes: [trp_monostatic, trp_trp_bistatic]
+      noTargetTrials: 100000
+      targetTrials: 10000
+
+carrier:
+  activeProfile: FR3_7GHz_100MHz_30kHz
+  profiles:
+    FR3_7GHz_100MHz_30kHz:
+      frequencyHz: 7000000000
+      channelBandwidthHz: 100000000
+      subcarrierSpacingKHz: 30
+      nSizeGrid: 273
+      nStartGrid: 0
+      nCellID: 17
+      cyclicPrefix: normal
+      implementation: nrCarrierConfig
+    FR2_30GHz_200MHz_120kHz:
+      frequencyHz: 30000000000
+      channelBandwidthHz: 200000000
+      subcarrierSpacingKHz: 120
+      nSizeGrid: 132
+      nStartGrid: 0
+      nCellID: 17
+      cyclicPrefix: normal
+      implementation: nrCarrierConfig
+
+waveform:
+  modulation: QPSK
+  dataSeedOffset: 300
+  communicationDataEnabled: true
+  communicationDataPower: 1.0
+  sensingRSPower: 1.0
+  sensingSymbolIndices: [2, 6, 10, 13]
+  frequencyComb: 4
+  frequencyCombOffset: 0
+  occupiedREEnergyNormalization: equal_total_sensing_energy
+  ofdmWindowingSamples: 0
+  profiles:
+    W0:
+      description: communication-aligned CP-OFDM with reused NR Gold QPSK RS
+      sequenceRule: reused_nr_gold
+      resetRule: slot_anchor
+      cumulativeCPPhase: false
+      receiverKnowledge: exact_sequence_and_grid
+    W1:
+      description: CP-OFDM with deterministic occasion-randomized reused RS
+      sequenceRule: randomized_nr_gold
+      resetRule: per_occasion
+      cumulativeCPPhase: false
+      receiverKnowledge: seed_and_reset_boundaries
+    W2:
+      description: repeated base-sequence multi-symbol reference
+      sequenceRule: repeated_nr_gold
+      resetRule: slot_anchor
+      cumulativeCPPhase: false
+      receiverKnowledge: exact_base_sequence
+    W3:
+      description: frame-anchored cumulative-CP multi-symbol sensing RS
+      sequenceRule: repeated_nr_gold
+      resetRule: frame_anchor
+      cumulativeCPPhase: true
+      absoluteSubcarrierIndex: centered_physical_ofdm_bin
+      punctureStateRule: advance_by_absolute_symbol_not_transmission
+      receiverKnowledge: independent_q_sequence_and_reset_derivation
+
+receiver:
+  profiles: [B0, B1, B2, C0]
+  B0:
+    description: conventional per-symbol CP removal and FFT
+    matchedWaveforms: [W0, W1, W2]
+  B1:
+    description: ordinary W0 overlap-save multi-symbol correlation
+    matchedWaveforms: [W0]
+  B2:
+    description: W2 repeated-sequence matched multi-symbol receiver
+    matchedWaveforms: [W2]
+  C0:
+    description: W3 absolute-index de-rotation and coherent processing
+    matchedWaveforms: [W3]
+  noiseFigureDb: 5
+  referenceTemperatureK: 290
+  snrDb: 5
+  channelEstimation: exact_saved_sensing_reference
+  sharedResourceKnowledge: known_cancelled
+  residualDataInterferenceFraction: 0.10
+
+channel:
+  controlledBackend: deterministic_time_domain_target_channel
+  geometryBackend: phased_scattering_mimo
+  tr38901Backend:
+    enabled: true
+    className: h38901ISACChannel
+    availabilityPolicy: fail_closed_do_not_substitute
+    autoAcquireMathWorksExample: true
+    exampleCacheDirectory: "%LOCALAPPDATA%/MathWorks/SixGRExamples/TR38901ISAC"
+    helperSearchPaths:
+      - "%LOCALAPPDATA%/Temp/sixgr_isac_example_20260812"
+    communicationScenario: UMi
+    sensingScenario: ISAC-UAV
+    backgroundChannel: true
+    targetChannel: true
+    losProbability: 1.0
+    referenceExample:
+      enabled: true
+      waveformProfile: W0
+      sensingMode: trp_monostatic
+      seed: 42
+      numTransmitAntennas: 1
+      numReceiveAntennas: 1
+  propagationSpeedMps: 299792458
+  directPathEnabled: true
+  targetPathGainDb: -20
+  backgroundPathGainDb: -35
+  fractionalDelayMethod: dsp_variable_fractional_delay
+  additiveNoiseEnabled: true
+  randomPhaseEnabled: true
+
+pre6gExampleAdapter:
+  enabled: true
+  executionBackend: simulation_only_no_usrp_claim
+  hardwareEnabled: false
+  carrierImplementation: pre6GCarrierConfig
+  physicalChannelImplementation: pre6GPhysicalChannel
+  referenceSignalImplementation: pre6GReferenceSignal
+  ofdmImplementation: pre6GOFDMModulate
+  nSizeGrid: 273
+  subcarrierSpacingKHz: 30
+  nCellID: 17
+  modulation: QPSK
+  dmrs:
+    subcarrierLocations: [0, 2, 4, 6, 8, 10]
+    symbolLocations: [2, 7, 11]
+    frequencyDomainCDM: 2
+    timeDomainCDM: 1
+    portSet: [0]
+
+scene:
+  activeTarget: UAV_1
+  nodes:
+    trp1PositionM: [0, 0, 10]
+    trp1OrientationDeg: [0, 0, 0]
+    trp2PositionM: [80, 0, 10]
+    trp2OrientationDeg: [180, 0, 0]
+    uePositionM: [60, 50, 1.5]
+  targets:
+    UAV_1:
+      positionM: [50, 20, 15]
+      velocityMps: [5, 3, 0]
+      orientationDeg: [0, 0, 0]
+      sizeM: [1.2, 1.2, 0.4]
+      reflectionCoefficientReal: 1.0
+      reflectionCoefficientImag: 0.0
+  modes:
+    trp_monostatic:
+      sensingTransmitter: trp1
+      sensingReceiver: trp1
+      delayReference: round_trip
+    trp_trp_bistatic:
+      sensingTransmitter: trp1
+      sensingReceiver: trp2
+      delayReference: direct_path_referenced_excess_delay
+
+antenna:
+  elementSpacingWavelength: 0.5
+  portProfiles: [single_port, eight_port_ula]
+  single_port:
+    transmitElements: 1
+    receiveElements: 1
+    portMapping: one_logical_port_per_element
+    powerNormalization: unit_total_power
+  eight_port_ula:
+    transmitElements: 8
+    receiveElements: 8
+    portMapping: one_logical_port_per_element
+    powerNormalization: unit_total_power
+    crossPortCalibration: configured_phase_relation
+    perPortPhaseSlopeDeg: 10
+  elementPattern:
+    model: phased_nr_antenna_element
+    maximumGainDbi: 8
+  angleEstimation:
+    minimumDeg: -90
+    maximumDeg: 90
+    stepDeg: 0.5
+
+resourcePatterns:
+  activePattern: regular_comb4
+  regular_comb4:
+    frequencyComb: 4
+    timeComb: 4
+    fixedOffset: 0
+  tdd_staggered_40slot:
+    slots: [0, 2, 6, 7, 10, 11, 16, 17, 20, 22, 25, 27, 30, 32, 35, 37]
+    frequencyCombOffsets: [0, 1, 2, 3]
+  finiteCandidateOffsets:
+    time: [0, 1, 2, 3]
+    frequency: [0, 1, 2, 3]
+
+tdd:
+  gapPhasePolicy: continuous
+  analysisSlots: 40
+  patterns:
+    all_dl: D
+    DDDSU: DDDSU
+    DDDSUDDSUU: DDDSUDDSUU
+    DDDDDDDSUU: DDDDDDDSUU
+    DSUUU: DSUUU
+  phaseRelations: [continuous, bounded_30deg, known_compensated, unknown_reset]
+
+events:
+  commonPhaseStepDeg: [0, 10, 20, 30, 45, 60, 90, 120, 150, 180]
+  eventPositionFraction: [0.25, 0.5, 0.75]
+  periodicHalfPeriodOccasions: [4, 8]
+  timingOffsetBins: [0, 0.25, 0.5, 1.0]
+  timingModels: [baseband_sample_shift, rf_time_reference_shift]
+  residualFrequencyHz: [0, 10, 50, 100]
+  portPhaseSlopeDeg: [0, 5, 10, 20]
+  powerStepDb: [0, -1, -3, -6]
+  relationClasses: [preserved, known_transform, estimated_transform, bounded_residual, unknown_unavailable]
+  periodicObservationCount: 64
+  periodicFFTLength: 256
+  portPhaseReferenceAzimuthDeg: 20
+
+interferenceStudy:
+  enabled: true
+  intercellRelativePowerDb: [-20, -10, 0]
+  asynchronousDelayOverCP: [0, 0.5, 1.25]
+  asynchronousFrequencyOffsetHz: [0, 50, 100]
+  selfInterferenceResidualDb: [-80, -60, -40, -20]
+  sensingEchoDelayOverCP: 1.0
+  multipathEchoRelativePowerDb: -6
+  isiIciWaveformProfiles: [W0, W3]
+
+rangeDopplerEvidence:
+  delayOverCP: [0.5, 1.0, 1.25]
+  delayClasses: [below_cp, at_cp, above_cp]
+  delayHypotheses: 256
+  dopplerHypotheses: 129
+  maximumNormalizedDoppler: 0.15
+
+collisions:
+  maskProfiles: [random_isolated, contiguous_time, contiguous_frequency, rectangular_tf, periodic_rs, port_specific]
+  ratiosPercent: [0, 5, 10, 20]
+  responses:
+    - share_reuse
+    - communication_muting
+    - sensing_puncture
+    - time_relocation
+    - frequency_relocation
+    - comb_pattern_selection
+    - beam_precoder_change
+    - known_ratio_power_scaling
+    - occasion_drop_defer
+    - recoverable_relocation
+  fallbackResponseOrder: [share_reuse, sensing_puncture, recoverable_relocation, time_relocation, frequency_relocation, occasion_drop_defer]
+  knownRatioPowerScalingDb: -3
+  beamPrecoderPhaseSlopeDeg: 10
+
+coherencyBudget:
+  maxCoherentSegments: [1, 2, 4]
+  minimumSegmentLength: [8, 16, 24, 32]
+  maximumResidualPhaseDeg: [10, 20, 30, 60, 90]
+  maximumResidualTimingBins: [0.25, 0.5, 1.0]
+  maximumResidualFrequencyHz: [10, 50, 100]
+  measurementProfiles: [range_only, doppler_required, angle_required, range_doppler, range_doppler_angle]
+  transparentCostWeights:
+    communicationRE: 1.0
+    sensingObservationLoss: 1.0
+    latencyOccasions: 0.25
+
+assistance:
+  dopplerHalfWidthCyclesPerSlot: [0.05, 0.08, 0.10, 0.15, 0.20, 0.25, 0.35, 0.50]
+  delayHalfWidthBins: [1, 2, 4, 8]
+  angleHalfWidthDeg: [2, 5, 10, 20]
+
+beamManagement:
+  enabled: true
+  algorithm: deterministic_geometry_measurement_confidence_gate
+  arrayElements: 32
+  narrowBeamCount: 32
+  wideBeamCount: 8
+  narrowAngleRangeDeg: [-60, 60]
+  targetInitialAngleRangeDeg: [-55, 55]
+  angularRateRangeDegPerSecond: [-20, 20]
+  sensingAngleErrorStdDeg: 1.5
+  angularRateErrorStdDegPerSecond: 15
+  informationAgeMs: [0, 25, 50, 100, 150, 200]
+  communicationMeasurementNoiseDb: 1.5
+  narrowRefinementMeasurements: 4
+  confidenceGateStdMultiplier: 2.0
+
+fairness:
+  equalOccupiedRECount: true
+  equalTotalSensingEnergy: true
+  equalOccupiedBandwidth: true
+  equalObservationTime: true
+  equalAntennaPorts: true
+  equalTargetChannelRealization: true
+  equalReceiverKnowledge: true
+
+metrics:
+  probabilityInterval: wilson
+  continuousInterval: bootstrap
+  confidenceLevel: 0.95
+  publicationPFA: 0.001
+  minimumExpectedFalseAlarmsForQualification: 3
+  requested: [papr, cubic_metric, ambiguity, pslr, islr, main_lobe_width, cross_ambiguity, psd, aclr, oobe, range_rmse, doppler_rmse, angle_rmse, pd, pfa, wrong_peak, isi, ici, self_interference, intercell_interference, evm, bler, throughput, complexity, overhead1, overhead2]
+
+detection:
+  probabilityFalseAlarm: 0.01
+  delayToleranceBins: 2
+
+output:
+  root: results/isac_joint
+  timestampedRunFolder: true
+  imageFormat: png
+  imageResolutionDPI: 160
+  imageSizePixels: [1200, 760]
+  prohibitSVG: true
+  saveCSV: true
+  saveMAT: true
+  savePNG: true
+  saveFIG: false
+  savePDF: false
+  deterministicRegeneration: true
+  requireSourceHashLineage: true
