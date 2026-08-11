@@ -26,6 +26,9 @@ def main() -> None:
     assert "live_modulation_demodulation_trace.csv" in text
     assert "Start-Process" in text
     assert "CodexMonitoredRunFolder" in text
+    assert "Get-SixGRMonitoredTerminalVerdict" in text
+    assert "scenario_summary.csv" in (REPO_ROOT / "scripts" / "lib" / "monitored_run_verdict.ps1").read_text(encoding="utf-8")
+    assert "$processFailed -or -not $terminalVerdict.Ok" in text
 
 
 if __name__ == "__main__":

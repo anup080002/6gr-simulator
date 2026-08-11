@@ -9,6 +9,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "lib\monitored_run_verdict.ps1")
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($MatlabExe)) {
     $MatlabExe = if ([string]::IsNullOrWhiteSpace($env:SIXGR_MATLAB_EXE)) {
@@ -248,13 +250,33 @@ do {
 } while ($true)
 
 $proc.WaitForExit()
-Write-Host ("[{0}] MATLAB exited code={1}" -f (Get-Date -Format o), $proc.ExitCode)
+$proc.Refresh()
+$rawExitCode = $null
+try {
+    $rawExitCode = $proc.ExitCode
+} catch {
+    $rawExitCode = $null
+}
+$exitCodeAvailable = $null -ne $rawExitCode -and `
+    -not [string]::IsNullOrWhiteSpace([string]$rawExitCode)
+$exitCodeText = if ($exitCodeAvailable) { [string]$rawExitCode } else { "unavailable" }
+Write-Host ("[{0}] MATLAB exited code={1}" -f (Get-Date -Format o), $exitCodeText)
 Show-DashboardSnapshot -ActiveRunTag $RunTag
 Show-StatusSnapshot -RunFolder $LogicalRunFolder
 Show-StageProgressSnapshot -RunFolder $LogicalRunFolder
 Show-LogTail -Label "matlab_stdout" -PathText $MatlabLog -Lines $TailLines
 Show-LogTail -Label "matlab_stderr" -PathText $MatlabErr -Lines $TailLines
 
-if ($proc.ExitCode -ne 0) {
-    throw "Monitored LLS run failed. Inspect $MatlabLog, $MatlabErr, and $LogicalRunFolder"
+$terminalVerdict = Get-SixGRMonitoredTerminalVerdict -MatlabLog $MatlabLog -RunFolder $LogicalRunFolder
+Write-Host ("TERMINAL result_ok={0} completion={1} required_failures={2} markers_ok={3} reasons={4}" -f `
+    $terminalVerdict.SummaryResultOk, $terminalVerdict.SummaryRunCompletion, `
+    $terminalVerdict.SummaryRequiredFailureCount, $terminalVerdict.MarkerOk, `
+    $terminalVerdict.FailureReasons)
+
+$processFailed = $exitCodeAvailable -and [int]$rawExitCode -ne 0
+if ($processFailed -or -not $terminalVerdict.Ok) {
+    throw "Monitored LLS run failed (process_exit=$exitCodeText terminal_ok=$($terminalVerdict.Ok) reasons=$($terminalVerdict.FailureReasons)). Inspect $MatlabLog, $MatlabErr, and $LogicalRunFolder"
+}
+if (-not $exitCodeAvailable) {
+    Write-Warning "MATLAB process exit code was unavailable; accepting only because independent terminal log markers and scenario_summary.csv both report completed success with zero required failures."
 }
