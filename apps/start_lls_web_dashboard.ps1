@@ -20,30 +20,35 @@ $venvRoot = Join-Path $PSScriptRoot ".webgui-venv"
 $venvPython = Join-Path $venvRoot "Scripts\python.exe"
 
 function Import-LocalDashboardEnvironment {
-    $envPath = Join-Path $PSScriptRoot ".env"
-    if (-not (Test-Path -LiteralPath $envPath)) {
-        return
-    }
-    foreach ($rawLine in Get-Content -LiteralPath $envPath) {
-        $line = $rawLine.Trim()
-        if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+    # Authentication is kept in the ignored .env.auth file and loaded first.
+    # General deployment settings remain in the ignored .env file. Existing
+    # process-level variables retain the highest priority.
+    foreach ($fileName in @(".env.auth", ".env")) {
+        $envPath = Join-Path $PSScriptRoot $fileName
+        if (-not (Test-Path -LiteralPath $envPath)) {
             continue
         }
-        $parts = $line.Split("=", 2)
-        $key = $parts[0].Trim()
-        if ($key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
-            continue
+        foreach ($rawLine in Get-Content -LiteralPath $envPath) {
+            $line = $rawLine.Trim()
+            if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+                continue
+            }
+            $parts = $line.Split("=", 2)
+            $key = $parts[0].Trim()
+            if ($key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+                continue
+            }
+            if (Test-Path -LiteralPath "Env:$key") {
+                continue
+            }
+            $value = $parts[1].Trim()
+            if ($value.Length -ge 2 -and
+                (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+                 ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+            Set-Item -LiteralPath "Env:$key" -Value $value
         }
-        if (Test-Path -LiteralPath "Env:$key") {
-            continue
-        }
-        $value = $parts[1].Trim()
-        if ($value.Length -ge 2 -and
-            (($value.StartsWith('"') -and $value.EndsWith('"')) -or
-             ($value.StartsWith("'") -and $value.EndsWith("'")))) {
-            $value = $value.Substring(1, $value.Length - 2)
-        }
-        Set-Item -LiteralPath "Env:$key" -Value $value
     }
 }
 

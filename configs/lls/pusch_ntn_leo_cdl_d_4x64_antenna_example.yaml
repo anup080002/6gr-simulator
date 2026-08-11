@@ -1,0 +1,117 @@
+inherits: pusch_reference.yaml
+
+scenario:
+  id: pusch_ntn_leo_cdl_d_4x64_antenna_example
+  description: Actual NR PUSCH through a 4-element UE and 64-element gNB using NTN-CDL-D
+
+simulation:
+  masterSeed: 20260811
+  commonRandomKey: pusch_ntn_leo_cdl_d_4x64_antenna_example_v1
+  snrDb: [30]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+carrier:
+  frequencyHz: 2000000000
+  bandwidthMHz: 5
+  subcarrierSpacingKHz: 30
+  nSizeGrid: 11
+  nCellId: 42
+
+allocation:
+  startPRB: 0
+  numberPRB: 11
+
+pusch:
+  numberLayers: 1
+  numberAntennaPorts: 1
+  ptrs:
+    enabled: true
+    timeDensity: 1
+    frequencyDensity: 2
+    cpeCorrection: true
+
+channel:
+  model: NTN-CDL-D
+  delaySpreadSeconds: 0.00000003
+  velocityKmph: 3.0
+  txAntennas: 4
+  rxAntennas: 64
+  seed: 20260814
+
+antenna:
+  enabled: true
+  standardReference: "3GPP TR 38.901"
+  researchTaxonomy: agreed_starting_point
+  couplingMode: cdl_physical_element_domain
+  pointingMode: auto_first_path_boresight
+  powerNormalization: unit_norm_per_logical_port
+  gnb:
+    model: 3gpp_nr_rectangular_panel
+    architecture: full_digital_element_domain
+    size: [8, 8, 1, 1]
+    spacingWavelength: [0.5, 0.5, 8.0, 8.0]
+    polarizationAnglesDeg: [0]
+    orientationDeg: [0, 0, 0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 64
+    element:
+      frequencyRangeHz: [500000000, 100000000000]
+      polarizationModel: 2
+      beamwidthDeg: [65, 65]
+      sidelobeLevelDb: [30, 30]
+      maximumAttenuationDb: 30
+      maximumGainDbi: 8
+  ue:
+    model: 3gpp_nr_rectangular_panel
+    architecture: full_digital_element_domain
+    size: [2, 2, 1, 1]
+    spacingWavelength: [0.5, 0.5, 2.0, 2.0]
+    polarizationAnglesDeg: [0]
+    orientationDeg: [0, 0, 0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 4
+    element:
+      frequencyRangeHz: [500000000, 100000000000]
+      polarizationModel: 2
+      beamwidthDeg: [65, 65]
+      sidelobeLevelDb: [30, 30]
+      maximumAttenuationDb: 30
+      maximumGainDbi: 8
+
+ntn:
+  enabled: true
+  researchTaxonomy: agreed_starting_point
+  orbit:
+    type: LEO
+    model: circular
+    satelliteAltitudeM: 600000
+    groundAltitudeM: 0
+    elevationAngleDeg: 50
+    epochSeconds: 0
+  payload:
+    architecture: regenerative_service_link
+  doppler:
+    satelliteMotionEnabled: true
+    mobileMotionEnabled: true
+    compensationMode: ideal_receiver_geometry
+    mobileDirectionAzimuthDeg: 0
+    mobileDirectionZenithDeg: 90
+  propagationDelay:
+    enabled: true
+    model: static_slant_range
+    compensationMode: perfect_geometry_timing_advance
+  cdl:
+    autoOrientSatelliteArray: true
+  atmosphericLoss:
+    enabled: false
+
+receiver:
+  channelEstimation: perfect
+
+results:
+  outputRoot: results/lls/ntn_antenna_waveform
+  generatePlots: true
+  imageFormat: png

@@ -2705,7 +2705,9 @@ trace.NoisePowerSource = strings(cap,1);
 trace.PhaseNoiseConfigured = false(cap,1);
 trace.PhaseNoiseApplied = false(cap,1);
 trace.PhaseNoiseRMS_rad = NaN(cap,1);
-trace.PTRSCPECorrectionApplied = false(cap,1);
+% Three-state measured evidence: 1 applied, 0 observed-not-applied, NaN
+% unavailable. Do not collapse unavailable receiver evidence to false.
+trace.PTRSCPECorrectionApplied = NaN(cap,1);
 trace.PTRSCPECorrectedSymbols = NaN(cap,1);
 trace.PTRSMeanCPE_deg = NaN(cap,1);
 trace.PTRSCPECorrectionReason = strings(cap,1);
@@ -2938,7 +2940,8 @@ trace.NoisePowerSource(i) = string(sixgr.util.structGet(replay, "NoisePowerSourc
 trace.PhaseNoiseConfigured(i) = logical(sixgr.util.structGet(replay, "PhaseNoiseConfigured", false));
 trace.PhaseNoiseApplied(i) = logical(sixgr.util.structGet(replay, "PhaseNoiseApplied", false));
 trace.PhaseNoiseRMS_rad(i) = double(sixgr.util.structGet(replay, "PhaseNoiseRMS_rad", NaN));
-trace.PTRSCPECorrectionApplied(i) = logical(sixgr.util.structGet(replay, "PTRSCPECorrectionApplied", false));
+trace.PTRSCPECorrectionApplied(i) = double(sixgr.util.structGet( ...
+    replay, "PTRSCPECorrectionApplied", NaN));
 trace.PTRSCPECorrectedSymbols(i) = double(sixgr.util.structGet(replay, "PTRSCPECorrectedSymbols", NaN));
 trace.PTRSMeanCPE_deg(i) = double(sixgr.util.structGet(replay, "PTRSMeanCPE_deg", NaN));
 trace.PTRSCPECorrectionReason(i) = string(sixgr.util.structGet(replay, "PTRSCPECorrectionReason", ""));
@@ -3103,7 +3106,7 @@ T.NoisePowerSource = localTraceString(trace, "NoisePowerSource", idx, n, "");
 T.PhaseNoiseConfigured = localTraceLogical(trace, "PhaseNoiseConfigured", idx, n, false);
 T.PhaseNoiseApplied = localTraceLogical(trace, "PhaseNoiseApplied", idx, n, false);
 T.PhaseNoiseRMS_rad = localTraceNumeric(trace, "PhaseNoiseRMS_rad", idx, n, NaN);
-T.PTRSCPECorrectionApplied = localTraceLogical(trace, "PTRSCPECorrectionApplied", idx, n, false);
+T.PTRSCPECorrectionApplied = localTraceNumeric(trace, "PTRSCPECorrectionApplied", idx, n, NaN);
 T.PTRSCPECorrectedSymbols = localTraceNumeric(trace, "PTRSCPECorrectedSymbols", idx, n, NaN);
 T.PTRSMeanCPE_deg = localTraceNumeric(trace, "PTRSMeanCPE_deg", idx, n, NaN);
 T.PTRSCPECorrectionReason = localTraceString(trace, "PTRSCPECorrectionReason", idx, n, "");

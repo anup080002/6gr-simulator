@@ -2,7 +2,9 @@
   "enable": true,
   "modulation": "256QAM",
   "nLayers": 4,
-  "codeRate": 0.75,
+  "codeRate": 0.736328125,
+  "mcsTable": "qam256_table2",
+  "mcsIndex": 22,
   "prbAllocation": {
     "type": "full",
     "rbStart": 0,

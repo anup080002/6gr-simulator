@@ -290,8 +290,27 @@
         "modulation": {"value_type": "string", "default": "256QAM", "allowed_values": ["PI/2-BPSK", "BPSK", "QPSK", "16QAM", "64QAM", "256QAM", "1024QAM", "4096QAM"]},
         "nLayers": {"value_type": "integer", "default": 4, "min": 1},
         "numLayers": {"value_type": "integer", "min": 1},
-        "codeRate": {"value_type": "number", "default": 0.75, "min": 0, "max": 1},
+        "codeRate": {"value_type": "number", "default": 0.736328125, "min": 0, "max": 1},
+        "prbSet": {"value_type": "integer_vector", "default": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]},
+        "symbolAllocation": {"value_type": "integer_vector", "default": [0, 14]},
+        "mappingType": {"value_type": "string", "default": "A", "allowed_values": ["A", "B"]},
         "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3"]},
+        "mcsIndex": {"value_type": "integer", "default": 22, "min": 0, "max": 31},
+        "RNTI": {"value_type": "integer", "default": 1, "min": 0, "max": 65535},
+        "NID": {"value_type": "integer", "default": 1, "min": 0, "max": 1023},
+        "rv": {"value_type": "integer", "default": 0, "allowed_values": [0, 1, 2, 3]},
+        "xOverhead": {"value_type": "integer", "default": 0, "min": 0},
+        "mcsContext": {
+          "UECapability1024QAM": {"value_type": "boolean", "default": false},
+          "RRCEnabled1024QAM": {"value_type": "boolean", "default": false},
+          "DCIEnabled1024QAM": {"value_type": "boolean", "default": false},
+          "DeploymentAllows1024QAM": {"value_type": "boolean", "default": false},
+          "FrequencyRangeAllows1024QAM": {"value_type": "boolean", "default": false},
+          "BandAllows1024QAM": {"value_type": "boolean", "default": false},
+          "FrequencyRange": {"value_type": "string", "default": "FR1"},
+          "OperatingBand": {"value_type": "string", "default": "n77"},
+          "DeploymentClass": {"value_type": "string", "default": "controlled_test"}
+        },
         "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "enablePTRS": {"value_type": "boolean", "default": false},
         "dmrs": {
@@ -352,6 +371,11 @@
         "dmrs": {
           "configType": {"value_type": "integer", "default": 1, "allowed_values": [1, 2]},
           "numCDMGroupsWithoutData": {"value_type": "integer", "default": 2, "min": 0}
+        },
+        "measurements": {
+          "dmrsResidualPostEqSINRBoundEnabled": {"value_type": "boolean", "default": true},
+          "decisionDirectedPostEqSINRBoundEnabled": {"value_type": "boolean", "default": true},
+          "decoderNoiseVarianceMode": {"value_type": "string", "default": "post_equalization", "allowed_values": ["post_equalization", "pre_equalization"]}
         }
       },
       "srs": {

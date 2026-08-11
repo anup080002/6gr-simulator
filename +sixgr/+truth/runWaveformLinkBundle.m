@@ -19,6 +19,14 @@ cfgL.outputs.savePNG = true;
 cfgL.channel.snr_dB = double(sixgr.util.structGet(opt, "LinkSNR_dB", 30));
 multiUser = localResolveMultiUserSpec(cfgL);
 isCoupledTruth = logical(multiUser.Enabled) && string(multiUser.ExecutionModel) == "slot_coupled_truth";
+isacEnabled = logical(sixgr.util.structGet(cfgL,"isac.enabled",false));
+if isacEnabled
+    sixgr.isac.validateConfig(cfgL);
+    if ~isCoupledTruth
+        error("sixgr:isac:RequiresCoupledTruthRuntime", ...
+            "Enabled full-stack ISAC requires slot_coupled_truth so the exact committed PDSCH waveform, topology, and runtime antenna objects share one state.");
+    end
+end
 cfgExec = localPrepareUserCfg(cfgL, multiUser, 1);
 rootRunFolder = fileparts(char(string(runFolder)));
 cfgL = sixgr.util.structSet(cfgL, "run.rootRunFolder", rootRunFolder);
@@ -246,6 +254,29 @@ if isCoupledTruth
     if isstruct(slotTrace) && ~isempty(fieldnames(slotTrace))
         liveMobilityArtifacts = localBuildMobilityArtifactsFromCoupledRuntime(slotTrace);
     end
+end
+isacArtifacts = struct("Enabled",isacEnabled,"Executed",false, ...
+    "EvidenceValid",~isacEnabled,"CSV",strings(0,1),"Images",strings(0,1), ...
+    "Result",struct());
+if isacEnabled
+    sensing = sixgr.util.structGet(slotTrace,"ISAC",struct());
+    if ~(isstruct(sensing) && logical(sixgr.util.structGet(sensing,"Executed",false)))
+        error("sixgr:isac:MissingRuntimeEvidence", ...
+            "ISAC was enabled, but no committed DL grant produced exact-waveform sensing evidence.");
+    end
+    if ~logical(sixgr.util.structGet(sensing,"EvidenceValid",false))
+        error("sixgr:isac:AcceptanceFailed", ...
+            "The measured ISAC result did not satisfy the YAML-owned target matching tolerances.");
+    end
+    imagePaths = sixgr.lls.exportISACArtifacts(rootRunFolder,cfgExec, ...
+        struct("ISAC",sensing),logical(cfgExec.isac.output.savePNG), ...
+        struct("StructuredComponentFolders",true));
+    componentFolder = char(string(cfgExec.isac.output.componentFolder));
+    csvListing = dir(fullfile(rootRunFolder,componentFolder,"csv","*.csv"));
+    csvPaths = string(fullfile({csvListing.folder},{csvListing.name})).';
+    isacArtifacts = struct("Enabled",true,"Executed",true, ...
+        "EvidenceValid",true,"CSV",csvPaths,"Images",string(imagePaths(:)), ...
+        "Result",sensing);
 end
 localPublishRuntimeReferenceArtifacts(runFolder, cfgL, multiUser, rawTrials);
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
@@ -800,6 +831,7 @@ arts = sixgr.link.exportLinkKPIs(runFolder, kpi, res, ...
     "SavePNG", true, "FigurePrefix", "link_truth_validation", ...
     "PlotVisible", false, "FigureResolution", 140);
 arts.PHYSignalDiagnostic = phySignalArtifacts;
+arts.ISAC = isacArtifacts;
 
 measuredSINRArtifacts = struct();
 try
@@ -848,6 +880,7 @@ out.HARQArtifacts = harqArtifacts;
 out.EnergyArtifacts = energyArtifacts;
 out.TrialDiagnosticPlots = trialPlots;
 out.PHYSignalDiagnosticArtifacts = phySignalArtifacts;
+out.ISACArtifacts = isacArtifacts;
 out.LiveMobilityArtifacts = struct();
 out.LiveDerivedArtifacts = struct();
 out.RuntimeStageProfile = struct2table(stageRows);
@@ -3875,6 +3908,11 @@ for chunkStart = 1:chunkSize:numel(grants)
             runtimeState, sixgr.util.structGet(chunk(bi).Result, "ChannelState", struct()));
         runtimeState = sixgr.truth.CoupledTruthRuntime.commitGrantExecution(runtimeState, ueIdx, direction, chunk(bi).GrantSnapshot);
         [runtimeState, userT] = localCompleteCoupledRuntimeSlot(runtimeState, chunk(bi).Cfg, ueIdx, direction, userT, chunk(bi).Result);
+        runtimeState = localCaptureCommittedFullPHYISAC( ...
+            runtimeState,cfg,chunk(bi),direction);
+        if isfield(chunk(bi).Result,"ISACWaveformCapture")
+            chunk(bi).Result.ISACWaveformCapture = struct();
+        end
         userT = sixgr.truth.annotateFrozenMUMIMOTrialEvidence(userT, chunk(bi).GrantSnapshot);
         primaryTrials = localAppendCompatTable(primaryTrials, userT);
         primaryConstT = localAppendCompatTable(primaryConstT, sixgr.util.structGet(chunk(bi), "ConstellationTable", table()));
@@ -4254,7 +4292,7 @@ out = struct();
 if ~(isstruct(res) && ~isempty(fieldnames(res)))
     return;
 end
-keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", ...
+keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", "ISACWaveformCapture", ...
     "Throughput_Mbps", "Goodput_Mbps", "BLER", "BER", "Ok", "Notes"];
 for i = 1:numel(keepFields)
     f = char(keepFields(i));
@@ -5065,6 +5103,81 @@ intraCellMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
 tf = interCellMode == "full_per_link_channel_waveform_sum" || ...
     intraCellMode == "shared_slot_waveform_superposition" || ...
     logical(sixgr.util.structGet(cfg, "run.precomputeInterfererTxWaveforms", false));
+end
+
+function runtimeState = localCaptureCommittedFullPHYISAC(runtimeState,cfg,plan,direction)
+if ~logical(sixgr.util.structGet(cfg,"isac.enabled",false)) || ...
+        upper(string(direction)) ~= "DL"
+    return;
+end
+prior = sixgr.util.structGet(runtimeState,"ISAC",struct());
+if logical(sixgr.util.structGet(prior,"Executed",false)) || ...
+        logical(sixgr.util.structGet(prior,"EvidenceValid",false))
+    return;
+end
+sixgr.isac.validateConfig(cfg);
+capture = sixgr.util.structGet(plan,"Result.ISACWaveformCapture",struct());
+waveform = sixgr.util.structGet(capture,"Waveform",[]);
+sampleRateHz = double(sixgr.util.structGet(capture,"SampleRateHz",NaN));
+if isempty(waveform) || ~(isfinite(sampleRateHz) && sampleRateHz > 0)
+    error("sixgr:isac:MissingCommittedPDSCHWaveform", ...
+        "The first committed DL grant did not return its exact post-Tx-RF PDSCH waveform.");
+end
+
+ueIdx = round(double(sixgr.util.structGet(plan,"UEIndex",NaN)));
+grant = sixgr.util.structGet(plan,"GrantSnapshot",struct());
+servingCell = round(double(sixgr.util.structGet(grant,"ServingCell",NaN)));
+bsRuntime = sixgr.util.structGet(runtimeState,"BSAntennaRuntime",repmat(struct(),0,1));
+ueRuntime = sixgr.util.structGet(runtimeState,"UEAntennaRuntime",repmat(struct(),0,1));
+bsPositions = double(sixgr.util.structGet(runtimeState,"Layout.bs.pos_m",zeros(0,3)));
+uePositions = double(sixgr.util.structGet(runtimeState,"UE.pos_m",zeros(0,3)));
+if ~(isfinite(servingCell) && servingCell >= 1 && servingCell <= numel(bsRuntime) && ...
+        servingCell <= size(bsPositions,1))
+    error("sixgr:isac:MissingRuntimeGNBState", ...
+        "Committed ISAC grant has no bound runtime gNB array/topology row.");
+end
+if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= numel(ueRuntime) && ...
+        ueIdx <= size(uePositions,1))
+    error("sixgr:isac:MissingRuntimeUEState", ...
+        "Committed ISAC grant has no bound runtime UE array/topology row.");
+end
+
+mode = lower(strtrim(string(cfg.isac.sensingMode)));
+txEntry = bsRuntime(servingCell);
+if mode == "monostatic_gnb"
+    rxEntry = bsRuntime(servingCell);
+else
+    rxEntry = ueRuntime(ueIdx);
+end
+context = struct( ...
+    "SignalType","PDSCH", ...
+    "ScenarioId",string(sixgr.util.structGet(cfg,"run.scenarioID", ...
+        sixgr.util.structGet(cfg,"meta.lls6gScenarioID",""))), ...
+    "CarrierFrequencyHz",double(sixgr.util.structGet(cfg,"channel.fc_Hz", ...
+        sixgr.util.structGet(cfg,"phy.fc_Hz",NaN))), ...
+    "SampleRateHz",sampleRateHz, ...
+    "TxAntennaRuntime",txEntry, ...
+    "RxAntennaRuntime",rxEntry, ...
+    "GNBPositionM",reshape(bsPositions(servingCell,1:3),1,[]), ...
+    "UEPositionM",reshape(uePositions(ueIdx,1:3),1,[]));
+sensing = sixgr.lls.runISACSensingTrial(cfg,struct("Waveform",waveform),context);
+grantContextId = string(sixgr.util.structGet(grant,"PHYGrantContextId", ...
+    sixgr.util.structGet(grant,"GrantContextId","")));
+sensing.RuntimeTable = addvars(sensing.RuntimeTable, ...
+    repmat(grantContextId,height(sensing.RuntimeTable),1), ...
+    repmat(double(ueIdx),height(sensing.RuntimeTable),1), ...
+    repmat(double(servingCell),height(sensing.RuntimeTable),1), ...
+    repmat(double(sixgr.util.structGet(capture,"Frame",NaN)),height(sensing.RuntimeTable),1), ...
+    repmat(double(sixgr.util.structGet(capture,"Slot",NaN)),height(sensing.RuntimeTable),1), ...
+    repmat(string(sixgr.util.structGet(capture,"CapturePoint","")),height(sensing.RuntimeTable),1), ...
+    'NewVariableNames',{'PHYGrantContextId','UEIndex','ServingCell','Frame','Slot','CapturePoint'});
+sensing.Executed = true;
+runtimeState.ISAC = sensing;
+localAppendRuntimeLog("INFO", ...
+    "Committed full-PHY ISAC capture: ue=%d cell=%d frame=%g slot=%g waveform_samples=%d ports=%d evidence_valid=%d.", ...
+    ueIdx,servingCell,double(sixgr.util.structGet(capture,"Frame",NaN)), ...
+    double(sixgr.util.structGet(capture,"Slot",NaN)),size(waveform,1),size(waveform,2), ...
+    double(logical(sensing.EvidenceValid)));
 end
 
 function cfgOut = localCompactCoupledResolvedGrantCacheCfg(cfgIn)

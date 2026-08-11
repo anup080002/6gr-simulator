@@ -1,0 +1,156 @@
+inherits: pdsch_reference.yaml
+
+scenario:
+  id: pdsch_isac_monostatic_30ghz_example
+  description: Communication-centric 30 GHz PDSCH plus monostatic gNB sensing using the exact runtime waveform
+
+simulation:
+  masterSeed: 20260815
+  commonRandomKey: pdsch_isac_monostatic_30ghz_v1
+  snrDb: [35]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+execution:
+  parallelEnabled: false
+  maximumWorkers: 1
+  batchTransportBlocks: 1
+
+carrier:
+  frequencyHz: 30000000000
+  bandwidthMHz: 20
+  subcarrierSpacingKHz: 60
+  nSizeGrid: 24
+  nCellId: 17
+
+allocation:
+  startPRB: 0
+  numberPRB: 24
+  symbols: [0, 14]
+
+pdsch:
+  modulation: QPSK
+  targetCodeRate: 0.30
+  numberLayers: 1
+  numberAntennaPorts: 1
+  mcsIndex: 0
+  rnti: 17
+  nid: 17
+  dmrs:
+    typeAPosition: 2
+    configurationType: 1
+    additionalPositions: 3
+    length: 1
+    numCDMGroupsWithoutData: 1
+    portSet: [0]
+
+channel:
+  model: CDL-D
+  delaySpreadSeconds: 0.00000003
+  velocityKmph: 0
+  txAntennas: 16
+  rxAntennas: 4
+  seed: 20260816
+
+antenna:
+  enabled: true
+  standardReference: "3GPP TR 38.901"
+  researchTaxonomy: study_item_candidate
+  couplingMode: cdl_physical_element_domain
+  pointingMode: auto_first_path_boresight
+  powerNormalization: unit_norm_per_logical_port
+  gnb:
+    model: 3gpp_nr_rectangular_panel
+    architecture: full_digital_element_domain
+    size: [4, 4, 1, 1]
+    spacingWavelength: [0.5, 0.5, 4.0, 4.0]
+    polarizationAnglesDeg: [0]
+    orientationDeg: [0, 0, 0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 16
+    element:
+      frequencyRangeHz: [500000000, 100000000000]
+      polarizationModel: 2
+      beamwidthDeg: [65, 65]
+      sidelobeLevelDb: [30, 30]
+      maximumAttenuationDb: 30
+      maximumGainDbi: 8
+  ue:
+    model: 3gpp_nr_rectangular_panel
+    architecture: full_digital_element_domain
+    size: [2, 2, 1, 1]
+    spacingWavelength: [0.5, 0.5, 2.0, 2.0]
+    polarizationAnglesDeg: [0]
+    orientationDeg: [0, 0, 0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 4
+    element:
+      frequencyRangeHz: [500000000, 100000000000]
+      polarizationModel: 2
+      beamwidthDeg: [65, 65]
+      sidelobeLevelDb: [30, 30]
+      maximumAttenuationDb: 30
+      maximumGainDbi: 8
+
+isac:
+  enabled: true
+  researchTaxonomy: study_item_candidate
+  approach: communication_centric_nr_ofdm
+  sensingMode: monostatic_gnb
+  waveformAuthority: exact_runtime_pdsch_waveform
+  channelModel: phased_scattering_mimo
+  seed: 20260817
+  coherentRepetitions: 16
+  transmitPowerDbm: 46
+  receiver:
+    noiseFigureDb: 5
+    referenceTemperatureK: 290
+    gainDb: 0
+  channel:
+    simulateDirectPath: false
+  scene:
+    gnbPositionM: [0, 0, 10]
+    uePositionM: [50, 60, 2]
+    numberTargets: 1
+    targetPositionsM: [40, 10, 10]
+    targetVelocitiesMps: [8, 0, 0]
+    reflectionCoefficientReal: [1]
+    reflectionCoefficientImag: [0]
+  processing:
+    observationSource: known_runtime_waveform_matched_filter
+    backgroundRemoval: none
+    maximumRangeM: 150
+    rangeFFTSize: 32768
+    dopplerFFTSize: 32
+    azimuthGrid:
+      minimumDeg: -90
+      maximumDeg: 90
+      stepDeg: 2
+  detection:
+    trainingCellsRange: 4
+    trainingCellsAngle: 4
+    guardCellsRange: 1
+    guardCellsAngle: 1
+    probabilityFalseAlarm: 0.01
+    maximumDetections: 8
+    nonMaximumSuppressionRangeBins: 3
+    nonMaximumSuppressionAngleBins: 2
+  acceptance:
+    minimumMatchedTargets: 1
+    maximumRangeErrorM: 15
+    maximumAzimuthErrorDeg: 15
+
+receiver:
+  channelEstimation: practical
+
+provenance:
+  requireGitCommit: true
+  requireCleanWorktree: false
+  requireStableSourceThroughoutRun: false
+
+results:
+  outputRoot: results/lls/isac_waveform
+  generatePlots: true
+  imageFormat: png

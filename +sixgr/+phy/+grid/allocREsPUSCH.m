@@ -547,19 +547,19 @@ try
         ptrs.TimeDensity = localValidatedIntegerSet( ...
             timeDensity, [1 2 4], "PTRS.TimeDensity");
     end
-    if isprop(ptrs, 'FrequencyDensity')
+    if ~transformPrecoding && isprop(ptrs, 'FrequencyDensity')
         ptrs.FrequencyDensity = localValidatedIntegerSet( ...
             freqDensity, [2 4], "PTRS.FrequencyDensity");
     end
-    if isprop(ptrs, 'NumPTRSSamples')
+    if transformPrecoding && isprop(ptrs, 'NumPTRSSamples')
         ptrs.NumPTRSSamples = localValidatedIntegerSet( ...
             numPTRSSamples, [2 4], "PTRS.NumPTRSSamples");
     end
-    if isprop(ptrs, 'NumPTRSGroups')
+    if transformPrecoding && isprop(ptrs, 'NumPTRSGroups')
         ptrs.NumPTRSGroups = localValidatedIntegerSet( ...
             numPTRSGroups, [2 4 8], "PTRS.NumPTRSGroups");
     end
-    if isprop(ptrs, 'REOffset')
+    if ~transformPrecoding && isprop(ptrs, 'REOffset')
         if ~ismember(reOffset, ["00","01","10","11"])
             error("sixgr:pusch:InvalidPTRSConfiguration", ...
                 "PUSCH PT-RS REOffset must be 00, 01, 10, or 11.");

@@ -99,8 +99,8 @@ localRequiredInteger(cfg, linkPath + ".rnti", 0, 65535);
 localRequiredInteger(cfg, linkPath + ".nid", 0, 1023);
 localRequiredOpenUnit(cfg, linkPath + ".targetCodeRate");
 localRequiredInteger(cfg, linkPath + ".mcsIndex", 0, 31);
+localRequiredText(cfg, linkPath + ".mcsTable");
 if link == "PDSCH"
-    localRequiredText(cfg, "pdsch.mcsTable");
     localRequiredLogical(cfg, "pdsch.mcsContext.ueCapability1024QAM");
     localRequiredLogical(cfg, "pdsch.mcsContext.rrcEnabled1024QAM");
     localRequiredLogical(cfg, "pdsch.mcsContext.dciEnabled1024QAM");
@@ -164,17 +164,20 @@ if link == "PUSCH"
     if transformPrecoding ...
             && double(cfg.pusch.dmrs.numCDMGroupsWithoutData) ~= 2
         error("sixgr:lls:TransformPrecodingDMRSConflict", ...
-            ["pusch.transformPrecoding=true requires " ...
-             "pusch.dmrs.numCDMGroupsWithoutData=2 for the executable NR waveform."]);
+            "pusch.transformPrecoding=true requires " + ...
+            "pusch.dmrs.numCDMGroupsWithoutData=2 for the executable NR waveform.");
     end
 end
 
 model = upper(string(localRequiredText(cfg, "channel.model")));
 allowedModels = ["AWGN","TDL-A","TDL-B","TDL-C","TDL-D","TDL-E", ...
-    "CDL-A","CDL-B","CDL-C","CDL-D","CDL-E"];
+    "CDL-A","CDL-B","CDL-C","CDL-D","CDL-E", ...
+    "NTN-TDL-A","NTN-TDL-B","NTN-TDL-C","NTN-TDL-D", ...
+    "NTN-CDL-A","NTN-CDL-B","NTN-CDL-C","NTN-CDL-D"];
 if ~ismember(model, allowedModels)
     error("sixgr:lls:UnsupportedChannel", ...
-        "channel.model must be AWGN or a concrete TDL-/CDL- profile, not a family token.");
+        "channel.model must be AWGN or a concrete terrestrial/NTN TDL/CDL " + ...
+        "profile, not a family token.");
 end
 txAnt = localRequiredInteger(cfg, "channel.txAntennas", 1, Inf);
 rxAnt = localRequiredInteger(cfg, "channel.rxAntennas", 1, Inf);
@@ -200,13 +203,23 @@ if model ~= "AWGN" && delaySpread <= 0
     error("sixgr:lls:InvalidFadingParameters", ...
         "A concrete TDL/CDL profile requires a positive channel.delaySpreadSeconds.");
 end
-if startsWith(model,"CDL-")
+antennaEnabled = localRequiredLogical(cfg,"antenna.enabled");
+if (startsWith(model,"CDL-") || startsWith(model,"NTN-CDL-")) && ~antennaEnabled
     localValidateCDLArray(cfg,"channel.cdl.transmitArray",txAnt);
     localValidateCDLArray(cfg,"channel.cdl.receiveArray",rxAnt);
 end
+localValidateNTN(cfg,model);
+localValidateAntenna(cfg,model,link,ports,txAnt,rxAnt);
+localValidateISAC(cfg,link,ports);
 
 localRequiredLogical(cfg,"interference.enabled");
 interferenceEnabled = logical(sixgr.util.structGet(cfg,"interference.enabled",false));
+if logical(cfg.ntn.enabled) && interferenceEnabled
+    error("sixgr:lls:NTNInterferenceConfigurationRequired", ...
+        "Enabled NTN interference requires an independent NTN geometry, " + ...
+        "Doppler and delay block for the interferer. This schema does not " + ...
+        "silently reuse the desired-link orbit.");
+end
 dirDb = double(sixgr.util.structGet(cfg,"interference.desiredToInterferenceRatioDb",NaN));
 if ~(isscalar(dirDb) && isfinite(dirDb))
     error("sixgr:lls:InvalidInterferenceConfiguration", ...
@@ -277,6 +290,20 @@ end
 localRequiredInteger(cfg, "receiver.ldpcMaxIterations", 1, Inf);
 localRequiredText(cfg, "receiver.ldpcAlgorithm");
 localRequiredLogical(cfg, "receiver.useMexLDPC");
+dmrsResidualBoundEnabled = localRequiredLogical(cfg, ...
+    "receiver.postEqualizationSINR.dmrsResidualBoundEnabled");
+decisionResidualBoundEnabled = localRequiredLogical(cfg, ...
+    "receiver.postEqualizationSINR.decisionDirectedResidualBoundEnabled");
+localAllowedText(cfg,"receiver.decoderNoiseVariance.mode", ...
+    ["post_equalization","pre_equalization"]);
+if link == "PDSCH" && (dmrsResidualBoundEnabled || decisionResidualBoundEnabled)
+    error("sixgr:lls:UnsupportedPDSCHResidualSINRBound", ...
+        "PDSCH does not implement the PUSCH DM-RS/decision-directed " + ...
+        "post-equalization SINR bounds; configure both receiver bounds false.");
+end
+localRequiredLogical(cfg,"provenance.requireGitCommit");
+localRequiredLogical(cfg,"provenance.requireCleanWorktree");
+localRequiredLogical(cfg,"provenance.requireStableSourceThroughoutRun");
 confidence = double(sixgr.util.structGet(cfg, "simulation.confidenceLevel", NaN));
 if ~(isscalar(confidence) && isfinite(confidence) && confidence > 0 && confidence < 1)
     error("sixgr:lls:InvalidConfidenceLevel", ...
@@ -398,6 +425,360 @@ value = double(sixgr.util.structGet(cfg, path, NaN));
 if ~(isscalar(value) && isfinite(value) && value > 0)
     error("sixgr:lls:InvalidConfigValue", "Field '%s' must be positive and finite.", path);
 end
+end
+
+function localValidateNTN(cfg,model)
+enabled = localRequiredLogical(cfg,"ntn.enabled");
+isNTNProfile = startsWith(model,"NTN-TDL-") || startsWith(model,"NTN-CDL-");
+if enabled ~= isNTNProfile
+    error("sixgr:lls:NTNEnableProfileMismatch", ...
+        "ntn.enabled and channel.model must agree: enabled NTN requires an " + ...
+        "NTN-TDL-* or NTN-CDL-* profile, and those profiles require ntn.enabled=true.");
+end
+
+localAllowedText(cfg,"ntn.standardReference","3GPP TR 38.811");
+localAllowedText(cfg,"ntn.researchTaxonomy", ...
+    ["baseline_benchmark","agreed_starting_point", ...
+     "study_item_candidate","optional_research_experiment"]);
+localAllowedText(cfg,"ntn.channelProfile", ...
+    ["NTN-TDL-A","NTN-TDL-B","NTN-TDL-C","NTN-TDL-D", ...
+     "NTN-CDL-A","NTN-CDL-B","NTN-CDL-C","NTN-CDL-D"]);
+localAllowedText(cfg,"ntn.orbit.type",["LEO","MEO","GEO"]);
+localAllowedText(cfg,"ntn.orbit.model","circular");
+satelliteAltitudeM = localRequiredPositive(cfg,"ntn.orbit.satelliteAltitudeM");
+groundAltitudeM = localRequiredFinite(cfg,"ntn.orbit.groundAltitudeM");
+if groundAltitudeM < 0 || groundAltitudeM >= satelliteAltitudeM
+    error("sixgr:lls:InvalidNTNAltitude", ...
+        "ntn.orbit.groundAltitudeM must be nonnegative and below satelliteAltitudeM.");
+end
+elevationDeg = localRequiredFinite(cfg,"ntn.orbit.elevationAngleDeg");
+if elevationDeg <= 0 || elevationDeg > 90
+    error("sixgr:lls:InvalidNTNElevation", ...
+        "ntn.orbit.elevationAngleDeg must be in (0,90] degrees.");
+end
+localRequiredFinite(cfg,"ntn.orbit.epochSeconds");
+localAllowedText(cfg,"ntn.payload.architecture","regenerative_service_link");
+localRequiredLogical(cfg,"ntn.doppler.satelliteMotionEnabled");
+localRequiredLogical(cfg,"ntn.doppler.mobileMotionEnabled");
+localAllowedText(cfg,"ntn.doppler.compensationMode", ...
+    ["none","ideal_transmitter_geometry","ideal_receiver_geometry"]);
+azimuthDeg = localRequiredFinite(cfg,"ntn.doppler.mobileDirectionAzimuthDeg");
+zenithDeg = localRequiredFinite(cfg,"ntn.doppler.mobileDirectionZenithDeg");
+if azimuthDeg < 0 || azimuthDeg > 360 || zenithDeg < 0 || zenithDeg > 180
+    error("sixgr:lls:InvalidNTNDirection", ...
+        "ntn.doppler mobile direction must use azimuth in [0,360] and " + ...
+        "zenith in [0,180] degrees.");
+end
+delayEnabled = localRequiredLogical(cfg,"ntn.propagationDelay.enabled");
+localAllowedText(cfg,"ntn.propagationDelay.model","static_slant_range");
+delayCompensation = lower(string(localAllowedText(cfg, ...
+    "ntn.propagationDelay.compensationMode", ...
+    ["disabled","perfect_geometry_timing_advance"])));
+if delayEnabled && delayCompensation ~= "perfect_geometry_timing_advance"
+    error("sixgr:lls:UnsupportedNTNDelayCompensation", ...
+        "The compact slot LLS requires perfect_geometry_timing_advance " + ...
+        "when NTN propagation delay is enabled.");
+end
+if ~delayEnabled && delayCompensation ~= "disabled"
+    error("sixgr:lls:InvalidNTNDelayCompensation", ...
+        "Disabled NTN propagation delay requires compensationMode=disabled.");
+end
+localAllowedText(cfg,"ntn.tdl.mimoCorrelation",["Low","Medium","Medium-A","High","Custom"]);
+localAllowedText(cfg,"ntn.tdl.polarization",["Co-Polar","Cross-Polar","Custom"]);
+localRequiredLogical(cfg,"ntn.cdl.autoOrientSatelliteArray");
+atmosphericEnabled = localRequiredLogical(cfg,"ntn.atmosphericLoss.enabled");
+localAllowedText(cfg,"ntn.atmosphericLoss.model","ITU-R P.618");
+if enabled && atmosphericEnabled
+    error("sixgr:lls:NTNAtmosphericLossRequiresPowerBudgetMode", ...
+        "ntn.atmosphericLoss.enabled=true requires a transmit-power/thermal-noise " + ...
+        "link-budget study. The configured Es/N0 sweep cannot apply P.618 loss " + ...
+        "without changing its SNR reference plane.");
+end
+if enabled && (exist("slantRangeCircularOrbit","file") ~= 2 || ...
+        exist("dopplerShiftCircularOrbit","file") ~= 2)
+    error("sixgr:lls:MissingSatelliteCommunicationsToolbox", ...
+        "Enabled NTN execution requires Satellite Communications Toolbox.");
+end
+localRequiredLogical(cfg,"ntn.output.enabled");
+localRequiredLogical(cfg,"ntn.output.structuredComponentFolders");
+localRequiredLogical(cfg,"ntn.output.saveCSV");
+localRequiredLogical(cfg,"ntn.output.savePNG");
+localAllowedText(cfg,"ntn.output.imageFormat",["png","jpeg"]);
+localRequiredInteger(cfg,"ntn.output.imageResolutionDPI",72,600);
+localRequiredLogical(cfg,"ntn.output.prohibitSVG");
+if enabled && (~logical(cfg.ntn.output.enabled) || ...
+        ~logical(cfg.ntn.output.saveCSV) || ~logical(cfg.ntn.output.savePNG) || ...
+        ~logical(cfg.ntn.output.prohibitSVG))
+    error("sixgr:lls:IncompleteNTNOutputContract", ...
+        "Enabled NTN requires CSV plus PNG/JPEG evidence and prohibitSVG=true.");
+end
+end
+
+function localValidateAntenna(cfg,model,link,logicalPorts,txAnt,rxAnt)
+enabled = localRequiredLogical(cfg,"antenna.enabled");
+localAllowedText(cfg,"antenna.standardReference","3GPP TR 38.901");
+localAllowedText(cfg,"antenna.researchTaxonomy", ...
+    ["baseline_benchmark","agreed_starting_point", ...
+     "study_item_candidate","optional_research_experiment"]);
+localAllowedText(cfg,"antenna.couplingMode", ...
+    ["disabled","cdl_physical_element_domain"]);
+localAllowedText(cfg,"antenna.pointingMode", ...
+    ["disabled","auto_first_path_boresight"]);
+localAllowedText(cfg,"antenna.powerNormalization", ...
+    ["disabled","unit_norm_per_logical_port"]);
+if enabled && ~(startsWith(model,"CDL-") || startsWith(model,"NTN-CDL-"))
+    error("sixgr:lls:AntennaPatternRequiresCDL", ...
+        "antenna.enabled=true requires a concrete CDL-* or NTN-CDL-* " + ...
+        "profile. TDL has no per-path angle state, so a plotted directional " + ...
+        "array cannot honestly be coupled to that waveform.");
+end
+
+if enabled && ~strcmpi(string(cfg.antenna.couplingMode), ...
+        "cdl_physical_element_domain")
+    error("sixgr:lls:InvalidAntennaCouplingMode", ...
+        "Enabled antenna execution requires couplingMode=cdl_physical_element_domain.");
+end
+if enabled && ~strcmpi(string(cfg.antenna.pointingMode), ...
+        "auto_first_path_boresight")
+    error("sixgr:lls:InvalidAntennaPointingMode", ...
+        "Enabled antenna execution currently requires auto_first_path_boresight.");
+end
+if enabled && ~strcmpi(string(cfg.antenna.powerNormalization), ...
+        "unit_norm_per_logical_port")
+    error("sixgr:lls:InvalidAntennaPowerNormalization", ...
+        "Enabled antenna execution requires unit_norm_per_logical_port.");
+end
+
+gnbElements = localValidateAntennaRole(cfg,"gnb",logicalPorts,link == "PDSCH");
+ueElements = localValidateAntennaRole(cfg,"ue",logicalPorts,link == "PUSCH");
+if ~enabled
+    return;
+end
+if link == "PDSCH"
+    expectedTx = gnbElements;
+    expectedRx = ueElements;
+else
+    expectedTx = ueElements;
+    expectedRx = gnbElements;
+end
+if txAnt ~= expectedTx || rxAnt ~= expectedRx
+    error("sixgr:lls:AntennaChannelDimensionMismatch", ...
+        "For %s, channel.txAntennas/channel.rxAntennas must equal the " + ...
+        "executed physical transmitter/receiver element counts %d/%d, " + ...
+        "but the configuration contains %d/%d.", ...
+        link,expectedTx,expectedRx,txAnt,rxAnt);
+end
+if exist("phased.NRAntennaElement","class") ~= 8 || ...
+        exist("phased.NRRectangularPanelArray","class") ~= 8
+    error("sixgr:lls:MissingPhasedArraySystemToolbox", ...
+        "antenna.enabled=true requires Phased Array System Toolbox NR antenna objects.");
+end
+end
+
+function localValidateISAC(cfg,link,logicalPorts)
+enabled = localRequiredLogical(cfg,"isac.enabled");
+localAllowedText(cfg,"isac.researchTaxonomy", ...
+    ["baseline_benchmark","agreed_starting_point", ...
+    "study_item_candidate","optional_research_experiment"]);
+localAllowedText(cfg,"isac.approach","communication_centric_nr_ofdm");
+mode = lower(string(localAllowedText(cfg,"isac.sensingMode", ...
+    ["monostatic_gnb","bistatic_gnb_ue"])));
+localAllowedText(cfg,"isac.waveformAuthority","exact_runtime_pdsch_waveform");
+localAllowedText(cfg,"isac.executionScope", ...
+    ["first_diagnostic_transport_block","first_committed_dl_grant"]);
+localAllowedText(cfg,"isac.channelModel","phased_scattering_mimo");
+localAllowedText(cfg,"isac.processing.observationSource", ...
+    "known_runtime_waveform_matched_filter");
+localAllowedText(cfg,"isac.processing.matchedFilterImplementation", ...
+    "frequency_domain_exact_reference");
+localAllowedText(cfg,"isac.processing.beamformer","conventional_phase_shift");
+localRequiredLogical(cfg,"isac.processing.includeElementResponse");
+localAllowedText(cfg,"isac.processing.backgroundRemoval", ...
+    ["none","slow_time_mean"]);
+localRequiredInteger(cfg,"isac.seed",0,2^32-1);
+localRequiredInteger(cfg,"isac.coherentRepetitions",2,256);
+localRequiredFinite(cfg,"isac.transmitPowerDbm");
+noiseFigure = localRequiredFinite(cfg,"isac.receiver.noiseFigureDb");
+if noiseFigure < 0
+    error("sixgr:lls:InvalidISACReceiver", ...
+        "isac.receiver.noiseFigureDb must be finite and nonnegative.");
+end
+localRequiredPositive(cfg,"isac.receiver.referenceTemperatureK");
+localRequiredFinite(cfg,"isac.receiver.gainDb");
+localRequiredLogical(cfg,"isac.channel.simulateDirectPath");
+localRequiredInteger(cfg,"isac.channel.warmupPulses",1,64);
+localAllowedText(cfg,"isac.scene.nodePositionAuthority", ...
+    ["configured_compact_geometry","coupled_runtime_topology"]);
+localRequiredVector3(cfg,"isac.scene.gnbPositionM");
+localRequiredVector3(cfg,"isac.scene.uePositionM");
+targetCount = localRequiredInteger(cfg,"isac.scene.numberTargets",1,64);
+positions = localRequiredVector(cfg,"isac.scene.targetPositionsM");
+velocities = localRequiredVector(cfg,"isac.scene.targetVelocitiesMps");
+realCoeff = localRequiredVector(cfg,"isac.scene.reflectionCoefficientReal");
+imagCoeff = localRequiredVector(cfg,"isac.scene.reflectionCoefficientImag");
+if numel(positions) ~= 3*targetCount || numel(velocities) ~= 3*targetCount
+    error("sixgr:lls:InvalidISACTargetGeometry", ...
+        ["ISAC flattened targetPositionsM and targetVelocitiesMps must " ...
+        "each contain exactly 3*scene.numberTargets values."]);
+end
+if numel(realCoeff) ~= targetCount || numel(imagCoeff) ~= targetCount
+    error("sixgr:lls:InvalidISACTargetReflectivity", ...
+        ["ISAC reflectionCoefficientReal and reflectionCoefficientImag " ...
+        "must contain one value per target."]);
+end
+if any(~isfinite([positions(:);velocities(:);realCoeff(:);imagCoeff(:)]))
+    error("sixgr:lls:InvalidISACTargetGeometry", ...
+        "ISAC target geometry, velocity, and reflection coefficients must be finite.");
+end
+localRequiredPositive(cfg,"isac.processing.maximumRangeM");
+localRequiredInteger(cfg,"isac.processing.rangeFFTSize",64,2^22);
+localRequiredInteger(cfg,"isac.processing.dopplerFFTSize",2,4096);
+azMin = localRequiredFinite(cfg,"isac.processing.azimuthGrid.minimumDeg");
+azMax = localRequiredFinite(cfg,"isac.processing.azimuthGrid.maximumDeg");
+azStep = localRequiredPositive(cfg,"isac.processing.azimuthGrid.stepDeg");
+if azMin < -180 || azMax > 180 || azMin >= azMax || ...
+        mod((azMax-azMin)/azStep,1) > 1e-9
+    error("sixgr:lls:InvalidISACAzimuthGrid", ...
+        ["ISAC azimuth grid must satisfy -180 <= minimumDeg < maximumDeg " ...
+        "<= 180 and be exactly divisible by stepDeg."]);
+end
+localRequiredInteger(cfg,"isac.detection.trainingCellsRange",1,256);
+localAllowedText(cfg,"isac.detection.algorithm","ca_cfar_2d");
+localRequiredInteger(cfg,"isac.detection.trainingCellsAngle",1,256);
+localRequiredInteger(cfg,"isac.detection.guardCellsRange",0,256);
+localRequiredInteger(cfg,"isac.detection.guardCellsAngle",0,256);
+localRequiredOpenUnit(cfg,"isac.detection.probabilityFalseAlarm");
+localRequiredInteger(cfg,"isac.detection.maximumDetections",1,256);
+localRequiredInteger(cfg,"isac.detection.nonMaximumSuppressionRangeBins",0,256);
+localRequiredInteger(cfg,"isac.detection.nonMaximumSuppressionAngleBins",0,256);
+minimumMatched = localRequiredInteger(cfg,"isac.acceptance.minimumMatchedTargets",0,targetCount);
+localRequiredPositive(cfg,"isac.acceptance.maximumRangeErrorM");
+localRequiredPositive(cfg,"isac.acceptance.maximumAzimuthErrorDeg");
+localRequiredLogical(cfg,"isac.output.enabled");
+localRequiredLogical(cfg,"isac.output.structuredComponentFolders");
+localRequiredLogical(cfg,"isac.output.saveCSV");
+localRequiredLogical(cfg,"isac.output.savePNG");
+localAllowedText(cfg,"isac.output.imageFormat",["png","jpeg"]);
+localRequiredInteger(cfg,"isac.output.imageResolutionDPI",72,600);
+localRequiredLogical(cfg,"isac.output.prohibitSVG");
+if enabled
+    if ~logical(cfg.isac.output.enabled) || ...
+            ~logical(cfg.isac.output.saveCSV) || ...
+            ~logical(cfg.isac.output.savePNG) || ...
+            ~logical(cfg.isac.output.prohibitSVG)
+        error("sixgr:lls:IncompleteISACOutputContract", ...
+            "Enabled ISAC requires CSV plus PNG/JPEG evidence and prohibitSVG=true.");
+    end
+    if link ~= "PDSCH"
+        error("sixgr:lls:ISACRequiresPDSCH", ...
+            "The implemented communication-centric ISAC branch requires simulation.link=PDSCH.");
+    end
+    if ~logical(sixgr.util.structGet(cfg,"antenna.enabled",false))
+        error("sixgr:lls:ISACRequiresPhysicalAntenna", ...
+            "Enabled ISAC requires antenna.enabled=true and a physical CDL array.");
+    end
+    if logicalPorts ~= 1
+        error("sixgr:lls:ISACMultiportNotQualified", ...
+            ["The current matched-filter ISAC receiver is qualified for one " ...
+            "logical PDSCH beam port; configure pdsch.numberAntennaPorts=1."]);
+    end
+    if numel(double(cfg.simulation.snrDb)) ~= 1
+        error("sixgr:lls:ISACRequiresSingleOperatingPoint", ...
+            "Enabled ISAC currently requires exactly one simulation.snrDb point.");
+    end
+    if logical(cfg.execution.parallelEnabled)
+        error("sixgr:lls:ISACParallelCaptureUnsupported", ...
+            "Enabled ISAC requires execution.parallelEnabled=false for one deterministic coherent capture.");
+    end
+    if minimumMatched < 1
+        error("sixgr:lls:InvalidISACAcceptance", ...
+            "Enabled ISAC requires acceptance.minimumMatchedTargets >= 1.");
+    end
+    if mode == "monostatic_gnb" && ...
+            logical(sixgr.util.structGet(cfg,"isac.channel.simulateDirectPath",false))
+        error("sixgr:lls:InvalidISACDirectPath", ...
+            "Monostatic collocated sensing requires simulateDirectPath=false to avoid a zero-range self path.");
+    end
+end
+end
+
+function value = localRequiredVector3(cfg,path)
+value = localRequiredVector(cfg,path);
+if numel(value) ~= 3
+    error("sixgr:lls:InvalidVector3", ...
+        "%s must contain exactly three finite numeric values.",path);
+end
+end
+
+function numElements = localValidateAntennaRole(cfg,role,logicalPorts,isTransmitter)
+path = "antenna." + role;
+localAllowedText(cfg,path + ".model","3gpp_nr_rectangular_panel");
+localAllowedText(cfg,path + ".architecture","full_digital_element_domain");
+size4 = localRequiredVector(cfg,path + ".size");
+if numel(size4) ~= 4 || any(size4 < 1 | size4 ~= fix(size4))
+    error("sixgr:lls:InvalidAntennaArraySize", ...
+        "%s.size must be [rows columns panelRows panelColumns].",path);
+end
+spacing = localRequiredVector(cfg,path + ".spacingWavelength");
+if numel(spacing) ~= 4 || any(spacing <= 0)
+    error("sixgr:lls:InvalidAntennaSpacing", ...
+        "%s.spacingWavelength must contain four positive values.",path);
+end
+orientation = localRequiredVector(cfg,path + ".orientationDeg");
+if numel(orientation) ~= 3
+    error("sixgr:lls:InvalidAntennaOrientation", ...
+        "%s.orientationDeg must contain [bearing downtilt slant].",path);
+end
+polarizationAngles = localRequiredVector(cfg,path + ".polarizationAnglesDeg");
+if ~ismember(numel(polarizationAngles),[1 2]) || ...
+        numel(unique(polarizationAngles)) ~= numel(polarizationAngles)
+    error("sixgr:lls:InvalidAntennaPolarization", ...
+        "%s.polarizationAnglesDeg must contain one or two distinct slant angles.",path);
+end
+numElements = prod(size4) * numel(polarizationAngles);
+numRFChains = localRequiredInteger(cfg,path + ".numRFChains",1,Inf);
+if numRFChains ~= numElements
+    error("sixgr:lls:AntennaRFChainElementMismatch", ...
+        "%s full_digital_element_domain requires numRFChains=%d.",path,numElements);
+end
+beamAngles = double(sixgr.util.structGet(cfg,path + ".steeringAzElDeg",[]));
+if isvector(beamAngles) && numel(beamAngles) == 2
+    beamAngles = reshape(beamAngles,1,2);
+end
+if isempty(beamAngles) || ~ismatrix(beamAngles) || size(beamAngles,2) ~= 2 || ...
+        any(~isfinite(beamAngles),"all") || ...
+        any(beamAngles(:,1) < -180 | beamAngles(:,1) > 180) || ...
+        any(beamAngles(:,2) < -90 | beamAngles(:,2) > 90)
+    error("sixgr:lls:InvalidAntennaSteeringAngles", ...
+        "%s.steeringAzElDeg must be an N-by-2 [azimuth elevation] matrix.",path);
+end
+if isTransmitter && size(beamAngles,1) ~= logicalPorts
+    error("sixgr:lls:AntennaSteeringPortMismatch", ...
+        "%s.steeringAzElDeg must contain one beam row per %d logical port(s).", ...
+        path,logicalPorts);
+end
+frequencyRange = localRequiredVector(cfg,path + ".element.frequencyRangeHz");
+fc = double(cfg.carrier.frequencyHz);
+if numel(frequencyRange) ~= 2 || frequencyRange(1) < 0 || ...
+        frequencyRange(2) <= frequencyRange(1) || ...
+        fc < frequencyRange(1) || fc > frequencyRange(2)
+    error("sixgr:lls:InvalidAntennaFrequencyRange", ...
+        "%s.element.frequencyRangeHz must bracket carrier.frequencyHz.",path);
+end
+localRequiredMember(cfg,path + ".element.polarizationModel",[1 2]);
+beamwidth = localRequiredVector(cfg,path + ".element.beamwidthDeg");
+sidelobe = localRequiredVector(cfg,path + ".element.sidelobeLevelDb");
+if numel(beamwidth) ~= 2 || any(beamwidth <= 0 | beamwidth > 180) || ...
+        numel(sidelobe) ~= 2 || any(sidelobe <= 0)
+    error("sixgr:lls:InvalidAntennaElementPattern", ...
+        "%s element beamwidth/sidelobe values are invalid.",path);
+end
+maximumAttenuation = localRequiredPositive(cfg,path + ".element.maximumAttenuationDb");
+if maximumAttenuation < max(sidelobe)
+    error("sixgr:lls:InvalidAntennaElementPattern", ...
+        "%s.element.maximumAttenuationDb must not be below its sidelobe levels.",path);
+end
+localRequiredFinite(cfg,path + ".element.maximumGainDbi");
 end
 
 function value = localRequiredFinite(cfg,path)

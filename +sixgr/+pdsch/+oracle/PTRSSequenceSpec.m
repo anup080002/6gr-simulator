@@ -50,7 +50,6 @@ classdef PTRSSequenceSpec
                 localPattern = delta + [0 1 6 7];
             end
             rePerPRB = numel(localPattern);
-            [wf,~] = localWeights(configType,port);
             cInit = mod( ...
                 2^17*(symbolsPerSlot*slot + referenceDMRSSymbol + 1) ...
                 *(2*nid + 1) + 2*nid + nscid,2^31);
@@ -76,7 +75,14 @@ classdef PTRSSequenceSpec
                             "PT-RS index cannot be mapped to its associated DM-RS sequence.");
                     end
                     m = prb*rePerPRB + localOrder;
-                    sequence(row) = base(m)*wf(localOrder);
+                    % TS 38.211 7.4.1.2.1 reuses the underlying DM-RS
+                    % pseudorandom sequence for PDSCH PT-RS.  The
+                    % associated DM-RS port selects the PT-RS RE through
+                    % the delta/local-pattern mapping above; it does not
+                    % apply the DM-RS frequency-domain OCC weight again.
+                    % Applying w_f here negated every port-1 PT-RS sample
+                    % and caused an exact NMSE of four in two-user MU-MIMO.
+                    sequence(row) = base(m);
                 end
             end
             result = struct( ...
@@ -85,44 +91,6 @@ classdef PTRSSequenceSpec
                 "StandardReference","TS_38.211_7.4.1.2");
         end
     end
-end
-
-function [wf,wt] = localWeights(configType,port)
-if configType == 1
-    block = floor(port/4);
-    if port < 8
-        evenPattern = [1 1 1 1];
-        oddPattern = [1 -1 1 -1];
-    else
-        evenPattern = [1 1 -1 -1];
-        oddPattern = [1 -1 -1 1];
-    end
-else
-    block = floor(port/6);
-    if block == 0
-        evenPattern = [1 1 1 1];
-        oddPattern = [1 -1 1 -1];
-    else
-        evenPattern = [1 1 -1 -1];
-        oddPattern = [1 -1 -1 1];
-    end
-end
-if mod(port,2) == 0
-    pattern = evenPattern;
-else
-    pattern = oddPattern;
-end
-if configType == 1
-    wf = repmat(pattern,1,ceil(6/numel(pattern)));
-    wf = wf(1:6);
-else
-    wf = pattern(1:4);
-end
-if mod(block,2) == 0
-    wt = [1 1];
-else
-    wt = [1 -1];
-end
 end
 
 function value = localInteger(value,minimum,maximum)

@@ -300,6 +300,114 @@ canonical_control:
     ue_tx_power_dbm: 23
     ue_noise_figure_db: 7
     bs_noise_figure_db: 5
+  isac:
+    # Communication-centric NR-OFDM sensing is a 6G study item, not a
+    # normative NR conformance claim.  Enabling it consumes the exact first
+    # committed full-PHY PDSCH waveform and the same runtime gNB array.
+    enabled: false
+    researchTaxonomy: study_item_candidate
+    approach: communication_centric_nr_ofdm
+    sensingMode: monostatic_gnb
+    waveformAuthority: exact_runtime_pdsch_waveform
+    executionScope: first_committed_dl_grant
+    channelModel: phased_scattering_mimo
+    seed: 20260817
+    coherentRepetitions: 4
+    transmitPowerDbm: 46
+    receiver:
+      noiseFigureDb: 5
+      referenceTemperatureK: 290
+      gainDb: 0
+    channel:
+      simulateDirectPath: false
+      warmupPulses: 1
+    scene:
+      nodePositionAuthority: coupled_runtime_topology
+      numberTargets: 1
+      targetPositionsM: [40, 10, 24]
+      targetVelocitiesMps: [8, 0, 0]
+      reflectionCoefficientReal: [1]
+      reflectionCoefficientImag: [0]
+    processing:
+      observationSource: known_runtime_waveform_matched_filter
+      matchedFilterImplementation: frequency_domain_exact_reference
+      beamformer: conventional_phase_shift
+      includeElementResponse: false
+      backgroundRemoval: none
+      maximumRangeM: 150
+      rangeFFTSize: 131072
+      dopplerFFTSize: 8
+      azimuthGrid:
+        minimumDeg: -90
+        maximumDeg: 90
+        stepDeg: 2
+    detection:
+      algorithm: ca_cfar_2d
+      trainingCellsRange: 4
+      trainingCellsAngle: 4
+      guardCellsRange: 1
+      guardCellsAngle: 1
+      probabilityFalseAlarm: 0.01
+      maximumDetections: 8
+      nonMaximumSuppressionRangeBins: 3
+      nonMaximumSuppressionAngleBins: 2
+    acceptance:
+      minimumMatchedTargets: 1
+      maximumRangeErrorM: 15
+      maximumAzimuthErrorDeg: 15
+    output:
+      enabled: true
+      componentFolder: isac
+      structuredComponentFolders: true
+      saveCSV: true
+      savePNG: true
+      imageFormat: png
+      imageResolutionDPI: 180
+      prohibitSVG: true
+  ntn:
+    # Disabled means the terrestrial channel section remains authoritative.
+    # Enabling NTN requires the selected runtime channel to exactly match
+    # channelProfile; no terrestrial fallback or zero-Doppler shortcut is used.
+    enabled: false
+    standardReference: 3GPP TR 38.811
+    researchTaxonomy: agreed_starting_point
+    channelProfile: NTN-TDL-D
+    orbit:
+      type: LEO
+      model: circular
+      satelliteAltitudeM: 600000
+      groundAltitudeM: 0
+      elevationAngleDeg: 50
+      epochSeconds: 0
+    payload:
+      architecture: regenerative_service_link
+    doppler:
+      satelliteMotionEnabled: true
+      mobileMotionEnabled: true
+      compensationMode: ideal_transmitter_geometry
+      mobileDirectionAzimuthDeg: 0
+      mobileDirectionZenithDeg: 90
+    propagationDelay:
+      enabled: true
+      model: static_slant_range
+      compensationMode: perfect_geometry_timing_advance
+    tdl:
+      mimoCorrelation: Low
+      polarization: Co-Polar
+    cdl:
+      autoOrientSatelliteArray: true
+    atmosphericLoss:
+      enabled: false
+      model: ITU-R P.618
+    output:
+      enabled: true
+      componentFolder: ntn
+      structuredComponentFolders: true
+      saveCSV: true
+      savePNG: true
+      imageFormat: png
+      imageResolutionDPI: 180
+      prohibitSVG: true
   mimo:
     n_tx_ant: 1
     n_rx_ant: 1

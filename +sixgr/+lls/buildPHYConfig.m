@@ -17,9 +17,10 @@ cfg.outputs.saveFigures = false;
 
 cfg.channel.model = char(string(llsCfg.channel.model));
 cfg.channel.awgnOnly = strcmpi(string(llsCfg.channel.model), "AWGN");
-if startsWith(upper(string(llsCfg.channel.model)), "TDL-")
+channelModel = upper(string(llsCfg.channel.model));
+if startsWith(channelModel, "TDL-") || startsWith(channelModel,"NTN-TDL-")
     cfg.channel.tdlProfile = char(upper(string(llsCfg.channel.model)));
-elseif startsWith(upper(string(llsCfg.channel.model)), "CDL-")
+elseif startsWith(channelModel, "CDL-") || startsWith(channelModel,"NTN-CDL-")
     cfg.channel.cdlProfile = char(upper(string(llsCfg.channel.model)));
 end
 cfg.channel.fading.delaySpread_s = double(llsCfg.channel.delaySpreadSeconds);
@@ -27,6 +28,8 @@ cfg.channel.fading.velocity_kmh = double(llsCfg.channel.velocityKmph);
 cfg.channel.snr_dB = double(snrDb);
 cfg.channel.nTxAnt = double(llsCfg.channel.txAntennas);
 cfg.channel.nRxAnt = double(llsCfg.channel.rxAntennas);
+cfg.channel.ntn = llsCfg.ntn;
+cfg.antenna.waveformLLS = llsCfg.antenna;
 cfg.phy.nTxAnt = double(llsCfg.channel.txAntennas);
 cfg.phy.nRxAnt = double(llsCfg.channel.rxAntennas);
 link = upper(string(llsCfg.simulation.link));
@@ -89,6 +92,12 @@ if link == "PUSCH"
     cfg.phy.pusch.dmrs.portSet = double(linkCfg.dmrs.portSet(:).');
     cfg.phy.pusch.dmrs.groupHopping = logical(linkCfg.dmrs.groupHopping);
     cfg.phy.pusch.dmrs.sequenceHopping = logical(linkCfg.dmrs.sequenceHopping);
+    cfg.phy.pusch.measurements.dmrsResidualPostEqSINRBoundEnabled = logical( ...
+        llsCfg.receiver.postEqualizationSINR.dmrsResidualBoundEnabled);
+    cfg.phy.pusch.measurements.decisionDirectedPostEqSINRBoundEnabled = logical( ...
+        llsCfg.receiver.postEqualizationSINR.decisionDirectedResidualBoundEnabled);
+    cfg.phy.pusch.measurements.decoderNoiseVarianceMode = char(string( ...
+        llsCfg.receiver.decoderNoiseVariance.mode));
 else
     cfg.phy.pdsch.prbSet = firstPRB:(firstPRB + numPRB - 1);
     cfg.phy.pdsch.symbolAllocation = double(llsCfg.allocation.symbols(:).');

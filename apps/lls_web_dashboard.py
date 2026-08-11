@@ -4767,6 +4767,51 @@ def _filesystem_artifact_kind_and_mime(path: Path) -> tuple[str, str] | None:
     return None
 
 
+def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
+    """Return true only for a folder with a recognized atomic run authority."""
+    return (
+        (run_dir / "meta" / "scenario_manifest.json").is_file()
+        or (run_dir / "reports" / "csv" / "scenario_summary.csv").is_file()
+        or (
+            run_dir
+            / "artifact_generation"
+            / "component_qualification_manifest.csv"
+        ).is_file()
+        or (
+            run_dir
+            / "reports"
+            / "csv"
+            / "full_stack_run_manifest.csv"
+        ).is_file()
+        or (
+            run_dir
+            / "reports"
+            / "json"
+            / "phase18_reanalysis_manifest.json"
+        ).is_file()
+        or (run_dir / "meta" / "recovery_manifest.json").is_file()
+        or (
+            (run_dir / "run_provenance.json").is_file()
+            and (run_dir / "artifact_manifest.csv").is_file()
+            and (run_dir / "result_validity.csv").is_file()
+            and (run_dir / "truth_contract.csv").is_file()
+        )
+        or (
+            (
+                run_dir
+                / "air_interface"
+                / "reports"
+                / "csv"
+                / "live_stage_status.csv"
+            ).is_file()
+            and (
+                (run_dir / "meta" / "scenario_config_identity.json").is_file()
+                or (run_dir / "meta" / "scenario_config_resolved.json").is_file()
+            )
+        )
+    )
+
+
 def _filesystem_run_folders() -> list[Path]:
     folders: list[Path] = []
     for root in _dashboard_result_roots():
@@ -4779,42 +4824,19 @@ def _filesystem_run_folders() -> list[Path]:
             for run_dir in scenario_dir.iterdir():
                 if not run_dir.is_dir():
                     continue
-                if (
-                    (run_dir / "meta" / "scenario_manifest.json").is_file()
-                    or (run_dir / "reports" / "csv" / "scenario_summary.csv").is_file()
-                    or (
-                        run_dir
-                        / "artifact_generation"
-                        / "component_qualification_manifest.csv"
-                    ).is_file()
-                    or (
-                        run_dir
-                        / "reports"
-                        / "csv"
-                        / "full_stack_run_manifest.csv"
-                    ).is_file()
-                    or (
-                        run_dir
-                        / "reports"
-                        / "json"
-                        / "phase18_reanalysis_manifest.json"
-                    ).is_file()
-                    or (run_dir / "meta" / "recovery_manifest.json").is_file()
-                    or (
-                        (
-                            run_dir
-                            / "air_interface"
-                            / "reports"
-                            / "csv"
-                            / "live_stage_status.csv"
-                        ).is_file()
-                        and (
-                            (run_dir / "meta" / "scenario_config_identity.json").is_file()
-                            or (run_dir / "meta" / "scenario_config_resolved.json").is_file()
-                        )
-                    )
-                ):
+                if _is_discoverable_filesystem_run_folder(run_dir):
                     folders.append(run_dir)
+                    continue
+                # Compact RAN1 LLS runs may be grouped as
+                # results/lls/<qualification-family>/<scenario>/<run-tag>.
+                # Inspect exactly one additional directory level; do not
+                # recursively index arbitrary intermediate/debug folders.
+                for nested_run_dir in run_dir.iterdir():
+                    if (
+                        nested_run_dir.is_dir()
+                        and _is_discoverable_filesystem_run_folder(nested_run_dir)
+                    ):
+                        folders.append(nested_run_dir)
     return folders
 
 
@@ -4852,6 +4874,12 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     )
     config_identity_path = run_folder / "meta" / "scenario_config_identity.json"
     config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
+    compact_provenance_path = run_folder / "run_provenance.json"
+    compact_summary_path = run_folder / "bler_vs_snr.csv"
+    compact_truth_path = run_folder / "truth_contract.csv"
+    compact_validity_path = run_folder / "result_validity.csv"
+    compact_manifest_path = run_folder / "artifact_manifest.csv"
+    compact_config_path = run_folder / "resolved_config.json"
     manifest = _read_json_file(manifest_path)
     summary = _read_first_csv_record(summary_path)
     qualification = _read_first_csv_record(qualification_path)
@@ -4866,6 +4894,19 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     live_stage = _read_first_csv_record(live_stage_path)
     config_identity = _read_json_file(config_identity_path)
     resolved_config = _read_json_file(config_json_path)
+    compact_provenance = _read_json_file(compact_provenance_path)
+    compact_summary = _read_first_csv_record(compact_summary_path)
+    compact_truth = _read_first_csv_record(compact_truth_path)
+    compact_validity_rows = _read_csv_records(compact_validity_path)
+    compact_manifest_rows = _read_csv_records(compact_manifest_path)
+    compact_resolved_config = _read_json_file(compact_config_path)
+    compact_lls_run = bool(
+        compact_provenance
+        and compact_summary
+        and compact_truth
+        and compact_validity_rows
+        and compact_manifest_rows
+    )
     if (
         not manifest
         and not summary
@@ -4873,12 +4914,14 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         and not reanalysis
         and not recovery
         and not component_qualification_manifest
+        and not compact_lls_run
         and not (live_stage and (config_identity or resolved_config))
     ):
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
     scenario_id = str(
         summary.get("ScenarioID")
+        or compact_summary.get("ScenarioId")
         or qualification.get("ScenarioID")
         or (
             FULL_STACK_QUALIFICATION_SCENARIO
@@ -4887,6 +4930,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         )
         or manifest.get("ScenarioID")
         or manifest.get("ScenarioId")
+        or compact_provenance.get("ScenarioId")
         or config_identity.get("ScenarioID")
         or path_get(resolved_config, "meta.scenario_id", "")
         or run_folder.parent.name
@@ -4930,6 +4974,24 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             if statuses and statuses == {"PASS"}
             else "completed_with_failures"
         )
+    if not run_completion and compact_lls_run:
+        compact_status = str(
+            compact_provenance.get("ResultValidity") or ""
+        ).strip().lower()
+        all_valid = all(
+            _truthy_value(row.get("Pass")) is True
+            for row in compact_validity_rows
+        )
+        truth_valid = (
+            _truthy_value(compact_truth.get("WaveformGenerated")) is True
+            and str(compact_truth.get("Status") or "").strip().lower()
+            == "valid_waveform_truth"
+        )
+        run_completion = (
+            "completed"
+            if compact_status == "complete_valid" and all_valid and truth_valid
+            else "completed_with_failures"
+        )
     if not run_completion and live_stage:
         # A filesystem-only waveform run has no terminal manifest while it
         # is executing.  Its atomically refreshed live-stage row is the
@@ -4956,6 +5018,17 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         result_ok = bool(qualification_statuses) and all(
             status == "PASS" for status in qualification_statuses
         )
+    if result_ok is None and compact_lls_run:
+        result_ok = (
+            str(compact_provenance.get("ResultValidity") or "").strip().lower()
+            == "complete_valid"
+            and all(
+                _truthy_value(row.get("Pass")) is True
+                for row in compact_validity_rows
+            )
+            and str(compact_truth.get("Status") or "").strip().lower()
+            == "valid_waveform_truth"
+        )
     required_failures = _int_value(summary.get("RequiredFailureCount") or manifest.get("RequiredFailureCount"))
     if required_failures is None and component_qualification_manifest:
         required_failures = sum(
@@ -4963,7 +5036,19 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             for row in component_qualification_rows
             if str(row.get("Status") or "").strip().upper() != "PASS"
         )
+    if required_failures is None and compact_lls_run:
+        required_failures = sum(
+            1
+            for row in compact_validity_rows
+            if _truthy_value(row.get("Pass")) is not True
+        )
     truth_ok = _truthy_value(summary.get("RuntimeTruthContractOk") or manifest.get("RuntimeTruthContractOk"))
+    if truth_ok is None and compact_lls_run:
+        truth_ok = (
+            _truthy_value(compact_truth.get("WaveformGenerated")) is True
+            and str(compact_truth.get("Status") or "").strip().lower()
+            == "valid_waveform_truth"
+        )
     updated_utc = _max_mtime_utc(
         [
             manifest_path,
@@ -4976,6 +5061,12 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             live_stage_path,
             config_identity_path,
             config_json_path,
+            compact_provenance_path,
+            compact_summary_path,
+            compact_truth_path,
+            compact_validity_path,
+            compact_manifest_path,
+            compact_config_path,
             run_folder,
         ]
     )
@@ -4984,6 +5075,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         or qualification.get("StartUTC")
         or reanalysis.get("GeneratedUTC")
         or config_identity.get("GeneratedUTC")
+        or compact_provenance.get("CreatedUTC")
         or ""
     ).strip()
     config_json = ""
@@ -4992,12 +5084,19 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             config_json = config_json_path.read_text(encoding="utf-8")
         except OSError:
             config_json = ""
+    elif compact_config_path.is_file():
+        try:
+            config_json = compact_config_path.read_text(encoding="utf-8")
+        except OSError:
+            config_json = ""
     status_payload: dict[str, Any] = {
         "status": run_completion,
         "run_completion": run_completion,
         "stage": str(live_stage.get("Stage") or "filesystem_result_folder"),
         "status_authority": (
-            "component_qualification_summary"
+            "run_provenance_and_result_validity"
+            if compact_lls_run
+            else "component_qualification_summary"
             if component_qualification_manifest
             else (
                 summary.get("StatusAuthority")
@@ -5009,8 +5108,16 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "required_failure_count": required_failures,
         "runtime_truth_contract_ok": truth_ok,
         "filesystem_backed": True,
-        "summary_artifact": "reports/csv/scenario_summary.csv" if summary else "",
-        "manifest_artifact": "meta/scenario_manifest.json" if manifest else "",
+        "summary_artifact": (
+            "bler_vs_snr.csv"
+            if compact_lls_run
+            else "reports/csv/scenario_summary.csv" if summary else ""
+        ),
+        "manifest_artifact": (
+            "artifact_manifest.csv"
+            if compact_lls_run
+            else "meta/scenario_manifest.json" if manifest else ""
+        ),
         "qualification_manifest_artifact": (
             "artifact_generation/component_qualification_manifest.csv"
             if component_qualification_manifest
@@ -5060,7 +5167,10 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             or ""
         ),
         "current_stage": str(live_stage.get("Stage") or ""),
-        "current_snr_db": _int_value(live_stage.get("CurrentSNR_dB")),
+        "current_snr_db": _int_value(
+            live_stage.get("CurrentSNR_dB")
+            or compact_summary.get("SNRdB")
+        ),
         "current_slot": _int_value(live_stage.get("CurrentSlot")),
         "total_slots": _int_value(live_stage.get("TotalSlots")),
     }
@@ -5070,8 +5180,13 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "scenario_id": scenario_id,
         "run_tag": run_folder.name,
         "run_folder": str(run_folder.absolute()),
-        "bucket": str(manifest.get("OutputBucket") or "filesystem"),
+        "bucket": str(
+            manifest.get("OutputBucket")
+            or (run_folder.parent.parent.name if compact_lls_run else "filesystem")
+        ),
         "profile_name": str(
+            ("ran1_waveform_truth" if compact_lls_run else "")
+            or
             (
                 "component_qualification"
                 if component_qualification_manifest
@@ -5097,7 +5212,11 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
                 )
             )
         ),
-        "backend": str(manifest.get("OutputBackend") or "results_folder"),
+        "backend": str(
+            compact_provenance.get("ExecutionBackend")
+            or manifest.get("OutputBackend")
+            or "results_folder"
+        ),
         "status_text": run_completion,
         "status_json": json.dumps(status_payload, separators=(",", ":")),
         "config_json": config_json,
@@ -7060,6 +7179,7 @@ RESULT_SECTION_LABELS: dict[str, str] = {
     "scheduler": "Scheduler",
     "csi": "CSI",
     "rf": "RF",
+    "isac": "ISAC",
     "cellselection": "Cell Selection",
     "debug": "Debug",
     "logs": "Logs",
@@ -7086,6 +7206,7 @@ PLOT_BUCKET_LABELS: dict[str, str] = {
     "geometry": "Geometry / Topology / Mobility",
     "throughput_reliability": "Throughput / BLER / BER / EVM",
     "resource_grid": "Air Interface Resource Grid",
+    "isac": "ISAC / Sensing",
     "export_integrity": "Export / Integrity / Coverage",
     "other": "Other Published Evidence",
 }
@@ -7102,6 +7223,8 @@ TABLE_BUCKET_LABELS: dict[str, str] = {
 
 def infer_plot_bucket(*values: Any) -> str:
     text = " ".join(str(value or "") for value in values).lower()
+    if any(token in text for token in ("isac", "sensing", "range-angle", "range_angle", "range-doppler", "range_doppler")):
+        return "isac"
     if any(token in text for token in ("artifact audit", "artifact_audit", "two_mode_acceptance", "run_classification", "geometry_runtime_audit", "fixed_snr_sweep_audit")):
         return "artifact_audit"
     if any(token in text for token in ("fixed_snr", "fixed snr", "fixed-link", "fixed_link", "snr sweep", "lls_fixed_link_campaign", "measured_sinr_vs_configured_snr", "dl_bler_vs_snr", "ul_bler_vs_snr", "dl_ber_vs_snr", "ul_ber_vs_snr", "throughput_vs_snr", "bler_vs_snr", "ber_vs_snr")):
@@ -7227,6 +7350,8 @@ def classify_result_section(logical_path: str) -> str:
         return "debug"
     if any(token in path for token in ("summary", "manifest", "catalog", "checktable", "kpi_summary", "runtime_operating_mode", "truth_contract", "mcs_table_reference", "cqi_table_reference", "multiuser_user_summary", "runtime_stage_profile", "runtime_profiler_summary", "runtime_function_profile", "runtime_function_call_edges", "time_profile", "user_performance", "output_coverage_registry", "lls_implementation_register", "output_completeness", "instrumentation_coverage", "api_exposure_audit", "persistence_audit", "honest_unavailable_registry", "compare_run_prerequisites", "result_issue_registry", "table_scenario_topology", "scenario_consistency_check", "table_gnb_cell", "table_channel_summary", "table_noise_interference", "table_link_budget", "root_cause_candidate_table", "cell_edge_analytics_table", "energy_root_cause_table")):
         return "summary"
+    if any(token in path for token in ("isac", "sensing", "range_angle", "range_doppler")):
+        return "isac"
     if any(token in path for token in ("sites.csv", "sectors.csv", "trps.csv", "ues.csv", "deployment_layout_reference", "layout", "geometry")):
         return "geometry"
     if any(token in path for token in ("antenna_", "array_consistency")):
@@ -7284,6 +7409,7 @@ def result_section_priority(section: str) -> int:
         "beam",
         "csi",
         "rf",
+        "isac",
         "cellselection",
         "scheduler",
         "geometry",
@@ -8784,6 +8910,10 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
         root / "artifact_generation" / "artifact_contract_finalization_status.json",
         root / "artifact_generation" / "component_qualification_manifest.csv",
         root / "artifact_generation" / "component_qualification_summary.csv",
+        root / "run_provenance.json",
+        root / "artifact_manifest.csv",
+        root / "result_validity.csv",
+        root / "truth_contract.csv",
     ]
     authority_fingerprint: list[tuple[str, int, int]] = []
     for authority_path in authority_paths:
@@ -9970,6 +10100,43 @@ def build_live_summary(
             )
         ),
     }
+    if str(run_row.get("profile_name") or "").strip().lower() == "ran1_waveform_truth":
+        status = _status_payload(run_row)
+        config = parse_config_json(run_row)
+        compact_artifact = find_artifact_by_logical_path(artifacts, "bler_vs_snr.csv")
+        compact_rows = _read_csv_records(
+            Path(str((compact_artifact or {}).get("filesystem_path") or ""))
+        ) if compact_artifact else []
+        executed_trials = sum(
+            int(coerce_numeric(row.get("NumTB")) or 0) for row in compact_rows
+        )
+        link = str(_config_get_nested(config, "simulation.link", "")).strip().upper()
+        interference_enabled = bool(
+            _truthy_value(_config_get_nested(config, "interference.enabled", False))
+        )
+        summary.update(
+            {
+                "source": "bler_vs_snr.csv|run_provenance.json|result_validity.csv",
+                "run_completion": status.get("run_completion") or run_row.get("status_text") or "",
+                "result_ok": status.get("result_ok"),
+                "required_failure_count": status.get("required_failure_count"),
+                "status_authority": status.get("status_authority") or "",
+                "runtime_truth_contract_ok": status.get("runtime_truth_contract_ok"),
+                "canonical_artifact_gap_count": 0 if status.get("result_ok") is True else None,
+                "runner_profile": "ran1_waveform_truth",
+                "effective_dl_trial_count": executed_trials if link == "PDSCH" else 0,
+                "effective_ul_trial_count": executed_trials if link == "PUSCH" else 0,
+                "execution_backend": str(run_row.get("backend") or "waveform_truth"),
+                "phy_mode": "waveform_truth",
+                "waveform_phy_active": True,
+                "proxy_phy_active": False,
+                "fallback_used": False,
+                "execution_model": "independent_link_sweep",
+                "interference_mode": (
+                    "independent_waveform_and_channel" if interference_enabled else "none"
+                ),
+            }
+        )
     return summary
 
 
@@ -10480,6 +10647,11 @@ def _config_get_nested(config: dict[str, Any], path: str, default: Any = None) -
 
 def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     config = parse_config_json(run_row)
+    compact_lls_run = (
+        str(run_row.get("profile_name") or "").strip().lower()
+        == "ran1_waveform_truth"
+    )
+    system_default = not compact_lls_run
     cross_feature_qualification = (
         str(run_row.get("profile_name") or "").strip().lower()
         == "component_qualification"
@@ -10518,14 +10690,21 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         _config_get_nested(config, "ai.enable", False)
         or _config_get_nested(config, "lls6g.resolvedConfig.ai.enable", False)
     )
-    ntn_enabled = bool(
-        _config_get_nested(config, "ntn.enable", False)
-        or _config_get_nested(config, "lls6g.resolvedConfig.ntn.enable", False)
+    ntn_enabled = config_bool(
+        "ntn.enabled",
+        "ntn.enable",
+        "lls6g.resolvedConfig.ntn.enabled",
+        "lls6g.resolvedConfig.ntn.enable",
     )
-    sensing_enabled = bool(
-        _config_get_nested(config, "sensing.enable", False)
-        or _config_get_nested(config, "isac.enable", False)
-        or _config_get_nested(config, "lls6g.resolvedConfig.sensing.enable", False)
+    sensing_enabled = config_bool(
+        "sensing.enabled",
+        "sensing.enable",
+        "isac.enabled",
+        "isac.enable",
+        "lls6g.resolvedConfig.sensing.enabled",
+        "lls6g.resolvedConfig.sensing.enable",
+        "lls6g.resolvedConfig.isac.enabled",
+        "lls6g.resolvedConfig.isac.enable",
     )
     localization_enabled = bool(
         _config_get_nested(config, "ai.positioning.enable", False)
@@ -10602,59 +10781,61 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(active_pucch_formats, (list, tuple, set)):
         active_pucch_formats = [active_pucch_formats]
     harq_enabled = config_bool(
+        "harq.enabled",
         "canonical_control.harq.enabled",
         "phy.harq.enable",
         "mac.harq.enable",
         "lls6g.resolvedConfig.harq.enabled",
-        default=True,
+        default=system_default,
     )
     rf_impairments_enabled = config_bool(
         "canonical_control.rf_frontend.enabled",
         "rf.frontend.enabled",
         "rf.enable",
         "lls6g.resolvedConfig.rf_frontend.enabled",
-        default=True,
+        default=system_default,
     )
     power_control_enabled = config_bool(
         "canonical_control.power_control.enabled",
         "phy.pusch.power_control.enabled",
         "phy.pusch.powerControl.enabled",
         "lls6g.resolvedConfig.pusch.power_control.enabled",
-        default=True,
+        default=system_default,
     )
     raw_iq_capture_enabled = config_bool(
         "run.rawIQCaptureEnabled",
         "outputs.rawIQCaptureEnabled",
         "lls6g.resolvedConfig.run_control.raw_iq_capture_enable",
-        default=True,
+        default=system_default,
     )
     raw_grid_capture_enabled = config_bool(
         "run.rawGridCaptureEnabled",
         "outputs.rawGridCaptureEnabled",
         "lls6g.resolvedConfig.run_control.raw_grid_capture_enable",
-        default=True,
+        default=system_default,
     )
     channel_snapshot_capture_enabled = config_bool(
         "outputs.saveChannelSnapshots",
         "lls6g.resolvedConfig.run_control.save_channel_tensors",
-        default=True,
+        default=system_default,
     )
     pathloss_enabled = config_bool(
         "canonical_control.channel.pathloss_enabled",
         "channel.pathlossEnabled",
         "lls6g.resolvedConfig.channel.pathloss_enabled",
-        default=True,
+        default=system_default,
     )
     shadowing_enabled = config_bool(
         "canonical_control.channel.shadow_fading_enabled",
         "channel.shadowFadingEnabled",
         "lls6g.resolvedConfig.channel.shadow_fading_enabled",
-        default=True,
+        default=system_default,
     )
     interference_enabled = config_bool(
+        "interference.enabled",
         "channel.interference.interCellEnabled",
         "interference.interCellEnabled",
-        default=True,
+        default=system_default,
     ) or config_bool(
         "channel.interference.intraCellEnabled",
         "interference.intraCellEnabled",
@@ -10663,62 +10844,62 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.initial_access.enabled",
         "initial_access.enabled",
         "lls6g.resolvedConfig.initial_access.enabled",
-        default=True,
+        default=system_default,
     )
     prach_enabled = config_bool(
         "canonical_control.random_access.enabled",
         "random_access.enabled",
         "phy.prach.enable",
-        default=True,
+        default=system_default,
     )
     prach_runtime_required = config_bool(
         "run.controlGating.prachRequired",
         "control_gating.prach_required",
         "canonical_control.control.prach_required",
         "validation.random_access_evidence.msg1_prach_required",
-        default=True,
+        default=system_default,
     )
     pbch_runtime_required = config_bool(
         "run.controlGating.pbchRequired",
         "canonical_control.control.pbch_required",
-        default=True,
+        default=system_default,
     )
     pdcch_enabled = config_bool(
         "canonical_control.control.pdcch_enabled",
         "phy.pdcch.enable",
         "lls6g.resolvedConfig.pdcch.enabled",
-        default=True,
+        default=system_default,
     )
     pucch_enabled = config_bool(
         "canonical_control.control.pucch_enabled",
         "phy.pucch.enable",
-        default=True,
+        default=system_default,
     )
     srs_enabled = config_bool(
         "canonical_control.reference_signals.srs_enabled",
         "phy.srs.enable",
         "lls6g.resolvedConfig.reference_signals.srs.enabled",
-        default=True,
+        default=system_default,
     )
     energy_enabled = config_bool(
         "canonical_control.energy.enabled",
         "energy.enable",
         "lls6g.resolvedConfig.energy.enable",
-        default=True,
+        default=system_default,
     )
     prach_collision_enabled = config_bool(
         "random_access.enable_collision_mode",
         "prach_lls.EnableCollisionMode",
-        default=True,
+        default=system_default,
     )
     prach_threshold_sweep_enabled = config_bool(
         "random_access.parameterized_config_enabled",
-        default=True,
+        default=system_default,
     )
     reciprocity_calibration_enabled = config_bool(
         "phy.mimo.ulSRSAuthority.enabled",
         "canonical_control.csi.ul_csi_enabled",
-        default=True,
+        default=system_default,
     )
     channel_model = str(
         _config_get_nested(
@@ -11463,6 +11644,52 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
         if isinstance(submitted, dict) and submitted:
             browser_cfg = submitted
     truth_modes = dict(infer_browser_truth_modes(browser_cfg))
+    if str(browser_cfg.get("schemaVersion") or "").startswith("sixgr.lls.config/"):
+        ntn_enabled = bool(
+            _truthy_value(_config_get_nested(browser_cfg, "ntn.enabled", False))
+        )
+        interference_enabled = bool(
+            _truthy_value(
+                _config_get_nested(browser_cfg, "interference.enabled", False)
+            )
+        )
+        truth_modes.update(
+            {
+                "browser_execution_mode": "LLS",
+                "browser_execution_mode_label": "LLS",
+                "execution_model": "independent_link_sweep",
+                "execution_backend": str(
+                    _config_get_nested(
+                        browser_cfg, "simulation.executionBackend", "waveform_truth"
+                    )
+                ),
+                "phy_mode": "waveform_truth",
+                "waveform_phy_active": True,
+                "proxy_phy_active": False,
+                "fallback_used": False,
+                "noise_operating_mode": "configured_EsN0_per_occupied_QAM_RE",
+                "doppler_source_mode": (
+                    "satcom_circular_orbit_geometry_and_configured_compensation"
+                    if ntn_enabled
+                    else "configured_channel_velocity"
+                ),
+                "interference_mode": (
+                    "independent_waveform_and_channel" if interference_enabled else "none"
+                ),
+                "control_integration_mode": "disabled_for_single_link_waveform_lls",
+                "pbch_mode": "disabled",
+                "prach_mode": "disabled",
+                "pdcch_mode": "disabled",
+                "pucch_mode": "disabled",
+                "srs_mode": "disabled",
+                "trs_mode": "disabled",
+                "pbch_gating_active": False,
+                "prach_gating_active": False,
+                "pdcch_gating_active": False,
+                "srs_gating_active": False,
+                "trs_gating_active": False,
+            }
+        )
     if isinstance(operating_mode, list):
         for row in operating_mode:
             if not isinstance(row, dict):
@@ -13000,6 +13227,66 @@ def is_component_qualification_artifact_path(value: Any) -> bool:
     )
 
 
+def _select_compact_lls_manifest_artifacts(
+    artifacts: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """Validate and select one compact runLLS artifact-manifest authority."""
+    manifest_artifact = find_artifact_by_logical_path(
+        artifacts, "artifact_manifest.csv"
+    )
+    if manifest_artifact is None:
+        return None
+    manifest_path = Path(str(manifest_artifact.get("filesystem_path") or ""))
+    manifest_rows = _read_csv_records(manifest_path)
+    if not manifest_rows:
+        return None
+
+    selected: list[dict[str, Any]] = [manifest_artifact]
+    verification_failures: list[str] = []
+    for manifest_row in manifest_rows:
+        relative_path = str(
+            manifest_row.get("RelativePath") or ""
+        ).strip().replace("\\", "/").lower()
+        expected_hash = str(
+            manifest_row.get("SHA256") or ""
+        ).strip().lower()
+        expected_bytes = _int_value(manifest_row.get("Bytes"))
+        artifact = find_artifact_by_logical_path(artifacts, relative_path)
+        if not relative_path or artifact is None:
+            verification_failures.append(relative_path or "<empty-path>")
+            continue
+        if expected_bytes is None or int(artifact.get("byte_size") or -1) != expected_bytes:
+            verification_failures.append(relative_path)
+            continue
+        filesystem_path = Path(str(artifact.get("filesystem_path") or ""))
+        if not filesystem_path.is_file() or len(expected_hash) != 64:
+            verification_failures.append(relative_path)
+            continue
+        digest = hashlib.sha256()
+        try:
+            with _windows_extended_path(filesystem_path).open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError:
+            verification_failures.append(relative_path)
+            continue
+        if not secrets.compare_digest(digest.hexdigest(), expected_hash):
+            verification_failures.append(relative_path)
+            continue
+        selected.append(artifact)
+
+    if verification_failures or len(selected) != len(manifest_rows) + 1:
+        return None
+    return selected, {
+        "status": "compact_lls_manifest_authoritative",
+        "evidence_scope": "ran1_waveform_truth",
+        "authority_artifact": manifest_artifact,
+        "canonical_count": len(selected),
+        "legacy_diagnostic_count": max(0, len(artifacts) - len(selected)),
+        "manifest_hash_verified": True,
+    }
+
+
 def select_primary_result_artifacts(
     artifacts: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -13071,6 +13358,10 @@ def select_primary_result_artifacts(
             "canonical_count": len(qualification_rows),
             "legacy_diagnostic_count": max(0, len(rows) - len(selected)),
         }
+
+    compact_selection = _select_compact_lls_manifest_artifacts(rows)
+    if compact_selection is not None:
+        return compact_selection
 
     legacy_manifest = find_artifact_by_logical_path(
         rows, "reports/csv/component_artifact_publication_manifest.csv"
@@ -15211,7 +15502,12 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
                 "<run_folder>/components/<component>/qualification/{csv,png}"
                 if component_authority.get("evidence_scope")
                 == "component_validation_campaign"
-                else "<run_folder>/components/<component>/{csv,png}"
+                else (
+                    "<run_folder>/{csv,png,json}"
+                    if component_authority.get("evidence_scope")
+                    == "ran1_waveform_truth"
+                    else "<run_folder>/components/<component>/{csv,png}"
+                )
             ),
             "note": (
                 "This is dedicated component-qualification evidence and is not relabeled as the "
@@ -15219,8 +15515,15 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
                 "the canonical CSV/PNG counts."
                 if component_authority.get("evidence_scope")
                 == "component_validation_campaign"
-                else "A completed runtime-only contract tree is the sole primary results authority. "
-                "Legacy reports remain diagnostic and are excluded from canonical CSV/PNG counts."
+                else (
+                    "This compact RAN1 run is backed by actual waveform execution. Every public "
+                    "CSV, PNG, and JSON file is selected from artifact_manifest.csv only after "
+                    "its byte count and SHA-256 hash are verified."
+                    if component_authority.get("evidence_scope")
+                    == "ran1_waveform_truth"
+                    else "A completed runtime-only contract tree is the sole primary results authority. "
+                    "Legacy reports remain diagnostic and are excluded from canonical CSV/PNG counts."
+                )
             ),
         },
     }

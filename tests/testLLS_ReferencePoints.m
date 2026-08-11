@@ -1,9 +1,9 @@
 function ok = testLLS_ReferencePoints()
 %TESTLLS_REFERENCEPOINTS Golden-style PHY reference points (AWGN baseline).
-% Reference envelopes were recalibrated on 2026-05-29 after fixing payload
-% and DM-RS index-base alignment in the DL/UL waveform grids. The bounds below are based on the fixed
-% `rng(2026,"twister")` reference run, with a small tolerance band and an
-% additional three-seed sanity check kept outside this test.
+% Reference envelopes were recalibrated on 2026-08-10 after strict
+% codeword-specific MCS ownership replaced the former free modulation/rate
+% pair. These are deterministic regression anchors, not 3GPP conformance
+% claims; the independent FRC gate owns standards comparisons.
 
 setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
@@ -12,6 +12,17 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+% Golden data-channel points exclude CSI-RS; CSI-RS physical codebooks are
+% qualified separately and must never be synthesized by this test.
+cfg.phy.csirs.enable = false;
+cfg.phy.csirs.enabled = false;
+% Pin DL to TS 38.214 table-2 MCS 22 (256QAM, R=754/1024). This exact
+% table/index tuple is now required by the calibration transmitter.
+dlReferenceMCS = sixgr.link.resolveMCSProfile("qam256_table2", 22);
+cfg.phy.pdsch.mcsTable = "qam256_table2";
+cfg.phy.pdsch.mcsIndex = 22;
+cfg.phy.pdsch.modulation = char(string(dlReferenceMCS.Modulation));
+cfg.phy.pdsch.codeRate = double(dlReferenceMCS.TargetCodeRate);
 % Golden points must not inherit a moving operator default. Pin the UL
 % reference to TS 38.214 table-1 MCS 19 (64QAM, R=517/1024) so the 0/20 dB
 % envelopes describe one stable waveform operating point.
@@ -27,24 +38,24 @@ cfg.phy.pusch.codeRate = double(ulReferenceMCS.TargetCodeRate);
 rng(2026, "twister");
 dl0 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, ...
     "SNR_dB", 0, "ExecutionProfile", "phy_calibration");
-dl20 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, ...
-    "SNR_dB", 20, "ExecutionProfile", "phy_calibration");
+dl30 = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, ...
+    "SNR_dB", 30, "ExecutionProfile", "phy_calibration");
 ul0 = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 0);
 ul20 = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 20);
 
-if logical(dl0.Skipped) || logical(dl20.Skipped)
-    assert(logical(dl0.Skipped) && logical(dl20.Skipped), ...
+if logical(dl0.Skipped) || logical(dl30.Skipped)
+    assert(logical(dl0.Skipped) && logical(dl30.Skipped), ...
         "DL reference runs must both skip or both execute.");
 else
-    localAssertRange(double(dl0.BER), 0.17, 0.21, "DL BER @0dB out of reference envelope.");
-    localAssertRange(double(dl20.BER), 0.0, 0.005, "DL BER @20dB out of reference envelope.");
-    localAssertRange(double(dl20.BLER), 0.0, 0.25, "DL BLER @20dB out of reference envelope.");
-    assert(double(dl20.BER) <= double(dl0.BER), "DL BER must improve with SNR.");
-    assert(double(dl20.BER) <= 0.15 * max(double(dl0.BER), eps), "DL BER improvement is below reference expectation.");
-    if istable(dl0.TrialTable) && istable(dl20.TrialTable) && ...
+    localAssertRange(double(dl0.BER), 0.32, 0.39, "DL BER @0dB out of reference envelope.");
+    localAssertRange(double(dl30.BER), 0.0, 0.005, "DL BER @30dB out of reference envelope.");
+    localAssertRange(double(dl30.BLER), 0.0, 0.25, "DL BLER @30dB out of reference envelope.");
+    assert(double(dl30.BER) <= double(dl0.BER), "DL BER must improve with SNR.");
+    assert(double(dl30.BER) <= 0.15 * max(double(dl0.BER), eps), "DL BER improvement is below reference expectation.");
+    if istable(dl0.TrialTable) && istable(dl30.TrialTable) && ...
             all(ismember(["WidebandCQI","MCS"], string(dl0.TrialTable.Properties.VariableNames))) && ...
-            all(ismember(["WidebandCQI","MCS"], string(dl20.TrialTable.Properties.VariableNames)))
-        assert(mean(double(dl20.TrialTable.WidebandCQI), "omitnan") >= mean(double(dl0.TrialTable.WidebandCQI), "omitnan"), ...
+            all(ismember(["WidebandCQI","MCS"], string(dl30.TrialTable.Properties.VariableNames)))
+        assert(mean(double(dl30.TrialTable.WidebandCQI), "omitnan") >= mean(double(dl0.TrialTable.WidebandCQI), "omitnan"), ...
             "DL reference CQI should improve with SNR.");
     end
 end

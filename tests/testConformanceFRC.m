@@ -624,8 +624,9 @@ if isempty(diagnostics)
 else
     details = strjoin("  - " + diagnostics, newline);
 end
-message = sprintf(char(heading), varargin{:}) + newline + details;
-error(identifier, "%s", message);
+headingText = string(sprintf(char(heading), varargin{:}));
+message = strjoin([headingText; string(details(:))], string(newline));
+error(char(identifier), "%s", char(message));
 end
 
 function tf = localTextScalar(value)

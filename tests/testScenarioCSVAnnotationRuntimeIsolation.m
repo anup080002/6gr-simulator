@@ -22,6 +22,9 @@ if ~isfolder(reportDir)
 end
 reportPath = fullfile(reportDir, "ordinary_report.csv");
 sixgr.util.csvWriteTable(reportPath, table((1:2).', 'VariableNames', {'Value'}));
+caseVariantPath = fullfile(reportDir,"case_variant_identity.csv");
+sixgr.util.csvWriteTable(caseVariantPath,table("scenario_unit",7, ...
+    'VariableNames',{'ScenarioId','Value'}));
 
 % Statistical component exporters run before the global identity pass.
 % Their source hashes must be refreshed after the source is annotated.
@@ -77,6 +80,11 @@ assert(isequal(string(report.Properties.VariableNames(1:3)), ...
 assert(all(string(report.ScenarioID) == "scenario_unit"));
 assert(all(string(report.ConfigHash) == "hash_unit"));
 assert(all(string(report.RunnerProfile) == "waveform_bundle"));
+caseVariant = readtable(caseVariantPath,'VariableNamingRule','preserve','TextType','string');
+caseNames = string(caseVariant.Properties.VariableNames);
+assert(nnz(strcmpi(caseNames,"ScenarioID")) == 1 && ...
+    numel(unique(lower(caseNames))) == numel(caseNames), ...
+    "Scenario annotation must not append a case-only duplicate identity column.");
 assert(summary.AnnotatedCount >= 3 && summary.SkippedImmutableCount >= 4);
 statAnnotated = readtable(statSource, "VariableNamingRule", "preserve", "TextType", "string");
 lineageAfter = readtable(statLineage, "VariableNamingRule", "preserve", "TextType", "string");

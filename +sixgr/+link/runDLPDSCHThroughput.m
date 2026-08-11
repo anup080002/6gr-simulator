@@ -115,6 +115,9 @@ out.ApproximationMode = "none";
 out.StrictSchedulingOwnership = executionContract.IsStrict;
 out.ConnectedStrictCertified = false;
 out.CalibrationProvenance = executionContract.CalibrationProvenance;
+out.ISACWaveformCapture = struct();
+isacCaptureRequired = logical(sixgr.util.structGet(cfg,"isac.enabled",false));
+isacWaveformCapture = struct();
 
 configuredPDSCH = logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "scheduled_pdsch", ...
@@ -712,6 +715,19 @@ for n = 1:numFrames
             tx.TxRFImpairmentReplay = txRfOut.Replay;
             txInfo.TxRFImpairmentReplay = txRfOut.Replay;
             cfgFrame = sixgr.util.structSet(cfgFrame, "lls6g.txRFImpairmentReplay", txRfOut.Replay);
+        end
+        if isacCaptureRequired && isempty(fieldnames(isacWaveformCapture))
+            % Capture the exact post-power-context/post-Tx-RF PDSCH samples
+            % that continue into the production channel and receiver.  The
+            % sensing branch is attached later by the serial coordinator;
+            % it never regenerates or substitutes a configured waveform.
+            isacWaveformCapture = struct( ...
+                "Waveform",tx.Waveform, ...
+                "SampleRateHz",double(localResolveSampleRate(tx,txInfo)), ...
+                "Frame",double(frameIdx), ...
+                "Slot",double(trialSlot(n)), ...
+                "CapturePoint","post_power_and_tx_rf_pre_channel", ...
+                "WaveformAuthority","exact_runtime_pdsch_waveform");
         end
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
         [grantSnapshot, harqContext, harqTBContext, harqTBStatus] = localApplyHARQTransportBlockContext( ...
@@ -1673,6 +1689,7 @@ out.EndFrameIndex = double(trialFrame(max(1, numFrames)));
 out.EndSlotIndex = double(trialSlot(max(1, numFrames)));
 out.HARQ = lastHARQ;
 out.ChannelState = chState;
+out.ISACWaveformCapture = isacWaveformCapture;
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...

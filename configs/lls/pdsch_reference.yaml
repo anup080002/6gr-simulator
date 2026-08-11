@@ -86,6 +86,165 @@ channel:
   seed: 20260811
   normalization: occupied_re_esn0
 
+# Canonical BS/UE physical-array authority. When enabled, the logical PHY
+# ports are projected onto these physical elements before nrCDLChannel. The
+# exact same descriptor and steering matrix generate the antenna CSV/PNG
+# artifacts. Directional antenna coupling is deliberately CDL-only because
+# TDL profiles do not expose per-path angles.
+antenna:
+  enabled: false
+  standardReference: "3GPP TR 38.901"
+  researchTaxonomy: baseline_benchmark
+  couplingMode: disabled
+  pointingMode: disabled
+  powerNormalization: disabled
+  gnb:
+    model: 3gpp_nr_rectangular_panel
+    architecture: full_digital_element_domain
+    size: [1, 1, 1, 1]
+    spacingWavelength: [0.5, 0.5, 1.0, 1.0]
+    polarizationAnglesDeg: [0]
+    orientationDeg: [0, 0, 0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 1
+    element:
+      frequencyRangeHz: [500000000, 100000000000]
+      polarizationModel: 2
+      beamwidthDeg: [65, 65]
+      sidelobeLevelDb: [30, 30]
+      maximumAttenuationDb: 30
+      maximumGainDbi: 8
+  ue:
+    model: 3gpp_nr_rectangular_panel
+    architecture: full_digital_element_domain
+    size: [1, 1, 1, 1]
+    spacingWavelength: [0.5, 0.5, 1.0, 1.0]
+    polarizationAnglesDeg: [0]
+    orientationDeg: [0, 0, 0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 1
+    element:
+      frequencyRangeHz: [500000000, 100000000000]
+      polarizationModel: 2
+      beamwidthDeg: [65, 65]
+      sidelobeLevelDb: [30, 30]
+      maximumAttenuationDb: 30
+      maximumGainDbi: 8
+
+# Communication-centric ISAC authority. When enabled, the exact runtime
+# PDSCH waveform and physical gNB array are also sent through a configured
+# phased.ScatteringMIMOChannel sensing scene. This is a study-item model,
+# not a 3GPP conformance channel and not a synthetic KPI generator.
+isac:
+  enabled: false
+  researchTaxonomy: study_item_candidate
+  approach: communication_centric_nr_ofdm
+  sensingMode: monostatic_gnb
+  waveformAuthority: exact_runtime_pdsch_waveform
+  executionScope: first_diagnostic_transport_block
+  channelModel: phased_scattering_mimo
+  seed: 20260814
+  coherentRepetitions: 8
+  transmitPowerDbm: 46
+  receiver:
+    noiseFigureDb: 5
+    referenceTemperatureK: 290
+    gainDb: 0
+  channel:
+    simulateDirectPath: false
+    warmupPulses: 1
+  scene:
+    nodePositionAuthority: configured_compact_geometry
+    gnbPositionM: [0, 0, 10]
+    uePositionM: [50, 60, 2]
+    numberTargets: 1
+    targetPositionsM: [40, 10, 10]
+    targetVelocitiesMps: [5, 0, 0]
+    reflectionCoefficientReal: [1]
+    reflectionCoefficientImag: [0]
+  processing:
+    observationSource: known_runtime_waveform_matched_filter
+    matchedFilterImplementation: frequency_domain_exact_reference
+    beamformer: conventional_phase_shift
+    includeElementResponse: false
+    backgroundRemoval: none
+    maximumRangeM: 200
+    rangeFFTSize: 32768
+    dopplerFFTSize: 16
+    azimuthGrid:
+      minimumDeg: -90
+      maximumDeg: 90
+      stepDeg: 2
+  detection:
+    algorithm: ca_cfar_2d
+    trainingCellsRange: 4
+    trainingCellsAngle: 4
+    guardCellsRange: 1
+    guardCellsAngle: 1
+    probabilityFalseAlarm: 0.001
+    maximumDetections: 8
+    nonMaximumSuppressionRangeBins: 3
+    nonMaximumSuppressionAngleBins: 2
+  acceptance:
+    minimumMatchedTargets: 1
+    maximumRangeErrorM: 15
+    maximumAzimuthErrorDeg: 15
+  output:
+    enabled: true
+    componentFolder: isac
+    structuredComponentFolders: false
+    saveCSV: true
+    savePNG: true
+    imageFormat: png
+    imageResolutionDPI: 180
+    prohibitSVG: true
+
+
+# Non-terrestrial channel authority. The terrestrial reference keeps this
+# disabled. An enabled NTN scenario must select NTN-TDL-A..D or NTN-CDL-A..D;
+# the loader rejects an enable/profile mismatch instead of falling back.
+ntn:
+  enabled: false
+  standardReference: "3GPP TR 38.811"
+  researchTaxonomy: baseline_benchmark
+  channelProfile: NTN-TDL-D
+  orbit:
+    type: LEO
+    model: circular
+    satelliteAltitudeM: 600000
+    groundAltitudeM: 0
+    elevationAngleDeg: 50
+    epochSeconds: 0
+  payload:
+    architecture: regenerative_service_link
+  doppler:
+    satelliteMotionEnabled: true
+    mobileMotionEnabled: true
+    compensationMode: none
+    mobileDirectionAzimuthDeg: 0
+    mobileDirectionZenithDeg: 90
+  propagationDelay:
+    enabled: false
+    model: static_slant_range
+    compensationMode: disabled
+  tdl:
+    mimoCorrelation: Low
+    polarization: Co-Polar
+  cdl:
+    autoOrientSatelliteArray: true
+  atmosphericLoss:
+    enabled: false
+    model: "ITU-R P.618"
+  output:
+    enabled: true
+    componentFolder: ntn
+    structuredComponentFolders: false
+    saveCSV: true
+    savePNG: true
+    imageFormat: png
+    imageResolutionDPI: 180
+    prohibitSVG: true
+
 # Optional cochannel interferer. When enabled, this is a second independently
 # encoded/modulated waveform passed through its own configured channel. The
 # desired-to-interference ratio is calibrated only at the common receiver.
@@ -109,6 +268,16 @@ receiver:
   ldpcMaxIterations: 50
   ldpcAlgorithm: Normalized min-sum
   useMexLDPC: true
+  postEqualizationSINR:
+    dmrsResidualBoundEnabled: false
+    decisionDirectedResidualBoundEnabled: false
+  decoderNoiseVariance:
+    mode: post_equalization
+
+provenance:
+  requireGitCommit: true
+  requireCleanWorktree: false
+  requireStableSourceThroughoutRun: false
 
 harq:
   enabled: false

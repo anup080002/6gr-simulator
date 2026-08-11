@@ -7,6 +7,7 @@ classdef StrictPDSCHChainFixture
             ip.addParameter("NPRB", 1);
             ip.addParameter("FrequencySelective", false);
             ip.addParameter("UsePTRS", false);
+            ip.addParameter("PTRSPortSet", 0);
             ip.addParameter("RNTI", 4660);
             ip.addParameter("NID", 42);
             ip.addParameter("TransportBlockSize", 40);
@@ -37,7 +38,11 @@ classdef StrictPDSCHChainFixture
             L = carrier.SymbolsPerSlot;
             allocation = 0:(K*L - 1);
             if logical(opt.UsePTRS)
-                ptrsPortSet = 0;
+                ptrsPortSet = double(opt.PTRSPortSet);
+                assert(isscalar(ptrsPortSet) && isfinite(ptrsPortSet) && ...
+                    ptrsPortSet == fix(ptrsPortSet) && ...
+                    ismember(ptrsPortSet,0:rankValue-1), ...
+                    "PTRSPortSet must identify one configured DM-RS port.");
                 ptrsConfigId = "PTRS-STRICT-FIXTURE";
             else
                 ptrsPortSet = zeros(1,0);

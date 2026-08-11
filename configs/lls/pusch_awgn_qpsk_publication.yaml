@@ -17,6 +17,20 @@ execution:
   maximumWorkers: 4
   batchTransportBlocks: 32
 
+receiver:
+  # Perfect-CSI AWGN reference: do not replace the configured/equalized
+  # noise variance with a finite-sample DM-RS or decision-directed bound.
+  postEqualizationSINR:
+    dmrsResidualBoundEnabled: false
+    decisionDirectedResidualBoundEnabled: false
+  decoderNoiseVariance:
+    mode: post_equalization
+
+provenance:
+  requireGitCommit: true
+  requireCleanWorktree: true
+  requireStableSourceThroughoutRun: true
+
 comparison:
   targetBLER: [0.1, 0.01, 0.001]
 

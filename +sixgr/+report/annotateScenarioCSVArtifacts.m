@@ -51,19 +51,19 @@ for i = 1:numel(files)
 
     changed = false;
     variableNames = string(tableValue.Properties.VariableNames);
-    if ~any(variableNames == "ScenarioID")
+    if ~any(strcmpi(variableNames, "ScenarioID"))
         tableValue = addvars(tableValue, localConstantColumn(height(tableValue), scenarioID), ...
             'Before', 1, 'NewVariableNames', 'ScenarioID');
         changed = true;
     end
     variableNames = string(tableValue.Properties.VariableNames);
-    if ~any(variableNames == "ConfigHash")
+    if ~any(strcmpi(variableNames, "ConfigHash"))
         tableValue = addvars(tableValue, localConstantColumn(height(tableValue), configHash), ...
             'Before', min(2, width(tableValue) + 1), 'NewVariableNames', 'ConfigHash');
         changed = true;
     end
     variableNames = string(tableValue.Properties.VariableNames);
-    if ~any(variableNames == "RunnerProfile")
+    if ~any(strcmpi(variableNames, "RunnerProfile"))
         tableValue = addvars(tableValue, localConstantColumn(height(tableValue), runnerProfile), ...
             'Before', min(3, width(tableValue) + 1), 'NewVariableNames', 'RunnerProfile');
         changed = true;

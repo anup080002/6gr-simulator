@@ -8,6 +8,11 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+% This test qualifies the PDSCH/DL-SCH chain only. CSI-RS has its own
+% strict resource/codebook tests and must be explicitly configured rather
+% than inheriting the system-level default without a physical codebook.
+cfg.phy.csirs.enable = false;
+cfg.phy.csirs.enabled = false;
 
 resLow = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 6, ...
     "SNR_dB", 0, "ExecutionProfile", "phy_calibration");

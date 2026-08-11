@@ -18,7 +18,10 @@ assert(all(abs(T.ConfiguredDIRdB-T.MeasuredDIRdB) <= 0.05));
 assert(all(isfinite(T.MeasuredPreEqualizationSINRdB)));
 assert(all(T.MeasuredPreEqualizationSINRdB < T.TargetSNRdB-20), ...
     "A -10 dB D/I waveform must materially lower pre-equalization SINR.");
-assert(result.TruthContractTable.ActualInterference);
+assert(result.TruthContractTable.ActualInterference && ...
+    result.TruthContractTable.InterferenceEvidenceValid);
+assert(~result.TruthContractTable.ActualHARQ && ...
+    result.TruthContractTable.HARQEvidenceValid);
 
 [cfg,~] = sixgr.lls.loadConfig(configPath);
 cfg.interference.rnti = cfg.pusch.rnti;

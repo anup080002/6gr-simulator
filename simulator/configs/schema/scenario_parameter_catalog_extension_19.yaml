@@ -1,0 +1,148 @@
+top_level_order:
+  - isac
+  - ntn
+sections:
+  canonical_control:
+    required: false
+    parameters:
+      isac: {required: false, type: struct}
+      ntn: {required: false, type: struct}
+  isac:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      researchTaxonomy: {required: true, type: string, allowed_values: [study_item_candidate, optional_research_experiment]}
+      approach: {required: true, type: string, allowed_values: [communication_centric_nr_ofdm]}
+      sensingMode: {required: true, type: string, allowed_values: [monostatic_gnb, bistatic_gnb_ue]}
+      waveformAuthority: {required: true, type: string, allowed_values: [exact_runtime_pdsch_waveform]}
+      executionScope: {required: true, type: string, allowed_values: [first_committed_dl_grant]}
+      channelModel: {required: true, type: string, allowed_values: [phased_scattering_mimo]}
+      seed: {required: true, type: integer, min: 0}
+      coherentRepetitions: {required: true, type: integer, min: 2}
+      transmitPowerDbm: {required: true, type: number}
+      receiver: {required: true, type: struct, nested_rule: isac_receiver}
+      channel: {required: true, type: struct, nested_rule: isac_channel}
+      scene: {required: true, type: struct, nested_rule: isac_scene}
+      processing: {required: true, type: struct, nested_rule: isac_processing}
+      detection: {required: true, type: struct, nested_rule: isac_detection}
+      acceptance: {required: true, type: struct, nested_rule: isac_acceptance}
+      output: {required: true, type: struct, nested_rule: isac_output}
+  ntn:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      standardReference: {required: true, type: string, allowed_values: [3GPP TR 38.811]}
+      researchTaxonomy: {required: true, type: string, allowed_values: [agreed_starting_point, study_item_candidate, optional_research_experiment]}
+      channelProfile: {required: true, type: string, allowed_values: [NTN-TDL-A, NTN-TDL-B, NTN-TDL-C, NTN-TDL-D, NTN-CDL-A, NTN-CDL-B, NTN-CDL-C, NTN-CDL-D]}
+      orbit: {required: true, type: struct, nested_rule: ntn_orbit}
+      payload: {required: true, type: struct, nested_rule: ntn_payload}
+      doppler: {required: true, type: struct, nested_rule: ntn_doppler}
+      propagationDelay: {required: true, type: struct, nested_rule: ntn_propagation_delay}
+      tdl: {required: true, type: struct, nested_rule: ntn_tdl}
+      cdl: {required: true, type: struct, nested_rule: ntn_cdl}
+      atmosphericLoss: {required: true, type: struct, nested_rule: ntn_atmospheric_loss}
+      output: {required: true, type: struct, nested_rule: ntn_output}
+nested_sections:
+  isac_receiver:
+    parameters:
+      noiseFigureDb: {required: true, type: number, min: 0}
+      referenceTemperatureK: {required: true, type: number, min_exclusive: 0}
+      gainDb: {required: true, type: number}
+  isac_channel:
+    parameters:
+      simulateDirectPath: {required: true, type: boolean}
+      warmupPulses: {required: true, type: integer, min: 1, max: 64}
+  isac_scene:
+    parameters:
+      nodePositionAuthority: {required: true, type: string, allowed_values: [coupled_runtime_topology]}
+      numberTargets: {required: true, type: integer, min: 1, max: 64}
+      targetPositionsM: {required: true, type: number_list, min_items: 3}
+      targetVelocitiesMps: {required: true, type: number_list, min_items: 3}
+      reflectionCoefficientReal: {required: true, type: number_list, min_items: 1}
+      reflectionCoefficientImag: {required: true, type: number_list, min_items: 1}
+  isac_processing:
+    parameters:
+      observationSource: {required: true, type: string, allowed_values: [known_runtime_waveform_matched_filter]}
+      matchedFilterImplementation: {required: true, type: string, allowed_values: [frequency_domain_exact_reference]}
+      beamformer: {required: true, type: string, allowed_values: [conventional_phase_shift]}
+      includeElementResponse: {required: true, type: boolean}
+      backgroundRemoval: {required: true, type: string, allowed_values: [none, slow_time_mean]}
+      maximumRangeM: {required: true, type: number, min_exclusive: 0}
+      rangeFFTSize: {required: true, type: integer, min: 64}
+      dopplerFFTSize: {required: true, type: integer, min: 2}
+      azimuthGrid: {required: true, type: struct, nested_rule: isac_azimuth_grid}
+  isac_azimuth_grid:
+    parameters:
+      minimumDeg: {required: true, type: number, min: -180, max: 180}
+      maximumDeg: {required: true, type: number, min: -180, max: 180}
+      stepDeg: {required: true, type: number, min_exclusive: 0}
+  isac_detection:
+    parameters:
+      algorithm: {required: true, type: string, allowed_values: [ca_cfar_2d]}
+      trainingCellsRange: {required: true, type: integer, min: 1}
+      trainingCellsAngle: {required: true, type: integer, min: 1}
+      guardCellsRange: {required: true, type: integer, min: 0}
+      guardCellsAngle: {required: true, type: integer, min: 0}
+      probabilityFalseAlarm: {required: true, type: number, min_exclusive: 0, max_exclusive: 1}
+      maximumDetections: {required: true, type: integer, min: 1}
+      nonMaximumSuppressionRangeBins: {required: true, type: integer, min: 0}
+      nonMaximumSuppressionAngleBins: {required: true, type: integer, min: 0}
+  isac_acceptance:
+    parameters:
+      minimumMatchedTargets: {required: true, type: integer, min: 0}
+      maximumRangeErrorM: {required: true, type: number, min_exclusive: 0}
+      maximumAzimuthErrorDeg: {required: true, type: number, min_exclusive: 0}
+  isac_output:
+    parameters:
+      enabled: {required: true, type: boolean}
+      componentFolder: {required: true, type: string, nonempty: true}
+      structuredComponentFolders: {required: true, type: boolean}
+      saveCSV: {required: true, type: boolean}
+      savePNG: {required: true, type: boolean}
+      imageFormat: {required: true, type: string, allowed_values: [png, jpeg]}
+      imageResolutionDPI: {required: true, type: integer, min: 72, max: 600}
+      prohibitSVG: {required: true, type: boolean}
+  ntn_orbit:
+    parameters:
+      type: {required: true, type: string, allowed_values: [LEO, MEO, GEO]}
+      model: {required: true, type: string, allowed_values: [circular]}
+      satelliteAltitudeM: {required: true, type: number, min_exclusive: 0}
+      groundAltitudeM: {required: true, type: number, min: 0}
+      elevationAngleDeg: {required: true, type: number, min_exclusive: 0, max: 90}
+      epochSeconds: {required: true, type: number}
+  ntn_payload:
+    parameters:
+      architecture: {required: true, type: string, allowed_values: [regenerative_service_link]}
+  ntn_doppler:
+    parameters:
+      satelliteMotionEnabled: {required: true, type: boolean}
+      mobileMotionEnabled: {required: true, type: boolean}
+      compensationMode: {required: true, type: string, allowed_values: [none, ideal_transmitter_geometry, ideal_receiver_geometry]}
+      mobileDirectionAzimuthDeg: {required: true, type: number, min: 0, max: 360}
+      mobileDirectionZenithDeg: {required: true, type: number, min: 0, max: 180}
+  ntn_propagation_delay:
+    parameters:
+      enabled: {required: true, type: boolean}
+      model: {required: true, type: string, allowed_values: [static_slant_range]}
+      compensationMode: {required: true, type: string, allowed_values: [disabled, perfect_geometry_timing_advance]}
+  ntn_tdl:
+    parameters:
+      mimoCorrelation: {required: true, type: string, allowed_values: [Low, Medium, Medium-A, High, Custom]}
+      polarization: {required: true, type: string, allowed_values: [Co-Polar, Cross-Polar, Custom]}
+  ntn_cdl:
+    parameters:
+      autoOrientSatelliteArray: {required: true, type: boolean}
+  ntn_atmospheric_loss:
+    parameters:
+      enabled: {required: true, type: boolean}
+      model: {required: true, type: string, allowed_values: [ITU-R P.618]}
+  ntn_output:
+    parameters:
+      enabled: {required: true, type: boolean}
+      componentFolder: {required: true, type: string, nonempty: true}
+      structuredComponentFolders: {required: true, type: boolean}
+      saveCSV: {required: true, type: boolean}
+      savePNG: {required: true, type: boolean}
+      imageFormat: {required: true, type: string, allowed_values: [png, jpeg]}
+      imageResolutionDPI: {required: true, type: integer, min: 72, max: 600}
+      prohibitSVG: {required: true, type: boolean}

@@ -429,6 +429,17 @@ end
 if isfield(control,"integration")
     cfg.integration = control.integration;
 end
+if isfield(control,"isac")
+    % ISAC is a single YAML authority.  Preserve the complete section as
+    % authored; buildInternalConfig validates and installs the same resolved
+    % values into the production runtime without MATLAB-side feature defaults.
+    cfg.isac = control.isac;
+end
+if isfield(control,"ntn")
+    % Keep NTN independent of the SINR/geometry mode choice and preserve
+    % every operator-authored value for fail-closed runtime validation.
+    cfg.ntn = control.ntn;
+end
 
 mappings = {
     "identity.scenario_id", "meta.scenario_id", "identity"

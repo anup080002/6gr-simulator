@@ -1,0 +1,76 @@
+inherits: pdsch_reference.yaml
+
+scenario:
+  id: pdsch_ntn_leo_tdl_d_example
+  description: Actual NR PDSCH waveform through a 3GPP TR 38.811 NTN-TDL-D LEO channel
+
+simulation:
+  masterSeed: 20260810
+  commonRandomKey: pdsch_ntn_leo_tdl_d_example_v1
+  snrDb: [30]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+carrier:
+  frequencyHz: 2000000000
+  bandwidthMHz: 5
+  subcarrierSpacingKHz: 30
+  nSizeGrid: 11
+  nCellId: 42
+
+allocation:
+  startPRB: 0
+  numberPRB: 11
+
+pdsch:
+  ptrs:
+    enabled: true
+    timeDensity: 1
+    frequencyDensity: 2
+    cpeCorrection: true
+
+channel:
+  model: NTN-TDL-D
+  delaySpreadSeconds: 0.00000003
+  velocityKmph: 3.0
+  txAntennas: 1
+  rxAntennas: 1
+  seed: 20260812
+
+ntn:
+  enabled: true
+  researchTaxonomy: agreed_starting_point
+  orbit:
+    type: LEO
+    model: circular
+    satelliteAltitudeM: 600000
+    groundAltitudeM: 0
+    elevationAngleDeg: 50
+    epochSeconds: 0
+  payload:
+    architecture: regenerative_service_link
+  doppler:
+    satelliteMotionEnabled: true
+    mobileMotionEnabled: true
+    compensationMode: ideal_transmitter_geometry
+    mobileDirectionAzimuthDeg: 0
+    mobileDirectionZenithDeg: 90
+  propagationDelay:
+    enabled: true
+    model: static_slant_range
+    compensationMode: perfect_geometry_timing_advance
+  tdl:
+    mimoCorrelation: Low
+    polarization: Co-Polar
+  atmosphericLoss:
+    enabled: false
+
+receiver:
+  channelEstimation: perfect
+
+results:
+  outputRoot: results/lls/ntn_waveform
+  generatePlots: true
+  imageFormat: png

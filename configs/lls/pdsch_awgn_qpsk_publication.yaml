@@ -17,6 +17,11 @@ execution:
   maximumWorkers: 4
   batchTransportBlocks: 32
 
+provenance:
+  requireGitCommit: true
+  requireCleanWorktree: true
+  requireStableSourceThroughoutRun: true
+
 comparison:
   targetBLER: [0.1, 0.01, 0.001]
 

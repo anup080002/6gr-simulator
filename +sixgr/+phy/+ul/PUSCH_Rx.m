@@ -530,8 +530,12 @@ if ~isempty(csiFromEqualizerResult)
 end
 pilotPostEqInfo = localEstimatePUSCHDMRSPostEqResidual(rxGrid, Hest, chEstDMRSInd, chEstDMRSSym, ...
     nVar, equalizerAlg, Rint, RIncludesNoise, rxPUSCH);
-[postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = localApplyPUSCHDMRSPostEqSINRBound( ...
-    postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, pilotPostEqInfo);
+dmrsResidualBoundEnabled = logical(sixgr.util.structGet(cfg, ...
+    "phy.pusch.measurements.dmrsResidualPostEqSINRBoundEnabled", true));
+if dmrsResidualBoundEnabled
+    [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = localApplyPUSCHDMRSPostEqSINRBound( ...
+        postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, pilotPostEqInfo);
+end
 [layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, [], pusch);
 decisionPostEqInfo = localEstimatePUSCHDecisionDirectedPostEqResidual(layerEqSym, pusch);
 decisionDirectedBoundEnabled = logical(sixgr.util.structGet(cfg, ...
@@ -550,8 +554,10 @@ receiverSINR = localReceiverHestSINR(Hest, nVar, cfg, "UL", rxGrid, ...
     "PostEqSINRPerRE_dB", postEqSINRPerRE_dB, ...
     "PostEqSINR_dB", postEqSINR_dB, ...
     "CSI", csi);
-[nVarPostEqDiagnostic, nVarPostEqInfo] = localApplyPUSCHDMRSPostEqNoiseBound( ...
-    nVarPostEqDiagnostic, nVarPostEqInfo, pilotPostEqInfo);
+if dmrsResidualBoundEnabled
+    [nVarPostEqDiagnostic, nVarPostEqInfo] = localApplyPUSCHDMRSPostEqNoiseBound( ...
+        nVarPostEqDiagnostic, nVarPostEqInfo, pilotPostEqInfo);
+end
 if decisionDirectedBoundEnabled
     [nVarPostEqDiagnostic, nVarPostEqInfo] = localApplyPUSCHDMRSPostEqNoiseBound( ...
         nVarPostEqDiagnostic, nVarPostEqInfo, decisionPostEqInfo);
@@ -882,6 +888,8 @@ rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayer
 rx.PostEqSINRRawEqualizer_dB = double(sixgr.util.structGet(postEqSINRInfo, "RawEqualizerSINR_dB", ...
     sixgr.util.structGet(postEqSINRInfo, "RawSINR_dB", NaN)));
 rx.PostEqSINRDMRSResidualBoundApplied = logical(sixgr.util.structGet(postEqSINRInfo, "DMRSResidualBoundApplied", false));
+rx.DMRSResidualPostEqSINRBoundEnabled = logical(dmrsResidualBoundEnabled);
+rx.DecisionDirectedPostEqSINRBoundEnabled = logical(decisionDirectedBoundEnabled);
 rx.PostEqSINRDMRSResidual_dB = double(sixgr.util.structGet(pilotPostEqInfo, "SINR_dB", NaN));
 rx.PostEqDMRSResidualNoiseVar = double(sixgr.util.structGet(pilotPostEqInfo, "NoiseVariance", NaN));
 rx.PostEqDMRSResidualSource = char(string(sixgr.util.structGet(pilotPostEqInfo, "Source", "")));
@@ -938,6 +946,8 @@ rx.LLRNoiseVariance = double(nVarForDecode);
 rx.LLRNoiseVarianceDomain = "unit_constellation_soft_demapper_input";
 rx.LLRNoiseVarianceSource = char(string(sixgr.util.structGet( ...
     nVarDecodeInfo, "Source", "pusch_soft_demapper")));
+rx.DecoderNoiseVarianceConfiguredMode = char(string(sixgr.util.structGet( ...
+    nVarDecodeInfo, "ConfiguredMode", "")));
 rx.NoiseVarianceUnit = "normalized_complex_power";
 rx.NoiseVarianceNormalization = ...
     "native_ofdm_grid_then_unit_constellation_equalizer_domains";
@@ -1994,7 +2004,10 @@ end
 
 function qamInd = localPUSCHQAMIndicesFromAllocatedIndices( ...
         allocatedInd,ptrsInd,carrier,qamSym)
-% nrPUSCHIndices describes frequency-domain allocated PUSCH resources.
+% nrPUSCHIndices describes frequency-domain allocated PUSCH resources in
+% the configured antenna-port domain.  nrPUSCHDecode returns QAM symbols
+% in the layer domain, so the number of columns need not match when the
+% number of logical ports exceeds the scheduled rank.
 % With PT-RS enabled, nrPUSCHDecode returns the QAM-domain data symbols
 % after removing PT-RS-reserved coordinates (and after transform
 % deprecoding when requested).  Preserve an exact ordering map by removing
@@ -2010,12 +2023,22 @@ allocatedBase = mod(double(allocatedInd)-1,plane)+1;
 ptrsBase = unique(mod(double(ptrsInd(:))-1,plane)+1);
 keepRows = ~any(ismember(allocatedBase,ptrsBase),2);
 candidate = allocatedInd(keepRows,:);
-expected = numel(qamSym);
-if numel(candidate) ~= expected
+if isvector(qamSym)
+    qamShape = [numel(qamSym) 1];
+else
+    qamShape = size(qamSym);
+end
+expectedRows = qamShape(1);
+expectedLayers = qamShape(2);
+if size(candidate,1) ~= expectedRows || size(candidate,2) < expectedLayers
     error("sixgr:phy:ul:PUSCHQAMIndexDomainMismatch", ...
-        ["Removing the exact PT-RS coordinates from PUSCH indices produced " ...
-         "%d layer indices, but the decoded QAM domain contains %d symbols."], ...
-        numel(candidate),expected);
+        "Removing the exact PT-RS coordinates from PUSCH indices produced " + ...
+        "%d layer indices (allocated shape %s, candidate shape %s, removed rows %d), " + ...
+        "but the decoded QAM domain requires %d ordered rows and %d layer columns " + ...
+        "with shape %s.", ...
+        numel(candidate),mat2str(size(allocatedInd)),mat2str(size(candidate)), ...
+        size(allocatedInd,1)-size(candidate,1),expectedRows,expectedLayers, ...
+        mat2str(size(qamSym)));
 end
 qamInd = candidate;
 end
@@ -2552,6 +2575,13 @@ post = double(localScalarOrNaN(nVarPostEq));
 postSource = char(string(sixgr.util.structGet(postInfo, "Source", "")));
 postMethod = char(string(sixgr.util.structGet(postInfo, "ReductionMethod", "")));
 postSampleCount = double(sixgr.util.structGet(postInfo, "SampleCount", 0));
+configuredMode = lower(string(sixgr.util.structGet(cfg, ...
+    "phy.pusch.measurements.decoderNoiseVarianceMode", "post_equalization")));
+if ~any(configuredMode == ["post_equalization","pre_equalization"])
+    error("sixgr:phy:ul:InvalidDecoderNoiseVarianceMode", ...
+        "phy.pusch.measurements.decoderNoiseVarianceMode must be " + ...
+        "'post_equalization' or 'pre_equalization', not '%s'.",configuredMode);
+end
 info = struct( ...
     "ValueStatus", "unavailable", ...
     "Source", "pusch_decoder_noise_variance_unavailable", ...
@@ -2561,14 +2591,14 @@ info = struct( ...
     "PostEqualizationNoiseVar", double(post), ...
     "ReductionMethod", "", ...
     "SampleCount", 0, ...
-    "Convention", "post_equalization_variance_only", ...
-    "ConfiguredMode", "post_equalization_fixed", ...
+    "Convention", configuredMode + "_variance_only", ...
+    "ConfiguredMode", configuredMode, ...
     "PostEqualizationDiagnosticSource", postSource, ...
     "PostEqualizationDiagnosticReductionMethod", postMethod, ...
     "PostEqualizationDiagnosticSampleCount", double(postSampleCount), ...
     "Domain", "post_equalization_decoder_symbol_domain");
 
-if localValidNoiseScalar(post)
+if configuredMode == "post_equalization" && localValidNoiseScalar(post)
     nVarForDecode = double(post);
     info.ValueStatus = "OK";
     info.Source = "post_equalization_sinr_decoder_noise_variance";
@@ -2578,18 +2608,42 @@ if localValidNoiseScalar(post)
     return;
 end
 
-if localValidNoiseScalar(pre)
+if configuredMode == "pre_equalization" && localValidNoiseScalar(pre)
     nVarForDecode = double(pre);
     info.ValueStatus = "OK";
-    info.Source = "pre_equalization_noise_variance_used_because_post_equalization_unavailable";
+    info.Source = "configured_pre_equalization_noise_variance";
     info.NAReason = "";
-    info.ReductionMethod = "explicit_pre_equalization_emergency_path";
+    info.ReductionMethod = "configured_pre_equalization_noise_variance";
     info.SampleCount = 1;
     info.Domain = "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode";
     return;
 end
 
-nVarForDecode = double(max(eps, realmin));
+strictRequired = logical(sixgr.util.structGet(cfg,"run.strictNoiseVarianceRequired",false));
+if strictRequired
+    error("sixgr:phy:ul:ConfiguredDecoderNoiseVarianceUnavailable", ...
+        "Configured PUSCH decoder-noise mode '%s' has no finite positive " + ...
+        "variance in its required domain (pre=%g, post=%g).", ...
+        configuredMode,pre,post);
+end
+if localValidNoiseScalar(post)
+    nVarForDecode = double(post);
+    info.ValueStatus = "OK_non_strict_fallback";
+    info.Source = "non_strict_post_equalization_noise_variance_fallback";
+    info.NAReason = "configured_domain_unavailable";
+    info.ReductionMethod = postMethod;
+    info.SampleCount = double(max(postSampleCount,1));
+elseif localValidNoiseScalar(pre)
+    nVarForDecode = double(pre);
+    info.ValueStatus = "OK_non_strict_fallback";
+    info.Source = "non_strict_pre_equalization_noise_variance_fallback";
+    info.NAReason = "configured_domain_unavailable";
+    info.ReductionMethod = "explicit_non_strict_pre_equalization_fallback";
+    info.SampleCount = 1;
+    info.Domain = "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode";
+else
+    nVarForDecode = double(max(eps,realmin));
+end
 end
 
 function tf = localValidNoiseScalar(value)

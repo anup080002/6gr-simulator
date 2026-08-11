@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from pathlib import Path
 
@@ -9,6 +10,20 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
+
+
+def _write_compact_manifest(run_folder: Path, relative_paths: list[str]) -> None:
+    lines = ["RelativePath,Bytes,SHA256,ArtifactType"]
+    for relative_path in relative_paths:
+        payload = (run_folder / relative_path).read_bytes()
+        artifact_type = Path(relative_path).suffix.lstrip(".").upper()
+        lines.append(
+            f"{relative_path},{len(payload)},{hashlib.sha256(payload).hexdigest()},"
+            f"{artifact_type}"
+        )
+    (run_folder / "artifact_manifest.csv").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
 
 
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
@@ -174,6 +189,291 @@ def test_dashboard_discovers_filesystem_only_result_run(tmp_path, monkeypatch) -
     lite_payload = dash.build_lite_live_payload(run_id)
     assert lite_payload["counts"]["tables_total"] == 0
     assert lite_payload["counts"]["diagnostic_tables_total"] >= 2
+
+
+def test_dashboard_publishes_hash_verified_compact_rank4_lls_run(
+    tmp_path, monkeypatch
+) -> None:
+    results_root = tmp_path / "results"
+    run_folder = (
+        results_root
+        / "lls"
+        / "ran1_waveform_qualification"
+        / "rank4_su_mimo"
+        / "run_01"
+    )
+    run_folder.mkdir(parents=True)
+    (run_folder / "run_provenance.json").write_text(
+        json.dumps(
+            {
+                "SchemaVersion": "sixgr.lls.run_provenance/v1",
+                "ScenarioId": "rank4_su_mimo",
+                "ExecutionBackend": "waveform_truth",
+                "ApproximationMode": "none",
+                "CreatedUTC": "2026-08-10T00:00:00Z",
+                "ResultValidity": "complete_valid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_folder / "resolved_config.json").write_text(
+        json.dumps({"scenario": {"id": "rank4_su_mimo"}}),
+        encoding="utf-8",
+    )
+    (run_folder / "bler_vs_snr.csv").write_text(
+        "ScenarioId,SNRdB,NumTB,NumBlockErrors,BLER,ExecutionBackend\n"
+        "rank4_su_mimo,50,1,0,0,waveform_truth\n",
+        encoding="utf-8",
+    )
+    (run_folder / "truth_contract.csv").write_text(
+        "ScenarioId,WaveformGenerated,UsesSyntheticBLER,Status\n"
+        "rank4_su_mimo,1,0,valid_waveform_truth\n",
+        encoding="utf-8",
+    )
+    (run_folder / "result_validity.csv").write_text(
+        "Check,Pass,Status,Evidence\ntruth_contract,1,PASS,waveform truth executed\n",
+        encoding="utf-8",
+    )
+    (run_folder / "rank4_resource_grid.png").write_bytes(b"verified-raster")
+    _write_compact_manifest(
+        run_folder,
+        [
+            "bler_vs_snr.csv",
+            "rank4_resource_grid.png",
+            "resolved_config.json",
+            "result_validity.csv",
+            "run_provenance.json",
+            "truth_contract.csv",
+        ],
+    )
+
+    monkeypatch.setattr(dash, "RESULTS_ROOT", results_root)
+    dash.clear_dashboard_caches()
+
+    rows = dash.filesystem_run_rows(limit=10)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["scenario_id"] == "rank4_su_mimo"
+    assert row["run_tag"] == "run_01"
+    assert row["status_text"] == "completed"
+    assert row["profile_name"] == "ran1_waveform_truth"
+    assert row["backend"] == "waveform_truth"
+    status = dash._status_payload(row)
+    assert status["status_authority"] == "run_provenance_and_result_validity"
+    assert status["result_ok"] is True
+    assert status["runtime_truth_contract_ok"] is True
+    assert status["required_failure_count"] == 0
+
+    artifacts = dash.filesystem_artifacts_for_run(row)
+    selected, authority = dash.select_primary_result_artifacts(artifacts)
+    assert authority["status"] == "compact_lls_manifest_authoritative"
+    assert authority["evidence_scope"] == "ran1_waveform_truth"
+    assert authority["manifest_hash_verified"] is True
+    assert {item["logical_path"] for item in selected} == {
+        "artifact_manifest.csv",
+        "bler_vs_snr.csv",
+        "rank4_resource_grid.png",
+        "resolved_config.json",
+        "result_validity.csv",
+        "run_provenance.json",
+        "truth_contract.csv",
+    }
+
+    payload = dash.build_live_payload(int(row["run_id"]))
+    assert payload["run"]["status_text"] == "completed"
+    assert payload["counts"]["tables_total"] == 4
+    assert payload["counts"]["images_total"] == 1
+    assert payload["realtime_dashboard"]["folder_policy"]["status"] == (
+        "compact_lls_manifest_authoritative"
+    )
+
+
+def test_dashboard_publishes_enabled_ntn_compact_lls_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    results_root = tmp_path / "results"
+    run_folder = results_root / "lls" / "ntn_waveform" / "ntn_case" / "run_01"
+    run_folder.mkdir(parents=True)
+    (run_folder / "run_provenance.json").write_text(
+        json.dumps(
+            {
+                "ScenarioId": "ntn_case",
+                "ExecutionBackend": "waveform_truth",
+                "ResultValidity": "complete_valid",
+                "CreatedUTC": "2026-08-10T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_folder / "resolved_config.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "sixgr.lls.config/v1",
+                "scenario": {"id": "ntn_case"},
+                "simulation": {"link": "PDSCH"},
+                "channel": {"model": "NTN-TDL-D"},
+                "ntn": {"enabled": True},
+                "harq": {"enabled": False},
+                "interference": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_folder / "bler_vs_snr.csv").write_text(
+        "ScenarioId,SNRdB,NumTB,BLER\nntn_case,30,1,0\n", encoding="utf-8"
+    )
+    (run_folder / "truth_contract.csv").write_text(
+        "ScenarioId,WaveformGenerated,ActualNTNChannel,NTNEvidenceValid,Status\n"
+        "ntn_case,1,1,1,valid_waveform_truth\n",
+        encoding="utf-8",
+    )
+    (run_folder / "result_validity.csv").write_text(
+        "Check,Pass,Status\nntn_channel_authority,1,PASS\n", encoding="utf-8"
+    )
+    (run_folder / "ntn_channel_state.csv").write_text(
+        "NTNEnabled,NTNProfile,NTNSlantRangeM\n1,NTN-TDL-D,760823.18\n",
+        encoding="utf-8",
+    )
+    (run_folder / "ntn_geometry_and_doppler.png").write_bytes(b"png-evidence")
+    _write_compact_manifest(
+        run_folder,
+        [
+            "bler_vs_snr.csv",
+            "ntn_channel_state.csv",
+            "ntn_geometry_and_doppler.png",
+            "resolved_config.json",
+            "result_validity.csv",
+            "run_provenance.json",
+            "truth_contract.csv",
+        ],
+    )
+
+    monkeypatch.setattr(dash, "RESULTS_ROOT", results_root)
+    dash.clear_dashboard_caches()
+    row = dash.filesystem_run_rows(limit=10)[0]
+    policy = dash.extract_run_feature_policy(row)
+    assert policy["ntn_enabled"] is True
+    assert policy["harq_enabled"] is False
+    assert policy["interference_enabled"] is False
+    assert policy["initial_access_enabled"] is False
+
+    payload = dash.build_live_payload(int(row["run_id"]))
+    assert payload["feature_policy"]["ntn_enabled"] is True
+    assert payload["summary"]["result_ok"] is True
+    assert payload["summary"]["runtime_truth_contract_ok"] is True
+    assert payload["summary"]["effective_dl_trial_count"] == 1
+    assert payload["runtime_context"]["truth_modes"]["waveform_phy_active"] is True
+    assert payload["runtime_context"]["truth_modes"]["proxy_phy_active"] is False
+    assert payload["runtime_context"]["truth_modes"]["noise_operating_mode"] == (
+        "configured_EsN0_per_occupied_QAM_RE"
+    )
+    assert payload["counts"]["tables_total"] == 5
+    assert payload["counts"]["images_total"] == 1
+    assert any(
+        table["logical_path"] == "ntn_channel_state.csv"
+        for table in payload["tables_all"]
+    )
+    assert any(
+        image["logical_path"] == "ntn_geometry_and_doppler.png"
+        for image in payload["images_all"]
+    )
+
+
+def test_dashboard_publishes_enabled_isac_compact_lls_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    results_root = tmp_path / "results"
+    run_folder = results_root / "lls" / "isac_waveform" / "isac_case" / "run_01"
+    run_folder.mkdir(parents=True)
+    (run_folder / "run_provenance.json").write_text(
+        json.dumps(
+            {
+                "ScenarioId": "isac_case",
+                "ExecutionBackend": "waveform_truth",
+                "ResultValidity": "complete_valid",
+                "CreatedUTC": "2026-08-11T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_folder / "resolved_config.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "sixgr.lls.config/v1",
+                "scenario": {"id": "isac_case"},
+                "simulation": {"link": "PDSCH"},
+                "isac": {
+                    "enabled": True,
+                    "approach": "communication_centric_nr_ofdm",
+                    "waveformAuthority": "exact_runtime_pdsch_waveform",
+                },
+                "harq": {"enabled": False},
+                "interference": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_folder / "bler_vs_snr.csv").write_text(
+        "ScenarioId,SNRdB,NumTB,BLER\nisac_case,35,1,0\n", encoding="utf-8"
+    )
+    (run_folder / "truth_contract.csv").write_text(
+        "ScenarioId,WaveformGenerated,ActualISACSensing,ISACEvidenceValid,Status\n"
+        "isac_case,1,1,1,valid_waveform_truth\n",
+        encoding="utf-8",
+    )
+    (run_folder / "result_validity.csv").write_text(
+        "Check,Pass,Status\nisac_sensing_authority,1,PASS\n", encoding="utf-8"
+    )
+    (run_folder / "isac_detections.csv").write_text(
+        "DetectionIndex,RangeM,AzimuthDeg,MatchedTargetIndex\n1,39.0,14.0,1\n",
+        encoding="utf-8",
+    )
+    (run_folder / "isac_range_angle_map.png").write_bytes(b"png-evidence")
+    (run_folder / "isac_scenario_geometry.png").write_bytes(b"geometry-evidence")
+    _write_compact_manifest(
+        run_folder,
+        [
+            "bler_vs_snr.csv",
+            "isac_detections.csv",
+            "isac_range_angle_map.png",
+            "isac_scenario_geometry.png",
+            "resolved_config.json",
+            "result_validity.csv",
+            "run_provenance.json",
+            "truth_contract.csv",
+        ],
+    )
+
+    monkeypatch.setattr(dash, "RESULTS_ROOT", results_root)
+    dash.clear_dashboard_caches()
+    row = dash.filesystem_run_rows(limit=10)[0]
+    policy = dash.extract_run_feature_policy(row)
+    assert policy["sensing_enabled"] is True
+
+    payload = dash.build_live_payload(int(row["run_id"]))
+    assert payload["feature_policy"]["sensing_enabled"] is True
+    assert payload["counts"]["tables_total"] == 5
+    assert payload["counts"]["images_total"] == 2
+    detection_table = next(
+        table
+        for table in payload["tables_all"]
+        if table["logical_path"] == "isac_detections.csv"
+    )
+    range_angle_image = next(
+        image
+        for image in payload["images_all"]
+        if image["logical_path"] == "isac_range_angle_map.png"
+    )
+    assert detection_table["section"] == "isac"
+    assert range_angle_image["section"] == "isac"
+    assert range_angle_image["bucket"] == "isac"
+    scenario_image = next(
+        image
+        for image in payload["images_all"]
+        if image["logical_path"] == "isac_scenario_geometry.png"
+    )
+    assert scenario_image["section"] == "isac"
+    assert scenario_image["bucket"] == "isac"
 
 
 def test_dashboard_discovers_component_qualification_without_scenario_manifest(

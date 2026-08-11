@@ -120,6 +120,8 @@ if isfield(cfg,'phy') && isa(cfg.phy,'struct')
         if isfield(cfg.phy.pdsch,'nLayers') && (~isfield(cfg.phy.pdsch,'numLayers') || isempty(cfg.phy.pdsch.numLayers))
             cfg.phy.pdsch.numLayers = cfg.phy.pdsch.nLayers;
         end
+        cfg.phy.pdsch = localNormalizeLegacySymbolAllocation( ...
+            cfg.phy.pdsch, "phy.pdsch.symbolAllocation");
     end
     if isfield(cfg.phy,'pusch') && isstruct(cfg.phy.pusch)
         if isfield(cfg.phy.pusch,'nLayers') && (~isfield(cfg.phy.pusch,'numLayers') || isempty(cfg.phy.pusch.numLayers))

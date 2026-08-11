@@ -1,0 +1,80 @@
+# Bounded full-stack communication-centric ISAC execution.
+# The parent retains the complete enabled PHY/control/L2/L3/traffic graph.
+# Only ISAC is enabled here; NTN remains independently disabled by the SINR
+# master and geometry mode is never imported.
+inherits: webgui_sinr_plus20_2x2_mu_mimo_wiring_gate.yaml
+
+canonical_control:
+  identity:
+    scenario_id: webgui_sinr_plus20_2x2_mu_mimo_isac_full_phy
+    scenario_name: Full-PHY +20 dB 2x2 MU-MIMO communication-centric ISAC
+    description: Exact first committed PDSCH waveform sensed through a configured scattering-MIMO scene using the same runtime gNB array.
+    version: 1.0.0
+    purpose: Focused full-stack ISAC integration and artifact qualification without a proxy waveform.
+    comparison_group_name: full_phy_2x2_mu_mimo_isac_plus20
+    tags: [lls, webgui, full_phy, isac, sensing, exact_pdsch_waveform, plus20db, two_by_two, mu_mimo]
+  launch:
+    run_class: adaptive_system_diagnostic
+    scenario_mode: single_point_full_phy_2x2_mu_mimo_isac
+    notes: Bounded deterministic execution; sensing measurements are a 6G study item and not an NR conformance claim.
+  isac:
+    enabled: true
+    researchTaxonomy: study_item_candidate
+    approach: communication_centric_nr_ofdm
+    sensingMode: monostatic_gnb
+    waveformAuthority: exact_runtime_pdsch_waveform
+    executionScope: first_committed_dl_grant
+    channelModel: phased_scattering_mimo
+    seed: 20260817
+    coherentRepetitions: 4
+    transmitPowerDbm: 46
+    receiver:
+      noiseFigureDb: 5
+      referenceTemperatureK: 290
+      gainDb: 0
+    channel:
+      simulateDirectPath: false
+      warmupPulses: 1
+    scene:
+      nodePositionAuthority: coupled_runtime_topology
+      numberTargets: 1
+      targetPositionsM: [40, 10, 24]
+      targetVelocitiesMps: [8, 0, 0]
+      reflectionCoefficientReal: [1]
+      reflectionCoefficientImag: [0]
+    processing:
+      observationSource: known_runtime_waveform_matched_filter
+      matchedFilterImplementation: frequency_domain_exact_reference
+      beamformer: conventional_phase_shift
+      includeElementResponse: false
+      backgroundRemoval: none
+      maximumRangeM: 150
+      rangeFFTSize: 131072
+      dopplerFFTSize: 8
+      azimuthGrid:
+        minimumDeg: -90
+        maximumDeg: 90
+        stepDeg: 2
+    detection:
+      algorithm: ca_cfar_2d
+      trainingCellsRange: 4
+      trainingCellsAngle: 4
+      guardCellsRange: 1
+      guardCellsAngle: 1
+      probabilityFalseAlarm: 0.01
+      maximumDetections: 8
+      nonMaximumSuppressionRangeBins: 3
+      nonMaximumSuppressionAngleBins: 2
+    acceptance:
+      minimumMatchedTargets: 1
+      maximumRangeErrorM: 15
+      maximumAzimuthErrorDeg: 15
+    output:
+      enabled: true
+      componentFolder: isac
+      structuredComponentFolders: true
+      saveCSV: true
+      savePNG: true
+      imageFormat: png
+      imageResolutionDPI: 180
+      prohibitSVG: true

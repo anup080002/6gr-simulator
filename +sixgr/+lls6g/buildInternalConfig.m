@@ -2029,6 +2029,14 @@ cfg = sixgr.util.structSet(cfg, "lls6g.mimo", s.mimo);
 if isfield(s, "antenna_and_array")
     cfg = sixgr.util.structSet(cfg, "lls6g.antenna_and_array", s.antenna_and_array);
 end
+if isfield(s, "isac")
+    cfg = localApplyISACConfig(cfg, s.isac);
+    cfg = sixgr.util.structSet(cfg, "lls6g.isac", s.isac);
+end
+if isfield(s, "ntn")
+    cfg = localApplyNTNConfig(cfg, s.ntn);
+    cfg = sixgr.util.structSet(cfg, "lls6g.ntn", s.ntn);
+end
 if isfield(s, "users")
     cfg = sixgr.util.structSet(cfg, "lls6g.users", s.users);
 end
@@ -5462,6 +5470,24 @@ dlLayers = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "phy.pdsch.numLayer
 ulLayers = localNumericScalarOrNaN(sixgr.util.structGet(cfg, "phy.pusch.numLayers", ...
     sixgr.util.structGet(cfg, "phy.pusch.nLayers", localGetNested(s, "mimo.n_layers", NaN))));
 tf = (isfinite(dlLayers) && dlLayers >= 1) || (isfinite(ulLayers) && ulLayers >= 1);
+end
+
+function cfg = localApplyISACConfig(cfg, isacCfg)
+if ~(isstruct(isacCfg) && isscalar(isacCfg))
+    error("sixgr:isac:MissingConfiguration", ...
+        "The resolved YAML isac section must be a scalar struct.");
+end
+cfg = sixgr.util.structSet(cfg,"isac",isacCfg);
+sixgr.isac.validateConfig(cfg);
+end
+
+function cfg = localApplyNTNConfig(cfg, ntnCfg)
+if ~(isstruct(ntnCfg) && isscalar(ntnCfg))
+    error("sixgr:ntn:MissingConfiguration", ...
+        "The resolved YAML ntn section must be a scalar struct.");
+end
+cfg = sixgr.util.structSet(cfg,"ntn",ntnCfg);
+sixgr.ntn.validateConfig(cfg);
 end
 
 function tf = localValidationModulationFixed(cfg, s, fixedMCSActive)
