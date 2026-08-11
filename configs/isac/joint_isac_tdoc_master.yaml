@@ -80,6 +80,15 @@ waveform:
   communicationDataPower: 1.0
   sensingRSPower: 1.0
   sensingSymbolIndices: [2, 6, 10, 13]
+  defaultCoherentSymbols: 4
+  coherentSymbolSets:
+    M1: [2]
+    M2: [2, 10]
+    M4: [2, 6, 10, 13]
+    M8: [0, 2, 4, 6, 8, 10, 12, 13]
+    M14: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+  w1RandomizationSubcases: [per_occasion, reset_aligned_interval]
+  w1ResetAlignedIntervalOccasions: 2
   frequencyComb: 4
   frequencyCombOffset: 0
   occupiedREEnergyNormalization: equal_total_sensing_energy
@@ -288,7 +297,7 @@ rangeDopplerEvidence:
   maximumNormalizedDoppler: 0.15
 
 collisions:
-  maskProfiles: [random_isolated, contiguous_time, contiguous_frequency, rectangular_tf, periodic_rs, port_specific]
+  maskProfiles: [random_isolated, contiguous_time, contiguous_frequency, rectangular_tf, periodic_rs]
   ratiosPercent: [0, 5, 10, 20]
   responses:
     - share_reuse
@@ -304,6 +313,17 @@ collisions:
   fallbackResponseOrder: [share_reuse, sensing_puncture, recoverable_relocation, time_relocation, frequency_relocation, occasion_drop_defer]
   knownRatioPowerScalingDb: -3
   beamPrecoderPhaseSlopeDeg: 10
+  responseProperties:
+    share_reuse: {relationClass: preserved, residualPhaseDeg: 0, residualTimingBins: 0, residualFrequencyHz: 0, latencyOccasions: 0, crossPortRelationAvailable: true}
+    communication_muting: {relationClass: preserved, residualPhaseDeg: 0, residualTimingBins: 0, residualFrequencyHz: 0, latencyOccasions: 0, crossPortRelationAvailable: true}
+    sensing_puncture: {relationClass: preserved, residualPhaseDeg: 0, residualTimingBins: 0, residualFrequencyHz: 0, latencyOccasions: 0, crossPortRelationAvailable: true}
+    time_relocation: {relationClass: known_transform, residualPhaseDeg: 10, residualTimingBins: 0.25, residualFrequencyHz: 10, latencyOccasions: 1, crossPortRelationAvailable: true}
+    frequency_relocation: {relationClass: known_transform, residualPhaseDeg: 15, residualTimingBins: 0.25, residualFrequencyHz: 20, latencyOccasions: 0, crossPortRelationAvailable: true}
+    comb_pattern_selection: {relationClass: known_transform, residualPhaseDeg: 10, residualTimingBins: 0, residualFrequencyHz: 10, latencyOccasions: 0, crossPortRelationAvailable: true}
+    beam_precoder_change: {relationClass: bounded_residual, residualPhaseDeg: 20, residualTimingBins: 0, residualFrequencyHz: 10, latencyOccasions: 0, crossPortRelationAvailable: true}
+    known_ratio_power_scaling: {relationClass: preserved, residualPhaseDeg: 0, residualTimingBins: 0, residualFrequencyHz: 0, latencyOccasions: 0, crossPortRelationAvailable: true}
+    occasion_drop_defer: {relationClass: preserved, residualPhaseDeg: 0, residualTimingBins: 0, residualFrequencyHz: 0, latencyOccasions: 1, crossPortRelationAvailable: true}
+    recoverable_relocation: {relationClass: bounded_residual, residualPhaseDeg: 20, residualTimingBins: 0.25, residualFrequencyHz: 50, latencyOccasions: 1, crossPortRelationAvailable: true}
 
 coherencyBudget:
   maxCoherentSegments: [1, 2, 4]
@@ -312,6 +332,12 @@ coherencyBudget:
   maximumResidualTimingBins: [0.25, 0.5, 1.0]
   maximumResidualFrequencyHz: [10, 50, 100]
   measurementProfiles: [range_only, doppler_required, angle_required, range_doppler, range_doppler_angle]
+  requiredRelationClass:
+    range_only: bounded_residual
+    doppler_required: known_transform
+    angle_required: known_transform
+    range_doppler: known_transform
+    range_doppler_angle: known_transform
   transparentCostWeights:
     communicationRE: 1.0
     sensingObservationLoss: 1.0
@@ -319,6 +345,8 @@ coherencyBudget:
 
 assistance:
   dopplerHalfWidthCyclesPerSlot: [0.05, 0.08, 0.10, 0.15, 0.20, 0.25, 0.35, 0.50]
+  priorDopplerErrorStdCyclesPerSlot: 0.12
+  searchFFTLength: 1024
   delayHalfWidthBins: [1, 2, 4, 8]
   angleHalfWidthDeg: [2, 5, 10, 20]
 
@@ -337,6 +365,16 @@ beamManagement:
   communicationMeasurementNoiseDb: 1.5
   narrowRefinementMeasurements: 4
   confidenceGateStdMultiplier: 2.0
+  reportPayloadBits: 24
+  reportLatencyMs: 2
+
+fullPHYAnchor:
+  enabled: true
+  configPath: configs/lls/pdsch_isac_monostatic_30ghz_example.yaml
+  executionProfile: phy_calibration
+  snrDb: 35
+  coherentRepetitions: 2
+  evidenceClass: production_pdsch_waveform_truth
 
 fairness:
   equalOccupiedRECount: true
@@ -353,6 +391,7 @@ metrics:
   confidenceLevel: 0.95
   publicationPFA: 0.001
   minimumExpectedFalseAlarmsForQualification: 3
+  highSidelobePSLRThresholdDb: -10
   requested: [papr, cubic_metric, ambiguity, pslr, islr, main_lobe_width, cross_ambiguity, psd, aclr, oobe, range_rmse, doppler_rmse, angle_rmse, pd, pfa, wrong_peak, isi, ici, self_interference, intercell_interference, evm, bler, throughput, complexity, overhead1, overhead2]
 
 detection:

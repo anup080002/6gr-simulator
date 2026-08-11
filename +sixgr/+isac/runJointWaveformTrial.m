@@ -26,15 +26,11 @@ cleanup = onCleanup(@() rng(prior)); %#ok<NASGU>
 rng(double(trial.Seed),"twister");
 
 configuredMask = bundle.ConfiguredMask;
-collisionMask = false(size(configuredMask));
-configuredIndices = find(configuredMask);
-nCollision = round(numel(configuredIndices)*double(trial.CollisionRatioPercent)/100);
-if nCollision > 0
-    selected = configuredIndices(randperm(numel(configuredIndices),nCollision));
-    collisionMask(selected) = true;
-end
+maskProfile=string(sixgr.util.structGet(trial,"CollisionMaskProfile","random_isolated"));
+collisionMask=sixgr.isac.buildCollisionMask(configuredMask,maskProfile, ...
+    double(trial.CollisionRatioPercent),double(trial.Seed)+1709);
 patternState = sixgr.isac.deriveEffectivePattern(configuredMask,collisionMask, ...
-    string(trial.CollisionResponse),localTrialRelationClass(trial));
+    string(trial.CollisionResponse),localTrialRelationClass(cfg,trial));
 
 % Apply the effective sensing mask to the actual grid. Punctured sensing REs
 % revert to their exact saved communication symbols, not zeros or synthetic
@@ -105,10 +101,14 @@ txFieldSense = (sensingWaveform*transpose(txWeights))*txSteering;
 txFieldData = (dataWaveform*transpose(txWeights))*txSteering;
 
 gain = 10^(double(cfg.channel.targetPathGainDb)/20);
+targetPhase=1;
+if logical(cfg.channel.randomPhaseEnabled)
+    targetPhase=exp(1i*2*pi*rand());
+end
 if logical(trial.TargetPresent)
-    targetFullField = gain*localDelayDoppler(txFieldFull,delaySamples,dopplerHz,fs,0);
-    targetSenseField = gain*localDelayDoppler(txFieldSense,delaySamples,dopplerHz,fs,0);
-    targetDataField = gain*localDelayDoppler(txFieldData,delaySamples,dopplerHz,fs,0);
+    targetFullField = gain*targetPhase*localDelayDoppler(txFieldFull,delaySamples,dopplerHz,fs,0);
+    targetSenseField = gain*targetPhase*localDelayDoppler(txFieldSense,delaySamples,dopplerHz,fs,0);
+    targetDataField = gain*targetPhase*localDelayDoppler(txFieldData,delaySamples,dopplerHz,fs,0);
     targetFull = targetFullField*transpose(rxSteering);
     targetSense = targetSenseField*transpose(rxSteering);
     targetData = targetDataField*transpose(rxSteering);
@@ -144,13 +144,21 @@ switch knowledge
             "Unsupported shared-resource receiver policy %s.",knowledge);
 end
 
-% Whole-waveform linear matched filter for delay/range.
-nFFTCorrelation = 2^nextpow2(2*numel(sensingWaveform)-1);
-referenceSpectrum = fft(sensingWaveform,nFFTCorrelation);
-correlation = ifft(fft(receivedSensing,nFFTCorrelation).*conj(referenceSpectrum));
 maximumLag = min(numel(waveform)-1,max(delaySamples+4*cpSamples,4*cpSamples));
-rangeResponse = correlation(1:maximumLag+1,:);
-rangePower = sum(abs(rangeResponse).^2,2);
+receiverProfile=upper(string(sixgr.util.structGet(trial,"ReceiverProfile", ...
+    localDefaultReceiver(bundle.ProfileId))));
+if receiverProfile=="B0"
+    [rangeResponse,rangePower]=localConventionalOFDMRangeResponse( ...
+        bundle,receivedSensing,sensingGrid,patternState.EffectiveMask,maximumLag);
+    receiverEvidenceClass="conventional_per_symbol_cp_removal_fft_truth";
+else
+    nFFTCorrelation = 2^nextpow2(2*numel(sensingWaveform)-1);
+    referenceSpectrum = fft(sensingWaveform,nFFTCorrelation);
+    correlation = ifft(fft(receivedSensing,nFFTCorrelation).*conj(referenceSpectrum));
+    rangeResponse = correlation(1:maximumLag+1,:);
+    rangePower = sum(abs(rangeResponse).^2,2);
+    receiverEvidenceClass="whole_observation_linear_correlation_truth";
+end
 [peakPower,peakIndex] = max(rangePower);
 estimatedDelaySamples = peakIndex-1;
 noiseFloor = median(rangePower);
@@ -265,9 +273,17 @@ uncodedGoodputBps = 2*numel(txData)*(~uncodedBlockError)/slotDuration;
 [aclrDb,oobeRatio] = localSpectralMetrics(waveform,fs, ...
     double(bundle.CarrierProfile.channelBandwidthHz));
 paprDb = 10*log10(max(abs(waveform).^2)/mean(abs(waveform).^2));
+symbolLengths=double(bundle.CPLengths(:))+double(bundle.OFDMInfo.Nfft);
+boundaries=cumsum(symbolLengths(1:end-1));
+boundaryDiscontinuityRMS=sqrt(mean(abs(waveform(boundaries+1)-waveform(boundaries)).^2))/ ...
+    max(sqrt(mean(abs(waveform).^2)),eps);
 observationHash = localComplexHash(receivedCommon);
 
-row = table(string(trial.TrialId),string(bundle.ProfileId),string(trial.SensingMode), ...
+row = table(string(trial.TrialId),string(bundle.ProfileId),receiverProfile, ...
+    double(sixgr.util.structGet(trial,"CoherentSymbols",bundle.CoherentSymbols)), ...
+    maskProfile,string(sixgr.util.structGet(trial,"SequenceVariant","default")), ...
+    double(sixgr.util.structGet(trial,"WaveformSeed",trial.Seed)), ...
+    string(trial.SensingMode), ...
     string(trial.TDDPattern),string(trial.CollisionResponse),double(trial.Seed), ...
     logical(trial.TargetPresent),logical(trial.UseGeometryDelay),channelBasis, ...
     double(trial.DelayOverCP),double(trial.NormalizedDoppler), ...
@@ -279,10 +295,12 @@ row = table(string(trial.TrialId),string(bundle.ProfileId),string(trial.SensingM
     patternState.ConfiguredObservations,nnz(patternState.ReplacementMask), ...
     patternState.RetainedObservations,patternState.CoherentSegmentCount, ...
     string(patternState.RelationClass),knowledge,evmRMS,symbolErrorRate, ...
-    uncodedBlockError,uncodedGoodputBps,paprDb,pslrDb,islrDb,mainLobeBins, ...
+    uncodedBlockError,uncodedGoodputBps,paprDb,boundaryDiscontinuityRMS, ...
+    pslrDb,islrDb,mainLobeBins, ...
     aclrDb,oobeRatio,string(bundle.WaveformSHA256),string(observationHash), ...
-    string(cfg.study.evidenceClass),"common_time_domain_waveform_truth", ...
-    'VariableNames',{'TrialId','WaveformProfile','SensingMode','TDDPattern', ...
+    string(cfg.study.evidenceClass),"common_time_domain_waveform_truth",receiverEvidenceClass, ...
+    'VariableNames',{'TrialId','WaveformProfile','ReceiverProfile','CoherentSymbols', ...
+    'CollisionMaskProfile','SequenceVariant','WaveformSeed','SensingMode','TDDPattern', ...
     'CollisionResponse','Seed','TargetPresent','UseGeometryDelay','ChannelBasis', ...
     'DelayOverCP','NormalizedDoppler','CollisionRatioPercent','CPSamples', ...
     'DelaySamples','DelaySeconds','ExpectedDopplerHz','MeasuredDopplerHz', ...
@@ -294,9 +312,9 @@ row = table(string(trial.TrialId),string(bundle.ProfileId),string(trial.SensingM
     'ConfiguredObservations','ReplacementObservations','RetainedObservations', ...
     'CoherentSegments','RelationClass','SharedResourceKnowledge', ...
     'CommunicationEVMRMS','UncodedSymbolErrorRate','UncodedDataBlockError', ...
-    'UncodedGoodputBps','PAPRDb','PSLRDb','ISLRDb','MainLobeWidthBins', ...
+    'UncodedGoodputBps','PAPRDb','BoundaryDiscontinuityRMS','PSLRDb','ISLRDb','MainLobeWidthBins', ...
     'ACLRDb','OOBEPowerRatio','TransmitWaveformSHA256', ...
-    'ReceivedObservationSHA256','EvidenceClass','ObservationSource'});
+    'ReceivedObservationSHA256','EvidenceClass','ObservationSource','ReceiverEvidenceClass'});
 
 geometryTable = table(txPosition(1),txPosition(2),txPosition(3), ...
     rxPosition(1),rxPosition(2),rxPosition(3),targetPosition(1), ...
@@ -331,11 +349,13 @@ switch lower(response)
 end
 end
 
-function relation=localTrialRelationClass(trial)
+function relation=localTrialRelationClass(cfg,trial)
 if isfield(trial,"RelationClass") && strlength(string(trial.RelationClass))>0
     relation=lower(string(trial.RelationClass));
 else
-    relation=localRelationClass(string(trial.CollisionResponse));
+    relation=string(sixgr.util.structGet(cfg, ...
+        "collisions.responseProperties."+string(trial.CollisionResponse)+".relationClass", ...
+        localRelationClass(string(trial.CollisionResponse))));
 end
 end
 
@@ -414,6 +434,44 @@ n = (0:numel(x)-1).';
 phase = exp(1i*2*pi*dopplerHz*(startTime+n/fs));
 shifted = [complex(zeros(delaySamples,1));x(1:end-delaySamples)];
 y = shifted.*phase;
+end
+
+function receiver=localDefaultReceiver(profile)
+switch upper(string(profile))
+    case "W0", receiver="B1";
+    case "W1", receiver="B0";
+    case "W2", receiver="B2";
+    case "W3", receiver="C0";
+    otherwise, error("sixgr:isac:UnknownWaveformProfile","Unknown waveform %s.",profile);
+end
+end
+
+function [response,power]=localConventionalOFDMRangeResponse(bundle,received,referenceGrid,mask,maximumLag)
+% Conventional B0 processing: ordinary CP removal/FFT followed by a
+% per-symbol frequency-domain matched filter and noncoherent symbol fusion.
+rxGrid=nrOFDMDemodulate(bundle.Carrier,received);
+nFFT=double(bundle.OFDMInfo.Nfft);
+nRx=size(rxGrid,3);
+response=complex(zeros(maximumLag+1,nRx));
+power=zeros(maximumLag+1,1);
+symbols=find(any(mask,1));
+if isempty(symbols)
+    error("sixgr:isac:NoEffectiveSensingSymbols", ...
+        "B0 processing requires at least one effective sensing symbol.");
+end
+for symbol=symbols
+    active=find(mask(:,symbol));
+    physicalK=(active-1)+12*double(bundle.Carrier.NStartGrid)-floor(size(mask,1)/2);
+    fftBins=mod(physicalK,nFFT)+1;
+    for rxIndex=1:nRx
+        spectrum=complex(zeros(nFFT,1));
+        spectrum(fftBins)=rxGrid(active,symbol,rxIndex).*conj(referenceGrid(active,symbol));
+        perSymbol=ifft(spectrum,nFFT);
+        selected=perSymbol(1:maximumLag+1);
+        response(:,rxIndex)=response(:,rxIndex)+selected;
+        power=power+abs(selected).^2;
+    end
+end
 end
 
 function decided = localQPSKDecision(value)

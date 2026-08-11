@@ -21,8 +21,10 @@ for i = 1:height(contract)
     folder = fullfile(runFolder,"figures",contract.Folder(i));
     if exist(folder,"dir") ~= 7, mkdir(folder); end
     path = fullfile(folder,stem+".png");
-    fig = figure("Visible","off","Color","white", ...
-        "Position",[80 80 double(cfg.output.imageSizePixels(:).')]);
+    pixels=double(cfg.output.imageSizePixels(:).');
+    dpi=double(cfg.output.imageResolutionDPI);
+    fig = figure("Visible","off","Color","white","Units","inches", ...
+        "Position",[1 1 pixels(1)/dpi pixels(2)/dpi]);
     cleanup = onCleanup(@() localClose(fig)); %#ok<NASGU>
     localRender(fig,stem,saved);
     exportgraphics(fig,path,"Resolution",double(cfg.output.imageResolutionDPI));
@@ -51,7 +53,33 @@ function localRender(fig,stem,saved)
 tables = saved.tables; diagnostics = saved.diagnostics;
 studies = saved.studies; aggregate = saved.aggregate;
 name = lower(stem);
-if contains(name,"tr38901_scenario")
+if stem=="Fig12_pattern_pslr_p90"
+    localPatternPSLR(studies.EffectivePatterns,false,saved.cfg);
+elseif stem=="Fig13_high_sidelobe_probability"
+    localPatternPSLR(studies.EffectivePatterns,true,saved.cfg);
+elseif stem=="Fig18_report_content"
+    localReportContent(studies.BeamManagement);
+elseif stem=="WFig01_scope_and_baselines"
+    localReceiverBaselines(tables.Table03_waveform_trials);
+elseif stem=="WFig02_delay_reference_and_cp_boundary"
+    localDelayBoundary(tables.Table03_waveform_trials);
+elseif stem=="WFig05_time_domain_boundary_continuity"
+    localBoundaryContinuity(tables.Table03_waveform_trials);
+elseif stem=="WFig07_rmse_pd_pfa_vs_delay_over_cp"
+    localRMSDetection(tables.Table03_waveform_trials);
+elseif stem=="WFig13_shared_resource_evm_bler_throughput"
+    localSharedCommunication(aggregate.Communication,diagnostics.FullPHYAnchor.Summary);
+elseif stem=="JFig01_waveform_pattern_collision_heatmap"
+    localPatternHeatmap(studies.EffectivePatterns);
+elseif stem=="JFig03_beyond_cp_with_collision"
+    localBeyondCP(tables.Table03_waveform_trials);
+elseif stem=="JFig04_tdd_sequence_interaction"
+    localTDDInteraction(studies.TDD);
+elseif stem=="JFig05_pareto_sensing_communication_overhead"
+    localJointPareto(studies.EffectivePatterns);
+elseif stem=="JFig06_decision_summary"
+    localDecisionSummary(tables.Table17_acceptance);
+elseif contains(name,"tr38901_scenario")
     localTR38901Scene(diagnostics.TR38901Geometry);
 elseif contains(name,"tr38901_power_delay")
     localTR38901PDP(diagnostics.TR38901Paths);
@@ -61,8 +89,7 @@ elseif contains(name,"geometry")
     localGeometry(tables.Table02_geometry);
 elseif contains(name,"integration_chain") || contains(name,"transmitter_receiver_chains") || ...
         contains(name,"system_architecture") || contains(name,"sequence_flow") || ...
-        contains(name,"selection_flowchart") || contains(name,"effective_pattern_collision_flow") || ...
-        contains(name,"report_content")
+        contains(name,"selection_flowchart") || contains(name,"effective_pattern_collision_flow")
     localFlowDiagram(stem,saved.cfg);
 elseif contains(name,"beam_scope")
     localBeamScope(saved.cfg);
@@ -71,8 +98,8 @@ elseif contains(name,"best_beam")
         studies.BeamManagement.Top1NeighborhoodInclusion,"-o","LineWidth",2);
     ylabel("Top-1 neighborhood inclusion"); xlabel("Information age (ms)"); grid on;
 elseif contains(name,"gain_gap")
-    plot(studies.BeamManagement.InformationAgeMs,studies.BeamManagement.P90AngleGapDeg, ...
-        "-o","LineWidth",2); ylabel("90th-percentile angle gap (deg)");
+    plot(studies.BeamManagement.InformationAgeMs,studies.BeamManagement.P90GainGapDb, ...
+        "-o","LineWidth",2); ylabel("90th-percentile array-gain gap (dB)");
     xlabel("Information age (ms)"); grid on;
 elseif contains(name,"measurement_cost_fallback")
     yyaxis left; plot(studies.BeamManagement.InformationAgeMs, ...
@@ -106,9 +133,12 @@ elseif contains(name,"coherency_budget") || contains(name,"budget_selected") || 
         contains(name,"separate_vs_coupled")
     localBudget(studies.BudgetEvaluation);
 elseif contains(name,"assistance_window")
-    plot(studies.Assistance.DopplerHalfWidthCyclesPerSlot, ...
+    yyaxis left; plot(studies.Assistance.DopplerHalfWidthCyclesPerSlot, ...
         studies.Assistance.ObservedWrongPeakRate,"-o","LineWidth",2);
-    xlabel("Doppler assistance half-width (cycles/slot)"); ylabel("Observed wrong-peak rate"); grid on;
+    ylabel("Observed wrong-peak rate"); yyaxis right;
+    plot(studies.Assistance.DopplerHalfWidthCyclesPerSlot, ...
+        studies.Assistance.ObservedDopplerRMSEHz,"-s","LineWidth",2);
+    ylabel("Doppler RMSE (Hz)"); xlabel("Doppler assistance half-width (cycles/slot)"); grid on;
 elseif contains(name,"frame_anchored_q") || contains(name,"boundary_continuity") || ...
         contains(name,"puncture_robustness")
     localW3(diagnostics.W3State,name);
@@ -126,7 +156,7 @@ elseif contains(name,"cross_ambiguity")
 elseif contains(name,"isi_ici")
     localISIICI(studies.ISIICI);
 elseif contains(name,"shared_resource_evm")
-    localSharedCommunication(aggregate.Communication);
+    localSharedCommunication(aggregate.Communication,diagnostics.FullPHYAnchor.Summary);
 elseif contains(name,"self_and_intercell_interference")
     localInterference(studies.Interference);
 elseif contains(name,"complexity")
@@ -336,8 +366,11 @@ bar(categorical(types),values); ylabel("Median absolute measured event bias"); x
 end
 
 function localPatterns(t)
-labels = categorical(t.Response+"/"+string(t.CollisionRatioPercent)+"%");
-bar(labels,t.RetainedObservations); ylabel("Retained observations"); grid on;
+raw=t.Response+"/"+string(t.CollisionRatioPercent)+"%";
+[group,labels]=findgroups(raw);
+retained=splitapply(@mean,t.RetainedObservations,group);
+bar(categorical(labels),retained); ylabel("Mean retained observations");
+xtickangle(55); grid on;
 end
 
 function localBudget(t)
@@ -395,15 +428,124 @@ for i=1:numel(profiles), values(i)=mean(t.MeanCommunicationEVMRMS(t.WaveformProf
 bar(categorical(profiles),values); ylabel("Mean communication EVM RMS"); grid on;
 end
 
-function localSharedCommunication(t)
+function localPatternPSLR(t,probability,cfg)
+responses=unique(t.Response,"stable"); values=zeros(numel(responses),1);
+threshold=double(cfg.metrics.highSidelobePSLRThresholdDb);
+for i=1:numel(responses)
+    rows=t.Response==responses(i)&isfinite(t.PSLRDb);
+    if probability
+        values(i)=mean(t.PSLRDb(rows)>threshold);
+    else
+        values(i)=prctile(t.PSLRDb(rows),90);
+    end
+end
+bar(categorical(responses),values); grid on; xtickangle(30);
+if probability
+    ylabel("Pr(PSLR exceeds configured threshold)");
+else
+    ylabel("90th-percentile PSLR (dB)");
+end
+end
+
+function localReportContent(t)
+yyaxis left; bar(t.InformationAgeMs,t.ReportPayloadBits,.65);
+ylabel("Report payload (bits)"); yyaxis right;
+plot(t.InformationAgeMs,t.ReportLatencyMs,"-o","LineWidth",2);
+ylabel("Report latency (ms)"); xlabel("Information age (ms)"); grid on;
+end
+
+function localReceiverBaselines(t)
+rows=t.TargetPresent&t.CollisionRatioPercent==0;
+[group,receiver]=findgroups(t.ReceiverProfile(rows));
+range=splitapply(@(x) sqrt(mean(x.^2,"omitnan")),t.RangeErrorM(rows),group);
+doppler=splitapply(@(x) sqrt(mean(x.^2,"omitnan")),t.DopplerErrorHz(rows),group);
+layout=tiledlayout(gcf,1,2,"TileSpacing","compact","Padding","compact");
+nexttile(layout); bar(categorical(receiver),range); ylabel("Range RMSE (m)"); grid on;
+nexttile(layout); bar(categorical(receiver),doppler); ylabel("Doppler RMSE (Hz)"); grid on;
+title(layout,"Executed B0/B1/B2/C0 receiver baselines");
+end
+
+function localDelayBoundary(t)
+rows=t.TargetPresent&t.CollisionRatioPercent==0;
+profiles=unique(t.WaveformProfile(rows),"stable"); hold on;
+for i=1:numel(profiles)
+    select=rows&t.WaveformProfile==profiles(i);
+    [delay,~,bin]=unique(t.DelayOverCP(select));
+    errorValue=splitapply(@(x) sqrt(mean(x.^2,"omitnan")),t.RangeErrorM(select),bin);
+    plot(delay,errorValue,"-o","DisplayName",profiles(i),"LineWidth",1.5);
+end
+xline(1,"--","CP boundary"); xlabel("Target delay / CP"); ylabel("Range RMSE (m)");
+legend("Location","best"); grid on;
+end
+
+function localBoundaryContinuity(t)
+rows=t.Stage=="J3_w1_randomization";
+if ~any(rows), error("sixgr:isac:MissingW1BoundaryEvidence","No W1 randomization rows exist."); end
+bar(categorical(t.SequenceVariant(rows)),t.BoundaryDiscontinuityRMS(rows));
+ylabel("Normalized RMS sample jump at OFDM boundaries"); grid on;
+end
+
+function localRMSDetection(t)
+target=t.TargetPresent&t.CollisionRatioPercent==0;
+delays=unique(t.DelayOverCP(target)); rmse=zeros(numel(delays),1); pd=rmse;
+for i=1:numel(delays)
+    rows=target&t.DelayOverCP==delays(i);
+    rmse(i)=sqrt(mean(t.RangeErrorM(rows).^2,"omitnan")); pd(i)=mean(t.Detected(rows));
+end
+pfa=mean(t.Detected(~t.TargetPresent));
 layout=tiledlayout(gcf,1,3,"TileSpacing","compact","Padding","compact");
+nexttile(layout); plot(delays,rmse,"-o","LineWidth",1.5); xline(1,"--");
+xlabel("Delay / CP"); ylabel("Range RMSE (m)"); grid on;
+nexttile(layout); plot(delays,pd,"-o","LineWidth",1.5); ylim([0 1.05]);
+xlabel("Delay / CP"); ylabel("Detection probability"); grid on;
+nexttile(layout); plot(delays,repmat(pfa,size(delays)),"-o","LineWidth",1.5);
+text(delays(1),pfa,sprintf("  PFA=%.4g",pfa));
+xlim([min(delays) max(delays)]); ylim([0 max(.02,1.2*pfa)]); xlabel("Delay / CP"); ylabel("False-alarm probability"); grid on;
+end
+
+function localBeyondCP(t)
+rows=t.TargetPresent&t.DelayOverCP>=1;
+scatter(t.DelayOverCP(rows),t.RangeErrorM(rows),45,t.CollisionRatioPercent(rows),"filled");
+xline(1,"--","CP boundary"); xlabel("Delay / CP"); ylabel("Range error (m)");
+cb=colorbar; cb.Label.String="Collision ratio (%)"; grid on;
+end
+
+function localTDDInteraction(t)
+patterns=unique(t.TDDPattern,"stable"); relations=unique(t.PhaseRelation,"stable");
+z=nan(numel(patterns),numel(relations));
+for i=1:numel(patterns), for j=1:numel(relations)
+    rows=t.TDDPattern==patterns(i)&t.PhaseRelation==relations(j);
+    z(i,j)=mean(t.CoherentGainLinear(rows));
+end, end
+imagesc(1:numel(relations),1:numel(patterns),z,[0 1]);
+set(gca,"XTick",1:numel(relations),"XTickLabel",relations,"XTickLabelRotation",25, ...
+    "YTick",1:numel(patterns),"YTickLabel",patterns);
+xlabel("Across-gap phase relation"); ylabel("TDD pattern"); colorbar;
+end
+
+function localJointPareto(t)
+loss=100*(t.ConfiguredObservations-t.RetainedObservations)./max(t.ConfiguredObservations,1);
+scatter(t.CommunicationCostRE,loss,45,t.PSLRDb,"filled");
+xlabel("Communication resource cost (RE)"); ylabel("Lost sensing observations (%)");
+cb=colorbar; cb.Label.String="Executed pattern PSLR (dB)"; grid on;
+end
+
+function localDecisionSummary(t)
+bar(categorical(t.Check),double(t.Pass)); ylim([0 1.1]); xtickangle(65);
+ylabel("Pass (1) / fail (0)"); grid on;
+end
+
+function localSharedCommunication(t,anchor)
+layout=tiledlayout(gcf,1,4,"TileSpacing","compact","Padding","compact");
 nexttile(layout); bar(categorical(t.WaveformProfile),t.MeanCommunicationEVMRMS);
 ylabel("EVM RMS"); title("EVM"); grid on;
 nexttile(layout); bar(categorical(t.WaveformProfile),t.MeanUncodedSymbolErrorRate);
 ylabel("Uncoded SER"); title("Uncoded data errors"); grid on;
 nexttile(layout); bar(categorical(t.WaveformProfile),t.MeanUncodedGoodputBps/1e6);
 ylabel("Goodput (Mbit/s)"); title("Uncoded goodput"); grid on;
-layoutTitle=title(layout,"Shared-resource communication measurements","Interpreter","none");
+nexttile(layout); bar(categorical("Production PDSCH"),double(anchor.CRCError)); ylim([0 1.1]);
+ylabel("CRC error"); title("Coded DL-SCH/PDSCH"); grid on;
+layoutTitle=title(layout,"Shared-resource calibration plus production PDSCH anchor","Interpreter","none");
 layoutTitle.Color=[.08 .08 .08];
 end
 
@@ -479,7 +621,21 @@ end
 
 function path = localSourcePath(runFolder,stem)
 name=lower(stem); tableStem="Table04_profile_metrics";
-if contains(name,"tr38901_scenario"), path=fullfile(runFolder,"aggregate","tr38901_example_geometry.csv"); return;
+if stem=="WFig13_shared_resource_evm_bler_throughput"
+    path=localCompositeSource(runFolder,stem,[ ...
+        string(fullfile(runFolder,"tables","Table13_communication_metrics.csv")); ...
+        string(fullfile(runFolder,"aggregate","full_phy_anchor_summary.csv"))]); return;
+elseif ismember(stem,["WFig01_scope_and_baselines","WFig02_delay_reference_and_cp_boundary", ...
+        "WFig05_time_domain_boundary_continuity","WFig07_rmse_pd_pfa_vs_delay_over_cp", ...
+        "JFig03_beyond_cp_with_collision"])
+    tableStem="Table03_waveform_trials";
+elseif stem=="JFig04_tdd_sequence_interaction"
+    tableStem="Table08_tdd_patterns";
+elseif stem=="JFig05_pareto_sensing_communication_overhead"
+    tableStem="Table06_effective_patterns";
+elseif stem=="JFig06_decision_summary"
+    tableStem="Table17_acceptance";
+elseif contains(name,"tr38901_scenario"), path=fullfile(runFolder,"aggregate","tr38901_example_geometry.csv"); return;
 elseif contains(name,"tr38901_power_delay"), path=fullfile(runFolder,"aggregate","tr38901_example_paths.csv"); return;
 elseif contains(name,"range_doppler_maps"), path=fullfile(runFolder,"aggregate","range_doppler_maps.csv"); return;
 elseif contains(name,"papr"), path=fullfile(runFolder,"aggregate","papr_ccdf.csv"); return;
@@ -509,6 +665,21 @@ elseif contains(name,"complexity"), tableStem="Table14_complexity";
 elseif contains(name,"frame_anchored")||contains(name,"boundary_continuity"), tableStem="Table15_w3_absolute_state";
 end
 path=fullfile(runFolder,"tables",tableStem+".csv");
+end
+
+function path=localCompositeSource(runFolder,stem,sourcePaths)
+for i=1:numel(sourcePaths)
+    if exist(sourcePaths(i),"file")~=2
+        error("sixgr:isac:MissingCompositeFigureSource", ...
+            "Composite figure %s is missing source %s.",stem,sourcePaths(i));
+    end
+end
+relative=erase(sourcePaths,string(runFolder)+filesep);
+hashes=strings(numel(sourcePaths),1);
+for i=1:numel(sourcePaths), hashes(i)=localFileHash(sourcePaths(i)); end
+sourceTable=table(relative,hashes,'VariableNames',{'SourcePath','SourceSHA256'});
+path=fullfile(runFolder,"aggregate","figure_source_"+stem+".csv");
+writetable(sourceTable,path);
 end
 
 function localStyle(ax,fig)

@@ -124,8 +124,14 @@ studies=sixgr.isac.runIntegrationStudies(testCfg,studyBundles,row);
 assert(max(abs(studies.PeriodicPhase.Summary.ExpectedGhostOffsetNormalized- ...
     studies.PeriodicPhase.Summary.MeasuredGhostOffsetNormalized))<1e-12);
 assert(height(studies.TDD)==double(testCfg.tdd.analysisSlots)* ...
-    numel(fieldnames(testCfg.tdd.patterns)));
+    numel(fieldnames(testCfg.tdd.patterns))*numel(testCfg.tdd.phaseRelations));
+assert(all(ismember(string(testCfg.tdd.phaseRelations(:)),unique(studies.TDD.PhaseRelation))));
 assert(numel(unique(studies.EffectivePatterns.Response))==10);
+assert(all(ismember(string(testCfg.collisions.maskProfiles(:)), ...
+    unique(studies.EffectivePatterns.CollisionMaskProfile))));
+assert(all(strlength(studies.Assistance.EvidenceSHA256)==64));
+assert(all(isfinite(studies.BeamManagement.P90GainGapDb)) && ...
+    all(strlength(studies.BeamManagement.EvidenceSHA256)==64));
 assert(all(isfinite(studies.ISIICI.ResidualEVMRMS)) && ...
     all(strlength(studies.ISIICI.ReceivedWaveformSHA256)==64));
 below=studies.ISIICI.DelayOverCP<1 & studies.ISIICI.NormalizedDoppler==0;
@@ -138,6 +144,9 @@ assert(all(strlength(studies.Interference.ReceivedWaveformSHA256)==64));
 plan=sixgr.isac.buildJointTrialPlan(testCfg);
 stage=string({plan.Stage}); profile=string({plan.WaveformProfile});
 response=string({plan.CollisionResponse});
+assert(all(ismember(["B0","B1","B2","C0"],unique(string({plan.ReceiverProfile})))));
+assert(all(ismember(string(testCfg.waveform.w1RandomizationSubcases(:)), ...
+    unique(string({plan.SequenceVariant})))));
 relocationIndex=find(stage=="J3_response"&profile=="W3"& ...
     response=="time_relocation",1);
 [relocationRow,~]=sixgr.isac.runJointWaveformTrial(testCfg,w3,plan(relocationIndex));

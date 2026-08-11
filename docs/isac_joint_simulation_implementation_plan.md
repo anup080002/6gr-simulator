@@ -15,21 +15,26 @@ waveform-truth table.
    sensing RE maps, collision responses, event models, coherency budgets,
    receiver profiles, geometry, targets, beam management, fairness and output
    contracts. Validation rejects missing or incompatible values.
-2. **Grid and waveform builder** — constructs a physical NR/pre-6G CP-OFDM
-   grid, maps communication data/DM-RS and sensing REs, applies W0-W3
+2. **Grid and waveform builder** — constructs a physical NR CP-OFDM
+   comparison grid, maps uncoded QPSK communication data and configured
+   sensing REs, applies W0-W3
    frequency-domain phase/sequence rules, performs ordinary OFDM modulation,
    and records absolute symbol/subcarrier indices plus CP state.
 3. **Integration state** — derives configured/collision/response/transmit/
    receive/effective masks and coherent segments. Puncturing never compresses
    the W3 absolute-symbol state.
 4. **Channel and target adapter** — operates on the shared transmit samples.
-   Supported truth backends are `phased.ScatteringMIMOChannel` and, when its
-   example helper is installed, `h38901ISACChannel`. Geometry-derived delay
-   and bistatic Doppler are always exported independently for validation.
+   The controlled paired W0-W3 experiment executes explicit direct/target
+   sample paths. The separate production PDSCH anchor executes
+   `phased.ScatteringMIMOChannel`; the official `h38901ISACChannel` helper is
+   supplementary reference evidence. Geometry-derived delay and bistatic
+   Doppler are always exported independently for validation.
 5. **Receiver/measurements** — communication demodulation and sensing
    correlation consume the same receive observation. The receiver exports
    range-Doppler/angle estimates, ambiguity state, PD/PFA decisions, error,
-   communication EVM/BLER/throughput, and complexity.
+   uncoded communication EVM/SER/goodput, and complexity. Coded PDSCH CRC,
+   bit errors and post-equalization metrics come only from the production
+   full-PHY anchor and are never inferred from the component experiment.
 6. **Coherency-budget selector** — evaluates all configured actions against
    requested measurement and residual phase/timing/frequency limits, stores
    feasibility for every action, and applies the declared fallback order.

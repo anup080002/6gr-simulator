@@ -43,18 +43,29 @@ diagnostics.Pre6GExample = table("PRE6G_EXAMPLE_RS",pre6gExample.SampleRateHz, .
 diagnostics.TR38901Summary=tr38901Example.Summary;
 diagnostics.TR38901Paths=tr38901Example.Paths;
 diagnostics.TR38901Geometry=tr38901Example.Geometry;
+fprintf("Executing production PDSCH-to-ISAC full-PHY anchor ...\n");
+diagnostics.FullPHYAnchor=sixgr.isac.runFullPHYAnchor(cfg);
 plan = sixgr.isac.buildJointTrialPlan(cfg);
 fprintf("Staged waveform trials: %d\n",numel(plan));
 
 trialParts = cell(numel(plan),1); geometryParts = cell(numel(plan),1);
 rangeParts = cell(numel(plan),1); occasionParts = cell(numel(plan),1);
 rawCaptures = struct();
+bundleCache=struct();
 rangeDopplerDelay=double(cfg.rangeDopplerEvidence.delayOverCP(:)).';
 rangeDopplerClass=string(cfg.rangeDopplerEvidence.delayClasses(:)).';
 rangeDopplerParts=cell(numel(rangeDopplerDelay),1);
 for i=1:numel(plan)
     trial = plan(i);
-    bundle = bundles.(string(trial.WaveformProfile));
+    cacheKey=matlab.lang.makeValidName(sprintf("%s_s%d_m%d_%s", ...
+        string(trial.WaveformProfile),round(double(trial.WaveformSeed)), ...
+        round(double(trial.CoherentSymbols)),string(trial.SequenceVariant)));
+    if ~isfield(bundleCache,cacheKey)
+        bundleCache.(cacheKey)=sixgr.isac.buildJointWaveform(cfg, ...
+            string(trial.WaveformProfile),double(trial.WaveformSeed),zeros(0,1), ...
+            double(trial.CoherentSymbols),string(trial.SequenceVariant));
+    end
+    bundle=bundleCache.(cacheKey);
     [row,raw] = sixgr.isac.runJointWaveformTrial(cfg,bundle,trial);
     row.Stage = string(trial.Stage);
     trialParts{i} = row;
@@ -78,7 +89,9 @@ for i=1:numel(plan)
     if string(trial.WaveformProfile)=="W0" && logical(trial.TargetPresent) && ...
             double(trial.CollisionRatioPercent)==0 && ...
             string(trial.SensingMode)=="trp_monostatic" && ...
-            string(trial.PortProfile)=="single_port"
+            string(trial.PortProfile)=="single_port" && ...
+            string(trial.ReceiverProfile)=="B1" && ...
+            double(trial.CoherentSymbols)==double(cfg.waveform.defaultCoherentSymbols)
         mapIndex=find(abs(double(trial.DelayOverCP)-rangeDopplerDelay)<1e-12,1);
         if ~isempty(mapIndex) && isempty(rangeDopplerParts{mapIndex})
             rangeDopplerParts{mapIndex}=sixgr.isac.buildRangeDopplerEvidence( ...
@@ -122,7 +135,8 @@ end
 function localCreateLayout(runFolder)
 folders = ["logs","raw","aggregate","tables", ...
     fullfile("figures","tdoc_10_8_2"),fullfile("figures","tdoc_10_8_3"), ...
-    fullfile("figures","joint"),fullfile("figures","patent_support"),"report"];
+    fullfile("figures","joint"),fullfile("figures","patent_support"), ...
+    "full_phy_anchor","report"];
 for folder=folders
     path=fullfile(runFolder,folder);
     if exist(path,"dir")~=7, mkdir(path); end
@@ -143,6 +157,15 @@ writetable(diagnostics.TR38901Summary,fullfile(runFolder,"aggregate","tr38901_ex
 writetable(diagnostics.TR38901Paths,fullfile(runFolder,"aggregate","tr38901_example_paths.csv"));
 writetable(diagnostics.TR38901Geometry,fullfile(runFolder,"aggregate","tr38901_example_geometry.csv"));
 writetable(diagnostics.RangeDopplerMaps,fullfile(runFolder,"aggregate","range_doppler_maps.csv"));
+if diagnostics.FullPHYAnchor.Enabled
+    writetable(diagnostics.FullPHYAnchor.Summary, ...
+        fullfile(runFolder,"aggregate","full_phy_anchor_summary.csv"));
+    writetable(struct2table(diagnostics.FullPHYAnchor.LinkRow), ...
+        fullfile(runFolder,"aggregate","full_phy_anchor_pdsch_trial.csv"));
+    sixgr.lls.exportISACArtifacts(char(fullfile(runFolder,"full_phy_anchor")), ...
+        diagnostics.FullPHYAnchor.Config, ...
+        struct("ISAC",diagnostics.FullPHYAnchor.Sensing),true);
+end
 writetable(aggregate.ProbabilityQualification,fullfile(runFolder,"aggregate","probability_qualification.csv"));
 writetable(studies.BudgetSelection,fullfile(runFolder,"aggregate","budget_selection.csv"));
 writetable(studies.PeriodicPhase.Spectrum,fullfile(runFolder,"aggregate","periodic_phase_spectrum.csv"));

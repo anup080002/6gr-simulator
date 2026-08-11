@@ -95,9 +95,11 @@ pattern, received pattern, and coherent-segment labels are stored separately.
   120 kHz SCS where supported.
 - Waveforms: W0 communication-aligned CP-OFDM RS reuse; W1 randomized
   sequence; W2 repeated base sequence; W3 frame-anchored cumulative CP.
-- Receiver baselines: B0 ordinary processing, B1 no-transmitter-change
-  multi-symbol linear-convolution processing, B2 enhanced processing for W3,
-  and C0 a declared comparison receiver.
+- Receiver baselines: B0 conventional per-symbol CP removal/FFT processing,
+  B1 no-transmitter-change multi-symbol linear-convolution processing for W0,
+  B2 correlation processing for the repeated-base W2 profile, and C0
+  absolute-state correlation processing for frame-anchored W3. The mapping is
+  exported on every trial row and checked by the acceptance table.
 - Delay/CP ratios: `[0.25,0.5,0.9,1,1.1,1.25,1.5,2,3]`.
 - Symbols per coherent interval: `[1,2,4,8,14]`.
 - normalized Doppler: `[0,0.01,0.05,0.1]`.
@@ -137,6 +139,12 @@ to publication statistics.
 - Replaced for the joint campaign: the previous single waveform/single event
   output is expanded into W0-W3, event, TDD, collision, coherency-budget,
   beam-management, joint-interaction, and fair-comparison tables.
+- Production anchor: every joint run separately executes the repository's
+  coded DL-SCH/PDSCH transmitter and receiver, physical antenna projection,
+  `phased.ScatteringMIMOChannel`, matched filtering, beamforming and CA-CFAR.
+  Its CRC, bit errors, sensing errors and waveform/cube hashes are exported.
+  The W0-W3 comparison rows remain a controlled common-waveform component
+  experiment and are not relabelled as coded PDSCH trials.
 - Optional: the R2026a `h38901ISACChannel` example backend is selected only
   when its example-local helper is installed on the MATLAB path. A requested
   but unavailable backend fails closed; it is not replaced with a scattering

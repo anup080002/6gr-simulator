@@ -52,102 +52,155 @@ studies.EventPhase = table(phaseGrid(:),positionGrid(:),executedFraction, ...
     'SourceWaveformSHA256','EvidenceClass'});
 
 patterns = string(fieldnames(cfg.tdd.patterns));
-tddParts = cell(numel(patterns),1);
+phaseRelations = string(cfg.tdd.phaseRelations(:));
+tddParts = cell(numel(patterns)*numel(phaseRelations),1);
 analysisSlots=double(cfg.tdd.analysisSlots);
+partIndex=0;
 for i = 1:numel(patterns)
     token = string(cfg.tdd.patterns.(patterns(i)));
     repetitions = ceil(analysisSlots/strlength(token));
     expanded = char(join(repmat(token,1,repetitions),""));
     expanded = expanded(1:analysisSlots);
     mask = double(expanded == 'D').';
-    response = abs(fft(mask,analysisSlots)).^2;
-    response = fftshift(response/max(response));
-    executedWaveform = complex(zeros(analysisSlots*numel(bundles.W0.SensingWaveform),1));
-    for slotIndex=1:analysisSlots
-        if mask(slotIndex)>0
-            sampleIndices=(slotIndex-1)*numel(bundles.W0.SensingWaveform)+(1:numel(bundles.W0.SensingWaveform));
-            executedWaveform(sampleIndices)=bundles.W0.SensingWaveform;
-        end
+    for relation=phaseRelations.'
+        partIndex=partIndex+1;
+        [injected,compensated]=localTDDPhases(relation,mask, ...
+            double(cfg.run.masterSeed)+100*i+partIndex);
+        residual=injected-compensated;
+        observations=mask.*exp(1i*deg2rad(residual));
+        response = abs(fft(observations,analysisSlots)).^2;
+        if max(response)>0, response=response/max(response); end
+        response=fftshift(response);
+        active=max(nnz(mask),1);
+        coherentGain=abs(sum(observations))^2/active^2;
+        executedHash=string(localComplexHash(observations));
+        executedEnergy=sum(abs(bundles.W0.SensingWaveform).^2)*nnz(mask);
+        tddParts{partIndex} = table(repmat(patterns(i),analysisSlots,1), ...
+            repmat(relation,analysisSlots,1),(0:analysisSlots-1).',mask, ...
+            injected,compensated,residual, ...
+            ((-analysisSlots/2):(analysisSlots/2-1)).'/analysisSlots,response, ...
+            repmat(coherentGain,analysisSlots,1),repmat(executedHash,analysisSlots,1), ...
+            repmat(numel(bundles.W0.SensingWaveform)*nnz(mask),analysisSlots,1), ...
+            repmat(executedEnergy,analysisSlots,1), ...
+            repmat("executed_cp_ofdm_matched_observations_with_tdd_phase_policy",analysisSlots,1), ...
+            'VariableNames',{'TDDPattern','PhaseRelation','SlotIndex','DLSensingAvailable', ...
+            'InjectedPhaseDeg','CompensatedPhaseDeg','ResidualPhaseDeg', ...
+            'NormalizedDopplerBin','MaskDFTPowerNormalized','CoherentGainLinear', ...
+            'ExecutedObservationSHA256','ExecutedWaveformSamples','ExecutedWaveformEnergy', ...
+            'EvidenceClass'});
     end
-    executedHash=string(localComplexHash(executedWaveform));
-    executedEnergy=sum(abs(executedWaveform).^2);
-    tddParts{i} = table(repmat(patterns(i),analysisSlots,1),(0:analysisSlots-1).',mask, ...
-        ((-analysisSlots/2):(analysisSlots/2-1)).'/analysisSlots,response, ...
-        repmat(executedHash,analysisSlots,1), ...
-        repmat(numel(executedWaveform),analysisSlots,1), ...
-        repmat(executedEnergy,analysisSlots,1), ...
-        repmat("executed_tdd_masked_cp_ofdm_waveform",analysisSlots,1), ...
-        'VariableNames',{'TDDPattern','SlotIndex','DLSensingAvailable', ...
-        'NormalizedDopplerBin','MaskDFTPowerNormalized','ExecutedWaveformSHA256', ...
-        'ExecutedWaveformSamples','ExecutedWaveformEnergy','EvidenceClass'});
 end
-studies.TDD = vertcat(tddParts{:});
+studies.TDD = vertcat(tddParts{1:partIndex});
 
-w0 = bundles.W0;
-configured = w0.ConfiguredMask;
 ratios = double(cfg.collisions.ratiosPercent(:));
 responses = string(cfg.collisions.responses(:));
-patternParts = cell(numel(ratios)*numel(responses),1);
+maskProfiles=string(cfg.collisions.maskProfiles(:));
+patternWaveforms=intersect(string(fieldnames(bundles)),["W0";"W3"],"stable");
+patternParts = cell(numel(patternWaveforms)*numel(maskProfiles)*numel(ratios)*numel(responses),1);
 index = 0;
-for ratio = ratios.'
-    collision = false(size(configured));
-    active = find(configured);
-    count = round(numel(active)*ratio/100);
-    if count > 0, collision(active(1:count)) = true; end
-    for response = responses.'
-        index = index+1;
-        state = sixgr.isac.deriveEffectivePattern(configured,collision,response,"preserved");
-        [executedGrid,evidenceClass]=localExecutedSensingGrid(bundles.W0,state,response, ...
-            double(cfg.collisions.knownRatioPowerScalingDb));
-        executedWaveform=nrOFDMModulate(bundles.W0.Carrier,executedGrid, ...
-            "Windowing",double(cfg.waveform.ofdmWindowingSamples));
-        patternParts{index} = table(ratio,response,state.ConfiguredObservations, ...
-            nnz(collision),state.RetainedObservations,state.CoherentSegmentCount, ...
-            string(state.RelationClass),string(localComplexHash(executedWaveform)), ...
-            sum(abs(executedWaveform).^2),true,evidenceClass, ...
-            'VariableNames',{'CollisionRatioPercent','Response','ConfiguredObservations', ...
-            'CollidedObservations','RetainedObservations','CoherentSegments','RelationClass', ...
-            'ExecutedWaveformSHA256','ExecutedWaveformEnergy','WaveformExecuted','EvidenceClass'});
+for waveformProfile=patternWaveforms.'
+    bundle=bundles.(waveformProfile); configured=bundle.ConfiguredMask;
+    for maskProfile=maskProfiles.'
+        for ratio = ratios.'
+            collision=sixgr.isac.buildCollisionMask(configured,maskProfile,ratio, ...
+                double(cfg.run.masterSeed)+index+1901);
+            for response = responses.'
+                index = index+1;
+                properties=cfg.collisions.responseProperties.(char(response));
+                state = sixgr.isac.deriveEffectivePattern(configured,collision,response, ...
+                    string(properties.relationClass));
+                [executedGrid,evidenceClass]=localExecutedSensingGrid(bundle,state,response, ...
+                    double(cfg.collisions.knownRatioPowerScalingDb));
+                executedWaveform=nrOFDMModulate(bundle.Carrier,executedGrid, ...
+                    "Windowing",double(cfg.waveform.ofdmWindowingSamples));
+                [patternPSLR,patternISLR]=localGridRangeMetrics(bundle,executedGrid,state.EffectiveMask);
+                minimumLength=0;
+                if ~isempty(state.SegmentLengths), minimumLength=min(state.SegmentLengths); end
+                communicationCost=localCommunicationCost(response,state,collision);
+                patternParts{index} = table(waveformProfile,maskProfile,ratio,response, ...
+                    state.ConfiguredObservations,nnz(collision),nnz(state.ReplacementMask), ...
+                    state.RetainedObservations,state.CoherentSegmentCount,minimumLength, ...
+                    string(state.RelationClass),double(properties.residualPhaseDeg), ...
+                    double(properties.residualTimingBins),double(properties.residualFrequencyHz), ...
+                    double(properties.latencyOccasions),communicationCost,patternPSLR,patternISLR, ...
+                    string(localComplexHash(executedWaveform)),sum(abs(executedWaveform).^2), ...
+                    true,evidenceClass, ...
+                    'VariableNames',{'WaveformProfile','CollisionMaskProfile', ...
+                    'CollisionRatioPercent','Response','ConfiguredObservations', ...
+                    'CollidedObservations','ReplacementObservations','RetainedObservations', ...
+                    'CoherentSegments','MinimumSegmentLength','RelationClass', ...
+                    'ResidualPhaseDeg','ResidualTimingBins','ResidualFrequencyHz', ...
+                    'LatencyOccasions','CommunicationCostRE','PSLRDb','ISLRDb', ...
+                    'ExecutedWaveformSHA256','ExecutedWaveformEnergy','WaveformExecuted','EvidenceClass'});
+            end
+        end
     end
 end
 
 studies.EffectivePatterns = vertcat(patternParts{1:index});
 
-% Transparent candidate properties are derived from the observed pattern and
-% configured response classes. They remain study decisions, not PHY truth.
-baseCount = nnz(configured);
-candidates(1) = localCandidate("share_reuse",1,baseCount,0,0,0,12,true);
-candidates = repmat(candidates(1),4,1);
-candidates(2) = localCandidate("sensing_puncture",1,round(0.9*baseCount),0,0,0,8,true);
-candidates(3) = localCandidate("recoverable_relocation",2,round(0.5*baseCount),20,0.25,50,5,true);
-candidates(4) = localCandidate("occasion_drop_defer",1,round(0.75*baseCount),0,0,0,10,true);
-budget = struct("MaxCoherentSegments",2,"MinimumSegmentLength",8, ...
-    "MaximumResidualPhaseDeg",30,"MaximumResidualTimingBins",0.5, ...
-    "MaximumResidualFrequencyHz",10);
-measurements = ["range_only","range_doppler","range_doppler_angle"];
-budgetParts = cell(numel(measurements),1);
-selectionParts = cell(numel(measurements),1);
-for i = 1:numel(measurements)
-    [selected,evaluation] = sixgr.isac.selectCollisionResponse(candidates,budget,measurements(i));
-    evaluation.Selected = evaluation.Response == string(selected.Name);
-    budgetParts{i} = evaluation;
-    selectionParts{i} = table(measurements(i),string(selected.Name), ...
-        logical(selected.Feasible),logical(selected.FallbackRequired), ...
-        'VariableNames',{'Measurement','SelectedResponse','Feasible','FallbackRequired'});
+% Derive selector inputs from executed W0/random-mask/10-percent waveforms;
+% residual relation parameters and cost weights remain explicit YAML policy.
+referenceRatio=ratios(find(ratios>0,1));
+candidateRows=studies.EffectivePatterns.WaveformProfile=="W0" & ...
+    studies.EffectivePatterns.CollisionMaskProfile=="random_isolated" & ...
+    studies.EffectivePatterns.CollisionRatioPercent==referenceRatio;
+observed=studies.EffectivePatterns(candidateRows,:);
+candidates=repmat(localCandidate("",0,0,"preserved",0,0,0,0,true),height(observed),1);
+weights=cfg.coherencyBudget.transparentCostWeights;
+for candidateIndex=1:height(observed)
+    cost=double(weights.communicationRE)*observed.CommunicationCostRE(candidateIndex)+ ...
+        double(weights.sensingObservationLoss)*(observed.ConfiguredObservations(candidateIndex)- ...
+        observed.RetainedObservations(candidateIndex))+ ...
+        double(weights.latencyOccasions)*observed.LatencyOccasions(candidateIndex);
+    properties=cfg.collisions.responseProperties.(char(observed.Response(candidateIndex)));
+    candidates(candidateIndex)=localCandidate(observed.Response(candidateIndex), ...
+        observed.CoherentSegments(candidateIndex),observed.MinimumSegmentLength(candidateIndex), ...
+        observed.RelationClass(candidateIndex),observed.ResidualPhaseDeg(candidateIndex), ...
+        observed.ResidualTimingBins(candidateIndex),observed.ResidualFrequencyHz(candidateIndex), ...
+        cost,logical(properties.crossPortRelationAvailable));
 end
-studies.BudgetEvaluation = vertcat(budgetParts{:});
-studies.BudgetSelection = vertcat(selectionParts{:});
+measurements=string(cfg.coherencyBudget.measurementProfiles(:));
+budgetParts=cell(0,1); selectionParts=cell(0,1); budgetIndex=0;
+for measurement=measurements.'
+for maxSegments=double(cfg.coherencyBudget.maxCoherentSegments(:)).'
+for minLength=double(cfg.coherencyBudget.minimumSegmentLength(:)).'
+for phaseLimit=double(cfg.coherencyBudget.maximumResidualPhaseDeg(:)).'
+for timingLimit=double(cfg.coherencyBudget.maximumResidualTimingBins(:)).'
+for frequencyLimit=double(cfg.coherencyBudget.maximumResidualFrequencyHz(:)).'
+    budgetIndex=budgetIndex+1;
+    budget=struct("MaxCoherentSegments",maxSegments,"MinimumSegmentLength",minLength, ...
+        "MaximumResidualPhaseDeg",phaseLimit,"MaximumResidualTimingBins",timingLimit, ...
+        "MaximumResidualFrequencyHz",frequencyLimit, ...
+        "RequiredRelationClass",string(cfg.coherencyBudget.requiredRelationClass.(char(measurement))), ...
+        "FallbackResponseOrder",string(cfg.collisions.fallbackResponseOrder(:)));
+    [selected,evaluation]=sixgr.isac.selectCollisionResponse(candidates,budget,measurement);
+    evaluation.Selected=evaluation.Response==string(selected.Name);
+    evaluation.MaxCoherentSegments=repmat(maxSegments,height(evaluation),1);
+    evaluation.RequiredMinimumSegmentLength=repmat(minLength,height(evaluation),1);
+    evaluation.MaximumResidualPhaseDeg=repmat(phaseLimit,height(evaluation),1);
+    evaluation.MaximumResidualTimingBins=repmat(timingLimit,height(evaluation),1);
+    evaluation.MaximumResidualFrequencyHz=repmat(frequencyLimit,height(evaluation),1);
+    evaluation.RequiredRelationClass=repmat(string(budget.RequiredRelationClass),height(evaluation),1);
+    budgetParts{budgetIndex}=evaluation; %#ok<AGROW>
+    selectionParts{budgetIndex}=table(measurement,maxSegments,minLength,phaseLimit, ...
+        timingLimit,frequencyLimit,string(budget.RequiredRelationClass),string(selected.Name), ...
+        logical(selected.Feasible),logical(selected.FallbackRequired), ...
+        'VariableNames',{'Measurement','MaxCoherentSegments','MinimumSegmentLength', ...
+        'MaximumResidualPhaseDeg','MaximumResidualTimingBins', ...
+        'MaximumResidualFrequencyHz','RequiredRelationClass','SelectedResponse', ...
+        'Feasible','FallbackRequired'}); %#ok<AGROW>
+end
+end
+end
+end
+end
+end
+studies.BudgetEvaluation=vertcat(budgetParts{:});
+studies.BudgetSelection=vertcat(selectionParts{:});
 
 studies.BeamManagement = localBeamStudy(cfg);
-halfWidths = double(cfg.assistance.dopplerHalfWidthCyclesPerSlot(:));
-targetRows = trialRows(trialRows.TargetPresent,:);
-wrongRate = mean(targetRows.WrongPeak);
-rmse = sqrt(mean(targetRows.DopplerErrorHz.^2,"omitnan"));
-studies.Assistance = table(halfWidths, ...
-    repmat(wrongRate,numel(halfWidths),1), ...
-    repmat(rmse,numel(halfWidths),1),round(2*halfWidths*1000)+1, ...
-    'VariableNames',{'DopplerHalfWidthCyclesPerSlot','ObservedWrongPeakRate', ...
-    'ObservedDopplerRMSEHz','RelativeSearchOperations'});
+studies.Assistance = localAssistanceStudy(cfg,trialRows);
 
 studies.PeriodicPhase=localPeriodicPhaseStudy(cfg,bundles.W0);
 studies.TimingUpdate=localTimingUpdateStudy(cfg,bundles.W0);
@@ -158,16 +211,13 @@ studies.ISIICI=localISIICIStudy(cfg,bundles);
 studies.Overhead=localOverheadStudy(studies.EffectivePatterns,bundles.W0);
 studies.EventSummary=localEventSummary(studies);
 
-studies.Fairness = table(["Equal occupied RE";"Equal sensing energy"; ...
-    "Equal bandwidth";"Equal observation time";"Equal antenna ports"; ...
-    "Paired target/channel seed";"Equal receiver knowledge"],true(7,1), ...
-    repmat("enforced_by_joint_master_yaml",7,1), ...
-    'VariableNames',{'Criterion','Satisfied','Evidence'});
+studies.Fairness = localFairnessStudy(cfg,bundles,trialRows);
 end
 
-function c = localCandidate(name,segments,minLength,phase,timing,frequency,cost,crossPort)
+function c = localCandidate(name,segments,minLength,relation,phase,timing,frequency,cost,crossPort)
 c = struct("Name",name,"CoherentSegmentCount",segments, ...
-    "MinimumSegmentLength",minLength,"ResidualPhaseDeg",phase, ...
+    "MinimumSegmentLength",minLength,"RelationClass",string(relation), ...
+    "ResidualPhaseDeg",phase, ...
     "ResidualTimingBins",timing,"ResidualFrequencyHz",frequency, ...
     "Cost",cost,"CrossPortRelationAvailable",crossPort);
 end
@@ -190,21 +240,169 @@ for i = 1:numel(ages)
     rate = rateRange(1)+(rateRange(2)-rateRange(1))*rand(nTrials,1);
     actual = initial+rate*ages(i)/1000;
     sensed = initial+randn(nTrials,1)*double(cfg.beamManagement.sensingAngleErrorStdDeg);
-    predicted = sensed+rate*ages(i)/1000;
+    rateEstimate=rate+randn(nTrials,1)*double(cfg.beamManagement.angularRateErrorStdDegPerSecond);
+    predicted = sensed+rateEstimate*ages(i)/1000;
     [~,actualBeam] = min(abs(actual-beamAngles),[],2);
     [~,predictedBeam] = min(abs(predicted-beamAngles),[],2);
-    included = abs(actualBeam-predictedBeam) <= 2;
+    included = actualBeam==predictedBeam;
     angleGap = abs(actual-predicted);
-    fallback = angleGap > double(cfg.beamManagement.confidenceGateStdMultiplier)* ...
-        double(cfg.beamManagement.sensingAngleErrorStdDeg);
+    uncertainty=sqrt(double(cfg.beamManagement.sensingAngleErrorStdDeg)^2+ ...
+        (ages(i)/1000*double(cfg.beamManagement.angularRateErrorStdDegPerSecond))^2);
+    beamSpacing=mean(diff(beamAngles));
+    fallback=repmat(double(cfg.beamManagement.confidenceGateStdMultiplier)*uncertainty> ...
+        2*beamSpacing,nTrials,1);
+    elements=0:double(cfg.beamManagement.arrayElements)-1;
+    selectedAngles=reshape(beamAngles(predictedBeam),[],1);
+    optimalAngles=reshape(beamAngles(actualBeam),[],1);
+    actualSteering=exp(1i*pi*sind(actual).*elements);
+    selectedSteering=exp(1i*pi*sind(selectedAngles).*elements);
+    optimalSteering=exp(1i*pi*sind(optimalAngles).*elements);
+    selectedPower=abs(sum(conj(actualSteering).*selectedSteering,2)).^2;
+    optimalPower=abs(sum(conj(actualSteering).*optimalSteering,2)).^2;
+    gainGapDb=10*log10(max(optimalPower,realmin)./max(selectedPower,realmin));
+    measurements=double(cfg.beamManagement.narrowRefinementMeasurements)+ ...
+        fallback*double(cfg.beamManagement.wideBeamCount);
+    evidenceHash=string(localComplexHash([actual;predicted;gainGapDb]));
     rows{i} = table(ages(i),nTrials,mean(included),median(angleGap), ...
-        prctile(angleGap,90),mean(fallback), ...
-        mean(4+fallback*double(cfg.beamManagement.wideBeamCount)), ...
+        prctile(angleGap,90),median(gainGapDb),prctile(gainGapDb,90),mean(fallback), ...
+        mean(measurements),double(cfg.beamManagement.reportPayloadBits), ...
+        double(cfg.beamManagement.reportLatencyMs),evidenceHash, ...
+        "executed_ula_array_factor_geometry_measurement_monte_carlo", ...
         'VariableNames',{'InformationAgeMs','Trials','Top1NeighborhoodInclusion', ...
-        'MedianAngleGapDeg','P90AngleGapDeg','FallbackRate', ...
-        'MeanCommunicationMeasurements'});
+        'MedianAngleGapDeg','P90AngleGapDeg','MedianGainGapDb','P90GainGapDb', ...
+        'FallbackRate','MeanCommunicationMeasurements','ReportPayloadBits', ...
+        'ReportLatencyMs','EvidenceSHA256','EvidenceClass'});
 end
 tableOut = vertcat(rows{:});
+end
+
+function tableOut=localAssistanceStudy(cfg,trialRows)
+halfWidths=double(cfg.assistance.dopplerHalfWidthCyclesPerSlot(:));
+targetRows=trialRows(trialRows.TargetPresent & isfinite(trialRows.MeasuredDopplerHz),:);
+if isempty(targetRows)
+    error("sixgr:isac:MissingAssistanceWaveformEvidence", ...
+        "Doppler assistance requires finite target-present waveform measurements.");
+end
+carrier=cfg.carrier.profiles.(char(cfg.carrier.activeProfile));
+scsHz=double(carrier.subcarrierSpacingKHz)*1e3;
+fftLength=double(cfg.assistance.searchFFTLength);
+priorStd=double(cfg.assistance.priorDopplerErrorStdCyclesPerSlot);
+priorRng=rng; cleanup=onCleanup(@() rng(priorRng)); %#ok<NASGU>
+rng(double(cfg.run.masterSeed)+8100,"twister");
+truthNormalized=targetRows.ExpectedDopplerHz/scsHz;
+measuredNormalized=targetRows.MeasuredDopplerHz/scsHz;
+priorNormalized=truthNormalized+priorStd*randn(height(targetRows),1);
+parts=cell(numel(halfWidths),1);
+for i=1:numel(halfWidths)
+    lowerBound=priorNormalized-halfWidths(i);
+    upperBound=priorNormalized+halfWidths(i);
+    restricted=max(lowerBound,min(upperBound,measuredNormalized));
+    errorHz=(restricted-truthNormalized)*scsHz;
+    binResolutionHz=scsHz/fftLength;
+    wrong=abs(errorHz)>binResolutionHz/2;
+    searchBins=max(1,round(2*halfWidths(i)*fftLength)+1);
+    digest=string(localComplexHash([priorNormalized;measuredNormalized;restricted]));
+    parts{i}=table(halfWidths(i),height(targetRows),mean(wrong), ...
+        sqrt(mean(errorHz.^2)),median(abs(errorHz)),searchBins, ...
+        searchBins/fftLength,digest, ...
+        "measured_waveform_doppler_with_restricted_assistance_search", ...
+        'VariableNames',{'DopplerHalfWidthCyclesPerSlot','Trials', ...
+        'ObservedWrongPeakRate','ObservedDopplerRMSEHz','MedianAbsoluteErrorHz', ...
+        'SearchOperations','RelativeSearchOperations','EvidenceSHA256','EvidenceClass'});
+end
+tableOut=vertcat(parts{:});
+end
+
+function tableOut=localFairnessStudy(cfg,bundles,trialRows)
+profiles=string(fieldnames(bundles));
+n=numel(profiles); sensingRE=zeros(n,1); sensingEnergy=zeros(n,1);
+bandwidth=zeros(n,1); samples=zeros(n,1); ports=zeros(n,1);
+for i=1:n
+    b=bundles.(profiles(i));
+    sensingRE(i)=nnz(b.ConfiguredMask);
+    sensingEnergy(i)=sum(abs(b.SensingGrid(:)).^2);
+    bandwidth(i)=double(b.CarrierProfile.channelBandwidthHz);
+    samples(i)=numel(b.Waveform);
+    ports(i)=size(b.Waveform,2);
+end
+modeCfg=cfg.run.modes.(char(cfg.run.activeMode));
+seeds=double(modeCfg.trialSeeds(:));
+paired=true;
+for seed=seeds.'
+    for profile=profiles.'
+        paired=paired && any(trialRows.Seed==seed & trialRows.WaveformProfile==profile);
+    end
+end
+equalRE=numel(unique(sensingRE))==1;
+equalEnergy=(max(sensingEnergy)-min(sensingEnergy))/max(mean(sensingEnergy),eps)<1e-10;
+equalBW=numel(unique(bandwidth))==1;
+equalTime=numel(unique(samples))==1;
+equalPorts=numel(unique(ports))==1;
+knowledge=all(strlength(trialRows.ReceiverProfile)>0) && ...
+    all(strlength(trialRows.ReceiverEvidenceClass)>0);
+criteria=["Equal occupied sensing RE";"Equal total sensing energy"; ...
+    "Equal occupied bandwidth";"Equal observation time";"Equal antenna ports"; ...
+    "Paired target/channel seed";"Explicit receiver knowledge"];
+satisfied=[equalRE;equalEnergy;equalBW;equalTime;equalPorts;paired;knowledge];
+evidence=["counts="+join(string(sensingRE),"|"); ...
+    "energies="+join(compose("%.12g",sensingEnergy),"|"); ...
+    "bandwidth_hz="+join(string(bandwidth),"|"); ...
+    "waveform_samples="+join(string(samples),"|"); ...
+    "ports="+join(string(ports),"|"); ...
+    "configured_seed_profile_pairs_checked="+string(numel(seeds)*n); ...
+    "receiver_profiles="+join(unique(trialRows.ReceiverProfile),"|")];
+tableOut=table(criteria,satisfied,evidence, ...
+    repmat("measured_from_executed_waveform_bundles_and_trial_rows",numel(criteria),1), ...
+    'VariableNames',{'Criterion','Satisfied','Evidence','EvidenceClass'});
+end
+
+function [injected,compensated]=localTDDPhases(relation,mask,seed)
+n=numel(mask); injected=zeros(n,1); compensated=zeros(n,1); active=find(mask>0);
+switch lower(relation)
+    case "continuous"
+        return;
+    case "bounded_30deg"
+        injected(active)=30*(-1).^(0:numel(active)-1);
+    case "known_compensated"
+        injected(active)=mod((0:numel(active)-1)'*73+17,360)-180;
+        compensated=injected;
+    case "unknown_reset"
+        prior=rng; cleanup=onCleanup(@() rng(prior)); %#ok<NASGU>
+        rng(seed,"twister"); injected(active)=360*rand(numel(active),1)-180;
+    otherwise
+        error("sixgr:isac:UnknownTDDPhaseRelation", ...
+            "Unknown TDD phase relation %s.",relation);
+end
+end
+
+function [pslrDb,islrDb]=localGridRangeMetrics(bundle,grid,mask)
+reference=bundle.SensingGrid;
+matched=sum(grid.*conj(reference).*mask,2);
+nFFT=2^nextpow2(max(256,4*numel(matched)));
+power=abs(ifft(matched,nFFT)).^2;
+[peak,peakIndex]=max(power);
+guard=max(1,round(nFFT/max(numel(matched),1)));
+main=false(size(power));
+lo=max(1,peakIndex-guard); hi=min(numel(power),peakIndex+guard); main(lo:hi)=true;
+side=power(~main);
+if isempty(side) || peak<=0
+    pslrDb=NaN; islrDb=NaN;
+else
+    pslrDb=10*log10(max(side)/peak);
+    islrDb=10*log10(sum(side)/max(sum(power(main)),realmin));
+end
+end
+
+function cost=localCommunicationCost(response,state,collision)
+switch lower(response)
+    case "communication_muting"
+        cost=nnz(collision);
+    case {"time_relocation","frequency_relocation","comb_pattern_selection", ...
+            "recoverable_relocation"}
+        cost=nnz(state.ReplacementMask);
+    otherwise
+        cost=0;
+end
 end
 
 function [grid,evidenceClass]=localExecutedSensingGrid(bundle,state,response,powerScalingDb)
@@ -226,7 +424,16 @@ for i=1:numel(rows)
         error("sixgr:isac:CollisionRelocationSourceMissing", ...
             "No configured source RE exists for relocated target (%d,%d).",rows(i),cols(i));
     end
-    grid(rows(i),cols(i))=bundle.SensingGrid(source);
+    value=bundle.SensingGrid(source);
+    if logical(bundle.Profile.cumulativeCPPhase)
+        [sourceRow,sourceCol]=ind2sub(size(grid),source);
+        nSC=size(grid,1); nFFT=double(bundle.OFDMInfo.Nfft);
+        sourceK=(sourceRow-1)+12*double(bundle.Carrier.NStartGrid)-floor(nSC/2);
+        targetK=(rows(i)-1)+12*double(bundle.Carrier.NStartGrid)-floor(nSC/2);
+        base=value*exp(-1i*2*pi*sourceK*bundle.CumulativeCPState(sourceCol)/nFFT);
+        value=base*exp(1i*2*pi*targetK*bundle.CumulativeCPState(cols(i))/nFFT);
+    end
+    grid(rows(i),cols(i))=value;
 end
 if response=="known_ratio_power_scaling"
     grid=grid*10^(powerScalingDb/20);

@@ -1,4 +1,4 @@
-function bundle = buildJointWaveform(cfg,waveformId,seed,omittedSensingSymbols)
+function bundle = buildJointWaveform(cfg,waveformId,seed,omittedSensingSymbols,coherentSymbols,sequenceVariant)
 %BUILDJOINTWAVEFORM Build the common data+sensing CP-OFDM waveform.
 %
 % W3 modifies sensing RE phases only. OFDM modulation and communication CP
@@ -9,6 +9,8 @@ arguments
     waveformId (1,1) string
     seed (1,1) double
     omittedSensingSymbols double = zeros(0,1)
+    coherentSymbols (1,1) double = 0
+    sequenceVariant (1,1) string = ""
 end
 waveformId = upper(strtrim(waveformId));
 profile = sixgr.util.structGet(cfg,"waveform.profiles."+waveformId,[]);
@@ -29,7 +31,15 @@ if logical(cfg.waveform.communicationDataEnabled)
     grid(:,:,1) = sqrt(double(cfg.waveform.communicationDataPower))*dataGrid;
 end
 
-sensingSymbols0 = double(cfg.waveform.sensingSymbolIndices(:));
+if coherentSymbols<=0
+    coherentSymbols=double(cfg.waveform.defaultCoherentSymbols);
+end
+symbolSet=sixgr.util.structGet(cfg,"waveform.coherentSymbolSets.M"+string(round(coherentSymbols)),[]);
+if isempty(symbolSet)
+    error("sixgr:isac:UnsupportedCoherentSymbolCount", ...
+        "No waveform.coherentSymbolSets.M%d entry exists.",round(coherentSymbols));
+end
+sensingSymbols0=double(symbolSet(:));
 comb = double(cfg.waveform.frequencyComb);
 combOffset = double(cfg.waveform.frequencyCombOffset);
 subcarrier0 = (combOffset:comb:nSC-1).';
@@ -62,8 +72,20 @@ for occasion = 1:numel(sensingSymbols0)
             sequence = localGoldQPSK(double(seed)+104729*symbol0+ ...
                 1009*occasion+double(carrier.NCellID),nREPerSymbol);
         case "randomized_nr_gold"
-            sequence = localGoldQPSK(double(seed)+65537*occasion+ ...
-                4099*symbol0+double(carrier.NCellID),nREPerSymbol);
+            variant=lower(strtrim(sequenceVariant));
+            if strlength(variant)==0, variant=lower(string(profile.resetRule)); end
+            if variant=="reset_aligned_interval"
+                interval=double(cfg.waveform.w1ResetAlignedIntervalOccasions);
+                intervalIndex=floor((occasion-1)/interval);
+                sequence=localGoldQPSK(double(seed)+65537*intervalIndex+ ...
+                    double(carrier.NCellID),nREPerSymbol);
+            elseif ismember(variant,["per_occasion","per_occasion_randomization"])
+                sequence = localGoldQPSK(double(seed)+65537*occasion+ ...
+                    4099*symbol0+double(carrier.NCellID),nREPerSymbol);
+            else
+                error("sixgr:isac:UnsupportedW1SequenceVariant", ...
+                    "Unsupported W1 sequence variant %s.",variant);
+            end
         otherwise
             sequence = baseSequence;
     end
@@ -101,7 +123,8 @@ bundle = struct( ...
     "Waveform",waveform,"SensingWaveform",sensingWaveform, ...
     "SensingSymbolIndices",sensingSymbols0,"PhysicalSubcarrierIndices",physicalK, ...
     "CumulativeCPState",qBySymbol,"CPLengths",cpLengths(1:nSymbols), ...
-    "PAPRDb",paprDb,"Seed",seed, ...
+    "PAPRDb",paprDb,"Seed",seed,"CoherentSymbols",coherentSymbols, ...
+    "SequenceVariant",sequenceVariant, ...
     "WaveformSHA256",string(localComplexHash(waveform)), ...
     "SensingWaveformSHA256",string(localComplexHash(sensingWaveform)));
 end
