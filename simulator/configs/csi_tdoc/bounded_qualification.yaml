@@ -1,0 +1,15 @@
+inherits: [common.yaml]
+execution:
+  active_mode: bounded_qualification
+reproducibility:
+  replicates:
+    bounded_qualification: 1
+simulation:
+  bounded_transport_blocks_per_point: 1
+  bounded_channel_realizations_per_point: 1
+interference_age:
+  sanity_trials: 2000
+event_csi:
+  sanity_slots: 2000
+multislot:
+  monte_carlo_trials: 2000

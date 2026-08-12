@@ -16,6 +16,20 @@ classdef MeasurementStateStore < handle
                 error("RSLA:MissingMeasuredInput", ...
                     "Only valid observed measurement state may be installed.");
             end
+            if isempty(obj.Values)
+                % The first valid observed measurement establishes the
+                % immutable store schema. Appending to struct([]) with no
+                % fields raises MATLAB's dissimilar-structures error and
+                % previously made the production store unusable.
+                obj.Values = measurement;
+                return;
+            end
+            existingFields = sort(string(fieldnames(obj.Values)));
+            incomingFields = sort(string(fieldnames(measurement)));
+            if ~isequal(existingFields,incomingFields)
+                error("RSLA:MeasurementSchemaMismatch", ...
+                    "Observed measurements in one store must use one complete schema.");
+            end
             obj.Values(end+1) = measurement;
         end
 

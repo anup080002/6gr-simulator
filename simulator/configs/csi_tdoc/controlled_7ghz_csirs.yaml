@@ -1,0 +1,6 @@
+inherits: [common.yaml]
+carrier:
+  center_frequency_hz: 7000000000
+  bandwidth_hz: 20000000
+  scs_khz: 30
+  n_rb: 52

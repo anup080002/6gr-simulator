@@ -1,0 +1,47 @@
+schema_version: sixgr.phy.ia.c0.config.v1
+required_paths:
+  - meta.scenario_id
+  - meta.research_class
+  - run.mode
+  - run.max_trials_per_snr
+  - run.min_errors_per_snr
+  - run.checkpoint_interval
+  - carrier.frequency_hz
+  - carrier.scs_khz
+  - carrier.n_size_grid
+  - waveform.candidate
+  - waveform.normalization
+  - waveform.n_cell_id
+  - waveform.ssb_index
+  - waveform.lmax
+  - waveform.candidate_start_symbol
+  - waveform.mib.bcch_bch_choice_bit
+  - waveform.mib.system_frame_number_msb6
+  - waveform.mib.subcarrier_spacing_common
+  - waveform.mib.ssb_subcarrier_offset
+  - waveform.mib.dmrs_type_a_position
+  - waveform.mib.pdcch_config_sib1
+  - waveform.mib.cell_barred
+  - waveform.mib.intra_freq_reselection
+  - waveform.mib.spare
+  - channel.model
+  - channel.delay_profile
+  - channel.delay_spread_s
+  - channel.velocity_kmh
+  - mimo.num_tx_antennas
+  - mimo.num_rx_antennas
+  - oscillator.ue_ppm_range
+  - oscillator.trp_ppm_range
+  - search.cfo_hypotheses_hz
+  - search.timing_uncertainty_samples
+  - false_alarm.target_probability
+  - false_alarm.calibration_trials
+  - false_alarm.validation_trials
+  - snr.coarse_grid_db
+  - snr.refinement_step_db
+  - statistics.confidence_level
+allowed_run_modes: [smoke, quick_sanity, tdoc, exhaustive]
+allowed_research_classes: [baseline_benchmark, agreed_starting_point, study_item_candidate, optional_research_experiment]
+allowed_channels: [AWGN, TDL-C, CDL-C]
+allowed_normalizations: [equal_epre, equal_total_energy, equal_tf_resource]
+allowed_candidates: [A20RB4]

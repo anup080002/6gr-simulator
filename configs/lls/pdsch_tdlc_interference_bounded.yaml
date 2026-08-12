@@ -1,0 +1,39 @@
+inherits: pdsch_reference.yaml
+
+scenario:
+  id: pdsch_tdl_c_bounded_two_occasion_interference
+  description: Bounded real-waveform desired/interferer covariance-age qualification
+
+simulation:
+  studyType: interference_bler
+  snrDb: [15]
+  minTransportBlocks: 1
+  minBlockErrors: 2
+  maxTransportBlocks: 2
+  statisticalClass: diagnostic_only
+
+channel:
+  model: TDL-C
+  delaySpreadSeconds: 0.00000003
+  velocityKmph: 0.0
+  txAntennas: 1
+  rxAntennas: 2
+  seed: 20268121
+  normalization: occupied_re_esn0
+
+interference:
+  enabled: true
+  desiredToInterferenceRatioDb: 0.0
+  rnti: 101
+  nid: 101
+  channel:
+    model: TDL-C
+    delaySpreadSeconds: 0.00000003
+    velocityKmph: 0.0
+    txAntennas: 1
+    rxAntennas: 2
+    seed: 20268122
+    normalization: occupied_re_esn0
+
+results:
+  generatePlots: false

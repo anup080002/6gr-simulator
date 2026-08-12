@@ -86,6 +86,7 @@ ip.addParameter('ExecutionProfile', "", @(x) ischar(x) || isstring(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('CellCommonSignalOwnershipMode', "emit", ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
+ip.addParameter('ISACReferenceGrid', [], @(x) isempty(x) || isnumeric(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 cellCommonSignalOwnershipMode = localCellCommonSignalOwnershipMode( ...
@@ -1077,6 +1078,13 @@ xOverhead = localResolvePDSCHXOverheadExact( ...
     localGenerateCSIRSRuntimeResource(carrier, cfg);
 reservedZeroBased = localCalibrationBasePlaneZeroBased( ...
     csirsInd, carrier, pdsch);
+[isacReferenceGrid,isacReservedZeroBased]=localSanitizeISACReferenceGrid( ...
+    opt.ISACReferenceGrid,carrier,pdsch);
+if ~isempty(isacReservedZeroBased)
+    pdsch.ReservedRE=unique([double(pdsch.ReservedRE(:)); ...
+        double(isacReservedZeroBased(:))],"sorted");
+end
+reservedZeroBased=union(reservedZeroBased,isacReservedZeroBased,"sorted");
 
 transportBlockSizes = opt.TransportBlockSizeOverride;
 transportBlockSizeSource = "nrTBS_from_current_allocation";
@@ -1191,6 +1199,7 @@ canonical = sixgr.pdsch.PDSCHTransmitter( ...
         csirsEvent.RuntimeEvidenceSource = ...
             "sixgr.phy.dl.PDSCH_Tx:shared_slot_cell_common_signal_ownership";
     end
+    [canonical,isacEvent]=localMapISACReferenceGrid(canonical,isacReferenceGrid);
     csirsEvent.CellCommonSignalOwnershipMode = ...
         char(cellCommonSignalOwnershipMode);
 [tx, info] = localAdaptCanonicalCalibrationTX( ...
@@ -1198,6 +1207,9 @@ canonical = sixgr.pdsch.PDSCHTransmitter( ...
     dmrsPowerInfo, csirsInd, csirsSym, csirsInfo, ...
     csirsCfg, csirsEvent, transportBlockSizeSource, ...
     phyGrant, hasPHYGrant, logical(opt.CompactOutput));
+tx.ISACReferenceGrid=isacReferenceGrid;
+tx.ISACReferenceEvent=isacEvent;
+info.ISACReferenceEvent=isacEvent;
 if hasPHYGrant
     sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, ...
         "pdsch_tx_after_waveform", "PDSCH", pdsch, ...
@@ -1296,6 +1308,76 @@ scheduledSymbols = symbolAllocation(1) ...
 allocation = double(k(:) ...
     + 12 .* double(carrier.NSizeGrid) .* l(:));
 indices = intersect(indices,allocation(:).',"stable");
+end
+
+function [referenceGrid,indices]=localSanitizeISACReferenceGrid(referenceGrid,carrier,pdsch)
+if isempty(referenceGrid)
+    indices=zeros(1,0); return;
+end
+K=double(carrier.NSizeGrid)*12; L=double(carrier.SymbolsPerSlot);
+if size(referenceGrid,1)~=K || size(referenceGrid,2)~=L || ...
+        any(~isfinite(referenceGrid),"all")
+    error("sixgr:pdsch:InvalidISACReferenceGrid", ...
+        "ISAC reference grid must be finite and have physical size [%d %d P].",K,L);
+end
+referenceIndices=[nrPDSCHDMRSIndices(carrier,pdsch);nrPDSCHPTRSIndices(carrier,pdsch)];
+if ~isempty(referenceIndices)
+    baseReference=unique(mod(double(referenceIndices(:))-1,K*L),"sorted")+1;
+    for page=1:size(referenceGrid,3)
+        pageGrid=referenceGrid(:,:,page);
+        pageGrid(baseReference)=0;
+        referenceGrid(:,:,page)=pageGrid;
+    end
+end
+prbs=double(pdsch.PRBSet(:).'); symbols=double(pdsch.SymbolAllocation(:).');
+subcarriers=reshape(12.*prbs+(0:11).',1,[]);
+scheduled=symbols(1)+(0:symbols(2)-1);
+[k,l]=ndgrid(subcarriers,scheduled);
+allocation=k(:)+K*l(:);
+allocationMask=false(K,L); allocationMask(double(allocation)+1)=true;
+for page=1:size(referenceGrid,3)
+    pageGrid=referenceGrid(:,:,page);
+    pageGrid(~allocationMask)=0;
+    referenceGrid(:,:,page)=pageGrid;
+end
+occupied=find(any(referenceGrid~=0,3))-1;
+indices=double(occupied(:).');
+end
+
+function [canonical,event]=localMapISACReferenceGrid(canonical,referenceGrid)
+event=struct("Enabled",false,"Transmitted",false,"NRE",0, ...
+    "PhysicalPortCount",size(canonical.Grid,3),"GridSHA256","", ...
+    "EvidenceClass","disabled");
+if isempty(referenceGrid), return; end
+grid=canonical.Grid; K=size(grid,1); L=size(grid,2); P=size(grid,3);
+if size(referenceGrid,1)~=K || size(referenceGrid,2)~=L
+    error("sixgr:pdsch:InvalidISACReferenceGrid", ...
+        "ISAC reference grid does not match the production PDSCH carrier grid.");
+end
+if size(referenceGrid,3)==1 && P>1
+    referenceGrid=repmat(referenceGrid,1,1,P)/sqrt(P);
+elseif size(referenceGrid,3)~=P
+    error("sixgr:pdsch:ISACReferencePortMismatch", ...
+        "ISAC reference pages must be one or match %d physical transmit ports.",P);
+end
+mask=referenceGrid~=0;
+if any(grid(mask)~=0)
+    error("sixgr:pdsch:ISACReferenceResourceCollision", ...
+        "The coded PDSCH resource plan did not reserve every occupied ISAC RE.");
+end
+grid(mask)=referenceGrid(mask);
+ofdmOptions=canonical.ReferenceConfig.get("OFDMOptions");
+[waveform,ofdmInfo]=sixgr.phy.waveform.ofdmModulate( ...
+    canonical.Carrier,grid,ofdmOptions{:});
+canonical.Grid=grid; canonical.Waveform=waveform; canonical.OFDMInfo=ofdmInfo;
+event.Enabled=true; event.Transmitted=true; event.NRE=nnz(mask);
+event.PhysicalPortCount=P;
+event.GridSHA256=sixgr.util.sha256Hex(typecast( ...
+    [real(referenceGrid(:));imag(referenceGrid(:))],"uint8"));
+event.EvidenceClass="production_pdsch_reserved_and_transmitted_isac_grid_truth";
+canonical.StageTrace=[canonical.StageTrace;table( ...
+    "isac_reference_grid_mapping","PASS",nnz(mask), ...
+    'VariableNames',canonical.StageTrace.Properties.VariableNames)];
 end
 
 function [canonical, event] = localMapCalibrationCSIRS( ...

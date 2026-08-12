@@ -1,0 +1,13 @@
+run:
+  # Bounded execution of the complete C0/TDoc processing and artifact path.
+  # This is deliberately QUICK_SANITY and cannot satisfy TDoc statistics.
+  mode: quick_sanity
+  max_trials_per_snr: 12
+  min_errors_per_snr: 4
+  checkpoint_interval: 4
+false_alarm:
+  calibration_trials: 24
+  validation_trials: 24
+snr:
+  # Exercise deep-failure, waterfall, and clean high-SNR operating regions.
+  coarse_grid_db: [-20, -16, -12, -8, -4, 0, 20]

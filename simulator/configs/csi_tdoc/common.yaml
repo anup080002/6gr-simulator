@@ -1,0 +1,246 @@
+schema_version: sixgr.csi.tdoc.10_5_3_1/v1
+identity:
+  suite_id: ran1_10_5_3_1_dl_csi
+  description: RAN1 10.5.3.1 downlink CSI acquisition evaluation suite
+  research_class: study_item_candidate
+  common_evm_verified: false
+  common_evm_source: ''
+  common_evm_document: ''
+  common_evm_version: ''
+  common_evm_hash: ''
+
+reproducibility:
+  base_seed: 10531
+  seed_policy: hierarchical_sha256
+  replicates:
+    bounded_qualification: 2
+    controlled: 1000
+  confidence_level: 0.95
+
+execution:
+  active_mode: bounded_qualification
+  strict: true
+  prohibit_fallback: true
+  save_csv: true
+  save_png: true
+  save_mat: true
+  image_width_px: 1280
+  image_height_px: 760
+  image_resolution_dpi: 150
+  checkpoint_interval_points: 1
+  output_root: results/csi_tdoc
+  pdsch_anchor_config: configs/lls/pdsch_reference_bounded_qualification.yaml
+  pdsch_interference_anchor_config: configs/lls/pdsch_tdlc_interference_bounded.yaml
+
+carrier:
+  center_frequency_hz: 7000000000
+  bandwidth_hz: 20000000
+  scs_khz: 30
+  n_rb: 52
+  fft_size: 1024
+  sample_rate_hz: 30720000
+  cp_type: normal
+  duplex: TDD
+
+channel:
+  strict_mode: strict_lls_cdl
+  models: [CDL-A, CDL-C, CDL-D]
+  delay_spread_ns: [30, 100, 300]
+  speed_kmph: [3, 30, 120]
+  spatial_consistency: true
+  normalize_path_gains: true
+  seed: 1053101
+  pathloss_enabled: false
+  shadowing_enabled: false
+
+arrays:
+  tx_ports: [32, 64, 128, 256, 512]
+  high_port_counts: [128, 256, 512]
+  rx_antennas: [2, 4]
+  tx_layout: rectangular_panel_logical_ports
+  rx_layout: ue_panel
+  element_spacing_lambda: 0.5
+  aperture_modes: [half_lambda_growing_aperture, fixed_aperture]
+  txru_mapping: one_logical_port_per_txru
+  polarization: dual
+
+power:
+  normalization_modes: [fixed_total_csirs, fixed_per_port_epre]
+  total_csirs_power_dbm: 0
+  per_port_epre_dbm: 0
+  power_boost_db: 0
+  pdsch_power_dbm: 0
+  interference_power_dbm: -10
+
+impairments:
+  residual_cfo_hz: [0, 50, 100, 250, 500]
+  timing_offset_samples: [0, 1]
+  common_phase_error_deg: [0, 5, 15]
+  iid_slot_phase_std_deg: [0, 5, 15, 30]
+  phase_noise_model: disabled_for_bounded_qualification
+  rx_retuning_phase_jump_deg: [0, 15, 30]
+  calibration_error_db: [0, 1]
+  pa_model: linear
+
+csirs:
+  port_count: 128
+  port_counts: [128, 256, 512]
+  cdm_sizes: [8, 16, 32, 64]
+  fd_td_splits: [2x4, 4x2, 4x4, 8x2, 8x4, 8x8]
+  occ_families: [walsh, dft]
+  layout: localized
+  density: [1, 0.5, 0.25]
+  periodicity_ms: [5, 10, 20]
+  m1_slots: [1, 2, 4, 8]
+  m2_rbs: [1, 2, 4]
+  mapping_orders: [fixed, switched]
+  sequence_indexing: [compacted, absolute_coordinate]
+  sharing_levels: [level1, level2a, level2b]
+  power_control_offset_db: [0, -3, -6]
+  streaming_port_batch: 64
+  memory_budget_mb: 1024
+
+sharing:
+  horizon_slots: 40
+  pair_labels: [periodic_periodic, periodic_semipersistent, periodic_aperiodic]
+  type_a: [periodic, periodic, periodic]
+  type_b: [periodic, semipersistent, aperiodic]
+  period_a_slots: [10, 10, 10]
+  period_b_slots: [20, 20, 0]
+  initial_b_slots: [0, 2, 7]
+  semipersistent_active_slots: 30
+  maximum_state_age_slots: 16
+
+pdsch:
+  ranks: [1, 2, 4]
+  mcs_table: qam64_table1
+  mcs_indices: [0, 9, 16]
+  prg_size: 4
+  dmrs_type: 1
+  dmrs_additional_positions: [0, 1, 2]
+  num_codewords: 1
+  harq_processes: 4
+  rv_sequence: [0, 2, 3, 1]
+
+csi:
+  reference_states: [periodic_csirs, aperiodic_csirs, calibrated_srs]
+  report_types: [absolute, differential, two_stage_event]
+  cqi_target_bler: 0.1
+  cqi_delta_quantizer_db: [-6, -3, -1, 0, 1, 3, 6]
+  validity_threshold_db: [1, 2, 3]
+  layer_imbalance_quantizer_db: [1, 3, 6]
+  rank_down_enabled: true
+  local_pmi_candidate_set: 4
+  report_delay_slots: [1, 2, 4, 8, 16]
+  report_bler_target: [0.01, 0.1]
+  feedback_modes: [error_free, encoded_uci]
+  bounded_flow:
+    enabled: true
+    tx_ports: 2
+    rank: 1
+    resource_id: 0
+    measurement_slot: 0
+    consumer_slot: 1
+    maximum_age_slots: 4
+    pucch_formats: [2, 2, 1, 2]
+    pucch_snr_db: 30
+    active_tci_state: 0
+    cqi_thresholds_db: [-100, -6.7, -4.7, -2.3, 0.2, 2.4, 4.3, 5.9, 8.1, 10.3, 11.7, 14.1, 16.3, 18.7, 21.0, 22.7]
+
+olla:
+  enabled: true
+  target_bler: 0.1
+  ack_step_db: 0.1
+  nack_step_db: 0.9
+  reset_policies: [retain, partial_reset, split_slow_fast]
+
+simulation:
+  snr_points_db: [-10, 0, 10, 20, 30]
+  bounded_snr_points_db: [-5, 5, 15]
+  max_transport_blocks: 10000
+  min_block_errors: 100
+  min_channel_realizations: 1000
+  bounded_transport_blocks_per_point: 2
+  bounded_channel_realizations_per_point: 2
+  shard_index: 1
+  shard_count: 1
+
+state_lifecycle:
+  state_counts: [1, 2, 4, 8]
+  report_delay_slots: [0, 1, 2, 4, 8, 16]
+  computation_duration_slots: [1, 2, 4, 8]
+  expiry_slots: [2, 4, 8, 16, 32]
+  basis_update_probability: [0, 0.1]
+  invalidation_probability: [0, 0.1]
+  policies: [implicit, unique_trigger_map, explicit_compact_selection, fail_closed]
+  maximum_simultaneous_cpus: 2
+  maximum_stored_states: 8
+
+interference_age:
+  desired_power: 1
+  noise_power: 0.1
+  ages_slots: [0, 1, 2, 4, 8, 12, 16, 20]
+  sanity_ages_slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  pairing_change_probability: [0.02, 0.08, 0.20]
+  sanity_trials: 250000
+  interference_to_noise_db: [-10, 0, 10]
+
+early_csi:
+  variants: [E0, E1, E2, E3, E4]
+  monitored_candidates: [1, 2, 4, 8]
+  transmissions: [1, 2, 4, 8]
+  stored_state_age_slots: [0, 2, 8, 16]
+
+event_csi:
+  gauss_markov_rho: 0.985
+  sanity_slots: 200000
+  periodic_periods: [2, 4, 8, 16, 32, 64]
+  thresholds: [0.15, 0.3, 0.5, 0.75, 1.0, 1.25, 1.5]
+  hysteresis: [0, 0.1]
+  ttt_slots: [1, 2, 4]
+  minimum_inter_event_slots: [1, 4, 8]
+  uci_failure_behaviors: [no_update, retry, periodic_fallback]
+
+energy_hypotheses:
+  names: [H0, H1, H2, H3]
+  active_port_counts: [256, 128, 128, 256]
+  active_trp_counts: [2, 2, 1, 2]
+  per_hypothesis_power_offset_db: [0, 0, 0, -6]
+  hypothesis_counts: [2, 3, 4]
+  port_reductions: [128to64, 256to128]
+  trp_active_sets: [2, 1]
+  power_offsets_db: [0, -3, -6]
+  differential_quantizer_bits: [2, 3, 4]
+  state_age_slots: [0, 4, 8]
+  correlation: [0.5, 0.8, 0.95]
+  bounded_csirs_snr_db: 10
+  bounded_pdsch_snr_db: 15
+  bounded_channel_model: flat_rayleigh_same_csirs_snapshot
+
+occ:
+  lengths: [8, 16, 32, 64]
+  families: [walsh, dft]
+  phase_sweep_deg_per_chip: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30]
+  focal_phase_deg_per_chip: [5, 15]
+  near_far_db: [0, 3, 6]
+
+multislot:
+  m1: [1, 2, 4, 8]
+  m2: [1, 2, 4]
+  phase_increment_deg: [-45, -30, -15, 0, 15, 30, 45]
+  iid_phase_std_deg: [0, 5, 15, 30, 60]
+  speed_kmph: [3, 30, 120]
+  slot_duration_s: 0.0005
+  monte_carlo_trials: 10000
+  bounded_m1: 2
+  bounded_m2: 1
+  bounded_port_count: 128
+  bounded_cdm_size: 8
+  bounded_phase_increment_deg: 15
+  bounded_speed_kmph: 30
+  bounded_snr_db: 10
+
+outputs:
+  required_tdoc_figures: [FIG-1-1, FIG-2.2-1, FIG-2.2-2, FIG-2.3-1, FIG-2.4-1, FIG-2.4-2, FIG-2.5-1, FIG-2.6-1, FIG-2.6-2, FIG-2.7-1, FIG-2.8-1, FIG-2.8-2, FIG-2.9-1, FIG-2.9-2, FIG-2.10-1, FIG-2.10-2, FIG-2.10-3, FIG-2.11-1, FIG-2.11-2, FIG-2.11-3]
+  prohibit_svg: true
+  sls_kpis: [upt_mean, upt_5th_percentile, simultaneous_multi_ue_event_load, network_energy_saving]

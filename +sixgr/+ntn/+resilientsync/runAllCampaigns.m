@@ -72,9 +72,11 @@ end
 writetable(evidence,fullfile(runDirectory,'acceptance','evidence_registry.csv'));
 
 publicFigures=sixgr.ntn.resilientsync.report.generateTdocFigures(string(runDirectory));
+backupFigures=sixgr.ntn.resilientsync.report.generateFigureBackups(string(runDirectory),scenario);
+figureChecks=sixgr.ntn.resilientsync.report.evaluateFigureFixRegressions(string(runDirectory),scenario);
 confidentialFigures=sixgr.ntn.resilientsync.report.generateConfidentialFigures(string(runDirectory));
 traceability=sixgr.ntn.resilientsync.report.buildTraceabilityReport(string(runDirectory),scenario);
-acceptance=localAcceptance(scenario,campaigns,evidence,traceability,runDirectory,publicFigures,confidentialFigures);
+acceptance=localAcceptance(scenario,campaigns,evidence,traceability,runDirectory,publicFigures,confidentialFigures,figureChecks);
 writetable(acceptance,fullfile(runDirectory,'acceptance','acceptance_checks.csv'));
 if all(acceptance.Pass)
     if string(scenario.run_mode)=="quick",status="QUICK_COMPLETE";else,status="PASS";end
@@ -84,7 +86,7 @@ end
 numberedRecords=sixgr.ntn.resilientsync.report.exportTables( ...
     string(runDirectory),scenario,allTables,acceptance);
 localWriteReports(runDirectory,scenario,status,acceptance,evidence);
-allRecords=[genericRecords;publicFigures;confidentialFigures;numberedRecords];
+allRecords=[genericRecords;publicFigures;backupFigures;confidentialFigures;numberedRecords];
 fprintf('[%s] resilient NTN synchronization complete status=%s\n', ...
     char(datetime('now','TimeZone','UTC')),char(status));
 % Close the active diary before hashing the run tree.  Otherwise the final
@@ -96,13 +98,15 @@ manifest=sixgr.ntn.resilientsync.report.buildManifest( ...
 result=struct('Status',status,'RunId',runId,'RunDirectory',string(runDirectory), ...
     'Scenario',scenario,'Campaigns',campaigns,'Tables',allTables, ...
     'Evidence',evidence,'Acceptance',acceptance,'Traceability',traceability, ...
-    'Manifest',manifest,'FigureRecords',[publicFigures;confidentialFigures], ...
+    'Manifest',manifest,'FigureRecords',[publicFigures;backupFigures;confidentialFigures], ...
+    'FigureFixRegression',figureChecks, ...
     'TableRecords',numberedRecords);
 end
 
 function localCreateLayout(root,cfg)
 dirs=["config","logs","raw","tables","figures/tdoc_public", ...
-    "figures/confidential_validation","figures/explanatory","traces","tests","acceptance"];
+    "figures/confidential_validation","figures/backup_validation", ...
+    "figures/explanatory","traces","tests","acceptance"];
 for d=dirs,path=fullfile(root,char(d));if exist(path,'dir')~=7,mkdir(path);end,end
 if string(cfg.outputs.public_dir)~="figures/tdoc_public",mkdir(fullfile(root,char(cfg.outputs.public_dir)));end
 if string(cfg.outputs.confidential_dir)~="figures/confidential_validation",mkdir(fullfile(root,char(cfg.outputs.confidential_dir)));end
@@ -142,13 +146,14 @@ if ~(isstruct(checkpoint)&&isscalar(checkpoint)) || ...
         'Checkpoint is incomplete or belongs to another config/campaign: %s',path);
 end
 end
-function acceptance=localAcceptance(cfg,campaigns,evidence,trace,root,pub,conf)
+function acceptance=localAcceptance(cfg,campaigns,evidence,trace,root,pub,conf,figureChecks)
 ids=string(fieldnames(campaigns));campaignOk=true;
 for i=1:numel(ids),campaignOk=campaignOk&&string(campaigns.(ids(i)).Status)=="COMPLETE";end
 checks=["all_campaigns_complete";"no_proxy_or_fallback_evidence";"calibrated_evidence_present"; ...
     "public_figure_contract";"confidential_figure_contract";"traceability_complete"; ...
     "figure_traceability_complete"; ...
-    "intentional_figure_gap_preserved";"geometry_budget";"prach_budget";"source_config_hashed"];
+    "intentional_figure_gap_preserved";"public_figure_regressions"; ...
+    "geometry_budget";"prach_budget";"source_config_hashed"];
 pass=false(size(checks));detail=strings(size(checks));
 pass(1)=campaignOk;detail(1)=strjoin(ids,',');
 pass(2)=~any(contains(lower(string(evidence.EvidenceClass)),["proxy","fallback","synthetic"]));detail(2)='evidence registry';
@@ -160,11 +165,12 @@ figureTrace=readtable(fullfile(root,'figure_traceability_matrix.csv'),'TextType'
 pass(7)=all(figureTrace.Status=="PRODUCED" | figureTrace.Status=="INTENTIONAL_NUMBERING_GAP");
 detail(7)=string(sum(figureTrace.Status=="PRODUCED"))+" produced + "+string(sum(figureTrace.Status=="INTENTIONAL_NUMBERING_GAP"))+" gap";
 pass(8)=~isfile(fullfile(root,char(cfg.outputs.public_dir),'fig_2_11.png'));detail(8)='no Figure 2-11';
-if string(cfg.run_mode)=="quick",pass(9)=double(cfg.gnss_free.drops_per_point)>=10000;else,pass(9)=double(cfg.gnss_free.drops_per_point)>=300000;end
-detail(9)=string(cfg.gnss_free.drops_per_point);
-if string(cfg.run_mode)=="quick",pass(10)=double(cfg.physical_layer.prach_trials_min)>=100;else,pass(10)=double(cfg.physical_layer.prach_trials_min)>=10000;end
-detail(10)=string(cfg.physical_layer.prach_trials_min);
-pass(11)=strlength(string(cfg.ConfigSHA256))==64;detail(11)=string(cfg.ConfigSHA256);
+pass(9)=all(figureChecks.Pass);detail(9)=string(sum(figureChecks.Pass))+"/"+height(figureChecks);
+if string(cfg.run_mode)=="quick",pass(10)=double(cfg.gnss_free.drops_per_point)>=10000;else,pass(10)=double(cfg.gnss_free.drops_per_point)>=300000;end
+detail(10)=string(cfg.gnss_free.drops_per_point);
+if string(cfg.run_mode)=="quick",pass(11)=double(cfg.physical_layer.prach_trials_min)>=100;else,pass(11)=double(cfg.physical_layer.prach_trials_min)>=10000;end
+detail(11)=string(cfg.physical_layer.prach_trials_min);
+pass(12)=strlength(string(cfg.ConfigSHA256))==64;detail(12)=string(cfg.ConfigSHA256);
 acceptance=table(checks,pass,detail,repmat(string(cfg.run_mode),numel(checks),1), ...
     'VariableNames',{'Check','Pass','Detail','RunMode'});
 end

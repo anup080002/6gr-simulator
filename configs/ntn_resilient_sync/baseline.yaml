@@ -81,6 +81,7 @@ k_offset:
   processing_delay_ms: 1.0
   configured_wait_ms: 0
   exclude_common_feeder_from_relative_comparison: true
+  rtt_update_elevations_deg: [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85]
 
 ta_report:
   report_steps_ms: [1.0, 0.5, 0.1]
@@ -101,6 +102,38 @@ measurement:
   observation_intervals_s: [1, 2, 5, 10, 20, 30]
   dl_cfo_sigma_ppm_reference: 0.03
   covariance_model: "diagonal_reference"
+
+public_figures:
+  baseline_elevation_deg: 30
+  holdover_motion_projection_deg: 30
+  timing_cdf_radii_km: [5, 12.5, 25, 50]
+  timing_cdf_elevation_deg: 30
+  cfo_cdf_radius_km: 25
+  cfo_cdf_elevation_deg: 30
+  elevation_sensitivity_radius_km: 25
+  geometric_frequency_carrier_ids: ["S_band", "Ka_generic"]
+  acquisition_region:
+    empirical_enabled: false
+    acquisition_cfo_radius_khz: 5
+    acquisition_timing_radius_us: 250
+    ordinary_ul_cfo_radius_khz: 2
+    ordinary_ul_timing_radius_us: 50
+  estimator:
+    timing_sigma_us: [0.2, 0.5]
+    carrier_hz: [2000000000, 30000000000]
+    observation_intervals_s: [1, 2, 5, 10, 20, 30]
+    oscillator_sigma_fractional: 0.00000003
+  search_threshold:
+    pfa_total: 0.01
+    reference_hypotheses: 4
+    hypotheses: [1, 2, 4, 8, 16, 32, 64, 128, 196, 256, 512, 1016, 2048, 4096, 8128, 16384, 65536, 1000000]
+  ta_guard:
+    beam_bound_ms: 0.328
+    report_steps_ms: [1.0, 0.5, 0.1]
+    scs_khz: [30, 120]
+  residual_cfo:
+    normalized_grid: [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2, 0.22, 0.24, 0.26, 0.28, 0.3, 0.32, 0.34, 0.36, 0.38, 0.4]
+    input_snr_db: [0, 5, 10]
 
 residual_grid:
   timing_error_us: [0, -10, 10, -25, 25, -50, 50, -100, 100, -250, 250, -500, 500]
@@ -226,8 +259,8 @@ outputs:
   save_mat: true
   save_csv: true
   save_json_metadata: true
-  save_fig: false
-  save_pdf_vector: false
+  save_fig: true
+  save_pdf_vector: true
   save_png_dpi: 300
   public_dir: "figures/tdoc_public"
   confidential_dir: "figures/confidential_validation"

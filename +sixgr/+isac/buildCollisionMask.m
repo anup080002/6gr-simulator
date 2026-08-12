@@ -41,6 +41,17 @@ switch profile
         periodic=start:stride:numel(active);
         remainder=setdiff(1:numel(active),periodic,"stable");
         order=[periodic,remainder];
+    case "tdd_driven_missing_occasions"
+        % Remove complete sensing occasions in physical-time order. This is
+        % a missing-DL-opportunity model: every RE of a selected physical
+        % symbol is absent, while W3 q(l) continues over that absolute
+        % symbol. A final partially selected occasion is deterministic.
+        symbols=unique(activeCols,"stable");
+        symbolOrder=symbols(randperm(numel(symbols)));
+        order=zeros(0,1);
+        for symbol=symbolOrder(:).'
+            order=[order;find(activeCols==symbol)]; %#ok<AGROW>
+        end
     otherwise
         error("sixgr:isac:UnsupportedCollisionMaskProfile", ...
             "Unsupported collision mask profile %s.",profile);

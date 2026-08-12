@@ -1,0 +1,11 @@
+run:
+  # TDoc statistical campaign.
+  mode: tdoc
+  max_trials_per_snr: 200000
+  min_errors_per_snr: 500
+  checkpoint_interval: 1000
+false_alarm:
+  calibration_trials: 100000
+  validation_trials: 100000
+snr:
+  coarse_grid_db: [-24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6]

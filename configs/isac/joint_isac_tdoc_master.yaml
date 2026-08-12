@@ -79,6 +79,7 @@ waveform:
   communicationDataEnabled: true
   communicationDataPower: 1.0
   sensingRSPower: 1.0
+  w3ResetSymbolIndices: [0]
   sensingSymbolIndices: [2, 6, 10, 13]
   defaultCoherentSymbols: 4
   coherentSymbolSets:
@@ -138,6 +139,8 @@ receiver:
   noiseFigureDb: 5
   referenceTemperatureK: 290
   snrDb: 5
+  ofdmCyclicPrefixFraction: 1.0
+  maximumSearchDelayOverCP: 3.0
   channelEstimation: exact_saved_sensing_reference
   sharedResourceKnowledge: known_cancelled
   residualDataInterferenceFraction: 0.10
@@ -297,7 +300,7 @@ rangeDopplerEvidence:
   maximumNormalizedDoppler: 0.15
 
 collisions:
-  maskProfiles: [random_isolated, contiguous_time, contiguous_frequency, rectangular_tf, periodic_rs]
+  maskProfiles: [random_isolated, contiguous_time, contiguous_frequency, rectangular_tf, periodic_rs, tdd_driven_missing_occasions]
   ratiosPercent: [0, 5, 10, 20]
   responses:
     - share_reuse
@@ -375,6 +378,11 @@ fullPHYAnchor:
   snrDb: 35
   coherentRepetitions: 2
   evidenceClass: production_pdsch_waveform_truth
+  sharedResourceAllocation:
+    policy: sensing_restricted_to_pdsch_allocation
+    startPRB: 0
+    numberPRB: 24
+    symbols: [0, 14]
 
 fairness:
   equalOccupiedRECount: true
@@ -398,6 +406,108 @@ detection:
   probabilityFalseAlarm: 0.001
   delayToleranceBins: 2
 
+validation:
+  stage1:
+    seed: 2026081301
+    cpSafe:
+      delayOverCP: [0.0, 0.1, 0.25, 0.5, 0.9]
+      integerEVMTolerance: 1.0e-8
+      fractionalEVMTolerance: 5.0e-4
+      channelKnowledge: perfect
+      impairmentsEnabled: false
+    linearConvolution:
+      delayOverCP: [0.25, 0.5, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0]
+      differentConsecutiveSymbols: true
+      additiveNoiseEnabled: false
+      dopplerEnabled: false
+    offGrid:
+      baseDelayBins: 3
+      delayFractions: [0.17, 0.33, 0.47]
+      baseDopplerBins: 1
+      dopplerFractions: [0.13, 0.31, 0.43]
+      maximumRangeErrorBins: 0.5
+      maximumDopplerErrorHz: 5.0
+      estimator: common_three_point_parabolic_delay_and_phase_slope_doppler
+    puncture:
+      ratioPercent: 20
+      maskProfile: contiguous_time
+  comparative:
+    screening:
+      probabilityFalseAlarm: 0.01
+      h0TrialsPerReceiver: 100
+      targetTrialsPerOperatingPoint: 2
+      # Calibrated target-echo SNR bracket. The earlier [-10,0,10] points
+      # saturated every receiver at PD=1 and were not discriminating.
+      snrDb: [-35, -30, -25, -20]
+      evidenceClass: engineering_screening_not_publication_qualified
+    publication:
+      probabilityFalseAlarm: 0.001
+      h0TrialsPerReceiver: 100000
+      targetTrialsPerOperatingPoint: 5000
+      snrDb: [-40, -35, -30, -27.5, -25, -22.5, -20, -17.5]
+      evidenceClass: publication_candidate_requires_confidence_gates
+    activeClass: screening
+    receivers: [B0, B1, B2, C0]
+    scenarioClasses: [single_target_off_grid, two_target_clutter]
+    delayOverCP: [0.25, 0.5, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0]
+    offGridDelayFractionBins: [0.17, 0.33, 0.47]
+    offGridDopplerFractionBins: [0.13, 0.31, 0.43]
+    additionalTargetRelativeDelayCP: 0.35
+    additionalTargetRelativeGainDb: -6
+    clutterRelativeDelayCP: 0.15
+    clutterRelativeGainDb: -12
+  intrinsic:
+    activeClass: screening
+    screening:
+      paprOFDMSymbolsPerProfile: 10000
+      crossCorrelationPairsPerClass: 20
+      ambiguityDelayBins: 65
+      ambiguityDopplerBins: 65
+      evidenceClass: engineering_screening_not_publication_qualified
+    publication:
+      paprOFDMSymbolsPerProfile: 10000
+      crossCorrelationPairsPerClass: 1000
+      ambiguityDelayBins: 257
+      ambiguityDopplerBins: 257
+      evidenceClass: publication_candidate
+    spectralOversampledNfft: 16384
+    adjacentChannelIntegration:
+      lowerBandwidthOffsets: [-1.5, -0.5]
+      upperBandwidthOffsets: [0.5, 1.5]
+    ambiguity:
+      maximumDelaySamples: 256
+      maximumNormalizedDoppler: 0.1
+      mainlobeDelayExclusionBins: 2
+      mainlobeDopplerExclusionBins: 2
+  stress:
+    activeClass: screening
+    screening:
+      probabilityFalseAlarm: 0.01
+      h0TrialsPerReceiver: 20
+      targetTrialsPerPoint: 2
+      pdschTransportBlocksPerPoint: 2
+      # The 16-element gNB / 4-element UE CDL-D receiver provides roughly
+      # 27 dB post-equalization gain at this anchor. These transmit-grid
+      # Es/N0 points intentionally bracket the measured coded waterfall.
+      pdschSNRDb: [-35, -30, -25, -20, -15, -10]
+      evidenceClass: engineering_screening_not_publication_qualified
+    publication:
+      probabilityFalseAlarm: 0.001
+      h0TrialsPerReceiver: 100000
+      targetTrialsPerPoint: 5000
+      pdschMinimumBlockErrors: 100
+      pdschMaximumTransportBlocks: 10000
+      pdschSNRDb: [-40, -35, -32.5, -30, -27.5, -25, -22.5, -20]
+      evidenceClass: publication_candidate_requires_confidence_gates
+    intercellRelativePowerDb: [-30, -20, -15, -10, -5, 0]
+    intercellDelayOverCP: 0.33
+    intercellFrequencyOffsetHz: 137
+    selfInterferenceResidualDb: [-80, -60, -40, -20, 0]
+    punctureRatesPercent: [0, 5, 10, 20, 30, 50]
+    puncturePatterns: [random_isolated, contiguous_time, tdd_driven_missing_occasions]
+    relocationResidualPhaseDeg: [0, 10, 20, 30, 60]
+    complexityRepetitions: 5
+
 output:
   root: results/isac_joint
   timestampedRunFolder: true
@@ -408,7 +518,7 @@ output:
   saveCSV: true
   saveMAT: true
   savePNG: true
-  saveFIG: false
-  savePDF: false
+  saveFIG: true
+  savePDF: true
   deterministicRegeneration: true
   requireSourceHashLineage: true

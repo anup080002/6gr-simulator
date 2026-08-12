@@ -1,4 +1,4 @@
-function bundle = buildJointWaveform(cfg,waveformId,seed,omittedSensingSymbols,coherentSymbols,sequenceVariant)
+function bundle = buildJointWaveform(cfg,waveformId,seed,omittedSensingSymbols,coherentSymbols,sequenceVariant,nFFTOverride)
 %BUILDJOINTWAVEFORM Build the common data+sensing CP-OFDM waveform.
 %
 % W3 modifies sensing RE phases only. OFDM modulation and communication CP
@@ -11,6 +11,7 @@ arguments
     omittedSensingSymbols double = zeros(0,1)
     coherentSymbols (1,1) double = 0
     sequenceVariant (1,1) string = ""
+    nFFTOverride (1,1) double {mustBeInteger,mustBeNonnegative} = 0
 end
 waveformId = upper(strtrim(waveformId));
 profile = sixgr.util.structGet(cfg,"waveform.profiles."+waveformId,[]);
@@ -18,6 +19,11 @@ if ~(isstruct(profile) && isscalar(profile))
     error("sixgr:isac:UnknownWaveformProfile","Unknown waveform profile %s.",waveformId);
 end
 [carrier,carrierProfile,ofdmInfo] = sixgr.isac.carrierConfig(cfg);
+ofdmOptions={"Windowing",double(cfg.waveform.ofdmWindowingSamples)};
+if nFFTOverride>0
+    ofdmOptions=[ofdmOptions,{"Nfft",nFFTOverride}];
+    ofdmInfo=nrOFDMInfo(carrier,ofdmOptions{:});
+end
 nSC = carrier.NSizeGrid*12;
 nSymbols = carrier.SymbolsPerSlot;
 grid = complex(zeros(nSC,nSymbols,1));
@@ -50,10 +56,9 @@ if numel(cpLengths) < nSymbols
     error("sixgr:isac:InvalidOFDMMeta", ...
         "nrOFDMInfo returned fewer CP lengths than symbols in the slot.");
 end
-qBySymbol = zeros(nSymbols,1);
-for symbol = 2:nSymbols
-    qBySymbol(symbol) = mod(qBySymbol(symbol-1)+cpLengths(symbol-1),ofdmInfo.Nfft);
-end
+resetSymbols0=double(sixgr.util.structGet(cfg,"waveform.w3ResetSymbolIndices",0));
+qBySymbol=sixgr.isac.cumulativeCPState(cpLengths(1:nSymbols), ...
+    double(ofdmInfo.Nfft),resetSymbols0(:));
 
 sensingGrid = complex(zeros(nSC,nSymbols));
 sensingMaskConfigured = false(nSC,nSymbols);
@@ -107,10 +112,8 @@ sensingScale = sqrt(double(cfg.waveform.sensingRSPower)* ...
     nnz(sensingMaskConfigured)/activeCount);
 sensingGrid = sensingGrid*sensingScale;
 grid(sensingMaskTransmitted) = sensingGrid(sensingMaskTransmitted);
-sensingWaveform = nrOFDMModulate(carrier,sensingGrid, ...
-    "Windowing",double(cfg.waveform.ofdmWindowingSamples));
-waveform = nrOFDMModulate(carrier,grid, ...
-    "Windowing",double(cfg.waveform.ofdmWindowingSamples));
+sensingWaveform = nrOFDMModulate(carrier,sensingGrid,ofdmOptions{:});
+waveform = nrOFDMModulate(carrier,grid,ofdmOptions{:});
 
 power = mean(abs(waveform).^2);
 paprDb = 10*log10(max(abs(waveform).^2)/power);
@@ -125,6 +128,7 @@ bundle = struct( ...
     "CumulativeCPState",qBySymbol,"CPLengths",cpLengths(1:nSymbols), ...
     "PAPRDb",paprDb,"Seed",seed,"CoherentSymbols",coherentSymbols, ...
     "SequenceVariant",sequenceVariant, ...
+    "NfftOverride",nFFTOverride, ...
     "WaveformSHA256",string(localComplexHash(waveform)), ...
     "SensingWaveformSHA256",string(localComplexHash(sensingWaveform)));
 end

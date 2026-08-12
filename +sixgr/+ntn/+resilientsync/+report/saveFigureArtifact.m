@@ -1,4 +1,4 @@
-function record = saveFigureArtifact(fig, figureData, runDirectory, relativeDirectory, basename, evidenceClass, scenario, titleText)
+function record = saveFigureArtifact(fig, figureData, runDirectory, relativeDirectory, basename, evidenceClass, scenario, titleText, options)
 %SAVEFIGUREARTIFACT Save figure, source data, MAT and metadata atomically.
 
 arguments
@@ -10,6 +10,7 @@ arguments
     evidenceClass (1,1) string
     scenario (1,1) struct
     titleText (1,1) string
+    options.Metadata (1,1) struct = struct()
 end
 if height(figureData) == 0
     error("sixgr:ntn:resilientsync:EmptyFigureData", ...
@@ -21,15 +22,15 @@ base = fullfile(folder,char(basename));
 pngPath = string(base) + ".png";
 exportgraphics(fig,pngPath,"Resolution",double(scenario.outputs.save_png_dpi));
 paths = pngPath;
-if logical(scenario.outputs.save_fig)
-    figPath = string(base) + ".fig";
-    savefig(fig,figPath,"compact");
-    paths(end+1,1) = figPath;
-end
 if logical(scenario.outputs.save_pdf_vector)
     pdfPath = string(base) + ".pdf";
     exportgraphics(fig,pdfPath,"ContentType","vector");
     paths(end+1,1) = pdfPath;
+end
+if logical(scenario.outputs.save_fig)
+    figPath = string(base) + ".fig";
+    savefig(fig,figPath);
+    paths(end+1,1) = figPath;
 end
 csvPath = string(base) + ".csv";
 writetable(figureData,csvPath);
@@ -39,10 +40,11 @@ matPath = string(base) + ".mat";
 save(matPath,"data","-v7.3");
 paths(end+1,1) = matPath;
 metadata = struct( ...
-    "SchemaVersion","sixgr.ntn.resilientsync.figure/v1", ...
+    "SchemaVersion","sixgr.ntn.resilientsync.figure/v2", ...
     "Basename",basename,"Title",titleText, ...
     "EvidenceClass",evidenceClass, ...
-    "Measured",evidenceClass == "CALIBRATED_LLS", ...
+    "Measured",evidenceClass == "CALIBRATED_LLS" && ...
+        string(sixgr.util.structGet(options.Metadata,"CalibrationStatus","")) == "ACCEPTED", ...
     "ProxyUsed",false,"FallbackUsed",false, ...
     "ConfigSHA256",string(scenario.ConfigSHA256), ...
     "StateProfileSHA256",string(scenario.StateProfileSHA256), ...
@@ -51,6 +53,10 @@ metadata = struct( ...
     "ColumnUnits",string(figureData.Properties.VariableUnits), ...
     "CreatedUTC",string(datetime("now","TimeZone","UTC", ...
         "Format","yyyy-MM-dd'T'HH:mm:ss'Z'")));
+extraFields=fieldnames(options.Metadata);
+for i=1:numel(extraFields)
+    metadata.(extraFields{i})=options.Metadata.(extraFields{i});
+end
 jsonPath = string(base) + ".metadata.json";
 localWriteJSON(jsonPath,metadata);
 paths(end+1,1) = jsonPath;

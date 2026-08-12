@@ -1,0 +1,6 @@
+inherits: common.yaml
+# C0 uses the existing sixgr.phy.ia production namespace.
+meta:
+  scenario_id: JIO_RAN1_126_AI_10_5_1_1_C0
+  description: Candidate A 20RBx4 complete SSB, 7 GHz, TDL-C 300 ns, 3 km/h, 2Tx4Rx
+  research_class: baseline_benchmark

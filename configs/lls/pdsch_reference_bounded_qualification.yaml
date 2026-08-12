@@ -1,0 +1,17 @@
+inherits:
+  - pdsch_reference.yaml
+
+scenario:
+  id: pdsch_awgn_qpsk_bounded_qualification
+  description: Bounded production PDSCH/DL-SCH waveform qualification point; not publication statistics
+
+simulation:
+  snrDb: [-10, 0, 20]
+  minTransportBlocks: 1
+  minBlockErrors: 2
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+results:
+  outputRoot: artifacts/focused_lls
+  generatePlots: false

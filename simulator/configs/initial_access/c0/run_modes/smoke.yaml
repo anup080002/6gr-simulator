@@ -1,0 +1,11 @@
+run:
+  # Focused C0 engineering campaign.
+  mode: smoke
+  max_trials_per_snr: 12
+  min_errors_per_snr: 4
+  checkpoint_interval: 4
+false_alarm:
+  calibration_trials: 24
+  validation_trials: 24
+snr:
+  coarse_grid_db: [-12, -4, 20]

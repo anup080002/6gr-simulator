@@ -54,9 +54,10 @@ x=ifft(X,w0.OFDMInfo.Nfft); shifted=circshift(x,17);
 papr=@(v) max(abs(v).^2)/mean(abs(v).^2);
 assert(abs(papr(x)-papr(shifted)) < 1e-12);
 
-% 7. W3 symbol-dependent CP recurrence.
+% 7. W3 symbol-dependent CP recurrence (inclusive absolute-symbol CP sum).
 q=w3.CumulativeCPState; cp=w3.CPLengths;
-assert(all(q(2:end)==mod(q(1:end-1)+cp(1:end-1),w3.OFDMInfo.Nfft)));
+assert(q(1)==mod(cp(1),w3.OFDMInfo.Nfft));
+assert(all(q(2:end)==mod(q(1:end-1)+cp(2:end),w3.OFDMInfo.Nfft)));
 
 % 8. Omitted sensing symbol does not change absolute q.
 punctured=sixgr.isac.buildJointWaveform(testCfg,"W3",1101, ...

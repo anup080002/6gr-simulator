@@ -1,6 +1,7 @@
 function manifest = buildManifest(runDirectory, scenario, acceptanceStatus, evidenceTable)
 %BUILDMANIFEST Build the complete hash-addressed run manifest.
 
+runDirectory=string(char(java.io.File(char(runDirectory)).getCanonicalPath()));
 files = dir(fullfile(char(runDirectory),"**","*"));
 files = files(~[files.isdir]);
 % A manifest cannot truthfully contain the hash of the file that is being

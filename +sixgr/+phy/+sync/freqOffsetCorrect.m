@@ -20,6 +20,8 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     p = inputParser;
     p.addParameter('SearchBW_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 0));
     p.addParameter('NID2Candidates', 0:2, @(x) isnumeric(x) && isvector(x));
+    p.addParameter('CFOHypothesesHz', [], ...
+        @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(isfinite(x))));
     p.addParameter('TimingSearchGuardSamples', 0, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0 && x == round(x));
     p.addParameter('SSBTiming', struct(), @localOptionalTiming);
@@ -38,8 +40,15 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         candNID2 = 0:2;
     end
 
-    % Candidate frequency offsets (Hz)
-    if searchBW_Hz == 0
+    % Candidate frequency offsets (Hz). An explicit caller-supplied grid is
+    % authoritative; the nine-point grid is retained only for legacy calls.
+    if ~isempty(opt.CFOHypothesesHz)
+        candHz = unique(double(opt.CFOHypothesesHz(:).'),"stable");
+        if any(abs(candHz) > searchBW_Hz + max(1,eps(searchBW_Hz)))
+            error("sixgr:phy:sync:CFOHypothesisOutsideSearchRange", ...
+                "Explicit CFO hypotheses must lie inside +/-SearchBW_Hz.");
+        end
+    elseif searchBW_Hz == 0
         candHz = 0;
     else
         % Keep a small number of points for a cheap coarse search
@@ -57,7 +66,7 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     bestHz = 0;
     bestNID2 = 0;
     bestWindowIndex = NaN;
-    xIn = rxWaveform(:,1);
+    xIn = rxWaveform;
     metricMatrix = nan(numel(candNID2), numel(candHz));
     bestWindowIndexMatrix = nan(numel(candNID2), numel(candHz));
     [searchSegments, searchWindows, candidateStartSymbols] = ...
@@ -183,19 +192,26 @@ function metric = localCorrMetric(x, ref)
 end
 
 function [metric, lagIndex] = localCorrMetricAndLag(x, ref)
-    x = x(:,1);
+    if isvector(x)
+        x = x(:);
+    end
     ref = ref(:);
-    c = abs(conv(x, flipud(conj(ref)), "valid"));
-    if isempty(c)
+    nLag = size(x,1)-numel(ref)+1;
+    if nLag < 1
         metric = -Inf;
         lagIndex = NaN;
         return;
     end
     referenceEnergy = sum(abs(ref).^2);
-    windowEnergy = conv(abs(x).^2, ones(numel(ref), 1), "valid");
-    denominator = sqrt(max(windowEnergy .* referenceEnergy, realmin));
-    normalisedCorrelation = c ./ denominator;
-    [metric, lagIndex] = max(normalisedCorrelation);
+    rho2 = zeros(nLag,size(x,2));
+    for rxIndex = 1:size(x,2)
+        c = abs(conv(x(:,rxIndex),flipud(conj(ref)),"valid"));
+        windowEnergy = conv(abs(x(:,rxIndex)).^2,ones(numel(ref),1),"valid");
+        rho2(:,rxIndex) = abs(c).^2 ./ ...
+            max(windowEnergy.*referenceEnergy,realmin);
+    end
+    combinedCorrelation = sqrt(mean(rho2,2));
+    [metric, lagIndex] = max(combinedCorrelation);
     metric = double(metric);
     lagIndex = double(lagIndex);
 end
@@ -244,11 +260,14 @@ for candidateIndex = 1:numel(candidateSymbols)
         ssbTiming, 0, fs, startSymbol);
     referenceLength = numel(reference);
     sampleCount = referenceLength + 2 * guardSamples;
-    lastSample = min(numel(x), firstSample + sampleCount - 1);
-    if firstSample > numel(x) || lastSample < firstSample
+    sampleRows = size(x, 1);
+    lastSample = min(sampleRows, firstSample + sampleCount - 1);
+    if firstSample > sampleRows || lastSample < firstSample
         continue;
     end
-    segments{end+1,1} = x(firstSample:lastSample); %#ok<AGROW>
+    % Preserve receive branches. Single-subscript indexing linearizes an
+    % Nsample-by-Nrx capture and creates false cross-antenna time windows.
+    segments{end+1,1} = x(firstSample:lastSample, :); %#ok<AGROW>
     windows(end+1,:) = [firstSample, lastSample]; %#ok<AGROW>
     retainedCandidateSymbols(end+1,1) = startSymbol; %#ok<AGROW>
 end

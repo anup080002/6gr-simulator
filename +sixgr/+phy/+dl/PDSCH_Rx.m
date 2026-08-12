@@ -309,9 +309,10 @@ if isempty(configuredNoiseVariance) || ~isscalar(configuredNoiseVariance) ...
         || ~isfinite(configuredNoiseVariance) || configuredNoiseVariance < 0
     configuredNoiseVariance = 0;
 end
-[Rint, rintInfo, RintIncludesNoise] = ...
-    localResolvePDSCHInterferenceCovariance(opt, carrier, pdschInd, ...
-    appliedTimingCorrection, configuredNoiseVariance, [], [], [], []);
+    rxPortShape = complex(zeros(0,0,size(rxWaveform,2)));
+    [Rint, rintInfo, RintIncludesNoise] = ...
+        localResolvePDSCHInterferenceCovariance(opt, carrier, pdschInd, ...
+        appliedTimingCorrection, configuredNoiseVariance,rxPortShape,[],[],[]);
 
 canonical = sixgr.pdsch.PDSCHReceiver( ...
     rxWaveform, bundle.Assignment, bundle.ResourcePlan, ...
@@ -604,13 +605,21 @@ rx.PostEqSINRValueRole = ...
 rx.PostEqSINRValueStatus = "OK";
 rx.PostEqSINRNAReason = "";
 rx.PostEqSINRPerLayer_dB = sinr;
-rx.EqualizerType = "MMSE";
-rx.EqualizerRequestedType = "MMSE";
+    covarianceApplied=logical(sixgr.util.structGet( ...
+        canonical.EqualizationInfo,"InterferenceCovarianceAvailable",false));
+    if covarianceApplied
+        rx.EqualizerType = "MMSE-IRC";
+        rx.EqualizerEquation = "unbiased_layer_LMMSE_with_measured_receive_covariance";
+    else
+        rx.EqualizerType = "MMSE";
+        rx.EqualizerEquation = "unbiased_layer_LMMSE_with_scalar_noise";
+    end
+    rx.EqualizerRequestedType = "MMSE";
 rx.EqualizerEngine = char(string(sixgr.util.structGet( ...
     canonical.EqualizationInfo,"EngineUsed","")));
-rx.EqualizerResultContract = "";
-rx.EqualizerEquation = "";
-rx.EqualizerCovarianceIncludesNoise = false;
+    rx.EqualizerResultContract = "canonical_resource_selective_equalizer";
+    rx.EqualizerCovarianceIncludesNoise = logical(sixgr.util.structGet( ...
+        canonical.EqualizationInfo,"InterferenceCovarianceIncludesNoise",false));
 rx.EqualizerNoiseAddedExactlyOnce = true;
 rx.EqualizerUniqueSolveCount = double(sixgr.util.structGet( ...
     canonical.EqualizationInfo, "UniqueSolveCount", NaN));

@@ -1,0 +1,9 @@
+run:
+  # Full C0 production campaign.
+  mode: exhaustive
+  max_trials_per_snr: 200000
+  min_errors_per_snr: 500
+  checkpoint_interval: 1000
+false_alarm:
+  calibration_trials: 200000
+  validation_trials: 200000
