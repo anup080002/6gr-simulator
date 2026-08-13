@@ -1,0 +1,17 @@
+run:
+  # Bounded evidence campaign requested for a time-limited TDoc study.
+  # It uses the production TDOC waveform/search chain, but quick_sanity
+  # classification prevents publication-statistics claims.
+  mode: quick_sanity
+  max_trials_per_snr: 2000
+  min_errors_per_snr: 500
+  checkpoint_interval: 100
+  developer_allow_non_tdoc_tdoc_figures: true
+false_alarm:
+  calibration_trials: 2000
+  validation_trials: 2000
+  progress_interval: 100
+  checkpoint_interval: 500
+snr:
+  # Preserve the complete TDoc coarse SNR grid while bounding each point.
+  coarse_grid_db: [-24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6]
