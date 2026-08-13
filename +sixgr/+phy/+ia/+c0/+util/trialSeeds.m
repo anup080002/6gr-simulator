@@ -6,7 +6,8 @@ function seeds = trialSeeds(cfg,snrDB,trialIndex)
 
 configuredSNRs=[double(cfg.snr.minimum_db) double(cfg.snr.maximum_db) ...
     double(cfg.snr.coarse_grid_db(:).') ...
-    double(cfg.statistics.high_snr_sanity_db)];
+    double(cfg.statistics.high_snr_sanity_db) ...
+    double(cfg.validation.zero_impairment_anchor_snr_db)];
 minimumSNR = min(configuredSNRs);
 step = double(cfg.snr.refinement_step_db);
 maximumSNR = max(configuredSNRs);

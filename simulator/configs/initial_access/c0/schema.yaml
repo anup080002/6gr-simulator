@@ -72,6 +72,8 @@ required_paths:
   - statistics.tdoc_min_errors_per_point
   - statistics.tdoc_max_trials_per_point
   - validation.snr_calibration_requested_db
+  - validation.zero_impairment_anchor_snr_db
+  - validation.zero_impairment_anchor_trial_index
   - validation.snr_calibration_repetitions
   - validation.snr_calibration_tolerance_db
   - validation.high_snr_nmse_floor_margin_db

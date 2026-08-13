@@ -90,8 +90,10 @@ zeroCfg=cfg;
 zeroCfg.channel.model="AWGN"; zeroCfg.channel.delay_profile="AWGN";
 zeroCfg.oscillator.ue_ppm_range=[0 0]; zeroCfg.oscillator.trp_ppm_range=[0 0];
 zeroCfg.search.cfo_hypotheses_hz=0; zeroCfg.search.timing_uncertainty_samples=0;
+zeroAnchorSNR=double(cfg.validation.zero_impairment_anchor_snr_db);
+zeroAnchorTrial=double(cfg.validation.zero_impairment_anchor_trial_index);
 zeroAnchor=sixgr.phy.ia.c0.campaigns.runC0Trial( ...
-    bundle,zeroCfg,35,999001,calibration.Thresholds);
+    bundle,zeroCfg,zeroAnchorSNR,zeroAnchorTrial,calibration.Thresholds);
 writetable(struct2table(zeroAnchor,"AsArray",true),fullfile(runFolder,"zero_impairment_anchor.csv"));
 
 lineage=sixgr.phy.ia.c0.plots.renderC0Figures( ...

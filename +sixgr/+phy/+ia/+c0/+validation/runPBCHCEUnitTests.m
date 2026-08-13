@@ -29,8 +29,13 @@ for k=1:numel(snrs)
     [~,mk]=localRecover(rx,c.Waveform,bundle,cfg,0,truthTiming);
     available=available&&mk.Available; nmse(k)=mk.NMSELinear;
 end
+referenceIndex=find(snrs==double(cfg.statistics.high_snr_sanity_db),1);
+if isempty(referenceIndex)
+    error("sixgr:phy:ia:c0:validation:MissingCESanitySNR", ...
+        "CE-UT4 SNR ladder must contain statistics.high_snr_sanity_db.");
+end
 rows{4}=localRow("CE-UT4",available&&nmse(end)<nmse(1)&&nmse(end)<0.02, ...
-    nmse(end),"tdl_c_awgn_high_snr_trend_final_linear_nmse");
+    nmse(referenceIndex),"tdl_c_awgn_configured_high_snr_linear_nmse");
 
 dimensionPass=isequal(m3.HhatSize,[576 double(cfg.mimo.num_rx_antennas)])&& ...
     isequal(m3.HtrueEffSize,[576 double(cfg.mimo.num_rx_antennas)]);

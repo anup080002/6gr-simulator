@@ -123,6 +123,10 @@ statistics:
   tdoc_min_errors_per_point: 500
   tdoc_max_trials_per_point: 200000
 validation:
+  # Noise-free reference point used to prove receiver closure. It must stay
+  # inside the configured deterministic SNR/seed grid.
+  zero_impairment_anchor_snr_db: 35
+  zero_impairment_anchor_trial_index: 200000
   snr_calibration_requested_db: [-20, -10, 0, 10]
   snr_calibration_repetitions: 64
   snr_calibration_tolerance_db: 0.1
