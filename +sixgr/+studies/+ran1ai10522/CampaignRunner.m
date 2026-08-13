@@ -27,7 +27,11 @@ classdef CampaignRunner
             if options.RunId==""
                 runId="ran1_10522_"+mode+"_"+string(datetime("now","Format","yyyyMMdd_HHmmss"));
             else,runId=options.RunId;end
-            runFolder=string(fullfile(options.OutputRoot,runId)); localLayout(runFolder);
+            % Canonicalize once at the boundary. dir() returns absolute folder
+            % names on Windows, so retaining a relative output root would make
+            % manifest-relative path extraction depend on the launch directory.
+            runFolder=localCanonicalPath(fullfile(options.OutputRoot,runId));
+            localLayout(runFolder);
             context=localContext(runId,scfg.ConfigHash);
             localConfigManifests(runFolder,cfg,provenance,scfg,context,mode);
             scenario=sixgr.studies.ran1ai10522.ScenarioRegistry.table(mode);
@@ -73,6 +77,10 @@ classdef CampaignRunner
             localArtifactManifest(runFolder,context);
             [audit,frameAudit,passed,publicationPassed]=sixgr.studies.ran1ai10522.ArtifactAuditor.run(runFolder);
             sixgr.studies.ran1ai10522.ResultWriter.write(fullfile(runFolder,"manifests","frame_image_audit.csv"),frameAudit,context);
+            % The frame audit is itself bound by the artifact manifest. Bind
+            % the final bytes and perform one read-only acceptance pass.
+            localArtifactManifest(runFolder,context);
+            [audit,frameAudit,passed,publicationPassed]=sixgr.studies.ran1ai10522.ArtifactAuditor.run(runFolder);
             sixgr.studies.ran1ai10522.ResultWriter.write(fullfile(runFolder,"manifests","artifact_audit.csv"),audit,context);
             localRunSummary(runFolder,mode,context,numel(dir(fullfile(runFolder,"**","*.csv"))),height(manifest),passed,publicationPassed);
             result=struct("RunFolder",runFolder,"Passed",passed,"PublicationQualified",publicationPassed, ...
@@ -229,6 +237,7 @@ sixgr.util.jsonWrite(fullfile(root,"json","run_manifest.json"),payload);
 end
 
 function localArtifactManifest(root,context)
+root=localCanonicalPath(root);
 files=dir(fullfile(root,"**","*"));files=files(~[files.isdir]); rows=repmat(struct( ...
     "RelativePath","","ArtifactType","","SHA256","","Bytes",0,"EvidenceClass","", ...
     "TDocReady",false,"Status","PASS"),0,1);
@@ -246,12 +255,18 @@ sixgr.studies.ran1ai10522.ResultWriter.write(fullfile(root,"manifests","artifact
 end
 
 function result=localReplayOrAudit(mode,root)
-root=string(root); config=fullfile(root,"manifests","resolved_config.yaml");
-[cfg,~,scfg]=sixgr.studies.ran1ai10522.loadStudyConfig(config);
+root=localCanonicalPath(root); config=fullfile(root,"manifests","resolved_config.yaml");
+[cfg,~,~]=sixgr.studies.ran1ai10522.loadStudyConfig(config);
 sourceManifest=readtable(fullfile(root,"manifests","resolved_config_manifest.csv"), ...
     "Delimiter",",","VariableNamingRule","preserve");
-context=localContext(string(sourceManifest.RunId(1)),scfg.ConfigHash);
+% Recovery must preserve source-run provenance. Rehashing the copied
+% resolved YAML would identify the recovery invocation rather than the
+% immutable configuration that generated the physical trials.
+context=localContext(string(sourceManifest.RunId(1)),string(sourceManifest.ConfigHash(1)));
 context.GitCommit=string(sourceManifest.GitCommit(1));
+environment=readtable(fullfile(root,"manifests","environment_manifest.csv"), ...
+    "Delimiter",",","VariableNamingRule","preserve");
+context.GitWorktreeDirty=logical(environment.GitWorktreeDirtyObserved(1));
 if mode=="figure_replay"
     include=exist(fullfile(root,"csv","controlled","pdsch_baseline_trials.csv"),"file")==2;
     figures=sixgr.studies.ran1ai10522.FigurePublisher.replay(root,cfg,context,include);
@@ -264,7 +279,15 @@ sixgr.studies.ran1ai10522.ResultWriter.write(fullfile(root,"manifests","frame_im
 localArtifactManifest(root,context);
 [audit,frame,passed,pub]=sixgr.studies.ran1ai10522.ArtifactAuditor.run(root);
 sixgr.studies.ran1ai10522.ResultWriter.write(fullfile(root,"manifests","frame_image_audit.csv"),frame,context);
+localArtifactManifest(root,context);
+[audit,frame,passed,pub]=sixgr.studies.ran1ai10522.ArtifactAuditor.run(root);
 sixgr.studies.ran1ai10522.ResultWriter.write(fullfile(root,"manifests","artifact_audit.csv"),audit,context);
+localRunSummary(root,string(sourceManifest.Mode(1)),context, ...
+    numel(dir(fullfile(root,"**","*.csv"))),height(figures),passed,pub);
 result=struct("RunFolder",root,"Figures",figures,"Audit",audit,"Passed",passed,"PublicationQualified",pub);
 if ~passed,error("sixgr:ran1ai10522:ArtifactGateFailed","Replay/audit failed.");end
+end
+
+function path=localCanonicalPath(path)
+path=string(char(java.io.File(char(string(path))).getCanonicalPath()));
 end
