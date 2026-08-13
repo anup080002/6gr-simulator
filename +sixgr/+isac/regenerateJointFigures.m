@@ -27,7 +27,8 @@ for i = 1:height(contract)
         "Position",[1 1 pixels(1)/dpi pixels(2)/dpi]);
     cleanup = onCleanup(@() localClose(fig)); %#ok<NASGU>
     localRender(fig,stem,saved);
-    exportgraphics(fig,path,"Resolution",double(cfg.output.imageResolutionDPI));
+    sixgr.visual.exportRasterAtomic(fig,string(path), ...
+        double(cfg.output.imageResolutionDPI));
     close(fig); clear cleanup;
     sourcePath = localSourcePath(runFolder,stem);
     if exist(sourcePath,"file") ~= 2

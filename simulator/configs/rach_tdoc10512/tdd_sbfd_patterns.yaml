@@ -1,0 +1,16 @@
+tdoc10512:
+  sbfd:
+    ro_bandwidth_mhz: 4.32
+    carrier_scs_khz: 30
+    prb_bandwidth_mhz: 0.36
+    ul_subband_widths_mhz: [10, 15, 20, 25, 30, 35, 40]
+    edge_guard_prbs: [0, 1, 2]
+    msg1_fdm: [1, 2, 4, 8]
+    frequency_reference_modes: [active_ul_bwp_prb0, sbfd_ul_subband_edge]
+  tdd_patterns:
+    - id: ONE_UL_SLOT
+      slots: [D, D, D, S, U]
+    - id: TWO_CONSECUTIVE_UL_SLOTS
+      slots: [D, D, D, U, U]
+    - id: DYNAMIC_OVERRIDE_REMOVES_SECOND_UL
+      slots: [D, D, D, U, D]

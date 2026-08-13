@@ -1,0 +1,31 @@
+inherits: [common.yaml]
+
+# A statistically populated execution of the currently qualified bounded
+# waveform matrix. It is deliberately not named common-EVM or full-matrix:
+# the exact common EVM and the wider D/E/I/J Cartesian campaigns remain
+# separate fail-closed gates.
+identity:
+  description: RAN1 10.5.3.1 CSI-RS controlled waveform scenario with 1000 paired realizations per qualified point
+
+execution:
+  active_mode: bounded_qualification
+  image_resolution_dpi: 300
+  parallel_enabled: true
+  maximum_workers: 4
+
+reproducibility:
+  replicates:
+    bounded_qualification: 1000
+
+simulation:
+  bounded_transport_blocks_per_point: 1000
+  bounded_channel_realizations_per_point: 1000
+
+interference_age:
+  sanity_trials: 250000
+
+event_csi:
+  sanity_slots: 200000
+
+multislot:
+  monte_carlo_trials: 10000

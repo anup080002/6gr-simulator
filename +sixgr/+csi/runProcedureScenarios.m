@@ -19,28 +19,33 @@ end
 rho=double(cfg.event_csi.gauss_markov_rho); slots=double(cfg.event_csi.sanity_slots);
 periods=double(cfg.event_csi.periodic_periods(:)); thresholds=double(cfg.event_csi.thresholds(:));
 old=rng; cleanup=onCleanup(@() rng(old)); %#ok<NASGU>
-rng(double(cfg.reproducibility.base_seed)+31,"twister");
+eventSeed=double(cfg.reproducibility.base_seed)+31;
+rng(eventSeed,"twister");
 x=zeros(slots,1); innovation=randn(slots,1);
 for t=2:slots, x(t)=rho*x(t-1)+sqrt(1-rho^2)*innovation(t); end
 event=[];
 for period=periods.'
     sample=1:period:slots; held=zeros(slots,1);
     for k=1:numel(sample), held(sample(k):min(slots,sample(k)+period-1))=x(sample(k)); end
+    absError=abs(x-held); [ciLow,ciHigh]=localMeanCI(absError,.95);
     event=[event;table("periodic",period,NaN,100*numel(sample)/slots, ...
-        mean(abs(x-held)),slots,"SANITY","PASS",'VariableNames', ...
-        {'Policy','PeriodSlots','Threshold','ReportsPer100Slots','MeanAbsoluteStateError', ...
-        'N','EvidenceClass','Status'})]; %#ok<AGROW>
+        mean(absError),ciLow,ciHigh,slots,eventSeed,"SANITY","PASS", ...
+        'VariableNames',{'Policy','PeriodSlots','Threshold', ...
+        'ReportsPer100Slots','MeanAbsoluteStateError','MAECI95Low', ...
+        'MAECI95High','N','Seed','EvidenceClass','Status'})]; %#ok<AGROW>
 end
 for threshold=thresholds.'
-    last=x(1); reports=1; errorSum=0;
+    last=x(1); reports=1; absError=zeros(slots,1);
     for t=1:slots
         if abs(x(t)-last)>=threshold, last=x(t); reports=reports+1; end
-        errorSum=errorSum+abs(x(t)-last);
+        absError(t)=abs(x(t)-last);
     end
-    event=[event;table("event",NaN,threshold,100*reports/slots,errorSum/slots, ...
-        slots,"SANITY","PASS",'VariableNames',{'Policy','PeriodSlots', ...
-        'Threshold','ReportsPer100Slots','MeanAbsoluteStateError','N', ...
-        'EvidenceClass','Status'})]; %#ok<AGROW>
+    [ciLow,ciHigh]=localMeanCI(absError,.95);
+    event=[event;table("event",NaN,threshold,100*reports/slots,mean(absError), ...
+        ciLow,ciHigh,slots,eventSeed,"SANITY","PASS", ...
+        'VariableNames',{'Policy','PeriodSlots','Threshold', ...
+        'ReportsPer100Slots','MeanAbsoluteStateError','MAECI95Low', ...
+        'MAECI95High','N','Seed','EvidenceClass','Status'})]; %#ok<AGROW>
 end
 
 hyp=string(cfg.energy_hypotheses.names(:)); energy=[];
@@ -101,4 +106,11 @@ end
 
 function value=localLast(values)
 if isempty(values), value=NaN; else, value=values(end); end
+end
+
+function [low,high]=localMeanCI(samples,confidence)
+samples=double(samples(:)); n=numel(samples); meanValue=mean(samples);
+if n<2, low=meanValue; high=meanValue; return; end
+z=-sqrt(2)*erfcinv(2*(.5+confidence/2));
+half=z*std(samples,0)/sqrt(n); low=meanValue-half; high=meanValue+half;
 end

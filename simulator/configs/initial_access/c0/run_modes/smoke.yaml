@@ -4,6 +4,7 @@ run:
   max_trials_per_snr: 12
   min_errors_per_snr: 4
   checkpoint_interval: 4
+  developer_allow_non_tdoc_tdoc_figures: true
 false_alarm:
   calibration_trials: 24
   validation_trials: 24

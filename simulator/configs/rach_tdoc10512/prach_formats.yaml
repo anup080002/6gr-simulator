@@ -1,0 +1,57 @@
+tdoc10512:
+  prach_formats:
+    - id: NR_FORMAT_0
+      family: nr_baseline
+      toolbox_format: "0"
+      sequence_length: 839
+      prach_scs_khz: 1.25
+      cp_us: 103.1
+      useful_sequence_us: 800.0
+      repetitions: 1
+      guard_us: 96.9
+      waveform_backend: matlab_5g_toolbox
+      research_class: baseline_benchmark
+    - id: NR_B4
+      family: nr_baseline
+      toolbox_format: B4
+      sequence_length: 139
+      prach_scs_khz: 30
+      cp_us: 15.2
+      useful_sequence_us: 400.0
+      repetitions: 12
+      guard_us: 12.9
+      waveform_backend: matlab_5g_toolbox
+      research_class: baseline_benchmark
+    - id: NR_C2
+      family: nr_baseline
+      toolbox_format: C2
+      sequence_length: 139
+      prach_scs_khz: 30
+      cp_us: 33.3
+      useful_sequence_us: 133.3
+      repetitions: 4
+      guard_us: 47.4
+      waveform_backend: matlab_5g_toolbox
+      research_class: baseline_benchmark
+    - id: F4_2_LIKE_A
+      family: long_zc_candidate
+      toolbox_format: ""
+      sequence_length: 839
+      prach_scs_khz: 5
+      cp_us: 25.8
+      useful_sequence_us: 400.0
+      repetitions: 2
+      guard_us: 74.2
+      waveform_backend: gated_custom_long_zc
+      research_class: study_item_candidate
+    - id: F4_2_LIKE_B
+      family: long_zc_candidate
+      toolbox_format: ""
+      sequence_length: 839
+      prach_scs_khz: 5
+      cp_us: 15.2
+      useful_sequence_us: 400.0
+      repetitions: 2
+      guard_us: 84.8
+      waveform_backend: gated_custom_long_zc
+      research_class: study_item_candidate

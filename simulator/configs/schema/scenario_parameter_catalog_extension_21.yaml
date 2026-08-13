@@ -1,0 +1,28 @@
+top_level_order:
+  - bwop
+
+sections:
+  bwop:
+    required: false
+    parameters:
+      schema_version: {required: true, type: string, nonempty: true}
+      agenda_item: {required: true, type: string, allowed_values: ["10.5.1.3"]}
+      campaign_id: {required: true, type: string, nonempty: true}
+      campaign_mode: {required: true, type: string, allowed_values: [analytical, smoke, bounded_tdoc, calibration, priority_tdoc, full, report_only]}
+      master_seed: {required: true, type: integer, min: 0}
+      source: {required: true, type: struct}
+      evidence_policy: {required: true, type: struct}
+      output: {required: true, type: struct}
+      runtime_modes: {required: true, type: struct}
+      analytical: {required: true, type: struct}
+      calibration: {required: true, type: struct}
+      calibrated_waveform: {required: true, type: struct}
+      downlink: {required: true, type: struct}
+      common_control: {required: true, type: struct}
+      rach: {required: true, type: struct}
+      initial_ul: {required: true, type: struct}
+      post_ia: {required: true, type: struct}
+      paging: {required: true, type: struct}
+      end_to_end: {required: true, type: struct}
+      statistics: {required: true, type: struct}
+      figures: {required: true, type: struct}

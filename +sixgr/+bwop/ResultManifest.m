@@ -1,0 +1,86 @@
+classdef ResultManifest
+    %RESULTMANIFEST Reproducibility and figure traceability for BWOP.
+
+    methods (Static)
+        function manifest=write(runFolder,campaign,figureRows,scenarioStatus,startedUTC,elapsedSeconds)
+            [~,commit]=system("git rev-parse HEAD");[~,branch]=system("git branch --show-current");
+            [~,dirty]=system("git status --porcelain");
+            sixgr.util.csvWriteTable(fullfile(runFolder,"metadata","traceability.csv"),figureRows);
+            sixgr.util.csvWriteTable(fullfile(runFolder,"metadata","scenario_status.csv"),scenarioStatus);
+            gitState=struct("commit",strtrim(commit),"branch",strtrim(branch), ...
+                "dirty",strlength(strtrim(string(dirty)))>0);
+            sixgr.util.jsonWrite(fullfile(runFolder,"metadata","git_state.json"),gitState);
+            inventory=localInventory(runFolder);
+            localVerifyInventory(runFolder,inventory);
+            sixgr.util.csvWriteTable(fullfile(runFolder,"metadata","file_inventory.csv"),inventory);
+            blocked=figureRows.Status=="BLOCKED";
+            manifest=struct("schema_version","sixgr.bwop.ai10513.manifest.v1", ...
+                "campaign_id",campaign.Config.campaign_id,"run_mode",campaign.Mode, ...
+                "scenario_id",campaign.ScenarioID,"agenda_item","10.5.1.3", ...
+                "config_source",campaign.ConfigPath,"config_hash",campaign.ConfigHash, ...
+                "source_document",campaign.Config.source.controlling_document, ...
+                "source_document_available",campaign.SourceAvailable, ...
+                "source_document_path",campaign.SourcePath,"git_commit",strtrim(commit), ...
+                "git_branch",strtrim(branch),"git_worktree_dirty", ...
+                strlength(strtrim(string(dirty)))>0,"matlab_release",version("-release"), ...
+                "matlab_version",version,"started_utc",startedUTC, ...
+                "completed_utc",sixgr.util.utcNowISO8601(),"elapsed_seconds",elapsedSeconds, ...
+                "scenario_rows",height(scenarioStatus), ...
+                "scenario_pass",nnz(scenarioStatus.Status=="PASS"), ...
+                "scenario_warn",nnz(scenarioStatus.Status=="WARN"), ...
+                "scenario_blocked",nnz(scenarioStatus.Status=="BLOCKED"), ...
+                "figures_required",height(figureRows), ...
+                "figures_pass",nnz(figureRows.Status=="PASS"), ...
+                "figures_blocked",nnz(blocked), ...
+                "tdoc_ready_measured_figures",nnz(figureRows.Kind=="result"&figureRows.TDocReady), ...
+                "placeholder_curves_generated",false, ...
+                "artifact_completeness_passed",height(figureRows)==34&& ...
+                all(figureRows.Status=="PASS"|figureRows.Status=="BLOCKED"), ...
+                "file_count",height(inventory)+2,"inventoried_file_count",height(inventory), ...
+                "inventory_excludes",["metadata/file_inventory.csv","metadata/manifest.json"], ...
+                "truth_proxy_separation","strict");
+            sixgr.util.jsonWrite(fullfile(runFolder,"metadata","manifest.json"),manifest);
+        end
+    end
+end
+
+function T=localInventory(root)
+files=dir(fullfile(root,"**","*"));files=files(~[files.isdir]);
+paths=string(fullfile({files.folder},{files.name})).';
+excluded=endsWith(paths,"metadata"+filesep+"file_inventory.csv")| ...
+    endsWith(paths,"metadata"+filesep+"manifest.json");
+files=files(~excluded);
+relative=strings(numel(files),1);bytes=zeros(numel(files),1);hash=strings(numel(files),1);
+for i=1:numel(files)
+    path=fullfile(files(i).folder,files(i).name);relative(i)=localRelative(path,root);
+    bytes(i)=files(i).bytes;hash(i)=localHash(path);
+end
+T=table(relative,bytes,hash,'VariableNames',{'RelativePath','Bytes','SHA256'});
+end
+
+function hash=localHash(path)
+fid=fopen(path,"r");if fid<0,error("sixgr:bwop:ManifestReadFailed","Cannot read %s.",path);end
+clean=onCleanup(@()fclose(fid));hash=sixgr.util.sha256Hex(fread(fid,Inf,"*uint8"));
+end
+
+function out=localRelative(path,root)
+canonicalRoot=string(char(java.io.File(char(root)).getCanonicalPath()));
+canonicalPath=string(char(java.io.File(char(path)).getCanonicalPath()));
+prefix=canonicalRoot+filesep;
+if ~startsWith(canonicalPath,prefix)
+    error("sixgr:bwop:InventoryPathEscape","Artifact escaped the BWOP run root: %s.",canonicalPath);
+end
+out=extractAfter(canonicalPath,strlength(prefix));out=replace(out,"\","/");
+end
+
+function localVerifyInventory(root,T)
+if height(T)~=numel(unique(T.RelativePath))||any(startsWith(T.RelativePath,"/")|contains(T.RelativePath,".."))
+    error("sixgr:bwop:InvalidInventoryPath","BWOP inventory paths must be unique, relative and contained.");
+end
+for i=1:height(T)
+    path=fullfile(root,replace(T.RelativePath(i),"/",filesep));
+    if ~isfile(path)||localHash(path)~=T.SHA256(i)
+        error("sixgr:bwop:InventoryHashMismatch","Inventory hash mismatch for %s.",T.RelativePath(i));
+    end
+end
+end

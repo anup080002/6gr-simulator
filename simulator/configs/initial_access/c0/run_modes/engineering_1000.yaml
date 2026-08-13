@@ -1,0 +1,17 @@
+run:
+  # Bounded end-to-end engineering campaign. This executes the same blind
+  # waveform receiver as TDOC mode, but its sample counts are not sufficient
+  # for a TDOC statistical claim.
+  mode: quick_sanity
+  max_trials_per_snr: 1000
+  min_errors_per_snr: 100
+  checkpoint_interval: 100
+  developer_allow_non_tdoc_tdoc_figures: true
+false_alarm:
+  calibration_trials: 1000
+  validation_trials: 1000
+  progress_interval: 100
+  checkpoint_interval: 500
+snr:
+  # Deep-failure, waterfall, nominal, and clean high-SNR regions.
+  coarse_grid_db: [-20, -16, -12, -8, -4, 0, 20]

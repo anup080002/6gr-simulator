@@ -1,0 +1,13 @@
+inherits: ./campaign_core.yaml
+
+meta:
+  scenario_id: ran1_10512_prach_rach_full
+  description: Full PRACH/RACH LLS, multicell, and procedure campaign configuration.
+  maturity_tag: experimental
+
+scenario:
+  name: ran1_10512_prach_rach_full
+
+tdoc10512:
+  campaign_mode: full
+  campaign_id: ran1_10512_full

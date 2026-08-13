@@ -1,0 +1,288 @@
+meta:
+  scenario_id: ran1_ai10513_bandwidth_operation
+  description: Config-driven bandwidth operation during and immediately after initial access.
+  version: "1.0"
+  owner: SixGR
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: initial_access_bandwidth_operation
+  tags: [ran1_10_5_1_3, bandwidth_operation, initial_access, tdoc]
+
+scenario:
+  name: ran1_ai10513_bandwidth_operation
+  description: AI 10.5.1.3 analytical, calibrated-LLS and procedure-SLS campaign.
+  runner_profile: generic_sweep
+  target_cases: [pbch, pdcch, pdsch, pusch, prach]
+  honesty_mode: strict
+
+bwop:
+  schema_version: sixgr.bwop.ai10513.v1
+  agenda_item: "10.5.1.3"
+  campaign_id: bwop_ai10513
+  campaign_mode: smoke
+  master_seed: 2026081301
+
+  source:
+    controlling_document: R1-26xxxxx_On_Bandwidth_Operation_During_and_Right_After_Initial_Access_for_6GR_Jio_v2.docx
+    revision: Jio_v2
+    expected_locations: [".", "docs", "C:/Users/anup0/Downloads"]
+    missing_policy: record_unavailable_and_continue_without_source_attribution
+    qcom_msg4_document: R1-2604695
+    mediatek_energy_document: R1-2604311
+
+  evidence_policy:
+    allowed_classes: [ANALYTICAL_EXACT, ANALYTICAL_SCREENING, SOURCE_REPRODUCTION, CALIBRATED_LLS, PROCEDURE_SLS, ASSUMPTION_ONLY, PROCEDURE_SCHEMATIC]
+    tdoc_ready_classes: [SOURCE_REPRODUCTION, CALIBRATED_LLS, PROCEDURE_SLS]
+    prohibit_proxy_as_truth: true
+    prohibit_assumption_in_tdoc_ready: true
+    prohibit_screening_in_tdoc_ready: true
+    prohibit_placeholder_curves: true
+    preserve_ns_a_separation: true
+
+  output:
+    root: results/bwop_ai10513
+    png_dpi: 300
+    image_size_pixels: [1600, 960]
+    save_png: true
+    save_fig: true
+    save_pdf: true
+    save_svg: false
+    save_csv: true
+    save_mat: true
+    save_json: true
+
+  runtime_modes:
+    analytical:
+      analytical: true
+      procedure: false
+      calibrated_lls: false
+      max_trials_per_point: 0
+    smoke:
+      analytical: true
+      procedure: true
+      calibrated_lls: false
+      max_trials_per_point: 32
+    bounded_tdoc:
+      analytical: true
+      procedure: true
+      calibrated_lls: true
+      max_trials_per_point: 2
+    calibration:
+      analytical: true
+      procedure: true
+      calibrated_lls: true
+      max_trials_per_point: 200000
+    priority_tdoc:
+      analytical: true
+      procedure: true
+      calibrated_lls: true
+      max_trials_per_point: 200000
+    full:
+      analytical: true
+      procedure: true
+      calibrated_lls: true
+      max_trials_per_point: 500000
+
+  analytical:
+    sib1_payload_bits: [512, 1024, 2048, 4096]
+    effective_code_rates: [0.10, 0.15, 0.20, 0.30]
+    analytical_re_per_rb: 132
+    dmrs_re_per_rb: 12
+    dci_non_fdra_bits: 24
+    conceptual_reference_coreset_rb: 48
+    coreset_rb: [24, 48, 96]
+    sib1_reference_multipliers: [1, 2, 4]
+    carrier_nsize_grid: [273]
+    coreset_start_crb: [0, 48, 96, 144]
+    ssb_start_crb: 20
+    ssb_size_rb: 20
+    guard_rb: 4
+    mandatory_rf_span_start_crb: 0
+    mandatory_rf_span_size_rb: 137
+    pbch_baseline_input_bits: 56
+    pbch_coded_bits: 864
+    pbch_added_bits: [0, 1, 2, 4, 8, 11, 16]
+    fdra_reference_bandwidth_rb: [24, 48, 96, 192, 273]
+    coreset_duration_symbols: [1, 2, 3]
+    aggregation_levels: [1, 2, 4, 8, 16]
+    source_allocation_small_rb: 32
+    source_allocation_large_rb: 216
+    source_required_snr_delta_db: 6.5
+    source_distributed_delta_db: 0.7
+
+  calibration:
+    enabled_in_smoke: false
+    qcom:
+      carrier_frequency_hz: 700000000
+      scs_khz: 15
+      channel_profile: TDL-C
+      delay_spread_ns: 300
+      doppler_hz: 1.94
+      allocations:
+        contiguous_small: [0, 31]
+        contiguous_large: [0, 215]
+        distributed_edges: [0, 15, 200, 215]
+      pdsch_symbols: 12
+      dmrs_symbols: 2
+      transport_block_bits: 900
+      rank: 1
+      prg_rb: 4
+      channel_estimation: MMSE
+      snr_db: [-12, -9, -6, -3, 0, 3, 6, 9]
+    mediatek:
+      packet_rate_hz: 250
+      packet_bytes: 100
+      tdd_pattern: DDDSU
+      scs_khz: 30
+      target_tx_power_dbm: 0
+      micro_sleep_power: 45
+      pusch_energy_100mhz: 250
+      pusch_energy_200mhz: 300
+      sleep_energy_baseline: 405
+      sleep_energy_enhanced: 227
+
+  # Bounded engineering execution through the production PHY.  The small
+  # trial count is intentional for rapid TDoc code/evidence verification;
+  # it is never promoted to publication-qualified statistics.
+  calibrated_waveform:
+    pdsch_base_config: configs/lls/pdsch_reference.yaml
+    pusch_base_config: configs/lls/pusch_reference.yaml
+    pdcch_base_config: configs/lls/lls_pdcch_strict_mini_anchor.yaml
+    reference_snr_db: [-6, 0, 6]
+    confidence_level: 0.95
+    transport_blocks_per_point: 2
+    pdcch_trials_per_point: 2
+    maximum_measured_snr_error_db: 0.5
+    cases:
+      case_id: [cal_psd_32, cal_psd_216, cal_total_32, cal_total_216, dl_controlled_24, ul_msg3_24]
+      study_id: [CAL-001, CAL-001, CAL-001, CAL-001, DL-001, UL-002]
+      link: [PDSCH, PDSCH, PDSCH, PDSCH, PDSCH, PUSCH]
+      power_mode: [fixed_psd, fixed_psd, fixed_total_power, fixed_total_power, fixed_psd, fixed_pmax]
+      frequency_hz: [700000000, 700000000, 700000000, 700000000, 7000000000, 7000000000]
+      bandwidth_mhz: [40, 40, 40, 40, 100, 100]
+      scs_khz: [15, 15, 15, 15, 30, 30]
+      n_size_grid: [216, 216, 216, 216, 273, 273]
+      start_prb: [0, 0, 0, 0, 0, 0]
+      allocation_rb: [32, 216, 32, 216, 24, 24]
+      symbol_start: [2, 2, 2, 2, 2, 2]
+      symbol_length: [12, 12, 12, 12, 12, 12]
+      channel_model: [TDL-C, TDL-C, TDL-C, TDL-C, TDL-C, TDL-C]
+      delay_spread_ns: [300, 300, 300, 300, 300, 300]
+      velocity_kmph: [2.99, 2.99, 2.99, 2.99, 3.0, 3.0]
+      # Fixed-total cases execute at this per-RE offset from the reference
+      # SNR.  -8.293037 dB equals 10*log10(32/216).
+      snr_offset_db: [0, 0, 0, -8.293037, 0, 0]
+
+  downlink:
+    carrier_frequency_hz: 7000000000
+    scs_khz: [30, 60]
+    carrier_bandwidth_mhz: [100, 200, 400]
+    coreset_rb: [24, 48, 96]
+    sib1_reference_multiplier: [1, 2, 4]
+    payload_bits: [512, 1024, 2048, 4096]
+    scheduled_symbols: [4, 7, 10, 12]
+    channel_profiles: [AWGN, TDL-C]
+    power_modes: [fixed_psd, fixed_total_pdsch_power]
+    controlled_cases: [SAME_SAME, WIDER_S_SAME_A, WIDER_S_WIDER_CONTIGUOUS_A, WIDER_S_DISTRIBUTED_A, WIDER_S_RELOCATED_A, SHIFTED_OVERLAPPING_S, NON_OVERLAPPING_S]
+    pdcch_al_policies: [FIXED_AL, MIN_AL_TARGET, CCE_CONSTRAINED]
+    receiver_modes: [WIDE_PREACTIVATED, POST_DCI_BB_EXPANSION, POST_DCI_RF_BW_CHANGE, POST_DCI_CENTER_RETUNE]
+    preparation_offsets_slots: [0, 1, 2, 4, 8]
+    beam_counts: [1, 8, 16, 32]
+    si_window_slots: 32
+    si_periodicity_slots: 160
+    inter_occasion_gap_slots: 1
+    si_occasion_duration_slots: 1
+    baseline_actual_allocation_rb: 24
+    tracking_cases: [ssb_contained, ssb_outside_same_rf_span, ssb_retune, carrier_edge]
+    tracking_ssb_contained: [1, 0, 0, 0]
+    tracking_retune_required: [0, 0, 1, 1]
+    tracking_overhead_slots: [0, 1, 3, 4]
+
+  common_control:
+    coreset_rb: [24, 48, 96]
+    coreset_duration_symbols: 3
+    offered_cce_load: [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+    beam_counts: [1, 8, 16, 32]
+    aggregation_level_mix: [0.05, 0.15, 0.40, 0.30, 0.10]
+    aggregation_levels: [1, 2, 4, 8, 16]
+    periods: 200
+    message_classes: [SIB1, Msg2_MsgB, Msg4, Msg3_retx, paging]
+
+  rach:
+    procedure_types: [four_step, two_step]
+    early_indication_states: [none, correct, absent, collision, msg3_not_decoded, misinterpreted, ambiguous_identity, unsupported_profile, delayed]
+    policies: [COMMON_ONLY_BASELINE, CAPABILITY_SPECIFIC_NO_FALLBACK, CAPABILITY_SPECIFIC_WITH_COMMON_FALLBACK, DUAL_RESPONSE_WHERE_FEASIBLE]
+    indication_error_rates: [0, 0.01, 0.05, 0.10, 0.20]
+    trials: 2000
+    calibrated_lookup_available: false
+
+  initial_ul:
+    configured_range_rb: [51, 106, 273, 546]
+    actual_pusch_rb: [4, 8, 16, 24, 48]
+    prach_rb: 12
+    pucch_rb: 2
+    ue_tx_power_dbm: [-10, 0, 5, 10, 23]
+    rf_processing_bandwidth_mhz: [20, 40, 100, 200]
+    retune_gap_slots: [0, 1, 2, 4, 8]
+    rf_architectures: [single_lo, dual_lo]
+    single_lo_required_gap_slots: 2
+    energy_model:
+      pa_slot_duration_s: 0.01
+      rf_sqrt_bandwidth_coefficient: 0.04
+      bb_configured_rb_coefficient: 0.015
+      bb_allocated_rb_coefficient: 0.02
+      sleep_baseline: 45
+      sleep_per_configured_rb: 0.02
+
+  post_ia:
+    capability_cases: [A, B]
+    activation_references: [msg4_harq_ack, rrc_setup_complete_pusch]
+    transition_classes: [0, 1, 2]
+    k_act_slots: [0, 1, 2, 4, 8]
+    k_fallback_slots: [0, 1, 2, 4, 8, 16]
+    early_cease_rules: [fixed_window, target_pdsch_harq_ack, target_pdcch_diagnostic]
+    monitoring_split_policies: [equal, target_75, target_90, fixed_common_minimum, priority]
+    max_blind_decodes: 44
+    max_nonoverlapped_cce: 56
+    common_min_blind_decodes: 4
+    common_min_cce: 8
+    target_profile_support_probability: 0.90
+    confirming_ul_success_probability: 0.98
+    target_pdcch_success_probability: 0.95
+    common_pdcch_success_probability: 0.98
+    trials: 2000
+    transition_geometry_common_start_rb: 48
+    transition_geometry_common_size_rb: 48
+    transition_geometry_target_start_rb: [48, 36, 72]
+    transition_geometry_target_size_rb: [24, 96, 48]
+    target_diagnostic_observation_slots: 1
+    latency_fallback_cap_slots: 4
+
+  paging:
+    drx_cycle_slots: 320
+    paging_occasions: 1000
+    locations: [common_coreset, sib1_pdsch, same_span_additional, retune_additional, outside_mandatory_span]
+    pdcch_success_probability: 0.98
+    pdsch_success_probability: 0.99
+    retune_time_slots: 2
+    deep_sleep_energy_per_slot: 1
+    active_energy_per_slot: 12
+
+  end_to_end:
+    trials: 2000
+    ue_classes: [low_tier_single_lo, high_tier_single_lo, high_tier_dual_lo]
+    access_stage_success: [0.995, 0.99, 0.98, 0.97, 0.98, 0.99, 0.98, 0.95]
+    stage_latency_slots: [1, 4, 2, 4, 4, 2, 2, 2]
+    failure_causes: [SSB_PBCH, SIB1_PDCCH, SIB1_PDSCH, PRACH, Msg3, Msg4, confirming_UL, target_activation]
+
+  statistics:
+    confidence_level: 0.95
+    minimum_errors: 100
+    preferred_errors_near_one_percent: 300
+    maximum_blocks: 200000
+    low_confidence_policy: mark_and_exclude_from_tdoc_ready
+    interpolation: adjacent_measured_points_only
+
+  figures:
+    conceptual: [F01_scope, F02_sib1_option_decomposition, F03_pbch_payload_cost, F04_wider_coreset_vs_wider_s, F05_source_power_normalization, F06_rf_span_feasibility, F07_rach_inheritance, F08_initial_ul_applicability, F09_postia_timeline]
+    measured: [R01_qcom_msg4_fixed_psd_bler, R02_qcom_msg4_fixed_total_power_bler, R03_contiguous_vs_distributed_constant_power, R04_pbch_added_bits_practical_bler, R05_pdcch_bler_vs_ns_fdra_al, R06_pdsch_bler_controlled_allocation_cases, R07_joint_sib1_acquisition_bler, R08_sib1_break_even_payload_bandwidth, R09_cce_blocking_vs_coreset_bandwidth, R10_common_message_delay_cdf, R11_receiver_preparation_offset_tradeoff, R12_sib1_completion_latency_vs_beams, R13_ssb_containment_tracking_overhead, R14_rf_span_feasibility_heatmap, R15_msg3_msga_bler_vs_actual_rbs_fixed_pmax, R16_ul_energy_vs_configured_range_width, R17_aligned_vs_non_aligned_tdd_gap, R18_early_capability_rach_success, R19_postia_activation_latency_mismatch, R20_overlap_window_recovery_overhead, R21_bd_cce_split_tradeoff, R22_profile_not_supported_recovery, R23_paging_energy_latency, R24_end_to_end_access_latency_cdf, R25_end_to_end_failure_cause_breakdown]

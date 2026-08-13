@@ -14,6 +14,7 @@ function [pb, info] = PBCH_Recovery(rxSSBGrid, sync, cfg, varargin)
 %   "PolarListLength" : default 8
 %   "AveragingWindow" : default [0 1]
 %   "NoiseVarFloor"   : default 1e-10
+%   "CandidateSelection" : crc_aided_legacy or dmrs_metric_then_single_decode
 %   "Verbose"         : default false
 %
 % Output pb fields:
@@ -31,6 +32,8 @@ p = inputParser;
 p.addParameter('PolarListLength', 8);
 p.addParameter('AveragingWindow', [0 1]);
 p.addParameter('NoiseVarFloor', 1e-10);
+p.addParameter('CandidateSelection', "crc_aided_legacy", ...
+    @(x) ischar(x) || (isstring(x) && isscalar(x)));
 p.addParameter('Verbose', false);
 p.parse(varargin{:});
 opt = p.Results;
@@ -80,6 +83,12 @@ if Lmax == 4
 else
     ibarCandidates = 0:7;
 end
+singleDMRSSelection=strcmpi(string(opt.CandidateSelection), ...
+    "dmrs_metric_then_single_decode");
+if ~singleDMRSSelection&&~strcmpi(string(opt.CandidateSelection),"crc_aided_legacy")
+    error("sixgr:phy:ia:PBCHCandidateSelection", ...
+        "PBCH CandidateSelection must be crc_aided_legacy or dmrs_metric_then_single_decode.");
+end
 
 % -----------------------------
 % Precompute indices
@@ -99,6 +108,23 @@ info.PerCandidate = repmat(struct( ...
     'NoiseVar', [], ...
     'ErrFlag', [], ...
     'msbidxoffset', []), numel(ibarCandidates), 1);
+info.DMRSHypothesesEvaluated = double(numel(ibarCandidates));
+info.PolarDecodesAttempted = 0;
+
+if singleDMRSSelection
+    rxDmrsPre = nrExtractResources(dmrsInd, rxGrid);
+    metricsPre = zeros(size(ibarCandidates));
+    for candidateIndex=1:numel(ibarCandidates)
+        refPre=nrPBCHDMRS(ncellid,ibarCandidates(candidateIndex));
+        for receiveIndex=1:Nr
+            metricsPre(candidateIndex)=metricsPre(candidateIndex)+ ...
+                abs(sum(conj(refPre(:)).*rxDmrsPre(:,receiveIndex))).^2;
+        end
+    end
+    [~,preselectedIndex]=max(metricsPre);
+    ibarCandidates=ibarCandidates([preselectedIndex, ...
+        setdiff(1:numel(ibarCandidates),preselectedIndex,"stable")]);
+end
 
 bestIdx = 1;
 bestMetric = -Inf;
@@ -163,6 +189,7 @@ for k = 1:numel(ibarCandidates)
     % BCH decode (nrBCHDecode 2nd output is errFlag / CRC)
     [scrblk, errFlag, trblk, sfn4lsb, nHalfFrame, msbidxoffset] = ...
         nrBCHDecode(pbchBits, double(opt.PolarListLength), double(Lmax), ncellid);
+    info.PolarDecodesAttempted = info.PolarDecodesAttempted + 1;
 
     info.PerCandidate(k).iBar_SSB = ibar;
     info.PerCandidate(k).v = v;
@@ -171,7 +198,7 @@ for k = 1:numel(ibarCandidates)
     info.PerCandidate(k).ErrFlag = errFlag;
     info.PerCandidate(k).msbidxoffset = msbidxoffset;
 
-    if errFlag == 0
+    if errFlag == 0 || singleDMRSSelection
         selectedFound = true;
         selected.ibar = ibar;
         selected.v = v;
@@ -184,6 +211,7 @@ for k = 1:numel(ibarCandidates)
         selected.nHalfFrame = nHalfFrame;
         selected.msbidxoffset = msbidxoffset;
         selected.evidence = evidence;
+        selected.hest = hest;
         break;
     end
 end
@@ -237,6 +265,7 @@ if ~selectedFound
     selected.nHalfFrame = nHalfFrame;
     selected.msbidxoffset = msbidxoffset;
     selected.evidence = evidence;
+    selected.hest = hest;
 end
 
 % -----------------------------
@@ -314,6 +343,7 @@ pb.MIBKSSBSubcarrierOffset = double(k_SSB);
 pb.MIBSSBIndex = double(ssbIndex);
 evidence = sixgr.util.structGet(selected, "evidence", struct());
 pb.ChannelEstimateAvailable = logical(sixgr.util.structGet(evidence, "ChannelEstimateAvailable", false));
+pb.ChannelEstimateGrid = sixgr.util.structGet(selected,"hest",complex(zeros(0,0,0)));
 pb.ChannelEstimateSource = string(sixgr.util.structGet(evidence, "ChannelEstimateSource", ""));
 pb.EqualizationAvailable = logical(sixgr.util.structGet(evidence, "EqualizationAvailable", false));
 pb.EqualizerType = string(sixgr.util.structGet(evidence, "EqualizerType", ""));

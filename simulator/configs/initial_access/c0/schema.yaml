@@ -6,6 +6,10 @@ required_paths:
   - run.max_trials_per_snr
   - run.min_errors_per_snr
   - run.checkpoint_interval
+  - run.seed_set_main
+  - run.seed_set_calibration
+  - run.seed_set_validation
+  - run.developer_allow_non_tdoc_tdoc_figures
   - carrier.frequency_hz
   - carrier.scs_khz
   - carrier.n_size_grid
@@ -28,20 +32,58 @@ required_paths:
   - channel.delay_profile
   - channel.delay_spread_s
   - channel.velocity_kmh
+  - interference.interfering_trps
   - mimo.num_tx_antennas
   - mimo.num_rx_antennas
   - oscillator.ue_ppm_range
   - oscillator.trp_ppm_range
   - search.cfo_hypotheses_hz
+  - search.cfo_coverage_margin_hz
   - search.timing_uncertainty_samples
+  - search.declaration_statistic
+  - search.pss_stage_threshold
+  - search.sss_normalized_metric_floor
+  - search.fine_cfo.enabled
+  - search.fine_cfo.method
+  - search.fine_cfo.maximum_residual_hz
+  - search.fine_cfo.minimum_symbols
   - false_alarm.target_probability
+  - false_alarm.pss_stage_target_probability
   - false_alarm.calibration_trials
   - false_alarm.validation_trials
+  - false_alarm.relative_ci_half_width_limit
+  - false_alarm.progress_interval
+  - false_alarm.checkpoint_interval
   - snr.coarse_grid_db
   - snr.refinement_step_db
+  - snr.refinement_half_span_db
+  - receiver.practical_timing
+  - receiver.practical_cfo
+  - receiver.practical_pci
+  - receiver.channel_estimation
+  - receiver.pbch_component_residual_cfo_model
+  - receiver.timing_success_tolerance_fraction_min_cp
+  - receiver.require_correct_dmrs_for_nmse
   - statistics.confidence_level
+  - statistics.target_crossing_interpolation
+  - statistics.confidence_crossing_method
+  - statistics.cdf_selection
+  - statistics.high_snr_sanity_db
+  - statistics.tdoc_min_errors_per_point
+  - statistics.tdoc_max_trials_per_point
+  - validation.snr_calibration_requested_db
+  - validation.snr_calibration_repetitions
+  - validation.snr_calibration_tolerance_db
+  - validation.high_snr_nmse_floor_margin_db
+  - validation.fine_cfo_sigma_multiplier
+  - complexity.count_arithmetic_operations
+  - complexity.count_memory_and_rf_activity
+  - output.save_event_debug_csv
 allowed_run_modes: [smoke, quick_sanity, tdoc, exhaustive]
 allowed_research_classes: [baseline_benchmark, agreed_starting_point, study_item_candidate, optional_research_experiment]
 allowed_channels: [AWGN, TDL-C, CDL-C]
 allowed_normalizations: [equal_epre, equal_total_energy, equal_tf_resource]
 allowed_candidates: [A20RB4]
+allowed_declaration_statistics: [minimum_pss_sss_normalized_metric]
+allowed_fine_cfo_methods: [cyclic_prefix]
+allowed_pbch_component_residual_cfo_models: [reuse_practical_estimate]

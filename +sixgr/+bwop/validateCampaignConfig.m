@@ -1,0 +1,109 @@
+function report = validateCampaignConfig(cfg)
+%VALIDATECAMPAIGNCONFIG Fail-fast semantic validation of BWOP policy.
+
+required=["schema_version","agenda_item","campaign_id","campaign_mode", ...
+    "master_seed","source","evidence_policy","output","runtime_modes", ...
+    "analytical","calibration","calibrated_waveform","downlink","common_control","rach", ...
+    "initial_ul","post_ia","paging","end_to_end","statistics","figures"];
+missing=required(~isfield(cfg,required));
+if ~isempty(missing)
+    error("sixgr:bwop:MissingConfigField", ...
+        "BWOP config is missing required field(s): %s.",strjoin(missing,", "));
+end
+if string(cfg.agenda_item)~="10.5.1.3"
+    error("sixgr:bwop:WrongAgendaItem","bwop.agenda_item must equal 10.5.1.3.");
+end
+mode=lower(string(cfg.campaign_mode));
+if ~ismember(mode,["analytical","smoke","bounded_tdoc","calibration","priority_tdoc","full","report_only"])
+    error("sixgr:bwop:InvalidCampaignMode","Unsupported BWOP mode '%s'.",mode);
+end
+if logical(cfg.output.save_svg)
+    error("sixgr:bwop:SVGPolicyConflict", ...
+        "This repository's raster policy requires bwop.output.save_svg=false; use vector PDF plus editable FIG.");
+end
+if double(cfg.output.png_dpi)<300
+    error("sixgr:bwop:FigureResolutionTooLow","BWOP PNG resolution must be at least 300 dpi.");
+end
+allowed=string(cfg.evidence_policy.allowed_classes(:));
+if ~isequal(sort(allowed),sort(sixgr.bwop.EvidenceClassifier.allowed().'))
+    error("sixgr:bwop:EvidenceCatalogMismatch", ...
+        "Configured evidence classes must exactly match the production evidence taxonomy.");
+end
+a=cfg.analytical;
+if any(double(a.coreset_rb(:))<=0)||any(double(a.sib1_reference_multipliers(:))<1)
+    error("sixgr:bwop:InvalidBandwidthSweep","N_C and N_S multipliers must be positive.");
+end
+if ~ismember(double(a.conceptual_reference_coreset_rb),double(a.coreset_rb(:)))
+    error("sixgr:bwop:InvalidConceptualReferenceCORESET", ...
+        "analytical.conceptual_reference_coreset_rb must be present in analytical.coreset_rb.");
+end
+if double(a.mandatory_rf_span_start_crb)<0||double(a.mandatory_rf_span_size_rb)<1
+    error("sixgr:bwop:InvalidRFSpan","Mandatory RF span start/size is invalid.");
+end
+stats=cfg.statistics;
+if double(stats.minimum_errors)<1||double(stats.maximum_blocks)<double(stats.minimum_errors)
+    error("sixgr:bwop:InvalidStoppingPolicy", ...
+        "maximum_blocks must be no smaller than minimum_errors.");
+end
+if double(cfg.post_ia.max_blind_decodes)<double(cfg.post_ia.common_min_blind_decodes)|| ...
+        double(cfg.post_ia.max_nonoverlapped_cce)<double(cfg.post_ia.common_min_cce)
+    error("sixgr:bwop:InvalidMonitoringBudget", ...
+        "Common minimum monitoring budgets cannot exceed UE totals.");
+end
+modeNames=fieldnames(cfg.runtime_modes);
+for i=1:numel(modeNames)
+    runtime=cfg.runtime_modes.(modeNames{i});
+    if double(runtime.max_trials_per_point)<0
+        error("sixgr:bwop:InvalidRuntimeTrialCap", ...
+            "runtime_modes.%s.max_trials_per_point must be nonnegative.",modeNames{i});
+    end
+end
+wave=cfg.calibrated_waveform;
+if double(wave.transport_blocks_per_point)<1 || ...
+        double(wave.pdcch_trials_per_point)<1 || ...
+        double(wave.maximum_measured_snr_error_db)<=0 || ...
+        isempty(double(wave.reference_snr_db))
+    error("sixgr:bwop:InvalidCalibratedWaveformPolicy", ...
+        "Calibrated waveform points, trial counts and SNR tolerance must be positive and nonempty.");
+end
+trackingLengths=[numel(cfg.downlink.tracking_cases), ...
+    numel(cfg.downlink.tracking_ssb_contained), ...
+    numel(cfg.downlink.tracking_retune_required), ...
+    numel(cfg.downlink.tracking_overhead_slots)];
+if numel(unique(trackingLengths))~=1
+    error("sixgr:bwop:TrackingConfigLengthMismatch", ...
+        "All downlink tracking arrays must have equal length.");
+end
+transitionLengths=[numel(cfg.post_ia.transition_geometry_target_start_rb), ...
+    numel(cfg.post_ia.transition_geometry_target_size_rb)];
+if transitionLengths(1)~=transitionLengths(2)
+    error("sixgr:bwop:TransitionGeometryLengthMismatch", ...
+        "Post-IA target start and size arrays must have equal length.");
+end
+e2eLengths=[numel(cfg.end_to_end.failure_causes), ...
+    numel(cfg.end_to_end.access_stage_success),numel(cfg.end_to_end.stage_latency_slots)];
+if numel(unique(e2eLengths))~=1
+    error("sixgr:bwop:E2EStageLengthMismatch", ...
+        "E2E failure causes, success probabilities and latencies must have equal length.");
+end
+probabilities=[double(cfg.end_to_end.access_stage_success(:)); ...
+    double(cfg.post_ia.target_profile_support_probability); ...
+    double(cfg.post_ia.confirming_ul_success_probability); ...
+    double(cfg.post_ia.target_pdcch_success_probability); ...
+    double(cfg.post_ia.common_pdcch_success_probability)];
+if any(~isfinite(probabilities)|probabilities<0|probabilities>1)
+    error("sixgr:bwop:InvalidProcedureProbability", ...
+        "BWOP procedure probabilities must be finite and within [0,1].");
+end
+conceptual=string(cfg.figures.conceptual(:));measured=string(cfg.figures.measured(:));
+if numel(conceptual)~=9||numel(measured)~=25||numel(unique([conceptual;measured]))~=34
+    error("sixgr:bwop:FigureContractMismatch", ...
+        "BWOP figure contract requires exactly nine conceptual and 25 distinct result IDs.");
+end
+checks=["required_fields","agenda_item","mode","raster_vector_policy", ...
+    "evidence_taxonomy","bandwidth_sweep","rf_span","statistics", ...
+    "monitoring_budget","runtime_caps","tracking_geometry", ...
+    "transition_geometry","e2e_stage_contract","probabilities","figure_contract"]';
+report=table(checks,repmat("PASS",numel(checks),1),repmat("strict_yaml_validation",numel(checks),1), ...
+    'VariableNames',{'Check','Status','Detail'});
+end

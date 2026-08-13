@@ -31,6 +31,13 @@ execution:
   output_root: results/csi_tdoc
   pdsch_anchor_config: configs/lls/pdsch_reference_bounded_qualification.yaml
   pdsch_interference_anchor_config: configs/lls/pdsch_tdlc_interference_bounded.yaml
+  controlled_groups: [B, C, D, E, F, G, H, I, J]
+  checkpoint_enabled: true
+  resume_enabled: true
+  checkpoint_batch_trials: 25
+  fail_on_incomplete_matrix: true
+  parallel_enabled: true
+  maximum_workers: 4
 
 carrier:
   center_frequency_hz: 7000000000
@@ -164,6 +171,12 @@ simulation:
   bounded_channel_realizations_per_point: 2
   shard_index: 1
   shard_count: 1
+  controlled_transport_blocks_per_point: 1000
+  controlled_min_block_errors: 100
+  controlled_max_transport_blocks_per_point: 10000
+  controlled_channel_realizations_per_point: 1000
+  controlled_snr_points_db: [-10, -5, 0, 5, 10, 15, 20]
+  controlled_preflight: false
 
 state_lifecycle:
   state_counts: [1, 2, 4, 8]
@@ -190,6 +203,11 @@ early_csi:
   monitored_candidates: [1, 2, 4, 8]
   transmissions: [1, 2, 4, 8]
   stored_state_age_slots: [0, 2, 8, 16]
+  initial_mcs_index: 0
+  coarse_ssb_sinr_bias_db: -3
+  csirs_sinr_bias_db: 0
+  dmrs_refinement_weight: 0.5
+  cqi_table: table1
 
 event_csi:
   gauss_markov_rho: 0.985
@@ -200,6 +218,13 @@ event_csi:
   ttt_slots: [1, 2, 4]
   minimum_inter_event_slots: [1, 4, 8]
   uci_failure_behaviors: [no_update, retry, periodic_fallback]
+  stage1_pucch_format: 1
+  stage2_pucch_format: 2
+  stage1_snr_db: [0, 5, 10]
+  stage2_snr_db: [0, 5, 10]
+  periodic_benchmark_enabled: true
+  one_stage_enabled: true
+  two_stage_enabled: true
 
 energy_hypotheses:
   names: [H0, H1, H2, H3]
@@ -223,6 +248,12 @@ occ:
   phase_sweep_deg_per_chip: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30]
   focal_phase_deg_per_chip: [5, 15]
   near_far_db: [0, 3, 6]
+  estimators: [LS, LMMSE]
+  controlled_snr_points_db: [-5, 0, 5, 10, 15, 20, 25]
+  channel_models: [CDL-A, CDL-C, CDL-D]
+  delay_spread_ns: [30, 100, 300]
+  speed_kmph: [3, 30, 120]
+  phase_noise_std_deg: [0, 5, 15]
 
 multislot:
   m1: [1, 2, 4, 8]
@@ -239,6 +270,12 @@ multislot:
   bounded_phase_increment_deg: 15
   bounded_speed_kmph: 30
   bounded_snr_db: 10
+  cases: [split_single_occasion, repeated_full_pattern]
+  re_location_modes: [same, different]
+  mapping_orders: [fixed, switched]
+  receiver_phase_modes: [continuous, independent_discontinuity]
+  stress_modes: [cfo_only, phase_only, aging_only, combined]
+  controlled_snr_points_db: [-5, 0, 5, 10, 15, 20, 25]
 
 outputs:
   required_tdoc_figures: [FIG-1-1, FIG-2.2-1, FIG-2.2-2, FIG-2.3-1, FIG-2.4-1, FIG-2.4-2, FIG-2.5-1, FIG-2.6-1, FIG-2.6-2, FIG-2.7-1, FIG-2.8-1, FIG-2.8-2, FIG-2.9-1, FIG-2.9-2, FIG-2.10-1, FIG-2.10-2, FIG-2.10-3, FIG-2.11-1, FIG-2.11-2, FIG-2.11-3]

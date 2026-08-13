@@ -1,0 +1,336 @@
+inherits:
+  - ../../../configs/lls/lls_prach_strict_mini_anchor.yaml
+  - ./prach_formats.yaml
+  - ./scenarios_mandatory.yaml
+  - ./msg3_shapes.yaml
+  - ./tdd_sbfd_patterns.yaml
+
+meta:
+  scenario_id: ran1_10512_prach_rach
+  description: Config-driven PRACH/RACH evidence campaign using the canonical SixGR waveform and RA chains.
+  version: "1.0"
+  owner: SixGR
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: initial_access
+  tags: [prach, rach, ran1_10_5_1_2, waveform_truth]
+
+scenario:
+  name: ran1_10512_prach_rach
+  description: Reusable PRACH/RACH TDoc campaign adapter over sixgr.rach, sixgr.phy.prach, and sixgr.phy.ra.
+  runner_profile: prach_strict_validation
+  target_cases: [prach]
+  bundle_anchor_cases: [prach_strict_validation]
+  honesty_mode: strict
+
+simulation:
+  # The RAN1 LLS curves use a received-waveform SNR reference.  Geometry
+  # and link-budget studies must select receiver_noise_figure_thermal_noise
+  # in their own YAML instead of inheriting this normalized LLS setting.
+  noise_operating_mode: standalone_awgn_snr_argument
+
+frequency:
+  range_name: FR1
+  center_frequency_hz: 7000000000
+  dl_center_frequency_hz: 7000000000
+  ul_center_frequency_hz: 7000000000
+  bandwidth_hz: 100000000
+  duplex_mode: TDD
+  band_name: 7ghz_study
+  n_size_grid: 273
+  bandwidth_options_hz: [100000000]
+  numerology_options_khz: [30]
+  max_mimo_size: 4
+  mobility_defaults_kmph: 3
+  channel_model_defaults: TDL-C
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: ul
+
+reference_signals:
+  ssb_enabled: true
+  ssb_case: "Case A"
+  ssb_scs_khz: 15
+  ssb_lmax: 8
+
+channels:
+  model_type: TDL
+  profile: TDL-C
+  delay_spread_ns: 300
+  doppler_hz: 19.46
+  mobility_kmph: 3
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+
+mimo:
+  n_tx_ant: 1
+  n_rx_ant: 4
+  n_layers: 1
+  precoder_type: none
+
+random_access:
+  enabled: true
+  binding_source: scenario_config_pending_sib1
+  procedure_type: contention_based_four_step
+  four_step_ra_required: true
+  msg4_contention_resolution_required: true
+  frequency_range: FR1
+  duplex_mode: TDD
+  carrier_frequency_hz: 7000000000
+  carrier_scs_khz: 30
+  n_size_grid: 273
+  n_cell_id: 42
+  prach_format: B4
+  prach_sequence_family: zadoff_chu_baseline
+  prach_design: nr_baseline
+  preamble_length_mode: short
+  configuration_index: 157
+  subcarrier_spacing_khz: 30
+  root_sequence_index: 1
+  logical_root_sequence_index: 1
+  sequence_index: 1
+  zero_correlation_zone: 8
+  restricted_set: UnrestrictedSet
+  frequency_start: 0
+  preamble_count: 64
+  preamble_index: [7]
+  occasion:
+    frame: 0
+    slot: 0
+    symbol: 0
+    frequency_index: 0
+  ra_response_window_slots: 20
+  ra_contention_resolution_timer_slots: 64
+  preamble_trans_max: 10
+  power_ramping_step_db: 2
+  preamble_received_target_power_dbm: -96
+  temp_crnti: 4660
+  final_crnti: 4660
+  timing:
+    rar_processing_delay_slots: 1
+    msg3_k2_slots: 1
+    msg4_processing_delay_slots: 1
+    setup_complete_k2_slots: 1
+  dci_payload_bits: 32
+  msg2_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+    ptrs_enabled: false
+    ptrs_port_set: [0]
+    ptrs_time_density: 1
+    ptrs_frequency_density: 2
+    ptrs_re_offset: '00'
+  msg3_pusch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 0
+    num_symbols: 14
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+    transform_precoding: false
+    ptrs_enabled: false
+    ptrs_port_set: [0]
+    ptrs_time_density: 1
+    ptrs_frequency_density: 2
+    ptrs_re_offset: '00'
+  msg4_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+    ptrs_enabled: false
+    ptrs_port_set: [0]
+    ptrs_time_density: 1
+    ptrs_frequency_density: 2
+    ptrs_re_offset: '00'
+  setup_complete_pusch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 0
+    num_symbols: 14
+    mcs: 0
+    modulation: QPSK
+    target_code_rate: 0.1171875
+    rv: 0
+    n_layers: 1
+    transform_precoding: false
+    ptrs_enabled: false
+    ptrs_port_set: [0]
+    ptrs_time_density: 1
+    ptrs_frequency_density: 2
+    ptrs_re_offset: '00'
+  min_detection_trials: 100
+  msg3_enabled: false
+  num_prach_occasions: 1
+  num_slots: 80
+  num_subframes: 10
+  active_preamble_pattern: [1]
+  num_rx_antennas: 4
+  num_tx_antennas: 1
+  num_ues_per_ro: 1
+  enable_collision_mode: true
+  enable_inter_cell_interference: false
+  enable_frequency_offset: true
+  enable_phase_noise: false
+  enable_timing_uncertainty: true
+  enable_frequency_estimation_metric: true
+  channel_model: TDL-C
+  delay_spread_ns: 300
+  speed_kmh: 3
+  cell_radius_m: 1155
+  timing_uncertainty_min_us: 0
+  timing_uncertainty_max_us: 7.7
+  ue_frequency_offset_hz: 0
+  trp_frequency_offset_hz: 0
+  phase_noise_std_rad: 0
+  inter_cell_relative_power_db: -3
+  target_false_alarm_probability: 0.001
+  timing_tolerance_us: 0.25
+  detection_threshold_mode: fixed
+  detection_threshold: 0.35
+  threshold_sweep: [0.35]
+  snr_sweep_db: [20]
+  timing_offset_sweep_samples: [0, 4, 8]
+  frequency_offset_sweep_hz: [0, 250]
+  statistical_qualification:
+    enabled: true
+    target_false_alarm_probability: 0.001
+    confidence_level: 0.95
+    minimum_trials: 100
+    maximum_trials: 100
+    batch_size_trials: 20
+    minimum_false_alarm_events: 0
+    ci_width_target: 0.05
+    planned_looks: 5
+    target_missed_detection_probability: 0.01
+    required_detection_snr_db: [20]
+    minimum_detection_trials: 100
+    maximum_detection_trials: 100
+    batch_size_detection_trials: 20
+    minimum_missed_detection_events: 0
+    detection_ci_width_target: 0.05
+    detection_planned_looks: 5
+    deterministic_seeds: [10512001, 10512017, 10512031, 10512047]
+
+initial_access:
+  rrc:
+    require_setup_complete: true
+    transaction_id: 0
+    srb1_lcid: 1
+
+tdoc10512:
+  schema_version: sixgr.rach.tdoc10512.v1
+  agenda_item: "10.5.1.2"
+  campaign_mode: analytical
+  campaign_id: ran1_10512
+  master_seed: 10512001
+  speed_of_light_mps: 299792458
+  target_delay:
+    channel_excess_delay_quantile_us: 0.3
+    timing_margin_us: 0.3
+    precompensation_error_us: 0.0
+  analytical:
+    timing_allowance_us: 0.3
+    collision_preamble_counts: [64, 128, 256]
+    collision_attempt_counts: [1, 2, 4, 8, 16, 32, 64]
+    partition_counts: [1, 2, 4, 8, 16]
+    unbalanced_attempts: [40, 8, 8, 8]
+    root_ncs_values: [1, 2, 4, 6, 8, 10, 12, 13, 15, 18, 22, 26, 32, 38, 46, 59, 76, 93]
+    root_target_preambles: [64, 128, 256]
+    rar_entries: [4, 8, 16, 32]
+    nr_rar_bytes_per_entry: 8
+    expanded_rar_bytes_per_entry: 9
+    root_sequence_length: 139
+  procedure:
+    receiver_cases:
+      - id: PRACH_ONLY
+        prach_detected: true
+        msga_valid: false
+        other_ue_evidence: false
+        description: PRACH detected with no valid MsgA
+      - id: PRACH_AND_MSGA
+        prach_detected: true
+        msga_valid: true
+        other_ue_evidence: false
+        description: PRACH and valid MsgA with no evidence of another UE
+      - id: MIXED_SAME_PREAMBLE
+        prach_detected: true
+        msga_valid: true
+        other_ue_evidence: true
+        description: Same preamble used by PRACH-only and PRACH-plus-MsgA UEs
+      - id: AMBIGUOUS_MSGA
+        prach_detected: true
+        msga_valid: false
+        other_ue_evidence: true
+        description: MsgA is ambiguous or undecodable
+    response_policies:
+      - id: MSGB_ONLY
+        research_class: study_item_candidate
+      - id: RAR_ONLY
+        research_class: study_item_candidate
+      - id: COMBINED_MSGB_PLUS_FALLBACK_GRANT
+        research_class: study_item_candidate
+      - id: ALL_SAME_PREAMBLE_FALLBACK_TO_4STEP
+        research_class: study_item_candidate
+  frequency_stress_mode: study_table_screening
+  waveform_frequency_stress_mode: physical_channel_plus_residual_cfo
+  result_classification:
+    analytical: ANALYTICAL_DERIVATION
+    smoke: QUICK_SANITY_MODEL
+    engineering_lls: ENGINEERING_LLS
+    core_lls: CALIBRATED_LLS
+    full: MULTICELL_SLS
+  engineering:
+    full_ra_snr_db: [20]
+    full_ra_trials_per_snr: 3
+    full_ra_seed: 10512101
+    pucch_ack_snr_db: [0, 10, 20]
+    pucch_trials_per_point: 3
+    pucch_formats: [0, 1]
+    contention_snr_db: 20
+    negative_false_rar_trials: 3
+    cfo_offsets_hz: [-250, 0, 250]
+    cfo_trials_per_point: 3
+    type2_trials_per_tier: 3
+    type2_tiers:
+      - tier: 3
+        inter_cell_relative_power_db: -6
+      - tier: 4
+        inter_cell_relative_power_db: -12
+      - tier: 5
+        inter_cell_relative_power_db: -18
+    msg3_link_budget:
+      ue_pcmax_dbm: 23
+      receiver_noise_density_dbm_hz: -174
+      gnb_noise_figure_db: 5
+      implementation_loss_db: 0
+    complete_fit_trials: 2000
+    complete_fit_seed: 10512901
+  output:
+    root: results/ran1_10512
+    save_png: true
+    save_jpeg: false
+    save_pdf: false
+    save_svg: false
+    png_dpi: 300
+    never_overwrite: true
+    save_csv_sources: true
+    save_mat_sources: true
+    save_json_sidecars: true

@@ -24,6 +24,14 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(isfinite(x))));
     p.addParameter('TimingSearchGuardSamples', 0, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0 && x == round(x));
+    p.addParameter('FineCFOEnabled', false, ...
+        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+    p.addParameter('FineCFOMethod', "cyclic_prefix", ...
+        @(x) ischar(x) || (isstring(x) && isscalar(x)));
+    p.addParameter('FineCFOMaxResidualHz', Inf, ...
+        @(x) isnumeric(x) && isscalar(x) && ~isnan(x) && x > 0);
+    p.addParameter('FineCFOMinimumSymbols', 2, ...
+        @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == round(x));
     p.addParameter('SSBTiming', struct(), @localOptionalTiming);
     p.parse(varargin{:});
     opt = p.Results;
@@ -155,9 +163,36 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     selectedTimingOffset = searchWindows(bestWindowIndex, 1) - 1 + ...
         selectedLag - 1;
 
-    % Apply the selected correction
-    rxOut = localFreqShift(rxWaveform, sampleRateHz, -bestHz);
-    freqOffsetHz = bestHz;
+    % Refine the residual CFO without truth information.  Once coarse PSS
+    % acquisition has reduced the offset below half the SCS, the repeated
+    % cyclic prefix provides a practical fractional-CFO phase measurement.
+    coarseCorrected = localFreqShift(rxWaveform, sampleRateHz, -bestHz);
+    fineResidualHz = 0;
+    fineInfo = struct("Enabled",logical(opt.FineCFOEnabled), ...
+        "Method",string(opt.FineCFOMethod),"Available",false, ...
+        "ResidualEstimateHz",NaN,"SymbolsUsed",0, ...
+        "ComplexProducts",0,"ComplexAdditions",0, ...
+        "ExpectedUnambiguousRangeHz",double(ssbTiming.SSBSubcarrierSpacingKHz)*500);
+    if logical(opt.FineCFOEnabled)
+        if ~strcmpi(string(opt.FineCFOMethod),"cyclic_prefix")
+            error("sixgr:phy:sync:UnsupportedFineCFOMethod", ...
+                "Fine CFO method '%s' is unsupported; expected cyclic_prefix.", ...
+                string(opt.FineCFOMethod));
+        end
+        fineInfo = localCyclicPrefixResidualCFO(coarseCorrected, ...
+            sampleRateHz,selectedTimingOffset, ...
+            candidateStartSymbols(bestWindowIndex),ssbTiming, ...
+            double(opt.FineCFOMaxResidualHz), ...
+            double(opt.FineCFOMinimumSymbols));
+        if ~fineInfo.Available
+            error("sixgr:phy:sync:FineCFOUnavailable", ...
+                "CP-based fine CFO was enabled but fewer than %d complete SSB symbols were available.", ...
+                double(opt.FineCFOMinimumSymbols));
+        end
+        fineResidualHz = double(fineInfo.ResidualEstimateHz);
+    end
+    freqOffsetHz = bestHz + fineResidualHz;
+    rxOut = localFreqShift(rxWaveform, sampleRateHz, -freqOffsetHz);
     NID2 = bestNID2;
 
     info = struct();
@@ -178,7 +213,77 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.SearchDuration_ms = 1e3 * info.SearchSamples / ...
         double(sampleRateHz);
     info.Metric = bestMetric;
+    referenceLength = numel(selectedReference);
+    timingLagsPerWindow = max(0, ...
+        searchWindows(:,2)-searchWindows(:,1)+1-referenceLength+1);
+    totalTimingLags = sum(timingLagsPerWindow);
+    correlationVectors = numel(candNID2)*numel(candHz)*size(searchWindows,1);
+    arithmeticScale = numel(candNID2)*numel(candHz)*size(rxWaveform,2);
+    info.ReferenceLengthSamples = double(referenceLength);
+    info.TimingLagsEvaluated = double(totalTimingLags*numel(candNID2)*numel(candHz));
+    info.PSSSequences = double(numel(candNID2));
+    info.PSSCorrelationVectors = double(correlationVectors);
+    info.PSSComplexMultiplications = double(totalTimingLags*referenceLength*arithmeticScale);
+    info.PSSComplexAdditions = double(totalTimingLags*max(referenceLength-1,0)*arithmeticScale);
+    info.FFTCount = 0;
+    info.CoarseCFOEstimateHz = double(bestHz);
+    info.FineCFOEstimateHz = double(fineResidualHz);
+    info.FinalCFOEstimateHz = double(freqOffsetHz);
+    info.FineCFO = fineInfo;
     info.SSBTiming = ssbTiming;
+end
+
+function info = localCyclicPrefixResidualCFO(x,fs,pssStartZeroBased, ...
+        candidateStartSymbol,ssbTiming,maxResidualHz,minSymbols)
+carrier = nrCarrierConfig;
+carrier.SubcarrierSpacing = double(ssbTiming.SSBSubcarrierSpacingKHz);
+carrier.NSizeGrid = 20;
+carrier.NStartGrid = 0;
+carrier.CyclicPrefix = "normal";
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+    carrier,"SampleRate",double(fs),"WindowingSamples",0);
+nfft = double(sampling.Nfft);
+cp = double(sampling.CyclicPrefixLengthsPerSlot(:).');
+symbolWithinSlot = mod(double(candidateStartSymbol),numel(cp));
+cursor = round(double(pssStartZeroBased)) + 1;
+accumulator = complex(0);
+symbolsUsed = 0;
+products = 0;
+for symbolOffset = 0:3
+    symbolIndex = symbolWithinSlot + symbolOffset + 1;
+    if symbolIndex > numel(cp)
+        break;
+    end
+    cpLength = cp(symbolIndex);
+    first = cursor;
+    lastPrefix = first + cpLength - 1;
+    firstRepeated = first + nfft;
+    lastRepeated = firstRepeated + cpLength - 1;
+    if first < 1 || lastRepeated > size(x,1)
+        break;
+    end
+    prefix = x(first:lastPrefix,:);
+    repeated = x(firstRepeated:lastRepeated,:);
+    terms = conj(prefix).*repeated;
+    accumulator = accumulator + sum(terms,"all");
+    products = products + numel(terms);
+    symbolsUsed = symbolsUsed + 1;
+    cursor = cursor + cpLength + nfft;
+end
+available = symbolsUsed >= minSymbols && isfinite(real(accumulator)) && ...
+    isfinite(imag(accumulator)) && abs(accumulator) > 0;
+residualHz = NaN;
+if available
+    residualHz = angle(accumulator)*double(fs)/(2*pi*nfft);
+    if abs(residualHz) > maxResidualHz
+        available = false;
+    end
+end
+info = struct("Enabled",true,"Method","cyclic_prefix", ...
+    "Available",logical(available),"ResidualEstimateHz",double(residualHz), ...
+    "SymbolsUsed",double(symbolsUsed),"ComplexProducts",double(products), ...
+    "ComplexAdditions",double(max(products-1,0)), ...
+    "ExpectedUnambiguousRangeHz",double(fs)/(2*nfft));
 end
 
 function y = localFreqShift(x, fs, fHz)

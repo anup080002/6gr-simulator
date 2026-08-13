@@ -1,0 +1,56 @@
+classdef FigureContract
+    %FIGURECONTRACT Load and validate the versioned DL-CSI figure contract.
+
+    methods (Static)
+        function [figures,metadata]=load(path)
+            arguments
+                path (1,1) string = "simulator/configs/csi_tdoc/figure_contract.yaml"
+            end
+            raw=sixgr.lls6g.config.readConfigFile(path);
+            if ~isfield(raw,"schema_version") || ...
+                    string(raw.schema_version)~="sixgr.csi.figure_contract/v2"
+                error("sixgr:csi:BadFigureContractVersion", ...
+                    "The CSI figure contract must use sixgr.csi.figure_contract/v2.");
+            end
+            if ~isfield(raw,"figures") || isempty(raw.figures)
+                error("sixgr:csi:EmptyFigureContract", ...
+                    "The CSI figure contract contains no figures.");
+            end
+            figures=raw.figures(:);
+            required=["figure_id","tdoc_caption","evidence_class","plotter", ...
+                "source_csvs","required_columns","series_definition", ...
+                "filter_definition","aggregation","confidence_interval", ...
+                "x_axis_label","y_axis_label","units","required_annotations", ...
+                "limitations_text","png_path","pdf_path","acceptance_tests"];
+            for k=1:numel(figures)
+                for name=required
+                    if ~isfield(figures(k),char(name)) || ...
+                            isempty(figures(k).(char(name)))
+                        error("sixgr:csi:IncompleteFigureContract", ...
+                            "Figure contract row %d is missing %s.",k,name);
+                    end
+                end
+                sixgr.csi.EvidenceClass.validateFigure( ...
+                    string(figures(k).evidence_class));
+                if endsWith(string(figures(k).x_axis_label),"Index", ...
+                        "IgnoreCase",true) || contains(string(figures(k).y_axis_label), ...
+                        "Units","IgnoreCase",true)
+                    error("sixgr:csi:UnscientificFigureAxis", ...
+                        "Figure %s uses an internal/undefined axis label.", ...
+                        string(figures(k).figure_id));
+                end
+                if strlength(strtrim(string(figures(k).limitations_text)))==0
+                    error("sixgr:csi:MissingFigureLimitation", ...
+                        "Figure %s has no limitations text.",string(figures(k).figure_id));
+                end
+            end
+            ids=string({figures.figure_id});
+            if numel(figures)~=20 || numel(unique(ids))~=numel(ids)
+                error("sixgr:csi:FigureContractCardinality", ...
+                    "The public contract must contain exactly 20 unique figures.");
+            end
+            metadata=struct("SchemaVersion",string(raw.schema_version), ...
+                "Path",string(path),"SHA256",sixgr.csi.fileSHA256(path));
+        end
+    end
+end

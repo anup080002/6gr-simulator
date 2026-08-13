@@ -52,15 +52,18 @@ end
 stds=double(cfg.multislot.iid_phase_std_deg(:)); iidRows=[];
 trials=double(cfg.multislot.monte_carlo_trials);
 old=rng; cleanup=onCleanup(@() rng(old)); %#ok<NASGU>
-rng(double(cfg.reproducibility.base_seed)+11,"twister");
+iidSeed=double(cfg.reproducibility.base_seed)+11;
+rng(iidSeed,"twister");
 for M=m1.'
     for sd=stds.'
         sigma=deg2rad(sd); theoretical=1/M+(1-1/M)*exp(-sigma^2);
-        phi=sigma*randn(trials,M); empirical=mean(abs(mean(exp(1j*phi),2)).^2);
+        phi=sigma*randn(trials,M); samples=abs(mean(exp(1j*phi),2)).^2;
+        empirical=mean(samples); [ciLow,ciHigh]=localMeanCI(samples,.95);
         iidRows=[iidRows;table(M,sd,theoretical,empirical,abs(theoretical-empirical), ...
-            trials,"ANALYTICAL","PASS",'VariableNames',{'M1','PhaseStdDeg', ...
-            'TheoreticalGain','MonteCarloGain','AbsoluteError','N', ...
-            'EvidenceClass','Status'})]; %#ok<AGROW>
+            ciLow,ciHigh,trials,iidSeed,"ANALYTICAL","PASS", ...
+            'VariableNames',{'M1','PhaseStdDeg','TheoreticalGain', ...
+            'MonteCarloGain','AbsoluteError','GainCI95Low','GainCI95High', ...
+            'N','Seed','EvidenceClass','Status'})]; %#ok<AGROW>
     end
 end
 speeds=double(cfg.multislot.speed_kmph(:)); agingRows=[];
@@ -97,7 +100,8 @@ end
 ages=double(cfg.interference_age.sanity_ages_slots(:)); probs=double( ...
     cfg.interference_age.pairing_change_probability(:)); trials=double( ...
     cfg.interference_age.sanity_trials); ageRows=[];
-rng(double(cfg.reproducibility.base_seed)+19,"twister");
+ageSeed=double(cfg.reproducibility.base_seed)+19;
+rng(ageSeed,"twister");
 for prob=probs.'
     for age=ages.'
         retained=rand(trials,1)>(1-(1-prob)^age);
@@ -106,14 +110,29 @@ for prob=probs.'
         actual=retained.*oldInterference+(~retained).*newInterference;
         desired=double(cfg.interference_age.desired_power); noise=double(cfg.interference_age.noise_power);
         err=10*log10(desired./(noise+oldInterference))-10*log10(desired./(noise+actual));
-        ageRows=[ageRows;table(age,prob,mean(retained),sqrt(mean(err.^2)), ...
-            trials,"SANITY","PASS",'VariableNames',{'InterferenceAgeSlots', ...
+        squared=err.^2; mse=mean(squared); rmse=sqrt(mse);
+        seMSE=std(squared,0)/sqrt(trials); z=1.95996398454005;
+        rmseLow=sqrt(max(0,mse-z*seMSE)); rmseHigh=sqrt(max(0,mse+z*seMSE));
+        exactRetention=(1-prob)^age;
+        [retLow,retHigh]=sixgr.lls.stats.wilsonInterval(sum(retained),trials,.95);
+        ageRows=[ageRows;table(age,prob,mean(retained),exactRetention, ...
+            retLow,retHigh,rmse,rmseLow,rmseHigh,trials,ageSeed, ...
+            "SANITY","PASS",'VariableNames',{'InterferenceAgeSlots', ...
             'ChangeProbabilityPerSlot','HypothesisRetentionProbability', ...
-            'EffectiveSINRRMSEdB','N','EvidenceClass','Status'})]; %#ok<AGROW>
+            'ExactRetentionProbability','RetentionCI95Low','RetentionCI95High', ...
+            'EffectiveSINRRMSEdB','RMSECI95LowdB','RMSECI95HighdB', ...
+            'N','Seed','EvidenceClass','Status'})]; %#ok<AGROW>
     end
 end
 
 out=struct("PortPower",pRows,"PortNMSE",nRows,"OCC",occRows, ...
     "MultislotCFO",cfoRows,"MultislotIID",iidRows,"MultislotAging",agingRows, ...
     "Sharing",shareRows,"InterferenceAge",ageRows);
+end
+
+function [low,high]=localMeanCI(samples,confidence)
+samples=double(samples(:)); n=numel(samples); meanValue=mean(samples);
+if n<2, low=meanValue; high=meanValue; return; end
+z=-sqrt(2)*erfcinv(2*(.5+confidence/2));
+half=z*std(samples,0)/sqrt(n); low=meanValue-half; high=meanValue+half;
 end

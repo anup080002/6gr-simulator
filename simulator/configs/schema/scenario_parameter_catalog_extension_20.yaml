@@ -1,0 +1,29 @@
+top_level_order:
+  - tdoc10512
+
+sections:
+  tdoc10512:
+    required: false
+    parameters:
+      schema_version: {required: true, type: string, nonempty: true}
+      agenda_item: {required: true, type: string, allowed_values: ["10.5.1.2"]}
+      campaign_mode: {required: true, type: string, allowed_values: [smoke, analytical, engineering_lls, core_lls, full, report_only]}
+      campaign_id: {required: true, type: string, nonempty: true}
+      master_seed: {required: true, type: integer, min: 0}
+      speed_of_light_mps: {required: true, type: number, min: 290000000, max: 310000000}
+      # readConfigFile preserves YAML sequences of heterogeneous maps as
+      # cell arrays; the campaign validator performs record-level checking.
+      prach_formats: {required: true, min_items: 1}
+      scenarios: {required: true, min_items: 1}
+      msg3_shapes: {required: true, min_items: 1}
+      msg3_shape_edges: {required: true, min_items: 1}
+      sbfd: {required: true, type: struct}
+      tdd_patterns: {required: true, min_items: 1}
+      target_delay: {required: true, type: struct}
+      analytical: {required: true, type: struct}
+      procedure: {required: true, type: struct}
+      engineering: {required: true, type: struct}
+      frequency_stress_mode: {required: true, type: string, allowed_values: [study_table_screening]}
+      waveform_frequency_stress_mode: {required: true, type: string, allowed_values: [physical_channel_plus_residual_cfo]}
+      result_classification: {required: true, type: struct}
+      output: {required: true, type: struct}

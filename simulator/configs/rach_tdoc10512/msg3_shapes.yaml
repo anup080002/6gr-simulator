@@ -1,0 +1,47 @@
+tdoc10512:
+  msg3_shapes:
+    - id: S0
+      prbs: 2
+      symbols: 14
+      repetitions: 1
+      hopping_options: ["off"]
+      intended_use: normal_msg3
+    - id: S1
+      prbs: 2
+      symbols: 28
+      repetitions: 1
+      hopping_options: ["off", "on"]
+      intended_use: power_limited_consecutive_ul_slots
+    - id: S2
+      prbs: 4
+      symbols: 14
+      repetitions: 1
+      hopping_options: ["off", "on"]
+      intended_use: one_slot_frequency_diversity
+    - id: S3
+      prbs: 2
+      symbols: 14
+      repetitions: 2
+      hopping_options: ["off", "on"]
+      intended_use: coverage_enhancement
+    - id: S4
+      prbs: 2
+      symbols: 28
+      repetitions: 2
+      hopping_options: ["off", "on"]
+      intended_use: extreme_coverage_stress
+    - id: S5
+      prbs: 3
+      symbols: [14, 28]
+      repetitions: [1, 2]
+      hopping_options: ["off", "on"]
+      intended_use: intermediate_sensitivity
+  msg3_shape_edges:
+    - from: S1
+      to: S2
+    - from: S2
+      to: S0
+    - from: S4
+      to: S3
+    - from: S3
+      to: S0

@@ -1,0 +1,17 @@
+inherits: [common.yaml]
+
+execution:
+  active_mode: controlled
+  checkpoint_enabled: true
+  resume_enabled: true
+  fail_on_incomplete_matrix: true
+
+simulation:
+  controlled_preflight: false
+  controlled_transport_blocks_per_point: 1000
+  controlled_min_block_errors: 100
+  controlled_max_transport_blocks_per_point: 10000
+  controlled_channel_realizations_per_point: 1000
+  controlled_snr_points_db: [-10, -5, 0, 5, 10, 15, 20]
+  shard_index: 1
+  shard_count: 1

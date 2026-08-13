@@ -92,7 +92,7 @@ axis equal; grid on; view(35,25);
 xlabel('x (m)'); ylabel('y (m)'); zlabel('z (m)');
 title(sprintf('Executed ISAC scene | %s',strrep(char(cfg.isac.sensingMode),'_',' ')));
 legend('Location','best'); localStyle(gca);
-exportgraphics(fig,scenarioPath,"Resolution",resolutionDPI);
+sixgr.visual.exportRasterAtomic(fig,string(scenarioPath),resolutionDPI);
 plotPaths(end+1,1) = string(scenarioPath);
 close(fig); clear cleanup;
 
@@ -108,7 +108,7 @@ for index = 1:height(truth)
 end
 grid on; ylim([-80 3]); xlabel('Range (m)'); ylabel('Relative power (dB)');
 title('PDSCH waveform matched-filter range profile'); localStyle(gca);
-exportgraphics(fig,profilePath,"Resolution",resolutionDPI);
+sixgr.visual.exportRasterAtomic(fig,string(profilePath),resolutionDPI);
 plotPaths(end+1,1) = string(profilePath);
 close(fig); clear cleanup;
 
@@ -129,7 +129,7 @@ end
 xlabel('Local receive azimuth (deg)'); ylabel('Range (m)');
 title('Measured ISAC range-azimuth response'); legend('Location','best');
 localStyle(gca);
-exportgraphics(fig,anglePath,"Resolution",resolutionDPI);
+sixgr.visual.exportRasterAtomic(fig,string(anglePath),resolutionDPI);
 plotPaths(end+1,1) = string(anglePath);
 close(fig); clear cleanup;
 
@@ -145,7 +145,7 @@ plot(truth.ExpectedDopplerHz,truth.ExpectedRangeM,'wo','MarkerSize',10, ...
 xlabel('Doppler frequency (Hz)'); ylabel('Range (m)');
 title('Measured ISAC range-Doppler response'); legend('Location','best');
 localStyle(gca);
-exportgraphics(fig,dopplerPath,"Resolution",resolutionDPI);
+sixgr.visual.exportRasterAtomic(fig,string(dopplerPath),resolutionDPI);
 plotPaths(end+1,1) = string(dopplerPath);
 close(fig); clear cleanup;
 

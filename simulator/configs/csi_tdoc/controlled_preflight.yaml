@@ -1,0 +1,17 @@
+inherits: [controlled_full.yaml]
+
+simulation:
+  controlled_preflight: true
+  controlled_transport_blocks_per_point: 1
+  controlled_min_block_errors: 1
+  controlled_max_transport_blocks_per_point: 1
+  controlled_channel_realizations_per_point: 1
+
+interference_age:
+  sanity_trials: 128
+
+event_csi:
+  sanity_slots: 128
+
+multislot:
+  monte_carlo_trials: 128

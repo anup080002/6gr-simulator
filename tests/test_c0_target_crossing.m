@@ -1,12 +1,20 @@
 function test_c0_target_crossing()
-%TEST_C0_TARGET_CROSSING Zero-error endpoints still bracket real targets.
-points=table([-12;-8],[0.75;0], ...
-    'VariableNames',{'SNRDB','PBCHBLER'});
+%TEST_C0_TARGET_CROSSING Require qualified, nonzero adjacent brackets.
+points=table([-12;-11.75],[0.20;0.05],[600;500],[3000;10000], ...
+    [true;true],[0.18;0.04],[0.22;0.06], ...
+    'VariableNames',{'SNRDB','PBCHComponentBLER', ...
+    'PBCHComponentErrors','PBCHComponentTrials', ...
+    'PBCHComponentStoppingQualified','PBCHComponentCILow', ...
+    'PBCHComponentCIHigh'});
 r=sixgr.phy.ia.c0.metrics.findTargetCrossing( ...
-    points,"PBCHBLER",0.1);
-assert(r.Bracketed);
-assert(r.LowerSNRDB==-12 && r.UpperSNRDB==-8);
-assert(abs(r.CrossingSNRDB-(-8.53333333333333))<1e-10);
-assert(r.Interpolation=="linear_in_probability_zero_endpoint");
+    points,"PBCHComponentBLER",0.1);
+assert(r.Bracketed&&r.Status=="QUALIFIED_SIMULATED_BRACKET");
+assert(r.Interpolation=="linear_in_log10_probability");
+expected=interp1(log10([0.20 0.05]),[-12 -11.75],log10(0.1));
+assert(abs(r.CrossingSNRDB-expected)<1e-12);
+points.PBCHComponentBLER(2)=0;
+r=sixgr.phy.ia.c0.metrics.findTargetCrossing( ...
+    points,"PBCHComponentBLER",0.1);
+assert(~r.Bracketed&&contains(r.Status,"ZERO_RAW_ENDPOINT"));
 fprintf('test_c0_target_crossing: PASS\n');
 end

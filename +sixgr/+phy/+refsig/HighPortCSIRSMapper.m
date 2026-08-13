@@ -6,13 +6,14 @@ classdef HighPortCSIRSMapper
     % demodulated and despread.  No requested port is silently discarded.
 
     methods (Static)
-        function plan = plan(carrierCfg,portCount,cdmSize,family,density)
+        function plan = plan(carrierCfg,portCount,cdmSize,family,density,fdtdSplit)
             arguments
                 carrierCfg (1,1) struct
                 portCount (1,1) double {mustBePositive,mustBeInteger}
                 cdmSize (1,1) double {mustBePositive,mustBeInteger}
                 family (1,1) string
                 density (1,1) double {mustBePositive}
+                fdtdSplit (1,1) string = ""
             end
             if portCount < cdmSize || mod(portCount,cdmSize) ~= 0
                 error("sixgr:csi:InvalidHighPortGrouping", ...
@@ -23,19 +24,48 @@ classdef HighPortCSIRSMapper
                 error("sixgr:csi:InvalidCSIRSDensity", ...
                     "CSI-RS density must be one of [1, 0.5, 0.25].");
             end
+            [fdOcc,tdOcc,splitLabel]=localFDTDSplit(fdtdSplit,cdmSize);
+            persistent planCache
+            if isempty(planCache)
+                planCache=containers.Map("KeyType","char","ValueType","any");
+            end
+            cacheKey=char(strjoin(string([double(carrierCfg.n_rb), ...
+                double(sixgr.util.structGet(carrierCfg,"scs_khz",30)), ...
+                portCount,cdmSize,density])+"",":")+":"+lower(family)+":"+splitLabel);
+            if isKey(planCache,cacheKey)
+                plan=planCache(cacheKey);
+                return;
+            end
             C = sixgr.phy.refsig.OCCFactory.matrix(family,cdmSize);
             nSC = 12*double(carrierCfg.n_rb);
             nSym = 14;
-            available = (1:max(1,round(1/density)):nSC*nSym).';
             groupCount = portCount/cdmSize;
-            required = groupCount*cdmSize;
-            if required > numel(available)
+            frequencyStride=max(1,round(1/density));
+            groupWidth=(fdOcc-1)*frequencyStride+1;
+            frequencyBlocks=floor(nSC/groupWidth);
+            timeBlocks=floor(nSym/tdOcc);
+            capacity=frequencyBlocks*timeBlocks;
+            if groupCount > capacity
                 error("sixgr:csi:CSIRSPatternDoesNotFit", ...
-                    ["Requested %d ports with CDM%d and density %.2g requires %d " ...
-                     "localized REs, but the configured %d-RB grid provides %d."], ...
-                    portCount,cdmSize,density,required,carrierCfg.n_rb,numel(available));
+                    ["Requested %d ports with CDM%d, %s and density %.2g requires %d " ...
+                     "localized groups, but the configured %d-RB grid provides %d."], ...
+                    portCount,cdmSize,splitLabel,density,groupCount, ...
+                    carrierCfg.n_rb,capacity);
             end
-            re = reshape(available(1:required),cdmSize,groupCount);
+            re=zeros(cdmSize,groupCount);
+            for g=1:groupCount
+                frequencyBlock=mod(g-1,frequencyBlocks);
+                timeBlock=floor((g-1)/frequencyBlocks);
+                chip=0;
+                for td=0:tdOcc-1
+                    for fd=0:fdOcc-1
+                        chip=chip+1;
+                        subcarrier=frequencyBlock*groupWidth+fd*frequencyStride;
+                        symbol=timeBlock*tdOcc+td;
+                        re(chip,g)=subcarrier+1+symbol*nSC;
+                    end
+                end
+            end
             rows = repmat(localMapRow(),portCount*cdmSize,1);
             q = 0;
             for g = 1:groupCount
@@ -49,6 +79,7 @@ classdef HighPortCSIRSMapper
                             "LinearREZeroBased",linear-1, ...
                             "SubcarrierZeroBased",mod(linear-1,nSC), ...
                             "SymbolZeroBased",floor((linear-1)/nSC), ...
+                            "FDOccLength",fdOcc,"TDOccLength",tdOcc, ...
                             "SequenceReal",real(C(chip,p)), ...
                             "SequenceImag",imag(C(chip,p)));
                     end
@@ -57,10 +88,13 @@ classdef HighPortCSIRSMapper
             map = struct2table(rows,"AsArray",true);
             plan = struct("PortCount",portCount,"CDMSize",cdmSize, ...
                 "OCCFamily",lower(family),"Density",density, ...
+                "FDTDSplit",splitLabel,"FDOccLength",fdOcc, ...
+                "TDOccLength",tdOcc, ...
                 "GroupCount",groupCount,"REPerPort",cdmSize, ...
                 "REIndices",re,"OCC",C,"Map",map, ...
                 "MapSHA256",sixgr.util.sha256Hex(uint8(unicode2native( ...
                     jsonencode(table2struct(map)),"UTF-8"))));
+            planCache(cacheKey)=plan;
         end
 
         function result = runWaveformPoint(cfg,portCount,cdmSize,family, ...
@@ -80,12 +114,18 @@ classdef HighPortCSIRSMapper
                 options.ChipPhaseDeg (1,1) double {mustBeFinite} = 0
                 options.CommonPhaseDeg (1,1) double {mustBeFinite} = 0
                 options.PowerOffsetDb (1,1) double {mustBeFinite} = 0
+                options.FDTDSplit (1,1) string = ""
+                options.Estimator (1,1) string = "LS"
+                options.ResidualCFOHz (1,1) double {mustBeFinite} = 0
+                options.TimingOffsetSamples (1,1) double {mustBeInteger} = 0
+                options.PhaseNoiseStdDeg (1,1) double {mustBeNonnegative,mustBeFinite} = 0
+                options.PortPowerOffsetsDb double = []
             end
             carrierCfg = struct("n_rb",double(cfg.carrier.n_rb), ...
                 "scs_khz",double(cfg.carrier.scs_khz), ...
                 "n_cell_id",0);
             plan = sixgr.phy.refsig.HighPortCSIRSMapper.plan( ...
-                carrierCfg,portCount,cdmSize,family,density);
+                carrierCfg,portCount,cdmSize,family,density,options.FDTDSplit);
             carrier = nrCarrierConfig("NSizeGrid",carrierCfg.n_rb, ...
                 "SubcarrierSpacing",carrierCfg.scs_khz,"NCellID",0,"NSlot",0);
             nSC = 12*carrier.NSizeGrid;
@@ -100,6 +140,18 @@ classdef HighPortCSIRSMapper
                         "Unsupported CSI-RS power normalization '%s'.",powerNormalization);
             end
             amplitude=amplitude*10^(double(options.PowerOffsetDb)/20);
+            estimator=upper(string(options.Estimator));
+            if ~ismember(estimator,["LS","LMMSE"])
+                error("sixgr:csi:UnsupportedHighPortEstimator", ...
+                    "Estimator must be LS or LMMSE, not '%s'.",options.Estimator);
+            end
+            portPowerOffsets=double(options.PortPowerOffsetsDb(:));
+            if isempty(portPowerOffsets), portPowerOffsets=zeros(portCount,1); end
+            if numel(portPowerOffsets)~=portCount || any(~isfinite(portPowerOffsets))
+                error("sixgr:csi:InvalidHighPortPowerOffsets", ...
+                    "PortPowerOffsetsDb must be empty or contain one finite value per logical port.");
+            end
+            portAmplitudes=amplitude*10.^(portPowerOffsets/20);
             old = rng; cleanup = onCleanup(@() rng(old)); %#ok<NASGU>
             rng(double(options.ChannelSeed),"twister");
             truth = complex(zeros(nRx,portCount));
@@ -130,13 +182,31 @@ classdef HighPortCSIRSMapper
                 for p = 1:cdmSize
                     for chip = 1:cdmSize
                         [k,l]=ind2sub([nSC 14],re(chip));
-                        grid(k,l,p)=amplitude*plan.OCC(chip,p)* ...
+                        grid(k,l,p)=portAmplitudes(ports(p))*plan.OCC(chip,p)* ...
                             exp(1j*deg2rad(double(options.ChipPhaseDeg))*(chip-1))* ...
                             exp(1j*deg2rad(double(options.CommonPhaseDeg)));
                     end
                 end
                 tx = nrOFDMModulate(carrier,grid);
                 rx = tx*transpose(H);
+                sampleRate=double(nrOFDMInfo(carrier).SampleRate);
+                if options.ResidualCFOHz~=0
+                    time=(0:size(rx,1)-1).'/sampleRate;
+                    rx=rx.*exp(1j*2*pi*double(options.ResidualCFOHz)*time);
+                end
+                if options.PhaseNoiseStdDeg>0
+                    rng(double(options.NoiseSeed)+100000+g-1,"twister");
+                    phase=deg2rad(double(options.PhaseNoiseStdDeg))*randn(size(rx,1),1);
+                    rx=rx.*exp(1j*phase);
+                end
+                timingOffset=double(options.TimingOffsetSamples);
+                if timingOffset>0
+                    rx=[complex(zeros(timingOffset,size(rx,2),"like",rx));rx];
+                    rx=rx(1:size(tx,1),:);
+                elseif timingOffset<0
+                    advance=min(-timingOffset,size(rx,1));
+                    rx=[rx(advance+1:end,:);complex(zeros(advance,size(rx,2),"like",rx))];
+                end
                 [rx,noiseInfo] = sixgr.conformance.addReferenceNoise( ...
                     rx,carrier,snrDb,"Seed",double(options.NoiseSeed)+g-1, ...
                     "SignalEnergyPerOccupiedRE",1);
@@ -156,7 +226,15 @@ classdef HighPortCSIRSMapper
                     [k,l]=ind2sub([nSC 14],re(chip));
                     Y(chip,:)=reshape(rxGrid(k,l,:),1,nRx);
                 end
-                estimate(:,ports)=transpose((plan.OCC' * Y)/amplitude);
+                ls=transpose(plan.OCC' * Y);
+                ls=ls./reshape(portAmplitudes(ports),1,[]);
+                if estimator=="LMMSE"
+                    estimatorNoiseVariance=noiseVariance./max(portAmplitudes(ports).^2,eps);
+                    shrinkage=1./(1+estimatorNoiseVariance);
+                    estimate(:,ports)=ls.*reshape(shrinkage,1,[]);
+                else
+                    estimate(:,ports)=ls;
+                end
             end
             errorPower=sum(abs(estimate(:)-truth(:)).^2);
             truthPower=sum(abs(truth(:)).^2);
@@ -164,7 +242,8 @@ classdef HighPortCSIRSMapper
             result=struct("Plan",plan,"Truth",truth,"Estimate",estimate, ...
                 "NMSE",nmse,"NMSEdB",10*log10(max(nmse,realmin)), ...
                 "SGCS",localSGCS(truth,estimate), ...
-                "PerPortEPRE",amplitude^2,"TotalCSIRSPower",portCount*amplitude^2, ...
+                "PerPortEPRE",mean(portAmplitudes.^2), ...
+                "TotalCSIRSPower",sum(portAmplitudes.^2), ...
                 "NoiseVariance",noiseVariance, ...
                 "GridNoiseVariance",noiseVariance, ...
                 "SampleNoiseVariance",sampleNoiseVariance, ...
@@ -177,6 +256,13 @@ classdef HighPortCSIRSMapper
                 "ChipPhaseDeg",double(options.ChipPhaseDeg), ...
                 "CommonPhaseDeg",double(options.CommonPhaseDeg), ...
                 "PowerOffsetDb",double(options.PowerOffsetDb), ...
+                "PortPowerOffsetRangeDb",max(portPowerOffsets)-min(portPowerOffsets), ...
+                "FDTDSplit",string(plan.FDTDSplit), ...
+                "Estimator",estimator, ...
+                "EstimatorSource",localEstimatorSource(estimator), ...
+                "ResidualCFOHz",double(options.ResidualCFOHz), ...
+                "TimingOffsetSamples",double(options.TimingOffsetSamples), ...
+                "PhaseNoiseStdDeg",double(options.PhaseNoiseStdDeg), ...
                 "ExecutionBackend","nr_ofdm_streamed_high_port_occ_waveform", ...
                 "ApproximationMode","none", ...
                 "EvidenceClass","LLS_CONTROLLED");
@@ -264,7 +350,37 @@ end
 function row=localMapRow()
 row=struct("LogicalPort",NaN,"CDMGroup",NaN,"OCCIndex",NaN, ...
     "ChipIndex",NaN,"LinearREZeroBased",NaN,"SubcarrierZeroBased",NaN, ...
-    "SymbolZeroBased",NaN,"SequenceReal",NaN,"SequenceImag",NaN);
+    "SymbolZeroBased",NaN,"FDOccLength",NaN,"TDOccLength",NaN, ...
+    "SequenceReal",NaN,"SequenceImag",NaN);
+end
+
+function [fdOcc,tdOcc,label]=localFDTDSplit(raw,cdmSize)
+raw=lower(strtrim(string(raw)));
+if raw==""
+    fdOcc=cdmSize;
+    tdOcc=1;
+else
+    tokens=regexp(char(raw),'^(\d+)x(\d+)$','tokens','once');
+    if isempty(tokens)
+        error("sixgr:csi:InvalidFDTDSplit", ...
+            "FD/TD split '%s' must use the form <FD>x<TD>.",raw);
+    end
+    fdOcc=str2double(tokens{1});
+    tdOcc=str2double(tokens{2});
+end
+if fdOcc<1 || tdOcc<1 || fdOcc*tdOcc~=cdmSize
+    error("sixgr:csi:InvalidFDTDSplit", ...
+        "FD/TD split %dx%d must have product CDM%d.",fdOcc,tdOcc,cdmSize);
+end
+label=string(fdOcc)+"x"+string(tdOcc);
+end
+
+function source=localEstimatorSource(estimator)
+if estimator=="LMMSE"
+    source="iid_unit_variance_channel_prior_grid_noise_lmmse";
+else
+    source="occ_matched_filter_least_squares";
+end
 end
 
 function value=localSGCS(a,b)

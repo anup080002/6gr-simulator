@@ -1,0 +1,13 @@
+inherits: ./master.yaml
+
+meta:
+  scenario_id: ran1_10512_prach_rach_analytical
+  description: Deterministic PRACH/RACH TDoc arithmetic and conceptual evidence only.
+  maturity_tag: experimental
+
+scenario:
+  name: ran1_10512_prach_rach_analytical
+
+tdoc10512:
+  campaign_mode: analytical
+  campaign_id: ran1_10512_analytical

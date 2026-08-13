@@ -1,7 +1,7 @@
 function result=runTDocSuite(mode,options)
 %RUNTDOCSUITE RAN1 10.5.3.1 DL-CSI suite entry point.
 arguments
-    mode (1,1) string {mustBeMember(mode,["plan","unit","smoke","bounded_qualification", ...
+    mode (1,1) string {mustBeMember(mode,["plan","unit","smoke","bounded","bounded_qualification", ...
         "controlled","common_evm","figure_replay","audit"])} = "bounded_qualification"
     options.ConfigPath (1,1) string = "simulator/configs/csi_tdoc/bounded_qualification.yaml"
     options.OutputRoot (1,1) string = "results/csi_tdoc"
@@ -9,6 +9,8 @@ arguments
     options.RunFolder (1,1) string = ""
 end
 repo=localRepoRoot();
+effectiveMode=mode;
+if mode=="bounded", effectiveMode="bounded_qualification"; end
 if any(mode==["figure_replay","audit"])
     if options.RunFolder==""
         error("sixgr:csi:RunFolderRequired","RunFolder is required for %s.",mode);
@@ -37,26 +39,44 @@ if any(mode==["figure_replay","audit"])
             char(datetime("now","TimeZone","UTC")));
         sixgr.util.jsonWrite(fullfile(runFolder,"manifests", ...
             "audit_replay_manifest.json"),auditReplay);
+        highPort=readtable(fullfile(runFolder,"csv","lls", ...
+            "port_count_lls_points.csv"),"VariableNamingRule","preserve");
+        pdsch=readtable(fullfile(runFolder,"csv","lls", ...
+            "pdsch_anchor_trials.csv"),"VariableNamingRule","preserve");
+        figures=readtable(fullfile(runFolder,"manifests", ...
+            "figure_manifest.csv"),"VariableNamingRule","preserve");
+        summary=struct("RunFolder",runFolder, ...
+            "CSVCount",numel(dir(fullfile(runFolder,"**","*.csv"))), ...
+            "PNGCount",numel(dir(fullfile(runFolder,"**","*.png"))), ...
+            "PDFCount",numel(dir(fullfile(runFolder,"**","*.pdf"))), ...
+            "FigureCount",height(figures),"AuditChecks",height(result), ...
+            "AuditPassed",logical(passed),"HighPortPoints",height(highPort), ...
+            "PDSCHTransportBlocks",height(pdsch), ...
+            "CommonEVMVerified",logical(cfg.identity.common_evm_verified), ...
+            "PublicationQualified",false,"SemanticFigurePassed", ...
+            height(figures)==20&&all(string(figures.SemanticAuditStatus)=="PASS"));
+        localSummary(runFolder,summary,registry,"audit_replay");
+        localManifest(summary,cfg,prov,context,"audit_replay");
     end
     return;
 end
 [cfg,prov]=sixgr.csi.loadTDocConfig(options.ConfigPath);
-if mode=="common_evm" && ~logical(cfg.identity.common_evm_verified)
+if effectiveMode=="common_evm" && ~logical(cfg.identity.common_evm_verified)
     error("sixgr:csi:MissingCommonEVM", ...
         "LLS_COMMON_EVM cannot run: no exact verified common-EVM source/hash is configured.");
 end
-if mode=="controlled"
+if effectiveMode=="controlled"
     error("sixgr:csi:ControlledCampaignNotYetQualified", ...
         "The complete controlled sweep is intentionally blocked until the bounded "+ ...
         "artifact gate passes and missing waveform groups in gap_analysis.csv are closed.");
 end
 if options.RunId==""
-    runId="ran1_10_5_3_1_"+mode+"_"+string(datetime("now","Format","yyyyMMdd_HHmmss"));
+    runId="ran1_10_5_3_1_"+effectiveMode+"_"+string(datetime("now","Format","yyyyMMdd_HHmmss"));
 else, runId=options.RunId; end
 runFolder=string(fullfile(options.OutputRoot,runId));
 localLayout(runFolder); context=localContext(cfg,prov,runFolder); context.RunId=runId;
 [inventory,gaps]=sixgr.csi.buildRepositoryInventory(repo);
-registry=sixgr.csi.ScenarioRegistry.table(cfg,mode);
+registry=sixgr.csi.ScenarioRegistry.table(cfg,effectiveMode);
 flow=sixgr.csi.executionFlowContract(repo);
 sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests","repository_inventory.csv"),inventory,context);
 sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests","gap_analysis.csv"),gaps,context);
@@ -64,11 +84,11 @@ sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests","scenario_registry.c
 sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests","execution_flow_contract.csv"),flow,context);
 sixgr.lls6g.config.writeYAML(fullfile(runFolder,"manifests","resolved_config.yaml"),cfg);
 copyfile(prov.ConfigPath,fullfile(runFolder,"manifests","input_config.yaml"));
-if mode=="plan"
+if effectiveMode=="plan"
     result=struct("RunFolder",runFolder,"Inventory",inventory,"GapAnalysis",gaps, ...
         "ScenarioRegistry",registry,"ExecutionFlow",flow,"Passed",true); localManifest(result,cfg,prov,context,mode);
     return;
-elseif mode=="unit"
+elseif effectiveMode=="unit"
     testCSITDocExactModels;
     result=struct("RunFolder",runFolder,"Passed",true); localManifest(result,cfg,prov,context,mode);
     return;
@@ -79,6 +99,7 @@ procedure=sixgr.csi.runProcedureScenarios(cfg);
 waveform=sixgr.csi.runBoundedScenario(cfg,prov);
 paths=sixgr.csi.writeSuiteTables(runFolder,context,registry,inventory,gaps, ...
     analytical,procedure,waveform);
+sixgr.csi.writeFigureSourceTables(runFolder,context,cfg);
 figures=sixgr.csi.FigureManifest.replay(runFolder,cfg,context);
 [frameAudit,framePassed]=sixgr.csi.frameImageAudit(runFolder);
 sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests", ...
@@ -88,7 +109,7 @@ proposal=localProposal(registry); sixgr.csi.ResultWriter.write( ...
 limitations=localLimitations(cfg); sixgr.csi.ResultWriter.write( ...
     fullfile(runFolder,"manifests","limitations.csv"),limitations,context);
 coveragePassed=true; coverageChecks=0;
-if mode=="bounded_qualification"
+if effectiveMode=="bounded_qualification"
     [coverage,coveragePassed]=localBoundedCoverage(runFolder,registry,waveform,gaps);
     sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests", ...
         "bounded_qualification_coverage.csv"),coverage,context);
@@ -99,24 +120,26 @@ passed=auditPassed&&framePassed&&coveragePassed;
 sixgr.csi.ResultWriter.write(fullfile(runFolder,"manifests","artifact_audit.csv"),audit,context);
 summary=struct("RunFolder",runFolder,"CSVCount",numel(dir(fullfile(runFolder,"**","*.csv"))), ...
     "PNGCount",numel(dir(fullfile(runFolder,"**","*.png"))), ...
+    "PDFCount",numel(dir(fullfile(runFolder,"**","*.pdf"))), ...
     "FigureCount",height(figures),"AuditChecks",height(audit), ...
     "AuditPassed",passed,"HighPortPoints",height(waveform.HighPort), ...
     "PDSCHTransportBlocks",height(waveform.PDSCHTrials), ...
     "CommonEVMVerified",logical(cfg.identity.common_evm_verified), ...
-    "PublicationQualified",false);
-if mode=="bounded_qualification"
+    "PublicationQualified",false,"SemanticFigurePassed", ...
+    height(figures)==20&&all(figures.SemanticAuditStatus=="PASS"));
+if effectiveMode=="bounded_qualification"
     summary.BoundedCoverageChecks=coverageChecks;
     summary.BoundedCoveragePassed=coveragePassed;
 end
-localSummary(runFolder,summary,registry,mode); localManifest(summary,cfg,prov,context,mode);
+localSummary(runFolder,summary,registry,effectiveMode); localManifest(summary,cfg,prov,context,effectiveMode);
 result=struct("RunFolder",runFolder,"Summary",summary,"Audit",audit, ...
     "Figures",figures,"ScenarioRegistry",registry,"Passed",passed);
 if ~passed
     error("sixgr:csi:ArtifactGateFailed", ...
-        "CSI %s artifact/runtime coverage gate failed.",mode);
+        "CSI %s artifact/runtime coverage gate failed.",effectiveMode);
 end
-fprintf("RAN1 10.5.3.1 CSI %s PASS: %s (%d CSV, %d PNG, %d audit checks)\n", ...
-    mode,runFolder,summary.CSVCount,summary.PNGCount,summary.AuditChecks);
+fprintf("RAN1 10.5.3.1 CSI %s PASS: %s (%d CSV, %d PNG, %d PDF, %d audit checks)\n", ...
+    effectiveMode,runFolder,summary.CSVCount,summary.PNGCount,summary.PDFCount,summary.AuditChecks);
 end
 
 function [coverage,passed]=localBoundedCoverage(runFolder,registry,waveform,gaps)
@@ -221,7 +244,7 @@ context=struct("RunId",string(localLastPath(runFolder)), ...
     "Config",cfg);
 end
 function localLayout(folder)
-dirs=["csv/analytical","csv/sanity","csv/procedure","csv/lls","csv/scope", ...
+dirs=["csv/analytical","csv/sanity","csv/procedure","csv/lls","csv/scope","csv/figures", ...
     "figures","manifests","mat","logs"];
 for d=dirs
     target=fullfile(folder,d); if ~isfolder(target), mkdir(target); end
@@ -295,10 +318,16 @@ cleanup=onCleanup(@() fclose(fid)); %#ok<NASGU>
 fprintf(fid,"# RAN1 10.5.3.1 DL-CSI %s summary\n\n",mode);
 fprintf(fid,"- Artifact audit: **%s** (%d checks)\n",localPass(s.AuditPassed),s.AuditChecks);
 fprintf(fid,"- CSV: %d; PNG: %d; figures: %d\n",s.CSVCount,s.PNGCount,s.FigureCount);
+fprintf(fid,"- PDF: %d; semantic figures: **%s**\n",s.PDFCount,localPass(s.SemanticFigurePassed));
 fprintf(fid,"- High-port OFDM points: %d; PDSCH transport blocks: %d\n",s.HighPortPoints,s.PDSCHTransportBlocks);
 fprintf(fid,"- Common EVM verified: %d; publication qualified: %d\n\n",s.CommonEVMVerified,s.PublicationQualified);
 fprintf(fid,"This run contains bounded real-waveform, procedure, sanity and analytical "+ ...
     "evidence under their explicit classes. It is not a common-EVM or SLS result.\n\n");
+fprintf(fid,"- Analytical regression: executed in focused unit gate\n");
+fprintf(fid,"- Controlled waveform LLS: bounded matrix only\n");
+fprintf(fid,"- Procedure result: bounded deterministic/stochastic evidence\n");
+fprintf(fid,"- SLS-required gaps: retained in limitations.csv\n");
+fprintf(fid,"- Full D/E/I/J matrices: not complete; controlled mode remains fail-closed\n\n");
 fprintf(fid,"| Group | Evidence | Status | Quantitative TDoc eligible |\n|---|---|---|---|\n");
 for k=1:height(registry)
     fprintf(fid,"| %s | %s | %s | %d |\n",registry.ScenarioGroup(k), ...

@@ -1,0 +1,381 @@
+schema_version: sixgr.csi.figure_contract/v2
+figures:
+  - figure_id: FIG-1-1
+    tdoc_caption: DL-CSI mechanisms and common evidence foundation
+    evidence_class: ARCHITECTURE_DIAGRAM
+    plotter: renderArchitectureDiagram
+    source_csvs: [csv/figures/fig_1_1_nodes.csv, csv/figures/fig_1_1_edges.csv]
+    required_columns: [csv/figures/fig_1_1_nodes.csv::NodeId|Label|Layer, csv/figures/fig_1_1_edges.csv::FromNode|ToNode|Relation]
+    series_definition: configured nodes and directed relationships
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: none
+    y_axis_label: none
+    units: not applicable
+    required_annotations: common evidence foundation;A-J mechanism groups
+    limitations_text: Architecture diagram only; no quantitative performance claim.
+    png_path: figures/FIG-1-1.png
+    pdf_path: figures/FIG-1-1.pdf
+    acceptance_tests: [no_numeric_axes, all_nodes_and_edges, readable_labels]
+
+  - figure_id: FIG-2.2-1
+    tdoc_caption: CSI state ambiguity and report-selection timeline
+    evidence_class: PROCEDURE_TIMELINE
+    plotter: renderProcedureTimeline
+    source_csvs: [csv/figures/state_events.csv]
+    required_columns: [csv/figures/state_events.csv::time_slot|event_type|state_id|cmr_id|imr_id|basis_version|target_time|valid|selected_by_report]
+    series_definition: measurement;computation;storage;report;invalid selection
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: Slot
+    y_axis_label: Procedure lane
+    units: slot;categorical lane
+    required_annotations: S1;S2;selected state;invalid case
+    limitations_text: Deterministic procedure evidence; not waveform BLER evidence.
+    png_path: figures/FIG-2.2-1.png
+    pdf_path: figures/FIG-2.2-1.pdf
+    acceptance_tests: [two_completed_states_before_report, selected_state_visible, invalid_case_visible]
+
+  - figure_id: FIG-2.2-2
+    tdoc_caption: CSI computation and stored-state lifecycle
+    evidence_class: PROCEDURE_TIMELINE
+    plotter: renderStateLifecycle
+    source_csvs: [csv/figures/state_lifecycle.csv]
+    required_columns: [csv/figures/state_lifecycle.csv::Slot|CPUOccupied|StateAddressable|StateValid|ReportSent|EventLabel]
+    series_definition: four binary stairs traces
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: Slot
+    y_axis_label: Binary state
+    units: slot;binary
+    required_annotations: computation completion;state expiry;report
+    limitations_text: Deterministic lifecycle example configured from the suite YAML.
+    png_path: figures/FIG-2.2-2.png
+    pdf_path: figures/FIG-2.2-2.pdf
+    acceptance_tests: [binary_traces, cpu_and_storage_lifetimes_differ, event_markers]
+
+  - figure_id: FIG-2.3-1
+    tdoc_caption: Scheduled effective-subspace observability from DM-RS
+    evidence_class: ARCHITECTURE_DIAGRAM
+    plotter: renderEffectiveSubspace
+    source_csvs: [csv/figures/dmrs_subspace_nodes.csv, csv/figures/dmrs_subspace_edges.csv]
+    required_columns: [csv/figures/dmrs_subspace_nodes.csv::NodeId|Label|Scheduled, csv/figures/dmrs_subspace_edges.csv::FromNode|ToNode|Relation]
+    series_definition: H to scheduled W to G and DM-RS-observable subspace
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: none
+    y_axis_label: none
+    units: not applicable
+    required_annotations: H;W_scheduled;G=H*W_scheduled;unsounded alternatives
+    limitations_text: Technical schematic; numerical DM-RS performance is exported separately.
+    png_path: figures/FIG-2.3-1.png
+    pdf_path: figures/FIG-2.3-1.pdf
+    acceptance_tests: [no_snr_index, scheduled_distinct_from_unsounded]
+
+  - figure_id: FIG-2.4-1
+    tdoc_caption: Interference-hypothesis age and application timeline
+    evidence_class: PROCEDURE_TIMELINE
+    plotter: renderInterferenceTimeline
+    source_csvs: [csv/figures/interference_timeline.csv]
+    required_columns: [csv/figures/interference_timeline.csv::Slot|Event|Validity|Annotation]
+    series_definition: t_IM;hypothesis-change interval;t_PDSCH
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: Slot
+    y_axis_label: Hypothesis validity
+    units: slot;binary
+    required_annotations: t_IM;A_I=t_PDSCH-t_IM;t_PDSCH
+    limitations_text: Procedure timeline; retention probabilities are shown separately.
+    png_path: figures/FIG-2.4-1.png
+    pdf_path: figures/FIG-2.4-1.pdf
+    acceptance_tests: [measurement_and_application_present, change_event_present]
+
+  - figure_id: FIG-2.4-2
+    tdoc_caption: Interference-age sensitivity in sanity and controlled waveform evidence
+    evidence_class: CONTROLLED_PROCEDURE_PLUS_LLS
+    plotter: renderInterferenceSensitivity
+    source_csvs: [csv/sanity/interference_age_sanity.csv, csv/lls/interference_lls_point.csv]
+    required_columns: [csv/sanity/interference_age_sanity.csv::InterferenceAgeSlots|ChangeProbabilityPerSlot|EffectiveSINRRMSEdB|RMSECI95LowdB|RMSECI95HighdB|N|Seed, csv/lls/interference_lls_point.csv::CovariancePolicy|InterferenceAgeSlots|PostEqSINRdB|CovarianceApplied|EqualizerType|EvidenceClass]
+    series_definition: sanity CI curves;controlled current and aged covariance points
+    filter_definition: all rows
+    aggregation: paired by age and policy
+    confidence_interval: delta-method 95 percent interval for RMS error
+    x_axis_label: Interference-estimate age (slots)
+    y_axis_label: Effective-SINR error / post-equalization SINR (dB)
+    units: slot;dB
+    required_annotations: sanity model;controlled waveform LLS;MMSE-IRC
+    limitations_text: Controlled panel is bounded single-link evidence, not a common-EVM or system-level result.
+    png_path: figures/FIG-2.4-2.png
+    pdf_path: figures/FIG-2.4-2.pdf
+    acceptance_tests: [confidence_interval_present, trial_seed_present, controlled_panel_present]
+
+  - figure_id: FIG-2.5-1
+    tdoc_caption: Causal availability of early CSI information
+    evidence_class: PROCEDURE_TIMELINE
+    plotter: renderEarlyCSIFlow
+    source_csvs: [csv/figures/early_csi_nodes.csv, csv/figures/early_csi_edges.csv]
+    required_columns: [csv/figures/early_csi_nodes.csv::NodeId|Label|Stage, csv/figures/early_csi_edges.csv::FromNode|ToNode|Constraint]
+    series_definition: activation to available RS to CSI-informed scheduling
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: none
+    y_axis_label: none
+    units: not applicable
+    required_annotations: DM-RS cannot schedule its generating PDSCH;E0-E4
+    limitations_text: Causal procedure diagram; E0-E4 controlled performance matrix remains separately gated.
+    png_path: figures/FIG-2.5-1.png
+    pdf_path: figures/FIG-2.5-1.pdf
+    acceptance_tests: [causal_arrows, dmrs_order_constraint, no_identical_variant_lines]
+
+  - figure_id: FIG-2.6-1
+    tdoc_caption: Network-configured two-stage event-triggered CSI procedure
+    evidence_class: PROCEDURE_TIMELINE
+    plotter: renderEventCSIFlow
+    source_csvs: [csv/figures/event_csi_nodes.csv, csv/figures/event_csi_edges.csv]
+    required_columns: [csv/figures/event_csi_nodes.csv::NodeId|Label|Stage, csv/figures/event_csi_edges.csv::FromNode|ToNode|Condition]
+    series_definition: event condition to stage 1 to gNB decision to optional stage 2
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: none
+    y_axis_label: none
+    units: not applicable
+    required_annotations: threshold;hysteresis;TTT;minimum interval
+    limitations_text: Procedure diagram; multi-UE congestion and cell-edge UPT require SLS.
+    png_path: figures/FIG-2.6-1.png
+    pdf_path: figures/FIG-2.6-1.pdf
+    acceptance_tests: [two_stages_visible, configured_parameters_visible]
+
+  - figure_id: FIG-2.6-2
+    tdoc_caption: Event-reporting overhead and state-error Pareto frontier
+    evidence_class: SANITY_MONTE_CARLO
+    plotter: renderEventPareto
+    source_csvs: [csv/sanity/event_sanity_pareto.csv]
+    required_columns: [csv/sanity/event_sanity_pareto.csv::Policy|ReportsPer100Slots|MeanAbsoluteStateError|MAECI95Low|MAECI95High|N|Seed]
+    series_definition: raw periodic and event points plus non-dominated frontier
+    filter_definition: all rows
+    aggregation: non-dominated frontier only is connected
+    confidence_interval: normal 95 percent interval for mean absolute error
+    x_axis_label: Reports per 100 slots
+    y_axis_label: Mean absolute channel-state error
+    units: reports per 100 slots;normalized channel state
+    required_annotations: periodic benchmark;event policy;SLS_REQUIRED
+    limitations_text: Single-UE sanity model; simultaneous-event congestion and UPT require SLS.
+    png_path: figures/FIG-2.6-2.png
+    pdf_path: figures/FIG-2.6-2.pdf
+    acceptance_tests: [pareto_nondominated, confidence_interval_present, no_unsorted_connected_raw]
+
+  - figure_id: FIG-2.7-1
+    tdoc_caption: Differential CSI across configured physical energy hypotheses
+    evidence_class: CONTROLLED_PROCEDURE_PLUS_LLS
+    plotter: renderEnergyHypotheses
+    source_csvs: [csv/figures/energy_hypothesis_nodes.csv, csv/figures/energy_hypothesis_edges.csv, csv/lls/energy_phy_performance.csv]
+    required_columns: [csv/figures/energy_hypothesis_nodes.csv::Hypothesis|Label|ActivePorts|ActiveTRPs|PowerOffsetDb, csv/figures/energy_hypothesis_edges.csv::FromHypothesis|ToHypothesis|DeltaLabel, csv/lls/energy_phy_performance.csv::Hypothesis|CRCError|PostEqSINRdB|ExecutionBackend]
+    series_definition: H0 reference and H1-H3 differential states
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not available for bounded one-trial points
+    x_axis_label: none
+    y_axis_label: none
+    units: ports;TRPs;dB power offset
+    required_annotations: H0 reference;delta CSI;SLS_REQUIRED
+    limitations_text: Physical transmit states and bounded link evidence only; network energy saving requires SLS.
+    png_path: figures/FIG-2.7-1.png
+    pdf_path: figures/FIG-2.7-1.pdf
+    acceptance_tests: [reference_and_alternatives, physical_units_defined]
+
+  - figure_id: FIG-2.8-1
+    tdoc_caption: CSI-RS power-normalization trade-off relative to 128 ports
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderPowerNormalization
+    source_csvs: [csv/analytical/port_power_analytical.csv]
+    required_columns: [csv/analytical/port_power_analytical.csv::TxPorts|PowerNormalization|PerPortEPREdBm|TotalCSIRSPowerdBm|EvidenceClass]
+    series_definition: fixed total power;fixed per-port EPRE
+    filter_definition: Number of ports in 128,256,512
+    aggregation: subtract 128-port reference within each normalization
+    confidence_interval: not applicable
+    x_axis_label: Number of CSI-RS ports
+    y_axis_label: Power relative to 128-port reference (dB)
+    units: ports;dB
+    required_annotations: analytical normalization only
+    limitations_text: Exact normalization identity; no propagation channel or throughput claim.
+    png_path: figures/FIG-2.8-1.png
+    pdf_path: figures/FIG-2.8-1.pdf
+    acceptance_tests: [exact_power_regression, two_panels]
+
+  - figure_id: FIG-2.8-2
+    tdoc_caption: Idealized LS NMSE penalty relative to 128 CSI-RS ports
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderNMSEPenalty
+    source_csvs: [csv/analytical/port_power_analytical.csv]
+    required_columns: [csv/analytical/port_power_analytical.csv::TxPorts|PowerNormalization|PerPortEPREdBm|TotalCSIRSPowerdBm]
+    series_definition: fixed total power penalty;fixed per-port penalty
+    filter_definition: Number of ports in 128,256,512
+    aggregation: exact relative penalty
+    confidence_interval: not applicable
+    x_axis_label: Number of CSI-RS ports
+    y_axis_label: Idealized LS NMSE penalty (dB)
+    units: ports;dB relative to 128 ports
+    required_annotations: equal RE per port;analytical only
+    limitations_text: Idealized LS scaling; practical estimator results are separate controlled evidence.
+    png_path: figures/FIG-2.8-2.png
+    pdf_path: figures/FIG-2.8-2.pdf
+    acceptance_tests: [exact_nmse_penalty_regression]
+
+  - figure_id: FIG-2.9-1
+    tdoc_caption: Three levels of CSI-RS resource sharing
+    evidence_class: RESOURCE_GRID_DIAGRAM
+    plotter: renderResourceGrid
+    source_csvs: [csv/figures/sharing_resource_grid.csv]
+    required_columns: [csv/figures/sharing_resource_grid.csv::Level|Subcarrier|Symbol|CellState|CDMGroup|PortSubset]
+    series_definition: complete support;unequal OCC subsets;partial overlap
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: OFDM symbol
+    y_axis_label: Subcarrier
+    units: symbol;subcarrier
+    required_annotations: A only;B only;shared;unused;reference resource
+    limitations_text: Configured resource mapping diagram; performance is exported separately.
+    png_path: figures/FIG-2.9-1.png
+    pdf_path: figures/FIG-2.9-1.pdf
+    acceptance_tests: [three_panels, four_cell_states, cdm_annotations]
+
+  - figure_id: FIG-2.9-2
+    tdoc_caption: Absolute-coordinate CSI-RS sequence identity and compact-index counterexample
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderMappingProof
+    source_csvs: [csv/analytical/sharing_sequence_map.csv]
+    required_columns: [csv/analytical/sharing_sequence_map.csv::Density|AbsoluteCoordinate|CompactedIndex|AbsoluteSequenceReal|AbsoluteSequenceImag|CompactedSequenceReal|CompactedSequenceImag|CompactedMatchesAbsolute]
+    series_definition: masks;shared samples;absolute and compacted mismatch
+    filter_definition: all rows
+    aggregation: mismatch magnitude on shared coordinates
+    confidence_interval: not applicable
+    x_axis_label: Absolute subcarrier coordinate
+    y_axis_label: Active mask / sequence / mismatch
+    units: subcarrier;normalized complex sequence
+    required_annotations: absolute mapping proof;compacted counterexample
+    limitations_text: Deterministic sequence-indexing proof with common slot, symbol, port and scrambling identity.
+    png_path: figures/FIG-2.9-2.png
+    pdf_path: figures/FIG-2.9-2.pdf
+    acceptance_tests: [absolute_mismatch_below_1e_12, compacted_mismatch_nonzero, three_panels]
+
+  - figure_id: FIG-2.10-1
+    tdoc_caption: Worst-pair OCC leakage under 5 degree per-chip phase ramp
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderOCCWorst
+    source_csvs: [csv/analytical/occ_worst_leakage.csv]
+    required_columns: [csv/analytical/occ_worst_leakage.csv::CDMSize|OCCFamily|PhaseDegPerChip|WorstLeakage|EvidenceClass]
+    series_definition: Walsh OCC;DFT OCC
+    filter_definition: PhaseDegPerChip equals 5
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: CDM size
+    y_axis_label: Worst-pair leakage (dB)
+    units: chips;dB
+    required_annotations: phase-only;no channel;no noise;no estimator;no throughput
+    limitations_text: Analytical full-unitary-basis phase-ramp sanity only.
+    png_path: figures/FIG-2.10-1.png
+    pdf_path: figures/FIG-2.10-1.pdf
+    acceptance_tests: [phase_filter_5, analytical_scope_visible]
+
+  - figure_id: FIG-2.10-2
+    tdoc_caption: Worst-pair OCC leakage under 15 degree per-chip phase ramp
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderOCCWorst
+    source_csvs: [csv/analytical/occ_worst_leakage.csv]
+    required_columns: [csv/analytical/occ_worst_leakage.csv::CDMSize|OCCFamily|PhaseDegPerChip|WorstLeakage|EvidenceClass]
+    series_definition: Walsh OCC;DFT OCC
+    filter_definition: PhaseDegPerChip equals 15
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: CDM size
+    y_axis_label: Worst-pair leakage (dB)
+    units: chips;dB
+    required_annotations: phase-only;no channel;no noise;no estimator;no throughput
+    limitations_text: Analytical full-unitary-basis phase-ramp sanity only.
+    png_path: figures/FIG-2.10-2.png
+    pdf_path: figures/FIG-2.10-2.pdf
+    acceptance_tests: [phase_filter_15, analytical_scope_visible]
+
+  - figure_id: FIG-2.10-3
+    tdoc_caption: Walsh-minus-DFT mean leakage for the specified phase-only model
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderOCCMeanEquality
+    source_csvs: [csv/analytical/occ_mean_leakage.csv]
+    required_columns: [csv/analytical/occ_mean_leakage.csv::CDMSize|OCCFamily|PhaseDegPerChip|MeanLeakage]
+    series_definition: Walsh minus DFT mean leakage
+    filter_definition: all configured phase points
+    aggregation: paired difference by CDM size and phase
+    confidence_interval: not applicable
+    x_axis_label: Linear phase increment (degrees per chip)
+    y_axis_label: Walsh minus DFT mean leakage
+    units: degrees per chip;linear power ratio
+    required_annotations: A=C^H D_phi C;phase-only scope
+    limitations_text: Equality does not extend to amplitude-selective or non-diagonal channel/receiver distortion.
+    png_path: figures/FIG-2.10-3.png
+    pdf_path: figures/FIG-2.10-3.pdf
+    acceptance_tests: [mean_difference_below_1e_12]
+
+  - figure_id: FIG-2.11-1
+    tdoc_caption: Deterministic multi-slot phase progression coherent gain
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderDeterministicPhase
+    source_csvs: [csv/analytical/multislot_analytical_cfo.csv]
+    required_columns: [csv/analytical/multislot_analytical_cfo.csv::M1|PhaseIncrementDeg|DirectGain|ClosedFormGain|AbsoluteError]
+    series_definition: one curve per M1
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: Phase increment per slot (degrees)
+    y_axis_label: Normalized coherent gain
+    units: degrees;linear gain
+    required_annotations: closed form;zero-increment limit
+    limitations_text: Analytical phase progression; physical Doppler is not added a second time.
+    png_path: figures/FIG-2.11-1.png
+    pdf_path: figures/FIG-2.11-1.pdf
+    acceptance_tests: [closed_form_error_below_1e_12, phase_regressions]
+
+  - figure_id: FIG-2.11-2
+    tdoc_caption: Expected coherent gain under independent phase discontinuity
+    evidence_class: SANITY_MONTE_CARLO
+    plotter: renderIndependentPhase
+    source_csvs: [csv/analytical/multislot_analytical_iid_phase.csv]
+    required_columns: [csv/analytical/multislot_analytical_iid_phase.csv::M1|PhaseStdDeg|TheoreticalGain|MonteCarloGain|GainCI95Low|GainCI95High|AbsoluteError|N|Seed]
+    series_definition: theoretical curve and Monte-Carlo markers with 95 percent CI
+    filter_definition: all rows
+    aggregation: none
+    confidence_interval: normal 95 percent interval for sample mean gain
+    x_axis_label: Phase standard deviation (degrees)
+    y_axis_label: Expected normalized coherent gain
+    units: degrees;linear gain
+    required_annotations: analytical expectation;Monte-Carlo trials and seed
+    limitations_text: Independent receiver-phase discontinuity model, not a propagation-channel result.
+    png_path: figures/FIG-2.11-2.png
+    pdf_path: figures/FIG-2.11-2.pdf
+    acceptance_tests: [confidence_interval_present, phase_regressions]
+
+  - figure_id: FIG-2.11-3
+    tdoc_caption: Jakes channel-aging coherent gain at 7 GHz and 30 kHz SCS
+    evidence_class: ANALYTICAL_SANITY
+    plotter: renderChannelAging
+    source_csvs: [csv/analytical/multislot_analytical_aging.csv]
+    required_columns: [csv/analytical/multislot_analytical_aging.csv::M1|SpeedKmph|MaximumDopplerHz|ChannelAgingGain|MinimumEigenvalue]
+    series_definition: one curve per M1
+    filter_definition: carrier 7 GHz;slot 0.5 ms;SCS 30 kHz
+    aggregation: none
+    confidence_interval: not applicable
+    x_axis_label: UE speed (km/h)
+    y_axis_label: Normalized coherent gain
+    units: km/h;linear gain
+    required_annotations: 7 GHz;0.5 ms;30 kHz;Jakes;f_D=v f_c/c
+    limitations_text: Analytical isotropic-Jakes aging; no independent oscillator CFO is double-counted.
+    png_path: figures/FIG-2.11-3.png
+    pdf_path: figures/FIG-2.11-3.pdf
+    acceptance_tests: [jakes_regressions, nonnegative_correlation_matrix]

@@ -11,10 +11,13 @@ run:
   max_trials_per_snr: 120
   min_errors_per_snr: 30
   checkpoint_interval: 20
-  seed_set_calibration: 126001
-  seed_set_main: 126101
-  seed_set_validation: 126201
+  # Disjoint deterministic partitions. The main partition reserves four
+  # domain-specific seeds for every 0.25 dB point and every TDOC trial.
+  seed_set_main: 10000000
+  seed_set_calibration: 1000000000
+  seed_set_validation: 2000000000
   save_debug_trials: 2
+  developer_allow_non_tdoc_tdoc_figures: false
 carrier:
   frequency_hz: 7000000000
   reference_frequency_hz: 4000000000
@@ -54,6 +57,8 @@ channel:
   velocity_kmh: 3
   normalize_path_gains: true
   normalize_channel_outputs: true
+interference:
+  interfering_trps: 0
 mimo:
   num_tx_antennas: 2
   num_rx_antennas: 4
@@ -64,23 +69,36 @@ oscillator:
   trp_ppm_range: [-0.05, 0.05]
   frequency_drift_ppm_per_s: 0
 search:
-  cfo_hypotheses_hz: [-70350, -61556.25, -52762.5, -43968.75, -35175, -26381.25, -17587.5, -8793.75, 0, 8793.75, 17587.5, 26381.25, 35175, 43968.75, 52762.5, 61556.25, 70350]
+  cfo_hypotheses_hz: [-79143.75, -70350, -61556.25, -52762.5, -43968.75, -35175, -26381.25, -17587.5, -8793.75, 0, 8793.75, 17587.5, 26381.25, 35175, 43968.75, 52762.5, 61556.25, 70350, 79143.75]
+  cfo_coverage_margin_hz: 8793.75
   timing_uncertainty_samples: 96
   nid2_hypotheses: [0, 1, 2]
   structure_hypotheses: [A20RB4]
   raster_offset_hypotheses: [0]
   dmrs_hypotheses: [0, 1, 2, 3, 4, 5, 6, 7]
   qcw_hypotheses: [0]
+  declaration_statistic: minimum_pss_sss_normalized_metric
+  pss_stage_threshold: 0
+  sss_normalized_metric_floor: 0
+  fine_cfo:
+    enabled: true
+    method: cyclic_prefix
+    maximum_residual_hz: 15000
+    minimum_symbols: 2
 false_alarm:
   target_probability: 0.01
+  pss_stage_target_probability: 0.10
   calibration_trials: 200
   validation_trials: 200
   quantile_method: empirical_order_statistic
+  relative_ci_half_width_limit: 0.10
+  progress_interval: 100
+  checkpoint_interval: 1000
 snr:
   definition: average_desired_received_ssb_re_power_per_rx_antenna_over_noise_power_per_active_complex_re_before_combining
   coarse_grid_db: [-24, -20, -16, -12, -8, -4, 0, 4, 6]
   refinement_step_db: 0.25
-  refinement_half_span_db: 1
+  refinement_half_span_db: 1.5
   extension_step_db: 2
   minimum_db: -36
   maximum_db: 18
@@ -91,10 +109,28 @@ receiver:
   channel_estimation: practical_pbch_dmrs
   oracle_enabled: true
   pbch_noise_variance_floor: 1.0e-10
+  pbch_component_residual_cfo_model: reuse_practical_estimate
+  timing_success_tolerance_fraction_min_cp: 0.5
+  require_correct_dmrs_for_nmse: true
 statistics:
   confidence_level: 0.95
   mdr_targets: [0.10, 0.01]
   pbch_bler_targets: [0.10, 0.01]
+  target_crossing_interpolation: linear_log10_probability
+  confidence_crossing_method: binomial_envelope
+  cdf_selection: target_regions_and_high_snr
+  high_snr_sanity_db: 20
+  tdoc_min_errors_per_point: 500
+  tdoc_max_trials_per_point: 200000
+validation:
+  snr_calibration_requested_db: [-20, -10, 0, 10]
+  snr_calibration_repetitions: 64
+  snr_calibration_tolerance_db: 0.1
+  high_snr_nmse_floor_margin_db: 3
+  fine_cfo_sigma_multiplier: 4
+complexity:
+  count_arithmetic_operations: true
+  count_memory_and_rf_activity: true
 output:
   root: results/ia
   save_csv: true
@@ -103,3 +139,4 @@ output:
   save_pdf: false
   save_fig: false
   prohibit_svg: true
+  save_event_debug_csv: true

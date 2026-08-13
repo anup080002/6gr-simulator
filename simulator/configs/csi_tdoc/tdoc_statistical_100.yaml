@@ -1,0 +1,12 @@
+inherits: [tdoc_statistical_1000.yaml]
+
+identity:
+  description: RAN1 10.5.3.1 CSI-RS controlled waveform scenario with 100 paired realizations per qualified point
+
+reproducibility:
+  replicates:
+    bounded_qualification: 100
+
+simulation:
+  bounded_transport_blocks_per_point: 100
+  bounded_channel_realizations_per_point: 100

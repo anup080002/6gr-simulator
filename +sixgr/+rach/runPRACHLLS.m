@@ -308,7 +308,9 @@ if ~cfg.EnableInterCellInterference
 end
 interCfg = cfg;
 interCfg.SequenceIndex = mod(cfg.SequenceIndex + 1, 838);
-interCfg.PreambleIndex = mod(double(localResolvePreambleSpec(cfg.PreambleIndex, occasionOrdinal, max(1, cfg.NumUEsPerRO), false)) + 7, 64);
+interCfg.PreambleIndex = localResolvePreambleSpec( ...
+    cfg.InterfererPreambleIndex,occasionOrdinal,max(1,cfg.NumUEsPerRO),false);
+interCfg.ActivePreamblePattern = cfg.InterfererActivePreamblePattern;
 plan = localBuildUEPlan(interCfg, occasionOrdinal, true);
 end
 
@@ -608,6 +610,11 @@ dopplerEst = double(sixgr.util.structGet(zcdpe, "DopplerEstimate_Hz", NaN));
 
 roSummary = struct();
 roSummary.scenario_id = string(sixgr.util.structGet(cfg, "ScenarioID", "scenario_1"));
+roSummary.configured_ue_frequency_offset_hz = double(cfg.UEFrequencyOffsetHz);
+roSummary.configured_trp_frequency_offset_hz = double(cfg.TRPFrequencyOffsetHz);
+roSummary.inter_cell_relative_power_db = double(cfg.InterCellRelativePower_dB);
+roSummary.interferer_preamble_index = double(localFirstNonEmpty( ...
+    cfg.InterfererPreambleIndex,NaN));
 roSummary.trial_id = round(double(trialSeed));
 roSummary.ro_id = round(double(occasion.Ordinal));
 roSummary.slot_id = round(double(occasion.SlotIndex1));

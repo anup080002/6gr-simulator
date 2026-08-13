@@ -1,0 +1,59 @@
+tdoc10512:
+  scenarios:
+    - id: S4G_LOW_3
+      carrier_hz: 4000000000
+      cell_range_m: 1155
+      speed_kmh: 3
+      geometric_rtt_us: 7.705
+      two_way_screening_doppler_hz: 22.238
+      waveform_eligible: true
+    - id: S4G_MOBILE_200
+      carrier_hz: 4000000000
+      cell_range_m: 1155
+      speed_kmh: 200
+      geometric_rtt_us: 7.705
+      two_way_screening_doppler_hz: 1482.507
+      waveform_eligible: true
+    - id: S4G_HST_500
+      carrier_hz: 4000000000
+      cell_range_m: 1155
+      speed_kmh: 500
+      geometric_rtt_us: 7.705
+      two_way_screening_doppler_hz: 3706.268
+      waveform_eligible: true
+    - id: S7G_LOW_3
+      carrier_hz: 7000000000
+      cell_range_m: 1155
+      speed_kmh: 3
+      geometric_rtt_us: 7.705
+      two_way_screening_doppler_hz: 38.916
+      waveform_eligible: true
+    - id: S7G_MOBILE_200
+      carrier_hz: 7000000000
+      cell_range_m: 1155
+      speed_kmh: 200
+      geometric_rtt_us: 7.705
+      two_way_screening_doppler_hz: 2594.387
+      waveform_eligible: true
+    - id: S7G_HST_500
+      carrier_hz: 7000000000
+      cell_range_m: 1155
+      speed_kmh: 500
+      geometric_rtt_us: 7.705
+      two_way_screening_doppler_hz: 6485.969
+      waveform_eligible: true
+    - id: S7G_FWA_30
+      carrier_hz: 7000000000
+      cell_range_m: 10000
+      speed_kmh: 30
+      geometric_rtt_us: 66.713
+      two_way_screening_doppler_hz: 389.158
+      waveform_eligible: true
+    - id: S7G_ATG_1500
+      carrier_hz: 7000000000
+      cell_range_m: 100000
+      speed_kmh: 1500
+      geometric_rtt_us: 667.128
+      two_way_screening_doppler_hz: 19457.906
+      waveform_eligible: false
+      blocked_reason: analytical_only_without_calibrated_atg_channel_and_precompensation

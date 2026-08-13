@@ -1,0 +1,36 @@
+inherits: ./master.yaml
+
+meta:
+  scenario_id: ran1_10512_prach_rach_smoke
+  description: Short waveform-backed PRACH/RACH implementation check; not TDoc-grade statistics.
+  maturity_tag: smoke
+
+scenario:
+  name: ran1_10512_prach_rach_smoke
+
+tdoc10512:
+  campaign_mode: smoke
+  campaign_id: ran1_10512_smoke
+
+random_access:
+  snr_sweep_db: [20]
+  min_detection_trials: 100
+  statistical_qualification:
+    enabled: true
+    target_false_alarm_probability: 0.001
+    confidence_level: 0.95
+    minimum_trials: 100
+    maximum_trials: 100
+    batch_size_trials: 20
+    minimum_false_alarm_events: 0
+    ci_width_target: 0.05
+    planned_looks: 5
+    target_missed_detection_probability: 0.01
+    required_detection_snr_db: [20]
+    minimum_detection_trials: 100
+    maximum_detection_trials: 100
+    batch_size_detection_trials: 20
+    minimum_missed_detection_events: 0
+    detection_ci_width_target: 0.05
+    detection_planned_looks: 5
+    deterministic_seeds: [10512001, 10512017, 10512031, 10512047]
