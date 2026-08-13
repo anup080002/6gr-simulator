@@ -1,0 +1,17 @@
+inherits:
+  - pusch_reference.yaml
+
+scenario:
+  id: tdoc_ul_10523_quick_actual_pusch
+  description: One-point actual-waveform PUSCH wiring check for RAN1 10.5.2.3; diagnostic only
+
+simulation:
+  snrDb: [20]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+results:
+  outputRoot: results/tdoc_ul_10523
+  generatePlots: true

@@ -1,0 +1,513 @@
+schema_version: "1.0"
+title: "RAN1 AI 10.5.2.3 complete SixGR simulation scenario catalog"
+tdoc: "R1-26xxxx_Jio_Uplink_Transmission_Schemes_6GR_Maastricht_v2.docx"
+agenda_item: "10.5.2.3"
+source: "Jio Platforms"
+meeting: "3GPP TSG-RAN WG1 #126, Maastricht, 24-28 August 2026"
+
+repository_policy:
+  expected_root_hint: "C:/Anup/6gsimulation/sixgr_foundation_v2 (2)"
+  detect_actual_root: true
+  hardcode_windows_path: false
+  reuse_existing_sixgr: true
+  prohibit_parallel_simulator: true
+  fail_closed: true
+
+classification:
+  - ANALYTICAL_DERIVATION
+  - CONCEPTUAL_DIAGRAM
+  - QUICK_SANITY_MODEL
+  - CALIBRATED_LLS
+  - MULTICELL_SLS
+  - EXTERNAL_REFERENCE_REPRODUCTION
+
+run_profiles:
+  plan:
+    purpose: "Repository audit, scenario expansion, legality checks, no waveform execution."
+  unit:
+    purpose: "Analytical identities, bit accounting, grid mapping, no-noise round trips and negative tests."
+  quick:
+    purpose: "One bounded anchor per campaign; diagnostic only unless calibration gates pass."
+  tdoc:
+    purpose: "Selected calibrated evidence points sufficient for the public TDoc; no full Cartesian sweep."
+  full:
+    purpose: "All declared LLS matrices and required pairwise interactions."
+  sls:
+    purpose: "System-level campaigns required by DMRS-port, MRSS and antenna-selection studies."
+  figure_replay:
+    purpose: "Regenerate all figures from persisted CSV only."
+  audit:
+    purpose: "Artifact lineage, semantic figure audit, hashes, completeness and publication eligibility."
+
+common_lls_anchor:
+  carrier_hz: 4.0e9
+  duplex: TDD
+  scs_khz: 30
+  system_bandwidth_mhz: 100
+  waveform: CP_OFDM
+  allocation_rb: [24, 48]
+  channel_model: CDL-C
+  delay_spread_ns: 100
+  speed_kmph: 3
+  receiver: MMSE_IRC
+  channel_estimation: REALISTIC
+  harq: false
+  target_bler: 0.10
+  fixed_mcs_first: true
+  total_ue_power_normalization: SAME_TOTAL_POWER
+  use_common_channel_drops: true
+
+common_sweeps:
+  carrier_ghz: [4, 7]
+  system_bandwidth_mhz: [20, 100]
+  allocation_rb: [8, 24, 48, 96, 273]
+  channel_model: [CDL-A, CDL-C, CDL-D]
+  delay_spread_ns: [30, 100, 300]
+  optional_delay_spread_ns: [1000]
+  speed_kmph: [3, 30, 120]
+  optional_speed_kmph: [350]
+  ue_tx_ports: [2, 4]
+  optional_ue_tx_ports: [8]
+  rank: [1, 2, 4]
+  snr_db: [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
+
+campaigns:
+  - id: C00
+    name: "Canonical UL reference and calibration gates"
+    tdoc_sections: ["2.1", "Annex A"]
+    evidence: CALIBRATED_LLS
+    purpose: "Prove that the existing PUSCH/PUCCH/SRS/CSI-RS/DMRS/PT-RS chain is numerically usable before studying new mechanisms."
+    cases:
+      - "No-channel/no-noise SISO PUSCH bit-exact round trip"
+      - "AWGN PUSCH fixed-MCS monotonic BLER/BER/throughput sweep"
+      - "CDL-C 4 GHz/30 kHz/24 RB reference with realistic DMRS channel estimation"
+      - "2Tx rank-1 and rank-2 dimensional/power closure"
+      - "PUCCH one-/two-bit and coded-payload smoke"
+      - "SRS-derived RI/TPMI causal binding smoke"
+      - "CSI-RS-to-report measurement lineage smoke"
+    required_outputs:
+      - baseline_calibration.csv
+      - pusch_noiseless_roundtrip.csv
+      - pusch_awgn_reference.csv
+      - pusch_cdl_reference.csv
+      - power_resource_ledger.csv
+      - reference_signal_lineage.csv
+
+  - id: C01
+    name: "All TDoc conceptual and analytical figures"
+    tdoc_sections: ["Figures 1-22"]
+    evidence: ANALYTICAL_DERIVATION
+    purpose: "Regenerate every existing TDoc figure reproducibly; conceptual figures use CSV-defined nodes/edges, not hand-edited images."
+    cases:
+      - "Figures 1-4 conceptual architecture and Scheme-2 flow"
+      - "Figures 5-6 quick sanity models"
+      - "Figures 7-8 conceptual FSP/mapping"
+      - "Figure 9 analytical signaling bits"
+      - "Figures 10-11 conceptual CW/UCI mapping"
+      - "Figure 12 analytical fixed-power DMRS trade-off"
+      - "Figures 13-18 conceptual PH/multi-slot/UCI"
+      - "Figure 19 analytical hypothesis count"
+      - "Figures 20-22 conceptual MRSS/antenna procedures"
+    required_outputs:
+      - tdoc_figure_source_manifest.csv
+      - tdoc_concept_nodes.csv
+      - tdoc_concept_edges.csv
+      - tdoc_analytical_values.csv
+
+  - id: C02
+    name: "Scheme-2 report representation and quantization"
+    tdoc_sections: ["2.2.2", "2.2.3", "Annex A.1", "Annex B.1"]
+    evidence: CALIBRATED_LLS
+    purpose: "Compare compact transmit-subspace/receive-covariance reporting with full effective-channel reporting."
+    fixed_dimensions:
+      carrier_ghz: 4
+      scs_khz: 30
+      system_bandwidth_mhz: 100
+      channel: "CDL-C 100 ns"
+      speed_kmph: 3
+      waveform: CP_OFDM
+    sweeps:
+      ue_ports_rank:
+        - [2, 1]
+        - [2, 2]
+        - [4, 1]
+        - [4, 2]
+        - [4, 4]
+      report_mode: [FULL_EFFECTIVE_CHANNEL, COMPACT_SUBSPACE, COMPACT_COVARIANCE, IDEAL_UNQUANTIZED]
+      subspace_bits: [2, 4, 6, 8]
+      strength_bits: [0, 3, 5]
+      effective_strength_bits: [0, 3, 4]
+      validity_bits: [0, 2, 3]
+      allocation_rb: [24, 48]
+    baselines: [SRS_CODEBOOK, SCHEME1_PRECODED_SRS, IDEAL_RECIPROCITY]
+    metrics: [BLER, THROUGHPUT, FIRST_PUSCH_BLER, NORMALIZED_SUBSPACE_GAIN, REPORT_BITS, SRS_RESOURCES, COMPLEXITY]
+
+  - id: C03
+    name: "Scheme-2 reciprocity mismatch, age and temporal behavior"
+    tdoc_sections: ["2.2.5", "2.2.6", "2.2.7", "2.2.8"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      carrier_ghz: [4, 7]
+      speed_kmph: [3, 30, 120]
+      report_age_slots: [0, 1, 2, 4, 8]
+      ue_amplitude_mismatch_rms_db: [0, 0.35, 0.7, 1.0]
+      ue_phase_mismatch_rms_deg: [0, 5, 10, 20]
+      anb_amplitude_mismatch_rms_db: [0, 0.35]
+      anb_phase_mismatch_rms_deg: [0, 5]
+      mismatch_side: [UE_ONLY, ANB_ONLY, JOINT]
+      temporal_model: [CONSTANT_PER_DROP, PIECEWISE_CONSTANT, CORRELATED_DRIFT, EVENT_TRIGGERED]
+      dl_measurement_quality: [IDEAL, HIGH, MEDIUM, LOW]
+      ue_coherency: [NON_COHERENT, PARTIAL, FULL]
+    required_interactions:
+      - [report_age_slots, speed_kmph]
+      - [ue_phase_mismatch_rms_deg, ue_amplitude_mismatch_rms_db]
+      - [temporal_model, report_age_slots]
+      - [ue_coherency, ue_phase_mismatch_rms_deg]
+    metrics: [BLER, FIRST_PUSCH_BLER, THROUGHPUT, FALLBACK_RATE, PREDICTED_VS_DMRS_SINR_ERROR, REPORT_VALIDITY, SRS_TRIGGER_RATE]
+
+  - id: C04
+    name: "Scheme-2 initial link adaptation, DMRS validation and fallback"
+    tdoc_sections: ["2.2.4", "2.2.5", "Proposal 3"]
+    evidence: CALIBRATED_LLS
+    candidates:
+      - CONSERVATIVE_MARGIN_STATIC
+      - AGE_AWARE_MARGIN
+      - CALIBRATION_AWARE_MARGIN
+      - AGE_AND_CALIBRATION_AWARE_MARGIN
+    fallback_actions:
+      - CONTINUE_SCHEME2
+      - REQUEST_RICHER_REPORT
+      - TRIGGER_APERIODIC_SRS
+      - CODEBOOK_FALLBACK
+      - OPEN_LOOP_OR_SINGLE_PORT_FALLBACK
+    dimensions:
+      fixed_mcs_then_amc: true
+      target_bler: [0.10, 0.01]
+      su_mimo_primary: true
+      mu_mimo_sensitivity: true
+    metrics: [INITIAL_MCS, FIRST_PUSCH_BLER, POST_DMRS_MCS_UPDATE, GOODPUT, FALLBACK_PROBABILITY, FALLBACK_LATENCY, EXTRA_RS_OVERHEAD]
+
+  - id: C05
+    name: "Frequency-selective precoding: wideband anchor and sparse refinement"
+    tdoc_sections: ["2.3.2", "2.3.3", "Annex A.2", "Annex B.2"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      allocation_rb: [24, 48, 96, 273]
+      channel: ["CDL-C 30 ns", "CDL-C 100 ns", "CDL-C 300 ns", "CDL-A 100 ns", "CDL-D 100 ns"]
+      speed_kmph: [3, 30, 120]
+      ue_ports_rank:
+        - [2, 1]
+        - [2, 2]
+        - [4, 1]
+        - [4, 2]
+        - [8, 1]
+        - [8, 2]
+      group_size_rb: [4, 8, 16]
+      k_refined: [0, 1, 2, 4]
+      refinement_encoding: [COMBINATORIAL, BITMAP, ORDERED_LIST]
+      precoder: [WIDEBAND, FULL_GROUPWISE, SPARSE_DIFFERENTIAL, IDEAL_PER_SUBCARRIER]
+    metrics: [BLER, RAW_THROUGHPUT, NET_THROUGHPUT, REFINED_GROUP_COUNT, WIDEBAND_LOSS_DISTRIBUTION, INDICATION_BITS, COMPLEXITY]
+
+  - id: C06
+    name: "FSP realistic channel estimation, SRS age, RF and power"
+    tdoc_sections: ["2.3.3", "2.3.4", "2.3.5", "Annex A.2"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      srs_to_pusch_age_slots: [0, 1, 2, 4, 8]
+      estimator: [WIDEBAND, INDEPENDENT_PER_GROUP, BOUNDARY_AWARE, PHYSICAL_PORT_THEN_PRECODER, TRANSITION_MODEL_AWARE]
+      ue_coherency: [NON_COHERENT, PARTIAL, FULL]
+      waveform: [CP_OFDM, DFT_S_OFDM_CONSTRAINED]
+      power_constraint: [SAME_TOTAL_POWER, SAME_PER_PORT_LIMIT]
+      mpr_model: [NONE_DIAGNOSTIC, RAN4_CONSISTENT_OR_REPORTED]
+    metrics: [CHANNEL_ESTIMATION_NMSE, BLER, NET_THROUGHPUT, PER_BRANCH_PAPR_CCDF, CUBIC_METRIC, MAX_PER_PORT_POWER, MPR_BACKOFF, ESTIMATOR_OPERATIONS]
+
+  - id: C07
+    name: "FSP versus frequency hopping and frequency-domain interleaving"
+    tdoc_sections: ["2.3.6", "Annex A.2.1", "Annex B.2.1"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      carrier_ghz: [4, 7]
+      allocation_rb: [8, 24, 48]
+      delay_spread_ns: [30, 100, 300]
+      speed_kmph: [3, 30, 120]
+      srs_age_slots: [0, 1, 2, 4]
+      candidate: [WB, WB_FH, WB_RB_INTERLEAVING, FSP_K1, FSP_K2, FSP_K4, FSP_WITH_MAPPING]
+      group_domain: [VIRTUAL_PRE_MAPPING, PHYSICAL_POST_MAPPING]
+      feature_interaction: [MUTUALLY_EXCLUSIVE, SIMULTANEOUS_SUPPORTED]
+    metrics: [BLER, RAW_THROUGHPUT, NET_THROUGHPUT, GROUP_MAPPING_ERROR, CHEST_NMSE, DCI_BITS, SRS_OVERHEAD, SCHEDULER_RESTRICTIONS, PAPR_CM]
+
+  - id: C08
+    name: "Codeword-to-layer mapping first-stage study"
+    tdoc_sections: ["2.4.1", "2.4.2", "2.4.3", "2.4.4", "Annex A.3", "Annex B.3"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      rank: [2, 3, 4, 8]
+      optional_rank: [6]
+      tb_size_class: [SMALL, MEDIUM, LARGE, HIGH_RANK_SMALL_PACKET]
+      mapping: [NR_LIKE, ONE_CW_ALL_LAYERS, TWO_CW_FROM_RANK2, PER_LAYER_CW_UPPER_BOUND]
+      layer_partition: [FIXED_BY_RANK, NETWORK_SELECTED]
+      imbalance_db: [0, 3, 6, 9]
+      imbalance_source: [CONTROLLED_GAIN, DIRECTIONAL_UE, PA_IMBALANCE, BLOCKAGE]
+      coherency: [NON_COHERENT, FULL_COHERENT]
+      receiver: [LINEAR_MMSE_IRC, CW_SIC_OPTIONAL]
+      harq: [OFF_FIRST_STAGE, ON_SECOND_STAGE]
+    fixed_first_stage:
+      equal_layer_power: true
+      same_modulation_within_codeword: true
+      same_precoder: true
+      same_total_power: true
+      same_mpr_assumption: true
+    metrics: [AGGREGATE_BLER, PER_CW_BLER, GOODPUT, RETRANSMITTED_BITS, DCI_HARQ_BITS, BUFFER, DECODER_LATENCY, COMPLEXITY, MPR]
+
+  - id: C09
+    name: "Imbalance-aware single-codeword link adaptation"
+    tdoc_sections: ["2.4.5", "Proposal 9"]
+    evidence: CALIBRATED_LLS
+    candidates: [LEGACY_ONE_CW, IMBALANCE_AWARE_ONE_CW_MCS, TWO_CW, PER_LAYER_MODULATION_SECOND_STAGE]
+    sweeps:
+      rank: [2, 4]
+      imbalance_db: [0, 3, 6, 9]
+      target_bler: [0.10]
+      mcs_table: [NR_BASELINE, REPORTED_IMBALANCE_AWARE]
+    metrics: [SELECTED_MCS, EFFECTIVE_CODE_RATE, PER_LAYER_POST_EQ_SINR, BLER, GOODPUT, RETRANSMISSION_COST, MPR]
+
+  - id: C10
+    name: "UCI multiplexing on multi-codeword PUSCH"
+    tdoc_sections: ["2.4.6", "Annex A.3.1", "Annex B.3.1"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      pusch_mapping: [ONE_CW_BASELINE, TWO_CW_FIXED_GROUPS]
+      uci_mapping: [DESIGNATED_CW, RELIABILITY_SELECTED_CW, SPLIT_UCI]
+      uci_type: [HARQ_ACK, CSI_PART1, CSI_PART1_PART2]
+      uci_payload_bits: [1, 2, 3, 4, 6, 7, 11, 22]
+      beta_reference: [COMMON, DESIGNATED_CW_MCS, ROBUST_CW_MCS, PER_CW_SPLIT]
+      retransmission_case: [NO_RETX, CW0_RETX, CW1_RETX]
+    metrics: [UCI_BLER_BER, DTX_TO_ACK, ACK_MISSED, NACK_TO_ACK, DATA_BLER, GOODPUT, UCI_RE_COUNT, RETRANSMISSION_BEHAVIOR, OVERHEAD, COMPLEXITY]
+
+  - id: C11
+    name: "PUSCH-DMRS power boosting at fixed total power"
+    tdoc_sections: ["2.5.2", "Annex A.4"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      dmrs_pattern: [NR_TYPE1, NR_TYPE2, REL18_ENHANCED_TYPE1, REL18_ENHANCED_TYPE2, REPORTED_CANDIDATE]
+      dmrs_symbols: [1, 2]
+      boost_db: [0, 3, 6]
+      modulation: [QPSK, 16QAM, 64QAM, 256QAM]
+      mimo: [SU_RANK1, SU_RANK2, SU_RANK4, MU_2UE, MU_4UE]
+      mu_near_far_db: [0, 3, 6, 10]
+      power_source: [FIXED_TOTAL_SYMBOL_POWER, MUTED_RE_REDISTRIBUTION, AVAILABLE_POWER_HEADROOM]
+    metrics: [DMRS_MSE, RNN_ERROR, BLER, RAW_THROUGHPUT, NET_THROUGHPUT, MU_LEAKAGE, DATA_EPRE, DMRS_EPRE, TOTAL_POWER, PAPR_CM, PSD]
+
+  - id: C12
+    name: "Power-headroom reference semantics"
+    tdoc_sections: ["2.5.3", "Annex A.4.1"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      duration_segments: [1, 2, 4, 8]
+      dmrs_boost_db: [0, 3, 6]
+      ph_reference: [PER_SEGMENT, FIRST_SEGMENT_WITH_TRIGGER, WORST_CASE_ALLOCATION]
+      pa_imbalance_db: [0, 3, 6]
+      precoder_change: [FALSE, TRUE]
+      active_port_change: [FALSE, TRUE]
+      pa_state_change: [FALSE, TRUE]
+    metrics: [TRUE_POWER_HEADROOM, REPORTED_POWER_HEADROOM, PH_ERROR, CLIPPING_PROBABILITY, LIMITING_SYMBOL, LIMITING_PORT, BLER, GOODPUT, REPORT_OVERHEAD]
+
+  - id: C13
+    name: "PUSCH-DMRS sequence families"
+    tdoc_sections: ["2.5.5", "Annex A.4.1"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      family: [NR_REL16_LOW_PAPR, APPLICABLE_ZC, DETERMINISTIC_COMPUTER_GENERATED]
+      length_class: [SHORT, MEDIUM]
+      normalized_cfo: [-0.20, -0.10, -0.05, 0, 0.05, 0.10, 0.20]
+      timing_shift_samples: [-8, -4, -2, 0, 2, 4, 8]
+      ports_cdm: [SINGLE_PORT, MULTI_PORT, CO_SCHEDULED_CDM_GROUPS]
+    metrics: [USABLE_SEQUENCE_COUNT, AUTOCORRELATION, CROSS_CORRELATION, WORST_CASE_CORRELATION, CORRELATION_DISTRIBUTION, PAPR_CCDF, CM_CCDF, MSE, BLER, STORAGE_COST, GENERATION_OPERATIONS]
+
+  - id: C14
+    name: "Receiver-assisted DMRS overhead reduction"
+    tdoc_sections: ["2.5.6", "Annex A.4"]
+    evidence: CALIBRATED_LLS
+    conditional: true
+    block_if_no_real_model: true
+    subcases: [SPARSE_DMRS, SUPERIMPOSED_DMRS, DMRS_FREE]
+    mandatory_baselines: [SAME_PATTERN_NON_AI, NOMINAL_DENSITY_NON_AI]
+    generalization_cases: [CASE1_MATCHED, CASE2_UNSEEN, CASE3_MIXED]
+    sweeps:
+      desired_interferers: [1, 2, 4]
+      sir_db: [-10, -5, 0, 5, 10, 20]
+      modulation: [QPSK, 16QAM, 64QAM]
+      rank: [1, 2, 4]
+      waveform: [CP_OFDM, DFT_S_OFDM_IF_SUPPORTED]
+    metrics: [MSE, BLER, NET_THROUGHPUT, PAPR_CM, FLOPS_PER_RB_SLOT_LAYER, PARAMETERS, PEAK_MEMORY, LATENCY, GENERALIZATION_GAP, FALLBACK_RATE]
+
+  - id: C15
+    name: "Maximum orthogonal PUSCH-DMRS ports"
+    tdoc_sections: ["2.5.7", "Proposal 16"]
+    evidence: MULTICELL_SLS
+    required_port_options: [24, 32, 48, 96]
+    traffic: [FTP1, FTP3, OPTIONAL_FULL_BUFFER]
+    resource_utilization_percent: [20, 50, 70]
+    ue_per_cell: [10, 30]
+    metrics: [PORT_UTILIZATION_CDF, RANK_DISTRIBUTION, UE_DISTRIBUTION, DMRS_OVERHEAD, COLLISION_RATE, MU_MULTIPLEXING_ORDER, MEAN_THROUGHPUT, CELL_EDGE_5P_THROUGHPUT, RECEIVER_COMPLEXITY]
+    note: "Do not infer a port-count conclusion from LLS only."
+
+  - id: C16
+    name: "Multi-slot PUSCH processing models"
+    tdoc_sections: ["2.6.1", "2.6.2", "2.6.10", "Annex A.5"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      scheme: [REPETITION_TYPE_A, REPETITION_TYPE_B, TBOMS, CROSS_SLOT_SINGLE_PUSCH]
+      processing_model: [INDEPENDENT_OCCASION, FULL_MULTI_SLOT_UNIT, SEGMENTED_SINGLE_TB]
+      duration_slots: [1, 2, 4, 8]
+      symbol_continuity: [CONTIGUOUS, ONE_GAP, MULTIPLE_GAPS]
+      channel: ["CDL-A 100 ns", "CDL-C 100 ns", "CDL-D 100 ns", "CDL-C 300 ns"]
+      speed_kmph: [3, 30, 120, 350]
+      rf_continuity: [PHASE_CONTINUOUS_UPPER_BOUND, PHASE_RESET_PER_SEGMENT, POWER_AND_PHASE_RESET]
+    metrics: [BLER, GOODPUT, COVERAGE_SNR, DCI_COUNT, DMRS_OVERHEAD, BUFFER_MEMORY, DECODER_START_TIME, FINAL_HARQ_TIME, RETRANSMITTED_BITS, PAPR]
+
+  - id: C17
+    name: "Code-block-to-processing-segment mapping"
+    tdoc_sections: ["2.6.3", "Annex A.5.1", "Annex B.3.2"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      duration_slots: [2, 4, 8]
+      mapping: [CB_ALIGNED, BIT_ALIGNED]
+      tb_size_class: [SMALL, MEDIUM, LARGE]
+      residual_segment_rule: [PAD_OR_FILL, NEXT_SEGMENT, REPORTED_RULE]
+      decoder: [FULL_WAIT, CHECKPOINT_EARLY_START, EARLY_TERMINATION]
+    metrics: [RATE_MATCHING_POSITIONS, EARLIEST_DECODER_START, PEAK_CODED_BIT_BUFFER, PEAK_LLR_BUFFER, ACTIVE_CB_COUNT, BLER, EARLY_TERMINATION_RATE, FINAL_DECISION_TIME]
+
+  - id: C18
+    name: "Multi-slot DMRS checkpoints and segment-aware PT-RS"
+    tdoc_sections: ["2.6.4", "2.6.5", "Proposal 19"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      dmrs_mode: [FULL_PER_SLOT, SEGMENT_LOCAL, ANCHOR_PLUS_REDUCED_DENSITY, SAME_DMRS_JOINT_PROCESSING]
+      ptrs_mode: [NO_PTRS, SLOT_LOCAL_PTRS, SEGMENT_AWARE_PTRS]
+      phase_continuity: [VALID_ACROSS_BOUNDARY, INVALID_RESET, EVENT_TRIGGERED_RESET]
+      phase_noise_profile: [LOW, MEDIUM, HIGH_REPORTED]
+      duration_slots: [2, 4, 8]
+      speed_kmph: [3, 30, 120]
+    fairness: "Match total DMRS/PT-RS overhead between candidates where comparison claims a gain."
+    metrics: [CHANNEL_ESTIMATION_MSE, RESIDUAL_CPE_VARIANCE, BLER, GOODPUT, RS_OVERHEAD, PHASE_RESET_COUNT, BUFFER, LATENCY]
+
+  - id: C19
+    name: "Multi-slot usable resources, TBS, PHR and scrambling"
+    tdoc_sections: ["2.6.6", "2.6.7", "2.6.9", "Annex A.5.1"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      duration_slots: [2, 4, 8]
+      unavailable_resource: [NONE, TDD_GAP, SRS, MRSS_PROTECTION, REFERENCE_SIGNAL_PUNCTURE, COMBINED]
+      tbs_rule: [ALLOCATED_RE_THEN_PUNCTURE, USABLE_RE_TBS, BOUNDED_PROCESSING_UNIT]
+      ph_rule: [PER_SEGMENT, FIRST_SEGMENT, WORST_CASE]
+      scrambling: [TB_CONTINUOUS, SEGMENT_DEPENDENT]
+      allocation: [CONTIGUOUS, SEGMENTED, NON_CONTIGUOUS]
+      repetition: [NONE, TYPE_A, TYPE_B]
+    metrics: [USABLE_RE_COUNT, EFFECTIVE_CODE_RATE, BLER, GOODPUT, TBS, BUFFER, PROCESSING_TIME, PH_ERROR, SOFT_COMBINING_GAIN, INTERFERENCE_RANDOMIZATION, SCRAMBLER_COMPLEXITY]
+
+  - id: C20
+    name: "UCI-dedicated physical channel: sequence versus coded"
+    tdoc_sections: ["2.7.1", "2.7.2", "2.7.3", "2.7.4", "Annex A.6", "Annex B.4"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      payload_bits: [1, 2, 3, 4, 6, 7, 11, 22, 50, 100]
+      prb: [1]
+      symbols: [1, 2, 4, 7, 14]
+      family: [NR_LIKE_SEQUENCE, STRUCTURED_SEQUENCE, RM_CODED_BASELINE, CODING_AGENDA_CODE_IF_AVAILABLE]
+      dmrs_relation: [DMRS_LESS, DMRS_ASSISTED, DMRS_BASED]
+      repetition: [1, 2, 4, 8]
+      hopping: [OFF, ON_REPORTED]
+      speed_kmph: [3, 30, 120]
+      delay_spread_ns: [30, 100, 300]
+      rx_antennas: [2, 4, AGREED_ALIGNED]
+    statistics:
+      separate_ack_nack_dtx_sets: true
+      independent_threshold_validation: true
+      stop_by_trials_errors_or_ci: true
+    metrics: [BLER, BER, DTX_TO_ACK, ACK_MISSED, NACK_TO_ACK, REQUIRED_SNR, COMPLEXITY, MEMORY, LATENCY, PAPR_CM, RESOURCE_EFFICIENCY]
+
+  - id: C21
+    name: "Multi-port UCI and PUCCH/PUSCH DMRS commonality"
+    tdoc_sections: ["2.7.5", "2.7.6", "Proposals 25-26"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      multiport_mode: [SINGLE_PORT, STRONGEST_PORT, OPEN_LOOP_PORT_CYCLING, OPEN_LOOP_DIVERSITY, CSI_BASED_TPMI]
+      tx_ports: [1, 2, 4]
+      total_power: [SAME_TOTAL_POWER]
+      coherency: [NON_COHERENT, PARTIAL, FULL]
+      dmrs_parameterization: [PUCCH_NATIVE, PUSCH_COMMON_PARAMETERS, IDENTICAL_PATTERN_DIAGNOSTIC]
+      payload_bits: [1, 2, 6, 11, 22]
+    metrics: [UCI_ERROR_METRICS, BLER, GOODPUT, SOUNDING_OVERHEAD, PRECODER_BITS, RECEIVER_COMPLEXITY, PAPR_CM, MPR, COMMONALITY_COMPLEXITY]
+
+  - id: C22
+    name: "MRSS NR/6GR uplink resource sharing"
+    tdoc_sections: ["2.8", "Annex A.7"]
+    evidence: MULTICELL_SLS
+    candidates: [STATIC_ORTHOGONAL_RESERVATION, DYNAMIC_NETWORK_TRANSPARENT_REUSE]
+    sweeps:
+      nr_uci_periodicity_slots: [2, 5, 10, 20, 40]
+      nr_activity_probability: [0.0, 0.1, 0.25, 0.5, 0.75, 1.0]
+      protection: [ACTUAL_NR_OCCASION, CONFIGURED_RESERVATION, WIDEBAND_RS_PROTECTION]
+      sixgr_rate_matching: [PUNCTURE_AFTER_TBS, USABLE_RE_TBS]
+      dmrs_availability: [FULL, PARTIAL, BLOCKED]
+      scheduler_knowledge: [PERFECT_NETWORK_KNOWLEDGE, CONFIGURATION_ONLY]
+    metrics: [RESOURCE_UTILIZATION, PROTECTED_RE_COUNT, USABLE_RE_COUNT, TBS_DISTRIBUTION, BLER, GOODPUT, NR_PROTECTION_VIOLATIONS, SCHEDULER_BLOCKING]
+
+  - id: C23
+    name: "UE antenna-position randomization baseline"
+    tdoc_sections: ["2.9.1", "Annex A.8"]
+    evidence: CALIBRATED_LLS
+    sweeps:
+      device_type: [TR38901_HANDHELD, TR38901_CPE]
+      active_tx_chains: [2, 4, 8]
+      subset_policy: [FIXED_REFERENCE_SUBSET, RANDOM_PREDEFINED_SUBSET, RANDOM_ALL_VALID_SUBSETS]
+      orientation_deg: [0, 30, 60, 90, 120, 150, 180]
+      position_perturbation_percent: [0, 5, 10, 20]
+      per_port_gain_imbalance_db: [0, 3, 6]
+      coherency: [NON_COHERENT, PARTIAL, FULL]
+    candidates_under_test: [SCHEME2, FSP, UL_CODEBOOK]
+    metrics: [BLER, GOODPUT, NORMALIZED_PRECODING_GAIN, PERFORMANCE_CDF, SUBSET_ROBUSTNESS, CODEBOOK_REGRET, RECIPROCITY_REGRET]
+
+  - id: C24
+    name: "Network-assisted PUSCH antenna-set selection"
+    tdoc_sections: ["2.9.2", "Annex A.9"]
+    evidence: [CALIBRATED_LLS, MULTICELL_SLS]
+    sweeps:
+      duplex_use_case: [TDD, FDD_REPORTED_DUPLEX_GAP, UL_DL_DECOUPLING]
+      architecture: [2T4R, 2T8R, 4T8R]
+      selection: [FIXED, DL_BASED_TRANSPARENT, UE_INITIATED, NETWORK_ASSISTED]
+      update_period_slots: [20, 50, 100, 200]
+      ul_dl_pattern_mismatch_db: [0, 3, 6]
+      insertion_loss_mismatch_db: [0, 3, 6]
+      port_power_imbalance_db: [0, 3, 6, 10]
+      blockage: [NONE, ONE_PORT, ONE_PANEL]
+      rotation: [STATIC, SLOW, EVENT_CHANGE]
+    metrics: [LLS_BLER, LLS_GOODPUT, SLS_MEAN_THROUGHPUT, SLS_5P_THROUGHPUT, SELECTED_SET_STABILITY, SRS_OVERHEAD, UPDATE_RATE, POWER, COHERENCY]
+
+  - id: C25
+    name: "Supporting waveform, open-loop and full-power baselines"
+    tdoc_sections: ["2.10.1", "2.10.2", "2.10.3", "2.10.4"]
+    evidence: CALIBRATED_LLS
+    subcampaigns:
+      - name: "Open-loop transmit diversity baseline"
+        candidates: [SINGLE_STRONGEST_PORT, SPEC_TRANSPARENT_TXD, FSTD, CDD_IF_SUPPORTED, PORT_CYCLING]
+      - name: "Multi-layer DFT-s-OFDM"
+        ranks: [1, 2]
+        constraints: [PORT_SELECTION, CONSTANT_MODULUS, PHASE_ONLY]
+      - name: "Full-power and unequal PA capability"
+        pa_models: [EQUAL_PA, ONE_STRONG_SECONDARY_WEAK, NR_FULL_POWER_REPORTED]
+    metrics: [BLER, GOODPUT, PAPR_CM, MPR, PER_PORT_POWER, COVERAGE_SNR, RECEIVER_COMPLEXITY]
+
+  - id: C26
+    name: "Multi-TRP and UL/DL decoupling sensitivity"
+    tdoc_sections: ["2.10.5"]
+    evidence: [CALIBRATED_LLS, MULTICELL_SLS]
+    priority: SECONDARY
+    candidates: [SINGLE_RECIPROCAL_RECEIVE_DOMAIN, TRP_SPECIFIC_REPORT, RECENT_SRS_FOR_UL_TRP, JOINT_RECEIVE_DOMAIN, FALLBACK]
+    sweeps:
+      trp_count: [1, 2]
+      ul_dl_serving_relation: [SAME_TRP, DECOUPLED]
+      phase_coherence: [NONE, PARTIAL, FULL_UPPER_BOUND]
+      report_scope: [WIDEBAND_COMMON, TRP_SPECIFIC]
+    metrics: [BLER, GOODPUT, REPORT_OVERHEAD, SRS_OVERHEAD, TRP_SELECTION_ERROR, FALLBACK_RATE]

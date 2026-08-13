@@ -1,0 +1,17 @@
+inherits:
+  - pusch_reference.yaml
+
+scenario:
+  id: tdoc_ul_10523_bounded_actual_pusch
+  description: Bounded three-point actual-waveform PUSCH evidence for RAN1 10.5.2.3; not publication statistics
+
+simulation:
+  snrDb: [-10, 0, 20]
+  minTransportBlocks: 1
+  minBlockErrors: 1
+  maxTransportBlocks: 1
+  statisticalClass: diagnostic_only
+
+results:
+  outputRoot: results/tdoc_ul_10523
+  generatePlots: true
