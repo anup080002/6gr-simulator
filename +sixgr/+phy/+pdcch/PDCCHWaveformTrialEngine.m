@@ -81,10 +81,12 @@ classdef PDCCHWaveformTrialEngine
                     ~isempty(options.ChannelState)
                 waveform = localApplyChannelState( ...
                     txWaveform, options.ChannelState);
+                trueChannelGrid = [];
             else
-                [waveform, ~] = localApplyChannel(txWaveform, ...
+                [waveform, ~, trueChannelGrid] = localApplyChannel(txWaveform, ...
                     string(options.Channel), double(options.DopplerHz), ...
-                    kernel.SampleRate, trialSeed);
+                    kernel.SampleRate, trialSeed, double(localOption( ...
+                    options, "DelaySpreadSeconds", NaN)), kernel.Carrier);
             end
             channelID = localTextHash("channel-randomness:" + realizationKey);
             signalScaledB = localOption(options, "SignalScaledB", 0);
@@ -137,6 +139,15 @@ classdef PDCCHWaveformTrialEngine
                 kernel.SampleToGridNoiseVarianceGain, eps);
             [rxSymbols, hSymbols] = nrExtractResources( ...
                 kernel.PDCCHIndices, rxGrid, hEst);
+            ceNMSE = NaN;
+            if ~isempty(trueChannelGrid)
+                trueSymbols = nrExtractResources( ...
+                    kernel.PDCCHIndices, trueChannelGrid);
+                if isequal(size(trueSymbols), size(hSymbols))
+                    ceNMSE = sum(abs(hSymbols(:)-trueSymbols(:)).^2) / ...
+                        max(sum(abs(trueSymbols(:)).^2), eps);
+                end
+            end
             [equalized, csi] = nrEqualizeMMSE( ...
                 rxSymbols, hSymbols, gridNoiseVariance);
             hypothesisCount = max(1, round(double(localOption( ...
@@ -209,6 +220,7 @@ classdef PDCCHWaveformTrialEngine
                 "KnownLocationUsed", false, ...
                 "OracleTimingUsed", false, ...
                 "MeasuredSINRdB", double(options.SNRdB), ...
+                "CENMSE", double(ceNMSE), ...
                 "CFOEstimateHz", 0, ...
                 "TimingEstimateSamples", 0, ...
                 "RuntimeMs", 1000*toc(started), ...
@@ -224,16 +236,20 @@ classdef PDCCHWaveformTrialEngine
         end
 
         function state = createCampaignChannelState( ...
-                fixture, profile, dopplerHz, realizationKey)
+                fixture, profile, dopplerHz, realizationKey, varargin)
             profile = upper(strtrim(string(profile)));
             if profile == "AWGN"
                 state = [];
                 return;
             end
             seed = localSeedFromText(string(realizationKey));
+            delaySpreadSeconds = NaN;
+            if ~isempty(varargin)
+                delaySpreadSeconds = double(varargin{1});
+            end
             [channel, channelInfo] = localCreateChannel( ...
                 profile, double(dopplerHz), ...
-                fixture.CampaignKernel.SampleRate, seed);
+                fixture.CampaignKernel.SampleRate, seed, delaySpreadSeconds);
             state = struct( ...
                 "Object", channel, ...
                 "FilterDelay", double(channelInfo.ChannelFilterDelay), ...
@@ -260,6 +276,8 @@ classdef PDCCHWaveformTrialEngine
                 @(x) isnumeric(x) && isscalar(x));
             addParameter(p, "PhaseNoiseStdRadians", 0, ...
                 @(x) isnumeric(x) && isscalar(x) && x >= 0);
+            addParameter(p, "DelaySpreadSeconds", NaN, ...
+                @(x) isnumeric(x) && isscalar(x) && (isnan(x) || x >= 0));
             addParameter(p, "AbsoluteSlot", 0, ...
                 @(x) isnumeric(x) && isscalar(x));
             parse(p, varargin{:});
@@ -270,7 +288,8 @@ classdef PDCCHWaveformTrialEngine
             trialSeed = localSeed(opt.Seed, opt.Trial, ...
                 fixture.AggregationLevel, fixture.Context.Digest);
             [waveform, channelID] = localApplyChannel(txWaveform, ...
-                string(opt.Channel), double(opt.DopplerHz), sampleRate, trialSeed);
+                string(opt.Channel), double(opt.DopplerHz), sampleRate, trialSeed, ...
+                double(opt.DelaySpreadSeconds), []);
             noiseVariance = max(fixture.SignalPower/10^(double(opt.SNRdB)/10), eps);
             stream = RandStream("mt19937ar", "Seed", trialSeed);
             noiseUnit = (randn(stream, size(waveform)) + ...
@@ -463,26 +482,47 @@ else
 end
 end
 
-function [waveform, realizationID] = localApplyChannel( ...
-        txWaveform, profile, dopplerHz, sampleRate, seed)
+function [waveform, realizationID, trueChannelGrid] = localApplyChannel( ...
+        txWaveform, profile, dopplerHz, sampleRate, seed, delaySpreadSeconds, carrier)
 profile = upper(strtrim(string(profile)));
 if profile == "AWGN"
     waveform = txWaveform;
     realizationID = localTextHash("AWGN:unit_channel");
+    if isempty(carrier)
+        trueChannelGrid = [];
+    else
+        trueChannelGrid = complex(ones(carrier.NSizeGrid*12, ...
+            carrier.SymbolsPerSlot,1,1));
+    end
     return;
 end
 [channel, channelInfo] = localCreateChannel( ...
-    profile, dopplerHz, sampleRate, seed);
-state = struct("Object", channel, ...
-    "FilterDelay", double(channelInfo.ChannelFilterDelay), ...
-    "MaximumChannelDelay", double(channelInfo.MaximumChannelDelay));
-waveform = localApplyChannelState(txWaveform, state);
+    profile, dopplerHz, sampleRate, seed, delaySpreadSeconds);
+if isempty(carrier)
+    state = struct("Object", channel, ...
+        "FilterDelay", double(channelInfo.ChannelFilterDelay), ...
+        "MaximumChannelDelay", double(channelInfo.MaximumChannelDelay));
+    waveform = localApplyChannelState(txWaveform, state);
+    trueChannelGrid = [];
+else
+    if isprop(channel,"PathGainsOutputPort")
+        channel.PathGainsOutputPort = true;
+    end
+    padded = [txWaveform; complex(zeros(double(channelInfo.MaximumChannelDelay), ...
+        size(txWaveform,2),"like",txWaveform))];
+    [filtered,pathGains,sampleTimes] = channel(padded);
+    first = double(channelInfo.ChannelFilterDelay)+1;
+    last = first+size(txWaveform,1)-1;
+    waveform = filtered(first:last,:);
+    trueChannelGrid = nrPerfectChannelEstimate(carrier,pathGains, ...
+        getPathFilters(channel),double(channelInfo.ChannelFilterDelay),sampleTimes);
+end
 realizationID = localTextHash(profile + ":" + string(dopplerHz) + ...
     ":" + string(seed));
 end
 
 function [channel, channelInfo] = localCreateChannel( ...
-        profile, dopplerHz, sampleRate, seed)
+        profile, dopplerHz, sampleRate, seed, delaySpreadSeconds)
 if startsWith(profile, "TDL-")
     channel = nrTDLChannel;
     channel.DelayProfile = char(profile);
@@ -502,6 +542,9 @@ else
 end
 if isprop(channel, "MaximumDopplerShift")
     channel.MaximumDopplerShift = dopplerHz;
+end
+if isfinite(delaySpreadSeconds) && isprop(channel, "DelaySpread")
+    channel.DelaySpread = delaySpreadSeconds;
 end
 if isprop(channel, "RandomStream")
     channel.RandomStream = "mt19937ar with seed";
