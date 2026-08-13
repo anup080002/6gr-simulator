@@ -1,0 +1,24 @@
+schema_version: sixgr.ran1.10_5_2_2.parameter_contract/v1
+parameters:
+  pdschDmrsStudy.timeDomain.X: {type: integer, units: symbols_per_group, default: 1, allowed: [1, 2, 4], applies_when: pdschDmrsStudy.enabled, error: X must be 1, 2 or 4}
+  pdschDmrsStudy.timeDomain.supportedL: {type: integer_list, units: groups, default: [1, 2, 3, 4, 5, 6], allowed: X_dependent, applies_when: pdschDmrsStudy.enabled, error: L is unsupported for X}
+  pdschDmrsStudy.timeDomain.firstReference: {type: string, units: none, default: pdsch_start, allowed: [pdsch_start, slot_candidates, explicit_relative], applies_when: pdschDmrsStudy.enabled, error: unsupported first reference}
+  pdschDmrsStudy.timeDomain.firstOffsetSymbols: {type: integer, units: symbols, default: 0, allowed: nonnegative, applies_when: pdschDmrsStudy.enabled, error: first offset must fit without shifting}
+  pdschDmrsStudy.timeDomain.maxGroupStartSpacingG: {type: integer, units: symbols, default: 7, allowed: positive, applies_when: implicitL, error: G must be positive}
+  pdschDmrsStudy.timeDomain.placementRule: {type: string, units: none, default: floor_remainder_long_gaps_at_end, allowed: [floor_remainder_long_gaps_at_end], applies_when: pdschDmrsStudy.enabled, error: only the exact floor remainder rule is implemented}
+  pdschDmrsStudy.timeDomain.implicitL: {type: boolean, units: none, default: true, allowed: [true, false], applies_when: pdschDmrsStudy.enabled, error: implicitL must be boolean}
+  pdschDmrsStudy.timeDomain.noImplicitShift: {type: boolean, units: none, default: true, allowed: [true], applies_when: pdschDmrsStudy.enabled, error: implicit shifting is forbidden}
+  pdschDmrsStudy.nestedFamily.enabled: {type: boolean, units: none, default: false, allowed: [true, false], applies_when: pdschDmrsStudy.enabled, error: enabled must be boolean}
+  pdschDmrsStudy.nestedFamily.receiverTreatment: {type: string, units: none, default: separate_covariance, allowed: [separate_covariance, pooled_covariance], applies_when: nestedFamily.enabled, error: unsupported receiver treatment}
+  pdschDmrsStudy.nestedFamily.overlapMode: {type: string, units: none, default: overlap, allowed: [overlap, rate_match], applies_when: nestedFamily.enabled, error: unsupported overlap mode}
+  pdschDmrsStudy.frequencyDomain.sequenceIndexingModes: {type: string_list, units: none, default: [common_grid], allowed: [common_grid, reset_per_bundle, reset_per_region], applies_when: pdschDmrsStudy.enabled, error: unsupported sequence indexing mode}
+  pdschDmrsStudy.frequencyDomain.bundleSizesPrb: {type: integer_list, units: PRB, default: [4], allowed: positive, applies_when: pdschDmrsStudy.enabled, error: bundle sizes must be positive integers}
+  pdschDmrsStudy.wideband.processingRegionsPrb: {type: integer_matrix, units: PRB, default: [[0, 47]], allowed: nonoverlapping_zero_based_inclusive, applies_when: wideband.enabled, error: processing regions overlap or are malformed}
+  pdschDmrsStudy.wideband.coherentCrossRegion: {type: boolean, units: none, default: false, allowed: [true, false], applies_when: wideband.enabled, error: coherence flag must be boolean}
+  pdschDmrsStudy.interleaving.mode: {type: string, units: none, default: none, allowed: [none, bundle_local_region, bundle_cross_region], applies_when: pdschDmrsStudy.enabled, error: cross-region mode requires capability}
+  pdschDmrsStudy.ptrs.mode: {type: string, units: none, default: none, allowed: [none, common, per_region], applies_when: pdschDmrsStudy.enabled, error: common PT-RS requires coherent regions}
+  pdschDmrsStudy.tbMapping.mode: {type: string, units: none, default: one_tb, allowed: [one_tb, two_fdmed_tb, four_fdmed_tb], applies_when: pdschDmrsStudy.enabled, error: unsupported TB mapping}
+  pdschDmrsStudy.mcsSegmentation.mode: {type: string, units: none, default: common, allowed: [common, per_tb, per_region, per_bundle_stress], applies_when: pdschDmrsStudy.enabled, error: segment boundaries must be aligned}
+  pdschDmrsStudy.codewordLayerMapping.mode: {type: string, units: none, default: nr_baseline, allowed: [nr_baseline, alt_two_cw_rank2plus, alt_two_cw_rank3plus, cw_per_layer_stress], applies_when: pdschDmrsStudy.enabled, error: enhanced mapping cannot silently collapse to NR}
+  pdschDmrsStudy.multiTrp.enabled: {type: boolean, units: none, default: false, allowed: [true, false], applies_when: pdschDmrsStudy.enabled, error: enabled must be boolean}
+  pdschDmrsStudy.mrss.collisionHandling: {type: string, units: none, default: reject_invalid_profile, allowed: [reject_invalid_profile, rate_match_valid_mask], applies_when: mrss.enabled, error: invalid profiles cannot be shifted}

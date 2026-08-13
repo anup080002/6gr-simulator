@@ -1,0 +1,3 @@
+inherits: [pdsch_6gr_truth_study.yaml, ../ran1_10522/study_defaults.yaml]
+meta: {scenario_id: sls_ran1_10522_port_utilization, description: RAN1 10.5.2.2 port-utilization SLS launch template, research_class: study_item_candidate, scenario_group: group_b_data}
+study: {family: H, evidence_class: MULTICELL_SLS, run_mode: sls}

@@ -1,0 +1,4 @@
+inherits: [pdsch_6gr_truth_study.yaml, ../ran1_10522/study_defaults.yaml]
+meta: {scenario_id: lls_ran1_10522_bundle_interleaving, description: RAN1 10.5.2.2 bundle-preserving interleaver study, research_class: study_item_candidate, scenario_group: group_b_data}
+study: {family: J}
+pdschDmrsStudy: {wideband: {enabled: true}, interleaving: {mode: bundle_local_region}}

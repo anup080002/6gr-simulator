@@ -1,0 +1,144 @@
+study:
+  schema_version: sixgr.ran1.10_5_2_2/v1
+  id: ran1_ai_10_5_2_2_pdsch_dmrs_wideband
+  release: rel20_study
+  evidence_class: CONTROLLED_LLS
+  run_mode: smoke
+  family: A
+  master_seed: 1052201
+  strict: true
+  prohibit_fallback: true
+  common_evm_verified: false
+  controlling_prompt_sha256: 680db7439450b55b074342284d435cde95671c947bdae220adb6d8221f22e5cc
+  controlling_tdoc_path: ""
+  parameter_contract_path: simulator/configs/ran1_10522/parameter_contract.yaml
+  execution:
+    snr_points_db: [0, 20]
+    transport_blocks_per_point: 1
+    channel_realizations_per_point: 1
+    minimum_block_errors_for_convergence: 200
+    maximum_transport_blocks_per_point: 1000
+    confidence_level: 0.95
+    parallel_enabled: false
+    maximum_workers: 1
+    checkpoint_enabled: true
+    resume_enabled: true
+    fail_on_incomplete_matrix: false
+    image_width_px: 1280
+    image_height_px: 720
+    image_resolution_dpi: 150
+  output:
+    save_csv: true
+    save_mat: true
+    save_json: true
+    save_png: true
+    save_svg: false
+    save_pdf: false
+    raster_only: true
+
+pdschDmrsStudy:
+  enabled: true
+  timeDomain:
+    X: 1
+    supportedL: [1, 2, 3, 4, 5, 6]
+    allocationSymbolCounts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+    firstReference: pdsch_start
+    firstOffsetSymbols: 0
+    maxGroupStartSpacingG: 7
+    implicitSpacingValues: [3, 5, 7]
+    placementRule: floor_remainder_long_gaps_at_end
+    implicitL: true
+    noImplicitShift: true
+    slotCandidates: [0, 3, 6, 9, 11, 13]
+    iqBitsPerComponent: 16
+    receiverBranches: 2
+    subcarriersPerPrb: 12
+    bufferedWaitSymbols: 14
+  nestedFamily:
+    enabled: false
+    familyId: example_14sym_x1
+    commonAnchor: slot
+    Lmax: 6
+    insertionRule: retain_add_largest_gap_rightmost_tie_floor_midpoint
+    receiverTreatment: separate_covariance
+    overlapMode: overlap
+    coScheduledDmrsEpreOffsetDb: 0
+    allowMixedX: false
+  frequencyDomain:
+    fdOccLengths: [2, 4, 8]
+    cdmGroups: [1, 2, 3]
+    patternIds: [nr_rel18_type1_len1, parameterized_candidate_fd4, parameterized_candidate_fd8]
+    sequenceIndexingModes: [common_grid, reset_per_bundle, reset_per_region]
+    allocationPrbs: [8, 24, 48]
+    bundleSizesPrb: [2, 4, 8]
+    orphanHandling: reject_incomplete_occ
+  wideband:
+    enabled: false
+    nominalBandwidthsMHz: [100, 200, 400]
+    processingRegionsPrb: [[0, 47], [48, 95]]
+    coherentCrossRegion: false
+    guardPrbs: []
+    regionBundleRestart: true
+    shortenedEdgeBundle: true
+    receiverCapabilityCrossRegion: false
+    memoryLimitGiB: 8
+  interleaving:
+    mode: none
+    modes: [none, bundle_local_region, bundle_cross_region]
+    depthPolicy: configured
+    preserveCompleteBundles: true
+  ptrs:
+    mode: none
+    modes: [none, common, per_region]
+    timeDensity: 2
+    frequencyDensity: 4
+    phaseModelId: affine_cfo_delay_region_v1
+    commonRequiresCoherence: true
+  tbMapping:
+    mode: one_tb
+    modes: [one_tb, two_fdmed_tb, four_fdmed_tb]
+    independentEncodingRequired: true
+    harqPerActualTb: true
+  mcsSegmentation:
+    mode: common
+    modes: [common, per_tb, per_region, per_bundle_stress]
+    alignedBoundariesRequired: true
+    candidateMcsIndices: [0, 10, 20]
+  codewordLayerMapping:
+    mode: nr_baseline
+    modes: [nr_baseline, alt_two_cw_rank2plus, alt_two_cw_rank3plus, cw_per_layer_stress]
+    ranks: [1, 2, 3, 4, 5, 6, 7, 8]
+    prohibitSilentCollapse: true
+  multiTrp:
+    enabled: false
+    commonProfileRequired: true
+    trpCount: 2
+    mismatchHandling: reject
+  mrss:
+    enabled: false
+    reservationMaskId: none
+    collisionHandling: reject_invalid_profile
+    noImplicitShift: true
+    noSequenceReset: true
+
+reference_signals:
+  csi_rs_enabled: false
+
+simulation:
+  noise_operating_mode: standalone_awgn_snr_argument
+
+control_gating:
+  pdcch_required: false
+
+validation:
+  run_class: fixed_lls_anchor
+
+pdsch6gr:
+  mcs_mode: fixed
+  link_adaptation_mode: calibration_only
+
+link_adaptation:
+  fixed_or_amc: fixed
+  operating_point_mode: fixed
+  pdsch_link_adaptation_policy: fixed
+  rank_adaptation_policy: fixed

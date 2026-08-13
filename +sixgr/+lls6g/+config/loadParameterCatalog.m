@@ -85,6 +85,7 @@ switch kind
             string(fullfile(root, "simulator", "configs", "schema", "scenario_parameter_catalog_extension_19.yaml"))
             string(fullfile(root, "simulator", "configs", "schema", "scenario_parameter_catalog_extension_20.yaml"))
             string(fullfile(root, "simulator", "configs", "schema", "scenario_parameter_catalog_extension_21.yaml"))
+            string(fullfile(root, "simulator", "configs", "schema", "scenario_parameter_catalog_extension_22.yaml"))
             ];
     case "matrix"
         paths = strings(0,1);

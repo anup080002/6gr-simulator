@@ -1,0 +1,38 @@
+top_level_order:
+  - study
+  - pdschDmrsStudy
+
+sections:
+  study:
+    required: false
+    parameters:
+      schema_version: {required: true, type: string, allowed_values: [sixgr.ran1.10_5_2_2/v1]}
+      id: {required: true, type: string, allowed_values: [ran1_ai_10_5_2_2_pdsch_dmrs_wideband]}
+      release: {required: true, type: string, allowed_values: [rel20_study]}
+      evidence_class: {required: true, type: string, allowed_values: [ANALYTICAL_DERIVATION, CONCEPTUAL_DIAGRAM, QUICK_SANITY_MODEL, CONTROLLED_LLS, COMMON_EVM_LLS, MULTICELL_SLS, EXTERNAL_REFERENCE_REPRODUCTION, BLOCKED]}
+      run_mode: {required: true, type: string, allowed_values: [plan, unit, deterministic, smoke, controlled_core, controlled_full, common_evm, sls, figure_replay, audit]}
+      family: {required: true, type: string, allowed_values: [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q]}
+      master_seed: {required: true, type: integer, min: 0}
+      strict: {required: true, type: boolean}
+      prohibit_fallback: {required: true, type: boolean}
+      common_evm_verified: {required: true, type: boolean}
+      controlling_prompt_sha256: {required: true, type: string, nonempty: true}
+      controlling_tdoc_path: {required: true, type: string}
+      parameter_contract_path: {required: true, type: string, nonempty: true}
+      execution: {required: true, type: struct}
+      output: {required: true, type: struct}
+  pdschDmrsStudy:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      timeDomain: {required: true, type: struct}
+      nestedFamily: {required: true, type: struct}
+      frequencyDomain: {required: true, type: struct}
+      wideband: {required: true, type: struct}
+      interleaving: {required: true, type: struct}
+      ptrs: {required: true, type: struct}
+      tbMapping: {required: true, type: struct}
+      mcsSegmentation: {required: true, type: struct}
+      codewordLayerMapping: {required: true, type: struct}
+      multiTrp: {required: true, type: struct}
+      mrss: {required: true, type: struct}
