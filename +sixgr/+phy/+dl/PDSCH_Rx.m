@@ -393,11 +393,8 @@ for index = 1:numel(pdschProperties)
             "Transmitter and receiver PDSCH property %s differs.",name);
     end
 end
-if ~isequal(double(raw.ResourcePlan.DataIndices(:)) + 1, ...
-        double(kernelIndices(:)))
-    error("sixgr:pdsch:CalibrationReceiverBundleResourceMismatch", ...
-        "Transmitter resource ownership differs from receiver PDSCH indices.");
-end
+localAssertCalibrationResourceAgreement( ...
+    raw.ResourcePlan,carrier,pdsch,kernelIndices);
 rawPlans = raw.CodingPlans;
 if ~iscell(rawPlans), rawPlans = {rawPlans}; end
 if numel(rawPlans) ~= numel(codingPlans) || ...
@@ -441,6 +438,45 @@ receiver.Algorithm = char(string(algorithm));
 bundle.ReceiverConfig = receiver;
 bundle.ReceiverMaterializationSource = ...
     "same_transmission_calibration_bundle_exact_reuse";
+end
+
+function localAssertCalibrationResourceAgreement( ...
+        resourcePlan,carrier,pdsch,kernelIndices)
+% The immutable ownership plan records each scheduled base-grid RE once.
+% nrPDSCHIndices records one linear grid index for every layer.  Comparing
+% those vectors directly is therefore valid only for rank one.  Prove the
+% stronger multi-layer invariant without discarding the layer dimension:
+% every owned base RE must occur exactly once on every configured layer.
+nSubcarriers = 12 * double(carrier.NSizeGrid);
+symbolsPerSlot = double(carrier.SymbolsPerSlot);
+planeSize = nSubcarriers * symbolsPerSlot;
+nLayers = double(pdsch.NumLayers);
+expectedBase = double(resourcePlan.DataIndices(:)) + 1;
+actualLinear = double(kernelIndices(:));
+
+validScalarContract = isscalar(planeSize) && isfinite(planeSize) ...
+    && planeSize == fix(planeSize) && planeSize > 0 ...
+    && isscalar(nLayers) && isfinite(nLayers) ...
+    && nLayers == fix(nLayers) && nLayers >= 1;
+validIndices = all(isfinite(actualLinear)) ...
+    && all(actualLinear == fix(actualLinear)) ...
+    && all(actualLinear >= 1) ...
+    && all(actualLinear <= planeSize * nLayers);
+expectedCardinality = numel(expectedBase) * nLayers;
+if ~validScalarContract || ~validIndices ...
+        || numel(actualLinear) ~= expectedCardinality
+    error("sixgr:pdsch:CalibrationReceiverBundleResourceMismatch", ...
+        "Transmitter resource ownership and receiver PDSCH indices " + ...
+        "have incompatible grid, layer, bounds, or cardinality contracts.");
+end
+
+actualBase = mod(actualLinear - 1,planeSize) + 1;
+expectedLayeredBase = repmat(expectedBase,nLayers,1);
+if ~isequal(sort(actualBase),sort(expectedLayeredBase))
+    error("sixgr:pdsch:CalibrationReceiverBundleResourceMismatch", ...
+        "Transmitter resource ownership differs from the receiver " + ...
+        "PDSCH base-grid indices or per-layer multiplicity.");
+end
 end
 
 function localRequireSchedulerTruthRXAdapterInputs( ...
