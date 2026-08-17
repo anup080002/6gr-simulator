@@ -52,5 +52,28 @@ channel:
 receiver:
   channelEstimation: perfect
 
+antenna:
+  enabled: true
+  couplingMode: cdl_physical_element_domain
+  pointingMode: auto_first_path_boresight
+  powerNormalization: unit_norm_per_logical_port
+  gnb:
+    # Four half-wavelength elements with the four-point spatial-DFT grid.
+    # The resulting logical-port columns are orthonormal, so rank-4 port
+    # projection preserves the exact waveform power.
+    size: [1, 4, 1, 1]
+    polarizationAnglesDeg: [0]
+    steeringAzElDeg:
+      - [-90, 0]
+      - [-30, 0]
+      - [0, 0]
+      - [30, 0]
+    numRFChains: 4
+  ue:
+    size: [2, 2, 1, 1]
+    polarizationAnglesDeg: [0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 4
+
 results:
   generatePlots: false

@@ -845,6 +845,10 @@ validation:
   run_class: adaptive_system_diagnostic
   fixed_snr_sweep_required: false
   geometry_evidence_required: false
+  independent_reference_qualification:
+    enabled: false
+  phase7_execution_validation:
+    enabled: false
   fixed_link_campaign:
     enabled: false
     fixed_reference_mode: false

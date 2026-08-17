@@ -4,9 +4,10 @@ function result = testRank4SUMIMODedicatedScenario()
 repoRoot = fileparts(fileparts(mfilename("fullpath")));
 configPath = fullfile(repoRoot, "configs", "lls", ...
     "pdsch_cdlc_rank4_256qam_ptrs_regression.yaml");
-outputRoot = fullfile(repoRoot, "results", "lls", ...
-    "ran1_waveform_qualification");
-runTag = "pdsch_cdlc_rank4_su_mimo_4stream_20260810_02";
+outputRoot = tempname;
+mkdir(outputRoot);
+cleanup = onCleanup(@() rmdir(outputRoot, "s")); %#ok<NASGU>
+runTag = "pdsch_cdlc_rank4_su_mimo_4stream_dedicated";
 
 result = sixgr.lls.runLLS(configPath, ...
     "OutputRoot", outputRoot, ...

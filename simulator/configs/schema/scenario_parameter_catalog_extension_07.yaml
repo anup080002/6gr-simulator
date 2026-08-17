@@ -404,7 +404,31 @@ sections:
       fixed_link_campaign: {required: false, type: struct, nested_rule: validation_fixed_link_campaign}
       strict_component_evidence: {required: false, type: struct, nested_rule: validation_strict_component_evidence}
       independent_reference_qualification: {required: false, type: struct, nested_rule: validation_independent_reference_qualification}
+      phase7_execution_validation: {required: false, type: struct, nested_rule: validation_phase7_execution_validation}
 nested_sections:
+  validation_phase7_execution_validation:
+    parameters:
+      enabled: {required: true, type: boolean}
+      checkpoint_resume: {required: false, type: struct, nested_rule: validation_phase7_checkpoint_resume}
+      serial_parallel: {required: false, type: struct, nested_rule: validation_phase7_serial_parallel}
+  validation_phase7_checkpoint_resume:
+    parameters:
+      enabled: {required: true, type: boolean}
+      direction:
+        required: true
+        type: string
+        allowed_values: [DL, UL, dl, ul]
+      snr_db: {required: true, type: number_list, min_items: 2}
+      mcs: {required: true, type: integer, min: 0}
+      transport_blocks_per_point: {required: true, type: integer, min: 1}
+  validation_phase7_serial_parallel:
+    parameters:
+      enabled: {required: true, type: boolean}
+      frc_entry_id: {required: true, type: string, nonempty: true}
+      condition_id: {required: true, type: string, nonempty: true}
+      transport_blocks: {required: true, type: integer, min: 2}
+      parallel_workers: {required: true, type: integer, min: 2}
+      seed: {required: true, type: integer, min: 0}
   validation_independent_reference_qualification:
     parameters:
       enabled: {required: true, type: boolean}
@@ -461,6 +485,7 @@ nested_sections:
       max_ci_half_width: {required: false, type: number, min: 0}
       confidence_level: {required: false, type: number, min_exclusive: 0, max: 1}
       trials_per_drop: {required: false, type: integer, min: 1}
+      parallel_workers: {required: false, type: integer, min: 0}
       disable_auxiliary_signals: {required: false, type: boolean}
       enable_ptrs: {required: false, type: boolean}
       fixed_reference_mode: {required: false, type: boolean}

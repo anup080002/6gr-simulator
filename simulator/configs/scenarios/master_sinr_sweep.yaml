@@ -75,13 +75,42 @@ canonical_control:
     measurement_slots: 200
     n_subframes: 200
     monte_carlo_iterations: 1
-    num_seeds: 1
+    num_seeds: 30
     pilot_runs: 1
-    final_runs: 1
+    final_runs: 30
     seed_stride: 17
     seed_list:
     - 104729
-    campaign_mode: single_seed_coupled_truth
+    - 104746
+    - 104763
+    - 104780
+    - 104797
+    - 104814
+    - 104831
+    - 104848
+    - 104865
+    - 104882
+    - 104899
+    - 104916
+    - 104933
+    - 104950
+    - 104967
+    - 104984
+    - 105001
+    - 105018
+    - 105035
+    - 105052
+    - 105069
+    - 105086
+    - 105103
+    - 105120
+    - 105137
+    - 105154
+    - 105171
+    - 105188
+    - 105205
+    - 105222
+    campaign_mode: multi_seed_fixed_link_truth
     fixed_link_campaign_enabled: true
     fixed_link_snr_grid_db:
     - 10
@@ -1579,17 +1608,20 @@ validation:
   run_class: fixed_snr_sweep_lls
   publication_mode: strict_actual_evidence
   independent_reference_qualification:
-    # Independent waveform campaign; disabled diagnostic runs cannot create
-    # the production qualification artifact.
-    enabled: false
+    # Independent waveform campaign. Descendant diagnostic scenarios must
+    # explicitly disable it; this publication master executes it.
+    enabled: true
     required_for_production: true
     profile: full
     entry_ids:
     - dl_r_pdsch_1_1_4_fdd_awgn
     - dl_r_pdsch_1_3_6_fdd_atg_awgn
     - dl_r_pdsch_1_4_1_fdd_atg_awgn
+    - dl_r_pdsch_1_3_1_fdd_tdla30_10
+    - dl_r_pdsch_1_2_4_fdd_tdla30_10
     - ul_g_fr1_a3a_1_awgn
     - ul_g_fr1_a13_1_atg_awgn
+    - ul_g_fr1_a11_1_tdla30_10_rank4
     tolerance_db: 1.0
     confidence_level: 0.95
     max_confidence_half_width: 0.01
@@ -1615,6 +1647,14 @@ validation:
       min_transport_blocks: 10000
       max_transport_blocks: 10000
       batch_size: 100
+    - entry_id: dl_r_pdsch_1_3_1_fdd_tdla30_10
+      min_transport_blocks: 10000
+      max_transport_blocks: 10000
+      batch_size: 100
+    - entry_id: dl_r_pdsch_1_2_4_fdd_tdla30_10
+      min_transport_blocks: 10000
+      max_transport_blocks: 10000
+      batch_size: 100
     - entry_id: ul_g_fr1_a3a_1_awgn
       min_transport_blocks: 300000
       max_transport_blocks: 300000
@@ -1623,7 +1663,26 @@ validation:
       min_transport_blocks: 10000
       max_transport_blocks: 10000
       batch_size: 100
+    - entry_id: ul_g_fr1_a11_1_tdla30_10_rank4
+      min_transport_blocks: 10000
+      max_transport_blocks: 10000
+      batch_size: 100
     verbose: true
+  phase7_execution_validation:
+    enabled: true
+    checkpoint_resume:
+      enabled: true
+      direction: DL
+      snr_db: [10, 20]
+      mcs: 20
+      transport_blocks_per_point: 1
+    serial_parallel:
+      enabled: true
+      frc_entry_id: dl_r_pdsch_1_1_4_fdd_awgn
+      condition_id: awgn_static_1x2
+      transport_blocks: 2
+      parallel_workers: 2
+      seed: 38104
   required_artifact_audit: true
   fixed_snr_sweep_required: true
   geometry_evidence_required: false
@@ -1663,11 +1722,41 @@ validation:
     max_ci_half_width: 0.05
     seeds:
     - 104729
+    - 104746
+    - 104763
+    - 104780
+    - 104797
+    - 104814
+    - 104831
+    - 104848
+    - 104865
+    - 104882
+    - 104899
+    - 104916
+    - 104933
+    - 104950
+    - 104967
+    - 104984
+    - 105001
+    - 105018
+    - 105035
+    - 105052
+    - 105069
+    - 105086
+    - 105103
+    - 105120
+    - 105137
+    - 105154
+    - 105171
+    - 105188
+    - 105205
+    - 105222
     target_bler:
     - 0.1
     - 0.01
     confidence_level: 0.95
     trials_per_drop: 200
+    parallel_workers: 8
     disable_auxiliary_signals: true
     enable_ptrs: false
 bwp:

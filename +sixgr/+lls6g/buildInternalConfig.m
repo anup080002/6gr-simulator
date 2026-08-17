@@ -2286,6 +2286,17 @@ if builtin("isstruct", fixedLinkCampaignSection) && ~isempty(fieldnames(fixedLin
     cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign", ...
         localNormalizeFixedLinkCampaignSection(fixedLinkCampaignSection));
 end
+phase7ExecutionSection = localGetNested(s, ...
+    "validation.phase7_execution_validation", struct());
+if builtin("isstruct", phase7ExecutionSection) && ...
+        ~isempty(fieldnames(phase7ExecutionSection))
+    % The scenario schema has already validated every nested field. Keep
+    % the exact YAML names and values so the evidence runner cannot fall
+    % back to an implicit MATLAB policy.
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.phase7_execution_validation", ...
+        phase7ExecutionSection);
+end
 strictComponentSection = localGetNested(s, ...
     "validation.strict_component_evidence", struct());
 if builtin("isstruct", strictComponentSection) && ...
@@ -5419,7 +5430,7 @@ for fieldName = ["snr_db", "mcs", "seeds", "target_bler"]
     end
 end
 
-for fieldName = ["rank", "layers", "n_prb", "min_tb_per_point", "max_tb_per_point", "min_errors_for_ci", "trials_per_drop"]
+for fieldName = ["rank", "layers", "n_prb", "min_tb_per_point", "max_tb_per_point", "min_errors_for_ci", "trials_per_drop", "parallel_workers"]
     key = char(fieldName);
     if isfield(section, key)
         value = double(section.(key));

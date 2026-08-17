@@ -83,6 +83,8 @@ dopplerT = localReadTable(fullfile(runDir, "mobility", "csv", "doppler_reconcili
 measuredSinrT = localReadTable(fullfile(runDir, "reports", "csv", "measured_sinr_timeseries.csv"));
 referenceSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_reference_snr_sweep.csv"));
 dutSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_snr_sweep.csv"));
+frcQualificationT = localReadTable(fullfile(runDir, "reports", "csv", ...
+    "frc_reference_qualification.csv"));
 
 effectiveCfg = cfg;
 if ~isstruct(effectiveCfg) || isempty(fieldnames(effectiveCfg))
@@ -162,12 +164,21 @@ if fixedApplicable
         "BLER and BER must stay within [0,1] with valid confidence intervals."); %#ok<AGROW>
     [referenceComparisonOK,referenceFailure] = ...
         localIndependentReferenceComparisonPass(dutSweepT,referenceSweepT);
+    [frcComparisonOK,frcFailure] = ...
+        localIndependentFRCQualificationPass(frcQualificationT);
+    independentComparisonOK = referenceComparisonOK || frcComparisonOK;
+    independentFailure = referenceFailure;
+    if ~independentComparisonOK
+        independentFailure = referenceFailure + "|" + frcFailure;
+    end
     rows(end+1, 1) = localModeGateRow("ReferenceComparisonPresent", runClass, true, ...
-        fixedEnabled && referenceComparisonOK, ...
-        height(referenceSweepT), double(~(fixedEnabled && referenceComparisonOK)), ...
-        "air_interface/csv/lls_reference_snr_sweep.csv", ...
-        localFailureToken(fixedEnabled && referenceComparisonOK,referenceFailure), ...
-        "Publication readiness requires an independent, hash-distinct, exact-key reference comparison."); %#ok<AGROW>
+        fixedEnabled && independentComparisonOK, ...
+        height(referenceSweepT) + height(frcQualificationT), ...
+        double(~(fixedEnabled && independentComparisonOK)), ...
+        "air_interface/csv/lls_reference_snr_sweep.csv|reports/csv/frc_reference_qualification.csv", ...
+        localFailureToken(fixedEnabled && independentComparisonOK,independentFailure), ...
+        ["Publication readiness requires either an independent, hash-distinct, " ...
+        "exact-key reference sweep or a statistically qualified independent 3GPP FRC campaign."]); %#ok<AGROW>
 end
 
 if geometryApplicable
@@ -571,6 +582,50 @@ passed=true;
 failure="";
 end
 
+function [passed,failure]=localIndependentFRCQualificationPass(T)
+passed=false;
+failure="frc_reference_qualification_missing";
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+requiredColumns = ["Pass","DataChannelExact","StatisticallyQualified", ...
+    "OneSidedReferencePass","Profile","EvidenceClass","RequiredSNR_dB", ...
+    "MeasuredSNR_dB","Delta_dB","CatalogSHA256","TransportBlocks"];
+if any(~ismember(requiredColumns,string(T.Properties.VariableNames)))
+    failure="frc_reference_qualification_schema_invalid";
+    return;
+end
+required = true(height(T),1);
+if localHasColumn(T,"Required")
+    required = localColumnAsLogical(T.Required);
+end
+if ~any(required)
+    failure="frc_reference_qualification_has_no_required_rows";
+    return;
+end
+rows = T(required,:);
+hashes = lower(strtrim(string(rows.CatalogSHA256)));
+hashOK = arrayfun(@(x)strlength(x)==64 && ...
+    ~isempty(regexp(char(x),"^[0-9a-f]{64}$","once")),hashes);
+numericOK = isfinite(localNumericColumn(rows,"RequiredSNR_dB")) & ...
+    isfinite(localNumericColumn(rows,"MeasuredSNR_dB")) & ...
+    isfinite(localNumericColumn(rows,"Delta_dB")) & ...
+    localNumericColumn(rows,"TransportBlocks") > 0;
+passed = all(localColumnAsLogical(rows.Pass)) && ...
+    all(localColumnAsLogical(rows.DataChannelExact)) && ...
+    all(localColumnAsLogical(rows.StatisticallyQualified)) && ...
+    all(localColumnAsLogical(rows.OneSidedReferencePass)) && ...
+    all(lower(strtrim(string(rows.Profile))) == "full") && ...
+    all(string(rows.EvidenceClass) == ...
+    "ACTUAL_FRC_SELECTED_DATA_CHANNEL_TRUTH_EXECUTION") && ...
+    all(hashOK) && all(numericOK);
+if passed
+    failure="";
+else
+    failure="frc_reference_qualification_required_row_failed";
+end
+end
+
 function value = localConfigString(S, dottedPath, defaultValue)
 raw = localConfigValue(S, dottedPath, defaultValue);
 value = string(raw);
@@ -720,22 +775,49 @@ seed = localNumericColumn(drop, "FixedLinkDropSeed");
 if isempty(seed)
     seed = localNumericColumn(drop, "Seed");
 end
-valid = isfinite(bler);
-bler = bler(valid);
-if numel(seed) == height(drop)
-    seed = seed(valid);
+% Stability is an operating-point property.  Pooling low- and high-SNR
+% drops would interpret the intended waterfall as temporal instability.
+% Group by immutable fixed-link point and direction, then require the seed
+% count and BLER dispersion at every executed operating point.
+point = localNumericColumn(drop, "FixedLinkPointIndex");
+if isempty(point)
+    point = localNumericColumn(drop, ["SNR_dB","ConfiguredSNR_dB"]);
 end
-seedCount = localUniqueFiniteCount(seed);
-stdVal = NaN;
-meanVal = NaN;
-if ~isempty(bler)
-    meanVal = mean(bler, "omitnan");
-    stdVal = std(bler, 0, "omitnan");
+direction = repmat("UNKNOWN", height(drop), 1);
+if localHasColumn(drop, "Direction")
+    direction = upper(strtrim(string(drop.Direction)));
 end
-ok = exist(dropPath, "file") == 2 && seedCount >= minSeeds && isfinite(stdVal) && stdVal <= stdLimit && ...
-    isfinite(meanVal) && meanVal >= 0 && meanVal <= 0.5;
+executed = true(height(drop), 1);
+if localHasColumn(drop, "EvidenceStatus")
+    executed = string(drop.EvidenceStatus) == "executed_trial_rows";
+end
+valid = executed & isfinite(bler) & isfinite(seed) & isfinite(point) & ...
+    bler >= 0 & bler <= 1;
+groupKey = direction + "|" + string(point);
+groups = unique(groupKey(valid), "stable");
+seedCounts = zeros(numel(groups), 1);
+groupMeans = NaN(numel(groups), 1);
+groupStd = NaN(numel(groups), 1);
+for groupIndex = 1:numel(groups)
+    mask = valid & groupKey == groups(groupIndex);
+    seedCounts(groupIndex) = localUniqueFiniteCount(seed(mask));
+    groupMeans(groupIndex) = mean(bler(mask), "omitnan");
+    groupStd(groupIndex) = std(bler(mask), 0, "omitnan");
+end
+if isempty(groups)
+    seedCount = NaN;
+    meanVal = NaN;
+    stdVal = NaN;
+else
+    seedCount = min(seedCounts, [], "omitnan");
+    meanVal = mean(groupMeans, "omitnan");
+    stdVal = max(groupStd, [], "omitnan");
+end
+ok = exist(dropPath, "file") == 2 && ~isempty(groups) && ...
+    all(seedCounts >= minSeeds) && all(isfinite(groupStd) & groupStd <= stdLimit) && ...
+    all(isfinite(groupMeans) & groupMeans >= 0 & groupMeans <= 1);
 reason = localReason(ok, "multi_seed_bler_stability_verified", ...
-    "multi_seed_drop_statistics_missing_or_bler_variance_out_of_bounds");
+    "multi_seed_operating_point_statistics_missing_or_bler_variance_out_of_bounds");
 T = table(string(localPortable(runDir, dropPath)), height(drop), seedCount, meanVal, stdVal, stdLimit, minSeeds, ok, reason, ...
     'VariableNames', {'DropStatisticsCSV','DropRows','SeedCount','BLERMean','BLERStd', ...
     'BLERStdThreshold','RequiredSeedCount','LongRunStabilityOk','FailureReason'});

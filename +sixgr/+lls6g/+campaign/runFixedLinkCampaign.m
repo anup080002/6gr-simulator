@@ -6,6 +6,9 @@ ip.addRequired("cfg", @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("Config", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("RootRunFolder", "", @(x)ischar(x) || isstring(x));
 ip.addParameter("WriteArtifacts", true, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("CheckpointPath", "", @(x)ischar(x) || isstring(x));
+ip.addParameter("ResumeFromCheckpoint", false, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("MaxPointsThisInvocation", inf, @(x)isnumeric(x) && isscalar(x) && x > 0);
 ip.parse(cfg, varargin{:});
 opt = ip.Results;
 
@@ -31,53 +34,94 @@ taskPlan = table();
 dlTrials = table();
 ulTrials = table();
 pointIndex = 0;
+pointsExecutedThisInvocation = 0;
+checkpointPath = string(opt.CheckpointPath);
+campaignIdentity = localCampaignIdentity(cfgBase, campaignCfg);
+completedPointCount = 0;
 
-for mcs = reshape(double(loopMCS), 1, [])
-    for snr = reshape(double(campaignCfg.SNR_dB), 1, [])
-        pointIndex = pointIndex + 1;
-        row = localEmptySummaryRow(snr);
-        row.CampaignKind = "fixed_link_monte_carlo";
-        row.SweepKind = "fixed_reference_awgn_snr_campaign";
-        row.FixedReferenceMode = logical(campaignCfg.FixedReferenceMode);
-        row.NoiseOperatingMode = string(campaignCfg.NoiseOperatingMode);
-        row.ConfidenceLevel = double(campaignCfg.ConfidenceLevel);
-        row.SequentialMinTrials = double(campaignCfg.MinTBPerPoint);
-        row.SequentialMaxTrials = double(campaignCfg.MaxTBPerPoint);
-        row.SequentialErrorTarget = double(campaignCfg.MinErrorsForCI);
-        row.SequentialCIWidthTarget = 2 * double(campaignCfg.MaxCIHalfWidth);
-        row.TrialsPerDrop = double(campaignCfg.BatchTBCount);
-        row.PointIndex = double(pointIndex);
-        row.PointSeed = double(localPointSeed(campaignCfg, pointIndex, localNaNToZero(mcs)));
-        row.MCSIndex = double(mcs);
-        row.DLMCSIndex = localFirstFinite(dlMCS, NaN);
-        row.ULMCSIndex = localFirstFinite(ulMCS, NaN);
-        row.ConfiguredRank = double(campaignCfg.Rank);
-        row.ConfiguredLayers = double(campaignCfg.Layers);
-        row.ConfiguredPRBCount = double(campaignCfg.NPRB);
-        row.ConfiguredChannelModel = string(campaignCfg.ChannelModelResolved);
-        row.DirectionMode = string(campaignCfg.Direction);
-        row.DL_TargetBLER = double(campaignCfg.PrimaryTargetBLER);
-        row.UL_TargetBLER = double(campaignCfg.PrimaryTargetBLER);
+if logical(opt.ResumeFromCheckpoint)
+    if strlength(strtrim(checkpointPath)) == 0 || exist(char(checkpointPath), "file") ~= 2
+        error("sixgr:lls6g:campaign:MissingResumeCheckpoint", ...
+            "ResumeFromCheckpoint requires an existing CheckpointPath.");
+    end
+    loaded = load(char(checkpointPath), "CheckpointState");
+    if ~isfield(loaded, "CheckpointState") || ~isstruct(loaded.CheckpointState)
+        error("sixgr:lls6g:campaign:InvalidResumeCheckpoint", ...
+            "Checkpoint '%s' does not contain CheckpointState.", checkpointPath);
+    end
+    state = loaded.CheckpointState;
+    actualIdentity = string(sixgr.util.structGet(state, "CampaignIdentity", ""));
+    if actualIdentity ~= campaignIdentity
+        error("sixgr:lls6g:campaign:CheckpointIdentityMismatch", ...
+            "Checkpoint campaign identity %s does not match requested identity %s.", ...
+            actualIdentity, campaignIdentity);
+    end
+    summaryRows = sixgr.util.structGet(state, "SummaryRows", summaryRows);
+    taskPlan = sixgr.util.structGet(state, "TaskPlan", taskPlan);
+    dlTrials = sixgr.util.structGet(state, "DLTrials", dlTrials);
+    ulTrials = sixgr.util.structGet(state, "ULTrials", ulTrials);
+    completedPointCount = double(sixgr.util.structGet(state, "CompletedPointCount", 0));
+end
 
-        dlPointMCS = localPointMCS(useSharedMCS, mcs, dlMCS);
-        if localDirectionEnabled(campaignCfg, "DL") && isfinite(dlPointMCS)
-            row.DLMCSIndex = double(dlPointMCS);
-            [statsDL, trialsDL, planDL] = localRunDirectionPoint(cfgBase, campaignCfg, "DL", snr, dlPointMCS, pointIndex, row.PointSeed);
-            row = localApplyDirectionStats(row, "DL", statsDL);
-            dlTrials = localAppendCompatTable(dlTrials, trialsDL);
-            taskPlan = localAppendCompatTable(taskPlan, planDL);
+totalPointCount = double(numel(loopMCS) * numel(campaignCfg.SNR_dB));
+stoppedAtCheckpoint = false;
+parallelWorkers = max(0, round(double(campaignCfg.ParallelWorkers)));
+parallelExecution = parallelWorkers > 0 && ...
+    ~logical(opt.ResumeFromCheckpoint) && ...
+    strlength(strtrim(checkpointPath)) == 0 && ...
+    isinf(double(opt.MaxPointsThisInvocation)) && totalPointCount > 1;
+
+if parallelExecution
+    jobMCS = repelem(reshape(double(loopMCS), 1, []), ...
+        numel(campaignCfg.SNR_dB));
+    jobSNR = repmat(reshape(double(campaignCfg.SNR_dB), 1, []), ...
+        1, numel(loopMCS));
+    pointOutputs = cell(totalPointCount, 1);
+    parfor (jobIndex = 1:totalPointCount, parallelWorkers)
+        [row, pointDL, pointUL, pointPlan] = localExecuteCampaignPoint( ...
+            cfgBase, campaignCfg, jobSNR(jobIndex), jobMCS(jobIndex), ...
+            jobIndex, useSharedMCS, dlMCS, ulMCS);
+        pointOutputs{jobIndex} = struct("Row", row, "DL", pointDL, ...
+            "UL", pointUL, "TaskPlan", pointPlan);
+    end
+    for jobIndex = 1:totalPointCount
+        pointOut = pointOutputs{jobIndex};
+        summaryRows(end+1, 1) = pointOut.Row; %#ok<AGROW>
+        dlTrials = localAppendCompatTable(dlTrials, pointOut.DL);
+        ulTrials = localAppendCompatTable(ulTrials, pointOut.UL);
+        taskPlan = localAppendCompatTable(taskPlan, pointOut.TaskPlan);
+    end
+    completedPointCount = totalPointCount;
+else
+    for mcs = reshape(double(loopMCS), 1, [])
+        for snr = reshape(double(campaignCfg.SNR_dB), 1, [])
+            pointIndex = pointIndex + 1;
+            if pointIndex <= completedPointCount
+                continue;
+            end
+            [row, pointDL, pointUL, pointPlan] = localExecuteCampaignPoint( ...
+                cfgBase, campaignCfg, snr, mcs, pointIndex, ...
+                useSharedMCS, dlMCS, ulMCS);
+            summaryRows(end+1, 1) = row; %#ok<AGROW>
+            dlTrials = localAppendCompatTable(dlTrials, pointDL);
+            ulTrials = localAppendCompatTable(ulTrials, pointUL);
+            taskPlan = localAppendCompatTable(taskPlan, pointPlan);
+            completedPointCount = pointIndex;
+            pointsExecutedThisInvocation = pointsExecutedThisInvocation + 1;
+            if strlength(strtrim(checkpointPath)) > 0
+                localWriteCampaignCheckpoint(checkpointPath, campaignIdentity, ...
+                    summaryRows, taskPlan, dlTrials, ulTrials, ...
+                    completedPointCount, totalPointCount);
+            end
+            if pointsExecutedThisInvocation >= double(opt.MaxPointsThisInvocation) && ...
+                    completedPointCount < totalPointCount
+                stoppedAtCheckpoint = true;
+                break;
+            end
         end
-
-        ulPointMCS = localPointMCS(useSharedMCS, mcs, ulMCS);
-        if localDirectionEnabled(campaignCfg, "UL") && isfinite(ulPointMCS)
-            row.ULMCSIndex = double(ulPointMCS);
-            [statsUL, trialsUL, planUL] = localRunDirectionPoint(cfgBase, campaignCfg, "UL", snr, ulPointMCS, pointIndex, row.PointSeed);
-            row = localApplyDirectionStats(row, "UL", statsUL);
-            ulTrials = localAppendCompatTable(ulTrials, trialsUL);
-            taskPlan = localAppendCompatTable(taskPlan, planUL);
+        if stoppedAtCheckpoint
+            break;
         end
-
-        summaryRows(end+1, 1) = row; %#ok<AGROW>
     end
 end
 
@@ -97,9 +141,23 @@ campaign.ReportSummary = reportTables.Summary;
 campaign.TargetCrossings = reportTables.TargetCrossings;
 campaign.ReportTables = reportTables;
 campaign.PointCount = double(height(summary));
-campaign.Notes = "fixed_link_campaign_uses_waveform_dl_ul_kernels_with_controlled_post_channel_awgn";
+campaign.TotalPointCount = totalPointCount;
+campaign.CompletedPointCount = completedPointCount;
+campaign.Completed = completedPointCount == totalPointCount;
+campaign.ResumedFromCheckpoint = logical(opt.ResumeFromCheckpoint);
+campaign.CheckpointPath = checkpointPath;
+campaign.CampaignIdentity = campaignIdentity;
+campaign.ParallelExecution = logical(parallelExecution);
+campaign.ParallelWorkers = double(parallelWorkers * parallelExecution);
+campaign.ParallelContinuousMetricTolerance = 1e-12;
+if campaign.Completed
+    campaign.Notes = "fixed_link_campaign_uses_waveform_dl_ul_kernels_with_controlled_post_channel_awgn";
+else
+    campaign.Notes = "partial_checkpoint_only_not_publication_evidence";
+end
 
-if logical(opt.WriteArtifacts) && strlength(strtrim(string(opt.RootRunFolder))) > 0
+if logical(opt.WriteArtifacts) && campaign.Completed && ...
+        strlength(strtrim(string(opt.RootRunFolder))) > 0
     localWriteReportArtifacts(char(string(opt.RootRunFolder)), campaign);
 end
 end
@@ -122,7 +180,95 @@ campaign = struct( ...
     "TargetCrossings", localEmptyTargetCrossingTable(), ...
     "ReportTables", struct(), ...
     "PointCount", 0, ...
+    "TotalPointCount", 0, ...
+    "CompletedPointCount", 0, ...
+    "Completed", false, ...
+    "ResumedFromCheckpoint", false, ...
+    "CheckpointPath", "", ...
+    "CampaignIdentity", "", ...
+    "ParallelExecution", false, ...
+    "ParallelWorkers", 0, ...
+    "ParallelContinuousMetricTolerance", 1e-12, ...
     "Notes", "");
+end
+
+function [row, dlTrials, ulTrials, taskPlan] = localExecuteCampaignPoint( ...
+        cfgBase, campaignCfg, snr, mcs, pointIndex, useSharedMCS, dlMCS, ulMCS)
+row = localEmptySummaryRow(snr);
+row.CampaignKind = "fixed_link_monte_carlo";
+row.SweepKind = "fixed_reference_awgn_snr_campaign";
+row.FixedReferenceMode = logical(campaignCfg.FixedReferenceMode);
+row.NoiseOperatingMode = string(campaignCfg.NoiseOperatingMode);
+row.ConfidenceLevel = double(campaignCfg.ConfidenceLevel);
+row.SequentialMinTrials = double(campaignCfg.MinTBPerPoint);
+row.SequentialMaxTrials = double(campaignCfg.MaxTBPerPoint);
+row.SequentialErrorTarget = double(campaignCfg.MinErrorsForCI);
+row.SequentialCIWidthTarget = 2 * double(campaignCfg.MaxCIHalfWidth);
+row.TrialsPerDrop = double(campaignCfg.BatchTBCount);
+row.PointIndex = double(pointIndex);
+row.PointSeed = double(localPointSeed(campaignCfg, pointIndex, ...
+    localNaNToZero(mcs)));
+row.MCSIndex = double(mcs);
+row.DLMCSIndex = localFirstFinite(dlMCS, NaN);
+row.ULMCSIndex = localFirstFinite(ulMCS, NaN);
+row.ConfiguredRank = double(campaignCfg.Rank);
+row.ConfiguredLayers = double(campaignCfg.Layers);
+row.ConfiguredPRBCount = double(campaignCfg.NPRB);
+row.ConfiguredChannelModel = string(campaignCfg.ChannelModelResolved);
+row.DirectionMode = string(campaignCfg.Direction);
+row.DL_TargetBLER = double(campaignCfg.PrimaryTargetBLER);
+row.UL_TargetBLER = double(campaignCfg.PrimaryTargetBLER);
+dlTrials = table();
+ulTrials = table();
+taskPlan = table();
+
+dlPointMCS = localPointMCS(useSharedMCS, mcs, dlMCS);
+if localDirectionEnabled(campaignCfg, "DL") && isfinite(dlPointMCS)
+    row.DLMCSIndex = double(dlPointMCS);
+    [statsDL, dlTrials, planDL] = localRunDirectionPoint( ...
+        cfgBase, campaignCfg, "DL", snr, dlPointMCS, ...
+        pointIndex, row.PointSeed);
+    row = localApplyDirectionStats(row, "DL", statsDL);
+    taskPlan = localAppendCompatTable(taskPlan, planDL);
+end
+
+ulPointMCS = localPointMCS(useSharedMCS, mcs, ulMCS);
+if localDirectionEnabled(campaignCfg, "UL") && isfinite(ulPointMCS)
+    row.ULMCSIndex = double(ulPointMCS);
+    [statsUL, ulTrials, planUL] = localRunDirectionPoint( ...
+        cfgBase, campaignCfg, "UL", snr, ulPointMCS, ...
+        pointIndex, row.PointSeed);
+    row = localApplyDirectionStats(row, "UL", statsUL);
+    taskPlan = localAppendCompatTable(taskPlan, planUL);
+end
+end
+
+function identity = localCampaignIdentity(cfgBase, campaignCfg)
+payload = struct( ...
+    "Campaign", orderfields(campaignCfg), ...
+    "ScenarioID", string(sixgr.util.structGet(cfgBase, "run.scenarioID", ...
+        sixgr.util.structGet(cfgBase, "meta.scenarioID", ""))), ...
+    "ConfigHash", string(sixgr.util.structGet(cfgBase, "meta.configHash", "")), ...
+    "Carrier", sixgr.util.structGet(cfgBase, "phy.carrier", struct()), ...
+    "PDSCH", sixgr.util.structGet(cfgBase, "phy.pdsch", struct()), ...
+    "PUSCH", sixgr.util.structGet(cfgBase, "phy.pusch", struct()), ...
+    "Channel", sixgr.util.structGet(cfgBase, "channel", struct()));
+bytes = uint8(unicode2native(jsonencode(payload), "UTF-8"));
+identity = string(sixgr.util.sha256Hex(bytes));
+end
+
+function localWriteCampaignCheckpoint(pathValue, campaignIdentity, ...
+        summaryRows, taskPlan, dlTrials, ulTrials, completedPointCount, totalPointCount)
+state = struct( ...
+    "SchemaVersion", "sixgr.fixed_link_checkpoint.v1", ...
+    "CampaignIdentity", string(campaignIdentity), ...
+    "CompletedPointCount", double(completedPointCount), ...
+    "TotalPointCount", double(totalPointCount), ...
+    "SummaryRows", summaryRows, ...
+    "TaskPlan", taskPlan, ...
+    "DLTrials", dlTrials, ...
+    "ULTrials", ulTrials);
+sixgr.util.matSave(char(pathValue), struct("CheckpointState", state));
 end
 
 function cfgOut = localPrepareCampaignCfg(cfgIn, campaignCfg)
@@ -1233,6 +1379,9 @@ if ~(isscalar(batchTBCount) && isfinite(batchTBCount) ...
     batchTBCount = NaN;
 end
 cfg.BatchTBCount = batchTBCount;
+cfg.ParallelWorkers = double(sixgr.util.structGet(cfg, ...
+    "ParallelWorkers", sixgr.util.structGet(cfg, ...
+    "parallel_workers", 0)));
 cfg.DisableAuxiliarySignals = logical(sixgr.util.structGet(cfg, ...
     "DisableAuxiliarySignals", sixgr.util.structGet(cfg, ...
     "disable_auxiliary_signals", false)));
@@ -1291,7 +1440,7 @@ required = [ ...
     "fixed_reference_mode","noise_operating_mode", ...
     "pdsch_execution_profile", ...
     "link_adaptation_mode","harq_enabled","single_user_mode", ...
-    "seeds","target_bler"];
+    "seeds","target_bler","parallel_workers"];
 for fieldName = required
     if ~localHasEitherCampaignField(cfg, fieldName)
         error("sixgr:lls6g:campaign:MissingMasterYAMLField", ...
@@ -1327,7 +1476,8 @@ camelMap = struct( ...
     "harq_enabled", "HARQEnabled", ...
     "single_user_mode", "SingleUserMode", ...
     "seeds", "Seeds", ...
-    "target_bler", "TargetBLER");
+    "target_bler", "TargetBLER", ...
+    "parallel_workers", "ParallelWorkers");
 camelName = string(camelMap.(char(snakeName)));
 tf = isfield(cfg, char(snakeName)) || isfield(cfg, char(camelName));
 end
@@ -1356,6 +1506,12 @@ end
 if cfg.MaxTBPerPoint < cfg.MinTBPerPoint
     error("sixgr:lls6g:campaign:InvalidTrialRange", ...
         "max_tb_per_point must be >= min_tb_per_point.");
+end
+if ~(isscalar(cfg.ParallelWorkers) && isfinite(cfg.ParallelWorkers) && ...
+        cfg.ParallelWorkers == fix(cfg.ParallelWorkers) && ...
+        cfg.ParallelWorkers >= 0)
+    error("sixgr:lls6g:campaign:InvalidParallelWorkers", ...
+        "parallel_workers must be a nonnegative integer.");
 end
 if ~(isscalar(cfg.MinErrorsForCI) && isfinite(cfg.MinErrorsForCI) && ...
         cfg.MinErrorsForCI == fix(cfg.MinErrorsForCI) && ...
@@ -1399,11 +1555,12 @@ end
 function localAssertStrictMasterRawIntegers(cfg)
 names = [ ...
     "rank","layers","n_prb","min_tb_per_point", ...
-    "max_tb_per_point","min_errors_for_ci","trials_per_drop"];
+    "max_tb_per_point","min_errors_for_ci","trials_per_drop", ...
+    "parallel_workers"];
 for name = names
     value = localRawCampaignValue(cfg, name);
-    minimum = double(name == "min_errors_for_ci") * 0 + ...
-        double(name ~= "min_errors_for_ci") * 1;
+    zeroAllowed = ismember(name, ["min_errors_for_ci","parallel_workers"]);
+    minimum = double(~zeroAllowed);
     if ~(isnumeric(value) && isscalar(value) && isfinite(double(value)) ...
             && double(value) == fix(double(value)) && ...
             double(value) >= minimum)
