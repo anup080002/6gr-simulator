@@ -41,9 +41,19 @@ strictScenario.mimo.n_layers = 2;
 strictScenario.mimo.max_dl_layers = 2;
 strictScenario.mimo.max_ul_layers = 2;
 strictScenario.pdsch.layer_count = 2;
+strictScenario.pdsch.rank = 2;
 strictScenario.pdsch6gr.num_layers = 2;
 strictScenario.pusch.layer_count = 2;
 strictScenario.pusch.num_layers = 2;
+% The master retains read-only compatibility aliases, but a test fixture
+% that constructs a new operating point must update the canonical source
+% too.  Leaving canonical_control at rank one is an intentional conflict
+% and production correctly rejects it before execution.
+strictScenario.canonical_control.mimo.n_layers = 2;
+strictScenario.canonical_control.mimo.max_dl_layers = 2;
+strictScenario.canonical_control.mimo.max_ul_layers = 2;
+strictScenario.canonical_control.pdsch.layer_count = 2;
+strictScenario.canonical_control.pdsch.rank = 2;
 strictScenario.reference_signals.pdsch_dmrs_ports = 2;
 strictScenario.mimo.phase07_strict.enabled = true;
 strictScenario.mimo.phase07_strict.ports = 2;
@@ -85,11 +95,16 @@ fullScenario = sixgr.lls6g.config.loadScenarioConfig(fullfile(root, ...
 fullCfg = sixgr.lls6g.buildInternalConfig(fullScenario.toStruct(), tempdir);
 assert(double(fullCfg.phy.csirs.numResources) == 8);
 assert(isequal(double(fullCfg.phy.csirs.resourceIDs), 0:7));
-assert(isequal(size(fullCfg.phy.csirs.precoderMatrices), [64 2 8]));
+expectedElements = double(fullScenario.get( ...
+    "reference_signals.csi_rs_precoder_codebook.physical_element_count"));
+expectedPorts = double(fullScenario.get("reference_signals.csi_rs_ports"));
+assert(isequal(size(fullCfg.phy.csirs.precoderMatrices), ...
+    [expectedElements expectedPorts 8]));
 for resourceOrdinal = 1:8
     W = fullCfg.phy.csirs.precoderMatrices(:,:,resourceOrdinal);
-    assert(norm(W' * W - eye(2), "fro") < 1e-10, ...
-        "Every YAML CSI-RS resource must resolve to an orthonormal 64-by-2 physical filter.");
+    assert(norm(W' * W - eye(expectedPorts), "fro") < 1e-10, ...
+        ["Every YAML CSI-RS resource must resolve to an orthonormal " + ...
+        "physical-element-by-port filter."]);
 end
 ok = true;
 end

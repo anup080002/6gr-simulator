@@ -1,4 +1,4 @@
-function result = resolveWebGUIContractPython()
+function result = resolveWebGUIContractPython(varargin)
 %RESOLVEWEBGUICONTRACTPYTHON Locate the complete WebGUI contract runtime.
 %
 % YAML parsing only needs PyYAML, whereas the browser-contract materializer
@@ -7,7 +7,14 @@ function result = resolveWebGUIContractPython()
 % partially provisioned WebGUI venv) can therefore fail only after a long
 % MATLAB execution has completed. Probe the entire production dependency
 % surface up front and return only an interpreter that can materialize the
-% browser contract.
+% browser contract. Filesystem materialization deliberately does not
+% require mysql.connector; database publication does.
+
+ip = inputParser;
+ip.addParameter("RequireMySQL", true, ...
+    @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
+ip.parse(varargin{:});
+requireMySQL = logical(ip.Results.RequireMySQL);
 
 repoRoot = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
 result = struct( ...
@@ -15,8 +22,8 @@ result = struct( ...
     "Executable", "", ...
     "Source", "", ...
     "Attempted", strings(0, 1), ...
-    "Message", ["No Python runtime with mysql.connector, yaml, Pillow, " + ...
-        "and resvg_py was found."]);
+    "RequireMySQL", requireMySQL, ...
+    "Message", localMissingRuntimeMessage(requireMySQL));
 
 candidates = repmat(struct("Executable", "", "Source", ""), 0, 1);
 candidates = localAddCandidate(candidates, getenv("SIXGR_WEBGUI_PYTHON"), ...
@@ -58,9 +65,13 @@ for i = 1:numel(candidates)
         diagnostics(end + 1, 1) = executable + ":not_found"; %#ok<AGROW>
         continue;
     end
-    command = sprintf(['"%s" -c "import mysql.connector, yaml, resvg_py; ' ...
-        'from PIL import Image"'], ...
-        localEscapeDoubleQuotedArgument(executable));
+    if requireMySQL
+        probe = "import mysql.connector, yaml, resvg_py; from PIL import Image";
+    else
+        probe = "import yaml, resvg_py; from PIL import Image";
+    end
+    command = sprintf('"%s" -c "%s"', ...
+        localEscapeDoubleQuotedArgument(executable), char(probe));
     [status, output] = system(command);
     if status == 0
         result.Ok = true;
@@ -77,9 +88,18 @@ for i = 1:numel(candidates)
     diagnostics(end + 1, 1) = executable + ":probe_exit_" + ...
         string(status) + ":" + detail; %#ok<AGROW>
 end
-
 if ~isempty(diagnostics)
     result.Message = result.Message + " Probes: " + strjoin(diagnostics, " | ");
+end
+end
+
+function value = localMissingRuntimeMessage(requireMySQL)
+if requireMySQL
+    value = ["No Python runtime with mysql.connector, yaml, Pillow, " + ...
+        "and resvg_py was found."];
+else
+    value = ["No Python runtime with yaml, Pillow, and resvg_py was " + ...
+        "found for filesystem browser-contract materialization."];
 end
 end
 

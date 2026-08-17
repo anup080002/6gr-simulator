@@ -24,7 +24,8 @@ outputText = "";
 if exist(toolPath,"file") == 2
     pythonExe = "python";
     try
-        runtime = sixgr.lls6g.runners.resolveWebGUIContractPython();
+        runtime = sixgr.lls6g.runners.resolveWebGUIContractPython( ...
+            "RequireMySQL", false);
         candidate = string(sixgr.util.structGet(runtime,"Executable",""));
         if logical(sixgr.util.structGet(runtime,"Ok",false)) && ...
                 strlength(strtrim(candidate)) > 0

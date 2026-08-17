@@ -1329,9 +1329,12 @@ canonical_control:
     - mat
     - png
     - md
-    backend: mysql_web
+    # Keep the geometry master portable and filesystem-authoritative. A
+    # WebGUI deployment that has MySQL may opt into dual persistence in its
+    # own resolved YAML without changing geometry or PHY behavior.
+    backend: filesystem
     profile: lls_webgui_configurable_full_lls_4ghz_100mhz
-    persistence_mode: both
+    persistence_mode: results_folder
     save_csv: true
     save_mat: true
     save_figures: true
@@ -1425,7 +1428,7 @@ canonical_control:
   - path: output.emit_disabled_audit_artifacts
     value: true
   - path: output.persist_to_database
-    value: true
+    value: false
   - path: output.persist_to_results_folder
     value: true
   - path: antenna_and_array.bs_num_txrus

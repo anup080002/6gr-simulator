@@ -115,14 +115,16 @@ script = [ ...
     "UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, construct_unique_mapping)", newline, ...
     "with open(sys.argv[1], 'r', encoding='utf-8') as f:", newline, ...
     "    obj = yaml.load(f, Loader=UniqueKeyLoader)", newline, ...
-    "print(json.dumps(obj))", newline];
+    "with open(sys.argv[2], 'w', encoding='utf-8', newline='') as f:", newline, ...
+    "    json.dump(obj, f, ensure_ascii=False, separators=(',', ':'))", newline];
 tmpPy = char(string(tempname) + ".py");
+tmpJson = char(string(tempname) + ".json");
 fid = fopen(tmpPy, "w", "n", "UTF-8");
 if fid < 0
     error("sixgr:lls6g:config:YAMLTempScriptFail", ...
         "Unable to create temporary YAML helper for '%s'.", string(filePath));
 end
-cleanupFile = onCleanup(@() localDeleteFile(tmpPy)); %#ok<NASGU>
+cleanupFiles = onCleanup(@() localDeleteFiles([string(tmpPy), string(tmpJson)])); %#ok<NASGU>
 try
     fprintf(fid, "%s", script);
     fclose(fid);
@@ -136,7 +138,10 @@ end
 % extended-length spelling to the external parser while retaining the
 % original path for configuration identity and diagnostics.
 externalFilePath = localExternalPythonPath(filePath);
-cmd = sprintf('"%s" "%s" "%s"', localEscapeCmdPath(pythonExecutable), localEscapeCmdPath(tmpPy), localEscapeCmdPath(externalFilePath));
+externalJsonPath = localExternalPythonPath(tmpJson);
+cmd = sprintf('"%s" "%s" "%s" "%s"', ...
+    localEscapeCmdPath(pythonExecutable), localEscapeCmdPath(tmpPy), ...
+    localEscapeCmdPath(externalFilePath), localEscapeCmdPath(externalJsonPath));
 [status, outTxt] = system(cmd);
 if status ~= 0
     if contains(string(outTxt),"SIXGR_YAML_DUPLICATE_KEY")
@@ -148,7 +153,16 @@ if status ~= 0
         "Failed to parse YAML config '%s' via external Python. Python executable: %s. Install PyYAML with: %s. Root cause: %s", ...
         string(filePath), string(runtime.PythonExecutable), string(runtime.RecommendedInstallCommand), string(strtrim(outTxt)));
 end
-data = jsondecode(outTxt);
+if exist(tmpJson, "file") ~= 2
+    error("sixgr:lls6g:config:YAMLParseFailed", ...
+        "External YAML parser produced no JSON output for '%s'.", string(filePath));
+end
+jsonText = fileread(tmpJson);
+if strlength(strtrim(string(jsonText))) == 0
+    error("sixgr:lls6g:config:YAMLParseFailed", ...
+        "External YAML parser produced empty JSON output for '%s'.", string(filePath));
+end
+data = jsondecode(jsonText);
 end
 
 function localDeleteFile(filePath)
@@ -175,5 +189,11 @@ if startsWith(absolutePath, '\\')
     pathValue = ['\\?\UNC\' absolutePath(3:end)];
 else
     pathValue = ['\\?\' absolutePath];
+end
+end
+
+function localDeleteFiles(filePaths)
+for filePath = reshape(string(filePaths), 1, [])
+    localDeleteFile(char(filePath));
 end
 end

@@ -6484,6 +6484,8 @@ out = struct( ...
     "RunID", "", ...
     "DatabaseRunID", NaN, ...
     "DatabasePersisted", false, ...
+    "FilesystemPersisted", false, ...
+    "PublicationBackend", "filesystem", ...
     "BrowserMaterialized", false);
 repoRoot = localRepoRoot();
 scriptPath = fullfile(repoRoot, "scripts", "materialize_lls_contract_artifacts.py");
@@ -6492,7 +6494,9 @@ if exist(scriptPath, "file") ~= 2
     out.Message = "scripts/materialize_lls_contract_artifacts.py was not found in the repo root.";
     return;
 end
-pythonRuntime = sixgr.lls6g.runners.resolveWebGUIContractPython();
+databaseBackendActive = sixgr.db.isArtifactStoreActive();
+pythonRuntime = sixgr.lls6g.runners.resolveWebGUIContractPython( ...
+    "RequireMySQL", databaseBackendActive);
 if ~logical(sixgr.util.structGet(pythonRuntime, "Ok", false))
     out.Identifier = "webgui_contract_python_unavailable";
     out.Message = char(string(sixgr.util.structGet(pythonRuntime, ...
@@ -6500,7 +6504,7 @@ if ~logical(sixgr.util.structGet(pythonRuntime, "Ok", false))
     return;
 end
 pythonExe = char(string(pythonRuntime.Executable));
-if sixgr.db.isArtifactStoreActive()
+if databaseBackendActive
     storeState = sixgr.db.artifactStore("get_state");
     runID = double(sixgr.util.structGet(storeState, "RunID", NaN));
     if ~(isfinite(runID) && runID > 0)
@@ -6510,6 +6514,7 @@ if sixgr.db.isArtifactStoreActive()
     end
     out.DatabaseRunID = double(runID);
     out.DatabasePersisted = true;
+    out.PublicationBackend = "mysql_web";
     cmd = sprintf('"%s" "%s" --run-id %d --strict', ...
         localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), round(runID));
 else
@@ -6519,6 +6524,8 @@ else
         out.Message = "Filesystem browser-contract verification requires the active run folder.";
         return;
     end
+    out.FilesystemPersisted = true;
+    out.PublicationBackend = "filesystem";
     cmd = sprintf('"%s" "%s" --run-folder "%s" --strict --replace-existing-rasters-from-csv', ...
         localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), ...
         localShellEscapeArg(runFolder));

@@ -142,8 +142,11 @@ assert(logical(grant.ExactPHYFeasible) && double(grant.TBSBits) > 0, ...
 grant.DCI = struct("BitExactPDCCHPayload", true);
 bindingHash = "operating-point-authority-" + lower(direction) + "-binding";
 grant.ControlDecodeOk = true;
+grant.DCICrcPass = true;
+grant.PDCCHPayloadMatch = true;
 grant.PDCCHGrantBindingRequired = true;
 grant.PDCCHGrantBindingOk = true;
+grant.PDCCHGrantBindingStatus = "matched";
 grant.PDCCHGrantDCIId = "operating-point-authority-" + lower(direction) + "-dci";
 grant.PDCCHGrantDCIFieldsHash = char(bindingHash);
 grant.PDCCHGrantFieldsHash = char(bindingHash);
