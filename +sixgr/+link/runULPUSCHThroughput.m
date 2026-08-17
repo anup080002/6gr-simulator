@@ -4703,6 +4703,21 @@ source(blerMask) = "runtime_effective_sinr_proxy_for_bler_margin";
 end
 
 function source = localResolveMCSSelectionSourceToken(cfg, direction)
+selectionMode = lower(strtrim(string( ...
+    localResolveActualMCSSelectionMode(cfg, direction))));
+linkMode = lower(strtrim(string(localResolveLinkAdaptationMode(cfg, direction))));
+fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled", ...
+    "off","none","false",""];
+adaptiveTokens = ["amc","adaptive","cqi","cqi_driven","baseline", ...
+    "actual_bler_based","effective_sinr_driven"];
+if ismember(linkMode, fixedTokens) && ~ismember(selectionMode, adaptiveTokens)
+    if selectionMode == "fixed_modulation"
+        source = "configured_modulation_code_rate";
+    else
+        source = "configured_fixed_mcs";
+    end
+    return;
+end
 switch sixgr.link.resolveLinkAdaptationDomain(cfg, direction)
     case "effective_sinr"
         source = "effective_sinr_to_cqi_to_amc";
@@ -4717,8 +4732,14 @@ end
 
 function [source, status] = localResolveMCSSelectionEvidenceColumns(T, cfg, direction)
 n = height(T);
-source = repmat(localResolveMCSSelectionSourceToken(cfg, direction), n, 1);
+configuredSource = localResolveMCSSelectionSourceToken(cfg, direction);
+source = repmat(configuredSource, n, 1);
 status = repmat("configured_runtime_policy", n, 1);
+fixedByConfiguration = any(configuredSource == ...
+    ["configured_fixed_mcs","configured_modulation_code_rate"]);
+if fixedByConfiguration
+    status(:) = "configured";
+end
 if ~(istable(T) && n > 0)
     return;
 end
@@ -4743,6 +4764,14 @@ existingSource = strtrim(string(localOptionalColumn(T, "MCSSelectionSource", "")
 existingStatus = strtrim(string(localOptionalColumn(T, "MCSValueStatus", "")));
 source(strlength(existingSource) > 0) = existingSource(strlength(existingSource) > 0);
 status(strlength(existingStatus) > 0) = existingStatus(strlength(existingStatus) > 0);
+if fixedByConfiguration
+    % A fixed calibration point cannot truthfully inherit the generic CQI
+    % default carried by an undecorated trial row.  Its operating point is
+    % owned by the configured MCS/modulation policy and ILA/OLLA are not
+    % executed.
+    source(:) = configuredSource;
+    status(:) = "configured";
+end
 end
 
 function token = localResolveOLLADomainToken(cfg, direction)

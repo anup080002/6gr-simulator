@@ -504,19 +504,32 @@ end
 end
 
 function profile = localResolveRunClassProfile(scfg, cfg, scenarioMode)
-explicit = localNormalizeRunClassToken(localFirstNonBlankString([
-    % Validation/launch is operator-owned YAML authority. A derived
-    % internal cfg can also contain scenario.run_class; resolving that
-    % field first allowed its conservative adaptive default to mask an
-    % explicit fixed_snr_sweep_lls master configuration.
-    localScalarString(localScenarioGet(scfg, cfg, "validation.RunClass", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "validation.run_class", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "validation.runClass", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "canonical_control.launch.run_class", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "canonical_control.validation.run_class", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "scenario.run_class", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "scenario.runClass", ""))
-    ]));
+% Validation/launch is operator-owned YAML authority. Resolve each scalar
+% declaration in precedence order. Building one heterogeneous string array
+% here caused ScenarioConfig-object calls to discard a valid validation
+% declaration even though the equivalent plain-struct call succeeded.
+explicit = "";
+explicitSource = "";
+declarationEvidence = strings(0,1);
+declaredPaths = [ ...
+    "validation.RunClass"
+    "validation.run_class"
+    "validation.runClass"
+    "canonical_control.launch.run_class"
+    "canonical_control.validation.run_class"
+    "scenario.run_class"
+    "scenario.runClass"];
+for declaredPath = declaredPaths(:).'
+    declaredValue = localScalarString(localScenarioGet( ...
+        scfg, cfg, declaredPath, ""));
+    declarationEvidence(end+1,1) = declaredPath + "=" + declaredValue; %#ok<AGROW>
+    candidate = localNormalizeRunClassToken(declaredValue);
+    if strlength(candidate) > 0
+        explicit = candidate;
+        explicitSource = declaredPath;
+        break;
+    end
+end
 configured = localConfiguredOperatingPoint(scfg, cfg);
 fixedMCSActive = localRunClassFixedMCSActive(scfg, cfg);
 rankFixed = localRunClassRankFixed(scfg, cfg);
@@ -560,6 +573,9 @@ profile = struct( ...
     "ModulationFixed", logical(modulationFixed), ...
     "AdaptiveMode", logical(adaptiveMode), ...
     "FixedLinkCampaignEnabled", logical(fixedCampaignEnabled), ...
+    "DeclaredRunClass", string(explicit), ...
+    "DeclaredRunClassSource", string(explicitSource), ...
+    "RunClassDeclarationEvidence", strjoin(declarationEvidence, "|"), ...
     "Configured", configured);
 end
 
@@ -618,10 +634,14 @@ tableOut = table( ...
     localConfiguredDirectionalToken(profile.Configured, required, "Layers"), ...
     double(exactRate), ...
     logical(publicationEligible), ...
+    string(profile.DeclaredRunClass), ...
+    string(profile.DeclaredRunClassSource), ...
+    string(profile.RunClassDeclarationEvidence), ...
     string(reason), ...
     'VariableNames', {'RunClass','FixedMCSActive','RankFixed','ModulationFixed','AdaptiveMode', ...
     'ConfiguredMCS','ConfiguredModulation','ConfiguredRank','ConfiguredLayers', ...
-    'ExactConfiguredEffectiveMatchRate','PublicationLLSEligible','Reason'});
+    'ExactConfiguredEffectiveMatchRate','PublicationLLSEligible', ...
+    'DeclaredRunClass','DeclaredRunClassSource','RunClassDeclarationEvidence','Reason'});
 
 gate = struct();
 gate.RunClass = string(runClass);
@@ -2856,6 +2876,19 @@ end
 function value = localScalarString(raw)
 value = "";
 if isempty(raw)
+    return;
+end
+if ischar(raw)
+    % A YAML string commonly arrives as a 1-by-N character vector. Using
+    % raw(:) before conversion turns that token into N one-character string
+    % elements and silently selects only the first character (for example,
+    % fixed_snr_sweep_lls became "f"). Preserve each character row as one
+    % semantic scalar before selecting the first value.
+    vals = string(raw);
+    vals = vals(:);
+    if ~isempty(vals)
+        value = vals(1);
+    end
     return;
 end
 vals = string(raw(:));
