@@ -27,8 +27,27 @@ geometry = localLoadAndBuild(scenarioDir, "master_geometry_based.yaml", ...
 localAssertModeDifferences(fixed, geometry);
 localAssertMasterSurfaceParity(fixed.Raw, geometry.Raw);
 localAssertMutationsPropagate(fixed.Raw, tmp);
+localAssertFixedGridOverridePropagates(fixed.Resolved);
 
 ok = true;
+end
+
+function localAssertFixedGridOverridePropagates(resolved)
+requested = [18 22 26];
+resolved.canonical_control.run.fixed_link_snr_grid_db = requested;
+normalized = sixgr.lls6g.config.normalizeScenarioAliases(resolved);
+paths = [ ...
+    "canonical_control.run.fixed_link_snr_grid_db"
+    "sweeps_and_matrix.fixed_link_calibration.snr_db"
+    "validation.fixed_link_campaign.snr_db"
+    "sweeps_and_matrix.snr_sweep.values_db"];
+for path = paths(:).'
+    observed = double(sixgr.util.structGet(normalized, path, []));
+    assert(isequal(observed(:).', requested), ...
+        ["A child fixed-sweep YAML override must replace every inherited " ...
+         "SNR-grid alias before runtime; %s retained %s."], ...
+        path, mat2str(observed));
+end
 end
 
 function result = localLoadAndBuild(scenarioDir, fileName, scenarioID, ...

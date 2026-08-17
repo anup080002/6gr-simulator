@@ -261,6 +261,13 @@ cfg = localApplyDeclaredRadioAliases(cfg, newBase);
 % legacy compatibility aliases so an inherited legacy field cannot silently
 % override an explicit feature enable/disable decision from the YAML file.
 cfg = localExpandCanonicalControl(cfg, newBase);
+% Canonical runtime_overrides are applied by the expansion above. Re-run
+% the fixed-sweep semantic projection afterwards so a child YAML that
+% overrides canonical_control.run.fixed_link_snr_grid_db cannot execute the
+% inherited sweeps_and_matrix.snr_sweep.values_db grid. All fixed-sweep
+% authorities must describe the same operating points before runtime.
+cfg = localNormalizeFixedLinkCalibrationMode(cfg);
+cfg = localNormalizeFixedSNRSweepRunClass(cfg);
 cfg = localEnsureOperatingPointMode(cfg);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
@@ -1260,9 +1267,17 @@ snrGrid = localFirstFiniteVector( ...
     sixgr.util.structGet(cfg, "validation.fixed_link_campaign.snr_db", []), ...
     sixgr.util.structGet(cfg, "sweeps_and_matrix.snr_sweep.values_db", []));
 if ~isempty(snrGrid)
+    cfg = sixgr.util.structSet(cfg, ...
+        "sweeps_and_matrix.fixed_link_calibration.snr_db", snrGrid);
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.fixed_link_campaign.snr_db", snrGrid);
+    cfg = sixgr.util.structSet(cfg, ...
+        "canonical_control.run.fixed_link_snr_grid_db", snrGrid);
     cfg = sixgr.util.structSet(cfg, "sweeps_and_matrix.snr_sweep.values_db", snrGrid);
     cfg = localRecordNormalizationAudit(cfg, "sweeps_and_matrix.snr_sweep.values_db", ...
-        "Mirrored fixed-link SNR grid into sweeps_and_matrix.snr_sweep.values_db for validation.run_class=fixed_snr_sweep_lls.");
+        "Mirrored the authoritative fixed-link SNR grid into canonical, " + ...
+        "calibration, validation, and runtime sweep aliases for " + ...
+        "validation.run_class=fixed_snr_sweep_lls.");
 end
 end
 

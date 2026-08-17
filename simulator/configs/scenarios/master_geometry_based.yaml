@@ -1630,6 +1630,24 @@ validation:
       max_transport_blocks: 10000
       batch_size: 100
     verbose: true
+  # Phase-7 fixed-link determinism checks belong to the SINR-sweep master.
+  # Keep the complete operator surface here but disable both consumers so
+  # geometry qualification cannot silently launch a fixed-link campaign.
+  phase7_execution_validation:
+    enabled: false
+    checkpoint_resume:
+      enabled: false
+      direction: DL
+      snr_db: [10, 20]
+      mcs: 20
+      transport_blocks_per_point: 1
+    serial_parallel:
+      enabled: false
+      frc_entry_id: dl_r_pdsch_1_1_4_fdd_awgn
+      condition_id: awgn_static_1x2
+      transport_blocks: 2
+      parallel_workers: 2
+      seed: 38104
   required_artifact_audit: true
   fixed_snr_sweep_required: false
   geometry_evidence_required: true
@@ -1661,6 +1679,7 @@ validation:
     max_tb_per_point: 20000
     min_errors_for_ci: 100
     max_ci_half_width: 0.05
+    max_target_crossing_bracket_db: 2.0
     seeds: [104729]
     target_bler: [0.1, 0.01]
     confidence_level: 0.95
