@@ -37,7 +37,7 @@ if islogical(v)
     if isscalar(v)
         txt = lower(string(v));
     else
-        txt = localSerializeCell(num2cell(v(:)), indentLevel);
+        txt = localSerializeLogicalArray(v);
     end
     return;
 end
@@ -47,11 +47,7 @@ if isnumeric(v)
     elseif isscalar(v)
         txt = localScalarNumeric(v);
     else
-        items = strings(1, numel(v));
-        for ii = 1:numel(v)
-            items(ii) = localScalarNumeric(v(ii));
-        end
-        txt = "[" + strjoin(items, ", ") + "]";
+        txt = localSerializeNumericArray(v);
     end
     return;
 end
@@ -60,6 +56,47 @@ if isempty(v)
     return;
 end
 txt = localScalarString(string(evalc("disp(v)")), inline);
+end
+
+function txt = localSerializeNumericArray(v)
+if ndims(v) > 2
+    error("sixgr:lls6g:config:UnsupportedNumericArrayRank", ...
+        "YAML serialization supports numeric scalars, vectors, and two-dimensional matrices only.");
+end
+if isvector(v)
+    items = strings(1, numel(v));
+    for ii = 1:numel(v)
+        items(ii) = localScalarNumeric(v(ii));
+    end
+    txt = "[" + strjoin(items, ", ") + "]";
+    return;
+end
+rows = strings(1, size(v,1));
+for rowIndex = 1:size(v,1)
+    items = strings(1, size(v,2));
+    for columnIndex = 1:size(v,2)
+        items(columnIndex) = localScalarNumeric(v(rowIndex,columnIndex));
+    end
+    rows(rowIndex) = "[" + strjoin(items, ", ") + "]";
+end
+txt = "[" + strjoin(rows, ", ") + "]";
+end
+
+function txt = localSerializeLogicalArray(v)
+if ndims(v) > 2
+    error("sixgr:lls6g:config:UnsupportedLogicalArrayRank", ...
+        "YAML serialization supports logical scalars, vectors, and two-dimensional matrices only.");
+end
+if isvector(v)
+    txt = "[" + strjoin(lower(string(v(:).')), ", ") + "]";
+    return;
+end
+rows = strings(1, size(v,1));
+for rowIndex = 1:size(v,1)
+    rows(rowIndex) = "[" + ...
+        strjoin(lower(string(v(rowIndex,:))), ", ") + "]";
+end
+txt = "[" + strjoin(rows, ", ") + "]";
 end
 
 function txt = localSerializeStruct(s, indentLevel)
