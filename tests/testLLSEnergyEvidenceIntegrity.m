@@ -36,6 +36,7 @@ assert(~any(contains(lower(string(pass.SummaryTable.EvidenceType)), ...
 % hierarchy must keep successful TBs distinct and their active-time
 % denominator must not yield an impossible duty cycle above one.
 fixedT = [localTrial("PASS", 800); localTrial("PASS", 800); localTrial("FAIL", 0)];
+fixedT.UEID(:) = NaN;
 fixedT.FixedLinkPointIndex = (1:3).';
 fixedT.FixedLinkDropIndex = ones(3, 1);
 fixedT.FixedLinkTrialIndex = ones(3, 1);
@@ -43,8 +44,14 @@ fixedT.FixedLinkSeedIndex = ones(3, 1);
 fixedT.FixedLinkSeedValue = 104729 * ones(3, 1);
 fixed = sixgr.truth.exportLLSEnergyDiagnostics(cfg, airFolder, ...
     struct("DL", fixedT, "UL", table()));
+fixedIds = string(fixed.TimelineTable.TransportBlockId);
+assert(~any(ismissing(fixedIds)) && all(strlength(fixedIds) > 0), ...
+    "Fixed-link energy rows must retain a nonmissing transport-block identity when UE/RNTI are unavailable.");
+assert(numel(unique(fixedIds(string(fixed.TimelineTable.Entity) == "gNB"))) == 3, ...
+    "Each independently executed fixed-link point/trial must have a distinct transmitter identity.");
 localAssertMetricValue(fixed.SummaryTable, "first_delivery_count", 2, 0);
 localAssertMetricValue(fixed.SummaryTable, "first_delivered_bits", 1600, 0);
+localAssertMetricValue(fixed.SummaryTable, "measurement_window_duration", 0.003, 1e-12);
 activeRows = fixed.SummaryTable(string(fixed.SummaryTable.MetricKey) == ...
     "gnb_active_sleep_duty_cycle" & string(fixed.SummaryTable.Statistic) == "active_ratio", :);
 assert(height(activeRows) == 1 && activeRows.Value >= 0 && activeRows.Value <= 1, ...
