@@ -316,7 +316,10 @@ trialNoiseVarReason = strings(numFrames,1);
 trialNoiseVarStrictFailure = false(numFrames,1);
 trialUCIOnPUSCHApplied = false(numFrames,1);
 trialUCIOnPUSCHSource = strings(numFrames,1);
+trialUCIOnPUSCHEvidenceSource = strings(numFrames,1);
 trialHARQACKBitCount = zeros(numFrames,1);
+trialExpectedHARQACKBits = strings(numFrames,1);
+trialDecodedHARQACKBits = strings(numFrames,1);
 trialHARQACKContentMatch = false(numFrames,1);
 trialHARQACKDecodeStatus = strings(numFrames,1);
 trialHARQACKDecodeReason = strings(numFrames,1);
@@ -334,6 +337,9 @@ trialMUMIMOReceiveCombinerInputBranches = NaN(numFrames,1);
 trialMUMIMOReceiveCombinerOutputBranches = NaN(numFrames,1);
 trialMUMIMOReceiveCombinerMatrixSHA256 = strings(numFrames,1);
 trialMUMIMOReceiveCombinerInterferenceProjected = false(numFrames,1);
+trialMUMIMOReceiveCombinerFullObservationPreserved = false(numFrames,1);
+trialMUMIMOReceiveCombinerIdentityResidual = NaN(numFrames,1);
+trialMUMIMOReceiverAlgorithmApplied = strings(numFrames,1);
 trialReceiverUsable = false(numFrames,1);
 trialDecodeAttempted = false(numFrames,1);
 trialDecodeUsable = false(numFrames,1);
@@ -458,6 +464,10 @@ trialAppliedPrecoderPMI = NaN(numFrames,1);
 trialAppliedPrecoderPMIType = strings(numFrames,1);
 trialAppliedPrecoderCodebookMode = strings(numFrames,1);
 trialAppliedPrecoderMatrixSHA256 = strings(numFrames,1);
+trialRequestedPrecoderSHA256 = strings(numFrames,1);
+trialAppliedPrecoderSHA256 = strings(numFrames,1);
+trialPrecoderDigestDomain = strings(numFrames,1);
+trialFrozenGrantContextId = strings(numFrames,1);
 trialRequestedVsAppliedPrecoderPMIMatchStatus = strings(numFrames,1);
 trialPrecodingNumPorts = NaN(numFrames,1);
 trialPrecodingNumLayers = NaN(numFrames,1);
@@ -473,11 +483,15 @@ trialThroughput = NaN(numFrames,1);
 trialOfferedThr = NaN(numFrames,1);
 trialGoodput = NaN(numFrames,1);
 trialComputeLatency = NaN(numFrames,1);
+trialComputeLatencySource = strings(numFrames,1);
 trialProcedureDelay = NaN(numFrames,1);
 trialAirInterfaceTTI = slotDur_s * 1e3 * ones(numFrames,1);
 trialAirInterfaceObservation = slotDur_s * 1e3 * ones(numFrames,1);
 trialLatency = NaN(numFrames,1);
 trialDecodeLatency = NaN(numFrames,1);
+trialDecodeLatencySource = strings(numFrames,1);
+trialReceiverPipelineLatency = NaN(numFrames,1);
+trialReceiverPipelineLatencySource = strings(numFrames,1);
 trialEarlyStop = NaN(numFrames,1);
 trialDecoderComplexity = NaN(numFrames,1);
 trialNormDecoderComplexity = NaN(numFrames,1);
@@ -616,8 +630,11 @@ trialChan = repmat(chanModel, numFrames, 1);
 trialDopp = dopplerHz * ones(numFrames,1);
 liveCallbackWarned = false;
 lastHARQ = struct();
+lastExpectedHARQACKBits = int8([]);
+lastDecodedHARQACKBits = int8([]);
 
 for n = 1:numFrames
+    trialPipelineTic = tic;
     frameIdx = double(trialFrame(n));
     trialSeed(n) = seedBase + frameIdx - 1;
     rng(localRNGSeed(trialSeed(n)), 'twister');
@@ -832,6 +849,10 @@ for n = 1:numFrames
         trialAppliedPrecoderPMIType(n) = string(ulPrecoding.AppliedPrecoderPMIType);
         trialAppliedPrecoderCodebookMode(n) = string(ulPrecoding.AppliedPrecoderCodebookMode);
         trialAppliedPrecoderMatrixSHA256(n) = string(ulPrecoding.AppliedPrecoderMatrixSHA256);
+        trialRequestedPrecoderSHA256(n) = string(ulPrecoding.RequestedPrecoderSHA256);
+        trialAppliedPrecoderSHA256(n) = string(ulPrecoding.AppliedPrecoderSHA256);
+        trialPrecoderDigestDomain(n) = string(ulPrecoding.PrecoderDigestDomain);
+        trialFrozenGrantContextId(n) = string(ulPrecoding.FrozenGrantContextId);
         trialRequestedVsAppliedPrecoderPMIMatchStatus(n) = string(ulPrecoding.RequestedVsAppliedPrecoderPMIMatchStatus);
         trialPrecodingNumPorts(n) = double(ulPrecoding.PrecodingNumPorts);
         trialPrecodingNumLayers(n) = double(ulPrecoding.PrecodingNumLayers);
@@ -942,7 +963,10 @@ for n = 1:numFrames
                 "InterferenceCovarianceSource", sixgr.util.structGet(replay, "InterferenceCovarianceSourceFromContributions", ""), ...
                 "InterferenceCovarianceIncludesNoise", false}]; %#ok<AGROW>
         end
+        rxCallTic = tic;
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        trialReceiverPipelineLatency(n) = 1e3 * toc(rxCallTic);
+        trialReceiverPipelineLatencySource(n) = "matlab_tic_toc_pusch_receiver_call";
         trialMeasuredPHYEvidence{n} = sixgr.link.deriveMeasuredPHYEvidence(rx);
         replay = localFinalizeImpairmentReplay(replay, cfgFrame, rx, tx, txInfo, useIdealTimingSync);
         waveformChunks{n} = sixgr.link.buildWaveformPreviewTable("UL", snr_dB, trialFrame(n), trialSlot(n), ...
@@ -977,7 +1001,13 @@ for n = 1:numFrames
         trialNoiseVarStrictFailure(n) = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
         trialUCIOnPUSCHApplied(n) = logical(sixgr.util.structGet(rx, "UCIOnPUSCHApplied", false));
         trialUCIOnPUSCHSource(n) = string(sixgr.util.structGet(rx, "UCIOnPUSCHSource", ""));
+        trialUCIOnPUSCHEvidenceSource(n) = string(sixgr.util.structGet( ...
+            rx, "UCIOnPUSCHEvidenceSource", ""));
         trialHARQACKBitCount(n) = double(sixgr.util.structGet(rx, "HARQACKBitCount", numel(expectedUCIBits)));
+        lastExpectedHARQACKBits = int8(sixgr.util.structGet(rx, "ExpectedHARQACKBits", expectedUCIBits));
+        lastDecodedHARQACKBits = int8(sixgr.util.structGet(rx, "DecodedHARQACKBits", int8([])));
+        trialExpectedHARQACKBits(n) = localBitVectorToken(lastExpectedHARQACKBits);
+        trialDecodedHARQACKBits(n) = localBitVectorToken(lastDecodedHARQACKBits);
         trialHARQACKContentMatch(n) = logical(sixgr.util.structGet(rx, "HARQACKContentMatch", false));
         trialHARQACKDecodeStatus(n) = string(sixgr.util.structGet(rx, "HARQACKDecodeStatus", ""));
         trialHARQACKDecodeReason(n) = string(sixgr.util.structGet(rx, "HARQACKDecodeReason", ""));
@@ -998,6 +1028,12 @@ for n = 1:numFrames
         trialMUMIMOReceiveCombinerInterferenceProjected(n) = logical(sixgr.util.structGet(rx, ...
             "MUMIMOReceiveCombinerInterferenceContributionProjected", false)) || logical(sixgr.util.structGet(rx, ...
             "MUMIMOReceiveCombinerInterferenceCovarianceProjected", false));
+        trialMUMIMOReceiveCombinerFullObservationPreserved(n) = logical(sixgr.util.structGet(rx, ...
+            "MUMIMOReceiveCombinerFullObservationPreserved", false));
+        trialMUMIMOReceiveCombinerIdentityResidual(n) = double(sixgr.util.structGet(rx, ...
+            "MUMIMOReceiveCombinerIdentityResidual", NaN));
+        trialMUMIMOReceiverAlgorithmApplied(n) = string(sixgr.util.structGet(rx, ...
+            "MUMIMOReceiverAlgorithmApplied", ""));
         trialReceiverUsable(n) = logical(sixgr.util.structGet(rx, "ReceiverUsable", false));
         trialDecodeAttempted(n) = logical(sixgr.util.structGet(rx, "DecodeAttempted", false));
         trialDecodeUsable(n) = logical(sixgr.util.structGet(rx, "DecodeUsable", false));
@@ -1288,15 +1324,30 @@ for n = 1:numFrames
         end
         trialComputeLatency(n) = double(sixgr.util.structGet(coding, "ComputeLatency_ms", ...
             sixgr.util.structGet(coding, "Latency_ms", NaN)));
+        if isfinite(trialComputeLatency(n))
+            trialComputeLatencySource(n) = "receiver_instrumented_ldpc_decode";
+        else
+            trialComputeLatencySource(n) = "unavailable";
+        end
         trialProcedureDelay(n) = double(sixgr.util.structGet(coding, "ProcedureDelay_ms", NaN));
         if ~isfinite(trialProcedureDelay(n))
             % The pure link-level UL PHY chain executes within the same grant observation.
-            % When no extra procedure delay is instrumented, the truthful residual is zero.
-            trialProcedureDelay(n) = 0;
+            % Absence of an instrumented procedure stage remains unavailable;
+            % it is not silently converted into a measured zero.
+            trialProcedureDelay(n) = NaN;
         end
         % The generic Latency_ms alias stays unavailable in new exports.
         trialLatency(n) = NaN;
         trialDecodeLatency(n) = double(sixgr.util.structGet(coding, "DecodeLatency_ms", NaN));
+        if isfinite(trialDecodeLatency(n))
+            trialDecodeLatencySource(n) = "receiver_instrumented_ldpc_decode";
+        else
+            trialDecodeLatencySource(n) = "unavailable";
+        end
+        if ~isfinite(trialReceiverPipelineLatency(n))
+            trialReceiverPipelineLatency(n) = 1e3 * toc(trialPipelineTic);
+            trialReceiverPipelineLatencySource(n) = "matlab_tic_toc_tx_channel_rx_trial";
+        end
         trialEarlyStop(n) = double(sixgr.util.structGet(coding, "EarlyStopRate", NaN));
         trialDecoderComplexity(n) = double(sixgr.util.structGet(coding, "DecoderComplexityUnits", NaN));
         trialNormDecoderComplexity(n) = double(sixgr.util.structGet(coding, "NormalizedDecoderComplexity", NaN));
@@ -1686,6 +1737,15 @@ out.StartSlotIndex = double(startSlotIndex);
 out.EndFrameIndex = double(trialFrame(max(1, numFrames)));
 out.EndSlotIndex = double(trialSlot(max(1, numFrames)));
 out.HARQ = lastHARQ;
+if isstruct(out.HARQ)
+    out.HARQ.ExpectedHARQACKBits = int8(lastExpectedHARQACKBits(:));
+    out.HARQ.DecodedHARQACKBits = int8(lastDecodedHARQACKBits(:));
+    finalTrialIndex = max(1, numFrames);
+    out.HARQ.HARQACKDecodeStatus = char(string(trialHARQACKDecodeStatus(finalTrialIndex)));
+    out.HARQ.HARQACKContentMatch = logical(trialHARQACKContentMatch(finalTrialIndex));
+    out.HARQ.UCIOnPUSCHEvidenceSource = char(string( ...
+        trialUCIOnPUSCHEvidenceSource(finalTrialIndex)));
+end
 out.ChannelState = chState;
 
 if frameCrash == numFrames
@@ -1837,6 +1897,10 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
             'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB', ...
             'Status','Crash', ...
              'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
+        T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.DecodeLatencySource = trialDecodeLatencySource(idx);
+        T.ReceiverPipelineLatency_ms = trialReceiverPipelineLatency(idx);
+        T.ReceiverPipelineLatencySource = trialReceiverPipelineLatencySource(idx);
         T.ExecutionProfile = repmat(executionContract.Profile, stopIdx, 1);
         T.ExecutionTaxonomy = repmat(executionContract.Taxonomy, stopIdx, 1);
         T.ExecutionBackend = repmat(executionContract.Backend, stopIdx, 1);
@@ -1950,6 +2014,22 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.UCIOnPUSCHApplied = trialUCIOnPUSCHApplied(idx);
         T.UCIOnPUSCHSource = trialUCIOnPUSCHSource(idx);
         T.HARQACKBitCount = trialHARQACKBitCount(idx);
+        T.ExpectedHARQACKBits = trialExpectedHARQACKBits(idx);
+        T.DecodedHARQACKBits = trialDecodedHARQACKBits(idx);
+        T.UCIOnPUSCHFeedbackGrantIds = repmat(string(sixgr.util.structGet( ...
+            grantSnapshotOverride, "UCIOnPUSCHFeedbackGrantIds", "")), height(T), 1);
+        T.UCIOnPUSCHFeedbackSourceSlots = repmat(localFormatNumericVector( ...
+            sixgr.util.structGet(grantSnapshotOverride, ...
+            "UCIOnPUSCHFeedbackSourceSlots", [])), height(T), 1);
+        T.UCIOnPUSCHFeedbackHARQIds = repmat(localFormatNumericVector( ...
+            sixgr.util.structGet(grantSnapshotOverride, ...
+            "UCIOnPUSCHFeedbackHARQIds", [])), height(T), 1);
+        T.UCIOnPUSCHFeedbackBitCount = repmat(double(sixgr.util.structGet( ...
+            grantSnapshotOverride, "UCIOnPUSCHFeedbackBitCount", 0)), height(T), 1);
+        % This field is receiver evidence, not a reservation-time grant
+        % annotation. Export the source emitted only after the actual PUSCH
+        % waveform has been demultiplexed and decoded.
+        T.UCIOnPUSCHEvidenceSource = trialUCIOnPUSCHEvidenceSource(idx);
         T.HARQACKContentMatch = trialHARQACKContentMatch(idx);
         T.HARQACKDecodeStatus = trialHARQACKDecodeStatus(idx);
         T.HARQACKDecodeReason = trialHARQACKDecodeReason(idx);
@@ -1968,6 +2048,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.MUMIMOReceiveCombinerOutputBranches = trialMUMIMOReceiveCombinerOutputBranches(idx);
         T.MUMIMOReceiveCombinerMatrixSHA256 = trialMUMIMOReceiveCombinerMatrixSHA256(idx);
         T.MUMIMOReceiveCombinerInterferenceProjected = trialMUMIMOReceiveCombinerInterferenceProjected(idx);
+        T.MUMIMOReceiveCombinerFullObservationPreserved = trialMUMIMOReceiveCombinerFullObservationPreserved(idx);
+        T.MUMIMOReceiveCombinerIdentityResidual = trialMUMIMOReceiveCombinerIdentityResidual(idx);
+        T.MUMIMOReceiverAlgorithmApplied = trialMUMIMOReceiverAlgorithmApplied(idx);
         T.ReceiverUsable = trialReceiverUsable(idx);
         T.DecodeAttempted = trialDecodeAttempted(idx);
         T.DecodeUsable = trialDecodeUsable(idx);
@@ -2170,6 +2253,10 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.AppliedPrecoderPMIType = trialAppliedPrecoderPMIType(idx);
         T.AppliedPrecoderCodebookMode = trialAppliedPrecoderCodebookMode(idx);
         T.AppliedPrecoderMatrixSHA256 = trialAppliedPrecoderMatrixSHA256(idx);
+        T.RequestedPrecoderSHA256 = trialRequestedPrecoderSHA256(idx);
+        T.AppliedPrecoderSHA256 = trialAppliedPrecoderSHA256(idx);
+        T.PrecoderDigestDomain = trialPrecoderDigestDomain(idx);
+        T.FrozenGrantContextId = trialFrozenGrantContextId(idx);
         T.RequestedVsAppliedPrecoderPMIMatchStatus = trialRequestedVsAppliedPrecoderPMIMatchStatus(idx);
         T.PrecodingNumPorts = trialPrecodingNumPorts(idx);
         T.PrecodingNumLayers = trialPrecodingNumLayers(idx);
@@ -2423,6 +2510,14 @@ configuredDomain = repmat(sixgr.link.resolveLinkAdaptationDomain(cfg, direction)
 T.ConfiguredLinkAdaptationMode = configuredLinkMode;
 T.ConfiguredMCSSelectionPolicy = configuredSelectionMode;
 T.LinkAdaptationDomain = configuredDomain;
+fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false",""];
+adaptiveTokens = ["amc","adaptive","cqi","cqi_driven","baseline","actual_bler_based","effective_sinr_driven"];
+modeTokens = lower(strtrim(string(configuredLinkMode)));
+selectionTokens = lower(strtrim(string(configuredSelectionMode)));
+T.FixedAnchorMode = ismember(modeTokens, fixedTokens) & ...
+    ~ismember(selectionTokens, adaptiveTokens);
+T.AdaptiveMode = ismember(modeTokens, adaptiveTokens) | ...
+    ismember(selectionTokens, adaptiveTokens);
 T.CQISource = localResolveCQISourceColumn(T, configuredDomain);
 [mcsSelectionSource, mcsValueStatus] = localResolveMCSSelectionEvidenceColumns(T, cfg, direction);
 T.MCSSelectionSource = mcsSelectionSource;
@@ -2462,6 +2557,35 @@ T.GrantOperatingPointSource = operatingPointSource;
 T.AppliedOperatingPointSource = operatingPointSource;
 T.MCSAuthority = operatingPointSource;
 T.ModulationAuthority = operatingPointSource;
+% Export the nominal configured point and the exact transmitted/effective
+% point with the same schema used by DL.  Adaptive scheduling may correctly
+% choose a point different from the nominal YAML request, but blank effective
+% columns make that decision impossible to audit from the persisted UL CSV.
+configuredMCS = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", NaN), ...
+    sixgr.util.structGet(cfg, "pusch6gr.MCSIndex", NaN));
+configuredModulation = string(sixgr.util.structGet(cfg, ...
+    "phy.pusch.modulation", ...
+    sixgr.util.structGet(cfg, "pusch6gr.Modulation", "")));
+configuredRank = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pusch.rank", NaN), ...
+    sixgr.util.structGet(cfg, "phy.pusch.nLayers", NaN), ...
+    sixgr.util.structGet(cfg, "mimo.rank", NaN));
+if ~isfinite(configuredRank)
+    transmittedLayers = double(localOptionalColumn(T, "Layers", NaN));
+    transmittedLayers = transmittedLayers(isfinite(transmittedLayers));
+    if ~isempty(transmittedLayers)
+        configuredRank = transmittedLayers(1);
+    end
+end
+T.ConfiguredMCSIndex = repmat(configuredMCS, n, 1);
+T.ConfiguredModulation = repmat(configuredModulation, n, 1);
+T.ConfiguredRank = repmat(configuredRank, n, 1);
+T.EffectiveMCSIndex = double(localOptionalColumn(T, "MCS", NaN));
+T.EffectiveModulation = string(localOptionalColumn(T, "Modulation", ""));
+T.EffectiveLayers = double(localOptionalColumn(T, "Layers", NaN));
+T.EffectiveRank = T.EffectiveLayers;
+T = sixgr.link.applyScheduledOperatingPointEvidence(T);
 T = sixgr.util.applyLLSRawTrialLifecycle(T);
 T.RunUUID = repmat(string(localArtifactStoreField("RunUUID")), n, 1);
 T.RunTag = repmat(string(sixgr.util.structGet(cfg, "run.runTag", "")), n, 1);
@@ -2697,6 +2821,49 @@ row.AntennaGeometrySource = "CoupledTruthRuntime.applyUserContextImpl";
 row.RuntimeTraceSource = "runULPUSCHThroughput_active_trial";
 row.AntennaEvidenceSource = "active_runtime_user_context";
 row.SameFlowEvidenceSource = "CoupledTruthRuntime.applyUserContextImpl->runULPUSCHThroughput";
+row.ChannelRealizationId = string(sixgr.util.structGet(replay, "ChannelRealizationId", ""));
+row.RuntimeChannelLinkKey = string(sixgr.util.structGet(replay, "RuntimeChannelLinkKey", ""));
+row.RuntimeChannelSeed = double(sixgr.util.structGet(replay, "RuntimeChannelSeed", NaN));
+row.RuntimeChannelResetCount = double(sixgr.util.structGet(replay, "RuntimeChannelResetCount", NaN));
+row.RuntimeChannelStartSample = double(sixgr.util.structGet(replay, "RuntimeChannelStartSample", NaN));
+row.RuntimeChannelEndSample = double(sixgr.util.structGet(replay, "RuntimeChannelEndSample", NaN));
+row.RuntimeChannelInputWaveformSHA256 = string(sixgr.util.structGet(replay, "RuntimeChannelInputWaveformSHA256", ""));
+row.RuntimeChannelOutputWaveformSHA256 = string(sixgr.util.structGet(replay, "RuntimeChannelOutputWaveformSHA256", ""));
+row.RuntimeChannelPathGainsSHA256 = string(sixgr.util.structGet(replay, "RuntimeChannelPathGainsSHA256", ""));
+row.RuntimeChannelPathGainElementCount = double(sixgr.util.structGet(replay, "RuntimeChannelPathGainElementCount", 0));
+row.RuntimeChannelPathGainDimensions = string(sixgr.util.structGet(replay, "RuntimeChannelPathGainDimensions", ""));
+row.ChannelFadingObjectClass = string(sixgr.util.structGet(replay, "ChannelFadingObjectClass", ""));
+txRFReplay = sixgr.util.structGet(tx, "TxRFImpairmentReplay", struct());
+row.TxRFImpairmentChainId = string(sixgr.util.structGet(txRFReplay, "RFImpairmentChainId", ""));
+row.TxRFInputWaveformSHA256 = string(sixgr.util.structGet(txRFReplay, "RFInputWaveformSHA256", ""));
+row.TxRFOutputWaveformSHA256 = string(sixgr.util.structGet(txRFReplay, "RFOutputWaveformSHA256", ""));
+row.TxRFExecutionStatus = localRFExecutionStatus(txRFReplay, "tx");
+row.TxRFStageOrder = string(sixgr.util.structGet(txRFReplay, "RFStageOrder", ""));
+row.TxRFAppliedStageCount = double(sixgr.util.structGet(txRFReplay, "RFAppliedStageCount", 0));
+row.TxRFConfiguredStageCount = double(sixgr.util.structGet(txRFReplay, "RFConfiguredStageCount", 0));
+row.RxRFImpairmentChainId = string(sixgr.util.structGet(replay, "RFImpairmentChainId", ""));
+row.RxRFInputWaveformSHA256 = string(sixgr.util.structGet(replay, "RFInputWaveformSHA256", ""));
+row.RxRFOutputWaveformSHA256 = string(sixgr.util.structGet(replay, "RFOutputWaveformSHA256", ""));
+row.RxRFExecutionStatus = string(sixgr.util.structGet(replay, "RFExecutionStatus", ""));
+row.RxRFStageOrder = string(sixgr.util.structGet(replay, "RFStageOrder", ""));
+row.RxRFAppliedStageCount = double(sixgr.util.structGet(replay, "RFAppliedStageCount", 0));
+row.RxRFConfiguredStageCount = double(sixgr.util.structGet(replay, "RFConfiguredStageCount", 0));
+row.CompositeReceiverFrontEndApplied = logical(sixgr.util.structGet(replay, "CompositeReceiverFrontEndApplied", false));
+row.CompositeReceiverFrontEndStatus = string(sixgr.util.structGet(replay, "CompositeReceiverFrontEndStatus", ""));
+row.RFStrictOk = logical(sixgr.util.structGet(replay, "RFStrictOk", true));
+row.CFOApplied = logical(sixgr.util.structGet(replay, "CFOApplied", false));
+row.PhaseNoiseConfigured = logical(sixgr.util.structGet(replay, "PhaseNoiseConfigured", false));
+row.PhaseNoiseApplied = logical(sixgr.util.structGet(replay, "PhaseNoiseApplied", false));
+row.PAEnabled = logical(sixgr.util.structGet(txRFReplay, "PAEnabled", false));
+row.PAApplied = logical(sixgr.util.structGet(txRFReplay, "PAApplied", false));
+row.PAModel = string(sixgr.util.structGet(txRFReplay, "PAModel", ""));
+row.PABackoff_dB = double(sixgr.util.structGet(txRFReplay, "PABackoff_dB", NaN));
+row.TimingOffsetApplied = logical(sixgr.util.structGet(replay, "TimingOffsetApplied", false));
+row.ADCQuantizationApplied = logical(sixgr.util.structGet(replay, "ADCQuantizationApplied", false));
+row.ADCBits = double(sixgr.util.structGet(replay, "ADCBits", NaN));
+row.DACBits = double(sixgr.util.structGet(replay, "DACBits", NaN));
+row.NoiseOperatingMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""));
+row.RFImpairmentChainId = localCompositeRFChainId(row.TxRFImpairmentChainId, row.RxRFImpairmentChainId);
 row.ReferenceTxPower_dBm = double(sixgr.util.structGet(replay, "ReferenceTxPower_dBm", NaN));
 row.ReferenceTxPowerSource = string(sixgr.util.structGet(replay, "ReferenceTxPowerSource", ""));
 row.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
@@ -2988,6 +3155,48 @@ row = struct( ...
     "RuntimeTraceSource", "", ...
     "AntennaEvidenceSource", "", ...
     "SameFlowEvidenceSource", "", ...
+    "ChannelRealizationId", "", ...
+    "RuntimeChannelLinkKey", "", ...
+    "RuntimeChannelSeed", NaN, ...
+    "RuntimeChannelResetCount", NaN, ...
+    "RuntimeChannelStartSample", NaN, ...
+    "RuntimeChannelEndSample", NaN, ...
+    "RuntimeChannelInputWaveformSHA256", "", ...
+    "RuntimeChannelOutputWaveformSHA256", "", ...
+    "RuntimeChannelPathGainsSHA256", "", ...
+    "RuntimeChannelPathGainElementCount", 0, ...
+    "RuntimeChannelPathGainDimensions", "", ...
+    "ChannelFadingObjectClass", "", ...
+    "TxRFImpairmentChainId", "", ...
+    "TxRFInputWaveformSHA256", "", ...
+    "TxRFOutputWaveformSHA256", "", ...
+    "TxRFExecutionStatus", "", ...
+    "TxRFStageOrder", "", ...
+    "TxRFAppliedStageCount", 0, ...
+    "TxRFConfiguredStageCount", 0, ...
+    "RxRFImpairmentChainId", "", ...
+    "RxRFInputWaveformSHA256", "", ...
+    "RxRFOutputWaveformSHA256", "", ...
+    "RxRFExecutionStatus", "", ...
+    "RxRFStageOrder", "", ...
+    "RxRFAppliedStageCount", 0, ...
+    "RxRFConfiguredStageCount", 0, ...
+    "CompositeReceiverFrontEndApplied", false, ...
+    "CompositeReceiverFrontEndStatus", "", ...
+    "RFStrictOk", false, ...
+    "CFOApplied", false, ...
+    "PhaseNoiseConfigured", false, ...
+    "PhaseNoiseApplied", false, ...
+    "PAEnabled", false, ...
+    "PAApplied", false, ...
+    "PAModel", "", ...
+    "PABackoff_dB", NaN, ...
+    "TimingOffsetApplied", false, ...
+    "ADCQuantizationApplied", false, ...
+    "ADCBits", NaN, ...
+    "DACBits", NaN, ...
+    "NoiseOperatingMode", "", ...
+    "RFImpairmentChainId", "", ...
     "ReferenceTxPower_dBm", NaN, "ReferenceTxPowerSource", "", ...
     "ServingRxPower_dBm", NaN, "ServingRxPowerSource", "", ...
     "ThermalNoisePower_dBm", NaN, "NoisePowerSource", "", ...
@@ -2996,6 +3205,34 @@ row = struct( ...
     "PowerContextRxGain_dB", NaN, "PowerContextAdditionalLoss_dB", NaN, ...
     "AbsolutePowerReferencePlane", "", "SamplePowerReferencePlane", "", ...
     "InterferencePowerReferencePlane", "");
+end
+
+function id = localCompositeRFChainId(txId, rxId)
+txId = strtrim(string(txId));
+rxId = strtrim(string(rxId));
+if strlength(txId) == 0 && strlength(rxId) == 0
+    id = "";
+    return;
+end
+digest = lower(string(sixgr.channel.hashChannelRFConfig(struct( ...
+    "TxRFImpairmentChainId", txId, "RxRFImpairmentChainId", rxId))));
+id = "rfpath_" + extractBefore(digest, 17);
+end
+
+function status = localRFExecutionStatus(replay, endpoint)
+if ~(isstruct(replay) && ~isempty(fieldnames(replay)))
+    status = "not_configured";
+    return;
+end
+applied = double(sixgr.util.structGet(replay, "RFAppliedStageCount", 0));
+configured = double(sixgr.util.structGet(replay, "RFConfiguredStageCount", 0));
+if applied > 0
+    status = "applied_ordered_" + string(endpoint) + "_rf_chain";
+elseif configured > 0
+    status = "configured_identity_or_zero_stage";
+else
+    status = "disabled_identity";
+end
 end
 
 function T = localEnsureRuntimeEvidenceColumns(T, nRows)
@@ -3944,6 +4181,10 @@ end
 assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
+T.ComputeLatencySource = strings(0,1);
+T.DecodeLatencySource = strings(0,1);
+T.ReceiverPipelineLatency_ms = zeros(0,1);
+T.ReceiverPipelineLatencySource = strings(0,1);
 T.ExecutionProfile = strings(0,1);
 T.ExecutionTaxonomy = strings(0,1);
 T.ExecutionBackend = strings(0,1);
@@ -4030,6 +4271,13 @@ T.RateMatchedBitsDelta_TS38212 = zeros(0,1);
 T.UCIOnPUSCHApplied = false(0,1);
 T.UCIOnPUSCHSource = strings(0,1);
 T.HARQACKBitCount = zeros(0,1);
+T.ExpectedHARQACKBits = strings(0,1);
+T.DecodedHARQACKBits = strings(0,1);
+T.UCIOnPUSCHFeedbackGrantIds = strings(0,1);
+T.UCIOnPUSCHFeedbackSourceSlots = strings(0,1);
+T.UCIOnPUSCHFeedbackHARQIds = strings(0,1);
+T.UCIOnPUSCHFeedbackBitCount = zeros(0,1);
+T.UCIOnPUSCHEvidenceSource = strings(0,1);
 T.HARQACKContentMatch = false(0,1);
 T.HARQACKDecodeStatus = strings(0,1);
 T.HARQACKDecodeReason = strings(0,1);
@@ -4047,6 +4295,9 @@ T.MUMIMOReceiveCombinerInputBranches = zeros(0,1);
 T.MUMIMOReceiveCombinerOutputBranches = zeros(0,1);
 T.MUMIMOReceiveCombinerMatrixSHA256 = strings(0,1);
 T.MUMIMOReceiveCombinerInterferenceProjected = false(0,1);
+T.MUMIMOReceiveCombinerFullObservationPreserved = false(0,1);
+T.MUMIMOReceiveCombinerIdentityResidual = zeros(0,1);
+T.MUMIMOReceiverAlgorithmApplied = strings(0,1);
 T.ReceiverUsable = false(0,1);
 T.DecodeAttempted = false(0,1);
 T.DecodeUsable = false(0,1);
@@ -4162,6 +4413,8 @@ T.TimingEstimateApplicationPolicy = strings(0,1);
 T.TimingEstimateStatus = strings(0,1);
 T.TimingEstimateWasClipped = false(0,1);
 T.LinkAdaptationDomain = strings(0,1);
+T.FixedAnchorMode = false(0,1);
+T.AdaptiveMode = false(0,1);
 T.CQISource = strings(0,1);
 T.MCSSelectionSource = strings(0,1);
 T.MCSValueStatus = strings(0,1);
@@ -4251,6 +4504,10 @@ T.AppliedPrecoderPMI = zeros(0,1);
 T.AppliedPrecoderPMIType = strings(0,1);
 T.AppliedPrecoderCodebookMode = strings(0,1);
 T.AppliedPrecoderMatrixSHA256 = strings(0,1);
+T.RequestedPrecoderSHA256 = strings(0,1);
+T.AppliedPrecoderSHA256 = strings(0,1);
+T.PrecoderDigestDomain = strings(0,1);
+T.FrozenGrantContextId = strings(0,1);
 T.RequestedVsAppliedPrecoderPMIMatchStatus = strings(0,1);
 T.RequestedBeamTruthClassification = strings(0,1);
 T.RequestedPrecoderPMITruthClassification = strings(0,1);
@@ -4560,7 +4817,8 @@ appliedPMI = double(sixgr.util.structGet(prec, "PMI", sixgr.util.structGet(grant
 requestedPMI = double(sixgr.util.structGet(grant, "PMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.TPMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN))));
-appliedPrecoderMatrixSHA256 = localResolveAppliedPrecoderMatrixSHA256(prec);
+digestEvidence = sixgr.phy.grant.resolvePrecoderDigestEvidence(grant, prec);
+appliedPrecoderMatrixSHA256 = string(digestEvidence.AppliedPrecoderMatrixSHA256);
 trace = struct( ...
     "ConfiguredBeamSelectionStrategy", string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamSelectionStrategy", "")), ...
     "PrecoderSource", string(sixgr.util.structGet(prec, "Source", sixgr.util.structGet(grant, "PrecoderSource", localResolveULPrecoderSource(transformPrecoding)))), ...
@@ -4575,6 +4833,10 @@ trace = struct( ...
     "AppliedPrecoderPMIType", string(sixgr.util.structGet(prec, "PMIType", sixgr.util.structGet(grant, "AppliedPrecoderPMIType", ""))), ...
     "AppliedPrecoderCodebookMode", string(sixgr.util.structGet(prec, "CodebookMode", sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""))), ...
     "AppliedPrecoderMatrixSHA256", appliedPrecoderMatrixSHA256, ...
+    "RequestedPrecoderSHA256", string(digestEvidence.RequestedPrecoderSHA256), ...
+    "AppliedPrecoderSHA256", string(digestEvidence.AppliedPrecoderSHA256), ...
+    "PrecoderDigestDomain", string(digestEvidence.PrecoderDigestDomain), ...
+    "FrozenGrantContextId", string(digestEvidence.FrozenGrantContextId), ...
     "RequestedVsAppliedPrecoderPMIMatchStatus", localRequestedVsAppliedPMIStatus(requestedPMI, appliedPMI), ...
     "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", size(sixgr.util.structGet(tx, "Grid", zeros(0,0,0)), 3))), ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", localObjectValue(pusch, "NumLayers", sixgr.util.structGet(grant, "PrecodingNumLayers", NaN)))), ...
@@ -4759,6 +5021,22 @@ for ii = 1:numel(values)
     parts(ii) = string(sprintf("%.6g", values(ii)));
 end
 token = join(parts, "|");
+end
+
+function token = localBitVectorToken(bits)
+% Preserve the receiver-observed HARQ-ACK vector exactly in CSV-safe form.
+% Empty means no UCI bits were produced; it is never replaced with the
+% configured/expected payload.
+if isempty(bits)
+    token = "";
+    return;
+end
+bits = int8(bits(:).');
+if any(~ismember(double(bits), [0 1]))
+    error("sixgr:link:InvalidDecodedHARQACKBits", ...
+        "Decoded HARQ-ACK evidence must contain only binary values.");
+end
+token = join(string(double(bits)), "|");
 end
 
 function status = localRequestedVsAppliedPMIStatus(requestedPMI, appliedPMI)
@@ -5142,8 +5420,7 @@ for ii = 1:numel(candidates)
     if isempty(W) || size(W, 1) ~= nTx
         continue;
     end
-    Heff = double(Hwb) * double(W);
-    metric(ii) = real(trace(Heff * Heff')) / max(1, size(W, 2));
+    metric(ii) = sixgr.phy.dl.frequencySelectivePrecoderPower(Hwb, W);
 end
 if ~any(isfinite(metric))
     return;
@@ -5889,6 +6166,8 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "MUMIMOSpatialDesignEvidenceSource","MUMIMOSpatialFilterMatrixSHA256", ...
     "MUMIMOReceiveCombiningMatrix", ...
     "MUMIMOReceiveCombiningMatrixSHA256","MUMIMOReceiverAlgorithm", ...
+    "MUMIMOAdmissionReceiveCombiningMatrix", ...
+    "MUMIMOAdmissionReceiveCombiningMatrixSHA256","MUMIMOReceiveProcessingMode", ...
     "MUMIMOHybridRFDesignPolicy","MUMIMOHybridRFDesignStatus", ...
     "HybridElementToPortMatrixSHA256","BaseHybridElementToPortMatrixSHA256", ...
     "NumLogicalPorts","NumRFChains", ...
@@ -5907,6 +6186,8 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "TRSStateSource","TRSRuntimeConsumer","TRSInfluencedDecision","TRSInfluenceDefinition","TRSReceiverIntegrationStatus","TRSReceiverIntegrationBlocker", ...
     "ExpectedUCIBits","MultiplexedUCIBits","HARQACKBits","MultiplexedHARQACKBits","UCIOnPUSCHApplied","UCIOnPUSCHSource", ...
     "PUCCHCollisionPolicy","PUCCHSourceSlot","PUCCHGrantId","UCIOnPUSCHEvidenceSource", ...
+    "UCIOnPUSCHFeedbackGrantIds","UCIOnPUSCHFeedbackSourceSlots", ...
+    "UCIOnPUSCHFeedbackHARQIds","UCIOnPUSCHFeedbackBitCount", ...
     "GrantContextId","GrantWorkerSafe","GrantSharedStateCommitMode","PHYGrant","PHYGrantContextId", ...
     "DCI","Valid","GrantBlocker","ExactPHYFeasibilityChecked","ExactPHYFeasible", ...
     "ExactPHYFeasibilitySource","ExactPHYInfeasibilityReason","ExecutableTBSMode", ...

@@ -16,6 +16,14 @@ bus.stageStart("annotation_guard");
 runtimePath = fullfile(runFolder, "runtime", "csv", "stage_timing_events.csv");
 runtimeBefore = fileread(runtimePath);
 
+% raw/evidence is a sealed execution snapshot, not a mutable report root.
+rawDir = fullfile(runFolder, "raw", "evidence", "tables");
+mkdir(rawDir);
+rawPath = fullfile(rawDir, "rawtrials_dl.csv");
+sixgr.util.csvWriteTable(rawPath, table("raw-1", 7, ...
+    'VariableNames', {'TrialID','Value'}));
+rawBefore = fileread(rawPath);
+
 reportDir = fullfile(runFolder, "reports", "csv");
 if ~isfolder(reportDir)
     mkdir(reportDir);
@@ -64,16 +72,34 @@ sixgr.util.csvWriteTable(beamPath, table(3, 'VariableNames', {'Value'}));
 airBefore = fileread(airPath);
 beamBefore = fileread(beamPath);
 
+% A generic-sweep point is an independent execution.  Parent annotation
+% and visual verification must not mutate or claim any artifact below it.
+childReportDir = fullfile(runFolder, "sweeps", "point_1", "reports", "csv");
+childImageDir = fullfile(runFolder, "sweeps", "point_1", "reports", "image");
+mkdir(childReportDir);
+mkdir(childImageDir);
+childReportPath = fullfile(childReportDir, "child_report.csv");
+childImagePath = fullfile(childImageDir, "child_orphan.png");
+sixgr.util.csvWriteTable(childReportPath, table(9, 'VariableNames', {'Value'}));
+imwrite(uint8(zeros(8, 8, 3)), childImagePath);
+childReportBefore = fileread(childReportPath);
+
 summary = sixgr.report.annotateScenarioCSVArtifacts(runFolder, ...
     "scenario_unit", "hash_unit", "waveform_bundle");
 
 assert(strcmp(fileread(runtimePath), runtimeBefore), ...
     "Runtime journal projections must remain byte-for-byte unchanged.");
+assert(strcmp(fileread(rawPath), rawBefore), ...
+    "Cryptographically sealed raw evidence must remain byte-for-byte unchanged.");
 assert(strcmp(fileread(mirrorPath), mirrorBefore), ...
     "Component mirrors must remain byte-for-byte unchanged.");
 assert(strcmp(fileread(airPath), airBefore) && ...
     strcmp(fileread(beamPath), beamBefore), ...
     "Waveform plot-source tables must remain byte-for-byte unchanged after their lineage hashes are sealed.");
+assert(strcmp(fileread(childReportPath), childReportBefore), ...
+    "Parent annotation must not mutate a child sweep execution.");
+assert(summary.SkippedNestedExecutionCount >= 1, ...
+    "Child sweep artifacts must be reported as outside the parent execution scope.");
 report = readtable(reportPath, 'VariableNamingRule', 'preserve');
 assert(isequal(string(report.Properties.VariableNames(1:3)), ...
     ["ScenarioID", "ConfigHash", "RunnerProfile"]));
@@ -85,7 +111,7 @@ caseNames = string(caseVariant.Properties.VariableNames);
 assert(nnz(strcmpi(caseNames,"ScenarioID")) == 1 && ...
     numel(unique(lower(caseNames))) == numel(caseNames), ...
     "Scenario annotation must not append a case-only duplicate identity column.");
-assert(summary.AnnotatedCount >= 3 && summary.SkippedImmutableCount >= 4);
+assert(summary.AnnotatedCount >= 3 && summary.SkippedImmutableCount >= 5);
 statAnnotated = readtable(statSource, "VariableNamingRule", "preserve", "TextType", "string");
 lineageAfter = readtable(statLineage, "VariableNamingRule", "preserve", "TextType", "string");
 assert(ismember("ScenarioID", string(statAnnotated.Properties.VariableNames)), ...
@@ -93,6 +119,8 @@ assert(ismember("ScenarioID", string(statAnnotated.Properties.VariableNames)), .
 assert(lineageAfter.SourceCSV_SHA256(1) ~= lineageBefore.SourceCSV_SHA256(1), ...
     "Lineage hash must change when final identity annotation changes source bytes.");
 visual = sixgr.visual.verifyVisualArtifacts(runFolder, table());
+assert(~any(startsWith(string(visual.ArtifactPath), "sweeps/")), ...
+    "Parent visual verification must not ingest child sweep images.");
 plotRow = visual.PlotId == "prach_plot";
 assert(nnz(plotRow) == 1 && visual.IntegrityOk(plotRow), ...
     "Final statistical component lineage must verify against annotated source bytes.");

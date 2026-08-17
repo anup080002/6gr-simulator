@@ -241,6 +241,12 @@ classdef AntennaArrayFactory
             arr.DigitalPortToRFChainMatrix = portToRF;
             arr.HybridElementToPortMatrix = portToElement;
             arr.HybridBeamformingEnabled = hybridBeamformingEnabled;
+            % A signal-specific logical port may still need an explicit
+            % power-preserving projection onto a larger fully-digital
+            % physical array.  This capability is independent of the RF
+            % architecture: setting it must not relabel a fully-digital
+            % array as hybrid beamforming.
+            arr.PortToElementExpansionEnabled = logical(numElements > numPorts);
             arr.ElementsPerPort = double(elementsPerPort(:).');
 
             meta.NumElements = double(numElements);
@@ -253,6 +259,7 @@ classdef AntennaArrayFactory
             meta.RuntimeObjectSource = "AntennaArrayFactory.logicalPortView";
             meta.PortToElementMatrix = portToElement;
             meta.HybridBeamformingEnabled = hybridBeamformingEnabled;
+            meta.PortToElementExpansionEnabled = logical(numElements > numPorts);
         end
 
 
@@ -319,7 +326,16 @@ classdef AntennaArrayFactory
             end
 
             [analogPrecoder, rfElementsPerChain] = sixgr.rf.AntennaArrayFactory.localPortToElementMatrix(numElements, numRFChains);
-            digitalPortToRF = sixgr.rf.AntennaArrayFactory.localRectIdentity(numRFChains, numPorts);
+            % When more RF chains/elements exist than active logical signal
+            % ports, a rectangular identity silently energizes only the
+            % first ports and leaves the remaining configured array unused.
+            % Use a deterministic semi-unitary port-to-RF projection so all
+            % configured RF chains participate while total power is
+            % preserved. An explicit YAML hybrid matrix still overrides
+            % this baseline below.
+            [digitalPortToRF, ~] = ...
+                sixgr.rf.AntennaArrayFactory.localPortToElementMatrix( ...
+                numRFChains, numPorts);
             portToElement = analogPrecoder * digitalPortToRF;
             configuredElementToPort = [];
             configuredElementToPortSource = "";

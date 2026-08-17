@@ -1,6 +1,9 @@
 function ch = estimateTRSChannel(rx, cfg, tx, det)
 %ESTIMATETRSCHANNEL Estimate channel from received TRS REs using nrChannelEstimate.
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.trs.estimateTRSChannel", ...
+    "TRS", "DL", struct("Stage","CHANNEL_TRACKING"));
+
 slotDet = det.SlotDetections;
 resources = localResolveSlotResources(cfg, tx);
 rows = repmat(localChannelRow(), numel(slotDet), 1);

@@ -1189,13 +1189,18 @@ if direction == "DL"
     grant.MUMIMOPrecoderType = "measured_block_diagonalization";
 else
     receiveCombiner = design.("Member" + string(memberIndex) + "ReceiveCombiner");
+    admissionCombiner = design.("Member" + string(memberIndex) + "AdmissionReceiveCombiner");
     grant.MUMIMOReceiveCombiningMatrix = double(receiveCombiner);
     grant.ReceiveCombinerNormalizationConvention = char(string( ...
         design.ReceiveCombinerNormalizationConvention));
     grant.MUMIMOReceiveCombiningMatrixSHA256 = char( ...
         sixgr.phy.mimo.MatrixContract.digest(double(receiveCombiner)));
-    grant.MUMIMOReceiverAlgorithm = "IRC";
-    grant.MUMIMOPrecoderType = "measured_srs_irc_receive_projection";
+    grant.MUMIMOAdmissionReceiveCombiningMatrix = double(admissionCombiner);
+    grant.MUMIMOAdmissionReceiveCombiningMatrixSHA256 = char(string( ...
+        design.("Member" + string(memberIndex) + "AdmissionMatrixSHA256")));
+    grant.MUMIMOReceiveProcessingMode = char(string(design.ULReceiveProcessingMode));
+    grant.MUMIMOReceiverAlgorithm = "full_dimensional_per_re_irc";
+    grant.MUMIMOPrecoderType = "measured_srs_pairing_full_dimensional_per_re_irc";
 end
 end
 

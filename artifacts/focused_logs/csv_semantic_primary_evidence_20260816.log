@@ -1,0 +1,8 @@
+{Error using assert
+UL scheduled and transmitted operating-point evidence must reconcile row by row.
+
+Error in testULPUSCHReceiverEvidenceGate (line 76)
+assert(all(double(T.ScheduledMCSIndex) == double(T.MCS)) && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

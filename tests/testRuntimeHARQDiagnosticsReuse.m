@@ -56,6 +56,20 @@ ul = artifacts.PacketTable(string(artifacts.PacketTable.Direction) == "UL", :);
 assert(height(ul) == 1 && ul.PacketID == 3, ...
     "A missing sweep/TB identity must use the configured-SNR fallback key.");
 
+% Coupled runtime tables created from scalar structs can preserve an empty
+% char value with an additional scalar-cell wrapper.  The compatibility
+% publisher must read that legacy representation deterministically, while
+% still rejecting non-scalar/ambiguous identities.
+nestedTimeline = timeline(4, :);
+nestedTimeline.TBId = {{''}};
+nestedRuntime = struct("TimelineTable", nestedTimeline, ...
+    "SummaryTable", table(), "PreviewOnly", false);
+nestedArtifacts = sixgr.truth.publishRuntimeHARQDiagnostics( ...
+    cfg, fullfile(tmp, "nested", "air_interface"), nestedRuntime);
+assert(height(nestedArtifacts.PacketTable) == 1 && ...
+    strlength(string(nestedArtifacts.PacketTable.TBId)) == 0, ...
+    "A nested legacy empty TBId must use the disclosed fallback identity without crashing.");
+
 summary = artifacts.SummaryTable;
 dlEntity = string(summary.Entity) == "DL@canonical_slot_runtime";
 success = summary(dlEntity & string(summary.MetricKey) == ...

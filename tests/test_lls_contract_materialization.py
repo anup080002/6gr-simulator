@@ -16,6 +16,30 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_contract_materializer as materializer  # noqa: E402
 
 
+def test_image_artifact_audit_is_materialized_after_contract_charts() -> None:
+    source = (REPO_ROOT / "apps" / "lls_contract_materializer.py").read_text(
+        encoding="utf-8"
+    )
+    chart_loop = source.index("for chart_spec in _chart_specs():")
+    late_audit = source.index('late_image_audit_name = "all_image_artifact_audit"')
+    coverage = source.index("coverage = coverage_summary(final_artifacts, feature_policy)")
+    assert chart_loop < late_audit < coverage
+    assert "post_render_exact_image_artifact_audit" in source
+
+
+def test_filesystem_replacement_restores_declared_artifact_pngs_before_indexing() -> None:
+    source = (
+        REPO_ROOT / "scripts" / "materialize_lls_contract_artifacts.py"
+    ).read_text(encoding="utf-8")
+    deletion = source.index("io_path(target).unlink()")
+    declared_rasters = source.index(
+        "declared_artifact_rasters = materialize_declared_artifact_generation_rasters("
+    )
+    filesystem_index = source.index("run_row = dash.filesystem_run_row_from_folder(run_folder)")
+    assert deletion < declared_rasters < filesystem_index
+    assert '"declared_artifact_rasters_regenerated"' in source
+
+
 def test_contract_plot_lineage_binds_exact_raster_and_dataset_bytes() -> None:
     image_buffer = io.BytesIO()
     Image.new("RGB", (37, 23), color=(12, 34, 56)).save(
@@ -101,6 +125,176 @@ def test_csv_decoder_accepts_runtime_ldpc_vector_larger_than_python_default() ->
     header, rows = materializer._decode_csv_dicts(payload)  # noqa: SLF001
     assert header == ["run_id", "MeasuredLDPCParityCheckVector"]
     assert rows == [{"run_id": "runtime-1", "MeasuredLDPCParityCheckVector": parity_vector}]
+
+
+def test_low_information_reason_png_is_not_a_real_contract_chart() -> None:
+    svg = materializer._render_svg_plot(  # noqa: SLF001
+        "single point trend",
+        "runtime evidence",
+        {"mode": "line", "x_label": "Slot", "y_label": "BLER", "points": [[1.0, 0.0]]},
+        ["rows=1"],
+    )
+    png = materializer._rasterize_contract_png(  # noqa: SLF001
+        svg,
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/single-point.vector",
+    )
+    assert materializer._png_low_information_reason(png) == "all_zero_metric_values"  # noqa: SLF001
+    assert materializer._is_placeholder_materialization_status(  # noqa: SLF001
+        "generated_low_information_reason_png"
+    )
+
+
+def test_explicit_evidence_shapes_preserve_flat_truth_without_enabling_fake_curves() -> None:
+    flat_timeline = {
+        "mode": "line",
+        "points": [[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]],
+        "evidence_shape_policy": "observed_timeline",
+        "sample_count": 3,
+    }
+    reason, _details = materializer._dataset_low_information_reason(flat_timeline)  # noqa: SLF001
+    assert reason == ""
+
+    one_state_distribution = {
+        "mode": "bar",
+        "points": [[0.0, 12.0]],
+        "evidence_shape_policy": "observed_distribution",
+        "sample_count": 12,
+    }
+    reason, _details = materializer._dataset_low_information_reason(one_state_distribution)  # noqa: SLF001
+    assert reason == ""
+
+    zero_response_relation = {
+        "mode": "scatter",
+        "points": [[10.0, 0.0], [20.0, 0.0]],
+        "evidence_shape_policy": "observed_relation",
+        "sample_count": 12,
+    }
+    reason, _details = materializer._dataset_low_information_reason(zero_response_relation)  # noqa: SLF001
+    assert reason == ""
+
+    unlabelled_one_point_curve = {"mode": "line", "points": [[20.0, 0.0]]}
+    reason, _details = materializer._dataset_low_information_reason(unlabelled_one_point_curve)  # noqa: SLF001
+    assert reason == "all_zero_metric_values"
+
+
+def test_reliability_uses_weighted_bit_denominator_and_exports_wilson_interval() -> None:
+    payload = materializer._encode_csv(  # noqa: SLF001
+        ["BitErrors", "BitsCompared", "CRCPass", "ConfiguredSNR_dB"],
+        [[0, 100, 1, 20], [5, 900, 0, 20]],
+    )
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 701,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "BER", existing, lambda _artifact_id: payload, 44
+    )
+    assert result is not None
+    csv_text = result["csv_bytes"].decode("utf-8")
+    assert "metric_value,error_count,sample_count,ci95_lower,ci95_upper" in csv_text
+    assert "BER,0.005,5.0,1000" in csv_text
+    png = materializer._rasterize_contract_png(  # noqa: SLF001
+        result["img_bytes"],
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/weighted-ber.vector",
+    )
+    assert materializer._png_low_information_reason(png) == ""  # noqa: SLF001
+
+
+def test_prach_probability_exports_wilson_bounds_from_trial_flags() -> None:
+    payload = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "ConfiguredSNR_dB", "DecodeSuccess", "FalseAlarmFlag"],
+        [[1, 20, 1, 0], [2, 20, 0, 0]],
+    )
+    existing = {
+        "air_interface/csv/prach_trials.csv": {
+            "artifact_id": 702,
+            "logical_path": "air_interface/csv/prach_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "P_D", existing, lambda _artifact_id: payload, 45
+    )
+    assert result is not None
+    csv_text = result["csv_bytes"].decode("utf-8")
+    assert "ci95_lower,ci95_upper" in csv_text
+    assert ",0.5,2," in csv_text
+    svg_text = result["img_bytes"].decode("utf-8")
+    assert ">1<" in svg_text
+    assert ">2<" not in svg_text, "Bernoulli probabilities must use a [0,1] vertical domain."
+    png = materializer._rasterize_contract_png(  # noqa: SLF001
+        result["img_bytes"],
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/prach-pd.vector",
+    )
+    assert materializer._png_low_information_reason(png) == ""  # noqa: SLF001
+
+
+def test_scientific_renderers_publish_numeric_axes_and_truthful_constellation_counts() -> None:
+    bar_svg = materializer._render_svg_plot(  # noqa: SLF001
+        "beam gap",
+        "runtime values",
+        {
+            "mode": "bar",
+            "x_label": "Beam gain gap dB",
+            "y_label": "Count",
+            "points": [[1.25, 2.0], [1.75, 5.0]],
+        },
+        ["samples=7"],
+    ).decode("utf-8")
+    assert "Beam gain gap dB" in bar_svg
+    assert "Count" in bar_svg
+    assert 'transform="rotate(-90' in bar_svg
+    assert ">1.25<" in bar_svg and ">1.75<" in bar_svg
+
+    payload = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"],
+        [
+            ["DL", -0.7, 0.7, -0.707, 0.707],
+            ["DL", 0.7, -0.7, 0.707, -0.707],
+            ["UL", -0.7, -0.7, -0.707, -0.707],
+        ],
+    )
+    existing = {
+        "reports/csv/equalized_constellations.csv": {
+            "artifact_id": 1,
+            "logical_path": "reports/csv/equalized_constellations.csv",
+            "artifact_kind": "table_csv",
+        }
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "post-equalization constellation", existing, lambda _artifact_id: payload, 91
+    )
+    assert result is not None
+    constellation_svg = result["img_bytes"].decode("utf-8")
+    assert "dl_rows=2" in constellation_svg
+    assert "ul_rows=1" in constellation_svg
+    assert "In-phase" in constellation_svg
+    assert "Quadrature" in constellation_svg
+
+
+def test_contract_cleanup_never_removes_runtime_source_csv(tmp_path: Path) -> None:
+    stale = tmp_path / "analytics" / "image" / "contract__old__chart.png"
+    source = tmp_path / "air_interface" / "csv" / "dl_pdsch_trials.csv"
+    stale.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True)
+    stale.write_bytes(b"old-generated-chart")
+    source.write_text("Frame,Slot\n1,1\n", encoding="utf-8")
+    materializer._remove_materializer_owned_file(  # noqa: SLF001
+        str(tmp_path), "analytics/image/contract__old__chart.png"
+    )
+    materializer._remove_materializer_owned_file(  # noqa: SLF001
+        str(tmp_path), "air_interface/csv/dl_pdsch_trials.csv"
+    )
+    assert not stale.exists()
+    assert source.exists()
 import lls_output_contract as output_contract  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
 

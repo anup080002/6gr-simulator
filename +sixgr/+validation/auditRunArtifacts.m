@@ -627,6 +627,9 @@ if ~isempty(files)
 end
 for i = 1:numel(files)
     pathValue = fullfile(files(i).folder, files(i).name);
+    if sixgr.runtime.isNestedExecutionPath(rootRunFolder, pathValue)
+        continue;
+    end
     try
         T = readtable(pathValue, "VariableNamingRule", "preserve", "TextType", "string");
     catch
@@ -659,8 +662,119 @@ for i = 1:numel(files)
         plotAbs = localNormalizeRelativePath(localRelativePath(fullfile(rootRunFolder, strrep(char(plotRel), "/", filesep)), rootRunFolder));
         if ~isKey(lineageMap, char(plotAbs))
             lineageMap(char(plotAbs)) = char(sourceRel);
-        end
     end
+end
+end
+lineageMap = localAddArtifactGenerationLineage(lineageMap, rootRunFolder);
+lineageMap = localAddComponentMirrorLineage(lineageMap, rootRunFolder);
+end
+
+function lineageMap = localAddArtifactGenerationLineage(lineageMap, rootRunFolder)
+resultsPath = fullfile(rootRunFolder, "artifact_generation", ...
+    "artifact_generation_results.csv");
+if ~isfile(resultsPath)
+    return;
+end
+try
+    T = readtable(resultsPath, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+catch
+    return;
+end
+required = ["Domain","Component","Profile","ArtifactType", ...
+    "Status","OutputRelativePath","SHA256","SourceSHA256"];
+if ~all(ismember(required, string(T.Properties.VariableNames)))
+    return;
+end
+types = upper(strtrim(string(T.ArtifactType)));
+statuses = upper(strtrim(string(T.Status)));
+for idx = find(types == "PNG" & statuses == "PASS").'
+    sameContract = string(T.Domain) == string(T.Domain(idx)) & ...
+        string(T.Component) == string(T.Component(idx)) & ...
+        string(T.Profile) == string(T.Profile(idx)) & ...
+        types == "CSV" & statuses == "PASS";
+    candidates = find(sameContract);
+    if numel(candidates) ~= 1
+        continue;
+    end
+    imageRel = localNormalizeRelativePath(string(T.OutputRelativePath(idx)));
+    sourceRel = localNormalizeRelativePath(string(T.OutputRelativePath(candidates)));
+    imagePath = fullfile(rootRunFolder, strrep(char(imageRel), "/", filesep));
+    sourcePath = fullfile(rootRunFolder, strrep(char(sourceRel), "/", filesep));
+    if ~isfile(imagePath) || ~isfile(sourcePath)
+        continue;
+    end
+    if ~strcmpi(localFileSHA256(imagePath), string(T.SHA256(idx))) || ...
+            ~strcmpi(localFileSHA256(sourcePath), ...
+            string(T.SourceSHA256(idx)))
+        continue;
+    end
+    lineageMap(char(imageRel)) = char(sourceRel);
+end
+end
+
+function lineageMap = localAddComponentMirrorLineage(lineageMap, rootRunFolder)
+manifestPath = fullfile(rootRunFolder, "reports", "csv", ...
+    "component_artifact_publication_manifest.csv");
+if ~isfile(manifestPath)
+    return;
+end
+try
+    T = readtable(manifestPath, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+catch
+    return;
+end
+required = ["ArtifactType","CanonicalRelativePath", ...
+    "PublishedRelativePath","CanonicalSHA256","PublishedSHA256", ...
+    "MirrorOnly","CanonicalAuthorityRetained", ...
+    "SourceTruthClassification","PublishStatus"];
+if ~all(ismember(required, string(T.Properties.VariableNames)))
+    return;
+end
+for idx = 1:height(T)
+    if lower(strtrim(string(T.ArtifactType(idx)))) ~= "image" || ...
+            ~localLogicalScalar(T.MirrorOnly(idx)) || ...
+            ~localLogicalScalar(T.CanonicalAuthorityRetained(idx)) || ...
+            lower(strtrim(string(T.SourceTruthClassification(idx)))) ~= ...
+            "byte_identical_canonical_mirror" || ...
+            upper(strtrim(string(T.PublishStatus(idx)))) ~= ...
+            "PUBLISHED_HASH_VERIFIED"
+        continue;
+    end
+    canonicalRel = localNormalizeRelativePath( ...
+        string(T.CanonicalRelativePath(idx)));
+    publishedRel = localNormalizeRelativePath( ...
+        string(T.PublishedRelativePath(idx)));
+    if ~isKey(lineageMap, char(canonicalRel))
+        continue;
+    end
+    canonicalPath = fullfile(rootRunFolder, ...
+        strrep(char(canonicalRel), "/", filesep));
+    publishedPath = fullfile(rootRunFolder, ...
+        strrep(char(publishedRel), "/", filesep));
+    if ~isfile(canonicalPath) || ~isfile(publishedPath)
+        continue;
+    end
+    canonicalHash = localFileSHA256(canonicalPath);
+    publishedHash = localFileSHA256(publishedPath);
+    if ~strcmpi(canonicalHash, publishedHash) || ...
+            ~strcmpi(canonicalHash, string(T.CanonicalSHA256(idx))) || ...
+            ~strcmpi(publishedHash, string(T.PublishedSHA256(idx)))
+        continue;
+    end
+    lineageMap(char(publishedRel)) = lineageMap(char(canonicalRel));
+end
+end
+
+function value = localLogicalScalar(raw)
+if islogical(raw)
+    value = logical(raw);
+elseif isnumeric(raw)
+    value = raw ~= 0;
+else
+    value = any(lower(strtrim(string(raw))) == ["true","1","yes"]);
+end
 end
 
 function name = localFirstColumn(T, candidates)
@@ -672,7 +786,6 @@ for candidate = string(candidates(:)).'
         name = names(idx);
         return;
     end
-end
 end
 end
 
@@ -843,7 +956,11 @@ for i = 1:numel(patterns)
     files = dir(fullfile(rootRunFolder, "**", char(patterns(i))));
     files = files(~[files.isdir]);
     for k = 1:numel(files)
-        rel = localRelativePath(fullfile(files(k).folder, files(k).name), rootRunFolder);
+        absolutePath = fullfile(files(k).folder, files(k).name);
+        if sixgr.runtime.isNestedExecutionPath(rootRunFolder, absolutePath)
+            continue;
+        end
+        rel = localRelativePath(absolutePath, rootRunFolder);
         relPaths(end + 1, 1) = localNormalizeRelativePath(rel); %#ok<AGROW>
     end
 end

@@ -106,9 +106,8 @@ if strlength(strtrim(string(p.Results.ExecutionID))) > 0
         "ExecutionID", string(p.Results.ExecutionID), ...
         "ScenarioID", scenarioName, ...
         "ConfigHash", string(p.Results.ScenarioConfigHash));
-    result = sixgr.runtime.bindInPathArtifactIdentity(result, identity);
-    result.ExecutionID = identity.ExecutionID;
-    result.ScenarioConfigHash = identity.ConfigHash;
+    result = sixgr.channel.buildInPathChannelRFResult( ...
+        cfg, result, p.Results.RuntimeTrials, identity);
 end
 
 if logical(p.Results.WriteArtifacts)

@@ -58,7 +58,8 @@ if opt.SaveCSV
         "StrictMode", localStrictMode(details), ...
         "MeasurementWindowSec", localMeasurementWindowSec(details, rawKPI), ...
         "WarmupDurationSec", localWarmupDurationSec(details), ...
-        "EffectiveBandwidthHz", localEffectiveBandwidthHz(details));
+        "EffectiveBandwidthHz", localEffectiveBandwidthHz(details), ...
+        "FeatureApplicability", localFeatureApplicability(details));
     kpiLineage = localBuildKPILineageTable(kpiRecon.ReconstructionSummary);
 
     reportCSVDir = localKPIReportCSVDir(runFolder);
@@ -293,14 +294,16 @@ rows.KPIName = localColumnOrDefault(recon, "KPIName", strings(n, 1));
 rows.Direction = localColumnOrDefault(recon, "Direction", strings(n, 1));
 rows.FormulaId = localColumnOrDefault(recon, "FormulaId", strings(n, 1));
 rows.FormulaVersion = localColumnOrDefault(recon, "FormulaVersion", strings(n, 1));
+rows.Applicable = localColumnOrDefault(recon, "Applicable", true(n, 1));
+rows.ApplicabilityReason = localColumnOrDefault(recon, "ApplicabilityReason", strings(n, 1));
 rows.Value = localColumnOrDefault(recon, "Value", nan(n, 1));
 rows.NumeratorValue = localColumnOrDefault(recon, "NumeratorValue", nan(n, 1));
 rows.DenominatorValue = localColumnOrDefault(recon, "DenominatorValue", nan(n, 1));
 rows.AggregationDurationSec = localColumnOrDefault(recon, "AggregationDurationSec", nan(n, 1));
 rows.DurationSource = localColumnOrDefault(recon, "DurationSource", strings(n, 1));
-rows.RadioDurationOk = isfinite(double(rows.AggregationDurationSec)) & double(rows.AggregationDurationSec) > 0 & ...
+rows.RadioDurationOk = ~logical(rows.Applicable) | (isfinite(double(rows.AggregationDurationSec)) & double(rows.AggregationDurationSec) > 0 & ...
     ~contains(lower(string(rows.DurationSource)), "unavailable") & ...
-    ~contains(lower(string(rows.DurationSource)), "wall");
+    ~contains(lower(string(rows.DurationSource)), "wall"));
 rows.SourceTablePaths = localColumnOrDefault(recon, "SourceTablePaths", strings(n, 1));
 rows.SourceRowCount = localColumnOrDefault(recon, "SourceRowCount", zeros(n, 1));
 rows.EligibleRowCount = localColumnOrDefault(recon, "EligibleRowCount", zeros(n, 1));
@@ -381,6 +384,20 @@ end
 
 function cfg = localConfig(details)
 cfg = sixgr.util.structGet(details, "Config", struct());
+end
+
+function applicability = localFeatureApplicability(details)
+cfg = localConfig(details);
+fixedLinkOnly = logical(sixgr.util.structGet(cfg, "run.fixedLinkCampaignOnly", false));
+protocolEnabled = logical(sixgr.util.structGet(cfg, "protocol.enabled", false)) && ...
+    logical(sixgr.util.structGet(cfg, "protocol.strict", false));
+applicability = struct( ...
+    "HARQ", logical(sixgr.util.structGet(cfg, "phy.harq.enable", ...
+        sixgr.util.structGet(cfg, "mac.harq.enable", true))), ...
+    "Scheduler", ~fixedLinkOnly, ...
+    "Latency", ~fixedLinkOnly, ...
+    "MAC", protocolEnabled, ...
+    "Application", protocolEnabled);
 end
 
 function tf = localStrictMode(details)

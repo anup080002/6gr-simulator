@@ -16,12 +16,16 @@ componentMirrorRoots = ["air_interface","beamforming", ...
     "frame_grid","waveform","l3","channel","rf", ...
     "mac_harq_scheduler","l2","traffic","validation", ...
     "component_anchors"];
-immutableRoots = ["runtime", componentMirrorRoots];
+% raw/ is the cryptographically indexed, immutable execution snapshot.
+% Finalization and recovery may annotate derived reports repeatedly, but
+% must never rewrite a raw table after raw_evidence_index.csv is sealed.
+immutableRoots = ["runtime", "raw", componentMirrorRoots];
 
 summary = struct( ...
     "ScannedCount", 0, ...
     "AnnotatedCount", 0, ...
     "SkippedImmutableCount", 0, ...
+    "SkippedNestedExecutionCount", 0, ...
     "UnreadableCount", 0, ...
     "RefreshedLineageCount", 0);
 
@@ -30,6 +34,11 @@ normalizedRoot = strip(replace(runFolder, "\", "/"), "right", "/");
 for i = 1:numel(files)
     summary.ScannedCount = summary.ScannedCount + 1;
     pathValue = string(fullfile(files(i).folder, files(i).name));
+    if sixgr.runtime.isNestedExecutionPath(runFolder, pathValue)
+        summary.SkippedNestedExecutionCount = ...
+            summary.SkippedNestedExecutionCount + 1;
+        continue;
+    end
     normalizedFile = replace(pathValue, "\", "/");
     relativePath = normalizedFile;
     if startsWith(lower(normalizedFile), lower(normalizedRoot + "/"))
@@ -88,6 +97,9 @@ refreshed = 0;
 files = dir(fullfile(runFolder, "**", "*plot_lineage.csv"));
 for fileIndex = 1:numel(files)
     lineagePath = string(fullfile(files(fileIndex).folder, files(fileIndex).name));
+    if sixgr.runtime.isNestedExecutionPath(runFolder, lineagePath)
+        continue;
+    end
     try
         T = readtable(lineagePath, "VariableNamingRule", "preserve", ...
             "TextType", "string");

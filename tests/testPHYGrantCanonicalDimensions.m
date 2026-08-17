@@ -287,6 +287,8 @@ cfg.phy.pdsch.symbolAllocation = [2 10];
 cfg.phy.pdsch.modulation = "QPSK";
 cfg.phy.pdsch.codeRate = 0.587890625;
 cfg.phy.pdsch.enablePTRS = false;
+cfg.phy.pdsch.precoding.normalizationConvention = "unit_frobenius";
+cfg.phy.pdsch.precoderNormalizationConvention = "unit_frobenius";
 cfg.phy.csirs.enable = false;
 cfg.phy.pusch.enable = true;
 cfg.phy.pusch.prbSet = 0:5;
@@ -294,6 +296,8 @@ cfg.phy.pusch.symbolAllocation = [2 10];
 cfg.phy.pusch.modulation = "QPSK";
 cfg.phy.pusch.codeRate = 0.587890625;
 cfg.phy.pusch.enablePTRS = false;
+cfg.phy.pusch.precoding.normalizationConvention = "unit_frobenius";
+cfg.phy.pusch.precoderNormalizationConvention = "unit_frobenius";
 end
 
 function grant = localGrant(direction, rnti, nLayers)

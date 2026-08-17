@@ -57,6 +57,17 @@ pucch.ReceiverUsable = true;
 pucch.StrictReceiverEvidenceOk = true;
 raw.PDCCH = pdcch;
 raw.PUCCH = pucch;
+puschUCI = common;
+puschUCI.UCIOnPUSCHApplied = true(2,1);
+puschUCI.UCIOnPUSCHFeedbackBitCount = ones(2,1);
+puschUCI.ExpectedHARQACKBits = ["1";"0"];
+puschUCI.DecodedHARQACKBits = ["1";"0"];
+puschUCI.HARQACKContentMatch = true(2,1);
+puschUCI.HARQACKDecodeStatus = repmat("decoded_match",2,1);
+puschUCI.UCIOnPUSCHEvidenceSource = repmat("same_waveform_pusch_rx_crc",2,1);
+puschUCI.CRCApplicable = true(2,1);
+puschUCI.CRCPass = true(2,1);
+raw.UL = puschUCI;
 
 for component = ["sib1","prach","srs","trs"]
     result = sixgr.truth.evaluateInPathComponentEvidence(cfg, raw, component);
@@ -69,6 +80,30 @@ control = sixgr.truth.evaluateInPathControlEvidence(cfg, raw, ...
     "EnablePDCCH",true, "EnablePUCCH",true);
 assert(control.StrictOk && ~control.LaunchedSupplementalWaveform && ...
     height(control.SummaryTable) == 2);
+
+control = sixgr.truth.evaluateInPathControlEvidence(cfg, raw, ...
+    "EnablePDCCH",false, "EnablePUCCH",false, "EnablePUSCHUCI",true);
+assert(control.StrictOk && height(control.SummaryTable) == 1 && ...
+    string(control.SummaryTable.SignalFamily) == "PUSCH_UCI", ...
+    "Transferred HARQ-ACK must qualify through its actual PUSCH receiver rows.");
+badPUSCHUCI = raw;
+badPUSCHUCI.UL.HARQACKDecodeStatus(2) = "decoded_mismatch";
+control = sixgr.truth.evaluateInPathControlEvidence(cfg, badPUSCHUCI, ...
+    "EnablePDCCH",false, "EnablePUCCH",false, "EnablePUSCHUCI",true);
+assert(~control.StrictOk, ...
+    "A mismatched same-waveform PUSCH UCI row must fail closed.");
+badPUSCHCRC = raw;
+badPUSCHCRC.UL.CRCPass(2) = false;
+control = sixgr.truth.evaluateInPathControlEvidence(cfg, badPUSCHCRC, ...
+    "EnablePDCCH",false, "EnablePUCCH",false, "EnablePUSCHUCI",true);
+assert(~control.StrictOk, ...
+    "A failed production-schema PUSCH transport-block CRC must fail UCI evidence closed.");
+missingPUSCHCRC = raw;
+missingPUSCHCRC.UL(:, ["CRCApplicable","CRCPass"]) = [];
+control = sixgr.truth.evaluateInPathControlEvidence(cfg, missingPUSCHCRC, ...
+    "EnablePDCCH",false, "EnablePUCCH",false, "EnablePUSCHUCI",true);
+assert(~control.StrictOk, ...
+    "PUSCH UCI evidence without an auditable CRC outcome must fail closed.");
 
 badPUCCH = raw;
 badPUCCH.PUCCH.DetectionUsable(:) = false;

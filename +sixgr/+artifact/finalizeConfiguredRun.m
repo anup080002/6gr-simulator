@@ -27,7 +27,6 @@ if ~logical(sixgr.util.structGet(engine, "enabled", false))
 end
 
 localRequireLiteral(engine, "source_policy", "runtime_memory_only");
-localRequireLiteral(engine, "image_format", "png");
 localRequireLiteral(engine, "publish_root", "components");
 localRequireLiteral(engine, "legacy_reference_usage", "coverage_inventory_only");
 if logical(sixgr.util.structGet(engine, "allow_svg", true))
@@ -49,6 +48,13 @@ catalogScope = lower(strtrim(string(sixgr.util.structGet( ...
 if ~ismember(catalogScope, ["phase_pack", "runtime_in_path"])
     error("sixgr:artifact:UnsupportedCatalogScope", ...
         "Unsupported artifact catalog_scope '%s'.", catalogScope);
+end
+if catalogScope == "runtime_in_path"
+    localRequireLiteral(engine, "image_format", "none");
+    localRequireLiteral(engine, "raster_authority", ...
+        "post_run_csv_contract_materializer");
+else
+    localRequireLiteral(engine, "image_format", "png");
 end
 contractRoot = string(sixgr.util.structGet(engine, "contract_root", ""));
 expectedContractRoot = "tests/vectors";

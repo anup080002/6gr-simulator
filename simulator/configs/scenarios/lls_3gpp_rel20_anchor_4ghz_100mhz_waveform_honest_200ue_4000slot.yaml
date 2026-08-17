@@ -272,6 +272,7 @@ mimo:
 # operating point inherited by every bounded anchor scenario.
 pdsch:
   layer_count: 2
+  rank: 2
   modulation: 256QAM
 
 pusch:
@@ -279,6 +280,14 @@ pusch:
   num_layers: 2
   num_antenna_ports: 2
   modulation: 256QAM
+
+# Coupled execution consumes the monitored control-region allocation from
+# YAML.  It must not infer a PDCCH region from a CORESET duration or from a
+# MATLAB default because either would bypass the scenario authority.
+pdcch:
+  enabled: true
+  start_symbol: 0
+  num_symbols: 2
 
 system:
   queueMaxBits: 200000000

@@ -1,0 +1,20 @@
+{
+  "run_id": 9269979857,
+  "run_folder": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\results\\lls\\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02",
+  "storage_backend": "results_folder",
+  "verification_only": false,
+  "materializer_version": "2026-08-16-contract-v36-probability-domain",
+  "created_count": 499,
+  "old_rasters_removed": 0,
+  "stale_raster_lineage_rows_retired": 0,
+  "manifest_path": "reports/csv/contract_materialization_manifest.csv",
+  "coverage_path": "reports/csv/contract_materialization_coverage.csv",
+  "tables_total": 193,
+  "tables_available": 173,
+  "tables_policy_disabled": 20,
+  "tables_missing": 0,
+  "charts_total": 368,
+  "charts_available": 249,
+  "charts_policy_disabled": 119,
+  "charts_missing": 0
+}

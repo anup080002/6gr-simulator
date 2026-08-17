@@ -111,7 +111,7 @@ transformError(validTransform) = abs(gridN(validTransform) - ...
     max(abs(gridN(validTransform)), realmin);
 transformOk = validTransform & transformError <= 1e-9;
 add("sample_to_grid_transform", all(transformOk), localFiniteMax(transformError), ...
-    "replay grid variance is not the calibrated OFDM transform of the same pre-front-end sample variance");
+    localTransformMismatchReason(transformOk, sampleN, gridN, gain, transformError));
 
 applied = double(T.AppliedNoiseSNR_dB);
 referencePlane = string(T.SNRReferencePlane);
@@ -129,7 +129,8 @@ snrRows = sampleRows | gridRows;
 snrOk = snrRows & isfinite(applied) & isfinite(expected) & ...
     snrError <= double(opt.Tolerance_dB);
 add("applied_snr_same_plane_identity", all(snrOk), localFiniteMax(snrError), ...
-    "AppliedNoiseSNR_dB does not equal signal/noise evidence from its declared reference plane");
+    localSNRMismatchReason(snrOk, referencePlane, applied, expected, ...
+        signalPower, signalEnergy, sampleN, gridN));
 
 direction = upper(strtrim(string(T.Direction)));
 alias = string(T.NoiseVarianceAliasOf);
@@ -196,4 +197,29 @@ if isempty(values)
 else
     value = string(prefix) + ": " + strjoin(string(values), ", ");
 end
+end
+
+function reason = localTransformMismatchReason(ok, sampleN, gridN, gain, errorValue)
+idx = find(~ok, 1, "first");
+if isempty(idx)
+    reason = "";
+    return;
+end
+reason = sprintf(['row %d replay grid variance %.17g is not sample variance ' ...
+    '%.17g times calibrated gain %.17g (relative error %.17g)'], ...
+    idx, gridN(idx), sampleN(idx), gain(idx), errorValue(idx));
+end
+
+function reason = localSNRMismatchReason(ok, plane, applied, expected, ...
+        signalPower, signalEnergy, sampleN, gridN)
+idx = find(~ok, 1, "first");
+if isempty(idx)
+    reason = "";
+    return;
+end
+reason = sprintf(['row %d plane=%s applied=%.17g expected=%.17g ' ...
+    'sample_signal_power=%.17g occupied_re_energy=%.17g ' ...
+    'sample_noise=%.17g grid_noise=%.17g'], ...
+    idx, char(plane(idx)), applied(idx), expected(idx), ...
+    signalPower(idx), signalEnergy(idx), sampleN(idx), gridN(idx));
 end

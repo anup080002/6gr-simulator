@@ -39,10 +39,12 @@ canonical_control:
     notes: Functional wiring gate only; probability estimates and publication claims remain not evaluated.
   run:
     n_frames: 2
-    total_slots: 21
-    total_time_ms: 10.5
-    measurement_slots: 21
-    n_subframes: 11
+    # Thirty slots include two complete UL data occasions and close the
+    # K1=4 feedback due at slot 30 without opening the next DL data grant.
+    total_slots: 30
+    total_time_ms: 15
+    measurement_slots: 30
+    n_subframes: 15
     monte_carlo_iterations: 1
     num_seeds: 1
     seed_list: [104729]
@@ -58,6 +60,11 @@ canonical_control:
     num_trps: 1
     num_ues: 2
     execution_model: slot_coupled_truth
+  control:
+    # Override the production parent's standalone-PUCCH qualification for
+    # this explicit collision/transfer scenario. The top-level runtime gate
+    # below remains the PUSCH-UCI authority.
+    pucch_required: false
   antenna:
     bs_array_geometry: ULA
     ue_array_geometry: ULA
@@ -84,9 +91,20 @@ canonical_control:
     # The wiring gate therefore uses the causal measured dominant rank-one
     # signature that its one-layer-per-user scheduler actually transmits.
     mu_mimo_spatial_signature_mode: dominant_scheduled_rank
+    ul_mu_mimo_receive_processing_mode: full_dimensional_per_re_irc
     panel_count: 1
     phase07_strict:
       enabled: true
+      profile_id: fr1_typeI_single_panel_strict
+      specification_profile: 3GPP_R18_MIMO_CSI_V1
+      direction: DL
+      codebook_type: typeI-SinglePanel
+      ports: 2
+      panels: 1
+      n1: 1
+      n2: 1
+      o1: 1
+      o2: 1
       max_rank: 1
       rank_domain: [1]
       csi_report:
@@ -154,6 +172,13 @@ validation:
   fixed_snr_sweep_required: false
   geometry_evidence_required: false
 
+# This bounded gate validates HARQ-ACK transferred onto the same PUSCH
+# waveform. Standalone PUCCH remains a separate required qualification and
+# is never inferred or fabricated from these transferred control bits.
+control_gating:
+  pucch_required: false
+  pusch_uci_required: true
+
 sweeps_and_matrix:
   snr_sweep:
     enabled: false
@@ -186,3 +211,21 @@ pusch:
   tpmi: 0
   dmrs_port_set: [0]
   xoh_pusch: 18
+
+# Exercise the standards-defined UCI-on-PUSCH collision path in this
+# complete-graph gate.  DL slot 16 uses K1=4, which makes its HARQ-ACK due
+# on the already PDCCH-authorized PUSCH in UL slot 20.  The production
+# runtime must reserve the exact pending feedback bits after DCI binding,
+# suppress the duplicate standalone PUCCH, and consume only the PUSCH
+# receiver's decoded UCI bits.
+pucch_resources:
+  harq_ack:
+    k1_slots: 4
+  overlap_policy:
+    detect_pucch_pusch_overlap: true
+    uci_on_pusch_enabled: true
+    unsupported_overlap_policy: reject_before_waveform
+
+tdd_timing:
+  dl_harq_feedback_k1: [4]
+  k1_selection_policy: first_valid_configured

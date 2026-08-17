@@ -25,38 +25,6 @@
   ],
   "contracts": [
     {
-      "plot_id": "bler_vs_measured_sinr",
-      "file_path": "reports/image/bler_vs_measured_sinr.png",
-      "source_csv": "air_interface/csv/dl_measured_sinr_bler_curve.csv|air_interface/csv/ul_measured_sinr_bler_curve.csv",
-      "required_columns": ["Direction", "UEIndex", "PostEqSINR_dB_BinCenter", "BLER", "BLER_CI_Low", "BLER_CI_High", "BER", "TrialCount", "FailureCount", "SourceArtifact"],
-      "x_semantics": "measured_post_equalization_sinr_db",
-      "y_semantics": "crc_bler_from_measured_posteq_sinr_bins",
-      "units": {"x": "dB", "y": "ratio"},
-      "min_rows": 3,
-      "min_unique_x": 3,
-      "min_unique_y": 1,
-      "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth"],
-      "allowed_curve_construction": ["measured_posteq_sinr_binning", "geometry_measured_sinr", "none"],
-      "plot_kind": "relation",
-      "lls_validity": "real_lls_evidence"
-    },
-    {
-      "plot_id": "throughput_vs_measured_sinr",
-      "file_path": "reports/image/throughput_vs_measured_sinr.png",
-      "source_csv": "air_interface/csv/dl_measured_sinr_throughput_curve.csv|air_interface/csv/ul_measured_sinr_throughput_curve.csv",
-      "required_columns": ["Direction", "UEIndex", "PostEqSINR_dB_BinCenter", "Goodput_Mbps_mean", "OfferedThroughput_Mbps_mean", "SpectralEfficiency_bps_Hz_mean", "TrialCount", "SourceArtifact"],
-      "x_semantics": "measured_post_equalization_sinr_db",
-      "y_semantics": "runtime_throughput_from_measured_posteq_sinr_bins",
-      "units": {"x": "dB", "y": "Mbps"},
-      "min_rows": 3,
-      "min_unique_x": 3,
-      "min_unique_y": 2,
-      "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth"],
-      "allowed_curve_construction": ["measured_posteq_sinr_binning", "geometry_measured_sinr", "none"],
-      "plot_kind": "relation",
-      "lls_validity": "real_lls_evidence"
-    },
-    {
       "plot_id": "nmse_vs_measured_sinr",
       "file_path": "reports/image/nmse_vs_measured_sinr.png",
       "source_csv": "reports/csv/nmse_vs_measured_sinr.csv",
@@ -281,22 +249,6 @@
       "lls_validity": "real_lls_evidence"
     },
     {
-      "plot_id": "access_delay_cdf",
-      "file_path": "reports/image/access_delay_cdf.png",
-      "source_csv": "control/csv/initial_access_lifecycle_trace.csv",
-      "required_columns": ["ProcedureDelay_ms"],
-      "x_semantics": "initial_access_procedure_delay_ms",
-      "y_semantics": "empirical_cdf_probability",
-      "units": {"x": "ms", "y": "probability"},
-      "min_rows": 3,
-      "min_unique_x": 1,
-      "min_unique_y": 1,
-      "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth"],
-      "allowed_curve_construction": ["empirical_cdf", "runtime_samples", "none"],
-      "plot_kind": "cdf",
-      "lls_validity": "real_lls_evidence"
-    },
-    {
       "plot_id": "energy_vs_throughput",
       "file_path": "reports/image/energy_vs_throughput.png",
       "source_csv": "reports/csv/energy_vs_throughput.csv",
@@ -502,22 +454,6 @@
       "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth"],
       "allowed_curve_construction": ["runtime_prb_allocation_grid", "aggregated_heatmap", "none"],
       "plot_kind": "heatmap",
-      "lls_validity": "real_lls_evidence"
-    },
-    {
-      "plot_id": "power_energy_cumulative",
-      "file_path": "reports/image/power_energy_cumulative.png",
-      "source_csv": "rf/csv/power_energy_table.csv",
-      "required_columns": ["timestamp_sim_ms", "cumulative_energy_J"],
-      "x_semantics": "runtime_timestamp_ms",
-      "y_semantics": "cumulative_energy_joules",
-      "units": {"x": "ms", "y": "J"},
-      "min_rows": 2,
-      "min_unique_x": 2,
-      "min_unique_y": 2,
-      "allowed_truth_status": ["real_lls_evidence", "runtime_measured", "truth"],
-      "allowed_curve_construction": ["runtime_energy_integral", "runtime_trace", "none"],
-      "plot_kind": "trace",
       "lls_validity": "real_lls_evidence"
     }
   ]

@@ -240,19 +240,13 @@ for i = 1:numel(names)
 end
 localCoverageLog("table_artifacts_written", runFolder);
 
+% Raster production has one authority: the post-run Python contract
+% materializer consumes the verified CSV tables below.  Do not render legacy
+% MATLAB PNGs here; otherwise a future run can mix pre-contract figures with
+% the CSV-derived raster set before replacement and lineage verification.
 heatmapImagePath = "";
 energyImagePath = "";
-if ~isempty(tables.prb_allocation_heatmap)
-    localCoverageLog("writing_prb_heatmap", runFolder);
-    heatmapImagePath = fullfile(layout.ReportImageDir, "prb_allocation_heatmap.png");
-    localWritePRBHeatmapFigure(tables.prb_allocation_heatmap, heatmapImagePath, "reports/image/prb_allocation_heatmap.png");
-end
-if ~isempty(tables.power_energy_table)
-    localCoverageLog("writing_power_energy_figure", runFolder);
-    energyImagePath = fullfile(layout.ReportImageDir, "power_energy_cumulative.png");
-    localWritePowerEnergyFigure(tables.power_energy_table, energyImagePath, "reports/image/power_energy_cumulative.png");
-end
-localCoverageLog("figure_artifacts_written", runFolder);
+localCoverageLog("legacy_matlab_raster_emission_suppressed", runFolder);
 
 provenanceTables = sixgr.truth.buildLLSReportingProvenanceTables(runFolder, tables, logicalPaths, contract.Outputs, meta);
 provenanceTables.visual_artifact_integrity = sixgr.visual.verifyVisualArtifacts(runFolder, provenanceTables.plot_manifest);
@@ -318,11 +312,16 @@ localCoverageLog("measurement_sidecars_written", runFolder);
 localReconcileLiveStageControlAttemptCounts(runFolder);
 localCoverageLog("live_stage_control_counts_reconciled", runFolder);
 
-% buildPhase7ReadinessArtifacts runs before the late coverage figures are
-% emitted. Refresh publication readiness now so completeness is based on
-% the final filesystem, not on the pre-publication scan.
+% The first Phase-7 pass supplies tables consumed while coverage is being
+% assembled.  Rebuild it after every late table, plot-lineage record and
+% measurement sidecar has been persisted.  Otherwise phase7_truth_gates.csv
+% describes a pre-publication filesystem while the readiness summary
+% describes the final one.  This pass consumes only same-run evidence and
+% does not manufacture a missing gate.
+finalPhase7 = sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
+tables.phase7_truth_gates = sixgr.runtime.Phase7TruthEvaluator.table(finalPhase7.Gates);
 publicationReadiness = sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
-localCoverageLog("publication_readiness_refreshed", runFolder);
+localCoverageLog("phase7_and_publication_readiness_refreshed", runFolder);
 
 inventory = localBuildArtifactInventory(runFolder);
 localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", inventory);
@@ -443,6 +442,11 @@ meta.run_id = double(localFirstFinite([ ...
 meta.run_tag = localFirstNonEmptyString( ...
     string(sixgr.util.structGet(cfg, "run.runTag", "")), ...
     string(sixgr.util.structGet(storedMeta, "run_tag", "")));
+if strlength(strtrim(meta.run_tag)) == 0
+    [~, runLeaf] = fileparts(char(string(runFolder)));
+    meta.run_tag = string(runLeaf);
+end
+meta.logical_run_id = meta.run_tag;
 meta.scenario_id = string(scfg.ScenarioID);
 meta.scenario_variant_id = string(localScenarioGet(scfg, "meta.scenario_id", scfg.ScenarioID));
 meta.scenario_name = string(localScenarioGet(scfg, "meta.scenario_name", localScenarioGet(scfg, "meta.description", scfg.ScenarioID)));
@@ -4157,14 +4161,18 @@ rows = localAppendMCSIssueRows(rows, src.DLGrants, "DL", "packet_flow/csv/live_d
 rows = localAppendMCSIssueRows(rows, src.ULTrials, "UL", "air_interface/csv/ul_pusch_trials.csv");
 rows = localAppendMCSIssueRows(rows, src.ULGrants, "UL", "packet_flow/csv/live_ul_scheduler_grants.csv");
 
-if istable(src.PUCCHGrants) && ~isempty(src.PUCCHGrants) && ~(istable(src.PUCCHTrials) && ~isempty(src.PUCCHTrials))
+grantDisposition = sixgr.truth.classifyPUCCHGrantDisposition( ...
+    src.PUCCHGrants, src.PUCCHTrials);
+if grantDisposition.UnresolvedCount > 0
     rows(end+1, 1) = localIssueRow( ... %#ok<AGROW>
         "pucch_grants_without_trial_rows", "medium", "PARTIAL", "control_channel_runtime", ...
-        "UL", NaN, NaN, "PUCCH", "runtime_trial_rows", string(height(src.PUCCHGrants)), ...
-        "Every scheduled PUCCH feedback grant needs a consumed trial row or an explicit unavailable reason", ...
+        "UL", NaN, NaN, "PUCCH", "unresolved_runtime_feedback_grants", ...
+        string(grantDisposition.UnresolvedCount), ...
+        ["Every scheduled PUCCH feedback grant needs a matched standalone receiver trial, " ...
+         "an exact same-waveform PUSCH-UCI decode consumed by HARQ state, or a finalized cancellation"], ...
         "packet_flow/csv/live_pucch_grants.csv", ...
-        "PUCCH grant stream exists but PUCCH trial stream is empty", ...
-        "Connect due-feedback processing to PUCCH trial export, or write an explicit unavailable state with owner and reason.");
+        "One or more scheduled feedback grants have no auditable receiver/state disposition", ...
+        "Connect each unresolved grant to its PUCCH trial, exact PUSCH-UCI transfer, or explicit finalized cancellation.");
 end
 
 if istable(tables.energy_root_cause_table) && ~isempty(tables.energy_root_cause_table)
@@ -5504,78 +5512,6 @@ else
 end
 end
 
-function localWritePRBHeatmapFigure(T, filePath, logicalPath)
-if ~(istable(T) && ~isempty(T))
-    return;
-end
-slotVals = unique(double(T.slot));
-rbVals = unique(double(T.rb_index));
-slotVals = sort(slotVals(:));
-rbVals = sort(rbVals(:));
-M = zeros(numel(rbVals), numel(slotVals));
-for i = 1:height(T)
-    r = find(rbVals == double(T.rb_index(i)), 1, "first");
-    c = find(slotVals == double(T.slot(i)), 1, "first");
-    if isempty(r) || isempty(c)
-        continue;
-    end
-    M(r, c) = M(r, c) + double(T.occupancy_count(i));
-end
-fig = figure("Visible", "off", "Color", "w");
-imagesc(slotVals, rbVals, M);
-axis xy;
-xlabel("Slot");
-ylabel("RB Index");
-title("PRB Allocation Heatmap");
-colorbar;
-cleanupFig = onCleanup(@() close(fig)); %#ok<NASGU>
-sixgr.util.exportFigureArtifact(fig, filePath, "Resolution", 160, "LogicalPath", logicalPath);
-end
-
-function localWritePowerEnergyFigure(T, filePath, logicalPath)
-if ~(istable(T) && ~isempty(T))
-    return;
-end
-entityTypeAll = string(localColumnAsText(T, "entity_type"));
-mask = entityTypeAll == "cell" | entityTypeAll == "site";
-if any(mask)
-    T = T(mask, :);
-end
-entityType = string(localColumnAsText(T, "entity_type"));
-entityID = localColumnAsDouble(T, "entity_id");
-validKeyRows = ~ismissing(entityType) & strlength(entityType) > 0 & isfinite(entityID);
-if ~any(validKeyRows)
-    return;
-end
-T = T(validKeyRows, :);
-fig = figure("Visible", "off", "Color", "w");
-hold on;
-entityType = string(localColumnAsText(T, "entity_type"));
-entityID = localColumnAsDouble(T, "entity_id");
-keys = unique(entityType + ":" + string(entityID));
-for i = 1:numel(keys)
-    key = keys(i);
-    mask = (entityType + ":" + string(entityID)) == key;
-    xAll = localColumnAsDouble(T, "timestamp_sim_ms");
-    yAll = localColumnAsDouble(T, "cumulative_energy_J");
-    x = double(xAll(mask));
-    y = double(yAll(mask));
-    keep = isfinite(x) & isfinite(y);
-    if ~any(keep)
-        continue;
-    end
-    plot(x(keep), y(keep), "LineWidth", 1.5, "DisplayName", char(key));
-end
-hold off;
-grid on;
-xlabel("Timestamp (ms)");
-ylabel("Cumulative Energy (J)");
-title("Cumulative Energy");
-legend("Location", "best");
-cleanupFig = onCleanup(@() close(fig)); %#ok<NASGU>
-sixgr.util.exportFigureArtifact(fig, filePath, "Resolution", 160, "LogicalPath", logicalPath);
-end
-
 function [registry, unavailable] = localBuildCoverageRegistry(runFolder, meta, src, tables, logicalPaths, heatmapImagePath, energyImagePath)
 specs = localRequestedOutputSpecs();
 rows = repmat(struct("output_name", "", "ui_section", "", "block_module", "", "required_flag", false, ...
@@ -5656,8 +5592,6 @@ for i = 1:height(registry)
     plotMissing = "";
     if outName == "prb_allocation_heatmap"
         plotMissing = string(localTernary(exist(fullfile(runFolder, "reports", "image", "prb_allocation_heatmap.png"), "file") ~= 2, "reports/image/prb_allocation_heatmap.png", ""));
-    elseif outName == "power_energy_table"
-        plotMissing = string(localTernary(exist(fullfile(runFolder, "reports", "image", "power_energy_cumulative.png"), "file") ~= 2, "reports/image/power_energy_cumulative.png", ""));
     end
     actualArtifacts = double(actualRows > 0);
     if logical(actualRows > 0) && (logical(jsonRequired) && logical(jsonPresent) || ~logical(jsonRequired))
@@ -5932,7 +5866,11 @@ for i = 1:numel(files)
     if files(i).isdir
         continue;
     end
-    rel = localPortablePath(string(erase(fullfile(files(i).folder, files(i).name), string(runFolder) + filesep)));
+    absolutePath = fullfile(files(i).folder, files(i).name);
+    if sixgr.runtime.isNestedExecutionPath(runFolder, absolutePath)
+        continue;
+    end
+    rel = localPortablePath(string(erase(absolutePath, string(runFolder) + filesep)));
     [~, ~, ext] = fileparts(files(i).name);
     ext = lower(string(ext));
     semanticState = localInventorySemanticState(rel, coverageRows, metricRows, plotStatusRows);
@@ -6337,10 +6275,6 @@ status = "unavailable";
 blocker = "backend_source_missing";
 if outName == "prb_allocation_heatmap" && heatmapImagePath ~= ""
     persistedFlag = persistedFlag && localArtifactExists(runFolder, "reports/image/prb_allocation_heatmap.png", heatmapImagePath);
-    exportSupported = exportSupported && persistedFlag;
-end
-if outName == "power_energy_table" && energyImagePath ~= ""
-    persistedFlag = persistedFlag && localArtifactExists(runFolder, "reports/image/power_energy_cumulative.png", energyImagePath);
     exportSupported = exportSupported && persistedFlag;
 end
 apiExposedFlag = localOutputAPIExposed(spec, persistedFlag, exportSupported, hasRuntimeRows);

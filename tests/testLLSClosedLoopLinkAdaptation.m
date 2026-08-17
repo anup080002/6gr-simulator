@@ -29,7 +29,7 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.delayModel", "zero");
 
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.enable", true);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.modulation", "QPSK");
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.codeRate", 0.12);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.codeRate", 120/1024);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", 0);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.nLayers", 1);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.numLayers", 1);
@@ -41,7 +41,9 @@ assert(all(ismember(["Modulation","TargetCodeRate","LinkAdaptationApplied","Link
     "DL closed-loop run must export adaptation state.");
 assert(all(string(dl.TrialTable.LinkAdaptationDomain) == "cqi"), ...
     "Default closed-loop DL adaptation must label CQI-space domain explicitly.");
-assert(any(dl.TrialTable.LinkAdaptationScheduled), "DL closed-loop run must schedule at least one adaptation update.");
+assert(any(dl.TrialTable.LinkAdaptationScheduled), ...
+    "DL closed-loop run must schedule at least one adaptation update. " + ...
+    localAdaptationTrace(dl.TrialTable));
 assert(any(dl.TrialTable.MCS(2:end) > dl.TrialTable.MCS(1)), ...
     "DL closed-loop AMC must increase MCS after observing good CSI.");
 assert(any(string(dl.TrialTable.Modulation(2:end)) ~= string(dl.TrialTable.Modulation(1))), ...
@@ -49,16 +51,21 @@ assert(any(string(dl.TrialTable.Modulation(2:end)) ~= string(dl.TrialTable.Modul
 
 cfg = sixgr.util.structSet(cfg, "phy.pusch.enable", true);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", "QPSK");
-cfg = sixgr.util.structSet(cfg, "phy.pusch.codeRate", 0.12);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.codeRate", 120/1024);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsIndex", 0);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.nLayers", 1);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.numLayers", 1);
 
 ul = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 3, "SNR_dB", 24);
 assert(istable(ul.TrialTable) && height(ul.TrialTable) == 3, "UL closed-loop run must produce trial rows.");
+assert(all(logical(ul.TrialTable.AdaptiveMode)) && ...
+    all(~logical(ul.TrialTable.FixedAnchorMode)), ...
+    "UL truth rows must preserve the same resolved adaptive/fixed-mode classification as DL rows.");
 assert(all(string(ul.TrialTable.LinkAdaptationDomain) == "cqi"), ...
     "Default closed-loop UL adaptation must label CQI-space domain explicitly.");
-assert(any(ul.TrialTable.LinkAdaptationScheduled), "UL closed-loop run must schedule at least one adaptation update.");
+assert(any(ul.TrialTable.LinkAdaptationScheduled), ...
+    "UL closed-loop run must schedule at least one adaptation update. " + ...
+    localAdaptationTrace(ul.TrialTable));
 assert(any(ul.TrialTable.MCS(2:end) > ul.TrialTable.MCS(1)), ...
     "UL closed-loop AMC must increase MCS after observing good CSI.");
 assert(any(string(ul.TrialTable.Modulation(2:end)) ~= string(ul.TrialTable.Modulation(1))), ...
@@ -83,4 +90,22 @@ assert(all(double(ulNoCQI.TrialTable.MCS) == double(ulNoCQI.TrialTable.MCS(1))),
     "UL closed-loop AMC must keep MCS fixed when measured CQI is unavailable.");
 
 ok = true;
+end
+
+function text = localAdaptationTrace(T)
+fields = ["Status", "Crash", "TruthStatus", "MCS", "WidebandCQI", "CQISource", "MCSSelectionSource", ...
+    "LinkAdaptationApplied", "LinkAdaptationScheduled", "PostEqSINR_dB", ...
+    "PostEqSINRSource", "ReceiverUsable", "DecodeAttempted", "DecodeUsable", ...
+    "StrictReceiverEvidenceOk", "ChannelEstimateAvailable", "EqualizationAvailable", ...
+    "DLSCHDecodeAvailable", "FailureReason", "Notes"];
+parts = strings(0, 1);
+for name = fields
+    if ~ismember(name, string(T.Properties.VariableNames))
+        continue;
+    end
+    value = string(T.(char(name)));
+    value(ismissing(value)) = "<missing>";
+    parts(end+1, 1) = name + "=[" + join(value(:).', ",") + "]"; %#ok<AGROW>
+end
+text = join(parts, "; ");
 end

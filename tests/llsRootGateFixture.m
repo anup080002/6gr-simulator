@@ -120,6 +120,14 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.rank", double(target.Rank));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.rank", double(target.Rank));
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.modulation", string(target.Modulation));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", string(target.Modulation));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", double(target.MCS));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsIndex", double(target.MCS));
+initialMCS = target.MCS;
+if scenarioMode == "adaptive_link"
+    initialMCS = effective.MCS;
+end
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.initialMCSIndex", double(initialMCS));
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.maximumMCSIndex", double(target.MCS));
 cfg = sixgr.util.structSet(cfg, "pdsch6gr.FixedMCSActive", scenarioMode ~= "adaptive_link");
 if startsWith(caseName, "hybrid_")
     cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign.enabled", true);
@@ -168,9 +176,10 @@ sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "summary_vs_raw_consisten
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "value_source_audit.csv"), ...
     table("simulation.link_direction", "observed", 'VariableNames', {'ParameterName','Status'}));
 
-trialT = localTrialTable(target, effective, "DL");
+adaptiveMode = string(scfg.scenario.scenario_mode) == "adaptive_link";
+trialT = localTrialTable(target, effective, "DL", adaptiveMode);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), trialT);
-ulTrialT = localTrialTable(target, effective, "UL");
+ulTrialT = localTrialTable(target, effective, "UL", adaptiveMode);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ulTrialT);
 
 ferT = table( ...
@@ -241,7 +250,7 @@ if logical(evidence.WriteFixedLinkCampaignSummary)
 end
 end
 
-function T = localTrialTable(target, effective, direction)
+function T = localTrialTable(target, effective, direction, adaptiveMode)
 n = 2;
 T = table((0:1).', repmat(effective.Layers, n, 1), repmat(effective.Rank, n, 1), ...
     repmat(string(effective.Modulation), n, 1), repmat(effective.MCS, n, 1), ...
@@ -257,12 +266,27 @@ T = table((0:1).', repmat(effective.Layers, n, 1), repmat(effective.Rank, n, 1),
     'IsWarmupFrame','RowLifecycleState','FinalizedFlag','PartialRowFlag','PrimaryTruthValueStatus', ...
     'MCSAuthority','ModulationAuthority','AppliedOperatingPointSource','ConfiguredMCSSelectionPolicy'});
 T.Direction = repmat(string(direction), height(T), 1);
+if logical(adaptiveMode)
+    T.ScheduledLayers(:) = effective.Layers;
+    T.ScheduledRank(:) = effective.Rank;
+    T.ScheduledModulation(:) = string(effective.Modulation);
+    T.ScheduledMCS(:) = effective.MCS;
+end
 T.TrialId = string((1:height(T)).');
 T.GrantId = "grant_" + string((1:height(T)).');
 T.SchedulerDecisionId = "sched_" + string((1:height(T)).');
 T.TxEvidenceId = "tx_" + string((1:height(T)).');
 T.RxEvidenceId = "rx_" + string((1:height(T)).');
 T.AdaptationEvidenceId = "cqi_" + string((1:height(T)).');
+T.CSIReportId = T.AdaptationEvidenceId;
+T.ActualMCSSelectionMode = repmat("cqi_driven", height(T), 1);
+T.MCSSelectionSource = repmat("receiver_measured_cqi", height(T), 1);
+T.LinkAdaptationScheduled = true(height(T), 1);
+T.LinkAdaptationApplied = true(height(T), 1);
+T.WidebandCQI = repmat(4, height(T), 1);
+T.CQIDerivedMCS = repmat(effective.MCS, height(T), 1);
+T.ReceiverEstimatedRank = repmat(effective.Rank, height(T), 1);
+T.EffectiveRankSource = repmat("runtime_receiver_decoded_rank", height(T), 1);
 T.TBSize_bits = [1000; 1000];
 T.CRCPass = [true; true];
 T.BitErrors = [0; 0];

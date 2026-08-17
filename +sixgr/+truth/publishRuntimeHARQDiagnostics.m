@@ -254,9 +254,57 @@ end
 
 function values = localTextColumn(T, name, fallback)
 if ismember(name, string(T.Properties.VariableNames))
-    values = string(T.(name));
+    raw = T.(name);
+    values = strings(height(T), 1);
+    if ischar(raw) && height(T) == 1
+        values(1) = string(raw);
+        return;
+    end
+    if ~iscell(raw)
+        converted = string(raw);
+        if numel(converted) ~= height(T)
+            error("sixgr:truth:InvalidRuntimeHARQTextColumn", ...
+                "Runtime HARQ column %s has %d values for %d rows.", ...
+                char(name), numel(converted), height(T));
+        end
+        values = converted(:);
+        return;
+    end
+    if numel(raw) ~= height(T)
+        error("sixgr:truth:InvalidRuntimeHARQTextColumn", ...
+            "Runtime HARQ cell column %s has %d values for %d rows.", ...
+            char(name), numel(raw), height(T));
+    end
+    for rowIndex = 1:height(T)
+        values(rowIndex) = localScalarText(raw{rowIndex}, name, rowIndex, fallback);
+    end
 else
     values = repmat(string(fallback), height(T), 1);
+end
+end
+
+function value = localScalarText(raw, name, rowIndex, fallback)
+% Legacy runtime tables may contain one extra scalar-cell wrapper around
+% empty character values.  Unwrap scalar cells without accepting arrays,
+% structs, or other ambiguous values as transport-block identities.
+while iscell(raw) && isscalar(raw)
+    raw = raw{1};
+end
+if isempty(raw)
+    value = string(fallback);
+elseif ischar(raw)
+    value = string(raw);
+elseif isstring(raw) && isscalar(raw)
+    value = raw;
+elseif (isnumeric(raw) || islogical(raw)) && isscalar(raw)
+    value = string(raw);
+else
+    error("sixgr:truth:InvalidRuntimeHARQTextValue", ...
+        "Runtime HARQ column %s row %d is not a scalar text value (class %s).", ...
+        char(name), rowIndex, class(raw));
+end
+if ismissing(value)
+    value = string(fallback);
 end
 end
 
@@ -278,8 +326,8 @@ end
 
 function value = localText(row, name, fallback)
 if ismember(name, string(row.Properties.VariableNames))
-    raw = string(row.(name));
-    if isscalar(raw) && ~ismissing(raw), value = raw; return; end
+    column = localTextColumn(row, name, fallback);
+    if isscalar(column) && ~ismissing(column), value = column; return; end
 end
 value = string(fallback);
 end

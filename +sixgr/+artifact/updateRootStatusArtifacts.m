@@ -20,7 +20,16 @@ if height(T) ~= 1
 end
 updates = localUpdates(status);
 for index = 1:size(updates, 1)
-    T.(char(updates{index, 1})) = localTableScalar(updates{index, 2});
+    fieldName = string(updates{index, 1});
+    try
+        T.(char(fieldName)) = localTableScalar(updates{index, 2});
+    catch cause
+        wrapped = MException("sixgr:artifact:RootStatusAssignmentFailed", ...
+            "Could not assign scalar root status field %s: %s", ...
+            fieldName, string(cause.message));
+        wrapped = addCause(wrapped, cause);
+        throw(wrapped);
+    end
 end
 jsonStatus = jsondecode(fileread(jsonPath));
 for index = 1:size(updates, 1)
@@ -44,7 +53,16 @@ names = ["ArtifactContractRequired"; "ArtifactContractExecuted"; ...
     "ArtifactContractErrorMessage"; "ArtifactCompletenessOk"; ...
     "ResultOk"; "PublicationQualified"; ...
     "PublicationQualificationStatus"; "StrictAnchorPass"; ...
-    "ResultStatusReason"];
+    "ResultStatusReason"; "FunctionalRunOk"; "WiringCoverageOk"; ...
+    "WiringCoverageStatus"; "NumericalValidationOk"; ...
+    "NumericalValidationStatus"; "ReferenceQualificationOk"; ...
+    "ReferenceQualificationStatus"; "ScientificQualificationOk"; ...
+    "ScientificQualificationStatus"; "TerminalPublicationGatesOk"; ...
+    "TerminalPublicationGateStatus"; "ProductionGradeOk"; ...
+    "PublicationReady"; "OverallQualificationStatus"; ...
+    "ProductionQualificationFailureReasons"; ...
+    "ProductionQualificationProducer"; ...
+    "ProductionQualificationSchemaVersion"];
 updates = cell(numel(names), 2);
 for index = 1:numel(names)
     updates{index, 1} = names(index);
@@ -53,11 +71,31 @@ end
 end
 
 function value = localTableScalar(value)
-if islogical(value)
+% Older persisted status JSON can contain [] for an absent optional text
+% field. jsondecode returns that token as a 0-by-0 double. In a one-row
+% status table the faithful scalar representation is an empty text cell,
+% not a zero-row numeric column.
+if isempty(value)
+    value = "";
+elseif islogical(value)
     value = logical(value);
 elseif isnumeric(value)
     value = double(value);
 else
-    value = string(value);
+    % jsondecode represents an empty JSON string as a 0-by-0 char array.
+    % string(char.empty) is a 0-by-0 string array, which cannot be assigned
+    % to the canonical one-row status table.  Preserve the semantic empty
+    % value as one scalar empty string; never truncate a genuinely
+    % multi-valued status field.
+    if ischar(value) && isempty(value)
+        value = "";
+    else
+        value = string(value);
+    end
+    if ~isscalar(value)
+        error("sixgr:artifact:RootStatusValueNotScalar", ...
+            "Root status fields must be scalar; received a %s value.", ...
+            mat2str(size(value)));
+    end
 end
 end

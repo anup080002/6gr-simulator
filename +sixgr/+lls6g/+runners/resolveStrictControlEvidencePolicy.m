@@ -1,5 +1,5 @@
 function policy = resolveStrictControlEvidencePolicy(scfg, cfg)
-%RESOLVESTRICTCONTROLEVIDENCEPOLICY Decide strict PDCCH/PUCCH evidence gates.
+%RESOLVESTRICTCONTROLEVIDENCEPOLICY Decide strict control evidence gates.
 % Keep this file ASCII-only.
 
 targetCases = localStringVector(localScenarioGet(scfg, "scenario.target_cases", strings(0, 1)));
@@ -13,23 +13,40 @@ objectives = objectives(strlength(objectives) > 0);
 controlTargets = ["control", "control_channels"];
 pdcchTargeted = any(targetCases == "pdcch") || any(ismember(targetCases, controlTargets));
 pucchTargeted = any(targetCases == "pucch") || any(ismember(targetCases, controlTargets));
+puschUCITargeted = any(targetCases == "pusch_uci");
 
 pdcchObjective = any(objectives == "pdcch_strict_validation");
 pucchObjective = any(objectives == "pucch_strict_validation");
+puschUCIObjective = any(objectives == "pusch_uci_strict_validation");
 pdcchRequired = localPDCCHRequired(scfg, cfg);
 pucchRequired = localPUCCHRequired(scfg, cfg);
+puschUCIRequired = localPUSCHUCIRequired(scfg, cfg);
 
 pdcchEnabled = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
 pucchEnabled = logical(sixgr.util.structGet(cfg, "phy.pucch.enable", false));
+puschEnabled = logical(sixgr.util.structGet(cfg, "phy.pusch.enable", true));
+uciOnPUSCHEnabled = localAnyTruthy(scfg, cfg, [
+    "pucch_resources.overlap_policy.uci_on_pusch_enabled"
+    "phy.pucch.uciOnPUSCHEnabled"
+    "phy.pucch.uci_on_pusch_enabled"
+    ]);
 
 policy = struct();
 policy.TargetCases = targetCases(:);
 policy.ValidationObjectives = objectives(:);
 policy.PDCCHRequired = logical(pdcchRequired);
 policy.PUCCHRequired = logical(pucchRequired);
+policy.PUSCHUCIRequired = logical(puschUCIRequired);
+policy.UCIOnPUSCHEnabled = logical(uciOnPUSCHEnabled);
 policy.EnablePDCCH = pdcchEnabled && (pdcchTargeted || pdcchObjective || pdcchRequired);
-policy.EnablePUCCH = pucchEnabled && (pucchTargeted || pucchObjective || pucchRequired);
-policy.ShouldRun = logical(policy.EnablePDCCH || policy.EnablePUCCH);
+% An explicit PUSCH-UCI requirement supersedes a broad control target for
+% standalone PUCCH. Requiring both remains possible by setting both YAML
+% gates true.
+policy.EnablePUCCH = pucchEnabled && (pucchRequired || ...
+    ((pucchTargeted || pucchObjective) && ~puschUCIRequired));
+policy.EnablePUSCHUCI = puschEnabled && uciOnPUSCHEnabled && ...
+    (puschUCITargeted || puschUCIObjective || puschUCIRequired);
+policy.ShouldRun = logical(policy.EnablePDCCH || policy.EnablePUCCH || policy.EnablePUSCHUCI);
 
 reasons = strings(0, 1);
 if logical(policy.EnablePDCCH)
@@ -37,6 +54,9 @@ if logical(policy.EnablePDCCH)
 end
 if logical(policy.EnablePUCCH)
     reasons(end+1, 1) = "pucch_target_objective_or_required"; %#ok<AGROW>
+end
+if logical(policy.EnablePUSCHUCI)
+    reasons(end+1, 1) = "pusch_uci_target_objective_or_required"; %#ok<AGROW>
 end
 policy.Reasons = reasons;
 end
@@ -60,6 +80,15 @@ tf = localAnyTruthy(scfg, cfg, [
     "control_gating.pucchRequired"
     "control.pucch_required"
     "control.pucchRequired"
+    ]);
+end
+
+function tf = localPUSCHUCIRequired(scfg, cfg)
+tf = localAnyTruthy(scfg, cfg, [
+    "run.controlGating.puschUCIRequired"
+    "control_gating.pusch_uci_required"
+    "control_gating.puschUCIRequired"
+    "control.pusch_uci_required"
     ]);
 end
 

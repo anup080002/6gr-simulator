@@ -349,6 +349,12 @@ rx.DemodulationInfo = demodulationInfo;
 rx.DescrambledLLR = descrambledLLR;
 rx.DescramblingInfo = descramblingInfo;
 rx.Decode = decode;
+rx.DecodeLatency_s = double(sixgr.util.structGet( ...
+    decode,"DecodeLatency_s",NaN));
+rx.DecodeLatencyPerCodeword_s = double(sixgr.util.structGet( ...
+    decode,"DecodeLatencyPerCodeword_s",rx.DecodeLatency_s));
+rx.DecodeLatencySource = string(sixgr.util.structGet( ...
+    decode,"DecodeLatencySource","unavailable"));
 rx.TransportBlocks = transportBlocks;
 rx.TransportBlock = vertcat(transportBlocks{:});
 rx.CRCPassPerCodeword = logical(crcPass);

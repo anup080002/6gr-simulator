@@ -83,6 +83,22 @@
     "pdsch_dmrs_ports": 2,
     "pusch_dmrs_ports": 2,
     "csi_rs_enabled": true,
+    "csi_rs_ports": 2,
+    "csi_rs_num_resources": 1,
+    "csi_rs_resource_set_id": 0,
+    "csi_rs_resource_ids": [0],
+    "csi_rs_resource_row_numbers": [3],
+    "csi_rs_resource_symbol_locations": [5],
+    "csi_rs_resource_subcarrier_locations": [0],
+    "csi_rs_resource_rb_offsets": [0],
+    "csi_rs_resource_num_rbs": [106],
+    "csi_rs_precoder_codebook": {
+      "enabled": true,
+      "type": "dft_ura",
+      "physical_element_count": 2,
+      "beam_indices_port_0": [0],
+      "beam_indices_port_1": [1]
+    },
     "srs_enabled": true,
     "trs_enabled": true,
     "tracking_rs_enabled": true,
@@ -148,6 +164,7 @@
     "start_symbol": 2,
     "num_symbols": 12,
     "layer_count": 2,
+    "rank": 2,
     "modulation": "16QAM"
   },
   "pusch": {
@@ -165,6 +182,11 @@
     "modulation": "16QAM",
     "mcs_index": 10
   },
+  "pdcch": {
+    "enabled": true,
+    "start_symbol": 0,
+    "num_symbols": 2
+  },
   "pdsch6gr": {
     "mcs_ue_capability_1024qam": false,
     "mcs_rrc_enabled_1024qam": false,
@@ -178,6 +200,7 @@
   },
   "control": {
     "pdcch_enabled": true,
+    "coreset_duration": 2,
     "aggregation_levels": [1, 2, 4, 8],
     "blind_decode_candidates": 16,
     "pdcch_payload_bits": 64,
@@ -192,10 +215,99 @@
     "rv_sequence": [0, 2, 3, 1],
     "cbg_enabled": false,
     "feedback_timing_slots": 4,
+    "k1": 4,
+    "k2": 1,
     "combining_mode": "soft",
     "max_retx": 3,
     "validation_mode": "exercise",
     "detection_feedback_interaction_enabled": true
+  },
+  "tdd_timing": {
+    "pdcch_to_pdsch_k0": 0,
+    "pdcch_to_pusch_k2": 1,
+    "dl_harq_feedback_k1": [1, 2, 3, 4, 5, 6, 7, 8],
+    "k1_selection_policy": "first_valid_configured",
+    "ul_grant_k2": 1,
+    "n1_pdsch_processing_time_symbols": 8,
+    "n2_pusch_preparation_time_symbols": 10,
+    "capability_profile_id": "38.214-v18.8.0-cap1-dmrs-pos0-mu0"
+  },
+  "pucch_resources": {
+    "enabled": true,
+    "profile": "nr_rel18_pucch_strict",
+    "configuration_epoch": 1,
+    "resource_sets": [
+      {"id": 0, "max_payload_bits": 2, "resource_ids": [0]},
+      {"id": 1, "max_payload_bits": 1706, "resource_ids": [10]}
+    ],
+    "resources": [
+      {
+        "id": 0,
+        "format": 0,
+        "starting_prb": 0,
+        "nrof_prbs": 1,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 1,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      },
+      {
+        "id": 10,
+        "format": 2,
+        "starting_prb": 4,
+        "nrof_prbs": 2,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 1,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      }
+    ],
+    "dl_data_to_ul_ack": [1, 2, 3, 4, 5, 6, 7, 8],
+    "harq_ack": {"resource_id": 0, "k1_slots": 4},
+    "sr_resource_ids": [0],
+    "csi_resource_ids": [10],
+    "sps_pucch_an_resource_ids": [0],
+    "power_control": {
+      "mu": 0,
+      "m_rb": 1,
+      "p0_dbm": -80,
+      "pathloss_db": 77,
+      "delta_f_db": 0,
+      "delta_tf_db": 0,
+      "closed_loop_adjustment_db": 0,
+      "pcmax_dbm": 23,
+      "pathloss_reference_rs_id": 1,
+      "tpc_command_source": "decoded_tpc"
+    },
+    "spatial_relations": [
+      {
+        "id": 1,
+        "active_id": 1,
+        "reference_signal_type": "SSB",
+        "reference_signal_id": 0,
+        "pathloss_reference_rs_id": 1,
+        "p0_pucch_id": 1,
+        "closed_loop_index": 0,
+        "state_age_slots": 0,
+        "maximum_age_slots": 20,
+        "selected_beam_id": 0,
+        "applied_beam_id": 0
+      }
+    ]
   },
   "random_access": {
     "enabled": true,

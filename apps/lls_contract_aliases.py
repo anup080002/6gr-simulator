@@ -316,7 +316,7 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
     "detection rate": ["reports/csv/prach_correlation_trace.csv", "reports/csv/prach_correlation_traces.csv", "reports/csv/initial_access_random_access_outputs.csv"],
     "CFO true vs estimated vs residual": ["reports/image/cfo_to_tracking_traces.png", "reports/csv/cfo_to_tracking_traces.csv"],
     "IQ imbalance summary": ["rf/csv/probe_rf_iq_imbalance.csv", "rf/csv/iq_imbalance_timeline_trace.csv"],
-    "DL Tx power per cell / beam / UE": ["reports/csv/live_power_runtime_table.csv", "reports/image/power_energy_cumulative.png"],
+    "DL Tx power per cell / beam / UE": ["reports/csv/live_power_runtime_table.csv"],
     "active bandwidth vs power": ["rf/csv/energy_timeline_trace.csv", "reports/csv/live_power_runtime_table.csv"],
     "active rank vs power": ["rf/csv/energy_timeline_trace.csv", "reports/csv/live_power_runtime_table.csv"],
     "energy per bit histogram": ["rf/csv/energy_timeline_trace.csv", "reports/csv/live_energy_efficiency_table.csv", "analytics/csv/energy_efficiency_analytics.csv"],

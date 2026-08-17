@@ -400,6 +400,8 @@ def audit_component_plot_lineages(
     rows: list[AuditRow] = []
     seen: set[str] = set()
     for lineage_path in sorted(run_folder.rglob("*plot_lineage.csv")):
+        if is_nested_execution_path(run_folder, lineage_path):
+            continue
         for lineage_row in read_csv_dicts(lineage_path):
             image_spec = get_field(
                 lineage_row, "ImagePath", "PlotFile", "ArtifactPath"
@@ -631,10 +633,13 @@ def audit_manifest_row(run_folder: Path, manifest_row: dict[str, str]) -> AuditR
         failures.append(("png_bytes_in_svg", ".svg artifact contains PNG bytes"))
     if is_suppressed_status(manifest_status) and file_info.exists and not is_unavailable_visual_path(image_path):
         failures.append(("stale_suppressed_normal_artifact", "normal plot file exists but manifest says suppressed/not rendered"))
-    if unavailable_card_visual and not image_path.endswith("_unavailable.png"):
-        failures.append(("unavailable_card_bad_name", "new unavailable visual artifacts must end with _unavailable.png"))
-    if unavailable_card_visual and image_path and not file_info.exists:
-        failures.append(("unavailable_card_missing", "manifest declares an unavailable visual card but the card file is missing"))
+    if unavailable_card_visual:
+        failures.append(
+            (
+                "unavailable_raster_forbidden",
+                "unavailable measurements belong in suppression CSV rows and must not be persisted as raster cards",
+            )
+        )
 
     if not source_semantics_required:
         return make_row(
@@ -992,7 +997,11 @@ def companion_contract_csv_path(rel_path: str) -> str:
 
 def inventory_visual_files(run_folder: Path) -> Iterable[Path]:
     for path in run_folder.rglob("*"):
-        if path.is_file() and path.suffix.lower() in VISUAL_EXTENSIONS:
+        if (
+            not is_nested_execution_path(run_folder, path)
+            and path.is_file()
+            and path.suffix.lower() in VISUAL_EXTENSIONS
+        ):
             yield path
 
 
@@ -1204,6 +1213,16 @@ def relative_path(root: Path, path: Path) -> str:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def is_nested_execution_path(run_folder: Path, candidate: Path) -> bool:
+    """Keep child sweep evidence outside the parent execution's audit scope."""
+
+    try:
+        relative = candidate.resolve().relative_to(run_folder.resolve())
+    except (OSError, ValueError):
+        return False
+    return bool(relative.parts and relative.parts[0].lower() == "sweeps")
 
 
 def is_nan_token(value: str) -> bool:

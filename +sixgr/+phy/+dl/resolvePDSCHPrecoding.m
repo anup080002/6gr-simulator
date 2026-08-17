@@ -157,6 +157,8 @@ if isempty(Wcfg)
         Wports = eye(nLayers);
         source = "identity";
     end
+    Wports = localNormalizeSynthesizedMatrix( ...
+        Wports, normalizationConvention);
 else
     WportsPerPRG = localNormalizeExplicitMatrixPages(Wcfg, nLayers, normalizeW, strictPrecoder);
     Wports = WportsPerPRG(:, :, 1);
@@ -184,6 +186,7 @@ if ~isempty(requestedPorts) && size(Wports, 1) ~= requestedPorts
         "PrecodingMatrix resolves to %d port(s), but cfg.phy.pdsch.numPorts/nPorts requests %d.", ...
         size(Wports, 1), requestedPorts);
 end
+
 WlogicalPorts = Wports;
 if ~exist("WportsPerPRG", "var")
     WportsPerPRG = reshape(Wports, [size(Wports, 1), size(Wports, 2), 1]);
@@ -325,6 +328,27 @@ if isstruct(pmiMeta)
     end
 end
 
+end
+
+function W = localNormalizeSynthesizedMatrix(W, convention)
+% The matrix is generated here, so applying the configured power contract
+% does not mutate scheduler or oracle evidence.  In particular, an R-layer
+% identity has Frobenius power R and therefore is not unit-total-power.
+convention = lower(strtrim(string(convention)));
+if convention == "unit_frobenius"
+    scale = norm(W, "fro");
+    if ~(isfinite(scale) && scale > eps)
+        error("sixgr:mimo:PrecoderNormalizationMismatch", ...
+            "Synthesized PDSCH precoder has zero or nonfinite power.");
+    end
+    W = W ./ scale;
+elseif convention == "semi_unitary"
+    gramError = norm(W' * W - eye(size(W,2)), "fro");
+    if gramError > 1e-12
+        error("sixgr:mimo:PrecoderNormalizationMismatch", ...
+            "Synthesized PDSCH precoder is not semi-unitary.");
+    end
+end
 end
 
 function power = localFrobeniusPower(W)

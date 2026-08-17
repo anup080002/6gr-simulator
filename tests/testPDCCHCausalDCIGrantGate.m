@@ -6,6 +6,8 @@ setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
 cfg.run.useMex = false;
 cfg.phy.carrier.NSizeGrid = 52;
+cfg.phy.pdcch.enable = true;
+cfg.phy.pdcch.dmrs.enable = true;
 cfg.phy.pdcch.blindSearch = false;
 cfg.phy.pdcch.rnti = 4660;
 cfg = sixgr.config.normalizeConfig(cfg);

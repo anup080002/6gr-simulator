@@ -1,5 +1,5 @@
 function results = generateMeasuredSINRCurves(cfg, runTag, varargin)
-%GENERATEMEASUREDSINRCURVES Build geometry-driven measured-SINR KPI curves.
+%GENERATEMEASUREDSINRCURVES Build mode-neutral measured PostEq-SINR curves.
 %
 % The x-axis for these artifacts is always receiver-measured PostEqSINR_dB.
 % ConfiguredSNR_dB and AppliedAWGNSNR_dB remain raw-trial provenance columns
@@ -403,7 +403,7 @@ row = struct( ...
     "Rank_dominant", localModeNumeric(T, ["Rank","Layers"]), ...
     "Distance_min_m", localMinFinite(dist), ...
     "Distance_max_m", localMaxFinite(dist), ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "SourceArtifact", string(sourceArtifact));
 end
 
@@ -412,7 +412,8 @@ n = height(T);
 sinr = localNumericFirst(T, "PostEqSINR_dB", NaN(n, 1));
 crc = localCRC(T);
 goodBits = localGoodBits(T, crc);
-scheduledBits = localNumericFirst(T, ["TBSize_bits","TBSBits","TBS","ScheduledBits"], NaN(n, 1));
+scheduledBits = localNumericFirst(T, ...
+    ["TBSize_bits","TBSBits","TBS","ScheduledBits","BitsCompared"], NaN(n, 1));
 offeredBits = localNumericFirst(T, "OfferedBits", NaN(n, 1));
 bits = localNumericFirst(T, "BitsCompared", NaN(n, 1));
 bitErrors = localNumericFirst(T, "BitErrors", NaN(n, 1));
@@ -432,14 +433,15 @@ reconPass = isfinite(goodputMbps) && isfinite(throughputMbps) && isfinite(offere
     abs(goodputMbps - formulaGoodput) < 0.01 && ...
     abs(throughputMbps - formulaThroughput) < 0.01 && ...
     abs(offeredMbps - formulaOffered) < 0.01 && ...
-    goodputMbps <= throughputMbps + 1e-12 && offeredMbps <= throughputMbps + 1e-12;
+    goodputMbps <= throughputMbps + 1e-12 && ...
+    throughputMbps <= offeredMbps + 1e-12;
 strictOk = n > 0 && isfinite(localPercentile(sinr, 50)) && reconPass;
 row = struct( ...
     "RunId", string(runTag), ...
     "Direction", direction, ...
     "UEIndex", localSummaryUELabel(ueLabel), ...
     "RNTI", localGroupRNTI(T, ueLabel), ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "KPIReconciliationPass", logical(reconPass), ...
     "SINR_median_dB", localPercentile(sinr, 50), ...
     "SINR_p5_dB", localPercentile(sinr, 5), ...
@@ -525,7 +527,7 @@ T = table('Size', [n numel(localAnchorVars())], ...
     'VariableTypes', cellstr(localAnchorTypes()), ...
     'VariableNames', cellstr(localAnchorVars()));
 if n > 0
-    T.KPIFormulaVersion(:) = "measured_sinr_geometry_v1";
+    T.KPIFormulaVersion(:) = "measured_posteq_sinr_v2";
     T.EvidenceSource(:) = "runtime_trial_rows";
 end
 end
@@ -571,7 +573,7 @@ anchor.PassCount(mask) = max(0, round(trialCount * (1 - max(0, min(1, bler)))));
 anchor.FailCount(mask) = max(0, round(trialCount - anchor.PassCount(mask)));
 anchor.CrashCount(mask) = 0;
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "measured_sinr_kpi_summary";
 anchor.Notes(mask) = sprintf("Geometry-driven %s KPI from finalized measured-SINR rows; Throughput=%.6g Mbps; Goodput=%.6g Mbps; BLER=%.6g; no AWGN injection", ...
     string(direction), throughput, goodput, bler);
@@ -598,7 +600,7 @@ anchor.PassCount(mask) = nPass;
 anchor.FailCount(mask) = n - nPass;
 anchor.CrashCount(mask) = 0;
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "pbch_trial_rows";
 anchor.Notes(mask) = sprintf("PBCH/MIB/SIB1 strict evidence from %.0f runtime rows; pass=%.0f; BLER=%.6g", n, nPass, bler);
 end
@@ -626,7 +628,7 @@ anchor.PassCount(mask) = nPass;
 anchor.FailCount(mask) = n - nPass;
 anchor.CrashCount(mask) = 0;
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "prach_trial_rows";
 anchor.Notes(mask) = sprintf("PRACH strict detection evidence from %.0f runtime rows; detected=%.0f; missed_or_false=%.0f", n, nPass, n - nPass);
 end
@@ -654,7 +656,7 @@ anchor.PassCount(mask) = nPass;
 anchor.FailCount(mask) = n - nPass;
 anchor.CrashCount(mask) = 0;
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "srs_trial_rows";
 anchor.Notes(mask) = sprintf("SRS channel-estimation evidence from %.0f runtime rows; finite detected NMSE rows=%.0f; mean NMSE=%.6g dB; threshold=-8 dB", n, nPass, nmseMean);
 end
@@ -682,7 +684,7 @@ anchor.PassCount(mask) = sum(papr(valid) <= 12.0);
 anchor.FailCount(mask) = sum(papr(valid) > 12.0);
 anchor.CrashCount(mask) = 0;
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "ul_pusch_trial_rows";
 anchor.Notes(mask) = sprintf("UL PAPR evidence from %.0f runtime rows; mean PAPR=%.6g dB; pass threshold=12 dB", height(T), paprMean);
 end
@@ -695,7 +697,7 @@ mask = strcmpi(string(anchor.Case), caseName);
 anchor.Ok(mask) = false;
 anchor.Skipped(mask) = true;
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "runtime_trial_rows_missing";
 anchor.Notes(mask) = string(reason);
 end
@@ -723,7 +725,7 @@ end
 anchor.RequestedChannelModel(mask) = "";
 anchor.ObservedChannelModel(mask) = "";
 anchor.FallbackUsed(mask) = false;
-anchor.KPIFormulaVersion(mask) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
 anchor.EvidenceSource(mask) = "runtime_trial_rows";
 anchor.Notes(mask) = "";
 end
@@ -737,10 +739,10 @@ if ~(istable(anchor) && height(anchor) > 0)
     return;
 end
 anchor = localEnsureAnchorColumns(anchor);
-anchor.KPIFormulaVersion(:) = "measured_sinr_geometry_v1";
+anchor.KPIFormulaVersion(:) = "measured_posteq_sinr_v2";
 anchor.FallbackUsed(:) = false;
 notes = string(anchor.Notes);
-notes = replace(notes, "deferred_to_primary_raw_trials", "geometry_driven_measured_sinr_evidence");
+notes = replace(notes, "deferred_to_primary_raw_trials", "runtime_measured_posteq_sinr_evidence");
 anchor.Notes = notes;
 end
 
@@ -792,7 +794,7 @@ T = struct2table(struct( ...
     "UL_RadioDuration_s", ulDuration, ...
     "DL_TrialCount", dlTrials, ...
     "UL_TrialCount", ulTrials, ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "ThroughputReconciliationOk", logical(recon), ...
     "FailureReason", reason), "AsArray", true);
 end
@@ -807,7 +809,7 @@ T = struct2table(struct( ...
     "MaxBLER", localMaxFinite(bler), ...
     "MinBER", localMinFinite(ber), ...
     "MaxBER", localMaxFinite(ber), ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "BlerBerReconciliationOk", logical(ok), ...
     "FailureReason", string(localTernary(ok, "", "bler_or_ber_out_of_range_or_unavailable"))), "AsArray", true);
 end
@@ -818,7 +820,7 @@ S = struct( ...
     "RequiredCaseCount", double(numel(cases)), ...
     "PresentCaseCount", double(presentCount), ...
     "OkCaseCount", double(okCount), ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "FailureReason", string(reason));
 S.(char(gateName)) = logical(ok);
 T = struct2table(S, "AsArray", true);
@@ -830,7 +832,7 @@ ok = isfinite(latencyMs) && latencyMs >= 0;
 T = struct2table(struct( ...
     "MeanLatency_ms", latencyMs, ...
     "LatencyEvidenceSource", source, ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "LatencyReconciliationOk", logical(ok), ...
     "FailureReason", string(localTernary(ok, "", "latency_or_slot_timing_evidence_unavailable"))), "AsArray", true);
 end
@@ -849,7 +851,7 @@ T = struct2table(struct( ...
     "LatencyReconciliationOk", logical(latency.LatencyReconciliationOk(1)), ...
     "CanonicalKpiLedgerOk", logical(ok), ...
     "KPIConsistencyGateOk", logical(ok), ...
-    "KPIFormulaVersion", "measured_sinr_geometry_v1", ...
+    "KPIFormulaVersion", "measured_posteq_sinr_v2", ...
     "GeneratedAt", string(datetime("now", "Format", "yyyy-MM-dd HH:mm:ss")), ...
     "FailureReason", string(localTernary(ok, "", "one_or_more_kpi_reconciliation_gates_failed"))), "AsArray", true);
 end
@@ -892,24 +894,42 @@ function [latencyMs, source] = localLatencyEvidenceMs(trialData, slotDuration_s)
 latencyMs = NaN;
 source = "unavailable";
 for field = ["dl","ul","pdcch","pucch","prach"]
-    T = localTableField(trialData, field);
+    T = localTableField(trialData, [field, upper(field)]);
     if ~(istable(T) && height(T) > 0)
         continue;
     end
-    vals = localNumericFirst(T, ["ProcedureDelay_ms","DecodeLatency_ms","ControlLatency_ms", ...
-        "AccessDelay_ms","HARQLatency_ms","SchedulingLatency_ms","ProcessingLatency_ms","Latency_ms"], NaN(height(T), 1));
-    vals = vals(isfinite(vals));
-    if ~isempty(vals)
+    [vals, columnName] = localFirstFiniteNumericColumn(T, ...
+        ["ReceiverPipelineLatency_ms","DecodeLatency_ms","ComputeLatency_ms", ...
+        "ProcedureDelay_ms","ControlLatency_ms","AccessDelay_ms","HARQLatency_ms", ...
+        "SchedulingLatency_ms","ProcessingLatency_ms","Latency_ms"]);
+    if strlength(columnName) > 0
         latencyMs = mean(vals);
-        source = field + "_latency_columns";
+        source = upper(field) + "." + columnName;
         return;
     end
 end
 for field = ["dl","ul"]
-    T = localTableField(trialData, field);
+    T = localTableField(trialData, [field, upper(field)]);
     if istable(T) && height(T) > 0 && localHasColumn(T, "Slot") && isfinite(slotDuration_s) && slotDuration_s > 0
         latencyMs = slotDuration_s * 1e3;
-        source = field + "_slot_duration_observation";
+        source = upper(field) + ".AirInterfaceTTI_from_resolved_slot_duration";
+        return;
+    end
+end
+end
+
+function [values, columnName] = localFirstFiniteNumericColumn(T, names)
+values = zeros(0, 1);
+columnName = "";
+for name = string(names)
+    if ~localHasColumn(T, name)
+        continue;
+    end
+    candidate = localToDouble(T.(char(name)));
+    candidate = candidate(isfinite(candidate));
+    if ~isempty(candidate)
+        values = candidate;
+        columnName = name;
         return;
     end
 end

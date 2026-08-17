@@ -19,8 +19,11 @@ sixgr.util.ensureFolder(layout.ReportCSVDir);
 
 profilePath = fullfile(layout.ReportCSVDir, "runtime_function_profile.csv");
 summaryPath = fullfile(layout.ReportCSVDir, "runtime_profiler_summary.csv");
+ledgerPath = fullfile(layout.ReportCSVDir, "runtime_call_ledger.csv");
 profileT = localReadTable(profilePath);
 profilerSummaryT = localReadTable(summaryPath);
+ledgerT = localReadTable(ledgerPath);
+[ledgerAvailable, ledgerIdentityComplete] = localLedgerState(ledgerT);
 [profileAvailable, profileComplete, exportedFunctions, capturedFunctions] = ...
     localProfilerState(profileT, profilerSummaryT);
 
@@ -30,6 +33,9 @@ roots = [ ...
     "+sixgr/+phy/+ul/+pusch/"
     "+sixgr/+phy/+pucch/"
     "+sixgr/+phy/+pdcch/"
+    "+sixgr/+phy/+ra/"
+    "+sixgr/+phy/+srs/"
+    "+sixgr/+phy/+trs/"
     "+sixgr/+mimo/"
     "+sixgr/+phy/+rx/"];
 rel = lower(replace(string(inventory.file_path), "\", "/"));
@@ -46,7 +52,9 @@ criticalFacades = [ ...
     "+sixgr/+phy/+dl/pdcch_tx.m"
     "+sixgr/+phy/+dl/pdcch_rx.m"
     "+sixgr/+phy/+ul/pusch_tx.m"
-    "+sixgr/+phy/+ul/pusch_rx.m"];
+    "+sixgr/+phy/+ul/pusch_rx.m"
+    "+sixgr/+link/runpucchwaveformtrial.m"
+    "+sixgr/+link/runprachdetection.m"];
 selected = selected | ismember(rel, criticalFacades);
 inventory = inventory(selected, :);
 
@@ -55,35 +63,37 @@ for i = 1:height(inventory)
     relativePath = replace(string(inventory.file_path(i)), "\", "/");
     absolutePath = localNormalizePath(fullfile(repoRoot, char(relativePath)));
     profileMask = localExactProfileFileMask(profileT, absolutePath);
-    called = any(profileMask);
+    qualifiedName = localQualifiedName(relativePath);
+    ledgerMask = localExactLedgerFunctionMask(ledgerT, qualifiedName);
+    called = any(profileMask) || any(ledgerMask);
     role = localSourceRole(relativePath, string(inventory.primary_function_or_class(i)));
     rows(i).FilePath = relativePath;
-    rows(i).QualifiedName = localQualifiedName(relativePath);
+    rows(i).QualifiedName = qualifiedName;
     rows(i).Package = localAuditPackage(relativePath);
     rows(i).PrimaryFunctionOrClass = string(inventory.primary_function_or_class(i));
     rows(i).SourceRole = role;
     rows(i).RuntimeLibraryCandidate = role == "runtime_library";
     rows(i).ActuallyCalled = called;
-    rows(i).CallCount = localProfileSum(profileT, profileMask, "NumCalls");
+    rows(i).CallCount = localProfileSum(profileT, profileMask, "NumCalls") + sum(ledgerMask);
     rows(i).TotalTime_s = localProfileSum(profileT, profileMask, "TotalTime_s");
     rows(i).ProfilerAvailable = profileAvailable;
     rows(i).ProfilerComplete = profileComplete;
     rows(i).ProfilerExportedFunctionCount = exportedFunctions;
     rows(i).ProfilerCapturedFunctionCount = capturedFunctions;
-    rows(i).ExecutionEvidence = localExecutionEvidence(called, profileAvailable, profileComplete);
+    rows(i).ExecutionEvidence = localExecutionEvidence(called, ledgerAvailable, profileAvailable, profileComplete);
     rows(i).UsageAssessment = localUsageAssessment(role, called, profileAvailable, profileComplete);
     rows(i).SourceSHA256 = localFileSHA256(fullfile(repoRoot, char(relativePath)));
-    rows(i).EvidenceSource = "reports/csv/runtime_function_profile.csv:exact_FileName_match";
+    rows(i).EvidenceSource = localEvidenceSource(any(ledgerMask), any(profileMask));
 end
 
 detailT = struct2table(rows);
 if height(detailT) > 0
     detailT = sortrows(detailT, {'Package','SourceRole','FilePath'});
 end
-summaryT = localBuildSummary(detailT, profileAvailable, profileComplete, ...
+summaryT = localBuildSummary(detailT, ledgerAvailable, profileAvailable, profileComplete, ...
     exportedFunctions, capturedFunctions);
-gateT = localBuildEvidenceGate(detailT, profileAvailable, profileComplete, ...
-    exportedFunctions, capturedFunctions);
+gateT = localBuildEvidenceGate(detailT, ledgerAvailable, ledgerIdentityComplete, ...
+    profileAvailable, profileComplete, exportedFunctions, capturedFunctions);
 
 detailPath = fullfile(layout.ReportCSVDir, "phy_package_execution_audit.csv");
 summaryOutPath = fullfile(layout.ReportCSVDir, "phy_package_execution_summary.csv");
@@ -185,6 +195,7 @@ end
 
 function name = localAuditPackage(path)
 path = replace(string(path), "\", "/");
+pathLower = lower(path);
 if startsWith(path, "+sixgr/+pdsch/")
     name = "PDSCH";
 elseif any(path == ["+sixgr/+phy/+dl/PDSCH_Tx.m", ...
@@ -199,6 +210,14 @@ elseif startsWith(path, "+sixgr/+phy/+pucch/")
     name = "PUCCH";
 elseif startsWith(path, "+sixgr/+phy/+pdcch/")
     name = "PDCCH";
+elseif pathLower == "+sixgr/+link/runpucchwaveformtrial.m"
+    name = "PUCCH";
+elseif pathLower == "+sixgr/+link/runprachdetection.m" || startsWith(pathLower, "+sixgr/+phy/+ra/")
+    name = "INITIAL_ACCESS";
+elseif startsWith(pathLower, "+sixgr/+phy/+srs/")
+    name = "SRS";
+elseif startsWith(pathLower, "+sixgr/+phy/+trs/")
+    name = "TRS";
 elseif any(path == ["+sixgr/+phy/+dl/PDCCH_Tx.m", ...
         "+sixgr/+phy/+dl/PDCCH_Rx.m"])
     name = "PDCCH";
@@ -223,9 +242,11 @@ end
 value = sum(double(raw), "omitnan");
 end
 
-function state = localExecutionEvidence(called, available, complete)
+function state = localExecutionEvidence(called, ledgerAvailable, available, complete)
 if called
-    state = "exact_profiler_file_match";
+    state = "exact_runtime_entry_or_profiler_match";
+elseif ledgerAvailable
+    state = "not_called_in_runtime_call_ledger";
 elseif ~available
     state = "profiler_unavailable";
 elseif ~complete
@@ -249,8 +270,8 @@ else
 end
 end
 
-function T = localBuildSummary(detailT, available, complete, exportedCount, capturedCount)
-packages = ["PDSCH";"PUSCH";"PUCCH";"PDCCH";"MIMO";"RX"];
+function T = localBuildSummary(detailT, ledgerAvailable, available, complete, exportedCount, capturedCount)
+packages = ["PDSCH";"PUSCH";"PUCCH";"PDCCH";"MIMO";"RX";"INITIAL_ACCESS";"SRS";"TRS"];
 roles = ["ALL";"runtime_library";"validation_oracle";"validation_campaign"; ...
     "offline_impact_analysis";"offline_study";"artifact_reporting";"legacy"];
 rows = repmat(struct("Package","","SourceRole","","FileCount",0, ...
@@ -273,14 +294,16 @@ for p = packages(:).'
             "ProfilerAvailable", available, "ProfilerComplete", complete, ...
             "ProfilerExportedFunctionCount", exportedCount, ...
             "ProfilerCapturedFunctionCount", capturedCount, ...
-            "Assessment", localSummaryAssessment(available, complete));
+            "Assessment", localSummaryAssessment(ledgerAvailable, available, complete));
     end
 end
 T = struct2table(rows);
 end
 
-function state = localSummaryAssessment(available, complete)
-if ~available
+function state = localSummaryAssessment(ledgerAvailable, available, complete)
+if ledgerAvailable
+    state = "RUNTIME_CALL_LEDGER_AVAILABLE";
+elseif ~available
     state = "NO_RUNTIME_PROFILE";
 elseif ~complete
     state = "PARTIAL_RUNTIME_PROFILE_DO_NOT_TREAT_ABSENCE_AS_UNUSED";
@@ -289,18 +312,50 @@ else
 end
 end
 
-function T = localBuildEvidenceGate(detailT, available, complete, exportedCount, capturedCount)
+function T = localBuildEvidenceGate(detailT, ledgerAvailable, ledgerIdentityComplete, available, complete, exportedCount, capturedCount)
 T = table( ...
-    ["runtime_profiler_available";"runtime_profiler_export_complete";"selected_source_inventory_nonempty"], ...
-    [true;true;true], ...
-    [available;complete;height(detailT) > 0], ...
-    ["runtime_function_profile.csv contains exact source paths"; ...
-     "all captured MATLAB profiler functions are exported"; ...
-     "requested PDSCH/PUSCH/PUCCH/PDCCH/MIMO/RX roots contain source files"], ...
-    ["exported=" + string(exportedCount); ...
-     "exported=" + string(exportedCount) + ";captured=" + string(capturedCount); ...
-     "files=" + string(height(detailT))], ...
+    ["runtime_call_ledger_available";"runtime_call_ledger_identity_complete"; ...
+     "selected_source_inventory_nonempty";"runtime_profiler_available";"runtime_profiler_export_complete"], ...
+    [true;true;true;false;false], ...
+    [ledgerAvailable;ledgerIdentityComplete;height(detailT) > 0;available;complete], ...
+    ["runtime_call_ledger.csv contains canonical entry observations"; ...
+     "every runtime ledger row carries execution and config identity"; ...
+     "requested production PHY roots contain source files"; ...
+     "runtime_function_profile.csv contains exact source paths"; ...
+     "all captured MATLAB profiler functions are exported"], ...
+    ["ledger_available=" + string(ledgerAvailable); ...
+     "identity_complete=" + string(ledgerIdentityComplete); ...
+     "files=" + string(height(detailT)); ...
+     "exported=" + string(exportedCount); ...
+     "exported=" + string(exportedCount) + ";captured=" + string(capturedCount)], ...
     'VariableNames', {'Gate','Required','Pass','Definition','Observed'});
+end
+
+function [available, identityComplete] = localLedgerState(T)
+required = ["FunctionName","ExecutionID","ConfigHash","EvidenceClass"];
+available = height(T) > 0 && all(ismember(required,string(T.Properties.VariableNames)));
+identityComplete = available && all(strlength(strtrim(string(T.FunctionName))) > 0) && ...
+    all(strlength(strtrim(string(T.ExecutionID))) > 0) && ...
+    all(strlength(strtrim(string(T.ConfigHash))) == 64) && ...
+    all(string(T.EvidenceClass) == "ACTUAL_RUNTIME_ENTRY");
+end
+
+function mask = localExactLedgerFunctionMask(T, qualifiedName)
+mask = false(height(T),1);
+if isempty(T) || ~ismember("FunctionName",string(T.Properties.VariableNames)), return; end
+mask = strcmpi(strtrim(string(T.FunctionName)),strtrim(string(qualifiedName)));
+end
+
+function source = localEvidenceSource(ledgerMatch, profilerMatch)
+if ledgerMatch && profilerMatch
+    source = "runtime_call_ledger+exact_profiler_file_match";
+elseif ledgerMatch
+    source = "reports/csv/runtime_call_ledger.csv:exact_qualified_name_match";
+elseif profilerMatch
+    source = "reports/csv/runtime_function_profile.csv:exact_FileName_match";
+else
+    source = "no_runtime_entry_evidence";
+end
 end
 
 function digest = localFileSHA256(path)

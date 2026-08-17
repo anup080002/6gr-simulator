@@ -628,6 +628,7 @@ mappings = {
     "mimo.mu_mimo_minimum_desired_subspace_gain_db", "mimo.mu_mimo_minimum_desired_subspace_gain_db", "identity"
     "mimo.mu_mimo_hybrid_rf_design_policy", "mimo.mu_mimo_hybrid_rf_design_policy", "identity"
     "mimo.mu_mimo_spatial_signature_mode", "mimo.mu_mimo_spatial_signature_mode", "identity"
+    "mimo.ul_mu_mimo_receive_processing_mode", "mimo.ul_mu_mimo_receive_processing_mode", "identity"
     "mimo.mu_mimo_spatial_subspace_noise_margin_db", "mimo.mu_mimo_spatial_subspace_noise_margin_db", "identity"
     "mimo.mu_mimo_phase_only_projection_max_iterations", "mimo.mu_mimo_phase_only_projection_max_iterations", "identity"
     "mimo.mu_mimo_phase_only_projection_tolerance", "mimo.mu_mimo_phase_only_projection_tolerance", "identity"

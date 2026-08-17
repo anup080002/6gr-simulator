@@ -1,0 +1,2 @@
+category,artifact_path,check_id,required,evaluated,passed,row_count,failure_count,details
+chart_lineage,reports/csv/contract_plot_lineage.csv,lineage_present,True,True,False,0,1,missing_or_empty

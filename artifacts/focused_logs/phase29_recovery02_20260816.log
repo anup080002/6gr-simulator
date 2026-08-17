@@ -1,0 +1,31 @@
+{Error using sixgr.lls6g.config.readConfigFile>localReadYAMLViaExternalPython (line 142)
+Failed to parse YAML config 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02\.runtime_scenarios\phase29_plus20_2x2_runtime_truth_20260816_01_executed.yaml'
+via external Python. Python executable: C:\ProgramData\anaconda3\python.EXE. Install PyYAML with: "C:\ProgramData\anaconda3\python.EXE" -m pip install pyyaml. Root cause:
+Traceback (most recent call last):
+  File "C:\Users\anup0\AppData\Local\Temp\tp4ecc55fd_c09d_4f0d_b77b_035e7cb866d7.py", line 15, in <module>
+    with open(sys.argv[1], 'r', encoding='utf-8') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR
+Simulator_v2_clean_main\\results\\lls\\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02\\.runtime_scenarios\\phase29_plus20_2x2_runtime_truth_20260816_01_executed.yaml'
+
+Error in sixgr.lls6g.config.readConfigFile>localReadYAML (line 40)
+        data = localReadYAMLViaExternalPython(filePath, runtime.PythonExecutable);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.readConfigFile (line 17)
+        data = localReadYAML(raw, filePath);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 19)
+raw = sixgr.lls6g.config.readConfigFile(configPath);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep>localRuntimeYAML (line 98)
+executed = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in runFullSINRSameChainSweep (line 28)
+scenarioPath = localRuntimeYAML( ...
+               ^^^^^^^^^^^^^^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

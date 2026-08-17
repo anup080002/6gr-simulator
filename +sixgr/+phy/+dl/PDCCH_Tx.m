@@ -36,6 +36,9 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %
 %   INFO: struct of helper values (E, K, etc.)
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.PDCCH_Tx", ...
+    "PDCCH", "DL", struct("Stage","TX"));
+
 % Parse options
 p = inputParser;
 p.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));

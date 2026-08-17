@@ -4,7 +4,7 @@ function T = verifyVisualArtifacts(runFolder, plotManifest)
 if nargin < 2 || isempty(plotManifest)
     plotManifest = table();
 end
-runFolder = string(runFolder);
+runFolder = sixgr.util.canonicalPath(runFolder);
 rows = repmat(localEmptyRow(), 0, 1);
 seen = strings(0, 1);
 
@@ -12,6 +12,15 @@ if istable(plotManifest) && ~isempty(plotManifest)
     for i = 1:height(plotManifest)
         relPath = string(plotManifest.ImagePath(i));
         absPath = fullfile(runFolder, relPath);
+        if sixgr.runtime.isNestedExecutionPath(runFolder, absPath)
+            row = localBuildRow(absPath, relPath, true);
+            row.PlotId = string(plotManifest.PlotId(i));
+            row = localFail(row, "nested_execution_artifact_not_owned", ...
+                "A parent execution cannot claim a child sweep artifact in its plot manifest.");
+            rows(end + 1, 1) = row; %#ok<AGROW>
+            seen(end + 1, 1) = string(absPath); %#ok<AGROW>
+            continue;
+        end
         row = localBuildRow(absPath, relPath, true);
         row.PlotId = string(plotManifest.PlotId(i));
         row.PlotRenderStatus = string(plotManifest.PlotRenderStatus(i));
@@ -78,6 +87,9 @@ seen = strings(0, 1);
 files = dir(fullfile(runFolder, "**", "*plot_lineage.csv"));
 for f = 1:numel(files)
     lineagePath = fullfile(files(f).folder, files(f).name);
+    if sixgr.runtime.isNestedExecutionPath(runFolder, lineagePath)
+        continue;
+    end
     try
         T = readtable(lineagePath, "VariableNamingRule", "preserve", "TextType", "string");
     catch
@@ -210,7 +222,7 @@ for i = 1:height(T)
     if ~any(strcmpi(lineagedCanonical, canonicalAbs))
         row = localFail(row, "component_mirror_source_not_lineaged", ...
             "The canonical image behind this component mirror has no accepted plot lineage.");
-    elseif exist(canonicalAbs, "file") ~= 2
+    elseif ~localFileExists(canonicalAbs)
         row = localFail(row, "component_mirror_source_missing", ...
             "The canonical image behind this component mirror is missing.");
     else
@@ -302,7 +314,7 @@ for i = 1:numel(parts)
     else
         pathValue = localResolveOwnedRelativePath(runFolder, lineagePath, part);
     end
-    existsOne = exist(pathValue, "file") == 2;
+    existsOne = localFileExists(pathValue);
     tf = tf && existsOne;
     if existsOne
         hashValues(i) = localFileSHA256(pathValue);
@@ -334,7 +346,7 @@ while cursor == canonicalRoot || startsWith(cursor, ...
         strrep(char(portable), "/", filesep)));
     if (candidate == canonicalRoot || startsWith(candidate, ...
             canonicalRoot + string(filesep), "IgnoreCase", ispc)) && ...
-            exist(candidate, "file") == 2
+            localFileExists(candidate)
         resolved = candidate;
         return;
     end
@@ -356,21 +368,25 @@ tf = ~isempty(regexp(pathValue, '^[A-Za-z]:[\\/]', 'once')) || ...
 end
 
 function value = localCanonicalPath(pathValue)
-value = string(char(java.io.File(char(string(pathValue))).getCanonicalPath()));
+value = sixgr.util.canonicalPath(pathValue);
 end
 
 function hash = localFileSHA256(pathValue)
 hash = "";
-if exist(pathValue, "file") ~= 2
+if ~localFileExists(pathValue)
     return;
 end
-fid = fopen(pathValue, "r");
+fid = fopen(sixgr.util.ioPath(pathValue), "r");
 if fid < 0
     return;
 end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 bytes = fread(fid, inf, "*uint8");
 hash = string(sixgr.util.sha256Hex(uint8(bytes(:))));
+end
+
+function tf = localFileExists(pathValue)
+tf = exist(sixgr.util.ioPath(pathValue), "file") == 2;
 end
 
 function row = localEmptyRow()
@@ -416,14 +432,8 @@ if lower(string(row.Extension)) == ".svg" || lower(string(row.ActualMimeType)) =
     row = localFail(row, "vector_visual_format_forbidden", ...
         "Persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input.");
 elseif row.IsUnavailableCard
-    if ~endsWith(lower(string(row.ArtifactPath)), "_unavailable.png")
-        row = localFail(row, "bad_unavailable_card_name", "Unavailable visual cards must end with _unavailable.png.");
-    elseif row.ActualMimeType ~= "image/png"
-        row = localFail(row, "unavailable_card_mime_mismatch", "Unavailable visual card is not a valid PNG image.");
-    elseif row.IntegrityOk
-        row.FailureCode = "";
-        row.FailureReason = "";
-    end
+    row = localFail(row, "unavailable_raster_forbidden", ...
+        "Unavailable measurements must be recorded as suppressed CSV status rows, not raster cards.");
 elseif isSuppressed && row.ByteCount > 0
     row = localFail(row, "stale_suppressed_normal_artifact", "Manifest says this plot is suppressed/not rendered but a normal visual file exists.");
 elseif isSuppressed
@@ -441,8 +451,9 @@ if lower(string(row.Extension)) == ".svg" || lower(string(row.ActualMimeType)) =
         "Persisted visual artifacts must use PNG or JPEG; SVG is read-only legacy input.");
 elseif ~row.IntegrityOk
     row = localFail(row, string(row.FailureCode), string(row.FailureReason));
-elseif endsWith(lower(string(row.ArtifactPath)), "_unavailable.png") && row.ActualMimeType ~= "image/png"
-    row = localFail(row, "unavailable_card_mime_mismatch", "Unavailable visual card is not a valid PNG image.");
+elseif endsWith(lower(string(row.ArtifactPath)), "_unavailable.png")
+    row = localFail(row, "unavailable_raster_forbidden", ...
+        "Unavailable measurements must not be persisted as raster cards.");
 end
 end
 
@@ -473,9 +484,13 @@ for j = 1:numel(listing)
     if listing(j).isdir
         continue;
     end
+    candidatePath = string(fullfile(listing(j).folder, listing(j).name));
+    if sixgr.runtime.isNestedExecutionPath(runFolder, candidatePath)
+        continue;
+    end
     [~, ~, ext] = fileparts(listing(j).name);
     if any(lower(string(ext)) == [".png",".svg",".jpg",".jpeg"])
-        files(end + 1, 1) = string(fullfile(listing(j).folder, listing(j).name)); %#ok<AGROW>
+        files(end + 1, 1) = candidatePath; %#ok<AGROW>
     end
 end
 files = unique(files, "stable");
@@ -502,7 +517,7 @@ end
 name = regexprep(string(name), "_unavailable$", "");
 for ext = [".png",".svg",".jpg",".jpeg"]
     candidate = string(fullfile(folder, name + ext));
-    if candidate ~= string(absPath) && exist(candidate, "file") == 2
+    if candidate ~= string(absPath) && localFileExists(candidate)
         files(end + 1, 1) = candidate; %#ok<AGROW>
     end
 end

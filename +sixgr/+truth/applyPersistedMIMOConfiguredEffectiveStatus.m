@@ -57,10 +57,14 @@ fixedRequired = localPolicyRequirement(mimoT, ...
     "FixedOperatingPointRequired", "AdaptiveMode", true);
 adaptiveRequired = localPolicyRequirement(mimoT, ...
     "AdaptivePolicyRequired", "AdaptiveMode", false);
+spatialRequired = localExplicitRequirement(mimoT, ...
+    "SpatialContractRequired");
+spatialPolicyOk = ~spatialRequired | ...
+    localLogicalColumn(mimoT.SpatialContractMatch);
 fixedPolicyOk = ~fixedRequired | localLogicalColumn(mimoT.FixedOperatingPointMatch);
 adaptivePolicyOk = ~adaptiveRequired | localLogicalColumn(mimoT.AdaptivePolicyConformance);
 policyRowsOk = schemaOk && evidenceRowsOk && ...
-    all(localLogicalColumn(mimoT.SpatialContractMatch)) && ...
+    all(spatialPolicyOk) && ...
     all(fixedPolicyOk) && all(adaptivePolicyOk) && ...
     all(localLogicalColumn(mimoT.MUExecutionMatch)) && ...
     all(localLogicalColumn(mimoT.ScenarioObjectivePass));
@@ -138,6 +142,15 @@ elseif ismember(adaptiveName, names)
 else
     % Legacy evidence did not distinguish policy applicability. Preserve
     % the old fail-closed requirement until the versioned schema is present.
+    required = true(height(T), 1);
+end
+end
+
+function required = localExplicitRequirement(T, explicitName)
+names = string(T.Properties.VariableNames);
+if ismember(explicitName, names)
+    required = localLogicalColumn(T.(char(explicitName)));
+else
     required = true(height(T), 1);
 end
 end

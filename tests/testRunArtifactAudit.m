@@ -94,6 +94,7 @@ scfg.channels.model_type = "AWGN";
 scfg.channels.profile = "AWGN";
 scfg.simulation.noise_operating_mode = "standalone_awgn_snr_argument";
 scfg = sixgr.util.structSet(scfg, "pdsch.execution_profile", "phy_calibration");
+scfg = sixgr.util.structSet(scfg, "pusch.execution_profile", "phy_calibration");
 scfg = sixgr.util.structSet(scfg, "pdsch.num_ports", 1);
 scfg = sixgr.util.structSet(scfg, "pusch.num_ports", 1);
 scfg = sixgr.util.structSet(scfg, "reference_signals.pdsch_dmrs_ports", 1);
@@ -161,8 +162,8 @@ for path = ["reference_signals.ssb_enabled", "reference_signals.pbch_enabled", .
     scfg = sixgr.util.structSet(scfg, path, false);
 end
 for path = ["mimo.n_layers", "mimo.max_dl_layers", "mimo.max_ul_layers", ...
-        "pdsch.layer_count", "pdsch6gr.num_layers", ...
-        "pusch.layer_count", "pusch.num_layers"]
+        "pdsch.layer_count", "pdsch.rank", "pdsch6gr.num_layers", ...
+        "pusch.layer_count", "pusch.num_layers", "pusch.rank"]
     scfg = sixgr.util.structSet(scfg, path, 1);
 end
 scfg = sixgr.util.structSet(scfg, ...

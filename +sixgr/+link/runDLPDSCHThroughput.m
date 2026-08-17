@@ -458,6 +458,10 @@ trialPrecodingNumLayers = NaN(numFrames,1);
 trialPrecodingMatrixRows = NaN(numFrames,1);
 trialPrecodingMatrixCols = NaN(numFrames,1);
 trialAppliedPrecoderMatrixSHA256 = strings(numFrames,1);
+trialRequestedPrecoderSHA256 = strings(numFrames,1);
+trialAppliedPrecoderSHA256 = strings(numFrames,1);
+trialPrecoderDigestDomain = strings(numFrames,1);
+trialFrozenGrantContextId = strings(numFrames,1);
 trialCfgPMI = NaN(numFrames,1);
 trialCfgCRI = NaN(numFrames,1);
 trialBitErr = NaN(numFrames,1);
@@ -468,10 +472,14 @@ trialThroughput = NaN(numFrames,1);
 trialOfferedThr = NaN(numFrames,1);
 trialGoodput = NaN(numFrames,1);
 trialComputeLatency = NaN(numFrames,1);
+trialComputeLatencySource = strings(numFrames,1);
 trialProcedureDelay = NaN(numFrames,1);
 trialAirInterfaceTTI = slotDur_s * 1e3 * ones(numFrames,1);
 trialLatency = NaN(numFrames,1);
 trialDecodeLatency = NaN(numFrames,1);
+trialDecodeLatencySource = strings(numFrames,1);
+trialReceiverPipelineLatency = NaN(numFrames,1);
+trialReceiverPipelineLatencySource = strings(numFrames,1);
 trialEarlyStop = NaN(numFrames,1);
 trialDecoderComplexity = NaN(numFrames,1);
 trialNormDecoderComplexity = NaN(numFrames,1);
@@ -613,6 +621,7 @@ liveCallbackWarned = false;
 lastHARQ = struct();
 
 for n = 1:numFrames
+    trialPipelineTic = tic;
     frameIdx = double(trialFrame(n));
     trialSeed(n) = seedBase + frameIdx - 1;
     rng(localRNGSeed(trialSeed(n)), 'twister');
@@ -868,6 +877,10 @@ for n = 1:numFrames
         trialPrecodingMatrixRows(n) = double(dlPrecoding.PrecodingMatrixRows);
         trialPrecodingMatrixCols(n) = double(dlPrecoding.PrecodingMatrixCols);
         trialAppliedPrecoderMatrixSHA256(n) = string(dlPrecoding.AppliedPrecoderMatrixSHA256);
+        trialRequestedPrecoderSHA256(n) = string(dlPrecoding.RequestedPrecoderSHA256);
+        trialAppliedPrecoderSHA256(n) = string(dlPrecoding.AppliedPrecoderSHA256);
+        trialPrecoderDigestDomain(n) = string(dlPrecoding.PrecoderDigestDomain);
+        trialFrozenGrantContextId(n) = string(dlPrecoding.FrozenGrantContextId);
         if isfield(tx, "PDSCH")
             try
                 trialPRB(n) = numel(tx.PDSCH.PRBSet);
@@ -953,9 +966,12 @@ for n = 1:numFrames
             frameIdx, trialSlot(n), injectedNoiseVariance, "time");
         stageTic = tic;
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        rxCallElapsed_s = toc(stageTic);
+        trialReceiverPipelineLatency(n) = 1e3 * rxCallElapsed_s;
+        trialReceiverPipelineLatencySource(n) = "matlab_tic_toc_pdsch_receiver_call";
         localDLStageProgressLog(cfgFrame, ...
             "frame=%g slot=%g stage=rx_done elapsed_s=%.3f crc_pass=%g decoder_iter=%g", ...
-            frameIdx, trialSlot(n), toc(stageTic), double(logical(sixgr.util.structGet(rx, "CRCPass", false))), ...
+            frameIdx, trialSlot(n), rxCallElapsed_s, double(logical(sixgr.util.structGet(rx, "CRCPass", false))), ...
             double(sixgr.util.structGet(rx, "DecoderIterations", NaN)));
         trialMeasuredPHYEvidence{n} = sixgr.link.deriveMeasuredPHYEvidence(rx);
         replay = localFinalizeImpairmentReplay(replay, cfgFrame, rx, tx, txInfo, useIdealTimingSync);
@@ -1323,10 +1339,24 @@ for n = 1:numFrames
         end
         trialComputeLatency(n) = double(sixgr.util.structGet(coding, "ComputeLatency_ms", ...
             sixgr.util.structGet(coding, "Latency_ms", NaN)));
+        if isfinite(trialComputeLatency(n))
+            trialComputeLatencySource(n) = "receiver_instrumented_ldpc_decode";
+        else
+            trialComputeLatencySource(n) = "unavailable";
+        end
         trialProcedureDelay(n) = double(sixgr.util.structGet(coding, "ProcedureDelay_ms", NaN));
         % The generic Latency_ms alias stays unavailable in new exports.
         trialLatency(n) = NaN;
         trialDecodeLatency(n) = double(sixgr.util.structGet(coding, "DecodeLatency_ms", NaN));
+        if isfinite(trialDecodeLatency(n))
+            trialDecodeLatencySource(n) = "receiver_instrumented_ldpc_decode";
+        else
+            trialDecodeLatencySource(n) = "unavailable";
+        end
+        if ~isfinite(trialReceiverPipelineLatency(n))
+            trialReceiverPipelineLatency(n) = 1e3 * toc(trialPipelineTic);
+            trialReceiverPipelineLatencySource(n) = "matlab_tic_toc_tx_channel_rx_trial";
+        end
         trialEarlyStop(n) = double(sixgr.util.structGet(coding, "EarlyStopRate", NaN));
         trialDecoderComplexity(n) = double(sixgr.util.structGet(coding, "DecoderComplexityUnits", NaN));
         trialNormDecoderComplexity(n) = double(sixgr.util.structGet(coding, "NormalizedDecoderComplexity", NaN));
@@ -1864,6 +1894,15 @@ end
             'ChannelAgingLoss_dB','InterpolationLoss_dB','MismatchSensitivity_dB', ...
             'Status','Crash', ...
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
+        T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.DecodeLatencySource = trialDecodeLatencySource(idx);
+        T.ReceiverPipelineLatency_ms = trialReceiverPipelineLatency(idx);
+        T.ReceiverPipelineLatencySource = trialReceiverPipelineLatencySource(idx);
+        % One row represents one scheduled DL TTI.  Persist the exact
+        % observation interval used by the already-computed throughput so a
+        % CSV-only verifier can independently reproduce Mbps from bits/time.
+        % This is allocation timing evidence, not a configured-SNR proxy.
+        T.AirInterfaceObservation_ms = T.AirInterfaceTTI_ms;
         T.DataRECountPerLayer = trialDataRECountPerLayer(idx);
         T.TotalDataRECount = trialTotalDataRECount(idx);
         T.TBSInputModulation = trialModulation(idx);
@@ -2207,6 +2246,10 @@ end
         T.PrecodingMatrixRows = trialPrecodingMatrixRows(idx);
         T.PrecodingMatrixCols = trialPrecodingMatrixCols(idx);
         T.AppliedPrecoderMatrixSHA256 = trialAppliedPrecoderMatrixSHA256(idx);
+        T.RequestedPrecoderSHA256 = trialRequestedPrecoderSHA256(idx);
+        T.AppliedPrecoderSHA256 = trialAppliedPrecoderSHA256(idx);
+        T.PrecoderDigestDomain = trialPrecoderDigestDomain(idx);
+        T.FrozenGrantContextId = trialFrozenGrantContextId(idx);
         T.InterfererBeamformingAppliedCount = trialInterfererBeamformingAppliedCount(idx);
         T.InterfererExplicitBeamWeightCount = trialInterfererExplicitBeamWeightCount(idx);
         T.InterfererTransformPrecodingCount = trialInterfererTransformPrecodingCount(idx);
@@ -2523,6 +2566,7 @@ T.GrantOperatingPointSource = operatingPointSource;
 T.AppliedOperatingPointSource = operatingPointSource;
 T.MCSAuthority = operatingPointSource;
 T.ModulationAuthority = operatingPointSource;
+T = sixgr.link.applyScheduledOperatingPointEvidence(T);
 T = sixgr.util.applyLLSRawTrialLifecycle(T);
 T.RunUUID = repmat(string(localArtifactStoreField("RunUUID")), n, 1);
 T.RunTag = repmat(string(sixgr.util.structGet(cfg, "run.runTag", "")), n, 1);
@@ -2630,10 +2674,20 @@ row.ConfiguredResourceIDs = string(sixgr.util.structGet(txEvent, ...
     "ResourceIDs", ""));
 row.CSIRSPhysicalPortCount = double(sixgr.util.structGet(txEvent, ...
     "PhysicalPortCount", NaN));
+row.CSIRSWaveformPortCount = double(sixgr.util.structGet(txEvent, ...
+    "WaveformPortCount", NaN));
 row.CSIRSPrecoderSource = string(sixgr.util.structGet(txEvent, ...
     "PrecoderSource", ""));
 row.CSIRSPrecoderDigests = strjoin(string(sixgr.util.structGet(txEvent, ...
     "PrecoderDigests", strings(0,1))), "|");
+row.CSIRSWaveformPrecoderDigests = strjoin(string(sixgr.util.structGet( ...
+    txEvent, "WaveformPrecoderDigests", strings(0,1))), "|");
+row.CSIRSPortToElementMatrixDigests = strjoin(string(sixgr.util.structGet( ...
+    txEvent, "PortToElementMatrixDigests", strings(0,1))), "|");
+row.CSIRSPortProjectionSource = string(sixgr.util.structGet(txEvent, ...
+    "PortProjectionSource", ""));
+row.CSIRSPortProjectionResidualMax = double(sixgr.util.structGet(txEvent, ...
+    "PortProjectionResidualMax", NaN));
 row.PMIType = string(sixgr.util.structGet(metrics, "PMIType", ""));
 row.PMICodebookMode = string(sixgr.util.structGet(metrics, "PMICodebookMode", ""));
 row.SINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
@@ -2714,7 +2768,12 @@ row = struct( ...
     "NumConfiguredResources", NaN, "NumMeasuredResources", NaN, ...
     "ResourceObjectiveValues", "", "CRISelectionSource", "", ...
     "ConfiguredResourceIDs", "", "CSIRSPhysicalPortCount", NaN, ...
+    "CSIRSWaveformPortCount", NaN, ...
     "CSIRSPrecoderSource", "", "CSIRSPrecoderDigests", "", ...
+    "CSIRSWaveformPrecoderDigests", "", ...
+    "CSIRSPortToElementMatrixDigests", "", ...
+    "CSIRSPortProjectionSource", "", ...
+    "CSIRSPortProjectionResidualMax", NaN, ...
     "PMIType", "", "PMICodebookMode", "", "SINR_dB", NaN, "SINRSource", "", ...
     "SINRValueRole", "", "SINRValueStatus", "", "SINRMeasurementDomain", "", ...
     "PowerReferencePlane", "", "CSIMeasurementAvailable", false, ...
@@ -2956,6 +3015,49 @@ row.AntennaGeometrySource = "CoupledTruthRuntime.applyUserContextImpl";
 row.RuntimeTraceSource = "runDLPDSCHThroughput_active_trial";
 row.AntennaEvidenceSource = "active_runtime_user_context";
 row.SameFlowEvidenceSource = "CoupledTruthRuntime.applyUserContextImpl->runDLPDSCHThroughput";
+row.ChannelRealizationId = string(sixgr.util.structGet(replay, "ChannelRealizationId", ""));
+row.RuntimeChannelLinkKey = string(sixgr.util.structGet(replay, "RuntimeChannelLinkKey", ""));
+row.RuntimeChannelSeed = double(sixgr.util.structGet(replay, "RuntimeChannelSeed", NaN));
+row.RuntimeChannelResetCount = double(sixgr.util.structGet(replay, "RuntimeChannelResetCount", NaN));
+row.RuntimeChannelStartSample = double(sixgr.util.structGet(replay, "RuntimeChannelStartSample", NaN));
+row.RuntimeChannelEndSample = double(sixgr.util.structGet(replay, "RuntimeChannelEndSample", NaN));
+row.RuntimeChannelInputWaveformSHA256 = string(sixgr.util.structGet(replay, "RuntimeChannelInputWaveformSHA256", ""));
+row.RuntimeChannelOutputWaveformSHA256 = string(sixgr.util.structGet(replay, "RuntimeChannelOutputWaveformSHA256", ""));
+row.RuntimeChannelPathGainsSHA256 = string(sixgr.util.structGet(replay, "RuntimeChannelPathGainsSHA256", ""));
+row.RuntimeChannelPathGainElementCount = double(sixgr.util.structGet(replay, "RuntimeChannelPathGainElementCount", 0));
+row.RuntimeChannelPathGainDimensions = string(sixgr.util.structGet(replay, "RuntimeChannelPathGainDimensions", ""));
+row.ChannelFadingObjectClass = string(sixgr.util.structGet(replay, "ChannelFadingObjectClass", ""));
+txRFReplay = sixgr.util.structGet(tx, "TxRFImpairmentReplay", struct());
+row.TxRFImpairmentChainId = string(sixgr.util.structGet(txRFReplay, "RFImpairmentChainId", ""));
+row.TxRFInputWaveformSHA256 = string(sixgr.util.structGet(txRFReplay, "RFInputWaveformSHA256", ""));
+row.TxRFOutputWaveformSHA256 = string(sixgr.util.structGet(txRFReplay, "RFOutputWaveformSHA256", ""));
+row.TxRFExecutionStatus = localRFExecutionStatus(txRFReplay, "tx");
+row.TxRFStageOrder = string(sixgr.util.structGet(txRFReplay, "RFStageOrder", ""));
+row.TxRFAppliedStageCount = double(sixgr.util.structGet(txRFReplay, "RFAppliedStageCount", 0));
+row.TxRFConfiguredStageCount = double(sixgr.util.structGet(txRFReplay, "RFConfiguredStageCount", 0));
+row.RxRFImpairmentChainId = string(sixgr.util.structGet(replay, "RFImpairmentChainId", ""));
+row.RxRFInputWaveformSHA256 = string(sixgr.util.structGet(replay, "RFInputWaveformSHA256", ""));
+row.RxRFOutputWaveformSHA256 = string(sixgr.util.structGet(replay, "RFOutputWaveformSHA256", ""));
+row.RxRFExecutionStatus = string(sixgr.util.structGet(replay, "RFExecutionStatus", ""));
+row.RxRFStageOrder = string(sixgr.util.structGet(replay, "RFStageOrder", ""));
+row.RxRFAppliedStageCount = double(sixgr.util.structGet(replay, "RFAppliedStageCount", 0));
+row.RxRFConfiguredStageCount = double(sixgr.util.structGet(replay, "RFConfiguredStageCount", 0));
+row.CompositeReceiverFrontEndApplied = logical(sixgr.util.structGet(replay, "CompositeReceiverFrontEndApplied", false));
+row.CompositeReceiverFrontEndStatus = string(sixgr.util.structGet(replay, "CompositeReceiverFrontEndStatus", ""));
+row.RFStrictOk = logical(sixgr.util.structGet(replay, "RFStrictOk", true));
+row.CFOApplied = logical(sixgr.util.structGet(replay, "CFOApplied", false));
+row.PhaseNoiseConfigured = logical(sixgr.util.structGet(replay, "PhaseNoiseConfigured", false));
+row.PhaseNoiseApplied = logical(sixgr.util.structGet(replay, "PhaseNoiseApplied", false));
+row.PAEnabled = logical(sixgr.util.structGet(txRFReplay, "PAEnabled", false));
+row.PAApplied = logical(sixgr.util.structGet(txRFReplay, "PAApplied", false));
+row.PAModel = string(sixgr.util.structGet(txRFReplay, "PAModel", ""));
+row.PABackoff_dB = double(sixgr.util.structGet(txRFReplay, "PABackoff_dB", NaN));
+row.TimingOffsetApplied = logical(sixgr.util.structGet(replay, "TimingOffsetApplied", false));
+row.ADCQuantizationApplied = logical(sixgr.util.structGet(replay, "ADCQuantizationApplied", false));
+row.ADCBits = double(sixgr.util.structGet(replay, "ADCBits", NaN));
+row.DACBits = double(sixgr.util.structGet(replay, "DACBits", NaN));
+row.NoiseOperatingMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""));
+row.RFImpairmentChainId = localCompositeRFChainId(row.TxRFImpairmentChainId, row.RxRFImpairmentChainId);
 row.ReferenceTxPower_dBm = double(sixgr.util.structGet(replay, "ReferenceTxPower_dBm", NaN));
 row.ReferenceTxPowerSource = string(sixgr.util.structGet(replay, "ReferenceTxPowerSource", ""));
 row.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
@@ -3247,6 +3349,48 @@ row = struct( ...
     "RuntimeTraceSource", "", ...
     "AntennaEvidenceSource", "", ...
     "SameFlowEvidenceSource", "", ...
+    "ChannelRealizationId", "", ...
+    "RuntimeChannelLinkKey", "", ...
+    "RuntimeChannelSeed", NaN, ...
+    "RuntimeChannelResetCount", NaN, ...
+    "RuntimeChannelStartSample", NaN, ...
+    "RuntimeChannelEndSample", NaN, ...
+    "RuntimeChannelInputWaveformSHA256", "", ...
+    "RuntimeChannelOutputWaveformSHA256", "", ...
+    "RuntimeChannelPathGainsSHA256", "", ...
+    "RuntimeChannelPathGainElementCount", 0, ...
+    "RuntimeChannelPathGainDimensions", "", ...
+    "ChannelFadingObjectClass", "", ...
+    "TxRFImpairmentChainId", "", ...
+    "TxRFInputWaveformSHA256", "", ...
+    "TxRFOutputWaveformSHA256", "", ...
+    "TxRFExecutionStatus", "", ...
+    "TxRFStageOrder", "", ...
+    "TxRFAppliedStageCount", 0, ...
+    "TxRFConfiguredStageCount", 0, ...
+    "RxRFImpairmentChainId", "", ...
+    "RxRFInputWaveformSHA256", "", ...
+    "RxRFOutputWaveformSHA256", "", ...
+    "RxRFExecutionStatus", "", ...
+    "RxRFStageOrder", "", ...
+    "RxRFAppliedStageCount", 0, ...
+    "RxRFConfiguredStageCount", 0, ...
+    "CompositeReceiverFrontEndApplied", false, ...
+    "CompositeReceiverFrontEndStatus", "", ...
+    "RFStrictOk", false, ...
+    "CFOApplied", false, ...
+    "PhaseNoiseConfigured", false, ...
+    "PhaseNoiseApplied", false, ...
+    "PAEnabled", false, ...
+    "PAApplied", false, ...
+    "PAModel", "", ...
+    "PABackoff_dB", NaN, ...
+    "TimingOffsetApplied", false, ...
+    "ADCQuantizationApplied", false, ...
+    "ADCBits", NaN, ...
+    "DACBits", NaN, ...
+    "NoiseOperatingMode", "", ...
+    "RFImpairmentChainId", "", ...
     "ReferenceTxPower_dBm", NaN, "ReferenceTxPowerSource", "", ...
     "ServingRxPower_dBm", NaN, "ServingRxPowerSource", "", ...
     "ThermalNoisePower_dBm", NaN, "NoisePowerSource", "", ...
@@ -3255,6 +3399,34 @@ row = struct( ...
     "PowerContextRxGain_dB", NaN, "PowerContextAdditionalLoss_dB", NaN, ...
     "AbsolutePowerReferencePlane", "", "SamplePowerReferencePlane", "", ...
     "InterferencePowerReferencePlane", "");
+end
+
+function id = localCompositeRFChainId(txId, rxId)
+txId = strtrim(string(txId));
+rxId = strtrim(string(rxId));
+if strlength(txId) == 0 && strlength(rxId) == 0
+    id = "";
+    return;
+end
+digest = lower(string(sixgr.channel.hashChannelRFConfig(struct( ...
+    "TxRFImpairmentChainId", txId, "RxRFImpairmentChainId", rxId))));
+id = "rfpath_" + extractBefore(digest, 17);
+end
+
+function status = localRFExecutionStatus(replay, endpoint)
+if ~(isstruct(replay) && ~isempty(fieldnames(replay)))
+    status = "not_configured";
+    return;
+end
+applied = double(sixgr.util.structGet(replay, "RFAppliedStageCount", 0));
+configured = double(sixgr.util.structGet(replay, "RFConfiguredStageCount", 0));
+if applied > 0
+    status = "applied_ordered_" + string(endpoint) + "_rf_chain";
+elseif configured > 0
+    status = "configured_identity_or_zero_stage";
+else
+    status = "disabled_identity";
+end
 end
 
 function T = localEnsureRuntimeEvidenceColumns(T, nRows)
@@ -4167,6 +4339,10 @@ end
 assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:DLTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
+T.ComputeLatencySource = strings(0,1);
+T.DecodeLatencySource = strings(0,1);
+T.ReceiverPipelineLatency_ms = zeros(0,1);
+T.ReceiverPipelineLatencySource = strings(0,1);
 T.ConfiguredSNR_dB = zeros(0,1);
 T.CRCApplicable = false(0,1);
 T.TxWaveformColumns = zeros(0,1);
@@ -4464,6 +4640,10 @@ T.PrecodingNumLayers = zeros(0,1);
 T.PrecodingMatrixRows = zeros(0,1);
 T.PrecodingMatrixCols = zeros(0,1);
 T.AppliedPrecoderMatrixSHA256 = strings(0,1);
+T.RequestedPrecoderSHA256 = strings(0,1);
+T.AppliedPrecoderSHA256 = strings(0,1);
+T.PrecoderDigestDomain = strings(0,1);
+T.FrozenGrantContextId = strings(0,1);
 T.InterfererBeamformingAppliedCount = zeros(0,1);
 T.InterfererExplicitBeamWeightCount = zeros(0,1);
 T.InterfererTransformPrecodingCount = zeros(0,1);
@@ -4753,6 +4933,7 @@ if nargin < 3 || ~isstruct(grant)
     grant = struct();
 end
 prec = sixgr.util.structGet(tx, "PrecodeInfo", struct());
+digestEvidence = sixgr.phy.grant.resolvePrecoderDigestEvidence(grant, prec);
 trace = struct( ...
     "ConfiguredBeamSelectionStrategy", string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamSelectionStrategy", "")), ...
     "PrecoderSource", string(sixgr.util.structGet(prec, "Source", sixgr.util.structGet(grant, "PrecoderSource", "none"))), ...
@@ -4770,11 +4951,11 @@ trace = struct( ...
     "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", sixgr.util.structGet(grant, "PrecodingNumLayers", NaN))), ...
     "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", sixgr.util.structGet(grant, "PrecodingMatrixRows", NaN))), ...
     "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", sixgr.util.structGet(grant, "PrecodingMatrixCols", NaN))), ...
-    "AppliedPrecoderMatrixSHA256", "");
-appliedMatrix = sixgr.util.structGet(prec, "MatrixPorts", sixgr.util.structGet(prec, "Matrix", []));
-if ~isempty(appliedMatrix)
-    trace.AppliedPrecoderMatrixSHA256 = string(sixgr.phy.mimo.MatrixContract.digest(double(appliedMatrix)));
-end
+    "AppliedPrecoderMatrixSHA256", string(digestEvidence.AppliedPrecoderMatrixSHA256), ...
+    "RequestedPrecoderSHA256", string(digestEvidence.RequestedPrecoderSHA256), ...
+    "AppliedPrecoderSHA256", string(digestEvidence.AppliedPrecoderSHA256), ...
+    "PrecoderDigestDomain", string(digestEvidence.PrecoderDigestDomain), ...
+    "FrozenGrantContextId", string(digestEvidence.FrozenGrantContextId));
 end
 
 function trace = localResolveInterferencePrecodingTrace(replay)
@@ -5291,7 +5472,7 @@ for ii = 1:numel(candidates)
     if isempty(W) || size(W, 1) ~= nTx
         continue;
     end
-    metric(ii) = localFrequencySelectiveBeamPower(Hwb,W) / max(1, size(W, 2));
+    metric(ii) = sixgr.phy.dl.frequencySelectivePrecoderPower(Hwb, W);
 end
 if ~any(isfinite(metric))
     return;

@@ -27,14 +27,8 @@ try
     detection = localBuildPRACHDetectionTrials(raw, scfg, cfg, runtimeIdentity);
     registry.registerTable(domain, "base", "prach_detection_trials.csv", ...
         detection, "sixgr.artifact.registerInitialAccessEvidence.prach_detection_trials");
-    registry.registerRenderer(domain, "base", "prach_preamble_correlation.png", ...
-        @localRenderPRACHCorrelation, ...
-        "sixgr.artifact.registerInitialAccessEvidence.prach_preamble_correlation");
     rows(end+1,1) = localCoverage("CSV", "prach_detection_trials.csv", ... %#ok<AGROW>
         true, height(detection), "REGISTERED", "");
-    rows(end+1,1) = localCoverage("PNG", "prach_preamble_correlation.png", ... %#ok<AGROW>
-        true, height(detection), "REGISTERED", ...
-        "renderer_bound_to_validated_in_path_prach_detection_trials");
 catch cause
     rows(end+1,1) = localCoverage("CSV", "prach_detection_trials.csv", ... %#ok<AGROW>
         false, 0, "NOT_REGISTERED", string(cause.identifier) + " | " + string(cause.message));
@@ -169,26 +163,6 @@ if ismember("PRACHFrequencyEstimationEnabled", vars) && ...
         ~any(localLogical(raw.PRACHFrequencyEstimationEnabled))
     raw.PRACHFrequencyEstimate_Hz = NaN(height(raw), 1);
 end
-end
-
-function fig = localRenderPRACHCorrelation(bundle, contract)
-T = bundle.Tables{1};
-[timing, order] = sort(double(T.TimingEstimate_samples));
-peak = double(T.PeakMetric(order));
-threshold = double(T.Threshold(order));
-fig = figure("Visible", "off", "Color", "white");
-ax = axes(fig);
-hold(ax, "on");
-plot(ax, timing, peak, "o", "MarkerSize", 4, ...
-    "DisplayName", "Detected correlation peak");
-plot(ax, timing, threshold, "-", "LineWidth", 1.5, ...
-    "DisplayName", "Detection threshold");
-grid(ax, "on");
-xlabel(ax, string(contract.ExpectedXLabel));
-ylabel(ax, string(contract.ExpectedYLabel));
-title(ax, string(contract.ExpectedTitle));
-legend(ax, "Location", "best");
-hold(ax, "off");
 end
 
 function identity = localIdentity(scfg, cfg, runtimeIdentity)

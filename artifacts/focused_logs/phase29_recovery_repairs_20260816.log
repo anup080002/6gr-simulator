@@ -1,0 +1,2 @@
+PASS testScenarioCSVAnnotationRuntimeIsolation: runtime journals remain immutable.
+PASS testRawExecutionEvidenceSnapshot: immutable in-path snapshot excludes anchors and rejects proxy/duplicates.

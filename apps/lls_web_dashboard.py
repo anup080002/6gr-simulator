@@ -4767,6 +4767,16 @@ def _filesystem_artifact_kind_and_mime(path: Path) -> tuple[str, str] | None:
     return None
 
 
+def _is_nested_execution_artifact(run_folder: Path, candidate: Path) -> bool:
+    """Return true for evidence owned by a child generic-sweep execution."""
+
+    try:
+        relative = candidate.absolute().relative_to(run_folder.absolute())
+    except ValueError:
+        return False
+    return bool(relative.parts and relative.parts[0].lower() == "sweeps")
+
+
 def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
     """Return true only for a folder with a recognized atomic run authority."""
     return (
@@ -8940,6 +8950,8 @@ def filesystem_artifacts_for_run(run_row: dict[str, Any]) -> list[dict[str, Any]
         return [dict(row) for row in FILESYSTEM_ARTIFACT_CACHE[cache_key]]
     artifacts: list[dict[str, Any]] = []
     for path in root.rglob("*"):
+        if _is_nested_execution_artifact(root, path):
+            continue
         io_path = _windows_extended_path(path)
         if not io_path.is_file():
             continue
@@ -10530,7 +10542,7 @@ def output_family_candidate_paths(output_name: str) -> list[str]:
         return []
     overrides: dict[str, list[str]] = {
         "live_prb_allocation": ["packet_flow/csv/live_prb_allocation.csv"],
-        "power_energy_table": ["rf/csv/power_energy_table.csv", "reports/image/power_energy_cumulative.png"],
+        "power_energy_table": ["rf/csv/power_energy_table.csv"],
         "prb_allocation_heatmap": ["reports/csv/prb_allocation_heatmap.csv", "reports/image/prb_allocation_heatmap.png"],
         "compare_runs_kpi_delta_table": ["reports/csv/compare_run_prerequisites.csv"],
         "compare_run_overlay_plot": ["reports/csv/compare_run_prerequisites.csv"],
@@ -10879,6 +10891,16 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "phy.pucch.enable",
         default=system_default,
     )
+    pucch_runtime_required = config_bool(
+        "control_gating.pucch_required",
+        "run.controlGating.pucchRequired",
+        default=pucch_enabled,
+    )
+    pusch_uci_runtime_required = config_bool(
+        "control_gating.pusch_uci_required",
+        "run.controlGating.puschUCIRequired",
+        default=False,
+    )
     srs_enabled = config_bool(
         "canonical_control.reference_signals.srs_enabled",
         "phy.srs.enable",
@@ -10949,6 +10971,8 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "pbch_runtime_required": pbch_runtime_required,
         "pdcch_enabled": pdcch_enabled,
         "pucch_enabled": pucch_enabled,
+        "pucch_runtime_required": pucch_runtime_required,
+        "pusch_uci_runtime_required": pusch_uci_runtime_required,
         "srs_enabled": srs_enabled,
         "energy_enabled": energy_enabled,
         "prach_collision_enabled": prach_collision_enabled,

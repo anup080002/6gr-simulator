@@ -52,6 +52,19 @@ persistedJSON = jsondecode(fileread(fullfile(root, "reports", "json", ...
 assert(~logical(persistedJSON.PublicationQualified) && ...
     string(persistedJSON.ArtifactContractStatus) == "FAIL");
 
+% Persisted recovery/finalization paths read the status through jsondecode.
+% Empty JSON strings become 0-by-0 char arrays and must remain scalar empty
+% cells in the one-row canonical status table.
+decodedReduced = jsondecode(jsonencode(reduced));
+decodedReduced.ArtifactContractErrorIdentifier = [];
+decodedReduced.ArtifactContractErrorMessage = [];
+sixgr.artifact.updateRootStatusArtifacts(root, decodedReduced);
+decodedPersisted = readtable(fullfile(root, "reports", "csv", ...
+    "result_status_summary.csv"), "TextType", "string");
+assert(height(decodedPersisted) == 1 && ...
+    string(decodedPersisted.ArtifactContractStatus(1)) == "FAIL", ...
+    "JSON-decoded empty status strings must not break one-row publication.");
+
 % A malformed JSON peer must fail before the valid CSV is replaced.
 csvBefore = fileread(fullfile(root, "reports", "csv", ...
     "result_status_summary.csv"));

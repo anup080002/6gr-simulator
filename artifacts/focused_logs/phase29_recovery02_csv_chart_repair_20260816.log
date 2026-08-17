@@ -1,0 +1,132 @@
+[2026-08-16T13:05:28Z] INFO Preparing LLS run: scenario=webgui_sinr_plus20_2x2_mu_mimo_wiring_gate runTag=phase29_plus20_2x2_runtime_truth_20260816_01 runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+[2026-08-16T13:05:35Z] INFO Artifact store active=0 backend=filesystem schema=
+[2026-08-16T13:05:35Z] INFO Writing resolved snapshots.
+[2026-08-16T13:05:36Z] INFO Exporting live geometry artifacts.
+[2026-08-16T13:05:37Z] INFO Executing runner profile=waveform_bundle.
+[2026-08-16T13:05:37Z] INFO Waveform bundle runtime tuning: policy=yaml_exact_truth_runtime notes=exact_yaml_runtime_no_auto_reduction
+[2026-08-16T13:05:37Z] INFO Waveform bundle starting: snr=20.000 dB sweepPoints=1 canonicalSlots=30 monteCarlo=1 slotDuration_s=0.000500
+[2026-08-16T13:06:31Z] INFO Waveform bundle finished: ok=1
+[2026-08-16T13:06:31Z] INFO Evaluating strict control evidence from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-16T13:06:33Z] INFO Strict waveform-backed control evidence finished: ok=0
+[2026-08-16T13:06:33Z] INFO Evaluating strict PRACH from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-16T13:06:33Z] INFO Evaluating strict SRS from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-16T13:06:33Z] INFO Evaluating strict TRS from active slot-runtime rows; no supplemental waveform launched.
+[2026-08-16T13:06:33Z] INFO Evaluating strict PBCH/MIB/SIB1 from active slot-runtime rows; no mini-anchor launched.
+[2026-08-16T13:06:34Z] INFO Running strict Channel/RF validation with evidence_scope=in_path.
+[2026-08-16T13:06:53Z] INFO Refreshing MIMO nominal-vs-effective evidence from waveform-bundle raw trials.
+[2026-08-16T13:06:56Z] INFO Running configured bidirectional L2 protocol component validation.
+[2026-08-16T13:07:11Z] INFO Control-plane trace export complete.
+[2026-08-16T13:07:11Z] INFO Runner profile completed. result.Ok=0
+[2026-08-16T13:07:11Z] INFO Scenario status aggregated: completion=completed_with_failures resultOk=0 requiredFailures=1 optionalPruned=0
+[2026-08-16T13:07:11Z] INFO Annotating CSV artifacts.
+[2026-08-16T13:08:31Z] INFO Writing scenario summary CSV.
+[2026-08-16T13:08:31Z] INFO Writing runtime and environment summaries.
+[2026-08-16T13:10:03Z] INFO Writing scenario manifest.
+[2026-08-16T13:10:03Z] INFO Sealing immutable raw execution identity before report finalization.
+[2026-08-16T13:11:39Z] INFO Exporting initial config-ownership and hardcoding audit artifacts.
+[2026-08-16T13:18:08Z] INFO Runtime truth contract evaluated: ok=0 roundtripMismatch=0 evidenceMissing=1 strictFailures=2
+[2026-08-16T13:18:09Z] INFO Rewriting scenario summary CSV with final truth-gated status.
+[2026-08-16T13:19:37Z] INFO Rewriting scenario manifest with final truth-gated status.
+[2026-08-16T13:19:37Z] INFO Evaluating YAML-selected independent FRC reference qualification.
+[2026-08-16T13:19:37Z] INFO Independent FRC qualification: enabled=0 profile=full passed=0 artifact=
+[2026-08-16T13:19:37Z] INFO Exporting LLS reporting bundle.
+[2026-08-16T13:22:27Z] INFO Scanning truth primary artifacts for active proxy/fallback markers.
+[2026-08-16T13:22:33Z] INFO Registering fresh in-memory waveform evidence with the contract publisher.
+[2026-08-16T13:22:34Z] INFO Registering fresh in-memory initial-access evidence with the contract publisher.
+[2026-08-16T13:22:34Z] INFO Finalizing YAML-selected runtime-only artifact contracts.
+[2026-08-16T13:23:03Z] INFO Artifact contract finalization: status=PASS contracts=6 failures=0 requiredFailures=0.
+[2026-08-16T13:23:03Z] INFO Exporting output-coverage and honest-unavailable artifacts.
+exportLLSOutputCoverageArtifacts:start runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:sources_loaded runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_core_topology_channel_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_live_prb_allocation runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_live_re_allocation_snapshot runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_scheduler_decision runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_prb_allocation_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_dl_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_ul_resource_grid_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_dl_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_ul_transport_block runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_harq_process runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_cqi_pmi_ri runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:building_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:built_mcs_tbs_evolution runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_scheduler_transport_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_latency_energy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_root_cause_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_control_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_beam_timing_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_prompt8_adequacy_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:tables_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:packet_flow/csv/table_scheduler_decision.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:packet_flow/csv/live_prb_allocation.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_re_allocation_snapshot.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/prb_allocation_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/dl_resource_grid_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/ul_resource_grid_heatmap.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/table_mcs_tbs_evolution.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_power_runtime_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:reports/csv/live_rf_power_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:json_sidecar_suppressed:control/csv/timing_synchronization_table.csv:json_sidecar_suppressed_due_scale_guard_high_cardinality_runtime_table runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:table_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:writing_prb_heatmap runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:writing_power_energy_figure runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:figure_artifacts_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:coverage_registry_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:coverage_audits_built runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:coverage_tables_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:measurement_sidecars_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:live_stage_control_counts_reconciled runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:phase7_and_publication_readiness_refreshed runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:inventory_written runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+exportLLSOutputCoverageArtifacts:done runFolder=C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02
+[2026-08-16T13:27:00Z] INFO Refreshing config-ownership artifacts after final runtime/report exports.
+[2026-08-16T13:33:33Z] INFO Materializing strict browser contract artifacts before final visual and terminal status reduction.
+[2026-08-16T13:35:14Z] WARN Browser contract artifact materialization did not complete: browser_contract_materialization_failed | {
+  "run_id": 9269979857,
+  "run_folder": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\results\\lls\\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02",
+  "storage_backend": "results_folder",
+  "verification_only": false,
+  "materializer_version": "2026-08-16-contract-v32-semantic-raster-lineage",
+  "created_count": 249,
+  "old_rasters_removed": 0,
+  "manifest_path": "reports/csv/contract_materialization_manifest.csv",
+  "coverage_path": "reports/csv/contract_materialization_coverage.csv",
+  "tables_total": 193,
+  "tables_available": 173,
+  "tables_policy_disabled": 20,
+  "tables_missing": 0,
+  "charts_total": 368,
+  "charts_available": 124,
+  "charts_policy_disabled": 119,
+  "charts_missing": 125
+}
+Filesystem contract verification incomplete. Missing tables: [] Missing charts: [run health timeline, error/warning/fallback stacked time series, truth policy violations by category, candidate cell rank heatmap, SSB occasion timeline, PRACH occasion timeline, CORESET/search-space occupancy chart, scheduled PRBs per UE over time, scheduler fairness over time, SR/BSR event timeline, HARQ process timeline, RV usage distribution, retransmission count histogram, ACK/NACK timeline, residual BLER by HARQ process, combining gain histogram, aggregation level distribution, CCE usage heatmap, PDCCH DMRS occupancy, PDCCH decode success/failure trend if applicable, SSB index timeline, SSB/PBCH occupancy map, sync success/failure timeline if available, crash/error timeline, UCI bit count distribution, PRACH peak search timeline, noise floor trend, peak value histogram, SRS validity timeline, channel estimate quality trend, SRS consumption by scheduler/beam module, RSRP/CSI-RSRP timeline, selected vs best beam timeline, beam hit rate timeline, rank distribution, UE Tx power timeline, DRX state timeline, per-cell context health timeline, TX power timeline per cell, TX power timeline per UE, power vs BLER, duplicate write count trend, dl_bler_vs_snr, ul_bler_vs_snr, dl_ber_vs_snr, ul_ber_vs_snr, throughput_vs_snr, measured_sinr_vs_configured_snr, investigator stage lineage graph, truth violation rollup, occupied bandwidth, out-of-band spectral summaries if measurable, clipping event histogram, EVM per symbol, EVM per layer, PDCCH map, PBCH/SSB map, PUCCH map, PRACH opportunity map, SRS map, NMSE vs SNR / SINR, P_FA, FAR, P_MD, P_D, PRACH correlation peak distributions, PRACH noise floor distributions, PRACH peak search results, SSB detection statistics, control decode success/failure tables, PBCH/PDCCH/PUCCH detection and decode timelines, BER, BLER, FER, code-block error rates, CBG error rates, residual BLER after HARQ, per-channel reliability breakdown, per-UE and per-cell reliability, BLER vs SNR, BLER vs SINR, BLER vs MCS, BER vs SNR, FER vs SNR, throughput vs load, goodput vs retransmissions, per-cell throughput, throughput CDF, fairness index trend, ServingRSRP / RSRP / CSI-RSRP trends, per-beam quality plot, per-layer quality plot, HARQ process timeline, retransmission count histogram, retransmission rate trend, HARQ combining gain distribution, newTx vs retx comparison, residual failure patterns, antenna element layout, antenna radiation pattern, beam id timeline, beam pair timeline, beam hit rate / top-K hit rate, combiner summary, rank distribution, detection rate, false alarm rate, missed detection rate, retry count distribution, preamble/root/cyclic-shift usage summary, IQ imbalance summary, power vs BLER, active bandwidth vs power, active rank vs power, energy efficiency by cell, sleep/idle/active state occupancy, dropped row / duplicate write analytics, CSV vs DB consistency, DB vs browser consistency, config drift, truth-policy violation counts, smoke exposure checks, placeholder exposure checks, fallback event summaries, run status truth checks]
+
+[2026-08-16T13:35:14Z] INFO Auditing the exact post-materialization raster tree.
+[2026-08-16T13:35:37Z] INFO Runtime truth contract re-evaluated after final artifact exports: ok=0 roundtripMismatch=0 evidenceMissing=1 strictFailures=2
+[2026-08-16T13:35:38Z] INFO Rewriting scenario summary CSV with final artifact truth-gated status.
+[2026-08-16T13:37:40Z] INFO Rewriting scenario manifest with final artifact truth-gated status.
+[2026-08-16T13:37:40Z] INFO Writing artifact manifest.
+[2026-08-16T13:37:43Z] INFO Writing scenario markdown report.
+[2026-08-16T13:37:43Z] INFO Publishing component artifact views: enabled=1 required=1.
+[2026-08-16T13:38:18Z] INFO Component artifact views published: files=1061 componentsWithoutEvidence=0 skippedLegacySVG=0 manifest=reports/csv/component_artifact_publication_manifest.csv
+[2026-08-16T13:38:18Z] INFO Refreshing artifact manifest after component view publication.
+[2026-08-16T13:38:45Z] INFO Required final artifacts published; marking terminal run status before optional artifacts.
+[2026-08-16T13:38:46Z] INFO Pruning empty result directories.
+[2026-08-16T13:38:46Z] INFO Finalizing component artifact views after all canonical report and profiler writes.
+[2026-08-16T13:39:23Z] INFO Running terminal visual/status reduction after optional and component artifact writes.
+[2026-08-16T13:41:44Z] WARN Run completed with truth/status failures in 2178.326 seconds: requiredFailures=1 strictTruthFailures=0
+   0
+
+C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\results\lls\webgui_sinr_plus20_2x2_mu_mimo_wiring_gate\phase29_plus20_2x2_runtime_truth_20260816_01_recovery02

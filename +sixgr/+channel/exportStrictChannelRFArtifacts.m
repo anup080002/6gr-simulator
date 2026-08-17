@@ -59,7 +59,8 @@ sixgr.util.csvWriteTable(artifacts.LargeScaleParametersCSV, result.LargeScalePar
 sixgr.util.csvWriteTable(artifacts.ChannelRealizationsCSV, result.ChannelRealizations);
 sixgr.util.csvWriteTable(artifacts.ChannelSnapshotsCSV, result.ChannelSnapshots);
 sixgr.util.csvWriteTable(artifacts.PathGainsCSV, result.ChannelPathGains);
-sixgr.util.csvWriteTable(artifacts.ConfiguredVsAppliedCSV, result.ConfiguredVsApplied);
+configuredVsApplied = localAddExpectedOutcomeMatch(result.ConfiguredVsApplied);
+sixgr.util.csvWriteTable(artifacts.ConfiguredVsAppliedCSV, configuredVsApplied);
 sixgr.util.csvWriteTable(artifacts.ChannelRFConfiguredAppliedReportCSV, localReportConfiguredAppliedTable(result));
 sixgr.util.csvWriteTable(artifacts.ChannelRFCDLCRealizationReportCSV, localCDLCRealizationReportTable(result));
 sixgr.util.csvWriteTable(artifacts.ChannelRFPerUERealizationReportCSV, localPerUERealizationReportTable(result));
@@ -86,7 +87,7 @@ summary.StrictModeToolboxFallbackAllowed = false;
 summary.ProducerModule = "sixgr.channel.exportStrictChannelRFArtifacts";
 sixgr.util.jsonWrite(artifacts.ConformanceSummaryJSON, summary);
 
-localWriteConfiguredVsAppliedPNG(artifacts.ConfiguredVsAppliedPNG, result.ConfiguredVsApplied);
+localWriteConfiguredVsAppliedPNG(artifacts.ConfiguredVsAppliedPNG, configuredVsApplied);
 localWriteRFPNG(artifacts.RFImpairmentPNG, result.RFImpairmentChain);
 sixgr.visual.writeComponentPlotLineage(layout.Root, artifacts.PlotLineageCSV, ...
     ["channel_configured_vs_applied"; "rf_impairment_chain"], ...
@@ -278,7 +279,11 @@ row = struct("RunId", "", "ScenarioName", "", "LinkId", "", ...
 end
 
 function localWriteConfiguredVsAppliedPNG(path, T)
-ok = double(logical(T.StrictOk));
+if ismember("ExpectedOutcomeMatch", string(T.Properties.VariableNames))
+    ok = double(logical(T.ExpectedOutcomeMatch));
+else
+    ok = double(logical(T.StrictOk));
+end
 fig = figure("Visible", "off", "Color", "w", "Position", [100 100 max(720, 28 * max(height(T), 1)) 460]);
 cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
@@ -292,9 +297,27 @@ for i = 1:numel(ok)
     end
 end
 ylim(ax, [0 1.15]); grid(ax, "on");
-xlabel(ax, "Configured feature evidence row"); ylabel(ax, "Strict applied match");
-title(ax, "Channel/RF configured-vs-applied strict evidence", "Interpreter", "none");
+xlabel(ax, "Configured validation trial"); ylabel(ax, "Expected outcome match");
+if ismember("TrialId", string(T.Properties.VariableNames)) && height(T) <= 24
+    xticks(ax, 1:height(T));
+    xticklabels(ax, string(T.TrialId));
+    xtickangle(ax, 30);
+end
+title(ax, "Channel/RF configured-vs-applied expected outcomes", "Interpreter", "none");
 sixgr.util.exportFigureArtifact(fig, path, "Resolution", 170);
+end
+
+function T = localAddExpectedOutcomeMatch(T)
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+strictOk = logical(T.StrictOk);
+if ismember("ExpectedOk", string(T.Properties.VariableNames))
+    expectedOk = logical(T.ExpectedOk);
+else
+    expectedOk = true(height(T), 1);
+end
+T.ExpectedOutcomeMatch = strictOk == expectedOk;
 end
 
 function localWriteRFPNG(path, T)

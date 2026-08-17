@@ -40,8 +40,13 @@ cfg.channel.awgnOnly = true;
 assert(rx.Ok, "Explicit AWGN SISO smoke mode must allow the fast scalar shortcut.");
 assert(isequal(int8(rx.TransportBlock(:)), int8(tx.TransportBlock(:))), ...
     "Fast AWGN shortcut changed the recovered PDSCH transport block.");
-assert(strcmp(string(info.ChannelEstimation.EngineUsed), "unit-flat-shortcut"), ...
-    "Fast AWGN shortcut should record the unit-flat estimator path.");
+assert(strcmp(string(info.ChannelEstimation.EngineUsed), ...
+        "explicit_awgn_scalar_per_physical_port_ls"), ...
+    "Explicit flat AWGN validation must estimate one LS gain per physical port from received DM-RS; actual engine: %s.", ...
+    char(string(info.ChannelEstimation.EngineUsed)));
+assert(~logical(sixgr.util.structGet(info.ChannelEstimation, ...
+        "EstimatorUsesTrueChannel", false)), ...
+    "Explicit flat AWGN validation must not consume a true-channel oracle.");
 end
 
 function localTestStrictTDLDisallowsScalarShortcut()
@@ -112,6 +117,7 @@ cfg.phy.nTxAnt = 4;
 cfg.channel.nTxAnt = 4;
 cfg.phy.pdsch.nLayers = 2;
 cfg.phy.pdsch.numLayers = 2;
+cfg.phy.pdsch.dmrs.portSet = [0 1];
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.numPorts", 4);
 W = [ ...
     1  0; ...
@@ -232,8 +238,11 @@ cfg.phy.pdsch.prbSet = 0:5;
 cfg.phy.pdsch.symbolAllocation = [0 10];
 cfg.phy.pdsch.modulation = 'QPSK';
 cfg.phy.pdsch.codeRate = 0.30;
+cfg.phy.pdsch.mcsTable = "calibration_explicit";
+cfg.phy.pdsch.mcsIndex = 0;
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.dmrs.portSet = 0;
 cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.csirs.enable = false;
 end
@@ -253,8 +262,11 @@ cfg.phy.pusch.prbSet = 0:5;
 cfg.phy.pusch.symbolAllocation = [0 10];
 cfg.phy.pusch.modulation = 'QPSK';
 cfg.phy.pusch.codeRate = 0.30;
+cfg.phy.pusch.mcsTable = "calibration_explicit";
+cfg.phy.pusch.mcsIndex = 0;
 cfg.phy.pusch.nLayers = 1;
 cfg.phy.pusch.numLayers = 1;
+cfg.phy.pusch.dmrs.portSet = 0;
 cfg.phy.pusch.transformPrecoding = true;
 end
 

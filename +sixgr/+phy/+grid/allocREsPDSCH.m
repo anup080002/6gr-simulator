@@ -648,7 +648,8 @@ if ~(isstruct(cfg) && logical(sixgr.util.structGet(cfg, "phy.csirs.enable", fals
     return;
 end
 try
-    [~, csirsSym, csirsInfo, csirs] = sixgr.phy.refsig.csirs(carrier, cfg);
+    [csirsInd, csirsSym, csirsInfo] = sixgr.phy.refsig.csirs( ...
+        carrier, cfg, "IndexBase", "0based");
 catch ME
     error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationFailed", ...
         "CSI-RS is enabled but runtime CSI-RS resources could not be generated for PDSCH reservation: %s", ME.message);
@@ -656,34 +657,45 @@ end
 if isempty(csirsSym) || ~isstruct(csirsInfo) || ~logical(sixgr.util.structGet(csirsInfo, "Enabled", false))
     return;
 end
-try
-    resources = sixgr.util.structGet(csirsInfo, "Resources", []);
-    if isempty(resources)
-        resources = struct("Configuration", csirs);
-    end
-    reservations = cell(1, numel(resources));
-    for ordinal = 1:numel(resources)
-        resourceConfig = resources(ordinal).Configuration;
-        res = nrPDSCHReservedConfig;
-        rbOffset = double(resourceConfig.RBOffset);
-        numRB = double(resourceConfig.NumRB);
-        res.PRBSet = rbOffset:(rbOffset + max(0, numRB - 1));
-        res.SymbolSet = double(resourceConfig.SymbolLocations(:).');
-        period = sixgr.util.structGet(cfg, "phy.csirs.pdschReservationPeriod", []);
-        if ~isempty(period)
-            res.Period = double(period);
-        end
-        reservations{ordinal} = res;
-    end
 
-    existing = pdsch.ReservedPRB;
-    if isempty(existing)
-        pdsch.ReservedPRB = reservations;
-    elseif iscell(existing)
-        pdsch.ReservedPRB = [existing(:).' reservations];
-    else
-        pdsch.ReservedPRB = [{existing} reservations];
-    end
+% CSI-RS is sparse inside each configured RB.  Reserving an entire PRB for
+% every CSI-RS symbol removes unrelated PDSCH data and can remove every
+% active DM-RS RE from a narrow scheduler grant.  nrPDSCHConfig.ReservedRE
+% is zero-based, so project the physical multi-port CSI-RS indices onto one
+% resource-grid plane and retain only REs inside this PDSCH allocation.
+plane = double(carrier.NSizeGrid) * 12 * double(carrier.SymbolsPerSlot);
+csirsBaseZero = unique(mod(double(csirsInd(:)), plane), "sorted");
+prbs = double(pdsch.PRBSet(:).');
+symbolAllocation = double(pdsch.SymbolAllocation(:).');
+subcarriers = reshape(12 .* prbs + (0:11).', 1, []);
+scheduledSymbols = symbolAllocation(1) + (0:(symbolAllocation(2) - 1));
+[k, l] = ndgrid(subcarriers, scheduledSymbols);
+allocationZero = double(k(:) + 12 .* double(carrier.NSizeGrid) .* l(:));
+reservedZero = intersect(csirsBaseZero, allocationZero, "sorted");
+if isempty(reservedZero)
+    return;
+end
+
+% PDSCH data can be rate-matched around exact CSI-RS REs, but PDSCH DM-RS
+% cannot be punctured by CSI-RS.  Reject a colliding YAML schedule before
+% the Toolbox silently deactivates the receiver's channel-estimation
+% reference symbols.
+dmrsSub = nrPDSCHDMRSIndices(carrier, pdsch, ...
+    "IndexStyle", "subscript", "IndexBase", "0based");
+dmrsBaseZero = unique(double(dmrsSub(:,1) + ...
+    12 .* double(carrier.NSizeGrid) .* dmrsSub(:,2)), "sorted");
+dmrsCollision = intersect(reservedZero, dmrsBaseZero, "sorted");
+if ~isempty(dmrsCollision)
+    error("sixgr:phy:grid:allocREsPDSCH:CSIRSDMRSCollision", ...
+        ['Configured CSI-RS overlaps %d active PDSCH DM-RS RE(s) in slot %d. ' ...
+         'Move the YAML-owned CSI-RS resource(s) off the DM-RS symbols; ' ...
+         'DM-RS puncturing is not permitted.'], ...
+        numel(dmrsCollision), double(carrier.NSlot));
+end
+
+try
+    existing = double(pdsch.ReservedRE(:));
+    pdsch.ReservedRE = unique([existing; reservedZero(:)], "sorted");
 catch ME
     error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationApplyFailed", ...
         "CSI-RS runtime resources were generated but could not be reserved in the PDSCH allocation: %s", ME.message);

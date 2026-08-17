@@ -125,6 +125,9 @@ replay = struct( ...
     "ExplicitPrecoderReplayBlocker", "waveform_replay_not_executed", ...
     "AppliedPrecoderPMIType", "", ...
     "AppliedPrecoderCodebookMode", "", ...
+    "RequestedPrecoderSHA256", "", ...
+    "AppliedPrecoderSHA256", "", ...
+    "FrozenGrantContextId", "", ...
     "HARQSoftCombiningApplied", false, ...
     "HARQSoftCombiningReason", "", ...
     "HARQSoftBufferPriorAvailable", false, ...
@@ -592,6 +595,17 @@ else
         "ExecutionProfile", "phy_calibration", ...
         "CompactOutput", logical(opt.CompactPHYIO));
 end
+% The Tx builders return waveform-domain payloads and do not know about the
+% enclosing scheduler-grant template.  Preserve the immutable authority
+% identities on the emitted waveform object so replay evidence can prove
+% which frozen grant/configuration produced the samples (including cache
+% hits, where this augmented Tx object is retained verbatim).
+for authorityField = ["FrozenGrantContextId", ...
+        "FrozenPrecoderSHA256", "FrozenRuntimeAuthoritySHA256"]
+    if isfield(tmpl, authorityField)
+        tx.(authorityField) = tmpl.(authorityField);
+    end
+end
 end
 
 function bits = localPayloadlessTransportBits(expectedBits)
@@ -700,6 +714,12 @@ replay.ExplicitPrecoderReplayStatus = "materialized";
 replay.ExplicitPrecoderReplayBlocker = "";
 replay.AppliedPrecoderPMIType = string(sixgr.util.structGet(prec, "PMIType", ""));
 replay.AppliedPrecoderCodebookMode = string(sixgr.util.structGet(prec, "CodebookMode", ""));
+replay.RequestedPrecoderSHA256 = string(sixgr.util.structGet(prec, ...
+    "SelectedMatrixSHA256", sixgr.util.structGet(prec, "AppliedMatrixSHA256", "")));
+replay.AppliedPrecoderSHA256 = string(sixgr.util.structGet(prec, ...
+    "AppliedMatrixSHA256", replay.RequestedPrecoderSHA256));
+replay.FrozenGrantContextId = string(sixgr.util.structGet(tx, ...
+    "FrozenGrantContextId", ""));
 replay.PrecodingNumPorts = double(sixgr.util.structGet(prec, "NumPorts", NaN));
 replay.PrecodingNumLayers = double(sixgr.util.structGet(prec, "NumLayers", NaN));
 replay.PrecodingMatrixRows = double(sixgr.util.structGet(prec, "MatrixRows", NaN));
@@ -940,6 +960,29 @@ function cfgOut = localBuildReplayConfig(cfgIn, dir, grant)
 cfgOut = cfgIn;
 cfgOut.phy.rx.useFastChannelEstMex = false;
 
+% A scheduler grant is not merely an allocation hint.  When it carries an
+% immutable PHYGrant, replay that exact coding/spatial authority before any
+% carrier or calibration projection.  Otherwise the system path silently
+% regenerates an identity precoder and no longer executes the matrix that
+% the scheduler selected.
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
+        logical(sixgr.util.structGet(phyGrant, "IsFrozen", false))
+    frozenDirection = upper(string(sixgr.util.structGet(phyGrant, ...
+        "Direction", "")));
+    if frozenDirection ~= upper(string(dir))
+        error("sixgr:system:waveform:FrozenGrantDirectionMismatch", ...
+            "Frozen PHYGrant direction '%s' cannot drive %s replay.", ...
+            char(frozenDirection), char(upper(string(dir))));
+    end
+    if frozenDirection == "DL"
+        cfgOut = sixgr.truth.applyFrozenDLGrantAuthority( ...
+            cfgOut, grant, "system_waveform_replay");
+    else
+        cfgOut = sixgr.phy.grant.applyPHYGrantToConfig(cfgOut, phyGrant);
+    end
+end
+
 numLayers = max(1, round(double(sixgr.util.structGet(grant, "NumLayers", 1))));
 txAnt = localEffectiveTxAntennas(cfgIn, dir, numLayers);
 rxAnt = localEffectiveRxAntennas(cfgIn, dir, numLayers);
@@ -1175,6 +1218,7 @@ tx0 = struct( ...
     "TargetCodeRate", targetCodeRate, ...
     "XOverhead", double(xOverhead), ...
     "TransportBlockSize", localComputeTBSBitsFromAlloc(pdsch, pdschInfo, targetCodeRate, double(xOverhead)));
+tx0 = localAttachReplayAuthority(tx0, grant);
 end
 
 function prbSet = localReplayPRBSet(cfgE, grant)
@@ -1285,6 +1329,17 @@ tx0 = struct( ...
     "TargetCodeRate", targetCodeRate, ...
     "XOverhead", double(xOverhead), ...
     "TransportBlockSize", localComputeTBSBitsFromAlloc(pusch, puschInfo, targetCodeRate, double(xOverhead)));
+tx0 = localAttachReplayAuthority(tx0, grant);
+end
+
+function out = localAttachReplayAuthority(out, grant)
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+out.FrozenGrantContextId = char(string(sixgr.util.structGet( ...
+    phyGrant, "GrantContextId", "")));
+out.FrozenPrecoderSHA256 = char(string(sixgr.util.structGet( ...
+    phyGrant, "PrecodingState.SelectedMatrixSHA256", "")));
+out.FrozenRuntimeAuthoritySHA256 = char(string(sixgr.util.structGet( ...
+    phyGrant, "ConfigurationAuthority.RuntimeOperatingAuthoritySHA256", "")));
 end
 
 function key = localReplayTxCacheKey(dir, tmpl)
@@ -1294,6 +1349,12 @@ signature.TransportBlockSize = double(sixgr.util.structGet(tmpl, "TransportBlock
 signature.RV = double(sixgr.util.structGet(tmpl, "RV", NaN));
 signature.TargetCodeRate = round(double(sixgr.util.structGet(tmpl, "TargetCodeRate", NaN)) * 1e6) / 1e6;
 signature.XOverhead = double(sixgr.util.structGet(tmpl, "XOverhead", NaN));
+signature.FrozenGrantContextId = char(string(sixgr.util.structGet( ...
+    tmpl, "FrozenGrantContextId", "")));
+signature.FrozenPrecoderSHA256 = char(string(sixgr.util.structGet( ...
+    tmpl, "FrozenPrecoderSHA256", "")));
+signature.FrozenRuntimeAuthoritySHA256 = char(string(sixgr.util.structGet( ...
+    tmpl, "FrozenRuntimeAuthoritySHA256", "")));
 signature.Carrier = localObjectCacheStruct(sixgr.util.structGet(tmpl, "Carrier", []));
 if strcmpi(signature.Direction, "UL")
     signature.Channel = localObjectCacheStruct(sixgr.util.structGet(tmpl, "PUSCH", []));
@@ -1323,6 +1384,13 @@ signature.Modulation = char(string(sixgr.util.structGet(grant, "Modulation", "")
 signature.NumLayers = double(sixgr.util.structGet(grant, "NumLayers", NaN));
 signature.RV = double(localGrantRV(grant));
 signature.TargetCodeRate = round(double(sixgr.util.structGet(grant, "TargetCodeRate", NaN)) * 1e6) / 1e6;
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+signature.FrozenGrantContextId = char(string(sixgr.util.structGet( ...
+    phyGrant, "GrantContextId", "")));
+signature.FrozenPrecoderSHA256 = char(string(sixgr.util.structGet( ...
+    phyGrant, "PrecodingState.SelectedMatrixSHA256", "")));
+signature.FrozenRuntimeAuthoritySHA256 = char(string(sixgr.util.structGet( ...
+    phyGrant, "ConfigurationAuthority.RuntimeOperatingAuthoritySHA256", "")));
 try
     key = char(jsonencode(signature));
 catch

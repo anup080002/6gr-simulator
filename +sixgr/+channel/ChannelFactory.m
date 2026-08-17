@@ -748,6 +748,7 @@ classdef ChannelFactory
         function [y, replay, state] = applyRuntimeChannelState(state, x)
             y = x;
             replay = struct( ...
+                "ChannelRealizationId", "", ...
                 "ChannelFadingApplied", false, ...
                 "ChannelFadingExecutionStatus", "not_requested", ...
                 "ChannelFadingObjectClass", "", ...
@@ -767,7 +768,12 @@ classdef ChannelFactory
                 "RuntimeChannelExternalLogicalTxPorts", NaN, ...
                 "RuntimeChannelPhysicalTxElements", NaN, ...
                 "RuntimeChannelElementExpansionMatrixSHA256", "", ...
-                "RuntimeChannelElementExpansionChunkSamples", NaN);
+                "RuntimeChannelElementExpansionChunkSamples", NaN, ...
+                "RuntimeChannelInputWaveformSHA256", "", ...
+                "RuntimeChannelOutputWaveformSHA256", "", ...
+                "RuntimeChannelPathGainsSHA256", "", ...
+                "RuntimeChannelPathGainElementCount", 0, ...
+                "RuntimeChannelPathGainDimensions", "");
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 return;
             end
@@ -777,6 +783,8 @@ classdef ChannelFactory
             replay.RuntimeChannelResetCount = double(sixgr.util.structGet(state, "ResetCount", NaN));
             replay.RuntimeChannelStartSample = double(sixgr.util.structGet(state, "CurrentSampleIndex", 0));
             replay.RuntimeChannelIdleAdvancedSamples = double(sixgr.util.structGet(state, "LastIdleAdvancedSamples", 0));
+            replay.RuntimeChannelInputWaveformSHA256 = ...
+                sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(x);
             materializedTx = max(1, round(double(sixgr.util.structGet(state, "NumTxAnt", max(1, size(x, 2))))));
             activeTx = max(1, size(x, 2));
             externalTx = max(1, round(double(sixgr.util.structGet( ...
@@ -797,6 +805,10 @@ classdef ChannelFactory
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
                 replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
                 state.CurrentSampleIndex = replay.RuntimeChannelEndSample;
+                replay.RuntimeChannelOutputWaveformSHA256 = ...
+                    replay.RuntimeChannelInputWaveformSHA256;
+                replay.ChannelRealizationId = ...
+                    sixgr.channel.ChannelFactory.runtimeChannelRealizationId(state, replay);
                 return;
             end
             replay.ChannelFadingExecutionStatus = "attempted";
@@ -847,6 +859,14 @@ classdef ChannelFactory
             replay.ChannelFadingApplied = true;
             replay.ChannelFadingExecutionStatus = "applied_persistent_runtime_channel_object";
             replay.ChannelPathGainsAvailable = ~isempty(pathGains);
+            replay.RuntimeChannelOutputWaveformSHA256 = ...
+                sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(y);
+            if ~isempty(pathGains)
+                replay.RuntimeChannelPathGainsSHA256 = ...
+                    sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(pathGains);
+                replay.RuntimeChannelPathGainElementCount = double(numel(pathGains));
+                replay.RuntimeChannelPathGainDimensions = char(join(string(size(pathGains)), "x"));
+            end
             state.LastPathGainsAvailable = replay.ChannelPathGainsAvailable;
             state.LastApplyStartSample = replay.RuntimeChannelStartSample;
             state.LastApplyEndSample = replay.RuntimeChannelStartSample + size(x, 1);
@@ -858,6 +878,48 @@ classdef ChannelFactory
             state.TotalAppliedSamples = double(sixgr.util.structGet(state, "TotalAppliedSamples", 0)) + size(x, 1);
             state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + size(xIn, 1);
             replay.RuntimeChannelEndSample = double(state.CurrentSampleIndex);
+            replay.ChannelRealizationId = ...
+                sixgr.channel.ChannelFactory.runtimeChannelRealizationId(state, replay);
+        end
+
+        function realizationId = runtimeChannelRealizationId(state, replay)
+            % Identify the exact persistent-channel sample slice that was
+            % applied.  This digest is derived from executed state, never
+            % from the configured profile alone, and intentionally avoids
+            % serializing the mutable System object or hidden path gains.
+            payload = struct( ...
+                "ContractVersion", string(sixgr.util.structGet(state, "ContractVersion", "")), ...
+                "LinkKey", string(sixgr.util.structGet(replay, "RuntimeChannelLinkKey", "")), ...
+                "Seed", double(sixgr.util.structGet(replay, "RuntimeChannelSeed", NaN)), ...
+                "ResetCount", double(sixgr.util.structGet(replay, "RuntimeChannelResetCount", NaN)), ...
+                "StartSample", double(sixgr.util.structGet(replay, "RuntimeChannelStartSample", NaN)), ...
+                "EndSample", double(sixgr.util.structGet(replay, "RuntimeChannelEndSample", NaN)), ...
+                "ChannelObjectClass", string(sixgr.util.structGet(replay, "ChannelFadingObjectClass", "")), ...
+                "FadingApplied", logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false)), ...
+                "MaterializedTxPorts", double(sixgr.util.structGet(replay, "RuntimeChannelMaterializedTxPorts", NaN)), ...
+                "ActiveTxPorts", double(sixgr.util.structGet(replay, "RuntimeChannelActiveTxPorts", NaN)), ...
+                "PhysicalTxElements", double(sixgr.util.structGet(replay, "RuntimeChannelPhysicalTxElements", NaN)), ...
+                "ElementExpansionMatrixSHA256", string(sixgr.util.structGet(replay, "RuntimeChannelElementExpansionMatrixSHA256", "")));
+            digest = lower(string(sixgr.channel.hashChannelRFConfig(payload)));
+            realizationId = char("ch_" + extractBefore(digest, 17));
+        end
+
+        function hash = runtimeNumericArraySHA256(value)
+            % Byte-exact digest used for executed waveform/path-gain
+            % lineage.  Size and class are included to avoid equal byte
+            % streams from different array interpretations colliding.
+            header = uint8(char("runtime_array:" + string(class(value)) + ":"));
+            dims = reshape(typecast(uint64(size(value)), "uint8"), [], 1);
+            if isempty(value)
+                payload = uint8([]);
+            elseif isnumeric(value) || islogical(value)
+                realBytes = reshape(typecast(double(real(value(:))), "uint8"), [], 1);
+                imagBytes = reshape(typecast(double(imag(value(:))), "uint8"), [], 1);
+                payload = [realBytes; imagBytes];
+            else
+                payload = uint8(unicode2native(char(string(class(value))), "UTF-8"));
+            end
+            hash = char(lower(string(sixgr.util.sha256Hex([header(:); dims; payload(:)]))));
         end
 
         function [padSamples, trimSamples] = resolveChannelDelaySamples(chObj, fs)
@@ -925,7 +987,11 @@ classdef ChannelFactory
                 runtimeAntenna, "HybridBeamformingEnabled", false)) || ...
                 logical(sixgr.util.structGet( ...
                 runtimeMeta, "HybridBeamformingEnabled", false));
-            if ~hybridEnabled
+            projectionEnabled = logical(sixgr.util.structGet( ...
+                runtimeAntenna, "PortToElementExpansionEnabled", false)) || ...
+                logical(sixgr.util.structGet( ...
+                runtimeMeta, "PortToElementExpansionEnabled", false));
+            if ~(hybridEnabled || projectionEnabled)
                 return;
             end
             if isempty(matrix)
@@ -965,11 +1031,11 @@ classdef ChannelFactory
             runtimeAntenna.SourceLogicalWaveformColumns = double(logicalPorts);
             runtimeAntenna.NumWaveformColumns = double(physicalElements);
             runtimeAntenna.WaveformDomain = "element";
-            runtimeAntenna.HybridBeamformingEnabled = true;
+            runtimeAntenna.PortToElementExpansionEnabled = true;
             runtimeMeta.SourceLogicalWaveformColumns = double(logicalPorts);
             runtimeMeta.NumWaveformColumns = double(physicalElements);
             runtimeMeta.WaveformDomain = "element";
-            runtimeMeta.HybridBeamformingEnabled = true;
+            runtimeMeta.PortToElementExpansionEnabled = true;
         end
 
         function [yRaw, pathGains] = ...

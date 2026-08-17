@@ -1,0 +1,24 @@
+inherits:
+  - lls_channel_rf_strict_mini_anchor.yaml
+
+meta:
+  scenario_id: lls_channel_rf_strict_tdl_mini_anchor
+  description: Strict NR TDL-C configured-vs-applied channel validation mini anchor.
+  version: "1.0"
+  owner: codex
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: channel_rf
+  tags: [channel_rf, strict, configured_vs_applied, waveform_impairments, tdl_c]
+
+scenario:
+  name: UMa
+  description: YAML-authoritative TDL-C waveform channel validation companion to the CDL anchor.
+  notes: "Configured TDL-C realization only; no hidden CDL/AWGN substitution."
+
+frequency:
+  channel_model_defaults: TDL
+
+channels:
+  model_type: TDL
+  profile: TDL-C

@@ -243,6 +243,16 @@ reference_signals:
   pdsch_dmrs_ports: 2
   pusch_dmrs_ports: 2
   csi_rs_enabled: true
+  # The inherited 700 MHz seed carries a two-element CSI-RS codebook. This
+  # 64-element family must replace that physical-domain authority together
+  # with its antenna configuration; the logical two CSI ports remain
+  # orthogonal DFT spatial filters on the configured array.
+  csi_rs_precoder_codebook:
+    enabled: true
+    type: dft_ura
+    physical_element_count: 64
+    beam_indices_port_0: [0]
+    beam_indices_port_1: [1]
   srs_enabled: true
   trs_enabled: true
   tracking_rs_enabled: true
@@ -495,6 +505,15 @@ traffic:
 
 energy_efficiency:
   tx_power_dbm: 46
+
+# This family replaces the inherited 15 kHz carrier with mu=1 in both
+# directions.  The timing capability is part of that same YAML authority;
+# retaining the inherited mu=0 token would make every production grant
+# invalid even though the BWP and carrier grids are coherently 30 kHz.
+tdd_timing:
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
+  n1_pdsch_processing_time_symbols: 10
+  n2_pusch_preparation_time_symbols: 12
 
 # The inherited 700 MHz seed uses a 15 kHz / 106-PRB BWP.  This family is
 # a 4 GHz, 100 MHz, 30 kHz carrier, so both active BWPs and their carrier

@@ -10,6 +10,9 @@ function out = executeSpatialComposite(tx, rx, cfg, varargin)
 %   H: Nrx-by-Nport effective channel for each transmitter-to-receiver link
 %   Y = X * H.' contribution at the receiver antennas
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.mimo.executeSpatialComposite", ...
+    "MIMO", "BIDIRECTIONAL", struct("Stage","SPATIAL_CHANNEL"));
+
 if nargin < 3 || ~isstruct(cfg)
     cfg = struct();
 end

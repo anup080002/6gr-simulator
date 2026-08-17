@@ -742,30 +742,48 @@ T = table(string(localPortable(runDir, dropPath)), height(drop), seedCount, mean
 end
 
 function [ok, T] = localEvaluateArtifactCompleteness(runDir)
-required = [
-    "reports/image/bler_vs_measured_sinr.png"
-    "reports/image/throughput_vs_measured_sinr.png"
-    "reports/image/measured_sinr_distribution.png"
-    "reports/image/distance_vs_sinr.png"
-    "reports/image/access_delay_cdf.png"
-    "reports/image/power_energy_cumulative.png"
-    "control/csv/initial_access_lifecycle_trace.csv"
-    ];
+% The runtime contract coverage and exact image audit are the final raster
+% authority.  Do not require retired MATLAB plot aliases: those names were
+% removed deliberately when CSV-driven post-run rendering became the only
+% LLS raster producer.
+coverage = localReadTable(fullfile(runDir, "reports", "csv", ...
+    "contract_materialization_coverage.csv"));
+imageAudit = localReadTable(fullfile(runDir, "reports", "csv", ...
+    "all_image_artifact_audit.csv"));
+generation = localReadTable(fullfile(runDir, "artifact_generation", ...
+    "artifact_generation_results.csv"));
 missing = strings(0, 1);
-for rel = required(:).'
-    if exist(fullfile(runDir, strrep(char(rel), "/", filesep)), "file") ~= 2
-        missing(end+1, 1) = rel; %#ok<AGROW>
-    end
+
+[coverageOk, coverageCount, coverageMissing] = ...
+    localContractCoverageCompleteness(coverage);
+missing = [missing; coverageMissing(:)]; %#ok<AGROW>
+[imageAuditOk, imageCount, imageMissing] = ...
+    localImageAuditCompleteness(imageAudit);
+missing = [missing; imageMissing(:)]; %#ok<AGROW>
+[generationOk, generationCount, generationMissing] = ...
+    localArtifactGenerationCompleteness(runDir, generation);
+missing = [missing; generationMissing(:)]; %#ok<AGROW>
+if ~coverageOk && isempty(coverageMissing)
+    missing(end+1, 1) = "contract_materialization_coverage_invalid"; %#ok<AGROW>
+end
+if ~imageAuditOk && isempty(imageMissing)
+    missing(end+1, 1) = "all_image_artifact_audit_invalid"; %#ok<AGROW>
+end
+if ~generationOk && isempty(generationMissing)
+    missing(end+1, 1) = "artifact_generation_results_invalid"; %#ok<AGROW>
 end
 unavailable = localReadTable(fullfile(runDir, "reports", "csv", "unavailable_plot_card_registry.csv"));
 [unresolvedUnavailable, resolvedUnavailable] = localUnresolvedUnavailablePlots(runDir, unavailable);
 unavailableCount = height(unavailable);
 unresolvedCount = numel(unresolvedUnavailable);
-ok = isempty(missing) && unresolvedCount == 0;
-reason = localReason(ok, "mandatory_images_and_access_trace_present_no_unavailable_cards", ...
-    "mandatory_artifact_missing_or_unavailable_plot_cards_remain");
+ok = coverageOk && imageAuditOk && generationOk && ...
+    isempty(missing) && unresolvedCount == 0;
+reason = localReason(ok, ...
+    "runtime_contract_tables_images_and_declared_artifacts_pass_exact_audits", ...
+    "runtime_contract_artifact_missing_failed_or_unavailable_plot_cards_remain");
 T = table(strjoin(missing, "|"), unavailableCount, numel(resolvedUnavailable), unresolvedCount, ...
-    strjoin(unresolvedUnavailable, "|"), numel(required), ok, reason, ...
+    strjoin(unresolvedUnavailable, "|"), ...
+    coverageCount + imageCount + generationCount, ok, reason, ...
     'VariableNames', {'MissingArtifacts','UnavailablePlotCardCount','ResolvedUnavailablePlotCardCount', ...
     'UnresolvedUnavailablePlotCardCount','UnresolvedUnavailablePlotCards','RequiredArtifactCount', ...
     'ArtifactCompletenessOk','FailureReason'});
@@ -773,32 +791,163 @@ end
 
 function [ok, T] = localEvaluatePlotLineage(runDir)
 manifestPath = fullfile(runDir, "reports", "csv", "plot_manifest.csv");
-measuredPath = fullfile(runDir, "reports", "csv", "measurement_sinr_plot_lineage.csv");
-chartPath = fullfile(runDir, "reports", "csv", "chart_source_registry.csv");
+contractPath = fullfile(runDir, "reports", "csv", "contract_plot_lineage.csv");
+coveragePath = fullfile(runDir, "reports", "csv", "contract_materialization_coverage.csv");
 manifest = localReadTable(manifestPath);
-measured = localReadTable(measuredPath);
-chart = localReadTable(chartPath);
+contract = localReadTable(contractPath);
+coverage = localReadTable(coveragePath);
 
 [manifestOk, manifestMissing] = localManifestLineageOk(runDir, manifest);
-measuredOk = true;
-if istable(measured) && height(measured) > 0
-    if localHasColumn(measured, "LineageStatus")
-        measuredOk = all(lower(strtrim(string(measured.LineageStatus))) == "complete");
-    elseif all(localHasColumn(measured, ["ImageExists","SourceExists"]))
-        measuredOk = all(localColumnAsLogical(measured.ImageExists) & localColumnAsLogical(measured.SourceExists));
-    end
+[contractOk, contractMissing] = localContractPlotLineageOk(runDir, contract);
+measuredMask = false(height(contract), 1);
+if istable(contract) && height(contract) > 0 && localHasColumn(contract, "PlotId")
+    plotIds = lower(replace(strtrim(string(contract.PlotId)), "_", "-"));
+    measuredMask = contains(plotIds, "measured-sinr") | ...
+        contains(plotIds, "bler-vs-sinr") | ...
+        contains(plotIds, "throughput-vs-sinr");
 end
-chartOk = istable(chart) && height(chart) > 0;
-ok = manifestOk && measuredOk && chartOk;
-reason = localReason(ok, "plot_images_have_source_csv_lineage", ...
-    "plot_manifest_or_source_lineage_missing_incomplete");
-T = table(string(localPortable(runDir, manifestPath)), string(localPortable(runDir, measuredPath)), ...
-    string(localPortable(runDir, chartPath)), height(manifest), height(measured), height(chart), ...
-    strjoin(manifestMissing, "|"), manifestOk, measuredOk, chartOk, ok, reason, ...
+measuredOk = contractOk && any(measuredMask);
+[coverageOk, ~, coverageMissing] = localContractCoverageCompleteness(coverage);
+missing = unique([manifestMissing(:); contractMissing(:); coverageMissing(:)], "stable");
+ok = manifestOk && contractOk && measuredOk && coverageOk;
+reason = localReason(ok, "contract_pngs_have_exact_csv_and_hash_bound_lineage", ...
+    "contract_plot_manifest_or_source_lineage_missing_incomplete");
+T = table(string(localPortable(runDir, manifestPath)), string(localPortable(runDir, contractPath)), ...
+    string(localPortable(runDir, coveragePath)), height(manifest), sum(measuredMask), height(contract), ...
+    strjoin(missing, "|"), manifestOk, measuredOk, contractOk && coverageOk, ok, reason, ...
     'VariableNames', {'PlotManifestCSV','MeasuredSINRLineageCSV','ChartSourceRegistryCSV', ...
     'PlotManifestRows','MeasuredSINRLineageRows','ChartSourceRegistryRows','MissingManifestLineage', ...
     'PlotManifestLineageOk','MeasuredSINRLineageOk','ChartSourceRegistryOk', ...
     'PlotDataLineageOk','FailureReason'});
+end
+
+function [ok, count, missing] = localContractCoverageCompleteness(T)
+missing = strings(0, 1);
+count = 0;
+required = ["tables_total","tables_available","tables_policy_disabled", ...
+    "tables_missing","charts_total","charts_available", ...
+    "charts_policy_disabled","charts_missing"];
+if ~(istable(T) && height(T) == 1 && all(localHasColumn(T, required)))
+    ok = false;
+    missing = "reports/csv/contract_materialization_coverage.csv";
+    return;
+end
+values = zeros(numel(required),1);
+for index = 1:numel(required)
+    raw = localNumericColumn(T, required(index));
+    if numel(raw) ~= 1 || ~isfinite(raw(1)) || raw(1) < 0 || raw(1) ~= fix(raw(1))
+        ok = false;
+        missing = "contract_coverage_invalid_" + required(index);
+        return;
+    end
+    values(index) = raw(1);
+end
+tableTotal = values(1); tableAvailable = values(2);
+tableDisabled = values(3); tableMissing = values(4);
+chartTotal = values(5); chartAvailable = values(6);
+chartDisabled = values(7); chartMissing = values(8);
+if tableTotal <= 0 || chartTotal <= 0 || ...
+        tableAvailable + tableDisabled + tableMissing ~= tableTotal || ...
+        chartAvailable + chartDisabled + chartMissing ~= chartTotal || ...
+        tableMissing ~= 0 || chartMissing ~= 0
+    ok = false;
+    missing = [ ...
+        localFailureToken(tableMissing == 0, ...
+        "contract_tables_missing=" + string(tableMissing)); ...
+        localFailureToken(chartMissing == 0, ...
+        "contract_charts_missing=" + string(chartMissing)); ...
+        localFailureToken(tableAvailable + tableDisabled + tableMissing == tableTotal, ...
+        "contract_table_coverage_arithmetic_mismatch"); ...
+        localFailureToken(chartAvailable + chartDisabled + chartMissing == chartTotal, ...
+        "contract_chart_coverage_arithmetic_mismatch")];
+    missing = missing(strlength(missing) > 0);
+    if isempty(missing), missing = "contract_coverage_totals_invalid"; end
+    return;
+end
+count = tableAvailable + chartAvailable;
+ok = true;
+end
+
+function [ok, count, missing] = localImageAuditCompleteness(T)
+missing = strings(0, 1);
+count = height(T);
+required = ["relative_path","status","readable", ...
+    "blank_or_low_information","source_csv_exists"];
+if ~(istable(T) && height(T) > 0 && all(localHasColumn(T, required)))
+    ok = false;
+    missing = "reports/csv/all_image_artifact_audit.csv";
+    return;
+end
+pass = lower(strtrim(string(T.status))) == "pass" & ...
+    localColumnAsLogical(T.readable) & ...
+    ~localColumnAsLogical(T.blank_or_low_information) & ...
+    localColumnAsLogical(T.source_csv_exists);
+if any(~pass)
+    missing = "image_audit:" + string(T.relative_path(~pass));
+end
+ok = all(pass);
+end
+
+function [ok, count, missing] = localArtifactGenerationCompleteness(runDir, T)
+missing = strings(0, 1);
+count = 0;
+requiredColumns = ["Required","Status","OutputRelativePath"];
+if ~(istable(T) && height(T) > 0 && all(localHasColumn(T, requiredColumns)))
+    ok = false;
+    missing = "artifact_generation/artifact_generation_results.csv";
+    return;
+end
+required = localColumnAsLogical(T.Required);
+count = sum(required);
+if count == 0
+    ok = false;
+    missing = "artifact_generation_required_rows_missing";
+    return;
+end
+pass = ~required | lower(strtrim(string(T.Status))) == "pass";
+for index = find(required(:)).'
+    rel = replace(strtrim(string(T.OutputRelativePath(index))), "\", "/");
+    if strlength(rel) == 0 || ~localArtifactExists(runDir, rel)
+        pass(index) = false;
+        missing(end+1, 1) = "artifact_generation:" + rel; %#ok<AGROW>
+    end
+end
+if any(required & ~pass)
+    failed = find(required & ~pass);
+    for index = failed(:).'
+        rel = replace(strtrim(string(T.OutputRelativePath(index))), "\", "/");
+        token = "artifact_generation:" + rel;
+        if ~any(missing == token)
+            missing(end+1, 1) = token; %#ok<AGROW>
+        end
+    end
+end
+ok = all(pass);
+end
+
+function [ok, missing] = localContractPlotLineageOk(runDir, T)
+[ok, missing] = localManifestLineageOk(runDir, T);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+rowPass = true(height(T),1);
+if localHasColumn(T, "Status")
+    rowPass = rowPass & lower(strtrim(string(T.Status))) == "pass";
+else
+    rowPass(:) = false;
+end
+if all(localHasColumn(T, ["ImageExists","SourceExists"]))
+    rowPass = rowPass & localColumnAsLogical(T.ImageExists) & ...
+        localColumnAsLogical(T.SourceExists);
+else
+    rowPass(:) = false;
+end
+if any(~rowPass)
+    ids = string((1:height(T)).');
+    if localHasColumn(T, "PlotId"), ids = string(T.PlotId); end
+    missing = [missing(:); "contract_lineage:" + ids(~rowPass)];
+end
+ok = ok && all(rowPass);
 end
 
 function [ok, T] = localEvaluateClaimsTruthfulness(runDir)
@@ -971,18 +1120,26 @@ end
 
 function tf = localUnavailableEntryResolvedByEvidence(runDir, plotId, imageRel, sourceRel)
 plotId = lower(strtrim(string(plotId)));
-switch plotId
-    case {"bler_vs_snr","bler_vs_configured_snr"}
-        imageRel = "reports/image/bler_vs_measured_sinr.png";
-        sourceRel = "air_interface/csv/dl_measured_sinr_bler_curve.csv";
-    case {"throughput_vs_snr","throughput_vs_configured_snr"}
-        imageRel = "reports/image/throughput_vs_measured_sinr.png";
-        sourceRel = "air_interface/csv/dl_measured_sinr_throughput_curve.csv";
-    case {"access_delay_cdf"}
-        imageRel = "reports/image/access_delay_cdf.png";
-        sourceRel = "control/csv/initial_access_lifecycle_trace.csv";
-end
 tf = localArtifactExists(runDir, imageRel) && localAllSourceArtifactsExist(runDir, sourceRel);
+if tf || strlength(plotId) == 0
+    return;
+end
+contract = localReadTable(fullfile(runDir, "reports", "csv", ...
+    "contract_plot_lineage.csv"));
+if ~(istable(contract) && height(contract) > 0 && ...
+        all(localHasColumn(contract, ["PlotId","ImagePath","SourceCSV","Status"])))
+    return;
+end
+token = replace(replace(plotId, "_", "-"), " ", "-");
+ids = lower(replace(replace(strtrim(string(contract.PlotId)), "_", "-"), " ", "-"));
+mask = contains(ids, token) & lower(strtrim(string(contract.Status))) == "pass";
+for index = find(mask(:)).'
+    if localArtifactExists(runDir, string(contract.ImagePath(index))) && ...
+            localAllSourceArtifactsExist(runDir, string(contract.SourceCSV(index)))
+        tf = true;
+        return;
+    end
+end
 end
 
 function tf = localAllSourceArtifactsExist(runDir, sourceSpec)

@@ -1,5 +1,5 @@
 function testTDLChannelAppliedToWaveform
-T = channelRFStrictAnchorResult().Result.ChannelRealizations;
+T = channelRFStrictAnchorResult("ChannelModel", "TDL").Result.ChannelRealizations;
 row = T(string(T.ChannelModelType) == "TDL", :);
 assert(height(row) == 1, "TDL realization row is required.");
 assert(row.StrictOk && row.WaveformChanged && row.PathGainsExported, ...

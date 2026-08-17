@@ -86,6 +86,7 @@ state.NumUsers = nUsers;
 state.MultiUser = struct("RNTIStart", 4601, "NumUsers", nUsers, "Enabled", true, "ExecutionModel", "coupled_truth");
 state.CurrentFrame = 1;
 state.CurrentSlot = 5;
+state.SlotsPerFrame = 20;
 state.SlotDuration_s = 0.0005;
 state.CurrentServingIdx = (1:nUsers).';
 state.CfgMobility = struct();

@@ -52,10 +52,29 @@ assert(height(continuityT) == 1 && localAsLogical(continuityT.ChannelStateContin
 
 for name = ["FullTrajectoryExecutedOk","MobilityStateContinuousOk","LosStateModelOk", ...
         "PathlossReconciliationOk","ShadowFadingReconciliationOk","LargeScaleParameterReconciliationOk", ...
-        "ChannelStateContinuityOk","DopplerReconciliationOk","PropagationDelayReconciliationOk"]
+        "ChannelStateContinuityOk","DopplerReconciliationOk","PropagationDelayReconciliationOk", ...
+        "MobilityKpiReconciliationOk"]
     assert(logical(report.Gates.(char(name))), ...
         "Expected runtime mobility gate %s to pass with complete slot evidence.", name);
 end
+
+% Static UEs have exactly zero expected/applied Doppler.  Zero is valid
+% physical evidence, not a missing-measurement sentinel.
+cfgStatic = cfg;
+cfgStatic.mobility.ue_speed_kmh = 0;
+cfgStatic.deployment_topology.mobility.speed_kmh = 0;
+staticTrace = localRuntimeTraceTable(cfgStatic);
+sixgr.analytics.writeAnalysisTable(tracePath, staticTrace);
+staticReport = sixgr.analytics.buildPhase7ReadinessArtifacts(cfgStatic, tmp);
+staticDoppler = staticReport.Mobility.DopplerReconciliation;
+assert(height(staticDoppler) == 4 && all(localAsLogical(staticDoppler.DopplerReconciliationOk)) && ...
+    all(string(staticDoppler.Status) == "static_zero_doppler_reconciled"), ...
+    "Finite zero-Doppler rows for a static UE must pass strict reconciliation.");
+staticKPI = readtable(fullfile(tmp, "reports", "csv", "mobility_kpi_reconciliation.csv"), ...
+    "VariableNamingRule", "preserve", "TextType", "string");
+assert(height(staticKPI) == 1 && localAsLogical(staticKPI.MobilityKpiReconciliationOk(1)) && ...
+    double(staticKPI.ExpectedDistance_m(1)) == 0 && double(staticKPI.ActualDistance_m(1)) == 0, ...
+    "A complete static runtime trajectory must reconcile to exactly zero travelled distance.");
 
 ok = true;
 end

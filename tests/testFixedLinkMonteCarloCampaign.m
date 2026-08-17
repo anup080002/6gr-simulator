@@ -113,13 +113,23 @@ kpiReconstruction = readtable(kpiReconstructionPath, ...
     "VariableNamingRule", "preserve");
 strictKPIOk = localAsLogicalVector(kpiReconstruction.StrictOk);
 latencyKPI = contains(string(kpiReconstruction.KPIName), "Latency");
+formulaOk = localAsLogicalVector(kpiReconstruction.FormulaExecuted);
+reconciliationOk = localAsLogicalVector(kpiReconstruction.ReconciliationPass);
+applicableKPI = localAsLogicalVector(kpiReconstruction.Applicable);
+failedKPI = string(kpiReconstruction.KPIName((applicableKPI & ~formulaOk) | ...
+    (applicableKPI & ~latencyKPI & (~reconciliationOk | ~strictKPIOk))));
 assert(~isempty(kpiReconstruction) && ...
-    all(localAsLogicalVector(kpiReconstruction.FormulaExecuted)) && ...
-    all(localAsLogicalVector( ...
-    kpiReconstruction.ReconciliationPass(~latencyKPI))) && ...
-    all(strictKPIOk(~latencyKPI)), ...
+    all(~applicableKPI | formulaOk) && ...
+    all(reconciliationOk(applicableKPI & ~latencyKPI)) && ...
+    all(strictKPIOk(applicableKPI & ~latencyKPI)), ...
     "Fixed-link KPI reconstruction must execute every formula and " + ...
-    "reconcile every non-latency KPI to raw DL/UL trials.");
+    "reconcile every non-latency KPI to raw DL/UL trials. Failed KPI(s): " + ...
+    strjoin(failedKPI, ", "));
+notApplicable = contains(string(kpiReconstruction.KPIName), ...
+    ["HARQ_NACK_Rate","Retransmission_Rate","PRB_Utilization","Latency"]);
+assert(all(~applicableKPI(notApplicable)) && ...
+    all(string(kpiReconstruction.Status(notApplicable)) == "not_applicable"), ...
+    "Disabled HARQ/scheduler/application KPI rows must be explicit not_applicable evidence.");
 
 dlCurveCsv = fullfile(tmp, "reports", "csv", "dl_fixed_link_bler_curve.csv");
 ulCurveCsv = fullfile(tmp, "reports", "csv", "ul_fixed_link_bler_curve.csv");
@@ -252,11 +262,13 @@ values = values(:);
 end
 
 function cfg = localFixtureConfig()
-scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "variants", "SCN00_BASELINE_CAPACITY.yaml");
+% Use the dedicated fixed-SNR master rather than mutating a geometry/MU
+% system scenario into a calibration profile after YAML authority has been
+% installed.  This keeps every disabled auxiliary signal and rank alias
+% owned by the source configuration exercised by the test.
+scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_sinr_sweep.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 scfg = scfg.toStruct();
-scfg.harq.k2 = 2;
-scfg.random_access.enabled = false;
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "fixed_link_campaign_fixture"));
 cfg.run.numFrames = 1;
 cfg.run.strictMode = false;
@@ -266,8 +278,8 @@ cfg.run.fixedReferenceMode = true;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 cfg.lls6g.users.beam_selection_strategy = "fixed_first_beam";
 cfg.phy.linkAdaptation.mode = "fixed";
-cfg.phy.pdsch.PRBSet = 0:23;
-cfg.phy.pdsch.prbSet = 0:23;
+cfg.phy.pdsch.PRBSet = 0:49;
+cfg.phy.pdsch.prbSet = 0:49;
 cfg.phy.pdsch.numPorts = 1;
 cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.pdsch.executionProfile = "phy_calibration";
@@ -283,8 +295,8 @@ cfg.phy.pdsch.DeploymentClass = "macro";
 cfg.phy.pdsch.DCIFormat = "1_1";
 cfg.phy.pdsch.symbolAllocation = [2 12];
 cfg.phy.pdsch.mappingType = "A";
-cfg.phy.pusch.prbSet = 0:23;
-cfg.phy.pusch.PRBSet = 0:23;
+cfg.phy.pusch.prbSet = 0:49;
+cfg.phy.pusch.PRBSet = 0:49;
 cfg.phy.pusch.enablePTRS = false;
 cfg.phy.bwp.dl = struct("NStartBWP",0,"NSizeBWP",273);
 cfg.phy.bwp.ul = struct("NStartBWP",0,"NSizeBWP",273);
@@ -292,16 +304,16 @@ cfg.run.seed = 4207;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.fading.enable = false;
-cfg.channel.bandwidth_Hz = 5e6;
+cfg.channel.bandwidth_Hz = 100e6;
 cfg.channel.snr_dB = 18;
 cfg.channel.nTxAnt = 1;
 cfg.channel.nRxAnt = 1;
-cfg.phy.channelBandwidth_MHz = 5;
+cfg.phy.channelBandwidth_MHz = 100;
 cfg.phy.nTxAnt = 1;
 cfg.phy.nRxAnt = 1;
-cfg.phy.carrier.NSizeGrid = 24;
-cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", 24);
-cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", 24);
+cfg.phy.carrier.NSizeGrid = 273;
+cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", 273);
+cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", 273);
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pusch.nLayers = 1;

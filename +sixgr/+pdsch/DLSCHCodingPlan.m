@@ -98,6 +98,24 @@ classdef DLSCHCodingPlan
                 nref = localPositiveInteger(opt.Nref, "Nref");
             end
 
+            % The coding plan is an immutable pure function of these eight
+            % coding inputs.  Campaigns otherwise repeat the expensive LDPC
+            % layout factorization for every transport block and again at
+            % the receiver.  Cache only the exact immutable object; payload
+            % bits, channel samples, decoder state, and evidence never enter
+            % this cache.
+            persistent exactPlanCache
+            if isempty(exactPlanCache)
+                exactPlanCache = containers.Map( ...
+                    'KeyType','char','ValueType','any');
+            end
+            cacheKey = localExactPlanCacheKey( ...
+                A,R,G,rv,modulation,nLayers,codewordIndex,nref);
+            if isKey(exactPlanCache,cacheKey)
+                obj = exactPlanCache(cacheKey);
+                return;
+            end
+
             args = { ...
                 "Direction", "DL", ...
                 "TransportBlockSize", A, ...
@@ -155,6 +173,10 @@ classdef DLSCHCodingPlan
             layout.PlanID = obj.PlanID;
             layout.ContractVersion = obj.ContractVersion;
             obj.CodingLayoutStorage = layout;
+            if exactPlanCache.Count >= 4096
+                remove(exactPlanCache, keys(exactPlanCache));
+            end
+            exactPlanCache(cacheKey) = obj;
         end
     end
 
@@ -218,6 +240,18 @@ switch upper(strrep(char(modulation), " ", ""))
         error("sixgr:pdsch:DLSCHCodingPlan:UnsupportedModulation", ...
             "Unsupported DL-SCH modulation '%s'.", char(modulation));
 end
+end
+
+function key = localExactPlanCacheKey(A,R,G,rv,modulation,nLayers,cw,nref)
+if isempty(nref)
+    nrefToken = "none";
+else
+    nrefToken = string(sprintf('%.17g',double(nref)));
+end
+key = char(sprintf( ...
+    'A=%d|R=%.17g|G=%d|rv=%d|mod=%s|layers=%d|cw=%d|nref=%s', ...
+    double(A),double(R),double(G),double(rv),char(modulation), ...
+    double(nLayers),double(cw),char(nrefToken)));
 end
 
 function [positionMap, ePerCB] = localTruthPositionMap(layout)

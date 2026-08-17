@@ -106,6 +106,30 @@ def test_visual_artifact_audit_accepts_component_owned_lineage(tmp_path: Path) -
     )
 
 
+def test_visual_artifact_audit_excludes_nested_sweep_execution(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    report_csv = run / "reports" / "csv"
+    child_image = run / "sweeps" / "point_1" / "reports" / "image" / "orphan.png"
+    report_csv.mkdir(parents=True)
+    child_image.parent.mkdir(parents=True)
+    write_csv(report_csv / "plot_manifest.csv", ["PlotId", "ImagePath"], [])
+    child_image.write_bytes(PNG_BYTES)
+
+    proc = subprocess.run(
+        [sys.executable, str(AUDIT_TOOL), str(run)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    with (report_csv / "visual_artifact_audit.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+    assert not any(str(row.get("artifact_path", "")).startswith("sweeps/") for row in rows)
+
+
 def test_visual_artifact_audit_accepts_only_exact_component_image_mirror(
     tmp_path: Path,
 ) -> None:
@@ -250,7 +274,7 @@ def test_visual_artifact_audit_supports_windows_extended_run_paths(tmp_path: Pat
     assert not read_audit_codes(report_csv / "visual_artifact_audit.csv")
 
 
-def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantics(tmp_path: Path) -> None:
+def test_visual_artifact_audit_rejects_unavailable_raster_cards(tmp_path: Path) -> None:
     run = tmp_path / "run"
     image_dir = run / "reports" / "image"
     csv_dir = run / "reports" / "csv"
@@ -300,8 +324,9 @@ def test_visual_artifact_audit_accepts_unavailable_cards_without_source_semantic
         check=False,
     )
 
-    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert proc.returncode == 1, proc.stderr + proc.stdout
     codes = read_audit_codes(csv_dir / "visual_artifact_audit.csv")
+    assert "unavailable_raster_forbidden" in codes
     assert "plot_source_x_column_missing" not in codes
     assert "plot_source_y_column_missing" not in codes
     assert "plot_source_forbidden_truth_status" not in codes

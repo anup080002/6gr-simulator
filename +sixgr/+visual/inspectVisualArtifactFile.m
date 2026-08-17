@@ -18,11 +18,12 @@ info = struct( ...
     "signature_status", "missing_file", ...
     "reason", "file_missing");
 
-if exist(filePath, "file") ~= 2
+ioFilePath = sixgr.util.ioPath(filePath);
+if exist(ioFilePath, "file") ~= 2
     return;
 end
 
-data = localReadBytes(filePath);
+data = localReadBytes(ioFilePath);
 info.exists = true;
 info.byte_count = double(numel(data));
 info.sha256 = localSHA256Hex(data);

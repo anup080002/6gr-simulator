@@ -26,14 +26,8 @@ else
         curve = localBuildPDSCHBLERCurve(dl, scfg, cfg, runtimeIdentity);
         registry.registerTable("pdsch", "base", "pdsch_bler_curve.csv", ...
             curve, "sixgr.artifact.registerWaveformLinkEvidence.pdsch_bler_curve");
-        registry.registerRenderer("pdsch", "base", "pdsch_bler_vs_snr.png", ...
-            @(bundle, contract) localRenderBLER(bundle, contract, "PDSCH"), ...
-            "sixgr.artifact.registerWaveformLinkEvidence.pdsch_bler_vs_snr");
         rows(end+1,1) = localCoverage("pdsch", "CSV", ... %#ok<AGROW>
             "pdsch_bler_curve.csv", true, height(curve), "REGISTERED", "");
-        rows(end+1,1) = localCoverage("pdsch", "PNG", ... %#ok<AGROW>
-            "pdsch_bler_vs_snr.png", true, height(curve), "REGISTERED", ...
-            "renderer_bound_to_validated_pdsch_bler_curve");
     catch cause
         rows(end+1,1) = localCoverage("pdsch", "CSV", ... %#ok<AGROW>
             "pdsch_bler_curve.csv", false, 0, "NOT_REGISTERED", ...
@@ -51,14 +45,8 @@ else
         curve = localBuildPUSCHBLERCurve(ul, scfg, cfg, runtimeIdentity);
         registry.registerTable("pusch", "base", "pusch_bler_curve.csv", ...
             curve, "sixgr.artifact.registerWaveformLinkEvidence.pusch_bler_curve");
-        registry.registerRenderer("pusch", "base", "pusch_bler_vs_snr.png", ...
-            @(bundle, contract) localRenderBLER(bundle, contract, "PUSCH"), ...
-            "sixgr.artifact.registerWaveformLinkEvidence.pusch_bler_vs_snr");
         rows(end+1,1) = localCoverage("pusch", "CSV", ... %#ok<AGROW>
             "pusch_bler_curve.csv", true, height(curve), "REGISTERED", "");
-        rows(end+1,1) = localCoverage("pusch", "PNG", ... %#ok<AGROW>
-            "pusch_bler_vs_snr.png", true, height(curve), "REGISTERED", ...
-            "renderer_bound_to_validated_pusch_bler_curve");
     catch cause
         rows(end+1,1) = localCoverage("pusch", "CSV", ... %#ok<AGROW>
             "pusch_bler_curve.csv", false, 0, "NOT_REGISTERED", ...
@@ -343,38 +331,6 @@ else
     status = "STATISTICALLY_QUALIFIED";
     incomplete = false;
 end
-end
-
-function fig = localRenderBLER(bundle, contract, linkName)
-T = bundle.Tables{1};
-fig = figure("Visible", "off", "Color", "white");
-ax = axes(fig);
-hold(ax, "on");
-seriesKey = compose("%s rank %d MCS %d %s", ...
-    string(T.ChannelModel), round(double(T.Rank)), ...
-    round(double(T.MCSIndex)), string(T.Modulation));
-[groups, labels] = findgroups(seriesKey);
-for index = 1:numel(labels)
-    selected = groups == index;
-    [x, order] = sort(double(T.SNRdB(selected)));
-    y = double(T.BLER(selected));
-    lower = double(T.CILower(selected));
-    upper = double(T.CIUpper(selected));
-    y = y(order);
-    lower = lower(order);
-    upper = upper(order);
-    errorbar(ax, x, y, max(0, y-lower), max(0, upper-y), ...
-        "-o", "LineWidth", 1.5, "DisplayName", labels(index));
-end
-grid(ax, "on");
-xlabel(ax, string(contract.ExpectedXLabel));
-ylabel(ax, string(contract.ExpectedYLabel));
-title(ax, string(linkName) + " BLER with exact 95% confidence intervals");
-ylim(ax, [0 1]);
-if numel(labels) > 1
-    legend(ax, "Location", "best");
-end
-hold(ax, "off");
 end
 
 function localRequireIdentity(T, column, expected)

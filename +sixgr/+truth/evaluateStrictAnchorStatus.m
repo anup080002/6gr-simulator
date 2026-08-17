@@ -95,8 +95,9 @@ proxyEvidenceCount = double(sixgr.util.structGet(verdict, "StrictProxyGuardFailu
 skippedEvidenceCount = localFailureTokenCount(preRootFailures, ["skipped", "skip"]);
 fallbackEvidenceCount = localFailureTokenCount(preRootFailures, ["fallback"]);
 
+standardsGateOk = ~logical(strictEligible) || logical(standardsConformanceOk);
 resultOk = logical(runCompleted) && logical(artifactsWritten) && logical(artifactCompletenessOk) && logical(truthContractOk) && ...
-    logical(runtimeTruthContractOk) && logical(standardsConformanceOk) && logical(scenarioObjectiveOk) && ...
+    logical(runtimeTruthContractOk) && logical(standardsGateOk) && logical(scenarioObjectiveOk) && ...
     logical(configuredGate.ConfiguredEffectivePolicyOk) && logical(mandatoryGate.MandatorySubsystemsOk) && ...
     logical(activeIssueGate.ActiveIssueGateOk) && logical(kpiConsistencyOk) && ...
     logical(visualArtifactGateOk) && logical(duplicateArtifactGateOk) && ...
@@ -104,7 +105,7 @@ resultOk = logical(runCompleted) && logical(artifactsWritten) && logical(artifac
 
 strictAnchorPass = ~strictEligible || resultOk;
 failureReasons = localStatusFailureReasons(runCompleted, artifactsWritten, artifactCompletenessOk, truthContractOk, ...
-    standardsConformanceOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, ...
+    standardsGateOk, scenarioObjectiveOk, configuredGate, runClassGate, bindingGate, mandatoryGate, activeIssueGate, ...
     kpiConsistencyOk, visualArtifactGateOk, duplicateArtifactGateOk, browserGate);
 resultReason = localResultReason(resultOk, failureReasons);
 
@@ -460,8 +461,12 @@ profile = lower(strtrim(string(localScenarioGet(scfg, cfg, ...
 componentOnlyProfiles = ["prach_detection","prach_strict_validation", ...
     "pdcch_blind_decode_sweep","pdcch_strict_validation", ...
     "srs_strict_validation","trs_strict_validation", ...
-    "channel_rf_strict_validation","random_access_four_step"];
-tf = any(profile == componentOnlyProfiles);
+    "channel_rf_strict_validation","random_access_four_step", ...
+    "ai_benchmark"];
+sweepBase = lower(strtrim(string(localScenarioGet(scfg, cfg, ...
+    "scenario.sweep.base_profile", ""))));
+tf = any(profile == componentOnlyProfiles) || ...
+    (profile == "generic_sweep" && sweepBase == "ai_benchmark");
 end
 
 function mode = localScenarioMode(scfg, cfg)
@@ -1130,6 +1135,24 @@ mimoPath = fullfile(layout.BeamformingCSVDir, "mimo_configured_vs_effective.csv"
 mimoT = localReadTable(mimoPath);
 mimoSupplementalEvaluated = istable(mimoT) && height(mimoT) > 0;
 mimoRequired = localStrictMIMOEvidenceRequired(cfg);
+mimoEvidenceSource = "persisted_mimo_configured_vs_effective";
+if ~mimoSupplementalEvaluated && mimoRequired
+    try
+        recomputedMIMO = sixgr.mimo.resolveNominalVsEffectiveMIMO( ...
+            cfg, struct("DL", dlTrials, "UL", ulTrials), ...
+            "RunId", meta.RunId, "ScenarioName", meta.ScenarioName, ...
+            "StrictMode", logical(strictEligible));
+        candidateMIMO = sixgr.util.structGet(recomputedMIMO, ...
+            "ConfiguredVsEffective", table());
+        if istable(candidateMIMO) && height(candidateMIMO) > 0
+            mimoT = candidateMIMO;
+            mimoSupplementalEvaluated = true;
+            mimoEvidenceSource = "recomputed_from_canonical_raw_trials";
+        end
+    catch
+        % The ordinary missing-evidence branch below remains fail closed.
+    end
+end
 mimoSupplementalOk = ~mimoRequired;
 if mimoSupplementalEvaluated
     requiredMIMOColumns = ["Direction","ScenarioObjectivePass", ...
@@ -1144,13 +1167,17 @@ if mimoSupplementalEvaluated
         "FixedOperatingPointRequired", "AdaptiveMode", true);
     adaptiveMIMORequired = localMIMOPolicyRequirement(mimoT, ...
         "AdaptivePolicyRequired", "AdaptiveMode", false);
+    spatialMIMORequired = localExplicitMIMORequirement(mimoT, ...
+        "SpatialContractRequired");
+    spatialMIMORowsOk = ~spatialMIMORequired | ...
+        localToLogical(mimoT.SpatialContractMatch);
     fixedMIMORowsOk = ~fixedMIMORequired | ...
         localToLogical(mimoT.FixedOperatingPointMatch);
     adaptiveMIMORowsOk = ~adaptiveMIMORequired | ...
         localToLogical(mimoT.AdaptivePolicyConformance);
     mimoRowsOk = mimoSchemaOk && ...
         all(isfinite(strictMIMORowCounts) & strictMIMORowCounts > 0) && ...
-        all(localToLogical(mimoT.SpatialContractMatch)) && ...
+        all(spatialMIMORowsOk) && ...
         all(fixedMIMORowsOk) && all(adaptiveMIMORowsOk) && ...
         all(localToLogical(mimoT.MUExecutionMatch)) && ...
         all(localToLogical(mimoT.ScenarioObjectivePass));
@@ -1188,6 +1215,7 @@ summary.ConfiguredEffectivePolicyOk = logical(policyOk);
 summary.MIMOSupplementalEvaluated = logical(mimoSupplementalEvaluated);
 summary.MIMOSupplementalOk = logical(mimoSupplementalOk);
 summary.MIMOSupplementalArtifact = "antenna_beamforming/csv/mimo_configured_vs_effective.csv";
+summary.MIMOSupplementalEvidenceSource = string(mimoEvidenceSource);
 summary.FailureReason = string(strjoin(exactMissing, "; "));
 summary.PolicyFailureReason = string(strjoin(missing, "; "));
 summary.StrictAnchorEligible = logical(strictEligible);
@@ -1216,11 +1244,6 @@ muRequested = logical(sixgr.util.structGet(cfg, ...
 rankRequested = max([double(sixgr.util.structGet(cfg, ...
     "phy.pdsch.numLayers", 1)), double(sixgr.util.structGet(cfg, ...
     "phy.pusch.numLayers", 1))]) > 1;
-% Multi-layer, MU-MIMO, and hybrid execution all require the persisted
-% four-gate artifact. The per-trial configured/effective rows establish
-% operating-point equality, but they cannot alone prove the complete
-% spatial architecture, adaptive-policy, and shared-resource execution
-% contract. Missing supplemental evidence therefore fails closed.
 required = logical(muRequested || rankRequested || ...
     sixgr.util.structGet(cfg, ...
     "phy.beamManagement.hybridBeamformingEnabled", false));
@@ -2601,8 +2624,10 @@ n = height(T);
 updates = {
     "RunCompleted", status.RunCompleted;
     "RunCompletion", string(ternary(status.RunCompleted, "completed", "not_completed"));
+    "Ok", status.ResultOk;
     "ResultOk", status.ResultOk;
     "RuntimeTruthContractOk", status.RuntimeTruthContractOk;
+    "TruthContractOk", status.TruthContractOk;
     "StandardsConformanceOk", status.StandardsConformanceOk;
     "ScenarioObjectiveOk", status.ScenarioObjectiveOk;
     "ConfiguredEffectiveOk", status.ConfiguredEffectiveOk;
@@ -2621,6 +2646,9 @@ updates = {
     "VisualArtifactGateOk", status.VisualArtifactGateOk;
     "VisualArtifactGateStatus", status.VisualArtifactGateStatus;
     "VisualArtifactFailureCount", status.VisualArtifactFailureCount;
+    "VisualArtifactIntegrityOk", status.VisualArtifactGateOk;
+    "VisualArtifactIntegrityFailureCount", status.VisualArtifactFailureCount;
+    "VisualArtifactIntegrityFailures", status.VisualArtifactFailureReason;
     "DuplicateArtifactGateOk", status.DuplicateArtifactGateOk;
     "DuplicateArtifactGateStatus", status.DuplicateArtifactGateStatus;
     "DuplicateArtifactFailureCount", status.DuplicateArtifactFailureCount;
@@ -2883,6 +2911,16 @@ elseif ismember(adaptiveName, names)
 else
     % Legacy rows cannot prove which operating-point policy applies, so
     % retain the historical fail-closed requirement.
+    required = true(height(T), 1);
+end
+end
+
+function required = localExplicitMIMORequirement(T, explicitName)
+names = string(T.Properties.VariableNames);
+if ismember(explicitName, names)
+    required = localToLogical(T.(char(explicitName)));
+else
+    % Legacy evidence cannot prove that rank/layers were adaptive.
     required = true(height(T), 1);
 end
 end

@@ -100,6 +100,22 @@ assert(all(string(adaptiveOut.MIMOConfigStrict.Status) == "pass") && ...
     all(strlength(string(adaptiveOut.MIMOConfigStrict.RuntimeValidationFailureReason)) == 0), ...
     "Direct adaptive runtime evidence must resolve the MIMO config status instead of leaving it not_validated.");
 
+bootstrapOnlyRaw = adaptiveRaw;
+bootstrapOnlyRaw.DL.MCSValueStatus(:) = ...
+    "yaml_mu_mimo_first_data_bootstrap_pending_data_feedback";
+bootstrapOnlyRaw.UL.MCSValueStatus(:) = ...
+    "yaml_mu_mimo_first_data_bootstrap_pending_data_feedback";
+bootstrapOnlyOut = sixgr.mimo.resolveNominalVsEffectiveMIMO( ...
+    adaptiveCfg, bootstrapOnlyRaw, "RunId", "mimo_bootstrap_only", ...
+    "StrictMode", true);
+assert(~logical(bootstrapOnlyOut.StrictOk) && ...
+    all(double(bootstrapOnlyOut.ConfiguredVsEffective.AdaptiveFeedbackDecisionRowCount) == 0) && ...
+    all(~logical(bootstrapOnlyOut.ConfiguredVsEffective.AdaptivePolicyConformance)) && ...
+    all(contains(string(bootstrapOnlyOut.ConfiguredVsEffective.FailureReason), ...
+        "adaptive_policy_only_bootstrap_rows")), ...
+    ["An adaptive run containing only configured bootstrap grants must " ...
+    "not be certified as measured CQI feedback adaptation."]);
+
 muCfg = adaptiveCfg;
 muCfg.mimo.mu_mimo_enable = true;
 muCfg.mimo.ul_mu_mimo_enable = true;
@@ -285,6 +301,7 @@ T.LinkAdaptationScheduled = true(n, 1);
 T.LinkAdaptationApplied = true(n, 1);
 T.WidebandCQI = repmat(8, n, 1);
 T.CQIDerivedMCS = T.MCS;
+T.MCSValueStatus = repmat("measured_feedback_adapted", n, 1);
 T.GrantContextId = "grant_" + string((1:n).');
 end
 
@@ -309,20 +326,25 @@ if upper(string(T.Direction(1))) == "DL"
         "shared_slot_contribution_grid_covariance", n, 1);
 else
     T.MUMIMOPairingMetricSource = repmat( ...
-        "measured_srs_complete_peer_subspace_irc_receive_projection_leakage", n, 1);
+        "measured_srs_peer_subspace_admission_projection_leakage_full_dimensional_per_re_irc", n, 1);
     T.MUMIMOPairingEvidenceSource = repmat( ...
-        "causal_measured_srs_complete_peer_subspace_and_runtime_irc_covariance", n, 1);
+        "causal_measured_srs_pairing_with_full_receiver_observation_and_runtime_per_re_irc_covariance", n, 1);
+    T.MUMIMOAdmissionReceiveCombiningMatrixSHA256 = T.MUMIMOSpatialFilterMatrixSHA256;
+    T.MUMIMOReceiveProcessingMode = repmat("full_dimensional_per_re_irc", n, 1);
+    T.MUMIMOReceiverAlgorithmApplied = repmat("full_dimensional_per_re_irc", n, 1);
     T.EqualizerType = repmat("MMSE_IRC", n, 1);
     T.InterferenceCovarianceSource = repmat( ...
         "shared_slot_contribution_grid_covariance", n, 1);
     T.InterferenceCovarianceAvailable = true(n, 1);
     T.MUMIMOReceiveCombinerApplied = true(n, 1);
     T.MUMIMOReceiveCombinerStatus = repmat( ...
-        "applied_exact_scheduler_frozen_projection", n, 1);
+        "applied_full_dimensional_identity_preprocessor_for_per_re_irc", n, 1);
     T.MUMIMOReceiveCombinerMatrixSHA256 = T.MUMIMOSpatialFilterMatrixSHA256;
     T.MUMIMOReceiveCombinerInputBranches = T.PhysicalRxAntennas;
-    T.MUMIMOReceiveCombinerOutputBranches = T.Layers;
+    T.MUMIMOReceiveCombinerOutputBranches = T.PhysicalRxAntennas;
     T.MUMIMOReceiveCombinerInterferenceProjected = true(n, 1);
+    T.MUMIMOReceiveCombinerFullObservationPreserved = true(n, 1);
+    T.MUMIMOReceiveCombinerIdentityResidual = zeros(n, 1);
 end
 T.InterferenceMode = repmat("shared_slot_waveform_superposition", n, 1);
 T.InterferenceContributorCount = ones(n, 1);

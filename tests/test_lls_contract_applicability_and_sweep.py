@@ -188,6 +188,40 @@ def test_resolved_master_yaml_switches_override_dashboard_profile_defaults() -> 
     assert policy["channel_snapshot_capture_enabled"] is False
 
 
+def test_pusch_uci_policy_does_not_claim_standalone_pucch_artifacts() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "phy": {"pucch": {"enable": True}, "pusch": {"enable": True}},
+                "control_gating": {
+                    "pucch_required": False,
+                    "pusch_uci_required": True,
+                },
+            }
+        )
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["pucch_enabled"] is True
+    assert policy["pucch_runtime_required"] is False
+    assert policy["pusch_uci_runtime_required"] is True
+    for name in (
+        "requested vs resolved format confusion matrix",
+        "PUCCH DTX statistics",
+        "per-format reliability breakdown",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"control_phy/csv/contract__test__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "air_interface/csv/pucch_trials.csv", policy, contract_name="pucch_trials"
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "air_interface/csv/ul_pusch_trials.csv", policy, contract_name="live_uci_table"
+    )
+
+
 def test_optional_6g_contracts_are_filtered_per_feature() -> None:
     policy = {
         "sensing_enabled": True,

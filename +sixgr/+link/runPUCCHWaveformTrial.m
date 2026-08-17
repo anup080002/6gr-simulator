@@ -1,6 +1,9 @@
 function trial = runPUCCHWaveformTrial(cfg, varargin)
 %RUNPUCCHWAVEFORMTRIAL Execute one canonical typed-report PUCCH trial.
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.link.runPUCCHWaveformTrial", ...
+    "PUCCH", "UL", struct("Stage","TX_RX_TRIAL"));
+
 p = inputParser;
 p.FunctionName = "sixgr.link.runPUCCHWaveformTrial";
 addRequired(p,"cfg",@(x) isstruct(x)||isobject(x));

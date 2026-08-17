@@ -42,6 +42,9 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     * nrPUSCH internally performs scrambling using pusch.NID / pusch.RNTI.
 %       Therefore, TX.Codeword is NOT scrambled here.
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ul.PUSCH_Tx", ...
+    "PUSCH", "UL", struct("Stage","TX"));
+
 % ---------------------- Parse inputs ----------------------
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));

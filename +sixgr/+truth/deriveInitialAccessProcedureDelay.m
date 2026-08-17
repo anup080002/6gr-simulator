@@ -77,6 +77,13 @@ for groupIdx = 1:size(groups, 1)
     if isempty(startRows) || isempty(terminalRows)
         continue;
     end
+    msg4Rows = find(ueMask & ismember(eventNames, ...
+        ["MSG4_CONTENTION_RESOLUTION_COMPLETED","MSG4_PDSCH_COMPLETED"]));
+    if isempty(msg4Rows)
+        continue;
+    end
+    localAssertCausalOrder(eventNames, times_s, slots, ueMask, ...
+        msg4Rows, terminalRows, requireRRCSetupComplete);
     [~, startLocal] = min(times_s(startRows));
     [~, endLocal] = max(times_s(terminalRows));
     startRow = startRows(startLocal);
@@ -114,6 +121,40 @@ for groupIdx = 1:size(groups, 1)
     T = localAssignText(T, "Notes", endRow, ...
         "Delay uses slot-coupled runtime timestamps only; configured values and compute runtime are not substituted.");
 end
+end
+
+function localAssertCausalOrder(eventNames, times_s, slots, groupMask, msg4Rows, terminalRows, requireRRC)
+pbchRow = localFirstEventRow(eventNames, times_s, groupMask, "PBCH_DECODED");
+prachRow = localFirstEventRow(eventNames, times_s, groupMask, "PRACH_MSG1_DETECTED");
+msg2Row = localFirstEventRow(eventNames, times_s, groupMask, "MSG2_RAR_DECODED");
+msg3Row = localFirstEventRow(eventNames, times_s, groupMask, "MSG3_PUSCH_COMPLETED");
+[~, msg4Local] = min(times_s(msg4Rows));
+msg4Row = msg4Rows(msg4Local);
+rows = [pbchRow,prachRow,msg2Row,msg3Row,msg4Row];
+labels = ["PBCH","PRACH_MSG1","MSG2","MSG3","MSG4"];
+if requireRRC
+    [~, terminalLocal] = min(times_s(terminalRows));
+    rows(end+1) = terminalRows(terminalLocal);
+    labels(end+1) = "RRC_SETUP_COMPLETE";
+end
+eventTimes = times_s(rows);
+eventSlots = slots(rows);
+if any(~isfinite(eventTimes)) || any(~isfinite(eventSlots)) || ...
+        any(diff(eventTimes) <= 0) || any(diff(eventSlots) <= 0)
+    detail = strjoin(labels + "@slot" + string(eventSlots), " -> ");
+    error("sixgr:truth:InitialAccessLifecycleNonCausal", ...
+        "Initial-access lifecycle must be strictly causal after PBCH: %s.", detail);
+end
+end
+
+function row = localFirstEventRow(eventNames, times_s, groupMask, eventName)
+rows = find(groupMask & eventNames == eventName & isfinite(times_s));
+if isempty(rows)
+    error("sixgr:truth:InitialAccessLifecycleEventMissing", ...
+        "Required initial-access event %s is missing.", eventName);
+end
+[~, local] = min(times_s(rows));
+row = rows(local);
 end
 
 function T = localEnsureNumericColumn(T, name, n)

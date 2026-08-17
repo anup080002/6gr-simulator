@@ -19,7 +19,12 @@ filePath = char(filePath);
 if ~sixgr.util.persistenceEnabled()
     return;
 end
-if ~p.Results.PreserveSchema
+% An evaluated-but-empty artifact still needs a decodable header.  Pruning
+% structurally blank columns from a zero-row table removes its entire
+% schema and produces a two-byte, unreadable CSV.  Preserve typed empty
+% schemas automatically; callers must explicitly define the columns they
+% claim to export.
+if ~p.Results.PreserveSchema && height(T) > 0
     T = sixgr.util.pruneStructurallyBlankTableColumns(T);
 end
 sixgr.util.ensureDir(filePath);

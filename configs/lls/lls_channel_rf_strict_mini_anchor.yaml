@@ -105,6 +105,7 @@ channels:
   shadow_fading_std_db: 4
   o2i_model: low
   o2i_loss_model: low
+  o2i_indoor_distance_m: 10
   normalize_path_gains: true
   normalize_channel_outputs: false
 

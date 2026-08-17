@@ -13,7 +13,9 @@ fid = fopen(scenarioPath, "w");
 fprintf(fid, "%s", ['{' ...
     '"inherits":["' strrep(baseScenario, '\', '\\') '"],' ...
     '"meta":{"scenario_id":"lls_report_bundle","description":"report bundle smoke","version":"1","owner":"test","maturity_tag":"smoke"},' ...
-    '"simulation":{"n_frames":4,"n_slots":4,"monte_carlo_iterations":2,"snr_sweep_offsets_db":[-12,0],"random_seed":19},' ...
+    '"simulation":{"n_frames":1,"n_slots":20,"monte_carlo_iterations":1,"snr_sweep_offsets_db":[-12,0],"random_seed":19},' ...
+    '"run_control":{"total_frames":1,"total_slots":20,"warmup_slots":0,"measurement_slots":20,"total_time_ms":10,"warmup_time_ms":0,"measurement_time_ms":10},' ...
+    '"sweeps_and_matrix":{"snr_sweep":{"enabled":true,"state_policy":"independent_link_state_per_point","initial_access_state_policy":"independent_per_point"}},' ...
     '"bwp":{"dl":{"bwp_id":0,"direction":"DL","n_start_bwp":0,"n_size_bwp":273,"scs_khz":30,"cp_type":"normal","active":true},' ...
     '"ul":{"bwp_id":0,"direction":"UL","n_start_bwp":0,"n_size_bwp":273,"scs_khz":30,"cp_type":"normal","active":true}},' ...
     '"pdsch":{"execution_profile":"scheduler_truth","mapping_type":"A","start_symbol":2,"num_symbols":12,"prb_start":0,"num_prb":273},' ...
@@ -53,28 +55,12 @@ mustExist = {
     fullfile(runFolder, "reports", "csv", "cfo_to_tracking_traces.csv")
     fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv")
     fullfile(runFolder, "reports", "csv", "ai_confidence_trace.csv")
-    fullfile(runFolder, "reports", "image", "bler_vs_snr_unavailable.png")
-    fullfile(runFolder, "reports", "image", "bler_vs_sinr_unavailable.png")
-    fullfile(runFolder, "reports", "image", "throughput_vs_snr_unavailable.png")
-    fullfile(runFolder, "reports", "image", "nmse_vs_snr_unavailable.png")
-    fullfile(runFolder, "reports", "image", "ber_vs_sinr_unavailable.png")
-    fullfile(runFolder, "reports", "image", "ber_vs_bler_unavailable.png")
-    fullfile(runFolder, "reports", "image", "ber_vs_ecno_unavailable.png")
-    fullfile(runFolder, "reports", "image", "bler_vs_ecno_unavailable.png")
-    fullfile(runFolder, "reports", "image", "gains_losses_waterfall_unavailable.png")
-    fullfile(runFolder, "reports", "image", "papr_ccdf_unavailable.png")
     fullfile(runFolder, "reports", "image", "latency_cdf.png")
-    fullfile(runFolder, "reports", "image", "access_delay_cdf_unavailable.png")
-    fullfile(runFolder, "reports", "image", "energy_vs_throughput_unavailable.png")
     fullfile(runFolder, "reports", "image", "complexity_vs_gain.png")
     fullfile(runFolder, "reports", "image", "equalized_constellations.png")
     fullfile(runFolder, "reports", "image", "llr_histograms.png")
     fullfile(runFolder, "reports", "image", "cfo_to_tracking_traces.png")
     fullfile(runFolder, "reports", "image", "prach_correlation_traces.png")
-    fullfile(runFolder, "reports", "image", "ai_confidence_trace_unavailable.png")
-    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi_unavailable.png")
-    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi_unavailable.png")
-    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi_unavailable.png")
     fullfile(runFolder, "reports", "automatic_markdown_summary.md")
     fullfile(runFolder, "reports", "executive_summary.md")
     fullfile(runFolder, "reports", "technical_report.md")
@@ -129,6 +115,22 @@ mustNotExist = {
     fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi.png")
     fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi.png")
     fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_snr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_sinr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "throughput_vs_snr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "nmse_vs_snr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_sinr_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_bler_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ber_vs_ecno_unavailable.png")
+    fullfile(runFolder, "reports", "image", "bler_vs_ecno_unavailable.png")
+    fullfile(runFolder, "reports", "image", "gains_losses_waterfall_unavailable.png")
+    fullfile(runFolder, "reports", "image", "papr_ccdf_unavailable.png")
+    fullfile(runFolder, "reports", "image", "access_delay_cdf_unavailable.png")
+    fullfile(runFolder, "reports", "image", "energy_vs_throughput_unavailable.png")
+    fullfile(runFolder, "reports", "image", "ai_confidence_trace_unavailable.png")
+    fullfile(runFolder, "reports", "image", "heatmap_band_feature_kpi_unavailable.png")
+    fullfile(runFolder, "reports", "image", "heatmap_impairment_kpi_unavailable.png")
+    fullfile(runFolder, "reports", "image", "heatmap_beam_rank_trp_kpi_unavailable.png")
     };
 for i = 1:numel(mustNotExist)
     assert(exist(mustNotExist{i}, "file") ~= 2, ...

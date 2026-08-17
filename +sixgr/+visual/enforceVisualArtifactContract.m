@@ -35,10 +35,9 @@ for i = 1:numel(contracts)
         if string(status.PlotRenderStatus) ~= "rendered"
             localDeleteIfExists(imagePath);
             enforcement = "deleted_stale_normal_artifact";
+            localDeleteIfExists(unavailablePath);
             if logical(opts.CreateUnavailableCards)
-                sixgr.visual.writeUnavailablePlotCard(unavailablePath, spec.PlotId, ...
-                    "Plot unavailable: " + string(status.PlotSuppressionReason));
-                enforcement = enforcement + "|wrote_unavailable_card";
+                enforcement = enforcement + "|unavailable_raster_forbidden";
             end
         else
             localDeleteIfExists(unavailablePath);

@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-11-contract-v31-raster-lineage"
+MATERIALIZER_VERSION = "2026-08-17-contract-v37-late-image-audit"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -391,6 +391,28 @@ def contract_artifact_is_policy_filtered(
 
     if not bool(policy.get("pucch_enabled", False)) and "pucch" in name:
         return True
+
+    # Standalone PUCCH and UCI transferred onto PUSCH are different PHY
+    # evidence families. Only an explicit YAML runtime gate may make the
+    # standalone PUCCH contracts inapplicable; absence of rows alone never
+    # hides them.
+    if not bool(policy.get("pucch_runtime_required", policy.get("pucch_enabled", False))):
+        if path.endswith("/pucch_trials.csv") or name in {
+            "live_pucch_summary",
+            "live_pucch_f0_table",
+            "live_pucch_f1_table",
+            "live_pucch_f2_table",
+            "live_pucch_f3_table",
+            "live_pucch_f4_table",
+            "requested vs resolved format confusion matrix",
+            "pucch decode success/failure trend",
+            "ack/nack match chart",
+            "dtx detection chart",
+            "pucch dtx statistics",
+            "per-format latency histograms",
+            "per-format reliability breakdown",
+        }:
+            return True
 
     if not bool(policy.get("srs_enabled", False)) and "srs" in name:
         return True
@@ -756,6 +778,23 @@ def _rasterize_contract_png(
     return png_bytes
 
 
+def _png_low_information_reason(image_bytes: bytes) -> str:
+    """Return the renderer's explicit low-information gate, if present."""
+
+    try:
+        with Image.open(io.BytesIO(bytes(image_bytes or b""))) as image:
+            image.load()
+            semantics = str(image.info.get("sixgr_visual_semantics") or "")
+    except (OSError, UnidentifiedImageError):
+        return "invalid_png_semantics"
+    match = re.search(r"\bvisual_gate=([^\s]+)", semantics, flags=re.IGNORECASE)
+    if match:
+        return str(match.group(1)).strip().lower()
+    if "Unavailable Without Faking".lower() in semantics.lower():
+        return "unavailable_without_faking"
+    return ""
+
+
 def _chart_image_from_dataset(chart_name: str, subtitle: str, dataset: dict[str, Any] | None, summary_lines: list[str]) -> bytes:
     if dataset and dataset.get("mode") == "heatmap":
         return _render_heatmap_svg(
@@ -862,6 +901,65 @@ def _dataset_low_information_reason(dataset: dict[str, Any] | None) -> tuple[str
         f"unique_y={unique_y}",
         f"chart_mode={mode or 'unknown'}",
     ]
+    evidence_shape_policy = str(
+        (dataset or {}).get("evidence_shape_policy") or ""
+    ).strip().lower()
+    sample_count = int(
+        max(
+            0,
+            _coerce_float((dataset or {}).get("sample_count"))
+            or len(points),
+        )
+    )
+    if evidence_shape_policy:
+        stats.extend(
+            [
+                f"evidence_shape_policy={evidence_shape_policy}",
+                f"source_sample_count={sample_count}",
+            ]
+        )
+    # Constant and single-state observations are not inherently low quality.
+    # A flat runtime trace proves that a measured state stayed constant; a
+    # one-bucket histogram proves that every observed sample occupied the same
+    # state; and one spatial coordinate may legitimately be constant for a
+    # linear antenna array.  These narrowly scoped policies let the producer
+    # state that semantics explicitly.  They do *not* permit a one-point SNR
+    # sweep or a one-axis table to masquerade as a curve/2-D heatmap.
+    if evidence_shape_policy == "observed_timeline":
+        if sample_count >= 2 and len(points) >= 2 and unique_x >= 2:
+            return "", stats + [
+                "A constant measured state is retained as an observed flat timeline."
+            ]
+    elif evidence_shape_policy == "observed_distribution":
+        if sample_count >= 1 and len(points) >= 1:
+            return "", stats + [
+                "A one-state measured population is retained as an exact categorical distribution."
+            ]
+    elif evidence_shape_policy == "observed_geometry":
+        if sample_count >= 2 and len(points) >= 2 and (unique_x >= 2 or unique_y >= 2):
+            return "", stats + [
+                "A constant spatial coordinate is valid for a measured/configured linear array geometry."
+            ]
+    elif evidence_shape_policy == "measured_scalar":
+        if sample_count >= 1 and len(points) == 1:
+            return "", stats + [
+                "The chart is an explicitly labeled measured scalar, not a trend or fitted curve."
+            ]
+    elif evidence_shape_policy == "empirical_cdf":
+        if sample_count >= 2 and len(points) >= 2:
+            return "", stats + [
+                "This is the exact empirical CDF of the persisted sample population; no fitted distribution is claimed."
+            ]
+    elif evidence_shape_policy == "observed_relation":
+        if sample_count >= 2 and len(points) >= 2 and unique_x >= 2:
+            return "", stats + [
+                "Exact paired observations are shown; a constant response is retained and no regression/correlation is inferred."
+            ]
+    elif evidence_shape_policy == "operating_point":
+        if sample_count >= 1 and len(points) >= 1:
+            return "", stats + [
+                "This is an explicitly labeled bounded operating-point observation, not a sweep curve."
+            ]
     if all(math.isclose(y, 0.0, abs_tol=1e-15) for y in ys):
         return "all_zero_metric_values", stats + ["Every plotted metric value is zero."]
     if mode in {"line", "cdf"}:
@@ -891,7 +989,71 @@ def _bar_dataset_from_named_values(
 ) -> tuple[dict[str, Any], list[str]]:
     points = [[float(idx + 1), float(value)] for idx, (_name, value) in enumerate(named_values)]
     summary = [f"bucket_{idx + 1}={name}" for idx, (name, _value) in enumerate(named_values)]
-    return {"mode": "bar", "x_label": x_label, "y_label": y_label, "points": points}, summary
+    return {
+        "mode": "bar",
+        "x_label": x_label,
+        "y_label": y_label,
+        "points": points,
+        "evidence_shape_policy": "observed_distribution",
+        "sample_count": len(named_values),
+    }, summary
+
+
+def _format_axis_tick(value: float) -> str:
+    value = 0.0 if math.isclose(float(value), 0.0, abs_tol=1e-12) else float(value)
+    magnitude = abs(value)
+    if magnitude >= 10000 or (magnitude > 0 and magnitude < 0.001):
+        return f"{value:.2e}"
+    return f"{value:.4g}"
+
+
+def _ellipsize_svg_text(value: Any, max_chars: int) -> str:
+    text = str(value or "")
+    limit = max(4, int(max_chars))
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _axis_tick_values(minimum: float, maximum: float, count: int = 5) -> list[float]:
+    if count <= 1 or math.isclose(minimum, maximum):
+        return [float(minimum)]
+    return [minimum + (maximum - minimum) * idx / (count - 1) for idx in range(count)]
+
+
+def _append_y_axis_ticks(
+    parts: list[str],
+    axis_left: float,
+    axis_right: float,
+    axis_top: float,
+    axis_bottom: float,
+    min_y: float,
+    max_y: float,
+) -> None:
+    for value in _axis_tick_values(min_y, max_y):
+        y_px = axis_bottom - ((value - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+        parts.append(f'<line x1="{axis_left}" y1="{y_px:.2f}" x2="{axis_right}" y2="{y_px:.2f}" stroke="#e2e8f0" stroke-width="1"/>')
+        parts.append(f'<line x1="{axis_left - 5}" y1="{y_px:.2f}" x2="{axis_left}" y2="{y_px:.2f}" stroke="#64748b"/>')
+        parts.append(f'<text x="{axis_left - 9}" y="{y_px + 4:.2f}" text-anchor="end" font-family="Consolas,Segoe UI Mono,monospace" font-size="10" fill="#475569">{html.escape(_format_axis_tick(value))}</text>')
+
+
+def _append_numeric_axis_ticks(
+    parts: list[str],
+    axis_left: float,
+    axis_right: float,
+    axis_top: float,
+    axis_bottom: float,
+    min_x: float,
+    max_x: float,
+    min_y: float,
+    max_y: float,
+) -> None:
+    _append_y_axis_ticks(parts, axis_left, axis_right, axis_top, axis_bottom, min_y, max_y)
+    for value in _axis_tick_values(min_x, max_x):
+        x_px = axis_left + ((value - min_x) / (max_x - min_x)) * (axis_right - axis_left)
+        parts.append(f'<line x1="{x_px:.2f}" y1="{axis_top}" x2="{x_px:.2f}" y2="{axis_bottom}" stroke="#e2e8f0" stroke-width="1"/>')
+        parts.append(f'<line x1="{x_px:.2f}" y1="{axis_bottom}" x2="{x_px:.2f}" y2="{axis_bottom + 5}" stroke="#64748b"/>')
+        parts.append(f'<text x="{x_px:.2f}" y="{axis_bottom + 18}" text-anchor="middle" font-family="Consolas,Segoe UI Mono,monospace" font-size="10" fill="#475569">{html.escape(_format_axis_tick(value))}</text>')
 
 
 def _render_multi_series_svg(
@@ -915,7 +1077,7 @@ def _render_multi_series_svg(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
         f'<text x="42" y="50" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        f'<text x="42" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(subtitle)}</text>',
+        f'<text x="42" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 112))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
         f'<rect x="{info_x}" y="{top}" width="316" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
@@ -968,6 +1130,17 @@ def _render_multi_series_svg(
     axis_bottom = top + plot_h - 42
     axis_top = top + 26
     axis_right = left + plot_w - 24
+    _append_numeric_axis_ticks(
+        parts,
+        axis_left,
+        axis_right,
+        axis_top,
+        axis_bottom,
+        min_x,
+        max_x,
+        min_y,
+        max_y,
+    )
     parts.append(f'<line x1="{axis_left}" y1="{axis_bottom}" x2="{axis_right}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
     parts.append(f'<line x1="{axis_left}" y1="{axis_top}" x2="{axis_left}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
     for prepared_series in prepared:
@@ -992,17 +1165,17 @@ def _render_multi_series_svg(
         f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(x_label)}</text>'
     )
     parts.append(
-        f'<text x="{left + 6}" y="{top + 14}" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(y_label)}</text>'
+        f'<text x="{left + 13}" y="{top + plot_h / 2:.1f}" text-anchor="middle" transform="rotate(-90 {left + 13} {top + plot_h / 2:.1f})" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(y_label)}</text>'
     )
     parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
     y_cursor = top + 58
     for line in summary_lines[:14]:
-        parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(line)}</text>')
+        parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 38))}</text>')
         y_cursor += 22
     y_cursor += 12
     for prepared_series in prepared[:8]:
         parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"/>')
-        parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(prepared_series["name"])}</text>')
+        parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(prepared_series["name"], 28))}</text>')
         y_cursor += 22
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
@@ -1019,7 +1192,7 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
         f'<text x="40" y="46" font-family="Segoe UI,Arial,sans-serif" font-size="26" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        f'<text x="40" y="72" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(subtitle)}</text>',
+        f'<text x="40" y="72" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 112))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
     if dataset and dataset.get("points"):
@@ -1037,26 +1210,60 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         max_x = max(xs)
         min_y = min(ys)
         max_y = max(ys)
+        requested_y_min = dataset.get("y_axis_min")
+        requested_y_max = dataset.get("y_axis_max")
+        if requested_y_min is not None and requested_y_max is not None:
+            requested_y_min = float(requested_y_min)
+            requested_y_max = float(requested_y_max)
+            if (
+                math.isfinite(requested_y_min)
+                and math.isfinite(requested_y_max)
+                and requested_y_min < requested_y_max
+                and min_y >= requested_y_min
+                and max_y <= requested_y_max
+            ):
+                min_y = requested_y_min
+                max_y = requested_y_max
         if math.isclose(min_x, max_x):
             max_x = min_x + 1.0
         if math.isclose(min_y, max_y):
             max_y = min_y + 1.0
-        parts.append(f'<line x1="{left + 45}" y1="{top + plot_h - 38}" x2="{left + plot_w - 24}" y2="{top + plot_h - 38}" stroke="#94a3b8" stroke-width="1.2"/>')
-        parts.append(f'<line x1="{left + 45}" y1="{top + 24}" x2="{left + 45}" y2="{top + plot_h - 38}" stroke="#94a3b8" stroke-width="1.2"/>')
-        if dataset.get("mode") == "bar":
+        is_bar = dataset.get("mode") == "bar"
+        if is_bar:
             if min_y > 0:
                 min_y = 0.0
             if math.isclose(min_y, max_y):
                 max_y = min_y + max(abs(min_y) * 0.1, 1.0)
+        axis_left = left + 45
+        axis_right = left + plot_w - 24
+        axis_top = top + 24
+        axis_bottom = top + plot_h - 38
+        if not is_bar:
+            _append_numeric_axis_ticks(
+                parts,
+                axis_left,
+                axis_right,
+                axis_top,
+                axis_bottom,
+                min_x,
+                max_x,
+                min_y,
+                max_y,
+            )
+        else:
+            _append_y_axis_ticks(parts, axis_left, axis_right, axis_top, axis_bottom, min_y, max_y)
+        parts.append(f'<line x1="{axis_left}" y1="{axis_bottom}" x2="{axis_right}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
+        parts.append(f'<line x1="{axis_left}" y1="{axis_top}" x2="{axis_left}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
+        if is_bar:
             bar_w = max(8.0, (plot_w - 100) / max(len(points), 1) * 0.7)
             for idx, (x_val, y_val) in enumerate(points):
                 x_px = left + 55 + idx * max(bar_w + 4, (plot_w - 100) / max(len(points), 1))
-                y_px = top + plot_h - 38 - ((y_val - min_y) / (max_y - min_y)) * (plot_h - 80)
-                parts.append(f'<rect x="{x_px:.1f}" y="{y_px:.1f}" width="{bar_w:.1f}" height="{(top + plot_h - 38 - y_px):.1f}" fill="#0f766e" opacity="0.88"/>')
+                y_px = axis_bottom - ((y_val - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+                parts.append(f'<rect x="{x_px:.1f}" y="{y_px:.1f}" width="{bar_w:.1f}" height="{(axis_bottom - y_px):.1f}" fill="#0f766e" opacity="0.88"/>')
                 tick_labels = dataset.get("tick_labels") or []
-                if idx < len(tick_labels):
-                    label = str(tick_labels[idx])[:14]
-                    parts.append(f'<text x="{x_px + bar_w/2:.1f}" y="{top + plot_h - 18}" text-anchor="middle" font-family="Consolas,Segoe UI Mono,monospace" font-size="10" fill="#475569">{html.escape(label)}</text>')
+                label = str(tick_labels[idx])[:14] if idx < len(tick_labels) else _format_axis_tick(x_val)
+                parts.append(f'<line x1="{x_px + bar_w/2:.1f}" y1="{axis_bottom}" x2="{x_px + bar_w/2:.1f}" y2="{axis_bottom + 5}" stroke="#64748b"/>')
+                parts.append(f'<text x="{x_px + bar_w/2:.1f}" y="{axis_bottom + 18}" text-anchor="middle" font-family="Consolas,Segoe UI Mono,monospace" font-size="10" fill="#475569">{html.escape(label)}</text>')
         elif dataset.get("mode") == "scatter":
             for x_val, y_val in points:
                 x_px = left + 45 + ((x_val - min_x) / (max_x - min_x)) * (plot_w - 70)
@@ -1072,8 +1279,8 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
             parts.append(f'<polyline fill="none" stroke="#0f766e" stroke-width="3" points="{poly}"/>')
             for x_px, y_px in coords[:: max(1, len(coords) // 24)]:
                 parts.append(f'<circle cx="{x_px:.1f}" cy="{y_px:.1f}" r="3.5" fill="#0f766e"/>')
-        parts.append(f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 18}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(str(dataset.get("x_label") or "X"))}</text>')
-        parts.append(f'<text x="{left - 10}" y="{top + 12}" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(str(dataset.get("y_label") or "Y"))}</text>')
+        parts.append(f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(str(dataset.get("x_label") or "X"))}</text>')
+        parts.append(f'<text x="{left + 13}" y="{top + plot_h / 2:.1f}" text-anchor="middle" transform="rotate(-90 {left + 13} {top + plot_h / 2:.1f})" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(str(dataset.get("y_label") or "Y"))}</text>')
     else:
         parts.append(f'<text x="{left + 45}" y="{top + 50}" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#334155">No numeric series could be derived for this chart family.</text>')
     info_x = 780
@@ -1081,11 +1288,11 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
     parts.append(f'<text x="{info_x + 18}" y="{top + 32}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
     y = top + 60
     for line in summary_lines[:16]:
-        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(line)}</text>')
+        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 34))}</text>')
         y += 22
     extra_lines = dataset.get("summary_lines", []) if isinstance(dataset, dict) else []
     for line in extra_lines[: max(0, 16 - len(summary_lines))]:
-        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(str(line))}</text>')
+        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 34))}</text>')
         y += 22
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
@@ -1868,7 +2075,7 @@ def _render_heatmap_svg(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
         f'<text x="44" y="50" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        f'<text x="44" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(subtitle)}</text>',
+        f'<text x="44" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 116))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
         f'<rect x="{info_x}" y="{top}" width="300" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
@@ -1919,10 +2126,82 @@ def _render_heatmap_svg(
     parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
     y = top + 60
     for line in summary_lines[:18]:
-        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(line)}</text>')
+        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 36))}</text>')
         y += 22
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
+
+
+def _render_heatmap_or_projection_svg(
+    title: str,
+    subtitle: str,
+    x_labels: list[str],
+    y_labels: list[str],
+    matrix: list[list[float]],
+    summary_lines: list[str],
+    x_axis_title: str,
+    y_axis_title: str,
+) -> tuple[bytes, str]:
+    """Render a 2-D heatmap or an explicitly labeled 1-D projection.
+
+    A single-cell/single-UE run often has only one spatial category.  Rejecting
+    that data as unavailable loses useful occupancy evidence; duplicating the
+    category would fake a second axis.  The exact marginal projection is the
+    scientifically honest visualization in that case.
+    """
+    if len(x_labels) >= 2 and len(y_labels) >= 2:
+        return (
+            _render_heatmap_svg(
+                title, subtitle, x_labels, y_labels, matrix, summary_lines,
+                x_axis_title, y_axis_title,
+            ),
+            "generated_specialized_runtime_heatmap_svg",
+        )
+    if not x_labels or not y_labels or not matrix:
+        return (
+            _render_reason_svg(
+                title, subtitle,
+                summary_lines + ["No finite occupancy cells were available."],
+            ),
+            "generated_unavailable_reason_svg",
+        )
+    if len(x_labels) >= 2:
+        values = [
+            sum(float(row[index]) for row in matrix if index < len(row))
+            for index in range(len(x_labels))
+        ]
+        labels = [str(value) for value in x_labels]
+        axis_label = x_axis_title
+    elif len(y_labels) >= 2:
+        values = [sum(float(value) for value in row) for row in matrix]
+        labels = [str(value) for value in y_labels]
+        axis_label = y_axis_title
+    else:
+        values = [sum(float(value) for row in matrix for value in row)]
+        labels = [f"{x_labels[0]} / {y_labels[0]}"]
+        axis_label = f"{x_axis_title} / {y_axis_title}"
+    dataset = {
+        "mode": "bar",
+        "x_label": f"{axis_label} projection",
+        "y_label": "Summed occupancy",
+        "points": [[float(index + 1), value] for index, value in enumerate(values)],
+        "tick_labels": labels,
+        "evidence_shape_policy": "observed_distribution" if len(values) > 1 else "measured_scalar",
+        "sample_count": max(1, sum(1 for row in matrix for _value in row)),
+    }
+    return (
+        _render_svg_plot(
+            title,
+            f"{subtitle} One axis has one observed category, so the exact marginal projection is shown instead of inventing a 2-D surface.",
+            dataset,
+            summary_lines + [
+                "view=exact_1d_projection",
+                f"unique_{x_axis_title.lower().replace(' ', '_')}={len(x_labels)}",
+                f"unique_{y_axis_title.lower().replace(' ', '_')}={len(y_labels)}",
+            ],
+        ),
+        "generated_specialized_runtime_projection_svg",
+    )
 
 
 def _render_scatter_panels_svg(
@@ -1937,7 +2216,7 @@ def _render_scatter_panels_svg(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
         f'<text x="40" y="48" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        f'<text x="40" y="74" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(subtitle)}</text>',
+        f'<text x="40" y="74" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 116))}</text>',
     ]
     if not panels:
         return _render_reason_svg(title, subtitle, summary_lines + ["No constellation preview samples were available for this chart."])
@@ -1956,15 +2235,27 @@ def _render_scatter_panels_svg(
         cx = x0 + panel_w / 2
         cy = y0 + panel_h / 2 + 12
         radius = 86
+        numeric = [(x_val, y_val) for x_val, y_val, _direction in points] + list(ideal_points)
+        observed_max = max((max(abs(x_val), abs(y_val)) for x_val, y_val in numeric), default=1.0)
+        axis_limit = max(1.0, math.ceil(observed_max * 2.0) / 2.0)
+        for tick in _axis_tick_values(-axis_limit, axis_limit):
+            px = cx + (tick / axis_limit) * radius
+            py = cy - (tick / axis_limit) * radius
+            parts.append(f'<line x1="{px:.2f}" y1="{cy - radius}" x2="{px:.2f}" y2="{cy + radius}" stroke="#e2e8f0" stroke-width="1"/>')
+            parts.append(f'<line x1="{cx - radius}" y1="{py:.2f}" x2="{cx + radius}" y2="{py:.2f}" stroke="#e2e8f0" stroke-width="1"/>')
+            parts.append(f'<text x="{px:.2f}" y="{cy + radius + 14}" text-anchor="middle" font-family="Consolas,Segoe UI Mono,monospace" font-size="9" fill="#64748b">{html.escape(_format_axis_tick(tick))}</text>')
+            parts.append(f'<text x="{cx - radius - 7}" y="{py + 3:.2f}" text-anchor="end" font-family="Consolas,Segoe UI Mono,monospace" font-size="9" fill="#64748b">{html.escape(_format_axis_tick(tick))}</text>')
         parts.append(f'<line x1="{cx - radius}" y1="{cy}" x2="{cx + radius}" y2="{cy}" stroke="#94a3b8" stroke-width="1.1"/>')
         parts.append(f'<line x1="{cx}" y1="{cy - radius}" x2="{cx}" y2="{cy + radius}" stroke="#94a3b8" stroke-width="1.1"/>')
+        parts.append(f'<text x="{cx}" y="{y0 + panel_h - 8}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#334155">In-phase</text>')
+        parts.append(f'<text x="{x0 + 14}" y="{cy}" text-anchor="middle" transform="rotate(-90 {x0 + 14} {cy})" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#334155">Quadrature</text>')
         for ix, iy in ideal_points[:64]:
-            px = cx + ix * radius * 0.9
-            py = cy - iy * radius * 0.9
+            px = cx + (ix / axis_limit) * radius
+            py = cy - (iy / axis_limit) * radius
             parts.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="4.0" fill="#cbd5e1" />')
         for x_val, y_val, direction in points[:420]:
-            px = cx + x_val * radius * 0.75
-            py = cy - y_val * radius * 0.75
+            px = cx + (x_val / axis_limit) * radius
+            py = cy - (y_val / axis_limit) * radius
             color = colors.get(direction, "#475569")
             parts.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="2.0" fill="{color}" fill-opacity="0.72" />')
     info_x = 740
@@ -2309,6 +2600,7 @@ def _is_placeholder_materialization_status(status: str) -> bool:
         "missing_source_summary",
         "generated_unavailable_reason_svg",
         "generated_unavailable_reason_png",
+        "generated_low_information_reason_png",
     }
 
 
@@ -3518,6 +3810,27 @@ def _trial_rows_with_paths(
     return out
 
 
+def _wilson_score_interval(success_count: float, sample_count: int, z_value: float = 1.959963984540054) -> tuple[float, float]:
+    """Return a two-sided Wilson interval for a Bernoulli proportion."""
+    n = max(0, int(sample_count))
+    if n <= 0:
+        return math.nan, math.nan
+    successes = min(max(float(success_count), 0.0), float(n))
+    proportion = successes / float(n)
+    z2 = float(z_value) ** 2
+    denominator = 1.0 + z2 / float(n)
+    center = (proportion + z2 / (2.0 * float(n))) / denominator
+    half_width = (
+        float(z_value)
+        * math.sqrt(
+            proportion * (1.0 - proportion) / float(n)
+            + z2 / (4.0 * float(n) ** 2)
+        )
+        / denominator
+    )
+    return max(0.0, center - half_width), min(1.0, center + half_width)
+
+
 def _prach_rate_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -3631,6 +3944,7 @@ def _prach_rate_chart_materialization(
             tick_labels.append(tick_label)
             total_samples += len(values)
             total_positive += sum(values)
+            ci95_lower, ci95_upper = _wilson_score_interval(sum(values), len(values))
             csv_rows.append(
                 {
                     "run_id": run_id,
@@ -3639,6 +3953,8 @@ def _prach_rate_chart_materialization(
                     "snr_db": "" if snr_bucket is None else snr_bucket,
                     "metric_value": rate_value,
                     "sample_count": len(values),
+                    "ci95_lower": ci95_lower,
+                    "ci95_upper": ci95_upper,
                     "source_table_logical_path": trial_path,
                 }
             )
@@ -3648,6 +3964,10 @@ def _prach_rate_chart_materialization(
                 "x_label": "PRACH SNR (dB)" if any(item[0] is not None for item in ordered) else "Observation bucket",
                 "y_label": str(spec["metric_label"]),
                 "points": points,
+                "y_axis_min": 0.0,
+                "y_axis_max": 1.0,
+                "evidence_shape_policy": "observed_distribution" if len(points) == 1 else "observed_timeline",
+                "sample_count": total_samples,
             }
             if dataset["mode"] == "bar":
                 dataset["tick_labels"] = tick_labels
@@ -3657,27 +3977,20 @@ def _prach_rate_chart_materialization(
                 f"samples_used={total_samples}",
                 f"mean_rate={total_positive / max(total_samples, 1):.6f}",
             ]
-            unique_x = _unique_numeric_count([point[0] for point in points])
-            unique_y = _unique_numeric_count([point[1] for point in points])
-            if len(points) < 2 or unique_x < 2 or unique_y < 2:
-                img_bytes = _render_prach_rate_card_svg(
-                    chart_name,
-                    str(spec["metric_label"]),
-                    total_positive / max(total_samples, 1),
-                    total_positive,
-                    total_samples,
-                    summary,
-                )
-            else:
-                img_bytes = _render_svg_plot(
-                    chart_name,
-                    "PRACH detection statistics aggregated directly from persisted PRACH trial outcomes.",
-                    dataset,
-                    summary,
-                )
+            overall_lower, overall_upper = _wilson_score_interval(total_positive, total_samples)
+            summary.extend([
+                f"wilson95_lower={overall_lower:.6f}",
+                f"wilson95_upper={overall_upper:.6f}",
+            ])
+            img_bytes = _render_svg_plot(
+                chart_name,
+                "Observed PRACH Bernoulli rate from persisted trials; Wilson 95% bounds are reported in the summary.",
+                dataset,
+                summary,
+            )
             return {
                 "csv_bytes": _encode_dict_rows(
-                    ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "source_table_logical_path"],
+                    ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "ci95_lower", "ci95_upper", "source_table_logical_path"],
                     csv_rows,
                 ),
                 "img_bytes": img_bytes,
@@ -3714,7 +4027,11 @@ def _prach_rate_chart_materialization(
         "x_label": "Observation bucket",
         "y_label": str(spec["metric_label"]),
         "points": [[1.0, float(rate_value)]],
+        "y_axis_min": 0.0,
+        "y_axis_max": 1.0,
         "tick_labels": ["Observed PRACH"],
+        "evidence_shape_policy": "measured_scalar",
+        "sample_count": int(round(count_value)) if count_value is not None else 1,
     }
     csv_rows = [
         {
@@ -3724,23 +4041,23 @@ def _prach_rate_chart_materialization(
             "snr_db": "",
             "metric_value": float(rate_value),
             "sample_count": "" if count_value is None else count_value,
+            "ci95_lower": "",
+            "ci95_upper": "",
             "source_table_logical_path": summary_path,
         }
     ]
     summary = [f"source={summary_path}", f"observed_rate={float(rate_value):.6f}"]
     if count_value is not None:
         summary.append(f"sample_count={int(round(count_value))}")
-    img_bytes = _render_prach_rate_card_svg(
+    img_bytes = _render_svg_plot(
         chart_name,
-        str(spec["metric_label"]),
-        float(rate_value),
-        float(rate_value) * float(count_value if count_value is not None else 1.0),
-        int(round(count_value)) if count_value is not None else 1,
+        "Observed PRACH summary rate from persisted runtime metrics; no SNR curve is implied.",
+        dataset,
         summary,
     )
     return {
         "csv_bytes": _encode_dict_rows(
-            ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "source_table_logical_path"],
+            ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "ci95_lower", "ci95_upper", "source_table_logical_path"],
             csv_rows,
         ),
         "img_bytes": img_bytes,
@@ -3816,21 +4133,39 @@ def _prach_peak_chart_materialization(
         )
     if not csv_rows:
         return None
+    unique_slots = _unique_numeric_count([point[0] for point in points])
+    timeline_points = points
+    timeline_x_label = "Slot/sample"
+    if unique_slots < 2:
+        timeline_points = [[float(index), float(point[1])] for index, point in enumerate(points, start=1)]
+        timeline_x_label = "PRACH observation index"
     is_distribution_chart = "histogram" in chart_key or "distributions" in chart_key or "results" in chart_key
     if is_distribution_chart:
-        dataset = {"mode": "bar", "x_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric", "y_label": "Count", "points": _histogram_points(values, 18)}
+        dataset = {
+            "mode": "bar",
+            "x_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric",
+            "y_label": "Count",
+            "points": _histogram_points(values, 18),
+            "evidence_shape_policy": "observed_distribution",
+            "sample_count": len(values),
+        }
     else:
-        dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric", "points": points[:MAX_PREVIEW_ROWS]}
-    unique_slots = _unique_numeric_count([point[0] for point in points])
+        dataset = {
+            "mode": "scatter" if len(points) < 3 else "line",
+            "x_label": timeline_x_label,
+            "y_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric",
+            "points": timeline_points[:MAX_PREVIEW_ROWS],
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(values),
+        }
     unique_values = _unique_numeric_count(values)
     summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
-    sparse_peak_evidence = len(values) < 3 or unique_values < 2
-    if not is_distribution_chart:
-        sparse_peak_evidence = sparse_peak_evidence or unique_slots < 3
-    if sparse_peak_evidence:
-        img_bytes = _render_prach_peak_summary_svg(chart_name, values, status_counts, summary)
-    else:
-        img_bytes = _render_svg_plot(chart_name, "PRACH peak/noise evidence from persisted runtime PRACH correlation or trial rows.", dataset, summary)
+    img_bytes = _render_svg_plot(
+        chart_name,
+        "PRACH peak/noise observations from persisted runtime rows; sparse samples are rendered as points or exact categorical counts.",
+        dataset,
+        summary + [f"unique_slots={unique_slots}", f"unique_values={unique_values}"],
+    )
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "slot", "peak_index", "peak_value", "noise_floor", "detection_metric", "timing_error_samples", "status", "source_table_logical_path"],
@@ -3970,7 +4305,14 @@ def _beam_mimo_chart_materialization(
             )
         if not csv_rows:
             return None
-        dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "Selected beam index", "points": points[:MAX_PREVIEW_ROWS]}
+        dataset = {
+            "mode": "line",
+            "x_label": "Slot/sample",
+            "y_label": "Selected beam index",
+            "points": points[:MAX_PREVIEW_ROWS],
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(csv_rows),
+        }
         return {
             "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "selected_beam_index", "best_beam_index", "source_table_logical_path"], csv_rows),
             "img_bytes": _render_svg_plot(chart_name, "Selected beam timeline from runtime beam/precoder rows.", dataset, [f"rows={len(csv_rows)}"]),
@@ -3999,7 +4341,14 @@ def _beam_mimo_chart_materialization(
                 "source_row_count": len(flat_rows),
                 "note": reason,
             }
-        dataset = {"mode": "bar", "x_label": "Beam gain gap dB", "y_label": "Count", "points": _histogram_points(values, 18)}
+        dataset = {
+            "mode": "bar",
+            "x_label": "Beam gain gap dB",
+            "y_label": "Count",
+            "points": _histogram_points(values, 18),
+            "evidence_shape_policy": "observed_distribution",
+            "sample_count": len(values),
+        }
         return {
             "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "beam_gap_value", "source_table_logical_path"], csv_rows),
             "img_bytes": _render_svg_plot(chart_name, "Beam gap distribution from exported runtime beam metrics.", dataset, [f"samples={len(values)}"]),
@@ -4023,7 +4372,14 @@ def _beam_mimo_chart_materialization(
         if not points:
             return None
         csv_rows = [{"run_id": run_id, "chart_name": chart_name, "slot": slot, "beam_hit_rate": value, "source_table_logical_path": "runtime_beam_sources"} for slot, value in points]
-        dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "Beam hit rate", "points": points}
+        dataset = {
+            "mode": "line",
+            "x_label": "Slot/sample",
+            "y_label": "Beam hit rate",
+            "points": points,
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(flat_rows),
+        }
         return {
             "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "beam_hit_rate", "source_table_logical_path"], csv_rows),
             "img_bytes": _render_svg_plot(chart_name, "Beam hit-rate trend from exported beam-hit flags.", dataset, [f"points={len(points)}"]),
@@ -4138,7 +4494,14 @@ def _pdcch_control_chart_materialization(
         if not points:
             return None
         csv_rows = [{"run_id": run_id, "chart_name": chart_name, "slot": slot, "decode_success_rate": value, "source_table_logical_path": source_path} for slot, value in points]
-        dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "PDCCH decode success rate", "points": points}
+        dataset = {
+            "mode": "line",
+            "x_label": "Slot/sample",
+            "y_label": "PDCCH decode success rate",
+            "points": points,
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(records),
+        }
         return {
             "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "decode_success_rate", "source_table_logical_path"], csv_rows),
             "img_bytes": _render_svg_plot(chart_name, "PDCCH decode success trend from persisted control trials.", dataset, [f"source={source_path}", f"points={len(points)}"]),
@@ -4160,11 +4523,33 @@ def _pdcch_control_chart_materialization(
         return None
     x_labels, y_labels, matrix = _grid_rows_to_heatmap(dmrs_rows, "slot", "cell_id", "occupancy_value")
     csv_rows = [{**row, "run_id": run_id, "chart_name": chart_name, "source_table_logical_path": source_path} for row in dmrs_rows]
+    if len(x_labels) < 2 or len(y_labels) < 2:
+        by_slot: dict[int, list[float]] = defaultdict(list)
+        for row in dmrs_rows:
+            by_slot[int(row["slot"])].append(float(row["occupancy_value"]))
+        projection = {
+            "mode": "line",
+            "x_label": "Slot",
+            "y_label": "PDCCH DMRS RE count",
+            "points": [[float(slot), sum(values) / len(values)] for slot, values in sorted(by_slot.items())],
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(dmrs_rows),
+        }
+        image_bytes = _render_svg_plot(
+            chart_name,
+            "Exact one-cell PDCCH DMRS occupancy projection; no second spatial axis was invented.",
+            projection,
+            [f"source={source_path}", f"rows={len(dmrs_rows)}", "view=slot_projection"],
+        )
+        image_status = "generated_specialized_runtime_summary_svg"
+    else:
+        image_bytes = _render_heatmap_svg(chart_name, "PDCCH DMRS RE occupancy by slot/cell from exported control rows.", x_labels, y_labels, matrix, [f"source={source_path}", f"rows={len(dmrs_rows)}"], "Slot", "Cell")
+        image_status = "generated_specialized_runtime_heatmap_svg"
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "cell_id", "dmrs_re_count", "source_table_logical_path"], csv_rows),
-        "img_bytes": _render_heatmap_svg(chart_name, "PDCCH DMRS RE occupancy by slot/cell from exported control rows.", x_labels, y_labels, matrix, [f"source={source_path}", f"rows={len(dmrs_rows)}"], "Slot", "Cell"),
+        "img_bytes": image_bytes,
         "csv_status": "specialized_runtime_pdcch_dataset",
-        "image_status": "generated_specialized_runtime_heatmap_svg",
+        "image_status": image_status,
         "source_table_path": source_path,
         "source_row_count": len(records),
         "note": "PDCCH DMRS occupancy requires exported DMRS RE count columns; no occupancy is inferred from unrelated CCE counts.",
@@ -4203,20 +4588,29 @@ def _ssb_index_timeline_chart_materialization(
         csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot": slot, "ssb_index": ssb, "source_table_logical_path": source_path})
     if not csv_rows:
         return None
-    dataset = {"mode": "line", "x_label": "Slot/sample", "y_label": "SSB index", "points": points[:MAX_PREVIEW_ROWS]}
-    summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
     unique_slots = _unique_numeric_count([point[0] for point in points])
-    unique_ssb = _unique_numeric_count([point[1] for point in points])
-    if len(points) < 3 or unique_slots < 3:
-        img_bytes = _render_kpi_card_svg(
-            chart_name,
-            "SSB acquisition evidence is a bounded event set, not a slot-by-slot beam timeline.",
-            [("Observed rows", len(csv_rows), ""), ("Unique slots", unique_slots, ""), ("Unique SSBs", unique_ssb, "")],
-            summary + ["chart_decision=ssb_event_summary_card"],
-            visual_gate="sparse_ssb_index_events",
-        )
+    if unique_slots < 2:
+        chart_points = [[float(index), float(point[1])] for index, point in enumerate(points, start=1)]
+        x_label = "Observed SSB event index"
     else:
-        img_bytes = _render_svg_plot(chart_name, "SSB index timeline parsed from runtime SSB/PBCH stage rows.", dataset, summary)
+        chart_points = points
+        x_label = "Slot/sample"
+    dataset = {
+        "mode": "scatter" if len(points) < 3 else "line",
+        "x_label": x_label,
+        "y_label": "SSB index",
+        "points": chart_points[:MAX_PREVIEW_ROWS],
+        "evidence_shape_policy": "observed_timeline",
+        "sample_count": len(csv_rows),
+    }
+    summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
+    unique_ssb = _unique_numeric_count([point[1] for point in points])
+    img_bytes = _render_svg_plot(
+        chart_name,
+        "SSB index events parsed from runtime SSB/PBCH stage rows; sparse observations are shown as measured points.",
+        dataset,
+        summary + [f"unique_slots={unique_slots}", f"unique_ssb={unique_ssb}"],
+    )
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ssb_index", "source_table_logical_path"], csv_rows),
         "img_bytes": img_bytes,
@@ -4401,21 +4795,17 @@ def _srs_map_chart_materialization(
     if nmse_values:
         summary.append(f"mean_nmse_db={sum(nmse_values) / len(nmse_values):.3f}")
     summary.append("exact_srs_rb_symbol_map=not_exported_by_runtime")
+    image_bytes, image_status = _render_heatmap_or_projection_svg(
+        chart_name,
+        "Exact SRS RE placement is not exported for this run, so the view shows truthful per-UE SRS observation success by slot.",
+        x_labels, y_labels, matrix, summary, "Slot", "UE index",
+    )
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "slot", "ue_index", "occupancy_value", "nmse_db", "success_flag", "source_table_logical_path"],
             [{**row, "run_id": run_id, "chart_name": chart_name} for row in grid_rows],
         ),
-        "img_bytes": _render_heatmap_svg(
-            chart_name,
-            "Exact SRS RE placement is not exported for this run, so the map shows truthful per-UE SRS observation success by slot.",
-            x_labels,
-            y_labels,
-            matrix,
-            summary,
-            "Slot",
-            "UE index",
-        ),
+        "img_bytes": image_bytes,
         "csv_status": "specialized_runtime_srs_dataset",
         "image_status": "generated_specialized_runtime_heatmap_svg",
         "source_table_path": source_path,
@@ -4667,7 +5057,14 @@ def _runtime_bler_vs_mcs_chart(
                 "source_table_logical_path": source_token or "multiple_runtime_trials",
             }
         )
-    dataset = {"mode": _honest_chart_mode(points), "x_label": "MCS", "y_label": "BLER", "points": points}
+    dataset = {
+        "mode": "bar" if len(points) == 1 else _honest_chart_mode(points),
+        "x_label": "MCS",
+        "y_label": "BLER",
+        "points": points,
+        "evidence_shape_policy": "operating_point" if len(points) == 1 else "observed_relation",
+        "sample_count": sample_count,
+    }
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "mcs", "bler", "sample_count", "source_table_logical_path"], csv_rows),
         "img_bytes": _render_svg_plot("BLER vs MCS", "BLER by selected runtime MCS from persisted waveform trials.", dataset, [f"samples={sample_count}"]),
@@ -4866,7 +5263,15 @@ def _runtime_power_scatter_chart(
     points = _bin_mean_points(pairs, 18)
     if not points:
         return None
-    dataset = {"mode": "scatter" if len(points) > 10 else "line", "x_label": x_label, "y_label": "Mean power (W)", "points": points}
+    unique_x = _unique_numeric_count([point[0] for point in points])
+    dataset = {
+        "mode": "bar" if unique_x <= 1 else "scatter",
+        "x_label": x_label,
+        "y_label": "Mean power (W)",
+        "points": points,
+        "evidence_shape_policy": "operating_point" if unique_x <= 1 else "observed_relation",
+        "sample_count": len(pairs),
+    }
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "chart_mode", "x_label", "y_label", "x_value", "y_value", "power_w", "source_table_logical_path"], csv_rows),
         "img_bytes": _render_svg_plot(chart_name, "Power relationship derived from runtime energy timeline rows.", dataset, [f"samples={len(pairs)}", f"sources={len(source_counts)}"]),
@@ -4962,7 +5367,14 @@ def _runtime_antenna_layout_chart(
                     "source_table_logical_path": cfg["source_path"],
                 }
             )
-    dataset = {"mode": "scatter", "x_label": "Horizontal position (lambda)", "y_label": "Vertical position (lambda)", "points": points}
+    dataset = {
+        "mode": "scatter",
+        "x_label": "Horizontal position (lambda)",
+        "y_label": "Vertical position (lambda)",
+        "points": points,
+        "evidence_shape_policy": "observed_geometry",
+        "sample_count": len(rows),
+    }
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "element_index", "node_type", "array_type", "array_class", "element_class", "row_index", "col_index", "y_lambda", "z_lambda", "source_table_logical_path"],
@@ -5013,7 +5425,14 @@ def _runtime_antenna_radiation_chart(
                 "source_table_logical_path": cfg["source_path"],
             }
         )
-    dataset = {"mode": "line", "x_label": "Azimuth (deg)", "y_label": "Element gain (dBi)", "points": points}
+    dataset = {
+        "mode": "line",
+        "x_label": "Azimuth (deg)",
+        "y_label": "Element gain (dBi)",
+        "points": points,
+        "evidence_shape_policy": "observed_timeline",
+        "sample_count": len(rows),
+    }
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "azimuth_deg", "element_gain_dbi", "element_class", "source_table_logical_path"], rows),
         "img_bytes": _render_svg_plot(chart_name, "Configured phased.IsotropicAntennaElement radiation pattern.", dataset, ["element=isotropic", "gain=0 dBi all azimuths", "array factor shown in beam pattern chart"]),
@@ -5338,7 +5757,16 @@ def _configured_sweep_chart_materialization(
         run_id=run_id,
         source_path=source_path_text,
     )
-    dataset["mode"] = _honest_chart_mode(dataset.get("points", []), "line")
+    point_count = len(dataset.get("points", []))
+    dataset["sample_count"] = len(pairs)
+    if point_count == 1:
+        dataset["mode"] = "bar"
+        dataset["evidence_shape_policy"] = "operating_point"
+        chart_scope = "single_operating_point_not_a_sweep_curve"
+    else:
+        dataset["mode"] = _honest_chart_mode(dataset.get("points", []), "line")
+        dataset["evidence_shape_policy"] = "observed_relation"
+        chart_scope = "measured_sweep_points"
     return {
         "csv_bytes": csv_bytes,
         "img_bytes": _render_svg_plot(
@@ -5349,6 +5777,7 @@ def _configured_sweep_chart_materialization(
                 f"direction={required_direction or 'DL+UL'}",
                 f"samples={len(pairs)}",
                 f"source={source_path_text}",
+                f"chart_scope={chart_scope}",
             ],
         ),
         "csv_status": "specialized_runtime_configured_sweep_dataset",
@@ -5356,8 +5785,8 @@ def _configured_sweep_chart_materialization(
         "source_table_path": source_path_text,
         "source_row_count": len(pairs),
         "note": (
-            "Configured SNR is the explicit sweep axis. Metrics come from real PDSCH/PUSCH trial rows; "
-            "measured SINR uses receiver post-equalization evidence."
+            "Configured SNR is the explicit operating-point axis. Metrics come from real PDSCH/PUSCH trial rows; "
+            "measured SINR uses receiver post-equalization evidence. A one-point run is labeled as an operating point, not a sweep curve."
         ),
     }
 
@@ -5527,13 +5956,34 @@ def _explicit_runtime_metric_chart_materialization(
                     idx = min(15, max(0, int((value - min_value) / max(width, 1e-12))))
                     bins[idx] += 1
                 points = [[min_value + width * (idx + 0.5), float(count)] for idx, count in enumerate(bins) if count]
-        dataset = {"mode": "bar", "x_label": spec["label"], "y_label": "Sample count", "points": points}
+        dataset = {
+            "mode": "bar",
+            "x_label": spec["label"],
+            "y_label": "Sample count",
+            "points": points,
+            "evidence_shape_policy": "observed_distribution",
+            "sample_count": len(raw_values),
+        }
     else:
         grouped: dict[float, list[float]] = defaultdict(list)
         for x_value, metric_value in samples:
             grouped[round(float(x_value), 9)].append(float(metric_value))
         points = [[x_value, sum(values) / len(values)] for x_value, values in sorted(grouped.items())]
-        dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot / runtime sample", "y_label": spec["label"], "points": points}
+        mode = _honest_chart_mode(points)
+        if len(points) == 1:
+            # One persisted runtime row is a state snapshot, not a trend.
+            mode = "bar"
+            evidence_shape_policy = "measured_scalar"
+        else:
+            evidence_shape_policy = "observed_timeline"
+        dataset = {
+            "mode": mode,
+            "x_label": "Slot / runtime sample",
+            "y_label": spec["label"],
+            "points": points,
+            "evidence_shape_policy": evidence_shape_policy,
+            "sample_count": len(raw_values),
+        }
     if not dataset.get("points"):
         return None
     return {
@@ -5566,6 +6016,7 @@ def _runtime_point_chart(
     note: str,
     *,
     mode: str = "line",
+    evidence_shape_policy: str = "",
 ) -> dict[str, Any] | None:
     finite = [
         [float(point[0]), float(point[1])]
@@ -5592,7 +6043,10 @@ def _runtime_point_chart(
         "x_label": x_label,
         "y_label": y_label,
         "points": _downsample_points(finite, 256),
+        "sample_count": len(finite),
     }
+    if evidence_shape_policy:
+        dataset["evidence_shape_policy"] = str(evidence_shape_policy)
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "point_index", "x_value", "y_value", "source_table_logical_path"],
@@ -5679,23 +6133,24 @@ def _runtime_resource_occupancy_chart(
         }
         for row in grid_rows
     ]
+    image_bytes, image_status = _render_heatmap_or_projection_svg(
+        chart_name,
+        "Resource occupancy aggregated from persisted runtime RE-allocation rows.",
+        x_labels,
+        y_labels,
+        matrix,
+        [f"source={source_path}", f"cell={chosen_cell or 'all'}", f"occupied_slot_rb_pairs={len(grid_rows)}"],
+        "Slot",
+        "RB index",
+    )
     return {
         "csv_bytes": _encode_dict_rows(
             ["run_id", "chart_name", "cell_id", "slot", "rb_index", "occupancy_value", "source_table_logical_path"],
             csv_rows,
         ),
-        "img_bytes": _render_heatmap_svg(
-            chart_name,
-            "Resource occupancy aggregated from persisted runtime RE-allocation rows.",
-            x_labels,
-            y_labels,
-            matrix,
-            [f"source={source_path}", f"cell={chosen_cell or 'all'}", f"occupied_slot_rb_pairs={len(grid_rows)}"],
-            "Slot",
-            "RB index",
-        ),
+        "img_bytes": image_bytes,
         "csv_status": "specialized_runtime_re_occupancy_dataset",
-        "image_status": "generated_specialized_runtime_heatmap_svg",
+        "image_status": image_status,
         "source_table_path": source_path,
         "source_row_count": len(grid_rows),
         "source_mapping_status": "exact",
@@ -5893,6 +6348,7 @@ def _runtime_spectral_chart(
             "99% occupied bandwidth (MHz)" if chart_name == "occupied bandwidth" else "Out/in-band power ratio (dB)",
             note,
             mode="bar",
+            evidence_shape_policy="measured_scalar",
         )
     return {
         "csv_bytes": _encode_dict_rows(
@@ -5931,7 +6387,7 @@ def _runtime_contract_gap_chart(
             failed = any(token in status for token in ("fail", "missing", "error", "unavailable"))
             counts[(required, failed)] += 1
         points = [[float(index), float(counts[key])] for index, key in enumerate(((True, False), (True, True), (False, False), (False, True)))]
-        return _runtime_point_chart(chart_name, run_id, source, points, "Required/pass category", "Case count", "Counts are reduced from persisted required_flag and status fields.", mode="bar")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Required/pass category", "Case count", "Counts are reduced from persisted required_flag and status fields.", mode="bar", evidence_shape_policy="observed_distribution")
     if chart_name == "HOL delay over time":
         source = "packet_flow/csv/live_application_packet_delivery_ledger.csv"
         _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
@@ -5948,7 +6404,7 @@ def _runtime_contract_gap_chart(
         paths = [_row_text(row, "RelativePath") for row in rows if _row_text(row, "RelativePath")]
         counts = Counter(paths)
         points = [[float(index), float(max(counts[path] - 1, 0))] for index, path in enumerate(paths, start=1)]
-        return _runtime_point_chart(chart_name, run_id, source, points, "Inventory row", "Duplicate write count", "Duplicate counts are exact RelativePath multiplicities in the persisted artifact inventory.")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Inventory row", "Duplicate write count", "Duplicate counts are exact RelativePath multiplicities in the persisted artifact inventory.", evidence_shape_policy="observed_timeline")
     if chart_name == "consistency failure trend":
         source = "reports/csv/live_consistency_check_table.csv"
         _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
@@ -5956,7 +6412,7 @@ def _runtime_contract_gap_chart(
         for index, row in enumerate(rows, start=1):
             status = _row_text(row, "status").lower()
             points.append([float(index), float(any(token in status for token in ("fail", "missing", "error", "invalid")))])
-        return _runtime_point_chart(chart_name, run_id, source, points, "Consistency check", "Failure flag", "Failure flags are reduced from persisted consistency-check status values.")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Consistency check", "Failure flag", "Failure flags are reduced from persisted consistency-check status values.", evidence_shape_policy="observed_timeline")
     if chart_name == "investigator stage lineage graph":
         source = "reports/csv/raw_to_derived_lineage.csv"
         _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
@@ -5964,7 +6420,7 @@ def _runtime_contract_gap_chart(
         for index, row in enumerate(rows, start=1):
             status = (_row_text(row, "RuntimeEvidenceStatus") + " " + _row_text(row, "DerivationStatus")).lower()
             points.append([float(index), 0.0 if any(token in status for token in ("fail", "missing", "unavailable")) else 1.0])
-        return _runtime_point_chart(chart_name, run_id, source, points, "Lineage edge", "Published/derived flag", "Each point is an exact raw-to-derived lineage edge and its persisted evidence/derivation status.")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Lineage edge", "Published/derived flag", "Each point is an exact raw-to-derived lineage edge and its persisted evidence/derivation status.", evidence_shape_policy="observed_timeline")
     if chart_name == "config drift":
         source = "reports/csv/config_roundtrip_verification.csv"
         _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
@@ -5972,18 +6428,18 @@ def _runtime_contract_gap_chart(
         for index, row in enumerate(rows, start=1):
             status = _row_text(row, "ConsistencyStatus").lower()
             points.append([float(index), 0.0 if status in {"consistent", "match", "matched", "ok", "pass", "passed"} else 1.0])
-        return _runtime_point_chart(chart_name, run_id, source, points, "Configured field", "Drift flag", "Drift is reduced only from persisted configuration round-trip consistency status.")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Configured field", "Drift flag", "Drift is reduced only from persisted configuration round-trip consistency status.", evidence_shape_policy="observed_timeline")
     if chart_name == "smoke exposure checks":
         source = "reports/csv/run_classification.csv"
         _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
         points = [[float(index), float("smoke" in _row_text(row, "RunClass").lower())] for index, row in enumerate(rows, start=1)]
-        return _runtime_point_chart(chart_name, run_id, source, points, "Run classification", "Smoke classification flag", "Smoke exposure is derived only from the persisted RunClass token.", mode="bar")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Run classification", "Smoke classification flag", "Smoke exposure is derived only from the persisted RunClass token.", mode="bar", evidence_shape_policy="measured_scalar")
     if chart_name == "assumption usage summaries":
         source = "reports/csv/value_source_audit.csv"
         _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source)
         roles = Counter(_row_text(row, "ValueRole") or "unspecified" for row in rows)
         points = [[float(index), float(count)] for index, (_role, count) in enumerate(sorted(roles.items()), start=1)]
-        return _runtime_point_chart(chart_name, run_id, source, points, "Value-role category", "Audited field count", "Counts come from explicit ValueRole classifications in the persisted value-source audit.", mode="bar")
+        return _runtime_point_chart(chart_name, run_id, source, points, "Value-role category", "Audited field count", "Counts come from explicit ValueRole classifications in the persisted value-source audit.", mode="bar", evidence_shape_policy="observed_distribution")
     return None
 
 
@@ -6034,7 +6490,18 @@ def _runtime_energy_relation_chart(
             if metric is not None:
                 points.append([power, float(metric)])
     y_label = {"power vs throughput": "Goodput (Mbps)", "power vs BLER": "BLER", "PAPR vs power": "PAPR (dB)"}[chart_name]
-    return _runtime_point_chart(chart_name, run_id, energy_path + "|air_interface/csv/*_trials.csv", points, "TX power (W)", y_label, "Power is joined to waveform trial metrics by exact direction/frame/slot keys.", mode="scatter")
+    unique_power = _unique_numeric_count([point[0] for point in points])
+    return _runtime_point_chart(
+        chart_name,
+        run_id,
+        energy_path + "|air_interface/csv/*_trials.csv",
+        points,
+        "TX power (W)",
+        y_label,
+        "Power is joined to waveform trial metrics by exact direction/frame/slot keys; constant BLER remains a measured outcome and no correlation fit is claimed.",
+        mode="bar" if unique_power <= 1 else "scatter",
+        evidence_shape_policy="operating_point" if unique_power <= 1 else "observed_relation",
+    )
 
 
 def _render_cfo_tracking_svg(
@@ -6397,18 +6864,15 @@ def _runtime_prach_operational_chart(
 
     dataset: dict[str, Any] | None = None
     summary: list[str] = [f"source={source_path}", f"runtime_rows={len(out_rows)}"]
-    card_metrics: list[tuple[str, float | int, str]] | None = None
     if chart_key in {"prach occasion timeline", "prach opportunity map"}:
         counts = Counter(str(row["occasion_id"] or f"frame={row['occasion_frame']}|slot={row['occasion_slot']}|symbol={row['occasion_symbol']}") for row in out_rows)
         named = list(counts.items())
         dataset, labels = _bar_dataset_from_named_values("PRACH occasion", "Attempts", [(key, float(value)) for key, value in named])
         dataset["tick_labels"] = [key for key, _value in named]
         summary.extend(labels)
-        if len(named) == 1:
-            card_metrics = [("Observed attempts", len(out_rows), ""), ("Distinct occasions", 1, ""), ("Occasion slot", out_rows[0]["occasion_slot"], "")]
     elif chart_key in {"ta estimate timeline", "ta estimate trend"}:
         points = [[float(row["observation_index"]), float(row["estimated_timing_offset_samples"])] for row in out_rows if row["estimated_timing_offset_samples"] != ""]
-        dataset = {"mode": "bar", "x_label": "PRACH observation", "y_label": "Timing estimate (samples)", "points": points}
+        dataset = {"mode": "bar", "x_label": "PRACH observation", "y_label": "Timing estimate (samples)", "points": points, "evidence_shape_policy": "observed_distribution", "sample_count": len(points)}
     elif chart_key == "preamble usage chart":
         counts = Counter(str(row["preamble_index_tx"]) for row in out_rows if str(row["preamble_index_tx"]))
         named = list(sorted(counts.items()))
@@ -6434,15 +6898,13 @@ def _runtime_prach_operational_chart(
         summary.extend(labels)
     elif chart_key == "access latency":
         points = [[float(row["observation_index"]), float(row["access_latency_slots"])] for row in out_rows if row["access_latency_slots"] != ""]
-        dataset = {"mode": "bar", "x_label": "UE access observation", "y_label": "Msg1-to-SetupComplete slots", "points": points}
+        dataset = {"mode": "bar", "x_label": "UE access observation", "y_label": "Msg1-to-SetupComplete slots", "points": points, "evidence_shape_policy": "observed_distribution", "sample_count": len(points)}
     elif chart_key == "retry count distribution":
         retries = [max(int(round(float(row["attempt_number"]))) - 1, 0) for row in out_rows if row["attempt_number"] != ""]
         counts = Counter(retries)
         dataset, labels = _bar_dataset_from_named_values("Retry count", "UE count", [(str(key), float(value)) for key, value in sorted(counts.items())])
         dataset["tick_labels"] = [str(key) for key in sorted(counts)]
         summary.extend(labels)
-        if retries and all(value == 0 for value in retries):
-            card_metrics = [("Access observations", len(retries), ""), ("Observed retries", 0, ""), ("Successful access", sum(int(row["success_flag"]) for row in out_rows if row["success_flag"] != ""), "")]
     elif chart_key == "timing advance distribution":
         values = [float(row["timing_advance_command"]) for row in out_rows if _coerce_float(row["timing_advance_command"]) is not None]
         counts = Counter(values)
@@ -6453,21 +6915,25 @@ def _runtime_prach_operational_chart(
         preambles = {str(row["preamble_index_tx"]) for row in out_rows if str(row["preamble_index_tx"])}
         roots = {str(row["root_sequence_index"]) for row in out_rows if str(row["root_sequence_index"])}
         shifts = {str(row["cyclic_shift_ncs"]) for row in out_rows if str(row["cyclic_shift_ncs"])}
-        card_metrics = [("Preambles observed", len(preambles), ""), ("Roots exported", len(roots), ""), ("Cyclic shifts exported", len(shifts), "")]
+        dataset, labels = _bar_dataset_from_named_values(
+            "PRACH identity field",
+            "Distinct observed values",
+            [
+                ("Preambles", float(len(preambles))),
+                ("Roots", float(len(roots))),
+                ("Cyclic shifts", float(len(shifts))),
+            ],
+        )
+        dataset["tick_labels"] = ["Preambles", "Roots", "Cyclic shifts"]
+        summary.extend(labels)
         summary.extend(["missing root/shift values remain unavailable", "configured values are not substituted"])
 
-    if card_metrics is not None:
-        img_bytes = _render_kpi_card_svg(
-            chart_name,
-            "Exact bounded-run PRACH observations; sparse evidence is shown as a factual card, not a statistical trend.",
-            card_metrics,
-            summary,
-            visual_gate="bounded_runtime_prach_observation",
-        )
-    elif dataset and dataset.get("points"):
+    if dataset and dataset.get("points"):
+        dataset.setdefault("sample_count", len(out_rows))
+        dataset.setdefault("evidence_shape_policy", "observed_distribution")
         img_bytes = _render_svg_plot(
             chart_name,
-            "PRACH/initial-access values from the executed four-step waveform chain.",
+            "Exact PRACH/initial-access observations from the executed four-step waveform chain.",
             dataset,
             summary,
         )
@@ -6856,6 +7322,11 @@ def _specialized_chart_materialization(
                 note += " x-axis buckets correspond to the listed grant-reason order in the SVG summary."
                 dataset = {"mode": "bar", "x_label": "Grant-reason bucket", "y_label": "Count", "points": points}
             if dataset and dataset.get("points"):
+                dataset["sample_count"] = len(records)
+                if chart_name in {"PHR distribution", "grant reason distribution"}:
+                    dataset["evidence_shape_policy"] = "observed_distribution"
+                elif chart_name != "CQI vs selected MCS":
+                    dataset["evidence_shape_policy"] = "observed_timeline"
                 summary = [f"source_table={source_path}", f"source_rows={len(records)}", f"chart={chart_name}"]
                 if chart_name == "grant reason distribution":
                     counts = Counter(_row_text(row, "GrantReason") for row in records if _row_text(row, "GrantReason"))
@@ -6977,15 +7448,6 @@ def _specialized_chart_materialization(
             elif chart_name == "residual failure patterns":
                 counts = Counter(_row_text(row, "final_state", "FinalState", "ack_nack_state", "ACKNACKState") or "unknown" for row in records)
                 dataset, _summary = _bar_dataset_from_named_values("Final HARQ state", "Count", [(key, float(value)) for key, value in counts.items()])
-                if len(counts) <= 1:
-                    label, count = next(iter(counts.items())) if counts else ("unknown", 0)
-                    img_bytes_override = _render_kpi_card_svg(
-                        chart_name,
-                        "Residual HARQ evidence has one final-state bucket in this run, so no failure-pattern distribution can be inferred.",
-                        [("Final state count", count, ""), ("Distinct states", len(counts), ""), ("Rows", len(records), "")],
-                        [f"state={label}", f"source_rows={len(records)}", "chart_decision=single_state_harq_card"],
-                        visual_gate="single_bucket_harq_residual_state",
-                    )
             elif chart_name == "ACK/NACK timeline":
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in records:
@@ -7074,26 +7536,19 @@ def _specialized_chart_materialization(
                     float(_row_float(row, "CombinedLLRCount") or 0.0)
                     for row in records
                 )
-                metrics = [
-                    ("HARQ observations", len(records), ""),
-                    ("Combining applied", combining_rows, "rows"),
-                    ("Mean measured gain", sum(gain_values) / len(gain_values) if gain_values else 0.0, "dB"),
-                    ("Previous LLR", previous_llrs, "values"),
-                    ("Current LLR", current_llrs, "values"),
-                    ("Combined LLR", combined_llrs, "values"),
-                ]
-                img_bytes_override = _render_kpi_card_svg(
-                    chart_name,
-                    "HARQ soft-combiner accounting from the executed waveform lifecycle.",
-                    metrics,
-                    [f"source_rows={len(records)}", "configured values are not substituted"],
-                    visual_gate="runtime_harq_combiner_accounting",
-                )
                 dataset, _summary = _bar_dataset_from_named_values(
                     "LLR accounting", "Count",
                     [("previous", previous_llrs), ("current", current_llrs), ("combined", combined_llrs)],
                 )
             if dataset and dataset.get("points"):
+                dataset["sample_count"] = len(records)
+                if chart_name in {
+                    "HARQ process timeline", "ACK/NACK timeline",
+                    "retransmission rate trend",
+                }:
+                    dataset["evidence_shape_policy"] = "observed_timeline"
+                else:
+                    dataset["evidence_shape_policy"] = "observed_distribution"
                 summary = [f"source_table={source_path}", f"source_rows={len(records)}", f"chart={chart_name}"]
                 csv_bytes = _chart_dataset_csv(run_id, chart_name, dataset, source_path, len(records), "derived_chart_dataset", note)
                 img_bytes = img_bytes_override or _render_svg_plot(chart_name, "Runtime HARQ evidence rendered from persisted truthful rows.", dataset, summary)
@@ -7157,10 +7612,12 @@ def _specialized_chart_materialization(
             if plot_rows:
                 subtitle = "Per-UE throughput distribution from the runtime fairness source. This run exports a final user snapshot, not a slot-by-slot fairness timeline."
                 dataset = {
-                    "mode": "line",
+                    "mode": "bar",
                     "x_label": "UE rank (sorted by throughput)",
                     "y_label": "Throughput (Mbps)",
                     "points": [[float(row["ue_rank"]), float(row["throughput_mbps"])] for row in plot_rows[:MAX_PREVIEW_ROWS]],
+                    "evidence_shape_policy": "observed_distribution",
+                    "sample_count": len(plot_rows),
                 }
                 return {
                     "csv_bytes": _encode_dict_rows(
@@ -7296,6 +7753,8 @@ def _specialized_chart_materialization(
             "x_label": "Measured event index",
             "y_label": "Mean Image Rejection (dB)",
             "points": dataset_points,
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(grouped_rows),
         }
         return {
             "csv_bytes": _encode_dict_rows(
@@ -7413,11 +7872,16 @@ def _specialized_chart_materialization(
             }
             for row in grid_rows
         ]
+        image_bytes, image_status = _render_heatmap_or_projection_svg(
+            chart_name,
+            "Runtime slot/RB occupancy derived from persisted waveform scheduler evidence.",
+            x_labels, y_labels, matrix, summary, "Slot", "RB index",
+        )
         return {
             "csv_bytes": _encode_dict_rows(csv_header, csv_rows),
-            "img_bytes": _render_heatmap_svg(chart_name, "Runtime slot/RB occupancy derived from persisted waveform scheduler evidence.", x_labels, y_labels, matrix, summary, "Slot", "RB index"),
+            "img_bytes": image_bytes,
             "csv_status": "specialized_runtime_grid_dataset",
-            "image_status": "generated_specialized_runtime_heatmap_svg",
+            "image_status": image_status,
             "source_table_path": source_path,
             "source_row_count": len(grid_rows),
             "note": "Heatmap built from truthful slot/RB occupancy evidence.",
@@ -7464,11 +7928,16 @@ def _specialized_chart_materialization(
             }
             for row in rows
         ]
+        image_bytes, image_status = _render_heatmap_or_projection_svg(
+            chart_name,
+            "Runtime candidate-cell ranking density derived from persisted measurement-trace observations.",
+            x_labels, y_labels, matrix, summary, "Candidate rank", "Cell",
+        )
         return {
             "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "candidate_rank", "cell_id", "observation_count", "source_table_logical_path"], csv_rows),
-            "img_bytes": _render_heatmap_svg(chart_name, "Runtime candidate-cell ranking density derived from persisted measurement-trace observations.", x_labels, y_labels, matrix, summary, "Candidate rank", "Cell"),
+            "img_bytes": image_bytes,
             "csv_status": "specialized_runtime_candidate_rank_dataset",
-            "image_status": "generated_specialized_runtime_heatmap_svg",
+            "image_status": image_status,
             "source_table_path": source_path,
             "source_row_count": len(rows),
             "note": "Candidate-cell heatmap derived from real per-UE measurement-trace ranking rows.",
@@ -7490,11 +7959,16 @@ def _specialized_chart_materialization(
         summary = ["source=air_interface/csv/pdcch_trials.csv", f"rows={len(rows)}", "note=exact CCE-to-REG placement is not exported; this view uses runtime used-CCE / control utilization."]
         csv_header = ["run_id", "chart_name", "cell_id", "slot", "occupancy_value", "UsedCCECount", "source_table_logical_path"]
         csv_rows = [{**row, "run_id": run_id, "chart_name": chart_name, "source_table_logical_path": "air_interface/csv/pdcch_trials.csv"} for row in rows]
+        image_bytes, image_status = _render_heatmap_or_projection_svg(
+            chart_name,
+            "Runtime PDCCH control occupancy by slot and serving cell.",
+            x_labels, y_labels, matrix, summary, "Slot", "Cell",
+        )
         return {
             "csv_bytes": _encode_dict_rows(csv_header, csv_rows),
-            "img_bytes": _render_heatmap_svg(chart_name, "Runtime PDCCH control occupancy by slot and serving cell.", x_labels, y_labels, matrix, summary, "Slot", "Cell"),
+            "img_bytes": image_bytes,
             "csv_status": "specialized_runtime_control_dataset",
-            "image_status": "generated_specialized_runtime_heatmap_svg",
+            "image_status": image_status,
             "source_table_path": "air_interface/csv/pdcch_trials.csv",
             "source_row_count": len(rows),
             "note": "Control-region occupancy derived from PDCCH runtime trials.",
@@ -7525,24 +7999,16 @@ def _specialized_chart_materialization(
         summary = ["source=air_interface/csv/pbch_trials.csv", f"rows={len(rows)}", "note=exact SSB RE mapping is not exported; this view shows runtime PBCH/SSB observation density and decode success."]
         csv_header = ["run_id", "chart_name", "cell_id", "slot", "occupancy_value", "SelectedBeamIndex", "source_table_logical_path"]
         csv_rows = [{**row, "run_id": run_id, "chart_name": chart_name, "source_table_logical_path": "air_interface/csv/pbch_trials.csv"} for row in rows]
-        occupied_cells = sum(1 for matrix_row in matrix for value in matrix_row if value > 0.0)
-        value_sum = sum(value for matrix_row in matrix for value in matrix_row)
-        if len(x_labels) < 2 or len(y_labels) < 2:
-            img_bytes = _render_resource_occupancy_card_svg(
-                chart_name,
-                occupied_cells=occupied_cells,
-                x_count=len(x_labels),
-                y_count=len(y_labels),
-                value_sum=value_sum,
-                summary_lines=summary,
-            )
-        else:
-            img_bytes = _render_heatmap_svg(chart_name, "Runtime PBCH/SSB observations by slot and cell.", x_labels, y_labels, matrix, summary, "Slot", "Cell")
+        img_bytes, image_status = _render_heatmap_or_projection_svg(
+            chart_name,
+            "Runtime PBCH/SSB observations by slot and cell.",
+            x_labels, y_labels, matrix, summary, "Slot", "Cell",
+        )
         return {
             "csv_bytes": _encode_dict_rows(csv_header, csv_rows),
             "img_bytes": img_bytes,
             "csv_status": "specialized_runtime_control_dataset",
-            "image_status": "generated_specialized_runtime_heatmap_svg",
+            "image_status": image_status,
             "source_table_path": "air_interface/csv/pbch_trials.csv",
             "source_row_count": len(rows),
             "note": "PBCH/SSB occupancy summary derived from runtime PBCH observations.",
@@ -7838,9 +8304,10 @@ def _specialized_chart_materialization(
                 if points:
                     panels.append((f"{direction} {chart_name.replace(' constellation', '')}", points[:450], ideal[:64]))
             if panels:
+                direction_counts = Counter(str(row["direction"]) for row in csv_rows)
                 return {
                     "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "x_value", "y_value", "reference_x", "reference_y", "source_table_logical_path"], csv_rows),
-                    "img_bytes": _render_scatter_panels_svg(chart_name, "Constellation cloud from real runtime preview samples. Grey markers show ideal reference symbols when exported.", panels, [f"dl_rows={len(dl_preview)}", f"ul_rows={len(ul_preview)}"]),
+                    "img_bytes": _render_scatter_panels_svg(chart_name, "Constellation cloud from real runtime preview samples. Grey markers show ideal reference symbols when exported.", panels, [f"dl_rows={direction_counts['DL']}", f"ul_rows={direction_counts['UL']}"]),
                     "csv_status": "specialized_runtime_constellation_dataset",
                     "image_status": "generated_specialized_runtime_constellation_svg",
                     "source_table_path": f"{dl_preview_path}|{ul_preview_path}",
@@ -7939,6 +8406,12 @@ def _specialized_chart_materialization(
                         csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials")
                         chart_note = "Reliability-vs-quality curve derived from actual trial BER/BLER/FER outcomes; measured/applied quality fields are preferred over configured SNR metadata."
                     dataset["mode"] = _honest_chart_mode(dataset.get("points", []), str(dataset.get("mode") or "line"))
+                    dataset["sample_count"] = len(pairs)
+                    if len(dataset.get("points", [])) == 1:
+                        dataset["mode"] = "bar"
+                        dataset["evidence_shape_policy"] = "operating_point"
+                    else:
+                        dataset["evidence_shape_policy"] = "observed_relation"
                     return {
                         "csv_bytes": csv_bytes,
                         "img_bytes": _render_svg_plot(chart_name, "Reliability metric aggregated from truthful trial rows.", dataset, [f"samples={len(pairs)}", f"x_axis={x_label}", f"y_axis={y_label}"]),
@@ -7954,20 +8427,21 @@ def _specialized_chart_materialization(
                 for source_path, row in reliability_rows:
                     source_counter[source_path] += 1
                     if chart_name == "BER":
-                        value = _trial_row_ber(row)
-                        if value is not None:
-                            counts["Mean BER"] += value
-                            counts["BER samples"] += 1
+                        bit_errors = _row_float(row, "BitErrors")
+                        bits_compared = _row_float(row, "BitsCompared")
+                        if bit_errors is not None and bits_compared is not None and bits_compared > 0:
+                            counts["BER errors"] += max(0.0, float(bit_errors))
+                            counts["BER denominator"] += float(bits_compared)
                     elif chart_name == "BLER":
                         value = _trial_row_bler(row)
                         if value is not None:
-                            counts["Mean BLER"] += value
-                            counts["BLER samples"] += 1
+                            counts["BLER errors"] += float(value)
+                            counts["BLER denominator"] += 1
                     elif chart_name == "FER":
                         value = _trial_row_fer(row)
                         if value is not None:
-                            counts["Mean FER"] += value
-                            counts["FER samples"] += 1
+                            counts["FER errors"] += float(value)
+                            counts["FER denominator"] += 1
                     else:
                         token = _row_text(row, "CRCPass", "DecodeSuccess", "CombinedDecodeOK")
                         if token:
@@ -7977,28 +8451,69 @@ def _specialized_chart_materialization(
                 if chart_name == "CRC pass/fail rates":
                     named_values = [(key, float(value)) for key, value in counts.items() if key in {"Pass", "Fail"}]
                 else:
-                    sample_key = f"{chart_name} samples"
-                    mean_key = f"Mean {chart_name}"
-                    if counts.get(sample_key, 0) > 0:
-                        named_values = [(chart_name, float(counts[mean_key]) / float(counts[sample_key]))]
+                    denominator = float(counts.get(f"{chart_name} denominator", 0.0))
+                    errors = float(counts.get(f"{chart_name} errors", 0.0))
+                    if denominator > 0:
+                        named_values = [(chart_name, errors / denominator)]
                 if named_values:
-                    dataset, summary = _bar_dataset_from_named_values("Metric bucket", "Value", named_values)
-                    summary.extend([f"{path}={count}" for path, count in source_counter.most_common(4)])
                     source_path_text = "|".join(source_counter.keys()) if source_counter else "multiple_runtime_trials"
-                    sample_count = int(counts.get(f"{chart_name} samples", counts.get("BER samples", counts.get("BLER samples", counts.get("FER samples", 0)))))
-                    csv_rows = [{"run_id": run_id, "chart_name": chart_name, "metric_name": name, "metric_value": value, "sample_count": sample_count, "source_table_logical_path": source_path_text} for name, value in named_values]
-                    if chart_name in {"BER", "BLER", "FER"} and len(named_values) == 1:
-                        img_bytes = _render_reliability_card_svg(chart_name, float(named_values[0][1]), sample_count, summary)
+                    if chart_name in {"BER", "BLER", "FER"}:
+                        sample_count = int(round(float(counts.get(f"{chart_name} denominator", 0.0))))
+                        error_count = float(counts.get(f"{chart_name} errors", 0.0))
+                        ci95_lower, ci95_upper = _wilson_score_interval(error_count, sample_count)
+                        observed_rate = float(named_values[0][1])
+                        dataset, summary = _bar_dataset_from_named_values(
+                            "Reliability statistic",
+                            chart_name,
+                            [("95% lower", ci95_lower), ("Observed", observed_rate), ("95% upper", ci95_upper)],
+                        )
+                        dataset["tick_labels"] = ["95% lower", "Observed", "95% upper"]
+                        dataset["sample_count"] = sample_count
+                        csv_rows = [{
+                            "run_id": run_id,
+                            "chart_name": chart_name,
+                            "metric_name": chart_name,
+                            "metric_value": observed_rate,
+                            "error_count": error_count,
+                            "sample_count": sample_count,
+                            "ci95_lower": ci95_lower,
+                            "ci95_upper": ci95_upper,
+                            "source_table_logical_path": source_path_text,
+                        }]
+                        summary.extend([
+                            f"errors={error_count:g}",
+                            f"denominator={sample_count}",
+                            "interval=Wilson 95%",
+                        ])
                     else:
-                        img_bytes = _render_svg_plot(chart_name, "Summary reliability metric from persisted waveform/control trials.", dataset, summary)
+                        dataset, summary = _bar_dataset_from_named_values("CRC outcome", "Count", named_values)
+                        sample_count = int(counts.get("Pass", 0) + counts.get("Fail", 0))
+                        csv_rows = [{
+                            "run_id": run_id,
+                            "chart_name": chart_name,
+                            "metric_name": name,
+                            "metric_value": value,
+                            "error_count": "",
+                            "sample_count": sample_count,
+                            "ci95_lower": "",
+                            "ci95_upper": "",
+                            "source_table_logical_path": source_path_text,
+                        } for name, value in named_values]
+                    summary.extend([f"{path}={count}" for path, count in source_counter.most_common(4)])
+                    img_bytes = _render_svg_plot(
+                        chart_name,
+                        "Observed reliability from persisted waveform/control trials with exact denominator and Wilson interval where applicable.",
+                        dataset,
+                        summary,
+                    )
                     return {
-                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "metric_name", "metric_value", "sample_count", "source_table_logical_path"], csv_rows),
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "metric_name", "metric_value", "error_count", "sample_count", "ci95_lower", "ci95_upper", "source_table_logical_path"], csv_rows),
                         "img_bytes": img_bytes,
                         "csv_status": "specialized_runtime_reliability_dataset",
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": source_path_text,
                         "source_row_count": sum(source_counter.values()),
-                        "note": "BER/BLER use data-channel PDSCH/PUSCH trials with real bit/CRC evidence; FER/CRC summaries use rows that explicitly export decode/CRC outcomes.",
+                        "note": "BER is a bit-error-weighted ratio; BLER/FER are error-count ratios. Wilson 95% intervals use the exact persisted denominator.",
                     }
             if chart_name == "decoder iteration distributions":
                 values = [float(value) for _source_path, row in trial_rows for value in [_row_float(row, "DecoderIterations")] if value is not None]
@@ -8130,6 +8645,13 @@ def _specialized_chart_materialization(
                     if chart_name in {"throughput vs SNR", "throughput vs SINR"} and selected_x_labels:
                         x_label = selected_x_labels.most_common(1)[0][0]
                     csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=source_token or "multiple_runtime_trials")
+                    dataset["sample_count"] = len(pairs)
+                    if len(dataset.get("points", [])) == 1:
+                        dataset["mode"] = "bar"
+                        dataset["evidence_shape_policy"] = "operating_point"
+                    else:
+                        dataset["mode"] = "scatter"
+                        dataset["evidence_shape_policy"] = "observed_relation"
                     subtitle = "Correlation view derived directly from persisted runtime throughput/goodput trials."
                     if chart_name == "throughput vs SNR":
                         subtitle = "Throughput-vs-quality view prefers measured/applied runtime quality over configured SNR metadata."
@@ -8162,7 +8684,14 @@ def _specialized_chart_materialization(
                         percentiles = [(5, _percentile(sorted_values, 0.05)), (25, _percentile(sorted_values, 0.25)), (50, _percentile(sorted_values, 0.50)), (75, _percentile(sorted_values, 0.75)), (95, _percentile(sorted_values, 0.95))]
                         dataset = {"mode": "bar", "x_label": "Percentile", "y_label": "Throughput (Mbps)", "points": [[float(p), float(v)] for p, v in percentiles]}
                     else:
-                        dataset = {"mode": "cdf", "x_label": "Throughput (Mbps)", "y_label": "CDF", "points": [[value, (idx + 1) / len(sorted_values)] for idx, value in enumerate(sorted_values[:MAX_PREVIEW_ROWS])]}
+                        dataset = {
+                            "mode": "cdf",
+                            "x_label": "Throughput (Mbps)",
+                            "y_label": "Empirical CDF",
+                            "points": [[value, (idx + 1) / len(sorted_values)] for idx, value in enumerate(sorted_values[:MAX_PREVIEW_ROWS])],
+                            "evidence_shape_policy": "empirical_cdf",
+                            "sample_count": len(sorted_values),
+                        }
                     return {
                         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "ue_name", "throughput_mbps", "source_table_logical_path"], csv_rows),
                         "img_bytes": _render_svg_plot(chart_name, "Per-UE throughput distribution derived from the exported runtime user snapshot.", dataset, [f"ue_samples={len(values)}"]),
@@ -8658,9 +9187,41 @@ def _specialized_chart_materialization(
                 if points:
                     series.append({"name": direction, "points": _downsample_points(points, 180)})
             if series:
+                unique_profile_x = {
+                    round(float(point[0]), 9)
+                    for item in series
+                    for point in item.get("points", [])
+                }
+                if len(unique_profile_x) < 3:
+                    named_values: list[tuple[str, float]] = []
+                    for item in series:
+                        for point in item.get("points", []):
+                            named_values.append(
+                                (f"{item['name']} {axis_field}={_format_axis_tick(float(point[0]))}", float(point[1]))
+                            )
+                    dataset, summary = _bar_dataset_from_named_values(
+                        f"Direction / {axis_field}", "Mean EVM RMS", named_values
+                    )
+                    dataset["tick_labels"] = [name for name, _value in named_values]
+                    dataset["sample_count"] = len(csv_rows)
+                    image_bytes = _render_svg_plot(
+                        chart_name,
+                        "Measured EVM by the exported symbol/layer buckets; no unobserved trend is inferred.",
+                        dataset,
+                        summary + [f"samples={len(csv_rows)}"],
+                    )
+                else:
+                    image_bytes = _render_multi_series_svg(
+                        chart_name,
+                        "EVM profile derived from symbol-level equalized/reference runtime preview samples.",
+                        series,
+                        [f"samples={len(csv_rows)}"],
+                        x_label=axis_field,
+                        y_label="EVM RMS",
+                    )
                 return {
                     "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", axis_field, "symbol_evm_rms", "source_table_logical_path"], csv_rows),
-                    "img_bytes": _render_multi_series_svg(chart_name, "EVM profile derived from symbol-level equalized/reference runtime preview samples.", series, [f"samples={len(csv_rows)}"], x_label=axis_field, y_label="EVM RMS"),
+                    "img_bytes": image_bytes,
                     "csv_status": "specialized_runtime_evm_dataset",
                     "image_status": "generated_specialized_runtime_summary_svg",
                     "source_table_path": "|".join(source_path for source_path, _rows in preview_sources),
@@ -8722,6 +9283,29 @@ def _write_file_if_possible(run_folder: str | None, logical_path: str, data: byt
             f"Cannot persist browser contract artifact {logical_path!r} "
             f"under {root!r}: {exc}"
         ) from exc
+
+
+def _remove_materializer_owned_file(run_folder: str | None, logical_path: str) -> None:
+    """Remove only a previously indexed contract__ output below one run.
+
+    Source/runtime evidence is never eligible.  This prevents a contract
+    version change from leaving an old chart on disk with no lineage row in
+    the new manifest.
+    """
+
+    root_text = str(run_folder or "").strip()
+    normalized = str(logical_path or "").replace("\\", "/").strip("/")
+    if not root_text or "/contract__" not in f"/{normalized}" or ".." in Path(normalized).parts:
+        return
+    root = Path(root_text).resolve()
+    target = (root / Path(*normalized.split("/"))).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Contract cleanup escaped the run folder: {logical_path}") from exc
+    io_target = _windows_long_path(target)
+    if io_target.is_file():
+        io_target.unlink()
 
 
 def _store_artifact(
@@ -9051,6 +9635,9 @@ def materialize_run_contract_artifacts(
                 "skipped": True,
             }
         if manifest_art is not None:
+            if filesystem_only:
+                for path in sorted(contract_owned_paths):
+                    _remove_materializer_owned_file(run_folder, path)
             for path in list(contract_owned_paths):
                 existing.pop(path, None)
             source_lookup = dict(existing)
@@ -9179,6 +9766,9 @@ def materialize_run_contract_artifacts(
                 )
                 csv_status = str(special.get("csv_status") or "specialized_contract_dataset")
                 image_status = str(special.get("image_status") or "generated_specialized_contract_image").replace("_svg", "_png")
+                low_information_reason = _png_low_information_reason(image_bytes)
+                if low_information_reason:
+                    image_status = "generated_low_information_reason_png"
                 source_table_path = str(special.get("source_table_path") or "")
                 source_mapping_status = str(special.get("source_mapping_status") or _source_mapping_status_for_status(csv_status, image_status))
                 source_row_count = int(special.get("source_row_count") or 0)
@@ -9382,6 +9972,10 @@ def materialize_run_contract_artifacts(
                 image_mime = "image/png"
                 image_status = "generated_contract_summary_png"
 
+            low_information_reason = _png_low_information_reason(image_bytes)
+            if low_information_reason:
+                image_status = "generated_low_information_reason_png"
+
             csv_meta = {
                 "materializer_version": MATERIALIZER_VERSION,
                 "chart_name": chart_name,
@@ -9457,6 +10051,92 @@ def materialize_run_contract_artifacts(
             existing[target_img] = img_artifact
             source_lookup[target_csv] = csv_artifact
             source_lookup[target_img] = img_artifact
+
+    # The image audit is intrinsically a post-render artifact.  During a
+    # filesystem replacement transaction every old raster is intentionally
+    # absent while the table loop above runs, so attempting this audit there
+    # can only produce a false "missing" result.  Revisit the exact contract
+    # after every eligible chart has been rendered and registered in the
+    # transaction-local source lookup.  The resulting table is computed from
+    # the actual PNG bytes; it is neither a placeholder nor configured-value
+    # evidence.
+    late_image_audit_name = "all_image_artifact_audit"
+    late_image_audit_spec = next(
+        (
+            spec
+            for spec in _table_specs()
+            if str(spec.get("table_name") or "") == late_image_audit_name
+        ),
+        None,
+    )
+    if late_image_audit_spec is not None:
+        late_image_audit_path = table_contract_path(late_image_audit_spec)
+        late_image_audit_filtered = contract_artifact_is_policy_filtered(
+            late_image_audit_path,
+            feature_policy,
+            contract_name=late_image_audit_name,
+        )
+        if late_image_audit_path and not late_image_audit_filtered:
+            late_image_audit = _db_artifact_audit_table(
+                late_image_audit_name,
+                source_lookup,
+                fetch_artifact_bytes,
+                run_id,
+            )
+            if late_image_audit is not None:
+                late_image_audit_data = bytes(late_image_audit["data"])
+                late_image_audit_status = str(
+                    late_image_audit.get("status")
+                    or "post_render_exact_image_artifact_audit"
+                )
+                late_image_audit_note = str(
+                    late_image_audit.get("note")
+                    or "Exact post-render image-byte audit."
+                )
+                late_image_audit_meta = {
+                    "materializer_version": MATERIALIZER_VERSION,
+                    "contract_table": late_image_audit_name,
+                    "section_slug": late_image_audit_spec.get("section_slug"),
+                    "source_logical_path": "generated contract PNG artifacts",
+                    "materialization_status": late_image_audit_status,
+                    "post_render_audit": True,
+                }
+                _write_file_if_possible(
+                    run_folder,
+                    late_image_audit_path,
+                    late_image_audit_data,
+                )
+                late_image_audit_id = persist_artifact(
+                    late_image_audit_path,
+                    "table_csv",
+                    "text/csv; charset=UTF-8",
+                    late_image_audit_data,
+                    late_image_audit_meta,
+                )
+                created.append(
+                    {
+                        "logical_path": late_image_audit_path,
+                        "artifact_id": late_image_audit_id,
+                        "status": late_image_audit_status,
+                    }
+                )
+                manifest_rows.append(
+                    [
+                        late_image_audit_path,
+                        "table_csv",
+                        late_image_audit_status,
+                        "generated contract PNG artifacts",
+                        late_image_audit_note,
+                    ]
+                )
+                late_image_audit_artifact = {
+                    "artifact_id": late_image_audit_id,
+                    "logical_path": late_image_audit_path,
+                    "artifact_kind": "table_csv",
+                    "mime_type": "text/csv; charset=UTF-8",
+                }
+                existing[late_image_audit_path] = late_image_audit_artifact
+                source_lookup[late_image_audit_path] = late_image_audit_artifact
 
     lineage_header = [
         "PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256",

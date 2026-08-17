@@ -14,6 +14,7 @@ out = struct("Enabled", options.Enabled, "Required", options.Required, ...
     "Ok", true, "ManifestPath", "", "SummaryPath", "", ...
     "PublishedCount", 0, "MissingComponentCount", 0, ...
     "SkippedLegacySVGCount", 0, "RemovedStaleMirrorCount", 0, ...
+    "SkippedEmptyCSVCount", 0, ...
     "PreservedModifiedMirrorCount", 0, "Rows", localEmptyTable(), ...
     "SummaryRows", localEmptySummaryTable());
 if ~options.Enabled
@@ -42,13 +43,19 @@ manifestPath = fullfile(root, "reports", "csv", ...
     "component_artifact_publication_manifest.csv");
 summaryPath = fullfile(root, "reports", "csv", ...
     "component_artifact_publication_summary.csv");
-[out.RemovedStaleMirrorCount, out.PreservedModifiedMirrorCount] = ...
+[removedPrior, out.PreservedModifiedMirrorCount, protectedMirrors] = ...
     localRemovePriorMirrors(root, manifestPath, componentRoots);
+removedOrphans = localRemoveOrphanHashedMirrors( ...
+    root, componentRoots, protectedMirrors);
+out.RemovedStaleMirrorCount = removedPrior + removedOrphans;
 files = dir(fullfile(root, "**", "*"));
 files = files(~[files.isdir]);
 rows = repmat(localEmptyRow(), 0, 1);
 for idx = 1:numel(files)
     sourcePath = string(fullfile(files(idx).folder, files(idx).name));
+    if sixgr.runtime.isNestedExecutionPath(root, sourcePath)
+        continue;
+    end
     rel = localRelativePath(root, sourcePath);
     firstPart = extractBefore(rel + "/", "/");
     if any(firstPart == componentRoots) || firstPart == "component_anchors" || ...
@@ -63,6 +70,14 @@ for idx = 1:numel(files)
     end
     if ext == ".svg"
         out.SkippedLegacySVGCount = out.SkippedLegacySVGCount + 1;
+        continue;
+    end
+    if ext == ".csv" && localIsHeaderOnlyCSV(sourcePath)
+        % A zero-observation registry can remain at its canonical path for
+        % strict status reduction, but publishing it again into component
+        % folders creates duplicate CSV clutter with no additional runtime
+        % evidence.
+        out.SkippedEmptyCSVCount = out.SkippedEmptyCSVCount + 1;
         continue;
     end
     kind = localKind(ext);
@@ -117,7 +132,8 @@ else
     T = sortrows(T, ["Component", "ArtifactType", "PublishedRelativePath"]);
 end
 sixgr.util.csvWriteTable(manifestPath, T);
-summaryT = localBuildSummary(requiredComponents, T);
+summaryT = localBuildSummary(requiredComponents, T, ...
+    localReadRunIdentity(root));
 sixgr.util.csvWriteTable(summaryPath, summaryT);
 out.ManifestPath = localRelativePath(root, manifestPath);
 out.SummaryPath = localRelativePath(root, summaryPath);
@@ -129,6 +145,31 @@ out.Ok = ~options.Required || (out.MissingComponentCount == 0 && ...
     all(T.PublishStatus == "PUBLISHED_HASH_VERIFIED"));
 end
 
+function tf = localIsHeaderOnlyCSV(pathValue)
+tf = false;
+fid = fopen(pathValue, "rt");
+if fid < 0
+    error("sixgr:truth:componentViews:CSVUnreadable", ...
+        "Unable to inspect CSV before publication: %s", pathValue);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+header = fgetl(fid);
+if ~ischar(header)
+    tf = true;
+    return;
+end
+while true
+    line = fgetl(fid);
+    if ~ischar(line)
+        tf = true;
+        return;
+    end
+    if strlength(strtrim(string(line))) > 0
+        return;
+    end
+end
+end
+
 function value = localIsPublicationControlArtifact(relativePath)
 pathValue = lower(replace(strtrim(string(relativePath)), "\", "/"));
 value = any(pathValue == [ ...
@@ -136,6 +177,22 @@ value = any(pathValue == [ ...
     "reports/csv/component_artifact_publication_summary.csv", ...
     "reports/csv/artifact_manifest.csv", ...
     "reports/csv/scenario_summary.csv", ...
+    "reports/csv/public_output_claim_scan.csv", ...
+    "reports/csv/result_status_summary.csv", ...
+    "reports/csv/standards_claim_audit.csv", ...
+    "reports/csv/all_csv_artifact_audit.csv", ...
+    "reports/csv/all_image_artifact_audit.csv", ...
+    "reports/csv/artifact_issue_registry.csv", ...
+    "reports/csv/visual_artifact_audit.csv", ...
+    "reports/csv/visual_artifact_integrity.csv", ...
+    "reports/csv/visual_artifact_audit.json", ...
+    "reports/csv/visual_artifact_audit.json_policy.json", ...
+    "reports/csv/visual_artifact_integrity.json", ...
+    "reports/csv/visual_artifact_integrity.json_policy.json", ...
+    "reports/json/public_output_claim_scan.json", ...
+    "reports/json/result_status_summary.json", ...
+    "reports/json/scenario_manifest.json", ...
+    "reports/json/artifact_audit_summary.json", ...
     "meta/scenario_manifest.json"]) || ...
     contains(pathValue, "/artifact_manifest.");
 end
@@ -210,9 +267,10 @@ if ~any(component == string({specs.Folder}))
 end
 end
 
-function [removedCount, preservedCount] = localRemovePriorMirrors(root, manifestPath, componentRoots)
+function [removedCount, preservedCount, protectedPaths] = localRemovePriorMirrors(root, manifestPath, componentRoots)
 removedCount = 0;
 preservedCount = 0;
+protectedPaths = strings(0, 1);
 if ~isfile(manifestPath)
     return;
 end
@@ -252,7 +310,70 @@ for idx = 1:height(prior)
         removedCount = removedCount + 1;
     else
         preservedCount = preservedCount + 1;
+        protectedPaths(end + 1, 1) = lower(rel); %#ok<AGROW>
     end
+end
+end
+
+function removedCount = localRemoveOrphanHashedMirrors(root, componentRoots, protectedPaths)
+% Hash-suffixed collision names are reserved to this publisher.  A mirror
+% can become orphaned when an interrupted/older publication has already
+% replaced the manifest that originally owned it.  Delete only files in the
+% controlled component artifact folders that match that reserved name and
+% still have a canonical artifact with the unhashed basename.  A mirror
+% explicitly preserved above because its bytes were modified is never
+% touched.
+removedCount = 0;
+protectedPaths = lower(replace(string(protectedPaths(:)), "\", "/"));
+for component = componentRoots(:).'
+    for kind = ["csv", "image", "json", "mat"]
+        folder = fullfile(root, component, kind);
+        if ~isfolder(folder)
+            continue;
+        end
+        candidates = dir(fullfile(folder, "*"));
+        candidates = candidates(~[candidates.isdir]);
+        for idx = 1:numel(candidates)
+            fileName = string(candidates(idx).name);
+            token = regexp(fileName, ...
+                '^(?<stem>.+)__(?<digest>[0-9a-fA-F]{12})(?<ext>\.(?:csv|json|mat|png|jpg|jpeg))$', ...
+                'names', 'once');
+            if isempty(token)
+                continue;
+            end
+            candidatePath = string(fullfile(candidates(idx).folder, fileName));
+            rel = lower(localRelativePath(root, candidatePath));
+            if any(rel == protectedPaths)
+                continue;
+            end
+            canonicalName = string(token.stem) + string(token.ext);
+            if ~localHasCanonicalBasename(root, canonicalName, componentRoots)
+                continue;
+            end
+            delete(candidatePath);
+            removedCount = removedCount + 1;
+        end
+    end
+end
+end
+
+function value = localHasCanonicalBasename(root, fileName, componentRoots)
+value = false;
+matches = dir(fullfile(root, "**", fileName));
+matches = matches(~[matches.isdir]);
+for idx = 1:numel(matches)
+    pathValue = string(fullfile(matches(idx).folder, matches(idx).name));
+    if sixgr.runtime.isNestedExecutionPath(root, pathValue)
+        continue;
+    end
+    rel = localRelativePath(root, pathValue);
+    firstPart = extractBefore(rel + "/", "/");
+    if any(firstPart == componentRoots) || firstPart == "component_anchors" || ...
+            localIsPublicationControlArtifact(rel)
+        continue;
+    end
+    value = true;
+    return;
 end
 end
 
@@ -266,7 +387,7 @@ else
 end
 end
 
-function summaryT = localBuildSummary(requiredComponents, T)
+function summaryT = localBuildSummary(requiredComponents, T, identity)
 rows = repmat(localEmptySummaryRow(), numel(requiredComponents), 1);
 for idx = 1:numel(requiredComponents)
     component = requiredComponents(idx);
@@ -276,6 +397,9 @@ for idx = 1:numel(requiredComponents)
         selected = T.Component == component;
     end
     rows(idx).Component = component;
+    rows(idx).ScenarioID = identity.ScenarioID;
+    rows(idx).ConfigHash = identity.ConfigHash;
+    rows(idx).RunnerProfile = identity.RunnerProfile;
     rows(idx).Folder = component + "/{csv,image,json,mat}";
     rows(idx).SourceArtifactCount = sum(selected);
     rows(idx).CSVCount = sum(selected & T.ArtifactType == "csv");
@@ -291,6 +415,31 @@ for idx = 1:numel(requiredComponents)
         "Presence is not a pass verdict; absent evidence is never synthesized.";
 end
 summaryT = struct2table(rows);
+end
+
+function identity = localReadRunIdentity(root)
+identity = struct("ScenarioID", "", "ConfigHash", "", ...
+    "RunnerProfile", "");
+summaryPath = fullfile(root, "reports", "csv", "scenario_summary.csv");
+if ~isfile(summaryPath)
+    return;
+end
+try
+    summary = readtable(summaryPath, "TextType", "string", ...
+        "VariableNamingRule", "preserve");
+catch ME
+    error("sixgr:truth:componentViews:ScenarioSummaryUnreadable", ...
+        "Unable to read canonical scenario identity: %s", ME.message);
+end
+if height(summary) ~= 1
+    error("sixgr:truth:componentViews:ScenarioSummaryCardinality", ...
+        "Canonical scenario summary must contain exactly one row.");
+end
+for name = ["ScenarioID", "ConfigHash", "RunnerProfile"]
+    if ismember(name, string(summary.Properties.VariableNames))
+        identity.(char(name)) = string(summary.(char(name))(1));
+    end
+end
 end
 
 function kind = localKind(ext)
@@ -342,7 +491,8 @@ T = struct2table(repmat(localEmptyRow(), 0, 1));
 end
 
 function row = localEmptySummaryRow()
-row = struct("Component", "", "Folder", "", ...
+row = struct("ScenarioID", "", "ConfigHash", "", ...
+    "RunnerProfile", "", "Component", "", "Folder", "", ...
     "SourceArtifactCount", 0, "CSVCount", 0, "RasterImageCount", 0, ...
     "JSONCount", 0, "MATCount", 0, "PublicationStatus", "", ...
     "EvidenceInterpretation", "");

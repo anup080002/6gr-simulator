@@ -326,29 +326,37 @@ paths = [
     string(fullfile(figDir, "srs_timing_offset_sweep.png"))
     string(fullfile(figDir, "srs_negative_trial_outcomes.png"))
     string(fullfile(figDir, "srs_strict_flow.png"))];
+stageDir = tempname(figDir);
+sixgr.util.ensureFolder(stageDir);
+stageCleanup = onCleanup(@() localRemoveStageDirectory(stageDir)); %#ok<NASGU>
+stagePaths = strings(size(paths));
+for index = 1:numel(paths)
+    [~, name, extension] = fileparts(paths(index));
+    stagePaths(index) = string(fullfile(stageDir, name + extension));
+end
 rows = repmat(localManifestRow(), numel(paths), 1);
 gridPower = abs(result.PositiveGrid(:,:,1));
-localWriteHeatPNG(paths(1), "SRS resource grid power", gridPower);
+localWriteHeatPNG(stagePaths(1), "SRS resource grid power", gridPower);
 rows(1) = localManifestRow(paths(1), "image/png", "figure", numel(gridPower), "sixgr.phy.srs.exportStrictSRSArtifacts");
 det = result.ArtifactTables.srs_detection_metrics;
-localWriteLinePNG(paths(2), "SRS detection metric by trial", double(det.TrialId), double(det.DetectionMetric));
+localWriteLinePNG(stagePaths(2), "SRS detection metric by trial", double(det.TrialId), double(det.DetectionMetric));
 rows(2) = localManifestRow(paths(2), "image/png", "figure", height(det), "sixgr.phy.srs.exportStrictSRSArtifacts");
 cov = result.ArtifactTables.srs_coverage;
-localWriteBarPNG(paths(3), "SRS coverage percent", double(cov.CoveragePercent));
+localWriteBarPNG(stagePaths(3), "SRS coverage percent", double(cov.CoveragePercent));
 rows(3) = localManifestRow(paths(3), "image/png", "figure", height(cov), "sixgr.phy.srs.exportStrictSRSArtifacts");
 ch = result.ArtifactTables.srs_channel_estimation;
-localWriteLinePNG(paths(4), "SRS channel NMSE by trial", double(ch.TrialId), double(ch.NMSE_dB));
+localWriteLinePNG(stagePaths(4), "SRS channel NMSE by trial", double(ch.TrialId), double(ch.NMSE_dB));
 rows(4) = localManifestRow(paths(4), "image/png", "figure", height(ch), "sixgr.phy.srs.exportStrictSRSArtifacts");
 low = result.ArtifactTables.srs_low_snr_sweep;
-localWriteLinePNG(paths(5), "SRS low-SNR detection probability", double(low.SNRdB), double(low.DetectionProbability));
+localWriteLinePNG(stagePaths(5), "SRS low-SNR detection probability", double(low.SNRdB), double(low.DetectionProbability));
 rows(5) = localManifestRow(paths(5), "image/png", "figure", height(low), "sixgr.phy.srs.exportStrictSRSArtifacts");
 tim = result.ArtifactTables.srs_timing_offset_sweep;
-localWriteLinePNG(paths(6), "SRS timing error sweep", double(tim.InjectedTimingOffsetSamples), abs(double(tim.MeanTimingErrorSamples)));
+localWriteLinePNG(stagePaths(6), "SRS timing error sweep", double(tim.InjectedTimingOffsetSamples), abs(double(tim.MeanTimingErrorSamples)));
 rows(6) = localManifestRow(paths(6), "image/png", "figure", height(tim), "sixgr.phy.srs.exportStrictSRSArtifacts");
 neg = result.ArtifactTables.srs_negative_trials;
-localWriteBarPNG(paths(7), "SRS negative trial expected failures", double(neg.NegativeExpectedOk));
+localWriteBarPNG(stagePaths(7), "SRS negative trial expected failures", double(neg.NegativeExpectedOk));
 rows(7) = localManifestRow(paths(7), "image/png", "figure", height(neg), "sixgr.phy.srs.exportStrictSRSArtifacts");
-sixgr.visual.writeFlowDiagramPNG(paths(8), "Strict SRS channel sounding flow", ...
+sixgr.visual.writeFlowDiagramPNG(stagePaths(8), "Strict SRS channel sounding flow", ...
     ["nrSRS generation","UL OFDM waveform","gNB resource extraction","LS/MMSE/DFT channel estimate","coverage gate"], result.StrictOk);
 rows(8) = localManifestRow(paths(8), "image/png", "figure", NaN, "sixgr.phy.srs.exportStrictSRSArtifacts");
 lineagePath = fullfile(refCsvDir, "srs_plot_lineage.csv");
@@ -361,11 +369,41 @@ sourceCSVs = [
     string(csvMap.srs_timing_offset_sweep)
     string(csvMap.srs_negative_trials)
     string(csvMap.srs_config_strict) + "|" + string(csvMap.srs_trials)];
-sixgr.visual.writeComponentPlotLineage(runFolder, lineagePath, ...
-    ["srs_resource_grid","srs_detection_metric_by_trial","srs_coverage_summary", ...
-    "srs_channel_estimation_nmse","srs_low_snr_sweep","srs_timing_offset_sweep", ...
-    "srs_negative_trial_outcomes","srs_strict_flow"], ...
-    paths, sourceCSVs, "sixgr.phy.srs.exportStrictSRSArtifacts");
+publishedPaths = strings(0, 1);
+try
+    for index = 1:numel(paths)
+        sixgr.util.ensureDir(paths(index));
+        [moved, message] = movefile(stagePaths(index), paths(index), "f");
+        if ~moved
+            error("sixgr:phy:srs:FigurePublicationFailed", ...
+                "Unable to publish SRS figure '%s': %s", paths(index), message);
+        end
+        publishedPaths(end+1, 1) = paths(index); %#ok<AGROW>
+    end
+    sixgr.visual.writeComponentPlotLineage(runFolder, lineagePath, ...
+        ["srs_resource_grid","srs_detection_metric_by_trial","srs_coverage_summary", ...
+        "srs_channel_estimation_nmse","srs_low_snr_sweep","srs_timing_offset_sweep", ...
+        "srs_negative_trial_outcomes","srs_strict_flow"], ...
+        paths, sourceCSVs, "sixgr.phy.srs.exportStrictSRSArtifacts");
+catch cause
+    localDeleteFiles(publishedPaths);
+    localDeleteFiles(string(lineagePath));
+    rethrow(cause);
+end
+end
+
+function localRemoveStageDirectory(stageDir)
+if isfolder(stageDir)
+    rmdir(stageDir, "s");
+end
+end
+
+function localDeleteFiles(paths)
+for pathValue = string(paths(:)).'
+    if isfile(pathValue)
+        delete(pathValue);
+    end
+end
 end
 
 function localWriteLinePNG(path, titleText, x, y)

@@ -189,7 +189,13 @@ classdef PDSCHMCSResolver
                 error("sixgr:pdsch:MissingNormativeMCSTable", ...
                     "5G Toolbox nrPDSCHMCSTables is required for strict MCS resolution.");
             end
-            catalog = nrPDSCHMCSTables;
+            % nrPDSCHMCSTables is immutable reference data. Constructing
+            % the table object for every codeword and transport block adds
+            % material campaign cost without adding evidence.
+            persistent catalog
+            if isempty(catalog)
+                catalog = nrPDSCHMCSTables;
+            end
             switch token
                 case "qam64_table1"
                     tableData = catalog.QAM64Table;

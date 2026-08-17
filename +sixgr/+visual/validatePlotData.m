@@ -139,6 +139,25 @@ switch plotType
         elseif status.UniqueYCount < minUniqueY
             [status.PlotRenderStatus, status.PlotSuppressionReason] = localSuppressed("insufficient_unique_y");
         end
+    case {"summary", "bar", "waterfall"}
+        % Summary plots still need enough independent observations to
+        % support the comparison claimed by their contract.  Previously
+        % this type fell through to the generic non-NaN-only check, so a
+        % one-scenario waterfall was classified as renderable even though
+        % the renderer correctly declined to create a misleading raster.
+        minRows = localDefaultOr(opts.MinimumRows, 1);
+        minUniqueX = localDefaultOr(opts.MinimumUniqueX, 1);
+        minUniqueY = localDefaultOr(opts.MinimumUniqueY, 1);
+        minNonNaNY = localDefaultOr(opts.MinimumNonNaNY, minRows);
+        if status.PairRowCount < minRows
+            [status.PlotRenderStatus, status.PlotSuppressionReason] = localSuppressed("insufficient_rows");
+        elseif status.UniqueXCount < minUniqueX
+            [status.PlotRenderStatus, status.PlotSuppressionReason] = localSuppressed("insufficient_unique_x");
+        elseif status.UniqueYCount < minUniqueY
+            [status.PlotRenderStatus, status.PlotSuppressionReason] = localSuppressed("insufficient_unique_y");
+        elseif status.NonNaNYCount < minNonNaNY
+            [status.PlotRenderStatus, status.PlotSuppressionReason] = localSuppressed("insufficient_non_nan_y");
+        end
     otherwise
         if status.NonNaNYCount < localDefaultOr(opts.MinimumNonNaNY, 1)
             [status.PlotRenderStatus, status.PlotSuppressionReason] = localSuppressed("insufficient_non_nan_y");

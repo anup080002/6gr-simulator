@@ -14,6 +14,7 @@ ip.parse(varargin{:});
 opt = ip.Results;
 strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
     sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
+normalizationConvention = localResolveNormalizationConvention(cfg);
 
 nLayers = localPositiveInteger(localObjectValue(pusch, "NumLayers", 1), "NumLayers");
 arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "ue", ...
@@ -69,7 +70,8 @@ prec.CodebookCatalogNumCandidates = NaN;
 prec.BeamIndices = [];
 prec.MatrixRows = double(max(nPorts, nLayers));
 prec.MatrixCols = double(nLayers);
-prec.MatrixPorts = localRectIdentity(max(nPorts, nLayers), nLayers);
+prec.MatrixPorts = localRectIdentity(max(nPorts, nLayers), nLayers, ...
+    normalizationConvention);
 prec.MatrixLogicalPorts = prec.MatrixPorts;
 prec.MatrixNR = [];
 prec.MatrixRightInverse = [];
@@ -91,8 +93,10 @@ prec.SRSMeasurementID = "";
 prec.SRSMeasurementSlot = NaN;
 prec.SelectedMatrixSHA256 = "";
 prec.AppliedMatrixSHA256 = "";
+prec.NormalizationConvention = normalizationConvention;
 prec = localAttachArchitecture(prec, arch);
-prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers, ...
+    normalizationConvention);
 
 if transformPrecoding && ~isCodebook
     if strictMIMO && isempty(srsDecision)
@@ -105,7 +109,8 @@ if transformPrecoding && ~isCodebook
     prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
     prec.MatrixRows = double(size(prec.MatrixPorts, 1));
     prec.MatrixCols = double(size(prec.MatrixPorts, 2));
-    prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+    prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers, ...
+        normalizationConvention);
     return;
 end
 
@@ -116,7 +121,8 @@ if ~isCodebook
     end
     if strictMIMO && ~isempty(srsDecision) && isfield(srsDecision,"MatrixPorts")
         Wmeasured = double(srsDecision.MatrixPorts);
-        sixgr.phy.mimo.MatrixContract.validate(Wmeasured,size(Wmeasured,1),nLayers);
+        sixgr.phy.mimo.MatrixContract.validate(Wmeasured,size(Wmeasured,1),nLayers, ...
+            "NormalizationConvention", normalizationConvention);
         prec.MatrixPorts = Wmeasured;
         prec.MatrixLogicalPorts = Wmeasured;
         prec.MatrixRows = size(Wmeasured,1);
@@ -133,7 +139,8 @@ if ~isCodebook
         prec.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(Wmeasured);
         prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
         prec.AppliedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixPorts);
-        prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+        prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers, ...
+            normalizationConvention);
         return;
     end
     % Non-codebook PUSCH still occupies the configured logical antenna-port
@@ -151,7 +158,22 @@ if ~isCodebook
     end
     logicalPortCount = max([nLayers,nPorts,architectureLogicalPorts]);
     logicalPortCount = max(1, round(double(logicalPortCount)));
-    prec.MatrixPorts = localRectIdentity(logicalPortCount, nLayers);
+    [configuredLogicalMatrix, configuredMatrixSource] = ...
+        localResolveConfiguredLogicalPrecoder(cfg, logicalPortCount, nLayers, ...
+        normalizationConvention);
+    if isempty(configuredLogicalMatrix)
+        prec.MatrixPorts = localRectIdentity(logicalPortCount, nLayers, ...
+            normalizationConvention);
+        prec.Source = "ul_noncodebook_configured_normalization_identity";
+        prec.ExplicitBeamWeightsApplied = normalizationConvention == "unit_frobenius" && nLayers > 1;
+    else
+        prec.MatrixPorts = configuredLogicalMatrix;
+        prec.Source = configuredMatrixSource;
+        prec.ApplicationStage = "explicit_layer_to_logical_port_precoding_before_re_mapping";
+        prec.ExplicitBeamWeightsApplied = true;
+        prec.BeamformingApplied = true;
+        prec.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(configuredLogicalMatrix);
+    end
     prec.MatrixLogicalPorts = prec.MatrixPorts;
     prec.MatrixRows = double(logicalPortCount);
     prec.MatrixCols = double(nLayers);
@@ -159,7 +181,9 @@ if ~isCodebook
     prec.NumLogicalPorts = double(logicalPortCount);
     prec.NumWaveformColumns = double(logicalPortCount);
     prec = localApplyHybridElementDomainPrecoder(prec, arch, nLayers);
-    prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+    prec.AppliedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixPorts);
+    prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers, ...
+        normalizationConvention);
     return;
 end
 
@@ -221,7 +245,8 @@ if strlength(string(prec.SelectedMatrixSHA256)) == 0
     prec.SelectedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixLogicalPorts);
 end
 prec.AppliedMatrixSHA256 = sixgr.phy.mimo.MatrixContract.digest(prec.MatrixPorts);
-prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers);
+prec = localAttachPowerInfo(prec, prec.MatrixPorts, nLayers, ...
+    normalizationConvention);
 end
 
 function localValidateSRSAuthority(decision,nLayers,nPorts,tpmi)
@@ -326,10 +351,10 @@ prec.HybridEquation = "X_elem=X_logical*(F_RF*F_BB)'', F_RF columns unit-norm";
 prec.BeamformingApplied = true;
 end
 
-function prec = localAttachPowerInfo(prec, Wports, nLayers)
+function prec = localAttachPowerInfo(prec, Wports, nLayers, normalizationConvention)
 Wports = double(Wports);
 traceWWH = real(trace(Wports * Wports'));
-traceTarget = double(nLayers);
+traceTarget = localNormalizationTraceTarget(normalizationConvention, nLayers, traceWWH);
 if isempty(Wports)
     gramError = NaN;
 else
@@ -353,7 +378,8 @@ prec.PrecoderPowerScale = double(powerScale);
 prec.PowerNormalizedMatrixPorts = Wpower;
 prec.PrecoderNormalizedTraceWWH = double(normalizedTrace);
 prec.PrecoderNormalizedTraceError = double(abs(normalizedTrace - traceTarget));
-prec.TotalPowerPreservationEquation = "trace((alpha*W)*(alpha*W)'')=NumLayers, alpha=sqrt(NumLayers/trace(W*W''))";
+prec.TotalPowerPreservationEquation = ...
+    "trace((alpha*W)*(alpha*W)'')=normalization_target";
 prec.TotalPowerPreservingTrace = logical(isfinite(traceWWH) && abs(traceWWH - traceTarget) <= 1e-12 * max(1, traceTarget));
 prec.TotalPowerPreservingNormalizedTrace = logical(isfinite(normalizedTrace) && abs(normalizedTrace - traceTarget) <= 1e-12 * max(1, traceTarget));
 end
@@ -383,15 +409,81 @@ end
 value = round(value);
 end
 
-function W = localRectIdentity(nPorts, nLayers)
+function W = localRectIdentity(nPorts, nLayers, normalizationConvention)
 W = zeros(max(1, round(double(nPorts))), max(1, round(double(nLayers))));
 activeStreams = min(size(W, 1), size(W, 2));
 % Non-codebook nrPUSCH emits one unit-gain port per layer. Preserve that
 % TS 38.211/Toolbox port mapping exactly; configured UE transmit power is
 % applied later by the power-control/amplitude stage, not by silently
 % renormalizing the immutable layer-to-port map.
+coefficient = 1;
+if lower(strtrim(string(normalizationConvention))) == "unit_frobenius"
+    coefficient = 1 / sqrt(activeStreams);
+end
 for i = 1:activeStreams
-    W(i, i) = 1;
+    W(i, i) = coefficient;
+end
+end
+
+function convention = localResolveNormalizationConvention(cfg)
+convention = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.pusch.precoding.normalizationConvention", ...
+    sixgr.util.structGet(cfg, "phy.pusch.precoderNormalizationConvention", ...
+    sixgr.util.structGet(cfg, "pusch.precoder_normalization_convention", ...
+    "semi_unitary"))))));
+aliases = struct( ...
+    "unit_total_power", "unit_frobenius", ...
+    "equal_per_layer_unit_total_power", "unit_frobenius", ...
+    "per_layer_unit_power", "semi_unitary");
+field = matlab.lang.makeValidName(char(convention));
+if isfield(aliases, field)
+    convention = string(aliases.(field));
+end
+if ~any(convention == ["unit_frobenius","semi_unitary","explicit_no_normalization"])
+    error("sixgr:mimo:PrecoderNormalizationConventionUnsupported", ...
+        "Unsupported PUSCH precoder normalization convention '%s'.", convention);
+end
+end
+
+function target = localNormalizationTraceTarget(convention, nLayers, observed)
+switch lower(strtrim(string(convention)))
+    case "unit_frobenius"
+        target = 1;
+    case "semi_unitary"
+        target = double(nLayers);
+    otherwise
+        target = double(observed);
+end
+end
+
+function [W, source] = localResolveConfiguredLogicalPrecoder( ...
+        cfg, nPorts, nLayers, normalizationConvention)
+W = [];
+source = "";
+paths = ["phy.pusch.precoding.matrix", "phy.pusch.precodingMatrix", "phy.pusch.W"];
+for path = paths
+    raw = sixgr.util.structGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    if ~isnumeric(raw) || ~ismatrix(raw)
+        error("sixgr:phy:ul:PUSCHPrecoding:BadConfiguredMatrix", ...
+            "Configured %s must be a finite numeric Nport-by-Nlayer matrix.", path);
+    end
+    raw = double(raw);
+    if isequal(size(raw), [nPorts nLayers])
+        W = raw;
+    elseif isequal(size(raw), [nLayers nPorts]) && nPorts ~= nLayers
+        W = raw.';
+    else
+        error("sixgr:phy:ul:PUSCHPrecoding:ConfiguredMatrixShapeMismatch", ...
+            "Configured %s has shape %s; expected %dx%d Nport-by-Nlayer.", ...
+            path, mat2str(size(raw)), nPorts, nLayers);
+    end
+    sixgr.phy.mimo.MatrixContract.validate(W, nPorts, nLayers, ...
+        "NormalizationConvention", normalizationConvention);
+    source = "configured_noncodebook_logical_precoder:" + path;
+    return;
 end
 end
 

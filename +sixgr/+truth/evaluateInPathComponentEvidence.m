@@ -7,7 +7,7 @@ function result = evaluateInPathComponentEvidence(cfg, rawTrials, component)
 
 component = lower(strtrim(string(component)));
 if ~isscalar(component) || ~ismember(component, ...
-        ["prach","pdcch","pucch","srs","trs","sib1"])
+        ["prach","pdcch","pucch","pusch_uci","srs","trs","sib1"])
     error("sixgr:truth:UnsupportedInPathComponent", ...
         "Unsupported in-path component '%s'.", component);
 end
@@ -18,6 +18,12 @@ end
 
 [tableField, artifactField] = localTableNames(component);
 T = sixgr.util.structGet(rawTrials, tableField, table());
+if component == "pusch_uci" && istable(T) && ~isempty(T)
+    % A PUSCH table also contains data-only transmissions. The strict UCI
+    % component is limited to rows where the same receiver actually
+    % demultiplexed a configured UCI payload from that PUSCH waveform.
+    T = T(localLogicalColumn(T, "UCIOnPUSCHApplied", false(height(T), 1)), :);
+end
 if ~(istable(T) && ~isempty(T))
     result = localResult(component, table(), artifactField, false, ...
         "missing_active_runtime_" + component + "_rows", 0, 0, 0);
@@ -125,6 +131,9 @@ switch component
     case "sib1"
         tableField = "PBCH";
         artifactField = "pbch_trials";
+    case "pusch_uci"
+        tableField = "UL";
+        artifactField = "pusch_uci_trials";
     otherwise
         tableField = upper(component);
         artifactField = component + "_trials";
@@ -224,6 +233,20 @@ switch component
             localLogicalColumn(T, "DetectionUsable", false(n, 1)) & ...
             localLogicalColumn(T, "ReceiverUsable", false(n, 1)) & ...
             localLogicalColumn(T, "StrictReceiverEvidenceOk", false(n, 1));
+    case "pusch_uci"
+        feedbackCount = localNumericColumn(T, "UCIOnPUSCHFeedbackBitCount", nan(n, 1));
+        expected = localStringColumn(T, "ExpectedHARQACKBits", repmat("", n, 1));
+        decoded = localStringColumn(T, "DecodedHARQACKBits", repmat("", n, 1));
+        decodeStatus = lower(localStringColumn(T, "HARQACKDecodeStatus", repmat("", n, 1)));
+        evidenceSource = lower(localStringColumn(T, "UCIOnPUSCHEvidenceSource", repmat("", n, 1)));
+        transportBlockCRC = localTransportBlockCRCMask(T);
+        mask = mask & localLogicalColumn(T, "UCIOnPUSCHApplied", false(n, 1)) & ...
+            isfinite(feedbackCount) & feedbackCount > 0 & ...
+            strlength(expected) > 0 & decoded == expected & ...
+            localLogicalColumn(T, "HARQACKContentMatch", false(n, 1)) & ...
+            decodeStatus == "decoded_match" & ...
+            contains(evidenceSource, "same_waveform_pusch_rx") & ...
+            transportBlockCRC;
     case "srs"
         mask = mask & localLogicalColumn(T, "StrictOk", false(n, 1)) & ...
             localLogicalColumn(T, "DetectionSuccess", false(n, 1)) & ...
@@ -249,6 +272,24 @@ switch component
             localLogicalColumn(T, "SIB1DLSCHCrcPass", false(n, 1)) & ...
             localLogicalColumn(T, "SIB1ASN1DecodeOk", false(n, 1));
 end
+end
+
+function mask = localTransportBlockCRCMask(T)
+% Accept the canonical production schema (CRCApplicable/CRCPass) while
+% retaining exact compatibility with legacy runtime rows that carried the
+% inverse CRCError flag. Missing CRC evidence remains a hard failure.
+n = height(T);
+vars = string(T.Properties.VariableNames);
+if ismember("CRCPass", vars)
+    applicable = localLogicalColumn(T, "CRCApplicable", true(n, 1));
+    passed = localLogicalColumn(T, "CRCPass", false(n, 1));
+    mask = ~applicable | passed;
+elseif ismember("CRCError", vars)
+    mask = ~localLogicalColumn(T, "CRCError", true(n, 1));
+else
+    mask = false(n, 1);
+end
+mask = logical(mask(:));
 end
 
 function mask = localStatusPassMask(T)

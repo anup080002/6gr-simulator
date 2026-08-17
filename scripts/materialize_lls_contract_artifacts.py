@@ -11,6 +11,16 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_contract_materializer as materializer  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
+from regenerate_lls_rasters_from_csv import (  # noqa: E402
+    RASTER_SUFFIXES,
+    io_path,
+    materialize_declared_artifact_generation_rasters,
+    reconcile_removed_raster_lineage,
+    raster_inventory,
+    require_primary_csv_semantics,
+    validate_run_root,
+    write_csv,
+)
 
 
 def main() -> int:
@@ -37,10 +47,55 @@ def main() -> int:
         action="store_true",
         help="Bypass the manifest-current fast path and rebuild contract artifacts for this run.",
     )
+    parser.add_argument(
+        "--replace-existing-rasters-from-csv",
+        action="store_true",
+        help=(
+            "After the primary CSV semantic gate passes, inventory and remove all "
+            "run-local PNG/JPEG files before rebuilding eligible scientific charts "
+            "from exact CSV sources. No reason-card image is generated."
+        ),
+    )
     args = parser.parse_args()
 
     if args.run_folder is not None:
-        run_folder = args.run_folder.absolute()
+        run_folder = validate_run_root(args.run_folder)
+        removed_rasters: list[dict[str, object]] = []
+        declared_artifact_rasters: list[dict[str, str]] = []
+        if args.replace_existing_rasters_from_csv:
+            require_primary_csv_semantics(run_folder)
+            removed_rasters = raster_inventory(run_folder)
+            inventory_path = (
+                run_folder / "reports" / "csv" / "raster_replacement_inventory.csv"
+            )
+            write_csv(
+                inventory_path,
+                removed_rasters,
+                [
+                    "relative_path",
+                    "extension",
+                    "bytes",
+                    "sha256",
+                    "width_px",
+                    "height_px",
+                    "format",
+                ],
+            )
+            for row in removed_rasters:
+                target = (run_folder / str(row["relative_path"])).resolve()
+                target.relative_to(run_folder)
+                if target.suffix.lower() not in RASTER_SUFFIXES:
+                    raise RuntimeError(f"Refusing to remove non-raster path {target}")
+                io_path(target).unlink()
+            # Artifact-engine PNGs are separate from the browser chart
+            # contract, but their PASS rows are just as binding.  Rebuild
+            # them now from their exact declared CSV sources so they are in
+            # the filesystem inventory consumed by the post-render image
+            # audit.  Leaving their old PASS rows after deleting the images
+            # would make the run manifest dishonest.
+            declared_artifact_rasters = materialize_declared_artifact_generation_rasters(
+                run_folder
+            )
         run_row = dash.filesystem_run_row_from_folder(run_folder)
         if run_row is None:
             raise SystemExit(
@@ -54,6 +109,9 @@ def main() -> int:
             feature_policy=policy,
             force=bool(args.force),
         )
+        retired_lineage_rows = []
+        if args.replace_existing_rasters_from_csv:
+            retired_lineage_rows = reconcile_removed_raster_lineage(run_folder)
         # Terminal filesystem runs are cached by the dashboard.  The cache
         # necessarily reflects the pre-materialization file set unless it is
         # invalidated before strict coverage is recomputed.
@@ -68,6 +126,9 @@ def main() -> int:
             "verification_only": False,
             "materializer_version": materializer.MATERIALIZER_VERSION,
             "created_count": len(result.get("created") or []),
+            "old_rasters_removed": len(removed_rasters),
+            "declared_artifact_rasters_regenerated": len(declared_artifact_rasters),
+            "stale_raster_lineage_rows_retired": len(retired_lineage_rows),
             "manifest_path": result.get("manifest_path"),
             "coverage_path": result.get("coverage_path"),
             "tables_total": coverage.get("tables_total"),

@@ -29,6 +29,9 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %     RX.AppliedTimingCorrection_samples : applied waveform correction
 %     RX.NoiseVar       : noise variance used
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.PDCCH_Rx", ...
+    "PDCCH", "DL", struct("Stage","RX"));
+
 % ---------------------- Parse inputs ----------------------
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
@@ -102,11 +105,14 @@ sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch_blind_search", blind, ...
 candSymInd = {};
 candDMRSInd = {};
 candDMRSSym = {};
+candAggregationLevel = [];
+candWithinAggregation = [];
 
 if blind
     % This returns candidates for the configured search space.
     [allSymInd, allDMRSSym, allDMRSInd] = nrPDCCHSpace(carrier, pdcch);
-    [candSymInd, candDMRSInd, candDMRSSym] = localCollectPDCCHCandidates(allSymInd, allDMRSInd, allDMRSSym);
+    [candSymInd, candDMRSInd, candDMRSSym, candAggregationLevel, candWithinAggregation] = ...
+        localCollectPDCCHCandidates(allSymInd, allDMRSInd, allDMRSSym);
     if isempty(candSymInd)
         error("sixgr:phy:pdcch:invalid_candidate_count", ...
             "Blind PDCCH monitoring resolved no legal candidates; known-location fallback is forbidden.");
@@ -116,6 +122,8 @@ else
     candSymInd  = {pdcchInd};
     candDMRSInd = {dmrsInd};
     candDMRSSym = {dmrsSym};
+    candAggregationLevel = double(localPDCCHProperty(pdcch, 'AggregationLevel', NaN));
+    candWithinAggregation = double(localPDCCHProperty(pdcch, 'AllocatedCandidate', 1)) - 1;
 end
 
 % ---------------------- Timing estimation ----------------------
@@ -221,6 +229,9 @@ rx.MissedDetection = ~isempty(expectedDCIBits);
 rx.ErrFlag = 1;
 rx.Ok = false;
 rx.CandidateIndex = 0;
+rx.CandidateFlatIndex = 0;
+rx.CandidateAggregationLevel = NaN;
+rx.CandidateIndexWithinAggregation = NaN;
 rx.TimingOffset = double(timingResolution.RawEstimate_samples);
 rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
 rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
@@ -299,6 +310,9 @@ for c = 1:numel(candSymInd)
     rx.FalseAlarm = logical(rx.Ok && ~dciPayloadMatch && ~isempty(expectedDCIBits));
     rx.MissedDetection = logical(~rx.Ok && ~isempty(expectedDCIBits));
     rx.CandidateIndex = c;
+    rx.CandidateFlatIndex = c;
+    rx.CandidateAggregationLevel = double(candAggregationLevel(c));
+    rx.CandidateIndexWithinAggregation = double(candWithinAggregation(c));
     rx.NoiseVar = nVar;
     rx.NoiseVarStatus = char(string(nVarStatus));
     rx.NoiseVarSource = char(string(nVarSource));
@@ -314,6 +328,9 @@ for c = 1:numel(candSymInd)
 
     row = localEmptyCandidateRow();
     row.CandidateIndex = double(c);
+    row.CandidateFlatIndex = double(c);
+    row.AggregationLevel = double(candAggregationLevel(c));
+    row.CandidateIndexWithinAggregation = double(candWithinAggregation(c));
     row.DecodeAttempted = true;
     row.DecodeOK = logical(rx.Ok);
     row.ErrFlag = double(errFlag);
@@ -339,17 +356,25 @@ for c = 1:numel(candSymInd)
     end
 end
 
-if numel(passingRx) == 1
-    rx = passingRx{1};
-elseif numel(passingRx) > 1
-    rx = passingRx{1};
+[selectedPassingIndex, hypothesisClass] = ...
+    sixgr.phy.pdcch.reduceBlindHypotheses(passingRx);
+validHypothesisCount = numel(passingRx);
+if selectedPassingIndex > 0
+    rx = passingRx{selectedPassingIndex};
+end
+rx.ValidHypothesisCount = validHypothesisCount;
+rx.HypothesisReductionClass = char(hypothesisClass);
+rx.MultipleEquivalentValidHypotheses = hypothesisClass == "equivalent";
+rx.EquivalentValidHypothesisCount = double((hypothesisClass == "equivalent") * validHypothesisCount);
+rx.AmbiguousValidHypotheses = hypothesisClass == "ambiguous";
+rx.AmbiguousHypothesisCount = double((hypothesisClass == "ambiguous") * validHypothesisCount);
+if rx.AmbiguousValidHypotheses
+    % Multiple CRC-valid hypotheses with different decoded payloads cannot
+    % be reduced without an oracle. Fail closed. Multiple hypotheses that
+    % decode to the same payload are one semantic DCI observation and are
+    % accepted by reduceBlindHypotheses without consulting ExpectedDCIBits.
     rx.Ok = false;
     rx.CausalGrantDecodeOk = false;
-    rx.AmbiguousValidHypotheses = true;
-    rx.AmbiguousHypothesisCount = numel(passingRx);
-else
-    rx.AmbiguousValidHypotheses = false;
-    rx.AmbiguousHypothesisCount = 0;
 end
 
 info = struct();
@@ -371,7 +396,11 @@ info.BlindSearch = blind;
 info.NumCandidatesAvailable = numel(candSymInd);
 info.NumCandidatesTried = numel(candidateRows);
 info.ValidHypothesisCount = numel(passingRx);
-info.AmbiguousValidHypotheses = numel(passingRx) > 1;
+info.HypothesisReductionClass = char(hypothesisClass);
+info.MultipleEquivalentValidHypotheses = logical(rx.MultipleEquivalentValidHypotheses);
+info.EquivalentValidHypothesisCount = double(rx.EquivalentValidHypothesisCount);
+info.AmbiguousValidHypotheses = logical(rx.AmbiguousValidHypotheses);
+info.AmbiguousHypothesisCount = double(rx.AmbiguousHypothesisCount);
 info.TimingEstimate = timingResolution;
 if ~isempty(candidateRows)
     info.CandidateResults = struct2table(candidateRows, "AsArray", true);
@@ -387,6 +416,9 @@ end
 function row = localEmptyCandidateRow()
 row = struct( ...
     "CandidateIndex", NaN, ...
+    "CandidateFlatIndex", NaN, ...
+    "AggregationLevel", NaN, ...
+    "CandidateIndexWithinAggregation", NaN, ...
     "DecodeAttempted", false, ...
     "DecodeOK", false, ...
     "ErrFlag", NaN, ...
@@ -657,13 +689,16 @@ else
 end
 end
 
-function [candSymInd, candDMRSInd, candDMRSSym] = localCollectPDCCHCandidates(allSymInd, allDMRSInd, allDMRSSym)
+function [candSymInd, candDMRSInd, candDMRSSym, candAggregationLevel, candWithinAggregation] = localCollectPDCCHCandidates(allSymInd, allDMRSInd, allDMRSSym)
 candSymInd = {};
 candDMRSInd = {};
 candDMRSSym = {};
+candAggregationLevel = [];
+candWithinAggregation = [];
 if ~iscell(allSymInd)
     return;
 end
+aggregationLevels = [1 2 4 8 16];
 for i = 1:numel(allSymInd)
     s = allSymInd{i};
     dIdx = allDMRSInd{i};
@@ -677,6 +712,16 @@ for i = 1:numel(allSymInd)
             candSymInd{end+1,1} = sList{j}; %#ok<AGROW>
             candDMRSInd{end+1,1} = dIdxList{j}; %#ok<AGROW>
             candDMRSSym{end+1,1} = dSymList{j}; %#ok<AGROW>
+            if i <= numel(aggregationLevels)
+                candAggregationLevel(end+1,1) = aggregationLevels(i); %#ok<AGROW>
+            else
+                candAggregationLevel(end+1,1) = NaN; %#ok<AGROW>
+            end
+            % Toolbox candidate numbering is exposed as a zero-based
+            % index within each aggregation level, matching 38.213-style
+            % candidate notation. CandidateIndex above remains the legacy
+            % one-based flat attempt ordinal for compatibility.
+            candWithinAggregation(end+1,1) = j - 1; %#ok<AGROW>
         end
     end
 end
@@ -755,6 +800,17 @@ if double(dciRNTI) == 65535
     configRNTI = double(scramblingRNTI);
 else
     configRNTI = double(dciRNTI);
+end
+end
+
+function value = localPDCCHProperty(obj, propertyName, defaultValue)
+value = defaultValue;
+if isprop(obj, propertyName)
+    try
+        value = obj.(propertyName);
+    catch
+        value = defaultValue;
+    end
 end
 end
 

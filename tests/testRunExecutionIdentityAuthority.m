@@ -52,6 +52,27 @@ assert(rowResume.ExecutionID == rowExecutionID);
 assert(startsWith(rowResume.Source, "persisted_canonical_rows:"), ...
     "Resume must recover the immutable ID from canonical waveform rows.");
 
+child1 = sixgr.runtime.deriveChildRunID("repeat_1", ...
+    "sweep_point", 1, "Baseline Point");
+child2 = sixgr.runtime.deriveChildRunID("repeat_1", ...
+    "sweep_point", 2, "Baseline-Point");
+assert(child1 == "repeat_1__sweep_point_001_baseline_point");
+assert(child2 == "repeat_1__sweep_point_002_baseline-point");
+assert(child1 ~= child2, ...
+    "Nested point identities must remain unique after token normalization.");
+localMustFail(@() sixgr.runtime.deriveChildRunID("", ...
+    "sweep_point", 1, "point"), ...
+    "sixgr:runtime:ParentRunIdentityRequired");
+
+baseConfig = struct("meta", struct("scenario_id", "hash_test"), ...
+    "simulation", struct("snr_db", 0));
+changedConfig = baseConfig;
+changedConfig.simulation.snr_db = 10;
+hash1 = sixgr.lls6g.config.hashResolvedScenario(baseConfig);
+hash2 = sixgr.lls6g.config.hashResolvedScenario(changedConfig);
+assert(strlength(hash1) == 64 && strlength(hash2) == 64 && hash1 ~= hash2, ...
+    "Resolved sweep overrides must change the immutable configuration hash.");
+
 ok = true;
 fprintf("PASS testRunExecutionIdentityAuthority: resume preserves execution identity.\n");
 end

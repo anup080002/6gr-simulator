@@ -1,5 +1,5 @@
 function ok = testWaveformLinkArtifactEvidence()
-%TESTWAVEFORMLINKARTIFACTEVIDENCE Runtime trials drive BLER CSV/PNG evidence.
+%TESTWAVEFORMLINKARTIFACTEVIDENCE Runtime trials drive BLER CSV evidence.
 
 n = 8;
 snr = repelem([-5; 0; 5; 10], 2);
@@ -49,18 +49,10 @@ sixgr.artifact.validateEvidenceIdentity(curve, struct( ...
     "BandwidthHz", 100e6, "SubcarrierSpacingHz", 30e3), ...
     "pdsch_bler_curve.csv");
 
-[rendererFound, renderer] = registry.resolveRenderer( ...
+[rendererFound, ~] = registry.resolveRenderer( ...
     "pdsch", "base", "pdsch_bler_vs_snr.png");
-assert(rendererFound);
-bundle = struct("Tables", {{curve}}, "Names", "pdsch_bler_curve.csv", ...
-    "Provenance", provenance, "SourceSHA256", hash(1));
-contract = struct("ExpectedXLabel", "SNR (dB)", ...
-    "ExpectedYLabel", "BLER");
-fig = renderer(bundle, contract);
-cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
-assert(isgraphics(fig, "figure"));
-ax = findall(fig, "Type", "axes");
-assert(~isempty(ax) && contains(string(ax(1).Title.String), "PDSCH BLER"));
+assert(~rendererFound, ...
+    "The retired MATLAB PDSCH BLER renderer must not be registered.");
 
 [ulFound, ulCurve] = registry.resolveTable( ...
     "pusch", "base", "pusch_bler_curve.csv");
@@ -69,16 +61,10 @@ assert(all(ulCurve.TransformPrecoding == false));
 assert(all(ulCurve.FrequencyHopping == "intra_slot"));
 assert(all(ulCurve.Status == "STATISTICALLY_QUALIFIED") & ...
     ~any(ulCurve.Incomplete));
-[ulRendererFound, ulRenderer] = registry.resolveRenderer( ...
+[ulRendererFound, ~] = registry.resolveRenderer( ...
     "pusch", "base", "pusch_bler_vs_snr.png");
-assert(ulRendererFound);
-ulBundle = struct("Tables", {{ulCurve}}, "Names", ...
-    "pusch_bler_curve.csv", "Provenance", provenance, ...
-    "SourceSHA256", hash(1));
-ulFig = ulRenderer(ulBundle, contract);
-ulCleanup = onCleanup(@() close(ulFig)); %#ok<NASGU>
-ulAx = findall(ulFig, "Type", "axes");
-assert(~isempty(ulAx) && contains(string(ulAx(1).Title.String), "PUSCH BLER"));
+assert(~ulRendererFound, ...
+    "The retired MATLAB PUSCH BLER renderer must not be registered.");
 
 % A bounded scenario observation is still valid in-path truth when it does
 % not claim statistical qualification.  Its Status must say MEASURED and

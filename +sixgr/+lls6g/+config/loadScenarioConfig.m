@@ -7,7 +7,7 @@ resolved = sixgr.lls6g.config.normalizeScenarioAliases(resolved, ...
     "SourceFiles", chain, "ConfigPath", configPath);
 sixgr.lls6g.config.validateScenarioConfig(resolved, ...
     "Kind", "scenario", "AllowPartial", false, "Context", configPath);
-cfgHash = localComputeConfigHash(resolved);
+cfgHash = sixgr.lls6g.config.hashResolvedScenario(resolved);
 scfg = sixgr.lls6g.config.ScenarioConfig(resolved, ...
     "SourceFiles", chain, ...
     "ConfigPath", configPath, ...
@@ -37,17 +37,6 @@ if isfield(raw, "inherits")
 end
 merged = sixgr.util.mergeStruct(merged, raw);
 chain(end+1,1) = string(configPath); %#ok<AGROW>
-end
-
-function cfgHash = localComputeConfigHash(cfg)
-txt = jsonencode(cfg);
-try
-    cfgHash = sixgr.util.sha256Hex(uint8(unicode2native(char(txt), "UTF-8")));
-catch ME
-    error("sixgr:lls6g:ConfigHashUnavailable", ...
-        "Unable to compute scenario config SHA-256 hash: %s", ME.message);
-end
-cfgHash = char(string(cfgHash));
 end
 
 function resolved = localResolveRelativeConfig(baseFile, relativePath)

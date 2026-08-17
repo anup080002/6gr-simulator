@@ -26,6 +26,23 @@ def _write_compact_manifest(run_folder: Path, relative_paths: list[str]) -> None
     )
 
 
+def test_dashboard_parent_run_excludes_nested_sweep_artifacts(tmp_path) -> None:
+    run_folder = tmp_path / "parent"
+    parent_csv = run_folder / "reports" / "csv" / "sweep_summary.csv"
+    child_csv = run_folder / "sweeps" / "point_1" / "reports" / "csv" / "child.csv"
+    parent_csv.parent.mkdir(parents=True)
+    child_csv.parent.mkdir(parents=True)
+    parent_csv.write_text("Label,Ok\npoint_1,1\n", encoding="utf-8")
+    child_csv.write_text("Value\n1\n", encoding="utf-8")
+
+    artifacts = dash.filesystem_artifacts_for_run(
+        {"run_folder": str(run_folder), "run_id": 123, "status_text": "running"}
+    )
+    logical_paths = {str(row["logical_path"]) for row in artifacts}
+    assert "reports/csv/sweep_summary.csv" in logical_paths
+    assert "sweeps/point_1/reports/csv/child.csv" not in logical_paths
+
+
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
     packed_vector = "|".join("0" for _ in range(70000))
     raw = ("TrialID,MeasuredLDPCParityCheckVector,CRCPass\n"

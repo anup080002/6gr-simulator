@@ -1,6 +1,9 @@
 function ch = estimateULChannelFromSRS(det, srsCfg)
 %ESTIMATEULCHANNELFROMSRS Estimate measured UL channel evidence from SRS REs.
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.srs.estimateULChannelFromSRS", ...
+    "SRS", "UL", struct("Stage","CHANNEL_ESTIMATION"));
+
 obs = det.Extracted.ObservedSymbols(:);
 ref = det.Extracted.ReferenceSymbols(:);
 N = min(numel(obs), numel(ref));

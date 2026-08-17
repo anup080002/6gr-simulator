@@ -93,17 +93,20 @@ cfg = localSetNestedField(cfg, "phy.srs.enable", true);
 cfg = localSetNestedField(cfg, "phy.srs.Enable", true);
 cfg = localSetNestedField(cfg, "phy.prach.enable", true);
 cfg = localSetNestedField(cfg, "phy.prach.Enable", true);
-cfg = localSetNestedField(cfg, "phy.prach.configurationIndex", 86);
-cfg = localSetNestedField(cfg, "phy.prach.ConfigurationIndex", 86);
+% Index 87 / A2 is explicitly aligned with the canonical 30 kHz TDD
+% pattern installed by defaultConfig. Index 86 places its first occasion
+% in non-UL symbols for that pattern and must fail strict timing checks.
+cfg = localSetNestedField(cfg, "phy.prach.configurationIndex", 87);
+cfg = localSetNestedField(cfg, "phy.prach.ConfigurationIndex", 87);
 cfg = localSetNestedField(cfg, "phy.prach.subcarrierSpacing_kHz", 15);
 cfg = localSetNestedField(cfg, "phy.prach.SubcarrierSpacing", 15);
-cfg = localSetNestedField(cfg, "phy.prach.preambleFormat", "A1");
-cfg = localSetNestedField(cfg, "phy.prach.PreambleFormat", "A1");
-cfg = localSetNestedField(cfg, "prach_lls.PRACHFormat", "A1");
+cfg = localSetNestedField(cfg, "phy.prach.preambleFormat", "A2");
+cfg = localSetNestedField(cfg, "phy.prach.PreambleFormat", "A2");
+cfg = localSetNestedField(cfg, "prach_lls.PRACHFormat", "A2");
 cfg = localSetNestedField(cfg, "prach_lls.NCellID", 1);
 cfg = localSetNestedField(cfg, "prach_lls.TimingOffsetSweepSamples", [0 4 8]);
 cfg = localSetNestedField(cfg, "prach_lls.FrequencyOffsetSweepHz", [0 100 250]);
-cfg = localSetNestedField(cfg, "random_access.prach_format", "A1");
+cfg = localSetNestedField(cfg, "random_access.prach_format", "A2");
 cfg = localSetNestedField(cfg, "random_access.n_cell_id", 1);
 cfg = localSetNestedField(cfg, "random_access.timing_offset_sweep_samples", [0 4 8]);
 cfg = localSetNestedField(cfg, "random_access.frequency_offset_sweep_hz", [0 100 250]);

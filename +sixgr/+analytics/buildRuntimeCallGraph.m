@@ -15,9 +15,17 @@ callGraph = struct("Path", string(outPath), "Rows", height(T), "SourceArtifact",
 end
 
 function [T, sourceArtifact] = localBuildRows(layout)
+ledgerPath = fullfile(layout.ReportCSVDir, "runtime_call_ledger.csv");
 profilePath = fullfile(layout.ReportCSVDir, "runtime_function_profile.csv");
 edgePath = fullfile(layout.ReportCSVDir, "runtime_function_call_edges.csv");
 timeProfilePath = fullfile(layout.ReportCSVDir, "time_profile_calls.csv");
+
+L = localReadOptionalTable(ledgerPath);
+if height(L) > 0
+    T = localRowsFromLedger(L);
+    sourceArtifact = "reports/csv/runtime_call_ledger.csv";
+    return;
+end
 
 F = localReadOptionalTable(profilePath);
 if height(F) > 0
@@ -42,6 +50,30 @@ end
 
 T = localEmptyTable();
 sourceArtifact = "no_runtime_profiler_rows";
+end
+
+function T = localRowsFromLedger(L)
+if ~ismember("FunctionName", string(L.Properties.VariableNames))
+    T = localEmptyTable();
+    return;
+end
+names = strtrim(string(L.FunctionName));
+names = names(strlength(names) > 0);
+[uniqueNames,~,group] = unique(names,"stable");
+rows = repmat(localEmptyRow(),numel(uniqueNames),1);
+for i = 1:numel(uniqueNames)
+    mask = group == i;
+    rows(i).FunctionName = uniqueNames(i);
+    rows(i).ParentFunctionName = "sixgr.lls6g.runners.runSingle";
+    rows(i).NumCalls = sum(mask);
+    rows(i).TotalTime_s = NaN;
+    rows(i).SelfTime_s = NaN;
+    rows(i).MeanTime_s = NaN;
+    rows(i).SourceArtifact = "reports/csv/runtime_call_ledger.csv";
+    rows(i).EvidenceClass = "ACTUAL_RUNTIME_ENTRY";
+    rows(i).Status = "runtime_call_ledger_entry";
+end
+T = struct2table(rows);
 end
 
 function T = localRowsFromFunctionProfile(F)

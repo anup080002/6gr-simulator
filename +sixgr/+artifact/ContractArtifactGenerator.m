@@ -65,7 +65,12 @@ classdef ContractArtifactGenerator
             localAtomicWriteTable(fullfile(auditDir, "contract_catalog_snapshot.csv"), catalog);
             localAtomicWriteTable(fullfile(auditDir, "artifact_generation_results.csv"), audit);
             failures = audit(audit.Status ~= "PASS", :);
-            localAtomicWriteTable(fullfile(auditDir, "artifact_generation_failures.csv"), failures);
+            failurePath = fullfile(auditDir, "artifact_generation_failures.csv");
+            if isempty(failures)
+                localDeleteFile(failurePath);
+            else
+                localAtomicWriteTable(failurePath, failures);
+            end
             summary = localBuildGenerationSummary(audit);
             localAtomicWriteTable(fullfile(auditDir, "artifact_generation_summary.csv"), summary);
 
@@ -85,8 +90,10 @@ classdef ContractArtifactGenerator
             % output to the validated CSV bytes used in this same attempt.
             plotLineage = localBuildContractPlotLineage( ...
                 catalog, audit, options.PublishRoot);
-            localAtomicWriteTable(fullfile(stageComponents, ...
-                "contract_plot_lineage.csv"), plotLineage);
+            if ~isempty(plotLineage)
+                localAtomicWriteTable(fullfile(stageComponents, ...
+                    "contract_plot_lineage.csv"), plotLineage);
+            end
 
             publishedRoot = fullfile(runFolder, options.PublishRoot);
             localPublishComponents(stageComponents, publishedRoot, runFolder);

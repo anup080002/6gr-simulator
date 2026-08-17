@@ -21,8 +21,13 @@ try
     if result.Executed
         result.AuditPath = string(fullfile(runFolder, "artifact_generation", ...
             "artifact_generation_results.csv"));
-        result.FailurePath = string(fullfile(runFolder, "artifact_generation", ...
+        candidateFailurePath = string(fullfile(runFolder, "artifact_generation", ...
             "artifact_generation_failures.csv"));
+        if isfile(candidateFailurePath)
+            result.FailurePath = candidateFailurePath;
+        else
+            result.FailurePath = "";
+        end
     end
     if ~result.Executed
         result.Status = "DISABLED_BY_YAML";
@@ -84,6 +89,9 @@ auditPath = string(fullfile(runFolder, "artifact_generation", ...
     "artifact_generation_results.csv"));
 failurePath = string(fullfile(runFolder, "artifact_generation", ...
     "artifact_generation_failures.csv"));
+if ~isfile(failurePath)
+    failurePath = "";
+end
 contractCount = 0;
 failureCount = 0;
 requiredFailureCount = 0;

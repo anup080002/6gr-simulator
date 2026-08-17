@@ -13,6 +13,9 @@ files = dir(fullfile(runFolder, "**", "*.csv"));
 rows = struct("csv_path", {}, "column_name", {}, "unit", {}, "description", {});
 for i = 1:numel(files)
     fp = fullfile(files(i).folder, files(i).name);
+    if sixgr.runtime.isNestedExecutionPath(runFolder, fp)
+        continue;
+    end
     try
         opts = detectImportOptions(fp, "NumHeaderLines", 0);
         vars = string(opts.VariableNames);

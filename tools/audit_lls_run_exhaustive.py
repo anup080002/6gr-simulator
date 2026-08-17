@@ -23,6 +23,10 @@ from typing import Iterable
 
 from PIL import Image, ImageStat
 
+from lls_csv_semantics import audit_run as audit_csv_semantics
+from lls_csv_semantics import write_audit as write_csv_semantic_audit
+from lls_csv_semantics import LINK_REQUIRED_COLUMNS, PRIMARY_LINK_TABLES
+
 
 FAILURE_TOKENS = {"fail", "failed", "error", "crash", "invalid"}
 RISK_TOKENS = {
@@ -33,7 +37,10 @@ RISK_TOKENS = {
     "logistic": "proxy",
     "lut": "proxy",
 }
-NULL_TOKENS = {"", "nan", "+nan", "-nan", "<missing>", "null", "none"}
+# ``none`` is a valid, explicit value for fields such as ApproximationMode.
+# Treating it as null concealed whether a truth row had declared that no
+# approximation was used.
+NULL_TOKENS = {"", "nan", "+nan", "-nan", "<missing>", "null"}
 INF_TOKENS = {"inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}
 
 
@@ -54,6 +61,16 @@ def io_path(path: Path) -> Path:
     if text.startswith("\\\\"):
         return Path("\\\\?\\UNC\\" + text[2:])
     return Path("\\\\?\\" + text)
+
+
+def is_nested_execution_path(run_root: Path, candidate: Path) -> bool:
+    """Exclude complete child sweep executions from a parent-run audit."""
+
+    try:
+        relative = candidate.resolve().relative_to(run_root.resolve())
+    except (OSError, ValueError):
+        return False
+    return bool(relative.parts and relative.parts[0].lower() == "sweeps")
 
 
 def sha256(path: Path) -> str:
@@ -106,10 +123,14 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
         "synthetic_token_count": 0,
         "fallback_token_count": 0,
         "placeholder_token_count": 0,
+        "schema_only": False,
+        "observation_count": 0,
+        "observations": "",
         "issue_count": 0,
         "issues": "",
     }
     issues: list[str] = []
+    observations: list[str] = []
     columns: list[dict] = []
     try:
         with source_path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -138,6 +159,9 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
                     "inf_token_count": 0,
                     "unique_nonblank_count": 0,
                     "numeric_count": 0,
+                    "finite_fraction": 0.0,
+                    "zero_count": 0,
+                    "nonzero_numeric_count": 0,
                     "numeric_min": "",
                     "numeric_max": "",
                     "numeric_mean": "",
@@ -146,6 +170,8 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
                     "synthetic_token_count": 0,
                     "fallback_token_count": 0,
                     "placeholder_token_count": 0,
+                    "value_population_class": "",
+                    "semantic_attention": "",
                 }
                 for index, name in enumerate(header)
             ]
@@ -201,7 +227,12 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
             if file_row["row_width_mismatch_count"]:
                 issues.append("row_width_mismatch")
             if file_row["row_count"] == 0:
-                issues.append("header_only_no_rows")
+                # A header-only CSV is structurally valid. It commonly
+                # represents an honestly empty failure/event table. Keep it
+                # visible as an observation; semantic completeness remains
+                # the responsibility of the run's artifact/truth contract.
+                file_row["schema_only"] = True
+                observations.append("header_only_no_rows")
             for index, stat in enumerate(stats):
                 stat["blank_fraction"] = (
                     stat["blank_count"] / stat["row_count"] if stat["row_count"] else 0.0
@@ -209,14 +240,56 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
                 stat["unique_nonblank_count"] = len(uniques[index])
                 values = numeric_values[index]
                 stat["numeric_count"] = len(values)
+                stat["finite_fraction"] = (
+                    len(values) / stat["row_count"] if stat["row_count"] else 0.0
+                )
+                stat["zero_count"] = sum(math.isclose(value, 0.0, abs_tol=0.0) for value in values)
+                stat["nonzero_numeric_count"] = len(values) - stat["zero_count"]
                 if values:
                     stat["numeric_min"] = format(min(values), ".17g")
                     stat["numeric_max"] = format(max(values), ".17g")
                     stat["numeric_mean"] = format(fmean(values), ".17g")
+                if stat["row_count"] == 0:
+                    stat["value_population_class"] = "schema_only_no_observations"
+                elif stat["blank_count"] == stat["row_count"]:
+                    stat["value_population_class"] = "all_missing_or_not_applicable"
+                elif stat["numeric_count"] == stat["row_count"] and stat["zero_count"] == stat["row_count"]:
+                    stat["value_population_class"] = "all_zero_finite"
+                elif stat["numeric_count"] > 0 and stat["blank_count"] > 0:
+                    stat["value_population_class"] = "mixed_finite_and_missing"
+                elif stat["numeric_count"] > 0:
+                    stat["value_population_class"] = "finite_numeric_population"
+                else:
+                    stat["value_population_class"] = "categorical_population"
+                primary_paths = set(PRIMARY_LINK_TABLES.values())
+                if (
+                    relative in primary_paths
+                    and stat["column_name"] in LINK_REQUIRED_COLUMNS
+                    and stat["blank_count"] > 0
+                ):
+                    stat["semantic_attention"] = "required_primary_value_missing"
+                elif (
+                    stat["inf_token_count"] > 0
+                    and stat["column_name"] in {"ExpectedMin", "ExpectedMax"}
+                    and relative.endswith((
+                        "generated_value_plausibility_audit.csv",
+                        "phy_value_invariant_checks.csv",
+                    ))
+                ):
+                    # Infinite lower/upper bounds are deliberate for
+                    # one-sided invariant definitions; they are not measured
+                    # non-finite runtime values.
+                    stat["semantic_attention"] = "unbounded_acceptance_limit_not_runtime_measurement"
+                elif stat["inf_token_count"] > 0:
+                    stat["semantic_attention"] = "nonfinite_infinity_requires_review"
+                elif stat["blank_count"] > 0 or stat["zero_count"] == stat["row_count"]:
+                    stat["semantic_attention"] = "classified_observation_not_automatic_failure"
             columns = stats
             file_row["parse_ok"] = True
     except Exception as error:  # audit must record, not hide, unreadable artifacts
         issues.append(f"parse_error:{type(error).__name__}:{error}")
+    file_row["observations"] = "|".join(observations)
+    file_row["observation_count"] = len(observations)
     file_row["issues"] = "|".join(issues)
     file_row["issue_count"] = len(issues)
     return file_row, columns
@@ -278,6 +351,183 @@ def write_csv(path: Path, rows: Iterable[dict]) -> None:
         writer.writerows(rows)
 
 
+def build_csv_file_dispositions(
+    run_root: Path,
+    csv_rows: list[dict],
+    column_rows: list[dict],
+    semantic_audit: dict[str, list[dict]],
+) -> list[dict]:
+    """Produce one honest disposition row for every CSV in the run.
+
+    Parsing and numeric population statistics are not sufficient to certify
+    a domain table.  This view therefore distinguishes semantic passes,
+    semantic failures, byte-identical component mirrors, declared empty
+    schemas, and files that still require a component-specific contract.
+    """
+
+    columns_by_path: dict[str, list[dict]] = {}
+    for row in column_rows:
+        columns_by_path.setdefault(str(row["relative_path"]), []).append(row)
+
+    checks_by_path: dict[str, list[dict]] = {}
+    for collection in (
+        semantic_audit.get("canonical_csv_semantic_audit", []),
+        semantic_audit.get("chart_source_semantic_audit", []),
+    ):
+        for check in collection:
+            artifact_path = str(check.get("artifact_path", ""))
+            if artifact_path:
+                checks_by_path.setdefault(artifact_path, []).append(check)
+
+    mirror_map: dict[str, dict[str, str]] = {}
+    manifest = run_root / "reports" / "csv" / "component_artifact_publication_manifest.csv"
+    if io_path(manifest).is_file():
+        with io_path(manifest).open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                published = str(row.get("PublishedRelativePath", "")).strip().replace("\\", "/")
+                if published:
+                    mirror_map[published] = {str(key): str(value) for key, value in row.items()}
+
+    dispositions: list[dict] = []
+    file_hash_by_path = {
+        str(row["relative_path"]): str(row.get("sha256", "")).lower()
+        for row in csv_rows
+    }
+    primary_paths = set(PRIMARY_LINK_TABLES.values())
+    for file_row in csv_rows:
+        relative = str(file_row["relative_path"])
+        columns = columns_by_path.get(relative, [])
+        checks = checks_by_path.get(relative, [])
+        required_failures = sum(
+            bool(check.get("required", False))
+            and (not bool(check.get("evaluated", False)) or not bool(check.get("passed", False)))
+            for check in checks
+        )
+        mirror = mirror_map.get(relative)
+        mirror_verified = bool(
+            mirror
+            and str(mirror.get("PublishedSHA256", "")).lower() == str(file_row["sha256"]).lower()
+            and str(mirror.get("CanonicalSHA256", "")).lower() == str(file_row["sha256"]).lower()
+            and str(mirror.get("PublishStatus", "")).upper() == "PUBLISHED_HASH_VERIFIED"
+        )
+        if mirror:
+            role = "byte_identical_component_mirror"
+            canonical_source = str(mirror.get("CanonicalRelativePath", ""))
+        elif relative in primary_paths:
+            role = "primary_runtime_truth"
+            canonical_source = relative
+        elif "/contract__" in f"/{relative}" or relative.startswith("reports/csv/contract__"):
+            role = "browser_contract_dataset"
+            canonical_source = relative
+        elif relative.startswith("raw/") or "/raw/" in f"/{relative}":
+            role = "raw_runtime_or_lineage"
+            canonical_source = relative
+        else:
+            role = "canonical_or_derived_artifact"
+            canonical_source = relative
+
+        if int(file_row["issue_count"]) > 0 or not bool(file_row["parse_ok"]):
+            disposition = "FAIL_STRUCTURAL"
+        elif required_failures:
+            disposition = "FAIL_REQUIRED_SEMANTICS"
+        elif mirror and mirror_verified:
+            disposition = "PASS_BYTE_IDENTICAL_MIRROR"
+        elif mirror:
+            disposition = "FAIL_MIRROR_HASH_OR_STATUS"
+        elif int(file_row["row_count"]) == 0:
+            disposition = "EMPTY_DECLARED_SCHEMA_NO_OBSERVATIONS"
+        elif checks and relative in primary_paths:
+            disposition = "PASS_PRIMARY_RUNTIME_SEMANTICS"
+        elif checks and any(str(check.get("category", "")) == "chart_lineage" for check in checks):
+            disposition = "PASS_CHART_DATASET_SEMANTICS"
+        elif checks and any(
+            str(check.get("category", "")) == "control_runtime" for check in checks
+        ):
+            disposition = "PASS_CONTROL_RUNTIME_SEMANTICS"
+        elif checks and any(
+            str(check.get("category", ""))
+            in {"status_reduction", "cross_table_reconciliation"}
+            for check in checks
+        ):
+            disposition = "PASS_STATUS_REDUCTION_SEMANTICS"
+        elif checks and any(
+            str(check.get("category", "")) == "derived_link" for check in checks
+        ):
+            disposition = "PASS_DERIVED_LINK_SEMANTICS"
+        elif checks and any(
+            str(check.get("category", "")) == "manifest_integrity" for check in checks
+        ):
+            disposition = "PASS_MANIFEST_INTEGRITY_SEMANTICS"
+        elif checks and any(
+            str(check.get("category", "")) == "domain_runtime" for check in checks
+        ):
+            disposition = "PASS_DOMAIN_RUNTIME_SEMANTICS"
+        else:
+            disposition = "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW"
+
+        dispositions.append(
+            {
+                "relative_path": relative,
+                "artifact_role": role,
+                "canonical_source": canonical_source,
+                "row_count": int(file_row["row_count"]),
+                "column_count": int(file_row["column_count"]),
+                "all_zero_finite_column_count": sum(
+                    str(row["value_population_class"]) == "all_zero_finite" for row in columns
+                ),
+                "all_missing_column_count": sum(
+                    str(row["value_population_class"]) == "all_missing_or_not_applicable" for row in columns
+                ),
+                "mixed_finite_missing_column_count": sum(
+                    str(row["value_population_class"]) == "mixed_finite_and_missing" for row in columns
+                ),
+                "semantic_check_count": len(checks),
+                "required_semantic_failure_count": required_failures,
+                "mirror_hash_verified": mirror_verified,
+                "audit_disposition": disposition,
+            }
+        )
+
+    # Exact run-local copies can inherit an already-passed contract only
+    # when both their bytes and basename match the checked authority.  This
+    # recognizes component/report replication without treating coincidental
+    # equal values in differently named scientific tables as equivalent.
+    pass_priority = {
+        "PASS_PRIMARY_RUNTIME_SEMANTICS": 0,
+        "PASS_CONTROL_RUNTIME_SEMANTICS": 1,
+        "PASS_STATUS_REDUCTION_SEMANTICS": 2,
+        "PASS_DERIVED_LINK_SEMANTICS": 3,
+        "PASS_MANIFEST_INTEGRITY_SEMANTICS": 4,
+        "PASS_DOMAIN_RUNTIME_SEMANTICS": 5,
+        "PASS_CHART_DATASET_SEMANTICS": 6,
+        "PASS_BYTE_IDENTICAL_MIRROR": 7,
+    }
+    passed_by_hash_and_name: dict[tuple[str, str], dict] = {}
+    for row in sorted(
+        dispositions,
+        key=lambda item: pass_priority.get(str(item["audit_disposition"]), 99),
+    ):
+        if str(row["audit_disposition"]) not in pass_priority:
+            continue
+        relative = str(row["relative_path"])
+        key = (file_hash_by_path.get(relative, ""), Path(relative).name.lower())
+        if key[0]:
+            passed_by_hash_and_name.setdefault(key, row)
+    for row in dispositions:
+        if row["audit_disposition"] != "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW":
+            continue
+        relative = str(row["relative_path"])
+        key = (file_hash_by_path.get(relative, ""), Path(relative).name.lower())
+        authority = passed_by_hash_and_name.get(key)
+        if authority is None or str(authority["relative_path"]) == relative:
+            continue
+        row["artifact_role"] = "byte_identical_semantic_duplicate"
+        row["canonical_source"] = str(authority["relative_path"])
+        row["mirror_hash_verified"] = True
+        row["audit_disposition"] = "PASS_BYTE_IDENTICAL_SEMANTIC_DUPLICATE"
+    return dispositions
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_root", type=Path)
@@ -291,15 +541,23 @@ def main() -> int:
     csv_rows: list[dict] = []
     column_rows: list[dict] = []
     for path in sorted(run_root.rglob("*.csv")):
+        if is_nested_execution_path(run_root, path):
+            continue
         file_row, columns = audit_csv(path, run_root)
         csv_rows.append(file_row)
         column_rows.extend(columns)
     image_paths = sorted(
         path for path in run_root.rglob("*")
-        if io_path(path).is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}
+        if not is_nested_execution_path(run_root, path)
+        and io_path(path).is_file()
+        and path.suffix.lower() in {".png", ".jpg", ".jpeg"}
     )
     image_rows = [audit_image(path, run_root) for path in image_paths]
-    vector_paths = sorted(path for path in run_root.rglob("*.svg") if io_path(path).is_file())
+    vector_paths = sorted(
+        path
+        for path in run_root.rglob("*.svg")
+        if not is_nested_execution_path(run_root, path) and io_path(path).is_file()
+    )
 
     hash_groups: dict[str, list[str]] = {}
     for row in csv_rows:
@@ -318,9 +576,25 @@ def main() -> int:
 
     write_csv(output_root / "all_csv_file_audit.csv", csv_rows)
     write_csv(output_root / "all_csv_column_audit.csv", column_rows)
+    zero_nan_rows = [
+        row for row in column_rows
+        if int(row["blank_count"]) > 0
+        or int(row["nan_token_count"]) > 0
+        or int(row["inf_token_count"]) > 0
+        or (int(row["row_count"]) > 0 and int(row["zero_count"]) == int(row["row_count"]))
+    ]
+    write_csv(output_root / "zero_nan_column_classification.csv", zero_nan_rows)
     write_csv(output_root / "all_raster_image_audit.csv", image_rows)
     write_csv(output_root / "duplicate_csv_byte_hashes.csv", duplicate_files)
     write_csv(output_root / "duplicate_raster_byte_hashes.csv", duplicate_images)
+
+    semantic_audit = audit_csv_semantics(run_root)
+    write_csv_semantic_audit(output_root, semantic_audit)
+    semantic_summary = semantic_audit["summary"][0]
+    file_dispositions = build_csv_file_dispositions(
+        run_root, csv_rows, column_rows, semantic_audit
+    )
+    write_csv(output_root / "csv_file_semantic_disposition.csv", file_dispositions)
 
     summary = {
         "run_root": str(run_root),
@@ -331,6 +605,12 @@ def main() -> int:
             int(row["row_count"]) > 0
             and int(row["blank_count"]) == int(row["row_count"])
             for row in column_rows
+        ),
+        "csv_all_zero_finite_columns": sum(
+            row["value_population_class"] == "all_zero_finite" for row in column_rows
+        ),
+        "csv_required_primary_columns_with_missing_values": sum(
+            row["semantic_attention"] == "required_primary_value_missing" for row in column_rows
         ),
         "csv_parse_failures": sum(not bool(row["parse_ok"]) for row in csv_rows),
         "csv_empty_files": sum(int(row["row_count"]) == 0 for row in csv_rows),
@@ -352,6 +632,21 @@ def main() -> int:
         "raster_issue_count": sum(bool(row["issue"]) for row in image_rows),
         "svg_file_count": len(vector_paths),
         "svg_paths": [path.relative_to(run_root).as_posix() for path in vector_paths],
+        "csv_semantic_check_count": int(semantic_summary["semantic_check_count"]),
+        "csv_semantic_required_failures": int(semantic_summary["semantic_required_failure_count"]),
+        "chart_semantic_check_count": int(semantic_summary["chart_check_count"]),
+        "chart_semantic_required_failures": int(semantic_summary["chart_required_failure_count"]),
+        "csv_files_with_required_semantic_failures": sum(
+            int(row["required_semantic_failure_count"]) > 0 for row in file_dispositions
+        ),
+        "csv_files_parsed_but_without_domain_contract": sum(
+            row["audit_disposition"] == "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW"
+            for row in file_dispositions
+        ),
+        "csv_verified_component_mirror_files": sum(
+            row["audit_disposition"] == "PASS_BYTE_IDENTICAL_MIRROR"
+            for row in file_dispositions
+        ),
     }
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "audit_summary.json").write_text(
@@ -377,6 +672,8 @@ def main() -> int:
         or summary["raster_decode_failures"]
         or summary["raster_issue_count"]
         or summary["svg_file_count"]
+        or summary["csv_semantic_required_failures"]
+        or summary["chart_semantic_required_failures"]
     ) else 0
 
 

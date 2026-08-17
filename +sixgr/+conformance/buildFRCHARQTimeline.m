@@ -1,0 +1,93 @@
+function timeline = buildFRCHARQTimeline(entry, transportBlockIndex, numAttempts)
+%BUILDFRCHARQTIMELINE Resolve the YAML-owned FRC HARQ slot timeline.
+%
+% Each fading transport block is an independently seeded statistical
+% cluster. Retransmissions within that cluster retain one channel object
+% and are separated by the configured number of transmission
+% opportunities. The function does not invent a standards provenance:
+% fields absent from the cited requirement remain explicitly marked as
+% harness assumptions.
+
+arguments
+    entry (1,1) struct
+    transportBlockIndex (1,1) double {mustBeInteger,mustBePositive}
+    numAttempts (1,1) double {mustBeInteger,mustBeNonnegative}
+end
+
+maxTransmissions = double(entry.harq.max_transmissions);
+if numAttempts > maxTransmissions
+    error("sixgr:conformance:HARQTimelineAttemptOverflow", ...
+        "Requested %d attempts but the FRC permits at most %d.", ...
+        numAttempts, maxTransmissions);
+end
+
+timeline = struct( ...
+    "ContractVersion", "sixgr_frc_harq_timeline/v1", ...
+    "TimelineScope", "serial_transmission_opportunities", ...
+    "SelectedDuplexMode", string(entry.carrier.duplex_mode), ...
+    "ProcessCount", 1, ...
+    "HARQProcessID", 0, ...
+    "FeedbackDelaySlots", 0, ...
+    "FeedbackDelaySpecifiedByStandard", false, ...
+    "ProcessCountSpecifiedByStandard", false, ...
+    "RetransmissionSpacingSlots", 1, ...
+    "RetransmissionSpacingSource", "adjacent_transmission_opportunities", ...
+    "InactiveSlotWaveform", "not_applicable", ...
+    "StandardReference", "single_or_unprofiled_harq_execution", ...
+    "ChannelEvolutionBetweenRetransmissionsMaterialized", ...
+        maxTransmissions == 1, ...
+    "FirstOpportunityIndex", double(transportBlockIndex), ...
+    "OpportunityIndexByAttempt", zeros(numAttempts, 1, "uint64"), ...
+    "AbsoluteSlotByAttempt", zeros(numAttempts, 1, "uint64"));
+
+if maxTransmissions > 1 && isfield(entry.harq, "timing")
+    configured = entry.harq.timing;
+    timeline.TimelineScope = string(configured.timeline_scope);
+    timeline.SelectedDuplexMode = string(configured.selected_duplex_mode);
+    timeline.ProcessCount = double(configured.process_count);
+    timeline.HARQProcessID = mod(transportBlockIndex - 1, ...
+        timeline.ProcessCount);
+    timeline.FeedbackDelaySlots = double(configured.feedback_delay_slots);
+    timeline.FeedbackDelaySpecifiedByStandard = logical( ...
+        configured.feedback_delay_specified_by_standard);
+    timeline.ProcessCountSpecifiedByStandard = logical( ...
+        configured.process_count_specified_by_standard);
+    timeline.RetransmissionSpacingSlots = double( ...
+        configured.retransmission_spacing_slots);
+    timeline.RetransmissionSpacingSource = string( ...
+        configured.retransmission_spacing_source);
+    timeline.InactiveSlotWaveform = string(configured.inactive_slot_waveform);
+    timeline.StandardReference = string(configured.standard_reference);
+    timeline.ChannelEvolutionBetweenRetransmissionsMaterialized = true;
+
+    clusterStride = maxTransmissions * timeline.RetransmissionSpacingSlots;
+    timeline.FirstOpportunityIndex = ...
+        (transportBlockIndex - 1) * clusterStride + 1;
+end
+
+if numAttempts == 0
+    return;
+end
+opportunities = double(timeline.FirstOpportunityIndex) + ...
+    (0:numAttempts-1).' * double(timeline.RetransmissionSpacingSlots);
+timeline.OpportunityIndexByAttempt = uint64(opportunities);
+timeline.AbsoluteSlotByAttempt = uint64(localOpportunityToSlot( ...
+    string(entry.direction), opportunities));
+end
+
+function slots = localOpportunityToSlot(direction, opportunities)
+if direction == "uplink"
+    slots = opportunities - 1;
+    return;
+end
+if direction ~= "downlink"
+    error("sixgr:conformance:InvalidHARQTimelineDirection", ...
+        "FRC direction must be downlink or uplink, not '%s'.", direction);
+end
+% The selected DL FRCs reserve slot 0 of every 20-slot period for SS/PBCH.
+% Map the monotonically increasing data-opportunity ordinal onto slots
+% 1:19 without ever rewinding NFrame/NSlot.
+periodIndex = floor((opportunities - 1) / 19);
+slotWithinPeriod = mod(opportunities - 1, 19) + 1;
+slots = 20 .* periodIndex + slotWithinPeriod;
+end

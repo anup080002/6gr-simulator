@@ -76,12 +76,25 @@ elseif stats.ComponentAnchorEvidenceScope == "in_path" && ...
         "LaunchedSupplementalWaveform", true));
     sourceHash = string(sixgr.util.structGet(supplemental, ...
         "SourceTableSHA256", ""));
+    expectedAuthority = "sixgr.truth.evaluateInPathComponentEvidence/v1";
+    expectedComponent = lower(strtrim(componentName));
+    validationComponent = lower(strtrim(string(sixgr.util.structGet( ...
+        supplemental, "ValidationComponent", expectedComponent))));
+    if expectedComponent == "channelrf"
+        expectedAuthority = "sixgr.channel.buildInPathChannelRFResult/v1";
+        expectedComponent = "channel_rf";
+    end
     locallyValidated = validationComplete && ...
-        validationAuthority == "sixgr.truth.evaluateInPathComponentEvidence/v1" && ...
+        validationAuthority == expectedAuthority && ...
+        validationComponent == expectedComponent && ...
         runtimeSource == "CoupledTruthRuntime.RawTrials" && ...
         ~launchedSupplemental && strlength(sourceHash) == 64;
     stats.InPathRuntimeEvidenceValidated = locallyValidated;
     stats.InPathRuntimeSourceSHA256 = sourceHash;
+    stats.InPathRuntimeValidationAuthority = validationAuthority;
+    stats.InPathRuntimeExpectedValidationAuthority = expectedAuthority;
+    stats.InPathRuntimeValidationComponent = validationComponent;
+    stats.InPathRuntimeExpectedValidationComponent = expectedComponent;
     strictField = replace(statusField, "Status", "StrictOk");
     if locallyValidated && isfield(stats, char(strictField))
         stats.(char(strictField)) = stats.ComponentAnchorStrictOk;

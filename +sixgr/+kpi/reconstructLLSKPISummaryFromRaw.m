@@ -10,6 +10,7 @@ ip.addParameter("StrictMode", false, @(x) islogical(x) || (isnumeric(x) && issca
 ip.addParameter("MeasurementWindowSec", NaN, @(x) isnumeric(x) && isscalar(x));
 ip.addParameter("WarmupDurationSec", 0, @(x) isnumeric(x) && isscalar(x));
 ip.addParameter("EffectiveBandwidthHz", NaN, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("FeatureApplicability", struct(), @(x) isempty(x) || isstruct(x));
 ip.parse(varargin{:});
 
 runId = string(ip.Results.RunId);
@@ -20,6 +21,7 @@ strictMode = logical(ip.Results.StrictMode);
 measurementWindowSec = double(ip.Results.MeasurementWindowSec);
 warmupDurationSec = max(0, double(ip.Results.WarmupDurationSec));
 effectiveBandwidthHz = double(ip.Results.EffectiveBandwidthHz);
+featureApplicability = localResolveFeatureApplicability(ip.Results.FeatureApplicability);
 
 registry = sixgr.kpi.KPIFormulaRegistry();
 schemaAudit = sixgr.kpi.validateRawKPITables(raw);
@@ -34,7 +36,7 @@ ulMetrics = localAttachHARQAndSchedulerMetrics(raw, sourcePaths, "UL", ulMetrics
 dlMetrics = localAttachHARQAndSchedulerMetrics(raw, sourcePaths, "DL", dlMetrics);
 
 summary = localBuildLegacySummary(runId, scenarioName, ulMetrics, dlMetrics, strictMode);
-recon = localBuildReconstructionSummary(runId, scenarioName, registry, ulMetrics, dlMetrics, exportedSummary);
+recon = localBuildReconstructionSummary(runId, scenarioName, registry, ulMetrics, dlMetrics, exportedSummary, featureApplicability);
 dirAudit = localBuildDirectionIsolationAudit(runId, ulMetrics, dlMetrics);
 aliasMap = localBuildLegacyAliasMap(runId, registry, summary, recon);
 knownBug = sixgr.kpi.guardNoULGoodputCopiedFromDL(summary, ulMetrics, dlMetrics);
@@ -980,7 +982,7 @@ row.DLSourceDirection = "DL";
 summary = struct2table(row);
 end
 
-function T = localBuildReconstructionSummary(runId, scenarioName, registry, ul, dl, exportedSummary)
+function T = localBuildReconstructionSummary(runId, scenarioName, registry, ul, dl, exportedSummary, featureApplicability)
 defs = [
     localRecon("UL_Goodput_Max_Mbps", ul, "GoodputMax_Mbps", "Goodput_UL_max_Mbps");
     localRecon("DL_Goodput_Max_Mbps", dl, "GoodputMax_Mbps", "Goodput_DL_max_Mbps");
@@ -1076,17 +1078,69 @@ for i = 1:numel(defs)
     rows(i).DuplicateDeliveryCount = d.Metrics.DuplicateDeliveryCount;
     rows(i).MissingRawData = d.Metrics.MissingRawData;
     rows(i).SchemaValid = d.Metrics.SchemaValid;
-    rows(i).FormulaExecuted = strcmp(d.Metrics.Status, "pass");
+    [applicable, applicabilityReason] = localKPIApplicability(d.KPIName, featureApplicability);
+    rows(i).Applicable = logical(applicable);
+    rows(i).ApplicabilityReason = string(applicabilityReason);
+    rows(i).FormulaExecuted = applicable && strcmp(d.Metrics.Status, "pass");
     rows(i).ExportedSummaryValue = exported;
     rows(i).ReconstructionValue = value;
     rows(i).ReconstructionDelta = delta;
     rows(i).ReconciliationTolerance = tolerance;
-    rows(i).ReconciliationPass = pass;
-    rows(i).StrictOk = pass && strcmp(d.Metrics.Status, "pass");
-    rows(i).Status = string(localTernary(rows(i).StrictOk, "pass", "fail"));
-    rows(i).FailureReason = string(localTernary(rows(i).StrictOk, "", d.Metrics.FailureReason));
+    if applicable
+        rows(i).ReconciliationPass = pass;
+        rows(i).StrictOk = pass && strcmp(d.Metrics.Status, "pass");
+        rows(i).Status = string(localTernary(rows(i).StrictOk, "pass", "fail"));
+        rows(i).FailureReason = string(localTernary(rows(i).StrictOk, "", d.Metrics.FailureReason));
+    else
+        rows(i).ReconciliationPass = true;
+        rows(i).StrictOk = true;
+        rows(i).Status = "not_applicable";
+        rows(i).FailureReason = "";
+    end
 end
 T = struct2table(rows);
+end
+
+function applicability = localResolveFeatureApplicability(input)
+% An omitted applicability contract preserves the historical strict API:
+% direct callers must provide all registry evidence. Production exporters
+% pass the resolved configuration explicitly.
+applicability = struct("HARQ",true,"Scheduler",true,"Latency",true, ...
+    "MAC",true,"Application",true);
+if isempty(input), return; end
+for name = ["HARQ","Scheduler","Latency","MAC","Application"]
+    raw = sixgr.util.structGet(input, name, applicability.(char(name)));
+    if ~((islogical(raw) || isnumeric(raw)) && isscalar(raw) && isfinite(double(raw)))
+        error("sixgr:kpi:InvalidFeatureApplicability", ...
+            "FeatureApplicability.%s must be a finite logical scalar.", name);
+    end
+    applicability.(char(name)) = logical(raw);
+end
+end
+
+function [applicable, reason] = localKPIApplicability(kpiName, applicability)
+kpiName = string(kpiName);
+if contains(kpiName, ["HARQ_NACK_Rate","Retransmission_Rate"])
+    applicable = logical(applicability.HARQ);
+    reason = localTernary(applicable, "harq_enabled", "harq_disabled_by_resolved_configuration");
+elseif contains(kpiName, "PRB_Utilization")
+    applicable = logical(applicability.Scheduler);
+    reason = localTernary(applicable, "scheduler_enabled", "independent_fixed_link_has_no_scheduler");
+elseif contains(kpiName, "Latency")
+    applicable = logical(applicability.Latency);
+    reason = localTernary(applicable, "packet_timing_required", "independent_fixed_link_has_no_application_latency");
+elseif contains(kpiName, "MAC_Goodput_Mbps")
+    applicable = logical(applicability.MAC);
+    reason = localTernary(applicable, "same_waveform_mac_enabled", ...
+        "same_waveform_protocol_stack_disabled");
+elseif contains(kpiName, "Application_Goodput_Mbps")
+    applicable = logical(applicability.Application);
+    reason = localTernary(applicable, "same_waveform_application_delivery_enabled", ...
+        "same_waveform_protocol_stack_disabled");
+else
+    applicable = true;
+    reason = "always_applicable_raw_phy_kpi";
+end
 end
 
 function tf = localLayerEvidencePresent(metrics, layerName)
@@ -1170,8 +1224,11 @@ T = struct2table(rows);
 end
 
 function T = localBuildUnitAudit(runId, recon)
-rows = repmat(struct("RunId","", "KPIName","", "Direction","", "Bits",NaN, "DurationSec",NaN, ...
-    "ExpectedMbps",NaN, "ComputedMbps",NaN, "Delta",NaN, "Tolerance",1e-9, "Pass",false, "Status","", "FailureReason",""), 0, 1);
+rows = repmat(struct("RunId","", "KPIName","", "Direction","", ...
+    "Applicable",true, "ApplicabilityReason","", ...
+    "Bits",NaN, "DurationSec",NaN, "ExpectedMbps",NaN, ...
+    "ComputedMbps",NaN, "Delta",NaN, "Tolerance",1e-9, ...
+    "Pass",false, "Status","", "FailureReason",""), 0, 1);
 mask = contains(string(recon.KPIName), "ScheduledThroughput_Mbps") | ...
     contains(string(recon.KPIName), "TB_Delivery_Goodput_Mbps") | ...
     contains(string(recon.KPIName), "MAC_Goodput_Mbps") | ...
@@ -1179,11 +1236,24 @@ mask = contains(string(recon.KPIName), "ScheduledThroughput_Mbps") | ...
 idxs = find(mask(:).');
 for j = 1:numel(idxs)
     i = idxs(j);
+    applicable = true;
+    applicabilityReason = "always_applicable_raw_phy_kpi";
+    if ismember("Applicable", string(recon.Properties.VariableNames))
+        applicable = logical(recon.Applicable(i));
+    end
+    if ismember("ApplicabilityReason", string(recon.Properties.VariableNames))
+        applicabilityReason = string(recon.ApplicabilityReason(i));
+    end
     row = struct("RunId",string(runId), "KPIName",string(recon.KPIName(i)), "Direction",string(recon.Direction(i)), ...
+        "Applicable",applicable, "ApplicabilityReason",applicabilityReason, ...
         "Bits",double(recon.NumeratorValue(i)), "DurationSec",double(recon.AggregationDurationSec(i)), ...
         "ExpectedMbps",NaN, "ComputedMbps",double(recon.Value(i)), "Delta",NaN, "Tolerance",1e-9, ...
         "Pass",false, "Status","fail", "FailureReason","duration_or_bits_unavailable");
-    if isfinite(row.Bits) && isfinite(row.DurationSec) && row.DurationSec > 0
+    if ~applicable
+        row.Pass = true;
+        row.Status = "not_applicable";
+        row.FailureReason = "";
+    elseif isfinite(row.Bits) && isfinite(row.DurationSec) && row.DurationSec > 0
         row.ExpectedMbps = row.Bits / row.DurationSec / 1e6;
         row.Delta = abs(row.ExpectedMbps - row.ComputedMbps);
         row.Pass = row.Delta <= row.Tolerance;
@@ -1202,6 +1272,7 @@ end
 function T = localBuildObjectiveBinding(runId, scenarioName, registry, recon)
 rows = repmat(struct("RunId","", "ScenarioName","", "KPIName","", "Direction","", ...
     "Layer","", "MandatoryInScenarioObjective",false, "FormulaId","", ...
+    "Applicable",true, "ApplicabilityReason","", ...
     "RawEvidenceAvailable",false, "ReconstructionPass",false, "StrictOk",false, ...
     "ScenarioObjectiveContribution","not_configured", "Status","not_evaluated", "FailureReason",""), 0, 1);
 for i = 1:height(registry)
@@ -1211,16 +1282,30 @@ for i = 1:height(registry)
         "KPIName",kpiName, "Direction",string(registry.Direction(i)), ...
         "Layer",string(registry.Layer(i)), ...
         "MandatoryInScenarioObjective",logical(registry.StrictAllowed(i)), ...
-        "FormulaId",kpiName, "RawEvidenceAvailable",false, ...
+        "FormulaId",kpiName, "Applicable",true, "ApplicabilityReason","", ...
+        "RawEvidenceAvailable",false, ...
         "ReconstructionPass",false, "StrictOk",false, ...
         "ScenarioObjectiveContribution","not_configured", "Status","not_applicable", ...
         "FailureReason","not_in_current_reconstruction_scope");
     if ~isempty(idx)
+        applicable = true;
+        if ismember("Applicable", string(recon.Properties.VariableNames))
+            applicable = logical(recon.Applicable(idx));
+        end
+        row.Applicable = applicable;
+        if ismember("ApplicabilityReason", string(recon.Properties.VariableNames))
+            row.ApplicabilityReason = string(recon.ApplicabilityReason(idx));
+        end
+        row.MandatoryInScenarioObjective = row.MandatoryInScenarioObjective && applicable;
         row.RawEvidenceAvailable = ~logical(recon.MissingRawData(idx));
         row.ReconstructionPass = logical(recon.ReconciliationPass(idx));
         row.StrictOk = logical(recon.StrictOk(idx));
         row.ScenarioObjectiveContribution = string(localTernary(row.MandatoryInScenarioObjective, "mandatory", "optional"));
-        if ~row.RawEvidenceAvailable
+        if ~applicable
+            row.Status = "not_applicable";
+            row.FailureReason = row.ApplicabilityReason;
+            row.ScenarioObjectiveContribution = "not_applicable";
+        elseif ~row.RawEvidenceAvailable
             row.Status = string(localTernary(row.MandatoryInScenarioObjective, "fail", "not_evaluated"));
             row.FailureReason = string(recon.FailureReason(idx));
         elseif row.StrictOk
@@ -1898,6 +1983,7 @@ row = struct("RunId","", "ScenarioName","", "KPIName","", "Direction","", "Layer
     "ExcludedRowCount",0, "SourceRowsHash","", "SourceDirection","", "ProxyRowsExcluded",0, ...
     "SkippedRowsExcluded",0, "FailedRowsIncluded",true, "HARQDeduplicationApplied",false, ...
     "DuplicateDeliveryCount",0, "MissingRawData",true, "SchemaValid",false, ...
+    "Applicable",true, "ApplicabilityReason","", ...
     "FormulaExecuted",false, "ExportedSummaryValue",NaN, "ReconstructionValue",NaN, ...
     "ReconstructionDelta",NaN, "ReconciliationTolerance",1e-9, "ReconciliationPass",false, ...
     "StrictOk",false, "Status","fail", "FailureReason","");

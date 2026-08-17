@@ -430,6 +430,10 @@ canonical_control:
     mu_mimo_minimum_desired_subspace_gain_db: -30
     mu_mimo_hybrid_rf_design_policy: measured_srs_phase_only_subarray
     mu_mimo_spatial_signature_mode: complete_detectable_subspace
+    # Preserve the complete received antenna vector; the per-RE IRC
+    # equalizer owns spatial suppression using measured desired-channel and
+    # shared-slot interference covariance evidence.
+    ul_mu_mimo_receive_processing_mode: full_dimensional_per_re_irc
     mu_mimo_spatial_subspace_noise_margin_db: 6
     mu_mimo_phase_only_projection_max_iterations: 500
     mu_mimo_phase_only_projection_tolerance: 1.0e-6
@@ -597,6 +601,24 @@ canonical_control:
     pdsch_dmrs_ports: 1
     pusch_dmrs_ports: 1
     csi_rs_ports: 1
+    csi_rs_num_resources: 1
+    csi_rs_resource_set_id: 0
+    csi_rs_resource_ids: [0]
+    csi_rs_resource_row_numbers: [2]
+    csi_rs_resource_symbol_locations: [5]
+    csi_rs_resource_subcarrier_locations: [0]
+    csi_rs_resource_rb_offsets: [0]
+    csi_rs_resource_num_rbs: [273]
+    csi_rs_precoder_codebook:
+      enabled: false
+      type: dft_ura
+      physical_element_count: 1
+      beam_indices_port_0: [0]
+      # Schema-complete inactive entries. They are not consumed while the
+      # codebook is disabled and physical_element_count remains one.
+      beam_indices_port_1: [0]
+      beam_indices_port_2: [0]
+      beam_indices_port_3: [0]
     srs_ports: 1
     trs_ports: 1
     trs_scrambling_id: 1
@@ -1366,7 +1388,8 @@ canonical_control:
       require_identity_columns: true
       require_radio_identity_columns: true
       atomic_replace: true
-      image_format: png
+      image_format: none
+      raster_authority: post_run_csv_contract_materializer
       allow_svg: false
       allow_placeholder_evidence: false
   logging:
@@ -1555,6 +1578,52 @@ validation:
   RunClass: fixed_snr_sweep_lls
   run_class: fixed_snr_sweep_lls
   publication_mode: strict_actual_evidence
+  independent_reference_qualification:
+    # Independent waveform campaign; disabled diagnostic runs cannot create
+    # the production qualification artifact.
+    enabled: false
+    required_for_production: true
+    profile: full
+    entry_ids:
+    - dl_r_pdsch_1_1_4_fdd_awgn
+    - dl_r_pdsch_1_3_6_fdd_atg_awgn
+    - dl_r_pdsch_1_4_1_fdd_atg_awgn
+    - ul_g_fr1_a3a_1_awgn
+    - ul_g_fr1_a13_1_atg_awgn
+    tolerance_db: 1.0
+    confidence_level: 0.95
+    max_confidence_half_width: 0.01
+    # 3GPP receiver requirements are one-sided at the required SNR.  The
+    # symmetric +/- tolerance crossing remains available as a separate
+    # engineering diagnostic and is not a conformance requirement.
+    require_symmetric_regression_for_production: false
+    parallel_workers: 4
+    min_transport_blocks: 1000
+    max_transport_blocks: 10000
+    batch_size: 100
+    minimum_block_errors: 100
+    sampling_by_entry:
+    - entry_id: dl_r_pdsch_1_1_4_fdd_awgn
+      min_transport_blocks: 300000
+      max_transport_blocks: 300000
+      batch_size: 500
+    - entry_id: dl_r_pdsch_1_3_6_fdd_atg_awgn
+      min_transport_blocks: 10000
+      max_transport_blocks: 10000
+      batch_size: 100
+    - entry_id: dl_r_pdsch_1_4_1_fdd_atg_awgn
+      min_transport_blocks: 10000
+      max_transport_blocks: 10000
+      batch_size: 100
+    - entry_id: ul_g_fr1_a3a_1_awgn
+      min_transport_blocks: 300000
+      max_transport_blocks: 300000
+      batch_size: 500
+    - entry_id: ul_g_fr1_a13_1_atg_awgn
+      min_transport_blocks: 10000
+      max_transport_blocks: 10000
+      batch_size: 100
+    verbose: true
   required_artifact_audit: true
   fixed_snr_sweep_required: true
   geometry_evidence_required: false
@@ -1900,7 +1969,9 @@ pusch:
   uci_scaling: 1
   repetition_type: none
   repetition_count: 1
+  dmrs_residual_post_eq_sinr_bound_enabled: false
   decision_directed_post_eq_sinr_bound_enabled: false
+  decoder_noise_variance_mode: post_equalization
   power_control:
     enabled: false
     open_loop_enabled: false

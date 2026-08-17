@@ -1,6 +1,9 @@
 function out = runPRACHDetection(cfg, varargin)
 %RUNPRACHDETECTION PRACH Tx/Rx detection KPI case.
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.link.runPRACHDetection", ...
+    "PRACH", "UL", struct("Stage","TX_RX_TRIAL"));
+
 p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 12), @(x) isnumeric(x) && isscalar(x));

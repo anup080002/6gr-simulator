@@ -143,13 +143,22 @@ function symbols = localMapBits(bits, qm, normalizationSquared)
 bits = double(bits(:));
 groups = reshape(bits, qm, []).';
 axisBits = qm / 2;
-inPhase = zeros(size(groups, 1), 1);
-quadrature = zeros(size(groups, 1), 1);
-for symbolIndex = 1:size(groups, 1)
-    inPhase(symbolIndex) = localAxisAmplitude(groups(symbolIndex, 1:2:qm), axisBits);
-    quadrature(symbolIndex) = localAxisAmplitude(groups(symbolIndex, 2:2:qm), axisBits);
-end
+inPhase = localAxisAmplitudes(groups(:,1:2:qm),axisBits);
+quadrature = localAxisAmplitudes(groups(:,2:2:qm),axisBits);
 symbols = complex(inPhase, quadrature) / sqrt(normalizationSquared);
+end
+
+function amplitude = localAxisAmplitudes(bits,axisBitCount)
+if axisBitCount == 1
+    amplitude = 1 - 2 .* bits(:,1);
+    return;
+end
+inner = 2 - (1 - 2 .* bits(:,axisBitCount));
+for idx = (axisBitCount - 1):-1:2
+    weight = 2^(axisBitCount - idx + 1);
+    inner = weight - (1 - 2 .* bits(:,idx)) .* inner;
+end
+amplitude = (1 - 2 .* bits(:,1)) .* inner;
 end
 
 function amplitude = localAxisAmplitude(bits, axisBitCount)
@@ -175,22 +184,42 @@ points = localMapBits(labels.', qm, normalizationSquared);
 end
 
 function llr = localSoftDemap(symbols, qm, normalizationSquared, noiseVariance, algorithm)
+[symbolCount,~] = size(symbols);
+if qm == 2
+    % Exact QPSK log-MAP and max-log expressions are identical for the NR
+    % Gray constellation. N0 is complex-symbol noise variance.
+    scale = 2 * sqrt(2) ./ noiseVariance;
+    llrMatrix = [scale .* real(symbols), scale .* imag(symbols)];
+    llr = reshape(llrMatrix.', [], 1);
+    return;
+end
 [points, labels] = localConstellation(qm, normalizationSquared);
-llrMatrix = zeros(numel(symbols), qm);
-for symbolIndex = 1:numel(symbols)
-    metric = -abs(symbols(symbolIndex) - points).^2 / noiseVariance(symbolIndex);
+llrMatrix = zeros(symbolCount, qm);
+% Bound the temporary distance matrix for 1024QAM while vectorizing over
+% received symbols. This is the same Euclidean log-MAP/max-log equation as
+% the scalar implementation, without millions of MATLAB loop iterations.
+blockSize = max(1,floor(524288/numel(points)));
+for first = 1:blockSize:symbolCount
+    rows = first:min(first + blockSize - 1,symbolCount);
+    metric = -abs(symbols(rows) - transpose(points)).^2 ./ ...
+        noiseVariance(rows);
     for bitIndex = 1:qm
-        metric0 = metric(labels(:, bitIndex) == 0);
-        metric1 = metric(labels(:, bitIndex) == 1);
+        metric0 = metric(:,labels(:, bitIndex) == 0);
+        metric1 = metric(:,labels(:, bitIndex) == 1);
         if algorithm == "max-log"
-            llrMatrix(symbolIndex, bitIndex) = max(metric0) - max(metric1);
+            llrMatrix(rows, bitIndex) = max(metric0,[],2) - max(metric1,[],2);
         else
-            llrMatrix(symbolIndex, bitIndex) = ...
-                localLogSumExp(metric0) - localLogSumExp(metric1);
+            llrMatrix(rows, bitIndex) = ...
+                localLogSumExpRows(metric0) - localLogSumExpRows(metric1);
         end
     end
 end
 llr = reshape(llrMatrix.', [], 1);
+end
+
+function value = localLogSumExpRows(values)
+peak = max(values,[],2);
+value = peak + log(sum(exp(values - peak),2));
 end
 
 function bits = localHardDemap(symbols, qm, normalizationSquared)

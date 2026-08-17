@@ -428,6 +428,7 @@ try
 catch ME
     out.Ok = false;
     out.TrackingFailure = 1;
+    out.FailureReason = char(string(ME.identifier));
     out.Notes = "Failure: " + string(ME.message);
     if ~isempty(log)
         log.warn("runSRSChannelEstimation failed: " + string(ME.message));

@@ -68,7 +68,7 @@ end
 
 summary = readtable(fullfile(tmp, "air_interface", "csv", "lls_measured_sinr_summary.csv"), "VariableNamingRule", "preserve");
 assert(all(isfinite(double(summary.SINR_median_dB))), "Measured SINR summary contains non-finite median SINR.");
-assert(all(string(summary.KPIFormulaVersion) == "measured_sinr_geometry_v1"), "Unexpected measured SINR formula version.");
+assert(all(string(summary.KPIFormulaVersion) == "measured_posteq_sinr_v2"), "Unexpected measured SINR formula version.");
 
 kpi = readtable(fullfile(tmp, "air_interface", "csv", "lls_kpi_summary.csv"), "VariableNamingRule", "preserve");
 assert(all(logical(kpi.KPIReconciliationPass)), "KPI reconciliation did not pass for measured SINR summary.");
@@ -82,7 +82,7 @@ for caseName = requiredCases
     mask = strcmp(string(anchor.Case), caseName);
     assert(any(mask) && localAsLogical(anchor.Ok(find(mask, 1))), "Anchor case did not pass from runtime evidence: %s", caseName);
 end
-assert(all(string(anchor.KPIFormulaVersion) == "measured_sinr_geometry_v1"), "Anchor KPI formula version must be measured_sinr_geometry_v1.");
+assert(all(string(anchor.KPIFormulaVersion) == "measured_posteq_sinr_v2"), "Anchor KPI formula version must be mode-neutral measured_posteq_sinr_v2.");
 
 localAssertGateOk(tmp, "throughput_reconciliation.csv", "ThroughputReconciliationOk");
 localAssertGateOk(tmp, "blerber_reconciliation.csv", "BlerBerReconciliationOk");
@@ -91,24 +91,35 @@ localAssertGateOk(tmp, "scheduler_kpi_reconciliation.csv", "SchedulerKpiReconcil
 localAssertGateOk(tmp, "latency_reconciliation.csv", "LatencyReconciliationOk");
 localAssertGateOk(tmp, "canonical_kpi_ledger.csv", "CanonicalKpiLedgerOk");
 
-% This fixture intentionally has two trials per generated bin. Select a
-% one-trial rendering threshold here so the section exercises all five PNG
-% producers; production keeps the stricter default of three trials/bin.
+% Canonical truth bundles use uppercase DL/UL fields. A zero extra
+% ProcedureDelay_ms value must not mask a receiver-measured decode latency.
+tmpUpper = tempname;
+mkdir(tmpUpper);
+cleanupUpper = onCleanup(@() rmdir(tmpUpper, "s")); %#ok<NASGU>
+upperDL = localTrialTable("DL");
+upperDL.ProcedureDelay_ms(:) = 0;
+upperDL.DecodeLatency_ms = 2.5 * ones(height(upperDL), 1);
+sixgr.analytics.generateMeasuredSINRCurves(tmpUpper, "uppercase_latency_unit", ...
+    "TrialData", struct("DL", upperDL), ...
+    "ScenarioConfig", struct(), ...
+    "BinCount", 3, "WriteKPISummary", false, "UpdateAnchorKPIs", false);
+latencyUpper = readtable(fullfile(tmpUpper, "reports", "csv", ...
+    "latency_reconciliation.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+assert(abs(double(latencyUpper.MeanLatency_ms(1)) - 2.5) <= 1e-12 && ...
+    string(latencyUpper.LatencyEvidenceSource(1)) == "DL.DecodeLatency_ms", ...
+    "Receiver decode latency was masked by a zero extra procedure delay.");
+
+% The MATLAB raster producer is retired. Runtime curve CSVs remain the
+% authority and the post-run contract materializer owns every final PNG.
 plots = sixgr.analytics.generateMeasuredSINRPlots(tmp, "unit", ...
     "MinimumTrialsPerBin", 1);
-if usejava("jvm")
-    assert(logical(plots.Ok), "Measured SINR plot generation did not report Ok=true.");
-    for p = string(plots.Plots(:)).'
-        assert(exist(p, "file") == 2, "Missing measured SINR plot: %s", p);
-    end
-    lineagePath = fullfile(tmp, "reports", "csv", "measurement_sinr_plot_lineage.csv");
-    assert(exist(lineagePath, "file") == 2, "Missing measured SINR plot lineage CSV.");
-    lineage = readtable(lineagePath, "VariableNamingRule", "preserve");
-    assert(height(lineage) == 5 && all(logical(lineage.ImageExists)) && all(logical(lineage.SourceExists)), ...
-        "Measured SINR plot lineage must cover all five generated measured-SINR plots and their source CSVs.");
-    assert(all(strlength(string(lineage.GeneratorFunction)) > 0), ...
-        "Measured SINR plot lineage must name each plot generator function.");
-end
+assert(logical(plots.Ok) && logical(plots.Suppressed) && isempty(plots.Plots), ...
+    "The retired MATLAB measured-SINR raster API must emit no images.");
+assert(strlength(string(plots.LineageCSV)) == 0, ...
+    "Suppressed legacy rasters must not emit a false lineage CSV.");
+assert(exist(fullfile(tmp, "reports", "csv", ...
+    "measurement_sinr_plot_lineage.csv"), "file") ~= 2, ...
+    "The obsolete measured-SINR plot lineage CSV must not return.");
 localAssertRelabeledAnalytics(tmp);
 
 % A configured AWGN SNR campaign and receiver-measured SINR analytics are
@@ -152,8 +163,8 @@ assert(ismember(flagName, string(T.Properties.VariableNames)), ...
     "Gate CSV %s is missing flag %s.", fileName, flagName);
 assert(localAsLogical(T.(flagName)(1)), "KPI reconciliation gate did not pass: %s", flagName);
 assert(ismember("KPIFormulaVersion", string(T.Properties.VariableNames)) && ...
-    string(T.KPIFormulaVersion(1)) == "measured_sinr_geometry_v1", ...
-    "Gate CSV %s must carry measured_sinr_geometry_v1.", fileName);
+    string(T.KPIFormulaVersion(1)) == "measured_posteq_sinr_v2", ...
+    "Gate CSV %s must carry measured_posteq_sinr_v2.", fileName);
 end
 
 function localWriteLegacyAnalyticsFiles(tmp)

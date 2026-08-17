@@ -131,7 +131,12 @@ catch ME
     rethrow(ME);
 end
 
-cmd = sprintf('"%s" "%s" "%s"', localEscapeCmdPath(pythonExecutable), localEscapeCmdPath(tmpPy), localEscapeCmdPath(filePath));
+% Python installations without the Windows long-path manifest still obey
+% MAX_PATH even when MATLAB can create/read the file. Pass the Win32
+% extended-length spelling to the external parser while retaining the
+% original path for configuration identity and diagnostics.
+externalFilePath = localExternalPythonPath(filePath);
+cmd = sprintf('"%s" "%s" "%s"', localEscapeCmdPath(pythonExecutable), localEscapeCmdPath(tmpPy), localEscapeCmdPath(externalFilePath));
 [status, outTxt] = system(cmd);
 if status ~= 0
     if contains(string(outTxt),"SIXGR_YAML_DUPLICATE_KEY")
@@ -154,4 +159,21 @@ end
 
 function p = localEscapeCmdPath(pathStr)
 p = strrep(char(string(pathStr)), '"', '""');
+end
+
+function pathValue = localExternalPythonPath(pathValue)
+pathValue = char(string(pathValue));
+if ~ispc
+    return;
+end
+absolutePath = char(java.io.File(pathValue).getAbsolutePath());
+if numel(absolutePath) < 248 || startsWith(absolutePath, '\\?\')
+    pathValue = absolutePath;
+    return;
+end
+if startsWith(absolutePath, '\\')
+    pathValue = ['\\?\UNC\' absolutePath(3:end)];
+else
+    pathValue = ['\\?\' absolutePath];
+end
 end

@@ -20,9 +20,8 @@ gate = sixgr.visual.checkVisualArtifactRenderGate(filePath);
 if isstruct(gate) && isfield(gate, "Matched") && logical(gate.Matched)
     if ~logical(gate.AllowRender)
         localDeleteIfExists(filePath);
-        sixgr.visual.writeUnavailablePlotCard(string(gate.UnavailablePath), string(gate.PlotId), ...
-            "Plot suppressed by visual artifact contract: " + string(gate.SuppressionReason));
-        actualPath = char(string(gate.UnavailablePath));
+        localDeleteIfExists(char(string(gate.UnavailablePath)));
+        actualPath = '';
         return;
     elseif string(gate.VisualValidity) == "diagnostic_only"
         sixgr.visual.addDiagnosticWarningBanner(figHandle, gate.WarningBannerText);

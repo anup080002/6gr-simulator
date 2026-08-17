@@ -18,9 +18,17 @@ storageTables = localBuildStorageTables(cfg);
 runtimeMobility = localReadRuntimeMobilityEvidence(runDir, cfg);
 geometryTables = localBuildGeometryTables(cfg, runtimeMobility);
 mobilityTables = localBuildMobilityTables(cfg, geometryTables, runtimeMobility);
+% The live exporter runs before Phase 7 has resolved trajectory completeness.
+% Refresh only the mobility KPI reducer from the in-memory runtime-backed
+% resolution so the Phase 7 gate cannot consume a stale pre-resolution row.
+mobilityKPI = sixgr.analytics.buildMobilityKPIReconciliation( ...
+    cfg, struct("Resolution", mobilityTables.Resolution), runDir);
+sixgr.analytics.writeAnalysisTable(fullfile(dirs.ReportCSV, ...
+    "mobility_kpi_reconciliation.csv"), mobilityKPI);
 measuredSinrT = localBuildMeasuredSINRTimeseries(runDir, cfg);
+physicalTables = localBuildPhysicalChannelReconciliationTables(runDir, cfg);
 campaignEvidence = localBuildCampaignEvidence(runDir, cfg);
-gateStatus = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence);
+gateStatus = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, physicalTables, campaignEvidence);
 finalTables = localBuildFinalReportTables(runDir, gateStatus, cfgTables, storageTables, mobilityTables, campaignEvidence);
 
 localWrite(dirs.ConfigurationCSV, "resolved_channel_rf_configuration.csv", cfgTables.Resolved);
@@ -50,6 +58,10 @@ localWrite(dirs.MobilityCSV, "pathloss_reconciliation.csv", mobilityTables.Pathl
 localWrite(dirs.MobilityCSV, "propagation_delay_reconciliation.csv", mobilityTables.PropagationDelayReconciliation);
 localWrite(dirs.MobilityCSV, "channel_continuity_reconciliation.csv", mobilityTables.ChannelContinuityReconciliation);
 localWrite(dirs.ReportCSV, "measured_sinr_timeseries.csv", measuredSinrT);
+localWrite(dirs.ReportCSV, "channel_realization_reconciliation.csv", physicalTables.ChannelRealization);
+localWrite(dirs.ReportCSV, "path_power_normalization_reconciliation.csv", physicalTables.PathPowerNormalization);
+localWrite(dirs.ReportCSV, "antenna_array_reconciliation.csv", physicalTables.AntennaArray);
+localWrite(dirs.ReportCSV, "polarization_reconciliation.csv", physicalTables.Polarization);
 
 if istable(campaignEvidence.Tables.DLBlerCurve) && height(campaignEvidence.Tables.DLBlerCurve) > 0
     localWrite(dirs.AirInterfaceCSV, "dl_multi_seed_bler_curve.csv", campaignEvidence.Tables.DLBlerCurve);
@@ -79,6 +91,7 @@ report.Geometry = geometryTables;
 report.Mobility = mobilityTables;
 report.RuntimeMobilityEvidence = runtimeMobility;
 report.MeasuredSINRTimeseries = measuredSinrT;
+report.PhysicalChannelReconciliation = physicalTables;
 report.Campaign = campaignEvidence;
 report.Gates = gateStatus;
 report.OutputRoot = string(runDir);
@@ -181,7 +194,8 @@ specs = [
     localConcept("pathloss_los_mode", ["channels.pathloss_los_mode"], "+sixgr/+channel/runStrictChannelRFValidation.m", "los_pathloss_policy", "channel/csv/large_scale_parameters.csv")
     localConcept("mobility_speed_kmh", ["mobility.ue_speed_kmh","channels.mobility_kmph"], "+sixgr/+scenario/+mobility/updatePositions.m", "trajectory_speed", "mobility/csv/trajectory_resolution.csv")
     localConcept("max_doppler_hz", ["channels.max_doppler_hz","channels.doppler_hz","channel_model.doppler_hz"], "+sixgr/+channel/ChannelFactory.m", "doppler_resolution", "channel/csv/channel_realizations.csv")
-    localConcept("noise_figure_db", ["scenario.bs.noiseFigure_dB","scenario.ue.noiseFigure_dB","air_interface.bs_noise_figure_dB","air_interface.ue_noise_figure_dB"], "+sixgr/+link/applyWaveformImpairments.m", "thermal_noise_resolution", "rf/csv/thermal_noise_validation.csv")
+    localConcept("bs_noise_figure_db", ["scenario.bs.noiseFigure_dB","air_interface.bs_noise_figure_dB"], "+sixgr/+link/applyWaveformImpairments.m", "bs_receiver_thermal_noise_resolution", "rf/csv/thermal_noise_validation.csv")
+    localConcept("ue_noise_figure_db", ["scenario.ue.noiseFigure_dB","air_interface.ue_noise_figure_dB"], "+sixgr/+link/applyWaveformImpairments.m", "ue_receiver_thermal_noise_resolution", "rf/csv/thermal_noise_validation.csv")
     localConcept("iq_amplitude_imbalance_db", ["impairments.iq_amplitude_imbalance_dB"], "+sixgr/+rf/applyRFImpairmentChain.m", "rf_impairment_chain", "rf/csv/rf_impairment_chain.csv")
     localConcept("iq_phase_imbalance_deg", ["impairments.iq_phase_imbalance_deg"], "+sixgr/+rf/applyRFImpairmentChain.m", "rf_impairment_chain", "rf/csv/rf_impairment_chain.csv")
     ];
@@ -391,9 +405,6 @@ if ~(istable(runtime.ServingTrace) && height(runtime.ServingTrace) > 0)
 end
 
 T = runtime.ServingTrace;
-cellGeometry = localConfiguredCellGeometryState(cfg);
-pathlossModel = localConfiguredRuntimePathlossModel(cfg);
-hasRuntimeLOSMetadata = localHasColumn(T, "LOSState") || localHasColumn(T, "LOSFlag");
 rows = repmat(localEmptyRuntimeMobilityTraceRow(), height(T), 1);
 for i = 1:height(T)
     row = localEmptyRuntimeMobilityTraceRow();
@@ -408,7 +419,7 @@ for i = 1:height(T)
     row.X_m = localTableNumber(T, i, ["X_m","UEPosX_m"], NaN);
     row.Y_m = localTableNumber(T, i, ["Y_m","UEPosY_m"], NaN);
     row.Z_m = localTableNumber(T, i, ["Z_m","UEPosZ_m"], NaN);
-    row.Speed_kmh = localTableNumber(T, i, "Speed_kmh", localNumber(cfg, "mobility.ue_speed_kmh", NaN));
+    row.Speed_kmh = localTableNumber(T, i, "Speed_kmh", NaN);
     row.Speed_mps = row.Speed_kmh / 3.6;
     headingDeg = localTableNumber(T, i, ["Heading_deg","UEHeading_deg"], NaN);
     row.Heading_deg = headingDeg;
@@ -416,12 +427,12 @@ for i = 1:height(T)
     row.Pathloss_dB = localTableNumber(T, i, "Pathloss_dB", NaN);
     row.BasePathloss_dB = localTableNumber(T, i, "BasePathloss_dB", NaN);
     row.ShadowFading_dB = localTableNumber(T, i, "ShadowFading_dB", NaN);
-    row.O2I_dB = localTableNumber(T, i, "O2I_dB", 0);
+    row.O2I_dB = localTableNumber(T, i, "O2I_dB", NaN);
     row.Distance2D_m = localTableNumber(T, i, ["Distance2D_m","ServingDistance2D_m"], NaN);
     row.Distance3D_m = localTableNumber(T, i, ["Distance3D_m","ServingDistance_m"], NaN);
     row.PropagationDelay_s = localTableNumber(T, i, "PropagationDelay_s", NaN);
     row.RadialVelocity_mps = localTableNumber(T, i, "RadialVelocity_mps", NaN);
-    row.ExpectedDopplerHz = localRuntimeExpectedDoppler(row.Speed_mps, runtime.CarrierFrequency_Hz, runtime.LightSpeed_mps);
+    row.ExpectedDopplerHz = localRuntimeExpectedDoppler(row.RadialVelocity_mps, runtime.CarrierFrequency_Hz, runtime.LightSpeed_mps);
     row.AppliedDopplerHz = localTableNumber(T, i, ["AppliedDopplerHz","Doppler_Hz","RuntimeServingDopplerHz"], NaN);
     row.SignedDoppler_Hz = localTableNumber(T, i, ["SignedDoppler_Hz","RuntimeServingSignedDopplerHz"], NaN);
     row.PathlossModelSource = localTableString(T, i, "PathlossModelSource", "");
@@ -433,7 +444,7 @@ for i = 1:height(T)
         losFlag = localTableLogical(T, i, "LOSFlag", false);
         row.LOSState = localTernary(losFlag, "LOS", "NLOS");
     end
-    row = localBackfillRuntimeMobilityRow(row, cfg, runtime, cellGeometry, pathlossModel, hasRuntimeLOSMetadata);
+    row = localFinalizeObservedRuntimeMobilityRow(row, runtime);
     row.Status = localRuntimeTraceRowStatus(row);
     rows(i) = row;
 end
@@ -445,192 +456,17 @@ if runtime.ConfiguredSlotCount < 1
 end
 end
 
-function row = localBackfillRuntimeMobilityRow(row, cfg, runtime, cellGeometry, pathlossModel, hasRuntimeLOSMetadata)
-row.Speed_kmh = localFirstFiniteScalar(localConfiguredMobilitySpeedKmh(cfg, row.UeId), row.Speed_kmh);
+function row = localFinalizeObservedRuntimeMobilityRow(row, runtime)
+% Only unit conversions and analytical expectations derived from observed
+% runtime fields are permitted here. Missing channel/geometry quantities
+% remain missing and therefore fail strict reconciliation; configured
+% values must never be promoted into a runtime evidence row.
 if ~isfinite(row.Speed_mps) && isfinite(row.Speed_kmh)
     row.Speed_mps = row.Speed_kmh / 3.6;
 end
-if ~isfinite(row.RadialVelocity_mps) && isfinite(row.Speed_mps)
-    row.RadialVelocity_mps = row.Speed_mps;
-end
-
-[cellPos, hasCellPos] = localLookupConfiguredCellPosition(cellGeometry, row.ServingCellId, row.CellId);
-if hasCellPos && all(isfinite([row.X_m, row.Y_m, row.Z_m]))
-    delta = [row.X_m, row.Y_m, row.Z_m] - cellPos;
-    if ~isfinite(row.Distance2D_m)
-        row.Distance2D_m = hypot(delta(1), delta(2));
-    end
-    if ~isfinite(row.Distance3D_m)
-        row.Distance3D_m = norm(delta);
-    end
-end
-
-if ~isfinite(row.PropagationDelay_s) && isfinite(row.Distance3D_m)
-    row.PropagationDelay_s = row.Distance3D_m / runtime.LightSpeed_mps;
-end
-
-if strlength(strtrim(row.LOSState)) == 0
-    row.LOSState = localConfiguredLOSState(cfg);
-end
 if ~isfinite(row.ExpectedDopplerHz)
-    row.ExpectedDopplerHz = localRuntimeExpectedDoppler(row.Speed_mps, runtime.CarrierFrequency_Hz, runtime.LightSpeed_mps);
-end
-if ~isfinite(row.ExpectedDopplerHz) && isfinite(row.RadialVelocity_mps) && isfinite(runtime.CarrierFrequency_Hz)
-    row.ExpectedDopplerHz = abs(row.RadialVelocity_mps) * runtime.CarrierFrequency_Hz / runtime.LightSpeed_mps;
-end
-if ~isfinite(row.AppliedDopplerHz)
-    row.AppliedDopplerHz = localConfiguredAppliedDopplerHz(cfg, row.ExpectedDopplerHz);
-end
-if ~isfinite(row.AppliedDopplerHz) && isfinite(row.ExpectedDopplerHz)
-    row.AppliedDopplerHz = row.ExpectedDopplerHz;
-end
-if ~isfinite(row.SignedDoppler_Hz) && isfinite(row.AppliedDopplerHz)
-    row.SignedDoppler_Hz = row.AppliedDopplerHz;
-end
-
-row = localBackfillRuntimePathloss(row, cfg, pathlossModel, cellPos, hasCellPos, hasRuntimeLOSMetadata);
-end
-
-function state = localConfiguredCellGeometryState(cfg)
-state = struct("CellIds", zeros(0, 1), "SiteIds", zeros(0, 1), "SitePositions", zeros(0, 3));
-try
-    geom = sixgr.channel.buildScenarioGeometry(cfg);
-    siteT = sixgr.util.structGet(geom, "SiteTable", table());
-    sectorT = sixgr.util.structGet(geom, "SectorTable", table());
-    if ~(istable(siteT) && height(siteT) > 0 && istable(sectorT) && height(sectorT) > 0)
-        return;
-    end
-    state.CellIds = localColumnDouble(sectorT, "CellId", NaN);
-    state.SiteIds = localColumnDouble(sectorT, "SiteId", NaN);
-    state.SitePositions = [localColumnDouble(siteT, "X_m", NaN), ...
-        localColumnDouble(siteT, "Y_m", NaN), ...
-        localColumnDouble(siteT, "Z_m", NaN)];
-catch
-    state = struct("CellIds", zeros(0, 1), "SiteIds", zeros(0, 1), "SitePositions", zeros(0, 3));
-end
-end
-
-function [pos, ok] = localLookupConfiguredCellPosition(state, servingCellId, cellId)
-pos = [NaN NaN NaN];
-ok = false;
-candidateIds = [servingCellId, cellId];
-for candidate = candidateIds
-    if ~(isfinite(candidate) && isstruct(state) && isfield(state, "CellIds"))
-        continue;
-    end
-    idx = find(double(state.CellIds(:)) == double(candidate), 1, "first");
-    if isempty(idx)
-        continue;
-    end
-    siteId = localSafeIndex(state.SiteIds, idx, idx);
-    pos = localSafeSitePosition(state.SitePositions, siteId, idx);
-    ok = all(isfinite(pos));
-    if ok
-        return;
-    end
-end
-end
-
-function speedKmh = localConfiguredMobilitySpeedKmh(cfg, ueId)
-speedKmh = NaN;
-vector = sixgr.util.structGet(cfg, "scenario.mobility.speed_kmh", NaN);
-vector = double(vector(:));
-vector = vector(isfinite(vector));
-if ~isempty(vector)
-    if isfinite(ueId)
-        idx = max(1, min(numel(vector), round(double(ueId))));
-        speedKmh = double(vector(idx));
-        return;
-    end
-    speedKmh = double(vector(1));
-    return;
-end
-speedKmh = localNumber(cfg, ["mobility.ue_speed_kmh","scenario.mobility.speed_kmh"], NaN);
-end
-
-function state = localConfiguredLOSState(cfg)
-losEnabled = localBool(cfg, ["channel.losEnabled","channel.fading.losEnabled"], false);
-state = localTernary(losEnabled, "LOS", "NLOS");
-end
-
-function dopplerHz = localConfiguredAppliedDopplerHz(cfg, fallbackValue)
-dopplerHz = localNumber(cfg, ["channel.dopplerHz","channel.doppler_Hz","channel.maxDopplerHz","channel.maxDoppler_Hz"], fallbackValue);
-if ~isfinite(dopplerHz)
-    dopplerHz = double(fallbackValue);
-end
-end
-
-function model = localConfiguredRuntimePathlossModel(cfg)
-model = [];
-try
-    model = sixgr.channel.TR38901Plus(cfg);
-catch
-    model = [];
-end
-end
-
-function row = localBackfillRuntimePathloss(row, cfg, pathlossModel, cellPos, hasCellPos, hasRuntimeLOSMetadata)
-if ~(hasCellPos && all(isfinite([row.X_m, row.Y_m, row.Z_m])) && isa(pathlossModel, "sixgr.channel.TR38901Plus"))
-    return;
-end
-
-args = {};
-if hasRuntimeLOSMetadata && strlength(strtrim(row.LOSState)) > 0
-    args = [args, {"LOS", strcmpi(char(row.LOSState), "LOS")}]; %#ok<AGROW>
-end
-if isfinite(row.ShadowFading_dB)
-    args = [args, {"Shadow_dB", row.ShadowFading_dB}]; %#ok<AGROW>
-end
-if isfinite(row.O2I_dB)
-    args = [args, {"O2ILoss_dB", row.O2I_dB}]; %#ok<AGROW>
-end
-
-try
-    [pl_dB, los, ex] = pathlossModel.pathloss(cellPos(:), [row.X_m; row.Y_m; row.Z_m], args{:});
-    row.Distance2D_m = localFirstFiniteScalar(row.Distance2D_m, localFirstFiniteScalar(ex.d2d_m, NaN));
-    row.Distance3D_m = localFirstFiniteScalar(row.Distance3D_m, localFirstFiniteScalar(ex.d3d_m, NaN));
-    row.Pathloss_dB = localFirstFiniteScalar(row.Pathloss_dB, localFirstFiniteScalar(pl_dB, NaN));
-    row.BasePathloss_dB = localFirstFiniteScalar(row.BasePathloss_dB, localFirstFiniteScalar(ex.base_dB, NaN));
-    row.ShadowFading_dB = localFirstFiniteScalar(row.ShadowFading_dB, localFirstFiniteScalar(ex.shadow_dB, NaN));
-    row.O2I_dB = localFirstFiniteScalar(row.O2I_dB, localFirstFiniteScalar(ex.o2i_dB, 0));
-    if strlength(strtrim(row.LOSState)) == 0
-        row.LOSState = localTernary(localFirstFiniteScalar(double(ex.los), 0) ~= 0, "LOS", "NLOS");
-    end
-    if strlength(strtrim(row.PathlossModelSource)) == 0
-        row.PathlossModelSource = string(sixgr.util.structGet(ex, "pathlossModelSource", "runtime_geometry_reconstructed"));
-    end
-    if strlength(strtrim(row.PathlossComplianceStatus)) == 0
-        row.PathlossComplianceStatus = string(sixgr.util.structGet(ex, "pathlossComplianceStatus", "runtime_geometry_reconstructed"));
-    end
-    if strlength(strtrim(row.LOSProbabilitySource)) == 0
-        row.LOSProbabilitySource = string(sixgr.util.structGet(ex, "losProbabilitySource", "runtime_geometry_reconstructed"));
-    end
-    if strlength(strtrim(row.LOSComplianceStatus)) == 0
-        row.LOSComplianceStatus = string(sixgr.util.structGet(ex, "losComplianceStatus", "runtime_geometry_reconstructed"));
-    end
-catch
-    if ~isfinite(row.Pathloss_dB) && isfinite(row.BasePathloss_dB) && isfinite(row.ShadowFading_dB) && isfinite(row.O2I_dB)
-        row.Pathloss_dB = row.BasePathloss_dB + row.ShadowFading_dB + row.O2I_dB;
-    end
-end
-
-if ~isfinite(row.Pathloss_dB) && isfinite(row.BasePathloss_dB) && isfinite(row.ShadowFading_dB) && isfinite(row.O2I_dB)
-    row.Pathloss_dB = row.BasePathloss_dB + row.ShadowFading_dB + row.O2I_dB;
-end
-if ~isfinite(row.BasePathloss_dB) && isfinite(row.Pathloss_dB) && isfinite(row.ShadowFading_dB) && isfinite(row.O2I_dB)
-    row.BasePathloss_dB = row.Pathloss_dB - row.ShadowFading_dB - row.O2I_dB;
-end
-if strlength(strtrim(row.PathlossModelSource)) == 0 && isfinite(row.Pathloss_dB)
-    row.PathlossModelSource = "runtime_geometry_reconstructed";
-end
-if strlength(strtrim(row.PathlossComplianceStatus)) == 0 && isfinite(row.Pathloss_dB)
-    row.PathlossComplianceStatus = "runtime_geometry_reconstructed";
-end
-if strlength(strtrim(row.LOSProbabilitySource)) == 0 && strlength(strtrim(row.LOSState)) > 0
-    row.LOSProbabilitySource = "runtime_geometry_reconstructed";
-end
-if strlength(strtrim(row.LOSComplianceStatus)) == 0 && strlength(strtrim(row.LOSState)) > 0
-    row.LOSComplianceStatus = "runtime_geometry_reconstructed";
+    row.ExpectedDopplerHz = localRuntimeExpectedDoppler( ...
+        row.RadialVelocity_mps, runtime.CarrierFrequency_Hz, runtime.LightSpeed_mps);
 end
 end
 
@@ -956,8 +792,13 @@ for i = 1:height(traceT)
     expected = double(traceT.ExpectedDopplerHz(i));
     applied = double(traceT.AppliedDopplerHz(i));
     err = abs(applied - expected);
-    ok = isfinite(expected) && expected > 0 && isfinite(applied) && applied > 0 && isfinite(err) && err <= toleranceHz;
-    status = "doppler_reconciled";
+    % Zero Doppler is the physically correct value for a static terminal;
+    % signed Doppler may also be negative for a receding/approaching path.
+    % Reconciliation therefore tests finite values and residual magnitude,
+    % never positivity.
+    ok = isfinite(expected) && isfinite(applied) && isfinite(err) && err <= toleranceHz;
+    status = localTernary(ok && expected == 0 && applied == 0, ...
+        "static_zero_doppler_reconciled", "doppler_reconciled");
     if ~isfinite(applied)
         status = "missing_applied_doppler_evidence";
     elseif ~ok
@@ -1466,7 +1307,7 @@ switch string(kind)
 end
 end
 
-function status = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, campaignEvidence)
+function status = localBuildGateStatus(runDir, cfg, cfgTables, storageTables, geometryTables, mobilityTables, physicalTables, campaignEvidence)
 flags = struct();
 flags.ResolvedConfigurationConsistentOk = ~any(string(cfgTables.Conflicts.ConflictStatus) == "conflict_unresolved");
 flags.CapturePolicyTruthfulOk = logical(storageTables.Policy.CapturePolicyTruthfulOk(1));
@@ -1483,6 +1324,10 @@ flags.ChannelStateContinuityOk = localAllTableFlag(mobilityTables.ChannelContinu
 flags.LargeScaleParameterReconciliationOk = ...
     localAllTableFlag(mobilityTables.PathlossReconciliation, "LargeScaleParameterReconciliationOk") && ...
     flags.DopplerReconciliationOk && flags.PropagationDelayReconciliationOk;
+flags.CdlRealizationOk = localAllTableFlag(physicalTables.ChannelRealization, "ChannelRealizationOk");
+flags.PathPowerNormalizationOk = localAllTableFlag(physicalTables.PathPowerNormalization, "PathPowerNormalizationOk");
+flags.AntennaArrayReconciliationOk = localAllTableFlag(physicalTables.AntennaArray, "AntennaArrayReconciliationOk");
+flags.PolarizationReconciliationOk = localAllTableFlag(physicalTables.Polarization, "PolarizationReconciliationOk");
 flags.Phase7NoFabricationOk = true;
 flags.Phase7ProvenanceOk = exist(fullfile(runDir, "reports", "json", "scenario_manifest.json"), "file") == 2 || ...
     exist(fullfile(runDir, "meta", "scenario_manifest.json"), "file") == 2;
@@ -2057,6 +1902,413 @@ function T = localEmptyServingCellAssignmentTable()
 T = struct2table(repmat(localEmptyServingCellAssignmentRow(), 0, 1), "AsArray", true);
 end
 
+function tables = localBuildPhysicalChannelReconciliationTables(runDir, cfg)
+% Build Phase-1 gates only from active same-run waveform rows.  The
+% ChannelFactory profile table is joined to the active trial object class;
+% it is never treated as a measured realization by itself.
+reportDir = fullfile(runDir, "reports", "csv");
+airDir = fullfile(runDir, "air_interface", "csv");
+dlT = localReadOptionalTable(fullfile(airDir, "dl_pdsch_trials.csv"));
+ulT = localReadOptionalTable(fullfile(airDir, "ul_pusch_trials.csv"));
+cirT = localReadOptionalTable(fullfile(reportDir, "channel_impulse_response.csv"));
+arrayT = localReadOptionalTable(fullfile(reportDir, "channel_array_consistency.csv"));
+antennaT = localReadOptionalTable(fullfile(reportDir, "antenna_runtime_evidence.csv"));
+
+tables = struct();
+tables.ChannelRealization = localBuildChannelRealizationReconciliation(cfg, dlT, ulT);
+tables.PathPowerNormalization = localBuildPathPowerNormalizationReconciliation(cfg, cirT, dlT, ulT);
+tables.AntennaArray = localBuildAntennaArrayReconciliation(cfg, arrayT);
+tables.Polarization = localBuildPolarizationReconciliation(cfg, antennaT);
+end
+
+function T = localBuildChannelRealizationReconciliation(cfg, dlT, ulT)
+rows = repmat(struct("Direction", "", "ObservedRows", 0, ...
+    "ConfiguredChannel", "", "ObservedChannelSet", "", ...
+    "ObservedChannelObjectClassSet", "", "FadingRequired", false, ...
+    "FadingAppliedRowCount", 0, "SameRuntimeArrayRowCount", 0, ...
+    "FallbackRowCount", 0, "PlaceholderRowCount", 0, ...
+    "ChannelRealizationOk", false, "EvidenceSource", "", "FailureReason", ""), 0, 1);
+configured = localConfiguredConcreteChannel(cfg);
+requiredDirections = localRequiredLinkDirections(cfg, dlT, ulT);
+for spec = {"DL", dlT, "air_interface/csv/dl_pdsch_trials.csv"; ...
+        "UL", ulT, "air_interface/csv/ul_pusch_trials.csv"}'
+    direction = string(spec{1});
+    if ~ismember(direction, requiredDirections)
+        continue;
+    end
+    sourceT = spec{2};
+    sourcePath = string(spec{3});
+    active = localActiveRuntimeTrialRows(sourceT);
+    if height(active) == 0
+        rows(end+1,1) = struct("Direction", direction, "ObservedRows", 0, ... %#ok<AGROW>
+            "ConfiguredChannel", configured, "ObservedChannelSet", "", ...
+            "ObservedChannelObjectClassSet", "", ...
+            "FadingRequired", startsWith(configured, "TDL-") || startsWith(configured, "CDL-"), ...
+            "FadingAppliedRowCount", 0, "SameRuntimeArrayRowCount", 0, ...
+            "FallbackRowCount", 0, "PlaceholderRowCount", 0, ...
+            "ChannelRealizationOk", false, "EvidenceSource", sourcePath, ...
+            "FailureReason", "required_active_runtime_trials_missing");
+        continue;
+    end
+    observed = upper(strtrim(localFirstAvailableTableText(active, ["ChannelModelApplied","ChannelModel"])));
+    objectClass = strtrim(localFirstAvailableTableText(active, ["ChannelObjectClass","ChannelFadingObjectClass"]));
+    fadingRequired = startsWith(configured, "TDL-") || startsWith(configured, "CDL-");
+    fadingApplied = localTrialLogicalColumn(active, "ChannelFadingApplied", false);
+    sameArray = localTrialLogicalColumn(active, "ChannelUsesSameRuntimeAntennaAssumptions", false);
+    fallback = localTrialLogicalColumn(active, ["FallbackFlag","FallbackUsed"], false);
+    placeholder = localTrialLogicalColumn(active, ["PlaceholderFlag","PlaceholderUsed"], false);
+    channelMatches = all(observed == configured);
+    if fadingRequired
+        expectedClass = localTernary(startsWith(configured, "CDL-"), "nrCDLChannel", "nrTDLChannel");
+        runtimeOk = all(fadingApplied) && all(objectClass == expectedClass);
+        % CDL consumes the runtime array geometry directly. TDL consumes a
+        % reduced spatial-correlation representation and is assessed by its
+        % explicit adapter status elsewhere, so sameArray is CDL-specific.
+        if startsWith(configured, "CDL-")
+            runtimeOk = runtimeOk && all(sameArray);
+        end
+    else
+        runtimeOk = configured == "AWGN" && all(~fadingApplied);
+    end
+    ok = channelMatches && runtimeOk && ~any(fallback) && ~any(placeholder);
+    reason = "";
+    if ~ok
+        reason = localJoinFailureReasons([ ...
+            localConditionalReason(~channelMatches, "configured_applied_channel_mismatch"), ...
+            localConditionalReason(~runtimeOk, "runtime_channel_realization_incomplete"), ...
+            localConditionalReason(any(fallback), "fallback_rows_present"), ...
+            localConditionalReason(any(placeholder), "placeholder_rows_present")]);
+    end
+    rows(end+1,1) = struct("Direction", direction, "ObservedRows", height(active), ... %#ok<AGROW>
+        "ConfiguredChannel", configured, "ObservedChannelSet", localTokenSet(observed), ...
+        "ObservedChannelObjectClassSet", localTokenSet(objectClass), ...
+        "FadingRequired", fadingRequired, "FadingAppliedRowCount", sum(fadingApplied), ...
+        "SameRuntimeArrayRowCount", sum(sameArray), "FallbackRowCount", sum(fallback), ...
+        "PlaceholderRowCount", sum(placeholder), "ChannelRealizationOk", ok, ...
+        "EvidenceSource", sourcePath, "FailureReason", reason);
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildPathPowerNormalizationReconciliation(cfg, cirT, dlT, ulT)
+rows = repmat(struct("Direction", "", "ProfileRows", 0, ...
+    "ConfiguredNormalizePathGains", false, "AppliedNormalizePathGains", false, ...
+    "ConfiguredAppliedMatch", false, "NormalizedPowerSum", NaN, ...
+    "NormalizedPowerError", NaN, "FiniteNonnegativePowerOk", false, ...
+    "ActiveTrialRows", 0, "RuntimeChannelClass", "", "ProfileChannelClass", "", ...
+    "RuntimeProfileJoinOk", false, "PathPowerNormalizationOk", false, ...
+    "EvidenceRole", "", "EvidenceSource", "", "FailureReason", ""), 0, 1);
+[configuredNormalize, configuredSource] = localConfiguredNormalizePathGains(cfg);
+requiredDirections = localRequiredLinkDirections(cfg, dlT, ulT);
+for spec = {"DL", dlT; "UL", ulT}'
+    direction = string(spec{1});
+    if ~ismember(direction, requiredDirections)
+        continue;
+    end
+    active = localActiveRuntimeTrialRows(spec{2});
+    if height(active) == 0
+        rows(end+1,1) = struct("Direction", direction, "ProfileRows", 0, ... %#ok<AGROW>
+            "ConfiguredNormalizePathGains", configuredNormalize, ...
+            "AppliedNormalizePathGains", false, "ConfiguredAppliedMatch", false, ...
+            "NormalizedPowerSum", NaN, "NormalizedPowerError", NaN, ...
+            "FiniteNonnegativePowerOk", false, "ActiveTrialRows", 0, ...
+            "RuntimeChannelClass", "", "ProfileChannelClass", "", ...
+            "RuntimeProfileJoinOk", false, "PathPowerNormalizationOk", false, ...
+            "EvidenceRole", "channel_object_configuration_and_profile_identity_not_instantaneous_path_gain_measurement", ...
+            "EvidenceSource", configuredSource + ";required_active_trial_missing", ...
+            "FailureReason", "required_active_runtime_trials_missing");
+        continue;
+    end
+    if ~(istable(cirT) && height(cirT) > 0 && localHasColumn(cirT, "Direction"))
+        slice = table();
+    else
+        slice = cirT(strcmpi(strtrim(string(cirT.Direction)), direction), :);
+    end
+    applied = false;
+    normalizedSum = NaN;
+    finitePowerOk = false;
+    profileClass = "";
+    if height(slice) > 0
+        appliedValues = localTrialLogicalColumn(slice, "NormalizePathGains", false);
+        applied = all(appliedValues) && numel(appliedValues) == height(slice);
+        powers = localColumnDouble(slice, "NormalizedTapPower", NaN);
+        finitePowerOk = all(isfinite(powers) & powers >= 0);
+        if finitePowerOk
+            normalizedSum = sum(powers);
+        end
+        profileClass = localTokenSet(localFirstAvailableTableText(slice, "ChannelObjectClass"));
+    end
+    runtimeClass = localTokenSet(localFirstAvailableTableText(active, ["ChannelObjectClass","ChannelFadingObjectClass"]));
+    joinOk = height(slice) > 0 && strlength(runtimeClass) > 0 && runtimeClass == profileClass;
+    match = height(slice) > 0 && applied == configuredNormalize;
+    if configuredNormalize
+        numericalOk = finitePowerOk && isfinite(normalizedSum) && abs(normalizedSum - 1) <= 1e-12;
+    else
+        % The exported normalized profile is a display quantity when path
+        % normalization is disabled. The production gate then checks only
+        % that the active ChannelFactory object applied the disabled policy.
+        numericalOk = true;
+    end
+    ok = match && numericalOk && joinOk;
+    reason = "";
+    if ~ok
+        reason = localJoinFailureReasons([ ...
+            localConditionalReason(~match, "configured_applied_normalization_mismatch"), ...
+            localConditionalReason(~numericalOk, "normalized_path_power_sum_invalid"), ...
+            localConditionalReason(~joinOk, "profile_not_joined_to_active_runtime_channel_class")]);
+    end
+    rows(end+1,1) = struct("Direction", direction, "ProfileRows", height(slice), ... %#ok<AGROW>
+        "ConfiguredNormalizePathGains", configuredNormalize, ...
+        "AppliedNormalizePathGains", applied, "ConfiguredAppliedMatch", match, ...
+        "NormalizedPowerSum", normalizedSum, "NormalizedPowerError", abs(normalizedSum - 1), ...
+        "FiniteNonnegativePowerOk", finitePowerOk, "ActiveTrialRows", height(active), ...
+        "RuntimeChannelClass", runtimeClass, "ProfileChannelClass", profileClass, ...
+        "RuntimeProfileJoinOk", joinOk, "PathPowerNormalizationOk", ok, ...
+        "EvidenceRole", "channel_object_configuration_and_profile_identity_not_instantaneous_path_gain_measurement", ...
+        "EvidenceSource", configuredSource + ";reports/csv/channel_impulse_response.csv;active_trial_channel_object_class", ...
+        "FailureReason", reason);
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildAntennaArrayReconciliation(cfg, arrayT)
+rows = repmat(struct("Direction", "", "ObservedRows", 0, ...
+    "ExpectedTxPhysicalElements", NaN, "ObservedTxPhysicalElements", NaN, ...
+    "ExpectedRxPhysicalElements", NaN, "ObservedRxPhysicalElements", NaN, ...
+    "PhysicalArrayConsistencyOk", false, "RuntimeGeometryCoupledOk", false, ...
+    "CountOnlyChannelUsed", false, "AntennaArrayReconciliationOk", false, ...
+    "EvidenceSource", "", "FailureReason", ""), 0, 1);
+if ~(istable(arrayT) && height(arrayT) > 0 && localHasColumn(arrayT, "Direction"))
+    T = localStructRowsToTable(rows);
+    return;
+end
+bsElements = localNumber(cfg, [ ...
+    "antenna_and_array.bs_num_antenna_elements", ...
+    "deployment_topology.bs.antenna.n_elements", ...
+    "scenario.bs.nTxAnt","scenario.bs.nRxAnt","channel.nTxAnt","phy.nTxAnt"], NaN);
+ueElements = localNumber(cfg, [ ...
+    "antenna_and_array.ue_num_antenna_elements", ...
+    "deployment_topology.ue.nRxAnt", ...
+    "scenario.ue.nRxAnt","scenario.ue.nTxAnt","channel.nRxAnt","phy.nRxAnt"], NaN);
+for direction = localRequiredLinkDirections(cfg, ...
+        localDirectionalPresenceTable(arrayT, "DL"), localDirectionalPresenceTable(arrayT, "UL"))
+    slice = arrayT(upper(strtrim(string(arrayT.Direction))) == direction, :);
+    if direction == "DL"
+        expectedTx = bsElements;
+        expectedRx = ueElements;
+    else
+        expectedTx = ueElements;
+        expectedRx = bsElements;
+    end
+    observedTx = localFirstFinite(localFirstAvailableTableColumn(slice, ["ObservedPhysicalTxAntennas","ObservedTxWaveformColumns"]));
+    observedRx = localFirstFinite(localFirstAvailableTableColumn(slice, ["ObservedPhysicalRxAntennas","ObservedRxWaveformBranches"]));
+    physicalOk = localAllTableFlag(slice, "PhysicalArrayConsistencyOk") && ...
+        isfinite(expectedTx) && isfinite(expectedRx) && observedTx == expectedTx && observedRx == expectedRx;
+    countOnly = any(localTrialLogicalColumn(slice, "ChannelUsesCountOnlyAntennaModel", false));
+    configuredChannel = localConfiguredConcreteChannel(cfg);
+    if startsWith(configuredChannel, "CDL-")
+        geometryOk = all(localTrialLogicalColumn(slice, "ChannelUsesSameRuntimeAntennaAssumptions", false));
+    elseif startsWith(configuredChannel, "TDL-")
+        levels = lower(strtrim(localFirstAvailableTableText(slice, "ChannelGeometryCouplingLevel")));
+        geometryOk = all(contains(levels, "runtime_geometry_reduced_spatial_correlation"));
+    else
+        geometryOk = configuredChannel == "AWGN";
+    end
+    ok = physicalOk && geometryOk && ~countOnly;
+    if configuredChannel == "AWGN"
+        ok = physicalOk;
+    end
+    reason = "";
+    if ~ok
+        reason = localJoinFailureReasons([ ...
+            localConditionalReason(~physicalOk, "physical_array_count_mismatch"), ...
+            localConditionalReason(~geometryOk, "runtime_array_geometry_not_coupled"), ...
+            localConditionalReason(countOnly, "count_only_channel_model_used")]);
+    end
+    rows(end+1,1) = struct("Direction", direction, "ObservedRows", sum(localColumnDouble(slice, "ObservedRows", 0)), ... %#ok<AGROW>
+        "ExpectedTxPhysicalElements", expectedTx, "ObservedTxPhysicalElements", observedTx, ...
+        "ExpectedRxPhysicalElements", expectedRx, "ObservedRxPhysicalElements", observedRx, ...
+        "PhysicalArrayConsistencyOk", physicalOk, "RuntimeGeometryCoupledOk", geometryOk, ...
+        "CountOnlyChannelUsed", countOnly, "AntennaArrayReconciliationOk", ok, ...
+        "EvidenceSource", "reports/csv/channel_array_consistency.csv<-active_same_flow_trials", ...
+        "FailureReason", reason);
+end
+T = localStructRowsToTable(rows);
+end
+
+function T = localBuildPolarizationReconciliation(cfg, antennaT)
+rows = repmat(struct("Direction", "", "ObservedRows", 0, ...
+    "ConfiguredBSPolarization", "", "ObservedBSPolarizationSet", "", ...
+    "ConfiguredUEPolarization", "", "ObservedUEPolarizationSet", "", ...
+    "BSPolarizationMatch", false, "UEPolarizationMatch", false, ...
+    "RuntimeAntennaObjectRows", 0, "SameFlowEvidenceRows", 0, ...
+    "PolarizationReconciliationOk", false, "EvidenceSource", "", "FailureReason", ""), 0, 1);
+if ~(istable(antennaT) && height(antennaT) > 0 && localHasColumn(antennaT, "Direction"))
+    T = localStructRowsToTable(rows);
+    return;
+end
+bsConfigured = localNormalizedPolarization(localGet(cfg, "antenna.bs.polarization", ...
+    localGet(cfg, "antenna_and_array.polarization", "")));
+ueConfigured = localNormalizedPolarization(localGet(cfg, "antenna.ue.polarization", ...
+    localGet(cfg, "antenna_and_array.polarization", "")));
+for direction = localRequiredLinkDirections(cfg, ...
+        localDirectionalPresenceTable(antennaT, "DL"), localDirectionalPresenceTable(antennaT, "UL"))
+    slice = antennaT(upper(strtrim(string(antennaT.Direction))) == direction, :);
+    bsObserved = localNormalizedPolarization(string(slice.BSAntennaPolarization));
+    ueObserved = localNormalizedPolarization(string(slice.UEAntennaPolarization));
+    bsMatch = strlength(bsConfigured) > 0 && all(bsObserved == bsConfigured);
+    ueMatch = strlength(ueConfigured) > 0 && all(ueObserved == ueConfigured);
+    runtimeRows = sum(localTrialLogicalColumn(slice, "AntennaRuntimeObjectCreated", false));
+    sources = localFirstAvailableTableText(slice, "SameFlowEvidenceSource");
+    sameFlowRows = sum(strlength(strtrim(sources)) > 0);
+    ok = height(slice) > 0 && bsMatch && ueMatch && ...
+        runtimeRows == height(slice) && sameFlowRows == height(slice);
+    reason = "";
+    if ~ok
+        reason = localJoinFailureReasons([ ...
+            localConditionalReason(~bsMatch, "bs_polarization_mismatch"), ...
+            localConditionalReason(~ueMatch, "ue_polarization_mismatch"), ...
+            localConditionalReason(height(slice) == 0, "required_runtime_polarization_rows_missing"), ...
+            localConditionalReason(runtimeRows ~= height(slice), "runtime_antenna_object_evidence_missing"), ...
+            localConditionalReason(sameFlowRows ~= height(slice), "same_flow_lineage_missing")]);
+    end
+    rows(end+1,1) = struct("Direction", direction, "ObservedRows", height(slice), ... %#ok<AGROW>
+        "ConfiguredBSPolarization", bsConfigured, "ObservedBSPolarizationSet", localTokenSet(bsObserved), ...
+        "ConfiguredUEPolarization", ueConfigured, "ObservedUEPolarizationSet", localTokenSet(ueObserved), ...
+        "BSPolarizationMatch", bsMatch, "UEPolarizationMatch", ueMatch, ...
+        "RuntimeAntennaObjectRows", runtimeRows, "SameFlowEvidenceRows", sameFlowRows, ...
+        "PolarizationReconciliationOk", ok, ...
+        "EvidenceSource", "reports/csv/antenna_runtime_evidence.csv<-active_same_flow_trials", ...
+        "FailureReason", reason);
+end
+T = localStructRowsToTable(rows);
+end
+
+function active = localActiveRuntimeTrialRows(T)
+active = table();
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+mask = true(height(T), 1);
+if localHasColumn(T, "Status")
+    status = upper(strtrim(string(T.Status)));
+    mask = mask & ~ismember(status, ["CRASH","SKIPPED","UNAVAILABLE"]);
+end
+if localHasColumn(T, "FinalizedFlag")
+    mask = mask & localColumnAsLogical(T.FinalizedFlag);
+end
+mask = mask & ~localTrialLogicalColumn(T, ["FallbackFlag","FallbackUsed"], false);
+mask = mask & ~localTrialLogicalColumn(T, ["PlaceholderFlag","PlaceholderUsed"], false);
+active = T(mask, :);
+end
+
+function directions = localRequiredLinkDirections(cfg, dlT, ulT)
+token = lower(strtrim(string(localGet(cfg, "run.link_direction", ...
+    localGet(cfg, "validation.fixed_link_campaign.direction", ...
+    localGet(cfg, "traffic.flow_direction", ""))))));
+if any(token == ["both","bidirectional","dl_ul","downlink_uplink"])
+    directions = ["DL","UL"];
+elseif any(token == ["dl","downlink"])
+    directions = "DL";
+elseif any(token == ["ul","uplink"])
+    directions = "UL";
+else
+    directions = strings(1,0);
+    if istable(dlT) && height(dlT) > 0
+        directions(end+1) = "DL"; %#ok<AGROW>
+    end
+    if istable(ulT) && height(ulT) > 0
+        directions(end+1) = "UL"; %#ok<AGROW>
+    end
+end
+directions = reshape(unique(directions, "stable"), 1, []);
+end
+
+function T = localDirectionalPresenceTable(Tin, direction)
+T = table();
+if istable(Tin) && height(Tin) > 0 && localHasColumn(Tin, "Direction") && ...
+        any(strcmpi(strtrim(string(Tin.Direction)), direction))
+    T = Tin(1,:);
+end
+end
+
+function values = localTrialLogicalColumn(T, names, defaultValue)
+values = repmat(logical(defaultValue), height(T), 1);
+for name = string(names(:)).'
+    if localHasColumn(T, name)
+        values = localColumnAsLogical(T.(char(name)));
+        return;
+    end
+end
+end
+
+function token = localConfiguredConcreteChannel(cfg)
+model = upper(strtrim(string(localGet(cfg, "channel.model", localGet(cfg, "channels.model_type", "AWGN")))));
+if any(model == ["CDL","NRCDL"])
+    profile = upper(strtrim(string(localGet(cfg, "channel.cdlProfile", ...
+        localGet(cfg, "channel.fading.profile", localGet(cfg, "channels.profile", ""))))));
+    token = profile;
+elseif any(model == ["TDL","NRTDL"])
+    profile = upper(strtrim(string(localGet(cfg, "channel.tdlProfile", ...
+        localGet(cfg, "channel.fading.profile", localGet(cfg, "channels.profile", ""))))));
+    token = profile;
+elseif any(model == ["AWGN","NONE","OFF",""])
+    token = "AWGN";
+else
+    token = model;
+end
+end
+
+function [value, source] = localConfiguredNormalizePathGains(cfg)
+paths = ["channel.normalizePathGains","channel.NormalizePathGains", ...
+    "channel.normalize_path_gains","channel.fading.normalizePathGains", ...
+    "channel.fading.normalize_path_gains"];
+for path = paths
+    raw = localGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    value = localBool(struct("value", raw), "value", false);
+    source = path;
+    return;
+end
+noiseMode = lower(strtrim(string(localGet(cfg, "run.noiseOperatingMode", ...
+    localGet(cfg, "simulation.noise_operating_mode", "")))));
+value = noiseMode ~= "receiver_noise_figure_thermal_noise";
+source = localTernary(strlength(noiseMode) > 0, "ChannelFactory.default_for_" + noiseMode, ...
+    "ChannelFactory.default_without_noise_operating_mode");
+end
+
+function token = localNormalizedPolarization(value)
+token = lower(strtrim(string(value)));
+dualMask = contains(token, "dual") | contains(token, "cross") | ...
+    contains(token, "+-45") | contains(token, "±45");
+singleMask = contains(token, "single") | contains(token, "co-polar") | ...
+    token == "co" | token == "copolar";
+token(dualMask) = "dual";
+token(singleMask & ~dualMask) = "single";
+end
+
+function value = localTokenSet(values)
+values = unique(strtrim(string(values(:))), "stable");
+values = values(strlength(values) > 0 & lower(values) ~= "nan" & lower(values) ~= "missing");
+value = strjoin(values, "|");
+end
+
+function reason = localConditionalReason(condition, text)
+if condition
+    reason = string(text);
+else
+    reason = "";
+end
+end
+
+function reason = localJoinFailureReasons(reasons)
+reasons = string(reasons(:));
+reasons = reasons(strlength(reasons) > 0);
+reason = strjoin(reasons, ";");
+end
+
 function T = localBuildMeasuredSINRTimeseries(runDir, cfg)
 airCsvDir = fullfile(runDir, "air_interface", "csv");
 dlT = localReadOptionalTable(fullfile(airCsvDir, "dl_pdsch_trials.csv"));
@@ -2577,10 +2829,12 @@ end
 end
 
 function T = localStructRowsToTable(rows)
-if isempty(rows)
+if isstruct(rows)
+    T = struct2table(rows, "AsArray", true);
+elseif isempty(rows)
     T = table();
 else
-    T = struct2table(rows, "AsArray", true);
+    T = rows;
 end
 end
 

@@ -24,3 +24,14 @@ run_control:
 
 output:
   profile: SCN00_BASELINE_CAPACITY
+
+# Keep all independently exposed PHY aliases consistent with the inherited
+# two-layer MIMO scenario.  The runtime authority rejects contradictory
+# layer/rank inputs rather than choosing one silently.
+pdsch:
+  layer_count: 2
+  rank: 2
+
+pusch:
+  layer_count: 2
+  num_layers: 2

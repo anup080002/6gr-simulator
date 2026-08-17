@@ -5,6 +5,9 @@ function result = runFourStepRA(cfg, varargin)
 % correlation, RA-RNTI PDCCH, RAR PDSCH bytes, RAR UL grant, Msg3 PUSCH, and
 % Msg4 PDSCH contention identity.
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.runFourStepRA", ...
+    "INITIAL_ACCESS", "BIDIRECTIONAL", struct("Stage","FOUR_STEP_RA"));
+
 p = inputParser;
 p.addParameter("RunFolder", "", @(x)ischar(x) || isstring(x));
 p.addParameter("RunId", "ra_anchor", @(x)ischar(x) || isstring(x));

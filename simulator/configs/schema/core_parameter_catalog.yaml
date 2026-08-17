@@ -320,7 +320,7 @@
         }
       },
       "csirs": {
-        "enable": {"value_type": "boolean", "default": true},
+        "enable": {"value_type": "boolean", "default": false},
         "nPorts": {"value_type": "integer", "default": 8, "min": 1}
       },
       "csi": {

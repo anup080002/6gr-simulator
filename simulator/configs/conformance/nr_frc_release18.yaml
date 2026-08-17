@@ -483,7 +483,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -1322,7 +1334,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_fdd_test_harness_assumption",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 clauses 8.2.1.1 and 8.2.1.2; process count and feedback delay are not specified by those clauses"
+        }
       },
       "requirement": {
         "normative": true,

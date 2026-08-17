@@ -332,7 +332,11 @@ for i = 1:numel(files)
     if f.isdir
         continue;
     end
-    rel = localPortablePath(string(strrep(fullfile(f.folder, f.name), [char(runFolder) filesep], "")));
+    absolutePath = fullfile(f.folder, f.name);
+    if sixgr.runtime.isNestedExecutionPath(runFolder, absolutePath)
+        continue;
+    end
+    rel = localPortablePath(string(strrep(absolutePath, [char(runFolder) filesep], "")));
     ext = "";
     if contains(f.name, ".")
         [~, ~, ext0] = fileparts(f.name);
@@ -351,7 +355,6 @@ for i = 1:numel(files)
         "MachineReadable", any(strcmp(ext, [".csv" ".json" ".mat" ".yaml" ".yml"])), ...
         "HumanReadable", any(strcmp(ext, [".md" ".png" ".jpg" ".jpeg" ".svg"])));
 end
-invRows = localAppendUnavailableCardInventoryAliases(runFolder, invRows, metricRows);
 T = struct2table(invRows);
 if ~isempty(T)
     T = sortrows(T, "RelativePath");
@@ -1004,10 +1007,12 @@ switch key
         T = localMetricTableRow(cat, metric, "report", "chart", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No key-KPI aggregate data available; placeholder figure emitted."));
     case "curves_bler_vs_snr"
         hasData = localMeasuredCurveHasAnyKPI(ctx, "BLER");
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/bler_vs_measured_sinr.png", "", "reports/image/bler_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No measured SINR BLER curve data available; placeholder figure emitted."));
+        contractPath = "analytics/image/contract__error-reliability-analytics__bler-vs-sinr.png";
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, contractPath, "", contractPath, localAggregateAvailabilityNote(hasData, "No measured SINR BLER curve data are available for contract rendering."));
     case "curves_throughput_vs_snr"
         hasData = localMeasuredCurveHasAnyKPI(ctx, "Goodput_Mbps_mean");
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/throughput_vs_measured_sinr.png", "", "reports/image/throughput_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No measured SINR throughput curve data available; placeholder figure emitted."));
+        contractPath = "analytics/image/contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-sinr.png";
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, contractPath, "", contractPath, localAggregateAvailabilityNote(hasData, "No measured SINR throughput curve data are available for contract rendering."));
     case "curves_nmse_vs_snr"
         hasData = exist(fullfile(ctx.Layout.ReportCSVDir, "nmse_vs_measured_sinr.csv"), "file") == 2;
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/nmse_vs_measured_sinr.png", "", "reports/image/nmse_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No NMSE measured-SINR data available; placeholder figure emitted."));
@@ -4534,7 +4539,7 @@ end
 
 function plots = localExportReportPlots(ctx, coverageT)
 plots = strings(0, 1);
-if ~localCanRenderReportFigures()
+if ~localCanRenderReportFigures(ctx)
     return;
 end
 sixgr.util.ensureFolder(ctx.Layout.ReportImageDir);
@@ -4564,8 +4569,14 @@ plots(end+1, 1) = localPlotCoverageAvailability(ctx.Layout.ReportImageDir, cover
 plots = plots(strlength(plots) > 0);
 end
 
-function tf = localCanRenderReportFigures()
-tf = usejava("jvm");
+function tf = localCanRenderReportFigures(ctx)
+% The post-run contract materializer is the sole raster authority whenever
+% enabled.  The report bundle must still persist every source CSV, but must
+% not produce legacy MATLAB PNGs or unavailable/reason-card images that can
+% be mistaken for runtime charts on a future run.
+contractRasterAuthority = logical(ctx.ScenarioConfig.get( ...
+    "output.artifact_contract_engine.enabled", false));
+tf = usejava("jvm") && ~contractRasterAuthority;
 end
 
 function tf = localHasMeasuredPostEqSINRDiagnosticEvidence(ctx)
@@ -5515,7 +5526,8 @@ artifacts.AutomaticMarkdownSummary = fullfile(ctx.Layout.ReportDir, "automatic_m
 artifacts.WaterfallChart = fullfile(ctx.Layout.ReportImageDir, "gains_losses_waterfall.png");
 artifacts.PAPRCCDFPlot = fullfile(ctx.Layout.ReportImageDir, "papr_ccdf.png");
 artifacts.LatencyCDFPlot = fullfile(ctx.Layout.ReportImageDir, "latency_cdf.png");
-artifacts.AccessDelayCDFPlot = fullfile(ctx.Layout.ReportImageDir, "access_delay_cdf.png");
+artifacts.AccessDelayCDFPlot = fullfile(ctx.RunFolder, "analytics", "image", ...
+    "contract__random-access-prach-analytics__access-latency.png");
 artifacts.EnergyVsThroughputPlot = fullfile(ctx.Layout.ReportImageDir, "energy_vs_throughput.png");
 artifacts.ComplexityVsGainPlot = fullfile(ctx.Layout.ReportImageDir, "complexity_vs_gain.png");
 artifacts.BandFeatureKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_band_feature_kpi.png");
@@ -5531,7 +5543,7 @@ sixgr.util.csvWriteTable(artifacts.MeasuredSINRComparisonTable, localBuildMeasur
 sixgr.util.csvWriteTable(artifacts.BaselineCandidateDeltaTable, localBuildBaselineDeltaTable(ctx));
 localWriteAutomaticMarkdownSummary(artifacts.AutomaticMarkdownSummary, ctx, coverageT, plots, artifacts);
 
-if localCanRenderReportFigures()
+if localCanRenderReportFigures(ctx)
     localPlotWaterfallOrPlaceholder(artifacts.WaterfallChart, ctx);
     localPlotPAPRCCDFOrPlaceholder(artifacts.PAPRCCDFPlot, ctx);
     localPlotLatencyCDFOrPlaceholder(artifacts.LatencyCDFPlot, ctx);
@@ -5772,12 +5784,14 @@ if localShouldEmitAIAuditArtifacts(ctx)
     sixgr.util.csvWriteTable(artifacts.AIConfidenceCSV, localBuildAIConfidenceTraceTable(ctx));
 end
 
-localPlotEqualizedConstellationsOrPlaceholder(artifacts.EqualizedConstellationsImage, ctx);
-localPlotLLRHistogramsOrPlaceholder(artifacts.LLRHistogramsImage, ctx);
-localPlotTrackingTraceOrPlaceholder(artifacts.CFOToTrackingImage, ctx);
-localPlotPRACHCorrelationTraceOrPlaceholder(artifacts.PRACHCorrelationImage, ctx);
-if isfield(artifacts, "AIConfidenceImage")
-    localPlotAIConfidenceTraceOrPlaceholder(artifacts.AIConfidenceImage, ctx);
+if localCanRenderReportFigures(ctx)
+    localPlotEqualizedConstellationsOrPlaceholder(artifacts.EqualizedConstellationsImage, ctx);
+    localPlotLLRHistogramsOrPlaceholder(artifacts.LLRHistogramsImage, ctx);
+    localPlotTrackingTraceOrPlaceholder(artifacts.CFOToTrackingImage, ctx);
+    localPlotPRACHCorrelationTraceOrPlaceholder(artifacts.PRACHCorrelationImage, ctx);
+    if isfield(artifacts, "AIConfidenceImage")
+        localPlotAIConfidenceTraceOrPlaceholder(artifacts.AIConfidenceImage, ctx);
+    end
 end
 end
 
@@ -7887,7 +7901,8 @@ switch string(fieldName)
     case "LatencyCDFPlot"
         pathOut = fullfile(ctx.Layout.ReportImageDir, "latency_cdf.png");
     case "AccessDelayCDFPlot"
-        pathOut = fullfile(ctx.Layout.ReportImageDir, "access_delay_cdf.png");
+        pathOut = fullfile(ctx.RunFolder, "analytics", "image", ...
+            "contract__random-access-prach-analytics__access-latency.png");
     case "EnergyVsThroughputPlot"
         pathOut = fullfile(ctx.Layout.ReportImageDir, "energy_vs_throughput.png");
     case "ComplexityVsGainPlot"

@@ -166,7 +166,9 @@ sections:
       uci_scaling: {required: false, type: number, min: 0, max: 1}
       repetition_type: {required: false, type: string}
       repetition_count: {required: false, type: integer, min: 1}
+      dmrs_residual_post_eq_sinr_bound_enabled: {required: false, type: boolean}
       decision_directed_post_eq_sinr_bound_enabled: {required: false, type: boolean}
+      decoder_noise_variance_mode: {required: false, type: string, allowed_values: [post_equalization, pre_equalization]}
       power_control: {required: false, type: string_or_struct}
       srs_authority: {required: false, type: struct}
       xoh_pusch: {required: false, type: number}
@@ -401,7 +403,34 @@ sections:
       strict_after_run_artifact_audit: {required: false, type: boolean}
       fixed_link_campaign: {required: false, type: struct, nested_rule: validation_fixed_link_campaign}
       strict_component_evidence: {required: false, type: struct, nested_rule: validation_strict_component_evidence}
+      independent_reference_qualification: {required: false, type: struct, nested_rule: validation_independent_reference_qualification}
 nested_sections:
+  validation_independent_reference_qualification:
+    parameters:
+      enabled: {required: true, type: boolean}
+      required_for_production: {required: true, type: boolean}
+      profile:
+        required: true
+        type: string
+        allowed_values: [full, diagnostic]
+      entry_ids: {required: true, type: string_list}
+      tolerance_db: {required: true, type: number, min_exclusive: 0}
+      confidence_level: {required: true, type: number, min_exclusive: 0, max_exclusive: 1}
+      max_confidence_half_width: {required: true, type: number, min_exclusive: 0}
+      require_symmetric_regression_for_production: {required: true, type: boolean}
+      parallel_workers: {required: true, type: integer, min: 0}
+      min_transport_blocks: {required: true, type: integer, min: 1}
+      max_transport_blocks: {required: true, type: integer, min: 1}
+      batch_size: {required: true, type: integer, min: 1}
+      minimum_block_errors: {required: true, type: integer, min: 1}
+      sampling_by_entry: {required: true, type: struct_array, min_items: 1, item_nested_rule: validation_independent_reference_sampling}
+      verbose: {required: true, type: boolean}
+  validation_independent_reference_sampling:
+    parameters:
+      entry_id: {required: true, type: string, nonempty: true}
+      min_transport_blocks: {required: true, type: integer, min: 1}
+      max_transport_blocks: {required: true, type: integer, min: 1}
+      batch_size: {required: true, type: integer, min: 1}
   validation_strict_component_evidence:
     parameters:
       enabled: {required: true, type: boolean}

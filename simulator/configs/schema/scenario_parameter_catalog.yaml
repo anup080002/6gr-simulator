@@ -431,6 +431,11 @@ sections:
         required: false
         type: string
         allowed_values: [dominant_scheduled_rank, complete_detectable_subspace]
+      ul_mu_mimo_receive_processing_mode:
+        required: false
+        type: string
+        allowed_values: [full_dimensional_per_re_irc]
+        description: Preserve all received antenna branches and perform interference rejection per resource element using measured channel and covariance evidence.
       mu_mimo_spatial_subspace_noise_margin_db:
         required: false
         type: number
@@ -1203,7 +1208,11 @@ nested_sections:
       image_format:
         required: true
         type: string
-        allowed_values: [png]
+        allowed_values: [none, png]
+      raster_authority:
+        required: true
+        type: string
+        allowed_values: [post_run_csv_contract_materializer]
       allow_svg: {required: true, type: boolean}
       allow_placeholder_evidence: {required: true, type: boolean}
   mimo_phase07_strict:

@@ -939,10 +939,10 @@ if ~isempty(frozenF)
 end
 
 rawPorts = localMatrixPortCount(Wraw, nLayers);
-if isempty(Wlogical) && isfinite(rawPorts) && round(rawPorts) == nElements
+if isempty(Wlogical) && ~isempty(Wraw) && isfinite(rawPorts) && round(rawPorts) == nElements
     WrawPhysical = localNormalizeDLMatrix(Wraw, nElements, nLayers);
     Wlogical = pinv(F) * WrawPhysical;
-elseif isempty(Wlogical)
+elseif isempty(Wlogical) && ~isempty(Wraw)
     Wlogical = localNormalizeDLMatrix(Wraw, nLogicalPorts, nLayers);
 end
 

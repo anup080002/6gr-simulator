@@ -40,6 +40,9 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     RX.TimingOffset       : raw estimated timing offset (samples)
 %     RX.AppliedTimingCorrection_samples : applied waveform correction (samples)
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ul.PUSCH_Rx", ...
+    "PUSCH", "UL", struct("Stage","RX"));
+
 % ---------------------- Parse inputs ----------------------
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
@@ -996,6 +999,11 @@ if hasPHYGrant
 end
 rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
 rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
+if rx.UCIOnPUSCHApplied
+    rx.UCIOnPUSCHEvidenceSource = "same_waveform_pusch_rx_uci_demultiplexer";
+else
+    rx.UCIOnPUSCHEvidenceSource = "";
+end
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
 rx.ExpectedHARQACKBits = int8(uciOnPUSCH.ExpectedHARQACKBits(:));
 rx.DecodedHARQACKBits = int8(uciOnPUSCH.DecodedHARQACKBits(:));
@@ -2974,8 +2982,9 @@ info.ContentMatch = result.HARQACKCRCOK;
 info.CSI1ContentMatch = result.CSI1CRCOK;
 info.CSI2ContentMatch = result.CSI2CRCOK;
 info.ConfiguredGrantUCIContentMatch = result.ConfiguredGrantUCIMatch;
-if info.ContentMatch && info.CSI1ContentMatch && info.CSI2ContentMatch && ...
-        info.ConfiguredGrantUCIContentMatch
+% This exported status is HARQ-ACK-specific. CSI and configured-grant UCI
+% retain their independent content-match fields.
+if info.ContentMatch
     info.Status = "decoded_match";
 else
     info.Status = "decoded_mismatch";
@@ -3132,6 +3141,11 @@ rx.PTRSCPECorrectionStatus = char(localPTRSCorrectionStatus(cpeCorrInfo));
 rx.PTRSReceiverEvidenceSource = "sixgr.phy.ul.PUSCH_Rx.ptrs_cpe";
 rx.UCIOnPUSCHApplied = logical(uci.Applied);
 rx.UCIOnPUSCHSource = char(string(uci.Source));
+if rx.UCIOnPUSCHApplied
+    rx.UCIOnPUSCHEvidenceSource = "same_waveform_pusch_rx_uci_demultiplexer";
+else
+    rx.UCIOnPUSCHEvidenceSource = "";
+end
 rx.HARQACKBitCount = double(uci.HARQACKBitCount);
 rx.CSI1BitCount = double(uci.CSI1BitCount);
 rx.CSI2BitCount = double(uci.CSI2BitCount);
@@ -3238,10 +3252,10 @@ end
 end
 
 function [waveOut, optOut, info] = localApplyScheduledReceiveCombiner(waveIn, optIn, phyGrant)
-% Apply the exact scheduler-frozen UL MU projection in receiver sample
-% space.  The same projection is applied to every interference contributor
-% and any supplied covariance so all receiver evidence remains in one
-% consistent post-combiner observation domain.
+% Apply the exact scheduler-frozen UL receive preprocessor in sample space.
+% Production MU-MIMO freezes an identity matrix so every antenna branch is
+% retained for per-RE IRC. Explicit non-MU component probes may still supply
+% a semi-unitary projection and are reported as a reduced observation.
 waveOut = waveIn;
 optOut = optIn;
 legacy = sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot", struct());
@@ -3257,8 +3271,10 @@ if strlength(expectedDigest) == 0
         "MUMIMOReceiveCombiningMatrixSHA256", "")));
 end
 muRequired = logical(sixgr.util.structGet(legacy, "MUMIMOEnabled", false));
+receiverAlgorithm = lower(strtrim(string(sixgr.util.structGet(legacy, ...
+    "MUMIMOReceiverAlgorithm", ""))));
 info = struct( ...
-    "ContractVersion", "PUSCHScheduledReceiveCombiner/v1", ...
+    "ContractVersion", "PUSCHScheduledReceiveCombiner/v2", ...
     "Applied", false, ...
     "Status", "not_requested", ...
     "Source", "no_scheduler_frozen_receive_combiner", ...
@@ -3272,6 +3288,9 @@ info = struct( ...
     "InterferenceContributionProjected", false, ...
     "InterferenceCovarianceProjected", false, ...
     "NoiseVarianceInvariant", true, ...
+    "FullObservationPreserved", false, ...
+    "IdentityResidual", NaN, ...
+    "ReceiverAlgorithm", char(receiverAlgorithm), ...
     "Domain", "receiver_sample_waveform");
 if isempty(W)
     if muRequired
@@ -3307,6 +3326,27 @@ if ~(isfinite(orthResidual) && orthResidual <= 1e-8)
         "scalar thermal-noise variance remains valid; residual=%.12g.", ...
         orthResidual);
 end
+identityResidual = Inf;
+if size(W, 1) == size(W, 2)
+    identityResidual = norm(W - eye(size(W)), "fro") ./ ...
+        max(1, norm(eye(size(W)), "fro"));
+end
+fullObservationPreserved = size(W, 1) == size(W, 2) && ...
+    isfinite(identityResidual) && identityResidual <= 1e-12;
+if muRequired
+    if receiverAlgorithm ~= "full_dimensional_per_re_irc"
+        error("sixgr:phy:ul:InvalidMUMIMOReceiverAlgorithm", ...
+            "A production UL MU-MIMO grant must declare " + ...
+            "MUMIMOReceiverAlgorithm=full_dimensional_per_re_irc; received '%s'.", ...
+            char(receiverAlgorithm));
+    end
+    if ~fullObservationPreserved
+        error("sixgr:phy:ul:RankReducingMUMIMOReceivePreprocessor", ...
+            "Production UL MU-MIMO must preserve every receiver branch for " + ...
+            "per-RE IRC. Frozen matrix %s has identity residual %.12g.", ...
+            mat2str(size(W)), identityResidual);
+    end
+end
 
 waveOut = waveIn * conj(cast(W, "like", waveIn));
 tensor = optIn.InterferenceContributionTensor;
@@ -3337,13 +3377,19 @@ if ~isempty(R)
     covarianceProjected = true;
 end
 info.Applied = true;
-info.Status = "applied_exact_scheduler_frozen_projection";
+if fullObservationPreserved
+    info.Status = "applied_full_dimensional_identity_preprocessor_for_per_re_irc";
+else
+    info.Status = "applied_explicit_semi_unitary_reduced_observation";
+end
 info.Source = char(source);
 info.OutputBranches = double(size(waveOut, 2));
 info.MatrixRows = double(size(W, 1));
 info.MatrixCols = double(size(W, 2));
 info.MatrixSHA256 = char(digest);
 info.OrthonormalityResidual = double(orthResidual);
+info.FullObservationPreserved = logical(fullObservationPreserved);
+info.IdentityResidual = double(identityResidual);
 info.InterferenceContributionProjected = logical(contributionProjected);
 info.InterferenceCovarianceProjected = logical(covarianceProjected);
 end
@@ -3361,6 +3407,9 @@ rx.MUMIMOReceiveCombinerExpectedMatrixSHA256 = char(string(info.ExpectedMatrixSH
 rx.MUMIMOReceiveCombinerOrthonormalityResidual = double(info.OrthonormalityResidual);
 rx.MUMIMOReceiveCombinerInterferenceContributionProjected = logical(info.InterferenceContributionProjected);
 rx.MUMIMOReceiveCombinerInterferenceCovarianceProjected = logical(info.InterferenceCovarianceProjected);
+rx.MUMIMOReceiveCombinerFullObservationPreserved = logical(info.FullObservationPreserved);
+rx.MUMIMOReceiveCombinerIdentityResidual = double(info.IdentityResidual);
+rx.MUMIMOReceiverAlgorithmApplied = char(string(info.ReceiverAlgorithm));
 end
 
 function [waveOut, info] = localTrimInactiveFastAWGNColumns(waveIn, channelToken, numTxPorts, useFastAWGNPath)

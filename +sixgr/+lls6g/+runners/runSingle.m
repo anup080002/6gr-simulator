@@ -186,7 +186,15 @@ opt.LinkFixedLinkSeed = double(sixgr.util.structGet(fixedLinkCampaignCfg, "SeedB
     double(sixgr.util.structGet(cfg, "run.seed", 1)) + 730001)));
 opt.LinkFixedLinkSeed = opt.LinkFixedLinkSeed(1);
 opt.LinkAnchorCases = scfg.get("scenario.bundle_anchor_cases", {});
-opt.SaveFigures = logical(scfg.get("output.save_figures"));
+% The artifact-contract engine owns final raster production from verified
+% runtime CSVs.  When it is enabled, do not let the waveform bundle emit the
+% retired MATLAB diagnostic PNG set before the transactional materializer
+% replaces the raster tree.  output.save_figures still means that final
+% CSV-derived figures are requested; it is not permission for two producers.
+contractRasterAuthority = logical(scfg.get( ...
+    "output.artifact_contract_engine.enabled", false));
+opt.SaveFigures = logical(scfg.get("output.save_figures")) && ...
+    ~contractRasterAuthority;
 tuning = sixgr.lls6g.runners.resolveWaveformBundleRuntimeTuning(scfg, cfg, opt.LinkSNRGrid_dB);
 opt.RuntimeTuning = tuning;
 opt.LinkSweepTrialsPerSNR = double(tuning.PrimaryTrialsPerSNR);
@@ -244,7 +252,8 @@ if localShouldRunStrictControlEvidence(scfg, cfg)
     strictControl = sixgr.truth.evaluateInPathControlEvidence(cfg, ...
         sixgr.util.structGet(link, "RawTrials", struct()), ...
         "EnablePDCCH", localStrictControlTargetEnabled(scfg, cfg, "pdcch"), ...
-        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"));
+        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"), ...
+        "EnablePUSCHUCI", localStrictControlTargetEnabled(scfg, cfg, "pusch_uci"));
     localDBLog("INFO", "Strict waveform-backed control evidence finished: ok=%d", ...
         double(logical(sixgr.util.structGet(strictControl, "Ok", false))));
     link.KPITable = localAppendStrictControlKPI(link.KPITable, strictControl);
@@ -889,7 +898,8 @@ if localShouldRunStrictControlEvidence(scfg, cfg)
     strictControl = sixgr.truth.evaluateInPathControlEvidence(cfg, ...
         sixgr.util.structGet(canon, "RawTrials", struct()), ...
         "EnablePDCCH", localStrictControlTargetEnabled(scfg, cfg, "pdcch"), ...
-        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"));
+        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"), ...
+        "EnablePUSCHUCI", localStrictControlTargetEnabled(scfg, cfg, "pusch_uci"));
     localDBLog("INFO", "Strict waveform-backed control evidence finished: ok=%d", ...
         double(logical(sixgr.util.structGet(strictControl, "Ok", false))));
 end
@@ -947,6 +957,8 @@ switch signalName
         tf = logical(policy.EnablePDCCH);
     case "pucch"
         tf = logical(policy.EnablePUCCH);
+    case "pusch_uci"
+        tf = logical(policy.EnablePUSCHUCI);
     otherwise
         tf = false;
 end
@@ -1856,7 +1868,7 @@ else
 end
 end
 
-function result = localRunGenericSweep(cfg, scfg, runFolder)
+function result = localRunGenericSweep(cfg, scfg, runFolder, parentRunTag)
 sweepCfg = scfg.get("scenario.sweep", struct());
 baseProfile = lower(string(sixgr.util.structGet(sweepCfg, "base_profile")));
 overrides = sixgr.util.structGet(sweepCfg, "overrides", struct([]));
@@ -1866,10 +1878,17 @@ if isempty(overrides)
 end
 
 rows = repmat(struct("Label","", "PointScenarioID","", "RunFolder","", "Ok", false, ...
-    "ResearchClass","", "StudyBucket",""), 0, 1);
+    "RunID","", "ConfigHash","", "ResearchClass","", "StudyBucket",""), 0, 1);
+folderTokens = strings(numel(overrides), 1);
 for i = 1:numel(overrides)
     label = string(sixgr.util.structGet(overrides(i), "label", "case_" + i));
-    subFolder = fullfile(runFolder, "sweeps", localSanitizeToken(label, "case"));
+    folderTokens(i) = string(localSanitizeToken(label, "case"));
+    if nnz(folderTokens(1:i) == folderTokens(i)) > 1
+        error("sixgr:lls6g:runner:DuplicateSweepPointFolder", ...
+            "Sweep label '%s' normalizes to duplicate folder token '%s'.", ...
+            label, folderTokens(i));
+    end
+    subFolder = fullfile(runFolder, "sweeps", folderTokens(i));
     sixgr.util.ensureFolder(subFolder);
     overrideConfig = sixgr.util.structGet(overrides(i), "config", struct());
     subScenario = sixgr.util.mergeStruct(scfg.toStruct(), overrideConfig);
@@ -1878,9 +1897,6 @@ for i = 1:numel(overrides)
         "Authority", overrideConfig);
     sixgr.lls6g.config.validateScenarioConfig(subScenario, "Kind", "scenario", "AllowPartial", false, ...
         "Context", scfg.ConfigPath + "::sweep::" + label);
-    subScfg = sixgr.lls6g.config.ScenarioConfig(subScenario, ...
-        "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
-        "ConfigHash", scfg.ConfigHash, "Kind", "scenario");
     if baseProfile == "waveform_bundle"
         subScenario.scenario.runner_profile = "waveform_bundle";
     elseif baseProfile == "ai_benchmark"
@@ -1891,14 +1907,22 @@ for i = 1:numel(overrides)
     end
     subScfg = sixgr.lls6g.config.ScenarioConfig(subScenario, ...
         "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
-        "ConfigHash", scfg.ConfigHash, "Kind", "scenario");
-    subExec = localExecutePreparedScenario(subScfg, subFolder);
+        "ConfigHash", sixgr.lls6g.config.hashResolvedScenario(subScenario), ...
+        "Kind", "scenario");
+    childRunID = sixgr.runtime.deriveChildRunID( ...
+        parentRunTag, "sweep_point", i, label);
+    % A sweep point is a new waveform execution.  Parent resume/finalize
+    % options and ExecutionID must never be inherited by the child.
+    subExec = localExecutePreparedScenario(subScfg, subFolder, ...
+        childRunID, subFolder, struct());
     researchClass = string(subScfg.get("meta.research_class", ""));
     rows(end+1,1) = struct( ... %#ok<AGROW>
         "Label", label, ...
         "PointScenarioID", string(subScfg.ScenarioID), ...
         "RunFolder", string(subFolder), ...
         "Ok", logical(subExec.Ok), ...
+        "RunID", childRunID, ...
+        "ConfigHash", string(subScfg.ConfigHash), ...
         "ResearchClass", researchClass, ...
         "StudyBucket", localStudyBucketFromClass(researchClass));
 end
@@ -2243,8 +2267,15 @@ artifactEvidence = sixgr.artifact.EvidenceRegistry();
 cfg.run.runTag = char(string(runTag));
 executionIdentity = sixgr.runtime.resolveExecutionIdentity( ...
     runFolder, string(runTag), string(scfg.ConfigHash), executionOptions);
-cfg.run.executionID = char(executionIdentity.ExecutionID);
-cfg.meta.executionID = char(executionIdentity.ExecutionID);
+    cfg.run.executionID = char(executionIdentity.ExecutionID);
+    cfg.meta.executionID = char(executionIdentity.ExecutionID);
+    sixgr.runtime.RuntimeCallLedger.configure(runFolder, struct( ...
+        "RunId", string(runTag), ...
+        "ExecutionID", string(executionIdentity.ExecutionID), ...
+        "ConfigHash", string(executionIdentity.ConfigHash), ...
+        "PreserveExisting", logical(executionIdentity.ResumeRequested)));
+    runtimeCallLedgerCleanup = onCleanup(@() ...
+        sixgr.runtime.RuntimeCallLedger.flush()); %#ok<NASGU>
 configuredProfile = lower(strtrim(string(scfg.get("scenario.runner_profile"))));
 cfg.run.configuredRunnerProfile = char(configuredProfile);
 cfg.run.runnerProfile = char(configuredProfile);
@@ -2270,7 +2301,7 @@ storeInfo = sixgr.db.activateArtifactStore(runFolder, cfg, struct( ...
     "ScenarioConfigSourceKind", localResolveScenarioSourceKind(scfg)));
 cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
 sixgr.config.publishConfigApplicationEvidence("reset", struct( ...
-    "RunId", double(sixgr.util.structGet(storeInfo, "RunID", NaN)), ...
+    "RunId", string(runTag), ...
     "ScenarioID", string(scfg.ScenarioID), ...
     "RunTag", string(runTag)));
 localPublishMappedRuntimeConfigEvidence(scfg, cfg);
@@ -2288,6 +2319,7 @@ result = struct();
 manifest = struct();
 runtimeSummary = struct();
 environmentSummary = struct();
+sourceProvenance = struct();
 reportBundle = struct();
 configOwnership = struct();
 scenarioStatus = struct();
@@ -2307,7 +2339,7 @@ try
     localDBLog("INFO", "Writing resolved snapshots.");
     localWriteResolvedSnapshots(layout, scfg);
     localDBLog("INFO", "Exporting live geometry artifacts.");
-    localExportLiveGeometryArtifacts(layout, scfg, cfg);
+    sixgr.truth.exportLiveGeometryArtifacts(layout, scfg, cfg);
 
     localDBLog("INFO", "Executing runner profile=%s.", char(profile));
     switch profile
@@ -2336,7 +2368,7 @@ try
         case "random_access_four_step"
             result = localRunFourStepRAScenario(cfg, scfg, runFolder);
         case "generic_sweep"
-            result = localRunGenericSweep(cfg, scfg, runFolder);
+            result = localRunGenericSweep(cfg, scfg, runFolder, runTag);
         case "ai_benchmark"
             result = localRunAIBenchmark(cfg, scfg, runFolder);
         case "full_stack_qualification"
@@ -2369,10 +2401,15 @@ try
     end
     runtimeSummary = localBuildRuntimeSummary(runStartUTC, runTimer, profile, publicRunFolder, cfg);
     environmentSummary = localBuildEnvironmentSummary(cfg);
+    % Source provenance is immutable for this MATLAB process.  Capturing it
+    % once avoids repeatedly rebuilding a potentially large dirty-tree patch
+    % bundle each time terminal status requires a manifest rewrite.
+    sourceProvenance = localDetectGitProvenance( ...
+        logical(scfg.get("logging.include_git_hash")));
     localDBLog("INFO", "Writing runtime and environment summaries.");
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "runtime_summary.json"), runtimeSummary);
     sixgr.util.jsonWrite(fullfile(layout.MetaDir, "environment.json"), environmentSummary);
-    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus, sourceProvenance);
     localDBLog("INFO", "Writing scenario manifest.");
     localWriteScenarioManifest(layout, manifest);
     if logical(sixgr.util.structGet(sixgr.util.structGet(result, "Link", struct()), "ProfileStoppedEarly", false))
@@ -2393,7 +2430,7 @@ try
     if localIsSmokePublicationRun(scfg)
         scenarioStatus = localApplySmokePublicationStatus(scenarioStatus);
         result = localApplyScenarioStatus(result, scenarioStatus);
-        manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+        manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus, sourceProvenance);
         manifest.PublicationMode = "smoke";
         manifest.PublicationModeNotes = "Runner smoke publication: profile artifacts were written, release truth-contract/report bundle publication was intentionally skipped.";
         localDBLog("INFO", "Smoke publication mode active; skipping release truth-contract/report bundle publication.");
@@ -2438,7 +2475,6 @@ try
             "ScenarioID", string(scfg.ScenarioID), ...
             "ConfigHash", executionIdentity.ConfigHash));
     end
-    sourceProvenance = localDetectGitProvenance(true);
     rawMetadata = struct( ...
         "RunID", executionIdentity.RunID, ...
         "ExecutionID", executionIdentity.ExecutionID, ...
@@ -2487,7 +2523,7 @@ try
         localDBLog("INFO", "Rewriting scenario summary CSV with final truth-gated status.");
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
     end
-    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus, sourceProvenance);
     localDBLog("INFO", "Rewriting scenario manifest with final truth-gated status.");
     localWriteScenarioManifest(layout, manifest);
     try
@@ -2507,10 +2543,24 @@ try
         profilerState.OwnsSession = false;
         profilerArtifacts = struct();
     end
+    localDBLog("INFO", "Evaluating YAML-selected independent FRC reference qualification.");
+    referenceQualification = localRunIndependentReferenceQualification( ...
+        runFolder, scfg, cfg);
+    localDBLog("INFO", ...
+        "Independent FRC qualification: enabled=%d profile=%s passed=%d artifact=%s", ...
+        double(logical(sixgr.util.structGet(referenceQualification, "Enabled", false))), ...
+        char(string(sixgr.util.structGet(referenceQualification, "Profile", "disabled"))), ...
+        double(logical(sixgr.util.structGet(referenceQualification, "AllPassed", false))), ...
+        char(string(sixgr.util.structGet(referenceQualification, "OutputPath", ""))));
+    % The reporting bundle evaluates required runtime wiring evidence. The
+    % identity-bound ledger must exist before that reduction, not only
+    % before the later output-coverage pass.
+    sixgr.runtime.RuntimeCallLedger.flush();
     localDBLog("INFO", "Exporting LLS reporting bundle.");
     reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
     reportBundle.ConfigOwnershipArtifacts = configOwnership;
     reportBundle.FixedSNRSweepAudit = fixedSNRSweepAudit;
+    reportBundle.ReferenceQualification = referenceQualification;
     localDBLog("INFO", "Scanning truth primary artifacts for active proxy/fallback markers.");
     truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
     reportBundle.TruthArtifactScan = truthArtifactScan;
@@ -2544,6 +2594,7 @@ try
     % complete so the strict visual audit compares stable final bytes.
     sixgr.lls.refreshISACPlotLineage(runFolder, cfg);
     localDBLog("INFO", "Exporting output-coverage and honest-unavailable artifacts.");
+    sixgr.runtime.RuntimeCallLedger.flush();
     outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
     reportBundle.OutputCoverageArtifacts = outputCoverage;
     reportBundle.Inventory = sixgr.util.structGet(outputCoverage, "UpdatedArtifactInventory", sixgr.util.structGet(reportBundle, "Inventory", table()));
@@ -2608,7 +2659,7 @@ try
         localDBLog("INFO", "Rewriting scenario summary CSV with final artifact truth-gated status.");
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
     end
-    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus, sourceProvenance);
     localDBLog("INFO", "Rewriting scenario manifest with final artifact truth-gated status.");
     localWriteScenarioManifest(layout, manifest);
     truthGatedCompletionPublished = true;
@@ -2661,9 +2712,14 @@ try
         scenarioStatus, geometryScenarioAudit);
     scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
         scenarioStatus, artifactContractResult);
+    finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
+        runFolder, scfg, cfg);
+    reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
     artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
     reportBundle.ArtifactAudit = artifactAudit;
     scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
+    scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
+        scenarioStatus, runFolder);
     sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
     result = localApplyScenarioStatus(result, scenarioStatus);
     if logical(sixgr.util.structGet(artifactAudit, "Required", false))
@@ -2677,7 +2733,7 @@ try
             localDBLog("INFO", "Rewriting scenario summary CSV with final artifact-audit status.");
             sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
         end
-        manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus);
+        manifest = localBuildManifest(scfg, publicRunFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus, sourceProvenance);
         localDBLog("INFO", "Rewriting scenario manifest with final artifact-audit status.");
         localWriteScenarioManifest(layout, manifest);
         localDBLog("INFO", "Refreshing artifact manifest after recursive artifact audit.");
@@ -2738,6 +2794,60 @@ try
             runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
         localWriteScenarioManifest(layout, manifest);
     end
+    % The final component publication can add raster mirrors after the
+    % earlier visual audit.  Re-audit the exact terminal raster tree, then
+    % refresh component mirrors once more so the newly written audit tables
+    % are hash-identical to their canonical sources.  The second publication
+    % does not create new scientific plots; it only replaces declared
+    % byte-identical mirrors at the same paths.
+    localDBLog("INFO", ...
+        "Running terminal visual/status reduction after optional and component artifact writes.");
+    finalVisualAudit = sixgr.visual.finalizeRunVisualAudit(runFolder);
+    outputCoverage.VisualArtifactIntegrity = finalVisualAudit.Integrity;
+    outputCoverage.VisualArtifactAudit = finalVisualAudit.Audit;
+    reportBundle.OutputCoverageArtifacts = outputCoverage;
+    if componentViewsEnabled
+        componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
+            "Enabled", true, ...
+            "Required", componentViewsRequired, ...
+            "RequiredComponents", componentViewsRequiredComponents(:));
+        reportBundle.ComponentArtifactViews = componentViews;
+    end
+    scenarioStatus = localApplyRuntimeTruthContract( ...
+        preTruthScenarioStatus, result, scfg, cfg, runFolder);
+    scenarioStatus = localApplyVisualArtifactIntegrityStatus( ...
+        scenarioStatus, finalVisualAudit.Integrity);
+    scenarioStatus = localApplyFixedSNRSweepAuditStatus( ...
+        scenarioStatus, fixedSNRSweepAudit);
+    scenarioStatus = localApplyGeometryScenarioAuditStatus( ...
+        scenarioStatus, geometryScenarioAudit);
+    scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
+        scenarioStatus, artifactContractResult);
+    finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
+        runFolder, scfg, cfg);
+    reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
+    artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
+    reportBundle.ArtifactAudit = artifactAudit;
+    scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
+    scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
+        scenarioStatus, runFolder);
+    sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
+    result = localApplyScenarioStatus(result, scenarioStatus);
+    localAppendLinkRunStatusLog(layout, scenarioStatus);
+    summaryT = localBuildScenarioSummaryTable(scfg, profile, result, scenarioStatus);
+    if logical(scfg.get("output.save_csv"))
+        sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
+            "scenario_summary.csv"), summaryT);
+    end
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, result, ...
+        runtimeSummary, environmentSummary, scenarioStatus, sourceProvenance);
+    manifest.ArtifactManifestPath = char(localWriteArtifactManifest( ...
+        runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
+    localWriteScenarioManifest(layout, manifest);
+    localWriteMarkdownReport(fullfile(layout.ReportDir, ...
+        "scenario_report.md"), scfg, profile, runFolder, result, ...
+        manifest, reportBundle, scenarioStatus);
+    truthGatedCompletionPublished = true;
     hydration = localHydratePublicRunFolderIfNeeded(runFolder, publicRunFolder);
     hydrationNotes = string(sixgr.util.structGet(hydration, "Notes", ""));
     if hydrationNotes == "artifact_store_inactive_or_same_folder"
@@ -2903,8 +3013,13 @@ fileCleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
 canonicalHash = sixgr.util.sha256Hex(fread(fid, Inf, "*uint8"));
 clear fileCleanup;
 
+% A functionally completed run may still fail numerical, independent
+% reference, statistical, browser or terminal publication gates.  Advancing
+% published/current.json on ResultOk alone contradicts the canonical
+% production gate.  Only the post-finalization publication verdict may
+% publish an attempt.
 qualified = logical(sixgr.util.structGet( ...
-    scenarioStatus, "ResultOk", false));
+    scenarioStatus, "PublicationQualified", false));
 attemptManifest = struct( ...
     "SchemaName", "sixgr.finalized_artifact_manifest", ...
     "SchemaVersion", "1.0.0", ...
@@ -2917,7 +3032,8 @@ attemptManifest = struct( ...
     "CanonicalArtifactManifestSHA256", canonicalHash, ...
     "RunCompletion", string(sixgr.util.structGet( ...
     scenarioStatus, "RunCompletion", "")), ...
-    "ResultOk", qualified, ...
+    "ResultOk", logical(sixgr.util.structGet( ...
+        scenarioStatus, "ResultOk", false)), ...
     "ArtifactContractStatus", string(sixgr.util.structGet( ...
     artifactContractResult, "Status", "NOT_EVALUATED")), ...
     "ArtifactContractRequiredFailureCount", double(sixgr.util.structGet( ...
@@ -3331,95 +3447,13 @@ if strlength(strtrim(kind)) == 0
 end
 end
 
-function localExportLiveGeometryArtifacts(layout, scfg, cfg)
-backend = lower(string(scfg.get("output.backend", "filesystem")));
-if backend ~= "mysql_web"
-    return;
-end
-
-rngState = rng; %#ok<RNGR>
-cleanupRng = onCleanup(@() rng(rngState)); %#ok<NASGU>
-
-try
-    seed = double(sixgr.util.structGet(cfg, "run.seed", sixgr.util.structGet(cfg, "run.randomSeed", 1)));
-    rng(seed, "twister");
-
-    scenarioName = string(sixgr.util.structGet(cfg, "scenario.name", scfg.ScenarioID));
-    scenarioLayout = sixgr.scenario.generateLayout(cfg, scenarioName);
-    ue = sixgr.scenario.dropUEs(cfg, scenarioLayout, scenarioName);
-    [siteT, sectorT, trpT, ueT] = localBuildProjectedGeometryTables(scenarioLayout, ue);
-
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "sites.csv"), siteT);
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "sectors.csv"), sectorT);
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "trps.csv"), trpT);
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "ues.csv"), ueT);
-catch
-    % Geometry export is best-effort for the live dashboard and must not
-    % change scenario execution semantics if a profile cannot provide it.
-end
-end
-
-function [siteT, sectorT, trpT, ueT] = localBuildProjectedGeometryTables(layoutStruct, ue)
-anchorLat = 19.122164;
-anchorLon = 72.999217;
-anchorLabel = "Reliance Corporate Park, Ghansoli, Navi Mumbai";
-coordMode = "projected_default_anchor";
-
-sitePos = double(sixgr.util.structGet(layoutStruct, "sites.pos_m", zeros(0,3)));
-siteId = double(sixgr.util.structGet(layoutStruct, "sites.id", (1:size(sitePos,1)).'));
-[siteLat, siteLon] = localProjectXYToLatLon(sitePos(:,1), sitePos(:,2), anchorLat, anchorLon);
-siteT = table( ...
-    siteId(:), sitePos(:,1), sitePos(:,2), sitePos(:,3), siteLat(:), siteLon(:), ...
-    repmat(string(coordMode), numel(siteId), 1), repmat(string(anchorLabel), numel(siteId), 1), ...
-    'VariableNames', {'SiteID','X_m','Y_m','Z_m','Lat','Lon','CoordinateMode','MapAnchorLabel'});
-
-bsPos = double(sixgr.util.structGet(layoutStruct, "bs.pos_m", zeros(0,3)));
-siteRef = double(sixgr.util.structGet(layoutStruct, "bs.siteId", nan(size(bsPos,1),1)));
-sectorId = double(sixgr.util.structGet(layoutStruct, "bs.sectorId", (1:size(bsPos,1)).'));
-cellId = double(sixgr.util.structGet(layoutStruct, "bs.cellId", ...
-    (siteRef(:) - 1) .* max(1, double(sixgr.util.structGet(layoutStruct, "nSectors", 1))) + sectorId(:)));
-pci = double(sixgr.util.structGet(layoutStruct, "bs.pci", cellId(:)));
-nCellId = double(sixgr.util.structGet(layoutStruct, "bs.nCellId", cellId(:)));
-az = double(sixgr.util.structGet(layoutStruct, "bs.azim_deg", nan(size(bsPos,1),1)));
-txP = double(sixgr.util.structGet(layoutStruct, "bs.txPower_dBm", nan(size(bsPos,1),1)));
-[bsLat, bsLon] = localProjectXYToLatLon(bsPos(:,1), bsPos(:,2), anchorLat, anchorLon);
-
-sectorT = table( ...
-    siteRef(:), sectorId(:), cellId(:), pci(:), nCellId(:), az(:), bsPos(:,1), bsPos(:,2), bsPos(:,3), bsLat(:), bsLon(:), ...
-    repmat(string(coordMode), numel(sectorId), 1), repmat(string(anchorLabel), numel(sectorId), 1), ...
-    'VariableNames', {'SiteID','SectorID','CellID','PCI','NCellID','Azimuth_deg','X_m','Y_m','Z_m','Lat','Lon','CoordinateMode','MapAnchorLabel'});
-
-trpId = (1:size(bsPos,1)).';
-trpT = table( ...
-    trpId(:), siteRef(:), sectorId(:), cellId(:), pci(:), nCellId(:), az(:), txP(:), bsPos(:,1), bsPos(:,2), bsPos(:,3), bsLat(:), bsLon(:), ...
-    repmat(string(coordMode), numel(trpId), 1), repmat(string(anchorLabel), numel(trpId), 1), ...
-    'VariableNames', {'TRPID','SiteID','SectorID','CellID','PCI','NCellID','Azimuth_deg','TxPower_dBm','X_m','Y_m','Z_m','Lat','Lon','CoordinateMode','MapAnchorLabel'});
-
-ueId = double(sixgr.util.structGet(ue, "id", (1:size(ue.pos_m,1)).'));
-uePos = double(sixgr.util.structGet(ue, "pos_m", zeros(0,3)));
-ueIndoor = logical(sixgr.util.structGet(ue, "indoor", false(size(uePos,1),1)));
-ueSpeed = double(sixgr.util.structGet(ue, "speed_kmh", nan(size(uePos,1),1)));
-ueHeading = double(sixgr.util.structGet(ue, "heading_deg", nan(size(uePos,1),1)));
-servingCellId = double(sixgr.util.structGet(ue, "drop_cell_id", nan(size(uePos,1),1)));
-[ueLat, ueLon] = localProjectXYToLatLon(uePos(:,1), uePos(:,2), anchorLat, anchorLon);
-ueT = table( ...
-    ueId(:), uePos(:,1), uePos(:,2), uePos(:,3), ueLat(:), ueLon(:), ueIndoor(:), ueSpeed(:), ueHeading(:), servingCellId(:), ...
-    repmat(string(coordMode), numel(ueId), 1), repmat(string(anchorLabel), numel(ueId), 1), ...
-    'VariableNames', {'UEID','X_m','Y_m','Z_m','Lat','Lon','Indoor','Speed_kmh','Heading_deg','ServingCellID','CoordinateMode','MapAnchorLabel'});
-end
-
-function [lat, lon] = localProjectXYToLatLon(x_m, y_m, anchorLat, anchorLon)
-[lat, lon] = sixgr.util.projectLocalXYToGeo(x_m, y_m, double(anchorLat), double(anchorLon));
-end
-
 function tf = localShouldWriteCSV(scfg)
 tf = logical(scfg.get("output.save_csv"));
 end
 
-function manifest = localBuildManifest(scfg, runFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus)
+function manifest = localBuildManifest(scfg, runFolder, profile, result, runtimeSummary, environmentSummary, scenarioStatus, gitInfo)
 includeGitHash = logical(scfg.get("logging.include_git_hash"));
 [codeVersion, codeDetail] = localDetectCodeVersion(includeGitHash);
-gitInfo = localDetectGitProvenance(includeGitHash);
 [configOverlay, configOverlayPath] = localDetectConfigOverlay(scfg);
 manifest = struct();
 manifest.GeneratedUTC = localUTCStamp();
@@ -3581,14 +3615,17 @@ end
 end
 
 function bundle = localCaptureGitPatchBundle(repoRoot, porcelainStatus)
-% Capture tracked changes plus complete, reconstructable untracked files.
+% Capture tracked changes and complete untracked source/config/test files.
+% Generated focused audits/logs are evidence outputs, not executable source;
+% record their paths and sizes honestly without embedding their often-large
+% payloads into raw/source_patch.diff.
 [diffStatus, trackedDiff] = system(sprintf( ...
     'git -C "%s" diff --binary --no-ext-diff HEAD -- .', repoRoot));
 if diffStatus ~= 0
     error("sixgr:runtime:GitPatchCaptureFailed", ...
         "Unable to capture tracked source changes for execution provenance.");
 end
-bundle = "SIXGR_EXECUTION_PATCH_BUNDLE_V1" + newline + ...
+bundle = "SIXGR_EXECUTION_PATCH_BUNDLE_V2" + newline + ...
     "GIT_STATUS_PORCELAIN_BEGIN" + newline + string(porcelainStatus) + ...
     "GIT_STATUS_PORCELAIN_END" + newline + ...
     "TRACKED_GIT_DIFF_BEGIN" + newline + string(trackedDiff) + ...
@@ -3607,6 +3644,23 @@ for index = 1:numel(paths)
     if ~isfile(absolutePath)
         continue;
     end
+    normalizedPath = replace(relativePath, "\", "/");
+    normalizedLower = lower(normalizedPath);
+    if startsWith(normalizedLower, "artifacts/focused_audits/") || ...
+            startsWith(normalizedLower, "artifacts/focused_logs/")
+        info = dir(absolutePath);
+        byteSize = NaN;
+        if ~isempty(info)
+            byteSize = double(info(1).bytes);
+        end
+        bundle = bundle + "UNTRACKED_GENERATED_EVIDENCE_EXCLUDED_BEGIN" + newline + ...
+            "Path: " + normalizedPath + newline + ...
+            "ByteSize: " + string(byteSize) + newline + ...
+            "Reason: generated_evidence_not_source" + newline + ...
+            "ReconstructableFromPatchBundle: false" + newline + ...
+            "UNTRACKED_GENERATED_EVIDENCE_EXCLUDED_END" + newline;
+        continue;
+    end
     fid = fopen(absolutePath, "rb");
     if fid < 0
         error("sixgr:runtime:GitPatchCaptureFailed", ...
@@ -3617,7 +3671,7 @@ for index = 1:numel(paths)
     clear fileCleanup;
     encoded = sixgr.runtime.base64EncodeBytes(bytes);
     bundle = bundle + "UNTRACKED_FILE_BEGIN" + newline + ...
-        "Path: " + replace(relativePath, "\", "/") + newline + ...
+        "Path: " + normalizedPath + newline + ...
         "SHA256: " + sixgr.util.sha256Hex(bytes) + newline + ...
         "Encoding: base64" + newline + encoded + newline + ...
         "UNTRACKED_FILE_END" + newline;
@@ -4024,6 +4078,8 @@ T = table( ...
     logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityOk", false)), ...
     double(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailureCount", 0)), ...
     string(strjoin(string(sixgr.util.structGet(scenarioStatus, "VisualArtifactIntegrityFailures", strings(0, 1))), "; ")), ...
+    logical(sixgr.util.structGet(scenarioStatus, "VisualArtifactGateOk", false)), ...
+    double(sixgr.util.structGet(scenarioStatus, "VisualArtifactFailureCount", 0)), ...
     string(strjoin(string(scenarioStatus.RuntimeTruthContractFailures(:)), "; ")), ...
     string(scfg.get("meta.description", "")), ...
     string(opSummary.RuntimeQualifiedDescription), ...
@@ -4074,7 +4130,7 @@ T = table( ...
     'ConfiguredEffectiveOk','ConfiguredEffectivePolicyOk','MandatorySubsystemsOk','ActiveIssueGateOk','KpiConsistencyOk','StrictAnchorEligible','StrictAnchorPass','ResultStatusReason', ...
     'ActiveMandatoryIssueCount','ActiveCriticalIssueCount','ActiveHighIssueCount','ActiveMediumIssueCount', ...
     'RoundtripMismatchCount','RequiredRuntimeEvidenceMissingCount', ...
-    'StrictTruthFailureCount','StrictProxyGuardFailureCount','CanonicalArtifactGapCount','VisualArtifactIntegrityOk','VisualArtifactIntegrityFailureCount','VisualArtifactIntegrityFailures','RuntimeTruthContractFailures','Description', ...
+    'StrictTruthFailureCount','StrictProxyGuardFailureCount','CanonicalArtifactGapCount','VisualArtifactIntegrityOk','VisualArtifactIntegrityFailureCount','VisualArtifactIntegrityFailures','VisualArtifactGateOk','VisualArtifactFailureCount','RuntimeTruthContractFailures','Description', ...
     'RuntimeQualifiedDescription', ...
     'ConfiguredParameterSemantics','ConfiguredMIMO','ConfiguredDLNominalOperatingPoint','ConfiguredULNominalOperatingPoint', ...
     'ActiveGridNumRBs','ConfiguredGridNumRBs','ActiveGridSource','Numerology_mu','SCS_kHz','SlotDuration_ms','SlotsPerFrame','SymbolsPerSlot','NumerologySource','TimingInterpretationSource','ActiveDuplexMode','ConfiguredTDDPattern','ActiveTDDPattern','TDDPatternApplicable', ...
@@ -5361,6 +5417,9 @@ function status = localApplyRuntimeTruthContract(status, result, scfg, cfg, runF
 try
     verdict = sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result);
 catch ME
+    localDBLog("ERROR", ...
+        "Runtime truth contract evaluator failed closed: %s | %s", ...
+        char(string(ME.identifier)), char(string(ME.message)));
     verdict = struct();
     verdict.Ok = false;
     verdict.RuntimeTruthContractOk = false;
@@ -5370,6 +5429,8 @@ catch ME
     verdict.StrictProxyGuardFailureCount = 0;
     verdict.CanonicalArtifactGapCount = 0;
     verdict.Failures = "runtime_truth_contract_evaluator_error:" + string(ME.identifier);
+    verdict.EvaluatorErrorIdentifier = string(ME.identifier);
+    verdict.EvaluatorErrorMessage = string(ME.message);
 end
 
 status.StatusAuthority = "scenario_status_aggregation_v2_runtime_truth_contract";
@@ -5669,9 +5730,6 @@ strictAudit = logical(localRunnerScenarioGetBool(scfg, cfg, "validation.strict_a
 emitPlaceholders = logical(localRunnerScenarioGetBool(scfg, cfg, "output.emit_placeholder_artifacts", true));
 required = localIsBrowserLaunchedScenario(scfg, cfg) && (strictAudit || ~emitPlaceholders);
 audit.Required = logical(required);
-if ~audit.Required
-    return;
-end
 
 try
     audit = sixgr.validation.auditRunArtifacts(runFolder, ...
@@ -5679,10 +5737,12 @@ try
         "FailOnEmptyRequiredCSV", true, ...
         "FailOnBlankRequiredImage", true, ...
         "WriteOutputs", true);
-    audit.Required = true;
+    % Always refresh the exact terminal CSV/image inventory.  Whether its
+    % findings are a mandatory scenario gate remains configuration-owned.
+    audit.Required = logical(required);
     audit.Executed = true;
 catch ME
-    audit.Required = true;
+    audit.Required = logical(required);
     audit.Executed = false;
     audit.Ok = false;
     audit.Status = "error";
@@ -5693,6 +5753,77 @@ catch ME
     audit.Identifier = string(ME.identifier);
     audit.Message = string(ME.message);
 end
+end
+
+function evidence = localRefreshFinalQualificationEvidence(runFolder, scfg, cfg)
+% Phase-7 consumes terminal CSV/image audits and plot lineage.  Its initial
+% pass necessarily runs before browser contract materialization so those
+% tables exist for the browser.  Rebuild the scientific/readiness reducer
+% after materialization and visual finalization; otherwise a clean terminal
+% tree can retain pre-materialization ArtifactCompletenessOk=false and
+% PlotDataLineageOk=false.  Missing campaigns, samples, FRC references or
+% determinism evidence continue to fail closed in the same evaluator.
+phase7 = sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
+publication = sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
+evidence = struct( ...
+    "Phase7", phase7, ...
+    "PublicationReadiness", publication, ...
+    "RefreshedAfterMaterialization", true, ...
+    "EvidencePolicy", "terminal_filesystem_no_proxy_no_missing_gate_override");
+end
+
+function out = localRunIndependentReferenceQualification(runFolder, scfg, cfg)
+base = "validation.independent_reference_qualification.";
+enabled = logical(localRunnerScenarioGetBool(scfg, cfg, base + "enabled", false));
+profile = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, ...
+    base + "profile", "full"))));
+if ~ismember(profile, ["full","diagnostic"])
+    error("sixgr:lls6g:InvalidFRCQualificationProfile", ...
+        "validation.independent_reference_qualification.profile must be full or diagnostic.");
+end
+out = struct("Enabled", enabled, "Profile", profile, ...
+    "AllPassed", false, "OutputPath", "", "Table", table());
+if ~enabled
+    return;
+end
+
+entryIds = string(localRunnerScenarioGet(scfg, cfg, ...
+    base + "entry_ids", strings(0,1)));
+entryIds = entryIds(:);
+entryIds = entryIds(strlength(strtrim(entryIds)) > 0);
+if isempty(entryIds)
+    error("sixgr:lls6g:MissingFRCQualificationEntries", ...
+        "Enabled independent FRC qualification requires nonempty entry_ids in YAML.");
+end
+
+args = { ...
+    "Profile", profile, ...
+    "EntryIds", entryIds, ...
+    "EntrySampling", localRunnerScenarioGet( ...
+        scfg, cfg, base + "sampling_by_entry", {}), ...
+    "Tolerance_dB", double(localRunnerScenarioGet(scfg, cfg, base + "tolerance_db", 1.0)), ...
+    "ConfidenceLevel", double(localRunnerScenarioGet( ...
+        scfg, cfg, base + "confidence_level", 0.95)), ...
+    "RequireSymmetricRegression", logical(localRunnerScenarioGetBool( ...
+        scfg, cfg, base + "require_symmetric_regression_for_production", false)), ...
+    "ParallelWorkers", double(localRunnerScenarioGet( ...
+        scfg, cfg, base + "parallel_workers", 0)), ...
+    "MinimumBlockErrors", double(localRunnerScenarioGet(scfg, cfg, base + "minimum_block_errors", 100)), ...
+    "Verbose", logical(localRunnerScenarioGetBool(scfg, cfg, base + "verbose", true))};
+optional = [ ...
+    "min_transport_blocks", "MinTransportBlocks"; ...
+    "max_transport_blocks", "MaxTransportBlocks"; ...
+    "batch_size", "BatchSize"; ...
+    "max_confidence_half_width", "MaxConfidenceHalfWidth"];
+for index = 1:size(optional,1)
+    value = localRunnerScenarioGet(scfg, cfg, base + optional(index,1), []);
+    if ~isempty(value)
+        args(end+1:end+2) = {char(optional(index,2)), double(value)}; %#ok<AGROW>
+    end
+end
+qualification = sixgr.conformance.runReferenceQualification(runFolder, args{:});
+out = qualification;
+out.Enabled = true;
 end
 
 function value = localRunnerScenarioGet(scfg, cfg, pathValue, defaultValue)
@@ -6371,7 +6502,7 @@ else
         out.Message = "Filesystem browser-contract verification requires the active run folder.";
         return;
     end
-    cmd = sprintf('"%s" "%s" --run-folder "%s" --strict', ...
+    cmd = sprintf('"%s" "%s" --run-folder "%s" --strict --replace-existing-rasters-from-csv', ...
         localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), ...
         localShellEscapeArg(runFolder));
 end

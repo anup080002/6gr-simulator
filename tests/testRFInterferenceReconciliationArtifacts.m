@@ -71,6 +71,32 @@ for i = 1:size(required, 1)
     end
 end
 
+% Regression: adaptive QPSK/MCS 1 is not an exact match for a nominal
+% 256QAM/MCS 20 operating point.  It can satisfy the execution policy only
+% when every trial carries the scheduled/applied decision and causal CSI
+% lineage.  The two claims must never be collapsed into one boolean.
+adaptiveCfg = cfg;
+adaptiveCfg.link_adaptation.fixed_or_amc = "amc";
+adaptiveCfg.link_adaptation.initial_mcs = 1;
+adaptiveCfg.link_adaptation.maximum_mcs = 20;
+adaptiveCfg.pdsch.mcs_index = 20;
+adaptiveCfg.pdsch.modulation = "256QAM";
+adaptiveCfg.pusch.mcs_index = 20;
+adaptiveCfg.pusch.modulation = "256QAM";
+adaptiveTrials = struct("DL", localAdaptiveTrialTable("DL"), ...
+    "UL", localAdaptiveTrialTable("UL"));
+sixgr.analytics.writeRFInterferenceReconciliation(adaptiveCfg, tmp, ...
+    adaptiveTrials, mobilityArtifacts, struct());
+mimo = readtable(fullfile(tmp, "reports", "csv", "mimo_kpi_reconciliation.csv"), ...
+    "VariableNamingRule", "preserve", "TextType", "string");
+assert(~localAsLogical(mimo.DLConfiguredEffectiveExactOk(1)) && ...
+    ~localAsLogical(mimo.ULConfiguredEffectiveExactOk(1)), ...
+    "Adaptive operating points must not be mislabeled as exact configured matches.");
+assert(localAsLogical(mimo.DLExecutionPolicyOk(1)) && ...
+    localAsLogical(mimo.ULExecutionPolicyOk(1)) && ...
+    localAsLogical(mimo.MimoKpiReconciliationOk(1)), ...
+    "Causally evidenced adaptive decisions must pass the separate execution-policy contract.");
+
 report = sixgr.analytics.buildPhase7ReadinessArtifacts(cfg, tmp);
 assert(isfield(report, "Gates"), "Phase 7 report must expose gates.");
 gates = readtable(fullfile(tmp, "reports", "csv", "phase7_truth_gates.csv"), ...
@@ -81,6 +107,28 @@ for flag = required(:, 2).'
 end
 
 ok = true;
+end
+
+function T = localAdaptiveTrialTable(direction)
+T = localTrialTable(direction);
+n = height(T);
+profile = sixgr.link.resolveMCSProfile("qam64_table1", 1);
+T.MCS(:) = 1;
+T.Modulation(:) = "QPSK";
+T.MCSTable(:) = "qam64_table1";
+T.TargetCodeRate(:) = double(profile.TargetCodeRate);
+T.ScheduledMCS = ones(n, 1);
+T.ScheduledModulation = repmat("QPSK", n, 1);
+T.LinkAdaptationScheduled = true(n, 1);
+T.LinkAdaptationApplied = true(n, 1);
+T.MCSSelectionSource = repmat("measured_csi_cqi_scheduler", n, 1);
+T.MCSAuthority = repmat("scheduler_decoded_csi_feedback", n, 1);
+T.ModulationAuthority = repmat("ts38214_mcs_profile_from_scheduled_mcs", n, 1);
+T.AppliedOperatingPointSource = repmat("frozen_scheduler_grant", n, 1);
+T.CSIReportId = "csi-report-" + string((1:n).');
+T.WidebandCQI = repmat(8, n, 1);
+T.CQIDerivedMCS = ones(n, 1);
+T.MCSValueStatus = repmat("measured_feedback_adapted", n, 1);
 end
 
 function cfg = localScenarioConfig()
@@ -95,6 +143,9 @@ cfg.run_control = struct("total_slots", 240);
 cfg.simulation = struct("n_slots", 240);
 cfg.interference = struct("inter_cell_execution_mode", "full_per_link_channel_waveform_sum");
 cfg.mimo = struct("max_dl_layers", 2, "max_ul_layers", 2);
+cfg.pdsch = struct("mcs_index", 13, "modulation", "64QAM");
+cfg.pusch = struct("mcs_index", 13, "modulation", "64QAM");
+cfg.link_adaptation = struct("fixed_or_amc", "fixed", "initial_mcs", 13, "maximum_mcs", 20);
 cfg.impairments = struct();
 cfg.impairments.oscillator_profile = "lab_clean";
 cfg.impairments.dac_quantization_bits = 12;

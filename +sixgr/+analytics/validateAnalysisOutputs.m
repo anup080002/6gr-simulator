@@ -22,7 +22,7 @@ expected = [
     "air_interface/csv/dl_measured_sinr_bler_curve.csv"
     "air_interface/csv/ul_measured_sinr_bler_curve.csv"
     "air_interface/csv/distance_vs_sinr.csv"
-    "reports/csv/measurement_sinr_plot_lineage.csv"
+    "reports/csv/contract_plot_lineage.csv"
     "reports/csv/nmse_vs_measured_sinr.csv"
     "reports/csv/energy_vs_throughput.csv"
     "reports/csv/tbs_reference_comparison.csv"

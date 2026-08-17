@@ -124,12 +124,27 @@ ulMURequired = logical(executed.get("mimo.ul_mu_mimo_enable", false));
 result = sixgr.util.structGet(out, "Result", struct());
 link = sixgr.util.structGet(result, "Link", struct());
 raw = sixgr.util.structGet(link, "RawTrials", struct());
-required = ["DL","UL","PBCH","PRACH","PDCCH","PUCCH","SRS","CSIRS","TRS"];
+standalonePUCCHRequired = logical(executed.get("control_gating.pucch_required", false));
+puschUCIRequired = logical(executed.get("control_gating.pusch_uci_required", false));
+required = ["DL","UL","PBCH","PRACH","PDCCH","SRS","CSIRS","TRS"];
+if standalonePUCCHRequired
+    required(end+1) = "PUCCH";
+end
 for name = required
     T = sixgr.util.structGet(raw, name, table());
     assert(istable(T) && ~isempty(T), ...
         "Same-chain sweep is missing current-run %s rows.", name);
     localAssertTruthRows(T, name);
+end
+
+if puschUCIRequired
+    verificationCfg = struct("users", struct("n_users", ...
+        double(executed.get("canonical_control.topology.num_ues", 1))));
+    puschUCI = sixgr.truth.evaluateInPathComponentEvidence( ...
+        verificationCfg, raw, "pusch_uci");
+    assert(logical(puschUCI.StrictOk), ...
+        "YAML-required same-waveform PUSCH UCI failed: %s", ...
+        char(string(puschUCI.FailureReason)));
 end
 
 dl = raw.DL;

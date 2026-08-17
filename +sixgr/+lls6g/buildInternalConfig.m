@@ -909,6 +909,8 @@ muMimoHybridRFDesignPolicy = lower(strtrim(string(localGetNested(s, ...
     "mimo.mu_mimo_hybrid_rf_design_policy", "fixed_configured_matrix"))));
 muMimoSpatialSignatureMode = lower(strtrim(string(localGetNested(s, ...
     "mimo.mu_mimo_spatial_signature_mode", "dominant_scheduled_rank"))));
+ulMuMimoReceiveProcessingMode = lower(strtrim(string(localGetNested(s, ...
+    "mimo.ul_mu_mimo_receive_processing_mode", ""))));
 muMimoSpatialSubspaceNoiseMargin_dB = double(localGetNested(s, ...
     "mimo.mu_mimo_spatial_subspace_noise_margin_db", NaN));
 muMimoPhaseOnlyProjectionMaxIterations = double(localGetNested(s, ...
@@ -936,6 +938,14 @@ if muMimoEnabled && ~ismember(muMimoSpatialSignatureMode, ...
     error("sixgr:lls6g:config:InvalidMUMIMOSpatialSignatureMode", ...
         "mimo.mu_mimo_spatial_signature_mode must be dominant_scheduled_rank " + ...
         "or complete_detectable_subspace when MU-MIMO is enabled.");
+end
+if ulMuMimoEnabled && ulMuMimoReceiveProcessingMode ~= ...
+        "full_dimensional_per_re_irc"
+    error("sixgr:lls6g:config:InvalidULMUMIMOReceiveProcessingMode", ...
+        "mimo.ul_mu_mimo_receive_processing_mode must be explicitly " + ...
+        "configured as full_dimensional_per_re_irc when UL MU-MIMO is enabled. " + ...
+        "A frequency-flat rank-reducing projection is not accepted as the " + ...
+        "production receiver authority.");
 end
 if muMimoEnabled && muMimoSpatialSignatureMode == "complete_detectable_subspace" && ...
         ~(isscalar(muMimoSpatialSubspaceNoiseMargin_dB) && ...
@@ -977,6 +987,8 @@ cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoHybridRFDesignPolicy", char(muMi
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoHybridRFDesignPolicy", char(muMimoHybridRFDesignPolicy));
 cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoSpatialSignatureMode", char(muMimoSpatialSignatureMode));
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoSpatialSignatureMode", char(muMimoSpatialSignatureMode));
+cfg = sixgr.util.structSet(cfg, "phy.mimo.ulMuMimoReceiveProcessingMode", char(ulMuMimoReceiveProcessingMode));
+cfg = sixgr.util.structSet(cfg, "mac.scheduler.ulMuMimoReceiveProcessingMode", char(ulMuMimoReceiveProcessingMode));
 cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoSpatialSubspaceNoiseMargin_dB", muMimoSpatialSubspaceNoiseMargin_dB);
 cfg = sixgr.util.structSet(cfg, "mac.scheduler.muMimoSpatialSubspaceNoiseMargin_dB", muMimoSpatialSubspaceNoiseMargin_dB);
 cfg = sixgr.util.structSet(cfg, "phy.mimo.muMimoPhaseOnlyProjectionMaxIterations", muMimoPhaseOnlyProjectionMaxIterations);
@@ -1348,14 +1360,21 @@ cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", double(ulLayerCount));
 cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", double(ulLayerCount));
 cfg.phy.pusch.transformPrecoding = logical(s.waveform.transform_precoding_enabled);
 cfg.phy.pusch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
-if logical(localGetNested(s, ...
-        "pucch_resources.overlap_policy.uci_on_pusch_enabled", false))
-    cfg.phy.pusch.uciMultiplexingMode = ...
-        "harq_ack_on_pusch_when_pucch_collides";
-    cfg = sixgr.util.structSet(cfg, ...
-        "mac.scheduler.uciMultiplexingMode", ...
-        "harq_ack_on_pusch_when_pucch_collides");
+uciOnPUSCHEnabled = logical(localGetNested(s, ...
+    "pucch_resources.overlap_policy.uci_on_pusch_enabled", false));
+cfg = sixgr.util.structSet(cfg, ...
+    "phy.pucch.uciOnPUSCHEnabled", uciOnPUSCHEnabled);
+if uciOnPUSCHEnabled
+    uciMultiplexingMode = "harq_ack_on_pusch_when_pucch_collides";
+else
+    % The disabled state is an explicit runtime authority.  Leaving this
+    % field absent previously allowed the execution helper's enabled
+    % default to bypass a YAML false value when PUCCH and PUSCH collided.
+    uciMultiplexingMode = "pucch_only";
 end
+cfg.phy.pusch.uciMultiplexingMode = char(uciMultiplexingMode);
+cfg = sixgr.util.structSet(cfg, ...
+    "mac.scheduler.uciMultiplexingMode", char(uciMultiplexingMode));
 cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(ulMCSTable));
@@ -1653,6 +1672,8 @@ cfg.phy.ldpc.maxIterations = double(s.coding.max_decoder_iterations);
 cfg = sixgr.util.structSet(cfg, "phy.ldpc.useMexBatchDecode", ...
     ~localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile));
 cfoHz = localResolveRuntimeCFOHz(s);
+cfoConfiguredHz = localNumericScalarOrNaN(localGetNested(s, ...
+    "impairments.cfo_hz", NaN));
 timingOffsetSamples = localResolveRuntimeTimingOffsetSamples(s);
 cfoEnabled = logical(localRequireNested(s, ...
     "impairments.cfo_enabled", "impairments.cfo_enabled"));
@@ -1667,6 +1688,8 @@ cfg.phy.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.phy.nRxAnt = double(s.mimo.n_rx_ant);
 cfg = localApplyRuntimeAntennaConfig(cfg, s);
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(cfoHz));
+cfg = sixgr.util.structSet(cfg, "phy.impairments.configuredCFOHz", ...
+    double(cfoConfiguredHz));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoEstimationMethod", ...
     char(string(localGetNested(s, "impairments.cfo_estimation_method", "cyclic_prefix"))));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoCorrectionEnabled", cfoCorrectionEnabled);
@@ -1793,6 +1816,7 @@ pbchRequired = logical(localRequireNested(s, "control_gating.pbch_required", "co
 prachRequired = logical(localRequireNested(s, "control_gating.prach_required", "control_gating.prach_required"));
 pdcchRequired = logical(localRequireNested(s, "control_gating.pdcch_required", "control_gating.pdcch_required"));
 pucchRequired = logical(localGetNested(s, "control_gating.pucch_required", false));
+puschUCIRequired = logical(localGetNested(s, "control_gating.pusch_uci_required", false));
 srsRequired = logical(localRequireNested(s, "control_gating.srs_required", "control_gating.srs_required"));
 srsMaxAgeSlots = max(0, round(double(localRequireNested(s, ...
     "control_gating.srs_max_age_slots", "control_gating.srs_max_age_slots"))));
@@ -1803,12 +1827,14 @@ cfg = sixgr.util.structSet(cfg, "run.controlGating.pbchRequired", pbchRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.prachRequired", prachRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.pdcchRequired", pdcchRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.pucchRequired", pucchRequired);
+cfg = sixgr.util.structSet(cfg, "run.controlGating.puschUCIRequired", puschUCIRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.srsRequired", srsRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.srsMaxAgeSlots", srsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsRequired", trsRequired);
 cfg = sixgr.util.structSet(cfg, "run.controlGating.trsMaxAgeSlots", trsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "control_gating.pdcch_required", pdcchRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.pucch_required", pucchRequired);
+cfg = sixgr.util.structSet(cfg, "control_gating.pusch_uci_required", puschUCIRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.srs_required", srsRequired);
 cfg = sixgr.util.structSet(cfg, "control_gating.srs_max_age_slots", srsMaxAgeSlots);
 cfg = sixgr.util.structSet(cfg, "control_gating.trs_required", trsRequired);
@@ -1818,6 +1844,13 @@ if pdcchRequired
 end
 if pucchRequired
     cfg = localAppendValidationObjectives(cfg, "pucch_strict_validation");
+end
+if puschUCIRequired
+    if ~logical(sixgr.util.structGet(cfg, "phy.pucch.uciOnPUSCHEnabled", false))
+        error("sixgr:lls6g:config:PUSCHUCIRequiredButDisabled", ...
+            "control_gating.pusch_uci_required=true requires YAML UCI-on-PUSCH to be enabled.");
+    end
+    cfg = localAppendValidationObjectives(cfg, "pusch_uci_strict_validation");
 end
 if srsRequired
     cfg = localAppendValidationObjectives(cfg, "srs_strict_validation");
@@ -2601,7 +2634,9 @@ scalarPairs = {
     "uci_scaling", "uci.scaling"
     "repetition_type", "repetition.type"
     "repetition_count", "repetition.count"
+    "dmrs_residual_post_eq_sinr_bound_enabled", "measurements.dmrsResidualPostEqSINRBoundEnabled"
     "decision_directed_post_eq_sinr_bound_enabled", "measurements.decisionDirectedPostEqSINRBoundEnabled"
+    "decoder_noise_variance_mode", "measurements.decoderNoiseVarianceMode"
     };
 for i = 1:size(scalarPairs, 1)
     cfg = localCopyRuntimeField(cfg, s, ...
@@ -4267,7 +4302,13 @@ end
 nSectorsPerSite = max(1, round(nSectorsRequested));
 requestedSitesCompatible = isfinite(nSitesRequested) && nSitesRequested >= 1 && ...
     max(1, round(nSitesRequested)) * nSectorsPerSite == numCells;
-if isfinite(nSitesRequested) && nSitesRequested >= 1 && (numCells <= 1 || requestedSitesCompatible)
+if numCells == 1
+    % A child YAML requesting one cell must override inherited multi-site
+    % cardinality completely. Retaining the parent site count here changes
+    % one requested cell back into a multi-cell runtime layout.
+    nSites = 1;
+    nSectorsPerSite = 1;
+elseif requestedSitesCompatible
     nSites = max(1, round(nSitesRequested));
 else
     nSites = max(1, ceil(numCells / nSectorsPerSite));

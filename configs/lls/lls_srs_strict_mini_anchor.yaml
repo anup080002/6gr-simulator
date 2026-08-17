@@ -38,6 +38,10 @@ run_control:
 
 simulation:
   link_direction: ul
+  # This isolated waveform anchor is driven by the explicit SNR argument.
+  # It has no geometry/pathloss authority and therefore must not inherit the
+  # system-level thermal-noise operating mode from global defaults.
+  noise_operating_mode: standalone_awgn_snr_argument
   n_frames: 1
   n_slots: 5
   n_subframes: 1
