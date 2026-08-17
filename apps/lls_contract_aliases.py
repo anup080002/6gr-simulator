@@ -85,7 +85,7 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "live_interference_table": ["system/csv/system_interference_detail.csv", "reports/csv/table_noise_interference.csv"],
     "live_impairment_table": ["rf/csv/probe_rf_iq_imbalance.csv", "rf/csv/iq_imbalance_timeline_trace.csv", "reports/csv/channel_estimation_tracking_outputs.csv", "reports/csv/table_noise_interference.csv"],
     "live_tracking_table": ["reports/csv/cfo_to_tracking_traces.csv", "reports/csv/channel_estimation_tracking_outputs.csv"],
-    "live_measurement_table": ["reports/csv/table_cqi_pmi_ri.csv", "reports/csv/live_csi_feedback_stats.csv"],
+    "live_measurement_table": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv", "reports/csv/table_cqi_pmi_ri.csv", "reports/csv/live_csi_feedback_stats.csv"],
     "live_csi_feedback_table": ["reports/csv/live_csi_feedback_stats.csv", "reports/csv/csi_outputs.csv"],
     "live_link_adaptation_input_table": ["reports/csv/live_link_adaptation_input_table.csv", "reports/csv/table_mcs_tbs_evolution.csv", "reports/csv/table_cqi_pmi_ri.csv"],
     "live_beam_selection_table": ["reports/csv/live_beam_selection_stats.csv", "beamforming/csv/beamforming_analytics_table.csv"],

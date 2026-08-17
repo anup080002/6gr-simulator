@@ -67,10 +67,19 @@ if fixedLinkCampaignOnly
     rawTrials = struct( ...
         "DL", sixgr.util.structGet(campaign, "DLTrials", table()), ...
         "UL", sixgr.util.structGet(campaign, "ULTrials", table()));
+    energyArtifacts = struct();
     measuredSINRArtifacts = struct();
     if logical(persistenceEnabled)
         rawTrials = localPublishFixedLinkCanonicalTruthEvidence( ...
             runFolder, cfgExec, multiUser, campaign);
+        % Fixed-link-only execution still consumes real PDSCH/PUSCH trial
+        % rows.  Feed those exact rows through the same runtime-conditioned
+        % engineering energy model used by the connected runtime.  This is
+        % model-backed evidence (and is labelled as such by the exporter),
+        % never measured circuit power and never a synthetic primary PHY
+        % row.
+        energyArtifacts = sixgr.truth.exportLLSEnergyDiagnostics( ...
+            cfgExec, runFolder, rawTrials);
         kpiDetails = struct( ...
             "RawTrials", rawTrials, ...
             "Config", cfgExec, ...
@@ -125,7 +134,9 @@ if fixedLinkCampaignOnly
     out.ReferenceSweep = fixedSummary;
     out.FixedLinkCampaign = campaign;
     out.RawTrials = rawTrials;
-    out.Artifacts = struct("MeasuredSINR", measuredSINRArtifacts);
+    out.Artifacts = struct("MeasuredSINR", measuredSINRArtifacts, ...
+        "Energy", energyArtifacts);
+    out.EnergyArtifacts = energyArtifacts;
     out.Errors = strings(0,1);
     out.MultiUser = multiUser;
     out.PersistenceEnabled = logical(persistenceEnabled);

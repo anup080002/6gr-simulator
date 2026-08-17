@@ -126,6 +126,85 @@ def test_resolved_fixed_link_campaign_authority_and_geometry_exclusion() -> None
     )
 
 
+def test_resolved_fixed_link_disables_only_nonexecuted_runtime_families() -> None:
+    run_row = {
+        "profile_name": "waveform_bundle",
+        "config_json": json.dumps(
+            {
+                "lls6g": {
+                    "resolvedConfig": {
+                        "canonical_control": {"run": {"fixed_link_campaign_only": True}},
+                        "sweeps_and_matrix": {
+                            "fixed_link_calibration": {"enabled": True, "only": True}
+                        },
+                        "run_control": {
+                            "save_scheduler_decisions": True,
+                            "save_constellations": False,
+                            "save_energy_trace": False,
+                            "raw_iq_capture_enable": False,
+                            "raw_grid_capture_enable": False,
+                        },
+                        "output": {"backend": "filesystem"},
+                        "channels": {
+                            "profile": "AWGN",
+                            "pathloss_enabled": False,
+                            "shadow_fading_enabled": False,
+                            "phase10_strict": {"interference": {"execution": "none"}},
+                        },
+                        "random_access": {
+                            "enabled": False,
+                            "enable_collision_mode": False,
+                            "parameterized_config_enabled": False,
+                        },
+                        "phy": {"pucch": {"enable": False}},
+                        "mimo": {
+                            "phase07_strict": {"ul_srs_authority": {"enabled": False}}
+                        },
+                    }
+                }
+            }
+        ),
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["fixed_link_campaign_only"] is True
+    assert policy["scheduler_runtime_enabled"] is False
+    assert policy["traffic_runtime_enabled"] is False
+    assert policy["pathloss_enabled"] is False
+    assert policy["shadowing_enabled"] is False
+    assert policy["interference_enabled"] is False
+    assert policy["prach_enabled"] is False
+    assert policy["pucch_enabled"] is False
+    assert policy["energy_enabled"] is False
+    assert policy["prach_collision_enabled"] is False
+    assert policy["prach_threshold_sweep_enabled"] is False
+    assert policy["reciprocity_calibration_enabled"] is False
+    assert policy["storage_backend"] == "filesystem"
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_scheduler_cycle.csv", policy,
+        contract_name="live_scheduler_cycle",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/fairness_analytics.csv", policy,
+        contract_name="fairness_analytics",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__waveform__tx-waveform.csv", policy,
+        contract_name="Tx waveform",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/resource_grid_analytics.csv", policy,
+        contract_name="resource_grid_analytics",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/waveform_analytics.csv", policy,
+        contract_name="waveform_analytics",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/reports_all_stage_exec_v.csv", policy,
+        contract_name="reports_all_stage_exec_v",
+    )
+
+
 def test_fixed_single_beam_rank1_run_disables_adaptive_spatial_charts() -> None:
     run_row = {
         "config_json": json.dumps(
@@ -974,3 +1053,56 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
     )
     assert rv_chart is not None
     assert ",0.0,1.0," in rv_chart["csv_bytes"].decode("utf-8")
+
+
+def test_runtime_measurement_table_and_channel_reliability_use_trial_truth() -> None:
+    dl = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Direction", "Frame", "Slot", "ConfiguredSNR_dB",
+            "AppliedAWGNSNR_dB", "PostEqSINR_dB", "PostEqSINRSource",
+            "NMSE_dB", "CRCPass", "MCS", "Modulation", "TargetCodeRate",
+        ],
+        [
+            ["DL", 1, 1, 10, 10, 8.5, "receiver_equalizer", -18.0, 1, 10, "64QAM", 0.5],
+            ["DL", 1, 2, 10, 10, 7.8, "receiver_equalizer", -16.5, 0, 10, "64QAM", 0.5],
+        ],
+    )
+    ul = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Direction", "Frame", "Slot", "ConfiguredSNR_dB",
+            "AppliedAWGNSNR_dB", "PostEqSINR_dB", "PostEqSINRSource",
+            "NMSE_dB", "CRCPass", "MCS", "Modulation", "TargetCodeRate",
+        ],
+        [
+            ["UL", 1, 1, 10, 10, 9.1, "receiver_equalizer", -20.0, 1, 10, "64QAM", 0.5],
+            ["UL", 1, 2, 10, 10, 8.9, "receiver_equalizer", -19.0, 1, 10, "64QAM", 0.5],
+        ],
+    )
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {"artifact_id": 1},
+        "air_interface/csv/ul_pusch_trials.csv": {"artifact_id": 2},
+    }
+    payloads = {1: dl, 2: ul}
+    table_result = materializer._specialized_table_materialization(  # noqa: SLF001
+        "live_measurement_table", existing, lambda artifact_id: payloads[artifact_id],
+        77, "Measurements", {}, {},
+    )
+    assert table_result is not None
+    header, rows = materializer._decode_csv(table_result["data"])  # noqa: SLF001
+    assert len(rows) == 4
+    assert "configured_snr_db" in header
+    assert "posteq_sinr_db" in header
+    assert "nmse_db" in header
+    assert "source_artifact" in header
+
+    chart_result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "per-channel reliability breakdown", existing,
+        lambda artifact_id: payloads[artifact_id], 77,
+    )
+    assert chart_result is not None
+    chart_header, chart_rows = materializer._decode_csv(chart_result["csv_bytes"])  # noqa: SLF001
+    assert len(chart_rows) == 2
+    by_channel = {row[chart_header.index("channel")]: row for row in chart_rows}
+    assert float(by_channel["PDSCH"][chart_header.index("pass_rate")]) == 0.5
+    assert float(by_channel["PUSCH"][chart_header.index("pass_rate")]) == 1.0
+    assert chart_result["source_mapping_status"] == "exact"

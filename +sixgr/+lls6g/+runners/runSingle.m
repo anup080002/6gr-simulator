@@ -47,6 +47,10 @@ if resumeExisting
     % completed waveform to a different scenario revision.
     sixgr.truth.assertResumeConfigurationIdentity(runFolder, ...
         string(scfg.ScenarioID), string(scfg.ConfigHash));
+    % Source identity must be checked before any finalization/report path
+    % can rewrite derived files. Configuration equality alone is not enough
+    % when production code changed after the waveform was sealed.
+    sixgr.runtime.assertResumeSourceIdentity(runFolder);
 else
     logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
     if backend == "mysql_web"

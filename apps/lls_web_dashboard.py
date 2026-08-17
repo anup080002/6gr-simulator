@@ -10912,12 +10912,14 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     raw_iq_capture_enabled = config_bool(
         "output_control.save_raw_waveforms",
+        "run_control.raw_iq_capture_enable",
         "run.rawIQCaptureEnabled",
         "outputs.rawIQCaptureEnabled",
         "lls6g.resolvedConfig.run_control.raw_iq_capture_enable",
         default=system_default,
     )
     raw_grid_capture_enabled = config_bool(
+        "run_control.raw_grid_capture_enable",
         "run.rawGridCaptureEnabled",
         "outputs.rawGridCaptureEnabled",
         "lls6g.resolvedConfig.run_control.raw_grid_capture_enable",
@@ -10925,6 +10927,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     channel_snapshot_capture_enabled = config_bool(
         "output_control.save_channel_snapshots",
+        "run_control.save_channel_tensors",
         "outputs.saveChannelSnapshots",
         "lls6g.resolvedConfig.run_control.save_channel_tensors",
         default=system_default,
@@ -10933,6 +10936,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.channel.pathloss_enabled",
         "channel.pathlossEnabled",
         "lls6g.resolvedConfig.channel.pathloss_enabled",
+        "lls6g.resolvedConfig.channels.pathloss_enabled",
         default=system_default,
     )
     noise_operating_mode = config_text(
@@ -10954,17 +10958,26 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.channel.shadow_fading_enabled",
         "channel.shadowFadingEnabled",
         "lls6g.resolvedConfig.channel.shadow_fading_enabled",
+        "lls6g.resolvedConfig.channels.shadow_fading_enabled",
         default=system_default,
     )
+    interference_execution = config_text(
+        "channels.phase10_strict.interference.execution",
+        "lls6g.resolvedConfig.channels.phase10_strict.interference.execution",
+        default="none",
+    ).lower()
     interference_enabled = config_bool(
         "interference.enabled",
         "channel.interference.interCellEnabled",
         "interference.interCellEnabled",
-        default=system_default,
+        "lls6g.resolvedConfig.interference.enabled",
+        "lls6g.resolvedConfig.channel.interference.interCellEnabled",
+        default=False,
     ) or config_bool(
         "channel.interference.intraCellEnabled",
         "interference.intraCellEnabled",
-    )
+        "lls6g.resolvedConfig.channel.interference.intraCellEnabled",
+    ) or interference_execution not in {"", "none", "off", "disabled"}
     initial_access_enabled = config_bool(
         "canonical_control.initial_access.enabled",
         "initial_access.enabled",
@@ -10975,6 +10988,8 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.random_access.enabled",
         "random_access.enabled",
         "phy.prach.enable",
+        "lls6g.resolvedConfig.random_access.enabled",
+        "lls6g.resolvedConfig.phy.prach.enable",
         default=system_default,
     )
     prach_runtime_required = config_bool(
@@ -10982,12 +10997,14 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "control_gating.prach_required",
         "canonical_control.control.prach_required",
         "validation.random_access_evidence.msg1_prach_required",
-        default=system_default,
+        "lls6g.resolvedConfig.control_gating.prach_required",
+        default=prach_enabled,
     )
     pbch_runtime_required = config_bool(
         "run.controlGating.pbchRequired",
         "canonical_control.control.pbch_required",
-        default=system_default,
+        "lls6g.resolvedConfig.control_gating.pbch_required",
+        default=initial_access_enabled,
     )
     pdcch_enabled = config_bool(
         "canonical_control.control.pdcch_enabled",
@@ -10998,11 +11015,14 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     pucch_enabled = config_bool(
         "canonical_control.control.pucch_enabled",
         "phy.pucch.enable",
+        "lls6g.resolvedConfig.phy.pucch.enable",
+        "lls6g.resolvedConfig.control.pucch_enabled",
         default=system_default,
     )
     pucch_runtime_required = config_bool(
         "control_gating.pucch_required",
         "run.controlGating.pucchRequired",
+        "lls6g.resolvedConfig.control_gating.pucch_required",
         default=pucch_enabled,
     )
     pusch_uci_runtime_required = config_bool(
@@ -11020,22 +11040,54 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.energy.enabled",
         "energy.enable",
         "lls6g.resolvedConfig.energy.enable",
-        default=system_default,
+        "lls6g.resolvedConfig.canonical_control.energy.enabled",
+        "run_control.save_energy_trace",
+        "lls6g.resolvedConfig.run_control.save_energy_trace",
+        default=False,
     )
     prach_collision_enabled = config_bool(
         "random_access.enable_collision_mode",
         "prach_lls.EnableCollisionMode",
-        default=system_default,
+        "lls6g.resolvedConfig.random_access.enable_collision_mode",
+        default=False,
     )
     prach_threshold_sweep_enabled = config_bool(
         "random_access.parameterized_config_enabled",
-        default=system_default,
+        "lls6g.resolvedConfig.random_access.parameterized_config_enabled",
+        default=False,
     )
     reciprocity_calibration_enabled = config_bool(
         "phy.mimo.ulSRSAuthority.enabled",
         "canonical_control.csi.ul_csi_enabled",
-        default=system_default,
+        "lls6g.resolvedConfig.mimo.phase07_strict.ul_srs_authority.enabled",
+        default=False,
     )
+    scheduler_runtime_enabled = bool(
+        not fixed_link_campaign_only
+        and config_bool(
+            "run_control.save_scheduler_decisions",
+            "lls6g.resolvedConfig.run_control.save_scheduler_decisions",
+            default=system_default,
+        )
+    )
+    traffic_runtime_enabled = bool(
+        not fixed_link_campaign_only
+        and config_text(
+            "traffic.model",
+            "lls6g.resolvedConfig.traffic.model",
+            default="",
+        ).lower() not in {"", "none", "off", "disabled"}
+    )
+    constellation_capture_enabled = config_bool(
+        "run_control.save_constellations",
+        "lls6g.resolvedConfig.run_control.save_constellations",
+        default=False,
+    )
+    storage_backend = config_text(
+        "output.backend",
+        "lls6g.resolvedConfig.output.backend",
+        default="mysql_web" if system_default else "filesystem",
+    ).lower()
     channel_model = str(
         _config_get_nested(
             config,
@@ -11094,6 +11146,10 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "pusch_uci_runtime_required": pusch_uci_runtime_required,
         "srs_enabled": srs_enabled,
         "energy_enabled": energy_enabled,
+        "scheduler_runtime_enabled": scheduler_runtime_enabled,
+        "traffic_runtime_enabled": traffic_runtime_enabled,
+        "constellation_capture_enabled": constellation_capture_enabled,
+        "storage_backend": storage_backend,
         "prach_collision_enabled": prach_collision_enabled,
         "prach_threshold_sweep_enabled": prach_threshold_sweep_enabled,
         "reciprocity_calibration_enabled": reciprocity_calibration_enabled,

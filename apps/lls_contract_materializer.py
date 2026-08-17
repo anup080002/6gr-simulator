@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-17-contract-v40-unit-safe-fixed-link-plots"
+MATERIALIZER_VERSION = "2026-08-17-contract-v41-runtime-measurement-energy"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -163,6 +163,134 @@ def contract_artifact_is_policy_filtered(
     ):
         return True
 
+    # A fixed-link calibration campaign directly exercises transport blocks
+    # at controlled SNR points. It has no connected-mode mobility state,
+    # packet queues, MAC scheduler cycles, per-UE traffic timeline, DRX or
+    # PHY/MAC API exchange. These are configuration-inapplicable, not
+    # missing waveform evidence. Enabled PHY measurement, grid, RF and
+    # energy families are deliberately not included here.
+    if bool(policy.get("fixed_link_campaign_only", False)):
+        fixed_link_inapplicable_tables = {
+            "live_candidate_cell_table.csv",
+            "live_mobility_state.csv",
+            "live_measurement_filter_state.csv",
+            "live_selection_state.csv",
+            "live_reselection_state.csv",
+            "live_event_trigger_table.csv",
+            "live_prb_allocation_snapshot.csv",
+            "live_re_allocation_snapshot.csv",
+            "live_scheduler_cycle.csv",
+            "live_dl_scheduler_grants.csv",
+            "live_ul_scheduler_grants.csv",
+            "live_queue_state.csv",
+            "live_buffer_status.csv",
+            "live_hol_delay_state.csv",
+            "live_qos_state.csv",
+            "live_bsr_state.csv",
+            "live_ack_nack_table.csv",
+            "live_soft_buffer_table.csv",
+            "live_pdsch_mapping_table.csv",
+            "live_uci_table.csv",
+            "live_ue_state_table.csv",
+            "live_ue_measurement_state.csv",
+            "live_ue_power_state.csv",
+            "live_drx_state.csv",
+            "live_per_ue_context.csv",
+            "live_phy_mac_api_table.csv",
+            "doppler_reconciliation.csv",
+            "fairness_analytics.csv",
+            "mobility_analytics.csv",
+            "selection_reselection_analytics.csv",
+        }
+        if Path(path).name in fixed_link_inapplicable_tables:
+            return True
+        fixed_link_inapplicable_charts = {
+            "candidate cell rank heatmap",
+            "scheduled prbs per ue over time",
+            "queue depth over time",
+            "hol delay over time",
+            "scheduler fairness over time",
+            "sr/bsr event timeline",
+            "grant reason distribution",
+            "rv usage distribution",
+            "aggregation level distribution",
+            "cce usage heatmap",
+            "ue tx power timeline",
+            "drx state timeline",
+            "ue energy proxy timeline",
+            "per-cell context health timeline",
+            "throughput over time",
+            "goodput over time",
+            "per-ue throughput",
+            "throughput percentile plots",
+            "throughput cdf",
+            "fairness index trend",
+        }
+        if name in fixed_link_inapplicable_charts:
+            return True
+
+    if not bool(policy.get("scheduler_runtime_enabled", False)) and (
+        "scheduler" in name
+        or name in {
+            "mcs over time",
+            "sr/bsr event timeline",
+            "grant reason distribution",
+            "rv usage distribution",
+        }
+    ):
+        return True
+
+    if not bool(policy.get("traffic_runtime_enabled", False)) and name in {
+        "throughput over time",
+        "goodput over time",
+        "per-ue throughput",
+        "throughput percentile plots",
+        "throughput cdf",
+        "fairness index trend",
+    }:
+        return True
+
+    table_name = Path(path).name
+    if not bool(policy.get("power_control_enabled", False)) and table_name == "live_power_control_state.csv":
+        return True
+    if bool(policy.get("fixed_mcs_mode", False)) and table_name in {
+        "live_link_adaptation_input_table.csv",
+        "link_adaptation_analytics.csv",
+        "cqi_mcs_consistency_analytics.csv",
+    }:
+        return True
+    if not bool(policy.get("csi_enabled", False)) and table_name == "measurement_feedback_analytics.csv":
+        return True
+    if not bool(policy.get("raw_iq_capture_enabled", False)) and table_name in {
+        "waveform_analytics.csv",
+        "waveform_stage_overlay_analytics.csv",
+    }:
+        return True
+    if not bool(policy.get("constellation_capture_enabled", False)) and table_name == "constellation_analytics.csv":
+        return True
+    if not bool(policy.get("raw_grid_capture_enabled", False)) and table_name == "resource_grid_analytics.csv":
+        return True
+    if not bool(policy.get("prach_collision_enabled", False)) and table_name == "re_collision_analytics.csv":
+        return True
+    if not bool(policy.get("harq_enabled", False)) and table_name == "soft_buffer_analytics.csv":
+        return True
+    if not bool(policy.get("profiler_enabled", False)) and table_name == "runtime_latency_analytics.csv":
+        return True
+    if not bool(policy.get("energy_enabled", False)) and table_name in {
+        "live_power_runtime_table.csv",
+        "live_rf_power_table.csv",
+        "live_bb_power_table.csv",
+        "live_energy_efficiency_table.csv",
+        "live_sleep_state_table.csv",
+        "power_analytics.csv",
+        "energy_efficiency_analytics.csv",
+        "runtime_power_analytics.csv",
+        "sleep_state_analytics.csv",
+    }:
+        return True
+    if policy.get("storage_backend", "") == "filesystem" and table_name == "reports_all_stage_exec_v.csv":
+        return True
+
     if (
         bool(policy.get("fixed_link_campaign_only", False))
         and not bool(policy.get("beam_adaptation_enabled", False))
@@ -185,6 +313,13 @@ def contract_artifact_is_policy_filtered(
     if not bool(policy.get("csi_enabled", False)) and name in {
         "cqi / pmi / ri / cri timeline",
         "cqi / pmi / ri / cri / ssbri trends",
+        "cqi vs selected mcs",
+        "csi-rs resource occupancy",
+        "csi-rs map",
+        "cqi-to-mcs mapping plot",
+        "selected mcs distribution",
+        "selected vs derived mcs confusion matrix",
+        "quality-vs-selected-mcs mismatch plot",
     }:
         return True
 
@@ -193,6 +328,21 @@ def contract_artifact_is_policy_filtered(
         and not bool(policy.get("rank_adaptation_enabled", False))
         and int(policy.get("max_spatial_rank", 1) or 1) <= 1
         and name in {"rank distribution", "active rank vs power", "port usage chart"}
+    ):
+        return True
+
+    if (
+        bool(policy.get("fixed_link_campaign_only", False))
+        and int(policy.get("max_spatial_rank", 1) or 1) <= 1
+        and not bool(policy.get("beam_adaptation_enabled", False))
+        and name in {
+            "condition number distribution",
+            "mu grouping summary",
+            "mu grouping analytics",
+            "antenna element layout",
+            "antenna radiation pattern",
+            "beam pattern 3d",
+        }
     ):
         return True
 
@@ -301,6 +451,7 @@ def contract_artifact_is_policy_filtered(
 
     if not bool(policy.get("rf_impairments_enabled", False)) and name in {
         "impairment contribution bar chart",
+        "iq imbalance summary",
         "phase noise summary",
         "pa nonlinearity summary",
         "clipping summary",
@@ -329,12 +480,41 @@ def contract_artifact_is_policy_filtered(
         "stage overlay plots",
         "ue-wise / link-wise waveform comparison",
         "pre-equalization constellation",
+        "tx waveform",
+        "rx waveform",
+        "magnitude vs sample",
+        "phase vs sample",
+        "power vs sample",
+        "psd",
+        "occupied bandwidth",
+        "out-of-band spectral summaries if measurable",
+        "power spectral comparison before/after impairment",
+    }:
+        return True
+
+    if not bool(policy.get("constellation_capture_enabled", False)) and name in {
+        "post-equalization constellation",
+        "constellation per layer",
+        "constellation per codeword",
+        "constellation per modulation order",
+        "evm per symbol",
+        "evm per subcarrier",
+        "evm per layer",
+        "symbol decision error histogram",
     }:
         return True
 
     if not bool(policy.get("raw_grid_capture_enabled", False)) and name in {
         "dmrs/ptrs occupancy plot",
         "dmrs/ptrs occupancy map",
+        "frame/slot/symbol occupancy timeline",
+        "prb heatmap",
+        "re occupancy heatmap",
+        "dl/ul/guard slot pattern chart",
+        "dl resource-grid heatmap",
+        "ul resource-grid / equalized symbol summaries",
+        "pdsch map",
+        "pusch map",
     }:
         return True
 
@@ -380,7 +560,19 @@ def contract_artifact_is_policy_filtered(
     if not bool(policy.get("prach_enabled", False)) and (
         "prach" in name
         or "preamble" in name
-        or name in {"peak value histogram", "noise floor trend", "access attempt/success timeline", "collision summary if modeled"}
+        or name in {
+            "peak value histogram",
+            "noise floor trend",
+            "access attempt/success timeline",
+            "collision summary if modeled",
+            "p_fa",
+            "far",
+            "p_md",
+            "p_d",
+            "detection rate",
+            "false alarm rate",
+            "missed detection rate",
+        }
     ):
         return True
 
@@ -440,7 +632,20 @@ def contract_artifact_is_policy_filtered(
     ):
         return True
 
+    if (
+        not bool(policy.get("pdcch_enabled", False))
+        and not bool(policy.get("pucch_enabled", False))
+        and not bool(policy.get("initial_access_enabled", False))
+        and name in {
+            "sync success/failure timeline if available",
+            "control decode success/failure tables",
+        }
+    ):
+        return True
+
     if not bool(policy.get("pucch_enabled", False)) and "pucch" in name:
+        return True
+    if not bool(policy.get("pucch_enabled", False)) and name == "uci bit count distribution":
         return True
 
     # Standalone PUCCH and UCI transferred onto PUSCH are different PHY
@@ -3563,6 +3768,59 @@ def _specialized_live_report_table(
                 "source_logical_path": "|".join(raw_sources[family] for family in ("dl_pdsch", "ul_pusch", "pdcch", "pbch")),
                 "source_row_count": len(rows),
             }
+    if table_name == "live_measurement_table":
+        # Measurement evidence belongs to the receiver rows that produced it.
+        # Preserve configured, applied, and receiver-measured quantities as
+        # separate fields so no configured value is relabeled as measured.
+        selected_sources = [
+            (raw_sources["dl_pdsch"], raw_rows["dl_pdsch"]),
+            (raw_sources["ul_pusch"], raw_rows["ul_pusch"]),
+        ]
+        rows: list[dict[str, Any]] = []
+        for logical_path, source_rows in selected_sources:
+            for row in source_rows[:4096]:
+                rows.append({
+                    "run_id": run_id,
+                    "direction": _row_text(row, "Direction"),
+                    "frame": _row_text(row, "Frame", "SFN"),
+                    "slot": _row_text(row, "Slot"),
+                    "ue_id": _row_text(row, "UEID", "UEIndex", "RNTI"),
+                    "cell_id": _row_text(row, "BaseStationID", "ServingCell", "CellID"),
+                    "configured_snr_db": _row_text(row, "ConfiguredSNR_dB", "SNR_dB"),
+                    "applied_awgn_snr_db": _row_text(row, "AppliedAWGNSNR_dB", "AppliedNoiseSNR_dB"),
+                    "posteq_sinr_db": _row_text(row, "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB"),
+                    "posteq_sinr_source": _row_text(row, "PostEqSINRSource", "MeasuredTrialSINRSource", "SINRSource"),
+                    "posteq_sinr_status": _row_text(row, "PostEqSINRValueStatus", "MeasuredTrialSINRValueStatus", "SINRValueStatus"),
+                    "receiver_hest_sinr_db": _row_text(row, "ReceiverHestSINR_dB"),
+                    "receiver_hest_sinr_source": _row_text(row, "ReceiverHestSINRSource"),
+                    "serving_rsrp_dbm": _row_text(row, "ServingRSRP_dBm"),
+                    "csi_rsrp_dbm": _row_text(row, "CSI_RSRP_dBm", "CSI_RSRP_dB"),
+                    "thermal_noise_power_dbm": _row_text(row, "ThermalNoisePower_dBm"),
+                    "noise_variance": _row_text(row, "NoiseVariance", "LLRNoiseVariance"),
+                    "wideband_cqi": _row_text(row, "WidebandCQI"),
+                    "pmi": _row_text(row, "PMI", "AppliedPrecoderPMI"),
+                    "ri": _row_text(row, "RankIndicator", "Rank", "Layers"),
+                    "cri": _row_text(row, "CRI"),
+                    "mcs": _row_text(row, "MCS", "MCSIndex"),
+                    "modulation": _row_text(row, "Modulation"),
+                    "target_code_rate": _row_text(row, "TargetCodeRate"),
+                    "channel_model": _row_text(row, "ChannelModel", "ChannelModelApplied"),
+                    "channel_estimate_attempted": _row_text(row, "ChannelEstimateAttempted"),
+                    "channel_estimate_available": _row_text(row, "ChannelEstimateAvailable"),
+                    "channel_estimate_source": _row_text(row, "ChannelEstimateSource"),
+                    "nmse_db": _row_text(row, "NMSE_dB", "TrueChannelNMSE_dB"),
+                    "crc_pass": _row_text(row, "CRCPass", "CombinedDecodeOK"),
+                    "source_artifact": logical_path,
+                    "value_status": "runtime_receiver_measurement_evidence",
+                })
+        if rows:
+            return {
+                "data": _encode_rows_from_dicts(rows),
+                "status": "specialized_runtime_measurement_table",
+                "note": "Measurement rows preserve configured/applied SNR and receiver-derived SINR, RSRP, CQI, channel-estimation, and CRC fields from the same PDSCH/PUSCH trials.",
+                "source_logical_path": "|".join(path for path, source_rows in selected_sources if source_rows),
+                "source_row_count": len(rows),
+            }
     if table_name == "live_path_geometry_table":
         scenario_cfg = _json_object(config_payload.get("scenario"))
         layout_cfg = _json_object(scenario_cfg.get("layout"))
@@ -6426,7 +6684,7 @@ def _explicit_runtime_metric_chart_materialization(
         "DTX detection chart": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["DTXFlag"], "kind": "distribution", "label": "DTX flag"},
         "UCI bit count distribution": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["UCIBitCount", "ExpectedBitCount"], "kind": "distribution", "label": "UCI bit count"},
         "SRS validity timeline": {"sources": ["reports/csv/live_srs_stage_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["SRSRuntimeEvidenceUsable", "MeasurementUsable", "DetectionUsable"], "kind": "timeline", "label": "SRS usable flag"},
-        "channel estimate quality trend": {"sources": ["reports/csv/live_srs_channel_estimation_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["NMSE_dB", "TrueChannelNMSE_dB"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
+        "channel estimate quality trend": {"sources": ["reports/csv/live_srs_channel_estimation_table.csv", "air_interface/csv/srs_trials.csv", "reports/csv/live_measurement_table.csv"], "fields": ["NMSE_dB", "TrueChannelNMSE_dB", "nmse_db"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
         "RSRP/CSI-RSRP timeline": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dBm)"},
         "CQI / PMI / RI / CRI timeline": {"sources": ["reports/csv/live_measurement_table.csv", "reports/csv/live_link_adaptation_input_table.csv"], "fields": ["wideband_cqi", "WidebandCQI", "ri", "RI"], "kind": "timeline", "label": "Reported CQI / RI"},
         "MU grouping summary": {"sources": ["packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], "fields": ["MUMIMOGroupSize"], "kind": "distribution", "label": "MU-MIMO group size"},
@@ -7672,6 +7930,93 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    if chart_name == "per-channel reliability breakdown":
+        channel_sources = [
+            ("PDSCH", "air_interface/csv/dl_pdsch_trials.csv"),
+            ("PUSCH", "air_interface/csv/ul_pusch_trials.csv"),
+            ("PDCCH", "air_interface/csv/pdcch_trials.csv"),
+            ("PUCCH", "air_interface/csv/pucch_trials.csv"),
+            ("PBCH", "air_interface/csv/pbch_trials.csv"),
+            ("PRACH", "air_interface/csv/prach_trials.csv"),
+            ("SRS", "air_interface/csv/srs_trials.csv"),
+        ]
+        rows_out: list[dict[str, Any]] = []
+        points: list[list[float]] = []
+        summary: list[str] = []
+        source_paths: list[str] = []
+        for label, logical_path in channel_sources:
+            _header, source_rows = _artifact_rows_by_path(
+                existing, fetch_artifact_bytes, logical_path
+            )
+            if not source_rows:
+                continue
+            outcomes: list[bool] = []
+            for row in source_rows:
+                outcome = _row_flag(
+                    row,
+                    "CRCPass", "CombinedDecodeOK", "CurrentDecodeOK",
+                    "DecodeSuccess", "PUCCHDecodeOk", "DetectedFlag",
+                    "Detected", "SuccessFlag", "ControlDecodeOk",
+                )
+                if outcome is None:
+                    status = _row_text(row, "Status").strip().lower()
+                    if status in {"pass", "passed", "success", "detected", "ack"}:
+                        outcome = True
+                    elif status in {"fail", "failed", "error", "missed", "nack"}:
+                        outcome = False
+                if outcome is not None:
+                    outcomes.append(bool(outcome))
+            if not outcomes:
+                continue
+            passed = sum(1 for value in outcomes if value)
+            trials = len(outcomes)
+            rate = passed / trials
+            ci_low, ci_high = _wilson_score_interval(passed, trials)
+            bucket = len(points) + 1
+            points.append([float(bucket), float(rate)])
+            rows_out.append({
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "channel": label,
+                "pass_count": passed,
+                "fail_count": trials - passed,
+                "trial_count": trials,
+                "pass_rate": rate,
+                "ci95_lower": ci_low,
+                "ci95_upper": ci_high,
+                "source_table_logical_path": logical_path,
+            })
+            summary.append(f"bucket_{bucket}={label}")
+            source_paths.append(logical_path)
+        if rows_out:
+            dataset = {
+                "mode": "bar",
+                "x_label": "Physical channel bucket",
+                "y_label": "Observed pass rate",
+                "points": points,
+                "y_axis_min": 0.0,
+                "y_axis_max": 1.0,
+                "evidence_shape_policy": "observed_distribution",
+                "sample_count": sum(int(row["trial_count"]) for row in rows_out),
+            }
+            return {
+                "csv_bytes": _encode_dict_rows(
+                    ["run_id", "chart_name", "channel", "pass_count", "fail_count", "trial_count", "pass_rate", "ci95_lower", "ci95_upper", "source_table_logical_path"],
+                    rows_out,
+                ),
+                "img_bytes": _render_svg_plot(
+                    chart_name,
+                    "Observed decode/detection reliability by executed physical channel with Wilson 95% intervals in the CSV.",
+                    dataset,
+                    summary + [f"runtime_trials={dataset['sample_count']}"]
+                ),
+                "csv_status": "specialized_runtime_channel_reliability_dataset",
+                "image_status": "generated_specialized_runtime_summary_svg",
+                "source_table_path": "|".join(source_paths),
+                "source_row_count": int(dataset["sample_count"]),
+                "source_mapping_status": "exact",
+                "note": "Per-channel reliability uses only persisted physical-channel outcome rows; absent channel families are omitted rather than synthesized.",
+            }
     sensing = _runtime_sensing_probability_chart(
         chart_name, existing, fetch_artifact_bytes, run_id
     )

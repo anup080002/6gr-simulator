@@ -59,7 +59,16 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.run_folder is not None:
-        run_folder = validate_run_root(args.run_folder)
+        # Contract materialization itself is run-folder-local and
+        # non-destructive, so it is valid for isolated test/recovery roots.
+        # The repository-root restriction applies only to the explicit
+        # destructive raster-replacement option.
+        if args.replace_existing_rasters_from_csv:
+            run_folder = validate_run_root(args.run_folder)
+        else:
+            run_folder = Path(args.run_folder).resolve()
+            if not run_folder.is_dir():
+                raise SystemExit(f"Filesystem run folder does not exist: {run_folder}")
         _, policy = _filesystem_run_policy(run_folder)
 
         def policy_filter(path: str, name: str) -> bool:
