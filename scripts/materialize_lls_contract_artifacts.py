@@ -60,10 +60,17 @@ def main() -> int:
 
     if args.run_folder is not None:
         run_folder = validate_run_root(args.run_folder)
+        _, policy = _filesystem_run_policy(run_folder)
+
+        def policy_filter(path: str, name: str) -> bool:
+            return materializer.contract_artifact_is_policy_filtered(
+                path, policy, contract_name=name
+            )
+
         removed_rasters: list[dict[str, object]] = []
         declared_artifact_rasters: list[dict[str, str]] = []
         if args.replace_existing_rasters_from_csv:
-            require_primary_csv_semantics(run_folder)
+            require_primary_csv_semantics(run_folder, policy_filter=policy_filter)
             removed_rasters = raster_inventory(run_folder)
             inventory_path = (
                 run_folder / "reports" / "csv" / "raster_replacement_inventory.csv"
@@ -96,13 +103,14 @@ def main() -> int:
             declared_artifact_rasters = materialize_declared_artifact_generation_rasters(
                 run_folder
             )
+        # Index only after any raster replacement so the filesystem artifact
+        # set cannot be cached from the pre-replacement tree.
         run_row = dash.filesystem_run_row_from_folder(run_folder)
         if run_row is None:
             raise SystemExit(
                 f"Filesystem run metadata was not found under {run_folder}."
             )
         artifacts = dash.filesystem_artifacts_for_run(run_row)
-        policy = dash.extract_run_feature_policy(run_row)
         result = materializer.materialize_filesystem_run_contract_artifacts(
             run_row,
             artifacts,
@@ -203,6 +211,18 @@ def main() -> int:
             f"Missing tables: [{missing_tables}] Missing charts: [{missing_charts}]"
         )
     return 0
+
+
+def _filesystem_run_policy(run_folder: Path) -> tuple[dict[str, object], dict[str, object]]:
+    """Resolve applicability before destructive raster replacement.
+
+    This metadata read is policy-only. The run is indexed again after raster
+    replacement so cached filesystem artifacts always describe the new tree.
+    """
+    policy_row = dash.filesystem_run_row_from_folder(run_folder)
+    if policy_row is None:
+        raise SystemExit(f"Filesystem run metadata was not found under {run_folder}.")
+    return policy_row, dash.extract_run_feature_policy(policy_row)
 
 
 if __name__ == "__main__":

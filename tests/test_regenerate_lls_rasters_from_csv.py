@@ -28,12 +28,15 @@ def _semantic_row(category: str, *, passed: bool) -> dict[str, object]:
 
 
 def test_pre_raster_gate_defers_only_terminal_status_and_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    image_audit = _semantic_row("domain_runtime", passed=False)
+    image_audit["artifact_path"] = "reports/csv/all_image_artifact_audit.csv"
     audit = {
         "canonical_csv_semantic_audit": [
             _semantic_row("primary_link", passed=True),
             _semantic_row("runtime_execution_lineage", passed=True),
             _semantic_row("status_reduction", passed=False),
             _semantic_row("manifest_integrity", passed=False),
+            image_audit,
         ]
     }
     monkeypatch.setattr(MODULE, "audit_run", lambda _run_root: audit)
@@ -51,6 +54,42 @@ def test_pre_raster_gate_still_rejects_runtime_ledger_failure(monkeypatch: pytes
     monkeypatch.setattr(MODULE, "audit_run", lambda _run_root: audit)
     with pytest.raises(SystemExit, match="runtime_execution_lineage_check"):
         MODULE.require_primary_csv_semantics(tmp_path)
+
+
+def test_pre_raster_gate_skips_only_configuration_filtered_csv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    distance = _semantic_row("primary_link", passed=False)
+    distance["artifact_path"] = "air_interface/csv/distance_vs_sinr.csv"
+    required_runtime = _semantic_row("runtime_execution_lineage", passed=True)
+    audit = {"canonical_csv_semantic_audit": [distance, required_runtime]}
+    monkeypatch.setattr(MODULE, "audit_run", lambda _run_root: audit)
+
+    def fixed_link_filter(path: str, _name: str) -> bool:
+        return path == "air_interface/csv/distance_vs_sinr.csv"
+
+    assert (
+        MODULE.require_primary_csv_semantics(
+            tmp_path, policy_filter=fixed_link_filter
+        )
+        is audit
+    )
+
+
+def test_pre_raster_policy_filter_does_not_hide_other_required_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    distance = _semantic_row("primary_link", passed=False)
+    distance["artifact_path"] = "air_interface/csv/distance_vs_sinr.csv"
+    ledger = _semantic_row("runtime_execution_lineage", passed=False)
+    audit = {"canonical_csv_semantic_audit": [distance, ledger]}
+    monkeypatch.setattr(MODULE, "audit_run", lambda _run_root: audit)
+
+    with pytest.raises(SystemExit, match="runtime_execution_lineage_check"):
+        MODULE.require_primary_csv_semantics(
+            tmp_path,
+            policy_filter=lambda path, _name: path.endswith("distance_vs_sinr.csv"),
+        )
 
 
 def test_post_raster_gate_defers_only_caller_owned_terminal_status() -> None:

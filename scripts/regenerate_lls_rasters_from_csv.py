@@ -804,7 +804,22 @@ def validate_run_root(run_root: Path) -> Path:
     return resolved
 
 
-def require_primary_csv_semantics(run_root: Path) -> dict[str, list[dict[str, Any]]]:
+def _semantic_row_is_policy_filtered(
+    row: dict[str, Any],
+    policy_filter: Callable[[str, str], bool] | None,
+) -> bool:
+    if policy_filter is None:
+        return False
+    artifact_path = str(row.get("artifact_path") or "")
+    contract_name = Path(artifact_path).stem
+    return bool(policy_filter(artifact_path, contract_name))
+
+
+def require_primary_csv_semantics(
+    run_root: Path,
+    *,
+    policy_filter: Callable[[str, str], bool] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     audit = audit_run(run_root)
     # Terminal visual/status rows describe the post-materialization raster
     # tree and are necessarily stale before replacement.  Defer only these
@@ -812,11 +827,16 @@ def require_primary_csv_semantics(run_root: Path) -> dict[str, list[dict[str, An
     # and the complete post-materialization audit below evaluates every
     # status and manifest check before publication succeeds.
     deferred_until_post_materialization = {"manifest_integrity", "status_reduction"}
+    deferred_artifacts_until_post_materialization = {
+        "reports/csv/all_image_artifact_audit.csv"
+    }
     required_checks = [
         row
         for row in audit["canonical_csv_semantic_audit"]
         if bool(row.get("required"))
         and str(row.get("category")) not in deferred_until_post_materialization
+        and str(row.get("artifact_path")) not in deferred_artifacts_until_post_materialization
+        and not _semantic_row_is_policy_filtered(row, policy_filter)
     ]
     failures = sum(not bool(row.get("evaluated")) or not bool(row.get("passed")) for row in required_checks)
     if failures:
@@ -825,6 +845,8 @@ def require_primary_csv_semantics(run_root: Path) -> dict[str, list[dict[str, An
             for row in audit["canonical_csv_semantic_audit"]
             if bool(row.get("required"))
             and str(row.get("category")) not in deferred_until_post_materialization
+            and str(row.get("artifact_path")) not in deferred_artifacts_until_post_materialization
+            and not _semantic_row_is_policy_filtered(row, policy_filter)
             and (not bool(row.get("evaluated")) or not bool(row.get("passed")))
         ]
         raise SystemExit(
@@ -836,6 +858,8 @@ def require_primary_csv_semantics(run_root: Path) -> dict[str, list[dict[str, An
 
 def post_materialization_required_failures(
     audit: dict[str, list[dict[str, Any]]],
+    *,
+    policy_filter: Callable[[str, str], bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Return failures Python can close before MATLAB terminal reduction.
 
@@ -852,6 +876,8 @@ def post_materialization_required_failures(
     ):
         for row in audit[collection_name]:
             if not bool(row.get("required")):
+                continue
+            if _semantic_row_is_policy_filtered(row, policy_filter):
                 continue
             if (
                 collection_name == "canonical_csv_semantic_audit"
@@ -1050,7 +1076,23 @@ def main() -> int:
     _delete_header_only_csv(
         run_root / "artifact_generation" / "artifact_generation_failures.csv"
     )
-    require_primary_csv_semantics(run_root)
+    # The semantic catalog is deliberately broader than one scenario.  Apply
+    # only configuration-derived applicability here: for example, an AWGN
+    # fixed-link campaign must retain a header-only distance_vs_sinr.csv and
+    # must not be blocked or populated with invented geometry rows.
+    import lls_web_dashboard as dashboard  # noqa: E402
+
+    run_row = dashboard.filesystem_run_row_from_folder(run_root)
+    if run_row is None:
+        raise SystemExit(f"Filesystem run metadata was not found under {run_root}.")
+    feature_policy = dashboard.extract_run_feature_policy(run_row)
+
+    def policy_filter(path: str, name: str) -> bool:
+        return contract_materializer.contract_artifact_is_policy_filtered(
+            path, feature_policy, contract_name=name
+        )
+
+    require_primary_csv_semantics(run_root, policy_filter=policy_filter)
 
     before = raster_inventory(run_root)
     write_csv(
@@ -1145,7 +1187,9 @@ def main() -> int:
     )
     post_audit = audit_run(run_root)
     post_summary = dict(post_audit["summary"][0])
-    failures = post_materialization_required_failures(post_audit)
+    failures = post_materialization_required_failures(
+        post_audit, policy_filter=policy_filter
+    )
     if failures:
         raise SystemExit(
             "Post-materialization CSV/chart semantic gate failed: "

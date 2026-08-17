@@ -1411,7 +1411,11 @@ canonical_control:
       legacy_reference_root: artifacts
       legacy_reference_usage: coverage_inventory_only
       profiles: [base]
-      domains: [initial_access, pdsch, pusch]
+      # This master executes an independent fixed-link-only waveform sweep;
+      # initial_access.enabled=false, so requiring PRACH here would contradict
+      # the same resolved YAML. Initial-access qualification is a separate
+      # enabled scenario and is never synthesized into this campaign.
+      domains: [pdsch, pusch]
       publish_root: components
       source_policy: runtime_memory_only
       truth_only: true
