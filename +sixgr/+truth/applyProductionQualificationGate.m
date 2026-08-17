@@ -42,8 +42,8 @@ scenarioObjectiveOk = localResolvedLogical(status, persistedStatus, ...
     "Required", "Pass", "runtime_wiring_evidence_missing_or_invalid");
 [referenceOk, referenceStatus, referenceReason] = localReferenceGate(runFolder);
 
-statisticalOk = localResolvedLogical(status, persistedStatus, ...
-    "StatisticalQualificationOk", false);
+[statisticalOk, statisticalStatus, statisticalReason] = ...
+    localProductionStatisticalGate(status, persistedStatus, layout);
 scientificOk = functionalOk && scenarioObjectiveOk && phase7Ok && statisticalOk;
 productionGradeOk = functionalOk && wiringOk && scientificOk && ...
     referenceOk && publicationOk;
@@ -56,9 +56,13 @@ status.NumericalValidationOk = logical(phase7Ok);
 status.NumericalValidationStatus = phase7Status;
 status.ReferenceQualificationOk = logical(referenceOk);
 status.ReferenceQualificationStatus = referenceStatus;
+status.StatisticalQualificationOk = logical(statisticalOk);
+status.StatisticalQualificationStatus = statisticalStatus;
 status.ScientificQualificationOk = logical(scientificOk);
 status.ScientificQualificationStatus = localState(scientificOk, ...
-    phase7Status == "NOT_EVALUATED" || referenceStatus == "NOT_EVALUATED");
+    phase7Status == "NOT_EVALUATED" || ...
+    statisticalStatus == "NOT_EVALUATED" || ...
+    referenceStatus == "NOT_EVALUATED");
 status.TerminalPublicationGatesOk = logical(publicationOk);
 status.TerminalPublicationGateStatus = publicationStatus;
 status.ProductionGradeOk = logical(productionGradeOk);
@@ -67,13 +71,14 @@ status.PublicationQualified = logical(productionGradeOk) && ...
     localResolvedLogical(status, persistedStatus, ...
     "PublicationLLSEligible", false);
 status.PublicationQualificationStatus = localState(status.PublicationQualified, ...
-    ~functionalOk || any([phase7Status, publicationStatus, wiringStatus, referenceStatus] == "NOT_EVALUATED"));
+    ~functionalOk || any([phase7Status, statisticalStatus, publicationStatus, ...
+    wiringStatus, referenceStatus] == "NOT_EVALUATED"));
 status.OverallQualificationStatus = localOverallStatus(functionalOk, productionGradeOk);
 status.ProductionQualificationFailureReasons = strjoin(localReasons( ...
     functionalOk, scenarioObjectiveOk, wiringOk, phase7Ok, statisticalOk, referenceOk, publicationOk, ...
-    wiringReason, phase7Reason, referenceReason, publicationReason), "; ");
+    wiringReason, phase7Reason, statisticalReason, referenceReason, publicationReason), "; ");
 status.ProductionQualificationProducer = "sixgr.truth.applyProductionQualificationGate";
-status.ProductionQualificationSchemaVersion = "production_qualification_status_v1";
+status.ProductionQualificationSchemaVersion = "production_qualification_status_v2";
 
 gateT = table( ...
     ["FunctionalRun";"ScenarioObjective";"RuntimeWiringCoverage";"Phase7NumericalValidation"; ...
@@ -82,7 +87,7 @@ gateT = table( ...
     [true;true;true;true;true;true;true;true], ...
     [functionalOk;scenarioObjectiveOk;wiringOk;phase7Ok;statisticalOk;referenceOk;publicationOk;productionGradeOk], ...
     [localState(functionalOk,false);localState(scenarioObjectiveOk,false);wiringStatus;phase7Status; ...
-     localState(statisticalOk,~statisticalOk);referenceStatus;publicationStatus; ...
+     statisticalStatus;referenceStatus;publicationStatus; ...
      localState(productionGradeOk,~functionalOk)], ...
     ["reports/csv/result_status_summary.csv"; ...
      "reports/csv/scenario_objective_gates.csv"; ...
@@ -95,7 +100,7 @@ gateT = table( ...
     [localReason(functionalOk,"functional_runtime_gate_failed"); ...
      localReason(scenarioObjectiveOk,"scenario_objective_gate_failed"); ...
      localReason(wiringOk,wiringReason);localReason(phase7Ok,phase7Reason); ...
-     localReason(statisticalOk,"statistical_qualification_not_passed"); ...
+     localReason(statisticalOk,statisticalReason); ...
      localReason(referenceOk,referenceReason); ...
      localReason(publicationOk,publicationReason); ...
      localReason(productionGradeOk,status.ProductionQualificationFailureReasons)], ...
@@ -113,7 +118,63 @@ sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", ...
     "TerminalPublicationGatesOk", logical(publicationOk), ...
     "ProductionGradeOk", logical(productionGradeOk), ...
     "FailureReasons", string(status.ProductionQualificationFailureReasons), ...
-    "SchemaVersion", "production_qualification_status_v1"));
+    "SchemaVersion", "production_qualification_status_v2"));
+end
+
+function [ok, state, reason] = localProductionStatisticalGate(status, persistedStatus, layout)
+% Production qualification may not inherit a component-level
+% NOT_APPLICABLE statistical pass.  Fixed-SNR and geometry campaigns own
+% their sample adequacy in the Phase-7 campaign evidence.
+runClass = localResolvedString(status, persistedStatus, "RunClass", "");
+phase7Path = fullfile(layout.ReportCSVDir, "phase7_truth_gates.csv");
+phase7 = localRead(phase7Path);
+campaignRunClasses = ["fixed_snr_sweep_lls","ue_placement_geometry_lls", ...
+    "hybrid_validation"];
+if ismember(runClass, campaignRunClasses)
+    requiredColumns = ["SeedHierarchyOk","CampaignDesignOk", ...
+        "CampaignCompletionOk","MultiSeedDropStatisticsOk", ...
+        "ConfidenceIntervalsOk","SampleAdequacyOk","SweepDataQualityOk"];
+    if height(phase7) ~= 1 || ...
+            any(~ismember(requiredColumns, string(phase7.Properties.VariableNames)))
+        ok = false;
+        state = "NOT_EVALUATED";
+        reason = "production_statistical_campaign_evidence_missing_or_invalid";
+        return;
+    end
+    passes = false(numel(requiredColumns), 1);
+    for idx = 1:numel(requiredColumns)
+        passes(idx) = localToLogical(phase7.(char(requiredColumns(idx)))(1));
+    end
+    ok = all(passes);
+    state = localState(ok, false);
+    if ok
+        reason = "";
+    else
+        reason = "production_statistical_campaign_gates_failed:" + ...
+            strjoin(requiredColumns(~passes), "|");
+    end
+    return;
+end
+
+ok = localResolvedLogical(status, persistedStatus, ...
+    "StatisticalQualificationOk", false);
+qualificationState = localResolvedString(status, persistedStatus, ...
+    "StatisticalQualificationStatus", "");
+if qualificationState == "NOT_APPLICABLE"
+    ok = false;
+    state = "NOT_EVALUATED";
+    reason = "production_statistical_qualification_not_applicable";
+elseif ok && qualificationState == "PASS"
+    state = "PASS";
+    reason = "";
+elseif strlength(qualificationState) == 0
+    state = "NOT_EVALUATED";
+    reason = "production_statistical_qualification_status_missing";
+else
+    ok = false;
+    state = "FAIL";
+    reason = "production_statistical_qualification_not_passed";
+end
 end
 
 function [ok, state, reason] = localScalarGate(path, columns, missingReason)
@@ -184,13 +245,13 @@ state = localState(ok, false);
 reason = localReason(ok, "independent_frc_reference_point_failed");
 end
 
-function reasons = localReasons(functionalOk, scenarioObjectiveOk, wiringOk, phase7Ok, statisticalOk, referenceOk, publicationOk, wiringReason, phase7Reason, referenceReason, publicationReason)
+function reasons = localReasons(functionalOk, scenarioObjectiveOk, wiringOk, phase7Ok, statisticalOk, referenceOk, publicationOk, wiringReason, phase7Reason, statisticalReason, referenceReason, publicationReason)
 reasons = strings(0,1);
 if ~functionalOk, reasons(end+1,1) = "functional_runtime_gate_failed"; end %#ok<AGROW>
 if ~scenarioObjectiveOk, reasons(end+1,1) = "scenario_objective_gate_failed"; end %#ok<AGROW>
 if ~wiringOk, reasons(end+1,1) = wiringReason; end %#ok<AGROW>
 if ~phase7Ok, reasons(end+1,1) = phase7Reason; end %#ok<AGROW>
-if ~statisticalOk, reasons(end+1,1) = "statistical_qualification_not_passed"; end %#ok<AGROW>
+if ~statisticalOk, reasons(end+1,1) = statisticalReason; end %#ok<AGROW>
 if ~referenceOk, reasons(end+1,1) = referenceReason; end %#ok<AGROW>
 if ~publicationOk, reasons(end+1,1) = publicationReason; end %#ok<AGROW>
 reasons = unique(reasons(strlength(strtrim(reasons)) > 0), "stable");
@@ -235,6 +296,20 @@ if istable(persistedStatus) && height(persistedStatus) == 1 && ...
     return;
 end
 value = logical(defaultValue);
+end
+
+function value = localResolvedString(status, persistedStatus, name, defaultValue)
+if isfield(status, char(name)) && ~isempty(status.(char(name)))
+    value = string(status.(char(name)));
+    value = value(1);
+    return;
+end
+if istable(persistedStatus) && height(persistedStatus) == 1 && ...
+        ismember(string(name), string(persistedStatus.Properties.VariableNames))
+    value = string(persistedStatus.(char(name))(1));
+    return;
+end
+value = string(defaultValue);
 end
 
 function value = localToLogical(raw)

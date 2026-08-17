@@ -914,20 +914,48 @@ def _audit_manifest_integrity(run_root: Path) -> list[AuditCheck]:
     if result_rows:
         failures: list[str] = []
         required_columns = {
-            "Domain", "Component", "Profile", "ArtifactType", "FileName", "Required",
+            "ContractID", "Domain", "Component", "Profile", "ArtifactType", "FileName", "Required",
             "Status", "SourceRows", "OutputRelativePath", "SourceSHA256", "SHA256",
             "ByteSize", "Width", "Height", "AxesCount", "SeriesCount", "FinitePointCount",
         }
         if not required_columns.issubset(results_header):
             failures.append("missing_columns=" + ",".join(sorted(required_columns.difference(results_header))))
+        canonical_rel = "artifact_generation/canonical_component_manifest.csv"
+        canonical_header, canonical_rows = _read_rows(run_root / canonical_rel)
+        canonical_by_contract: dict[str, dict[str, str]] = {}
+        duplicate_contracts: set[str] = set()
+        for manifest_row in canonical_rows:
+            contract_id = _text(manifest_row, "ContractID")
+            if not contract_id:
+                continue
+            if contract_id in canonical_by_contract:
+                duplicate_contracts.add(contract_id)
+            canonical_by_contract[contract_id] = manifest_row
+        if duplicate_contracts:
+            failures.append(
+                "canonical_manifest_duplicate_contracts="
+                + ",".join(sorted(duplicate_contracts))
+            )
         for index, row in enumerate(result_rows, start=1):
             prefix = f"row={index}"
-            output = _run_relative_path(run_root, _text(row, "OutputRelativePath"))
             status = _text(row, "Status").upper()
             required = _boolean(row, "Required") is True
+            contract_id = _text(row, "ContractID")
+            canonical_row = canonical_by_contract.get(contract_id)
+            if status == "PASS" and canonical_row is None:
+                failures.append(prefix + ":pass_claim_missing_canonical_manifest_row")
+            published_relative = (
+                _text(canonical_row or {}, "PublishedRelativePath")
+                or f"components/{_text(row, 'OutputRelativePath')}"
+            ).replace("\\", "/")
+            output = _run_relative_path(run_root, published_relative)
             if output is None:
                 failures.append(prefix + ":invalid_output_path")
                 continue
+            if canonical_row is not None:
+                for field in ("Status", "SHA256", "SourceSHA256", "ByteSize"):
+                    if _text(canonical_row, field) != _text(row, field):
+                        failures.append(prefix + f":canonical_manifest_{field}_mismatch")
             exists = _io_path(output).is_file()
             if status == "PASS" and not exists:
                 failures.append(prefix + ":pass_claim_output_missing")

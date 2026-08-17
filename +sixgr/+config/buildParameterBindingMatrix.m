@@ -29,6 +29,18 @@ scenarioLeaves = localFlattenLeafMap(scenarioStruct);
 overlayLeaves = localFlattenLeafMap(overlayStruct);
 baseLeaves = localFlattenLeafMap(baseStruct);
 
+% Build invocation-local indexes once.  The ownership inventory contains
+% thousands of leaves; rescanning the full contract, evidence table and leaf
+% vectors for every parameter made strict finalization quadratic and consumed
+% several minutes after even a three-point waveform run.  These maps change
+% lookup cost only; values and first/last-row precedence remain identical.
+contractIndex = localBuildContractIndex(contractRows);
+registryHintIndex = localBuildRegistryHintIndex(registryHints);
+scenarioLeafIndex = localBuildLeafIndex(scenarioLeaves);
+overlayLeafIndex = localBuildLeafIndex(overlayLeaves);
+baseLeafIndex = localBuildLeafIndex(baseLeaves);
+evidenceIndex = localBuildEvidenceIndex(applicationEvidence);
+
 parameterIds = strings(0, 1);
 parameterIds = [parameterIds; string({contractRows.ParameterId}).']; %#ok<AGROW>
 parameterIds = [parameterIds; string({scenarioLeaves.Path}).']; %#ok<AGROW>
@@ -45,9 +57,9 @@ measuredArtifactCache = containers.Map("KeyType", "char", "ValueType", "any");
 rows = repmat(localEmptyBindingRow(), numel(parameterIds), 1);
 for i = 1:numel(parameterIds)
     parameterId = string(parameterIds(i));
-    contract = localFindContractRow(contractRows, parameterId);
+    contract = localFindContractRowIndexed(contractIndex, parameterId);
     taxonomy = localFindTaxonomyRow(taxonomyRows, parameterId);
-    registryHint = localFindRegistryHint(registryHints, parameterId);
+    registryHint = localFindRegistryHintIndexed(registryHintIndex, parameterId);
 
     browserPath = localCoalesceString(localGetField(contract, "BrowserPath", ""), parameterId);
     scenarioPath = localCoalesceString(localGetField(contract, "ScenarioPath", ""), browserPath);
@@ -61,9 +73,9 @@ for i = 1:numel(parameterIds)
         [measuredArtifact, measuredField] = localDefaultMeasuredMapping(parameterId);
     end
 
-    [submittedValue, submittedFound] = localTryGetLeaf(overlayLeaves, browserPath);
-    [baseValue, baseFound] = localTryGetLeaf(baseLeaves, scenarioPath);
-    [resolvedScenarioValue, resolvedFound] = localTryGetLeaf(scenarioLeaves, scenarioPath);
+    [submittedValue, submittedFound] = localTryGetLeafIndexed(overlayLeafIndex, browserPath);
+    [baseValue, baseFound] = localTryGetLeafIndexed(baseLeafIndex, scenarioPath);
+    [resolvedScenarioValue, resolvedFound] = localTryGetLeafIndexed(scenarioLeafIndex, scenarioPath);
     [internalCfgValue, internalFound] = localGetInternalValue(cfg, internalCfgPath, aliases);
     [dbValue, dbFound] = localTryGet(dbStruct, scenarioPath);
     if ~dbFound && strlength(internalCfgPath) > 0
@@ -98,7 +110,7 @@ for i = 1:numel(parameterIds)
         appliesWhen = localGetField(taxonomy, "AppliesWhen", strings(0, 1));
     end
 
-    evidenceRow = localFindEvidenceRow(applicationEvidence, parameterId);
+    evidenceRow = localFindEvidenceRowIndexed(evidenceIndex, parameterId);
     runtimeAppliedArtifact = "";
     runtimeAppliedField = "";
     runtimeAppliedValue = "";
@@ -394,6 +406,102 @@ for i = 1:numel(rawHints)
     hints(i).FeatureFamily = string(localGetField(hint, "FeatureFamily", ""));
     hints(i).UILayer = string(localGetField(hint, "UILayer", ""));
     hints(i).UISection = string(localGetField(hint, "UISection", ""));
+end
+end
+
+function index = localBuildContractIndex(rows)
+index = containers.Map("KeyType", "char", "ValueType", "any");
+for i = 1:numel(rows)
+    key = char(string(localGetField(rows(i), "ParameterId", "")));
+    if isempty(key) || isKey(index, key)
+        continue;
+    end
+    index(key) = rows(i);
+end
+end
+
+function row = localFindContractRowIndexed(index, parameterId)
+row = localEmptyContractRow();
+key = char(string(parameterId));
+if ~isempty(key) && isKey(index, key)
+    row = index(key);
+end
+end
+
+function index = localBuildRegistryHintIndex(hints)
+index = containers.Map("KeyType", "char", "ValueType", "any");
+% Direct ParameterId matches have precedence over every alias, matching the
+% former two-pass search exactly.
+for i = 1:numel(hints)
+    key = char(string(localGetField(hints(i), "ParameterId", "")));
+    if isempty(key) || isKey(index, key)
+        continue;
+    end
+    index(key) = hints(i);
+end
+for i = 1:numel(hints)
+    aliases = string(localGetField(hints(i), "Aliases", strings(0, 1)));
+    for j = 1:numel(aliases)
+        key = char(aliases(j));
+        if isempty(key) || isKey(index, key)
+            continue;
+        end
+        index(key) = hints(i);
+    end
+end
+end
+
+function hint = localFindRegistryHintIndexed(index, parameterId)
+hint = localEmptyRegistryHintRow();
+key = char(string(parameterId));
+if ~isempty(key) && isKey(index, key)
+    hint = index(key);
+end
+end
+
+function index = localBuildLeafIndex(leaves)
+index = containers.Map("KeyType", "char", "ValueType", "any");
+for i = 1:numel(leaves)
+    key = char(string(leaves(i).Path));
+    if isempty(key) || isKey(index, key)
+        continue;
+    end
+    index(key) = leaves(i).Value;
+end
+end
+
+function [value, found] = localTryGetLeafIndexed(index, path)
+value = [];
+found = false;
+key = char(string(path));
+if isempty(key) || ~isKey(index, key)
+    return;
+end
+value = index(key);
+found = true;
+end
+
+function index = localBuildEvidenceIndex(T)
+index = containers.Map("KeyType", "char", "ValueType", "any");
+if ~(istable(T) && ~isempty(T) && ...
+        any(strcmp(string(T.Properties.VariableNames), "ParameterId")))
+    return;
+end
+% The original resolver selected the last matching evidence row.
+for i = 1:height(T)
+    key = char(string(T.ParameterId(i)));
+    if isempty(key)
+        continue;
+    end
+    index(key) = T(i, :);
+end
+end
+
+function row = localFindEvidenceRowIndexed(index, parameterId)
+row = table();
+key = char(string(parameterId));
+if ~isempty(key) && isKey(index, key)
+    row = index(key);
 end
 end
 

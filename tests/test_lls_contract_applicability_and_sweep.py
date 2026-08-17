@@ -259,6 +259,55 @@ def test_fixed_single_beam_rank1_run_disables_adaptive_spatial_charts() -> None:
             contract_name=name,
         )
 
+    # Schema-only component summaries are inapplicable only because the same
+    # authoritative YAML disables the owning runtime family.  This must not be
+    # inferred from the absence of rows.
+    for path in (
+        "reports/csv/live_coverage_layer.csv",
+        "reports/csv/live_user_performance_snapshot.csv",
+        "reports/csv/live_csirs_stats.csv",
+        "reports/csv/live_beam_p1_acquisition_stats.csv",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            path,
+            policy,
+            contract_name=Path(path).stem,
+        )
+
+
+def test_enabled_csi_beam_and_geometry_tables_remain_required() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "canonical_control": {
+                    "launch": {
+                        "fixed_link_campaign_enabled": False,
+                        "geometry_enabled": True,
+                    },
+                    "run": {"fixed_link_campaign_only": False},
+                },
+                "mimo": {"beam_count": 4},
+                "mimo_and_beam_management": {"beam_sweeping": True},
+                "csi_acquisition_and_reporting": {"dl_csi_enabled": True},
+            }
+        )
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["fixed_link_campaign_only"] is False
+    assert policy["csi_enabled"] is True
+    assert policy["beam_adaptation_enabled"] is True
+    for path in (
+        "reports/csv/live_coverage_layer.csv",
+        "reports/csv/live_user_performance_snapshot.csv",
+        "reports/csv/live_csirs_stats.csv",
+        "reports/csv/live_beam_p1_acquisition_stats.csv",
+    ):
+        assert not materializer.contract_artifact_is_policy_filtered(
+            path,
+            policy,
+            contract_name=Path(path).stem,
+        )
+
 
 def test_disabled_runtime_capabilities_filter_only_their_own_contracts() -> None:
     run_row = {

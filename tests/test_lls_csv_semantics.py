@@ -214,6 +214,7 @@ def test_derived_link_summary_reconciles_weighted_ber_and_trial_count() -> None:
 
 def test_artifact_manifest_rejects_pass_claim_for_missing_png(tmp_path: Path) -> None:
     rows = [{
+        "ContractID": "pdsch|base|png|pdsch_bler_vs_snr.png|runtime_in_path",
         "Domain": "pdsch", "Component": "pdsch", "Profile": "base",
         "ArtifactType": "PNG", "FileName": "pdsch_bler_vs_snr.png", "Required": "1",
         "Status": "PASS", "SourceRows": "2", "OutputRelativePath": "pdsch/png/pdsch_bler_vs_snr.png",
@@ -225,7 +226,55 @@ def test_artifact_manifest_rejects_pass_claim_for_missing_png(tmp_path: Path) ->
     checks = _audit_manifest_integrity(tmp_path)
     result_check = next(check for check in checks if check.check_id == "declared_artifacts_match_filesystem")
     assert not result_check.passed
-    assert "pass_claim_output_missing" in result_check.details
+    assert "pass_claim_missing_canonical_manifest_row" in result_check.details
+
+
+def test_artifact_manifest_resolves_generator_output_under_components_root(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    contract_id = "pdsch|base|csv|pdsch_bler_curve.csv|all|runtime_in_path"
+    output = tmp_path / "components/pdsch/csv/pdsch_bler_curve.csv"
+    _write_rows(output, [{"SNR_dB": "20", "BLER": "0"}])
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    result = {
+        "ContractID": contract_id,
+        "Domain": "pdsch", "Component": "pdsch", "Profile": "base",
+        "ArtifactType": "CSV", "FileName": "pdsch_bler_curve.csv",
+        "Required": "1", "Status": "PASS", "SourceRows": "1",
+        "OutputRelativePath": "pdsch/csv/pdsch_bler_curve.csv",
+        "SourceSHA256": digest, "SHA256": digest,
+        "ByteSize": str(output.stat().st_size), "Width": "0", "Height": "0",
+        "AxesCount": "0", "SeriesCount": "0", "FinitePointCount": "0",
+    }
+    _write_rows(
+        tmp_path / "artifact_generation/artifact_generation_results.csv",
+        [result],
+    )
+    manifest = dict(result)
+    manifest["PublishedRelativePath"] = "components/pdsch/csv/pdsch_bler_curve.csv"
+    _write_rows(
+        tmp_path / "artifact_generation/canonical_component_manifest.csv",
+        [manifest],
+    )
+    summary = {
+        "Domain": "pdsch", "Component": "pdsch", "Profile": "base",
+        "ArtifactType": "CSV", "ContractCount": "1", "RequiredCount": "1",
+        "GeneratedCount": "1", "MissingCount": "0", "FailedCount": "0",
+        "RequiredFailureCount": "0", "SourceRowCount": "1",
+        "PublishedByteCount": str(output.stat().st_size), "Status": "PASS",
+    }
+    _write_rows(
+        tmp_path / "artifact_generation/artifact_generation_summary.csv",
+        [summary],
+    )
+    checks = _audit_manifest_integrity(tmp_path)
+    result_check = next(
+        check for check in checks
+        if check.check_id == "declared_artifacts_match_filesystem"
+    )
+    assert result_check.passed, result_check.details
 
 
 def test_component_summary_rejects_blank_identity(tmp_path: Path) -> None:

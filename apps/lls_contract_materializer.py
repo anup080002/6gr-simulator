@@ -201,6 +201,11 @@ def contract_artifact_is_policy_filtered(
             "fairness_analytics.csv",
             "mobility_analytics.csv",
             "selection_reselection_analytics.csv",
+            # Fixed-link calibration has no geometry/system-user state.  These
+            # tables are valid only when their owning runtime family executes;
+            # a schema-only file is not missing evidence for this run class.
+            "live_coverage_layer.csv",
+            "live_user_performance_snapshot.csv",
         }
         if Path(path).name in fixed_link_inapplicable_tables:
             return True
@@ -251,6 +256,17 @@ def contract_artifact_is_policy_filtered(
         return True
 
     table_name = Path(path).name
+    if (
+        not bool(policy.get("csi_enabled", False))
+        and table_name == "live_csirs_stats.csv"
+    ):
+        return True
+    if (
+        not bool(policy.get("beam_adaptation_enabled", False))
+        and int(policy.get("beam_count", 1) or 1) <= 1
+        and table_name == "live_beam_p1_acquisition_stats.csv"
+    ):
+        return True
     if not bool(policy.get("power_control_enabled", False)) and table_name == "live_power_control_state.csv":
         return True
     if bool(policy.get("fixed_mcs_mode", False)) and table_name in {

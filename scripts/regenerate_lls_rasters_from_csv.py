@@ -1186,7 +1186,6 @@ def main() -> int:
         ],
     )
     post_audit = audit_run(run_root)
-    post_summary = dict(post_audit["summary"][0])
     failures = post_materialization_required_failures(
         post_audit, policy_filter=policy_filter
     )
@@ -1219,6 +1218,21 @@ def main() -> int:
         materializer_summary = {}
     missing_tables = int(materializer_summary.get("tables_missing") or 0)
     missing_charts = int(materializer_summary.get("charts_missing") or 0)
+    applicable_primary_failures = [
+        row
+        for row in post_audit["canonical_csv_semantic_audit"]
+        if bool(row.get("required"))
+        and str(row.get("category")) != "status_reduction"
+        and not _semantic_row_is_policy_filtered(row, policy_filter)
+        and (not bool(row.get("evaluated")) or not bool(row.get("passed")))
+    ]
+    applicable_chart_failures = [
+        row
+        for row in post_audit["chart_source_semantic_audit"]
+        if bool(row.get("required"))
+        and not _semantic_row_is_policy_filtered(row, policy_filter)
+        and (not bool(row.get("evaluated")) or not bool(row.get("passed")))
+    ]
     summary = {
         "run_folder": str(run_root),
         "old_rasters_removed": len(before),
@@ -1229,8 +1243,12 @@ def main() -> int:
         "component_manifest_mirrors_synchronized": len(synchronized_mirrors),
         "raw_evidence_index_shape_repairs": len(raw_index_repairs),
         "stale_raster_lineage_rows_retired": len(lineage_changes),
-        "primary_csv_semantic_failures": int(post_summary["semantic_required_failure_count"]),
-        "chart_semantic_failures": int(post_summary["chart_required_failure_count"]),
+        # Report only failures applicable to this exact YAML-selected run.
+        # The raw semantic catalog deliberately contains other-mode entries;
+        # exposing that unfiltered count here made a successful fail-closed
+        # materialization look internally contradictory.
+        "primary_csv_semantic_failures": len(applicable_primary_failures),
+        "chart_semantic_failures": len(applicable_chart_failures),
         "contract_tables_missing": missing_tables,
         "contract_charts_missing": missing_charts,
         "contract_complete": missing_tables == 0 and missing_charts == 0,
