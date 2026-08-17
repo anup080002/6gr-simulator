@@ -113,7 +113,10 @@ art.DLBLER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "dl_fixed_snr_
 art.ULBLER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "ul_fixed_snr_bler_curve.csv"));
 art.DLBER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "dl_fixed_snr_ber_curve.csv"));
 art.ULBER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "ul_fixed_snr_ber_curve.csv"));
-art.PlotLineage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "fixed_snr_plot_lineage.csv"));
+% Python is the sole raster authority. Its canonical lineage binds every
+% plotted dataset CSV to the rendered PNG hash; the retired MATLAB
+% fixed_snr_plot_lineage.csv must not be recreated as a second authority.
+art.PlotLineage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "contract_plot_lineage.csv"));
 end
 
 function req = localResolveRequirements(cfg, art, opt)
@@ -191,7 +194,7 @@ paths = {
     "reports/csv/ul_fixed_snr_bler_curve.csv", "UL", localDirectionEnabled(req, "UL")
     "reports/csv/dl_fixed_snr_ber_curve.csv", "DL", localDirectionEnabled(req, "DL")
     "reports/csv/ul_fixed_snr_ber_curve.csv", "UL", localDirectionEnabled(req, "UL")
-    "reports/csv/fixed_snr_plot_lineage.csv", "global", true
+    "reports/csv/contract_plot_lineage.csv", "global", true
     };
 
 rows = repmat(struct( ...
@@ -596,7 +599,7 @@ artifacts = {
     "reports/csv/ul_fixed_snr_bler_curve.csv", art.ULBLER.Table
     "reports/csv/dl_fixed_snr_ber_curve.csv", art.DLBER.Table
     "reports/csv/ul_fixed_snr_ber_curve.csv", art.ULBER.Table
-    "reports/csv/fixed_snr_plot_lineage.csv", art.PlotLineage.Table
+    "reports/csv/contract_plot_lineage.csv", art.PlotLineage.Table
     };
 for i = 1:size(artifacts, 1)
     relPath = string(artifacts{i, 1});
@@ -866,7 +869,7 @@ switch string(relPath)
         entry = art.DLBER;
     case "reports/csv/ul_fixed_snr_ber_curve.csv"
         entry = art.ULBER;
-    case "reports/csv/fixed_snr_plot_lineage.csv"
+    case "reports/csv/contract_plot_lineage.csv"
         entry = art.PlotLineage;
     otherwise
         entry = struct("Path", string(relPath), "Present", false, "Readable", false, "NonEmpty", false, "Reason", "unknown_artifact");

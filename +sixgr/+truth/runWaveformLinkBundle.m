@@ -111,10 +111,9 @@ if fixedLinkCampaignOnly
     if logical(sixgr.util.structGet(campaign, "Enabled", false))
         sixgr.analytics.exportFixedSNRSweepCurves(rootRunFolder, campaign, cfgExec, ...
             struct("WriteArtifacts", logical(persistenceEnabled)));
-        if logical(persistenceEnabled) && ...
-                logical(sixgr.util.structGet(opt, "SaveFigures", true))
-            sixgr.visual.plotFixedSNRSweepCurves(rootRunFolder);
-        end
+        % Production rasters are generated once, after final CSV bytes are
+        % stable, by scripts/materialize_lls_contract_artifacts.py.  Do not
+        % create an earlier MATLAB PNG/lineage authority here.
     end
     out = struct();
     out.Ok = localFixedLinkCampaignEvidenceOk(campaign);
@@ -468,9 +467,9 @@ if logical(sixgr.util.structGet(sixgr.util.structGet(res, "FixedLinkCampaign", s
     sixgr.analytics.exportFixedSNRSweepCurves(rootRunFolder, ...
         sixgr.util.structGet(res, "FixedLinkCampaign", struct()), cfgExec, ...
         struct("WriteArtifacts", logical(persistenceEnabled)));
-    if logical(persistenceEnabled)
-        sixgr.visual.plotFixedSNRSweepCurves(rootRunFolder);
-    end
+    % Production rasters are generated once, after final CSV bytes are
+    % stable, by scripts/materialize_lls_contract_artifacts.py.  Do not
+    % create an earlier MATLAB PNG/lineage authority here.
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "sweep_csv_export", toc(stageStart), toc(bundleStart), "Controlled sweep CSV artifact export completed when fixed-link or raw sweep evidence was available.");
