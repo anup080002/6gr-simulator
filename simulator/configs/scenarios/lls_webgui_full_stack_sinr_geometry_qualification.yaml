@@ -568,6 +568,7 @@ validation:
     max_ci_half_width: 0.5
     seeds: [11, 23]
     target_bler: [0.1, 0.01]
+    max_target_crossing_bracket_db: 2.0
     confidence_level: 0.95
     trials_per_drop: 12
     disable_auxiliary_signals: false

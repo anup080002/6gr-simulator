@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-17-contract-v37-late-image-audit"
+MATERIALIZER_VERSION = "2026-08-17-contract-v40-unit-safe-fixed-link-plots"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -148,6 +148,57 @@ def contract_artifact_is_policy_filtered(
         "fixed_snr_sweep_curve_summary",
         "dl_fixed_snr_bler_curve",
         "ul_fixed_snr_bler_curve",
+    }:
+        return True
+
+    if bool(policy.get("fixed_link_campaign_only", False)) and (
+        name in {
+            "distance_vs_sinr",
+            "distance vs sinr",
+            "distance vs sinr scatter",
+            "topology_map",
+            "ue_trajectory_xy",
+        }
+        or "distance_vs_sinr.csv" in path
+    ):
+        return True
+
+    if (
+        bool(policy.get("fixed_link_campaign_only", False))
+        and not bool(policy.get("beam_adaptation_enabled", False))
+        and int(policy.get("beam_count", 1) or 1) <= 1
+        and name in {
+            "selected beam timeline",
+            "precoder / beam selection timeline",
+            "selected vs best beam timeline",
+            "beam gain gap histogram",
+            "beam hit rate timeline",
+            "per-beam quality plot",
+            "beam id timeline",
+            "beam pair timeline",
+            "selected vs best beam gap",
+            "beam hit rate / top-k hit rate",
+        }
+    ):
+        return True
+
+    if not bool(policy.get("csi_enabled", False)) and name in {
+        "cqi / pmi / ri / cri timeline",
+        "cqi / pmi / ri / cri / ssbri trends",
+    }:
+        return True
+
+    if (
+        bool(policy.get("fixed_link_campaign_only", False))
+        and not bool(policy.get("rank_adaptation_enabled", False))
+        and int(policy.get("max_spatial_rank", 1) or 1) <= 1
+        and name in {"rank distribution", "active rank vs power", "port usage chart"}
+    ):
+        return True
+
+    if not bool(policy.get("absolute_rx_power_calibrated", False)) and name in {
+        "rsrp/csi-rsrp timeline",
+        "servingrsrp / rsrp / csi-rsrp trends",
     }:
         return True
 
@@ -1018,7 +1069,51 @@ def _ellipsize_svg_text(value: Any, max_chars: int) -> str:
 def _axis_tick_values(minimum: float, maximum: float, count: int = 5) -> list[float]:
     if count <= 1 or math.isclose(minimum, maximum):
         return [float(minimum)]
-    return [minimum + (maximum - minimum) * idx / (count - 1) for idx in range(count)]
+    span = float(maximum) - float(minimum)
+    raw_step = span / max(int(count) - 1, 1)
+    exponent = math.floor(math.log10(raw_step))
+    scale = 10.0**exponent
+    fraction = raw_step / scale
+    if fraction <= 1.0:
+        nice_fraction = 1.0
+    elif fraction <= 2.0:
+        nice_fraction = 2.0
+    elif fraction <= 2.5:
+        nice_fraction = 2.5
+    elif fraction <= 5.0:
+        nice_fraction = 5.0
+    else:
+        nice_fraction = 10.0
+    step = nice_fraction * scale
+    epsilon = max(abs(minimum), abs(maximum), 1.0) * 1e-12
+    first = math.ceil((float(minimum) - epsilon) / step) * step
+    last = math.floor((float(maximum) + epsilon) / step) * step
+    if first > last:
+        return [float(minimum), float(maximum)]
+    tick_count = int(round((last - first) / step)) + 1
+    ticks = [first + idx * step for idx in range(tick_count)]
+    if len(ticks) < 2:
+        return [float(minimum), float(maximum)]
+    return [0.0 if math.isclose(value, 0.0, abs_tol=epsilon) else value for value in ticks]
+
+
+def _explicit_axis_ticks(values: Iterable[float], maximum_count: int = 8) -> list[float] | None:
+    """Use exact sample ticks only when their labels will remain visually distinct."""
+
+    ticks = sorted({float(value) for value in values if math.isfinite(float(value))})
+    if not ticks or len(ticks) > max(1, int(maximum_count)):
+        return None
+    if len(ticks) <= 1:
+        return ticks
+    span = ticks[-1] - ticks[0]
+    if not math.isfinite(span) or span <= 0.0:
+        return ticks
+    minimum_gap = min(right - left for left, right in zip(ticks, ticks[1:]))
+    # Eight full-width engineering labels need roughly one tenth of the axis each.
+    # Close DL/UL measured-SINR pairs therefore use rounded engineering ticks.
+    if minimum_gap < span / 10.0:
+        return None
+    return ticks
 
 
 def _append_y_axis_ticks(
@@ -1047,13 +1142,87 @@ def _append_numeric_axis_ticks(
     max_x: float,
     min_y: float,
     max_y: float,
+    x_tick_values: list[float] | None = None,
 ) -> None:
     _append_y_axis_ticks(parts, axis_left, axis_right, axis_top, axis_bottom, min_y, max_y)
-    for value in _axis_tick_values(min_x, max_x):
+    requested_ticks = [
+        float(value) for value in (x_tick_values or [])
+        if math.isfinite(float(value)) and min_x <= float(value) <= max_x
+    ]
+    ticks = sorted(set(requested_ticks)) if requested_ticks else _axis_tick_values(min_x, max_x)
+    for value in ticks:
         x_px = axis_left + ((value - min_x) / (max_x - min_x)) * (axis_right - axis_left)
         parts.append(f'<line x1="{x_px:.2f}" y1="{axis_top}" x2="{x_px:.2f}" y2="{axis_bottom}" stroke="#e2e8f0" stroke-width="1"/>')
         parts.append(f'<line x1="{x_px:.2f}" y1="{axis_bottom}" x2="{x_px:.2f}" y2="{axis_bottom + 5}" stroke="#64748b"/>')
         parts.append(f'<text x="{x_px:.2f}" y="{axis_bottom + 18}" text-anchor="middle" font-family="Consolas,Segoe UI Mono,monospace" font-size="10" fill="#475569">{html.escape(_format_axis_tick(value))}</text>')
+
+
+def _display_axis_label(value: Any) -> str:
+    """Convert persisted schema names into publication-facing axis labels."""
+
+    raw = str(value or "").strip()
+    normalized = re.sub(r"[^a-z0-9]+", "", raw.lower())
+    labels = {
+        "appliedawgnsnrdb": "Applied AWGN SNR (dB)",
+        "appliedsnrdb": "Applied SNR (dB)",
+        "configuredsnrdb": "Configured SNR (dB)",
+        "snrdb": "SNR (dB)",
+        "posteqsinrdb": "Post-equalization SINR (dB)",
+        "measuredtrialsinrdb": "Measured trial SINR (dB)",
+        "measuredsinrdb": "Measured SINR (dB)",
+        "measuredposteqsinrdb": "Measured post-equalization SINR (dB)",
+        "meanmeasuredsinrdb": "Mean measured post-equalization SINR (dB)",
+        "measuredwidebandsinrdb": "Measured wideband SINR (dB)",
+        "throughputmbps": "Throughput (Mbit/s)",
+        "goodputmbps": "Goodput (Mbit/s)",
+        "spectralefficiencybpshz": "Spectral efficiency (bit/s/Hz)",
+        "allocatedprbcount": "Allocated PRBs",
+        "harqretxcount": "HARQ retransmissions",
+        "bler": "Block error rate (BLER)",
+        "ber": "Bit error rate (BER)",
+        "fer": "Frame error rate (FER)",
+    }
+    if normalized in labels:
+        return labels[normalized]
+    cleaned = raw.replace("_dB", " (dB)").replace("_Mbps", " (Mbit/s)")
+    cleaned = cleaned.replace("_", " ").strip()
+    return cleaned or "Value"
+
+
+def _display_chart_title(value: Any) -> str:
+    raw = str(value or "Chart").strip()
+    if "_" not in raw and raw != raw.lower() and raw[:1].isupper():
+        return raw
+    words = raw.replace("_", " ").split()
+    acronyms = {"dl", "ul", "snr", "sinr", "awgn", "bler", "ber", "fer", "mcs", "harq", "pdcch", "pdsch", "pucch", "pusch", "prach", "csi", "srs", "ssb", "pbch", "evm"}
+    rendered = [
+        word.upper() if word.lower() in acronyms
+        else ("vs" if word.lower() == "vs" else word.capitalize())
+        for word in words
+    ]
+    return " ".join(rendered) or "Chart"
+
+
+def _dataset_evidence_summary(
+    dataset: dict[str, Any] | None,
+    points: list[list[float]],
+) -> list[str]:
+    if not isinstance(dataset, dict) or not points:
+        return []
+    xs = [float(point[0]) for point in points]
+    ys = [float(point[1]) for point in points]
+    lines = [
+        f"Plotted points: {len(points)}",
+        f"X range: {_format_axis_tick(min(xs))} to {_format_axis_tick(max(xs))}",
+        f"Y range: {_format_axis_tick(min(ys))} to {_format_axis_tick(max(ys))}",
+    ]
+    sample_count = _coerce_float(dataset.get("sample_count"))
+    if sample_count is not None:
+        lines.append(f"Runtime samples: {int(max(0, sample_count))}")
+    policy = str(dataset.get("evidence_shape_policy") or "").strip()
+    if policy:
+        lines.append(f"Evidence shape: {policy.replace('_', ' ')}")
+    return lines
 
 
 def _render_multi_series_svg(
@@ -1065,21 +1234,25 @@ def _render_multi_series_svg(
     x_label: str,
     y_label: str,
     mode: str = "line",
+    target_line: float | None = None,
 ) -> bytes:
-    width = 1180
-    height = 700
-    left = 78
-    top = 92
-    plot_w = 700
-    plot_h = 420
-    info_x = 820
+    width = 1280
+    height = 720
+    left = 72
+    top = 108
+    plot_w = 820
+    plot_h = 458
+    info_x = 930
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
-        f'<text x="42" y="50" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        f'<text x="42" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 112))}</text>',
+        '<rect x="0" y="0" width="10" height="720" fill="#0f766e"/>',
+        '<rect x="40" y="24" width="190" height="24" rx="12" fill="#ccfbf1"/>',
+        '<text x="135" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">RUNTIME MEASUREMENT</text>',
+        f'<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="29" font-weight="700" fill="#0f172a">{html.escape(_display_chart_title(title))}</text>',
+        f'<text x="40" y="99" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 132))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
-        f'<rect x="{info_x}" y="{top}" width="316" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+        f'<rect x="{info_x}" y="{top}" width="310" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
     prepared: list[dict[str, Any]] = []
     palette = ["#0f766e", "#2563eb", "#dc2626", "#7c3aed", "#d97706", "#0891b2"]
@@ -1101,7 +1274,16 @@ def _render_multi_series_svg(
             {
                 "name": str(item.get("name") or f"Series {idx + 1}"),
                 "color": str(item.get("color") or palette[idx % len(palette)]),
+                "dasharray": str(item.get("dasharray") or ("" if idx == 0 else "8 5")),
+                "marker": str(item.get("marker") or ("circle" if idx == 0 else "square")),
                 "points": sampled_pairs,
+                "error_bars": [
+                    [float(bar[0]), float(bar[1]), float(bar[2])]
+                    for bar in (item.get("error_bars") or [])
+                    if isinstance(bar, (list, tuple))
+                    and len(bar) >= 3
+                    and all(_coerce_float(value) is not None for value in bar[:3])
+                ],
             }
         )
         all_points.extend(sampled_pairs)
@@ -1140,6 +1322,7 @@ def _render_multi_series_svg(
         max_x,
         min_y,
         max_y,
+        _explicit_axis_ticks(xs),
     )
     parts.append(f'<line x1="{axis_left}" y1="{axis_bottom}" x2="{axis_right}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
     parts.append(f'<line x1="{axis_left}" y1="{axis_top}" x2="{axis_left}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
@@ -1156,25 +1339,61 @@ def _render_multi_series_svg(
                 )
         else:
             poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
+            dash_attr = (
+                f' stroke-dasharray="{html.escape(prepared_series["dasharray"])}"'
+                if prepared_series["dasharray"]
+                else ""
+            )
             parts.append(
-                f'<polyline fill="none" stroke="{prepared_series["color"]}" stroke-width="2.2" points="{poly}"/>'
+                f'<polyline fill="none" stroke="{prepared_series["color"]}" stroke-width="2.2"{dash_attr} points="{poly}"/>'
             )
             for x_px, y_px in coords[:: max(1, len(coords) // 16)]:
-                parts.append(f'<circle cx="{x_px:.2f}" cy="{y_px:.2f}" r="2.6" fill="{prepared_series["color"]}" />')
+                if prepared_series["marker"] == "square":
+                    parts.append(
+                        f'<rect x="{x_px - 3.2:.2f}" y="{y_px - 3.2:.2f}" width="6.4" height="6.4" fill="#ffffff" stroke="{prepared_series["color"]}" stroke-width="2" />'
+                    )
+                else:
+                    parts.append(f'<circle cx="{x_px:.2f}" cy="{y_px:.2f}" r="2.8" fill="#ffffff" stroke="{prepared_series["color"]}" stroke-width="2" />')
+        for x_val, low_val, high_val in prepared_series["error_bars"]:
+            if not (min_x <= x_val <= max_x):
+                continue
+            x_px = axis_left + ((x_val - min_x) / (max_x - min_x)) * (axis_right - axis_left)
+            low_px = axis_bottom - ((low_val - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+            high_px = axis_bottom - ((high_val - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+            low_px = min(axis_bottom, max(axis_top, low_px))
+            high_px = min(axis_bottom, max(axis_top, high_px))
+            color = prepared_series["color"]
+            parts.append(f'<line x1="{x_px:.1f}" y1="{high_px:.1f}" x2="{x_px:.1f}" y2="{low_px:.1f}" stroke="{color}" stroke-width="1.4" opacity="0.75"/>')
+            parts.append(f'<line x1="{x_px - 4:.1f}" y1="{high_px:.1f}" x2="{x_px + 4:.1f}" y2="{high_px:.1f}" stroke="{color}" stroke-width="1.4"/>')
+            parts.append(f'<line x1="{x_px - 4:.1f}" y1="{low_px:.1f}" x2="{x_px + 4:.1f}" y2="{low_px:.1f}" stroke="{color}" stroke-width="1.4"/>')
+    target_value = _coerce_float(target_line)
+    if target_value is not None and min_y <= target_value <= max_y:
+        target_y = axis_bottom - ((target_value - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+        parts.append(f'<line x1="{axis_left}" y1="{target_y:.1f}" x2="{axis_right}" y2="{target_y:.1f}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="7 6"/>')
+        parts.append(f'<text x="{axis_right - 4}" y="{target_y - 6:.1f}" text-anchor="end" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#b91c1c">Target {_format_axis_tick(target_value)}</text>')
     parts.append(
-        f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(x_label)}</text>'
+        f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 26}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" fill="#334155">{html.escape(_display_axis_label(x_label))}</text>'
     )
     parts.append(
-        f'<text x="{left + 13}" y="{top + plot_h / 2:.1f}" text-anchor="middle" transform="rotate(-90 {left + 13} {top + plot_h / 2:.1f})" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(y_label)}</text>'
+        f'<text x="{left + 13}" y="{top + plot_h / 2:.1f}" text-anchor="middle" transform="rotate(-90 {left + 13} {top + plot_h / 2:.1f})" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" fill="#334155">{html.escape(_display_axis_label(y_label))}</text>'
     )
-    parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
+    parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Evidence Summary</text>')
     y_cursor = top + 58
-    for line in summary_lines[:14]:
-        parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 38))}</text>')
+    evidence_lines = list(summary_lines) + _dataset_evidence_summary(
+        {"evidence_shape_policy": "observed_relation"},
+        [[point[0], point[1]] for point in all_points],
+    )
+    for line in evidence_lines[:14]:
+        parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Segoe UI,Arial,sans-serif" font-size="12.5" fill="#334155">{html.escape(_ellipsize_svg_text(line, 42))}</text>')
         y_cursor += 22
     y_cursor += 12
     for prepared_series in prepared[:8]:
-        parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"/>')
+        dash_attr = (
+            f' stroke-dasharray="{html.escape(prepared_series["dasharray"])}"'
+            if prepared_series["dasharray"]
+            else ""
+        )
+        parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"{dash_attr}/>')
         parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(prepared_series["name"], 28))}</text>')
         y_cursor += 22
     parts.append('</svg>')
@@ -1182,17 +1401,20 @@ def _render_multi_series_svg(
 
 
 def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, summary_lines: list[str]) -> bytes:
-    width = 1100
-    height = 620
-    left = 70
-    top = 80
-    plot_w = 660
-    plot_h = 360
+    width = 1280
+    height = 720
+    left = 72
+    top = 108
+    plot_w = 820
+    plot_h = 458
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
-        f'<text x="40" y="46" font-family="Segoe UI,Arial,sans-serif" font-size="26" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        f'<text x="40" y="72" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 112))}</text>',
+        '<rect x="0" y="0" width="10" height="720" fill="#0f766e"/>',
+        '<rect x="40" y="24" width="190" height="24" rx="12" fill="#ccfbf1"/>',
+        '<text x="135" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">RUNTIME MEASUREMENT</text>',
+        f'<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="29" font-weight="700" fill="#0f172a">{html.escape(_display_chart_title(title))}</text>',
+        f'<text x="40" y="99" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 132))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
     if dataset and dataset.get("points"):
@@ -1227,7 +1449,25 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         if math.isclose(min_x, max_x):
             max_x = min_x + 1.0
         if math.isclose(min_y, max_y):
-            max_y = min_y + 1.0
+            constant_value = float(min_y)
+            y_semantics = str(dataset.get("y_label") or "").strip().lower()
+            bounded_unit_metric = any(
+                token in y_semantics
+                for token in ("rate", "bler", "ber", "fer", "probability", "flag", "hit")
+            )
+            discrete_index_metric = any(
+                token in y_semantics
+                for token in ("beam", "rank", "layer", "pmi", "cri", "index")
+            )
+            if bounded_unit_metric and 0.0 <= constant_value <= 1.0:
+                min_y, max_y = 0.0, 1.0
+            elif discrete_index_metric:
+                min_y = max(0.0, constant_value - 1.0)
+                max_y = constant_value + 1.0
+            else:
+                padding = max(abs(constant_value) * 0.1, 1.0)
+                min_y = constant_value - padding
+                max_y = constant_value + padding
         is_bar = dataset.get("mode") == "bar"
         if is_bar:
             if min_y > 0:
@@ -1249,6 +1489,7 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
                 max_x,
                 min_y,
                 max_y,
+                _explicit_axis_ticks(xs),
             )
         else:
             _append_y_axis_ticks(parts, axis_left, axis_right, axis_top, axis_bottom, min_y, max_y)
@@ -1279,20 +1520,43 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
             parts.append(f'<polyline fill="none" stroke="#0f766e" stroke-width="3" points="{poly}"/>')
             for x_px, y_px in coords[:: max(1, len(coords) // 24)]:
                 parts.append(f'<circle cx="{x_px:.1f}" cy="{y_px:.1f}" r="3.5" fill="#0f766e"/>')
-        parts.append(f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 24}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(str(dataset.get("x_label") or "X"))}</text>')
-        parts.append(f'<text x="{left + 13}" y="{top + plot_h / 2:.1f}" text-anchor="middle" transform="rotate(-90 {left + 13} {top + plot_h / 2:.1f})" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">{html.escape(str(dataset.get("y_label") or "Y"))}</text>')
+        for error_bar in dataset.get("error_bars", []) or []:
+            if not isinstance(error_bar, (list, tuple)) or len(error_bar) < 3:
+                continue
+            x_val = _coerce_float(error_bar[0])
+            low_val = _coerce_float(error_bar[1])
+            high_val = _coerce_float(error_bar[2])
+            if x_val is None or low_val is None or high_val is None:
+                continue
+            x_px = axis_left + ((float(x_val) - min_x) / (max_x - min_x)) * (axis_right - axis_left)
+            low_px = axis_bottom - ((float(low_val) - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+            high_px = axis_bottom - ((float(high_val) - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+            low_px = min(axis_bottom, max(axis_top, low_px))
+            high_px = min(axis_bottom, max(axis_top, high_px))
+            parts.append(f'<line x1="{x_px:.1f}" y1="{high_px:.1f}" x2="{x_px:.1f}" y2="{low_px:.1f}" stroke="#0f766e" stroke-width="1.6" opacity="0.8"/>')
+            parts.append(f'<line x1="{x_px - 5:.1f}" y1="{high_px:.1f}" x2="{x_px + 5:.1f}" y2="{high_px:.1f}" stroke="#0f766e" stroke-width="1.6"/>')
+            parts.append(f'<line x1="{x_px - 5:.1f}" y1="{low_px:.1f}" x2="{x_px + 5:.1f}" y2="{low_px:.1f}" stroke="#0f766e" stroke-width="1.6"/>')
+        target_line = _coerce_float(dataset.get("target_line"))
+        if target_line is not None and min_y <= target_line <= max_y:
+            target_y = axis_bottom - ((target_line - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
+            parts.append(f'<line x1="{axis_left}" y1="{target_y:.1f}" x2="{axis_right}" y2="{target_y:.1f}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="7 6"/>')
+            parts.append(f'<text x="{axis_right - 4}" y="{target_y - 6:.1f}" text-anchor="end" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#b91c1c">Target {_format_axis_tick(target_line)}</text>')
+        parts.append(f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 26}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" fill="#334155">{html.escape(_display_axis_label(dataset.get("x_label") or "X"))}</text>')
+        parts.append(f'<text x="{left + 13}" y="{top + plot_h / 2:.1f}" text-anchor="middle" transform="rotate(-90 {left + 13} {top + plot_h / 2:.1f})" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" fill="#334155">{html.escape(_display_axis_label(dataset.get("y_label") or "Y"))}</text>')
     else:
         parts.append(f'<text x="{left + 45}" y="{top + 50}" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#334155">No numeric series could be derived for this chart family.</text>')
-    info_x = 780
-    parts.append(f'<rect x="{info_x}" y="{top}" width="280" height="430" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
-    parts.append(f'<text x="{info_x + 18}" y="{top + 32}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
+    info_x = 930
+    parts.append(f'<rect x="{info_x}" y="{top}" width="310" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
+    parts.append(f'<text x="{info_x + 18}" y="{top + 32}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Evidence Summary</text>')
     y = top + 60
-    for line in summary_lines[:16]:
-        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 34))}</text>')
+    points_for_summary = points if dataset and dataset.get("points") else []
+    combined_summary = list(summary_lines) + _dataset_evidence_summary(dataset, points_for_summary)
+    for line in combined_summary[:17]:
+        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Segoe UI,Arial,sans-serif" font-size="12.5" fill="#334155">{html.escape(_ellipsize_svg_text(line, 42))}</text>')
         y += 22
     extra_lines = dataset.get("summary_lines", []) if isinstance(dataset, dict) else []
-    for line in extra_lines[: max(0, 16 - len(summary_lines))]:
-        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Consolas,Segoe UI Mono,monospace" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(line, 34))}</text>')
+    for line in extra_lines[: max(0, 17 - len(combined_summary))]:
+        parts.append(f'<text x="{info_x + 18}" y="{y}" font-family="Segoe UI,Arial,sans-serif" font-size="12.5" fill="#334155">{html.escape(_ellipsize_svg_text(line, 42))}</text>')
         y += 22
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
@@ -1788,6 +2052,16 @@ def _row_quality_axis_value(row: dict[str, str], *, allow_receiver_hest: bool = 
         value = _row_float(row, field_name)
         if value is not None:
             return float(value), label
+    return None, ""
+
+
+def _row_snr_axis_value(row: dict[str, str]) -> tuple[float | None, str]:
+    """Return the controlled channel operating point for an SNR-axis plot."""
+
+    for field_name in ("AppliedAWGNSNR_dB", "AppliedSNR_dB", "ConfiguredSNR_dB", "SNR_dB"):
+        value = _row_float(row, field_name)
+        if value is not None and math.isfinite(float(value)):
+            return float(value), field_name
     return None, ""
 
 
@@ -5684,6 +5958,318 @@ def _runtime_delay_spread_chart(
     }
 
 
+def _persisted_fixed_sweep_curve_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Prefer the finalized fixed-sweep table because it carries CIs and scope."""
+
+    chart_key = re.sub(
+        r"[^a-z0-9]+", "_", str(chart_name or "").strip().lower()
+    ).strip("_")
+    direction = "DL" if chart_key.startswith("dl_") else ("UL" if chart_key.startswith("ul_") else "")
+    x_axis_mode = "applied_snr"
+    if chart_key == "bler_vs_sinr":
+        metric_name, source_metric_name = "BLER", "BLER"
+        low_name, high_name = "BLER_CI_Low", "BLER_CI_High"
+        x_axis_mode = "measured_sinr"
+    elif chart_key == "fer_vs_snr":
+        # A fixed-link campaign executes one transport block per recorded
+        # frame/trial, so the observed frame-error indicator is the TB CRC
+        # failure indicator. Preserve that one-to-one scope explicitly.
+        metric_name, source_metric_name = "FER", "BLER"
+        low_name, high_name = "BLER_CI_Low", "BLER_CI_High"
+    elif chart_key.endswith("bler_vs_snr"):
+        metric_name, source_metric_name = "BLER", "BLER"
+        low_name, high_name = "BLER_CI_Low", "BLER_CI_High"
+    elif chart_key.endswith("ber_vs_snr"):
+        metric_name, source_metric_name = "BER", "BER"
+        low_name, high_name = "BER_CI_Low", "BER_CI_High"
+    elif chart_key == "throughput_vs_snr":
+        metric_name, source_metric_name = "Throughput_Mbps", "Throughput_Mbps"
+        low_name, high_name = "", ""
+    elif chart_key in {
+        "measured_sinr_vs_configured_snr",
+        "applied_awgn_snr_vs_measured_runtime_sinr_comparison",
+        "applied_vs_measured_runtime_snr_sinr_comparison",
+    }:
+        metric_name, source_metric_name = "MeanMeasuredSINR_dB", "MeanMeasuredSINR_dB"
+        low_name, high_name = "", ""
+    else:
+        return None
+
+    candidate_paths: list[str] = []
+    if direction:
+        direction_token = direction.lower()
+        curve_token = "bler" if source_metric_name == "BLER" else "ber"
+        candidate_paths.append(f"reports/csv/{direction_token}_fixed_snr_{curve_token}_curve.csv")
+    candidate_paths.append("reports/csv/fixed_snr_sweep_curve_summary.csv")
+    source_path, rows = _first_available_rows(existing, fetch_artifact_bytes, candidate_paths)
+    if not rows:
+        return None
+
+    selected_rows: list[dict[str, str]] = []
+    for row in rows:
+        row_direction = _row_text(row, "Direction").upper()
+        if direction and row_direction != direction:
+            continue
+        if x_axis_mode == "measured_sinr":
+            x_value = _row_float(row, "MeanMeasuredSINR_dB")
+        else:
+            x_value, _x_source = _row_snr_axis_value(row)
+        y_value = _row_float(row, source_metric_name)
+        if x_value is None or y_value is None:
+            continue
+        selected_rows.append(row)
+    if not selected_rows:
+        return None
+
+    csv_rows: list[dict[str, Any]] = []
+    grouped_points: dict[str, list[list[float]]] = defaultdict(list)
+    grouped_error_bars: dict[str, list[list[float]]] = defaultdict(list)
+    trials_total = 0
+    for row in selected_rows:
+        row_direction = _row_text(row, "Direction").upper() or direction or "DL+UL"
+        if x_axis_mode == "measured_sinr":
+            x_value = _row_float(row, "MeanMeasuredSINR_dB")
+            x_source = "MeanMeasuredSINR_dB"
+        else:
+            x_value, x_source = _row_snr_axis_value(row)
+        y_value = _row_float(row, source_metric_name)
+        assert x_value is not None and y_value is not None
+        low_value = _row_float(row, low_name) if low_name else None
+        high_value = _row_float(row, high_name) if high_name else None
+        trial_count = int(max(0, _row_float(row, "TrialCount") or 0))
+        trials_total += trial_count
+        grouped_points[row_direction].append([float(x_value), float(y_value)])
+        if low_value is not None and high_value is not None:
+            grouped_error_bars[row_direction].append([float(x_value), float(low_value), float(high_value)])
+        csv_rows.append(
+            {
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "direction": row_direction,
+                "snr_axis_field": x_source,
+                "snr_db": float(x_value),
+                "metric": metric_name,
+                "metric_value": float(y_value),
+                "ci_low": low_value if low_value is not None else "",
+                "ci_high": high_value if high_value is not None else "",
+                "trial_count": trial_count,
+                "failure_count": int(max(0, _row_float(row, "TBFailCount", "FailureCount") or 0)),
+                "mcs": _row_text(row, "MCS", "MCSIndex"),
+                "modulation": _row_text(row, "Modulation"),
+                "rank": _row_text(row, "Rank", "ConfiguredRank"),
+                "layers": _row_text(row, "Layers", "ConfiguredLayers"),
+                "channel_model": _row_text(row, "ChannelModel", "ConfiguredChannelModel"),
+                "point_status": _row_text(row, "Status", "StopReason"),
+                "source_table_logical_path": source_path,
+            }
+        )
+
+    for points in grouped_points.values():
+        points.sort(key=lambda point: point[0])
+    first_row = selected_rows[0]
+    summary = [
+        f"Runtime trials: {trials_total}",
+        f"SNR points: {sum(len(points) for points in grouped_points.values())}",
+        f"MCS: {_row_text(first_row, 'MCS', 'MCSIndex') or 'mixed'}",
+        f"Modulation: {_row_text(first_row, 'Modulation') or 'mixed'}",
+        f"Rank / layers: {_row_text(first_row, 'Rank', 'ConfiguredRank') or '?'} / {_row_text(first_row, 'Layers', 'ConfiguredLayers') or '?'}",
+        f"Channel: {_row_text(first_row, 'ChannelModel', 'ConfiguredChannelModel') or 'unknown'}",
+        f"Source CSV: {source_path.rsplit('/', 1)[-1]}",
+    ]
+    target = _row_float(first_row, "TargetBLER") if metric_name in {"BLER", "FER"} else None
+    transition_brackets: list[str] = []
+    coarse_transition = False
+    if target is not None:
+        for series_direction, points in sorted(grouped_points.items()):
+            ordered = sorted(points, key=lambda point: point[0])
+            for left_point, right_point in zip(ordered, ordered[1:]):
+                left_delta = float(left_point[1]) - float(target)
+                right_delta = float(right_point[1]) - float(target)
+                if left_delta == 0.0 or right_delta == 0.0 or left_delta * right_delta < 0.0:
+                    gap_db = float(right_point[0]) - float(left_point[0])
+                    if gap_db > 0.0:
+                        transition_brackets.append(
+                            f"{series_direction}: {_format_axis_tick(left_point[0])} to {_format_axis_tick(right_point[0])} dB ({_format_axis_tick(gap_db)} dB bracket)"
+                        )
+                        coarse_transition = coarse_transition or gap_db > 2.0
+                    break
+    if transition_brackets:
+        summary.append("Target bracket: " + " | ".join(transition_brackets))
+    if coarse_transition:
+        summary.append("WARNING: transition unresolved; refine SNR grid to <=2 dB spacing")
+
+    y_axis_label = "Delivered goodput (Mbit/s)" if metric_name == "Throughput_Mbps" else metric_name
+    x_axis_label = "MeanMeasuredSINR_dB" if x_axis_mode == "measured_sinr" else "AppliedAWGNSNR_dB"
+    render_mode = "scatter" if coarse_transition else "line"
+    if metric_name == "Throughput_Mbps":
+        summary.append("Throughput definition: CRC-delivered TB bits / observed air time")
+        for series_direction, points in sorted(grouped_points.items()):
+            endpoint = max(points, key=lambda point: point[0])
+            summary.append(
+                f"{series_direction} at {_format_axis_tick(endpoint[0])} dB: "
+                f"{_format_axis_tick(endpoint[1])} Mbit/s"
+            )
+    if len(grouped_points) == 1:
+        only_direction = next(iter(grouped_points))
+        points = grouped_points[only_direction]
+        dataset: dict[str, Any] = {
+            "mode": _honest_chart_mode(points, render_mode),
+            "x_label": x_axis_label,
+            "y_label": y_axis_label,
+            "points": points,
+            "error_bars": grouped_error_bars.get(only_direction, []),
+            "sample_count": trials_total,
+            "evidence_shape_policy": "observed_relation" if len(points) > 1 else "operating_point",
+        }
+        if metric_name in {"BLER", "BER", "FER"}:
+            dataset["y_axis_min"] = 0.0
+            dataset["y_axis_max"] = 1.0
+        if target is not None:
+            dataset["target_line"] = target
+        image = _render_svg_plot(
+            chart_name,
+            "CRC-delivered fixed-link goodput from measured transport-block outcomes; unresolved target brackets are shown as unconnected points."
+            if metric_name == "Throughput_Mbps"
+            else "Measured fixed-link operating points; unresolved target brackets are shown as unconnected points.",
+            dataset,
+            [f"Direction: {only_direction}"] + summary,
+        )
+    else:
+        series = [
+            {
+                "name": key,
+                "points": value,
+                "error_bars": grouped_error_bars.get(key, []),
+            }
+            for key, value in sorted(grouped_points.items())
+        ]
+        image = _render_multi_series_svg(
+            chart_name,
+            "Directional CRC-delivered goodput; solid-circle DL and dashed-square UL remain distinguishable when values overlap."
+            if metric_name == "Throughput_Mbps"
+            else "Directional fixed-link operating points; unresolved target brackets are not interpolated.",
+            series,
+            summary,
+            x_label=x_axis_label,
+            y_label=y_axis_label,
+            mode=render_mode,
+            target_line=target,
+        )
+
+    header = [
+        "run_id", "chart_name", "direction", "snr_axis_field", "snr_db",
+        "metric", "metric_value", "ci_low", "ci_high", "trial_count",
+        "failure_count", "mcs", "modulation", "rank", "layers",
+        "channel_model", "point_status", "source_table_logical_path",
+    ]
+    return {
+        "csv_bytes": _encode_dict_rows(header, csv_rows),
+        "img_bytes": image,
+        "csv_status": "specialized_finalized_fixed_sweep_dataset",
+        "image_status": "generated_finalized_fixed_sweep_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(selected_rows),
+        "source_mapping_status": "exact",
+        "note": "Finalized fixed-sweep rows provide applied SNR, measured metric, trial counts, operating point status, and confidence limits without re-estimation.",
+    }
+
+
+def _persisted_fixed_sweep_crc_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    source_path, rows = _first_available_rows(
+        existing,
+        fetch_artifact_bytes,
+        ["reports/csv/fixed_snr_sweep_curve_summary.csv"],
+    )
+    if not rows:
+        return None
+    csv_rows: list[dict[str, Any]] = []
+    grouped_points: dict[str, list[list[float]]] = defaultdict(list)
+    grouped_error_bars: dict[str, list[list[float]]] = defaultdict(list)
+    trial_total = 0
+    for row in rows:
+        direction = _row_text(row, "Direction").upper()
+        snr_db, snr_source = _row_snr_axis_value(row)
+        trial_count = int(max(0, _row_float(row, "TrialCount") or 0))
+        fail_count = int(max(0, _row_float(row, "TBFailCount", "FailureCount") or 0))
+        if not direction or snr_db is None or trial_count <= 0 or fail_count > trial_count:
+            continue
+        pass_count = trial_count - fail_count
+        pass_rate = pass_count / trial_count
+        ci_low, ci_high = _wilson_score_interval(pass_count, trial_count)
+        grouped_points[direction].append([float(snr_db), float(pass_rate)])
+        grouped_error_bars[direction].append([float(snr_db), ci_low, ci_high])
+        trial_total += trial_count
+        csv_rows.append(
+            {
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "direction": direction,
+                "snr_axis_field": snr_source,
+                "snr_db": float(snr_db),
+                "crc_pass_count": pass_count,
+                "crc_fail_count": fail_count,
+                "trial_count": trial_count,
+                "crc_pass_rate": pass_rate,
+                "ci95_lower": ci_low,
+                "ci95_upper": ci_high,
+                "source_table_logical_path": source_path,
+            }
+        )
+    if not csv_rows:
+        return None
+    for points in grouped_points.values():
+        points.sort(key=lambda point: point[0])
+    series = [
+        {
+            "name": f"{direction} pass rate",
+            "points": points,
+            "error_bars": grouped_error_bars.get(direction, []),
+        }
+        for direction, points in sorted(grouped_points.items())
+    ]
+    image = _render_multi_series_svg(
+        "CRC Pass Rate vs SNR",
+        "CRC outcomes stratified by direction and applied SNR; aggregate low-SNR failures are not mixed with high-SNR results.",
+        series,
+        [
+            f"Runtime trials: {trial_total}",
+            f"Directional SNR points: {len(csv_rows)}",
+            "Interval: Wilson 95%",
+            f"Source CSV: {source_path.rsplit('/', 1)[-1]}",
+        ],
+        x_label="AppliedAWGNSNR_dB",
+        y_label="CRC pass rate",
+        mode="scatter",
+    )
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "direction", "snr_axis_field", "snr_db",
+                "crc_pass_count", "crc_fail_count", "trial_count", "crc_pass_rate",
+                "ci95_lower", "ci95_upper", "source_table_logical_path",
+            ],
+            csv_rows,
+        ),
+        "img_bytes": image,
+        "csv_status": "specialized_fixed_sweep_crc_by_direction_and_snr",
+        "image_status": "generated_fixed_sweep_crc_by_direction_and_snr_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(rows),
+        "source_mapping_status": "exact",
+        "note": "CRC pass/fail counts and Wilson intervals come directly from finalized fixed-sweep trial/failure counts at each direction and SNR.",
+    }
+
+
 def _configured_sweep_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -5691,16 +6277,41 @@ def _configured_sweep_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     """Materialize configured-SNR plots only from persisted waveform trials."""
-    chart_key = str(chart_name or "").strip().lower()
+    chart_key = re.sub(
+        r"[^a-z0-9]+", "_", str(chart_name or "").strip().lower()
+    ).strip("_")
     supported = {
         "dl_bler_vs_snr",
         "ul_bler_vs_snr",
         "dl_ber_vs_snr",
         "ul_ber_vs_snr",
+        "bler_vs_snr",
+        "bler_vs_sinr",
+        "ber_vs_snr",
+        "fer_vs_snr",
+        "crc_pass_fail_rates",
         "throughput_vs_snr",
         "measured_sinr_vs_configured_snr",
+        "applied_awgn_snr_vs_measured_runtime_sinr_comparison",
+        "applied_vs_measured_runtime_snr_sinr_comparison",
     }
     if chart_key not in supported:
+        return None
+
+    if chart_key == "crc_pass_fail_rates":
+        return _persisted_fixed_sweep_crc_chart(
+            chart_name, existing, fetch_artifact_bytes, run_id
+        )
+
+    finalized = _persisted_fixed_sweep_curve_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if finalized is not None:
+        return finalized
+    if chart_key in {"bler_vs_sinr", "fer_vs_snr"}:
+        # Without the finalized sweep summary, defer to the trial-level
+        # reliability renderer below. Do not misroute these names through the
+        # generic configured-SNR-vs-measured-SINR comparison.
         return None
 
     trial_sources = _all_available_rows(
@@ -5714,15 +6325,17 @@ def _configured_sweep_chart_materialization(
     required_direction = "DL" if chart_key.startswith("dl_") else ("UL" if chart_key.startswith("ul_") else "")
     pairs: list[tuple[float, float]] = []
     used_paths: list[str] = []
+    selected_x_labels: Counter[str] = Counter()
     for source_path, rows in trial_sources:
         source_direction = "DL" if "dl_pdsch" in source_path else "UL"
         if required_direction and source_direction != required_direction:
             continue
         source_used = False
         for row in rows:
-            configured_snr = _row_float(row, "ConfiguredSNR_dB", "SNR_dB", "AppliedAWGNSNR_dB")
+            configured_snr, row_x_label = _row_snr_axis_value(row)
             if configured_snr is None or not math.isfinite(float(configured_snr)):
                 continue
+            selected_x_labels[row_x_label] += 1
             if chart_key.endswith("bler_vs_snr"):
                 metric = _trial_row_bler(row)
             elif chart_key.endswith("ber_vs_snr"):
@@ -5748,10 +6361,11 @@ def _configured_sweep_chart_materialization(
         y_label = "Throughput_Mbps"
     else:
         y_label = "MeasuredPostEqSINR_dB"
+    x_label = selected_x_labels.most_common(1)[0][0] if selected_x_labels else "ConfiguredSNR_dB"
     source_path_text = "|".join(used_paths)
     csv_bytes, dataset = _metric_rows_by_exact_x(
         pairs,
-        x_label="ConfiguredSNR_dB",
+        x_label=x_label,
         y_label=y_label,
         chart_name=chart_name,
         run_id=run_id,
@@ -5759,6 +6373,9 @@ def _configured_sweep_chart_materialization(
     )
     point_count = len(dataset.get("points", []))
     dataset["sample_count"] = len(pairs)
+    if chart_key.endswith("bler_vs_snr") or chart_key.endswith("ber_vs_snr"):
+        dataset["y_axis_min"] = 0.0
+        dataset["y_axis_max"] = 1.0
     if point_count == 1:
         dataset["mode"] = "bar"
         dataset["evidence_shape_policy"] = "operating_point"
@@ -5774,10 +6391,10 @@ def _configured_sweep_chart_materialization(
             "Configured operating-point sweep aggregated only from persisted waveform trial measurements.",
             dataset,
             [
-                f"direction={required_direction or 'DL+UL'}",
-                f"samples={len(pairs)}",
-                f"source={source_path_text}",
-                f"chart_scope={chart_scope}",
+                f"Direction: {required_direction or 'DL+UL'}",
+                f"Runtime samples: {len(pairs)}",
+                f"X axis: {_display_axis_label(x_label)}",
+                f"Scope: {chart_scope.replace('_', ' ')}",
             ],
         ),
         "csv_status": "specialized_runtime_configured_sweep_dataset",
@@ -5810,7 +6427,7 @@ def _explicit_runtime_metric_chart_materialization(
         "UCI bit count distribution": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["UCIBitCount", "ExpectedBitCount"], "kind": "distribution", "label": "UCI bit count"},
         "SRS validity timeline": {"sources": ["reports/csv/live_srs_stage_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["SRSRuntimeEvidenceUsable", "MeasurementUsable", "DetectionUsable"], "kind": "timeline", "label": "SRS usable flag"},
         "channel estimate quality trend": {"sources": ["reports/csv/live_srs_channel_estimation_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["NMSE_dB", "TrueChannelNMSE_dB"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
-        "RSRP/CSI-RSRP timeline": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dB"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dB)"},
+        "RSRP/CSI-RSRP timeline": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dBm)"},
         "CQI / PMI / RI / CRI timeline": {"sources": ["reports/csv/live_measurement_table.csv", "reports/csv/live_link_adaptation_input_table.csv"], "fields": ["wideband_cqi", "WidebandCQI", "ri", "RI"], "kind": "timeline", "label": "Reported CQI / RI"},
         "MU grouping summary": {"sources": ["packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], "fields": ["MUMIMOGroupSize"], "kind": "distribution", "label": "MU-MIMO group size"},
         "UE Tx power timeline": {"sources": ["reports/csv/live_ue_power_state.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["ul_tx_power_dbm"], "kind": "timeline", "label": "UE Tx power (dBm)"},
@@ -5863,7 +6480,7 @@ def _explicit_runtime_metric_chart_materialization(
         "PBCH/PDCCH/PUCCH detection and decode timelines": {"sources": ["air_interface/csv/pbch_trials.csv", "air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["DecodeSuccess", "CRCPass", "PUCCHDecodeOk"], "x_fields": ["Slot"], "kind": "timeline", "label": "Control decode success"},
         "per-channel reliability breakdown": {"sources": ["reports/csv/control_pass_rates.csv"], "fields": ["PassRate", "SuccessRate", "Rate"], "kind": "distribution", "label": "Channel reliability"},
         "per-format reliability breakdown": {"sources": ["air_interface/csv/pucch_trials.csv"], "fields": ["PUCCHDecodeOk", "DecodeSuccess", "CRCPass"], "kind": "distribution", "label": "PUCCH format reliability"},
-        "ServingRSRP / RSRP / CSI-RSRP trends": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dB"], "x_fields": ["Slot"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dB/dBm)"},
+        "ServingRSRP / RSRP / CSI-RSRP trends": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], "x_fields": ["Slot"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dBm)"},
         "per-beam quality plot": {"sources": ["reports/csv/live_beam_selection_table.csv"], "fields": ["selected_beam_gain_db", "best_beam_gain_db", "beam_gain_gap_db"], "x_fields": ["selected_beam_index"], "kind": "timeline", "label": "Beam quality (dB)"},
         "per-layer quality plot": {"sources": ["beamforming/csv/mimo_layer_metrics.csv"], "fields": ["PostEqSINRdB", "ChannelEstimateNMSEdB"], "x_fields": ["LayerIndex"], "kind": "timeline", "label": "Per-layer quality (dB)"},
         "inter-user leakage": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["residual_interference_power_db", "interference_rx_power_dbm"], "x_fields": ["slot"], "kind": "timeline", "label": "Inter-user leakage (dB/dBm)"},
@@ -5895,6 +6512,7 @@ def _explicit_runtime_metric_chart_materialization(
     source_path = ""
     samples: list[tuple[float, float]] = []
     raw_values: list[float] = []
+    selected_rows: list[dict[str, str]] = []
     for candidate in spec["sources"]:
         _header, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, candidate)
         candidate_samples: list[tuple[float, float]] = []
@@ -5936,6 +6554,7 @@ def _explicit_runtime_metric_chart_materialization(
             source_path = candidate
             samples = candidate_samples
             raw_values = candidate_values
+            selected_rows = rows
             break
     if not raw_values:
         return None
@@ -5986,6 +6605,41 @@ def _explicit_runtime_metric_chart_materialization(
         }
     if not dataset.get("points"):
         return None
+    render_title = chart_name
+    extra_summary: list[str] = []
+    if chart_name == "MCS/code-rate timeline":
+        dataset["y_axis_min"] = 0.0
+        dataset["y_axis_max"] = 1.0
+        mcs_values = sorted(
+            {
+                int(round(value))
+                for value in (
+                    _row_float(row, "mcs", "MCS", "mcs_index", "MCSIndex")
+                    for row in selected_rows
+                )
+                if value is not None and math.isfinite(float(value))
+            }
+        )
+        _trial_header, trial_rows = _artifact_rows_by_path(
+            existing, fetch_artifact_bytes, "air_interface/csv/dl_pdsch_trials.csv"
+        )
+        fixed_tokens = {
+            _row_text(row, "ActualMCSSelectionMode", "LinkAdaptationMode").strip().lower()
+            for row in trial_rows
+            if _row_text(row, "ActualMCSSelectionMode", "LinkAdaptationMode").strip()
+        }
+        fixed_policy = bool(fixed_tokens) and fixed_tokens.issubset(
+            {"configured_fixed", "fixed", "configured_fixed_mcs"}
+        )
+        if fixed_policy:
+            render_title = "Fixed MCS / Code-Rate Verification"
+            extra_summary.append("Policy: configured fixed operating point")
+        if mcs_values:
+            extra_summary.append("Observed MCS: " + ", ".join(str(value) for value in mcs_values))
+        extra_summary.append(
+            "Observed code rate: "
+            + ", ".join(_format_axis_tick(value) for value in sorted(set(raw_values)))
+        )
     return {
         "csv_bytes": _chart_dataset_csv(
             run_id, chart_name, dataset, source_path, len(raw_values),
@@ -5993,10 +6647,10 @@ def _explicit_runtime_metric_chart_materialization(
             f"Explicit {spec['label']} mapping from {source_path}.",
         ),
         "img_bytes": _render_svg_plot(
-            chart_name,
+            render_title,
             f"{spec['label']} derived from explicitly mapped persisted runtime fields.",
             dataset,
-            [f"samples={len(raw_values)}", f"source={source_path}"],
+            [f"samples={len(raw_values)}", f"source={source_path}"] + extra_summary,
         ),
         "csv_status": "explicit_runtime_metric_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
@@ -6504,86 +7158,6 @@ def _runtime_energy_relation_chart(
     )
 
 
-def _render_cfo_tracking_svg(
-    title: str,
-    series: dict[str, list[tuple[float, float]]],
-    summary_lines: list[str],
-) -> bytes:
-    width, height = 1180, 700
-    left, top, plot_w, plot_h = 82.0, 118.0, 760.0, 480.0
-    all_points = [point for points in series.values() for point in points]
-    if not all_points:
-        return _render_reason_svg(title, "CFO tracking evidence", summary_lines)
-    xs = [point[0] for point in all_points]
-    ys = [point[1] for point in all_points]
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    if math.isclose(x_min, x_max):
-        x_max = x_min + 1.0
-    if math.isclose(y_min, y_max):
-        pad = max(1.0, abs(y_min) * 0.1)
-        y_min -= pad
-        y_max += pad
-    else:
-        pad = 0.08 * (y_max - y_min)
-        y_min -= pad
-        y_max += pad
-
-    def project(point: tuple[float, float]) -> tuple[float, float]:
-        x_val, y_val = point
-        px = left + (x_val - x_min) / (x_max - x_min) * plot_w
-        py = top + plot_h - (y_val - y_min) / (y_max - y_min) * plot_h
-        return px, py
-
-    colors = {
-        "True CFO": "#0f766e",
-        "Estimated CFO": "#2563eb",
-        "Residual CFO": "#dc2626",
-    }
-    parts = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-        '<rect width="100%" height="100%" fill="#f8fafc"/>',
-        f'<text x="40" y="48" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{html.escape(title)}</text>',
-        '<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#475569">Persisted runtime CFO truth, receiver estimate, and post-correction residual.</text>',
-        f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
-    ]
-    for tick in range(6):
-        frac = tick / 5.0
-        y = top + plot_h - frac * plot_h
-        value = y_min + frac * (y_max - y_min)
-        parts.append(f'<line x1="{left}" y1="{y:.2f}" x2="{left + plot_w}" y2="{y:.2f}" stroke="#e2e8f0" stroke-width="1"/>')
-        parts.append(f'<text x="{left - 10}" y="{y + 4:.2f}" text-anchor="end" font-family="Consolas,monospace" font-size="11" fill="#475569">{value:.3g}</text>')
-    for name, points in series.items():
-        if not points:
-            continue
-        projected = [project(point) for point in points]
-        polyline = " ".join(f"{x:.2f},{y:.2f}" for x, y in projected)
-        color = colors.get(name, "#475569")
-        parts.append(f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="2.4"/>')
-        for x, y in projected:
-            parts.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="3" fill="{color}"/>')
-    parts.extend([
-        f'<text x="{left + plot_w / 2}" y="{top + plot_h + 42}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">Runtime observation index</text>',
-        f'<text x="25" y="{top + plot_h / 2}" transform="rotate(-90 25 {top + plot_h / 2})" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#334155">CFO (Hz)</text>',
-    ])
-    info_x = 875
-    parts.append(f'<rect x="{info_x}" y="{top}" width="265" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
-    parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Evidence</text>')
-    y_pos = top + 62
-    for name in ("True CFO", "Estimated CFO", "Residual CFO"):
-        color = colors[name]
-        count = len(series.get(name, []))
-        parts.append(f'<line x1="{info_x + 18}" y1="{y_pos}" x2="{info_x + 48}" y2="{y_pos}" stroke="{color}" stroke-width="3"/>')
-        parts.append(f'<text x="{info_x + 58}" y="{y_pos + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(name)} ({count})</text>')
-        y_pos += 28
-    y_pos += 18
-    for line in summary_lines[:12]:
-        parts.append(f'<text x="{info_x + 18}" y="{y_pos}" font-family="Consolas,monospace" font-size="12" fill="#475569">{html.escape(line)}</text>')
-        y_pos += 21
-    parts.append('</svg>')
-    return "".join(parts).encode("utf-8")
-
-
 def _runtime_cfo_tracking_chart(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -6651,7 +7225,17 @@ def _runtime_cfo_tracking_chart(
             ],
             csv_rows,
         ),
-        "img_bytes": _render_cfo_tracking_svg(chart_name, series, summary),
+        "img_bytes": _render_multi_series_svg(
+            chart_name,
+            "Persisted runtime CFO truth, receiver estimate, and post-correction residual.",
+            [
+                {"name": name, "points": [[x, y] for x, y in points]}
+                for name, points in series.items()
+            ],
+            summary,
+            x_label="Runtime observation index",
+            y_label="CFO (Hz)",
+        ),
         "csv_status": "explicit_runtime_cfo_tracking_dataset",
         "image_status": "generated_runtime_cfo_tracking_svg",
         "source_table_path": source_path,
@@ -8378,11 +8962,15 @@ def _specialized_chart_materialization(
             if chart_name in {"BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR"}:
                 pairs: list[tuple[float, float]] = []
                 used_source_path = ""
-                x_label = "PostEqSINR_dB"
+                is_snr_axis = chart_name.endswith("vs SNR")
+                x_label = "AppliedAWGNSNR_dB" if is_snr_axis else "PostEqSINR_dB"
                 y_label = "BLER" if "BLER" in chart_name else ("FER" if "FER" in chart_name else "BER")
                 selected_x_labels: Counter[str] = Counter()
                 for source_path, row in reliability_rows:
-                    x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
+                    if is_snr_axis:
+                        x_val, row_x_label = _row_snr_axis_value(row)
+                    else:
+                        x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
                     if x_val is None:
                         continue
                     selected_x_labels[row_x_label] += 1
@@ -8399,12 +8987,15 @@ def _specialized_chart_materialization(
                 if pairs:
                     if selected_x_labels:
                         x_label = selected_x_labels.most_common(1)[0][0]
-                    if chart_name == "BLER vs SINR":
+                    if not is_snr_axis:
                         csv_bytes, dataset = _metric_rows_by_binned_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials", bin_width=1.0)
                         chart_note = "Reliability-vs-SINR curve binned by data-domain trial SINR where available; receiver-Hest diagnostic SINR is intentionally not used as the x-axis fallback."
                     else:
                         csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials")
-                        chart_note = "Reliability-vs-quality curve derived from actual trial BER/BLER/FER outcomes; measured/applied quality fields are preferred over configured SNR metadata."
+                        chart_note = "Reliability-vs-SNR curve uses the applied channel-noise operating point and actual trial BER/BLER/FER outcomes."
+                    if y_label in {"BLER", "BER", "FER"}:
+                        dataset["y_axis_min"] = 0.0
+                        dataset["y_axis_max"] = 1.0
                     dataset["mode"] = _honest_chart_mode(dataset.get("points", []), str(dataset.get("mode") or "line"))
                     dataset["sample_count"] = len(pairs)
                     if len(dataset.get("points", [])) == 1:
@@ -8414,7 +9005,7 @@ def _specialized_chart_materialization(
                         dataset["evidence_shape_policy"] = "observed_relation"
                     return {
                         "csv_bytes": csv_bytes,
-                        "img_bytes": _render_svg_plot(chart_name, "Reliability metric aggregated from truthful trial rows.", dataset, [f"samples={len(pairs)}", f"x_axis={x_label}", f"y_axis={y_label}"]),
+                        "img_bytes": _render_svg_plot(chart_name, "Reliability metric aggregated from truthful trial rows.", dataset, [f"Runtime samples: {len(pairs)}", f"X axis: {_display_axis_label(x_label)}", f"Y axis: {_display_axis_label(y_label)}"]),
                         "csv_status": "specialized_runtime_reliability_dataset",
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": used_source_path or "multiple_runtime_trials",
@@ -8608,7 +9199,7 @@ def _specialized_chart_materialization(
                 pairs: list[tuple[float, float]] = []
                 source_token = ""
                 if chart_name == "throughput vs SNR":
-                    x_label = "PostEqSINR_dB"
+                    x_label = "AppliedAWGNSNR_dB"
                     y_label = "Throughput_Mbps"
                 elif chart_name == "throughput vs SINR":
                     x_label = "PostEqSINR_dB"
@@ -8623,7 +9214,7 @@ def _specialized_chart_materialization(
                 for source_path, rows in trial_sources:
                     for row in rows:
                         if chart_name == "throughput vs SNR":
-                            x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
+                            x_val, row_x_label = _row_snr_axis_value(row)
                             if row_x_label:
                                 selected_x_labels[row_x_label] += 1
                         elif chart_name == "throughput vs SINR":
@@ -8654,7 +9245,7 @@ def _specialized_chart_materialization(
                         dataset["evidence_shape_policy"] = "observed_relation"
                     subtitle = "Correlation view derived directly from persisted runtime throughput/goodput trials."
                     if chart_name == "throughput vs SNR":
-                        subtitle = "Throughput-vs-quality view prefers measured/applied runtime quality over configured SNR metadata."
+                        subtitle = "Throughput versus the applied channel-noise SNR operating point from persisted runtime trials."
                     if chart_name == "throughput vs load":
                         subtitle = "Load view uses scheduled PRB count as the honest load proxy because this run exports one high-load operating point, not a sweep campaign."
                     return {
@@ -8790,7 +9381,10 @@ def _specialized_chart_materialization(
                     }
             if chart_name == "ServingRSRP / RSRP / CSI-RSRP trends":
                 rsrp_rows = la_rows
-                series_specs = [("Serving RSRP", "ServingRSRP_dBm"), ("RSRP", "RSRP_dBm"), ("CSI-RSRP", "CSI_RSRP_dB")]
+                # Absolute RSRP is a power-per-reference-RE quantity in dBm.
+                # CSI_RSRP_dB is a relative digital-grid power and must never
+                # be mixed with calibrated dBm values on this axis.
+                series_specs = [("Serving RSRP", "ServingRSRP_dBm"), ("RSRP", "RSRP_dBm"), ("CSI-RSRP", "CSI_RSRP_dBm")]
                 series: list[dict[str, Any]] = []
                 csv_rows: list[dict[str, Any]] = []
                 for series_name, field_name in series_specs:
@@ -8809,12 +9403,12 @@ def _specialized_chart_materialization(
                 if series:
                     return {
                         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot_or_sample", "series_name", "metric_value", "source_table_logical_path"], csv_rows),
-                        "img_bytes": _render_multi_series_svg(chart_name, "Serving RSRP, generic RSRP, and CSI-RSRP trends from runtime measurement exports.", series, [f"rows={len(rsrp_rows)}"], x_label="Slot / sample", y_label="dB / dBm"),
+                        "img_bytes": _render_multi_series_svg(chart_name, "Calibrated serving RSRP and CSI-RSRP power per reference RE from runtime measurement exports.", series, [f"rows={len(rsrp_rows)}", "Unit authority: absolute dBm only"], x_label="Slot / sample", y_label="RSRP per reference RE (dBm)"),
                         "csv_status": "specialized_runtime_measurement_dataset",
                         "image_status": "generated_specialized_runtime_summary_svg",
                         "source_table_path": la_path,
                         "source_row_count": len(csv_rows),
-                        "note": "RSRP trend chart derived from runtime measurement rows.",
+                        "note": "RSRP trend chart contains only calibrated absolute dBm fields; relative digital-grid CSI_RSRP_dB is excluded.",
                     }
             if chart_name == "CQI / PMI / RI / CRI / SSBRI trends":
                 series_specs = [("CQI", "WidebandCQI"), ("PMI", "PMI"), ("RI", "RI"), ("CRI", "CRI"), ("SSBRI", "SSBRI")]

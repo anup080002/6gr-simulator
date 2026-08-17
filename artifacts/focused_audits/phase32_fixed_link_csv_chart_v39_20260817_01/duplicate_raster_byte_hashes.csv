@@ -1,0 +1,5 @@
+sha256,copy_count,relative_paths
+009ee95ab2073112b7298bb58a2862a634d846738a24b4e59ec1078888610f38,2,analytics/image/contract__measurement-csi-link-adaptation-analytics__config-vs-measured-conflict-dashboard.png|reports/image/contract__measurements-csi-link-adaptation-inputs__config-vs-measured-conflict-dashboard.png
+268b90d902dcc7bd13e90fcd14bbde193c33aa2caa868e6f515c06830aa0f987,2,analytics/image/contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr.png|reports/image/contract__fixed-snr-sinr-sweep-validation__throughput-vs-snr.png
+49e2ccdc2cc5acc858bdd7e52a8eda5a573cc3024152705dd648ab1108b5c96b,2,analytics/image/contract__beamforming-precoding-mimo-analytics__precoder-mode-distribution.png|reports/image/contract__beamforming-precoding-mimo-massive-mimo__precoder-mode-distribution.png
+d785f43f10e92b9267c0936675b4648022ff5f5462b374ae936fcc2427c19a1e,2,analytics/image/contract__impairments-tracking-analytics__cfo-true-vs-estimated-vs-residual.png|reports/image/contract__channel-interference-impairments__cfo-true-vs-estimated-vs-residual.png

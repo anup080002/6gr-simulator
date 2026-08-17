@@ -2084,11 +2084,11 @@ end
         T.ServingRSRPSource = trialServingRSRPSource(idx);
         T.CSI_RSRP_dB = trialCSIRSRP(idx);
         T.CSI_RSRPSource = trialCSIRSRPSource(idx);
-        T.RSRP_dB = T.ServingRSRP_dBm;
-        rsrpAliasMissing = ~isfinite(double(T.RSRP_dB));
-        if any(rsrpAliasMissing)
-            T.RSRP_dB(rsrpAliasMissing) = T.CSI_RSRP_dB(rsrpAliasMissing);
-        end
+        % Keep absolute received power and relative digital-grid power in
+        % separate unit-bearing fields.  A relative CSI measurement is not
+        % a valid fallback for an unavailable dBm link-budget quantity.
+        T.RSRP_dBm = T.ServingRSRP_dBm;
+        T.RSRP_dB = T.CSI_RSRP_dB;
         T.CSI_RSSI_dB = trialCSIRSSI(idx);
         T.CSI_RSSISource = trialCSIRSSISource(idx);
         T.CSI_RSRQ_dB = trialCSIRSRQ(idx);
@@ -4459,6 +4459,7 @@ T.ServingRSRP_dBm = zeros(0,1);
 T.ServingRSRPSource = strings(0,1);
 T.CSI_RSRP_dB = zeros(0,1);
 T.CSI_RSRPSource = strings(0,1);
+T.RSRP_dBm = zeros(0,1);
 T.RSRP_dB = zeros(0,1);
 T.CSI_RSSI_dB = zeros(0,1);
 T.CSI_RSSISource = strings(0,1);

@@ -20,6 +20,13 @@ assert(string(loaded.Text) == payload.Text);
 leftovers = dir(fullfile(fileparts(target), "*.mat"));
 assert(numel(leftovers) == 1 && string(leftovers(1).name) == "runtime_result.mat", ...
     "MAT publication left a temporary or duplicate artifact.");
+
+localTarget = fullfile(root, "checkpoint", "local_execution_state.mat");
+sixgr.util.matSave(localTarget, payload, "UseArtifactStore", false);
+assert(isfile(localTarget), ...
+    "Filesystem-authoritative execution state was not published locally.");
+localLoaded = load(localTarget);
+assert(isequal(localLoaded.Matrix, payload.Matrix));
 ok = true;
 end
 

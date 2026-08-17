@@ -70,6 +70,8 @@ parallelExecution = parallelWorkers > 0 && ...
     ~logical(opt.ResumeFromCheckpoint) && ...
     strlength(strtrim(checkpointPath)) == 0 && ...
     isinf(double(opt.MaxPointsThisInvocation)) && totalPointCount > 1;
+captureParallelRuntimeCalls = parallelExecution && ...
+    sixgr.runtime.RuntimeCallLedger.isConfigured();
 
 if parallelExecution
     jobMCS = repelem(reshape(double(loopMCS), 1, []), ...
@@ -78,11 +80,13 @@ if parallelExecution
         1, numel(loopMCS));
     pointOutputs = cell(totalPointCount, 1);
     parfor (jobIndex = 1:totalPointCount, parallelWorkers)
-        [row, pointDL, pointUL, pointPlan] = localExecuteCampaignPoint( ...
+        [row, pointDL, pointUL, pointPlan, pointLedger] = localExecuteCampaignPoint( ...
             cfgBase, campaignCfg, jobSNR(jobIndex), jobMCS(jobIndex), ...
-            jobIndex, useSharedMCS, dlMCS, ulMCS);
+            jobIndex, useSharedMCS, dlMCS, ulMCS, ...
+            captureParallelRuntimeCalls);
         pointOutputs{jobIndex} = struct("Row", row, "DL", pointDL, ...
-            "UL", pointUL, "TaskPlan", pointPlan);
+            "UL", pointUL, "TaskPlan", pointPlan, ...
+            "RuntimeCallLedger", pointLedger);
     end
     for jobIndex = 1:totalPointCount
         pointOut = pointOutputs{jobIndex};
@@ -90,6 +94,10 @@ if parallelExecution
         dlTrials = localAppendCompatTable(dlTrials, pointOut.DL);
         ulTrials = localAppendCompatTable(ulTrials, pointOut.UL);
         taskPlan = localAppendCompatTable(taskPlan, pointOut.TaskPlan);
+        if captureParallelRuntimeCalls
+            sixgr.runtime.RuntimeCallLedger.appendObservedRows( ...
+                pointOut.RuntimeCallLedger);
+        end
     end
     completedPointCount = totalPointCount;
 else
@@ -101,7 +109,7 @@ else
             end
             [row, pointDL, pointUL, pointPlan] = localExecuteCampaignPoint( ...
                 cfgBase, campaignCfg, snr, mcs, pointIndex, ...
-                useSharedMCS, dlMCS, ulMCS);
+                useSharedMCS, dlMCS, ulMCS, false);
             summaryRows(end+1, 1) = row; %#ok<AGROW>
             dlTrials = localAppendCompatTable(dlTrials, pointDL);
             ulTrials = localAppendCompatTable(ulTrials, pointUL);
@@ -192,8 +200,19 @@ campaign = struct( ...
     "Notes", "");
 end
 
-function [row, dlTrials, ulTrials, taskPlan] = localExecuteCampaignPoint( ...
-        cfgBase, campaignCfg, snr, mcs, pointIndex, useSharedMCS, dlMCS, ulMCS)
+function [row, dlTrials, ulTrials, taskPlan, runtimeCallLedger] = localExecuteCampaignPoint( ...
+        cfgBase, campaignCfg, snr, mcs, pointIndex, useSharedMCS, dlMCS, ulMCS, captureRuntimeCalls)
+runtimeCallLedger = table();
+if logical(captureRuntimeCalls)
+    sixgr.runtime.RuntimeCallLedger.reset();
+    sixgr.runtime.RuntimeCallLedger.configure("", struct( ...
+        "RunId", string(sixgr.util.structGet(cfgBase, "run.runTag", "")), ...
+        "ExecutionID", string(sixgr.util.structGet(cfgBase, ...
+            "run.executionID", sixgr.util.structGet(cfgBase, ...
+            "meta.executionID", ""))), ...
+        "ConfigHash", string(sixgr.util.structGet(cfgBase, ...
+            "meta.configHash", ""))));
+end
 row = localEmptySummaryRow(snr);
 row.CampaignKind = "fixed_link_monte_carlo";
 row.SweepKind = "fixed_reference_awgn_snr_campaign";
@@ -241,6 +260,10 @@ if localDirectionEnabled(campaignCfg, "UL") && isfinite(ulPointMCS)
     row = localApplyDirectionStats(row, "UL", statsUL);
     taskPlan = localAppendCompatTable(taskPlan, planUL);
 end
+if logical(captureRuntimeCalls)
+    runtimeCallLedger = sixgr.runtime.RuntimeCallLedger.snapshot();
+    sixgr.runtime.RuntimeCallLedger.reset();
+end
 end
 
 function identity = localCampaignIdentity(cfgBase, campaignCfg)
@@ -268,7 +291,11 @@ state = struct( ...
     "TaskPlan", taskPlan, ...
     "DLTrials", dlTrials, ...
     "ULTrials", ulTrials);
-sixgr.util.matSave(char(pathValue), struct("CheckpointState", state));
+% A resume checkpoint is execution state, not a publication artifact.  It
+% must remain addressable at CheckpointPath even when the run's result
+% artifacts are captured directly by the active MySQL store.
+sixgr.util.matSave(char(pathValue), struct("CheckpointState", state), ...
+    "UseArtifactStore", false);
 end
 
 function cfgOut = localPrepareCampaignCfg(cfgIn, campaignCfg)
@@ -306,6 +333,16 @@ cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.rankPolicy", ...
     char(campaignCfg.LinkAdaptationMode));
 cfgOut = sixgr.util.structSet(cfgOut, "phy.linkAdaptation.beamPolicy", ...
     char(campaignCfg.LinkAdaptationMode));
+% A fixed-MCS calibration point cannot simultaneously have ILA/OLLA
+% enabled.  The enclosing scenario may enable those loops for its adaptive
+% runtime, but validation.fixed_link_campaign.link_adaptation_mode=fixed is
+% the authority for this isolated campaign.  Clear the effective flags so
+% exported *Enabled and *Applied fields describe this waveform execution,
+% rather than leaking unrelated parent-policy state into fixed-link rows.
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "phy.linkAdaptation.innerLoopFlag", false);
+cfgOut = sixgr.util.structSet(cfgOut, ...
+    "phy.linkAdaptation.outerLoopFlag", false);
 cfgOut = sixgr.util.structSet(cfgOut, ...
     "phy.linkAdaptation.fixedReferenceMode", ...
     logical(campaignCfg.FixedReferenceMode));
@@ -646,7 +683,9 @@ while true
             direction, double(snr));
     end
 
-    Ti = localAnnotateTrialRows(Ti, direction, snr, pointIndex, dropIndex, taskSeed, seedIndex, seedValue, completed, campaignCfg, mcs, pointSeed);
+    Ti = localAnnotateTrialRows(Ti, cfgPoint, direction, snr, ...
+        pointIndex, dropIndex, taskSeed, seedIndex, seedValue, ...
+        completed, campaignCfg, mcs, pointSeed);
     T = localAppendCompatTable(T, Ti);
     completed = height(localEffectiveTrialRows(T));
     taskPlan = localAppendCompatTable(taskPlan, ...
@@ -732,7 +771,7 @@ cfgPoint = sixgr.util.structSet(cfgPoint, root + ".mcsIndex", ...
     double(mcs));
 end
 
-function T = localAnnotateTrialRows(T, direction, snr, pointIndex, dropIndex, taskSeed, seedIndex, seedValue, completed, campaignCfg, mcs, pointSeed)
+function T = localAnnotateTrialRows(T, cfgPoint, direction, snr, pointIndex, dropIndex, taskSeed, seedIndex, seedValue, completed, campaignCfg, mcs, pointSeed)
 if ~(istable(T) && ~isempty(T))
     return;
 end
@@ -757,6 +796,27 @@ T.FixedLinkConfiguredLayers = repmat(double(campaignCfg.Layers), n, 1);
 T.FixedLinkConfiguredPRBCount = repmat(double(campaignCfg.NPRB), n, 1);
 T.FixedLinkConfiguredChannelModel = repmat(string(campaignCfg.ChannelModelResolved), n, 1);
 T.PointSeed = repmat(double(pointSeed), n, 1);
+% The fixed-link campaign bypasses the scheduler, but it does not bypass
+% runtime identity.  Preserve the same immutable run/execution binding as
+% the canonical system runner on every physical TB row.
+runID = string(sixgr.util.structGet(cfgPoint, "run.runTag", ""));
+executionID = string(sixgr.util.structGet(cfgPoint, "run.executionID", ...
+    sixgr.util.structGet(cfgPoint, "meta.executionID", "")));
+scenarioID = string(sixgr.util.structGet(cfgPoint, "run.scenarioID", ...
+    sixgr.util.structGet(cfgPoint, "meta.scenarioID", "")));
+configHash = string(sixgr.util.structGet(cfgPoint, "meta.configHash", ""));
+if any(strlength(strtrim([runID executionID scenarioID configHash])) == 0)
+    if sixgr.runtime.RuntimeCallLedger.isConfigured()
+        error("sixgr:lls6g:campaign:MissingRuntimeIdentity", ...
+            ["Fixed-link truth rows require non-empty RunID, ExecutionID, " + ...
+             "ScenarioID, and ConfigHash before waveform execution."]);
+    end
+end
+T.RunID = repmat(runID, n, 1);
+T.RunTag = repmat(runID, n, 1);
+T.ExecutionID = repmat(executionID, n, 1);
+T.ScenarioID = repmat(scenarioID, n, 1);
+T.ConfigHash = repmat(configHash, n, 1);
 T.FixedLinkSeedHierarchy = "campaign=" + string(double(campaignCfg.SeedBase)) + ...
     "|point=" + string(double(pointIndex)) + ...
     "|drop=" + string(double(dropIndex)) + ...
@@ -1044,14 +1104,15 @@ for prefix = ["DL", "UL"]
     if ~ismember(char(blerCol), summary.Properties.VariableNames)
         continue;
     end
-    [statuses, crossings] = localPerMCSTargetCrossings(summary, prefix, target);
+    [statuses, crossings] = localPerMCSTargetCrossings(summary, prefix, target, ...
+        campaignCfg.MaxTargetCrossingBracket_dB);
     summary.(char(prefix + "_TargetBLER")) = repmat(target, height(summary), 1);
     summary.(char(prefix + "_TargetCrossingStatus")) = statuses;
     summary.(char(prefix + "_TargetCrossingSNR_dB")) = crossings;
 end
 end
 
-function [statusCol, snrCol] = localPerMCSTargetCrossings(summary, prefix, target)
+function [statusCol, snrCol] = localPerMCSTargetCrossings(summary, prefix, target, maxBracketWidth_dB)
 statusCol = repmat("not_requested", height(summary), 1);
 snrCol = NaN(height(summary), 1);
 mcsCol = localDirectionMCSColumnName(prefix);
@@ -1062,49 +1123,17 @@ for mcs = reshape(finiteMCS, 1, [])
     if ~any(mask)
         continue;
     end
-    [status, crossingSNR] = localTargetCrossingStatus(summary(mask, :), prefix, target);
+    [status, crossingSNR] = localTargetCrossingStatus(summary(mask, :), prefix, target, maxBracketWidth_dB);
     statusCol(mask) = string(status);
     snrCol(mask) = double(crossingSNR);
 end
 end
 
-function [status, crossingSNR] = localTargetCrossingStatus(T, prefix, targetBLER)
-status = "insufficient_finite_points";
-crossingSNR = NaN;
-
+function [status, crossingSNR] = localTargetCrossingStatus(T, prefix, targetBLER, maxBracketWidth_dB)
 x = localNumericColumn(T, ["SNR_dB"], NaN);
 y = localNumericColumn(T, [prefix + "_BLER"], NaN);
-mask = isfinite(x) & isfinite(y);
-if nnz(mask) < 2
-    return;
-end
-
-x = x(mask);
-y = y(mask);
-[x, order] = sort(x(:));
-y = y(order);
-
-for i = 1:numel(x) - 1
-    y1 = y(i);
-    y2 = y(i + 1);
-    if (y1 >= targetBLER && y2 <= targetBLER) || (y1 <= targetBLER && y2 >= targetBLER)
-        if abs(y2 - y1) < eps
-            crossingSNR = x(i);
-        else
-            crossingSNR = x(i) + (targetBLER - y1) * (x(i + 1) - x(i)) / (y2 - y1);
-        end
-        status = "crossing_observed";
-        return;
-    end
-end
-
-if all(y > targetBLER)
-    status = "no_crossing_all_points_above_target";
-elseif all(y < targetBLER)
-    status = "no_crossing_all_points_below_target";
-else
-    status = "non_monotonic_curve";
-end
+[status, crossingSNR] = sixgr.validation.qualifyObservedBLERCrossing( ...
+    x(:), y(:), double(targetBLER), double(maxBracketWidth_dB));
 end
 
 function reportTables = localBuildReportTables(summary, dlTrials, ulTrials, campaignCfg)
@@ -1209,7 +1238,8 @@ rows = repmat(struct( ...
                 continue;
             end
             for target = reshape(double(campaignCfg.TargetBLER), 1, [])
-                [status, crossingSNR] = localTargetCrossingStatus(summary(mask, :), prefix, target);
+                [status, crossingSNR] = localTargetCrossingStatus(summary(mask, :), prefix, target, ...
+                    campaignCfg.MaxTargetCrossingBracket_dB);
                 rows(end+1, 1) = struct( ... %#ok<AGROW>
                     "Direction", char(prefix), ...
                     "MCSIndex", double(mcs), ...
@@ -1358,6 +1388,9 @@ cfg.Seeds = localFiniteIntegerAwareRowVector(sixgr.util.structGet(cfg, "Seeds", 
     double(sixgr.util.structGet(cfgIn, "run.seed", 1)) + 730001);
 cfg.TargetBLER = localFiniteRowVector(sixgr.util.structGet(cfg, "TargetBLER", sixgr.util.structGet(cfg, "target_bler", [0.1 0.01])), [0.1 0.01]);
 cfg.PrimaryTargetBLER = double(cfg.TargetBLER(1));
+cfg.MaxTargetCrossingBracket_dB = localFiniteNonNegativeDefault( ...
+    sixgr.util.structGet(cfg, "MaxTargetCrossingBracket_dB", ...
+    sixgr.util.structGet(cfg, "max_target_crossing_bracket_db", 2)), 2);
 cfg.ConfidenceLevel = double(sixgr.util.structGet(cfg, "ConfidenceLevel", ...
     sixgr.util.structGet(cfg, "confidence_level", NaN)));
 if ~(isscalar(cfg.ConfidenceLevel) && isfinite(cfg.ConfidenceLevel) ...
@@ -1440,7 +1473,7 @@ required = [ ...
     "fixed_reference_mode","noise_operating_mode", ...
     "pdsch_execution_profile", ...
     "link_adaptation_mode","harq_enabled","single_user_mode", ...
-    "seeds","target_bler","parallel_workers"];
+    "seeds","target_bler","max_target_crossing_bracket_db","parallel_workers"];
 for fieldName = required
     if ~localHasEitherCampaignField(cfg, fieldName)
         error("sixgr:lls6g:campaign:MissingMasterYAMLField", ...
@@ -1477,6 +1510,7 @@ camelMap = struct( ...
     "single_user_mode", "SingleUserMode", ...
     "seeds", "Seeds", ...
     "target_bler", "TargetBLER", ...
+    "max_target_crossing_bracket_db", "MaxTargetCrossingBracket_dB", ...
     "parallel_workers", "ParallelWorkers");
 camelName = string(camelMap.(char(snakeName)));
 tf = isfield(cfg, char(snakeName)) || isfield(cfg, char(camelName));
@@ -1532,6 +1566,12 @@ end
 if isempty(cfg.TargetBLER) || any(cfg.TargetBLER <= 0 | cfg.TargetBLER >= 1)
     error("sixgr:lls6g:campaign:InvalidTargetBLER", ...
         "target_bler must contain values strictly between zero and one.");
+end
+if ~(isscalar(cfg.MaxTargetCrossingBracket_dB) && ...
+        isfinite(cfg.MaxTargetCrossingBracket_dB) && ...
+        cfg.MaxTargetCrossingBracket_dB > 0)
+    error("sixgr:lls6g:campaign:InvalidTargetCrossingBracket", ...
+        "max_target_crossing_bracket_db must be a finite positive scalar.");
 end
 if ~logical(cfg.FixedReferenceMode)
     error("sixgr:lls6g:campaign:FixedReferenceModeRequired", ...

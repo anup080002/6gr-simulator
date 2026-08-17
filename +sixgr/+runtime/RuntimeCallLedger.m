@@ -34,6 +34,21 @@ methods(Static)
         T = sixgr.runtime.RuntimeCallLedger.dispatch("snapshot", struct());
     end
 
+    function tf = isConfigured()
+        tf = logical(sixgr.runtime.RuntimeCallLedger.dispatch( ...
+            "is_configured", struct()));
+    end
+
+    function appendObservedRows(rows)
+        %APPENDOBSERVEDROWS Merge identity-bound entries captured in a
+        % parallel worker. The rows must already be direct ENTER events from
+        % RuntimeCallLedger.record; this method never infers calls from trial
+        % output or source-code reachability.
+        if nargin < 1 || ~istable(rows), rows = table(); end
+        sixgr.runtime.RuntimeCallLedger.dispatch( ...
+            "append_observed_rows", struct("Rows", rows));
+    end
+
     function reset()
         sixgr.runtime.RuntimeCallLedger.dispatch("reset", struct());
     end
@@ -87,6 +102,47 @@ methods(Static, Access=private)
                 state.Rows(end+1,1) = row;
             case "snapshot"
                 out = struct2table(state.Rows);
+            case "is_configured"
+                out = logical(state.Configured);
+            case "append_observed_rows"
+                observed = payload.Rows;
+                if ~state.Configured
+                    error("sixgr:runtime:RuntimeCallLedgerNotConfigured", ...
+                        "Observed worker rows require a configured parent ledger.");
+                end
+                if isempty(observed)
+                    return;
+                end
+                required = string(fieldnames( ...
+                    sixgr.runtime.RuntimeCallLedger.emptyRow())).';
+                if ~all(ismember(required, ...
+                        string(observed.Properties.VariableNames)))
+                    error("sixgr:runtime:RuntimeCallLedgerObservedSchemaInvalid", ...
+                        "Observed worker rows do not match the runtime ledger schema.");
+                end
+                for rowIndex = 1:height(observed)
+                    source = table2struct(observed(rowIndex, :));
+                    if string(source.RunId) ~= state.RunId || ...
+                            string(source.ExecutionID) ~= state.ExecutionID || ...
+                            string(source.ConfigHash) ~= state.ConfigHash
+                        error("sixgr:runtime:RuntimeCallLedgerObservedIdentityMismatch", ...
+                            "Observed worker row %d does not match the parent run identity.", ...
+                            rowIndex);
+                    end
+                    if upper(string(source.Event)) ~= "ENTER" || ...
+                            upper(string(source.EvidenceClass)) ~= ...
+                            "ACTUAL_RUNTIME_ENTRY" || ...
+                            lower(string(source.ApproximationMode)) ~= "none" || ...
+                            strlength(strtrim(string(source.FunctionName))) == 0 || ...
+                            strlength(strtrim(string(source.ContextSHA256))) ~= 64
+                        error("sixgr:runtime:RuntimeCallLedgerObservedTruthInvalid", ...
+                            "Observed worker row %d is not direct non-proxy runtime evidence.", ...
+                            rowIndex);
+                    end
+                    state.Sequence = state.Sequence + 1;
+                    source.Sequence = state.Sequence;
+                    state.Rows(end+1, 1) = source;
+                end
             case "flush"
                 out = struct2table(state.Rows);
                 if state.Configured && strlength(strtrim(state.RunFolder)) > 0

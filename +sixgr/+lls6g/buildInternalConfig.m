@@ -5443,10 +5443,13 @@ for fieldName = ["rank", "layers", "n_prb", "min_tb_per_point", "max_tb_per_poin
     end
 end
 
-if isfield(section, "max_ci_half_width")
-    value = double(section.max_ci_half_width);
-    if isfinite(value)
-        section.max_ci_half_width = double(value);
+for fieldName = ["max_ci_half_width", "max_target_crossing_bracket_db"]
+    key = char(fieldName);
+    if isfield(section, key)
+        value = double(section.(key));
+        if isscalar(value) && isfinite(value)
+            section.(key) = double(value);
+        end
     end
 end
 end

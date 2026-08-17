@@ -509,3 +509,4 @@ nested_sections:
         allowed_values: [master_yaml]
       seeds: {required: false, type: number_list, integer: true}
       target_bler: {required: false, type: number_list, min_items: 1}
+      max_target_crossing_bracket_db: {required: false, type: number, min_exclusive: 0}

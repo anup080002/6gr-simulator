@@ -1,2 +1,0 @@
-row_index,relative_path,sha256,row_count,previous_column_count,current_column_count,repair_scope
-2,tables/rawtrials_csirs.csv,caadc6bb2883dc6213247a7abbb3953f67e52b7fa3531cbd17e698a3497feef0,6,112,113,index_metadata_only_raw_csv_bytes_unchanged

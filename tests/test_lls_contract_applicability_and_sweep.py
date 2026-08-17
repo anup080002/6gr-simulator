@@ -90,6 +90,97 @@ def test_config_driven_contract_applicability_does_not_enable_optional_6g() -> N
     )
 
 
+def test_resolved_fixed_link_campaign_authority_and_geometry_exclusion() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "validation": {"fixed_link_campaign": {"enabled": True}},
+                "lls6g": {
+                    "resolvedConfig": {
+                        "canonical_control": {
+                            "run": {"fixed_link_campaign_only": True}
+                        },
+                        "sweeps_and_matrix": {
+                            "fixed_link_calibration": {
+                                "enabled": True,
+                                "only": True,
+                            }
+                        },
+                    }
+                },
+            }
+        )
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["fixed_link_campaign_enabled"] is True
+    assert policy["fixed_link_campaign_only"] is True
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/dl_fixed_snr_bler_curve.csv",
+        policy,
+        contract_name="dl_fixed_snr_bler_curve",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "air_interface/csv/distance_vs_sinr.csv",
+        policy,
+        contract_name="distance_vs_sinr",
+    )
+
+
+def test_fixed_single_beam_rank1_run_disables_adaptive_spatial_charts() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "canonical_control": {
+                    "launch": {"fixed_link_campaign_enabled": True},
+                    "run": {"fixed_link_campaign_only": True},
+                },
+                "mimo": {
+                    "beam_sweep_enabled": False,
+                    "beam_count": 1,
+                    "n_layers": 1,
+                    "max_dl_layers": 1,
+                    "max_ul_layers": 1,
+                    "rank_adaptation_enable": False,
+                },
+                "mimo_and_beam_management": {
+                    "beam_sweeping": False,
+                    "rank_set": [1],
+                },
+                "csi_acquisition_and_reporting": {
+                    "dl_csi_enabled": False,
+                    "ul_csi_enabled": False,
+                },
+                "link_adaptation": {
+                    "fixed_or_amc": "fixed",
+                    "rank_adaptation_policy": "fixed",
+                    "beam_adaptation_policy": "fixed",
+                },
+            }
+        )
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["beam_adaptation_enabled"] is False
+    assert policy["beam_count"] == 1
+    assert policy["rank_adaptation_enabled"] is False
+    assert policy["max_spatial_rank"] == 1
+    assert policy["csi_enabled"] is False
+    assert policy["fixed_mcs_mode"] is True
+    for name in (
+        "precoder / beam selection timeline",
+        "beam pair timeline",
+        "beam hit rate / top-K hit rate",
+        "selected vs best beam gap",
+        "per-beam quality plot",
+        "rank distribution",
+        "CQI / PMI / RI / CRI timeline",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__test__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        )
+
+
 def test_disabled_runtime_capabilities_filter_only_their_own_contracts() -> None:
     run_row = {
         "config_json": json.dumps(
@@ -360,6 +451,212 @@ def test_configured_sweep_charts_use_real_directional_trials() -> None:
     assert b"visual_gate=" not in measured["img_bytes"]
 
 
+def test_snr_and_sinr_chart_titles_use_distinct_runtime_axes() -> None:
+    trial_csv = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Direction",
+            "AppliedAWGNSNR_dB",
+            "ConfiguredSNR_dB",
+            "PostEqSINR_dB",
+            "CRCPass",
+            "BitErrors",
+            "BitsCompared",
+            "Throughput_Mbps",
+        ],
+        [
+            ["DL", -15, -14, -13.8, 0, 480, 1000, 0],
+            ["DL", -5, -4, -4.7, 0, 300, 1000, 0],
+            ["DL", 10, 11, 9.6, 1, 20, 1000, 12],
+            ["DL", 20, 21, 19.8, 1, 0, 1000, 24],
+        ],
+    )
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 1,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    fetch = lambda artifact_id: trial_csv  # noqa: E731, ARG005
+
+    by_snr = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "BLER vs SNR", existing, fetch, 92
+    )
+    by_sinr = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "BLER vs SINR", existing, fetch, 92
+    )
+    throughput = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "throughput vs SNR", existing, fetch, 92
+    )
+
+    assert by_snr is not None and by_sinr is not None and throughput is not None
+    assert "AppliedAWGNSNR_dB,BLER" in by_snr["csv_bytes"].decode("utf-8")
+    assert "PostEqSINR_dB,BLER" in by_sinr["csv_bytes"].decode("utf-8")
+    assert "AppliedAWGNSNR_dB,Throughput_Mbps" in throughput["csv_bytes"].decode("utf-8")
+    assert b"Applied AWGN SNR (dB)" in by_snr["img_bytes"]
+    assert b"Post-equalization SINR (dB)" in by_sinr["img_bytes"]
+    assert b"Evidence Summary" in by_snr["img_bytes"]
+
+
+def test_finalized_fixed_sweep_chart_preserves_confidence_intervals() -> None:
+    curve_csv = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Direction",
+            "AppliedSNR_dB",
+            "BLER",
+            "BLER_CI_Low",
+            "BLER_CI_High",
+            "TrialCount",
+            "TBFailCount",
+            "MCS",
+            "Modulation",
+            "Rank",
+            "Layers",
+            "ChannelModel",
+            "TargetBLER",
+            "Status",
+        ],
+        [
+            ["DL", -15, 1.0, 0.963, 1.0, 100, 100, 20, "256QAM", 1, 1, "AWGN", 0.1, "complete"],
+            ["DL", -5, 0.8, 0.71, 0.86, 100, 80, 20, "256QAM", 1, 1, "AWGN", 0.1, "complete"],
+            ["DL", 10, 0.2, 0.13, 0.29, 100, 20, 20, "256QAM", 1, 1, "AWGN", 0.1, "complete"],
+            ["DL", 20, 0.0, 0.0, 0.037, 100, 0, 20, "256QAM", 1, 1, "AWGN", 0.1, "complete"],
+        ],
+    )
+    path = "reports/csv/dl_fixed_snr_bler_curve.csv"
+    existing = {
+        path: {
+            "artifact_id": 7,
+            "logical_path": path,
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "dl_bler_vs_snr", existing, lambda artifact_id: curve_csv, 93
+    )
+    assert result is not None
+    assert result["csv_status"] == "specialized_finalized_fixed_sweep_dataset"
+    csv_text = result["csv_bytes"].decode("utf-8")
+    assert "ci_low,ci_high,trial_count,failure_count" in csv_text
+    assert ",20.0,BLER,0.0,0.0,0.037,100,0," in csv_text
+    assert b"Applied AWGN SNR (dB)" in result["img_bytes"]
+    assert b"Target 0.1" in result["img_bytes"]
+    assert b"Runtime trials: 400" in result["img_bytes"]
+
+
+def test_coarse_fixed_sweep_uses_measured_sinr_and_does_not_interpolate_transition() -> None:
+    summary_csv = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Direction", "AppliedSNR_dB", "MeanMeasuredSINR_dB", "BLER",
+            "BLER_CI_Low", "BLER_CI_High", "TrialCount", "TBFailCount",
+            "MCS", "Modulation", "Rank", "Layers", "ChannelModel", "TargetBLER", "Throughput_Mbps",
+        ],
+        [
+            ["DL", -5, -5.0, 1.0, 0.963, 1.0, 100, 100, 20, "256QAM", 1, 1, "AWGN", 0.1, 0.0],
+            ["DL", 10, 10.0, 1.0, 0.963, 1.0, 100, 100, 20, "256QAM", 1, 1, "AWGN", 0.1, 0.0],
+            ["DL", 20, 20.04, 0.0, 0.0, 0.037, 100, 0, 20, "256QAM", 1, 1, "AWGN", 0.1, 69.632],
+            ["UL", -5, -5.0, 1.0, 0.963, 1.0, 100, 100, 20, "256QAM", 1, 1, "AWGN", 0.1, 0.0],
+            ["UL", 10, 9.99, 1.0, 0.963, 1.0, 100, 100, 20, "256QAM", 1, 1, "AWGN", 0.1, 0.0],
+            ["UL", 20, 20.00, 0.08, 0.041, 0.15, 100, 8, 20, "256QAM", 1, 1, "AWGN", 0.1, 69.729],
+        ],
+    )
+    path = "reports/csv/fixed_snr_sweep_curve_summary.csv"
+    existing = {path: {"artifact_id": 41, "logical_path": path}}
+    fetch = lambda artifact_id: summary_csv  # noqa: ARG005, E731
+
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "BLER vs SINR", existing, fetch, 94
+    )
+    assert result is not None
+    csv_text = result["csv_bytes"].decode("utf-8")
+    svg_text = result["img_bytes"].decode("utf-8")
+    assert "MeanMeasuredSINR_dB" in csv_text
+    assert "DL" in svg_text and "UL" in svg_text
+    assert "transition unresolved" in svg_text
+    assert "polyline" not in svg_text
+
+    crc = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CRC pass/fail rates", existing, fetch, 94
+    )
+    assert crc is not None
+    crc_csv = crc["csv_bytes"].decode("utf-8")
+    assert "crc_pass_count,crc_fail_count,trial_count,crc_pass_rate" in crc_csv
+    assert "DL pass rate" in crc["img_bytes"].decode("utf-8")
+
+    throughput = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "Throughput vs SNR", existing, fetch, 94
+    )
+    assert throughput is not None
+    throughput_svg = throughput["img_bytes"].decode("utf-8")
+    assert "Delivered goodput (Mbit/s)" in throughput_svg
+    assert "DL at 20 dB" in throughput_svg and "UL at 20 dB" in throughput_svg
+    assert 'stroke-dasharray="8 5"' in throughput_svg
+    assert "<rect" in throughput_svg and "<circle" in throughput_svg
+
+
+def test_rsrp_chart_never_mixes_relative_grid_db_with_absolute_dbm() -> None:
+    relative_only = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "CSI_RSRP_dB", "CSI_RSRPSource"],
+        [[1, 40.0, "relative_digital_grid_power"], [2, 39.8, "relative_digital_grid_power"], [3, 40.1, "relative_digital_grid_power"]],
+    )
+    trial_path = "air_interface/csv/dl_pdsch_trials.csv"
+    relative_existing = {trial_path: {"artifact_id": 71, "logical_path": trial_path}}
+    relative_result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "ServingRSRP / RSRP / CSI-RSRP trends",
+        relative_existing,
+        lambda artifact_id: relative_only,  # noqa: ARG005
+        101,
+    )
+    assert relative_result is None
+
+    absolute = materializer._encode_csv(  # noqa: SLF001
+        ["Slot", "ServingRSRP_dBm", "RSRP_dBm"],
+        [[1, -103.0, -103.0], [2, -98.0, -98.0], [3, -91.0, -91.0]],
+    )
+    absolute_path = "reports/csv/live_rsrp_serving_trace.csv"
+    absolute_existing = {absolute_path: {"artifact_id": 72, "logical_path": absolute_path}}
+    absolute_result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "ServingRSRP / RSRP / CSI-RSRP trends",
+        absolute_existing,
+        lambda artifact_id: absolute,  # noqa: ARG005
+        102,
+    )
+    assert absolute_result is not None
+    svg = absolute_result["img_bytes"].decode("utf-8")
+    assert "RSRP / CSI-RSRP (dBm)" in svg
+    assert "relative digital" not in svg
+    assert "CSI_RSRP_dB" not in absolute_result["csv_bytes"].decode("utf-8")
+
+
+def test_fixed_awgn_policy_disables_absolute_rsrp_and_static_port_charts() -> None:
+    fixed_awgn_policy = {
+        "fixed_link_campaign_only": True,
+        "rank_adaptation_enabled": False,
+        "max_spatial_rank": 1,
+        "absolute_rx_power_calibrated": False,
+    }
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/contract__measurement__servingrsrp-rsrp-csi-rsrp-trends.csv",
+        fixed_awgn_policy,
+        contract_name="ServingRSRP / RSRP / CSI-RSRP trends",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "beamforming/csv/contract__mimo__port-usage-chart.csv",
+        fixed_awgn_policy,
+        contract_name="port usage chart",
+    )
+
+
+def test_publication_axis_ticks_use_rounded_engineering_values() -> None:
+    assert materializer._axis_tick_values(-14.83, 20.04) == [-10.0, 0.0, 10.0, 20.0]
+    assert materializer._axis_tick_values(0.0, 1.0) == [0.0, 0.25, 0.5, 0.75, 1.0]
+    assert materializer._explicit_axis_ticks([-15.0, -5.0, 10.0, 20.0]) == [-15.0, -5.0, 10.0, 20.0]
+    assert materializer._explicit_axis_ticks([-14.829, -14.331, -5.074, -5.007, 9.987, 10.004, 20.0005, 20.039]) is None
+    assert materializer._display_axis_label("MeanMeasuredSINR_dB") == "Mean measured post-equalization SINR (dB)"
+
+
 def test_report_charts_select_semantic_runtime_sources() -> None:
     scheduler_csv = materializer._encode_csv(  # noqa: SLF001
         ["slot", "mcs_index"], [[1, 4], [2, 8], [3, 12]]
@@ -370,6 +667,10 @@ def test_report_charts_select_semantic_runtime_sources() -> None:
     tb_csv = materializer._encode_csv(  # noqa: SLF001
         ["slot", "tbs_bits", "code_rate"],
         [[1, 1024, 0.25], [2, 2048, 0.5], [3, 4096, 0.75]],
+    )
+    fixed_trial_csv = materializer._encode_csv(  # noqa: SLF001
+        ["ActualMCSSelectionMode", "MCS", "TargetCodeRate"],
+        [["configured_fixed", 20, 0.6665]],
     )
     existing = {
         "reports/csv/live_scheduler_cycle.csv": {
@@ -390,8 +691,14 @@ def test_report_charts_select_semantic_runtime_sources() -> None:
             "artifact_kind": "table_csv",
             "mime_type": "text/csv; charset=UTF-8",
         },
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 24,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        },
     }
-    payloads = {21: scheduler_csv, 22: queue_csv, 23: tb_csv}
+    payloads = {21: scheduler_csv, 22: queue_csv, 23: tb_csv, 24: fixed_trial_csv}
     fetch = lambda artifact_id: payloads[artifact_id]
 
     queue_chart = materializer._specialized_chart_materialization(  # noqa: SLF001
@@ -409,6 +716,8 @@ def test_report_charts_select_semantic_runtime_sources() -> None:
     assert "Queue bytes" in queue_chart["csv_bytes"].decode("utf-8")
     assert tb_chart is not None and "Transport block size" in tb_chart["csv_bytes"].decode("utf-8")
     assert code_rate_chart is not None and "Target code rate" in code_rate_chart["csv_bytes"].decode("utf-8")
+    assert b"Fixed MCS / Code-Rate Verification" in code_rate_chart["img_bytes"]
+    assert b"Policy: configured fixed operating point" in code_rate_chart["img_bytes"]
 
 
 def test_runtime_grid_spectrum_and_audit_charts_use_exact_sources() -> None:

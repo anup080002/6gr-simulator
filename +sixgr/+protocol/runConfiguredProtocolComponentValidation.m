@@ -25,6 +25,12 @@ if ~logical(sixgr.util.structGet(campaign, "enabled", false))
     error("sixgr:protocol:ConfiguredComponentDisabled", ...
         "protocol.component_validation.enabled must be true.");
 end
+if logical(sixgr.util.structGet(campaign, "write_png", false))
+    error("sixgr:protocol:LegacyRasterEmissionDisabled", ...
+        ['protocol.component_validation.write_png is retired. Persist the ' ...
+         'component CSV evidence and let the post-run CSV contract ' ...
+         'materializer decide whether a truthful protocol chart applies.']);
+end
 
 sessions = localStructArray(sixgr.util.structGet(protocol, ...
     "traffic.sessions", struct()));
@@ -164,9 +170,7 @@ summaryT = table(options.RunId, options.ScenarioName, numUEs, ...
 paths = struct();
 if options.WriteArtifacts
     csvDir = fullfile(runFolder, "protocol_stack", "csv");
-    imageDir = fullfile(runFolder, "protocol_stack", "image");
     if ~isfolder(csvDir), mkdir(csvDir); end
-    if ~isfolder(imageDir), mkdir(imageDir); end
     paths.Execution = string(fullfile(csvDir, ...
         "protocol_configured_component_execution.csv"));
     paths.Conservation = string(fullfile(csvDir, ...
@@ -179,29 +183,6 @@ if options.WriteArtifacts
     sixgr.util.csvWriteTable(paths.Conservation, conservationT);
     sixgr.util.csvWriteTable(paths.Events, eventT);
     sixgr.util.csvWriteTable(paths.Summary, summaryT);
-    if logical(sixgr.util.structGet(campaign, "write_png", false))
-        resolution = double(sixgr.util.structGet(campaign, ...
-            "png_resolution_dpi", []));
-        if ~(isscalar(resolution) && isfinite(resolution) && ...
-                resolution >= 72 && resolution <= 1200)
-            error("sixgr:protocol:InvalidRasterResolution", ...
-                "protocol.component_validation.png_resolution_dpi must be in [72, 1200].");
-        end
-        paths.PacketFigure = string(fullfile(imageDir, ...
-            "protocol_configured_packets_by_direction.png"));
-        paths.EventFigure = string(fullfile(imageDir, ...
-            "protocol_configured_events_by_layer.png"));
-        paths.PlotLineage = string(fullfile(csvDir, ...
-            "protocol_configured_plot_lineage.csv"));
-        localRenderPacketFigure(executionT, paths.PacketFigure, resolution);
-        localRenderEventFigure(eventT, paths.EventFigure, resolution);
-        sixgr.visual.writeComponentPlotLineage(runFolder, paths.PlotLineage, ...
-            ["protocol_configured_packets_by_direction"; ...
-             "protocol_configured_events_by_layer"], ...
-            [paths.PacketFigure; paths.EventFigure], ...
-            [paths.Execution; paths.Events], ...
-            "sixgr.protocol.runConfiguredProtocolComponentValidation");
-    end
 end
 
 out = struct("Ok", strictOk, "StrictOk", strictOk, ...
@@ -343,36 +324,6 @@ T = tables{1};
 for index = 2:numel(tables)
     T = [T; tables{index}]; %#ok<AGROW>
 end
-end
-
-function localRenderPacketFigure(T, path, resolution)
-directions = ["DL","UL"];
-transmitted = arrayfun(@(d)sum(T.Direction == d), directions);
-delivered = arrayfun(@(d)sum(T.Direction == d & T.Delivered), directions);
-fig = figure("Visible", "off", "Color", "white", ...
-    "Position", [100 100 900 520]);
-cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
-bar([transmitted(:), delivered(:)], "grouped");
-set(gca, "XTick", 1:2, "XTickLabel", cellstr(directions));
-ylabel("Packets"); xlabel("Direction");
-title("Configured L2 packet execution by direction");
-legend("Transmitted", "Delivered", "Location", "best");
-grid on;
-sixgr.util.exportFigureArtifact(fig, path, "Resolution", resolution);
-end
-
-function localRenderEventFigure(T, path, resolution)
-layers = unique(T.Layer, "stable");
-counts = arrayfun(@(layer)sum(T.Layer == layer), layers);
-fig = figure("Visible", "off", "Color", "white", ...
-    "Position", [100 100 1000 520]);
-cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
-bar(counts);
-set(gca, "XTick", 1:numel(layers), "XTickLabel", cellstr(layers));
-ylabel("Events"); xlabel("Protocol layer");
-title("Configured SDAP/PDCP/RLC/MAC event evidence");
-grid on;
-sixgr.util.exportFigureArtifact(fig, path, "Resolution", resolution);
 end
 
 function row = localExecutionRow()

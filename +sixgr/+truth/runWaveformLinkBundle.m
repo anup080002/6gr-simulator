@@ -16772,48 +16772,21 @@ for prefix = ["DL", "UL"]
     if ~all(ismember(["SNR_dB", prefix + "_BLER", statusCol, snrCol], string(T.Properties.VariableNames)))
         continue;
     end
-    [status, crossingSNR] = localFixedLinkCrossingStatus(T, prefix, double(sweepPlan.FixedLinkTargetBLER));
+    [status, crossingSNR] = localFixedLinkCrossingStatus(T, prefix, ...
+        double(sweepPlan.FixedLinkTargetBLER), ...
+        double(sweepPlan.FixedLinkMaxTargetCrossingBracket_dB));
     T.(char(targetCol)) = repmat(double(sweepPlan.FixedLinkTargetBLER), height(T), 1);
     T.(char(statusCol)) = repmat(string(status), height(T), 1);
     T.(char(snrCol)) = repmat(double(crossingSNR), height(T), 1);
 end
 end
 
-function [status, crossingSNR] = localFixedLinkCrossingStatus(T, prefix, targetBLER)
-status = "insufficient_finite_points";
-crossingSNR = NaN;
+function [status, crossingSNR] = localFixedLinkCrossingStatus(T, prefix, targetBLER, maxBracketWidth_dB)
 prefix = upper(string(prefix));
 x = double(T.SNR_dB);
 y = double(T.(char(prefix + "_BLER")));
-mask = isfinite(x) & isfinite(y);
-if nnz(mask) < 2
-    return;
-end
-x = x(mask);
-y = y(mask);
-[x, order] = sort(x(:));
-y = y(order);
-target = double(targetBLER);
-for i = 1:numel(x)-1
-    y1 = y(i);
-    y2 = y(i + 1);
-    if (y1 >= target && y2 <= target) || (y1 <= target && y2 >= target)
-        if abs(y2 - y1) < eps
-            crossingSNR = x(i);
-        else
-            crossingSNR = x(i) + (target - y1) .* (x(i + 1) - x(i)) ./ (y2 - y1);
-        end
-        status = "crossing_observed";
-        return;
-    end
-end
-if all(y > target)
-    status = "no_crossing_all_points_above_target";
-elseif all(y < target)
-    status = "no_crossing_all_points_below_target";
-else
-    status = "no_crossing_nonmonotonic_points";
-end
+[status, crossingSNR] = sixgr.validation.qualifyObservedBLERCrossing( ...
+    x(:), y(:), double(targetBLER), double(maxBracketWidth_dB));
 end
 
 function res = localApplyPrimarySweepResults(res, rawTrials, cfg, snrGrid, pruneMissingPrimaryEvidence)
@@ -17790,6 +17763,12 @@ end
 plan.FixedLinkTargetBLER = double(sixgr.util.structGet(opt, "LinkFixedLinkTargetBLER", 0.10));
 if ~(isfinite(plan.FixedLinkTargetBLER) && plan.FixedLinkTargetBLER > 0 && plan.FixedLinkTargetBLER < 1)
     plan.FixedLinkTargetBLER = 0.10;
+end
+plan.FixedLinkMaxTargetCrossingBracket_dB = double(sixgr.util.structGet( ...
+    opt, "LinkFixedLinkMaxTargetCrossingBracket_dB", 2));
+if ~(isfinite(plan.FixedLinkMaxTargetCrossingBracket_dB) && ...
+        plan.FixedLinkMaxTargetCrossingBracket_dB > 0)
+    plan.FixedLinkMaxTargetCrossingBracket_dB = 2;
 end
 end
 

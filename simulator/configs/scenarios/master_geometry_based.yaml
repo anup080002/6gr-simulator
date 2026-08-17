@@ -548,8 +548,7 @@ canonical_control:
       packets_per_ue_direction: 2
       duplicate_reception_check_enabled: true
       require_configured_bidirectional_execution: true
-      write_png: true
-      png_resolution_dpi: 150
+      write_png: false
     rrc:
       endpoint_profile: ue_and_gnb
       setup_enabled: true

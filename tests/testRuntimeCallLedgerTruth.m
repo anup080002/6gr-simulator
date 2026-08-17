@@ -15,9 +15,15 @@ sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.PDSCH_Rx", ...
 T = sixgr.runtime.RuntimeCallLedger.flush();
 assert(height(T)==2 && all(T.EvidenceClass=="ACTUAL_RUNTIME_ENTRY"));
 assert(all(strlength(T.ConfigHash)==64) && all(T.ExecutionID=="exec-unit"));
+sixgr.runtime.RuntimeCallLedger.appendObservedRows(T);
+merged = sixgr.runtime.RuntimeCallLedger.flush();
+assert(height(merged)==4 && isequal(double(merged.Sequence),(1:4).') && ...
+    all(merged.RunId=="unit") && all(merged.ExecutionID=="exec-unit"), ...
+    "Identity-bound worker observations were not merged exactly.");
 G = sixgr.analytics.buildRuntimeCallGraph(root);
 callT = readtable(G.Path,"TextType","string");
-assert(height(callT)==2 && all(callT.EvidenceClass=="ACTUAL_RUNTIME_ENTRY"));
+assert(height(callT)==2 && all(callT.EvidenceClass=="ACTUAL_RUNTIME_ENTRY") && ...
+    all(double(callT.NumCalls)==2));
 audit = sixgr.analytics.buildPHYPackageExecutionAudit(root,pwd);
 required = logical(audit.GateTable.Required);
 assert(any(required) && all(logical(audit.GateTable.Pass(required))), ...

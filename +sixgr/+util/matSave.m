@@ -1,4 +1,4 @@
-function matSave(filePath, data)
+function matSave(filePath, data, options)
 %MATSAVE Unified MAT export (creates parent directories).
 %
 %   sixgr.util.matSave("results/run1/mat/run.mat", struct("cfg",cfg,"kpi",kpi))
@@ -6,6 +6,7 @@ function matSave(filePath, data)
 arguments
     filePath {mustBeTextScalar}
     data
+    options.UseArtifactStore (1,1) logical = true
 end
 
 filePath = char(filePath);
@@ -37,7 +38,7 @@ catch firstME
     end
 end
 
-if sixgr.db.isArtifactStoreActive()
+if options.UseArtifactStore && sixgr.db.isArtifactStoreActive()
     handled = sixgr.db.captureFileArtifact(tmpPath, "mat_binary", ...
         "application/octet-stream", true, filePath);
     if ~handled

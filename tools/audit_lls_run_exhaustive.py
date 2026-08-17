@@ -16,12 +16,20 @@ import hashlib
 import json
 import math
 import os
+import sys
 from collections import Counter
 from pathlib import Path
 from statistics import fmean
 from typing import Iterable
 
 from PIL import Image, ImageStat
+
+# Pytest imports this file as a module from the repository root, whereas the
+# command-line entry point executes it with tools/ on sys.path.  Make both
+# entry paths resolve the sibling semantic auditor identically.
+TOOLS_ROOT = Path(__file__).resolve().parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
 
 from lls_csv_semantics import audit_run as audit_csv_semantics
 from lls_csv_semantics import write_audit as write_csv_semantic_audit

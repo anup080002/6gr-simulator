@@ -21,19 +21,9 @@ end
 % jsonencode returns string in some releases
 txt = char(txt);
 
-if sixgr.db.storeTextArtifact(filePath, [txt, newline], "application/json; charset=UTF-8", "json")
-    return;
-end
-
-sixgr.util.ensureDir(filePath); % creates parent
-
-fid = fopen(filePath, "w", "n", "UTF-8");
-if fid < 0
-    error("sixgr:util:jsonWrite:OpenFailed","Cannot open for writing: %s", filePath);
-end
-fwrite(fid, txt, "char");
-fwrite(fid, newline, "char");
-fclose(fid);
+sixgr.util.writeTextFile(filePath, [txt, newline], ...
+    "MimeType", "application/json; charset=UTF-8", ...
+    "ArtifactKind", "json");
 
 end
 

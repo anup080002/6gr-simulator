@@ -406,14 +406,27 @@ def _audit_link_table(
     mimo_failures: list[str] = []
     for index, row in enumerate(rows, start=1):
         prefix = f"row={index}"
-        key = (
-            _text(row, "Direction"),
-            _text(row, "Frame"),
-            _text(row, "Slot"),
-            _text(row, "UEID", "UEIndex"),
-            _text(row, "HARQRound"),
-            _text(row, "ExecutionID"),
-        )
+        fixed_link_trial = _boolean(row, "FixedLinkCampaign") is True
+        if fixed_link_trial:
+            # Independent calibration points restart their local NR frame
+            # timeline by design. Point/drop/trial identity is therefore the
+            # physical Monte-Carlo primary key, not Frame/Slot alone.
+            key = (
+                _text(row, "Direction"),
+                _text(row, "FixedLinkPointIndex"),
+                _text(row, "FixedLinkDropIndex"),
+                _text(row, "FixedLinkTrialIndex"),
+                _text(row, "ExecutionID"),
+            )
+        else:
+            key = (
+                _text(row, "Direction"),
+                _text(row, "Frame"),
+                _text(row, "Slot"),
+                _text(row, "UEID", "UEIndex"),
+                _text(row, "HARQRound"),
+                _text(row, "ExecutionID"),
+            )
         if key in keys:
             duplicate_failures.append(prefix + ":duplicate_primary_key")
         keys.add(key)
@@ -561,8 +574,17 @@ def _audit_link_table(
         elif not _close(evm_sinr, -20.0 * math.log10(evm), atol=1e-8, rtol=1e-8):
             noise_failures.append(prefix + ":evm_sinr_formula_mismatch")
 
-        if _boolean(row, "StrictOk") is not True:
-            truth_failures.append(prefix + ":StrictOk_not_true")
+        # On a BLER campaign a failed CRC is an expected measured outcome,
+        # not invalid evidence. Fixed-link rows carry the receiver trust
+        # boundary separately; requiring decode-oriented StrictOk would erase
+        # exactly the errors needed to form the waterfall.
+        strict_evidence = (
+            _boolean(row, "StrictReceiverEvidenceOk")
+            if fixed_link_trial
+            else _boolean(row, "StrictOk")
+        )
+        if strict_evidence is not True:
+            truth_failures.append(prefix + ":strict_execution_evidence_not_true")
         if _boolean(row, "FinalizedFlag") is not True:
             truth_failures.append(prefix + ":FinalizedFlag_not_true")
         if _boolean(row, "FallbackFlag") is not False:
@@ -721,6 +743,26 @@ def _audit_derived_link_table(
     }
     required_columns = required_by_name.get(name, set())
     schema_failures = sorted(required_columns.difference(header))
+    raw_link_population = [
+        row for direction_rows in link_rows.values() for row in direction_rows
+    ]
+    fixed_link_without_geometry = bool(raw_link_population) and all(
+        _boolean(row, "FixedLinkCampaign") is True
+        and _number(row, "PropagationDistance_m") is None
+        for row in raw_link_population
+    )
+    if not rows and name == "distance_vs_sinr.csv" and fixed_link_without_geometry:
+        return [
+            _check(
+                "derived_link",
+                path,
+                "not_applicable_fixed_link_without_geometry",
+                rows,
+                schema_failures,
+                required=False,
+                evaluated=False,
+            )
+        ]
     if not rows:
         schema_failures.append("missing_runtime_rows")
     checks = [

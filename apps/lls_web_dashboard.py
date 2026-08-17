@@ -10698,6 +10698,16 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
                 return float(number)
         return float(default)
 
+    def config_text(*paths: str, default: str = "") -> str:
+        for path in paths:
+            value = _config_get_nested(config, path, None)
+            if value is None or isinstance(value, (dict, list, tuple, set)):
+                continue
+            token = str(value).strip()
+            if token:
+                return token
+        return str(default)
+
     ai_enabled = bool(
         _config_get_nested(config, "ai.enable", False)
         or _config_get_nested(config, "lls6g.resolvedConfig.ai.enable", False)
@@ -10773,9 +10783,93 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.launch.fixed_link_campaign_enabled",
         "canonical_control.run.fixed_link_campaign_enabled",
         "run.fixedLinkCampaignEnabled",
+        "validation.fixed_link_campaign.enabled",
         "lls6g.resolvedConfig.launch.fixed_link_campaign_enabled",
         "lls6g.resolvedConfig.fixed_link_campaign.enabled",
+        "lls6g.resolvedConfig.validation.fixed_link_campaign.enabled",
+        "lls6g.resolvedConfig.sweeps_and_matrix.fixed_link_calibration.enabled",
+        "lls6g.resolvedConfig.canonical_control.launch.fixed_link_campaign_enabled",
+        "lls6g.resolvedConfig.canonical_control.run.fixed_link_campaign_enabled",
     )
+    fixed_link_campaign_only = config_bool(
+        "canonical_control.run.fixed_link_campaign_only",
+        "sweeps_and_matrix.fixed_link_calibration.only",
+        "lls6g.resolvedConfig.canonical_control.run.fixed_link_campaign_only",
+        "lls6g.resolvedConfig.sweeps_and_matrix.fixed_link_calibration.only",
+        default=False,
+    )
+    beam_sweeping_enabled = config_bool(
+        "mimo.beam_sweep_enabled",
+        "mimo_and_beam_management.beam_sweeping",
+        "lls6g.resolvedConfig.mimo.beam_sweep_enabled",
+        "lls6g.resolvedConfig.mimo_and_beam_management.beam_sweeping",
+    )
+    beam_adaptation_enabled = beam_sweeping_enabled or config_bool(
+        "mimo_and_beam_management.beam_refinement",
+        "mimo_and_beam_management.beam_switching",
+        "mimo_and_beam_management.beam_tracking",
+        "mimo_and_beam_management.beam_prediction",
+        "lls6g.resolvedConfig.mimo_and_beam_management.beam_refinement",
+        "lls6g.resolvedConfig.mimo_and_beam_management.beam_switching",
+        "lls6g.resolvedConfig.mimo_and_beam_management.beam_tracking",
+        "lls6g.resolvedConfig.mimo_and_beam_management.beam_prediction",
+    )
+    beam_policy = config_text(
+        "link_adaptation.beam_adaptation_policy",
+        "lls6g.resolvedConfig.link_adaptation.beam_adaptation_policy",
+        default="fixed",
+    ).lower()
+    beam_adaptation_enabled = bool(
+        beam_adaptation_enabled
+        or beam_policy not in {"", "fixed", "none", "disabled", "off"}
+    )
+    beam_count = max(
+        1.0,
+        config_number("mimo.beam_count", default=1.0),
+        config_number("mimo_and_beam_management.beam_count", default=1.0),
+        config_number("lls6g.resolvedConfig.mimo.beam_count", default=1.0),
+    )
+    csi_enabled = config_bool(
+        "csi.dl_csi_enabled",
+        "csi.ul_csi_enabled",
+        "csi_acquisition_and_reporting.dl_csi_enabled",
+        "csi_acquisition_and_reporting.ul_csi_enabled",
+        "reference_signals.csi_rs_enabled",
+        "reference_signals.csi_reporting_enabled",
+        "lls6g.resolvedConfig.csi.dl_csi_enabled",
+        "lls6g.resolvedConfig.csi.ul_csi_enabled",
+        "lls6g.resolvedConfig.csi_acquisition_and_reporting.dl_csi_enabled",
+        "lls6g.resolvedConfig.csi_acquisition_and_reporting.ul_csi_enabled",
+        "lls6g.resolvedConfig.reference_signals.csi_rs_enabled",
+    )
+    rank_policy = config_text(
+        "link_adaptation.rank_adaptation_policy",
+        "mimo.rank_adaptation_policy",
+        "lls6g.resolvedConfig.link_adaptation.rank_adaptation_policy",
+        "lls6g.resolvedConfig.mimo.rank_adaptation_policy",
+        default="fixed",
+    ).lower()
+    rank_adaptation_enabled = config_bool(
+        "mimo.rank_adaptation_enable",
+        "lls6g.resolvedConfig.mimo.rank_adaptation_enable",
+    ) or rank_policy not in {"", "fixed", "none", "disabled", "off"}
+    max_spatial_rank = max(
+        1.0,
+        config_number("mimo.n_layers", default=1.0),
+        config_number("mimo.max_dl_layers", default=1.0),
+        config_number("mimo.max_ul_layers", default=1.0),
+        config_number("mimo_and_beam_management.rank_set", default=1.0),
+        config_number("pdsch.rank", default=1.0),
+        config_number("pusch.layer_count", default=1.0),
+    )
+    fixed_mcs_mode = config_text(
+        "link_adaptation.fixed_or_amc",
+        "link_adaptation.operating_point_mode",
+        "pdsch.link_adaptation_mode",
+        "lls6g.resolvedConfig.link_adaptation.fixed_or_amc",
+        "lls6g.resolvedConfig.link_adaptation.operating_point_mode",
+        default="fixed",
+    ).lower() in {"fixed", "calibration_only", "fixed_mcs"}
     profiler_enabled = config_bool(
         "run.timeProfilingEnabled",
         "lls6g.resolvedConfig.output.profiler_enabled",
@@ -10840,6 +10934,21 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "channel.pathlossEnabled",
         "lls6g.resolvedConfig.channel.pathloss_enabled",
         default=system_default,
+    )
+    noise_operating_mode = config_text(
+        "run.noiseOperatingMode",
+        "run.noise_operating_mode",
+        "simulation.noise_operating_mode",
+        "validation.fixed_link_campaign.noise_operating_mode",
+        "lls6g.resolvedConfig.run.noiseOperatingMode",
+        "lls6g.resolvedConfig.run.noise_operating_mode",
+        "lls6g.resolvedConfig.simulation.noise_operating_mode",
+        "lls6g.resolvedConfig.validation.fixed_link_campaign.noise_operating_mode",
+        default="",
+    ).lower()
+    absolute_rx_power_calibrated = bool(
+        pathloss_enabled
+        and noise_operating_mode == "receiver_noise_figure_thermal_noise"
     )
     shadowing_enabled = config_bool(
         "canonical_control.channel.shadow_fading_enabled",
@@ -10953,6 +11062,14 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "mobility_enabled": mobility_enabled,
         "handover_enabled": handover_enabled,
         "fixed_link_campaign_enabled": fixed_link_campaign_enabled,
+        "fixed_link_campaign_only": fixed_link_campaign_only,
+        "beam_sweeping_enabled": beam_sweeping_enabled,
+        "beam_adaptation_enabled": beam_adaptation_enabled,
+        "beam_count": int(round(beam_count)),
+        "csi_enabled": csi_enabled,
+        "rank_adaptation_enabled": rank_adaptation_enabled,
+        "max_spatial_rank": int(round(max_spatial_rank)),
+        "fixed_mcs_mode": fixed_mcs_mode,
         "profiler_enabled": profiler_enabled,
         "comparison_enabled": comparison_enabled,
         "active_pucch_formats": [str(value).strip() for value in active_pucch_formats],
@@ -10963,6 +11080,8 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "raw_grid_capture_enabled": raw_grid_capture_enabled,
         "channel_snapshot_capture_enabled": channel_snapshot_capture_enabled,
         "pathloss_enabled": pathloss_enabled,
+        "noise_operating_mode": noise_operating_mode,
+        "absolute_rx_power_calibrated": absolute_rx_power_calibrated,
         "shadowing_enabled": shadowing_enabled,
         "interference_enabled": interference_enabled,
         "initial_access_enabled": initial_access_enabled,
