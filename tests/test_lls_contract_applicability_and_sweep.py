@@ -1106,3 +1106,85 @@ def test_runtime_measurement_table_and_channel_reliability_use_trial_truth() -> 
     assert float(by_channel["PDSCH"][chart_header.index("pass_rate")]) == 0.5
     assert float(by_channel["PUSCH"][chart_header.index("pass_rate")]) == 1.0
     assert chart_result["source_mapping_status"] == "exact"
+
+
+def test_runtime_energy_charts_use_only_persisted_summary_and_state_rows() -> None:
+    summary = materializer._encode_csv(  # noqa: SLF001
+        [
+            "MetricKey", "Entity", "Statistic", "Value", "TextValue", "Unit",
+            "Notes", "Availability", "EvidenceType", "ModelVersion",
+        ],
+        [
+            ["ue_energy_per_successful_bit", "UE", "mean", 2.0e-6, "2e-6", "J/bit", "runtime", "AVAILABLE", "runtime_state_conditioned_engineering_model", "lls_energy_accounting_v2"],
+            ["gnb_energy_per_successful_bit", "gNB", "mean", 5.0e-6, "5e-6", "J/bit", "runtime", "AVAILABLE", "runtime_state_conditioned_engineering_model", "lls_energy_accounting_v2"],
+            ["race_to_sleep_gains", "system", "fractional_gain", "NaN", "", "fraction", "not evaluated", "NOT_EVALUATED", "unavailable", "lls_energy_accounting_v2"],
+        ],
+    )
+    timeline = materializer._encode_csv(  # noqa: SLF001
+        [
+            "Entity", "Direction", "TimestampSim_ms", "State", "Duration_s",
+            "Energy_J", "SuccessfulBits", "TransportBlockId",
+        ],
+        [
+            ["gNB", "DL", 0.0, "active_tx", 0.001, 0.10, 800, "FIXED|DL|point=1"],
+            ["UE", "DL", 0.0, "active_rx", 0.001, 0.002, 800, "FIXED|DL|point=1"],
+            ["UE", "UL", 1.0, "active_tx", 0.001, 0.02, 400, "FIXED|UL|point=1"],
+            ["gNB", "UL", 1.0, "active_rx", 0.001, 0.03, 400, "FIXED|UL|point=1"],
+            ["UE", "", 2.0, "idle", 0.002, 0.001, 0, ""],
+        ],
+    )
+    existing = {
+        "reports/csv/live_energy_efficiency_table.csv": {
+            "artifact_id": 111,
+            "logical_path": "reports/csv/live_energy_efficiency_table.csv",
+        },
+        "rf/csv/energy_timeline_trace.csv": {
+            "artifact_id": 112,
+            "logical_path": "rf/csv/energy_timeline_trace.csv",
+        },
+    }
+    payloads = {111: summary, 112: timeline}
+    fetch = lambda artifact_id: payloads[artifact_id]
+
+    for chart_name in (
+        "sleep-state timeline",
+        "sleep/idle/active state occupancy",
+        "efficiency scatter plots",
+        "energy/bit",
+        "joules/GB",
+        "energy efficiency by UE",
+        "energy efficiency by cell",
+    ):
+        chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+            chart_name, existing, fetch, 110
+        )
+        assert chart is not None, chart_name
+        assert chart["source_mapping_status"] == "exact", chart_name
+        assert chart["csv_bytes"], chart_name
+        assert chart["img_bytes"].startswith(b"<svg"), chart_name
+        assert b"Unavailable Without Faking" not in chart["img_bytes"], chart_name
+
+    occupancy = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "sleep/idle/active state occupancy", existing, fetch, 110
+    )
+    assert occupancy is not None
+    occupancy_header, occupancy_rows = materializer._decode_csv(  # noqa: SLF001
+        occupancy["csv_bytes"]
+    )
+    states = {row[occupancy_header.index("state")] for row in occupancy_rows}
+    assert states == {"active", "idle"}
+
+    joules_gb = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "joules/GB", existing, fetch, 110
+    )
+    assert joules_gb is not None
+    header, rows = materializer._decode_csv(joules_gb["csv_bytes"])  # noqa: SLF001
+    values = {row[header.index("entity")]: float(row[header.index("value")]) for row in rows}
+    assert values == {"UE": 16000.0, "gNB": 40000.0}
+
+    scatter = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "efficiency scatter plots", existing, fetch, 110
+    )
+    assert scatter is not None
+    _header, scatter_rows = materializer._decode_csv(scatter["csv_bytes"])  # noqa: SLF001
+    assert len(scatter_rows) == 2  # one transmitter-side row for DL and one for UL

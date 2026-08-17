@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-17-contract-v41-runtime-measurement-energy"
+MATERIALIZER_VERSION = "2026-08-18-contract-v42-runtime-energy-charts"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -7923,6 +7923,336 @@ def _runtime_sensing_probability_chart(
     }
 
 
+def _runtime_energy_summary_chart(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Build energy charts only from persisted runtime accounting rows.
+
+    The energy summary contains state-conditioned engineering-model values
+    whose denominators are observed successful transport blocks.  The state
+    timeline is the corresponding per-observation runtime ledger.  This
+    adapter deliberately omits unavailable metrics and unobserved states;
+    it never creates zero-valued sleep/idle samples to fill a chart shape.
+    """
+
+    supported = {
+        "sleep-state timeline",
+        "sleep/idle/active state occupancy",
+        "efficiency scatter plots",
+        "energy/bit",
+        "joules/GB",
+        "energy efficiency by UE",
+        "energy efficiency by cell",
+    }
+    if chart_name not in supported:
+        return None
+
+    summary_path = "reports/csv/live_energy_efficiency_table.csv"
+    timeline_paths = [
+        "rf/csv/energy_timeline_trace.csv",
+        "reports/csv/live_sleep_state_table.csv",
+    ]
+    _summary_header, summary_rows = _artifact_rows_by_path(
+        existing, fetch_artifact_bytes, summary_path
+    )
+    timeline_path, timeline_rows = _first_available_rows(
+        existing, fetch_artifact_bytes, timeline_paths
+    )
+
+    def available_metric(metric_key: str, entity: str) -> tuple[float, dict[str, str]] | None:
+        for row in summary_rows:
+            if _row_text(row, "MetricKey").strip().lower() != metric_key.lower():
+                continue
+            if _row_text(row, "Entity").strip().lower() != entity.lower():
+                continue
+            availability = _row_text(row, "Availability").strip().lower()
+            value = _row_float(row, "Value")
+            if availability not in {"", "available"} or value is None or not math.isfinite(value):
+                continue
+            return float(value), row
+        return None
+
+    if chart_name in {
+        "energy/bit", "joules/GB", "energy efficiency by UE",
+        "energy efficiency by cell",
+    }:
+        requested_entities = {
+            "energy/bit": [("UE", "ue_energy_per_successful_bit"), ("gNB", "gnb_energy_per_successful_bit")],
+            "joules/GB": [("UE", "ue_energy_per_successful_bit"), ("gNB", "gnb_energy_per_successful_bit")],
+            "energy efficiency by UE": [("UE aggregate", "ue_energy_per_successful_bit")],
+            "energy efficiency by cell": [("gNB aggregate", "gnb_energy_per_successful_bit")],
+        }[chart_name]
+        rows_out: list[dict[str, Any]] = []
+        points: list[list[float]] = []
+        tick_labels: list[str] = []
+        for label, metric_key in requested_entities:
+            source_entity = "UE" if metric_key.startswith("ue_") else "gNB"
+            matched = available_metric(metric_key, source_entity)
+            if matched is None:
+                continue
+            joules_per_bit, source_row = matched
+            if not (joules_per_bit > 0):
+                continue
+            if chart_name == "joules/GB":
+                value = joules_per_bit * 8.0e9
+                unit = "J/GB"
+                statistic = "runtime_energy_per_decimal_gigabyte"
+            elif chart_name.startswith("energy efficiency by"):
+                value = 1.0 / joules_per_bit
+                unit = "bit/J"
+                statistic = "runtime_successful_bit_energy_efficiency"
+            else:
+                value = joules_per_bit
+                unit = "J/bit"
+                statistic = "runtime_energy_per_successful_bit"
+            bucket = len(points) + 1
+            points.append([float(bucket), float(value)])
+            tick_labels.append(label)
+            rows_out.append({
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "entity": label,
+                "metric": statistic,
+                "value": value,
+                "unit": unit,
+                "source_metric_key": metric_key,
+                "source_evidence_type": _row_text(source_row, "EvidenceType"),
+                "source_model_version": _row_text(source_row, "ModelVersion"),
+                "source_table_logical_path": summary_path,
+            })
+        if not rows_out:
+            return None
+        y_label = rows_out[0]["unit"]
+        dataset = {
+            "mode": "bar",
+            "x_label": "Runtime energy-accounting entity",
+            "y_label": y_label,
+            "points": points,
+            "tick_labels": tick_labels,
+            "evidence_shape_policy": "observed_distribution",
+            "sample_count": len(rows_out),
+        }
+        return {
+            "csv_bytes": _encode_dict_rows(
+                [
+                    "run_id", "chart_name", "entity", "metric", "value",
+                    "unit", "source_metric_key", "source_evidence_type",
+                    "source_model_version", "source_table_logical_path",
+                ],
+                rows_out,
+            ),
+            "img_bytes": _render_svg_plot(
+                chart_name,
+                "Runtime-conditioned energy accounting divided by observed successful transport-block bits.",
+                dataset,
+                [
+                    f"entities={len(rows_out)}",
+                    f"source={summary_path}",
+                    "configured circuit terms + measured runtime state durations",
+                ],
+            ),
+            "csv_status": "specialized_runtime_energy_summary_dataset",
+            "image_status": "generated_specialized_runtime_summary_svg",
+            "source_table_path": summary_path,
+            "source_row_count": len(rows_out),
+            "source_mapping_status": "exact",
+            "note": "Unavailable energy metrics and unobserved entity groups are omitted rather than replaced with configured or zero-valued rows.",
+        }
+
+    if not timeline_rows or not timeline_path:
+        return None
+
+    if chart_name == "sleep-state timeline":
+        observed: list[tuple[dict[str, str], str, float, float]] = []
+        states: list[str] = []
+        for row in timeline_rows:
+            duration = _row_float(row, "Duration_s")
+            state = _row_text(row, "State")
+            if duration is None or duration <= 0 or not state:
+                continue
+            normalized = _normalize_drx_state(state)
+            if normalized not in states:
+                states.append(normalized)
+            timestamp = _row_float(row, "TimestampSim_ms")
+            observed.append((row, normalized, float(timestamp or 0.0), float(duration)))
+        if not observed:
+            return None
+        state_codes = {state: index + 1 for index, state in enumerate(states)}
+        rows_out = []
+        points = []
+        for event_index, (row, state, timestamp, duration) in enumerate(observed, 1):
+            state_code = state_codes[state]
+            points.append([float(event_index), float(state_code)])
+            rows_out.append({
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "event_index": event_index,
+                "timestamp_sim_ms": timestamp,
+                "entity": _row_text(row, "Entity"),
+                "direction": _row_text(row, "Direction"),
+                "observed_state": _row_text(row, "State"),
+                "normalized_state": state,
+                "state_code": state_code,
+                "duration_s": duration,
+                "transport_block_id": _row_text(row, "TransportBlockId"),
+                "source_table_logical_path": timeline_path,
+            })
+        dataset = {
+            "mode": "line",
+            "x_label": "Runtime observation event",
+            "y_label": "Observed state code",
+            "points": points,
+            "evidence_shape_policy": "observed_timeline",
+            "sample_count": len(points),
+        }
+        state_summary = [f"state_{code}={state}" for state, code in state_codes.items()]
+        return {
+            "csv_bytes": _encode_dict_rows(
+                [
+                    "run_id", "chart_name", "event_index", "timestamp_sim_ms",
+                    "entity", "direction", "observed_state", "normalized_state",
+                    "state_code", "duration_s", "transport_block_id",
+                    "source_table_logical_path",
+                ], rows_out,
+            ),
+            "img_bytes": _render_svg_plot(
+                chart_name,
+                "State sequence from the persisted runtime energy ledger; state codes are listed in the evidence summary.",
+                dataset,
+                state_summary + [f"events={len(points)}", f"source={timeline_path}"],
+            ),
+            "csv_status": "specialized_runtime_energy_state_timeline_dataset",
+            "image_status": "generated_specialized_runtime_summary_svg",
+            "source_table_path": timeline_path,
+            "source_row_count": len(points),
+            "source_mapping_status": "exact",
+            "note": "Only observed states are plotted; no idle or sleep event is synthesized.",
+        }
+
+    if chart_name == "sleep/idle/active state occupancy":
+        duration_by_state: dict[str, float] = {}
+        event_count_by_state: dict[str, int] = {}
+        for row in timeline_rows:
+            duration = _row_float(row, "Duration_s")
+            state = _row_text(row, "State")
+            if duration is None or duration <= 0 or not state:
+                continue
+            normalized = _normalize_drx_state(state)
+            duration_by_state[normalized] = duration_by_state.get(normalized, 0.0) + float(duration)
+            event_count_by_state[normalized] = event_count_by_state.get(normalized, 0) + 1
+        total_duration = sum(duration_by_state.values())
+        if total_duration <= 0:
+            return None
+        rows_out = []
+        points = []
+        tick_labels = []
+        for bucket, state in enumerate(sorted(duration_by_state), 1):
+            fraction = duration_by_state[state] / total_duration
+            points.append([float(bucket), float(fraction)])
+            tick_labels.append(state)
+            rows_out.append({
+                "run_id": run_id,
+                "chart_name": chart_name,
+                "state": state,
+                "event_count": event_count_by_state[state],
+                "duration_s": duration_by_state[state],
+                "occupancy_fraction": fraction,
+                "source_table_logical_path": timeline_path,
+            })
+        dataset = {
+            "mode": "bar",
+            "x_label": "Observed runtime state",
+            "y_label": "Duration-weighted occupancy fraction",
+            "points": points,
+            "tick_labels": tick_labels,
+            "y_axis_min": 0.0,
+            "y_axis_max": 1.0,
+            "evidence_shape_policy": "observed_distribution",
+            "sample_count": sum(event_count_by_state.values()),
+        }
+        return {
+            "csv_bytes": _encode_dict_rows(
+                [
+                    "run_id", "chart_name", "state", "event_count",
+                    "duration_s", "occupancy_fraction", "source_table_logical_path",
+                ], rows_out,
+            ),
+            "img_bytes": _render_svg_plot(
+                chart_name,
+                "Duration-weighted occupancy of states present in the runtime energy ledger.",
+                dataset,
+                [f"observed_states={len(rows_out)}", f"runtime_events={dataset['sample_count']}", f"source={timeline_path}"],
+            ),
+            "csv_status": "specialized_runtime_energy_state_occupancy_dataset",
+            "image_status": "generated_specialized_runtime_summary_svg",
+            "source_table_path": timeline_path,
+            "source_row_count": int(dataset["sample_count"]),
+            "source_mapping_status": "exact",
+            "note": "Occupancy is normalized across observed state-duration rows only; absent states are not assigned artificial zero rows.",
+        }
+
+    # Energy-versus-delivered-bits scatter uses one transmitter-side row per
+    # executed transport-block observation. Receiver duplicates are excluded.
+    rows_out = []
+    points = []
+    for row in timeline_rows:
+        entity = _row_text(row, "Entity").strip().upper()
+        direction = _row_text(row, "Direction").strip().upper()
+        if not ((direction == "DL" and entity == "GNB") or (direction == "UL" and entity == "UE")):
+            continue
+        energy_j = _row_float(row, "Energy_J")
+        successful_bits = _row_float(row, "SuccessfulBits")
+        if energy_j is None or energy_j < 0 or successful_bits is None or successful_bits < 0:
+            continue
+        points.append([float(energy_j), float(successful_bits)])
+        rows_out.append({
+            "run_id": run_id,
+            "chart_name": chart_name,
+            "event_index": len(points),
+            "entity": _row_text(row, "Entity"),
+            "direction": _row_text(row, "Direction"),
+            "energy_j": energy_j,
+            "successful_bits": successful_bits,
+            "successful_bits_per_joule": (successful_bits / energy_j) if energy_j > 0 else float("nan"),
+            "transport_block_id": _row_text(row, "TransportBlockId"),
+            "source_table_logical_path": timeline_path,
+        })
+    if not rows_out:
+        return None
+    dataset = {
+        "mode": "scatter",
+        "x_label": "Runtime event energy (J)",
+        "y_label": "Successfully delivered bits",
+        "points": points,
+        "evidence_shape_policy": "observed_relation",
+        "sample_count": len(points),
+    }
+    return {
+        "csv_bytes": _encode_dict_rows(
+            [
+                "run_id", "chart_name", "event_index", "entity", "direction",
+                "energy_j", "successful_bits", "successful_bits_per_joule",
+                "transport_block_id", "source_table_logical_path",
+            ], rows_out,
+        ),
+        "img_bytes": _render_svg_plot(
+            chart_name,
+            "Transmitter-side runtime event energy versus observed successfully delivered bits.",
+            dataset,
+            [f"transmitter_events={len(points)}", f"source={timeline_path}"],
+        ),
+        "csv_status": "specialized_runtime_energy_efficiency_scatter_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": timeline_path,
+        "source_row_count": len(points),
+        "source_mapping_status": "exact",
+        "note": "Each point is a persisted transmitter-side waveform observation; failed deliveries remain at zero delivered bits.",
+    }
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -7930,6 +8260,11 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    energy_chart = _runtime_energy_summary_chart(
+        chart_name, existing, fetch_artifact_bytes, run_id
+    )
+    if energy_chart is not None:
+        return energy_chart
     if chart_name == "per-channel reliability breakdown":
         channel_sources = [
             ("PDSCH", "air_interface/csv/dl_pdsch_trials.csv"),

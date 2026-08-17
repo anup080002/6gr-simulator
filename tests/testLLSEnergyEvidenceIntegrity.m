@@ -32,6 +32,24 @@ end
 assert(~any(contains(lower(string(pass.SummaryTable.EvidenceType)), ...
     ["proxy","fallback","synthetic","placeholder"])));
 
+% Fixed-link campaign points reuse frame/slot coordinates. Their campaign
+% hierarchy must keep successful TBs distinct and their active-time
+% denominator must not yield an impossible duty cycle above one.
+fixedT = [localTrial("PASS", 800); localTrial("PASS", 800); localTrial("FAIL", 0)];
+fixedT.FixedLinkPointIndex = (1:3).';
+fixedT.FixedLinkDropIndex = ones(3, 1);
+fixedT.FixedLinkTrialIndex = ones(3, 1);
+fixedT.FixedLinkSeedIndex = ones(3, 1);
+fixedT.FixedLinkSeedValue = 104729 * ones(3, 1);
+fixed = sixgr.truth.exportLLSEnergyDiagnostics(cfg, airFolder, ...
+    struct("DL", fixedT, "UL", table()));
+localAssertMetricValue(fixed.SummaryTable, "first_delivery_count", 2, 0);
+localAssertMetricValue(fixed.SummaryTable, "first_delivered_bits", 1600, 0);
+activeRows = fixed.SummaryTable(string(fixed.SummaryTable.MetricKey) == ...
+    "gnb_active_sleep_duty_cycle" & string(fixed.SummaryTable.Statistic) == "active_ratio", :);
+assert(height(activeRows) == 1 && activeRows.Value >= 0 && activeRows.Value <= 1, ...
+    "Fixed-link gNB duty cycle must be in [0,1].");
+
 missingCfg = cfg;
 missingCfg.lls6g.energy_efficiency = rmfield( ...
     missingCfg.lls6g.energy_efficiency, "ue_tx_dc_per_watt_rf");
@@ -87,6 +105,12 @@ function localAssertMetricUnavailable(T, key)
 row = T(string(T.MetricKey) == string(key), :);
 assert(height(row) == 1 && ~isfinite(row.Value));
 assert(string(row.Availability) == "NOT_EVALUATED");
+end
+
+function localAssertMetricValue(T, key, expected, tolerance)
+row = T(string(T.MetricKey) == string(key), :);
+assert(height(row) == 1 && abs(double(row.Value) - double(expected)) <= tolerance, ...
+    "Unexpected %s value.", key);
 end
 
 function localCleanup(root)

@@ -287,6 +287,17 @@ value = spectralEfficiency / max(avgPowerW, eps);
 end
 
 function durationSec = localScenarioMeasurementDuration(cfg, timelineT, numFrames, slotDur_s)
+% Fixed-link points are independent waveform observations. They intentionally
+% reuse frame/slot coordinates, so configured slot count and max timestamp
+% undercount the actual energy observation duration. Count every distinct
+% transmitter-side fixed-link TB once before considering connected-runtime
+% time axes.
+if localHasFixedLinkObservationIdentity(timelineT)
+    durationSec = localUniqueTransmitterObservationDuration(timelineT);
+    if isfinite(durationSec) && durationSec > 0
+        return;
+    end
+end
 durationSec = double(sixgr.util.structGet(cfg, "run.measurementWindow_s", ...
     sixgr.util.structGet(cfg, "simulation.measurementWindow_s", NaN)));
 if isfinite(durationSec) && durationSec > 0
@@ -309,6 +320,33 @@ if istable(timelineT) && ~isempty(timelineT) && all(ismember(["TimestampSim_ms",
     end
 end
 durationSec = max(numFrames * slotDur_s, sum(double(timelineT.Duration_s(string(timelineT.Entity) == "gNB")), "omitnan"));
+end
+
+function tf = localHasFixedLinkObservationIdentity(T)
+tf = istable(T) && ~isempty(T) && ismember("TransportBlockId", string(T.Properties.VariableNames)) && ...
+    any(startsWith(upper(strtrim(string(T.TransportBlockId))), "FIXED|"));
+end
+
+function durationSec = localUniqueTransmitterObservationDuration(T)
+durationSec = 0;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+txMask = (upper(string(T.Direction)) == "DL" & string(T.Entity) == "gNB") | ...
+    (upper(string(T.Direction)) == "UL" & string(T.Entity) == "UE");
+seen = strings(0, 1);
+for i = find(txMask(:).')
+    key = localEnergyDeliveryKey(T, i);
+    if any(seen == key)
+        continue;
+    end
+    duration = double(T.Duration_s(i));
+    if ~(isfinite(duration) && duration > 0)
+        continue;
+    end
+    seen(end+1, 1) = key; %#ok<AGROW>
+    durationSec = durationSec + duration;
+end
 end
 
 function [bits, count] = localUniqueDeliveredBits(timelineT)
@@ -392,6 +430,27 @@ end
 end
 
 function tbId = localTransportBlockId(T, rowIdx, direction)
+% Fixed-link campaign points are independent waveform executions but reuse
+% frame/slot/HARQ coordinates. Build their identity from the persisted
+% campaign hierarchy before consulting connected-runtime TB/grant IDs.
+fixedPoint = localNumericField(T, rowIdx, ["FixedLinkPointIndex"], NaN);
+fixedTrial = localNumericField(T, rowIdx, ["FixedLinkTrialIndex"], NaN);
+if isfinite(fixedPoint) && isfinite(fixedTrial)
+    fixedDrop = localNumericField(T, rowIdx, ["FixedLinkDropIndex"], 1);
+    fixedSeedIndex = localNumericField(T, rowIdx, ["FixedLinkSeedIndex"], 1);
+    fixedSeedValue = localNumericField(T, rowIdx, ["FixedLinkSeedValue","PointSeed"], NaN);
+    ueId = localNumericField(T, rowIdx, ["UEID","UEIndex"], NaN);
+    rnti = localNumericField(T, rowIdx, ["RNTI","UEID","UEIndex"], NaN);
+    tbId = "FIXED|" + upper(string(direction)) + ...
+        "|point=" + string(fixedPoint) + ...
+        "|drop=" + string(fixedDrop) + ...
+        "|trial=" + string(fixedTrial) + ...
+        "|seed_index=" + string(fixedSeedIndex) + ...
+        "|seed=" + string(fixedSeedValue) + ...
+        "|ue=" + string(ueId) + ...
+        "|rnti=" + string(rnti);
+    return;
+end
 for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
     if istable(T) && ismember(name, string(T.Properties.VariableNames))
         raw = strtrim(string(T.(char(name))(rowIdx)));
