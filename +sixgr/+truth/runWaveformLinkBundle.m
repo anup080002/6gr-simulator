@@ -69,9 +69,18 @@ if fixedLinkCampaignOnly
         "UL", sixgr.util.structGet(campaign, "ULTrials", table()));
     energyArtifacts = struct();
     measuredSINRArtifacts = struct();
+    liveDerivedArtifacts = struct();
     if logical(persistenceEnabled)
         rawTrials = localPublishFixedLinkCanonicalTruthEvidence( ...
             runFolder, cfgExec, multiUser, campaign);
+        % Fixed-link-only execution is still a production waveform run.
+        % Feed its exact canonical trial rows through the same derived-table
+        % and reconciliation pipeline as the ordinary waveform bundle.  Do
+        % not leave Phase-7 to infer RF/noise/MIMO evidence from configured
+        % values, and do not synthesize scheduler/control rows that this
+        % mode did not execute.
+        liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables( ...
+            cfgExec, rootRunFolder, rawTrials, multiUser, struct(), struct());
         % Fixed-link-only execution still consumes real PDSCH/PUSCH trial
         % rows.  Feed those exact rows through the same runtime-conditioned
         % engineering energy model used by the connected runtime.  This is
@@ -135,8 +144,9 @@ if fixedLinkCampaignOnly
     out.FixedLinkCampaign = campaign;
     out.RawTrials = rawTrials;
     out.Artifacts = struct("MeasuredSINR", measuredSINRArtifacts, ...
-        "Energy", energyArtifacts);
+        "Energy", energyArtifacts, "LiveDerived", liveDerivedArtifacts);
     out.EnergyArtifacts = energyArtifacts;
+    out.LiveDerivedArtifacts = liveDerivedArtifacts;
     out.Errors = strings(0,1);
     out.MultiUser = multiUser;
     out.PersistenceEnabled = logical(persistenceEnabled);
@@ -2243,6 +2253,8 @@ rows = repmat(struct( ...
     "FixedTargetCodeRate", NaN, ...
     "Numerology_mu", NaN, ...
     "SCS_kHz", NaN, ...
+    "ConfiguredBandwidth_Hz", NaN, ...
+    "CyclicPrefix", "", ...
     "SlotDuration_ms", NaN, ...
     "SlotsPerFrame", NaN, ...
     "SymbolsPerSlot", NaN, ...
@@ -2409,6 +2421,10 @@ for i = 1:2
     rows(i).CalibrationProfile = char(localResolveRuntimeCalibrationProfileToken(cfg, direction));
     rows(i).Numerology_mu = double(sixgr.util.structGet(cfg, "phy.numerology.mu", NaN));
     rows(i).SCS_kHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN));
+    rows(i).ConfiguredBandwidth_Hz = double(sixgr.util.structGet(cfg, ...
+        "channel.bandwidth_Hz", NaN));
+    rows(i).CyclicPrefix = char(string(sixgr.util.structGet(cfg, ...
+        "phy.carrier.CyclicPrefix", "")));
     rows(i).SlotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
     rows(i).SlotsPerFrame = double(sixgr.util.structGet(cfg, "phy.numerology.slotsPerFrame", NaN));
     rows(i).SymbolsPerSlot = double(sixgr.util.structGet(cfg, "phy.numerology.symbolsPerSlot", NaN));

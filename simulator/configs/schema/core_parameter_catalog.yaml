@@ -124,6 +124,7 @@
       "root_sequence_index": {"value_type": "integer", "default": 1, "min": 0},
       "zero_correlation_zone": {"value_type": "integer", "default": 8, "min": 0},
       "restricted_set": {"value_type": "string", "default": "UnrestrictedSet"},
+      "msg1_fdm": {"value_type": "integer", "default": 1, "allowed_values": [1, 2, 4, 8]},
       "frequency_start": {"value_type": "integer", "default": 0, "min": 0},
       "preamble_index": {"value_type": "integer", "default": 0, "min": 0},
       "ra_response_window_slots": {"value_type": "integer", "default": 8, "min": 1},

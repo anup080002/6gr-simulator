@@ -792,6 +792,7 @@ mappings = {
     "random_access.sequence_index", "random_access.sequence_index", "identity"
     "random_access.logical_root_sequence_index", "random_access.logical_root_sequence_index", "identity"
     "random_access.restricted_set", "random_access.restricted_set", "identity"
+    "random_access.msg1_fdm", "random_access.msg1_fdm", "identity"
     "random_access.frequency_start", "random_access.frequency_start", "identity"
     "random_access.preamble_index", "random_access.preamble_index", "identity"
     "random_access.occasion", "random_access.occasion", "identity"

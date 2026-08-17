@@ -6597,11 +6597,23 @@ methods(Static, Access=private)
 
     function tbId = transportBlockIdFromGrant(state, grant, direction, ueIdx)
         for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
-            raw = string(sixgr.util.structGet(grant, char(name), ""));
-            if strlength(strtrim(raw)) > 0 && lower(strtrim(raw)) ~= "nan"
-                tbId = raw;
-                return;
+            raw = strtrim(string(sixgr.util.structGet(grant, char(name), "")));
+            raw = raw(:);
+            valid = ~ismissing(raw) & strlength(raw) > 0 & lower(raw) ~= "nan";
+            raw = raw(valid);
+            if isempty(raw)
+                continue;
             end
+            identities = unique(raw, "stable");
+            if numel(identities) ~= 1
+                error("sixgr:truth:AmbiguousGrantTransportBlockIdentity", ...
+                    ("%s grant field %s contains %d conflicting transport-block " + ...
+                    "identities: %s."), char(upper(string(direction))), ...
+                    char(name), numel(identities), ...
+                    char(strjoin(identities, ", ")));
+            end
+            tbId = identities(1);
+            return;
         end
         harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
         rnti = double(sixgr.util.structGet(grant, "RNTI", NaN));

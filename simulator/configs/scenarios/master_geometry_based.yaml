@@ -1104,6 +1104,7 @@ canonical_control:
     sequence_index: 1
     logical_root_sequence_index: 1
     restricted_set: UnrestrictedSet
+    msg1_fdm: 1
     frequency_start: 0
     preamble_index: 0
     occasion:

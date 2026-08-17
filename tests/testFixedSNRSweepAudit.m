@@ -33,6 +33,19 @@ assert(exist(fullfile(tmp, "reports", "csv", "fixed_snr_sweep_required_outputs.c
 assert(exist(fullfile(tmp, "reports", "json", "fixed_snr_sweep_audit.json"), "file") == 2, ...
     "The fixed-sweep audit JSON must be written.");
 
+runClassPath = fullfile(tmp, "reports", "csv", "run_classification.csv");
+runClassT = readtable(runClassPath, "VariableNamingRule", "preserve", "TextType", "string");
+runClassT.RunClass(:) = "geometry_network_lls";
+sixgr.util.csvWriteTable(runClassPath, runClassT);
+auditClassMismatch = sixgr.validation.auditFixedSNRSweepRun(tmp, ...
+    "Strict", false, "WriteOutputs", false);
+assert(~logical(auditClassMismatch.Ok), ...
+    "A runtime run class that conflicts with the resolved YAML must fail the audit.");
+assert(any(string(auditClassMismatch.FailureCodes) == "run_class_config_runtime_mismatch"), ...
+    "The audit must report the exact resolved-config/runtime run-class mismatch.");
+runClassT.RunClass(:) = "fixed_snr_sweep_lls";
+sixgr.util.csvWriteTable(runClassPath, runClassT);
+
 ulCurvePath = fullfile(tmp, "reports", "csv", "ul_fixed_snr_bler_curve.csv");
 ulCurve = readtable(ulCurvePath, "VariableNamingRule", "preserve", "TextType", "string");
 sixgr.util.csvWriteTable(ulCurvePath, ulCurve([],:));

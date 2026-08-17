@@ -505,11 +505,17 @@ end
 
 function profile = localResolveRunClassProfile(scfg, cfg, scenarioMode)
 explicit = localNormalizeRunClassToken(localFirstNonBlankString([
-    localScalarString(localScenarioGet(scfg, cfg, "scenario.run_class", ""))
-    localScalarString(localScenarioGet(scfg, cfg, "scenario.runClass", ""))
+    % Validation/launch is operator-owned YAML authority. A derived
+    % internal cfg can also contain scenario.run_class; resolving that
+    % field first allowed its conservative adaptive default to mask an
+    % explicit fixed_snr_sweep_lls master configuration.
     localScalarString(localScenarioGet(scfg, cfg, "validation.RunClass", ""))
     localScalarString(localScenarioGet(scfg, cfg, "validation.run_class", ""))
     localScalarString(localScenarioGet(scfg, cfg, "validation.runClass", ""))
+    localScalarString(localScenarioGet(scfg, cfg, "canonical_control.launch.run_class", ""))
+    localScalarString(localScenarioGet(scfg, cfg, "canonical_control.validation.run_class", ""))
+    localScalarString(localScenarioGet(scfg, cfg, "scenario.run_class", ""))
+    localScalarString(localScenarioGet(scfg, cfg, "scenario.runClass", ""))
     ]));
 configured = localConfiguredOperatingPoint(scfg, cfg);
 fixedMCSActive = localRunClassFixedMCSActive(scfg, cfg);

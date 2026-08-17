@@ -54,9 +54,17 @@ if resumeExisting
 else
     logicalRunFolder = localComposeRunFolderNoCreate(outputDir, "lls", scfg.ScenarioID, leaf);
     if backend == "mysql_web"
-        runFolder = localComposeDBStagingRunFolder(scfg.ScenarioID, leaf);
-        localResetRunFolder(runFolder);
-        localDeleteFolderTreeIfExists(logicalRunFolder);
+        % Filesystem artifacts are the durable primary publication even
+        % when MySQL mirroring is active.  Running from an OS-temporary
+        % staging tree made a database or hydration failure erase the only
+        % complete evidence set.  The artifact store can mirror writes from
+        % this public folder without changing their filesystem authority.
+        runFolder = sixgr.report.defaultRunFolder(outputDir, ...
+            "Bucket", "lls", ...
+            "Profile", scfg.ScenarioID, ...
+            "Leaf", leaf, ...
+            "CleanExisting", true);
+        logicalRunFolder = runFolder;
     else
         runFolder = sixgr.report.defaultRunFolder(outputDir, ...
             "Bucket", "lls", ...
@@ -2739,12 +2747,12 @@ try
         scenarioStatus, geometryScenarioAudit);
     scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
         scenarioStatus, artifactContractResult);
-    finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
-        runFolder, scfg, cfg);
-    reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
     artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
     reportBundle.ArtifactAudit = artifactAudit;
     scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
+    finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
+        runFolder, scfg, cfg);
+    reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
     scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
         scenarioStatus, runFolder);
     sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
@@ -2850,12 +2858,12 @@ try
         scenarioStatus, geometryScenarioAudit);
     scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
         scenarioStatus, artifactContractResult);
-    finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
-        runFolder, scfg, cfg);
-    reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
     artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
     reportBundle.ArtifactAudit = artifactAudit;
     scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
+    finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
+        runFolder, scfg, cfg);
+    reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
     scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
         scenarioStatus, runFolder);
     sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
@@ -4557,19 +4565,13 @@ if strlength(string(pathValue)) > 1 && endsWith(pathValue, filesep) && ~(ispc &&
 end
 end
 
-function runFolder = localComposeDBStagingRunFolder(profile, leaf)
-profile = localSanitizeToken(profile, "scenario");
-leaf = localSanitizeToken(leaf, "current");
-runFolder = fullfile(tempdir, "sixgr_mysql_web_runs", profile, leaf);
-end
-
-function localResetRunFolder(runFolder)
-localDeleteFolderTreeIfExists(runFolder);
-sixgr.util.ensureFolder(runFolder);
-end
-
 function localCleanupDBOnlyRunFolders(backend, stagingRunFolder, logicalRunFolder)
 if lower(string(backend)) ~= "mysql_web"
+    return;
+end
+if localSameFolder(stagingRunFolder, logicalRunFolder)
+    % Current mysql_web runs publish directly into the durable result tree.
+    % Never delete that authoritative filesystem evidence on cleanup.
     return;
 end
 localDeleteFolderTreeIfExists(stagingRunFolder);
@@ -5785,11 +5787,10 @@ end
 function evidence = localRefreshFinalQualificationEvidence(runFolder, scfg, cfg)
 % Phase-7 consumes terminal CSV/image audits and plot lineage.  Its initial
 % pass necessarily runs before browser contract materialization so those
-% tables exist for the browser.  Rebuild the scientific/readiness reducer
-% after materialization and visual finalization; otherwise a clean terminal
-% tree can retain pre-materialization ArtifactCompletenessOk=false and
-% PlotDataLineageOk=false.  Missing campaigns, samples, FRC references or
-% determinism evidence continue to fail closed in the same evaluator.
+% tables exist for the browser.  The terminal caller first refreshes the
+% recursive filesystem audit and only then rebuilds this scientific
+% reducer.  Missing campaigns, samples, FRC references or determinism
+% evidence continue to fail closed in the same evaluator.
 phase7 = sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
 publication = sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
 evidence = struct( ...
@@ -5811,6 +5812,7 @@ end
 out = struct("Enabled", enabled, "Profile", profile, ...
     "AllPassed", false, "OutputPath", "", "Table", table());
 if ~enabled
+    localPublishReferenceQualificationConfig(base + "enabled", false);
     return;
 end
 
@@ -5846,11 +5848,39 @@ for index = 1:size(optional,1)
     value = localRunnerScenarioGet(scfg, cfg, base + optional(index,1), []);
     if ~isempty(value)
         args(end+1:end+2) = {char(optional(index,2)), double(value)}; %#ok<AGROW>
+        localPublishReferenceQualificationConfig( ...
+            base + optional(index,1), double(value));
     end
 end
+localPublishReferenceQualificationConfig(base + "enabled", true);
+localPublishReferenceQualificationConfig(base + "profile", profile);
+localPublishReferenceQualificationConfig(base + "entry_ids", entryIds);
+localPublishReferenceQualificationConfig(base + "sampling_by_entry", ...
+    localRunnerScenarioGet(scfg, cfg, base + "sampling_by_entry", {}));
+localPublishReferenceQualificationConfig(base + "tolerance_db", args{8});
+localPublishReferenceQualificationConfig(base + "confidence_level", args{10});
+localPublishReferenceQualificationConfig(base + "minimum_block_errors", ...
+    localRunnerScenarioGet(scfg, cfg, base + "minimum_block_errors", 100));
+localPublishReferenceQualificationConfig(base + "parallel_workers", ...
+    localRunnerScenarioGet(scfg, cfg, base + "parallel_workers", 0));
+localPublishReferenceQualificationConfig( ...
+    base + "require_symmetric_regression_for_production", ...
+    localRunnerScenarioGetBool(scfg, cfg, ...
+    base + "require_symmetric_regression_for_production", false));
+localPublishReferenceQualificationConfig(base + "verbose", ...
+    localRunnerScenarioGetBool(scfg, cfg, base + "verbose", true));
 qualification = sixgr.conformance.runReferenceQualification(runFolder, args{:});
 out = qualification;
 out.Enabled = true;
+end
+
+function localPublishReferenceQualificationConfig(parameterId, value)
+sixgr.config.publishConfigApplicationEvidence("record", ...
+    parameterId, "Truth_Contract", parameterId, ...
+    "sixgr.lls6g.runners.runSingle.localRunIndependentReferenceQualification", ...
+    value, "RuntimeObjectType", "frc_qualification_runtime_options", ...
+    "RuntimeObjectPath", parameterId, ...
+    "ApplicationScope", "independent_frc_campaign");
 end
 
 function value = localRunnerScenarioGet(scfg, cfg, pathValue, defaultValue)
@@ -6499,7 +6529,7 @@ if exist(scriptPath, "file") ~= 2
 end
 databaseBackendActive = sixgr.db.isArtifactStoreActive();
 pythonRuntime = sixgr.lls6g.runners.resolveWebGUIContractPython( ...
-    "RequireMySQL", databaseBackendActive);
+    "RequireMySQL", false);
 if ~logical(sixgr.util.structGet(pythonRuntime, "Ok", false))
     out.Identifier = "webgui_contract_python_unavailable";
     out.Message = char(string(sixgr.util.structGet(pythonRuntime, ...
@@ -6507,61 +6537,107 @@ if ~logical(sixgr.util.structGet(pythonRuntime, "Ok", false))
     return;
 end
 pythonExe = char(string(pythonRuntime.Executable));
-if databaseBackendActive
-    storeState = sixgr.db.artifactStore("get_state");
-    runID = double(sixgr.util.structGet(storeState, "RunID", NaN));
-    if ~(isfinite(runID) && runID > 0)
-        out.Identifier = "run_id_unavailable";
-        out.Message = "The active MySQL artifact store did not expose a valid run_id.";
-        return;
-    end
-    out.DatabaseRunID = double(runID);
-    out.DatabasePersisted = true;
-    out.PublicationBackend = "mysql_web";
-    cmd = sprintf('"%s" "%s" --run-id %d --strict', ...
-        localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), round(runID));
-else
-    runFolder = char(string(runFolder));
-    if exist(runFolder, "dir") ~= 7
-        out.Identifier = "filesystem_run_folder_missing";
-        out.Message = "Filesystem browser-contract verification requires the active run folder.";
-        return;
-    end
-    out.FilesystemPersisted = true;
-    out.PublicationBackend = "filesystem";
-    cmd = sprintf('"%s" "%s" --run-folder "%s" --strict --replace-existing-rasters-from-csv', ...
-        localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), ...
-        localShellEscapeArg(runFolder));
+runFolder = char(string(runFolder));
+if exist(runFolder, "dir") ~= 7
+    out.Identifier = "filesystem_run_folder_missing";
+    out.Message = "Filesystem browser-contract verification requires the active run folder.";
+    return;
 end
-[status, raw] = system(cmd);
-out.Status = double(status);
-payloadText = strtrim(string(raw));
-jsonStart = strfind(char(payloadText), "{");
-if ~isempty(jsonStart)
-    payloadText = extractAfter(payloadText, jsonStart(1) - 1);
-    try
-        payload = jsondecode(char(payloadText));
-        out.CreatedCount = double(sixgr.util.structGet(payload, "created_count", 0));
-        out.MissingTableCount = double(sixgr.util.structGet(payload, "tables_missing", NaN));
-        out.MissingChartCount = double(sixgr.util.structGet(payload, "charts_missing", NaN));
-    catch
-    end
-end
-if status == 0
-    out.Ok = true;
-    out.BrowserMaterialized = isfinite(out.MissingTableCount) && ...
-        out.MissingTableCount == 0 && isfinite(out.MissingChartCount) && ...
-        out.MissingChartCount == 0;
-    if out.DatabasePersisted
-        out.Identifier = "browser_contract_materialization_ok";
-    else
-        out.Identifier = "filesystem_browser_contract_verification_ok";
-    end
-    out.Message = char(payloadText);
-else
+
+% Filesystem materialization is always first and authoritative.  MySQL is
+% an additional publication sink, never the only surviving evidence store.
+filesystemCmd = sprintf('"%s" "%s" --run-folder "%s" --strict --replace-existing-rasters-from-csv', ...
+    localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), ...
+    localShellEscapeArg(runFolder));
+filesystemResult = localExecuteMaterializerCommand(filesystemCmd);
+out.Status = double(filesystemResult.Status);
+out.CreatedCount = double(filesystemResult.CreatedCount);
+out.MissingTableCount = double(filesystemResult.MissingTableCount);
+out.MissingChartCount = double(filesystemResult.MissingChartCount);
+out.Message = char(filesystemResult.PayloadText);
+if filesystemResult.Status ~= 0
     out.Identifier = "browser_contract_materialization_failed";
-    out.Message = char(string(raw));
+    return;
 end
+out.FilesystemPersisted = true;
+
+filesystemComplete = localMaterializationCoverageComplete(filesystemResult);
+if ~databaseBackendActive
+    out.Ok = true;
+    out.PublicationBackend = "filesystem";
+    out.BrowserMaterialized = filesystemComplete;
+    out.Identifier = "filesystem_browser_contract_verification_ok";
+    return;
+end
+
+mysqlPython = sixgr.lls6g.runners.resolveWebGUIContractPython("RequireMySQL", true);
+if ~logical(sixgr.util.structGet(mysqlPython, "Ok", false))
+    out.Identifier = "mysql_web_contract_python_unavailable";
+    out.Message = char(string(sixgr.util.structGet(mysqlPython, "Message", ...
+        "The filesystem contract passed, but the MySQL publication runtime is unavailable.")));
+    return;
+end
+storeState = sixgr.db.artifactStore("get_state");
+runID = double(sixgr.util.structGet(storeState, "RunID", NaN));
+if ~(isfinite(runID) && runID > 0)
+    out.Identifier = "run_id_unavailable";
+    out.Message = "The filesystem contract passed, but the active MySQL artifact store did not expose a valid run_id.";
+    return;
+end
+out.DatabaseRunID = double(runID);
+out.PublicationBackend = "mysql_web";
+databaseCmd = sprintf('"%s" "%s" --run-id %d --strict', ...
+    localShellEscapeArg(string(mysqlPython.Executable)), ...
+    localShellEscapeArg(scriptPath), round(runID));
+databaseResult = localExecuteMaterializerCommand(databaseCmd);
+out.Status = double(databaseResult.Status);
+out.CreatedCount = out.CreatedCount + double(databaseResult.CreatedCount);
+out.MissingTableCount = double(databaseResult.MissingTableCount);
+out.MissingChartCount = double(databaseResult.MissingChartCount);
+out.Message = char("filesystem=" + filesystemResult.PayloadText + ...
+    newline + "mysql=" + databaseResult.PayloadText);
+if databaseResult.Status ~= 0
+    out.Identifier = "mysql_browser_contract_materialization_failed";
+    return;
+end
+out.DatabasePersisted = true;
+out.Ok = true;
+out.BrowserMaterialized = filesystemComplete && ...
+    localMaterializationCoverageComplete(databaseResult);
+out.Identifier = "browser_contract_materialization_ok";
+end
+
+function result = localExecuteMaterializerCommand(cmd)
+[status, raw] = system(cmd);
+payloadText = strtrim(string(raw));
+result = struct( ...
+    "Status", double(status), ...
+    "CreatedCount", 0, ...
+    "MissingTableCount", NaN, ...
+    "MissingChartCount", NaN, ...
+    "PayloadText", payloadText);
+jsonStart = strfind(char(payloadText), "{");
+if isempty(jsonStart)
+    return;
+end
+jsonText = extractAfter(payloadText, jsonStart(1) - 1);
+try
+    payload = jsondecode(char(jsonText));
+    result.CreatedCount = double(sixgr.util.structGet(payload, "created_count", 0));
+    result.MissingTableCount = double(sixgr.util.structGet(payload, "tables_missing", NaN));
+    result.MissingChartCount = double(sixgr.util.structGet(payload, "charts_missing", NaN));
+    result.PayloadText = jsonText;
+catch
+    % Preserve the raw materializer response. A zero exit with an
+    % unparsable coverage payload cannot satisfy BrowserMaterialized.
+end
+end
+
+function tf = localMaterializationCoverageComplete(result)
+tf = isfinite(double(result.MissingTableCount)) && ...
+    double(result.MissingTableCount) == 0 && ...
+    isfinite(double(result.MissingChartCount)) && ...
+    double(result.MissingChartCount) == 0;
 end
 
 function out = localShellEscapeArg(value)

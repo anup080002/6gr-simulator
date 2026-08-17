@@ -10,6 +10,16 @@ classdef Phase7TruthEvaluator
             end
 
             gateNames = sixgr.runtime.Phase7TruthEvaluator.gateNames();
+            notApplicable = string(sixgr.util.structGet(flags, ...
+                "NotApplicableGateNames", strings(0, 1)));
+            notApplicable = unique(strtrim(notApplicable(:)), "stable");
+            notApplicable = notApplicable(strlength(notApplicable) > 0);
+            unknownNotApplicable = setdiff(notApplicable, gateNames, "stable");
+            if ~isempty(unknownNotApplicable)
+                error("sixgr:runtime:UnknownPhase7GateApplicability", ...
+                    "Unknown Phase-7 not-applicable gate(s): %s", ...
+                    char(strjoin(unknownNotApplicable, ", ")));
+            end
             status = struct();
             failureCodes = strings(0, 1);
             phase7Ok = true;
@@ -17,8 +27,9 @@ classdef Phase7TruthEvaluator
                 name = gateNames(i);
                 value = logical(sixgr.util.structGet(flags, char(name), false));
                 status.(char(name)) = value;
-                phase7Ok = phase7Ok && value;
-                if ~value
+                applicable = ~ismember(name, notApplicable);
+                phase7Ok = phase7Ok && (~applicable || value);
+                if applicable && ~value
                     failureCodes(end+1, 1) = name + "_false"; %#ok<AGROW>
                 end
             end
@@ -41,6 +52,8 @@ classdef Phase7TruthEvaluator
                 failureCodes(end+1, 1) = "PublicationReadinessOk_false"; %#ok<AGROW>
             end
             status.ResultOkAuthority = "all_phase_gates_required_no_lower_pass_override";
+            status.NotApplicableGateNames = notApplicable;
+            status.ApplicabilityAuthority = "operator_run_class_and_concrete_channel_model";
             status.ScopeLabel = "SCOPED_IMPLEMENTATION_VALIDATION";
             status.FailureCodes = failureCodes;
             status.PrimaryFailureCode = localPrimaryFailure(failureCodes);
@@ -119,6 +132,11 @@ classdef Phase7TruthEvaluator
             failureCodes = strtrim(failureCodes(:));
             failureCodes = failureCodes(strlength(failureCodes) > 0);
             tabular.FailureCodes = string(strjoin(failureCodes, ";"));
+            notApplicable = string(sixgr.util.structGet(tabular, ...
+                "NotApplicableGateNames", strings(0, 1)));
+            notApplicable = strtrim(notApplicable(:));
+            notApplicable = notApplicable(strlength(notApplicable) > 0);
+            tabular.NotApplicableGateNames = string(strjoin(notApplicable, ";"));
             T = struct2table(tabular, "AsArray", true);
         end
     end

@@ -115,8 +115,11 @@ canonical_control:
     fixed_link_snr_grid_db:
     - 10
     - 14
+    - 16
     - 18
+    - 19
     - 20
+    - 21
     - 22
     - 24
     - 26
@@ -1126,6 +1129,7 @@ canonical_control:
     sequence_index: 1
     logical_root_sequence_index: 1
     restricted_set: UnrestrictedSet
+    msg1_fdm: 1
     frequency_start: 0
     preamble_index: 0
     occasion:
@@ -1547,7 +1551,7 @@ canonical_control:
   - path: sweeps_and_matrix.snr_sweep.enabled
     value: true
   - path: sweeps_and_matrix.snr_sweep.values_db
-    value: [10, 14, 18, 20, 22, 24, 26, 30]
+    value: [10, 14, 16, 18, 19, 20, 21, 22, 24, 26, 30]
   - path: system.measurement.periodSlots
     value: 1
   - path: system.measurement.filterAlpha
@@ -1712,8 +1716,11 @@ validation:
     snr_db:
     - 10
     - 14
+    - 16
     - 18
+    - 19
     - 20
+    - 21
     - 22
     - 24
     - 26

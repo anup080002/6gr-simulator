@@ -120,12 +120,17 @@ art.PlotLineage = localReadOptionalTable(fullfile(layout.ReportCSVDir, "contract
 end
 
 function req = localResolveRequirements(cfg, art, opt)
-runClass = localFirstTextValue([
+configuredRunClass = localFirstTextValue([
     localGetText(cfg, "validation.RunClass", "")
     localGetText(cfg, "validation.run_class", "")
     localGetText(cfg, "scenario.run_class", "")
     localGetText(cfg, "canonical_control.validation.run_class", "")
     ]);
+artifactRunClass = localRunClassificationValue(art.RunClassification.Table);
+runClass = configuredRunClass;
+if strlength(runClass) == 0
+    runClass = artifactRunClass;
+end
 direction = upper(localFirstTextValue([
     localGetText(cfg, "sweeps_and_matrix.fixed_link_calibration.direction", "")
     localGetText(cfg, "validation.fixed_link_campaign.direction", "")
@@ -152,11 +157,18 @@ ciWidthTarget = localFirstFinite([
 
 req = struct();
 req.RunClass = string(runClass);
+req.ConfiguredRunClass = string(configuredRunClass);
+req.ArtifactRunClass = string(artifactRunClass);
+req.RunClassConflict = strlength(configuredRunClass) > 0 && ...
+    strlength(artifactRunClass) > 0 && ...
+    lower(configuredRunClass) ~= lower(artifactRunClass);
 req.FixedLinkCampaignOnly = localGetLogical(cfg, "sweeps_and_matrix.fixed_link_calibration.only", ...
-    localGetLogical(cfg, "canonical_control.run.fixed_link_campaign_only", false));
+    localGetLogical(cfg, "canonical_control.run.fixed_link_campaign_only", ...
+    localGetLogical(cfg, "run.fixedLinkCampaignOnly", false)));
 req.NoiseOperatingMode = localFirstTextValue([
     localGetText(cfg, "simulation.noise_operating_mode", "")
     localGetText(cfg, "run.noiseOperatingMode", "")
+    localGetText(cfg, "channel.noiseOperatingMode", "")
     ]);
 req.Direction = string(direction);
 req.SNRGrid_dB = double(grid(:));
@@ -276,6 +288,22 @@ end
 
 function rows = localRunClassAuditRows(req)
 rows = repmat(localEmptyAuditRow(), 0, 1);
+bad = strlength(strtrim(string(req.ConfiguredRunClass))) == 0;
+rows(end + 1, 1) = localAuditRow( ...
+    "run_class_present_in_resolved_config", ...
+    "meta/scenario_config_resolved.json", ...
+    1, double(bad), double(~bad), "true", localStatusFromFailures(double(bad)), ...
+    localFailureToken(bad, "run_class_missing_from_resolved_config"), ...
+    "The resolved YAML snapshot must retain the operator-owned run class.");
+
+bad = logical(req.RunClassConflict);
+rows(end + 1, 1) = localAuditRow( ...
+    "run_class_config_matches_runtime_classification", ...
+    "meta/scenario_config_resolved.json|reports/csv/run_classification.csv", ...
+    1, double(bad), double(~bad), "true", localStatusFromFailures(double(bad)), ...
+    localFailureToken(bad, "run_class_config_runtime_mismatch"), ...
+    "Resolved YAML and canonical runtime classification must name the same run class.");
+
 bad = req.RunClass ~= "fixed_snr_sweep_lls";
 rows(end + 1, 1) = localAuditRow( ...
     "run_class_fixed_snr_sweep_lls", ...
@@ -301,6 +329,28 @@ rows(end + 1, 1) = localAuditRow( ...
     localStatusFromFailures(double(bad)), ...
     localFailureToken(bad, "noise_operating_mode_not_standalone_awgn"), ...
     "Fixed SNR sweep runs must resolve to standalone_awgn_snr_argument noise mode.");
+end
+
+function value = localRunClassificationValue(T)
+value = "";
+if ~(istable(T) && ~isempty(T) && ...
+        ismember("RunClass", string(T.Properties.VariableNames)))
+    return;
+end
+tokens = strtrim(string(T.RunClass));
+tokens = tokens(~ismissing(tokens) & strlength(tokens) > 0);
+if isempty(tokens)
+    return;
+end
+uniqueTokens = unique(lower(tokens), "stable");
+if numel(uniqueTokens) ~= 1
+    % Preserve an unmistakable conflict token.  The regular fixed-sweep
+    % class check will fail closed and the source CSV remains available for
+    % diagnosis; no arbitrary row is selected as authority.
+    value = "conflicting_runtime_run_classes";
+    return;
+end
+value = uniqueTokens(1);
 end
 
 function rows = localConfiguredGridAuditRows(req, campaignT, opt)

@@ -49,5 +49,32 @@ assert(abs(double(context.ChannelState.TargetSlotStartTime_s)-expectedTime_s) <=
 assert(string(context.ChannelState.ContractVersion) ~= "", ...
     "The regression must exercise a real runtime fading-channel state.");
 
+repeatedIdentityGrant = grant;
+repeatedIdentityGrant.TransportBlockId = ["dl_tb_same", "dl_tb_same"];
+[~, repeatedContext] = sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant( ...
+    state,cfg,1,"DL",repeatedIdentityGrant);
+assert(isscalar(string(repeatedContext.GrantSnapshot.TransportBlockId)) && ...
+    string(repeatedContext.GrantSnapshot.TransportBlockId) == "dl_tb_same", ...
+    "Repeated identical grant identities must reduce to one immutable scalar ID.");
+
+ambiguousIdentityGrant = grant;
+ambiguousIdentityGrant.TransportBlockId = ["dl_tb_a", "dl_tb_b"];
+localAssertThrows(@() sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant( ...
+    state,cfg,1,"DL",ambiguousIdentityGrant), ...
+    "sixgr:truth:AmbiguousGrantTransportBlockIdentity");
+
 ok = true;
+end
+
+function localAssertThrows(fn, expectedId)
+try
+    fn();
+catch ME
+    assert(string(ME.identifier) == string(expectedId), ...
+        "Expected error %s, got %s: %s", ...
+        string(expectedId), string(ME.identifier), string(ME.message));
+    return;
+end
+error("testCoupledTruthRuntimeSlotDurationBinding:ExpectedErrorMissing", ...
+    "Expected error %s was not thrown.", string(expectedId));
 end

@@ -1338,7 +1338,6 @@ flags = localApplyCampaignFlags(flags, campaignEvidence);
 publicationEvidence = sixgr.analytics.evaluatePublicationReadinessGates(cfg, runDir);
 flags = localApplyStructFlags(flags, publicationEvidence.Flags);
 flags.OutputSchemaValidationOk = true;
-flags = localApplyPhaseRollupFlags(flags);
 modeAcceptance = struct();
 if isstruct(publicationEvidence) && isfield(publicationEvidence, "ModeAcceptance") && isstruct(publicationEvidence.ModeAcceptance)
     modeAcceptance = publicationEvidence.ModeAcceptance;
@@ -1349,7 +1348,11 @@ geometryApplicable = logical(sixgr.util.structGet(modeAcceptance, "GeometryScena
 fixedOk = logical(sixgr.util.structGet(flags, "FixedSNRLLSOk", ~fixedApplicable));
 geometryOk = logical(sixgr.util.structGet(flags, "GeometryScenarioOk", ~geometryApplicable));
 referenceOk = logical(sixgr.util.structGet(flags, "PublicationReferenceComparisonOk", ~fixedApplicable));
-terminalOk = localAllNamedFlagsTrue(flags, sixgr.runtime.Phase7TruthEvaluator.gateNames());
+notApplicable = localResolveNotApplicableGates(runClass, cfg, fixedApplicable, geometryApplicable);
+flags.NotApplicableGateNames = notApplicable;
+flags = localApplyPhaseRollupFlags(flags, notApplicable);
+terminalOk = localAllApplicableNamedFlagsTrue(flags, ...
+    sixgr.runtime.Phase7TruthEvaluator.gateNames(), notApplicable);
 phaseRollupOk = localAllNamedFlagsTrue(flags, ["Phase1Ok","Phase2Ok","Phase3Ok","Phase4Ok","Phase5Ok","Phase6Ok"]);
 flags.PublicationReadinessOk = terminalOk && phaseRollupOk && fixedApplicable && fixedOk && referenceOk;
 status = sixgr.runtime.Phase7TruthEvaluator.evaluate(flags);
@@ -1359,6 +1362,46 @@ status.GeometryScenarioApplicable = logical(geometryApplicable);
 status.FixedSNRLLSOk = logical(fixedOk);
 status.GeometryScenarioOk = logical(geometryOk);
 status.PublicationReferenceComparisonOk = logical(referenceOk);
+end
+
+function names = localResolveNotApplicableGates(runClass, cfg, fixedApplicable, geometryApplicable)
+% Mode-specific gates are excluded only when the operator-selected run
+% class makes that evidence inapplicable.  This is not a pass override:
+% observed values remain exported and the excluded names are explicit in
+% the terminal status.  Hybrid runs exclude nothing.
+names = strings(0, 1);
+if fixedApplicable && ~geometryApplicable
+    names = [names; [ ...
+        "FullTrajectoryExecutedOk"
+        "MobilityStateContinuousOk"
+        "InterUeConstraintResolvedOk"
+        "LosStateModelOk"
+        "PathlossReconciliationOk"
+        "ShadowFadingReconciliationOk"
+        "LargeScaleParameterReconciliationOk"
+        "ChannelStateContinuityOk"
+        "DopplerReconciliationOk"
+        "PropagationDelayReconciliationOk"
+        "MobilityKpiReconciliationOk"
+        "AccessKpiReconciliationOk"
+        "SchedulerKpiReconciliationOk"]];
+end
+
+channelModel = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "channel.model", "AWGN"))));
+if channelModel == "AWGN"
+    names = [names; ...
+        "CdlRealizationOk"; ...
+        "PathPowerNormalizationOk"; ...
+        "AntennaArrayReconciliationOk"; ...
+        "PolarizationReconciliationOk"];
+end
+names = unique(names, "stable");
+
+if ~(fixedApplicable || geometryApplicable) && runClass ~= "hybrid_validation"
+    % Unknown run classes do not receive mode-based exclusions.
+    names = strings(0, 1);
+end
 end
 
 function tf = localChannelRFArtifactsPass(runDir)
@@ -1455,8 +1498,8 @@ for i = 1:numel(names)
 end
 end
 
-function flags = localApplyPhaseRollupFlags(flags)
-flags.Phase1Ok = localAllNamedFlagsTrue(flags, [
+function flags = localApplyPhaseRollupFlags(flags, notApplicable)
+flags.Phase1Ok = localAllApplicableNamedFlagsTrue(flags, [
     "GeometryValidationOk"
     "FullTrajectoryExecutedOk"
     "MobilityStateContinuousOk"
@@ -1471,8 +1514,8 @@ flags.Phase1Ok = localAllNamedFlagsTrue(flags, [
     "DopplerReconciliationOk"
     "PropagationDelayReconciliationOk"
     "AntennaArrayReconciliationOk"
-    "PolarizationReconciliationOk"]);
-flags.Phase2Ok = localAllNamedFlagsTrue(flags, [
+    "PolarizationReconciliationOk"], notApplicable);
+flags.Phase2Ok = localAllApplicableNamedFlagsTrue(flags, [
     "ResolvedConfigurationConsistentOk"
     "NoiseReconciliationOk"
     "InterferenceAccountingOk"
@@ -1487,19 +1530,19 @@ flags.Phase2Ok = localAllNamedFlagsTrue(flags, [
     "ChannelRfConfiguredVsAppliedOk"
     "MimoKpiReconciliationOk"
     "SchedulerKpiReconciliationOk"
-    "MobilityKpiReconciliationOk"]);
-flags.Phase3Ok = localAllNamedFlagsTrue(flags, [
+    "MobilityKpiReconciliationOk"], notApplicable);
+flags.Phase3Ok = localAllApplicableNamedFlagsTrue(flags, [
     "ArtifactCompletenessOk"
     "PlotDataLineageOk"
-    "Phase7NoFabricationOk"]);
-flags.Phase4Ok = localAllNamedFlagsTrue(flags, [
+    "Phase7NoFabricationOk"], notApplicable);
+flags.Phase4Ok = localAllApplicableNamedFlagsTrue(flags, [
     "CanonicalKpiLedgerOk"
     "ThroughputReconciliationOk"
     "BlerBerReconciliationOk"
     "LatencyReconciliationOk"
     "AccessKpiReconciliationOk"
-    "SchedulerKpiReconciliationOk"]);
-flags.Phase5Ok = localAllNamedFlagsTrue(flags, [
+    "SchedulerKpiReconciliationOk"], notApplicable);
+flags.Phase5Ok = localAllApplicableNamedFlagsTrue(flags, [
     "SeedHierarchyOk"
     "CampaignDesignOk"
     "CampaignCompletionOk"
@@ -1508,11 +1551,18 @@ flags.Phase5Ok = localAllNamedFlagsTrue(flags, [
     "SampleAdequacyOk"
     "SweepDataQualityOk"
     "CheckpointResumeEquivalenceOk"
-    "SerialParallelDeterminismOk"]);
-flags.Phase6Ok = localAllNamedFlagsTrue(flags, [
+    "SerialParallelDeterminismOk"], notApplicable);
+flags.Phase6Ok = localAllApplicableNamedFlagsTrue(flags, [
     "EnergyModelOk"
     "PerformanceProfileOk"
-    "LongRunStabilityOk"]);
+    "LongRunStabilityOk"], notApplicable);
+end
+
+function tf = localAllApplicableNamedFlagsTrue(flags, names, notApplicable)
+names = string(names(:));
+notApplicable = string(notApplicable(:));
+names = names(~ismember(names, notApplicable));
+tf = localAllNamedFlagsTrue(flags, names);
 end
 
 function tf = localAllNamedFlagsTrue(flags, names)

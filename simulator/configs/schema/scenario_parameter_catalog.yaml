@@ -904,6 +904,10 @@ sections:
         required: false
         type: string
         allowed_values: [UnrestrictedSet, RestrictedSet, RestrictedSetTypeA, RestrictedSetTypeB, RestrictedSetA, RestrictedSetB]
+      msg1_fdm:
+        required: false
+        type: integer
+        allowed_values: [1, 2, 4, 8]
       frequency_start: {required: false, type: integer, min: 0}
       num_prach_occasions: {required: false, type: integer, min: 1}
       num_slots: {required: false, type: integer, min: 1}

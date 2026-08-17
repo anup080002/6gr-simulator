@@ -36,14 +36,16 @@ parameters:
     applies_when:
       features: [Random_Access_PRACH]
     aliases: [global_radio_scope.channel_bandwidth_hz]
-    matlab_consumer_functions: []
-    runtime_object_path: ""
+    matlab_consumer_functions: [sixgr.lls6g.buildInternalConfig, sixgr.truth.runWaveformLinkBundle]
+    runtime_object_path: cfg.channel.bandwidth_Hz
     evidence_artifact: ""
     evidence_field: ""
     evidence_role: ""
     classification: browser_editable
-    support_status: no_runtime_evidence_mapping_registered
-    unavailable_reason: runtime_consumer_not_yet_instrumented
+    measured_artifact: reports/csv/runtime_operating_mode.csv
+    measured_field: ConfiguredBandwidth_Hz
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
   - parameter_id: frequency.duplex_mode
     browser_path: frequency.duplex_mode
     scenario_path: frequency.duplex_mode
@@ -102,14 +104,16 @@ parameters:
     applies_when:
       features: [Random_Access_PRACH]
     aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
+    matlab_consumer_functions: [sixgr.lls6g.buildInternalConfig, sixgr.truth.runWaveformLinkBundle]
+    runtime_object_path: cfg.phy.carrier.CyclicPrefix
     evidence_artifact: ""
     evidence_field: ""
     evidence_role: ""
     classification: browser_editable
-    support_status: consumer_not_instrumented
-    unavailable_reason: current_prach_backend_uses_toolbox_defaults_without_explicit_cp_evidence
+    measured_artifact: reports/csv/runtime_operating_mode.csv
+    measured_field: CyclicPrefix
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
   - parameter_id: frequency.n_size_grid
     browser_path: frequency.n_size_grid
     scenario_path: frequency.n_size_grid
@@ -421,69 +425,47 @@ parameters:
   - parameter_id: random_access.msg1_fdm
     browser_path: random_access.msg1_fdm
     scenario_path: random_access.msg1_fdm
-    internal_cfg_path: ""
+    internal_cfg_path: prach_lls.Msg1FDM
     value_type: integer
-    default_source: none
-    browser_visible: false
-    browser_editable: false
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
     ui_layer: PHY_L1
     ui_section: Random_Access_PRACH
     feature_family: Random_Access_PRACH
     applies_when:
       features: [Random_Access_PRACH]
-    aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
-    evidence_artifact: ""
-    evidence_field: ""
-    evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
-  - parameter_id: random_access.msg1_frequency_start
-    browser_path: random_access.msg1_frequency_start
-    scenario_path: random_access.msg1_frequency_start
-    internal_cfg_path: ""
-    value_type: integer
-    default_source: none
-    browser_visible: false
-    browser_editable: false
-    ui_layer: PHY_L1
-    ui_section: Random_Access_PRACH
-    feature_family: Random_Access_PRACH
-    applies_when:
-      features: [Random_Access_PRACH]
-    aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
-    evidence_artifact: ""
-    evidence_field: ""
-    evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+    aliases: [phy.prach.msg1FDM]
+    matlab_consumer_functions: [sixgr.rach.PRACHConfig, sixgr.rach.mapPRACHToOccasion]
+    runtime_object_path: prachCfg.Msg1FDM
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
   - parameter_id: random_access.response_window_slots
     browser_path: random_access.response_window_slots
-    scenario_path: random_access.response_window_slots
-    internal_cfg_path: ""
+    scenario_path: random_access.ra_response_window_slots
+    internal_cfg_path: random_access.ra_response_window_slots
     value_type: integer
-    default_source: none
-    browser_visible: false
-    browser_editable: false
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
     ui_layer: PHY_L1
     ui_section: Random_Access_PRACH
     feature_family: Random_Access_PRACH
     applies_when:
       features: [Random_Access_PRACH]
     aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
-    evidence_artifact: ""
-    evidence_field: ""
-    evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+    matlab_consumer_functions: [sixgr.mac.ra.RAConfig, sixgr.phy.ia.RAEventScheduler]
+    runtime_object_path: raCfg.RAResponseWindowSlots
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
   - parameter_id: random_access.preamble_transmit_power_dbm
     browser_path: random_access.preamble_transmit_power_dbm
     scenario_path: random_access.preamble_transmit_power_dbm
@@ -503,31 +485,33 @@ parameters:
     evidence_artifact: ""
     evidence_field: ""
     evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+    measured_artifact: control/csv/msg1_prach_detection.csv
+    measured_field: PreambleTxPower_dBm
+    classification: hidden_internal
+    support_status: runtime_derived_measurement
+    unavailable_reason: runtime_derived_from_target_power_pathloss_ramping_and_pcmax
   - parameter_id: random_access.power_ramping_step_db
     browser_path: random_access.power_ramping_step_db
     scenario_path: random_access.power_ramping_step_db
-    internal_cfg_path: ""
+    internal_cfg_path: random_access.power_ramping_step_db
     value_type: number
-    default_source: none
-    browser_visible: false
-    browser_editable: false
+    default_source: scenario_catalog
+    browser_visible: true
+    browser_editable: true
     ui_layer: PHY_L1
     ui_section: Random_Access_PRACH
     feature_family: Random_Access_PRACH
     applies_when:
       features: [Random_Access_PRACH]
     aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
-    evidence_artifact: ""
-    evidence_field: ""
-    evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+    matlab_consumer_functions: [sixgr.mac.ra.RAConfig, sixgr.phy.ra.runFourStepRAMultiAttempt]
+    runtime_object_path: raCfg.PowerRampingStep_dB
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: browser_editable
+    support_status: runtime_consumer_registered
+    unavailable_reason: ""
   - parameter_id: random_access.ra_rnti_policy
     browser_path: random_access.ra_rnti_policy
     scenario_path: random_access.ra_rnti_policy
@@ -542,14 +526,14 @@ parameters:
     applies_when:
       features: [Random_Access_PRACH]
     aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
-    evidence_artifact: ""
-    evidence_field: ""
-    evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+    matlab_consumer_functions: [sixgr.phy.ra.computeRARNTI, sixgr.mac.ra.RAConfig]
+    runtime_object_path: raCfg.RARNTI
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: hidden_internal
+    support_status: standards_derived_runtime_policy
+    unavailable_reason: ""
   - parameter_id: random_access.prach_occasion_policy
     browser_path: random_access.prach_occasion_policy
     scenario_path: random_access.prach_occasion_policy
@@ -564,11 +548,11 @@ parameters:
     applies_when:
       features: [Random_Access_PRACH]
     aliases: []
-    matlab_consumer_functions: []
-    runtime_object_path: ""
-    evidence_artifact: ""
-    evidence_field: ""
-    evidence_role: ""
-    classification: unsupported_backend
-    support_status: dead_parameter
-    unavailable_reason: not_declared_in_active_scenario_schema_or_runtime_backend
+    matlab_consumer_functions: [sixgr.phy.frame.PRACHOccasionResolver, sixgr.mac.ra.RAConfig]
+    runtime_object_path: raCfg.PRACHOccasionResolution
+    evidence_artifact: reports/csv/runtime_config_application_evidence.csv
+    evidence_field: AppliedValue
+    evidence_role: runtime_applied
+    classification: hidden_internal
+    support_status: standards_derived_runtime_policy
+    unavailable_reason: ""

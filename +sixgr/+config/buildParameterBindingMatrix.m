@@ -271,16 +271,17 @@ function rows = localLoadContractRows()
 catalogPath = fullfile(localRepoRoot(), "simulator", "configs", "schema", "scenario_parameter_matrix_catalog.yaml");
 raw = sixgr.lls6g.config.readConfigFile(catalogPath);
 params = sixgr.util.structGet(raw, "parameters", struct([]));
-if iscell(params)
-    params = vertcat(params{:});
-end
 if isempty(params)
     rows = repmat(localEmptyContractRow(), 0, 1);
     return;
 end
 rows = repmat(localEmptyContractRow(), numel(params), 1);
 for i = 1:numel(params)
-    p = params(i);
+    if iscell(params)
+        p = params{i};
+    else
+        p = params(i);
+    end
     rows(i).ParameterId = char(string(sixgr.util.structGet(p, "parameter_id", "")));
     rows(i).BrowserPath = string(sixgr.util.structGet(p, "browser_path", ""));
     rows(i).ScenarioPath = string(sixgr.util.structGet(p, "scenario_path", ""));
@@ -843,7 +844,9 @@ elseif contains(pid, "traffic")
 elseif contains(pid, "scheduler")
     field = "ConfiguredSchedulerType";
 elseif contains(pid, "bandwidth")
-    field = "ConfiguredBandwidthHz";
+    field = "ConfiguredBandwidth_Hz";
+elseif contains(pid, "cp_type") || contains(pid, "cyclic_prefix")
+    field = "CyclicPrefix";
 else
     field = "ConfiguredGridNumRBs";
 end
