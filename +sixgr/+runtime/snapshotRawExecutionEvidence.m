@@ -105,8 +105,7 @@ for variableIndex = 1:numel(names)
     if iscell(value)
         cellValues = true;
         encodeRows = any(cellfun(@localRequiresArrayToken, value(:)));
-    elseif (isnumeric(value) || islogical(value) || isstring(value) || ischar(value)) && ...
-            (ndims(value) > 2 || size(value, 2) > 1)
+    elseif ndims(value) > 2 || size(value, 2) > 1
         encodeRows = true;
     end
     if ~encodeRows
