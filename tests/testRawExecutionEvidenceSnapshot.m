@@ -14,6 +14,7 @@ dl = table(["dl-1";"dl-2"], [1;2], [1;1], [1;2], ...
     'SourceClassification','FallbackFlag'});
 dl.PerLayerMetric = [1 2; 3 4];
 dl.VariableLengthMetric = {1:3; 4:7};
+dl.PaddedCharVector = ['abc'; 'def'];
 anchor = dl(1, :);
 anchor.TrialID = "anchor-1";
 anchor.EvidenceScope = "component_anchor";
@@ -33,11 +34,14 @@ assert(indexT.ColumnCount == width(rawT) && ...
     indexT.LogicalColumnCount == width(rawT), ...
     "Raw evidence CSV must keep exactly one physical column per logical variable.");
 assert(contains(indexT.EncodedColumns, "PerLayerMetric") && ...
-    contains(indexT.EncodedColumns, "VariableLengthMetric"));
+    contains(indexT.EncodedColumns, "VariableLengthMetric") && ...
+    contains(indexT.EncodedColumns, "PaddedCharVector"));
 assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(rawT.PerLayerMetric(1)), [1 2]));
 assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(rawT.PerLayerMetric(2)), [3 4]));
 assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(rawT.VariableLengthMetric(1)), 1:3));
 assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(rawT.VariableLengthMetric(2)), 4:7));
+assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(rawT.PaddedCharVector(1)), 'abc'));
+assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(rawT.PaddedCharVector(2)), 'def'));
 
 codecVectors = { ...
     complex(single([1 NaN; Inf -2]), single([3 -4; 5 NaN])), ...
