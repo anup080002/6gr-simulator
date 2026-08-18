@@ -37,15 +37,20 @@ for i = 1:numel(vectors)
         "TransportBlockBits", tbBits, ...
         "RV", v.RV);
     exp = localDirectToolboxPUSCH(tx.Carrier, tx.PUSCH, tbBits, ...
-        v.TargetCodeRate, v.RV, tx.ResourceAccounting.CodedBitCountG, size(tx.Grid, 3));
+        v.TargetCodeRate, v.RV, tx.ResourceAccounting.CodedBitCountG, ...
+        size(tx.Grid, 3), phyGrant);
 
     assert(logical(tx.TxContext.GrantDriven), "TxContext must declare frozen-grant mode.");
     assert(strcmp(tx.TransportBlockSizeSource, "frozen_phygrant_transport_block_size"), ...
         "PUSCH_Tx must use the frozen grant TBS when present.");
+    assert(isequal(tx.PUSCHNativeIndices, exp.NativePUSCHIndices), ...
+        "Frozen-grant native PUSCH data indices changed for vector %d.", i);
+    assert(isequal(tx.DMRSNativeIndices, exp.NativeDMRSIndices), ...
+        "Frozen-grant native PUSCH DMRS indices changed for vector %d.", i);
     assert(isequal(tx.PUSCHIndices, exp.PUSCHIndices), ...
-        "Frozen-grant PUSCH data indices changed for vector %d.", i);
+        "Frozen-grant executed logical-port PUSCH indices changed for vector %d.", i);
     assert(isequal(tx.DMRSIndices, exp.DMRSIndices), ...
-        "Frozen-grant PUSCH DMRS indices changed for vector %d.", i);
+        "Frozen-grant executed logical-port PUSCH DMRS indices changed for vector %d.", i);
     assert(isequal(int8(tx.Codeword(:)), int8(exp.Codeword(:))), ...
         "Frozen-grant PUSCH codeword bits changed for vector %d.", i);
 
@@ -182,6 +187,13 @@ cfg.phy.pusch.ptrs.timeDensity = 2;
 cfg.phy.pusch.ptrs.frequencyDensity = 2;
 cfg.phy.pusch.ptrs.reOffset = "00";
 cfg.phy.pusch.ptrs.portSet = v.PTRSPortSet;
+if logical(v.TransformPrecoding) && logical(v.EnablePTRS)
+    % DFT-s-OFDM PT-RS has a different 38.211 parameterization from
+    % CP-OFDM PT-RS.  Keep the grant vector complete instead of silently
+    % borrowing frequency-density/RE-offset controls from the CP-OFDM path.
+    cfg.phy.pusch.ptrs.numPTRSSamples = 2;
+    cfg.phy.pusch.ptrs.numPTRSGroups = 2;
+end
 if isfinite(v.TPMI)
     cfg.phy.pusch.TPMI = v.TPMI;
     cfg.phy.pusch.PMI = v.TPMI;
@@ -247,9 +259,12 @@ grant.HARQ = struct("HarqID", 0, "NDI", true, "RV", v.RV, "IsRetransmission", fa
 phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, "UL", grant, "Frame", 0, "Slot", 0);
 end
 
-function exp = localDirectToolboxPUSCH(carrier, pusch, tbBits, targetCodeRate, rv, G, nPages)
+function exp = localDirectToolboxPUSCH(carrier, pusch, tbBits, targetCodeRate, rv, G, nPages, phyGrant)
 if nargin < 7
     nPages = [];
+end
+if nargin < 8
+    phyGrant = struct();
 end
 schInfo = nrULSCHInfo(numel(tbBits), targetCodeRate);
 bgn = double(schInfo.BGN);
@@ -261,6 +276,8 @@ codeword = nrRateMatchLDPC(codedCB, double(G), rv, pusch.Modulation, pusch.NumLa
 
 [puschInd, ~] = nrPUSCHIndices(carrier, pusch, "IndexStyle", "index");
 [portSym, ptrsSym] = nrPUSCH(carrier, pusch, int8(codeword(:)));
+nativePUSCHInd = puschInd;
+nativePortSym = portSym;
 dftInputSym = localScrambledLayerSymbols(pusch, int8(codeword(:)));
 if logical(pusch.TransformPrecoding)
     if strcmpi(char(string(pusch.TransmissionScheme)), "codebook")
@@ -274,11 +291,17 @@ end
 
 dmrsInd = nrPUSCHDMRSIndices(carrier, pusch, "IndexStyle", "index");
 dmrsSym = nrPUSCHDMRS(carrier, pusch);
+nativeDMRSInd = dmrsInd;
+nativeDMRSSym = dmrsSym;
 ptrsInd = zeros(0, size(portSym, 2));
 if ~isempty(ptrsSym)
     ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
         carrier, pusch, "IndexBase", "1based");
 end
+[portSym, puschInd] = localApplyFrozenLogicalProjection( ...
+    carrier, portSym, puschInd, phyGrant);
+[dmrsSym, dmrsInd] = localApplyFrozenLogicalProjection( ...
+    carrier, dmrsSym, dmrsInd, phyGrant);
 if isempty(nPages)
     nPages = max([size(puschInd, 2), size(dmrsInd, 2), size(ptrsInd, 2), 1]);
 end
@@ -294,8 +317,47 @@ exp.LayerSymbols = layerSym;
 exp.PortSymbols = portSym;
 exp.PUSCHIndices = puschInd;
 exp.DMRSIndices = dmrsInd;
+exp.NativePortSymbols = nativePortSym;
+exp.NativePUSCHIndices = nativePUSCHInd;
+exp.NativeDMRSSymbols = nativeDMRSSym;
+exp.NativeDMRSIndices = nativeDMRSInd;
 exp.PTRSIndices = ptrsInd;
 exp.Grid = grid;
+end
+
+function [logicalSym, logicalInd] = localApplyFrozenLogicalProjection( ...
+        carrier, nativeSym, nativeInd, phyGrant)
+logicalSym = nativeSym;
+logicalInd = nativeInd;
+if isempty(nativeSym) || isempty(nativeInd) || ...
+        ~(isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)))
+    return;
+end
+prec = sixgr.util.structGet(phyGrant, "PrecodingState", struct());
+if logical(sixgr.util.structGet(prec, "NativeCodebookApplied", false))
+    return;
+end
+W = double(sixgr.util.structGet(prec, "MatrixLogicalPorts", []));
+% The immutable frozen matrix is the authority.  During replay it is
+% projected into cfg and resolvePUSCHPrecoding correctly classifies it as
+% explicit even when the original scheduler metadata did not need to set a
+% redundant ExplicitBeamWeightsApplied flag.
+if isempty(W)
+    return;
+end
+assert(~isempty(W) && size(W, 2) == size(nativeSym, 2), ...
+    "Frozen non-codebook logical-port matrix is incompatible with native PUSCH tensors.");
+logicalSym = nativeSym * W.';
+probeGrid = nrResourceGrid(carrier, size(W, 1));
+planeSize = size(probeGrid, 1) * size(probeGrid, 2);
+if isvector(nativeInd)
+    baseInd = mod(double(nativeInd(:)) - 1, planeSize) + 1;
+else
+    baseInd = mod(double(nativeInd(:, 1)) - 1, planeSize) + 1;
+end
+assert(size(logicalSym, 1) == numel(baseInd), ...
+    "Frozen logical-port projection changed the PUSCH RE-row count.");
+logicalInd = baseInd + (0:size(W, 1)-1) * planeSize;
 end
 
 function dftInputSym = localScrambledLayerSymbols(pusch, codeword)

@@ -258,6 +258,13 @@ end
     carrier, pusch, localUnwrapSingleCell(codewords));
 [puschLayerSym, dftInputSym, puschDomainInfo] = localResolvePUSCHSymbolDomains( ...
     carrier, pusch, localUnwrapSingleCell(codewords), puschSym, prec);
+% Preserve the native nrPUSCH domain independently from the executed
+% logical-port domain.  Non-codebook grants may carry an authoritative
+% rectangular layer-to-port matrix (for example, three layers on four
+% logical antenna ports); overwriting the native tensors makes an exact
+% Toolbox comparison and an audit of the subsequent projection impossible.
+puschNativeSym = puschSym;
+puschNativeInd = puschInd;
 if nCodewords == 1
     localAssertPUSCHSymbolContract(codeword, dftInputSym, puschLayerSym, ...
         puschSym, puschInd, resourceAccounting, pusch, codingLayout, uciInfo);
@@ -278,6 +285,8 @@ puschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschInd, "p
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
 [dmrsSym, dmrsPowerInfo] = localApplyPUSCHDMRSEPREDifference(dmrsSym, cfg);
+dmrsNativeSym = dmrsSym;
+dmrsNativeInd = dmrsInd;
 dmrsInfo.DataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
 dmrsInfo.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
 dmrsInfo.ConfiguredDMRSPowerBoost_dB = double(dmrsPowerInfo.ConfiguredDMRSPowerBoost_dB);
@@ -297,6 +306,8 @@ if ~isempty(ptrsSym)
     ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
         carrier, pusch, "IndexBase", "1based");
 end
+ptrsNativeSym = ptrsSym;
+ptrsNativeInd = ptrsInd;
 [ptrsSym, ptrsInd, ptrsLogicalPrecodeInfo] = ...
     localApplyResolvedPTRSPortPrecode( ...
     carrier, ptrsSym, ptrsInd, prec, pusch, phyGrant);
@@ -453,12 +464,18 @@ if ~logical(opt.CompactOutput)
     tx.PUSCHInfo = puschInfo;
     tx.PUSCHSymbols = puschLayerSym;
     tx.DFTInputSymbols = dftInputSym;
+    tx.PUSCHNativeIndices = puschNativeInd;
+    tx.PUSCHNativeSymbols = puschNativeSym;
     tx.DMRSIndices = dmrsInd;
     tx.DMRSSymbols = dmrsSym;
+    tx.DMRSNativeIndices = dmrsNativeInd;
+    tx.DMRSNativeSymbols = dmrsNativeSym;
     tx.DMRSWaveformIndices = dmrsWaveformInd;
     tx.DMRSWaveformSymbols = dmrsWaveformSym;
     tx.PTRSIndices = ptrsInd;
     tx.PTRSSymbols = ptrsSym;
+    tx.PTRSNativeIndices = ptrsNativeInd;
+    tx.PTRSNativeSymbols = ptrsNativeSym;
     tx.PTRSRawWaveformIndices = ptrsWaveformInd;
     tx.PTRSRawWaveformSymbols = ptrsWaveformSym;
     tx.PTRSWaveformIndices = ptrsGridInd;

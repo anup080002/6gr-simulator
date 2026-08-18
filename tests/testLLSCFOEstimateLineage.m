@@ -9,6 +9,16 @@ c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "simulator", "configs", "scenarios", "lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml"));
+% Mutate the parsed scenario before runtime authority is installed.  This
+% keeps the test YAML-authoritative while selecting the intentional
+% no-estimator/no-correction CFO case and excluding unrelated CSI-RS.
+sdata = scfg.toStruct();
+sdata.impairments.cfo_correction_enable = false;
+sdata.impairments.cfo_estimation_method = "none";
+sdata.reference_signals.csi_rs_enabled = false;
+scfg = sixgr.lls6g.config.ScenarioConfig(sdata, ...
+    "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
+    "ConfigHash", "cfo_lineage_no_estimator_authority", "Kind", scfg.Kind);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
 cfg.run.numFrames = 1;
 cfg.channel.snr_dB = 10;
@@ -39,47 +49,74 @@ state.CurrentUESpeed_kmh = 30;
 state.CurrentDopplerHz = 40;
 [cfgDL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "DL");
 [cfgUL, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, 1, "UL");
+cfgDL = localSingleStreamCalibrationConfig(cfgDL, "DL");
+cfgUL = localSingleStreamCalibrationConfig(cfgUL, "UL");
 cfgDL.phy.impairments.cfoEstimationMethod = "none";
 cfgDL.phy.impairments.cfoCorrectionEnabled = false;
 cfgDL.phy.rx.cfoCorrectionEnabled = false;
+cfgDL.phy.pdsch.executionProfile = "phy_calibration";
+cfgDL.run.pdschExecutionProfile = "phy_calibration";
 cfgDL.phy.pdsch.dmrs.DMRSTypeAPosition = 3;
 cfgDL.phy.pdsch.dmrs.typeAPosition = 3;
 cfgUL.phy.impairments.cfoEstimationMethod = "none";
 cfgUL.phy.impairments.cfoCorrectionEnabled = false;
 cfgUL.phy.rx.cfoCorrectionEnabled = false;
+cfgUL.phy.pusch.executionProfile = "phy_calibration";
+cfgUL.run.puschExecutionProfile = "phy_calibration";
 cfgUL.phy.pusch.dmrs.DMRSTypeAPosition = 3;
 cfgUL.phy.pusch.dmrs.typeAPosition = 3;
-
-grant = struct( ...
-    "UEIndex", 1, ...
-    "RNTI", 320, ...
-    "ServingCell", 1, ...
-    "CQIUsed", 7, ...
-    "RIUsed", 1, ...
-    "PMI", 0, ...
-    "CRI", 0, ...
-    "MCSTable", "qam64_table1", ...
-    "CQITable", "table1", ...
-    "AMCMode", "cqi_driven", ...
-    "GrantReason", "cfo_lineage_unit_test", ...
-    "Frame", 1, ...
-    "Slot", 1, ...
-    "HARQ", struct());
 
 dl = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
     "NumFrames", 1, ...
     "SNR_dB", 10, ...
-    "GrantSnapshot", grant, ...
+    "ExecutionProfile", "phy_calibration", ...
     "InterferenceBundle", struct([]));
 ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
     "NumFrames", 1, ...
     "SNR_dB", 10, ...
-    "GrantSnapshot", grant, ...
+    "ExecutionProfile", "phy_calibration", ...
     "InterferenceBundle", struct([]));
 
 localAssertCFOLineage(dl.TrialTable, "DL");
 localAssertCFOLineage(ul.TrialTable, "UL");
 ok = true;
+end
+
+function cfg = localSingleStreamCalibrationConfig(cfg, direction)
+% CFO lineage does not require the parent 64-element scheduler/beam state.
+% Use an explicit one-layer/one-port waveform calibration contract so that
+% this test measures CFO fields without silently inheriting a rectangular
+% system-level precoder that belongs to scheduler_truth execution.
+cfg.phy.nTxAnt = 1;
+cfg.phy.nRxAnt = 1;
+cfg.channel.nTxAnt = 1;
+cfg.channel.nRxAnt = 1;
+cfg.phy.csirs.enable = false;
+cfg.phy.csi.enable = false;
+if isfield(cfg, "runtime") && isfield(cfg.runtime, "features") && ...
+        isfield(cfg.runtime.features, "csi_rs")
+    cfg.runtime.features.csi_rs.Enabled = false;
+end
+if upper(string(direction)) == "DL"
+    cfg.phy.pdsch.nLayers = 1;
+    cfg.phy.pdsch.numLayers = 1;
+    cfg.phy.pdsch.nPorts = 1;
+    cfg.phy.pdsch.numPorts = 1;
+    cfg.phy.pdsch.precoding.matrix = 1;
+    cfg.phy.pdsch.precoding.normalizationConvention = "semi_unitary";
+    cfg.phy.pdsch.precodingMatrix = 1;
+    cfg.phy.pdsch.W = 1;
+else
+    cfg.phy.pusch.nLayers = 1;
+    cfg.phy.pusch.numLayers = 1;
+    cfg.phy.pusch.nPorts = 1;
+    cfg.phy.pusch.numPorts = 1;
+    cfg.phy.pusch.NumAntennaPorts = 1;
+    cfg.phy.pusch.precoding.matrix = 1;
+    cfg.phy.pusch.precoding.normalizationConvention = "semi_unitary";
+    cfg.phy.pusch.precodingMatrix = 1;
+    cfg.phy.pusch.W = 1;
+end
 end
 
 function localAssertCFOLineage(T, direction)
