@@ -474,6 +474,7 @@ g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 1;
 g.CQIUsed = 1;
 g.PDCCHAggregationLevel = NaN;
+g.PDCCHCandidateIndex = 0;
 g.DAI = 1;
 g.K0 = NaN;
 g.K1 = NaN;

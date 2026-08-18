@@ -18,7 +18,8 @@
     "ul_center_frequency_hz": 3900000000
   },
   "mimo": {
-    "reciprocity_mode": "FDD"
+    "reciprocity_mode": "FDD",
+    "ul_mu_mimo_receive_processing_mode": "full_dimensional_per_re_irc"
   },
   "output": {
     "profile": "lls_mimo4x4_multiuser_beamformed_awgn_validation"

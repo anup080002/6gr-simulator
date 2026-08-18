@@ -189,6 +189,7 @@ random_access:
   sequence_index: 1
   zero_correlation_zone: 8
   restricted_set: UnrestrictedSet
+  msg1_fdm: 1
   frequency_start: 0
   preamble_count: 64
   preamble_index: 7
@@ -225,7 +226,7 @@ random_access:
   snr_sweep_db: [30]
   occasion:
     frame: 0
-    slot: 0
+    slot: 2
     symbol: 0
     frequency_index: 0
   ra_response_window_slots: 8
@@ -233,6 +234,8 @@ random_access:
   preamble_trans_max: 10
   power_ramping_step_db: 2
   preamble_received_target_power_dbm: -100
+  ra_rnti_policy: ts_38_321_ra_rnti_formula
+  prach_occasion_policy: ts_38_211_configuration_index_resolution
   temp_crnti: 4660
   final_crnti: 4660
   timing:

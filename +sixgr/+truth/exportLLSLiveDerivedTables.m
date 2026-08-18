@@ -1147,7 +1147,29 @@ if ~(istable(T) && ~isempty(T) && ismember(string(name), string(T.Properties.Var
     return;
 end
 col = T.(name);
-if isstring(col)
+if iscell(col)
+    raw = col{end};
+    while iscell(raw) && isscalar(raw)
+        raw = raw{1};
+    end
+    if isempty(raw)
+        return;
+    elseif ischar(raw) || isstring(raw) || iscategorical(raw)
+        textValue = string(raw);
+        if isempty(textValue) || all(ismissing(textValue))
+            return;
+        end
+        value = textValue(end);
+    elseif islogical(raw) && isscalar(raw)
+        value = logical(raw);
+    elseif isnumeric(raw) && isscalar(raw)
+        value = double(raw);
+    else
+        error("sixgr:truth:PersistedCSVScalarTypeMismatch", ...
+            "Column %s contains a non-scalar persisted value of class %s.", ...
+            string(name), class(raw));
+    end
+elseif isstring(col) || iscategorical(col) || ischar(col)
     value = string(col(end));
 elseif islogical(col)
     value = logical(col(end));

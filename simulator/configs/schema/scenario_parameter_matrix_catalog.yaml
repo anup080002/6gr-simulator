@@ -444,8 +444,8 @@ parameters:
     classification: browser_editable
     support_status: runtime_consumer_registered
     unavailable_reason: ""
-  - parameter_id: random_access.response_window_slots
-    browser_path: random_access.response_window_slots
+  - parameter_id: random_access.ra_response_window_slots
+    browser_path: random_access.ra_response_window_slots
     scenario_path: random_access.ra_response_window_slots
     internal_cfg_path: random_access.ra_response_window_slots
     value_type: integer
@@ -515,11 +515,11 @@ parameters:
   - parameter_id: random_access.ra_rnti_policy
     browser_path: random_access.ra_rnti_policy
     scenario_path: random_access.ra_rnti_policy
-    internal_cfg_path: ""
+    internal_cfg_path: random_access.ra_rnti_policy
     value_type: string
     default_source: none
-    browser_visible: false
-    browser_editable: false
+    browser_visible: true
+    browser_editable: true
     ui_layer: PHY_L1
     ui_section: Random_Access_PRACH
     feature_family: Random_Access_PRACH
@@ -527,21 +527,21 @@ parameters:
       features: [Random_Access_PRACH]
     aliases: []
     matlab_consumer_functions: [sixgr.phy.ra.computeRARNTI, sixgr.mac.ra.RAConfig]
-    runtime_object_path: raCfg.RARNTI
+    runtime_object_path: raCfg.RARNTIPolicy
     evidence_artifact: reports/csv/runtime_config_application_evidence.csv
     evidence_field: AppliedValue
     evidence_role: runtime_applied
-    classification: hidden_internal
-    support_status: standards_derived_runtime_policy
+    classification: browser_editable
+    support_status: runtime_consumer_registered
     unavailable_reason: ""
   - parameter_id: random_access.prach_occasion_policy
     browser_path: random_access.prach_occasion_policy
     scenario_path: random_access.prach_occasion_policy
-    internal_cfg_path: ""
+    internal_cfg_path: random_access.prach_occasion_policy
     value_type: string
     default_source: none
-    browser_visible: false
-    browser_editable: false
+    browser_visible: true
+    browser_editable: true
     ui_layer: PHY_L1
     ui_section: Random_Access_PRACH
     feature_family: Random_Access_PRACH
@@ -549,10 +549,10 @@ parameters:
       features: [Random_Access_PRACH]
     aliases: []
     matlab_consumer_functions: [sixgr.phy.frame.PRACHOccasionResolver, sixgr.mac.ra.RAConfig]
-    runtime_object_path: raCfg.PRACHOccasionResolution
+    runtime_object_path: raCfg.PRACHOccasionPolicy
     evidence_artifact: reports/csv/runtime_config_application_evidence.csv
     evidence_field: AppliedValue
     evidence_role: runtime_applied
-    classification: hidden_internal
-    support_status: standards_derived_runtime_policy
+    classification: browser_editable
+    support_status: runtime_consumer_registered
     unavailable_reason: ""

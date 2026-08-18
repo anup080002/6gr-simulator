@@ -60,7 +60,8 @@ rows = repmat(localRow(), 0, 1);
     "", "enum", "normal", "decoded");
 [ra, rows] = localApply(rows, ra, "configuration_index", double(rach.configurationIndex), ...
     "SIB1.rach-ConfigCommon.rach-ConfigGeneric.prach-ConfigurationIndex", "", "index", "mandatory", "decoded");
-[ra, rows] = localApply(rows, ra, "msg1_fdm", string(sixgr.util.structGet(rach, "msg1FDM", "one")), ...
+[ra, rows] = localApply(rows, ra, "msg1_fdm", localMsg1FDMValue( ...
+    sixgr.util.structGet(rach, "msg1FDM", "")), ...
     "SIB1.rach-ConfigCommon.rach-ConfigGeneric.msg1-FDM", "", "enum", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "root_sequence_index", double(rach.rootSequenceIndex), ...
     "SIB1.rach-ConfigCommon.rootSequenceIndex", "", "index", "mandatory", "decoded");
@@ -233,6 +234,29 @@ if isempty(tokens)
     value = NaN;
 else
     value = str2double(tokens{1});
+end
+end
+
+function value = localMsg1FDMValue(raw)
+if isnumeric(raw) && isscalar(raw) && isfinite(raw) && ...
+        any(double(raw) == [1 2 4 8])
+    value = double(raw);
+    return;
+end
+token = lower(strtrim(string(raw)));
+switch token
+    case {"one", "n1", "1"}
+        value = 1;
+    case {"two", "n2", "2"}
+        value = 2;
+    case {"four", "n4", "4"}
+        value = 4;
+    case {"eight", "n8", "8"}
+        value = 8;
+    otherwise
+        error("sixgr:mac:ra:UnsupportedDecodedMsg1FDM", ...
+            "Decoded SIB1 msg1-FDM must resolve to one of 1, 2, 4, or 8; got '%s'.", ...
+            char(token));
 end
 end
 

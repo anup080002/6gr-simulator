@@ -245,6 +245,7 @@ canonical_control:
       csi_report:
         report_config_id: csi-report-0
         epoch: 0
+        codebook_mode: 1
         report_quantity: cri-RI-PMI-CQI
         num_csi_resources: 8
         frequency_granularity: wideband
@@ -313,12 +314,14 @@ canonical_control:
     csi_rs_num_resources: 8
     csi_rs_resource_set_id: 0
     csi_rs_resource_ids: [0, 1, 2, 3, 4, 5, 6, 7]
-    # The eight NZP resources occupy disjoint REs in symbols 10 and 11.
-    # Each spans the complete 273-PRB BWP; the k offsets are explicit
-    # operator inputs and are never inferred from the resource ordinal.
-    csi_rs_resource_row_numbers: [3, 3, 3, 3, 3, 3, 3, 3]
-    csi_rs_resource_symbol_locations: [10, 10, 10, 10, 11, 11, 11, 11]
-    csi_rs_resource_subcarrier_locations: [0, 3, 6, 9, 0, 3, 6, 9]
+    # A four-port row-4 resource occupies four adjacent subcarriers per PRB.
+    # Therefore eight NZP resources require three symbols with disjoint
+    # k0={0,4,8} placements; k0={0,3,6,9} would overlap and k0=9 is invalid.
+    # Each resource spans the complete 273-PRB BWP. Placement remains an
+    # explicit operator input and is never inferred from resource ordinal.
+    csi_rs_resource_row_numbers: [4, 4, 4, 4, 4, 4, 4, 4]
+    csi_rs_resource_symbol_locations: [9, 9, 9, 10, 10, 10, 11, 11]
+    csi_rs_resource_subcarrier_locations: [0, 4, 8, 0, 4, 8, 0, 4]
     csi_rs_resource_rb_offsets: [0, 0, 0, 0, 0, 0, 0, 0]
     csi_rs_resource_num_rbs: [273, 273, 273, 273, 273, 273, 273, 273]
     csi_rs_precoder_codebook:

@@ -29,7 +29,8 @@ def main() -> None:
     assert raw["output"]["profile"] == "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot"
 
     assert dash.HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO == SCENARIO
-    assert dash.DEFAULT_SCENARIO == dash.WAVEFORM_TRUTH_DEFAULT_SCENARIO
+    assert dash.DEFAULT_SCENARIO == dash.SINR_SWEEP_MASTER_SCENARIO
+    assert dash.WAVEFORM_TRUTH_DEFAULT_SCENARIO != dash.HONEST_SYSTEM_LEVEL_DEFAULT_SCENARIO
     resolved, chain = dash.load_resolved_config_payload(SCENARIO)
     assert chain
     assert dash.path_get(resolved, "meta.scenario_id") == "lls_3gpp_rel20_anchor_4ghz_100mhz_system_level_honest_200ue_1000slot"

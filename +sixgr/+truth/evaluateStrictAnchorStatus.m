@@ -460,6 +460,7 @@ profile = lower(strtrim(string(localScenarioGet(scfg, cfg, ...
     "scenario.runner_profile", sixgr.util.structGet(cfg, "run.runnerProfile", "")))));
 componentOnlyProfiles = ["prach_detection","prach_strict_validation", ...
     "pdcch_blind_decode_sweep","pdcch_strict_validation", ...
+    "ctrl6gr_pdcch_study", ...
     "srs_strict_validation","trs_strict_validation", ...
     "channel_rf_strict_validation","random_access_four_step", ...
     "ai_benchmark"];
@@ -853,6 +854,15 @@ tokens = ["amc", "adaptive", "dynamic", "dynamic_link_adaptation", "cqi", "cqi_d
 end
 
 function tf = localStrictAnchorEligible(scfg, cfg, scenarioMode, meta)
+if localIsComponentOnlyProfile(scfg, cfg)
+    % A strict component validator proves its own waveform/runtime contract;
+    % it is not a complete fixed-link LLS publication anchor.  Requiring
+    % full DL/UL KPI, issue-registry, waterfall and FRC gates here both
+    % rejects valid component evidence and risks conflating component PASS
+    % with product publication qualification.
+    tf = false;
+    return;
+end
 honesty = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.honesty_mode", ""))));
 profile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
 text = lower(strjoin([meta.ScenarioName; meta.ScenarioID; meta.ScenarioClass; scenarioMode], " "));

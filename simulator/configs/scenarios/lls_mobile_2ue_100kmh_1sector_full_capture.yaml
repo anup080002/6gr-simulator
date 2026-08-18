@@ -938,13 +938,14 @@ random_access:
   sequence_index: 1
   logical_root_sequence_index: 1
   restricted_set: UnrestrictedSet
+  msg1_fdm: 1
   frequency_start: 0
   preamble_index: 0
   occasion:
     # TS 38.211 V18.8.0, FR1 unpaired configuration index 157 resolves
-    # format B4 in the slot-4 UL opportunity of this 30 kHz TDD pattern.
+    # format B4 at zero-based carrier slot 9 of the 30 kHz frame.
     frame: 0
-    slot: 4
+    slot: 9
     symbol: 0
     frequency_index: 0
   n_cell_id: 42
@@ -957,6 +958,8 @@ random_access:
   preamble_trans_max: 10
   power_ramping_step_db: 2
   preamble_received_target_power_dbm: -96
+  ra_rnti_policy: ts_38_321_ra_rnti_formula
+  prach_occasion_policy: ts_38_211_configuration_index_resolution
   temp_crnti: 4660
   final_crnti: 4660
   timing:

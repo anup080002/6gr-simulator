@@ -32,3 +32,20 @@ channel:
       orientationDeg: [0.0, 0.0, 0.0]
       element: isotropic
       polarizationModel: Model-2
+
+antenna:
+  # The strict descriptor must still match the two logical UL transmit
+  # ports even when physical pattern coupling is disabled for this
+  # receiver-trust regression.
+  gnb:
+    size: [1, 2, 1, 1]
+    polarizationAnglesDeg: [0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 2
+  ue:
+    size: [1, 2, 1, 1]
+    polarizationAnglesDeg: [0]
+    steeringAzElDeg:
+      - [0, 0]
+      - [0, 0]
+    numRFChains: 2

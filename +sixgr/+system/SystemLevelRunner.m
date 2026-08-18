@@ -220,6 +220,12 @@ classdef SystemLevelRunner
             beamEventCap = max(1024, round(K * (2 + ceil(nTTI / max(1, beamUpdatePeriodSlots)))));
             beamEventTrace = localInitBeamEventTrace(beamEventCap);
             beamEventCount = 0;
+            % A PUSCH grant is decoded on a DL control occasion and executed
+            % at the absolute slot selected by K2.  Retain that causal
+            % separation instead of scheduling a new UL grant inside the UL
+            % data slot (which makes K2 relative to the wrong occasion).
+            pendingULGrantsBySlot = cell(nTTI, 1);
+            pendingULGrantCellsBySlot = cell(nTTI, 1);
             prevServingBeamCell = NaN(K,1);
             prevServingBeamIdx = NaN(K,1);
             prevServingBeamGain_dB = NaN(K,1);
@@ -228,7 +234,17 @@ classdef SystemLevelRunner
             posXHist = NaN(nTTI, K);
             posYHist = NaN(nTTI, K);
             posZHist = NaN(nTTI, K);
+            speedHist = NaN(nTTI, K);
             headingHist = NaN(nTTI, K);
+            distance3DHist = NaN(nTTI, K);
+            basePathlossHist = NaN(nTTI, K);
+            shadowFadingHist = NaN(nTTI, K);
+            o2iHist = NaN(nTTI, K);
+            propagationDelayHist = NaN(nTTI, K);
+            radialVelocityHist = NaN(nTTI, K);
+            signedDopplerHist = NaN(nTTI, K);
+            appliedDopplerHist = NaN(nTTI, K);
+            losStateHist = false(nTTI, K);
 
             mobModel = [];
             sinrModel = localResolveSINRModel(cfg);
@@ -503,12 +519,21 @@ classdef SystemLevelRunner
                 linIdx = sub2ind(size(largeScaleState.d2d_m), (1:K).', servingIdx);
                 dServe = largeScaleState.d2d_m(linIdx);
                 dServeHist(t,:) = dServe(:).';
+                distance3DHist(t,:) = largeScaleState.d3d_m(linIdx).';
                 pl_dB = largeScaleState.Pathloss_dB(linIdx);
                 rxP_dBm = largeScaleState.RxPower_dBm(linIdx);
                 ulLinkPowerCells_dBm = localBuildULLinkPowerTable(cfg, largeScaleState);
                 rxPUL_dBm = ulLinkPowerCells_dBm(linIdx);
                 rsrpServing_dBm = largeScaleState.RSRP_dBm(linIdx);
                 pathlossHist(t,:) = pl_dB(:).';
+                basePathlossHist(t,:) = largeScaleState.BasePathloss_dB(linIdx).';
+                shadowFadingHist(t,:) = largeScaleState.Shadow_dB(linIdx).';
+                o2iHist(t,:) = largeScaleState.O2I_dB(linIdx).';
+                propagationDelayHist(t,:) = largeScaleState.PropagationDelay_s(linIdx).';
+                radialVelocityHist(t,:) = largeScaleState.RadialVelocity_mps(linIdx).';
+                signedDopplerHist(t,:) = largeScaleState.SignedDoppler_Hz(linIdx).';
+                appliedDopplerHist(t,:) = largeScaleState.Doppler_Hz(linIdx).';
+                losStateHist(t,:) = logical(largeScaleState.LOS(linIdx)).';
                 rxPowerHist(t,:) = rxP_dBm(:).';
                 desiredPowerHistDL(t,:) = rxP_dBm(:).';
                 desiredPowerHistUL(t,:) = rxPUL_dBm(:).';
@@ -523,6 +548,7 @@ classdef SystemLevelRunner
                     posXHist(t,:) = ue.pos_m(:,1).';
                     posYHist(t,:) = ue.pos_m(:,2).';
                     posZHist(t,:) = ue.pos_m(:,3).';
+                    speedHist(t,:) = ue.speed_kmh(:).';
                     headingHist(t,:) = ue.heading_deg(:).';
                 end
 
@@ -534,6 +560,8 @@ classdef SystemLevelRunner
                     localSlotBudgetSupportsExecutableDataGrants(cfg, "DL", dlBudget);
                 slotULDataSchedulable = slotUL && ...
                     localSlotBudgetSupportsExecutableDataGrants(cfg, "UL", ulBudget);
+                [ulControlSchedulable, ulSchedulingTargetTTI, ulSchedulingBudget] = ...
+                    localResolveULControlOpportunity(cfg, t, nTTI, nRB, slotDL);
 
                 [beamEventTrace, beamEventCount] = localAppendBeamEvents( ...
                     beamEventTrace, beamEventCount, t, tti_s, servingIdx, ...
@@ -552,15 +580,27 @@ classdef SystemLevelRunner
 
                 activeDL = find(queueBitsDL > 0 & ~interruptedMask);
                 activeUL = find(queueBitsUL > 0 & ~interruptedMask);
+                activeULForScheduling = activeUL;
                 if ~slotDLDataSchedulable
                     activeDL = zeros(0,1);
                 end
                 if ~slotULDataSchedulable
                     activeUL = zeros(0,1);
                 end
+                if ~ulControlSchedulable
+                    activeULForScheduling = zeros(0,1);
+                else
+                    pendingRNTI = localPendingULRNTI( ...
+                        pendingULGrantsBySlot, t, nTTI);
+                    if ~isempty(pendingRNTI)
+                        activeULForScheduling = setdiff( ...
+                            activeULForScheduling, pendingRNTI, "stable");
+                    end
+                end
                 activeMask = false(K,1);
                 activeMask(activeDL) = true;
                 activeMask(activeUL) = true;
+                activeMask(activeULForScheduling) = true;
                 activeUECount(t) = sum(activeMask);
                 if t == 1
                     localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
@@ -570,7 +610,8 @@ classdef SystemLevelRunner
                         "system_level_lls_slot1_active_ues_ready");
                 end
                 ueByCellDL = localSplitUEByServingCell(activeDL, servingIdx, nCells);
-                ueByCellUL = localSplitUEByServingCell(activeUL, servingIdx, nCells);
+                ueByCellUL = localSplitUEByServingCell( ...
+                    activeULForScheduling, servingIdx, nCells);
                 activeCellDL = cellfun("length", ueByCellDL);
                 activeCellUL = cellfun("length", ueByCellUL);
                 if t == 1
@@ -594,6 +635,29 @@ classdef SystemLevelRunner
                     schedSinrDL_dB = schedPowerState.SINR_DL_dB;
                     schedSinrUL_dB = schedPowerState.SINR_UL_dB;
                 end
+                if ulControlSchedulable
+                    ulControlCandidates = find( ...
+                        queueBitsUL > 0 & ~interruptedMask);
+                    if legacySINRMode
+                        [~, schedSinrUL_dB] = localBuildLegacySINRState( ...
+                            rxP_dBm, rxPUL_dBm, false, true, dlBudget, ...
+                            ulSchedulingBudget, scs_kHz, noiseFigDL_dB, ...
+                            noiseFigUL_dB, fastFading_dB(t,:).', ...
+                            interfVar_dB(t,:).', interfMargin_dB, ...
+                            ulSinrOffset_dB);
+                    else
+                        ulSchedulingPowerState = localBuildExplicitSINRState( ...
+                            rxP_dBm, rxPUL_dBm, ...
+                            largeScaleState.RxPower_dBm, ...
+                            ulLinkPowerCells_dBm, servingIdx, false, true, ...
+                            dlBudget, ulSchedulingBudget, scs_kHz, ...
+                            noiseFigDL_dB, noiseFigUL_dB, ...
+                            false(nCells, 1), ulControlCandidates, ...
+                            servingIdx(ulControlCandidates));
+                        schedSinrUL_dB = ...
+                            ulSchedulingPowerState.SINR_UL_dB;
+                    end
+                end
                 cqiDLVec = localResolveWidebandCQI(schedSinrDL_dB, cfg, "DL");
                 cqiULVec = localResolveWidebandCQI(schedSinrUL_dB, cfg, "UL");
                 if t == 1
@@ -605,9 +669,11 @@ classdef SystemLevelRunner
                 end
 
                 grantsDL = struct([]);
-                grantsUL = struct([]);
+                grantsUL = localPendingGrantSet( ...
+                    pendingULGrantsBySlot, t);
                 grantCellDL = zeros(0,1);
-                grantCellUL = zeros(0,1);
+                grantCellUL = localPendingGrantCellSet( ...
+                    pendingULGrantCellsBySlot, t);
                 grantCountDLByCell = zeros(nCells,1);
                 grantCountULByCell = zeros(nCells,1);
                 servedCellDL = zeros(nCells,1);
@@ -626,10 +692,11 @@ classdef SystemLevelRunner
                         ueStateDLAll(k).HeadOfLineDelay_ms = 0;
                     end
                 end
-                if ~isempty(activeUL)
-                    ulBufBytes = floor(max(queueBitsUL(activeUL), 0) / 8);
-                    for ii = 1:numel(activeUL)
-                        k = activeUL(ii);
+                if ~isempty(activeULForScheduling)
+                    ulBufBytes = floor(max( ...
+                        queueBitsUL(activeULForScheduling), 0) / 8);
+                    for ii = 1:numel(activeULForScheduling)
+                        k = activeULForScheduling(ii);
                         ueStateULAll(k).ULBufferBytes = ulBufBytes(ii);
                         ueStateULAll(k).CQI = cqiULVec(k);
                         ueStateULAll(k).HeadOfLineDelay_ms = 0;
@@ -694,7 +761,7 @@ classdef SystemLevelRunner
                     end
                 end
 
-                if slotULDataSchedulable
+                if ulControlSchedulable
                     activeCellsUL = find(activeCellUL > 0).';
                     grantSetsUL = cell(numel(activeCellsUL), 1);
                     grantCellsUL = cell(numel(activeCellsUL), 1);
@@ -715,7 +782,8 @@ classdef SystemLevelRunner
                         ueStateUL = ueStateULAll(ueCell);
                         schedCellTimer = tic;
                         try
-                            [gCell, ~] = schedULCells{cellId}.schedule(t-1, ueStateUL, ulBudget);
+                            [gCell, ~] = schedULCells{cellId}.schedule( ...
+                                t-1, ueStateUL, ulSchedulingBudget);
                         catch MEs
                             gCell = struct([]);
                             schedulingError = "UL scheduling failed at slot " + string(t) + ...
@@ -740,8 +808,17 @@ classdef SystemLevelRunner
                         end
                     end
                     if nGrantSetsUL > 0
-                        grantsUL = localVertcatGrantSets(grantSetsUL, nGrantSetsUL);
-                        grantCellUL = vertcat(grantCellsUL{1:nGrantSetsUL});
+                        scheduledUL = localVertcatGrantSets( ...
+                            grantSetsUL, nGrantSetsUL);
+                        scheduledULCells = vertcat( ...
+                            grantCellsUL{1:nGrantSetsUL});
+                        [grantsUL, grantCellUL, pendingULGrantsBySlot, ...
+                            pendingULGrantCellsBySlot] = ...
+                            localQueueScheduledULGrants( ...
+                            scheduledUL, scheduledULCells, grantsUL, ...
+                            grantCellUL, pendingULGrantsBySlot, ...
+                            pendingULGrantCellsBySlot, t, nTTI, ...
+                            ulSchedulingTargetTTI);
                     end
                     if t == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
@@ -1453,7 +1530,17 @@ classdef SystemLevelRunner
                 out.Details.UEPosX_m = posXHist;
                 out.Details.UEPosY_m = posYHist;
                 out.Details.UEPosZ_m = posZHist;
+                out.Details.UESpeed_kmh = speedHist;
                 out.Details.UEHeading_deg = headingHist;
+                out.Details.ServingDistance3D_m = distance3DHist;
+                out.Details.ServingBasePathloss_dB = basePathlossHist;
+                out.Details.ServingShadowFading_dB = shadowFadingHist;
+                out.Details.ServingO2I_dB = o2iHist;
+                out.Details.ServingPropagationDelay_s = propagationDelayHist;
+                out.Details.ServingRadialVelocity_mps = radialVelocityHist;
+                out.Details.ServingSignedDoppler_Hz = signedDopplerHist;
+                out.Details.ServingAppliedDopplerHz = appliedDopplerHist;
+                out.Details.ServingLOS = losStateHist;
             end
 
             ueSummary = localBuildUESummary( ...
@@ -1687,6 +1774,151 @@ partition = sixgr.util.resolveTDDSlotPartition(cfg, t - 1);
 allowDL = logical(partition.AllowDL);
 allowUL = logical(partition.AllowUL);
 slotLabel = string(partition.SlotLabel);
+end
+
+function [schedulable, targetTTI, budget] = ...
+        localResolveULControlOpportunity(cfg, controlTTI, nTTI, nRB, slotDL)
+% Resolve a real DL control occasion and its next executable PUSCH slot.
+schedulable = false;
+targetTTI = NaN;
+budget = struct();
+if ~logical(slotDL)
+    return;
+end
+
+dlControlBudget = localSlotBudget(cfg, controlTTI, nRB, "DL");
+controlSymbols = double(sixgr.util.structGet( ...
+    dlControlBudget, "ControlSymbolAllocation", [0 0]));
+if numel(controlSymbols) ~= 2 || any(~isfinite(controlSymbols)) || ...
+        round(controlSymbols(2)) <= 0
+    return;
+end
+
+for candidateTTI = controlTTI:nTTI
+    [~, allowUL, ~] = localSlotDuplexState(cfg, candidateTTI);
+    candidateBudget = localSlotBudget(cfg, candidateTTI, nRB, "UL");
+    if allowUL && localSlotBudgetSupportsExecutableDataGrants( ...
+            cfg, "UL", candidateBudget)
+        candidateBudget.ControlAbsoluteSlot = double(controlTTI - 1);
+        candidateBudget.ControlSymbolAllocation = ...
+            reshape(controlSymbols, 1, 2);
+        % The runner and scheduler must use one K2 authority.  Do not infer
+        % the target from the first UL-capable slot: the attached YAML
+        % timing catalog may select a later allowed K2 even in FDD.  Probe
+        % the canonical engine with this candidate slot's exact data-symbol
+        % budget and accept the candidate only when that engine selects it.
+        timingProbe = struct( ...
+            "Direction", "UL", ...
+            "ControlAbsoluteSlot", double(controlTTI - 1), ...
+            "ControlSymbolAllocation", reshape(controlSymbols, 1, 2), ...
+            "SymbolAllocation", reshape(double( ...
+                candidateBudget.SymbolAllocation), 1, 2));
+        timing = sixgr.phy.frame.TimingRelationEngine. ...
+            resolveProductionGrant(cfg, timingProbe);
+        if logical(timing.Valid) && ...
+                double(timing.DataAbsoluteSlot) + 1 == double(candidateTTI)
+            schedulable = true;
+            targetTTI = double(candidateTTI);
+            budget = candidateBudget;
+            return;
+        end
+    end
+end
+end
+
+function grants = localPendingGrantSet(pendingBySlot, tti)
+grants = struct([]);
+if tti >= 1 && tti <= numel(pendingBySlot) && ...
+        isstruct(pendingBySlot{tti})
+    grants = pendingBySlot{tti};
+end
+end
+
+function cells = localPendingGrantCellSet(pendingBySlot, tti)
+cells = zeros(0, 1);
+if tti >= 1 && tti <= numel(pendingBySlot) && ...
+        isnumeric(pendingBySlot{tti})
+    cells = double(pendingBySlot{tti}(:));
+end
+end
+
+function rnti = localPendingULRNTI(pendingBySlot, firstTTI, nTTI)
+rnti = zeros(0, 1);
+lastTTI = min(double(nTTI), numel(pendingBySlot));
+for tti = max(1, round(double(firstTTI))):lastTTI
+    grants = localPendingGrantSet(pendingBySlot, tti);
+    if isempty(grants)
+        continue;
+    end
+    values = arrayfun(@(g)double(sixgr.util.structGet( ...
+        g, "RNTI", NaN)), grants(:));
+    rnti = [rnti; values(isfinite(values))]; %#ok<AGROW>
+end
+rnti = unique(round(rnti), "stable");
+end
+
+function [currentGrants, currentCells, pendingGrants, pendingCells] = ...
+        localQueueScheduledULGrants(scheduledGrants, scheduledCells, ...
+        currentGrants, currentCells, pendingGrants, pendingCells, ...
+        currentTTI, nTTI, expectedTargetTTI)
+if isempty(scheduledGrants)
+    return;
+end
+scheduledCells = double(scheduledCells(:));
+if numel(scheduledCells) ~= numel(scheduledGrants)
+    error("sixgr:system:SystemLevelRunner:ULGrantCellCardinalityMismatch", ...
+        "Every scheduled UL grant must retain one serving-cell identity.");
+end
+
+for grantIndex = 1:numel(scheduledGrants)
+    grant = scheduledGrants(grantIndex);
+    scheduledAbsoluteSlot = double(sixgr.util.structGet( ...
+        grant, "ScheduledAbsoluteSlot", NaN));
+    if ~(isscalar(scheduledAbsoluteSlot) && ...
+            isfinite(scheduledAbsoluteSlot) && ...
+            scheduledAbsoluteSlot == fix(scheduledAbsoluteSlot))
+        error("sixgr:system:SystemLevelRunner:MissingULScheduledAbsoluteSlot", ...
+            "A finalized UL grant is missing its canonical ScheduledAbsoluteSlot.");
+    end
+    targetTTI = scheduledAbsoluteSlot + 1;
+    if targetTTI ~= round(double(expectedTargetTTI))
+        error("sixgr:system:SystemLevelRunner:ULGrantTargetMismatch", ...
+            "The canonical K2 timing engine selected TTI %d, but the " + ...
+            "runner prepared the exact UL budget for TTI %d.", ...
+            round(targetTTI), round(double(expectedTargetTTI)));
+    end
+    if targetTTI < currentTTI || targetTTI > nTTI
+        error("sixgr:system:SystemLevelRunner:ULGrantOutsideRunWindow", ...
+            "Canonical UL grant target TTI %d is outside [%d,%d].", ...
+            round(targetTTI), round(currentTTI), round(nTTI));
+    end
+    % The grant's TimingDecision already performed the authoritative TDD
+    % validation.  This queue only preserves that result; it never rewrites
+    % K2 or the selected absolute slot.
+    if targetTTI == currentTTI
+        currentGrants = localConcatGrantSets( ...
+            currentGrants, grant);
+        currentCells(end+1, 1) = scheduledCells(grantIndex); %#ok<AGROW>
+    else
+        pendingGrants{targetTTI} = localConcatGrantSets( ...
+            localPendingGrantSet(pendingGrants, targetTTI), grant);
+        pendingCells{targetTTI}(end+1, 1) = ...
+            scheduledCells(grantIndex);
+    end
+end
+end
+
+function out = localConcatGrantSets(lhs, rhs)
+if isempty(lhs)
+    out = rhs(:);
+    return;
+end
+if isempty(rhs)
+    out = lhs(:);
+    return;
+end
+sets = {lhs(:), rhs(:)};
+out = localVertcatGrantSets(sets, 2);
 end
 
 function sched = localCreateScheduler(cfg, schedulerName, direction, log)
@@ -2637,6 +2869,10 @@ trace.IsRetransmission = false(cap,1);
 trace.DAI = NaN(cap,1);
 trace.K1 = NaN(cap,1);
 trace.K2 = NaN(cap,1);
+trace.ControlAbsoluteSlot = NaN(cap,1);
+trace.ScheduledAbsoluteSlot = NaN(cap,1);
+trace.TimingRelation = strings(cap,1);
+trace.TimingDecisionSource = strings(cap,1);
 trace.SearchSpaceID = NaN(cap,1);
 trace.CORESETID = NaN(cap,1);
 trace.BWPId = NaN(cap,1);
@@ -2748,6 +2984,27 @@ trace.PrecodingNumPorts = NaN(cap,1);
 trace.PrecodingNumLayers = NaN(cap,1);
 trace.PrecodingMatrixRows = NaN(cap,1);
 trace.PrecodingMatrixCols = NaN(cap,1);
+trace.PDCCHWaveformExecuted = false(cap,1);
+trace.PDCCHGrantBindingRequired = false(cap,1);
+trace.PDCCHGrantBindingOk = false(cap,1);
+trace.PDCCHGrantBindingStatus = strings(cap,1);
+trace.PDCCHGrantBindingFailureCode = strings(cap,1);
+trace.PDCCHGrantDCIId = strings(cap,1);
+trace.PDCCHGrantDCIFieldsHash = strings(cap,1);
+trace.PDCCHGrantFieldsHash = strings(cap,1);
+trace.PDCCHGrantSearchSpaceId = NaN(cap,1);
+trace.PDCCHGrantCORESETId = NaN(cap,1);
+trace.PDCCHGrantAggregationLevel = NaN(cap,1);
+trace.PDCCHGrantCandidateIndex = NaN(cap,1);
+trace.PDCCHGrantDCIFormat = strings(cap,1);
+trace.DCICrcPass = false(cap,1);
+trace.PDCCHPayloadMatch = false(cap,1);
+trace.PDCCHCausalGrantDecodeOk = false(cap,1);
+trace.PDCCHMissedDetection = false(cap,1);
+trace.PDCCHFalseAlarm = false(cap,1);
+trace.PDCCHControlEvidenceSource = strings(cap,1);
+trace.PDCCHLogicalTxPorts = NaN(cap,1);
+trace.PDCCHObservedRxBranches = NaN(cap,1);
 trace = localInitializeMeasuredPHYEvidenceTrace(trace, cap);
 end
 
@@ -2871,6 +3128,15 @@ trace.IsRetransmission(i) = logical(sixgr.util.structGet(harq, "IsRetransmission
 trace.DAI(i) = double(sixgr.util.structGet(grant, "DAI", NaN));
 trace.K1(i) = double(sixgr.util.structGet(grant, "K1", NaN));
 trace.K2(i) = double(sixgr.util.structGet(grant, "K2", NaN));
+trace.ControlAbsoluteSlot(i) = double(sixgr.util.structGet( ...
+    grant, "ControlAbsoluteSlot", NaN));
+trace.ScheduledAbsoluteSlot(i) = double(sixgr.util.structGet( ...
+    grant, "ScheduledAbsoluteSlot", NaN));
+timingDecision = sixgr.util.structGet(grant, "TimingDecision", struct());
+trace.TimingRelation(i) = string(sixgr.util.structGet( ...
+    timingDecision, "Relation", ""));
+trace.TimingDecisionSource(i) = string(sixgr.util.structGet( ...
+    timingDecision, "Source", ""));
 trace.SearchSpaceID(i) = double(sixgr.util.structGet(grant, "SearchSpaceID", NaN));
 trace.CORESETID(i) = double(sixgr.util.structGet(grant, "CORESETID", NaN));
 trace.BWPId(i) = double(sixgr.util.structGet(grant, "BWPId", NaN));
@@ -2982,6 +3248,27 @@ trace.PrecodingNumPorts(i) = double(sixgr.util.structGet(replay, "PrecodingNumPo
 trace.PrecodingNumLayers(i) = double(sixgr.util.structGet(replay, "PrecodingNumLayers", NaN));
 trace.PrecodingMatrixRows(i) = double(sixgr.util.structGet(replay, "PrecodingMatrixRows", NaN));
 trace.PrecodingMatrixCols(i) = double(sixgr.util.structGet(replay, "PrecodingMatrixCols", NaN));
+trace.PDCCHWaveformExecuted(i) = logical(sixgr.util.structGet(replay, "PDCCHWaveformExecuted", false));
+trace.PDCCHGrantBindingRequired(i) = logical(sixgr.util.structGet(replay, "PDCCHGrantBindingRequired", false));
+trace.PDCCHGrantBindingOk(i) = logical(sixgr.util.structGet(replay, "PDCCHGrantBindingOk", false));
+trace.PDCCHGrantBindingStatus(i) = string(sixgr.util.structGet(replay, "PDCCHGrantBindingStatus", ""));
+trace.PDCCHGrantBindingFailureCode(i) = string(sixgr.util.structGet(replay, "PDCCHGrantBindingFailureCode", ""));
+trace.PDCCHGrantDCIId(i) = string(sixgr.util.structGet(replay, "PDCCHGrantDCIId", ""));
+trace.PDCCHGrantDCIFieldsHash(i) = string(sixgr.util.structGet(replay, "PDCCHGrantDCIFieldsHash", ""));
+trace.PDCCHGrantFieldsHash(i) = string(sixgr.util.structGet(replay, "PDCCHGrantFieldsHash", ""));
+trace.PDCCHGrantSearchSpaceId(i) = double(sixgr.util.structGet(replay, "PDCCHGrantSearchSpaceId", NaN));
+trace.PDCCHGrantCORESETId(i) = double(sixgr.util.structGet(replay, "PDCCHGrantCORESETId", NaN));
+trace.PDCCHGrantAggregationLevel(i) = double(sixgr.util.structGet(replay, "PDCCHGrantAggregationLevel", NaN));
+trace.PDCCHGrantCandidateIndex(i) = double(sixgr.util.structGet(replay, "PDCCHGrantCandidateIndex", NaN));
+trace.PDCCHGrantDCIFormat(i) = string(sixgr.util.structGet(replay, "PDCCHGrantDCIFormat", ""));
+trace.DCICrcPass(i) = logical(sixgr.util.structGet(replay, "DCICrcPass", false));
+trace.PDCCHPayloadMatch(i) = logical(sixgr.util.structGet(replay, "PDCCHPayloadMatch", false));
+trace.PDCCHCausalGrantDecodeOk(i) = logical(sixgr.util.structGet(replay, "PDCCHCausalGrantDecodeOk", false));
+trace.PDCCHMissedDetection(i) = logical(sixgr.util.structGet(replay, "PDCCHMissedDetection", false));
+trace.PDCCHFalseAlarm(i) = logical(sixgr.util.structGet(replay, "PDCCHFalseAlarm", false));
+trace.PDCCHControlEvidenceSource(i) = string(sixgr.util.structGet(replay, "PDCCHControlEvidenceSource", ""));
+trace.PDCCHLogicalTxPorts(i) = double(sixgr.util.structGet(replay, "PDCCHLogicalTxPorts", NaN));
+trace.PDCCHObservedRxBranches(i) = double(sixgr.util.structGet(replay, "PDCCHObservedRxBranches", NaN));
 end
 
 function T = localGrantTraceToTable(trace, count)
@@ -3048,6 +3335,10 @@ T.NREPerPRB = localTraceNumeric(trace, "NREPerPRB", idx, n, NaN);
 T.EstimatedTBSBits = localTraceNumeric(trace, "EstimatedTBSBits", idx, n, NaN);
 T.EstimatedTBSBytes = localTraceNumeric(trace, "EstimatedTBSBytes", idx, n, NaN);
 T.QueueLimited = localTraceLogical(trace, "QueueLimited", idx, n, false);
+T.ControlAbsoluteSlot = localTraceNumeric(trace, "ControlAbsoluteSlot", idx, n, NaN);
+T.ScheduledAbsoluteSlot = localTraceNumeric(trace, "ScheduledAbsoluteSlot", idx, n, NaN);
+T.TimingRelation = localTraceString(trace, "TimingRelation", idx, n, "");
+T.TimingDecisionSource = localTraceString(trace, "TimingDecisionSource", idx, n, "");
 T.ReceiverHestSINR_dB = localTraceNumeric(trace, "ReceiverHestSINR_dB", idx, n, NaN);
 T.BitErrors = localTraceNumeric(trace, "BitErrors", idx, n, NaN);
 T.BitsCompared = localTraceNumeric(trace, "BitsCompared", idx, n, NaN);
@@ -3147,6 +3438,27 @@ T.PrecodingNumPorts = localTraceNumeric(trace, "PrecodingNumPorts", idx, n, NaN)
 T.PrecodingNumLayers = localTraceNumeric(trace, "PrecodingNumLayers", idx, n, NaN);
 T.PrecodingMatrixRows = localTraceNumeric(trace, "PrecodingMatrixRows", idx, n, NaN);
 T.PrecodingMatrixCols = localTraceNumeric(trace, "PrecodingMatrixCols", idx, n, NaN);
+T.PDCCHWaveformExecuted = localTraceLogical(trace, "PDCCHWaveformExecuted", idx, n, false);
+T.PDCCHGrantBindingRequired = localTraceLogical(trace, "PDCCHGrantBindingRequired", idx, n, false);
+T.PDCCHGrantBindingOk = localTraceLogical(trace, "PDCCHGrantBindingOk", idx, n, false);
+T.PDCCHGrantBindingStatus = localTraceString(trace, "PDCCHGrantBindingStatus", idx, n, "");
+T.PDCCHGrantBindingFailureCode = localTraceString(trace, "PDCCHGrantBindingFailureCode", idx, n, "");
+T.PDCCHGrantDCIId = localTraceString(trace, "PDCCHGrantDCIId", idx, n, "");
+T.PDCCHGrantDCIFieldsHash = localTraceString(trace, "PDCCHGrantDCIFieldsHash", idx, n, "");
+T.PDCCHGrantFieldsHash = localTraceString(trace, "PDCCHGrantFieldsHash", idx, n, "");
+T.PDCCHGrantSearchSpaceId = localTraceNumeric(trace, "PDCCHGrantSearchSpaceId", idx, n, NaN);
+T.PDCCHGrantCORESETId = localTraceNumeric(trace, "PDCCHGrantCORESETId", idx, n, NaN);
+T.PDCCHGrantAggregationLevel = localTraceNumeric(trace, "PDCCHGrantAggregationLevel", idx, n, NaN);
+T.PDCCHGrantCandidateIndex = localTraceNumeric(trace, "PDCCHGrantCandidateIndex", idx, n, NaN);
+T.PDCCHGrantDCIFormat = localTraceString(trace, "PDCCHGrantDCIFormat", idx, n, "");
+T.DCICrcPass = localTraceLogical(trace, "DCICrcPass", idx, n, false);
+T.PDCCHPayloadMatch = localTraceLogical(trace, "PDCCHPayloadMatch", idx, n, false);
+T.PDCCHCausalGrantDecodeOk = localTraceLogical(trace, "PDCCHCausalGrantDecodeOk", idx, n, false);
+T.PDCCHMissedDetection = localTraceLogical(trace, "PDCCHMissedDetection", idx, n, false);
+T.PDCCHFalseAlarm = localTraceLogical(trace, "PDCCHFalseAlarm", idx, n, false);
+T.PDCCHControlEvidenceSource = localTraceString(trace, "PDCCHControlEvidenceSource", idx, n, "");
+T.PDCCHLogicalTxPorts = localTraceNumeric(trace, "PDCCHLogicalTxPorts", idx, n, NaN);
+T.PDCCHObservedRxBranches = localTraceNumeric(trace, "PDCCHObservedRxBranches", idx, n, NaN);
 end
 
 function trace = localInitializeMeasuredPHYEvidenceTrace(trace, cap)

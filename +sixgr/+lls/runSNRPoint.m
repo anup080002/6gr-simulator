@@ -110,9 +110,13 @@ pool = gcp("nocreate");
 if isempty(pool)
     pool = parpool("Processes",maximumWorkers);
 elseif pool.NumWorkers > maximumWorkers
-    error("sixgr:lls:ParallelPoolTooLarge", ...
-        "Existing parallel pool has %d workers; YAML permits at most %d.", ...
-        pool.NumWorkers,maximumWorkers);
+    % A pool is process-global MATLAB state, not campaign authority.  A
+    % previous run may legitimately have created a larger pool; retaining
+    % it would violate this run's YAML worker ceiling and aborting would make
+    % results depend on ambient session history.  Recreate an exact,
+    % process-based pool owned by the current execution policy.
+    delete(pool);
+    pool = parpool("Processes",maximumWorkers);
 end
 end
 

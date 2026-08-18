@@ -365,6 +365,12 @@ if row.source_csv == "__manifested_without_source__"
     row.first_issue = "The visual manifest row does not identify its source CSV.";
     return;
 end
+if row.source_csv == "__conflicting_source_lineage__"
+    row.status = "fail";
+    row.failure_code = "conflicting_visual_source_lineage";
+    row.first_issue = "Multiple visual manifest rows bind the same image to different source CSV specifications.";
+    return;
+end
 if row.blank_or_low_information && required && logical(opt.FailOnBlankRequiredImage)
     row.status = "fail";
     row.failure_code = "required_image_blank_or_low_information";
@@ -639,7 +645,8 @@ for i = 1:numel(files)
         continue;
     end
     plotColumn = localFirstColumn(T, ["PlotFile", "ImagePath", "ArtifactPath"]);
-    sourceColumn = localFirstColumn(T, ["SourceCSV", "source_csv"]);
+    sourceColumn = localFirstColumn(T, ...
+        ["SourceCSV", "SourceCSVPath", "source_csv", "source_csv_path"]);
     if strlength(plotColumn) == 0
         continue;
     end
@@ -656,17 +663,42 @@ for i = 1:numel(files)
         if strlength(plotRel) == 0
             continue;
         end
-        if ~isKey(lineageMap, char(plotRel))
-            lineageMap(char(plotRel)) = char(sourceRel);
-        end
+        lineageMap = localMergeLineageSource( ...
+            lineageMap, plotRel, sourceRel);
         plotAbs = localNormalizeRelativePath(localRelativePath(fullfile(rootRunFolder, strrep(char(plotRel), "/", filesep)), rootRunFolder));
-        if ~isKey(lineageMap, char(plotAbs))
-            lineageMap(char(plotAbs)) = char(sourceRel);
+        lineageMap = localMergeLineageSource( ...
+            lineageMap, plotAbs, sourceRel);
     end
-end
 end
 lineageMap = localAddArtifactGenerationLineage(lineageMap, rootRunFolder);
 lineageMap = localAddComponentMirrorLineage(lineageMap, rootRunFolder);
+end
+
+function lineageMap = localMergeLineageSource(lineageMap, plotRel, sourceRel)
+% Merge duplicate manifest rows without allowing filesystem enumeration
+% order to choose an incomplete or conflicting semantic source.
+key = char(localNormalizeRelativePath(plotRel));
+candidate = string(sourceRel);
+if ~isKey(lineageMap, key)
+    lineageMap(key) = char(candidate);
+    return;
+end
+existing = string(lineageMap(key));
+missingToken = "__manifested_without_source__";
+conflictToken = "__conflicting_source_lineage__";
+if existing == conflictToken || existing == candidate
+    return;
+end
+if existing == missingToken && candidate ~= missingToken
+    lineageMap(key) = char(candidate);
+    return;
+end
+if candidate == missingToken
+    return;
+end
+% Two nonempty, different source specifications for the same image are not
+% interchangeable evidence. Preserve the conflict as a fail-closed token.
+lineageMap(key) = char(conflictToken);
 end
 
 function lineageMap = localAddArtifactGenerationLineage(lineageMap, rootRunFolder)

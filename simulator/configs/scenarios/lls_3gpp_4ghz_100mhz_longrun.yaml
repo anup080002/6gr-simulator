@@ -374,6 +374,11 @@ control_gating:
   trs_required: true
   trs_max_age_slots: 4
 
+interference:
+  # Strict multi-user descendants execute intra-cell interference through
+  # the same shared sample-domain waveform as their desired links.
+  intra_cell_execution_mode: shared_slot_waveform_superposition
+
 link_adaptation:
   fixed_or_amc: amc
   cqi_table: table1

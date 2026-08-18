@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import math
 import os
 from dataclasses import asdict, dataclass
@@ -50,6 +51,18 @@ CONTROL_TABLES = (
     "air_interface/csv/srs_trials.csv",
     "air_interface/csv/trs_trials.csv",
 )
+COMPONENT_ONLY_RUNNER_PROFILES = {
+    "prach_detection",
+    "prach_strict_validation",
+    "pdcch_blind_decode_sweep",
+    "pdcch_strict_validation",
+    "ctrl6gr_pdcch_study",
+    "srs_strict_validation",
+    "trs_strict_validation",
+    "channel_rf_strict_validation",
+    "random_access_four_step",
+    "ai_benchmark",
+}
 DERIVED_LINK_TABLES = (
     "air_interface/csv/distance_vs_sinr.csv",
     "air_interface/csv/dl_measured_sinr_bler_curve.csv",
@@ -348,19 +361,31 @@ def _audit_identity(path: str, rows: list[dict[str, str]]) -> list[AuditCheck]:
     checks: list[AuditCheck] = []
     failures: list[str] = []
     for index, row in enumerate(rows, start=1):
-        missing = [name for name in IDENTITY_COLUMNS if not _text(row, name)]
+        missing = [
+            name
+            for name in IDENTITY_COLUMNS
+            if not (
+                _text(row, "ScenarioConfigHash", "ConfigHash")
+                if name == "ConfigHash"
+                else _text(row, name)
+            )
+        ]
         if missing:
             failures.append(f"row={index}:missing={','.join(missing)}")
         run_id = _text(row, "RunID")
         run_tag = _text(row, "RunTag")
         if run_id and run_tag and run_id != run_tag:
             failures.append(f"row={index}:RunID!=RunTag")
-        config_hash = _text(row, "ConfigHash")
+        config_hash = _text(row, "ScenarioConfigHash", "ConfigHash")
         if config_hash and (len(config_hash) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in config_hash)):
             failures.append(f"row={index}:ConfigHash_not_sha256")
     checks.append(_check("runtime_identity", path, "identity_complete_and_consistent", rows, failures))
     for column in IDENTITY_COLUMNS:
-        values = {_text(row, column) for row in rows if _text(row, column)}
+        values = {
+            (_text(row, "ScenarioConfigHash", "ConfigHash") if column == "ConfigHash" else _text(row, column))
+            for row in rows
+            if (_text(row, "ScenarioConfigHash", "ConfigHash") if column == "ConfigHash" else _text(row, column))
+        }
         checks.append(
             _check(
                 "runtime_identity",
@@ -637,6 +662,9 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
             "SINR_dB",
             "MeasurementRSRP_dB",
             "ChannelEstimateNoiseVariance",
+            "EstimatedSINR_dB",
+            "PostEqEVM",
+            "NMSEChannelEst",
         )
         if not any(_number(row, name) is not None for name in measured_fields if name in header):
             failures.append(f"row={index}:no_finite_runtime_measurement")
@@ -1212,6 +1240,7 @@ def _audit_domain_runtime_tables(
     """
 
     extended_root = _io_path(run_root)
+    resolved_config = _load_resolved_config(run_root)
     candidates: list[tuple[str, Path]] = []
     for current, _directories, filenames in os.walk(extended_root):
         current_path = Path(current)
@@ -1220,6 +1249,11 @@ def _audit_domain_runtime_tables(
             if not filename.lower().endswith(".csv"):
                 continue
             relative = (relative_directory / filename).as_posix()
+            if relative in PRIMARY_LINK_TABLES.values() or relative in CONTROL_TABLES or relative in DERIVED_LINK_TABLES:
+                # These tables have stronger, schema-specific checks above;
+                # do not reclassify an explicitly non-applicable derived
+                # table as missing through the generic domain rule.
+                continue
             if relative in DOMAIN_RUNTIME_EXACT or any(
                 relative.startswith(prefix) for prefix in DOMAIN_RUNTIME_PREFIXES
             ):
@@ -1242,9 +1276,17 @@ def _audit_domain_runtime_tables(
             "channel/csv/trajectory_constraint_conflicts.csv",
             "reports/csv/live_cell_reselection_events.csv",
         }
-        if not rows and not empty_means_no_event:
+        required, evaluated = _domain_table_applicability(
+            relative, run_root, scenario_summary, resolved_config
+        )
+        if not rows and not empty_means_no_event and required:
             schema_failures.append("missing_runtime_rows")
-        checks.append(_check("domain_runtime", relative, "schema_and_runtime_rows", rows, schema_failures))
+        checks.append(_check(
+            "domain_runtime", relative, "schema_and_runtime_rows", rows,
+            schema_failures, required=required, evaluated=evaluated,
+        ))
+        if not required and not evaluated:
+            continue
         if schema_failures:
             continue
 
@@ -1331,6 +1373,100 @@ def _audit_domain_runtime_tables(
                 )
             )
     return checks
+
+
+def _load_resolved_config(run_root: Path) -> dict[str, Any]:
+    for relative in (
+        "meta/scenario_config_resolved.json",
+        "meta/config_resolved.json",
+        "config/scenario_config_resolved.json",
+    ):
+        path = _io_path(run_root / relative)
+        if not path.is_file():
+            continue
+        try:
+            decoded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(decoded, dict):
+            return decoded
+    return {}
+
+
+def _nested_value(source: dict[str, Any], path: str, default: Any = None) -> Any:
+    value: Any = source
+    for part in path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return default
+        value = value[part]
+    return value
+
+
+def _truthy_config(source: dict[str, Any], *paths: str) -> bool:
+    for path in paths:
+        value = _nested_value(source, path, None)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+            return bool(value)
+        if isinstance(value, str):
+            token = value.strip().lower()
+            if token in {"true", "1", "yes", "on", "enabled"}:
+                return True
+            if token in {"false", "0", "no", "off", "disabled"}:
+                return False
+    return False
+
+
+def _domain_table_applicability(
+    relative: str,
+    run_root: Path,
+    scenario_summary: dict[str, str],
+    resolved_config: dict[str, Any],
+) -> tuple[bool, bool]:
+    """Return exact run-policy applicability for optional live surfaces.
+
+    A header-only file is not evidence, but it is also not a failure when
+    the owning feature is explicitly disabled. Unknown tables remain
+    required and fail closed.
+    """
+
+    if relative == "reports/csv/live_beam_p1_acquisition_stats.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "mimo_and_beam_management.beam_sweeping",
+            "system.beam.enable",
+            "reference_signals.ssb_enabled",
+        )
+        return enabled, enabled
+    if relative == "reports/csv/live_csirs_stats.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "reference_signals.csi_rs_enabled",
+            "reference_signals.nzp_csi_rs.enabled",
+        )
+        return enabled, enabled
+    if relative == "reports/csv/live_coverage_layer.csv":
+        run_class = str(
+            _nested_value(
+                resolved_config,
+                "validation.run_class",
+                _text(scenario_summary, "RunClass"),
+            )
+        ).strip().lower()
+        enabled = run_class in {
+            "geometry_based_lls",
+            "geometry_based_link_level",
+            "geometry_mobility_lls",
+        }
+        return enabled, enabled
+    if relative == "reports/csv/live_user_performance_snapshot.csv":
+        has_link_rows = any(
+            bool(_read_rows(run_root / path)[1])
+            for path in PRIMARY_LINK_TABLES.values()
+        )
+        return has_link_rows, has_link_rows
+    return True, True
 
 
 def _audit_chart_lineage(run_root: Path) -> list[AuditCheck]:
@@ -1435,6 +1571,8 @@ def _audit_reconciliation(
     summary_path: str,
     summary: dict[str, str],
     link_rows: dict[str, list[dict[str, str]]],
+    *,
+    primary_links_required: bool = True,
 ) -> list[AuditCheck]:
     checks: list[AuditCheck] = []
     for direction, rows in link_rows.items():
@@ -1446,6 +1584,8 @@ def _audit_reconciliation(
                 f"{direction.lower()}_summary_trial_count",
                 rows,
                 [] if expected == len(rows) else [f"summary={expected};table={len(rows)}"],
+                required=primary_links_required or bool(rows),
+                evaluated=primary_links_required or bool(rows),
             )
         )
     config_hashes = {
@@ -1462,6 +1602,8 @@ def _audit_reconciliation(
             "summary_config_hash_matches_trials",
             [summary] if summary else [],
             [] if summary_hash and config_hashes == {summary_hash} else [f"summary={summary_hash};trials={sorted(config_hashes)}"],
+            required=primary_links_required or bool(config_hashes),
+            evaluated=primary_links_required or bool(config_hashes),
         )
     )
     return checks
@@ -1720,6 +1862,8 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     summary_rel = "reports/csv/scenario_summary.csv"
     _summary_header, summary_rows = _read_rows(run_root / summary_rel)
     summary = summary_rows[0] if summary_rows else {}
+    runner_profile = _text(summary, "RunnerProfile").strip().lower()
+    component_only = runner_profile in COMPONENT_ONLY_RUNNER_PROFILES
     has_primary_run_evidence = bool(summary_rows) or any(
         _io_path(run_root / path).is_file() for path in PRIMARY_LINK_TABLES.values()
     )
@@ -1744,6 +1888,19 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     for direction, path in PRIMARY_LINK_TABLES.items():
         header, rows = _read_rows(run_root / path)
         link_rows[direction] = rows
+        if component_only and not rows:
+            checks.append(
+                _check(
+                    "primary_link",
+                    path,
+                    "not_applicable_to_component_runner",
+                    rows,
+                    [],
+                    required=False,
+                    evaluated=False,
+                )
+            )
+            continue
         checks.extend(
             _audit_link_table(
                 path,
@@ -1764,7 +1921,14 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     checks.extend(_audit_runtime_call_ledger(run_root, summary, link_rows))
     checks.extend(_audit_manifest_integrity(run_root))
     checks.extend(_audit_domain_runtime_tables(run_root, summary))
-    checks.extend(_audit_reconciliation(summary_rel, summary, link_rows))
+    checks.extend(
+        _audit_reconciliation(
+            summary_rel,
+            summary,
+            link_rows,
+            primary_links_required=not component_only,
+        )
+    )
     checks.extend(_audit_status_reduction(run_root, summary_rel, summary))
     chart_checks = _audit_chart_lineage(run_root)
     required_failures = sum(check.required and (not check.evaluated or not check.passed) for check in checks)

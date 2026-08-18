@@ -13,9 +13,22 @@ assert(size(decision.Precoder_W, 1) == 64 && size(decision.Precoder_W, 2) == 2, 
 assert(double(decision.Rate_rank2_bps) > double(decision.Rate_rank1_bps), ...
     "Rank-2 rate must exceed rank-1 for the positive Prompt 5 channel.");
 
-csi = sixgr.mimo.buildCSIFeedback(Hdl, 1e-3, cfg.mimoRuntime, "NominalRank", 2);
+csiChannel = localRank2Channel(2, 2, 1002);
+csiCfg = cfg.mimoRuntime;
+csiCfg.N1 = 1;
+csiCfg.N2 = 2;
+csi = sixgr.mimo.buildCSIFeedback(csiChannel, 1e-3, csiCfg, "NominalRank", 2);
 assert(double(csi.RI) == 2 && isfinite(double(csi.CQI)), ...
     "CSI feedback must carry runtime RI/CQI from measured channel.");
+
+try
+    sixgr.mimo.buildCSIFeedback(Hdl, 1e-3, cfg.mimoRuntime, "NominalRank", 2);
+    error("sixgr:test:ExpectedFailure", ...
+        "Matrix-only high-port CSI must fail closed instead of inventing a PMI payload.");
+catch ME
+    assert(strcmp(ME.identifier, "sixgr:mimo:HighPortCSIRequiresNRGrid"), ...
+        "High-port matrix-only CSI must fail with the typed NR-grid requirement.");
+end
 
 Hul = localRank2Channel(64, 4, 2002);
 [Wul, beamIdx, ~, gainGap, ulInfo] = sixgr.mimo.selectULBeamFromSRS([], [], Hul, [], cfg.mimoRuntime);

@@ -204,7 +204,11 @@
     "prb_start": 0,
     "num_prb": 24,
     "start_symbol": 2,
-    "num_symbols": 12
+    "num_symbols": 12,
+    "num_antenna_ports": 2,
+    "transmission_scheme": "codebook",
+    "codebook_type": "type1",
+    "pmi": 0
   },
   "pdsch6gr": {
     "mcs_mode": "fixed",

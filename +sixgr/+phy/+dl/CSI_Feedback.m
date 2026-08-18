@@ -17,6 +17,10 @@ ip.addParameter("PostEqSINRNAReason", "", @(s) ischar(s) || isstring(s));
 ip.addParameter("MeasurementState", [], @(x) isempty(x) || isa(x, ...
     "sixgr.phy.mimo.CSIMeasurementState"));
 ip.addParameter("ReportConfiguration", [], @(x) isempty(x) || isstruct(x));
+ip.addParameter("Carrier", [], @(x) isempty(x) || isa(x,"nrCarrierConfig"));
+ip.addParameter("CSIRSConfig", [], @(x) isempty(x) || isa(x,"nrCSIRSConfig"));
+ip.addParameter("PDSCHDMRSConfig", [], @(x) isempty(x) || isa(x,"nrPDSCHDMRSConfig"));
+ip.addParameter("FullChannelEstimate", [], @(x) isempty(x) || isnumeric(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -1164,9 +1168,16 @@ if isempty(reportRequest)
         "Strict CSI feedback requires the active decoded report configuration.");
 end
 runtime = localStrictRuntimeConfig(cfg,opt,reportRequest,measurement,size(Hwb,2));
-core = sixgr.mimo.buildCSIFeedback(Hwb,double(nVar),runtime, ...
-    "Direction",opt.Direction,"NominalRank",runtime.MaxRank, ...
-    "MeasurementState",measurement);
+if size(Hwb,2) > 2
+    core = sixgr.phy.mimo.NRCSIReportEngine.run( ...
+        opt.Carrier,opt.CSIRSConfig,opt.PDSCHDMRSConfig, ...
+        opt.FullChannelEstimate,double(nVar),runtime,measurement, ...
+        "Direction",string(opt.Direction));
+else
+    core = sixgr.mimo.buildCSIFeedback(Hwb,double(nVar),runtime, ...
+        "Direction",opt.Direction,"NominalRank",runtime.MaxRank, ...
+        "MeasurementState",measurement);
+end
 payload = sixgr.phy.dl.packCSIFeedbackPayload(core,runtime);
 csi = core;
 csi.SINR_dB = double(core.WidebandSINR_dB);
@@ -1240,15 +1251,22 @@ runtime.O1 = localFirstStrictNumber(cfg, ...
     ["phy.mimo.O1","mimo.O1"],1);
 runtime.O2 = localFirstStrictNumber(cfg, ...
     ["phy.mimo.O2","mimo.O2"],1);
-if ~(isfinite(runtime.N1) && isfinite(runtime.N2) && runtime.N1*runtime.N2 == nTx)
+panelProduct = runtime.N1*runtime.N2;
+polarizationBranches = nTx / panelProduct;
+if ~(isfinite(runtime.N1) && isfinite(runtime.N2) && ...
+        isfinite(polarizationBranches) && ismember(polarizationBranches,[1 2]) && ...
+        panelProduct*polarizationBranches == nTx)
     if nTx == 2
         runtime.N1 = 1;
         runtime.N2 = 1;
+        polarizationBranches = 2;
     else
         error("sixgr:mimo:InvalidPanelGeometry", ...
-            "Strict CSI requires explicit N1*N2 equal to the measured transmit ports.");
+            "Strict CSI requires measured ports to equal N1*N2 for a " + ...
+            "single-polarized panel or 2*N1*N2 for a dual-polarized panel.");
     end
 end
+runtime.PolarizationBranches = polarizationBranches;
 runtime.MaxRank = opt.MaxRank;
 if isempty(runtime.MaxRank)
     runtime.MaxRank = double(sixgr.util.structGet(cfg,"phy.csi.maxRank", ...
@@ -1263,6 +1281,8 @@ runtime.ReportConfiguration = reportRequest;
 runtime.ReportConfigurationEpoch = double(sixgr.util.structGet(cfg, ...
     "phy.csi.reportConfigurationEpoch",double(reportRequest.Epoch)));
 runtime.CurrentSlot = double(sixgr.util.structGet(cfg,"runtime.currentSlot",measurement.Slot));
+runtime.CQITable = string(sixgr.util.structGet(cfg, ...
+    "phy.csi.cqiTable",sixgr.util.structGet(cfg,"phy.csi.dlCQITable","table1")));
 runtime.CQISINRThresholdsDB = double(sixgr.util.structGet(cfg, ...
     "phy.csi.cqiSINRThresholdsDB", ...
     [-Inf -6.7 -4.7 -2.3 .2 2.4 4.3 5.9 8.1 10.3 11.7 14.1 16.3 18.7 21 22.7]));

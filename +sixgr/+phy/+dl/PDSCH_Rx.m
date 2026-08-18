@@ -53,6 +53,7 @@ ip.addParameter('PDSCHIndices', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CSIRSIndices', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CSIRSSymbols', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CSIRSInfo', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('CSIRSConfig', [], @(x) isempty(x) || isa(x, 'nrCSIRSConfig'));
 ip.addParameter('CSIRSTransmitted', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>0)));
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>0 & x(:)<1)));
@@ -929,6 +930,7 @@ rx.CodeBlockCRCError = cbCRCError;
 rx.ChannelEstimate = channelEstimate;
 rx.ChannelEstimation = canonical.ChannelEstimationInfo;
 rx.RxGrid = canonical.OFDMGrid;
+rx.Carrier = carrier;
 rx.DMRSIndices = dmrsInd;
 rx.DMRSSymbols = dmrsSym;
 rx.PDSCH = pdsch;
@@ -943,6 +945,7 @@ rx.PDSCHIndices = pdschInd;
 rx.CSIRSIndices = csirsInd;
 rx.CSIRSSymbols = csirsSym;
 rx.CSIRSInfo = csirsInfo;
+rx.CSIRS = opt.CSIRSConfig;
 rx.PTRSIndices = ptrsInd;
 rx.PTRSSymbols = ptrsSym;
 rx.PTRSAntennaIndices = ptrsAntInd;
@@ -957,6 +960,8 @@ rx.CPECorrectionInfo = canonical.PTRSCorrection;
 rx.CSIRSChannelEstimate = csirsHest;
 rx.CSIRSNoiseVar = csirsNoiseVar;
 rx.CSIRSChannelEstimation = csirsEstimateInfo;
+rx.SelectedCSIRS = localSelectedCSIRSConfig( ...
+    opt.CSIRSConfig, csirsInfo, csirsEstimateInfo);
 rx.CSIChannelEstimateForPMI = csirsHest;
 rx.CSIChannelNoiseVarForPMI = csirsNoiseVar;
 rx.CSIChannelEstimateSource = string(sixgr.util.structGet( ...
@@ -3019,6 +3024,28 @@ obs.CRISelectionSource = "";
 obs.NRE = NaN;
 obs.NumPorts = NaN;
 obs.RowNumber = NaN;
+end
+
+function selected = localSelectedCSIRSConfig(defaultConfig,info,estimateInfo)
+selected = defaultConfig;
+resources = sixgr.util.structGet(info,"Resources",[]);
+if isempty(resources)
+    return;
+end
+ordinal = double(sixgr.util.structGet(estimateInfo, ...
+    "SelectedResourceOrdinal",1));
+if ~(isscalar(ordinal) && isfinite(ordinal) && ordinal >= 1 && ...
+        ordinal <= numel(resources) && ordinal == round(ordinal))
+    error("sixgr:mimo:BeamReportMismatch", ...
+        "Selected CSI-RS resource ordinal %g is invalid for %d resources.", ...
+        ordinal,numel(resources));
+end
+candidate = sixgr.util.structGet(resources(ordinal),"Configuration",[]);
+if ~isa(candidate,"nrCSIRSConfig")
+    error("sixgr:mimo:MissingMeasurementState", ...
+        "Selected CSI-RS measurement has no matching runtime nrCSIRSConfig.");
+end
+selected = candidate;
 end
 
 function [state, info] = localBuildCSIMeasurementState(cfg, carrier, Hest, nVar, estInfo, canonical)

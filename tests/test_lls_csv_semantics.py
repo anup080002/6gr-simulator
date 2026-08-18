@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import csv
+import json
 from pathlib import Path
 
 
@@ -9,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from lls_csv_semantics import (  # noqa: E402
+    audit_run,
     _audit_derived_link_table,
     _audit_domain_runtime_tables,
     _audit_link_table,
@@ -16,6 +18,49 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_runtime_call_ledger,
     _audit_status_reduction,
 )
+
+
+def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path) -> None:
+    scenario_hash = "a" * 64
+    _write_rows(
+        tmp_path / "reports/csv/scenario_summary.csv",
+        [{
+            "RunnerProfile": "ctrl6gr_pdcch_study",
+            "RunCompletion": "completed",
+            "RunID": "run-1",
+            "RunTag": "run-1",
+            "ScenarioID": "pdcch-study",
+            "ConfigHash": scenario_hash,
+            "ExecutionID": "execution-1",
+            "EffectiveDLTrialCount": "0",
+            "EffectiveULTrialCount": "0",
+        }],
+    )
+    _write_rows(
+        tmp_path / "air_interface/csv/pdcch_trials.csv",
+        [{
+            "RunID": "run-1",
+            "RunTag": "run-1",
+            "ScenarioID": "pdcch-study",
+            "ScenarioConfigHash": scenario_hash,
+            "ExecutionID": "execution-1",
+            "EvidenceScope": "in_path",
+            "EstimatedSINR_dB": "12.5",
+            "CRCPass": "1",
+            "FalseAlarmFlag": "0",
+        }],
+    )
+
+    audit = audit_run(tmp_path)
+    checks = audit["canonical_csv_semantic_audit"]
+    link_checks = [row for row in checks if row["category"] == "primary_link"]
+    assert link_checks
+    assert all(not row["required"] for row in link_checks)
+    pdcch_checks = [
+        row for row in checks if row["artifact_path"] == "air_interface/csv/pdcch_trials.csv"
+    ]
+    assert pdcch_checks
+    assert all(row["passed"] for row in pdcch_checks), pdcch_checks
 
 
 def _mu_check(direction: str, row: dict[str, str]):
@@ -342,6 +387,56 @@ def test_live_reselection_event_table_may_be_schema_only_when_no_event_occurred(
     )
     assert checks
     assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_fixed_link_disabled_live_domains_are_not_required_but_user_summary_is(
+    tmp_path: Path,
+) -> None:
+    resolved = {
+        "validation": {"run_class": "fixed_snr_sweep_lls"},
+        "mimo_and_beam_management": {"beam_sweeping": False},
+        "system": {"beam": {"enable": False}},
+        "reference_signals": {
+            "ssb_enabled": False,
+            "csi_rs_enabled": False,
+            "nzp_csi_rs": {"enabled": False},
+        },
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(resolved), encoding="utf-8")
+    for relative in (
+        "reports/csv/live_beam_p1_acquisition_stats.csv",
+        "reports/csv/live_coverage_layer.csv",
+        "reports/csv/live_csirs_stats.csv",
+        "reports/csv/live_user_performance_snapshot.csv",
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("ScenarioID,ConfigHash\n", encoding="utf-8")
+    _write_rows(
+        tmp_path / "air_interface/csv/dl_pdsch_trials.csv",
+        [{"CRCPass": "1"}],
+    )
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "fixed", "ConfigHash": "a" * 64},
+    )
+    by_path = {
+        check.artifact_path: check
+        for check in checks
+        if check.check_id == "schema_and_runtime_rows"
+    }
+    for relative in (
+        "reports/csv/live_beam_p1_acquisition_stats.csv",
+        "reports/csv/live_coverage_layer.csv",
+        "reports/csv/live_csirs_stats.csv",
+    ):
+        assert not by_path[relative].required
+        assert not by_path[relative].evaluated
+    user = by_path["reports/csv/live_user_performance_snapshot.csv"]
+    assert user.required and user.evaluated and not user.passed
+    assert "missing_runtime_rows" in user.details
 
 
 def test_runtime_config_application_evidence_rejects_nan_run_identity(tmp_path: Path) -> None:

@@ -61,6 +61,17 @@ COMPONENTS = (
 )
 
 
+COMPONENT_RUN_AUTHORITY: dict[str, tuple[str, ...]] = {
+    "pdcch_blind_decode_sweep": ("air_interface/csv/pdcch_trials.csv",),
+    "pdcch_strict_validation": ("air_interface/csv/pdcch_trials.csv",),
+    "ctrl6gr_pdcch_study": ("air_interface/csv/pdcch_trials.csv",),
+    "prach_detection": ("air_interface/csv/prach_trials.csv",),
+    "prach_strict_validation": ("air_interface/csv/prach_trials.csv",),
+    "srs_strict_validation": ("air_interface/csv/srs_trials.csv",),
+    "trs_strict_validation": ("air_interface/csv/trs_trials.csv",),
+}
+
+
 def io_path(path: Path) -> Path:
     """Return an extended-length Windows path for all filesystem I/O."""
 
@@ -791,13 +802,40 @@ def validate_run_root(run_root: Path) -> Path:
         raise SystemExit(
             "Raster replacement requires one exact results/lls/<scenario>/<run> folder."
         )
-    required_markers = (
+    resolved_config_path = resolved / "meta" / "scenario_config_resolved.json"
+    required_markers = [
         resolved / "meta" / "scenario_config_identity.json",
-        resolved / "meta" / "scenario_config_resolved.json",
+        resolved_config_path,
         resolved / "reports" / "csv" / "scenario_summary.csv",
-        resolved / "air_interface" / "csv" / "dl_pdsch_trials.csv",
-        resolved / "air_interface" / "csv" / "ul_pusch_trials.csv",
-    )
+    ]
+    if io_path(resolved_config_path).is_file():
+        try:
+            with io_path(resolved_config_path).open("r", encoding="utf-8") as handle:
+                config = json.load(handle)
+        except (OSError, ValueError, TypeError) as error:
+            raise SystemExit(
+                f"Resolved scenario config is not readable JSON: {resolved_config_path}: {error}"
+            ) from error
+        scenario = config.get("scenario", {}) if isinstance(config, dict) else {}
+        simulation = config.get("simulation", {}) if isinstance(config, dict) else {}
+        profile = str(scenario.get("runner_profile") or "").strip().lower() \
+            if isinstance(scenario, dict) else ""
+        component_markers = COMPONENT_RUN_AUTHORITY.get(profile)
+        if component_markers is not None:
+            required_markers.extend(resolved / marker for marker in component_markers)
+        else:
+            direction = str(simulation.get("link_direction") or "both").strip().lower() \
+                if isinstance(simulation, dict) else "both"
+            if direction in {"", "all"}:
+                direction = "both"
+            if direction in {"both", "dl", "downlink"}:
+                required_markers.append(
+                    resolved / "air_interface" / "csv" / "dl_pdsch_trials.csv"
+                )
+            if direction in {"both", "ul", "uplink"}:
+                required_markers.append(
+                    resolved / "air_interface" / "csv" / "ul_pusch_trials.csv"
+                )
     missing = [str(path) for path in required_markers if not io_path(path).is_file()]
     if missing:
         raise SystemExit("Run folder is missing required authority files: " + "; ".join(missing))

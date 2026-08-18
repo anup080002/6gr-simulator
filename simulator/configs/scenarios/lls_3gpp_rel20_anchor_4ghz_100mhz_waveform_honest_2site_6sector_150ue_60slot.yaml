@@ -267,6 +267,10 @@ modulation:
   dl_mcs_index: 20
   ul_mcs_index: 20
 
+pusch:
+  mcs_index: 20
+  modulation: 256QAM
+
 control:
   pdcch_enabled: true
   dci_formats: ["0_0", "0_1", "1_0", "1_1"]

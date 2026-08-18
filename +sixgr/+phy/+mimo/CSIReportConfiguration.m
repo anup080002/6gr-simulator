@@ -156,6 +156,37 @@ if contains(cb,"typei") && contains(cb,"single") && ports == 2
     p2w(end+1) = localBits(rankValue-1);
     return;
 end
+if contains(cb,"typei") && contains(cb,"single") && ports > 2
+    n1 = localInteger(localField(request,"N1",NaN),"N1");
+    n2 = localInteger(localField(request,"N2",NaN),"N2");
+    o1 = localInteger(localField(request,"O1",NaN),"O1");
+    o2 = localInteger(localField(request,"O2",NaN),"O2");
+    maxRank = localInteger(localField(request,"MaxRank",rankValue),"MaxRank");
+    codebookMode = localInteger(localField(request,"CodebookMode",NaN),"CodebookMode");
+    if ports ~= 2*n1*n2 || ~ismember(codebookMode,[1 2]) || ...
+            rankValue > 2 || maxRank > 2
+        error("sixgr:mimo:UnsupportedAntennaTuple", ...
+            "The enabled strict Type-I single-panel payload schema supports " + ...
+            "dual-polarized ports=2*N1*N2 and ranks one or two.");
+    end
+    p1f = ["CRI","RI","CQI_CW0"];
+    p1w = [criWidth,localBits(maxRank-1),4];
+    p2f = strings(1,0);
+    p2w = zeros(1,0);
+    localAppendPMIField("PMI_I11",localBits(n1*o1-1));
+    localAppendPMIField("PMI_I12",localBits(n2*o2-1));
+    if rankValue == 2
+        localAppendPMIField("PMI_I13",1);
+    end
+    if rankValue == 1
+        localAppendPMIField("PMI_I2",2);
+    else
+        localAppendPMIField("PMI_I2",1);
+    end
+    p2f(end+1) = "LI";
+    p2w(end+1) = localBits(rankValue-1);
+    return;
+end
 if ~(contains(cb,"typeii") || contains(cb,"typei"))
     error("sixgr:mimo:InvalidCodebookType", ...
         "Unsupported CSI codebook type %s.", codebookType);
@@ -176,6 +207,13 @@ end
 p2f = ["PMI_COEFFICIENTS","LI"];
 p2w = [rankValue*beamCount*(localBits(phaseAlphabet-1)+1)*subbands, ...
        localBits(rankValue-1)];
+
+    function localAppendPMIField(name,width)
+        if width > 0
+            p2f(end+1) = name;
+            p2w(end+1) = width;
+        end
+    end
 end
 
 function [bits,owners] = localSerializeFields(fields,widths,values)

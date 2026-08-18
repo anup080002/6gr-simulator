@@ -43,11 +43,16 @@ run_control:
 
 deployment_topology:
   scenario_type: multi-cell
+  site_layout: hex_grid
+  num_sites: 2
+  num_base_stations: 2
+  num_sectors_per_site: 1
+  num_cells: 2
   sector_azimuths_deg: [0, 120, 240]
   inter_site_distance_m: 500
   cell_radius_m: 350
   ues_per_sector: 1
-  indoor_ue_fraction: 0.5
+  indoor_ue_fraction: 1.0
   min_ue_distance_from_bs_m: 80
   max_ue_distance_from_bs_m: 350
 

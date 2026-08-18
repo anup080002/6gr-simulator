@@ -815,7 +815,7 @@ sections:
       procedure_type:
         required: false
         type: string
-        allowed_values: [contention_based_four_step]
+        allowed_values: [contention_based_four_step, prach_detection]
       frequency_range:
         required: false
         type: string
@@ -932,6 +932,14 @@ sections:
       preamble_trans_max: {required: false, type: integer, min: 1}
       power_ramping_step_db: {required: false, type: number, min: 0}
       preamble_received_target_power_dbm: {required: false, type: number}
+      ra_rnti_policy:
+        required: false
+        type: string
+        allowed_values: [ts_38_321_ra_rnti_formula]
+      prach_occasion_policy:
+        required: false
+        type: string
+        allowed_values: [ts_38_211_configuration_index_resolution]
       temp_crnti: {required: false, type: integer, min: 1}
       final_crnti: {required: false, type: integer, min: 1}
       timing: {required: false, type: struct}
@@ -1269,6 +1277,10 @@ nested_sections:
     parameters:
       report_config_id: {required: true, type: string, nonempty: true}
       epoch: {required: true, type: integer, min: 0}
+      codebook_mode:
+        required: true
+        type: integer
+        allowed_values: [1, 2]
       report_quantity: {required: true, type: string, nonempty: true}
       num_csi_resources: {required: true, type: integer, min: 1}
       frequency_granularity:

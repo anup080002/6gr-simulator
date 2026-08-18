@@ -44,5 +44,22 @@ channel:
 receiver:
   channelEstimation: perfect
 
+antenna:
+  # Keep the canonical antenna descriptor dimensionally identical to the
+  # two-port/two-branch CDL execution even though directional coupling is
+  # disabled for this receiver trust-boundary regression.
+  gnb:
+    size: [1, 2, 1, 1]
+    polarizationAnglesDeg: [0]
+    steeringAzElDeg:
+      - [0, 0]
+      - [0, 0]
+    numRFChains: 2
+  ue:
+    size: [1, 2, 1, 1]
+    polarizationAnglesDeg: [0]
+    steeringAzElDeg: [0, 0]
+    numRFChains: 2
+
 results:
   generatePlots: false

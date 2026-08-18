@@ -21,6 +21,9 @@ sixgr.validation.auditFixedSNRSweepRun(tmp, "Strict", false, "WriteOutputs", tru
 sixgr.visual.plotFixedSNRSweepCurves(tmp);
 
 artifactAudit = sixgr.validation.auditRunArtifacts(tmp, "Strict", false, "WriteOutputs", true);
+if ~logical(artifactAudit.Ok)
+    disp(artifactAudit.IssueRegistry);
+end
 assert(logical(artifactAudit.Ok), ...
     "A complete fixed-sweep fixture must pass the recursive artifact audit.");
 assert(exist(fullfile(tmp, "reports", "csv", "all_csv_artifact_audit.csv"), "file") == 2, ...
@@ -102,6 +105,15 @@ scfg = sixgr.util.structSet(scfg, "reference_signals.pusch_dmrs_ports", 1);
 scfg = sixgr.util.structSet(scfg, "pdsch6gr.dmrs_port_set", 0);
 scfg = sixgr.util.structSet(scfg, "pdsch6gr.dmrs_num_ports", 1);
 scfg = sixgr.util.structSet(scfg, "mimo.phase07_strict.enabled", false);
+scfg = sixgr.util.structSet(scfg, "mimo.hybrid_beamforming_flag", false);
+for path = ["antenna_and_array.bs_num_txrus", ...
+        "antenna_and_array.bs_num_rxrus", ...
+        "antenna_and_array.ue_num_txrus", ...
+        "antenna_and_array.ue_num_rxrus", ...
+        "antenna_and_array.bs_num_antenna_elements", ...
+        "antenna_and_array.ue_num_antenna_elements"]
+    scfg = sixgr.util.structSet(scfg, path, 1);
+end
 scfg = sixgr.util.structSet(scfg, "link_adaptation.fixed_or_amc", "fixed");
 scfg = sixgr.util.structSet(scfg, "link_adaptation.pdsch_link_adaptation_policy", "fixed");
 scfg = sixgr.util.structSet(scfg, "link_adaptation.pusch_link_adaptation_policy", "fixed");
@@ -141,7 +153,9 @@ scfg.validation.fixed_link_campaign = struct( ...
     "harq_enabled", false, ...
     "single_user_mode", true, ...
     "seeds", 314159, ...
-    "target_bler", 0.1);
+    "target_bler", 0.1, ...
+    "max_target_crossing_bracket_db", 8.0, ...
+    "parallel_workers", 0);
 for path = ["reference_signals.ssb_enabled", "reference_signals.pbch_enabled", ...
         "reference_signals.pdcch_dmrs_enabled", "reference_signals.ptrs_enabled", ...
         "reference_signals.ptrs_cpe_correction_enabled", ...
@@ -191,6 +205,9 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", 24);
 cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", 24);
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.numPorts = 1;
+cfg.phy.pdsch.nPorts = 1;
+cfg.phy.pdsch.NumAntennaPorts = 1;
 cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.phy.pdsch.mcsIndex = 4;
 cfg.phy.pdsch.modulation = "QPSK";
@@ -201,6 +218,9 @@ cfg.phy.pdsch.prbSet = 0:23;
 cfg.phy.pdsch.PRBSet = 0:23;
 cfg.phy.pusch.nLayers = 1;
 cfg.phy.pusch.numLayers = 1;
+cfg.phy.pusch.numPorts = 1;
+cfg.phy.pusch.numAntennaPorts = 1;
+cfg.phy.pusch.NumAntennaPorts = 1;
 cfg.phy.pusch.mcsIndex = 4;
 cfg.phy.pusch.modulation = "QPSK";
 cfg.phy.pusch.codeRate = 0.30;
@@ -224,6 +244,23 @@ cfg.phy.pusch.powerControl.enabled = false;
 cfg.powerAndRF.puschPowerControlEnabled = false;
 cfg = sixgr.util.structSet(cfg, "lls6g.users.enabled", false);
 cfg = sixgr.util.structSet(cfg, "lls6g.users.n_users", 1);
+cfg = sixgr.util.structSet(cfg, "scenario.bs.nTxAnt", 1);
+cfg = sixgr.util.structSet(cfg, "scenario.bs.nRxAnt", 1);
+cfg = sixgr.util.structSet(cfg, "scenario.bs.numRFChains", 1);
+cfg = sixgr.util.structSet(cfg, "scenario.ue.nTxAnt", 1);
+cfg = sixgr.util.structSet(cfg, "scenario.ue.nRxAnt", 1);
+cfg = sixgr.util.structSet(cfg, "scenario.ue.numRFChains", 1);
+cfg = sixgr.util.structSet(cfg, "antenna.bs.numElements", 1);
+cfg = sixgr.util.structSet(cfg, "antenna.bs.numPorts", 1);
+cfg = sixgr.util.structSet(cfg, "antenna.bs.numRFChains", 1);
+cfg = sixgr.util.structSet(cfg, "antenna.ue.numElements", 1);
+cfg = sixgr.util.structSet(cfg, "antenna.ue.numPorts", 1);
+cfg = sixgr.util.structSet(cfg, "antenna.ue.numRFChains", 1);
+% The fixture deliberately narrows the inherited production scenario to a
+% 1x1 calibration link. Rebuild the immutable operating authority after all
+% explicit overrides so waveform execution cannot observe stale 64x4/2-port
+% metadata from the inherited scenario.
+cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, scfg);
 end
 
 function opt = localCampaignOptions(cfg, snrGrid, trialsPerPoint, seed)

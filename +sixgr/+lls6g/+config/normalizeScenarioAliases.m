@@ -821,6 +821,8 @@ mappings = {
     "random_access.preamble_trans_max", "random_access.preamble_trans_max", "identity"
     "random_access.power_ramping_step_db", "random_access.power_ramping_step_db", "identity"
     "random_access.preamble_received_target_power_dbm", "random_access.preamble_received_target_power_dbm", "identity"
+    "random_access.ra_rnti_policy", "random_access.ra_rnti_policy", "identity"
+    "random_access.prach_occasion_policy", "random_access.prach_occasion_policy", "identity"
     "random_access.temp_crnti", "random_access.temp_crnti", "identity"
     "random_access.final_crnti", "random_access.final_crnti", "identity"
     "random_access.timing", "random_access.timing", "identity"

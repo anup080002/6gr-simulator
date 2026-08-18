@@ -231,7 +231,11 @@ if ~any(strcmpi(char(string(prachCfg.DuplexMode)), {'FDD','TDD','SUL'}))
 end
 
 localValidateResolvedConfig(prachCfg);
+localAssertRestrictedSetFormatCompatibility( ...
+    prachCfg.RequestedPRACHFormat, prachCfg.RestrictedSet);
 [carrier, prach] = localBuildToolboxConfigs(prachCfg);
+localAssertRestrictedSetFormatCompatibility( ...
+    string(prach.Format), prachCfg.RestrictedSet);
 [occasionResolution, requiredSlots] = localResolveOccasionPeriod( ...
     prachCfg, carrier, prach);
 prachCfg.NumSlots = max(prachCfg.NumSlots, requiredSlots);
@@ -253,6 +257,23 @@ prachCfg.ZCDPE = sixgr.rach.ZCDPEConfig(baseCfg, "NumSymbols", localResolveZCDPE
 prachCfg.ZCDPEEnabled = localResolveZCDPEEnabled(baseCfg);
 prachCfg.ConfigExport = localMakeSerializable(prachCfg);
 localPublishConfigEvidence(prachCfg, cfg);
+end
+
+function localAssertRestrictedSetFormatCompatibility(formatValue, restrictedSet)
+% Restricted sets are defined only for the long NR PRACH formats.  Check
+% this before occasion enumeration so Toolbox release-specific exceptions
+% cannot leak through as an unrelated frame-resolution failure.
+formatValue = upper(strtrim(string(formatValue)));
+restrictedSet = localNormalizeRestrictedSet(restrictedSet);
+if strlength(formatValue) == 0 || restrictedSet == "UnrestrictedSet"
+    return;
+end
+longFormats = ["0","1","2","3"];
+if ~any(formatValue == longFormats)
+    error("sixgr:rach:PRACHConfig:RestrictedSetInvalidForShortFormat", ...
+        "Restricted-set PRACH is valid only for long preamble formats 0/1/2/3; requested format %s must use UnrestrictedSet.", ...
+        char(formatValue));
+end
 end
 
 function localAssertZCZRuntimeResolvable(cfg, prach)
@@ -372,8 +393,24 @@ for iPath = 1:numel(paths)
     topLevelNames(end+1, 1) = parts(end); %#ok<AGROW>
 end
 topLevelNames = unique(topLevelNames);
+cfgNames = string(fieldnames(cfg));
 for iName = 1:numel(topLevelNames)
-    name = char(topLevelNames(iName));
+    requestedName = topLevelNames(iName);
+    exactMatch = find(strcmpi(cfgNames, requestedName));
+    if isempty(exactMatch)
+        requestedKey = regexprep(lower(requestedName), "[^a-z0-9]", "");
+        cfgKeys = regexprep(lower(cfgNames), "[^a-z0-9]", "");
+        exactMatch = find(cfgKeys == requestedKey);
+    end
+    if numel(exactMatch) > 1
+        error("sixgr:rach:PRACHConfig:AmbiguousFlatAlias", ...
+            "Top-level PRACH field alias '%s' matches multiple input fields: %s.", ...
+            requestedName, strjoin(cfgNames(exactMatch), ", "));
+    end
+    if isempty(exactMatch)
+        continue;
+    end
+    name = char(cfgNames(exactMatch));
     % A normalized scenario can contain a top-level section whose name is
     % identical to a requested leaf (for example channel_model).  Such a
     % section is not a flat scalar alias and must not shadow the explicit

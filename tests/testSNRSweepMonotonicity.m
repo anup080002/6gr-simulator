@@ -8,6 +8,17 @@ cfg = sixgr.config.defaultConfig();
 cfg.channel.model = "AWGN";
 cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+% Keep this trend test on one explicit, capacity-feasible operating point.
+% Inheriting defaultConfig's 256QAM/MCS-22 point made the former 20 dB
+% assertion a hidden MCS-specific waterfall claim rather than a monotonicity
+% check.  High-rate feasibility is covered separately by
+% testFixedMCS20AWGNCapacityBoundary.
+mcs = sixgr.link.resolveMCSProfile("qam64_table1", 16);
+cfg.phy.pdsch.mcsTable = char(mcs.Table);
+cfg.phy.pdsch.mcsIndex = double(mcs.MCSIndex);
+cfg.phy.pdsch.modulation = char(mcs.Modulation);
+cfg.phy.pdsch.codeRate = double(mcs.TargetCodeRate);
+cfg.phy.pdsch.nLayers = 1;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;

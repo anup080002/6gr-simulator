@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 
@@ -131,6 +132,68 @@ def test_component_mapping_routes_contract_plots_to_requested_folders() -> None:
 def test_run_root_guard_rejects_paths_outside_results_lls(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="Refusing raster replacement outside"):
         MODULE.validate_run_root(tmp_path)
+
+
+def test_run_root_guard_uses_component_waveform_authority(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results" / "lls" / "pdcch_component" / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "air_interface" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "ctrl6gr_pdcch_study"},
+                "simulation": {"link_direction": "dl"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    (run / "air_interface" / "csv" / "pdcch_trials.csv").write_text(
+        "TrialId,CRCOK\n1,1\n", encoding="utf-8"
+    )
+
+    assert MODULE.validate_run_root(run) == run.resolve()
+    assert not (run / "air_interface" / "csv" / "dl_pdsch_trials.csv").exists()
+    assert not (run / "air_interface" / "csv" / "ul_pusch_trials.csv").exists()
+
+
+def test_run_root_guard_requires_configured_link_direction_authority(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results" / "lls" / "dl_only" / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "air_interface" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "waveform_bundle"},
+                "simulation": {"link_direction": "dl"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    (run / "air_interface" / "csv" / "dl_pdsch_trials.csv").write_text(
+        "TrialId,CRCPass\n1,1\n", encoding="utf-8"
+    )
+
+    assert MODULE.validate_run_root(run) == run.resolve()
 
 
 def test_missing_legacy_raster_claim_is_retired_without_touching_source_csv(

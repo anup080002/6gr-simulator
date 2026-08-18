@@ -978,6 +978,7 @@ g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 1;
 g.CQIUsed = 1;
 g.PDCCHAggregationLevel = NaN;
+g.PDCCHCandidateIndex = 0;
 g.RIUsed = NaN;
 g.PMI = NaN;
 g.CRI = NaN;

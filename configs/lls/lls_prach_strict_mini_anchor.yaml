@@ -109,7 +109,7 @@ mimo:
 random_access:
   enabled: true
   binding_source: scenario_config_pending_sib1
-  procedure_type: contention_based_four_step
+  procedure_type: prach_detection
   frequency_range: FR1
   duplex_mode: FDD
   carrier_frequency_hz: 723000000

@@ -498,6 +498,7 @@ canonical_control:
       csi_report:
         report_config_id: csi-report-0
         epoch: 0
+        codebook_mode: 1
         report_quantity: cri-RI-PMI-CQI
         num_csi_resources: 1
         frequency_granularity: wideband
@@ -1134,7 +1135,7 @@ canonical_control:
     preamble_index: 0
     occasion:
       frame: 0
-      slot: 0
+      slot: 9
       symbol: 0
       frequency_index: 0
     prach_format: B4
@@ -1160,6 +1161,8 @@ canonical_control:
     preamble_trans_max: 10
     power_ramping_step_db: 2
     preamble_received_target_power_dbm: -96
+    ra_rnti_policy: ts_38_321_ra_rnti_formula
+    prach_occasion_policy: ts_38_211_configuration_index_resolution
     temp_crnti: 4660
     final_crnti: 4660
     timing:
@@ -1947,6 +1950,10 @@ pdsch:
   codeword_count: 1
   cw_to_layer_mapping: single_codeword_all_layers
   layer_count: 1
+  num_antenna_ports: 1
+  transmission_scheme: nonCodebook
+  codebook_type: type1
+  pmi: 0
   modulation: 256QAM
   modulation_table: qam256_table2
   mixed_modulation_flag: false

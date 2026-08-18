@@ -796,6 +796,26 @@ T.FixedLinkConfiguredLayers = repmat(double(campaignCfg.Layers), n, 1);
 T.FixedLinkConfiguredPRBCount = repmat(double(campaignCfg.NPRB), n, 1);
 T.FixedLinkConfiguredChannelModel = repmat(string(campaignCfg.ChannelModelResolved), n, 1);
 T.PointSeed = repmat(double(pointSeed), n, 1);
+if logical(campaignCfg.SingleUserMode)
+    % The standalone fixed-link kernel has no scheduler object from which to
+    % inherit UE identity. Its single UE and RNTI are exact runtime context
+    % owned by the resolved YAML/PHY configuration, so bind them to each
+    % transmitted TB row instead of exporting an anonymous NaN identity.
+    if upper(string(direction)) == "DL"
+        rnti = double(sixgr.util.structGet(cfgPoint, "phy.pdsch.RNTI", NaN));
+    else
+        rnti = double(sixgr.util.structGet(cfgPoint, "phy.pusch.RNTI", NaN));
+    end
+    if ~(isscalar(rnti) && isfinite(rnti) && rnti >= 0 && ...
+            rnti <= 65535 && rnti == round(rnti))
+        error("sixgr:lls6g:campaign:MissingSingleUserRNTI", ...
+            "Single-user fixed-link %s execution requires an explicit PHY RNTI.", ...
+            upper(string(direction)));
+    end
+    T.UEIndex = ones(n, 1);
+    T.UEID = repmat("UE1", n, 1);
+    T.RNTI = repmat(rnti, n, 1);
+end
 % The fixed-link campaign bypasses the scheduler, but it does not bypass
 % runtime identity.  Preserve the same immutable run/execution binding as
 % the canonical system runner on every physical TB row.

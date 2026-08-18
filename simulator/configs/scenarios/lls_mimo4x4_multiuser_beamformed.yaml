@@ -139,6 +139,7 @@
   "pdsch": {
     "execution_profile": "scheduler_truth",
     "layer_count": 2,
+    "rank": 2,
     "prb_start": 0,
     "num_prb": 106,
     "mapping_type": "typeA",
