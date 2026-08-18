@@ -758,9 +758,17 @@ profilingConfigured = localBool(cfg, ["output.profiler_enabled","run.profiler_en
     "performance/csv/time_profile.csv"
     ]);
 runtimeOk = isfinite(runtimeS) && runtimeS > 0 && runtimeS < 86400;
-ok = exist(runtimeEvidencePath, "file") == 2 && runtimeOk && (profilingConfigured || profileArtifact);
-reason = localReason(ok, "runtime_summary_and_profiling_evidence_verified", ...
-    "runtime_summary_missing_invalid_or_no_profiling_evidence");
+% A configured profiler is an execution request, not measured evidence.
+% Publication readiness therefore requires the persisted profiler artifact;
+% otherwise a run could pass this gate without ever executing the profiler.
+ok = exist(runtimeEvidencePath, "file") == 2 && runtimeOk && profileArtifact;
+if ok
+    reason = "runtime_summary_and_persisted_profiling_evidence_verified";
+elseif ~(exist(runtimeEvidencePath, "file") == 2 && runtimeOk)
+    reason = "runtime_summary_missing_or_invalid";
+else
+    reason = "persisted_profiling_evidence_missing";
+end
 runtimeEvidenceRel = string(localPortable(runDir, runtimeEvidencePath));
 T = table(runtimeEvidenceRel, runtimeEvidenceRel, string(localPortable(runDir, profileArtifactPath)), ...
     runtimeS, logical(profilingConfigured), logical(profileArtifact), ...
