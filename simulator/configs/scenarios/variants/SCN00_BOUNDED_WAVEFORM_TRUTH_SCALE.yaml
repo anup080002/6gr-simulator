@@ -80,6 +80,13 @@ antenna_and_array:
   bs_num_antenna_elements: 16
   ue_num_antenna_elements: 4
 
+# This bounded profile deliberately reduces the inherited 64-element gNB
+# to a 4x4 array. Keep the CSI-RS DFT codebook on the same physical array;
+# the inherited beam indices 0..15 remain the exact 4x4 spatial codebook.
+reference_signals:
+  csi_rs_precoder_codebook:
+    physical_element_count: 16
+
 users:
   n_users: 18
   execution_model: slot_coupled_truth

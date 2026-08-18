@@ -74,7 +74,7 @@ for i = 1:height(inventory)
     rows(i).SourceRole = role;
     rows(i).RuntimeLibraryCandidate = role == "runtime_library";
     rows(i).ActuallyCalled = called;
-    rows(i).CallCount = localProfileSum(profileT, profileMask, "NumCalls") + sum(ledgerMask);
+    rows(i).CallCount = localExactCallCount(profileT, profileMask, ledgerMask);
     rows(i).TotalTime_s = localProfileSum(profileT, profileMask, "TotalTime_s");
     rows(i).ProfilerAvailable = profileAvailable;
     rows(i).ProfilerComplete = profileComplete;
@@ -240,6 +240,17 @@ if ~isnumeric(raw)
     raw = str2double(string(raw));
 end
 value = sum(double(raw), "omitnan");
+end
+
+function value = localExactCallCount(profileT, profileMask, ledgerMask)
+% A profiler row and a call-ledger row are two observations of the same
+% execution, not independent calls. Prefer the profiler's measured call
+% count when present; otherwise use the number of exact ledger entries.
+if any(profileMask)
+    value = localProfileSum(profileT, profileMask, "NumCalls");
+else
+    value = sum(ledgerMask);
+end
 end
 
 function state = localExecutionEvidence(called, ledgerAvailable, available, complete)

@@ -18,6 +18,10 @@ summaryT = table("MATLAB", 1e-7, 1, 0, 1, 1, 0, 0, "now", "fixture", ...
     'FunctionCount','ExportedFunctionCount','EdgeCount','ExportedEdgeCount','CapturedUTC','Notes'});
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_function_profile.csv"), profileT);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_profiler_summary.csv"), summaryT);
+ledgerT = table("sixgr.pdsch.PDSCHTransmitter", "EXEC-PHY-AUDIT-1", ...
+    string(repmat('a', 1, 64)), "ACTUAL_RUNTIME_ENTRY", ...
+    'VariableNames', {'FunctionName','ExecutionID','ConfigHash','EvidenceClass'});
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "runtime_call_ledger.csv"), ledgerT);
 
 out = sixgr.analytics.buildPHYPackageExecutionAudit(tmp, pwd);
 T = out.DetailTable;
