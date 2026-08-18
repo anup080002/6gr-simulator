@@ -14,6 +14,7 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.outerLoopFlag", true);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.deltaMCSPolicy", "olla");
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingMode", "doppler_adaptive");
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", 0.35);
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnMCSJump", true);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mcsJumpResetThreshold", 5);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepUp", 0.1);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaStepDown", 0.9);

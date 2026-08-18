@@ -2045,6 +2045,14 @@ cqiJumpResetThreshold = double(localGetNested(s, "link_adaptation.cqi_jump_reset
 if isfinite(cqiJumpResetThreshold) && cqiJumpResetThreshold >= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiJumpResetThreshold", double(cqiJumpResetThreshold));
 end
+resetOnMCSJump = localGetNested(s, "link_adaptation.reset_on_mcs_jump", []);
+if ~isempty(resetOnMCSJump)
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.resetOnMCSJump", logical(resetOnMCSJump));
+end
+mcsJumpResetThreshold = double(localGetNested(s, "link_adaptation.mcs_jump_reset_threshold", NaN));
+if isfinite(mcsJumpResetThreshold) && mcsJumpResetThreshold >= 0
+    cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mcsJumpResetThreshold", double(mcsJumpResetThreshold));
+end
 rankEigenThreshold_dB = double(localGetNested(s, "reference_signals.srs_rank_eigen_threshold_db", ...
     localGetNested(s, "link_adaptation.srs_rank_eigen_threshold_db", NaN)));
 if isfinite(rankEigenThreshold_dB) && rankEigenThreshold_dB > 0

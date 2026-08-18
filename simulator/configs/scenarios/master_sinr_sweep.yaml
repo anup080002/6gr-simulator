@@ -1536,6 +1536,10 @@ canonical_control:
     value: 0
   - path: link_adaptation.cqi_aging_step_db
     value: 2
+  - path: link_adaptation.reset_on_mcs_jump
+    value: false
+  - path: link_adaptation.mcs_jump_reset_threshold
+    value: 5
   - path: harq.validation_mode
     value: observation
   - path: harq.save_harq_buffers

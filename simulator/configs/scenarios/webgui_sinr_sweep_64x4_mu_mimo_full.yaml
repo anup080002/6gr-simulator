@@ -604,6 +604,8 @@ canonical_control:
 link_adaptation:
   initial_mcs: 1
   maximum_mcs: 20
+  reset_on_mcs_jump: true
+  mcs_jump_reset_threshold: 5
   bootstrap_mcs_index: 1
   # SRS remains the causal rank/spatial-pairing authority. Its pilot-only
   # SINR is not treated as a post-MU data SINR before the first decoded data

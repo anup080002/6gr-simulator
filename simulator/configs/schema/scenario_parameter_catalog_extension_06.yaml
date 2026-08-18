@@ -254,6 +254,8 @@
       "ul_max_csi_age_slots": {"required": false, "type": "number", "min": 0},
       "reset_on_ri_change": {"required": false, "type": "boolean"},
       "cqi_jump_reset_threshold": {"required": false, "type": "number", "min": 0},
+      "reset_on_mcs_jump": {"required": false, "type": "boolean"},
+      "mcs_jump_reset_threshold": {"required": false, "type": "number", "min": 0},
       "srs_rank_eigen_threshold_db": {"required": false, "type": "number"}
     }},
     "harq": {"parameters": {

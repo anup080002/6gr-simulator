@@ -76,6 +76,8 @@
   },
   "pdsch": {
     "execution_profile": "phy_calibration",
+    "layer_count": 2,
+    "rank": 2,
     "mapping_type": "A",
     "prb_start": 0,
     "num_prb": 51,
@@ -83,11 +85,21 @@
     "num_symbols": 12
   },
   "pusch": {
+    "layer_count": 2,
+    "num_layers": 2,
     "mapping_type": "A",
     "prb_start": 0,
     "num_prb": 51,
     "start_symbol": 0,
     "num_symbols": 14
+  },
+  "reference_signals": {
+    "csi_rs_enabled": false,
+    "csi_reporting_enabled": false,
+    "cqi_reporting_enabled": false,
+    "pmi_reporting_enabled": false,
+    "ri_reporting_enabled": false,
+    "cri_reporting_enabled": false
   },
   "energy_efficiency": {
     "tx_power_dbm": -35

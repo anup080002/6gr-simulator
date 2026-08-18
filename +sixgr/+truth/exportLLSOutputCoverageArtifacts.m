@@ -7362,6 +7362,15 @@ end
 end
 
 function v = localScenarioGet(scfg, path, defaultValue)
+if isstruct(scfg)
+    % Focused/recovery callers may provide the already-resolved scenario
+    % snapshot as a plain struct. Read that persisted authority directly;
+    % falling through to the default would discard real numerology and
+    % other scenario values merely because no ScenarioConfig.get method is
+    % available.
+    v = sixgr.util.structGet(scfg, path, defaultValue);
+    return;
+end
 try
     v = scfg.get(path, defaultValue);
 catch
