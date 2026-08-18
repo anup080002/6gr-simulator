@@ -580,8 +580,8 @@ function localValidateProbabilityMetric(values, metricName, direction)
 bad = ~isfinite(values) | values < 0 | values > 1;
 if any(bad)
     error("sixgr:analytics:exportFixedSNRSweepCurves:InvalidProbability", ...
-        "Fixed SNR sweep direction %s has invalid %s values outside [0,1].", ...
-        char(direction), char(metricName));
+        "Fixed SNR sweep direction %s has invalid %s values outside [0,1]: %s.", ...
+        char(direction), char(metricName), mat2str(values(bad).'));
 end
 end
 

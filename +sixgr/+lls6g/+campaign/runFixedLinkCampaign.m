@@ -872,6 +872,19 @@ bitErr = localNumericColumn(Te, ["BitErrors"], 0);
 bits = localNumericColumn(Te, ["BitsCompared", "TBSize_bits"], 0);
 bitErrTotal = sum(bitErr, "omitnan");
 bitTotal = sum(bits, "omitnan");
+if ~(isfinite(bitTotal) && bitTotal > 0)
+    errorIds = unique(localTextColumn(Te, ...
+        ["ErrorID", "FailureIdentifier", "TrialStatus", "Notes", "Status"], "missing"));
+    errorIds = errorIds(strlength(strtrim(errorIds)) > 0);
+    if isempty(errorIds)
+        errorIds = "missing";
+    end
+    error("sixgr:lls6g:campaign:MissingBitComparisonEvidence", ...
+        ["Fixed-link %s trials contain no positive BitsCompared/TBSize_bits " + ...
+         "denominator; runtime trial status: %s."], ...
+        char(string(sixgr.util.structGet(campaignCfg, "Direction", "unknown"))), ...
+        char(strjoin(errorIds, ";")));
+end
 stats.BER = localSafeDivide(bitErrTotal, bitTotal);
 if isfinite(bitTotal) && bitTotal > 0
     [~, berHalfWidth, stats.BER_CI_Low, stats.BER_CI_High] = ...

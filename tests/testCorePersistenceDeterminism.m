@@ -169,13 +169,54 @@ scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "variants", "S
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 scfg = scfg.toStruct();
 scfg.harq.k2 = 2;
+scfg.harq.enabled = false;
+scfg.simulation.harq_diagnostics_enabled = false;
 scfg.random_access.enabled = false;
+scfg.scenario.target_cases = {"pdsch"};
+scfg.users.enabled = false;
+scfg.reference_signals.ssb_enabled = false;
+scfg.reference_signals.pbch_enabled = false;
+scfg.reference_signals.pdcch_dmrs_enabled = false;
+scfg.reference_signals.srs_enabled = false;
+scfg.reference_signals.trs_enabled = false;
+scfg.reference_signals.tracking_rs_enabled = false;
+scfg.reference_signals.csi_rs_enabled = false;
+scfg.reference_signals.csi_reporting_enabled = false;
+scfg.reference_signals.cqi_reporting_enabled = false;
+scfg.reference_signals.pmi_reporting_enabled = false;
+scfg.reference_signals.ri_reporting_enabled = false;
+scfg.reference_signals.cri_reporting_enabled = false;
+scfg.reference_signals.ptrs_enabled = false;
+scfg.reference_signals.ptrs_cpe_correction_enabled = false;
+scfg.mimo.beam_sweep_enabled = false;
+scfg.initial_access.sib1.enabled = false;
+scfg.initial_access.sib1.pdsch.ptrs_enabled = false;
+scfg.control.pdcch_enabled = false;
+scfg.control.blind_search_enabled = false;
+scfg.control.pucch_enabled = false;
+scfg.validation.fixed_link_campaign.fixed_reference_mode = true;
+scfg.validation.fixed_link_campaign.noise_operating_mode = "standalone_awgn_snr_argument";
+scfg.validation.fixed_link_campaign.pdsch_execution_profile = "phy_calibration";
+scfg.validation.fixed_link_campaign.link_adaptation_mode = "fixed";
+scfg.validation.fixed_link_campaign.harq_enabled = false;
+scfg.validation.fixed_link_campaign.single_user_mode = true;
+scfg.validation.fixed_link_campaign.direction = "DL";
+scfg.validation.fixed_link_campaign.mcs = 0;
+scfg.validation.fixed_link_campaign.dl_mcs = 0;
+scfg.simulation.noise_operating_mode = "standalone_awgn_snr_argument";
+scfg.pdsch.execution_profile = "phy_calibration";
+scfg.pusch.execution_profile = "phy_calibration";
+scfg.modulation.dl_mcs_index = 0;
+scfg.pdsch.modulation = "QPSK";
+scfg.pdsch.fixed_mcs = 0;
+scfg.pdsch6gr.modulation = "QPSK";
+scfg.pdsch6gr.fixed_mcs = 0;
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "core_persistence_fixture"));
 cfg.run.numFrames = 1;
 cfg.run.strictMode = false;
 cfg.run.noProxyTruthContract = false;
 cfg.run.interferenceExecutionMode = "none";
-cfg.run.noiseOperatingMode = "receiver_noise_figure_thermal_noise";
+cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
 cfg.run.seed = 4309;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
@@ -192,6 +233,17 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.activeGridNumRBs", 24);
 cfg = sixgr.util.structSet(cfg, "phy.numerology.configuredGridNumRBs", 24);
 cfg.phy.pdsch.nLayers = 1;
 cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.nPorts = 1;
+cfg.phy.pdsch.numPorts = 1;
+cfg.phy.pdsch.dmrs.nPorts = 1;
+cfg.phy.pdsch.dmrs.portSet = 0;
+cfg.phy.pdsch.precoding.matrix = 1;
+cfg.phy.pdsch.precoding.normalizationConvention = "semi_unitary";
+cfg.phy.pdsch.precodingMatrix = 1;
+cfg.phy.pdsch.W = 1;
+cfg.phy.pdsch.prbSet = 0:23;
+cfg.phy.pdsch.PRBSet = 0:23;
+cfg.phy.pdsch.nPRB = 24;
 cfg.phy.pusch.enable = false;
 cfg.phy.pbch.enable = false;
 cfg.phy.mib.enable = false;
@@ -226,8 +278,8 @@ opt = struct( ...
     "LinkFixedLinkMinTrials", 1, ...
     "LinkFixedLinkMaxTrials", 1, ...
     "LinkFixedLinkTrialsPerDrop", 1, ...
-    "LinkFixedLinkErrorTarget", inf, ...
-    "LinkFixedLinkCIWidthTarget", inf, ...
+    "LinkFixedLinkErrorTarget", 0, ...
+    "LinkFixedLinkCIWidthTarget", 1, ...
     "LinkFixedLinkConfidenceLevel", 0.95, ...
     "LinkFixedLinkSeed", seed, ...
     "HARQDiagnosticsEnabled", false, ...

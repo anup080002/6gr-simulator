@@ -43,6 +43,12 @@ canonical_control:
     sweep_enabled: true
     fixed_link_campaign_enabled: true
     geometry_enabled: true
+  validation:
+    # This file is an orchestration profile, not a fixed-link waveform run.
+    # Override the inherited master_sinr_sweep canonical alias so the
+    # orchestrator can launch separate fixed-SNR and geometry child runs
+    # without merging their scientific semantics.
+    run_class: webgui_full_stack_qualification
   run:
     seed: 11
     deterministic_mode: true
