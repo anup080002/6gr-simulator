@@ -2777,6 +2777,18 @@ try
     finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
         runFolder, scfg, cfg);
     reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
+    % The terminal Phase-7 reducer rewrites its canonical CSV/JSON files.
+    % Republish component mirrors immediately so every declared mirror hash
+    % still binds to the exact canonical bytes consumed by the production
+    % qualification reducer.  Do not defer this until after root status:
+    % that leaves a stale validation mirror in otherwise successful runs.
+    if componentViewsEnabled
+        componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
+            "Enabled", true, ...
+            "Required", componentViewsRequired, ...
+            "RequiredComponents", componentViewsRequiredComponents(:));
+        reportBundle.ComponentArtifactViews = componentViews;
+    end
     scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
         scenarioStatus, runFolder);
     sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
@@ -2888,6 +2900,17 @@ try
     finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
         runFolder, scfg, cfg);
     reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
+    % This is the final scientific-evidence refresh.  It must be followed by
+    % a final byte-identical component publication before any root status is
+    % reduced from those files.  Otherwise phase7_truth_gates.{csv,json}
+    % change after their mirror hashes were sealed.
+    if componentViewsEnabled
+        componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
+            "Enabled", true, ...
+            "Required", componentViewsRequired, ...
+            "RequiredComponents", componentViewsRequiredComponents(:));
+        reportBundle.ComponentArtifactViews = componentViews;
+    end
     scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
         scenarioStatus, runFolder);
     sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
