@@ -179,7 +179,6 @@ antenna_and_array:
   mutual_coupling_model: none
   analog_beam_codebook: dft
   digital_precoder_family: wideband
-  hybrid_beamforming_flag: false
   reciprocity_assumption: fdd_feedback
   amplitude_phase_mismatch: none
   srs_power_imbalance_model: none
@@ -283,6 +282,13 @@ mimo:
   n_tx_ant: 64
   n_rx_ant: 4
   n_layers: 2
+  # This family owns 64 TX RF units for 64 physical gNB elements. Enable
+  # the element-domain RF/baseband expansion so the configured 64-element
+  # DFT CSI-RS filters and the PDSCH occupy the same physical channel
+  # domain. With one RF unit per element this is a fully-digital limiting
+  # case of the implemented RF/baseband factorization, not a two-port
+  # projection of the physical CSI-RS codebook.
+  hybrid_beamforming_flag: true
   precoder_type: wideband
   codebook_type: type1
   reciprocity_mode: FDD
