@@ -43,6 +43,14 @@ classdef RawCSVArrayCodec
                 values(missingMask) = "";
                 payload.Values = cellstr(values);
                 payload.MissingMask = logical(missingMask(:));
+            elseif iscell(value)
+                payload.ValueKind = "cell_tokens";
+                tokens = strings(numel(value), 1);
+                for valueIndex = 1:numel(value)
+                    tokens(valueIndex) = sixgr.runtime.RawCSVArrayCodec.encode( ...
+                        value{valueIndex});
+                end
+                payload.Values = cellstr(tokens);
             else
                 error("sixgr:runtime:RawCSVArrayTypeUnsupported", ...
                     "Raw CSV array codec does not support class %s.", class(value));
@@ -109,6 +117,17 @@ classdef RawCSVArrayCodec
                             "Raw CSV string missing-mask length differs from the value count.");
                     end
                     value(missingMask) = missing;
+                case "cell_tokens"
+                    tokens = string(payload.Values);
+                    if numel(tokens) ~= prod(dims)
+                        error("sixgr:runtime:RawCSVArrayTokenInvalid", ...
+                            "Raw CSV cell token count differs from its declared shape.");
+                    end
+                    value = cell(dims);
+                    for valueIndex = 1:numel(tokens)
+                        value{valueIndex} = sixgr.runtime.RawCSVArrayCodec.decode( ...
+                            tokens(valueIndex));
+                    end
                 otherwise
                     error("sixgr:runtime:RawCSVArrayTokenInvalid", ...
                         "Unknown raw CSV array value kind '%s'.", char(kind));

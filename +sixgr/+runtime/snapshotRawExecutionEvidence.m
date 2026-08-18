@@ -57,7 +57,7 @@ for sourceIndex = 1:numel(sources)
     fileName = localSafeName(source.Name) + ".csv";
     stagePath = fullfile(stageTables, fileName);
     writetable(csvT, stagePath);
-    persistedT = readtable(stagePath, "TextType", "string", ...
+    persistedT = readtable(stagePath, "Delimiter", ",", "TextType", "string", ...
         "VariableNamingRule", "preserve");
     if height(persistedT) ~= height(T) || width(persistedT) ~= width(T)
         error("sixgr:runtime:RawEvidenceSerializedShapeMismatch", ...
@@ -102,9 +102,12 @@ for variableIndex = 1:numel(names)
     value = T.(char(name));
     encodeRows = false;
     cellValues = false;
+    wideCellValues = false;
     if iscell(value)
         cellValues = true;
-        encodeRows = any(cellfun(@localRequiresArrayToken, value(:)));
+        wideCellValues = ndims(value) > 2 || size(value, 2) > 1;
+        encodeRows = wideCellValues || ...
+            any(cellfun(@localRequiresArrayToken, value(:)));
     elseif ndims(value) > 2 || size(value, 2) > 1
         encodeRows = true;
     end
@@ -114,7 +117,13 @@ for variableIndex = 1:numel(names)
     tokens = strings(height(T), 1);
     for rowIndex = 1:height(T)
         if cellValues
-            rowValue = value{rowIndex};
+            if wideCellValues
+                subs = repmat({':'}, 1, ndims(value));
+                subs{1} = rowIndex;
+                rowValue = value(subs{:});
+            else
+                rowValue = value{rowIndex};
+            end
         else
             subs = repmat({':'}, 1, ndims(value));
             subs{1} = rowIndex;
@@ -269,7 +278,8 @@ end
 end
 
 function snapshot = localReadExisting(indexPath, identity)
-T = readtable(indexPath, "VariableNamingRule", "preserve", "TextType", "string");
+T = readtable(indexPath, "Delimiter", ",", ...
+    "VariableNamingRule", "preserve", "TextType", "string");
 required = ["RunID","ExecutionID","ScenarioID","ConfigHash", ...
     "EvidenceScope","RelativePath","SHA256"];
 if isempty(T) || any(~ismember(required, string(T.Properties.VariableNames)))
