@@ -79,8 +79,10 @@ def test_webgui_geometry_master_is_self_contained_and_launchable() -> None:
     assert dash.path_get(resolved, "channel_model.scenario_label") == "CDL-C"
     assert dash.path_get(resolved, "output.emit_placeholder_artifacts") is False
     assert dash.path_get(resolved, "output.profiler_enabled") is True
-    assert dash.path_get(resolved, "output.profiler_top_functions") == 250
-    assert dash.path_get(resolved, "output.profiler_top_edges") == 500
+    # Publication profiling retains the complete observed call graph rather
+    # than the former presentation-only 250/500 truncation.
+    assert dash.path_get(resolved, "output.profiler_top_functions") == 20_000
+    assert dash.path_get(resolved, "output.profiler_top_edges") == 50_000
     assert dash.path_get(resolved, "output.live_publish_frame_interval") == 1
     assert dash.path_get(resolved, "output.live_heavy_refresh_interval_frames") == 1
     assert dash.path_get(resolved, "random_access.n_cell_id") == 1
