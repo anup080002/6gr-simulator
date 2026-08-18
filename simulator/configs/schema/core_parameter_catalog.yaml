@@ -25,6 +25,7 @@
       "saveIntermediate": {"value_type": "boolean", "default": false},
       "verbose": {"value_type": "boolean", "default": true},
       "noProxyTruthContract": {"value_type": "boolean", "default": false},
+      "interferenceExecutionMode": {"value_type": "string", "default": "none", "allowed_values": ["none", "full_per_link_channel_waveform_sum"]},
       "strictMode": {"value_type": "boolean"},
       "useMex": {"value_type": "boolean"},
       "preset": {"value_type": "string_or_empty"},

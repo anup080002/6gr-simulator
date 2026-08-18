@@ -49,6 +49,9 @@ end
 
 function localAssertPFCandidateLineage()
 cfg = sixgr.config.defaultConfig();
+assert(string(cfg.run.interferenceExecutionMode) == "none", ...
+    ["The YAML-backed core config must give direct production-runtime " ...
+    "fixtures an explicit no-interference execution policy."]);
 cfg.mac.scheduler.maxUEPerSlot = 1;
 cfg.mac.scheduler.minPRBPerUE = 4;
 cfg.mac.scheduler.maxPRBAllocationPerUE = 12;
