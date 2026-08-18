@@ -44,6 +44,16 @@ probe.rf_frontend.pa.input_backoff_db=9.25;
 probe.rf_frontend.phase_noise.enabled=true;
 probe.rf_frontend.phase_noise.mask_levels_dbchz= ...
     [-80 -92 -108 -126 -142];
+% rf_frontend owns the implementation parameters, but the canonical
+% impairments surface owns feature enable/disable. Prove that changing only
+% the subordinate hardware block cannot bypass the operator-facing switch.
+disabledCfg=sixgr.lls6g.buildInternalConfig(probe,fullfile(tmp,"disabled-probe"));
+disabledPhaseNoise=sixgr.rf.PhaseNoiseModel(disabledCfg,30.72e6,11);
+verifyFalse(t,disabledPhaseNoise.Enable);
+verifyEqual(t,disabledPhaseNoise.Backend,"disabled");
+
+probe.impairments.phase_noise_enabled=true;
+probe.impairments.pa_nonlinearity_enabled=true;
 probeCfg=sixgr.lls6g.buildInternalConfig(probe,fullfile(tmp,"probe"));
 [paProfile,canonical]=sixgr.rf.runtime.PAProfile. ...
     fromConfiguration(probeCfg);
