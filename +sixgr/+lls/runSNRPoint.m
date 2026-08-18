@@ -3,8 +3,6 @@ function [summaryRow, trialTable, diagnostic] = runSNRPoint(llsCfg, configHash, 
 
 snrDb = double(llsCfg.simulation.snrDb(snrIndex));
 phyCfg = sixgr.lls.buildPHYConfig(llsCfg, snrDb);
-minTB = double(llsCfg.simulation.minTransportBlocks);
-minErrors = double(llsCfg.simulation.minBlockErrors);
 maxTB = double(llsCfg.simulation.maxTransportBlocks);
 rows = cell(maxTB, 1);
 errors = 0;
@@ -16,7 +14,8 @@ batchSize = double(llsCfg.execution.batchTransportBlocks);
 if parallelEnabled
     localEnsurePool(double(llsCfg.execution.maximumWorkers));
 end
-while trialIndex < maxTB && ~(trialIndex >= minTB && errors >= minErrors)
+decision = sixgr.lls.stats.evaluateSamplingPlan(llsCfg, errors, trialIndex);
+while trialIndex < maxTB && ~decision.Stop
     batchStart = trialIndex + 1;
     if parallelEnabled
         requested = min(batchSize,maxTB-trialIndex);
@@ -43,7 +42,9 @@ while trialIndex < maxTB && ~(trialIndex >= minTB && errors >= minErrors)
     for localIndex = 1:requested
         globalIndex = batchStart + localIndex - 1;
         cumulativeErrors = priorErrors + sum(batchErrors(1:localIndex));
-        if globalIndex >= minTB && cumulativeErrors >= minErrors
+        localDecision = sixgr.lls.stats.evaluateSamplingPlan( ...
+            llsCfg, cumulativeErrors, globalIndex);
+        if localDecision.Stop
             keep = localIndex;
             break;
         end
@@ -57,6 +58,7 @@ while trialIndex < maxTB && ~(trialIndex >= minTB && errors >= minErrors)
     end
     trialIndex = batchStart + keep - 1;
     errors = priorErrors + sum(batchErrors(1:keep));
+    decision = sixgr.lls.stats.evaluateSamplingPlan(llsCfg, errors, trialIndex);
 end
 trialTable = struct2table(vertcat(rows{1:trialIndex}));
 numTB = height(trialTable);
@@ -98,7 +100,10 @@ summaryRow = struct( ...
     "ThroughputBps", double(throughputBps), ...
     "MeanMeasuredSNRdB", mean(trialTable.MeasuredSNRdB), ...
     "MeasuredSNRStdDevdB", std(trialTable.MeasuredSNRdB), ...
-    "StoppingReason", localStoppingReason(numTB, errors, minTB, minErrors, maxTB), ...
+    "StoppingReason", string(decision.StoppingReason), ...
+    "SamplingPlan", string(decision.SamplingPlan), ...
+    "ConfidenceIntervalMethod", string(decision.ConfidenceIntervalMethod), ...
+    "StatisticalPointQualified", logical(decision.StatisticallyQualified), ...
     "RuntimeSeconds", toc(pointClock), ...
     "ExecutionBackend", "waveform_truth", ...
     "ApproximationMode", "none");
@@ -117,15 +122,5 @@ elseif pool.NumWorkers > maximumWorkers
     % process-based pool owned by the current execution policy.
     delete(pool);
     pool = parpool("Processes",maximumWorkers);
-end
-end
-
-function reason = localStoppingReason(numTB, errors, minTB, minErrors, maxTB)
-if numTB >= minTB && errors >= minErrors
-    reason = "minimum_trials_and_errors_reached";
-elseif numTB >= maxTB
-    reason = "maximum_trials_reached";
-else
-    reason = "invalid_unexpected_termination";
 end
 end

@@ -14,6 +14,8 @@ simulation:
   minBlockErrors: 100
   maxTransportBlocks: 100000
   confidenceLevel: 0.95
+  samplingPlan: fixed_sample
+  confidenceIntervalMethod: wilson_two_sided_fixed_sample
   statisticalClass: publication_candidate
   studyType: fixed_mcs_bler
 

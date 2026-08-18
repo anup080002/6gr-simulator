@@ -6,8 +6,6 @@ function [summaryRow,trialTable,diagnostic] = runLinkAdaptationSNRPoint(llsCfg,c
 % waveform results rather than threshold/LUT predictions.
 
 snrDb = double(llsCfg.simulation.snrDb(snrIndex));
-minTB = double(llsCfg.simulation.minTransportBlocks);
-minErrors = double(llsCfg.simulation.minBlockErrors);
 maxTB = double(llsCfg.simulation.maxTransportBlocks);
 rows = cell(maxTB,1);
 errors = 0;
@@ -15,35 +13,39 @@ diagnostic = struct();
 pointClock = tic;
 policy = llsCfg.linkAdaptation;
 offsetDb = double(policy.olla.initialOffsetDb);
-decision = localBootstrapDecision(policy,offsetDb);
+laDecision = localBootstrapDecision(policy,offsetDb);
 
 trialIndex = 0;
-while trialIndex < maxTB && ~(trialIndex >= minTB && errors >= minErrors)
+samplingDecision = sixgr.lls.stats.evaluateSamplingPlan( ...
+    llsCfg,errors,trialIndex);
+while trialIndex < maxTB && ~samplingDecision.Stop
     trialIndex = trialIndex + 1;
-    trialCfg = localApplyProfile(llsCfg,decision.Profile);
+    trialCfg = localApplyProfile(llsCfg,laDecision.Profile);
     phyCfg = sixgr.lls.buildPHYConfig(trialCfg,snrDb);
     [row,trialDiagnostic] = sixgr.lls.runTransportBlock( ...
         trialCfg,phyCfg,configHash,snrIndex,trialIndex, ...
         "CaptureDiagnostic",trialIndex == 1);
     row.LinkAdaptationEnabled = true;
-    row.LinkAdaptationDecisionSource = string(decision.Source);
-    row.LinkAdaptationFeedbackTrialIndex = double(decision.FeedbackTrialIndex);
-    row.LinkAdaptationFeedbackSINRdB = double(decision.FeedbackSINRdB);
-    row.LinkAdaptationEffectiveSINRdB = double(decision.EffectiveSINRdB);
-    row.LinkAdaptationSelectedCQI = double(decision.CQI);
-    row.LinkAdaptationSelectedMCSIndex = double(decision.Profile.MCSIndex);
+    row.LinkAdaptationDecisionSource = string(laDecision.Source);
+    row.LinkAdaptationFeedbackTrialIndex = double(laDecision.FeedbackTrialIndex);
+    row.LinkAdaptationFeedbackSINRdB = double(laDecision.FeedbackSINRdB);
+    row.LinkAdaptationEffectiveSINRdB = double(laDecision.EffectiveSINRdB);
+    row.LinkAdaptationSelectedCQI = double(laDecision.CQI);
+    row.LinkAdaptationSelectedMCSIndex = double(laDecision.Profile.MCSIndex);
     row.LinkAdaptationThresholdSource = string(policy.thresholdSource);
     row.LinkAdaptationThresholdValueRole = string(policy.thresholdValueRole);
     row.LinkAdaptationThresholdCalibrationId = string(policy.thresholdCalibrationId);
     row.OLLAEnabled = logical(policy.olla.enabled);
-    row.OLLAOffsetDbApplied = double(decision.OLLAOffsetDb);
+    row.OLLAOffsetDbApplied = double(laDecision.OLLAOffsetDb);
     rows{trialIndex} = row;
     errors = errors + double(row.CRCError);
     if trialIndex == 1
         diagnostic = trialDiagnostic;
     end
     offsetDb = localUpdateOLLA(offsetDb,~row.CRCError,policy.olla);
-    decision = localFeedbackDecision(policy,row,trialIndex,offsetDb);
+    laDecision = localFeedbackDecision(policy,row,trialIndex,offsetDb);
+    samplingDecision = sixgr.lls.stats.evaluateSamplingPlan( ...
+        llsCfg,errors,trialIndex);
 end
 
 trialTable = struct2table(vertcat(rows{1:trialIndex}));
@@ -77,7 +79,10 @@ summaryRow = struct( ...
     "ThroughputBps",double(successfulBits/simulatedDurationSeconds), ...
     "MeanMeasuredSNRdB",mean(trialTable.MeasuredSNRdB), ...
     "MeasuredSNRStdDevdB",std(trialTable.MeasuredSNRdB), ...
-    "StoppingReason",localStoppingReason(numTB,errors,minTB,minErrors,maxTB), ...
+    "StoppingReason",string(samplingDecision.StoppingReason), ...
+    "SamplingPlan",string(samplingDecision.SamplingPlan), ...
+    "ConfidenceIntervalMethod",string(samplingDecision.ConfidenceIntervalMethod), ...
+    "StatisticalPointQualified",logical(samplingDecision.StatisticallyQualified), ...
     "RuntimeSeconds",toc(pointClock), ...
     "ExecutionBackend","waveform_truth", ...
     "ApproximationMode","none", ...
@@ -159,16 +164,6 @@ else
     next = next - double(olla.nackStepDb);
 end
 next = max(double(olla.minimumOffsetDb),min(double(olla.maximumOffsetDb),next));
-end
-
-function reason = localStoppingReason(n,errors,minN,minE,maxN)
-if n >= minN && errors >= minE
-    reason = "minimum_trials_and_errors_reached";
-elseif n >= maxN
-    reason = "maximum_trials_reached";
-else
-    reason = "invalid_unexpected_termination";
-end
 end
 
 function text = localBoundDisplay(errors,bler,upper,cfg)

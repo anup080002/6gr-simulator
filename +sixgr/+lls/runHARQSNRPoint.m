@@ -6,8 +6,6 @@ function [summaryRow,trialTable,diagnostic] = runHARQSNRPoint(llsCfg,configHash,
 
 snrDb = double(llsCfg.simulation.snrDb(snrIndex));
 phyCfg = sixgr.lls.buildPHYConfig(llsCfg,snrDb);
-minPackets = double(llsCfg.simulation.minTransportBlocks);
-minErrors = double(llsCfg.simulation.minBlockErrors);
 maxPackets = double(llsCfg.simulation.maxTransportBlocks);
 rvSequence = double(llsCfg.harq.rvSequence(:).');
 maxTransmissions = double(llsCfg.harq.maxTransmissions);
@@ -22,9 +20,9 @@ successfulBits = 0;
 totalBits = 0;
 diagnostic = struct();
 pointClock = tic;
-while packetIndex < maxPackets && ...
-        ~(packetIndex >= minPackets && localStoppingErrors( ...
-        stoppingMetric,firstErrors,residualErrors) >= minErrors)
+decision = sixgr.lls.stats.evaluateSamplingPlan(llsCfg, ...
+    localStoppingErrors(stoppingMetric,firstErrors,residualErrors),packetIndex);
+while packetIndex < maxPackets && ~decision.Stop
     packetIndex = packetIndex + 1;
     transportBlock = [];
     priorSoftBuffer = [];
@@ -72,6 +70,8 @@ while packetIndex < maxPackets && ...
         rows{index}.FinalPacketCRCError = finalCRCError;
         rows{index}.PacketTransmissions = numel(packetRows);
     end
+    decision = sixgr.lls.stats.evaluateSamplingPlan(llsCfg, ...
+        localStoppingErrors(stoppingMetric,firstErrors,residualErrors),packetIndex);
 end
 
 trialTable = struct2table(vertcat(rows{1:rowCount}));
@@ -105,8 +105,10 @@ summaryRow = struct( ...
     "ThroughputBps",double(successfulBits/simulatedDurationSeconds), ...
     "MeanMeasuredSNRdB",mean(trialTable.MeasuredSNRdB), ...
     "MeasuredSNRStdDevdB",std(trialTable.MeasuredSNRdB), ...
-    "StoppingReason",localStoppingReason(numPackets,firstErrors,residualErrors, ...
-        minPackets,minErrors,maxPackets,stoppingMetric), ...
+    "StoppingReason",string(decision.StoppingReason), ...
+    "SamplingPlan",string(decision.SamplingPlan), ...
+    "ConfidenceIntervalMethod",string(decision.ConfidenceIntervalMethod), ...
+    "StatisticalPointQualified",logical(decision.StatisticallyQualified), ...
     "RuntimeSeconds",toc(pointClock), ...
     "ExecutionBackend","waveform_truth", ...
     "ApproximationMode","none", ...
@@ -129,16 +131,6 @@ if metric == "post_harq_residual_bler"
     value = residualErrors;
 else
     value = firstErrors;
-end
-end
-
-function reason = localStoppingReason(n,firstErrors,residualErrors,minN,minE,maxN,metric)
-if n >= minN && localStoppingErrors(metric,firstErrors,residualErrors) >= minE
-    reason = "minimum_packets_and_" + metric + "_errors_reached";
-elseif n >= maxN
-    reason = "maximum_packets_reached";
-else
-    reason = "invalid_unexpected_termination";
 end
 end
 

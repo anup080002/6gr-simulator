@@ -8,7 +8,9 @@ simulation:
   snrDb: [-4, -3, -2, -1, 0]
   minTransportBlocks: 1000
   minBlockErrors: 100
-  maxTransportBlocks: 100000
+  # Prespecified fixed N. At 95% confidence, a zero-error Wilson upper
+  # bound with N=4000 is below 1e-3, the smallest requested BLER target.
+  maxTransportBlocks: 4000
   statisticalClass: publication_candidate
   studyType: fixed_mcs_bler
 
