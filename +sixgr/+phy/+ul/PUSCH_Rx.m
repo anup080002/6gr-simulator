@@ -340,7 +340,8 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
     end
 end
 [rxGrid, ofdmInfo, trackingCorrection] = localApplyEstimatedCFOAndRedemodulate( ...
-    carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, trackingCorrection, cfg);
+    carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, ...
+    trackingCorrection, cfg, dmrsInd, dmrsSym);
 syncState = sixgr.phy.sync.resolveSynchronizationState( ...
     "SampleRate_Hz", sampleRateHz, ...
     "InjectedCFO_Hz", localResolveInjectedCFOHz(cfg), ...
@@ -872,6 +873,8 @@ rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
 rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
 rx.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_PostCorrection_Hz", NaN));
 rx.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
+rx.ResidualCFOEstimateSource = char(string(sixgr.util.structGet( ...
+    trackingCorrection, "ResidualCFOEstimateSource", "")));
 rx.ResidualTimingError_PostCorrection_samples = double(sixgr.util.structGet(syncState, "ResidualTimingError_PostCorrection_samples", NaN));
 rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
 rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
@@ -1711,7 +1714,8 @@ y = x .* cast(rot, "like", x);
 end
 
 function [rxGrid, ofdmInfo, tracking] = localApplyEstimatedCFOAndRedemodulate( ...
-    carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, tracking, cfg)
+    carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, tracking, cfg, ...
+    dmrsInd, dmrsSym)
 enabled = logical(sixgr.util.structGet(cfg, "phy.rx.cfoCorrectionEnabled", ...
     sixgr.util.structGet(cfg, "phy.impairments.cfoCorrectionEnabled", false)));
 if ~enabled
@@ -1721,8 +1725,9 @@ if ~enabled
     return;
 end
 if logical(sixgr.util.structGet(tracking, "CFOCorrectionApplied", false))
-    tracking = localEstimateResidualCFOAfterCorrection(rxWaveform, ofdmInfo, sampleRateHz, tracking, ...
-        "cyclic_prefix_post_tracking_correction");
+    tracking = localEstimateResidualCFOAfterCorrection( ...
+        rxWaveform, rxGrid, carrier, dmrsInd, dmrsSym, ofdmInfo, ...
+        sampleRateHz, tracking, cfg, "post_tracking_correction");
     return;
 end
 estimatedCFOHz = double(sixgr.util.structGet(tracking, "EstimatedCFO_Hz", NaN));
@@ -1744,8 +1749,9 @@ tracking.CFOCorrectionApplied_Hz = estimatedCFOHz;
 tracking.Status = "available_corrected";
 tracking.NAReason = "";
 tracking.CFONAReason = "";
-tracking = localEstimateResidualCFOAfterCorrection(correctedWaveform, ofdmInfo, sampleRateHz, tracking, ...
-    "cyclic_prefix_post_receiver_correction");
+tracking = localEstimateResidualCFOAfterCorrection( ...
+    correctedWaveform, rxGrid, carrier, dmrsInd, dmrsSym, ofdmInfo, ...
+    sampleRateHz, tracking, cfg, "post_receiver_correction");
 end
 
 function tf = localSuppressBlindCFOCorrectionForRuntimeAligned(cfg, tracking)
@@ -1760,19 +1766,41 @@ sourceIsBlindEstimator = any(contains(source, ["cyclic_prefix", "dmrs_reference_
 tf = runtimeAligned && ~forceBlindCorrection && ~hasInjectedCFO && sourceIsBlindEstimator;
 end
 
-function tracking = localEstimateResidualCFOAfterCorrection(rxWaveform, ofdmInfo, sampleRateHz, tracking, source)
+function tracking = localEstimateResidualCFOAfterCorrection( ...
+        rxWaveform, rxGrid, carrier, dmrsInd, dmrsSym, ofdmInfo, ...
+        sampleRateHz, tracking, cfg, source)
 tracking.ResidualCFOEstimate_Hz = NaN;
-tracking.ResidualCFOEstimateSource = string(source);
+method = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.impairments.cfoEstimationMethod", "cyclic_prefix"))));
+tracking.ResidualCFOEstimateSource = method + "_" + string(source);
 if ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
     return;
 end
 try
-    [residualHz, residualInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWaveform, ofdmInfo, sampleRateHz);
+    if any(method == ["dmrs_two_symbol", "dmrs", ...
+            "reference_symbol_phase_slope"])
+        [residualHz, residualInfo] = ...
+            sixgr.phy.rx.estimateCFOFromReferenceSymbols( ...
+            rxGrid, dmrsInd, dmrsSym, carrier, sampleRateHz);
+        tracking.ResidualCFOEstimateSource = ...
+            "dmrs_reference_symbol_phase_slope_" + string(source);
+    elseif any(method == ["cyclic_prefix", "cp"])
+        [residualHz, residualInfo] = ...
+            sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
+            rxWaveform, ofdmInfo, sampleRateHz);
+        tracking.ResidualCFOEstimateSource = ...
+            "cyclic_prefix_" + string(source);
+    else
+        tracking.ResidualCFOEstimateSource = ...
+            "unsupported_residual_cfo_method_" + method;
+        return;
+    end
     if logical(sixgr.util.structGet(residualInfo, "EstimateAvailable", false)) && isfinite(double(residualHz))
         tracking.ResidualCFOEstimate_Hz = double(residualHz);
     end
 catch
-    tracking.ResidualCFOEstimateSource = string(source) + "_failed";
+    tracking.ResidualCFOEstimateSource = ...
+        tracking.ResidualCFOEstimateSource + "_failed";
 end
 end
 
