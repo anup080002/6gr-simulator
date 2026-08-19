@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,11 +15,208 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_derived_link_table,
     _audit_domain_runtime_tables,
     _audit_frc_point_table,
+    _audit_component_bler_curve,
     _audit_link_table,
     _audit_manifest_integrity,
+    _audit_mimo_rank_layer_table,
     _audit_runtime_call_ledger,
     _audit_status_reduction,
 )
+
+
+def _component_primary_rows(direction: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for trial, crc_pass in enumerate(("1", "1", "1", "0"), start=1):
+        row = {
+            "RunID": "run-1",
+            "ScenarioID": "scenario-1",
+            "ConfigHash": "a" * 64,
+            "ExecutionID": "execution-1",
+            "ConfiguredSNR_dB": "5",
+            "ChannelModelApplied": "AWGN",
+            "Rank": "1",
+            "MCSIndex": "10",
+            "Modulation": "16QAM",
+            "CRCPass": crc_pass,
+            "FinalizedFlag": "1",
+            "CRCApplicable": "1",
+            "DecodeAttempted": "1",
+            "FallbackFlag": "0",
+            "PlaceholderFlag": "0",
+            "TruthStatus": "real_lls_evidence",
+            "Frame": str(trial),
+            "Slot": str(trial),
+            "UEID": "1",
+        }
+        if direction == "UL":
+            row.update({
+                "TransformPrecodingApplied": "0",
+                "FrequencyHoppingApplied": "0",
+                "FrequencyHoppingMode": "none",
+            })
+        rows.append(row)
+    return rows
+
+
+def _component_curve_row(direction: str) -> dict[str, str]:
+    key = "snr=5|channel=AWGN|rank=1|mcs=10|mod=16QAM"
+    if direction == "UL":
+        key += "|tp=0|hop=none"
+    row = {
+        "CampaignID": "run-1",
+        "OperatingPointID": hashlib.sha256(key.encode("utf-8")).hexdigest(),
+        "SNRdB": "5",
+        "ChannelModel": "AWGN",
+        "Rank": "1",
+        "MCSIndex": "10",
+        "Modulation": "16QAM",
+        "Trials": "4",
+        "TBErrors": "1",
+        "BLER": "0.25",
+        "ConfidenceLevel": "0.95",
+        "CILower": "0.006309463209709866",
+        "CIUpper": "0.8058795503167565",
+        "CIHalfWidth": "0.39978504355352334",
+        "MinErrorsRequired": "0",
+        "QualificationProfile": "diagnostic",
+        "PublicationQualificationRequested": "0",
+        "PublicationEligible": "0",
+        "StopReason": "diagnostic_profile_design_criteria_reached",
+        "Incomplete": "0",
+        "Status": "MEASURED",
+        "ScenarioID": "scenario-1",
+        "ConfigHash": "a" * 64,
+        "EvidenceScope": "in_path",
+        "EvidenceOrigin": "current_runtime_memory",
+        "RunID": "run-1",
+        "ExecutionID": "execution-1",
+        "CenterFrequencyHz": "3500000000",
+        "BandwidthHz": "100000000",
+        "SubcarrierSpacingHz": "30000",
+        "IntervalMethod": "CLOPPER_PEARSON_TWO_SIDED",
+        "EvidenceUnit": "decoded_transport_block",
+    }
+    if direction == "UL":
+        row.update({"TransformPrecoding": "0", "FrequencyHopping": "none"})
+    return row
+
+
+def test_component_bler_semantics_recompute_raw_counts_and_exact_interval() -> None:
+    summary = {"ScenarioID": "scenario-1", "ConfigHash": "a" * 64}
+    for direction, path in (
+        ("DL", "components/pdsch/csv/pdsch_bler_curve.csv"),
+        ("UL", "components/pusch/csv/pusch_bler_curve.csv"),
+    ):
+        row = _component_curve_row(direction)
+        checks = _audit_component_bler_curve(
+            path, list(row), [row], direction,
+            _component_primary_rows(direction), summary,
+        )
+        assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_component_bler_semantics_reject_corrupt_interval_origin_and_counts() -> None:
+    row = _component_curve_row("DL")
+    row["TBErrors"] = "2"
+    row["CILower"] = "0.1"
+    row["EvidenceOrigin"] = "reconstructed_from_chart"
+    checks = _audit_component_bler_curve(
+        "components/pdsch/csv/pdsch_bler_curve.csv",
+        list(row), [row], "DL", _component_primary_rows("DL"),
+        {"ScenarioID": "scenario-1", "ConfigHash": "a" * 64},
+    )
+    failed = {check.check_id: check.details for check in checks if not check.passed}
+    assert "EvidenceOrigin_invalid" in failed["runtime_identity_and_truth_origin"]
+    assert "bler_count_or_interval_arithmetic_invalid" in failed[
+        "operating_point_bler_and_exact_interval"
+    ]
+    assert "TBErrors_not_source_crc_fail_count" in failed[
+        "exact_primary_trial_reconciliation"
+    ]
+
+
+def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
+    raw = {
+        "RunID": "run-1", "ScenarioID": "scenario-1", "Direction": "DL",
+        "Frame": "1", "Slot": "2", "UEID": "3", "CRCPass": "0",
+        "Layers": "1", "MCSIndex": "10", "Modulation": "16QAM",
+        "IsWarmupFrame": "0",
+    }
+    row = {
+        "RunId": "run-1", "ScenarioName": "scenario-1", "TrialId": "1",
+        "Direction": "DL", "CellId": "1", "UEId": "3", "Frame": "1",
+        "Slot": "2", "ConfiguredRank": "1", "ConfiguredLayers": "1",
+        "ScheduledRank": "1", "ScheduledLayers": "1", "TransmittedRank": "1",
+        "TransmittedLayers": "1", "ReceiverEstimatedRank": "1",
+        "EffectiveDecodedRank": "0", "EffectiveDecodedLayers": "0",
+        "NumRxAntennas": "2", "NumTxPorts": "2", "TxWaveformColumns": "2",
+        "PhysicalTxAntennas": "2", "RxWaveformBranches": "2",
+        "PhysicalRxAntennas": "2", "LogicalTxPortCount": "1",
+        "LogicalRxBranchCount": "2", "ConfiguredModulation": "16QAM",
+        "ScheduledModulation": "16QAM", "TransmittedModulation": "16QAM",
+        "EffectiveDecodedModulation": "16QAM", "ConfiguredMCS": "10",
+        "ConfiguredInitialMCS": "10", "ConfiguredMaximumMCS": "10",
+        "ScheduledMCS": "10", "TransmittedMCS": "10",
+        "EffectiveDecodedMCS": "10", "DMRSPorts": "0",
+        "ConfiguredMCSSelectionPolicy": "fixed",
+        "ActualMCSSelectionMode": "configured_fixed",
+        "MCSSelectionSource": "configured_fixed_mcs",
+        "MCSAuthority": "configured_fixed_mcs",
+        "ModulationAuthority": "configured_fixed_mcs",
+        "AppliedOperatingPointSource": "configured_fixed_mcs",
+        "LinkAdaptationScheduled": "0", "LinkAdaptationApplied": "0",
+        "WidebandCQI": "NaN", "CQIDerivedMCS": "NaN",
+        "AdaptiveFeedbackDecisionObserved": "0",
+        "AppliedPrecoderMatrixSHA256": "b" * 64, "LayerSINRdB": "8.5",
+        "DecodeCrcPass": "0", "ExactSpatialMatch": "1",
+        "SpatialContractMatch": "1", "ExactOperatingPointMatch": "1",
+        "FixedOperatingPointMatch": "1", "AdaptivePolicyRequired": "0",
+        "AdaptivePolicyMatch": "1", "AdaptivePolicyConformance": "1",
+        "AdaptivePolicyFailureReason": "not_applicable_fixed_operating_point",
+        "OperatingPointContractMatch": "1", "MUExecutionRequired": "0",
+        "RequiredMUUserCount": "2", "MUMIMOEnabled": "0",
+        "InterferenceContributorCount": "0", "MUExecutionMatch": "1",
+        "ExactConfiguredMatch": "1", "ExecutionContractMatch": "1",
+        "AdaptiveMode": "0", "AdaptationEvidenceId": "",
+        "FixedAnchorMode": "1", "StrictEligible": "1",
+        "ExecutionContractOk": "1", "DecodeReliabilityOk": "0",
+        "DecodeReliabilityStatus": "crc_fail", "StrictOk": "1",
+        "SourceArtifactRef": "air_interface/csv/dl_pdsch_trials.csv",
+        "SourceRowsHash": "c" * 64, "Status": "pass", "FailureReason": "",
+    }
+    return raw, row
+
+
+def test_mimo_rank_semantics_keep_crc_failure_separate_from_execution() -> None:
+    raw, row = _mimo_source_and_rank_row()
+    checks = _audit_mimo_rank_layer_table(
+        "beamforming/csv/rank_layer_trials.csv", list(row), [row],
+        {"DL": [raw], "UL": []},
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_mimo_rank_semantics_reject_execution_and_decode_status_corruption() -> None:
+    raw, row = _mimo_source_and_rank_row()
+    row["TransmittedRank"] = "2"
+    row["StrictOk"] = "0"
+    row["DecodeReliabilityOk"] = "1"
+    row["EffectiveDecodedRank"] = "1"
+    checks = _audit_mimo_rank_layer_table(
+        "beamforming/csv/rank_layer_trials.csv", list(row), [row],
+        {"DL": [raw], "UL": []},
+    )
+    failed = {check.check_id: check.details for check in checks if not check.passed}
+    assert "ExactSpatialMatch_mismatch" in failed["execution_contract_boolean_reduction"]
+    assert "DecodeReliabilityOk_mismatch" in failed[
+        "decode_reliability_separate_from_execution"
+    ]
+    assert "crc_fail_decoded_rank_layers_not_zero" in failed[
+        "decode_reliability_separate_from_execution"
+    ]
+    assert "TransmittedRank_not_primary_source" in failed[
+        "ordered_primary_trial_and_lineage_reconciliation"
+    ]
 
 
 def _frc_point_row() -> dict[str, str]:

@@ -128,6 +128,13 @@ if localPreserveDeclaredSchemaScope(scope) || localPreserveDeclaredSchemaFile(fi
     % A column that is not applicable in this run (for example the second
     % hop PRB while hopping is disabled) must stay present as missing data;
     % removing it changes the interface and also changes the DB mirror.
+    % readtable infers an entirely blank CSV field as a numeric NaN column.
+    % Writing that inferred table back would turn honest absence into the
+    % literal token "NaN" on every row.  A CSV has no numeric type metadata,
+    % so preserve the declared header while serializing wholly absent fields
+    % as empty strings.  Mixed measured/missing numeric columns are left
+    % untouched; this rule cannot erase a partially observed measurement.
+    T = localNormalizeDeclaredAllMissingColumns(T);
     removedCount = max(0, inputWidth - originalWidth);
     sixgr.util.csvWriteTable(filePath, T, "PreserveSchema", true);
     changed = canonicalized;
@@ -149,6 +156,46 @@ changed = true;
     filePath, string(T.Properties.VariableNames));
 changed = changed || rawChanged;
 removedCount = removedCount + rawRemoved;
+end
+
+function T = localNormalizeDeclaredAllMissingColumns(T)
+names = string(T.Properties.VariableNames);
+for i = 1:numel(names)
+    name = char(names(i));
+    column = T.(name);
+    if localColumnIsEntirelyMissing(column)
+        T.(name) = strings(height(T), 1);
+    end
+end
+end
+
+function tf = localColumnIsEntirelyMissing(column)
+if isempty(column)
+    tf = true;
+    return;
+end
+if isnumeric(column)
+    % Infinity is invalid measured data, not absence.  Never conceal it.
+    tf = all(isnan(double(column(:))));
+    return;
+end
+if islogical(column)
+    tf = false;
+    return;
+end
+try
+    values = string(column(:));
+    normalized = lower(strtrim(fillmissing(values, "constant", "")));
+    tf = all(ismissing(values) | strlength(normalized) == 0 | ...
+        normalized == "nan" | normalized == "<missing>" | ...
+        normalized == "null");
+catch
+    try
+        tf = all(ismissing(column(:)));
+    catch
+        tf = false;
+    end
+end
 end
 
 function tf = localPreserveDeclaredSchemaFile(filePath)

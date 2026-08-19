@@ -577,7 +577,10 @@ def build_csv_file_dispositions(
         ):
             disposition = "PASS_MANIFEST_INTEGRITY_SEMANTICS"
         elif checks and any(
-            str(check.get("category", "")) == "domain_runtime" for check in checks
+            str(check.get("category", "")) in {
+                "domain_runtime", "component_bler", "mimo_rank_layer"
+            }
+            for check in checks
         ):
             disposition = "PASS_DOMAIN_RUNTIME_SEMANTICS"
         elif checks and any(
