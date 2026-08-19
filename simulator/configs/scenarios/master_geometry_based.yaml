@@ -1690,6 +1690,7 @@ validation:
     seeds: [104729]
     target_bler: [0.1, 0.01]
     confidence_level: 0.95
+    interval_method: CLOPPER_PEARSON_TWO_SIDED
     trials_per_drop: 200
     parallel_workers: 0
     disable_auxiliary_signals: false

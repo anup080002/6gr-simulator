@@ -36,6 +36,8 @@ assert(height(curve) == 5 && all(double(curve.TrialCount) >= 5000), ...
     "Derived DL BLER curve must keep all configured SNR bins and trial counts.");
 assert(all(double(curve.BLER_CI_Width) <= 0.05), ...
     "Derived DL BLER curve must carry confidence intervals within the configured bound.");
+assert(all(string(curve.IntervalMethod) == "CLOPPER_PEARSON_TWO_SIDED"), ...
+    "Phase-7 reduction must use and disclose the configured interval method.");
 
 drops = readtable(dropPath, "VariableNamingRule", "preserve", "TextType", "string");
 assert(height(drops) >= 30 && any(strcmp(string(drops.EvidenceStatus), "executed_trial_rows")), ...
@@ -75,6 +77,8 @@ internalCfg = struct();
 internalCfg.validation.fixed_link_campaign.min_tb_per_point = 5000;
 internalCfg.validation.fixed_link_campaign.max_ci_half_width = 0.05;
 internalCfg.validation.fixed_link_campaign.confidence_level = 0.95;
+internalCfg.validation.fixed_link_campaign.interval_method = ...
+    "CLOPPER_PEARSON_TWO_SIDED";
 internalCfg.lls6g.resolvedConfig.canonical_control.run.num_seeds = 30;
 internalCfg.lls6g.resolvedConfig.canonical_control.run.final_runs = 30;
 internalCfg.lls6g.resolvedConfig.canonical_control.run.min_campaign_snr_points = 5;
@@ -197,6 +201,8 @@ cfg.canonical_control.run.min_campaign_snr_points = 5;
 cfg.canonical_control.run.min_trials_per_sinr_bin = 5000;
 cfg.canonical_control.run.max_ci_width = 0.05;
 cfg.canonical_control.run.confidence_level = 0.95;
+cfg.validation.fixed_link_campaign.interval_method = ...
+    "CLOPPER_PEARSON_TWO_SIDED";
 cfg.frame_timing.slot_duration_ms = 0.5;
 cfg.run_control.total_slots = 1;
 cfg.scenario.bs.height_m = 25;

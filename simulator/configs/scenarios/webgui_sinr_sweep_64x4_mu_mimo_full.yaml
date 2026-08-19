@@ -766,6 +766,10 @@ pdsch:
   num_prb: 273
   layer_count: 2
   rank: 2
+  num_antenna_ports: 2
+  transmission_scheme: codebook
+  codebook_type: type2
+  pmi: 0
   modulation: 256QAM
   xoh_pdsch: 18
 

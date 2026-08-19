@@ -488,6 +488,10 @@ nested_sections:
       min_errors_for_ci: {required: false, type: integer, min: 0}
       max_ci_half_width: {required: false, type: number, min: 0}
       confidence_level: {required: false, type: number, min_exclusive: 0, max: 1}
+      interval_method:
+        required: false
+        type: string
+        allowed_values: [CLOPPER_PEARSON_TWO_SIDED, WILSON_TWO_SIDED]
       trials_per_drop: {required: false, type: integer, min: 1}
       parallel_workers: {required: false, type: integer, min: 0}
       disable_auxiliary_signals: {required: false, type: boolean}
