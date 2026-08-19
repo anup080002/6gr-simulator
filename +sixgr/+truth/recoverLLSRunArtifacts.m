@@ -157,6 +157,30 @@ localWriteScenarioManifest(layout, manifest);
 
 reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
+artifactEvidenceCoverage = table();
+artifactContractResult = struct( ...
+    "Ok", false, "Executed", false, "Status", "NOT_EVALUATED", ...
+    "EvidenceOrigin", "not_available");
+runtimeArtifactIdentity = struct();
+if finalizationMode == "completed_run_refinalization"
+    % Rebuild the runtime contract components from the canonical persisted
+    % Result.  Never carry a copied component CSV through recovery: doing so
+    % would preserve stale qualification labels even when the current
+    % exporter or YAML policy has changed.  The registration adapter checks
+    % all raw lifecycle identities before admitting any table.
+    artifactEvidence = sixgr.artifact.EvidenceRegistry();
+    [artifactEvidenceCoverage, runtimeArtifactIdentity] = ...
+        sixgr.artifact.registerPersistedCompletedRunEvidence( ...
+        artifactEvidence, result, scfg, cfg, recoveryRunTag);
+    cfg.run.executionID = char(runtimeArtifactIdentity.ExecutionID);
+    cfg.meta.executionID = char(runtimeArtifactIdentity.ExecutionID);
+    reportBundle.ArtifactEvidenceCoverage = artifactEvidenceCoverage;
+    artifactContractResult = sixgr.artifact.finalizeRunFailClosed( ...
+        runFolder, artifactEvidence, scfg, runtimeArtifactIdentity);
+    artifactContractResult.EvidenceOrigin = ...
+        "persisted_completed_run_truth";
+    reportBundle.ArtifactContract = artifactContractResult;
+end
 % The ISAC source tables have already passed through the global provenance
 % annotator in the original run.  Rebind plot lineage to those stable bytes
 % before output coverage performs its strict visual-integrity audit.
@@ -238,6 +262,9 @@ out.ScenarioStatus = scenarioStatus;
 out.ConfigOwnershipArtifacts = configOwnership;
 out.ReportBundle = reportBundle;
 out.TruthArtifactScan = truthArtifactScan;
+out.ArtifactEvidenceCoverage = artifactEvidenceCoverage;
+out.ArtifactContract = artifactContractResult;
+out.RuntimeArtifactIdentity = runtimeArtifactIdentity;
 out.OutputCoverageArtifacts = outputCoverage;
 out.ComponentArtifactViews = componentViews;
 out.SanitizedCSVs = sanitizedCSVs;

@@ -1,9 +1,10 @@
-function coverage = registerInitialAccessEvidence(registry, result, scfg, cfg, runtimeIdentity)
-%REGISTERINITIALACCESSEVIDENCE Register fresh in-path PRACH contract evidence.
+function coverage = registerInitialAccessEvidence(registry, result, scfg, cfg, runtimeIdentity, evidenceOrigin)
+%REGISTERINITIALACCESSEVIDENCE Register identity-bound PRACH contract evidence.
 %
-% Only the current run's in-memory waveform trial table is accepted.  This
-% adapter never reads an existing CSV and never pads a campaign to a
-% contract minimum.
+% Normal execution uses current_runtime_memory. Completed-run
+% re-finalization may use persisted_completed_run_truth only after strict
+% lifecycle-identity validation. This adapter never reads an existing CSV
+% and never pads a campaign to a contract minimum.
 
 arguments
     registry (1,1) sixgr.artifact.EvidenceRegistry
@@ -11,6 +12,9 @@ arguments
     scfg
     cfg (1,1) struct
     runtimeIdentity (1,1) struct = struct()
+    evidenceOrigin (1,1) string {mustBeMember(evidenceOrigin, ...
+        ["current_runtime_memory","persisted_completed_run_truth"])} = ...
+        "current_runtime_memory"
 end
 
 domain = "initial_access";
@@ -20,13 +24,15 @@ if ~(istable(raw) && ~isempty(raw))
     rows(end+1,1) = localCoverage("CSV", "prach_detection_trials.csv", ... %#ok<AGROW>
         false, 0, "NOT_REGISTERED", "in_memory_prach_trials_missing");
     coverage = struct2table(rows, "AsArray", true);
+    coverage.EvidenceOrigin = repmat(evidenceOrigin, height(coverage), 1);
     return;
 end
 
 try
-    detection = localBuildPRACHDetectionTrials(raw, scfg, cfg, runtimeIdentity);
+    detection = localBuildPRACHDetectionTrials(raw, scfg, cfg, runtimeIdentity, evidenceOrigin);
     registry.registerTable(domain, "base", "prach_detection_trials.csv", ...
-        detection, "sixgr.artifact.registerInitialAccessEvidence.prach_detection_trials");
+        detection, "sixgr.artifact.registerInitialAccessEvidence." + ...
+        evidenceOrigin + ".prach_detection_trials");
     rows(end+1,1) = localCoverage("CSV", "prach_detection_trials.csv", ... %#ok<AGROW>
         true, height(detection), "REGISTERED", "");
 catch cause
@@ -34,9 +40,10 @@ catch cause
         false, 0, "NOT_REGISTERED", string(cause.identifier) + " | " + string(cause.message));
 end
 coverage = struct2table(rows, "AsArray", true);
+coverage.EvidenceOrigin = repmat(evidenceOrigin, height(coverage), 1);
 end
 
-function T = localBuildPRACHDetectionTrials(raw, scfg, cfg, runtimeIdentity)
+function T = localBuildPRACHDetectionTrials(raw, scfg, cfg, runtimeIdentity, evidenceOrigin)
 raw = localNormalizePRACHReceiverSchema(raw);
 required = ["RARunId","PRACHOccasionID","PreambleIndexTx", ...
     "PreambleIndexDetected","PreambleDetected","PreambleDetectionMetric", ...
@@ -124,6 +131,7 @@ T = table( ...
     'ConfigHash','EvidenceScope','RunID','ExecutionID','CenterFrequencyHz', ...
     'BandwidthHz','SubcarrierSpacingHz','FrequencyEstimationEnabled', ...
     'FrequencyEstimateValid'});
+T.EvidenceOrigin = repmat(evidenceOrigin, n, 1);
 if strlength(identity.ExecutionID) == 0
     T.ExecutionID = [];
 end
