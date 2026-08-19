@@ -68,6 +68,28 @@ assert(~localAsLogical(missingGates.CampaignCompletionOk(1)) && ...
     ~localAsLogical(missingGates.SampleAdequacyOk(1)), ...
     "Missing campaign evidence must not pass completion or sample adequacy gates.");
 
+tmpInternalThresholds = tempname;
+mkdir(tmpInternalThresholds);
+cleanupInternalThresholds = onCleanup(@() rmdir(tmpInternalThresholds, "s")); %#ok<NASGU>
+internalCfg = struct();
+internalCfg.validation.fixed_link_campaign.min_tb_per_point = 5000;
+internalCfg.validation.fixed_link_campaign.max_ci_half_width = 0.05;
+internalCfg.validation.fixed_link_campaign.confidence_level = 0.95;
+internalCfg.lls6g.resolvedConfig.canonical_control.run.num_seeds = 30;
+internalCfg.lls6g.resolvedConfig.canonical_control.run.final_runs = 30;
+internalCfg.lls6g.resolvedConfig.canonical_control.run.min_campaign_snr_points = 5;
+internalCfg.lls6g.resolvedConfig.canonical_control.run.min_trials_per_sinr_bin = 5000;
+internalCfg.lls6g.resolvedConfig.canonical_control.run.max_ci_width = 0.1;
+internalCfg.lls6g.resolvedConfig.canonical_control.run.confidence_level = 0.95;
+sixgr.analytics.buildPhase7ReadinessArtifacts(internalCfg, tmpInternalThresholds);
+internalSummary = readtable(fullfile(tmpInternalThresholds, "reports", "final", ...
+    "final_campaign_summary.csv"), "VariableNamingRule", "preserve");
+assert(double(internalSummary.RequiredSeedCount(1)) == 30 && ...
+    double(internalSummary.RequiredMinTrialsPerBin(1)) == 5000 && ...
+    abs(double(internalSummary.RequiredMaxCIWidth(1)) - 0.1) < 1e-12, ...
+    ["Phase-7 campaign thresholds must retain the resolved master-YAML " ...
+     "authority after buildInternalConfig nests it under lls6g.resolvedConfig."]);
+
 tmpExecutionOnly = tempname;
 mkdir(tmpExecutionOnly);
 cleanupExecutionOnly = onCleanup(@() rmdir(tmpExecutionOnly, "s")); %#ok<NASGU>
