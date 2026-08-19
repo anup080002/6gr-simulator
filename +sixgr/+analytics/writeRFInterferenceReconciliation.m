@@ -37,7 +37,7 @@ end
 dlT = localEffectiveRows(dlT);
 ulT = localEffectiveRows(ulT);
 
-noiseT = localBuildNoiseTable(cfg);
+noiseT = localBuildNoiseTable(cfg, dlT, ulT);
 interferenceT = localBuildInterferenceTable(dlT, ulT, cfg);
 rfChainT = localBuildRFChainTable(cfg);
 cfoT = localBuildCFOTable(dlT, ulT, cfg);
@@ -90,7 +90,7 @@ path = fullfile(dirPath, fileName);
 sixgr.analytics.writeAnalysisTable(path, T);
 end
 
-function T = localBuildNoiseTable(cfg)
+function T = localBuildNoiseTable(cfg, dlT, ulT)
 bwHz = localNumber(cfg, ["global_radio_scope.channel_bandwidth_hz","frequency.bandwidth_hz","air_interface.channel_bandwidth_hz"], 100e6);
 ueNF = localNumber(cfg, ["scenario.ue.noiseFigure_dB","air_interface.ue_noise_figure_dB","ue.noise_figure_db"], 7);
 bsNF = localNumber(cfg, ["scenario.bs.noiseFigure_dB","air_interface.bs_noise_figure_dB","bs_noise_figure_db"], 5);
@@ -99,14 +99,77 @@ ueFloor = kTBdBm + ueNF;
 bsFloor = kTBdBm + bsNF;
 mode = localString(cfg, ["run.noiseOperatingMode","run.noise_operating_mode", ...
     "simulation.noiseOperatingMode","simulation.noise_operating_mode", ...
-    "noise.operatingMode","noise.operating_mode"], "receiver_noise_figure_thermal_noise");
-ok = isfinite(bwHz) && bwHz > 0 && isfinite(ueNF) && isfinite(bsNF) && strlength(strtrim(mode)) > 0;
-source = "resolved_config_noise_mode:" + string(mode);
-T = table(bwHz, -174, kTBdBm, ueNF, bsNF, ueFloor, bsFloor, string(mode), ok, ...
-    source, ...
-    'VariableNames', {'BandwidthHz','ThermalNoiseDensity_dBmHz','ThermalNoisePower_dBm', ...
-    'UE_NoiseFigure_dB','BS_NoiseFigure_dB','UE_NoiseFloor_dBm','BS_NoiseFloor_dBm', ...
-    'NoiseOperatingMode','NoiseReconciliationOk','EvidenceSource'});
+    "noise.operatingMode","noise.operating_mode"], "");
+rows = [localNoiseRow("DL", dlT, mode, bwHz, ueNF, bsNF, kTBdBm, ueFloor, bsFloor); ...
+    localNoiseRow("UL", ulT, mode, bwHz, ueNF, bsNF, kTBdBm, ueFloor, bsFloor)];
+T = struct2table(rows, "AsArray", true);
+end
+
+function row = localNoiseRow(direction, T, configuredMode, bwHz, ueNF, bsNF, kTBdBm, ueFloor, bsFloor)
+n = localHeight(T);
+mode = localStringColumn(T, "NoiseOperatingMode");
+mode = lower(strtrim(mode));
+configuredMode = lower(strtrim(string(configuredMode)));
+modePresent = numel(mode) == n && n > 0 && all(~ismissing(mode) & strlength(mode) > 0);
+modeMatches = modePresent && strlength(configuredMode) > 0 && all(mode == configuredMode);
+
+receiverInput = localNumericColumn(T, "ReceiverInputSampleNoiseVariance");
+postEq = localNumericColumn(T, "PostEqualizationNoiseVariance");
+llr = localNumericColumn(T, "LLRNoiseVariance");
+receiverInputOk = n > 0 && numel(receiverInput) == n && all(isfinite(receiverInput) & receiverInput > 0);
+postEqOk = n > 0 && numel(postEq) == n && all(isfinite(postEq) & postEq > 0);
+llrOk = n > 0 && numel(llr) == n && all(isfinite(llr) & llr > 0);
+
+status = lower(strtrim(localStringColumn(T, "NoiseVarStatus")));
+statusOk = numel(status) == n && n > 0 && all(~ismissing(status) & status == "ok");
+strictFailure = localLogicalColumn(T, "NoiseVarStrictFailure");
+strictFailureOk = numel(strictFailure) == n && n > 0 && ~any(strictFailure);
+varianceSource = localStringColumn(T, "NoiseVarianceSource");
+snrSource = localStringColumn(T, "AppliedNoiseSNRSource");
+postEqSource = localStringColumn(T, "PostEqualizationNoiseVarianceSource");
+llrSource = localStringColumn(T, "LLRNoiseVarianceSource");
+varianceSourceOk = localAllNonblank(varianceSource, n);
+snrSourceOk = localAllNonblank(snrSource, n);
+postEqSourceOk = localAllNonblank(postEqSource, n);
+llrSourceOk = localAllNonblank(llrSource, n);
+
+configOk = isfinite(bwHz) && bwHz > 0 && isfinite(ueNF) && isfinite(bsNF) && ...
+    strlength(configuredMode) > 0;
+ok = configOk && modeMatches && receiverInputOk && postEqOk && llrOk && ...
+    statusOk && strictFailureOk && varianceSourceOk && snrSourceOk && ...
+    postEqSourceOk && llrSourceOk;
+observedMode = strjoin(unique(mode(~ismissing(mode) & strlength(mode) > 0), "stable"), "|");
+evidenceSource = localTernary(n > 0, ...
+    "runtime_trial_noise_variance_and_lineage_columns:" + configuredMode, ...
+    "evidence_missing");
+row = struct( ...
+    "Direction", char(direction), ...
+    "ObservedRows", double(n), ...
+    "BandwidthHz", double(bwHz), ...
+    "ThermalNoiseDensity_dBmHz", -174, ...
+    "ThermalNoisePower_dBm", double(kTBdBm), ...
+    "UE_NoiseFigure_dB", double(ueNF), ...
+    "BS_NoiseFigure_dB", double(bsNF), ...
+    "UE_NoiseFloor_dBm", double(ueFloor), ...
+    "BS_NoiseFloor_dBm", double(bsFloor), ...
+    "NoiseOperatingMode", char(configuredMode), ...
+    "ConfiguredNoiseOperatingMode", char(configuredMode), ...
+    "ObservedNoiseOperatingMode", char(observedMode), ...
+    "NoiseOperatingModeExactFraction", localFraction(~ismissing(mode) & mode == configuredMode), ...
+    "ReceiverInputNoiseVariancePositiveFraction", localFraction(isfinite(receiverInput) & receiverInput > 0), ...
+    "PostEqualizationNoiseVariancePositiveFraction", localFraction(isfinite(postEq) & postEq > 0), ...
+    "LLRNoiseVariancePositiveFraction", localFraction(isfinite(llr) & llr > 0), ...
+    "MeanReceiverInputSampleNoiseVariance", localMean(receiverInput), ...
+    "MeanPostEqualizationNoiseVariance", localMean(postEq), ...
+    "MeanLLRNoiseVariance", localMean(llr), ...
+    "NoiseVarianceStatusOkFraction", localFraction(~ismissing(status) & status == "ok"), ...
+    "NoiseVarianceStrictFailureCount", double(nnz(strictFailure)), ...
+    "NoiseVarianceSourceObservedFraction", localNonblankFraction(varianceSource), ...
+    "AppliedNoiseSNRSourceObservedFraction", localNonblankFraction(snrSource), ...
+    "PostEqualizationNoiseVarianceSourceObservedFraction", localNonblankFraction(postEqSource), ...
+    "LLRNoiseVarianceSourceObservedFraction", localNonblankFraction(llrSource), ...
+    "NoiseReconciliationOk", logical(ok), ...
+    "EvidenceSource", char(evidenceSource));
 end
 
 function T = localBuildRFChainTable(cfg)
@@ -323,28 +386,78 @@ T = struct2table(rows, "AsArray", true);
 end
 
 function row = localInterferenceRow(direction, T, cfg)
-modeCfg = localString(cfg, ["interference.inter_cell_execution_mode","run.interference_mode","topology.inter_cell_execution_mode"], "");
+[flagPresent, flagEnabled] = localConfiguredInterferenceEnablement(cfg);
+configuredModes = localConfiguredInterferenceModes(cfg);
+configuredModes = lower(strtrim(configuredModes));
+configuredModes = configuredModes(~ismissing(configuredModes) & strlength(configuredModes) > 0);
+modeCfg = strjoin(unique(configuredModes, "stable"), "|");
+configuredModeKnown = ~isempty(configuredModes);
+configuredModeActive = configuredModeKnown && ...
+    any(localIsWaveformTruthInterferenceMode(configuredModes)) && ...
+    all(localIsDisabledInterferenceMode(configuredModes) | ...
+        localIsWaveformTruthInterferenceMode(configuredModes));
+configuredModeDisabled = configuredModeKnown && all(localIsDisabledInterferenceMode(configuredModes));
+if flagPresent
+    configuredEnabled = flagEnabled;
+else
+    configuredEnabled = configuredModeActive;
+end
+configuredConsistent = configuredModeKnown && ...
+    ((configuredEnabled && configuredModeActive) || (~configuredEnabled && configuredModeDisabled));
 modes = localStringColumn(T, "InterferenceMode");
-contributors = localFiniteColumn(T, "InterferenceContributorCount");
-power = localFiniteColumn(T, "InterferenceAggregatedRxPower_dBm");
+modes = lower(strtrim(modes));
+contributorsRaw = localNumericColumn(T, "InterferenceContributorCount");
+powerRaw = localNumericColumn(T, "InterferenceAggregatedRxPower_dBm");
 source = localStringColumn(T, "InterferencePowerSource");
 truth = localLogicalColumn(T, "FullInterfererChannelTruthUsed");
-observed = localHeight(T) > 0 && (~isempty(modes) || ~isempty(contributors) || ~isempty(power));
-modeEvidence = strjoin(unique(modes(strlength(strtrim(modes)) > 0), "stable"), "|");
-if strlength(modeEvidence) == 0
-    modeEvidence = modeCfg;
+observedRows = localHeight(T);
+observed = observedRows > 0 && numel(modes) == observedRows && ...
+    numel(contributorsRaw) == observedRows && numel(powerRaw) == observedRows && ...
+    numel(source) == observedRows && numel(truth) == observedRows;
+validMode = ~ismissing(modes) & strlength(strtrim(modes)) > 0;
+modeEvidence = strjoin(unique(modes(validMode), "stable"), "|");
+modePresent = observedRows > 0 && numel(modes) == observedRows && ...
+    all(~ismissing(modes) & strlength(modes) > 0);
+runtimeDisabled = modePresent && all(localIsDisabledInterferenceMode(modes));
+runtimeActive = modePresent && all(localIsWaveformTruthInterferenceMode(modes));
+
+contributorsDisabled = observedRows > 0 && numel(contributorsRaw) == observedRows && ...
+    all(isfinite(contributorsRaw) & contributorsRaw == 0);
+powerDisabled = observedRows > 0 && numel(powerRaw) == observedRows && ...
+    ~any(isfinite(powerRaw));
+sourceDisabled = observedRows > 0 && numel(source) == observedRows && ...
+    all(ismissing(source) | strlength(strtrim(source)) == 0);
+truthDisabled = observedRows > 0 && numel(truth) == observedRows && ~any(truth);
+disabledIdentity = runtimeDisabled && contributorsDisabled && powerDisabled && sourceDisabled && truthDisabled;
+
+contributorsEnabled = observedRows > 0 && numel(contributorsRaw) == observedRows && ...
+    all(isfinite(contributorsRaw) & contributorsRaw > 0);
+powerEnabled = observedRows > 0 && numel(powerRaw) == observedRows && all(isfinite(powerRaw));
+sourceEnabled = localAllNonblank(source, observedRows);
+truthEnabled = observedRows > 0 && numel(truth) == observedRows && all(truth);
+enabledTruth = runtimeActive && contributorsEnabled && powerEnabled && sourceEnabled && truthEnabled;
+
+if configuredEnabled
+    accountingStatus = "enabled_runtime_waveform_truth";
+    runtimeSemanticsOk = enabledTruth;
+    evidenceName = "trial_waveform_interference_truth_columns";
+else
+    accountingStatus = "disabled_runtime_identity";
+    runtimeSemanticsOk = disabledIdentity;
+    evidenceName = "trial_disabled_interference_identity_columns";
 end
-fullMode = contains(lower(string(modeEvidence)), "full_per_link_channel_waveform_sum") || ...
-    contains(lower(string(modeEvidence)), "shared");
-hasContributor = (~isempty(contributors) && max(contributors, [], "omitnan") > 0) || ~isempty(power);
-truthOk = isempty(truth) || any(truth);
-ok = observed && fullMode && hasContributor && truthOk;
+ok = observed && configuredConsistent && runtimeSemanticsOk;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "ConfiguredInterferenceMode", char(string(modeCfg)), "ObservedInterferenceMode", char(string(modeEvidence)), ...
-    "MaxContributorCount", localMax(contributors), "MeanInterferencePower_dBm", localMean(power), ...
-    "InterferencePowerSource", char(strjoin(unique(source(strlength(strtrim(source)) > 0), "stable"), "|")), ...
+    "ConfiguredInterferenceEnabled", logical(configuredEnabled), ...
+    "ConfiguredModeConsistent", logical(configuredConsistent), ...
+    "ObservedDisabledIdentity", logical(disabledIdentity), ...
+    "InterferenceEvaluationStatus", char(accountingStatus), ...
+    "MaxContributorCount", localMax(contributorsRaw), "MeanInterferencePower_dBm", localMean(powerRaw), ...
+    "InterferencePowerSource", char(strjoin(unique(source(~ismissing(source) & ...
+        strlength(strtrim(source)) > 0), "stable"), "|")), ...
     "InterferenceTruthChannelUsed", logical(any(truth)), "InterferenceAccountingOk", logical(ok), ...
-    "EvidenceSource", char(localEvidenceSource(observed, "trial_shared_slot_interference_columns")));
+    "EvidenceSource", char(localEvidenceSource(observed, evidenceName)));
 end
 
 function T = localBuildMIMOTable(dlT, ulT, cfg)
@@ -387,6 +500,7 @@ T = table(cfgDLLayers, cfgULLayers, bootstrapMCS, maximumMCS, ...
     dl.ConfiguredModulationExactOk, ul.ConfiguredModulationExactOk, ...
     dl.AdaptivePolicyOk, ul.AdaptivePolicyOk, ...
     dl.RuntimeArrayModelOk, ul.RuntimeArrayModelOk, ...
+    dl.RuntimeArrayEvaluationStatus, ul.RuntimeArrayEvaluationStatus, ...
     muRequested, dl.MUPairedRows, ul.MUPairedRows, muExecutionOk, ...
     dl.ExactOk, ul.ExactOk, dl.ExecutionPolicyOk, ul.ExecutionPolicyOk, ok, ...
     "raw_waveform_trials_exact_configuration_and_adaptive_policy_contract", ...
@@ -405,6 +519,7 @@ T = table(cfgDLLayers, cfgULLayers, bootstrapMCS, maximumMCS, ...
     'DL_ConfiguredModulationExactOk','UL_ConfiguredModulationExactOk', ...
     'DL_AdaptivePolicyOk','UL_AdaptivePolicyOk', ...
     'DL_RuntimeArrayModelOk','UL_RuntimeArrayModelOk', ...
+    'DL_RuntimeArrayEvaluationStatus','UL_RuntimeArrayEvaluationStatus', ...
     'MUMIMOConfigured','DLMUPairedRows','ULMUPairedRows','MUMIMOExecutionOk', ...
     'DLConfiguredEffectiveExactOk','ULConfiguredEffectiveExactOk', ...
     'DLExecutionPolicyOk','ULExecutionPolicyOk', ...
@@ -420,6 +535,7 @@ out = struct( ...
     "ConfiguredMCS", NaN, "ConfiguredModulation", "", "AdaptiveMode", false, ...
     "ConfiguredMCSExactOk", false, "ConfiguredModulationExactOk", false, ...
     "AdaptivePolicyOk", false, "RuntimeArrayModelOk", false, ...
+    "RuntimeArrayEvaluationStatus", "runtime_array_evidence_missing", ...
     "MUPairedRows", 0, "ExactOk", false, "ExecutionPolicyOk", false);
 if istable(cfgRow) && height(cfgRow) == 1
     out.ConfiguredMCS = double(cfgRow.ConfiguredMCS(1));
@@ -453,6 +569,8 @@ antennaRowOk = isfinite(physicalTx) & isfinite(physicalRx) & ...
 if ~isempty(antennaRowOk)
     out.PhysicalAntennaExactFraction = mean(antennaRowOk);
 end
+hasSameAssumptions = localHasColumn(T, "ChannelUsesSameRuntimeAntennaAssumptions");
+hasCountOnly = localHasColumn(T, "ChannelUsesCountOnlyAntennaModel");
 sameAssumptions = localLogicalColumn(T, "ChannelUsesSameRuntimeAntennaAssumptions");
 countOnly = localLogicalColumn(T, "ChannelUsesCountOnlyAntennaModel");
 if isempty(sameAssumptions)
@@ -461,7 +579,29 @@ end
 if isempty(countOnly)
     countOnly = true(height(T), 1);
 end
-out.RuntimeArrayModelOk = all(antennaRowOk) && all(sameAssumptions) && ~any(countOnly);
+fullRuntimeArrayOk = all(antennaRowOk) && hasSameAssumptions && hasCountOnly && ...
+    numel(sameAssumptions) == height(T) && numel(countOnly) == height(T) && ...
+    all(sameAssumptions) && ~any(countOnly);
+channelModels = upper(strtrim(localStringColumn(T, "ChannelModel")));
+explicitAWGN = numel(channelModels) == height(T) && ...
+    all(~ismissing(channelModels) & channelModels == "AWGN");
+scalarAWGNSISOIdentity = all(antennaRowOk) && configuredTx == 1 && configuredRx == 1 && ...
+    configuredLayers == 1 && rankExact && explicitAWGN && hasCountOnly && ...
+    numel(countOnly) == height(T) && all(countOnly);
+if fullRuntimeArrayOk
+    out.RuntimeArrayModelOk = true;
+    out.RuntimeArrayEvaluationStatus = "physical_runtime_array_model";
+elseif scalarAWGNSISOIdentity
+    % A scalar unit channel is an allowed truth shortcut only for an
+    % explicit 1x1 AWGN link.  It must never qualify a fading or spatial
+    % MIMO campaign, where per-resource/per-antenna channel evidence is
+    % mandatory.
+    out.RuntimeArrayModelOk = true;
+    out.RuntimeArrayEvaluationStatus = "explicit_awgn_siso_scalar_identity";
+else
+    out.RuntimeArrayModelOk = false;
+    out.RuntimeArrayEvaluationStatus = "runtime_array_model_mismatch";
+end
 
 mcs = localNumericColumn(T, "MCSIndex");
 fallbackMCS = localNumericColumn(T, "MCS");
@@ -697,6 +837,98 @@ if ~(istable(T) && height(T) > 0 && localHasColumn(T, name))
     return;
 end
 vals = localColumnAsLogical(T.(char(string(name))));
+end
+
+function tf = localAllNonblank(values, expectedCount)
+values = string(values(:));
+tf = expectedCount > 0 && numel(values) == expectedCount && ...
+    all(~ismissing(values) & strlength(strtrim(values)) > 0);
+end
+
+function frac = localNonblankFraction(values)
+values = string(values(:));
+if isempty(values)
+    frac = NaN;
+else
+    frac = mean(~ismissing(values) & strlength(strtrim(values)) > 0);
+end
+end
+
+function tf = localIsDisabledInterferenceMode(values)
+values = lower(strtrim(string(values(:))));
+tf = ~ismissing(values) & (values == "none" | values == "disabled" | ...
+    values == "off" | values == "no_interference" | values == "identity");
+end
+
+function tf = localIsWaveformTruthInterferenceMode(values)
+values = lower(strtrim(string(values(:))));
+tf = ~ismissing(values) & (values == "full_per_link_channel_waveform_sum" | ...
+    values == "shared_slot_waveform_superposition");
+end
+
+function modes = localConfiguredInterferenceModes(cfg)
+paths = [ ...
+    "interference.inter_cell_execution_mode"
+    "interference.intra_cell_execution_mode"
+    "run.interferenceExecutionMode"
+    "run.intraCellInterferenceExecutionMode"
+    "run.interference_mode"
+    "topology.inter_cell_execution_mode"];
+modes = strings(0, 1);
+for path = paths.'
+    raw = localGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    value = string(raw);
+    value = value(:);
+    value = value(~ismissing(value) & strlength(strtrim(value)) > 0);
+    modes = [modes; value]; %#ok<AGROW>
+end
+end
+
+function [present, enabled] = localConfiguredInterferenceEnablement(cfg)
+paths = [ ...
+    "interference.inter_cell_interference_flag"
+    "interference.inter_cell_interference_enable"
+    "interference.interCellEnabled"
+    "channel.interference.interCellEnabled"
+    "interference.intra_cell_interference_flag"
+    "interference.intra_cell_interference_enable"
+    "interference.intraCellEnabled"
+    "channel.interference.intraCellEnabled"
+    "interference.mu_mimo_interference_flag"];
+present = false;
+enabled = false;
+for path = paths.'
+    raw = localGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    [parsed, ok] = localParseBool(raw);
+    if ok
+        present = true;
+        enabled = enabled || parsed;
+    end
+end
+end
+
+function [value, ok] = localParseBool(raw)
+value = false;
+ok = false;
+if (islogical(raw) || isnumeric(raw)) && isscalar(raw) && isfinite(double(raw))
+    value = logical(raw);
+    ok = true;
+    return;
+end
+token = lower(strtrim(string(raw)));
+if isscalar(token) && any(token == ["true","1","yes","on"])
+    value = true;
+    ok = true;
+elseif isscalar(token) && any(token == ["false","0","no","off"])
+    value = false;
+    ok = true;
+end
 end
 
 function tf = localColumnAsLogical(values)

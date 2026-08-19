@@ -71,6 +71,97 @@ for i = 1:size(required, 1)
     end
 end
 
+% Explicitly disabled interference is not missing evidence.  It is a
+% runtime-observed identity only when every trial says none, has zero
+% contributors, no finite aggregate power/source and no interferer truth.
+disabledCfg = cfg;
+disabledCfg.interference.inter_cell_execution_mode = "none";
+disabledCfg.interference.inter_cell_interference_flag = false;
+disabledCfg.interference.intra_cell_interference_flag = false;
+disabledCfg.interference.mu_mimo_interference_flag = false;
+disabledTrials = struct("DL", localDisabledTrialTable("DL"), ...
+    "UL", localDisabledTrialTable("UL"));
+disabledRoot = fullfile(tmp, "disabled_identity");
+sixgr.analytics.writeRFInterferenceReconciliation(disabledCfg, disabledRoot, ...
+    disabledTrials, mobilityArtifacts, struct());
+disabledInterference = readtable(fullfile(disabledRoot, "reports", "csv", ...
+    "interference_accounting.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+assert(all(localAsLogical(disabledInterference.InterferenceAccountingOk)) && ...
+    all(localAsLogical(disabledInterference.ObservedDisabledIdentity)) && ...
+    all(~localAsLogical(disabledInterference.ConfiguredInterferenceEnabled)) && ...
+    all(string(disabledInterference.InterferenceEvaluationStatus) == "disabled_runtime_identity"), ...
+    "Configured-off and runtime-off interference must pass as an audited disabled identity.");
+
+badDisabledTrials = disabledTrials;
+badDisabledTrials.DL.InterferenceContributorCount(1) = 1;
+badDisabledRoot = fullfile(tmp, "bad_disabled_identity");
+sixgr.analytics.writeRFInterferenceReconciliation(disabledCfg, badDisabledRoot, ...
+    badDisabledTrials, mobilityArtifacts, struct());
+badInterference = readtable(fullfile(badDisabledRoot, "reports", "csv", ...
+    "interference_accounting.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+dlBad = upper(string(badInterference.Direction)) == "DL";
+assert(~localAsLogical(badInterference.InterferenceAccountingOk(dlBad)) && ...
+    localAsLogical(badInterference.InterferenceAccountingOk(~dlBad)), ...
+    "A nonzero contributor must fail an otherwise disabled interference identity.");
+
+badNoiseTrials = disabledTrials;
+badNoiseTrials.DL.NoiseOperatingMode(1) = "receiver_noise_figure_thermal_noise";
+badNoiseRoot = fullfile(tmp, "bad_noise_mode");
+sixgr.analytics.writeRFInterferenceReconciliation(disabledCfg, badNoiseRoot, ...
+    badNoiseTrials, mobilityArtifacts, struct());
+badNoise = readtable(fullfile(badNoiseRoot, "reports", "csv", ...
+    "noise_reconciliation.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+dlBad = upper(string(badNoise.Direction)) == "DL";
+assert(~localAsLogical(badNoise.NoiseReconciliationOk(dlBad)) && ...
+    localAsLogical(badNoise.NoiseReconciliationOk(~dlBad)), ...
+    "Runtime/configured noise-mode mismatch must fail reconciliation for that direction.");
+
+% The only permitted scalar channel/array identity is an exact rank-1,
+% 1x1, explicit-AWGN link.  This keeps fixed-reference AWGN honest without
+% weakening the per-antenna/per-resource evidence required by fading MIMO.
+sisoCfg = cfg;
+sisoCfg.scenario.bs.nTxAnt = 1;
+sisoCfg.scenario.bs.nRxAnt = 1;
+sisoCfg.scenario.ue.nTxAnt = 1;
+sisoCfg.scenario.ue.nRxAnt = 1;
+sisoCfg.mimo.max_dl_layers = 1;
+sisoCfg.mimo.max_ul_layers = 1;
+sisoTrials = struct("DL", localScalarAWGNTrialTable("DL"), ...
+    "UL", localScalarAWGNTrialTable("UL"));
+sisoRoot = fullfile(tmp, "scalar_awgn_siso");
+sixgr.analytics.writeRFInterferenceReconciliation(sisoCfg, sisoRoot, ...
+    sisoTrials, mobilityArtifacts, struct());
+sisoMIMO = readtable(fullfile(sisoRoot, "reports", "csv", ...
+    "mimo_kpi_reconciliation.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+assert(localAsLogical(sisoMIMO.MimoKpiReconciliationOk(1)) && ...
+    string(sisoMIMO.DL_RuntimeArrayEvaluationStatus(1)) == "explicit_awgn_siso_scalar_identity" && ...
+    string(sisoMIMO.UL_RuntimeArrayEvaluationStatus(1)) == "explicit_awgn_siso_scalar_identity", ...
+    "Exact explicit-AWGN SISO scalar identities must be accepted and labeled narrowly.");
+
+badFadingTrials = sisoTrials;
+badFadingTrials.DL.ChannelModel(:) = "CDL-D";
+badFadingRoot = fullfile(tmp, "scalar_fading_rejected");
+sixgr.analytics.writeRFInterferenceReconciliation(sisoCfg, badFadingRoot, ...
+    badFadingTrials, mobilityArtifacts, struct());
+badFadingMIMO = readtable(fullfile(badFadingRoot, "reports", "csv", ...
+    "mimo_kpi_reconciliation.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+assert(~localAsLogical(badFadingMIMO.MimoKpiReconciliationOk(1)) && ...
+    ~localAsLogical(badFadingMIMO.DL_RuntimeArrayModelOk(1)), ...
+    "A scalar count-only fading channel must never qualify as a runtime MIMO array model.");
+
+proxyInterferenceCfg = cfg;
+proxyInterferenceCfg.interference.inter_cell_execution_mode = "explicit_activity_power_sum";
+proxyInterferenceTrials = struct("DL", localTrialTable("DL"), "UL", localTrialTable("UL"));
+proxyInterferenceTrials.DL.InterferenceMode(:) = "explicit_activity_power_sum";
+proxyInterferenceTrials.UL.InterferenceMode(:) = "explicit_activity_power_sum";
+proxyInterferenceRoot = fullfile(tmp, "proxy_interference_rejected");
+sixgr.analytics.writeRFInterferenceReconciliation(proxyInterferenceCfg, proxyInterferenceRoot, ...
+    proxyInterferenceTrials, mobilityArtifacts, struct());
+proxyInterference = readtable(fullfile(proxyInterferenceRoot, "reports", "csv", ...
+    "interference_accounting.csv"), "VariableNamingRule", "preserve", "TextType", "string");
+assert(all(~localAsLogical(proxyInterference.InterferenceAccountingOk)), ...
+    "Aggregate/proxy interference modes must never pass waveform-truth reconciliation.");
+
 % Regression: adaptive QPSK/MCS 1 is not an exact match for a nominal
 % 256QAM/MCS 20 operating point.  It can satisfy the execution policy only
 % when every trial carries the scheduled/applied decision and causal CSI
@@ -208,6 +299,41 @@ T.ChannelUsesSameRuntimeAntennaAssumptions = true(n, 1);
 T.ChannelUsesCountOnlyAntennaModel = false(n, 1);
 T.MUMIMOGroupSize = ones(n, 1);
 T.MUMIMOEnabled = false(n, 1);
+T.NoiseOperatingMode = repmat("standalone_awgn_snr_argument", n, 1);
+T.ReceiverInputSampleNoiseVariance = repmat(1e-3, n, 1);
+T.PostEqualizationNoiseVariance = repmat(1.1e-3, n, 1);
+T.LLRNoiseVariance = repmat(1.1e-3, n, 1);
+T.NoiseVarStatus = repmat("OK", n, 1);
+T.NoiseVarStrictFailure = false(n, 1);
+T.NoiseVarianceSource = repmat("fixture_waveform_awgn_replay", n, 1);
+T.AppliedNoiseSNRSource = repmat("occupied_re_signal_energy_over_effective_grid_noise_variance", n, 1);
+T.PostEqualizationNoiseVarianceSource = repmat("fixture_post_equalization_variance", n, 1);
+T.LLRNoiseVarianceSource = repmat("fixture_soft_demapper_variance", n, 1);
+T.ChannelModel = repmat("AWGN", n, 1);
+end
+
+function T = localDisabledTrialTable(direction)
+T = localTrialTable(direction);
+n = height(T);
+T.InterferenceMode(:) = "none";
+T.InterferenceContributorCount(:) = 0;
+T.InterferenceAggregatedRxPower_dBm(:) = NaN;
+T.InterferencePowerSource(:) = "";
+T.FullInterfererChannelTruthUsed(:) = false;
+end
+
+function T = localScalarAWGNTrialTable(direction)
+T = localTrialTable(direction);
+n = height(T);
+T.Rank(:) = 1;
+T.RankIndicator(:) = 1;
+T.PhysicalTxAntennas(:) = 1;
+T.PhysicalRxAntennas(:) = 1;
+T.ChannelUsesSameRuntimeAntennaAssumptions(:) = false;
+T.ChannelUsesCountOnlyAntennaModel(:) = true;
+T.ChannelModel(:) = "AWGN";
+T.MUMIMOGroupSize(:) = 1;
+T.MUMIMOEnabled(:) = false;
 end
 
 function T = localMobilityResolution()
