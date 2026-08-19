@@ -40,6 +40,8 @@ end
 
 dlRaw = localTableField(trialData, ["dl","DL"]);
 ulRaw = localTableField(trialData, ["ul","UL"]);
+dlSourceArtifact = localPrimaryTrialArtifact(dlRaw, "DL");
+ulSourceArtifact = localPrimaryTrialArtifact(ulRaw, "UL");
 dl = localFilterMeasuredTrials(dlRaw);
 ul = localFilterMeasuredTrials(ulRaw);
 
@@ -53,9 +55,9 @@ slotDuration_s = localSlotDurationSeconds(cfg, scenarioCfg);
 nBins = max(1, round(double(opt.BinCount)));
 
 [dlBler, dlThroughput, dlDistribution, dlScatter, dlSummary, dlKPI] = ...
-    localBuildDirectionArtifacts(dl, "DL", "dl_pdsch_trials.csv", nBins, bandwidthHz, 4/5, slotDuration_s, runTag);
+    localBuildDirectionArtifacts(dl, "DL", dlSourceArtifact, nBins, bandwidthHz, 4/5, slotDuration_s, runTag);
 [ulBler, ulThroughput, ulDistribution, ulScatter, ulSummary, ulKPI] = ...
-    localBuildDirectionArtifacts(ul, "UL", "ul_pusch_trials.csv", nBins, bandwidthHz, 1/5, slotDuration_s, runTag);
+    localBuildDirectionArtifacts(ul, "UL", ulSourceArtifact, nBins, bandwidthHz, 1/5, slotDuration_s, runTag);
 
 distribution = localConcatTables(dlDistribution, ulDistribution);
 scatter = localSortDistanceScatter(localConcatTables(dlScatter, ulScatter));
@@ -124,6 +126,26 @@ results.RunDir = string(runDir);
 results.Paths = paths;
 results.Tables = tables;
 results.RowCounts = structfun(@(T) height(T), tables, "UniformOutput", false);
+end
+
+function artifact = localPrimaryTrialArtifact(T, direction)
+direction = upper(string(direction));
+if direction == "DL"
+    artifact = "dl_pdsch_trials.csv";
+else
+    artifact = "ul_pusch_trials.csv";
+end
+if ~(istable(T) && height(T) > 0 && localHasColumn(T, "FixedLinkCampaign"))
+    return;
+end
+fixed = localToLogical(T.FixedLinkCampaign);
+if numel(fixed) == height(T) && all(fixed)
+    if direction == "DL"
+        artifact = "dl_fixed_link_campaign_trials.csv";
+    else
+        artifact = "ul_fixed_link_campaign_trials.csv";
+    end
+end
 end
 
 function [blerT, throughputT, distT, scatterT, summaryT, kpiT] = localBuildDirectionArtifacts(T, direction, sourceArtifact, nBins, bandwidthHz, tddEfficiency, slotDuration_s, runTag)

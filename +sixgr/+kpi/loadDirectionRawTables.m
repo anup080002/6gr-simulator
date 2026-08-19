@@ -27,6 +27,8 @@ if isstruct(details)
     if isstruct(rt)
         [raw.DL, raw.Paths.DL] = localResolveTable(sixgr.util.structGet(rt, "DL", table()), "air_interface/csv/dl_pdsch_trials.csv");
         [raw.UL, raw.Paths.UL] = localResolveTable(sixgr.util.structGet(rt, "UL", table()), "air_interface/csv/ul_pusch_trials.csv");
+        raw.Paths.DL = localRuntimeTrialPath(raw.DL, "DL", raw.Paths.DL);
+        raw.Paths.UL = localRuntimeTrialPath(raw.UL, "UL", raw.Paths.UL);
         [raw.PacketSDU, raw.Paths.PacketSDU] = localResolveTable(sixgr.util.structGet(rt, "PacketSDU", table()), "packet_flow/csv/live_packet_sdu_delivery_ledger.csv");
         [raw.ApplicationPackets, raw.Paths.ApplicationPackets] = localResolveTable(sixgr.util.structGet(rt, "ApplicationPackets", table()), "packet_flow/csv/live_application_packet_delivery_ledger.csv");
         [raw.HARQTimeline, raw.Paths.HARQTimeline] = localResolveTable(sixgr.util.structGet(rt, "HARQTimeline", table()), "harq/csv/live_harq_observation_timeline.csv");
@@ -84,11 +86,13 @@ end
 
 if strlength(runFolder) > 0
     if isempty(raw.DL)
-        p = localCandidatePath(runFolder, "air_interface/csv/dl_pdsch_trials.csv", "csv/dl_pdsch_trials.csv");
+        p = localCandidatePath(runFolder, "air_interface/csv/dl_pdsch_trials.csv", "csv/dl_pdsch_trials.csv", ...
+            "air_interface/csv/dl_fixed_link_campaign_trials.csv");
         [raw.DL, raw.Paths.DL] = localResolveTable(p, string(p));
     end
     if isempty(raw.UL)
-        p = localCandidatePath(runFolder, "air_interface/csv/ul_pusch_trials.csv", "csv/ul_pusch_trials.csv");
+        p = localCandidatePath(runFolder, "air_interface/csv/ul_pusch_trials.csv", "csv/ul_pusch_trials.csv", ...
+            "air_interface/csv/ul_fixed_link_campaign_trials.csv");
         [raw.UL, raw.Paths.UL] = localResolveTable(p, string(p));
     end
     if isempty(raw.PacketSDU)
@@ -143,7 +147,7 @@ for i = 1:numel(paths)
 end
 end
 
-function p = localCandidatePath(runFolder, canonicalRel, localRel)
+function p = localCandidatePath(runFolder, canonicalRel, localRel, fallbackRel)
 runFolder = char(string(runFolder));
 p = fullfile(runFolder, canonicalRel);
 if exist(p, "file") == 2
@@ -154,12 +158,42 @@ if exist(pLocal, "file") == 2
     p = pLocal;
     return;
 end
+if nargin >= 4 && strlength(strtrim(string(fallbackRel))) > 0
+    pFallback = fullfile(runFolder, char(string(fallbackRel)));
+    if exist(pFallback, "file") == 2
+        p = pFallback;
+        return;
+    end
+end
 parent = fileparts(runFolder);
 if strlength(string(parent)) > 0
     pParent = fullfile(parent, canonicalRel);
     if exist(pParent, "file") == 2
         p = pParent;
     end
+end
+end
+
+function path = localRuntimeTrialPath(T, direction, currentPath)
+path = string(currentPath);
+if ~(istable(T) && height(T) > 0 && ...
+        ismember("FixedLinkCampaign", string(T.Properties.VariableNames)))
+    return;
+end
+raw = T.FixedLinkCampaign;
+if islogical(raw) || isnumeric(raw)
+    fixed = isfinite(double(raw)) & double(raw) ~= 0;
+else
+    token = lower(strtrim(string(raw)));
+    fixed = ismember(token, ["1","true","yes","on","enabled"]);
+end
+if numel(fixed) ~= height(T) || ~all(fixed)
+    return;
+end
+if upper(string(direction)) == "DL"
+    path = "air_interface/csv/dl_fixed_link_campaign_trials.csv";
+else
+    path = "air_interface/csv/ul_fixed_link_campaign_trials.csv";
 end
 end
 

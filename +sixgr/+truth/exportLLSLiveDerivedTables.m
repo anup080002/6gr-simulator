@@ -147,8 +147,8 @@ end
 
 function T = localBuildChannelStatsTable(dlT, ulT, srsT, trsT)
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "dl_pdsch_trials"), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], "ul_pusch_trials"), ...
+    localAggregateByDirectionAndSNR(dlT, "DL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], localRuntimeTrialSource(dlT, "DL", false)), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], localRuntimeTrialSource(ulT, "UL", false)), ...
     localAggregateByDirectionAndSNR(srsT, "SRS", ["SINR_dB","CQI","MCSIndex","RankEstimate","EstimatedRI","NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","QCLAccuracy","TrackingFailureProbability"], "srs_trials"), ...
     localAggregateByDirectionAndSNR(trsT, "TRS", ["NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","PhaseTrackingError_deg","QCLAccuracy"], "trs_trials")};
 T = localVertcat(parts);
@@ -157,10 +157,40 @@ if isempty(T)
 end
 end
 
+function source = localRuntimeTrialSource(T, direction, includePath)
+direction = upper(string(direction));
+if direction == "DL"
+    stem = "dl_pdsch_trials";
+else
+    stem = "ul_pusch_trials";
+end
+if istable(T) && height(T) > 0 && ...
+        ismember("FixedLinkCampaign", string(T.Properties.VariableNames))
+    raw = T.FixedLinkCampaign;
+    if islogical(raw) || isnumeric(raw)
+        fixed = isfinite(double(raw)) & double(raw) ~= 0;
+    else
+        token = lower(strtrim(string(raw)));
+        fixed = ismember(token, ["1","true","yes","on","enabled"]);
+    end
+    if numel(fixed) == height(T) && all(fixed)
+        if direction == "DL"
+            stem = "dl_fixed_link_campaign_trials";
+        else
+            stem = "ul_fixed_link_campaign_trials";
+        end
+    end
+end
+source = stem;
+if logical(includePath)
+    source = "air_interface/csv/" + source + ".csv";
+end
+end
+
 function T = localBuildRankStatsTable(dlT, ulT)
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["RankIndicator","RankEstimate","Layers"], "dl_pdsch_trials"), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["RankIndicator","RankEstimate","Layers"], "ul_pusch_trials")};
+    localAggregateByDirectionAndSNR(dlT, "DL", ["RankIndicator","RankEstimate","Layers"], localRuntimeTrialSource(dlT, "DL", false)), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", ["RankIndicator","RankEstimate","Layers"], localRuntimeTrialSource(ulT, "UL", false))};
 T = localVertcat(parts);
 if isempty(T)
     T = localEmptySummaryTable();
@@ -191,13 +221,13 @@ function T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder)
 beamMetricFields = ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount", ...
     "SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"];
 rawBeamT = localVertcat({ ...
-    localAggregateByDirectionAndSNR(dlT, "DL", beamMetricFields, "dl_pdsch_trials"), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", beamMetricFields, "ul_pusch_trials")});
+    localAggregateByDirectionAndSNR(dlT, "DL", beamMetricFields, localRuntimeTrialSource(dlT, "DL", false)), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", beamMetricFields, localRuntimeTrialSource(ulT, "UL", false))});
 if isempty(rawBeamT)
     [persistedDL, persistedUL] = localReadPersistedDirectionalBeamTrials(runFolder);
     rawBeamT = localVertcat({ ...
-        localAggregateByDirectionAndSNR(persistedDL, "DL", beamMetricFields, "air_interface/csv/dl_pdsch_trials.csv"), ...
-        localAggregateByDirectionAndSNR(persistedUL, "UL", beamMetricFields, "air_interface/csv/ul_pusch_trials.csv")});
+        localAggregateByDirectionAndSNR(persistedDL, "DL", beamMetricFields, localRuntimeTrialSource(persistedDL, "DL", true)), ...
+        localAggregateByDirectionAndSNR(persistedUL, "UL", beamMetricFields, localRuntimeTrialSource(persistedUL, "UL", true))});
 end
 rawBeamT = localAnnotateBeamSummaryTable(rawBeamT, "P2_runtime_beam_refinement", "PDSCH_PUSCH_GRANT");
 
@@ -239,8 +269,12 @@ if strlength(strtrim(string(runFolder))) == 0
     return;
 end
 layout = sixgr.report.resultLayout(runFolder);
-dlT = localReadOptionalDerivedTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
-ulT = localReadOptionalDerivedTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
+dlT = localReadFirstDerivedTable({ ...
+    fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "dl_fixed_link_campaign_trials.csv")});
+ulT = localReadFirstDerivedTable({ ...
+    fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "ul_fixed_link_campaign_trials.csv")});
 end
 
 function T = localReadSSBBeamSweepTable(runFolder)
@@ -607,8 +641,8 @@ end
 
 function T = localBuildCSIStatsTable(dlT, ulT)
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","PMI","CRI","RankIndicator"], "dl_pdsch_trials"), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","PMI","CRI","RankIndicator"], "ul_pusch_trials")};
+    localAggregateByDirectionAndSNR(dlT, "DL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","PMI","CRI","RankIndicator"], localRuntimeTrialSource(dlT, "DL", false)), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","PMI","CRI","RankIndicator"], localRuntimeTrialSource(ulT, "UL", false))};
 T = localVertcat(parts);
 if isempty(T)
     T = localEmptySummaryTable();
@@ -618,10 +652,10 @@ end
 function T = localBuildLinkAdaptationInputTable(cfg, dlT, ulT)
 parts = {};
 if istable(dlT) && ~isempty(dlT)
-    parts{end+1} = localDirectionLinkAdaptationRows(dlT, "DL", "air_interface/csv/dl_pdsch_trials.csv", cfg); %#ok<AGROW>
+    parts{end+1} = localDirectionLinkAdaptationRows(dlT, "DL", localRuntimeTrialSource(dlT, "DL", true), cfg); %#ok<AGROW>
 end
 if istable(ulT) && ~isempty(ulT)
-    parts{end+1} = localDirectionLinkAdaptationRows(ulT, "UL", "air_interface/csv/ul_pusch_trials.csv", cfg); %#ok<AGROW>
+    parts{end+1} = localDirectionLinkAdaptationRows(ulT, "UL", localRuntimeTrialSource(ulT, "UL", true), cfg); %#ok<AGROW>
 end
 T = localVertcat(parts);
 if isempty(T)
@@ -1293,16 +1327,13 @@ rows = repmat(struct( ...
 if ~(istable(sourceT) && ~isempty(sourceT))
     return;
 end
-frames = [];
-if ismember("Frame", string(sourceT.Properties.VariableNames))
-    frames = unique(double(sourceT.Frame), "stable");
-    frames = frames(isfinite(frames));
-end
+frameKeys = localFERFrameKeys(sourceT);
+frames = unique(frameKeys(strlength(frameKeys) > 0), "stable");
 frameFailCount = NaN;
 if ~isempty(frames)
     frameFailMask = false(numel(frames), 1);
     for fi = 1:numel(frames)
-        frameSlice = sourceT(abs(double(sourceT.Frame) - frames(fi)) < 1e-9, :);
+        frameSlice = sourceT(frameKeys == frames(fi), :);
         crcVals = double(frameSlice.CRCPass);
         statusVals = upper(strtrim(string(frameSlice.Status)));
         crashVals = double(frameSlice.Crash);
@@ -1352,17 +1383,17 @@ end
 
 function fer = localFrameErrorRate(sourceT)
 fer = NaN;
-if ~(istable(sourceT) && ~isempty(sourceT) && ismember("Frame", string(sourceT.Properties.VariableNames)))
+if ~(istable(sourceT) && ~isempty(sourceT))
     return;
 end
-frames = unique(double(sourceT.Frame), "stable");
-frames = frames(isfinite(frames));
+frameKeys = localFERFrameKeys(sourceT);
+frames = unique(frameKeys(strlength(frameKeys) > 0), "stable");
 if isempty(frames)
     return;
 end
 frameFailCount = 0;
 for fi = 1:numel(frames)
-    frameSlice = sourceT(abs(double(sourceT.Frame) - frames(fi)) < 1e-9, :);
+    frameSlice = sourceT(frameKeys == frames(fi), :);
     crcVals = double(frameSlice.CRCPass);
     statusVals = upper(strtrim(string(frameSlice.Status)));
     crashVals = double(frameSlice.Crash);
@@ -1371,6 +1402,42 @@ for fi = 1:numel(frames)
     end
 end
 fer = localRatio(double(frameFailCount), double(numel(frames)));
+end
+
+function keys = localFERFrameKeys(T)
+% Fixed-link Monte-Carlo points restart SFN/frame numbering independently.
+% Point/drop/trial is therefore the frame identity for FER aggregation;
+% grouping by Frame alone aliases distinct SNR experiments.
+keys = strings(height(T), 1);
+vars = string(T.Properties.VariableNames);
+isFixed = false(height(T), 1);
+if ismember("FixedLinkCampaign", vars)
+    raw = T.FixedLinkCampaign;
+    if islogical(raw) || isnumeric(raw)
+        isFixed = logical(double(raw));
+    else
+        token = lower(strtrim(string(raw)));
+        isFixed = ismember(token, ["1","true","yes","on","enabled"]);
+    end
+end
+if any(isFixed) && all(ismember(["FixedLinkPointIndex","FixedLinkDropIndex","FixedLinkTrialIndex"], vars))
+    point = double(T.FixedLinkPointIndex);
+    drop = double(T.FixedLinkDropIndex);
+    trial = double(T.FixedLinkTrialIndex);
+    valid = isFixed & isfinite(point) & isfinite(drop) & isfinite(trial);
+    keys(valid) = "fixed|point=" + string(point(valid)) + ...
+        "|drop=" + string(drop(valid)) + "|trial=" + string(trial(valid));
+end
+ordinary = strlength(keys) == 0;
+if ismember("Frame", vars)
+    frame = double(T.Frame);
+    valid = ordinary & isfinite(frame);
+    keys(valid) = "frame=" + string(frame(valid));
+elseif ismember("SFN", vars)
+    frame = double(T.SFN);
+    valid = ordinary & isfinite(frame);
+    keys(valid) = "frame=" + string(frame(valid));
+end
 end
 
 function T = localEnsureCoverageLayerSINRContract(T)
@@ -2267,7 +2334,16 @@ function col = localOptionalTextColumn(T, name, defaultValue)
 if ismember(string(name), string(T.Properties.VariableNames))
     col = string(T.(char(name)));
 else
-    col = repmat(string(defaultValue), height(T), 1);
+    fallback = string(defaultValue);
+    if isscalar(fallback)
+        col = repmat(fallback, height(T), 1);
+    elseif numel(fallback) == height(T)
+        col = reshape(fallback, [], 1);
+    else
+        error("sixgr:truth:OptionalTextColumnDimensionMismatch", ...
+            "Default text evidence for '%s' has %d values for %d trial rows.", ...
+            string(name), numel(fallback), height(T));
+    end
 end
 end
 

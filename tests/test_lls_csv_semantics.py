@@ -439,6 +439,40 @@ def test_fixed_link_disabled_live_domains_are_not_required_but_user_summary_is(
     assert "missing_runtime_rows" in user.details
 
 
+def test_fixed_link_only_audit_uses_declared_campaign_trial_tables(tmp_path: Path) -> None:
+    resolved = {
+        "sweeps_and_matrix": {"fixed_link_calibration": {"only": True}},
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(resolved), encoding="utf-8")
+    _write_rows(
+        tmp_path / "reports/csv/scenario_summary.csv",
+        [{
+            "ScenarioID": "fixed",
+            "ConfigHash": "a" * 64,
+            "EffectiveDLTrialCount": "1",
+            "EffectiveULTrialCount": "1",
+        }],
+    )
+    for direction, name in (("DL", "dl"), ("UL", "ul")):
+        _write_rows(
+            tmp_path / f"air_interface/csv/{name}_fixed_link_campaign_trials.csv",
+            [{"Direction": direction, "FixedLinkCampaign": "1"}],
+        )
+
+    audit = audit_run(tmp_path)
+    paths = {
+        row["artifact_path"]
+        for row in audit["canonical_csv_semantic_audit"]
+        if row["category"] == "primary_link"
+    }
+    assert "air_interface/csv/dl_fixed_link_campaign_trials.csv" in paths
+    assert "air_interface/csv/ul_fixed_link_campaign_trials.csv" in paths
+    assert "air_interface/csv/dl_pdsch_trials.csv" not in paths
+    assert "air_interface/csv/ul_pusch_trials.csv" not in paths
+
+
 def test_runtime_config_application_evidence_rejects_nan_run_identity(tmp_path: Path) -> None:
     _write_rows(
         tmp_path / "reports/csv/runtime_config_application_evidence.csv",

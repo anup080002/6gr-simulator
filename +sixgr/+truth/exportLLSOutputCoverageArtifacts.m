@@ -103,10 +103,10 @@ tables.prach_table = localBuildRuntimeMirrorTable(src.PRACHTrials, meta, ...
     "runtime_control_trial_rows", "UL");
 tables.pucch_table = localBuildPUCCHRuntimeTable(src, meta);
 tables.pusch_table = localBuildRuntimeMirrorTable(src.ULTrials, meta, ...
-    "sixgr.link.runULPUSCHThroughput", "air_interface/csv/ul_pusch_trials.csv", ...
+    "sixgr.link.runULPUSCHThroughput", src.ULTrialsSourceArtifact, ...
     "runtime_air_interface_trial_rows", "UL");
 tables.pdsch_table = localBuildRuntimeMirrorTable(src.DLTrials, meta, ...
-    "sixgr.link.runDLPDSCHThroughput", "air_interface/csv/dl_pdsch_trials.csv", ...
+    "sixgr.link.runDLPDSCHThroughput", src.DLTrialsSourceArtifact, ...
     "runtime_air_interface_trial_rows", "DL");
 tables.srs_table = localBuildRuntimeMirrorTable(src.SRSTrials, meta, ...
     "sixgr.truth.exportControlPlaneTraces", "control/csv/srs_trials.csv|air_interface/csv/srs_trials.csv", ...
@@ -356,8 +356,16 @@ src.SlotTrace = localReadFirstOptionalTable( ...
     fullfile(layout.ReportCSVDir, "slot_trace.csv"));
 src.DLGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"));
 src.ULGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"));
-src.DLTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
-src.ULTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
+src.DLTrialsSourceArtifact = localFirstExistingArtifactRef(layout.Root, [ ...
+    "air_interface/csv/dl_pdsch_trials.csv"
+    "air_interface/csv/dl_fixed_link_campaign_trials.csv"
+    "reports/csv/dl_fixed_link_campaign_trials.csv"]);
+src.ULTrialsSourceArtifact = localFirstExistingArtifactRef(layout.Root, [ ...
+    "air_interface/csv/ul_pusch_trials.csv"
+    "air_interface/csv/ul_fixed_link_campaign_trials.csv"
+    "reports/csv/ul_fixed_link_campaign_trials.csv"]);
+src.DLTrials = localReadOptionalTable(fullfile(layout.Root, src.DLTrialsSourceArtifact));
+src.ULTrials = localReadOptionalTable(fullfile(layout.Root, src.ULTrialsSourceArtifact));
 src.PBCHTrials = localReadFirstOptionalTable( ...
     fullfile(layout.ControlCSVDir, "pbch_trials.csv"), ...
     fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"));
@@ -8025,6 +8033,16 @@ end
 function strs = localStringFromMask(mask, trueValue, falseValue)
 strs = repmat(string(falseValue), numel(mask), 1);
 strs(mask) = string(trueValue);
+end
+
+function relativePath = localFirstExistingArtifactRef(runRoot, candidates)
+relativePath = "";
+for candidate = string(candidates(:)).'
+    if exist(fullfile(runRoot, candidate), "file") == 2
+        relativePath = candidate;
+        return;
+    end
+end
 end
 
 function T = localReadOptionalTable(pathStr)

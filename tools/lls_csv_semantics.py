@@ -28,6 +28,10 @@ PRIMARY_LINK_TABLES = {
     "DL": "air_interface/csv/dl_pdsch_trials.csv",
     "UL": "air_interface/csv/ul_pusch_trials.csv",
 }
+FIXED_LINK_PRIMARY_TABLES = {
+    "DL": "air_interface/csv/dl_fixed_link_campaign_trials.csv",
+    "UL": "air_interface/csv/ul_fixed_link_campaign_trials.csv",
+}
 RUNTIME_CALL_LEDGER = "reports/csv/runtime_call_ledger.csv"
 RUNTIME_LEDGER_REQUIRED_COLUMNS = (
     "Sequence",
@@ -913,9 +917,22 @@ def _audit_derived_link_table(
     elif name == "fer_summary.csv":
         for index, row in enumerate(rows, start=1):
             raw = _raw_rows_for_scope(link_rows, _text(row, "Direction"), _text(row, "UEIndex"))
-            frame_groups: dict[tuple[str, str], list[dict[str, str]]] = {}
+            frame_groups: dict[tuple[str, ...], list[dict[str, str]]] = {}
             for item in raw:
-                frame_groups.setdefault((_text(item, "SFN", "Frame"), _text(item, "SweepPointIndex")), []).append(item)
+                if _boolean(item, "FixedLinkCampaign") is True:
+                    frame_key = (
+                        "fixed_link",
+                        _text(item, "FixedLinkPointIndex"),
+                        _text(item, "FixedLinkDropIndex"),
+                        _text(item, "FixedLinkTrialIndex"),
+                    )
+                else:
+                    frame_key = (
+                        "runtime_frame",
+                        _text(item, "SFN", "Frame"),
+                        _text(item, "SweepPointIndex"),
+                    )
+                frame_groups.setdefault(frame_key, []).append(item)
             errored = sum(any(_boolean(item, "CRCPass") is False for item in group) for group in frame_groups.values())
             observed = len(frame_groups)
             if not _close(_number(row, "ObservedFrames"), observed, atol=0) or not _close(_number(row, "ErroredFrames"), errored, atol=0):
@@ -1241,6 +1258,7 @@ def _audit_domain_runtime_tables(
 
     extended_root = _io_path(run_root)
     resolved_config = _load_resolved_config(run_root)
+    resolved_primary_tables = primary_link_tables(run_root)
     candidates: list[tuple[str, Path]] = []
     for current, _directories, filenames in os.walk(extended_root):
         current_path = Path(current)
@@ -1249,7 +1267,7 @@ def _audit_domain_runtime_tables(
             if not filename.lower().endswith(".csv"):
                 continue
             relative = (relative_directory / filename).as_posix()
-            if relative in PRIMARY_LINK_TABLES.values() or relative in CONTROL_TABLES or relative in DERIVED_LINK_TABLES:
+            if relative in resolved_primary_tables.values() or relative in CONTROL_TABLES or relative in DERIVED_LINK_TABLES:
                 # These tables have stronger, schema-specific checks above;
                 # do not reclassify an explicitly non-applicable derived
                 # table as missing through the generic domain rule.
@@ -1418,6 +1436,18 @@ def _truthy_config(source: dict[str, Any], *paths: str) -> bool:
     return False
 
 
+def primary_link_tables(run_root: Path) -> dict[str, str]:
+    """Resolve primary PHY table names from the persisted run authority."""
+
+    resolved = _load_resolved_config(run_root)
+    fixed_only = _truthy_config(
+        resolved,
+        "sweeps_and_matrix.fixed_link_calibration.only",
+        "canonical_control.run.fixed_link_campaign_only",
+    )
+    return dict(FIXED_LINK_PRIMARY_TABLES if fixed_only else PRIMARY_LINK_TABLES)
+
+
 def _domain_table_applicability(
     relative: str,
     run_root: Path,
@@ -1463,7 +1493,7 @@ def _domain_table_applicability(
     if relative == "reports/csv/live_user_performance_snapshot.csv":
         has_link_rows = any(
             bool(_read_rows(run_root / path)[1])
-            for path in PRIMARY_LINK_TABLES.values()
+            for path in primary_link_tables(run_root).values()
         )
         return has_link_rows, has_link_rows
     return True, True
@@ -1859,13 +1889,14 @@ def _audit_status_reduction(run_root: Path, summary_path: str, summary: dict[str
 
 def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     run_root = run_root.resolve()
+    resolved_primary_tables = primary_link_tables(run_root)
     summary_rel = "reports/csv/scenario_summary.csv"
     _summary_header, summary_rows = _read_rows(run_root / summary_rel)
     summary = summary_rows[0] if summary_rows else {}
     runner_profile = _text(summary, "RunnerProfile").strip().lower()
     component_only = runner_profile in COMPONENT_ONLY_RUNNER_PROFILES
     has_primary_run_evidence = bool(summary_rows) or any(
-        _io_path(run_root / path).is_file() for path in PRIMARY_LINK_TABLES.values()
+        _io_path(run_root / path).is_file() for path in resolved_primary_tables.values()
     )
     has_chart_contract = _io_path(
         run_root / "reports/csv/contract_plot_lineage.csv"
@@ -1885,7 +1916,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         }
     checks: list[AuditCheck] = []
     link_rows: dict[str, list[dict[str, str]]] = {}
-    for direction, path in PRIMARY_LINK_TABLES.items():
+    for direction, path in resolved_primary_tables.items():
         header, rows = _read_rows(run_root / path)
         link_rows[direction] = rows
         if component_only and not rows:

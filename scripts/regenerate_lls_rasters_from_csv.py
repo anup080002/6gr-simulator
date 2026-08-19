@@ -824,22 +824,61 @@ def validate_run_root(run_root: Path) -> Path:
         if component_markers is not None:
             required_markers.extend(resolved / marker for marker in component_markers)
         else:
+            sweeps = config.get("sweeps_and_matrix", {}) \
+                if isinstance(config, dict) else {}
+            fixed_link = sweeps.get("fixed_link_calibration", {}) \
+                if isinstance(sweeps, dict) else {}
+            canonical = config.get("canonical_control", {}) \
+                if isinstance(config, dict) else {}
+            canonical_run = canonical.get("run", {}) \
+                if isinstance(canonical, dict) else {}
+            fixed_link_only = _as_config_bool(
+                fixed_link.get("only") if isinstance(fixed_link, dict) else None,
+                default=_as_config_bool(
+                    canonical_run.get("fixed_link_campaign_only")
+                    if isinstance(canonical_run, dict) else None,
+                    default=False,
+                ),
+            )
             direction = str(simulation.get("link_direction") or "both").strip().lower() \
                 if isinstance(simulation, dict) else "both"
             if direction in {"", "all"}:
                 direction = "both"
             if direction in {"both", "dl", "downlink"}:
                 required_markers.append(
-                    resolved / "air_interface" / "csv" / "dl_pdsch_trials.csv"
+                    resolved / "air_interface" / "csv" /
+                    (
+                        "dl_fixed_link_campaign_trials.csv"
+                        if fixed_link_only else "dl_pdsch_trials.csv"
+                    )
                 )
             if direction in {"both", "ul", "uplink"}:
                 required_markers.append(
-                    resolved / "air_interface" / "csv" / "ul_pusch_trials.csv"
+                    resolved / "air_interface" / "csv" /
+                    (
+                        "ul_fixed_link_campaign_trials.csv"
+                        if fixed_link_only else "ul_pusch_trials.csv"
+                    )
                 )
     missing = [str(path) for path in required_markers if not io_path(path).is_file()]
     if missing:
         raise SystemExit("Run folder is missing required authority files: " + "; ".join(missing))
     return resolved
+
+
+def _as_config_bool(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    token = str(value).strip().lower()
+    if token in {"true", "1", "yes", "on", "enabled"}:
+        return True
+    if token in {"false", "0", "no", "off", "disabled"}:
+        return False
+    return bool(default)
 
 
 def _semantic_row_is_policy_filtered(

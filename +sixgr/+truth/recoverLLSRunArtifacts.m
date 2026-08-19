@@ -30,9 +30,11 @@ layout = sixgr.report.resultLayout(runFolder);
 localEnsureDirs(layout);
 storedMeta = localReadStoredRunMetadata(runFolder);
 finalizationMode = lower(strtrim(string(p.Results.FinalizationMode)));
-if ~ismember(finalizationMode, ["failed_recovery", "completed_run_refinalization"])
+if ~ismember(finalizationMode, ["failed_recovery", ...
+        "completed_run_refinalization", "persisted_trial_refinalization"])
     error("sixgr:truth:recover:InvalidFinalizationMode", ...
-        "FinalizationMode must be failed_recovery or completed_run_refinalization.");
+        ["FinalizationMode must be failed_recovery, " ...
+        "completed_run_refinalization, or persisted_trial_refinalization."]);
 end
 
 inputCfg = p.Results.scenarioCfg;
@@ -92,6 +94,20 @@ if finalizationMode == "completed_run_refinalization"
     result.RefinalizedFromPersistedCompletedRun = true;
     restoredTruthArtifacts = sixgr.truth.restoreCompletedRunTruthArtifacts( ...
         runFolder, result);
+elseif finalizationMode == "persisted_trial_refinalization"
+    if ~logical(runtimeEvidenceRefinalization.RawEvidencePresent)
+        error("sixgr:truth:recover:MissingPersistedTrialEvidence", ...
+            ["Persisted-trial re-finalization requires at least one " ...
+            "primary DL or UL runtime trial row."]);
+    end
+    result = struct( ...
+        "Ok", false, ...
+        "RefinalizedFromPersistedTrialRun", true, ...
+        "ProfileReportedOk", false, ...
+        "RunCompletion", "completed_with_failures", ...
+        "DLTrialRows", double(runtimeEvidenceRefinalization.DLTrialRows), ...
+        "ULTrialRows", double(runtimeEvidenceRefinalization.ULTrialRows));
+    restoredTruthArtifacts = table();
 else
     result = struct( ...
         "Ok", false, ...
@@ -143,6 +159,17 @@ sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), 
 manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
 localWriteScenarioManifest(layout, manifest);
 sanitizedCSVs = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
+% Browser publication is part of terminal evidence finalization, not a UI
+% convenience. Run it only after CSV sanitization so every raster and
+% lineage hash binds to the exact stable source bytes.
+contractMaterialization = ...
+    sixgr.artifact.materializeBrowserContractArtifacts(runFolder);
+contractMaterialization.RunID = recoveryRunTag;
+contractMaterialization.GeneratedAtUTC = string(sixgr.util.utcNowISO8601());
+browserReceipt = sixgr.artifact.writeBrowserPublicationReceipt( ...
+    runFolder, contractMaterialization);
+reportBundle.BrowserContractMaterialization = contractMaterialization;
+reportBundle.BrowserPublicationReceipt = browserReceipt;
 componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
     "Enabled", logical(scfg.get( ...
         "output.component_artifact_views.enabled", false)), ...
@@ -152,6 +179,17 @@ componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
 % Keep the final verdict tied to the exact post-sanitization source bytes.
 % This is idempotent and never regenerates or substitutes a plot.
 sixgr.lls.refreshISACPlotLineage(runFolder, cfg);
+finalVisualAudit = sixgr.visual.finalizeRunVisualAudit(runFolder);
+outputCoverage.VisualArtifactIntegrity = finalVisualAudit.Integrity;
+outputCoverage.VisualArtifactAudit = finalVisualAudit.Audit;
+reportBundle.OutputCoverageArtifacts = outputCoverage;
+postMaterializationPhase7 = ...
+    sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
+postMaterializationPublication = ...
+    sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
+reportBundle.PostMaterializationPhase7 = postMaterializationPhase7;
+reportBundle.PostMaterializationPublicationReadiness = ...
+    postMaterializationPublication;
 % Sanitization and component publication are mutating finalization stages.
 % Re-evaluate the exact persisted tree after both so the root verdict never
 % describes an earlier intermediate filesystem state.
@@ -190,6 +228,12 @@ out.SanitizedCSVs = sanitizedCSVs;
 out.RestoredTruthArtifacts = restoredTruthArtifacts;
 out.RecoveryArtifactStore = recoveryStore;
 out.RuntimeEvidenceRefinalization = runtimeEvidenceRefinalization;
+out.BrowserContractMaterialization = contractMaterialization;
+out.BrowserPublicationReceipt = browserReceipt;
+out.FinalVisualAudit = finalVisualAudit;
+out.PostMaterializationPhase7 = postMaterializationPhase7;
+out.PostMaterializationPublicationReadiness = ...
+    postMaterializationPublication;
 out.FinalizationMode = finalizationMode;
 out.RecoveryConfigAuthority = recoveryConfigAuthority;
 end
@@ -204,10 +248,8 @@ end
 function localEnsureResolvedSnapshots(layout, scfg)
 resolvedStruct = scfg.toStruct();
 jsonPath = fullfile(layout.MetaDir, "scenario_config_resolved.json");
-jsonCreated = false;
 if exist(jsonPath, "file") ~= 2
     sixgr.util.jsonWrite(jsonPath, resolvedStruct);
-    jsonCreated = true;
 end
 yamlPath = fullfile(layout.MetaDir, "scenario_config_resolved.yaml");
 if exist(yamlPath, "file") ~= 2
@@ -223,7 +265,7 @@ if exist(sourcePath, "file") ~= 2
     sixgr.util.csvWriteTable(sourcePath, srcT);
 end
 identityPath = fullfile(layout.MetaDir, "scenario_config_identity.json");
-if jsonCreated && exist(identityPath, "file") ~= 2
+if exist(jsonPath, "file") == 2 && exist(identityPath, "file") ~= 2
     fid = fopen(jsonPath, "r");
     if fid < 0
         error("sixgr:truth:recover:ResolvedConfigSnapshotUnreadable", ...
@@ -332,15 +374,21 @@ status.ErrorSource = "recovered_failed_run_artifacts";
 status.ErrorIdentifier = string(errorIdentifier);
 status.ErrorMessage = string(errorMessage);
 status.AuthoritativeStatusSource = "recovered_failed_run_artifacts";
-if lower(strtrim(string(finalizationMode))) == "completed_run_refinalization"
+if ismember(lower(strtrim(string(finalizationMode))), ...
+        ["completed_run_refinalization", "persisted_trial_refinalization"])
     status.RunCompletion = "completed_with_failures";
-    status.RequiredFailedCases = "completed_run_refinalization_pending_truth_contract";
-    status.StatusAuthority = "completed_run_refinalization_pending_truth_contract";
-    status.StatusNotes = "Completed waveform evidence is being re-finalized; no success is claimed before every canonical root gate passes.";
+    status.RequiredFailedCases = ...
+        "persisted_trial_refinalization_pending_truth_contract";
+    status.StatusAuthority = ...
+        "persisted_trial_refinalization_pending_truth_contract";
+    status.StatusNotes = [ ...
+        "Persisted waveform evidence is being re-finalized; no success " ...
+        "is claimed before every canonical root gate passes."];
     status.ErrorSource = "";
     status.ErrorIdentifier = "";
     status.ErrorMessage = "";
-    status.AuthoritativeStatusSource = "completed_run_refinalization_pending_truth_contract";
+    status.AuthoritativeStatusSource = ...
+        "persisted_trial_refinalization_pending_truth_contract";
 end
 end
 
@@ -465,8 +513,14 @@ end
 
 function T = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder)
 layout = sixgr.report.resultLayout(runFolder);
-dlTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
-ulTrials = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
+dlTrials = localReadFirstAvailableTable( ...
+    fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "dl_fixed_link_campaign_trials.csv"), ...
+    fullfile(layout.ReportCSVDir, "dl_fixed_link_campaign_trials.csv"));
+ulTrials = localReadFirstAvailableTable( ...
+    fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "ul_fixed_link_campaign_trials.csv"), ...
+    fullfile(layout.ReportCSVDir, "ul_fixed_link_campaign_trials.csv"));
 opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
 opSummary.Radio.SCS_kHz = double(scfg.get("frame.scs_khz", NaN));
 cp = string(scfg.get("frame.cp_type", ...
@@ -792,6 +846,16 @@ catch
 end
 end
 
+function T = localReadFirstAvailableTable(varargin)
+T = table();
+for i = 1:nargin
+    T = localReadOptionalTable(varargin{i});
+    if height(T) > 0 || exist(varargin{i}, "file") == 2
+        return;
+    end
+end
+end
+
 function txt = localUTCStamp()
 dt = datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd HH:mm:ss");
 txt = char(replace(string(dt), " ", "T") + "Z");
@@ -808,7 +872,9 @@ end
 end
 
 function notes = localJoinStatusNotes(existing, addition)
-parts = [string(existing); string(addition)];
+existingParts = string(existing);
+additionParts = string(addition);
+parts = [existingParts(:); additionParts(:)];
 parts = strtrim(parts(:));
 parts = parts(strlength(parts) > 0);
 parts = unique(parts, "stable");

@@ -1,12 +1,12 @@
 function status = applyCompletedRefinalizationVerdict(status, verdict, finalizationMode)
 %APPLYCOMPLETEDREFINALIZATIONVERDICT Reduce a completed-run recovery verdict.
 %
-% Failed/aborted recovery remains fail-closed. Only the explicit
-% completed_run_refinalization mode may promote a run, and only when both
-% the runtime truth contract and canonical root status pass.
+% Failed/aborted recovery remains fail-closed. Only explicit persisted-run
+% re-finalization modes may promote a run, and only when both the runtime
+% truth contract and canonical root status pass.
 
-if nargin < 3 || lower(strtrim(string(finalizationMode))) ~= ...
-        "completed_run_refinalization"
+if nargin < 3 || ~ismember(lower(strtrim(string(finalizationMode))), ...
+        ["completed_run_refinalization", "persisted_trial_refinalization"])
     return;
 end
 

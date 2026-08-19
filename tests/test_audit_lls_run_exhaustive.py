@@ -92,6 +92,34 @@ def test_zero_and_nan_columns_are_classified_not_hidden(tmp_path: Path) -> None:
     assert rows["PartlyMissing"]["value_population_class"] == "mixed_finite_and_missing"
     assert rows["PartlyMissing"]["nan_token_count"] == "1"
 
+    with (output / "all_csv_first_three_rows.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        previews = list(csv.DictReader(handle))
+    assert len(previews) == 2
+    assert previews[0]["source_row_number"] == "1"
+    assert previews[0]["missing_or_nan_cell_count"] == "1"
+    assert previews[0]["zero_numeric_cell_count"] == "1"
+    assert json.loads(previews[0]["values_json"]) == ["0", "NaN", "2"]
+
+
+def test_header_only_csv_has_explicit_first_row_preview_state(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    output = tmp_path / "audit"
+    source = run / "reports" / "csv" / "no_failures.csv"
+    source.parent.mkdir(parents=True)
+    source.write_text("FailureCode,Reason\n", encoding="utf-8")
+
+    proc = run_audit(run, output)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    with (output / "all_csv_first_three_rows.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        preview = next(csv.DictReader(handle))
+    assert preview["preview_state"] == "header_only_no_rows"
+    assert json.loads(preview["header_json"]) == ["FailureCode", "Reason"]
+    assert json.loads(preview["values_json"]) == []
+
 
 def test_none_is_an_explicit_value_not_a_missing_token(tmp_path: Path) -> None:
     run = tmp_path / "run"

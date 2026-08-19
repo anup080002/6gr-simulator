@@ -33,7 +33,7 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from lls_csv_semantics import audit_run as audit_csv_semantics
 from lls_csv_semantics import write_audit as write_csv_semantic_audit
-from lls_csv_semantics import LINK_REQUIRED_COLUMNS, PRIMARY_LINK_TABLES
+from lls_csv_semantics import LINK_REQUIRED_COLUMNS, primary_link_tables
 
 
 FAILURE_TOKENS = {"fail", "failed", "error", "crash", "invalid"}
@@ -109,7 +109,7 @@ def risk_counts(value: str) -> Counter[str]:
     return result
 
 
-def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
+def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
     relative = path.relative_to(root).as_posix()
     source_path = io_path(path)
     file_row = {
@@ -140,6 +140,7 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
     issues: list[str] = []
     observations: list[str] = []
     columns: list[dict] = []
+    first_rows: list[dict] = []
     try:
         with source_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.reader(handle)
@@ -148,7 +149,19 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
                 issues.append("empty_file_no_header")
                 file_row["issues"] = "|".join(issues)
                 file_row["issue_count"] = len(issues)
-                return file_row, columns
+                first_rows.append({
+                    "relative_path": relative,
+                    "source_row_number": 0,
+                    "preview_state": "missing_header",
+                    "nonblank_cell_count": 0,
+                    "missing_or_nan_cell_count": 0,
+                    "finite_numeric_cell_count": 0,
+                    "zero_numeric_cell_count": 0,
+                    "nonzero_numeric_cell_count": 0,
+                    "header_json": "[]",
+                    "values_json": "[]",
+                })
+                return file_row, columns, first_rows
             file_row["column_count"] = len(header)
             file_row["duplicate_header_count"] = len(header) - len(set(header))
             if not header:
@@ -189,6 +202,36 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
             cell_count = 0
             for row in reader:
                 file_row["row_count"] += 1
+                if file_row["row_count"] <= 3:
+                    normalized = row[: len(header)] + [""] * max(0, len(header) - len(row))
+                    missing = 0
+                    finite_numeric = 0
+                    zero_numeric = 0
+                    nonblank = 0
+                    for value in normalized:
+                        text = value.strip()
+                        lowered = text.lower()
+                        if lowered in NULL_TOKENS:
+                            missing += 1
+                            continue
+                        nonblank += 1
+                        number = numeric(text)
+                        if number is not None:
+                            finite_numeric += 1
+                            if math.isclose(number, 0.0, abs_tol=0.0):
+                                zero_numeric += 1
+                    first_rows.append({
+                        "relative_path": relative,
+                        "source_row_number": file_row["row_count"],
+                        "preview_state": "observed_row",
+                        "nonblank_cell_count": nonblank,
+                        "missing_or_nan_cell_count": missing,
+                        "finite_numeric_cell_count": finite_numeric,
+                        "zero_numeric_cell_count": zero_numeric,
+                        "nonzero_numeric_cell_count": finite_numeric - zero_numeric,
+                        "header_json": json.dumps(header, ensure_ascii=False),
+                        "values_json": json.dumps(normalized, ensure_ascii=False),
+                    })
                 row_hashes[hashlib.sha256(
                     json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
                 ).hexdigest()] += 1
@@ -241,6 +284,18 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
                 # the responsibility of the run's artifact/truth contract.
                 file_row["schema_only"] = True
                 observations.append("header_only_no_rows")
+                first_rows.append({
+                    "relative_path": relative,
+                    "source_row_number": 0,
+                    "preview_state": "header_only_no_rows",
+                    "nonblank_cell_count": 0,
+                    "missing_or_nan_cell_count": 0,
+                    "finite_numeric_cell_count": 0,
+                    "zero_numeric_cell_count": 0,
+                    "nonzero_numeric_cell_count": 0,
+                    "header_json": json.dumps(header, ensure_ascii=False),
+                    "values_json": "[]",
+                })
             for index, stat in enumerate(stats):
                 stat["blank_fraction"] = (
                     stat["blank_count"] / stat["row_count"] if stat["row_count"] else 0.0
@@ -269,7 +324,7 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
                     stat["value_population_class"] = "finite_numeric_population"
                 else:
                     stat["value_population_class"] = "categorical_population"
-                primary_paths = set(PRIMARY_LINK_TABLES.values())
+                primary_paths = set(primary_link_tables(root).values())
                 if (
                     relative in primary_paths
                     and stat["column_name"] in LINK_REQUIRED_COLUMNS
@@ -300,7 +355,7 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict]]:
     file_row["observation_count"] = len(observations)
     file_row["issues"] = "|".join(issues)
     file_row["issue_count"] = len(issues)
-    return file_row, columns
+    return file_row, columns, first_rows
 
 
 def audit_image(path: Path, root: Path) -> dict:
@@ -401,7 +456,7 @@ def build_csv_file_dispositions(
         str(row["relative_path"]): str(row.get("sha256", "")).lower()
         for row in csv_rows
     }
-    primary_paths = set(PRIMARY_LINK_TABLES.values())
+    primary_paths = set(primary_link_tables(run_root).values())
     for file_row in csv_rows:
         relative = str(file_row["relative_path"])
         columns = columns_by_path.get(relative, [])
@@ -548,12 +603,14 @@ def main() -> int:
 
     csv_rows: list[dict] = []
     column_rows: list[dict] = []
+    first_row_previews: list[dict] = []
     for path in sorted(run_root.rglob("*.csv")):
         if is_nested_execution_path(run_root, path):
             continue
-        file_row, columns = audit_csv(path, run_root)
+        file_row, columns, first_rows = audit_csv(path, run_root)
         csv_rows.append(file_row)
         column_rows.extend(columns)
+        first_row_previews.extend(first_rows)
     image_paths = sorted(
         path for path in run_root.rglob("*")
         if not is_nested_execution_path(run_root, path)
@@ -584,6 +641,7 @@ def main() -> int:
 
     write_csv(output_root / "all_csv_file_audit.csv", csv_rows)
     write_csv(output_root / "all_csv_column_audit.csv", column_rows)
+    write_csv(output_root / "all_csv_first_three_rows.csv", first_row_previews)
     zero_nan_rows = [
         row for row in column_rows
         if int(row["blank_count"]) > 0

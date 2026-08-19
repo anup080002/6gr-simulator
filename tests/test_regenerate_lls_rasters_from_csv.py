@@ -196,6 +196,43 @@ def test_run_root_guard_requires_configured_link_direction_authority(
     assert MODULE.validate_run_root(run) == run.resolve()
 
 
+def test_run_root_guard_accepts_yaml_declared_fixed_link_primary_trials(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results" / "lls" / "fixed_link" / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "air_interface" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "waveform_bundle"},
+                "simulation": {"link_direction": "both"},
+                "sweeps_and_matrix": {
+                    "fixed_link_calibration": {"enabled": True, "only": True}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    for direction in ("dl", "ul"):
+        (run / "air_interface" / "csv" / f"{direction}_fixed_link_campaign_trials.csv").write_text(
+            "Direction,CRCPass\n" + direction.upper() + ",1\n",
+            encoding="utf-8",
+        )
+
+    assert MODULE.validate_run_root(run) == run.resolve()
+    assert not (run / "air_interface" / "csv" / "dl_pdsch_trials.csv").exists()
+    assert not (run / "air_interface" / "csv" / "ul_pusch_trials.csv").exists()
+
+
 def test_missing_legacy_raster_claim_is_retired_without_touching_source_csv(
     tmp_path: Path,
 ) -> None:

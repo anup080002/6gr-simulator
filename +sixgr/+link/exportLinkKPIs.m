@@ -89,7 +89,17 @@ if opt.SaveCSV
         };
     for ki = 1:size(kpiSidecars, 1)
         sidecarPath = fullfile(reportCSVDir, kpiSidecars{ki, 1});
-        sixgr.util.csvWriteTable(sidecarPath, kpiSidecars{ki, 2});
+        sidecarTable = kpiSidecars{ki, 2};
+        if width(sidecarTable) == 0
+            % A schema-less two-byte file is neither evidence nor an honest
+            % unavailable artifact. Omit it and let the applicability/status
+            % tables explain why no packet-layer runtime ledger exists.
+            if isfile(sidecarPath)
+                delete(sidecarPath);
+            end
+            continue;
+        end
+        sixgr.util.csvWriteTable(sidecarPath, sidecarTable);
         artifacts.csv{end+1} = sidecarPath; %#ok<AGROW>
     end
     reportJSONDir = localKPIReportJSONDir(reportCSVDir);
