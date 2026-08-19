@@ -6261,7 +6261,7 @@ def _persisted_fixed_sweep_curve_chart(
     elif chart_key.endswith("ber_vs_snr"):
         metric_name, source_metric_name = "BER", "BER"
         low_name, high_name = "BER_CI_Low", "BER_CI_High"
-    elif chart_key == "throughput_vs_snr":
+    elif chart_key.endswith("throughput_vs_snr"):
         metric_name, source_metric_name = "Throughput_Mbps", "Throughput_Mbps"
         low_name, high_name = "", ""
     elif chart_key in {
@@ -6275,7 +6275,7 @@ def _persisted_fixed_sweep_curve_chart(
         return None
 
     candidate_paths: list[str] = []
-    if direction:
+    if direction and source_metric_name in {"BLER", "BER"}:
         direction_token = direction.lower()
         curve_token = "bler" if source_metric_name == "BLER" else "ber"
         candidate_paths.append(f"reports/csv/{direction_token}_fixed_snr_{curve_token}_curve.csv")
