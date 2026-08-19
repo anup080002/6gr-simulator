@@ -103,6 +103,33 @@ def test_zero_and_nan_columns_are_classified_not_hidden(tmp_path: Path) -> None:
     assert json.loads(previews[0]["values_json"]) == ["0", "NaN", "2"]
 
 
+def test_fixed_link_unscheduled_fields_respect_explicit_not_applicable_status(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    source = run / "air_interface" / "csv" / "dl_fixed_link_campaign_trials.csv"
+    source.parent.mkdir(parents=True)
+    resolved = run / "meta" / "scenario_config_resolved.json"
+    resolved.parent.mkdir(parents=True)
+    resolved.write_text(
+        json.dumps({"sweeps_and_matrix": {"fixed_link_calibration": {"only": True}}}),
+        encoding="utf-8",
+    )
+    source.write_text(
+        "ScheduledMCSIndex,ScheduledModulation,"
+        "ScheduledOperatingPointEvidenceStatus\n"
+        "NaN,,not_applicable_no_adaptive_scheduled_decision\n"
+        "NaN,,not_applicable_no_adaptive_scheduled_decision\n",
+        encoding="utf-8",
+    )
+
+    _, columns, _ = AUDIT_MODULE.audit_csv(source, run)
+    by_name = {row["column_name"]: row for row in columns}
+    expected = "explicit_not_applicable_no_adaptive_scheduled_decision"
+    assert by_name["ScheduledMCSIndex"]["semantic_attention"] == expected
+    assert by_name["ScheduledModulation"]["semantic_attention"] == expected
+
+
 def test_header_only_csv_has_explicit_first_row_preview_state(tmp_path: Path) -> None:
     run = tmp_path / "run"
     output = tmp_path / "audit"

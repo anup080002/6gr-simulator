@@ -199,6 +199,10 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
             uniques = [set() for _ in header]
             numeric_values: list[list[float]] = [[] for _ in header]
             row_hashes: Counter[str] = Counter()
+            header_index = {name: index for index, name in enumerate(header)}
+            primary_paths = set(primary_link_tables(root).values())
+            required_missing_counts: Counter[str] = Counter()
+            scheduled_na_counts: Counter[str] = Counter()
             cell_count = 0
             for row in reader:
                 file_row["row_count"] += 1
@@ -241,6 +245,33 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
                         row = row + [""] * (len(header) - len(row))
                     else:
                         row = row[: len(header)]
+                if relative in primary_paths:
+                    schedule_status_index = header_index.get(
+                        "ScheduledOperatingPointEvidenceStatus"
+                    )
+                    schedule_status = (
+                        row[schedule_status_index].strip().lower()
+                        if schedule_status_index is not None
+                        else ""
+                    )
+                    explicit_unscheduled_na = (
+                        "not_applicable_no_adaptive_scheduled_decision"
+                        in schedule_status
+                    )
+                    for required_name in LINK_REQUIRED_COLUMNS:
+                        required_index = header_index.get(required_name)
+                        if required_index is None:
+                            continue
+                        if row[required_index].strip().lower() not in NULL_TOKENS:
+                            continue
+                        if (
+                            required_name
+                            in {"ScheduledMCSIndex", "ScheduledModulation"}
+                            and explicit_unscheduled_na
+                        ):
+                            scheduled_na_counts[required_name] += 1
+                        else:
+                            required_missing_counts[required_name] += 1
                 for index, value in enumerate(row):
                     text = value.strip()
                     lowered = text.lower()
@@ -324,13 +355,23 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
                     stat["value_population_class"] = "finite_numeric_population"
                 else:
                     stat["value_population_class"] = "categorical_population"
-                primary_paths = set(primary_link_tables(root).values())
                 if (
                     relative in primary_paths
                     and stat["column_name"] in LINK_REQUIRED_COLUMNS
-                    and stat["blank_count"] > 0
+                    and required_missing_counts[stat["column_name"]] > 0
                 ):
                     stat["semantic_attention"] = "required_primary_value_missing"
+                elif (
+                    relative in primary_paths
+                    and stat["column_name"]
+                    in {"ScheduledMCSIndex", "ScheduledModulation"}
+                    and stat["blank_count"] > 0
+                    and scheduled_na_counts[stat["column_name"]]
+                    == stat["blank_count"]
+                ):
+                    stat["semantic_attention"] = (
+                        "explicit_not_applicable_no_adaptive_scheduled_decision"
+                    )
                 elif (
                     stat["inf_token_count"] > 0
                     and stat["column_name"] in {"ExpectedMin", "ExpectedMax"}

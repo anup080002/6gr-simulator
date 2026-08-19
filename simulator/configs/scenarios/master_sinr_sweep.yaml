@@ -2747,6 +2747,52 @@ execution_scales:
         snr_db: 18
         noise_operating_mode: standalone_awgn_snr_argument
       validation:
+        independent_reference_qualification:
+          # Bounded actual-waveform conformance diagnostic.  This overlay
+          # must override every per-entry publication sampling rule below;
+          # otherwise a smoke run silently inherits the 300k/10k TB full
+          # qualification budgets from the master scenario.
+          enabled: true
+          required_for_production: false
+          profile: diagnostic
+          min_transport_blocks: 100
+          max_transport_blocks: 100
+          batch_size: 50
+          minimum_block_errors: 1
+          max_confidence_half_width: 0.49
+          sampling_by_entry:
+          - entry_id: dl_r_pdsch_1_1_4_fdd_awgn
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: dl_r_pdsch_1_3_6_fdd_atg_awgn
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: dl_r_pdsch_1_4_1_fdd_atg_awgn
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: dl_r_pdsch_1_3_1_fdd_tdla30_10
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: dl_r_pdsch_1_2_4_fdd_tdla30_10
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: ul_g_fr1_a3a_1_awgn
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: ul_g_fr1_a13_1_atg_awgn
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
+          - entry_id: ul_g_fr1_a3_8_tdlb100_400
+            min_transport_blocks: 100
+            max_transport_blocks: 100
+            batch_size: 50
         fixed_link_campaign:
           snr_db:
           - 18
