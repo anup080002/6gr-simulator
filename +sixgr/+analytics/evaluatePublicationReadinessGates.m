@@ -738,8 +738,12 @@ end
 function [ok, T] = localEvaluateLongRunStability(cfg, runDir)
 dropPath = fullfile(runDir, "air_interface", "csv", "multi_seed_drop_statistics.csv");
 drop = localReadTable(dropPath);
-stdLimit = localNumber(cfg, ["canonical_control.run.max_bler_std","run.max_bler_std","analysis.long_run_bler_std_threshold"], 0.05);
-minSeeds = localNumber(cfg, ["canonical_control.run.num_seeds","run.num_seeds","simulation.num_seeds"], 2);
+stdLimit = localNumber(cfg, ["canonical_control.run.max_bler_std", ...
+    "lls6g.resolvedConfig.canonical_control.run.max_bler_std", ...
+    "run.max_bler_std","analysis.long_run_bler_std_threshold"], 0.05);
+minSeeds = localNumber(cfg, ["canonical_control.run.num_seeds", ...
+    "lls6g.resolvedConfig.canonical_control.run.num_seeds", ...
+    "run.num_seeds","simulation.num_seeds"], 2);
 if ~(isfinite(minSeeds) && minSeeds >= 2)
     minSeeds = 2;
 end
