@@ -262,6 +262,105 @@ def test_missing_legacy_raster_claim_is_retired_without_touching_source_csv(
     assert retired[0]["image_path"] == "channel/image/old.png"
 
 
+def _write_frc_point_fixture(run: Path, *, proxy_used: str = "0") -> tuple[Path, Path]:
+    source = run / "reports" / "csv" / "frc_reference_points" / "dl_qpsk_awgn.csv"
+    MODULE.write_csv(
+        source,
+        [
+            {
+                "EntryId": "dl_qpsk_awgn",
+                "FRC": "R.PDSCH.1-1.4 FDD",
+                "Condition": "awgn_static_1x2",
+                "Metric": "block_error_rate",
+                "SNR_dB": "3.2",
+                "MetricEstimate": "0.01",
+                "ConfidenceLower": "0.002",
+                "ConfidenceUpper": "0.035",
+                "TargetFraction": "0.01",
+                "RequiredSNR_dB": "3.2",
+                "TransportBlocks": "100",
+                "ExecutionBackend": "truth_waveform",
+                "ApproximationMode": "none",
+                "Source": "sixgr.conformance.runFRCPoint",
+                "ProxyUsed": proxy_used,
+                "FallbackUsed": "0",
+            }
+        ],
+        [
+            "EntryId", "FRC", "Condition", "Metric", "SNR_dB",
+            "MetricEstimate", "ConfidenceLower", "ConfidenceUpper",
+            "TargetFraction", "RequiredSNR_dB", "TransportBlocks",
+            "ExecutionBackend", "ApproximationMode", "Source",
+            "ProxyUsed", "FallbackUsed",
+        ],
+    )
+    image = run / "reports" / "image" / "dl_qpsk_awgn_reference_point.png"
+    lineage = run / "reports" / "csv" / "frc_reference_plot_lineage.csv"
+    MODULE.write_csv(
+        lineage,
+        [
+            {
+                "PlotId": "frc_reference_point_dl_qpsk_awgn",
+                "ImagePath": image.relative_to(run).as_posix(),
+                "SourceCSV": source.relative_to(run).as_posix(),
+                "SourceCSV_SHA256": "",
+                "ImageSHA256": "",
+                "Width": "0",
+                "Height": "0",
+                "MimeType": "image/png",
+                "ImageExists": "0",
+                "SourceExists": "1",
+                "ProducerModule": "old_producer",
+                "Status": "not_rendered",
+                "FailureReason": "removed_by_csv_authority_raster_replacement",
+            }
+        ],
+        [
+            "PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256",
+            "ImageSHA256", "Width", "Height", "MimeType", "ImageExists",
+            "SourceExists", "ProducerModule", "Status", "FailureReason",
+        ],
+    )
+    return source, image
+
+
+def test_frc_reference_raster_is_rebuilt_from_exact_csv_and_lineage_resealed(
+    tmp_path: Path,
+) -> None:
+    from PIL import Image
+
+    run = tmp_path / "scenario" / "run"
+    source, image = _write_frc_point_fixture(run)
+
+    generated = MODULE.materialize_frc_reference_rasters(run)
+
+    assert len(generated) == 1
+    assert image.is_file()
+    with Image.open(image) as raster:
+        raster.load()
+        assert raster.size == (1280, 720)
+        assert raster.format == "PNG"
+        assert "FRC RUNTIME TRUTH" in str(raster.info.get("sixgr_visual_semantics", ""))
+    lineage = MODULE.read_csv(run / "reports/csv/frc_reference_plot_lineage.csv")[0]
+    assert lineage["Status"] == "pass"
+    assert lineage["FailureReason"] == ""
+    assert lineage["ImageExists"] == "1"
+    assert lineage["SourceExists"] == "1"
+    assert lineage["SourceCSV_SHA256"] == MODULE.sha256(source)
+    assert lineage["ImageSHA256"] == MODULE.sha256(image)
+    assert lineage["Width"] == "1280"
+    assert lineage["Height"] == "720"
+    assert lineage["ProducerModule"].endswith("materialize_frc_reference_rasters")
+    assert MODULE.reconcile_removed_raster_lineage(run) == []
+
+
+def test_frc_reference_raster_rejects_proxy_rows(tmp_path: Path) -> None:
+    run = tmp_path / "scenario" / "run"
+    _write_frc_point_fixture(run, proxy_used="1")
+    with pytest.raises(RuntimeError, match="Proxy or fallback FRC rows"):
+        MODULE.materialize_frc_reference_rasters(run)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows MAX_PATH regression")
 def test_long_path_raster_inventory_and_lineage_reconciliation(tmp_path: Path) -> None:
     run = tmp_path / "scenario" / "run"

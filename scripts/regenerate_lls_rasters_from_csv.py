@@ -16,7 +16,9 @@ runtime samples remains policy-disabled in contract coverage.
 import argparse
 import csv
 import hashlib
+import html
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -359,6 +361,245 @@ def materialize_declared_artifact_generation_rasters(run_root: Path) -> list[dic
             "materialization."
         )
     return []
+
+
+def _frc_numeric(row: dict[str, str], field: str) -> float:
+    try:
+        value = float(str(row.get(field, "")).strip())
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"FRC point field {field} is not numeric.") from error
+    if not math.isfinite(value):
+        raise RuntimeError(f"FRC point field {field} is not finite.")
+    return value
+
+
+def _frc_truth_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "pass", "passed"}
+
+
+def _frc_svg_text(value: Any) -> str:
+    return html.escape(str(value or ""), quote=True)
+
+
+def _render_frc_reference_svg(rows: list[dict[str, str]]) -> bytes:
+    """Render exact FRC point/CI evidence without inventing extra samples."""
+
+    if not rows:
+        raise RuntimeError("FRC reference raster requires at least one persisted row.")
+    required_fields = {
+        "FRC", "Condition", "Metric", "SNR_dB", "MetricEstimate",
+        "ConfidenceLower", "ConfidenceUpper", "TargetFraction",
+        "RequiredSNR_dB", "TransportBlocks", "ExecutionBackend",
+        "ApproximationMode", "Source", "ProxyUsed", "FallbackUsed",
+    }
+    missing = sorted(required_fields - set(rows[0]))
+    if missing:
+        raise RuntimeError("FRC point CSV is missing field(s): " + ", ".join(missing))
+
+    points: list[dict[str, float]] = []
+    for row in rows:
+        approximation = str(row.get("ApproximationMode", "")).strip().lower()
+        if (
+            approximation != "none"
+            or _frc_truth_bool(row.get("ProxyUsed"))
+            or _frc_truth_bool(row.get("FallbackUsed"))
+        ):
+            raise RuntimeError("Proxy or fallback FRC rows cannot be rendered as truth evidence.")
+        backend = str(row.get("ExecutionBackend", "")).strip().lower()
+        source = str(row.get("Source", "")).strip().lower()
+        if not backend or not source or "proxy" in backend or "proxy" in source or "fallback" in source:
+            raise RuntimeError("FRC raster source does not identify an actual truth execution backend.")
+        point = {
+            "snr": _frc_numeric(row, "SNR_dB"),
+            "metric": _frc_numeric(row, "MetricEstimate"),
+            "lower": _frc_numeric(row, "ConfidenceLower"),
+            "upper": _frc_numeric(row, "ConfidenceUpper"),
+            "target": _frc_numeric(row, "TargetFraction"),
+            "required_snr": _frc_numeric(row, "RequiredSNR_dB"),
+            "transport_blocks": _frc_numeric(row, "TransportBlocks"),
+        }
+        if (
+            point["transport_blocks"] <= 0
+            or not point["transport_blocks"].is_integer()
+            or point["lower"] > point["metric"]
+            or point["metric"] > point["upper"]
+            or not 0 <= point["target"] <= 1
+        ):
+            raise RuntimeError("FRC point confidence, target, or transport-block arithmetic is invalid.")
+        points.append(point)
+    points.sort(key=lambda item: item["snr"])
+
+    width, height = 1280, 720
+    left, top, plot_width, plot_height = 100, 140, 790, 420
+    info_x, info_y, info_width, info_height = 930, 140, 300, 420
+    all_x = [point["snr"] for point in points] + [point["required_snr"] for point in points]
+    x_min, x_max = min(all_x), max(all_x)
+    if math.isclose(x_min, x_max):
+        x_min -= 2.0
+        x_max += 2.0
+    else:
+        padding = max((x_max - x_min) * 0.12, 0.5)
+        x_min -= padding
+        x_max += padding
+    y_min, y_max = 0.0, 1.0
+
+    def px(value: float) -> float:
+        return left + (value - x_min) * plot_width / (x_max - x_min)
+
+    def py(value: float) -> float:
+        bounded = min(max(value, y_min), y_max)
+        return top + plot_height - (bounded - y_min) * plot_height / (y_max - y_min)
+
+    first = rows[0]
+    frc = str(first.get("FRC", "FRC reference point"))
+    condition = str(first.get("Condition", ""))
+    metric_name = str(first.get("Metric", "metric"))
+    metric_label = (
+        "Block error rate (BLER)"
+        if metric_name.strip().lower() == "block_error_rate"
+        else "Fraction of maximum throughput"
+        if metric_name.strip().lower() == "fraction_of_maximum_throughput"
+        else metric_name.replace("_", " ")
+    )
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#f8fafc"/>',
+        '<rect x="0" y="0" width="10" height="720" fill="#0f766e"/>',
+        '<rect x="40" y="24" width="214" height="24" rx="12" fill="#ccfbf1"/>',
+        '<text x="147" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">FRC RUNTIME TRUTH</text>',
+        f'<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#0f172a">{_frc_svg_text(frc)}</text>',
+        f'<text x="40" y="101" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{_frc_svg_text(condition)} — persisted waveform point with exact confidence interval</text>',
+        f'<rect x="{left}" y="{top}" width="{plot_width}" height="{plot_height}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+        f'<rect x="{info_x}" y="{info_y}" width="{info_width}" height="{info_height}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+    ]
+    for tick in (0.0, 0.25, 0.5, 0.75, 1.0):
+        y = py(tick)
+        parts.extend([
+            f'<line x1="{left}" y1="{y:.2f}" x2="{left + plot_width}" y2="{y:.2f}" stroke="#dbe4ee" stroke-width="1"/>',
+            f'<text x="{left - 12}" y="{y + 5:.2f}" text-anchor="end" font-family="Segoe UI,Arial,sans-serif" font-size="12" fill="#475569">{tick:g}</text>',
+        ])
+    x_ticks = sorted({round(x_min, 6), round(points[0]["required_snr"], 6), round(x_max, 6)})
+    for tick in x_ticks:
+        x = px(tick)
+        parts.extend([
+            f'<line x1="{x:.2f}" y1="{top}" x2="{x:.2f}" y2="{top + plot_height}" stroke="#e2e8f0" stroke-width="1"/>',
+            f'<text x="{x:.2f}" y="{top + plot_height + 25}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="12" fill="#475569">{tick:g}</text>',
+        ])
+    target = points[0]["target"]
+    target_y = py(target)
+    parts.extend([
+        f'<line x1="{left}" y1="{target_y:.2f}" x2="{left + plot_width}" y2="{target_y:.2f}" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="8 6"/>',
+        f'<text x="{left + plot_width - 8}" y="{target_y - 8:.2f}" text-anchor="end" font-family="Segoe UI,Arial,sans-serif" font-size="12" fill="#b91c1c">Target {target:g}</text>',
+    ])
+    required_snr = points[0]["required_snr"]
+    required_x = px(required_snr)
+    parts.extend([
+        f'<line x1="{required_x:.2f}" y1="{top}" x2="{required_x:.2f}" y2="{top + plot_height}" stroke="#4f46e5" stroke-width="1.6" stroke-dasharray="3 5"/>',
+        f'<text x="{required_x + 7:.2f}" y="{top + 20}" font-family="Segoe UI,Arial,sans-serif" font-size="12" fill="#4338ca">Required {required_snr:g} dB</text>',
+    ])
+    if len(points) > 1:
+        polyline = " ".join(f'{px(point["snr"]):.2f},{py(point["metric"]):.2f}' for point in points)
+        parts.append(f'<polyline points="{polyline}" fill="none" stroke="#0f766e" stroke-width="3"/>')
+    for point in points:
+        x = px(point["snr"])
+        y = py(point["metric"])
+        lower_y = py(point["lower"])
+        upper_y = py(point["upper"])
+        parts.extend([
+            f'<line x1="{x:.2f}" y1="{upper_y:.2f}" x2="{x:.2f}" y2="{lower_y:.2f}" stroke="#0f766e" stroke-width="2.5"/>',
+            f'<line x1="{x - 9:.2f}" y1="{upper_y:.2f}" x2="{x + 9:.2f}" y2="{upper_y:.2f}" stroke="#0f766e" stroke-width="2.5"/>',
+            f'<line x1="{x - 9:.2f}" y1="{lower_y:.2f}" x2="{x + 9:.2f}" y2="{lower_y:.2f}" stroke="#0f766e" stroke-width="2.5"/>',
+            f'<circle cx="{x:.2f}" cy="{y:.2f}" r="7" fill="#0f766e" stroke="#ffffff" stroke-width="2"/>',
+        ])
+    parts.extend([
+        f'<text x="{left + plot_width / 2}" y="{top + plot_height + 58}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" fill="#334155">Applied SNR (dB)</text>',
+        f'<text x="32" y="{top + plot_height / 2}" transform="rotate(-90 32 {top + plot_height / 2})" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" fill="#334155">{_frc_svg_text(metric_label)}</text>',
+        f'<text x="{info_x + 18}" y="{info_y + 34}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Evidence Summary</text>',
+    ])
+    summary = [
+        f"Metric: {metric_label}",
+        f"Measured: {points[0]['metric']:.6g}",
+        f"95% CI: [{points[0]['lower']:.6g}, {points[0]['upper']:.6g}]",
+        f"Target: {target:.6g}",
+        f"Required SNR: {required_snr:.6g} dB",
+        f"Transport blocks: {int(sum(point['transport_blocks'] for point in points))}",
+        f"Measured points: {len(points)}",
+        "Backend: actual waveform truth",
+        "Approximation: none",
+    ]
+    y_cursor = info_y + 68
+    for line in summary:
+        parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{_frc_svg_text(line)}</text>')
+        y_cursor += 28
+    parts.append('</svg>')
+    return "".join(parts).encode("utf-8")
+
+
+def materialize_frc_reference_rasters(run_root: Path) -> list[dict[str, str]]:
+    """Rebuild FRC point PNGs from their exact persisted per-entry CSVs."""
+
+    lineage_path = run_root / "reports" / "csv" / "frc_reference_plot_lineage.csv"
+    if not io_path(lineage_path).is_file():
+        return []
+    with io_path(lineage_path).open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = list(reader.fieldnames or [])
+        lineage_rows = [dict(row) for row in reader]
+    required_lineage_fields = {
+        "PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256", "ImageSHA256",
+        "Width", "Height", "MimeType", "ImageExists", "SourceExists",
+        "ProducerModule", "Status", "FailureReason",
+    }
+    missing = sorted(required_lineage_fields - set(fieldnames))
+    if missing:
+        raise RuntimeError("FRC plot lineage is missing field(s): " + ", ".join(missing))
+    generated: list[dict[str, str]] = []
+    for row in lineage_rows:
+        source_rel = str(row.get("SourceCSV", "")).strip().replace("\\", "/")
+        image_rel = str(row.get("ImagePath", "")).strip().replace("\\", "/")
+        source_path = _run_relative_path(run_root, source_rel)
+        image_path = _run_relative_path(run_root, image_rel)
+        if source_path.suffix.lower() != ".csv" or image_path.suffix.lower() != ".png":
+            raise RuntimeError("FRC lineage must bind a CSV source to a PNG image.")
+        if not io_path(source_path).is_file():
+            raise RuntimeError(f"FRC point CSV is missing: {source_rel}")
+        point_rows = read_csv(source_path)
+        svg = _render_frc_reference_svg(point_rows)
+        png = contract_materializer._rasterize_contract_png(
+            svg,
+            source_mime_type="image/svg+xml",
+            source_logical_path=image_rel,
+        )
+        io_path(image_path.parent).mkdir(parents=True, exist_ok=True)
+        io_path(image_path).write_bytes(png)
+        with Image.open(io_path(image_path)) as image:
+            image.load()
+            width, height = image.size
+        source_hash = sha256(source_path)
+        image_hash = sha256(image_path)
+        row.update({
+            "SourceCSV_SHA256": source_hash,
+            "ImageSHA256": image_hash,
+            "Width": str(width),
+            "Height": str(height),
+            "MimeType": "image/png",
+            "ImageExists": "1",
+            "SourceExists": "1",
+            "ProducerModule": "scripts.regenerate_lls_rasters_from_csv.materialize_frc_reference_rasters",
+            "Status": "pass",
+            "FailureReason": "",
+        })
+        generated.append({
+            "plot_id": str(row.get("PlotId", "")),
+            "source_relative_path": source_rel,
+            "image_relative_path": image_rel,
+            "source_sha256": source_hash,
+            "image_sha256": image_hash,
+            "width": str(width),
+            "height": str(height),
+        })
+    write_csv(lineage_path, lineage_rows, fieldnames)
+    return generated
 
 
 def reconcile_raw_evidence_index_shape_metadata(run_root: Path) -> list[dict[str, str]]:
@@ -1231,6 +1472,16 @@ def main() -> int:
         ],
     )
 
+    frc_reference_rasters = materialize_frc_reference_rasters(run_root)
+    write_csv(
+        audit_output / "frc_reference_rasters.csv",
+        frc_reference_rasters,
+        [
+            "plot_id", "source_relative_path", "image_relative_path",
+            "source_sha256", "image_sha256", "width", "height",
+        ],
+    )
+
     lineage_changes = reconcile_removed_raster_lineage(run_root)
     retired_lineage = retired_raster_lineage_inventory(run_root)
     write_csv(
@@ -1317,6 +1568,7 @@ def main() -> int:
         "canonical_lineaged_charts": len(post_audit["chart_source_semantic_audit"]) - 1,
         "component_raster_mirrors": len(mirrors),
         "artifact_generation_rasters": len(artifact_generation_rasters),
+        "frc_reference_rasters": len(frc_reference_rasters),
         "component_manifest_mirrors_synchronized": len(synchronized_mirrors),
         "raw_evidence_index_shape_repairs": len(raw_index_repairs),
         "stale_raster_lineage_rows_retired": len(lineage_changes),

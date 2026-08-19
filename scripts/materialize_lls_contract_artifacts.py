@@ -15,6 +15,7 @@ from regenerate_lls_rasters_from_csv import (  # noqa: E402
     RASTER_SUFFIXES,
     io_path,
     materialize_declared_artifact_generation_rasters,
+    materialize_frc_reference_rasters,
     reconcile_removed_raster_lineage,
     raster_inventory,
     require_primary_csv_semantics,
@@ -126,6 +127,13 @@ def main() -> int:
             feature_policy=policy,
             force=bool(args.force),
         )
+        frc_reference_rasters: list[dict[str, str]] = []
+        if args.replace_existing_rasters_from_csv:
+            # FRC reference-point plots are outside the browser chart catalog,
+            # but their lineage is a required scientific contract. Rebuild
+            # them from the exact persisted per-entry CSVs before stale
+            # lineage reconciliation runs.
+            frc_reference_rasters = materialize_frc_reference_rasters(run_folder)
         retired_lineage_rows = []
         if args.replace_existing_rasters_from_csv:
             retired_lineage_rows = reconcile_removed_raster_lineage(run_folder)
@@ -145,6 +153,7 @@ def main() -> int:
             "created_count": len(result.get("created") or []),
             "old_rasters_removed": len(removed_rasters),
             "declared_artifact_rasters_regenerated": len(declared_artifact_rasters),
+            "frc_reference_rasters_regenerated": len(frc_reference_rasters),
             "stale_raster_lineage_rows_retired": len(retired_lineage_rows),
             "manifest_path": result.get("manifest_path"),
             "coverage_path": result.get("coverage_path"),
