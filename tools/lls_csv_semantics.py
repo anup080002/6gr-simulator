@@ -99,6 +99,22 @@ COMPONENT_BLER_TABLES = {
     "UL": "components/pusch/csv/pusch_bler_curve.csv",
 }
 MIMO_RANK_LAYER_TABLE = "beamforming/csv/rank_layer_trials.csv"
+MIMO_COMPANION_TABLES = (
+    "beamforming/csv/antenna_array_config.csv",
+    "beamforming/csv/antenna_port_mapping.csv",
+    "beamforming/csv/beam_codebook.csv",
+    "beamforming/csv/beam_precoder_table.csv",
+    "beamforming/csv/beam_sweep_measurements.csv",
+    "beamforming/csv/beamforming_analytics_table.csv",
+    "beamforming/csv/mimo_config_strict.csv",
+    "beamforming/csv/mimo_config_validation.csv",
+    "beamforming/csv/mimo_configured_vs_effective.csv",
+    "beamforming/csv/mimo_layer_metrics.csv",
+    "beamforming/csv/mimo_oracle_guard.csv",
+    "beamforming/csv/mimo_rank_utilization_table.csv",
+    "beamforming/csv/precoder_evidence.csv",
+    "beamforming/csv/rank_layer_usage_histogram.csv",
+)
 DOMAIN_RUNTIME_PREFIXES = (
     "air_interface/csv/",
     "analytics/csv/",
@@ -1445,6 +1461,1244 @@ def _audit_mimo_rank_layer_output(
     return _audit_mimo_rank_layer_table(
         MIMO_RANK_LAYER_TABLE, header, rows, link_rows
     )
+
+
+def _mode_number(rows: list[dict[str, str]], field: str) -> float | None:
+    values = [_number(row, field) for row in rows]
+    finite = [value for value in values if value is not None]
+    if not finite:
+        return None
+    counts: dict[float, int] = {}
+    for value in finite:
+        counts[value] = counts.get(value, 0) + 1
+    maximum = max(counts.values())
+    return min(value for value, count in counts.items() if count == maximum)
+
+
+def _mode_text(rows: list[dict[str, str]], field: str) -> str:
+    values = [_text(row, field) for row in rows]
+    populated = [value for value in values if value]
+    if not populated:
+        return ""
+    counts: dict[str, int] = {}
+    for value in populated:
+        counts[value] = counts.get(value, 0) + 1
+    maximum = max(counts.values())
+    return min(value for value, count in counts.items() if count == maximum)
+
+
+def _audit_mimo_configured_effective_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required_columns = {
+        "RunId", "ScenarioName", "Direction", "ConfiguredRank",
+        "DominantScheduledRank", "DominantTransmittedRank",
+        "DominantEffectiveDecodedRank", "ConfiguredLayers",
+        "DominantScheduledLayers", "DominantTransmittedLayers",
+        "DominantEffectiveDecodedLayers", "ConfiguredModulation",
+        "DominantEffectiveModulation", "ConfiguredMCS",
+        "ConfiguredInitialMCS", "ConfiguredMaximumMCS", "DominantEffectiveMCS",
+        "AdaptiveMode", "StrictEligibleRowCount", "ExactMatchRowCount",
+        "ExactMatchPercent", "ExactSpatialMatchRowCount",
+        "ExactSpatialMatchPercent", "ExactOperatingPointMatchRowCount",
+        "ExactOperatingPointMatchPercent", "AdaptivePolicyMatchRowCount",
+        "AdaptivePolicyMatchPercent", "AdaptiveFeedbackDecisionRowCount",
+        "ExecutionContractMatchRowCount", "ExecutionContractMatchPercent",
+        "SpatialContractRequired", "SpatialContractMatch",
+        "FixedOperatingPointRequired", "FixedOperatingPointMatch",
+        "AdaptivePolicyRequired", "AdaptivePolicyConformance",
+        "MUExecutionRequired", "RequiredMUUserCount",
+        "RequiredMULeakageThreshold_dB", "RequiredMUExecutionMode",
+        "MUExecutedTrialRowCount", "MUExecutedDistinctGroupCount",
+        "MUExecutionMatch", "MUExecutionFailureReason",
+        "RequiredExactMatchPercent", "RequiredExecutionContractMatchPercent",
+        "ScenarioObjectivePass", "RuntimePopulated", "RuntimeTrialCount",
+        "RuntimeRank2Fraction", "RuntimeExactMatchFraction",
+        "RuntimeEvidenceSource", "EvidenceClass", "Status", "FailureReason",
+    }
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required_columns - set(header)),
+    )]
+    failures: list[str] = []
+    expected_directions = {
+        _text(row, "Direction").upper() for row in rank_rows
+        if _text(row, "Direction").upper() in {"DL", "UL"}
+    }
+    observed_directions = [_text(row, "Direction").upper() for row in rows]
+    if set(observed_directions) != expected_directions or len(observed_directions) != len(set(observed_directions)):
+        failures.append("direction_rows_not_exactly_one_per_runtime_direction")
+    for row_index, row in enumerate(rows, start=1):
+        direction = _text(row, "Direction").upper()
+        prefix = f"row={row_index}:{direction or 'missing'}"
+        subset = [
+            item for item in rank_rows
+            if _text(item, "Direction").upper() == direction
+            and _boolean(item, "StrictEligible") is True
+        ]
+        if not subset:
+            failures.append(prefix + ":no_strict_rank_layer_source_rows")
+            continue
+        if any(_text(item, "RunId") != _text(row, "RunId") for item in subset):
+            failures.append(prefix + ":RunId_not_rank_source")
+        if any(_text(item, "ScenarioName") != _text(row, "ScenarioName") for item in subset):
+            failures.append(prefix + ":ScenarioName_not_rank_source")
+        expected_modes = {
+            "ConfiguredRank": _mode_number(subset, "ConfiguredRank"),
+            "DominantScheduledRank": _mode_number(subset, "ScheduledRank"),
+            "DominantTransmittedRank": _mode_number(subset, "TransmittedRank"),
+            "DominantEffectiveDecodedRank": _mode_number(subset, "EffectiveDecodedRank"),
+            "ConfiguredLayers": _mode_number(subset, "ConfiguredLayers"),
+            "DominantScheduledLayers": _mode_number(subset, "ScheduledLayers"),
+            "DominantTransmittedLayers": _mode_number(subset, "TransmittedLayers"),
+            "DominantEffectiveDecodedLayers": _mode_number(subset, "EffectiveDecodedLayers"),
+            "ConfiguredMCS": _mode_number(subset, "ConfiguredMCS"),
+            "ConfiguredInitialMCS": _mode_number(subset, "ConfiguredInitialMCS"),
+            "ConfiguredMaximumMCS": _mode_number(subset, "ConfiguredMaximumMCS"),
+            "DominantEffectiveMCS": _mode_number(subset, "EffectiveDecodedMCS"),
+        }
+        for field, expected in expected_modes.items():
+            if not _close(_number(row, field), expected, atol=0):
+                failures.append(prefix + f":{field}_not_rank_mode")
+        if _text(row, "ConfiguredModulation").upper() != _mode_text(subset, "ConfiguredModulation").upper():
+            failures.append(prefix + ":ConfiguredModulation_not_rank_mode")
+        if _text(row, "DominantEffectiveModulation").upper() != _mode_text(subset, "EffectiveDecodedModulation").upper():
+            failures.append(prefix + ":DominantEffectiveModulation_not_rank_mode")
+
+        count = len(subset)
+        count_fields = {
+            "ExactMatch": "ExactConfiguredMatch",
+            "ExactSpatialMatch": "ExactSpatialMatch",
+            "ExactOperatingPointMatch": "ExactOperatingPointMatch",
+            "AdaptivePolicyMatch": "AdaptivePolicyMatch",
+            "ExecutionContractMatch": "ExecutionContractMatch",
+        }
+        derived_counts: dict[str, int] = {}
+        for prefix_name, source_field in count_fields.items():
+            observed_count = sum(_boolean(item, source_field) is True for item in subset)
+            derived_counts[prefix_name] = observed_count
+            if not _close(_number(row, prefix_name + "RowCount"), float(observed_count), atol=0):
+                failures.append(prefix + f":{prefix_name}RowCount_mismatch")
+            if not _close(_number(row, prefix_name + "Percent"), observed_count / count, atol=1e-12):
+                failures.append(prefix + f":{prefix_name}Percent_mismatch")
+        feedback_count = sum(
+            _boolean(item, "AdaptiveFeedbackDecisionObserved") is True for item in subset
+        )
+        for field in ("StrictEligibleRowCount", "RuntimeTrialCount"):
+            if not _close(_number(row, field), float(count), atol=0):
+                failures.append(prefix + f":{field}_mismatch")
+        if not _close(_number(row, "AdaptiveFeedbackDecisionRowCount"), float(feedback_count), atol=0):
+            failures.append(prefix + ":AdaptiveFeedbackDecisionRowCount_mismatch")
+
+        adaptive = all(_boolean(item, "AdaptiveMode") is True for item in subset)
+        fixed_anchor = all(_boolean(item, "FixedAnchorMode") is True for item in subset)
+        spatial_match = all(_boolean(item, "SpatialContractMatch") is True for item in subset)
+        fixed_match = all(_boolean(item, "FixedOperatingPointMatch") is True for item in subset)
+        adaptive_conformance = (
+            all(_boolean(item, "AdaptivePolicyConformance") is True for item in subset)
+            and (not adaptive or feedback_count > 0)
+        )
+        mu_required = any(_boolean(item, "MUExecutionRequired") is True for item in subset)
+        mu_execution_match = all(_boolean(item, "MUExecutionMatch") is True for item in subset)
+        expected_booleans = {
+            "AdaptiveMode": adaptive,
+            "SpatialContractRequired": fixed_anchor,
+            "SpatialContractMatch": spatial_match,
+            "FixedOperatingPointRequired": not adaptive,
+            "FixedOperatingPointMatch": fixed_match,
+            "AdaptivePolicyRequired": adaptive,
+            "AdaptivePolicyConformance": adaptive_conformance,
+            "MUExecutionRequired": mu_required,
+            "MUExecutionMatch": mu_execution_match,
+            "RuntimePopulated": True,
+        }
+        for field, expected in expected_booleans.items():
+            if _boolean(row, field) is not expected:
+                failures.append(prefix + f":{field}_mismatch")
+        rank2_fraction = sum(
+            _number(item, "TransmittedRank") == 2
+            or _number(item, "EffectiveDecodedRank") == 2
+            for item in subset
+        ) / count
+        exact_fraction = derived_counts["ExactMatch"] / count
+        if not _close(_number(row, "RuntimeRank2Fraction"), rank2_fraction, atol=1e-12):
+            failures.append(prefix + ":RuntimeRank2Fraction_mismatch")
+        if not _close(_number(row, "RuntimeExactMatchFraction"), exact_fraction, atol=1e-12):
+            failures.append(prefix + ":RuntimeExactMatchFraction_mismatch")
+
+        if not mu_required:
+            if (
+                _number(row, "MUExecutedTrialRowCount") != 0
+                or _number(row, "MUExecutedDistinctGroupCount") != 0
+                or _text(row, "MUExecutionFailureReason") != "not_applicable_mu_disabled"
+            ):
+                failures.append(prefix + ":mu_disabled_summary_invalid")
+        else:
+            group_ids = {
+                _number(item, "MUMIMOGroupId") for item in subset
+                if _number(item, "MUMIMOGroupId") is not None
+                and _boolean(item, "MUExecutionMatch") is True
+            }
+            executed_rows = sum(
+                _boolean(item, "MUExecutionMatch") is True
+                and _number(item, "MUMIMOGroupId") is not None
+                for item in subset
+            )
+            if (
+                not _close(_number(row, "MUExecutedTrialRowCount"), float(executed_rows), atol=0)
+                or not _close(_number(row, "MUExecutedDistinctGroupCount"), float(len(group_ids)), atol=0)
+            ):
+                failures.append(prefix + ":mu_execution_counts_not_rank_source")
+
+        exact_threshold = _number(row, "RequiredExactMatchPercent")
+        execution_threshold = _number(row, "RequiredExecutionContractMatchPercent")
+        objective = bool(
+            count > 0
+            and (exact_threshold is None or exact_fraction + 2.3e-16 >= exact_threshold)
+            and (
+                execution_threshold is None
+                or derived_counts["ExecutionContractMatch"] / count + 2.3e-16
+                >= execution_threshold
+            )
+            and (not fixed_anchor or spatial_match)
+            and (adaptive or fixed_match)
+            and (not adaptive or adaptive_conformance)
+            and mu_execution_match
+        )
+        if _boolean(row, "ScenarioObjectivePass") is not objective:
+            failures.append(prefix + ":ScenarioObjectivePass_mismatch")
+        expected_status = "pass" if objective else "fail"
+        if _text(row, "Status").lower() != expected_status:
+            failures.append(prefix + ":Status_not_objective_reduction")
+        if objective and _text(row, "FailureReason"):
+            failures.append(prefix + ":passing_row_has_failure_reason")
+        if not objective and not _text(row, "FailureReason"):
+            failures.append(prefix + ":failed_row_missing_failure_reason")
+        if _text(row, "RuntimeEvidenceSource") != "rank_layer_trials_from_air_interface_raw_trials":
+            failures.append(prefix + ":RuntimeEvidenceSource_invalid")
+        if _text(row, "EvidenceClass") != "DIRECT_RUNTIME_EVIDENCE":
+            failures.append(prefix + ":EvidenceClass_invalid")
+    checks.append(_check(
+        "mimo_companion", path,
+        "configured_effective_summary_recomputed_from_rank_trials", rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_per_trial_companion(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required_by_path = {
+        "beamforming/csv/beam_sweep_measurements.csv": {
+            "RunId", "TrialId", "Direction", "SelectedBeamId",
+            "MeasurementSource", "SourceRowsHash", "Status", "FailureReason",
+        },
+        "beamforming/csv/mimo_oracle_guard.csv": {
+            "RunId", "Direction", "TrialId", "CellId", "UEId", "Stage",
+            "OracleFieldName", "WasAccessed", "Allowed", "Violation",
+            "Status", "FailureReason",
+        },
+        "beamforming/csv/precoder_evidence.csv": {
+            "RunId", "TrialId", "Direction", "PrecoderId", "PMI",
+            "AppliedPrecoderMatrixSHA256", "EvidenceType", "PrecoderSource",
+            "PrecodingActive", "SourceRowsHash", "Status", "FailureReason",
+        },
+    }
+    required = required_by_path[path]
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required - set(header)),
+    )]
+    failures: list[str] = []
+    if len(rows) != len(rank_rows):
+        failures.append(f"row_count_mismatch:{len(rows)}!={len(rank_rows)}")
+    for index, (row, rank) in enumerate(zip(rows, rank_rows), start=1):
+        prefix = f"row={index}"
+        for field in ("RunId", "Direction", "TrialId"):
+            observed = _number(row, field) if field == "TrialId" else _text(row, field)
+            expected = _number(rank, field) if field == "TrialId" else _text(rank, field)
+            if observed != expected:
+                failures.append(prefix + f":{field}_not_rank_source")
+        status = _text(row, "Status").lower()
+        reason = _text(row, "FailureReason")
+        if path.endswith("beam_sweep_measurements.csv"):
+            selected = _text(rank, "BeamId")
+            configured_layers = _number(rank, "ConfiguredLayers")
+            expected_pass = bool(selected or (configured_layers is not None and configured_layers <= 1))
+            if _text(row, "SelectedBeamId") != selected:
+                failures.append(prefix + ":SelectedBeamId_not_rank_source")
+            if _text(row, "SourceRowsHash") != _text(rank, "SourceRowsHash"):
+                failures.append(prefix + ":SourceRowsHash_not_rank_source")
+            if _text(row, "MeasurementSource") not in {
+                "air_interface_trial_row", "csi_or_grant_runtime_evidence"
+            }:
+                failures.append(prefix + ":MeasurementSource_invalid")
+        elif path.endswith("mimo_oracle_guard.csv"):
+            expected_violation = bool(
+                _number(rank, "EffectiveDecodedRank") is not None
+                and _number(rank, "ConfiguredRank") is not None
+                and _number(rank, "EffectiveDecodedRank") == _number(rank, "ConfiguredRank")
+                and not _text(rank, "LayerSINRdB")
+                and _boolean(rank, "DecodeCrcPass") is True
+            )
+            expected_pass = not expected_violation
+            if _boolean(row, "Violation") is not expected_violation:
+                failures.append(prefix + ":Violation_formula_mismatch")
+            if _boolean(row, "WasAccessed") is not False or _boolean(row, "Allowed") is not False:
+                failures.append(prefix + ":configured_rank_oracle_access_not_forbidden")
+            if _text(row, "Stage") != "effective_rank_derivation" or _text(row, "OracleFieldName") != "ConfiguredRank":
+                failures.append(prefix + ":oracle_stage_or_field_invalid")
+            for field in ("CellId", "UEId"):
+                if not _close(_number(row, field), _number(rank, field), atol=0):
+                    failures.append(prefix + f":{field}_not_rank_source")
+        else:
+            pmi = _text(rank, "PrecoderId")
+            matrix_hash = _text(rank, "AppliedPrecoderMatrixSHA256").lower()
+            matrix_available = _is_sha256(matrix_hash)
+            pmi_available = bool(pmi)
+            expected_active = pmi_available or matrix_available
+            expected_pass = bool(
+                expected_active or (_number(rank, "ConfiguredLayers") or 0) <= 1
+            )
+            expected_id = (
+                "matrix_sha256:" + matrix_hash if matrix_available
+                else "pmi:" + pmi if pmi_available else ""
+            )
+            expected_type = (
+                "pmi_and_applied_matrix" if matrix_available and pmi_available
+                else "applied_matrix" if matrix_available
+                else "pmi" if pmi_available else "missing"
+            )
+            if _text(row, "PrecoderId") != expected_id:
+                failures.append(prefix + ":PrecoderId_formula_mismatch")
+            if _text(row, "PMI") != (pmi if pmi_available else ""):
+                failures.append(prefix + ":PMI_not_rank_source")
+            if _text(row, "AppliedPrecoderMatrixSHA256").lower() != (
+                matrix_hash if matrix_available else ""
+            ):
+                failures.append(prefix + ":matrix_hash_not_rank_source")
+            if _text(row, "EvidenceType") != expected_type:
+                failures.append(prefix + ":EvidenceType_mismatch")
+            if _boolean(row, "PrecodingActive") is not expected_active:
+                failures.append(prefix + ":PrecodingActive_mismatch")
+            if _text(row, "SourceRowsHash") != _text(rank, "SourceRowsHash"):
+                failures.append(prefix + ":SourceRowsHash_not_rank_source")
+        if status != ("pass" if expected_pass else "fail"):
+            failures.append(prefix + ":Status_mismatch")
+        if expected_pass and reason:
+            failures.append(prefix + ":passing_row_has_failure_reason")
+        if not expected_pass and not reason:
+            failures.append(prefix + ":failed_row_missing_failure_reason")
+    checks.append(_check(
+        "mimo_companion", path, "ordered_row_reconciliation_to_rank_trials",
+        rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_layer_metrics_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {
+        "RunId", "TrialId", "CellId", "UEId", "Direction", "Slot",
+        "LayerIndex", "CodewordIndex", "DMRSPort", "PostEqSINRdB", "EVMdB",
+        "ChannelEstimateNMSEdB", "LLRMeanAbs", "DecodeCrcPass", "BER",
+        "BLERContribution", "Status",
+    }
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required - set(header)),
+    )]
+    failures: list[str] = []
+    expected_count = sum(int(_number(rank, "TransmittedLayers") or 0) for rank in rank_rows)
+    if len(rows) != expected_count:
+        failures.append(f"layer_row_count_mismatch:{len(rows)}!={expected_count}")
+    offset = 0
+    for rank_index, rank in enumerate(rank_rows, start=1):
+        layers = int(_number(rank, "TransmittedLayers") or 0)
+        source_sinr = [
+            float(token) for token in _text(rank, "LayerSINRdB").split("|")
+            if token.strip()
+        ]
+        group = rows[offset:offset + layers]
+        offset += layers
+        if len(group) != layers:
+            failures.append(f"trial={rank_index}:missing_layer_rows")
+            continue
+        for layer_index, row in enumerate(group, start=1):
+            prefix = f"trial={rank_index}:layer={layer_index}"
+            for field in ("RunId", "Direction", "TrialId", "CellId", "UEId", "Slot"):
+                observed = _number(row, field) if field in {"TrialId", "CellId", "UEId", "Slot"} else _text(row, field)
+                expected = _number(rank, field) if field in {"TrialId", "CellId", "UEId", "Slot"} else _text(rank, field)
+                if observed != expected:
+                    failures.append(prefix + f":{field}_not_rank_source")
+            if _number(row, "LayerIndex") != layer_index or _number(row, "DMRSPort") != layer_index - 1:
+                failures.append(prefix + ":layer_or_dmrs_index_invalid")
+            expected_codeword = 1 if layers <= 4 else min(2, math.ceil(layer_index / 4))
+            if _number(row, "CodewordIndex") != expected_codeword:
+                failures.append(prefix + ":CodewordIndex_invalid")
+            if layer_index <= len(source_sinr):
+                if not _close(_number(row, "PostEqSINRdB"), source_sinr[layer_index - 1], atol=1e-8):
+                    failures.append(prefix + ":PostEqSINRdB_not_rank_source")
+            elif _number(row, "PostEqSINRdB") is not None:
+                failures.append(prefix + ":unexpected_PostEqSINRdB")
+            crc = _boolean(rank, "DecodeCrcPass")
+            if _boolean(row, "DecodeCrcPass") is not crc:
+                failures.append(prefix + ":DecodeCrcPass_not_rank_source")
+            if _number(row, "BLERContribution") != (0 if crc is True else 1):
+                failures.append(prefix + ":BLERContribution_not_crc_inverse")
+            ber = _number(row, "BER")
+            if ber is None or not 0 <= ber <= 1:
+                failures.append(prefix + ":BER_invalid")
+            for field in ("EVMdB", "ChannelEstimateNMSEdB", "LLRMeanAbs"):
+                if _number(row, field) is None:
+                    failures.append(prefix + f":{field}_missing")
+            expected_status = "pass" if layer_index <= len(source_sinr) else "missing_layer_receiver_metric"
+            if _text(row, "Status") != expected_status:
+                failures.append(prefix + ":Status_mismatch")
+    checks.append(_check(
+        "mimo_companion", path, "per_layer_receiver_metrics_reconcile_rank_trials",
+        rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_beam_codebook_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {
+        "RunId", "Direction", "BeamId", "WeightVectorHash",
+        "SourceRowsHash", "Status", "FailureReason",
+    }
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required - set(header)),
+    )]
+    failures: list[str] = []
+    expected: set[tuple[str, str]] = set()
+    for direction in ("DL", "UL"):
+        subset = [item for item in rank_rows if _text(item, "Direction").upper() == direction]
+        if not subset:
+            continue
+        beams = {_text(item, "BeamId") for item in subset if _text(item, "BeamId")}
+        if not beams:
+            beams = {"not_selected"}
+        expected.update((direction, beam) for beam in beams)
+    observed: set[tuple[str, str]] = set()
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        direction = _text(row, "Direction").upper()
+        beam = _text(row, "BeamId")
+        key = (direction, beam)
+        if key in observed:
+            failures.append(prefix + ":duplicate_direction_beam")
+        observed.add(key)
+        subset = [item for item in rank_rows if _text(item, "Direction").upper() == direction]
+        if not subset:
+            failures.append(prefix + ":no_rank_source_direction")
+            continue
+        if _text(row, "RunId") != _text(subset[0], "RunId"):
+            failures.append(prefix + ":RunId_not_rank_source")
+        if _text(row, "SourceRowsHash") != _text(subset[0], "SourceRowsHash"):
+            failures.append(prefix + ":SourceRowsHash_not_rank_source")
+        if not _is_sha256(_text(row, "WeightVectorHash")):
+            failures.append(prefix + ":WeightVectorHash_invalid")
+        multi_layer_missing = beam == "not_selected" and any(
+            (_number(item, "ConfiguredLayers") or 0) > 1 for item in subset
+        )
+        expected_pass = not multi_layer_missing
+        if _text(row, "Status").lower() != ("pass" if expected_pass else "fail"):
+            failures.append(prefix + ":Status_mismatch")
+        if expected_pass and _text(row, "FailureReason"):
+            failures.append(prefix + ":passing_row_has_failure_reason")
+        if not expected_pass and not _text(row, "FailureReason"):
+            failures.append(prefix + ":failed_row_missing_failure_reason")
+    if observed != expected:
+        failures.append(f"direction_beam_set_mismatch:{len(observed)}!={len(expected)}")
+    checks.append(_check(
+        "mimo_companion", path, "beam_codebook_reconciles_rank_trial_beams",
+        rows, failures,
+    ))
+    return checks
+
+
+def _optional_number_equal(
+    actual: float | None, expected: float | None, *, atol: float = 0.0
+) -> bool:
+    if actual is None or expected is None:
+        return actual is None and expected is None
+    return math.isclose(actual, expected, abs_tol=atol, rel_tol=1e-9)
+
+
+def _mode_first_available(
+    rows: list[dict[str, str]], fields: tuple[str, ...]
+) -> float | None:
+    for field in fields:
+        value = _mode_number(rows, field)
+        if value is not None:
+            return value
+    return None
+
+
+def _audit_beam_precoder_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    link_rows: dict[str, list[dict[str, str]]],
+) -> list[AuditCheck]:
+    semantic_columns = {
+        "timestamp_sim_ms", "frame", "slot", "direction", "ue_id", "rnti",
+        "cell_id", "configured_beam_selection_strategy", "beam_selection_strategy",
+        "selected_beam_index", "best_beam_index", "beam_hit",
+        "requested_beam_index_set", "requested_beam_truth_classification",
+        "precoder_source", "applied_precoder_source", "requested_precoder_pmi",
+        "requested_precoder_pmi_truth_classification", "applied_precoder_pmi",
+        "applied_precoder_pmi_type", "applied_precoder_codebook_mode",
+        "requested_vs_applied_precoder_pmi_match_status", "beamforming_applied",
+        "applied_beam_index_set", "applied_beam_application_source",
+        "applied_beam_truth_classification", "applied_precoder_pmi_application_source",
+        "applied_precoder_pmi_truth_classification", "precoding_mode",
+        "precoding_application_stage", "precoding_active",
+        "explicit_beam_weights_applied", "transform_precoding_applied",
+        "precoding_num_ports", "precoding_num_layers", "precoding_matrix_rows",
+        "precoding_matrix_cols", "qcl_accuracy", "qcl_status", "tci_status",
+        "near_field_status", "runtime_evidence",
+        "source_artifact_ref", "run_tag", "scenario_id", "config_hash",
+        "code_commit", "seed", "producer_module", "status_code",
+        "status_classification", "derived_flag", "active_flag",
+    }
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(semantic_columns - set(header)),
+    )]
+    sources: list[tuple[str, dict[str, str]]] = []
+    for direction in ("DL", "UL"):
+        sources.extend((direction, row) for row in link_rows.get(direction, []))
+    failures: list[str] = []
+    if len(rows) != len(sources):
+        failures.append(f"row_count_mismatch:{len(rows)}!={len(sources)}")
+    numeric_mapping = {
+        "frame": ("Frame",), "slot": ("Slot",),
+        "ue_id": ("UEID", "UEIndex", "UE", "RNTI"), "rnti": ("RNTI",),
+        "cell_id": ("CellID", "ServingCell"),
+        "selected_beam_index": ("SelectedBeamIndex",),
+        "best_beam_index": ("BestBeamIndex",), "beam_hit": ("BeamHit",),
+        "requested_precoder_pmi": ("RequestedPrecoderPMI",),
+        "applied_precoder_pmi": ("AppliedPrecoderPMI",),
+        "precoding_num_ports": ("PrecodingNumPorts",),
+        "precoding_num_layers": ("PrecodingNumLayers",),
+        "precoding_matrix_rows": ("PrecodingMatrixRows",),
+        "precoding_matrix_cols": ("PrecodingMatrixCols",),
+        "qcl_accuracy": ("QCLAccuracy",),
+        "tci_validity_timer_slots": ("TCIValidityTimerSlots",),
+        "fraunhofer_boundary_m": ("FraunhoferBoundary_m",),
+        "near_field_focal_point_m": ("NearFieldFocalPoint_m", "FocalPoint_m"),
+    }
+    text_mapping = {
+        "configured_beam_selection_strategy": ("ConfiguredBeamSelectionStrategy",),
+        "beam_selection_strategy": ("BeamSelectionStrategy",),
+        "requested_beam_index_set": ("RequestedBeamIndexSet",),
+        "requested_beam_truth_classification": ("RequestedBeamTruthClassification",),
+        "precoder_source": ("PrecoderSource",),
+        "applied_precoder_source": ("AppliedPrecoderSource",),
+        "requested_precoder_pmi_truth_classification": ("RequestedPrecoderPMITruthClassification",),
+        "applied_precoder_pmi_type": ("AppliedPrecoderPMIType",),
+        "applied_precoder_codebook_mode": ("AppliedPrecoderCodebookMode",),
+        "requested_vs_applied_precoder_pmi_match_status": ("RequestedVsAppliedPrecoderPMIMatchStatus",),
+        "applied_beam_index_set": ("AppliedBeamIndexSet",),
+        "applied_beam_application_source": ("AppliedBeamApplicationSource",),
+        "applied_beam_truth_classification": ("AppliedBeamTruthClassification",),
+        "applied_precoder_pmi_application_source": ("AppliedPrecoderPMIApplicationSource",),
+        "applied_precoder_pmi_truth_classification": ("AppliedPrecoderPMITruthClassification",),
+        "precoding_mode": ("PrecodingMode",),
+        "precoding_application_stage": ("PrecodingApplicationStage",),
+        "qcl_type": ("QCLType", "QCLTypes"), "qcl_source_rs": ("QCLSourceRS",),
+        "tci_state_id": ("TCIState", "TCIStateID"),
+        "unified_tci_state_id": ("UnifiedTCIStateID",),
+    }
+    logical_mapping = {
+        "beamforming_applied": "BeamformingApplied",
+        "precoding_active": "PrecodingActive",
+        "explicit_beam_weights_applied": "ExplicitBeamWeightsApplied",
+        "transform_precoding_applied": "TransformPrecodingApplied",
+    }
+    for index, (row, source_item) in enumerate(zip(rows, sources), start=1):
+        direction, source = source_item
+        prefix = f"row={index}:{direction}"
+        timestamp = _number(source, "TimestampSim_ms")
+        if timestamp is None:
+            time_s = _number(source, "Time_s")
+            timestamp = None if time_s is None else 1000.0 * time_s
+        if not _optional_number_equal(_number(row, "timestamp_sim_ms"), timestamp, atol=1e-9):
+            failures.append(prefix + ":timestamp_not_primary_source")
+        if _text(row, "direction").upper() != direction:
+            failures.append(prefix + ":direction_not_primary_order")
+        for target, aliases in numeric_mapping.items():
+            if not _optional_number_equal(_number(row, target), _number(source, *aliases), atol=1e-9):
+                failures.append(prefix + f":{target}_not_primary_source")
+        for target, aliases in text_mapping.items():
+            if _text(row, target) != _text(source, *aliases):
+                failures.append(prefix + f":{target}_not_primary_source")
+        for target, source_field in logical_mapping.items():
+            expected = _boolean(source, source_field)
+            expected = False if expected is None else expected
+            if _boolean(row, target) is not expected:
+                failures.append(prefix + f":{target}_not_primary_source")
+        expected_qcl_status = _text(source, "QCLStatus")
+        if not expected_qcl_status:
+            expected_qcl_status = (
+                "runtime_qcl_accuracy_measured"
+                if _number(source, "QCLAccuracy") is not None
+                else "not_materialized_in_active_truth_path"
+            )
+        expected_tci_status = _text(source, "TCIStatus")
+        if not expected_tci_status:
+            expected_tci_status = (
+                "runtime_or_configured_tci_state_present"
+                if _text(source, "TCIState", "TCIStateID")
+                else "not_materialized_in_active_truth_path"
+            )
+        if _text(row, "qcl_status") != expected_qcl_status:
+            failures.append(prefix + ":qcl_status_formula_mismatch")
+        if _text(row, "tci_status") != expected_tci_status:
+            failures.append(prefix + ":tci_status_formula_mismatch")
+        expected_near = _text(source, "NearFieldStatus") or "not_materialized_in_active_truth_path"
+        if _text(row, "near_field_status") != expected_near:
+            failures.append(prefix + ":near_field_status_formula_mismatch")
+        expected_source = (
+            "air_interface/csv/dl_pdsch_trials.csv" if direction == "DL"
+            else "air_interface/csv/ul_pusch_trials.csv"
+        )
+        exact_text = {
+            "runtime_evidence": "persisted_air_interface_trial_row",
+            "source_artifact_ref": expected_source,
+            "run_tag": _text(source, "RunTag", "RunID"),
+            "scenario_id": _text(source, "ScenarioID"),
+            "config_hash": _text(source, "ConfigHash"),
+            "producer_module": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildBeamPrecoderTable",
+            "status_code": "implemented",
+            "status_classification": "runtime_beam_precoder_trial_rows",
+        }
+        for field, expected in exact_text.items():
+            if _text(row, field) != expected:
+                failures.append(prefix + f":{field}_mismatch")
+        if _boolean(row, "derived_flag") is not False or _boolean(row, "active_flag") is not True:
+            failures.append(prefix + ":finalization_flags_invalid")
+        if not _is_sha256(_text(row, "config_hash")):
+            failures.append(prefix + ":config_hash_invalid")
+        commit = _text(row, "code_commit").lower()
+        if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
+            failures.append(prefix + ":code_commit_invalid")
+        if _number(row, "seed") is None:
+            failures.append(prefix + ":seed_missing")
+    checks.append(_check(
+        "mimo_companion", path, "ordered_trial_and_all_beam_precoder_fields_reconcile",
+        rows, failures,
+    ))
+    return checks
+
+
+def _group_key_number(value: float | None) -> str:
+    return "NOT_AVAILABLE" if value is None else format(value, ".17g")
+
+
+def _audit_beamforming_analytics_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    beam_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {
+        "direction", "cell_id", "ue_id", "trial_row_count",
+        "beamforming_applied_count", "runtime_applied_beam_rows",
+        "runtime_applied_pmi_rows", "beam_hit_rate", "mean_precoding_ports",
+        "mean_precoding_layers", "analytics_value_source", "producer_module",
+        "status_code", "status_classification", "source_artifact_ref",
+        "derived_flag", "active_flag",
+    }
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required - set(header)),
+    )]
+    groups: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+    for source in beam_rows:
+        direction = _text(source, "direction").upper() or "NOT_AVAILABLE"
+        key = (
+            direction,
+            _group_key_number(_number(source, "cell_id")),
+            _group_key_number(_number(source, "ue_id")),
+        )
+        groups.setdefault(key, []).append(source)
+    failures: list[str] = []
+    if len(rows) != len(groups):
+        failures.append(f"row_count_mismatch:{len(rows)}!={len(groups)}")
+    for index, (row, (key, subset)) in enumerate(zip(rows, groups.items()), start=1):
+        prefix = f"row={index}"
+        direction, _cell_token, _ue_token = key
+        expected_numbers = {
+            "cell_id": _number(subset[0], "cell_id"),
+            "ue_id": _number(subset[0], "ue_id"),
+            "trial_row_count": float(len(subset)),
+            "beamforming_applied_count": float(sum(_boolean(item, "beamforming_applied") is True for item in subset)),
+            "runtime_applied_beam_rows": float(sum(_text(item, "applied_beam_truth_classification") == "applied_runtime_value" for item in subset)),
+            "runtime_applied_pmi_rows": float(sum(_text(item, "applied_precoder_pmi_truth_classification") == "applied_runtime_value" for item in subset)),
+            "beam_hit_rate": _finite_mean([_number(item, "beam_hit") for item in subset]),
+            "mean_precoding_ports": _finite_mean([_number(item, "precoding_num_ports") for item in subset]),
+            "mean_precoding_layers": _finite_mean([_number(item, "precoding_num_layers") for item in subset]),
+        }
+        if _text(row, "direction").upper() != direction:
+            failures.append(prefix + ":direction_group_mismatch")
+        for field, expected in expected_numbers.items():
+            if not _optional_number_equal(_number(row, field), expected, atol=1e-12):
+                failures.append(prefix + f":{field}_aggregate_mismatch")
+        exact = {
+            "analytics_value_source": "beamforming/csv/beam_precoder_table.csv",
+            "producer_module": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildBeamformingAnalyticsTable",
+            "status_code": "implemented", "status_classification": "derived_beamforming_analytics",
+            "source_artifact_ref": "beamforming/csv/beam_precoder_table.csv",
+        }
+        for field, expected in exact.items():
+            if _text(row, field) != expected:
+                failures.append(prefix + f":{field}_invalid")
+        if _boolean(row, "derived_flag") is not True or _boolean(row, "active_flag") is not True:
+            failures.append(prefix + ":finalization_flags_invalid")
+    checks.append(_check(
+        "mimo_companion", path, "grouped_beam_analytics_recomputed_from_precoder_rows",
+        rows, failures,
+    ))
+    return checks
+
+
+def _finite_mean(values: list[float | None]) -> float | None:
+    finite = [value for value in values if value is not None]
+    return None if not finite else sum(finite) / len(finite)
+
+
+def _audit_mimo_rank_coverage_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    beam_rows: list[dict[str, str]],
+    *,
+    histogram: bool,
+) -> list[AuditCheck]:
+    required = {
+        "direction", "cell_id", "rank_or_layer_count", "trial_row_count",
+        "utilization_fraction", "source_artifact_ref", "producer_module",
+        "status_code", "status_classification", "derived_flag", "active_flag",
+    }
+    if histogram:
+        required.add("histogram_definition")
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required - set(header)),
+    )]
+    groups: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+    denominators: dict[tuple[str, str], int] = {}
+    for source in beam_rows:
+        rank = _number(source, "precoding_num_layers")
+        if rank is None:
+            continue
+        direction = _text(source, "direction").upper() or "NOT_AVAILABLE"
+        cell = _group_key_number(_number(source, "cell_id"))
+        groups.setdefault((direction, cell, _group_key_number(rank)), []).append(source)
+        denominators[(direction, cell)] = denominators.get((direction, cell), 0) + 1
+    failures: list[str] = []
+    if len(rows) != len(groups):
+        failures.append(f"row_count_mismatch:{len(rows)}!={len(groups)}")
+    for index, (row, (key, subset)) in enumerate(zip(rows, groups.items()), start=1):
+        direction, cell, rank_token = key
+        prefix = f"row={index}"
+        expected = {
+            "cell_id": _number(subset[0], "cell_id"),
+            "rank_or_layer_count": _number(subset[0], "precoding_num_layers"),
+            "trial_row_count": float(len(subset)),
+            "utilization_fraction": len(subset) / max(denominators[(direction, cell)], 1),
+        }
+        if _text(row, "direction").upper() != direction:
+            failures.append(prefix + ":direction_group_mismatch")
+        for field, value in expected.items():
+            if not _optional_number_equal(_number(row, field), value, atol=1e-12):
+                failures.append(prefix + f":{field}_aggregate_mismatch")
+        exact = {
+            "source_artifact_ref": "beamforming/csv/beam_precoder_table.csv",
+            "producer_module": (
+                "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildRankLayerUsageHistogram"
+                if histogram else
+                "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildMIMORankUtilizationTable"
+            ),
+            "status_code": "implemented",
+            "status_classification": (
+                "derived_rank_layer_histogram" if histogram else "derived_mimo_rank_utilization"
+            ),
+        }
+        for field, value in exact.items():
+            if _text(row, field) != value:
+                failures.append(prefix + f":{field}_invalid")
+        if histogram and _text(row, "histogram_definition") != (
+            "rank/layer usage histogram from runtime beam-precoder rows"
+        ):
+            failures.append(prefix + ":histogram_definition_invalid")
+        if _boolean(row, "derived_flag") is not True or _boolean(row, "active_flag") is not True:
+            failures.append(prefix + ":finalization_flags_invalid")
+    checks.append(_check(
+        "mimo_companion", path,
+        "rank_histogram_recomputed_from_precoder_rows" if histogram
+        else "rank_utilization_recomputed_from_precoder_rows",
+        rows, failures,
+    ))
+    return checks
+
+
+def _rows_by_direction(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
+    result: dict[str, dict[str, str]] = {}
+    for row in rows:
+        direction = _text(row, "Direction").upper()
+        if direction in {"DL", "UL"} and direction not in result:
+            result[direction] = row
+    return result
+
+
+def _audit_mimo_antenna_array_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+    config_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {
+        "RunId", "ScenarioName", "Direction", "ArrayGeometryId",
+        "PhysicalTxAntennaCount", "PhysicalRxAntennaCount", "TxRFChainCount",
+        "RxRFChainCount", "TxAntennaPortCount", "RxAntennaPortCount",
+        "ObservedTxPortCount", "ObservedRxAntennaCount", "RuntimePopulated",
+        "FullElementDomainRequired", "ExpectedRuntimeTxCount", "ExpectedRuntimeRxCount",
+        "ExactRuntimeAntennaMatch", "ObservedPhysicalTxAntennaCount",
+        "ObservedPhysicalRxAntennaCount", "ObservedLogicalTxPortCount",
+        "ObservedLogicalRxBranchCount", "LogicalPortLayerMatch",
+        "RuntimeAntennaObjectCreated", "ChannelUsesSameRuntimeAntennaAssumptions",
+        "NominalCapabilityOnly", "EvidenceClass", "RuntimeEvidenceSource",
+        "SourceHash", "Status", "FailureReason",
+    }
+    checks = [_check(
+        "mimo_companion", path, "required_columns", rows,
+        sorted(required - set(header)),
+    )]
+    configs = _rows_by_direction(config_rows)
+    failures: list[str] = []
+    if len(rows) != len(configs) or len(rows) != len({_text(row, "Direction").upper() for row in rows}):
+        failures.append("direction_rows_not_exactly_one_per_config_direction")
+    for index, row in enumerate(rows, start=1):
+        direction = _text(row, "Direction").upper()
+        prefix = f"row={index}:{direction or 'missing'}"
+        config = configs.get(direction)
+        subset = [item for item in rank_rows if _text(item, "Direction").upper() == direction]
+        if config is None:
+            failures.append(prefix + ":missing_config_source")
+            continue
+        copy_numbers = (
+            "PhysicalTxAntennaCount", "PhysicalRxAntennaCount", "TxRFChainCount",
+            "RxRFChainCount", "TxAntennaPortCount", "RxAntennaPortCount",
+        )
+        for field in copy_numbers:
+            if not _optional_number_equal(_number(row, field), _number(config, field)):
+                failures.append(prefix + f":{field}_not_config_source")
+        if _text(row, "RunId") != _text(config, "RunId") or _text(row, "ScenarioName") != _text(config, "ScenarioName"):
+            failures.append(prefix + ":run_identity_not_config_source")
+        if _text(row, "ArrayGeometryId") != "scenario_config_array_counts":
+            failures.append(prefix + ":ArrayGeometryId_invalid")
+        observed_tx_ports = _mode_number(subset, "NumTxPorts")
+        if observed_tx_ports is None:
+            observed_tx_ports = _mode_number(subset, "TransmittedLayers")
+        observed_rx = _mode_number(subset, "NumRxAntennas")
+        if observed_rx is None:
+            observed_rx = _mode_number(subset, "EffectiveDecodedLayers")
+        logical_tx = _mode_number(subset, "LogicalTxPortCount")
+        if logical_tx is None:
+            logical_tx = _mode_number(subset, "TransmittedLayers")
+        logical_rx = _mode_number(subset, "LogicalRxBranchCount")
+        if logical_rx is None:
+            logical_rx = _mode_number(subset, "EffectiveDecodedLayers")
+        if direction == "UL":
+            physical_tx = _mode_first_available(subset, ("TxWaveformColumns", "PhysicalTxAntennas", "UEAntennaElements", "UEAntennaNumPorts"))
+            physical_rx = _mode_first_available(subset, ("RxWaveformBranches", "PhysicalRxAntennas", "BSAntennaElements", "BSAntennaNumPorts"))
+        else:
+            physical_tx = _mode_first_available(subset, ("TxWaveformColumns", "PhysicalTxAntennas", "BSAntennaElements", "BSAntennaNumPorts"))
+            physical_rx = _mode_first_available(subset, ("RxWaveformBranches", "PhysicalRxAntennas", "NumRxAntennas", "UEAntennaElements", "UEAntennaNumPorts"))
+        expected_numbers = {
+            "ObservedTxPortCount": observed_tx_ports,
+            "ObservedRxAntennaCount": observed_rx,
+            "ObservedPhysicalTxAntennaCount": physical_tx,
+            "ObservedPhysicalRxAntennaCount": physical_rx,
+            "ObservedLogicalTxPortCount": logical_tx,
+            "ObservedLogicalRxBranchCount": logical_rx,
+        }
+        for field, expected in expected_numbers.items():
+            if not _optional_number_equal(_number(row, field), expected):
+                failures.append(prefix + f":{field}_not_rank_source")
+        runtime = bool(subset)
+        full_element = _boolean(config, "FullElementDomainRequired") is True
+        expected_tx = _number(config, "PhysicalTxAntennaCount" if full_element else "TxAntennaPortCount")
+        expected_rx = _number(config, "PhysicalRxAntennaCount" if full_element else "RxAntennaPortCount")
+        runtime_object = runtime and all(_boolean(item, "AntennaRuntimeObjectCreated") is True for item in subset)
+        same_assumptions = runtime and all(_boolean(item, "ChannelUsesSameRuntimeAntennaAssumptions") is True for item in subset)
+        configured_layers = _number(config, "ConfiguredLayers")
+        logical_match = bool(
+            runtime and logical_tx is not None and logical_rx is not None
+            and configured_layers is not None and logical_tx == configured_layers
+            and logical_rx >= configured_layers
+        )
+        exact_match = logical_match
+        if full_element:
+            exact_match = bool(
+                runtime and physical_tx == expected_tx and physical_rx == expected_rx
+                and logical_match and runtime_object and same_assumptions
+            )
+        expected_booleans = {
+            "RuntimePopulated": runtime, "FullElementDomainRequired": full_element,
+            "ExactRuntimeAntennaMatch": exact_match, "LogicalPortLayerMatch": logical_match,
+            "RuntimeAntennaObjectCreated": runtime_object,
+            "ChannelUsesSameRuntimeAntennaAssumptions": same_assumptions,
+            "NominalCapabilityOnly": not runtime,
+        }
+        for field, expected in expected_booleans.items():
+            if _boolean(row, field) is not expected:
+                failures.append(prefix + f":{field}_formula_mismatch")
+        for field, expected in (("ExpectedRuntimeTxCount", expected_tx), ("ExpectedRuntimeRxCount", expected_rx)):
+            if not _optional_number_equal(_number(row, field), expected):
+                failures.append(prefix + f":{field}_formula_mismatch")
+        evidence = "CONFIGURATION_WITH_DIRECT_RUNTIME_TRIAL_EVIDENCE" if runtime else "CONFIGURATION_ONLY"
+        runtime_source = "rank_layer_trials_from_air_interface_raw_trials" if runtime else ""
+        if _text(row, "EvidenceClass") != evidence or _text(row, "RuntimeEvidenceSource") != runtime_source:
+            failures.append(prefix + ":evidence_class_or_source_invalid")
+        if _text(row, "SourceHash") != _text(config, "ConfigHash") or not _is_sha256(_text(row, "SourceHash")):
+            failures.append(prefix + ":SourceHash_not_config_hash")
+        if _text(row, "Status").lower() != ("pass" if exact_match else "fail"):
+            failures.append(prefix + ":Status_formula_mismatch")
+        if exact_match != (not bool(_text(row, "FailureReason"))):
+            failures.append(prefix + ":FailureReason_formula_mismatch")
+    checks.append(_check(
+        "mimo_companion", path, "antenna_execution_domain_recomputed_from_rank_trials",
+        rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_antenna_port_mapping_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+    config_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {
+        "RunId", "ScenarioName", "Direction", "TxAntennaPortCount",
+        "RxAntennaPortCount", "DMRSPorts", "DMRSPortCount", "ConfiguredLayers",
+        "ObservedTransmittedLayers", "ObservedEffectiveDecodedLayers",
+        "MappingEvidenceSource", "SourceRowsHash", "Status", "FailureReason",
+    }
+    checks = [_check("mimo_companion", path, "required_columns", rows, sorted(required - set(header)))]
+    configs = _rows_by_direction(config_rows)
+    failures: list[str] = []
+    if len(rows) != len(configs):
+        failures.append(f"row_count_mismatch:{len(rows)}!={len(configs)}")
+    for index, row in enumerate(rows, start=1):
+        direction = _text(row, "Direction").upper()
+        prefix = f"row={index}:{direction or 'missing'}"
+        config = configs.get(direction)
+        subset = [item for item in rank_rows if _text(item, "Direction").upper() == direction]
+        if config is None:
+            failures.append(prefix + ":missing_config_source")
+            continue
+        for field in ("TxAntennaPortCount", "RxAntennaPortCount", "DMRSPortCount", "ConfiguredLayers"):
+            if not _optional_number_equal(_number(row, field), _number(config, field)):
+                failures.append(prefix + f":{field}_not_config_source")
+        if _text(row, "DMRSPorts") != _text(config, "DMRSPorts"):
+            failures.append(prefix + ":DMRSPorts_not_config_source")
+        if _text(row, "RunId") != _text(config, "RunId") or _text(row, "ScenarioName") != _text(config, "ScenarioName"):
+            failures.append(prefix + ":run_identity_not_config_source")
+        transmitted = _mode_number(subset, "TransmittedLayers")
+        decoded = _mode_number(subset, "EffectiveDecodedLayers")
+        if not _optional_number_equal(_number(row, "ObservedTransmittedLayers"), transmitted):
+            failures.append(prefix + ":ObservedTransmittedLayers_not_rank_source")
+        if not _optional_number_equal(_number(row, "ObservedEffectiveDecodedLayers"), decoded):
+            failures.append(prefix + ":ObservedEffectiveDecodedLayers_not_rank_source")
+        expected_source = "air_interface/csv/dl_pdsch_trials.csv" if direction == "DL" else "air_interface/csv/ul_pusch_trials.csv"
+        if _text(row, "MappingEvidenceSource") != expected_source:
+            failures.append(prefix + ":MappingEvidenceSource_invalid")
+        expected_hash = _text(subset[0], "SourceRowsHash") if subset else "empty"
+        if _text(row, "SourceRowsHash") != expected_hash:
+            failures.append(prefix + ":SourceRowsHash_not_rank_source")
+        ok = bool(subset and transmitted is not None and transmitted <= (_number(config, "DMRSPortCount") or -1))
+        if _text(row, "Status").lower() != ("pass" if ok else "fail"):
+            failures.append(prefix + ":Status_formula_mismatch")
+        if ok != (not bool(_text(row, "FailureReason"))):
+            failures.append(prefix + ":FailureReason_formula_mismatch")
+    checks.append(_check(
+        "mimo_companion", path, "antenna_port_mapping_recomputed_from_config_and_rank_trials",
+        rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_config_validation_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    config_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {"RunId", "ScenarioName", "Direction", "ValidationRule", "Pass", "Status", "FailureReason", "ConfigHash"}
+    checks = [_check("mimo_companion", path, "required_columns", rows, sorted(required - set(header)))]
+    rules = (
+        "physical_antenna_counts_present", "antenna_ports_present",
+        "configured_rank_supported_by_ports", "configured_layers_supported_by_ports",
+        "dmrs_ports_cover_layers", "unsupported_codebook_modes_fail_closed",
+    )
+    reason_by_rule = {
+        "physical_antenna_counts_present": "physical_tx_rx_antenna_counts_missing",
+        "antenna_ports_present": "tx_rx_antenna_ports_missing",
+        "configured_rank_supported_by_ports": "configured_rank_exceeds_tx_rx_dmrs_port_support",
+        "configured_layers_supported_by_ports": "configured_layers_exceed_tx_rx_dmrs_port_support",
+        "dmrs_ports_cover_layers": "dmrs_port_count_less_than_configured_layers",
+        "unsupported_codebook_modes_fail_closed": "unsupported_codebook_or_multipanel_mode",
+    }
+    expected: list[tuple[dict[str, str], str, bool]] = []
+    for config in config_rows:
+        values = [
+            _number(config, field) for field in (
+                "PhysicalTxAntennaCount", "PhysicalRxAntennaCount", "TxRFChainCount",
+                "RxRFChainCount", "TxAntennaPortCount", "RxAntennaPortCount", "DMRSPortCount",
+            )
+        ]
+        supported = min(values) if all(value is not None for value in values) else None
+        codebook = (_text(config, "CodebookType") + "|" + _text(config, "CodebookMode")).lower()
+        passes = (
+            _number(config, "PhysicalTxAntennaCount") is not None and _number(config, "PhysicalRxAntennaCount") is not None,
+            _number(config, "TxAntennaPortCount") is not None and _number(config, "RxAntennaPortCount") is not None,
+            supported is not None and (_number(config, "ConfiguredRank") or math.inf) <= supported,
+            supported is not None and (_number(config, "ConfiguredLayers") or math.inf) <= supported,
+            (_number(config, "DMRSPortCount") or -math.inf) >= (_number(config, "ConfiguredLayers") or math.inf),
+            not any(token in codebook for token in ("typeii", "multi-panel", "multipanel")),
+        )
+        expected.extend((config, rule, passed) for rule, passed in zip(rules, passes))
+    failures: list[str] = []
+    if len(rows) != len(expected):
+        failures.append(f"row_count_mismatch:{len(rows)}!={len(expected)}")
+    for index, (row, expected_item) in enumerate(zip(rows, expected), start=1):
+        config, rule, passed = expected_item
+        prefix = f"row={index}:{rule}"
+        for field in ("RunId", "ScenarioName", "Direction", "ConfigHash"):
+            if _text(row, field) != _text(config, field):
+                failures.append(prefix + f":{field}_not_config_source")
+        if _text(row, "ValidationRule") != rule:
+            failures.append(prefix + ":ValidationRule_order_mismatch")
+        if _boolean(row, "Pass") is not passed or _text(row, "Status").lower() != ("pass" if passed else "fail"):
+            failures.append(prefix + ":pass_status_formula_mismatch")
+        expected_reason = "" if passed else reason_by_rule[rule]
+        if _text(row, "FailureReason") != expected_reason:
+            failures.append(prefix + ":FailureReason_formula_mismatch")
+    checks.append(_check(
+        "mimo_companion", path, "strict_config_rules_recomputed_from_mimo_config",
+        rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_config_strict_table(
+    path: str,
+    header: list[str],
+    rows: list[dict[str, str]],
+    rank_rows: list[dict[str, str]],
+    configured_rows: list[dict[str, str]],
+    validation_rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    required = {
+        "RunId", "ScenarioName", "Direction", "NCellID", "NSizeGrid",
+        "SubcarrierSpacingKHz", "PhysicalTxAntennaCount", "PhysicalRxAntennaCount",
+        "TxRFChainCount", "RxRFChainCount", "TxAntennaPortCount", "RxAntennaPortCount",
+        "FullElementDomainRequired", "DMRSPorts", "DMRSPortCount", "ConfiguredRank",
+        "ConfiguredLayers", "ConfiguredCodewords", "ConfiguredModulation", "ConfiguredMCS",
+        "ConfiguredInitialMCS", "ConfiguredMaximumMCS", "ConfiguredMCSSelectionPolicy",
+        "ConfiguredMUMIMOEnabled", "ConfiguredMUUsersPerPRB",
+        "ConfiguredMUMIMOLeakageThreshold_dB", "ConfiguredMUMIMOExecutionMode",
+        "ConfiguredMCSTable", "ConfiguredTransmissionScheme", "CodebookType",
+        "ConfiguredPMI", "FixedAnchorMode", "AdaptiveMode", "RankSelectionSource",
+        "PrecoderSelectionSource", "BeamSelectionSource", "StrictUnsupportedReason",
+        "ConfigHash", "Status", "RuntimePopulated", "RuntimeTrialCount",
+        "RuntimeRank2Fraction", "RuntimeExactMatchFraction", "RuntimeEvidenceSource",
+        "EvidenceClass",
+    }
+    checks = [_check("mimo_companion", path, "required_columns", rows, sorted(required - set(header)))]
+    configured = _rows_by_direction(configured_rows)
+    failures: list[str] = []
+    observed_directions = [_text(row, "Direction").upper() for row in rows]
+    expected_directions = {_text(row, "Direction").upper() for row in rank_rows if _text(row, "Direction").upper() in {"DL", "UL"}}
+    if set(observed_directions) != expected_directions or len(observed_directions) != len(set(observed_directions)):
+        failures.append("direction_rows_not_exactly_one_per_runtime_direction")
+    for index, row in enumerate(rows, start=1):
+        direction = _text(row, "Direction").upper()
+        prefix = f"row={index}:{direction or 'missing'}"
+        subset = [item for item in rank_rows if _text(item, "Direction").upper() == direction and _boolean(item, "StrictEligible") is True]
+        summary = configured.get(direction)
+        if not subset or summary is None:
+            failures.append(prefix + ":missing_rank_or_configured_effective_source")
+            continue
+        expected_modes = {
+            "ConfiguredRank": _mode_number(subset, "ConfiguredRank"),
+            "ConfiguredLayers": _mode_number(subset, "ConfiguredLayers"),
+            "ConfiguredMCS": _mode_number(subset, "ConfiguredMCS"),
+            "ConfiguredInitialMCS": _mode_number(subset, "ConfiguredInitialMCS"),
+            "ConfiguredMaximumMCS": _mode_number(subset, "ConfiguredMaximumMCS"),
+        }
+        for field, expected in expected_modes.items():
+            if not _optional_number_equal(_number(row, field), expected):
+                failures.append(prefix + f":{field}_not_rank_source")
+        expected_text = {
+            "ConfiguredModulation": _mode_text(subset, "ConfiguredModulation"),
+            "ConfiguredMCSSelectionPolicy": _mode_text(subset, "ConfiguredMCSSelectionPolicy"),
+            "DMRSPorts": _mode_text(subset, "DMRSPorts"),
+        }
+        for field, expected in expected_text.items():
+            if _text(row, field) != expected:
+                failures.append(prefix + f":{field}_not_rank_source")
+        if _text(row, "RunId") != _text(subset[0], "RunId") or _text(row, "ScenarioName") != _text(subset[0], "ScenarioName"):
+            failures.append(prefix + ":run_identity_not_rank_source")
+        count = len(subset)
+        rank2_fraction = sum(
+            _number(item, "TransmittedRank") == 2 or _number(item, "EffectiveDecodedRank") == 2
+            for item in subset
+        ) / count
+        exact_fraction = sum(_boolean(item, "ExactConfiguredMatch") is True for item in subset) / count
+        if _boolean(row, "RuntimePopulated") is not True or _number(row, "RuntimeTrialCount") != count:
+            failures.append(prefix + ":runtime_population_mismatch")
+        if not _close(_number(row, "RuntimeRank2Fraction"), rank2_fraction, atol=1e-12):
+            failures.append(prefix + ":RuntimeRank2Fraction_mismatch")
+        if not _close(_number(row, "RuntimeExactMatchFraction"), exact_fraction, atol=1e-12):
+            failures.append(prefix + ":RuntimeExactMatchFraction_mismatch")
+        if _text(row, "RuntimeEvidenceSource") != "rank_layer_trials_from_air_interface_raw_trials" or _text(row, "EvidenceClass") != "CONFIGURATION_WITH_DIRECT_RUNTIME_TRIAL_EVIDENCE":
+            failures.append(prefix + ":runtime_evidence_invalid")
+        for field in ("ConfiguredMCSTable", "ConfiguredTransmissionScheme", "CodebookType", "RankSelectionSource", "PrecoderSelectionSource", "BeamSelectionSource"):
+            if not _text(row, field):
+                failures.append(prefix + f":{field}_missing")
+        if _number(row, "NCellID") is None or (_number(row, "NSizeGrid") or 0) <= 0 or (_number(row, "SubcarrierSpacingKHz") or 0) <= 0:
+            failures.append(prefix + ":carrier_configuration_invalid")
+        layers = _number(row, "ConfiguredLayers")
+        expected_codewords = None if layers is None else (1 if layers <= 4 else 2)
+        if not _optional_number_equal(_number(row, "ConfiguredCodewords"), expected_codewords):
+            failures.append(prefix + ":ConfiguredCodewords_formula_mismatch")
+        adaptive = all(_boolean(item, "AdaptiveMode") is True for item in subset)
+        fixed_anchor = all(_boolean(item, "FixedAnchorMode") is True for item in subset)
+        mu_required = any(_boolean(item, "MUExecutionRequired") is True for item in subset)
+        expected_bools = {
+            "AdaptiveMode": adaptive, "FixedAnchorMode": fixed_anchor,
+            "ConfiguredMUMIMOEnabled": mu_required,
+        }
+        for field, expected in expected_bools.items():
+            if _boolean(row, field) is not expected:
+                failures.append(prefix + f":{field}_not_rank_source")
+        if not _optional_number_equal(_number(row, "ConfiguredMUUsersPerPRB"), _mode_number(subset, "RequiredMUUserCount")):
+            failures.append(prefix + ":ConfiguredMUUsersPerPRB_not_rank_source")
+        if not _optional_number_equal(_number(row, "ConfiguredMUMIMOLeakageThreshold_dB"), _mode_number(subset, "RequiredMULeakageThreshold_dB")):
+            failures.append(prefix + ":ConfiguredMUMIMOLeakageThreshold_not_rank_source")
+        if _text(row, "ConfiguredMUMIMOExecutionMode") != _mode_text(subset, "RequiredMUExecutionMode"):
+            failures.append(prefix + ":ConfiguredMUMIMOExecutionMode_not_rank_source")
+        audit_subset = [item for item in validation_rows if _text(item, "Direction").upper() == direction]
+        expected_pass = _boolean(summary, "ScenarioObjectivePass") is True and bool(audit_subset) and all(_boolean(item, "Pass") is True for item in audit_subset)
+        if _text(row, "Status").lower() != ("pass" if expected_pass else "fail"):
+            failures.append(prefix + ":Status_not_runtime_validation_reduction")
+        if expected_pass and _text(row, "StrictUnsupportedReason"):
+            failures.append(prefix + ":passing_config_has_StrictUnsupportedReason")
+        if not _is_sha256(_text(row, "ConfigHash")):
+            failures.append(prefix + ":ConfigHash_invalid")
+        if any(_text(item, "ConfigHash") != _text(row, "ConfigHash") for item in audit_subset):
+            failures.append(prefix + ":ConfigHash_not_validation_source")
+    checks.append(_check(
+        "mimo_companion", path, "strict_config_runtime_summary_and_status_recomputed",
+        rows, failures,
+    ))
+    return checks
+
+
+def _audit_mimo_companion_outputs(
+    run_root: Path,
+    link_rows: dict[str, list[dict[str, str]]],
+) -> list[AuditCheck]:
+    _rank_header, rank_rows = _read_rows(run_root / MIMO_RANK_LAYER_TABLE)
+    if not rank_rows:
+        return []
+    table_rows = {
+        relative: _read_rows(run_root / relative)
+        for relative in MIMO_COMPANION_TABLES
+    }
+    config_rows = table_rows["beamforming/csv/mimo_config_strict.csv"][1]
+    configured_rows = table_rows["beamforming/csv/mimo_configured_vs_effective.csv"][1]
+    validation_rows = table_rows["beamforming/csv/mimo_config_validation.csv"][1]
+    beam_rows = table_rows["beamforming/csv/beam_precoder_table.csv"][1]
+    checks: list[AuditCheck] = []
+    for relative in MIMO_COMPANION_TABLES:
+        header, rows = table_rows[relative]
+        if not header and not rows:
+            continue
+        if relative.endswith("antenna_array_config.csv"):
+            checks.extend(_audit_mimo_antenna_array_table(
+                relative, header, rows, rank_rows, config_rows
+            ))
+        elif relative.endswith("antenna_port_mapping.csv"):
+            checks.extend(_audit_mimo_antenna_port_mapping_table(
+                relative, header, rows, rank_rows, config_rows
+            ))
+        elif relative.endswith("beam_precoder_table.csv"):
+            checks.extend(_audit_beam_precoder_table(
+                relative, header, rows, link_rows
+            ))
+        elif relative.endswith("beamforming_analytics_table.csv"):
+            checks.extend(_audit_beamforming_analytics_table(
+                relative, header, rows, beam_rows
+            ))
+        elif relative.endswith("mimo_config_strict.csv"):
+            checks.extend(_audit_mimo_config_strict_table(
+                relative, header, rows, rank_rows, configured_rows, validation_rows
+            ))
+        elif relative.endswith("mimo_config_validation.csv"):
+            checks.extend(_audit_mimo_config_validation_table(
+                relative, header, rows, config_rows
+            ))
+        elif relative.endswith("mimo_configured_vs_effective.csv"):
+            checks.extend(_audit_mimo_configured_effective_table(
+                relative, header, rows, rank_rows
+            ))
+        elif relative.endswith("mimo_layer_metrics.csv"):
+            checks.extend(_audit_mimo_layer_metrics_table(
+                relative, header, rows, rank_rows
+            ))
+        elif relative.endswith("beam_codebook.csv"):
+            checks.extend(_audit_mimo_beam_codebook_table(
+                relative, header, rows, rank_rows
+            ))
+        elif relative.endswith("mimo_rank_utilization_table.csv"):
+            checks.extend(_audit_mimo_rank_coverage_table(
+                relative, header, rows, beam_rows, histogram=False
+            ))
+        elif relative.endswith("rank_layer_usage_histogram.csv"):
+            checks.extend(_audit_mimo_rank_coverage_table(
+                relative, header, rows, beam_rows, histogram=True
+            ))
+        else:
+            checks.extend(_audit_mimo_per_trial_companion(
+                relative, header, rows, rank_rows
+            ))
+    return checks
 
 
 def _audit_frc_point_table(
@@ -3463,6 +4717,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
             checks.extend(_audit_derived_link_table(path, header, rows, link_rows))
     checks.extend(_audit_component_bler_outputs(run_root, link_rows, summary))
     checks.extend(_audit_mimo_rank_layer_output(run_root, link_rows))
+    checks.extend(_audit_mimo_companion_outputs(run_root, link_rows))
     checks.extend(_audit_runtime_call_ledger(run_root, summary, link_rows))
     checks.extend(_audit_manifest_integrity(run_root))
     checks.extend(_audit_domain_runtime_tables(run_root, summary))

@@ -19,6 +19,17 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_link_table,
     _audit_manifest_integrity,
     _audit_mimo_rank_layer_table,
+    _audit_mimo_beam_codebook_table,
+    _audit_beam_precoder_table,
+    _audit_beamforming_analytics_table,
+    _audit_mimo_antenna_array_table,
+    _audit_mimo_antenna_port_mapping_table,
+    _audit_mimo_config_strict_table,
+    _audit_mimo_config_validation_table,
+    _audit_mimo_configured_effective_table,
+    _audit_mimo_layer_metrics_table,
+    _audit_mimo_per_trial_companion,
+    _audit_mimo_rank_coverage_table,
     _audit_runtime_call_ledger,
     _audit_status_reduction,
 )
@@ -168,13 +179,15 @@ def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
         "WidebandCQI": "NaN", "CQIDerivedMCS": "NaN",
         "AdaptiveFeedbackDecisionObserved": "0",
         "AppliedPrecoderMatrixSHA256": "b" * 64, "LayerSINRdB": "8.5",
+        "PrecoderId": "0", "BeamId": "1",
         "DecodeCrcPass": "0", "ExactSpatialMatch": "1",
         "SpatialContractMatch": "1", "ExactOperatingPointMatch": "1",
         "FixedOperatingPointMatch": "1", "AdaptivePolicyRequired": "0",
         "AdaptivePolicyMatch": "1", "AdaptivePolicyConformance": "1",
         "AdaptivePolicyFailureReason": "not_applicable_fixed_operating_point",
         "OperatingPointContractMatch": "1", "MUExecutionRequired": "0",
-        "RequiredMUUserCount": "2", "MUMIMOEnabled": "0",
+        "RequiredMUUserCount": "2", "RequiredMULeakageThreshold_dB": "-15",
+        "RequiredMUExecutionMode": "none", "MUMIMOEnabled": "0",
         "InterferenceContributorCount": "0", "MUExecutionMatch": "1",
         "ExactConfiguredMatch": "1", "ExecutionContractMatch": "1",
         "AdaptiveMode": "0", "AdaptationEvidenceId": "",
@@ -217,6 +230,395 @@ def test_mimo_rank_semantics_reject_execution_and_decode_status_corruption() -> 
     assert "TransmittedRank_not_primary_source" in failed[
         "ordered_primary_trial_and_lineage_reconciliation"
     ]
+
+
+def _mimo_configured_effective_row() -> dict[str, str]:
+    return {
+        "RunId": "run-1", "ScenarioName": "scenario-1", "Direction": "DL",
+        "ConfiguredRank": "1", "DominantScheduledRank": "1",
+        "DominantTransmittedRank": "1", "DominantEffectiveDecodedRank": "0",
+        "ConfiguredLayers": "1", "DominantScheduledLayers": "1",
+        "DominantTransmittedLayers": "1", "DominantEffectiveDecodedLayers": "0",
+        "ConfiguredModulation": "16QAM", "DominantEffectiveModulation": "16QAM",
+        "ConfiguredMCS": "10", "ConfiguredInitialMCS": "10",
+        "ConfiguredMaximumMCS": "10", "DominantEffectiveMCS": "10",
+        "AdaptiveMode": "0", "StrictEligibleRowCount": "1",
+        "ExactMatchRowCount": "1", "ExactMatchPercent": "1",
+        "ExactSpatialMatchRowCount": "1", "ExactSpatialMatchPercent": "1",
+        "ExactOperatingPointMatchRowCount": "1", "ExactOperatingPointMatchPercent": "1",
+        "AdaptivePolicyMatchRowCount": "1", "AdaptivePolicyMatchPercent": "1",
+        "AdaptiveFeedbackDecisionRowCount": "0",
+        "ExecutionContractMatchRowCount": "1", "ExecutionContractMatchPercent": "1",
+        "SpatialContractRequired": "1", "SpatialContractMatch": "1",
+        "FixedOperatingPointRequired": "1", "FixedOperatingPointMatch": "1",
+        "AdaptivePolicyRequired": "0", "AdaptivePolicyConformance": "1",
+        "MUExecutionRequired": "0", "RequiredMUUserCount": "2",
+        "RequiredMULeakageThreshold_dB": "-15", "RequiredMUExecutionMode": "none",
+        "MUExecutedTrialRowCount": "0", "MUExecutedDistinctGroupCount": "0",
+        "MUExecutionMatch": "1", "MUExecutionFailureReason": "not_applicable_mu_disabled",
+        "RequiredExactMatchPercent": "0.999",
+        "RequiredExecutionContractMatchPercent": "0.999",
+        "ScenarioObjectivePass": "1", "RuntimePopulated": "1",
+        "RuntimeTrialCount": "1", "RuntimeRank2Fraction": "0",
+        "RuntimeExactMatchFraction": "1",
+        "RuntimeEvidenceSource": "rank_layer_trials_from_air_interface_raw_trials",
+        "EvidenceClass": "DIRECT_RUNTIME_EVIDENCE", "Status": "pass",
+        "FailureReason": "",
+    }
+
+
+def _mimo_companion_rows() -> dict[str, dict[str, str]]:
+    return {
+        "beamforming/csv/beam_sweep_measurements.csv": {
+            "RunId": "run-1", "TrialId": "1", "Direction": "DL",
+            "SelectedBeamId": "1", "MeasurementSource": "air_interface_trial_row",
+            "SourceRowsHash": "c" * 64, "Status": "pass", "FailureReason": "",
+        },
+        "beamforming/csv/mimo_oracle_guard.csv": {
+            "RunId": "run-1", "Direction": "DL", "TrialId": "1",
+            "CellId": "1", "UEId": "3", "Stage": "effective_rank_derivation",
+            "OracleFieldName": "ConfiguredRank", "WasAccessed": "0",
+            "Allowed": "0", "Violation": "0", "Status": "pass",
+            "FailureReason": "",
+        },
+        "beamforming/csv/precoder_evidence.csv": {
+            "RunId": "run-1", "TrialId": "1", "Direction": "DL",
+            "PrecoderId": "matrix_sha256:" + "b" * 64, "PMI": "0",
+            "AppliedPrecoderMatrixSHA256": "b" * 64,
+            "EvidenceType": "pmi_and_applied_matrix",
+            "PrecoderSource": "air_interface_trial_applied_precoder_matrix_sha256",
+            "PrecodingActive": "1", "SourceRowsHash": "c" * 64,
+            "Status": "pass", "FailureReason": "",
+        },
+    }
+
+
+def test_mimo_companion_semantics_reconcile_all_direct_rank_derivatives() -> None:
+    _raw, rank = _mimo_source_and_rank_row()
+    summary = _mimo_configured_effective_row()
+    checks = _audit_mimo_configured_effective_table(
+        "beamforming/csv/mimo_configured_vs_effective.csv",
+        list(summary), [summary], [rank],
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    layer = {
+        "RunId": "run-1", "TrialId": "1", "CellId": "1", "UEId": "3",
+        "Direction": "DL", "Slot": "2", "LayerIndex": "1",
+        "CodewordIndex": "1", "DMRSPort": "0", "PostEqSINRdB": "8.5",
+        "EVMdB": "-20", "ChannelEstimateNMSEdB": "-30", "LLRMeanAbs": "5",
+        "DecodeCrcPass": "0", "BER": "0.1", "BLERContribution": "1",
+        "Status": "pass",
+    }
+    checks = _audit_mimo_layer_metrics_table(
+        "beamforming/csv/mimo_layer_metrics.csv", list(layer), [layer], [rank]
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    for path, row in _mimo_companion_rows().items():
+        checks = _audit_mimo_per_trial_companion(path, list(row), [row], [rank])
+        assert all(check.passed for check in checks), [check.details for check in checks]
+
+    codebook = {
+        "RunId": "run-1", "Direction": "DL", "BeamId": "1",
+        "WeightVectorHash": "d" * 64, "SourceRowsHash": "c" * 64,
+        "Status": "pass", "FailureReason": "",
+    }
+    checks = _audit_mimo_beam_codebook_table(
+        "beamforming/csv/beam_codebook.csv", list(codebook), [codebook], [rank]
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_mimo_companion_semantics_reject_corrupt_derived_values() -> None:
+    _raw, rank = _mimo_source_and_rank_row()
+    summary = _mimo_configured_effective_row()
+    summary["ExactMatchRowCount"] = "0"
+    checks = _audit_mimo_configured_effective_table(
+        "beamforming/csv/mimo_configured_vs_effective.csv",
+        list(summary), [summary], [rank],
+    )
+    assert "ExactMatchRowCount_mismatch" in next(
+        check.details for check in checks if not check.passed
+    )
+
+    layer = {
+        "RunId": "run-1", "TrialId": "1", "CellId": "1", "UEId": "3",
+        "Direction": "DL", "Slot": "2", "LayerIndex": "1",
+        "CodewordIndex": "1", "DMRSPort": "0", "PostEqSINRdB": "8.5",
+        "EVMdB": "-20", "ChannelEstimateNMSEdB": "-30", "LLRMeanAbs": "5",
+        "DecodeCrcPass": "0", "BER": "0.1", "BLERContribution": "0",
+        "Status": "pass",
+    }
+    checks = _audit_mimo_layer_metrics_table(
+        "beamforming/csv/mimo_layer_metrics.csv", list(layer), [layer], [rank]
+    )
+    assert "BLERContribution_not_crc_inverse" in next(
+        check.details for check in checks if not check.passed
+    )
+
+    companions = _mimo_companion_rows()
+    companions["beamforming/csv/beam_sweep_measurements.csv"]["SelectedBeamId"] = "2"
+    companions["beamforming/csv/mimo_oracle_guard.csv"]["Violation"] = "1"
+    companions["beamforming/csv/precoder_evidence.csv"]["AppliedPrecoderMatrixSHA256"] = "e" * 64
+    expected_tokens = {
+        "beamforming/csv/beam_sweep_measurements.csv": "SelectedBeamId_not_rank_source",
+        "beamforming/csv/mimo_oracle_guard.csv": "Violation_formula_mismatch",
+        "beamforming/csv/precoder_evidence.csv": "matrix_hash_not_rank_source",
+    }
+    for path, row in companions.items():
+        checks = _audit_mimo_per_trial_companion(path, list(row), [row], [rank])
+        assert expected_tokens[path] in next(
+            check.details for check in checks if not check.passed
+        )
+
+    codebook = {
+        "RunId": "run-1", "Direction": "DL", "BeamId": "2",
+        "WeightVectorHash": "d" * 64, "SourceRowsHash": "c" * 64,
+        "Status": "pass", "FailureReason": "",
+    }
+    checks = _audit_mimo_beam_codebook_table(
+        "beamforming/csv/beam_codebook.csv", list(codebook), [codebook], [rank]
+    )
+    assert "direction_beam_set_mismatch" in next(
+        check.details for check in checks if not check.passed
+    )
+
+
+def _strict_mimo_config_row() -> dict[str, str]:
+    return {
+        "RunId": "run-1", "ScenarioName": "scenario-1", "Direction": "DL",
+        "CellId": "NaN", "UEId": "NaN", "NCellID": "1", "NSizeGrid": "273",
+        "SubcarrierSpacingKHz": "30", "PhysicalTxAntennaCount": "2",
+        "PhysicalRxAntennaCount": "2", "TxRFChainCount": "2",
+        "RxRFChainCount": "2", "TxAntennaPortCount": "1",
+        "RxAntennaPortCount": "2", "FullElementDomainRequired": "0",
+        "DMRSPorts": "0", "DMRSPortCount": "1", "ConfiguredRank": "1",
+        "ConfiguredLayers": "1", "ConfiguredCodewords": "1",
+        "ConfiguredModulation": "16QAM", "ConfiguredMCS": "10",
+        "ConfiguredInitialMCS": "10", "ConfiguredMaximumMCS": "10",
+        "ConfiguredMCSSelectionPolicy": "fixed", "ConfiguredMUMIMOEnabled": "0",
+        "ConfiguredMUUsersPerPRB": "2", "ConfiguredMUMIMOLeakageThreshold_dB": "-15",
+        "ConfiguredMUMIMOExecutionMode": "none", "ConfiguredMCSTable": "qam64_table1",
+        "ConfiguredTransmissionScheme": "nonCodebook", "CodebookType": "type1",
+        "CodebookMode": "type1_su_mimo", "PrecodingMode": "explicit-wideband",
+        "ConfiguredPMI": "0", "FixedAnchorMode": "1", "AdaptiveMode": "0",
+        "RankSelectionSource": "fixed_anchor", "PrecoderSelectionSource": "configured_pmi",
+        "BeamSelectionSource": "fixed_first_beam", "StrictUnsupportedReason": "",
+        "ConfigHash": "d" * 64, "Status": "pass", "RuntimePopulated": "1",
+        "RuntimeTrialCount": "1", "RuntimeRank2Fraction": "0",
+        "RuntimeExactMatchFraction": "1",
+        "RuntimeEvidenceSource": "rank_layer_trials_from_air_interface_raw_trials",
+        "EvidenceClass": "CONFIGURATION_WITH_DIRECT_RUNTIME_TRIAL_EVIDENCE",
+    }
+
+
+def _mimo_validation_rows(config: dict[str, str]) -> list[dict[str, str]]:
+    rules = (
+        "physical_antenna_counts_present", "antenna_ports_present",
+        "configured_rank_supported_by_ports", "configured_layers_supported_by_ports",
+        "dmrs_ports_cover_layers", "unsupported_codebook_modes_fail_closed",
+    )
+    return [{
+        "RunId": config["RunId"], "ScenarioName": config["ScenarioName"],
+        "Direction": config["Direction"], "ValidationRule": rule, "Pass": "1",
+        "Status": "pass", "FailureReason": "", "ConfigHash": config["ConfigHash"],
+    } for rule in rules]
+
+
+def _antenna_array_row(config: dict[str, str]) -> dict[str, str]:
+    return {
+        "RunId": "run-1", "ScenarioName": "scenario-1", "Direction": "DL",
+        "ArrayGeometryId": "scenario_config_array_counts",
+        "PhysicalTxAntennaCount": "2", "PhysicalRxAntennaCount": "2",
+        "TxRFChainCount": "2", "RxRFChainCount": "2",
+        "TxAntennaPortCount": "1", "RxAntennaPortCount": "2",
+        "ObservedTxPortCount": "2", "ObservedRxAntennaCount": "2",
+        "RuntimePopulated": "1", "FullElementDomainRequired": "0",
+        "ExpectedRuntimeTxCount": "1", "ExpectedRuntimeRxCount": "2",
+        "ExactRuntimeAntennaMatch": "1", "ObservedPhysicalTxAntennaCount": "2",
+        "ObservedPhysicalRxAntennaCount": "2", "ObservedLogicalTxPortCount": "1",
+        "ObservedLogicalRxBranchCount": "2", "LogicalPortLayerMatch": "1",
+        "RuntimeAntennaObjectCreated": "1",
+        "ChannelUsesSameRuntimeAntennaAssumptions": "0",
+        "NominalCapabilityOnly": "0",
+        "EvidenceClass": "CONFIGURATION_WITH_DIRECT_RUNTIME_TRIAL_EVIDENCE",
+        "RuntimeEvidenceSource": "rank_layer_trials_from_air_interface_raw_trials",
+        "SourceHash": config["ConfigHash"], "Status": "pass", "FailureReason": "",
+    }
+
+
+def _antenna_port_row() -> dict[str, str]:
+    return {
+        "RunId": "run-1", "ScenarioName": "scenario-1", "Direction": "DL",
+        "TxAntennaPortCount": "1", "RxAntennaPortCount": "2", "DMRSPorts": "0",
+        "DMRSPortCount": "1", "ConfiguredLayers": "1",
+        "ObservedTransmittedLayers": "1", "ObservedEffectiveDecodedLayers": "0",
+        "MappingEvidenceSource": "air_interface/csv/dl_pdsch_trials.csv",
+        "SourceRowsHash": "c" * 64, "Status": "pass", "FailureReason": "",
+    }
+
+
+def _beam_primary_and_output() -> tuple[dict[str, str], dict[str, str]]:
+    raw, _rank = _mimo_source_and_rank_row()
+    raw.update({
+        "RunTag": "run-1", "ConfigHash": "a" * 64, "RNTI": "3", "CellID": "1",
+        "ConfiguredBeamSelectionStrategy": "fixed_first_beam",
+        "BeamSelectionStrategy": "fixed_first_beam", "SelectedBeamIndex": "1",
+        "BestBeamIndex": "1", "BeamHit": "1", "RequestedBeamIndexSet": "1",
+        "RequestedBeamTruthClassification": "requested_reference",
+        "PrecoderSource": "pmi-codebook", "AppliedPrecoderSource": "pmi-codebook",
+        "RequestedPrecoderPMI": "0",
+        "RequestedPrecoderPMITruthClassification": "requested_reference",
+        "AppliedPrecoderPMI": "0", "AppliedPrecoderPMIType": "type1",
+        "AppliedPrecoderCodebookMode": "type1_su_mimo",
+        "RequestedVsAppliedPrecoderPMIMatchStatus": "requested_matches_runtime_applied",
+        "BeamformingApplied": "1", "AppliedBeamIndexSet": "1",
+        "AppliedBeamApplicationSource": "pmi-codebook",
+        "AppliedBeamTruthClassification": "applied_runtime_value",
+        "AppliedPrecoderPMIApplicationSource": "pmi-codebook",
+        "AppliedPrecoderPMITruthClassification": "applied_runtime_value",
+        "PrecodingMode": "explicit-wideband",
+        "PrecodingApplicationStage": "nrPDSCHPrecode_before_RE_mapping",
+        "PrecodingActive": "1", "ExplicitBeamWeightsApplied": "1",
+        "TransformPrecodingApplied": "0", "PrecodingNumPorts": "1",
+        "PrecodingNumLayers": "1", "PrecodingMatrixRows": "1",
+        "PrecodingMatrixCols": "1", "QCLAccuracy": "1",
+    })
+    output = {
+        "timestamp_sim_ms": "NaN", "frame": "1", "slot": "2", "direction": "DL",
+        "ue_id": "3", "rnti": "3", "cell_id": "1",
+        "configured_beam_selection_strategy": "fixed_first_beam",
+        "beam_selection_strategy": "fixed_first_beam", "selected_beam_index": "1",
+        "best_beam_index": "1", "beam_hit": "1", "requested_beam_index_set": "1",
+        "requested_beam_truth_classification": "requested_reference",
+        "precoder_source": "pmi-codebook", "applied_precoder_source": "pmi-codebook",
+        "requested_precoder_pmi": "0",
+        "requested_precoder_pmi_truth_classification": "requested_reference",
+        "applied_precoder_pmi": "0", "applied_precoder_pmi_type": "type1",
+        "applied_precoder_codebook_mode": "type1_su_mimo",
+        "requested_vs_applied_precoder_pmi_match_status": "requested_matches_runtime_applied",
+        "beamforming_applied": "1", "applied_beam_index_set": "1",
+        "applied_beam_application_source": "pmi-codebook",
+        "applied_beam_truth_classification": "applied_runtime_value",
+        "applied_precoder_pmi_application_source": "pmi-codebook",
+        "applied_precoder_pmi_truth_classification": "applied_runtime_value",
+        "precoding_mode": "explicit-wideband",
+        "precoding_application_stage": "nrPDSCHPrecode_before_RE_mapping",
+        "precoding_active": "1", "explicit_beam_weights_applied": "1",
+        "transform_precoding_applied": "0", "precoding_num_ports": "1",
+        "precoding_num_layers": "1", "precoding_matrix_rows": "1",
+        "precoding_matrix_cols": "1", "qcl_accuracy": "1",
+        "qcl_status": "runtime_qcl_accuracy_measured",
+        "tci_status": "not_materialized_in_active_truth_path",
+        "near_field_status": "not_materialized_in_active_truth_path",
+        "runtime_evidence": "persisted_air_interface_trial_row",
+        "source_artifact_ref": "air_interface/csv/dl_pdsch_trials.csv",
+        "run_tag": "run-1", "scenario_id": "scenario-1", "config_hash": "a" * 64,
+        "code_commit": "1" * 40, "seed": "1",
+        "producer_module": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildBeamPrecoderTable",
+        "status_code": "implemented", "status_classification": "runtime_beam_precoder_trial_rows",
+        "derived_flag": "0", "active_flag": "1",
+    }
+    return raw, output
+
+
+def _beam_aggregate_rows() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    analytics = {
+        "direction": "DL", "cell_id": "1", "ue_id": "3", "trial_row_count": "1",
+        "beamforming_applied_count": "1", "runtime_applied_beam_rows": "1",
+        "runtime_applied_pmi_rows": "1", "beam_hit_rate": "1",
+        "mean_precoding_ports": "1", "mean_precoding_layers": "1",
+        "analytics_value_source": "beamforming/csv/beam_precoder_table.csv",
+        "producer_module": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildBeamformingAnalyticsTable",
+        "status_code": "implemented", "status_classification": "derived_beamforming_analytics",
+        "source_artifact_ref": "beamforming/csv/beam_precoder_table.csv",
+        "derived_flag": "1", "active_flag": "1",
+    }
+    utilization = {
+        "direction": "DL", "cell_id": "1", "rank_or_layer_count": "1",
+        "trial_row_count": "1", "utilization_fraction": "1",
+        "source_artifact_ref": "beamforming/csv/beam_precoder_table.csv",
+        "producer_module": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildMIMORankUtilizationTable",
+        "status_code": "implemented", "status_classification": "derived_mimo_rank_utilization",
+        "derived_flag": "1", "active_flag": "1",
+    }
+    histogram = dict(utilization)
+    histogram.update({
+        "histogram_definition": "rank/layer usage histogram from runtime beam-precoder rows",
+        "producer_module": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildRankLayerUsageHistogram",
+        "status_classification": "derived_rank_layer_histogram",
+    })
+    return analytics, utilization, histogram
+
+
+def test_remaining_mimo_tables_reconcile_config_rank_and_primary_trials() -> None:
+    raw, rank = _mimo_source_and_rank_row()
+    rank.update({
+        "BSAntennaElements": "2", "UEAntennaElements": "2",
+        "BSAntennaNumPorts": "1", "UEAntennaNumPorts": "2",
+        "AntennaRuntimeObjectCreated": "1",
+        "ChannelUsesSameRuntimeAntennaAssumptions": "0",
+    })
+    config = _strict_mimo_config_row()
+    validation = _mimo_validation_rows(config)
+    configured = _mimo_configured_effective_row()
+    array = _antenna_array_row(config)
+    port = _antenna_port_row()
+    beam_raw, beam = _beam_primary_and_output()
+    analytics, utilization, histogram = _beam_aggregate_rows()
+    invocations = (
+        _audit_mimo_antenna_array_table("beamforming/csv/antenna_array_config.csv", list(array), [array], [rank], [config]),
+        _audit_mimo_antenna_port_mapping_table("beamforming/csv/antenna_port_mapping.csv", list(port), [port], [rank], [config]),
+        _audit_mimo_config_validation_table("beamforming/csv/mimo_config_validation.csv", list(validation[0]), validation, [config]),
+        _audit_mimo_config_strict_table("beamforming/csv/mimo_config_strict.csv", list(config), [config], [rank], [configured], validation),
+        _audit_beam_precoder_table("beamforming/csv/beam_precoder_table.csv", list(beam), [beam], {"DL": [beam_raw], "UL": []}),
+        _audit_beamforming_analytics_table("beamforming/csv/beamforming_analytics_table.csv", list(analytics), [analytics], [beam]),
+        _audit_mimo_rank_coverage_table("beamforming/csv/mimo_rank_utilization_table.csv", list(utilization), [utilization], [beam], histogram=False),
+        _audit_mimo_rank_coverage_table("beamforming/csv/rank_layer_usage_histogram.csv", list(histogram), [histogram], [beam], histogram=True),
+    )
+    for checks in invocations:
+        assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_remaining_mimo_tables_reject_corrupt_values_in_every_contract() -> None:
+    _raw, rank = _mimo_source_and_rank_row()
+    rank.update({
+        "BSAntennaElements": "2", "UEAntennaElements": "2",
+        "BSAntennaNumPorts": "1", "UEAntennaNumPorts": "2",
+        "AntennaRuntimeObjectCreated": "1",
+        "ChannelUsesSameRuntimeAntennaAssumptions": "0",
+    })
+    config = _strict_mimo_config_row()
+    validation = _mimo_validation_rows(config)
+    configured = _mimo_configured_effective_row()
+    array = _antenna_array_row(config)
+    array["ExactRuntimeAntennaMatch"] = "0"
+    port = _antenna_port_row()
+    port["ObservedTransmittedLayers"] = "2"
+    validation_corrupt = [dict(row) for row in validation]
+    validation_corrupt[0]["Pass"] = "0"
+    config_corrupt = dict(config)
+    config_corrupt["RuntimeTrialCount"] = "99"
+    beam_raw, beam = _beam_primary_and_output()
+    beam["selected_beam_index"] = "2"
+    analytics, utilization, histogram = _beam_aggregate_rows()
+    analytics["beam_hit_rate"] = "0"
+    utilization["utilization_fraction"] = "0.5"
+    histogram["trial_row_count"] = "2"
+    cases = (
+        (_audit_mimo_antenna_array_table("beamforming/csv/antenna_array_config.csv", list(array), [array], [rank], [config]), "ExactRuntimeAntennaMatch_formula_mismatch"),
+        (_audit_mimo_antenna_port_mapping_table("beamforming/csv/antenna_port_mapping.csv", list(port), [port], [rank], [config]), "ObservedTransmittedLayers_not_rank_source"),
+        (_audit_mimo_config_validation_table("beamforming/csv/mimo_config_validation.csv", list(validation_corrupt[0]), validation_corrupt, [config]), "pass_status_formula_mismatch"),
+        (_audit_mimo_config_strict_table("beamforming/csv/mimo_config_strict.csv", list(config_corrupt), [config_corrupt], [rank], [configured], validation), "runtime_population_mismatch"),
+        (_audit_beam_precoder_table("beamforming/csv/beam_precoder_table.csv", list(beam), [beam], {"DL": [beam_raw], "UL": []}), "selected_beam_index_not_primary_source"),
+        (_audit_beamforming_analytics_table("beamforming/csv/beamforming_analytics_table.csv", list(analytics), [analytics], [_beam_primary_and_output()[1]]), "beam_hit_rate_aggregate_mismatch"),
+        (_audit_mimo_rank_coverage_table("beamforming/csv/mimo_rank_utilization_table.csv", list(utilization), [utilization], [_beam_primary_and_output()[1]], histogram=False), "utilization_fraction_aggregate_mismatch"),
+        (_audit_mimo_rank_coverage_table("beamforming/csv/rank_layer_usage_histogram.csv", list(histogram), [histogram], [_beam_primary_and_output()[1]], histogram=True), "trial_row_count_aggregate_mismatch"),
+    )
+    for checks, token in cases:
+        failures = " | ".join(check.details for check in checks if not check.passed)
+        assert token in failures
 
 
 def _frc_point_row() -> dict[str, str]:
