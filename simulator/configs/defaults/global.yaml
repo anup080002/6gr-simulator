@@ -452,6 +452,7 @@
   "validation": {
     "fixed_link_campaign": {
       "enabled": false,
+      "profile": "diagnostic",
       "direction": "both",
       "channel_model": "AWGN",
       "snr_db": [],

@@ -1732,6 +1732,7 @@ validation:
     required_components: [prach, pdcch, srs, trs, sib1, channel_rf]
   fixed_link_campaign:
     enabled: true
+    profile: full
     fixed_reference_mode: true
     single_user_mode: true
     configuration_authority: master_yaml
@@ -2831,6 +2832,7 @@ execution_scales:
             max_transport_blocks: 100
             batch_size: 50
         fixed_link_campaign:
+          profile: diagnostic
           snr_db:
           - 18
           - 24

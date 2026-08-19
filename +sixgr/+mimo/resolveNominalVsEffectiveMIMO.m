@@ -353,14 +353,33 @@ for direction = ["DL","UL"]
         row.StrictEligible = ~localBool(tr, "IsWarmupFrame", false);
         row.SourceArtifactRef = sourceArtifact;
         row.SourceRowsHash = sourceHash;
-        row.StrictOk = row.StrictEligible && row.DecodeCrcPass && row.ExecutionContractMatch && ...
-            isfinite(row.EffectiveDecodedRank) && row.EffectiveDecodedRank == row.ConfiguredRank;
-        if row.FixedAnchorMode && row.StrictEligible && ~row.StrictOk
+        % This table proves what spatial/operating-point contract actually
+        % reached the waveform.  CRC success is a separate reliability
+        % observation: a deliberately low-SNR block error must not be
+        % relabelled as rank/layer or MCS configuration drift.
+        row.ExecutionContractOk = row.StrictEligible && ...
+            row.ExecutionContractMatch && row.MUExecutionMatch;
+        row.DecodeReliabilityOk = row.StrictEligible && row.DecodeCrcPass;
+        row.DecodeReliabilityStatus = string(localTernary(~row.StrictEligible, ...
+            "not_evaluated", localTernary(row.DecodeCrcPass, "crc_pass", "crc_fail")));
+        row.StrictOk = row.ExecutionContractOk;
+        if ~row.StrictEligible
+            row.Status = "not_evaluated";
+            row.FailureReason = "warmup_row_excluded_from_strict_mimo_evidence";
+        elseif row.ExecutionContractOk
+            row.Status = "pass";
+            row.FailureReason = "";
+        elseif row.MUExecutionRequired && ~row.MUExecutionMatch
             row.Status = "fail";
-            row.FailureReason = "fixed_anchor_configured_effective_mismatch";
+            row.FailureReason = "mu_execution_contract_failed";
+        elseif row.FixedAnchorMode
+            row.Status = "fail";
+            row.FailureReason = "fixed_anchor_execution_contract_mismatch:" + ...
+                string(localNonemptyReason(row.MismatchCause));
         else
-            row.Status = string(localTernary(row.StrictOk || ~row.FixedAnchorMode, "pass", "fail"));
-            row.FailureReason = string(localTernary(row.Status == "pass", "", "rank_layer_evidence_not_strict_success"));
+            row.Status = "fail";
+            row.FailureReason = "adaptive_execution_contract_mismatch:" + ...
+                string(localNonemptyReason(row.MismatchCause));
         end
         rows(end+1, 1) = row; %#ok<AGROW>
         for l = 1:max(1, round(max(row.TransmittedLayers, 1)))
@@ -1175,6 +1194,7 @@ parts = strings(0,1);
 if ~(isfinite(row.TransmittedRank) && row.TransmittedRank == row.ConfiguredRank)
     parts(end+1,1) = "transmitted_rank_mismatch"; %#ok<AGROW>
 end
+
 if ~(isfinite(row.TransmittedLayers) && row.TransmittedLayers == row.ConfiguredLayers)
     parts(end+1,1) = "transmitted_layers_mismatch"; %#ok<AGROW>
 end
@@ -1313,7 +1333,9 @@ row = struct("RunId","", "ScenarioName","", "TrialId",NaN, "Direction","", ...
     "MUExecutionMatch",false, ...
     "ExactConfiguredMatch",false, "ExecutionContractMatch",false, "MismatchCause","", ...
     "AdaptiveMode",false, "AdaptationEvidenceId","", "FixedAnchorMode",false, ...
-    "StrictEligible",false, "StrictOk",false, "SourceArtifactRef","", "SourceRowsHash","", ...
+    "StrictEligible",false, "ExecutionContractOk",false, ...
+    "DecodeReliabilityOk",false, "DecodeReliabilityStatus","not_evaluated", ...
+    "StrictOk",false, "SourceArtifactRef","", "SourceRowsHash","", ...
     "Status","not_evaluated", "FailureReason","");
 end
 
@@ -1392,6 +1414,13 @@ if isvector(Hwb)
 end
 if ~ismatrix(Hwb)
     Hwb = [];
+end
+end
+
+function reason = localNonemptyReason(reason)
+reason = strtrim(string(reason));
+if strlength(reason) == 0
+    reason = "unspecified_execution_contract_mismatch";
 end
 end
 

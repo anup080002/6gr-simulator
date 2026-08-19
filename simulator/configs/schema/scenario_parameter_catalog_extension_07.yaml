@@ -474,6 +474,10 @@ nested_sections:
   validation_fixed_link_campaign:
     parameters:
       enabled: {required: false, type: boolean}
+      profile:
+        required: false
+        type: string
+        allowed_values: [full, diagnostic]
       direction:
         required: false
         type: string
