@@ -6220,36 +6220,9 @@ T = table( ...
 end
 
 function T = localBuildPRACHCorrelationTraceTable(ctx)
-if localTruthCasePruned(ctx, "PRACH_Detection")
-    T = localUnavailablePRACHCorrelationTraceRow("not_supported", ...
-        "PRACH_Detection was pruned from the active truth profile.", "air_interface/csv/prach_trials.csv");
-    return;
-end
-if istable(ctx.Tables.PRACHCorrelationTrace) && ~isempty(ctx.Tables.PRACHCorrelationTrace)
-    adapted = sixgr.visual.normalizePRACHCorrelationTrace(ctx.Tables.PRACHCorrelationTrace);
-    usable = ~isempty(adapted) && any(isfinite(double(adapted.lag_samples)) & ...
-        isfinite(double(adapted.correlation_abs))) && ...
-        any(adapted.truth_status == "real_lls_evidence");
-    if usable
-        T = adapted(:, localPRACHCorrelationTraceVariableNames());
-        return;
-    end
-end
-T = localUnavailablePRACHCorrelationTraceRow("not_available", ...
-    "No lag-domain PRACH correlation trace table was emitted by this run.", "none");
-end
-
-function names = localPRACHCorrelationTraceVariableNames()
-names = {'trial_id','preamble_index','root_sequence_index','restricted_set_type','n_cs', ...
-    'zero_correlation_zone_config','lag_samples','lag_us','correlation_abs','threshold', ...
-    'noise_floor','peak_lag_samples','timing_advance_samples','detection_result', ...
-    'false_alarm','missed_detection','snr_db','cfo_hz','seed','truth_status'};
-end
-
-function T = localUnavailablePRACHCorrelationTraceRow(status, notes, sourceArtifact)
-T = table(NaN, NaN, NaN, string("unavailable"), NaN, NaN, NaN, NaN, NaN, NaN, ...
-    NaN, NaN, NaN, string(notes), false, false, NaN, NaN, NaN, string(status), ...
-    'VariableNames', localPRACHCorrelationTraceVariableNames());
+T = sixgr.truth.buildPRACHCorrelationTraceTable( ...
+    ctx.Tables.PRACHCorrelationTrace, ...
+    "TruthCasePruned", localTruthCasePruned(ctx, "PRACH_Detection"));
 end
 
 function T = localBuildAIConfidenceTraceTable(ctx)

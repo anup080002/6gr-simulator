@@ -16,9 +16,14 @@ AUDIT_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AUDIT_MODULE)
 
 
-def run_audit(run: Path, output: Path) -> subprocess.CompletedProcess[str]:
+def run_audit(
+    run: Path, output: Path, *, strict_value_closure: bool = False
+) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, str(AUDIT_TOOL), str(run), str(output)]
+    if strict_value_closure:
+        command.append("--strict-value-closure")
     return subprocess.run(
-        [sys.executable, str(AUDIT_TOOL), str(run), str(output)],
+        command,
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,
@@ -165,6 +170,62 @@ def test_header_only_csv_has_explicit_first_row_preview_state(tmp_path: Path) ->
     assert preview["preview_state"] == "header_only_no_rows"
     assert json.loads(preview["header_json"]) == ["FailureCode", "Reason"]
     assert json.loads(preview["values_json"]) == []
+
+
+def test_strict_value_closure_fails_unclassified_header_only_csv(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    output = tmp_path / "audit"
+    source = run / "reports" / "csv" / "unclassified.csv"
+    source.parent.mkdir(parents=True)
+    source.write_text("Metric,Value\n", encoding="utf-8")
+
+    proc = run_audit(run, output, strict_value_closure=True)
+    assert proc.returncode == 1
+    summary = json.loads((output / "audit_summary.json").read_text(encoding="utf-8"))
+    assert summary["csv_header_only_unresolved_files"] == 1
+    assert not summary["csv_value_review_gate_pass"]
+
+
+def test_disabled_live_csirs_header_is_not_counted_as_runtime_evidence(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    output = tmp_path / "audit"
+    config = run / "meta" / "scenario_config_resolved.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        json.dumps({
+            "reference_signals": {
+                "csi_rs_enabled": False,
+                "nzp_csi_rs": {"enabled": False},
+            }
+        }),
+        encoding="utf-8",
+    )
+    source = run / "reports" / "csv" / "live_csirs_stats.csv"
+    source.parent.mkdir(parents=True)
+    source.write_text("ScenarioID,ConfigHash,SampleCount\n", encoding="utf-8")
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "ScenarioID,ConfigHash,RunnerProfile\nscenario," + "a" * 64 + ",waveform_bundle\n",
+        encoding="utf-8",
+    )
+
+    proc = run_audit(run, output)
+    # This deliberately minimal fixture lacks the unrelated primary-link,
+    # manifest and chart evidence required by the complete-run auditor.  Its
+    # process may therefore fail for those missing contracts; the assertion
+    # below is specifically about the CSI-RS zero-row disposition.
+    assert proc.returncode in {0, 1}, proc.stderr + proc.stdout
+    with (output / "first_three_row_value_assessment.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        assessment = next(csv.DictReader(handle))
+    assert assessment["value_review_status"] == "POLICY_DISABLED_NO_OBSERVATIONS"
+    assert assessment["semantic_disposition"] == (
+        "PASS_POLICY_DISABLED_NO_OBSERVATIONS"
+    )
 
 
 def test_none_is_an_explicit_value_not_a_missing_token(tmp_path: Path) -> None:

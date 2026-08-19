@@ -141,6 +141,29 @@ DOMAIN_RUNTIME_EXACT = {
     "reports/csv/reports_truth_violations_v.csv",
     "reports/csv/reports_value_semantics_coverage_v.csv",
     "reports/csv/standards_claim_audit.csv",
+    # Zero-row component surfaces need an explicit applicability contract.
+    # Merely creating a header is not runtime evidence and must not disappear
+    # from the semantic audit just because the table lives outside a broadly
+    # audited component directory.
+    "beamforming/csv/mimo_negative_trials.csv",
+    "geometry/csv/serving_cell_assignment.csv",
+    "mobility/csv/channel_continuity_reconciliation.csv",
+    "mobility/csv/doppler_reconciliation.csv",
+    "mobility/csv/inter_ue_distance_validation.csv",
+    "mobility/csv/pathloss_reconciliation.csv",
+    "mobility/csv/propagation_delay_reconciliation.csv",
+    "mobility/csv/trajectory_constraint_conflicts.csv",
+    "reports/csv/active_issue_gate_summary.csv",
+    "reports/csv/antenna_config_resolved.csv",
+    "reports/csv/beam_management_outputs.csv",
+    "reports/csv/channel_impulse_response.csv",
+    "reports/csv/dl_pdsch_objective_failures.csv",
+    "reports/csv/equalized_constellations.csv",
+    "reports/csv/pdcch_grant_binding_evidence.csv",
+    "reports/csv/prach_correlation_trace.csv",
+    "reports/csv/prach_correlation_traces.csv",
+    "reports/csv/result_issue_registry.csv",
+    "reports/csv/unavailable_plot_card_registry.csv",
 }
 IDENTITY_COLUMNS = (
     "RunID",
@@ -1748,10 +1771,9 @@ def _audit_domain_runtime_tables(
             schema_failures.append("missing_schema")
         if len(header) != len(set(header)):
             schema_failures.append("duplicate_column_names")
-        empty_means_no_event = relative in {
-            "channel/csv/trajectory_constraint_conflicts.csv",
-            "reports/csv/live_cell_reselection_events.csv",
-        }
+        empty_means_no_event = _empty_domain_table_is_valid_zero_event(
+            relative, run_root
+        )
         required, evaluated = _domain_table_applicability(
             relative, run_root, scenario_summary, resolved_config
         )
@@ -1795,6 +1817,34 @@ def _audit_domain_runtime_tables(
                     application_identity_failures.append(
                         prefix + f":RunId_RunTag_mismatch:{run_id or 'missing'}!={run_tag or 'missing'}"
                     )
+            if relative == "reports/csv/live_scenario_overview.csv":
+                required_text = ("run_id", "scenario_id", "duplex_mode")
+                required_numeric = (
+                    "center_frequency_hz", "bandwidth_hz", "scs_khz", "n_rb",
+                    "num_frames", "total_slots",
+                )
+                for column in required_text:
+                    if not _text(row, column):
+                        value_failures.append(prefix + f":{column}_missing")
+                for column in required_numeric:
+                    value = _number(row, column)
+                    if value is None or not math.isfinite(value) or value <= 0:
+                        value_failures.append(prefix + f":{column}_missing_or_nonpositive")
+                if _boolean(row, "strict_mode") is None:
+                    value_failures.append(prefix + ":strict_mode_missing_or_invalid")
+                honesty_mode = _text(row, "honesty_mode").strip().lower()
+                if honesty_mode != "strict":
+                    value_failures.append(prefix + ":honesty_mode_missing_or_not_strict")
+            if relative in {
+                "reports/csv/prach_correlation_trace.csv",
+                "reports/csv/prach_correlation_traces.csv",
+            }:
+                if _number(row, "lag_samples") is None:
+                    value_failures.append(prefix + ":lag_samples_missing")
+                if _number(row, "correlation_abs") is None:
+                    value_failures.append(prefix + ":correlation_abs_missing")
+                if _text(row, "truth_status").lower() != "real_lls_evidence":
+                    truth_failures.append(prefix + ":truth_status_not_real_lls_evidence")
 
             for column in header:
                 normalized = _normalized_column(column)
@@ -1894,6 +1944,35 @@ def _truthy_config(source: dict[str, Any], *paths: str) -> bool:
     return False
 
 
+def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bool:
+    """Return true only for an explicitly event-driven zero-row table.
+
+    Failure/issue registries are zero-event tables only when the authoritative
+    truth-contract failure table is also empty.  This prevents a failed run
+    from publishing an empty issue registry and having the absence mistaken
+    for clean evidence.
+    """
+
+    if relative in {
+        "beamforming/csv/mimo_negative_trials.csv",
+        "channel/csv/trajectory_constraint_conflicts.csv",
+        "mobility/csv/trajectory_constraint_conflicts.csv",
+        "reports/csv/dl_pdsch_objective_failures.csv",
+        "reports/csv/live_cell_reselection_events.csv",
+        "reports/csv/unavailable_plot_card_registry.csv",
+    }:
+        return True
+    if relative in {
+        "reports/csv/active_issue_gate_summary.csv",
+        "reports/csv/result_issue_registry.csv",
+    }:
+        _header, failures = _read_rows(
+            run_root / "reports/csv/truth_contract_failures.csv"
+        )
+        return not failures
+    return False
+
+
 def primary_link_tables(run_root: Path) -> dict[str, str]:
     """Resolve primary PHY table names from the persisted run authority."""
 
@@ -1927,6 +2006,16 @@ def _domain_table_applicability(
             "reference_signals.ssb_enabled",
         )
         return enabled, enabled
+    if relative == "reports/csv/beam_management_outputs.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "mimo_and_beam_management.beam_sweeping",
+            "mimo_and_beam_management.beam_refinement",
+            "mimo_and_beam_management.beam_switching",
+            "mimo_and_beam_management.beam_tracking",
+            "system.beam.enable",
+        )
+        return enabled, enabled
     if relative == "reports/csv/live_csirs_stats.csv":
         enabled = _truthy_config(
             resolved_config,
@@ -1942,11 +2031,85 @@ def _domain_table_applicability(
                 _text(scenario_summary, "RunClass"),
             )
         ).strip().lower()
-        enabled = run_class in {
+        enabled = _truthy_config(
+            resolved_config,
+            "canonical_control.launch.geometry_enabled",
+        ) or run_class in {
             "geometry_based_lls",
             "geometry_based_link_level",
             "geometry_mobility_lls",
         }
+        return enabled, enabled
+    if relative in {
+        "geometry/csv/serving_cell_assignment.csv",
+        "mobility/csv/channel_continuity_reconciliation.csv",
+        "mobility/csv/doppler_reconciliation.csv",
+        "mobility/csv/inter_ue_distance_validation.csv",
+        "mobility/csv/pathloss_reconciliation.csv",
+        "mobility/csv/propagation_delay_reconciliation.csv",
+    }:
+        run_class = str(
+            _nested_value(
+                resolved_config,
+                "validation.run_class",
+                _text(scenario_summary, "RunClass"),
+            )
+        ).strip().lower()
+        enabled = _truthy_config(
+            resolved_config,
+            "canonical_control.launch.geometry_enabled",
+        ) or run_class in {
+            "geometry_based_lls",
+            "geometry_based_link_level",
+            "geometry_mobility_lls",
+        }
+        return enabled, enabled
+    if relative == "reports/csv/equalized_constellations.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "run_control.save_constellations",
+            "output_control.save_constellations",
+        )
+        return enabled, enabled
+    if relative == "reports/csv/channel_impulse_response.csv":
+        model = str(
+            _nested_value(
+                resolved_config,
+                "channel_model.model_family",
+                _nested_value(resolved_config, "channels.model_type", ""),
+            )
+        ).strip().upper()
+        enabled = model not in {"", "AWGN", "UNIT", "IDENTITY"}
+        return enabled, enabled
+    if relative == "reports/csv/pdcch_grant_binding_evidence.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "control_gating.pdcch_required",
+            "pdcch.enabled",
+            "canonical_control.control.pdcch_required",
+        )
+        return enabled, enabled
+    if relative in {
+        "reports/csv/prach_correlation_trace.csv",
+        "reports/csv/prach_correlation_traces.csv",
+    }:
+        enabled = _truthy_config(
+            resolved_config,
+            "control_gating.prach_required",
+            "prach.enabled",
+            "prach.enable",
+            "canonical_control.control.prach_required",
+        )
+        return enabled, enabled
+    if relative == "reports/csv/antenna_config_resolved.csv":
+        has_runtime_antenna_rows = bool(
+            _read_rows(run_root / "reports/csv/antenna_runtime_evidence.csv")[1]
+        )
+        has_link_rows = any(
+            bool(_read_rows(run_root / path)[1])
+            for path in primary_link_tables(run_root).values()
+        )
+        enabled = has_runtime_antenna_rows or has_link_rows
         return enabled, enabled
     if relative == "reports/csv/live_user_performance_snapshot.csv":
         has_link_rows = any(

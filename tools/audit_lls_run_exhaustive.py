@@ -507,6 +507,16 @@ def build_csv_file_dispositions(
             and (not bool(check.get("evaluated", False)) or not bool(check.get("passed", False)))
             for check in checks
         )
+        all_checks_policy_disabled = bool(checks) and all(
+            not bool(check.get("required", False))
+            and not bool(check.get("evaluated", False))
+            for check in checks
+        )
+        has_passed_evaluated_contract = any(
+            bool(check.get("evaluated", False))
+            and bool(check.get("passed", False))
+            for check in checks
+        )
         mirror = mirror_map.get(relative)
         mirror_verified = bool(
             mirror
@@ -538,8 +548,12 @@ def build_csv_file_dispositions(
             disposition = "PASS_BYTE_IDENTICAL_MIRROR"
         elif mirror:
             disposition = "FAIL_MIRROR_HASH_OR_STATUS"
+        elif int(file_row["row_count"]) == 0 and all_checks_policy_disabled:
+            disposition = "PASS_POLICY_DISABLED_NO_OBSERVATIONS"
+        elif int(file_row["row_count"]) == 0 and has_passed_evaluated_contract:
+            disposition = "PASS_CONTRACTED_ZERO_EVENT_NO_OBSERVATIONS"
         elif int(file_row["row_count"]) == 0:
-            disposition = "EMPTY_DECLARED_SCHEMA_NO_OBSERVATIONS"
+            disposition = "EMPTY_UNCLASSIFIED_REQUIRES_APPLICABILITY_REVIEW"
         elif checks and relative in primary_paths:
             disposition = "PASS_PRIMARY_RUNTIME_SEMANTICS"
         elif checks and any(str(check.get("category", "")) == "chart_lineage" for check in checks):
@@ -610,6 +624,8 @@ def build_csv_file_dispositions(
         "PASS_FRC_REFERENCE_SEMANTICS": 6,
         "PASS_CHART_DATASET_SEMANTICS": 7,
         "PASS_BYTE_IDENTICAL_MIRROR": 8,
+        "PASS_POLICY_DISABLED_NO_OBSERVATIONS": 9,
+        "PASS_CONTRACTED_ZERO_EVENT_NO_OBSERVATIONS": 10,
     }
     passed_by_hash_and_name: dict[tuple[str, str], dict] = {}
     for row in sorted(
@@ -694,6 +710,10 @@ def build_first_three_row_value_assessment(
         )
         if required_failures:
             review_status = "REQUIRED_SEMANTIC_FAILURE"
+        elif header_only and semantic_disposition == "PASS_POLICY_DISABLED_NO_OBSERVATIONS":
+            review_status = "POLICY_DISABLED_NO_OBSERVATIONS"
+        elif header_only and semantic_disposition == "PASS_CONTRACTED_ZERO_EVENT_NO_OBSERVATIONS":
+            review_status = "CONTRACTED_ZERO_EVENT_NO_OBSERVATIONS"
         elif header_only:
             review_status = "HEADER_ONLY_REQUIRES_APPLICABILITY_REVIEW"
         elif not semantic_contract_present:
@@ -736,6 +756,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_root", type=Path)
     parser.add_argument("output_root", type=Path)
+    parser.add_argument(
+        "--strict-value-closure",
+        action="store_true",
+        help=(
+            "Fail when a CSV has no domain-value contract or a zero-row table "
+            "has no explicit disabled/zero-event applicability disposition."
+        ),
+    )
     args = parser.parse_args()
     run_root = args.run_root.resolve()
     output_root = args.output_root.resolve()
@@ -861,6 +889,18 @@ def main() -> int:
             row["value_shape"] == "header_only_no_values"
             for row in first_row_value_assessments
         ),
+        "csv_header_only_policy_disabled_files": sum(
+            row["value_review_status"] == "POLICY_DISABLED_NO_OBSERVATIONS"
+            for row in first_row_value_assessments
+        ),
+        "csv_header_only_contracted_zero_event_files": sum(
+            row["value_review_status"] == "CONTRACTED_ZERO_EVENT_NO_OBSERVATIONS"
+            for row in first_row_value_assessments
+        ),
+        "csv_header_only_unresolved_files": sum(
+            row["value_review_status"] == "HEADER_ONLY_REQUIRES_APPLICABILITY_REVIEW"
+            for row in first_row_value_assessments
+        ),
         "csv_first_rows_mostly_missing_files": sum(
             row["value_shape"] == "first_rows_mostly_missing_or_nan"
             for row in first_row_value_assessments
@@ -876,7 +916,14 @@ def main() -> int:
             row["audit_disposition"] == "PASS_BYTE_IDENTICAL_MIRROR"
             for row in file_dispositions
         ),
+        "strict_value_closure_requested": bool(args.strict_value_closure),
     }
+    summary["csv_value_review_gate_pass"] = bool(
+        summary["csv_header_only_unresolved_files"] == 0
+        and summary["csv_files_parsed_but_without_domain_contract"] == 0
+        and summary["csv_semantic_required_failures"] == 0
+        and summary["chart_semantic_required_failures"] == 0
+    )
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "audit_summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
@@ -903,6 +950,7 @@ def main() -> int:
         or summary["svg_file_count"]
         or summary["csv_semantic_required_failures"]
         or summary["chart_semantic_required_failures"]
+        or (args.strict_value_closure and not summary["csv_value_review_gate_pass"])
     ) else 0
 
 

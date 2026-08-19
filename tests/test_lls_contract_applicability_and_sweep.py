@@ -15,6 +15,57 @@ import lls_contract_materializer as materializer  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
 
 
+def test_live_scenario_overview_adapts_master_yaml_schema_without_blank_radio_fields() -> None:
+    config = {
+        "scenario": {
+            "name": "master_sinr_sweep",
+            "honesty_mode": "strict",
+            "layout": {
+                "type": "single_site",
+                "nSites": 1,
+                "nSectorsPerSite": 1,
+                "interSiteDistance_m": 1000,
+                "wrapAround": False,
+            },
+            "ue": {"nUE": 1},
+        },
+        "global_radio_scope": {
+            "carrier_frequency_hz": 4.0e9,
+            "channel_bandwidth_hz": 100.0e6,
+            "duplex_mode": "TDD",
+        },
+        "frame": {"scs_khz": 30},
+        "frame_timing": {"slots_per_frame": 20},
+        "resource_grid": {"num_rbs": 273},
+        "run_control": {"total_slots": 40},
+        "logging": {"strict_validation": True},
+    }
+    result = materializer._specialized_live_report_table(  # noqa: SLF001
+        "live_scenario_overview",
+        {},
+        lambda _artifact_id: b"",
+        17,
+        {
+            "scenario_id": "master_sinr_sweep",
+            "config_json": json.dumps(config),
+        },
+        {},
+    )
+    assert result is not None
+    _header, rows = materializer._decode_csv_dicts(result["data"])  # noqa: SLF001
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["center_frequency_hz"] == "4000000000.0"
+    assert row["bandwidth_hz"] == "100000000.0"
+    assert row["scs_khz"] == "30"
+    assert row["n_rb"] == "273"
+    assert row["duplex_mode"] == "TDD"
+    assert row["num_frames"] == "2"
+    assert row["total_slots"] == "40"
+    assert row["strict_mode"] == "True"
+    assert row["honesty_mode"] == "strict"
+
+
 def test_contract_chart_persistence_is_raster_png_only() -> None:
     chart_spec = {
         "kind": "analytics",

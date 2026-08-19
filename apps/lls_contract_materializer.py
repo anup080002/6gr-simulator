@@ -3077,6 +3077,33 @@ def _nested_value(payload: dict[str, Any], path: str, default: Any = None) -> An
     return current
 
 
+def _first_config_value(
+    payload: dict[str, Any], *paths: str, default: Any = ""
+) -> Any:
+    """Resolve one persisted configuration value across supported schemas.
+
+    WebGUI rows can contain the submitted master YAML, the normalized runtime
+    config, or a wrapper carrying either under ``lls6g``.  Returning the first
+    nonblank value keeps the adapter versioned and explicit without replacing
+    missing runtime values with presentation defaults.
+    """
+
+    views = [
+        payload,
+        _json_object(_nested_value(payload, "lls6g.resolvedConfig", {})),
+        _json_object(_nested_value(payload, "lls6g.submittedScenarioConfig", {})),
+    ]
+    for view in views:
+        for path in paths:
+            value = _nested_value(view, path, None)
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return value
+    return default
+
+
 def _run_allows_placeholder_artifacts(run_row: dict[str, Any]) -> bool:
     config = _json_object(run_row.get("config_json"))
     candidates = [
@@ -3460,30 +3487,107 @@ def _specialized_live_report_table(
             "source_row_count": 1,
         }
     if table_name == "live_scenario_overview":
-        scenario_cfg = _json_object(config_payload.get("scenario"))
-        layout_cfg = _json_object(scenario_cfg.get("layout"))
-        ue_cfg = _json_object(scenario_cfg.get("ue"))
-        carrier_cfg = _json_object(config_payload.get("carrier"))
-        run_cfg = _json_object(config_payload.get("run"))
+        total_slots = _first_config_value(
+            config_payload,
+            "run.totalSlots",
+            "run_control.total_slots",
+            "canonical_control.run.total_slots",
+        )
+        num_frames = _first_config_value(
+            config_payload,
+            "run.numFrames",
+            "run_control.num_frames",
+            "canonical_control.run.num_frames",
+        )
+        if num_frames == "":
+            slots_per_frame = _first_config_value(
+                config_payload,
+                "frame_timing.slots_per_frame",
+                "frame.slots_per_frame",
+                "canonical_control.frame.slots_per_frame",
+            )
+            try:
+                if float(total_slots) > 0 and float(slots_per_frame) > 0:
+                    num_frames = float(total_slots) / float(slots_per_frame)
+                    if float(num_frames).is_integer():
+                        num_frames = int(num_frames)
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
         rows = [{
             "run_id": run_id,
             "scenario_id": str(run_row.get("scenario_id") or ""),
-            "layout_type": str(layout_cfg.get("type") or ""),
-            "num_sites": layout_cfg.get("nSites", ""),
-            "sectors_per_site": layout_cfg.get("nSectorsPerSite", ""),
-            "intersite_distance_m": layout_cfg.get("interSiteDistance_m", ""),
-            "wrap_around": layout_cfg.get("wrapAround", ""),
-            "configured_ue_count": ue_cfg.get("nUE", ""),
-            "center_frequency_hz": carrier_cfg.get("centerFrequencyHz", ""),
-            "bandwidth_hz": carrier_cfg.get("bandwidthHz", ""),
-            "scs_khz": carrier_cfg.get("scsKHz", ""),
-            "n_rb": carrier_cfg.get("nRB", ""),
-            "duplex_mode": carrier_cfg.get("duplexMode", ""),
-            "num_frames": run_cfg.get("numFrames", ""),
-            "total_slots": run_cfg.get("totalSlots", ""),
-            "strict_mode": run_cfg.get("strictMode", ""),
-            "honesty_mode": run_cfg.get("honestyMode", ""),
-            "source_artifact": "sim_runs.config_json",
+            "layout_type": _first_config_value(
+                config_payload, "scenario.layout.type", "deployment_topology.layout_type"
+            ),
+            "num_sites": _first_config_value(
+                config_payload, "scenario.layout.nSites", "deployment_topology.num_sites"
+            ),
+            "sectors_per_site": _first_config_value(
+                config_payload,
+                "scenario.layout.nSectorsPerSite",
+                "deployment_topology.sectors_per_site",
+            ),
+            "intersite_distance_m": _first_config_value(
+                config_payload,
+                "scenario.layout.interSiteDistance_m",
+                "deployment_topology.inter_site_distance_m",
+            ),
+            "wrap_around": _first_config_value(
+                config_payload,
+                "scenario.layout.wrapAround",
+                "deployment_topology.wrap_around",
+            ),
+            "configured_ue_count": _first_config_value(
+                config_payload, "scenario.ue.nUE", "deployment_topology.num_ues"
+            ),
+            "center_frequency_hz": _first_config_value(
+                config_payload,
+                "carrier.centerFrequencyHz",
+                "global_radio_scope.carrier_frequency_hz",
+                "frequency.center_frequency_hz",
+                "canonical_control.radio.center_frequency_hz",
+            ),
+            "bandwidth_hz": _first_config_value(
+                config_payload,
+                "carrier.bandwidthHz",
+                "global_radio_scope.channel_bandwidth_hz",
+                "frequency.bandwidth_hz",
+                "canonical_control.radio.bandwidth_hz",
+            ),
+            "scs_khz": _first_config_value(
+                config_payload,
+                "carrier.scsKHz",
+                "frame.scs_khz",
+                "canonical_control.radio.scs_khz",
+            ),
+            "n_rb": _first_config_value(
+                config_payload,
+                "carrier.nRB",
+                "resource_grid.num_rbs",
+                "canonical_control.reference_signals.num_rb",
+            ),
+            "duplex_mode": _first_config_value(
+                config_payload,
+                "carrier.duplexMode",
+                "global_radio_scope.duplex_mode",
+                "frequency.duplex_mode",
+                "canonical_control.radio.duplex_mode",
+            ),
+            "num_frames": num_frames,
+            "total_slots": total_slots,
+            "strict_mode": _first_config_value(
+                config_payload,
+                "run.strictMode",
+                "logging.strict_validation",
+                "validation.strict_after_run_artifact_audit",
+            ),
+            "honesty_mode": _first_config_value(
+                config_payload,
+                "run.honestyMode",
+                "scenario.honesty_mode",
+                "canonical_control.launch.honesty_mode",
+            ),
+            "source_artifact": "sim_runs.config_json:versioned_multi_schema_adapter",
         }]
         return {
             "data": _encode_rows_from_dicts(rows),

@@ -164,6 +164,50 @@ resource_grid:
   num_rbs: 264
   rb_start: 0
 
+# Replace the complete inherited FR1 BWP/component-carrier tuple.  Overriding
+# only frequency.n_size_grid leaves the inherited 273-PRB, 30-kHz active BWP
+# visible to SSB, PDCCH, PDSCH and frame-grid consumers even though this FR2
+# carrier is explicitly 264 PRBs at 120 kHz.
+bwp:
+  dl:
+    bwp_id: 0
+    direction: DL
+    n_start_bwp: 0
+    n_size_bwp: 264
+    scs_khz: 120
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 120
+  ul:
+    bwp_id: 0
+    direction: UL
+    n_start_bwp: 0
+    n_size_bwp: 264
+    scs_khz: 120
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 120
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 30000000000
+      band: custom_fr2_30ghz
+      frequency_range: FR2-1
+      channel_bandwidth_mhz: 400
+      duplex_mode: TDD
+      dl_carrier_grid:
+        n_start_grid: 0
+        n_size_grid: 264
+        scs_khz: 120
+      ul_carrier_grid:
+        n_start_grid: 0
+        n_size_grid: 264
+        scs_khz: 120
+      carrier_indicator_map:
+        - indicator: 0
+          scheduled_cc_id: 0
+
 deployment_topology:
   scenario_type: multi-cell
   site_layout: hex_grid
@@ -276,7 +320,10 @@ random_access:
   zero_correlation_zone: 8
   detection_threshold: 0.5
   msg3_enabled: true
-  configuration_index: 130
+  # B4 index 117 resolves every Msg1 occasion onto the full UL slot of the
+  # configured 0.625 ms TDD pattern (3 DL + special + 1 UL).  Index 130 lands
+  # on a DL-owned slot and is rejected by the canonical occasion resolver.
+  configuration_index: 117
   subcarrier_spacing_khz: 120
   root_sequence_index: 1
   preamble_index: 0
@@ -332,6 +379,27 @@ modulation:
   mcs_table: qam256_table2
   dl_mcs_index: 20
   ul_mcs_index: 20
+
+# Replace the inherited 700-MHz directional allocation aliases.  These
+# fields are consumed directly by the scheduled waveform chain and must
+# agree with the canonical modulation/MCS and the 264-PRB FR2 BWP above.
+pdsch:
+  prb_start: 0
+  num_prb: 264
+  layer_count: 2
+  rank: 2
+  modulation: 256QAM
+  mcs_table: qam256_table2
+
+pusch:
+  prb_start: 0
+  num_prb: 264
+  layer_count: 2
+  num_layers: 2
+  num_antenna_ports: 2
+  modulation: 256QAM
+  mcs_table: qam256_table2
+  mcs_index: 20
 
 pdsch6gr:
   enabled: true

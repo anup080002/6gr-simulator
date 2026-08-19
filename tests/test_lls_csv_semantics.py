@@ -557,6 +557,134 @@ def test_fixed_link_disabled_live_domains_are_not_required_but_user_summary_is(
     assert "missing_runtime_rows" in user.details
 
 
+def test_runtime_antenna_rows_require_resolved_antenna_configuration(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/antenna_runtime_evidence.csv",
+        [{"Direction": "DL", "UEIndex": "1"}],
+    )
+    resolved = tmp_path / "reports/csv/antenna_config_resolved.csv"
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_text("NodeType,NodeIndex,NumElements\n", encoding="utf-8")
+
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "fixed", "ConfigHash": "a" * 64},
+    )
+    check = next(
+        item for item in checks
+        if item.artifact_path == "reports/csv/antenna_config_resolved.csv"
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert check.required and check.evaluated and not check.passed
+    assert "missing_runtime_rows" in check.details
+
+
+def test_failed_truth_contract_cannot_publish_empty_issue_registries(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/truth_contract_failures.csv",
+        [{"FailureCode": "missing_runtime_rows", "Reason": "evidence absent"}],
+    )
+    for name in ("active_issue_gate_summary.csv", "result_issue_registry.csv"):
+        path = tmp_path / "reports/csv" / name
+        path.write_text("IssueCode,Reason\n", encoding="utf-8")
+
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "failed", "ConfigHash": "a" * 64},
+    )
+    failed = {
+        item.artifact_path: item
+        for item in checks
+        if item.check_id == "schema_and_runtime_rows" and not item.passed
+    }
+    assert "reports/csv/active_issue_gate_summary.csv" in failed
+    assert "reports/csv/result_issue_registry.csv" in failed
+
+
+def test_live_scenario_overview_requires_populated_radio_runtime_fields(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/live_scenario_overview.csv",
+        [{
+            "run_id": "run-1", "scenario_id": "scenario", "center_frequency_hz": "",
+            "bandwidth_hz": "", "scs_khz": "", "n_rb": "", "duplex_mode": "",
+            "num_frames": "", "total_slots": "", "strict_mode": "",
+            "honesty_mode": "",
+        }],
+    )
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "scenario", "ConfigHash": "a" * 64},
+    )
+    value_check = next(
+        item for item in checks
+        if item.artifact_path == "reports/csv/live_scenario_overview.csv"
+        and item.check_id == "populated_physical_value_ranges"
+    )
+    assert not value_check.passed
+    assert "center_frequency_hz_missing_or_nonpositive" in value_check.details
+    assert "duplex_mode_missing" in value_check.details
+
+
+def test_live_scenario_overview_accepts_strict_text_honesty_mode(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/live_scenario_overview.csv",
+        [{
+            "run_id": "run-1", "scenario_id": "scenario",
+            "center_frequency_hz": "4000000000", "bandwidth_hz": "100000000",
+            "scs_khz": "30", "n_rb": "273", "duplex_mode": "TDD",
+            "num_frames": "2", "total_slots": "40", "strict_mode": "true",
+            "honesty_mode": "strict",
+        }],
+    )
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "scenario", "ConfigHash": "a" * 64},
+    )
+    value_check = next(
+        item for item in checks
+        if item.artifact_path == "reports/csv/live_scenario_overview.csv"
+        and item.check_id == "populated_physical_value_ranges"
+    )
+    assert value_check.passed, value_check.details
+
+
+def test_enabled_prach_correlation_rejects_unavailable_nan_row(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "meta/scenario_config_resolved.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        json.dumps({"control_gating": {"prach_required": True}}),
+        encoding="utf-8",
+    )
+    _write_rows(
+        tmp_path / "reports/csv/prach_correlation_trace.csv",
+        [{
+            "lag_samples": "NaN", "correlation_abs": "NaN",
+            "truth_status": "not_available",
+        }],
+    )
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "scenario", "ConfigHash": "a" * 64},
+    )
+    failed = {
+        item.check_id: item.details for item in checks
+        if item.artifact_path == "reports/csv/prach_correlation_trace.csv"
+        and not item.passed
+    }
+    assert "lag_samples_missing" in failed["populated_physical_value_ranges"]
+    assert "truth_status_not_real_lls_evidence" in failed["in_path_truth_proxy_separation"]
+
+
 def test_fixed_link_only_audit_uses_declared_campaign_trial_tables(tmp_path: Path) -> None:
     resolved = {
         "sweeps_and_matrix": {"fixed_link_calibration": {"only": True}},
