@@ -91,7 +91,14 @@ for f = 1:numel(files)
         continue;
     end
     try
-        T = readtable(lineagePath, "VariableNamingRule", "preserve", "TextType", "string");
+        % Lineage contains SHA-256 strings that can begin with decimal
+        % digits and the letter "e".  MATLAB's delimiter/type heuristic can
+        % misclassify those values as numeric exponent tokens and expand a
+        % valid 13-column CSV into anonymous Var1..VarN columns.  The
+        % lineage contract is explicitly comma-delimited, so do not leave
+        % delimiter discovery to the heuristic.
+        T = readtable(lineagePath, "Delimiter", ",", ...
+            "VariableNamingRule", "preserve", "TextType", "string");
     catch
         continue;
     end
@@ -186,7 +193,8 @@ if exist(manifestPath, "file") ~= 2
     return;
 end
 try
-    T = readtable(manifestPath, "VariableNamingRule", "preserve", ...
+    T = readtable(manifestPath, "Delimiter", ",", ...
+        "VariableNamingRule", "preserve", ...
         "TextType", "string");
 catch
     return;

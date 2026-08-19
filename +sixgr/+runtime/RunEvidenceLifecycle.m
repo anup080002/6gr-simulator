@@ -233,6 +233,31 @@ for index = 1:numel(names)
     terminal.(names{index}) = details.(names{index});
 end
 localAtomicWriteJSON(terminalPath, terminal);
+
+% The attempt manifest is the lifecycle index used by recovery tooling.
+% Leaving it IN_PROGRESS after an authoritative terminal record has been
+% written makes a completed FAIL look resumable and a published PASS look
+% abandoned.  Mirror only lifecycle state and immutable terminal pointers;
+% the detailed failure/publication evidence remains in terminal_status.json.
+attemptManifestPath = fullfile(attempt.AttemptRoot, "attempt_manifest.json");
+attemptManifest = localReadJSON(attemptManifestPath);
+attemptManifest.Status = string(status);
+attemptManifest.EndedUTC = string(terminal.EndedUTC);
+attemptManifest.TerminalStatusRelativePath = "terminal_status.json";
+attemptManifest.PublicationQualified = logical(sixgr.util.structGet( ...
+    terminal, "PublicationQualified", false));
+if isfield(terminal, "FailureIdentifier")
+    attemptManifest.FailureIdentifier = string(terminal.FailureIdentifier);
+end
+if isfield(terminal, "ArtifactManifestRelativePath")
+    attemptManifest.ArtifactManifestRelativePath = ...
+        string(terminal.ArtifactManifestRelativePath);
+end
+if isfield(terminal, "ArtifactManifestSHA256")
+    attemptManifest.ArtifactManifestSHA256 = ...
+        string(terminal.ArtifactManifestSHA256);
+end
+localAtomicWriteJSON(attemptManifestPath, attemptManifest);
 end
 
 function localValidateAttempt(attempt)
