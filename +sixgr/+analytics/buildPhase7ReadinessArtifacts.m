@@ -1400,6 +1400,7 @@ function names = localResolveNotApplicableGates(runClass, cfg, fixedApplicable, 
 names = strings(0, 1);
 if fixedApplicable && ~geometryApplicable
     names = [names; [ ...
+        "GeometryValidationOk"
         "FullTrajectoryExecutedOk"
         "MobilityStateContinuousOk"
         "InterUeConstraintResolvedOk"
