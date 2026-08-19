@@ -826,8 +826,16 @@ end
 function vals = localStringColumn(T, name)
 vals = strings(0, 1);
 if istable(T) && height(T) > 0 && localHasColumn(T, name)
-    vals = string(T.(char(string(name))));
+    raw = T.(char(string(name)));
+    vals = string(raw);
     vals = vals(:);
+    % readtable can infer an all-empty CSV text column as numeric NaN even
+    % with TextType="string". Preserve those cells as missing evidence;
+    % the literal token "NaN" is not a valid runtime source or mode.
+    if isnumeric(raw)
+        missingMask = ~isfinite(double(raw(:)));
+        vals(missingMask) = missing;
+    end
 end
 end
 

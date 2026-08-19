@@ -64,6 +64,17 @@ cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
 localEnsureResolvedSnapshots(layout, scfg);
 sixgr.truth.exportLiveGeometryArtifacts(layout, scfg, cfg);
 localRepairRuntimeOperatingMode(layout, cfg);
+fixedLinkCampaignOnly = logical(scfg.get( ...
+    "sweeps_and_matrix.fixed_link_calibration.only", ...
+    scfg.get("canonical_control.run.fixed_link_campaign_only", false)));
+cfg.run.fixedLinkCampaignOnly = fixedLinkCampaignOnly;
+% Rebuild all runtime-derived evidence before any truth/status reduction.
+% This invokes the same exporters as normal waveform completion and uses
+% only persisted primary trial rows. If no DL/UL rows survived, it writes a
+% provenance record and leaves every downstream gate fail-closed.
+runtimeEvidenceRefinalization = ...
+    sixgr.truth.refinalizePersistedLLSRuntimeEvidence(cfg, runFolder, ...
+    "RunTag", recoveryRunTag);
 
 profile = lower(string(scfg.get("scenario.runner_profile", "")));
 if finalizationMode == "completed_run_refinalization"
@@ -178,6 +189,7 @@ out.ComponentArtifactViews = componentViews;
 out.SanitizedCSVs = sanitizedCSVs;
 out.RestoredTruthArtifacts = restoredTruthArtifacts;
 out.RecoveryArtifactStore = recoveryStore;
+out.RuntimeEvidenceRefinalization = runtimeEvidenceRefinalization;
 out.FinalizationMode = finalizationMode;
 out.RecoveryConfigAuthority = recoveryConfigAuthority;
 end
