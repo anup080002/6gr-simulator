@@ -1146,7 +1146,13 @@ def require_primary_csv_semantics(
     # status and manifest check before publication succeeds.
     deferred_until_post_materialization = {"manifest_integrity", "status_reduction"}
     deferred_artifacts_until_post_materialization = {
-        "reports/csv/all_image_artifact_audit.csv"
+        "reports/csv/all_image_artifact_audit.csv",
+        # This versioned lineage table describes rasters that this exact
+        # materialization pass is responsible for rebuilding.  It may be
+        # stale or intentionally retired before replacement.  It is not
+        # exempted from validation: the complete post-materialization audit
+        # below requires its hashes, dimensions and files to pass.
+        "reports/csv/frc_reference_plot_lineage.csv",
     }
     required_checks = [
         row

@@ -31,6 +31,8 @@ def _semantic_row(category: str, *, passed: bool) -> dict[str, object]:
 def test_pre_raster_gate_defers_only_terminal_status_and_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     image_audit = _semantic_row("domain_runtime", passed=False)
     image_audit["artifact_path"] = "reports/csv/all_image_artifact_audit.csv"
+    frc_lineage = _semantic_row("chart_lineage", passed=False)
+    frc_lineage["artifact_path"] = "reports/csv/frc_reference_plot_lineage.csv"
     audit = {
         "canonical_csv_semantic_audit": [
             _semantic_row("primary_link", passed=True),
@@ -38,6 +40,7 @@ def test_pre_raster_gate_defers_only_terminal_status_and_manifest(monkeypatch: p
             _semantic_row("status_reduction", passed=False),
             _semantic_row("manifest_integrity", passed=False),
             image_audit,
+            frc_lineage,
         ]
     }
     monkeypatch.setattr(MODULE, "audit_run", lambda _run_root: audit)
@@ -120,6 +123,16 @@ def test_post_raster_gate_keeps_manifest_and_chart_failures_strict() -> None:
         manifest_failure,
         chart_failure,
     ]
+
+
+def test_post_raster_gate_requires_rebuilt_frc_lineage() -> None:
+    frc_failure = _semantic_row("chart_lineage", passed=False)
+    frc_failure["artifact_path"] = "reports/csv/frc_reference_plot_lineage.csv"
+    audit = {
+        "canonical_csv_semantic_audit": [frc_failure],
+        "chart_source_semantic_audit": [],
+    }
+    assert MODULE.post_materialization_required_failures(audit) == [frc_failure]
 
 
 def test_component_mapping_routes_contract_plots_to_requested_folders() -> None:

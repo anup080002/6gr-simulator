@@ -123,7 +123,7 @@ if strlength(scope) > 0
     canonicalized = true;
 end
 originalWidth = width(T);
-if localPreserveDeclaredSchemaScope(scope)
+if localPreserveDeclaredSchemaScope(scope) || localPreserveDeclaredSchemaFile(filePath)
     % Canonical waveform/control trial schemas are versioned interfaces.
     % A column that is not applicable in this run (for example the second
     % hop PRB while hopping is disabled) must stay present as missing data;
@@ -133,6 +133,7 @@ if localPreserveDeclaredSchemaScope(scope)
     changed = canonicalized;
     return;
 end
+
 T = sixgr.util.pruneStructurallyBlankTableColumns(T);
 removedCount = max(0, inputWidth - originalWidth) + max(0, originalWidth - width(T));
 if removedCount <= 0 && ~canonicalized
@@ -148,6 +149,23 @@ changed = true;
     filePath, string(T.Properties.VariableNames));
 changed = changed || rawChanged;
 removedCount = removedCount + rawRemoved;
+end
+
+function tf = localPreserveDeclaredSchemaFile(filePath)
+% These tables are versioned evidence interfaces.  Some required fields are
+% legitimately all-missing for a diagnostic run (for example a measured FRC
+% crossing that was not statistically resolved, or scheduled-MCS metadata
+% in a fixed-MCS campaign).  Their absence is semantically different from a
+% declared column containing missing values, so the sanitizer must retain
+% the declared schema without manufacturing values.
+[~, name, ~] = fileparts(char(string(filePath)));
+name = lower(string(name));
+tf = any(name == [ ...
+    "dl_fixed_link_campaign_trials", ...
+    "ul_fixed_link_campaign_trials", ...
+    "frc_reference_diagnostic", ...
+    "frc_reference_qualification", ...
+    "frc_reference_plot_lineage"]);
 end
 
 function scope = localScopeTokenFromFile(filePath)
