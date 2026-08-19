@@ -456,6 +456,8 @@ nested_sections:
   validation_independent_reference_sampling:
     parameters:
       entry_id: {required: true, type: string, nonempty: true}
+      parallel_workers: {required: false, type: integer, min: 0}
+      channel_chunk_slots: {required: false, type: integer, min: 0}
       min_transport_blocks: {required: true, type: integer, min: 1}
       max_transport_blocks: {required: true, type: integer, min: 1}
       batch_size: {required: true, type: integer, min: 1}
