@@ -230,6 +230,11 @@ def contract_artifact_is_policy_filtered(
             "throughput percentile plots",
             "throughput cdf",
             "fairness index trend",
+            # Fixed-link calibration has no executed cell identity.  A gNB
+            # aggregate can support system energy/bit, but calling that value
+            # "by cell" would invent a cell grouping that is absent from the
+            # runtime rows.
+            "energy efficiency by cell",
         }
         if name in fixed_link_inapplicable_charts:
             return True

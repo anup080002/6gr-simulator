@@ -2958,6 +2958,7 @@ stats = struct( ...
     "DLBinsWithAtLeast5Trials", NaN, ...
     "RequiredTrialsPerAggregateDLBin", minTrialsPerAggregateBin, ...
     "DLBinsMeetingRequiredTrials", NaN, ...
+    "MeasuredSINRSampleAdequacySource", "", ...
     "DistanceRows", NaN, ...
     "UEsWithDistanceRows", NaN, ...
     "SummaryRows", NaN, ...
@@ -2967,21 +2968,60 @@ if ~stats.MeasuredSINRRequired
     return;
 end
 
-curvePath = fullfile(layout.AirInterfaceCSVDir, "dl_measured_sinr_bler_curve.csv");
-curveT = localReadTable(curvePath);
-if isempty(curveT) || height(curveT) == 0 || ~localHasColumn(curveT, "UEIndex") || ~localHasColumn(curveT, "TrialCount")
-    stats.MeasuredSINRCurveOk = false;
-    failures(end+1, 1) = "measured_sinr_curve_missing_or_empty:dl_measured_sinr_bler_curve"; %#ok<AGROW>
+if logical(isFixedSNRSweep)
+    % A measured-SINR histogram can split one configured fixed-SNR point
+    % across adjacent 1 dB bins.  Requiring the full point sample budget in
+    % any one histogram bin incorrectly rejects a complete campaign.  The
+    % applied-SNR point summary is the fixed-link sampling authority; the
+    % measured-SINR curve remains a measured visualization artifact.
+    curvePath = fullfile(layout.ReportCSVDir, ...
+        "fixed_snr_sweep_curve_summary.csv");
+    curveT = localReadTable(curvePath);
+    stats.MeasuredSINRSampleAdequacySource = ...
+        "fixed_snr_sweep_curve_summary_applied_snr_points";
+    if isempty(curveT) || height(curveT) == 0 || ...
+            ~localHasColumn(curveT, "Direction") || ...
+            ~localHasColumn(curveT, "TrialCount")
+        stats.MeasuredSINRCurveOk = false;
+        failures(end+1, 1) = ...
+            "fixed_snr_curve_summary_missing_or_empty"; %#ok<AGROW>
+    else
+        direction = upper(strtrim(string(curveT.Direction)));
+        trials = localColumnNumeric(curveT, "TrialCount");
+        dl = direction == "DL";
+        stats.DLBinsWithAtLeast5Trials = sum(dl & trials >= 5);
+        stats.DLBinsMeetingRequiredTrials = ...
+            sum(dl & trials >= minTrialsPerAggregateBin);
+        stats.MeasuredSINRCurveOk = stats.DLBinsMeetingRequiredTrials >= 1;
+        if ~stats.MeasuredSINRCurveOk
+            failures(end+1, 1) = ...
+                "fixed_snr_curve_no_dl_point_with_min_trials"; %#ok<AGROW>
+        end
+    end
 else
-    ue = localColumnNumeric(curveT, "UEIndex");
-    trials = localColumnNumeric(curveT, "TrialCount");
-    agg = isnan(ue);
-    stats.DLBinsWithAtLeast5Trials = sum(agg & trials >= 5);
-    stats.DLBinsMeetingRequiredTrials = ...
-        sum(agg & trials >= minTrialsPerAggregateBin);
-    stats.MeasuredSINRCurveOk = stats.DLBinsMeetingRequiredTrials >= 1;
-    if ~stats.MeasuredSINRCurveOk
-        failures(end+1, 1) = "measured_sinr_curve_no_aggregate_dl_bin_with_min_trials"; %#ok<AGROW>
+    curvePath = fullfile(layout.AirInterfaceCSVDir, ...
+        "dl_measured_sinr_bler_curve.csv");
+    curveT = localReadTable(curvePath);
+    stats.MeasuredSINRSampleAdequacySource = ...
+        "dl_measured_sinr_bler_curve_aggregate_bins";
+    if isempty(curveT) || height(curveT) == 0 || ...
+            ~localHasColumn(curveT, "UEIndex") || ...
+            ~localHasColumn(curveT, "TrialCount")
+        stats.MeasuredSINRCurveOk = false;
+        failures(end+1, 1) = ...
+            "measured_sinr_curve_missing_or_empty:dl_measured_sinr_bler_curve"; %#ok<AGROW>
+    else
+        ue = localColumnNumeric(curveT, "UEIndex");
+        trials = localColumnNumeric(curveT, "TrialCount");
+        agg = isnan(ue);
+        stats.DLBinsWithAtLeast5Trials = sum(agg & trials >= 5);
+        stats.DLBinsMeetingRequiredTrials = ...
+            sum(agg & trials >= minTrialsPerAggregateBin);
+        stats.MeasuredSINRCurveOk = stats.DLBinsMeetingRequiredTrials >= 1;
+        if ~stats.MeasuredSINRCurveOk
+            failures(end+1, 1) = ...
+                "measured_sinr_curve_no_aggregate_dl_bin_with_min_trials"; %#ok<AGROW>
+        end
     end
 end
 

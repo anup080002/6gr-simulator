@@ -2278,7 +2278,8 @@ try
         uint64(size(channelInput, 1));
 catch cause
     failure = MException("sixgr:conformance:FadingChannelExecutionFailed", ...
-        "The concrete %s truth channel failed.", propagation.Model);
+        "The concrete %s truth channel failed (%s): %s", ...
+        propagation.Model, string(cause.identifier), string(cause.message));
     failure = addCause(failure, cause);
     throw(failure);
 end

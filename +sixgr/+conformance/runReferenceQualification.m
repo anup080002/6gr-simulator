@@ -158,7 +158,7 @@ for index = 1:numel(entries)
         rows(index).Status = "FAIL";
         rows(index).EvidenceClass = "ACTUAL_FRC_EXECUTION_FAILURE";
         rows(index).FailureIdentifier = string(ME.identifier);
-        rows(index).FailureReason = string(ME.message);
+        rows(index).FailureReason = localExceptionChain(ME);
     end
     entryResults{index} = result;
     checkpoint = struct( ...
@@ -568,6 +568,21 @@ if logical(requireSymmetricRegression) && ...
     parts(end+1,1) = "required_symmetric_reference_regression_failed"; %#ok<AGROW>
 end
 reason = strjoin(unique(parts, "stable"), ";");
+end
+
+function reason = localExceptionChain(ME)
+% Preserve the actionable nested cause without exporting a multiline stack.
+parts = string(ME.identifier) + ": " + string(ME.message);
+pending = ME.cause;
+depth = 0;
+while ~isempty(pending) && depth < 8
+    cause = pending{1};
+    parts(end+1, 1) = string(cause.identifier) + ": " + ... %#ok<AGROW>
+        string(cause.message);
+    pending = cause.cause;
+    depth = depth + 1;
+end
+reason = regexprep(strjoin(parts, " <- caused by: "), "[\r\n\t]+", " ");
 end
 
 function state = localState(pass)

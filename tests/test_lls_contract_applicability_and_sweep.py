@@ -1237,3 +1237,17 @@ def test_runtime_energy_charts_use_only_persisted_summary_and_state_rows() -> No
     assert scatter is not None
     _header, scatter_rows = materializer._decode_csv(scatter["csv_bytes"])  # noqa: SLF001
     assert len(scatter_rows) == 2  # one transmitter-side row for DL and one for UL
+
+
+def test_fixed_link_cell_energy_chart_requires_executed_cell_identity() -> None:
+    policy = {"fixed_link_campaign_only": True, "energy_enabled": True}
+    assert materializer.contract_artifact_is_policy_filtered(
+        "contract/charts/power-energy-efficiency-analytics/energy-efficiency-by-cell.csv",
+        policy,
+        contract_name="energy efficiency by cell",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "contract/charts/power-energy-efficiency-analytics/energy-efficiency-by-ue.csv",
+        policy,
+        contract_name="energy efficiency by UE",
+    )
