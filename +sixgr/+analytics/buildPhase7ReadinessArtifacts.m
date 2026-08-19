@@ -1125,6 +1125,12 @@ end
 
 function [summary, flags] = localBuildCampaignSummaryAndFlags(fixed, taskPlan, dlTrials, ulTrials, curve, dropStats, checkpoint, determinism, thresholds)
 flags = localCampaignFlags(false);
+% Checkpoint/resume equivalence and serial/parallel determinism are
+% independently executed Phase-7 evidence.  Preserve their status even
+% when the fixed-link statistical campaign has not been run yet.  The
+% remaining campaign gates continue to fail closed below.
+flags.CheckpointResumeEquivalenceOk = localEvidenceFlag(checkpoint, "CheckpointResumeEquivalenceOk");
+flags.SerialParallelDeterminismOk = localEvidenceFlag(determinism, "SerialParallelDeterminismOk");
 if ~(istable(fixed) && height(fixed) > 0)
     summary = localCampaignSummaryTable(0, 0, 0, 0, 0, 0, 0, NaN, NaN, NaN, thresholds, ...
         "no_phase7_campaign_runs_provided", "air_interface/csv/lls_fixed_link_campaign.csv missing", flags);
@@ -1158,8 +1164,6 @@ flags.SampleAdequacyOk = any(finiteCurve) && all(curveTrials(finiteCurve) >= thr
     seedsRun >= thresholds.RequiredSeedCount;
 flags.ConfidenceIntervalsOk = any(finiteCurve) && all(curveCI(finiteCurve) <= thresholds.MaxCIWidth);
 flags.MultiSeedDropStatisticsOk = localDropStatisticsOk(dropStats, thresholds);
-flags.CheckpointResumeEquivalenceOk = localEvidenceFlag(checkpoint, "CheckpointResumeEquivalenceOk");
-flags.SerialParallelDeterminismOk = localEvidenceFlag(determinism, "SerialParallelDeterminismOk");
 flags.SweepDataQualityOk = flags.CampaignDesignOk && flags.CampaignCompletionOk && ...
     flags.SampleAdequacyOk && flags.ConfidenceIntervalsOk;
 
