@@ -207,6 +207,13 @@ MODULATION_QM = {
 
 BAD_TRUTH_TOKENS = ("proxy", "synthetic", "fallback", "placeholder", "logistic", "lut")
 GENERIC_AXIS_LABELS = {"", "x", "y", "value", "metric", "not_available", "n/a", "na"}
+FRC_POINT_TABLE = "reports/csv/frc_reference_points.csv"
+FRC_SUMMARY_TABLES = (
+    "reports/csv/frc_reference_qualification.csv",
+    "reports/csv/frc_reference_diagnostic.csv",
+    "reports/csv/frc_reference_qualification.partial.csv",
+)
+FRC_PLOT_LINEAGE = "reports/csv/frc_reference_plot_lineage.csv"
 
 
 @dataclass
@@ -673,6 +680,401 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
         if not any(_number(row, name) is not None for name in measured_fields if name in header):
             failures.append(f"row={index}:no_finite_runtime_measurement")
     checks.append(_check("control_runtime", path, "runtime_measurement_and_truth", rows, failures))
+    return checks
+
+
+def _whole(value: float | None, minimum: int = 0) -> bool:
+    return value is not None and value >= minimum and value == round(value)
+
+
+def _audit_frc_point_table(
+    path: str, header: list[str], rows: list[dict[str, str]]
+) -> list[AuditCheck]:
+    required_columns = {
+        "EntryId", "FRC", "Condition", "Direction", "PhysicalChannel",
+        "Profile", "Metric", "RequiredSNR_dB", "TargetFraction", "SNR_dB",
+        "RequiredPoint", "MetricEstimate", "ConfidenceLower",
+        "ConfidenceUpper", "OneSidedLower", "OneSidedUpper",
+        "TransportBlocks", "DeliveredTransportBlocks", "FailedTransportBlocks",
+        "Transmissions", "PointEstimatePass", "ConfidenceSupportsPass",
+        "ConfidenceQualificationEligible", "ConfidenceMethod", "StopReason",
+        "StandardDocument", "StandardVersion", "StandardRelease",
+        "StandardSourceURL", "FRCDefinitionClause", "FRCDefinitionTable",
+        "RequirementClause", "RequirementTables", "ConfidenceLevel",
+        "RequiredQualificationTransportBlocks", "ConfidenceSamplingPlan",
+        "StatisticalUnit", "ConfiguredModulation", "ConfiguredMCSTable",
+        "ConfiguredMCSIndex", "ConfiguredTargetCodeRate",
+        "EffectiveTargetCodeRate", "ConfiguredTBSBits", "EffectiveTBSBits",
+        "ConfiguredCodedBitsPerSlot", "EffectiveCodedBitsPerSlot",
+        "ConfiguredLayers", "ConfiguredTxAntennas", "ConfiguredRxAntennas",
+        "EffectiveLayers", "EffectiveTxPorts", "NoiseVarSource",
+        "DecoderNoiseVar", "PostEqSINR_dB", "LastTBReceiverOk",
+        "LastTBCRCError", "ChannelExecutionMode", "ChannelChunkSlots",
+        "ChannelChunkSamples", "ChannelCallCount", "ChannelMaximumInputRows",
+        "ChannelFullSequenceProcessed", "ExecutionBackend",
+        "ApproximationMode", "Source", "FullStandardExecutionExact",
+        "DataChannelExact", "ProxyUsed", "FallbackUsed", "EvidenceClass",
+        "CatalogSHA256",
+    }
+    checks = [_check(
+        "frc_reference", path, "required_columns", rows,
+        sorted(required_columns - set(header)),
+    )]
+    value_failures: list[str] = []
+    phy_failures: list[str] = []
+    truth_failures: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        for name in (
+            "EntryId", "FRC", "Condition", "Direction", "PhysicalChannel",
+            "Profile", "Metric", "StandardDocument", "StandardVersion",
+            "StandardSourceURL", "FRCDefinitionClause", "FRCDefinitionTable",
+            "RequirementClause", "RequirementTables", "ConfidenceMethod",
+            "ConfidenceSamplingPlan", "StatisticalUnit",
+        ):
+            if not _text(row, name):
+                value_failures.append(prefix + f":{name}_missing")
+        target = _number(row, "TargetFraction")
+        estimate = _number(row, "MetricEstimate")
+        lower = _number(row, "ConfidenceLower")
+        upper = _number(row, "ConfidenceUpper")
+        one_lower = _number(row, "OneSidedLower")
+        one_upper = _number(row, "OneSidedUpper")
+        required_snr = _number(row, "RequiredSNR_dB")
+        snr = _number(row, "SNR_dB")
+        if any(value is None for value in (
+            target, estimate, lower, upper, one_lower, one_upper,
+            required_snr, snr,
+        )):
+            value_failures.append(prefix + ":nonfinite_metric_or_snr")
+        elif not (
+            0 < target < 1
+            and 0 <= lower <= estimate <= upper <= 1
+            and 0 <= one_lower <= estimate <= one_upper <= 1
+        ):
+            value_failures.append(prefix + ":invalid_metric_or_confidence_order")
+        required_point = _boolean(row, "RequiredPoint")
+        if required_snr is not None and snr is not None and (
+            required_point is not (abs(required_snr - snr) <= 1e-10)
+        ):
+            value_failures.append(prefix + ":required_point_flag_mismatch")
+        tb = _number(row, "TransportBlocks")
+        delivered = _number(row, "DeliveredTransportBlocks")
+        failed = _number(row, "FailedTransportBlocks")
+        transmissions = _number(row, "Transmissions")
+        if not (
+            _whole(tb, 1) and _whole(delivered) and _whole(failed)
+            and _whole(transmissions, 1)
+            and delivered + failed == tb and transmissions >= tb
+        ):
+            value_failures.append(prefix + ":transport_block_arithmetic_mismatch")
+
+        configured_rate = _number(row, "ConfiguredTargetCodeRate")
+        effective_rate = _number(row, "EffectiveTargetCodeRate")
+        configured_tbs = _number(row, "ConfiguredTBSBits")
+        effective_tbs = _number(row, "EffectiveTBSBits")
+        configured_g = _number(row, "ConfiguredCodedBitsPerSlot")
+        effective_g = _number(row, "EffectiveCodedBitsPerSlot")
+        configured_layers = _number(row, "ConfiguredLayers")
+        effective_layers = _number(row, "EffectiveLayers")
+        configured_tx = _number(row, "ConfiguredTxAntennas")
+        configured_rx = _number(row, "ConfiguredRxAntennas")
+        effective_ports = _number(row, "EffectiveTxPorts")
+        if not (
+            configured_rate is not None and 0 < configured_rate < 1
+            and _close(effective_rate, configured_rate, atol=1e-12)
+            and _whole(configured_tbs, 1)
+            and _close(effective_tbs, configured_tbs, atol=0)
+            and _whole(configured_g, 1)
+            and _close(effective_g, configured_g, atol=0)
+            and _whole(configured_layers, 1)
+            and _close(effective_layers, configured_layers, atol=0)
+            and _whole(configured_tx, 1) and _whole(configured_rx, 1)
+            and _close(effective_ports, configured_tx, atol=0)
+        ):
+            phy_failures.append(prefix + ":configured_effective_phy_mismatch")
+        if not all(_text(row, name) for name in (
+            "ConfiguredModulation", "ConfiguredMCSTable", "ConfiguredMCSIndex",
+            "NoiseVarSource",
+        )):
+            phy_failures.append(prefix + ":phy_or_noise_lineage_missing")
+        decoder_noise = _number(row, "DecoderNoiseVar")
+        posteq = _number(row, "PostEqSINR_dB")
+        if decoder_noise is None or decoder_noise <= 0 or posteq is None:
+            phy_failures.append(prefix + ":receiver_noise_or_sinr_invalid")
+
+        full_standard = _boolean(row, "FullStandardExecutionExact")
+        data_exact = _boolean(row, "DataChannelExact")
+        proxy = _boolean(row, "ProxyUsed")
+        fallback = _boolean(row, "FallbackUsed")
+        approximation = _text(row, "ApproximationMode").lower()
+        evidence = _text(row, "EvidenceClass").upper()
+        if not (
+            data_exact is True and proxy is False and fallback is False
+            and approximation == "none"
+            and _text(row, "ExecutionBackend")
+            and _text(row, "Source")
+            and len(_text(row, "CatalogSHA256")) == 64
+        ):
+            truth_failures.append(prefix + ":truth_or_provenance_invalid")
+        if full_standard is True and "FULL_STANDARD_TRUTH_EXECUTION" not in evidence:
+            truth_failures.append(prefix + ":full_standard_evidence_class_mismatch")
+        if full_standard is False and "SELECTED_DATA_CHANNEL_TRUTH_EXECUTION" not in evidence:
+            truth_failures.append(prefix + ":selected_channel_evidence_class_mismatch")
+
+        channel_mode = _text(row, "ChannelExecutionMode")
+        if channel_mode:
+            chunk_slots = _number(row, "ChannelChunkSlots")
+            chunk_samples = _number(row, "ChannelChunkSamples")
+            calls = _number(row, "ChannelCallCount")
+            maximum_rows = _number(row, "ChannelMaximumInputRows")
+            if _boolean(row, "ChannelFullSequenceProcessed") is not True:
+                truth_failures.append(prefix + ":fading_full_sequence_not_processed")
+            if channel_mode == "streamed_complete_sequence":
+                if not (
+                    _whole(chunk_slots, 1) and _whole(chunk_samples, 1)
+                    and _whole(calls, 2) and _whole(maximum_rows, 1)
+                    and maximum_rows <= chunk_samples
+                ):
+                    truth_failures.append(prefix + ":streamed_channel_evidence_invalid")
+            elif channel_mode == "monolithic_complete_sequence":
+                if not (
+                    chunk_slots == 0 and chunk_samples == 0
+                    and calls == 1 and _whole(maximum_rows, 1)
+                ):
+                    truth_failures.append(prefix + ":monolithic_channel_evidence_invalid")
+            else:
+                truth_failures.append(prefix + ":unknown_channel_execution_mode")
+    checks.extend([
+        _check("frc_reference", path, "metric_confidence_and_tb_arithmetic", rows, value_failures),
+        _check("frc_reference", path, "configured_effective_phy_and_receiver", rows, phy_failures),
+        _check("frc_reference", path, "truth_channel_and_provenance", rows, truth_failures),
+    ])
+    return checks
+
+
+def _audit_frc_summary_table(
+    path: str, header: list[str], rows: list[dict[str, str]]
+) -> list[AuditCheck]:
+    required_columns = {
+        "EntryId", "FRC", "Condition", "Required", "Profile",
+        "ExecutionAttempted", "DataChannelExact", "FullStandardExecutionExact",
+        "StatisticallyQualified", "OneSidedReferencePass", "RequiredSNR_dB",
+        "MeasuredSNR_dB", "Delta_dB", "TransportBlocks", "BlockErrors",
+        "Pass", "Status", "EvidenceClass", "CatalogSHA256",
+        "FailureIdentifier", "FailureReason",
+    }
+    checks = [_check(
+        "frc_reference", path, "required_columns", rows,
+        sorted(required_columns - set(header)),
+    )]
+    failures: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        profile = _text(row, "Profile").lower()
+        passed = _boolean(row, "Pass")
+        qualified = _boolean(row, "StatisticallyQualified")
+        reference_pass = _boolean(row, "OneSidedReferencePass")
+        tb = _number(row, "TransportBlocks")
+        block_errors = _number(row, "BlockErrors")
+        if not (
+            all(_text(row, name) for name in ("EntryId", "FRC", "Condition"))
+            and profile in {"diagnostic", "full"}
+            and _boolean(row, "Required") is True
+            and _boolean(row, "ExecutionAttempted") is True
+            and _boolean(row, "DataChannelExact") is True
+            and _whole(tb, 1) and _whole(block_errors)
+            and block_errors <= tb
+            and _number(row, "RequiredSNR_dB") is not None
+            and len(_text(row, "CatalogSHA256")) == 64
+        ):
+            failures.append(prefix + ":identity_execution_or_count_invalid")
+        if passed is True and not (
+            profile == "full" and qualified is True and reference_pass is True
+            and _boolean(row, "FullStandardExecutionExact") is True
+            and _text(row, "Status").upper() == "PASS"
+        ):
+            failures.append(prefix + ":pass_claim_not_supported")
+        if profile == "diagnostic" and passed is not False:
+            failures.append(prefix + ":diagnostic_promoted_to_qualification")
+        measured = _number(row, "MeasuredSNR_dB")
+        delta = _number(row, "Delta_dB")
+        if (measured is None) != (delta is None):
+            failures.append(prefix + ":crossing_delta_partial")
+        elif measured is not None and not _close(
+            delta, measured - (_number(row, "RequiredSNR_dB") or 0.0), atol=1e-10
+        ):
+            failures.append(prefix + ":crossing_delta_arithmetic_mismatch")
+        reason = _text(row, "FailureReason")
+        if (
+            "observed_pass_not_statistically_qualified" in reason
+            and "one_sided_reference_point_failed" in reason
+        ):
+            failures.append(prefix + ":observed_pass_mislabeled_failed")
+        if "TRUTH_EXECUTION" not in _text(row, "EvidenceClass").upper():
+            failures.append(prefix + ":truth_evidence_class_missing")
+    checks.append(_check(
+        "frc_reference", path, "status_counts_and_qualification_semantics", rows, failures
+    ))
+    return checks
+
+
+def _audit_frc_progress_table(
+    path: str, header: list[str], rows: list[dict[str, str]]
+) -> list[AuditCheck]:
+    required_columns = {
+        "EntryId", "FRC", "Condition", "SNR_dB", "SNRSeedIndex",
+        "CompletedTransportBlocks", "MaxTransportBlocks",
+        "DeliveredTransportBlocks", "FailedTransportBlocks", "Transmissions",
+        "MetricEstimate", "ConfidenceLower", "ConfidenceUpper",
+        "OneSidedLower", "OneSidedUpper", "ConfidenceMethod",
+        "ConfidenceHalfWidth", "Status", "StopReason",
+        "ConfidenceQualificationEligible", "EvidenceClass",
+        "ApproximationMode", "IdentitySHA256",
+    }
+    checks = [_check(
+        "frc_reference", path, "required_columns", rows,
+        sorted(required_columns - set(header)),
+    )]
+    failures: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        completed = _number(row, "CompletedTransportBlocks")
+        maximum = _number(row, "MaxTransportBlocks")
+        delivered = _number(row, "DeliveredTransportBlocks")
+        failed = _number(row, "FailedTransportBlocks")
+        transmissions = _number(row, "Transmissions")
+        estimate = _number(row, "MetricEstimate")
+        lower = _number(row, "ConfidenceLower")
+        upper = _number(row, "ConfidenceUpper")
+        if not (
+            _whole(completed, 1) and _whole(maximum, 1) and completed <= maximum
+            and _whole(delivered) and _whole(failed) and delivered + failed == completed
+            and _whole(transmissions, 1) and transmissions >= completed
+            and estimate is not None and lower is not None and upper is not None
+            and 0 <= lower <= estimate <= upper <= 1
+            and _text(row, "ApproximationMode").lower() == "none"
+            and "ACTUAL_FRC_TRUTH_EXECUTION" in _text(row, "EvidenceClass").upper()
+            and len(_text(row, "IdentitySHA256")) == 64
+        ):
+            failures.append(prefix + ":progress_arithmetic_or_truth_invalid")
+    checks.append(_check(
+        "frc_reference", path, "progress_arithmetic_and_truth", rows, failures
+    ))
+    return checks
+
+
+def _audit_frc_plot_lineage(
+    run_root: Path, path: str, header: list[str], rows: list[dict[str, str]]
+) -> list[AuditCheck]:
+    required_columns = {
+        "PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256",
+        "ImageSHA256", "Width", "Height", "MimeType", "ImageExists",
+        "SourceExists", "ProducerModule", "Status", "FailureReason",
+    }
+    checks = [_check(
+        "frc_reference", path, "required_columns", rows,
+        sorted(required_columns - set(header)),
+    )]
+    failures: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        image_path = run_root / _text(row, "ImagePath")
+        source_path = run_root / _text(row, "SourceCSV")
+        dimensions = _png_dimensions(image_path) if _io_path(image_path).is_file() else None
+        if not (
+            _boolean(row, "ImageExists") is True
+            and _boolean(row, "SourceExists") is True
+            and _text(row, "Status").lower() == "pass"
+            and _text(row, "MimeType").lower() == "image/png"
+            and _io_path(image_path).is_file() and _io_path(source_path).is_file()
+            and _sha256(image_path).lower() == _text(row, "ImageSHA256").lower()
+            and _sha256(source_path).lower() == _text(row, "SourceCSV_SHA256").lower()
+            and dimensions is not None
+            and dimensions == (
+                int(_number(row, "Width") or -1), int(_number(row, "Height") or -1)
+            )
+            and dimensions[0] >= 1200 and dimensions[1] >= 675
+        ):
+            failures.append(prefix + ":plot_lineage_hash_dimension_or_file_invalid")
+    checks.append(_check(
+        "frc_reference", path, "plot_lineage_hashes_dimensions_and_files", rows, failures
+    ))
+    return checks
+
+
+def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
+    checks: list[AuditCheck] = []
+    point_header, point_rows = _read_rows(run_root / FRC_POINT_TABLE)
+    if point_header or point_rows:
+        checks.extend(_audit_frc_point_table(FRC_POINT_TABLE, point_header, point_rows))
+    point_shard_paths = sorted(
+        run_root.glob("reports/csv/frc_reference_points/*.csv")
+    )
+    for shard_path in point_shard_paths:
+        relative = shard_path.relative_to(run_root).as_posix()
+        header, rows = _read_rows(shard_path)
+        checks.extend(_audit_frc_point_table(relative, header, rows))
+
+    summary_paths = [
+        path for path in FRC_SUMMARY_TABLES
+        if _io_path(run_root / path).is_file()
+    ]
+    summary_rows: list[dict[str, str]] = []
+    for summary_path in summary_paths:
+        summary_header, current_rows = _read_rows(run_root / summary_path)
+        checks.extend(_audit_frc_summary_table(
+            summary_path, summary_header, current_rows
+        ))
+        if not summary_rows:
+            summary_rows = current_rows
+    progress_paths = sorted(
+        run_root.glob("reports/csv/frc_reference_progress/**/frc_reference_progress.csv")
+    )
+    progress_rows: list[dict[str, str]] = []
+    for progress_path in progress_paths:
+        relative = progress_path.relative_to(run_root).as_posix()
+        header, rows = _read_rows(progress_path)
+        progress_rows.extend(rows)
+        checks.extend(_audit_frc_progress_table(relative, header, rows))
+    lineage_header, lineage_rows = _read_rows(run_root / FRC_PLOT_LINEAGE)
+    if lineage_header or lineage_rows:
+        checks.extend(_audit_frc_plot_lineage(
+            run_root, FRC_PLOT_LINEAGE, lineage_header, lineage_rows
+        ))
+    reconcile_failures: list[str] = []
+    if point_rows and summary_rows:
+        summary_by_entry = {_text(row, "EntryId"): row for row in summary_rows}
+        for row in point_rows:
+            entry = _text(row, "EntryId")
+            summary_row = summary_by_entry.get(entry)
+            if summary_row is None:
+                reconcile_failures.append(f"entry={entry}:summary_missing")
+                continue
+            if not (
+                _close(_number(summary_row, "TransportBlocks"), _number(row, "TransportBlocks"), atol=0)
+                and _close(_number(summary_row, "BlockErrors"), _number(row, "FailedTransportBlocks"), atol=0)
+                and _close(_number(summary_row, "RequiredSNR_dB"), _number(row, "RequiredSNR_dB"), atol=1e-12)
+            ):
+                reconcile_failures.append(f"entry={entry}:summary_point_mismatch")
+    if point_rows and progress_rows:
+        progress_by_entry = {_text(row, "EntryId"): row for row in progress_rows}
+        for row in point_rows:
+            entry = _text(row, "EntryId")
+            progress_row = progress_by_entry.get(entry)
+            if progress_row is None or not (
+                _close(_number(progress_row, "CompletedTransportBlocks"), _number(row, "TransportBlocks"), atol=0)
+                and _close(_number(progress_row, "DeliveredTransportBlocks"), _number(row, "DeliveredTransportBlocks"), atol=0)
+                and _close(_number(progress_row, "FailedTransportBlocks"), _number(row, "FailedTransportBlocks"), atol=0)
+                and _close(_number(progress_row, "MetricEstimate"), _number(row, "MetricEstimate"), atol=1e-12)
+            ):
+                reconcile_failures.append(f"entry={entry}:progress_point_mismatch")
+    if point_rows:
+        checks.append(_check(
+            "frc_reference", FRC_POINT_TABLE,
+            "summary_progress_point_reconciliation", point_rows,
+            reconcile_failures,
+        ))
     return checks
 
 
@@ -1901,7 +2303,8 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     has_chart_contract = _io_path(
         run_root / "reports/csv/contract_plot_lineage.csv"
     ).is_file()
-    if not has_primary_run_evidence and not has_chart_contract:
+    has_frc_reference = _io_path(run_root / FRC_POINT_TABLE).is_file()
+    if not has_primary_run_evidence and not has_chart_contract and not has_frc_reference:
         return {
             "canonical_csv_semantic_audit": [],
             "chart_source_semantic_audit": [],
@@ -1915,6 +2318,29 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
             }],
         }
     checks: list[AuditCheck] = []
+    if has_frc_reference:
+        checks.extend(_audit_frc_reference_outputs(run_root))
+    if not has_primary_run_evidence and not has_chart_contract:
+        required_failures = sum(
+            check.required and (not check.evaluated or not check.passed)
+            for check in checks
+        )
+        return {
+            "canonical_csv_semantic_audit": [asdict(check) for check in checks],
+            "chart_source_semantic_audit": [],
+            "runtime_physics_reconciliation": [
+                asdict(check)
+                for check in checks
+                if check.category == "frc_reference"
+            ],
+            "summary": [{
+                "semantic_check_count": len(checks),
+                "semantic_required_failure_count": required_failures,
+                "chart_check_count": 0,
+                "chart_required_failure_count": 0,
+                "ok": required_failures == 0,
+            }],
+        }
     link_rows: dict[str, list[dict[str, str]]] = {}
     for direction, path in resolved_primary_tables.items():
         header, rows = _read_rows(run_root / path)

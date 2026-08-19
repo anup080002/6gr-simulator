@@ -566,6 +566,10 @@ def build_csv_file_dispositions(
             str(check.get("category", "")) == "domain_runtime" for check in checks
         ):
             disposition = "PASS_DOMAIN_RUNTIME_SEMANTICS"
+        elif checks and any(
+            str(check.get("category", "")) == "frc_reference" for check in checks
+        ):
+            disposition = "PASS_FRC_REFERENCE_SEMANTICS"
         else:
             disposition = "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW"
 
@@ -603,8 +607,9 @@ def build_csv_file_dispositions(
         "PASS_DERIVED_LINK_SEMANTICS": 3,
         "PASS_MANIFEST_INTEGRITY_SEMANTICS": 4,
         "PASS_DOMAIN_RUNTIME_SEMANTICS": 5,
-        "PASS_CHART_DATASET_SEMANTICS": 6,
-        "PASS_BYTE_IDENTICAL_MIRROR": 7,
+        "PASS_FRC_REFERENCE_SEMANTICS": 6,
+        "PASS_CHART_DATASET_SEMANTICS": 7,
+        "PASS_BYTE_IDENTICAL_MIRROR": 8,
     }
     passed_by_hash_and_name: dict[tuple[str, str], dict] = {}
     for row in sorted(

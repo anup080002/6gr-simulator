@@ -13,11 +13,126 @@ from lls_csv_semantics import (  # noqa: E402
     audit_run,
     _audit_derived_link_table,
     _audit_domain_runtime_tables,
+    _audit_frc_point_table,
     _audit_link_table,
     _audit_manifest_integrity,
     _audit_runtime_call_ledger,
     _audit_status_reduction,
 )
+
+
+def _frc_point_row() -> dict[str, str]:
+    return {
+        "EntryId": "dl_rank4_tdla",
+        "FRC": "R.PDSCH.1-2.4 FDD",
+        "Condition": "TDL-A 30ns 10Hz",
+        "Direction": "DL",
+        "PhysicalChannel": "PDSCH",
+        "Profile": "diagnostic",
+        "Metric": "fraction_max_throughput",
+        "RequiredSNR_dB": "15.6",
+        "TargetFraction": "0.7",
+        "SNR_dB": "15.6",
+        "RequiredPoint": "1",
+        "MetricEstimate": "0.8",
+        "ConfidenceLower": "0.486405762473591",
+        "ConfidenceUpper": "1",
+        "OneSidedLower": "0.486405762473591",
+        "OneSidedUpper": "1",
+        "TransportBlocks": "4",
+        "DeliveredTransportBlocks": "4",
+        "FailedTransportBlocks": "0",
+        "Transmissions": "5",
+        "PointEstimatePass": "1",
+        "ConfidenceSupportsPass": "0",
+        "ConfidenceQualificationEligible": "0",
+        "ConfidenceMethod": "clopper_pearson",
+        "StopReason": "diagnostic_transport_block_cap",
+        "StandardDocument": "TS 38.101-4",
+        "StandardVersion": "18.7.0",
+        "StandardRelease": "18",
+        "StandardSourceURL": "https://www.3gpp.org/ftp/Specs/archive/38_series/38.101-4/",
+        "FRCDefinitionClause": "Annex A",
+        "FRCDefinitionTable": "Table A.3.2.2-1",
+        "RequirementClause": "Clause 7.3",
+        "RequirementTables": "Table 7.3.2-1",
+        "ConfidenceLevel": "0.95",
+        "RequiredQualificationTransportBlocks": "9604",
+        "ConfidenceSamplingPlan": "one_sided_binomial",
+        "StatisticalUnit": "transport_block",
+        "ConfiguredModulation": "64QAM",
+        "ConfiguredMCSTable": "qam64_table1",
+        "ConfiguredMCSIndex": "20",
+        "ConfiguredTargetCodeRate": "0.6015625",
+        "EffectiveTargetCodeRate": "0.6015625",
+        "ConfiguredTBSBits": "24456",
+        "EffectiveTBSBits": "24456",
+        "ConfiguredCodedBitsPerSlot": "40640",
+        "EffectiveCodedBitsPerSlot": "40640",
+        "ConfiguredLayers": "4",
+        "ConfiguredTxAntennas": "4",
+        "ConfiguredRxAntennas": "4",
+        "EffectiveLayers": "4",
+        "EffectiveTxPorts": "4",
+        "NoiseVarSource": "waveform_awgn_variance",
+        "DecoderNoiseVar": "0.0123",
+        "PostEqSINR_dB": "14.8",
+        "LastTBReceiverOk": "1",
+        "LastTBCRCError": "0",
+        "ChannelExecutionMode": "streamed_complete_sequence",
+        "ChannelChunkSlots": "1",
+        "ChannelChunkSamples": "15360",
+        "ChannelCallCount": "21",
+        "ChannelMaximumInputRows": "15360",
+        "ChannelFullSequenceProcessed": "1",
+        "ExecutionBackend": "matlab_5g_toolbox_waveform",
+        "ApproximationMode": "none",
+        "Source": "sixgr.conformance.runFRCPoint",
+        "FullStandardExecutionExact": "0",
+        "DataChannelExact": "1",
+        "ProxyUsed": "0",
+        "FallbackUsed": "0",
+        "EvidenceClass": "SELECTED_DATA_CHANNEL_TRUTH_EXECUTION",
+        "CatalogSHA256": "a" * 64,
+    }
+
+
+def test_frc_point_semantics_accept_exact_runtime_truth() -> None:
+    row = _frc_point_row()
+    checks = _audit_frc_point_table(
+        "reports/csv/frc_reference_points.csv", list(row), [row]
+    )
+    assert checks
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_frc_point_semantics_reject_count_and_effective_rank_corruption() -> None:
+    row = _frc_point_row()
+    row["DeliveredTransportBlocks"] = "5"
+    row["EffectiveLayers"] = "1"
+    checks = _audit_frc_point_table(
+        "reports/csv/frc_reference_points.csv", list(row), [row]
+    )
+    failed = {check.check_id: check.details for check in checks if not check.passed}
+    assert "transport_block_arithmetic_mismatch" in failed[
+        "metric_confidence_and_tb_arithmetic"
+    ]
+    assert "configured_effective_phy_mismatch" in failed[
+        "configured_effective_phy_and_receiver"
+    ]
+
+
+def test_frc_only_run_is_not_skipped_by_semantic_audit(tmp_path: Path) -> None:
+    row = _frc_point_row()
+    _write_rows(tmp_path / "reports/csv/frc_reference_points.csv", [row])
+    audit = audit_run(tmp_path)
+    assert audit["summary"][0]["semantic_check_count"] >= 4
+    assert audit["summary"][0]["semantic_required_failure_count"] == 0
+    assert all(check["passed"] for check in audit["canonical_csv_semantic_audit"])
+    assert all(
+        check["category"] == "frc_reference"
+        for check in audit["canonical_csv_semantic_audit"]
+    )
 
 
 def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path) -> None:

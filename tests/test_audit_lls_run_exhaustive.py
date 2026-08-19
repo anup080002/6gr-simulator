@@ -310,3 +310,32 @@ def test_equal_bytes_with_different_basename_do_not_inherit_domain_contract(
     assert by_path["analytics/csv/unrelated_metric.csv"]["audit_disposition"] == (
         "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW"
     )
+
+
+def test_frc_reference_contract_receives_explicit_pass_disposition(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    relative = "reports/csv/frc_reference_points.csv"
+    csv_rows = [{
+        "relative_path": relative,
+        "sha256": "c" * 64,
+        "row_count": 1,
+        "column_count": 70,
+        "issue_count": 0,
+        "parse_ok": True,
+    }]
+    semantic_audit = {
+        "canonical_csv_semantic_audit": [{
+            "artifact_path": relative,
+            "category": "frc_reference",
+            "required": True,
+            "evaluated": True,
+            "passed": True,
+        }],
+        "chart_source_semantic_audit": [],
+    }
+    rows = AUDIT_MODULE.build_csv_file_dispositions(
+        run, csv_rows, [], semantic_audit
+    )
+    assert rows[0]["audit_disposition"] == "PASS_FRC_REFERENCE_SEMANTICS"
