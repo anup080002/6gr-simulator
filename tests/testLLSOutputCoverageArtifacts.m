@@ -10,6 +10,16 @@ c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 runFolder = fullfile(tmp, "coverage_run");
 layout = sixgr.report.resultLayout(runFolder);
 localCreateSourceArtifacts(layout);
+% Registered file paths are not sufficient evidence by themselves.  These
+% fixtures deliberately model the two failure shapes seen in production:
+% a header-only antenna schema and a PRACH row that explicitly says no
+% correlation trace was emitted.
+localWrite(fullfile(layout.ReportCSVDir, "antenna_config_resolved.csv"), table( ...
+    zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
+    'VariableNames', {'NumRows','NumCols','NumElements'}));
+localWrite(fullfile(layout.ReportCSVDir, "prach_correlation_trace.csv"), table( ...
+    NaN, NaN, "not_available", ...
+    'VariableNames', {'lag_samples','correlation_abs','truth_status'}));
 
 scfg = struct();
 scfg.ScenarioID = "SCN00_BASELINE_CAPACITY";
@@ -40,6 +50,7 @@ assert(isfield(out, "Tables") && isempty(fieldnames(out.Tables)), ...
 registryPath = fullfile(layout.ReportCSVDir, "output_coverage_registry.csv");
 implementationRegisterPath = fullfile(layout.ReportCSVDir, "lls_implementation_register.csv");
 unavailablePath = fullfile(layout.ReportCSVDir, "honest_unavailable_registry.csv");
+completenessPath = fullfile(layout.ReportCSVDir, "output_completeness_table.csv");
 energyPath = fullfile(layout.RFCSVDir, "power_energy_table.csv");
 livePowerPath = fullfile(layout.ReportCSVDir, "live_power_runtime_table.csv");
 liveRFPath = fullfile(layout.ReportCSVDir, "live_rf_power_table.csv");
@@ -113,6 +124,7 @@ fieldAvailabilityPath = fullfile(layout.ReportCSVDir, "table_field_availability_
 assert(exist(registryPath, "file") == 2, "Output coverage registry must be persisted.");
 assert(exist(implementationRegisterPath, "file") == 2, "LLS implementation register must be persisted.");
 assert(exist(unavailablePath, "file") == 2, "Honest unavailable registry must be persisted.");
+assert(exist(completenessPath, "file") == 2, "Output completeness table must be persisted.");
 assert(exist(energyPath, "file") == 2, "Power/energy table must be persisted when energy telemetry exists.");
 assert(exist(livePowerPath, "file") == 2, "Canonical live power runtime table must be persisted when energy telemetry exists.");
 assert(exist(liveRFPath, "file") == 2, "Canonical live RF power table must be persisted when energy telemetry exists.");
@@ -186,6 +198,7 @@ assert(exist(fieldAvailabilityPath, "file") == 2, "Table field-availability matr
 registry = readtable(registryPath, "VariableNamingRule", "preserve");
 implementationRegister = readtable(implementationRegisterPath, "VariableNamingRule", "preserve");
 unavailable = readtable(unavailablePath, "VariableNamingRule", "preserve");
+completeness = readtable(completenessPath, "VariableNamingRule", "preserve");
 energy = readtable(energyPath, "VariableNamingRule", "preserve");
 livePower = readtable(livePowerPath, "VariableNamingRule", "preserve");
 liveRF = readtable(liveRFPath, "VariableNamingRule", "preserve");
@@ -250,6 +263,9 @@ plotSuppression = readtable(plotSuppressionPath, "VariableNamingRule", "preserve
 unavailablePlotCards = readtable(unavailablePlotCardRegistryPath, "VariableNamingRule", "preserve");
 lineage = readtable(lineagePath, "VariableNamingRule", "preserve");
 fieldAvailability = readtable(fieldAvailabilityPath, "VariableNamingRule", "preserve");
+
+localAssertUnusableAlternative(completeness, "antenna_radiation_pattern_plot");
+localAssertUnusableAlternative(completeness, "prach_correlation_peak_plot");
 
 assert(height(registry) >= 50, "Registry must cover the requested broad output surface, not a tiny subset.");
 localAssertRegistryRow(registry, "power_energy_table", "implemented", "c");
@@ -558,9 +574,17 @@ runFolderNoCSIRS = fullfile(tmp, "coverage_run_no_csirs");
 layoutNoCSIRS = sixgr.report.resultLayout(runFolderNoCSIRS);
 localCreateSourceArtifacts(layoutNoCSIRS);
 delete(fullfile(layoutNoCSIRS.AirInterfaceCSVDir, "csi_rs_trials.csv"));
+localWrite(fullfile(layoutNoCSIRS.ReportCSVDir, "antenna_config_resolved.csv"), table( ...
+    8, 8, 64, 'VariableNames', {'NumRows','NumCols','NumElements'}));
+localWrite(fullfile(layoutNoCSIRS.ReportCSVDir, "prach_correlation_trace.csv"), table( ...
+    [-1; 0; 1], [0.12; 1.0; 0.15], repmat("real_lls_evidence", 3, 1), ...
+    'VariableNames', {'lag_samples','correlation_abs','truth_status'}));
 sixgr.truth.exportLLSOutputCoverageArtifacts(runFolderNoCSIRS, scfg, cfg);
 registryNoCSIRS = readtable(fullfile(layoutNoCSIRS.ReportCSVDir, "output_coverage_registry.csv"), "VariableNamingRule", "preserve");
 unavailableNoCSIRS = readtable(fullfile(layoutNoCSIRS.ReportCSVDir, "honest_unavailable_registry.csv"), "VariableNamingRule", "preserve");
+completenessNoCSIRS = readtable(fullfile(layoutNoCSIRS.ReportCSVDir, "output_completeness_table.csv"), "VariableNamingRule", "preserve");
+localAssertUsableAlternative(completenessNoCSIRS, "antenna_radiation_pattern_plot");
+localAssertUsableAlternative(completenessNoCSIRS, "prach_correlation_peak_plot");
 localAssertRegistryRow(registryNoCSIRS, "csi_rs_table", "unavailable", "c");
 assert(exist(fullfile(layoutNoCSIRS.ControlCSVDir, "csi_rs_table.csv"), "file") ~= 2, ...
     "CSI-RS standalone table must not be fabricated when no runtime CSI-RS trial stream exists.");
@@ -780,6 +804,30 @@ assert(strcmp(string(T.current_status(idx)), string(status)), ...
     "Registry row %s expected status %s but saw %s.", name, status, string(T.current_status(idx)));
 assert(strcmp(string(T.classification_code(idx)), string(classCode)), ...
     "Registry row %s expected classification %s but saw %s.", name, classCode, string(T.classification_code(idx)));
+end
+
+function localAssertUnusableAlternative(T, outputName)
+mask = strcmp(string(T.output_name), string(outputName));
+assert(nnz(mask) == 1, "Completeness table missing unique output %s.", outputName);
+row = T(mask, :);
+assert(string(row.alternative_evidence_status) == "present_unusable", ...
+    "Header-only or explicitly unavailable %s evidence must not be reported present.", outputName);
+assert(string(row.runtime_evidence_status) == "alternative_evidence_unusable", ...
+    "Unusable %s alternatives must not satisfy runtime evidence.", outputName);
+assert(string(row.evidence_substitution_reason) == "alternative_evidence_present_but_value_unusable", ...
+    "Unusable %s alternatives require an explicit value-level reason.", outputName);
+end
+
+function localAssertUsableAlternative(T, outputName)
+mask = strcmp(string(T.output_name), string(outputName));
+assert(nnz(mask) == 1, "Completeness table missing unique output %s.", outputName);
+row = T(mask, :);
+assert(string(row.alternative_evidence_status) == "present", ...
+    "Value-backed %s alternative evidence must be reported present.", outputName);
+assert(string(row.runtime_evidence_status) == "alternative_evidence_only", ...
+    "Value-backed %s alternative evidence must satisfy its registered substitution.", outputName);
+assert(string(row.evidence_substitution_reason) == "alternative_evidence_contract_registered_and_value_usable", ...
+    "Value-backed %s alternative evidence requires an explicit usable-value reason.", outputName);
 end
 
 function out = localAsLogical(values)

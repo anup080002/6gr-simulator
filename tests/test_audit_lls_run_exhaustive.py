@@ -45,6 +45,14 @@ def test_header_only_result_is_schema_valid_observation(tmp_path: Path) -> None:
     assert row["schema_only"] == "True"
     assert row["observations"] == "header_only_no_rows"
     assert row["issues"] == ""
+    with (output / "first_three_row_value_assessment.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        assessment = next(csv.DictReader(handle))
+    assert assessment["value_shape"] == "header_only_no_values"
+    assert assessment["value_review_status"] == (
+        "HEADER_ONLY_REQUIRES_APPLICABILITY_REVIEW"
+    )
 
 
 def test_missing_header_remains_a_structural_failure(tmp_path: Path) -> None:
@@ -101,6 +109,17 @@ def test_zero_and_nan_columns_are_classified_not_hidden(tmp_path: Path) -> None:
     assert previews[0]["missing_or_nan_cell_count"] == "1"
     assert previews[0]["zero_numeric_cell_count"] == "1"
     assert json.loads(previews[0]["values_json"]) == ["0", "NaN", "2"]
+
+    with (output / "first_three_row_value_assessment.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        assessment = next(csv.DictReader(handle))
+    assert assessment["observed_preview_row_count"] == "2"
+    assert assessment["preview_missing_or_nan_cell_count"] == "1"
+    assert assessment["preview_zero_numeric_cell_count"] == "2"
+    assert assessment["value_review_status"] == (
+        "VALUES_PRESENT_BUT_DOMAIN_CONTRACT_MISSING"
+    )
 
 
 def test_fixed_link_unscheduled_fields_respect_explicit_not_applicable_status(

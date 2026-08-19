@@ -632,6 +632,101 @@ def build_csv_file_dispositions(
     return dispositions
 
 
+def build_first_three_row_value_assessment(
+    csv_rows: list[dict],
+    first_row_previews: list[dict],
+    file_dispositions: list[dict],
+) -> list[dict]:
+    """Summarize actual first-row values for every CSV without calling shape a pass.
+
+    The raw values remain in ``all_csv_first_three_rows.csv``.  This table
+    makes their value population reviewable per file, including header-only,
+    mostly-missing and mostly-zero previews, and keeps semantic-contract
+    coverage separate from structural parsing.
+    """
+    previews_by_path: dict[str, list[dict]] = {}
+    for preview in first_row_previews:
+        previews_by_path.setdefault(str(preview["relative_path"]), []).append(preview)
+    disposition_by_path = {
+        str(row["relative_path"]): row for row in file_dispositions
+    }
+    assessments: list[dict] = []
+    for file_row in csv_rows:
+        relative = str(file_row["relative_path"])
+        previews = previews_by_path.get(relative, [])
+        observed = [
+            row for row in previews if row.get("preview_state") == "observed_row"
+        ]
+        nonblank = sum(int(row["nonblank_cell_count"]) for row in observed)
+        missing = sum(int(row["missing_or_nan_cell_count"]) for row in observed)
+        finite = sum(int(row["finite_numeric_cell_count"]) for row in observed)
+        zero = sum(int(row["zero_numeric_cell_count"]) for row in observed)
+        nonzero = sum(int(row["nonzero_numeric_cell_count"]) for row in observed)
+        total_cells = nonblank + missing
+        missing_fraction = missing / total_cells if total_cells else 0.0
+        zero_fraction = zero / finite if finite else 0.0
+        header_only = int(file_row["row_count"]) == 0
+        if header_only:
+            value_shape = "header_only_no_values"
+        elif missing_fraction >= 0.5:
+            value_shape = "first_rows_mostly_missing_or_nan"
+        elif finite > 0 and nonzero == 0:
+            value_shape = "first_rows_numeric_all_zero"
+        elif finite > 0 and zero_fraction >= 0.8:
+            value_shape = "first_rows_numeric_mostly_zero"
+        else:
+            value_shape = "first_rows_value_populated"
+
+        disposition = disposition_by_path.get(relative, {})
+        semantic_disposition = str(
+            disposition.get(
+                "audit_disposition", "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW"
+            )
+        )
+        semantic_contract_present = semantic_disposition.startswith("PASS_")
+        required_failures = int(
+            disposition.get("required_semantic_failure_count", 0) or 0
+        )
+        if required_failures:
+            review_status = "REQUIRED_SEMANTIC_FAILURE"
+        elif header_only:
+            review_status = "HEADER_ONLY_REQUIRES_APPLICABILITY_REVIEW"
+        elif not semantic_contract_present:
+            review_status = "VALUES_PRESENT_BUT_DOMAIN_CONTRACT_MISSING"
+        elif value_shape in {
+            "first_rows_mostly_missing_or_nan",
+            "first_rows_numeric_mostly_zero",
+            "first_rows_numeric_all_zero",
+        }:
+            review_status = "CONTRACTED_VALUES_WITH_SPARSE_PREVIEW_REVIEWED"
+        else:
+            review_status = "CONTRACTED_FIRST_ROWS_REVIEWED"
+
+        first_values = observed[0]["values_json"] if observed else "[]"
+        assessments.append(
+            {
+                "relative_path": relative,
+                "row_count": int(file_row["row_count"]),
+                "column_count": int(file_row["column_count"]),
+                "observed_preview_row_count": len(observed),
+                "preview_nonblank_cell_count": nonblank,
+                "preview_missing_or_nan_cell_count": missing,
+                "preview_missing_or_nan_fraction": missing_fraction,
+                "preview_finite_numeric_cell_count": finite,
+                "preview_zero_numeric_cell_count": zero,
+                "preview_nonzero_numeric_cell_count": nonzero,
+                "preview_zero_fraction_of_finite": zero_fraction,
+                "first_row_values_json": first_values,
+                "value_shape": value_shape,
+                "semantic_disposition": semantic_disposition,
+                "semantic_contract_present": semantic_contract_present,
+                "required_semantic_failure_count": required_failures,
+                "value_review_status": review_status,
+            }
+        )
+    return assessments
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_root", type=Path)
@@ -702,6 +797,13 @@ def main() -> int:
         run_root, csv_rows, column_rows, semantic_audit
     )
     write_csv(output_root / "csv_file_semantic_disposition.csv", file_dispositions)
+    first_row_value_assessments = build_first_three_row_value_assessment(
+        csv_rows, first_row_previews, file_dispositions
+    )
+    write_csv(
+        output_root / "first_three_row_value_assessment.csv",
+        first_row_value_assessments,
+    )
 
     summary = {
         "run_root": str(run_root),
@@ -749,6 +851,21 @@ def main() -> int:
         "csv_files_parsed_but_without_domain_contract": sum(
             row["audit_disposition"] == "PARSED_UNCONTRACTED_REQUIRES_DOMAIN_REVIEW"
             for row in file_dispositions
+        ),
+        "csv_first_row_header_only_files": sum(
+            row["value_shape"] == "header_only_no_values"
+            for row in first_row_value_assessments
+        ),
+        "csv_first_rows_mostly_missing_files": sum(
+            row["value_shape"] == "first_rows_mostly_missing_or_nan"
+            for row in first_row_value_assessments
+        ),
+        "csv_first_rows_numeric_mostly_zero_files": sum(
+            row["value_shape"] in {
+                "first_rows_numeric_mostly_zero",
+                "first_rows_numeric_all_zero",
+            }
+            for row in first_row_value_assessments
         ),
         "csv_verified_component_mirror_files": sum(
             row["audit_disposition"] == "PASS_BYTE_IDENTICAL_MIRROR"

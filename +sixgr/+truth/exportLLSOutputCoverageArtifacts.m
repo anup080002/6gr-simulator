@@ -5591,10 +5591,14 @@ for i = 1:height(registry)
     jsonPath = replace(logicalPath, ".csv", ".json");
     jsonPresent = logicalPath ~= "" && exist(fullfile(runFolder, jsonPath), "file") == 2;
     altPaths = localAlternativeEvidencePaths(outName);
+    altExisting = strings(0, 1);
     altPresent = strings(0, 1);
     for p = 1:numel(altPaths)
         if localArtifactExists(runFolder, altPaths(p))
-            altPresent(end + 1, 1) = string(altPaths(p)); %#ok<AGROW>
+            altExisting(end + 1, 1) = string(altPaths(p)); %#ok<AGROW>
+            if localAlternativeEvidenceUsable(runFolder, outName, altPaths(p))
+                altPresent(end + 1, 1) = string(altPaths(p)); %#ok<AGROW>
+            end
         end
     end
     plotMissing = "";
@@ -5627,13 +5631,20 @@ for i = 1:height(registry)
     rows(i).direct_artifact_rows = actualRows;
     rows(i).direct_artifact_columns = directCols;
     rows(i).direct_artifact_required_columns_present = actualRows > 0 || registry.current_status(i) ~= "implemented";
-    rows(i).alternative_evidence_status = localTernary(isempty(altPaths), "none_registered", localTernary(~isempty(altPresent), "present", "missing"));
-    rows(i).alternative_evidence_artifact = strjoin(string(altPresent), "|");
+    rows(i).alternative_evidence_status = localTernary(isempty(altPaths), "none_registered", ...
+        localTernary(~isempty(altPresent), "present", ...
+        localTernary(~isempty(altExisting), "present_unusable", "missing")));
+    rows(i).alternative_evidence_artifact = strjoin(string(altExisting), "|");
     rows(i).evidence_substitution_allowed = ~isempty(altPaths);
-    rows(i).evidence_substitution_reason = localTernary(~isempty(altPaths), "alternative_evidence_contract_registered", "");
+    rows(i).evidence_substitution_reason = localTernary(isempty(altPaths), "", ...
+        localTernary(~isempty(altPresent), "alternative_evidence_contract_registered_and_value_usable", ...
+        localTernary(~isempty(altExisting), "alternative_evidence_present_but_value_unusable", ...
+        "alternative_evidence_contract_registered_but_missing")));
     rows(i).implementation_status = string(registry.current_status(i));
     rows(i).completeness_status = localCompletenessStatus(registry.current_status(i), expectedRows, actualRows);
-    rows(i).runtime_evidence_status = localTernary(actualRows > 0, "runtime_rows_present", localTernary(~isempty(altPresent), "alternative_evidence_only", "runtime_rows_missing"));
+    rows(i).runtime_evidence_status = localTernary(actualRows > 0, "runtime_rows_present", ...
+        localTernary(~isempty(altPresent), "alternative_evidence_only", ...
+        localTernary(~isempty(altExisting), "alternative_evidence_unusable", "runtime_rows_missing")));
     rows(i).plot_render_status = localTernary(plotMissing == "", "not_applicable_or_rendered", "missing_required_plot");
 end
 T = struct2table(rows);
@@ -6390,7 +6401,119 @@ if isempty(paths)
 end
 tf = false;
 for i = 1:numel(paths)
-    if localArtifactExists(runFolder, string(paths(i)))
+    if localAlternativeEvidenceUsable(runFolder, outName, string(paths(i)))
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = localAlternativeEvidenceUsable(runFolder, outName, logicalPath)
+% A registered alternative is evidence only when its values are inspectable
+% and usable.  File existence alone must never promote a header-only schema
+% or an explicit unavailable/status row into runtime evidence.
+tf = false;
+logicalPath = string(logicalPath);
+if ~localArtifactExists(runFolder, logicalPath)
+    return;
+end
+
+pathStr = fullfile(runFolder, char(logicalPath));
+[~, ~, ext] = fileparts(char(logicalPath));
+if ~strcmpi(ext, ".csv")
+    if exist(pathStr, "file") == 2
+        info = dir(pathStr);
+        tf = ~isempty(info) && double(info(1).bytes) > 0;
+    end
+    return;
+end
+
+% Fail closed for store-only CSVs because this exporter cannot inspect
+% their rows here.  A materialized filesystem copy is required for a
+% value-backed substitution claim.
+if exist(pathStr, "file") ~= 2
+    return;
+end
+T = localReadOptionalTable(pathStr);
+if ~istable(T) || height(T) == 0
+    return;
+end
+
+switch string(outName)
+    case "prach_correlation_peak_plot"
+        if contains(lower(logicalPath), "prach_correlation_trace")
+            lag = localNumericTableColumn(T, "lag_samples");
+            corr = localNumericTableColumn(T, "correlation_abs");
+            tf = ~isempty(lag) && ~isempty(corr) && any(isfinite(lag) & isfinite(corr));
+            return;
+        end
+    case "antenna_radiation_pattern_plot"
+        rows = localNumericTableColumn(T, "NumRows");
+        cols = localNumericTableColumn(T, "NumCols");
+        elements = localNumericTableColumn(T, "NumElements");
+        tf = ~isempty(rows) && ~isempty(cols) && ~isempty(elements) && ...
+            any(isfinite(rows) & rows > 0 & isfinite(cols) & cols > 0 & ...
+            isfinite(elements) & elements > 0);
+        return;
+end
+
+if localAllRowsExplicitlyUnavailable(T)
+    return;
+end
+tf = true;
+end
+
+function values = localNumericTableColumn(T, requestedName)
+values = [];
+names = string(T.Properties.VariableNames);
+idx = find(strcmpi(names, string(requestedName)), 1, "first");
+if isempty(idx)
+    return;
+end
+raw = T.(T.Properties.VariableNames{idx});
+if isnumeric(raw) || islogical(raw)
+    values = double(raw(:));
+else
+    values = str2double(string(raw(:)));
+end
+end
+
+function tf = localAllRowsExplicitlyUnavailable(T)
+tf = false;
+names = string(T.Properties.VariableNames);
+
+coverageIdx = find(strcmpi(names, "CountsTowardCoverage"), 1, "first");
+if ~isempty(coverageIdx)
+    raw = T.(T.Properties.VariableNames{coverageIdx});
+    if islogical(raw) || isnumeric(raw)
+        covered = logical(raw(:));
+    else
+        txt = lower(strtrim(string(raw(:))));
+        covered = txt == "1" | txt == "true" | txt == "yes";
+    end
+    if ~any(covered)
+        tf = true;
+        return;
+    end
+end
+
+statusCandidates = ["Availability", "TruthStatus", "truth_status", ...
+    "RuntimeMaterializationStatus", "VisualValidity", "PlotRenderStatus", "Status"];
+for candidate = statusCandidates
+    idx = find(strcmpi(names, candidate), 1, "first");
+    if isempty(idx)
+        continue;
+    end
+    values = lower(strtrim(string(T.(T.Properties.VariableNames{idx}))));
+    values = values(~ismissing(values) & strlength(values) > 0);
+    if isempty(values)
+        continue;
+    end
+    unavailable = startsWith(values, "unavailable") | startsWith(values, "not_available") | ...
+        startsWith(values, "not_emitted") | startsWith(values, "not_exercised") | ...
+        startsWith(values, "disabled") | startsWith(values, "schema_only") | ...
+        startsWith(values, "suppressed") | values == "missing" | values == "config_only";
+    if all(unavailable)
         tf = true;
         return;
     end
