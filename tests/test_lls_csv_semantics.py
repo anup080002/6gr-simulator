@@ -44,6 +44,7 @@ def _frc_point_row() -> dict[str, str]:
         "DeliveredTransportBlocks": "4",
         "FailedTransportBlocks": "0",
         "Transmissions": "5",
+        "FailedTransmissionAttempts": "1",
         "PointEstimatePass": "1",
         "ObservedConfidenceBoundSupportsPass": "1",
         "ConfidenceSupportsPass": "0",

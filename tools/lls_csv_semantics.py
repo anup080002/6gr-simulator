@@ -696,7 +696,8 @@ def _audit_frc_point_table(
         "RequiredPoint", "ExperimentSeed", "MetricEstimate", "ConfidenceLower",
         "ConfidenceUpper", "OneSidedLower", "OneSidedUpper",
         "TransportBlocks", "DeliveredTransportBlocks", "FailedTransportBlocks",
-        "Transmissions", "PointEstimatePass", "ConfidenceSupportsPass",
+        "Transmissions", "FailedTransmissionAttempts",
+        "PointEstimatePass", "ConfidenceSupportsPass",
         "ObservedConfidenceBoundSupportsPass",
         "ConfidenceQualificationEligible", "ConfidenceMethod", "StopReason",
         "StandardDocument", "StandardVersion", "StandardRelease",
@@ -785,12 +786,15 @@ def _audit_frc_point_table(
         delivered = _number(row, "DeliveredTransportBlocks")
         failed = _number(row, "FailedTransportBlocks")
         transmissions = _number(row, "Transmissions")
+        failed_attempts = _number(row, "FailedTransmissionAttempts")
         if not (
             _whole(_number(row, "ExperimentSeed"))
             and
             _whole(tb, 1) and _whole(delivered) and _whole(failed)
             and _whole(transmissions, 1)
             and delivered + failed == tb and transmissions >= tb
+            and _whole(failed_attempts)
+            and failed_attempts == transmissions - delivered
         ):
             value_failures.append(prefix + ":transport_block_arithmetic_mismatch")
 
@@ -886,7 +890,9 @@ def _audit_frc_summary_table(
         "ExperimentSeed",
         "ExecutionAttempted", "DataChannelExact", "FullStandardExecutionExact",
         "StatisticallyQualified", "OneSidedReferencePass", "RequiredSNR_dB",
-        "MeasuredSNR_dB", "Delta_dB", "TransportBlocks", "BlockErrors",
+        "MeasuredSNR_dB", "Delta_dB", "MeasuredSNRAvailable",
+        "CrossingStatus", "TransportBlocks", "BlockErrors", "Transmissions",
+        "FailedTransmissionAttempts",
         "Pass", "Status", "EvidenceClass", "CatalogSHA256",
         "FailureIdentifier", "FailureReason",
     }
@@ -903,6 +909,8 @@ def _audit_frc_summary_table(
         reference_pass = _boolean(row, "OneSidedReferencePass")
         tb = _number(row, "TransportBlocks")
         block_errors = _number(row, "BlockErrors")
+        transmissions = _number(row, "Transmissions")
+        failed_attempts = _number(row, "FailedTransmissionAttempts")
         if not (
             all(_text(row, name) for name in ("EntryId", "FRC", "Condition"))
             and profile in {"diagnostic", "full"}
@@ -912,6 +920,9 @@ def _audit_frc_summary_table(
             and _whole(_number(row, "ExperimentSeed"))
             and _whole(tb, 1) and _whole(block_errors)
             and block_errors <= tb
+            and _whole(transmissions, 1) and transmissions >= tb
+            and _whole(failed_attempts)
+            and failed_attempts == transmissions - (tb - block_errors)
             and _number(row, "RequiredSNR_dB") is not None
             and len(_text(row, "CatalogSHA256")) == 64
         ):
@@ -926,6 +937,12 @@ def _audit_frc_summary_table(
             failures.append(prefix + ":diagnostic_promoted_to_qualification")
         measured = _number(row, "MeasuredSNR_dB")
         delta = _number(row, "Delta_dB")
+        measured_available = _boolean(row, "MeasuredSNRAvailable")
+        crossing_status = _text(row, "CrossingStatus")
+        if not crossing_status or measured_available is not (
+            measured is not None and delta is not None
+        ):
+            failures.append(prefix + ":crossing_availability_disclosure_mismatch")
         if (measured is None) != (delta is None):
             failures.append(prefix + ":crossing_delta_partial")
         elif measured is not None and not _close(
@@ -954,6 +971,7 @@ def _audit_frc_progress_table(
         "ExperimentSeed",
         "CompletedTransportBlocks", "MaxTransportBlocks",
         "DeliveredTransportBlocks", "FailedTransportBlocks", "Transmissions",
+        "FailedTransmissionAttempts",
         "MetricEstimate", "ConfidenceLower", "ConfidenceUpper",
         "OneSidedLower", "OneSidedUpper", "ConfidenceMethod",
         "ConfidenceHalfWidth", "Status", "StopReason",
@@ -972,6 +990,7 @@ def _audit_frc_progress_table(
         delivered = _number(row, "DeliveredTransportBlocks")
         failed = _number(row, "FailedTransportBlocks")
         transmissions = _number(row, "Transmissions")
+        failed_attempts = _number(row, "FailedTransmissionAttempts")
         estimate = _number(row, "MetricEstimate")
         lower = _number(row, "ConfidenceLower")
         upper = _number(row, "ConfidenceUpper")
@@ -980,6 +999,8 @@ def _audit_frc_progress_table(
             and _whole(_number(row, "ExperimentSeed"))
             and _whole(delivered) and _whole(failed) and delivered + failed == completed
             and _whole(transmissions, 1) and transmissions >= completed
+            and _whole(failed_attempts)
+            and failed_attempts == transmissions - delivered
             and estimate is not None and lower is not None and upper is not None
             and 0 <= lower <= estimate <= upper <= 1
             and _text(row, "ApproximationMode").lower() == "none"
@@ -1083,6 +1104,8 @@ def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
             if not (
                 _close(_number(summary_row, "TransportBlocks"), _number(row, "TransportBlocks"), atol=0)
                 and _close(_number(summary_row, "BlockErrors"), _number(row, "FailedTransportBlocks"), atol=0)
+                and _close(_number(summary_row, "Transmissions"), _number(row, "Transmissions"), atol=0)
+                and _close(_number(summary_row, "FailedTransmissionAttempts"), _number(row, "FailedTransmissionAttempts"), atol=0)
                 and _close(_number(summary_row, "RequiredSNR_dB"), _number(row, "RequiredSNR_dB"), atol=1e-12)
                 and _close(_number(summary_row, "ExperimentSeed"), _number(row, "ExperimentSeed"), atol=0)
             ):
@@ -1096,6 +1119,8 @@ def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
                 _close(_number(progress_row, "CompletedTransportBlocks"), _number(row, "TransportBlocks"), atol=0)
                 and _close(_number(progress_row, "DeliveredTransportBlocks"), _number(row, "DeliveredTransportBlocks"), atol=0)
                 and _close(_number(progress_row, "FailedTransportBlocks"), _number(row, "FailedTransportBlocks"), atol=0)
+                and _close(_number(progress_row, "Transmissions"), _number(row, "Transmissions"), atol=0)
+                and _close(_number(progress_row, "FailedTransmissionAttempts"), _number(row, "FailedTransmissionAttempts"), atol=0)
                 and _close(_number(progress_row, "MetricEstimate"), _number(row, "MetricEstimate"), atol=1e-12)
                 and _close(_number(progress_row, "ExperimentSeed"), _number(row, "ExperimentSeed"), atol=0)
             ):
