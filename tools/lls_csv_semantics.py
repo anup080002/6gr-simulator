@@ -697,6 +697,7 @@ def _audit_frc_point_table(
         "ConfidenceUpper", "OneSidedLower", "OneSidedUpper",
         "TransportBlocks", "DeliveredTransportBlocks", "FailedTransportBlocks",
         "Transmissions", "PointEstimatePass", "ConfidenceSupportsPass",
+        "ObservedConfidenceBoundSupportsPass",
         "ConfidenceQualificationEligible", "ConfidenceMethod", "StopReason",
         "StandardDocument", "StandardVersion", "StandardRelease",
         "StandardSourceURL", "FRCDefinitionClause", "FRCDefinitionTable",
@@ -753,6 +754,28 @@ def _audit_frc_point_table(
             and 0 <= one_lower <= estimate <= one_upper <= 1
         ):
             value_failures.append(prefix + ":invalid_metric_or_confidence_order")
+        if (
+            target is not None and estimate is not None and one_lower is not None
+            and _text(row, "Metric").lower() == "fraction_max_throughput"
+        ):
+            point_pass = _boolean(row, "PointEstimatePass")
+            observed_bound_pass = _boolean(
+                row, "ObservedConfidenceBoundSupportsPass"
+            )
+            qualification_eligible = _boolean(
+                row, "ConfidenceQualificationEligible"
+            )
+            qualification_bound_pass = _boolean(row, "ConfidenceSupportsPass")
+            if point_pass is not (estimate >= target):
+                value_failures.append(prefix + ":point_estimate_pass_mismatch")
+            if observed_bound_pass is not (one_lower >= target):
+                value_failures.append(prefix + ":observed_confidence_bound_pass_mismatch")
+            if qualification_bound_pass is not (
+                observed_bound_pass is True and qualification_eligible is True
+            ):
+                value_failures.append(
+                    prefix + ":qualification_confidence_gate_mismatch"
+                )
         required_point = _boolean(row, "RequiredPoint")
         if required_snr is not None and snr is not None and (
             required_point is not (abs(required_snr - snr) <= 1e-10)
