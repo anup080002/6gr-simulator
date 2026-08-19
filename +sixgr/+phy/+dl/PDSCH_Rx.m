@@ -315,7 +315,7 @@ localAssertCalibrationCodingLayoutMatchesPlan( ...
     opt.CodingLayout, codingPlans);
 [rxWaveform, trackingCorrection, timingResolution, syncState] = ...
     localApplyCalibrationReceiverTracking( ...
-    rxWaveform, carrier, cfg, opt);
+    rxWaveform, carrier, pdsch, cfg, opt);
 opt.RuntimeTrackingCorrection = trackingCorrection;
 opt.RuntimeTimingResolution = timingResolution;
 opt.RuntimeSynchronizationState = syncState;
@@ -2659,12 +2659,23 @@ end
 
 function [rxWaveform, tracking, timingResolution, syncState] = ...
         localApplyCalibrationReceiverTracking( ...
-        rxWaveform, carrier, cfg, opt)
+        rxWaveform, carrier, pdsch, cfg, opt)
 tracking = localResolveReceiverTrackingCorrection( ...
     opt.ReceiverTrackingState, cfg);
 sampleRateHz = localCarrierSampleRateHz(carrier);
 knownTimingDelaySamples = localResolveKnownTimingDelaySamples( ...
     cfg, tracking, sampleRateHz);
+
+% A calibration waveform is still a receiver waveform: a configured CFO
+% must be estimated from received samples, not copied from the impairment
+% configuration.  The UL truth receiver already owns this acquisition
+% boundary.  Keep the DL calibration facade on the same measured contract
+% so an FRC with nonzero frequency offset cannot silently execute with an
+% unavailable tracking state.
+if ~logical(tracking.CFOEstimateAvailable)
+    tracking = localEstimateCalibrationReceiverCFO( ...
+        rxWaveform, carrier, pdsch, cfg, sampleRateHz, tracking);
+end
 
 if logical(tracking.CFOEstimateAvailable) ...
         && isfinite(double(tracking.EstimatedCFO_Hz)) ...
@@ -2674,6 +2685,17 @@ if logical(tracking.CFOEstimateAvailable) ...
     tracking.CFOCorrectionApplied = true;
     tracking.CFOCorrectionApplied_Hz = ...
         double(tracking.EstimatedCFO_Hz);
+    try
+        [~, correctedOFDMInfo] = ...
+            sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
+        tracking = localEstimateResidualCFOAfterCorrection( ...
+            rxWaveform, correctedOFDMInfo, sampleRateHz, tracking, ...
+            "cyclic_prefix_post_calibration_receiver_correction");
+    catch
+        tracking.ResidualCFOEstimate_Hz = NaN;
+        tracking.ResidualCFOEstimateSource = ...
+            "cyclic_prefix_post_calibration_receiver_correction_failed";
+    end
 elseif logical(tracking.CFOEstimateAvailable)
     tracking.CFONAReason = ...
         "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
@@ -2739,6 +2761,74 @@ syncState = sixgr.phy.sync.resolveSynchronizationState( ...
     "FrequencySource", string(tracking.Source), ...
     "TrackingState", string(tracking.TrackingState), ...
     "TrackingAgeSlots", double(tracking.AgeSlots));
+end
+
+function tracking = localEstimateCalibrationReceiverCFO( ...
+        rxWaveform, carrier, pdsch, cfg, sampleRateHz, tracking)
+enabled = logical(sixgr.util.structGet(cfg, ...
+    "phy.rx.cfoCorrectionEnabled", ...
+    sixgr.util.structGet(cfg, ...
+    "phy.impairments.cfoCorrectionEnabled", false)));
+if ~enabled
+    tracking.Status = "not_available";
+    tracking.Source = "receiver_cfo_correction_disabled_by_config";
+    tracking.NAReason = "cfo_correction_disabled_by_config";
+    tracking.CFONAReason = tracking.NAReason;
+    return;
+end
+
+method = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.impairments.cfoEstimationMethod", "cyclic_prefix"))));
+estimateHz = NaN;
+estimateAvailable = false;
+estimateSource = method;
+estimateStatus = "not_evaluated";
+try
+    [rxGrid, ofdmInfo] = ...
+        sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
+    if any(method == ["dmrs_two_symbol", "dmrs", ...
+            "reference_symbol_phase_slope"])
+        dmrsIndices = nrPDSCHDMRSIndices(carrier, pdsch);
+        dmrsSymbols = nrPDSCHDMRS(carrier, pdsch);
+        [estimateHz, estimateInfo] = ...
+            sixgr.phy.rx.estimateCFOFromReferenceSymbols( ...
+            rxGrid, dmrsIndices, dmrsSymbols, carrier, sampleRateHz);
+        estimateAvailable = logical(sixgr.util.structGet( ...
+            estimateInfo, "EstimateAvailable", false));
+        estimateSource = "pdsch_dmrs_reference_symbol_phase_slope";
+        estimateStatus = string(sixgr.util.structGet( ...
+            estimateInfo, "Status", "not_available"));
+    elseif any(method == ["cyclic_prefix", "cp"])
+        [estimateHz, estimateInfo] = ...
+            sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
+            rxWaveform, ofdmInfo, sampleRateHz);
+        estimateAvailable = logical(sixgr.util.structGet( ...
+            estimateInfo, "EstimateAvailable", false));
+        estimateSource = "cyclic_prefix_cfo_estimator";
+        estimateStatus = string(sixgr.util.structGet( ...
+            estimateInfo, "Status", "not_available"));
+    else
+        estimateStatus = "unsupported_or_disabled_cfo_estimation_method";
+    end
+catch ME
+    estimateStatus = "cfo_estimation_failed:" + string(ME.identifier);
+end
+
+if estimateAvailable && isfinite(double(estimateHz))
+    tracking.CFOEstimateAvailable = true;
+    tracking.EstimatedCFO_Hz = double(estimateHz);
+    tracking.Source = char(estimateSource);
+    tracking.Status = "available";
+    tracking.NAReason = "";
+    tracking.CFONAReason = "";
+else
+    tracking.CFOEstimateAvailable = false;
+    tracking.EstimatedCFO_Hz = NaN;
+    tracking.Source = char(estimateSource);
+    tracking.Status = "not_available";
+    tracking.NAReason = char(estimateStatus);
+    tracking.CFONAReason = char(estimateStatus);
+end
 end
 
 function [csirsInd, csirsSym, csirsInfo, obs] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt)
