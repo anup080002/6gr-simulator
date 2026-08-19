@@ -446,6 +446,7 @@ nested_sections:
       confidence_level: {required: true, type: number, min_exclusive: 0, max_exclusive: 1}
       max_confidence_half_width: {required: true, type: number, min_exclusive: 0}
       require_symmetric_regression_for_production: {required: true, type: boolean}
+      seed: {required: true, type: integer, min: 0}
       parallel_workers: {required: true, type: integer, min: 0}
       min_transport_blocks: {required: true, type: integer, min: 1}
       max_transport_blocks: {required: true, type: integer, min: 1}
@@ -458,6 +459,7 @@ nested_sections:
       entry_id: {required: true, type: string, nonempty: true}
       parallel_workers: {required: false, type: integer, min: 0}
       channel_chunk_slots: {required: false, type: integer, min: 0}
+      seed: {required: false, type: integer, min: 0}
       min_transport_blocks: {required: true, type: integer, min: 1}
       max_transport_blocks: {required: true, type: integer, min: 1}
       batch_size: {required: true, type: integer, min: 1}

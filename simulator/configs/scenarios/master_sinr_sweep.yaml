@@ -1647,6 +1647,7 @@ validation:
     # symmetric +/- tolerance crossing remains available as a separate
     # engineering diagnostic and is not a conformance requirement.
     require_symmetric_regression_for_production: false
+    seed: 38104
     parallel_workers: 4
     min_transport_blocks: 1000
     max_transport_blocks: 10000

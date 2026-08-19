@@ -693,7 +693,7 @@ def _audit_frc_point_table(
     required_columns = {
         "EntryId", "FRC", "Condition", "Direction", "PhysicalChannel",
         "Profile", "Metric", "RequiredSNR_dB", "TargetFraction", "SNR_dB",
-        "RequiredPoint", "MetricEstimate", "ConfidenceLower",
+        "RequiredPoint", "ExperimentSeed", "MetricEstimate", "ConfidenceLower",
         "ConfidenceUpper", "OneSidedLower", "OneSidedUpper",
         "TransportBlocks", "DeliveredTransportBlocks", "FailedTransportBlocks",
         "Transmissions", "PointEstimatePass", "ConfidenceSupportsPass",
@@ -786,6 +786,8 @@ def _audit_frc_point_table(
         failed = _number(row, "FailedTransportBlocks")
         transmissions = _number(row, "Transmissions")
         if not (
+            _whole(_number(row, "ExperimentSeed"))
+            and
             _whole(tb, 1) and _whole(delivered) and _whole(failed)
             and _whole(transmissions, 1)
             and delivered + failed == tb and transmissions >= tb
@@ -881,6 +883,7 @@ def _audit_frc_summary_table(
 ) -> list[AuditCheck]:
     required_columns = {
         "EntryId", "FRC", "Condition", "Required", "Profile",
+        "ExperimentSeed",
         "ExecutionAttempted", "DataChannelExact", "FullStandardExecutionExact",
         "StatisticallyQualified", "OneSidedReferencePass", "RequiredSNR_dB",
         "MeasuredSNR_dB", "Delta_dB", "TransportBlocks", "BlockErrors",
@@ -906,6 +909,7 @@ def _audit_frc_summary_table(
             and _boolean(row, "Required") is True
             and _boolean(row, "ExecutionAttempted") is True
             and _boolean(row, "DataChannelExact") is True
+            and _whole(_number(row, "ExperimentSeed"))
             and _whole(tb, 1) and _whole(block_errors)
             and block_errors <= tb
             and _number(row, "RequiredSNR_dB") is not None
@@ -947,6 +951,7 @@ def _audit_frc_progress_table(
 ) -> list[AuditCheck]:
     required_columns = {
         "EntryId", "FRC", "Condition", "SNR_dB", "SNRSeedIndex",
+        "ExperimentSeed",
         "CompletedTransportBlocks", "MaxTransportBlocks",
         "DeliveredTransportBlocks", "FailedTransportBlocks", "Transmissions",
         "MetricEstimate", "ConfidenceLower", "ConfidenceUpper",
@@ -972,6 +977,7 @@ def _audit_frc_progress_table(
         upper = _number(row, "ConfidenceUpper")
         if not (
             _whole(completed, 1) and _whole(maximum, 1) and completed <= maximum
+            and _whole(_number(row, "ExperimentSeed"))
             and _whole(delivered) and _whole(failed) and delivered + failed == completed
             and _whole(transmissions, 1) and transmissions >= completed
             and estimate is not None and lower is not None and upper is not None
@@ -1078,6 +1084,7 @@ def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
                 _close(_number(summary_row, "TransportBlocks"), _number(row, "TransportBlocks"), atol=0)
                 and _close(_number(summary_row, "BlockErrors"), _number(row, "FailedTransportBlocks"), atol=0)
                 and _close(_number(summary_row, "RequiredSNR_dB"), _number(row, "RequiredSNR_dB"), atol=1e-12)
+                and _close(_number(summary_row, "ExperimentSeed"), _number(row, "ExperimentSeed"), atol=0)
             ):
                 reconcile_failures.append(f"entry={entry}:summary_point_mismatch")
     if point_rows and progress_rows:
@@ -1090,6 +1097,7 @@ def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
                 and _close(_number(progress_row, "DeliveredTransportBlocks"), _number(row, "DeliveredTransportBlocks"), atol=0)
                 and _close(_number(progress_row, "FailedTransportBlocks"), _number(row, "FailedTransportBlocks"), atol=0)
                 and _close(_number(progress_row, "MetricEstimate"), _number(row, "MetricEstimate"), atol=1e-12)
+                and _close(_number(progress_row, "ExperimentSeed"), _number(row, "ExperimentSeed"), atol=0)
             ):
                 reconcile_failures.append(f"entry={entry}:progress_point_mismatch")
     if point_rows:

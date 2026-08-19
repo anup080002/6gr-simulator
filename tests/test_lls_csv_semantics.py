@@ -34,6 +34,7 @@ def _frc_point_row() -> dict[str, str]:
         "TargetFraction": "0.7",
         "SNR_dB": "15.6",
         "RequiredPoint": "1",
+        "ExperimentSeed": "38104",
         "MetricEstimate": "0.8",
         "ConfidenceLower": "0.741744938411775",
         "ConfidenceUpper": "0.897599323883307",

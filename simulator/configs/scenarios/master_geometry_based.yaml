@@ -1610,6 +1610,7 @@ validation:
     confidence_level: 0.95
     max_confidence_half_width: 0.01
     require_symmetric_regression_for_production: false
+    seed: 38104
     parallel_workers: 4
     min_transport_blocks: 1000
     max_transport_blocks: 10000
