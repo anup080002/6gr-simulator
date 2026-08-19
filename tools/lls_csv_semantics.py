@@ -163,6 +163,7 @@ DOMAIN_RUNTIME_EXACT = {
     "reports/csv/prach_correlation_trace.csv",
     "reports/csv/prach_correlation_traces.csv",
     "reports/csv/result_issue_registry.csv",
+    "reports/csv/truth_contract_failures.csv",
     "reports/csv/unavailable_plot_card_registry.csv",
 }
 IDENTITY_COLUMNS = (
@@ -1963,12 +1964,61 @@ def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bo
         "reports/csv/unavailable_plot_card_registry.csv",
     }:
         return True
+    if relative == "reports/csv/truth_contract_failures.csv":
+        return _evaluated_empty_truth_contract_failures_is_valid(run_root)
     if relative in {
         "reports/csv/active_issue_gate_summary.csv",
         "reports/csv/result_issue_registry.csv",
     }:
         return _evaluated_empty_issue_registry_is_valid(relative, run_root)
     return False
+
+
+def _evaluated_empty_truth_contract_failures_is_valid(run_root: Path) -> bool:
+    """Accept an empty failure ledger only when both verdict authorities pass.
+
+    A header-only failure table is positive zero-event evidence only when the
+    independently persisted scenario status and truth-contract summary agree
+    on the same run identity and explicitly report zero failures.  Merely
+    naming a table ``truth_contract_failures`` never makes it valid.
+    """
+
+    _summary_header, summary_rows = _read_rows(
+        run_root / "reports/csv/scenario_summary.csv"
+    )
+    _truth_header, truth_rows = _read_rows(
+        run_root / "reports/csv/truth_contract_summary.csv"
+    )
+    if len(summary_rows) != 1 or len(truth_rows) != 1:
+        return False
+    summary = summary_rows[0]
+    truth = truth_rows[0]
+    if _boolean(summary, "ResultOk") is not True:
+        return False
+    if _boolean(summary, "RuntimeTruthContractOk") is not True:
+        return False
+    if _boolean(summary, "TruthContractOk") is not True:
+        return False
+    if _boolean(truth, "ResultOk") is not True:
+        return False
+    if _boolean(truth, "RuntimeTruthContractOk") is not True:
+        return False
+    zero_fields = (
+        "StrictTruthFailureCount",
+        "StrictProxyGuardFailureCount",
+        "CanonicalArtifactGapCount",
+        "RoundtripMismatchCount",
+        "RequiredRuntimeEvidenceMissingCount",
+    )
+    for field in zero_fields:
+        if _number(truth, field) != 0:
+            return False
+    for field in ("ScenarioID", "ConfigHash"):
+        summary_value = _text(summary, field).strip().lower()
+        truth_value = _text(truth, field).strip().lower()
+        if not summary_value or summary_value != truth_value:
+            return False
+    return True
 
 
 def _evaluated_empty_issue_registry_is_valid(relative: str, run_root: Path) -> bool:

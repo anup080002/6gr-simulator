@@ -605,6 +605,56 @@ def test_failed_truth_contract_cannot_publish_empty_issue_registries(
     assert "reports/csv/result_issue_registry.csv" in failed
 
 
+def test_empty_truth_contract_failure_ledger_requires_matching_pass_receipts(
+    tmp_path: Path,
+) -> None:
+    scenario_id = "truth-zero-event"
+    config_hash = "a" * 64
+    failure_path = tmp_path / "reports/csv/truth_contract_failures.csv"
+    failure_path.parent.mkdir(parents=True, exist_ok=True)
+    failure_path.write_text("FailureCode,Reason\n", encoding="utf-8")
+    summary = {
+        "ScenarioID": scenario_id,
+        "ConfigHash": config_hash,
+        "ResultOk": "1",
+        "RuntimeTruthContractOk": "1",
+        "TruthContractOk": "1",
+    }
+    _write_rows(tmp_path / "reports/csv/scenario_summary.csv", [summary])
+    _write_rows(
+        tmp_path / "reports/csv/truth_contract_summary.csv",
+        [{
+            "ScenarioID": scenario_id,
+            "ConfigHash": config_hash,
+            "ResultOk": "1",
+            "RuntimeTruthContractOk": "1",
+            "StrictTruthFailureCount": "0",
+            "StrictProxyGuardFailureCount": "0",
+            "CanonicalArtifactGapCount": "0",
+            "RoundtripMismatchCount": "0",
+            "RequiredRuntimeEvidenceMissingCount": "0",
+        }],
+    )
+    checks = _audit_domain_runtime_tables(tmp_path, summary)
+    check = next(
+        item for item in checks
+        if item.artifact_path == "reports/csv/truth_contract_failures.csv"
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert check.required and check.evaluated and check.passed
+
+    summary["ResultOk"] = "0"
+    _write_rows(tmp_path / "reports/csv/scenario_summary.csv", [summary])
+    failed_checks = _audit_domain_runtime_tables(tmp_path, summary)
+    failed = next(
+        item for item in failed_checks
+        if item.artifact_path == "reports/csv/truth_contract_failures.csv"
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert failed.required and failed.evaluated and not failed.passed
+    assert "missing_runtime_rows" in failed.details
+
+
 def test_evaluated_empty_issue_registries_are_valid_with_canonical_receipts(
     tmp_path: Path,
 ) -> None:
