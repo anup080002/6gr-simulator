@@ -15176,6 +15176,9 @@ if ~logical(sixgr.util.structGet(multiUser, "Enabled", false)) && ...
         "BeamIndexSet", "", ...
         "BeamformingApplied", false, ...
         "PrecoderSource", "none"));
+    if string(sixgr.util.structGet(multiUser, "ExecutionModel", "")) ~= "slot_coupled_truth"
+        cfgU = sixgr.truth.attachFixedLinkRuntimeAntennaContext(cfgU, 1, 1);
+    end
     return;
 end
 
@@ -15227,6 +15230,10 @@ if ~isempty(W)
         cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.nPorts", size(W, 1));
     end
     cfgU.phy.nTxAnt = size(W, 1);
+end
+if string(sixgr.util.structGet(multiUser, "ExecutionModel", "")) ~= "slot_coupled_truth"
+    cfgU = sixgr.truth.attachFixedLinkRuntimeAntennaContext( ...
+        cfgU, double(userIdx), max(1, round(double(multiUser.NumUsers))));
 end
 end
 

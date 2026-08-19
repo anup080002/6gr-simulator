@@ -92,7 +92,14 @@ classdef AntennaArrayFactory
                     if nRow >= 2 && nCol >= 2
                         arrObj = phased.URA("Size",[nRow nCol], "ElementSpacing", d, "Element", elemObj);
                     elseif nRow == 1 && nCol == 1
-                        arrObj = phased.ULA("NumElements", 1, "ElementSpacing", d(1), "Element", elemObj);
+                        % phased.ULA requires at least two elements.  A
+                        % conducted 1x1 link is still a real one-element
+                        % array, represented without inventing a second
+                        % inactive element.
+                        arrObj = phased.ConformalArray( ...
+                            "Element", elemObj, ...
+                            "ElementPosition", [0; 0; 0], ...
+                            "ElementNormal", [0; 0]);
                     elseif nRow == 1
                         arrObj = phased.ULA("NumElements", nCol, "ElementSpacing", d(2), "Element", elemObj);
                     else

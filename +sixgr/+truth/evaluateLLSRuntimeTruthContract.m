@@ -76,6 +76,17 @@ if isProxyOnlyStudy
         verdict.Failures = "root_result_status_failed:" + rootReason;
         verdict.StrictTruthFailureCount = 1;
     end
+    % The first root reduction can discover terminal gates (for example a
+    % visual-integrity failure) that were not present in the incoming
+    % runtime verdict.  Persist the resulting truth verdict, then reduce
+    % the root once more from that finalized verdict.  Without this second
+    % phase result_status_summary.csv could retain TruthContractOk=true
+    % while truth_contract_summary.csv correctly reported false.
+    localWriteTruthContractArtifacts(layout, runFolder, scfg, cfg, verdict);
+    rootStatus = sixgr.truth.evaluateStrictAnchorStatus( ...
+        runFolder, scfg, cfg, verdict, table(), table(), struct());
+    verdict.CheckDetails.RootStatus = rootStatus;
+    verdict.ResultStatus = sixgr.util.structGet(rootStatus, "Status", struct());
     localWriteTruthContractArtifacts(layout, runFolder, scfg, cfg, verdict);
     return;
 end
@@ -580,6 +591,16 @@ verdict.ResultStatus = rootStatus.Status;
 verdict.StrictTruthFailureCount = numel(verdict.Failures);
 verdict.Ok = rootResultOk && verdict.StrictTruthFailureCount == 0;
 verdict.RuntimeTruthContractOk = verdict.Ok;
+% Root reduction is intentionally two-phase.  The preliminary reduction
+% above is allowed to discover terminal evidence failures and add them to
+% the runtime verdict.  Publish that finalized verdict first, then rebuild
+% the canonical root status from it so the two status artifacts cannot
+% disagree about TruthContractOk/RuntimeTruthContractOk.
+localWriteTruthContractArtifacts(layout, runFolder, scfg, cfg, verdict);
+rootStatus = sixgr.truth.evaluateStrictAnchorStatus( ...
+    runFolder, scfg, cfg, verdict, dlTrials, ulTrials, opSummary);
+verdict.CheckDetails.RootStatus = rootStatus;
+verdict.ResultStatus = sixgr.util.structGet(rootStatus, "Status", struct());
 localWriteTruthContractArtifacts(layout, runFolder, scfg, cfg, verdict);
 end
 

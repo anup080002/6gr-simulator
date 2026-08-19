@@ -605,6 +605,68 @@ def test_failed_truth_contract_cannot_publish_empty_issue_registries(
     assert "reports/csv/result_issue_registry.csv" in failed
 
 
+def test_evaluated_empty_issue_registries_are_valid_with_canonical_receipts(
+    tmp_path: Path,
+) -> None:
+    run_id = "evaluated-empty-run"
+    config_hash = "a" * 64
+    _write_rows(
+        tmp_path / "reports/csv/truth_contract_failures.csv",
+        [{"FailureCode": "visual_artifact_integrity", "Reason": "terminal visual gate"}],
+    )
+    for name in ("active_issue_gate_summary.csv", "result_issue_registry.csv"):
+        path = tmp_path / "reports/csv" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("IssueCode,Reason\n", encoding="utf-8")
+    _write_rows(
+        tmp_path / "reports/csv/result_issue_registry_evaluation.csv",
+        [{
+            "RunId": run_id,
+            "ScenarioId": "fixed",
+            "ConfigHash": config_hash,
+            "EvaluationStatus": "EVALUATED",
+            "IssueRowCount": "0",
+            "SourceTableCount": "11",
+            "RuntimeSourceRowCount": "240",
+            "Evaluator": "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildResultIssueRegistry",
+            "SchemaVersion": "result_issue_registry_evaluation_v1",
+            "EvaluatedSources": "DLTrials|ULTrials",
+        }],
+    )
+    active_summary = {
+        "RunId": run_id,
+        "ActiveIssueGateOk": True,
+        "ActiveCriticalIssueCount": 0,
+        "ActiveHighIssueCount": 0,
+        "ActiveMediumIssueCount": 0,
+        "ActiveMandatoryIssueCount": 0,
+        "IssueRegistryStatus": "PASS",
+        "IssueRegistryRowCount": 0,
+        "IssueRegistryEvaluationValid": True,
+        "IssueRegistryEvaluationAudit": {
+            "ObservedRunId": run_id,
+            "ObservedConfigHash": config_hash,
+            "ObservedIssueRowCount": 0,
+            "EvaluationStatus": "EVALUATED",
+        },
+    }
+    summary_path = tmp_path / "reports/json/active_issue_gate_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(active_summary), encoding="utf-8")
+
+    checks = _audit_domain_runtime_tables(
+        tmp_path,
+        {"ScenarioID": "fixed", "ConfigHash": config_hash},
+    )
+    by_path = {
+        item.artifact_path: item
+        for item in checks
+        if item.check_id == "schema_and_runtime_rows"
+    }
+    assert by_path["reports/csv/active_issue_gate_summary.csv"].passed
+    assert by_path["reports/csv/result_issue_registry.csv"].passed
+
+
 def test_live_scenario_overview_requires_populated_radio_runtime_fields(
     tmp_path: Path,
 ) -> None:

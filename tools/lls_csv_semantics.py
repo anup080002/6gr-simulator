@@ -1947,10 +1947,11 @@ def _truthy_config(source: dict[str, Any], *paths: str) -> bool:
 def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bool:
     """Return true only for an explicitly event-driven zero-row table.
 
-    Failure/issue registries are zero-event tables only when the authoritative
-    truth-contract failure table is also empty.  This prevents a failed run
-    from publishing an empty issue registry and having the absence mistaken
-    for clean evidence.
+    Failure/issue registries are zero-event tables only when their canonical
+    evaluator receipt proves that all runtime sources were evaluated and
+    found zero issues.  A separate terminal gate (for example a visual gate)
+    can fail without manufacturing a PHY issue row, so the global truth
+    failure count is not the authority for this domain table.
     """
 
     if relative in {
@@ -1966,11 +1967,91 @@ def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bo
         "reports/csv/active_issue_gate_summary.csv",
         "reports/csv/result_issue_registry.csv",
     }:
-        _header, failures = _read_rows(
-            run_root / "reports/csv/truth_contract_failures.csv"
-        )
-        return not failures
+        return _evaluated_empty_issue_registry_is_valid(relative, run_root)
     return False
+
+
+def _evaluated_empty_issue_registry_is_valid(relative: str, run_root: Path) -> bool:
+    """Validate the fail-closed receipt for a genuinely empty issue registry."""
+
+    _header, receipts = _read_rows(
+        run_root / "reports/csv/result_issue_registry_evaluation.csv"
+    )
+    if len(receipts) != 1:
+        return False
+    receipt = receipts[0]
+    if _text(receipt, "EvaluationStatus").upper() != "EVALUATED":
+        return False
+    if _text(receipt, "SchemaVersion") != "result_issue_registry_evaluation_v1":
+        return False
+    if _text(receipt, "Evaluator") != (
+        "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildResultIssueRegistry"
+    ):
+        return False
+    if _number(receipt, "IssueRowCount") != 0:
+        return False
+    source_count = _number(receipt, "SourceTableCount")
+    runtime_row_count = _number(receipt, "RuntimeSourceRowCount")
+    if source_count is None or source_count < 1:
+        return False
+    if runtime_row_count is None or runtime_row_count < 1:
+        return False
+    run_id = _text(receipt, "RunId")
+    config_hash = _text(receipt, "ConfigHash").lower()
+    if not run_id or len(config_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in config_hash
+    ):
+        return False
+    if relative == "reports/csv/result_issue_registry.csv":
+        return True
+
+    summary_path = _io_path(
+        run_root / "reports/json/active_issue_gate_summary.json"
+    )
+    if not summary_path.is_file():
+        return False
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(summary, dict):
+        return False
+    if str(summary.get("RunId", "")).strip() != run_id:
+        return False
+    if summary.get("ActiveIssueGateOk") is not True:
+        return False
+    if str(summary.get("IssueRegistryStatus", "")).strip().upper() != "PASS":
+        return False
+    if summary.get("IssueRegistryEvaluationValid") is not True:
+        return False
+    numeric_zero_fields = (
+        "IssueRegistryRowCount",
+        "ActiveCriticalIssueCount",
+        "ActiveHighIssueCount",
+        "ActiveMediumIssueCount",
+        "ActiveMandatoryIssueCount",
+    )
+    for field in numeric_zero_fields:
+        try:
+            if float(summary.get(field, math.nan)) != 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+    audit = summary.get("IssueRegistryEvaluationAudit", {})
+    if not isinstance(audit, dict):
+        return False
+    if str(audit.get("ObservedRunId", "")).strip() != run_id:
+        return False
+    if str(audit.get("ObservedConfigHash", "")).strip().lower() != config_hash:
+        return False
+    if str(audit.get("EvaluationStatus", "")).strip().upper() != "EVALUATED":
+        return False
+    try:
+        if float(audit.get("ObservedIssueRowCount", math.nan)) != 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def primary_link_tables(run_root: Path) -> dict[str, str]:

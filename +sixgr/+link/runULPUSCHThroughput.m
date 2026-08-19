@@ -2817,10 +2817,13 @@ row.ToDSource = "runtime_slot_start_reference";
 row.ToASource = "runtime_geometry_plus_channel_path_delay";
 row.ToAEstimateSource = string(ternaryString(isfinite(toaEstimate_s), "receiver_timing_estimate_pre_correction", ""));
 row.ChannelDelaySource = string(channelDelaySource);
-row.AntennaGeometrySource = "CoupledTruthRuntime.applyUserContextImpl";
+row.AntennaGeometrySource = string(sixgr.util.structGet(userMeta, ...
+    "RuntimeAntennaGeometrySource", "CoupledTruthRuntime.applyUserContextImpl"));
 row.RuntimeTraceSource = "runULPUSCHThroughput_active_trial";
 row.AntennaEvidenceSource = "active_runtime_user_context";
-row.SameFlowEvidenceSource = "CoupledTruthRuntime.applyUserContextImpl->runULPUSCHThroughput";
+row.SameFlowEvidenceSource = string(sixgr.util.structGet(userMeta, ...
+    "RuntimeSameFlowEvidenceSource", ...
+    "CoupledTruthRuntime.applyUserContextImpl->runULPUSCHThroughput"));
 row.ChannelRealizationId = string(sixgr.util.structGet(replay, "ChannelRealizationId", ""));
 row.RuntimeChannelLinkKey = string(sixgr.util.structGet(replay, "RuntimeChannelLinkKey", ""));
 row.RuntimeChannelSeed = double(sixgr.util.structGet(replay, "RuntimeChannelSeed", NaN));

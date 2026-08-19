@@ -736,6 +736,20 @@ methods(Static)
         cells = sixgr.truth.CoupledTruthRuntime.createSchedulers( ...
             cfg, nCells, direction, harqEntity);
     end
+
+    function [bsRuntime, ueRuntime, resolvedT] = ...
+            buildRuntimeAntennaStateForFixedLink(cfg, layoutStruct, ue)
+        % Public reuse surface for fixed-link execution.  The implementation
+        % remains private so coupled and fixed-link modes cannot diverge into
+        % separate antenna factories.
+        [bsRuntime, ueRuntime, resolvedT] = ...
+            sixgr.truth.CoupledTruthRuntime.buildRuntimeAntennaState( ...
+            cfg, layoutStruct, ue);
+    end
+
+    function mode = resolveChannelArrayModelRuntime(cfg)
+        mode = sixgr.truth.CoupledTruthRuntime.resolveChannelArrayModel(cfg);
+    end
 end
 
 methods(Static, Access=private)
