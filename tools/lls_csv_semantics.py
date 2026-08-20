@@ -115,6 +115,20 @@ MIMO_COMPANION_TABLES = (
     "beamforming/csv/precoder_evidence.csv",
     "beamforming/csv/rank_layer_usage_histogram.csv",
 )
+HARQ_OBSERVATION_TIMELINE = "harq/csv/live_harq_observation_timeline.csv"
+HARQ_OBSERVATION_SUMMARY = "harq/csv/live_harq_observation_summary.csv"
+KPI_DELIVERY_TABLES = {
+    "DL": {
+        "trace": "reports/csv/kpi_harq_delivery_trace_dl.csv",
+        "ledger": "reports/csv/kpi_tb_delivery_ledger_dl.csv",
+        "contributions": "reports/csv/kpi_row_contributions_dl.csv",
+    },
+    "UL": {
+        "trace": "reports/csv/kpi_harq_delivery_trace_ul.csv",
+        "ledger": "reports/csv/kpi_tb_delivery_ledger_ul.csv",
+        "contributions": "reports/csv/kpi_row_contributions_ul.csv",
+    },
+}
 DOMAIN_RUNTIME_PREFIXES = (
     "air_interface/csv/",
     "analytics/csv/",
@@ -2701,6 +2715,350 @@ def _audit_mimo_companion_outputs(
     return checks
 
 
+def _audit_harq_observation_tables(
+    run_root: Path,
+    link_rows: dict[str, list[dict[str, str]]],
+) -> list[AuditCheck]:
+    timeline_header, timeline_rows = _read_rows(run_root / HARQ_OBSERVATION_TIMELINE)
+    summary_header, summary_rows = _read_rows(run_root / HARQ_OBSERVATION_SUMMARY)
+    if not timeline_header and not summary_header:
+        return []
+    timeline_required = {
+        "Direction", "TraceSource", "SNR_dB", "Frame", "Slot", "CRCPass",
+        "Status", "Crash", "GoodBits", "OfferedBits", "Goodput_Mbps",
+        "ReceiverHestSINR_dB", "RankIndicator", "Notes",
+    }
+    checks = [_check(
+        "harq_runtime", HARQ_OBSERVATION_TIMELINE, "required_columns",
+        timeline_rows, sorted(timeline_required - set(timeline_header)),
+    )]
+    expected: list[tuple[str, dict[str, str]]] = []
+    for direction in ("DL", "UL"):
+        source = link_rows.get(direction, [])
+        snr_order: list[float | None] = []
+        for row in source:
+            snr = _number(row, "SNR_dB")
+            if snr not in snr_order:
+                snr_order.append(snr)
+        for snr in snr_order:
+            expected.extend(
+                (direction, row) for row in source
+                if _optional_number_equal(_number(row, "SNR_dB"), snr, atol=1e-9)
+            )
+    failures: list[str] = []
+    if len(timeline_rows) != len(expected):
+        failures.append(f"row_count_mismatch:{len(timeline_rows)}!={len(expected)}")
+    numeric_fields = {
+        "SNR_dB": ("SNR_dB",), "Frame": ("Frame",), "Slot": ("Slot",),
+        "CRCPass": ("CRCPass",), "Crash": ("Crash",), "GoodBits": ("GoodBits",),
+        "OfferedBits": ("OfferedBits",), "Goodput_Mbps": ("Goodput_Mbps",),
+        "ReceiverHestSINR_dB": ("ReceiverHestSINR_dB",),
+        "DecoderTruthProxySINR_dB": ("DecoderTruthProxySINR_dB",),
+        "WidebandCQI": ("WidebandCQI",), "CQIDerivedMCS": ("CQIDerivedMCS",),
+        "CQIDerivedTargetCodeRate": ("CQIDerivedTargetCodeRate",),
+        "PMI": ("PMI",), "CRI": ("CRI",), "RankIndicator": ("RankIndicator",),
+    }
+    for index, (row, expected_item) in enumerate(zip(timeline_rows, expected), start=1):
+        direction, source = expected_item
+        prefix = f"row={index}:{direction}"
+        if _text(row, "Direction").upper() != direction:
+            failures.append(prefix + ":Direction_order_mismatch")
+        if _text(row, "TraceSource") != direction.lower() + "_raw_link_trials":
+            failures.append(prefix + ":TraceSource_invalid")
+        for target, aliases in numeric_fields.items():
+            if target not in timeline_header and _number(source, *aliases) is None:
+                continue
+            if not _optional_number_equal(_number(row, target), _number(source, *aliases), atol=1e-9):
+                failures.append(prefix + f":{target}_not_primary_source")
+        for field in ("Status", "CQIDerivedModulation"):
+            if field in timeline_header and _text(row, field) != _text(source, field):
+                failures.append(prefix + f":{field}_not_primary_source")
+        if _text(row, "Notes") != "Actual frame-level DL/UL decode outcome for live HARQ visibility.":
+            failures.append(prefix + ":Notes_invalid")
+    checks.append(_check(
+        "harq_runtime", HARQ_OBSERVATION_TIMELINE,
+        "ordered_observations_reconcile_primary_link_trials", timeline_rows, failures,
+    ))
+
+    summary_required = {
+        "Direction", "TraceSource", "SNR_dB", "FramesObserved", "CRCPassRate",
+        "CRCFailRate", "CrashRate", "MeanGoodput_Mbps", "Notes",
+    }
+    checks.append(_check(
+        "harq_runtime", HARQ_OBSERVATION_SUMMARY, "required_columns",
+        summary_rows, sorted(summary_required - set(summary_header)),
+    ))
+    summary_failures: list[str] = []
+    direction_order: list[str] = []
+    for row in timeline_rows:
+        direction = _text(row, "Direction").upper()
+        if direction and direction not in direction_order:
+            direction_order.append(direction)
+    if len(summary_rows) != len(direction_order):
+        summary_failures.append(f"row_count_mismatch:{len(summary_rows)}!={len(direction_order)}")
+    mean_fields = {
+        "SNR_dB": "SNR_dB", "CRCPassRate": "CRCPass",
+        "CrashRate": "Crash", "MeanGoodput_Mbps": "Goodput_Mbps",
+        "MeanReceiverHestSINR_dB": "ReceiverHestSINR_dB",
+        "MeanDecoderTruthProxySINR_dB": "DecoderTruthProxySINR_dB",
+        "MeanMeasuredSINR_dB": "MeasuredSINR_dB", "MeanWidebandCQI": "WidebandCQI",
+        "MeanCQIDerivedMCS": "CQIDerivedMCS",
+    }
+    for index, (row, direction) in enumerate(zip(summary_rows, direction_order), start=1):
+        prefix = f"row={index}:{direction}"
+        subset = [item for item in timeline_rows if _text(item, "Direction").upper() == direction]
+        if _text(row, "Direction").upper() != direction:
+            summary_failures.append(prefix + ":Direction_order_mismatch")
+        expected_trace = _mode_text(subset, "TraceSource") or "runtime_harq_timeline"
+        if _text(row, "TraceSource") != expected_trace:
+            summary_failures.append(prefix + ":TraceSource_not_timeline_mode")
+        if _number(row, "FramesObserved") != len(subset):
+            summary_failures.append(prefix + ":FramesObserved_mismatch")
+        for target, source_field in mean_fields.items():
+            if target not in summary_header and all(_number(item, source_field) is None for item in subset):
+                continue
+            expected_mean = _finite_mean([_number(item, source_field) for item in subset])
+            if not _optional_number_equal(_number(row, target), expected_mean, atol=1e-9):
+                summary_failures.append(prefix + f":{target}_mean_mismatch")
+        crc_mean = _finite_mean([_number(item, "CRCPass") for item in subset])
+        expected_fail = None if crc_mean is None else 1.0 - crc_mean
+        if not _optional_number_equal(_number(row, "CRCFailRate"), expected_fail, atol=1e-9):
+            summary_failures.append(prefix + ":CRCFailRate_mismatch")
+        if _text(row, "Notes") != "Live HARQ observation summary derived from the provided runtime HARQ timeline.":
+            summary_failures.append(prefix + ":Notes_invalid")
+    checks.append(_check(
+        "harq_runtime", HARQ_OBSERVATION_SUMMARY,
+        "direction_summary_recomputed_from_timeline", summary_rows, summary_failures,
+    ))
+    return checks
+
+
+def _kpi_new_data(row: dict[str, str]) -> bool:
+    explicit = _boolean(row, "NewDataFlag")
+    if explicit is True:
+        return True
+    retransmission = _kpi_retransmission(row)
+    rv = _number(row, "RV")
+    return not retransmission and (rv is None or abs(rv) < 1e-12)
+
+
+def _kpi_retransmission(row: dict[str, str]) -> bool:
+    for field in ("RetransmissionFlag", "HARQIsRetransmission"):
+        if _boolean(row, field) is True:
+            return True
+    rv = _number(row, "RV", "HARQRV")
+    return rv is not None and abs(rv) > 1e-12
+
+
+def _matlab_key_token(value: float | None) -> str:
+    return "nan" if value is None else format(value, ".15g")
+
+
+def _kpi_transport_block_keys(
+    rows: list[dict[str, str]], direction: str
+) -> list[str]:
+    keys: list[str] = []
+    active: dict[str, str] = {}
+    instances: dict[str, int] = {}
+    for row in rows:
+        explicit = _text(row, "TransportBlockId", "TBId", "MACPDUId", "MACSDUId")
+        if explicit:
+            keys.append(explicit)
+            continue
+        ue = _number(row, "UEIndex", "UEId")
+        rnti = _number(row, "RNTI")
+        harq = _number(row, "HARQProcessId", "HARQProcess")
+        ndi = _number(row, "NDI")
+        codeword = _number(row, "Codeword", "CodewordIndex")
+        if codeword is None:
+            codeword = 0.0
+        base = (
+            f"derived_{direction}_ue{_matlab_key_token(ue)}"
+            f"_rnti{_matlab_key_token(rnti)}"
+            f"_harq{_matlab_key_token(harq)}"
+            f"_ndi{_matlab_key_token(ndi)}"
+            f"_cw{_matlab_key_token(codeword)}"
+        )
+        if base not in active or _kpi_new_data(row):
+            instances[base] = instances.get(base, 0) + 1
+            active[base] = f"{base}_tb{instances[base]}"
+        keys.append(active[base])
+    return keys
+
+
+def _audit_kpi_delivery_direction(
+    run_root: Path,
+    direction: str,
+    source_rows: list[dict[str, str]],
+    source_path: str,
+) -> list[AuditCheck]:
+    paths = KPI_DELIVERY_TABLES[direction]
+    trace_header, trace_rows = _read_rows(run_root / paths["trace"])
+    ledger_header, ledger_rows = _read_rows(run_root / paths["ledger"])
+    contribution_header, contribution_rows = _read_rows(run_root / paths["contributions"])
+    if not trace_header and not ledger_header and not contribution_header:
+        return []
+    trace_required = {
+        "RunId", "Direction", "UEId", "TransportBlockId", "Codeword",
+        "AttemptIndex", "RV", "NDI", "NewDataFlag", "RetransmissionFlag",
+        "ScheduledBits", "TBCrcPass", "DeliveredThisAttempt",
+        "FirstSuccessDelivery", "DuplicateDelivery", "CountedGoodputBits",
+        "DeliveryStatus", "Status", "FailureReason",
+    }
+    checks = [_check(
+        "kpi_delivery", paths["trace"], "required_columns", trace_rows,
+        sorted(trace_required - set(trace_header)),
+    )]
+    keys = _kpi_transport_block_keys(source_rows, direction)
+    scheduled = [
+        _number(row, "ScheduledBits", "TBSize_bits", "OfferedBits", "TBS") or 0.0
+        for row in source_rows
+    ]
+    crc = [(_boolean(row, "TBCrcPass", "CRCPass") is not False) for row in source_rows]
+    good_bits: list[float] = []
+    for row, passed in zip(source_rows, crc):
+        value = _number(row, "GoodputBits", "GoodBits", "DeliveredBits", "PayloadBits")
+        if value is None and passed:
+            value = _number(row, "TBSize_bits", "TBS", "ScheduledBits")
+        good_bits.append(float(value or 0.0) if passed else 0.0)
+    failures: list[str] = []
+    if len(trace_rows) != len(source_rows):
+        failures.append(f"row_count_mismatch:{len(trace_rows)}!={len(source_rows)}")
+    delivered_keys: set[str] = set()
+    for index, (row, source, key, scheduled_bits, bits, passed) in enumerate(
+        zip(trace_rows, source_rows, keys, scheduled, good_bits, crc), start=1
+    ):
+        prefix = f"row={index}"
+        delivered = passed and bits > 0
+        duplicate = delivered and key in delivered_keys
+        first = delivered and not duplicate
+        counted = bits if first else 0.0
+        if delivered:
+            delivered_keys.add(key)
+        expected_numbers = {
+            "UEId": _number(source, "UEIndex", "UEId"),
+            "Codeword": _number(source, "Codeword", "CodewordIndex") or 0.0,
+            "AttemptIndex": float(index), "RV": _number(source, "RV"),
+            "NDI": _number(source, "NDI"), "ScheduledBits": scheduled_bits,
+            "CountedGoodputBits": counted,
+        }
+        for field, expected in expected_numbers.items():
+            if not _optional_number_equal(_number(row, field), expected, atol=1e-9):
+                failures.append(prefix + f":{field}_not_source_or_formula")
+        if _text(row, "Direction").upper() != direction or _text(row, "TransportBlockId") != key:
+            failures.append(prefix + ":direction_or_transport_block_identity_mismatch")
+        expected_bools = {
+            "NewDataFlag": _kpi_new_data(source),
+            "RetransmissionFlag": _kpi_retransmission(source),
+            "TBCrcPass": passed, "DeliveredThisAttempt": delivered,
+            "FirstSuccessDelivery": first, "DuplicateDelivery": duplicate,
+        }
+        for field, expected in expected_bools.items():
+            if _boolean(row, field) is not expected:
+                failures.append(prefix + f":{field}_formula_mismatch")
+        expected_status = (
+            "duplicate_delivery_not_counted" if duplicate else
+            "first_success_delivery_counted" if first else "not_delivered"
+        )
+        if _text(row, "DeliveryStatus") != expected_status:
+            failures.append(prefix + ":DeliveryStatus_formula_mismatch")
+        if _text(row, "Status") != "pass" or _text(row, "FailureReason"):
+            failures.append(prefix + ":row_status_invalid")
+        if _kpi_new_data(source) and not _text(source, "TransportBlockId", "TBId", "MACPDUId", "MACSDUId"):
+            if _text(row, "TransportBlockId") == _text(source, "GrantContextId"):
+                failures.append(prefix + ":grant_context_improperly_used_as_transport_block_identity")
+    checks.append(_check(
+        "kpi_delivery", paths["trace"],
+        "tb_identity_deduplication_and_goodput_recomputed_from_primary_trials",
+        trace_rows, failures,
+    ))
+
+    ledger_failures: list[str] = []
+    if ledger_header != trace_header:
+        ledger_failures.append("ledger_schema_not_trace_schema")
+    if len(ledger_rows) != len(trace_rows):
+        ledger_failures.append(f"row_count_mismatch:{len(ledger_rows)}!={len(trace_rows)}")
+    for index, (ledger, trace) in enumerate(zip(ledger_rows, trace_rows), start=1):
+        for field in trace_header:
+            if _text(ledger, field) != _text(trace, field):
+                ledger_failures.append(f"row={index}:{field}_not_trace_mirror")
+    checks.extend([
+        _check("kpi_delivery", paths["ledger"], "required_columns", ledger_rows, sorted(trace_required - set(ledger_header))),
+        _check("kpi_delivery", paths["ledger"], "exact_harq_trace_mirror", ledger_rows, ledger_failures),
+    ])
+
+    contribution_required = {
+        "RunId", "ScenarioName", "KPIName", "FormulaId", "Direction",
+        "SourceTablePath", "SourceRowIndex", "UEId", "TrialId", "Slot", "Frame",
+        "TransportBlockId", "RV", "NDI", "NewDataFlag", "RetransmissionFlag",
+        "TBCrcPass", "ScheduledBitsContribution", "DeliveredBitsContribution",
+        "GoodputBitsContribution", "DurationContributionSec",
+        "MeasurementWindowContributionSec", "FirstSuccessDelivery",
+        "DuplicateDelivery", "Included", "Status",
+    }
+    checks.append(_check(
+        "kpi_delivery", paths["contributions"], "required_columns", contribution_rows,
+        sorted(contribution_required - set(contribution_header)),
+    ))
+    contribution_failures: list[str] = []
+    if len(contribution_rows) != len(source_rows):
+        contribution_failures.append(f"row_count_mismatch:{len(contribution_rows)}!={len(source_rows)}")
+    for index, (row, source, trace) in enumerate(zip(contribution_rows, source_rows, trace_rows), start=1):
+        prefix = f"row={index}"
+        exact_text = {
+            "Direction": direction, "KPIName": direction + "_TB_Delivery_Goodput_Mbps",
+            "FormulaId": direction + "_TB_Delivery_Goodput_Mbps",
+            "SourceTablePath": source_path,
+            "TransportBlockId": _text(trace, "TransportBlockId"), "Status": "pass",
+        }
+        for field, expected in exact_text.items():
+            if _text(row, field) != expected:
+                contribution_failures.append(prefix + f":{field}_mismatch")
+        source_numbers = {
+            "SourceRowIndex": float(index), "UEId": _number(source, "UEIndex", "UEId"),
+            "TrialId": _number(source, "TrialId") or float(index),
+            "Slot": _number(source, "Slot"), "Frame": _number(source, "Frame"),
+            "RV": _number(source, "RV"), "NDI": _number(source, "NDI"),
+            "ScheduledBitsContribution": _number(trace, "ScheduledBits"),
+            "DeliveredBitsContribution": _number(trace, "CountedGoodputBits"),
+            "GoodputBitsContribution": _number(trace, "CountedGoodputBits"),
+        }
+        for field, expected in source_numbers.items():
+            if not _optional_number_equal(_number(row, field), expected, atol=1e-9):
+                contribution_failures.append(prefix + f":{field}_mismatch")
+        for field in (
+            "NewDataFlag", "RetransmissionFlag", "TBCrcPass",
+            "FirstSuccessDelivery", "DuplicateDelivery",
+        ):
+            if _boolean(row, field) is not _boolean(trace, field):
+                contribution_failures.append(prefix + f":{field}_not_trace_source")
+        if _boolean(row, "Included") is not True:
+            contribution_failures.append(prefix + ":Included_not_true")
+        duration = _number(row, "DurationContributionSec")
+        measurement = _number(row, "MeasurementWindowContributionSec")
+        if duration is None or duration <= 0 or measurement is None or measurement <= 0:
+            contribution_failures.append(prefix + ":duration_contribution_invalid")
+    checks.append(_check(
+        "kpi_delivery", paths["contributions"],
+        "row_contributions_reconcile_primary_trials_and_harq_trace",
+        contribution_rows, contribution_failures,
+    ))
+    return checks
+
+
+def _audit_kpi_delivery_outputs(
+    run_root: Path,
+    link_rows: dict[str, list[dict[str, str]]],
+    source_paths: dict[str, str],
+) -> list[AuditCheck]:
+    checks: list[AuditCheck] = []
+    for direction in ("DL", "UL"):
+        checks.extend(_audit_kpi_delivery_direction(
+            run_root, direction, link_rows.get(direction, []), source_paths[direction]
+        ))
+    return checks
+
+
 def _audit_frc_point_table(
     path: str, header: list[str], rows: list[dict[str, str]]
 ) -> list[AuditCheck]:
@@ -4718,6 +5076,10 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     checks.extend(_audit_component_bler_outputs(run_root, link_rows, summary))
     checks.extend(_audit_mimo_rank_layer_output(run_root, link_rows))
     checks.extend(_audit_mimo_companion_outputs(run_root, link_rows))
+    checks.extend(_audit_harq_observation_tables(run_root, link_rows))
+    checks.extend(_audit_kpi_delivery_outputs(
+        run_root, link_rows, resolved_primary_tables
+    ))
     checks.extend(_audit_runtime_call_ledger(run_root, summary, link_rows))
     checks.extend(_audit_manifest_integrity(run_root))
     checks.extend(_audit_domain_runtime_tables(run_root, summary))

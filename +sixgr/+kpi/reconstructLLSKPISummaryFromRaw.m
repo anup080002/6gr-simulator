@@ -899,7 +899,15 @@ end
 
 function key = localExplicitTransportBlockKey(T, i)
 vars = string(T.Properties.VariableNames);
-for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
+% A grant context identifies the frozen scheduling/PHY contract, not a
+% transport-block lifecycle.  Multiple new-data TBs can legitimately reuse
+% one grant context (for example, a fixed-link campaign operating point).
+% Treating GrantContextId as a TB identity collapses distinct successful
+% new-data attempts into duplicate deliveries and corrupts goodput.  Only
+% explicit packet/TB lifecycle identifiers are authoritative here; when
+% they are absent localTransportBlockKeys derives a new-data-instance key
+% from UE/HARQ/NDI/codeword state.
+for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId"]
     if ismember(name, vars)
         raw = string(T.(name)(i));
         if strlength(strtrim(raw)) > 0 && raw ~= "NaN"

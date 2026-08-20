@@ -30,6 +30,9 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_mimo_layer_metrics_table,
     _audit_mimo_per_trial_companion,
     _audit_mimo_rank_coverage_table,
+    _audit_harq_observation_tables,
+    _audit_kpi_delivery_direction,
+    _kpi_transport_block_keys,
     _audit_runtime_call_ledger,
     _audit_status_reduction,
 )
@@ -830,6 +833,208 @@ def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _kpi_source_rows() -> list[dict[str, str]]:
+    common = {
+        "Direction": "DL",
+        "UEIndex": "1",
+        "RNTI": "1001",
+        "HARQProcessId": "3",
+        "NDI": "1",
+        "Codeword": "0",
+        "TBSize_bits": "1000",
+        "AirInterfaceObservation_ms": "1",
+        "GrantContextId": "shared-frozen-grant-context",
+    }
+    return [
+        {
+            **common,
+            "TrialId": "1", "Frame": "1", "Slot": "1", "RV": "0",
+            "NewDataFlag": "1", "RetransmissionFlag": "0",
+            "CRCPass": "0", "GoodBits": "0",
+        },
+        {
+            **common,
+            "TrialId": "2", "Frame": "1", "Slot": "2", "RV": "2",
+            "NewDataFlag": "0", "RetransmissionFlag": "1",
+            "CRCPass": "1", "GoodBits": "1000",
+        },
+        {
+            **common,
+            "TrialId": "3", "Frame": "1", "Slot": "3", "RV": "0",
+            "NewDataFlag": "1", "RetransmissionFlag": "0",
+            "CRCPass": "1", "GoodBits": "1000",
+        },
+    ]
+
+
+def _kpi_trace_rows(source_rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    keys = _kpi_transport_block_keys(source_rows, "DL")
+    delivered_keys: set[str] = set()
+    rows: list[dict[str, str]] = []
+    for index, (source, key) in enumerate(zip(source_rows, keys), start=1):
+        passed = source["CRCPass"] == "1"
+        delivered = passed and float(source["GoodBits"]) > 0
+        duplicate = delivered and key in delivered_keys
+        first = delivered and not duplicate
+        if delivered:
+            delivered_keys.add(key)
+        counted = float(source["GoodBits"]) if first else 0.0
+        status = (
+            "duplicate_delivery_not_counted" if duplicate else
+            "first_success_delivery_counted" if first else "not_delivered"
+        )
+        rows.append({
+            "RunId": "run-1", "Direction": "DL", "UEId": "1",
+            "TransportBlockId": key, "Codeword": "0",
+            "AttemptIndex": str(index), "RV": source["RV"], "NDI": "1",
+            "NewDataFlag": source["NewDataFlag"],
+            "RetransmissionFlag": source["RetransmissionFlag"],
+            "ScheduleTime_s": "0", "AttemptStartTime_s": str(index - 1),
+            "AttemptEndTime_s": str(index),
+            "FirstSuccessTime_s": str(index) if first else "NaN",
+            "DeliveryLatency_ms": "1000" if first else "NaN",
+            "ScheduledBits": "1000", "TBCrcPass": source["CRCPass"],
+            "DeliveredThisAttempt": "1" if delivered else "0",
+            "FirstSuccessDelivery": "1" if first else "0",
+            "DuplicateDelivery": "1" if duplicate else "0",
+            "CountedGoodputBits": format(counted, ".15g"),
+            "ScheduledResourceExposureSec": "0.001",
+            "MeasurementWindowSec": "0.003",
+            "DeliveryStatus": status, "Status": "pass", "FailureReason": "",
+        })
+    return rows
+
+
+def _kpi_contribution_rows(
+    source_rows: list[dict[str, str]], trace_rows: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for index, (source, trace) in enumerate(zip(source_rows, trace_rows), start=1):
+        rows.append({
+            "RunId": "run-1", "ScenarioName": "fixture",
+            "KPIName": "DL_TB_Delivery_Goodput_Mbps",
+            "FormulaId": "DL_TB_Delivery_Goodput_Mbps", "Direction": "DL",
+            "SourceTablePath": "air_interface/csv/dl_pdsch_trials.csv",
+            "SourceRowIndex": str(index), "CellId": "1", "UEId": "1",
+            "TrialId": source["TrialId"], "Slot": source["Slot"],
+            "Frame": source["Frame"],
+            "TransportBlockId": trace["TransportBlockId"], "RV": source["RV"],
+            "NDI": source["NDI"], "NewDataFlag": source["NewDataFlag"],
+            "RetransmissionFlag": source["RetransmissionFlag"],
+            "TBCrcPass": source["CRCPass"],
+            "ScheduledBitsContribution": trace["ScheduledBits"],
+            "DeliveredBitsContribution": trace["CountedGoodputBits"],
+            "GoodputBitsContribution": trace["CountedGoodputBits"],
+            "DurationContributionSec": "0.001",
+            "MeasurementWindowContributionSec": "0.003",
+            "ScheduleTime_s": "0", "AttemptStartTime_s": str(index - 1),
+            "AttemptEndTime_s": str(index),
+            "FirstSuccessTime_s": trace["FirstSuccessTime_s"],
+            "DeliveryLatency_ms": trace["DeliveryLatency_ms"],
+            "FirstSuccessDelivery": trace["FirstSuccessDelivery"],
+            "DuplicateDelivery": trace["DuplicateDelivery"],
+            "Included": "1", "Status": "pass",
+        })
+    return rows
+
+
+def test_kpi_transport_block_identity_ignores_shared_grant_context() -> None:
+    keys = _kpi_transport_block_keys(_kpi_source_rows(), "DL")
+    assert keys[0] == keys[1]
+    assert keys[2] != keys[1]
+    assert all(key != "shared-frozen-grant-context" for key in keys)
+
+
+def test_kpi_delivery_contract_recomputes_harq_identity_and_detects_corruption(
+    tmp_path: Path,
+) -> None:
+    source_rows = _kpi_source_rows()
+    trace_rows = _kpi_trace_rows(source_rows)
+    _write_rows(tmp_path / "reports/csv/kpi_harq_delivery_trace_dl.csv", trace_rows)
+    _write_rows(tmp_path / "reports/csv/kpi_tb_delivery_ledger_dl.csv", trace_rows)
+    _write_rows(
+        tmp_path / "reports/csv/kpi_row_contributions_dl.csv",
+        _kpi_contribution_rows(source_rows, trace_rows),
+    )
+    checks = _audit_kpi_delivery_direction(
+        tmp_path, "DL", source_rows, "air_interface/csv/dl_pdsch_trials.csv"
+    )
+    assert len(checks) == 6
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    corrupt = [dict(row) for row in trace_rows]
+    corrupt[2]["TransportBlockId"] = source_rows[2]["GrantContextId"]
+    _write_rows(tmp_path / "reports/csv/kpi_harq_delivery_trace_dl.csv", corrupt)
+    failed = _audit_kpi_delivery_direction(
+        tmp_path, "DL", source_rows, "air_interface/csv/dl_pdsch_trials.csv"
+    )
+    trace_check = next(
+        check for check in failed
+        if check.check_id == "tb_identity_deduplication_and_goodput_recomputed_from_primary_trials"
+    )
+    assert not trace_check.passed
+    assert "grant_context_improperly_used_as_transport_block_identity" in trace_check.details
+
+
+def test_harq_observation_contract_recomputes_timeline_and_summary(
+    tmp_path: Path,
+) -> None:
+    source = {
+        "DL": [{
+            "SNR_dB": "10", "Frame": "1", "Slot": "2", "CRCPass": "1",
+            "Status": "PASS", "Crash": "0", "GoodBits": "1000",
+            "OfferedBits": "1000", "Goodput_Mbps": "1",
+            "ReceiverHestSINR_dB": "9.5", "RankIndicator": "1",
+        }],
+        "UL": [{
+            "SNR_dB": "5", "Frame": "1", "Slot": "3", "CRCPass": "0",
+            "Status": "FAIL", "Crash": "0", "GoodBits": "0",
+            "OfferedBits": "1000", "Goodput_Mbps": "0",
+            "ReceiverHestSINR_dB": "4.5", "RankIndicator": "1",
+        }],
+    }
+    note = "Actual frame-level DL/UL decode outcome for live HARQ visibility."
+    timeline = []
+    for direction in ("DL", "UL"):
+        row = source[direction][0]
+        timeline.append({
+            "Direction": direction,
+            "TraceSource": direction.lower() + "_raw_link_trials",
+            **row,
+            "Notes": note,
+        })
+    summary_note = "Live HARQ observation summary derived from the provided runtime HARQ timeline."
+    summary = [
+        {
+            "Direction": "DL", "TraceSource": "dl_raw_link_trials",
+            "SNR_dB": "10", "FramesObserved": "1", "CRCPassRate": "1",
+            "CRCFailRate": "0", "CrashRate": "0", "MeanGoodput_Mbps": "1",
+            "MeanReceiverHestSINR_dB": "9.5", "Notes": summary_note,
+        },
+        {
+            "Direction": "UL", "TraceSource": "ul_raw_link_trials",
+            "SNR_dB": "5", "FramesObserved": "1", "CRCPassRate": "0",
+            "CRCFailRate": "1", "CrashRate": "0", "MeanGoodput_Mbps": "0",
+            "MeanReceiverHestSINR_dB": "4.5", "Notes": summary_note,
+        },
+    ]
+    _write_rows(tmp_path / "harq/csv/live_harq_observation_timeline.csv", timeline)
+    _write_rows(tmp_path / "harq/csv/live_harq_observation_summary.csv", summary)
+    checks = _audit_harq_observation_tables(tmp_path, source)
+    assert len(checks) == 4
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    summary[1]["CRCFailRate"] = "0"
+    _write_rows(tmp_path / "harq/csv/live_harq_observation_summary.csv", summary)
+    failed = _audit_harq_observation_tables(tmp_path, source)
+    summary_check = next(
+        check for check in failed
+        if check.check_id == "direction_summary_recomputed_from_timeline"
+    )
+    assert not summary_check.passed
+    assert "CRCFailRate_mismatch" in summary_check.details
 
 
 def test_terminal_status_reduction_rejects_stale_visual_failure(tmp_path: Path) -> None:

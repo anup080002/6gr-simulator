@@ -36,6 +36,8 @@ assert(isfinite(double(resLow.BER)) && double(resLow.BER) >= 0 && double(resLow.
 assert(isfinite(double(resHigh.BER)) && double(resHigh.BER) >= 0 && double(resHigh.BER) <= 1, "Invalid high-SNR BER.");
 assert(double(resHigh.BLER) <= double(resLow.BLER) + 0.15, "DL BLER should improve with SNR.");
 assert(double(resHigh.Throughput_Mbps) + 0.1 >= double(resLow.Throughput_Mbps), "DL throughput should not regress at high SNR.");
+localAssertDerivedGrantContext(resLow.TrialTable, "DL low-SNR");
+localAssertDerivedGrantContext(resHigh.TrialTable, "DL high-SNR");
 if istable(resLow.TrialTable) && istable(resHigh.TrialTable) && ...
         all(ismember(["WidebandCQI","MCS"], string(resLow.TrialTable.Properties.VariableNames))) && ...
         all(ismember(["WidebandCQI","MCS"], string(resHigh.TrialTable.Properties.VariableNames)))
@@ -43,4 +45,14 @@ if istable(resLow.TrialTable) && istable(resHigh.TrialTable) && ...
         "DL wideband CQI should not regress at higher SNR.");
 end
 ok = true;
+end
+
+function localAssertDerivedGrantContext(T, label)
+assert(ismember("GrantContextId", string(T.Properties.VariableNames)), ...
+    "%s trials must expose grant-context lineage.", label);
+context = lower(strtrim(string(T.GrantContextId)));
+assert(all(strlength(context) > 0) && ...
+    all(contains(context, "frame=") & contains(context, "slot=") & contains(context, "seed=")) && ...
+    ~any(contains(context, ["frame=na","slot=na","seed=na"])), ...
+    "%s derived grant contexts must bind the actual frame, slot and trial seed.", label);
 end

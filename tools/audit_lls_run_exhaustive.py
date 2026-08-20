@@ -579,7 +579,7 @@ def build_csv_file_dispositions(
         elif checks and any(
             str(check.get("category", "")) in {
                 "domain_runtime", "component_bler", "mimo_rank_layer",
-                "mimo_companion",
+                "mimo_companion", "harq_runtime", "kpi_delivery",
             }
             for check in checks
         ):

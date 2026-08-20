@@ -738,7 +738,8 @@ for n = 1:numFrames
                 "CapturePoint","post_power_and_tx_rf_pre_channel", ...
                 "WaveformAuthority","exact_runtime_pdsch_waveform");
         end
-        grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, grantSnapshotOverride);
+        grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, ...
+            grantSnapshotOverride, frameIdx, trialSlot(n), trialSeed(n));
         [grantSnapshot, harqContext, harqTBContext, harqTBStatus] = localApplyHARQTransportBlockContext( ...
             "DL", cfgFrame, grantSnapshot, tx, harqContext, previousCombinedLLR);
         trialHARQNDIEpoch(n) = double(sixgr.util.structGet(harqTBContext, "NDIEpoch", NaN));
@@ -6198,7 +6199,7 @@ end
 seed = mod(round(baseSeed) + snrKey * 7919 + trialKey * 104729, 2^31 - 1);
 end
 
-function grant = localBuildHARQGrantSnapshot(tx, mcsIndex, cfg, seedGrant)
+function grant = localBuildHARQGrantSnapshot(tx, mcsIndex, cfg, seedGrant, frameIdx, slotIdx, trialSeed)
 if nargin < 4 || ~isstruct(seedGrant)
     seedGrant = struct();
 end
@@ -6371,7 +6372,8 @@ if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
 end
 grant = sixgr.link.finalizeHARQGrantSpatialSnapshot(grant, "DL");
 if ~(isfield(grant, "GrantContextId") && strlength(strtrim(string(grant.GrantContextId))) > 0)
-    grant.GrantContextId = localComposeReplayGrantContextId(seedGrant, "DL");
+    grant.GrantContextId = localComposeReplayGrantContextId( ...
+        seedGrant, "DL", frameIdx, slotIdx, trialSeed);
 end
 if ~isfield(grant, "GrantWorkerSafe")
     grant.GrantWorkerSafe = true;
@@ -6658,7 +6660,7 @@ tf = active || beamApplied || explicitApplied || ...
     (strlength(stage) > 0 && stage ~= "none");
 end
 
-function token = localComposeReplayGrantContextId(grant, direction)
+function token = localComposeReplayGrantContextId(grant, direction, fallbackFrame, fallbackSlot, trialSeed)
 direction = localSafeCharToken(upper(string(direction)));
 if nargin < 1 || ~isstruct(grant)
     grant = struct();
@@ -6666,11 +6668,16 @@ end
 rnti = localIntegerToken(sixgr.util.structGet(grant, "RNTI", NaN));
 ueIdx = localIntegerToken(sixgr.util.structGet(grant, "UEIndex", NaN));
 servingCell = localIntegerToken(sixgr.util.structGet(grant, "ServingCell", NaN));
-frame = localIntegerToken(sixgr.util.structGet(grant, "Frame", NaN));
-slot = localIntegerToken(sixgr.util.structGet(grant, "Slot", NaN));
+frameValue = double(sixgr.util.structGet(grant, "Frame", NaN));
+slotValue = double(sixgr.util.structGet(grant, "Slot", NaN));
+if ~(isscalar(frameValue) && isfinite(frameValue)), frameValue = double(fallbackFrame); end
+if ~(isscalar(slotValue) && isfinite(slotValue)), slotValue = double(fallbackSlot); end
+frame = localIntegerToken(frameValue);
+slot = localIntegerToken(slotValue);
+seed = localIntegerToken(trialSeed);
 grantReason = strtrim(localSafeCharToken(sixgr.util.structGet(grant, "GrantReason", "")));
-token = sprintf('%s|cell=%s|ue=%s|rnti=%s|frame=%s|slot=%s', ...
-    direction, servingCell, ueIdx, rnti, frame, slot);
+token = sprintf('%s|cell=%s|ue=%s|rnti=%s|frame=%s|slot=%s|seed=%s', ...
+    direction, servingCell, ueIdx, rnti, frame, slot, seed);
 if ~isempty(grantReason)
     token = token + "|reason=" + grantReason;
 end

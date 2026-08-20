@@ -40,6 +40,8 @@ if ~(logical(puschLow.Skipped) || logical(puschHigh.Skipped))
     assert(double(puschHigh.BLER) <= double(puschLow.BLER) + 0.15, "UL BLER should improve with SNR.");
     assert(double(puschHigh.Throughput_Mbps) + 0.1 >= double(puschLow.Throughput_Mbps), ...
         "UL throughput should not regress at high SNR.");
+    localAssertDerivedGrantContext(puschLow.TrialTable, "UL low-SNR");
+    localAssertDerivedGrantContext(puschHigh.TrialTable, "UL high-SNR");
     if istable(puschLow.TrialTable) && istable(puschHigh.TrialTable) && ...
             all(ismember(["WidebandCQI","MCS"], string(puschLow.TrialTable.Properties.VariableNames))) && ...
             all(ismember(["WidebandCQI","MCS"], string(puschHigh.TrialTable.Properties.VariableNames)))
@@ -81,6 +83,16 @@ if isfinite(double(prach.AppliedNoiseSNR_dB)) && isfinite(double(prach.AppliedAW
         "PRACH injected-noise SNR must match the requested receiver Es/N0 calibration axis.");
 end
 ok = true;
+end
+
+function localAssertDerivedGrantContext(T, label)
+assert(ismember("GrantContextId", string(T.Properties.VariableNames)), ...
+    "%s trials must expose grant-context lineage.", label);
+context = lower(strtrim(string(T.GrantContextId)));
+assert(all(strlength(context) > 0) && ...
+    all(contains(context, "frame=") & contains(context, "slot=") & contains(context, "seed=")) && ...
+    ~any(contains(context, ["frame=na","slot=na","seed=na"])), ...
+    "%s derived grant contexts must bind the actual frame, slot and trial seed.", label);
 end
 
 function localAssertAllowedPUSCHSkip(res, label)
