@@ -29,6 +29,8 @@ end
 layout = sixgr.report.resultLayout(runFolder);
 localEnsureDirs(layout);
 storedMeta = localReadStoredRunMetadata(runFolder);
+[persistedRunTag, persistedRunTagEvidence] = ...
+    sixgr.truth.resolvePersistedLLSRunTag(string(runFolder));
 finalizationMode = lower(strtrim(string(p.Results.FinalizationMode)));
 if ~ismember(finalizationMode, ["failed_recovery", ...
         "completed_run_refinalization", "persisted_trial_refinalization"])
@@ -48,7 +50,7 @@ inputCfg = p.Results.scenarioCfg;
 % built from a later YAML revision and is therefore not recovery authority.
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 requestedRunTag = strtrim(string(p.Results.RunTag));
-storedRunTag = strtrim(string(sixgr.util.structGet(storedMeta, "run_tag", "")));
+storedRunTag = strtrim(string(persistedRunTag));
 if finalizationMode == "completed_run_refinalization" && ...
         strlength(storedRunTag) > 0 && strlength(requestedRunTag) > 0 && ...
         requestedRunTag ~= storedRunTag
@@ -258,6 +260,7 @@ out.RunnerProfile = profile;
 out.RuntimeSummary = runtimeSummary;
 out.EnvironmentSummary = environmentSummary;
 out.Manifest = manifest;
+out.PersistedRunTagEvidence = persistedRunTagEvidence;
 out.ScenarioStatus = scenarioStatus;
 out.ConfigOwnershipArtifacts = configOwnership;
 out.ReportBundle = reportBundle;
@@ -352,6 +355,7 @@ runtime.CompletedUTC = char(localUTCStamp());
 runtime.ElapsedSeconds = NaN;
 runtime.Profile = char(string(profile));
 runtime.RunFolder = char(string(runFolder));
+runtime.RunTag = char(string(sixgr.util.structGet(cfg, "run.runTag", "")));
 runtime.UseMex = logical(sixgr.util.structGet(cfg, "acceleration.useMex", false));
 runtime.UseMexAutoEnabled = logical(sixgr.util.structGet(cfg, "acceleration.useMexAutoEnabled", false));
 runtime.UseParallel = logical(sixgr.util.structGet(cfg, "run.useParallel", false));
@@ -490,6 +494,7 @@ manifest.ScenarioID = char(string(scfg.ScenarioID));
 manifest.ConfigHash = char(string(scfg.ConfigHash));
 manifest.ConfigPath = char(string(scfg.ConfigPath));
 manifest.RunFolder = char(string(runFolder));
+manifest.RunTag = char(string(sixgr.util.structGet(runtimeSummary, "RunTag", "")));
 manifest.SourceFiles = cellstr(localPortablePath(scfg.SourceFiles));
 manifest.SourceFileCount = numel(scfg.SourceFiles);
 manifest.RunnerProfile = char(string(profile));

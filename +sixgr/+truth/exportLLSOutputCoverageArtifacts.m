@@ -493,6 +493,14 @@ meta = struct("run_id", NaN, "run_tag", "", "config_hash", "", "code_commit", ""
 if nargin < 1 || strlength(string(runFolder)) == 0
     return;
 end
+try
+    [meta.run_tag, ~] = sixgr.truth.resolvePersistedLLSRunTag(string(runFolder));
+catch ME
+    if startsWith(string(ME.identifier), ...
+            "sixgr:truth:recover:PersistedRunTagIdentityMismatch")
+        rethrow(ME);
+    end
+end
 manifestPath = fullfile(runFolder, "meta", "scenario_manifest.json");
 if exist(manifestPath, "file") == 2
     try
@@ -500,7 +508,9 @@ if exist(manifestPath, "file") == 2
         if isstruct(manifest)
             meta.config_hash = string(sixgr.util.structGet(manifest, "ConfigHash", ""));
             meta.seed = double(sixgr.util.structGet(manifest, "RandomSeed", NaN));
-            meta.run_tag = localResolveRunTagFromStoredFolder(string(sixgr.util.structGet(manifest, "RunFolder", "")));
+            meta.run_tag = localFirstNonEmptyString(meta.run_tag, ...
+                string(sixgr.util.structGet(manifest, "RunTag", "")), ...
+                localResolveRunTagFromStoredFolder(string(sixgr.util.structGet(manifest, "RunFolder", ""))));
             meta.code_commit = localResolveStoredCodeCommit(manifest);
         end
     catch
