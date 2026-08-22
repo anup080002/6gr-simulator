@@ -65,6 +65,7 @@ if numel(numCand) < 5
     numCand(numel(numCand)+1:5) = 0;
 end
 numCand = numCand(1:5);
+configuredNumCand = numCand;
 
 strictCfg = struct();
 strictCfg.RunId = string(opt.RunId);
@@ -141,12 +142,28 @@ if hasContextualOperatorConfig
     bitmap = char(string(localRequired(searchRaw, "monitoring_symbols_within_slot")));
     strictCfg.SearchSpaceFirstSymbolWithinSlot = find(bitmap == '1', 1, "first") - 1;
     numCand = double(localRequired(searchRaw, "num_candidates"));
-    strictCfg.NumCandidatesAL1 = numCand(1);
-    strictCfg.NumCandidatesAL2 = numCand(2);
-    strictCfg.NumCandidatesAL4 = numCand(3);
-    strictCfg.NumCandidatesAL8 = numCand(4);
-    strictCfg.NumCandidatesAL16 = numCand(5);
+    numCand = reshape(numCand, 1, []);
+    if numel(numCand) ~= 5
+        error("sixgr:phy:pdcch:invalid_candidate_count", ...
+            "Strict search-space num_candidates must contain AL 1/2/4/8/16 counts.");
+    end
+    configuredNumCand = numCand;
 end
+[numCand, candidateCapacity] = ...
+    sixgr.phy.pdcch.resolveSearchSpaceCandidates( ...
+    configuredNumCand, strictCfg.CORESETFrequencyDomainResources, ...
+    strictCfg.CORESETDurationSymbols, strictCfg.AggregationLevelsEnabled);
+strictCfg.ConfiguredNumCandidates = configuredNumCand;
+strictCfg.ResolvedNumCandidates = numCand;
+strictCfg.CORESETNCCE = candidateCapacity.NCCE;
+strictCfg.CandidateCapacityPerAggregationLevel = ...
+    candidateCapacity.MaximumCandidates;
+strictCfg.CandidateResolutionSource = candidateCapacity.Source;
+strictCfg.NumCandidatesAL1 = numCand(1);
+strictCfg.NumCandidatesAL2 = numCand(2);
+strictCfg.NumCandidatesAL4 = numCand(3);
+strictCfg.NumCandidatesAL8 = numCand(4);
+strictCfg.NumCandidatesAL16 = numCand(5);
 configuredPayloadBits = double(sixgr.util.structGet(cfg, "phy.pdcch.configuredPayloadBits", ...
     sixgr.util.structGet(cfg, "phy.pdcch.dciPayloadBits", ...
     sixgr.util.structGet(cfg, "lls6g.control.pdcch_payload_bits", NaN))));

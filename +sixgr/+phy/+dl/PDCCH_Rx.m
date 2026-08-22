@@ -76,9 +76,12 @@ pdcchScramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, rnti, opt.PDCCHScramb
 
 % PDCCH config
 if isempty(opt.PDCCH)
-    pdcch = localDefaultPDCCH(cfg, carrier, nCellID, localPDCCHConfigRNTI(rnti, pdcchScramblingRNTI));
+    [pdcch, candidateResolution] = localDefaultPDCCH( ...
+        cfg, carrier, nCellID, ...
+        localPDCCHConfigRNTI(rnti, pdcchScramblingRNTI));
 else
     pdcch = opt.PDCCH;
+    candidateResolution = struct();
 end
 
 K = opt.K;
@@ -395,6 +398,17 @@ info.ListLength = listLen;
 info.BlindSearch = blind;
 info.NumCandidatesAvailable = numel(candSymInd);
 info.NumCandidatesTried = numel(candidateRows);
+if ~isempty(fieldnames(candidateResolution))
+    info.ConfiguredSearchSpaceNumCandidates = ...
+        candidateResolution.ConfiguredCandidates;
+    info.ResolvedSearchSpaceNumCandidates = ...
+        candidateResolution.ResolvedCandidates;
+    info.SearchSpaceCandidateCapacity = ...
+        candidateResolution.MaximumCandidates;
+    info.SearchSpaceNCCE = candidateResolution.NCCE;
+    info.SearchSpaceCandidateResolutionSource = ...
+        char(candidateResolution.Source);
+end
 info.ValidHypothesisCount = numel(passingRx);
 info.HypothesisReductionClass = char(hypothesisClass);
 info.MultipleEquivalentValidHypotheses = logical(rx.MultipleEquivalentValidHypotheses);
@@ -814,7 +828,8 @@ if isprop(obj, propertyName)
 end
 end
 
-function pdcch = localDefaultPDCCH(cfg, carrier, nCellID, rnti)
+function [pdcch, candidateResolution] = localDefaultPDCCH( ...
+        cfg, carrier, nCellID, rnti)
 % Create a minimal, valid PDCCH configuration.
 
 % CORESET
@@ -843,21 +858,28 @@ aggr = double(sixgr.util.structGet(cfg, 'phy.pdcch.aggregationLevel', 4));
 if ~ismember(aggr, [1 2 4 8 16])
     aggr = 4;
 end
+idxAgg = find([1 2 4 8 16] == aggr, 1, 'first');
 numCand = sixgr.util.structGet(cfg, 'phy.pdcch.searchSpace.numCandidates', []);
 numCand = double(numCand(:).');
 if isempty(numCand)
     numCand = zeros(1,5);
+    numCand(idxAgg) = 1;
 end
 if numel(numCand) < 5
     numCand(numel(numCand)+1:5) = 0;
 end
 numCand = numCand(1:5);
-idxAgg = find([1 2 4 8 16] == aggr, 1, 'first');
-if isempty(idxAgg)
-    idxAgg = 3;
-end
+enabledLevels = double(sixgr.util.structGet(cfg, ...
+    'phy.pdcch.aggregationLevels', aggr));
+[numCand, candidateResolution] = ...
+    sixgr.phy.pdcch.resolveSearchSpaceCandidates( ...
+    numCand, coreset.FrequencyResources, coreset.Duration, enabledLevels);
 if numCand(idxAgg) < 1
-    numCand(idxAgg) = 1;
+    error("sixgr:phy:pdcch:selected_aggregation_level_unavailable", ...
+        ['Selected aggregation level %d has no legal candidate in the ' ...
+         '%d-CCE CORESET after resolving configured candidates [%s].'], ...
+        aggr, candidateResolution.NCCE, ...
+        strjoin(string(candidateResolution.ConfiguredCandidates), ','));
 end
 ss.NumCandidates = double(numCand(:).');
 

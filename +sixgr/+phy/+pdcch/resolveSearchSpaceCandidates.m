@@ -1,0 +1,53 @@
+function [resolved, evidence] = resolveSearchSpaceCandidates( ...
+        configured, frequencyResources, coresetDuration, enabledLevels)
+%RESOLVESEARCHSPACECANDIDATES Bound configured candidates by CORESET CCEs.
+%   One CCE contains six REGs (TS 38.211). A CORESET provides one REG per
+%   enabled six-RB frequency group, RB, and OFDM symbol. Therefore its CCE
+%   count is nnz(FrequencyResources)*Duration. Candidate counts are
+%   resolved for aggregation levels 1/2/4/8/16 without changing the
+%   configured intent, which remains present in EVIDENCE.
+
+levels = [1 2 4 8 16];
+configured = double(reshape(configured, 1, []));
+if numel(configured) ~= numel(levels) || ...
+        any(~isfinite(configured) | configured < 0 | configured ~= fix(configured))
+    error("sixgr:phy:pdcch:invalid_candidate_count", ...
+        "PDCCH candidate counts must be five nonnegative integers for AL 1/2/4/8/16.");
+end
+frequencyResources = double(reshape(frequencyResources, 1, []));
+if isempty(frequencyResources) || ...
+        any(~isfinite(frequencyResources) | ...
+        ~ismember(frequencyResources, [0 1])) || ~any(frequencyResources)
+    error("sixgr:phy:pdcch:invalid_coreset_frequency_resources", ...
+        "CORESET frequency resources must contain at least one enabled binary six-RB group.");
+end
+coresetDuration = double(coresetDuration);
+if ~(isscalar(coresetDuration) && isfinite(coresetDuration) && ...
+        ismember(coresetDuration, [1 2 3]))
+    error("sixgr:phy:pdcch:invalid_coreset_frequency_resources", ...
+        "CORESET duration must be one, two, or three OFDM symbols.");
+end
+enabledLevels = double(reshape(enabledLevels, 1, []));
+if isempty(enabledLevels) || any(~ismember(enabledLevels, levels))
+    error("sixgr:phy:pdcch:invalid_candidate_count", ...
+        "Enabled PDCCH aggregation levels must be selected from 1/2/4/8/16.");
+end
+
+nCCE = nnz(frequencyResources) * coresetDuration;
+maximum = floor(nCCE ./ levels);
+maximum(~ismember(levels, enabledLevels)) = 0;
+resolved = min(configured, maximum);
+if isequal(resolved, configured)
+    source = "configured_exact_within_coreset_capacity";
+else
+    source = "configured_bounded_by_coreset_cce_capacity";
+end
+evidence = struct( ...
+    "NCCE", double(nCCE), ...
+    "AggregationLevels", levels, ...
+    "EnabledAggregationLevels", enabledLevels, ...
+    "MaximumCandidates", maximum, ...
+    "ConfiguredCandidates", configured, ...
+    "ResolvedCandidates", resolved, ...
+    "Source", source);
+end
