@@ -1242,8 +1242,8 @@ end
 function nRx = localResolveStageRxPorts(cfg, direction, numTx)
 if direction == "UL"
     nRx = localFirstFiniteScalar( ...
-        sixgr.util.structGet(cfg, "random_access.num_rx_antennas", []), ...
         sixgr.phy.ul.resolveULDirectionalAntennaCount(cfg, "rx", numTx), ...
+        sixgr.util.structGet(cfg, "random_access.num_rx_antennas", []), ...
         sixgr.util.structGet(cfg, "phy.nRxAnt", []), NaN);
 else
     userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
@@ -1307,20 +1307,17 @@ end
 if ~(isstruct(meta) && ~isempty(fieldnames(meta)))
     meta = struct();
 end
+% Use the same logical-port authority as every other runtime waveform.  The
+% former RA-local copy omitted PortToElementExpansionEnabled, so a one-port
+% Msg1 waveform reached a two-element required-pattern CDL endpoint without
+% the power-preserving element projection that had already been resolved.
+[ant, meta] = sixgr.rf.AntennaArrayFactory.logicalPortView( ...
+    ant, meta, portCount, "four_step_ra_stage_logical_waveform_ports");
 numElements = localFirstFiniteScalar( ...
     sixgr.util.structGet(meta, "NumElements", []), ...
     sixgr.util.structGet(ant, "NumElements", []), ...
     sixgr.util.structGet(ant, "Nant", []), ...
     portCount);
-ant.NumPorts = double(portCount);
-ant.NumLogicalPorts = double(portCount);
-ant.LogicalPortCount = double(portCount);
-ant.NumWaveformColumns = double(portCount);
-ant.WaveformColumnCount = double(portCount);
-ant.NumRFChains = max(portCount, round(double(localFirstFiniteScalar(sixgr.util.structGet(ant, "NumRFChains", []), portCount))));
-ant.WaveformDomain = "logical_port";
-ant.PortCountSource = "four_step_ra_stage_logical_waveform_ports";
-ant.RFChainCountSource = "four_step_ra_stage_logical_waveform_ports";
 proj = projection;
 if isempty(proj)
     proj = localPortProjectionMatrix(numElements, portCount);
@@ -1340,17 +1337,9 @@ if gramResidual > 1e-9 * max(1, portCount)
 end
 ant.PortToElementMatrix = proj;
 ant.ElementToPortMatrix = proj';
+ant.HybridElementToPortMatrix = proj;
 ant.PortToElementMappingSource = char(mappingSource);
 ant.SelectedBeamId = char(beamId);
-meta.NumPorts = double(portCount);
-meta.NumLogicalPorts = double(portCount);
-meta.LogicalPortCount = double(portCount);
-meta.NumWaveformColumns = double(portCount);
-meta.WaveformColumnCount = double(portCount);
-meta.NumRFChains = double(ant.NumRFChains);
-meta.WaveformDomain = "logical_port";
-meta.PortCountSource = "four_step_ra_stage_logical_waveform_ports";
-meta.RFChainCountSource = "four_step_ra_stage_logical_waveform_ports";
 meta.PortToElementMatrix = proj;
 meta.PortToElementMappingSource = char(mappingSource);
 meta.SelectedBeamId = char(beamId);
