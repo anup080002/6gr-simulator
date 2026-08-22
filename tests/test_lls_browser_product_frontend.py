@@ -165,6 +165,46 @@ def main() -> None:
         assert "parallel pool off" in run_page
         assert dash.FULLY_WIRED_BROWSER_EXECUTION_MODE == "LLS"
 
+        fdd_source_path = (
+            REPO_ROOT
+            / "simulator"
+            / "configs"
+            / "scenarios"
+            / "lls_causal_access_to_data_wiring.yaml"
+        )
+        fdd_source_text = fdd_source_path.read_text(encoding="utf-8")
+        fdd_runtime = json.loads(
+            dash.normalize_run_yaml(
+                fdd_source_text,
+                "lls_causal_access_to_data_wiring.yaml",
+            )
+        )
+        for incompatible_path in (
+            "frame.tdd_common",
+            "frame_timing.tdd_common",
+            "frame.tdd_dedicated",
+            "frame_timing.tdd_dedicated",
+            "radio.tdd_common",
+            "tdd_timing",
+        ):
+            assert dash.path_get(fdd_runtime, incompatible_path, dash.PATH_MISSING) is dash.PATH_MISSING, (
+                f"WebGUI materialization reintroduced FDD-incompatible {incompatible_path}"
+            )
+
+        explicitly_bad_fdd = dash.yaml.safe_load(fdd_source_text)
+        explicitly_bad_fdd.setdefault("frame", {})["tdd_common"] = {
+            "ReferenceSubcarrierSpacingKHz": 15,
+        }
+        bad_runtime = json.loads(
+            dash.normalize_run_yaml(
+                dash.yaml.safe_dump(explicitly_bad_fdd, sort_keys=False),
+                "lls_causal_access_to_data_wiring.yaml",
+            )
+        )
+        assert dash.path_get(bad_runtime, "frame.tdd_common", dash.PATH_MISSING) is not dash.PATH_MISSING, (
+            "An explicitly authored duplex contradiction must survive materialization and fail in MATLAB"
+        )
+
         runs_page = pages["runs"]
         assert "Run history" in runs_page
         assert 'id="selectAllRuns"' in runs_page

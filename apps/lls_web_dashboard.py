@@ -5803,6 +5803,57 @@ def cleanup_runtime_yaml(folder: Path) -> None:
             continue
 
 
+def enforce_runtime_duplex_overlay_isolation(
+    payload: dict[str, Any],
+    source_payload: dict[str, Any] | None,
+) -> None:
+    """Remove only inherited fields that contradict the YAML duplex authority.
+
+    The WebGUI writes a fully resolved runtime overlay.  Catalog defaults may
+    contain the opposite duplex family's fields, but MATLAB deliberately treats
+    every field in that generated file as authored.  Preserve contradictions
+    that the user actually supplied so the strict MATLAB validator still fails
+    closed; prune only fields introduced by catalog/browser materialization.
+    """
+
+    source = source_payload if isinstance(source_payload, dict) else {}
+    mode_candidates = (
+        path_get(source, "frequency.duplex_mode", PATH_MISSING),
+        path_get(source, "global_radio_scope.duplex_mode", PATH_MISSING),
+        path_get(source, "radio.duplex_mode", PATH_MISSING),
+        path_get(payload, "frequency.duplex_mode", PATH_MISSING),
+        path_get(payload, "global_radio_scope.duplex_mode", PATH_MISSING),
+        path_get(payload, "radio.duplex_mode", PATH_MISSING),
+    )
+    mode = next(
+        (
+            str(value).strip().upper()
+            for value in mode_candidates
+            if value is not PATH_MISSING
+            and str(value).strip().upper() in {"FDD", "TDD"}
+        ),
+        "",
+    )
+    forbidden_by_mode = {
+        "FDD": (
+            "frame.tdd_common",
+            "frame_timing.tdd_common",
+            "frame.tdd_dedicated",
+            "frame_timing.tdd_dedicated",
+            "radio.tdd_common",
+            "tdd_timing",
+        ),
+        "TDD": (
+            "scheduling_timing",
+            "frequency.dl_center_frequency_hz",
+            "frequency.ul_center_frequency_hz",
+        ),
+    }
+    for forbidden_path in forbidden_by_mode.get(mode, ()):
+        if path_get(source, forbidden_path, PATH_MISSING) is PATH_MISSING:
+            path_delete(payload, forbidden_path)
+
+
 def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
     def _coerce_scalar_strings(value: Any, path: str = "") -> Any:
         if isinstance(value, dict):
@@ -5963,6 +6014,7 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
             run_cfg["numWorkers"] = WEBGUI_EXECUTION_WORKERS
         if "useParallel" in run_cfg:
             run_cfg["useParallel"] = False
+    enforce_runtime_duplex_overlay_isolation(payload, raw_payload_for_overlay)
     # Emit JSON text on disk even for .yaml runtime files. YAML parsers accept JSON as a
     # subset, and this preserves numeric types like 1e-6 without PyYAML re-emitting them
     # into a plain-scalar form that later reloads as a string.
