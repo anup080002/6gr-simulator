@@ -22,11 +22,15 @@ pngPath = fullfile(tmpRoot, "probe.png");
 jpgPath = fullfile(tmpRoot, "probe.jpg");
 actualPNG = sixgr.util.exportFigureArtifact(fig, pngPath, "Resolution", 160);
 actualJPG = sixgr.util.exportFigureArtifact(fig, jpgPath, "Resolution", 160);
+title(ax, "Headless raster overwrite regression");
+actualPNGOverwrite = sixgr.util.exportFigureArtifact(fig, pngPath, "Resolution", 160);
 
 assert(string(actualPNG) == string(pngPath) && isfile(pngPath), ...
     "PNG export did not create the requested raster artifact.");
 assert(string(actualJPG) == string(jpgPath) && isfile(jpgPath), ...
     "JPEG export did not create the requested raster artifact.");
+assert(string(actualPNGOverwrite) == string(pngPath) && isfile(pngPath), ...
+    "Atomic PNG overwrite did not publish the requested raster artifact.");
 pngInfo = imfinfo(pngPath);
 jpgInfo = imfinfo(jpgPath);
 assert(strcmpi(string(pngInfo.Format), "png") && ...
@@ -35,6 +39,10 @@ assert(strcmpi(string(pngInfo.Format), "png") && ...
 assert(any(strcmpi(string(jpgInfo.Format), ["jpg", "jpeg"])) && ...
     jpgInfo.Width >= 640 && jpgInfo.Height >= 400, ...
     "JPEG export has the wrong MIME format or unexpectedly small dimensions.");
+remainingFiles = dir(fullfile(tmpRoot, "*"));
+remainingFiles = remainingFiles(~[remainingFiles.isdir]);
+assert(numel(remainingFiles) == 2, ...
+    "Raster export left an incomplete staging artifact behind.");
 
 ok = true;
 end

@@ -59,7 +59,7 @@ strict = sixgr.pdsch.RASIPDSCHContext.materialize( ...
 
 siGrid = localAddGrids(pdcchTx.Grid, pdschTx.Grid);
 siWaveform = sixgr.phy.waveform.ofdmModulate(carrierSI, siGrid);
-[ssbWaveform, ~, ssbInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", localSSBObservationSubframes(cfg), ...
+[ssbWaveform, ssbWaveInfo, ssbInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", localSSBObservationSubframes(cfg), ...
     "SSBIndex", double(sixgr.util.structGet(cfg, "phy.ssb.runtimeSSBIndex", 0)));
 sampleRate = double(sixgr.util.structGet(ssbInfo, "SampleRate_Hz", localSampleRate(carrier)));
 sib1StartSample = localAbsoluteSlotStartSample( ...
@@ -109,6 +109,12 @@ tx.PDSCHPrecoderBundle = strict.PrecoderBundle;
 tx.PDSCHIntegrationContext = strict.IntegrationContext;
 tx.PDSCHExecutionProfile = "ra_si_strict";
 tx.SSBInfo = ssbInfo;
+% Preserve the exact SSB burst composition returned by the production
+% transmitter.  Downstream PBCH evidence must not infer beam weights from
+% YAML after the waveform has been generated.
+tx.SSBWaveInfo = ssbWaveInfo;
+tx.SSBBurstPlan = sixgr.util.structGet(ssbInfo, "SSBBurstPlan", struct());
+tx.SSBComposite = sixgr.util.structGet(ssbWaveInfo, "SSBComposite", struct());
 tx.MIBPDCCHConfigSIB1 = double(sixgr.util.structGet(cfgSI, "phy.sib1.decodedPDCCHConfigSIB1", ...
     localPDCCHConfigSIB1(cfg)));
 tx.CORESET0 = sixgr.util.structGet(cfgSI, "phy.sib1.resolvedCORESET0", ...

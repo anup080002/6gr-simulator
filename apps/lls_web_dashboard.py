@@ -9203,8 +9203,8 @@ PHY_GRID_CHANNEL_SPECS: dict[str, dict[str, Any]] = {
 
 PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
     "planned_re_allocation": {
-        "canonical_path": "frame_grid/csv/planned_re_allocation.csv",
-        "legacy_paths": [],
+        "canonical_path": "components/frame_grid/csv/planned_re_allocation.csv",
+        "legacy_paths": ["frame_grid/csv/planned_re_allocation.csv"],
         "owner_kind": "planned_re_allocation",
         "spec": {"channel": "Planned", "direction": ""},
     },
@@ -9277,6 +9277,7 @@ def phy_grid_slot_value(row: dict[str, Any]) -> int | None:
         [
             "CanonicalSlot",
             "AbsoluteSlot",
+            "absolute_slot",
             "AbsSlot",
             "SlotIndex",
             "Slot",
@@ -9288,6 +9289,47 @@ def phy_grid_slot_value(row: dict[str, Any]) -> int | None:
     if not math.isfinite(slot):
         return None
     return int(round(slot))
+
+
+def phy_grid_component_channel(row: dict[str, Any], fallback: str) -> str:
+    """Map an exact producer component to a stable resource-grid lane."""
+    component = str(first_present_value(row, ["component", "Component"], "") or "").strip().upper()
+    owner = str(first_present_value(row, ["channel", "Channel"], "") or "").strip().upper()
+    if component == "PSS":
+        return "PSS"
+    if component == "SSS":
+        return "SSS"
+    if component == "PBCH":
+        return "SSB/PBCH"
+    if component == "PBCH_DMRS":
+        return "PBCH-DMRS"
+    if component in {"PDCCH_DATA", "PDCCH"}:
+        return "PDCCH"
+    if component == "PDCCH_DMRS":
+        return "PDCCH-DMRS"
+    if component == "CSI_RS":
+        return "TRS" if owner == "TRS" else "CSI-RS"
+    if component == "PDSCH_DATA":
+        return "PDSCH"
+    if component == "PDSCH_DMRS":
+        return "PDSCH-DMRS"
+    if component == "PDSCH_PTRS":
+        return "PDSCH-PTRS"
+    if component == "PRACH":
+        return "PRACH"
+    if component == "PUSCH_DATA":
+        return "PUSCH"
+    if component == "PUSCH_DMRS":
+        return "PUSCH-DMRS"
+    if component == "PUSCH_PTRS":
+        return "PUSCH-PTRS"
+    if component == "PUCCH_DATA":
+        return "PUCCH"
+    if component == "PUCCH_DMRS":
+        return "PUCCH-DMRS"
+    if component == "SRS":
+        return "SRS"
+    return str(fallback or owner or component)
 
 
 def phy_grid_ue_value(row: dict[str, Any]) -> str:
@@ -9492,10 +9534,13 @@ def build_phy_event(
     *,
     derived_channel: str | None = None,
     derived_source_note: str = "",
+    slot_offset: int = 0,
 ) -> dict[str, Any] | None:
     slot = phy_grid_slot_value(row)
     if slot is None:
         return None
+    source_slot = int(slot)
+    slot = source_slot + int(slot_offset)
     prb_start_columns = [
         "PUCCHPRBStart",
         "PUSCHPRBStart",
@@ -9535,6 +9580,7 @@ def build_phy_event(
         "PRACHSymbolStart",
         "SRSSymbolStart",
         "CSIRSSymbolStart",
+        "symbol_index",
         "SymbolStart",
         "StartSymbol",
         "StartSymbolIndex",
@@ -9565,12 +9611,26 @@ def build_phy_event(
         prb_count = phy_grid_prb_count_from_set(prb_set_present)
     symbol_start = first_present_number(row, symbol_start_columns, math.nan)
     symbol_count = first_present_number(row, symbol_count_columns, math.nan)
+    if math.isfinite(symbol_start) and not math.isfinite(symbol_count):
+        # Canonical sparse allocation rows identify one OFDM symbol per row.
+        symbol_count = 1.0
     subcarrier_start = first_present_number(
         row, ["subcarrier_start", "SubcarrierStart", "REStart"], math.nan
     )
     subcarrier_count = first_present_number(
         row, ["subcarrier_count", "SubcarrierCount", "RECount"], math.nan
     )
+    exact_subcarrier_span = (
+        math.isfinite(subcarrier_start)
+        and math.isfinite(subcarrier_count)
+        and subcarrier_count > 0
+    )
+    if exact_subcarrier_span and (not math.isfinite(prb_start) or not math.isfinite(prb_count)):
+        # PRB bounds are only a display envelope.  The persisted subcarrier
+        # start/count remain the authoritative coordinates returned below.
+        prb_start = math.floor(subcarrier_start / 12.0)
+        final_subcarrier = subcarrier_start + subcarrier_count
+        prb_count = math.ceil(final_subcarrier / 12.0) - prb_start
     if not all(math.isfinite(value) for value in [prb_start, prb_count, symbol_start, symbol_count]):
         return None
     if prb_count <= 0 or symbol_count <= 0:
@@ -9578,7 +9638,7 @@ def build_phy_event(
     coordinate_precision = str(
         first_present_value(row, ["coordinate_precision", "CoordinatePrecision"], "") or ""
     ).strip()
-    if math.isfinite(subcarrier_start) and math.isfinite(subcarrier_count) and subcarrier_count > 0:
+    if exact_subcarrier_span:
         if not coordinate_precision:
             coordinate_precision = "subcarrier_symbol_region"
     else:
@@ -9586,12 +9646,13 @@ def build_phy_event(
         subcarrier_count = 12.0 * prb_count
         if not coordinate_precision:
             coordinate_precision = "rb_symbol_region"
-    channel = str(
+    channel_fallback = str(
         derived_channel
         or first_present_value(row, ["channel_name", "signal_name", "ChannelName", "SignalFamily", "Channel"], "")
         or spec.get("channel")
         or table_key
     )
+    channel = phy_grid_component_channel(row, channel_fallback)
     direction = str(first_present_value(row, ["Direction", "direction", "LinkDirection", "Duplex"], spec.get("direction") or ""))
     crc_value = first_present_value(row, ["CRCPass", "CRCOK", "CRC", "DecodeSuccess", "DetectionSuccess", "Pass"], "")
     status_value = first_present_value(row, ["Status", "DecodeStatus", "DetectionStatus", "ResultStatus", "SRSValidityState"], "")
@@ -9605,9 +9666,12 @@ def build_phy_event(
         "planned" if table_key == "planned_re_allocation" else "observed",
     ))
     source_note = derived_source_note or f"{evidence_scope};{coordinate_precision}"
+    if slot_offset:
+        source_note += f";display_slot_offset={slot_offset:+d};source_slot={source_slot}"
     return {
         "frame": bounded_int(first_present_number(row, ["frame", "Frame", "SFN"], 0), 0, 0, 1023),
         "slot": int(slot),
+        "source_slot": source_slot,
         "direction": direction,
         "channel": channel,
         "table_key": table_key,
@@ -9742,7 +9806,13 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         },
         key=lambda item: (coerce_numeric(item) is None, float(coerce_numeric(item) or 0), item),
     )
-    raw_slots = [
+    trace_slots = [
+        phy_grid_slot_value(row)
+        for row in table_rows.get("slot_trace", [])
+        if phy_grid_slot_value(row) is not None
+    ]
+    trace_slots = [int(x) for x in trace_slots if x is not None]
+    raw_slots = trace_slots or [
         phy_grid_slot_value(row)
         for rows in table_rows.values()
         for row in rows
@@ -9803,18 +9873,33 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             continue
         spec = channel_specs.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
         selected_path = str(table_meta.get(table_key, {}).get("selected_logical_path") or "")
+        table_slots = [phy_grid_slot_value(row) for row in rows]
+        table_slots = [int(value) for value in table_slots if value is not None]
+        slot_offset = 0
+        if trace_slots and table_slots:
+            trace_base = min(trace_slots)
+            table_base = min(table_slots)
+            if trace_base == 1 and table_base == 0:
+                slot_offset = 1
         for row in rows:
             event_ue = phy_grid_ue_value(row)
             if selected_ue and event_ue and event_ue != selected_ue:
                 continue
-            event = build_phy_event(row, table_key, spec, selected_path, nrb)
+            event = build_phy_event(
+                row,
+                table_key,
+                spec,
+                selected_path,
+                nrb,
+                slot_offset=slot_offset,
+            )
             if event is None or int(event["slot"]) not in slot_set:
                 continue
             events.append(event)
 
     lane_order = [
-        "PSS", "SSS", "SSB/PBCH", "PBCH", "PDCCH", "CSI-RS", "TRS", "DL Grant", "PDSCH", "PDSCH-DMRS", "PDSCH-PTRS",
-        "PRACH", "UL Grant", "PUSCH", "PUSCH-DMRS", "PUCCH", "SRS",
+        "PSS", "SSS", "SSB/PBCH", "PBCH-DMRS", "PDCCH", "PDCCH-DMRS", "CSI-RS", "TRS", "DL Grant", "PDSCH", "PDSCH-DMRS", "PDSCH-PTRS",
+        "PRACH", "UL Grant", "PUSCH", "PUSCH-DMRS", "PUSCH-PTRS", "PUCCH", "PUCCH-DMRS", "SRS",
     ]
     present_lanes = sorted({str(event.get("channel") or "") for event in events if str(event.get("channel") or "")})
     lanes = [lane for lane in lane_order if lane in present_lanes] + [lane for lane in present_lanes if lane not in lane_order]
@@ -9834,6 +9919,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         "Slot D/U/S/F labels and idle reasons come from the canonical slot trace when available; resolved configuration is only the fallback.",
         "planned_config rows describe the YAML-resolved schedule. runtime_observed rows describe allocations actually reached by the execution chain.",
         "coordinate_precision distinguishes exact sparse REs from subcarrier/symbol or RB/symbol regions; the UI never upgrades a coarse region to exact evidence.",
+        "Zero-based absolute-slot allocation rows are shifted by +1 only when the canonical slot trace explicitly uses one-based slots; source_slot and the offset remain visible on every affected event.",
         "Missing, disabled, collision, transmitted, received, and decoded states are rendered from persisted lifecycle_status fields only.",
     ]
     payload = {

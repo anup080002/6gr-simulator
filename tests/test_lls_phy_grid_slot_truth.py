@@ -112,3 +112,83 @@ def test_tdd_pattern_derives_from_common_pattern_and_nan_is_not_a_ue() -> None:
     assert dash.phy_grid_ue_value({"UEIndex": float("nan")}) == ""
     assert dash.phy_grid_ue_value({"UEIndex": "nan"}) == ""
     assert dash.phy_grid_ue_value({"UEIndex": 4.0}) == "4"
+
+
+def test_exact_planned_re_rows_render_without_inventing_coordinates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_rows = [_trace_row(1, "D", grants=1)]
+    planned_rows = [
+        {
+            "absolute_slot": 0,
+            "sfn": 0,
+            "slot_within_frame": 0,
+            "direction": "DL",
+            "channel": "PDSCH",
+            "component": "PDSCH_DMRS",
+            "subcarrier_start": 241,
+            "subcarrier_count": 1,
+            "symbol_index": 2,
+            "port_index": 1,
+            "re_count": 1,
+            "cell_id": 42,
+            "ue_id": 7,
+            "layer_count": 2,
+            "authority": "resolved_runtime_allocation",
+            "resolver": "nrPDSCHDMRSIndices",
+            "allocation_id": "pdsch_dmrs_1",
+            "coordinate_precision": "exact_sparse_re_span",
+            "evidence_scope": "planned_config",
+        }
+    ]
+    config = {
+        "resolved_runtime_view": {"active_grid_num_rbs": 25},
+        "frame_timing": {"symbols_per_slot": 14},
+    }
+    run_row = {
+        "run_id": 78,
+        "run_tag": "exact-grid",
+        "scenario_id": "exact-grid",
+        "status_text": "running",
+        "status_json": "{}",
+        "config_json": json.dumps(config),
+        "updated_utc": "2026-08-22T00:00:00Z",
+    }
+    monkeypatch.setattr(dash, "fetch_run", lambda _run_id: run_row)
+    monkeypatch.setattr(dash, "fetch_artifacts", lambda _run_id: [])
+    monkeypatch.setattr(dash, "merge_db_and_filesystem_artifacts", lambda _artifacts, _run: [])
+
+    def select_rows(_artifacts, logical_path, **_kwargs):
+        selected = []
+        if logical_path == "reports/csv/slot_trace.csv":
+            selected = trace_rows
+        elif logical_path == "components/frame_grid/csv/planned_re_allocation.csv":
+            selected = planned_rows
+        return selected, {
+            "selected_logical_path": logical_path,
+            "canonical_logical_path": logical_path,
+            "selection_status": "selected" if selected else "unavailable",
+            "selected_artifact_id": None,
+        }
+
+    monkeypatch.setattr(dash, "select_canonical_csv_rows", select_rows)
+    dash.PHY_GRID_PAYLOAD_CACHE.clear()
+    grid = dash.build_phy_grid_payload(78, slot_limit=1)["grid"]
+
+    assert grid["event_count"] == 1
+    event = grid["events"][0]
+    assert event["channel"] == "PDSCH-DMRS"
+    assert event["slot"] == 1
+    assert event["source_slot"] == 0
+    assert event["symbol_start"] == 2
+    assert event["symbol_count"] == 1
+    assert event["subcarrier_start"] == 241
+    assert event["subcarrier_count"] == 1
+    assert event["prb_start"] == 20
+    assert event["prb_count"] == 1
+    assert str(event["port_index"]) == "1"
+    assert str(event["layer_count"]) == "2"
+    assert str(event["cell_id"]) == "42"
+    assert event["ue_id"] == "7"
+    assert event["coordinate_precision"] == "exact_sparse_re_span"
+    assert "display_slot_offset=+1" in event["source_note"]

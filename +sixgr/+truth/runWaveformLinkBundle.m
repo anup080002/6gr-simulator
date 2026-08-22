@@ -3628,12 +3628,18 @@ for sweepIdx = 1:numel(snrGrid)
             localAppendRuntimeLog("INFO", ...
                 "Coupled DL PDCCH qualification complete: sweep=%d/%d slot=%d/%d executable_grants=%d.", ...
                 round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), numel(dlGrants));
+            % The same PDCCH monitoring occasion can carry DL assignments
+            % and UL grants.  Resolve and freeze the future K2 PUSCH grant
+            % while the runtime still represents that control occasion.
+            % Executing PDSCH first mutates per-UE feedback/PHY state and
+            % incorrectly made the UL decision depend on a later data-plane
+            % event instead of the decoded DCI authority.
+            [runtimeState, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl( ...
+                runtimeState, cfg, userCfg, pendingULGrants, snrVal, sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
             [runtimeState, dlTrials, dlConstT, dlStates] = localExecuteCoupledDirectionBatch( ...
                 runtimeState, cfg, runFolder, multiUser, userCfg, dlGrants, "DL", snrVal, absoluteFrame, dlStates, ...
                 dlTrials, ulTrials, dlConstT, ulConstT, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ...
                 sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
-            [runtimeState, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl( ...
-                runtimeState, cfg, userCfg, pendingULGrants, snrVal, sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
         end
         if allowUL
             if allowDL
@@ -11463,6 +11469,42 @@ for k = 1:nTrials
         r.SIB1FailureReason = string(sixgr.util.structGet(sib1, "FailureReason", ""));
         r.SSBIndex = double(sixgr.util.structGet(out, "SSBIndex", ssbIndex));
         r.BeamIndex = double(sixgr.util.structGet(out, "SSBBeamIndex", r.SSBIndex + 1));
+        ssbTx = sixgr.util.structGet(out, "SSBTxEvidence", struct());
+        r.SSBBurstConfiguredBeamCount = double(sixgr.util.structGet(ssbTx, "ConfiguredBeamCount", NaN));
+        r.SSBBurstExecutedBeamCount = double(sixgr.util.structGet(ssbTx, "ExecutedBeamCount", NaN));
+        r.SSBBurstActiveIndices0Based = localNumericVectorToken( ...
+            sixgr.util.structGet(ssbTx, "ActiveSSBIndices0Based", []));
+        r.SSBBurstPrecoderIDs = char(strjoin(string(sixgr.util.structGet( ...
+            ssbTx, "PrecoderIDs", strings(0, 1))), "|"));
+        r.SSBBurstPrecoderMatrixSHA256 = char(strjoin(string(sixgr.util.structGet( ...
+            ssbTx, "PrecoderMatrixSHA256", strings(0, 1))), "|"));
+        r.SSBBurstPlanSHA256 = string(sixgr.util.structGet(ssbTx, "BurstPlanSHA256", ""));
+        r.SSBWaveformDomain = string(sixgr.util.structGet(ssbTx, "WaveformDomain", ""));
+        r.SSBWaveformPorts = double(sixgr.util.structGet(ssbTx, "WaveformPorts", NaN));
+        r.SSBPhysicalTransmitAntennaElements = double(sixgr.util.structGet( ...
+            ssbTx, "PhysicalTransmitAntennaElements", NaN));
+        r.SSBTxEvidenceSource = string(sixgr.util.structGet(ssbTx, "Source", ""));
+        r.PrecoderSource = r.SSBTxEvidenceSource;
+        r.PrecodingMode = r.SSBWaveformDomain;
+        r.PrecodingApplicationStage = "SSB_Tx_component_precoding_before_composite";
+        r.PrecodingActive = logical(sixgr.util.structGet(ssbTx, "BeamformingApplied", false));
+        r.ExplicitBeamWeightsApplied = logical(sixgr.util.structGet( ...
+            ssbTx, "ExplicitBeamWeightsApplied", false));
+        r.BeamformingApplied = logical(sixgr.util.structGet(ssbTx, "BeamformingApplied", false));
+        r.AppliedBeamIndexSet = char(string(r.BeamIndex));
+        r.PrecodingNumPorts = r.SSBWaveformPorts;
+        r.PrecodingNumLayers = 1;
+        r.PrecodingMatrixRows = 1;
+        r.PrecodingMatrixCols = r.SSBPhysicalTransmitAntennaElements;
+        ssbPrecoderHashes = string(sixgr.util.structGet(ssbTx, ...
+            "PrecoderMatrixSHA256", strings(0, 1)));
+        if isfinite(r.SSBIndex) && r.SSBIndex >= 0 && ...
+                r.SSBIndex + 1 <= numel(ssbPrecoderHashes)
+            r.AppliedPrecoderMatrixSHA256 = ssbPrecoderHashes(r.SSBIndex + 1);
+            r.RequestedPrecoderSHA256 = r.AppliedPrecoderMatrixSHA256;
+            r.AppliedPrecoderSHA256 = r.AppliedPrecoderMatrixSHA256;
+            r.PrecoderDigestDomain = "SSB_Tx_physical_beam_weight_matrix";
+        end
         r.InjectedCFO_Hz = double(sixgr.util.structGet(out, "InjectedCFO_Hz", NaN));
         r.EstimatedCFO_PreCorrection_Hz = double(sixgr.util.structGet(out, "EstimatedCFO_PreCorrection_Hz", NaN));
         r.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(out, "ResidualCFO_PostCorrection_Hz", NaN));
@@ -14306,6 +14348,16 @@ row.Frame = double(trialIdx);
 row.Slot = double(trialIdx);
 row.SSBIndex = NaN;
 row.BeamIndex = NaN;
+row.SSBBurstConfiguredBeamCount = NaN;
+row.SSBBurstExecutedBeamCount = NaN;
+row.SSBBurstActiveIndices0Based = "";
+row.SSBBurstPrecoderIDs = "";
+row.SSBBurstPrecoderMatrixSHA256 = "";
+row.SSBBurstPlanSHA256 = "";
+row.SSBWaveformDomain = "";
+row.SSBWaveformPorts = NaN;
+row.SSBPhysicalTransmitAntennaElements = NaN;
+row.SSBTxEvidenceSource = "";
 row.MCS = NaN;
 row.PRBs = NaN;
 row.Layers = NaN;

@@ -32,6 +32,7 @@ if sixgr.db.isArtifactStoreActive()
     tmpPath = char(string(tempname) + string(ext));
     cleanupTmp = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>
     localExportGraphics(figHandle, tmpPath, string(ext), exportArgs{:});
+    localRequireValidRaster(tmpPath, string(ext));
     [tmpPath, logicalPath, artifactKind, mimeType] = localNormalizeExportedVisualFile(tmpPath, logicalPath);
     sixgr.db.captureFileArtifact(tmpPath, artifactKind, mimeType, true, logicalPath);
     actualPath = char(logicalPath);
@@ -39,7 +40,20 @@ if sixgr.db.isArtifactStoreActive()
 end
 
 sixgr.util.ensureDir(filePath);
-localExportGraphics(figHandle, filePath, string(ext), exportArgs{:});
+[targetFolder, ~, ~] = fileparts(filePath);
+if isempty(targetFolder)
+    targetFolder = pwd;
+end
+stagingPath = char(string(tempname(targetFolder)) + string(ext));
+cleanupStage = onCleanup(@() localDeleteIfExists(stagingPath)); %#ok<NASGU>
+localExportGraphics(figHandle, stagingPath, string(ext), exportArgs{:});
+localRequireValidRaster(stagingPath, string(ext));
+[moveOk, moveMessage] = movefile(stagingPath, filePath, "f");
+if ~moveOk
+    error("sixgr:visual:RasterPublishFailed", ...
+        "Validated raster staging file could not be published to %s: %s", ...
+        string(filePath), string(moveMessage));
+end
 [actualPath, ~, ~, ~] = localNormalizeExportedVisualFile(filePath, filePath);
 end
 
@@ -143,8 +157,40 @@ switch lower(string(ext))
     otherwise
         device = "-djpeg95";
 end
+% Some headless Windows graphics warnings are routed through an asynchronous
+% console stream.  If the launching client has already closed that stream,
+% warning() itself throws iolib:badbit before print can finish.  Suppress
+% console warnings only for this bounded call and validate the raster bytes
+% immediately afterwards; an absent or corrupt image still fails closed.
+warningState = warning("off", "all");
+cleanupWarning = onCleanup(@() warning(warningState)); %#ok<NASGU>
 print(figHandle, filePath, char(device), ...
     sprintf("-r%d", round(resolution)));
+end
+
+function localRequireValidRaster(filePath, ext)
+info = sixgr.visual.inspectVisualArtifactFile(filePath);
+expectedMime = "image/png";
+if any(lower(string(ext)) == [".jpg", ".jpeg"])
+    expectedMime = "image/jpeg";
+end
+if ~logical(info.exists) || string(info.actual_mime_type) ~= expectedMime || ...
+        ~logical(info.extension_mime_match) || double(info.byte_count) <= 0
+    error("sixgr:visual:RasterExportInvalid", ...
+        "Raster export %s is missing or invalid (expected=%s actual=%s bytes=%g status=%s).", ...
+        string(filePath), expectedMime, string(info.actual_mime_type), ...
+        double(info.byte_count), string(info.signature_status));
+end
+try
+    imageInfo = imfinfo(filePath);
+catch ME
+    error("sixgr:visual:RasterExportUnreadable", ...
+        "Raster export %s could not be decoded: %s", string(filePath), string(ME.message));
+end
+if isempty(imageInfo) || double(imageInfo(1).Width) <= 0 || double(imageInfo(1).Height) <= 0
+    error("sixgr:visual:RasterExportEmptyDimensions", ...
+        "Raster export %s has invalid pixel dimensions.", string(filePath));
+end
 end
 
 function localDeleteIfExists(filePath)
