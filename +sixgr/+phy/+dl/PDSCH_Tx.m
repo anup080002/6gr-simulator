@@ -148,16 +148,22 @@ end
 
 function featureName = localPTRSAuthorityFeature(cfg, executionProfile, assignment)
 featureName = "ptrs";
-isSIB1 = false;
+rntiType = "";
 if isa(assignment, "sixgr.pdsch.PDSCHSchedulingAssignment")
     assignmentData = assignment.toStruct();
-    isSIB1 = upper(strtrim(string(sixgr.util.structGet( ...
-        assignmentData, "RNTIType", "")))) == "SI-RNTI";
+    rntiType = upper(strtrim(string(sixgr.util.structGet( ...
+        assignmentData, "RNTIType", ""))));
 end
-if string(executionProfile) == "ra_si_strict" && isSIB1 && ...
-        isfield(sixgr.util.structGet(cfg, "runtime.features", struct()), ...
-        "sib1_ptrs")
+if string(executionProfile) ~= "ra_si_strict"
+    return;
+end
+features = sixgr.util.structGet(cfg, "runtime.features", struct());
+if rntiType == "SI-RNTI" && isfield(features, "sib1_ptrs")
     featureName = "sib1_ptrs";
+elseif rntiType == "RA-RNTI" && isfield(features, "ra_msg2_ptrs")
+    featureName = "ra_msg2_ptrs";
+elseif rntiType == "TC-RNTI" && isfield(features, "ra_msg4_ptrs")
+    featureName = "ra_msg4_ptrs";
 end
 end
 

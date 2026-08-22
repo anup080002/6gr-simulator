@@ -18,6 +18,7 @@ function [tx, info] = PUSCH_Tx(cfg, varargin)
 %     "NumTxAnt"           : number of TX antennas for resource grid pages
 %     "PHYGrant"           : frozen canonical grant dimensional contract
 %     "SRSDecision"        : authoritative measured-SRS RI/SRI/TPMI decision
+%     "ExecutionProfile"   : explicit procedure authority scope
 %
 %   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -64,8 +65,11 @@ ip.addParameter('InitialIMCSPerCodeword', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('SRSDecision', [], @(x) isempty(x) || (isstruct(x) && isscalar(x)));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('ExecutionProfile', "data_pusch", ...
+    @(x) ischar(x) || (isstring(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+executionProfile = lower(strtrim(string(opt.ExecutionProfile)));
 phyGrant = opt.PHYGrant;
 hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
 if hasPHYGrant
@@ -101,12 +105,14 @@ else
         [puschInd, puschInfo] = nrPUSCHIndices(carrier, pusch);
     end
 end
-sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs", ...
+sixgr.config.assertRuntimeFeatureUse(cfg, ...
+    localProcedureFeature("ptrs", executionProfile), ...
     logical(localObjectValue(pusch, "EnablePTRS", false)), ...
-    "PUSCH_Tx.nrPUSCHConfig.EnablePTRS");
-sixgr.config.assertRuntimeFeatureUse(cfg, "transform_precoding", ...
+    "PUSCH_Tx." + executionProfile + ".nrPUSCHConfig.EnablePTRS");
+sixgr.config.assertRuntimeFeatureUse(cfg, ...
+    localProcedureFeature("transform_precoding", executionProfile), ...
     logical(localObjectValue(pusch, "TransformPrecoding", false)), ...
-    "PUSCH_Tx.nrPUSCHConfig.TransformPrecoding");
+    "PUSCH_Tx." + executionProfile + ".nrPUSCHConfig.TransformPrecoding");
 [frequencyHoppingMode, frequencyHoppingToolboxMode, secondHopStartPRB] = ...
     localActualPUSCHFrequencyHopping(pusch);
 
@@ -1926,4 +1932,15 @@ info = struct( ...
     "NormativeMinus3dBBetaApplied", logical(scalePolicy == "ts_38_104_minus3_db_beta_sqrt2"), ...
     "ScalePolicy", scalePolicy, ...
     "Equation", "normative_minus3_db_uses_beta_sqrt2_otherwise_10_power_minus_delta_db_over_20");
+end
+
+function featureName = localProcedureFeature(baseName, executionProfile)
+switch lower(strtrim(string(executionProfile)))
+    case "ra_msg3"
+        featureName = "ra_msg3_" + string(baseName);
+    case "ra_setup_complete"
+        featureName = "ra_setup_complete_" + string(baseName);
+    otherwise
+        featureName = string(baseName);
+end
 end

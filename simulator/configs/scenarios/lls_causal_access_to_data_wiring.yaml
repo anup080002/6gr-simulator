@@ -4682,8 +4682,9 @@ random_access:
     symbol_start: 2
     num_symbols: 12
     mcs: 0
+    mcs_table: "qam64"
     modulation: "QPSK"
-    target_code_rate: 0.11719
+    target_code_rate: 0.1171875
     rv: 0
     n_layers: 1
     ptrs_enabled: false
@@ -4697,8 +4698,9 @@ random_access:
     symbol_start: 0
     num_symbols: 14
     mcs: 0
+    mcs_table: "qam64"
     modulation: "QPSK"
-    target_code_rate: 0.11719
+    target_code_rate: 0.1171875
     rv: 0
     n_layers: 1
     transform_precoding: false
@@ -4713,8 +4715,9 @@ random_access:
     symbol_start: 2
     num_symbols: 12
     mcs: 0
+    mcs_table: "qam64"
     modulation: "QPSK"
-    target_code_rate: 0.11719
+    target_code_rate: 0.1171875
     rv: 0
     n_layers: 1
     ptrs_enabled: false
@@ -4728,8 +4731,9 @@ random_access:
     symbol_start: 0
     num_symbols: 14
     mcs: 0
+    mcs_table: "qam64"
     modulation: "QPSK"
-    target_code_rate: 0.11719
+    target_code_rate: 0.1171875
     rv: 0
     n_layers: 1
     transform_precoding: false

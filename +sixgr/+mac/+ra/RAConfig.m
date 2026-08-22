@@ -353,6 +353,7 @@ s.NumPRB = double(sixgr.util.structGet(node, "num_prb", 24));
 s.SymbolStart = double(sixgr.util.structGet(node, "symbol_start", 0));
 s.NumSymbols = double(sixgr.util.structGet(node, "num_symbols", 14));
 s.MCS = double(sixgr.util.structGet(node, "mcs", defaultMCS));
+s.MCSTable = string(sixgr.util.structGet(node, "mcs_table", "qam64"));
 s.Modulation = string(sixgr.util.structGet(node, "modulation", "QPSK"));
 s.TargetCodeRate = double(sixgr.util.structGet(node, "target_code_rate", 120/1024));
 s.RV = double(sixgr.util.structGet(node, "rv", 0));
