@@ -39,7 +39,7 @@ assert(string(calibration.ExecutionTaxonomy) == "isolated_phy_calibration");
 assert(string(calibration.ApproximationMode) == "none");
 
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
-    "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml");
+    "lls_causal_access_to_data_wiring.yaml");
 scenario = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 runtimeCfg = sixgr.lls6g.buildInternalConfig(scenario, tempdir);
 assert(string(sixgr.util.structGet(runtimeCfg, ...

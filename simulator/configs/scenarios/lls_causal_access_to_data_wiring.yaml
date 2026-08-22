@@ -1112,7 +1112,7 @@ pdsch:
   mtrp_policy: "disabled"
   mrss_constraints: "none"
   throughput_eval_policy: "baseline"
-  execution_profile: "phy_calibration"
+  execution_profile: "scheduler_truth"
   num_antenna_ports: 2
   mapping_type: "A"
   prb_start: 0
@@ -1151,7 +1151,7 @@ pusch:
   msg3_flag: false
   rv_sequence: [0, 2, 3, 1]
   retransmission_policy: "baseline"
-  execution_profile: "phy_calibration"
+  execution_profile: "scheduler_truth"
   transmission_scheme: "codebook"
   codebook_type: "codebook1_ng1n2n2"
   num_antenna_ports: 2
