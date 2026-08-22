@@ -180,7 +180,17 @@ for name = unique(names, "stable").'
                 "validatecampaignconfig"}
             state = "PASS_PACKAGE_QUALIFIED_ISOLATED_CAMPAIGN_SYMBOL";
         otherwise
-            state = "UNRESOLVED_DUPLICATE_NAME";
+            qualified = lower(strtrim(string(T.QualifiedName(mask))));
+            if numel(unique(qualified)) == count
+                % MATLAB package qualification is the authority boundary.
+                % Equal basenames in distinct packages (for example
+                % sixgr.config.loadConfig and sixgr.lls.loadConfig) do not
+                % collide and must not be reported as duplicate runtime
+                % implementations.
+                state = "PASS_PACKAGE_QUALIFIED_DISTINCT_SYMBOL";
+            else
+                state = "UNRESOLVED_DUPLICATE_NAME";
+            end
     end
     T.SameBasenameAssessment(mask) = state;
 end
