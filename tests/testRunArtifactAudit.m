@@ -19,6 +19,7 @@ sixgr.truth.runWaveformLinkBundle(cfg, fullfile(tmp, "air_interface"), opt); %#o
 localWriteAuditPrereqs(tmp, snrGrid, trialsPerPoint);
 sixgr.validation.auditFixedSNRSweepRun(tmp, "Strict", false, "WriteOutputs", true);
 sixgr.visual.plotFixedSNRSweepCurves(tmp);
+localInstallCanonicalRasterContract(tmp);
 
 artifactAudit = sixgr.validation.auditRunArtifacts(tmp, "Strict", false, "WriteOutputs", true);
 if ~logical(artifactAudit.Ok)
@@ -41,7 +42,8 @@ imageAudit = readtable(fullfile(tmp, "reports", "csv", "all_image_artifact_audit
     "VariableNamingRule", "preserve", "TextType", "string");
 assert(any(string(csvAudit.relative_path) == "reports/csv/fixed_snr_sweep_audit.csv"), ...
     "The recursive CSV audit must include fixed_snr_sweep_audit.csv.");
-assert(any(string(imageAudit.relative_path) == "reports/image/dl_bler_vs_snr.png"), ...
+assert(any(string(imageAudit.relative_path) == ...
+        "reports/image/contract__fixed-snr-sinr-sweep-validation__dl-bler-vs-snr.png"), ...
     "The recursive image audit must include the fixed-sweep BLER plot.");
 
 ulCurvePath = fullfile(tmp, "reports", "csv", "ul_fixed_snr_bler_curve.csv");
@@ -59,20 +61,23 @@ assert(any(contains(lower(string(issueRegistry.failure_code(missingCurveRows))),
     "The issue registry must explain that the required UL curve is empty.");
 
 sixgr.util.csvWriteTable(ulCurvePath, ulCurve);
-blankPlotPath = fullfile(tmp, "reports", "image", "dl_bler_vs_snr.png");
+blankPlotPath = fullfile(tmp, "reports", "image", ...
+    "contract__fixed-snr-sinr-sweep-validation__dl-bler-vs-snr.png");
 imwrite(uint8(255 * ones(180, 240, 3)), blankPlotPath);
 auditBlankImage = sixgr.validation.auditRunArtifacts(tmp, "Strict", false, "WriteOutputs", true);
 assert(~logical(auditBlankImage.Ok), ...
     "A blank required fixed-sweep plot must fail the recursive artifact audit.");
 issueRegistry = readtable(fullfile(tmp, "reports", "csv", "artifact_issue_registry.csv"), ...
     "VariableNamingRule", "preserve", "TextType", "string");
-blankImageRows = string(issueRegistry.relative_path) == "reports/image/dl_bler_vs_snr.png";
+blankImageRows = string(issueRegistry.relative_path) == ...
+    "reports/image/contract__fixed-snr-sinr-sweep-validation__dl-bler-vs-snr.png";
 assert(any(blankImageRows), ...
     "The issue registry must point to the exact blank required image.");
 assert(any(contains(lower(string(issueRegistry.failure_code(blankImageRows))), "required_image_blank_or_low_information")), ...
     "The issue registry must explain that the required BLER image is blank or low-information.");
 
 sixgr.visual.plotFixedSNRSweepCurves(tmp);
+localInstallCanonicalRasterContract(tmp);
 orphanPath = fullfile(tmp, "reports", "image", "unmanifested_orphan.png");
 imwrite(uint8(repmat(reshape(uint8(mod(0:255, 256)), 16, 16), 1, 1, 3)), orphanPath);
 auditOrphan = sixgr.validation.auditRunArtifacts(tmp, "Strict", false, "WriteOutputs", true);
@@ -85,6 +90,49 @@ assert(any(orphanRows) && any(string(auditOrphan.ImageAuditTable.failure_code(or
     "The recursive audit must classify an orphan PNG as unmanifested visual evidence.");
 
 ok = true;
+end
+
+function localInstallCanonicalRasterContract(runFolder)
+% The browser CSV renderer is the production raster authority.  This
+% focused unit fixture uses the small MATLAB curve renderer to create image
+% bytes, then installs them under the exact canonical browser paths and
+% supplies explicit source lineage.  No runtime production path calls this
+% test-only adapter.
+stems = [ ...
+    "dl_bler_vs_snr"
+    "ul_bler_vs_snr"
+    "dl_ber_vs_snr"
+    "ul_ber_vs_snr"
+    "measured_sinr_vs_configured_snr"];
+contractStems = [ ...
+    "dl-bler-vs-snr"
+    "ul-bler-vs-snr"
+    "dl-ber-vs-snr"
+    "ul-ber-vs-snr"
+    "measured-sinr-vs-configured-snr"];
+sources = [ ...
+    "reports/csv/dl_fixed_snr_bler_curve.csv"
+    "reports/csv/ul_fixed_snr_bler_curve.csv"
+    "reports/csv/dl_fixed_snr_ber_curve.csv"
+    "reports/csv/ul_fixed_snr_ber_curve.csv"
+    "reports/csv/fixed_snr_sweep_curve_summary.csv"];
+imagePaths = strings(numel(stems), 1);
+plotIds = strings(numel(stems), 1);
+for index = 1:numel(stems)
+    sourceImage = fullfile(runFolder, "reports", "image", stems(index) + ".png");
+    imagePaths(index) = "reports/image/contract__fixed-snr-sinr-sweep-validation__" + ...
+        contractStems(index) + ".png";
+    targetImage = fullfile(runFolder, strrep(char(imagePaths(index)), "/", filesep));
+    assert(isfile(sourceImage), "Missing test fixture raster %s.", sourceImage);
+    [copied, message] = copyfile(sourceImage, targetImage, "f");
+    assert(copied, "Unable to install canonical fixture raster: %s", message);
+    plotIds(index) = "contract__fixed-snr-sinr-sweep-validation__" + ...
+        contractStems(index);
+end
+lineage = table(plotIds, sources, imagePaths, repmat("pass", numel(stems), 1), ...
+    'VariableNames', {'PlotId','SourceCSVPath','ImagePath','Status'});
+sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", ...
+    "contract_plot_lineage.csv"), lineage);
 end
 
 function cfg = localFixtureConfig(snrGrid, trialsPerPoint)
@@ -143,6 +191,7 @@ scfg.validation.fixed_link_campaign = struct( ...
     "min_errors_for_ci", 0, ...
     "max_ci_half_width", 1.0, ...
     "confidence_level", 0.95, ...
+    "interval_method", "WILSON_TWO_SIDED", ...
     "trials_per_drop", 1, ...
     "disable_auxiliary_signals", true, ...
     "enable_ptrs", false, ...

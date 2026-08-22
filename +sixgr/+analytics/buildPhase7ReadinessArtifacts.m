@@ -359,7 +359,7 @@ runDurationS = slots * slotMs / 1e3;
 if height(traj) == 0
     resolution = table(false, slots, runDurationS, NaN, NaN, "no_user_paths", "unavailable_no_user_paths", ...
         'VariableNames', {'FullTrajectoryExecutedOk','ConfiguredSlots','ConfiguredDuration_s','RequiredTraversalSlots','ActualDistanceTravelled_m','Status','PathProvenance'});
-    segments = table();
+    segments = localEmptyTrajectorySegmentTable();
 else
     requiredSlots = max(traj.RequiredTraversalSlots);
     speedMs = traj.Speed_kmh / 3.6;
@@ -720,6 +720,10 @@ function T = localBuildRuntimeTrajectorySegments(runtime)
 traceT = runtime.NormalizedTrace;
 ueList = unique(localColumnDouble(traceT, "UeId", NaN));
 ueList = ueList(isfinite(ueList));
+if isempty(ueList)
+    T = localEmptyTrajectorySegmentTable();
+    return;
+end
 rows = repmat(struct("UEID", NaN, "StartX_m", NaN, "StartY_m", NaN, "StartZ_m", NaN, ...
     "EndX_m", NaN, "EndY_m", NaN, "EndZ_m", NaN, "RouteLength_m", NaN, ...
     "Speed_kmh", NaN, "TraversalTime_s", NaN, "RequiredTraversalSlots", NaN, ...
@@ -745,6 +749,15 @@ for i = 1:numel(ueList)
         "Status", localTernary(coverageOk, "continuous_runtime_trace", "runtime_trace_gap_detected"));
 end
 T = localStructRowsToTable(rows);
+end
+
+function T = localEmptyTrajectorySegmentTable()
+T = table('Size', [0 16], ...
+    'VariableTypes', {'double','double','double','double','double','double','double', ...
+    'double','double','double','double','double','double','string','string','string'}, ...
+    'VariableNames', {'UEID','StartX_m','StartY_m','StartZ_m','EndX_m','EndY_m','EndZ_m', ...
+    'RouteLength_m','Speed_kmh','TraversalTime_s','RequiredTraversalSlots', ...
+    'ObservedSlotCount','MissingSlotCount','LoopMode','PathProvenance','Status'});
 end
 
 function T = localRuntimeInterUEDistanceTable(cfg, runtime)
@@ -974,23 +987,29 @@ dlTrials = localReadOptionalTable(fullfile(airCsv, "dl_fixed_link_campaign_trial
 ulTrials = localReadOptionalTable(fullfile(airCsv, "ul_fixed_link_campaign_trials.csv"));
 checkpoint = localReadOptionalTable(fullfile(reportCsv, "checkpoint_resume_equivalence.csv"));
 determinism = localReadOptionalTable(fullfile(reportCsv, "serial_parallel_determinism.csv"));
+fixedSweepAudit = localReadOptionalTable(fullfile(reportCsv, "fixed_snr_sweep_audit.csv"));
+targetCrossings = localReadOptionalTable(fullfile(reportCsv, "fixed_snr_sweep_curve_crossing.csv"));
 
 thresholds = localCampaignThresholds(cfg);
 curve = localBuildDLMultiSeedBlerCurve(fixed, thresholds);
 dropStats = localBuildMultiSeedDropStatistics(dlTrials, ulTrials, taskPlan);
 [summary, flags] = localBuildCampaignSummaryAndFlags(fixed, taskPlan, dlTrials, ulTrials, ...
-    curve, dropStats, checkpoint, determinism, thresholds);
-audit = localBuildCampaignEvidenceAudit(fixed, taskPlan, dlTrials, ulTrials, checkpoint, determinism, curve, dropStats);
+    curve, dropStats, checkpoint, determinism, fixedSweepAudit, targetCrossings, thresholds);
+audit = localBuildCampaignEvidenceAudit(fixed, taskPlan, dlTrials, ulTrials, ...
+    checkpoint, determinism, fixedSweepAudit, targetCrossings, curve, dropStats);
 
 evidence = struct();
 evidence.Thresholds = thresholds;
 evidence.Tables = struct("FixedLinkSummary", fixed, "TaskPlan", taskPlan, ...
     "DLTrials", dlTrials, "ULTrials", ulTrials, "DLBlerCurve", curve, ...
-    "DropStatistics", dropStats, "CampaignAudit", audit, "Summary", summary);
+    "DropStatistics", dropStats, "FixedSweepAudit", fixedSweepAudit, ...
+    "TargetCrossings", targetCrossings, "CampaignAudit", audit, "Summary", summary);
 evidence.Flags = flags;
 end
 
 function thresholds = localCampaignThresholds(cfg)
+[configuredSeeds, configuredSeedsSpecified] = ...
+    sixgr.analytics.configuredFixedLinkSeedValues(cfg);
 requiredSeeds = localNumber(cfg, ["canonical_control.run.num_seeds", ...
     "lls6g.resolvedConfig.canonical_control.run.num_seeds", ...
     "simulation.num_seeds", "canonical_control.run.final_runs", ...
@@ -998,6 +1017,9 @@ requiredSeeds = localNumber(cfg, ["canonical_control.run.num_seeds", ...
     "simulation.final_runs", "canonical_control.run.monte_carlo_iterations", ...
     "lls6g.resolvedConfig.canonical_control.run.monte_carlo_iterations", ...
     "simulation.monte_carlo_iterations"], 30);
+if configuredSeedsSpecified
+    requiredSeeds = numel(configuredSeeds);
+end
 maxCIWidth = localNumber(cfg, ["canonical_control.run.max_ci_width", ...
     "lls6g.resolvedConfig.canonical_control.run.max_ci_width", ...
     "simulation.max_ci_width", "statistics.max_ci_width"], NaN);
@@ -1008,7 +1030,8 @@ if ~(isscalar(maxCIWidth) && isfinite(maxCIWidth) && maxCIWidth >= 0)
     maxCIWidth = 2 * maxCIHalfWidth;
 end
 thresholds = struct( ...
-    "RequiredSeedCount", max(1, round(requiredSeeds)), ...
+    "RequiredSeedCount", max(2, round(requiredSeeds)), ...
+    "ExpectedSeedValues", configuredSeeds(:), ...
     "MinTrialsPerBin", max(1, round(localNumber(cfg, [ ...
         "validation.fixed_link_campaign.min_tb_per_point", ...
         "lls6g.resolvedConfig.validation.fixed_link_campaign.min_tb_per_point", ...
@@ -1029,6 +1052,19 @@ thresholds = struct( ...
         sixgr.util.structGet(cfg, ...
         "lls6g.resolvedConfig.validation.fixed_link_campaign.interval_method", ...
         "CLOPPER_PEARSON_TWO_SIDED"))))));
+thresholds.TargetBLERs = localNumericVectorFromPaths(cfg, [ ...
+    "validation.fixed_link_campaign.target_bler", ...
+    "lls6g.resolvedConfig.validation.fixed_link_campaign.target_bler", ...
+    "sweeps_and_matrix.fixed_link_calibration.target_bler", ...
+    "lls6g.resolvedConfig.sweeps_and_matrix.fixed_link_calibration.target_bler"]);
+thresholds.TargetBLERs = unique(thresholds.TargetBLERs( ...
+    isfinite(thresholds.TargetBLERs) & thresholds.TargetBLERs > 0 & ...
+    thresholds.TargetBLERs < 1), "stable");
+thresholds.MaxTargetCrossingBracket_dB = localNumber(cfg, [ ...
+    "validation.fixed_link_campaign.max_target_crossing_bracket_db", ...
+    "lls6g.resolvedConfig.validation.fixed_link_campaign.max_target_crossing_bracket_db", ...
+    "sweeps_and_matrix.fixed_link_calibration.max_target_crossing_bracket_db", ...
+    "lls6g.resolvedConfig.sweeps_and_matrix.fixed_link_calibration.max_target_crossing_bracket_db"], 2);
 if ~ismember(thresholds.IntervalMethod, ...
         ["CLOPPER_PEARSON_TWO_SIDED", "WILSON_TWO_SIDED"])
     error("sixgr:analytics:InvalidCampaignIntervalMethod", ...
@@ -1115,11 +1151,22 @@ for i = 1:size(keys, 1)
     fail = localTrialFailureMask(Ti);
     trials = height(Ti);
     failures = sum(fail);
+    dropSeed = localUniqueFiniteScalar(localColumnDouble( ...
+        Ti, "FixedLinkDropSeed", localColumnDouble(Ti, "TaskSeed", NaN)));
+    seedIndex = localUniqueFiniteScalar(localColumnDouble( ...
+        Ti, "FixedLinkSeedIndex", NaN));
+    seedValue = localUniqueFiniteScalar(localColumnDouble( ...
+        Ti, "FixedLinkSeedValue", NaN));
+    seedLineageComplete = isfinite(dropSeed) && isfinite(seedIndex) && ...
+        isfinite(seedValue) && seedIndex >= 1 && seedIndex == round(seedIndex);
     rows(end+1, 1) = struct("Direction", upper(string(direction)), ...
         "FixedLinkPointIndex", double(p), ...
         "SNR_dB", localFirstFinite(localColumnDouble(Ti, "SNR_dB", localColumnDouble(Ti, "PointValue", NaN))), ...
         "FixedLinkDropIndex", double(d), ...
-        "FixedLinkDropSeed", localFirstFinite(localColumnDouble(Ti, "FixedLinkDropSeed", localColumnDouble(Ti, "TaskSeed", NaN))), ...
+        "FixedLinkDropSeed", double(dropSeed), ...
+        "FixedLinkSeedIndex", double(seedIndex), ...
+        "FixedLinkSeedValue", double(seedValue), ...
+        "SeedLineageComplete", logical(seedLineageComplete), ...
         "TrialCount", double(trials), ...
         "FailureCount", double(failures), ...
         "BLER", localSafeDivide(failures, trials), ...
@@ -1152,6 +1199,9 @@ for j = 1:numel(idx)
         "SNR_dB", localColumnDouble(taskPlan(k, :), "PointValue", NaN), ...
         "FixedLinkDropIndex", drop(k), ...
         "FixedLinkDropSeed", localColumnDouble(taskPlan(k, :), "TaskSeed", NaN), ...
+        "FixedLinkSeedIndex", localColumnDouble(taskPlan(k, :), "SeedIndex", NaN), ...
+        "FixedLinkSeedValue", localColumnDouble(taskPlan(k, :), "SeedValue", NaN), ...
+        "SeedLineageComplete", localTaskPlanSeedLineageComplete(taskPlan(k, :)), ...
         "TrialCount", localColumnDouble(taskPlan(k, :), "TrialCount", NaN), ...
         "FailureCount", NaN, "BLER", NaN, "Goodput_Mbps_mean", NaN, ...
         "EvidenceStatus", "planned_task_no_trial_table", ...
@@ -1159,7 +1209,7 @@ for j = 1:numel(idx)
 end
 end
 
-function [summary, flags] = localBuildCampaignSummaryAndFlags(fixed, taskPlan, dlTrials, ulTrials, curve, dropStats, checkpoint, determinism, thresholds)
+function [summary, flags] = localBuildCampaignSummaryAndFlags(fixed, taskPlan, dlTrials, ulTrials, curve, dropStats, checkpoint, determinism, fixedSweepAudit, targetCrossings, thresholds)
 flags = localCampaignFlags(false);
 % Checkpoint/resume equivalence and serial/parallel determinism are
 % independently executed Phase-7 evidence.  Preserve their status even
@@ -1177,51 +1227,278 @@ dlTrialCount = sum(localColumnDouble(fixed, "DL_TrialCount", 0), "omitnan");
 ulTrialCount = sum(localColumnDouble(fixed, "UL_TrialCount", 0), "omitnan");
 dlFailureCount = sum(localColumnDouble(fixed, "DL_FailureCount", 0), "omitnan");
 ulFailureCount = sum(localColumnDouble(fixed, "UL_FailureCount", 0), "omitnan");
-trialSeedCount = localUniqueFiniteCount([localColumnDouble(dlTrials, "FixedLinkDropSeed", NaN); ...
-    localColumnDouble(ulTrials, "FixedLinkDropSeed", NaN)]);
-taskSeedCount = localUniqueFiniteCount(localColumnDouble(taskPlan, "TaskSeed", NaN));
-pointSeedCount = localUniqueFiniteCount(localColumnDouble(fixed, "PointSeed", NaN));
-dropSeedCount = max(trialSeedCount, taskSeedCount);
-seedsRun = max([dropSeedCount, pointSeedCount, localMaxFinite(localColumnDouble(fixed, "DL_DropCount", NaN)), ...
-    localMaxFinite(localColumnDouble(fixed, "UL_DropCount", NaN))]);
+    % Publication statistics require independent seeds at every operating
+    % point, not merely many globally unique task seeds.  A campaign with
+    % one seed at each of N SNR points has N unique seeds globally but still
+    % has only one realization per point.  Derive the reported seed count
+    % from executed direction/point groups so that shape cannot pass.
+    expectedGroups = localExpectedOperatingGroups(fixed);
+    seedsRun = localMinimumSeedCountPerOperatingGroup( ...
+        dropStats, expectedGroups);
 snrPoints = localUniqueFiniteCount(localColumnDouble(fixed, "SNR_dB", NaN));
 pilotRuns = localPilotRunCount(taskPlan);
 failedRuns = dlFailureCount + ulFailureCount;
 incomplete = localIncompleteCount(fixed);
-curveTrials = localColumnDouble(curve, "TrialCount", NaN);
-curveCI = localColumnDouble(curve, "BLER_CI_Width", NaN);
-finiteCurve = isfinite(curveTrials) & curveTrials > 0 & isfinite(curveCI);
+    [sampleAdequate, confidenceAdequate, minDirectionalTrials, ...
+        maxDirectionalCIWidth] = localDirectionalPointAdequacy(fixed, thresholds);
 
 flags.SeedHierarchyOk = localTaskPlanSeedHierarchyOk(taskPlan);
-flags.CampaignDesignOk = flags.SeedHierarchyOk && snrPoints >= thresholds.MinSNRPoints && ...
-    seedsRun >= thresholds.RequiredSeedCount && all(lower(string(localFirstString(fixed, "CampaignKind", ""))) == "fixed_link_monte_carlo");
-flags.CampaignCompletionOk = (dlTrialCount > 0 || ulTrialCount > 0) && incomplete == 0;
-flags.SampleAdequacyOk = any(finiteCurve) && all(curveTrials(finiteCurve) >= thresholds.MinTrialsPerBin) && ...
-    seedsRun >= thresholds.RequiredSeedCount;
-flags.ConfidenceIntervalsOk = any(finiteCurve) && all(curveCI(finiteCurve) <= thresholds.MaxCIWidth);
-flags.MultiSeedDropStatisticsOk = localDropStatisticsOk(dropStats, thresholds);
+expectedGroupKeys = strings(0,1);
+if istable(expectedGroups) && height(expectedGroups) > 0
+    expectedGroupKeys = string(expectedGroups.GroupKey);
+end
+exactSeedPairing = sixgr.analytics.validateConfiguredSeedPairing( ...
+    dropStats, expectedGroupKeys, thresholds.ExpectedSeedValues);
+flags.CampaignDesignOk = flags.SeedHierarchyOk && ...
+    logical(exactSeedPairing.Pass) && ...
+    snrPoints >= thresholds.MinSNRPoints && ...
+    seedsRun >= thresholds.RequiredSeedCount && ...
+    all(lower(strtrim(string(localColumnText(fixed, "CampaignKind", "")))) == ...
+    "fixed_link_monte_carlo");
+    [dropStatisticsOk, rawSummaryReconciled] = ...
+        localDropStatisticsOk(dropStats, thresholds, expectedGroups);
+    flags.CampaignCompletionOk = (dlTrialCount > 0 || ulTrialCount > 0) && ...
+        incomplete == 0 && rawSummaryReconciled;
+    flags.SampleAdequacyOk = sampleAdequate && ...
+        seedsRun >= thresholds.RequiredSeedCount;
+    flags.ConfidenceIntervalsOk = confidenceAdequate;
+    flags.MultiSeedDropStatisticsOk = dropStatisticsOk;
 flags.SweepDataQualityOk = flags.CampaignDesignOk && flags.CampaignCompletionOk && ...
-    flags.SampleAdequacyOk && flags.ConfidenceIntervalsOk;
+    flags.SampleAdequacyOk && flags.ConfidenceIntervalsOk && ...
+    localFixedSweepScientificQualityOk(fixedSweepAudit, targetCrossings, thresholds);
 
 status = "campaign_incomplete";
-if flags.CampaignCompletionOk && flags.SampleAdequacyOk && flags.ConfidenceIntervalsOk && flags.MultiSeedDropStatisticsOk
-    status = "campaign_complete";
-end
-summary = localCampaignSummaryTable(pilotRuns, dlTrialCount + ulTrialCount, failedRuns, seedsRun, ...
-    snrPoints, dlTrialCount, ulTrialCount, localMinFinite(curveTrials), ...
-    localMaxFinite(curveCI), localVarianceFinite(localColumnDouble(dropStats, "BLER", NaN)), ...
-    thresholds, status, "air_interface/csv/lls_fixed_link_campaign.csv", flags);
+    if flags.SweepDataQualityOk && flags.MultiSeedDropStatisticsOk
+        status = "campaign_complete";
+    end
+    summary = localCampaignSummaryTable(pilotRuns, dlTrialCount + ulTrialCount, failedRuns, seedsRun, ...
+        snrPoints, dlTrialCount, ulTrialCount, minDirectionalTrials, ...
+        maxDirectionalCIWidth, localMaximumWithinGroupBLERStd(dropStats), ...
+        thresholds, status, "air_interface/csv/lls_fixed_link_campaign.csv", flags);
 end
 
-function T = localCampaignSummaryTable(pilotRuns, finalRuns, failedRuns, seedsRun, snrPoints, dlTrials, ulTrials, minTrials, maxCI, blerVariance, thresholds, status, source, flags)
-T = table(double(pilotRuns), double(finalRuns), double(failedRuns), double(seedsRun), ...
+function count = localMinimumSeedCountPerOperatingGroup(dropStats, expectedGroups)
+count = 0;
+if ~(istable(dropStats) && height(dropStats) > 0)
+    return;
+end
+
+expectedKeys = strings(0,1);
+if nargin >= 2 && istable(expectedGroups) && height(expectedGroups) > 0
+    expectedKeys = string(expectedGroups.GroupKey);
+end
+pairing = sixgr.analytics.validateConfiguredSeedPairing( ...
+    dropStats, expectedKeys);
+if ~logical(pairing.Pass)
+    return;
+end
+status = strings(height(dropStats), 1);
+if localHasColumn(dropStats, "EvidenceStatus")
+    status = lower(strtrim(string(dropStats.EvidenceStatus)));
+end
+executed = status == "executed_trial_rows";
+direction = upper(strtrim(string(localColumnText(dropStats, "Direction", ""))));
+point = localColumnDouble(dropStats, "FixedLinkPointIndex", NaN);
+seed = localColumnDouble(dropStats, "FixedLinkSeedValue", NaN);
+seedIndex = localColumnDouble(dropStats, "FixedLinkSeedIndex", NaN);
+lineage = false(height(dropStats), 1);
+if localHasColumn(dropStats, "SeedLineageComplete")
+    lineage = localColumnAsLogical(dropStats.SeedLineageComplete);
+end
+valid = executed & lineage & strlength(direction) > 0 & ...
+    isfinite(point) & isfinite(seed) & isfinite(seedIndex) & ...
+    seedIndex >= 1 & seedIndex == round(seedIndex);
+if ~any(valid)
+    return;
+end
+groupKey = direction(valid) + "|" + string(point(valid));
+groups = unique(groupKey, "stable");
+if nargin >= 2 && istable(expectedGroups) && height(expectedGroups) > 0
+    expectedKeys = string(expectedGroups.GroupKey);
+    if ~isequal(sort(groups), sort(expectedKeys))
+        return;
+    end
+end
+perGroup = zeros(numel(groups), 1);
+validSeeds = seed(valid);
+for index = 1:numel(groups)
+    perGroup(index) = localUniqueFiniteCount(validSeeds(groupKey == groups(index)));
+end
+
+if ~isempty(perGroup)
+    count = min(perGroup);
+end
+end
+
+function tf = localFixedSweepScientificQualityOk(fixedSweepAudit, targetCrossings, thresholds)
+% Phase 7 must not promote a numerically adequate Monte-Carlo campaign when
+% its YAML-requested BLER targets remain under-resolved.  The fixed-sweep
+% audit independently recomputes every direction/MCS/target identity from
+% measured curve rows; consume that terminal evidence fail-closed here.
+if isempty(thresholds.TargetBLERs)
+    tf = true;
+    return;
+end
+tf = false;
+if ~(istable(fixedSweepAudit) && height(fixedSweepAudit) > 0 && ...
+        localHasColumn(fixedSweepAudit, "Status") && ...
+        istable(targetCrossings) && height(targetCrossings) > 0)
+    return;
+end
+status = upper(strtrim(string(fixedSweepAudit.Status)));
+if any(status == "FAIL") || ~any(contains(lower(string( ...
+        fixedSweepAudit.CheckName)), "target_crossing"))
+    return;
+end
+crossStatus = lower(strtrim(string(localColumnText(targetCrossings, ...
+    "Status", ""))));
+crossFailure = lower(strtrim(string(localColumnText(targetCrossings, ...
+    "FailureCode", ""))));
+target = localColumnDouble(targetCrossings, "TargetBLER", NaN);
+configured = sort(double(thresholds.TargetBLERs(:)));
+observed = sort(unique(target(isfinite(target))));
+targetSetOk = numel(observed) == numel(configured) && ...
+    all(abs(observed - configured) <= max(1e-12, eps(configured) * 8));
+tf = targetSetOk && all(crossStatus == "qualified") && ...
+    all(strlength(crossFailure) == 0);
+end
+
+function groups = localExpectedOperatingGroups(fixed)
+groups = table('Size', [0 3], ...
+    'VariableTypes', {'string','double','double'}, ...
+    'VariableNames', {'GroupKey','ExpectedTrialCount','ExpectedPointIndex'});
+if ~(istable(fixed) && height(fixed) > 0)
+    return;
+end
+point = localColumnDouble(fixed, "PointIndex", (1:height(fixed)).');
+if numel(point) ~= height(fixed) || any(~isfinite(point))
+    point = (1:height(fixed)).';
+end
+mode = lower(strtrim(string(localColumnText(fixed, "DirectionMode", ""))));
+rows = repmat(struct("GroupKey", "", "ExpectedTrialCount", NaN, ...
+    "ExpectedPointIndex", NaN), 0, 1);
+for rowIndex = 1:height(fixed)
+    directions = strings(0, 1);
+    if contains(mode(rowIndex), "both") || contains(mode(rowIndex), "bidir") || ...
+            contains(mode(rowIndex), "dl+ul") || contains(mode(rowIndex), "ul+dl")
+        directions = ["DL"; "UL"];
+    elseif mode(rowIndex) == "dl" || contains(mode(rowIndex), "downlink")
+        directions = "DL";
+    elseif mode(rowIndex) == "ul" || contains(mode(rowIndex), "uplink")
+        directions = "UL";
+    else
+        if localColumnDouble(fixed(rowIndex,:), "DL_TrialCount", 0) > 0
+            directions(end+1, 1) = "DL"; %#ok<AGROW>
+        end
+        if localColumnDouble(fixed(rowIndex,:), "UL_TrialCount", 0) > 0
+            directions(end+1, 1) = "UL"; %#ok<AGROW>
+        end
+    end
+    for direction = unique(directions, "stable").'
+        expected = localColumnDouble(fixed(rowIndex,:), ...
+            char(direction + "_TrialCount"), NaN);
+        rows(end+1, 1) = struct( ... %#ok<AGROW>
+            "GroupKey", direction + "|" + string(point(rowIndex)), ...
+            "ExpectedTrialCount", double(expected), ...
+            "ExpectedPointIndex", double(point(rowIndex)));
+    end
+end
+if ~isempty(rows)
+    groups = struct2table(rows);
+end
+end
+
+function [sampleOk, ciOk, minTrials, maxCIWidth] = ...
+        localDirectionalPointAdequacy(fixed, thresholds)
+sampleOk = false;
+ciOk = false;
+minTrials = NaN;
+maxCIWidth = NaN;
+if ~(istable(fixed) && height(fixed) > 0)
+    return;
+end
+
+directions = strings(0, 1);
+mode = lower(strtrim(string(localColumnText(fixed, "DirectionMode", ""))));
+if any(contains(mode, "both") | contains(mode, "bidir") | ...
+        contains(mode, "dl+ul") | contains(mode, "ul+dl"))
+    directions = ["DL"; "UL"];
+elseif any(mode == "dl" | contains(mode, "downlink"))
+    directions = "DL";
+elseif any(mode == "ul" | contains(mode, "uplink"))
+    directions = "UL";
+else
+    if any(localColumnDouble(fixed, "DL_TrialCount", 0) > 0)
+        directions(end+1, 1) = "DL"; %#ok<AGROW>
+    end
+    if any(localColumnDouble(fixed, "UL_TrialCount", 0) > 0)
+        directions(end+1, 1) = "UL"; %#ok<AGROW>
+    end
+end
+directions = unique(directions, "stable");
+if isempty(directions)
+    return;
+end
+
+allTrials = zeros(0, 1);
+allCIWidths = zeros(0, 1);
+for direction = directions(:).'
+    trialColumn = char(direction + "_TrialCount");
+    ciColumn = char(direction + "_BLER_CI_Width");
+    if ~localHasColumn(fixed, trialColumn) || ~localHasColumn(fixed, ciColumn)
+        return;
+    end
+    trials = localColumnDouble(fixed, trialColumn, NaN);
+    widths = localColumnDouble(fixed, ciColumn, NaN);
+    if any(~isfinite(trials) | trials <= 0 | ~isfinite(widths) | widths < 0)
+        return;
+    end
+    allTrials = [allTrials; trials(:)]; %#ok<AGROW>
+    allCIWidths = [allCIWidths; widths(:)]; %#ok<AGROW>
+end
+minTrials = min(allTrials);
+maxCIWidth = max(allCIWidths);
+sampleOk = all(allTrials >= thresholds.MinTrialsPerBin);
+ciOk = all(allCIWidths <= thresholds.MaxCIWidth);
+end
+
+function value = localMaximumWithinGroupBLERStd(dropStats)
+value = NaN;
+if ~(istable(dropStats) && height(dropStats) > 0)
+    return;
+end
+status = lower(strtrim(string(localColumnText(dropStats, "EvidenceStatus", ""))));
+direction = upper(strtrim(string(localColumnText(dropStats, "Direction", ""))));
+point = localColumnDouble(dropStats, "FixedLinkPointIndex", NaN);
+bler = localColumnDouble(dropStats, "BLER", NaN);
+valid = status == "executed_trial_rows" & strlength(direction) > 0 & ...
+    isfinite(point) & isfinite(bler);
+if ~any(valid)
+    return;
+end
+keys = direction(valid) + "|" + string(point(valid));
+values = bler(valid);
+groups = unique(keys, "stable");
+groupStd = NaN(numel(groups), 1);
+for index = 1:numel(groups)
+    groupStd(index) = std(values(keys == groups(index)), 0, "omitnan");
+end
+value = localMaxFinite(groupStd);
+end
+
+function T = localCampaignSummaryTable(pilotMetadataRows, executedTransportBlocks, blockErrorCount, seedsRun, snrPoints, dlTrials, ulTrials, minTrials, maxCI, blerVariance, thresholds, status, source, flags)
+% These are evidence counts, not process/run outcomes.  In particular, a
+% CRC-failed transport block is part of a scientifically valid BLER sample;
+% it is not a failed MATLAB run.  Use names that preserve that distinction
+% in the terminal publication artifact.
+T = table(double(pilotMetadataRows), double(executedTransportBlocks), double(blockErrorCount), double(seedsRun), ...
     double(snrPoints), double(dlTrials), double(ulTrials), double(minTrials), double(maxCI), ...
     double(blerVariance), double(thresholds.RequiredSeedCount), double(thresholds.MinTrialsPerBin), ...
     double(thresholds.MaxCIWidth), string(status), string(source), ...
     logical(flags.SeedHierarchyOk), logical(flags.CampaignDesignOk), logical(flags.CampaignCompletionOk), ...
     logical(flags.MultiSeedDropStatisticsOk), logical(flags.SampleAdequacyOk), logical(flags.ConfidenceIntervalsOk), ...
     logical(flags.CheckpointResumeEquivalenceOk), logical(flags.SerialParallelDeterminismOk), ...
-    'VariableNames', {'PilotRuns','FinalRuns','FailedRuns','SeedsRun','SNRPointCount', ...
+    'VariableNames', {'PilotMetadataRows','ExecutedTransportBlocks','BlockErrorCount','SeedsRun','SNRPointCount', ...
     'NDLTrialsTotal','NULTrialsTotal','MinTrialsPerBin','MaxCIWidth','BLERVarianceAcrossSeeds', ...
     'RequiredSeedCount','RequiredMinTrialsPerBin','RequiredMaxCIWidth','Status','EvidenceSource', ...
     'SeedHierarchyOk','CampaignDesignOk','CampaignCompletionOk','MultiSeedDropStatisticsOk', ...
@@ -1236,15 +1513,18 @@ flags = struct("SeedHierarchyOk", logical(value), "CampaignDesignOk", logical(va
     "SweepDataQualityOk", logical(value));
 end
 
-function T = localBuildCampaignEvidenceAudit(fixed, taskPlan, dlTrials, ulTrials, checkpoint, determinism, curve, dropStats)
+function T = localBuildCampaignEvidenceAudit(fixed, taskPlan, dlTrials, ulTrials, checkpoint, determinism, fixedSweepAudit, targetCrossings, curve, dropStats)
 artifacts = ["lls_fixed_link_campaign.csv"; "fixed_link_campaign_task_plan.csv"; ...
     "dl_fixed_link_campaign_trials.csv"; "ul_fixed_link_campaign_trials.csv"; ...
     "checkpoint_resume_equivalence.csv"; "serial_parallel_determinism.csv"; ...
+    "fixed_snr_sweep_audit.csv"; "fixed_snr_sweep_curve_crossing.csv"; ...
     "dl_multi_seed_bler_curve.csv"; "multi_seed_drop_statistics.csv"];
 classes = ["runtime_summary"; "seed_hierarchy"; "executed_dl_trials"; "executed_ul_trials"; ...
-    "checkpoint_resume"; "serial_parallel"; "derived_bler_curve"; "derived_drop_statistics"];
+    "checkpoint_resume"; "serial_parallel"; "fixed_sweep_scientific_audit"; ...
+    "target_crossing_evidence"; "derived_bler_curve"; "derived_drop_statistics"];
 counts = [height(fixed); height(taskPlan); height(dlTrials); height(ulTrials); ...
-    height(checkpoint); height(determinism); height(curve); height(dropStats)];
+    height(checkpoint); height(determinism); height(fixedSweepAudit); ...
+    height(targetCrossings); height(curve); height(dropStats)];
 rows = repmat(struct("Artifact", "", "EvidenceClass", "", "RowCount", NaN, ...
     "EvidencePresent", false, "CountsTowardCampaignGate", false), 0, 1);
 for i = 1:numel(artifacts)
@@ -1289,9 +1569,19 @@ for col = ["DL_Incomplete", "UL_Incomplete"]
 end
 end
 
-function tf = localDropStatisticsOk(dropStats, thresholds)
+function [tf, reconciliationOk] = localDropStatisticsOk(dropStats, thresholds, expectedGroups)
 tf = false;
+reconciliationOk = false;
 if ~(istable(dropStats) && height(dropStats) > 0)
+    return;
+end
+expectedKeys = strings(0,1);
+if istable(expectedGroups) && height(expectedGroups) > 0
+    expectedKeys = string(expectedGroups.GroupKey);
+end
+pairing = sixgr.analytics.validateConfiguredSeedPairing( ...
+    dropStats, expectedKeys, thresholds.ExpectedSeedValues);
+if ~logical(pairing.Pass)
     return;
 end
 status = strings(height(dropStats), 1);
@@ -1302,9 +1592,47 @@ executed = status == "executed_trial_rows";
 if ~any(executed)
     return;
 end
-seeds = localColumnDouble(dropStats(executed, :), "FixedLinkDropSeed", NaN);
-bler = localColumnDouble(dropStats(executed, :), "BLER", NaN);
-tf = localUniqueFiniteCount(seeds) >= thresholds.RequiredSeedCount && any(isfinite(bler));
+executedRows = dropStats(executed, :);
+bler = localColumnDouble(executedRows, "BLER", NaN);
+direction = upper(strtrim(string(localColumnText(executedRows, "Direction", ""))));
+point = localColumnDouble(executedRows, "FixedLinkPointIndex", NaN);
+seed = localColumnDouble(executedRows, "FixedLinkSeedValue", NaN);
+seedIndex = localColumnDouble(executedRows, "FixedLinkSeedIndex", NaN);
+lineage = false(height(executedRows), 1);
+if localHasColumn(executedRows, "SeedLineageComplete")
+    lineage = localColumnAsLogical(executedRows.SeedLineageComplete);
+end
+trialCount = localColumnDouble(executedRows, "TrialCount", NaN);
+valid = isfinite(bler) & bler >= 0 & bler <= 1 & ...
+    lineage & strlength(direction) > 0 & isfinite(point) & ...
+    isfinite(seed) & isfinite(seedIndex) & seedIndex >= 1 & ...
+    seedIndex == round(seedIndex) & ...
+    isfinite(trialCount) & trialCount > 0 & trialCount == round(trialCount);
+if ~all(valid) || ~any(valid)
+    return;
+end
+keys = direction + "|" + string(point);
+groups = unique(keys, "stable");
+if ~(istable(expectedGroups) && height(expectedGroups) > 0)
+    return;
+end
+expectedKeys = string(expectedGroups.GroupKey);
+if ~isequal(sort(groups), sort(expectedKeys))
+    return;
+end
+perGroup = zeros(numel(groups), 1);
+trialsPerGroup = zeros(numel(groups), 1);
+for index = 1:numel(groups)
+    perGroup(index) = localUniqueFiniteCount(seed(keys == groups(index)));
+    trialsPerGroup(index) = sum(trialCount(keys == groups(index)));
+end
+[~, actualOrder] = ismember(expectedKeys, groups);
+orderedActualTrials = trialsPerGroup(actualOrder);
+expectedTrials = double(expectedGroups.ExpectedTrialCount);
+reconciliationOk = all(isfinite(expectedTrials) & expectedTrials > 0) && ...
+    all(orderedActualTrials == expectedTrials);
+tf = reconciliationOk && ~isempty(perGroup) && ...
+    all(perGroup >= thresholds.RequiredSeedCount);
 end
 
 function tf = localEvidenceFlag(T, flagName)
@@ -1329,7 +1657,9 @@ end
 
 function row = localEmptyDropStatisticRow()
 row = struct("Direction", "", "FixedLinkPointIndex", NaN, "SNR_dB", NaN, ...
-    "FixedLinkDropIndex", NaN, "FixedLinkDropSeed", NaN, "TrialCount", NaN, ...
+    "FixedLinkDropIndex", NaN, "FixedLinkDropSeed", NaN, ...
+    "FixedLinkSeedIndex", NaN, "FixedLinkSeedValue", NaN, ...
+    "SeedLineageComplete", false, "TrialCount", NaN, ...
     "FailureCount", NaN, "BLER", NaN, "Goodput_Mbps_mean", NaN, ...
     "EvidenceStatus", "", "EvidenceSource", "");
 end
@@ -1343,9 +1673,10 @@ switch string(kind)
             'FailureCount','BLER','BLER_CI_Low','BLER_CI_High','BLER_CI_Width','IntervalMethod','Goodput_Mbps_mean', ...
             'SeedCount','CampaignKind','EvidenceSource'});
     case "drops"
-        T = table('Size', [0 11], 'VariableTypes', {'string','double','double','double','double','double', ...
-            'double','double','double','string','string'}, ...
+        T = table('Size', [0 14], 'VariableTypes', {'string','double','double','double','double', ...
+            'double','double','logical','double','double','double','double','string','string'}, ...
             'VariableNames', {'Direction','FixedLinkPointIndex','SNR_dB','FixedLinkDropIndex','FixedLinkDropSeed', ...
+            'FixedLinkSeedIndex','FixedLinkSeedValue','SeedLineageComplete', ...
             'TrialCount','FailureCount','BLER','Goodput_Mbps_mean','EvidenceStatus','EvidenceSource'});
     otherwise
         T = table();
@@ -2666,6 +2997,22 @@ end
 x = x(:);
 end
 
+function values = localColumnText(T, name, defaultValue)
+if nargin < 3
+    defaultValue = "";
+end
+if ~(istable(T) && height(T) > 0)
+    values = strings(0, 1);
+    return;
+end
+if localHasColumn(T, name)
+    values = string(T.(char(name)));
+else
+    values = repmat(string(defaultValue), height(T), 1);
+end
+values = values(:);
+end
+
 function x = localToDouble(raw)
 if isempty(raw)
     x = zeros(0, 1);
@@ -2708,6 +3055,32 @@ function n = localUniqueFiniteCount(values)
 v = localToDouble(values);
 v = v(isfinite(v));
 n = double(numel(unique(v)));
+end
+
+function value = localUniqueFiniteScalar(values)
+v = localToDouble(values);
+if isempty(v) || any(~isfinite(v))
+    value = NaN;
+    return;
+end
+u = unique(v);
+if numel(u) ~= 1
+    value = NaN;
+else
+    value = double(u(1));
+end
+end
+
+function tf = localTaskPlanSeedLineageComplete(T)
+tf = false;
+if ~(istable(T) && height(T) == 1)
+    return;
+end
+taskSeed = localColumnDouble(T, "TaskSeed", NaN);
+seedIndex = localColumnDouble(T, "SeedIndex", NaN);
+seedValue = localColumnDouble(T, "SeedValue", NaN);
+tf = isfinite(taskSeed) && isfinite(seedIndex) && isfinite(seedValue) && ...
+    seedIndex >= 1 && seedIndex == round(seedIndex);
 end
 
 function m = localMeanFinite(values)
@@ -2825,6 +3198,26 @@ for path = string(paths)
             value = x;
             return;
         end
+    end
+end
+end
+
+function values = localNumericVectorFromPaths(cfg, paths)
+values = zeros(0, 1);
+for path = string(paths)
+    raw = localGet(cfg, path, []);
+    if isempty(raw)
+        continue;
+    end
+    if isnumeric(raw) || islogical(raw)
+        candidate = double(raw(:));
+    else
+        candidate = str2double(string(raw(:)));
+    end
+    candidate = candidate(isfinite(candidate));
+    if ~isempty(candidate)
+        values = candidate;
+        return;
     end
 end
 end

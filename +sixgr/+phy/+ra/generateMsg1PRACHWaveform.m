@@ -1,8 +1,25 @@
 function [tx, occasion] = generateMsg1PRACHWaveform(cfg, raCfg)
 %GENERATEMSG1PRACHWAVEFORM Generate MSG1 PRACH waveform for the selected preamble.
 prachCfg = sixgr.phy.ra.buildPRACHConfigFromRACHCommon(cfg, raCfg);
-occasion = sixgr.rach.mapPRACHToOccasion(prachCfg, "OccasionIndex", 1);
+occasionOrdinal = double(sixgr.util.structGet(raCfg, ...
+    "PRACHOccasionOrdinal", NaN));
+if ~isfinite(occasionOrdinal) || occasionOrdinal < 1 || ...
+        occasionOrdinal ~= fix(occasionOrdinal)
+    error("sixgr:phy:ra:MissingPRACHOccasionOrdinal", ...
+        "Msg1 requires the canonical PRACH occasion ordinal resolved by RAConfig.");
+end
+occasion = sixgr.rach.mapPRACHToOccasion(prachCfg, ...
+    "OccasionIndex", occasionOrdinal);
+occasionRARNTI = sixgr.phy.ra.computeRARNTIFromOccasion(occasion);
+if occasionRARNTI ~= double(raCfg.RARNTI)
+    error("sixgr:phy:ra:PRACHOccasionRARNTIMismatch", ...
+        ["The materialized Msg1 occasion derives RA-RNTI %d, but the " ...
+        "validated RA configuration carries %d."], ...
+        occasionRARNTI, double(raCfg.RARNTI));
+end
 tx = sixgr.rach.generatePRACHWaveform(prachCfg, "Occasion", occasion, ...
     "PreambleIndex", double(raCfg.PreambleIndex));
 tx.PRACHRuntimeConfig = prachCfg;
+tx.RARNTI = occasionRARNTI;
+tx.PRACHOccasionOrdinal = occasionOrdinal;
 end

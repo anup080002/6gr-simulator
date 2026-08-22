@@ -57,10 +57,10 @@ rows = localNormalizeMetricRows(rows, runFolder, ctx);
 coverageT = localBuildCoverageSummary(catalog, rows);
 
 detailPath = fullfile(layout.ReportCSVDir, "lls_output_metric_rows.csv");
-sixgr.util.csvWriteTable(detailPath, rows);
+sixgr.util.csvWriteTable(detailPath, rows, "PreserveSchema", true);
 
 coveragePath = fullfile(layout.ReportCSVDir, "lls_output_spec_coverage.csv");
-sixgr.util.csvWriteTable(coveragePath, coverageT);
+sixgr.util.csvWriteTable(coveragePath, coverageT, "PreserveSchema", true);
 
 ctx.AggregateArtifacts = localWriteAggregateArtifacts(ctx, coverageT, rows, plots);
 localWriteExecutiveSummary(executivePath, ctx, coverageT, rows, plots);
@@ -78,7 +78,7 @@ for i = 1:numel(catalog.categories)
         continue;
     end
     filePath = fullfile(layout.ReportCSVDir, char(string(cat.file_name)));
-    sixgr.util.csvWriteTable(filePath, Tcat);
+    sixgr.util.csvWriteTable(filePath, Tcat, "PreserveSchema", true);
     categoryFiles(end+1, 1) = string(filePath); %#ok<AGROW>
 end
 
@@ -485,17 +485,25 @@ switch key
         T = localMetricTableRow(cat, metric, "run", "seed", "available", double(ctx.Manifest.RandomSeed), "", "", "", "");
     case "execution_timestamp"
         T = [T; ...
-            localMetricTableRow(cat, metric, "run", "generated_utc", "available", NaN, string(ctx.Manifest.GeneratedUTC), "", "", ""); ...
-            localMetricTableRow(cat, metric, "run", "started_utc", localRuntimeAvailability(ctx), NaN, string(sixgr.util.structGet(ctx.RuntimeSummary, "StartedUTC", "")), "", "", ""); ...
-            localMetricTableRow(cat, metric, "run", "completed_utc", localRuntimeAvailability(ctx), NaN, string(sixgr.util.structGet(ctx.RuntimeSummary, "CompletedUTC", "")), "", "", "")];
+            localMetricTableRow(cat, metric, "run", "generated_utc", "derived", NaN, string(ctx.Manifest.GeneratedUTC), "", "meta/scenario_manifest.json", "Timestamp persisted by the run manifest."); ...
+            localMetricTableRow(cat, metric, "run", "started_utc", localRuntimeTimestampAvailability(ctx, "StartedUTC"), NaN, string(sixgr.util.structGet(ctx.RuntimeSummary, "StartedUTC", "")), "", "meta/runtime_summary.json", "Timestamp persisted by the runtime summary."); ...
+            localMetricTableRow(cat, metric, "run", "completed_utc", localRuntimeTimestampAvailability(ctx, "CompletedUTC"), NaN, string(sixgr.util.structGet(ctx.RuntimeSummary, "CompletedUTC", "")), "", "meta/runtime_summary.json", "Timestamp persisted by the runtime summary.")];
     case "hardware_software_environment"
         if exist(fullfile(ctx.Layout.MetaDir, "environment.json"), "file") == 2
             T = localMetricTableRow(cat, metric, "environment", "summary", "available", NaN, "meta/environment.json", "", "meta/environment.json", "");
         end
     case "runtime_summary"
         if exist(fullfile(ctx.Layout.MetaDir, "runtime_summary.json"), "file") == 2
+            elapsedSeconds = str2double(string(sixgr.util.structGet( ...
+                ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
+            if ~isscalar(elapsedSeconds)
+                elapsedSeconds = NaN;
+            end
             T = [T; ...
-                localMetricTableRow(cat, metric, "runtime", "elapsed_seconds", "available", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)), "", "s", "", ""); ...
+                localMetricTableRow(cat, metric, "runtime", "elapsed_seconds", ...
+                    localRuntimeNumericAvailability(ctx, "ElapsedSeconds"), ...
+                    elapsedSeconds, "", "s", "meta/runtime_summary.json", ...
+                    "Elapsed time persisted by the runtime summary when the completed runtime recorded a finite duration."); ...
                 localMetricTableRow(cat, metric, "runtime", "summary_json", "available", NaN, "meta/runtime_summary.json", "", "meta/runtime_summary.json", "")];
         end
     case "warnings_validation_messages"
@@ -598,7 +606,7 @@ switch key
         aggPath = localAggregateArtifactPath(ctx, "PAPRCCDFPlot");
         hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["PAPR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["PAPR_dB"]);
         T = [T; ...
-            localMetricTableRow(cat, metric, "DL_UL", "ccdf_plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No PAPR samples available; placeholder figure emitted.")); ...
+            localMetricTableRow(cat, metric, "DL_UL", "ccdf_plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No finite runtime PAPR samples are available; the CCDF plot was omitted.")); ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "PAPR_dB", "DL", "dB"); ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "PAPR_dB", "UL", "dB")];
     case "peak_clipping_events"
@@ -1000,11 +1008,11 @@ switch key
     case "baseline_candidate_delta_tables"
         aggPath = localAggregateArtifactPath(ctx, "BaselineCandidateDeltaTable");
         hasComparator = strlength(string(ctx.ScenarioConfig.get("meta.baseline_reference_name", ""))) > 0;
-        T = localMetricTableRow(cat, metric, "report", "delta_table", localDerivedOrPlaceholderAvailability(hasComparator), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasComparator, "No paired baseline comparator artifacts were materialized for this run; placeholder delta table emitted."));
+        T = localMetricTableRow(cat, metric, "report", "delta_table", localDerivedOrPlaceholderAvailability(hasComparator), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasComparator, "No paired baseline comparator artifacts were materialized for this run; the delta table is unavailable."));
     case "waterfall_bar_charts_gains_losses"
         aggPath = localAggregateArtifactPath(ctx, "WaterfallChart");
         hasData = localMeasuredSummaryHasAnyKPI(ctx);
-        T = localMetricTableRow(cat, metric, "report", "chart", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No key-KPI aggregate data available; placeholder figure emitted."));
+        T = localMetricTableRow(cat, metric, "report", "chart", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No key-KPI aggregate data are available; the chart is omitted."));
     case "curves_bler_vs_snr"
         hasData = localMeasuredCurveHasAnyKPI(ctx, "BLER");
         contractPath = "analytics/image/contract__error-reliability-analytics__bler-vs-sinr.png";
@@ -1015,15 +1023,15 @@ switch key
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, contractPath, "", contractPath, localAggregateAvailabilityNote(hasData, "No measured SINR throughput curve data are available for contract rendering."));
     case "curves_nmse_vs_snr"
         hasData = exist(fullfile(ctx.Layout.ReportCSVDir, "nmse_vs_measured_sinr.csv"), "file") == 2;
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/nmse_vs_measured_sinr.png", "", "reports/image/nmse_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No NMSE measured-SINR data available; placeholder figure emitted."));
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, "reports/image/nmse_vs_measured_sinr.png", "", "reports/image/nmse_vs_measured_sinr.png", localAggregateAvailabilityNote(hasData, "No NMSE measured-SINR data are available; the plot is omitted."));
     case "curves_papr_ccdf"
         aggPath = localAggregateArtifactPath(ctx, "PAPRCCDFPlot");
         hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["PAPR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["PAPR_dB"]);
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No PAPR samples available; placeholder figure emitted."));
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No PAPR samples are available; the plot is omitted."));
     case "curves_latency_cdf"
         aggPath = localAggregateArtifactPath(ctx, "LatencyCDFPlot");
         hasData = localHasLatencySemanticData(ctx);
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No compute, radio-time, or procedure-delay samples are available; placeholder figure emitted."));
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No compute, radio-time, or procedure-delay samples are available; the plot is omitted."));
     case "curves_access_delay_cdf"
         aggPath = localAggregateArtifactPath(ctx, "AccessDelayCDFPlot");
         hasData = localHasAnyFiniteColumn(ctx.Tables.InitialAccessLifecycle, ["AccessDelay_ms","ProcedureDelay_ms"]) || ...
@@ -1034,7 +1042,7 @@ switch key
         if hasData
             note = "";
         elseif localShouldEmitPlaceholderArtifacts(ctx)
-            note = "No true initial-access procedure-delay samples are available in this LLS scope; placeholder figure emitted.";
+            note = "No true initial-access procedure-delay samples are available in this LLS scope; the plot is omitted.";
         else
             note = "No true initial-access procedure-delay samples are available in this LLS scope, so the plot is intentionally omitted in this production truth profile.";
         end
@@ -1045,11 +1053,11 @@ switch key
             localHasAnyFiniteColumn(ctx.Tables.CaseStatus, ["Throughput_Mbps","EnergyPerBit_J"]) || ...
             (localHasAnyFiniteColumn(ctx.Tables.Sweep, ["DL_Throughput_Mbps","UL_Throughput_Mbps"]) && ...
             localHasAnyFiniteColumn(ctx.Tables.RFEnergy, ["Value"]));
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No joint energy/throughput samples available; placeholder figure emitted."));
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No joint energy/throughput samples are available; the plot is omitted."));
     case "curves_complexity_vs_gain"
         aggPath = localAggregateArtifactPath(ctx, "ComplexityVsGainPlot");
         hasData = localHasAnyFiniteColumn(ctx.Tables.DL, ["DecoderIterations","PostEqSINR_dB"]) || localHasAnyFiniteColumn(ctx.Tables.UL, ["DecoderIterations","PostEqSINR_dB"]);
-        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No complexity/gain sample pairs available; placeholder figure emitted."));
+        T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No complexity/gain sample pairs are available; the plot is omitted."));
     case "heatmaps_band_feature_kpi"
         aggPath = localAggregateArtifactPath(ctx, "BandFeatureKPIHeatmap");
         T = localMetricTableRow(cat, metric, "report", "heatmap", localFileAvailability(aggPath), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), "Single-run band/feature/KPI snapshot heatmap built from actual current-run KPIs.");
@@ -2373,7 +2381,7 @@ if isempty(papr)
     papr = NaN;
 end
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "UL", "feature_enabled", "available", double(enabled), "", "bool", localDefaultSource("UL"), localConfigEnabledNote(enabled, note)); ...
+    localMetricTableRow(cat, metric, "UL", "feature_enabled", "config_only", double(enabled), "", "bool", "meta/scenario_config_resolved.json", localConfigEnabledNote(enabled, note)); ...
     localMetricTableRow(cat, metric, "UL", "mean_papr_db", "available", mean(papr, "omitnan"), "", "dB", localDefaultSource("UL"), localConfigEnabledNote(enabled, note)); ...
     localMetricTableRow(cat, metric, "UL", "p95_papr_db", "available", prctile(papr(isfinite(papr)), 95), "", "dB", localDefaultSource("UL"), localConfigEnabledNote(enabled, note))];
 end
@@ -2382,7 +2390,7 @@ function T = localPABackoffImpactRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 backoff = localConfigNumber(ctx, ["power_and_rf_frontend.power_backoff_db", "rf.pa.backoff_dB"], 0);
 note = "Configured PA backoff is exported directly, alongside observed UL goodput efficiency from the actual waveform run.";
-T = [T; localMetricTableRow(cat, metric, "UL", "configured_backoff_db", "available", backoff, "", "dB", localDefaultSource("UL"), note)]; %#ok<AGROW>
+T = [T; localMetricTableRow(cat, metric, "UL", "configured_backoff_db", "config_only", backoff, "", "dB", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 T = [T; localRatioSummaryRows(cat, metric, ctx.Tables.UL, "GoodBits", "OfferedBits", "UL_goodput_efficiency", "fraction", localDefaultSource("UL"), note)]; %#ok<AGROW>
 end
 
@@ -2390,7 +2398,7 @@ function T = localPrepTimeImpactRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pusch.prep_time_model"], "baseline");
 note = "Prep-time impact is exported through the configured prep-time policy and the observed UL compute-latency cost in the waveform loop. No separate radio/procedure delay is modeled here.";
-T = [T; localMetricTableRow(cat, metric, "UL", "policy", "available", NaN, policy, "", localDefaultSource("UL"), note)]; %#ok<AGROW>
+T = [T; localMetricTableRow(cat, metric, "UL", "policy", "config_only", NaN, policy, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 T = [T; localCustomNumericSummaryRows(cat, metric, ctx.Tables.UL, "ComputeLatency_ms", "UL_compute", "ms", "air_interface/csv/ul_pusch_trials.csv", note)]; %#ok<AGROW>
 if ~isempty(T)
     T.Notes(:) = note;
@@ -2401,7 +2409,7 @@ function T = localUCIMultiplexingEfficiencyRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pusch.uci_multiplexing_mode", "pucch.multiplexing_policy"], "baseline");
 note = "Computed as correctly detected UCI bits over compared UCI bits from actual PUCCH observations; CRC pass is ignored when CRC is not applicable.";
-T = [T; localMetricTableRow(cat, metric, "UCI", "policy", "available", NaN, policy, "", "air_interface/csv/pucch_trials.csv", note)]; %#ok<AGROW>
+T = [T; localMetricTableRow(cat, metric, "UCI", "policy", "config_only", NaN, policy, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 if ~(istable(ctx.Tables.PUCCH) && ~isempty(ctx.Tables.PUCCH) && ismember("BitsCompared", string(ctx.Tables.PUCCH.Properties.VariableNames)))
     return;
 end
@@ -2444,7 +2452,7 @@ function T = localSimultaneousPUSCHPUCCHRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pucch.simultaneous_pucch_pusch_policy", "pusch.simultaneous_pusch_pucch_policy"], "baseline");
 note = "Simultaneous behavior is measured from overlapping Frame/Slot observations between the actual PUSCH and PUCCH trial tables.";
-T = [T; localMetricTableRow(cat, metric, "UL_control", "policy", "available", NaN, policy, "", "air_interface/csv/pucch_trials.csv", note)]; %#ok<AGROW>
+T = [T; localMetricTableRow(cat, metric, "UL_control", "policy", "config_only", NaN, policy, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 if ~(istable(ctx.Tables.UL) && istable(ctx.Tables.PUCCH) && ~isempty(ctx.Tables.UL) && ~isempty(ctx.Tables.PUCCH) && ...
         all(ismember(["Frame","Slot","Status"], string(ctx.Tables.UL.Properties.VariableNames))) && ...
         all(ismember(["Frame","Slot","Status"], string(ctx.Tables.PUCCH.Properties.VariableNames))))
@@ -2478,7 +2486,7 @@ function T = localPowerControlConvergenceRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localPowerControlPolicy(ctx);
 note = "Power-control convergence is summarized from actual UL SINR stability under the configured power-control policy.";
-T = [T; localMetricTableRow(cat, metric, "UL", "policy", "available", NaN, policy, "", localDefaultSource("UL"), note)]; %#ok<AGROW>
+T = [T; localMetricTableRow(cat, metric, "UL", "policy", "config_only", NaN, policy, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
     sinr = localFiniteColumn(ctx.Tables.UL, "PostEqSINR_dB");
 if isempty(sinr)
     return;
@@ -2522,18 +2530,20 @@ enabled = localConfigFlag(ctx, ["random_access.msg3_enabled", "pusch.msg3_flag"]
 alignment = localConfigString(ctx, ["random_access.msg3_waveform_alignment"], "inherit_ul_waveform");
 note = "Msg3 success is exported from the actual UL/PUSCH and PRACH execution path when Msg3 support is enabled.";
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "Msg3", "enabled_flag", "available", double(enabled), "", "bool", "air_interface/csv/ul_pusch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "Msg3", "waveform_alignment", "available", NaN, alignment, "", "air_interface/csv/ul_pusch_trials.csv", note)];
+    localMetricTableRow(cat, metric, "Msg3", "enabled_flag", "config_only", double(enabled), "", "bool", "meta/scenario_config_resolved.json", note); ...
+    localMetricTableRow(cat, metric, "Msg3", "waveform_alignment", "config_only", NaN, alignment, "", "meta/scenario_config_resolved.json", note)];
 if ~enabled
-    T = [T; localMetricTableRow(cat, metric, "Msg3", "success_rate", "available", 0, "", "fraction", "air_interface/csv/ul_pusch_trials.csv", note + " Feature is disabled in this scenario.")]; %#ok<AGROW>
+    T = [T; localMetricTableRow(cat, metric, "Msg3", "success_rate", "disabled", NaN, "", "fraction", "", note + " Feature is disabled in this scenario; no success observation is claimed.")]; %#ok<AGROW>
     return;
 end
 ulPass = localPassRateScalar(ctx.Tables.UL);
 prachPass = localPassRateScalar(ctx.Tables.PRACH);
-successRate = ulPass;
-if isfinite(prachPass)
-    successRate = min(successRate, prachPass);
+if ~isfinite(ulPass) || ~isfinite(prachPass)
+    T = [T; localMetricTableRow(cat, metric, "Msg3", "success_rate", "not_available", NaN, "", "fraction", "", note + " Both UL transport and PRACH runtime outcomes are required.")]; %#ok<AGROW>
+    return;
 end
+successRate = ulPass;
+successRate = min(successRate, prachPass);
 T = [T; localMetricTableRow(cat, metric, "Msg3", "success_rate", "available", successRate, "", "fraction", "air_interface/csv/ul_pusch_trials.csv", note)]; %#ok<AGROW>
 end
 
@@ -2591,8 +2601,8 @@ count = max(1, round(localConfigNumber(ctx, repetitionPaths, 1)));
 gain = 10 * log10(count);
 note = string(entity) + " repetition gain is exported as the configuration-derived combining ceiling for the executed scenario. A paired comparator campaign is required to measure empirical gain.";
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, entity, "repetition_count", "available", count, "", "count", sourcePath, note); ...
-    localMetricTableRow(cat, metric, entity, "theoretical_combining_gain_db", "available", gain, "", "dB", sourcePath, note)];
+    localMetricTableRow(cat, metric, entity, "repetition_count", "config_only", count, "", "count", "meta/scenario_config_resolved.json", note); ...
+    localMetricTableRow(cat, metric, entity, "theoretical_combining_gain_db", "config_only", gain, "", "dB", "meta/scenario_config_resolved.json", note)];
 passRate = localPassRateScalar(passT);
 if isfinite(passRate)
     T = [T; localMetricTableRow(cat, metric, entity, "observed_success_rate", "available", passRate, "", "fraction", sourcePath, note)]; %#ok<AGROW>
@@ -2941,9 +2951,9 @@ end
 function T = localSRSPortScalingImpactRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 ports = localConfigNumber(ctx, ["reference_signals.srs_ports", "reference_signals.srs.num_ports"], NaN);
-note = "SRS-port scaling impact is exported as the configured port count alongside the observed SRS NMSE from the actual run.";
+note = "SRS-port scaling separates configured port-count intent from observed SRS NMSE runtime evidence.";
 if isfinite(ports)
-    T = [T; localMetricTableRow(cat, metric, "SRS", "configured_ports", "available", ports, "", "count", "air_interface/csv/srs_trials.csv", note)]; %#ok<AGROW>
+    T = [T; localMetricTableRow(cat, metric, "SRS", "configured_ports", "config_only", ports, "", "count", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 end
 T = [T; localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "NMSE_dB", "SRS", "dB")]; %#ok<AGROW>
 if ~isempty(T)
@@ -2955,7 +2965,7 @@ function T = localReciprocityMismatchRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 mode = localConfigString(ctx, ["mimo_and_beam_management.reciprocity_mode", "mimo.reciprocity_mode"], "fdd_feedback");
 note = "Reciprocity mismatch impact is measured from the actual runtime mismatch-sensitivity signal under the configured reciprocity mode.";
-T = [T; localMetricTableRow(cat, metric, "CSI", "reciprocity_mode", "available", NaN, mode, "", localDefaultSource("UL"), note)]; %#ok<AGROW>
+T = [T; localMetricTableRow(cat, metric, "CSI", "reciprocity_mode", "config_only", NaN, mode, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 T = [T; ... %#ok<AGROW>
     localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "MismatchSensitivity_dB", "DL", "dB"); ...
     localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "MismatchSensitivity_dB", "UL", "dB")];
@@ -3168,7 +3178,8 @@ T = localMetricTableRow(cat, metric, entity, stat, "not_available", NaN, "", "",
 end
 
 function opSummary = localContextOperatingPointSummary(ctx)
-opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(ctx.ScenarioConfig, ctx.Tables.DL, ctx.Tables.UL);
+opSummary = sixgr.truth.summarizeEffectiveOperatingPoint( ...
+    ctx.ScenarioConfig, ctx.Tables.DL, ctx.Tables.UL, ctx.InternalConfig);
 end
 
 function T = localConfiguredOperatingPointRows(cat, metric, ctx)
@@ -3772,8 +3783,9 @@ end
 function T = localRuntimePerBlockRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 note = "Runtime-per-block reporting is exported from actual runtime-summary wall time plus observed wall-clock compute-latency columns emitted by the waveform LLS execution path.";
-if isfield(ctx.RuntimeSummary, "ElapsedSeconds")
-    T = [T; localMetricTableRow(cat, metric, "run", "scenario_total", "available", double(ctx.RuntimeSummary.ElapsedSeconds), "", "s", "meta/runtime_summary.json", note)]; %#ok<AGROW>
+elapsedSeconds = localRuntimeElapsedSeconds(ctx);
+if isfinite(elapsedSeconds)
+    T = [T; localMetricTableRow(cat, metric, "run", "scenario_total", "derived", elapsedSeconds, "", "s", "meta/runtime_summary.json", note)]; %#ok<AGROW>
 end
 T = [T; ... %#ok<AGROW>
     localCustomNumericSummaryRows(cat, metric, ctx.Tables.DL, "ComputeLatency_ms", "pdsch_decode_compute", "ms", "air_interface/csv/dl_pdsch_trials.csv", note); ...
@@ -3829,8 +3841,9 @@ if ~isfinite(count)
     end
 end
 T = [T; localMetricTableRow(cat, metric, "ai_ml", "count", "available", double(count), "", "count", src, note)]; %#ok<AGROW>
-if isfield(ctx.RuntimeSummary, "ElapsedSeconds") && double(ctx.RuntimeSummary.ElapsedSeconds) > 0
-    T = [T; localMetricTableRow(cat, metric, "ai_ml", "effective_rate_hz", "available", double(count) / double(ctx.RuntimeSummary.ElapsedSeconds), "", "invocations_per_s", src, note)]; %#ok<AGROW>
+elapsedSeconds = localRuntimeElapsedSeconds(ctx);
+if isfinite(elapsedSeconds) && elapsedSeconds > 0
+    T = [T; localMetricTableRow(cat, metric, "ai_ml", "effective_rate_hz", "derived", double(count) / elapsedSeconds, "", "invocations_per_s", src, note)]; %#ok<AGROW>
 end
 end
 
@@ -4087,8 +4100,9 @@ if ~isfinite(count)
         count = 0;
     end
 end
-if isfield(ctx.RuntimeSummary, "ElapsedSeconds") && double(ctx.RuntimeSummary.ElapsedSeconds) > 0
-    T = [T; localMetricTableRow(cat, metric, "ai_ml", "effective_rate_hz", aiAvail, double(count) / double(ctx.RuntimeSummary.ElapsedSeconds), "", "invocations_per_s", src, note)]; %#ok<AGROW>
+elapsedSeconds = localRuntimeElapsedSeconds(ctx);
+if isfinite(elapsedSeconds) && elapsedSeconds > 0
+    T = [T; localMetricTableRow(cat, metric, "ai_ml", "effective_rate_hz", aiAvail, double(count) / elapsedSeconds, "", "invocations_per_s", src, note)]; %#ok<AGROW>
 end
 end
 
@@ -4526,7 +4540,48 @@ if ismember("Availability", string(rows.Properties.VariableNames))
     if ~localConfigFlag(ctx, ["output.emit_disabled_audit_artifacts"], true)
         states(states == "disabled") = "not_supported";
     end
+    if ismember("SourceArtifact", string(rows.Properties.VariableNames))
+        sources = strtrim(string(rows.SourceArtifact));
+        for i = 1:height(rows)
+            if ~(states(i) == "observed" || states(i) == "derived")
+                continue;
+            end
+            sourceExists = false;
+            if strlength(sources(i)) > 0 && ~ismissing(sources(i))
+                candidate = fullfile(runFolder, char(replace(sources(i), "/", filesep)));
+                sourceExists = exist(candidate, "file") == 2;
+            end
+            if sourceExists
+                continue;
+            end
+            priorState = states(i);
+            states(i) = "not_available";
+            reason = "Runtime coverage suppressed: " + priorState + ...
+                " metric source is missing from the finalized run tree (" + ...
+                localMissingMetricSourceText(sources(i)) + ").";
+            if ismember("Notes", string(rows.Properties.VariableNames))
+                note = strtrim(string(rows.Notes(i)));
+                if strlength(note) > 0
+                    rows.Notes(i) = note + " " + reason;
+                else
+                    rows.Notes(i) = reason;
+                end
+            end
+        end
+    end
     rows.Availability = states;
+    if ismember("CountsTowardCoverage", string(rows.Properties.VariableNames))
+        rows.CountsTowardCoverage = localCoverageStateCountsTowardCoverage(states);
+    end
+end
+end
+
+function out = localMissingMetricSourceText(source)
+source = strtrim(string(source));
+if strlength(source) == 0 || ismissing(source)
+    out = "source_not_declared";
+else
+    out = source;
 end
 end
 
@@ -5593,7 +5648,7 @@ T = table( ...
     double(sixgr.util.structGet(ctx.Manifest, "OptionalPrunedCount", sixgr.util.structGet(ctx.ScenarioStatus, "OptionalPrunedCount", NaN))), ...
     double(ctx.Manifest.RandomSeed), ...
     string(ctx.Manifest.DeterministicMode), ...
-    double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)), ...
+    localRuntimeElapsedSeconds(ctx), ...
     double(coveredCount), ...
     double(sum(availLower == "observed")), ...
     double(sum(availLower == "derived")), ...
@@ -6843,7 +6898,7 @@ fprintf(fid, "- Disabled metrics: `%d`\n", sum(availability == "disabled"));
 fprintf(fid, "- Placeholder metrics: `%d`\n", sum(availability == "placeholder"));
 fprintf(fid, "- Not supported in this truth profile: `%d`\n", sum(availability == "not_supported"));
 fprintf(fid, "- Not exercised metrics: `%d`\n", sum(availability == "not_exercised"));
-fprintf(fid, "- Runtime seconds: `%.3f`\n", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
+fprintf(fid, "- Runtime seconds: `%.3f`\n", localRuntimeElapsedSeconds(ctx));
 fprintf(fid, "\n## Aggregate Tables\n\n");
 fprintf(fid, "- `%s`\n", localRelativeToRunFolder(artifacts.PerScenarioSummaryTable, ctx.RunFolder));
 if isfield(artifacts, "MeasuredSINRComparisonTable")
@@ -7362,7 +7417,7 @@ fprintf(fid, "- Required failure count: `%g / %g`\n", ...
     double(sixgr.util.structGet(ctx.Manifest, "RequiredCaseCount", sixgr.util.structGet(ctx.ScenarioStatus, "RequiredCaseCount", NaN))));
 fprintf(fid, "- Optional/pruned case count: `%g`\n", ...
     double(sixgr.util.structGet(ctx.Manifest, "OptionalPrunedCount", sixgr.util.structGet(ctx.ScenarioStatus, "OptionalPrunedCount", NaN))));
-fprintf(fid, "- Runtime (s): `%.3f`\n", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
+fprintf(fid, "- Runtime (s): `%.3f`\n", localRuntimeElapsedSeconds(ctx));
 fprintf(fid, "- Covered output metrics: `%d / %d`\n", availableCount, specifiedCount);
 fprintf(fid, "- Observed runtime metrics: `%d`\n", observedCount);
 fprintf(fid, "- Derived metrics: `%d`\n", derivedCount);
@@ -7444,7 +7499,7 @@ end
 if strlength(string(sixgr.util.structGet(ctx.Manifest, "StatusNotes", sixgr.util.structGet(ctx.ScenarioStatus, "StatusNotes", "")))) > 0
     fprintf(fid, "- Status notes: `%s`\n", string(sixgr.util.structGet(ctx.Manifest, "StatusNotes", sixgr.util.structGet(ctx.ScenarioStatus, "StatusNotes", ""))));
 end
-fprintf(fid, "- Runtime seconds: `%.3f`\n", double(sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN)));
+fprintf(fid, "- Runtime seconds: `%.3f`\n", localRuntimeElapsedSeconds(ctx));
 [runtimeCount, configCount, reportCount] = localMetricProvenanceCounts(rows);
 availability = lower(strtrim(string(coverageT.Availability)));
 fprintf(fid, "- Covered metrics: `%d / %d`\n", sum(localCoverageStateCountsTowardCoverage(availability)), height(coverageT));
@@ -7828,11 +7883,34 @@ switch entity
 end
 end
 
-function out = localRuntimeAvailability(ctx)
-if isfield(ctx.RuntimeSummary, "StartedUTC")
+function out = localRuntimeTimestampAvailability(ctx, fieldName)
+value = string(sixgr.util.structGet(ctx.RuntimeSummary, string(fieldName), ""));
+if strlength(strtrim(value)) > 0 && ...
+        exist(fullfile(ctx.Layout.MetaDir, "runtime_summary.json"), "file") == 2
     out = "derived";
 else
     out = "not_available";
+end
+end
+
+function out = localRuntimeNumericAvailability(ctx, fieldName)
+value = str2double(string(sixgr.util.structGet( ...
+    ctx.RuntimeSummary, string(fieldName), NaN)));
+if isscalar(value) && isfinite(value) && ...
+        exist(fullfile(ctx.Layout.MetaDir, "runtime_summary.json"), "file") == 2
+    out = "derived";
+else
+    out = "not_available";
+end
+end
+
+function value = localRuntimeElapsedSeconds(ctx)
+raw = sixgr.util.structGet(ctx.RuntimeSummary, "ElapsedSeconds", NaN);
+value = str2double(string(raw));
+if ~isscalar(value) || ~isfinite(value)
+    value = NaN;
+else
+    value = double(value);
 end
 end
 
@@ -7902,15 +7980,13 @@ function out = localDerivedOrPlaceholderAvailability(tf)
 if tf
     out = "derived";
 else
-    out = "placeholder";
+    out = "not_available";
 end
 end
 
 function out = localDerivedOrSuppressedPlaceholderAvailability(ctx, tf)
 if tf
     out = "derived";
-elseif localShouldEmitPlaceholderArtifacts(ctx)
-    out = "placeholder";
 else
     out = "not_available";
 end
@@ -7924,13 +8000,12 @@ else
 end
 end
 
-function state = localNormalizeAvailabilityState(availability, source, notes)
+function state = localNormalizeAvailabilityState(availability, source, notes) %#ok<INUSD>
 state = lower(strtrim(string(availability)));
 source = strtrim(string(source));
-notes = lower(strtrim(string(notes)));
-if contains(notes, "placeholder")
-    state = "placeholder";
-end
+% Availability is an explicit producer contract.  Do not infer or override
+% it from human-readable notes: phrases such as "no placeholder emitted"
+% otherwise corrupt an honest not_available/disabled state.
 switch state
     case {"observed","derived","config_only","disabled","placeholder","not_supported","not_available","not_exercised"}
         return;
@@ -8162,7 +8237,12 @@ end
 end
 
 function tf = localShouldEmitPlaceholderArtifacts(ctx)
-tf = localConfigFlag(ctx, ["output.emit_placeholder_artifacts"], false);
+% Strict/public result trees never contain unavailable-image cards.  A
+% missing runtime relation is represented by an honest not_available row
+% and no raster.  Debug-only profiles may opt in when strict visual
+% publication is explicitly disabled.
+tf = ~localStrictVisualArtifactMode(ctx) && ...
+    localConfigFlag(ctx, ["output.emit_placeholder_artifacts"], false);
 end
 
 function tf = localStrictVisualArtifactMode(ctx)

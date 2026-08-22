@@ -21,6 +21,8 @@ out = struct( ...
     "DatabaseRunID", NaN, ...
     "DatabasePersisted", false, ...
     "FilesystemPersisted", false, ...
+    "PostMaterializationAuditRefreshed", false, ...
+    "PostMaterializationAuditStatus", "not_applicable", ...
     "PublicationBackend", "filesystem", ...
     "BrowserMaterialized", false);
 
@@ -67,6 +69,15 @@ out.MissingChartCount = double(filesystemResult.MissingChartCount);
 out.Message = char(filesystemResult.PayloadText);
 if filesystemResult.Status ~= 0
     out.Identifier = "browser_contract_materialization_failed";
+    return;
+end
+[receiptOk, receiptStatus, receiptMessage] = ...
+    localRefreshPostMaterializationReceipts(runFolder);
+out.PostMaterializationAuditRefreshed = receiptStatus ~= "not_applicable";
+out.PostMaterializationAuditStatus = receiptStatus;
+if ~receiptOk
+    out.Identifier = "post_materialization_receipt_refresh_failed";
+    out.Message = char(string(out.Message) + newline + receiptMessage);
     return;
 end
 out.FilesystemPersisted = true;
@@ -120,6 +131,37 @@ out.Ok = true;
 out.BrowserMaterialized = filesystemComplete && ...
     localMaterializationCoverageComplete(databaseResult);
 out.Identifier = "browser_contract_materialization_ok";
+end
+
+function [ok, status, message] = localRefreshPostMaterializationReceipts(runFolder)
+% Some fixed-sweep receipts require contract_plot_lineage.csv, which is
+% created by the Python materializer itself. Refresh that audit only after
+% raster/lineage publication so the receipt describes the final filesystem
+% rather than the pre-materialization tree. Scientific audit failures remain
+% visible in the refreshed CSV and do not become browser-publication errors.
+receiptPath = fullfile(runFolder, "reports", "csv", ...
+    "fixed_snr_sweep_required_outputs.csv");
+if exist(receiptPath, "file") ~= 2
+    ok = true;
+    status = "not_applicable";
+    message = "";
+    return;
+end
+try
+    audit = sixgr.validation.auditFixedSNRSweepRun(runFolder, ...
+        "Strict", false, "WriteOutputs", true);
+    ok = true;
+    if logical(audit.Ok)
+        status = "fixed_snr_audit_refreshed_pass";
+    else
+        status = "fixed_snr_audit_refreshed_with_scientific_failures";
+    end
+    message = "";
+catch ME
+    ok = false;
+    status = "fixed_snr_audit_refresh_failed";
+    message = string(ME.identifier) + ": " + string(ME.message);
+end
 end
 
 function result = localExecuteMaterializerCommand(cmd)

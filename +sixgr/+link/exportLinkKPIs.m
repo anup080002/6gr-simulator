@@ -50,7 +50,10 @@ if opt.SaveCSV
         artifacts.csv{end+1} = paprFile;
     end
 
-    rawKPI = sixgr.kpi.loadDirectionRawTables(details, "RunFolder", runFolder);
+    rawKPI = sixgr.kpi.loadDirectionRawTables(details, ...
+        "RunFolder", localRunRootFolder(runFolder));
+    rawKPI.Paths = localPortableKPISourcePaths( ...
+        rawKPI.Paths, localRunRootFolder(runFolder));
     kpiRecon = sixgr.kpi.reconstructLLSKPISummaryFromRaw(rawKPI, ...
         "RunId", runId, ...
         "ScenarioName", localScenarioName(details), ...
@@ -365,16 +368,43 @@ else
 end
 end
 
+function paths = localPortableKPISourcePaths(paths, runRoot)
+% Persist run-relative source identities so KPI evidence remains portable.
+if ~isstruct(paths)
+    return;
+end
+root = string(char(java.io.File(char(string(runRoot))).getCanonicalPath()));
+names = string(fieldnames(paths));
+for i = 1:numel(names)
+    name = char(names(i));
+    value = strtrim(string(paths.(name)));
+    if strlength(value) == 0
+        continue;
+    end
+    % Candidate paths returned by the persisted-table loader can be
+    % repository-relative (for example results/lls/.../air_interface/csv).
+    % Canonicalize both absolute and relative candidates before deciding
+    % whether they belong to this run. Already-portable logical paths such
+    % as air_interface/csv/... remain unchanged when they resolve outside
+    % the run root.
+    canonical = string(char(java.io.File(char(value)).getCanonicalPath()));
+    if canonical == root
+        paths.(name) = "";
+    elseif startsWith(canonical, root + string(filesep), ...
+            "IgnoreCase", ispc)
+        relative = extractAfter(canonical, strlength(root) + 1);
+        paths.(name) = char(replace(relative, string(filesep), "/"));
+    end
+end
+end
+
 function runId = localRunId(details, runFolder)
 cfg = sixgr.util.structGet(details, "Config", struct());
 values = [ ...
     string(sixgr.util.structGet(details, "RunId", "")); ...
     string(sixgr.util.structGet(details, "run_id", "")); ...
-    string(sixgr.util.structGet(details, "ScenarioID", "")); ...
     string(sixgr.util.structGet(cfg, "run.runId", "")); ...
-    string(sixgr.util.structGet(cfg, "run.runTag", "")); ...
-    string(sixgr.util.structGet(cfg, "run.scenarioID", "")); ...
-    string(sixgr.util.structGet(cfg, "meta.lls6gScenarioID", ""))];
+    string(sixgr.util.structGet(cfg, "run.runTag", ""))];
 runId = "";
 for i = 1:numel(values)
     candidate = strtrim(values(i));
@@ -388,8 +418,23 @@ runId = strtrim(string(leaf));
 end
 
 function scenarioName = localScenarioName(details)
-scenarioName = string(sixgr.util.structGet(details, "ScenarioName", ...
-    sixgr.util.structGet(details, "scenario_name", "")));
+cfg = sixgr.util.structGet(details, "Config", struct());
+values = [ ...
+    string(sixgr.util.structGet(details, "ScenarioName", "")); ...
+    string(sixgr.util.structGet(details, "scenario_name", "")); ...
+    string(sixgr.util.structGet(details, "ScenarioID", "")); ...
+    string(sixgr.util.structGet(cfg, "run.scenarioID", "")); ...
+    string(sixgr.util.structGet(cfg, "meta.lls6gScenarioID", "")); ...
+    string(sixgr.util.structGet(cfg, "meta.scenarioID", ""))];
+scenarioName = "";
+for i = 1:numel(values)
+    candidate = strtrim(values(i));
+    if strlength(candidate) > 0 && ...
+            ~any(strcmpi(candidate, ["nan","<missing>","missing"]))
+        scenarioName = candidate;
+        return;
+    end
+end
 end
 
 function cfg = localConfig(details)
@@ -398,8 +443,9 @@ end
 
 function applicability = localFeatureApplicability(details)
 cfg = localConfig(details);
-fixedLinkOnly = logical(sixgr.util.structGet(cfg, "run.fixedLinkCampaignOnly", false));
-protocolEnabled = logical(sixgr.util.structGet(cfg, "protocol.enabled", false)) && ...
+fixedLinkOnly = localFixedLinkCampaignOnly(cfg);
+protocolEnabled = ~fixedLinkOnly && ...
+    logical(sixgr.util.structGet(cfg, "protocol.enabled", false)) && ...
     logical(sixgr.util.structGet(cfg, "protocol.strict", false));
 applicability = struct( ...
     "HARQ", logical(sixgr.util.structGet(cfg, "phy.harq.enable", ...
@@ -408,6 +454,30 @@ applicability = struct( ...
     "Latency", ~fixedLinkOnly, ...
     "MAC", protocolEnabled, ...
     "Application", protocolEnabled);
+end
+
+function tf = localFixedLinkCampaignOnly(cfg)
+% Resolve the campaign-mode authority from normalized runtime aliases and
+% the persisted scenario schema.  Refinalization may supply either the
+% normalized config directly or under lls6g.resolvedConfig.
+paths = [ ...
+    "run.fixedLinkCampaignOnly", ...
+    "run.fixed_link_campaign_only", ...
+    "canonical_control.run.fixed_link_campaign_only", ...
+    "sweeps_and_matrix.fixed_link_calibration.only", ...
+    "lls6g.resolvedConfig.run.fixedLinkCampaignOnly", ...
+    "lls6g.resolvedConfig.run.fixed_link_campaign_only", ...
+    "lls6g.resolvedConfig.canonical_control.run.fixed_link_campaign_only", ...
+    "lls6g.resolvedConfig.sweeps_and_matrix.fixed_link_calibration.only"];
+tf = false;
+for i = 1:numel(paths)
+    value = sixgr.util.structGet(cfg, paths(i), false);
+    if islogical(value) || isnumeric(value)
+        tf = tf || any(logical(value(:)));
+    elseif ischar(value) || isstring(value)
+        tf = tf || any(strcmpi(strtrim(string(value(:))), ["true","1","yes","on"]));
+    end
+end
 end
 
 function tf = localStrictMode(details)

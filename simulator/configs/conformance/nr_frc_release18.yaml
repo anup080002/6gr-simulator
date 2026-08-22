@@ -3,12 +3,12 @@
   "catalog_id": "nr_frc_release18",
   "research_class": "baseline_benchmark",
   "catalog_status": "normative_reference_data_with_nonnormative_project_diagnostic",
-  "expected_entry_count": 21,
+  "expected_entry_count": 22,
   "coverage": {
     "scope_kind": "selected_phase1_conformance_operating_points",
     "complete_annex_catalog": false,
-    "scope_statement": "This catalog contains twenty-one selected Release 18 conformance operating points: the ten Phase 1 gate anchors plus eleven representative coverage records spanning FDD PDSCH QPSK through 256QAM and ranks 1 through 4, and selected FR1 and FR2 PUSCH families including 16QAM, 256QAM, and rank-4 codebook transmission. It is not a complete transcription of the PDSCH reference measurement channels in TS 38.101-4 Annex A or the PUSCH G-FR1-A*/G-FR2-A* fixed reference channel families in TS 38.104 Annex A.",
-    "operating_point_count": 21,
+    "scope_statement": "This catalog contains twenty-two selected Release 18 conformance operating points, including separate Type-A and Type-B requirement variants for G-FR1-A3A-1 so their distinct required SNR values cannot be conflated. The selected records span FDD PDSCH QPSK through 256QAM and ranks 1 through 4, and selected FR1 and FR2 PUSCH families including 16QAM, 256QAM, and rank-4 codebook transmission. It is not a complete transcription of the PDSCH reference measurement channels in TS 38.101-4 Annex A or the PUSCH G-FR1-A*/G-FR2-A* fixed reference channel families in TS 38.104 Annex A.",
+    "operating_point_count": 22,
     "unique_frc_count": 19,
     "downlink": {
       "standard_key": "ts_38_101_4",
@@ -24,7 +24,7 @@
     "uplink": {
       "standard_key": "ts_38_104",
       "standards_role": "Base-station receiver PUSCH demodulation requirements; the gNB is the uplink receiver.",
-      "operating_point_count": 10,
+      "operating_point_count": 11,
       "unique_frc_count": 10,
       "represented_modulations": ["QPSK", "16QAM", "64QAM", "256QAM"],
       "represented_layers": [1, 4],
@@ -225,6 +225,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 12,
@@ -331,6 +332,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 12,
@@ -356,7 +358,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -437,6 +451,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 12,
@@ -462,7 +477,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -542,8 +569,9 @@
         "configuration_type": 1,
         "duration": "single_symbol",
         "type_a_position": 2,
-        "additional_position": 2,
-        "num_cdm_groups_without_data": 1,
+      "additional_position": 2,
+      "symbol_indices": [2, 7, 11],
+      "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 18,
         "data_to_dmrs_epre_db": 0
@@ -661,6 +689,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000, 1001],
         "dmrs_re_per_prb": 12,
@@ -779,6 +808,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 12,
@@ -804,7 +834,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -885,6 +927,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 12,
@@ -910,7 +953,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -991,6 +1046,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000, 1001],
         "dmrs_re_per_prb": 12,
@@ -1016,7 +1072,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -1097,6 +1165,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 2,
         "ports": [1000, 1001, 1002, 1003],
         "dmrs_re_per_prb": 24,
@@ -1251,6 +1320,110 @@
       }
     },
     {
+      "id": "ul_g_fr1_a3a_1_awgn_mapping_b",
+      "frc_id": "G-FR1-A3A-1",
+      "research_class": "baseline_benchmark",
+      "direction": "uplink",
+      "physical_channel": "PUSCH",
+      "receiver_role": "gNB-Rx",
+      "test_interface": "conducted",
+      "standard": {
+        "standard_key": "ts_38_104",
+        "document": "3GPP TS 38.104",
+        "version": "18.13.0",
+        "release": 18,
+        "source_url": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf",
+        "frc_definition_clause": "A.3A",
+        "frc_definition_table": "A.3A-1",
+        "requirement_clause": "8.2.6",
+        "test_parameter_tables": ["8.2.6.1-1"],
+        "requirement_tables": ["8.2.6.2-5"],
+        "snr_definition_clause": "8.1.1"
+      },
+      "carrier": {
+        "frequency_range": "FR1",
+        "duplex_mode": "FDD_and_TDD",
+        "channel_bandwidth_mhz": 5,
+        "subcarrier_spacing_khz": 15,
+        "cyclic_prefix": "normal",
+        "n_prb": 25,
+        "prb_start": 0,
+        "prb_end": 24
+      },
+      "allocation": {
+        "mapping_type": "B",
+        "start_symbol": 0,
+        "symbol_length": 14,
+        "data_bearing_symbols": 12,
+        "full_bandwidth": true,
+        "frequency_hopping": "disabled",
+        "resource_allocation_type": "full_applicable_test_bandwidth",
+        "vrb_to_prb_mapping": "not_applicable"
+      },
+      "waveform": {
+        "name": "CP-OFDM",
+        "transform_precoding": false
+      },
+      "coding": {
+        "mcs_table": "not_specified_by_frc",
+        "mcs_index": "not_specified_by_frc",
+        "modulation": "QPSK",
+        "target_code_rate_numerator": 99,
+        "target_code_rate_denominator": 1024,
+        "displayed_target_code_rate": 0.0967,
+        "tbs_bits": 704,
+        "transport_block_crc_bits": 16,
+        "code_blocks": 1,
+        "code_block_crc_bits": 0,
+        "g_bits_per_slot": 7200
+      },
+      "dmrs": {
+        "configuration_type": 1,
+        "duration": "single_symbol",
+        "type_a_position": 2,
+        "type_a_position_applicable": false,
+        "additional_position": 1,
+        "num_cdm_groups_without_data": 2,
+        "ports": [0],
+        "data_to_dmrs_epre_db": -3,
+        "n_id_0": 0,
+        "n_scid": 0,
+        "symbol_indices": [0, 10]
+      },
+      "mimo": {
+        "layers": 1,
+        "tx_antennas": 1,
+        "rx_antennas": 2,
+        "antenna_configuration": "1x2",
+        "correlation_matrix": "not_applicable_awgn"
+      },
+      "condition": {
+        "id": "awgn_1x2_mapping_b",
+        "kind": "awgn",
+        "label": "AWGN, PUSCH mapping Type B",
+        "model": "AWGN",
+        "delay_spread_ns": 0,
+        "max_doppler_hz": 0,
+        "static_channel_reference": "not_applicable",
+        "frequency_offset_hz": 0,
+        "snr_definition": "TS 38.104 clause 8.1.1 conducted SNR: total signal energy in the slot on one antenna or TAB connector divided by noise energy in the transmission bandwidth over the same signal duration on that connector."
+      },
+      "harq": {
+        "max_transmissions": 1,
+        "rv_sequence": [0]
+      },
+      "requirement": {
+        "normative": true,
+        "metric": "block_error_rate",
+        "comparator": "less_than_or_equal",
+        "target_fraction": 0.00001,
+        "target_percent": 0.001,
+        "required_snr_db": -5.2,
+        "evaluation_mode": "at_required_snr",
+        "semantics": "one_sided_minimum_performance_at_required_snr"
+      }
+    },
+    {
       "id": "ul_g_fr1_a13_1_atg_awgn",
       "frc_id": "G-FR1-A13-1",
       "research_class": "baseline_benchmark",
@@ -1340,7 +1513,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_fdd_test_harness_assumption",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 clauses 8.2.1.1 and 8.2.1.2; process count and feedback delay are not specified by those clauses"
+        }
       },
       "requirement": {
         "normative": true,
@@ -1558,7 +1743,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_fdd_test_harness_assumption",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 clauses 8.2.1.1 and 8.2.1.2; process count and feedback delay are not specified by those clauses"
+        }
       },
       "requirement": {
         "normative": true,
@@ -1579,6 +1776,15 @@
       "physical_channel": "PUSCH",
       "receiver_role": "gNB-Rx",
       "test_interface": "radiated_RIB",
+      "test_interface_contract": {
+        "reference_plane": "radiated_interface_boundary",
+        "rib_count": 2,
+        "rib_labels": ["RIB-1", "RIB-2"],
+        "receiver_branch_by_rib": [1, 2],
+        "polarization_basis": "orthogonal_test_polarizations",
+        "noise_variance_policy": "equal_independent_variance_per_rib",
+        "standard_reference": "3GPP TS 38.104 V18.13.0 clause 11.1.1"
+      },
       "standard": {
         "standard_key": "ts_38_104",
         "document": "3GPP TS 38.104",
@@ -1668,7 +1874,25 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "TDD",
+          "process_count": 1,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 5,
+          "retransmission_spacing_source": "successive_full_ul_slots_in_ts38104_default_3d1s1u_pattern",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 Table 11.2.2.1.1-1",
+          "tdd_pattern_period_slots": 5,
+          "tdd_slot_formats": ["D", "D", "D", "S", "U"],
+          "first_ul_opportunity_slot": 4,
+          "special_slot_downlink_symbols": 10,
+          "special_slot_guard_symbols": 2,
+          "special_slot_uplink_symbols": 2
+        }
       },
       "requirement": {
         "normative": true,
@@ -1689,6 +1913,15 @@
       "physical_channel": "PUSCH",
       "receiver_role": "gNB-Rx",
       "test_interface": "radiated_RIB",
+      "test_interface_contract": {
+        "reference_plane": "radiated_interface_boundary",
+        "rib_count": 2,
+        "rib_labels": ["RIB-1", "RIB-2"],
+        "receiver_branch_by_rib": [1, 2],
+        "polarization_basis": "orthogonal_test_polarizations",
+        "noise_variance_policy": "equal_independent_variance_per_rib",
+        "standard_reference": "3GPP TS 38.104 V18.13.0 clause 11.1.1"
+      },
       "standard": {
         "standard_key": "ts_38_104",
         "document": "3GPP TS 38.104",
@@ -1778,7 +2011,25 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "TDD",
+          "process_count": 1,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 5,
+          "retransmission_spacing_source": "successive_full_ul_slots_in_ts38104_default_3d1s1u_pattern",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 Table 11.2.2.1.1-1",
+          "tdd_pattern_period_slots": 5,
+          "tdd_slot_formats": ["D", "D", "D", "S", "U"],
+          "first_ul_opportunity_slot": 4,
+          "special_slot_downlink_symbols": 10,
+          "special_slot_guard_symbols": 2,
+          "special_slot_uplink_symbols": 2
+        }
       },
       "requirement": {
         "normative": true,
@@ -1859,6 +2110,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 1,
         "ports": [1000],
         "dmrs_re_per_prb": 12,
@@ -1965,6 +2217,7 @@
         "duration": "single_symbol",
         "type_a_position": 2,
         "additional_position": 1,
+        "symbol_indices": [2, 11],
         "num_cdm_groups_without_data": 2,
         "ports": [1000, 1001, 1002],
         "dmrs_re_per_prb": 24,
@@ -1990,7 +2243,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 2,
+          "feedback_delay_specified_by_standard": true,
+          "process_count_specified_by_standard": true,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_round_robin_test_harness",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.101-4 V18.11.0 Table 5.2.2.1.1-2"
+        }
       },
       "requirement": {
         "normative": true,
@@ -2093,7 +2358,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_fdd_test_harness_assumption",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 clauses 8.2.1.1 and 8.2.1.2; process count and feedback delay are not specified by those clauses"
+        }
       },
       "requirement": {
         "normative": true,
@@ -2196,7 +2473,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_fdd_test_harness_assumption",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 clauses 8.2.1.1 and 8.2.1.2; process count and feedback delay are not specified by those clauses"
+        }
       },
       "requirement": {
         "normative": true,
@@ -2330,7 +2619,7 @@
         "frc_definition_table": "A.11-1",
         "requirement_clause": "8.2.1",
         "test_parameter_tables": ["8.2.1.1-1"],
-        "requirement_tables": ["8.2.1.2-1"],
+        "requirement_tables": ["8.2.1.2-8"],
         "snr_definition_clause": "8.1.1"
       },
       "carrier": {
@@ -2404,7 +2693,19 @@
       },
       "harq": {
         "max_transmissions": 4,
-        "rv_sequence": [0, 2, 3, 1]
+        "rv_sequence": [0, 2, 3, 1],
+        "timing": {
+          "timeline_scope": "independent_transport_block_cluster",
+          "selected_duplex_mode": "FDD",
+          "process_count": 4,
+          "feedback_delay_slots": 0,
+          "feedback_delay_specified_by_standard": false,
+          "process_count_specified_by_standard": false,
+          "retransmission_spacing_slots": 4,
+          "retransmission_spacing_source": "explicit_four_process_fdd_test_harness_assumption",
+          "inactive_slot_waveform": "zero_at_all_tx_ports",
+          "standard_reference": "3GPP TS 38.104 V18.13.0 clauses 8.2.1.1 and 8.2.1.2; process count and feedback delay are not specified by those clauses"
+        }
       },
       "requirement": {
         "normative": true,

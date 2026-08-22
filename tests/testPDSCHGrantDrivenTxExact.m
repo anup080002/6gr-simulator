@@ -163,6 +163,10 @@ cfg.phy.pdsch.numLayers = v.NumLayers;
 cfg.phy.pdsch.nLayers = v.NumLayers;
 cfg.phy.pdsch.numPorts = v.NumPorts;
 cfg.phy.pdsch.nPorts = v.NumPorts;
+% Mirror the explicit YAML-owned scheduled DM-RS pool.  Rank>1 grants must
+% not silently expand the rank-1 default port.
+cfg.phy.pdsch.dmrs.portSet = 0:(v.NumLayers - 1);
+cfg.phy.pdsch.dmrs.DMRSPortSet = cfg.phy.pdsch.dmrs.portSet;
 cfg.phy.pdsch.RNTI = v.RNTI;
 cfg.phy.pdsch.NID = v.NID;
 cfg.phy.pdsch.codeRate = v.TargetCodeRate;

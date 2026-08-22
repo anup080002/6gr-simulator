@@ -53,6 +53,7 @@ csvSpecs = {
     fullfile(layout.BeamformingCSVDir, "beam_sweep_measurements.csv"), evidence.BeamSweepMeasurements;
     fullfile(layout.BeamformingCSVDir, "mimo_negative_trials.csv"), evidence.NegativeTrials;
     fullfile(layout.BeamformingCSVDir, "mimo_oracle_guard.csv"), evidence.OracleGuard;
+    fullfile(layout.BeamformingCSVDir, "mimo_strict_gate_summary.csv"), evidence.StrictGateSummary;
     fullfile(layout.ReportCSVDir, "mimo_rank_utilization_table.csv"), evidence.RankUtilization
     };
 for i = 1:size(csvSpecs, 1)

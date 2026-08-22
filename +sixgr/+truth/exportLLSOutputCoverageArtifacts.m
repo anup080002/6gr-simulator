@@ -130,6 +130,13 @@ tables.doppler_time_variation_plot = localBuildDopplerTimeVariationTable(src, me
 localCoverageLog("tables_beam_timing_built", runFolder);
 tables.mobility_adequacy_report = sixgr.analytics.buildMobilityAdequacyReport(scfg, src.DLTrials, runFolder);
 tables.harq_combining_gain = sixgr.analytics.measureHARQCombiningGain(src.DLTrials, runFolder);
+% The package audit is a persisted-evidence reader. Flush the active
+% identity-bound call ledger immediately before both runtime graph and
+% package-gate construction so a later cleanup flush cannot make a stale
+% required-failure row look authoritative.
+if sixgr.runtime.RuntimeCallLedger.isConfigured()
+    sixgr.runtime.RuntimeCallLedger.flush();
+end
 sixgr.analytics.buildRuntimeCallGraph(runFolder);
 packageAudit = sixgr.analytics.buildPHYPackageExecutionAudit(runFolder);
 sixgr.truth.buildProvenanceManifest(scfg, runFolder);
@@ -138,6 +145,8 @@ tables.runtime_call_graph = localReadOptionalTable(fullfile(layout.ReportCSVDir,
 tables.phy_package_execution_audit = packageAudit.DetailTable;
 tables.phy_package_execution_summary = packageAudit.SummaryTable;
 tables.phy_package_execution_evidence_gate = packageAudit.GateTable;
+tables.sixgr_source_file_execution_inventory = packageAudit.DetailTable;
+tables.sixgr_source_function_execution_inventory = packageAudit.FunctionTable;
 tables.phase7_truth_gates = localReadOptionalTable(fullfile(layout.ReportCSVDir, "phase7_truth_gates.csv"));
 localCoverageLog("tables_prompt8_adequacy_built", runFolder);
 localCoverageLog("tables_built", runFolder);
@@ -228,6 +237,8 @@ logicalPaths = struct( ...
     "phy_package_execution_audit", "reports/csv/phy_package_execution_audit.csv", ...
     "phy_package_execution_summary", "reports/csv/phy_package_execution_summary.csv", ...
     "phy_package_execution_evidence_gate", "reports/csv/phy_package_execution_evidence_gate.csv", ...
+    "sixgr_source_file_execution_inventory", "reports/csv/sixgr_source_file_execution_inventory.csv", ...
+    "sixgr_source_function_execution_inventory", "reports/csv/sixgr_source_function_execution_inventory.csv", ...
     "phase7_truth_gates", "reports/csv/phase7_truth_gates.csv");
 
 names = fieldnames(logicalPaths);
@@ -326,6 +337,8 @@ localCoverageLog("phase7_and_publication_readiness_refreshed", runFolder);
 inventory = localBuildArtifactInventory(runFolder);
 localWriteTableArtifacts(runFolder, "reports/csv/artifact_inventory.csv", inventory);
 localCoverageLog("inventory_written", runFolder);
+top50Visualization = sixgr.truth.exportTop50VisualizationEvidenceInventory(runFolder, cfg);
+localCoverageLog("top50_visualization_evidence_inventory_written", runFolder);
 
 out = struct();
 out.Tables = struct();
@@ -341,6 +354,7 @@ out.MeasurementSidecars = measurementSidecars;
 out.VisualArtifactIntegrity = tables.visual_artifact_integrity;
 out.VisualArtifactIntegrityOk = all(logical(tables.visual_artifact_integrity.IntegrityOk));
 out.UpdatedArtifactInventory = inventory;
+out.Top50VisualizationEvidence = top50Visualization;
 out.PublicationReadiness = publicationReadiness;
 out.ManifestUnavailableEntries = localManifestUnavailableEntries(unavailable);
 localCoverageLog("done", runFolder);
@@ -459,7 +473,12 @@ meta.scenario_id = string(scfg.ScenarioID);
 meta.scenario_variant_id = string(localScenarioGet(scfg, "meta.scenario_id", scfg.ScenarioID));
 meta.scenario_name = string(localScenarioGet(scfg, "meta.scenario_name", localScenarioGet(scfg, "meta.description", scfg.ScenarioID)));
 meta.config_hash = localFirstNonEmptyString(string(scfg.ConfigHash), string(sixgr.util.structGet(storedMeta, "config_hash", "")));
-meta.code_commit = localFirstNonEmptyString(localResolveCodeCommit(summaryRow, runFolder), string(sixgr.util.structGet(storedMeta, "code_commit", "")));
+% Persisted raw provenance is authoritative during recovery.  In
+% particular, never replace the commit that produced an immutable run with
+% the commit of the checkout performing the re-finalization.
+meta.code_commit = localFirstNonEmptyString( ...
+    string(sixgr.util.structGet(storedMeta, "code_commit", "")), ...
+    localResolveCodeCommit(summaryRow, runFolder));
 meta.seed = double(localFirstFinite([ ...
     double(localScenarioGet(scfg, "simulation.random_seed", localTableValue(summaryRow, "RandomSeed", NaN))); ...
     double(sixgr.util.structGet(storedMeta, "seed", NaN))]));
@@ -531,6 +550,20 @@ if exist(runtimeSummaryPath, "file") == 2
     catch
     end
 end
+executionManifestPath = fullfile(runFolder, "raw", "execution_manifest.json");
+if exist(executionManifestPath, "file") == 2
+    try
+        executionManifest = jsondecode(fileread(executionManifestPath));
+        if isstruct(executionManifest)
+            % The raw execution manifest is the immutable source-of-run
+            % authority.  Prefer it over derived/recovered metadata.
+            meta.code_commit = localFirstNonEmptyString( ...
+                localResolveStoredCodeCommit(executionManifest), ...
+                meta.code_commit);
+        end
+    catch
+    end
+end
 meta.run_id = localParseRunIDFromFolder(runFolder);
 end
 
@@ -560,17 +593,37 @@ commit = "";
 if ~isstruct(T)
     return;
 end
-commit = localFirstNonEmptyString( ...
-    string(sixgr.util.structGet(T, "CodeCommit", "")), ...
-    string(sixgr.util.structGet(T, "CodeVersion", "")), ...
-    string(sixgr.util.structGet(T, "CodeDetail", "")));
-if startsWith(lower(strtrim(commit)), "git:")
-    commit = extractAfter(commit, 4);
+candidateFields = ["CodeCommit", "GitCommit", "GitSHA", "CommitSHA", ...
+    "CodeVersion", "CodeDetail"];
+for fieldName = candidateFields
+    candidate = localNormalizeGitCommit( ...
+        sixgr.util.structGet(T, char(fieldName), ""));
+    if strlength(candidate) > 0
+        commit = candidate;
+        return;
+    end
 end
-hashToken = regexp(char(commit), 'hash=([0-9a-fA-F]+)', 'tokens', 'once');
+end
+
+function commit = localNormalizeGitCommit(candidate)
+commit = strtrim(string(candidate));
+if ~isscalar(commit) || ismissing(commit) || strlength(commit) == 0
+    commit = "";
+    return;
+end
+if startsWith(lower(commit), "git:")
+    commit = strtrim(extractAfter(commit, 4));
+end
+hashToken = regexp(char(commit), ...
+    '(?:^|\b)hash=([0-9a-fA-F]{7,64})(?:\b|$)', 'tokens', 'once');
 if ~isempty(hashToken)
     commit = string(hashToken{1});
 end
+if isempty(regexp(char(commit), '^[0-9a-fA-F]{7,64}$', 'once'))
+    commit = "";
+    return;
+end
+commit = lower(commit);
 end
 
 function out = localFirstNonEmptyString(varargin)
@@ -4186,8 +4239,8 @@ if grantDisposition.UnresolvedCount > 0
         "pucch_grants_without_trial_rows", "medium", "PARTIAL", "control_channel_runtime", ...
         "UL", NaN, NaN, "PUCCH", "unresolved_runtime_feedback_grants", ...
         string(grantDisposition.UnresolvedCount), ...
-        ["Every scheduled PUCCH feedback grant needs a matched standalone receiver trial, " ...
-         "an exact same-waveform PUSCH-UCI decode consumed by HARQ state, or a finalized cancellation"], ...
+        "Every scheduled PUCCH feedback grant needs a matched standalone receiver trial, " + ...
+        "an exact same-waveform PUSCH-UCI decode consumed by HARQ state, or a finalized cancellation", ...
         "packet_flow/csv/live_pucch_grants.csv", ...
         "One or more scheduled feedback grants have no auditable receiver/state disposition", ...
         "Connect each unresolved grant to its PUCCH trial, exact PUSCH-UCI transfer, or explicit finalized cancellation.");
@@ -4481,24 +4534,33 @@ end
 
 function row = localIssueRow(issueID, severity, issueStatus, issueCategory, direction, ueID, cellID, blockName, metricName, observedValue, expectedOrPolicy, evidenceArtifactRef, rootCauseHint, fixPlan)
 row = struct( ...
-    "issue_id", string(issueID), ...
-    "severity", string(severity), ...
-    "issue_status", string(issueStatus), ...
-    "issue_category", string(issueCategory), ...
-    "direction", string(direction), ...
+    "issue_id", localRequireScalarIssueText(issueID, "issue_id"), ...
+    "severity", localRequireScalarIssueText(severity, "severity"), ...
+    "issue_status", localRequireScalarIssueText(issueStatus, "issue_status"), ...
+    "issue_category", localRequireScalarIssueText(issueCategory, "issue_category"), ...
+    "direction", localRequireScalarIssueText(direction, "direction"), ...
     "ue_id", double(ueID), ...
     "cell_id", double(cellID), ...
-    "block_name", string(blockName), ...
-    "metric_name", string(metricName), ...
-    "observed_value", string(observedValue), ...
-    "expected_or_policy", string(expectedOrPolicy), ...
-    "evidence_artifact_ref", string(evidenceArtifactRef), ...
-    "root_cause_hint", string(rootCauseHint), ...
-    "fix_plan", string(fixPlan), ...
+    "block_name", localRequireScalarIssueText(blockName, "block_name"), ...
+    "metric_name", localRequireScalarIssueText(metricName, "metric_name"), ...
+    "observed_value", localRequireScalarIssueText(observedValue, "observed_value"), ...
+    "expected_or_policy", localRequireScalarIssueText(expectedOrPolicy, "expected_or_policy"), ...
+    "evidence_artifact_ref", localRequireScalarIssueText(evidenceArtifactRef, "evidence_artifact_ref"), ...
+    "root_cause_hint", localRequireScalarIssueText(rootCauseHint, "root_cause_hint"), ...
+    "fix_plan", localRequireScalarIssueText(fixPlan, "fix_plan"), ...
     "frame", NaN, ...
     "slot", NaN, ...
     "harq_id", NaN, ...
     "analytics_visible_flag", true);
+end
+
+function value = localRequireScalarIssueText(value, fieldName)
+value = string(value);
+if ~isscalar(value)
+    error("sixgr:truth:outputCoverage:NonScalarIssueField", ...
+        "Issue-registry field %s must be a text scalar; received size %s.", ...
+        char(string(fieldName)), char(mat2str(size(value))));
+end
 end
 
 function T = localBuildCompareRunPrerequisitesTable(meta)
@@ -4731,7 +4793,8 @@ for i = 1:height(trials)
     rows(i).selected_beam_index = localNumericTableValue(row, "SelectedBeamIndex", NaN);
     rows(i).best_beam_index = localNumericTableValue(row, "BestBeamIndex", NaN);
     rows(i).beam_hit = localNumericTableValue(row, "BeamHit", NaN);
-    rows(i).requested_beam_index_set = localTextTableValue(row, "RequestedBeamIndexSet", "");
+    rows(i).requested_beam_index_set = localBeamIndexSetToken( ...
+        localTextTableValue(row, "RequestedBeamIndexSet", ""));
     rows(i).requested_beam_truth_classification = localTextTableValue(row, "RequestedBeamTruthClassification", "");
     rows(i).precoder_source = localTextTableValue(row, "PrecoderSource", "");
     rows(i).applied_precoder_source = localTextTableValue(row, "AppliedPrecoderSource", "");
@@ -4742,7 +4805,8 @@ for i = 1:height(trials)
     rows(i).applied_precoder_codebook_mode = localTextTableValue(row, "AppliedPrecoderCodebookMode", "");
     rows(i).requested_vs_applied_precoder_pmi_match_status = localTextTableValue(row, "RequestedVsAppliedPrecoderPMIMatchStatus", "");
     rows(i).beamforming_applied = localLogicalTableValue(row, "BeamformingApplied", false);
-    rows(i).applied_beam_index_set = localTextTableValue(row, "AppliedBeamIndexSet", "");
+    rows(i).applied_beam_index_set = localBeamIndexSetToken( ...
+        localTextTableValue(row, "AppliedBeamIndexSet", ""));
     rows(i).applied_beam_application_source = localTextTableValue(row, "AppliedBeamApplicationSource", "");
     rows(i).applied_beam_truth_classification = localTextTableValue(row, "AppliedBeamTruthClassification", "");
     rows(i).applied_precoder_pmi_application_source = localTextTableValue(row, "AppliedPrecoderPMIApplicationSource", "");
@@ -7072,7 +7136,19 @@ for i = 1:numel(varNames)
         keepMask(i) = true;
         continue;
     end
-    asString = string(values);
+    if iscell(values)
+        [asString, scalarConvertible] = localCellTextScalars(values);
+        if ~scalarConvertible
+            % A heterogeneous cell-valued evidence column cannot be judged
+            % blank by scalar-text rules. Preserve it here; the canonical
+            % CSV writer remains responsible for rejecting unsupported
+            % serialization rather than silently deleting evidence.
+            keepMask(i) = true;
+            continue;
+        end
+    else
+        asString = string(values);
+    end
     if isempty(asString)
         keepMask(i) = false;
         continue;
@@ -7082,6 +7158,27 @@ for i = 1:numel(varNames)
 end
 if any(~keepMask)
     T(:, ~keepMask) = [];
+end
+end
+
+
+function [values, ok] = localCellTextScalars(raw)
+values = strings(size(raw));
+ok = true;
+for i = 1:numel(raw)
+    item = raw{i};
+    if isempty(item)
+        values(i) = "";
+        continue;
+    end
+    if (ischar(item) && (isrow(item) || isempty(item))) || ...
+            (isstring(item) && isscalar(item)) || ...
+            ((isnumeric(item) || islogical(item) || iscategorical(item)) && isscalar(item))
+        values(i) = string(item);
+    else
+        ok = false;
+        return;
+    end
 end
 end
 
@@ -7095,7 +7192,7 @@ names = ["run_id","run_tag","scenario_id","scenario_variant_id","config_hash","c
 end
 
 function commit = localResolveCodeCommit(summaryRow, runFolder)
-commit = string(strtrim(string(localTableValue(summaryRow, "CodeCommit", ""))));
+commit = localNormalizeGitCommit(localTableValue(summaryRow, "CodeCommit", ""));
 if strlength(commit) > 0
     return;
 end
@@ -7106,7 +7203,7 @@ if strlength(repoRoot) == 0
 end
 [status, out] = system(sprintf('git -C "%s" rev-parse HEAD', char(repoRoot)));
 if status == 0
-    commit = string(strtrim(out));
+    commit = localNormalizeGitCommit(out);
 else
     commit = "";
 end
@@ -7118,6 +7215,17 @@ if nargin < 1 || strlength(string(startPath)) == 0
     return;
 end
 current = string(startPath);
+if ~isfolder(current)
+    return;
+end
+if ~localIsAbsolutePath(current)
+    current = string(fullfile(pwd, current));
+end
+try
+    current = string(char(java.io.File(char(current)).getCanonicalPath()));
+catch
+    current = string(char(current));
+end
 while strlength(current) > 0
     if isfolder(fullfile(current, ".git")) && ...
             isfile(fullfile(current, "setup6GRSimToolkit.m")) && ...
@@ -8166,6 +8274,28 @@ end
 function strs = localStringFromMask(mask, trueValue, falseValue)
 strs = repmat(string(falseValue), numel(mask), 1);
 strs(mask) = string(trueValue);
+end
+
+function val = localBeamIndexSetToken(raw)
+% Derived beam tables use one explicit categorical token for an absent
+% selected/index set.  Raw trial tables retain their more detailed
+% not-recorded sentinel and therefore remain the primary truth source.
+val = strtrim(string(raw));
+normalized = lower(val);
+inactive = ismissing(val) || strlength(val) == 0 || ...
+    ismember(normalized, ["nan","<missing>","missing","none", ...
+        "unavailable","not_available"]) || ...
+    startsWith(normalized, ["not_recorded_by_active_", ...
+        "not_emitted_by_active_","field_not_emitted_by_active_"]);
+if inactive
+    val = "not_selected";
+end
+end
+
+function tf = localIsAbsolutePath(pathValue)
+pathValue = char(string(pathValue));
+tf = ~isempty(regexp(pathValue, '^[A-Za-z]:[\\/]', 'once')) || ...
+    startsWith(pathValue, "\\\\") || startsWith(pathValue, "/");
 end
 
 function relativePath = localFirstExistingArtifactRef(runRoot, candidates)

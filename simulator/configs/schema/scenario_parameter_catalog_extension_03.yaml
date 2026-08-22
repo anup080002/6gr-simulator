@@ -39,6 +39,7 @@
       "pusch_link_adaptation_policy": {"required": true, "type": "string"}, "rank_adaptation_policy": {"required": true, "type": "string"},
       "al_adaptation_policy": {"required": true, "type": "string"}, "beam_adaptation_policy": {"required": true, "type": "string"},
       "adaptation_periodicity": {"required": true, "type": "string"}, "adaptation_delay_model": {"required": true, "type": "string"},
+      "feedback_delay_slots": {"required": true, "type": "integer", "min": 1},
       "cqi_smoothing_alpha": {"required": false, "type": "number", "min": 0, "max": 1},
       "cqi_smoothing_mode": {"required": false, "type": "string", "allowed_values": ["fixed", "doppler_adaptive"]},
       "olla_step_down": {"required": false, "type": "number", "min": 0},

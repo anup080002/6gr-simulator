@@ -1,7 +1,7 @@
 function [summaryRow,trialTable,diagnostic] = runLinkAdaptationSNRPoint(llsCfg,configHash,snrIndex)
 %RUNLINKADAPTATIONSNRPOINT Execute causal AMC through the actual PHY chain.
-% A decision for trial N>1 consumes only the receiver-derived post-equalizer
-% SINR and ACK/NACK from trial N-1. The CQI thresholds are a declared link
+% A decision for trial N consumes only receiver-derived post-equalizer SINR
+% and ACK/NACK whose configured feedback delay has elapsed. CQI thresholds
 % adaptation policy; BLER, bits, throughput, and every ACK remain decoded
 % waveform results rather than threshold/LUT predictions.
 
@@ -12,13 +12,24 @@ errors = 0;
 diagnostic = struct();
 pointClock = tic;
 policy = llsCfg.linkAdaptation;
+feedbackDelaySlots = double(policy.feedbackDelaySlots);
 offsetDb = double(policy.olla.initialOffsetDb);
+adaptationState = struct( ...
+    "DeltaMCS",offsetDb, ...
+    "OLLAUpdateCount",0, ...
+    "OLLAStateAuthority","receiver_harq_feedback_state");
 laDecision = localBootstrapDecision(policy,offsetDb);
 
 trialIndex = 0;
+outOfRangeFeedbackCount = 0;
+terminalSchedulingBlock = false;
 samplingDecision = sixgr.lls.stats.evaluateSamplingPlan( ...
     llsCfg,errors,trialIndex);
 while trialIndex < maxTB && ~samplingDecision.Stop
+    if ~logical(laDecision.ExecuteWaveform)
+        terminalSchedulingBlock = true;
+        break;
+    end
     trialIndex = trialIndex + 1;
     trialCfg = localApplyProfile(llsCfg,laDecision.Profile);
     phyCfg = sixgr.lls.buildPHYConfig(trialCfg,snrDb);
@@ -28,24 +39,80 @@ while trialIndex < maxTB && ~samplingDecision.Stop
     row.LinkAdaptationEnabled = true;
     row.LinkAdaptationDecisionSource = string(laDecision.Source);
     row.LinkAdaptationFeedbackTrialIndex = double(laDecision.FeedbackTrialIndex);
+    row.LinkAdaptationFeedbackDelaySlots = feedbackDelaySlots;
+    row.LinkAdaptationFeedbackAgeSlots = double(laDecision.FeedbackAgeSlots);
     row.LinkAdaptationFeedbackSINRdB = double(laDecision.FeedbackSINRdB);
     row.LinkAdaptationEffectiveSINRdB = double(laDecision.EffectiveSINRdB);
     row.LinkAdaptationSelectedCQI = double(laDecision.CQI);
     row.LinkAdaptationSelectedMCSIndex = double(laDecision.Profile.MCSIndex);
+    row.LinkAdaptationSchedulingEligible = logical(laDecision.SchedulingEligible);
+    row.LinkAdaptationForcedWaveformProbe = logical(laDecision.ForcedWaveformProbe);
+    row.LinkAdaptationDecisionClass = string(laDecision.DecisionClass);
+    row.LinkAdaptationDecisionValueRole = string(laDecision.DecisionValueRole);
+    row.LinkAdaptationOutOfRangeCQIPolicy = string(policy.outOfRangeCQIPolicy);
     row.LinkAdaptationThresholdSource = string(policy.thresholdSource);
     row.LinkAdaptationThresholdValueRole = string(policy.thresholdValueRole);
     row.LinkAdaptationThresholdCalibrationId = string(policy.thresholdCalibrationId);
+    row.LinkAdaptationThresholdComparisonToleranceDb = ...
+        double(policy.thresholdComparisonToleranceDb);
     row.OLLAEnabled = logical(policy.olla.enabled);
     row.OLLAOffsetDbApplied = double(laDecision.OLLAOffsetDb);
+    row.OLLATargetBLER = double(policy.olla.targetBLER);
+    row.OLLAACKStepDb = double(policy.olla.ackStepDb);
+    row.OLLANACKStepDb = double(policy.olla.nackStepDb);
+    row.OLLAMinimumOffsetDb = double(policy.olla.minimumOffsetDb);
+    row.OLLAMaximumOffsetDb = double(policy.olla.maximumOffsetDb);
+    row.OLLAUpdateSource = string(laDecision.OLLAUpdateSource);
+    row.OLLAFeedbackTrialIndex = double(laDecision.OLLAFeedbackTrialIndex);
+    row.OLLAFeedbackACK = double(laDecision.OLLAFeedbackACK);
+    row.OLLAUpdateCount = double(laDecision.OLLAUpdateCount);
+    row.OLLAStateAuthority = string(laDecision.OLLAStateAuthority);
     rows{trialIndex} = row;
     errors = errors + double(row.CRCError);
     if trialIndex == 1
         diagnostic = trialDiagnostic;
     end
-    offsetDb = localUpdateOLLA(offsetDb,~row.CRCError,policy.olla);
-    laDecision = localFeedbackDecision(policy,row,trialIndex,offsetDb);
     samplingDecision = sixgr.lls.stats.evaluateSamplingPlan( ...
         llsCfg,errors,trialIndex);
+    if samplingDecision.Stop || trialIndex >= maxTB
+        continue;
+    end
+
+    % Trial N may only consume feedback whose configured slot delay has
+    % elapsed.  Until then the initial profile is held; no receiver result
+    % or OLLA update is applied early merely because this runner executes
+    % transport blocks serially.
+    nextTrialIndex = trialIndex + 1;
+    feedbackSourceIndex = nextTrialIndex - feedbackDelaySlots;
+    if feedbackSourceIndex < 1
+        laDecision = localPendingBootstrapDecision( ...
+            policy,offsetDb,nextTrialIndex,adaptationState);
+        continue;
+    end
+
+    feedbackRow = rows{feedbackSourceIndex};
+    feedback = struct( ...
+        "ObservedAck",logical(~feedbackRow.CRCError), ...
+        "IsRetransmission",false, ...
+        "RV",0, ...
+        "SourceSlot",double(feedbackRow.TrialIndex), ...
+        "HarqID",0);
+    ollaDirection = "UL";
+    if upper(string(llsCfg.simulation.link)) == "PDSCH"
+        ollaDirection = "DL";
+    end
+    [adaptationState,ollaEvent] = ...
+        sixgr.link.updateOLLAStateFromHARQFeedback( ...
+        llsCfg,ollaDirection,feedback,adaptationState);
+    offsetDb = double(adaptationState.DeltaMCS);
+    laDecision = localFeedbackDecision( ...
+        policy,feedbackRow,double(feedbackRow.TrialIndex), ...
+        feedbackDelaySlots,offsetDb);
+    laDecision.OLLAUpdateCount = double(ollaEvent.UpdateCount);
+    laDecision.OLLAStateAuthority = string(ollaEvent.Authority);
+    if isfinite(double(laDecision.CQI)) && double(laDecision.CQI) <= 0
+        outOfRangeFeedbackCount = outOfRangeFeedbackCount + 1;
+    end
 end
 
 trialTable = struct2table(vertcat(rows{1:trialIndex}));
@@ -59,6 +126,12 @@ ber = bitErrors/numBits;
 slotDurationSeconds = 1e-3/(double(llsCfg.carrier.subcarrierSpacingKHz)/15);
 simulatedDurationSeconds = numTB*slotDurationSeconds;
 successfulBits = sum(trialTable.TransportBlockSizeBits(~trialTable.CRCError));
+stoppingReason = string(samplingDecision.StoppingReason);
+statisticallyQualified = logical(samplingDecision.StatisticallyQualified);
+if terminalSchedulingBlock
+    stoppingReason = "cqi_zero_out_of_range_scheduling_block";
+    statisticallyQualified = false;
+end
 summaryRow = struct( ...
     "ScenarioId",string(llsCfg.scenario.id), ...
     "ConfigSHA256",configHash, ...
@@ -79,10 +152,10 @@ summaryRow = struct( ...
     "ThroughputBps",double(successfulBits/simulatedDurationSeconds), ...
     "MeanMeasuredSNRdB",mean(trialTable.MeasuredSNRdB), ...
     "MeasuredSNRStdDevdB",std(trialTable.MeasuredSNRdB), ...
-    "StoppingReason",string(samplingDecision.StoppingReason), ...
+    "StoppingReason",stoppingReason, ...
     "SamplingPlan",string(samplingDecision.SamplingPlan), ...
     "ConfidenceIntervalMethod",string(samplingDecision.ConfidenceIntervalMethod), ...
-    "StatisticalPointQualified",logical(samplingDecision.StatisticallyQualified), ...
+    "StatisticalPointQualified",statisticallyQualified, ...
     "RuntimeSeconds",toc(pointClock), ...
     "ExecutionBackend","waveform_truth", ...
     "ApproximationMode","none", ...
@@ -92,8 +165,15 @@ summaryRow = struct( ...
     "MaximumMCSIndex",max(trialTable.MCSIndex), ...
     "MeanMCSIndex",mean(trialTable.MCSIndex), ...
     "MCSChangeCount",sum(diff(trialTable.MCSIndex) ~= 0), ...
-    "FeedbackSource","previous_trial_receiver_post_equalization_sinr", ...
-    "FeedbackDelaySlots",double(policy.feedbackDelaySlots));
+    "FeedbackSource","receiver_post_equalization_sinr_after_configured_feedback_delay", ...
+    "FeedbackDelaySlots",feedbackDelaySlots, ...
+    "ThresholdComparisonToleranceDb",double(policy.thresholdComparisonToleranceDb), ...
+    "OLLATargetBLER",double(policy.olla.targetBLER), ...
+    "OutOfRangeCQIPolicy",string(policy.outOfRangeCQIPolicy), ...
+    "OutOfRangeCQIFeedbackCount",double(outOfRangeFeedbackCount), ...
+    "SchedulerEligibleTrialCount",double(nnz(trialTable.LinkAdaptationSchedulingEligible)), ...
+    "DiagnosticWaveformProbeCount",double(nnz(trialTable.LinkAdaptationForcedWaveformProbe)), ...
+    "TerminalSchedulingBlock",logical(terminalSchedulingBlock));
 end
 
 function decision = localBootstrapDecision(policy,offsetDb)
@@ -104,23 +184,72 @@ if ~profile.Valid
 end
 decision = struct("Profile",profile,"CQI",NaN,"FeedbackSINRdB",NaN, ...
     "EffectiveSINRdB",NaN,"FeedbackTrialIndex",0, ...
-    "Source","configured_bootstrap_mcs","OLLAOffsetDb",double(offsetDb));
+    "FeedbackAgeSlots",NaN, ...
+    "Source","configured_bootstrap_mcs","OLLAOffsetDb",double(offsetDb), ...
+    "ExecuteWaveform",true,"SchedulingEligible",true, ...
+    "ForcedWaveformProbe",false,"DecisionClass","scheduled_bootstrap", ...
+    "DecisionValueRole","executable_scheduler_decision", ...
+    "OLLAUpdateSource","no_prior_ack_nack", ...
+    "OLLAFeedbackTrialIndex",0,"OLLAFeedbackACK",NaN, ...
+    "OLLAUpdateCount",0, ...
+    "OLLAStateAuthority","receiver_harq_feedback_state");
 end
 
-function decision = localFeedbackDecision(policy,row,trialIndex,offsetDb)
+function decision = localPendingBootstrapDecision(policy,offsetDb,trialIndex,state)
+decision = localBootstrapDecision(policy,offsetDb);
+decision.Source = "configured_bootstrap_mcs_feedback_pending";
+decision.DecisionClass = "scheduled_bootstrap_feedback_pending";
+decision.OLLAUpdateSource = "configured_feedback_delay_pending";
+decision.OLLAUpdateCount = double(state.OLLAUpdateCount);
+decision.OLLAStateAuthority = string(state.OLLAStateAuthority);
+decision.FeedbackTrialIndex = 0;
+decision.FeedbackAgeSlots = NaN;
+decision.OLLAFeedbackTrialIndex = 0;
+decision.OLLAFeedbackACK = NaN;
+if trialIndex <= 1
+    error("sixgr:lls:InvalidLinkAdaptationFeedbackDelayState", ...
+        "A feedback-pending bootstrap decision is only valid after trial 1.");
+end
+end
+
+function decision = localFeedbackDecision( ...
+        policy,row,feedbackTrialIndex,feedbackAgeSlots,offsetDb)
 measured = double(row.PostEqSINRdB);
 if ~(isscalar(measured) && isfinite(measured) && ...
         startsWith(string(row.PostEqSINRValueStatus),"OK") && ...
         string(row.PostEqSINRValueRole) == ...
         "measured_post_equalization_scheduling_input")
     error("sixgr:lls:LinkAdaptationMeasurementUnavailable", ...
-        "Trial %d did not provide a trusted receiver post-equalization SINR.",trialIndex);
+        "Trial %d did not provide a trusted receiver post-equalization SINR.", ...
+        feedbackTrialIndex);
 end
 effective = measured + offsetDb;
 thresholds = double(policy.sinrThresholdsDb(:).');
-cqi = sum(effective >= thresholds);
+[cqi, ~] = sixgr.link.resolveCQIFromConfiguredThresholds( ...
+    effective, thresholds, double(policy.thresholdComparisonToleranceDb));
 if cqi < 1
+    outOfRangePolicy = lower(string(policy.outOfRangeCQIPolicy));
+    if outOfRangePolicy == "block_scheduling"
+        decision = struct("Profile",struct("MCSIndex",NaN),"CQI",double(cqi), ...
+            "FeedbackSINRdB",measured,"EffectiveSINRdB",effective, ...
+            "FeedbackTrialIndex",double(feedbackTrialIndex), ...
+            "FeedbackAgeSlots",double(feedbackAgeSlots), ...
+            "Source","measured_cqi_zero_out_of_range", ...
+            "OLLAOffsetDb",double(offsetDb),"ExecuteWaveform",false, ...
+            "SchedulingEligible",false,"ForcedWaveformProbe",false, ...
+            "DecisionClass","scheduling_blocked_cqi_zero_out_of_range", ...
+            "DecisionValueRole","out_of_range_feedback_no_transport_block", ...
+            "OLLAUpdateSource","decoded_transport_block_crc_after_configured_feedback_delay", ...
+            "OLLAFeedbackTrialIndex",double(feedbackTrialIndex), ...
+            "OLLAFeedbackACK",double(~row.CRCError));
+        return;
+    end
     selected = double(policy.minimumMCSIndex);
+    decisionSource = "diagnostic_minimum_mcs_waveform_probe_from_delayed_receiver_post_equalization_sinr";
+    schedulingEligible = false;
+    forcedWaveformProbe = true;
+    decisionClass = "diagnostic_minimum_mcs_outage_probe";
+    decisionValueRole = "diagnostic_waveform_probe_not_scheduler_decision";
 else
     amc = sixgr.link.resolveMCSFromCQI(cqi,policy.mcsTable,policy.cqiTable);
     if ~amc.Valid
@@ -128,6 +257,11 @@ else
             "CQI %d did not resolve to a valid MCS profile.",cqi);
     end
     selected = double(amc.MCSIndex);
+    decisionSource = "receiver_post_equalization_sinr_after_configured_feedback_delay";
+    schedulingEligible = true;
+    forcedWaveformProbe = false;
+    decisionClass = "scheduled_cqi_amc";
+    decisionValueRole = "executable_scheduler_decision";
 end
 selected = max(double(policy.minimumMCSIndex), ...
     min(double(policy.maximumMCSIndex),selected));
@@ -138,9 +272,15 @@ if ~profile.Valid
 end
 decision = struct("Profile",profile,"CQI",double(cqi), ...
     "FeedbackSINRdB",measured,"EffectiveSINRdB",effective, ...
-    "FeedbackTrialIndex",double(trialIndex), ...
-    "Source","previous_trial_receiver_post_equalization_sinr", ...
-    "OLLAOffsetDb",double(offsetDb));
+    "FeedbackTrialIndex",double(feedbackTrialIndex), ...
+    "FeedbackAgeSlots",double(feedbackAgeSlots), ...
+    "Source",decisionSource,"OLLAOffsetDb",double(offsetDb), ...
+    "ExecuteWaveform",true,"SchedulingEligible",logical(schedulingEligible), ...
+    "ForcedWaveformProbe",logical(forcedWaveformProbe), ...
+    "DecisionClass",decisionClass,"DecisionValueRole",decisionValueRole, ...
+    "OLLAUpdateSource","decoded_transport_block_crc_after_configured_feedback_delay", ...
+    "OLLAFeedbackTrialIndex",double(feedbackTrialIndex), ...
+    "OLLAFeedbackACK",double(~row.CRCError));
 end
 
 function cfg = localApplyProfile(cfg,profile)
@@ -151,19 +291,6 @@ cfg.(linkPath).targetCodeRate = double(profile.TargetCodeRate);
 if isfield(cfg.(linkPath),"mcsTable")
     cfg.(linkPath).mcsTable = char(string(profile.Table));
 end
-end
-
-function next = localUpdateOLLA(current,ack,olla)
-next = double(current);
-if ~logical(olla.enabled)
-    return;
-end
-if ack
-    next = next + double(olla.ackStepDb);
-else
-    next = next - double(olla.nackStepDb);
-end
-next = max(double(olla.minimumOffsetDb),min(double(olla.maximumOffsetDb),next));
 end
 
 function text = localBoundDisplay(errors,bler,upper,cfg)

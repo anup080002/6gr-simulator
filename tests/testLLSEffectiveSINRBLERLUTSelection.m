@@ -33,7 +33,11 @@ assert(all(isfinite(low.PredictedBLERByCQI) | isnan(low.PredictedBLERByCQI)), ..
 assert(double(high.WidebandCQI) > double(low.WidebandCQI), ...
     "Higher effective SINR must produce a higher CQI under the LUT-backed selector.");
 
+% The EESM beta belongs to the MCS actually applied to the waveform.  Keep
+% the nominal/configured and applied fields atomic so this fixture does not
+% leave the default applied MCS (22) in conflict with nominal MCS 10.
 cfgCatalog = sixgr.util.structSet(cfg, "phy.pdsch.configuredMCSIndex", 10);
+cfgCatalog = sixgr.util.structSet(cfgCatalog, "phy.pdsch.mcsIndex", 10);
 cfgCatalog = sixgr.util.structSet(cfgCatalog, "phy.pdsch.eesmBetaMCSIndex", [9 10 11]);
 cfgCatalog = sixgr.util.structSet(cfgCatalog, "phy.pdsch.eesmBetaByMCS_dB", [2.0 4.0 6.0]);
 catalog = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", 8, "PerRBSINR_dB", [4 8 10 12]), cfgCatalog, "DL");

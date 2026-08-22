@@ -80,7 +80,7 @@ else
 end
 
 runClass = localResolveRunClass(cfg, trialTable);
-fixedAnchor = runClass == "fixed_lls_anchor";
+fixedAnchor = any(runClass == ["fixed_lls_anchor", "functional_waveform_validation"]);
 adaptiveMode = any(runClass == ["adaptive_system_diagnostic", "hybrid_validation"]);
 grantBindingRequired = localRequiresPDCCHGrantBinding(cfg);
 mimoReferenceRequired = any(attemptMask & double(rowAudit.EffectiveLayers) > 1) && strictMode;
@@ -675,7 +675,8 @@ end
 
 function runClass = localNormalizeRunClassToken(raw)
 token = lower(strtrim(string(raw)));
-if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation"])
+if any(token == ["fixed_lls_anchor", "functional_waveform_validation", ...
+        "adaptive_system_diagnostic", "hybrid_validation"])
     runClass = token;
 else
     runClass = "";

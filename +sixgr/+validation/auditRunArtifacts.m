@@ -146,11 +146,11 @@ runClass = lower(strtrim(string(runClass)));
 switch runClass
     case "fixed_snr_sweep_lls"
         paths = [
-            "reports/image/dl_bler_vs_snr.png"
-            "reports/image/ul_bler_vs_snr.png"
-            "reports/image/dl_ber_vs_snr.png"
-            "reports/image/ul_ber_vs_snr.png"
-            "reports/image/measured_sinr_vs_configured_snr.png"
+            "reports/image/contract__fixed-snr-sinr-sweep-validation__dl-bler-vs-snr.png"
+            "reports/image/contract__fixed-snr-sinr-sweep-validation__ul-bler-vs-snr.png"
+            "reports/image/contract__fixed-snr-sinr-sweep-validation__dl-ber-vs-snr.png"
+            "reports/image/contract__fixed-snr-sinr-sweep-validation__ul-ber-vs-snr.png"
+            "reports/image/contract__fixed-snr-sinr-sweep-validation__measured-sinr-vs-configured-snr.png"
             ];
     case "ue_placement_geometry_lls"
         paths = [
@@ -395,7 +395,8 @@ T = table();
 readable = false;
 reason = "";
 try
-    T = readtable(char(pathValue), "VariableNamingRule", "preserve", "TextType", "string");
+    T = readtable(char(pathValue), "Delimiter", ",", ...
+        "VariableNamingRule", "preserve", "TextType", "string");
     readable = true;
     return;
 catch ME
@@ -637,7 +638,8 @@ for i = 1:numel(files)
         continue;
     end
     try
-        T = readtable(pathValue, "VariableNamingRule", "preserve", "TextType", "string");
+        T = readtable(pathValue, "Delimiter", ",", ...
+            "VariableNamingRule", "preserve", "TextType", "string");
     catch
         continue;
     end
@@ -708,8 +710,8 @@ if ~isfile(resultsPath)
     return;
 end
 try
-    T = readtable(resultsPath, "VariableNamingRule", "preserve", ...
-        "TextType", "string");
+    T = readtable(resultsPath, "Delimiter", ",", ...
+        "VariableNamingRule", "preserve", "TextType", "string");
 catch
     return;
 end
@@ -752,8 +754,8 @@ if ~isfile(manifestPath)
     return;
 end
 try
-    T = readtable(manifestPath, "VariableNamingRule", "preserve", ...
-        "TextType", "string");
+    T = readtable(manifestPath, "Delimiter", ",", ...
+        "VariableNamingRule", "preserve", "TextType", "string");
 catch
     return;
 end
@@ -1038,7 +1040,8 @@ if exist(pathValue, "file") ~= 2
 end
 out.Present = true;
 try
-    out.Table = readtable(pathValue, "VariableNamingRule", "preserve", "TextType", "string");
+    out.Table = readtable(pathValue, "Delimiter", ",", ...
+        "VariableNamingRule", "preserve", "TextType", "string");
     out.Readable = true;
 catch
     out.Table = table();
@@ -1046,9 +1049,9 @@ end
 end
 
 function rootRunFolder = localResolveRootRunFolder(runFolder)
-rootRunFolder = char(string(runFolder));
+rootRunFolder = char(sixgr.util.canonicalPath(runFolder));
 if strlength(string(rootRunFolder)) == 0
-    rootRunFolder = pwd;
+    rootRunFolder = char(sixgr.util.canonicalPath(pwd));
     return;
 end
 while true

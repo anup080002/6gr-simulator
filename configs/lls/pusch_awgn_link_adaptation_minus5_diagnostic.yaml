@@ -1,0 +1,37 @@
+inherits: pusch_reference.yaml
+
+scenario:
+  id: pusch_awgn_causal_link_adaptation_minus5_diagnostic
+  description: Actual-waveform UL CQI/ILLA/OLLA diagnostic starting from table-1 MCS 4 at minus 5 dB
+
+simulation:
+  studyType: link_adaptation_throughput
+  snrDb: [-5]
+  minTransportBlocks: 10
+  minBlockErrors: 1
+  maxTransportBlocks: 10
+  statisticalClass: diagnostic_only
+
+linkAdaptation:
+  enabled: true
+  mcsTable: qam64_table1
+  cqiTable: table1
+  sinrThresholdsDb: [-5.90, -4.78, -2.87, -1.02, 1.00, 3.05, 5.08, 7.25, 9.46, 11.81, 14.34, 16.52, 18.88, 21.47, 23.84]
+  thresholdSource: configured_ran1_link_adaptation_policy
+  thresholdValueRole: implementation_policy_not_phy_result
+  thresholdCalibrationId: sixgr_qpsk_reference_policy_v1
+  initialMCSIndex: 4
+  minimumMCSIndex: 0
+  maximumMCSIndex: 28
+  feedbackDelaySlots: 1
+  outOfRangeCQIPolicy: minimum_mcs_waveform_probe
+  olla:
+    enabled: true
+    initialOffsetDb: 0.0
+    ackStepDb: 0.1
+    nackStepDb: 0.9
+    minimumOffsetDb: -6.0
+    maximumOffsetDb: 6.0
+
+results:
+  generatePlots: true

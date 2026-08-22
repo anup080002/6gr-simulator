@@ -590,13 +590,22 @@ for i = 1:n
         channelModel(i) = "";
     end
 
-    crossingStatus = string(localTableValue(targetCrossings, i, "CrossingStatus", ""));
+    crossingStatus = lower(strtrim(string(localTableValue( ...
+        targetCrossings, i, "CrossingStatus", ""))));
     if strlength(crossingStatus) == 0
         status(i) = "missing";
         failure(i) = "crossing_status_missing";
-    else
-        status(i) = "reported";
+    elseif ismember(crossingStatus, [ ...
+            "crossing_observed_exact_point", ...
+            "crossing_observed_interpolated"])
+        status(i) = "qualified";
         failure(i) = "";
+    else
+        % Preserve the measured classification verbatim, but do not turn an
+        % under-resolved or absent crossing into an acceptable publication
+        % result merely because the status field is nonempty.
+        status(i) = "unqualified";
+        failure(i) = crossingStatus;
     end
 end
 

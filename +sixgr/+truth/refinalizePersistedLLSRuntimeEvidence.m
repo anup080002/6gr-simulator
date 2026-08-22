@@ -12,21 +12,34 @@ p = inputParser;
 p.addRequired("cfg", @(x)isstruct(x) && isscalar(x));
 p.addRequired("runFolder", @(x)ischar(x) || (isstring(x) && isscalar(x)));
 p.addParameter("RunTag", "", @(x)ischar(x) || (isstring(x) && isscalar(x)));
+p.addParameter("RefreshBrowserContract", "auto", ...
+    @(x)(islogical(x) && isscalar(x)) || ...
+    (isnumeric(x) && isscalar(x) && isfinite(x) && ismember(double(x), [0 1])) || ...
+    ischar(x) || (isstring(x) && isscalar(x)));
 p.parse(cfg, runFolder, varargin{:});
 
-runFolder = char(string(p.Results.runFolder));
+runFolder = char(java.io.File(char(string(p.Results.runFolder))).getCanonicalPath());
 layout = sixgr.report.resultLayout(runFolder);
-runTag = string(p.Results.RunTag);
-if strlength(strtrim(runTag)) == 0
-    runTag = string(sixgr.util.structGet(cfg, "run.runTag", ""));
+requestedRunTag = string(p.Results.RunTag);
+if strlength(strtrim(requestedRunTag)) == 0
+    requestedRunTag = string(sixgr.util.structGet(cfg, "run.runTag", ""));
 end
 
 trialData = sixgr.analytics.loadAllTrialData(runFolder);
 rawTrials = localRawTrialBundle(trialData);
+runTag = localResolvePersistedRunTag(rawTrials, requestedRunTag);
 dlRows = localHeight(rawTrials.DL);
 ulRows = localHeight(rawTrials.UL);
 rawEvidencePresent = dlRows > 0 || ulRows > 0;
-fixedLinkOnly = logical(sixgr.util.structGet(cfg, "run.fixedLinkCampaignOnly", false));
+fixedLinkOnly = localResolveFixedLinkCampaignOnly(cfg, rawTrials);
+% Runtime rows are the authority for what actually executed.  Propagate the
+% resolved campaign class into every downstream reducer; keeping it only in
+% this local variable caused fixed-link reanalysis to invoke connected-run
+% access/scheduler KPI requirements.
+cfg = sixgr.util.structSet(cfg, "run.fixedLinkCampaignOnly", ...
+    logical(fixedLinkOnly));
+refreshBrowserContract = localResolveBrowserContractRefresh( ...
+    p.Results.RefreshBrowserContract, layout);
 
 out = struct( ...
     "Ok", false, ...
@@ -40,10 +53,21 @@ out = struct( ...
     "DerivedTablesGenerated", false, ...
     "EnergyEvidenceGenerated", false, ...
     "MeasuredSINREvidenceGenerated", false, ...
+    "Phase7RefreshCompleted", false, ...
+    "Phase7RefreshStatus", "not_evaluated", ...
     "FixedSweepEvidenceGenerated", false, ...
     "FixedSweepStatus", "not_applicable", ...
     "FixedSweepFailureIdentifier", "", ...
     "FixedSweepFailureMessage", "", ...
+    "SourceCSVFinalizationCompleted", false, ...
+    "SourceCSVFinalization", struct(), ...
+    "LinkKPIReconstructionCompleted", false, ...
+    "LinkKPIReconstructionStatus", "not_evaluated", ...
+    "BrowserContractRefreshRequested", string(refreshBrowserContract.Requested), ...
+    "BrowserContractRefreshAttempted", false, ...
+    "BrowserContractRefreshOk", false, ...
+    "BrowserContractRefreshStatus", string(refreshBrowserContract.Status), ...
+    "BrowserContractMaterialization", struct(), ...
     "DerivedArtifacts", struct(), ...
     "EnergyArtifacts", struct(), ...
     "MeasuredSINRArtifacts", struct(), ...
@@ -66,19 +90,35 @@ out.EnergyArtifacts = sixgr.truth.exportLLSEnergyDiagnostics( ...
     cfg, fullfile(runFolder, "air_interface"), rawTrials);
 out.EnergyEvidenceGenerated = true;
 
+% KPI manifests and plot lineage are byte-level evidence contracts.  The
+% live derived exporter above can create scheduler, packet and application
+% ledgers whose canonical schema is completed by the artifact sanitizer.
+% Finalize those source bytes before any KPI reconstruction records their
+% width or SHA-256.  The later terminal sanitizer must therefore be a
+% byte-idempotent verification pass rather than a post-manifest mutation.
+out.SourceCSVFinalization = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
+out.SourceCSVFinalizationCompleted = true;
+
+% Reload the primary tables after canonicalization so every downstream
+% in-memory projection observes the same schema that is persisted and
+% hashed.  Row identity and counts are immutable across this operation.
+finalizedTrialData = sixgr.analytics.loadAllTrialData(runFolder);
+finalizedRawTrials = localRawTrialBundle(finalizedTrialData);
+if localHeight(finalizedRawTrials.DL) ~= dlRows || ...
+        localHeight(finalizedRawTrials.UL) ~= ulRows
+    error("sixgr:truth:refinalize:SourceFinalizationRowCountChanged", ...
+        ["Canonical source finalization changed primary DL/UL row counts " ...
+        "from %d/%d to %d/%d."], ...
+        dlRows, ulRows, localHeight(finalizedRawTrials.DL), ...
+        localHeight(finalizedRawTrials.UL));
+end
+rawTrials = finalizedRawTrials;
+
+persistedKPITable = localReadPersistedLinkKPITable(layout);
 if fixedLinkOnly
     campaign = localFixedLinkCampaign(layout, rawTrials);
     if istable(campaign.Summary) && height(campaign.Summary) > 0
-        kpiDetails = struct( ...
-            "RawTrials", rawTrials, ...
-            "Config", cfg, ...
-            "RunId", runTag, ...
-            "ScenarioName", string(sixgr.util.structGet(cfg, "run.scenarioID", "")));
-        out.LinkKPIArtifacts = sixgr.link.exportLinkKPIs( ...
-            fullfile(runFolder, "air_interface"), campaign.Summary, kpiDetails, ...
-            "SaveCSV", true, "SaveMAT", false, "SaveFigures", false, ...
-            "SavePNG", false, "FigurePrefix", "fixed_link_truth_validation", ...
-            "PlotVisible", false);
+        persistedKPITable = campaign.Summary;
         try
             out.FixedSweepArtifacts = sixgr.analytics.exportFixedSNRSweepCurves( ...
                 runFolder, campaign, cfg, struct("WriteArtifacts", true));
@@ -100,6 +140,32 @@ if fixedLinkOnly
     end
 end
 
+% Reconstruct the complete KPI sidecar bundle for every completed runtime,
+% not only for fixed-link sweeps.  The online waveform path already wrote
+% link_kpis.csv; replaying the KPI exporter here binds the manifest to the
+% finalized packet, grant, HARQ, slot and PHY source bytes above.  If the
+% persisted KPI authority is absent, remain fail closed instead of creating
+% a substitute summary from unrelated aggregates.
+if istable(persistedKPITable) && width(persistedKPITable) > 0 && ...
+        height(persistedKPITable) > 0
+    kpiDetails = struct( ...
+        "Config", cfg, ...
+        "RunId", runTag, ...
+        "ScenarioName", string(sixgr.util.structGet(cfg, "run.scenarioID", "")));
+    % Deliberately omit RawTrials here. exportLinkKPIs will reload every KPI
+    % source from runFolder, so its semantic hashes describe the exact
+    % finalized CSV representation rather than an earlier in-memory table.
+    out.LinkKPIArtifacts = sixgr.link.exportLinkKPIs( ...
+        fullfile(runFolder, "air_interface"), persistedKPITable, kpiDetails, ...
+        "SaveCSV", true, "SaveMAT", false, "SaveFigures", false, ...
+        "SavePNG", false, "FigurePrefix", "persisted_runtime_truth_validation", ...
+        "PlotVisible", false);
+    out.LinkKPIReconstructionCompleted = true;
+    out.LinkKPIReconstructionStatus = "reconstructed_from_finalized_source_csv_bytes";
+else
+    out.LinkKPIReconstructionStatus = "persisted_link_kpi_authority_missing";
+end
+
 % Match the production fixed-link finalization order: the aggregate KPI
 % reconstruction is written first and the directional, raw-row-reconciled
 % KPI table is the final lls_kpi_summary authority. Reversing this order
@@ -112,13 +178,141 @@ out.MeasuredSINRArtifacts = sixgr.analytics.generateMeasuredSINRCurves( ...
     "UpdateAnchorKPIs", true);
 out.MeasuredSINREvidenceGenerated = true;
 
-out.Ok = ~fixedLinkOnly || logical(out.FixedSweepEvidenceGenerated);
-if out.Ok
+% Every reducer above can change persisted inputs consumed by Phase 7
+% (mobility/KPI reconciliation, source manifests, measured-SINR evidence).
+% Re-finalization previously left phase7_truth_gates.csv at its pre-refresh
+% value, so the browser/exhaustive audit could observe a true reconciliation
+% row alongside a stale false Phase-7 flag.  Recompute the terminal reducer
+% from the same immutable configuration and finalized filesystem before any
+% browser contract is materialized.  This does not promote a missing gate;
+% buildPhase7ReadinessArtifacts remains fail-closed for absent evidence.
+phase7 = sixgr.analytics.buildPhase7ReadinessArtifacts(cfg, runFolder);
+out.Phase7RefreshCompleted = true;
+out.Phase7RefreshStatus = "refreshed_from_finalized_persisted_runtime_evidence";
+out.DerivedArtifacts.Phase7 = phase7;
+
+if logical(refreshBrowserContract.Enabled)
+    out.BrowserContractRefreshAttempted = true;
+    out.BrowserContractMaterialization = ...
+        sixgr.artifact.materializeBrowserContractArtifacts(runFolder);
+    out.BrowserContractRefreshOk = logical(sixgr.util.structGet( ...
+        out.BrowserContractMaterialization, "Ok", false));
+    if out.BrowserContractRefreshOk
+        out.BrowserContractRefreshStatus = ...
+            "existing_browser_contract_refreshed_from_current_csv_bytes";
+    else
+        out.BrowserContractRefreshStatus = ...
+            "existing_browser_contract_refresh_failed";
+    end
+end
+
+fixedSweepOk = ~fixedLinkOnly || logical(out.FixedSweepEvidenceGenerated);
+kpiReconstructionOk = logical(out.LinkKPIReconstructionCompleted);
+browserRefreshOk = ~logical(out.BrowserContractRefreshAttempted) || ...
+    logical(out.BrowserContractRefreshOk);
+out.Ok = fixedSweepOk && kpiReconstructionOk && browserRefreshOk;
+if ~browserRefreshOk
+    out.Status = "persisted_runtime_truth_refinalized_with_browser_contract_failure";
+elseif ~kpiReconstructionOk
+    out.Status = "persisted_runtime_truth_refinalized_with_kpi_reconstruction_failure";
+elseif out.Ok
     out.Status = "persisted_runtime_truth_refinalized";
 else
     out.Status = "persisted_runtime_truth_refinalized_with_fixed_sweep_failure";
 end
+
 out.ProvenanceJSON = localWriteProvenance(layout, out);
+end
+
+function T = localReadPersistedLinkKPITable(layout)
+T = table();
+pathValue = fullfile(layout.AirInterfaceCSVDir, "link_kpis.csv");
+if exist(pathValue, "file") ~= 2
+    return;
+end
+try
+    T = readtable(pathValue, "FileType", "text", "Delimiter", ",", ...
+        "ReadVariableNames", true, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+catch
+    T = table();
+end
+end
+
+function policy = localResolveBrowserContractRefresh(value, layout)
+requested = lower(strtrim(string(value)));
+if islogical(value) || isnumeric(value)
+    enabled = logical(value);
+    if enabled
+        requested = "true";
+    else
+        requested = "false";
+    end
+elseif ~ismember(requested, ["auto", "true", "false"])
+    error("sixgr:truth:refinalize:InvalidBrowserContractRefresh", ...
+        "RefreshBrowserContract must be auto, true or false.");
+end
+
+hasExistingContract = exist(fullfile(layout.ReportCSVDir, ...
+    "contract_plot_lineage.csv"), "file") == 2 || ...
+    exist(fullfile(layout.ReportCSVDir, ...
+    "contract_materialization_manifest.csv"), "file") == 2;
+if requested == "auto"
+    enabled = hasExistingContract;
+    if enabled
+        status = "auto_refresh_existing_browser_contract";
+    else
+        status = "auto_skipped_no_existing_browser_contract";
+    end
+elseif requested == "true"
+    enabled = true;
+    status = "explicit_browser_contract_refresh";
+else
+    enabled = false;
+    status = "explicit_browser_contract_refresh_disabled";
+end
+policy = struct( ...
+    "Requested", requested, ...
+    "Enabled", logical(enabled), ...
+    "ExistingContract", logical(hasExistingContract), ...
+    "Status", string(status));
+end
+
+function runTag = localResolvePersistedRunTag(rawTrials, requestedRunTag)
+persisted = strings(0, 1);
+for direction = ["DL", "UL"]
+    T = rawTrials.(char(direction));
+    if ~(istable(T) && height(T) > 0)
+        continue;
+    end
+    vars = string(T.Properties.VariableNames);
+    for fieldName = ["RunID", "RunId", "RunTag"]
+        if ~ismember(fieldName, vars)
+            continue;
+        end
+        values = strtrim(string(T.(char(fieldName))));
+        values = values(~ismissing(values) & strlength(values) > 0);
+        persisted = [persisted; values(:)]; %#ok<AGROW>
+    end
+end
+persisted = unique(persisted, "stable");
+if numel(persisted) > 1
+    error("sixgr:truth:refinalize:InconsistentPersistedRunIdentity", ...
+        "Primary persisted DL/UL rows contain multiple run identities: %s.", ...
+        char(strjoin(persisted, ", ")));
+end
+
+requestedRunTag = strtrim(string(requestedRunTag));
+if isempty(persisted)
+    runTag = requestedRunTag;
+    return;
+end
+runTag = persisted(1);
+if strlength(requestedRunTag) > 0 && requestedRunTag ~= runTag
+    error("sixgr:truth:refinalize:PersistedRunIdentityMismatch", ...
+        "Requested RunTag '%s' does not match immutable primary runtime identity '%s'.", ...
+        char(requestedRunTag), char(runTag));
+end
 end
 
 function raw = localRawTrialBundle(trialData)
@@ -145,6 +339,39 @@ if istable(T)
     n = height(T);
 else
     n = 0;
+end
+end
+
+function fixedLinkOnly = localResolveFixedLinkCampaignOnly(cfg, rawTrials)
+% Accept both the internal camelCase config and the immutable resolved-YAML
+% snake_case form used by persisted WebGUI runs. Runtime row classification
+% is the final authority for what actually executed.
+configured = logical(sixgr.util.structGet(cfg, ...
+    "run.fixedLinkCampaignOnly", sixgr.util.structGet(cfg, ...
+    "run.fixed_link_campaign_only", sixgr.util.structGet(cfg, ...
+    "simulation.fixed_link_campaign_enabled", false))));
+observed = false(0, 1);
+for direction = ["DL", "UL"]
+    T = sixgr.util.structGet(rawTrials, direction, table());
+    if ~(istable(T) && height(T) > 0) || ...
+            ~ismember("FixedLinkCampaign", string(T.Properties.VariableNames))
+        continue;
+    end
+    raw = T.FixedLinkCampaign;
+    if islogical(raw) || isnumeric(raw)
+        values = isfinite(double(raw(:))) & double(raw(:)) ~= 0;
+    else
+        token = lower(strtrim(string(raw(:))));
+        values = token == "1" | token == "true" | token == "yes";
+    end
+    observed = [observed; values(:)]; %#ok<AGROW>
+end
+if isempty(observed)
+    fixedLinkOnly = configured;
+else
+    % Mixed fixed/system rows are not a fixed-link-only campaign even when
+    % an obsolete config flag says otherwise.
+    fixedLinkOnly = all(observed);
 end
 end
 
@@ -216,10 +443,19 @@ payload = struct( ...
     "DerivedTablesGenerated", logical(out.DerivedTablesGenerated), ...
     "EnergyEvidenceGenerated", logical(out.EnergyEvidenceGenerated), ...
     "MeasuredSINREvidenceGenerated", logical(out.MeasuredSINREvidenceGenerated), ...
+    "Phase7RefreshCompleted", logical(out.Phase7RefreshCompleted), ...
+    "Phase7RefreshStatus", char(string(out.Phase7RefreshStatus)), ...
     "FixedSweepEvidenceGenerated", logical(out.FixedSweepEvidenceGenerated), ...
     "FixedSweepStatus", char(string(out.FixedSweepStatus)), ...
     "FixedSweepFailureIdentifier", char(string(out.FixedSweepFailureIdentifier)), ...
     "FixedSweepFailureMessage", char(string(out.FixedSweepFailureMessage)), ...
+    "SourceCSVFinalizationCompleted", logical(out.SourceCSVFinalizationCompleted), ...
+    "LinkKPIReconstructionCompleted", logical(out.LinkKPIReconstructionCompleted), ...
+    "LinkKPIReconstructionStatus", char(string(out.LinkKPIReconstructionStatus)), ...
+    "BrowserContractRefreshRequested", char(string(out.BrowserContractRefreshRequested)), ...
+    "BrowserContractRefreshAttempted", logical(out.BrowserContractRefreshAttempted), ...
+    "BrowserContractRefreshOk", logical(out.BrowserContractRefreshOk), ...
+    "BrowserContractRefreshStatus", char(string(out.BrowserContractRefreshStatus)), ...
     "EvidencePolicy", "persisted_primary_runtime_rows_only_no_proxy_no_fallback_no_placeholder");
 sixgr.util.jsonWrite(pathValue, payload);
 pathValue = string(pathValue);

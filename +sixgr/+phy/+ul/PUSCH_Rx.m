@@ -1682,14 +1682,17 @@ end
 function tf = localRuntimeAlignedTimingBypass(cfg)
 runtimeAligned = logical(sixgr.util.structGet(cfg, ...
     "lls6g.receiverSync.RuntimeWaveformSampleAligned", false));
-forceApply = logical(sixgr.util.structGet(cfg, ...
-    "phy.rx.applyTimingCorrectionOnAlignedRuntimeWaveform", false));
 injectedTiming = localResolveInjectedTimingOffsetSamples(cfg);
 hasInjectedTiming = isfinite(injectedTiming) && abs(double(injectedTiming)) > 1e-9;
-runtimeTrim = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", ...
-    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", 0)));
-hasRuntimeTrim = isfinite(runtimeTrim) && abs(runtimeTrim) > 1e-9;
-tf = runtimeAligned && hasRuntimeTrim && ~forceApply && ~hasInjectedTiming;
+% RuntimeWaveformSampleAligned is asserted only after the link wrapper has
+% applied the materialized channel and its exact sample trim.  A zero-delay
+% AWGN channel is therefore just as aligned as a fading channel with a
+% nonzero filter delay.  Requiring a nonzero trim here caused a second blind
+% DM-RS acquisition on AWGN waveforms; for multi-port PUSCH that acquisition
+% can lock to a later OFDM-symbol replica and shift the entire slot.  An
+% explicitly injected timing offset remains the YAML-owned way to exercise
+% receiver timing acquisition/correction.
+tf = runtimeAligned && ~hasInjectedTiming;
 end
 
 function value = localFirstFiniteValue(varargin)

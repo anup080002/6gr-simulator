@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import statistics
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -129,14 +130,74 @@ KPI_DELIVERY_TABLES = {
         "contributions": "reports/csv/kpi_row_contributions_ul.csv",
     },
 }
+METRIC_OUTPUT_TABLES = (
+    "reports/csv/aggregated_reporting_outputs.csv",
+    "reports/csv/ai_ml_outputs.csv",
+    "reports/csv/basic_phy_performance_outputs.csv",
+    "reports/csv/channel_estimation_tracking_outputs.csv",
+    "reports/csv/coding_decoder_outputs.csv",
+    "reports/csv/complexity_implementation_outputs.csv",
+    "reports/csv/csi_outputs.csv",
+    "reports/csv/beam_management_outputs.csv",
+    "reports/csv/debug_trace_outputs.csv",
+    "reports/csv/energy_efficiency_outputs.csv",
+    "reports/csv/harq_outputs.csv",
+    "reports/csv/initial_access_random_access_outputs.csv",
+    "reports/csv/lls_output_metric_rows.csv",
+    "reports/csv/modulation_shaping_outputs.csv",
+    "reports/csv/pdcch_control_outputs.csv",
+    "reports/csv/pdsch_outputs.csv",
+    "reports/csv/pusch_pucch_outputs.csv",
+    "reports/csv/run_metadata_outputs.csv",
+)
+METRIC_COVERAGE_TABLE = "reports/csv/lls_output_spec_coverage.csv"
+METRIC_COVERAGE_REQUIRED_COLUMNS = {
+    "CategoryCode", "CategoryKey", "CategoryName", "MetricKey", "MetricName",
+    "Availability", "CountsTowardCoverage", "CoveredRowCount",
+    "ObservedRowCount", "DerivedRowCount", "ConfigOnlyRowCount",
+    "DisabledRowCount", "PlaceholderRowCount", "NotSupportedRowCount",
+    "NotAvailableRowCount", "NotExercisedRowCount", "SourceArtifacts", "Notes",
+}
+METRIC_OUTPUT_REQUIRED_COLUMNS = {
+    "CategoryCode",
+    "CategoryKey",
+    "CategoryName",
+    "MetricKey",
+    "MetricName",
+    "Entity",
+    "Statistic",
+    "Availability",
+    "CountsTowardCoverage",
+    "ValueNumeric",
+    "ValueText",
+    "Unit",
+    "SourceArtifact",
+    "Notes",
+}
+METRIC_OUTPUT_AVAILABILITY = {
+    "observed",
+    "derived",
+    "config_only",
+    "disabled",
+    "not_available",
+    "not_supported",
+}
 DOMAIN_RUNTIME_PREFIXES = (
     "air_interface/csv/",
     "analytics/csv/",
+    "beamforming/csv/",
     "channel/csv/",
     "component_anchors/protocol/protocol_stack/csv/",
     "configuration/csv/",
     "control/csv/",
+    "geometry/csv/",
+    "harq/csv/",
+    "meta/",
+    "mobility/csv/",
+    "packet_flow/csv/",
     "rf/csv/",
+    "reports/csv/",
+    "reports/final/",
     "runtime/csv/",
     "storage/csv/",
     # Live WebGUI tables are persisted derived/runtime surfaces, not exempt
@@ -189,6 +250,8 @@ DOMAIN_RUNTIME_EXACT = {
     "mobility/csv/propagation_delay_reconciliation.csv",
     "mobility/csv/trajectory_constraint_conflicts.csv",
     "reports/csv/active_issue_gate_summary.csv",
+    "reports/csv/access_state_timeline.csv",
+    "reports/csv/access_transition_ledger.csv",
     "reports/csv/antenna_config_resolved.csv",
     "reports/csv/beam_management_outputs.csv",
     "reports/csv/channel_impulse_response.csv",
@@ -197,6 +260,7 @@ DOMAIN_RUNTIME_EXACT = {
     "reports/csv/pdcch_grant_binding_evidence.csv",
     "reports/csv/prach_correlation_trace.csv",
     "reports/csv/prach_correlation_traces.csv",
+    "reports/csv/raster_replacement_inventory.csv",
     "reports/csv/result_issue_registry.csv",
     "reports/csv/truth_contract_failures.csv",
     "reports/csv/unavailable_plot_card_registry.csv",
@@ -208,6 +272,13 @@ IDENTITY_COLUMNS = (
     "ConfigHash",
     "ExecutionID",
 )
+LOCAL_CONFIG_HASH_TABLES = {
+    # These rows bind a direction-specific normalized MIMO configuration,
+    # not the complete scenario. Dedicated MIMO auditors reconcile this hash
+    # to validation and configured/effective evidence for each direction.
+    "beamforming/csv/mimo_config_strict.csv",
+    "beamforming/csv/mimo_config_validation.csv",
+}
 LINK_REQUIRED_COLUMNS = (
     "Direction",
     "Frame",
@@ -244,6 +315,7 @@ LINK_REQUIRED_COLUMNS = (
     "MeasuredTrialSINRSource",
     "EVM_rms",
     "EVMProxySINR_dB",
+    "StrictReceiverEvidenceOk",
     "StrictOk",
     "TruthStatus",
     "ExecutionBackend",
@@ -273,6 +345,125 @@ FRC_SUMMARY_TABLES = (
     "reports/csv/frc_reference_qualification.partial.csv",
 )
 FRC_PLOT_LINEAGE = "reports/csv/frc_reference_plot_lineage.csv"
+
+# These persisted reducers feed Phase-7 and production qualification.  Each
+# file has an explicit outcome field; the semantic auditor must reconcile the
+# field with the final Phase-7 row instead of treating a parsed CSV as proof.
+RECONCILIATION_PHASE7_FLAGS = {
+    "reports/csv/access_kpi_reconciliation.csv": "AccessKpiReconciliationOk",
+    "reports/csv/antenna_array_reconciliation.csv": "AntennaArrayReconciliationOk",
+    "reports/csv/artifact_completeness_summary.csv": "ArtifactCompletenessOk",
+    "reports/csv/blerber_reconciliation.csv": "BlerBerReconciliationOk",
+    "reports/csv/cfo_reconciliation.csv": "CfoConfiguredAppliedOk",
+    "reports/csv/channel_realization_reconciliation.csv": (
+        "ChannelRealizationOk", "CdlRealizationOk"
+    ),
+    "reports/csv/channel_rf_reconciliation.csv": "ChannelRfConfiguredVsAppliedOk",
+    "reports/csv/checkpoint_resume_equivalence.csv": "CheckpointResumeEquivalenceOk",
+    "reports/csv/energy_model_gate.csv": "EnergyModelOk",
+    "reports/csv/evm_reconciliation.csv": "EvmReconciliationOk",
+    "reports/csv/final_scientific_claims_truthfulness.csv": "FinalScientificClaimsTruthfulOk",
+    "reports/csv/interference_accounting.csv": "InterferenceAccountingOk",
+    "reports/csv/iq_imbalance_reconciliation.csv": "IqImbalanceConfiguredAppliedOk",
+    "reports/csv/latency_reconciliation.csv": "LatencyReconciliationOk",
+    "reports/csv/long_run_stability_summary.csv": "LongRunStabilityOk",
+    "reports/csv/mimo_kpi_reconciliation.csv": "MimoKpiReconciliationOk",
+    "reports/csv/mobility_kpi_reconciliation.csv": "MobilityKpiReconciliationOk",
+    "reports/csv/noise_reconciliation.csv": "NoiseReconciliationOk",
+    "reports/csv/pa_reconciliation.csv": "PaConfiguredAppliedOk",
+    "reports/csv/papr_reconciliation.csv": "PaprReconciliationOk",
+    "reports/csv/path_power_normalization_reconciliation.csv": "PathPowerNormalizationOk",
+    "reports/csv/performance_profile_summary.csv": "PerformanceProfileOk",
+    "reports/csv/phase_noise_reconciliation.csv": "PhaseNoiseConfiguredAppliedOk",
+    "reports/csv/plot_data_lineage_summary.csv": "PlotDataLineageOk",
+    "reports/csv/polarization_reconciliation.csv": "PolarizationReconciliationOk",
+    "reports/csv/rf_chain_definition.csv": "RfChainDefinitionOk",
+    "reports/csv/scheduler_kpi_reconciliation.csv": "SchedulerKpiReconciliationOk",
+    "reports/csv/serial_parallel_determinism.csv": "SerialParallelDeterminismOk",
+    "reports/csv/throughput_reconciliation.csv": "ThroughputReconciliationOk",
+    "reports/csv/timing_offset_reconciliation.csv": "TimingOffsetConfiguredAppliedOk",
+}
+
+PHASE7_PHASE_MEMBERS = {
+    "Phase1Ok": (
+        "GeometryValidationOk", "FullTrajectoryExecutedOk",
+        "MobilityStateContinuousOk", "InterUeConstraintResolvedOk",
+        "LosStateModelOk", "PathlossReconciliationOk",
+        "ShadowFadingReconciliationOk", "LargeScaleParameterReconciliationOk",
+        "CdlRealizationOk", "ChannelStateContinuityOk",
+        "PathPowerNormalizationOk", "DopplerReconciliationOk",
+        "PropagationDelayReconciliationOk", "AntennaArrayReconciliationOk",
+        "PolarizationReconciliationOk",
+    ),
+    "Phase2Ok": (
+        "ResolvedConfigurationConsistentOk", "NoiseReconciliationOk",
+        "InterferenceAccountingOk", "RfChainDefinitionOk",
+        "CfoConfiguredAppliedOk", "PhaseNoiseConfiguredAppliedOk",
+        "TimingOffsetConfiguredAppliedOk", "IqImbalanceConfiguredAppliedOk",
+        "PaConfiguredAppliedOk", "EvmReconciliationOk", "PaprReconciliationOk",
+        "ChannelRfConfiguredVsAppliedOk", "MimoKpiReconciliationOk",
+        "SchedulerKpiReconciliationOk", "MobilityKpiReconciliationOk",
+    ),
+    "Phase3Ok": (
+        "ArtifactCompletenessOk", "PlotDataLineageOk", "Phase7NoFabricationOk",
+    ),
+    "Phase4Ok": (
+        "CanonicalKpiLedgerOk", "ThroughputReconciliationOk",
+        "BlerBerReconciliationOk", "LatencyReconciliationOk",
+        "AccessKpiReconciliationOk", "SchedulerKpiReconciliationOk",
+    ),
+    "Phase5Ok": (
+        "SeedHierarchyOk", "CampaignDesignOk", "CampaignCompletionOk",
+        "MultiSeedDropStatisticsOk", "ConfidenceIntervalsOk",
+        "SampleAdequacyOk", "SweepDataQualityOk",
+        "CheckpointResumeEquivalenceOk", "SerialParallelDeterminismOk",
+    ),
+    "Phase6Ok": (
+        "EnergyModelOk", "PerformanceProfileOk", "LongRunStabilityOk",
+    ),
+}
+
+PHASE7_GATE_NAMES = (
+    "ResolvedConfigurationConsistentOk", "CapturePolicyTruthfulOk",
+    "GeometryValidationOk", "FullTrajectoryExecutedOk",
+    "MobilityStateContinuousOk", "InterUeConstraintResolvedOk",
+    "LosStateModelOk", "PathlossReconciliationOk",
+    "ShadowFadingReconciliationOk", "LargeScaleParameterReconciliationOk",
+    "CdlRealizationOk", "ChannelStateContinuityOk",
+    "PathPowerNormalizationOk", "DopplerReconciliationOk",
+    "PropagationDelayReconciliationOk", "AntennaArrayReconciliationOk",
+    "PolarizationReconciliationOk", "NoiseReconciliationOk",
+    "InterferenceAccountingOk", "RfChainDefinitionOk",
+    "CfoConfiguredAppliedOk", "PhaseNoiseConfiguredAppliedOk",
+    "TimingOffsetConfiguredAppliedOk", "IqImbalanceConfiguredAppliedOk",
+    "PaConfiguredAppliedOk", "EvmReconciliationOk", "PaprReconciliationOk",
+    "ChannelRfConfiguredVsAppliedOk", "CheckpointResumeEquivalenceOk",
+    "SeedHierarchyOk", "CampaignDesignOk", "CampaignCompletionOk",
+    "MultiSeedDropStatisticsOk", "CanonicalKpiLedgerOk",
+    "ThroughputReconciliationOk", "BlerBerReconciliationOk",
+    "LatencyReconciliationOk", "AccessKpiReconciliationOk",
+    "SchedulerKpiReconciliationOk", "MobilityKpiReconciliationOk",
+    "MimoKpiReconciliationOk", "EnergyModelOk", "ConfidenceIntervalsOk",
+    "SampleAdequacyOk", "SweepDataQualityOk",
+    "SerialParallelDeterminismOk", "PerformanceProfileOk",
+    "LongRunStabilityOk", "OutputSchemaValidationOk",
+    "ArtifactCompletenessOk", "PlotDataLineageOk", "Phase7NoFabricationOk",
+    "Phase7ProvenanceOk", "TwoModeAcceptanceGatesOk",
+    "FinalScientificClaimsTruthfulOk",
+)
+
+PRODUCTION_GATE_ORDER = (
+    "FunctionalRun", "ScenarioObjective", "RuntimeWiringCoverage",
+    "Phase7NumericalValidation", "StatisticalQualification",
+    "IndependentFRCQualification", "IndependentReferenceComparison",
+    "TerminalPublicationEvidence", "ProductionGrade",
+)
+
+MEASUREMENT_SIDECAR_MANIFEST = "reports/csv/measurement_sidecar_manifest.csv"
+CANONICAL_COMPONENT_MANIFEST = "artifact_generation/canonical_component_manifest.csv"
+CONTRACT_CATALOG_SNAPSHOT = "artifact_generation/contract_catalog_snapshot.csv"
+DUT_REFERENCE_DETAIL = "reports/csv/dut_reference_comparison.csv"
+DUT_REFERENCE_SUMMARY = "reports/csv/lls_reference_comparison_summary.csv"
 
 
 @dataclass
@@ -363,6 +554,23 @@ def _read_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
         csv.field_size_limit(previous)
 
 
+def _find_named_files(root: Path, filename: str) -> list[Path]:
+    """Recursively find files without losing Windows extended-length paths."""
+
+    if not _io_path(root).is_dir():
+        return []
+    io_root = _io_path(root)
+    results: list[Path] = []
+    for directory, _, files in os.walk(str(io_root)):
+        if filename not in files:
+            continue
+        relative = os.path.relpath(
+            os.path.join(directory, filename), str(io_root)
+        )
+        results.append(root / Path(relative))
+    return sorted(results, key=lambda value: value.as_posix().lower())
+
+
 def _text(row: dict[str, str], *names: str) -> str:
     for name in names:
         value = str(row.get(name, "")).strip()
@@ -372,12 +580,20 @@ def _text(row: dict[str, str], *names: str) -> str:
 
 
 def _number(row: dict[str, str], *names: str) -> float | None:
-    text = _text(row, *names)
-    try:
-        value = float(text)
-    except (TypeError, ValueError):
-        return None
-    return value if math.isfinite(value) else None
+    # Numeric aliases are ordered candidates, not text aliases.  A common
+    # canonical schema carries both UEID="UE1" and UEIndex=1; stopping at the
+    # first non-empty string incorrectly discards the usable numeric alias.
+    for name in names:
+        text = _text(row, name)
+        if not text:
+            continue
+        try:
+            value = float(text)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
 
 
 def _boolean(row: dict[str, str], *names: str) -> bool | None:
@@ -387,6 +603,21 @@ def _boolean(row: dict[str, str], *names: str) -> bool | None:
     if value in {"0", "false", "no", "fail", "failed"}:
         return False
     return None
+
+
+def _beam_index_set(row: dict[str, str], *names: str) -> str:
+    value = _text(row, *names)
+    normalized = value.lower()
+    if (
+        not value
+        or normalized in {"none", "unavailable", "not_available"}
+        or normalized.startswith((
+            "not_recorded_by_active_", "not_emitted_by_active_",
+            "field_not_emitted_by_active_",
+        ))
+    ):
+        return "not_selected"
+    return value
 
 
 def _close(actual: float | None, expected: float | None, *, atol: float, rtol: float = 1e-9) -> bool:
@@ -673,11 +904,15 @@ def _audit_link_table(
         # not invalid evidence. Fixed-link rows carry the receiver trust
         # boundary separately; requiring decode-oriented StrictOk would erase
         # exactly the errors needed to form the waterfall.
-        strict_evidence = (
-            _boolean(row, "StrictReceiverEvidenceOk")
-            if fixed_link_trial
-            else _boolean(row, "StrictOk")
-        )
+        # Receiver-evidence validity and TB decoding are orthogonal. A CRC
+        # failure is a legitimate measured BLER outcome and must not make an
+        # otherwise complete waveform/estimation/equalization/LLR row
+        # semantically invalid. Prefer the explicit receiver trust-boundary
+        # flag for every waveform trial; retain StrictOk only for legacy rows
+        # that predate that field.
+        strict_evidence = _boolean(row, "StrictReceiverEvidenceOk")
+        if strict_evidence is None:
+            strict_evidence = _boolean(row, "StrictOk")
         if strict_evidence is not True:
             truth_failures.append(prefix + ":strict_execution_evidence_not_true")
         if _boolean(row, "FinalizedFlag") is not True:
@@ -1742,9 +1977,12 @@ def _audit_mimo_per_trial_companion(
         status = _text(row, "Status").lower()
         reason = _text(row, "FailureReason")
         if path.endswith("beam_sweep_measurements.csv"):
-            selected = _text(rank, "BeamId")
+            selected = _text(rank, "BeamId") or "not_selected"
             configured_layers = _number(rank, "ConfiguredLayers")
-            expected_pass = bool(selected or (configured_layers is not None and configured_layers <= 1))
+            expected_pass = bool(
+                selected != "not_selected"
+                or (configured_layers is not None and configured_layers <= 1)
+            )
             if _text(row, "SelectedBeamId") != selected:
                 failures.append(prefix + ":SelectedBeamId_not_rank_source")
             if _text(row, "SourceRowsHash") != _text(rank, "SourceRowsHash"):
@@ -2063,7 +2301,11 @@ def _audit_beam_precoder_table(
             if not _optional_number_equal(_number(row, target), _number(source, *aliases), atol=1e-9):
                 failures.append(prefix + f":{target}_not_primary_source")
         for target, aliases in text_mapping.items():
-            if _text(row, target) != _text(source, *aliases):
+            if target in {"requested_beam_index_set", "applied_beam_index_set"}:
+                matches = _beam_index_set(row, target) == _beam_index_set(source, *aliases)
+            else:
+                matches = _text(row, target) == _text(source, *aliases)
+            if not matches:
                 failures.append(prefix + f":{target}_not_primary_source")
         for target, source_field in logical_mapping.items():
             expected = _boolean(source, source_field)
@@ -3052,9 +3294,23 @@ def _audit_kpi_delivery_outputs(
     source_paths: dict[str, str],
 ) -> list[AuditCheck]:
     checks: list[AuditCheck] = []
+    _manifest_header, manifest_rows = _read_rows(
+        run_root / "reports/csv/kpi_source_table_manifest.csv"
+    )
+    manifest_by_direction = {
+        _text(row, "Direction").upper(): row for row in manifest_rows
+    }
     for direction in ("DL", "UL"):
+        source_path = source_paths[direction]
+        source_rows = link_rows.get(direction, [])
+        manifest = manifest_by_direction.get(direction, {})
+        declared_path = _text(manifest, "SourceTablePath").replace("\\", "/")
+        declared_file = _run_relative_path(run_root, declared_path)
+        if declared_file is not None and _io_path(declared_file).is_file():
+            _source_header, source_rows = _read_rows(declared_file)
+            source_path = declared_path
         checks.extend(_audit_kpi_delivery_direction(
-            run_root, direction, link_rows.get(direction, []), source_paths[direction]
+            run_root, direction, source_rows, source_path
         ))
     return checks
 
@@ -3450,8 +3706,9 @@ def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
         ))
         if not summary_rows:
             summary_rows = current_rows
-    progress_paths = sorted(
-        run_root.glob("reports/csv/frc_reference_progress/**/frc_reference_progress.csv")
+    progress_paths = _find_named_files(
+        run_root / "reports/csv/frc_reference_progress",
+        "frc_reference_progress.csv",
     )
     progress_rows: list[dict[str, str]] = []
     for progress_path in progress_paths:
@@ -4074,6 +4331,304 @@ def _normalized_column(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
 
 
+def _audit_metric_output_tables(run_root: Path) -> list[AuditCheck]:
+    """Validate the canonical long-form metric catalog and category views.
+
+    A metric only counts as runtime coverage when its persisted source exists
+    in the same run tree.  Config-only, disabled and unavailable descriptors
+    remain useful catalog rows, but they cannot be promoted to observed
+    evidence and cannot count toward runtime coverage.
+    """
+
+    checks: list[AuditCheck] = []
+    aggregate_tables = {
+        "reports/csv/lls_output_metric_rows.csv",
+    }
+    for relative in METRIC_OUTPUT_TABLES:
+        header, rows = _read_rows(run_root / relative)
+        if not header and not rows:
+            continue
+        missing_columns = sorted(METRIC_OUTPUT_REQUIRED_COLUMNS - set(header))
+        checks.append(
+            _check(
+                "metric_output",
+                relative,
+                "required_metric_catalog_columns",
+                rows,
+                missing_columns,
+            )
+        )
+        if missing_columns:
+            continue
+
+        identity_failures: list[str] = []
+        coverage_failures: list[str] = []
+        value_failures: list[str] = []
+        source_failures: list[str] = []
+        observed_keys: set[tuple[str, str, str, str]] = set()
+        expected_category = Path(relative).stem
+        for index, row in enumerate(rows, start=1):
+            prefix = f"row={index}"
+            category_code = _text(row, "CategoryCode")
+            category_key = _text(row, "CategoryKey")
+            category_name = _text(row, "CategoryName")
+            metric_key = _text(row, "MetricKey")
+            metric_name = _text(row, "MetricName")
+            entity = _text(row, "Entity")
+            statistic = _text(row, "Statistic")
+            if not all((category_code, category_key, category_name, metric_key, metric_name)):
+                identity_failures.append(prefix + ":missing_category_or_metric_identity")
+            if relative not in aggregate_tables and category_key != expected_category:
+                identity_failures.append(
+                    prefix + f":CategoryKey_mismatch:{category_key or 'missing'}!={expected_category}"
+                )
+            key = (category_key, metric_key, entity, statistic)
+            if key in observed_keys:
+                identity_failures.append(prefix + ":duplicate_metric_entity_statistic_key")
+            observed_keys.add(key)
+
+            availability = _text(row, "Availability").lower()
+            if availability not in METRIC_OUTPUT_AVAILABILITY:
+                coverage_failures.append(
+                    prefix + f":invalid_availability:{availability or 'missing'}"
+                )
+            counts = _boolean(row, "CountsTowardCoverage")
+            if counts is None:
+                coverage_failures.append(prefix + ":CountsTowardCoverage_not_boolean")
+                continue
+            runtime_evidence = availability in {"observed", "derived"}
+            if counts is not runtime_evidence:
+                coverage_failures.append(
+                    prefix + f":coverage_availability_mismatch:{int(counts)}:{availability}"
+                )
+
+            numeric_text = _text(row, "ValueNumeric") if "ValueNumeric" in header else ""
+            numeric_value = _number(row, "ValueNumeric") if "ValueNumeric" in header else None
+            value_text = _text(row, "ValueText")
+            if counts and numeric_value is None and not value_text:
+                value_failures.append(prefix + ":counted_metric_has_no_value")
+            if numeric_value is not None and value_text:
+                try:
+                    rendered_value = float(value_text)
+                except (TypeError, ValueError):
+                    rendered_value = None
+                if (
+                    rendered_value is not None
+                    and math.isfinite(rendered_value)
+                    and not math.isclose(
+                        numeric_value,
+                        rendered_value,
+                        rel_tol=5e-5,
+                        abs_tol=1e-12,
+                    )
+                ):
+                    value_failures.append(prefix + ":ValueNumeric_ValueText_mismatch")
+            unit = _text(row, "Unit").strip().lower()
+            if numeric_value is not None:
+                if unit in {"fraction", "probability"} and not (
+                    -1e-12 <= numeric_value <= 1.0 + 1e-12
+                ):
+                    value_failures.append(prefix + f":{unit}_outside_unit_interval")
+                if unit in {"percent", "%"} and not (
+                    -1e-12 <= numeric_value <= 100.0 + 1e-12
+                ):
+                    value_failures.append(prefix + ":percent_outside_0_100")
+                normalized_statistic = _normalized_column(statistic)
+                if normalized_statistic in {
+                    "count", "samplecount", "trialcount", "errorcount",
+                }:
+                    if numeric_value < 0 or not math.isclose(
+                        numeric_value, round(numeric_value), abs_tol=1e-9
+                    ):
+                        value_failures.append(prefix + ":count_not_nonnegative_integer")
+            elif numeric_text and numeric_text.lower() not in {
+                "nan", "+nan", "-nan", "not_available", "n/a", "na",
+            }:
+                value_failures.append(prefix + ":ValueNumeric_not_finite_or_nan")
+
+            source_text = _text(row, "SourceArtifact")
+            if counts:
+                source_path = _run_relative_path(run_root, source_text)
+                if not source_text:
+                    source_failures.append(prefix + ":counted_metric_source_missing")
+                elif source_path is None:
+                    source_failures.append(prefix + ":counted_metric_source_not_run_relative")
+                elif not _io_path(source_path).is_file():
+                    source_failures.append(
+                        prefix + f":counted_metric_source_not_found:{source_text}"
+                    )
+
+        checks.extend(
+            [
+                _check(
+                    "metric_output",
+                    relative,
+                    "metric_identity_and_unique_key",
+                    rows,
+                    identity_failures,
+                ),
+                _check(
+                    "metric_output",
+                    relative,
+                    "availability_matches_runtime_coverage",
+                    rows,
+                    coverage_failures,
+                ),
+                _check(
+                    "metric_output",
+                    relative,
+                    "metric_values_and_units_are_coherent",
+                    rows,
+                    value_failures,
+                ),
+                _check(
+                    "metric_output",
+                    relative,
+                    "counted_metrics_bind_existing_run_artifacts",
+                    rows,
+                    source_failures,
+                ),
+            ]
+        )
+    return checks
+
+
+def _audit_metric_coverage_table(run_root: Path) -> list[AuditCheck]:
+    """Recompute every coverage row from the canonical metric-row ledger."""
+
+    header, rows = _read_rows(run_root / METRIC_COVERAGE_TABLE)
+    detail_header, detail_rows = _read_rows(
+        run_root / "reports/csv/lls_output_metric_rows.csv"
+    )
+    if not header and not rows:
+        return []
+    checks: list[AuditCheck] = []
+    missing_columns = sorted(METRIC_COVERAGE_REQUIRED_COLUMNS - set(header))
+    checks.append(
+        _check(
+            "metric_coverage",
+            METRIC_COVERAGE_TABLE,
+            "required_coverage_columns",
+            rows,
+            missing_columns,
+        )
+    )
+    if missing_columns:
+        return checks
+    detail_missing = sorted(METRIC_OUTPUT_REQUIRED_COLUMNS - set(detail_header))
+    checks.append(
+        _check(
+            "metric_coverage",
+            METRIC_COVERAGE_TABLE,
+            "canonical_metric_ledger_present",
+            rows,
+            detail_missing or ([] if detail_rows else ["metric_ledger_empty"]),
+        )
+    )
+    if detail_missing or not detail_rows:
+        return checks
+
+    grouped: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for detail in detail_rows:
+        grouped.setdefault(
+            (_text(detail, "CategoryKey"), _text(detail, "MetricKey")), []
+        ).append(detail)
+    observed_keys: set[tuple[str, str]] = set()
+    failures: list[str] = []
+    count_fields = {
+        "observed": "ObservedRowCount",
+        "derived": "DerivedRowCount",
+        "config_only": "ConfigOnlyRowCount",
+        "disabled": "DisabledRowCount",
+        "placeholder": "PlaceholderRowCount",
+        "not_supported": "NotSupportedRowCount",
+        "not_available": "NotAvailableRowCount",
+        "not_exercised": "NotExercisedRowCount",
+    }
+    precedence = (
+        "observed", "derived", "config_only", "disabled", "placeholder",
+        "not_supported", "not_exercised", "not_available",
+    )
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        key = (_text(row, "CategoryKey"), _text(row, "MetricKey"))
+        if not all(key):
+            failures.append(prefix + ":coverage_key_missing")
+            continue
+        if key in observed_keys:
+            failures.append(prefix + ":duplicate_coverage_key")
+        observed_keys.add(key)
+        source_rows = grouped.get(key, [])
+        if not source_rows:
+            # Some primary catalogs intentionally suppress unmeasured rows
+            # (notably beam-management evidence) so a table cannot be padded
+            # with non-observations.  The coverage catalog may still declare
+            # that gap, but it must be an exact zero-count, non-covered,
+            # source-free not_available row.
+            zero_fields = (
+                "CoveredRowCount", "ObservedRowCount", "DerivedRowCount",
+                "ConfigOnlyRowCount", "DisabledRowCount",
+                "PlaceholderRowCount", "NotSupportedRowCount",
+                "NotAvailableRowCount", "NotExercisedRowCount",
+            )
+            if (
+                _text(row, "Availability").lower() != "not_available"
+                or _boolean(row, "CountsTowardCoverage") is not False
+                or any(not _close(_number(row, field), 0, atol=0) for field in zero_fields)
+                or _text(row, "SourceArtifacts")
+            ):
+                failures.append(prefix + ":unmeasured_catalog_gap_not_fail_closed")
+            continue
+        states = [_text(item, "Availability").lower() for item in source_rows]
+        expected_counts = {
+            state: sum(value == state for value in states) for state in count_fields
+        }
+        for state, field in count_fields.items():
+            actual = _number(row, field)
+            if actual is None or actual < 0 or not _close(
+                actual, expected_counts[state], atol=0
+            ):
+                failures.append(prefix + f":{field}_mismatch")
+        covered = expected_counts["observed"] + expected_counts["derived"]
+        if not _close(_number(row, "CoveredRowCount"), covered, atol=0):
+            failures.append(prefix + ":CoveredRowCount_mismatch")
+        if _boolean(row, "CountsTowardCoverage") is not (covered > 0):
+            failures.append(prefix + ":CountsTowardCoverage_mismatch")
+        expected_availability = next(
+            (state for state in precedence if expected_counts[state] > 0),
+            "not_available",
+        )
+        if _text(row, "Availability").lower() != expected_availability:
+            failures.append(prefix + ":Availability_rollup_mismatch")
+        expected_sources = sorted(
+            {
+                _text(item, "SourceArtifact")
+                for item in source_rows
+                if _text(item, "SourceArtifact")
+            }
+        )
+        observed_sources = sorted(
+            value for value in _text(row, "SourceArtifacts").split("|") if value
+        )
+        if observed_sources != expected_sources:
+            failures.append(prefix + ":SourceArtifacts_rollup_mismatch")
+    missing_rollups = sorted(set(grouped) - observed_keys)
+    failures.extend(
+        f"missing_coverage_row:{category}:{metric}"
+        for category, metric in missing_rollups
+    )
+    checks.append(
+        _check(
+            "metric_coverage",
+            METRIC_COVERAGE_TABLE,
+            "coverage_recomputed_from_metric_ledger",
+            rows,
+            failures,
+        )
+    )
+    return checks
+
+
 def _audit_domain_runtime_tables(
     run_root: Path,
     scenario_summary: dict[str, str],
@@ -4149,7 +4704,7 @@ def _audit_domain_runtime_tables(
                 observed = _text(row, "ScenarioID")
                 if not observed or (expected_scenario and observed != expected_scenario):
                     identity_failures.append(prefix + ":ScenarioID_mismatch_or_missing")
-            if "ConfigHash" in header:
+            if "ConfigHash" in header and relative not in LOCAL_CONFIG_HASH_TABLES:
                 observed = _text(row, "ScenarioConfigHash", "ConfigHash")
                 if not observed or (expected_hash and observed.lower() != expected_hash.lower()):
                     identity_failures.append(prefix + ":ConfigHash_mismatch_or_missing")
@@ -4309,6 +4864,7 @@ def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bo
         "mobility/csv/trajectory_constraint_conflicts.csv",
         "reports/csv/dl_pdsch_objective_failures.csv",
         "reports/csv/live_cell_reselection_events.csv",
+        "reports/csv/raster_replacement_inventory.csv",
         "reports/csv/unavailable_plot_card_registry.csv",
     }:
         return True
@@ -4477,6 +5033,69 @@ def _domain_table_applicability(
     required and fail closed.
     """
 
+    if relative in {
+        "control/csv/access_state_timeline.csv",
+        "control/csv/access_transition_ledger.csv",
+        "reports/csv/access_state_timeline.csv",
+        "reports/csv/access_transition_ledger.csv",
+    }:
+        enabled = _truthy_config(
+            resolved_config,
+            "initial_access.enabled",
+            "random_access.enabled",
+            "control_gating.pbch_required",
+            "control_gating.prach_required",
+        )
+        return enabled, enabled
+    if relative == "control/csv/pbch_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "initial_access.enabled",
+            "control_gating.pbch_required",
+        )
+        return enabled, enabled
+    if relative == "control/csv/prach_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "random_access.enabled",
+            "control_gating.prach_required",
+        )
+        return enabled, enabled
+    if relative == "control/csv/csi_rs_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "reference_signals.csi_rs_enabled",
+            "reference_signals.nzp_csi_rs.enabled",
+        )
+        return enabled, enabled
+    if relative == "control/csv/srs_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "reference_signals.srs_enabled",
+            "reference_signals.srs.enabled",
+            "control_gating.srs_required",
+        )
+        return enabled, enabled
+    if relative == "control/csv/trs_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "reference_signals.trs_enabled",
+            "reference_signals.trs.enabled",
+            "control_gating.trs_required",
+        )
+        return enabled, enabled
+    if relative == "reports/csv/live_receiver_tracking_trace.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "reference_signals.srs_enabled",
+            "reference_signals.srs.enabled",
+            "reference_signals.trs_enabled",
+            "reference_signals.trs.enabled",
+            "control_gating.srs_required",
+            "control_gating.trs_required",
+        )
+        return enabled, enabled
+
     if relative == "reports/csv/live_beam_p1_acquisition_stats.csv":
         enabled = _truthy_config(
             resolved_config,
@@ -4521,11 +5140,14 @@ def _domain_table_applicability(
         return enabled, enabled
     if relative in {
         "geometry/csv/serving_cell_assignment.csv",
+        "geometry/csv/trajectory_geometry.csv",
+        "geometry/csv/ue_initial_positions.csv",
         "mobility/csv/channel_continuity_reconciliation.csv",
         "mobility/csv/doppler_reconciliation.csv",
         "mobility/csv/inter_ue_distance_validation.csv",
         "mobility/csv/pathloss_reconciliation.csv",
         "mobility/csv/propagation_delay_reconciliation.csv",
+        "mobility/csv/trajectory_segment_table.csv",
     }:
         run_class = str(
             _nested_value(
@@ -4884,6 +5506,1055 @@ def _audit_runtime_call_ledger(
     return checks
 
 
+def _audit_measurement_sidecar_manifest(run_root: Path) -> list[AuditCheck]:
+    relative = MEASUREMENT_SIDECAR_MANIFEST
+    header, rows = _read_rows(run_root / relative)
+    required_columns = {
+        "SourceArtifact", "MeasurementArtifact", "ProvenanceArtifact",
+        "SourceRows", "MeasurementRows", "ProvenanceRows",
+        "MeasurementColumnCount", "ProvenanceColumnCount", "SplitKind",
+    }
+    failures: list[str] = []
+    missing = sorted(required_columns - set(header))
+    if missing:
+        failures.append("missing_columns=" + ",".join(missing))
+    if not rows:
+        failures.append("sidecar_manifest_rows_missing")
+    for field in ("SourceArtifact", "MeasurementArtifact", "ProvenanceArtifact"):
+        values = [_text(row, field).replace("\\", "/") for row in rows]
+        if any(not value for value in values):
+            failures.append(field + "_blank")
+        if len(values) != len(set(values)):
+            failures.append(field + "_duplicate")
+
+    checks: list[AuditCheck] = []
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        source_rel = _text(row, "SourceArtifact").replace("\\", "/")
+        measurement_rel = _text(row, "MeasurementArtifact").replace("\\", "/")
+        provenance_rel = _text(row, "ProvenanceArtifact").replace("\\", "/")
+        per_file_failures: list[str] = []
+        loaded: dict[str, tuple[list[str], list[dict[str, str]]]] = {}
+        for label, artifact in (
+            ("source", source_rel),
+            ("measurement", measurement_rel),
+            ("provenance", provenance_rel),
+        ):
+            if not artifact or not _io_path(run_root / artifact).is_file():
+                per_file_failures.append(f"{label}_artifact_missing={artifact or 'blank'}")
+                loaded[label] = ([], [])
+            else:
+                loaded[label] = _read_rows(run_root / artifact)
+        declared_specs = (
+            ("SourceRows", "source", None),
+            ("MeasurementRows", "measurement", "MeasurementColumnCount"),
+            ("ProvenanceRows", "provenance", "ProvenanceColumnCount"),
+        )
+        for row_field, label, column_field in declared_specs:
+            declared_rows = _number(row, row_field)
+            observed_header, observed_rows = loaded[label]
+            if not _whole(declared_rows) or int(declared_rows) != len(observed_rows):
+                per_file_failures.append(
+                    f"{row_field}_mismatch={declared_rows}!={len(observed_rows)}"
+                )
+            if column_field:
+                declared_columns = _number(row, column_field)
+                if not _whole(declared_columns) or int(declared_columns) != len(observed_header):
+                    per_file_failures.append(
+                        f"{column_field}_mismatch={declared_columns}!={len(observed_header)}"
+                    )
+        source_rows = loaded["source"][1]
+        measurement_rows = loaded["measurement"][1]
+        provenance_rows = loaded["provenance"][1]
+        if len(provenance_rows) != len(source_rows):
+            per_file_failures.append("provenance_not_one_row_per_source_row")
+        if len(measurement_rows) > len(source_rows):
+            per_file_failures.append("measurement_rows_exceed_source_rows")
+        for label, split_rows in (("measurement", measurement_rows), ("provenance", provenance_rows)):
+            if split_rows and "SourceArtifact" in loaded[label][0]:
+                mismatches = sum(
+                    _text(item, "SourceArtifact").replace("\\", "/") != source_rel
+                    for item in split_rows
+                )
+                if mismatches:
+                    per_file_failures.append(
+                        f"{label}_SourceArtifact_mismatch_count={mismatches}"
+                    )
+            for flag in ("FallbackFlag", "PlaceholderFlag"):
+                if flag in loaded[label][0] and any(
+                    _boolean(item, flag) is True for item in split_rows
+                ):
+                    per_file_failures.append(f"{label}_{flag}_true")
+        failures.extend(prefix + ":" + reason for reason in per_file_failures)
+        for artifact, label in (
+            (measurement_rel, "measurement_split_matches_manifest"),
+            (provenance_rel, "provenance_split_matches_manifest"),
+        ):
+            if artifact:
+                checks.append(
+                    _check(
+                        "manifest_integrity", artifact, label,
+                        loaded["measurement" if artifact == measurement_rel else "provenance"][1],
+                        per_file_failures,
+                    )
+                )
+    checks.insert(
+        0,
+        _check(
+            "manifest_integrity", relative, "measurement_sidecars_match_sources",
+            rows, failures,
+        ),
+    )
+    return checks
+
+
+def _audit_canonical_component_manifest(run_root: Path) -> list[AuditCheck]:
+    manifest_header, manifest_rows = _read_rows(run_root / CANONICAL_COMPONENT_MANIFEST)
+    catalog_header, catalog_rows = _read_rows(run_root / CONTRACT_CATALOG_SNAPSHOT)
+    failures: list[str] = []
+    manifest_required = {
+        "ContractID", "ArtifactType", "Required", "Status", "SourceRows",
+        "PublishedRelativePath", "SourceSHA256", "SHA256", "ByteSize",
+    }
+    catalog_required = {
+        "ContractID", "ArtifactType", "Required", "MinimumRows",
+        "RequiredColumns", "PrimaryKey",
+    }
+    missing_manifest = sorted(manifest_required - set(manifest_header))
+    missing_catalog = sorted(catalog_required - set(catalog_header))
+    if missing_manifest:
+        failures.append("manifest_missing_columns=" + ",".join(missing_manifest))
+    if missing_catalog:
+        failures.append("catalog_missing_columns=" + ",".join(missing_catalog))
+    manifest_ids = [_text(row, "ContractID") for row in manifest_rows]
+    catalog_ids = [_text(row, "ContractID") for row in catalog_rows]
+    if any(not value for value in manifest_ids + catalog_ids):
+        failures.append("blank_contract_id")
+    if len(manifest_ids) != len(set(manifest_ids)):
+        failures.append("duplicate_manifest_contract_id")
+    if len(catalog_ids) != len(set(catalog_ids)):
+        failures.append("duplicate_catalog_contract_id")
+    if set(manifest_ids) != set(catalog_ids):
+        failures.append("manifest_catalog_contract_id_set_mismatch")
+    catalog_by_id = {_text(row, "ContractID"): row for row in catalog_rows}
+    for index, row in enumerate(manifest_rows, start=1):
+        contract_id = _text(row, "ContractID")
+        prefix = f"row={index}:{contract_id or 'blank'}"
+        catalog = catalog_by_id.get(contract_id, {})
+        for field in ("ArtifactType", "Required"):
+            if _text(row, field).upper() != _text(catalog, field).upper():
+                failures.append(prefix + f":{field}_catalog_mismatch")
+        required = _boolean(row, "Required")
+        status = _text(row, "Status").upper()
+        if status not in {"PASS", "FAIL", "NOT_EVALUATED", "NOT_REQUIRED"}:
+            failures.append(prefix + ":status_invalid")
+        if required is True and status != "PASS" and not _text(row, "Message"):
+            failures.append(prefix + ":required_nonpass_message_missing")
+        published_rel = _text(row, "PublishedRelativePath").replace("\\", "/")
+        published = _io_path(run_root / published_rel) if published_rel else None
+        if published is None or not published.is_file():
+            failures.append(prefix + f":published_artifact_missing={published_rel or 'blank'}")
+            continue
+        observed_hash = _sha256(published)
+        if _text(row, "SHA256").lower() != observed_hash:
+            failures.append(prefix + ":published_sha256_mismatch")
+        if _text(row, "SourceSHA256").lower() != observed_hash:
+            failures.append(prefix + ":source_sha256_mismatch")
+        byte_size = _number(row, "ByteSize")
+        if not _whole(byte_size) or int(byte_size) != published.stat().st_size:
+            failures.append(prefix + ":byte_size_mismatch")
+        artifact_type = _text(row, "ArtifactType").upper()
+        if artifact_type == "CSV":
+            published_header, published_rows = _read_rows(run_root / published_rel)
+            source_rows = _number(row, "SourceRows")
+            minimum_rows = _number(catalog, "MinimumRows")
+            if not _whole(source_rows) or int(source_rows) != len(published_rows):
+                failures.append(prefix + ":SourceRows_mismatch")
+            if minimum_rows is None or len(published_rows) < int(minimum_rows):
+                failures.append(prefix + ":MinimumRows_not_met")
+            required_columns = {
+                token.strip() for token in _text(catalog, "RequiredColumns").split("|")
+                if token.strip()
+            }
+            missing_columns = sorted(required_columns - set(published_header))
+            if missing_columns:
+                failures.append(prefix + ":required_columns_missing=" + ",".join(missing_columns))
+            primary_key = [
+                token.strip() for token in _text(catalog, "PrimaryKey").split("|")
+                if token.strip()
+            ]
+            if primary_key and all(name in published_header for name in primary_key):
+                keys = [tuple(_text(item, name) for name in primary_key) for item in published_rows]
+                if any(any(not value for value in key) for key in keys):
+                    failures.append(prefix + ":primary_key_blank")
+                if len(keys) != len(set(keys)):
+                    failures.append(prefix + ":primary_key_duplicate")
+    check = _check(
+        "manifest_integrity", CANONICAL_COMPONENT_MANIFEST,
+        "canonical_manifest_matches_catalog_and_filesystem", manifest_rows, failures,
+    )
+    catalog_check = _check(
+        "manifest_integrity", CONTRACT_CATALOG_SNAPSHOT,
+        "contract_catalog_matches_canonical_manifest", catalog_rows, failures,
+    )
+    return [check, catalog_check]
+
+
+def _audit_mcs_cqi_reference_tables(run_root: Path) -> list[AuditCheck]:
+    checks: list[AuditCheck] = []
+    specs = (
+        ("reports/csv/mcs_table_reference.csv", "MCSTable", "MCSIndex", False),
+        ("reports/csv/cqi_table_reference.csv", "CQITable", "CQI", True),
+    )
+    for relative, table_field, index_field, zero_is_reserved in specs:
+        header, rows = _read_rows(run_root / relative)
+        required = {
+            "ScenarioID", "ConfigHash", "Direction", table_field, index_field,
+            "Modulation", "TargetCodeRate", "SpectralEfficiency",
+        }
+        failures: list[str] = []
+        missing = sorted(required - set(header))
+        if missing:
+            failures.append("missing_columns=" + ",".join(missing))
+        identities = {
+            (_text(row, "ScenarioID"), _text(row, "ConfigHash")) for row in rows
+        }
+        if len(identities) != 1 or any(not all(identity) for identity in identities):
+            failures.append("scenario_or_config_identity_not_single_nonblank")
+        keys: list[tuple[str, str, int]] = []
+        grouped: dict[tuple[str, str], list[int]] = {}
+        for row_index, row in enumerate(rows, start=1):
+            prefix = f"row={row_index}"
+            direction = _text(row, "Direction").upper()
+            table_name = _text(row, table_field)
+            index = _number(row, index_field)
+            if direction not in {"DL", "UL"} or not table_name or not _whole(index):
+                failures.append(prefix + ":key_invalid")
+                continue
+            int_index = int(index)
+            key = (direction, table_name, int_index)
+            keys.append(key)
+            grouped.setdefault((direction, table_name), []).append(int_index)
+            rate = _number(row, "TargetCodeRate")
+            efficiency = _number(row, "SpectralEfficiency")
+            modulation = _text(row, "Modulation").upper()
+            if zero_is_reserved and int_index == 0:
+                if modulation or rate != 0 or efficiency != 0:
+                    failures.append(prefix + ":reserved_zero_entry_invalid")
+                continue
+            qm = MODULATION_QM.get(modulation)
+            if qm is None:
+                failures.append(prefix + ":modulation_invalid")
+            if rate is None or not (0 < rate <= 1):
+                failures.append(prefix + ":target_code_rate_invalid")
+            if qm is not None and rate is not None and not _close(
+                efficiency, qm * rate, atol=5e-4, rtol=5e-4
+            ):
+                failures.append(prefix + ":spectral_efficiency_mismatch")
+        if len(keys) != len(set(keys)):
+            failures.append("duplicate_direction_table_index")
+        for group, indexes in grouped.items():
+            expected = list(range(min(indexes), max(indexes) + 1))
+            if sorted(indexes) != expected:
+                failures.append(f"noncontiguous_index_range={group}")
+        checks.append(
+            _check(
+                "domain_runtime", relative,
+                "mcs_cqi_reference_arithmetic_and_keys", rows, failures,
+            )
+        )
+    return checks
+
+
+def _audit_dut_reference_comparison(run_root: Path) -> list[AuditCheck]:
+    detail_header, detail_rows = _read_rows(run_root / DUT_REFERENCE_DETAIL)
+    summary_header, summary_rows = _read_rows(run_root / DUT_REFERENCE_SUMMARY)
+    detail_failures: list[str] = []
+    detail_required = {
+        "RunId", "BlockId", "DUTValue", "ReferenceValue", "DeltaAbs",
+        "ToleranceAbs", "ToleranceRel", "Pass", "ReferenceAvailable",
+        "ReferenceSource", "DUTArtifactPath", "FailureReason",
+    }
+    missing = sorted(detail_required - set(detail_header))
+    if missing:
+        detail_failures.append("missing_columns=" + ",".join(missing))
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for index, row in enumerate(detail_rows, start=1):
+        prefix = f"row={index}"
+        block = _text(row, "BlockId")
+        if not block:
+            detail_failures.append(prefix + ":BlockId_blank")
+        grouped.setdefault(block, []).append(row)
+        available = _boolean(row, "ReferenceAvailable")
+        passed = _boolean(row, "Pass")
+        if available is None or passed is None:
+            detail_failures.append(prefix + ":availability_or_pass_invalid")
+            continue
+        if not available:
+            if passed or not _text(row, "FailureReason"):
+                detail_failures.append(prefix + ":unavailable_reference_not_fail_closed")
+            continue
+        dut = _number(row, "DUTValue")
+        reference = _number(row, "ReferenceValue")
+        delta = _number(row, "DeltaAbs")
+        tolerance_abs = _number(row, "ToleranceAbs")
+        tolerance_rel = _number(row, "ToleranceRel")
+        if None in (dut, reference, delta, tolerance_abs, tolerance_rel):
+            detail_failures.append(prefix + ":available_comparison_numeric_value_missing")
+            continue
+        expected_delta = abs(dut - reference)
+        if not _close(delta, expected_delta, atol=1e-12, rtol=1e-9):
+            detail_failures.append(prefix + ":DeltaAbs_mismatch")
+        expected_pass = expected_delta <= tolerance_abs + tolerance_rel * abs(reference) + 1e-12
+        if passed is not expected_pass:
+            detail_failures.append(prefix + ":Pass_tolerance_mismatch")
+        artifact = _text(row, "DUTArtifactPath").replace("\\", "/")
+        if not artifact or not _io_path(run_root / artifact).is_file():
+            detail_failures.append(prefix + ":DUTArtifactPath_missing")
+
+    summary_failures: list[str] = []
+    summary_by_block = {_text(row, "BlockId"): row for row in summary_rows}
+    if set(summary_by_block) != set(grouped):
+        summary_failures.append("summary_detail_block_set_mismatch")
+    for block, rows in grouped.items():
+        summary = summary_by_block.get(block, {})
+        passes = sum(_boolean(row, "Pass") is True for row in rows)
+        available = all(_boolean(row, "ReferenceAvailable") is True for row in rows)
+        expected = {
+            "ComparisonCount": len(rows),
+            "PassCount": passes,
+            "FailCount": len(rows) - passes,
+        }
+        for field, value in expected.items():
+            observed = _number(summary, field)
+            if not _whole(observed) or int(observed) != value:
+                summary_failures.append(f"{block}:{field}_mismatch")
+        if _boolean(summary, "ReferenceAvailable") is not available:
+            summary_failures.append(f"{block}:ReferenceAvailable_mismatch")
+        if _boolean(summary, "DUTReferencePass") is not (available and passes == len(rows)):
+            summary_failures.append(f"{block}:DUTReferencePass_mismatch")
+    return [
+        _check(
+            "cross_table_reconciliation", DUT_REFERENCE_DETAIL,
+            "dut_reference_values_and_tolerances", detail_rows, detail_failures,
+        ),
+        _check(
+            "cross_table_reconciliation", DUT_REFERENCE_SUMMARY,
+            "reference_summary_recomputed_from_detail", summary_rows, summary_failures,
+        ),
+    ]
+
+
+def _fixed_snr_group_key(direction: str, row: dict[str, str]) -> tuple[str, int] | None:
+    point = _number(row, "FixedLinkPointIndex", "PointIndex")
+    if direction not in {"DL", "UL"} or not _whole(point, 1):
+        return None
+    return direction, int(point)
+
+
+def _audit_fixed_snr_reporting_tables(
+    run_root: Path,
+    link_rows: dict[str, list[dict[str, str]]],
+) -> list[AuditCheck]:
+    """Recompute the publication sweep tables from canonical TB trials."""
+
+    summary_rel = "reports/csv/fixed_snr_sweep_curve_summary.csv"
+    reporting_paths = (
+        summary_rel,
+        "reports/csv/dl_fixed_snr_bler_curve.csv",
+        "reports/csv/dl_fixed_snr_ber_curve.csv",
+        "reports/csv/ul_fixed_snr_bler_curve.csv",
+        "reports/csv/ul_fixed_snr_ber_curve.csv",
+        "reports/csv/dl_fixed_link_bler_curve.csv",
+        "reports/csv/dl_fixed_link_ber_curve.csv",
+        "reports/csv/ul_fixed_link_bler_curve.csv",
+        "reports/csv/ul_fixed_link_ber_curve.csv",
+        "reports/csv/fixed_link_campaign_summary.csv",
+        "reports/csv/fixed_snr_sweep_required_outputs.csv",
+        "reports/csv/fixed_snr_sweep_audit.csv",
+    )
+    # This contract is specific to a materialized fixed-SNR reporting bundle.
+    # PDCCH-only, component-only, and minimal primary-link audits legitimately
+    # have no such bundle.  Once any member exists, however, the complete
+    # cross-table contract below applies and missing peers fail closed.
+    if not any((run_root / relative).is_file() for relative in reporting_paths):
+        return []
+    summary_header, summary_rows = _read_rows(run_root / summary_rel)
+    required_columns = {
+        "Direction", "PointIndex", "PointSeed", "SNR_dB", "ConfiguredSNR_dB",
+        "AppliedSNR_dB", "MeanMeasuredSINR_dB", "MCS", "Modulation", "Rank",
+        "Layers", "TrialCount", "TBPassCount", "TBFailCount", "BLER",
+        "BLER_CI_Low", "BLER_CI_High", "BitErrors", "BitsCompared", "BER",
+        "BER_CI_Low", "BER_CI_High", "Throughput_Mbps", "Goodput_Mbps",
+        "PointStatus", "Incomplete", "Status",
+    }
+    failures: list[str] = []
+    missing = sorted(required_columns - set(summary_header))
+    if missing:
+        failures.append("missing_columns=" + ",".join(missing))
+    raw_groups: dict[tuple[str, int], list[dict[str, str]]] = {}
+    for direction, rows in link_rows.items():
+        for row in rows:
+            key = _fixed_snr_group_key(direction, row)
+            if key is None:
+                failures.append(f"{direction}:raw_fixed_point_key_missing")
+            else:
+                raw_groups.setdefault(key, []).append(row)
+    summary_by_key: dict[tuple[str, int], dict[str, str]] = {}
+    for row in summary_rows:
+        direction = _text(row, "Direction").upper()
+        key = _fixed_snr_group_key(direction, row)
+        if key is None or key in summary_by_key:
+            failures.append(f"summary_key_invalid_or_duplicate={key}")
+        else:
+            summary_by_key[key] = row
+    if set(summary_by_key) != set(raw_groups):
+        failures.append("summary_raw_operating_point_set_mismatch")
+
+    for key, raw in raw_groups.items():
+        row = summary_by_key.get(key, {})
+        prefix = f"{key[0]}:point={key[1]}"
+        trials = len(raw)
+        crc_values = [_boolean(item, "CRCPass") for item in raw]
+        if any(value is None for value in crc_values):
+            failures.append(prefix + ":raw_crc_invalid")
+            continue
+        fail_count = sum(value is False for value in crc_values)
+        pass_count = trials - fail_count
+        bit_errors = sum(int(_number(item, "BitErrors") or 0) for item in raw)
+        bits_compared = sum(int(_number(item, "BitsCompared") or 0) for item in raw)
+        bler = fail_count / trials if trials else math.nan
+        ber = bit_errors / bits_compared if bits_compared else math.nan
+        bler_low, bler_high = _clopper_pearson_two_sided(fail_count, trials, 0.95)
+        ber_low, ber_high = _clopper_pearson_two_sided(bit_errors, bits_compared, 0.95)
+        expected_numbers = {
+            "TrialCount": trials,
+            "TBPassCount": pass_count,
+            "TBFailCount": fail_count,
+            "BLER": bler,
+            "BLER_CI_Low": bler_low,
+            "BLER_CI_High": bler_high,
+            "BitErrors": bit_errors,
+            "BitsCompared": bits_compared,
+            "BER": ber,
+            "BER_CI_Low": ber_low,
+            "BER_CI_High": ber_high,
+        }
+        measured = [_number(item, "MeasuredTrialSINR_dB", "PostEqSINR_dB") for item in raw]
+        if any(value is None for value in measured):
+            failures.append(prefix + ":raw_measured_sinr_missing")
+        else:
+            values = [float(value) for value in measured if value is not None]
+            expected_numbers["MeanMeasuredSINR_dB"] = statistics.fmean(values)
+            expected_numbers["MedianMeasuredSINR_dB"] = statistics.median(values)
+        goodputs = [_number(item, "Goodput_Mbps") for item in raw]
+        if all(value is not None for value in goodputs):
+            mean_goodput = statistics.fmean(float(value) for value in goodputs if value is not None)
+            expected_numbers["Goodput_Mbps"] = mean_goodput
+            expected_numbers["Throughput_Mbps"] = mean_goodput
+        for field, expected in expected_numbers.items():
+            tolerance = 2e-12 if field not in {"MeanMeasuredSINR_dB", "MedianMeasuredSINR_dB"} else 2e-10
+            if not _close(_number(row, field), float(expected), atol=tolerance, rtol=2e-10):
+                failures.append(prefix + f":{field}_mismatch")
+        if not _close(
+            _number(row, "BLER_CI_Width"), bler_high - bler_low, atol=2e-12
+        ):
+            failures.append(prefix + ":BLER_CI_Width_mismatch")
+        if not _close(
+            _number(row, "BER_CI_Width"), ber_high - ber_low, atol=2e-12
+        ):
+            failures.append(prefix + ":BER_CI_Width_mismatch")
+        configured_snr = _mode_number(raw, "ConfiguredSNR_dB")
+        applied_snr = _mode_number(raw, "AppliedAWGNSNR_dB")
+        for field, expected in (
+            ("SNR_dB", configured_snr),
+            ("ConfiguredSNR_dB", configured_snr),
+            ("AppliedSNR_dB", applied_snr),
+            ("MCS", _mode_number(raw, "MCSIndex")),
+            ("Rank", _mode_number(raw, "Rank")),
+            ("Layers", _mode_number(raw, "Layers")),
+        ):
+            if not _close(_number(row, field), expected, atol=1e-12):
+                failures.append(prefix + f":{field}_raw_mode_mismatch")
+        if _text(row, "Modulation").upper() != _mode_text(raw, "Modulation").upper():
+            failures.append(prefix + ":Modulation_raw_mode_mismatch")
+        if _boolean(row, "Incomplete") is True:
+            failures.append(prefix + ":complete_point_marked_incomplete")
+        # A zero-error point whose one-sided upper confidence bound met the
+        # configured stopping rule is complete but right-censored.  Preserve
+        # that distinction instead of rejecting truthful CENSORED_COMPLETE
+        # evidence as an incomplete operating point.
+        point_status = _text(row, "PointStatus").upper()
+        if point_status not in {"COMPLETE", "CENSORED_COMPLETE"} or _text(row, "Status").lower() != "complete":
+            failures.append(prefix + ":point_status_not_complete")
+
+    checks: list[AuditCheck] = [
+        _check(
+            "derived_link", summary_rel,
+            "fixed_snr_curve_recomputed_from_primary_trials", summary_rows, failures,
+        )
+    ]
+
+    # The four directional BER/BLER tables intentionally expose the same
+    # complete point schema.  Reconcile every field rather than accepting
+    # same-shaped but stale copies.
+    for direction in ("DL", "UL"):
+        expected_rows = [
+            row for row in summary_rows if _text(row, "Direction").upper() == direction
+        ]
+        for metric in ("bler", "ber"):
+            relative = f"reports/csv/{direction.lower()}_fixed_snr_{metric}_curve.csv"
+            header, rows = _read_rows(run_root / relative)
+            copy_failures: list[str] = []
+            if header != summary_header:
+                copy_failures.append("schema_differs_from_curve_summary")
+            if rows != expected_rows:
+                copy_failures.append("rows_differ_from_directional_curve_summary")
+            checks.append(
+                _check(
+                    "derived_link", relative,
+                    "directional_curve_is_exact_summary_projection", rows, copy_failures,
+                )
+            )
+
+    for direction in ("DL", "UL"):
+        expected_rows = {
+            int(_number(row, "PointIndex") or -1): row
+            for row in summary_rows
+            if _text(row, "Direction").upper() == direction
+        }
+        for metric in ("bler", "ber"):
+            relative = f"reports/csv/{direction.lower()}_fixed_link_{metric}_curve.csv"
+            _header, rows = _read_rows(run_root / relative)
+            metric_failures: list[str] = []
+            if len(rows) != len(expected_rows):
+                metric_failures.append("point_count_mismatch")
+            for index, item in enumerate(rows, start=1):
+                point = int(_number(item, "PointIndex") or -1)
+                source = expected_rows.get(point, {})
+                expected_metric = metric.upper()
+                if _text(item, "Direction").upper() != direction or _text(item, "Metric").upper() != expected_metric:
+                    metric_failures.append(f"row={index}:direction_or_metric_mismatch")
+                value_field = "BLER" if metric == "bler" else "BER"
+                low_field = value_field + "_CI_Low"
+                high_field = value_field + "_CI_High"
+                for observed_field, source_field in (
+                    ("Value", value_field), ("CI_Low", low_field),
+                    ("CI_High", high_field), ("TrialCount", "TrialCount"),
+                    ("FailureCount", "TBFailCount"),
+                    ("MeasuredSINR_dB", "MeanMeasuredSINR_dB"),
+                    ("Throughput_Mbps", "Throughput_Mbps"),
+                    ("Goodput_Mbps", "Goodput_Mbps"),
+                ):
+                    if not _close(
+                        _number(item, observed_field), _number(source, source_field),
+                        atol=2e-10, rtol=2e-10,
+                    ):
+                        metric_failures.append(f"row={index}:{observed_field}_mismatch")
+            checks.append(
+                _check(
+                    "derived_link", relative,
+                    "metric_curve_reconciles_fixed_snr_summary", rows, metric_failures,
+                )
+            )
+
+    campaign_rel = "reports/csv/fixed_link_campaign_summary.csv"
+    _campaign_header, campaign_rows = _read_rows(run_root / campaign_rel)
+    campaign_failures: list[str] = []
+    campaign_by_direction = {
+        _text(row, "Direction").upper(): row for row in campaign_rows
+    }
+    for direction in ("DL", "UL"):
+        source = [
+            row for row in summary_rows if _text(row, "Direction").upper() == direction
+        ]
+        row = campaign_by_direction.get(direction, {})
+        expected = {
+            "SNRPointCount": len(source),
+            "TotalTBCount": sum(int(_number(item, "TrialCount") or 0) for item in source),
+            "TotalFailureCount": sum(int(_number(item, "TBFailCount") or 0) for item in source),
+            "IncompletePointCount": sum(_boolean(item, "Incomplete") is True for item in source),
+        }
+        for field, value in expected.items():
+            if _number(row, field) != value:
+                campaign_failures.append(f"{direction}:{field}_mismatch")
+        max_half_width = max(
+            ((_number(item, "BLER_CI_Width") or 0) / 2 for item in source),
+            default=0.0,
+        )
+        if not _close(_number(row, "MaxBLERCIHalfWidth"), max_half_width, atol=2e-12):
+            campaign_failures.append(direction + ":MaxBLERCIHalfWidth_mismatch")
+        if _boolean(row, "CurvePresent") is not bool(source):
+            campaign_failures.append(direction + ":CurvePresent_mismatch")
+    checks.append(
+        _check(
+            "derived_link", campaign_rel,
+            "campaign_summary_recomputed_from_curve_points", campaign_rows, campaign_failures,
+        )
+    )
+
+    required_rel = "reports/csv/fixed_snr_sweep_required_outputs.csv"
+    _required_header, required_rows = _read_rows(run_root / required_rel)
+    required_failures: list[str] = []
+    for index, row in enumerate(required_rows, start=1):
+        artifact = _text(row, "ArtifactPath").replace("\\", "/")
+        path = _io_path(run_root / artifact) if artifact else None
+        exists = path is not None and path.is_file()
+        nonempty = exists and path.stat().st_size > 0
+        if _boolean(row, "Required") is not True:
+            required_failures.append(f"row={index}:Required_not_true")
+        if _boolean(row, "Present") is not exists:
+            required_failures.append(f"row={index}:Present_mismatch")
+        if _boolean(row, "Readable") is not exists:
+            required_failures.append(f"row={index}:Readable_mismatch")
+        if _boolean(row, "NonEmpty") is not nonempty:
+            required_failures.append(f"row={index}:NonEmpty_mismatch")
+        expected_status = "PASS" if exists and nonempty else "FAIL"
+        if _text(row, "Status").upper() != expected_status:
+            required_failures.append(f"row={index}:Status_mismatch")
+    checks.append(
+        _check(
+            "manifest_integrity", required_rel,
+            "fixed_snr_required_outputs_match_filesystem", required_rows, required_failures,
+        )
+    )
+
+    audit_rel = "reports/csv/fixed_snr_sweep_audit.csv"
+    _audit_header, audit_rows = _read_rows(run_root / audit_rel)
+    audit_failures: list[str] = []
+    names = [_text(row, "CheckName") for row in audit_rows]
+    if any(not value for value in names) or len(names) != len(set(names)):
+        audit_failures.append("audit_check_name_blank_or_duplicate")
+    for index, row in enumerate(audit_rows, start=1):
+        checked = _number(row, "RowsChecked")
+        failed = _number(row, "RowsFailed")
+        if not _whole(checked) or not _whole(failed) or (checked is not None and failed is not None and failed > checked):
+            audit_failures.append(f"row={index}:row_counts_invalid")
+        expected_status = "PASS" if failed == 0 else "FAIL"
+        if _text(row, "Status").upper() != expected_status:
+            audit_failures.append(f"row={index}:status_failure_count_mismatch")
+    checks.append(
+        _check(
+            "status_reduction", audit_rel,
+            "fixed_snr_audit_row_arithmetic", audit_rows, audit_failures,
+        )
+    )
+    return checks
+
+
+def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
+    """Reconcile KPI registries, source manifests, formulas, and bindings."""
+
+    registry_rel = "reports/csv/kpi_formula_registry.csv"
+    manifest_rel = "reports/csv/kpi_source_table_manifest.csv"
+    reconstruction_rel = "reports/csv/kpi_reconstruction_summary.csv"
+    binding_rel = "reports/csv/kpi_objective_binding.csv"
+    core_paths = (registry_rel, manifest_rel, reconstruction_rel, binding_rel)
+    if not any((run_root / relative).is_file() for relative in core_paths):
+        return []
+
+    checks: list[AuditCheck] = []
+    registry_header, registry_rows = _read_rows(run_root / registry_rel)
+    registry_failures: list[str] = []
+    registry_required = {
+        "KPIName", "Direction", "Layer", "Units", "RequiredSourceTables",
+        "Tolerance", "StrictAllowed", "FormulaVersion", "FormulaEquation",
+        "ProducerModule", "Status",
+    }
+    missing = sorted(registry_required - set(registry_header))
+    if missing:
+        registry_failures.append("missing_columns=" + ",".join(missing))
+    registry_names = [_text(row, "KPIName") for row in registry_rows]
+    if any(not value for value in registry_names) or len(registry_names) != len(set(registry_names)):
+        registry_failures.append("kpi_name_blank_or_duplicate")
+    for index, row in enumerate(registry_rows, start=1):
+        prefix = f"row={index}"
+        if _text(row, "Direction").upper() not in {"DL", "UL", "SCENARIO"}:
+            registry_failures.append(prefix + ":direction_invalid")
+        if not all(_text(row, name) for name in (
+            "Layer", "Units", "RequiredSourceTables", "FormulaVersion",
+            "FormulaEquation", "ProducerModule",
+        )):
+            registry_failures.append(prefix + ":formula_provenance_incomplete")
+        tolerance = _number(row, "Tolerance")
+        if tolerance is None or tolerance < 0:
+            registry_failures.append(prefix + ":tolerance_invalid")
+        if _boolean(row, "StrictAllowed") is None:
+            registry_failures.append(prefix + ":strict_allowed_invalid")
+        if _text(row, "Status").lower() != "active":
+            registry_failures.append(prefix + ":formula_not_active")
+    checks.append(_check(
+        "manifest_integrity", registry_rel,
+        "kpi_registry_unique_versioned_formulas", registry_rows, registry_failures,
+    ))
+
+    manifest_header, manifest_rows = _read_rows(run_root / manifest_rel)
+    manifest_failures: list[str] = []
+    manifest_required = {
+        "RunId", "ScenarioName", "SourceTablePath", "SourceTableName",
+        "Direction", "Layer", "RequiredForObjective", "Exists", "RowCount",
+        "ColumnCount", "FileHash", "SchemaHash", "ProducerModule", "Status",
+        "FailureReason",
+    }
+    missing = sorted(manifest_required - set(manifest_header))
+    if missing:
+        manifest_failures.append("missing_columns=" + ",".join(missing))
+    expected_directions = {
+        "UL", "DL", "PacketSDU", "ApplicationPackets", "HARQTimeline",
+        "ULGrants", "DLGrants", "SlotTrace",
+    }
+    manifest_by_direction: dict[str, dict[str, str]] = {}
+    manifest_sources: dict[str, tuple[list[str], list[dict[str, str]]]] = {}
+    for index, row in enumerate(manifest_rows, start=1):
+        prefix = f"row={index}"
+        direction = _text(row, "Direction")
+        if not direction or direction in manifest_by_direction:
+            manifest_failures.append(prefix + ":direction_blank_or_duplicate")
+        else:
+            manifest_by_direction[direction] = row
+        required = _boolean(row, "RequiredForObjective")
+        exists = _boolean(row, "Exists")
+        if required is None or exists is None:
+            manifest_failures.append(prefix + ":required_or_exists_invalid")
+        source_value = _text(row, "SourceTablePath")
+        source_path = _run_relative_path(run_root, source_value)
+        if source_value and source_path is None:
+            manifest_failures.append(prefix + ":source_path_not_run_relative")
+        actual_header: list[str] = []
+        actual_rows: list[dict[str, str]] = []
+        actual_exists = bool(source_path and _io_path(source_path).is_file())
+        if actual_exists and source_path is not None:
+            actual_header, actual_rows = _read_rows(source_path)
+            manifest_sources[direction] = (actual_header, actual_rows)
+        if exists is not actual_exists or not _close(
+            _number(row, "RowCount"), float(len(actual_rows)), atol=0,
+        ) or not _close(
+            _number(row, "ColumnCount"), float(len(actual_header)), atol=0,
+        ):
+            manifest_failures.append(prefix + ":persisted_source_shape_or_exists_mismatch")
+        source_hash = _text(row, "FileHash")
+        if actual_exists and not _is_sha256(source_hash):
+            manifest_failures.append(prefix + ":source_rows_hash_invalid")
+        if not actual_exists and source_hash.lower() not in {"", "empty"}:
+            manifest_failures.append(prefix + ":missing_source_hash_not_empty")
+        status = _text(row, "Status").lower()
+        reason = _text(row, "FailureReason")
+        if actual_exists:
+            if status != "pass" or reason:
+                manifest_failures.append(prefix + ":available_source_status_invalid")
+        elif required is True:
+            if status not in {"missing", "fail"} or not reason:
+                manifest_failures.append(prefix + ":required_missing_source_not_fail_closed")
+        elif required is False:
+            if status != "not_applicable" or not reason:
+                manifest_failures.append(prefix + ":optional_missing_source_not_applicable")
+        if not _text(row, "SchemaHash") or not _text(row, "ProducerModule"):
+            manifest_failures.append(prefix + ":schema_or_producer_missing")
+    if set(manifest_by_direction) != expected_directions:
+        manifest_failures.append("source_direction_membership_mismatch")
+    checks.append(_check(
+        "manifest_integrity", manifest_rel,
+        "kpi_source_manifest_matches_exact_persisted_tables",
+        manifest_rows, manifest_failures,
+    ))
+
+    reconstruction_header, reconstruction_rows = _read_rows(run_root / reconstruction_rel)
+    reconstruction_failures: list[str] = []
+    reconstruction_required = {
+        "KPIName", "Direction", "FormulaId", "FormulaVersion", "Value",
+        "SourceTablePaths", "SourceRowCount", "EligibleRowCount",
+        "ExcludedRowCount", "SourceRowsHash", "MissingRawData", "SchemaValid",
+        "Applicable", "ApplicabilityReason", "FormulaExecuted",
+        "ReconstructionValue", "ReconciliationTolerance", "ReconciliationPass",
+        "StrictOk", "Status", "FailureReason",
+    }
+    missing = sorted(reconstruction_required - set(reconstruction_header))
+    if missing:
+        reconstruction_failures.append("missing_columns=" + ",".join(missing))
+    reconstruction_by_name: dict[str, dict[str, str]] = {}
+    for index, row in enumerate(reconstruction_rows, start=1):
+        prefix = f"row={index}"
+        name = _text(row, "KPIName")
+        if not name or name in reconstruction_by_name:
+            reconstruction_failures.append(prefix + ":kpi_name_blank_or_duplicate")
+        else:
+            reconstruction_by_name[name] = row
+        if name not in set(registry_names):
+            reconstruction_failures.append(prefix + ":kpi_not_in_registry")
+        if _text(row, "FormulaId") != name:
+            reconstruction_failures.append(prefix + ":formula_id_mismatch")
+        direction = _text(row, "Direction")
+        applicable = _boolean(row, "Applicable")
+        source_relative = _text(row, "SourceTablePaths").replace("\\", "/")
+        manifest_row = next((
+            item for item in manifest_rows
+            if _text(item, "SourceTablePath").replace("\\", "/") == source_relative
+        ), {})
+        if manifest_row and applicable is True:
+            manifest_direction = _text(manifest_row, "Direction")
+            if manifest_direction == "HARQTimeline" and direction.upper() in {"DL", "UL"}:
+                expected_count = _number(
+                    manifest_row, direction.upper() + "SubsetRowCount"
+                )
+                expected_hash = _text(
+                    manifest_row, direction.upper() + "SubsetRowsHash"
+                )
+            else:
+                expected_count = _number(manifest_row, "RowCount")
+                expected_hash = _text(manifest_row, "FileHash")
+            if not _close(
+                _number(row, "SourceRowCount"), expected_count, atol=0,
+            ) or _text(row, "SourceRowsHash") != expected_hash:
+                reconstruction_failures.append(prefix + ":source_count_or_hash_manifest_mismatch")
+        elif source_relative and _run_relative_path(run_root, source_relative) is None:
+            reconstruction_failures.append(prefix + ":source_path_not_run_relative")
+        source_rows = _number(row, "SourceRowCount")
+        eligible = _number(row, "EligibleRowCount")
+        excluded = _number(row, "ExcludedRowCount")
+        if applicable is True and not _close(
+            source_rows, (eligible or 0) + (excluded or 0), atol=0
+        ):
+            reconstruction_failures.append(prefix + ":eligible_excluded_source_count_mismatch")
+        strict = _boolean(row, "StrictOk")
+        recon_pass = _boolean(row, "ReconciliationPass")
+        formula_executed = _boolean(row, "FormulaExecuted")
+        status = _text(row, "Status").lower()
+        reason = _text(row, "FailureReason")
+        if applicable is True:
+            if formula_executed is not True or strict is not True or recon_pass is not True or status != "pass":
+                reconstruction_failures.append(prefix + ":applicable_kpi_not_strict_pass")
+            if reason or _number(row, "Value") is None or not _close(
+                _number(row, "Value"), _number(row, "ReconstructionValue"), atol=2e-12,
+            ):
+                reconstruction_failures.append(prefix + ":applicable_kpi_value_or_reason_invalid")
+        elif applicable is False:
+            if formula_executed is not False or strict is not True or status != "not_applicable":
+                reconstruction_failures.append(prefix + ":disabled_kpi_applicability_status_invalid")
+            if not _text(row, "ApplicabilityReason"):
+                reconstruction_failures.append(prefix + ":disabled_kpi_reason_missing")
+        else:
+            reconstruction_failures.append(prefix + ":applicable_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", reconstruction_rel,
+        "kpi_reconstruction_matches_registry_sources_and_applicability",
+        reconstruction_rows, reconstruction_failures,
+    ))
+
+    binding_header, binding_rows = _read_rows(run_root / binding_rel)
+    binding_failures: list[str] = []
+    binding_required = {
+        "KPIName", "FormulaId", "MandatoryInScenarioObjective", "Applicable",
+        "ApplicabilityReason", "RawEvidenceAvailable", "ReconstructionPass",
+        "StrictOk", "ScenarioObjectiveContribution", "Status", "FailureReason",
+    }
+    missing = sorted(binding_required - set(binding_header))
+    if missing:
+        binding_failures.append("missing_columns=" + ",".join(missing))
+    binding_names = [_text(row, "KPIName") for row in binding_rows]
+    if set(binding_names) != set(registry_names) or len(binding_names) != len(set(binding_names)):
+        binding_failures.append("binding_registry_membership_or_uniqueness_mismatch")
+    for index, row in enumerate(binding_rows, start=1):
+        prefix = f"row={index}"
+        name = _text(row, "KPIName")
+        if _text(row, "FormulaId") != name:
+            binding_failures.append(prefix + ":formula_id_mismatch")
+        applicable = _boolean(row, "Applicable")
+        mandatory = _boolean(row, "MandatoryInScenarioObjective")
+        status = _text(row, "Status").lower()
+        reason = _text(row, "FailureReason")
+        recon = reconstruction_by_name.get(name)
+        if applicable is False:
+            if mandatory is not False or status != "not_applicable" or not _text(row, "ApplicabilityReason"):
+                binding_failures.append(prefix + ":not_applicable_binding_invalid")
+        elif recon is not None:
+            for binding_field, reconstruction_field in (
+                ("Applicable", "Applicable"),
+                ("ReconstructionPass", "ReconciliationPass"),
+                ("StrictOk", "StrictOk"),
+            ):
+                if _boolean(row, binding_field) is not _boolean(recon, reconstruction_field):
+                    binding_failures.append(prefix + f":{binding_field}_reconstruction_mismatch")
+            expected_raw = _boolean(recon, "MissingRawData") is False
+            if _boolean(row, "RawEvidenceAvailable") is not expected_raw:
+                binding_failures.append(prefix + ":raw_evidence_reconstruction_mismatch")
+            if _boolean(row, "StrictOk") is True and (status != "pass" or reason):
+                binding_failures.append(prefix + ":strict_binding_not_clean_pass")
+        elif applicable is True:
+            if status not in {"not_evaluated", "fail"} or not reason:
+                binding_failures.append(prefix + ":applicable_missing_reconstruction_not_fail_closed")
+        else:
+            binding_failures.append(prefix + ":applicable_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", binding_rel,
+        "kpi_objective_binding_exact_registry_and_reconstruction_reduction",
+        binding_rows, binding_failures,
+    ))
+
+    direction_rel = "reports/csv/kpi_direction_isolation_audit.csv"
+    _direction_header, direction_rows = _read_rows(run_root / direction_rel)
+    direction_failures: list[str] = []
+    direction_by_name = {_text(row, "Direction").upper(): row for row in direction_rows}
+    if set(direction_by_name) != {"DL", "UL"} or len(direction_rows) != 2:
+        direction_failures.append("direction_membership_mismatch")
+    for direction in ("DL", "UL"):
+        row = direction_by_name.get(direction, {})
+        manifest_row = manifest_by_direction.get(direction, {})
+        opposite = manifest_by_direction.get("UL" if direction == "DL" else "DL", {})
+        if _text(row, "SourceTablePath").replace("\\", "/") != _text(
+            manifest_row, "SourceTablePath"
+        ).replace("\\", "/"):
+            direction_failures.append(direction + ":source_path_mismatch")
+        if not _close(_number(row, "RowsWithExpectedDirection"), _number(manifest_row, "RowCount"), atol=0):
+            direction_failures.append(direction + ":expected_direction_count_mismatch")
+        if any((_number(row, field) or 0) != 0 for field in (
+            "RowsWithWrongDirection", "CrossDirectionSourceUsed", "HashCollisionOrCopySuspected",
+        )):
+            direction_failures.append(direction + ":cross_direction_contamination")
+        if _text(row, "SourceRowsHash") != _text(manifest_row, "FileHash") or _text(
+            row, "OppositeDirectionRowsHash"
+        ) != _text(opposite, "FileHash"):
+            direction_failures.append(direction + ":direction_hash_manifest_mismatch")
+        if _text(row, "Status").lower() != "pass" or _text(row, "FailureReason"):
+            direction_failures.append(direction + ":direction_status_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", direction_rel,
+        "kpi_direction_isolation_matches_source_manifest", direction_rows, direction_failures,
+    ))
+
+    duration_rel = "reports/csv/kpi_duration_source_audit.csv"
+    _duration_header, duration_rows = _read_rows(run_root / duration_rel)
+    duration_failures: list[str] = []
+    for index, row in enumerate(duration_rows, start=1):
+        direction = _text(row, "Direction").upper()
+        prefix = f"row={index}"
+        if direction not in {"DL", "UL"}:
+            duration_failures.append(prefix + ":direction_invalid")
+            continue
+        if not _close(_number(row, "SlotCount"), _number(manifest_by_direction.get(direction, {}), "RowCount"), atol=0):
+            duration_failures.append(prefix + ":slot_count_source_rows_mismatch")
+        aggregation = _number(row, "AggregationDurationSec")
+        if aggregation is None or aggregation <= 0 or not _close(
+            aggregation, _number(row, "RadioDurationSec"), atol=2e-12,
+        ) or _boolean(row, "WallClockUsedForRadioThroughput") is not False:
+            duration_failures.append(prefix + ":radio_duration_or_wallclock_invalid")
+        if _boolean(row, "Pass") is not True or _text(row, "Status").lower() != "pass" or _text(row, "FailureReason"):
+            duration_failures.append(prefix + ":duration_status_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", duration_rel,
+        "kpi_duration_uses_radio_not_wallclock_time", duration_rows, duration_failures,
+    ))
+
+    unit_rel = "reports/csv/kpi_unit_conversion_audit.csv"
+    _unit_header, unit_rows = _read_rows(run_root / unit_rel)
+    unit_failures: list[str] = []
+    for index, row in enumerate(unit_rows, start=1):
+        prefix = f"row={index}"
+        applicable = _boolean(row, "Applicable")
+        if applicable is True:
+            bits = _number(row, "Bits")
+            duration = _number(row, "DurationSec")
+            expected = bits / duration / 1e6 if bits is not None and duration and duration > 0 else None
+            if not _close(_number(row, "ExpectedMbps"), expected, atol=2e-12) or not _close(
+                _number(row, "Delta"), abs((_number(row, "ExpectedMbps") or 0) - (_number(row, "ComputedMbps") or 0)), atol=2e-12,
+            ):
+                unit_failures.append(prefix + ":mbps_formula_or_delta_mismatch")
+            if _boolean(row, "Pass") is not True or _text(row, "Status").lower() != "pass":
+                unit_failures.append(prefix + ":unit_conversion_not_pass")
+        elif applicable is False:
+            if _text(row, "Status").lower() != "not_applicable":
+                unit_failures.append(prefix + ":disabled_conversion_status_invalid")
+        else:
+            unit_failures.append(prefix + ":applicable_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", unit_rel,
+        "kpi_bit_duration_mbps_conversion_recomputed", unit_rows, unit_failures,
+    ))
+
+    alias_rel = "reports/csv/kpi_legacy_alias_map.csv"
+    _alias_header, alias_rows = _read_rows(run_root / alias_rel)
+    alias_failures: list[str] = []
+    for index, row in enumerate(alias_rows, start=1):
+        if not _close(_number(row, "AliasValue"), _number(row, "CanonicalValue"), atol=2e-12) or _boolean(row, "Equal") is not True:
+            alias_failures.append(f"row={index}:alias_canonical_value_mismatch")
+        if _text(row, "Status").lower() != "pass" or _text(row, "FailureReason"):
+            alias_failures.append(f"row={index}:alias_status_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", alias_rel,
+        "legacy_kpi_aliases_equal_canonical_values", alias_rows, alias_failures,
+    ))
+
+    bug_rel = "reports/csv/kpi_known_bug_regression.csv"
+    _bug_header, bug_rows = _read_rows(run_root / bug_rel)
+    bug_failures: list[str] = []
+    for index, row in enumerate(bug_rows, start=1):
+        if not _close(_number(row, "CorrectExportedULValueMbps"), _number(row, "ULRawValueMbps"), atol=2e-12):
+            bug_failures.append(f"row={index}:correct_ul_not_raw_ul")
+        if _boolean(row, "BugDetected") is not False or _boolean(row, "BugPrevented") is not True:
+            bug_failures.append(f"row={index}:known_bug_guard_invalid")
+        if _text(row, "Status").lower() != "pass" or _text(row, "FailureReason"):
+            bug_failures.append(f"row={index}:known_bug_status_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", bug_rel,
+        "ul_kpi_copy_regression_guard", bug_rows, bug_failures,
+    ))
+
+    lineage_rel = "reports/csv/kpi_lineage_table.csv"
+    _lineage_header, lineage_rows = _read_rows(run_root / lineage_rel)
+    lineage_failures: list[str] = []
+    if len(lineage_rows) != len(reconstruction_rows):
+        lineage_failures.append("lineage_reconstruction_row_count_mismatch")
+    lineage_by_name = {_text(row, "KPIName"): row for row in lineage_rows}
+    for name, recon in reconstruction_by_name.items():
+        row = lineage_by_name.get(name, {})
+        for field in (
+            "Direction", "FormulaId", "FormulaVersion", "Applicable",
+            "ApplicabilityReason", "Value", "NumeratorValue", "DenominatorValue",
+            "AggregationDurationSec", "DurationSource", "SourceTablePaths",
+            "SourceRowCount", "EligibleRowCount", "SourceRowsHash",
+            "StrictOk", "Status", "FailureReason",
+        ):
+            if _text(row, field) != _text(recon, field):
+                lineage_failures.append(name + f":{field}_reconstruction_projection_mismatch")
+        if _boolean(row, "ReconstructionPass") is not _boolean(recon, "ReconciliationPass"):
+            lineage_failures.append(name + ":ReconstructionPass_reconstruction_projection_mismatch")
+    checks.append(_check(
+        "cross_table_reconciliation", lineage_rel,
+        "kpi_lineage_exact_reconstruction_projection", lineage_rows, lineage_failures,
+    ))
+
+    summary_rel = "reports/csv/summary_vs_raw_consistency.csv"
+    _summary_header, summary_rows = _read_rows(run_root / summary_rel)
+    summary_failures: list[str] = []
+    for index, row in enumerate(summary_rows, start=1):
+        summary_value = _number(row, "SummaryValue")
+        raw_value = _number(row, "RawDerivedValue")
+        browser_value = _number(row, "BrowserDisplayedValue")
+        numeric = summary_value is not None or raw_value is not None or browser_value is not None
+        if numeric:
+            consistent = _close(summary_value, raw_value, atol=2e-12) and _close(summary_value, browser_value, atol=2e-12)
+        else:
+            consistent = _text(row, "SummaryValue") == _text(row, "RawDerivedValue") == _text(row, "BrowserDisplayedValue")
+        if not consistent or _text(row, "ConsistencyStatus").lower() != "consistent":
+            summary_failures.append(f"row={index}:summary_raw_browser_mismatch")
+        source_tokens = [value for value in _text(row, "RawSourceArtifacts").split("|") if value]
+        if not source_tokens or any(_run_relative_path(run_root, value) is None for value in source_tokens):
+            summary_failures.append(f"row={index}:raw_source_artifact_invalid")
+    checks.append(_check(
+        "cross_table_reconciliation", summary_rel,
+        "scenario_summary_values_match_raw_and_browser", summary_rows, summary_failures,
+    ))
+    return checks
+
+
+def _audit_provenance_and_reference_tables(run_root: Path) -> list[AuditCheck]:
+    checks: list[AuditCheck] = []
+    checks.extend(_audit_measurement_sidecar_manifest(run_root))
+    checks.extend(_audit_canonical_component_manifest(run_root))
+    checks.extend(_audit_mcs_cqi_reference_tables(run_root))
+    checks.extend(_audit_dut_reference_comparison(run_root))
+    return checks
+
+
 def _audit_status_reduction(run_root: Path, summary_path: str, summary: dict[str, str]) -> list[AuditCheck]:
     """Verify terminal status CSVs describe the exact persisted visual tree."""
 
@@ -4987,6 +6658,504 @@ def _audit_status_reduction(run_root: Path, summary_path: str, summary: dict[str
     return checks
 
 
+def _split_artifact_paths(value: str) -> list[str]:
+    return [
+        token.strip().replace("\\", "/")
+        for token in str(value).split("|")
+        if token.strip()
+    ]
+
+
+def _all_required_gate_rows_pass(
+    rows: list[dict[str, str]],
+    required_column: str,
+    pass_column: str,
+) -> bool:
+    required = [_boolean(row, required_column) for row in rows]
+    passed = [_boolean(row, pass_column) for row in rows]
+    return (
+        bool(rows)
+        and all(value is not None for value in required + passed)
+        and any(value is True for value in required)
+        and all(req is not True or ok is True for req, ok in zip(required, passed))
+    )
+
+
+def _audit_gate_row_table(
+    run_root: Path,
+    relative: str,
+    *,
+    key_column: str,
+    required_column: str,
+    pass_column: str | None = None,
+    status_column: str | None = None,
+    evidence_column: str | None = None,
+    source_count_column: str | None = None,
+) -> AuditCheck:
+    """Validate one explicitly declared gate table without requiring a pass.
+
+    A failing gate may be the correct scientific result.  The contract checks
+    that required/pass/status arithmetic, failure disclosure and referenced
+    evidence are coherent; it never rewrites a FAIL into PASS.
+    """
+
+    header, rows = _read_rows(run_root / relative)
+    required_columns = {key_column, required_column}
+    if pass_column:
+        required_columns.add(pass_column)
+    if status_column:
+        required_columns.add(status_column)
+    if evidence_column:
+        required_columns.add(evidence_column)
+    if source_count_column:
+        required_columns.add(source_count_column)
+    failures: list[str] = []
+    missing = sorted(required_columns - set(header))
+    if missing:
+        failures.append("missing_columns=" + ",".join(missing))
+    if not rows:
+        failures.append("gate_rows_missing")
+    keys = [_text(row, key_column) for row in rows]
+    if any(not key for key in keys):
+        failures.append("blank_gate_key")
+    if len(keys) != len(set(keys)):
+        failures.append("duplicate_gate_key")
+
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}:{_text(row, key_column) or 'missing_key'}"
+        required = _boolean(row, required_column)
+        if required is None:
+            failures.append(prefix + ":required_flag_invalid")
+        passed: bool | None = None
+        if pass_column:
+            passed = _boolean(row, pass_column)
+            if passed is None:
+                failures.append(prefix + ":pass_flag_invalid")
+        if status_column:
+            status = _text(row, status_column).upper()
+            if status not in {"PASS", "FAIL", "NOT_EVALUATED", "NOT_REQUIRED", "NOT_APPLICABLE"}:
+                failures.append(prefix + f":status_invalid={status or 'blank'}")
+            status_pass = status == "PASS"
+            if passed is not None and status_pass is not passed:
+                failures.append(prefix + ":pass_status_mismatch")
+            if passed is None:
+                passed = status_pass
+        failure_reason = _text(row, "FailureReason", "FailureCode", "Reason")
+        if required is True and passed is False and not failure_reason:
+            failures.append(prefix + ":required_failure_reason_missing")
+
+        for count_name in ("FailureCount", "RowsChecked", "RowsFailed", source_count_column or ""):
+            if not count_name or count_name not in header:
+                continue
+            count = _number(row, count_name)
+            if not _whole(count):
+                failures.append(prefix + f":{count_name}_invalid")
+        if "FailureCount" in header:
+            failure_count = _number(row, "FailureCount")
+            if passed is True and failure_count != 0:
+                failures.append(prefix + ":pass_with_nonzero_failure_count")
+            if passed is False and required is True and failure_count == 0 and not failure_reason:
+                failures.append(prefix + ":failed_required_gate_has_no_failure_evidence")
+        if "RowsFailed" in header:
+            rows_failed = _number(row, "RowsFailed")
+            if passed is True and rows_failed != 0:
+                failures.append(prefix + ":pass_with_failed_rows")
+
+        if evidence_column:
+            artifacts = _split_artifact_paths(_text(row, evidence_column))
+            if required is True and passed is True and not artifacts:
+                failures.append(prefix + ":passing_required_gate_has_no_evidence_path")
+            existing_rows = 0
+            for artifact in artifacts:
+                artifact_path = _io_path(run_root / artifact)
+                if not artifact_path.is_file():
+                    if passed is True:
+                        failures.append(prefix + f":passing_gate_evidence_missing={artifact}")
+                    continue
+                if source_count_column:
+                    _source_header, source_rows = _read_rows(run_root / artifact)
+                    existing_rows += len(source_rows)
+            if source_count_column and artifacts:
+                declared = _number(row, source_count_column)
+                if declared is None or int(declared) != existing_rows:
+                    failures.append(
+                        prefix + f":source_row_count_mismatch={declared}!={existing_rows}"
+                    )
+
+    return _check(
+        "status_reduction", relative, "declared_gate_rows_are_coherent", rows, failures
+    )
+
+
+def _audit_phase7_reducer(run_root: Path) -> list[AuditCheck]:
+    relative = "reports/csv/phase7_truth_gates.csv"
+    header, rows = _read_rows(run_root / relative)
+    failures: list[str] = []
+    if len(rows) != 1:
+        failures.append(f"expected_one_phase7_row;observed={len(rows)}")
+        return [_check("status_reduction", relative, "phase7_exact_reduction", rows, failures)]
+    row = rows[0]
+    try:
+        first_phase = header.index("Phase1Ok")
+    except ValueError:
+        failures.append("Phase1Ok_missing")
+        first_phase = 0
+    gate_names = [name for name in header[:first_phase] if name.endswith("Ok")]
+    if tuple(gate_names) != PHASE7_GATE_NAMES:
+        failures.append("phase7_gate_columns_missing_extra_or_reordered")
+    not_applicable = {
+        token.strip()
+        for token in _text(row, "NotApplicableGateNames").split(";")
+        if token.strip()
+    }
+    unknown_not_applicable = sorted(not_applicable - set(gate_names))
+    if unknown_not_applicable:
+        failures.append("unknown_not_applicable=" + ",".join(unknown_not_applicable))
+    observed_gate_values: dict[str, bool] = {}
+    for name in gate_names:
+        value = _boolean(row, name)
+        if value is None:
+            failures.append(name + "_invalid_boolean")
+        else:
+            observed_gate_values[name] = value
+
+    for phase_name, member_names in PHASE7_PHASE_MEMBERS.items():
+        observed = _boolean(row, phase_name)
+        expected = all(
+            member in not_applicable or observed_gate_values.get(member) is True
+            for member in member_names
+        )
+        if observed is not expected:
+            failures.append(f"{phase_name}_rollup_mismatch={observed}!={expected}")
+    phase7_expected = all(
+        name in not_applicable or observed_gate_values.get(name) is True
+        for name in gate_names
+    )
+    if _boolean(row, "Phase7Ok") is not phase7_expected:
+        failures.append("Phase7Ok_rollup_mismatch")
+    phase_values = [_boolean(row, f"Phase{index}Ok") for index in range(1, 7)]
+    result_expected = phase7_expected and all(value is True for value in phase_values)
+    if _boolean(row, "ResultOk") is not result_expected:
+        failures.append("ResultOk_phase_rollup_mismatch")
+
+    expected_failure_codes = [
+        name + "_false"
+        for name in gate_names
+        if name not in not_applicable and observed_gate_values.get(name) is False
+    ]
+    expected_failure_codes.extend(
+        f"Phase{index}Ok_false"
+        for index, value in enumerate(phase_values, start=1)
+        if value is False
+    )
+    if _boolean(row, "PublicationReadinessOk") is not True:
+        expected_failure_codes.append("PublicationReadinessOk_false")
+    observed_failure_codes = [
+        token.strip()
+        for token in _text(row, "FailureCodes").split(";")
+        if token.strip()
+    ]
+    if observed_failure_codes != expected_failure_codes:
+        failures.append("FailureCodes_do_not_match_false_applicable_gates")
+    expected_primary = expected_failure_codes[0] if expected_failure_codes else ""
+    if _text(row, "PrimaryFailureCode") != expected_primary:
+        failures.append("PrimaryFailureCode_mismatch")
+    if _text(row, "ResultOkAuthority") != "all_phase_gates_required_no_lower_pass_override":
+        failures.append("ResultOkAuthority_invalid")
+    if _text(row, "ProducerModule") != "sixgr.runtime.Phase7TruthEvaluator":
+        failures.append("ProducerModule_invalid")
+    return [_check("status_reduction", relative, "phase7_exact_reduction", rows, failures)]
+
+
+def _audit_reconciliation_reducers(run_root: Path) -> list[AuditCheck]:
+    phase7_rel = "reports/csv/phase7_truth_gates.csv"
+    _phase7_header, phase7_rows = _read_rows(run_root / phase7_rel)
+    phase7 = phase7_rows[0] if len(phase7_rows) == 1 else {}
+    checks: list[AuditCheck] = []
+    for relative, mapping in RECONCILIATION_PHASE7_FLAGS.items():
+        source_field, phase7_field = mapping if isinstance(mapping, tuple) else (mapping, mapping)
+        header, rows = _read_rows(run_root / relative)
+        failures: list[str] = []
+        if source_field not in header:
+            failures.append("outcome_column_missing=" + source_field)
+        if not rows:
+            failures.append("reconciliation_rows_missing")
+        source_values = [_boolean(row, source_field) for row in rows]
+        if any(value is None for value in source_values):
+            failures.append("outcome_boolean_invalid")
+        source_outcome = bool(rows) and all(value is True for value in source_values)
+        phase7_outcome = _boolean(phase7, phase7_field)
+        if phase7_outcome is None:
+            failures.append("phase7_outcome_missing_or_invalid=" + phase7_field)
+        elif source_outcome is not phase7_outcome:
+            failures.append(
+                f"phase7_outcome_mismatch:{source_field}={source_outcome};"
+                f"{phase7_field}={phase7_outcome}"
+            )
+        for index, row in enumerate(rows, start=1):
+            value = _boolean(row, source_field)
+            if value is False and "FailureReason" in header and not _text(row, "FailureReason"):
+                failures.append(f"row={index}:failed_reconciliation_reason_missing")
+            for name in header:
+                normalized = _normalized_column(name)
+                if not normalized.endswith(("count", "rows")):
+                    continue
+                number = _number(row, name)
+                if number is not None and not _whole(number):
+                    failures.append(f"row={index}:{name}_negative_or_fractional")
+        checks.append(
+            _check(
+                "cross_table_reconciliation", relative,
+                "outcome_matches_phase7_and_rows_are_coherent", rows, failures,
+            )
+        )
+    return checks
+
+
+def _audit_publication_reducer(run_root: Path) -> list[AuditCheck]:
+    relative = "reports/csv/publication_readiness_gate_summary.csv"
+    header, rows = _read_rows(run_root / relative)
+    failures: list[str] = []
+    fields = (
+        "EnergyModelOk", "PerformanceProfileOk", "LongRunStabilityOk",
+        "ArtifactCompletenessOk", "PlotDataLineageOk",
+        "FinalScientificClaimsTruthfulOk", "TwoModeAcceptanceGatesOk",
+        "FixedSNRLLSOk", "GeometryScenarioOk", "PublicationReferenceComparisonOk",
+    )
+    if len(rows) != 1:
+        failures.append(f"expected_one_publication_row;observed={len(rows)}")
+        return [_check("status_reduction", relative, "publication_exact_reduction", rows, failures)]
+    row = rows[0]
+    values: dict[str, bool] = {}
+    for field in fields + ("TerminalPublicationGatesOk",):
+        if field not in header:
+            failures.append(field + "_missing")
+            continue
+        value = _boolean(row, field)
+        if value is None:
+            failures.append(field + "_invalid_boolean")
+        else:
+            values[field] = value
+    terminal_members = fields[:7]
+    terminal_expected = all(values.get(field) is True for field in terminal_members)
+    if values.get("TerminalPublicationGatesOk") is not terminal_expected:
+        failures.append("TerminalPublicationGatesOk_rollup_mismatch")
+    if _text(row, "EvaluationPolicy") != "evidence_files_only_no_forced_publication_pass":
+        failures.append("EvaluationPolicy_invalid")
+
+    _phase_header, phase_rows = _read_rows(run_root / "reports/csv/phase7_truth_gates.csv")
+    phase = phase_rows[0] if len(phase_rows) == 1 else {}
+    for field in fields:
+        phase_value = _boolean(phase, field)
+        if phase_value is not None and values.get(field) is not phase_value:
+            failures.append(f"{field}_mismatch_phase7")
+    return [_check("status_reduction", relative, "publication_exact_reduction", rows, failures)]
+
+
+def _audit_production_qualification_reducer(run_root: Path) -> list[AuditCheck]:
+    relative = "reports/csv/production_qualification_gate.csv"
+    header, rows = _read_rows(run_root / relative)
+    failures: list[str] = []
+    required_columns = {"Gate", "Required", "Pass", "Status", "EvidenceArtifact", "FailureReason"}
+    missing = sorted(required_columns - set(header))
+    if missing:
+        failures.append("missing_columns=" + ",".join(missing))
+    gate_names = [_text(row, "Gate") for row in rows]
+    if tuple(gate_names) != PRODUCTION_GATE_ORDER:
+        failures.append("gate_order_or_membership_mismatch")
+    by_gate = {_text(row, "Gate"): row for row in rows}
+
+    _result_header, result_rows = _read_rows(run_root / "reports/csv/result_status_summary.csv")
+    result = result_rows[0] if len(result_rows) == 1 else {}
+    functional = all(
+        _boolean(result, name) is True
+        for name in (
+            "ResultOk", "ExecutionCompleted", "RuntimeTruthContractOk",
+            "MandatorySubsystemsOk", "KpiConsistencyOk",
+        )
+    )
+    scenario = _boolean(result, "ScenarioObjectiveOk") is True
+    _wiring_header, wiring_rows = _read_rows(
+        run_root / "reports/csv/phy_package_execution_evidence_gate.csv"
+    )
+    wiring = _all_required_gate_rows_pass(wiring_rows, "Required", "Pass")
+    _phase_header, phase_rows = _read_rows(run_root / "reports/csv/phase7_truth_gates.csv")
+    phase = phase_rows[0] if len(phase_rows) == 1 else {}
+    phase7 = _boolean(phase, "Phase7Ok") is True
+    statistical_fields = (
+        "SeedHierarchyOk", "CampaignDesignOk", "CampaignCompletionOk",
+        "MultiSeedDropStatisticsOk", "ConfidenceIntervalsOk",
+        "SampleAdequacyOk", "SweepDataQualityOk",
+    )
+    statistical = all(_boolean(phase, name) is True for name in statistical_fields)
+    resolved_config = _load_resolved_config(run_root)
+    run_class = _text(phase, "RunClass").strip().lower()
+    if not run_class:
+        run_class = str(
+            _nested_value(
+                resolved_config,
+                "validation.RunClass",
+                _nested_value(resolved_config, "validation.run_class", ""),
+            )
+        ).strip().lower()
+    campaign_run_classes = {
+        "fixed_snr_sweep_lls", "ue_placement_geometry_lls", "hybrid_validation",
+    }
+    _stat_header, stat_rows = _read_rows(
+        run_root / "reports/csv/statistical_qualification_gate.csv"
+    )
+    component_statistics_required = any(
+        _boolean(row, "RequiredForStandardsClaim") is True for row in stat_rows
+    )
+    statistical_not_evaluated = (
+        not statistical
+        and run_class not in campaign_run_classes
+        and not component_statistics_required
+    )
+    _publication_header, publication_rows = _read_rows(
+        run_root / "reports/csv/publication_readiness_gate_summary.csv"
+    )
+    publication = (
+        len(publication_rows) == 1
+        and _boolean(publication_rows[0], "TerminalPublicationGatesOk") is True
+    )
+    frc_required_raw = _nested_value(
+        resolved_config,
+        "validation.independent_reference_qualification.required_for_production",
+        None,
+    )
+    frc_required = True
+    if isinstance(frc_required_raw, bool):
+        frc_required = frc_required_raw
+    elif isinstance(frc_required_raw, (int, float)):
+        frc_required = bool(frc_required_raw)
+    elif isinstance(frc_required_raw, str):
+        token = frc_required_raw.strip().lower()
+        if token in {"false", "0", "no", "off", "disabled"}:
+            frc_required = False
+        elif token in {"true", "1", "yes", "on", "enabled"}:
+            frc_required = True
+    frc_path = _io_path(run_root / "reports/csv/frc_reference_qualification.csv")
+    frc = False
+    if frc_path.is_file():
+        _frc_header, frc_rows = _read_rows(
+            run_root / "reports/csv/frc_reference_qualification.csv"
+        )
+        frc = bool(frc_rows) and all(
+            _boolean(row, "QualificationOk", "ReferenceQualificationOk", "Pass") is True
+            for row in frc_rows
+        )
+    frc_satisfied = (not frc_required) or frc
+    reference_comparison_required = run_class in {
+        "fixed_snr_sweep_lls", "hybrid_validation",
+    }
+    reference_comparison_value = (
+        _boolean(publication_rows[0], "PublicationReferenceComparisonOk")
+        if len(publication_rows) == 1
+        else None
+    )
+    reference_comparison = reference_comparison_value is True
+    reference_comparison_satisfied = (
+        not reference_comparison_required or reference_comparison
+    )
+    production = all((
+        functional, scenario, wiring, phase7, statistical, frc_satisfied,
+        reference_comparison_satisfied, publication,
+    ))
+    expected = {
+        "FunctionalRun": functional,
+        "ScenarioObjective": scenario,
+        "RuntimeWiringCoverage": wiring,
+        "Phase7NumericalValidation": phase7,
+        "StatisticalQualification": statistical,
+        "IndependentFRCQualification": frc,
+        "IndependentReferenceComparison": reference_comparison,
+        "TerminalPublicationEvidence": publication,
+        "ProductionGrade": production,
+    }
+    for gate_name in PRODUCTION_GATE_ORDER:
+        row = by_gate.get(gate_name, {})
+        expected_required = not (
+            (gate_name == "IndependentFRCQualification" and not frc_required)
+            or (
+                gate_name == "IndependentReferenceComparison"
+                and not reference_comparison_required
+            )
+        )
+        if _boolean(row, "Required") is not expected_required:
+            failures.append(
+                gate_name + f":Required_mismatch_expected_{expected_required}"
+            )
+        observed = _boolean(row, "Pass")
+        if observed is not expected[gate_name]:
+            failures.append(f"{gate_name}:Pass={observed};expected={expected[gate_name]}")
+        status = _text(row, "Status").upper()
+        if expected[gate_name]:
+            expected_status = "PASS"
+        elif gate_name == "StatisticalQualification" and statistical_not_evaluated:
+            expected_status = "NOT_EVALUATED"
+        elif gate_name == "IndependentFRCQualification" and (
+            not frc_required or not frc_path.is_file()
+        ):
+            expected_status = "NOT_EVALUATED"
+        elif gate_name == "IndependentReferenceComparison" and (
+            not reference_comparison_required
+            or reference_comparison_value is None
+        ):
+            expected_status = "NOT_EVALUATED"
+        elif gate_name == "ProductionGrade" and not functional:
+            expected_status = "NOT_EVALUATED"
+        else:
+            expected_status = "FAIL"
+        if status != expected_status:
+            failures.append(f"{gate_name}:Status={status};expected={expected_status}")
+        reason = _text(row, "FailureReason")
+        if expected[gate_name] and reason:
+            failures.append(gate_name + ":passing_gate_has_failure_reason")
+        if not expected[gate_name] and expected_required and not reason:
+            failures.append(gate_name + ":failed_gate_reason_missing")
+    return [_check("status_reduction", relative, "production_exact_reduction", rows, failures)]
+
+
+def _audit_qualification_status_tables(run_root: Path) -> list[AuditCheck]:
+    """Audit terminal reducers and their exact persisted evidence inputs."""
+
+    checks: list[AuditCheck] = []
+    checks.extend(_audit_phase7_reducer(run_root))
+    checks.extend(_audit_reconciliation_reducers(run_root))
+    checks.extend(_audit_publication_reducer(run_root))
+    checks.extend(_audit_production_qualification_reducer(run_root))
+    checks.extend(
+        [
+            _audit_gate_row_table(
+                run_root, "reports/csv/kpi_consistency_gate.csv",
+                key_column="GateName", required_column="Required", pass_column="Pass",
+                evidence_column="EvidenceArtifact",
+            ),
+            _audit_gate_row_table(
+                run_root, "reports/csv/phy_package_execution_evidence_gate.csv",
+                key_column="Gate", required_column="Required", pass_column="Pass",
+            ),
+            _audit_gate_row_table(
+                run_root, "reports/csv/scenario_objective_gates.csv",
+                key_column="ObjectiveName", required_column="Mandatory", pass_column="Pass",
+                evidence_column="SourceCsv", source_count_column="SourceRowCount",
+            ),
+            _audit_gate_row_table(
+                run_root, "reports/csv/strict_anchor_acceptance_report.csv",
+                key_column="GateName", required_column="Required", pass_column="Pass",
+                evidence_column="EvidenceArtifacts",
+            ),
+            _audit_gate_row_table(
+                run_root, "reports/csv/two_mode_acceptance_gates.csv",
+                key_column="GateName", required_column="Required", status_column="Status",
+                evidence_column="EvidencePath",
+            ),
+        ]
+    )
+    return checks
+
+
 def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     run_root = run_root.resolve()
     resolved_primary_tables = primary_link_tables(run_root)
@@ -5074,14 +7243,19 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         if header or rows:
             checks.extend(_audit_derived_link_table(path, header, rows, link_rows))
     checks.extend(_audit_component_bler_outputs(run_root, link_rows, summary))
+    checks.extend(_audit_fixed_snr_reporting_tables(run_root, link_rows))
     checks.extend(_audit_mimo_rank_layer_output(run_root, link_rows))
     checks.extend(_audit_mimo_companion_outputs(run_root, link_rows))
     checks.extend(_audit_harq_observation_tables(run_root, link_rows))
     checks.extend(_audit_kpi_delivery_outputs(
         run_root, link_rows, resolved_primary_tables
     ))
+    checks.extend(_audit_kpi_reporting_tables(run_root))
     checks.extend(_audit_runtime_call_ledger(run_root, summary, link_rows))
     checks.extend(_audit_manifest_integrity(run_root))
+    checks.extend(_audit_provenance_and_reference_tables(run_root))
+    checks.extend(_audit_metric_output_tables(run_root))
+    checks.extend(_audit_metric_coverage_table(run_root))
     checks.extend(_audit_domain_runtime_tables(run_root, summary))
     checks.extend(
         _audit_reconciliation(
@@ -5092,6 +7266,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         )
     )
     checks.extend(_audit_status_reduction(run_root, summary_rel, summary))
+    checks.extend(_audit_qualification_status_tables(run_root))
     chart_checks = _audit_chart_lineage(run_root)
     required_failures = sum(check.required and (not check.evaluated or not check.passed) for check in checks)
     chart_failures = sum(check.required and (not check.evaluated or not check.passed) for check in chart_checks)

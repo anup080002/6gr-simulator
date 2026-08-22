@@ -27,6 +27,7 @@ required = [
     "beamforming/csv/beam_sweep_measurements.csv"
     "beamforming/csv/mimo_negative_trials.csv"
     "beamforming/csv/mimo_oracle_guard.csv"
+    "beamforming/csv/mimo_strict_gate_summary.csv"
     "reports/csv/mimo_rank_utilization_table.csv"
     "reports/json/mimo_toolbox_capabilities.json"
     ];
@@ -39,6 +40,11 @@ assert(all(ismember(["ConfiguredRank","TransmittedRank","EffectiveDecodedRank","
 summaryT = readtable(fullfile(tmp, "beamforming", "csv", "mimo_configured_vs_effective.csv"), "VariableNamingRule", "preserve");
 assert(all(logical(summaryT.ScenarioObjectivePass)), ...
     "Positive rank-2 MIMO artifact fixture must pass configured-vs-effective objective.");
+gateT = readtable(fullfile(tmp, "beamforming", "csv", ...
+    "mimo_strict_gate_summary.csv"), "VariableNamingRule", "preserve");
+assert(height(gateT) == 8 && all(logical(gateT.Pass)) && ...
+    all(double(gateT.EvidenceRowCount) > 0), ...
+    "MIMO strict gate summary must expose eight populated passing sub-gates.");
 
 ok = true;
 end

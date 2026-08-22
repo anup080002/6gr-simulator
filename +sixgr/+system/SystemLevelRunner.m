@@ -306,6 +306,11 @@ classdef SystemLevelRunner
                 ueStateDLAll(k).RNTI = k;
                 ueStateULAll(k).RNTI = k;
             end
+            cqiFeedbackDelaySlots = localResolveSystemCQIFeedbackDelaySlots(cfg);
+            cqiFeedbackDL = localInitSystemCQIFeedback(nTTI, K, ...
+                cqiFeedbackDelaySlots, tti_s, "DL");
+            cqiFeedbackUL = localInitSystemCQIFeedback(nTTI, K, ...
+                cqiFeedbackDelaySlots, tti_s, "UL");
 
             progressEverySlots = localResolveProgressEverySlots(cfg, nTTI);
             [noProgressGuardEnabled, noProgressTimeout_s, noProgressSlotLimit] = ...
@@ -658,8 +663,20 @@ classdef SystemLevelRunner
                             ulSchedulingPowerState.SINR_UL_dB;
                     end
                 end
-                cqiDLVec = localResolveWidebandCQI(schedSinrDL_dB, cfg, "DL");
-                cqiULVec = localResolveWidebandCQI(schedSinrUL_dB, cfg, "UL");
+                % Geometry/link-budget SINR is an interference and power
+                % planning quantity.  It is not receiver CQI.  Only a
+                % delayed post-equalization measurement from an earlier
+                % waveform replay may drive normal AMC.  A first-data
+                % preview is admitted only by the explicit YAML bootstrap
+                % policy and remains labeled as non-measured evidence.
+                previewCQIDLVec = localResolveWidebandCQI(schedSinrDL_dB, cfg, "DL");
+                previewCQIULVec = localResolveWidebandCQI(schedSinrUL_dB, cfg, "UL");
+                cqiFeedbackDL = localAdvanceSystemCQIFeedback(cqiFeedbackDL, t);
+                cqiFeedbackUL = localAdvanceSystemCQIFeedback(cqiFeedbackUL, t);
+                [ueStateDLAll, cqiDLVec] = localApplySystemCQIFeedbackToUEState( ...
+                    ueStateDLAll, cqiFeedbackDL, previewCQIDLVec, t, cfg, "DL");
+                [ueStateULAll, cqiULVec] = localApplySystemCQIFeedbackToUEState( ...
+                    ueStateULAll, cqiFeedbackUL, previewCQIULVec, t, cfg, "UL");
                 if t == 1
                     localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
                         slotLabel, activeUECount(t), nCells, 0, ...
@@ -1015,6 +1032,8 @@ classdef SystemLevelRunner
                     else
                         blerHistDL(t,u) = 0.5 * (blerHistDL(t,u) + blerDL);
                     end
+                    cqiFeedbackDL = localQueueSystemReceiverCQIFeedback( ...
+                        cqiFeedbackDL, replayDL, t, u, cfg, "DL");
                     if decisionUnavailableDL
                         decodeUnavailableCountDL = decodeUnavailableCountDL + 1;
                     elseif okDL
@@ -1146,6 +1165,8 @@ classdef SystemLevelRunner
                     else
                         blerHistUL(t,u) = 0.5 * (blerHistUL(t,u) + blerUL);
                     end
+                    cqiFeedbackUL = localQueueSystemReceiverCQIFeedback( ...
+                        cqiFeedbackUL, replayUL, t, u, cfg, "UL");
                     if decisionUnavailableUL
                         decodeUnavailableCountUL = decodeUnavailableCountUL + 1;
                     elseif okUL
@@ -1471,6 +1492,9 @@ classdef SystemLevelRunner
             out.Details.PacketDelayBudget_ms = sixgr.util.structGet(traffic, "PacketDelayBudget_ms", NaN);
             out.Details.FlowTable = sixgr.util.structGet(traffic, "FlowTable", table());
             out.Details.TTI_s = tti_s;
+            out.Details.CQIFeedbackDelaySlots = cqiFeedbackDelaySlots;
+            out.Details.CQIFeedbackDL = localSystemCQIFeedbackTable(cqiFeedbackDL);
+            out.Details.CQIFeedbackUL = localSystemCQIFeedbackTable(cqiFeedbackUL);
             out.Details.SINRModel = sinrModel;
             out.Details.Noise_dBm = noisePowerHistDL;
             out.Details.InterferenceMargin_dB = localInterferenceMarginFromPowers( ...
@@ -2471,6 +2495,234 @@ feedback = sixgr.link.resolveWidebandCQI(struct("WidebandSINR_dB", sinr_dB), cfg
 cqi = double(feedback.WidebandCQI);
 end
 
+function slots = localResolveSystemCQIFeedbackDelaySlots(cfg)
+delay = sixgr.link.resolveLinkAdaptationFeedbackDelay(cfg);
+slots = double(delay.FeedbackDelaySlots);
+end
+
+function state = localInitSystemCQIFeedback(nTTI, nUE, delaySlots, tti_s, direction)
+nRows = max(1, round(double(nTTI))) + max(1, round(double(delaySlots))) + 1;
+nUE = max(1, round(double(nUE)));
+state = struct( ...
+    "Direction", upper(string(direction)), ...
+    "DelaySlots", max(1, round(double(delaySlots))), ...
+    "TTI_s", double(tti_s), ...
+    "QueueLinearSINRSum", zeros(nRows, nUE), ...
+    "QueueCount", zeros(nRows, nUE), ...
+    "QueueCQI", NaN(nRows, nUE), ...
+    "QueueSINR_dB", NaN(nRows, nUE), ...
+    "QueueSourceTTI", NaN(nRows, nUE), ...
+    "QueueSource", strings(nRows, nUE), ...
+    "QueueValueRole", strings(nRows, nUE), ...
+    "QueueValueStatus", strings(nRows, nUE), ...
+    "QueueMeasurementID", strings(nRows, nUE), ...
+    "CurrentValid", false(nUE, 1), ...
+    "CurrentCQI", NaN(nUE, 1), ...
+    "CurrentSINR_dB", NaN(nUE, 1), ...
+    "CurrentSourceTTI", NaN(nUE, 1), ...
+    "CurrentSource", strings(nUE, 1), ...
+    "CurrentValueRole", strings(nUE, 1), ...
+    "CurrentValueStatus", strings(nUE, 1), ...
+    "CurrentMeasurementID", strings(nUE, 1));
+end
+
+function state = localAdvanceSystemCQIFeedback(state, tti)
+tti = max(1, round(double(tti)));
+if tti > size(state.QueueCount, 1)
+    return;
+end
+ready = state.QueueCount(tti, :) > 0;
+for ueIdx = find(ready)
+    state.CurrentValid(ueIdx) = true;
+    state.CurrentCQI(ueIdx) = double(state.QueueCQI(tti, ueIdx));
+    state.CurrentSINR_dB(ueIdx) = double(state.QueueSINR_dB(tti, ueIdx));
+    state.CurrentSourceTTI(ueIdx) = double(state.QueueSourceTTI(tti, ueIdx));
+    state.CurrentSource(ueIdx) = string(state.QueueSource(tti, ueIdx));
+    state.CurrentValueRole(ueIdx) = string(state.QueueValueRole(tti, ueIdx));
+    state.CurrentValueStatus(ueIdx) = string(state.QueueValueStatus(tti, ueIdx));
+    state.CurrentMeasurementID(ueIdx) = string(state.QueueMeasurementID(tti, ueIdx));
+end
+end
+
+function [ueStates, cqiVec] = localApplySystemCQIFeedbackToUEState( ...
+        ueStates, state, previewCQI, tti, cfg, direction)
+nUE = numel(ueStates);
+cqiVec = NaN(nUE, 1);
+previewCQI = reshape(double(previewCQI), [], 1);
+if numel(previewCQI) < nUE
+    previewCQI(end+1:nUE, 1) = NaN;
+end
+maxAgeSlots = localSystemMaximumCQIAgeSlots(cfg, direction);
+bootstrapMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "phy.linkAdaptation.bootstrapCQIMode", "conservative"))));
+previewModes = ["estimated","large_scale_preview", ...
+    "large_scale_preview_lab_default","large_scale_preview_cqi_lab_default"];
+for ueIdx = 1:nUE
+    valid = logical(state.CurrentValid(ueIdx));
+    ageSlots = NaN;
+    ageSeconds = NaN;
+    usable = false;
+    status = "awaiting_receiver_post_equalization_cqi";
+    cqi = NaN;
+    source = "";
+    measuredSINR = NaN;
+    bootstrapUsable = false;
+    bootstrapSource = "";
+    if valid
+        cqi = double(state.CurrentCQI(ueIdx));
+        measuredSINR = double(state.CurrentSINR_dB(ueIdx));
+        ageSlots = double(tti) - double(state.CurrentSourceTTI(ueIdx));
+        ageSeconds = ageSlots * double(state.TTI_s);
+        usable = isfinite(cqi) && ageSlots >= 0 && ...
+            (~isfinite(maxAgeSlots) || ageSlots <= maxAgeSlots);
+        source = string(state.CurrentSource(ueIdx));
+        if usable
+            status = "measured_receiver_feedback_available";
+        else
+            status = "stale_receiver_feedback_exceeds_yaml_max_age";
+        end
+    elseif ismember(bootstrapMode, previewModes) && isfinite(previewCQI(ueIdx))
+        cqi = double(previewCQI(ueIdx));
+        source = "system_link_budget_preview_not_receiver_feedback";
+        bootstrapSource = source;
+        bootstrapUsable = cqi > 0;
+        usable = bootstrapUsable;
+        if bootstrapUsable
+            status = "yaml_enabled_large_scale_preview_bootstrap_not_measured_cqi";
+        else
+            status = "bootstrap_cqi_rejected_below_min_cqi_for_scheduling";
+        end
+    end
+    ueStates(ueIdx).CQI = double(cqi);
+    ueStates(ueIdx).FeedbackValid = logical(valid);
+    ueStates(ueIdx).CausalFeedbackUsable = logical(usable);
+    ueStates(ueIdx).CausalFeedbackStatus = char(status);
+    ueStates(ueIdx).FeedbackAgeSlots = double(ageSlots);
+    ueStates(ueIdx).FeedbackAgeSeconds = double(ageSeconds);
+    ueStates(ueIdx).MeasuredSINR_dB = double(measuredSINR);
+    ueStates(ueIdx).SchedulerCQIRawCQI = double(cqi);
+    ueStates(ueIdx).SchedulerAdjustedSINR_dB = double(measuredSINR);
+    ueStates(ueIdx).SchedulerSINRBackoff_dB = 0;
+    ueStates(ueIdx).SchedulerCQISource = char(source);
+    ueStates(ueIdx).BootstrapCQIUsableForScheduling = logical(bootstrapUsable);
+    ueStates(ueIdx).BootstrapCQISource = char(bootstrapSource);
+    ueStates(ueIdx).PreviewSINR_dB = NaN;
+    ueStates(ueIdx).AdjustedPreviewSINR_dB = NaN;
+    ueStates(ueIdx).PreviewCQI = NaN;
+    if strlength(bootstrapSource) > 0
+        ueStates(ueIdx).PreviewCQI = double(cqi);
+    end
+    cqiVec(ueIdx) = double(cqi);
+end
+end
+
+function state = localQueueSystemReceiverCQIFeedback( ...
+        state, replay, sourceTTI, ueIdx, cfg, direction)
+sourceTTI = max(1, round(double(sourceTTI)));
+ueIdx = max(1, round(double(ueIdx)));
+if ueIdx > size(state.QueueCount, 2)
+    return;
+end
+sinr_dB = double(sixgr.util.structGet(replay, "PostEqSINR_dB", NaN));
+source = lower(strtrim(string(sixgr.util.structGet( ...
+    replay, "PostEqSINRSource", ""))));
+valueRole = lower(strtrim(string(sixgr.util.structGet( ...
+    replay, "PostEqSINRValueRole", ""))));
+valueStatus = string(sixgr.util.structGet( ...
+    replay, "PostEqSINRValueStatus", "unavailable"));
+channelEstimateAvailable = logical(sixgr.util.structGet( ...
+    replay, "ChannelEstimateAvailable", false));
+equalizationAvailable = logical(sixgr.util.structGet( ...
+    replay, "EqualizationAvailable", false));
+forbiddenSource = any(contains(source, ["configured","system_level","fallback", ...
+    "proxy","oracle","lookup","logistic","evm"]));
+receiverDerived = isfinite(sinr_dB) && channelEstimateAvailable && ...
+    equalizationAvailable && strlength(source) > 0 && ~forbiddenSource && ...
+    (contains(source, "post_equal") || contains(valueRole, "scheduling_input"));
+if ~receiverDerived
+    return;
+end
+availableTTI = sourceTTI + double(state.DelaySlots);
+if availableTTI > size(state.QueueCount, 1)
+    return;
+end
+previousCount = double(state.QueueCount(availableTTI, ueIdx));
+state.QueueLinearSINRSum(availableTTI, ueIdx) = ...
+    double(state.QueueLinearSINRSum(availableTTI, ueIdx)) + 10.^(sinr_dB / 10);
+newCount = previousCount + 1;
+state.QueueCount(availableTTI, ueIdx) = newCount;
+meanSINR_dB = 10 .* log10( ...
+    double(state.QueueLinearSINRSum(availableTTI, ueIdx)) ./ newCount);
+feedback = sixgr.link.resolveWidebandCQI( ...
+    struct("WidebandSINR_dB", meanSINR_dB), cfg, direction);
+state.QueueSINR_dB(availableTTI, ueIdx) = double(meanSINR_dB);
+state.QueueCQI(availableTTI, ueIdx) = double(feedback.WidebandCQI);
+state.QueueSourceTTI(availableTTI, ueIdx) = double(sourceTTI);
+if newCount == 1
+    state.QueueSource(availableTTI, ueIdx) = string(source);
+    state.QueueValueRole(availableTTI, ueIdx) = string(valueRole);
+    state.QueueValueStatus(availableTTI, ueIdx) = string(valueStatus);
+else
+    state.QueueSource(availableTTI, ueIdx) = ...
+        "mean_linear_receiver_post_equalization_sinr_same_tti";
+    state.QueueValueRole(availableTTI, ueIdx) = ...
+        "measured_post_equalization_scheduling_input";
+    state.QueueValueStatus(availableTTI, ueIdx) = "OK_aggregated_same_tti";
+end
+state.QueueMeasurementID(availableTTI, ueIdx) = upper(string(direction)) + ...
+    ":tti" + string(sourceTTI) + ":ue" + string(ueIdx);
+end
+
+function maxAgeSlots = localSystemMaximumCQIAgeSlots(cfg, direction)
+if upper(string(direction)) == "UL"
+    candidates = [ ...
+        double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulMaxCSIAgeSlots", NaN)), ...
+        double(sixgr.util.structGet(cfg, "phy.linkAdaptation.maxCSIAgeSlots", NaN)), ...
+        double(sixgr.util.structGet(cfg, "run.controlGating.srsMaxAgeSlots", NaN))];
+else
+    candidates = [ ...
+        double(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlMaxCSIAgeSlots", NaN)), ...
+        double(sixgr.util.structGet(cfg, "phy.linkAdaptation.maxCSIAgeSlots", NaN)), ...
+        double(sixgr.util.structGet(cfg, "run.controlGating.csirsMaxAgeSlots", NaN))];
+end
+idx = find(isfinite(candidates) & candidates >= 0, 1, "first");
+if isempty(idx)
+    maxAgeSlots = inf;
+else
+    maxAgeSlots = double(candidates(idx));
+end
+end
+
+function T = localSystemCQIFeedbackTable(state)
+[availableTTI, ueIdx] = find(state.QueueCount > 0);
+if isempty(availableTTI)
+    T = table('Size', [0 12], ...
+        'VariableTypes', ["string", repmat("double", 1, 7), repmat("string", 1, 4)], ...
+        'VariableNames', {'Direction','UE','SourceTTI','AvailableTTI', ...
+        'FeedbackDelaySlots','MeasurementCount','PostEqSINR_dB','WidebandCQI', ...
+        'PostEqSINRSource','ValueRole','ValueStatus','MeasurementID'});
+    return;
+end
+linearIdx = sub2ind(size(state.QueueCount), availableTTI, ueIdx);
+n = numel(linearIdx);
+T = table( ...
+    repmat(string(state.Direction), n, 1), ...
+    double(ueIdx), ...
+    double(state.QueueSourceTTI(linearIdx)), ...
+    double(availableTTI), ...
+    repmat(double(state.DelaySlots), n, 1), ...
+    double(state.QueueCount(linearIdx)), ...
+    double(state.QueueSINR_dB(linearIdx)), ...
+    double(state.QueueCQI(linearIdx)), ...
+    string(state.QueueSource(linearIdx)), ...
+    string(state.QueueValueRole(linearIdx)), ...
+    string(state.QueueValueStatus(linearIdx)), ...
+    string(state.QueueMeasurementID(linearIdx)), ...
+    'VariableNames', {'Direction','UE','SourceTTI','AvailableTTI', ...
+    'FeedbackDelaySlots','MeasurementCount','PostEqSINR_dB','WidebandCQI', ...
+    'PostEqSINRSource','ValueRole','ValueStatus','MeasurementID'});
+end
+
 function mcs = localResolveGrantMCSIndex(cfg, grant, cqiUsed, direction)
 if isfield(grant, "MCSIndex") && ~isempty(grant.MCSIndex) && isfinite(double(grant.MCSIndex))
     mcs = double(grant.MCSIndex);
@@ -2827,11 +3079,14 @@ trace.NumSymbols = zeros(cap,1);
 trace.TBSBits = zeros(cap,1);
 trace.CQIUsed = zeros(cap,1);
 trace.MCSIndex = zeros(cap,1);
+trace.Modulation = strings(cap,1);
 trace.NumLayers = zeros(cap,1);
 trace.TargetCodeRate = zeros(cap,1);
 trace.AMCMode = strings(cap,1);
 trace.MCSTable = strings(cap,1);
 trace.CQITable = strings(cap,1);
+trace.InnerLoopEnabled = false(cap,1);
+trace.InnerLoopApplied = false(cap,1);
 trace.OuterLoopEnabled = false(cap,1);
 trace.OuterLoopApplied = false(cap,1);
 trace.OLLADeltaDb = NaN(cap,1);
@@ -2843,10 +3098,19 @@ trace.OLLABaseRequiredSINR_dB = NaN(cap,1);
 trace.OLLATargetRequiredSINR_dB = NaN(cap,1);
 trace.OLLAThresholdSource = strings(cap,1);
 trace.OLLAUpdateCount = NaN(cap,1);
+trace.OLLAStateAuthority = strings(cap,1);
 trace.OLLAState = strings(cap,1);
 trace.MCSSelectionSource = strings(cap,1);
 trace.CQIProvenance = strings(cap,1);
 trace.MCSValueStatus = strings(cap,1);
+trace.CausalFeedbackUsable = false(cap,1);
+trace.CausalFeedbackStatus = strings(cap,1);
+trace.FeedbackAgeSlots = NaN(cap,1);
+trace.FeedbackAgeSeconds = NaN(cap,1);
+trace.SchedulerCQIRawCQI = NaN(cap,1);
+trace.SchedulerAdjustedSINR_dB = NaN(cap,1);
+trace.SchedulerSINRBackoff_dB = NaN(cap,1);
+trace.SchedulerCQISource = strings(cap,1);
 trace.RankSelectionPolicy = strings(cap,1);
 trace.RankSelectionSource = strings(cap,1);
 trace.RankDecisionReason = strings(cap,1);
@@ -2898,6 +3162,17 @@ trace.PostEqSINRValueRole = strings(cap,1);
 trace.PostEqSINRValueStatus = strings(cap,1);
 trace.PostEqSINRNAReason = strings(cap,1);
 trace.PostEqSINRPerLayer_dB = strings(cap,1);
+trace.NoiseVariance = NaN(cap,1);
+trace.PreEqualizationNoiseVariance = NaN(cap,1);
+trace.PostEqualizationNoiseVariance = NaN(cap,1);
+trace.LLRNoiseVariance = NaN(cap,1);
+trace.EVM_rms = NaN(cap,1);
+trace.EVMProxySINR_dB = NaN(cap,1);
+trace.StrictReceiverEvidenceOk = false(cap,1);
+trace.StrictOk = false(cap,1);
+trace.TruthStatus = strings(cap,1);
+trace.ExecutionBackend = strings(cap,1);
+trace.ApproximationMode = strings(cap,1);
 trace.DecoderIterations = NaN(cap,1);
 trace.ChannelEstimateAvailable = false(cap,1);
 trace.EqualizationAvailable = false(cap,1);
@@ -3085,11 +3360,14 @@ trace.NumSymbols(i) = double(symAlloc(2));
 trace.TBSBits(i) = double(tbsBits);
 trace.CQIUsed(i) = double(cqiUsed);
 trace.MCSIndex(i) = double(mcsIdx);
+trace.Modulation(i) = string(sixgr.util.structGet(grant, "Modulation", ""));
 trace.NumLayers(i) = double(numLayers);
 trace.TargetCodeRate(i) = double(targetCodeRate);
 trace.AMCMode(i) = string(sixgr.util.structGet(grant, "AMCMode", ""));
 trace.MCSTable(i) = string(sixgr.util.structGet(grant, "MCSTable", ""));
 trace.CQITable(i) = string(sixgr.util.structGet(grant, "CQITable", ""));
+trace.InnerLoopEnabled(i) = logical(sixgr.util.structGet(grant, "InnerLoopEnabled", false));
+trace.InnerLoopApplied(i) = logical(sixgr.util.structGet(grant, "InnerLoopApplied", false));
 trace.OuterLoopEnabled(i) = logical(sixgr.util.structGet(grant, "OuterLoopEnabled", false));
 trace.OuterLoopApplied(i) = logical(sixgr.util.structGet(grant, "OuterLoopApplied", false));
 trace.OLLADeltaDb(i) = double(sixgr.util.structGet(grant, "OLLADeltaDb", ...
@@ -3102,10 +3380,19 @@ trace.OLLABaseRequiredSINR_dB(i) = double(sixgr.util.structGet(grant, "OLLABaseR
 trace.OLLATargetRequiredSINR_dB(i) = double(sixgr.util.structGet(grant, "OLLATargetRequiredSINR_dB", NaN));
 trace.OLLAThresholdSource(i) = string(sixgr.util.structGet(grant, "OLLAThresholdSource", ""));
 trace.OLLAUpdateCount(i) = double(sixgr.util.structGet(grant, "OLLAUpdateCount", NaN));
+trace.OLLAStateAuthority(i) = string(sixgr.util.structGet(grant, "OLLAStateAuthority", ""));
 trace.OLLAState(i) = string(sixgr.util.structGet(grant, "OLLAState", ""));
 trace.MCSSelectionSource(i) = string(sixgr.util.structGet(grant, "MCSSelectionSource", ""));
 trace.CQIProvenance(i) = string(sixgr.util.structGet(grant, "CQIProvenance", ""));
 trace.MCSValueStatus(i) = string(sixgr.util.structGet(grant, "MCSValueStatus", ""));
+trace.CausalFeedbackUsable(i) = logical(sixgr.util.structGet(grant, "CausalFeedbackUsable", false));
+trace.CausalFeedbackStatus(i) = string(sixgr.util.structGet(grant, "CausalFeedbackStatus", ""));
+trace.FeedbackAgeSlots(i) = double(sixgr.util.structGet(grant, "FeedbackAgeSlots", NaN));
+trace.FeedbackAgeSeconds(i) = double(sixgr.util.structGet(grant, "FeedbackAgeSeconds", NaN));
+trace.SchedulerCQIRawCQI(i) = double(sixgr.util.structGet(grant, "SchedulerCQIRawCQI", NaN));
+trace.SchedulerAdjustedSINR_dB(i) = double(sixgr.util.structGet(grant, "SchedulerAdjustedSINR_dB", NaN));
+trace.SchedulerSINRBackoff_dB(i) = double(sixgr.util.structGet(grant, "SchedulerSINRBackoff_dB", NaN));
+trace.SchedulerCQISource(i) = string(sixgr.util.structGet(grant, "SchedulerCQISource", ""));
 trace.RankSelectionPolicy(i) = string(sixgr.util.structGet(grant, "RankSelectionPolicy", ""));
 trace.RankSelectionSource(i) = string(sixgr.util.structGet(grant, "RankSelectionSource", ""));
 trace.RankDecisionReason(i) = string(sixgr.util.structGet(grant, "RankDecisionReason", ""));
@@ -3162,6 +3449,17 @@ trace.PostEqSINRValueRole(i) = string(sixgr.util.structGet(replay, "PostEqSINRVa
 trace.PostEqSINRValueStatus(i) = string(sixgr.util.structGet(replay, "PostEqSINRValueStatus", ""));
 trace.PostEqSINRNAReason(i) = string(sixgr.util.structGet(replay, "PostEqSINRNAReason", ""));
 trace.PostEqSINRPerLayer_dB(i) = localFormatNumericVector(sixgr.util.structGet(replay, "PostEqSINRPerLayer_dB", NaN));
+trace.NoiseVariance(i) = double(sixgr.util.structGet(replay, "NoiseVariance", NaN));
+trace.PreEqualizationNoiseVariance(i) = double(sixgr.util.structGet(replay, "PreEqualizationNoiseVariance", NaN));
+trace.PostEqualizationNoiseVariance(i) = double(sixgr.util.structGet(replay, "PostEqualizationNoiseVariance", NaN));
+trace.LLRNoiseVariance(i) = double(sixgr.util.structGet(replay, "LLRNoiseVariance", NaN));
+trace.EVM_rms(i) = double(sixgr.util.structGet(replay, "EVM_rms", NaN));
+trace.EVMProxySINR_dB(i) = double(sixgr.util.structGet(replay, "EVMProxySINR_dB", NaN));
+trace.StrictReceiverEvidenceOk(i) = logical(sixgr.util.structGet(replay, "StrictReceiverEvidenceOk", false));
+trace.StrictOk(i) = logical(sixgr.util.structGet(replay, "StrictOk", false));
+trace.TruthStatus(i) = string(sixgr.util.structGet(replay, "TruthStatus", ""));
+trace.ExecutionBackend(i) = string(sixgr.util.structGet(replay, "ExecutionBackend", ""));
+trace.ApproximationMode(i) = string(sixgr.util.structGet(replay, "ApproximationMode", "none"));
 trace.DecoderIterations(i) = double(sixgr.util.structGet(replay, "DecoderIterations", NaN));
 trace = localAssignMeasuredPHYEvidenceTrace(trace, i, replay);
 trace.ChannelEstimateAvailable(i) = logical(sixgr.util.structGet(replay, "ChannelEstimateAvailable", false));
@@ -3311,6 +3609,9 @@ n = height(T);
 T.AMCMode = localTraceString(trace, "AMCMode", idx, n, "");
 T.MCSTable = localTraceString(trace, "MCSTable", idx, n, "");
 T.CQITable = localTraceString(trace, "CQITable", idx, n, "");
+T.Modulation = localTraceString(trace, "Modulation", idx, n, "");
+T.InnerLoopEnabled = localTraceLogical(trace, "InnerLoopEnabled", idx, n, false);
+T.InnerLoopApplied = localTraceLogical(trace, "InnerLoopApplied", idx, n, false);
 T.OuterLoopEnabled = localTraceLogical(trace, "OuterLoopEnabled", idx, n, false);
 T.OuterLoopApplied = localTraceLogical(trace, "OuterLoopApplied", idx, n, false);
 T.OLLADeltaDb = localTraceNumeric(trace, "OLLADeltaDb", idx, n, NaN);
@@ -3322,10 +3623,19 @@ T.OLLABaseRequiredSINR_dB = localTraceNumeric(trace, "OLLABaseRequiredSINR_dB", 
 T.OLLATargetRequiredSINR_dB = localTraceNumeric(trace, "OLLATargetRequiredSINR_dB", idx, n, NaN);
 T.OLLAThresholdSource = localTraceString(trace, "OLLAThresholdSource", idx, n, "");
 T.OLLAUpdateCount = localTraceNumeric(trace, "OLLAUpdateCount", idx, n, NaN);
+T.OLLAStateAuthority = localTraceString(trace, "OLLAStateAuthority", idx, n, "");
 T.OLLAState = localTraceString(trace, "OLLAState", idx, n, "");
 T.MCSSelectionSource = localTraceString(trace, "MCSSelectionSource", idx, n, "");
 T.CQIProvenance = localTraceString(trace, "CQIProvenance", idx, n, "");
 T.MCSValueStatus = localTraceString(trace, "MCSValueStatus", idx, n, "");
+T.CausalFeedbackUsable = localTraceLogical(trace, "CausalFeedbackUsable", idx, n, false);
+T.CausalFeedbackStatus = localTraceString(trace, "CausalFeedbackStatus", idx, n, "");
+T.FeedbackAgeSlots = localTraceNumeric(trace, "FeedbackAgeSlots", idx, n, NaN);
+T.FeedbackAgeSeconds = localTraceNumeric(trace, "FeedbackAgeSeconds", idx, n, NaN);
+T.SchedulerCQIRawCQI = localTraceNumeric(trace, "SchedulerCQIRawCQI", idx, n, NaN);
+T.SchedulerAdjustedSINR_dB = localTraceNumeric(trace, "SchedulerAdjustedSINR_dB", idx, n, NaN);
+T.SchedulerSINRBackoff_dB = localTraceNumeric(trace, "SchedulerSINRBackoff_dB", idx, n, NaN);
+T.SchedulerCQISource = localTraceString(trace, "SchedulerCQISource", idx, n, "");
 T.RankSelectionPolicy = localTraceString(trace, "RankSelectionPolicy", idx, n, "");
 T.RankSelectionSource = localTraceString(trace, "RankSelectionSource", idx, n, "");
 T.RankDecisionReason = localTraceString(trace, "RankDecisionReason", idx, n, "");
@@ -3353,6 +3663,17 @@ T.PostEqSINRValueRole = localTraceString(trace, "PostEqSINRValueRole", idx, n, "
 T.PostEqSINRValueStatus = localTraceString(trace, "PostEqSINRValueStatus", idx, n, "");
 T.PostEqSINRNAReason = localTraceString(trace, "PostEqSINRNAReason", idx, n, "");
 T.PostEqSINRPerLayer_dB = localTraceString(trace, "PostEqSINRPerLayer_dB", idx, n, "");
+T.NoiseVariance = localTraceNumeric(trace, "NoiseVariance", idx, n, NaN);
+T.PreEqualizationNoiseVariance = localTraceNumeric(trace, "PreEqualizationNoiseVariance", idx, n, NaN);
+T.PostEqualizationNoiseVariance = localTraceNumeric(trace, "PostEqualizationNoiseVariance", idx, n, NaN);
+T.LLRNoiseVariance = localTraceNumeric(trace, "LLRNoiseVariance", idx, n, NaN);
+T.EVM_rms = localTraceNumeric(trace, "EVM_rms", idx, n, NaN);
+T.EVMProxySINR_dB = localTraceNumeric(trace, "EVMProxySINR_dB", idx, n, NaN);
+T.StrictReceiverEvidenceOk = localTraceLogical(trace, "StrictReceiverEvidenceOk", idx, n, false);
+T.StrictOk = localTraceLogical(trace, "StrictOk", idx, n, false);
+T.TruthStatus = localTraceString(trace, "TruthStatus", idx, n, "");
+T.ExecutionBackend = localTraceString(trace, "ExecutionBackend", idx, n, "");
+T.ApproximationMode = localTraceString(trace, "ApproximationMode", idx, n, "none");
 T.DecoderIterations = localTraceNumeric(trace, "DecoderIterations", idx, n, NaN);
 T = localAttachMeasuredPHYEvidenceTraceColumns(T, trace, idx);
 T.ChannelEstimateAvailable = localTraceLogical(trace, "ChannelEstimateAvailable", idx, n, false);

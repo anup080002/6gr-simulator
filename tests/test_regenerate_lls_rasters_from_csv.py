@@ -374,6 +374,100 @@ def test_frc_reference_raster_rejects_proxy_rows(tmp_path: Path) -> None:
         MODULE.materialize_frc_reference_rasters(run)
 
 
+def test_declared_report_raster_is_rebuilt_from_exact_csv_and_lineage(
+    tmp_path: Path,
+) -> None:
+    from PIL import Image
+
+    run = tmp_path / "scenario" / "run"
+    MODULE.write_csv(
+        run / "reports/csv/lls_output_metric_rows.csv",
+        [{
+            "Availability": "derived",
+            "CountsTowardCoverage": "1",
+            "ValueText": "reports/image/latency_cdf.png",
+            "SourceArtifact": "reports/image/latency_cdf.png",
+        }],
+        ["Availability", "CountsTowardCoverage", "ValueText", "SourceArtifact"],
+    )
+    source = run / "reports/csv/latency_cdf_plot.csv"
+    MODULE.write_csv(
+        source,
+        [
+            {"latency_ms": "1", "cdf_probability": "0.25"},
+            {"latency_ms": "2", "cdf_probability": "0.50"},
+            {"latency_ms": "3", "cdf_probability": "0.75"},
+            {"latency_ms": "4", "cdf_probability": "1.00"},
+        ],
+        ["latency_ms", "cdf_probability"],
+    )
+    MODULE.write_csv(
+        run / "reports/csv/plot_manifest.csv",
+        [{
+            "PlotId": "latency_cdf",
+            "PlotRenderStatus": "suppressed",
+            "PlotSuppressionReason": "removed_by_csv_authority_raster_replacement",
+            "IsUnavailableCard": "0",
+            "CountsAsRealPlot": "0",
+            "VisualValidity": "unavailable",
+            "WarningBannerText": "",
+            "actual_mime_type": "missing",
+            "declared_mime_type": "image/png",
+            "extension": ".png",
+            "sha256": "",
+            "byte_count": "0",
+        }],
+        [
+            "PlotId", "PlotRenderStatus", "PlotSuppressionReason",
+            "IsUnavailableCard", "CountsAsRealPlot", "VisualValidity",
+            "WarningBannerText", "actual_mime_type", "declared_mime_type",
+            "extension", "sha256", "byte_count",
+        ],
+    )
+
+    generated = MODULE.materialize_declared_report_rasters(
+        run, seal_lineage=True
+    )
+
+    assert len(generated) == 1
+    image_path = run / "reports/image/latency_cdf.png"
+    with Image.open(image_path) as image:
+        image.load()
+        assert image.format == "PNG"
+        assert image.size == (1280, 720)
+    assert generated[0]["source_sha256"] == MODULE.sha256(source)
+    assert generated[0]["image_sha256"] == MODULE.sha256(image_path)
+    plot_row = MODULE.read_csv(run / "reports/csv/plot_manifest.csv")[0]
+    assert plot_row["PlotRenderStatus"] == "rendered_real_plot"
+    assert plot_row["CountsAsRealPlot"] == "1"
+    assert plot_row["VisualValidity"] == "real_lls_evidence"
+    lineage = MODULE.read_csv(
+        run / "reports/csv/contract_plot_lineage.csv"
+    )[0]
+    assert lineage["PlotId"] == "report__latency_cdf"
+    assert lineage["SourceCSV_SHA256"] == MODULE.sha256(source)
+    assert lineage["ImageSHA256"] == MODULE.sha256(image_path)
+    assert lineage["Status"] == "pass"
+
+
+def test_declared_report_raster_fails_when_counting_source_is_missing(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "scenario" / "run"
+    MODULE.write_csv(
+        run / "reports/csv/lls_output_metric_rows.csv",
+        [{
+            "Availability": "derived",
+            "CountsTowardCoverage": "1",
+            "ValueText": "reports/image/latency_cdf.png",
+            "SourceArtifact": "reports/image/latency_cdf.png",
+        }],
+        ["Availability", "CountsTowardCoverage", "ValueText", "SourceArtifact"],
+    )
+    with pytest.raises(RuntimeError, match="missing CSV source"):
+        MODULE.materialize_declared_report_rasters(run)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows MAX_PATH regression")
 def test_long_path_raster_inventory_and_lineage_reconciliation(tmp_path: Path) -> None:
     run = tmp_path / "scenario" / "run"

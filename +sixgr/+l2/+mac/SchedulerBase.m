@@ -226,6 +226,7 @@ classdef (Abstract) SchedulerBase < handle
                 rvList = nan(height(rxFeedback), 1);
                 isRetxList = false(height(rxFeedback), 1);
                 isRetxKnownList = false(height(rxFeedback), 1);
+                ollaAuthorityList = repmat("scheduler_local_state", height(rxFeedback), 1);
                 sourceSlotList = nan(height(rxFeedback), 1);
                 if ismember("HarqID", string(rxFeedback.Properties.VariableNames))
                     harqIdList = rxFeedback.HarqID;
@@ -240,6 +241,9 @@ classdef (Abstract) SchedulerBase < handle
                 if ismember("IsRetransmission", string(rxFeedback.Properties.VariableNames))
                     isRetxList = logical(rxFeedback.IsRetransmission);
                     isRetxKnownList = true(height(rxFeedback), 1);
+                end
+                if ismember("OLLAStateAuthority", string(rxFeedback.Properties.VariableNames))
+                    ollaAuthorityList = string(rxFeedback.OLLAStateAuthority);
                 end
                 if ismember("SourceSlot", string(rxFeedback.Properties.VariableNames))
                     sourceSlotList = double(rxFeedback.SourceSlot);
@@ -262,6 +266,7 @@ classdef (Abstract) SchedulerBase < handle
                 rvList = nan(numel(rntiList), 1);
                 isRetxList = false(numel(rntiList), 1);
                 isRetxKnownList = false(numel(rntiList), 1);
+                ollaAuthorityList = repmat("scheduler_local_state", numel(rntiList), 1);
                 sourceSlotList = nan(numel(rntiList), 1);
                 for ii = 1:numel(rntiList)
                     if isfield(rxFeedback(ii), "HarqID") && ~isempty(rxFeedback(ii).HarqID)
@@ -284,6 +289,10 @@ classdef (Abstract) SchedulerBase < handle
                         isRetxList(ii) = logical(rxFeedback(ii).HARQ.IsRetransmission);
                         isRetxKnownList(ii) = true;
                     end
+                    if isfield(rxFeedback(ii), "OLLAStateAuthority") && ...
+                            ~isempty(rxFeedback(ii).OLLAStateAuthority)
+                        ollaAuthorityList(ii) = string(rxFeedback(ii).OLLAStateAuthority);
+                    end
                     if isfield(rxFeedback(ii), "SourceSlot") && ~isempty(rxFeedback(ii).SourceSlot)
                         sourceSlotList(ii) = double(rxFeedback(ii).SourceSlot);
                     elseif isfield(rxFeedback(ii), "Slot") && ~isempty(rxFeedback(ii).Slot)
@@ -297,7 +306,8 @@ classdef (Abstract) SchedulerBase < handle
                 tbsBits = double(tbsList(k));
                 ack = logical(ackList(k));
                 obj.updateAvgThroughput(rnti, tbsBits, ack);
-                if localFeedbackEligibleForOLLA(isRetxKnownList(k), isRetxList(k), rvList(k))
+                if ~localOLLAIsExternallyManaged(ollaAuthorityList(k)) && ...
+                        localFeedbackEligibleForOLLA(isRetxKnownList(k), isRetxList(k), rvList(k))
                     obj.updateOLLADelta(rnti, ack);
                 end
                 if ~isempty(obj.HARQ)
@@ -542,6 +552,8 @@ classdef (Abstract) SchedulerBase < handle
                 "CQIUsed", double(cqiRaw), ...
                 "MCSIndex", NaN, ...
                 "MCSProfile", sixgr.link.resolveMCSProfile(mcsTable, -1), ...
+                "InnerLoopEnabled", logical(localSchedulerInnerLoopEnabled(obj.Cfg, dir)), ...
+                "InnerLoopApplied", false, ...
                 "OuterLoopEnabled", logical(localSchedulerOLLAEnabled(obj.Cfg)), ...
                 "OuterLoopApplied", false, ...
                 "OLLADeltaDb", 0, ...
@@ -553,6 +565,7 @@ classdef (Abstract) SchedulerBase < handle
                 "OLLATargetRequiredSINR_dB", NaN, ...
                 "OLLAThresholdSource", "", ...
                 "OLLAUpdateCount", 0, ...
+                "OLLAStateAuthority", "scheduler_local_state", ...
                 "OLLAState", "not_applicable", ...
                 "MCSSelectionSource", "configured_profile", ...
                 "CQIProvenance", "unavailable", ...
@@ -616,6 +629,15 @@ classdef (Abstract) SchedulerBase < handle
                 if ~logical(causalFeedbackUsable)
                     cqiDecision = struct("Valid", false);
                     amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, causalFeedbackStatus);
+                elseif isfinite(double(cqiRaw)) && double(cqiRaw) == 0
+                    % TS 38.214 CQI index 0 is an explicit out-of-range
+                    % report.  It is receiver feedback, not missing CSI,
+                    % and therefore must never reopen the conservative
+                    % first-transmission bootstrap path.
+                    cqiDecision = struct("Valid", false);
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, ...
+                        "measured_cqi_zero_out_of_range");
+                    amc.InnerLoopApplied = true;
                 elseif ~(isfinite(double(cqiRaw)) && cqiRaw > 0)
                     cqiDecision = struct("Valid", false);
                     amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_runtime_cqi");
@@ -636,6 +658,7 @@ classdef (Abstract) SchedulerBase < handle
                         amc.MCSValueStatus = "measured_cqi_mapped";
                     end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
+                    amc.InnerLoopApplied = logical(feedbackValid && ~isBootstrapCQI);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 else
@@ -644,7 +667,10 @@ classdef (Abstract) SchedulerBase < handle
                     % Conservative scenarios can still request a labeled
                     % bootstrap MCS. Measured-only scenarios fail closed and
                     % block the grant until runtime CQI evidence arrives.
-                    if logical(causalFeedbackUsable)
+                    if localAMCBlocksGrant(amc)
+                        % Preserve an explicit measured-CQI-0 outage (or
+                        % another typed block) selected above.
+                    elseif logical(causalFeedbackUsable)
                         amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "missing_or_invalid_runtime_cqi");
                     else
                         amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, causalFeedbackStatus);
@@ -666,6 +692,11 @@ classdef (Abstract) SchedulerBase < handle
                 if ~logical(causalFeedbackUsable)
                     cqiDecision = struct("Valid", false);
                     amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, causalFeedbackStatus);
+                elseif double(cqiRaw) == 0
+                    cqiDecision = struct("Valid", false);
+                    amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, ...
+                        "measured_cqi_zero_out_of_range");
+                    amc.InnerLoopApplied = true;
                 elseif cqiRaw <= 0
                     cqiDecision = struct("Valid", false);
                     amc = localMarkMissingRuntimeCQI(amc, obj.Cfg, "invalid_runtime_cqi");
@@ -686,8 +717,11 @@ classdef (Abstract) SchedulerBase < handle
                         amc.MCSValueStatus = "measured_cqi_mapped";
                     end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
+                    amc.InnerLoopApplied = logical(feedbackValid && ~isBootstrapCQI);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
+                elseif localAMCBlocksGrant(amc)
+                    % Preserve explicit outage/missing-feedback blockers.
                 end
             end
 
@@ -1042,6 +1076,8 @@ classdef (Abstract) SchedulerBase < handle
                 "DeltaMCS", double(sixgr.util.structGet(amc, "DeltaMCS", NaN)), ...
                 "StaticDeltaMCS", double(sixgr.util.structGet(amc, "StaticDeltaMCS", 0)), ...
                 "AMCMode", char(string(amc.Mode)), ...
+                "InnerLoopEnabled", logical(sixgr.util.structGet(amc, "InnerLoopEnabled", false)), ...
+                "InnerLoopApplied", logical(sixgr.util.structGet(amc, "InnerLoopApplied", false)), ...
                 "OuterLoopEnabled", logical(sixgr.util.structGet(amc, "OuterLoopEnabled", false)), ...
                 "OuterLoopApplied", logical(sixgr.util.structGet(amc, "OuterLoopApplied", false)), ...
                 "OLLADeltaDb", double(sixgr.util.structGet(amc, "OLLADeltaDb", sixgr.util.structGet(amc, "OLLADeltaMCS", 0))), ...
@@ -1053,6 +1089,8 @@ classdef (Abstract) SchedulerBase < handle
                 "OLLATargetRequiredSINR_dB", double(sixgr.util.structGet(amc, "OLLATargetRequiredSINR_dB", NaN)), ...
                 "OLLAThresholdSource", char(string(sixgr.util.structGet(amc, "OLLAThresholdSource", ""))), ...
                 "OLLAUpdateCount", double(sixgr.util.structGet(amc, "OLLAUpdateCount", 0)), ...
+                "OLLAStateAuthority", char(string(sixgr.util.structGet(amc, ...
+                    "OLLAStateAuthority", "scheduler_local_state"))), ...
                 "OLLAState", char(string(sixgr.util.structGet(amc, "OLLAState", ""))), ...
                 "MCSSelectionSource", char(string(sixgr.util.structGet(amc, "MCSSelectionSource", ""))), ...
                 "CQIProvenance", char(string(sixgr.util.structGet(amc, "CQIProvenance", ""))), ...
@@ -2283,17 +2321,22 @@ end
 function amc = localMarkMissingRuntimeCQI(amc, cfg, provenance)
 amc.CausalFeedbackUsable = false;
 amc.CausalFeedbackStatus = char(string(provenance));
-if localSchedulerRequiresMeasuredCQI(cfg) || localBootstrapAdmissionRejected(provenance)
+if localSchedulerRequiresMeasuredCQI(cfg) || localBootstrapAdmissionRejected(provenance) || ...
+        localMeasuredCQIOutOfRange(provenance)
     amc.Mode = "cqi_required_no_runtime_feedback";
     amc.MCSIndex = NaN;
     amc.MCSProfile = sixgr.link.resolveMCSProfile(char(string(amc.MCSTable)), -1);
-    if localBootstrapAdmissionRejected(provenance)
+    if localMeasuredCQIOutOfRange(provenance)
+        amc.MCSSelectionSource = "blocked_measured_cqi_zero_out_of_range";
+        amc.MCSValueStatus = "unavailable_measured_cqi_zero_out_of_range";
+    elseif localBootstrapAdmissionRejected(provenance)
         amc.MCSSelectionSource = "blocked_bootstrap_cqi_below_configured_floor";
+        amc.MCSValueStatus = "unavailable_missing_runtime_cqi";
     else
         amc.MCSSelectionSource = "blocked_missing_runtime_cqi";
+        amc.MCSValueStatus = "unavailable_missing_runtime_cqi";
     end
     amc.CQIProvenance = char(string(provenance));
-    amc.MCSValueStatus = "unavailable_missing_runtime_cqi";
 else
     amc.Mode = "bootstrap_cqi_conservative";
     amc.MCSIndex = localResolveBootstrapMCSIndex(cfg);
@@ -2302,6 +2345,12 @@ else
     amc.CQIProvenance = char(string(provenance));
     amc.MCSValueStatus = "bootstrap_not_measured_cqi";
 end
+end
+
+function tf = localMeasuredCQIOutOfRange(provenance)
+token = lower(strtrim(string(provenance)));
+tf = token == "measured_cqi_zero_out_of_range" || ...
+    contains(token, "measured_cqi_zero_out_of_range");
 end
 
 function tf = localBootstrapAdmissionRejected(provenance)
@@ -2319,30 +2368,25 @@ end
 
 function tf = localAMCBlocksGrant(amc)
 tf = strcmpi(char(string(sixgr.util.structGet(amc, "Mode", ""))), "cqi_required_no_runtime_feedback") || ...
-    strcmpi(char(string(sixgr.util.structGet(amc, "MCSValueStatus", ""))), "unavailable_missing_runtime_cqi");
+    ismember(lower(strtrim(string(sixgr.util.structGet(amc, "MCSValueStatus", "")))), ...
+        ["unavailable_missing_runtime_cqi","unavailable_measured_cqi_zero_out_of_range"]);
 end
 
 function reason = localAMCBlockerReason(amc)
 if localAMCBlocksGrant(amc)
-    reason = "blocked_until_runtime_cqi_feedback";
+    if localMeasuredCQIOutOfRange(sixgr.util.structGet(amc, "CausalFeedbackStatus", ""))
+        reason = "blocked_measured_cqi_zero_out_of_range";
+    else
+        reason = "blocked_until_runtime_cqi_feedback";
+    end
 else
     reason = "";
 end
 end
 
 function tf = localSchedulerOLLAEnabled(cfg)
-mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed"))));
-dlPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.dlPolicy", ""))));
-ulPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.ulPolicy", ""))));
-deltaPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSPolicy", ""))));
-outerFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false));
-fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false",""];
-policyUnspecified = strlength(dlPolicy) == 0 && strlength(ulPolicy) == 0;
-policyEnabled = ~ismember(mode, fixedTokens) && (policyUnspecified || ~ismember(dlPolicy, fixedTokens) || ~ismember(ulPolicy, fixedTokens));
-if any(deltaPolicy == ["","baseline","default","auto"]) && outerFlag && policyEnabled
-    deltaPolicy = "ack_nack_olla";
-end
-tf = outerFlag && policyEnabled && any(deltaPolicy == ["olla","outer_loop","outerloop","ack_nack","ack_nack_olla"]);
+policy = sixgr.link.resolveOLLAConfig(cfg);
+tf = logical(policy.Enabled);
 end
 
 function tf = localFeedbackEligibleForOLLA(isRetxKnown, isRetx, rv)
@@ -2360,42 +2404,44 @@ if isfinite(rv) && round(rv) ~= 0
 end
 end
 
+function tf = localOLLAIsExternallyManaged(authority)
+authority = lower(strtrim(string(authority)));
+tf = any(authority == ["receiver_harq_feedback_state", ...
+    "external_receiver_feedback_state"]);
+end
+
 function step = localSchedulerOLLAStep(cfg, direction)
+policy = sixgr.link.resolveOLLAConfig(cfg);
 direction = lower(strtrim(string(direction)));
 if direction == "up"
-    step = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaStepUp", ...
-        sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_step_up_db", ...
-        sixgr.util.structGet(cfg, "link_adaptation.olla_step_up_db", 0.1))));
+    step = double(policy.StepUpDb);
 else
-    step = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaStepDown", ...
-        sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_step_down_db", ...
-        sixgr.util.structGet(cfg, "link_adaptation.olla_step_down_db", 0.9))));
+    step = double(policy.StepDownDb);
 end
-if ~(isscalar(step) && isfinite(step) && step >= 0)
-    step = 0;
 end
+
+function tf = localSchedulerInnerLoopEnabled(cfg, direction)
+mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed"))));
+if upper(string(direction)) == "UL"
+    policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+        "phy.linkAdaptation.ulPolicy", ""))));
+else
+    policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+        "phy.linkAdaptation.dlPolicy", ""))));
+end
+flag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", true));
+fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none","false",""];
+tf = flag && ~ismember(mode, fixedTokens) && ~ismember(policy, fixedTokens);
 end
 
 function value = localSchedulerOLLADeltaMin(cfg)
-value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMinDb", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_min_db", ...
-    sixgr.util.structGet(cfg, "link_adaptation.olla_margin_min_db", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMin", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaDeltaMCSMin", -10))))));
-if ~(isscalar(value) && isfinite(value))
-    value = -10;
-end
+policy = sixgr.link.resolveOLLAConfig(cfg);
+value = double(policy.MinimumOffsetDb);
 end
 
 function value = localSchedulerOLLADeltaMax(cfg)
-value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_max_db", ...
-    sixgr.util.structGet(cfg, "link_adaptation.olla_margin_max_db", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMax", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaDeltaMCSMax", 10))))));
-if ~(isscalar(value) && isfinite(value))
-    value = 10;
-end
+policy = sixgr.link.resolveOLLAConfig(cfg);
+value = double(policy.MaximumOffsetDb);
 end
 
 function symAlloc = localDefaultSymbolAllocation(cfg, direction, symbolsPerSlot)

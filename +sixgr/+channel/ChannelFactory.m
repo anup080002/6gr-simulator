@@ -244,6 +244,10 @@ classdef ChannelFactory
                 meta.CDLDelayProfileAfterLOSGating = string(sixgr.util.structGet(arrayRuntimeMeta, "CDLDelayProfileAfterLOSGating", ""));
                 meta.CDLLOSDraw = double(sixgr.util.structGet(arrayRuntimeMeta, "CDLLOSDraw", NaN));
                 meta.RuntimeArrayGeometryCoupled = logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false));
+                meta.TransmitElementPatternApplied = logical(sixgr.util.structGet(arrayRuntimeMeta, "TransmitElementPatternApplied", false));
+                meta.ReceiveElementPatternApplied = logical(sixgr.util.structGet(arrayRuntimeMeta, "ReceiveElementPatternApplied", false));
+                meta.TransmitElementPatternSource = string(sixgr.util.structGet(arrayRuntimeMeta, "TransmitElementPatternSource", ""));
+                meta.ReceiveElementPatternSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ReceiveElementPatternSource", ""));
                 if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeArrayGeometryCoupled", false))
                     meta.ChannelArrayModel = "nrcdl_runtime_array_geometry_channel";
                     meta.ChannelArrayHandlingStatus = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelArrayHandlingStatus", "runtime_array_shape_spacing_orientation_coupled"));
@@ -1797,10 +1801,24 @@ classdef ChannelFactory
                 sixgr.util.structGet(cfg, "antenna_and_array.ue_array_geometry", "ula"), ...
                 sixgr.util.structGet(cfg, "antenna_and_array.polarization", ""), ...
                 opt.ReceiveAntennaRuntime, opt.ReceiveAntennaMeta);
-            arrayRuntimeMeta.TransmitAntennaArraySize = mat2str(double(cdl.TransmitAntennaArray.Size));
-            arrayRuntimeMeta.ReceiveAntennaArraySize = mat2str(double(cdl.ReceiveAntennaArray.Size));
-            arrayRuntimeMeta.TransmitAntennaElementSpacing_lambda = mat2str(double(cdl.TransmitAntennaArray.ElementSpacing));
-            arrayRuntimeMeta.ReceiveAntennaElementSpacing_lambda = mat2str(double(cdl.ReceiveAntennaArray.ElementSpacing));
+            arrayRuntimeMeta.TransmitElementPatternApplied = logical( ...
+                sixgr.util.structGet(txArrayAdapterMeta, "ElementPatternApplied", false));
+            arrayRuntimeMeta.ReceiveElementPatternApplied = logical( ...
+                sixgr.util.structGet(rxArrayAdapterMeta, "ElementPatternApplied", false));
+            arrayRuntimeMeta.TransmitElementPatternSource = string( ...
+                sixgr.util.structGet(txArrayAdapterMeta, "ElementPatternSource", ""));
+            arrayRuntimeMeta.ReceiveElementPatternSource = string( ...
+                sixgr.util.structGet(rxArrayAdapterMeta, "ElementPatternSource", ""));
+            [txSize, txSpacing, txElementClass] = ...
+                sixgr.channel.ChannelFactory.localCDLArrayEvidence(cdl.TransmitAntennaArray, opt.Fc_Hz);
+            [rxSize, rxSpacing, rxElementClass] = ...
+                sixgr.channel.ChannelFactory.localCDLArrayEvidence(cdl.ReceiveAntennaArray, opt.Fc_Hz);
+            arrayRuntimeMeta.TransmitAntennaArraySize = mat2str(txSize);
+            arrayRuntimeMeta.ReceiveAntennaArraySize = mat2str(rxSize);
+            arrayRuntimeMeta.TransmitAntennaElementSpacing_lambda = mat2str(txSpacing);
+            arrayRuntimeMeta.ReceiveAntennaElementSpacing_lambda = mat2str(rxSpacing);
+            arrayRuntimeMeta.TransmitAntennaElementClass = txElementClass;
+            arrayRuntimeMeta.ReceiveAntennaElementClass = rxElementClass;
             if ~(txRuntimeCoupled && rxRuntimeCoupled)
                 arrayRuntimeMeta.RuntimeArrayGeometryCoupled = false;
                 arrayRuntimeMeta.RuntimeArrayGeometrySource = "ChannelFactory.configured_antenna_array_shape_to_nrCDLChannel";
@@ -1940,7 +1958,40 @@ classdef ChannelFactory
             if nargin < 6
                 runtimeMeta = struct();
             end
-            adapterMeta = struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports");
+            adapterMeta = struct("LogicalPortProjectionApplied", false, ...
+                "PortMapping", "runtime_array_shape_matches_channel_ports", ...
+                "ElementPatternApplied", false, ...
+                "ElementPatternSource", "");
+            requiredPattern = logical(sixgr.util.structGet(runtimeAntenna, ...
+                "RequireElementPatternInChannel", false));
+            runtimeArrayObject = sixgr.util.structGet(runtimeAntenna, "ArrayObj", []);
+            if ~isempty(runtimeArrayObject)
+                try
+                    runtimeElementCount = double(getNumElements(runtimeArrayObject));
+                catch ME
+                    if requiredPattern
+                        error("ChannelFactory:RequiredAntennaPatternInspectionFailed", ...
+                            "Required runtime phased-array element count cannot be inspected: %s", ME.message);
+                    end
+                    runtimeElementCount = NaN;
+                end
+                if isfinite(runtimeElementCount) && runtimeElementCount == round(double(numAnt))
+                    arr = runtimeArrayObject;
+                    usedRuntimeGeometry = true;
+                    adapterMeta.ElementPatternApplied = true;
+                    adapterMeta.ElementPatternSource = "AntennaArrayFactory.phased.NRRectangularPanelArray";
+                    adapterMeta.PortMapping = "runtime_phased_array_elements_match_channel_ports";
+                    return;
+                end
+                if requiredPattern
+                    error("ChannelFactory:RequiredAntennaPatternPortMismatch", ...
+                        "Required runtime phased array has %g elements but the CDL endpoint consumes %g physical ports.", ...
+                        runtimeElementCount, double(numAnt));
+                end
+            elseif requiredPattern
+                error("ChannelFactory:RequiredAntennaPatternObjectMissing", ...
+                    "The scenario requires an element pattern in the channel, but no phased array object reached ChannelFactory.");
+            end
             [runtimeSpec, usedRuntimeGeometry] = sixgr.channel.ChannelFactory.localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta, numAnt);
             if usedRuntimeGeometry
                 arr.Size = runtimeSpec.Size;
@@ -1948,6 +1999,8 @@ classdef ChannelFactory
                 arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
                     arr.PolarizationAngles, runtimeSpec.PolarizationCount);
                 adapterMeta = runtimeSpec.AdapterMeta;
+                adapterMeta.ElementPatternApplied = false;
+                adapterMeta.ElementPatternSource = "nrCDLChannel_struct_element_pattern";
                 return;
             end
             numAnt = max(1, round(double(numAnt)));
@@ -1958,6 +2011,41 @@ classdef ChannelFactory
                 double(arr.Size), 0.5, 0.5);
             arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
                 arr.PolarizationAngles, polCount);
+        end
+
+        function [sizeVec, spacingLambda, elementClass] = localCDLArrayEvidence(arr, fcHz)
+            sizeVec = NaN;
+            spacingLambda = NaN;
+            elementClass = "";
+            if isstruct(arr)
+                sizeVec = double(sixgr.util.structGet(arr, "Size", NaN));
+                spacingLambda = double(sixgr.util.structGet(arr, "ElementSpacing", NaN));
+                elementClass = string(sixgr.util.structGet(arr, "Element", ""));
+                return;
+            end
+            elementClass = string(class(arr));
+            try
+                sizeVec = double(arr.Size);
+            catch
+                try
+                    sizeVec = [double(getNumElements(arr)) 1 1 1 1];
+                catch
+                    sizeVec = NaN;
+                end
+            end
+            try
+                lambda = physconst("LightSpeed") ./ double(fcHz);
+                spacingLambda = double(arr.Spacing) ./ lambda;
+            catch
+                spacingLambda = NaN;
+            end
+            try
+                elementSet = arr.ElementSet;
+                if iscell(elementSet) && ~isempty(elementSet)
+                    elementClass = string(class(elementSet{1}));
+                end
+            catch
+            end
         end
 
         function [spec, valid] = localResolveRuntimeCDLArraySpec(runtimeAntenna, runtimeMeta, numAnt)
@@ -2059,11 +2147,25 @@ classdef ChannelFactory
                     sixgr.util.structGet(runtimeMeta, "Heading_deg", NaN)));
             end
             tilt = double(sixgr.util.structGet(runtimeMeta, "Tilt_deg", 0));
+            boresightAz = double(sixgr.util.structGet(runtimeMeta, "BoresightAzimuth_deg", 0));
+            boresightEl = double(sixgr.util.structGet(runtimeMeta, "BoresightElevation_deg", 0));
+            boresightSlant = double(sixgr.util.structGet(runtimeMeta, "BoresightSlant_deg", 0));
             if isfinite(az)
                 orientation(1) = az;
             end
             if isfinite(tilt)
                 orientation(2) = tilt;
+            end
+            if isfinite(boresightAz)
+                orientation(1) = orientation(1) + boresightAz;
+            end
+            % nrCDLChannel beta is positive mechanical downtilt, whereas
+            % boresight elevation is positive above the local horizon.
+            if isfinite(boresightEl)
+                orientation(2) = orientation(2) - boresightEl;
+            end
+            if isfinite(boresightSlant)
+                orientation(3) = boresightSlant;
             end
         end
 

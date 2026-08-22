@@ -165,6 +165,7 @@ for i = 1:numel(required)
 end
 
 function localValidateScenarioCompatibility(cfg, catalog, ctx)
+localValidateCausalPHYChainAudit(cfg, ctx);
 runnerProfile = lower(string(cfg.scenario.runner_profile));
 if ~ismember(runnerProfile, localCatalogAllowedStrings(catalog.sections.scenario.parameters.runner_profile))
     error("sixgr:lls6g:config:BadRunnerProfile", ...
@@ -438,6 +439,145 @@ if (ulWf == "DFT-S-OFDM") ~= transformEnabled
         ['waveform.ul_waveform=%s and transform_precoding_enabled=%d in %s ' ...
          'must describe the same UL waveform.'], ...
         char(ulWf), transformEnabled, localCtx(ctx));
+end
+
+function localValidateCausalPHYChainAudit(cfg, ctx)
+audit = sixgr.util.structGet(cfg, ...
+    "validation.causal_phy_chain_audit", struct());
+if ~(isstruct(audit) && isscalar(audit) && ~isempty(fieldnames(audit)))
+    return;
+end
+enabled = logical(sixgr.util.structGet(audit, "enabled", false));
+required = logical(sixgr.util.structGet(audit, "required", false));
+if required && ~enabled
+    error("sixgr:lls6g:config:CausalAuditRequiredButDisabled", ...
+        "validation.causal_phy_chain_audit in %s cannot be required and disabled.", ...
+        localCtx(ctx));
+end
+stages = localStructListItems(sixgr.util.structGet(audit, "stages", []), ...
+    "validation.causal_phy_chain_audit.stages", ctx);
+bindings = localStructListItems(sixgr.util.structGet(audit, ...
+    "parameter_bindings", []), ...
+    "validation.causal_phy_chain_audit.parameter_bindings", ctx);
+stageIds = strings(numel(stages),1);
+stageOrders = nan(numel(stages),1);
+for index = 1:numel(stages)
+    stage = stages{index};
+    stageIds(index) = strtrim(string(stage.stage_id));
+    stageOrders(index) = double(stage.order);
+    alwaysRequired = logical(sixgr.util.structGet(stage, ...
+        "always_required", false));
+    featureAuthority = strtrim(string(sixgr.util.structGet(stage, ...
+        "feature_authority", "")));
+    if alwaysRequired == (strlength(featureAuthority) > 0)
+        error("sixgr:lls6g:config:CausalAuditAuthorityAmbiguous", ...
+            ["Causal stage '%s' in %s must declare exactly one of " ...
+            "always_required=true or feature_authority."], ...
+            stageIds(index), localCtx(ctx));
+    end
+    consumers = [localStringListForValidation(sixgr.util.structGet(stage, ...
+        "consumer_functions", [])); ...
+        localStringListForValidation(sixgr.util.structGet(stage, ...
+        "consumer_source_files", []))];
+    if isempty(consumers)
+        error("sixgr:lls6g:config:CausalAuditConsumerMissing", ...
+            "Causal stage '%s' in %s has no exact runtime consumer.", ...
+            stageIds(index), localCtx(ctx));
+    end
+    localValidateCausalArtifactPath(string(stage.measurement_artifact), ...
+        stageIds(index), ctx);
+    measuredFields = localStringListForValidation(stage.measured_fields);
+    if numel(unique(measuredFields)) ~= numel(measuredFields)
+        error("sixgr:lls6g:config:CausalAuditDuplicateMeasuredField", ...
+            "Causal stage '%s' in %s repeats a measured field.", ...
+            stageIds(index), localCtx(ctx));
+    end
+    successField = strtrim(string(sixgr.util.structGet(stage, ...
+        "success_field", "")));
+    successMode = strtrim(string(sixgr.util.structGet(stage, ...
+        "success_mode", "")));
+    if xor(strlength(successField) > 0, strlength(successMode) > 0)
+        error("sixgr:lls6g:config:CausalAuditSuccessRuleIncomplete", ...
+            "Causal stage '%s' in %s must declare success_field and success_mode together.", ...
+            stageIds(index), localCtx(ctx));
+    end
+end
+if any(stageIds == "") || numel(unique(stageIds)) ~= numel(stageIds)
+    error("sixgr:lls6g:config:CausalAuditDuplicateStage", ...
+        "Causal audit stage IDs in %s must be unique and nonempty.", localCtx(ctx));
+end
+if any(~isfinite(stageOrders)) || numel(unique(stageOrders)) ~= numel(stageOrders)
+    error("sixgr:lls6g:config:CausalAuditDuplicateOrder", ...
+        "Causal audit stage orders in %s must be unique and finite.", localCtx(ctx));
+end
+for index = 1:numel(stages)
+    dependencies = localStringListForValidation(sixgr.util.structGet( ...
+        stages{index}, "dependency_stages", []));
+    for dependency = dependencies(:).'
+        dependencyIndex = find(stageIds == dependency, 1, "first");
+        if isempty(dependencyIndex)
+            error("sixgr:lls6g:config:CausalAuditUnknownDependency", ...
+                "Causal stage '%s' in %s names unknown dependency '%s'.", ...
+                stageIds(index), localCtx(ctx), dependency);
+        end
+        if stageOrders(dependencyIndex) >= stageOrders(index)
+            error("sixgr:lls6g:config:CausalAuditDependencyOrder", ...
+                "Causal dependency '%s' must precede stage '%s' in %s.", ...
+                dependency, stageIds(index), localCtx(ctx));
+        end
+    end
+end
+bindingIds = strings(numel(bindings),1);
+for index = 1:numel(bindings)
+    binding = bindings{index};
+    bindingIds(index) = strtrim(string(binding.parameter_id));
+    consumers = [localStringListForValidation(sixgr.util.structGet(binding, ...
+        "consumer_functions", [])); ...
+        localStringListForValidation(sixgr.util.structGet(binding, ...
+        "consumer_source_files", []))];
+    if isempty(consumers)
+        error("sixgr:lls6g:config:CausalAuditBindingConsumerMissing", ...
+            "Causal parameter '%s' in %s has no exact runtime consumer.", ...
+            bindingIds(index), localCtx(ctx));
+    end
+end
+if any(bindingIds == "") || numel(unique(bindingIds)) ~= numel(bindingIds)
+    error("sixgr:lls6g:config:CausalAuditDuplicateParameter", ...
+        "Causal audit parameter IDs in %s must be unique and nonempty.", localCtx(ctx));
+end
+end
+
+function items = localStructListItems(raw, fieldPath, ctx)
+if isstruct(raw)
+    items = arrayfun(@(index) raw(index), 1:numel(raw), ...
+        "UniformOutput", false);
+elseif iscell(raw) && all(cellfun(@(x) isstruct(x) && isscalar(x), raw(:)))
+    items = raw(:);
+else
+    error("sixgr:lls6g:config:BadCausalAuditRegistry", ...
+        "%s in %s must contain scalar struct mappings.", fieldPath, localCtx(ctx));
+end
+end
+
+function values = localStringListForValidation(raw)
+if isempty(raw)
+    values = strings(0,1);
+else
+    values = strtrim(string(raw(:)));
+    values(values == "") = [];
+end
+end
+
+function localValidateCausalArtifactPath(pathValue, stageId, ctx)
+normalized = replace(strtrim(string(pathValue)), "\", "/");
+parts = split(normalized, "/");
+if normalized == "" || startsWith(normalized, "/") || ...
+        ~isempty(regexp(char(normalized), '^[A-Za-z]:', 'once')) || ...
+        any(parts == "..")
+    error("sixgr:lls6g:config:CausalAuditUnsafeArtifactPath", ...
+        "Causal stage '%s' in %s requires a safe run-relative measurement artifact path.", ...
+        stageId, localCtx(ctx));
+end
 end
 
 if upper(string(cfg.coding.data_code_type)) == "POLAR"
@@ -1088,12 +1228,29 @@ if isfield(rule, "type") && strcmpi(string(rule.type), "struct_array") && isfiel
     reqFields = localRequiredNestedFields(nestedRule.parameters);
     for idx = 1:numel(value)
         elemPath = sprintf("%s(%d)", fieldPath, idx);
-        localRejectUnknownSectionFields(value(idx), string(fieldnames(nestedRule.parameters)), elemPath, ctx);
+        elem = localStructArrayElement(value, idx, fieldPath, ctx);
+        localRejectUnknownSectionFields(elem, string(fieldnames(nestedRule.parameters)), elemPath, ctx);
         if ~allowPartial
-            localRequireFields(value(idx), reqFields, elemPath, ctx);
+            localRequireFields(elem, reqFields, elemPath, ctx);
         end
-        localValidateStructRules(value(idx), nestedRule.parameters, elemPath, ctx, catalog, allowPartial);
+        localValidateStructRules(elem, nestedRule.parameters, elemPath, ctx, catalog, allowPartial);
     end
+end
+end
+
+function elem = localStructArrayElement(value, idx, fieldPath, ctx)
+% YAML mappings with heterogeneous optional fields are decoded as a cell
+% array of scalar structs by the repository YAML reader. Treat that as the
+% same schema type as a homogeneous MATLAB struct array, while rejecting
+% mixed or non-scalar elements.
+if iscell(value)
+    elem = value{idx};
+else
+    elem = value(idx);
+end
+if ~builtin("isstruct", elem) || ~isscalar(elem)
+    error("sixgr:lls6g:config:BadStructArrayElement", ...
+        "%s(%d) in %s must be a scalar struct.", fieldPath, idx, localCtx(ctx));
 end
 end
 
@@ -1137,7 +1294,8 @@ switch lower(typeName)
     case "struct"
         ok = builtin("isstruct", value) && isscalar(value);
     case "struct_array"
-        ok = isstruct(value) || isempty(value);
+        ok = isstruct(value) || isempty(value) || ...
+            (iscell(value) && all(cellfun(@(x) builtin("isstruct", x) && isscalar(x), value(:))));
     otherwise
         ok = true;
 end

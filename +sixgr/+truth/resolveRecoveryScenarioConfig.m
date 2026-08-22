@@ -216,7 +216,9 @@ catch ME
     legacyIntervalGap = string(ME.identifier) == ...
         "sixgr:lls6g:config:FixedLinkMasterFieldMissing" && ...
         contains(string(ME.message), "'interval_method'");
-    if ~legacyIntervalGap
+    legacyInactiveFeedbackDelayGap = ...
+        localLegacyInactiveFeedbackDelayGap(data, ME);
+    if ~(legacyIntervalGap || legacyInactiveFeedbackDelayGap)
         rethrow(ME);
     end
     % The snapshot is immutable execution evidence, not a candidate for a
@@ -227,7 +229,12 @@ catch ME
         "Kind", "scenario", "AllowPartial", true, ...
         "Context", "recoverLLSRunArtifacts legacy persisted snapshot");
     compatibility.Ok = false;
-    compatibility.Status = "legacy_fixed_link_interval_method_missing";
+    if legacyIntervalGap
+        compatibility.Status = "legacy_fixed_link_interval_method_missing";
+    else
+        compatibility.Status = ...
+            "legacy_inactive_link_adaptation_feedback_delay_missing";
+    end
     compatibility.Identifier = string(ME.identifier);
     compatibility.Message = string(ME.message);
 end
@@ -252,6 +259,23 @@ scfg = sixgr.lls6g.config.ScenarioConfig(data, ...
     "ConfigPath", persistedPath, ...
     "ConfigHash", hash, ...
     "Kind", "scenario");
+end
+
+function tf = localLegacyInactiveFeedbackDelayGap(data, failure)
+tf = contains(string(failure.message), ...
+    "'link_adaptation.feedback_delay_slots'");
+if ~tf
+    return;
+end
+mode = lower(strtrim(string(sixgr.util.structGet(data, ...
+    "link_adaptation.fixed_or_amc", ""))));
+dlPolicy = lower(strtrim(string(sixgr.util.structGet(data, ...
+    "link_adaptation.pdsch_link_adaptation_policy", ""))));
+ulPolicy = lower(strtrim(string(sixgr.util.structGet(data, ...
+    "link_adaptation.pusch_link_adaptation_policy", ""))));
+fixedTokens = ["fixed","fixed_mcs","configured_fixed","disabled","off","none"];
+tf = ismember(mode, fixedTokens) && ...
+    ismember(dlPolicy, fixedTokens) && ismember(ulPolicy, fixedTokens);
 end
 
 function [scfg, hash] = localSuppliedConfig(inputCfg, sourceFiles, configPath)

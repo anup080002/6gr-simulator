@@ -425,8 +425,13 @@ contributorsDisabled = observedRows > 0 && numel(contributorsRaw) == observedRow
     all(isfinite(contributorsRaw) & contributorsRaw == 0);
 powerDisabled = observedRows > 0 && numel(powerRaw) == observedRows && ...
     ~any(isfinite(powerRaw));
+% A disabled waveform path may either leave the power-source cell empty or
+% emit the explicit runtime sentinel written by the canonical DL/UL trial
+% exporters.  Accept only those two representations.  An arbitrary
+% nonempty source remains a contradiction because it could conceal an
+% interference contribution that was not accounted for.
 sourceDisabled = observedRows > 0 && numel(source) == observedRows && ...
-    all(ismissing(source) | strlength(strtrim(source)) == 0);
+    all(localIsDisabledInterferencePowerSource(source));
 truthDisabled = observedRows > 0 && numel(truth) == observedRows && ~any(truth);
 disabledIdentity = runtimeDisabled && contributorsDisabled && powerDisabled && sourceDisabled && truthDisabled;
 
@@ -692,6 +697,9 @@ for name = ["CSIReportId","CSIPayloadHex","GrantContextId"]
     end
 end
 valueStatus = lower(strtrim(localStringColumn(T, "MCSValueStatus")));
+if numel(valueStatus) ~= height(T)
+    valueStatus = strings(height(T), 1);
+end
 widebandCQI = localNumericColumn(T, "WidebandCQI");
 cqiDerivedMCS = localNumericColumn(T, "CQIDerivedMCS");
 if all(~isfinite(cqiDerivedMCS))
@@ -866,6 +874,15 @@ function tf = localIsDisabledInterferenceMode(values)
 values = lower(strtrim(string(values(:))));
 tf = ~ismissing(values) & (values == "none" | values == "disabled" | ...
     values == "off" | values == "no_interference" | values == "identity");
+end
+
+function tf = localIsDisabledInterferencePowerSource(values)
+values = lower(strtrim(string(values(:))));
+blank = ismissing(values) | strlength(values) == 0;
+explicitRuntimeIdentity = ...
+    values == "not_emitted_by_active_dl_pdsch_trials_runtime" | ...
+    values == "not_emitted_by_active_ul_pusch_trials_runtime";
+tf = blank | explicitRuntimeIdentity;
 end
 
 function tf = localIsWaveformTruthInterferenceMode(values)

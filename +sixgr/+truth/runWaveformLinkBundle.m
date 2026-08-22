@@ -363,8 +363,9 @@ end
 localLogStage(ctx, "Publishing live derived channel, beam, CSI, and coverage tables from raw trials.");
 stageStart = tic;
 liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgL, rootRunFolder, rawTrials, multiUser, liveMobilityArtifacts, slotTrace);
-if isstruct(sixgr.util.structGet(liveDerivedArtifacts, "HARQ", struct()))
-    harqArtifacts = sixgr.util.structGet(liveDerivedArtifacts, "HARQ", harqArtifacts);
+runtimeHARQArtifacts = sixgr.util.structGet(liveDerivedArtifacts, "RuntimeHARQ", struct());
+if localArtifactStructReady(runtimeHARQArtifacts, "TimelineTable")
+    harqArtifacts = runtimeHARQArtifacts;
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "live_derived_tables_initial", toc(stageStart), toc(bundleStart), "Initial live derived channel, beam, CSI, and coverage tables published.");
@@ -459,8 +460,9 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
 localLogStage(ctx, "Refreshing live derived tables after primary sweep consolidation.");
 stageStart = tic;
 liveDerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfgL, rootRunFolder, rawTrials, multiUser, liveMobilityArtifacts, slotTrace);
-if isstruct(sixgr.util.structGet(liveDerivedArtifacts, "HARQ", struct()))
-    harqArtifacts = sixgr.util.structGet(liveDerivedArtifacts, "HARQ", harqArtifacts);
+runtimeHARQArtifacts = sixgr.util.structGet(liveDerivedArtifacts, "RuntimeHARQ", struct());
+if localArtifactStructReady(runtimeHARQArtifacts, "TimelineTable")
+    harqArtifacts = runtimeHARQArtifacts;
 end
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "live_derived_tables_refresh", toc(stageStart), toc(bundleStart), "Live derived tables refreshed after sweep consolidation.");
@@ -1633,6 +1635,41 @@ sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, fileName), T, ...
     "PreserveSchema", preserveSchema);
 end
 
+function localWriteOptionalCoupledControlMirror(cfg, featureName, ...
+        airInterfaceRunFolder, fileName, T)
+rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
+if strlength(string(rootRunFolder)) == 0
+    return;
+end
+layout = sixgr.report.resultLayout(rootRunFolder);
+path = fullfile(layout.ControlCSVDir, fileName);
+if localOptionalFeatureHasPrimaryEvidence(cfg, featureName, T)
+    localWriteCoupledControlMirror(airInterfaceRunFolder, fileName, T);
+elseif isfile(path)
+    delete(path);
+end
+end
+
+function localWriteOptionalFeatureTrialTable(cfg, featureName, path, T)
+sixgr.truth.writeOptionalRuntimeFeatureTable(cfg, string(featureName), ...
+    string(path), T);
+end
+
+function tf = localOptionalFeatureHasPrimaryEvidence(cfg, featureName, T)
+feature = sixgr.util.structGet(cfg, ...
+    "runtime.features." + string(featureName), struct());
+authorityPresent = isstruct(feature) && isscalar(feature) && ...
+    isfield(feature, "Enabled");
+if ~authorityPresent
+    % Manual/unit configurations preserve their historical explicit-table
+    % behavior; resolved YAML runs always carry runtime.features authority.
+    tf = true;
+    return;
+end
+enabled = logical(sixgr.util.structGet(feature, "Enabled", false));
+tf = enabled || (istable(T) && height(T) > 0);
+end
+
 function tf = localShouldExportSSBBeamSweep(cfg)
 tf = logical(sixgr.util.structGet(cfg, "outputs.exportSSBBeamSweep", ...
     sixgr.util.structGet(cfg, "analytics.export_ssb_beam_sweep", ...
@@ -1711,12 +1748,12 @@ end
 % result and silently lose fields added during finalization.
 sixgr.util.csvWriteTable(fDL, dlTrials, "PreserveSchema", true);
 sixgr.util.csvWriteTable(fUL, ulTrials, "PreserveSchema", true);
-sixgr.util.csvWriteTable(fPBCH, pbchTrials);
+localWriteOptionalFeatureTrialTable(cfg, "pbch", fPBCH, pbchTrials);
 if localShouldExportSSBBeamSweep(cfg)
     ssbBeamSweep = localCollectSSBBeamSweepArtifact(cfg, snrGrid(1), fSSBBeamSweep);
     localWriteSSBBeamSweepMirrors(runFolder, ssbBeamSweep);
 end
-sixgr.util.csvWriteTable(fPRACH, prachTrials);
+localWriteOptionalFeatureTrialTable(cfg, "prach", fPRACH, prachTrials);
 if istable(prachCorrelationTrace) && ~isempty(prachCorrelationTrace)
     rootRunFolderForPRACHTrace = fileparts(char(string(runFolder)));
     layoutForPRACHTrace = sixgr.report.resultLayout(rootRunFolderForPRACHTrace);
@@ -1733,17 +1770,21 @@ if standalonePUCCHRequired || (istable(pucchTrials) && ~isempty(pucchTrials))
 elseif isfile(fPUCCH)
     delete(fPUCCH);
 end
-sixgr.util.csvWriteTable(fSRS, srsTrials);
-sixgr.util.csvWriteTable(fTRS, trsTrials);
+localWriteOptionalFeatureTrialTable(cfg, "srs", fSRS, srsTrials);
+localWriteOptionalFeatureTrialTable(cfg, "trs", fTRS, trsTrials);
 if coupledTruth
-    localWriteCoupledControlMirror(runFolder, "pbch_trials.csv", pbchTrials);
-    localWriteCoupledControlMirror(runFolder, "prach_trials.csv", prachTrials);
+    localWriteOptionalCoupledControlMirror(cfg, "pbch", runFolder, ...
+        "pbch_trials.csv", pbchTrials);
+    localWriteOptionalCoupledControlMirror(cfg, "prach", runFolder, ...
+        "prach_trials.csv", prachTrials);
     localWriteCoupledControlMirror(runFolder, "pdcch_trials.csv", pdcchTrials);
     if standalonePUCCHRequired || (istable(pucchTrials) && ~isempty(pucchTrials))
         localWriteCoupledControlMirror(runFolder, "pucch_trials.csv", pucchTrials);
     end
-    localWriteCoupledControlMirror(runFolder, "srs_trials.csv", srsTrials);
-    localWriteCoupledControlMirror(runFolder, "trs_trials.csv", trsTrials);
+    localWriteOptionalCoupledControlMirror(cfg, "srs", runFolder, ...
+        "srs_trials.csv", srsTrials);
+    localWriteOptionalCoupledControlMirror(cfg, "trs", runFolder, ...
+        "trs_trials.csv", trsTrials);
     localWriteCoupledControlMirror(runFolder, "csi_rs_trials.csv", csirsTrials);
 end
 if istable(csirsTrials) && ~isempty(csirsTrials)
@@ -4010,8 +4051,13 @@ for chunkStart = 1:chunkSize:numel(grants)
         [runtimeState, userT] = localCompleteCoupledRuntimeSlot(runtimeState, chunk(bi).Cfg, ueIdx, direction, userT, chunk(bi).Result);
         runtimeState = localCaptureCommittedFullPHYISAC( ...
             runtimeState,cfg,chunk(bi),direction);
+        runtimeState = localCaptureCommittedTxIQ( ...
+            runtimeState,cfg,chunk(bi),direction);
         if isfield(chunk(bi).Result,"ISACWaveformCapture")
             chunk(bi).Result.ISACWaveformCapture = struct();
+        end
+        if isfield(chunk(bi).Result,"TxWaveformCapture")
+            chunk(bi).Result.TxWaveformCapture = struct();
         end
         userT = sixgr.truth.annotateFrozenMUMIMOTrialEvidence(userT, chunk(bi).GrantSnapshot);
         userT = sixgr.link.applyMeasuredDLMUMIMOReceiverEvidence(userT);
@@ -4400,7 +4446,7 @@ out = struct();
 if ~(isstruct(res) && ~isempty(fieldnames(res)))
     return;
 end
-keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", "ISACWaveformCapture", ...
+keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", "ISACWaveformCapture", "TxWaveformCapture", ...
     "Throughput_Mbps", "Goodput_Mbps", "BLER", "BER", "Ok", "Notes"];
 for i = 1:numel(keepFields)
     f = char(keepFields(i));
@@ -5244,6 +5290,7 @@ if ~logical(sixgr.util.structGet(cfg,"isac.enabled",false)) || ...
         upper(string(direction)) ~= "DL"
     return;
 end
+
 prior = sixgr.util.structGet(runtimeState,"ISAC",struct());
 if logical(sixgr.util.structGet(prior,"Executed",false)) || ...
         logical(sixgr.util.structGet(prior,"EvidenceValid",false))
@@ -5312,6 +5359,43 @@ localAppendRuntimeLog("INFO", ...
     ueIdx,servingCell,double(sixgr.util.structGet(capture,"Frame",NaN)), ...
     double(sixgr.util.structGet(capture,"Slot",NaN)),size(waveform,1),size(waveform,2), ...
     double(logical(sensing.EvidenceValid)));
+end
+
+function runtimeState = localCaptureCommittedTxIQ(runtimeState,cfg,plan,direction)
+if ~(logical(sixgr.util.structGet(cfg,"outputs.rawIQCaptureEnabled",false)) && ...
+        logical(sixgr.util.structGet(cfg,"outputs.saveRawWaveforms",false)))
+    return;
+end
+direction = upper(string(direction));
+fieldName = char(direction);
+prior = sixgr.util.structGet(runtimeState,"TxIQCapture",struct());
+if isstruct(prior) && isfield(prior,fieldName) && ...
+        logical(sixgr.util.structGet(prior.(fieldName),"Ok",false))
+    return;
+end
+capture = sixgr.util.structGet(plan,"Result.TxWaveformCapture",struct());
+if ~(isstruct(capture) && isfield(capture,"Waveform") && ...
+        ~isempty(capture.Waveform))
+    error("sixgr:truth:MissingCommittedTxIQWaveform", ...
+        "The first committed %s grant did not return its exact pre-channel Tx-IQ waveform.", ...
+        direction);
+end
+rootRunFolder = string(sixgr.util.structGet(cfg,"run.rootRunFolder",""));
+if strlength(strtrim(rootRunFolder)) == 0 || ~isfolder(rootRunFolder)
+    error("sixgr:truth:MissingTxIQRunFolder", ...
+        "Runtime Tx-IQ capture has no valid root run folder.");
+end
+artifact = sixgr.truth.exportRuntimeTxIQCapture( ...
+    rootRunFolder,capture,cfg,direction);
+if ~isstruct(prior)
+    prior = struct();
+end
+prior.(fieldName) = artifact;
+runtimeState.TxIQCapture = prior;
+localAppendRuntimeLog("INFO", ...
+    "Exported committed %s Tx-IQ: samples=%d ports=%d rate_hz=%.6f hash=%s.", ...
+    char(direction),artifact.SampleCount,artifact.PortCount,artifact.SampleRateHz, ...
+    char(artifact.WaveformSHA256));
 end
 
 function cfgOut = localCompactCoupledResolvedGrantCacheCfg(cfgIn)
@@ -9622,7 +9706,10 @@ artifacts.Beam = localExportBeamformingDiagnostics(cfg, runFolder, rawTrials, fa
 artifacts.Energy = sixgr.truth.exportLLSEnergyDiagnostics(cfg, runFolder, rawTrials);
 artifacts.IQImpairment = sixgr.truth.exportLLSRFImpairmentDiagnostics(cfg, runFolder, rawTrials);
 artifacts.LiveDerived = sixgr.truth.exportLLSLiveDerivedTables(cfg, fileparts(char(string(runFolder))), rawTrials, multiUser, mobilityArtifacts, runtimeState);
-artifacts.HARQ = sixgr.util.structGet(artifacts.LiveDerived, "HARQ", struct());
+artifacts.HARQ = sixgr.util.structGet(artifacts.LiveDerived, "RuntimeHARQ", struct());
+if ~localArtifactStructReady(artifacts.HARQ, "TimelineTable")
+    artifacts.HARQ = sixgr.util.structGet(artifacts.LiveDerived, "HARQ", struct());
+end
 end
 
 function localPublishLiveSweepSnapshot(baseTrials, partialTrials, baseConst, partialConst, liveTablePath, liveConstellationPath, cfg, meta)
@@ -18146,22 +18233,36 @@ for i = 1:numel(dirs)
     failureRate = mean(double(beamGap > 3), "omitnan");
     overhead = mean(beamCount, "omitnan");
 
+    switchingEnabled = logical(sixgr.util.structGet(cfg, ...
+        "lls6g.mimo_and_beam_management.beam_switching", ...
+        sixgr.util.structGet(cfg, "mimo_and_beam_management.beam_switching", false)));
     switchLatency = localFiniteColumn(eventDirT(eventDirT.SwitchEventFlag > 0, :), "SwitchLatency_s");
-    if isempty(switchLatency)
-        switchAvailability = "not_exercised";
+    if ~switchingEnabled
+        switchAvailability = "disabled";
         switchValue = NaN;
-        switchNote = "No runtime beam-switch events were observed for this direction.";
+        switchNote = "Beam switching is disabled by the resolved scenario configuration.";
+    elseif isempty(switchLatency)
+        switchAvailability = "not_available";
+        switchValue = NaN;
+        switchNote = "Beam switching is enabled, but no runtime switch event was observed for this direction.";
     else
         switchAvailability = "observed";
         switchValue = mean(switchLatency, "omitnan");
         switchNote = "Measured from explicit runtime beam-switch events in the beam-management event trace.";
     end
 
+    refinementEnabled = logical(sixgr.util.structGet(cfg, ...
+        "lls6g.mimo_and_beam_management.beam_refinement", ...
+        sixgr.util.structGet(cfg, "mimo_and_beam_management.beam_refinement", false)));
     firstHitTrials = localFiniteColumn(eventDirT(eventDirT.FirstHitEventFlag > 0, :), "TrialsToFirstHit");
-    if isempty(firstHitTrials)
-        refinementAvailability = "not_exercised";
+    if ~refinementEnabled
+        refinementAvailability = "disabled";
         refinementValue = NaN;
-        refinementNote = "No runtime beam-refinement convergence event was observed for this direction.";
+        refinementNote = "Beam refinement is disabled by the resolved scenario configuration.";
+    elseif isempty(firstHitTrials)
+        refinementAvailability = "not_available";
+        refinementValue = NaN;
+        refinementNote = "Beam refinement is enabled, but no runtime convergence event was observed for this direction.";
     else
         refinementAvailability = "observed";
         refinementValue = mean(firstHitTrials, "omitnan");

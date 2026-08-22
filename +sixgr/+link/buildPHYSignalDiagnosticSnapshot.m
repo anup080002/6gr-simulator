@@ -136,7 +136,7 @@ if height(constellationUse) > maxConstellationPoints
     constellationUse = constellationUse(1:maxConstellationPoints, :);
 end
 
-meta = localMetadata(cfg, direction, rx, context, constellationUse, ...
+meta = localMetadata(cfg, direction, tx, rx, context, constellationUse, ...
     sampleRateHz, nFFT, channelModel, delayProfile, channelSource, channelMethod, hSymbolIndex);
 sourceT = localEmptySourceTable();
 
@@ -184,15 +184,36 @@ rows = localBaseRows(meta, "channel_estimate", "hest", numel(hSlice));
 rows.PointIndex = (1:numel(hSlice)).';
 rows.SubcarrierIndex = double(hSubcarrier);
 rows.OFDMSymbolIndex(:) = double(hSymbolIndex);
+rows.MatlabSubcarrierIndex = double(hSubcarrier) + 1;
+rows.MatlabOFDMSymbolIndex(:) = double(hSymbolIndex) + 1;
+startGrid = double(meta.NStartGrid);
+if ~isfinite(startGrid)
+    startGrid = 0;
+end
+rows.ResourceBlockIndex = startGrid + floor(double(hSubcarrier) ./ 12);
+rows.SubcarrierInResourceBlock = mod(double(hSubcarrier), 12);
 rows.XValue = double(hSubcarrier);
 rows.YValue = hMagnitude_dB;
 rows.XUnit(:) = "subcarrier_index";
 rows.YUnit(:) = "channel_magnitude_dB";
 rows.IValue = real(hSlice);
 rows.QValue = imag(hSlice);
+rows.MagnitudeLinear = abs(hSlice);
 rows.Magnitude_dB = hMagnitude_dB;
+rows.PowerLinear = abs(hSlice).^2;
+rows.Power_dB = 10 .* log10(max(rows.PowerLinear, realmin));
 rows.Phase_deg = hPhase_deg;
+rows.WrappedPhase_rad = angle(hSlice);
+rows.UnwrappedPhaseFrequency_rad = unwrap(angle(hSlice));
+rows.GridKind(:) = "receiver_channel_estimate_frequency_slice";
+rows.GridSHA256(:) = localComplexTensorHash(hSlice);
 sourceT = [sourceT; rows]; %#ok<AGROW>
+
+if logical(sixgr.util.structGet(cfg, ...
+        "outputs.phySignalDiagnosticFullChannelGrid", false))
+    fullGridRows = localFullChannelGridRows(meta, hest);
+    sourceT = [sourceT; fullGridRows]; %#ok<AGROW>
+end
 
 rows = localBaseRows(meta, "pre_equalization_re_cloud", "rx_antenna_1", numel(preEq));
 rows.PointIndex = (1:numel(preEq)).';
@@ -357,16 +378,16 @@ for li = 1:l
     candidate = h3(:, li, 1);
     counts(li) = sum(isfinite(real(candidate)) & isfinite(imag(candidate)));
 end
-[~, symbolIndex] = max(counts);
-if isempty(symbolIndex) || counts(symbolIndex) < 1
+[~, matlabSymbolIndex] = max(counts);
+if isempty(matlabSymbolIndex) || counts(matlabSymbolIndex) < 1
     slice = complex([]);
     subcarrier = [];
     symbolIndex = NaN;
     return;
 end
-slice = h3(:, symbolIndex, 1);
-subcarrier = (1:k).';
-symbolIndex = double(symbolIndex);
+slice = h3(:, matlabSymbolIndex, 1);
+subcarrier = (0:k-1).';
+symbolIndex = double(matlabSymbolIndex - 1);
 
 % Preserve the receiver grid indexing convention. SCS is resolved by the
 % exporter from metadata; no synthetic interpolation is performed here.
@@ -444,7 +465,7 @@ if isempty(T)
 end
 end
 
-function meta = localMetadata(cfg, direction, rx, context, constellationT, sampleRateHz, nFFT, channelModel, delayProfile, channelSource, channelMethod, hSymbolIndex)
+function meta = localMetadata(cfg, direction, tx, rx, context, constellationT, sampleRateHz, nFFT, channelModel, delayProfile, channelSource, channelMethod, hSymbolIndex)
 meta = struct();
 meta.Direction = string(direction);
 userContext = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
@@ -476,6 +497,35 @@ meta.RNTI = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.rnti", NaN));
 meta.Frame = localFirstFiniteScalar(sixgr.util.structGet(context, "Frame", NaN));
 meta.Slot = localFirstFiniteScalar(sixgr.util.structGet(context, "Slot", NaN));
+meta.SFN = localFirstFiniteScalar(sixgr.util.structGet(context, "SFN", meta.Frame));
+meta.CellID = localFirstFiniteScalar( ...
+    sixgr.util.structGet(context, "CellID", NaN), ...
+    sixgr.util.structGet(tx, "Carrier.NCellID", NaN), ...
+    sixgr.util.structGet(cfg, "phy.nCellId", NaN), ...
+    sixgr.util.structGet(cfg, "carrier.nCellId", NaN));
+meta.SCS_kHz = localFirstFiniteScalar( ...
+    sixgr.util.structGet(tx, "Carrier.SubcarrierSpacing", NaN), ...
+    sixgr.util.structGet(cfg, "frame.scs_kHz", NaN), ...
+    sixgr.util.structGet(cfg, "carrier.scs_kHz", NaN));
+meta.NStartGrid = localFirstFiniteScalar( ...
+    sixgr.util.structGet(tx, "Carrier.NStartGrid", NaN), ...
+    sixgr.util.structGet(cfg, "carrier.nStartGrid", 0));
+meta.CarrierFrequency_Hz = localFirstFiniteScalar( ...
+    sixgr.util.structGet(context, "CarrierFrequency_Hz", NaN), ...
+    sixgr.util.structGet(cfg, "channel.carrierFrequencyHz", NaN), ...
+    sixgr.util.structGet(cfg, "carrier.frequencyHz", NaN), ...
+    1e9 .* sixgr.util.structGet(cfg, "frame.carrierFrequencyGHz", NaN));
+if isfinite(meta.SCS_kHz) && meta.SCS_kHz > 0
+    numerology = round(log2(meta.SCS_kHz ./ 15));
+    meta.SlotsPerFrame = 10 .* (2 .^ numerology);
+else
+    meta.SlotsPerFrame = NaN;
+end
+if isfinite(meta.SFN) && isfinite(meta.Slot) && isfinite(meta.SlotsPerFrame)
+    meta.AbsoluteSlot = meta.SFN .* meta.SlotsPerFrame + meta.Slot;
+else
+    meta.AbsoluteSlot = NaN;
+end
 meta.TBId = string(sixgr.util.structGet(context, "TBId", ""));
 meta.LayerIndex = localFirstFiniteScalar(sixgr.util.structGet(context, "LayerIndex", 1));
 meta.Layers = localFirstFiniteScalar(sixgr.util.structGet(context, "Layers", 1));
@@ -541,6 +591,9 @@ T.UEIdentitySource = repmat(string(meta.UEIdentitySource), n, 1);
 T.RNTI = repmat(double(meta.RNTI), n, 1);
 T.Frame = repmat(double(meta.Frame), n, 1);
 T.Slot = repmat(double(meta.Slot), n, 1);
+T.SFN = repmat(double(meta.SFN), n, 1);
+T.AbsoluteSlot = repmat(double(meta.AbsoluteSlot), n, 1);
+T.CellID = repmat(double(meta.CellID), n, 1);
 T.TBId = repmat(string(meta.TBId), n, 1);
 T.LayerIndex = repmat(double(meta.LayerIndex), n, 1);
 T.Layers = repmat(double(meta.Layers), n, 1);
@@ -566,10 +619,28 @@ T.FFTLength = repmat(double(meta.FFTLength), n, 1);
 T.SampleIndex = nan(n, 1);
 T.SubcarrierIndex = nan(n, 1);
 T.OFDMSymbolIndex = nan(n, 1);
+T.MatlabSubcarrierIndex = nan(n, 1);
+T.MatlabOFDMSymbolIndex = nan(n, 1);
+T.ResourceBlockIndex = nan(n, 1);
+T.SubcarrierInResourceBlock = nan(n, 1);
+T.FrequencyOffset_Hz = nan(n, 1);
+T.AbsoluteFrequency_Hz = nan(n, 1);
+T.RxPortIndex0Based = nan(n, 1);
+T.TxPortIndex0Based = nan(n, 1);
 T.IValue = nan(n, 1);
 T.QValue = nan(n, 1);
+T.MagnitudeLinear = nan(n, 1);
 T.Magnitude_dB = nan(n, 1);
+T.PowerLinear = nan(n, 1);
+T.Power_dB = nan(n, 1);
 T.Phase_deg = nan(n, 1);
+T.WrappedPhase_rad = nan(n, 1);
+T.UnwrappedPhaseFrequency_rad = nan(n, 1);
+T.UnwrappedPhaseTime_rad = nan(n, 1);
+T.PhaseDeltaFrequency_rad = nan(n, 1);
+T.PhaseDeltaTime_rad = nan(n, 1);
+T.GridKind = strings(n, 1);
+T.GridSHA256 = strings(n, 1);
 T.ReferenceI = nan(n, 1);
 T.ReferenceQ = nan(n, 1);
 T.EqualizedI = nan(n, 1);
@@ -585,6 +656,82 @@ T.truth_status = repmat(string(meta.TruthStatus), n, 1);
 T.SourceArtifact = repmat(string(meta.SourceArtifact), n, 1);
 T.Status = repmat(string(meta.Status), n, 1);
 T.NAReason = repmat(string(meta.NAReason), n, 1);
+end
+
+function T = localFullChannelGridRows(meta, hest)
+% Persist the exact receiver channel-estimate tensor without interpolation.
+% NR coordinates are zero based; explicit MATLAB indices are retained so a
+% consumer can address the original array without guessing conventions.
+h4 = complex(double(hest));
+sz = size(h4);
+sz(end+1:4) = 1;
+h4 = reshape(h4, sz(1), sz(2), sz(3), sz(4));
+[kCount, symbolCount, rxCount, txCount] = size(h4);
+[k0, l0, rx0, tx0] = ndgrid(0:kCount-1, 0:symbolCount-1, ...
+    0:rxCount-1, 0:txCount-1);
+
+wrapped = angle(h4);
+unwrappedFrequency = unwrap(wrapped, [], 1);
+unwrappedTime = unwrap(wrapped, [], 2);
+deltaFrequency = nan(size(wrapped));
+deltaTime = nan(size(wrapped));
+if kCount > 1
+    deltaFrequency(2:end,:,:,:) = diff(unwrappedFrequency, 1, 1);
+end
+if symbolCount > 1
+    deltaTime(:,2:end,:,:) = diff(unwrappedTime, 1, 2);
+end
+
+n = numel(h4);
+T = localBaseRows(meta, "channel_estimate_grid", ...
+    "receiver_hest_exact_tensor", n);
+T.PointIndex = (1:n).';
+T.SubcarrierIndex = double(k0(:));
+T.OFDMSymbolIndex = double(l0(:));
+T.MatlabSubcarrierIndex = double(k0(:) + 1);
+T.MatlabOFDMSymbolIndex = double(l0(:) + 1);
+startGrid = double(meta.NStartGrid);
+if ~isfinite(startGrid)
+    startGrid = 0;
+end
+T.ResourceBlockIndex = startGrid + floor(double(k0(:)) ./ 12);
+T.SubcarrierInResourceBlock = mod(double(k0(:)), 12);
+scsHz = 1e3 .* double(meta.SCS_kHz);
+if isfinite(scsHz) && scsHz > 0
+    frequencyOffset = (double(k0(:)) - (double(kCount) - 1) ./ 2) .* scsHz;
+    T.FrequencyOffset_Hz = frequencyOffset;
+    if isfinite(double(meta.CarrierFrequency_Hz))
+        T.AbsoluteFrequency_Hz = double(meta.CarrierFrequency_Hz) + frequencyOffset;
+    end
+end
+T.RxPortIndex0Based = double(rx0(:));
+T.TxPortIndex0Based = double(tx0(:));
+T.RxAntennaIndex = double(rx0(:) + 1);
+T.TxPortIndex = double(tx0(:) + 1);
+T.XValue = T.SubcarrierIndex;
+T.YValue = T.OFDMSymbolIndex;
+T.XUnit(:) = "zero_based_subcarrier_index";
+T.YUnit(:) = "zero_based_ofdm_symbol_index";
+T.IValue = real(h4(:));
+T.QValue = imag(h4(:));
+T.MagnitudeLinear = abs(h4(:));
+T.Magnitude_dB = 20 .* log10(max(T.MagnitudeLinear, realmin));
+T.PowerLinear = abs(h4(:)).^2;
+T.Power_dB = 10 .* log10(max(T.PowerLinear, realmin));
+T.Phase_deg = rad2deg(wrapped(:));
+T.WrappedPhase_rad = wrapped(:);
+T.UnwrappedPhaseFrequency_rad = unwrappedFrequency(:);
+T.UnwrappedPhaseTime_rad = unwrappedTime(:);
+T.PhaseDeltaFrequency_rad = deltaFrequency(:);
+T.PhaseDeltaTime_rad = deltaTime(:);
+T.GridKind(:) = "receiver_channel_estimate";
+T.GridSHA256(:) = localComplexTensorHash(h4);
+end
+
+function digest = localComplexTensorHash(value)
+bytes = [typecast(real(double(value(:))), "uint8"); ...
+    typecast(imag(double(value(:))), "uint8")];
+digest = sixgr.util.sha256Hex(bytes);
 end
 
 function T = localKPIRows(meta)
@@ -616,7 +763,8 @@ end
 function T = localEmptySourceTable()
 meta = struct( ...
     "SnapshotID", "", "Direction", "", "UEIndex", NaN, "UEIdentitySource", "", "RNTI", NaN, ...
-    "Frame", NaN, "Slot", NaN, "TBId", "", "LayerIndex", NaN, "Layers", NaN, ...
+    "Frame", NaN, "Slot", NaN, "SFN", NaN, "AbsoluteSlot", NaN, "CellID", NaN, ...
+    "TBId", "", "LayerIndex", NaN, "Layers", NaN, ...
     "RxAntennaIndex", NaN, "TxPortIndex", NaN, "ChannelModel", "", ...
     "DelayProfile", "", "ChannelEstimateSource", "", "ChannelEstimateMethod", "", ...
     "ChannelEstimateEngine", "", "ChannelEstimateInterpolationMethod", "", ...
@@ -624,6 +772,7 @@ meta = struct( ...
     "ConfiguredSNRSource", "", "PostEqSINR_dB", NaN, "PostEqSINRSource", "", ...
     "PostEqSINRValueRole", "", "EVM_rms_pct", NaN, "CRCPass", NaN, ...
     "SampleRate_Hz", NaN, "FFTLength", NaN, ...
+    "SCS_kHz", NaN, "NStartGrid", NaN, "CarrierFrequency_Hz", NaN, "SlotsPerFrame", NaN, ...
     "CurveConstruction", "", "TruthStatus", "", "SourceArtifact", "", ...
     "Status", "", "NAReason", "");
 T = localBaseRows(meta, "", "", 0);

@@ -24,7 +24,15 @@ slotMs = localNumber(cfg, ["frame_timing.slot_duration_ms", ...
     "numerology.slot_duration_ms"], 0.5);
 slots = localNumber(cfg, ["run.total_slots", "run_control.total_slots", ...
     "simulation.n_slots"], NaN);
-speedKmh = localNumber(cfg, [ ...
+% buildInternalConfig publishes the resolved YAML authority as a per-UE
+% vector at scenario.mobility.speed_kmh.  A fixed/static link commonly has
+% [0 0] here; treating that non-scalar value as missing made the persisted
+% reconciliation disagree with the Phase-7 runtime trajectory.  Accept a
+% vector only when every finite entry names the same configured speed.  A
+% heterogeneous vector remains fail-closed because this aggregate table
+% cannot reconcile multiple trajectories to one expected distance.
+speedKmh = localUniformNumber(cfg, [ ...
+    "scenario.mobility.speed_kmh", ...
     "deployment_topology.mobility.speed_kmh", ...
     "topology.mobility.speed_kmh", ...
     "mobility.speed_kmh", ...
@@ -128,5 +136,29 @@ for path = string(paths)
             return;
         end
     end
+end
+end
+
+function value = localUniformNumber(cfg, paths, defaultValue)
+value = defaultValue;
+for path = string(paths)
+    raw = sixgr.util.structGet(cfg, path, []);
+    if isnumeric(raw) || islogical(raw)
+        numbers = double(raw(:));
+    else
+        numbers = str2double(string(raw(:)));
+    end
+    numbers = numbers(isfinite(numbers));
+    if isempty(numbers)
+        continue;
+    end
+    scale = max(1, max(abs(numbers)));
+    if all(abs(numbers - numbers(1)) <= 16 * eps(scale))
+        value = numbers(1);
+        return;
+    end
+    % The highest-precedence configured path exists but is heterogeneous.
+    % Do not silently fall through to a lower-precedence scalar alias.
+    return;
 end
 end

@@ -368,6 +368,15 @@ if ~any(direction == ["DL", "UL"])
     return;
 end
 decision.Direction = direction;
+[harqEnabled, reason] = localProductionHARQAuthority(cfg);
+if strlength(reason) > 0
+    decision.ReasonCode = reason;
+    decision.Diagnostic = ...
+        "phy.harq.enable and mac.harq.enable must be explicit and consistent.";
+    return;
+end
+decision.HARQEnabled = harqEnabled;
+decision.HARQACKRequired = direction == "DL" && harqEnabled;
 [identity, reason] = localGrantIdentity(grant, identity);
 if strlength(reason) > 0
     decision.ReasonCode = reason;
@@ -423,7 +432,11 @@ end
 
 try
     if direction == "DL"
-        requiredRelations = ["K0", "K1"];
+        if decision.HARQACKRequired
+            requiredRelations = ["K0", "K1"];
+        else
+            requiredRelations = "K0";
+        end
     else
         requiredRelations = "K2";
     end
@@ -500,7 +513,7 @@ decision.DataAbsoluteSlot = int64(dataResult.TargetAbsoluteSlot);
 decision.K0 = double(dataResult.K0);
 decision.K2 = double(dataResult.K2);
 
-if direction == "DL"
+if decision.HARQACKRequired
     [feedbackAllocation, reason] = ...
         localFeedbackSymbolAllocation(cfg, grant);
     if strlength(reason) > 0
@@ -569,6 +582,8 @@ decision = struct( ...
     "K0", NaN, ...
     "K1", NaN, ...
     "K2", NaN, ...
+    "HARQEnabled", false, ...
+    "HARQACKRequired", false, ...
     "DataDecision", emptyRelation, ...
     "HARQACKDecision", emptyRelation, ...
     "DataAttempts", struct([]), ...
@@ -577,6 +592,29 @@ decision = struct( ...
     "Status", "REJECTED", ...
     "ReasonCode", "", ...
     "Diagnostic", "");
+end
+
+function [enabled, reason] = localProductionHARQAuthority(cfg)
+enabled = false;
+reason = "";
+phyValue = sixgr.util.structGet(cfg, "phy.harq.enable", []);
+macValue = sixgr.util.structGet(cfg, "mac.harq.enable", []);
+if isempty(phyValue) || isempty(macValue)
+    reason = "harq_enable_authority_not_attached";
+    return;
+end
+if ~(isscalar(phyValue) && (islogical(phyValue) || isnumeric(phyValue)) && ...
+        isfinite(double(phyValue)) && ismember(double(phyValue), [0, 1])) || ...
+        ~(isscalar(macValue) && (islogical(macValue) || isnumeric(macValue)) && ...
+        isfinite(double(macValue)) && ismember(double(macValue), [0, 1]))
+    reason = "invalid_harq_enable_authority";
+    return;
+end
+if logical(phyValue) ~= logical(macValue)
+    reason = "inconsistent_harq_enable_authority";
+    return;
+end
+enabled = logical(phyValue);
 end
 
 function [context, frameState, reason] = localAttachedTimingContext(cfg)

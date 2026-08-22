@@ -116,8 +116,8 @@ servingCommon.uplinkConfigCommon = struct( ...
         "pucch_ConfigCommon", struct("pucch_ResourceCommon", 0)), ...
     "timeAlignmentTimerCommon", string(sixgr.util.structGet(cfg, ...
         "rrc.sib1.time_alignment_timer", "infinity")));
-servingCommon.ssb_PositionsInBurst = struct("inOneGroup", string( ...
-    sixgr.util.structGet(cfg, "initial_access.ssb.positions_in_burst", "10000000")));
+servingCommon.ssb_PositionsInBurst = struct("inOneGroup", ...
+    localCanonicalSIB1SSBPositions(cfg));
 servingCommon.ssb_periodicityServingCell = string(sixgr.util.structGet(cfg, ...
     "initial_access.ssb.periodicity_ms", "ms20"));
 if ~startsWith(servingCommon.ssb_periodicityServingCell, "ms")
@@ -158,6 +158,27 @@ msg.asn1Release = "3GPP_TS_38_331_V18_9_0";
 msg.profile = "3gpp_ts38331_v18_bounded_fr1_sib1";
 msg.message = struct("c1", struct("systemInformationBlockType1", sib1));
 sixgr.rrc.asn1.validateSIB1ForScenario(msg, cfg);
+end
+
+function bitmap = localCanonicalSIB1SSBPositions(cfg)
+% The bounded Release-18 codec represents inOneGroup as one octet.  Runtime
+% Case-A/B/C burst planning may legitimately use the four-bit short bitmap;
+% canonicalize that semantic value before hashing the transmit tree so the
+% independently decoded ASN.1 tree is compared in the same representation.
+bitmap = string(sixgr.util.structGet( ...
+    cfg, "initial_access.ssb.positions_in_burst", "10000000"));
+bitmap = erase(strtrim(bitmap), [" ", "_"]);
+if ~isscalar(bitmap) || strlength(bitmap) == 0 || ...
+        ~all(ismember(char(bitmap), ['0','1']))
+    error("sixgr:rrc:asn1:InvalidSSBPositionsInBurst", ...
+        "SIB1 ssb-PositionsInBurst must be a nonempty binary bitmap.");
+end
+if strlength(bitmap) == 4
+    bitmap = pad(bitmap, 8, "left", "0");
+elseif strlength(bitmap) ~= 8
+    error("sixgr:rrc:asn1:UnsupportedSSBPositionsInBurst", ...
+        "The bounded FR1 SIB1 profile accepts a 4-bit short or 8-bit medium bitmap.");
+end
 end
 
 function riv = localBWPResourceIndicatorValue(startRB, lengthRB, nRB)

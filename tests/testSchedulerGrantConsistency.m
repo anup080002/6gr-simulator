@@ -100,6 +100,8 @@ cfgGuard = sixgr.util.structSet(cfgGuard, "phy.linkAdaptation.minPRBForWidebandC
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.mcsTable", "qam64_table1");
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.nLayers", 2);
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.NumAntennaPorts", 2);
+cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.dmrs.nPorts", 2);
+cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.dmrs.portSet", [0 1]);
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.transformPrecoding", false);
 cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pusch.mappingType", "A");
 cfgGuard = sixgr.util.structSet(cfgGuard, "scenario.ue.nTxAnt", 2);
@@ -127,7 +129,25 @@ assert(logical(sixgr.util.structGet(gGuard, "QueueAwareReductionApplied", false)
     "The small-PRB wideband-CQI guard must disclose the queue-aware rank/MCS reduction.");
 localAssertExactTBSInputs(gGuard, "wideband-CQI guard UL grant");
 
+cfgInsufficientDMRS = sixgr.util.structSet(cfgGuard, "phy.pusch.dmrs.nPorts", 1);
+cfgInsufficientDMRS = sixgr.util.structSet(cfgInsufficientDMRS, "phy.pusch.dmrs.portSet", 0);
+localAssertThrows(@() sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+    cfgInsufficientDMRS, "UL", 2, struct()), "sixgr:pusch:InvalidDMRSPortSet");
+
 ok = true;
+end
+
+function localAssertThrows(fn, expectedID)
+didThrow = false;
+try
+    fn();
+catch ME
+    didThrow = true;
+    assert(strcmp(string(ME.identifier), string(expectedID)), ...
+        "Expected error %s, received %s: %s", ...
+        string(expectedID), string(ME.identifier), string(ME.message));
+end
+assert(didThrow, "Expected error %s was not raised.", string(expectedID));
 end
 
 function localAssertExactTBSInputs(grant, label)

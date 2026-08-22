@@ -580,6 +580,7 @@ def build_csv_file_dispositions(
             str(check.get("category", "")) in {
                 "domain_runtime", "component_bler", "mimo_rank_layer",
                 "mimo_companion", "harq_runtime", "kpi_delivery",
+                "metric_output", "metric_coverage", "runtime_execution_lineage",
             }
             for check in checks
         ):

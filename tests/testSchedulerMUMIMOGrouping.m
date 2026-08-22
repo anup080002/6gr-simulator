@@ -379,7 +379,16 @@ assert(all(annotatedT.MUMIMOEnabled) && ...
 % A different configured PMI without measured CQI is not causal MU
 % evidence.  Bootstrap rows remain orthogonal SU grants rather than being
 % forced into an MU label.
-bootstrapUE = localUEs([0 1 2 3], [0 0 0 0]);
+bootstrapUE = localUEs([0 1 2 3], [1 1 1 1]);
+for bootstrapIndex = 1:numel(bootstrapUE)
+    % CQI 0 is an explicit out-of-range report, not missing feedback.  A
+    % bootstrap scheduling test must instead carry a positive conservative
+    % CQI with explicit non-measured provenance and authorization.
+    bootstrapUE(bootstrapIndex).FeedbackValid = false;
+    bootstrapUE(bootstrapIndex).BootstrapCQIUsableForScheduling = true;
+    bootstrapUE(bootstrapIndex).BootstrapCQISource = ...
+        "yaml_enabled_conservative_bootstrap_not_measured_cqi";
+end
 bootstrapScheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL");
 bootstrapGrants = bootstrapScheduler.schedule(0, bootstrapUE, ...
     struct("PRBSet", 0:23, "SymbolAllocation", [2 12]));

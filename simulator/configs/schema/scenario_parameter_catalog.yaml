@@ -1155,6 +1155,7 @@ sections:
       phy_signal_diagnostic_fft_length: {required: false, type: integer, min: 64, max: 4096}
       phy_signal_diagnostic_channel_points: {required: false, type: integer, min: 8, max: 4096}
       phy_signal_diagnostic_constellation_points: {required: false, type: integer, min: 16, max: 2048}
+      phy_signal_diagnostic_full_channel_grid: {required: false, type: boolean}
       publication_mode:
         required: false
         type: string

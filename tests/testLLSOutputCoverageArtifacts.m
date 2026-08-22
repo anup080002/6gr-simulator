@@ -10,6 +10,10 @@ c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 runFolder = fullfile(tmp, "coverage_run");
 layout = sixgr.report.resultLayout(runFolder);
 localCreateSourceArtifacts(layout);
+sourceCommit = "0123456789abcdef0123456789abcdef01234567";
+sixgr.util.ensureFolder(layout.RawDir);
+sixgr.util.jsonWrite(fullfile(layout.RawDir, "execution_manifest.json"), ...
+    struct("GitCommit", sourceCommit, "GitDirty", false));
 % Registered file paths are not sufficient evidence by themselves.  These
 % fixtures deliberately model the two failure shapes seen in production:
 % a header-only antenna schema and a PRACH row that explicitly says no
@@ -233,6 +237,9 @@ pdsch = readtable(pdschPath, "VariableNamingRule", "preserve");
 pusch = readtable(puschPath, "VariableNamingRule", "preserve");
 csiRs = readtable(csiRsPath, "VariableNamingRule", "preserve");
 beamPrecoder = readtable(beamPrecoderPath, "VariableNamingRule", "preserve");
+assert(all(string(beamPrecoder.code_commit) == sourceCommit), ...
+    ["Recovered coverage artifacts must retain the immutable raw execution " ...
+     "manifest commit; a MATLAB release or current checkout must never replace it."]);
 beamAnalytics = readtable(beamAnalyticsPath, "VariableNamingRule", "preserve");
 mimoRank = readtable(mimoRankPath, "VariableNamingRule", "preserve");
 rankHistogram = readtable(rankHistogramPath, "VariableNamingRule", "preserve");
@@ -604,7 +611,7 @@ for i = 1:numel(dirs)
 end
 
 localWrite(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), table( ...
-    "dummy_commit", 30, 20, 14, "DDDDU", "TDD", 1234, ...
+    "2026a", 30, 20, 14, "DDDDU", "TDD", 1234, ...
     'VariableNames', {'CodeCommit','SCS_kHz','SlotsPerFrame','SymbolsPerSlot','ConfiguredTDDPattern','ActiveDuplexMode','RandomSeed'}));
 localWrite(fullfile(layout.ReportCSVDir, "deployment_layout_reference.csv"), table( ...
     19, 3, 57, 100, 600, "random_waypoint", ...

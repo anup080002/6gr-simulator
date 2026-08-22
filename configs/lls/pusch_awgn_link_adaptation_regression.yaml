@@ -2,7 +2,7 @@ inherits: pusch_reference.yaml
 
 scenario:
   id: pusch_awgn_causal_link_adaptation_regression
-  description: Focused causal AMC/OLLA regression using prior receiver post-equalization SINR and decoded ACK/NACK
+  description: Focused causal AMC/OLLA regression using two-slot-delayed receiver post-equalization SINR and decoded ACK/NACK
 
 simulation:
   studyType: link_adaptation_throughput
@@ -23,7 +23,7 @@ linkAdaptation:
   initialMCSIndex: 0
   minimumMCSIndex: 0
   maximumMCSIndex: 28
-  feedbackDelaySlots: 1
+  feedbackDelaySlots: 2
   olla:
     enabled: true
     initialOffsetDb: 0.0

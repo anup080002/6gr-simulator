@@ -13,7 +13,8 @@ layout = sixgr.report.resultLayout(runFolder);
 localEnsureDirs({layout.ReportCSVDir, layout.PacketFlowCSVDir, layout.RFCSVDir, ...
     layout.SystemCSVDir, layout.ControlCSVDir, layout.AirInterfaceCSVDir, layout.BeamformingCSVDir});
 
-scfg = struct("ScenarioID", "CQI_EXPORT_TRUTH", "ConfigHash", "unit_hash");
+scfg = struct("ScenarioID", "CQI_EXPORT_TRUTH", "ConfigHash", "unit_hash", ...
+    "frame", struct("scs_khz", 30));
 cfg = sixgr.config.defaultConfig();
 
 localWrite(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), table( ...

@@ -21,6 +21,16 @@ campaignCfg.min_errors_for_ci = 0;
 campaignCfg.max_ci_half_width = 1;
 campaignCfg.trials_per_drop = 1;
 campaignCfg.parallel_workers = 0;
+configuredSeeds = double(campaignCfg.seeds(:));
+assert(~isempty(configuredSeeds), ...
+    "The master YAML must provide a fixed-link seed list.");
+% Checkpoint/resume is an execution-equivalence check, not a statistical
+% campaign. Use one explicitly declared YAML seed while the independent
+% multi-seed campaign tests retain the full seed-coverage requirement.
+campaignCfg.seeds = configuredSeeds(1);
+if isfield(campaignCfg, "Seeds")
+    campaignCfg.Seeds = configuredSeeds(1);
+end
 
 tmp = tempname;
 mkdir(tmp);
@@ -41,6 +51,10 @@ resumed = sixgr.lls6g.campaign.runFixedLinkCampaign(cfg, ...
     "CheckpointPath", checkpointPath, "ResumeFromCheckpoint", true);
 assert(resumed.Completed && resumed.ResumedFromCheckpoint, ...
     "The resumed invocation must complete from the persisted checkpoint.");
+assert(all(double(baseline.DLTrials.FixedLinkSeedIndex) == 1) && ...
+    all(double(baseline.DLTrials.FixedLinkSeedValue) == configuredSeeds(1)), ...
+    ["The bounded resume fixture must disclose its exact YAML-owned seed " + ...
+     "instead of bypassing seed lineage."]);
 for field = ["Summary","DLTrials","ULTrials","TaskPlan"]
     baselineTable = localScientificTable(baseline.(char(field)));
     resumedTable = localScientificTable(resumed.(char(field)));

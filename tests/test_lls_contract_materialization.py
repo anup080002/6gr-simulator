@@ -35,9 +35,14 @@ def test_filesystem_replacement_restores_declared_artifact_pngs_before_indexing(
     declared_rasters = source.index(
         "declared_artifact_rasters = materialize_declared_artifact_generation_rasters("
     )
+    report_rasters = source.index(
+        "declared_report_rasters = materialize_declared_report_rasters(run_folder)"
+    )
     filesystem_index = source.index("run_row = dash.filesystem_run_row_from_folder(run_folder)")
     assert deletion < declared_rasters < filesystem_index
+    assert deletion < report_rasters < filesystem_index
     assert '"declared_artifact_rasters_regenerated"' in source
+    assert '"declared_report_rasters_regenerated"' in source
 
 
 def test_contract_plot_lineage_binds_exact_raster_and_dataset_bytes() -> None:

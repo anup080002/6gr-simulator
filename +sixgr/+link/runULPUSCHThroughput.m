@@ -105,6 +105,11 @@ out.ExecutionBackend = executionContract.Backend;
 out.ApproximationMode = "none";
 out.CalibrationProvenance = executionContract.CalibrationProvenance;
 out.StrictSchedulingOwnership = executionContract.Profile == "scheduler_truth";
+out.TxWaveformCapture = struct();
+txWaveformCaptureRequired = logical(sixgr.util.structGet(cfg, ...
+    "outputs.rawIQCaptureEnabled", false)) && logical(sixgr.util.structGet( ...
+    cfg, "outputs.saveRawWaveforms", false));
+txWaveformCapture = struct();
 
 configuredPUSCH = logical(sixgr.util.structGet(cfg, "phy.pusch.enable", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "scheduled_pusch", ...
@@ -272,6 +277,7 @@ trialOLLABaseRequiredSINR = NaN(numFrames,1);
 trialOLLATargetRequiredSINR = NaN(numFrames,1);
 trialOLLAThresholdSource = strings(numFrames,1);
 trialOLLAUpdateCount = NaN(numFrames,1);
+trialOLLAStateAuthority = strings(numFrames,1);
 trialOLLAState = strings(numFrames,1);
 trialRankSelectionPolicy = strings(numFrames,1);
 trialRankSelectionSource = strings(numFrames,1);
@@ -625,6 +631,25 @@ trialStatus(:) = "FAIL";
 trialCrash = false(numFrames,1);
 trialLAApplied = false(numFrames,1);
 trialLAScheduled = false(numFrames,1);
+trialLAFeedbackDelaySlots = NaN(numFrames,1);
+trialLAFeedbackDelaySource = strings(numFrames,1);
+trialLAFeedbackDelayStatus = strings(numFrames,1);
+trialLAAppliedSourceSlot = NaN(numFrames,1);
+trialLAAppliedAgeSlots = NaN(numFrames,1);
+trialLAScheduledSourceSlot = NaN(numFrames,1);
+trialLAScheduledApplySlot = NaN(numFrames,1);
+trialLAAppliedDecisionCQI = NaN(numFrames,1);
+trialLAAppliedDecisionCQIBasedMCS = NaN(numFrames,1);
+trialLAAppliedDecisionMCS = NaN(numFrames,1);
+trialLAAppliedDecisionOLLADeltaDb = NaN(numFrames,1);
+trialLAAppliedDecisionOLLAUpdateCount = NaN(numFrames,1);
+trialLAAppliedDecisionOLLAFeedbackEligible = false(numFrames,1);
+trialLAScheduledDecisionCQI = NaN(numFrames,1);
+trialLAScheduledDecisionMCS = NaN(numFrames,1);
+trialLAScheduledDecisionOLLADeltaDb = NaN(numFrames,1);
+trialLAScheduledDecisionOLLAUpdateCount = NaN(numFrames,1);
+trialLAScheduledDecisionOLLAFeedbackEligible = false(numFrames,1);
+trialLAScheduledDecisionOLLAFeedbackExclusionReason = strings(numFrames,1);
 trialNotes = strings(numFrames,1);
 trialChan = repmat(chanModel, numFrames, 1);
 trialDopp = dopplerHz * ones(numFrames,1);
@@ -643,9 +668,23 @@ for n = 1:numFrames
             cfgFrame = cfgDyn;
             trialLAApplied(n) = false;
         else
-            [cfgDyn, laState, laApplyEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "UL", frameIdx, "Phase", "before");
+            [cfgDyn, laState, laApplyEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "UL", trialSlot(n), "Phase", "before");
             cfgFrame = cfgDyn;
             trialLAApplied(n) = logical(laApplyEvent.Applied);
+            trialLAFeedbackDelaySlots(n) = double(laApplyEvent.ConfiguredFeedbackDelaySlots);
+            trialLAFeedbackDelaySource(n) = string(laApplyEvent.FeedbackDelaySource);
+            trialLAFeedbackDelayStatus(n) = string(laApplyEvent.FeedbackDelayStatus);
+            if logical(laApplyEvent.Applied)
+                appliedDecision = laApplyEvent.Decision;
+                trialLAAppliedSourceSlot(n) = double(laApplyEvent.FeedbackSourceSlot);
+                trialLAAppliedAgeSlots(n) = double(laApplyEvent.FeedbackAgeSlots);
+                trialLAAppliedDecisionCQI(n) = double(sixgr.util.structGet(appliedDecision, "ResolvedCQI", NaN));
+                trialLAAppliedDecisionCQIBasedMCS(n) = double(sixgr.util.structGet(appliedDecision, "CQIBasedMCS", NaN));
+                trialLAAppliedDecisionMCS(n) = double(sixgr.util.structGet(appliedDecision, "MCSIndex", NaN));
+                trialLAAppliedDecisionOLLADeltaDb(n) = double(sixgr.util.structGet(appliedDecision, "OLLADeltaDb", NaN));
+                trialLAAppliedDecisionOLLAUpdateCount(n) = double(sixgr.util.structGet(appliedDecision, "OLLAUpdateCount", NaN));
+                trialLAAppliedDecisionOLLAFeedbackEligible(n) = logical(sixgr.util.structGet(appliedDecision, "OLLAFeedbackEligible", false));
+            end
         end
         cfgFrame = localApplyReplayGrantConfig(cfgFrame, grantSnapshotOverride, "UL");
         trialMCS(n) = double(sixgr.util.structGet(cfgFrame, "phy.pusch.mcsIndex", NaN));
@@ -740,6 +779,7 @@ for n = 1:numFrames
         trialOLLATargetRequiredSINR(n) = double(sixgr.util.structGet(grantSnapshot, "OLLATargetRequiredSINR_dB", NaN));
         trialOLLAThresholdSource(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAThresholdSource", ""));
         trialOLLAUpdateCount(n) = double(sixgr.util.structGet(grantSnapshot, "OLLAUpdateCount", NaN));
+        trialOLLAStateAuthority(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAStateAuthority", ""));
         trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
         trialRankSelectionPolicy(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionPolicy", ""));
         trialRankSelectionSource(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionSource", ""));
@@ -906,6 +946,15 @@ for n = 1:numFrames
             tx.TxRFImpairmentReplay = txRfOut.Replay;
             txInfo.TxRFImpairmentReplay = txRfOut.Replay;
             cfgFrameRx = sixgr.util.structSet(cfgFrameRx, "lls6g.txRFImpairmentReplay", txRfOut.Replay);
+        end
+        if txWaveformCaptureRequired && isempty(fieldnames(txWaveformCapture))
+            txWaveformCapture = struct( ...
+                "Waveform",tx.Waveform, ...
+                "SampleRateHz",double(localResolveSampleRate(tx,txInfo)), ...
+                "Frame",double(frameIdx), ...
+                "Slot",double(trialSlot(n)), ...
+                "CapturePoint","post_power_control_power_context_and_tx_rf_pre_channel", ...
+                "WaveformAuthority","exact_runtime_pusch_waveform");
         end
         trialPUSCHPowerControlEnabled(n) = logical(powerCtrl.Enabled);
         trialPUSCHPowerControlStatus(n) = string(powerCtrl.Status);
@@ -1639,9 +1688,26 @@ for n = 1:numFrames
             metrics.CombinedDecodeOK = logical(finalDecodeOK);
             metrics.AckObserved = logical(finalDecodeOK);
             metrics.DecoderIterations = double(combinedDecodeIt);
-            [cfgDyn, laState, laObserveEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "UL", frameIdx, ...
+            metrics.SourceSlot = double(trialSlot(n));
+            metrics.RV = double(trialRV(n));
+            metrics.IsRetransmission = false;
+            [cfgDyn, laState, laObserveEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "UL", trialSlot(n), ...
                 "Phase", "after", "Metrics", metrics);
             trialLAScheduled(n) = logical(laObserveEvent.Scheduled);
+            trialLAFeedbackDelaySlots(n) = double(laObserveEvent.ConfiguredFeedbackDelaySlots);
+            trialLAFeedbackDelaySource(n) = string(laObserveEvent.FeedbackDelaySource);
+            trialLAFeedbackDelayStatus(n) = string(laObserveEvent.FeedbackDelayStatus);
+            if logical(laObserveEvent.Scheduled)
+                scheduledDecision = laObserveEvent.Decision;
+                trialLAScheduledSourceSlot(n) = double(laObserveEvent.FeedbackSourceSlot);
+                trialLAScheduledApplySlot(n) = double(laObserveEvent.ApplySlot);
+                trialLAScheduledDecisionCQI(n) = double(sixgr.util.structGet(scheduledDecision, "ResolvedCQI", NaN));
+                trialLAScheduledDecisionMCS(n) = double(sixgr.util.structGet(scheduledDecision, "MCSIndex", NaN));
+                trialLAScheduledDecisionOLLADeltaDb(n) = double(sixgr.util.structGet(scheduledDecision, "OLLADeltaDb", NaN));
+                trialLAScheduledDecisionOLLAUpdateCount(n) = double(sixgr.util.structGet(scheduledDecision, "OLLAUpdateCount", NaN));
+                trialLAScheduledDecisionOLLAFeedbackEligible(n) = logical(sixgr.util.structGet(scheduledDecision, "OLLAFeedbackEligible", false));
+                trialLAScheduledDecisionOLLAFeedbackExclusionReason(n) = string(sixgr.util.structGet(scheduledDecision, "OLLAFeedbackExclusionReason", ""));
+            end
         end
         lastHARQ = struct( ...
             "TransportBlockBits", txBits, ...
@@ -1748,6 +1814,7 @@ if isstruct(out.HARQ)
         trialUCIOnPUSCHEvidenceSource(finalTrialIndex)));
 end
 out.ChannelState = chState;
+out.TxWaveformCapture = txWaveformCapture;
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
@@ -1899,6 +1966,25 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
             'Status','Crash', ...
              'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.LinkAdaptationFeedbackDelaySlots = trialLAFeedbackDelaySlots(idx);
+        T.LinkAdaptationFeedbackDelaySource = trialLAFeedbackDelaySource(idx);
+        T.LinkAdaptationFeedbackDelayStatus = trialLAFeedbackDelayStatus(idx);
+        T.LinkAdaptationAppliedFeedbackSourceSlot = trialLAAppliedSourceSlot(idx);
+        T.LinkAdaptationAppliedFeedbackAgeSlots = trialLAAppliedAgeSlots(idx);
+        T.LinkAdaptationScheduledFeedbackSourceSlot = trialLAScheduledSourceSlot(idx);
+        T.LinkAdaptationScheduledApplySlot = trialLAScheduledApplySlot(idx);
+        T.AppliedLinkAdaptationResolvedCQI = trialLAAppliedDecisionCQI(idx);
+        T.AppliedLinkAdaptationCQIBasedMCS = trialLAAppliedDecisionCQIBasedMCS(idx);
+        T.AppliedLinkAdaptationMCS = trialLAAppliedDecisionMCS(idx);
+        T.AppliedLinkAdaptationOLLADeltaDb = trialLAAppliedDecisionOLLADeltaDb(idx);
+        T.AppliedLinkAdaptationOLLAUpdateCount = trialLAAppliedDecisionOLLAUpdateCount(idx);
+        T.AppliedLinkAdaptationOLLAFeedbackEligible = trialLAAppliedDecisionOLLAFeedbackEligible(idx);
+        T.ScheduledLinkAdaptationResolvedCQI = trialLAScheduledDecisionCQI(idx);
+        T.ScheduledLinkAdaptationMCS = trialLAScheduledDecisionMCS(idx);
+        T.ScheduledLinkAdaptationOLLADeltaDb = trialLAScheduledDecisionOLLADeltaDb(idx);
+        T.ScheduledLinkAdaptationOLLAUpdateCount = trialLAScheduledDecisionOLLAUpdateCount(idx);
+        T.ScheduledLinkAdaptationOLLAFeedbackEligible = trialLAScheduledDecisionOLLAFeedbackEligible(idx);
+        T.ScheduledLinkAdaptationOLLAFeedbackExclusionReason = trialLAScheduledDecisionOLLAFeedbackExclusionReason(idx);
         T.DecodeLatencySource = trialDecodeLatencySource(idx);
         T.ReceiverPipelineLatency_ms = trialReceiverPipelineLatency(idx);
         T.ReceiverPipelineLatencySource = trialReceiverPipelineLatencySource(idx);
@@ -2114,6 +2200,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.OLLATargetRequiredSINR_dB = trialOLLATargetRequiredSINR(idx);
         T.OLLAThresholdSource = trialOLLAThresholdSource(idx);
         T.OLLAUpdateCount = trialOLLAUpdateCount(idx);
+        T.OLLAStateAuthority = trialOLLAStateAuthority(idx);
         T.OLLAState = trialOLLAState(idx);
         T.RankSelectionPolicy = trialRankSelectionPolicy(idx);
         T.RankSelectionSource = trialRankSelectionSource(idx);
@@ -2296,7 +2383,7 @@ if isempty(carrier)
         "Standalone AWGN requires the transmitting carrier for occupied-grid noise calibration.");
 end
 signalEnergyPerOccupiedRE = localOccupiedRESignalEnergy(txInfo);
-[y, referenceNoise] = sixgr.conformance.addReferenceNoise( ...
+[y, referenceNoise] = sixgr.phy.waveform.addOccupiedREAWGN( ...
     x, carrier, appliedSNR_dB, ...
     "SignalEnergyPerOccupiedRE", signalEnergyPerOccupiedRE);
 [nVar, source] = localReceiverEffectiveNoiseVariance( ...
@@ -2535,21 +2622,47 @@ existingInnerLoopApplied = logical(localOptionalColumn(T, "InnerLoopApplied", fa
 existingOLLADeltaMCS = double(localOptionalColumn(T, "OLLADeltaMCS", NaN));
 existingOLLAUpdateCount = double(localOptionalColumn(T, "OLLAUpdateCount", NaN));
 existingOLLAState = string(localOptionalColumn(T, "OLLAState", ""));
-T.OuterLoopEnabled = repmat(outerLoopEnabled, n, 1) | existingOuterLoopEnabled;
-T.InnerLoopEnabled = repmat(innerLoopEnabled, n, 1);
+runtimeDecisionApplied = logical(localOptionalColumn(T, "LinkAdaptationApplied", false));
+runtimeDecisionScheduled = logical(localOptionalColumn(T, "LinkAdaptationScheduled", false));
+appliedDecisionCQI = double(localOptionalColumn(T, "AppliedLinkAdaptationResolvedCQI", NaN));
+appliedDecisionOLLADelta = double(localOptionalColumn(T, "AppliedLinkAdaptationOLLADeltaDb", NaN));
+appliedDecisionOLLAUpdates = double(localOptionalColumn(T, "AppliedLinkAdaptationOLLAUpdateCount", NaN));
+scheduledDecisionCQI = double(localOptionalColumn(T, "ScheduledLinkAdaptationResolvedCQI", NaN));
+scheduledOLLAEligible = logical(localOptionalColumn(T, "ScheduledLinkAdaptationOLLAFeedbackEligible", false));
+resolvedOuterLoopEnabled = repmat(outerLoopEnabled, n, 1) | existingOuterLoopEnabled;
+resolvedInnerLoopEnabled = repmat(innerLoopEnabled, n, 1);
+runtimeOuterApplied = resolvedOuterLoopEnabled & linkAdaptationRuntimeMask & ...
+    runtimeDecisionApplied & isfinite(appliedDecisionOLLAUpdates) & appliedDecisionOLLAUpdates >= 1;
+runtimeInnerApplied = resolvedInnerLoopEnabled & linkAdaptationRuntimeMask & ...
+    runtimeDecisionApplied & isfinite(appliedDecisionCQI);
+T.OuterLoopEnabled = resolvedOuterLoopEnabled;
+T.InnerLoopEnabled = resolvedInnerLoopEnabled;
 T.OuterLoopApplied = (T.OuterLoopEnabled & schedulerReplayMask & existingOuterLoopApplied) | ...
-    (T.OuterLoopEnabled & linkAdaptationRuntimeMask & logical(localOptionalColumn(T, "LinkAdaptationScheduled", false)));
+    runtimeOuterApplied;
 T.InnerLoopApplied = (T.InnerLoopEnabled & schedulerReplayMask & existingInnerLoopApplied) | ...
-    (T.InnerLoopEnabled & linkAdaptationRuntimeMask & ...
-    (logical(localOptionalColumn(T, "LinkAdaptationApplied", false)) | logical(localOptionalColumn(T, "LinkAdaptationScheduled", false))));
+    runtimeInnerApplied;
+T.ILLAUpdateScheduled = T.InnerLoopEnabled & linkAdaptationRuntimeMask & ...
+    runtimeDecisionScheduled & isfinite(scheduledDecisionCQI);
+T.OLLAFeedbackUpdateScheduled = T.OuterLoopEnabled & ...
+    linkAdaptationRuntimeMask & runtimeDecisionScheduled & scheduledOLLAEligible;
+runtimeOLLAValue = linkAdaptationRuntimeMask & isfinite(appliedDecisionOLLADelta);
+existingOLLADeltaMCS(runtimeOLLAValue) = appliedDecisionOLLADelta(runtimeOLLAValue);
+runtimeOLLAUpdateValue = linkAdaptationRuntimeMask & isfinite(appliedDecisionOLLAUpdates);
+existingOLLAUpdateCount(runtimeOLLAUpdateValue) = appliedDecisionOLLAUpdates(runtimeOLLAUpdateValue);
 T.OLLADeltaMCS = existingOLLADeltaMCS;
+T.OLLADeltaDb(runtimeOLLAValue) = appliedDecisionOLLADelta(runtimeOLLAValue);
 T.OLLAUpdateCount = existingOLLAUpdateCount;
 T.OLLAState = repmat("disabled", n, 1);
 T.OLLAState(T.OuterLoopEnabled & schedulerReplayMask) = "configured_enabled_waiting_for_scheduler_ack_nack_feedback";
 T.OLLAState(T.OuterLoopEnabled & linkAdaptationRuntimeMask & ~T.OuterLoopApplied) = "configured_enabled_waiting_for_runtime_feedback";
+T.OLLAState(T.OLLAFeedbackUpdateScheduled & ~T.OuterLoopApplied) = "feedback_update_scheduled_for_future_slot";
 T.OLLAState(T.OuterLoopApplied) = "applied_runtime_link_adaptation_decision";
 preserveStateMask = strlength(strtrim(existingOLLAState)) > 0 & lower(strtrim(existingOLLAState)) ~= "disabled";
 T.OLLAState(preserveStateMask) = existingOLLAState(preserveStateMask);
+ollaPolicy = sixgr.link.resolveOLLAConfig(cfg);
+ollaAuthority = string(localOptionalColumn(T, "OLLAStateAuthority", ""));
+ollaAuthority(strlength(strtrim(ollaAuthority)) == 0 & T.OuterLoopEnabled) = string(ollaPolicy.StateAuthority);
+T.OLLAStateAuthority = ollaAuthority;
 T.CalibrationProfile = repmat(localResolveLinkAdaptationCalibrationProfile(cfg, direction), n, 1);
 T.RequestedOperatingPointSource = localResolveOperatingPointSourceColumn(configuredSelectionMode, configuredLinkMode);
 T.SchedulerGrantMCSSelectionMode = string(localOptionalColumn(T, "SchedulerGrantMCSSelectionMode", ""));
@@ -2790,6 +2903,10 @@ row.GeometryAdapterLimitation = string(channelMeta.GeometryAdapterLimitation);
 row.GeometryAdapterPortMapping = string(channelMeta.GeometryAdapterPortMapping);
 row.ChannelUsesCountOnlyAntennaModel = logical(channelMeta.ChannelUsesCountOnlyAntennaModel);
 row.ChannelUsesSameRuntimeAntennaAssumptions = logical(channelMeta.ChannelUsesSameRuntimeAntennaAssumptions);
+row.TransmitElementPatternApplied = logical(channelMeta.TransmitElementPatternApplied);
+row.ReceiveElementPatternApplied = logical(channelMeta.ReceiveElementPatternApplied);
+row.TransmitElementPatternSource = string(channelMeta.TransmitElementPatternSource);
+row.ReceiveElementPatternSource = string(channelMeta.ReceiveElementPatternSource);
 row.ChannelComplianceMode = string(channelMeta.ChannelComplianceMode);
 row.PathlossModelSource = string(channelMeta.PathlossModelSource);
 row.PathlossComplianceStatus = string(channelMeta.PathlossComplianceStatus);
@@ -3033,6 +3150,10 @@ meta.GeometryAdapterPortMapping = string(sixgr.util.structGet(metaIn, "GeometryA
 meta.ChannelUsesCountOnlyAntennaModel = logical(sixgr.util.structGet(metaIn, "ChannelUsesCountOnlyAntennaModel", ...
     any(strcmpi(strtrim(string(meta.ChannelArrayModel)), ["nrtdl_count_only_fading_channel", "awgn_no_array_channel"]))));
 meta.ChannelUsesSameRuntimeAntennaAssumptions = logical(sixgr.util.structGet(metaIn, "ChannelUsesSameRuntimeAntennaAssumptions", false));
+meta.TransmitElementPatternApplied = logical(sixgr.util.structGet(metaIn, "TransmitElementPatternApplied", false));
+meta.ReceiveElementPatternApplied = logical(sixgr.util.structGet(metaIn, "ReceiveElementPatternApplied", false));
+meta.TransmitElementPatternSource = string(sixgr.util.structGet(metaIn, "TransmitElementPatternSource", ""));
+meta.ReceiveElementPatternSource = string(sixgr.util.structGet(metaIn, "ReceiveElementPatternSource", ""));
 meta.ChannelComplianceMode = string(sixgr.util.structGet(metaIn, "ChannelComplianceMode", ""));
 meta.PathlossModelSource = string(sixgr.util.structGet(metaIn, "PathlossModelSource", ""));
 meta.PathlossComplianceStatus = string(sixgr.util.structGet(metaIn, "PathlossComplianceStatus", ""));
@@ -3127,6 +3248,10 @@ row = struct( ...
     "GeometryAdapterPortMapping", "", ...
     "ChannelUsesCountOnlyAntennaModel", false, ...
     "ChannelUsesSameRuntimeAntennaAssumptions", false, ...
+    "TransmitElementPatternApplied", false, ...
+    "ReceiveElementPatternApplied", false, ...
+    "TransmitElementPatternSource", "", ...
+    "ReceiveElementPatternSource", "", ...
     "ChannelComplianceMode", "", ...
     "PathlossModelSource", "", ...
     "PathlossComplianceStatus", "", ...
@@ -4419,6 +4544,25 @@ T.TimingEstimateWasClipped = false(0,1);
 T.LinkAdaptationDomain = strings(0,1);
 T.FixedAnchorMode = false(0,1);
 T.AdaptiveMode = false(0,1);
+T.LinkAdaptationFeedbackDelaySlots = zeros(0,1);
+T.LinkAdaptationFeedbackDelaySource = strings(0,1);
+T.LinkAdaptationFeedbackDelayStatus = strings(0,1);
+T.LinkAdaptationAppliedFeedbackSourceSlot = zeros(0,1);
+T.LinkAdaptationAppliedFeedbackAgeSlots = zeros(0,1);
+T.LinkAdaptationScheduledFeedbackSourceSlot = zeros(0,1);
+T.LinkAdaptationScheduledApplySlot = zeros(0,1);
+T.AppliedLinkAdaptationResolvedCQI = zeros(0,1);
+T.AppliedLinkAdaptationCQIBasedMCS = zeros(0,1);
+T.AppliedLinkAdaptationMCS = zeros(0,1);
+T.AppliedLinkAdaptationOLLADeltaDb = zeros(0,1);
+T.AppliedLinkAdaptationOLLAUpdateCount = zeros(0,1);
+T.AppliedLinkAdaptationOLLAFeedbackEligible = false(0,1);
+T.ScheduledLinkAdaptationResolvedCQI = zeros(0,1);
+T.ScheduledLinkAdaptationMCS = zeros(0,1);
+T.ScheduledLinkAdaptationOLLADeltaDb = zeros(0,1);
+T.ScheduledLinkAdaptationOLLAUpdateCount = zeros(0,1);
+T.ScheduledLinkAdaptationOLLAFeedbackEligible = false(0,1);
+T.ScheduledLinkAdaptationOLLAFeedbackExclusionReason = strings(0,1);
 T.CQISource = strings(0,1);
 T.MCSSelectionSource = strings(0,1);
 T.MCSValueStatus = strings(0,1);
@@ -4427,6 +4571,12 @@ T.OuterLoopEnabled = false(0,1);
 T.InnerLoopEnabled = false(0,1);
 T.OuterLoopApplied = false(0,1);
 T.InnerLoopApplied = false(0,1);
+T.ILLAUpdateScheduled = false(0,1);
+T.OLLAFeedbackUpdateScheduled = false(0,1);
+T.OLLADeltaDb = zeros(0,1);
+T.OLLADeltaMCS = zeros(0,1);
+T.OLLAUpdateCount = zeros(0,1);
+T.OLLAStateAuthority = strings(0,1);
 T.OLLAState = strings(0,1);
 T.RankSelectionPolicy = strings(0,1);
 T.RankSelectionSource = strings(0,1);
@@ -6185,7 +6335,7 @@ grant = struct( ...
 preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode", ...
     "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
     "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
-    "OLLAUpdateCount","OLLAState", ...
+    "OLLAUpdateCount","OLLAStateAuthority","OLLAState", ...
     "RankSelectionPolicy","RankSelectionSource","RankDecisionReason","RankDowngradeApplied","MaxSupportedLayers", ...
     "RawCQIDerivedMCS","LinkAdaptationMCSIndex","LinkAdaptationDecisionReason", ...
     "CQIBasedMCS","SmoothedCQI","InstantaneousCQIMCS","DeltaMCS","StaticDeltaMCS", ...

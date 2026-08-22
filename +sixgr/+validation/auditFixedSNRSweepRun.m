@@ -47,6 +47,8 @@ for direction = ["DL", "UL"]
     berT = localDirectionCurveTable(art, direction, "BER");
     trialT = localDirectionTrialTable(art, direction);
     rows = [rows; localDirectionAuditRows(direction, enabled, req, blerT, berT, trialT)]; %#ok<AGROW>
+    rows = [rows; localTargetCrossingAuditRows(direction, enabled, req, ...
+        art.TargetCrossings.Table, blerT)]; %#ok<AGROW>
     monotonicityRows = [monotonicityRows; localMonotonicityAuditRows(direction, enabled, blerT)]; %#ok<AGROW>
 end
 
@@ -113,6 +115,8 @@ art.DLBLER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "dl_fixed_snr_
 art.ULBLER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "ul_fixed_snr_bler_curve.csv"));
 art.DLBER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "dl_fixed_snr_ber_curve.csv"));
 art.ULBER = localReadOptionalTable(fullfile(layout.ReportCSVDir, "ul_fixed_snr_ber_curve.csv"));
+art.TargetCrossings = localReadOptionalTable(fullfile(layout.ReportCSVDir, ...
+    "fixed_snr_sweep_curve_crossing.csv"));
 % Python is the sole raster authority. Its canonical lineage binds every
 % plotted dataset CSV to the rendered PNG hash; the retired MATLAB
 % fixed_snr_plot_lineage.csv must not be recreated as a second authority.
@@ -187,9 +191,18 @@ req.MaxSINRMinusSNR_dB = localFirstFinite([
     ]);
 req.FixedSNRSweepRequired = localGetLogical(cfg, "validation.fixed_snr_sweep_required", false);
 req.MeasuredSINRRequired = logical(req.FixedSNRSweepRequired) && isfinite(req.MaxSINRMinusSNR_dB);
-req.TargetBLER = localFirstFinite([
-    localGetDouble(cfg, "sweeps_and_matrix.fixed_link_calibration.target_bler", NaN)
-    localGetDouble(cfg, "validation.fixed_link_campaign.target_bler", NaN)
+targetBLERs = localFirstNumericVector({
+    localGetValue(cfg, "validation.fixed_link_campaign.target_bler", [])
+    localGetValue(cfg, "sweeps_and_matrix.fixed_link_calibration.target_bler", [])
+    });
+targetBLERs = unique(double(targetBLERs(:)), "stable");
+targetBLERs = targetBLERs(isfinite(targetBLERs) & targetBLERs > 0 & targetBLERs < 1);
+req.TargetBLERs = targetBLERs;
+req.TargetBLER = localFirstFinite(targetBLERs);
+req.MaxTargetCrossingBracket_dB = localFirstFinite([
+    localGetDouble(cfg, "validation.fixed_link_campaign.max_target_crossing_bracket_db", NaN)
+    localGetDouble(cfg, "sweeps_and_matrix.fixed_link_calibration.max_target_crossing_bracket_db", NaN)
+    2
     ]);
 req.RunClassificationPresent = logical(art.RunClassification.Present);
 end
@@ -206,6 +219,7 @@ paths = {
     "reports/csv/ul_fixed_snr_bler_curve.csv", "UL", localDirectionEnabled(req, "UL")
     "reports/csv/dl_fixed_snr_ber_curve.csv", "DL", localDirectionEnabled(req, "DL")
     "reports/csv/ul_fixed_snr_ber_curve.csv", "UL", localDirectionEnabled(req, "UL")
+    "reports/csv/fixed_snr_sweep_curve_crossing.csv", "global", ~isempty(req.TargetBLERs)
     "reports/csv/contract_plot_lineage.csv", "global", true
     };
 
@@ -459,6 +473,93 @@ rows = [rows; localHighSNRSanityAuditRows(direction, blerT, req)]; %#ok<AGROW>
 rows = [rows; localEffectiveCodeRateAuditRows(direction, trialT)]; %#ok<AGROW>
 end
 
+function rows = localTargetCrossingAuditRows(direction, enabled, req, crossingT, blerT)
+% Recompute every YAML-requested crossing from the measured curve.  The
+% exported crossing table is evidence, not an oracle: it must agree with
+% the independent reducer and an unresolved bracket is a hard failure.
+rows = repmat(localEmptyAuditRow(), 0, 1);
+if ~enabled || isempty(req.TargetBLERs)
+    return;
+end
+
+scope = "reports/csv/fixed_snr_sweep_curve_crossing.csv";
+direction = upper(strtrim(string(direction)));
+mcsValues = unique(localNumericColumn(blerT, ["MCS", "MCSIndex"], ...
+    NaN(height(blerT), 1)), "stable");
+mcsValues = mcsValues(isfinite(mcsValues));
+if isempty(mcsValues)
+    rows(end + 1, 1) = localAuditRow( ...
+        lower(direction) + "_target_crossing_mcs_identity_available", ...
+        scope, height(blerT), 1, NaN, "finite MCS identity", "FAIL", ...
+        "target_crossing_mcs_unavailable", ...
+        "A target-BLER crossing cannot be qualified without the executed MCS identity.");
+    return;
+end
+
+crossDirection = upper(strtrim(localTextColumn(crossingT, "Direction", "", height(crossingT))));
+crossMCS = localNumericColumn(crossingT, ["MCS", "MCSIndex"], NaN(height(crossingT), 1));
+crossTarget = localNumericColumn(crossingT, "TargetBLER", NaN(height(crossingT), 1));
+crossStatus = lower(strtrim(localTextColumn(crossingT, ...
+    ["TargetCrossingStatus", "CrossingStatus"], "", height(crossingT))));
+crossSNR = localNumericColumn(crossingT, ...
+    ["TargetCrossingSNR_dB", "CrossingSNR_dB"], NaN(height(crossingT), 1));
+exportStatus = lower(strtrim(localTextColumn(crossingT, "Status", "", height(crossingT))));
+exportFailure = lower(strtrim(localTextColumn(crossingT, "FailureCode", "", height(crossingT))));
+
+curveMCS = localNumericColumn(blerT, ["MCS", "MCSIndex"], NaN(height(blerT), 1));
+curveSNR = localNumericColumn(blerT, ["ConfiguredSNR_dB", "SNR_dB"], NaN(height(blerT), 1));
+curveBLER = localNumericColumn(blerT, "BLER", NaN(height(blerT), 1));
+qualifiedStates = ["crossing_observed_exact_point", "crossing_observed_interpolated"];
+
+for mcs = reshape(double(mcsValues), 1, [])
+    curveMask = abs(curveMCS - mcs) <= 1e-9;
+    for target = reshape(double(req.TargetBLERs), 1, [])
+        [expectedStatus, expectedSNR] = sixgr.validation.qualifyObservedBLERCrossing( ...
+            curveSNR(curveMask), curveBLER(curveMask), target, ...
+            double(req.MaxTargetCrossingBracket_dB));
+        match = crossDirection == direction & abs(crossMCS - mcs) <= 1e-9 & ...
+            abs(crossTarget - target) <= max(1e-12, eps(target) * 8);
+        nMatch = nnz(match);
+        observedSNR = NaN;
+        failureCode = "";
+        details = "Measured crossing is uniquely exported and independently qualified.";
+        bad = false;
+        if nMatch ~= 1
+            bad = true;
+            failureCode = localTernary(nMatch == 0, ...
+                "target_crossing_row_missing", "target_crossing_row_duplicate");
+            details = "Expected exactly one crossing row for the YAML direction/MCS/target identity.";
+        else
+            idx = find(match, 1, "first");
+            observedSNR = crossSNR(idx);
+            if ~ismember(expectedStatus, qualifiedStates)
+                bad = true;
+                failureCode = expectedStatus;
+                details = "The measured BLER curve does not resolve this configured target inside the maximum SNR bracket.";
+            elseif crossStatus(idx) ~= expectedStatus
+                bad = true;
+                failureCode = "target_crossing_classification_mismatch";
+                details = "Exported crossing classification disagrees with the independently reduced measured curve.";
+            elseif ~isfinite(observedSNR) || abs(observedSNR - expectedSNR) > 1e-9
+                bad = true;
+                failureCode = "target_crossing_snr_missing_or_mismatch";
+                details = "Exported target-crossing SNR is missing or differs from the independently reduced value.";
+            elseif exportStatus(idx) ~= "qualified" || strlength(exportFailure(idx)) > 0
+                bad = true;
+                failureCode = "target_crossing_export_not_qualified";
+                details = "The crossing row must be explicitly qualified with an empty failure code.";
+            end
+        end
+        checkName = lower(direction) + "_target_crossing_mcs_" + string(mcs) + ...
+            "_bler_" + replace(string(target), ".", "p");
+        rows(end + 1, 1) = localAuditRow( ... %#ok<AGROW>
+            checkName, scope, nMatch, double(bad), observedSNR, ...
+            "resolved crossing; max bracket " + string(req.MaxTargetCrossingBracket_dB) + " dB", ...
+            localStatusFromFailures(double(bad)), failureCode, details);
+    end
+end
+end
+
 function rows = localPerPointTrialAuditRows(direction, curveT, req)
 rows = repmat(localEmptyAuditRow(), 0, 1);
 if ~(istable(curveT) && ~isempty(curveT))
@@ -649,6 +750,7 @@ artifacts = {
     "reports/csv/ul_fixed_snr_bler_curve.csv", art.ULBLER.Table
     "reports/csv/dl_fixed_snr_ber_curve.csv", art.DLBER.Table
     "reports/csv/ul_fixed_snr_ber_curve.csv", art.ULBER.Table
+    "reports/csv/fixed_snr_sweep_curve_crossing.csv", art.TargetCrossings.Table
     "reports/csv/contract_plot_lineage.csv", art.PlotLineage.Table
     };
 for i = 1:size(artifacts, 1)
@@ -919,6 +1021,8 @@ switch string(relPath)
         entry = art.DLBER;
     case "reports/csv/ul_fixed_snr_ber_curve.csv"
         entry = art.ULBER;
+    case "reports/csv/fixed_snr_sweep_curve_crossing.csv"
+        entry = art.TargetCrossings;
     case "reports/csv/contract_plot_lineage.csv"
         entry = art.PlotLineage;
     otherwise

@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-18-contract-v42-runtime-energy-charts"
+MATERIALIZER_VERSION = "2026-08-20-contract-v43-harq-rtt-pucch-format"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -261,6 +261,19 @@ def contract_artifact_is_policy_filtered(
         return True
 
     table_name = Path(path).name
+    if not bool(policy.get("geometry_enabled", False)) and table_name in {
+        "live_site_table.csv",
+        "live_sector_table.csv",
+        "live_trp_table.csv",
+        "live_cell_table.csv",
+        "live_ue_table.csv",
+        "live_link_table.csv",
+        "live_path_geometry_table.csv",
+        "live_candidate_cell_table.csv",
+    }:
+        return True
+    if not bool(policy.get("raw_grid_capture_enabled", False)) and table_name == "live_re_allocation_snapshot.csv":
+        return True
     if (
         not bool(policy.get("csi_enabled", False))
         and table_name == "live_csirs_stats.csv"
@@ -376,7 +389,16 @@ def contract_artifact_is_policy_filtered(
     if not bool(policy.get("geometry_enabled", False)) and (
         name == "geometry_runtime_audit"
         or "geometry_runtime_audit.csv" in path
-        or name in {"topology_map", "ue_trajectory_xy"}
+        or name in {
+            "topology_map",
+            "ue_trajectory_xy",
+            "bs/sector/ue topology scatter plot",
+            "serving cell map",
+            "candidate cell rank heatmap",
+            "distance distribution histogram",
+            "azimuth/elevation rose plots",
+            "path geometry summary charts",
+        }
     ):
         return True
 
@@ -653,14 +675,14 @@ def contract_artifact_is_policy_filtered(
     ):
         return True
 
+    if not bool(policy.get("initial_access_enabled", False)) and name == "sync success/failure timeline if available":
+        return True
+
     if (
         not bool(policy.get("pdcch_enabled", False))
         and not bool(policy.get("pucch_enabled", False))
         and not bool(policy.get("initial_access_enabled", False))
-        and name in {
-            "sync success/failure timeline if available",
-            "control decode success/failure tables",
-        }
+        and name == "control decode success/failure tables"
     ):
         return True
 
@@ -2563,6 +2585,8 @@ def _render_heatmap_svg(
     summary_lines: list[str],
     x_axis_title: str,
     y_axis_title: str,
+    *,
+    allow_singleton_observation: bool = False,
 ) -> bytes:
     width = 1180
     height = 760
@@ -2581,7 +2605,7 @@ def _render_heatmap_svg(
     ]
     if not x_labels or not y_labels or not matrix:
         return _render_reason_svg(title, subtitle, summary_lines + ["No heatmap cells were derived from the persisted runtime source rows."])
-    if len(x_labels) < 2 or len(y_labels) < 2:
+    if (len(x_labels) < 2 or len(y_labels) < 2) and not allow_singleton_observation:
         return _render_reason_svg(
             title,
             "Exact runtime source rows exist, but a heatmap requires two independent axes.",
@@ -8732,10 +8756,24 @@ def _specialized_chart_materialization(
                     "note": note,
                 }
     if chart_name in harq_chart_names:
+        harq_sources = [
+            "harq/csv/live_harq_observation_timeline.csv",
+            "reports/csv/live_harq_process_table.csv",
+            "harq/csv/live_harq_observation_summary.csv",
+        ]
+        if chart_name == "HARQ RTT distribution":
+            # RTT belongs to the canonical per-attempt HARQ timeline. The
+            # generic live observation table intentionally contains decoder
+            # outcomes only and cannot be used to manufacture feedback timing.
+            harq_sources = [
+                "harq/csv/harq_process_timeline.csv",
+                "harq/csv/probe_harq_packets.csv",
+                *harq_sources,
+            ]
         source_path, records = _first_available_rows(
             existing,
             fetch_artifact_bytes,
-            ["harq/csv/live_harq_observation_timeline.csv", "reports/csv/live_harq_process_table.csv", "harq/csv/live_harq_observation_summary.csv"],
+            harq_sources,
         )
         if records:
             dataset = None
@@ -8789,8 +8827,11 @@ def _specialized_chart_materialization(
                 dataset = {"mode": _honest_chart_mode(points), "x_label": "Slot/sample", "y_label": "Retransmission rate", "points": points}
             elif chart_name == "HARQ RTT distribution":
                 values: list[float] = []
+                values_are_ms = False
                 for row in records:
                     rtt = _row_float(row, "HARQRTT_ms", "harq_rtt_ms", "RTT_ms")
+                    if rtt is not None:
+                        values_are_ms = True
                     if rtt is None:
                         tx_slot = _row_float(row, "Slot")
                         feedback_slot = _row_float(row, "FeedbackDueSlot")
@@ -8804,7 +8845,8 @@ def _specialized_chart_materialization(
                     if rtt is not None and math.isfinite(float(rtt)):
                         values.append(float(rtt))
                 points = _histogram_points(values, 16)
-                dataset = {"mode": "bar", "x_label": "HARQ RTT (slot/sample units if no ms field)", "y_label": "Count", "points": points}
+                rtt_axis = "HARQ RTT (ms)" if values_are_ms else "HARQ RTT (slot/sample units)"
+                dataset = {"mode": "bar", "x_label": rtt_axis, "y_label": "Count", "points": points}
             elif chart_name == "newTx vs retx comparison":
                 counts = Counter()
                 for row in records:
@@ -9914,7 +9956,14 @@ def _specialized_chart_materialization(
             if chart_name == "decoder iteration distributions":
                 values = [float(value) for _source_path, row in trial_rows for value in [_row_float(row, "DecoderIterations")] if value is not None]
                 if values:
-                    dataset = {"mode": "bar", "x_label": "Decoder iterations", "y_label": "Mean count per bin", "points": _bin_mean_points([(value, 1.0) for value in values], 14)}
+                    dataset = {
+                        "mode": "bar",
+                        "x_label": "Decoder iterations",
+                        "y_label": "Mean count per bin",
+                        "points": _bin_mean_points([(value, 1.0) for value in values], 14),
+                        "evidence_shape_policy": "observed_distribution",
+                        "sample_count": len(values),
+                    }
                     csv_rows = [{"run_id": run_id, "chart_name": chart_name, "decoder_iterations": value, "source_table_logical_path": "multiple_runtime_trials"} for value in values]
                     return {
                         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "decoder_iterations", "source_table_logical_path"], csv_rows),
@@ -10477,9 +10526,13 @@ def _specialized_chart_materialization(
                         x_labels,
                         y_labels,
                         matrix,
-                        [f"samples={len(raw_rows)}"],
+                        [
+                            f"samples={len(raw_rows)}",
+                            "A singleton matrix is the exact observed PUCCH format population; no absent format categories are synthesized.",
+                        ],
                         "Requested format",
                         "Resolved format",
+                        allow_singleton_observation=True,
                     ),
                     "csv_status": "specialized_runtime_pucch_dataset",
                     "image_status": "generated_specialized_runtime_heatmap_svg",

@@ -33,6 +33,9 @@ fprintf(fid, "%s", ['{' ...
     '"random_access":{"enabled":false,"prach_format":"B4","preamble_length_mode":"short","preamble_count":64,"zero_correlation_zone":8,"detection_threshold":0.5,"msg3_enabled":false,"configuration_index":198,"subcarrier_spacing_khz":30,"root_sequence_index":1,"preamble_index":0},' ...
     '"users":{"enabled":true,"n_users":2,"rnti_start":201,"seed_stride":17,' ...
     '"execution_model":"slot_coupled_truth","beam_selection_strategy":"fixed_first_beam","save_user_tables":true},' ...
+    '"link_adaptation":{"fixed_or_amc":"fixed","operating_point_mode":"fixed","outer_loop_flag":false,"inner_loop_flag":false,' ...
+    '"pdcch_link_adaptation_policy":"fixed","pdsch_link_adaptation_policy":"fixed","pusch_link_adaptation_policy":"fixed",' ...
+    '"rank_adaptation_policy":"fixed","al_adaptation_policy":"fixed","beam_adaptation_policy":"fixed"},' ...
     '"control_gating":{"pbch_required":false,"prach_required":false,"pdcch_required":false,"srs_required":false,"srs_max_age_slots":4,"trs_required":false,"trs_max_age_slots":4},' ...
     '"output":{"save_figures":false,"save_mat":false,"publication_mode":"smoke","profile":"lls_coupled_truth_smoke",' ...
     '"live_publish_frame_interval":1,"live_heavy_refresh_interval_frames":3}}']);
@@ -58,6 +61,8 @@ prachFile = fullfile(runFolder, "air_interface", "csv", "prach_trials.csv");
 pdcchFile = fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv");
 srsFile = fullfile(runFolder, "air_interface", "csv", "srs_trials.csv");
 trsFile = fullfile(runFolder, "air_interface", "csv", "trs_trials.csv");
+mimoSummaryFile = fullfile(runFolder, "beamforming", "csv", "mimo_configured_vs_effective.csv");
+mimoGateFile = fullfile(runFolder, "beamforming", "csv", "mimo_strict_gate_summary.csv");
 
 assert(exist(dlFile, "file") == 2, "Missing coupled-truth DL trials CSV.");
 assert(exist(ulFile, "file") == 2, "Missing coupled-truth UL trials CSV.");
@@ -71,10 +76,14 @@ assert(exist(dlGrantFile, "file") == 2, "Missing coupled-truth DL scheduler gran
 assert(exist(ulGrantFile, "file") == 2, "Missing coupled-truth UL scheduler grant CSV.");
 assert(exist(slotTraceFile, "file") == 2, "Missing canonical coupled-truth SlotTrace CSV.");
 assert(exist(runStateFile, "file") == 2, "Missing canonical coupled-truth RunState CSV.");
-assert(exist(prachFile, "file") == 2, "Missing coupled-truth mirrored PRACH CSV.");
+assert(exist(prachFile, "file") ~= 2, ...
+    "Disabled PRACH with zero observations must not publish a header-only primary CSV.");
 assert(exist(pdcchFile, "file") == 2, "Missing coupled-truth mirrored PDCCH CSV.");
 assert(exist(srsFile, "file") == 2, "Missing coupled-truth mirrored SRS CSV.");
-assert(exist(trsFile, "file") == 2, "Missing coupled-truth mirrored TRS CSV.");
+assert(exist(trsFile, "file") ~= 2, ...
+    "Disabled TRS with zero observations must not publish a header-only primary CSV.");
+assert(exist(mimoSummaryFile, "file") == 2, "Missing coupled-truth MIMO configured/effective CSV.");
+assert(exist(mimoGateFile, "file") == 2, "Missing coupled-truth MIMO strict-gate CSV.");
 
 dl = readtable(dlFile, "VariableNamingRule", "preserve");
 ul = readtable(ulFile, "VariableNamingRule", "preserve");
@@ -88,10 +97,12 @@ dlGrant = readtable(dlGrantFile, "VariableNamingRule", "preserve");
 ulGrant = readtable(ulGrantFile, "VariableNamingRule", "preserve");
 slotTrace = readtable(slotTraceFile, "VariableNamingRule", "preserve");
 runState = readtable(runStateFile, "VariableNamingRule", "preserve");
-prach = readtable(prachFile, "VariableNamingRule", "preserve");
+prach = table();
 pdcch = readtable(pdcchFile, "VariableNamingRule", "preserve");
 srs = readtable(srsFile, "VariableNamingRule", "preserve");
-trs = readtable(trsFile, "VariableNamingRule", "preserve");
+trs = table();
+mimoSummary = readtable(mimoSummaryFile, "VariableNamingRule", "preserve");
+mimoGate = readtable(mimoGateFile, "VariableNamingRule", "preserve");
 
 assert(~isempty(dl), "Coupled truth DL trials must not be empty.");
 assert(~isempty(ul), "Coupled truth UL trials must not be empty.");
@@ -104,10 +115,15 @@ assert(~isempty(dlGrant), "Coupled truth DL scheduler grant trace must not be em
 assert(~isempty(ulGrant), "Coupled truth UL scheduler grant trace must not be empty.");
 assert(~isempty(slotTrace), "Coupled truth SlotTrace must not be empty.");
 assert(~isempty(runState), "Coupled truth RunState must not be empty.");
-assert(istable(prach), "Coupled truth mirrored PRACH CSV must remain readable when PRACH is disabled.");
+assert(isempty(prach), "Disabled PRACH must remain absent from primary runtime evidence.");
 assert(~isempty(pdcch), "Coupled truth mirrored PDCCH CSV must not be empty.");
 assert(istable(srs), "Coupled truth mirrored SRS CSV must remain readable.");
-assert(istable(trs), "Coupled truth mirrored TRS CSV must remain readable.");
+assert(isempty(trs), "Disabled TRS must remain absent from primary runtime evidence.");
+assert(all(string(mimoSummary.RunId) == "smoke") && ...
+    all(string(mimoSummary.ScenarioName) == "lls_coupled_truth_smoke"), ...
+    "MIMO evidence must keep logical RunId distinct from ScenarioName.");
+assert(height(mimoGate) == 8 && all(logical(mimoGate.Pass)), ...
+    "Every strict MIMO evidence sub-gate must pass for the coupled truth scenario.");
 localAssertExactTBSInputs(dl, "TBSize_bits", "DL trial");
 localAssertExactTBSInputs(ul, "TBSize_bits", "UL trial");
 localAssertExactTBSInputs(dlGrant, "TBSBits", "DL grant");

@@ -6,7 +6,11 @@ arguments
     pointTable table
 end
 
-runFolder = char(string(runFolder));
+% This publisher is also a public entry point, so do not rely on its caller
+% to have canonicalized a relative run root.  All image/source paths below
+% must be absolute until writeComponentPlotLineage reduces them exactly
+% once to run-relative portable paths.
+runFolder = char(sixgr.util.canonicalPath(runFolder));
 layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.ReportImageDir);
@@ -38,6 +42,10 @@ entryIds = unique(string(pointTable.EntryId), "stable");
 imagePaths = strings(numel(entryIds), 1);
 subsetCSVs = strings(numel(entryIds), 1);
 plotIds = strings(numel(entryIds), 1);
+plotMetrics = strings(numel(entryIds), 1);
+plotYScales = strings(numel(entryIds), 1);
+plotFloors = nan(numel(entryIds), 1);
+zeroEstimateCounts = zeros(numel(entryIds), 1);
 for index = 1:numel(entryIds)
     entryId = entryIds(index);
     token = localSafeToken(entryId);
@@ -53,10 +61,14 @@ for index = 1:numel(entryIds)
     localValidatePointRows(persisted);
     imagePath = fullfile(layout.ReportImageDir, ...
         token + "_reference_point.png");
-    localPlotPointTable(persisted, imagePath);
+    plotMeta = localPlotPointTable(persisted, imagePath);
     imagePaths(index) = string(imagePath);
     subsetCSVs(index) = string(subsetPath);
     plotIds(index) = "frc_reference_point_" + string(token);
+    plotMetrics(index) = string(plotMeta.Metric);
+    plotYScales(index) = string(plotMeta.YScale);
+    plotFloors(index) = double(plotMeta.ZeroEstimatePlotFloor);
+    zeroEstimateCounts(index) = double(plotMeta.ZeroEstimateCount);
 end
 
 lineagePath = fullfile(layout.ReportCSVDir, ...
@@ -65,6 +77,31 @@ sixgr.visual.writeComponentPlotLineage(runFolder, lineagePath, ...
     plotIds, imagePaths, subsetCSVs, ...
     "sixgr.conformance.publishReferenceQualificationArtifacts", ...
     "SourcesAlreadyFinalized", true);
+lineage = readtable(lineagePath, "TextType", "string", ...
+    "VariableNamingRule", "preserve", "Delimiter", ",");
+lineage.Metric = strings(height(lineage), 1);
+lineage.YScale = strings(height(lineage), 1);
+lineage.ZeroEstimatePlotFloor = nan(height(lineage), 1);
+lineage.ZeroEstimateCount = zeros(height(lineage), 1);
+lineage.PlotSemantics = strings(height(lineage), 1);
+for index = 1:numel(plotIds)
+    match = string(lineage.PlotId) == plotIds(index);
+    if nnz(match) ~= 1
+        error("sixgr:conformance:FRCPlotLineageIdentityMismatch", ...
+            "Expected exactly one lineage row for plot '%s'.", plotIds(index));
+    end
+    lineage.Metric(match) = plotMetrics(index);
+    lineage.YScale(match) = plotYScales(index);
+    lineage.ZeroEstimatePlotFloor(match) = plotFloors(index);
+    lineage.ZeroEstimateCount(match) = zeroEstimateCounts(index);
+    if plotYScales(index) == "log"
+        lineage.PlotSemantics(match) = ...
+            "observed_zero_retained_in_csv_and_rendered_at_disclosed_positive_floor";
+    else
+        lineage.PlotSemantics(match) = "direct_linear_render_of_persisted_values";
+    end
+end
+sixgr.util.csvWriteTable(lineagePath, lineage, "PreserveSchema", true);
 artifacts = struct( ...
     "PointCSV", string(masterCSV), ...
     "ImagePaths", imagePaths, ...
@@ -96,7 +133,7 @@ if any(localLogical(T.ProxyUsed)) || any(localLogical(T.FallbackUsed)) || ...
 end
 end
 
-function localPlotPointTable(T, imagePath)
+function plotMeta = localPlotPointTable(T, imagePath)
 [snr, order] = sort(localNumeric(T, "SNR_dB"));
 metric = localNumeric(T, "MetricEstimate"); metric = metric(order);
 lower = localNumeric(T, "ConfidenceLower"); lower = lower(order);
@@ -113,9 +150,24 @@ fig = figure("Visible", "off", "Color", "white", ...
 cleanup = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
 hold(ax, "on");
-negativeError = max(metric - lower, 0);
-positiveError = max(upper - metric, 0);
-errorbar(ax, snr, metric, negativeError, positiveError, "o-", ...
+useLogReliabilityScale = strcmpi(strtrim(metricName), ...
+    "block_error_rate") && min(target) <= 0.01;
+zeroEstimatePlotFloor = NaN;
+plotMetric = metric;
+plotLower = lower;
+plotUpper = upper;
+if useLogReliabilityScale
+    positiveReference = [target(target > 0); metric(metric > 0); ...
+        lower(lower > 0); upper(upper > 0)];
+    zeroEstimatePlotFloor = 10 ^ (floor(log10(min(positiveReference))) - 1);
+    zeroEstimatePlotFloor = max(zeroEstimatePlotFloor, realmin("double"));
+    plotMetric = max(metric, zeroEstimatePlotFloor);
+    plotLower = max(lower, zeroEstimatePlotFloor);
+    plotUpper = max(upper, zeroEstimatePlotFloor);
+end
+negativeError = max(plotMetric - plotLower, 0);
+positiveError = max(plotUpper - plotMetric, 0);
+errorbar(ax, snr, plotMetric, negativeError, positiveError, "o-", ...
     "LineWidth", 2.2, "MarkerSize", 7, ...
     "Color", [0.05 0.47 0.44], "MarkerFaceColor", [0.05 0.47 0.44], ...
     "DisplayName", "Measured truth + confidence interval");
@@ -134,10 +186,19 @@ title(ax, frc + " — " + condition, "Interpreter", "none", ...
     "Color", [0.06 0.09 0.14], "FontWeight", "bold");
 subtitle(ax, sprintf("Runtime truth; %d TB across %d measured point(s)", ...
     sum(tb), height(T)), "Color", [0.20 0.25 0.33]);
+if useLogReliabilityScale
+    subtitle(ax, sprintf("Runtime truth; %d TB across %d measured point(s). " + ...
+        "Observed zero shown at %.3g plotting floor; CSV value remains zero.", ...
+        sum(tb), height(T), zeroEstimatePlotFloor), ...
+        "Color", [0.20 0.25 0.33]);
+end
 lgd = legend(ax, "Location", "best");
 set(lgd, "Color", "white", "TextColor", [0.08 0.12 0.18], ...
     "EdgeColor", [0.65 0.70 0.78]);
-if all(metric >= 0 & metric <= 1) && all(lower >= 0 & upper <= 1)
+if useLogReliabilityScale
+    set(ax, "YScale", "log");
+    ylim(ax, [zeroEstimatePlotFloor 1]);
+elseif all(metric >= 0 & metric <= 1) && all(lower >= 0 & upper <= 1)
     ylim(ax, [0 1]);
 end
 set(ax, "FontName", "Arial", "FontSize", 12, ...
@@ -145,6 +206,19 @@ set(ax, "FontName", "Arial", "FontSize", 12, ...
     "XColor", [0.12 0.16 0.22], "YColor", [0.12 0.16 0.22], ...
     "GridColor", [0.75 0.79 0.85], "GridAlpha", 0.55);
 sixgr.visual.exportRasterAtomic(fig, string(imagePath), 150);
+plotMeta = struct( ...
+    "Metric", metricName, ...
+    "YScale", localScaleName(useLogReliabilityScale), ...
+    "ZeroEstimatePlotFloor", double(zeroEstimatePlotFloor), ...
+    "ZeroEstimateCount", double(nnz(metric == 0)));
+end
+
+function value = localScaleName(useLogReliabilityScale)
+if useLogReliabilityScale
+    value = "log";
+else
+    value = "linear";
+end
 end
 
 function label = localMetricLabel(metricName)

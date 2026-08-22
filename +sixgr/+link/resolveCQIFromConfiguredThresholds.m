@@ -1,0 +1,33 @@
+function [cqi, detail] = resolveCQIFromConfiguredThresholds( ...
+        effectiveSINRdB, thresholdsDb, comparisonToleranceDb)
+%RESOLVECQIFROMCONFIGUREDTHRESHOLDS Map measured SINR to configured CQI.
+% The tolerance is an explicit configuration input used only to make an
+% exact threshold inclusive despite floating-point round-off. It is not an
+% SINR margin and must remain negligible relative to physical dB scales.
+
+arguments
+    effectiveSINRdB (1,1) double {mustBeFinite}
+    thresholdsDb (1,:) double {mustBeFinite}
+    comparisonToleranceDb (1,1) double {mustBeFinite,mustBeNonnegative}
+end
+
+if isempty(thresholdsDb) || any(diff(thresholdsDb) <= 0)
+    error("sixgr:link:InvalidCQIThresholds", ...
+        "CQI SINR thresholds must be a nonempty strictly increasing vector.");
+end
+if comparisonToleranceDb > 1e-3
+    error("sixgr:link:CQIThresholdToleranceTooLarge", ...
+        ["CQI threshold comparison tolerance %.12g dB is too large. " + ...
+        "It must be no greater than 1e-3 dB and cannot be used as a link margin."], ...
+        comparisonToleranceDb);
+end
+
+comparisonSINRdB = effectiveSINRdB + comparisonToleranceDb;
+cqi = double(sum(comparisonSINRdB >= thresholdsDb));
+detail = struct( ...
+    "EffectiveSINRdB", double(effectiveSINRdB), ...
+    "ComparisonSINRdB", double(comparisonSINRdB), ...
+    "ComparisonToleranceDb", double(comparisonToleranceDb), ...
+    "ThresholdsDb", double(thresholdsDb), ...
+    "CQI", double(cqi));
+end

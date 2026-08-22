@@ -129,7 +129,7 @@ def test_config_driven_contract_applicability_does_not_enable_optional_6g() -> N
         policy,
         contract_name="live_pucch_f3_table",
     )
-    assert not materializer.contract_artifact_is_policy_filtered(
+    assert materializer.contract_artifact_is_policy_filtered(
         "reports/csv/live_pucch_f0_table.csv",
         policy,
         contract_name="live_pucch_f0_table",
@@ -458,6 +458,150 @@ def test_resolved_master_yaml_switches_override_dashboard_profile_defaults() -> 
     assert policy["channel_snapshot_capture_enabled"] is False
 
 
+def test_bounded_pdsch_pusch_feature_authority_filters_only_disabled_families() -> None:
+    run_row = {
+        "profile_name": "waveform_bundle",
+        "config_json": json.dumps(
+            {
+                "canonical_control": {"launch": {"geometry_enabled": False}},
+                "channels": {
+                    "pathloss_enabled": False,
+                    "shadow_fading_enabled": False,
+                    "model_type": "AWGN",
+                    "profile": "AWGN",
+                },
+                "reference_signals": {
+                    "csi_rs_enabled": False,
+                    "csi_reporting_enabled": False,
+                    "srs_enabled": False,
+                    "pucch_enabled": False,
+                },
+                "csi_acquisition_and_reporting": {
+                    "dl_csi_enabled": False,
+                    "ul_csi_enabled": False,
+                },
+                "control": {"pdcch_enabled": False, "pucch_enabled": False},
+                "harq": {"enabled": False},
+                "pucch": {"enabled": False},
+                "power_control": {
+                    "ul_open_loop_enable": False,
+                    "f_closed_loop_enable": False,
+                },
+                "rf_frontend": {"enabled": False},
+                "impairments": {
+                    "cfo_enabled": False,
+                    "phase_noise_enabled": False,
+                    "iq_imbalance_enabled": False,
+                    "pa_nonlinearity_enabled": False,
+                    "timing_offset_enabled": False,
+                },
+                "run_control": {"raw_grid_capture_enable": False},
+                "link_adaptation": {"fixed_or_amc": "fixed"},
+                "mimo": {"n_layers": 2},
+            }
+        ),
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    for key in (
+        "geometry_enabled",
+        "pathloss_enabled",
+        "shadowing_enabled",
+        "csi_enabled",
+        "srs_enabled",
+        "pdcch_enabled",
+        "pucch_enabled",
+        "harq_enabled",
+        "power_control_enabled",
+        "rf_impairments_enabled",
+        "raw_grid_capture_enabled",
+    ):
+        assert policy[key] is False, key
+
+    for table_path in (
+        "reports/csv/live_site_table.csv",
+        "reports/csv/live_sector_table.csv",
+        "reports/csv/live_trp_table.csv",
+        "reports/csv/live_ue_table.csv",
+        "reports/csv/live_re_allocation_snapshot.csv",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            table_path, policy, contract_name=Path(table_path).stem
+        )
+
+    for name in (
+        "distance distribution histogram",
+        "azimuth/elevation rose plots",
+        "path geometry summary charts",
+        "CQI vs selected MCS",
+        "power control command timeline",
+        "PHR distribution",
+        "sync success/failure timeline if available",
+        "CSI-RS resource occupancy",
+        "requested vs resolved format confusion matrix",
+        "SRS validity timeline",
+        "SRS consumption by scheduler/beam module",
+        "pathloss/shadowing distributions",
+        "impairment contribution bar chart",
+        "UE power headroom timeline",
+        "CSI-RS map",
+        "SRS map",
+        "pathloss distribution",
+        "shadowing distribution",
+        "O2I distribution",
+        "PUCCH DTX statistics",
+        "per-format reliability breakdown",
+        "selected MCS distribution",
+        "selected vs derived MCS confusion matrix",
+        "quality-vs-selected-MCS mismatch plot",
+        "HARQ RTT distribution",
+        "phase noise summary",
+        "PA nonlinearity summary",
+        "clipping summary",
+        "quantization summary",
+        "impairment order trace",
+        "contribution decomposition if measurable",
+        "UL Tx power per UE",
+        "power control behavior",
+        "PA backoff distribution",
+        "RF chain power",
+        "thermal/throttling analytics if available",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__test__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        ), name
+
+    # Decoder iterations are emitted by the actual DL/UL decoder and remain a
+    # required runtime chart for this bounded waveform scenario.
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__test__decoder-iteration-distributions.csv",
+        policy,
+        contract_name="decoder iteration distributions",
+    )
+
+
+def test_independent_rf_and_power_switches_are_ored_without_false_masking() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "rf_frontend": {"enabled": False},
+                "impairments": {
+                    "cfo_enabled": False,
+                    "phase_noise_enabled": True,
+                },
+                "power_control": {
+                    "ul_open_loop_enable": False,
+                    "f_closed_loop_enable": True,
+                },
+            }
+        )
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["rf_impairments_enabled"] is True
+    assert policy["power_control_enabled"] is True
+
+
 def test_pusch_uci_policy_does_not_claim_standalone_pucch_artifacts() -> None:
     run_row = {
         "config_json": json.dumps(
@@ -565,6 +709,35 @@ def test_sensing_chart_uses_runtime_target_detection_and_cfar_cells() -> None:
     assert values["observed_target_detection_fraction"] == 1.0
     assert values["observed_false_alarm_cell_fraction"] == 0.0
     assert b"P_FA campaign claim=not made" in result["img_bytes"]
+
+
+def test_constant_decoder_iteration_population_is_a_valid_distribution() -> None:
+    trial_csv = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "DecoderIterations", "CRCPass"],
+        [["DL", 1, 1], ["DL", 1, 1], ["DL", 1, 1]],
+    )
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {
+            "artifact_id": 1,
+            "logical_path": "air_interface/csv/dl_pdsch_trials.csv",
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv; charset=UTF-8",
+        }
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "decoder iteration distributions",
+        existing,
+        lambda artifact_id: trial_csv,
+        23,
+    )
+    assert result is not None
+    png = materializer._rasterize_contract_png(  # noqa: SLF001
+        result["img_bytes"],
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/decoder-iterations.vector",
+    )
+    assert materializer._png_low_information_reason(png) == ""  # noqa: SLF001
+    assert b"decoder_iterations" in result["csv_bytes"]
 
 
 def test_configured_sweep_charts_use_real_directional_trials() -> None:
@@ -1153,6 +1326,52 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
     )
     assert rv_chart is not None
     assert ",0.0,1.0," in rv_chart["csv_bytes"].decode("utf-8")
+
+
+def test_harq_rtt_prefers_canonical_attempt_timeline_and_pucch_zero_format_is_valid() -> None:
+    harq_attempts = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "Slot", "HARQProcess", "RTT_slots", "RTT_ms"],
+        [["DL", 1, 0, 4, 2.0], ["DL", 2, 1, 4, 2.0]],
+    )
+    # Real decoder observations deliberately carry no feedback timing and
+    # must not mask the canonical per-attempt HARQ RTT evidence.
+    harq_observations = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "Slot", "HarqID", "CombinedDecodeOK"],
+        [["DL", 1, 0, 1]],
+    )
+    pucch = materializer._encode_csv(  # noqa: SLF001
+        ["RequestedFormat", "ResolvedFormat", "FormatAdapted", "PUCCHDecodeOk"],
+        [[0, 0, 0, 1], [0, 0, 0, 1]],
+    )
+    existing = {
+        "harq/csv/harq_process_timeline.csv": {"artifact_id": 101},
+        "harq/csv/live_harq_observation_timeline.csv": {"artifact_id": 102},
+        "air_interface/csv/pucch_trials.csv": {"artifact_id": 103},
+    }
+    payloads = {101: harq_attempts, 102: harq_observations, 103: pucch}
+    fetch = lambda artifact_id: payloads[artifact_id]
+
+    rtt_chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "HARQ RTT distribution", existing, fetch, 99
+    )
+    assert rtt_chart is not None
+    assert rtt_chart["source_table_path"] == "harq/csv/harq_process_timeline.csv"
+    rtt_csv = rtt_chart["csv_bytes"].decode("utf-8")
+    assert "HARQ RTT (ms)" in rtt_csv
+    assert ",2.0,2.0," in rtt_csv
+
+    pucch_chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "requested vs resolved format confusion matrix", existing, fetch, 99
+    )
+    assert pucch_chart is not None
+    assert pucch_chart["source_row_count"] == 2
+    assert ",0,0,1," in pucch_chart["csv_bytes"].decode("utf-8")
+    pucch_png = materializer._rasterize_contract_png(  # noqa: SLF001
+        pucch_chart["img_bytes"],
+        source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/pucch-format.vector",
+    )
+    assert materializer._png_low_information_reason(pucch_png) == ""  # noqa: SLF001
 
 
 def test_runtime_measurement_table_and_channel_reliability_use_trial_truth() -> None:

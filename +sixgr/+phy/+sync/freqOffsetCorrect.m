@@ -24,6 +24,8 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(isfinite(x))));
     p.addParameter('TimingSearchGuardSamples', 0, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0 && x == round(x));
+    p.addParameter('SSBCenterFrequencyOffsetHz', 0, ...
+        @(x) isnumeric(x) && isscalar(x) && isreal(x) && isfinite(x));
     p.addParameter('FineCFOEnabled', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     p.addParameter('FineCFOMethod', "cyclic_prefix", ...
@@ -74,7 +76,13 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     bestHz = 0;
     bestNID2 = 0;
     bestWindowIndex = NaN;
-    xIn = rxWaveform;
+    % NCRBSSB/KSSB place the SS/PBCH block relative to Point A.  That
+    % deterministic carrier-grid placement is not oscillator CFO and must
+    % be removed before correlating with the zero-centred 20-RB PSS
+    % reference.  Keeping the two terms separate prevents a non-centred SSB
+    % from being reported as UE/gNB frequency error.
+    ssbCenterOffsetHz = double(opt.SSBCenterFrequencyOffsetHz);
+    xIn = localFreqShift(rxWaveform, sampleRateHz, -ssbCenterOffsetHz);
     metricMatrix = nan(numel(candNID2), numel(candHz));
     bestWindowIndexMatrix = nan(numel(candNID2), numel(candHz));
     [searchSegments, searchWindows, candidateStartSymbols] = ...
@@ -166,7 +174,7 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     % Refine the residual CFO without truth information.  Once coarse PSS
     % acquisition has reduced the offset below half the SCS, the repeated
     % cyclic prefix provides a practical fractional-CFO phase measurement.
-    coarseCorrected = localFreqShift(rxWaveform, sampleRateHz, -bestHz);
+    coarseCorrected = localFreqShift(xIn, sampleRateHz, -bestHz);
     fineResidualHz = 0;
     fineInfo = struct("Enabled",logical(opt.FineCFOEnabled), ...
         "Method",string(opt.FineCFOMethod),"Available",false, ...
@@ -192,11 +200,14 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         fineResidualHz = double(fineInfo.ResidualEstimateHz);
     end
     freqOffsetHz = bestHz + fineResidualHz;
-    rxOut = localFreqShift(rxWaveform, sampleRateHz, -freqOffsetHz);
+    rxOut = localFreqShift(xIn, sampleRateHz, -freqOffsetHz);
     NID2 = bestNID2;
 
     info = struct();
     info.SearchBW_Hz = searchBW_Hz;
+    info.SSBCenterFrequencyOffsetHz = double(ssbCenterOffsetHz);
+    info.SSBPlacementCorrectionAppliedHz = double(-ssbCenterOffsetHz);
+    info.OscillatorCFOEstimateHz = double(freqOffsetHz);
     info.Candidates_Hz = candHz;
     info.Candidates_NID2 = candNID2;
     info.MetricMatrix = metricMatrix;

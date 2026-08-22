@@ -175,6 +175,11 @@ end
 end
 
 function path = localRuntimeTrialPath(T, direction, currentPath)
+% The source manifest must name the table that actually owns the rows.  A
+% fixed-link campaign persists its primary trials under versioned fixed-link
+% filenames; describing those in-memory rows as ordinary connected-run
+% dl_pdsch/ul_pusch files produces a manifest path that does not exist and
+% cannot be independently hashed.
 path = string(currentPath);
 if ~(istable(T) && height(T) > 0 && ...
         ismember("FixedLinkCampaign", string(T.Properties.VariableNames)))

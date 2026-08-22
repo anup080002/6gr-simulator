@@ -9,19 +9,29 @@ opt = ip.Results;
 
 phase = lower(string(opt.Phase));
 direction = upper(string(direction));
-if isempty(state) || ~isstruct(state)
+if isempty(state) || ~isstruct(state) || isempty(fieldnames(state)) || ...
+        ~isfield(state, "Enabled")
     state = localInitState(cfgIn, direction);
 end
 if ~isfield(state, "CurrentConfig") || isempty(state.CurrentConfig)
     state.CurrentConfig = cfgIn;
 end
+state = localUpgradeState(state, cfgIn);
 
 cfgOut = state.CurrentConfig;
 event = struct( ...
     "Applied", false, ...
     "Scheduled", false, ...
     "Frame", double(frameIdx), ...
+    "Slot", double(frameIdx), ...
     "ApplyFrame", NaN, ...
+    "ApplySlot", NaN, ...
+    "FeedbackSourceSlot", NaN, ...
+    "FeedbackAgeSlots", NaN, ...
+    "ConfiguredFeedbackDelaySlots", double(state.DelaySlots), ...
+    "RequestedFeedbackDelaySlots", double(state.RequestedDelaySlots), ...
+    "FeedbackDelaySource", char(state.DelaySource), ...
+    "FeedbackDelayStatus", char(state.DelayStatus), ...
     "Direction", char(direction), ...
     "Decision", struct(), ...
     "Reason", "");
@@ -36,13 +46,17 @@ switch phase
         if ~isempty(state.Pending)
             applyIdx = find([state.Pending.ApplyFrame] <= double(frameIdx), 1, "last");
             if ~isempty(applyIdx)
-                decision = state.Pending(applyIdx).Decision;
+                pendingDecision = state.Pending(applyIdx);
+                decision = pendingDecision.Decision;
                 state.Pending(1:applyIdx) = [];
                 state.CurrentConfig = sixgr.link.applyLinkAdaptationDecision(state.CurrentConfig, direction, decision);
                 state.LastAppliedFrame = double(frameIdx);
                 cfgOut = state.CurrentConfig;
                 event.Applied = true;
                 event.ApplyFrame = double(frameIdx);
+                event.ApplySlot = double(frameIdx);
+                event.FeedbackSourceSlot = double(pendingDecision.SourceSlot);
+                event.FeedbackAgeSlots = double(frameIdx) - double(pendingDecision.SourceSlot);
                 event.Decision = decision;
                 event.Reason = "decision_applied";
                 return;
@@ -70,12 +84,22 @@ switch phase
             cfgOut = state.CurrentConfig;
             return;
         end
-        applyFrame = double(frameIdx) + double(state.DelayFrames);
-        state.Pending(end+1,1) = struct("ApplyFrame", applyFrame, "Decision", decision); %#ok<AGROW>
+        applyFrame = double(frameIdx) + double(state.DelaySlots);
+        decision.FeedbackSourceSlot = double(frameIdx);
+        decision.ScheduledApplySlot = double(applyFrame);
+        decision.ConfiguredFeedbackDelaySlots = double(state.DelaySlots);
+        decision.FeedbackDelaySource = char(state.DelaySource);
+        state.Pending(end+1,1) = struct( ...
+            "ApplyFrame", applyFrame, ...
+            "SourceSlot", double(frameIdx), ...
+            "Decision", decision); %#ok<AGROW>
         state.LastObservedFrame = double(frameIdx);
         cfgOut = state.CurrentConfig;
         event.Scheduled = true;
         event.ApplyFrame = applyFrame;
+        event.ApplySlot = applyFrame;
+        event.FeedbackSourceSlot = double(frameIdx);
+        event.FeedbackAgeSlots = 0;
         event.Decision = decision;
         event.Reason = "decision_scheduled";
     otherwise
@@ -90,12 +114,49 @@ state.Direction = char(direction);
 mode = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed")));
 state.Enabled = localModeEnabled(mode);
 state.PeriodFrames = localParseFrameCount(sixgr.util.structGet(cfg, "phy.linkAdaptation.periodicity", "slot"), 1);
-state.DelayFrames = localParseDelay(sixgr.util.structGet(cfg, "phy.linkAdaptation.delayModel", "baseline"));
-state.Pending = repmat(struct("ApplyFrame", NaN, "Decision", struct()), 0, 1);
+delay = sixgr.link.resolveLinkAdaptationFeedbackDelay(cfg);
+state.DelaySlots = double(delay.FeedbackDelaySlots);
+state.DelayFrames = double(delay.FeedbackDelaySlots); % compatibility alias
+state.RequestedDelaySlots = double(delay.RequestedFeedbackDelaySlots);
+state.DelaySource = char(delay.Source);
+state.DelayStatus = char(delay.Status);
+state.Pending = repmat(struct("ApplyFrame", NaN, "SourceSlot", NaN, "Decision", struct()), 0, 1);
 state.LastObservedFrame = 0;
 state.LastAppliedFrame = 0;
 state.CurrentConfig = cfg;
 state.RuntimeDecisionState = struct();
+end
+
+function state = localUpgradeState(state, cfg)
+% Preserve resumable state created by an older schema while making delay
+% authority explicit. This does not reset accumulated ILLA/OLLA state.
+if ~isfield(state, "DelaySlots") || ...
+        ~(isscalar(state.DelaySlots) && isfinite(double(state.DelaySlots)))
+    delay = sixgr.link.resolveLinkAdaptationFeedbackDelay(cfg);
+    state.DelaySlots = double(delay.FeedbackDelaySlots);
+    state.DelayFrames = double(delay.FeedbackDelaySlots);
+    state.RequestedDelaySlots = double(delay.RequestedFeedbackDelaySlots);
+    state.DelaySource = char(delay.Source);
+    state.DelayStatus = char(delay.Status);
+end
+if ~isfield(state, "RequestedDelaySlots")
+    state.RequestedDelaySlots = double(state.DelaySlots);
+end
+if ~isfield(state, "DelaySource")
+    state.DelaySource = "legacy_resumed_state";
+end
+if ~isfield(state, "DelayStatus")
+    state.DelayStatus = "legacy_resumed_state";
+end
+if ~isfield(state, "Pending") || isempty(state.Pending)
+    state.Pending = repmat(struct( ...
+        "ApplyFrame", NaN, "SourceSlot", NaN, "Decision", struct()), 0, 1);
+elseif ~isfield(state.Pending, "SourceSlot")
+    for i = 1:numel(state.Pending)
+        state.Pending(i).SourceSlot = double(state.Pending(i).ApplyFrame) - ...
+            double(state.DelaySlots);
+    end
+end
 end
 
 function tf = localModeEnabled(mode)
@@ -106,19 +167,6 @@ end
 function tf = localFrameEligible(frameIdx, periodFrames)
 periodFrames = max(1, round(double(periodFrames)));
 tf = mod(max(0, round(double(frameIdx))) - 1, periodFrames) == 0;
-end
-
-function count = localParseDelay(raw)
-token = lower(strtrim(string(raw)));
-if token == "" || ismember(token, ["none","zero","immediate","same_frame"])
-    count = 0;
-    return;
-end
-if token == "baseline"
-    count = 1;
-    return;
-end
-count = localParseFrameCount(token, 1);
 end
 
 function count = localParseFrameCount(raw, defaultValue)

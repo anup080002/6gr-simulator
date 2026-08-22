@@ -83,7 +83,7 @@ assertThrows(@()sixgr.csi.validateTDocConfig(badThresholds), ...
 wave=sixgr.phy.refsig.HighPortCSIRSMapper.runWaveformPoint(resolved,128,8, ...
     "walsh",1,"fixed_per_port_epre",120,10531);
 assert(wave.NMSE<1e-9 && wave.SGCS>1-1e-9 && wave.Plan.PortCount==128);
-assert(wave.NoiseSource=="sixgr.conformance.addReferenceNoise");
+assert(wave.NoiseSource=="sixgr.phy.waveform.addOccupiedREAWGN");
 assert(wave.NoiseVarianceDomain=="resource_grid_pre_equalization");
 assert(abs(wave.GridNoiseVariance-1e-12)<1e-15);
 

@@ -150,6 +150,21 @@ end
 function campaignCfg = localBoundedCampaignConfig(cfg, checkCfg)
 campaignCfg = sixgr.util.structGet(cfg, ...
     "validation.fixed_link_campaign", struct());
+[configuredSeeds, seedsSpecified] = ...
+    sixgr.analytics.configuredFixedLinkSeedValues(cfg);
+if ~seedsSpecified
+    error("sixgr:validation:Phase7ResumeSeedMissing", ...
+        ["Checkpoint/resume validation requires the YAML-owned fixed-link " + ...
+         "campaign seed list."]);
+end
+% This is a bounded execution-equivalence check, not a multi-seed
+% statistical campaign. Bind it explicitly to the first declared campaign
+% seed so the production seed-coverage guard remains strict for the real
+% campaign without making the resume check execute every publication seed.
+% Set both spellings because an already-normalized overlay may contain the
+% CamelCase field, which has precedence in runFixedLinkCampaign.
+campaignCfg.seeds = reshape(double(configuredSeeds(1)), 1, []);
+campaignCfg.Seeds = reshape(double(configuredSeeds(1)), 1, []);
 snr = double(sixgr.util.structGet(checkCfg, "snr_db", [10 20]));
 snr = snr(isfinite(snr));
 if numel(snr) < 2

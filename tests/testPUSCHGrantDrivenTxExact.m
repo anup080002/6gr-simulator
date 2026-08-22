@@ -167,6 +167,11 @@ cfg.phy.pusch.nLayers = v.NumLayers;
 cfg.phy.pusch.numAntennaPorts = v.NumPorts;
 cfg.phy.pusch.numPorts = v.NumPorts;
 cfg.phy.pusch.nPorts = v.NumPorts;
+% Frozen-grant execution requires the same explicit per-layer DM-RS port
+% pool that a production YAML is required to provide.  Do not inherit the
+% scalar rank-1 default while constructing a rank>1 test grant.
+cfg.phy.pusch.dmrs.portSet = 0:(v.NumLayers - 1);
+cfg.phy.pusch.dmrs.DMRSPortSet = cfg.phy.pusch.dmrs.portSet;
 cfg.phy.pusch.RNTI = v.RNTI;
 cfg.phy.pusch.NID = v.NID;
 cfg.phy.pusch.codeRate = v.TargetCodeRate;

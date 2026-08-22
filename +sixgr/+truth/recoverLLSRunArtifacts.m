@@ -94,7 +94,8 @@ cfg.run.fixedLinkCampaignOnly = fixedLinkCampaignOnly;
 % provenance record and leaves every downstream gate fail-closed.
 runtimeEvidenceRefinalization = ...
     sixgr.truth.refinalizePersistedLLSRuntimeEvidence(cfg, runFolder, ...
-    "RunTag", recoveryRunTag);
+    "RunTag", recoveryRunTag, ...
+    "RefreshBrowserContract", false);
 
 profile = lower(string(scfg.get("scenario.runner_profile", "")));
 if finalizationMode == "completed_run_refinalization"
@@ -225,6 +226,16 @@ finalVisualAudit = sixgr.visual.finalizeRunVisualAudit(runFolder);
 outputCoverage.VisualArtifactIntegrity = finalVisualAudit.Integrity;
 outputCoverage.VisualArtifactAudit = finalVisualAudit.Audit;
 reportBundle.OutputCoverageArtifacts = outputCoverage;
+% The recursive CSV/image audit written during output-coverage export is a
+% pre-materialization snapshot.  Refresh it against the exact final raster
+% tree before Phase 7 consumes all_image_artifact_audit.csv; otherwise a
+% successful browser/visual publication can be reported alongside stale
+% "required image missing" rows.  This audit verifies persisted bytes and
+% lineage only and never creates substitute evidence.
+postMaterializationArtifactAudit = sixgr.validation.auditRunArtifacts( ...
+    runFolder, "Strict", false, "WriteOutputs", true);
+reportBundle.PostMaterializationArtifactAudit = ...
+    postMaterializationArtifactAudit;
 postMaterializationPhase7 = ...
     sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
 postMaterializationPublication = ...
@@ -277,6 +288,7 @@ out.RuntimeEvidenceRefinalization = runtimeEvidenceRefinalization;
 out.BrowserContractMaterialization = contractMaterialization;
 out.BrowserPublicationReceipt = browserReceipt;
 out.FinalVisualAudit = finalVisualAudit;
+out.PostMaterializationArtifactAudit = postMaterializationArtifactAudit;
 out.PostMaterializationPhase7 = postMaterializationPhase7;
 out.PostMaterializationPublicationReadiness = ...
     postMaterializationPublication;
@@ -569,7 +581,7 @@ ulTrials = localReadFirstAvailableTable( ...
     fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ...
     fullfile(layout.AirInterfaceCSVDir, "ul_fixed_link_campaign_trials.csv"), ...
     fullfile(layout.ReportCSVDir, "ul_fixed_link_campaign_trials.csv"));
-opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials);
+opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials, cfg);
 opSummary.Radio.SCS_kHz = double(scfg.get("frame.scs_khz", NaN));
 cp = string(scfg.get("frame.cp_type", ...
     sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal")));

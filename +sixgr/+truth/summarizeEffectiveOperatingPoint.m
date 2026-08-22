@@ -1,4 +1,4 @@
-function summary = summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials)
+function summary = summarizeEffectiveOperatingPoint(scfg, dlTrials, ulTrials, internalCfg)
 %SUMMARIZEEFFECTIVEOPERATINGPOINT Separate nominal config from effective runtime-selected operating points.
 
 if nargin < 2 || ~istable(dlTrials)
@@ -7,9 +7,12 @@ end
 if nargin < 3 || ~istable(ulTrials)
     ulTrials = table();
 end
+if nargin < 4 || ~isstruct(internalCfg)
+    internalCfg = struct();
+end
 
 s = localResolvedStruct(scfg);
-configured = localConfiguredView(s);
+configured = localConfiguredView(s, internalCfg);
 radio = localRadioView(s);
 
 summary = struct();
@@ -29,7 +32,7 @@ else
 end
 end
 
-function configured = localConfiguredView(s)
+function configured = localConfiguredView(s, internalCfg)
 txAnt = double(sixgr.util.structGet(s, "mimo.n_tx_ant", NaN));
 rxAnt = double(sixgr.util.structGet(s, "mimo.n_rx_ant", NaN));
 layers = double(sixgr.util.structGet(s, "mimo.n_layers", NaN));
@@ -39,27 +42,65 @@ configured.TxAntennas = txAnt;
 configured.RxAntennas = rxAnt;
 configured.Layers = layers;
 configured.MIMOText = localMIMOText(txAnt, rxAnt, layers);
-configured.DL = localConfiguredDirection(s, "DL", layers);
-configured.UL = localConfiguredDirection(s, "UL", layers);
+configured.DL = localConfiguredDirection(s, internalCfg, "DL", layers);
+configured.UL = localConfiguredDirection(s, internalCfg, "UL", layers);
 end
 
-function direction = localConfiguredDirection(s, dirName, layers)
+function direction = localConfiguredDirection(s, internalCfg, dirName, layers)
 dirName = upper(string(dirName));
 direction = struct();
 direction.Direction = dirName;
-direction.Layers = double(layers);
-direction.Rank = double(layers);
 if dirName == "DL"
-    direction.MCS = localFirstFiniteNumericScalar(sixgr.util.structGet(s, "modulation.dl_mcs_index", ...
-        sixgr.util.structGet(s, "pdsch.mcs_index", NaN)));
-    direction.Modulation = localConfiguredModulation(s, ...
-        ["modulation.dl_modulation_order", "pdsch.modulation", "modulation_and_mapping.pdsch_modulation"]);
+    direction.Layers = localFirstFiniteNumericScalar([ ...
+        sixgr.util.structGet(internalCfg, "phy.pdsch.numLayers", NaN), ...
+        sixgr.util.structGet(internalCfg, "phy.pdsch.nLayers", NaN), ...
+        layers]);
+    direction.MCS = localFirstFiniteNumericScalar([ ...
+        sixgr.util.structGet(internalCfg, "phy.pdsch.mcsIndex", NaN), ...
+        sixgr.util.structGet(internalCfg, "phy.pdsch.MCSIndex", NaN), ...
+        sixgr.util.structGet(s, "modulation.dl_mcs_index", NaN), ...
+        sixgr.util.structGet(s, "pdsch.mcs_index", NaN)]);
+    direction.Modulation = localFirstNonBlankString([ ...
+        localScalarString(sixgr.util.structGet(internalCfg, "phy.pdsch.modulation", "")), ...
+        localConfiguredModulation(s, ...
+        ["modulation.dl_modulation_order", "pdsch.modulation", "modulation_and_mapping.pdsch_modulation"])]);
 else
-    direction.MCS = localFirstFiniteNumericScalar(sixgr.util.structGet(s, "modulation.ul_mcs_index", ...
-        sixgr.util.structGet(s, "pusch.mcs_index", NaN)));
-    direction.Modulation = localConfiguredULModulation(s);
+    direction.Layers = localFirstFiniteNumericScalar([ ...
+        sixgr.util.structGet(internalCfg, "phy.pusch.numLayers", NaN), ...
+        sixgr.util.structGet(internalCfg, "phy.pusch.nLayers", NaN), ...
+        layers]);
+    direction.MCS = localFirstFiniteNumericScalar([ ...
+        sixgr.util.structGet(internalCfg, "phy.pusch.mcsIndex", NaN), ...
+        sixgr.util.structGet(internalCfg, "phy.pusch.MCSIndex", NaN), ...
+        sixgr.util.structGet(s, "modulation.ul_mcs_index", NaN), ...
+        sixgr.util.structGet(s, "pusch.mcs_index", NaN)]);
+    direction.Modulation = localFirstNonBlankString([ ...
+        localScalarString(sixgr.util.structGet(internalCfg, "phy.pusch.modulation", "")), ...
+        localConfiguredULModulation(s)]);
 end
+direction.Rank = double(direction.Layers);
 direction.OperatingPointText = localConfiguredOperatingPointText(direction);
+end
+
+function value = localScalarString(raw)
+value = "";
+if isempty(raw)
+    return;
+end
+raw = string(raw);
+raw = raw(:);
+if ~isempty(raw)
+    value = strtrim(raw(1));
+end
+end
+
+function value = localFirstNonBlankString(values)
+value = "";
+values = strtrim(string(values(:)));
+idx = find(strlength(values) > 0, 1, "first");
+if ~isempty(idx)
+    value = values(idx);
+end
 end
 
 function value = localFirstFiniteNumericScalar(valueIn)

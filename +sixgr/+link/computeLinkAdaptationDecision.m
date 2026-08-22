@@ -21,7 +21,6 @@ policyPath = localPolicyPath(direction);
 policy = lower(string(sixgr.util.structGet(cfg, policyPath, "fixed")));
 rankPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", "fixed")));
 beamPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.beamPolicy", "fixed")));
-deltaMCSPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSPolicy", "none")));
 
 base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
@@ -68,6 +67,8 @@ decision = struct( ...
     "MCSSelectionSource", char(localResolveMCSSelectionSource(adaptationDomain)), ...
     "MCSValueStatus", "unresolved", ...
     "OLLADomain", char(localResolveOLLADomain(adaptationDomain, adaptationState.OuterLoopEnabled)), ...
+    "OLLAStateAuthority", char(string(sixgr.util.structGet(adaptationState, ...
+        "OLLAStateAuthority", "receiver_harq_feedback_state"))), ...
     "OLLADeltaDb", double(adaptationState.DeltaMCS), ...
     "OLLADeltaMCS", double(adaptationState.DeltaMCS), ...
     "OLLAMarginMinDb", double(adaptationState.DeltaMCSMin), ...
@@ -76,6 +77,9 @@ decision = struct( ...
     "OLLABaseRequiredSINR_dB", NaN, ...
     "OLLATargetRequiredSINR_dB", NaN, ...
     "OLLAThresholdSource", "", ...
+    "OLLAUpdateCount", double(adaptationState.OLLAUpdateCount), ...
+    "OLLAFeedbackEligible", false, ...
+    "OLLAFeedbackExclusionReason", "no_ack_nack_feedback", ...
     "CalibrationProfile", char(calibrationProfile), ...
     "CalibrationVersion", char(string(cqiMeta.CalibrationVersion)), ...
     "CQIBLERLUTSource", char(string(cqiMeta.BLERLUTSource)), ...
@@ -122,9 +126,22 @@ if ~decision.Enabled
 end
 
 if localPolicyEnabled(policy)
+    % TS 38.214 CQI index 0 explicitly reports that the channel is out of
+    % range.  It is feedback, not a schedulable minimum-MCS operating
+    % point.  Fail closed before either ILLA smoothing or OLLA ACK/NACK
+    % state is updated so an outage cannot be turned into an MCS-0 grant.
+    rawReportedCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
+    reportedCQI0IsAuthoritative = string(adaptationDomain) == "cqi" && ...
+        isfinite(rawReportedCQI) && rawReportedCQI <= 0;
+    if reportedCQI0IsAuthoritative || (isfinite(instantCQI) && double(instantCQI) <= 0)
+        decision.Reason = "measured_cqi_zero_out_of_range";
+        decision.MCSValueStatus = "unavailable_measured_cqi_zero_out_of_range";
+        decision.CausalFeedbackStatus = "measured_cqi_zero_out_of_range";
+        return;
+    end
     [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, ...
         instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ...
-        ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy);
+        ackKnown, ackObserved, resetState, resetReason);
     if ~decision.MCSUpdated && ~(isfinite(decision.CQIBasedMCS) || adaptationState.Initialized) && ...
             strlength(string(decision.Reason)) == 0
         decision.Reason = "missing_cqi";
@@ -185,7 +202,7 @@ else
 end
 end
 
-function [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ackKnown, ackObserved, resetState, resetReason, deltaMCSPolicy)
+function [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ackKnown, ackObserved, resetState, resetReason)
 previousMCS = double(decision.MCSIndex);
 previousCodeRate = double(decision.TargetCodeRate);
 previousModulation = char(string(decision.Modulation));
@@ -254,16 +271,13 @@ if resetState
     adaptationState.LastResetReason = char(resetReason);
 end
 
-if adaptationState.OuterLoopEnabled && localDeltaPolicyEnabled(deltaMCSPolicy, cfg)
-    if ackKnown
-        if ackObserved
-            adaptationState.DeltaMCS = min(adaptationState.DeltaMCSMax, adaptationState.DeltaMCS + adaptationState.OLLAStepUp);
-        else
-            adaptationState.DeltaMCS = max(adaptationState.DeltaMCSMin, adaptationState.DeltaMCS - adaptationState.OLLAStepDown);
-        end
-        adaptationState.LastObservedAck = logical(ackObserved);
-    end
-end
+feedbackEvent = metrics;
+feedbackEvent.AckObservedValid = logical(ackKnown);
+feedbackEvent.AckObserved = logical(ackObserved);
+[adaptationState, ollaEvent] = sixgr.link.updateOLLAStateFromHARQFeedback( ...
+    cfg, direction, feedbackEvent, adaptationState);
+ollaFeedbackEligible = logical(ollaEvent.Eligible);
+ollaFeedbackExclusionReason = string(ollaEvent.ExclusionReason);
 
 maxMCS = localMaxValidMCS(mcsTable);
 cqiCeilingMCS = double(instantMCS);
@@ -312,6 +326,9 @@ decision.OLLAAdjustedMCSBeforeCQICeiling = double(ollaAdjustedMCSBeforeCQICeilin
 decision.OLLABaseRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "BaseRequiredSINR_dB", NaN));
 decision.OLLATargetRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "TargetRequiredSINR_dB", NaN));
 decision.OLLAThresholdSource = char(string(sixgr.util.structGet(ollaDetail, "ThresholdSource", "")));
+decision.OLLAUpdateCount = double(adaptationState.OLLAUpdateCount);
+decision.OLLAFeedbackEligible = logical(ollaFeedbackEligible);
+decision.OLLAFeedbackExclusionReason = char(ollaFeedbackExclusionReason);
 if string(adaptationDomain) == "legacy_mcs"
     decision.OLLAOffsetMCS = double(adaptationState.DeltaMCS);
     decision.OLLAMCSBoundMin = double(adaptationState.DeltaMCSMin);
@@ -353,12 +370,6 @@ adaptationState.LastCQI = double(decision.ResolvedCQI);
 adaptationState.LastRI = double(decision.RI);
 adaptationState.LastMCSIndex = double(selectedMCS);
 adaptationState.UpdateCount = adaptationState.UpdateCount + 1;
-end
-
-function tf = localDeltaPolicyEnabled(token, cfg)
-token = lower(string(token));
-outerLoopFlag = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false));
-tf = outerLoopFlag || ~(token == "" || ismember(token, ["disabled", "none", "off", "false"]));
 end
 
 function [instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile, cqiMeta] = localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain)
@@ -456,7 +467,10 @@ elseif ~isempty(agedLayerSINR)
     end
 end
 if isfinite(rawCQI)
-    if logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.ageReportedCQI", false))
+    % A delayed CQI is a quantized channel observation and must age by
+    % default just like its underlying measured SINR.  Scenario masters can
+    % explicitly disable this for independent fixed-SNR calibration points.
+    if logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.ageReportedCQI", true))
         rawCQI = localApplyCQIAging(rawCQI, cqiMeta.TotalCQISINRBackoff_dB, cfg);
     end
     cqiMeta.AgedCQI = double(rawCQI);
@@ -1251,22 +1265,24 @@ end
 
 function adaptationState = localInitAdaptationState(cfg, direction, previousState)
 [cqiSmoothingAlpha, cqiSmoothingAlphaSource] = localResolveCQISmoothingAlpha(cfg);
+olla = sixgr.link.resolveOLLAConfig(cfg);
 adaptationState = struct( ...
     "Direction", char(direction), ...
     "LinkAdaptationDomain", char(sixgr.link.resolveLinkAdaptationDomain(cfg, direction)), ...
     "Initialized", false, ...
     "InnerLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", false)), ...
-    "OuterLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false)), ...
+    "OuterLoopEnabled", logical(olla.Enabled), ...
     "CQISmoothingAlpha", double(cqiSmoothingAlpha), ...
     "CQISmoothingAlphaSource", char(cqiSmoothingAlphaSource), ...
     "SmoothedCQI", NaN, ...
     "CQIBasedMCS", NaN, ...
     "DeltaMCS", 0, ...
     "StaticDeltaMCS", localResolveStaticDeltaMCS(cfg), ...
-    "OLLAStepUp", localResolveOLLAStep(cfg, "up"), ...
-    "OLLAStepDown", localResolveOLLAStep(cfg, "down"), ...
-    "DeltaMCSMin", localResolveDeltaBound(cfg, "min"), ...
-    "DeltaMCSMax", localResolveDeltaBound(cfg, "max"), ...
+    "OLLAStepUp", double(olla.StepUpDb), ...
+    "OLLAStepDown", double(olla.StepDownDb), ...
+    "DeltaMCSMin", double(olla.MinimumOffsetDb), ...
+    "DeltaMCSMax", double(olla.MaximumOffsetDb), ...
+    "OLLAStateAuthority", char(olla.StateAuthority), ...
     "ResetOnRIChange", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.resetOnRIChange", false)), ...
     "CQIJumpResetThreshold", localResolveCQIJumpResetThreshold(cfg), ...
     "LastCQI", NaN, ...
@@ -1276,6 +1292,7 @@ adaptationState = struct( ...
     "LastInstantaneousModulation", "", ...
     "LastInstantaneousTargetCodeRate", NaN, ...
     "LastObservedAck", false, ...
+    "OLLAUpdateCount", 0, ...
     "LastResetReason", "", ...
     "UpdateCount", 0);
 
@@ -1357,83 +1374,6 @@ function delta = localResolveStaticDeltaMCS(cfg)
 delta = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSOffset", 0));
 if ~(isfinite(delta))
     delta = 0;
-end
-end
-
-function value = localResolveOLLAStep(cfg, stepDirection)
-if nargin < 2
-    stepDirection = "down";
-end
-stepDirection = lower(string(stepDirection));
-if stepDirection == "up"
-    candidates = [ ...
-        "phy.linkAdaptation.ollaStepUp"
-        "phy.linkAdaptation.stepUpMCS"];
-else
-    candidates = [ ...
-        "phy.linkAdaptation.ollaStepDown"
-        "phy.linkAdaptation.stepDownMCS"];
-end
-value = NaN;
-for i = 1:numel(candidates)
-    raw = double(sixgr.util.structGet(cfg, candidates(i), NaN));
-    if isfinite(raw) && raw > 0
-        value = raw;
-        break;
-    end
-end
-if isfinite(value) && value > 0
-    return;
-end
-if stepDirection == "up"
-    stepDown = localResolveConfiguredOLLAStepDown(cfg);
-    ackNackRatio = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ackNackTDDPatternRatio", 1));
-    if ~(isfinite(ackNackRatio) && ackNackRatio > 0)
-        ackNackRatio = 1;
-    end
-    value = (stepDown * ackNackRatio) / 10;
-else
-    value = 1.0;
-end
-end
-
-function value = localResolveConfiguredOLLAStepDown(cfg)
-candidates = [ ...
-    "phy.linkAdaptation.ollaStepDown"
-    "phy.linkAdaptation.stepDownMCS"];
-value = NaN;
-for i = 1:numel(candidates)
-    raw = double(sixgr.util.structGet(cfg, candidates(i), NaN));
-    if isfinite(raw) && raw > 0
-        value = raw;
-        return;
-    end
-end
-value = 1.0;
-end
-
-function value = localResolveDeltaBound(cfg, boundDirection)
-if nargin < 2
-    boundDirection = "max";
-end
-boundDirection = lower(string(boundDirection));
-if boundDirection == "min"
-    value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMinDb", ...
-        sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_min_db", ...
-        sixgr.util.structGet(cfg, "link_adaptation.olla_margin_min_db", ...
-        sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMin", -10)))));
-else
-    value = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", ...
-        sixgr.util.structGet(cfg, "phy.linkAdaptation.olla_margin_max_db", ...
-        sixgr.util.structGet(cfg, "link_adaptation.olla_margin_max_db", ...
-        sixgr.util.structGet(cfg, "phy.linkAdaptation.deltaMCSMax", 10)))));
-end
-if ~isfinite(value)
-    if boundDirection == "min"
-        value = -10;
-    else
-        value = 10;
-    end
 end
 end
 

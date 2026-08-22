@@ -85,6 +85,8 @@ referenceSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_r
 dutSweepT = localReadTable(fullfile(runDir, "air_interface", "csv", "lls_snr_sweep.csv"));
 frcQualificationT = localReadTable(fullfile(runDir, "reports", "csv", ...
     "frc_reference_qualification.csv"));
+frcDiagnosticT = localReadTable(fullfile(runDir, "reports", "csv", ...
+    "frc_reference_diagnostic.csv"));
 
 effectiveCfg = cfg;
 if ~isstruct(effectiveCfg) || isempty(fieldnames(effectiveCfg))
@@ -165,7 +167,18 @@ if fixedApplicable
     [referenceComparisonOK,referenceFailure] = ...
         localIndependentReferenceComparisonPass(dutSweepT,referenceSweepT);
     [frcComparisonOK,frcFailure] = ...
-        localIndependentFRCQualificationPass(frcQualificationT);
+        localIndependentFRCQualificationPass(frcQualificationT, effectiveCfg);
+    if ~frcComparisonOK && isempty(frcQualificationT) && ~isempty(frcDiagnosticT)
+        [~,diagnosticFailure,diagnosticDetails] = ...
+            sixgr.conformance.validateReferenceQualificationTable(frcDiagnosticT);
+        if logical(diagnosticDetails.Evaluated)
+            frcFailure = "frc_reference_diagnostic_not_qualification_evidence:" + ...
+                string(diagnosticFailure);
+        else
+            frcFailure = "frc_reference_diagnostic_invalid:" + ...
+                string(diagnosticFailure);
+        end
+    end
     independentComparisonOK = referenceComparisonOK || frcComparisonOK;
     independentFailure = referenceFailure;
     if ~independentComparisonOK
@@ -173,9 +186,9 @@ if fixedApplicable
     end
     rows(end+1, 1) = localModeGateRow("ReferenceComparisonPresent", runClass, true, ...
         fixedEnabled && independentComparisonOK, ...
-        height(referenceSweepT) + height(frcQualificationT), ...
+        height(referenceSweepT) + height(frcQualificationT) + height(frcDiagnosticT), ...
         double(~(fixedEnabled && independentComparisonOK)), ...
-        "air_interface/csv/lls_reference_snr_sweep.csv|reports/csv/frc_reference_qualification.csv", ...
+        "air_interface/csv/lls_reference_snr_sweep.csv|reports/csv/frc_reference_qualification.csv|reports/csv/frc_reference_diagnostic.csv", ...
         localFailureToken(fixedEnabled && independentComparisonOK,independentFailure), ...
         "Publication readiness requires either an independent, hash-distinct, " + ...
         "exact-key reference sweep or a statistically qualified independent 3GPP FRC campaign."); %#ok<AGROW>
@@ -256,7 +269,7 @@ row = struct( ...
     "GateName", "", ...
     "RunClass", string(runClass), ...
     "Required", false, ...
-    "Status", "SKIP", ...
+    "Status", "NOT_APPLICABLE", ...
     "RowsChecked", 0, ...
     "RowsFailed", 0, ...
     "EvidencePath", "", ...
@@ -516,7 +529,7 @@ end
 
 function status = localModeStatus(required, pass)
 if ~logical(required)
-    status = "SKIP";
+    status = "NOT_APPLICABLE";
 elseif logical(pass)
     status = "PASS";
 else
@@ -582,9 +595,49 @@ passed=true;
 failure="";
 end
 
-function [passed,failure]=localIndependentFRCQualificationPass(T)
+function [passed,failure]=localIndependentFRCQualificationPass(T,cfg)
+expected = strtrim(string(localConfigValue(cfg, ...
+    "validation.independent_reference_qualification.entry_ids", ...
+    strings(0,1))));
+expected = expected(:);
+expected = expected(strlength(expected) > 0);
+if isempty(expected) || numel(unique(expected)) ~= numel(expected)
+    passed = false;
+    failure = "frc_expected_entry_set_missing_or_invalid";
+    return;
+end
+try
+    catalog = sixgr.conformance.frcCatalog();
+    catalogEntryIds = localCatalogEntryIds(catalog);
+    catalogDigest = sixgr.util.sha256Hex(uint8(unicode2native( ...
+        jsonencode(catalog), "UTF-8")));
+catch
+    passed = false;
+    failure = "frc_catalog_unavailable_for_qualification_binding";
+    return;
+end
 [passed,failure] = ...
-    sixgr.conformance.validateReferenceQualificationTable(T);
+    sixgr.conformance.validateReferenceQualificationTable(T, ...
+    "ExpectedEntryIds", expected, ...
+    "CatalogEntryIds", catalogEntryIds, ...
+    "ExpectedCatalogSHA256", catalogDigest);
+end
+
+function ids = localCatalogEntryIds(catalog)
+entries = catalog.entries;
+ids = strings(numel(entries), 1);
+for index = 1:numel(entries)
+    if iscell(entries)
+        entry = entries{index};
+    else
+        entry = entries(index);
+    end
+    ids(index) = strtrim(string(entry.id));
+end
+if any(strlength(ids) == 0) || numel(unique(ids)) ~= numel(ids)
+    error("sixgr:conformance:FRCatalogEntryIdentityInvalid", ...
+        "The active FRC catalog must contain unique nonempty entry ids.");
+end
 end
 
 function value = localConfigString(S, dottedPath, defaultValue)
@@ -705,7 +758,8 @@ profilingConfigured = localBool(cfg, ["output.profiler_enabled","run.profiler_en
     "run_control.time_profiling_enable","time_profiling_enable","perf.exportTimeProfile", ...
     "analytics.export_time_profile","run.time_profiling_enable","run.timeProfilingEnabled", ...
     "perf.timeProfilingEnabled"], false);
-[profileArtifact, profileArtifactPath] = localFirstExistingFlag(runDir, [
+[profileArtifact, profileArtifactPath, profileArtifactRows, profileValidation] = ...
+    localFirstValidProfilerArtifact(runDir, [
     "reports/csv/time_profile_summary.csv"
     "reports/csv/time_profile_calls.csv"
     "reports/csv/time_profile_coverage.csv"
@@ -725,19 +779,27 @@ if ok
     reason = "runtime_summary_and_persisted_profiling_evidence_verified";
 elseif ~(exist(runtimeEvidencePath, "file") == 2 && runtimeOk)
     reason = "runtime_summary_missing_or_invalid";
-else
+elseif startsWith(profileValidation, "missing:")
     reason = "persisted_profiling_evidence_missing";
+else
+    reason = "persisted_profiling_evidence_invalid:" + profileValidation;
 end
 runtimeEvidenceRel = string(localPortable(runDir, runtimeEvidencePath));
 T = table(runtimeEvidenceRel, runtimeEvidenceRel, string(localPortable(runDir, profileArtifactPath)), ...
     runtimeS, logical(profilingConfigured), logical(profileArtifact), ...
+    double(profileArtifactRows), string(profileValidation), ...
     ok, reason, 'VariableNames', {'RuntimeSummaryJSON','RuntimeEvidencePath','ProfilerArtifactCSV','RuntimeSeconds','ProfilingConfigured', ...
-    'ProfilerArtifactExists','PerformanceProfileOk','FailureReason'});
+    'ProfilerArtifactExists','ProfilerArtifactRows','ProfilerEvidenceValidation', ...
+    'PerformanceProfileOk','FailureReason'});
 end
 
 function [ok, T] = localEvaluateLongRunStability(cfg, runDir)
 dropPath = fullfile(runDir, "air_interface", "csv", "multi_seed_drop_statistics.csv");
 drop = localReadTable(dropPath);
+[expectedSeedValues, expectedSeedsSpecified] = ...
+    sixgr.analytics.configuredFixedLinkSeedValues(cfg);
+seedPairing = sixgr.analytics.validateConfiguredSeedPairing( ...
+    drop, strings(0,1), expectedSeedValues);
 stdLimit = localNumber(cfg, ["canonical_control.run.max_bler_std", ...
     "lls6g.resolvedConfig.canonical_control.run.max_bler_std", ...
     "run.max_bler_std","analysis.long_run_bler_std_threshold"], 0.05);
@@ -747,18 +809,28 @@ minSeeds = localNumber(cfg, ["canonical_control.run.num_seeds", ...
 if ~(isfinite(minSeeds) && minSeeds >= 2)
     minSeeds = 2;
 end
-bler = localNumericColumn(drop, "BLER");
-seed = localNumericColumn(drop, "FixedLinkDropSeed");
-if isempty(seed)
-    seed = localNumericColumn(drop, "Seed");
+if expectedSeedsSpecified
+    minSeeds = max(2, numel(expectedSeedValues));
+end
+bler = localNumericColumnOrNaN(drop, "BLER");
+% FixedLinkDropSeed is a hierarchical task/replay seed and changes for
+% every drop even when all drops originate from one configured seed.  It
+% must never be counted as independent multi-seed evidence.  Publication
+% stability uses the YAML-owned seed value and requires its explicit
+% index/value lineage on every executed drop row.
+seed = localNumericColumnOrNaN(drop, "FixedLinkSeedValue");
+seedIndex = localNumericColumnOrNaN(drop, "FixedLinkSeedIndex");
+seedLineage = false(height(drop), 1);
+if localHasColumn(drop, "SeedLineageComplete")
+    seedLineage = localColumnAsLogical(drop.SeedLineageComplete);
 end
 % Stability is an operating-point property.  Pooling low- and high-SNR
 % drops would interpret the intended waterfall as temporal instability.
 % Group by immutable fixed-link point and direction, then require the seed
 % count and BLER dispersion at every executed operating point.
-point = localNumericColumn(drop, "FixedLinkPointIndex");
-if isempty(point)
-    point = localNumericColumn(drop, ["SNR_dB","ConfiguredSNR_dB"]);
+point = localNumericColumnOrNaN(drop, "FixedLinkPointIndex");
+if ~any(isfinite(point))
+    point = localNumericColumnOrNaN(drop, ["SNR_dB","ConfiguredSNR_dB"]);
 end
 direction = repmat("UNKNOWN", height(drop), 1);
 if localHasColumn(drop, "Direction")
@@ -768,8 +840,9 @@ executed = true(height(drop), 1);
 if localHasColumn(drop, "EvidenceStatus")
     executed = string(drop.EvidenceStatus) == "executed_trial_rows";
 end
-valid = executed & isfinite(bler) & isfinite(seed) & isfinite(point) & ...
-    bler >= 0 & bler <= 1;
+valid = executed & seedLineage & isfinite(bler) & isfinite(seed) & ...
+    isfinite(seedIndex) & seedIndex >= 1 & seedIndex == round(seedIndex) & ...
+    isfinite(point) & bler >= 0 & bler <= 1;
 groupKey = direction + "|" + string(point);
 groups = unique(groupKey(valid), "stable");
 seedCounts = zeros(numel(groups), 1);
@@ -791,13 +864,18 @@ else
     stdVal = max(groupStd, [], "omitnan");
 end
 ok = exist(dropPath, "file") == 2 && ~isempty(groups) && ...
+    logical(seedPairing.Pass) && ...
     all(seedCounts >= minSeeds) && all(isfinite(groupStd) & groupStd <= stdLimit) && ...
     all(isfinite(groupMeans) & groupMeans >= 0 & groupMeans <= 1);
 reason = localReason(ok, "multi_seed_bler_stability_verified", ...
     "multi_seed_operating_point_statistics_missing_or_bler_variance_out_of_bounds");
-T = table(string(localPortable(runDir, dropPath)), height(drop), seedCount, meanVal, stdVal, stdLimit, minSeeds, ok, reason, ...
-    'VariableNames', {'DropStatisticsCSV','DropRows','SeedCount','BLERMean','BLERStd', ...
-    'BLERStdThreshold','RequiredSeedCount','LongRunStabilityOk','FailureReason'});
+T = table(string(localPortable(runDir, dropPath)), height(drop), seedCount, ...
+    logical(seedPairing.Pass), string(seedPairing.FailureCode), ...
+    meanVal, stdVal, stdLimit, minSeeds, ok, reason, ...
+    'VariableNames', {'DropStatisticsCSV','DropRows','SeedCount', ...
+    'ConfiguredSeedPairingOk','ConfiguredSeedPairingFailureCode', ...
+    'BLERMean','BLERStd','BLERStdThreshold','RequiredSeedCount', ...
+    'LongRunStabilityOk','FailureReason'});
 end
 
 function [ok, T] = localEvaluateArtifactCompleteness(runDir)
@@ -1291,6 +1369,91 @@ for rel = string(rels(:)).'
 end
 end
 
+function [tf, path, rowCount, validation] = localFirstValidProfilerArtifact(runDir, rels)
+tf = false;
+path = "";
+rowCount = 0;
+validation = "missing:no_profiler_artifact";
+invalid = strings(0, 1);
+firstInvalidPath = "";
+firstInvalidRows = 0;
+for rel = string(rels(:)).'
+    p = fullfile(runDir, strrep(char(rel), "/", filesep));
+    if exist(p, "file") ~= 2
+        continue;
+    end
+    T = localReadTable(p);
+    [valid, detail] = localProfilerTableValid(T);
+    if valid
+        tf = true;
+        path = string(p);
+        rowCount = height(T);
+        validation = "valid_measured_profiler_rows";
+        return;
+    end
+    if strlength(firstInvalidPath) == 0
+        firstInvalidPath = string(p);
+        firstInvalidRows = height(T);
+    end
+    invalid(end+1, 1) = rel + "=" + detail; %#ok<AGROW>
+end
+if ~isempty(invalid)
+    path = firstInvalidPath;
+    rowCount = firstInvalidRows;
+    validation = "all_profiler_artifacts_invalid[" + strjoin(invalid, ";") + "]";
+end
+end
+
+function [valid, detail] = localProfilerTableValid(T)
+valid = false;
+detail = "unreadable_or_empty";
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+
+timeColumns = ["TotalTime_s","SelfTimeApprox_s","SelfTime_s", ...
+    "Elapsed_s","TotalElapsed_s","RuntimeSeconds","ElapsedSeconds", ...
+    "Duration_s","ElapsedTime_s"];
+timeValues = [];
+for name = timeColumns
+    if localHasColumn(T, name)
+        timeValues = [timeValues; localNumericColumn(T, name)]; %#ok<AGROW>
+    end
+end
+finiteTime = isfinite(timeValues) & timeValues >= 0;
+if isempty(timeValues) || ~any(finiteTime) || ~any(timeValues(finiteTime) > 0)
+    detail = "positive_measured_time_missing";
+    return;
+end
+
+identityColumns = ["FunctionName","CompleteName","FileName", ...
+    "Stage","StageName","ProfilerName"];
+hasIdentity = false;
+for name = identityColumns
+    if localHasColumn(T, name)
+        values = strtrim(string(T.(char(name))));
+        hasIdentity = hasIdentity || any(~ismissing(values) & strlength(values) > 0);
+    end
+end
+
+countColumns = ["NumCalls","TotalCallRows","ExecutedCallRows", ...
+    "FunctionCount","ExportedFunctionCount"];
+hasPositiveCount = false;
+for name = countColumns
+    if localHasColumn(T, name)
+        values = localNumericColumn(T, name);
+        hasPositiveCount = hasPositiveCount || any(isfinite(values) & values > 0);
+    end
+end
+if ~(hasIdentity || hasPositiveCount)
+    detail = "function_or_stage_identity_missing";
+    return;
+end
+
+valid = true;
+detail = "valid_measured_profiler_rows";
+end
+
 function tf = localHasColumn(T, names)
 tf = istable(T) && all(ismember(string(names), string(T.Properties.VariableNames)));
 end
@@ -1326,6 +1489,23 @@ else
     vals = str2double(string(raw(:)));
 end
 vals = vals(:);
+end
+
+function vals = localNumericColumnOrNaN(T, name)
+% Preserve row alignment when a persisted legacy/schema-invalid table is
+% missing a required numeric column.  Publication reducers must fail
+% closed through their evidence flags, not crash while combining a
+% zero-length vector with row-sized masks.
+vals = localNumericColumn(T, name);
+n = 0;
+if istable(T)
+    n = height(T);
+end
+if numel(vals) ~= n
+    vals = NaN(n, 1);
+else
+    vals = vals(:);
+end
 end
 
 function tf = localColumnAsLogical(values)

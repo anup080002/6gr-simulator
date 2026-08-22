@@ -122,10 +122,16 @@ if exist(pathStr, "file") ~= 2
     return;
 end
 try
-    T = readtable(pathStr, "VariableNamingRule", "preserve", "TextType", "string");
+    % Canonical artifacts are comma-separated.  Do not let readtable infer
+    % a delimiter from payload text: LDPC iteration/parity vectors contain
+    % tens of thousands of pipe characters and can otherwise be mistaken
+    % for an 80k-column pipe-delimited file during persisted refinalization.
+    T = readtable(pathStr, "Delimiter", ",", ...
+        "VariableNamingRule", "preserve", "TextType", "string");
 catch
     try
-        T = readtable(pathStr, "VariableNamingRule", "preserve");
+        T = readtable(pathStr, "Delimiter", ",", ...
+            "VariableNamingRule", "preserve");
     catch
         T = table();
     end

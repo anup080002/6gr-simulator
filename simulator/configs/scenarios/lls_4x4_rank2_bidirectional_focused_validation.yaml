@@ -1,0 +1,226 @@
+{
+  "inherits": [
+    "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_awgn_validation.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_4x4_rank2_bidirectional_focused_validation",
+    "description": "Bounded actual-waveform validation of the coupled bidirectional 4x4 rank-2 scheduler-owned PHY path.",
+    "version": "1",
+    "owner": "sixgr",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "focused_bidirectional_validation",
+    "maturity_tag": "regression"
+  },
+  "simulation": {
+    "link_direction": "both",
+    "n_frames": 1,
+    "n_slots": 5,
+    "monte_carlo_iterations": 1,
+    "random_seed": 23,
+    "snr_db": 28,
+    "noise_operating_mode": "standalone_awgn_snr_argument",
+    "harq_diagnostics_enabled": true
+  },
+  "scenario": {
+    "study_mode": "baseline",
+    "honesty_mode": "strict"
+  },
+  "validation": {
+    "run_class": "functional_waveform_validation"
+  },
+  "canonical_control": {
+    "integration": {
+      "enabled": true,
+      "run_mode": "FIXED_SNR_SWEEP",
+      "radio_profile": "nr_rel18_system_lls_strict",
+      "subprofile": "connected_control_smoke",
+      "trace_profile": "FULL_EVIDENCE",
+      "configuration_epoch": 1,
+      "configured_snr_is_link_authority": true,
+      "common_pipeline_required": true,
+      "measured_sinr_required": true
+    },
+    "topology": {
+      "num_sites": 1,
+      "num_sectors_per_site": 1,
+      "num_cells": 1,
+      "num_trps": 1,
+      "num_ues": 2,
+      "users_enabled": true,
+      "rnti_start": 201,
+      "seed_stride": 17,
+      "execution_model": "slot_coupled_truth"
+    }
+  },
+  "run_control": {
+    "total_slots": 5,
+    "warmup_slots": 0,
+    "measurement_slots": 5,
+    "total_time_ms": 2.5,
+    "warmup_time_ms": 0,
+    "measurement_time_ms": 2.5,
+    "batch_size_links": 1,
+    "num_workers": 1,
+    "auto_start_parallel_pool": false
+  },
+  "mimo": {
+    "mu_mimo_enable": false,
+    "ul_mu_mimo_enable": false,
+    "beam_sweep_enabled": false,
+    "beam_management_enable": false
+  },
+  "mimo_and_beam_management": {
+    "beam_sweeping": false,
+    "beam_refinement": false,
+    "beam_switching": false,
+    "beam_tracking": false,
+    "beam_prediction": false
+  },
+  "reference_signals": {
+    "ssb_enabled": false,
+    "pbch_enabled": false,
+    "pdcch_dmrs_enabled": true,
+    "csi_rs_enabled": false,
+    "srs_enabled": false,
+    "csi_reporting_enabled": false,
+    "cqi_reporting_enabled": false,
+    "pmi_reporting_enabled": false,
+    "ri_reporting_enabled": false,
+    "cri_reporting_enabled": false,
+    "nzp_csi_rs": {
+      "enabled": false
+    },
+    "srs": {
+      "enabled": false
+    }
+  },
+  "csi_acquisition_and_reporting": {
+    "dl_csi_enabled": false,
+    "ul_csi_enabled": false,
+    "joint_dl_ul_csi_enabled": false,
+    "csi_rs_baseline_flag": false,
+    "dmrs_based_csi_flag": false,
+    "srs_based_csi_flag": false,
+    "reciprocity_based_flag": false,
+    "feedback_based_flag": false
+  },
+  "control": {
+    "pdcch_enabled": true,
+    "blind_search_enabled": true,
+    "pucch_enabled": true
+  },
+  "harq": {
+    "enabled": true
+  },
+  "pucch": {
+    "enabled": true
+  },
+  "pucch_resources": {
+    "enabled": true
+  },
+  "power_control": {
+    "ul_open_loop_enable": false,
+    "f_closed_loop_enable": false,
+    "phr_report_enable": false
+  },
+  "rf_frontend": {
+    "enabled": false
+  },
+  "channels": {
+    "pathloss_enabled": false,
+    "shadow_fading_enabled": false
+  },
+  "system": {
+    "beam": {
+      "enable": false
+    }
+  },
+  "initial_access": {
+    "enabled": false,
+    "ssb": {
+      "enabled": false
+    },
+    "mib": {
+      "enabled": false
+    },
+    "sib1": {
+      "enabled": false
+    }
+  },
+  "pdsch": {
+    "execution_profile": "scheduler_truth"
+  },
+  "pusch": {
+    "execution_profile": "scheduler_truth"
+  },
+  "random_access": {
+    "enabled": false,
+    "prach_format": "B4",
+    "preamble_length_mode": "short",
+    "preamble_count": 64,
+    "zero_correlation_zone": 8,
+    "detection_threshold": 0.5,
+    "msg3_enabled": false,
+    "configuration_index": 198,
+    "subcarrier_spacing_khz": 30,
+    "root_sequence_index": 1,
+    "preamble_index": 0
+  },
+  "users": {
+    "enabled": true,
+    "n_users": 2,
+    "rnti_start": 201,
+    "seed_stride": 17,
+    "execution_model": "slot_coupled_truth",
+    "beam_selection_strategy": "fixed_first_beam",
+    "save_user_tables": true
+  },
+  "control_gating": {
+    "pbch_required": false,
+    "prach_required": false,
+    "pdcch_required": true,
+    "srs_required": false,
+    "srs_max_age_slots": 4,
+    "trs_required": false,
+    "trs_max_age_slots": 4
+  },
+  "link_adaptation": {
+    "fixed_or_amc": "fixed",
+    "operating_point_mode": "fixed",
+    "outer_loop_flag": false,
+    "inner_loop_flag": false,
+    "pdcch_link_adaptation_policy": "fixed",
+    "pdsch_link_adaptation_policy": "fixed",
+    "pusch_link_adaptation_policy": "fixed",
+    "rank_adaptation_policy": "fixed",
+    "al_adaptation_policy": "fixed",
+    "beam_adaptation_policy": "fixed"
+  },
+  "sweeps_and_matrix": {
+    "snr_sweep": {
+      "enabled": false,
+      "values_db": [28]
+    },
+    "fixed_link_calibration": {
+      "enabled": false,
+      "only": false
+    }
+  },
+  "output": {
+    "save_figures": false,
+    "save_mat": false,
+    "emit_placeholder_artifacts": false,
+    "emit_disabled_audit_artifacts": false,
+    "artifact_contract_engine": {
+      "enabled": true,
+      "catalog_scope": "runtime_in_path",
+      "profiles": ["base"],
+      "domains": ["pdsch", "pusch"],
+      "image_format": "none",
+      "raster_authority": "post_run_csv_contract_materializer"
+    },
+    "profile": "lls_4x4_rank2_bidirectional_focused_validation",
+    "live_publish_frame_interval": 1,
+    "live_heavy_refresh_interval_frames": 3
+  }
+}

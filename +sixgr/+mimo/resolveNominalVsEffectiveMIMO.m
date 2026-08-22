@@ -65,14 +65,96 @@ out.BeamSweepMeasurements = beamSweep;
 out.NegativeTrials = negativeTrials;
 out.OracleGuard = oracleGuard;
 out.ToolboxCapabilities = toolbox;
-out.StrictOk = all(localColumnLogical(configAudit, "Pass", false)) && ...
-    all(localColumnLogical(configuredEffective, "ScenarioObjectivePass", false)) && ...
-    localAllStatusPass(antennaArray) && ...
-    localAllStatusPass(portMapping) && ...
-    localAllStatusPass(precoderEvidence) && ...
-    localAllStatusPass(beamCodebook) && ...
-    localAllStatusPass(beamSweep) && ...
-    all(strcmp(string(oracleGuard.Status), "pass"));
+out.StrictGateSummary = localStrictGateSummary(configAudit, configuredEffective, ...
+    antennaArray, portMapping, precoderEvidence, beamCodebook, beamSweep, oracleGuard);
+out.StrictOk = height(out.StrictGateSummary) > 0 && all(logical(out.StrictGateSummary.Pass));
+failed = out.StrictGateSummary(~logical(out.StrictGateSummary.Pass), :);
+if isempty(failed)
+    out.FailureReason = "";
+else
+    out.FailureReason = strjoin(string(failed.Gate) + ":" + ...
+        string(failed.FailureReason), ";");
+end
+end
+
+function T = localStrictGateSummary(configAudit, configuredEffective, antennaArray, ...
+        portMapping, precoderEvidence, beamCodebook, beamSweep, oracleGuard)
+gateNames = [ ...
+    "configuration_validation"; ...
+    "configured_vs_effective"; ...
+    "antenna_runtime_domain"; ...
+    "antenna_port_mapping"; ...
+    "applied_precoder"; ...
+    "beam_codebook"; ...
+    "beam_sweep_measurement"; ...
+    "receiver_oracle_guard"];
+tables = {configAudit; configuredEffective; antennaArray; portMapping; ...
+    precoderEvidence; beamCodebook; beamSweep; oracleGuard};
+passFields = ["Pass"; "ScenarioObjectivePass"; repmat("Status", 6, 1)];
+n = numel(gateNames);
+rowCount = zeros(n, 1);
+pass = false(n, 1);
+failureReason = strings(n, 1);
+for i = 1:n
+    Ti = tables{i};
+    rowCount(i) = localTableHeight(Ti);
+    [pass(i), failureReason(i)] = localGateStatus(Ti, passFields(i));
+end
+T = table(gateNames, rowCount, pass, failureReason, ...
+    'VariableNames', {'Gate','EvidenceRowCount','Pass','FailureReason'});
+end
+
+function [pass, reason] = localGateStatus(T, passField)
+pass = false;
+reason = "missing_evidence_rows";
+if ~istable(T) || height(T) == 0
+    return;
+end
+passField = string(passField);
+if passField == "Status"
+    if ~ismember("Status", string(T.Properties.VariableNames))
+        reason = "missing_status_field";
+        return;
+    end
+    rowPass = lower(strtrim(string(T.Status))) == "pass";
+else
+    if ~ismember(passField, string(T.Properties.VariableNames))
+        reason = "missing_" + lower(passField) + "_field";
+        return;
+    end
+    rowPass = logical(T.(char(passField)));
+end
+pass = all(rowPass);
+if pass
+    reason = "";
+    return;
+end
+failed = find(~rowPass);
+reasonParts = strings(0, 1);
+if ismember("Direction", string(T.Properties.VariableNames))
+    reasonParts(end+1, 1) = "directions=" + ...
+        strjoin(unique(upper(strtrim(string(T.Direction(failed))))), "|"); %#ok<AGROW>
+end
+if ismember("FailureReason", string(T.Properties.VariableNames))
+    details = unique(strtrim(string(T.FailureReason(failed))));
+    details = details(strlength(details) > 0);
+    if ~isempty(details)
+        reasonParts(end+1, 1) = "details=" + strjoin(details, "|"); %#ok<AGROW>
+    end
+end
+if isempty(reasonParts)
+    reason = "failed_rows=" + strjoin(string(failed(:).'), "|");
+else
+    reason = strjoin(reasonParts, ",");
+end
+end
+
+function n = localTableHeight(T)
+if istable(T)
+    n = height(T);
+else
+    n = 0;
+end
 end
 
 function decision = localResolveRuntimeRank(carrier, pdsch, H, noiseVar, nominalRank, cfg)
@@ -774,7 +856,8 @@ for direction = ["DL","UL"]
     sub = rankT(strcmp(string(rankT.Direction), direction), :);
     if isempty(sub), continue; end
     beamIds = unique(string(sub.BeamId));
-    beamIds = beamIds(strlength(strtrim(beamIds)) > 0);
+    usable = arrayfun(@localUsableText, beamIds);
+    beamIds = beamIds(usable);
     if isempty(beamIds), beamIds = "not_selected"; end
     for i = 1:numel(beamIds)
         isMissingBeamCodebook = beamIds(i) == "not_selected" && any(double(sub.ConfiguredLayers) > 1);
@@ -797,7 +880,11 @@ for i = 1:height(rankT)
     rows(i).RunId = string(rankT.RunId(i));
     rows(i).TrialId = double(rankT.TrialId(i));
     rows(i).Direction = string(rankT.Direction(i));
-    rows(i).SelectedBeamId = string(rankT.BeamId(i));
+    selectedBeam = string(rankT.BeamId(i));
+    if ~localUsableText(selectedBeam)
+        selectedBeam = "not_selected";
+    end
+    rows(i).SelectedBeamId = selectedBeam;
     rows(i).CSIReportId = string(rankT.CSIReportId(i));
     rows(i).MeasurementSource = string(localTernary(strlength(strtrim(rows(i).CSIReportId)) > 0, "csi_or_grant_runtime_evidence", "air_interface_trial_row"));
     rows(i).SourceRowsHash = string(rankT.SourceRowsHash(i));
@@ -1384,7 +1471,10 @@ end
 
 function tf = localUsableText(s)
 s = lower(strtrim(string(s)));
-tf = ~ismissing(s) && strlength(s) > 0 && ~ismember(s, ["nan","<missing>","missing","none","unavailable"]);
+tf = ~ismissing(s) && strlength(s) > 0 && ...
+    ~ismember(s, ["nan","<missing>","missing","none","unavailable","not_available"]) && ...
+    ~startsWith(s, ["not_recorded_by_active_","not_emitted_by_active_", ...
+        "field_not_emitted_by_active_"]);
 end
 
 function Hwb = localWidebandRuntimeChannel(H)

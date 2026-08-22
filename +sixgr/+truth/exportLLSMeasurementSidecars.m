@@ -57,9 +57,18 @@ for i = 1:numel(specs)
         sixgr.util.csvWriteTable(provenancePath, provenanceT);
     end
 
-    manifestRows(end+1, 1) = localManifestRow(spec, T, measurementT, provenanceT, measurementRel, provenanceRel); %#ok<AGROW>
+    % csvWriteTable deliberately removes structurally blank columns from
+    % non-versioned consumer views.  The manifest must describe those exact
+    % persisted files, not the wider in-memory split that existed before the
+    % writer's lossless pruning step.  Read back fail closed so row/column
+    % counts can never drift while still being reported as authoritative.
+    persistedMeasurementT = localReadPersistedSidecar(measurementPath, measurementT);
+    persistedProvenanceT = localReadPersistedSidecar(provenancePath, provenanceT);
+    manifestRows(end+1, 1) = localManifestRow(spec, T, ...
+        persistedMeasurementT, persistedProvenanceT, ...
+        measurementRel, provenanceRel); %#ok<AGROW>
     auditRows(end+1, 1) = localAuditRow( ...
-        measurementRel, measurementT, spec.Kind, T); %#ok<AGROW>
+        measurementRel, persistedMeasurementT, spec.Kind, T); %#ok<AGROW>
 end
 
 manifestT = struct2table(manifestRows, "AsArray", true);
@@ -341,6 +350,32 @@ if istable(T)
     n = width(T);
 else
     n = 0;
+end
+end
+
+function T = localReadPersistedSidecar(path, expectedT)
+if ~(istable(expectedT) && ~isempty(expectedT))
+    T = table();
+    return;
+end
+if exist(path, "file") ~= 2
+    error("sixgr:truth:MeasurementSidecarWriteMissing", ...
+        "Persisted measurement/provenance sidecar is missing after write: %s", ...
+        string(path));
+end
+try
+    T = readtable(path, "FileType", "text", "Delimiter", ",", ...
+        "ReadVariableNames", true, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+catch ME
+    error("sixgr:truth:MeasurementSidecarReadbackFailed", ...
+        "Unable to read back persisted sidecar '%s': %s", ...
+        string(path), string(ME.message));
+end
+if ~istable(T) || height(T) ~= height(expectedT)
+    error("sixgr:truth:MeasurementSidecarReadbackMismatch", ...
+        "Persisted sidecar '%s' has %d rows; expected %d.", ...
+        string(path), height(T), height(expectedT));
 end
 end
 

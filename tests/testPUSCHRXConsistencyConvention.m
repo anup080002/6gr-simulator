@@ -137,6 +137,10 @@ cfg.phy.pusch.numLayers = nLayers;
 cfg.phy.pusch.nLayers = nLayers;
 cfg.phy.pusch.numAntennaPorts = nPorts;
 cfg.phy.pusch.numPorts = nPorts;
+% The strict production path must receive an explicit logical DM-RS port
+% pool for every scheduled layer; a rank-one default is not expandable.
+cfg.phy.pusch.dmrs.portSet = 0:(nLayers - 1);
+cfg.phy.pusch.dmrs.DMRSPortSet = 0:(nLayers - 1);
 cfg.phy.pusch.transmissionScheme = char(string(scheme));
 cfg.phy.pusch.transformPrecoding = logical(transformPrecoding);
 cfg.phy.pusch.enablePTRS = false;

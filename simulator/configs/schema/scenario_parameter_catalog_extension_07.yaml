@@ -301,8 +301,9 @@ sections:
       default:
         required: false
         type: string
-        allowed_values: [smoke, full]
+        allowed_values: [smoke, bounded_waterfall, full]
       smoke: {required: false, type: struct}
+      bounded_waterfall: {required: false, type: struct}
       full: {required: false, type: struct}
   coding:
     parameters:
@@ -395,11 +396,11 @@ sections:
       RunClass:
         required: false
         type: string
-        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls, webgui_full_stack_qualification]
+        allowed_values: [fixed_lls_anchor, functional_waveform_validation, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls, webgui_full_stack_qualification]
       run_class:
         required: false
         type: string
-        allowed_values: [fixed_lls_anchor, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls, webgui_full_stack_qualification]
+        allowed_values: [fixed_lls_anchor, functional_waveform_validation, adaptive_system_diagnostic, hybrid_validation, fixed_snr_sweep_lls, ue_placement_geometry_lls, webgui_full_stack_qualification]
       publication_mode: {required: false, type: string}
       required_artifact_audit: {required: false, type: boolean}
       fixed_snr_sweep_required: {required: false, type: boolean}
@@ -409,7 +410,54 @@ sections:
       strict_component_evidence: {required: false, type: struct, nested_rule: validation_strict_component_evidence}
       independent_reference_qualification: {required: false, type: struct, nested_rule: validation_independent_reference_qualification}
       phase7_execution_validation: {required: false, type: struct, nested_rule: validation_phase7_execution_validation}
+      causal_phy_chain_audit: {required: false, type: struct, nested_rule: validation_causal_phy_chain_audit}
 nested_sections:
+  validation_causal_phy_chain_audit:
+    parameters:
+      enabled: {required: true, type: boolean}
+      required: {required: true, type: boolean}
+      fail_on_enabled_bypass: {required: true, type: boolean}
+      require_config_mapping_match: {required: true, type: boolean}
+      require_runtime_consumer: {required: true, type: boolean}
+      require_measurement_evidence: {required: true, type: boolean}
+      stages: {required: true, type: struct_array, min_items: 1, item_nested_rule: validation_causal_phy_chain_stage}
+      parameter_bindings: {required: true, type: struct_array, min_items: 1, item_nested_rule: validation_causal_phy_parameter_binding}
+  validation_causal_phy_chain_stage:
+    parameters:
+      stage_id: {required: true, type: string, nonempty: true}
+      order: {required: true, type: integer, min: 0}
+      subsystem: {required: true, type: string, nonempty: true}
+      required: {required: true, type: boolean}
+      always_required: {required: false, type: boolean}
+      feature_authority:
+        required: false
+        type: string
+        allowed_values: [scheduled_pdsch, scheduled_pusch, ssb, pbch, pdcch, pdcch_blind_search, pdcch_dmrs, pucch, prach, sib1, sib1_ptrs, ptrs, ptrs_cpe_correction, csi_rs, srs, trs, tracking_rs, csi_reporting, cqi_reporting, pmi_reporting, ri_reporting, cri_reporting, harq, transform_precoding, waveform_windowing, link_adaptation_inner_loop, link_adaptation_outer_loop, pathloss, shadow_fading, los_propagation, reference_sweep, harq_diagnostics, adaptive_sweep, cfo, cfo_correction, phase_noise, iq_imbalance, iq_imbalance_correction, timing_offset, pa_nonlinearity, beam_sweep, mu_mimo, ul_mu_mimo]
+      dependency_stages: {required: false, type: string_list}
+      consumer_functions: {required: false, type: string_list}
+      consumer_source_files: {required: false, type: string_list}
+      measurement_artifact: {required: true, type: string, nonempty: true}
+      measured_fields: {required: true, type: string_list, min_items: 1}
+      measurement_min_rows: {required: true, type: integer, min: 1}
+      success_field: {required: false, type: string}
+      success_value: {required: false, type: string_or_number}
+      success_mode:
+        required: false
+        type: string
+        allowed_values: [any_true, all_true, any_equals, all_equals]
+  validation_causal_phy_parameter_binding:
+    parameters:
+      parameter_id: {required: true, type: string, nonempty: true}
+      subsystem: {required: true, type: string, nonempty: true}
+      scenario_path: {required: true, type: string, nonempty: true}
+      runtime_path: {required: true, type: string, nonempty: true}
+      required: {required: true, type: boolean}
+      feature_authority:
+        required: false
+        type: string
+        allowed_values: [scheduled_pdsch, scheduled_pusch, ssb, pbch, pdcch, pdcch_blind_search, pdcch_dmrs, pucch, prach, sib1, sib1_ptrs, ptrs, ptrs_cpe_correction, csi_rs, srs, trs, tracking_rs, csi_reporting, cqi_reporting, pmi_reporting, ri_reporting, cri_reporting, harq, transform_precoding, waveform_windowing, link_adaptation_inner_loop, link_adaptation_outer_loop, pathloss, shadow_fading, los_propagation, reference_sweep, harq_diagnostics, adaptive_sweep, cfo, cfo_correction, phase_noise, iq_imbalance, iq_imbalance_correction, timing_offset, pa_nonlinearity, beam_sweep, mu_mimo, ul_mu_mimo]
+      consumer_functions: {required: false, type: string_list}
+      consumer_source_files: {required: false, type: string_list}
   validation_phase7_execution_validation:
     parameters:
       enabled: {required: true, type: boolean}

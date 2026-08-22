@@ -19,7 +19,7 @@
     "fixed_or_amc": "amc", "domain": "cqi", "cqi_table": "table1", "outer_loop_flag": true, "inner_loop_flag": true, "cqi_source": "csi_feedback",
     "dmrs_based_tracking_flag": false, "csi_rs_based_tracking_flag": true, "delta_cqi_policy": "none", "delta_mcs_policy": "baseline",
     "pdcch_link_adaptation_policy": "fixed", "pdsch_link_adaptation_policy": "baseline", "pusch_link_adaptation_policy": "baseline",
-    "rank_adaptation_policy": "fixed", "al_adaptation_policy": "fixed", "beam_adaptation_policy": "fixed", "adaptation_periodicity": "slot", "adaptation_delay_model": "baseline",
+    "rank_adaptation_policy": "fixed", "al_adaptation_policy": "fixed", "beam_adaptation_policy": "fixed", "adaptation_periodicity": "slot", "adaptation_delay_model": "baseline", "feedback_delay_slots": 4,
     "cqi_smoothing_alpha": 0.2, "cqi_smoothing_mode": "doppler_adaptive", "olla_step_down": 0.3, "olla_step_up": 0.03, "bootstrap_cqi_mode": "conservative"
   },
   "harq": {

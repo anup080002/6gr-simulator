@@ -10685,6 +10685,16 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
                 return False
         return bool(default)
 
+    def config_any_bool(*paths: str) -> bool:
+        """OR independent feature switches without alias-precedence masking.
+
+        ``config_bool`` intentionally selects the first populated alias.  It
+        must not be used to combine distinct switches (for example CFO OR
+        phase noise), because an explicit false first switch would hide a
+        later true switch.
+        """
+        return any(config_bool(path, default=False) for path in paths)
+
     def config_number(*paths: str, default: float = 0.0) -> float:
         for path in paths:
             value = _config_get_nested(config, path, None)
@@ -10804,7 +10814,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "lls6g.resolvedConfig.mimo.beam_sweep_enabled",
         "lls6g.resolvedConfig.mimo_and_beam_management.beam_sweeping",
     )
-    beam_adaptation_enabled = beam_sweeping_enabled or config_bool(
+    beam_adaptation_enabled = beam_sweeping_enabled or config_any_bool(
         "mimo_and_beam_management.beam_refinement",
         "mimo_and_beam_management.beam_switching",
         "mimo_and_beam_management.beam_tracking",
@@ -10829,18 +10839,31 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         config_number("mimo_and_beam_management.beam_count", default=1.0),
         config_number("lls6g.resolvedConfig.mimo.beam_count", default=1.0),
     )
-    csi_enabled = config_bool(
-        "csi.dl_csi_enabled",
-        "csi.ul_csi_enabled",
-        "csi_acquisition_and_reporting.dl_csi_enabled",
-        "csi_acquisition_and_reporting.ul_csi_enabled",
-        "reference_signals.csi_rs_enabled",
-        "reference_signals.csi_reporting_enabled",
-        "lls6g.resolvedConfig.csi.dl_csi_enabled",
-        "lls6g.resolvedConfig.csi.ul_csi_enabled",
-        "lls6g.resolvedConfig.csi_acquisition_and_reporting.dl_csi_enabled",
-        "lls6g.resolvedConfig.csi_acquisition_and_reporting.ul_csi_enabled",
-        "lls6g.resolvedConfig.reference_signals.csi_rs_enabled",
+    # Mirror buildInternalConfig: CSI is executable only when a reference
+    # resource or report path is explicitly enabled.  Keep legacy aliases as
+    # conservative OR terms so contradictory resolved configs remain required
+    # (and therefore fail closed) rather than being hidden by path precedence.
+    csi_enabled = bool(
+        config_any_bool(
+            "reference_signals.csi_rs_enabled",
+            "reference_signals.nzp_csi_rs.enabled",
+            "lls6g.resolvedConfig.reference_signals.csi_rs_enabled",
+            "lls6g.resolvedConfig.reference_signals.nzp_csi_rs.enabled",
+        )
+        or config_any_bool(
+            "reference_signals.csi_reporting_enabled",
+            "lls6g.resolvedConfig.reference_signals.csi_reporting_enabled",
+        )
+        or config_any_bool(
+            "csi.dl_csi_enabled",
+            "csi.ul_csi_enabled",
+            "csi_acquisition_and_reporting.dl_csi_enabled",
+            "csi_acquisition_and_reporting.ul_csi_enabled",
+            "lls6g.resolvedConfig.csi.dl_csi_enabled",
+            "lls6g.resolvedConfig.csi.ul_csi_enabled",
+            "lls6g.resolvedConfig.csi_acquisition_and_reporting.dl_csi_enabled",
+            "lls6g.resolvedConfig.csi_acquisition_and_reporting.ul_csi_enabled",
+        )
     )
     rank_policy = config_text(
         "link_adaptation.rank_adaptation_policy",
@@ -10886,29 +10909,55 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     if not isinstance(active_pucch_formats, (list, tuple, set)):
         active_pucch_formats = [active_pucch_formats]
-    harq_enabled = config_bool(
+    harq_enabled = config_any_bool(
         "harq.enabled",
         "canonical_control.harq.enabled",
         "phy.harq.enable",
         "mac.harq.enable",
         "lls6g.resolvedConfig.harq.enabled",
-        default=system_default,
     )
-    rf_impairments_enabled = config_bool(
-        "rf_frontend.enabled",
-        "canonical_control.rf_frontend.enabled",
-        "rf.frontend.enabled",
-        "rf.enable",
-        "lls6g.resolvedConfig.rf_frontend.enabled",
-        default=system_default,
+    rf_impairments_enabled = bool(
+        config_any_bool(
+            "rf_frontend.enabled",
+            "canonical_control.rf_frontend.enabled",
+            "rf.frontend.enabled",
+            "rf.enable",
+            "lls6g.resolvedConfig.rf_frontend.enabled",
+        )
+        or config_any_bool(
+            "impairments.cfo.enabled",
+            "impairments.cfo_enabled",
+            "impairments.phase_noise.enabled",
+            "impairments.phase_noise_enabled",
+            "impairments.iq_imbalance.enabled",
+            "impairments.iq_imbalance_enabled",
+            "impairments.pa.enabled",
+            "impairments.pa_nonlinearity_enabled",
+            "impairments.clipping.enabled",
+            "impairments.clipping_enabled",
+            "impairments.quantization_noise.enabled",
+            "impairments.quantization_enabled",
+            "impairments.timing_offset_enabled",
+            "lls6g.resolvedConfig.impairments.cfo_enabled",
+            "lls6g.resolvedConfig.impairments.phase_noise_enabled",
+            "lls6g.resolvedConfig.impairments.iq_imbalance_enabled",
+            "lls6g.resolvedConfig.impairments.pa_nonlinearity_enabled",
+        )
     )
-    power_control_enabled = config_bool(
-        "pusch.power_control.enabled",
-        "canonical_control.power_control.enabled",
-        "phy.pusch.power_control.enabled",
-        "phy.pusch.powerControl.enabled",
-        "lls6g.resolvedConfig.pusch.power_control.enabled",
-        default=system_default,
+    power_control_enabled = bool(
+        config_any_bool(
+            "power_control.ul_open_loop_enable",
+            "power_control.f_closed_loop_enable",
+            "lls6g.resolvedConfig.power_control.ul_open_loop_enable",
+            "lls6g.resolvedConfig.power_control.f_closed_loop_enable",
+        )
+        or config_any_bool(
+            "pusch.power_control.enabled",
+            "canonical_control.power_control.enabled",
+            "phy.pusch.power_control.enabled",
+            "phy.pusch.powerControl.enabled",
+            "lls6g.resolvedConfig.pusch.power_control.enabled",
+        )
     )
     raw_iq_capture_enabled = config_bool(
         "output_control.save_raw_waveforms",
@@ -10934,10 +10983,12 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     pathloss_enabled = config_bool(
         "canonical_control.channel.pathloss_enabled",
+        "channels.pathloss_enabled",
+        "channel.pathloss_enabled",
         "channel.pathlossEnabled",
         "lls6g.resolvedConfig.channel.pathloss_enabled",
         "lls6g.resolvedConfig.channels.pathloss_enabled",
-        default=system_default,
+        default=False,
     )
     noise_operating_mode = config_text(
         "run.noiseOperatingMode",
@@ -10956,10 +11007,12 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     shadowing_enabled = config_bool(
         "canonical_control.channel.shadow_fading_enabled",
+        "channels.shadow_fading_enabled",
+        "channel.shadow_fading_enabled",
         "channel.shadowFadingEnabled",
         "lls6g.resolvedConfig.channel.shadow_fading_enabled",
         "lls6g.resolvedConfig.channels.shadow_fading_enabled",
-        default=system_default,
+        default=False,
     )
     interference_execution = config_text(
         "channels.phase10_strict.interference.execution",
@@ -10982,7 +11035,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "canonical_control.initial_access.enabled",
         "initial_access.enabled",
         "lls6g.resolvedConfig.initial_access.enabled",
-        default=system_default,
+        default=False,
     )
     prach_enabled = config_bool(
         "canonical_control.random_access.enabled",
@@ -10990,7 +11043,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "phy.prach.enable",
         "lls6g.resolvedConfig.random_access.enabled",
         "lls6g.resolvedConfig.phy.prach.enable",
-        default=system_default,
+        default=False,
     )
     prach_runtime_required = config_bool(
         "run.controlGating.prachRequired",
@@ -11008,16 +11061,23 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     pdcch_enabled = config_bool(
         "canonical_control.control.pdcch_enabled",
+        "control.pdcch_enabled",
+        "pdcch.enabled",
         "phy.pdcch.enable",
         "lls6g.resolvedConfig.pdcch.enabled",
-        default=system_default,
+        "lls6g.resolvedConfig.control.pdcch_enabled",
+        default=False,
     )
     pucch_enabled = config_bool(
         "canonical_control.control.pucch_enabled",
+        "control.pucch_enabled",
+        "pucch.enabled",
+        "reference_signals.pucch_enabled",
         "phy.pucch.enable",
         "lls6g.resolvedConfig.phy.pucch.enable",
         "lls6g.resolvedConfig.control.pucch_enabled",
-        default=system_default,
+        "lls6g.resolvedConfig.pucch.enabled",
+        default=False,
     )
     pucch_runtime_required = config_bool(
         "control_gating.pucch_required",
@@ -11032,9 +11092,12 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     srs_enabled = config_bool(
         "canonical_control.reference_signals.srs_enabled",
+        "reference_signals.srs_enabled",
+        "reference_signals.srs.enabled",
         "phy.srs.enable",
+        "lls6g.resolvedConfig.reference_signals.srs_enabled",
         "lls6g.resolvedConfig.reference_signals.srs.enabled",
-        default=system_default,
+        default=False,
     )
     energy_enabled = config_bool(
         "canonical_control.energy.enabled",

@@ -22,7 +22,7 @@ classdef AntennaArrayFactory
                 role (1,1) string
                 opts.fc_Hz (1,1) double = NaN
                 opts.arrayType (1,1) string = "URA"
-                opts.elementSpacingLambda (1,2) double = [0.5 0.5]
+                opts.elementSpacingLambda (1,2) double = [NaN NaN]
                 opts.usePhased (1,1) logical = true
                 opts.signal (1,1) string = ""
                 opts.numPorts (1,1) double = NaN
@@ -66,12 +66,28 @@ classdef AntennaArrayFactory
             nCol = max(1, round(a(2)));
             nPol = max(1, round(a(3)));
             [panelRows, panelCols, panelSource] = sixgr.rf.AntennaArrayFactory.localResolvePanelShape(cfg, roleL, a);
+            polModel = sixgr.rf.AntennaArrayFactory.localResolvePolarizationModel(cfg, roleL, nPol);
+            polAngles = sixgr.rf.AntennaArrayFactory.localResolvePolarizationAngles(cfg, roleL, nPol);
+            xprDb = sixgr.rf.AntennaArrayFactory.localResolveXPRdB(cfg, roleL);
+            elementSpec = sixgr.rf.AntennaArrayFactory.localResolveElementSpec(cfg, roleL, fc, polAngles);
 
-            % Element spacing (meters)
-            d = lambda .* opts.elementSpacingLambda(:).';
-            if any(d <= 0)
-                d = lambda .* [0.5 0.5];
+            % Element spacing (meters).  The YAML-resolved runtime antenna
+            % is authoritative unless a caller explicitly supplies an
+            % override.  Keeping [0.5 0.5] as an arguments-block default
+            % used to bypass every non-half-wavelength YAML configuration.
+            spacingLambda = double(opts.elementSpacingLambda(:).');
+            if any(~isfinite(spacingLambda))
+                spacingLambda = double(sixgr.util.structGet(cfg, ...
+                    "antenna." + roleL + ".spacingLambda", [0.5 0.5]));
+                spacingLambda = spacingLambda(:).';
             end
+            if numel(spacingLambda) ~= 2 || any(~isfinite(spacingLambda)) || ...
+                    any(spacingLambda <= 0)
+                error("AntennaArrayFactory:InvalidElementSpacing", ...
+                    "%s element spacing must contain two finite positive wavelength ratios.", ...
+                    upper(char(roleL)));
+            end
+            d = lambda .* spacingLambda;
 
             % Compute numeric element positions (for codegen friendliness and plotting).
             % Call the private static helper as a plain method name to avoid
@@ -83,42 +99,60 @@ classdef AntennaArrayFactory
             pos = sixgr.rf.AntennaArrayFactory.localURAElementPositions(nRow, nCol, d);
 
             % Build phased array object if available
-            havePhased = (exist("phased.URA","class") == 8) && opts.usePhased;
+            havePhased = (exist("phased.NRRectangularPanelArray","class") == 8) && opts.usePhased;
             arrObj = [];
             elemObj = [];
+            elementSet = {};
             if havePhased
                 try
-                    elemObj = phased.IsotropicAntennaElement("FrequencyRange",[max(1,fc/10) 10*fc]);
-                    if nRow >= 2 && nCol >= 2
-                        arrObj = phased.URA("Size",[nRow nCol], "ElementSpacing", d, "Element", elemObj);
-                    elseif nRow == 1 && nCol == 1
-                        % phased.ULA requires at least two elements.  A
-                        % conducted 1x1 link is still a real one-element
-                        % array, represented without inventing a second
-                        % inactive element.
-                        arrObj = phased.ConformalArray( ...
-                            "Element", elemObj, ...
-                            "ElementPosition", [0; 0; 0], ...
-                            "ElementNormal", [0; 0]);
-                    elseif nRow == 1
-                        arrObj = phased.ULA("NumElements", nCol, "ElementSpacing", d(2), "Element", elemObj);
-                    else
-                        arrObj = phased.ULA("NumElements", nRow, "ElementSpacing", d(1), "Element", elemObj);
+                    elementSet = cell(1,nPol);
+                    for elementIndex = 1:nPol
+                        if elementSpec.Model == "3gpp_tr38901"
+                            elementSet{elementIndex} = phased.NRAntennaElement( ...
+                                "FrequencyRange", elementSpec.FrequencyRangeHz, ...
+                                "PolarizationAngle", elementSpec.PolarizationAnglesDeg(elementIndex), ...
+                                "PolarizationModel", elementSpec.PolarizationModel, ...
+                                "Beamwidth", elementSpec.BeamwidthDeg, ...
+                                "SidelobeLevel", elementSpec.SidelobeLevelDb, ...
+                                "MaximumAttenuation", elementSpec.MaximumAttenuationDb, ...
+                                "MaximumGain", elementSpec.MaximumGainDbi);
+                        else
+                            elementSet{elementIndex} = phased.IsotropicAntennaElement( ...
+                                "FrequencyRange", elementSpec.FrequencyRangeHz);
+                        end
                     end
+                    elemObj = elementSet{1};
+                    panelSpacing = [max((nRow + 1) * d(2), d(2)), ...
+                        max((nCol + 1) * d(1), d(1))];
+                    % R2026a Size is [rows cols panelRows panelCols];
+                    % polarization is represented by ElementSet.
+                    arrObj = phased.NRRectangularPanelArray( ...
+                        "ElementSet", elementSet, ...
+                        "Size", [nRow nCol panelRows panelCols], ...
+                        "Spacing", [d(2) d(1) panelSpacing]);
                 catch ME
-                    % Fall back to numeric-only representation
+                    if elementSpec.RequirePatternInChannel
+                        error("AntennaArrayFactory:RequiredElementPatternBuildFailed", ...
+                            "Required %s %s element/array build failed: %s", ...
+                            upper(char(roleL)), char(elementSpec.Model), ME.message);
+                    end
+                    % Numeric-only fallback is retained only for scenarios
+                    % that did not require a physical element pattern.
                     havePhased = false;
                     arrObj = [];
                     elemObj = [];
+                    elementSet = {};
                     warning("AntennaArrayFactory:PhasedFailed","PHASED array build failed: %s", ME.message);
                 end
+            end
+            if elementSpec.RequirePatternInChannel && ~havePhased
+                error("AntennaArrayFactory:RequiredElementPatternUnavailable", ...
+                    "Required %s %s element pattern cannot be materialized by the installed toolboxes.", ...
+                    upper(char(roleL)), char(elementSpec.Model));
             end
 
             [pos, polIndex, panelIndex] = sixgr.rf.AntennaArrayFactory.localExpandPositionsForPolarizationAndPanels( ...
                 pos, nRow, nCol, nPol, panelRows, panelCols, d);
-            polModel = sixgr.rf.AntennaArrayFactory.localResolvePolarizationModel(cfg, roleL, nPol);
-            polAngles = sixgr.rf.AntennaArrayFactory.localResolvePolarizationAngles(cfg, roleL, nPol);
-            xprDb = sixgr.rf.AntennaArrayFactory.localResolveXPRdB(cfg, roleL);
 
             arr = struct();
             arr.Role = char(roleL);
@@ -133,10 +167,21 @@ classdef AntennaArrayFactory
             arr.PanelCount = panelRows * panelCols;
             arr.PanelShapeSource = char(string(panelSource));
             arr.ElementSpacing_m = d;
+            arr.ElementSpacing_lambda = spacingLambda;
             arr.ElementPositions_m = pos;           % [Nant x 3]
             arr.PolarizationModel = char(polModel);
             arr.PolarizationAngles_deg = double(polAngles(:).');
             arr.CrossPolarizationPowerRatio_dB = double(xprDb);
+            arr.ElementModel = char(elementSpec.Model);
+            arr.ElementFrequencyRangeHz = elementSpec.FrequencyRangeHz;
+            arr.ElementBeamwidthDeg = elementSpec.BeamwidthDeg;
+            arr.ElementSidelobeLevelDb = elementSpec.SidelobeLevelDb;
+            arr.ElementMaximumAttenuationDb = elementSpec.MaximumAttenuationDb;
+            arr.ElementMaximumGainDbi = elementSpec.MaximumGainDbi;
+            arr.ElementPolarizationModel = elementSpec.PolarizationModel;
+            arr.BoresightAzElSlant_deg = elementSpec.BoresightAzElSlantDeg;
+            arr.RequireElementPatternInChannel = elementSpec.RequirePatternInChannel;
+            arr.ElementConfigSource = char(elementSpec.ConfigSource);
             arr.PolarizationIndexByElement = double(polIndex(:).');
             arr.PanelIndexByElement = double(panelIndex(:).');
             arr.Nant = size(pos,1);
@@ -167,6 +212,7 @@ classdef AntennaArrayFactory
             arr.HasPhased = havePhased;
             arr.ArrayObj = arrObj;                 % phased.URA or []
             arr.ElementObj = elemObj;              % phased element or []
+            arr.ElementSet = elementSet;
         end
 
 
@@ -668,6 +714,76 @@ classdef AntennaArrayFactory
             end
         end
 
+        function spec = localResolveElementSpec(cfg, roleL, fc, polarizationAngles)
+            basePath = "antenna." + roleL;
+            model = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+                basePath + ".element.model", "isotropic"))));
+            if ~ismember(model, ["3gpp_tr38901", "isotropic"])
+                error("AntennaArrayFactory:InvalidElementModel", ...
+                    "Configured %s antenna element model '%s' is unsupported.", ...
+                    upper(char(roleL)), char(model));
+            end
+            frequencyRange = double(sixgr.util.structGet(cfg, ...
+                basePath + ".element.frequencyRangeHz", ...
+                [max(1,fc/10) 10*fc]));
+            beamwidth = double(sixgr.util.structGet(cfg, ...
+                basePath + ".element.beamwidthDeg", [65 65]));
+            sidelobe = double(sixgr.util.structGet(cfg, ...
+                basePath + ".element.sidelobeLevelDb", [30 30]));
+            maximumAttenuation = double(sixgr.util.structGet(cfg, ...
+                basePath + ".element.maximumAttenuationDb", 30));
+            maximumGain = double(sixgr.util.structGet(cfg, ...
+                basePath + ".element.maximumGainDbi", 8));
+            polarizationModel = double(sixgr.util.structGet(cfg, ...
+                basePath + ".element.polarizationModel", 2));
+            boresight = double(sixgr.util.structGet(cfg, ...
+                basePath + ".boresightAzElSlant_deg", [0 0 0]));
+            requirePattern = logical(sixgr.util.structGet(cfg, ...
+                basePath + ".requireElementPatternInChannel", false));
+            configSource = string(sixgr.util.structGet(cfg, ...
+                basePath + ".element.configSource", "runtime_default"));
+
+            frequencyRange = frequencyRange(:).';
+            beamwidth = beamwidth(:).';
+            sidelobe = sidelobe(:).';
+            boresight = boresight(:).';
+            if ~(numel(frequencyRange) == 2 && all(isfinite(frequencyRange)) && ...
+                    frequencyRange(1) >= 0 && frequencyRange(2) > frequencyRange(1) && ...
+                    fc >= frequencyRange(1) && fc <= frequencyRange(2))
+                error("AntennaArrayFactory:CarrierOutsideElementFrequencyRange", ...
+                    "%s carrier %.9g Hz is outside its configured finite element range.", ...
+                    upper(char(roleL)), fc);
+            end
+            if ~(numel(beamwidth) == 2 && all(isfinite(beamwidth)) && ...
+                    all(beamwidth > 0) && all(beamwidth <= 180) && ...
+                    numel(sidelobe) == 2 && all(isfinite(sidelobe)) && ...
+                    all(sidelobe > 0) && isfinite(maximumAttenuation) && ...
+                    maximumAttenuation >= max(sidelobe) && ...
+                    isfinite(maximumGain) && maximumGain > 0 && ...
+                    ismember(polarizationModel,[1 2]) && ...
+                    numel(boresight) == 3 && all(isfinite(boresight)))
+                error("AntennaArrayFactory:InvalidElementPattern", ...
+                    "Configured %s antenna element pattern is invalid.", upper(char(roleL)));
+            end
+            polarizationAngles = double(polarizationAngles(:).');
+            if isempty(polarizationAngles) || any(~isfinite(polarizationAngles))
+                error("AntennaArrayFactory:InvalidElementPolarizationAngles", ...
+                    "Configured %s element polarization angles are invalid.", upper(char(roleL)));
+            end
+            spec = struct( ...
+                "Model", model, ...
+                "FrequencyRangeHz", frequencyRange, ...
+                "BeamwidthDeg", beamwidth, ...
+                "SidelobeLevelDb", sidelobe, ...
+                "MaximumAttenuationDb", maximumAttenuation, ...
+                "MaximumGainDbi", maximumGain, ...
+                "PolarizationModel", polarizationModel, ...
+                "PolarizationAnglesDeg", polarizationAngles, ...
+                "BoresightAzElSlantDeg", boresight, ...
+                "RequirePatternInChannel", requirePattern, ...
+                "ConfigSource", configSource);
+        end
+
         function model = localResolvePolarizationModel(cfg, roleL, nPol)
             paths = ["antenna." + roleL + ".polarization", "rf." + roleL + ".polarization", ...
                 "antenna_and_array.polarization", "mimo.polarization"];
@@ -830,13 +946,16 @@ classdef AntennaArrayFactory
         end
         function pos = localURAElementPositions(nRow, nCol, d)
             % localURAElementPositions URA positions centered at origin.
+            % d is [horizontal vertical]. NR panel rows are vertical and
+            % columns are horizontal.  Keep the numeric geometry in the
+            % same axis convention as phased.NRRectangularPanelArray.
             dy = d(1);
             dz = d(2);
 
-            y = ((0:nRow-1) - (nRow-1)/2) * dy;
-            z = ((0:nCol-1) - (nCol-1)/2) * dz;
+            y = ((0:nCol-1) - (nCol-1)/2) * dy;
+            z = ((0:nRow-1) - (nRow-1)/2) * dz;
 
-            [Y,Z] = ndgrid(y, z);
+            [Z,Y] = ndgrid(z, y);
             X = zeros(size(Y));
 
             pos = [X(:) Y(:) Z(:)];

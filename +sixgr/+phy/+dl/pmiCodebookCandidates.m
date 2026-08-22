@@ -66,7 +66,9 @@ if mode == "noncodebook"
     return;
 end
 
-beamCountCfg = round(double(sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", numTxPorts)));
+beamCountCfg = round(double(sixgr.util.structGet(cfg, ...
+    "phy.beamManagement.dlCodebookSize", ...
+    sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", numTxPorts))));
 beamCountCfg = max(numTxPorts, beamCountCfg);
 
 switch mode
@@ -294,7 +296,9 @@ snapshot.Mode = char(string(mode));
 snapshot.NumLayers = double(nLayers);
 snapshot.NumTxPorts = double(numTxPorts);
 snapshot.MaxCandidates = double(maxCandidates);
-snapshot.BeamCount = double(sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", numTxPorts));
+snapshot.BeamCount = double(sixgr.util.structGet(cfg, ...
+    "phy.beamManagement.dlCodebookSize", ...
+    sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", numTxPorts)));
 snapshot.CodebookType = char(string(sixgr.util.structGet(cfg, "phy.csi.codebookType", "")));
 snapshot.Type2BasisBeamCount = double(sixgr.util.structGet(cfg, "phy.csi.type2BasisBeamCount", ...
     sixgr.util.structGet(cfg, "csi_acquisition_and_reporting.type2_basis_beam_count", NaN)));

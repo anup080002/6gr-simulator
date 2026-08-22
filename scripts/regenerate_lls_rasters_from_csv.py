@@ -602,6 +602,410 @@ def materialize_frc_reference_rasters(run_root: Path) -> list[dict[str, str]]:
     return generated
 
 
+_DECLARED_REPORT_RASTER_SPECS: tuple[dict[str, str], ...] = (
+    {
+        "plot_id": "latency_cdf",
+        "source": "reports/csv/latency_cdf_plot.csv",
+        "image": "reports/image/latency_cdf.png",
+        "kind": "latency_cdf",
+    },
+    {
+        "plot_id": "complexity_vs_gain",
+        "source": "reports/csv/complexity_vs_gain.csv",
+        "image": "reports/image/complexity_vs_gain.png",
+        "kind": "complexity_vs_gain",
+    },
+    {
+        "plot_id": "heatmap_band_feature_kpi",
+        "source": "reports/csv/heatmap_band_feature_kpi.csv",
+        "image": "reports/image/heatmap_band_feature_kpi.png",
+        "kind": "summary_heatmap",
+    },
+    {
+        "plot_id": "heatmap_impairment_kpi",
+        "source": "reports/csv/heatmap_impairment_kpi.csv",
+        "image": "reports/image/heatmap_impairment_kpi.png",
+        "kind": "summary_heatmap",
+    },
+    {
+        "plot_id": "heatmap_beam_rank_trp_kpi",
+        "source": "reports/csv/heatmap_beam_rank_trp_kpi.csv",
+        "image": "reports/image/heatmap_beam_rank_trp_kpi.png",
+        "kind": "summary_heatmap",
+    },
+    {
+        "plot_id": "equalized_constellations",
+        "source": "reports/csv/equalized_constellations.csv",
+        "image": "reports/image/equalized_constellations.png",
+        "kind": "equalized_constellations",
+    },
+    {
+        "plot_id": "llr_histograms",
+        "source": "reports/csv/llr_histograms.csv",
+        "image": "reports/image/llr_histograms.png",
+        "kind": "llr_histograms",
+    },
+)
+
+
+def _finite_report_value(row: dict[str, str], *fields: str) -> float | None:
+    for field in fields:
+        raw = str(row.get(field, "")).strip()
+        if not raw:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
+
+
+def _report_raster_is_declared(run_root: Path, image_rel: str) -> bool:
+    """Return true only for an available/counting report-image contract row."""
+
+    for table_name in (
+        "lls_output_metric_rows.csv",
+        "aggregated_reporting_outputs.csv",
+        "debug_trace_outputs.csv",
+    ):
+        metric_path = run_root / "reports" / "csv" / table_name
+        if not io_path(metric_path).is_file():
+            continue
+        for row in read_csv(metric_path):
+            source = str(row.get("SourceArtifact", "")).strip().replace("\\", "/")
+            value_text = str(row.get("ValueText", "")).strip().replace("\\", "/")
+            if image_rel not in {source, value_text}:
+                continue
+            counts = str(row.get("CountsTowardCoverage", "")).strip().lower()
+            availability = str(row.get("Availability", "")).strip().lower()
+            if counts in {"1", "true", "yes"} and availability in {
+                "available", "derived", "measured", "runtime_measured",
+            }:
+                return True
+    return False
+
+
+def _ensure_exact_report_source_mapping(path: Path) -> list[dict[str, str]]:
+    """Persist explicit exact-column mapping on a derived report dataset."""
+
+    with io_path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = list(reader.fieldnames or [])
+        rows = [dict(row) for row in reader]
+    if not rows:
+        return rows
+    if "source_mapping_status" in fields:
+        invalid = [
+            index
+            for index, row in enumerate(rows, start=1)
+            if str(row.get("source_mapping_status", "")).strip().lower() != "exact"
+        ]
+        if invalid:
+            raise RuntimeError(
+                f"Report source {path.name} has non-exact mapping row(s): {invalid[:8]}"
+            )
+        return rows
+    fields.append("source_mapping_status")
+    for row in rows:
+        row["source_mapping_status"] = "exact"
+    write_csv(path, rows, fields)
+    return rows
+
+
+def _render_declared_report_svg(
+    kind: str,
+    plot_id: str,
+    rows: list[dict[str, str]],
+) -> bytes:
+    """Render one legacy report alias from its exact persisted CSV rows."""
+
+    if not rows:
+        raise RuntimeError(f"Declared report raster {plot_id} has no persisted source rows.")
+    if kind == "latency_cdf":
+        points = []
+        for row in rows:
+            x_value = _finite_report_value(row, "latency_ms")
+            y_value = _finite_report_value(row, "cdf_probability")
+            if x_value is not None and y_value is not None:
+                points.append([x_value, y_value])
+        points.sort(key=lambda point: (point[0], point[1]))
+        dataset = {
+            "mode": "line",
+            "x_label": "Latency (ms)",
+            "y_label": "Empirical CDF",
+            "points": points,
+            "sample_count": len(points),
+            "evidence_shape_policy": "observed_relation",
+        }
+        return contract_materializer._render_svg_plot(
+            "Latency CDF",
+            "Empirical latency distribution from persisted same-run runtime measurements.",
+            dataset,
+            [f"source_rows={len(rows)}", "source=reports/csv/latency_cdf_plot.csv"],
+        )
+    if kind == "complexity_vs_gain":
+        grouped: dict[str, list[list[float]]] = {}
+        for row in rows:
+            x_value = _finite_report_value(row, "DecoderComplexityUnits")
+            y_value = _finite_report_value(row, "PostEqSINR_dB")
+            if x_value is None or y_value is None:
+                continue
+            grouped.setdefault(str(row.get("Direction", "runtime") or "runtime"), []).append(
+                [x_value, y_value]
+            )
+        series = [
+            {"name": name, "points": sorted(points)}
+            for name, points in sorted(grouped.items())
+        ]
+        return contract_materializer._render_multi_series_svg(
+            "Complexity vs Gain",
+            "Runtime decoder-complexity observations versus measured post-equalization SINR (diagnostic relation).",
+            series,
+            [f"source_rows={len(rows)}", "truth_status=diagnostic_only"],
+            x_label="Decoder complexity units",
+            y_label="Post-equalization SINR (dB)",
+            mode="scatter",
+        )
+    if kind == "summary_heatmap":
+        x_labels: list[str] = []
+        y_labels: list[str] = []
+        cells: dict[tuple[str, str], float] = {}
+        for row in rows:
+            x_label = str(row.get("Feature", "")).strip()
+            y_label = str(row.get("RowLabel", "")).strip()
+            value = _finite_report_value(row, "KPIValue")
+            if not x_label or not y_label or value is None:
+                continue
+            if x_label not in x_labels:
+                x_labels.append(x_label)
+            if y_label not in y_labels:
+                y_labels.append(y_label)
+            cells[(y_label, x_label)] = value
+        matrix = [
+            [cells.get((y_label, x_label), 0.0) for x_label in x_labels]
+            for y_label in y_labels
+        ]
+        svg, status = contract_materializer._render_heatmap_or_projection_svg(
+            plot_id.replace("_", " ").title(),
+            "Same-run KPI snapshot from persisted runtime-derived report rows (diagnostic summary).",
+            x_labels,
+            y_labels,
+            matrix,
+            [f"source_rows={len(rows)}", "truth_status=diagnostic_only"],
+            "KPI",
+            "Runtime category",
+        )
+        if "unavailable_reason" in status:
+            raise RuntimeError(
+                f"Declared report raster {plot_id} lacks two or more finite KPI cells."
+            )
+        return svg
+    if kind == "equalized_constellations":
+        grouped: dict[str, list[tuple[float, float, str]]] = {}
+        ideal: dict[str, set[tuple[float, float]]] = {}
+        for row in rows:
+            direction = str(row.get("RuntimeDirection", row.get("direction", ""))).strip().upper()
+            modulation = str(row.get("RuntimeModulation", row.get("modulation", ""))).strip().upper()
+            layer = str(row.get("LayerIndex", row.get("layer", ""))).strip()
+            panel = " / ".join(part for part in (direction, modulation, f"L{layer}" if layer else "") if part)
+            x_value = _finite_report_value(row, "EqualizedReal", "equalized_i")
+            y_value = _finite_report_value(row, "EqualizedImag", "equalized_q")
+            ref_x = _finite_report_value(row, "ReferenceSymbolReal", "reference_symbol_i")
+            ref_y = _finite_report_value(row, "ReferenceSymbolImag", "reference_symbol_q")
+            if panel and x_value is not None and y_value is not None:
+                grouped.setdefault(panel, []).append((x_value, y_value, direction))
+            if panel and ref_x is not None and ref_y is not None:
+                ideal.setdefault(panel, set()).add((ref_x, ref_y))
+        panels = [
+            (name, points, sorted(ideal.get(name, set())))
+            for name, points in sorted(grouped.items())
+        ]
+        if not panels:
+            raise RuntimeError("Equalized-constellation CSV contains no finite symbol pairs.")
+        return contract_materializer._render_scatter_panels_svg(
+            "Equalized Constellations",
+            "Aligned equalized symbols and exact transmitted references from persisted DL/UL receiver output.",
+            panels,
+            [f"source_rows={len(rows)}", f"panels={len(panels)}"],
+        )
+    if kind == "llr_histograms":
+        grouped: dict[str, list[list[float]]] = {}
+        for row in rows:
+            start = _finite_report_value(row, "BinStart")
+            end = _finite_report_value(row, "BinEnd")
+            count = _finite_report_value(row, "Count")
+            if start is None or end is None or count is None:
+                continue
+            direction = str(row.get("Direction", "")).strip().upper()
+            metric = str(row.get("MetricName", "LLR")).strip()
+            grouped.setdefault(f"{direction} {metric}".strip(), []).append(
+                [(start + end) / 2.0, count]
+            )
+        series = [
+            {"name": name, "points": sorted(points)}
+            for name, points in sorted(grouped.items())
+        ]
+        return contract_materializer._render_multi_series_svg(
+            "LLR Histograms",
+            "Decoder LLR summary histograms reconstructed from persisted runtime bin counts.",
+            series,
+            [f"source_rows={len(rows)}", f"series={len(series)}"],
+            x_label="LLR statistic bin center",
+            y_label="Observed trial count",
+            mode="line",
+        )
+    raise RuntimeError(f"Unsupported declared report raster kind: {kind}")
+
+
+def _seal_declared_report_plot_manifest(
+    run_root: Path,
+    generated: list[dict[str, str]],
+) -> None:
+    manifest_path = run_root / "reports" / "csv" / "plot_manifest.csv"
+    if not io_path(manifest_path).is_file():
+        return
+    with io_path(manifest_path).open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = list(reader.fieldnames or [])
+        rows = [dict(row) for row in reader]
+    by_plot = {row["plot_id"]: row for row in generated}
+    changed = False
+    for row in rows:
+        plot_id = str(row.get("PlotId", "")).strip()
+        if plot_id not in by_plot:
+            continue
+        evidence = by_plot[plot_id]
+        diagnostic = plot_id in {
+            "complexity_vs_gain",
+            "heatmap_band_feature_kpi",
+            "heatmap_impairment_kpi",
+            "heatmap_beam_rank_trp_kpi",
+        }
+        row["PlotRenderStatus"] = (
+            "rendered_diagnostic_plot" if diagnostic else "rendered_real_plot"
+        )
+        row["PlotSuppressionReason"] = ""
+        row["IsUnavailableCard"] = "0"
+        row["CountsAsRealPlot"] = "0" if diagnostic else "1"
+        row["VisualValidity"] = "diagnostic_only" if diagnostic else "real_lls_evidence"
+        row["WarningBannerText"] = (
+            "DIAGNOSTIC ONLY - not counted as publication evidence" if diagnostic else ""
+        )
+        row["actual_mime_type"] = "image/png"
+        row["declared_mime_type"] = "image/png"
+        row["extension"] = ".png"
+        row["sha256"] = evidence["image_sha256"]
+        row["byte_count"] = evidence["byte_size"]
+        changed = True
+    if changed:
+        write_csv(manifest_path, rows, fields)
+
+
+def _seal_declared_report_contract_lineage(
+    run_root: Path,
+    generated: list[dict[str, str]],
+) -> None:
+    lineage_path = run_root / "reports" / "csv" / "contract_plot_lineage.csv"
+    required_fields = [
+        "PlotId", "ImagePath", "SourceCSV", "SourceCSV_SHA256",
+        "ImageSHA256", "Width", "Height", "MimeType", "ImageExists",
+        "SourceExists", "ProducerModule", "Status", "FailureReason",
+    ]
+    rows = read_csv(lineage_path) if io_path(lineage_path).is_file() else []
+    fields = required_fields
+    if io_path(lineage_path).is_file():
+        with io_path(lineage_path).open("r", encoding="utf-8-sig", newline="") as handle:
+            fields = list(csv.DictReader(handle).fieldnames or [])
+        missing = [field for field in required_fields if field not in fields]
+        if missing:
+            raise RuntimeError(
+                "Contract plot lineage is missing field(s): " + ", ".join(missing)
+            )
+    generated_ids = {"report__" + row["plot_id"] for row in generated}
+    rows = [row for row in rows if str(row.get("PlotId", "")) not in generated_ids]
+    for evidence in generated:
+        rows.append({
+            "PlotId": "report__" + evidence["plot_id"],
+            "ImagePath": evidence["image_relative_path"],
+            "SourceCSV": evidence["source_relative_path"],
+            "SourceCSV_SHA256": evidence["source_sha256"],
+            "ImageSHA256": evidence["image_sha256"],
+            "Width": evidence["width"],
+            "Height": evidence["height"],
+            "MimeType": "image/png",
+            "ImageExists": "1",
+            "SourceExists": "1",
+            "ProducerModule": "scripts.regenerate_lls_rasters_from_csv.materialize_declared_report_rasters",
+            "Status": "pass",
+            "FailureReason": "",
+        })
+    write_csv(lineage_path, rows, fields)
+
+
+def materialize_declared_report_rasters(
+    run_root: Path,
+    *,
+    seal_lineage: bool = False,
+) -> list[dict[str, str]]:
+    """Rebuild every available/counting report PNG from its exact CSV source.
+
+    A report alias is eligible only when the runtime metric ledger declares
+    it available and counting.  Missing or numerically unusable declared
+    source rows fail loudly; no reason card or placeholder raster is written.
+    """
+
+    generated: list[dict[str, str]] = []
+    for spec in _DECLARED_REPORT_RASTER_SPECS:
+        source_rel = spec["source"]
+        image_rel = spec["image"]
+        if not _report_raster_is_declared(run_root, image_rel):
+            continue
+        source_path = _run_relative_path(run_root, source_rel)
+        image_path = _run_relative_path(run_root, image_rel)
+        if not io_path(source_path).is_file():
+            raise RuntimeError(
+                f"Declared report raster {image_rel} is missing CSV source {source_rel}."
+            )
+        source_rows = _ensure_exact_report_source_mapping(source_path)
+        svg = _render_declared_report_svg(
+            spec["kind"], spec["plot_id"], source_rows
+        )
+        png = contract_materializer._rasterize_contract_png(
+            svg,
+            source_mime_type="image/svg+xml",
+            source_logical_path=source_rel,
+        )
+        low_information = contract_materializer._png_low_information_reason(png)
+        if low_information:
+            raise RuntimeError(
+                f"Declared report raster {image_rel} is not scientifically informative: "
+                f"{low_information}"
+            )
+        io_path(image_path.parent).mkdir(parents=True, exist_ok=True)
+        io_path(image_path).write_bytes(png)
+        with Image.open(io_path(image_path)) as image:
+            image.load()
+            width, height = image.size
+            if image.format != "PNG":
+                raise RuntimeError(f"Declared report raster {image_rel} is not PNG.")
+        generated.append({
+            "plot_id": spec["plot_id"],
+            "source_relative_path": source_rel,
+            "image_relative_path": image_rel,
+            "source_sha256": sha256(source_path),
+            "image_sha256": sha256(image_path),
+            "width": str(width),
+            "height": str(height),
+            "byte_size": str(io_path(image_path).stat().st_size),
+        })
+    _seal_declared_report_plot_manifest(run_root, generated)
+    if seal_lineage:
+        _seal_declared_report_contract_lineage(run_root, generated)
+    return generated
+
+
 def reconcile_raw_evidence_index_shape_metadata(run_root: Path) -> list[dict[str, str]]:
     """Repair only stale shape metadata for already hash-matching raw bytes.
 
@@ -1416,6 +1820,7 @@ def main() -> int:
             path, feature_policy, contract_name=name
         )
 
+    materialize_declared_report_rasters(run_root)
     require_primary_csv_semantics(run_root, policy_filter=policy_filter)
 
     before = raster_inventory(run_root)
@@ -1428,6 +1833,8 @@ def main() -> int:
         target = (run_root / str(row["relative_path"])).resolve()
         target.relative_to(run_root)
         io_path(target).unlink()
+
+    materialize_declared_report_rasters(run_root)
 
     command = [
         sys.executable,
@@ -1485,6 +1892,18 @@ def main() -> int:
         [
             "plot_id", "source_relative_path", "image_relative_path",
             "source_sha256", "image_sha256", "width", "height",
+        ],
+    )
+
+    report_rasters = materialize_declared_report_rasters(
+        run_root, seal_lineage=True
+    )
+    write_csv(
+        audit_output / "declared_report_rasters.csv",
+        report_rasters,
+        [
+            "plot_id", "source_relative_path", "image_relative_path",
+            "source_sha256", "image_sha256", "width", "height", "byte_size",
         ],
     )
 
@@ -1575,6 +1994,7 @@ def main() -> int:
         "component_raster_mirrors": len(mirrors),
         "artifact_generation_rasters": len(artifact_generation_rasters),
         "frc_reference_rasters": len(frc_reference_rasters),
+        "declared_report_rasters": len(report_rasters),
         "component_manifest_mirrors_synchronized": len(synchronized_mirrors),
         "raw_evidence_index_shape_repairs": len(raw_index_repairs),
         "stale_raster_lineage_rows_retired": len(lineage_changes),

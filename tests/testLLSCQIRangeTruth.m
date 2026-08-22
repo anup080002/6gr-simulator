@@ -8,6 +8,11 @@ cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+% This test exercises the isolated waveform receiver, not a connected
+% scheduler-owned PDSCH grant.  Declare that trust boundary explicitly so
+% the production chain remains fail-closed for an omitted execution
+% profile.
+cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportCQI", true);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.enable", true);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.enable", true);

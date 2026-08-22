@@ -128,7 +128,7 @@ for keyNumber = 1:numel(uniqueKeys)
         row.Source = "canonical_slot_runtime_harq_timeline";
         row.ExecutionBackend = "runtime_observation_schema_adapter";
         row.ApproximationMode = "none";
-        row.Notes = "Derived only from harq/csv/live_harq_observation_timeline.csv; no replay PHY was launched.";
+        row.Notes = "Derived only from the in-memory canonical slot-runtime HARQ process state; no replay PHY was launched.";
         rows(end+1, 1) = row; %#ok<AGROW>
     end
 end

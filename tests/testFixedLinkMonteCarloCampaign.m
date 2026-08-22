@@ -308,6 +308,81 @@ for i = 1:numel(cols)
     assert(isequaln(a, b), "Fixed-link campaign column %s must be deterministic for the same seed.", cols(i));
 end
 
+% Sequential statistics may become admissible before the complete seed
+% catalog has executed.  The configured seed set remains authoritative:
+% every seed must contribute real waveform rows at the operating point
+% before the campaign is allowed to stop.
+coverageCfg = cfg.validation.fixed_link_campaign;
+coverageCfg.Enabled = true;
+coverageCfg.Direction = "DL";
+coverageCfg.SNR_dB = 20;
+coverageCfg.MCS = 0;
+coverageCfg.Rank = 1;
+coverageCfg.Layers = 1;
+coverageCfg.NPRB = 50;
+coverageCfg.MinTBPerPoint = 1;
+coverageCfg.MaxTBPerPoint = 3;
+coverageCfg.MinErrorsForCI = 0;
+coverageCfg.MaxCIHalfWidth = 1;
+coverageCfg.ConfidenceLevel = 0.95;
+coverageCfg.IntervalMethod = "CLOPPER_PEARSON_TWO_SIDED";
+coverageCfg.BatchTBCount = 1;
+coverageCfg.Seeds = [701 702 703];
+coverageCfg.TargetBLER = 0.10;
+coverageCfg.ParallelWorkers = 0;
+coverageOpt = localCampaignOptions(cfg, 20, 1, 701);
+coverageOpt.LinkFixedLinkCampaignConfig = coverageCfg;
+tmpCoverage = tempname;
+mkdir(tmpCoverage);
+coverageCleanup = onCleanup(@() rmdir(tmpCoverage, "s")); %#ok<NASGU>
+coverageOut = sixgr.truth.runWaveformLinkBundle(cfg, ...
+    fullfile(tmpCoverage, "air_interface"), coverageOpt);
+coverageTrials = coverageOut.FixedLinkCampaign.DLTrials;
+coveragePlan = coverageOut.FixedLinkCampaign.TaskPlan;
+coverageSummary = coverageOut.FixedLinkCampaign.Summary;
+assert(height(coverageTrials) == 3 && ...
+    isequal(unique(double(coverageTrials.FixedLinkSeedIndex), "stable").', [1 2 3]) && ...
+    isequal(unique(double(coverageTrials.FixedLinkSeedValue), "stable").', [701 702 703]), ...
+    "Early sequential stopping must not omit configured fixed-link seeds.");
+assert(height(coveragePlan) == 3 && ...
+    isequal(double(coveragePlan.SeedIndex(:)).', [1 2 3]) && ...
+    isequal(double(coveragePlan.SeedValue(:)).', [701 702 703]), ...
+    "The task plan must retain the exact configured seed index and value for every executed drop.");
+assert(double(coverageSummary.DL_ConfiguredSeedCount(1)) == 3 && ...
+    double(coverageSummary.DL_ExecutedSeedCount(1)) == 3 && ...
+    logical(coverageSummary.DL_SeedCoverageOk(1)), ...
+    "The fixed-link summary must disclose complete configured-seed coverage.");
+
+insufficientCfg = coverageCfg;
+insufficientCfg.MaxTBPerPoint = 2;
+insufficientOpt = coverageOpt;
+insufficientOpt.LinkFixedLinkCampaignConfig = insufficientCfg;
+try
+    sixgr.truth.runWaveformLinkBundle(cfg, ...
+        fullfile(tempname, "air_interface"), insufficientOpt);
+    error("sixgr:test:ExpectedInsufficientSeedBudget", ...
+        "An impossible configured-seed campaign budget must fail closed.");
+catch ME
+    assert(string(ME.identifier) == ...
+        "sixgr:lls6g:campaign:InsufficientTrialBudgetForConfiguredSeeds", ...
+        "Unexpected impossible-seed-budget error: %s", ME.identifier);
+end
+
+duplicateCfg = coverageCfg;
+duplicateCfg.Seeds = [701 701 703];
+duplicateOpt = coverageOpt;
+duplicateOpt.LinkFixedLinkCampaignConfig = duplicateCfg;
+try
+    sixgr.truth.runWaveformLinkBundle(cfg, ...
+        fullfile(tempname, "air_interface"), duplicateOpt);
+    error("sixgr:test:ExpectedDuplicateConfiguredSeeds", ...
+        "Duplicate configured seeds must fail closed.");
+catch ME
+    assert(string(ME.identifier) == ...
+        "sixgr:lls6g:campaign:DuplicateConfiguredSeeds", ...
+        "Unexpected duplicate-seed error: %s", ME.identifier);
+end
+
 ok = true;
 end
 

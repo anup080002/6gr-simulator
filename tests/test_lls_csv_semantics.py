@@ -18,6 +18,10 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_component_bler_curve,
     _audit_link_table,
     _audit_manifest_integrity,
+    _audit_metric_output_tables,
+    _audit_metric_coverage_table,
+    _find_named_files,
+    _io_path,
     _audit_mimo_rank_layer_table,
     _audit_mimo_beam_codebook_table,
     _audit_beam_precoder_table,
@@ -35,7 +39,118 @@ from lls_csv_semantics import (  # noqa: E402
     _kpi_transport_block_keys,
     _audit_runtime_call_ledger,
     _audit_status_reduction,
+    _audit_phase7_reducer,
+    _audit_reconciliation_reducers,
+    _audit_production_qualification_reducer,
+    _audit_gate_row_table,
+    _audit_measurement_sidecar_manifest,
+    _audit_canonical_component_manifest,
+    _audit_mcs_cqi_reference_tables,
+    _audit_dut_reference_comparison,
+    _domain_table_applicability,
+    _empty_domain_table_is_valid_zero_event,
+    _audit_fixed_snr_reporting_tables,
+    _audit_kpi_reporting_tables,
+    _clopper_pearson_two_sided,
+    PHASE7_GATE_NAMES,
+    PHASE7_PHASE_MEMBERS,
+    PRODUCTION_GATE_ORDER,
+    RECONCILIATION_PHASE7_FLAGS,
 )
+
+
+def test_optional_runtime_tables_follow_resolved_feature_applicability(
+    tmp_path: Path,
+) -> None:
+    summary: dict[str, str] = {}
+    disabled: dict[str, object] = {
+        "initial_access": {"enabled": False},
+        "random_access": {"enabled": False},
+        "control_gating": {
+            "pbch_required": False,
+            "prach_required": False,
+            "srs_required": False,
+            "trs_required": False,
+        },
+        "reference_signals": {
+            "srs_enabled": False,
+            "trs_enabled": False,
+            "csi_rs_enabled": False,
+        },
+        "mimo_and_beam_management": {
+            "beam_sweeping": False,
+            "beam_refinement": False,
+            "beam_switching": False,
+            "beam_tracking": False,
+        },
+        "system": {"beam": {"enable": False}},
+    }
+    optional_paths = (
+        "control/csv/access_state_timeline.csv",
+        "control/csv/access_transition_ledger.csv",
+        "reports/csv/access_state_timeline.csv",
+        "reports/csv/access_transition_ledger.csv",
+        "control/csv/pbch_trials.csv",
+        "control/csv/prach_trials.csv",
+        "control/csv/csi_rs_trials.csv",
+        "control/csv/srs_trials.csv",
+        "control/csv/trs_trials.csv",
+        "reports/csv/live_receiver_tracking_trace.csv",
+        "reports/csv/live_beam_p1_acquisition_stats.csv",
+        "reports/csv/beam_management_outputs.csv",
+        "reports/csv/live_csirs_stats.csv",
+    )
+    for relative in optional_paths:
+        assert _domain_table_applicability(
+            relative, tmp_path, summary, disabled
+        ) == (False, False)
+
+    assert _empty_domain_table_is_valid_zero_event(
+        "reports/csv/raster_replacement_inventory.csv", tmp_path
+    )
+
+    for relative, header in (
+        ("reports/csv/access_state_timeline.csv", "UEIndex,Slot,State\n"),
+        ("reports/csv/access_transition_ledger.csv", "UEIndex,Slot,Transition\n"),
+        (
+            "reports/csv/raster_replacement_inventory.csv",
+            "relative_path,extension,bytes,sha256,width_px,height_px,format\n",
+        ),
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(header, encoding="utf-8")
+    empty_checks = {
+        check.artifact_path: check
+        for check in _audit_domain_runtime_tables(tmp_path, summary)
+        if check.check_id == "schema_and_runtime_rows"
+    }
+    for relative in (
+        "reports/csv/access_state_timeline.csv",
+        "reports/csv/access_transition_ledger.csv",
+    ):
+        check = empty_checks[relative]
+        assert not check.required and not check.evaluated and check.failure_count == 0
+    raster_check = empty_checks["reports/csv/raster_replacement_inventory.csv"]
+    assert raster_check.required and raster_check.evaluated and raster_check.passed
+
+    enabled = json.loads(json.dumps(disabled))
+    enabled["initial_access"]["enabled"] = True
+    enabled["random_access"]["enabled"] = True
+    enabled["control_gating"].update({
+        "pbch_required": True,
+        "prach_required": True,
+        "srs_required": True,
+        "trs_required": True,
+    })
+    enabled["reference_signals"]["srs_enabled"] = True
+    enabled["reference_signals"]["trs_enabled"] = True
+    enabled["reference_signals"]["csi_rs_enabled"] = True
+    enabled["mimo_and_beam_management"]["beam_sweeping"] = True
+    for relative in optional_paths:
+        assert _domain_table_applicability(
+            relative, tmp_path, summary, enabled
+        ) == (True, True)
 
 
 def _component_primary_rows(direction: str) -> list[dict[str, str]]:
@@ -152,7 +267,9 @@ def test_component_bler_semantics_reject_corrupt_interval_origin_and_counts() ->
 def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
     raw = {
         "RunID": "run-1", "ScenarioID": "scenario-1", "Direction": "DL",
-        "Frame": "1", "Slot": "2", "UEID": "3", "CRCPass": "0",
+        # Canonical primary trials may expose a descriptive UEID alongside a
+        # numeric UEIndex.  Numeric reconciliation must try the next alias.
+        "Frame": "1", "Slot": "2", "UEID": "UE3", "UEIndex": "3", "CRCPass": "0",
         "Layers": "1", "MCSIndex": "10", "Modulation": "16QAM",
         "IsWarmupFrame": "0",
     }
@@ -208,6 +325,37 @@ def test_mimo_rank_semantics_keep_crc_failure_separate_from_execution() -> None:
     checks = _audit_mimo_rank_layer_table(
         "beamforming/csv/rank_layer_trials.csv", list(row), [row],
         {"DL": [raw], "UL": []},
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_mimo_missing_beam_uses_explicit_not_selected_category() -> None:
+    raw, rank = _mimo_source_and_rank_row()
+    raw["RequestedBeamIndexSet"] = "not_recorded_by_active_ul_pusch_trials_runtime"
+    raw["AppliedBeamIndexSet"] = ""
+    rank["BeamId"] = ""
+    rank["ConfiguredLayers"] = "1"
+    beam_row = {
+        "RunId": rank["RunId"], "TrialId": rank["TrialId"],
+        "Direction": rank["Direction"], "SelectedBeamId": "not_selected",
+        "CSIReportId": "", "MeasurementSource": "air_interface_trial_row",
+        "SourceRowsHash": rank["SourceRowsHash"], "Status": "pass",
+        "FailureReason": "",
+    }
+    checks = _audit_mimo_per_trial_companion(
+        "beamforming/csv/beam_sweep_measurements.csv", list(beam_row),
+        [beam_row], [rank],
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    _raw, output = _beam_primary_and_output()
+    _raw["RequestedBeamIndexSet"] = raw["RequestedBeamIndexSet"]
+    _raw["AppliedBeamIndexSet"] = raw["AppliedBeamIndexSet"]
+    output["requested_beam_index_set"] = "not_selected"
+    output["applied_beam_index_set"] = "not_selected"
+    checks = _audit_beam_precoder_table(
+        "beamforming/csv/beam_precoder_table.csv", list(output), [output],
+        {"DL": [_raw], "UL": []},
     )
     assert all(check.passed for check in checks), [check.details for check in checks]
 
@@ -1300,6 +1448,261 @@ def test_domain_runtime_contract_checks_identity_probability_and_truth(tmp_path:
     assert "FallbackFlag_true_in_path" in failed["in_path_truth_proxy_separation"]
 
 
+def test_packet_flow_and_report_csvs_cannot_escape_baseline_domain_semantics(
+    tmp_path: Path,
+) -> None:
+    summary = {"ScenarioID": "scenario-a", "ConfigHash": "a" * 64}
+    for relative in (
+        "packet_flow/csv/new_scheduler_surface.csv",
+        "reports/csv/new_runtime_surface.csv",
+        "reports/final/new_publication_surface.csv",
+    ):
+        _write_rows(
+            tmp_path / relative,
+            [{
+                "ScenarioID": "scenario-a",
+                "ConfigHash": "a" * 64,
+                "TrialCount": "-1",
+                "EvidenceScope": "in_path",
+                "FallbackFlag": "1",
+                "ApproximationMode": "fast_proxy",
+            }],
+        )
+    checks = _audit_domain_runtime_tables(tmp_path, summary)
+    by_path: dict[str, list[object]] = {}
+    for check in checks:
+        by_path.setdefault(check.artifact_path, []).append(check)
+    for relative in (
+        "packet_flow/csv/new_scheduler_surface.csv",
+        "reports/csv/new_runtime_surface.csv",
+        "reports/final/new_publication_surface.csv",
+    ):
+        assert relative in by_path
+        assert any(
+            check.check_id == "populated_physical_value_ranges" and not check.passed
+            for check in by_path[relative]
+        )
+        assert any(
+            check.check_id == "in_path_truth_proxy_separation" and not check.passed
+            for check in by_path[relative]
+        )
+
+
+def test_metric_output_contract_accepts_observed_and_unavailable_rows(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "air_interface/csv/dl_pdsch_trials.csv",
+        [{"CRCPass": "1"}],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/basic_phy_performance_outputs.csv",
+        [
+            {
+                "CategoryCode": "B",
+                "CategoryKey": "basic_phy_performance_outputs",
+                "CategoryName": "Basic PHY performance outputs",
+                "MetricKey": "bler",
+                "MetricName": "BLER",
+                "Entity": "DL",
+                "Statistic": "mean",
+                "Availability": "observed",
+                "CountsTowardCoverage": "1",
+                "ValueNumeric": "0.25",
+                "ValueText": "0.25",
+                "Unit": "fraction",
+                "SourceArtifact": "air_interface/csv/dl_pdsch_trials.csv",
+                "Notes": "runtime aggregation",
+            },
+            {
+                "CategoryCode": "B",
+                "CategoryKey": "basic_phy_performance_outputs",
+                "CategoryName": "Basic PHY performance outputs",
+                "MetricKey": "unsupported_metric",
+                "MetricName": "Unsupported metric",
+                "Entity": "",
+                "Statistic": "",
+                "Availability": "not_available",
+                "CountsTowardCoverage": "0",
+                "ValueNumeric": "NaN",
+                "ValueText": "",
+                "Unit": "",
+                "SourceArtifact": "",
+                "Notes": "not emitted by this run",
+            },
+        ],
+    )
+    checks = _audit_metric_output_tables(tmp_path)
+    assert checks
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_metric_output_contract_rejects_false_coverage_and_missing_lineage(
+    tmp_path: Path,
+) -> None:
+    row = {
+        "CategoryCode": "B",
+        "CategoryKey": "wrong_category",
+        "CategoryName": "Basic PHY performance outputs",
+        "MetricKey": "bler",
+        "MetricName": "BLER",
+        "Entity": "DL",
+        "Statistic": "mean",
+        "Availability": "not_available",
+        "CountsTowardCoverage": "1",
+        "ValueNumeric": "1.2",
+        "ValueText": "0.2",
+        "Unit": "fraction",
+        "SourceArtifact": "air_interface/csv/missing.csv",
+        "Notes": "",
+    }
+    _write_rows(
+        tmp_path / "reports/csv/basic_phy_performance_outputs.csv",
+        [row, dict(row)],
+    )
+    checks = _audit_metric_output_tables(tmp_path)
+    failed = {check.check_id: check.details for check in checks if not check.passed}
+    assert "CategoryKey_mismatch" in failed["metric_identity_and_unique_key"]
+    assert "duplicate_metric_entity_statistic_key" in failed[
+        "metric_identity_and_unique_key"
+    ]
+    assert "coverage_availability_mismatch" in failed[
+        "availability_matches_runtime_coverage"
+    ]
+    assert "ValueNumeric_ValueText_mismatch" in failed[
+        "metric_values_and_units_are_coherent"
+    ]
+    assert "fraction_outside_unit_interval" in failed[
+        "metric_values_and_units_are_coherent"
+    ]
+    assert "counted_metric_source_not_found" in failed[
+        "counted_metrics_bind_existing_run_artifacts"
+    ]
+
+
+def test_metric_coverage_contract_recomputes_detail_rollup(tmp_path: Path) -> None:
+    detail_rows = [
+        {
+            "CategoryCode": "B", "CategoryKey": "basic_phy_performance_outputs",
+            "CategoryName": "Basic PHY", "MetricKey": "bler", "MetricName": "BLER",
+            "Entity": "DL", "Statistic": "mean", "Availability": "observed",
+            "CountsTowardCoverage": "1", "ValueNumeric": "0.25", "ValueText": "0.25",
+            "Unit": "fraction", "SourceArtifact": "air_interface/csv/dl.csv", "Notes": "",
+        },
+        {
+            "CategoryCode": "B", "CategoryKey": "basic_phy_performance_outputs",
+            "CategoryName": "Basic PHY", "MetricKey": "bler", "MetricName": "BLER",
+            "Entity": "UL", "Statistic": "mean", "Availability": "not_available",
+            "CountsTowardCoverage": "0", "ValueNumeric": "NaN", "ValueText": "",
+            "Unit": "fraction", "SourceArtifact": "", "Notes": "not emitted",
+        },
+    ]
+    _write_rows(tmp_path / "reports/csv/lls_output_metric_rows.csv", detail_rows)
+    coverage = {
+        "CategoryCode": "B", "CategoryKey": "basic_phy_performance_outputs",
+        "CategoryName": "Basic PHY", "MetricKey": "bler", "MetricName": "BLER",
+        "Availability": "observed", "CountsTowardCoverage": "1",
+        "CoveredRowCount": "1", "ObservedRowCount": "1", "DerivedRowCount": "0",
+        "ConfigOnlyRowCount": "0", "DisabledRowCount": "0",
+        "PlaceholderRowCount": "0", "NotSupportedRowCount": "0",
+        "NotAvailableRowCount": "1", "NotExercisedRowCount": "0",
+        "SourceArtifacts": "air_interface/csv/dl.csv", "Notes": "",
+    }
+    _write_rows(tmp_path / "reports/csv/lls_output_spec_coverage.csv", [coverage])
+    checks = _audit_metric_coverage_table(tmp_path)
+    assert checks and all(check.passed for check in checks), [
+        check.details for check in checks
+    ]
+
+    coverage["ObservedRowCount"] = "0"
+    coverage["CountsTowardCoverage"] = "0"
+    _write_rows(tmp_path / "reports/csv/lls_output_spec_coverage.csv", [coverage])
+    failed = {
+        check.check_id: check.details
+        for check in _audit_metric_coverage_table(tmp_path)
+        if not check.passed
+    }
+    assert "ObservedRowCount_mismatch" in failed[
+        "coverage_recomputed_from_metric_ledger"
+    ]
+    assert "CountsTowardCoverage_mismatch" in failed[
+        "coverage_recomputed_from_metric_ledger"
+    ]
+
+
+def test_metric_coverage_accepts_fail_closed_unmeasured_catalog_gap(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/lls_output_metric_rows.csv",
+        [{
+            "CategoryCode": "J", "CategoryKey": "beam_management_outputs",
+            "CategoryName": "Beam management", "MetricKey": "beam_hit_rate",
+            "MetricName": "Beam hit rate", "Entity": "beam", "Statistic": "mean",
+            "Availability": "observed", "CountsTowardCoverage": "1",
+            "ValueNumeric": "1", "ValueText": "1", "Unit": "fraction",
+            "SourceArtifact": "beamforming/csv/beam.csv", "Notes": "",
+        }],
+    )
+    _write_rows(tmp_path / "beamforming/csv/beam.csv", [{"Hit": "1"}])
+    base = {
+        "CategoryCode": "J", "CategoryKey": "beam_management_outputs",
+        "CategoryName": "Beam management", "Availability": "not_available",
+        "CountsTowardCoverage": "0", "CoveredRowCount": "0",
+        "ObservedRowCount": "0", "DerivedRowCount": "0",
+        "ConfigOnlyRowCount": "0", "DisabledRowCount": "0",
+        "PlaceholderRowCount": "0", "NotSupportedRowCount": "0",
+        "NotAvailableRowCount": "0", "NotExercisedRowCount": "0",
+        "SourceArtifacts": "", "Notes": "primary row intentionally suppressed",
+    }
+    observed = dict(base, MetricKey="beam_hit_rate", MetricName="Beam hit rate",
+                    Availability="observed", CountsTowardCoverage="1",
+                    CoveredRowCount="1", ObservedRowCount="1",
+                    SourceArtifacts="beamforming/csv/beam.csv")
+    gap = dict(base, MetricKey="beam_switch_latency", MetricName="Beam switch latency")
+    _write_rows(
+        tmp_path / "reports/csv/lls_output_spec_coverage.csv",
+        [observed, gap],
+    )
+    checks = _audit_metric_coverage_table(tmp_path)
+    assert checks and all(check.passed for check in checks), [
+        check.details for check in checks
+    ]
+
+    gap["Availability"] = "observed"
+    gap["CountsTowardCoverage"] = "1"
+    _write_rows(
+        tmp_path / "reports/csv/lls_output_spec_coverage.csv",
+        [observed, gap],
+    )
+    failed = {
+        check.check_id: check.details
+        for check in _audit_metric_coverage_table(tmp_path)
+        if not check.passed
+    }
+    assert "unmeasured_catalog_gap_not_fail_closed" in failed[
+        "coverage_recomputed_from_metric_ledger"
+    ]
+
+
+def test_find_named_files_discovers_all_nested_progress_files(tmp_path: Path) -> None:
+    paths = [
+        tmp_path / "001_dl" / "001_snr" / "frc_reference_progress.csv",
+        tmp_path / ("002_" + "x" * 80) / ("001_" + "y" * 80)
+        / "frc_reference_progress.csv",
+    ]
+    for path in paths:
+        target = _io_path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["EntryId"])
+            writer.writeheader()
+            writer.writerow({"EntryId": path.parent.parent.name})
+    assert [path.resolve() for path in _find_named_files(
+        tmp_path, "frc_reference_progress.csv"
+    )] == [path.resolve() for path in paths]
+
+
 def test_live_reselection_event_table_may_be_schema_only_when_no_event_occurred(tmp_path: Path) -> None:
     path = tmp_path / "reports/csv/live_cell_reselection_events.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1333,6 +1736,9 @@ def test_fixed_link_disabled_live_domains_are_not_required_but_user_summary_is(
         "reports/csv/live_coverage_layer.csv",
         "reports/csv/live_csirs_stats.csv",
         "reports/csv/live_user_performance_snapshot.csv",
+        "geometry/csv/trajectory_geometry.csv",
+        "geometry/csv/ue_initial_positions.csv",
+        "mobility/csv/trajectory_segment_table.csv",
     ):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1354,6 +1760,9 @@ def test_fixed_link_disabled_live_domains_are_not_required_but_user_summary_is(
         "reports/csv/live_beam_p1_acquisition_stats.csv",
         "reports/csv/live_coverage_layer.csv",
         "reports/csv/live_csirs_stats.csv",
+        "geometry/csv/trajectory_geometry.csv",
+        "geometry/csv/ue_initial_positions.csv",
+        "mobility/csv/trajectory_segment_table.csv",
     ):
         assert not by_path[relative].required
         assert not by_path[relative].evaluated
@@ -1755,3 +2164,684 @@ def test_runtime_ledger_rejects_proxy_identity_and_sequence_corruption(tmp_path:
     assert "ConfigHash_mismatch" in failed["runtime_call_identity_matches_run"]
     assert "synthetic_runtime_entry" in failed["runtime_call_rows_are_actual_nonproxy_entries"]
     assert "fast_proxy" in failed["runtime_call_rows_are_actual_nonproxy_entries"]
+
+
+def _complete_phase7_row() -> dict[str, str]:
+    row = {name: "1" for name in PHASE7_GATE_NAMES}
+    for phase_name in PHASE7_PHASE_MEMBERS:
+        row[phase_name] = "1"
+    row.update(
+        {
+            "Phase7Ok": "1",
+            "ResultOk": "1",
+            "PublicationReadinessOk": "1",
+            "ResultOkAuthority": "all_phase_gates_required_no_lower_pass_override",
+            "NotApplicableGateNames": "",
+            "ApplicabilityAuthority": "operator_run_class_and_concrete_channel_model",
+            "ScopeLabel": "SCOPED_IMPLEMENTATION_VALIDATION",
+            "FailureCodes": "",
+            "PrimaryFailureCode": "",
+            "GeneratedAt": "2026-08-20T00:00:00Z",
+            "ProducerModule": "sixgr.runtime.Phase7TruthEvaluator",
+        }
+    )
+    return row
+
+
+def test_phase7_reducer_recomputes_every_gate_and_phase_rollup(tmp_path: Path) -> None:
+    row = _complete_phase7_row()
+    _write_rows(tmp_path / "reports/csv/phase7_truth_gates.csv", [row])
+    checks = _audit_phase7_reducer(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    row["InterferenceAccountingOk"] = "0"
+    _write_rows(tmp_path / "reports/csv/phase7_truth_gates.csv", [row])
+    checks = _audit_phase7_reducer(tmp_path)
+    assert not checks[0].passed
+    assert "Phase2Ok_rollup_mismatch" in checks[0].details
+    assert "Phase7Ok_rollup_mismatch" in checks[0].details
+    assert "FailureCodes_do_not_match" in checks[0].details
+
+
+def test_reconciliation_reducers_match_exact_phase7_fields(tmp_path: Path) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/phase7_truth_gates.csv",
+        [_complete_phase7_row()],
+    )
+    for relative, mapping in RECONCILIATION_PHASE7_FLAGS.items():
+        source_field = mapping[0] if isinstance(mapping, tuple) else mapping
+        _write_rows(tmp_path / relative, [{source_field: "1", "FailureReason": ""}])
+    checks = _audit_reconciliation_reducers(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    _write_rows(
+        tmp_path / "reports/csv/throughput_reconciliation.csv",
+        [{"ThroughputReconciliationOk": "0", "FailureReason": ""}],
+    )
+    checks = _audit_reconciliation_reducers(tmp_path)
+    throughput = next(
+        check
+        for check in checks
+        if check.artifact_path == "reports/csv/throughput_reconciliation.csv"
+    )
+    assert not throughput.passed
+    assert "phase7_outcome_mismatch" in throughput.details
+    assert "failed_reconciliation_reason_missing" in throughput.details
+
+
+def _production_gate_rows(
+    expected: dict[str, bool],
+    required: dict[str, bool] | None = None,
+) -> list[dict[str, str]]:
+    if required is None:
+        required = {gate: True for gate in PRODUCTION_GATE_ORDER}
+        required["IndependentReferenceComparison"] = False
+    rows: list[dict[str, str]] = []
+    for gate in PRODUCTION_GATE_ORDER:
+        passed = expected[gate]
+        status = "PASS" if passed else "FAIL"
+        if gate == "IndependentFRCQualification" and not passed:
+            status = "NOT_EVALUATED"
+        if not required[gate]:
+            status = "NOT_EVALUATED"
+        rows.append(
+            {
+                "Gate": gate,
+                "Required": "1" if required[gate] else "0",
+                "Pass": "1" if passed else "0",
+                "Status": status,
+                "EvidenceArtifact": "reports/csv/production_qualification_gate.csv",
+                "FailureReason": "" if passed or not required[gate] else gate + "_failed",
+            }
+        )
+    return rows
+
+
+def test_production_gate_cannot_promote_missing_reference_to_pass(tmp_path: Path) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/result_status_summary.csv",
+        [{
+            "ResultOk": "1", "ExecutionCompleted": "1",
+            "RuntimeTruthContractOk": "1", "MandatorySubsystemsOk": "1",
+            "KpiConsistencyOk": "1", "ScenarioObjectiveOk": "1",
+        }],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/phy_package_execution_evidence_gate.csv",
+        [{"Gate": "runtime", "Required": "1", "Pass": "1"}],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/phase7_truth_gates.csv",
+        [_complete_phase7_row()],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/publication_readiness_gate_summary.csv",
+        [{"TerminalPublicationGatesOk": "1"}],
+    )
+    expected = {gate: True for gate in PRODUCTION_GATE_ORDER}
+    expected["IndependentFRCQualification"] = False
+    expected["IndependentReferenceComparison"] = False
+    expected["ProductionGrade"] = False
+    rows = _production_gate_rows(expected)
+    _write_rows(tmp_path / "reports/csv/production_qualification_gate.csv", rows)
+    checks = _audit_production_qualification_reducer(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    rows[-1]["Pass"] = "1"
+    rows[-1]["Status"] = "PASS"
+    rows[-1]["FailureReason"] = ""
+    _write_rows(tmp_path / "reports/csv/production_qualification_gate.csv", rows)
+    checks = _audit_production_qualification_reducer(tmp_path)
+    assert not checks[0].passed
+    assert "ProductionGrade:Pass=True;expected=False" in checks[0].details
+
+
+def test_production_gate_honors_explicit_optional_reference_authority(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/result_status_summary.csv",
+        [{
+            "ResultOk": "1", "ExecutionCompleted": "1",
+            "RuntimeTruthContractOk": "1", "MandatorySubsystemsOk": "1",
+            "KpiConsistencyOk": "1", "ScenarioObjectiveOk": "1",
+        }],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/phy_package_execution_evidence_gate.csv",
+        [{"Gate": "runtime", "Required": "1", "Pass": "1"}],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/phase7_truth_gates.csv",
+        [_complete_phase7_row()],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/publication_readiness_gate_summary.csv",
+        [{"TerminalPublicationGatesOk": "1"}],
+    )
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({
+        "validation": {
+            "independent_reference_qualification": {
+                "required_for_production": False,
+            },
+        },
+    }), encoding="utf-8")
+
+    expected = {gate: True for gate in PRODUCTION_GATE_ORDER}
+    expected["IndependentFRCQualification"] = False
+    expected["IndependentReferenceComparison"] = False
+    required = {gate: True for gate in PRODUCTION_GATE_ORDER}
+    required["IndependentFRCQualification"] = False
+    required["IndependentReferenceComparison"] = False
+    rows = _production_gate_rows(expected, required)
+    reference_row = next(
+        row for row in rows
+        if row["Gate"] == "IndependentFRCQualification"
+    )
+    _write_rows(tmp_path / "reports/csv/production_qualification_gate.csv", rows)
+
+    checks = _audit_production_qualification_reducer(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_fixed_snr_reference_comparison_is_independent_of_optional_frc(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/result_status_summary.csv",
+        [{
+            "ResultOk": "1", "ExecutionCompleted": "1",
+            "RuntimeTruthContractOk": "1", "MandatorySubsystemsOk": "1",
+            "KpiConsistencyOk": "1", "ScenarioObjectiveOk": "1",
+        }],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/phy_package_execution_evidence_gate.csv",
+        [{"Gate": "runtime", "Required": "1", "Pass": "1"}],
+    )
+    phase = _complete_phase7_row()
+    phase["RunClass"] = "fixed_snr_sweep_lls"
+    _write_rows(tmp_path / "reports/csv/phase7_truth_gates.csv", [phase])
+    _write_rows(
+        tmp_path / "reports/csv/publication_readiness_gate_summary.csv",
+        [{
+            "PublicationReferenceComparisonOk": "0",
+            "TerminalPublicationGatesOk": "0",
+        }],
+    )
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({
+        "validation": {
+            "independent_reference_qualification": {
+                "required_for_production": False,
+            },
+        },
+    }), encoding="utf-8")
+
+    expected = {gate: True for gate in PRODUCTION_GATE_ORDER}
+    expected.update({
+        "IndependentFRCQualification": False,
+        "IndependentReferenceComparison": False,
+        "TerminalPublicationEvidence": False,
+        "ProductionGrade": False,
+    })
+    required = {gate: True for gate in PRODUCTION_GATE_ORDER}
+    required["IndependentFRCQualification"] = False
+    rows = _production_gate_rows(expected, required)
+    _write_rows(tmp_path / "reports/csv/production_qualification_gate.csv", rows)
+    checks = _audit_production_qualification_reducer(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_functional_run_statistics_remain_truthfully_not_evaluated(
+    tmp_path: Path,
+) -> None:
+    _write_rows(
+        tmp_path / "reports/csv/result_status_summary.csv",
+        [{
+            "ResultOk": "1", "ExecutionCompleted": "1",
+            "RuntimeTruthContractOk": "1", "MandatorySubsystemsOk": "1",
+            "KpiConsistencyOk": "1", "ScenarioObjectiveOk": "1",
+        }],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/phy_package_execution_evidence_gate.csv",
+        [{"Gate": "runtime", "Required": "1", "Pass": "1"}],
+    )
+    phase = _complete_phase7_row()
+    phase["RunClass"] = "functional_waveform_validation"
+    for name in (
+        "SeedHierarchyOk", "CampaignDesignOk", "CampaignCompletionOk",
+        "MultiSeedDropStatisticsOk", "ConfidenceIntervalsOk",
+        "SampleAdequacyOk", "SweepDataQualityOk",
+    ):
+        phase[name] = "0"
+    phase["Phase7Ok"] = "0"
+    _write_rows(tmp_path / "reports/csv/phase7_truth_gates.csv", [phase])
+    _write_rows(
+        tmp_path / "reports/csv/statistical_qualification_gate.csv",
+        [{
+            "Component": "PDCCH", "RequiredForStandardsClaim": "0",
+            "StatisticallyQualified": "0", "ReportedStatisticalStatus": "NOT_REQUIRED",
+        }],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/publication_readiness_gate_summary.csv",
+        [{"TerminalPublicationGatesOk": "0"}],
+    )
+    expected = {gate: False for gate in PRODUCTION_GATE_ORDER}
+    expected.update({
+        "FunctionalRun": True,
+        "ScenarioObjective": True,
+        "RuntimeWiringCoverage": True,
+    })
+    rows = _production_gate_rows(expected)
+    statistical_row = next(
+        row for row in rows if row["Gate"] == "StatisticalQualification"
+    )
+    statistical_row["Status"] = "NOT_EVALUATED"
+    _write_rows(tmp_path / "reports/csv/production_qualification_gate.csv", rows)
+    checks = _audit_production_qualification_reducer(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_gate_table_source_row_count_is_recomputed_not_trusted(tmp_path: Path) -> None:
+    _write_rows(tmp_path / "reports/csv/source.csv", [{"x": "1"}, {"x": "2"}])
+    _write_rows(
+        tmp_path / "reports/csv/scenario_objective_gates.csv",
+        [{
+            "ObjectiveName": "runtime_truth", "Mandatory": "1", "Pass": "1",
+            "SourceCsv": "reports/csv/source.csv", "SourceRowCount": "1",
+            "FailureReason": "",
+        }],
+    )
+    check = _audit_gate_row_table(
+        tmp_path,
+        "reports/csv/scenario_objective_gates.csv",
+        key_column="ObjectiveName",
+        required_column="Mandatory",
+        pass_column="Pass",
+        evidence_column="SourceCsv",
+        source_count_column="SourceRowCount",
+    )
+    assert not check.passed
+    assert "source_row_count_mismatch=1.0!=2" in check.details
+
+
+def test_measurement_sidecar_manifest_recomputes_persisted_shape(tmp_path: Path) -> None:
+    source_rel = "air_interface/csv/dl_pdsch_trials.csv"
+    measurement_rel = "reports/csv/measurements/dl_pdsch_measurements.csv"
+    provenance_rel = "reports/csv/provenance_sidecars/dl_pdsch_provenance.csv"
+    _write_rows(tmp_path / source_rel, [{"TrialId": "1"}, {"TrialId": "2"}])
+    _write_rows(
+        tmp_path / measurement_rel,
+        [
+            {"TrialId": "1", "Value": "2", "SourceArtifact": source_rel},
+            {"TrialId": "2", "Value": "3", "SourceArtifact": source_rel},
+        ],
+    )
+    _write_rows(
+        tmp_path / provenance_rel,
+        [
+            {"TrialId": "1", "ValueSource": "runtime", "SourceArtifact": source_rel},
+            {"TrialId": "2", "ValueSource": "runtime", "SourceArtifact": source_rel},
+        ],
+    )
+    manifest = {
+        "SourceArtifact": source_rel,
+        "MeasurementArtifact": measurement_rel,
+        "ProvenanceArtifact": provenance_rel,
+        "SourceRows": "2",
+        "MeasurementRows": "2",
+        "ProvenanceRows": "2",
+        "MeasurementColumnCount": "3",
+        "ProvenanceColumnCount": "3",
+        "SplitKind": "measurement",
+    }
+    _write_rows(tmp_path / "reports/csv/measurement_sidecar_manifest.csv", [manifest])
+    checks = _audit_measurement_sidecar_manifest(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    manifest["MeasurementColumnCount"] = "99"
+    _write_rows(tmp_path / "reports/csv/measurement_sidecar_manifest.csv", [manifest])
+    checks = _audit_measurement_sidecar_manifest(tmp_path)
+    assert not checks[0].passed
+    assert "MeasurementColumnCount_mismatch=99.0!=3" in checks[0].details
+
+
+def test_canonical_component_manifest_binds_catalog_schema_hash_and_rows(tmp_path: Path) -> None:
+    published_rel = "components/pdsch/csv/pdsch_bler_curve.csv"
+    _write_rows(
+        tmp_path / published_rel,
+        [
+            {"CampaignID": "c", "OperatingPointID": "1", "BLER": "0.5"},
+            {"CampaignID": "c", "OperatingPointID": "2", "BLER": "0.1"},
+        ],
+    )
+    payload = (tmp_path / published_rel).read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    contract_id = "pdsch|base|csv|pdsch_bler_curve.csv|all|runtime_in_path"
+    manifest = {
+        "ContractID": contract_id,
+        "ArtifactType": "CSV",
+        "Required": "1",
+        "Status": "PASS",
+        "SourceRows": "2",
+        "PublishedRelativePath": published_rel,
+        "SourceSHA256": digest,
+        "SHA256": digest,
+        "ByteSize": str(len(payload)),
+        "Message": "",
+    }
+    catalog = {
+        "ContractID": contract_id,
+        "ArtifactType": "CSV",
+        "Required": "1",
+        "MinimumRows": "1",
+        "RequiredColumns": "CampaignID|OperatingPointID|BLER",
+        "PrimaryKey": "CampaignID|OperatingPointID",
+    }
+    _write_rows(tmp_path / "artifact_generation/canonical_component_manifest.csv", [manifest])
+    _write_rows(tmp_path / "artifact_generation/contract_catalog_snapshot.csv", [catalog])
+    checks = _audit_canonical_component_manifest(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    manifest["SHA256"] = "0" * 64
+    _write_rows(tmp_path / "artifact_generation/canonical_component_manifest.csv", [manifest])
+    checks = _audit_canonical_component_manifest(tmp_path)
+    assert not checks[0].passed
+    assert "published_sha256_mismatch" in checks[0].details
+
+
+def test_mcs_cqi_reference_tables_verify_spectral_efficiency(tmp_path: Path) -> None:
+    identity = {"ScenarioID": "scenario", "ConfigHash": "a" * 64, "Direction": "DL"}
+    mcs_rows = [
+        {**identity, "MCSTable": "qam64", "MCSIndex": "0", "Modulation": "QPSK", "TargetCodeRate": "0.25", "SpectralEfficiency": "0.5"},
+        {**identity, "MCSTable": "qam64", "MCSIndex": "1", "Modulation": "16QAM", "TargetCodeRate": "0.5", "SpectralEfficiency": "2"},
+    ]
+    cqi_rows = [
+        {**identity, "CQITable": "table1", "CQI": "0", "Modulation": "", "TargetCodeRate": "0", "SpectralEfficiency": "0"},
+        {**identity, "CQITable": "table1", "CQI": "1", "Modulation": "QPSK", "TargetCodeRate": "0.25", "SpectralEfficiency": "0.5"},
+    ]
+    _write_rows(tmp_path / "reports/csv/mcs_table_reference.csv", mcs_rows)
+    _write_rows(tmp_path / "reports/csv/cqi_table_reference.csv", cqi_rows)
+    checks = _audit_mcs_cqi_reference_tables(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    mcs_rows[1]["SpectralEfficiency"] = "9"
+    _write_rows(tmp_path / "reports/csv/mcs_table_reference.csv", mcs_rows)
+    checks = _audit_mcs_cqi_reference_tables(tmp_path)
+    assert not checks[0].passed
+    assert "spectral_efficiency_mismatch" in checks[0].details
+
+
+def test_dut_reference_summary_is_recomputed_from_detail(tmp_path: Path) -> None:
+    artifact_rel = "air_interface/csv/dl_pdsch_trials.csv"
+    _write_rows(tmp_path / artifact_rel, [{"TBSize_bits": "100"}])
+    detail = {
+        "RunId": "run", "BlockId": "PDSCH", "DUTValue": "100",
+        "ReferenceValue": "100", "DeltaAbs": "0", "ToleranceAbs": "0",
+        "ToleranceRel": "0", "Pass": "1", "ReferenceAvailable": "1",
+        "ReferenceSource": "nrTBS", "DUTArtifactPath": artifact_rel,
+        "FailureReason": "",
+    }
+    summary = {
+        "RunId": "run", "BlockId": "PDSCH", "ReferenceAvailable": "1",
+        "ComparisonCount": "1", "PassCount": "1", "FailCount": "0",
+        "DUTReferencePass": "1", "ReferenceSources": "nrTBS",
+        "MaxAbsDelta": "0", "FailureReason": "",
+    }
+    _write_rows(tmp_path / "reports/csv/dut_reference_comparison.csv", [detail])
+    _write_rows(tmp_path / "reports/csv/lls_reference_comparison_summary.csv", [summary])
+    checks = _audit_dut_reference_comparison(tmp_path)
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    summary["PassCount"] = "0"
+    _write_rows(tmp_path / "reports/csv/lls_reference_comparison_summary.csv", [summary])
+    checks = _audit_dut_reference_comparison(tmp_path)
+    assert not checks[1].passed
+    assert "PassCount_mismatch" in checks[1].details
+
+
+def _fixed_point_fixture(direction: str, crc_pass: bool) -> tuple[dict[str, str], dict[str, str]]:
+    failures = 0 if crc_pass else 1
+    errors = failures
+    bler_low, bler_high = _clopper_pearson_two_sided(failures, 1, 0.95)
+    ber_low, ber_high = _clopper_pearson_two_sided(errors, 1, 0.95)
+    measured = "1" if direction == "UL" else "0"
+    goodput = "2" if crc_pass else "0"
+    raw = {
+        "FixedLinkPointIndex": "1", "PointSeed": "101",
+        "ConfiguredSNR_dB": "0", "AppliedAWGNSNR_dB": "0",
+        "MCSIndex": "1", "Modulation": "QPSK", "Rank": "1", "Layers": "1",
+        "CRCPass": "1" if crc_pass else "0", "BitErrors": str(errors),
+        "BitsCompared": "1", "MeasuredTrialSINR_dB": measured,
+        "Goodput_Mbps": goodput,
+    }
+    summary = {
+        "Direction": direction, "PointIndex": "1", "PointSeed": "101",
+        "SNR_dB": "0", "ConfiguredSNR_dB": "0", "AppliedSNR_dB": "0",
+        "MeanMeasuredSINR_dB": measured, "MedianMeasuredSINR_dB": measured,
+        "MCS": "1", "Modulation": "QPSK", "Rank": "1", "Layers": "1",
+        "TrialCount": "1", "TBPassCount": "1" if crc_pass else "0",
+        "TBFailCount": str(failures), "BLER": str(float(failures)),
+        "BLER_CI_Low": str(bler_low), "BLER_CI_High": str(bler_high),
+        "BLER_CI_Width": str(bler_high - bler_low),
+        "BitErrors": str(errors), "BitsCompared": "1", "BER": str(float(errors)),
+        "BER_CI_Low": str(ber_low), "BER_CI_High": str(ber_high),
+        "BER_CI_Width": str(ber_high - ber_low),
+        "Throughput_Mbps": goodput, "Goodput_Mbps": goodput,
+        "PointStatus": "COMPLETE", "Incomplete": "0", "Status": "complete",
+    }
+    return raw, summary
+
+
+def test_fixed_snr_reports_are_recomputed_from_primary_trials(tmp_path: Path) -> None:
+    dl_raw, dl_summary = _fixed_point_fixture("DL", False)
+    ul_raw, ul_summary = _fixed_point_fixture("UL", True)
+    ul_summary["PointStatus"] = "CENSORED_COMPLETE"
+    summary_rows = [dl_summary, ul_summary]
+    summary_rel = "reports/csv/fixed_snr_sweep_curve_summary.csv"
+    _write_rows(tmp_path / summary_rel, summary_rows)
+    for direction, source in (("dl", dl_summary), ("ul", ul_summary)):
+        for metric in ("bler", "ber"):
+            _write_rows(
+                tmp_path / f"reports/csv/{direction}_fixed_snr_{metric}_curve.csv",
+                [source],
+            )
+            value_field = metric.upper()
+            metric_row = {
+                "Direction": direction.upper(), "Metric": value_field,
+                "PointIndex": "1", "Value": source[value_field],
+                "CI_Low": source[value_field + "_CI_Low"],
+                "CI_High": source[value_field + "_CI_High"],
+                "TrialCount": "1", "FailureCount": source["TBFailCount"],
+                "MeasuredSINR_dB": source["MeanMeasuredSINR_dB"],
+                "Throughput_Mbps": source["Throughput_Mbps"],
+                "Goodput_Mbps": source["Goodput_Mbps"],
+            }
+            _write_rows(
+                tmp_path / f"reports/csv/{direction}_fixed_link_{metric}_curve.csv",
+                [metric_row],
+            )
+    campaign_rows = []
+    for direction, source in (("DL", dl_summary), ("UL", ul_summary)):
+        campaign_rows.append({
+            "Direction": direction, "SNRPointCount": "1", "TotalTBCount": "1",
+            "TotalFailureCount": source["TBFailCount"],
+            "MaxBLERCIHalfWidth": str(float(source["BLER_CI_Width"]) / 2),
+            "IncompletePointCount": "0", "CurvePresent": "1",
+        })
+    _write_rows(tmp_path / "reports/csv/fixed_link_campaign_summary.csv", campaign_rows)
+    _write_rows(
+        tmp_path / "reports/csv/fixed_snr_sweep_required_outputs.csv",
+        [{
+            "ArtifactPath": summary_rel, "Direction": "global", "Required": "1",
+            "Present": "1", "Readable": "1", "NonEmpty": "1", "Status": "PASS",
+        }],
+    )
+    _write_rows(
+        tmp_path / "reports/csv/fixed_snr_sweep_audit.csv",
+        [{
+            "CheckName": "curve", "Scope": summary_rel, "RowsChecked": "2",
+            "RowsFailed": "0", "Status": "PASS",
+        }],
+    )
+    checks = _audit_fixed_snr_reporting_tables(
+        tmp_path, {"DL": [dl_raw], "UL": [ul_raw]}
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    dl_summary["BLER"] = "0.5"
+    _write_rows(tmp_path / summary_rel, [dl_summary, ul_summary])
+    checks = _audit_fixed_snr_reporting_tables(
+        tmp_path, {"DL": [dl_raw], "UL": [ul_raw]}
+    )
+    assert not checks[0].passed
+    assert "DL:point=1:BLER_mismatch" in checks[0].details
+
+
+def test_kpi_source_manifest_names_exact_consumed_table(tmp_path: Path) -> None:
+    for direction, name in (("DL", "dl_pdsch_trials"), ("UL", "ul_pusch_trials")):
+        _write_rows(
+            tmp_path / f"air_interface/csv/{name}.csv",
+            [{"Direction": direction, "Goodput_Mbps": "1"}],
+        )
+    manifest_rows = []
+    for direction, path in (
+        ("UL", "air_interface/csv/ul_pusch_trials.csv"),
+        ("DL", "air_interface/csv/dl_pdsch_trials.csv"),
+    ):
+        manifest_rows.append({
+            "RunId": "run", "ScenarioName": "scenario",
+            "SourceTablePath": path, "SourceTableName": Path(path).stem,
+            "Direction": direction, "Layer": "PHY",
+            "RequiredForObjective": "1", "Exists": "1", "RowCount": "1",
+            "ColumnCount": "2", "FileHash": "a" * 64,
+            "SchemaHash": "kpi_schema_v1", "ProducerModule": "producer",
+            "Status": "pass", "FailureReason": "",
+        })
+    for direction, path, layer in (
+        ("PacketSDU", "packet_flow/csv/live_packet_sdu_delivery_ledger.csv", "MAC"),
+        ("ApplicationPackets", "packet_flow/csv/live_application_packet_delivery_ledger.csv", "application"),
+        ("HARQTimeline", "harq/csv/live_harq_observation_timeline.csv", "HARQ"),
+        ("ULGrants", "packet_flow/csv/live_ul_scheduler_grants.csv", "scheduler"),
+        ("DLGrants", "packet_flow/csv/live_dl_scheduler_grants.csv", "scheduler"),
+        ("SlotTrace", "packet_flow/csv/slot_trace.csv", "scheduler"),
+    ):
+        manifest_rows.append({
+            "RunId": "run", "ScenarioName": "scenario",
+            "SourceTablePath": path, "SourceTableName": Path(path).stem,
+            "Direction": direction, "Layer": layer,
+            "RequiredForObjective": "0", "Exists": "0", "RowCount": "0",
+            "ColumnCount": "0", "FileHash": "empty",
+            "SchemaHash": "kpi_schema_v1", "ProducerModule": "producer",
+            "Status": "not_applicable",
+            "FailureReason": "source_not_required_by_resolved_feature_applicability",
+        })
+    _write_rows(tmp_path / "reports/csv/kpi_source_table_manifest.csv", manifest_rows)
+    _write_rows(
+        tmp_path / "reports/csv/kpi_formula_registry.csv",
+        [{
+            "KPIName": "DL_Goodput", "Direction": "DL", "Layer": "PHY",
+            "Units": "Mbps", "RequiredSourceTables": "dl_pdsch_trials",
+            "Tolerance": "1e-9", "StrictAllowed": "1",
+            "FormulaVersion": "v1", "FormulaEquation": "bits/time",
+            "ProducerModule": "producer", "Status": "active",
+        }],
+    )
+    checks = _audit_kpi_reporting_tables(tmp_path)
+    manifest_check = next(
+        check for check in checks if check.artifact_path == "reports/csv/kpi_source_table_manifest.csv"
+    )
+    assert manifest_check.passed, manifest_check.details
+
+    manifest_rows[1]["SourceTablePath"] = "air_interface/csv/dl_fixed_link_campaign_trials.csv"
+    _write_rows(tmp_path / "reports/csv/kpi_source_table_manifest.csv", manifest_rows)
+    checks = _audit_kpi_reporting_tables(tmp_path)
+    manifest_check = next(
+        check for check in checks if check.artifact_path == "reports/csv/kpi_source_table_manifest.csv"
+    )
+    assert not manifest_check.passed
+    assert "persisted_source_shape_or_exists_mismatch" in manifest_check.details
+
+
+def test_kpi_mixed_harq_source_uses_direction_scoped_manifest_hashes(
+    tmp_path: Path,
+) -> None:
+    timeline_path = "harq/csv/live_harq_observation_timeline.csv"
+    _write_rows(
+        tmp_path / timeline_path,
+        [
+            {"Direction": "DL", "CombinedDecodeOK": "1"},
+            {"Direction": "UL", "CombinedDecodeOK": "0"},
+        ],
+    )
+    manifest_rows = []
+    for direction, path, layer in (
+        ("UL", "air_interface/csv/ul_pusch_trials.csv", "PHY"),
+        ("DL", "air_interface/csv/dl_pdsch_trials.csv", "PHY"),
+        ("PacketSDU", "packet_flow/csv/live_packet_sdu_delivery_ledger.csv", "MAC"),
+        ("ApplicationPackets", "packet_flow/csv/live_application_packet_delivery_ledger.csv", "application"),
+        ("HARQTimeline", timeline_path, "HARQ"),
+        ("ULGrants", "packet_flow/csv/live_ul_scheduler_grants.csv", "scheduler"),
+        ("DLGrants", "packet_flow/csv/live_dl_scheduler_grants.csv", "scheduler"),
+        ("SlotTrace", "packet_flow/csv/slot_trace.csv", "scheduler"),
+    ):
+        exists = direction == "HARQTimeline"
+        manifest_rows.append({
+            "RunId": "run", "ScenarioName": "scenario",
+            "SourceTablePath": path, "SourceTableName": Path(path).stem,
+            "Direction": direction, "Layer": layer,
+            "RequiredForObjective": "1" if exists else "0",
+            "Exists": "1" if exists else "0",
+            "RowCount": "2" if exists else "0",
+            "ColumnCount": "2" if exists else "0",
+            "FileHash": "a" * 64 if exists else "empty",
+            "DLSubsetRowCount": "1" if exists else "0",
+            "DLSubsetRowsHash": "b" * 64 if exists else "empty",
+            "ULSubsetRowCount": "1" if exists else "0",
+            "ULSubsetRowsHash": "c" * 64 if exists else "empty",
+            "SchemaHash": "kpi_schema_v1", "ProducerModule": "producer",
+            "Status": "pass" if exists else "not_applicable",
+            "FailureReason": "" if exists else "source_not_required",
+        })
+    _write_rows(tmp_path / "reports/csv/kpi_source_table_manifest.csv", manifest_rows)
+    _write_rows(tmp_path / "reports/csv/kpi_formula_registry.csv", [{
+        "KPIName": "DL_HARQ_NACK_Rate", "Direction": "DL", "Layer": "HARQ",
+        "Units": "ratio", "RequiredSourceTables": "harq_timeline",
+        "Tolerance": "1e-9", "StrictAllowed": "1", "FormulaVersion": "v1",
+        "FormulaEquation": "nack/events", "ProducerModule": "producer",
+        "Status": "active",
+    }])
+    reconstruction = {
+        "KPIName": "DL_HARQ_NACK_Rate", "Direction": "DL",
+        "FormulaId": "DL_HARQ_NACK_Rate", "FormulaVersion": "v1",
+        "Value": "0", "SourceTablePaths": timeline_path,
+        "SourceRowCount": "1", "EligibleRowCount": "1", "ExcludedRowCount": "0",
+        "SourceRowsHash": "b" * 64, "MissingRawData": "0",
+        "SchemaValid": "1", "Applicable": "1", "ApplicabilityReason": "harq_enabled",
+        "FormulaExecuted": "1", "ReconstructionValue": "0",
+        "ReconciliationTolerance": "1e-9", "ReconciliationPass": "1",
+        "StrictOk": "1", "Status": "pass", "FailureReason": "",
+    }
+    _write_rows(tmp_path / "reports/csv/kpi_reconstruction_summary.csv", [reconstruction])
+    checks = _audit_kpi_reporting_tables(tmp_path)
+    check = next(
+        item for item in checks
+        if item.artifact_path == "reports/csv/kpi_reconstruction_summary.csv"
+    )
+    assert check.passed, check.details
+
+    reconstruction["SourceRowsHash"] = "d" * 64
+    _write_rows(tmp_path / "reports/csv/kpi_reconstruction_summary.csv", [reconstruction])
+    checks = _audit_kpi_reporting_tables(tmp_path)
+    check = next(
+        item for item in checks
+        if item.artifact_path == "reports/csv/kpi_reconstruction_summary.csv"
+    )
+    assert not check.passed
+    assert "source_count_or_hash_manifest_mismatch" in check.details

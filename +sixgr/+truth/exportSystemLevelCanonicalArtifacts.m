@@ -5,6 +5,7 @@ layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
 sixgr.util.ensureFolder(layout.PacketFlowCSVDir);
+sixgr.util.ensureFolder(layout.SystemCSVDir);
 
 details = sixgr.util.structGet(systemOut, "Details", struct());
 grantT = sixgr.util.structGet(details, "SchedulerGrants", table());
@@ -43,16 +44,24 @@ ulGrantT = localBuildDirectionalGrantTable(grantT, "UL", cfg, details, tti_s, sl
 controlPDCCHT = localBuildSystemPDCCHTrialTable(dlGrantT, ulGrantT, slotDuration_ms);
 controlPUCCHGrantT = localBuildSystemPUCCHGrantTable(dlGrantT, slotDuration_ms);
 controlPUCCHT = localBuildSystemPUCCHTrialTable(controlPUCCHGrantT, slotDuration_ms);
-sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), dlGrantT);
-sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), ulGrantT);
-sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_pucch_grants.csv"), controlPUCCHGrantT);
+sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), dlGrantT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), ulGrantT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_pucch_grants.csv"), controlPUCCHGrantT, "PreserveSchema", true);
+cqiFeedbackDLT = sixgr.util.structGet(details, "CQIFeedbackDL", table());
+cqiFeedbackULT = sixgr.util.structGet(details, "CQIFeedbackUL", table());
+if ~istable(cqiFeedbackDLT), cqiFeedbackDLT = table(); end
+if ~istable(cqiFeedbackULT), cqiFeedbackULT = table(); end
+sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir, "dl_cqi_feedback_timeline.csv"), ...
+    cqiFeedbackDLT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir, "ul_cqi_feedback_timeline.csv"), ...
+    cqiFeedbackULT, "PreserveSchema", true);
 
 dlRaw = localBuildDirectionalRawTrialTable(dlGrantT, "DL", scfg, cfg, details, tti_s, slotsPerFrame);
 ulRaw = localBuildDirectionalRawTrialTable(ulGrantT, "UL", scfg, cfg, details, tti_s, slotsPerFrame);
 dlRaw = sixgr.util.applyLLSRawTrialLifecycle(dlRaw);
 ulRaw = sixgr.util.applyLLSRawTrialLifecycle(ulRaw);
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), dlRaw);
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ulRaw);
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), dlRaw, "PreserveSchema", true);
+sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ulRaw, "PreserveSchema", true);
 
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"), localEmptyControlTrialTable("PBCH"));
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"), localEmptyControlTrialTable("PRACH"));
@@ -108,6 +117,8 @@ out = struct();
 out.RawTrials = rawTrials;
 out.DLGrantTable = dlGrantT;
 out.ULGrantTable = ulGrantT;
+out.DLCQIFeedbackTable = cqiFeedbackDLT;
+out.ULCQIFeedbackTable = cqiFeedbackULT;
 out.MultiUserSummaryTable = multiUserT;
 out.RuntimeOperatingModeTable = runtimeT;
 out.DeploymentLayoutReferenceTable = layoutT;
@@ -222,10 +233,14 @@ interfCount = localDirectionalMetric(details, direction, "ActiveInterfererCountD
 widebandCQI = localNumericColumn(grantT, "CQIUsed", NaN);
 [cqiDerivedMcs, cqiDerivedMod, cqiDerivedRate] = localCQIDerivedOperatingPoint(cfg, direction, widebandCQI);
 
-goodputMbps = zeros(n, 1);
 ack = localLogicalColumn(grantT, "Ack", false);
 tbsBits = localNumericColumn(grantT, "TBSBits", NaN);
-goodputMbps(ack & isfinite(tbsBits)) = double(tbsBits(ack & isfinite(tbsBits))) ./ runDuration_s ./ 1e6;
+observation_ms = repmat(double(tti_s) * 1e3, n, 1);
+offeredBits = tbsBits;
+goodBits = zeros(n, 1);
+goodBits(ack & isfinite(tbsBits)) = double(tbsBits(ack & isfinite(tbsBits)));
+offeredThroughputMbps = offeredBits ./ observation_ms ./ 1e3;
+goodputMbps = goodBits ./ observation_ms ./ 1e3;
 
 T = table();
 T.Direction = repmat(string(direction), n, 1);
@@ -269,7 +284,12 @@ rankValues = localNumericColumn(grantT, "RIUsed", NaN);
 rankMissing = ~isfinite(rankValues);
 rankValues(rankMissing) = layerValues(rankMissing);
 T.Layers = layerValues;
+T.Rank = rankValues;
 T.RankIndicator = rankValues;
+T.EffectiveMCSIndex = T.MCSIndex;
+T.EffectiveModulation = T.Modulation;
+T.EffectiveLayers = layerValues;
+T.EffectiveRank = rankValues;
 T.WidebandCQI = widebandCQI;
 T.CQIDerivedMCS = cqiDerivedMcs;
 T.CQIDerivedModulation = cqiDerivedMod;
@@ -293,6 +313,55 @@ T.ActualMCSSelectionModeAuthority = repmat("raw_trial_runtime_evidence", n, 1);
 T.MCSAuthority = repmat("scheduler_grant", n, 1);
 T.ModulationAuthority = repmat("scheduler_grant", n, 1);
 T.GrantOperatingPointSource = repmat("scheduler_grant", n, 1);
+adaptiveMode = cfgMode ~= "fixed";
+T.AdaptiveMode = repmat(logical(adaptiveMode), n, 1);
+T.LinkAdaptationScheduled = repmat(logical(adaptiveMode), n, 1);
+T.ScheduledMCSIndex = nan(n, 1);
+T.ScheduledModulation = strings(n, 1);
+T.ScheduledOperatingPointMatchesTransmitted = false(n, 1);
+T.ScheduledOperatingPointEvidenceStatus = repmat( ...
+    "not_applicable_no_adaptive_scheduled_decision", n, 1);
+if adaptiveMode
+    T.ScheduledMCSIndex = T.MCSIndex;
+    T.ScheduledModulation = T.Modulation;
+    T.ScheduledOperatingPointMatchesTransmitted = true(n, 1);
+    T.ScheduledOperatingPointEvidenceStatus = repmat( ...
+        "runtime_scheduler_grant_matches_transmitted_waveform", n, 1);
+end
+T.InnerLoopEnabled = localLogicalColumn(grantT, "InnerLoopEnabled", adaptiveMode);
+T.InnerLoopApplied = localLogicalColumn(grantT, "InnerLoopApplied", false);
+T.OuterLoopEnabled = localLogicalColumn(grantT, "OuterLoopEnabled", false);
+T.OuterLoopApplied = localLogicalColumn(grantT, "OuterLoopApplied", false);
+T.LinkAdaptationApplied = T.InnerLoopApplied | T.OuterLoopApplied;
+T.OLLADeltaDb = localNumericColumn(grantT, "OLLADeltaDb", NaN);
+T.OLLADeltaMCS = localNumericColumn(grantT, "OLLADeltaMCS", NaN);
+T.OLLAMarginMinDb = localNumericColumn(grantT, "OLLAMarginMinDb", NaN);
+T.OLLAMarginMaxDb = localNumericColumn(grantT, "OLLAMarginMaxDb", NaN);
+T.OLLAAdjustedMCSBeforeCQICeiling = localNumericColumn( ...
+    grantT, "OLLAAdjustedMCSBeforeCQICeiling", NaN);
+T.OLLABaseRequiredSINR_dB = localNumericColumn( ...
+    grantT, "OLLABaseRequiredSINR_dB", NaN);
+T.OLLATargetRequiredSINR_dB = localNumericColumn( ...
+    grantT, "OLLATargetRequiredSINR_dB", NaN);
+T.OLLAThresholdSource = localStringColumn(grantT, "OLLAThresholdSource", "");
+T.OLLAUpdateCount = localNumericColumn(grantT, "OLLAUpdateCount", 0);
+T.OLLAStateAuthority = localStringColumn(grantT, "OLLAStateAuthority", "");
+T.OLLAState = localStringColumn(grantT, "OLLAState", "");
+T.CQISelectionSource = localStringColumn(grantT, "SchedulerCQISource", "");
+missingCQISource = strlength(strtrim(T.CQISelectionSource)) == 0;
+if any(missingCQISource)
+    fallbackCQISource = localStringColumn(grantT, "CQIProvenance", "");
+    T.CQISelectionSource(missingCQISource) = fallbackCQISource(missingCQISource);
+end
+T.CQIValueStatus = localStringColumn(grantT, "CausalFeedbackStatus", "");
+T.CausalFeedbackUsable = localLogicalColumn(grantT, "CausalFeedbackUsable", false);
+T.CausalFeedbackStatus = localStringColumn(grantT, "CausalFeedbackStatus", "");
+T.FeedbackAgeSlots = localNumericColumn(grantT, "FeedbackAgeSlots", NaN);
+T.FeedbackAgeSeconds = localNumericColumn(grantT, "FeedbackAgeSeconds", NaN);
+T.SchedulerCQIRawCQI = localNumericColumn(grantT, "SchedulerCQIRawCQI", NaN);
+T.SchedulerAdjustedSINR_dB = localNumericColumn(grantT, "SchedulerAdjustedSINR_dB", NaN);
+T.SchedulerSINRBackoff_dB = localNumericColumn(grantT, "SchedulerSINRBackoff_dB", NaN);
+T.SchedulerCQISource = localStringColumn(grantT, "SchedulerCQISource", "");
 T.ConfiguredSNR_dB = repmat(double(sixgr.util.structGet(cfg, "channel.snr_dB", NaN)), n, 1);
 T.ConfiguredSNRSource = repmat("simulation.snr_db", n, 1);
 T.SNRValueRole = repmat("applied", n, 1);
@@ -413,6 +482,17 @@ T.PrecodingMatrixCols = localNumericColumn(grantT, "PrecodingMatrixCols", NaN);
 T.GrantControlState = repmat(phyProfile.GrantControlState, n, 1);
 T.DecoderIterations = localNumericColumn(grantT, "DecoderIterations", NaN);
 T = localAttachMeasuredPHYEvidenceColumnsFromGrant(T, grantT);
+T.NoiseVariance = localNumericColumn(grantT, "NoiseVariance", NaN);
+T.PreEqualizationNoiseVariance = localNumericColumn(grantT, "PreEqualizationNoiseVariance", T.NoiseVariance);
+T.PostEqualizationNoiseVariance = localNumericColumn(grantT, "PostEqualizationNoiseVariance", NaN);
+T.LLRNoiseVariance = localNumericColumn(grantT, "LLRNoiseVariance", NaN);
+T.EVM_rms = localNumericColumn(grantT, "EVM_rms", NaN);
+T.EVMProxySINR_dB = localNumericColumn(grantT, "EVMProxySINR_dB", NaN);
+T.StrictReceiverEvidenceOk = localLogicalColumn(grantT, "StrictReceiverEvidenceOk", false);
+T.StrictOk = localLogicalColumn(grantT, "StrictOk", false);
+T.TruthStatus = localStringColumn(grantT, "TruthStatus", "");
+T.ExecutionBackend = localStringColumn(grantT, "ExecutionBackend", phyProfile.ExecutionBackend);
+T.ApproximationMode = localStringColumn(grantT, "ApproximationMode", "none");
 T.ChannelEstimateAvailable = localLogicalColumn(grantT, "ChannelEstimateAvailable", false);
 T.EqualizationAvailable = localLogicalColumn(grantT, "EqualizationAvailable", false);
 T.DecodeAttempted = localLogicalColumn(grantT, "DecodeAttempted", false);
@@ -498,11 +578,20 @@ T.InterferenceChannelArrayValueRole = repmat("system_level_approximation_label",
 T.InterferenceChannelArrayValueStatus = repmat("large_scale_interference_budget_no_runtime_interferer_channel_object", n, 1);
 T.InterferenceUsesSameRuntimeAntennaAssumptions = false(n, 1);
 T.InterferencePathUsesSameArrayAssumptions = false(n, 1);
+T.OfferedBits = offeredBits;
+T.GoodBits = goodBits;
+T.OfferedThroughput_Mbps = offeredThroughputMbps;
+T.Goodput_Mbps = goodputMbps;
+T.AirInterfaceObservation_ms = observation_ms;
+T.HARQRound = double(localLogicalColumn(grantT, "IsRetransmission", false));
 T.IsWarmupFrame = warmupMask;
 T.RunTag = repmat(string(sixgr.util.structGet(cfg, "run.runTag", "")), n, 1);
+T.RunID = T.RunTag;
 T.ScenarioID = repmat(string(sixgr.util.structGet(cfg, "meta.scenarioID", "")), n, 1);
 T.RunnerProfile = repmat("system_level_lls", n, 1);
 T.ConfigHash = repmat(string(sixgr.util.structGet(cfg, "meta.configHash", "")), n, 1);
+T.ExecutionID = repmat(string(sixgr.util.structGet(cfg, "run.executionID", ...
+    sixgr.util.structGet(cfg, "meta.executionID", ""))), n, 1);
 end
 
 function T = localBuildMultiUserSummaryTable(dlRaw, ulRaw, cfg, details, tti_s)
@@ -1620,6 +1709,25 @@ numericDefaults = struct( ...
     "BitsCompared", NaN, ...
     "RawBER", NaN, ...
     "PostEqSINR_dB", NaN, ...
+    "OLLADeltaDb", NaN, ...
+    "OLLADeltaMCS", NaN, ...
+    "OLLAMarginMinDb", NaN, ...
+    "OLLAMarginMaxDb", NaN, ...
+    "OLLAAdjustedMCSBeforeCQICeiling", NaN, ...
+    "OLLABaseRequiredSINR_dB", NaN, ...
+    "OLLATargetRequiredSINR_dB", NaN, ...
+    "OLLAUpdateCount", 0, ...
+    "FeedbackAgeSlots", NaN, ...
+    "FeedbackAgeSeconds", NaN, ...
+    "SchedulerCQIRawCQI", NaN, ...
+    "SchedulerAdjustedSINR_dB", NaN, ...
+    "SchedulerSINRBackoff_dB", NaN, ...
+    "NoiseVariance", NaN, ...
+    "PreEqualizationNoiseVariance", NaN, ...
+    "PostEqualizationNoiseVariance", NaN, ...
+    "LLRNoiseVariance", NaN, ...
+    "EVM_rms", NaN, ...
+    "EVMProxySINR_dB", NaN, ...
     "DecoderTruthProxySINR_dB", NaN, ...
     "DecoderIterations", NaN, ...
     "RawTimingEstimate_samples", NaN, ...
@@ -1649,6 +1757,11 @@ numericDefaults = struct( ...
     "PrecodingMatrixRows", NaN, ...
     "PrecodingMatrixCols", NaN);
 logicalDefaults = struct( ...
+    "InnerLoopEnabled", false, ...
+    "InnerLoopApplied", false, ...
+    "OuterLoopEnabled", false, ...
+    "OuterLoopApplied", false, ...
+    "CausalFeedbackUsable", false, ...
     "PrecodingActive", false, ...
     "ExplicitBeamWeightsApplied", false, ...
     "TransformPrecodingApplied", false, ...
@@ -1665,8 +1778,15 @@ logicalDefaults = struct( ...
     "PhaseNoiseConfigured", false, ...
     "PhaseNoiseApplied", false, ...
     "IQImbalanceConfigured", false, ...
-    "IQImbalanceApplied", false);
+    "IQImbalanceApplied", false, ...
+    "StrictReceiverEvidenceOk", false, ...
+    "StrictOk", false);
 stringDefaults = struct( ...
+    "CausalFeedbackStatus", "", ...
+    "SchedulerCQISource", "", ...
+    "OLLAThresholdSource", "", ...
+    "OLLAStateAuthority", "", ...
+    "OLLAState", "", ...
     "ReceiverHestSINRSource", "unavailable_system_level_no_receiver_hest_grid", ...
     "ReceiverHestSINRValueRole", "unavailable", ...
     "ReceiverHestSINRValueStatus", "unavailable", ...
@@ -1702,7 +1822,10 @@ stringDefaults = struct( ...
     "ExplicitPrecoderReplayStatus", "not_materialized", ...
     "ExplicitPrecoderReplayBlocker", "sixgr.system.WaveformPHY.replayGrant_receives_grant_operating_point_not_explicit_precoder_matrix", ...
     "AppliedPrecoderPMIType", "", ...
-    "AppliedPrecoderCodebookMode", "");
+    "AppliedPrecoderCodebookMode", "", ...
+    "TruthStatus", "", ...
+    "ExecutionBackend", "", ...
+    "ApproximationMode", "none");
 
 names = fieldnames(numericDefaults);
 for i = 1:numel(names)

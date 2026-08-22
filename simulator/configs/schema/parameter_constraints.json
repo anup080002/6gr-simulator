@@ -208,7 +208,7 @@
       "child": ["link_adaptation.olla_step_up", "link_adaptation.olla_step_down"],
       "type": "recommended_formula",
       "reference": "Outer-loop link adaptation control law",
-      "formula": "step_down = step_up * target_bler / max(1 - target_bler, eps)"
+      "formula": "step_down = step_up * (1 - target_bler) / max(target_bler, eps)"
     },
     {
       "id": "service_class_to_target_bler",

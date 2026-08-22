@@ -494,8 +494,8 @@
     "save_json_snapshot": true,
     "organize_by_block": true,
     "generate_summary_plots": true,
-    "emit_placeholder_artifacts": true,
-    "emit_disabled_audit_artifacts": true,
+    "emit_placeholder_artifacts": false,
+    "emit_disabled_audit_artifacts": false,
     "artifact_contract_engine": {
       "enabled": false,
       "catalog_scope": "phase_pack",

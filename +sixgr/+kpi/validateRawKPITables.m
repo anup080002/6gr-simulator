@@ -1,5 +1,12 @@
-function auditT = validateRawKPITables(raw)
+function auditT = validateRawKPITables(raw, varargin)
 %VALIDATERAWKPITABLES Audit raw DL/UL KPI source schemas.
+
+ip = inputParser;
+ip.addParameter("RunId", "", @(x)ischar(x) || isstring(x) || isnumeric(x));
+ip.addParameter("SourcePaths", struct(), @(x)isempty(x) || isstruct(x));
+ip.parse(varargin{:});
+runId = string(ip.Results.RunId);
+sourcePaths = ip.Results.SourcePaths;
 
 dirs = ["UL"; "DL"];
 rows = repmat(localRow(), 0, 1);
@@ -16,6 +23,9 @@ for d = 1:numel(dirs)
     end
     for i = 1:numel(required)
         row = localRow();
+        row.RunId = runId;
+        row.SourceTablePath = localSourcePath(sourcePaths, direction);
+        row.SchemaName = "canonical_lls_raw_phy_trial_v1";
         row.Direction = direction;
         row.SourceTableName = localSourceName(direction);
         row.RequiredColumn = required(i);
@@ -49,6 +59,17 @@ for d = 1:numel(dirs)
     end
 end
 auditT = struct2table(rows);
+end
+
+function value = localSourcePath(sourcePaths, direction)
+value = "";
+if ~(isstruct(sourcePaths) && isscalar(sourcePaths))
+    return;
+end
+fieldName = char(upper(string(direction)));
+if isfield(sourcePaths, fieldName)
+    value = string(sourcePaths.(fieldName));
+end
 end
 
 function cols = localRequiredColumns(direction)

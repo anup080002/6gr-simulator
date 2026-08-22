@@ -1,0 +1,7 @@
+sha256,copy_count,relative_paths
+1cf3fd8d497f60846d737a450ee629218e73ff8afaa6b4187a7e49c34af7f376,2,analytics/image/contract__impairments-tracking-analytics__cfo-true-vs-estimated-vs-residual.png|reports/image/contract__channel-interference-impairments__cfo-true-vs-estimated-vs-residual.png
+45825cf01f497cbbab4daf85f166bfdfa26bb966e21a76256dc6ac16b790027d,2,analytics/image/contract__power-energy-efficiency-analytics__power-vs-throughput.png|reports/image/contract__power-energy-thermal-compute-runtime__power-vs-throughput.png
+5dc93ce8936d39f4290e260e11cdff40c665454c26c5d8f0eb5367e9902eab93,2,analytics/image/contract__power-energy-efficiency-analytics__power-vs-bler.png|reports/image/contract__power-energy-thermal-compute-runtime__power-vs-bler.png
+c87e4e392bc75b015697d96a77eedcf2024c68aa8222c348d77c6a5f2a87d6e1,2,analytics/image/contract__beamforming-precoding-mimo-analytics__precoder-mode-distribution.png|reports/image/contract__beamforming-precoding-mimo-massive-mimo__precoder-mode-distribution.png
+c9fad705b123bfa1e822d0054ece9cdf311bc640b50e456626ed960a2d526a67,2,analytics/image/contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr.png|reports/image/contract__fixed-snr-sinr-sweep-validation__throughput-vs-snr.png
+cfe2dee3e5aae9892c7218580463005ba96166c6bdd6920d4dd9c83b80679ccf,2,analytics/image/contract__measurement-csi-link-adaptation-analytics__config-vs-measured-conflict-dashboard.png|reports/image/contract__measurements-csi-link-adaptation-inputs__config-vs-measured-conflict-dashboard.png

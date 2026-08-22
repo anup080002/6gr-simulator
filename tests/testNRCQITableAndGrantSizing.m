@@ -65,13 +65,27 @@ assert(double(mcsProfile.SpectralEfficiency) <= double(cqiProfile.SpectralEffici
 
 cfgStrict = sixgr.config.defaultConfig();
 cfgStrict.run.strictMode = true;
-cfgStrict.phy.pdsch.symbolAllocation = [0 14];
+% Mapping type B permits a front-loaded DM-RS for this 13-symbol
+% allocation. A full 14-symbol type-B allocation has no standard DM-RS
+% position and is exercised below as a fail-closed negative case.
+cfgStrict.phy.pdsch.symbolAllocation = [0 13];
 cfgStrict.phy.pdsch.mappingType = "B";
 cfgStrict = sixgr.config.normalizeConfig(cfgStrict);
 schStrict = sixgr.l2.mac.SchedulerPF(cfgStrict, "Direction", "DL");
-[~, ~, nrePerPRB, info] = schStrict.estimateTBS("QPSK", 1, 12, [0 14], 0.5);
+[~, ~, nrePerPRB, info] = schStrict.estimateTBS("QPSK", 1, 12, [0 13], 0.5);
 assert(~logical(info.UsedFastNREApprox), "Strict TBS mode must not use the fast NRE approximation.");
-assert(double(nrePerPRB) < 12 * 14, "Strict TBS mode must use actual RE counting with DMRS/overhead removed.");
+assert(double(nrePerPRB) < 12 * 13, "Strict TBS mode must use actual RE counting with DMRS/overhead removed.");
+
+invalidTypeBFailed = false;
+try
+    schStrict.estimateTBS("QPSK", 1, 12, [0 14], 0.5, "ForceExact", true);
+catch ME
+    invalidTypeBFailed = strcmp(string(ME.identifier), ...
+        "sixgr:SchedulerBase:ExactResourceAccountingFailed") && ...
+        contains(string(ME.message), "no DM-RS resource elements");
+end
+assert(invalidTypeBFailed, ...
+    "An invalid full-slot mapping-type-B allocation must fail closed when it produces no DM-RS REs.");
 
 cfgDefault = sixgr.config.defaultConfig();
 cfgDefault = sixgr.config.normalizeConfig(cfgDefault);
@@ -107,6 +121,7 @@ cfgGrant = sixgr.config.defaultConfig();
 cfgGrant.run.useMex = false;
 cfgGrant = sixgr.util.structSet(cfgGrant, "phy.pdsch.mcsTable", "qam256_table2");
 cfgGrant = sixgr.util.structSet(cfgGrant, "phy.csi.cqiTable", "table2");
+cfgGrant = withCanonicalSchedulerTiming(cfgGrant);
 cfgGrant = sixgr.config.normalizeConfig(cfgGrant);
 schGrant = sixgr.l2.mac.SchedulerRR(cfgGrant, "Direction", "DL");
 
@@ -116,7 +131,9 @@ ue = struct( ...
     "CQI", 15, ...
     "RI", 1, ...
     "HeadOfLineDelay_ms", 1);
-[grants, ~] = schGrant.schedule(0, ue, struct("NPRB", 50, "SymbolAllocation", [0 14]));
+[grants, ~] = schGrant.schedule(0, ue, struct( ...
+    "NPRB", 50, "SymbolAllocation", [0 14], ...
+    "ControlSymbolAllocation", [0 2]));
 assert(~isempty(grants), "Queue-limited scheduler regression must produce at least one grant.");
 g = grants(1);
 assert(double(g.TBSBytes) <= double(ue.DLBufferBytes), "New-data grant TBS must not exceed queued bytes.");

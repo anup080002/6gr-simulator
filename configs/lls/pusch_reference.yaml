@@ -298,12 +298,15 @@ linkAdaptation:
   thresholdSource: configured_ran1_link_adaptation_policy
   thresholdValueRole: implementation_policy_not_phy_result
   thresholdCalibrationId: sixgr_qpsk_reference_policy_v1
+  thresholdComparisonToleranceDb: 1.0e-9
   initialMCSIndex: 0
   minimumMCSIndex: 0
   maximumMCSIndex: 28
   feedbackDelaySlots: 1
+  outOfRangeCQIPolicy: block_scheduling
   olla:
     enabled: false
+    targetBLER: 0.1
     initialOffsetDb: 0.0
     ackStepDb: 0.1
     nackStepDb: 0.9

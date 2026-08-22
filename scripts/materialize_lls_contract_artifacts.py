@@ -15,6 +15,7 @@ from regenerate_lls_rasters_from_csv import (  # noqa: E402
     RASTER_SUFFIXES,
     io_path,
     materialize_declared_artifact_generation_rasters,
+    materialize_declared_report_rasters,
     materialize_frc_reference_rasters,
     reconcile_removed_raster_lineage,
     raster_inventory,
@@ -79,7 +80,15 @@ def main() -> int:
 
         removed_rasters: list[dict[str, object]] = []
         declared_artifact_rasters: list[dict[str, str]] = []
+        declared_report_rasters: list[dict[str, str]] = []
         if args.replace_existing_rasters_from_csv:
+            # A previous interrupted replacement can leave report-ledger
+            # image claims without their declared CSV-backed rasters. Rebuild
+            # only those explicitly available/counting aliases first so the
+            # preflight audit can validate a coherent source tree. They are
+            # removed with the complete inventory below and deterministically
+            # regenerated from the same CSV bytes afterward.
+            materialize_declared_report_rasters(run_folder)
             require_primary_csv_semantics(run_folder, policy_filter=policy_filter)
             removed_rasters = raster_inventory(run_folder)
             inventory_path = (
@@ -113,6 +122,7 @@ def main() -> int:
             declared_artifact_rasters = materialize_declared_artifact_generation_rasters(
                 run_folder
             )
+            declared_report_rasters = materialize_declared_report_rasters(run_folder)
         # Index only after any raster replacement so the filesystem artifact
         # set cannot be cached from the pre-replacement tree.
         run_row = dash.filesystem_run_row_from_folder(run_folder)
@@ -127,6 +137,13 @@ def main() -> int:
             feature_policy=policy,
             force=bool(args.force),
         )
+        if args.replace_existing_rasters_from_csv:
+            # The browser materializer owns contract_plot_lineage.csv. Seal
+            # the additional report aliases only after that file has reached
+            # its final browser-contract representation.
+            declared_report_rasters = materialize_declared_report_rasters(
+                run_folder, seal_lineage=True
+            )
         frc_reference_rasters: list[dict[str, str]] = []
         if args.replace_existing_rasters_from_csv:
             # FRC reference-point plots are outside the browser chart catalog,
@@ -153,6 +170,7 @@ def main() -> int:
             "created_count": len(result.get("created") or []),
             "old_rasters_removed": len(removed_rasters),
             "declared_artifact_rasters_regenerated": len(declared_artifact_rasters),
+            "declared_report_rasters_regenerated": len(declared_report_rasters),
             "frc_reference_rasters_regenerated": len(frc_reference_rasters),
             "stale_raster_lineage_rows_retired": len(retired_lineage_rows),
             "manifest_path": result.get("manifest_path"),

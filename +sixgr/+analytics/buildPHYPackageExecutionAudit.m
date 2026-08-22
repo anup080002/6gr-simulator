@@ -27,35 +27,12 @@ ledgerT = localReadTable(ledgerPath);
 [profileAvailable, profileComplete, exportedFunctions, capturedFunctions] = ...
     localProfilerState(profileT, profilerSummaryT);
 
-inventory = sixgr.monitor.StaticInventory.scan(repoRoot);
-roots = [ ...
-    "+sixgr/+pdsch/"
-    "+sixgr/+phy/+ul/+pusch/"
-    "+sixgr/+phy/+pucch/"
-    "+sixgr/+phy/+pdcch/"
-    "+sixgr/+phy/+ra/"
-    "+sixgr/+phy/+srs/"
-    "+sixgr/+phy/+trs/"
-    "+sixgr/+mimo/"
-    "+sixgr/+phy/+rx/"];
+inventory = localSixGRSourceInventory(repoRoot);
 rel = lower(replace(string(inventory.file_path), "\", "/"));
-selected = false(height(inventory), 1);
-for root = roots(:).'
-    selected = selected | startsWith(rel, lower(root));
-end
-% The canonical data/control facades live beside, rather than beneath, the
-% feature packages.  Omitting them can make a profile appear complete while
-% failing to prove that the actual Tx/Rx trust-boundary wrappers ran.
-criticalFacades = [ ...
-    "+sixgr/+phy/+dl/pdsch_tx.m"
-    "+sixgr/+phy/+dl/pdsch_rx.m"
-    "+sixgr/+phy/+dl/pdcch_tx.m"
-    "+sixgr/+phy/+dl/pdcch_rx.m"
-    "+sixgr/+phy/+ul/pusch_tx.m"
-    "+sixgr/+phy/+ul/pusch_rx.m"
-    "+sixgr/+link/runpucchwaveformtrial.m"
-    "+sixgr/+link/runprachdetection.m"];
-selected = selected | ismember(rel, criticalFacades);
+% Audit the complete production namespace. A scenario-specific absence is
+% reported only as NOT_OBSERVED_IN_THIS_SCENARIO; it is never promoted to a
+% repository-wide "dead code" claim from one execution.
+selected = startsWith(rel, "+sixgr/") & endsWith(rel, ".m");
 inventory = inventory(selected, :);
 
 rows = repmat(localEmptyRow(), height(inventory), 1);
@@ -81,7 +58,15 @@ for i = 1:height(inventory)
     rows(i).ProfilerExportedFunctionCount = exportedFunctions;
     rows(i).ProfilerCapturedFunctionCount = capturedFunctions;
     rows(i).ExecutionEvidence = localExecutionEvidence(called, ledgerAvailable, profileAvailable, profileComplete);
+    if called
+        rows(i).ScenarioCoverageStatus = "EXECUTED_IN_THIS_SCENARIO";
+    else
+        rows(i).ScenarioCoverageStatus = "NOT_OBSERVED_IN_THIS_SCENARIO";
+    end
     rows(i).UsageAssessment = localUsageAssessment(role, called, profileAvailable, profileComplete);
+    % A bounded scenario can prove execution, but absence from that one
+    % profile is not sufficient evidence that a source is dead code.
+    rows(i).NeverUsedConclusionPermitted = false;
     rows(i).SourceSHA256 = localFileSHA256(fullfile(repoRoot, char(relativePath)));
     rows(i).EvidenceSource = localEvidenceSource(any(ledgerMask), any(profileMask));
 end
@@ -94,21 +79,32 @@ summaryT = localBuildSummary(detailT, ledgerAvailable, profileAvailable, profile
     exportedFunctions, capturedFunctions);
 gateT = localBuildEvidenceGate(detailT, ledgerAvailable, ledgerIdentityComplete, ...
     profileAvailable, profileComplete, exportedFunctions, capturedFunctions);
+functionT = localBuildFunctionInventory(inventory, profileT, ledgerT, ...
+    repoRoot, profileAvailable, profileComplete);
 
 detailPath = fullfile(layout.ReportCSVDir, "phy_package_execution_audit.csv");
 summaryOutPath = fullfile(layout.ReportCSVDir, "phy_package_execution_summary.csv");
 gatePath = fullfile(layout.ReportCSVDir, "phy_package_execution_evidence_gate.csv");
+sourceFilePath = fullfile(layout.ReportCSVDir, ...
+    "sixgr_source_file_execution_inventory.csv");
+sourceFunctionPath = fullfile(layout.ReportCSVDir, ...
+    "sixgr_source_function_execution_inventory.csv");
 sixgr.util.csvWriteTable(detailPath, detailT);
 sixgr.util.csvWriteTable(summaryOutPath, summaryT);
 sixgr.util.csvWriteTable(gatePath, gateT);
+sixgr.util.csvWriteTable(sourceFilePath, detailT);
+sixgr.util.csvWriteTable(sourceFunctionPath, functionT);
 
 out = struct( ...
     "DetailTable", detailT, ...
     "SummaryTable", summaryT, ...
+    "FunctionTable", functionT, ...
     "GateTable", gateT, ...
     "DetailPath", string(detailPath), ...
     "SummaryPath", string(summaryOutPath), ...
     "GatePath", string(gatePath), ...
+    "SourceFileInventoryPath", string(sourceFilePath), ...
+    "SourceFunctionInventoryPath", string(sourceFunctionPath), ...
     "ProfilerAvailable", profileAvailable, ...
     "ProfilerComplete", profileComplete);
 end
@@ -129,9 +125,37 @@ row = struct( ...
     "ProfilerExportedFunctionCount", 0, ...
     "ProfilerCapturedFunctionCount", 0, ...
     "ExecutionEvidence", "", ...
+    "ScenarioCoverageStatus", "", ...
     "UsageAssessment", "", ...
+    "NeverUsedConclusionPermitted", false, ...
     "SourceSHA256", "", ...
     "EvidenceSource", "");
+end
+
+function inventory = localSixGRSourceInventory(repoRoot)
+% Restrict discovery to the production namespace. StaticInventory.scan is
+% intentionally repository-wide and includes large result/test trees; that
+% cost is unnecessary for a per-run +sixgr execution audit.
+rootPath = fullfile(repoRoot, "+sixgr");
+files = dir(fullfile(rootPath, "**", "*.m"));
+filePath = strings(numel(files),1);
+primary = strings(numel(files),1);
+repoPrefix = replace(string(repoRoot), "\", "/");
+if ~endsWith(repoPrefix, "/")
+    repoPrefix = repoPrefix + "/";
+end
+for index = 1:numel(files)
+    absolutePath = replace(string(fullfile(files(index).folder, ...
+        files(index).name)), "\", "/");
+    if startsWith(absolutePath, repoPrefix, "IgnoreCase", true)
+        filePath(index) = extractAfter(absolutePath, strlength(repoPrefix));
+    else
+        filePath(index) = absolutePath;
+    end
+    [~, primary(index)] = fileparts(files(index).name);
+end
+inventory = table(filePath, primary, ...
+    'VariableNames', {'file_path','primary_function_or_class'});
 end
 
 function [available, complete, exportedCount, capturedCount] = localProfilerState(profileT, summaryT)
@@ -226,7 +250,12 @@ elseif startsWith(path, "+sixgr/+mimo/")
 elseif startsWith(path, "+sixgr/+phy/+rx/")
     name = "RX";
 else
-    name = "OTHER";
+    parts = split(path, "/");
+    if numel(parts) >= 2
+        name = upper(erase(parts(2), "+"));
+    else
+        name = "OTHER";
+    end
 end
 end
 
@@ -256,10 +285,14 @@ end
 function state = localExecutionEvidence(called, ledgerAvailable, available, complete)
 if called
     state = "exact_runtime_entry_or_profiler_match";
-elseif ledgerAvailable
-    state = "not_called_in_runtime_call_ledger";
+elseif complete
+    state = "not_observed_in_complete_profiled_scenario";
 elseif ~available
-    state = "profiler_unavailable";
+    if ledgerAvailable
+        state = "not_observed_in_instrumented_entry_ledger_profile_unavailable";
+    else
+        state = "profiler_and_entry_ledger_unavailable";
+    end
 elseif ~complete
     state = "not_present_in_truncated_profiler_export";
 else
@@ -282,7 +315,7 @@ end
 end
 
 function T = localBuildSummary(detailT, ledgerAvailable, available, complete, exportedCount, capturedCount)
-packages = ["PDSCH";"PUSCH";"PUCCH";"PDCCH";"MIMO";"RX";"INITIAL_ACCESS";"SRS";"TRS"];
+packages = unique(string(detailT.Package), "stable");
 roles = ["ALL";"runtime_library";"validation_oracle";"validation_campaign"; ...
     "offline_impact_analysis";"offline_study";"artifact_reporting";"legacy"];
 rows = repmat(struct("Package","","SourceRole","","FileCount",0, ...
@@ -311,6 +344,138 @@ end
 T = struct2table(rows);
 end
 
+function T = localBuildFunctionInventory(inventory, profileT, ledgerT, ...
+        repoRoot, profileAvailable, profileComplete)
+rows = repmat(localEmptyFunctionRow(), 0, 1);
+for fileIndex = 1:height(inventory)
+    relativePath = replace(string(inventory.file_path(fileIndex)), "\", "/");
+    absolutePath = localNormalizePath(fullfile(repoRoot, char(relativePath)));
+    declarations = localReadFunctionDeclarations( ...
+        fullfile(repoRoot, char(relativePath)), ...
+        string(inventory.primary_function_or_class(fileIndex)));
+    sourceSHA256 = localFileSHA256(fullfile(repoRoot, char(relativePath)));
+    fileProfileMask = localExactProfileFileMask(profileT, absolutePath);
+    primaryQualifiedName = localQualifiedName(relativePath);
+    for declarationIndex = 1:height(declarations)
+        row = localEmptyFunctionRow();
+        row.FilePath = relativePath;
+        row.Package = localAuditPackage(relativePath);
+        row.SourceRole = localSourceRole(relativePath, ...
+            string(inventory.primary_function_or_class(fileIndex)));
+        row.DeclaredSymbol = declarations.DeclaredSymbol(declarationIndex);
+        row.DeclarationKind = declarations.DeclarationKind(declarationIndex);
+        row.DeclarationLine = declarations.DeclarationLine(declarationIndex);
+        row.PrimaryFileSymbol = declarationIndex == 1 || ...
+            strcmpi(row.DeclaredSymbol, ...
+            string(inventory.primary_function_or_class(fileIndex)));
+        if row.PrimaryFileSymbol
+            row.StaticQualifiedName = primaryQualifiedName;
+        else
+            row.StaticQualifiedName = primaryQualifiedName + ">" + row.DeclaredSymbol;
+        end
+        symbolProfileMask = fileProfileMask & ...
+            localExactProfileSymbolMask(profileT, row.DeclaredSymbol);
+        ledgerMask = false(height(ledgerT),1);
+        if row.PrimaryFileSymbol
+            ledgerMask = localExactLedgerFunctionMask(ledgerT, primaryQualifiedName);
+        end
+        row.ActuallyCalled = any(symbolProfileMask) || any(ledgerMask);
+        row.CallCount = localExactCallCount(profileT, symbolProfileMask, ledgerMask);
+        row.TotalTime_s = localProfileSum(profileT, symbolProfileMask, "TotalTime_s");
+        row.ProfilerAvailable = profileAvailable;
+        row.ProfilerComplete = profileComplete;
+        row.ExecutionEvidence = localExecutionEvidence(row.ActuallyCalled, ...
+            ~isempty(ledgerT), profileAvailable, profileComplete);
+        if row.ActuallyCalled
+            row.ScenarioCoverageStatus = "EXECUTED_IN_THIS_SCENARIO";
+            row.UsageAssessment = "executed_in_profiled_scenario";
+        else
+            row.ScenarioCoverageStatus = "NOT_OBSERVED_IN_THIS_SCENARIO";
+            row.UsageAssessment = localUsageAssessment(row.SourceRole, false, ...
+                profileAvailable, profileComplete);
+        end
+        row.NeverUsedConclusionPermitted = false;
+        row.SourceSHA256 = sourceSHA256;
+        row.EvidenceSource = localEvidenceSource(any(ledgerMask), ...
+            any(symbolProfileMask));
+        rows(end+1,1) = row; %#ok<AGROW>
+    end
+end
+T = struct2table(rows, "AsArray", true);
+if ~isempty(T)
+    T = sortrows(T, ["Package","FilePath","DeclarationLine"]);
+end
+end
+
+function declarations = localReadFunctionDeclarations(pathValue, primaryName)
+declaredSymbol = strings(0,1);
+declarationKind = strings(0,1);
+declarationLine = zeros(0,1);
+try
+    textValue = fileread(pathValue);
+catch
+    textValue = "";
+end
+lines = splitlines(string(textValue));
+for lineIndex = 1:numel(lines)
+    line = char(lines(lineIndex));
+    classToken = regexp(line, ...
+        '^\s*classdef(?:\s*\([^)]*\))?\s+([A-Za-z]\w*)', ...
+        'tokens', 'once');
+    if ~isempty(classToken)
+        declaredSymbol(end+1,1) = string(classToken{1}); %#ok<AGROW>
+        declarationKind(end+1,1) = "classdef"; %#ok<AGROW>
+        declarationLine(end+1,1) = lineIndex; %#ok<AGROW>
+        continue;
+    end
+    functionToken = regexp(line, ...
+        '^\s*function\s+(?:(?:\[[^\]]*\]|[A-Za-z]\w*)\s*=\s*)?([A-Za-z]\w*)', ...
+        'tokens', 'once');
+    if ~isempty(functionToken)
+        declaredSymbol(end+1,1) = string(functionToken{1}); %#ok<AGROW>
+        declarationKind(end+1,1) = "function"; %#ok<AGROW>
+        declarationLine(end+1,1) = lineIndex; %#ok<AGROW>
+    end
+end
+if isempty(declaredSymbol)
+    declaredSymbol = string(primaryName);
+    declarationKind = "script_or_unparsed";
+    declarationLine = 1;
+end
+declarations = table(declaredSymbol, declarationKind, declarationLine, ...
+    'VariableNames', {'DeclaredSymbol','DeclarationKind','DeclarationLine'});
+end
+
+function mask = localExactProfileSymbolMask(profileT, declaredSymbol)
+mask = false(height(profileT),1);
+if isempty(profileT)
+    return;
+end
+symbol = lower(strtrim(string(declaredSymbol)));
+if ismember("FunctionName", string(profileT.Properties.VariableNames))
+    names = lower(strtrim(string(profileT.FunctionName)));
+    mask = mask | names == symbol;
+end
+if ismember("CompleteName", string(profileT.Properties.VariableNames))
+    names = lower(replace(strtrim(string(profileT.CompleteName)), "\", "/"));
+    mask = mask | names == symbol | endsWith(names, ">" + symbol) | ...
+        endsWith(names, "." + symbol) | endsWith(names, "/" + symbol);
+end
+end
+
+function row = localEmptyFunctionRow()
+row = struct( ...
+    "FilePath", "", "Package", "", "SourceRole", "", ...
+    "DeclaredSymbol", "", "DeclarationKind", "", ...
+    "DeclarationLine", NaN, "PrimaryFileSymbol", false, ...
+    "StaticQualifiedName", "", "ActuallyCalled", false, ...
+    "CallCount", 0, "TotalTime_s", 0, ...
+    "ProfilerAvailable", false, "ProfilerComplete", false, ...
+    "ExecutionEvidence", "", "ScenarioCoverageStatus", "", ...
+    "UsageAssessment", "", "NeverUsedConclusionPermitted", false, ...
+    "SourceSHA256", "", "EvidenceSource", "");
+end
+
 function state = localSummaryAssessment(ledgerAvailable, available, complete)
 if ledgerAvailable
     state = "RUNTIME_CALL_LEDGER_AVAILABLE";
@@ -324,6 +489,12 @@ end
 end
 
 function T = localBuildEvidenceGate(detailT, ledgerAvailable, ledgerIdentityComplete, available, complete, exportedCount, capturedCount)
+failureReason = [ ...
+    localGateFailureReason(ledgerAvailable, "runtime_call_ledger_missing_or_empty"); ...
+    localGateFailureReason(ledgerIdentityComplete, "runtime_call_ledger_identity_missing_or_invalid"); ...
+    localGateFailureReason(height(detailT) > 0, "selected_source_inventory_empty"); ...
+    localGateFailureReason(available, "runtime_profiler_not_enabled_or_unavailable"); ...
+    localGateFailureReason(complete, "runtime_profiler_export_incomplete")];
 T = table( ...
     ["runtime_call_ledger_available";"runtime_call_ledger_identity_complete"; ...
      "selected_source_inventory_nonempty";"runtime_profiler_available";"runtime_profiler_export_complete"], ...
@@ -339,7 +510,16 @@ T = table( ...
      "files=" + string(height(detailT)); ...
      "exported=" + string(exportedCount); ...
      "exported=" + string(exportedCount) + ";captured=" + string(capturedCount)], ...
-    'VariableNames', {'Gate','Required','Pass','Definition','Observed'});
+    failureReason, ...
+    'VariableNames', {'Gate','Required','Pass','Definition','Observed','FailureReason'});
+end
+
+function value = localGateFailureReason(passed, reason)
+if logical(passed)
+    value = "";
+else
+    value = string(reason);
+end
 end
 
 function [available, identityComplete] = localLedgerState(T)

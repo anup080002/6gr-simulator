@@ -218,6 +218,20 @@ cfg.run.snrSweepStatePolicy = char(lower(strtrim(string(localGetNested(s, ...
 cfg.run.snrSweepInitialAccessStatePolicy = char(lower(strtrim(string(localGetNested(s, ...
     "sweeps_and_matrix.snr_sweep.initial_access_state_policy", ...
     "continuous_runtime")))));
+fixedLinkCalibration = localGetNested(s, ...
+    "sweeps_and_matrix.fixed_link_calibration", struct());
+if isstruct(fixedLinkCalibration) && isscalar(fixedLinkCalibration) && ...
+        ~isempty(fieldnames(fixedLinkCalibration))
+    % Preserve the complete resolved YAML campaign surface.  The runner
+    % consumes this section directly, while reducers consume the normalized
+    % run flag below.  Keeping both prevents an internal-config consumer
+    % from silently reverting a fixed-link-only run to connected-runtime
+    % semantics.
+    cfg = sixgr.util.structSet(cfg, ...
+        "sweeps_and_matrix.fixed_link_calibration", fixedLinkCalibration);
+end
+cfg.run.fixedLinkCampaignOnly = logical(localGetNested(s, ...
+    "sweeps_and_matrix.fixed_link_calibration.only", false));
 cfg.run.referenceSweepEnabled = logical(localRequireNested(s, ...
     "simulation.reference_sweep_enabled", "simulation.reference_sweep_enabled"));
 cfg.run.referenceTrialsPerSNR = double(localRequireNested(s, ...
@@ -238,6 +252,11 @@ cfg.outputs.saveMAT = logical(s.output.save_mat);
 cfg.outputs.saveFigures = logical(s.output.save_figures);
 cfg.outputs.saveFIG = false;
 cfg.outputs.savePNG = logical(s.output.save_png);
+cfg.outputs.emitPlaceholderArtifacts = logical(localRequireNested(s, ...
+    "output.emit_placeholder_artifacts", "output.emit_placeholder_artifacts"));
+cfg.outputs.emitDisabledAuditArtifacts = logical(localRequireNested(s, ...
+    "output.emit_disabled_audit_artifacts", ...
+    "output.emit_disabled_audit_artifacts"));
 cfg.outputs.plotVisible = false;
 cfg.outputs.livePublishFrameInterval = double(localGetNested(s, "output.live_publish_frame_interval", 1));
 cfg.outputs.liveHeavyRefreshFrameInterval = double(localGetNested(s, "output.live_heavy_refresh_interval_frames", 4));
@@ -315,6 +334,8 @@ cfg.outputs.phySignalDiagnosticChannelPoints = double(localGetNested(s, ...
     "output.phy_signal_diagnostic_channel_points", 1024));
 cfg.outputs.phySignalDiagnosticConstellationPoints = double(localGetNested(s, ...
     "output.phy_signal_diagnostic_constellation_points", 512));
+cfg.outputs.phySignalDiagnosticFullChannelGrid = logical(localGetNested(s, ...
+    "output.phy_signal_diagnostic_full_channel_grid", false));
 cfg = sixgr.util.structSet(cfg, "run.rawIQCaptureEnabled", cfg.outputs.rawIQCaptureEnabled);
 cfg = sixgr.util.structSet(cfg, "run.rawGridCaptureEnabled", cfg.outputs.rawGridCaptureEnabled);
 cfg.outputs.databaseHost = char(string(localResolveDatabaseField(s, "output.database_host", cfg.outputs.storageBackend)));
@@ -1161,7 +1182,17 @@ cfg.phy.pdsch.dmrs.maxLength = double(localGetNested(s, "reference_signals.pdsch
 cfg.phy.pdsch.configuredMCSIndex = dlConfiguredMCSIndex;
 cfg.phy.pdsch.mcsIndex = dlConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", char(dlMCSTable));
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.nPorts", double(s.reference_signals.pdsch_dmrs_ports));
+pdschDMRSPortCount = double(s.reference_signals.pdsch_dmrs_ports);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.nPorts", pdschDMRSPortCount);
+[pdschDMRSPortPool, hasPDSCHDMRSPortPool] = localTryGetNestedStrict( ...
+    s, "reference_signals.pdsch_dmrs.port_set");
+if hasPDSCHDMRSPortPool
+    pdschDMRSPortPool = localValidateConfiguredDMRSPortPool( ...
+        pdschDMRSPortPool, pdschDMRSPortCount, ...
+        "reference_signals.pdsch_dmrs.port_set");
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.portSet", pdschDMRSPortPool);
+    cfg = sixgr.util.structSet(cfg, "phy.pdsch.dmrs.DMRSPortSet", pdschDMRSPortPool);
+end
 
 cfg.phy.csirs.enable = logical(s.reference_signals.csi_rs_enabled);
 csiRSPorts = double(localGetNested(s, "reference_signals.csi_rs_ports", ...
@@ -1378,7 +1409,17 @@ cfg = sixgr.util.structSet(cfg, ...
 cfg.phy.pusch.configuredMCSIndex = ulConfiguredMCSIndex;
 cfg.phy.pusch.mcsIndex = ulConfiguredMCSIndex;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.mcsTable", char(ulMCSTable));
-cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.nPorts", double(s.reference_signals.pusch_dmrs_ports));
+puschDMRSPortCount = double(s.reference_signals.pusch_dmrs_ports);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.nPorts", puschDMRSPortCount);
+[puschDMRSPortPool, hasPUSCHDMRSPortPool] = localTryGetNestedStrict( ...
+    s, "reference_signals.pusch_dmrs.port_set");
+if hasPUSCHDMRSPortPool
+    puschDMRSPortPool = localValidateConfiguredDMRSPortPool( ...
+        puschDMRSPortPool, puschDMRSPortCount, ...
+        "reference_signals.pusch_dmrs.port_set");
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.portSet", puschDMRSPortPool);
+    cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.DMRSPortSet", puschDMRSPortPool);
+end
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.typeApos", double(localGetNested(s, "reference_signals.pusch_dmrs_type_a_position", 2)));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.configType", double(localGetNested(s, "reference_signals.pusch_dmrs_config_type", ...
     localGetNested(s, "reference_signals.pdsch_dmrs_config_type", 1))));
@@ -1890,6 +1931,15 @@ cfg.phy.pusch.modulation = char(ulModulation);
 cfg.phy.pusch.codeRate = double(ulCodeRate);
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.enabled", logical(s.mimo.beam_sweep_enabled));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.beamCount", double(s.mimo.beam_count));
+dlBeamCodebookSize = double(localGetNested(s, ...
+    "mimo.beam_codebook_size_dl", s.mimo.beam_count));
+if ~(isscalar(dlBeamCodebookSize) && isfinite(dlBeamCodebookSize) && ...
+        dlBeamCodebookSize >= 1 && dlBeamCodebookSize == round(dlBeamCodebookSize))
+    error("sixgr:lls6g:config:InvalidDLBeamCodebookSize", ...
+        "mimo.beam_codebook_size_dl must be a positive integer.");
+end
+cfg = sixgr.util.structSet(cfg, "phy.beamManagement.dlCodebookSize", ...
+    double(dlBeamCodebookSize));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.mtrpReady", logical(s.mimo.mtrp_ready));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.multiPanelReady", logical(s.mimo.multi_panel_ready));
 cfg = sixgr.util.structSet(cfg, "phy.beamManagement.panelCount", double(s.mimo.panel_count));
@@ -2006,6 +2056,29 @@ end
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", double(cqiSmoothingAlpha));
 end
+ollaTargetBLER = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.target_bler", NaN));
+if ~isfinite(ollaTargetBLER)
+    ollaTargetBLERDL = localNumericScalarOrNaN(localGetNested(s, ...
+        "link_adaptation.target_bler_dl", NaN));
+    ollaTargetBLERUL = localNumericScalarOrNaN(localGetNested(s, ...
+        "link_adaptation.target_bler_ul", NaN));
+    if isfinite(ollaTargetBLERDL) && isfinite(ollaTargetBLERUL)
+        if abs(ollaTargetBLERDL - ollaTargetBLERUL) <= 1e-12
+            ollaTargetBLER = ollaTargetBLERDL;
+        elseif logical(localGetNested(s, ...
+                "link_adaptation.outer_loop_flag", false))
+            error("sixgr:lls6g:config:DirectionalOLLATargetMismatch", ...
+                ['The current shared OLLA step policy requires equal DL/UL ' ...
+                'target BLER values; got DL %.12g and UL %.12g.'], ...
+                ollaTargetBLERDL, ollaTargetBLERUL);
+        end
+    end
+end
+if isfinite(ollaTargetBLER) && ollaTargetBLER > 0 && ollaTargetBLER < 1
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.linkAdaptation.targetBLER", double(ollaTargetBLER));
+end
 ollaStepDown = localNumericScalarOrNaN(localGetNested(s, "link_adaptation.olla_step_down", ...
     localGetNested(s, "link_adaptation.olla_step_down_db", NaN)));
 if isfinite(ollaStepDown) && ollaStepDown > 0
@@ -2072,6 +2145,11 @@ cfg = sixgr.util.structSet(cfg, "lls6g.waveform", s.waveform);
 cfg = sixgr.util.structSet(cfg, "lls6g.channels", s.channels);
 cfg = sixgr.util.structSet(cfg, "lls6g.reference_signals", s.reference_signals);
 cfg = sixgr.util.structSet(cfg, "lls6g.mimo", s.mimo);
+cfg = sixgr.util.structSet(cfg, "lls6g.output", s.output);
+if isfield(s, "mimo_and_beam_management")
+    cfg = sixgr.util.structSet(cfg, "lls6g.mimo_and_beam_management", ...
+        s.mimo_and_beam_management);
+end
 if isfield(s, "antenna_and_array")
     cfg = sixgr.util.structSet(cfg, "lls6g.antenna_and_array", s.antenna_and_array);
 end
@@ -2296,6 +2374,16 @@ if builtin("isstruct", fixedLinkCampaignSection) && ~isempty(fieldnames(fixedLin
     cfg = sixgr.util.structSet(cfg, "validation.fixed_link_campaign", ...
         localNormalizeFixedLinkCampaignSection(fixedLinkCampaignSection));
 end
+causalPHYChainAudit = localGetNested(s, ...
+    "validation.causal_phy_chain_audit", struct());
+if builtin("isstruct", causalPHYChainAudit) && ...
+        ~isempty(fieldnames(causalPHYChainAudit))
+    % Preserve the complete scenario-owned registry. The finalizer binds
+    % these declarations to exact calls and measured artifacts; it must not
+    % reconstruct a smaller hardcoded process list in MATLAB.
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.causal_phy_chain_audit", causalPHYChainAudit);
+end
 phase7ExecutionSection = localGetNested(s, ...
     "validation.phase7_execution_validation", struct());
 if builtin("isstruct", phase7ExecutionSection) && ...
@@ -2352,12 +2440,37 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.configuredMCSIndex", ...
     sixgr.util.structGet(cfg, "phy.pdsch.mcsIndex", NaN));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.configuredMCSIndex", ...
     sixgr.util.structGet(cfg, "phy.pusch.mcsIndex", NaN));
+% Reconcile the complete fixed operating point after the legacy per-channel
+% surfaces have been copied.  The MCS table/index is one atomic authority:
+% an inherited pusch.modulation or pdsch.modulation token must not leave the
+% internal config in a contradictory state such as MCS 4 plus 16QAM while
+% the transmitter correctly applies the table-defined QPSK profile.
+[dlCanonicalModulation, dlCanonicalCodeRate] = ...
+    localResolveFixedMCSProfile(s, "DL");
+[ulCanonicalModulation, ulCanonicalCodeRate] = ...
+    localResolveFixedMCSProfile(s, "UL");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.modulation", ...
+    char(dlCanonicalModulation));
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.codeRate", ...
+    double(dlCanonicalCodeRate));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.modulation", ...
+    char(ulCanonicalModulation));
+cfg = sixgr.util.structSet(cfg, "phy.pusch.codeRate", ...
+    double(ulCanonicalCodeRate));
 cfg = localReconcileULWaveformPUSCHSurface(cfg, s);
 cfg = localApplyPDCCHSurface(cfg, s);
 cfg = localApplyReceiverSurface(cfg, s);
 cfg = localApplyTimingAndRFHardwareSurface(cfg, s);
 cfg = localReconcileCanonicalImpairmentAuthority(cfg, s);
 cfg = localApplyAuxiliaryPHYKnobs(cfg, s);
+% Validate the spatial dependency graph only after the deep PDSCH/PUSCH
+% surfaces have materialized their logical antenna-port authorities.  The
+% physical array is built earlier, whereas pdsch.num_antenna_ports and
+% pusch.num_antenna_ports are intentionally translated here.
+if logical(sixgr.util.structGet(cfg, ...
+        "antenna.requireSpatialDependencyContract", false))
+    localValidateSpatialDependencyContract(cfg);
+end
 end
 
 function cfg = localReconcileCanonicalImpairmentAuthority(cfg, s)
@@ -2608,6 +2721,29 @@ if hasStart && hasNum
     cfg = sixgr.util.structSet( ...
         cfg, targetBase + ".SymbolAllocation", ...
         [startValue numValue]);
+end
+end
+
+function portPool = localValidateConfiguredDMRSPortPool(portPool, expectedCount, sourcePath)
+portPool = double(portPool(:).');
+expectedCount = double(expectedCount);
+if ~(isscalar(expectedCount) && isfinite(expectedCount) && ...
+        expectedCount >= 1 && expectedCount == fix(expectedCount))
+    error("sixgr:lls6g:config:InvalidDMRSPortCount", ...
+        "%s requires a positive-integer configured DM-RS port count.", ...
+        char(string(sourcePath)));
+end
+if isempty(portPool) || any(~isfinite(portPool)) || ...
+        any(portPool ~= fix(portPool)) || any(portPool < 0) || ...
+        numel(unique(portPool)) ~= numel(portPool)
+    error("sixgr:lls6g:config:InvalidDMRSPortSet", ...
+        "%s must contain unique nonnegative integer logical DM-RS ports.", ...
+        char(string(sourcePath)));
+end
+if numel(portPool) < expectedCount
+    error("sixgr:lls6g:config:DMRSPortCountMismatch", ...
+        "%s contains %d ports but the active YAML DM-RS port count requires at least %d.", ...
+        char(string(sourcePath)), numel(portPool), expectedCount);
 end
 end
 
@@ -3455,6 +3591,8 @@ auxPairs = {
     "link_adaptation.olla_min_offset_db", "phy.linkAdaptation.ollaMinOffset_dB"
     "link_adaptation.olla_window_size_slots", "phy.linkAdaptation.ollaWindowSizeSlots"
     "link_adaptation.olla_forgetting_factor", "phy.linkAdaptation.ollaForgettingFactor"
+    "link_adaptation.feedback_delay_slots", "phy.linkAdaptation.feedbackDelaySlots"
+    "link_adaptation.feedback_delay_slots", "phy.csi.feedbackDelaySlots"
     "link_adaptation.rank_threshold", "phy.linkAdaptation.rankThreshold"
     "link_adaptation.rank_threshold", "phy.mimo.svRankThreshold"
     "link_adaptation.min_sinr_for_rank2_dB", "phy.linkAdaptation.minSINRForRank2_dB"
@@ -4393,6 +4531,19 @@ ueGeom = string(localRequireNested(s, "antenna_and_array.ue_array_geometry", "an
 polToken = string(localRequireNested(s, "antenna_and_array.polarization", "antenna_and_array.polarization"));
 spacingH = double(localRequireNested(s, "antenna_and_array.element_spacing_h", "antenna_and_array.element_spacing_h"));
 spacingV = double(localRequireNested(s, "antenna_and_array.element_spacing_v", "antenna_and_array.element_spacing_v"));
+bsSpacingH = double(localGetNested(s, ...
+    "antenna_and_array.bs_element_spacing_horizontal_lambda", spacingH));
+bsSpacingV = double(localGetNested(s, ...
+    "antenna_and_array.bs_element_spacing_vertical_lambda", spacingV));
+ueSpacingH = double(localGetNested(s, ...
+    "antenna_and_array.ue_element_spacing_horizontal_lambda", spacingH));
+ueSpacingV = double(localGetNested(s, ...
+    "antenna_and_array.ue_element_spacing_vertical_lambda", spacingV));
+if any(~isfinite([bsSpacingH bsSpacingV ueSpacingH ueSpacingV])) || ...
+        any([bsSpacingH bsSpacingV ueSpacingH ueSpacingV] <= 0)
+    error("sixgr:lls6g:config:InvalidAntennaElementSpacing", ...
+        "Role-specific gNB/UE element spacings must be finite positive wavelength ratios.");
+end
 bsCount = max(1, round(double(localRequireNested(s, "antenna_and_array.bs_num_antenna_elements", "antenna_and_array.bs_num_antenna_elements"))));
 ueCount = max(1, round(double(localRequireNested(s, "antenna_and_array.ue_num_antenna_elements", "antenna_and_array.ue_num_antenna_elements"))));
 requestedBsTxRUs = max(1, round(double(localRequireNested(s, ...
@@ -4445,7 +4596,10 @@ cfg = sixgr.util.structSet(cfg, "phy.ueArray", ...
     localResolveArrayShape(ueGeom, ueCount, polToken, uePanelCount, "UE"));
 
 cfg = sixgr.util.structSet(cfg, "antenna.bs.geometry", char(lower(strtrim(bsGeom))));
-cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingLambda", [double(spacingH) double(spacingV)]);
+cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingLambda", ...
+    [double(bsSpacingH) double(bsSpacingV)]);
+cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingHorizontalLambda", double(bsSpacingH));
+cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingVerticalLambda", double(bsSpacingV));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.numElements", double(bsCount));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.numTxRFChains", double(bsTxRUs));
@@ -4461,7 +4615,10 @@ if isfinite(bsMechanicalTiltDeg)
     cfg = sixgr.util.structSet(cfg, "scenario.bs.mechanicalTilt_deg", double(bsMechanicalTiltDeg));
 end
 cfg = sixgr.util.structSet(cfg, "antenna.ue.geometry", char(lower(strtrim(ueGeom))));
-cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingLambda", [double(spacingH) double(spacingV)]);
+cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingLambda", ...
+    [double(ueSpacingH) double(ueSpacingV)]);
+cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingHorizontalLambda", double(ueSpacingH));
+cfg = sixgr.util.structSet(cfg, "antenna.ue.spacingVerticalLambda", double(ueSpacingV));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.polarization", char(lower(strtrim(polToken))));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.numElements", double(ueCount));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.numTxRFChains", double(ueTxRUs));
@@ -4471,8 +4628,227 @@ cfg = sixgr.util.structSet(cfg, "scenario.ue.numTxRFChains", double(ueTxRUs));
 cfg = sixgr.util.structSet(cfg, "scenario.ue.numRxRFChains", double(ueRxRUs));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.panelCount", double(uePanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.source", "browser_yaml_antenna_and_array");
+cfg = localApplyRuntimeAntennaElementPattern(cfg, s, "bs");
+cfg = localApplyRuntimeAntennaElementPattern(cfg, s, "ue");
 cfg = localApplySSBPrecoderCodebook(cfg, s);
 cfg = localApplyCSIRSPrecoderCodebook(cfg, s);
+requireSpatialContract = logical(localGetNested(s, ...
+    "antenna_and_array.require_spatial_dependency_contract", false));
+cfg = sixgr.util.structSet(cfg, "antenna.requireSpatialDependencyContract", ...
+    requireSpatialContract);
+end
+
+function localValidateSpatialDependencyContract(cfg)
+% Fail before waveform execution when physical arrays, RF chains, logical
+% ports, reference-signal ports and transmission layers cannot represent
+% one another. Beams are deliberately not equated to elements or layers:
+% a codebook can oversample the same physical aperture.
+bsElements = double(sixgr.util.structGet(cfg, "antenna.bs.numElements", NaN));
+ueElements = double(sixgr.util.structGet(cfg, "antenna.ue.numElements", NaN));
+bsTxRF = double(sixgr.util.structGet(cfg, "antenna.bs.numTxRFChains", NaN));
+bsRxRF = double(sixgr.util.structGet(cfg, "antenna.bs.numRxRFChains", NaN));
+ueTxRF = double(sixgr.util.structGet(cfg, "antenna.ue.numTxRFChains", NaN));
+ueRxRF = double(sixgr.util.structGet(cfg, "antenna.ue.numRxRFChains", NaN));
+counts = [bsElements ueElements bsTxRF bsRxRF ueTxRF ueRxRF];
+if any(~isfinite(counts) | counts < 1 | counts ~= round(counts))
+    error("sixgr:lls6g:config:InvalidSpatialHardwareCount", ...
+        "Strict spatial hardware element/RF-chain counts must be positive integers.");
+end
+if bsTxRF > bsElements || bsRxRF > bsElements || ...
+        ueTxRF > ueElements || ueRxRF > ueElements
+    error("sixgr:lls6g:config:RFChainCountExceedsPhysicalElements", ...
+        "Strict spatial RF-chain counts cannot exceed physical element counts.");
+end
+
+if logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", false))
+    dlLayers = double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN));
+    dlPorts = double(sixgr.util.structGet(cfg, "phy.pdsch.numPorts", NaN));
+    dlDMRS = double(sixgr.util.structGet(cfg, "phy.pdsch.dmrs.portSet", []));
+    validDLCounts = isscalar(dlLayers) && isfinite(dlLayers) && ...
+        dlLayers >= 1 && dlLayers == round(dlLayers) && ...
+        isscalar(dlPorts) && isfinite(dlPorts) && dlPorts >= dlLayers && ...
+        dlPorts == round(dlPorts);
+    validDLDMRS = isvector(dlDMRS) && numel(dlDMRS) == dlLayers && ...
+        all(isfinite(dlDMRS(:))) && ...
+        numel(unique(dlDMRS(:))) == dlLayers;
+    validDLHardware = dlPorts <= bsTxRF && dlLayers <= ueRxRF;
+    if ~(validDLCounts && validDLDMRS && validDLHardware)
+        error("sixgr:lls6g:config:DLSpatialDependencyMismatch", ...
+            ['PDSCH spatial mismatch: layers=%g, logicalPorts=%g, ' ...
+             'dmrsPorts=[%s], gNBTxRF=%g, UERxRF=%g, gNBElements=%g. ' ...
+             'Required: one unique DM-RS port per layer and layers <= ' ...
+             'logical ports <= gNB TX RF chains <= gNB elements, with ' ...
+             'layers <= UE RX RF chains.'], dlLayers, dlPorts, ...
+            strjoin(string(dlDMRS(:).'), ','), bsTxRF, ueRxRF, bsElements);
+    end
+end
+
+if logical(sixgr.util.structGet(cfg, "phy.pusch.enable", false))
+    ulLayers = double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", NaN));
+    ulPorts = double(sixgr.util.structGet(cfg, "phy.pusch.NumAntennaPorts", NaN));
+    ulDMRS = double(sixgr.util.structGet(cfg, "phy.pusch.dmrs.portSet", []));
+    validULCounts = isscalar(ulLayers) && isfinite(ulLayers) && ...
+        ulLayers >= 1 && ulLayers == round(ulLayers) && ...
+        isscalar(ulPorts) && isfinite(ulPorts) && ulPorts >= ulLayers && ...
+        ulPorts == round(ulPorts);
+    validULDMRS = isvector(ulDMRS) && numel(ulDMRS) == ulLayers && ...
+        all(isfinite(ulDMRS(:))) && ...
+        numel(unique(ulDMRS(:))) == ulLayers;
+    validULHardware = ulPorts <= ueTxRF && ulLayers <= bsRxRF;
+    if ~(validULCounts && validULDMRS && validULHardware)
+        error("sixgr:lls6g:config:ULSpatialDependencyMismatch", ...
+            ['PUSCH spatial mismatch: layers=%g, logicalPorts=%g, ' ...
+             'dmrsPorts=[%s], UETxRF=%g, gNBRxRF=%g, UEElements=%g. ' ...
+             'Required: one unique DM-RS port per layer and layers <= ' ...
+             'logical ports <= UE TX RF chains <= UE elements, with ' ...
+             'layers <= gNB RX RF chains.'], ulLayers, ulPorts, ...
+            strjoin(string(ulDMRS(:).'), ','), ueTxRF, bsRxRF, ueElements);
+    end
+end
+
+if logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false))
+    csiPorts = double(sixgr.util.structGet(cfg, "phy.csirs.nPorts", NaN));
+    csiPrecoders = sixgr.util.structGet(cfg, "phy.csirs.precoderMatrices", []);
+    if ~(isscalar(csiPorts) && isfinite(csiPorts) && csiPorts >= 1 && ...
+            csiPorts == round(csiPorts) && csiPorts <= bsTxRF && ...
+            size(csiPrecoders,1) == bsElements && ...
+            size(csiPrecoders,2) == csiPorts)
+        error("sixgr:lls6g:config:CSIRSSpatialDependencyMismatch", ...
+            "CSI-RS logical ports and physical precoders do not span the configured gNB hardware.");
+    end
+end
+
+if logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false))
+    ssbWeights = sixgr.util.structGet(cfg, "phy.ssb.precoderMatrices", []);
+    ssbCount = double(sixgr.util.structGet(cfg, "phy.ssb.beamCount", NaN));
+    lmax = double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", NaN));
+    if ~(isscalar(ssbCount) && isfinite(ssbCount) && ssbCount >= 1 && ...
+            ssbCount == round(ssbCount) && ssbCount <= lmax && ...
+            size(ssbWeights,1) == lmax && size(ssbWeights,2) == bsElements && ...
+            all(abs(sum(abs(ssbWeights).^2,2) - 1) <= 1e-10))
+        error("sixgr:lls6g:config:SSBSpatialDependencyMismatch", ...
+            "SSB beam weights must contain one unit-power physical-element vector for every Lmax candidate.");
+    end
+end
+end
+
+function cfg = localApplyRuntimeAntennaElementPattern(cfg, s, role)
+role = lower(string(role));
+prefix = "antenna_and_array." + role + "_";
+requiredInChannel = logical(localGetNested(s, ...
+    "antenna_and_array.require_element_pattern_in_channel", false));
+if requiredInChannel
+    requiredFields = [ ...
+        "element_model"
+        "element_frequency_min_hz"
+        "element_frequency_max_hz"
+        "element_azimuth_hpbw_deg"
+        "element_elevation_hpbw_deg"
+        "element_azimuth_sidelobe_attenuation_db"
+        "element_elevation_sidelobe_attenuation_db"
+        "element_maximum_attenuation_db"
+        "element_maximum_gain_dbi"
+        "element_polarization_model"
+        "boresight_azimuth_deg"
+        "boresight_elevation_deg"
+        "boresight_slant_deg"];
+    missing = strings(0,1);
+    for fieldIndex = 1:numel(requiredFields)
+        [~, found] = localTryGetNestedStrict(s, prefix + requiredFields(fieldIndex));
+        if ~found
+            missing(end+1,1) = prefix + requiredFields(fieldIndex); %#ok<AGROW>
+        end
+    end
+    [~, angleListFound] = localTryGetNestedStrict(s, ...
+        prefix + "element_polarization_angles_deg");
+    [~, angleScalarFound] = localTryGetNestedStrict(s, ...
+        prefix + "element_polarization_angle_deg");
+    if ~(angleListFound || angleScalarFound)
+        missing(end+1,1) = prefix + "element_polarization_angles_deg"; %#ok<AGROW>
+    end
+    if ~isempty(missing)
+        error("sixgr:lls6g:config:MissingRequiredAntennaPatternField", ...
+            "antenna_and_array.require_element_pattern_in_channel=true requires explicit YAML authority for: %s.", ...
+            strjoin(cellstr(missing), ", "));
+    end
+end
+elementModel = lower(strtrim(string(localGetNested(s, ...
+    prefix + "element_model", "isotropic"))));
+if ~ismember(elementModel, ["3gpp_tr38901", "isotropic"])
+    error("sixgr:lls6g:config:InvalidAntennaElementModel", ...
+        "%s_element_model must be 3gpp_tr38901 or isotropic.", upper(role));
+end
+frequencyRangeHz = [double(localGetNested(s, ...
+    prefix + "element_frequency_min_hz", 0)), ...
+    double(localGetNested(s, prefix + "element_frequency_max_hz", 1e20))];
+beamwidthDeg = [double(localGetNested(s, ...
+    prefix + "element_azimuth_hpbw_deg", 65)), ...
+    double(localGetNested(s, prefix + "element_elevation_hpbw_deg", 65))];
+sidelobeDb = [double(localGetNested(s, ...
+    prefix + "element_azimuth_sidelobe_attenuation_db", 30)), ...
+    double(localGetNested(s, ...
+    prefix + "element_elevation_sidelobe_attenuation_db", 30))];
+maximumAttenuationDb = double(localGetNested(s, ...
+    prefix + "element_maximum_attenuation_db", 30));
+maximumGainDbi = double(localGetNested(s, ...
+    prefix + "element_maximum_gain_dbi", 8));
+polarizationAnglesDeg = double(localGetNested(s, ...
+    prefix + "element_polarization_angles_deg", ...
+    localGetNested(s, prefix + "element_polarization_angle_deg", 0)));
+polarizationAnglesDeg = polarizationAnglesDeg(:).';
+polarizationModel = double(localGetNested(s, ...
+    prefix + "element_polarization_model", 2));
+boresightDeg = [double(localGetNested(s, prefix + "boresight_azimuth_deg", 0)), ...
+    double(localGetNested(s, prefix + "boresight_elevation_deg", 0)), ...
+    double(localGetNested(s, prefix + "boresight_slant_deg", 0))];
+if ~(all(isfinite(frequencyRangeHz)) && frequencyRangeHz(1) >= 0 && ...
+        frequencyRangeHz(2) > frequencyRangeHz(1))
+    error("sixgr:lls6g:config:InvalidAntennaFrequencyRange", ...
+        "%s antenna element frequency range must be finite and increasing.", upper(role));
+end
+if ~(all(isfinite(beamwidthDeg)) && all(beamwidthDeg > 0) && ...
+        all(beamwidthDeg <= 180))
+    error("sixgr:lls6g:config:InvalidAntennaBeamwidth", ...
+        "%s antenna azimuth/elevation HPBW must lie in (0,180] degrees.", upper(role));
+end
+if ~(all(isfinite(sidelobeDb)) && all(sidelobeDb > 0) && ...
+        isfinite(maximumAttenuationDb) && maximumAttenuationDb > 0 && ...
+        maximumAttenuationDb >= max(sidelobeDb))
+    error("sixgr:lls6g:config:InvalidAntennaAttenuation", ...
+        "%s maximum attenuation must be positive and no smaller than either sidelobe attenuation.", upper(role));
+end
+if ~(isscalar(maximumGainDbi) && isfinite(maximumGainDbi) && ...
+        maximumGainDbi > 0 && ~isempty(polarizationAnglesDeg) && ...
+        all(isfinite(polarizationAnglesDeg)) && ...
+        ismember(polarizationModel, [1 2]) && all(isfinite(boresightDeg)))
+    error("sixgr:lls6g:config:InvalidAntennaElementPattern", ...
+        "%s antenna gain, polarization, or boresight configuration is invalid.", upper(role));
+end
+
+basePath = "antenna." + role;
+cfg = sixgr.util.structSet(cfg, basePath + ".element.model", char(elementModel));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.frequencyRangeHz", frequencyRangeHz);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.frequencyMinHz", frequencyRangeHz(1));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.frequencyMaxHz", frequencyRangeHz(2));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.beamwidthDeg", beamwidthDeg);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.azimuthHPBWDeg", beamwidthDeg(1));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.elevationHPBWDeg", beamwidthDeg(2));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.sidelobeLevelDb", sidelobeDb);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.azimuthSidelobeAttenuationDb", sidelobeDb(1));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.elevationSidelobeAttenuationDb", sidelobeDb(2));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.maximumAttenuationDb", maximumAttenuationDb);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.maximumGainDbi", maximumGainDbi);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.polarizationAngleDeg", polarizationAnglesDeg(1));
+cfg = sixgr.util.structSet(cfg, basePath + ".element.polarizationAnglesDeg", polarizationAnglesDeg);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.polarizationModel", polarizationModel);
+cfg = sixgr.util.structSet(cfg, basePath + ".polarizationAngles_deg", polarizationAnglesDeg);
+cfg = sixgr.util.structSet(cfg, basePath + ".boresightAzElSlant_deg", boresightDeg);
+cfg = sixgr.util.structSet(cfg, basePath + ".boresightAzimuthDeg", boresightDeg(1));
+cfg = sixgr.util.structSet(cfg, basePath + ".boresightElevationDeg", boresightDeg(2));
+cfg = sixgr.util.structSet(cfg, basePath + ".boresightSlantDeg", boresightDeg(3));
+cfg = sixgr.util.structSet(cfg, basePath + ".requireElementPatternInChannel", requiredInChannel);
+cfg = sixgr.util.structSet(cfg, basePath + ".element.configSource", ...
+    "browser_yaml_antenna_and_array");
 end
 
 function cfg = localApplyCSIRSPrecoderCodebook(cfg, s)
@@ -4581,6 +4957,11 @@ end
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderMatrices", matrices);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderDigests", digests);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderBeamIndices", beamIndices);
+for portOrdinal = 1:nPorts
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.csirs.precoderBeamIndicesPort" + string(portOrdinal - 1), ...
+        beamIndices(:, portOrdinal).');
+end
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderCodebookType", codebookType);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderPhysicalElementCount", physicalElements);
 end
@@ -4667,6 +5048,8 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderCodebookType", codebookType);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamIndices", beamIndices);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamGrid", ...
     [beamGridRows beamGridColumns]);
+cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamGridRows", beamGridRows);
+cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamGridColumns", beamGridColumns);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderPhysicalElementCount", physicalElements);
 end
 
@@ -5617,7 +6000,8 @@ end
 
 function runClass = localNormalizeRunClassToken(raw)
 token = lower(strtrim(string(raw)));
-if any(token == ["fixed_lls_anchor", "adaptive_system_diagnostic", "hybrid_validation", ...
+if any(token == ["fixed_lls_anchor", "functional_waveform_validation", ...
+        "adaptive_system_diagnostic", "hybrid_validation", ...
         "fixed_snr_sweep_lls", "ue_placement_geometry_lls"])
     runClass = token;
 else

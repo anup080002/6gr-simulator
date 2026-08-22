@@ -205,10 +205,25 @@ gnbMask = string(timelineT.Entity) == "gNB";
 ueEnergy = sum(double(timelineT.Energy_J(ueMask)), "omitnan");
 gnbEnergy = sum(double(timelineT.Energy_J(gnbMask)), "omitnan");
 bbEnergy = sum(double(timelineT.BBProcessingEnergy_J(gnbMask)), "omitnan");
-rfActiveTime = sum(double(timelineT.Duration_s(gnbMask)), "omitnan");
+if localHasFixedLinkObservationIdentity(timelineT)
+    % Fixed-link campaign observations are independent executions that may
+    % intentionally reuse the same frame/slot coordinates.  Their durations
+    % are sequential campaign exposure, not overlapping connected-runtime
+    % intervals.
+    rfActiveTime = sum(double(timelineT.Duration_s(gnbMask)), "omitnan");
+    activeEntityCount = 1;
+else
+    % Connected-runtime rows are emitted per UE and per PHY domain.  Several
+    % rows can therefore describe the same gNB being active in one interval.
+    % A duty cycle is wall-clock occupancy, so use the union of intervals per
+    % gNB rather than summing simultaneous MU-MIMO/control observations.
+    [rfActiveTime, activeEntityCount] = localActiveIntervalUnionByEntity( ...
+        timelineT(gnbMask, :));
+end
+activeRatio = min(max(rfActiveTime / max(scenarioDur * activeEntityCount, eps), 0), 1);
 throughputMbps = (successBitsRaw / max(scenarioDur, eps)) / 1e6;
 avgPowerW = (ueEnergy + gnbEnergy) / max(scenarioDur, eps);
-sleepRatio = max(0, 1 - min(rfActiveTime, scenarioDur) / max(scenarioDur, eps));
+sleepRatio = 1 - activeRatio;
 clusteringEnabled = logical(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.common_signal_clustering_enabled", ...
     sixgr.util.structGet(cfg, "signals_and_channels_common.common_signal_clustering.enable_flag", false))) || ...
     logical(sixgr.util.structGet(cfg, "lls6g.random_access.beam_clustering_enabled", false)) || ...
@@ -251,9 +266,9 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("measurement_window_duration", "system", "total", scenarioDur, "", "s", "Simulated measurement window used by energy and throughput-per-watt metrics."); ...
     localProbeMetricRow("ue_energy_per_slot_frame_burst", "UE", "per_frame_mean", ueEnergy / numFrames, "", "J/frame", "Average UE energy per frame."); ...
     localProbeMetricRow("gnb_energy_per_successful_bit", "gNB", "mean", gnbEnergyPerBit, "", "J/bit", energyNotes, energyAvailability, "runtime_state_conditioned_engineering_model", modelVersion); ...
-    localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "active_ratio", rfActiveTime / max(scenarioDur, eps), "", "fraction", "Active ratio from gNB runtime timeline."); ...
-    localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "sleep_ratio", max(0, 1 - rfActiveTime / max(scenarioDur, eps)), "", "fraction", "Residual ratio not spent in active runtime states."); ...
-    localProbeMetricRow("rf_chain_active_time", "gNB", "total", rfActiveTime, "", "s", "Accumulated gNB RF-chain active time."); ...
+    localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "active_ratio", activeRatio, "", "fraction", "Mean gNB active-time ratio from the union of persisted runtime intervals per gNB."); ...
+    localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "sleep_ratio", sleepRatio, "", "fraction", "Residual mean gNB time not occupied by persisted active runtime intervals."); ...
+    localProbeMetricRow("rf_chain_active_time", "gNB", "total", rfActiveTime, "", "s", "Union of gNB active runtime intervals, summed across distinct gNB entities."); ...
     localProbeMetricRow("bb_processing_energy", "gNB", "total", bbEnergy, "", "J", "Modeled TRX-chain processing energy in the RF energy model."); ...
     localProbeMetricRow("pdcch_monitoring_energy_metric", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring"), "", "J", "UE receive energy while monitoring PDCCH."); ...
     localProbeMetricRow("pdcch_monitoring_energy", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring"), "", "J", "UE receive energy while monitoring PDCCH."); ...
@@ -269,6 +284,50 @@ summaryT = [summaryT; ... %#ok<AGROW>
 summaryT(end+1,:) = localProbeMetricRow("bandwidth_adaptation_policy_enabled", "system", "configured", ...
     double(bandwidthAdaptEnabled), string(bandwidthAdaptMode), "bool", ...
     "Configuration fact only; does not claim an energy saving.", "AVAILABLE", "configuration_fact", modelVersion);
+end
+
+function [unionDuration, entityCount] = localActiveIntervalUnionByEntity(T)
+unionDuration = 0;
+entityCount = 1;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+if ismember("EntityID", string(T.Properties.VariableNames))
+    entity = double(T.EntityID);
+elseif ismember("BaseStationID", string(T.Properties.VariableNames))
+    entity = double(T.BaseStationID);
+else
+    entity = ones(height(T), 1);
+end
+entity(~isfinite(entity)) = 1;
+ids = unique(entity, "stable");
+entityCount = max(numel(ids), 1);
+for i = 1:numel(ids)
+    mask = entity == ids(i);
+    duration = double(T.Duration_s(mask));
+    if ismember("TimestampSim_ms", string(T.Properties.VariableNames))
+        startTime = double(T.TimestampSim_ms(mask)) / 1e3;
+    else
+        startTime = nan(size(duration));
+    end
+    valid = isfinite(startTime) & isfinite(duration) & duration > 0;
+    if ~any(valid)
+        continue;
+    end
+    intervals = sortrows([startTime(valid), startTime(valid) + duration(valid)], 1);
+    currentStart = intervals(1, 1);
+    currentEnd = intervals(1, 2);
+    for row = 2:size(intervals, 1)
+        if intervals(row, 1) <= currentEnd + 10 * eps(max(abs(currentEnd), 1))
+            currentEnd = max(currentEnd, intervals(row, 2));
+        else
+            unionDuration = unionDuration + max(currentEnd - currentStart, 0);
+            currentStart = intervals(row, 1);
+            currentEnd = intervals(row, 2);
+        end
+    end
+    unionDuration = unionDuration + max(currentEnd - currentStart, 0);
+end
 end
 
 function value = localDomainEnergy(T, entity, domain)

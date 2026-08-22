@@ -57,6 +57,22 @@ activeRows = fixed.SummaryTable(string(fixed.SummaryTable.MetricKey) == ...
 assert(height(activeRows) == 1 && activeRows.Value >= 0 && activeRows.Value <= 1, ...
     "Fixed-link gNB duty cycle must be in [0,1].");
 
+% Two UEs and a control/data observation in the same connected-runtime slot
+% are simultaneous gNB activity, not four sequential active intervals.
+multiDL = [localTrial("PASS", 800); localTrial("PASS", 800)];
+multiDL.UEID = [1; 2];
+multiDL.TransportBlockId = ["dl_tb_ue1"; "dl_tb_ue2"];
+multiPDCCH = multiDL;
+multiPDCCH.TransportBlockId = ["dci_ue1"; "dci_ue2"];
+connected = sixgr.truth.exportLLSEnergyDiagnostics(cfg, airFolder, ...
+    struct("DL", multiDL, "UL", table(), "PDCCH", multiPDCCH));
+localAssertMetricValue(connected.SummaryTable, ...
+    "gnb_active_sleep_duty_cycle", 1, 1e-12, "active_ratio");
+activeTime = connected.SummaryTable(string(connected.SummaryTable.MetricKey) == ...
+    "rf_chain_active_time", :);
+assert(height(activeTime) == 1 && abs(double(activeTime.Value) - 0.001) < 1e-12, ...
+    "Simultaneous per-UE/control gNB rows must reduce to one interval of active time.");
+
 missingCfg = cfg;
 missingCfg.lls6g.energy_efficiency = rmfield( ...
     missingCfg.lls6g.energy_efficiency, "ue_tx_dc_per_watt_rf");
@@ -114,10 +130,17 @@ assert(height(row) == 1 && ~isfinite(row.Value));
 assert(string(row.Availability) == "NOT_EVALUATED");
 end
 
-function localAssertMetricValue(T, key, expected, tolerance)
-row = T(string(T.MetricKey) == string(key), :);
+function localAssertMetricValue(T, key, expected, tolerance, statistic)
+if nargin < 5
+    row = T(string(T.MetricKey) == string(key), :);
+    label = string(key);
+else
+    row = T(string(T.MetricKey) == string(key) & ...
+        string(T.Statistic) == string(statistic), :);
+    label = string(key) + "/" + string(statistic);
+end
 assert(height(row) == 1 && abs(double(row.Value) - double(expected)) <= tolerance, ...
-    "Unexpected %s value.", key);
+    "Unexpected %s value.", label);
 end
 
 function localCleanup(root)
