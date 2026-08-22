@@ -35,7 +35,8 @@ def test_component_dashboard_separates_raster_from_legacy_svg() -> None:
         "completed",
     )
     by_id = {row["component_id"]: row for row in rows}
-    assert len(rows) == 20
+    assert len(rows) == 24
+    assert len(by_id) == len(rows)
     assert by_id["prach_rach"]["status"] == "evidence_available"
     assert by_id["prach_rach"]["csv_count"] == 1
     assert by_id["prach_rach"]["image_count"] == 1
@@ -128,6 +129,44 @@ def test_runtime_log_component_annotation_preserves_original_message() -> None:
     assert rows[0]["component"] == "pdcch"
     assert rows[0]["message_text"] == source[0]["message_text"]
     assert "component" not in source[0]
+
+
+def test_data_preview_retains_crc_and_measured_beam_fields() -> None:
+    rows = dashboard.summarize_data_trial_preview_rows(
+        "dl_trials",
+        [
+            {
+                "Slot": 7,
+                "UEID": 2,
+                "Direction": "DL",
+                "MCSIndex": 11,
+                "Modulation": "64QAM",
+                "MeasuredTrialSINR_dB": 13.25,
+                "CRCPass": 1,
+                "SelectedBeamIndex": 3,
+                "PMI": 2,
+                "AppliedPrecoderPMI": 2,
+                "AppliedBeamIndexSet": "3",
+                "SelectedBeamGain_dB": 8.75,
+            }
+        ],
+    )
+    assert rows == [
+        {
+            "Direction": "DL",
+            "Slot": 7,
+            "UE": 2,
+            "MCS": 11,
+            "Modulation": "64QAM",
+            "Measured SINR dB": 13.25,
+            "CRC pass": 1,
+            "Beam": 3,
+            "PMI": 2,
+            "Applied PMI": 2,
+            "Applied beam": "3",
+            "Quality dB": 8.75,
+        }
+    ]
 
 
 def test_component_view_detection_does_not_hide_canonical_roots() -> None:

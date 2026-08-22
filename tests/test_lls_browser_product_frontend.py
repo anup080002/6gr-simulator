@@ -181,6 +181,24 @@ def main() -> None:
         assert "restoreScrollState" in realtime_page
         assert "function eventElement(target)" in realtime_page
         assert "payload_version" in realtime_page
+        assert "Each PHY/procedure channel has its own six-column view" in realtime_page
+        for channel_title in (
+            "SSB / PBCH",
+            "PRACH / RACH",
+            "Acquisition / Initial Access",
+            "Beam / Precoding",
+            "PDCCH / DCI",
+            "PUCCH / UCI",
+            "PDSCH / DL-SCH",
+            "PUSCH / UL-SCH",
+            "CSI / CSI-RS / CQI",
+            "SRS",
+            "TRS / Tracking",
+            "Traffic / Goodput",
+        ):
+            assert f"title:'{channel_title}'" in realtime_page
+        assert "columns:['Slot','UE','MCS','Modulation','Measured SINR dB','CRC pass']" in realtime_page
+        assert "columns:['Slot','UE','Direction','Applied beam','Applied PMI','Quality dB']" in realtime_page
 
         phy_grid_page = pages["phy_grid"]
         assert "Symbols / slot" in phy_grid_page
