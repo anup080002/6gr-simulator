@@ -1989,7 +1989,13 @@ layout = sixgr.report.resultLayout(rootRunFolder);
 statusPath = fullfile(layout.ReportCSVDir, "live_stage_status.csv");
 status = localNormalizeStageStatusStruct(status, localReadStageStatusStruct(statusPath));
 status = localReconcileStageStatusControlAttemptCounts(status, rootRunFolder);
+status = sixgr.truth.canonicalizeRuntimeStatusSnapshot(status);
 T = struct2table(orderfields(status));
+if height(T) ~= 1
+    error("sixgr:truth:RuntimeStatusRowCountMismatch", ...
+        "Runtime status serialization produced %d rows; exactly one measured snapshot is required.", ...
+        height(T));
+end
 sixgr.util.csvWriteTable(statusPath, T);
 localPublishWaveformBundleRuntimeStatus(status);
 end
